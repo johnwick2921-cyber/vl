@@ -51,6 +51,8 @@ interface Props {
   latestVersion?: number
   /** omit to keep the chips read-only */
   onSelectVersion?: (version: number) => void
+  /** mentor mode ON → the AI bias card is labelled advice-only. */
+  mentorOn?: boolean
 }
 
 // A centered state panel (loading / night / no-plan / error).
@@ -136,6 +138,7 @@ export function SessionPlanCard({
   versions = [],
   latestVersion = 0,
   onSelectVersion,
+  mentorOn = false,
 }: Props) {
   // P5 owner-door state (hooks before the early state-returns, unconditional).
   const [edit, setEdit] = useState<{
@@ -780,7 +783,7 @@ export function SessionPlanCard({
       )}
 
       {/* bias */}
-      <BiasBlock bias={doc.bias} language={language} />
+      <BiasBlock bias={doc.bias} language={language} adviceOnly={mentorOn} />
 
       {/* Mini chart (levels shared with the table). It is NOT gated on having
           levels: the bars are real regardless, and hiding the whole chart when a

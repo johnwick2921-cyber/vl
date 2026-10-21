@@ -447,14 +447,21 @@ export const riskControl = {
     es: 'Mover stop a equilibrio',
   },
   breakevenDesc: {
-    zh: '当浮盈达到设定点数后，把止损移到开仓价（保本）。仅期货 (NT8)。默认关闭。SUSPENDED (0B) — 当前运行中该功能已暂停，开启后不会移动止损。',
-    en: 'Move the stop to your entry (breakeven) after N points in profit. Futures (NT8) only. Default OFF. SUSPENDED (0B) — the running binary does not move the stop.',
-    es: 'Mueve el stop a la entrada tras N puntos. Solo futuros (NT8). OFF por defecto. SUSPENDIDO (0B) — el binario en ejecución no mueve el stop.',
+    zh: '当浮盈达到设定点数后，把止损移到开仓价（保本）。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。只有同时满足：本开关开启 且 服务器 EXIT_MECHS_SUSPENDED=0（seam=ACTIVE）才会移动止损；未设置该环境变量时为 SUSPENDED (0B)，不发送。运行状态见启动行 "🛑 exits: … BE=… seam=…"。',
+    en: 'Move the stop to your entry (breakeven) after N points in profit. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. It moves a stop only when this toggle is ON AND the server seam is ACTIVE (env EXIT_MECHS_SUSPENDED=0); with the env unset it is SUSPENDED (0B) and nothing is sent. The boot line "🛑 exits: … BE=… seam=…" shows the running state.',
+    es: 'Mueve el stop a la entrada tras N puntos. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09): las operaciones mentor siguen solo sus propias salidas. Mueve el stop solo si este interruptor está ON y el seam del servidor está ACTIVO (env EXIT_MECHS_SUSPENDED=0); sin esa variable queda SUSPENDIDO (0B) y no se envía nada. La línea de arranque "🛑 exits: … BE=… seam=…" muestra el estado real.',
   },
   breakevenTrigger: {
     zh: '触发点数',
     en: 'Trigger (points)',
     es: 'Disparador (puntos)',
+  },
+  // Release #25 (STRICT-12345 F-8) — breakeven in R; 0/blank = OFF = points rule.
+  breakevenTriggerR: {
+    zh: '按 R 触发（初始风险的倍数；0 = 关闭，用上面的点数）',
+    en: 'Trigger in R (× initial risk; 0 = off, the points rule above applies)',
+    es: 'Disparador en R (× riesgo inicial; 0 = off, se usa la regla de puntos)',
+    id: 'Pemicu dalam R (× risiko awal; 0 = off, aturan poin di atas berlaku)',
   },
 
   // === Trailing profit (Phase 3B) ===
@@ -464,9 +471,9 @@ export const riskControl = {
     es: 'Trailing stop',
   },
   trailingDesc: {
-    zh: '设计行为：按 最优价 ∓ 倍数×ATR(周期,5m) 逐级收紧止损。仅期货 (NT8)。默认关闭。SUSPENDED (0B) — 计算仍会产生新价位，但不会发到交易所（见 auto_trader_trailing.go）。',
-    en: 'Designed: the stop ratchets to best-price ∓ mult×ATR(period, 5m), tighten-only. Futures (NT8) only. Default OFF. SUSPENDED (0B) — the ratchet computes a new level but the broker is never moved (auto_trader_trailing.go).',
-    es: 'Diseñado: el stop se ajusta a mejor-precio ∓ mult×ATR. Solo futuros (NT8). OFF por defecto. SUSPENDIDO (0B) — el ratchet calcula pero el broker nunca se mueve.',
+    zh: '设计行为：按 最优价 ∓ 倍数×ATR(周期,5m) 逐级收紧止损。仅期货 (NT8)。默认关闭。Mentor mode 开启时不生效（owner ruling 2026-10-09）—— mentor 交易只跟随 mentor 自己的出场。只有同时满足：本开关开启 且 服务器 EXIT_MECHS_SUSPENDED=0（seam=ACTIVE）才会移动止损；未设置该环境变量时为 SUSPENDED (0B)：计算仍会产生新价位，但不会发到交易所（见 auto_trader_trailing.go）。',
+    en: 'Designed: the stop ratchets to best-price ∓ mult×ATR(period, 5m), tighten-only. Futures (NT8) only. Default OFF. Not applied while mentor mode is ON (owner ruling 2026-10-09) — mentor trades follow only the mentor\u2019s exits. It moves a stop only when this toggle is ON AND the server seam is ACTIVE (env EXIT_MECHS_SUSPENDED=0); with the env unset it is SUSPENDED (0B): the ratchet computes a new level but the broker is never moved (auto_trader_trailing.go). The boot line "🛑 exits: … trail=… seam=…" shows the running state.',
+    es: 'Diseñado: el stop se ajusta a mejor-precio ∓ mult×ATR. Solo futuros (NT8). OFF por defecto. No se aplica con modo mentor ON (decisión del propietario 2026-10-09). Mueve el stop solo si este interruptor está ON y el seam está ACTIVO (env EXIT_MECHS_SUSPENDED=0); sin esa variable queda SUSPENDIDO (0B): el ratchet calcula pero el broker nunca se mueve.',
   },
   trailingMult: {
     zh: 'ATR 倍数',
@@ -522,14 +529,19 @@ export const riskControl = {
     es: 'Barreras de riesgo',
   },
   masterSwitchDesc: {
-    zh: '关闭则全部防护栏停用（记录）；实盘账户拦截始终生效，不可关闭。',
-    en: 'OFF disables ALL guardrails (logged). The live-account block stays ON always — untoggleable.',
-    es: 'OFF desactiva TODAS las barreras. El bloqueo de cuenta real siempre activo.',
+    zh: '关闭则停用每日亏损/每日盈利/每日最大开仓/禁止交易时段/一致性防护栏（记录）。不受总开关控制：连续亏损熔断、止损后再入场冷却、合约数与名义上限。实盘账户拦截始终生效，不可关闭。',
+    en: 'OFF disables the daily loss, daily profit, max daily trades, blackout and consistency guardrails (logged). NOT gated by this switch: the consecutive-loss halt, the re-entry cooldown and the size caps (max contracts, notional). The live-account block stays ON always — untoggleable.',
+    es: 'OFF desactiva las barreras de pérdida diaria, ganancia diaria, máx. operaciones, bloqueo horario y consistencia. NO dependen de este interruptor: el freno por pérdidas seguidas, el enfriamiento de reingreso y los topes de tamaño (contratos, nocional). El bloqueo de cuenta real siempre activo.',
+  },
+  notEnforcedBadge: {
+    zh: '未生效 — 风险防护栏总开关为关闭',
+    en: 'NOT ENFORCED — Risk guardrails master is OFF',
+    es: 'NO APLICADO — el interruptor maestro de riesgo está OFF',
   },
   dailyLossLimit: {
-    zh: '每日亏损上限 (USD) — 默认开启；留空则取环境变量 RISK_MAX_DAILY_LOSS_USD',
-    en: 'Daily loss limit (USD) — default ON; a blank value falls back to env RISK_MAX_DAILY_LOSS_USD',
-    es: 'Límite de pérdida diaria (USD) — ON por defecto; vacío usa RISK_MAX_DAILY_LOSS_USD',
+    zh: '每日亏损上限 (USD) — 默认关闭；需同时开启防护栏总开关与本行；金额留空则取环境变量 RISK_MAX_DAILY_LOSS_USD（$500）',
+    en: 'Daily loss limit (USD) — default OFF; it acts only with the Guardrails master AND this row ON; a blank $ falls back to env RISK_MAX_DAILY_LOSS_USD ($500)',
+    es: 'Límite de pérdida diaria (USD) — OFF por defecto; actúa solo con el interruptor maestro Y esta fila en ON; vacío usa RISK_MAX_DAILY_LOSS_USD ($500)',
   },
   dailyProfitTarget: {
     zh: '每日盈利目标 (USD) — 默认关闭',
@@ -547,19 +559,24 @@ export const riskControl = {
     es: 'Freno por pérdidas seguidas (parar tras N) — presencia: vacío = hereda (8, ON); 0 explícito = OFF; no lo controla el master',
   },
   reentryCooldown: {
-    zh: '止损后再入场冷却 (分钟, 或价格离止损 ≥1×ATR15) — 默认 20；0 = 关闭；不受总开关控制',
-    en: 'Re-entry cooldown after stop (min, or ≥1×ATR15 from stop) — default 20; 0 = OFF; NOT gated by the master switch',
-    es: 'Enfriamiento de reingreso tras stop (min, o ≥1×ATR15) — por defecto 20; 0 = OFF; no lo controla el master',
+    zh: '止损后再入场冷却 (分钟, 或价格离止损 ≥1×ATR15) — 默认 0 = 关闭（打开开关时填入 20）；不受总开关控制',
+    en: 'Re-entry cooldown after stop (min, or ≥1×ATR15 from stop) — default 0 = OFF (switching it on fills 20); NOT gated by the master switch',
+    es: 'Enfriamiento de reingreso tras stop (min, o ≥1×ATR15) — por defecto 0 = OFF (al activarlo se pone 20); no lo controla el master',
   },
   maxContractsField: {
-    zh: '单笔最大合约数 — 默认 2（常开钳制；旧开关从未有读取方）',
-    en: 'Max contracts / order — default 2 (always-on clamp; the old toggle never had a reader)',
-    es: 'Máx. contratos / orden — por defecto 2 (tope siempre activo)',
+    zh: '单笔最大合约数 — 常开钳制：取你的值，否则 2，再受 Stage-A 上限约束（默认 1，环境变量 STAGE_A_CONTRACT_CAP 可提高）→ 实际默认 1；导师模式交易员不受此限（按导师表，最多 mentor_max_contracts，默认 20）',
+    en: 'Max contracts / order — always-on clamp: your value, else 2, then capped by the Stage-A ceiling (1 unless env STAGE_A_CONTRACT_CAP raises it), so effectively 1 by default; a mentor-mode trader is NOT clamped by it (mentor table, up to mentor_max_contracts, default 20)',
+    es: 'Máx. contratos / orden — tope siempre activo: tu valor, si no 2, luego limitado por el techo Stage-A (1 salvo que STAGE_A_CONTRACT_CAP lo suba): en la práctica 1; un trader en modo mentor NO queda limitado (tabla del mentor, hasta mentor_max_contracts, 20)',
+  },
+  plannerContractsField: {
+    zh: '规划器每笔合约数 — 默认 1（现状单口）。≥ 2 时入场拆成两半：第 1 腿 n/2（向下取整）在计划第一目标（target_chain[0]；第一障碍仅作 ≥ +1R 的兜底），第 2 腿其余部分跑到最终目标（主人 2026-10-16 “至少 4，先卖 2 才公平”）。若第 1 腿价格会等于或越过最终目标则退化为单笔 n 口。盖章总数受常开单笔最大合约数钳制（resolveMaxContracts）与硬上限 10（误填 40 会被拒），并在发送时再次钳制。只作用于规划器入场；导师手数与其它策略不变。',
+    en: 'Planner contracts / entry — default 1 (today’s single-contract arm). ≥ 2 splits the entry into equal halves: leg 1 = n/2 (floor) at the plan’s FIRST TARGET (target_chain[0]; the first obstacle is only the fallback, and only when it is ≥ +1R away), leg 2 = the rest at the final target (owner 2026-10-16 “set to 4 at least, sell 2 first so it’s equal”). If leg 1’s price would equal or pass the final target the split degrades to ONE n-lot bracket. The stamped total is clamped to the always-on Max contracts / order (resolveMaxContracts), re-clamped at send, and to a hard ceiling of 10 (a typo of 40 is refused). Planner entries only; mentor sizing and every other strategy are unchanged.',
+    es: 'Contratos planner / entrada — por defecto 1 (el brazo de un contrato actual). ≥ 2 divide la entrada en mitades iguales: pierna 1 = n/2 (suelo) en el PRIMER objetivo del plan (target_chain[0]; el primer obstáculo es solo el respaldo, y solo si está ≥ +1R), pierna 2 = el resto al objetivo final (owner 2026-10-16 “4 mínimo, vender 2 primero para igualar”). Si el precio de la pierna 1 igualara o pasara el objetivo final, la división se degrada a UN bracket de n. El total sellado se limita al tope siempre activo de contratos/orden (resolveMaxContracts), se re-limita al enviar, y a un techo de 10 (un error de 40 se rechaza). Solo entradas planner; el tamaño del mentor y las demás estrategias no cambian.',
   },
   notionalCapField: {
-    zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，开关默认开启）',
-    en: 'Notional cap (equity × N) — default 20 (safety backstop, toggle default ON)',
-    es: 'Tope nocional (capital × N) — por defecto 20 (respaldo, ON)',
+    zh: '名义上限倍数 (权益×N) — 默认 20（安全底线，始终开启，无开关）',
+    en: 'Notional cap (equity × N) — default 20 (safety backstop, always on — no toggle)',
+    es: 'Tope nocional (capital × N) — por defecto 20 (respaldo, siempre activo — sin interruptor)',
   },
   blackoutStart: {
     zh: '禁止交易开始 (CT) — 开关默认关闭；窗口内不做新决策（NT8 侧 SL/TP 仍保护持仓）',

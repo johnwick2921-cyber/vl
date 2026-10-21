@@ -202,7 +202,9 @@ type TraderPosition struct {
 	// closed rows carried the never-computed pair (D15). nil means UNKNOWN.
 	MAE             *float64 `gorm:"column:mae;default:0" json:"mae"`
 	MFE             *float64 `gorm:"column:mfe;default:0" json:"mfe"`
-	EntryConfidence int      `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
+	// R22 P2 — NULLABLE like mae/mfe: a plan-arm entry carries NO AI
+	// confidence; the old int stored a fabricated 0 (#649/#650). nil = absent.
+	EntryConfidence *int `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
 	// P5.5 — plan link (additive, futures day-plan): the cited scenario + plan
 	// version stamped at OPEN, and the adherence grade (A–F) computed at CLOSE.
 	// Empty/zero for crypto / off-plan trades.
@@ -225,6 +227,13 @@ type TraderPosition struct {
 	// PlanLinkNote carries backfill verdicts: "" (live stamp) |
 	// "backfill:<reason>" | "unresolvable:<reason>" (never a guessed join).
 	PlanLinkNote string `gorm:"column:plan_link_note;default:''" json:"plan_link_note"`
+	// Origin (R22 PNL-TRUTH, owner ruling R1 2026-10-14): WHO opened the
+	// position — "bot" (the default, every row this bot placed) or "manual"
+	// (an NT8 position the bot ADOPTED with no originating order/arm of its
+	// own). Manual rows stay in the ledger and the history list; every bot
+	// P&L aggregator excludes them and shows them as a separate counted line
+	// (store/manual_origin.go). Never inferred from close_reason or plan_id.
+	Origin string `gorm:"column:origin;not null;default:'bot'" json:"origin"`
 }
 
 // TableName returns the table name
@@ -318,12 +327,14 @@ func (s *PositionStore) EntryOrderIDInUse(entryOrderID string) (bool, error) {
 // GetUngradedClosedPositions returns a trader's closed positions that have NO
 // adherence grade yet and closed at/after sinceMs (W5 — the loop poll grades every
 // real exit; the epoch excludes pre-day-plan history). Oldest exit first.
+// LOG-NOISE-2: test-seam rows are excluded — a seam close never receives a
+// grade, so it would otherwise be selected forever and re-processed every cycle.
 func (s *PositionStore) GetUngradedClosedPositions(traderID string, sinceMs int64, limit int) ([]*TraderPosition, error) {
 	if limit <= 0 {
 		limit = 20
 	}
 	var rows []*TraderPosition
-	err := s.db.Where("trader_id = ? AND status = ? AND adherence_grade = '' AND exit_time >= ?", traderID, "CLOSED", sinceMs).
+	err := s.db.Where("trader_id = ? AND status = ? AND adherence_grade = '' AND exit_time >= ? AND NOT ("+seamSQLPredicate+")", traderID, "CLOSED", sinceMs).
 		Order("exit_time ASC").Limit(limit).Find(&rows).Error
 	if err != nil {
 		return nil, err
@@ -439,7 +450,11 @@ func (s *PositionStore) Create(pos *TraderPosition) error {
 	// captured BEFORE the insert: GORM writes the DDL default back into the
 	// struct, so after Create these pointers are no longer nil
 	unmeasured := pos.MAE == nil || pos.MFE == nil
+	noConfidence := pos.EntryConfidence == nil // R22 P2: absent ≠ 0
 	if err := s.db.Create(pos).Error; err != nil {
+		return err
+	}
+	if err := s.nullEntryConfidence(pos, noConfidence); err != nil {
 		return err
 	}
 	// E4 (wave 1A, 2026-09-02) — write the excursion columns as NULL.
@@ -908,6 +923,7 @@ func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 
 	// E4 — captured before the insert; see Create for why the DDL default stays
 	unmeasured := pos.MAE == nil || pos.MFE == nil
+	noConfidence := pos.EntryConfidence == nil // R22 P2: absent ≠ 0
 	err := s.db.Create(pos).Error
 	if err != nil {
 		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
@@ -928,7 +944,21 @@ func (s *PositionStore) CreateOpenPosition(pos *TraderPosition) error {
 		}
 		pos.MAE, pos.MFE = nil, nil
 	}
+	return s.nullEntryConfidence(pos, noConfidence)
+}
 
+// nullEntryConfidence (R22 P2) writes entry_confidence NULL right after the
+// insert when the caller had none — the DDL default 0 stays for the same
+// reason the mae/mfe default stays (E4: dropping it rebuilds the table), and
+// GORM omits a nil pointer on INSERT, so SQLite would fill in the fabricated 0.
+func (s *PositionStore) nullEntryConfidence(pos *TraderPosition, absent bool) error {
+	if !absent {
+		return nil
+	}
+	if err := s.db.Exec(`UPDATE trader_positions SET entry_confidence = NULL WHERE id = ?`, pos.ID).Error; err != nil {
+		return err
+	}
+	pos.EntryConfidence = nil
 	return nil
 }
 

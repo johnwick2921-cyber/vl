@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"strconv"
+	"time"
 
 	"vl/logger"
 	"vl/market"
@@ -87,6 +88,21 @@ func barIsStale(newestBarMs, intervalMs, nowMs int64) bool {
 	return newestBarMs < expectedOpen-intervalMs-staleBarGraceMs()
 }
 
+// StaleEntryGateFeed is the MENTOR stale-data block's ONE definition (release
+// #11): the SAME barIsStale formula B4 applies on the AI path — the
+// expected-open − interval − grace rule, ~75 s for the 1m — plus the SAME
+// CME-open/halt awareness. While CME is closed (the daily 16:00–17:00 break,
+// weekends, holidays) no bars arrive, so the formula must not fire there or it
+// would false-refuse every halt. The planner path already inherits this
+// awareness (it only runs during an open session); the mentor tick runs around
+// the clock and needs it explicit. Unknown bar → fail-open (not stale).
+func StaleEntryGateFeed(newestBarOpenMs int64, now time.Time) bool {
+	if !IsCMEOpen(now) {
+		return false
+	}
+	return barIsStale(newestBarOpenMs, 60_000, now.UnixMilli())
+}
+
 // staleEntryFeed reports whether the freshest intraday feed (1m preferred, else
 // 5m) is stale enough to block NEW entries, each timeframe judged against ITS
 // OWN period. No 1m/5m data → fail-open (not stale).
@@ -140,7 +156,38 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			continue
 		}
 		md := ctx.MarketDataMap[d.Symbol]
-		if tf, age, limit, stale := staleEntryFeed(md, evalMs); stale {
+		// P0 feed freshness — explicit DELAYED broker mode blocks a NEW entry
+		// first (precedence: delayed > stale > fresh). Unknown mode is NOT a
+		// reject reason on its own; the timestamp legs below still refuse
+		// missing/stale candles regardless of mode.
+		if mode := feedMode(); mode == "delayed" {
+			b4RefuseDelayed(d, ctx, "broker feed mode is delayed")
+			continue
+		}
+		// Release #22 OPS-SAFETY: the wall-clock rule below fails OPEN on a
+		// backward wall step. Two legs that never read the wall clock run
+		// FIRST: a clock-step hold around the snapshot, and the monotonic
+		// receipt age of the 1m feed at the snapshot instant.
+		if held, why := clockStepHeldAt(ctx.SnapshotAt); held {
+			b4Refuse(d, ctx, why)
+			continue
+		}
+		// m168: the receipt leg runs whenever a provider is wired, not only when
+		// the freshest subscribed TF is 1m — a dead feed on 5m-only must not slip
+		// through the monotonic leg. The freshest TF is what the receipt ages.
+		tf, wallAge, wallLimit, wallStale := staleEntryFeed(md, evalMs)
+		if tf == "" {
+			tf = "1m"
+		}
+		if stale, age, known := feedReceiptStale(d.Symbol, tf, ctx.SnapshotAt); known && stale {
+			why := fmt.Sprintf("receipt_age: no live %s frame received since boot (monotonic)", tf)
+			if age >= 0 {
+				why = fmt.Sprintf("receipt_age: last live %s frame received %ds before the snapshot on the monotonic clock (> %ds)", tf, age/1000, receiptMaxAgeMs(tfIntervalMs(tf))/1000)
+			}
+			b4Refuse(d, ctx, why)
+			continue
+		}
+		if wallStale {
 			// 2.4 — every discard self-diagnoses: live-feed age + clock drift +
 			// a verdict hint, so "feed or clock or math" is one glance.
 			feedAge, drift := liveFeedDiagnostics(d.Symbol, nowMs)
@@ -150,18 +197,42 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			// same skew, so drift past C2 tolerance explains BOTH readings.
 			case absI64(drift) > C2ToleranceMs():
 				hint = "clock"
-			case feedAge < 0 || feedAge > limit:
+			case feedAge < 0 || feedAge > wallLimit:
 				hint = "feed" // the LIVE cache is also old → the wire really gapped
 			}
 			logger.Warnf("⛔ stale_bar_discarded tf=%s age=%ds thresh=%ds drift_ms=%+d feed_last_bar_age=%ds verdict_hint=%s — %s %s → WAIT (exits unaffected)",
-				tf, age/1000, limit/1000, drift, feedAge/1000, hint, d.Symbol, d.Action)
-			reason := fmt.Sprintf("freshest %s bar %dms old (>%dms) hint=%s", tf, age, limit, hint)
+				tf, wallAge/1000, wallLimit/1000, drift, feedAge/1000, hint, d.Symbol, d.Action)
+			reason := fmt.Sprintf("freshest %s bar %dms old (>%dms) hint=%s", tf, wallAge, wallLimit, hint)
 			d.RefusalReason = "stale-data: " + reason
 			d.Action = "wait"
 			telemetry.IncGateBlock(ctx.TraderID, "stale_data")
 			telemetry.RecordError(ctx.TraderID, "entry_refused", "stale-data: "+reason, telemetry.CostTradeLost)
 		}
 	}
+}
+
+// b4Refuse neutralizes one open decision for a monotonic-leg refusal (clock
+// step / receipt age): WARN + the same stale_data gate-block counter and
+// entry_refused error as the wall rule, so every refusal is logged AND
+// counted under the class the gate-block table already shows.
+func b4Refuse(d *Decision, ctx *Context, why string) {
+	logger.Warnf("⛔ stale_bar_discarded %s — %s %s → WAIT (exits unaffected)", why, d.Symbol, d.Action)
+	d.RefusalReason = "stale-data: " + why
+	d.Action = "wait"
+	telemetry.IncGateBlock(ctx.TraderID, "stale_data")
+	telemetry.RecordError(ctx.TraderID, "entry_refused", "stale-data: "+why, telemetry.CostTradeLost)
+}
+
+// b4RefuseDelayed (P0 feed freshness) neutralizes one open decision for the
+// explicit delayed-mode leg: WARN + a DISTINCT delayed_data gate-block counter
+// and entry_refused error, so the delayed refusal is separable from inferred
+// stale. Exits and protection are never touched.
+func b4RefuseDelayed(d *Decision, ctx *Context, why string) {
+	logger.Warnf("⛔ delayed_data_discarded %s — %s %s → WAIT (exits unaffected)", why, d.Symbol, d.Action)
+	d.RefusalReason = "delayed-data: " + why
+	d.Action = "wait"
+	telemetry.IncGateBlock(ctx.TraderID, "delayed_data")
+	telemetry.RecordError(ctx.TraderID, "entry_refused", "delayed-data: "+why, telemetry.CostTradeLost)
 }
 
 // liveFeedDiagnostics reads the LIVE bar provider (not the snapshot) for the

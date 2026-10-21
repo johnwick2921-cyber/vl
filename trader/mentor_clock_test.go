@@ -32,7 +32,7 @@ func TestMentorEvalOnceTicksAtTheBarCloseInstant(t *testing.T) {
 	bars = append(bars,
 		bar(8, 30, 100, 101, 99, 100),
 		bar(8, 31, 100, 101, 99.5, 100),
-		bar(8, 32, 100, 105.5, 100, 105), // the first 1m close outside the 08:30–08:31 box
+		bar(8, 32, 101.5, 105.5, 101.25, 105), // the first 1m BODY wholly outside the 08:30–08:31 box (open AND close > 101) [D4.1 p1 @20:36]
 		bar(8, 33, 105, 106, 104, 105),
 	)
 	escaped := ""

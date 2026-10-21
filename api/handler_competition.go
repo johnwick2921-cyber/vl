@@ -151,6 +151,7 @@ func (s *Server) handleEquityHistory(c *gin.Context) {
 	// Build return rate historical data points
 	type EquityPoint struct {
 		Timestamp        string  `json:"timestamp"`
+		TimestampMs      int64   `json:"timestamp_ms"` // epoch ms — the chart's parseable source; `timestamp` stays the display string
 		TotalEquity      float64 `json:"total_equity"`
 		AvailableBalance float64 `json:"available_balance"` // Available balance
 		TotalPnL         float64 `json:"total_pnl"`         // Total PnL (unrealized PnL)
@@ -175,6 +176,7 @@ func (s *Server) handleEquityHistory(c *gin.Context) {
 
 		history = append(history, EquityPoint{
 			Timestamp:        kernel.FormatCT(snap.Timestamp),
+			TimestampMs:      snap.Timestamp.UnixMilli(),
 			TotalEquity:      snap.TotalEquity,
 			AvailableBalance: snap.Balance,
 			TotalPnL:         snap.UnrealizedPnL,
@@ -215,16 +217,20 @@ func (s *Server) handlePublicTraderList(c *gin.Context) {
 	result := make([]map[string]interface{}, 0, len(traders))
 	for _, trader := range traders {
 		result = append(result, map[string]interface{}{
-			"trader_id":       trader["trader_id"],
-			"trader_name":     trader["trader_name"],
-			"ai_model":        trader["ai_model"],
-			"exchange":        trader["exchange"],
-			"is_running":      trader["is_running"],
-			"total_equity":    trader["total_equity"],
-			"total_pnl":       trader["total_pnl"],
-			"total_pnl_pct":   trader["total_pnl_pct"],
-			"position_count":  trader["position_count"],
-			"margin_used_pct": trader["margin_used_pct"],
+			"trader_id":    trader["trader_id"],
+			"trader_name":  trader["trader_name"],
+			"ai_model":     trader["ai_model"],
+			"exchange":     trader["exchange"],
+			"is_running":   trader["is_running"],
+			"total_equity": trader["total_equity"],
+			"total_pnl":    trader["total_pnl"],
+			// N6 (release #26): what total_pnl SUMS — "nt8_session" (the broker's
+			// session-reset realized+unrealized) or "equity_minus_initial" — so a
+			// reader can tell the two apart. Additive, no shape change.
+			"total_pnl_source": trader["total_pnl_source"],
+			"total_pnl_pct":    trader["total_pnl_pct"],
+			"position_count":   trader["position_count"],
+			"margin_used_pct":  trader["margin_used_pct"],
 		})
 	}
 

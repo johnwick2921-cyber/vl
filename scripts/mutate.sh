@@ -46,7 +46,7 @@ cp "$FILE" "$BACKUP" || die "could not back up $FILE"
 # The restore runs on EVERY exit path, including a signal. A mutation harness
 # that can leave a mutant in the tree is worse than no harness: the next command
 # anyone runs is against code nobody chose.
-restore() { cp "$BACKUP" "$FILE"; rm -f "$BACKUP"; }
+restore() { cp "$BACKUP" "$FILE"; rm -f "${BACKUP:?}"; }
 trap restore EXIT INT TERM
 
 printf '── mutating %s\n' "$FILE"

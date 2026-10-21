@@ -93,6 +93,29 @@ func stopEntrySeamOn() bool     { return kernel.StopEntrySeamOn() }
 func stopEntryOffsetTicks() int { return kernel.StopEntryOffsetTicks() }
 func retestWaitBars() int       { return kernel.RetestWaitBars() }
 
+// stopEntryWireOffset is the ONE definition of how far past its authored entry
+// a stop entry's trigger goes on the wire (P2-1, rel22 mentor audit).
+//
+//   - A planner (non-mentor) stop entry keeps the E7 offset by spec: "the stop
+//     trigger sits STOP_ENTRY_OFFSET_TICKS beyond the break candle" (kernel
+//     StopEntryOffsetTicks, default 2 ticks; MATH-EXECUTOR row 167 authored
+//     29835.75, filled 29836.25). The write-time feasibility check
+//     (write_time_feasibility.go) judges planner scenarios with the same E7
+//     offset, so nothing else changes for the planner.
+//   - A MENTOR row gets NONE: the kernel authors the course price itself —
+//     the ISB at the extreme ± 1.5 [D2.1 p1 @ 05:36], the PHL at the candle ±
+//     its 1.0 buffer [D2.2 p1 @ 06:50 drawn], the SWING4H tight on the candle
+//     (R8: no buffer), the box at the rejecting candle's extreme. Adding the
+//     planner's 0.5 on top put every regular ISB 2.0 past the extreme (row 357:
+//     I1 high 30888.75, ledger 30890.25, wire 30890.75), and the reverse ISB had
+//     to pre-subtract it — two definitions of one number.
+func stopEntryWireOffset(r store.ArmedOrderDB, tick float64) float64 {
+	if isMentorArmOrigin(r) {
+		return 0
+	}
+	return float64(stopEntryOffsetTicks()) * tick
+}
+
 // stopEntryFallbackDue (E7, pure) — the breakout-retest fallback window: a
 // stop-entry leg is due when NO bar has touched its entry level within the
 // last RETEST_WAIT_BARS 1m bars AND at least RETEST_WAIT_BARS bars elapsed
@@ -400,12 +423,25 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 		// Cancelled through the same seam the close uses, so each cancel is a
 		// wire cancel the book can confirm — never a ledger assumption. PACED per row (W1b FOLD-12, window_sweep_pace.go).
 		if name, noun, window := sessionRiskWindowWords(risk.Class); window {
+			// N-I: a row whose own session has CLOSED is cancelled for THAT
+			// reason first (row 365: "NY first-5m" was the band, LONDON's
+			// close was the cause).
+			at.cancelClosedSessionArms(ledger, now, at.windowSweepPace(now))
 			if n, unacked := at.cancelArmedOrdersSync(name+" opened — "+risk.Reason, at.windowSweepPace(now)); n > 0 || unacked > 0 {
 				at.logWarnf("🔒 %s: %d resting arm(s) cancelled, %d unacked — an arm resting into the %s is cancelled, not grandfathered", name, n, unacked, noun)
 			}
 		}
 		return
 	}
+
+	// FIX-PLANNER-TRUTH (1) — a WORKING planner arm whose scenario id is ABSENT
+	// from the NEW plan version is cancelled through the normal cancel path
+	// (cancel_pending → broker proof), logged once with the dropped reason.
+	// Re-spec (arm_respec.go) only re-prices a scenario that is STILL authored;
+	// this handles the scenario the new version dropped entirely — until now it
+	// rested until a fill, the stale reaper, a band cancel, or plan death.
+	// Mentor rows are untouched; a FILLED row is terminal and never here.
+	at.cancelDroppedScenarioArms(ledger, plan, now)
 
 	// ONE SETUP (dispatch 102, 2026-09-10) — THE ONE CALL SITE. Every armable
 	// scenario's three verdicts, ONCE per cycle, at `now`, against the LIVE map
@@ -546,7 +582,9 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 				if row.ID != 0 {
 					at.armLifecycleWrite("set_state(shadowed)", *row, ledger.SetState(row.ID, "shadowed", "condition_shadowed"))
 				}
-				if err := ledger.UpsertArm(row); err != nil {
+				if err := ledger.UpsertArm(row); err != nil && !errors.Is(err, store.ErrArmSlotSpent) {
+					// A spent slot (it reached the broker under this version)
+					// is not re-authored even as a shadow — not a write failure.
 					at.logWarnf("⚔️ shadowed arm write failed %s %s leg %d: %v", plan.Session, sc.ID, li+1, err)
 				}
 			}
@@ -579,6 +617,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			// takes the reject structural-geometry path (provenance is a label, R2).
 			structuralFade := sc.Condition == kernel.OneSetupPlay && !strings.EqualFold(leg.Kind, "exit") && !zl.on
 			var geometry *store.StructuralGeometryRecord
+			floorCapWhy := "" // release #25 PK-4: set by the legacy stop composition below
 			osTargetSubstituted := false
 			if structuralFade {
 				policy := store.ResolveStructuralStop(cfg, at.futuresSymbol())
@@ -631,12 +670,14 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 				// beyond the nearest seated level on the risk side + clearance,
 				// floored at MIN_SL_ATR_MULT×ATR5m, widest wins, never tighter than
 				// authored. Logged once per (plan, version, scenario, leg, stop).
-				if comp := composeArmStop(strings.ToLower(strings.TrimSpace(sc.Direction)), stopFrom, leg.Stop, atr5m,
+				comp := composeArmStop(strings.ToLower(strings.TrimSpace(sc.Direction)), stopFrom, leg.Stop, atr5m,
 					market.FuturesTickSize(at.futuresSymbol()), doc.Levels, kernel.MinSLATRMult(),
-					kernel.MinSLTickClearance, armStopAnchorMaxATR()); comp.Stop != leg.Stop || comp.Unanchored {
+					kernel.MinSLTickClearance, armStopAnchorMaxATR())
+				floorCapWhy = at.atrFloorCapVerdictFor(sc, comp) // release #25 PK-4 (OFF → "")
+				if comp.Stop != leg.Stop || comp.Unanchored {
 					skey := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":stop"
 					if armRefusalChanged(&at.armStopCompLast, skey, fmt.Sprintf("%.2f/%s", comp.Stop, comp.Bound)) {
-						at.logInfof("%s", armStopCompositionLine(plan.Session, sc.ID, li+1, sc.Direction, comp, atr5m, kernel.MinSLATRMult()))
+						at.logArmStopComposition(plan, sc, li, comp, atr5m) // R22 P2: pts + $ on a widening, counted once per arm-spec
 						// OWNER RULING 1 (0B): ARM_STOP_ANCHOR_MAX_ATR 3.0 is a
 						// PROVISIONAL [I] default, reviewed at n≥30 dead zones. The
 						// count is RECORDED (class-35 law), never inferred from logs.
@@ -675,17 +716,17 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 					}
 				}
 			}
-			// S2b chained arm (autopsy-response wave): wait_confirm legs stay
-			// DORMANT until the chain confirm is machine-MET. E4: leg 1 chains
-			// on confirm2 (1m_mss|1x5m_close); a legacy single arm chains on
-			// its own confirm{}.
-			if leg.WaitConfirm {
+			// S2b chained arm: wait_confirm legs stay DORMANT until the chain confirm is machine-MET (E4); R22 F1 (owner R4): a SWEEP setup waits for its trigger whatever wait_confirm says; F-1 (planner-touch-fills): so does a level play's market_in_zone leg, for its reaction AT the level (kernel/touch_trigger.go).
+			if kernel.ArmLegWaitsForConfirm(sc, leg) {
 				v := kernel.EvaluateScenarioConfirm(sc, bars, plan.BirthMs, now.UnixMilli())
 				if !v.Met {
+					at.holdForConfirm(ledger, plan, sc, li, legs[li], leg, zl, v, now) // note + a re-priced working order is still re-spec-cancelled
 					scope.note(sc.ID, "waiting: confirm not met ("+kernel.ConfirmGatedRuleLabel(sc)+")")
 					continue
 				}
-				at.logInfof("⚔️ arm %s leg %d wait_confirm MET (%s) — arming", sc.ID, li+1, kernel.ConfirmGatedRuleLabel(sc)) // W2: the rule(s) gated + source
+				if !at.armConfirmFresh(ledger, plan, sc, li, legs[li], leg, zl, v, bars, now, scope) { // F-1 rescan: MET must be FRESH (event age + distance); logs "MET — arming" or the stale hold
+					continue
+				}
 			}
 			// gates AT ARM TIME — a resting order is a pre-passed entry; each gate
 			// input that changes materially later triggers a cancel (1.3).
@@ -697,7 +738,7 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			if machine {
 				legBias, dirRule = at.pictureDirectionRule(plan, sc, store.IsMachinePlan(planRow), legBias)
 			}
-			if verdict := pictureDirectionVerdict(dirRule, at.zoneAwareGateVerdict(zl, sc, leg, legBias, snap, atr5m, minQuality, cfg, plan.Session, structuralFade)); verdict != "" {
+			if verdict := pictureDirectionVerdict(dirRule, firstVerdict(floorCapWhy, at.zoneAwareGateVerdict(zl, sc, leg, legBias, snap, atr5m, minQuality, cfg, plan.Session, structuralFade))); verdict != "" {
 				scope.note(sc.ID, "refused: "+armRefusalClass(verdict)+": "+verdict)
 				if geometry != nil {
 					geometry.Reason = "entry_gate"
@@ -915,6 +956,15 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			}
 			zl.stamp(row)               // W3 — policy, zone (inward-rounded), provenance, planned entry
 			stampPictureSource(row, sc) // W5 — source, opportunity, rule, deadline, run epoch
+			// dispatch-31 (owner order 2026-10-16 "set to 4 at least, sell 2 first
+			// so it's equal") — a PLANNER single arm (non-machine, non-mentor, not a
+			// sweep_reclaim split) sizes to the per-strategy planner_contracts knob
+			// and splits AT ENTRY into equal halves: leg 1 = n/2 at the plan's first
+			// obstacle, leg 2 = the rest at the final target. Stamped on the row so
+			// the placement pass (any process, after a restart) sends it without
+			// re-reading the plan doc. Mentor rows and a 2-leg sweep_reclaim arm are
+			// untouched; the knob unset/0 → 1 = today's single-contract arm.
+			stampPlannerSplit(row, &cfg.RiskControl, machine, legCount, plannerLeg1Target(sc, row.Side, row.EntryPx, row.StopPx, row.TargetPx), at.resolveMaxContracts())
 			// W1b E1: the matched ledger row is KEPT — its prices are what went to the wire.
 			var prior store.ArmedOrderDB
 			existing, err := ledger.ListNonTerminal(at.id)
@@ -935,8 +985,40 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			if row.ID != 0 && at.respecWorkingArm(ledger, plan, sc, li, prior, legs[li], leg, zl, now) {
 				continue
 			}
+			// N-I (release #22 rescan): a NEW row is never written once the
+			// plan's own session is past its last-entry cutoff — it could
+			// never be placed (row 365, 08:24:00, cutoff 08:15).
+			if row.ID == 0 {
+				if why, past := at.planSessionPastLastEntry(plan.Session, now); past {
+					key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":last_entry"
+					if armRefusalChanged(&at.armRefusalLast, key, "last_entry") {
+						// Same gate-block family and record wording as the
+						// admission chain's last_entry refusal (gate parity).
+						telemetry.IncGateBlock(at.id, "last_entry")
+						shown := ""
+						if n, cerr := store.IncArmRefusal(at.store, at.id, kernel.PlanTradeDateFor(plan), plan.Session, "last_entry"); cerr == nil {
+							shown = fmt.Sprintf(" · last_entry refusals this session: %d", n)
+						}
+						at.logWarnf("🕒 arm NOT authored %s %s leg %d: last_entry_cutoff: %s — no row is written for an entry that cannot be placed%s", plan.Session, sc.ID, li+1, why, shown)
+					}
+					scope.note(sc.ID, "refused: last_entry_cutoff: "+why)
+					if geometry != nil {
+						geometry.Reason = "last_entry"
+						geometry.Detail = why
+						if !at.saveArmGeometry(*geometry) {
+							return
+						}
+					}
+					continue
+				}
+			}
 			if geometry != nil {
 				geometry.Quantity = 1
+				// fold-564-b D6: the geometry card must print the REAL size the
+				// arm was authorized for — a planner arm stamped 4 says 4, not 1.
+				if row.Contracts != nil && *row.Contracts > 0 {
+					geometry.Quantity = *row.Contracts
+				}
 				geometry.Reason = "admitted"
 				if !at.saveArmGeometry(*geometry) {
 					return // unavailable decision record must not expose older authorizations
@@ -945,6 +1027,9 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 			if row.ID == 0 {
 				if err := ledger.UpsertArm(row); err != nil {
 					if at.armSourceRefused(plan, sc, li, err, scope, admitted) {
+						continue
+					}
+					if at.armSlotSpentRefused(plan, sc, li, err, scope, admitted) {
 						continue
 					}
 					at.logWarnf("⚔️ arm write failed %s %s leg %d: %v", plan.Session, sc.ID, li+1, err)
@@ -1027,6 +1112,75 @@ func (at *AutoTrader) maybeManageArmedOrdersAtOpts(snap map[string]kernel.Struct
 	// PHASE 2 — placement engine (armed → working within the tick band), wire
 	// cancel/modify, and the order_update event machine.
 	at.runArmedPlacementAt(bars, plan.BirthMs, now, admitted, scope)
+}
+
+// cancelDroppedScenarioArms (FIX-PLANNER-TRUTH, 2026-10-13) cancels a WORKING
+// planner arm whose scenario id is ABSENT from the new plan version. Re-spec
+// (arm_respec.go) only re-prices a scenario that is STILL authored; a scenario
+// the new version dropped entirely used to rest until a fill, the 15-min stale
+// reaper (ARM_WORKING_STALE_MIN), a band cancel, or plan death. Each such row is
+// cancelled through the normal cancel path (RequestCancel → cancel_pending →
+// broker proof), logged once with "scenario dropped by plan vN". Mentor rows are
+// untouched (their own expiry/evaluator owns them); a FILLED row is terminal
+// and never reaches this (ListNonTerminal).
+func (at *AutoTrader) cancelDroppedScenarioArms(ledger *store.ArmedOrderStore, plan *kernel.ActivePlan, now time.Time) {
+	if ledger == nil || plan == nil {
+		return
+	}
+	rows, err := ledger.ListNonTerminal(at.id)
+	if err != nil {
+		return
+	}
+	present := make(map[string]bool, len(plan.Doc.Scenarios))
+	for _, sc := range plan.Doc.Scenarios {
+		present[sc.ID] = true
+	}
+	nt := at.armedTrader()
+	for _, r := range rows {
+		if r.TraderID != at.id || r.PlanID != plan.PlanID {
+			continue
+		}
+		// Only a row authored under an OLDER version can lose its scenario; a
+		// row at the current version is by construction still in the doc.
+		if r.Version >= plan.Version {
+			continue
+		}
+		if r.State != store.StateWorking || strings.TrimSpace(r.SignalID) == "" {
+			continue
+		}
+		// Picture rows carry their own deadline (pictureDeadlineCancel); mentor
+		// rows are governed by mentor mode + expiry — neither is the planner's
+		// to drop.
+		if r.Source != "" || isMentorArmOrigin(r) {
+			continue
+		}
+		if present[r.Scenario] {
+			continue
+		}
+		reason := fmt.Sprintf("scenario dropped by plan v%d", plan.Version)
+		if v := at.cancelSafetyFor(r, now); !v.Allow {
+			if at.admitLast.changed("dropped-scenario|"+r.SignalID, v.Why) {
+				at.logWarnf("🛟 dropped-scenario cancel REFUSED %s leg %d signal=%s — %s", r.Scenario, r.LegIndex+1, shortID(r.SignalID), v.Why)
+			}
+			continue
+		}
+		if nt != nil {
+			if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+				at.logWarnf("✕ dropped-scenario cancel SEND failed %s leg %d signal=%s: %v", r.Scenario, r.LegIndex+1, shortID(r.SignalID), cerr)
+			}
+		}
+		if xerr := ledger.RequestCancel(r.ID, reason, now.UnixMilli()); xerr != nil {
+			at.armLifecycleWrite("request_cancel(dropped_scenario)", r, xerr)
+			continue
+		}
+		at.armLifecycleWrite("request_cancel(dropped_scenario)", r, nil)
+		if at.store != nil {
+			if n, cerr := store.IncSystemCounter(at.store, "arm:dropped_scenario_cancel"); cerr == nil {
+				reason += fmt.Sprintf(" · dropped-scenario cancels recorded: %d", n)
+			}
+		}
+		at.logWarnf("✕ dropped-scenario cancel REQUESTED %s leg %d signal=%s — %s, pending broker confirmation", r.Scenario, r.LegIndex+1, shortID(r.SignalID), reason)
+	}
 }
 
 // biasDirectionFor normalizes the plan bias direction ("" → empty).
@@ -1428,6 +1582,14 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					ledger.RequestCancel(r.ID, fmt.Sprintf("stop-limit expiry: remainder cancelled %d of %d", remain, total), now.UnixMilli()))
 				at.logInfof("⏳ armed %s row %d partial fill at expiry — remainder cancelled %d of %d (the filled part keeps its bracket)",
 					r.Scenario, r.ID, remain, total)
+				// B1 (L2): a PART fill whose remainder is cancelled at expiry must
+				// still be handed to the mentor exit drive (BE / 1:1 / trail) — the
+				// filled quantity is the FINAL position, register it now. G1/G2 was
+				// already fed at first fill via mentorEnqueueFill, so no re-enqueue.
+				// Defensive fold (CTO 2026-10-05): register ONLY when the signal is
+				// not already live — never reset an in-flight position's BE/1:1/
+				// trail state. I4 shares this helper (the cancel-settled path).
+				at.mentorRegisterPartialFillIfAbsent(r)
 			}
 			continue
 		}
@@ -1494,6 +1656,16 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 			// STOP_ENTRY_OFFSET_TICKS beyond the level.
 			if r.Kind == "stop_entry" {
 				if !stopEntrySeamOn() {
+					// rel22 item 4: a MENTOR row refused here was silent — every
+					// mentor arm would sit armed forever with no line. Logged once
+					// per arm and counted (planner rows keep today's quiet hold).
+					if isMentorArmOrigin(r) {
+						seamKey := r.PlanID + ":" + strconv.Itoa(r.Version) + ":" + r.Scenario + ":leg" + strconv.Itoa(r.LegIndex+1) + ":place"
+						if armRefusalChanged(&at.armRefusalLast, seamKey, "stop_entry:seam_off") {
+							shown := at.countStopEntryRefusal(r, "stop_entry:seam_off", now)
+							at.logWarnf("📛 armed %s mentor stop-entry REFUSED [guard=stop_entry_seam] STOP_ENTRY_SEAM is off — the arm stays armed and never reaches the wire%s", r.Scenario, shown)
+						}
+					}
 					continue // seam off → the leg stays armed (never on the wire)
 				}
 				// D3 (2026-09-04): the window belongs to the E7 FALLBACK only.
@@ -1522,7 +1694,7 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.refuseContract(r, contract, placedThisPass, "stop", now)
 					continue
 				}
-				d := decideStopEntry(side, r.EntryPx, float64(stopEntryOffsetTicks())*tick, tick, price)
+				d := decideStopEntry(side, r.EntryPx, stopEntryWireOffset(r, tick), tick, price)
 				if at.placeOneStopEntry(nt, ledger, r, d, price, now, at.armSlotGuard(rows, r, now)) != stopPlaceCommitted {
 					// A hold refusal, a guard cancel, an un-adjudicated verdict,
 					// a refused slot, an AddOn too old to build the order, or a
@@ -1578,7 +1750,8 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					continue
 				}
 				registered := false
-				sid, perr := nt.PlaceLimitEntry(at.futuresSymbol(), side, 1, r.EntryPx, r.StopPx, r.TargetPx, func(sid string) error {
+				qty, leg1Qty, leg1TP := at.plannerArmWireQty(r)
+				sid, perr := nt.PlaceLimitEntryWithSplit(at.futuresSymbol(), side, qty, r.EntryPx, r.StopPx, r.TargetPx, leg1Qty, leg1TP, func(sid string) error {
 					err := ledger.BeginPlacement(r.ID, sid)
 					registered = err == nil
 					return err
@@ -1598,6 +1771,11 @@ func (at *AutoTrader) runArmedPlacementAtFiltered(bars []market.Kline, sinceMs i
 					at.logWarnf("📌 armed place failed %s: %v", r.Scenario, perr)
 					continue
 				}
+				var splitFrom any
+				if leg1Qty > 0 {
+					splitFrom = nt // the sender's own record of the split it actually carried
+				}
+				at.recordArmWirePrices(ledger, r, sid, side, r.EntryPx, r.StopPx, r.TargetPx, splitFrom) // F-7: ledger = wire
 				at.logInfof("📌 armed %s placement requested limit %.2f signal=%s (band ±%.0ft)", r.Scenario, r.EntryPx, sid, band/tick)
 				// ONE LIVE ENTRY PER PLAN (owner ruling 2026-09-06): the moment
 				// one arm reaches the wire, every other arm in the plan is
@@ -1777,6 +1955,10 @@ type stopEntryDecision struct {
 	Verdict stopGuardVerdict // what the stop-side guard answered
 	Action  stopEntryAction  // what the caller must do about it
 	Why     string           // the reason, in the guard's own relation
+	// OffsetTicks is the wire offset ACTUALLY applied to the authored entry,
+	// in ticks (stopEntryWireOffset: the E7 offset for a planner row, 0 for a
+	// mentor row). The placement line prints this READ value, never the knob.
+	OffsetTicks int
 }
 
 // decideStopEntry (pure) turns a ledger row's raw side and authored entry into
@@ -1821,6 +2003,9 @@ func decideStopEntry(rawSide string, entryPx, offset, tick, price float64) stopE
 		d.Trigger = entryPx + offset
 	}
 	d.Trigger = ntTrader.RoundToTick(d.Trigger, tick)
+	if tick > 0 {
+		d.OffsetTicks = int(math.Round(offset / tick))
+	}
 	d.Verdict, d.Why = stopEntryGuardVerdict(d.Side, d.Trigger, price)
 	switch d.Verdict {
 	case stopGuardThrough:
@@ -1836,8 +2021,8 @@ func decideStopEntry(rawSide string, entryPx, offset, tick, price float64) stopE
 // A29's "built ≠ wired ≠ used" is proven here by a FAKE that records what was
 // sent, not by grepping this file for the call's spelling.
 type stopEntryPlacer interface {
-	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
-	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error)
+	PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error)
 }
 
 // armStateWriter is the ledger seam: atomic pre-send registration plus refusal.
@@ -1879,11 +2064,19 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		at.refuseMaintenanceHold(r, reason, "stop-entry", now, nil)
 		return stopPlaceHeld
 	}
+	// FIX-PLANNER-TRUTH (3) — the log names the REAL order type the row will
+	// send: a mentor row routes PlaceStopEntryWithLimit (stop-limit); everyone
+	// else routes PlaceStopEntry (stop-market). The old lines always said
+	// "stop-market", which lied about a mentor stop-limit.
+	orderType := "stop-market"
+	if isMentorArmOrigin(r) {
+		orderType = "stop-limit"
+	}
 	switch d.Action {
 	case stopEntryCancel:
 		at.armLifecycleWrite("set_state(cancelled)", r, ledger.SetState(r.ID, "cancelled", d.Why+" — never placed"))
-		at.logWarnf("✕ armed %s stop-entry CANCELLED [guard=stop-side verdict=%s action=%s] %s stop-market trigger=%.2f price=%.2f — %s (never placed)",
-			r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), d.Trigger, price, d.Why)
+		at.logWarnf("✕ armed %s stop-entry CANCELLED [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f price=%.2f — %s (never placed)",
+			r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, d.Why)
 		return stopPlaceNotSent
 	case stopEntryPlace:
 		// The ONE named path to the wire; everything else falls to default.
@@ -1893,8 +2086,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		// the next cycle to adjudicate.
 		if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:guard_unknown") {
 			shown := at.countStopEntryRefusal(r, "stop_entry:guard_unknown", now)
-			at.logWarnf("⚠️ armed %s stop-entry NOT adjudicated [guard=stop-side verdict=%s action=%s] %s stop-market trigger=%.2f — %s%s",
-				r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), d.Trigger, d.Why, shown)
+			at.logWarnf("⚠️ armed %s stop-entry NOT adjudicated [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f — %s%s",
+				r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, d.Why, shown)
 		}
 		return stopPlaceNotSent
 	}
@@ -1951,7 +2144,12 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 	// B2 MENTOR SIZE (2026-10-04): the mentor arm carries its signed contract
 	// count on the row. A mentor row WITHOUT one is REFUSED (counted + logged),
 	// never sent as 1 (absent ≠ 0). Non-mentor rows stay 1.
+	// dispatch-31 (2026-10-16): a PLANNER arm stamped with its contract count at
+	// authoring (planner_contracts ≥ 2) sends that count; every other non-mentor
+	// row stays 1.
 	qty := 1.0
+	var plannerLeg1Qty int
+	var plannerLeg1TP float64
 	if isMentorArmOrigin(r) {
 		n, why := at.mentorArmQuantity(r)
 		if why != "" {
@@ -1963,6 +2161,11 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		qty = n
+	} else {
+		// dispatch-31: the planner split stamped at authoring, RE-CLAMPED at
+		// send (the cap may have moved since the stamp — knob lowered, Stage-A
+		// reverted). Never past the CURRENT resolveMaxContracts().
+		qty, plannerLeg1Qty, plannerLeg1TP = at.plannerArmWireQty(r)
 	}
 	// N4 (2026-10-04, DAY-1 #15/#42): the +2-tick wire offset moves the entry
 	// 0.5 pt against the trade (trigger = entry ± offset, stop and target
@@ -1991,13 +2194,15 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			return stopPlaceNotSent
 		}
 		if targetPx != r.TargetPx {
-			mentorCount("wire_target_1r_rebased")
+			at.mentorCount("wire_target_1r_rebased")
 		}
 	}
 	// REVIEW-353: the split rides the ONE frame — leg1_qty + leg1_tp (0, 0)
 	// = the single-bracket legacy path. Only the mentor origin stamps them.
 	leg1Qty := 0
 	leg1TP := 0.0
+	leg2Qty := 0
+	leg2TP := 0.0
 	if isMentorArmOrigin(r) {
 		// P0-1: leg 1 from the quantity actually SENT (mentorArmQuantity clamps
 		// to the trader max; the row was sized from the UNclamped intent).
@@ -2007,8 +2212,22 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if leg1Qty = mentorWireLeg1(r, int(qty)); leg1Qty > 0 {
 			leg1TP = mentorWireLeg1TP(r.EntryPx, d.Trigger, r.StopPx, r.Leg1TP)
 		}
+		// release #31: the runner's first partial (leg 2) rides the SAME frame.
+		// leg2_tp is a fixed LINE (not a derived R-multiple), so it is NOT
+		// re-based; wireLeg2TP in the send validates it sits strictly between
+		// the wire leg-1 TP and the wire target. Only when a leg 1 exists (a
+		// sub-1:1 drop of leg 1 also drops leg 2).
+		if leg1Qty > 0 && r.Leg2Qty != nil && *r.Leg2Qty > 0 && r.Leg2TP > 0 {
+			leg2Qty = *r.Leg2Qty
+			leg2TP = r.Leg2TP
+		}
+	} else {
+		// dispatch-31: the planner split, re-derived from the re-clamped qty.
+		// The wire rounds leg1TP to the tick grid and drops the split (single
+		// bracket) when it cannot sit on the profit side of the entry.
+		leg1Qty, leg1TP = plannerLeg1Qty, plannerLeg1TP
 	}
-	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, func(sid string) error {
+	sid, perr := placeStopFn(at.futuresSymbol(), d.Side, qty, d.Trigger, r.StopPx, targetPx, leg1Qty, leg1TP, leg2Qty, leg2TP, func(sid string) error {
 		if err := ledger.BeginPlacement(r.ID, sid); err != nil {
 			return err
 		}
@@ -2023,8 +2242,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if errors.Is(perr, ntwire.ErrAddonBuildTooOld) {
 			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:addon_build") {
 				shown := at.countStopEntryRefusal(r, "stop_entry:addon_build", now)
-				at.logWarnf("📌 armed %s stop-entry REFUSED [guard=far_side_build verdict=%s] %s stop-market trigger=%.2f: %v%s",
-					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, perr, shown)
+				at.logWarnf("📌 armed %s stop-entry REFUSED [guard=far_side_build verdict=%s] %s %s trigger=%.2f: %v%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), orderType, d.Trigger, perr, shown)
 			}
 			return stopPlaceNotSent
 		}
@@ -2035,8 +2254,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		if errors.Is(perr, ntwire.ErrFarSideNotProven) {
 			if armRefusalChanged(&at.armRefusalLast, armKey, "stop_entry:far_side_unproven") {
 				shown := at.countStopEntryRefusal(r, "stop_entry:far_side_unproven", now)
-				at.logWarnf("🔌 armed %s stop-entry REFUSED [guard=far_side_build state=not-proven-since-reconnect verdict=%s] %s stop-market trigger=%.2f: %v%s",
-					r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, perr, shown)
+				at.logWarnf("🔌 armed %s stop-entry REFUSED [guard=far_side_build state=not-proven-since-reconnect verdict=%s] %s %s trigger=%.2f: %v%s",
+					r.Scenario, d.Verdict, strings.ToUpper(d.Side), orderType, d.Trigger, perr, shown)
 			}
 			return stopPlaceNotSent
 		}
@@ -2046,8 +2265,8 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 			at.refuseMaintenanceHold(r, perr.Error(), "stop-entry", now, perr)
 			return stopPlaceHeld
 		}
-		at.logWarnf("📌 stop-entry place failed %s [guard=stop-side passed verdict=%s] %s stop-market trigger=%.2f: %v",
-			r.Scenario, d.Verdict, strings.ToUpper(d.Side), d.Trigger, perr)
+		at.logWarnf("📌 stop-entry place failed %s [guard=stop-side passed verdict=%s] %s %s trigger=%.2f: %v",
+			r.Scenario, d.Verdict, strings.ToUpper(d.Side), orderType, d.Trigger, perr)
 		if stamped {
 			// The send itself failed after the ledger stamp: whether the frame
 			// reached NT8 is unknown, so the latch stays pessimistic (class 81).
@@ -2055,8 +2274,14 @@ func (at *AutoTrader) placeOneStopEntry(pl stopEntryPlacer, ledger armStateWrite
 		}
 		return stopPlaceNotSent
 	}
-	at.logInfof("📌 armed %s placement requested stop-entry [guard=stop-side verdict=%s action=%s] %s stop-market trigger=%.2f price=%.2f signal=%s (%s · no retest in %d bars, offset %dt)",
-		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), d.Trigger, price, sid, d.Why, retestWaitBars(), stopEntryOffsetTicks())
+	// F-7: ledger = wire. Only a mentor frame can carry a split (leg1).
+	var splitFrom any
+	if isMentorArmOrigin(r) {
+		splitFrom = pl
+	}
+	at.recordArmWirePrices(ledger, r, sid, d.Side, d.Trigger, r.StopPx, targetPx, splitFrom)
+	at.logInfof("📌 armed %s placement requested stop-entry [guard=stop-side verdict=%s action=%s] %s %s trigger=%.2f price=%.2f signal=%s (%s · no retest in %d bars, offset %dt)",
+		r.Scenario, d.Verdict, d.Action, strings.ToUpper(d.Side), orderType, d.Trigger, price, sid, d.Why, retestWaitBars(), d.OffsetTicks)
 	return stopPlaceCommitted
 }
 
@@ -2225,6 +2450,15 @@ func churnNeedsModify(oldStop, oldTarget, newStop, newTarget, tick float64) bool
 func armRefusalClass(verdict string) string {
 	v := strings.ToLower(verdict)
 	switch {
+	// Release #25 planner-knobs — the three new arm refusals get their own
+	// classes (never "other"); checked first because the PK-4 text names the
+	// authored invalidation.
+	case strings.Contains(v, ATRFloorBeyondInvalidationClass):
+		return ATRFloorBeyondInvalidationClass
+	case strings.Contains(v, NoChaseRefusedClass):
+		return NoChaseRefusedClass
+	case strings.Contains(v, MomentumIntoZoneClass):
+		return MomentumIntoZoneClass
 	// INVALIDATION (2026-09-03) — first, because it is the only class that says
 	// the SETUP is gone rather than that the trade is badly shaped. It must not
 	// fall into "other" and disappear from the tally.
@@ -2287,6 +2521,37 @@ func (at *AutoTrader) armSourceRefused(plan *kernel.ActivePlan, sc kernel.PlanSc
 			}
 		}
 		at.logWarnf("✕ armed %s %s leg %d NOT authored — %s: %v%s", plan.Session, sc.ID, li+1, class, err, shown)
+	}
+	return true
+}
+
+// armSlotSpentRefused handles store.ErrArmSlotSpent from the authoring write
+// (CTO fold on PR #526): the slot already reached the broker under THIS plan
+// version and ended, so the same version does not place it again — the owner's
+// manual cancel in NT8 sticks, and a stopped trade is not re-placed at the
+// same level. Said ONCE per (plan, version, scenario, leg), counted as gate
+// block "arm_slot_spent" and as an arm refusal of the session. A NEW plan
+// version re-arms.
+func (at *AutoTrader) armSlotSpentRefused(plan *kernel.ActivePlan, sc kernel.PlanScenario, li int, err error, scope *armedPassScope, admitted armAdmission) bool {
+	if !errors.Is(err, store.ErrArmSlotSpent) {
+		return false
+	}
+	const class = "arm_slot_spent"
+	if admitted != nil {
+		admitted.retract(plan.PlanID, sc.ID, li)
+	}
+	scope.note(sc.ID, "refused: "+class+": "+err.Error())
+	key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":spent"
+	if armRefusalChanged(&at.armRefusalLast, key, class) {
+		telemetry.IncGateBlock(at.id, class)
+		shown := ""
+		if at.store != nil {
+			if n, cerr := store.IncArmRefusal(at.store, at.id, kernel.PlanTradeDateFor(plan), plan.Session, class); cerr == nil {
+				shown = fmt.Sprintf(" · %s this session: %d", class, n)
+			}
+		}
+		at.logWarnf("⏹ re-arm REFUSED %s %s leg %d: slot spent — %v; the same plan version never re-places it (a NEW plan version re-arms)%s",
+			plan.Session, sc.ID, li+1, err, shown)
 	}
 	return true
 }
@@ -2535,6 +2800,12 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				// FU-1: feed G1/G2 from the REAL fill — the receipt is queued
 				// and drained inside mentorEvalOnce under mentorEvalMu.
 				at.mentorEnqueueFill(r, u)
+				// ONE WORKING ENTRY PER SIDE + NO FLIP (release #30 fold): the
+				// fill is the reference — cancel every other working mentor
+				// entry, SAME side AND OPPOSITE side, BEFORE it can fill
+				// (OCO-style; the never-add sweep only runs on the NEXT tick
+				// and cannot catch a same-bar double fill or a same-bar flip).
+				at.mentorCancelOtherWorkingOnFill(r)
 			}
 		case "cancelled":
 			// CANCEL-REPORT REGIME (2026-10-03, knob default OFF): for a row
@@ -2551,6 +2822,12 @@ func (at *AutoTrader) onArmedOrderUpdate(u ntwire.OrderUpdatePayload, ledger *st
 				return
 			}
 			at.armLifecycleWrite("set_state(cancelled)", r, ledger.SetState(r.ID, "cancelled", "cancelled in NT8"))
+			// F-2 (release #22) — NT8's positive per-order report releases the
+			// one-entry latch's queued-entry marker HERE (the N7 hook, a
+			// positive cancel only). It used to survive to the C8 45 s sweep,
+			// which then printed "NT8 never confirmed" for an entry NT8 had
+			// positively cancelled and held the next arm until it ran.
+			at.forgetPendingEntry(r.SignalID)
 			at.logInfof("✕ armed %s cancelled in NT8", r.Scenario)
 		default:
 			// A received live ENTRY state proves placement. Preserve pending
@@ -2892,6 +3169,14 @@ func (at *AutoTrader) armedPassDormant() bool {
 // supersede. The consecutive-loss breaker stays a mentor safety; the lunch /
 // first-N band and the force-flat windows do NOT refuse mentor rows (Q1).
 func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassScope) {
+	// STALE-DATA BLOCK (release #11): the armed pass does NOT place a mentor row
+	// while the live 1m feed is stale (B4's formula). Rows stay armed and retry
+	// when the feed is fresh — nothing is cancelled by this (resting broker
+	// orders are untouched; that is a separate decision).
+	if at.mentorStaleDataBlocked(now) {
+		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+		return
+	}
 	var bars []market.Kline
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
@@ -3127,8 +3412,26 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			unacked++
 			continue
 		}
+		// CTO ruling on PR #526: the request is on record BEFORE the send. A
+		// promptly acked cancel is settled by NT8's report ("cancelled in NT8")
+		// inside the drain below, before any RequestCancel — without this stamp
+		// the bot's own band / EOD cancel read exactly like the owner's manual
+		// cancel, and the same-version re-arm rule could not tell them apart.
+		at.armLifecycleWrite("stamp_cancel_requested", r, ledger.StampCancelRequested(r.ID, p.nowMs()))
 		acked := false
+		offDrain := false // settled by NT8's report the ordered worker applied — READ, not drained
 		for attempt := 1; attempt <= 2 && !acked; attempt++ {
+			// F-1 (release #22) — READ THE ROW BEFORE A RE-SEND. The drain only
+			// re-read the row when a frame arrived on ITS channel, but NT8's
+			// report is owned by the ordered-execution worker: the drain's copy
+			// is a no-op (OrderedOwned) and the worker writes 'cancelled' only
+			// after the post-update snapshot. Row 363 (10-14 01:47:29) was
+			// written 'cancelled' by the worker while this loop waited, and the
+			// retry then re-sent a cancel for an order NT8 no longer had.
+			if attempt > 1 && !at.armedRowStillActive(ledger, r.ID) {
+				acked, offDrain = true, true
+				break
+			}
 			if err := cancelFn(r.SignalID); err != nil {
 				at.logWarnf("⚠️ armed sync cancel send %s signal=%s failed: %v", r.Scenario, r.SignalID, err)
 			}
@@ -3165,6 +3468,16 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 		// we cancelled. The two facts are opposite. So the outcome is read back
 		// and named.
 		final, readable := ledger.StateOf(r.ID)
+		// F-1 (release #22) — THE TIMEOUT BRANCH HONOURS THE STATE IT READ. A
+		// row the worker settled after the drain's last look is terminal here;
+		// it used to fall to the default branch below, whose RequestCancel
+		// moved row 363 from 'cancelled' back to cancel_pending.
+		if !acked && readable && store.IsTerminalArmState(final) {
+			acked, offDrain = true, true
+		}
+		if offDrain {
+			at.noteSyncCancelSettledOffDrain(r, final)
+		}
 		switch {
 		case acked && readable && final == store.StateFilled:
 			// NOT A CANCEL. The order became a POSITION during the drain, and
@@ -3196,7 +3509,23 @@ func (at *AutoTrader) cancelArmedOrdersSyncWith(reason string, timeout time.Dura
 			//
 			// This is the same ruling the no-broker-link branch above already
 			// follows — a missing answer records the INTENT, never the outcome.
-			at.armLifecycleWrite("request_cancel(ack_timeout)", r, ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs()))
+			rerr := ledger.RequestCancel(r.ID, reason+" (ack timeout — unconfirmed, settlement pass owns it)", p.nowMs())
+			if errors.Is(rerr, store.ErrArmCancelTerminal) {
+				// F-1: the worker settled the row between the read above and
+				// this write; the store refused (and counted) the re-open. The
+				// row is settled, not UNACKED — name what it became.
+				final, _ = ledger.StateOf(r.ID)
+				at.noteSyncCancelSettledOffDrain(r, final)
+				if final == store.StateFilled {
+					filled++
+					at.logWarnf("⚠️ armed sync cancel: %s signal=%s FILLED during the drain — this is a POSITION, not a cancelled order; the flatten's position re-read must clear it",
+						r.Scenario, shortID(r.SignalID))
+				} else {
+					n++
+				}
+				continue
+			}
+			at.armLifecycleWrite("request_cancel(ack_timeout)", r, rerr)
 			unacked++
 			at.logWarnf("⚠️ armed sync cancel UNACKED %s signal=%s after retry — held cancel_pending, NOT promoted; the flatten proceeds and the settlement pass will confirm or re-request",
 				r.Scenario, shortID(r.SignalID))
@@ -3302,6 +3631,7 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, entry, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err
@@ -3335,7 +3665,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if trigger <= 0 || stop <= 0 || target <= 0 {
 		return out, fmt.Errorf("entry(trigger)/stop/target must be > 0")
 	}
-	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, 0, 0, func(sid string) error {
+	sid, perr := nt.PlaceStopEntry(at.futuresSymbol(), side, 1, trigger, stop, target, 0, 0, 0, 0, func(sid string) error {
 		row := &store.ArmedOrderDB{
 			TraderID: at.id,
 			PlanID:   "TEST-E7:" + sid,
@@ -3359,6 +3689,7 @@ func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float6
 	if perr != nil {
 		return out, perr
 	}
+	at.recordArmWirePrices(ledger, out, sid, side, trigger, stop, target, nil) // F-7: ledger = wire
 	// Read back: a received rejection may already have won the race.
 	if err := ledger.DB().First(&out, out.ID).Error; err != nil {
 		return out, err

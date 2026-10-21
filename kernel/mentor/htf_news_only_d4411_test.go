@@ -3,8 +3,9 @@ package mentor
 // D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h direction gate is for NEWS
 // first, not ordinary trading yet ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI.
 // ĐỪNG SỬ DỤNG CHO [trade] THƯỜNG" / "đánh ĐẦU GIỜ hay là đánh THƯỜNG — CHƯA
-// TỚI LÚC ĐÂU"). The gate applied all day; now HTFGateNewsOnly (default true)
-// applies it only inside the 07:20–07:35 CT news window.
+// TỚI LÚC ĐÂU"). Owner decision A 2026-10-21 m134: HTFGateNewsOnly now defaults
+// OFF (gate all day). With the knob ON it applies only inside the 07:20–07:35
+// CT news window; with the knob OFF the gate applies all day.
 
 import (
 	"math"
@@ -18,7 +19,7 @@ import (
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
 	if cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default OFF (the all-day gate; U-6 open) — CTO 2026-10-04")
+		t.Fatal("HTFGateNewsOnly must default OFF (all-day gate; owner decision A 2026-10-21)")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {
@@ -45,18 +46,20 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 	}
 }
 
-// TestHTFGateNewsOnlyTick pins the Tick call site: at 09:05 CT (outside the news
-// window) a 4h/1h CONFLICT no longer refuses a long PHL — the gate is off under
-// the course default. With HTFGateNewsOnly=false (the legacy all-day gate) the
+// TestHTFGateNewsOnlyTick pins the Tick call site for BOTH knob settings: at
+// 09:05 CT (outside the news window) a 4h/1h CONFLICT refuses a long PHL only
+// when the gate applies. news-only (knob ON) → the gate is off outside the
+// window → the conflict PHL EMITS. all-day (knob OFF, the m134 default) → the
 // same tick refuses it (case 3).
 // MUTANT: drop the GateOff set in Tick (or the GateOff check in HTFVerdict) →
-// the 09:05 conflict PHL is refused under the default → RED.
+// the 09:05 conflict PHL is refused under news-only → RED.
 func TestHTFGateNewsOnlyTick(t *testing.T) {
 	run := func(allDay bool) bool {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.EMALocationTFMinutes = 0
+		cfg.Exec2mAfter30m = false // the 09:05 conflict-PHL pin reads the 1m touch
 		cfg.HTFGateNewsOnly = !allDay
 
 		e := New(cfg)
@@ -67,8 +70,8 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		e.State.EMA9 = 0
 		e.State.SeedLevels = []Level{
 			{Key: "L", Kind: KindKeyLevel, Price: 29386},
-			{Key: "old-low:29335", Kind: KindOldExtreme, Price: 29335},
-			{Key: "old-high:29431.75", Kind: KindOldExtreme, Price: 29431.75},
+			{Key: "old-low:29335", Kind: KindOldExtreme, Role: OldLow, Price: 29335},
+			{Key: "old-high:29431.75", Kind: KindOldExtreme, Role: OldHigh, Price: 29431.75},
 		}
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
 		// CONFLICT: 4h long vs 1h short — case 3 sits out when the gate is on.
@@ -99,6 +102,6 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		t.Fatal("news-only (switch ON): the 09:05 conflict PHL must EMIT — the HTF gate is off outside the news window [D4.4-11]")
 	}
 	if run(true) {
-		t.Fatal("all-day (switch OFF, the default): the same 09:05 conflict PHL must be REFUSED (case 3)")
+		t.Fatal("all-day (switch OFF): the same 09:05 conflict PHL must be REFUSED (case 3)")
 	}
 }

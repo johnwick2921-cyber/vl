@@ -61,7 +61,19 @@ export const UNKNOWN_PNL_REASONS = ['reconcile_flat', 'unresolved']
 // Test-seam rows (E7 far-side experiments) — never real trades, never summed.
 export const TEST_SEAM_REASONS = ['e7_farside_test']
 
-export type PositionKind = 'normal' | 'unresolved' | 'duplicate' | 'hidden'
+export type PositionKind =
+  | 'normal'
+  | 'unresolved'
+  | 'duplicate'
+  | 'hidden'
+  | 'manual'
+
+// R22 PNL-TRUTH (owner ruling R1): an NT8 position the bot adopted with no
+// order/arm of its own. LISTED with a badge, NEVER in a bot total — the
+// server's store.IsManualOrigin twin.
+export function isManualOrigin(p: Pick<HistoricalPosition, 'origin'>): boolean {
+  return (p.origin ?? '').trim().toLowerCase() === 'manual'
+}
 
 // effectivePnl mirrors the store aggregate rule: corrections win, then realized.
 export function effectivePnl(p: HistoricalPosition): number {
@@ -83,8 +95,9 @@ export function classifyPosition(
   all: HistoricalPosition[]
 ): PositionKind {
   const reason = (p.close_reason || '').trim()
-  if (reason === 'unresolved') return 'unresolved'
   if (TEST_SEAM_REASONS.includes(reason)) return 'hidden'
+  if (isManualOrigin(p)) return 'manual'
+  if (reason === 'unresolved') return 'unresolved'
   if (UNKNOWN_PNL_REASONS.includes(reason)) {
     const dupeOf = all.find(
       (q) =>
@@ -117,22 +130,49 @@ export function duplicateOfId(
   return dupeOf ? dupeOf.id : 0
 }
 
-// isTodayCT reports whether an epoch-ms timestamp falls on today's CT date.
-function isTodayCT(ms: number): boolean {
-  if (!ms || ms <= 0) return false
-  const today = new Date().toLocaleDateString('en-US', {
-    timeZone: 'America/Chicago',
+// manualFooterLine is the visible separate line for the manual rows in the
+// list: "Manual (excluded): 4 trades, −$3,202.00" (resolved P&L only).
+export function manualFooterLine(rows: HistoricalPosition[]): string {
+  const n = rows.length
+  if (n === 0) return 'Manual (excluded): none'
+  let sum = 0
+  for (const p of rows) {
+    if (typeof p.pnl_corrected === 'number' && !isNaN(p.pnl_corrected)) {
+      sum += p.pnl_corrected
+    }
+  }
+  sum = Math.round(sum * 100) / 100
+  const abs = Math.abs(sum).toLocaleString('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   })
-  const day = new Date(ms).toLocaleDateString('en-US', {
-    timeZone: 'America/Chicago',
-  })
-  return day === today
+  return `Manual (excluded): ${n} trade${n === 1 ? '' : 's'}, ${sum >= 0 ? '+' : '−'}$${abs}`
 }
 
 // computeDayTotal mirrors the ledger's GetSessionDayActivity rule exactly:
-// rows closed today (CT), close_reason NOT unknown/test-seam, not a duplicate,
-// and pnl_corrected present (legacy unverified rows excluded — the A-2 rule).
-export function computeDayTotal(positions: HistoricalPosition[]): number {
+// rows closed in the CURRENT CME SESSION DAY, close_reason NOT
+// unknown/test-seam, not a duplicate, not manual, and pnl_corrected present
+// (legacy unverified rows excluded — the A-2 rule).
+//
+// historyScopeLabel (RT-7, release #24): the scope of the history total, as
+// the server names it ("all accounts" — /positions/history reads GetFullStats
+// with no account), so it cannot be mistaken for the account-scoped
+// "Bot P&L (record)" card. An older server sends none: "scope n/a".
+export function historyScopeLabel(scope?: string): string {
+  return scope && scope.trim() !== '' ? scope : 'scope n/a'
+}
+
+// R22 PNL-TRUTH: ONE "today". This used the browser's CT CALENDAR day while
+// every risk gate counts from 17:00 CT; the session-day start now comes from
+// the server (kernel.CMESessionDayStart via /positions/history). Without it
+// the day total is UNKNOWN — null, never a guessed window.
+export function computeDayTotal(
+  positions: HistoricalPosition[],
+  sessionDayStartMs?: number
+): number | null {
+  if (typeof sessionDayStartMs !== 'number' || sessionDayStartMs <= 0) {
+    return null
+  }
   const kinds = new Map<number, PositionKind>()
   for (const p of positions) {
     kinds.set(p.id, classifyPosition(p, positions))
@@ -140,7 +180,8 @@ export function computeDayTotal(positions: HistoricalPosition[]): number {
   let total = 0
   for (const p of positions) {
     if (kinds.get(p.id) !== 'normal') continue
-    if (!isTodayCT(new Date(p.exit_time || 0).getTime())) continue
+    const exitMs = new Date(p.exit_time || 0).getTime()
+    if (!exitMs || exitMs < sessionDayStartMs) continue
     if (typeof p.pnl_corrected !== 'number' || isNaN(p.pnl_corrected)) continue
     total += p.pnl_corrected
   }
@@ -429,6 +470,20 @@ function PositionRow({
               duplicate of #{duplicateOf}
             </span>
           )}
+          {kind === 'manual' && (
+            <span
+              data-testid="manual-origin-badge"
+              className="px-2 py-0.5 rounded text-xs font-semibold"
+              style={{
+                background: '#2B3139',
+                color: '#F0B90B',
+                border: '1px solid #3A424B',
+              }}
+              title="Manual NT8 trade: the bot adopted this position with no order or arm of its own. It is listed here but is NOT in any bot total (owner ruling R1)."
+            >
+              MANUAL · excluded
+            </span>
+          )}
           {kind === 'unresolved' && (
             <span
               className="px-2 py-0.5 rounded text-xs font-semibold"
@@ -551,6 +606,10 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
   const [stats, setStats] = useState<TraderStats | null>(null)
   const [symbolStats, setSymbolStats] = useState<SymbolStats[]>([])
   const [directionStats, setDirectionStats] = useState<DirectionStats[]>([])
+  const [sessionDayStartMs, setSessionDayStartMs] = useState<
+    number | undefined
+  >(undefined)
+  const [statsScope, setStatsScope] = useState<string | undefined>(undefined)
 
   // Pagination state
   const [pageSize, setPageSize] = useState<number>(20)
@@ -578,6 +637,8 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
         setStats(data.stats)
         setSymbolStats(data.symbol_stats || [])
         setDirectionStats(data.direction_stats || [])
+        setSessionDayStartMs(data.session_day_start_ms)
+        setStatsScope(data.stats_scope)
       } catch (err) {
         setError(err instanceof Error ? err.message : 'Failed to load history')
       } finally {
@@ -605,6 +666,8 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
     setStats(data.stats)
     setSymbolStats(data.symbol_stats || [])
     setDirectionStats(data.direction_stats || [])
+    setSessionDayStartMs(data.session_day_start_ms)
+    setStatsScope(data.stats_scope)
   }, REFRESH_HISTORY_MS)
 
   // Get unique symbols for filter
@@ -711,7 +774,16 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
 
   // Day total — the SAME rule the ledger's session-day query uses
   // (unknown/test-seam/duplicate excluded, corrections win, A-2 NULLs out).
-  const dayTotal = useMemo(() => computeDayTotal(positions), [positions])
+  const dayTotal = useMemo(
+    () => computeDayTotal(positions, sessionDayStartMs),
+    [positions, sessionDayStartMs]
+  )
+
+  // R22 R1 — the manual NT8 rows in this list, as their own visible line.
+  const manualRows = useMemo(
+    () => positions.filter((p) => isManualOrigin(p)),
+    [positions]
+  )
 
   // Pagination calculations
   const totalFilteredCount = filteredAndSortedPositions.length
@@ -844,7 +916,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
               formatNumber(stats.total_pnl || 0)
             }
             color={(stats.total_pnl || 0) >= 0 ? '#0ECB81' : '#F6465D'}
-            subtitle={`${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
+            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
             metricKey="total_return"
             language={language}
           />
@@ -1204,16 +1276,30 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 </span>
               </span>
             )}
-            <span title="Same exclusion rule as the ledger (unknown / test-seam / duplicate rows excluded, corrections win)">
-              Today (CT):{' '}
-              <span
-                className="font-mono font-semibold"
-                style={{ color: dayTotal >= 0 ? '#0ECB81' : '#F6465D' }}
-              >
-                {dayTotal >= 0 ? '+' : ''}
-                {formatNumber(dayTotal)}
-              </span>
+            <span title="Bot trades closed in the CME session day (from 17:00 CT — the risk gates' day). Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win.">
+              Session day (from 17:00 CT):{' '}
+              {dayTotal === null ? (
+                <span className="font-mono">n/a</span>
+              ) : (
+                <span
+                  className="font-mono font-semibold"
+                  style={{ color: dayTotal >= 0 ? '#0ECB81' : '#F6465D' }}
+                >
+                  {dayTotal >= 0 ? '+' : ''}
+                  {formatNumber(dayTotal)}
+                </span>
+              )}
             </span>
+            {manualRows.length > 0 && (
+              <span
+                data-testid="manual-excluded-footer"
+                className="font-mono"
+                style={{ color: '#F0B90B' }}
+                title="Manual NT8 trades the bot adopted with no order of its own — listed, never in a bot total (owner ruling R1)"
+              >
+                {manualFooterLine(manualRows)}
+              </span>
+            )}
             {unresolvedCount > 0 && (
               <span
                 className="font-mono"

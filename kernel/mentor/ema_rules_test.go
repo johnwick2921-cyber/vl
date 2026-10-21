@@ -71,6 +71,9 @@ func TestEMAVisitReclassifies(t *testing.T) {
 func TestEmaLossTick(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.LossDeparturePts = 20 // B22 (CTO 20:29:07Z): the knob default is OFF — E2's numeric departure is pinned here explicitly
+	// CE-6 (release #25): this test pins the numeric departure, so it runs the
+	// "session" relock; the zone-exit default is TestCE6EmaLossRelocksOnZoneExit.
+	cfg.EmaLossRelock = EmaRelockSession
 	e := New(cfg)
 
 	armLong := func(entry, stop, target, expiry float64) {
@@ -231,7 +234,7 @@ func TestEmaCrossingGatesTradedLine(t *testing.T) {
 	e.State.Seed1HWatermark = math.MaxInt64
 	e.State.SeedLevels = []Level{
 		{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: 100},
-		{Key: "old-high:130", Kind: KindOldExtreme, Price: 130},
+		{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130},
 	}
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}

@@ -170,7 +170,9 @@ func applyDecisionCallTimeout(mcpClient mcp.AIClient, exchange string) {
 }
 
 func (at *AutoTrader) runCycle() error {
+	at.statusMu.Lock()
 	at.callCount++
+	at.statusMu.Unlock()
 
 	logger.Info("\n" + strings.Repeat("=", 70) + "\n")
 	logger.Infof("⏰ %s - AI decision cycle #%d", kernel.FormatCT(time.Now()), at.callCount)
@@ -242,12 +244,18 @@ func (at *AutoTrader) runCycle() error {
 	at.driveDeadManWatchdog()
 
 	// B6 — GATE-BLOCK COUNTERS: advance the per-trader/session-day tally to today's
-	// CME session-day. The first trader across the 17:00 CT rollover boundary logs a
-	// one-line journal summary of the ending day's gate blocks, then the table
-	// resets. Individual gate sites increment via telemetry.IncGateBlock.
+	// CME session-day. The first call across the 17:00 CT rollover boundary returns
+	// a one-line journal summary of the ending day's gate blocks (per trader), then
+	// the table resets; same-day calls return "". Individual gate sites increment
+	// via telemetry.IncGateBlock. P2-3b (release #26): the summary is PROCESS-level
+	// (it covers every trader's blocks), so it is logged by the process logger, not
+	// attributed to whichever trader's loop happened to cross the boundary first.
 	if summary := telemetry.RolloverGateBlocks(kernel.CMESessionDayStart(time.Now()).UnixMilli()); summary != "" {
-		at.logInfof("📊 %s", summary)
+		logger.Infof("📊 %s", summary)
 	}
+	// STALLED-SETUP ALARM (release #22): the seen-vs-placed counters roll on the
+	// SAME 17:00 CT session-day boundary (the alert latch resets with them).
+	telemetry.RolloverSetupStalls(kernel.CMESessionDayStart(time.Now()).UnixMilli())
 	// P0-cleanup — the structured error-event day rolls on the same boundary
 	// (idempotent: same-day calls adopt the day; a changed day resets the table).
 	telemetry.SetErrorSessionDay(kernel.CMESessionDayStart(time.Now()).UnixMilli())
@@ -371,9 +379,14 @@ func (at *AutoTrader) runCycle() error {
 	// ever writes at.dailyPnL (grep: reset + one display read only) — it is a
 	// permanently-zero display field. Every real daily guard reads the store.
 	// Left as-is: wiring it up is a behavior change outside the timegate train.
-	if time.Since(at.lastResetTime) > 24*time.Hour {
-		at.dailyPnL = 0
+	at.statusMu.Lock()
+	resetDue := time.Since(at.lastResetTime) > 24*time.Hour
+	if resetDue {
 		at.lastResetTime = time.Now()
+	}
+	at.statusMu.Unlock()
+	if resetDue {
+		at.dailyPnL = 0
 		logger.Info("📅 Daily P&L reset")
 	}
 
@@ -398,7 +411,8 @@ func (at *AutoTrader) runCycle() error {
 	// G1/G4/G8's input and future forensics' gold.
 	if market.FuturesBarsProvider != nil {
 		bars1m := market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-		ctx.Structure = kernel.StructureSnapshot(bars1m, time.Now().UnixMilli())
+		ctx.Structure = kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars1m, time.Now().UnixMilli()) // F-4: + the native 4h the cross veto needs
+		ctx.StructureGap = kernel.BarsHoleWarning(bars1m, 1)                                                // m149: a bars hole is its own field, never a fake StructureState
 		if blob, jerr := json.Marshal(ctx.Structure); jerr == nil {
 			record.StructureJSON = string(blob)
 		}
@@ -953,11 +967,18 @@ func (at *AutoTrader) runCycle() error {
 // when the whole cycle should be skipped because the futures market is closed —
 // after logging the open⇄closed edge and idling with a backoff.
 func (at *AutoTrader) cmeSessionClosedSkip() bool {
-	open := kernel.IsCMEOpen(time.Now())
-	at.noteCMESessionEdge(open)
+	now := traderNow() // class 32 trader clock (== time.Now() in production; test seam)
+	open := kernel.IsCMEOpen(now)
+	at.noteCMESessionEdgeAt(open, now)
 	if open {
 		return false
 	}
+	// R22 P1-B — retire the book on an EARLY-CLOSE afternoon BEFORE skipping.
+	// The early close is the flat (early_close − eod_flat_offset, 0 by
+	// default), the very instant IsCMEOpen turns false — and this skip returns
+	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
+	// 12-24 carried resting arms and open positions over the holiday.
+	at.retireBookAfterEarlyCloseAt(now)
 	// E5 (owner ruling 2026-09-07): mark the cycle as having taken the closed
 	// path, so the loop's overrun check can tell the deliberate backoff from a
 	// fault. Set BEFORE the sleep: a Stop() during the backoff still leaves a
@@ -967,19 +988,44 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	return true
 }
 
+// retireBookAfterEarlyCloseAt runs the ONE EOD-flat definition
+// (enforceEODFlatAt: cancel arms first, then flatten, broker-truth checked) on
+// the closed path, from a shortened day's early close to the end of that
+// calendar date. It re-runs each closed cycle while it still acts, and stops
+// for the date once a pass has nothing left to retire. Ordinary closes (the
+// 16:00 halt, the weekend) never reach it: their flat is inside the open
+// session and the open path already ran it.
+func (at *AutoTrader) retireBookAfterEarlyCloseAt(now time.Time) {
+	st := kernel.SessionStateAt(now)
+	if st.Class != kernel.SessionShortened || !st.HasClose || now.Before(st.Close) {
+		return
+	}
+	if at.earlyCloseRetiredDate == st.Date {
+		return
+	}
+	if at.earlyCloseNotedDate != st.Date {
+		at.earlyCloseNotedDate = st.Date
+		at.logInfof("🕒 EARLY CLOSE %s (%s, %s CT): market closed — retiring the book on the closed path (arms cancelled, positions flattened)",
+			st.Date, st.Name, kernel.CloseHHMMCT(st.Close))
+	}
+	if !at.enforceEODFlatAt(now) {
+		at.earlyCloseRetiredDate = st.Date // nothing left to retire this afternoon
+	}
+}
+
 // noteCMESessionEdge logs the market open⇄closed transition ONCE (not every
 // cycle). On a fresh start into a closed market it announces the closure + the
 // next open immediately; a fresh start into an open market stays silent (there
 // is nothing to "resume"). Single-goroutine (runCycle) → no locking on cmePrevOpen.
-func (at *AutoTrader) noteCMESessionEdge(open bool) {
+func (at *AutoTrader) noteCMESessionEdgeAt(open bool, now time.Time) {
 	prev := at.cmePrevOpen
 	at.cmePrevOpen = &open
 	if prev != nil && *prev == open {
 		return // no edge — stay quiet
 	}
 	if !open {
-		_, reason := kernel.CMEClosedReason(time.Now())
-		next := kernel.NextCMEOpen(time.Now())
+		_, reason := kernel.CMEClosedReason(now)
+		next := kernel.NextCMEOpen(now)
 		chicago := kernel.CTLocation()
 		at.logInfof("🌙 CME closed (%s) — next open %s", reason, next.In(chicago).Format("Mon 2006-01-02 15:04 MST"))
 	} else if prev != nil {
@@ -990,13 +1036,16 @@ func (at *AutoTrader) noteCMESessionEdge(open bool) {
 // backoffWhileClosed idles for cmeClosedBackoff while the market is shut, in
 // short stop-responsive slices so Stop() returns promptly instead of the loop
 // spinning a full cycle every ScanInterval (~1 min) all weekend. Returns early
-// the moment the trader is stopped.
+// the moment the trader is stopped — either the running flag is cleared, or the
+// per-Run stop context is cancelled (FOLD #535: a plain time.Sleep blocked a
+// Stop for the full 10 s slice; the backoff now wakes on the stop context).
 func (at *AutoTrader) backoffWhileClosed() {
 	const slice = 10 * time.Second
 	const cmeClosedBackoff = 3 * time.Minute
 	// A11 — hand the calendar the ENFORCING value so the boot line quotes this
 	// constant rather than a literal typed into a format string.
 	kernel.SetClosedBackoffForBootLine(cmeClosedBackoff) // within the ~2–5 min target
+	done := at.stopDone()
 	for waited := time.Duration(0); waited < cmeClosedBackoff; waited += slice {
 		at.isRunningMutex.RLock()
 		running := at.isRunning
@@ -1004,7 +1053,39 @@ func (at *AutoTrader) backoffWhileClosed() {
 		if !running {
 			return
 		}
-		time.Sleep(slice)
+		if !sleepOrStop(done, slice) {
+			return
+		}
+	}
+}
+
+// stopDone returns the per-Run stop context's Done channel (nil when no run is
+// active). backoffWhileClosed selects on it so a Stop during the closed-market
+// backoff wakes the loop immediately instead of blocking the remainder of the
+// 10 s slice.
+func (at *AutoTrader) stopDone() <-chan struct{} {
+	at.stopMonitorMu.Lock()
+	defer at.stopMonitorMu.Unlock()
+	if at.stopMonitorCtx == nil {
+		return nil
+	}
+	return at.stopMonitorCtx.Done()
+}
+
+// sleepOrStop sleeps for d, returning false the moment done is closed (the
+// per-Run stop context was cancelled). A nil done sleeps the full d.
+func sleepOrStop(done <-chan struct{}, d time.Duration) bool {
+	if done == nil {
+		time.Sleep(d)
+		return true
+	}
+	t := time.NewTimer(d)
+	defer t.Stop()
+	select {
+	case <-done:
+		return false
+	case <-t.C:
+		return true
 	}
 }
 
@@ -1276,6 +1357,13 @@ func (at *AutoTrader) attachTradeContext(ctx *kernel.Context) {
 		ctx.DailyRealizedPnL = dayPnL
 		ctx.TradesToday = dayTrades
 	}
+	// r22 RISK-GATES — the LOSS leg judges the bot's own P&L (realized + open,
+	// manual excluded) from the ONE reader every entry path uses.
+	if bot, berr := at.botDayPnLAt(time.Now()); berr != nil {
+		at.logWarnf("⚠️ daily-loss P&L read failed: %v — the decision path's loss leg falls back to realized", berr)
+	} else {
+		ctx.DailyLossPnL, ctx.DailyLossPnLKnown = bot.Total(), true
+	}
 
 	// Recent 10 closed trades for AI context, scoped to the ACTIVE account so a
 	// post-switch cycle does not carry the old account's trades into the prompt.
@@ -1339,7 +1427,14 @@ func (at *AutoTrader) attachTradeContext(ctx *kernel.Context) {
 		AvgWin:             stats.AvgWin,
 		AvgLoss:            stats.AvgLoss,
 		MaxDrawdownPct:     stats.MaxDrawdownPct,
+		// RT-4 (release #24): the manual rows ride as their own counted line,
+		// READ from the store (GetFullStats → ManualExcluded.Line).
+		ManualExcludedLine: stats.ManualExcludedLine,
 	}
-	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%%",
-		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct)
+	manualLine := stats.ManualExcludedLine
+	if manualLine == "" {
+		manualLine = "Manual (excluded): n/a"
+	}
+	logger.Infof("🧾 [%s] Track record: %+.2f over %d resolved trades (%d unresolved excluded), %.1f%% win rate, PF=%.2f, Sharpe=%.2f, DD=%.1f%% · %s",
+		at.name, stats.TotalPnL, stats.TotalTrades, stats.UnresolvedExcluded, stats.WinRate, stats.ProfitFactor, stats.SharpeRatio, stats.MaxDrawdownPct, manualLine)
 }

@@ -1,4 +1,10 @@
 import { useState, useEffect, useRef } from 'react'
+import {
+  mentorStaleMark,
+  sameChartSymbol,
+  type ChartLineSpec,
+} from './chartOverlays'
+import type { MentorTruth } from '../../lib/api/traders'
 import { EquityChart } from './EquityChart'
 import { AdvancedChart } from './AdvancedChart'
 import { useLanguage } from '../../contexts/LanguageContext'
@@ -15,6 +21,16 @@ interface ChartTabsProps {
   updateKey?: number // Force update key
   exchangeId?: string // Exchange ID
   selectedAccount?: string // F31 — dashboard account scope for the order snapshot
+  /** MENTOR-TRUTH PANEL — every horizontal mentor place drawn on the price chart. */
+  mentorLevels?: ChartLineSpec[]
+  /** T7 (release #22) — the mentor's valid trendlines (sloped segments). */
+  mentorTrendlines?: MentorTruth['trendlines']
+  /** UG-2 (release #24): the instrument the mentor overlays belong to
+   * (/api/mentor/truth `symbol`). They are drawn ONLY on a tab showing it. */
+  mentorSymbol?: string
+  /** UG-3 (release #24): the last good mentor read's time while the read is
+   * stale — the lines stay drawn and are marked "stale since HH:MM CT". */
+  mentorStaleSinceMs?: number
 }
 
 type ChartTab = 'equity' | 'kline'
@@ -125,6 +141,10 @@ export function ChartTabs({
   updateKey,
   exchangeId,
   selectedAccount,
+  mentorLevels,
+  mentorTrendlines,
+  mentorSymbol,
+  mentorStaleSinceMs,
 }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
@@ -209,6 +229,14 @@ export function ChartTabs({
     setChartSymbol(MARKET_CONFIG[type].defaultSymbol)
     setShowDropdown(false)
   }
+
+  // UG-2 (release #24): a mentor level is a price on ONE instrument. Draw the
+  // overlays only on a tab showing that instrument — and SAY they are hidden
+  // anywhere else (never a silent hide). No symbol named → not drawn.
+  const hasMentorOverlays =
+    (mentorLevels?.length ?? 0) > 0 || (mentorTrendlines?.length ?? 0) > 0
+  const mentorOnThisTab =
+    hasMentorOverlays && sameChartSymbol(chartSymbol, mentorSymbol)
 
   // Filtered symbol list
   const filteredSymbols = availableSymbols.filter((s) =>
@@ -459,6 +487,17 @@ export function ChartTabs({
         )}
       </div>
 
+      {visibleTab === 'kline' && hasMentorOverlays && (
+        <div
+          data-testid="mentor-overlay-note"
+          className="shrink-0 px-3 py-1 text-[10px] text-vl-neo-text-muted border-b border-white/5"
+        >
+          {mentorOnThisTab
+            ? `mentor lines: ${mentorSymbol}${mentorStaleMark(mentorStaleSinceMs)}`
+            : `mentor lines hidden — they belong to ${mentorSymbol || 'an unnamed symbol'}, this chart shows ${chartSymbol}`}
+        </div>
+      )}
+
       {/* Tab Content - Chart autosizes to this container */}
       <div className="relative flex-1 bg-[#0B0E11]/50 rounded-b-lg overflow-hidden h-full min-h-0">
         <AnimatePresence mode="wait">
@@ -490,6 +529,11 @@ export function ChartTabs({
                 // Dynamic auto-sizing via ResizeObserver
                 exchange={currentExchange}
                 onSymbolChange={setChartSymbol}
+                mentorLevels={mentorOnThisTab ? mentorLevels : undefined}
+                mentorTrendlines={
+                  mentorOnThisTab ? mentorTrendlines : undefined
+                }
+                mentorStaleSinceMs={mentorStaleSinceMs}
               />
             </motion.div>
           )}

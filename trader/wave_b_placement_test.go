@@ -46,7 +46,7 @@ type fakePlacer struct {
 	afterRegister  func()
 }
 
-func (f *fakePlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+func (f *fakePlacer) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
 	f.calls = append(f.calls, placeCall{symbol, side, quantity, stopPx, sl, tp, leg1Qty, leg1TP})
 	if f.err != nil {
 		return "", f.err
@@ -67,7 +67,7 @@ func (f *fakePlacer) PlaceStopEntry(symbol, side string, quantity float64, stopP
 
 // PlaceStopEntryWithLimit records the SAME call through the limit variant (PR B,
 // 2026-10-03): the routing pin asserts which variant the knob selected.
-func (f *fakePlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+func (f *fakePlacer) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
 	f.calls = append(f.calls, placeCall{symbol, side, quantity, stopPx, sl, tp, leg1Qty, leg1TP})
 	f.stopLimitCalls++
 	if f.err != nil {

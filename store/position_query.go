@@ -27,6 +27,13 @@ type TraderStats struct {
 	AvgWin             float64 `json:"avg_win"`
 	AvgLoss            float64 `json:"avg_loss"`
 	MaxDrawdownPct     float64 `json:"max_drawdown_pct"`
+	// R22 PNL-TRUTH (owner ruling R1): manual NT8 trades adopted into this
+	// ledger are NOT the bot's record. They are excluded from every figure
+	// above and shown here as their own line — never hidden silently.
+	ManualExcludedTrades int     `json:"manual_excluded_trades"`
+	ManualExcludedPnL    float64 `json:"manual_excluded_pnl"`
+	ManualExcludedIDs    []int64 `json:"manual_excluded_ids"`
+	ManualExcludedLine   string  `json:"manual_excluded_line"`
 }
 
 // GetPositionStats gets position statistics
@@ -56,6 +63,7 @@ func (s *PositionStore) GetPositionStats(traderID string) (map[string]interface{
 		// from. The excluded count is surfaced for visibility.
 		// 0A-2 (2026-08-31): unknown-P&L + e7 test-seam reasons excluded too.
 		Where("trader_id = ? AND status = ? AND pnl_corrected IS NOT NULL AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+		Where(BotOriginSQL). // R22 R1: manual NT8 rows are not the bot's record
 		Scan(&r).Error
 	if err != nil {
 		return nil, err
@@ -64,7 +72,7 @@ func (s *PositionStore) GetPositionStats(traderID string) (map[string]interface{
 	// A-2 — the excluded class, surfaced (never silently folded in).
 	var excluded int64
 	if err := s.db.Model(&TraderPosition{}).
-		Where("trader_id = ? AND status = ? AND pnl_corrected IS NULL", traderID, "CLOSED").
+		Where("trader_id = ? AND status = ? AND pnl_corrected IS NULL", traderID, "CLOSED").Where(BotOriginSQL).
 		Count(&excluded).Error; err == nil {
 		stats["excluded_null_pnl"] = excluded
 	}
@@ -96,6 +104,9 @@ func (s *PositionStore) CountConsecutiveLossesSince(traderID string, sinceMs int
 		// streak too (reconcile_flat + class-27 unresolved + e7 test-seam).
 		Where("trader_id = ? AND status = ? AND close_reason <> ? AND exit_time >= ?",
 			traderID, "CLOSED", CloseReasonTestSeam, sinceMs).
+		// R22 R1: a manual NT8 trade is not a trade the BOT made — like the
+		// test seam it neither counts toward nor breaks a bot losing run.
+		Where(BotOriginSQL).
 		Order("exit_time DESC").
 		Find(&rows).Error
 	if err != nil {
@@ -152,6 +163,7 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 		// excluded from the guardrail P&L too.
 		Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NOT NULL AND exit_time >= ?",
 			traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam, sinceMs)
+	pq = pq.Where(BotOriginSQL) // R22 R1: bot-only realized P&L
 	if acct != "" {
 		pq = pq.Where("account = ?", acct)
 	}
@@ -161,7 +173,8 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 
 	var cnt int64
 	cq := s.db.Model(&TraderPosition{}).
-		Where("trader_id = ? AND entry_time >= ?", traderID, sinceMs)
+		Where("trader_id = ? AND entry_time >= ?", traderID, sinceMs).
+		Where(BotOriginSQL) // R22 R1: a manual entry is not a bot entry
 	if acct != "" {
 		cq = cq.Where("account = ?", acct)
 	}
@@ -181,6 +194,7 @@ func (s *PositionStore) GetSessionDayActivity(traderID string, sinceMs int64, ac
 type MentorDayActivity struct {
 	DayNetPnl      float64
 	ClosedInProfit bool
+	ClosedInLoss   bool
 	Unresolved     int
 }
 
@@ -193,8 +207,12 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		acct = account[0]
 	}
 	var out MentorDayActivity
-	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason NOT IN (?, ?, ?)",
-		traderID, "CLOSED", sinceMs, CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam)
+	// RT-3 (release #24): reconcile_flat / unresolved closes are SELECTED and
+	// counted Unresolved (the caller fails CLOSED on it) instead of being
+	// filtered out unseen. The test seam stays out: it is not a trade.
+	q := s.db.Where("trader_id = ? AND status = ? AND exit_time >= ? AND close_reason <> ?",
+		traderID, "CLOSED", sinceMs, CloseReasonTestSeam).
+		Where(BotOriginSQL) // R22 R1: a manual winner/loser is not the bot's day
 	if acct != "" {
 		q = q.Where("account = ?", acct)
 	}
@@ -203,6 +221,10 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		return out, fmt.Errorf("mentor day activity: %w", err)
 	}
 	for _, r := range rows {
+		if UnknownPnLReason(r.CloseReason) {
+			out.Unresolved++
+			continue
+		}
 		pnl, resolved := r.CorrectedPnL()
 		if !resolved {
 			out.Unresolved++
@@ -211,6 +233,9 @@ func (s *PositionStore) MentorDayActivity(traderID string, sinceMs int64, accoun
 		out.DayNetPnl += pnl
 		if pnl > 0 {
 			out.ClosedInProfit = true
+		}
+		if pnl < 0 {
+			out.ClosedInLoss = true
 		}
 	}
 	return out, nil
@@ -238,7 +263,7 @@ func (s *PositionStore) GetFullStats(traderID string, account ...string) (*Trade
 	// was +304.32 over 105 resolved (row 526 alone: raw −1,458.00 vs corrected
 	// −69.43). The model must never read a fabricated track record.
 	var unresolved int64
-	uq := s.db.Model(&TraderPosition{}).Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NULL", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam)
+	uq := s.db.Model(&TraderPosition{}).Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NULL", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Where(BotOriginSQL)
 	if acct != "" {
 		uq = uq.Where("account = ?", acct)
 	}
@@ -248,10 +273,21 @@ func (s *PositionStore) GetFullStats(traderID string, account ...string) (*Trade
 	stats.UnresolvedExcluded = int(unresolved)
 
 	var positions []TraderPosition
-	pq := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NOT NULL", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam)
+	pq := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?) AND pnl_corrected IS NOT NULL", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).
+		Where(BotOriginSQL) // R22 R1: the bot's record excludes manual NT8 trades
 	if acct != "" {
 		pq = pq.Where("account = ?", acct)
 	}
+	// R22 R1 — the manual rows are NEVER hidden silently: counted, summed and
+	// worded as their own line beside the bot figure.
+	manual, merr := s.ManualExcludedSince(traderID, acct, 0)
+	if merr != nil {
+		return nil, merr
+	}
+	stats.ManualExcludedTrades = manual.Trades
+	stats.ManualExcludedPnL = manual.PnL
+	stats.ManualExcludedIDs = manual.IDs
+	stats.ManualExcludedLine = manual.Line()
 	err := pq.Order("exit_time ASC").
 		Find(&positions).Error
 	if err != nil {
@@ -337,7 +373,8 @@ func (s *PositionStore) GetRecentTrades(traderID string, limit int, account ...s
 	// P&L-TRUTH WAVE: test-seam rows are quarantined from every strategy-P&L
 	// surface (0A-2) — including the model's recent-trade list. Unresolved /
 	// reconcile_flat rows STAY listed, rendered as UNRESOLVED, never as $0.
-	q := s.db.Where("trader_id = ? AND status = ? AND close_reason <> ?", traderID, "CLOSED", CloseReasonTestSeam)
+	q := s.db.Where("trader_id = ? AND status = ? AND close_reason <> ?", traderID, "CLOSED", CloseReasonTestSeam).
+		Where(BotOriginSQL) // R22 R1: the model's recent trades are the bot's own
 	if len(account) > 0 && account[0] != "" {
 		q = q.Where("account = ?", account[0])
 	}
@@ -452,7 +489,7 @@ type SymbolStats struct {
 func (s *PositionStore) GetSymbolStats(traderID string, limit int) ([]SymbolStats, error) {
 	var positions []TraderPosition
 	// Exclude unknown-P&L orphan closes (reconcile_flat / class-27 unresolved / e7 test-seam).
-	err := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Find(&positions).Error
+	err := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Where(BotOriginSQL).Find(&positions).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query symbol stats: %w", err)
 	}
@@ -530,7 +567,7 @@ func (s *PositionStore) GetHoldingTimeStats(traderID string) ([]HoldingTimeStats
 	var positions []TraderPosition
 	// P&L-TRUTH WAVE: same ledger exclusions as every other aggregator
 	// (unknown-P&L / test-seam reasons out); unresolved rows counted below.
-	err := s.db.Where("trader_id = ? AND status = ? AND exit_time > 0 AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Find(&positions).Error
+	err := s.db.Where("trader_id = ? AND status = ? AND exit_time > 0 AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Where(BotOriginSQL).Find(&positions).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query holding time stats: %w", err)
 	}
@@ -609,7 +646,7 @@ type DirectionStats struct {
 func (s *PositionStore) GetDirectionStats(traderID string) ([]DirectionStats, error) {
 	var positions []TraderPosition
 	// Exclude unknown-P&L orphan closes (reconcile_flat / class-27 unresolved / e7 test-seam).
-	err := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Find(&positions).Error
+	err := s.db.Where("trader_id = ? AND status = ? AND close_reason NOT IN (?, ?, ?)", traderID, "CLOSED", CloseReasonReconcileFlat, CloseReasonUnresolved, CloseReasonTestSeam).Where(BotOriginSQL).Find(&positions).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query direction stats: %w", err)
 	}

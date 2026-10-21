@@ -6,9 +6,9 @@ Spec source: `docs/superpowers/plans/2026-05-22-nq-databento-ninjatrader.md` lin
 
 ## Transport
 
-- TCP loopback: `127.0.0.1:36974` (note: NOT NinjaTrader's ATI port 36973).
+- TCP loopback by default: `127.0.0.1:36974` (note: NOT NinjaTrader's ATI port 36973). The Go side's listen address is overridden by `NT_TCP_LISTEN_ADDR`; the C# AddOn's target is `Documents\NinjaTrader 8\VL\connect.json` (`{host, port, connect_key}`) — absent, it connects to `127.0.0.1:36974` with no key.
 - Single concurrent client: NT8 AddOn → Go server. A second client is rejected.
-- Connection is opened by the C# AddOn at NT8 startup; reconnects every 5 seconds on disconnect.
+- Connection is opened by the C# AddOn at NT8 startup; reconnects with exponential backoff 5s→60s (jittered, capped) on disconnect.
 
 ## Framing
 
@@ -65,8 +65,9 @@ Outgoing trade signal. Each numeric field is tick-rounded by the Go side before 
 
 ### 1b. `close_position` (Go server → C# AddOn)
 
-Flatten a held position. Historical behavior: immediate market flatten +
-working-order cancel. **4.3 (limit-then-market, dormant):** `limit_price > 0`
+Flatten a held position on the account the frame names. Historical behavior:
+immediate market flatten + working-order cancel. **4.3 (limit-then-market,
+on when the bot's env sets `EOD_FLAT_LIMIT_TICKS` > 0; default 0):** `limit_price > 0`
 submits a LIMIT exit at that price instead — the Go side owns the timing and
 sends the market fallback as a later `close_position` frame WITHOUT
 `limit_price`, whose Flatten cancels the resting limit.
@@ -94,7 +95,48 @@ sends the market fallback as a later `close_position` frame WITHOUT
   `<signal_id>-lx`; its fill routes to `position_close` with reason `"limit"`
   and cancels the still-live SL/TP bracket legs (`CancelBracketsFor`) so they
   can never re-enter the now-flat position.
-- All other fields unchanged (identity stamp, account routing, SIM-only guard).
+- `account` — **the routing (AddOn build `2026-10-14-a`, release #24).** Go
+  stamps the trader's BOUND account on every close (`tcp_trader.go`
+  `sendCloseAt`). When it is non-empty the AddOn resolves THAT account by name
+  (`FindAccountByName`, the same resolver the `signal` path uses) and acts on
+  it ONLY. If no account of that name exists, the close is **refused**: a WARN
+  in the NT8 log plus a `position_close_rejected` frame carrying the named
+  account. It never falls back to another account. The SIM guard still
+  applies: a non-SIM resolved account is refused the same way.
+  - Empty/absent `account` (legacy, a pre-P5.4 single-trader Go): the
+    per-(root, account) owner map recorded at entry fill, else the AddOn's
+    active account. Two or more accounts holding the root = ambiguous =
+    **refused**.
+  - Builds before `2026-10-14-a` ignored this field and flattened a root-keyed
+    map (last fill on ANY account wins), then the active account. That was the
+    cross-account flatten (AUDIT-CHECKLIST: "a frame field the receiver never
+    reads").
+  - Every close logs `close_position <root> → account=<name> (from
+    payload|map|active) side=… qty=… holds=…` in the NT8 log.
+- **Market close = full flatten of the instrument on the named account.**
+  `Account.Flatten` closes the whole position on that contract AND cancels
+  every working order for it on that account: bracket legs AND resting entry
+  orders. Go learns of those cancels from the next `order_update` /
+  `order_snapshot`.
+  - KNOWN LIMIT: `quantity` is NOT honoured on the market path. No Go path
+    sends a smaller market close and expects the rest to stay open. The swing
+    hold-close sizes to its own fill, but one open position per instrument per
+    trader is enforced (`entry_gate.go` leg 7, `oneLiveArmGuard`, the mentor
+    never-add sweep), so that fill is the account's whole position.
+  - The chat `execute_trade` close (`agent/trade.go`) can carry a nonzero
+    quantity, and its tool schema says 0 = close all. It still flattens the
+    whole position, and it is refused outright while two traders share the
+    instrument (`resolveCMETrader`).
+- **Limit exit size (`2026-10-14-a`).** The limit is sized to the WHOLE
+  position the resolved account holds on the contract; a smaller frame
+  `quantity` is logged and ignored. Go sends `quantity` 0 here
+  (`flattenPosition`). Older builds turned 0 into ONE contract, so a 5-lot got a
+  1-lot limit and that fill cancelled the bracket of the 4 still open. A flat
+  account, a held side that disagrees with the frame `side`, or an unreadable
+  position skips the limit and takes the market flatten. A limit is never
+  sized from a guess and never opens or adds to a position.
+- All other fields unchanged (identity stamp, SIM-only guard). No field was
+  added for this build.
 
 ### 2. `fill` (C# AddOn → Go server)
 
@@ -139,14 +181,14 @@ Outgoing fill notification.
 The C# AddOn sends `hello` as the FIRST frame on every (re)connect; the Go server replies with its own `hello`.
 
 ```json
-{ "type": "hello", "payload": { "protocol_version": 2, "source": "vltrader-addon" } }
+{ "type": "hello", "payload": { "protocol_version": 3, "source": "vltrader-addon" } }
 ```
 
 **Semantics:**
 
-- `protocol_version`: the peer's wire generation (`ProtocolVersion` in `tcp_framing.go` == `PROTOCOL_VERSION` in `VLTraderTCPClient.cs`; v2 = symbol-tagged fills + this handshake). Bump ONLY with a lockstep C#+Go ship.
+- `protocol_version`: the peer's wire generation (`ProtocolVersion` in `tcp_framing.go` == `PROTOCOL_VERSION` in `VLTraderTCPClient.cs`; current = 3). Bump ONLY with a lockstep C#+Go ship.
 - Go server on MISMATCH: logs `PROTOCOL VERSION MISMATCH — refusing connection` and CLOSES (never silently misparses). The AddOn's reconnect loop will retry + log its own mismatch warning from the server's reply.
-- Go server on a connection that NEVER sends hello: tolerated as a LEGACY (pre-v2) AddOn with a one-time warning — so the lockstep deploy window (new Go, not-yet-F5'd C#) cannot brick the bar feed.
+- Go server on a connection that NEVER sends hello: with `NT_CONNECT_KEY` set the connection is CLOSED after 10 s (a silent peer must not squat the single client slot, and any non-hello frame before auth is closed). With NO key it is tolerated as a LEGACY (pre-v2) AddOn with a one-time warning — so the lockstep deploy window (new Go, not-yet-F5'd C#) cannot brick the bar feed.
 - `source`: `"vltrader-addon"` or `"vl-go"` (diagnostics only).
 
 ### 3. `heartbeat` (bidirectional)
@@ -384,10 +426,43 @@ Used by auto-breakeven (once the trade is +N points in profit → stop → entry
   therefore REQUIRES the paired redeploy (cp `ninjascript/*.cs` → AddOns → F5 →
   clean NT8 restart).
 
-## Failure modes
+### 11. `feed_status` (C# AddOn → Go server) — P0 feed freshness
 
+Sent on every NT8 price-feed connection-status transition, and again ~1/min from
+the AddOn freshness timer. Carries the connection status PLUS the truthful bar
+freshness, so Go can tell "callbacks flowing but bars DELAYED" apart from "fresh".
+
+```json
+{ "type": "feed_status",
+  "payload": { "price_status": "Connected", "time": "RFC3339",
+               "last_bar_t_ms": 1729xxxxxxxxx, "last_bar_arrival_ms": 1729xxxxxxxxx,
+               "last_bar_symbol": "MNQ", "last_bar_tf": "1m", "mode": "unknown", "provenance": "bar_update" } }
+```
+
+- `price_status` — the NT8 price-feed connection status (`Connected` | `ConnectionLost` |
+  `Connecting` | `Disconnected`). Same as before; Go gates opens/closes on it.
+- `last_bar_t_ms` — **market** open timestamp (Unix ms UTC) of the newest bar the
+  AddOn emitted across all subscriptions. `0` = no bar yet. THIS is freshness.
+- `last_bar_arrival_ms` — wall-clock Unix ms UTC when that newest bar was emitted
+  (arrival/liveness). Distinct from freshness: delayed bars arrive late.
+- `last_bar_symbol` / `last_bar_tf` — identify the sample (`MNQ` / `1m`). This
+  frame is **diagnostic only**: it reports the SINGLE newest bar across ALL
+  subscriptions, so a fresh ES bar can mask a stale MNQ bar. Admission/gating
+  must use the Go side's own symbol-scoped bar cache, NEVER this unscoped max.
+- `mode` — **ALWAYS `"unknown"`** in this build. No supported NT8 API exposes the
+  market-data subscription mode (`Delayed` vs `Realtime`); it is NOT derived from
+  the account type. Reserved for when a real API is proven. Broker mode and bar
+  freshness are independent: a missing mode is broker-mode unknown, never candle
+  freshness unknown.
+- `provenance` — `"bar_update"` | `"bars_historical"` | `"none"` — where the
+  newest bar came from.
+
+Additive: an OLD Go build ignores the new keys (it only reads `price_status`
+/ `time`); a NEW Go build treats an absent key as unknown.
+
+## Failure modes
 - **TCP disconnect**: the server holds the signal queue; on reconnect, it sends pending signals with their original timestamps. The C# AddOn may reject signals older than 60s as stale (emits a `status=rejected` fill).
-- **Heartbeat timeout**: the server closes the connection after 60s without an ack; the C# AddOn reconnects every 5s.
+- **Heartbeat timeout**: the server closes the connection after 60s without an ack; the C# AddOn reconnects with exponential backoff 5s→60s.
 - **Invalid frame** (bad length, >1 MB, malformed JSON): the receiver logs a warning and closes the connection; the other side reconnects.
 - **Order rejection by NT8**: the AddOn emits a fill frame with `status=rejected`; the Go side logs the rejection and does NOT retry.
 
@@ -613,6 +688,21 @@ its `accept_seq`, monotonic accept time and `remote_port`, as that connection's 
 The verifier binds to that record, **never** to `FarSideBuildID()`. `VL_BUILD_ID` keeps
 its ISO-date prefix, because the capability floors compare it bytewise.
 
+### `connect_key` on `hello` (W-FRIEND-HOSTED)
+
+`hello` (AddOn → Go) gains one additive, `omitempty` field for the friend-hosted
+deploy (release #37): `connect_key` (string). The AddOn reads it from
+`Documents\NinjaTrader 8\VL\connect.json` (`connect_key`); with the file absent
+the field is omitted, keeping the wire byte-identical to today.
+
+The Go server checks it only when `NT_CONNECT_KEY` is set in the friend's
+`.env`. A hello that omits the key, or whose key does not match (compared with
+`crypto/subtle.ConstantTimeCompare`), is refused **before** anything is accepted
+— no hello reply, no allowlist flush, no queued signal, no bars subscribe — and
+the refusal is counted (`nt_connect_key_refused`). Unset `NT_CONNECT_KEY` =
+today's behaviour, byte-identical. The key is never logged and never appears in
+the Go reply.
+
 ## `signal.stop_limit` (2026-10-03-c2) — mentor stop-LIMIT entries (PR B)
 
 The `signal` payload gains `stop_limit` (bool, omitempty). When true and
@@ -682,3 +772,43 @@ bracket, byte-identical.
   single-bracket receipt key is unchanged from before the split.
 - The exit-drive record for the signal is kept while either leg is live; it
   is dropped when the last leg exits.
+
+## Leg-3 bracket (release #31, wire v5) — build `2026-10-16-a`
+
+The runner of ≥ 2 contracts sells half (rounded down) at the first line beyond
+the leg-1 exit (near old high/low → EMA 34 → next level [D3.3 p1 @04:11–04:17]);
+the rest trails as today. It stays ONE entry order and ONE signal id; the AddOn
+builds a THIRD OCO pair on the fill. Go sends the leg-2 split only when the far
+side has proven `MinAddonBuildLeg3` (`2026-10-16-a`); an older AddOn gets the
+2-pair plan, byte-identical. 5 → 3 / 1 / 1; 3 → 2 / 1 (no leg 3).
+
+**`signal` (Go → AddOn), additive:**
+
+- `leg2_qty` (int): the runner's first partial. Absent/0 = the 2-pair plan
+  (leg 1 + the whole runner). leg 3 = `filled − leg1_qty − leg2_qty` (the rest,
+  TP = `take_profit`); the AddOn builds the leg-3 pair only once the fill
+  exceeds `leg1_qty + leg2_qty`.
+- `leg2_tp` (float): the runner's first partial take-profit (the first line
+  beyond the leg-1 exit), rounded to the nearest tick by Go and STRICTLY
+  between leg 1's TP and the trade target. A leg-2 TP that fails drops leg 2
+  (the 2-pair plan stands).
+
+**Order names under the one signal id:** leg 1 = `<sid>-sl` / `<sid>-tp`, leg 2
+= `<sid>-sl2` / `<sid>-tp2`, leg 3 = `<sid>-sl3` / `<sid>-tp3` — three OCO
+pairs.
+
+**`move_stop` / `modify_bracket` (Go → AddOn), additive:**
+
+- `leg` (int): 1 = leg 1 only, 2 = leg 2 only, 3 = leg 3 only, absent/0 = every
+  live leg.
+- A terminal leg is skipped. The frame errors only when no selected leg is live.
+- Go's stop-widen ban is judged per leg (`<sid>#leg1` / `<sid>#leg2` /
+  `<sid>#leg3`).
+
+**`position_close` (AddOn → Go), additive:**
+
+- `leg` (int): which leg exited — 1 (`-sl`/`-tp`), 2 (`-sl2`/`-tp2`) or 3
+  (`-sl3`/`-tp3`). 0 or absent means the whole position.
+- The exit-drive record for the signal is kept while any leg is live; it is
+  dropped when the last leg exits.
+

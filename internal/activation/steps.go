@@ -11,6 +11,8 @@ import (
 	"strings"
 	"time"
 
+	"vl/logger"
+
 	// vl/store/sqlitedriver is the ONE place in this repo that registers the
 	// "sqlite" driver. A LIBRARY must never import a driver directly: anything
 	// may link it, and database/sql panics when two register the same name in
@@ -297,8 +299,11 @@ func lineTime(ln string) (time.Time, bool) {
 	if len(fields) < 2 {
 		return time.Time{}, false
 	}
+	// R22 P3-3: the logger writes these stamps in America/Chicago
+	// (logger.CTLocation, #488) — parse them there, not in the machine zone.
+	ct := logger.CTLocation()
 	t, err := time.ParseInLocation("2006-01-02 15:04:05",
-		fmt.Sprintf("%d-%s %s", sys.Now().Year(), fields[0], fields[1]), time.Local)
+		fmt.Sprintf("%d-%s %s", sys.Now().In(ct).Year(), fields[0], fields[1]), ct)
 	if err != nil {
 		return time.Time{}, false
 	}

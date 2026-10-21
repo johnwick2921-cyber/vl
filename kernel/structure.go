@@ -28,10 +28,79 @@ const (
 	DefaultStructureMinSwingATR = 0.25 // swing move must be ≥ this × ATR vs the prior opposite swing
 	DefaultStructureMSSBodyATR  = 1.5  // MSS displacement: CHoCH bar body ≥ this × ATR
 	DefaultStructureEventWindow = 4    // event history kept in the snapshot (periods)
+	// DefaultStructureOneWayATR (F-4, planner-touch-fills 2026-10-14) — a close
+	// this many ATR beyond the last swing extreme, with no completed 3-swing set
+	// (Trend RANGING), is a ONE-WAY move. 1.0 = the repo's own displacement unit
+	// for a broken level (BD_MIN_DISP_ATR default 1.0, breakdown_continue.go).
+	DefaultStructureOneWayATR = 1.0
 )
+
+// structureOneWayATR resolves STRUCTURE_ONEWAY_ATR (default 1.0; 0 or a bad
+// value → the default; the boot regime ledger prints the resolved value).
+func structureOneWayATR() float64 {
+	if v := os.Getenv("STRUCTURE_ONEWAY_ATR"); v != "" {
+		if f, err := strconv.ParseFloat(v, 64); err == nil && f > 0 {
+			return f
+		}
+	}
+	return DefaultStructureOneWayATR
+}
+
+// StructureOneWayATR exports the resolved one-way multiple (boot ledger, guide).
+func StructureOneWayATR() float64 { return structureOneWayATR() }
+
+// StructureOneWay is the evidence of a one-way move on a TF whose 3-swing
+// trend is RANGING: the newest CLOSED bar closed beyond the last swing extreme
+// by at least Mult × ATR — a break of structure the swing set has not caught
+// up with (a crash makes no new fractal low until it pauses).
+type StructureOneWay struct {
+	Dir     string  `json:"dir"`     // up | down
+	Close   float64 `json:"close"`   // the newest closed bar's close
+	Extreme float64 `json:"extreme"` // the swing high/low it closed beyond
+	ATR     float64 `json:"atr"`
+	Mult    float64 `json:"mult"`
+	TimeMs  int64   `json:"time_ms"` // that bar's close instant
+}
 
 // StructureTFs are the per-TF detectors the wave builds (2.1).
 var StructureTFs = []string{"5m", "15m", "1h"}
+
+// BarsHoleWarning reports the LATEST HOLE inside the last 6 hours of a bar
+// series (m134/m149): a gap longer than one bar interval between consecutive
+// bars, counting only the CME-OPEN missing minutes. A pure session break
+// (16:00→17:00 CT, a weekend) has no open minute missing and does NOT warn;
+// the forming tail never trips it. Returns "" when the series is contiguous or
+// every hole is older than 6 h (a stale hole must not warn for hours).
+func BarsHoleWarning(bars []market.Kline, tfMin int) string {
+	if tfMin <= 0 || len(bars) < 2 {
+		return ""
+	}
+	step := int64(tfMin) * 60_000
+	newest := bars[len(bars)-1].OpenTime
+	sixH := int64(6 * 60 * 60 * 1000)
+	for i := len(bars) - 1; i >= 1; i-- {
+		d := bars[i].OpenTime - bars[i-1].OpenTime
+		if d <= step {
+			continue
+		}
+		if bars[i].OpenTime < newest-sixH {
+			break // every older gap is outside the 6 h window
+		}
+		prev := bars[i-1].OpenTime
+		next := bars[i].OpenTime
+		open := 0
+		for m := prev + step; m < next; m += step {
+			if IsCMEOpen(time.UnixMilli(m)) {
+				open++
+			}
+		}
+		if open == 0 {
+			continue // a pure session break — no open minute missing
+		}
+		return fmt.Sprintf("gap %s → %s (%d open minute(s) missing)", ClockCT(time.UnixMilli(prev)), ClockCT(time.UnixMilli(next)), open)
+	}
+	return ""
+}
 
 // structureTFMinutes is the bar length table for the structure detectors
 // (5m/15m/1h only — the acceptance resolver is rule-scoped and would fold 1h
@@ -110,6 +179,11 @@ type StructureState struct {
 	// the entry gate can size the minimum stop distance against the real 5m ATR
 	// instead of a hardcoded width (research: 15/27 week losers stopped-too-tight).
 	Atr float64 `json:"atr,omitempty"`
+	// OneWay (F-4) — set ONLY when Trend is RANGING and the newest closed bar
+	// broke the last swing extreme by ≥ STRUCTURE_ONEWAY_ATR × ATR. Trend itself
+	// is unchanged for its 21 production readers; ONLY the HTF veto reads the
+	// evidence (StructureState.VetoTrend, kernel/htf_veto.go).
+	OneWay *StructureOneWay `json:"one_way,omitempty"`
 }
 
 type swing struct {
@@ -327,6 +401,19 @@ func ComputeStructureState(klines []market.KlineBar, tfMinutes int, atr float64,
 			break
 		}
 	}
+	// F-4 — a BOS without a completed 3-swing set: on a RANGING TF, the newest
+	// closed bar closing ≥ k×ATR beyond the last swing extreme is a one-way
+	// move (the 10-14 07:00–09:00 shape: a 400-pt fall makes no new fractal
+	// low until it pauses). Recorded as evidence; Trend stays RANGING.
+	if out.Trend == "RANGING" && atr > 0 {
+		lc, k := closed[n-1], structureOneWayATR()
+		t := lc.Time + iv
+		if !lastLow.high && t > lastLow.timeMs && lc.Close <= lastLow.price-k*atr {
+			out.OneWay = &StructureOneWay{Dir: "down", Close: lc.Close, Extreme: lastLow.price, ATR: atr, Mult: k, TimeMs: t}
+		} else if lastHigh.high && t > lastHigh.timeMs && lc.Close >= lastHigh.price+k*atr {
+			out.OneWay = &StructureOneWay{Dir: "up", Close: lc.Close, Extreme: lastHigh.price, ATR: atr, Mult: k, TimeMs: t}
+		}
+	}
 	var events []StructureEvent
 	// Track one BOS per side per run (first break past the extreme).
 	bosUpSeen, bosDownSeen := false, false
@@ -421,6 +508,55 @@ func StructureSnapshot(bars1m []market.Kline, nowMs int64) map[string]StructureS
 		if len(kb) > 0 {
 			snap[tf] = state
 		}
+	}
+	// m149: a bars hole is NOT injected here as a fake StructureState — the
+	// caller carries it as its own Context field (ctx.StructureGap), so the
+	// persisted structure map stays per-TF truth.
+	return snap
+}
+
+// HTFVetoNativeTF is the higher timeframe the HTF veto's cross / 4h modes read
+// from the NATIVE bar series (F-4): the 1m cache holds ~2,000 bars (≈8 4h
+// bars) — far too few for a 4h swing set — so the 4h state is computed from
+// the bar cache's own 4h series, the same series the planner's structure map
+// reads (trader/structure_map_wire.go).
+const HTFVetoNativeTF = "4h"
+
+// HTFVetoNativeBarsAsk is how many native 4h bars the veto asks for (the ring
+// holds up to 2,500).
+const HTFVetoNativeBarsAsk = 2500
+
+// WithNativeHTFStructure adds the 4h state computed from NATIVE 4h bars to a
+// structure snapshot (F-4). Before this, StructureSnapshot built 5m/15m/1h
+// only, so HTF_VETO_MODE=cross (LIVE since 2026-08-28) and =4h could never
+// find snap["4h"] and NEVER vetoed — zero "htf_veto:" refusals in every log
+// since the switch. No bars → the key stays ABSENT (never fabricated) and
+// the veto fails open loudly for that TF.
+func WithNativeHTFStructure(snap map[string]StructureState, bars4h []market.Kline, nowMs int64) map[string]StructureState {
+	if len(bars4h) == 0 {
+		return snap
+	}
+	if snap == nil {
+		snap = map[string]StructureState{}
+	}
+	kb := make([]market.KlineBar, 0, len(bars4h))
+	for _, k := range bars4h {
+		kb = append(kb, market.KlineBar{Time: k.OpenTime, Open: k.Open, High: k.High, Low: k.Low, Close: k.Close, Volume: k.Volume})
+	}
+	st := ComputeStructureState(kb, 240, 0, nowMs)
+	if st.Atr <= 0 && st.Swing == nil {
+		return snap // no CLOSED 4h bar at nowMs: absent, not a fabricated RANGING
+	}
+	snap[HTFVetoNativeTF] = st
+	return snap
+}
+
+// StructureSnapshotForVeto is the cycle snapshot every consumer of the HTF
+// veto reads: StructureSnapshot(1m cache) + the native 4h state (F-4).
+func StructureSnapshotForVeto(symbol string, bars1m []market.Kline, nowMs int64) map[string]StructureState {
+	snap := StructureSnapshot(bars1m, nowMs)
+	if market.FuturesBarsProvider != nil {
+		snap = WithNativeHTFStructure(snap, market.FuturesBarsProvider(symbol, HTFVetoNativeTF, HTFVetoNativeBarsAsk), nowMs)
 	}
 	return snap
 }

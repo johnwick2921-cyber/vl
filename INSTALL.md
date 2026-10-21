@@ -9,7 +9,7 @@ either in your local `.env` (never committed) or auto-detected at install time.
 | What | Version | Notes |
 |---|---|---|
 | WSL2 + a Linux distro (or native Linux) | Ubuntu 22.04/24.04 tested | Windows: WSL2 with **systemd enabled** for autostart (`/etc/wsl.conf` → `[boot] systemd=true`) |
-| Go | ≥ 1.25 (see `go.mod`) | https://go.dev/dl/ |
+| Go | ≥ 1.26.10 (see `go.mod`) | https://go.dev/dl/ |
 | Node.js + npm | LTS (18+; 22 tested) | nvm is fine — the autostart installer resolves nvm paths itself |
 | git | any recent | |
 | NinjaTrader 8 (Windows side) | 8.x | with your data/broker connection (SIM by default) |

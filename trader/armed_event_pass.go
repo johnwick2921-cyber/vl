@@ -8,7 +8,6 @@ import (
 
 	"vl/kernel"
 	"vl/logger"
-	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 )
 
@@ -160,6 +159,25 @@ func (at *AutoTrader) runArmedEventLoop(l *armedEventLoop) {
 		default:
 		}
 		last = time.Now()
+		// MENTOR P3 — the event pass also drives the mentor evaluator
+		// (event-driven: every FINAL 1m bar). Inert unless mentor mode ON.
+		//
+		// P1-1 (rel22 mentor audit) — the MENTOR pass runs FIRST. A mentor ISB
+		// arm expires at the close of the next candle, which is the very instant
+		// the evaluator decides keep-or-cancel on that candle [D4.2 p2 @
+		// 08:21–09:01]. The FINAL frame that wakes this loop arrives after that
+		// wall-clock close, so an armed pass run first always found the arm
+		// already expired and cancelled it at NT8 before the evaluator's
+		// ExtendArm could land ("row N is not an unfilled arm"): 16 resting
+		// orders, rows 253…358, 9 of which would have triggered inside the keep
+		// window. Running the evaluator first lets a keep move the expiry, and
+		// a cancel (body out of I1, or candle 4) still goes out on this same
+		// pass — mentorEvalOnce runs its own placement/expiry pass after the
+		// dispatch. A non-mentor trader is untouched: mentorEventPassAt returns
+		// false at once and the armed pass below runs exactly as before.
+		if at.mentorEventPassAt(time.Now()) {
+			l.passes.Add(1)
+		}
 		ran := false
 		if at.armedEventNowForTest != nil {
 			ran = at.armedEventPassAt(at.armedEventNowForTest())
@@ -167,11 +185,6 @@ func (at *AutoTrader) runArmedEventLoop(l *armedEventLoop) {
 			ran = at.armedEventPass()
 		}
 		if ran {
-			l.passes.Add(1)
-		}
-		// MENTOR P3 — the event pass also drives the mentor evaluator
-		// (event-driven: every FINAL 1m bar). Inert unless mentor mode ON.
-		if at.mentorEventPassAt(time.Now()) {
 			l.passes.Add(1)
 		}
 	}
@@ -201,11 +214,7 @@ func (at *AutoTrader) armedEventPassAt(now time.Time) bool {
 	if tr, err := at.store.Trader().GetByID(at.id); err != nil || tr == nil || strings.TrimSpace(tr.Account) == "" {
 		return false
 	}
-	var bars []market.Kline
-	if market.FuturesBarsProvider != nil {
-		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
-	}
-	at.maybeManageArmedOrdersAt(kernel.StructureSnapshot(bars, now.UnixMilli()), now)
+	at.maybeManageArmedOrdersAt(at.armVetoSnapshot(now), now) // 1m cache + native 4h (F-4), never nil — veto_snapshot.go
 	return true
 }
 

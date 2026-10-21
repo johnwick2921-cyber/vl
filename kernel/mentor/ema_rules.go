@@ -1,6 +1,10 @@
 package mentor
 
-import "vl/market"
+import (
+	"time"
+
+	"vl/market"
+)
 
 // emaCross30 counts how many times the close CROSSED the EMA line over the
 // last 30 closed 1m candles (sign changes of close - ema between consecutive
@@ -57,6 +61,17 @@ func emaSetupAllowed(e *Evaluator, lvl Level, bars []market.Kline, cfg Config) b
 //	    expired: no position, no loss);
 //	(c) entry filled, then the target reached first  → NOT blocked (a win).
 func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
+	// B8 (L10): the E2 block resets at the 17:00 CT session-day boundary, like
+	// the G2 loss boxes (Limits.Apply clears Places at the trading-day rollover)
+	// — a loss at the EMA line must not switch the location off until a restart
+	// / strategy save.
+	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
+	if e.State.EmaBlocked && e.State.EmaBlockDayKey != "" && e.State.EmaBlockDayKey != day {
+		e.State.EmaBlocked = false
+		e.State.EmaLossPrice = 0
+		e.State.EmaLossBarTime = 0
+		e.State.EmaBlockDayKey = ""
+	}
 	if e.State.EmaPendingSide != "" {
 		s := &e.State
 		touchEntry := s.EmaPendingSide == SideLong && cur.High >= s.EmaPendingEntry ||
@@ -74,6 +89,10 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 			s.EmaBlocked = true // (a) one loss at the line
 			s.EmaLossPrice = s.EmaPendingStop
 			s.EmaLossBarTime = cur.CloseTime
+			// CE-6: the zone the loss happened in — the trade's entry-to-stop.
+			s.EmaLossZoneLo = minf(s.EmaPendingEntry, s.EmaPendingStop)
+			s.EmaLossZoneHi = maxf(s.EmaPendingEntry, s.EmaPendingStop)
+			s.EmaBlockDayKey = day // B8: reset at the next 17:00 CT rollover
 			s.EmaPendingSide = ""
 			s.EmaPendingFilled = false
 		case s.EmaPendingFilled && touchTarget:
@@ -88,6 +107,20 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 		cur.CloseTime > e.State.EmaLossBarTime &&
 		e.Cfg.LossDeparturePts > 0 &&
 		abs(cur.Close-e.State.EmaLossPrice) >= e.Cfg.LossDeparturePts {
+		e.State.EmaBlocked = false
+	}
+	// CE-6 (release #25, knob ema34_loss_relock): "Tắt EMA 34 đi. Đợi xíu nữa
+	// nó thoát khỏi cái vùng đó đi. Rồi tôi bật EMA 34 lên lại tôi ngồi tôi
+	// trade" [D4.2 p2 @01:33–01:39] — with "until_zone_exit" (the default) the
+	// EMA 34 comes back once a CLOSED 1m candle AFTER the loss candle lies
+	// completely outside the losing trade's entry-to-stop zone, wicks included
+	// (the G2 box departure test, limits.go). "session" / "" keeps the block to
+	// the 17:00 CT roll (pre-#25).
+	if e.State.EmaBlocked &&
+		e.Cfg.EmaLossRelock == EmaRelockUntilZoneExit &&
+		cur.CloseTime > e.State.EmaLossBarTime &&
+		e.State.EmaLossZoneHi > 0 &&
+		(cur.High < e.State.EmaLossZoneLo || cur.Low > e.State.EmaLossZoneHi) {
 		e.State.EmaBlocked = false
 	}
 }

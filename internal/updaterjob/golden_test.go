@@ -66,17 +66,16 @@ func fullJob(t *testing.T, dd string) Job {
 		Dist: "/home/u/vl-backups/updater/" + id + "/install/web/dist", ReleaseFile: "/home/u/vl-backups/updater/" + id + "/install/deploy/RELEASE"}
 	step(t, dd, &j, &now, StateBackupDone)
 	cs := false
-	j.NT8 = &NT8Decision{Decision: NT8Updated, Reason: "ninjascript/*.cs changed", ManifestBuildID: "2026-09-24-m4", AckedBuildID: "2026-09-23-m21", AckedAt: "2026-09-24T18:02:30Z", AckAcceptSeq: 7, CSUnchanged: &cs, Absent: true, F5Owed: true}
+	j.NT8 = &NT8Decision{Decision: NT8Updated, Reason: "ninjascript/*.cs changed", ManifestBuildID: "2026-09-24-m4", AckedBuildID: "2026-09-23-m21", AckedAt: "2026-09-24T18:02:30Z", AckAcceptSeq: 7, CSUnchanged: &cs, Absent: true, F5Owed: true, OldInstallBuildID: "2026-09-23-m21"}
 	step(t, dd, &j, &now, StateNT8Updated)
-	j.Blocker = "attended AddOn F5 required"
-	mustWrite(t, dd, j)
-	now = now.Add(time.Minute)
-	resumed := now
-	j.ResumedAt = &resumed
-	if err := j.AddReceipt(Receipt{Step: "resume", StartedAt: now, EndedAt: now, OK: true, Evidence: map[string]string{"acked_build_id": "2026-09-24-m4"}}, now); err != nil {
-		t.Fatal(err)
-	}
-	mustWrite(t, dd, j)
+	j.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/" + id + "/ps1-out/VL.AddOn.dll", Sha256: "fedcba9876543210fedcba9876543210fedcba98",
+		BuiltBy:          "roslyn-ps1",
+		MigrationPending: true,
+		BackupDir:        "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, OldAcceptSeq: 7}
+	step(t, dd, &j, &now, StateAddonBuilt)
+	step(t, dd, &j, &now, StateAddonPlaced)
+	step(t, dd, &j, &now, StateNT8Restarted)
+	step(t, dd, &j, &now, StateAddonReconnected)
 	j.IdentityBefore = &Identity{PID: 172, StartTicks: 23987}
 	off := int64(81920)
 	since := now.Add(time.Second)
@@ -205,6 +204,23 @@ func TestJobFileSchemaGolden(t *testing.T) {
 		return out
 	}
 	want, got = fold(want), fold(got)
+	// resumed_at is retired (W-ADDON-ONE-CLICK): the field stays in the schema
+	// for legacy replay of parked jobs, but no new job writes it — the full
+	// golden walks the one-click addon path, which never parks.
+	delete(want, "resumed_at")
+	// catchup / catchup_nt8_open are set only on a worker-internal catch-up
+	// job; the full golden walks the one-click INSTALL path, which never sets
+	// them (absent ≠ false).
+	delete(want, "catchup")
+	delete(want, "catchup_nt8_open")
+	// friends (W-FRIEND-HOSTED Segment 5) is written only by the worker's
+	// post-complete friend sweep, which the golden's install path does not
+	// run (no friend registry configured): absent ≠ empty, like the others.
+	for k := range want {
+		if k == "friends" || strings.HasPrefix(k, "friends.") {
+			delete(want, k)
+		}
+	}
 	var missing, extra []string
 	for k := range want {
 		if !got[k] {

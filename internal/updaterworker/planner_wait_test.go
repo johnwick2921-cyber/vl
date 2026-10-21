@@ -13,8 +13,9 @@ import (
 // A live AI-plan read is a KNOWN BENIGN blocker: preflight/drain/gate wait for
 // it (the job shows "waiting for the AI plan (started hh:mm:ss)" as the live
 // blocker, never "not passed within"). On planner-wait EXPIRY: preflight
-// refuses with NO hold (as today); drain/gate RELEASE the hold and refuse —
-// a benign blocker must not leave the desk held.
+// refuses with NO hold (as today); drain/gate RELEASE the hold and end
+// reverted_clean (self-recovery: the lock is released too, nothing was
+// installed) — a benign blocker must not leave the desk held.
 
 func shrinkPlanner(r *rig) {
 	r.w.cfg.Budgets.Poll = 10 * time.Millisecond
@@ -73,9 +74,9 @@ func TestPreflightPlannerWaitExpiryRefusesNoHold(t *testing.T) {
 }
 
 // Drain: the planner read appears AFTER the hold — expiry must RELEASE the
-// hold and refuse (nothing installed; the desk must not stay held on a benign
-// blocker).
-func TestDrainPlannerWaitExpiryReleasesHoldAndRefuses(t *testing.T) {
+// hold and end reverted_clean (nothing installed; the desk must not stay held
+// on a benign blocker).
+func TestDrainPlannerWaitExpiryReleasesHoldAndRevertsClean(t *testing.T) {
 	r := newRig(t)
 	shrinkPlanner(r)
 	r.w.crash = func(q string) {
@@ -93,8 +94,8 @@ func TestDrainPlannerWaitExpiryReleasesHoldAndRefuses(t *testing.T) {
 		t.Fatal("drain passed although the AI plan read outlived the planner wait")
 	}
 	j := r.job()
-	if j.State != updaterjob.StateRefused {
-		t.Fatalf("state=%s, want refused (planner-wait expiry releases the hold)", j.State)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("state=%s, want reverted_clean (planner-wait expiry releases the hold)", j.State)
 	}
 	if r.hold().Present {
 		t.Fatal("the hold must be RELEASED on planner-wait expiry — a benign blocker never keeps the desk held")
@@ -111,8 +112,8 @@ func TestDrainPlannerWaitExpiryReleasesHoldAndRefuses(t *testing.T) {
 	}
 }
 
-// Gate: same release-and-refuse semantics at the gate step.
-func TestGatePlannerWaitExpiryReleasesHoldAndRefuses(t *testing.T) {
+// Gate: same release-and-revert semantics at the gate step.
+func TestGatePlannerWaitExpiryReleasesHoldAndRevertsClean(t *testing.T) {
 	r, _ := atDrained(t)
 	shrinkPlanner(r)
 	r.set(func() { r.plannerInFlight = true })
@@ -121,8 +122,8 @@ func TestGatePlannerWaitExpiryReleasesHoldAndRefuses(t *testing.T) {
 		t.Fatal("gate passed although the AI plan read outlived the planner wait")
 	}
 	j := r.job()
-	if j.State != updaterjob.StateRefused {
-		t.Fatalf("state=%s, want refused (planner-wait expiry releases the hold)", j.State)
+	if j.State != updaterjob.StateRevertedClean {
+		t.Fatalf("state=%s, want reverted_clean (planner-wait expiry releases the hold)", j.State)
 	}
 	if r.hold().Present {
 		t.Fatal("the hold must be RELEASED on planner-wait expiry at the gate")
@@ -163,5 +164,32 @@ func TestPlannerWaitPassesWhenTheReadEnds(t *testing.T) {
 	if !r.runCrashing(t) {
 		j := r.job()
 		t.Fatalf("the drain must pass once the planner read ends; state=%s error=%q", j.State, j.Error)
+	}
+}
+
+// TestPreflightReportsThePlannerFirstSoItsGraceApplies — release #22: with a
+// plan read in flight AND the bot not flat (an arm / working order), the
+// planner is the REPORTED blocker, so the planner budget governs the wait —
+// not the shorter flat budget naming the census/ledger leg (10-14 job
+// 30a8bbf6 was refused at 10 min on ledger_exposure while its planner grace
+// was owed).
+func TestPreflightReportsThePlannerFirstSoItsGraceApplies(t *testing.T) {
+	r := newRig(t, func(b *box) { b.plannerInFlight = true; b.flat = false })
+	r.w.cfg.Budgets.Poll = 10 * time.Millisecond
+	r.w.cfg.Budgets.PreflightFlat = 100 * time.Millisecond
+	r.w.cfg.Budgets.PlannerWait = 400 * time.Millisecond
+	watch := watchBlocker(t, r)
+	if r.runCrashing(t) {
+		t.Fatal("preflight passed although the bot was not flat")
+	}
+	j := r.job()
+	if j.State != updaterjob.StateRefused || r.hold().Present {
+		t.Fatalf("state=%s hold=%v, want refused with no hold", j.State, r.hold().Present)
+	}
+	if !strings.Contains(j.Error, "AI plan still running after") {
+		t.Fatalf("while a plan read runs the planner must be the reported blocker and its budget must govern; got error %q", j.Error)
+	}
+	if !watch() {
+		t.Fatal("the live blocker must read the planner's waiting text")
 	}
 }

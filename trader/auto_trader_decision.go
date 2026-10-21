@@ -70,6 +70,14 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 }
 
 // GetStatus gets system status (for API)
+// aiCallCount reads the AI cycle counter under statusMu, for readers that
+// run off the decision loop's goroutine (the watcher, GetStatus).
+func (at *AutoTrader) aiCallCount() int {
+	at.statusMu.Lock()
+	defer at.statusMu.Unlock()
+	return at.callCount
+}
+
 func (at *AutoTrader) GetStatus() map[string]interface{} {
 	aiProvider := "DeepSeek"
 	if at.config.UseQwen {
@@ -79,6 +87,9 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 	at.isRunningMutex.RLock()
 	isRunning := at.isRunning
 	at.isRunningMutex.RUnlock()
+	at.statusMu.Lock()
+	statusCallCount, statusLastReset := at.callCount, at.lastResetTime
+	at.statusMu.Unlock()
 
 	result := map[string]interface{}{
 		"trader_id":       at.id,
@@ -88,14 +99,14 @@ func (at *AutoTrader) GetStatus() map[string]interface{} {
 		"is_running":      isRunning,
 		"start_time":      at.startTime.Format(time.RFC3339),
 		"runtime_minutes": int(time.Since(at.startTime).Minutes()),
-		"call_count":      at.callCount,
+		"call_count":      statusCallCount,
 		"initial_balance": at.initialBalance,
 		"scan_interval":   at.config.ScanInterval.String(),
 		// P2 (ledger-close 2026-08-19): stop_until now reports the REAL owner
 		// pause (auto_trader_pause.go). The legacy at.stopUntil field is dormant
 		// (never assigned) so the unpaused rendering is byte-identical.
 		"stop_until":      pauseStatusString(at),
-		"last_reset_time": at.lastResetTime.Format(time.RFC3339),
+		"last_reset_time": statusLastReset.Format(time.RFC3339),
 		"ai_provider":     aiProvider,
 		// v1 audit §5.6 (E5): the running binary's revision, so a bug report
 		// can be checked against what is actually deployed without a shell.
@@ -175,6 +186,12 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 	}
 
 	totalPnL := totalEquity - at.initialBalance
+	// R22 PNL-TRUTH (RISK-PNL P1-2): every account figure under its OWN name.
+	// equity − initial is the account's P&L since the configured start; it is
+	// unknown (absent) without an initial balance.
+	accountVsInitial := totalPnL
+	totalPnLSource := "equity_minus_initial"
+	var nt8Session *float64
 	totalPnLPct := 0.0
 	if at.initialBalance > 0 {
 		totalPnLPct = (totalPnL / at.initialBalance) * 100
@@ -193,6 +210,11 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		realized, _ := balance["totalRealizedProfit"].(float64)
 		unrealized, _ := balance["totalUnrealizedProfit"].(float64)
 		totalPnL = realized + unrealized
+		// NT8 RESETS RealizedProfitLoss every session: this is the NT8
+		// SESSION figure (10-14: +74.00 = #648 + #651), not a total.
+		sessionPnL := totalPnL
+		nt8Session = &sessionPnL
+		totalPnLSource = "nt8_session"
 		if base := totalEquity - totalPnL; base > 0 {
 			totalPnLPct = (totalPnL / base) * 100
 		} else {
@@ -205,15 +227,18 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		marginUsedPct = (totalMarginUsed / totalEquity) * 100
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		// Core fields
 		"total_equity":      totalEquity,           // Account equity = wallet + unrealized
 		"wallet_balance":    totalWalletBalance,    // Wallet balance (excluding unrealized P&L)
 		"unrealized_profit": totalUnrealizedProfit, // Unrealized P&L (official value from exchange API)
 		"available_balance": availableBalance,      // Available balance
 
-		// P&L statistics
-		"total_pnl":       totalPnL,          // Total P&L = equity - initial
+		// P&L statistics. N6 (release #26): total_pnl is NOT a uniform "total" —
+		// on NT8 it is the broker's SESSION figure (realized+unrealized since the
+		// session reset), on crypto it is equity − initial. The truth is carried
+		// beside it in total_pnl_source; readers must consult it.
+		"total_pnl":       totalPnL,          // NT8: session realized+unrealized; crypto: equity − initial (see total_pnl_source)
 		"total_pnl_pct":   totalPnLPct,       // Total P&L percentage
 		"initial_balance": at.initialBalance, // Initial balance
 		"daily_pnl":       at.dailyPnL,       // Daily P&L
@@ -222,7 +247,19 @@ func (at *AutoTrader) GetAccountInfo() (map[string]interface{}, error) {
 		"position_count":  len(positions),  // Position count
 		"margin_used":     totalMarginUsed, // Margin used
 		"margin_used_pct": marginUsedPct,   // Margin usage rate
-	}, nil
+
+		// R22: what total_pnl HOLDS — "nt8_session" (NT8's session-reset
+		// realized+unrealized) or "equity_minus_initial".
+		"total_pnl_source": totalPnLSource,
+	}
+	if nt8Session != nil {
+		out["nt8_session_pnl"] = *nt8Session // ACCOUNT figure, as NT8 reports it
+	}
+	if at.initialBalance > 0 {
+		out["account_pnl_vs_initial"] = accountVsInitial // ACCOUNT figure: equity − initial_balance
+		out["account_pnl_vs_initial_pct"] = accountVsInitial / at.initialBalance * 100
+	}
+	return out, nil
 }
 
 // GetPositions gets position list (for API)
@@ -509,7 +546,7 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			EntryTime:       nowMs,
 			Leverage:        leverage,
 			Status:          "OPEN",
-			EntryConfidence: confidence, // P2.4 — capture the AI's entry confidence
+			EntryConfidence: &confidence, // P2.4 — the AI's entry confidence (R22: nil on paths without one)
 			CreatedAt:       nowMs,
 			UpdatedAt:       nowMs,
 		}

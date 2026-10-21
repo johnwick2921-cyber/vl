@@ -12,6 +12,7 @@ package ninjatrader
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -35,9 +36,6 @@ const (
 	// reaches WSL2 via mirrored networking). NOT 36973 (NT's ATI port).
 	TCPListenAddr = "127.0.0.1:36974"
 
-	// TCPHeartbeatInterval — server pings every 30s per spec L4408.
-	TCPHeartbeatInterval = 30 * time.Second
-
 	// TCPHeartbeatAckTimeout — server closes the connection after this long
 	// without a heartbeat ack per spec L4415.
 	TCPHeartbeatAckTimeout = 60 * time.Second
@@ -58,6 +56,19 @@ const (
 	acceptLoopPollInterval = 250 * time.Millisecond
 )
 
+// firstHelloTimeout (K1) — in connect-key mode a peer must send a matching
+// hello within this window or the connection closes (a silent peer must not
+// hold the single client slot). A var (not const) so tests can shrink it.
+var firstHelloTimeout = 10 * time.Second
+
+// TCPHeartbeatInterval (GATE 3) — server pings every 30s per spec L4408. A var
+// (not const) so the "no heartbeat before auth" pin can shrink it.
+var TCPHeartbeatInterval = 30 * time.Second
+
+// connKeyRefusedLogInterval (U21) — the "connect_key refused" warn is rate-
+// limited to once per peer per minute. A var (not const) so tests can shrink it.
+var connKeyRefusedLogInterval = time.Minute
+
 // TCPServer is the Go-side endpoint of the Plan 1.5 TCP bridge. It owns the
 // listener, exactly one connected client at a time, the pending-signal queue
 // flushed on (re)connect, and the inbound fill channel that TCPTrader reads.
@@ -71,6 +82,10 @@ type TCPServer struct {
 	// bumps these; a 60s reporter line answers "feed or math" in one glance.
 	framesTotal     atomic.Int64
 	lastFrameUnixMs atomic.Int64
+
+	// ntConnectKeyRefused (W-FRIEND-HOSTED S4) — hellos refused for a missing
+	// or wrong connect key. 0 when no key is required.
+	ntConnectKeyRefused atomic.Int64
 	// T8 (2026-08-27) — bar_update frame-log sampler (INFO spam ate the
 	// journald cap in <1 day; the frame is DEBUG-sampled 1-in-N now).
 	frameLogN atomic.Int64
@@ -85,6 +100,11 @@ type TCPServer struct {
 	// maint (W-ONE-BUTTON M2 site 7): the hold source, what each connection was
 	// told, and the per-connection record (hello epoch + maintenance_ack).
 	maint maintenanceWire
+
+	// acceptClock is a test-only seam for the accept instant (DEADMAN-ACCEPT-NS:
+	// a test states its own so a snapshot received in the SAME millisecond but
+	// BEFORE the accept is deterministic). nil = time.Now in production.
+	acceptClock func() time.Time
 
 	// E7 capability handshake (2026-08-30): the far-side AddOn's build id,
 	// reported on every heartbeat. Empty until the first heartbeat carries it.
@@ -102,6 +122,12 @@ type TCPServer struct {
 	// per snapshot). Optional so the provider package keeps no store import and
 	// the parse path stays testable without a database.
 	orderSnapCB func(OrderSnapshotPayload)
+
+	// accountsCB is the optional persistence hook for the accounts_list frame
+	// (F35 — the store writes the last account list so the installation gate
+	// can vouch for SIM accounts after a restart with NT8 closed). Optional for
+	// the same reason as orderSnapCB.
+	accountsCB func([]AccountInfo)
 
 	// FIX-DOUBLE-ENTRY (CTO ruling, 2026-09-26) — reconnect-relative broker
 	// truth for attempted entry frames (see attempted_guard.go). Never cleared
@@ -143,6 +169,12 @@ type TCPServer struct {
 	// first frame; consumers DEFAULT-ALLOW on empty (never false-halt at startup).
 	feedMu     sync.RWMutex
 	feedStatus string
+	// feedMode is the broker market-data mode from the feed_status frame
+	// ("realtime" | "delayed" | ""). P0 feed freshness: an explicit "delayed" is
+	// DELAYED DATA (actionable: switch the NT8 connection to realtime), NOT
+	// inferred stale. Empty until the first frame that carries a mode; a legacy
+	// AddOn that omits it leaves it empty.
+	feedMode string
 	// lastBarNano is the wall-clock (UnixNano) of the most recent LIVE bar_update.
 	// The feed_status frame is edge-triggered (sent only on CHANGE), so a momentary
 	// flap can latch a stale "Disconnected" that never self-heals. A recent
@@ -239,11 +271,22 @@ type TCPServer struct {
 	instrSubs    map[string]chan InstrumentInfoPayload
 	orderUpdSubs map[string]chan OrderUpdatePayload
 
-	// Connection state — single concurrent client (spec L4359).
+	// Connection state — single concurrent client (spec L4359). In connect-key
+	// mode, conn is published ONLY after a matching hello (GATE 3 root fix): a
+	// pre-auth dial sits in pendingConn and is never visible to any writer or to
+	// IsConnected(). Without a key, conn is published at accept as always.
 	connMu        sync.Mutex
 	conn          net.Conn
+	pendingConn   net.Conn // connect-key mode only: the unauthenticated dial
 	lastAckTime   time.Time
 	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
+
+	// U21 — rate-limit the "connect_key refused" warn to once per peer per
+	// minute (a wrong-key AddOn reconnecting every 5 s must not flood the
+	// journal). connKeyRefusedLogAt keys on the peer HOST (not host:port,
+	// which changes every reconnect).
+	connKeyRefusedLogMu sync.Mutex
+	connKeyRefusedLogAt map[string]time.Time
 
 	// writeMu serializes all writes to a connected client's net.Conn.
 	// Both heartbeatLoop and readLoop (handling client heartbeats) write
@@ -606,9 +649,7 @@ func (s *TCPServer) UnsubscribeBarsHistoryFor(requestID string) {
 // over [from, to). Immediate command: errors if no NT client is connected, so
 // the importer can state `unavailable` instead of hanging (three-state honesty).
 func (s *TCPServer) SendBarsHistoryRequest(payload BarsHistoryRequestPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -700,6 +741,58 @@ func ListenAddr() string {
 		return v
 	}
 	return TCPListenAddr
+}
+
+// ConnectKey returns the connect key a friend bot requires in the hello
+// (NT_CONNECT_KEY env, W-FRIEND-HOSTED S4). Empty = no key required: the
+// owner's box behaves exactly as today.
+func ConnectKey() string {
+	return strings.TrimSpace(os.Getenv("NT_CONNECT_KEY"))
+}
+
+// ConnectKeyRefused returns the count of hellos refused for a missing or wrong
+// connect key (W-FRIEND-HOSTED S4). 0 when no key is required.
+func (s *TCPServer) ConnectKeyRefused() int64 { return s.ntConnectKeyRefused.Load() }
+
+// connKeyPeerHost returns the host part of the peer's address — the identity
+// U21 rate-limits on. A reconnect reuses the host with a fresh source port, so
+// keying on host:port would never rate-limit; keying on host does.
+func connKeyPeerHost(c net.Conn) string {
+	if c == nil || c.RemoteAddr() == nil {
+		return "<unknown>"
+	}
+	if host, _, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
+		return host
+	}
+	return c.RemoteAddr().String()
+}
+
+// logPreAuthRefused (U21/GATE 3) logs a pre-auth refusal WARN at most once per
+// peer (host) per connKeyRefusedLogInterval. Counters are incremented at the
+// call site (e.g. ntConnectKeyRefused); only the WARN is rate-limited here, so
+// a looping keyless peer produces one log line per minute instead of one per
+// 5 s reconnect.
+func (s *TCPServer) logPreAuthRefused(c net.Conn, msg string, args ...any) {
+	host := connKeyPeerHost(c)
+	now := time.Now()
+	s.connKeyRefusedLogMu.Lock()
+	if s.connKeyRefusedLogAt == nil {
+		s.connKeyRefusedLogAt = make(map[string]time.Time)
+	}
+	if last, ok := s.connKeyRefusedLogAt[host]; ok && now.Sub(last) < connKeyRefusedLogInterval {
+		s.connKeyRefusedLogMu.Unlock()
+		return
+	}
+	// Prune stale peers so the map stays bounded.
+	for h, last := range s.connKeyRefusedLogAt {
+		if now.Sub(last) >= connKeyRefusedLogInterval {
+			delete(s.connKeyRefusedLogAt, h)
+		}
+	}
+	s.connKeyRefusedLogAt[host] = now
+	s.connKeyRefusedLogMu.Unlock()
+	all := append([]any{"addr", c.RemoteAddr()}, args...)
+	s.logger.Warn(msg, all...)
 }
 
 // NewTCPServer constructs a server bound to ListenAddr(). The listener is
@@ -833,12 +926,25 @@ func (s *TCPServer) CurrentAccount() *string {
 // and optionally sets the current account.
 func (s *TCPServer) SetAccountsList(accounts []AccountInfo, current string) {
 	s.accountsListMu.Lock()
-	defer s.accountsListMu.Unlock()
 	// Defensive copy of the slice
 	s.accountsList = make([]AccountInfo, len(accounts))
 	copy(s.accountsList, accounts)
 	s.currentAccount = current
+	snapshot := make([]AccountInfo, len(s.accountsList))
+	copy(snapshot, s.accountsList)
+	s.accountsListMu.Unlock()
+	// F35 — persist the last list (nil hook = no store wired, e.g. tests).
+	// Invoked OUTSIDE the lock: the hook does a DB write and must never hold
+	// the wire's account-list lock while it runs.
+	if cb := s.accountsCB; cb != nil {
+		cb(snapshot)
+	}
 }
+
+// SetAccountsSink installs the accounts_list persistence hook. Called once at
+// wiring time; nil disables persistence (a store failure must never cost the
+// wire its account list).
+func (s *TCPServer) SetAccountsSink(fn func([]AccountInfo)) { s.accountsCB = fn }
 
 // SetBarsSubscribe overrides the auto-subscribe parameters sent on each
 // (re)connect. Stage 3 will call this with the active strategy's
@@ -1007,9 +1113,7 @@ func (s *TCPServer) SubscribeBarsSymbol(symbol string) error {
 	s.AddBarsSubscribeSymbols(symbol) // idempotent (dedup)
 	s.setSubState(symbol, "pending", "", "")
 
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("tcp_server: subscribe %s: not connected (registered; will subscribe on reconnect)", symbol)
 	}
@@ -1020,6 +1124,7 @@ func (s *TCPServer) SubscribeBarsSymbol(symbol string) error {
 	if err != nil {
 		return fmt.Errorf("tcp_server: send bars_subscribe %s: %w", symbol, err)
 	}
+	s.barCache.NoteReconnect(time.Now()) // W26: a subscribe rebuilds the AddOn's BarsRequests
 	s.logger.Info("tcp_server: sent runtime bars_subscribe", "symbol", symbol,
 		"timeframes", payload.Timeframes, "bars_back", payload.BarsBack)
 	return nil
@@ -1093,9 +1198,7 @@ func (s *TCPServer) UnsubscribeBarsSymbol(symbol string) error {
 	s.barCache.PurgeSymbol(symbol)
 	s.setSubState(symbol, "unsubscribed", "", "")
 
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("tcp_server: unsubscribe %s: not connected (removed from auto-subscribe list)", symbol)
 	}
@@ -1208,6 +1311,11 @@ func (s *TCPServer) Start(ctx context.Context) error {
 	go s.drainBarIngest(cctx)
 	// U1 3.3 — wire-liveness line every 60s (not wg-tracked: exits with ctx).
 	go s.livenessReporter(cctx)
+	// B11 (L15) — read-idle detector: close a half-open link (no frame while the
+	// CME session is open). wg-tracked so Stop() joins it (the test seams reset
+	// only after Stop).
+	s.wg.Add(1)
+	go s.linkIdleWatcher(cctx)
 	// W-ONE-BUTTON M2 site 7 — push the installation hold (silent when unheld).
 	s.maint.mu.Lock()
 	s.maint.tick, s.maint.resend = maintenanceTick, maintenanceResend
@@ -1307,9 +1415,7 @@ func (s *TCPServer) SendSignal(payload SignalPayload) error {
 // Unlike SendSignal it is NOT queued — a close is an immediate command; if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1325,9 +1431,7 @@ func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
 // closing the position (auto-breakeven). Immediate command like
 // SendClosePosition; errors if no client is connected so the caller can report it.
 func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1343,9 +1447,7 @@ func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
 // resting limit entry and/or its bracket legs. Immediate command.
 // SendPlaceProtectiveStop puts a standalone protective stop on the wire (D5).
 func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1358,9 +1460,7 @@ func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) 
 }
 
 func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1375,9 +1475,7 @@ func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
 // SendModifyBracket (PHASE 2 armed orders) asks the AddOn to modify the live
 // bracket SL/TP in place (the safe Change pattern). Immediate command.
 func (s *TCPServer) SendModifyBracket(payload ModifyBracketPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1393,9 +1491,7 @@ func (s *TCPServer) SendModifyBracket(payload ModifyBracketPayload) error {
 // Like SendClosePosition, this is an immediate command (not queued); if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendAccountSelect(payload AccountSelectPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1427,6 +1523,15 @@ func (s *TCPServer) FeedStatus() string {
 	s.feedMu.RLock()
 	defer s.feedMu.RUnlock()
 	return s.feedStatus
+}
+
+// FeedMode returns the latest broker market-data mode from the feed_status frame
+// ("realtime" | "delayed" | ""). "" = the AddOn has not reported a mode (legacy
+// or not yet received) — callers must treat "" as UNKNOWN, never as realtime.
+func (s *TCPServer) FeedMode() string {
+	s.feedMu.RLock()
+	defer s.feedMu.RUnlock()
+	return s.feedMode
 }
 
 // feedFreshWindow: a live bar_update within this window proves the NT8 feed is
@@ -1465,6 +1570,16 @@ func (s *TCPServer) IsConnected() bool {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	return s.conn != nil
+}
+
+// connectedAuthed returns the live client conn (nil when disconnected). Under
+// the GATE 3 root fix, s.conn is ONLY ever an authenticated peer — a pre-auth
+// dial sits in pendingConn, never in s.conn — so every writer that fetches the
+// conn through here can never reach an unauthenticated peer.
+func (s *TCPServer) connectedAuthed() net.Conn {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	return s.conn
 }
 
 // Addr returns the actual listening address (useful for tests using :0).
@@ -1506,6 +1621,14 @@ func (s *TCPServer) ListenAddrForTest() net.Addr {
 // frame (mirrors the FramePositions receive path). Tests only; production is fed by
 // the C# AddOn's `positions` frames.
 func (s *TCPServer) SeedPositionsForTest(account string, ps []OpenPosition) {
+	s.SeedPositionsForTestAt(account, ps, time.Now())
+}
+
+// SeedPositionsForTestAt is the seamed twin: the receipt instant is passed IN
+// (class 60 / A28), so a test states its own and a snapshot received in the
+// SAME millisecond but BEFORE the accept is deterministically reproducible
+// (DEADMAN-ACCEPT-NS).
+func (s *TCPServer) SeedPositionsForTestAt(account string, ps []OpenPosition, receivedAt time.Time) {
 	s.acctMu.Lock()
 	if s.acctPositions == nil {
 		s.acctPositions = make(map[string][]OpenPosition)
@@ -1514,7 +1637,7 @@ func (s *TCPServer) SeedPositionsForTest(account string, ps []OpenPosition) {
 		s.acctPositionsReceived = make(map[string]time.Time)
 	}
 	s.acctPositions[account] = ps
-	s.acctPositionsReceived[account] = time.Now()
+	s.acctPositionsReceived[account] = receivedAt
 	s.acctMu.Unlock()
 }
 
@@ -1571,8 +1694,32 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 
-		// Single concurrent client (spec L4359). Any second simultaneous
-		// dial is closed immediately.
+		// GATE 3 root fix — in connect-key mode a pre-auth dial is a PENDING conn,
+		// never published as s.conn. Only a matching hello publishes it. Without a
+		// key (owner box) the conn is published at accept exactly as before.
+		if ConnectKey() != "" {
+			s.connMu.Lock()
+			if s.conn != nil {
+				// An AUTHED incumbent is never preempted (spec L4359).
+				s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
+				_ = c.Close()
+				s.connMu.Unlock()
+				continue
+			}
+			// PREEMPTION: a new dial replaces a waiting (unauthed) pending conn so a
+			// looping keyless peer cannot starve the real AddOn.
+			old := s.pendingConn
+			s.pendingConn = c
+			s.connMu.Unlock()
+			if old != nil {
+				_ = old.Close() // unblocks the old pending readLoop; its cleanup is a no-op
+			}
+			s.wg.Add(1)
+			go s.readLoop(ctx, c, true)
+			continue
+		}
+
+		// No key (owner box): publish at accept, byte-identical to today.
 		s.connMu.Lock()
 		if s.conn != nil {
 			s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
@@ -1582,28 +1729,39 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		}
 		s.conn = c
 		s.lastAckTime = time.Now()
+		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
-		s.beginConnectionRecord(c, time.Now()) // W-ONE-BUTTON M2 site 7
-		s.attempted.noteReconnect(time.Now())  // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.beginConnectionRecord(c, s.acceptNow()) // W-ONE-BUTTON M2 site 7
+		s.attempted.noteReconnect(time.Now())     // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.barCache.NoteReconnect(time.Now())      // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)
-		go s.readLoop(ctx, c)
+		go s.readLoop(ctx, c, false)
 		go s.heartbeatLoop(ctx, c)
-		// A3 (G2) — declare the bound-account allowlist BEFORE flushing any queued
-		// signals, so the AddOn's allowlist is established before it can execute one.
-		s.sendAccountAllowlist(c)
-		// W-ONE-BUTTON M2 site 7 — a held installation tells the AddOn BEFORE
-		// the flush (which itself drops queued entries while held).
-		s.pushMaintenance(c, time.Now())
-		// Flush any signals queued during the disconnect window.
-		_ = s.flushPending()
-		// Plan 4.4 Stage 2 — auto-subscribe to bars on every accept so
-		// the C# AddOn starts emitting bars_historical + bar_update
-		// without operator action. Idempotent on the C# side per the
-		// protocol contract (re-subscribing returns immediately).
-		s.sendAutoBarsSubscribe(c)
+		s.sendPostAccept(c)
 	}
+}
+
+// sendPostAccept sends everything the accept path sends once a connection is
+// established: the bound-account allowlist, the maintenance hold (if any), the
+// queued signals, and the auto bars subscription. With a connect key required,
+// this runs only AFTER the hello carried the matching key (readLoop); without
+// a key it runs in the accept loop exactly as before (byte-identical).
+func (s *TCPServer) sendPostAccept(c net.Conn) {
+	// A3 (G2) — declare the bound-account allowlist BEFORE flushing any queued
+	// signals, so the AddOn's allowlist is established before it can execute one.
+	s.sendAccountAllowlist(c)
+	// W-ONE-BUTTON M2 site 7 — a held installation tells the AddOn BEFORE
+	// the flush (which itself drops queued entries while held).
+	s.pushMaintenance(c, time.Now())
+	// Flush any signals queued during the disconnect window.
+	_ = s.flushPending()
+	// Plan 4.4 Stage 2 — auto-subscribe to bars on every accept so
+	// the C# AddOn starts emitting bars_historical + bar_update
+	// without operator action. Idempotent on the C# side per the
+	// protocol contract (re-subscribing returns immediately).
+	s.sendAutoBarsSubscribe(c)
 }
 
 // ── BAR-TRUTH WAVE (2026-08-28) — deep backfill + three-way arbiter ────────
@@ -1717,9 +1875,7 @@ func (s *TCPServer) RequestDeepBarsBackfill(symbol, timeframe string, barsBack i
 		barsBack = 8640 // 6 days of 1m — covers the 08-24+ retention window
 	}
 	s.beginBarTruthCapture(symbol, timeframe)
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("no live NT8 connection")
 	}
@@ -1731,6 +1887,7 @@ func (s *TCPServer) RequestDeepBarsBackfill(symbol, timeframe string, barsBack i
 	if err != nil {
 		return fmt.Errorf("bars_subscribe write: %w", err)
 	}
+	s.barCache.NoteReconnect(time.Now()) // W26: a deep backfill rebuilds the AddOn's BarsRequests
 	s.logger.Info("tcp_server: sent DEEP bars_subscribe (bar-truth arbiter)",
 		"symbol", symbol, "timeframe", timeframe, "bars_back", barsBack)
 	return nil
@@ -1756,6 +1913,7 @@ func (s *TCPServer) sendAutoBarsSubscribe(c net.Conn) {
 				"symbol", payload.Symbol, "timeframes", payload.Timeframes)
 			continue
 		}
+		s.barCache.NoteReconnect(time.Now())             // W26: the accept auto-subscribe rebuilds the AddOn's BarsRequests
 		s.setSubState(payload.Symbol, "pending", "", "") // P5.3 — awaiting the AddOn's ack
 		s.logger.Info("tcp_server: sent bars_subscribe",
 			"symbol", payload.Symbol,
@@ -1917,10 +2075,85 @@ func helloProcessPair(pid int, mvid string) (string, string) {
 	return p, m
 }
 
-func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
+// authenticateKeyHello (GATE 3) runs in connect-key mode on a PENDING conn. It
+// checks the key BEFORE the protocol version, then publishes the conn as s.conn
+// — the auth moment — where the connection record, reconnect note, stale-print
+// arm, hello record, reply, heartbeat, and post-accept sends all happen. It
+// returns false when the connection must close. The key is never stored or
+// logged.
+func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env Envelope) bool {
+	var p HelloPayload
+	if err := json.Unmarshal(env.Payload, &p); err != nil {
+		s.logPreAuthRefused(c, "tcp_server: bad hello payload — closing", "err", err)
+		return false
+	}
+	// ORDER (GATE 3): the key check runs BEFORE the protocol-version check, so a
+	// wrong-key peer never learns our version.
+	if key := ConnectKey(); key != "" {
+		if subtle.ConstantTimeCompare([]byte(p.ConnectKey), []byte(key)) != 1 {
+			s.ntConnectKeyRefused.Add(1)
+			s.logPreAuthRefused(c, "tcp_server: connect_key refused")
+			return false // close: no hello reply, no allowlist, no flush
+		}
+	}
+	if p.ProtocolVersion != ProtocolVersion {
+		s.logger.Error("tcp_server: PROTOCOL VERSION MISMATCH — refusing connection",
+			"peer_version", p.ProtocolVersion, "our_version", ProtocolVersion,
+			"source", p.Source,
+			"action", "redeploy the C# AddOn + Go binary in lockstep (cp → F5 → NT8 restart)")
+		return false
+	}
+
+	// Publish only if this conn is still the pending one (a preempting dial must
+	// not be clobbered by a stale readLoop) and no authed incumbent appeared.
+	s.connMu.Lock()
+	if s.pendingConn != c || s.conn != nil {
+		s.connMu.Unlock()
+		return false
+	}
+	s.conn = c
+	s.pendingConn = nil
+	s.lastAckTime = time.Now()
+	s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // the alive clock starts at auth
+	s.connMu.Unlock()
+
+	// The accept-time bookkeeping, now at the moment of auth (GATE 3).
+	s.beginConnectionRecord(c, s.acceptNow())
+	s.attempted.noteReconnect(time.Now())
+	s.barCache.NoteReconnect(time.Now())
+
+	if p.BuildID != "" {
+		if prev, _ := s.farSideBuild.Load().(string); prev != p.BuildID {
+			s.farSideBuild.Store(p.BuildID)
+		}
+	}
+	p.ConnectKey = "" // never store the key in the record
+	s.recordHello(c, p, time.Now())
+	pid, mvid := helloProcessPair(p.NT8PID, p.AssemblyMVID)
+	s.logger.Info("tcp_server: hello handshake OK",
+		"protocol_version", p.ProtocolVersion, "source", p.Source, "build_id", p.BuildID,
+		"nt8_pid", pid, "assembly_mvid", mvid)
+	s.writeMu.Lock()
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := WriteFrame(c, FrameHello, HelloPayload{ProtocolVersion: ProtocolVersion, Source: "vl-go"})
+	s.writeMu.Unlock()
+	if err != nil {
+		s.logger.Warn("tcp_server: write hello reply", "err", err)
+		return false
+	}
+
+	s.wg.Add(1)
+	go s.heartbeatLoop(ctx, c)
+	s.sendPostAccept(c)
+	return true
+}
+
+func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 	researchWire := newResearchWire()
 	defer s.wg.Done()
-	defer s.closeConn()
+	// m188 B1b: a closure, so connGone sees the post-auth value of pending
+	// (a plain defer captures pending==true and never frees s.conn).
+	defer func() { s.connGone(c, pending) }()
 
 	// Plan 1.5.7 — per-connection ctx-cancel watcher unblocks the blocked
 	// ReadFrame on server shutdown by closing this specific conn. Replaces
@@ -1950,6 +2183,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 	// is refused in the FrameHello case below.
 	helloSeen := false
 	legacyWarned := false
+	if pending {
+		_ = c.SetReadDeadline(time.Now().Add(firstHelloTimeout)) // K1: a silent peer must not hold the client slot
+	}
 
 	for {
 		// No SetReadDeadline — ReadFrame blocks until a frame arrives OR
@@ -1957,14 +2193,14 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 		// by the peer). The watcher provides the shutdown-responsiveness
 		// the old 2s polling deadline used to.
 		env, err := ReadFrame(c)
-		if err == nil {
-			researchWire.observe(env.Type, env.Payload)
-			s.framesTotal.Add(1)
-			s.lastFrameUnixMs.Store(time.Now().UnixMilli())
-		}
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				s.logger.Info("tcp_server: client disconnected")
+				return
+			}
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() && pending {
+				s.logPreAuthRefused(c, "tcp_server: no hello within deadline — closing (connect-key mode)")
 				return
 			}
 			if errors.Is(err, ErrFrameTooLarge) {
@@ -1974,6 +2210,32 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.logger.Warn("tcp_server: read frame error", "err", err)
 			return
 		}
+
+		if pending {
+			// GATE 3 — pre-auth (connect-key mode): only a matching hello is
+			// accepted. Any non-hello frame, malformed hello, wrong key, or
+			// version mismatch closes at once. No per-frame bookkeeping or Info
+			// log runs pre-auth.
+			if env.Type != FrameHello {
+				s.logPreAuthRefused(c, "tcp_server: frame before hello in connect-key mode — closing", "frame", env.Type)
+				return
+			}
+			if !s.authenticateKeyHello(ctx, c, env) {
+				return // closed on refusal/mismatch
+			}
+			researchWire.observe(FrameHello, env.Payload)
+			s.framesTotal.Add(1)
+			// m188 B1: clear the first-hello deadline once authenticated, or the
+			// next ReadFrame times out firstHelloTimeout after accept.
+			_ = c.SetReadDeadline(time.Time{})
+			pending = false
+			helloSeen = true
+			continue
+		}
+
+		researchWire.observe(env.Type, env.Payload)
+		s.framesTotal.Add(1)
+		s.lastFrameUnixMs.Store(time.Now().UnixMilli())
 
 		// T8 (2026-08-27) — per-frame INFO spam (7.5M bar_update lines/day)
 		// consumed the journald 2G cap in <24h, destroying forensics. bar_update
@@ -1989,10 +2251,10 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.logger.Info("tcp_server: received frame", "type", env.Type)
 		}
 
-		// P5.2 — legacy detection: a data frame before any hello means a
-		// pre-P5.2 AddOn. Tolerated (warn once per connection) so the lockstep
-		// deploy window can't kill the feed; an explicit version mismatch is
-		// still refused in the FrameHello case.
+		// P5.2 — legacy detection (no-key mode only): a data frame before any
+		// hello means a pre-P5.2 AddOn. Tolerated (warn once per connection) so
+		// the lockstep deploy window can't kill the feed; an explicit version
+		// mismatch is still refused in the FrameHello case.
 		if !helloSeen && !legacyWarned && env.Type != FrameHello && env.Type != FrameHeartbeat && env.Type != FrameAck {
 			legacyWarned = true
 			s.logger.Warn("tcp_server: data frame before hello — LEGACY (pre-P5.2) AddOn assumed",
@@ -2002,9 +2264,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 
 		switch env.Type {
 		case FrameHello:
-			// P5.2 handshake. Version MISMATCH → refuse the connection loudly
-			// (close; never silently misparse a different protocol generation).
-			// Matching hello → reply with ours so the AddOn can verify us too.
+			// P5.2 handshake (no-key / legacy path). Key-mode auth happens in the
+			// pending block above, before this switch is ever reached. Version
+			// MISMATCH → refuse loudly; matching hello → reply with ours.
 			var p HelloPayload
 			if err := json.Unmarshal(env.Payload, &p); err != nil {
 				s.logger.Warn("tcp_server: bad hello payload", "err", err)
@@ -2018,6 +2280,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				return // closes the connection via the deferred cleanup
 			}
 			helloSeen = true
+			// W26 — the hello precedes the AddOn's first BarsRequest build + the
+			// reloaded-series re-emit; arm the stale-print guard for it.
+			s.barCache.NoteReconnect(time.Now())
 			// F12 — the handshake carries build_id, so the running DLL is
 			// identifiable from the FIRST frame instead of only after a
 			// heartbeat or a snapshot.
@@ -2351,6 +2616,12 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				s.accountsList = make([]AccountInfo, len(p.Accounts))
 				copy(s.accountsList, p.Accounts)
 				s.accountsListMu.Unlock()
+				// F35 — persist the last list (nil hook = no store wired).
+				// p.Accounts is goroutine-local (owned by this readLoop), so the
+				// hook never races the shared accountsList slice.
+				if cb := s.accountsCB; cb != nil {
+					cb(p.Accounts)
+				}
 				s.logger.Info("tcp_server: stored accounts",
 					"count", len(p.Accounts),
 					"accounts", func() []string {
@@ -2458,8 +2729,24 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				continue
 			}
 			s.feedMu.Lock()
+			prev := s.feedStatus
 			s.feedStatus = p.PriceStatus
+			// P0 feed freshness — normalize the broker mode: only the two known
+			// values are evidence; an unsupported or omitted value reads UNKNOWN
+			// ("") and is NEVER fabricated as realtime.
+			switch p.Mode {
+			case "realtime", "delayed":
+				s.feedMode = p.Mode
+			default:
+				s.feedMode = ""
+			}
 			s.feedMu.Unlock()
+			// W26 — NT8's data-feed reconnect recreates the AddOn's BarsRequests
+			// ("feed Connected … recreating BarsRequests"), so the stale re-emit
+			// window opens on the transition to Connected.
+			if prev != "Connected" && p.PriceStatus == "Connected" {
+				s.barCache.NoteReconnect(time.Now())
+			}
 			s.logger.Info("tcp_server: feed status", "price_status", p.PriceStatus)
 
 		case FrameInstrumentInfo:
@@ -2588,9 +2875,7 @@ func (s *TCPServer) flushPendingReportFor(own string) (map[string]bool, error) {
 		return s.dropQueuedWhileHeldFor(own), nil
 	}
 	var heldDropped map[string]bool
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return nil, nil
 	}
@@ -2744,4 +3029,35 @@ func (s *TCPServer) closeConn() {
 	// older AddOn. Fail closed: until the new connection proves itself,
 	// FarSideBuildID() reads "".
 	s.farSideBuild.Store("")
+	// P0 feed freshness — the broker mode is session-scoped: a disconnect
+	// retires the old session's "delayed"/"realtime" evidence. The next
+	// session must re-report its mode; an old client's feed_status cannot
+	// overwrite the new session's state. feedStatus (edge-triggered) is left
+	// for its existing liveness override.
+	s.feedMu.Lock()
+	s.feedMode = ""
+	s.feedMu.Unlock()
+}
+
+// connGone (GATE 3) is the readLoop cleanup. It releases this connection's slot
+// only if the loop still owns it: a preempted pending conn must not clear the
+// pending slot now held by its replacement, and an authed readLoop must not
+// clear a conn that was re-published to a newer connection (the stale-readLoop
+// race).
+func (s *TCPServer) connGone(c net.Conn, pending bool) {
+	if pending {
+		s.connMu.Lock()
+		if s.pendingConn == c {
+			s.pendingConn = nil
+		}
+		s.connMu.Unlock()
+		_ = c.Close()
+		return
+	}
+	s.connMu.Lock()
+	isCurrent := s.conn == c
+	s.connMu.Unlock()
+	if isCurrent {
+		s.closeConn()
+	}
 }

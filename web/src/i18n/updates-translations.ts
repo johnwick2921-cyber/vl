@@ -127,6 +127,71 @@ export const updatesStrings = {
   gateReady: { en: 'Gate ready', zh: '闸门就绪', id: 'Gerbang siap' },
   gateLegs: { en: 'Legs', zh: '检查项', id: 'Pemeriksaan' },
 
+  // W-ADDON-ONE-CLICK — plain-words job statuses (the spec's exact wording).
+  // The server sends a raw step name; the page renders the owner-facing
+  // sentence and falls back to the raw step for an unknown one.
+  addonStatusBuilding: {
+    en: 'Building the NinjaTrader AddOn…',
+    zh: '正在构建 NinjaTrader AddOn…',
+    id: 'Membangun AddOn NinjaTrader…',
+  },
+  addonStatusInstalling: {
+    en: 'Installing the NinjaTrader AddOn…',
+    zh: '正在安装 NinjaTrader AddOn…',
+    id: 'Memasang AddOn NinjaTrader…',
+  },
+  addonStatusRestarting: {
+    en: 'Restarting NinjaTrader…',
+    zh: '正在重启 NinjaTrader…',
+    id: 'Memulai ulang NinjaTrader…',
+  },
+  addonStatusReconnecting: {
+    en: 'Waiting for NinjaTrader to reconnect…',
+    zh: '等待 NinjaTrader 重新连接…',
+    id: 'Menunggu NinjaTrader terhubung kembali…',
+  },
+  addonStatusDone: {
+    en: 'Done — NinjaTrader is running the new AddOn',
+    zh: '完成 — NinjaTrader 正在运行新的 AddOn',
+    id: 'Selesai — NinjaTrader menjalankan AddOn baru',
+  },
+  retryInstall: { en: 'Retry', zh: '重试', id: 'Coba lagi' },
+  retrying: { en: 'Retrying…', zh: '重试中…', id: 'Mencoba lagi…' },
+  retryAccepted: {
+    en: 'Retry accepted',
+    zh: '重试已接受',
+    id: 'Percobaan ulang diterima',
+  },
+  retryBlockerHelp: {
+    en: 'This update is held. Type your VL login password and Retry — nothing to type in a terminal.',
+    zh: '此更新已挂起。输入你的 VL 登录密码并点击重试 — 无需在终端输入任何命令。',
+    id: 'Pembaruan ini tertahan. Ketik kata sandi login VL Anda dan Coba lagi — tidak ada yang perlu diketik di terminal.',
+  },
+
+  // W-ADDON-ONE-CLICK "walk away" result banner — the plan's exact plain words.
+  resultDone: {
+    en: 'Update done — running {tag}',
+    zh: '更新完成 — 正在运行 {tag}',
+    id: 'Pembaruan selesai — menjalankan {tag}',
+  },
+  resultFailed: {
+    en: 'Update could not finish — nothing changed, still running {tag}, trading normal. Reason: {reason}',
+    zh: '更新未完成 — 没有更改，仍在运行 {tag}，交易正常。原因：{reason}',
+    id: 'Pembaruan tidak selesai — tidak ada perubahan, masih menjalankan {tag}, trading normal. Alasan: {reason}',
+  },
+  // fix/update-says-failed: a REFUSED or reverted_clean job is a FAILURE, not
+  // a "still trading normal" rollback — the red banner, the plain words.
+  resultFailedRed: {
+    en: 'Update failed — nothing changed: {reason}',
+    zh: '更新失败 — 没有更改：{reason}',
+    id: 'Pembaruan gagal — tidak ada perubahan: {reason}',
+  },
+  resultRecovery: {
+    en: 'Update needs your attention — the automatic recovery failed. Reason: {reason}',
+    zh: '更新需要你的注意 — 自动恢复失败。原因：{reason}',
+    id: 'Pembaruan perlu perhatian Anda — pemulihan otomatis gagal. Alasan: {reason}',
+  },
+
   // job
   noUpdateJob: {
     en: 'no update job',
@@ -137,6 +202,43 @@ export const updatesStrings = {
   jobState: { en: 'State', zh: '状态', id: 'Status' },
   jobStep: { en: 'Step', zh: '步骤', id: 'Langkah' },
   jobBlocker: { en: 'Blocker', zh: '阻塞原因', id: 'Pemblokir' },
+  // fix/update-says-failed: a gate-blocked (non-terminal) job is WAITING, not
+  // installing — the plain reason + the elapsed time since the blocker landed.
+  waitingFor: {
+    en: 'Waiting: {reason}',
+    zh: '等待：{reason}',
+    id: 'Menunggu: {reason}',
+  },
+  waitingElapsed: {
+    en: '({time} elapsed)',
+    zh: '（已等待 {time}）',
+    id: '({time} berlalu)',
+  },
+  // The sim_accounts gate leg, plain words (the server sends
+  // "sim_accounts: <detail>" — the detail carries the last-seen time once the
+  // account list is persisted, and the old "… not SIM-tradeable" before then).
+  blockerSimAccounts: {
+    en: 'NinjaTrader accounts not confirmed SIM ({detail})',
+    zh: 'NinjaTrader 账户未确认 SIM（{detail}）',
+    id: 'Akun NinjaTrader belum dikonfirmasi SIM ({detail})',
+  },
+  jobError: { en: 'Reason', zh: '原因', id: 'Alasan' },
+  jobRecovery: { en: 'Recovery', zh: '恢复原因', id: 'Pemulihan' },
+  installPending: {
+    en: 'Install pending',
+    zh: '待安装',
+    id: 'Instalasi tertunda',
+  },
+  installPendingFrozen: {
+    en: 'new entries frozen (exits and protection continue)',
+    zh: '新开仓已冻结（平仓与保护继续）',
+    id: 'entri baru dibekukan (keluar dan proteksi tetap jalan)',
+  },
+  installPendingClearsBy: {
+    en: 'clears when the job ends, at the latest',
+    zh: '任务结束时解除，最迟',
+    id: 'lepas saat pekerjaan selesai, paling lambat',
+  },
   receipt: { en: 'Receipt', zh: '回执', id: 'Tanda terima' },
   downloadReceipt: {
     en: 'Download receipt',

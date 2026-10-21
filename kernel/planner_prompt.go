@@ -51,6 +51,10 @@ type PlannerInput struct {
 	MinHoldMin         int
 	Zones              *LevelZoneMap // Uncut presentation snapshot; never used as trading inputs.
 	ResearchSnapshotID string        `json:"-"` // record link, never prompt content
+	// ReadFactID is the planner_read_facts row this read wrote (FIX-READ-FACTS-
+	// PLAN-ID). 0 = no facts row was written; the plan write then leaves the
+	// plan unbound rather than guess. Record link, never prompt content.
+	ReadFactID uint `json:"-"`
 	TradeDate          string
 	Session            string    // NY | ASIA | LONDON
 	Now                time.Time // labelled CT clock line (zero → omitted)
@@ -435,6 +439,11 @@ func BuildPlannerCandleTablesAt(bars1m []market.Kline, asked1m int, now time.Tim
 	// D1 (BARS HORIZON 2026-09-09) — the block declares the tape it is built
 	// from BEFORE any table, because the prompt disclosed its depth nowhere.
 	b.WriteString(candleTapeLine(HorizonOf(bars1m, "1m", asked1m, now)) + "\n")
+	// Anchor disclosure: the 4h table is 17:00 CT session-anchored (the SAME
+	// series the mentor's HTF gate + SWING4H 4h EMA34 read); 15m/1h are
+	// epoch-floored, daily = session-day. A 4h candle here and the mentor's 4h
+	// candle are the same bar.
+	b.WriteString("## anchors: 15m/1h epoch-floored · 4h = 17:00 CT session-anchored (same as the mentor's HTF/swing 4h) · daily = session-day\n")
 	b.WriteString(candleMarkerLegend + "\n\n")
 
 	// TAIL-TRIM FIRST, THEN MEASURE. The trim used to run after coverage was
@@ -469,7 +478,14 @@ func BuildPlannerCandleTablesAt(bars1m []market.Kline, asked1m int, now time.Tim
 	}
 	agg("15m", 15*60*1000, 12)
 	agg("1h", 60*60*1000, 12)
-	agg("4h", 240*60*1000, 8)
+	// 4h is the ONLY table on the 17:00 CT anchor — the same bucket function
+	// the mentor's HTF gate + SWING4H read (Aggregate4HCT → FourHBucketStart).
+	const fourH = int64(4 * time.Hour / time.Millisecond)
+	ct4hKey := func(ot int64) int64 { return FourHBucketStart(ot, CTLocation()) }
+	rows4h := tail(Aggregate4HCT(bars1m), 8)
+	render("4h", "4h", rows4h,
+		aggregateCoverageBy(bars1m, rows4h, fourH, ct4hKey, now),
+		absentAggregateRowsBy(rows4h, fourH, ct4hKey), 8)
 
 	daily := tail(DailySessionBars(bars1m), 8)
 	render("daily session candles", "session-day", daily, sessionCoverage(bars1m, daily, now), absentSessionRows(daily), 8)
@@ -698,9 +714,8 @@ func BuildPlannerPrompt(in PlannerInput) string {
 		}
 		b.WriteString("\n")
 	}
-	if strings.TrimSpace(in.OwnerNote) != "" {
-		b.WriteString("## Owner note\n  " + in.OwnerNote + "\n\n")
-	}
+	// R22 R4: OwnerNote = the owner's Studio custom prompt (owner_guidance.go).
+	b.WriteString(OwnerGuidanceBlock(in.OwnerNote))
 	if strings.TrimSpace(in.PriorPlanKiller) != "" {
 		b.WriteString("## Prior plan invalidation (MANDATORY context)\n  " + in.PriorPlanKiller + "\n")
 		if FlipToDirection(in.PriorPlanKiller) != "" {
@@ -770,7 +785,7 @@ func BuildPlannerPrompt(in PlannerInput) string {
 	// 11:30–13:30 ET lull BESIDE the machine's 12:00–13:30 CT gate — two
 	// different windows in one sentence, in two clocks, one of them enforced.
 	// The machine's is the only one, stated in CT, rendered from its resolver.
-	b.WriteString(fmt.Sprintf("  - lunch %s–%s CT: no new entries (refused on the AI-decision path only — no band predicate exists in the arm path, so with plan_mode=strict nothing refuses an entry here)\n", lunchStartCT, lunchEndCT))
+	b.WriteString(fmt.Sprintf("  - lunch %s–%s CT: no new entries (enforced on BOTH paths — the arm path refuses new placements here and cancels resting arms, so with plan_mode=strict the lunch band still holds)\n", lunchStartCT, lunchEndCT))
 	b.WriteString("  - Tier-1 news → stand aside until a fresh post-news swing prints\n\n")
 
 	// A4 — killzone weighting (advisory, not a gate).
@@ -859,6 +874,8 @@ func plannerOutputContractFor(maxLevels, maxScenarios int, hasHTFZones, has1HSDZ
 		"flip side must oppose the bias: short bias flips long on a close ABOVE; long bias flips short on a close BELOW (a short bias with flip.side below is REJECTED — it could never flip on a rally). " +
 		// W-FLIP-LINE-SIDE-OF-PRICE (2026-09-17): the side is judged against PRICE too.
 		"a flip line must sit on the far side of price at authoring: side above → the line is ABOVE the current price, side below → BELOW it (a line already beyond price on its own side can never be touched from the near side, so it never fires — REJECTED at write); the death line obeys the same law (a death line already crossed is a plan born dead). " +
+		// R22 F3: the plan's own flip line judges its armed entries.
+		FlipCoherenceSentence +
 		"Every scenario's confirm{} is MACHINE-EVALUATED the same way: rule + ref_price + side, and ref_price MUST equal a number written in that scenario's trigger/invalid prose. " +
 		// ENTRY-MECHANICS E1/E2 (2026-08-30) — the per-condition entry law.
 		// 15m confirms are DEAD (schema reject confirm_rule_15m_removed).
@@ -875,7 +892,10 @@ func plannerOutputContractFor(maxLevels, maxScenarios int, hasHTFZones, has1HSDZ
 		// Autopsy-response wave: armable A/B setups SHOULD carry arm{} (the
 		// resting order is the fast path); sweep_reclaim retraces chain via
 		// wait_confirm; fantasy targets (planned R > 6) are WARN-flagged.
-		"ARM SPLIT vs ARM SINGLE (class 38 — the validator refuses every other shape): legs[] are the sweep_reclaim SPLIT contract and nothing else — EXACTLY 2 legs, confirm=touch at the sweep ref, leg 1 rests there (wait_confirm false) and leg 2 chains (wait_confirm true) on confirm2 = 1m_mss or 1x5m_close with leg 2's rule EQUAL to confirm2.rule, and the top-level entry/stop/target mirror leg 1. " + ep.armSingleClause() +
+		"ARM SPLIT vs ARM SINGLE (class 38 — the validator refuses every other shape): legs[] are the sweep_reclaim SPLIT contract and nothing else — EXACTLY 2 legs, confirm=touch at the sweep ref, leg 1 is authored there with wait_confirm false (the SWEEP hold below still sends NO leg until the whole confirm — touch AND confirm2 — is machine-MET, so leg 1 then rests as a retest limit at the ref) and leg 2 chains (wait_confirm true) on confirm2 = 1m_mss or 1x5m_close with leg 2's rule EQUAL to confirm2.rule, and the top-level entry/stop/target mirror leg 1. " + ep.armSingleClause() +
+		// R22 F1 (owner R4): the machine holds every sweep-setup leg until its trigger.
+		SweepSetupHoldSentence +
+		TouchSetupHoldSentence + // F-1 (planner-touch-fills): level plays wait for a reaction AT the level
 		"ARMED ORDERS (the resting order IS the fast path — prefer it over a 2-minute debate at the touch). " + entryPolicyPlannedOrderFrag(contractOn) + "" +
 		ep.armsFollowBias() + // W3 (h): the ENTRY POLICY sentence + ARMS FOLLOW THE BIAS
 		"WHICH CONDITIONS CAN BE ARMED — " + ArmableConditionsLineFor(ResolvedConditionStatuses(ep.ConditionStatus, ep.SessionConditionStatus, ShadowConditionsEnv()), ep.Policy) + " " +
@@ -986,7 +1006,11 @@ func rejectComposedStopFrag(on bool) string {
 	if !on {
 		return ""
 	}
-	return "REJECT fades are the exception to authoring the stop yourself: the executor composes their stop from the FROZEN ZONE (zone edge \u2212 buffer), never your literal \u2014 that composed stop must still clear the same floor. "
+	return "REJECT fades are the exception to authoring the stop yourself: the executor composes their stop from the FROZEN ZONE (zone edge \u2212 buffer), never your literal \u2014 that composed stop must still clear the same floor. " +
+		// R22 P2 (MATH-PLANNER §3 F1): the TARGET is composed too (rulebook §Target
+		// and admission) — the prompt said only the stop, so 10 of 11 planned_order
+		// reject arms since 10-12 were authored on a target the gate never judges.
+		"A planned_order REJECT's TARGET is composed too: the near edge of the FIRST complete zone strictly beyond the entry zone in the profit direction (never your literal, never skipped for a better ratio), and R:R is judged on that composed stop and target. When that next zone sits closer than the floor \u00d7 the composed risk, the arm is refused \u2014 use a market_in_zone arm there (judged at your own target) or choose a level with room to its next zone. "
 }
 
 func plannerContractSchemaFrag(on bool) string {

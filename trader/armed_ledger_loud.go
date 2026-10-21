@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"errors"
 	"fmt"
 	"sync"
 
@@ -21,19 +22,29 @@ import (
 // place a second order on top (the class-81 stacking shape).
 
 type armedLedgerFailKey struct {
-	plan, scenario string
-	leg            int
+	trader, plan, scenario string
+	leg                    int
 }
 
 var armedLedgerFailures sync.Map // armedLedgerFailKey → struct{}
 
 func armedLedgerFailKeyOf(r store.ArmedOrderDB) armedLedgerFailKey {
-	return armedLedgerFailKey{r.PlanID, r.Scenario, r.LegIndex}
+	// REL18-A #6: the latch is trader-scoped — under the trader-keyed plan_id,
+	// B's write must never clear (or set) A's fail-closed latch.
+	return armedLedgerFailKey{r.TraderID, r.PlanID, r.Scenario, r.LegIndex}
 }
 
 func (at *AutoTrader) armLifecycleWrite(op string, r store.ArmedOrderDB, err error) {
 	if err == nil {
 		armedLedgerFailures.Delete(armedLedgerFailKeyOf(r))
+		return
+	}
+	// Release #22 F-1: a cancel request refused because the row is already
+	// terminal is a REFUSAL, not a failed write — the ledger already matches
+	// the broker's settled outcome, so the slot must not fail closed for it.
+	// The store logged it (once per row outcome) and counted it (gate-block
+	// request_cancel_terminal + arm:request_cancel_terminal_refused).
+	if errors.Is(err, store.ErrArmCancelTerminal) {
 		return
 	}
 	telemetry.RecordError(at.id, "armed_ledger_write_failed",

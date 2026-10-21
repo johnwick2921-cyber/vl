@@ -250,6 +250,39 @@ type Host interface {
 	BuildInfo(binary string) (revision, modified string, err error)
 	// ExeOf is /proc/<pid>/exe.
 	ExeOf(pid int) (string, error)
+	// AddonRestore MOVES a placed AddOn's backup back into bin/Custom — never
+	// a delete (THE ONE RULE). docsDir is the NT8 Documents dir (bin/Custom
+	// under it); backupDir is the directory addonbuild.Place returned ("" =
+	// nothing was backed up, nothing to restore).
+	AddonRestore(docsDir, backupDir string) error
+
+	// FriendFlat asks a friend bot (baseURL, the box's tunnel IP + the
+	// friend's web port) whether it is flat: GET /api/health answers 200 AND
+	// GET /api/positions reports no open positions. A probe error is NOT flat
+	// (fail-closed — the worker never restarts a friend it cannot prove is
+	// flat). W-FRIEND-HOSTED Segment 5.
+	//
+	// R11 (CTO 2026-10-18): the view also carries the friend's TRADERS count
+	// so the worker can restart a zero-trader instance (safe — it manages no
+	// position) even though F1 makes it read flat:false forever.
+	FriendFlat(ctx context.Context, baseURL string) (FriendFlatView, error)
+	// FriendRestart restarts a friend's user unit (systemctl --user restart
+	// vl-friend@<name>). W-FRIEND-HOSTED Segment 5.
+	FriendRestart(ctx context.Context, unit string) error
+	// FriendBootOK scans the friend unit's journal since `since` for the
+	// BOOT INTEGRITY OK line naming expectedSHA (and no REFUSED line after
+	// it). ok is true only for the OK line; rev is what the line named ("").
+	// W-FRIEND-HOSTED Segment 5.
+	FriendBootOK(ctx context.Context, unit string, since time.Time, expectedSHA string) (ok bool, rev string, err error)
+}
+
+// FriendFlatView is what GET /api/friend/flat reports, plus whether the reply
+// carried the traders count. R11: an OLDER friend bot omits "traders" — then
+// HasTraders is false and the worker falls back to flat alone.
+type FriendFlatView struct {
+	Flat       bool // flat as the friend reported it
+	Traders    int  // the friend's trader count
+	HasTraders bool // the reply carried a "traders" field (false = older bot)
 }
 
 // Deps is everything New needs besides the Config.
@@ -258,6 +291,11 @@ type Deps struct {
 	App  AppReader
 	Rel  Reverifier
 	Host Host
+	// Notify sends one advisory owner message (Telegram in production). It is
+	// OPTIONAL and never blocks the worker: nil logs the message instead. The
+	// authoritative record is the job file and its receipts, never this send.
+	// W-FRIEND-HOSTED Segment 5.
+	Notify func(text string)
 }
 
 // ErrNotWired: a production dependency whose adapter has not landed yet. serve

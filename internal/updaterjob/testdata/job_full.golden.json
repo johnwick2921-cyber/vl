@@ -7,7 +7,7 @@
   "phase": "done",
   "attempts": 0,
   "created_at": "2026-09-24T18:02:11.123456789Z",
-  "updated_at": "2026-09-24T18:06:35.123456789Z",
+  "updated_at": "2026-09-24T18:05:43.123456789Z",
   "blocker": "attended recovery: vl-updater recovery 0123456789abcdef0123456789abcdef",
   "error": "watch: no boot line for 89abcdef0123 within 1m30s",
   "transitions": [
@@ -114,34 +114,82 @@
       "receipts": 8
     },
     {
+      "state": "addon_built",
+      "phase": "started",
+      "at": "2026-09-24T18:02:28.123456789Z",
+      "receipts": 8
+    },
+    {
+      "state": "addon_built",
+      "phase": "done",
+      "at": "2026-09-24T18:02:29.123456789Z",
+      "receipts": 9
+    },
+    {
+      "state": "addon_placed",
+      "phase": "started",
+      "at": "2026-09-24T18:02:30.123456789Z",
+      "receipts": 9
+    },
+    {
+      "state": "addon_placed",
+      "phase": "done",
+      "at": "2026-09-24T18:02:31.123456789Z",
+      "receipts": 10
+    },
+    {
+      "state": "nt8_restarted",
+      "phase": "started",
+      "at": "2026-09-24T18:02:32.123456789Z",
+      "receipts": 10
+    },
+    {
+      "state": "nt8_restarted",
+      "phase": "done",
+      "at": "2026-09-24T18:02:33.123456789Z",
+      "receipts": 11
+    },
+    {
+      "state": "addon_reconnected",
+      "phase": "started",
+      "at": "2026-09-24T18:02:34.123456789Z",
+      "receipts": 11
+    },
+    {
+      "state": "addon_reconnected",
+      "phase": "done",
+      "at": "2026-09-24T18:02:35.123456789Z",
+      "receipts": 12
+    },
+    {
       "state": "activated",
       "phase": "started",
-      "at": "2026-09-24T18:03:28.123456789Z",
-      "receipts": 9
+      "at": "2026-09-24T18:02:36.123456789Z",
+      "receipts": 12
     },
     {
       "state": "activated",
       "phase": "done",
-      "at": "2026-09-24T18:03:29.123456789Z",
-      "receipts": 10
+      "at": "2026-09-24T18:02:37.123456789Z",
+      "receipts": 13
     },
     {
       "state": "booted",
       "phase": "started",
-      "at": "2026-09-24T18:03:30.123456789Z",
-      "receipts": 10
+      "at": "2026-09-24T18:02:38.123456789Z",
+      "receipts": 13
     },
     {
       "state": "rolling_back",
       "phase": "started",
-      "at": "2026-09-24T18:05:00.123456789Z",
-      "receipts": 11
+      "at": "2026-09-24T18:04:08.123456789Z",
+      "receipts": 14
     },
     {
       "state": "recovery_needed",
       "phase": "done",
-      "at": "2026-09-24T18:06:35.123456789Z",
-      "receipts": 13
+      "at": "2026-09-24T18:05:43.123456789Z",
+      "receipts": 16
     }
   ],
   "receipts": [
@@ -194,31 +242,46 @@
       "ok": true
     },
     {
-      "step": "resume",
-      "started_at": "2026-09-24T18:03:27.123456789Z",
-      "ended_at": "2026-09-24T18:03:27.123456789Z",
-      "ok": true,
-      "evidence": {
-        "acked_build_id": "2026-09-24-m4"
-      }
+      "step": "addon_build",
+      "started_at": "2026-09-24T18:02:28.123456789Z",
+      "ended_at": "2026-09-24T18:02:29.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "addon_place",
+      "started_at": "2026-09-24T18:02:30.123456789Z",
+      "ended_at": "2026-09-24T18:02:31.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "nt8_restart",
+      "started_at": "2026-09-24T18:02:32.123456789Z",
+      "ended_at": "2026-09-24T18:02:33.123456789Z",
+      "ok": true
+    },
+    {
+      "step": "addon_reconnect",
+      "started_at": "2026-09-24T18:02:34.123456789Z",
+      "ended_at": "2026-09-24T18:02:35.123456789Z",
+      "ok": true
     },
     {
       "step": "activate",
-      "started_at": "2026-09-24T18:03:28.123456789Z",
-      "ended_at": "2026-09-24T18:03:29.123456789Z",
+      "started_at": "2026-09-24T18:02:36.123456789Z",
+      "ended_at": "2026-09-24T18:02:37.123456789Z",
       "ok": true
     },
     {
       "step": "watch",
-      "started_at": "2026-09-24T18:03:30.123456789Z",
-      "ended_at": "2026-09-24T18:05:00.123456789Z",
+      "started_at": "2026-09-24T18:02:38.123456789Z",
+      "ended_at": "2026-09-24T18:04:08.123456789Z",
       "ok": false,
       "err": "no boot line for 0123456789ab within 1m30s"
     },
     {
       "step": "rollback",
-      "started_at": "2026-09-24T18:05:00.123456789Z",
-      "ended_at": "2026-09-24T18:05:05.123456789Z",
+      "started_at": "2026-09-24T18:04:08.123456789Z",
+      "ended_at": "2026-09-24T18:04:13.123456789Z",
       "ok": true,
       "evidence": {
         "restored": "binary,dist,release"
@@ -226,8 +289,8 @@
     },
     {
       "step": "watch",
-      "started_at": "2026-09-24T18:05:05.123456789Z",
-      "ended_at": "2026-09-24T18:06:35.123456789Z",
+      "started_at": "2026-09-24T18:04:13.123456789Z",
+      "ended_at": "2026-09-24T18:05:43.123456789Z",
       "ok": false,
       "err": "no boot line for 89abcdef0123 within 1m30s"
     }
@@ -269,10 +332,10 @@
   },
   "log_path": "/home/u/vl/data/vl_2026-09-24.log",
   "log_offset": 81920,
-  "watch_since": "2026-09-24T18:03:28.123456789Z",
+  "watch_since": "2026-09-24T18:02:36.123456789Z",
   "rollback_log_path": "/home/u/vl/data/vl_2026-09-24.log",
   "rollback_log_offset": 90112,
-  "rollback_watch_since": "2026-09-24T18:05:00.123456789Z",
+  "rollback_watch_since": "2026-09-24T18:04:08.123456789Z",
   "nt8": {
     "decision": "updated",
     "reason": "ninjascript/*.cs changed",
@@ -281,12 +344,21 @@
     "acked_at": "2026-09-24T18:02:30Z",
     "ack_accept_seq": 7,
     "cs_unchanged": false,
+    "old_install_build_id": "2026-09-23-m21",
     "absent": true,
     "f5_owed": true
   },
+  "addon": {
+    "dll_path": "/tmp/vl-addon-build/0123456789abcdef0123456789abcdef/ps1-out/VL.AddOn.dll",
+    "sha256": "fedcba9876543210fedcba9876543210fedcba98",
+    "built_by": "roslyn-ps1",
+    "migration_pending": true,
+    "backup_dir": "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak",
+    "restarted": true,
+    "old_accept_seq": 7
+  },
   "drain_path": "nt8_absent",
   "link_down_since": "2026-09-24T18:00:00.000000000Z",
-  "resumed_at": "2026-09-24T18:03:27.123456789Z",
-  "last_good_receipt": 11,
+  "last_good_receipt": 14,
   "recovery_reason": "rollback watch RED: the old build did not prove itself"
 }

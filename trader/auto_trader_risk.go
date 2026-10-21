@@ -50,8 +50,16 @@ func (at *AutoTrader) startDrawdownMonitor() {
 // cycles themselves, and skip-while-open silenced them while holding — so the
 // decision cycle could never report the outage that mattered most.
 func (at *AutoTrader) monitorTick(now time.Time) {
+	// Release #22 (EXECUTION F-3): the dead-man watchdog is sampled on THIS
+	// per-trader 60 s beat too. runCycle can block for minutes inside a
+	// planner call (402.5 s on 10-14) and a trader holding a position may not
+	// cycle at all; the link check must not depend on either.
+	wd := at.driveDeadManWatchdog()
 	at.checkFeedDown(now)
 	at.checkPositionDrawdown()
+	// Release #25 PK-2 — exit a planner position whose own thesis died
+	// (day_plan.planner_exit_on_thesis_death; OFF → returns at once).
+	at.maybeExitOnThesisDeath(now)
 	// TRADE EXCURSION LOGGING (wave 1A, 2026-09-02) — E2. This tick is the
 	// ~1m cadence the excursion path is recomputed on while a position lives.
 	// The whole path is rebuilt from stored bars each time, so a missed tick,
@@ -65,11 +73,36 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// day_plan, and a safety check a config flag can silence is not one. This
 	// beat is wall-clock and runs while a position is held — which is exactly
 	// the window position 592 spent naked with nothing looking.
-	at.reconcileProtectionAt(now, "monitor")
+	// The watchdog's reconnect edge just ran the "reconnect" pass on this
+	// same goroutine; a second pass now would read the same pre-placement
+	// book and could place a second stop. One pass per beat.
+	if wd != wdReconnected {
+		at.reconcileProtectionAt(now, "monitor")
+	}
+	// r22 RISK-GATES — the daily-loss gate is evaluated on this wall-clock beat
+	// (mentor or not, day_plan or not): a breach LATCHES here even when no
+	// entry is being attempted, and the mentor's live arms are cancelled. It
+	// runs BEFORE the withdraw so the withdraw sees this beat's latch.
+	at.dailyLossBeatAt(now)
 	// W-EXEC-TRUTH W0 (f) — withdraw resting ENTRIES while a hold asks for it
 	// or a loss limit has tripped. Here, not in the armed pass: that pass does
 	// not run in exactly the windows an update or a halt use.
 	at.withdrawEntriesIfDue(now)
+	// r22 RISK-GATES — then FLATTEN the bot's open positions while the daily
+	// loss latch holds (cancel first, flatten second: a working entry must not
+	// fill after the flat).
+	at.dailyLossFlattenAt(now)
+	// W26 P3-11: the EOD 14:45 flatten also runs on THIS 60 s wall-clock beat.
+	// Before, its only caller was runCycle (the ~2 min cycle), so a session-end
+	// flatten could be up to 2 minutes late. enforceEODFlatAt is idempotent and
+	// gated on day_plan/mentor, so a no-position trader no-ops every beat.
+	at.enforceEODFlat()
+	// MENTOR-NY item 8 (rescan P2-N5): the mentor news cancel/flatten and the
+	// day-stop sweep also run on this wall-clock beat — before, their only
+	// callers were inside mentorEvalOnce, i.e. only on a NEW closed bar, so a
+	// feed outage or an NT8 lag across the 07:30 print skipped the −10 m
+	// cancel/flatten (10-14: FEED DOWN 03:44–07:49 spanned the CPI print).
+	at.mentorSweepsOnBeat()
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:
@@ -154,6 +187,14 @@ func (at *AutoTrader) checkPositionDrawdown() {
 
 		// Check close position condition: profit > 5% and drawdown >= 40%
 		if currentPnLPct > 5.0 && drawdownPct >= 40.0 {
+			// FIX-EMERGENCY-CLOSE-OFF-IN-MENTOR (owner ruling 2026-10-09):
+			// with mentor mode ON, a mentor trade follows ONLY the mentor's
+			// exits — the AI-era drawdown emergency close must not close a
+			// mentor-owned position. Log ONCE per position + a visible counter.
+			if at.mentorEnabled() {
+				at.drawdownMentorBlockedOnce(symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
+				continue
+			}
 			logger.Infof("🚨 Drawdown close position condition triggered: %s %s | Current profit: %.2f%% | Peak profit: %.2f%% | Drawdown: %.2f%%",
 				symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
 

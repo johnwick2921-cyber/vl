@@ -278,14 +278,16 @@ func (s *Server) handlePlanToday(c *gin.Context) {
 	if ok {
 		sessName = sess.Name
 	}
-	night := reg.IsNightMode(now)
-
-	// W15.B — which sessions THIS strategy runs, resolved by the same gate the
-	// bot uses. The card's tabs used to derive this from a hardcoded FE constant,
-	// so switching ASIA on left its tab permanently greyed out.
+	// S2 (release #32): night resolves through the SAME per-strategy resolver the
+	// bot's session gates use (NightModeAt → sessionRunnable), not the
+	// registry-only IsNightMode — which called a strategy "night" while an
+	// explicit sessions[].enable override kept ASIA/LONDON runnable. The card
+	// tabs (W15.B) already resolve runnable sessions per trader; night now agrees.
+	night := reg.IsNightMode(now) // fallback when the trader is unavailable
 	runnable := []string{}
 	if at, err := s.traderManager.GetTrader(traderID); err == nil && at != nil {
 		runnable = at.RunnableSessions()
+		night = at.NightModeAt(now)
 	}
 	activeName := sessName
 	sessName, sess, explicit := resolveRequestedSession(reg, c.Query("session"), sessName, sess)
@@ -930,7 +932,7 @@ func marketRef(symbol string, now time.Time) (lastPrice, dATR float64) {
 			break
 		}
 	}
-	dATR = kernel.DailyRangeProxy(bars, now)
+	dATR = kernel.DailyRangeProxyFor(symbol, bars, now)
 	return lastPrice, dATR
 }
 

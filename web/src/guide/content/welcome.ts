@@ -13,7 +13,7 @@ export const welcome: GuideSection = {
       cards: [
         {
           title: PRODUCT_NAME,
-          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. You hold the knobs.',
+          body: 'One structure-permissioned, level-anchored MNQ SIM trader — advisory-first. The Go engine computes the map; the AI (deepseek-v4-pro) writes one day-plan per session, then decides every cycle against it. In MENTOR MODE (a per-strategy switch — the owner’s mentor trader runs it) the AI places no entries at all: the mentor rules engine places them and the AI plan is advice only (Section 17). You hold the knobs.',
           tag: 'SIM',
         },
         {
@@ -31,19 +31,19 @@ export const welcome: GuideSection = {
       kind: 'code',
       title: 'tap a layer to see its job',
       lines: [
-        'NT8 (Tradovate MNQ bars, Sim101)   ← SIM only, never live',
+        'NT8 (Tradovate MNQ bars, SIM accounts)   ← SIM only, never live',
         '  │ TCP (bars / account / positions / orders)',
         'C# AddOn (NinjaTrader AddOns folder)  ← compile + NT8 restart to change',
         '  │ framed messages (ninjascript/vltrader_tcp_PROTOCOL.md)',
         'Go bot (vl-bin) ─── BarCache + bars table (SQLite data/data.db = "memory")',
         '  ├─ PLANNER: DeepSeek → 1 day-plan per session (advisory JSON)',
-        '  ├─ EXECUTOR: every ~2 min → DeepSeek decision → risk gates → Sim101',
+        '  ├─ EXECUTOR: every ~2 min → DeepSeek decision → risk gates → its bound SIM account',
         '  └─ WATCHER: in-position advisory only (zero order authority)',
       ],
     },
     {
       kind: 'p',
-      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (provider/ninjatrader isAccountTradeable).',
+      text: 'Boot truth: the bot refuses to trade unless its revision and prompt goldens pass — `🔐 BOOT INTEGRITY OK — rev … · goldens PASS` (kernel/boot_integrity.go). The SIM lock is hard: non-SIM accounts are refused at the account-routing layer (trader/ninjatrader/tcp_trader.go isAccountTradeable). Each trader trades its own bound NinjaTrader SIM account (the Account shown on its dashboard), so two traders can run on two different SIM accounts.',
     },
     { kind: 'h', text: 'Canon — the files that ARE the answer' },
     {
@@ -80,7 +80,7 @@ export const welcome: GuideSection = {
     { kind: 'h', text: 'Quick start' },
     {
       kind: 'p',
-      text: 'Three jumps: read the plan card (Section 3) · learn what levels are (Section 4) · understand why it sits out (Section 6 + FAQ "ASIA sat out all night").',
+      text: 'Three jumps: read the plan card (Section 3) · learn what levels are (Section 4) · understand why it sits out (Section 6 + FAQ "Why did the bot sit out all session?").',
     },
   ],
 }

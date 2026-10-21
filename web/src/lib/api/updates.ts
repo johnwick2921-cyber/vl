@@ -57,9 +57,22 @@ export interface MaintenanceStatusView {
   // withdraw is ABSENT (null) when no hold asks for one — an unread ledger
   // carries the lists absent and unread says why (L7).
   withdraw?: MaintenanceWithdrawView | null
+  // release #22: an update job in a pre-hold state (requested → preflight)
+  // freezes NEW entries until it ends or passes the 30-minute job rule.
+  install_pending?: MaintenanceInstallPendingView
 }
 
-// ── GET /api/health (api/server.go:669 handleHealth) — panel A revision ──
+export interface MaintenanceInstallPendingView {
+  pending: boolean
+  job_id?: string
+  state?: string
+  phase?: string
+  created_at?: string
+  clears_by?: string
+  unread?: number
+}
+
+// ── GET /api/health (api/handler_health.go handleHealth) — panel A revision ──
 export interface HealthStatus {
   status?: string
   time?: string
@@ -239,9 +252,16 @@ export interface UpdateJobView {
   state?: string
   step?: string
   blocker?: string
+  // blocker_since anchors the page's "Waiting: … elapsed" — the job's
+  // updated_at at the moment the blocker was last written. Absent when no
+  // blocker is recorded (L7: absent ≠ empty).
+  blocker_since?: string
   timestamps?: Record<string, string>
   receipt_url?: string
   error?: string
+  // UI-GUIDE N-5: the worker's recovery text (stale at start/resume, the
+  // attempts cap) — those set ONLY this, never error.
+  recovery_reason?: string
   status?: number
 }
 
@@ -340,6 +360,29 @@ export const updatesApi = {
     const payload = { release_id: releaseId, password }
     const res = await httpClient.request<{ job_id: string; error?: string }>(
       `${API_BASE}/updates/install-with-password`,
+      { method: 'POST', data: payload, headers: UPDATE_HEADERS, silent: true }
+    )
+    if (res.success && res.data?.job_id) {
+      return { ok: true, job_id: res.data.job_id }
+    }
+    return {
+      ok: false,
+      error: res.data?.error || res.message,
+      status: res.statusCode,
+    }
+  },
+
+  // W-ADDON-ONE-CLICK: a HELD job is retried from the page with the owner's
+  // password (same proof as Update) — never `vl-updater resume` from a
+  // terminal. The password travels ONLY in this request body and is never
+  // echoed. Same refusal shape as install-with-password (429 = lockout).
+  async retry(
+    jobId: string,
+    password: string
+  ): Promise<InstallWithPasswordResult> {
+    const payload = { job_id: jobId, password }
+    const res = await httpClient.request<{ job_id: string; error?: string }>(
+      `${API_BASE}/updates/retry`,
       { method: 'POST', data: payload, headers: UPDATE_HEADERS, silent: true }
     )
     if (res.success && res.data?.job_id) {

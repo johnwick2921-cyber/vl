@@ -11,6 +11,7 @@ import {
 } from './types'
 import { Example } from './components/Example'
 import { KnobCard } from './components/KnobCard'
+import { guideRevBanner } from './guideRevBanner'
 import { MockPlanCard } from './components/MockPlanCard'
 import { welcome } from './content/welcome'
 import { tradingDay } from './content/tradingDay'
@@ -29,6 +30,8 @@ import { expectancy } from './content/expectancy'
 import { candidates } from './content/candidates'
 import { updates } from './content/updates'
 import { mentor } from './content/mentor'
+import { friends } from './content/friends'
+import { friendsApp } from './content/friendsApp'
 
 export const GUIDE_SECTIONS: GuideSection[] = [
   welcome,
@@ -48,6 +51,8 @@ export const GUIDE_SECTIONS: GuideSection[] = [
   candidates,
   updates,
   mentor,
+  friends,
+  friendsApp,
 ]
 
 const ivory = { color: 'var(--vl-ivory)' }
@@ -440,13 +445,11 @@ function BlockView({ block }: { block: GuideBlock }) {
   }
 }
 
-// Both sides truncate to this before comparing: the bot can only ever send a
-// short sha, so a full-length equality test can never succeed.
-const REV_COMPARE_LEN = 12
-
 export function GuidePage() {
   const [query, setQuery] = useState('')
   const [revision, setRevision] = useState<string | undefined>(undefined)
+  // DR-4 (release #22): a failed health read is UNVERIFIED, not "no drift".
+  const [healthFailed, setHealthFailed] = useState(false)
   const indexRef = useRef<HTMLDivElement>(null)
   const allHits = useMemo(() => collectHits(), [])
   const hits = useMemo(() => {
@@ -460,7 +463,11 @@ export function GuidePage() {
     fetch('/api/health')
       .then((r) => r.json())
       .then((j) => live && setRevision(j?.revision))
-      .catch(() => live && setRevision(undefined))
+      .catch(() => {
+        if (!live) return
+        setRevision(undefined)
+        setHealthFailed(true)
+      })
     return () => {
       live = false
     }
@@ -475,11 +482,9 @@ export function GuidePage() {
   // An empty revision means the boot assertion has not run yet: the bot does
   // not know its own rev, which is not the same as disagreeing with it. Claim
   // drift only when there is a revision to disagree with.
-  const drift =
-    revision !== undefined &&
-    revision !== '' &&
-    revision.slice(0, REV_COMPARE_LEN) !==
-      GUIDE_BUILT_REV.slice(0, REV_COMPARE_LEN)
+  // DR-3 (release #24): 'unknown' and 'dev' bundles get their own sentence
+  // (types.ts resolveGuideBuiltRev), never a generic drift (guideRevBanner).
+  const revBanner = guideRevBanner(GUIDE_BUILT_REV, revision)
 
   return (
     <div
@@ -494,14 +499,28 @@ export function GuidePage() {
           {PRODUCT_NAME} System Guide
         </h1>
         <p className="text-[12px]" style={muted}>
-          built against rev {GUIDE_BUILT_REV} · {GUIDE_SECTIONS.length} sections
-          · live-component examples
+          page bundle built at rev {GUIDE_BUILT_REV} · {GUIDE_SECTIONS.length}{' '}
+          sections · live-component examples
         </p>
       </header>
 
-      {drift && (
+      {healthFailed && (
         <div
-          data-testid="guide-rev-drift"
+          data-testid="guide-rev-unverified"
+          className="rounded-xl px-3 py-2 text-[12px]"
+          style={{
+            border: '1px solid var(--vl-gold-line)',
+            color: 'var(--vl-gold)',
+          }}
+        >
+          ⚠ CANNOT VERIFY THE BUILD — /api/health did not answer, so this page
+          cannot tell whether it matches the running bot.
+        </div>
+      )}
+
+      {revBanner && (
+        <div
+          data-testid={`guide-rev-${revBanner.kind}`}
           className="rounded-xl px-3 py-2 text-[12px]"
           style={{
             background: 'rgba(224,168,54,0.08)',
@@ -509,9 +528,7 @@ export function GuidePage() {
             color: 'var(--vl-gold)',
           }}
         >
-          ⚠ REVISION DRIFT — this guide was built against {GUIDE_BUILT_REV}, the
-          bot reports {revision}. Some cites may be stale; verify before
-          trusting them.
+          {revBanner.text}
         </div>
       )}
 

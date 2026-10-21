@@ -21,6 +21,8 @@ import (
 // scan) — whenever something asks for a withdraw:
 //
 //	maintenance  a hold written with --withdraw-entries (never implied)
+//	install      an update job is pending (requested → preflight): the
+//	             install-pending freeze (EXECUTION P2-2, 10-14)
 //	breaker      the consecutive-loss halt has tripped
 //	force-flat   the daily force-flat has tripped
 //
@@ -52,7 +54,19 @@ func (at *AutoTrader) withdrawDueReason(now time.Time) string {
 	if st, ok := maintenanceState(); ok && st.Held && !st.Corrupt && st.Hold.WithdrawEntries {
 		return "maintenance job " + st.Hold.JobID
 	}
-	if r := kernel.DailyForceFlatReason(at.id); r != "" {
+	// EXECUTION P2-2 (10-14): the install-pending freeze stopped NEW entries
+	// only; a planner limit already RESTING at NT8 stayed working, and the
+	// preflight's ledger_exposure leg then refused the install (job 30a8bbf6 /
+	// row 363, by another route). While a job is pending, resting entries are
+	// withdrawn too — entries only, the same path as a --withdraw-entries hold.
+	if v := InstallPendingStatus(now); v.Pending {
+		job := v.JobID
+		if job == "" {
+			job = "n/a"
+		}
+		return "install_pending job " + job
+	}
+	if r := kernel.DailyForceFlatReasonAt(at.id, now); r != "" { // r22: the beat's clock judges the latch's session-day
 		return "daily_force_flat"
 	}
 	if _, halted := at.consecutiveLossHaltedAt(now); halted {

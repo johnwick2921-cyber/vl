@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -33,9 +34,11 @@ func TestFilledRowIsTerminalAgainstSetStateAndRequestCancel(t *testing.T) {
 		t.Fatalf("fill: %v", err)
 	}
 
-	// The armed pass races in with a cancel request — the CAS must refuse it.
-	if err := st.RequestCancel(arm.ID, "pass invalidation", now.UnixMilli()); err != nil {
-		t.Fatalf("request cancel: %v", err)
+	// The armed pass races in with a cancel request — the CAS must refuse it,
+	// TYPED (release #22 F-1: a refused request is never a silent nil a caller
+	// could read as "requested").
+	if err := st.RequestCancel(arm.ID, "pass invalidation", now.UnixMilli()); !errors.Is(err, ErrArmCancelTerminal) {
+		t.Fatalf("request cancel on a filled row: want ErrArmCancelTerminal, got %v", err)
 	}
 	// And a direct SetState (the pass's invalidation path) must refuse too.
 	if err := st.SetState(arm.ID, StateCancelled, "trader stopped"); err != nil {

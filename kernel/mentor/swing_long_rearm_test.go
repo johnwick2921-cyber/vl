@@ -49,7 +49,7 @@ func TestSwing4hOneSetupPerApproachLong(t *testing.T) {
 	if entries != 1 || longs != 1 {
 		t.Fatalf("long stop entries = %d (longs=%d), want 1 (the invalid level refuses the later touch); got %+v", entries, longs, out)
 	}
-	if cancels != 1 {
-		t.Fatalf("cancels = %d, want 1 (the through-cross back); got %+v", cancels, out)
+	if cancels != 0 {
+		t.Fatalf("cancels = %d, want 0 (the through-cross back has nothing resting — no empty-ArmID cancel); got %+v", cancels, out)
 	}
 }

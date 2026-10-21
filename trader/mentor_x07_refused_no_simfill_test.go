@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
 	"vl/store"
@@ -17,7 +18,11 @@ import (
 // (the control proves the seed+fill machinery would otherwise fill it).
 func TestMentorRefusedIntentLeavesNoSimFill(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "") // off — every entry is SIZED then held (refused)
-	now := time.Now().UnixMilli()
+	// Deterministic same-session instant (noon CT): the second Apply at now+60s
+	// must NOT roll the CME trading day (17:00 CT). The old time.Now() fixture
+	// flaked in the 16:59–17:00 CT minute, where now+60s crossed the day
+	// boundary and the pend was correctly discarded (limits.go day reset).
+	now := time.Date(2026, 10, 19, 12, 0, 0, 0, kernel.CTLocation()).UnixMilli()
 	cfg := mentor.DefaultConfig()
 	levels := []mentor.Level{{Kind: mentor.KindOldExtreme, Price: 29650}}
 	prev := market.Kline{Open: 29500, High: 29590, Low: 29450, Close: 29580}
@@ -56,14 +61,32 @@ func TestMentorRefusedIntentLeavesNoSimFill(t *testing.T) {
 		})
 
 		at.mentorEval.State.Limits.Apply([]mentor.Intent{seed}, prev, cur, now, levels, cfg)
-		resetMentorCounters()
+		resetMentorCounters(at)
 		at.mentorDispatchIntent(seed, mentorTierInputs{}, 1000, 1100)
-		if got := MentorCountSnapshot()["placement_held"]; got != 1 {
+		if got := at.mentorCountSnapshot()["placement_held"]; got != 1 {
 			t.Fatalf("the intent must be refused via MENTOR_PLACE off (placement_held=1), got %d", got)
 		}
 		at.mentorEval.State.Limits.Apply(nil, prev, fillCur, now+60_000, levels, cfg)
 		if at.mentorEval.State.Limits.Long != nil {
 			t.Fatalf("a trader-refused intent left a phantom G1/G2 sim fill (leg created)")
+		}
+	})
+
+	// Day-rollover assertion: a pend seeded just before the 17:00 CT session
+	// rollover must DIE with the trading day (limits.go day reset) — never
+	// phantom-fill on the next day. This is the SAME semantics that made the
+	// wall-clock fixture flaky; it is pinned here, not weakened.
+	t.Run("day_rollover_discards_pend", func(t *testing.T) {
+		loc := kernel.CTLocation()
+		before := time.Date(2026, 10, 19, 16, 59, 30, 0, loc).UnixMilli()
+		after := time.Date(2026, 10, 19, 17, 0, 30, 0, loc).UnixMilli()
+		rollSeed := seed
+		rollSeed.ExpiryMs = before + 60_000
+		ev := mentor.New(cfg)
+		ev.State.Limits.Apply([]mentor.Intent{rollSeed}, prev, cur, before, levels, cfg)
+		ev.State.Limits.Apply(nil, prev, fillCur, after, levels, cfg)
+		if ev.State.Limits.Long != nil {
+			t.Fatalf("the day rollover must discard the pend (no cross-session phantom fill)")
 		}
 	})
 }

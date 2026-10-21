@@ -19,6 +19,14 @@ import (
 // levels) and line 57 (the Rules line's path_levels example moves from the
 // price-less {level, role} shape to the priced {price, level, level_id} shape
 // the obstacle-chain validator reads). Every other line is the W3 base.
+// Re-blessed again 2026-10-13 (FIX-PLANNER-TRUTH): line 35 — the lunch
+// no-trade gate line states the truth (the arm path enforces the band too).
+// Re-blessed again 2026-10-14 (F-1 planner-touch-fills): line 57 gains
+// kernel.TouchSetupHoldSentence right after the #515 sweep sentence — the
+// confirm-after-the-touch rule binds every policy (class 45: the prompt states
+// the machine rule it is judged by) — and the split clause states the sweep
+// hold (N3: "leg 1 is authored there with wait_confirm false (the SWEEP hold
+// … sends NO leg until the whole confirm …)"). No other line changed.
 func TestW3PlannerPromptLegacyPolicyByteIdentical(t *testing.T) {
 	want, err := os.ReadFile("testdata/knob_prune/planner_prompt_legacy_policy.txt")
 	if err != nil {

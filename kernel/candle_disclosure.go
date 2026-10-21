@@ -202,10 +202,18 @@ var absentRowScanCap = 20_000
 // absent from the tape. -1 = UNKNOWN (scan capped). Element 0 is always 0:
 // nothing is known about what precedes the first rendered row.
 func absentAggregateRows(rows []market.Kline, bucketMs int64) []int {
+	return absentAggregateRowsBy(rows, bucketMs, func(openMs int64) int64 {
+		return openMs / bucketMs * bucketMs
+	})
+}
+
+// absentAggregateRowsBy is absentAggregateRows keyed by an explicit bucket
+// function — the 4h table passes the 17:00 CT anchor (FourHBucketStart).
+func absentAggregateRowsBy(rows []market.Kline, bucketMs int64, key func(int64) int64) []int {
 	out := make([]int, len(rows))
 	for i := 1; i < len(rows); i++ {
 		n, steps := 0, 0
-		for t := rows[i-1].OpenTime + bucketMs; t < rows[i].OpenTime; t += bucketMs {
+		for t := key(rows[i-1].OpenTime) + bucketMs; t < key(rows[i].OpenTime); t += bucketMs {
 			steps++
 			if steps > absentRowScanCap {
 				n = -1
@@ -289,11 +297,19 @@ func measureRow(startMs, endMs int64, held int, firstHeldMs int64, now time.Time
 // (15m/1h/4h) against the 1m tape it was built from. rows must be the SAME
 // slice AggregateBars produced, in the same order.
 func aggregateCoverage(bars1m []market.Kline, rows []market.Kline, bucketMs int64, now time.Time) []RowCoverage {
+	return aggregateCoverageBy(bars1m, rows, bucketMs, func(openMs int64) int64 {
+		return openMs / bucketMs * bucketMs
+	}, now)
+}
+
+// aggregateCoverageBy is aggregateCoverage keyed by an explicit bucket function
+// — the 4h table passes the 17:00 CT anchor (FourHBucketStart).
+func aggregateCoverageBy(bars1m []market.Kline, rows []market.Kline, bucketMs int64, key func(int64) int64, now time.Time) []RowCoverage {
 	obs := observableEndMs(now)
 	held := map[int64]int{}
 	first := map[int64]int64{}
 	for _, b := range bars1m {
-		k := b.OpenTime / bucketMs * bucketMs
+		k := key(b.OpenTime)
 		if _, ok := first[k]; !ok {
 			first[k] = b.OpenTime
 		}
@@ -304,7 +320,7 @@ func aggregateCoverage(bars1m []market.Kline, rows []market.Kline, bucketMs int6
 	}
 	out := make([]RowCoverage, 0, len(rows))
 	for _, r := range rows {
-		out = append(out, measureRow(r.OpenTime, r.OpenTime+bucketMs, held[r.OpenTime], first[r.OpenTime], now))
+		out = append(out, measureRow(r.OpenTime, key(r.OpenTime)+bucketMs, held[r.OpenTime], first[r.OpenTime], now))
 	}
 	return out
 }

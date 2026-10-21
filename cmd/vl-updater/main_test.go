@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/internal/installpath"
 	"vl/internal/updaterjob"
@@ -41,7 +42,7 @@ func install(t *testing.T) (string, string) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(root) })
 	if err := os.MkdirAll(filepath.Join(root, "data"), 0o755); err != nil {
 		t.Fatal(err)
 	}

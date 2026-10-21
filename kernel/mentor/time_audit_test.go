@@ -136,7 +136,7 @@ func TestTimeAuditORBAnchors(t *testing.T) {
 		bars := []market.Kline{
 			mk(8, 30, 24820, 24844, 24814, 24830),
 			mk(8, 31, 24830, 24836, 24816, 24820),
-			mk(8, 32, 24840, 24870, 24830, 24860),
+			mk(8, 32, 24846, 24870, 24845, 24860), // BODY wholly above 24844 (open AND close) [D4.1 p1 @20:36]
 		}
 		orb := ORBAdvance(ORB{}, bars, auditMs(c.y, c.mo, c.d, 8, 33, 0)-1)
 		if !orb.Drawn || orb.High != 24844 || orb.Low != 24814 {

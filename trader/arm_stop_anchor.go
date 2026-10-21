@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"vl/kernel"
+	"vl/market"
 	"vl/store"
 )
 
@@ -167,7 +168,11 @@ func composeArmStop(side string, entry, authored, atr5m, tick float64, levels []
 
 // armStopCompositionLine is the per-arm log line (D2): chosen stop, the anchor
 // it sits beyond, the ATR floor, and which leg bound. Pure, fixture-tested.
-func armStopCompositionLine(session, scenario string, leg int, side string, c StopComposition, atr5m, mult float64) string {
+//
+// R22 P2 (PLANNER.md F9): a WIDENED stop now prints by how much — points past
+// the authored stop and the one-contract dollars (pointValue; ≤0 or absent →
+// "$ n/a"). The floor itself is unchanged (the owner's open question).
+func armStopCompositionLine(session, scenario string, leg int, side string, c StopComposition, atr5m, mult float64, pointValue ...float64) string {
 	anchor := "none (stop_unanchored)"
 	if !c.Unanchored && c.AnchorPrice > 0 {
 		label := c.AnchorLabel
@@ -182,8 +187,85 @@ func armStopCompositionLine(session, scenario string, leg int, side string, c St
 	}
 	moved := ""
 	if math.Abs(c.Stop-c.Authored) > 1e-9 {
-		moved = fmt.Sprintf(" (authored %.2f WIDENED)", c.Authored)
+		pts := math.Abs(c.Stop - c.Authored)
+		usd := "$ n/a"
+		if len(pointValue) > 0 && pointValue[0] > 0 {
+			usd = fmt.Sprintf("$%.2f/contract", pts*pointValue[0])
+		}
+		moved = fmt.Sprintf(" (authored %.2f WIDENED +%.2f pts = %s past the authored stop)", c.Authored, pts, usd)
 	}
 	return fmt.Sprintf("🛑 arm stop %s %s leg %d %s: stop %.2f%s · anchor %s · atr_floor %s · bound=%s",
 		session, scenario, leg, side, c.Stop, moved, anchor, floor, c.Bound)
+}
+
+// logArmStopComposition (R22 P2, PLANNER.md F9) logs the composition line with
+// the widening in points and one-contract dollars, and RECORDS each widened
+// arm-spec ONCE (plan, version, scenario, leg) in
+// arm_stop_widened:<trader>:<date>:<session> — the composition line itself
+// re-logs whenever the composed stop moves; the counter counts arms, not ATR
+// ticks. #649: authored 30873.00 → 30882.78 = +9.78 pts = $19.55/contract.
+func (at *AutoTrader) logArmStopComposition(plan *kernel.ActivePlan, sc kernel.PlanScenario, li int, c StopComposition, atr5m float64) {
+	line := armStopCompositionLine(plan.Session, sc.ID, li+1, sc.Direction, c, atr5m, kernel.MinSLATRMult(), market.FuturesPointValue(at.futuresSymbol()))
+	if math.Abs(c.Stop-c.Authored) > 1e-9 && c.Authored > 0 && at.store != nil {
+		key := plan.PlanID + ":" + strconv.Itoa(plan.Version) + ":" + sc.ID + ":leg" + strconv.Itoa(li+1) + ":widened"
+		if armRefusalChanged(&at.armStopCompLast, key, "1") {
+			ckey := fmt.Sprintf("arm_stop_widened:%s:%s:%s", at.id, kernel.PlanTradeDateFor(plan), plan.Session)
+			if n, err := store.IncSystemCounter(at.store, ckey); err != nil {
+				at.logWarnf("🛑 arm-stop-widened counter write failed: %v", err)
+			} else {
+				line += fmt.Sprintf(" · widened arms this session: %d (recorded)", n)
+			}
+		}
+	}
+	at.logInfof("%s", line)
+}
+
+// ── Release #25 PK-4 (STRICT-12345 F-7) — CAP THE ATR FLOOR AT THE AUTHORED
+// INVALIDATION ─────────────────────────────────────────────────────────────
+//
+// The 1.5×ATR5m floor above widened 649's stop 30873 → 30882.78 and 653's
+// 30436 → 30427.25: past the price the plan itself said the thesis was dead.
+// Knob day_plan.planner_atr_floor_cap_at_invalidation (store.ResolvePlannerATRFloorCap),
+// DEFAULT OFF = the composition above, untouched. ON: the floor may widen the
+// stop only up to the AUTHORED INVALIDATION = the farther (risk side) of the
+// authored stop and the price the scenario's invalidation sentence names (when
+// it parses under the one grammar, kernel.AuthoredInvalidationLine). A floor
+// that lies beyond it cannot be met inside the plan's invalidation, so the
+// arm is REFUSED (class atr_floor_beyond_invalidation) — never widened
+// silently. The anchor leg is not capped (it is not the floor).
+
+// ATRFloorBeyondInvalidationClass is the refusal class (arm refusal counter,
+// arm_disabled_reason at write, the gate-block table).
+const ATRFloorBeyondInvalidationClass = "atr_floor_beyond_invalidation"
+
+// atrFloorCapVerdict is the pure PK-4 judgement: "" = the floor fits inside
+// the authored invalidation (or there is no floor / no authored stop).
+func atrFloorCapVerdict(side string, c StopComposition, invalidLine float64) string {
+	if c.ATRFloorStop <= 0 || c.Authored <= 0 {
+		return ""
+	}
+	long := strings.EqualFold(strings.TrimSpace(side), "long")
+	limit, lineText := c.Authored, "n/a (sentence outside the grammar)"
+	if invalidLine > 0 {
+		lineText = fmt.Sprintf("%.2f", invalidLine)
+		if (long && invalidLine < limit) || (!long && invalidLine > limit) {
+			limit = invalidLine
+		}
+	}
+	beyond := (long && c.ATRFloorStop < limit-1e-9) || (!long && c.ATRFloorStop > limit+1e-9)
+	if !beyond {
+		return ""
+	}
+	return fmt.Sprintf("%s: the ATR stop floor %.2f lies %.2f pts past the authored invalidation %.2f (authored stop %.2f, invalidation line %s) — the floor cannot be met inside the plan's invalidation; refused, never widened (planner_atr_floor_cap_at_invalidation on)",
+		ATRFloorBeyondInvalidationClass, c.ATRFloorStop, math.Abs(c.ATRFloorStop-limit), limit, c.Authored, lineText)
+}
+
+// atrFloorCapVerdictFor resolves the knob and the scenario's invalidation
+// line; OFF → "" (byte-identical to the composition alone).
+func (at *AutoTrader) atrFloorCapVerdictFor(sc kernel.PlanScenario, c StopComposition) string {
+	if on, _ := store.ResolvePlannerATRFloorCap(at.dayPlanCfg()); !on {
+		return ""
+	}
+	line, _ := kernel.AuthoredInvalidationLine(sc)
+	return atrFloorCapVerdict(sc.Direction, c, line)
 }

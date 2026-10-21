@@ -3,12 +3,14 @@ package store
 import (
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"gorm.io/gorm"
 	"strings"
 
 	"vl/logger"
+	"vl/telemetry"
 )
 
 // ARMED ORDERS (Wave 2, 2026-08-27) — the durable ledger of scenario-arm
@@ -62,6 +64,12 @@ type ArmedOrderDB struct {
 	// mentor arm with the knob ON and no expiry is REFUSED fail-closed; a
 	// non-mentor arm takes today's path whatever its expiry.
 	Origin string `gorm:"default:''"`
+	// ExitMode (REL17-F2 restart-rebuild, 2026-10-11): the per-arm exit
+	// branch (A/B/C/swing) persisted at placement so a restart can rebuild an
+	// open mentor position with the SAME exit mode it was entered under. NULL
+	// on every pre-change row = the mode was never persisted — the rebuild
+	// derives it from the setup and logs that it did (absent ≠ fabricated).
+	ExitMode *string `gorm:"column:exit_mode"`
 	// Contracts (B2 mentor size, 2026-10-04): the mentor-signed contract count
 	// the armed pass must send. NULL = ABSENT (absent ≠ 0) — only the mentor
 	// injector stamps it; every historical and non-mentor row is NULL. The
@@ -73,8 +81,16 @@ type ArmedOrderDB struct {
 	// ≥2R for mode C), leg 2 = the runner (TP = TargetPx). NULL / 0 = the
 	// single-bracket legacy path (byte-identical wire). Only the mentor
 	// injector stamps them; the AddOn places TWO OCO pairs on the one fill.
-	Leg1Qty      *int
-	Leg1TP       float64 `gorm:"default:0"`
+	Leg1Qty *int
+	Leg1TP  float64 `gorm:"default:0"`
+	// Leg2Qty / Leg2TP (release #31, leg-3 bracket): the runner's FIRST partial
+	// — the runner sells leg2_qty at leg2_tp (the first line beyond the leg-1
+	// exit), and the rest trails as today (leg 3 = Contracts − Leg1Qty −
+	// Leg2Qty, TP = TargetPx). NULL / 0 = the 2-pair plan (no leg 3). Only the
+	// mentor injector stamps them, and the send is gated on the AddOn proving
+	// the leg-3 build.
+	Leg2Qty      *int
+	Leg2TP       float64 `gorm:"default:0"`
 	FillPrice    float64
 	FillQuantity int
 
@@ -313,6 +329,10 @@ func (s *ArmedOrderStore) Migrate() error {
 			// injector stamps ArmOriginMentor; '' on every historical
 			// row = not a mentor arm, which is the truth for them.
 			{"origin", "TEXT NOT NULL DEFAULT ''"},
+			// REL17-F2 (2026-10-11): the per-arm exit branch persisted at
+			// placement (A/B/C/swing). NULL on every historical row = the
+			// mode was never persisted; the restart rebuild derives it.
+			{"exit_mode", "TEXT"},
 			// B2 MENTOR SIZE (2026-10-04): the mentor-signed contract count.
 			// NULL = ABSENT on every historical and non-mentor row — a mentor
 			// row without one is REFUSED by the armed pass, never sent as 1.
@@ -321,6 +341,11 @@ func (s *ArmedOrderStore) Migrate() error {
 			// the ONE entry frame. NULL/0 = single-bracket legacy.
 			{"leg1_qty", "INTEGER"},
 			{"leg1_tp", "REAL NOT NULL DEFAULT 0"},
+			// RELEASE #31 (leg-3 bracket): the runner's FIRST partial — the
+			// runner sells leg2_qty at leg2_tp (the first line beyond the
+			// leg-1 exit). NULL/0 = the 2-pair plan (no leg 3).
+			{"leg2_qty", "INTEGER"},
+			{"leg2_tp", "REAL NOT NULL DEFAULT 0"},
 			// W3 market_in_zone (2026-09-23): NULLable where 0 would be a
 			// fabricated value (absent ≠ 0); '' where the text is a label.
 			{"policy", "TEXT NOT NULL DEFAULT ''"},
@@ -375,6 +400,13 @@ func (s *ArmedOrderStore) Migrate() error {
 // row — source_ref, deadline, epoch and prices — with only an INFO.
 var ErrArmSourceMismatch = errors.New("armed_orders: the ledger row belongs to another opportunity")
 
+// ErrArmSlotSpent (CTO fold on PR #526, 2026-10-14): the (plan, scenario, leg)
+// slot already REACHED THE BROKER under this plan version and ended (filled,
+// stopped, cancelled — by the owner in NT8 or by the bot). The same version
+// never places it again; a NEW version re-arms, and a boot-swept row keeps the
+// 0B re-arm law. Typed so the authoring loop can say so once and count it.
+var ErrArmSlotSpent = errors.New("armed_orders: slot spent — this plan version already placed it at the broker")
+
 // UpsertArm writes/refreshes the arm row for (plan_id, scenario, leg_index).
 // Same key = same row (state reset to armed only when the spec CHANGED
 // materially — entry/stop/target diff >= 2 ticks — the caller decides and
@@ -390,7 +422,7 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 	// lookup compared them literally — so it could never match. UPPER() on the
 	// read makes existing rows work; canonicalizing HERE, where the value
 	// enters, is what stops the two tables disagreeing at all.
-	row.Side = strings.ToUpper(strings.TrimSpace(row.Side))
+	row.Side = CanonicalArmSide(row.Side)
 	// W5 — ONE OPPORTUNITY, ONE LIFE, ACROSS PLAN VERSIONS. A machine-sourced
 	// row is identified by its opportunity (source_ref), not by the plan
 	// version: the Picture scenario is re-appended to the version that
@@ -470,17 +502,32 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			return fmt.Errorf("armed_orders: refusing to rewrite %s/%s — a cancel is in flight for signal %q and is not yet confirmed by the broker's book; the slot is not free",
 				row.PlanID, row.Scenario, existing.SignalID)
 		}
-		// W3 D15 — RE-ARM PINNED. A market_in_zone row that REACHED THE BROKER
-		// (it carries a signal) is terminal for its plan version: filled,
-		// stopped, cancelled by the rest cap or withdrawn for maintenance, the
-		// same version never mints it again. Without this the mint below is the
-		// re-place loop (fill → stop-out → seq+1 → marketable limit → fill…),
-		// and the rest cap becomes a 30-minute re-placement timer. A NEW
-		// version re-arms (the mint runs); a boot-swept row keeps the 0B law.
+		// W3 D15 — RE-ARM PINNED (CTO fold + ruling on PR #526). A row that
+		// REACHED THE BROKER (it carries a signal) and ended under THIS plan
+		// version is SPENT — the same version never mints it again — when:
+		//   · it is market_in_zone: every ending (D15 exactly as before);
+		//   · any other non-mentor policy, unless the BOT requested the cancel:
+		//     a fill (filled / stopped / closed), a cancel with NO bot request
+		//     on record (the owner's manual cancel in NT8, a broker cancel,
+		//     "absent from a fresh NT8 order_snapshot"), or any other ending
+		//     (rejected …) is spent. Fail-closed: the bot re-arms within a
+		//     version only what it asked to cancel itself (cancel_requested_at_ms
+		//     > 0 — gate changed, a band, an install/maintenance withdraw, a
+		//     re-spec, EOD / no-plan), which is today's behaviour for those.
+		// Without the pin the mint below is the re-place loop (fill → stop-out →
+		// seq+1 → limit → fill…) and the owner's cancel never wins; it held for
+		// market_in_zone ONLY before (reproduced through the real arm pass).
+		// Exceptions kept: a NEW version re-arms (the mint runs); a boot-swept
+		// row keeps the 0B law. Mentor rows are governed by mentor mode, their
+		// own expiry and the evaluator (B3), never by a plan version.
+		botCancelled := IsCancelledArmState(existing.State) && existing.CancelRequestedAtMs > 0
 		if existing.State != StateArmed && strings.TrimSpace(existing.SignalID) != "" &&
-			existing.Policy == ArmPolicyMarketInZone && existing.Version == row.Version &&
-			!IsBootSweepReason(existing.StateReason) {
-			return nil
+			existing.Version == row.Version && !IsBootSweepReason(existing.StateReason) &&
+			strings.TrimSpace(existing.Origin) != ArmOriginMentor &&
+			(existing.Policy == ArmPolicyMarketInZone || !botCancelled) {
+			return fmt.Errorf("%w: row #%d (%s leg %d) %s (%s) signal %s under v%d",
+				ErrArmSlotSpent, existing.ID, row.Scenario, row.LegIndex+1, existing.State,
+				existing.StateReason, signalOrNone(existing.SignalID), existing.Version)
 		}
 		// A TERMINAL row that reached the broker keeps its record forever; the
 		// new authorization becomes the NEXT placement rather than erasing it.
@@ -527,7 +574,7 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 					return err
 				}
 			}
-			return s.db.Model(&existing).Updates(map[string]any{
+			armedUpdates := map[string]any{
 				"version": row.Version, "session": row.Session,
 				"side": row.Side, "entry_px": row.EntryPx, "stop_px": row.StopPx,
 				"target_px": row.TargetPx, "updated_at": row.UpdatedAt,
@@ -542,9 +589,21 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
 				// REVIEW-SPLIT-2 P2: the mentor size and split follow the
 				// authorization — leg1_tp moves with a re-armed stop. Every
-				// other author writes NULL / 0 over NULL / 0.
+				// other author writes NULL / 0 over NULL / 0, INCLUDING a
+				// planner arm whose knob was lowered while it was still ARMED
+				// (unplaced): an unstamped re-authorization clears the size, so
+				// placement re-clamps instead of sending a stale 4 past a
+				// lowered cap (fold-564-b D1). Working rows never reach this
+				// branch (refused at the live-order guard above).
 				"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
-			}).Error
+				// release #31: the runner's first partial follows the
+				// authorization too (leg2_qty/leg2_tp, NULL/0 over NULL/0).
+				"leg2_qty": row.Leg2Qty, "leg2_tp": row.Leg2TP,
+				// REL17-F2: the persisted exit branch follows the re-authorization
+				// (a re-armed stop re-chooses the fork).
+				"exit_mode": row.ExitMode,
+			}
+			return s.db.Model(&existing).Updates(armedUpdates).Error
 		}
 		// MANUAL-CANCEL-WINS (2026-08-30 E7 incident): a TERMINAL row is
 		// re-authorized ONLY on a plan VERSION change. The old
@@ -597,6 +656,10 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 			"eligible_until_ms": row.EligibleUntilMs, "source_run_epoch": row.SourceRunEpoch,
 			// REVIEW-SPLIT-2 P2: the new authorization's mentor size and split.
 			"contracts": row.Contracts, "leg1_qty": row.Leg1Qty, "leg1_tp": row.Leg1TP,
+			// release #31: the new authorization's runner first partial.
+			"leg2_qty": row.Leg2Qty, "leg2_tp": row.Leg2TP,
+			// REL17-F2: the new authorization's persisted exit branch.
+			"exit_mode": row.ExitMode,
 		}).Error
 	}
 	if err != gorm.ErrRecordNotFound {
@@ -731,6 +794,57 @@ func (s *ArmedOrderStore) BeginPlacement(id int64, signalID string) error {
 	}
 	if r.RowsAffected != 1 {
 		return fmt.Errorf("armed_orders: row %d is no longer eligible for placement", id)
+	}
+	return nil
+}
+
+// ArmWirePrices is what ONE entry frame actually carried (F-7, release #22
+// CANCEL-SETTLE). Split=false leaves leg1_qty / leg1_tp untouched: the send
+// path that wrote it cannot carry a split (every non-mentor send), so the row's
+// absent split stays absent rather than becoming a fabricated 0.
+type ArmWirePrices struct {
+	Stop    float64
+	Target  float64
+	Split   bool // true: Leg1Qty/Leg1TP are the frame's split (0/0 = the frame carried none)
+	Leg1Qty int
+	Leg1TP  float64
+	Leg2Qty int
+	Leg2TP  float64
+}
+
+// RecordWirePrices (F-7) makes the row carry EXACTLY the prices its entry
+// frame put on the wire: the stop rounded AWAY from the entry and the target
+// to the nearest tick (WireBracket), and on a mentor split the leg-1 TP the
+// sender re-based on the trigger and rounded. The ledger used to keep the
+// authored values — row 350's stop 30882.7763003284 against NT8's 30883, row
+// 347's leg1_tp 30824.25 against NT8's 30825.25 — so every reader of the row
+// (accepted risk, the protection net's plan stop, a restart's leg-1 TP)
+// worked from a price NT8 never received.
+//
+// The CAS is the signal id: the write lands only on the row that sent THIS
+// frame, never on a re-identified one. No state, reason or lifecycle column is
+// touched. A row that no longer carries the signal is an error, never silent.
+func (s *ArmedOrderStore) RecordWirePrices(id int64, signalID string, w ArmWirePrices) error {
+	if s == nil || s.db == nil {
+		return fmt.Errorf("armed order store unavailable")
+	}
+	sig := strings.TrimSpace(signalID)
+	if sig == "" {
+		return fmt.Errorf("armed_orders: wire prices require the frame's signal id")
+	}
+	upd := map[string]any{"stop_px": w.Stop, "target_px": w.Target}
+	if w.Split {
+		upd["leg1_qty"] = w.Leg1Qty
+		upd["leg1_tp"] = w.Leg1TP
+		upd["leg2_qty"] = w.Leg2Qty
+		upd["leg2_tp"] = w.Leg2TP
+	}
+	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND signal_id = ?", id, sig).Updates(upd)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected != 1 {
+		return fmt.Errorf("armed_orders: row %d no longer carries signal %s — wire prices not recorded", id, shortSignal(sig))
 	}
 	return nil
 }
@@ -883,6 +997,18 @@ func (s *ArmedOrderStore) ResetToArmedUnplaced(id int64, reason string) error {
 	}).Error
 }
 
+// ErrArmCancelTerminal is RequestCancel's refusal for a row whose outcome is
+// already settled (release #22 CANCEL-SETTLE, F-1).
+var ErrArmCancelTerminal = errors.New("armed_orders: cancel request refused — the row is already terminal")
+
+// GateRequestCancelTerminal is the per-trader gate-block counter
+// (GET /api/risk/gate-blocks) a refused terminal cancel request records.
+const GateRequestCancelTerminal = "request_cancel_terminal"
+
+// requestCancelBeforeWriteHook runs between RequestCancel's read and its write
+// (fixtures only — it forces the race the CAS exists for). nil in production.
+var requestCancelBeforeWriteHook func(id int64)
+
 // RequestCancel moves a row to cancel_pending and records that a cancel was
 // SENT. It never writes 'cancelled': that word now means the broker's book
 // stopped listing the order, and only ConfirmCancel may say it.
@@ -890,6 +1016,22 @@ func (s *ArmedOrderStore) ResetToArmedUnplaced(id int64, reason string) error {
 // Idempotent on the timestamp — a re-request bumps the attempt count and leaves
 // the original request time, so the age in the timeout WARN is the age of the
 // FIRST attempt, which is the number that matters.
+// StampCancelRequested records that THIS process asked the broker to cancel
+// the row's order (the FIRST request only), without changing its state. The
+// synchronous sweep (band / EOD flat / no-active-plan / dormant) sends the
+// cancel and drains NT8's report before any RequestCancel, so a promptly acked
+// bot cancel used to end "cancelled in NT8" with no request on record —
+// indistinguishable from the owner's manual cancel in NT8 (CTO ruling on PR
+// #526: only a bot-requested cancel may re-arm within a plan version).
+func (s *ArmedOrderStore) StampCancelRequested(id int64, nowMs int64) error {
+	if s == nil || s.db == nil || nowMs <= 0 {
+		return nil
+	}
+	return s.db.Model(&ArmedOrderDB{}).
+		Where("id = ? AND cancel_requested_at_ms = 0 AND "+NonTerminalArmStateSQL(), id).
+		Update("cancel_requested_at_ms", nowMs).Error
+}
+
 func (s *ArmedOrderStore) RequestCancel(id int64, reason string, nowMs int64) error {
 	if s == nil || s.db == nil {
 		return nil
@@ -897,6 +1039,20 @@ func (s *ArmedOrderStore) RequestCancel(id int64, reason string, nowMs int64) er
 	var row ArmedOrderDB
 	if err := s.db.First(&row, id).Error; err != nil {
 		return err
+	}
+	// F-1 (release #22 CANCEL-SETTLE) — A SETTLED OUTCOME IS NEVER RE-OPENED.
+	// This guarded only 'filled', so the sync-cancel timeout branch moved row
+	// 363 from 'cancelled' (NT8's own report, 10-14 01:47:29 CT) back to
+	// cancel_pending: the ledger called a dead order live, the installation
+	// gate's ledger_exposure leg refused release #21 for 10 minutes, and a
+	// cancel was re-sent every pass for an order NT8 no longer had
+	// (cancel_attempts=8). Every terminal state is refused, read from the
+	// canonical table (IsTerminalArmState), never re-typed here.
+	if IsTerminalArmState(row.State) {
+		return s.refuseTerminalCancel(row, reason)
+	}
+	if requestCancelBeforeWriteHook != nil {
+		requestCancelBeforeWriteHook(id)
 	}
 	// B2 — the budget is PER PROCESS. A row whose attempts were counted by a
 	// different (or no longer identifiable) process starts again at 1 under
@@ -914,10 +1070,72 @@ func (s *ArmedOrderStore) RequestCancel(id int64, reason string, nowMs int64) er
 	if row.CancelRequestedAtMs == 0 {
 		upd["cancel_requested_at_ms"] = nowMs
 	}
-	// W117 F2 — TERMINAL FILL GUARD (CAS): a filled row can never be moved to
-	// cancel_pending, even by the armed pass racing a late fill. The WHERE is
-	// the precondition: the update only fires when the row is not filled.
-	return s.db.Model(&ArmedOrderDB{}).Where("id = ? AND state <> ?", id, StateFilled).Updates(upd).Error
+	// W117 F2 + F-1 — TERMINAL GUARD (CAS): no terminal row can be moved to
+	// cancel_pending, even by a caller racing the ordered worker that applies
+	// NT8's report (a late fill, or the 'cancelled' that row 363 lost). The
+	// WHERE is the precondition: the update only fires on a NON-terminal row.
+	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND "+NonTerminalArmStateSQL(), id).Updates(upd)
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 1 {
+		return nil
+	}
+	// The row changed under the request: read what it became. Terminal = the
+	// same refusal as above; anything else (the row vanished) is an error,
+	// never a silent success.
+	var now ArmedOrderDB
+	if err := s.db.First(&now, id).Error; err != nil {
+		return fmt.Errorf("armed_orders: cancel request for row %d wrote nothing and the row cannot be re-read: %w", id, err)
+	}
+	if IsTerminalArmState(now.State) {
+		return s.refuseTerminalCancel(now, reason)
+	}
+	return fmt.Errorf("armed_orders: cancel request for row %d wrote nothing (state %q)", id, now.State)
+}
+
+// terminalCancelRefusalLogged dedupes the refusal WARN per row outcome
+// (row id + state + signal): logged ONCE, counted EVERY time.
+var terminalCancelRefusalLogged sync.Map
+
+// refuseTerminalCancel is RequestCancel's one refusal: nothing is written to
+// the row, the refusal is counted (the per-trader gate-block table behind
+// GET /api/risk/gate-blocks, and the durable system_config counter
+// arm:request_cancel_terminal_refused), it is logged once per row outcome, and
+// the caller gets ErrArmCancelTerminal — so no cancel site can read a refused
+// request as a request (one_contract's discard included: the store line names
+// it). Never silent (L7).
+func (s *ArmedOrderStore) refuseTerminalCancel(row ArmedOrderDB, reason string) error {
+	telemetry.IncGateBlock(row.TraderID, GateRequestCancelTerminal)
+	recorded := "n/a"
+	if err := s.db.Exec(`INSERT INTO system_config (key, value) VALUES (?, '1')
+		ON CONFLICT(key) DO UPDATE SET value = CAST(CAST(value AS INTEGER) + 1 AS TEXT)`, RequestCancelTerminalRefusedKey).Error; err == nil {
+		var v string
+		if s.db.Raw(`SELECT value FROM system_config WHERE key = ?`, RequestCancelTerminalRefusedKey).Scan(&v).Error == nil && v != "" {
+			recorded = v
+		}
+	}
+	key := fmt.Sprintf("%d|%s|%s", row.ID, strings.ToLower(strings.TrimSpace(row.State)), row.SignalID)
+	if _, seen := terminalCancelRefusalLogged.LoadOrStore(key, struct{}{}); !seen {
+		logger.Warnf("🧾 cancel request REFUSED on arm #%d (%s/%s leg %d, signal=%s): the row is %s — a settled outcome is never re-opened to cancel_pending, and nothing re-sends a cancel for it · asked by: %q · refusals recorded: %s",
+			row.ID, row.PlanID, row.Scenario, row.LegIndex+1, shortSignal(row.SignalID), row.State, reason, recorded)
+	}
+	return fmt.Errorf("%w: arm %d is %s", ErrArmCancelTerminal, row.ID, row.State)
+}
+
+// RequestCancelTerminalRefusedKey is the durable counter of refused terminal
+// cancel requests (system_config; survives restarts).
+const RequestCancelTerminalRefusedKey = "arm:request_cancel_terminal_refused"
+
+// shortSignal is the 8-char signal prefix the trader logs print (shortID).
+func shortSignal(sig string) string {
+	if len(sig) > 8 {
+		return sig[:8]
+	}
+	if sig == "" {
+		return "n/a"
+	}
+	return sig
 }
 
 // ConfirmCancel is the ONLY way a row becomes 'cancelled' through the cancel
@@ -1082,6 +1300,27 @@ func (s *ArmedOrderStore) CountCancelUnconfirmed(nowMs, timeoutMs int64) int64 {
 func (s *ArmedOrderStore) SetFillPrice(id int64, fillPrice float64) error {
 	return s.db.Model(&ArmedOrderDB{}).Where("id = ?", id).
 		Update("fill_price", fillPrice).Error
+}
+
+// SetExitMode persists a mentor arm's exit branch on its row (MENTOR-NY item
+// 11, rescan P2-N3): the B20 confluence upgrade switched the branch to C only
+// in memory, so a restart rebuilt the position from the row's B. WHERE-scoped
+// to one mentor row; idempotent. Returns the rows it changed.
+func (s *ArmedOrderStore) SetExitMode(id int64, mode string) (int64, error) {
+	res := s.db.Model(&ArmedOrderDB{}).Where("id = ? AND origin = ?", id, ArmOriginMentor).
+		Update("exit_mode", mode)
+	return res.RowsAffected, res.Error
+}
+
+// SetExitModeBySignal is SetExitMode for an OPEN position, which the exit drive
+// knows by its signal id. WHERE-scoped to mentor rows of that signal.
+func (s *ArmedOrderStore) SetExitModeBySignal(signalID, mode string) (int64, error) {
+	if signalID == "" {
+		return 0, nil
+	}
+	res := s.db.Model(&ArmedOrderDB{}).Where("signal_id = ? AND origin = ?", signalID, ArmOriginMentor).
+		Update("exit_mode", mode)
+	return res.RowsAffected, res.Error
 }
 
 // SetSignal records the wire signal_id once the resting limit is placed

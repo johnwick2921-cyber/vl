@@ -114,6 +114,9 @@ func (h *replayHold) resolve(symbol, tf string, checked, offScale bool, insert f
 	h.written[k] += len(rows)
 	h.mu.Unlock()
 	logger.Infof("📼 replay verified on the live scale: %s %s — %d row(s) released to the store as historical (live rows, where they exist, are kept by the upsert rule)", symbol, tf, len(rows))
+	// N1 (release #23): the store now holds history the mentor's seed may not
+	// have read — announce it; the mentor tick re-seeds its state from the store.
+	NoteHistoryRefill(symbol, tf, len(rows), fmt.Sprintf("replay released %d %s %s row(s) to the store", len(rows), symbol, tf))
 }
 
 // heldCount is what the boot line reads.

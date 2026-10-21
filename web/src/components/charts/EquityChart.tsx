@@ -11,6 +11,7 @@ import {
 } from 'recharts'
 import useSWR from 'swr'
 import { api } from '../../lib/api'
+import { formatEquityTimestamp } from '../../lib/chartTime'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { useAuth } from '../../contexts/AuthContext'
 import { t } from '../../i18n/translations'
@@ -25,6 +26,7 @@ import {
 
 interface EquityPoint {
   timestamp: string
+  timestamp_ms?: number // epoch ms — the parseable source (F6); timestamp stays the display string
   total_equity: number
   available_balance?: number // snap.Balance; first point = per-account baseline (ITEM 2)
   pnl: number
@@ -187,10 +189,7 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
     const pnl = point.total_equity - initialBalance
     const pnlPct = ((pnl / initialBalance) * 100).toFixed(2)
     return {
-      time: new Date(point.timestamp).toLocaleTimeString('zh-CN', {
-        hour: '2-digit',
-        minute: '2-digit',
-      }),
+      time: formatEquityTimestamp(point.timestamp_ms, point.timestamp),
       value: displayMode === 'dollar' ? point.total_equity : parseFloat(pnlPct),
       cycle: point.cycle_number ?? index + 1,
       raw_equity: point.total_equity,
@@ -233,7 +232,7 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
           style={{ background: '#1E2329', border: '1px solid #2B3139' }}
         >
           <div className="text-xs mb-1" style={{ color: '#848E9C' }}>
-            Cycle #{data.cycle != null ? data.cycle : '—'}
+            {data.time ?? '—'} · Cycle #{data.cycle != null ? data.cycle : '—'}
           </div>
           <div className="font-bold mono" style={{ color: '#EAECEF' }}>
             {data.raw_equity.toFixed(2)} {currencyLabel}
@@ -421,7 +420,9 @@ export function EquityChart({ traderId, embedded = false }: EquityChartProps) {
               label={{
                 value:
                   displayMode === 'dollar'
-                    ? t('initialBalance', language).split(' ')[0]
+                    ? selectedAccount
+                      ? t('equityBaseline', language)
+                      : t('initialBalance', language).split(' ')[0]
                     : '0%',
                 fill: '#848E9C',
                 fontSize: 12,

@@ -175,14 +175,20 @@ func (at *AutoTrader) observeNightEdge() {
 		return
 	}
 	now := time.Now()
-	night := at.sessionRegistry(now).IsNightMode(now)
+	// S2 (release #32): judge night with the SAME per-strategy resolver the
+	// session gates use (NightModeAt → sessionRunnable), not the registry-only
+	// IsNightMode — which called this strategy "night" while an explicit
+	// sessions[].enable override kept ASIA/LONDON runnable.
+	night := at.NightModeAt(now)
 	if nightEdgeDecision(at.nightPrev, night) {
 		if night {
-			at.logInfof("🌙 NIGHT MODE — outside all enabled session windows; no reads, no entries until the next enabled window.")
+			at.logInfof("🌙 NIGHT MODE — outside every session window this strategy runs; no reads, no entries until the next runnable window.")
 		} else {
-			at.logInfof("🌅 DAY MODE — an enabled session window opened.")
+			at.logInfof("🌅 DAY MODE — a runnable session window opened.")
 		}
-		telemetry.IncGateBlock(at.id, "night_transition") // event row (until the P4 alert center)
+		// P2-3a (release #26): a night/day transition is an EVENT, not a
+		// refusal — it must not count as a gate-block.
+		telemetry.IncTraderEvent(at.id, "night_transition")
 	}
 	at.nightPrev = &night
 }

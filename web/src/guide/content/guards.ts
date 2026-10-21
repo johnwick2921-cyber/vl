@@ -40,6 +40,16 @@ export const guards: GuideSection = {
       kind: 'p',
       text: "While any position is open, EVERY entry is refused — either side, any plan version, on the arm path and the decision path alike: 'refused: position 591 open (v2 S1 short); no adds, no flips' (owner ruling 2026-09-03). The predecessor guard refused only the OPPOSITE side, because on a netting account an opposite-side fill silently nets the position; a same-side add was explicitly out of scope. The block on re-arming the SAME scenario in the same plan version lives in the store (MANUAL-CANCEL-WINS) and survives a restart, but a NEW plan version re-authorizes a terminal row — so a v3 S1 short could have added to a v2 S1 short position that was still open. An arm explicitly authored as an exit leg is exempt: that is how a position gets flattened.",
     },
+    { kind: 'h', text: 'One trader per (symbol, account)' },
+    {
+      kind: 'p',
+      text: 'Two traders can never trade the same account on the same symbol — a second one would double-apply the same fills. Starting a trader while another running trader already holds its (symbol, account) is refused with a 409 that names the other trader. At boot, if two traders in the database share a (symbol, account) and both are marked running, the first by created_at starts and the second is refused, marked not-running, and a P0 names both. A refused duplicate never falls back to a legacy path.',
+    },
+    { kind: 'h', text: 'Stop before changing the account' },
+    {
+      kind: 'p',
+      text: "A running trader's NT8 account cannot be changed — the account dropdown is disabled while it runs. Selecting an account that is already bound to another trader on the same symbol is refused with a 409 that names that trader. Stop the trader first, then choose the account, then start it.",
+    },
     { kind: 'h', text: 'Invalidation is execution-wired' },
     {
       kind: 'p',
@@ -103,12 +113,17 @@ export const guards: GuideSection = {
         [
           'Feed down / dead-man / freeze / boot integrity',
           'HARD',
-          'No bars, no bridge, no trading — cycle skipped or refused.',
+          'No bars, no bridge, no trading — cycle skipped or refused. The dead-man watchdog is sampled on every trader’s 1-minute monitor beat as well as its decision cycle, and it compares the NinjaTrader connection’s accept number between samples: a disconnect and reconnect that both fell between two samples (2026-10-14, trader 12345 holding a position) now blocks NEW entries until a clean reconciliation, exactly like one it saw. A clean reconciliation now means a positions snapshot AND an order snapshot RECEIVED on the new connection (after its accept number) — two reads that merely did not error could be answered from the old link’s cached frames. Resting entry orders are LEFT resting and listed by name while entries are blocked (whether to cancel them on a reconnect is an owner decision).',
         ],
         [
-          'Unprotected position (2026-09-07)',
+          'Stale data / clock step (release #22)',
           'HARD',
-          "Every minute while a position is open, and again the moment the NinjaTrader link comes back: is there a LIVE stop at the broker for it? If the book shows none, a P0 is raised AND a stop is placed — at the price the broker itself accepted, or failing that the plan's composed stop. It is the one check that acts rather than reports, because a position with no stop has no safe amount of waiting. Three things stop it acting: no fresh book, a protective order in a state this build cannot read, or a live stop whose quantity the book does not carry. Each says so in the journal and does nothing — an unknown is not permission to place a SECOND stop beside an invisible one. A PARTIALLY covered position is raised, never patched. Born from 2026-09-06 23:37:02, when a cancel meant for an already-filled entry took its stop with it and the position ran 8h19m unprotected with nothing in the bot looking.",
+          'A NEW entry needs a fresh 1m feed on two clocks: the bar age on the wall clock (~75 s) AND the arrival of the last live 1m frame on the monotonic clock (135 s). Any wall-clock step of 6 s or more (CLOCK_STEP_FREEZE_MS, default 6000 ms — raised from 2000 ms because the box’s normal 2–5 s NTP corrections held entries) holds NEW entries for 120 s of monotonic time (CLOCK_STEP_HOLD_S); steps of 2–6 s are logged and counted, never held — except inside the CME open/close boundary (15:59–16:01 and 16:59–17:01 CT), where any step of 2 s or more still holds because it can flip IsCMEOpen; smaller steps from 100 ms (CLOCK_STEP_DETECT_MS) are logged and counted only. The boot line “🕰 clock-step guard” and /api/health print the values the bot actually read. Exits and protection are never held. It binds every NEW entry path: AI decisions, mentor arms and — since OPS NEW-2 (10-14) — planner and Picture-scenario arms at their send point, where a refused row stays armed (never cancelled) and places on the first pass after the feed is fresh. Counted as stale_data on the AI decision path and for planner arms (a planner arm held by a step counts as clock_step, once per row per episode), and as mentor_stale_data for a refused mentor placement; every step logs “🕰 clock step”. A planner arm goes through the same one-verdict kernel.EntryFeedStale, so a wired live-frame provider reporting no live 1m frame since boot reads stale (fail-closed) even when the 1m cache is empty. Disclosure (m168): raising the freeze to 6000 ms makes the 10-21 00:44–02:56 live-refused mentor arms placeable — 00:44 short 29822.50, 01:24 short 29815.25 (likely filled, ~−12.75 pt, displacing the 666 slot), plus 02:14 / 02:34 / 02:56 (which the HTF direction gate refuses anyway); the owner’s chrony fix (12:32 CT) cuts the step rate.',
+        ],
+        [
+          'Unprotected position (2026-09-07, tightened 2026-10-11)',
+          'HARD',
+          "Every minute while a position is open, and again the moment the NinjaTrader link comes back: is there a LIVE stop at the broker for it? If the book shows none, a P0 is raised AND a stop is placed. For a MENTOR position the stop placed is the driver's CURRENT stop — the moved break-even / 1:1 / trail stop, never the original entry stop. If a FRESH last price is already THROUGH that current stop, the stop would have filled, so the position is FLATTENED at market instead. The only price that may flatten is the newest 1-minute close judged fresh by the same stale-data rule that blocks mentor entries (~75 s bar age on the wall clock, AND a live 1m frame received within 135 s on the monotonic clock, so a wall-clock step back can no longer make a dead feed's last close look fresh; a clock-step hold never freezes protection) AND only while the CME is open — while the CME is closed (the 16:00–17:00 halt, the weekend) there is no fresh price, so a SWING4H held across the break is never flattened on a stale close. The flatten P0 is raised once per EPISODE: a new episode (the verdict leaving flatten and returning) raises a fresh P0, while repeats inside one episode stay silent and the close is re-sent with a retry count. No fresh price — no 1m bars yet, a stale feed, or the CME closed — and it does NOT flatten: it places the driver's stop and the P0 says the stop side could not be checked. A stale close, or the position mark's fall-back-to-entry, can never flatten a healthy position. For any other position the stop placed is the price the broker itself accepted, or failing that the plan's composed stop. It is the one check that acts rather than reports, because a position with no stop has no safe amount of waiting. Three things stop it acting: no fresh book, a protective order in a state this build cannot read, or a live stop whose quantity the book does not carry. Each says so in the journal and does nothing — an unknown is not permission to place a SECOND stop beside an invisible one. A PARTIALLY covered position is raised, never patched. Kill-switch: env PROTECTION_MENTOR_STOP (default ON). Born from 2026-09-06 23:37:02, when a cancel meant for an already-filled entry took its stop with it and the position ran 8h19m unprotected with nothing in the bot looking.",
         ],
         [
           'Boot sweep (class 33)',
@@ -123,22 +138,22 @@ export const guards: GuideSection = {
         [
           'min_confidence',
           'HARD',
-          'Confidence below the floor (default 60) → entry refused.',
+          'Confidence below the floor (default 60) → entry refused. Decision path only: a plan arm carries no AI confidence, so under strict this gate never runs (since release #22 an arm entry stores its confidence empty / n/a; rows written before release #22 still show 0).',
         ],
         [
-          'MIN-SL (env MIN_SL_ATR_MULT, 1.0)',
+          'MIN-SL (env MIN_SL_ATR_MULT, default 1.5)',
           'HARD',
           'Stop closer than the floor (×ATR + 2-tick clearance) → refused. On CME futures, judged on the tick-rounded prices the broker receives (the stop rounds away from the entry).',
         ],
         [
           'HTF veto',
           'HARD',
-          "Entry against the HTF regime at a veto anchor → refused. MODE (HTF_VETO_MODE): 1h | cross | 4h — LIVE = cross: vetoes only when 1h AND 4h both agree (the 2026-08-28 autopsy: 1h-only blocked 3 would-have-won arms = +$352, 4h was RANGING at all 7 → cross blocks nothing the evidence doesn't support).",
+          'Entry against the HTF regime at a veto anchor → refused. MODE (HTF_VETO_MODE): 1h | cross | 4h — LIVE = cross: vetoes only when 1h AND 4h both agree (the 2026-08-28 autopsy: 1h-only blocked 3 would-have-won arms = +$352, 4h was RANGING at all 7 → cross blocks nothing the evidence doesn\'t support). FIXED (F-4): until this fix cross could NEVER veto — the cycle snapshot held 5m/15m/1h only, so it never found a 4h trend and passed every entry without a word (zero htf_veto refusals since 08-28; on 10-14 the 1h read TRENDING_DOWN all through the long #653). The 4h trend now comes from the bar cache\'s own 4h series, and a missing TF is said out loud (🛡️ HTF veto (cross) SKIPPED …). A one-way move also counts: a TF whose 3-swing set reads RANGING but whose newest closed bar broke the last swing extreme by ≥ STRUCTURE_ONEWAY_ATR (1.0) × ATR reads TRENDING in that direction for the veto only (the refusal says "one-way: …"); a genuine range still never vetoes, and every other reader of the structure trend is unchanged. JUDGED AT WRITE TOO (2026-10-16): when the planner writes a plan, its feasibility check now runs this veto on the same snapshot the arm pass builds (the 1m cache for the 1h, the native 4h series for the 4h). Before, that check passed no snapshot at all, so every plan write logged "🛡️ HTF veto (cross) SKIPPED — no 1h+4h" (136 times on 10-15) and a counter-trend arm was published, then refused only when it tried to arm (10-15 NY S1 and S2 longs). Now a counter-trend arm goes back to the planner as a repair hint; after the last attempt it is written with its arm disabled (arm_disabled_reason veto). SKIPPED now means one thing only: the bar cache had no bars for that timeframe.',
         ],
         [
-          'ARM floors (ARM_MIN_RR 2.0)',
+          'ARM floors (the strategy min R:R)',
           'HARD',
-          'The resting-order gate: R:R ≥ 2.0 AND stop ≥ 1.0×ATR5m or the arm is REFUSED every cycle.',
+          "The resting-order gate: R:R ≥ the bound strategy's min_risk_reward_ratio (2 on both bound strategies; ARM_MIN_RR was deleted 2026-09-03 — one floor for the arm seam and the decision path) AND stop ≥ the MIN-SL floor (1.5×ATR5m, kernel.MinSLATRMultDefault) or the arm is REFUSED every cycle.",
         ],
         [
           'Entry gate (class 48) — ONE gate, BOTH paths',
@@ -151,14 +166,44 @@ export const guards: GuideSection = {
           'No entries in the ±15m window around T1 events (calendar) whose currency is in day_plan.t1_currencies — default USD only (W-T1-CURRENCIES, 2026-09-18). A red event in any other currency (the 2026-09-17 BOJ rate decision, JPY, 21:54 CT, which hard-blocked the MNQ bot) is an ADVISORY line on the card, in the plan\'s no_trade list and in the prompt — visible, never blocking; set ALL to restore the old every-currency block. An event with no currency still hard-blocks (fail closed). When the host clock measurably disagrees with the NT8 feed the band is widened, but only by a CAPPED amount: 2 minutes a side at most (the 60 s tolerance plus one boundary minute), and the card says "(clock drift)" only when the measured skew is between 60 s and 5 min. A larger positive reading is the AGE of the last bar — a CME halt or a feed gap — not the clock; since 2026-09-17 (CLASS 145) it widens nothing beyond the cap and the journal says "feed stale Nm — halt or gap". While the Day Plan is on, entries are also refused from 2 minutes BEFORE the window (the force-flat lead, when open positions are flattened), on every path and trigger — scan, live-bar pass and AI decision — and any unfilled arm is cancelled. While the window stays open, a cancel NinjaTrader has not yet confirmed is re-sent at most once every 30 seconds per order, not on every scan and live-bar pass, so a lost cancel is still retried without the sweep blocking each pass on a dark book. These refusals are counted as force_flat_window, not as the no-trade band. Before that, the ASIA read authored inside the 16:00–17:00 halt widened the BOJ ±15m band by 39 minutes a side: an hour and three-quarters of the session blocked by a clock that was never wrong.',
         ],
         [
+          'Calendar slice missing (fail-closed alert)',
+          'HARD',
+          'The "Calendar slice missing" P0 fires ONLY when the calendar feed was NOT fetched for that trade date and the static file does not cover it — the bot then holds the standard 07:30 CT print window fail-closed. Since CAL-EMPTY-DAY, a fetched date with NO events is stored as an empty slice ("[]"), so an event-free day does NOT alert: the gate reads "fetched, nothing scheduled" and opens with no T1 blackout (the log says "📅 calendar: <date> fetched — no events scheduled"). The alert means the feed genuinely did not reach that date, not that the day had no news.',
+        ],
+        [
           'Lunch / session windows / EOD flat',
           'HARD',
-          'Outside an enabled session window, inside the lunch or first-N no-trade band (the lunch window is the one kernel.LunchWindowCT() resolves — read, never a literal), or past the session close: no NEW entry, and flat at session end. Since 2026-09-09 the band binds the ARM path too. Until then it was read by the AI-decision gate and the adherence grader and by NOTHING on the arm path, so under plan_mode=strict — where a resting order is the only way in — it refused nothing. An arm inside the band is now refused, and an arm already resting when the band opens is CANCELLED rather than grandfathered: refusing only NEW arms while one placed at 11:58 rests into 12:00 is a band that stops authoring and not entering. A cancel still unconfirmed by NinjaTrader is re-sent at most once every 30 seconds per order while the band stays open, not on every pass. A session whose EOD flat is set earlier than its last-entry cutoff refuses entries from the flat on, not only at last-entry (counted as force_flat_window).',
+          'Outside an enabled session window, inside the lunch or first-N no-trade band (the lunch window is the one kernel.LunchWindowCT() resolves — read, never a literal), or past the session close: no NEW entry, and flat at session end. MENTOR-MODE EXCEPTION: a mentor arm is NOT refused by the lunch band or the first-5m band — those two are waived for mentor rows (trader/session_risk.go mentorWaivesSessionBand); every other session refusal still applies to it (live: mentor row 251 filled at 13:25 CT on 10-05, inside the lunch band). Since 2026-09-09 the band binds the ARM path too. Until then it was read by the AI-decision gate and the adherence grader and by NOTHING on the arm path, so under plan_mode=strict — where a resting order is the only way in — it refused nothing. An arm inside the band is now refused, and an arm already resting when the band opens is CANCELLED rather than grandfathered: refusing only NEW arms while one placed at 11:58 rests into 12:00 is a band that stops authoring and not entering. A cancel still unconfirmed by NinjaTrader is re-sent at most once every 30 seconds per order while the band stays open, not on every pass. A session whose EOD flat is set earlier than its last-entry cutoff refuses entries from the flat on, not only at last-entry (counted as force_flat_window). Past a session’s last-entry cutoff the arm path no longer WRITES a new arm row for that session’s plan ("🕒 arm NOT authored … last_entry", counted once), and a resting zone row is not counted as WAITING any more — it is refused as last_entry. When a band cancels a row whose own session has already CLOSED, the cancel names the close ("session ended (LONDON closed; NY is active)"), not the next session’s band.',
         ],
         [
           'Consecutive-loss breaker',
           'HARD',
           'After N consecutive losing closes in one CME session-day, no new entry on EITHER path until the 17:00 CT roll. N is 8 by default and the owner may set it — since W1 (settings truth, 2026-09-23) presence-aware: a saved number wins, a saved 0 is OFF, and a BLANK strategy value inherits env BREAKER_HALT_N (0 = off) else 8; the 🛑 boot line tags each [O] saved, [E] env, [I] default; a WARN at 5 counts and surfaces without refusing. This is the ONE session limit that is not gated by the guardrails master, so it bites whether or not that switch is on — and since 2026-09-09 it is wired to the ARM path as well as the decision path, which under plan_mode=strict is the only path that trades. Honest about its own reach: on the retained tape the longest run of losers is SEVEN, so a threshold of 8 would never have fired — the boot line says so only when N ≥ 8. A stored 0 from before W1 meant "inherit" then and "OFF" now: the trader bound to it is REFUSED at load (the ⛔ line names the strategy, the field and both meanings) until a Studio save confirms it — the conversion never silently disables a breaker. An UNRESOLVABLE P&L ends a run rather than bridging it — an unknown outcome must not push the desk toward a halt.',
+        ],
+        [
+          'Owner pause (stop_until)',
+          'HARD',
+          'POST /api/traders/:id/pause sets a deadline; until it passes, NEW entries are refused on every path (AI decision, agent chat, arm, Picture). Closes, EOD-flat, the 60-second monitor guards and NT8 brackets continue. Off unless the owner pauses; not gated by the guardrails master. The deadline is kept in system_config (trader_pause_until:<trader>) and restored after a restart; the first check at or after it auto-resumes, and POST /api/traders/:id/resume clears it at once. Logs "⏸ stop_until"; counted as stop_until. (trader/auto_trader_pause.go entryPausedAt, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Maintenance hold (update install)',
+          'HARD',
+          'While the updater holds the installation (<data>/updater/hold.json; an unreadable hold file holds too, fail-closed), NEW entries are refused on every path, and the NT8 entry send itself must also pass a send-side permit that is refused while held. Position management continues. Set only by an update job, never by a strategy setting; resuming a stop_until pause does not lift it — entries resume when the update completes. Logs "🔒 maintenance hold"; counted as maintenance_hold. (trader/maintenance_gate.go MaintenanceHeld / MaintenanceEntryPermit, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Install pending (update preflight, release #22)',
+          'HARD',
+          'While an update job sits in a pre-hold state (requested, downloaded, verified or preflight_ok — read-only from the updater’s job files), NEW entries are frozen on every path, so the bot stops placing while the preflight waits for it to be flat. It clears when the job leaves those states (at maintenance_held the hold above takes over) or once the job is older than the updater’s 30-minute limit (updaterjob.MaxJobAge). Exits, protection, closes and plan reads continue. Always on; nothing to configure. A job file that cannot be read is skipped, WARNed and counted (install_pending_unreadable) once per file version — it never freezes entries. Logs "⏳ install pending"; refusals are counted as install_pending, each new job once as install_pending_episode. (trader/install_pending.go InstallPending, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Daily guardrails + daily-loss latch (release #22)',
+          'HARD',
+          'ONE verdict asked by every entry path (AI decision, agent chat, planner arms, mentor arms, Picture): the daily loss limit on the bot’s own session-day P&L (realized + open, manual trades excluded), the daily profit target and max daily trades. OFF by default: nothing trips unless the guardrails master (guardrails_enabled) AND that leg’s own toggle are on, and a switch never saved reads OFF (both bound strategies store them OFF). A loss breach LATCHES until 17:00 CT and survives a restart (system_config daily_loss_latch:<trader>); while latched the 60-second monitor beat cancels resting entry orders and flattens the bot’s own positions. The trip logs "🔴 DAILY LOSS LIMIT HIT" once and counts daily_loss_tripped; refusals are counted as daily_loss, daily_profit_target or max_daily_trades. Only a definite limit refuses here; an unknown (an unresolved close today, a failed read) refuses only at the mentor’s authoring step. The AI decision cycle also runs the kernel’s own check first and holds the cycle (counted strategy_studio_daily). Details: Settings → Risk Control knobs → Daily loss limit. (trader/daily_loss_gate.go dailyGuardVerdictAt, asked in trader/entry_admission.go admitChain)',
+        ],
+        [
+          'Re-entry cooldown (B7)',
+          'HARD',
+          'After a STOP-LOSS exit (NT8 exit reason "sl"; target and manual exits do not arm it), a SAME-direction re-entry on that symbol is refused until the cooldown minutes pass — or, on the AI decision path only, until price is a full ATR15 away from the stop, whichever comes first. Decision path: the entry is turned into WAIT (kernel/engine_analysis.go applyReentryCooldown); arm and Picture paths: refused in trader/entry_admission.go admitChain through discipline.ReentryPeek, timer only. OFF by default — risk_control.reentry_cooldown_minutes 0 or unset is OFF, and neither bound strategy stores a value; not gated by the guardrails master. The stop record lives in memory only, so a restart clears it. An agent-chat entry is not checked by it. Logs "⛔ re-entry cooldown"; counted as reentry_cooldown on both paths.',
         ],
         [
           'Side-quota (0-on-a-side / empty map)',
@@ -197,21 +242,21 @@ export const guards: GuideSection = {
         {
           title: 'confidence too low (N), must be ≥M',
           body: "The AI's confidence was under min_confidence. Not a bug — the bar.",
-          cite: 'kernel/engine_position.go:188',
+          cite: 'kernel/engine_position.go validateDecision (min-confidence check)',
         },
         {
           title: 'no matched scenario cited (strict mode)',
           body: "plan_mode=strict and the action didn't cite an armed S#. The plan is the law. Even a CITED decision is never a market entry under strict (entry_gate: refused: strict — … ARM path only): if the cited scenario is an enabled market_in_zone arm, the decision nudges one armed pass for it and the record carries the executor's verdict.",
-          cite: 'trader/auto_trader_planconfig.go:206-249',
+          cite: 'trader/auto_trader_planconfig.go planModeBlockedAt',
         },
         {
           title: 'against the plan (direction mode)',
           body: 'The bias is long and the entry is short. Advisory says fine; direction says no.',
         },
         {
-          title: '|entry−SL| below MIN_SL_ATR_MULT × ATR',
-          body: 'The stop is too tight for the volatility floor.',
-          cite: 'kernel/engine_position.go:196',
+          title: 'sl_too_tight: D < M×ATR (A) — widen or skip',
+          body: 'The stop is too tight for the volatility floor: |entry−SL| (D) is below MIN_SL_ATR_MULT (M) × the 5m ATR (A).',
+          cite: 'kernel/engine_position.go validateDecision → kernel/min_sl.go MinSLVerdict',
         },
         {
           title: 'past last-entry time · outside session window · lunch',
@@ -230,6 +275,12 @@ export const guards: GuideSection = {
           title: 'gate-block counters',
           body: '"Refused this session" panel shows every label + count; reset at the 17:00 roll and on restart.',
           cite: 'web/src/components/plan/GateBlocksPanel.tsx',
+        },
+        {
+          title:
+            'room_gate · thesis_death_exit · no_chase_refused · momentum_into_zone · atr_floor_beyond_invalidation · breakeven_r_unknown_risk (release #25, all OFF by default)',
+          body: 'The STRICT-12345 loss-fix switches. They count only after the owner turns one on in Studio (Day Plan → Loss-fix switches; Risk Control → Auto-breakeven → Trigger in R). room_gate: the first obstacle is closer than planner_room_min_r × risk (room_gate_tp1 = the target was moved to it instead). thesis_death_exit: a planner position closed at market because its own invalidation closed, its plan went dormant, or a newer plan turned the other way. no_chase_refused / momentum_into_zone: an arm placement refused for chasing / for price racing into the zone. atr_floor_beyond_invalidation: the ATR stop floor would sit past the authored invalidation, so the arm was refused instead of widened. breakeven_r_unknown_risk: breakeven in R had no initial risk and used the points rule. Settings → Day Plan cards carry what each would have done on #649–#654.',
+          cite: 'web/src/guide/content/settings.ts (the F-2/F-3/F-5/F-7/F-8 cards)',
         },
         {
           title: 'attempted-entry replay guard (FIX-DOUBLE-ENTRY)',
@@ -267,7 +318,7 @@ export const guards: GuideSection = {
     { kind: 'h', text: 'Guardrails + SIM lock' },
     {
       kind: 'p',
-      text: 'Risk guardrails: TWO switches must be on before the daily loss limit does anything. The master (guardrails_enabled) arms the whole block, and daily_loss_enabled arms this leg — both are OFF today, so the configured $450 limit is DECORATIVE and enforces nothing until both move. The desk strip DAY line says exactly that, in those words. The master also arms the daily profit/trade limits, re-entry cooldown, blackout windows, max-contracts and notional caps; the always-on pair (max contracts/order, notional cap) needs no toggle. The consecutive-loss breaker is deliberately OUTSIDE all of this and works regardless. Would-have-tripped counters are visible in the dashboard. SIM lock: every account list is filtered to SIM; the bot cannot route to a live NT account — do not try.',
+      text: 'Risk guardrails: the daily loss limit is OFF unless you turn it on in Strategy Studio → Risk Control — TWO switches must be on: the master (guardrails_enabled) arms the whole block, and the Daily loss limit row\u2019s toggle (daily_loss_enabled) arms this leg, with the dollar amount in that row\u2019s $ field. Both are OFF today, so the configured $450 limit is DECORATIVE and enforces nothing until both move; a switch never saved reads OFF too (since release #22). The desk strip DAY line says exactly that, in those words. When both are ON and the bot\u2019s own day P&L (realized + open, manual trades excluded) reaches −limit, every path refuses new entries, the 60-second beat cancels resting entry orders and flattens the bot\u2019s positions, and the gate stays latched until 17:00 CT. Max daily trades and the profit target (each with its own toggle) refuse on every path too, mentor included. Min confidence gates AI decisions only — it does not apply to mentor mode. The master also arms the daily profit/trade limits, the blackout window and the consistency rule (those last two are checked on the AI decision cycle only). Max contracts/order and the notional cap are NOT under the master: they are always on and have no toggle (the old max_contracts_enabled / notional_cap_enabled fields are parse-only). MENTOR MODE: max_contracts_per_order is NOT applied to mentor entries — a mentor-mode trader sizes from its own table (mentor_base_contracts …, hard cap mentor_max_contracts, default 20), so the per-order cap below is decorative for the mentor. The re-entry cooldown is deliberately OUTSIDE the master, like the consecutive-loss breaker: 0 = OFF until a strategy value is saved, and a saved value enforces regardless of the master switch. The consecutive-loss breaker is also outside all of this and works regardless. Would-have-tripped counters are visible in the dashboard. SIM lock: every account list is filtered to SIM; the bot cannot route to a live NT account — do not try.',
     },
     { kind: 'h', text: 'WHEN A PLAN IS REJECTED: THE REPAIR RETRY (class 44)' },
     {

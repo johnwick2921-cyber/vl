@@ -12,6 +12,7 @@
 package store
 
 import (
+	"errors"
 	"testing"
 	"time"
 )
@@ -40,9 +41,19 @@ func TestReauthorizationDoesNotSpawnARowPerCycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// The re-authorization cycle runs many times, as it does live (~2 min).
+	// CTO fold (PR #526): under the SAME version the placed slot is spent —
+	// every cycle is refused and nothing is minted.
+	for i := 0; i < 3; i++ {
+		if err := st.UpsertArm(mk()); !errors.Is(err, ErrArmSlotSpent) {
+			t.Fatalf("same-version cycle %d: want ErrArmSlotSpent, got %v", i, err)
+		}
+	}
+	// The re-authorization cycle under a NEW version runs many times, as it
+	// does live (~2 min): ONE successor, then refreshes of that live row.
 	for i := 0; i < 10; i++ {
-		if err := st.UpsertArm(mk()); err != nil {
+		r := mk()
+		r.Version = seed.Version + 1
+		if err := st.UpsertArm(r); err != nil {
 			t.Fatalf("cycle %d: %v", i, err)
 		}
 	}

@@ -86,6 +86,10 @@ func (at *AutoTrader) writeTimeFeasibilityVerdicts(d *kernel.PlanDoc, atr5m floa
 		minQuality = cfg.DayPlan.MinGradeFor(session)
 	}
 	bias := biasDirectionFor(d.Bias.Direction)
+	// The HTF veto inside armGateVerdictFor judges the snapshot the arm pass
+	// builds (armVetoSnapshot), NEVER nil: a nil here skipped the cross veto
+	// on every planner write (2026-10-16, veto_snapshot.go).
+	vetoSnap := at.lazyArmVetoSnapshot()
 	var out []writeTimeFeasibilityIssue
 	for i := range d.Scenarios {
 		sc := &d.Scenarios[i]
@@ -145,11 +149,17 @@ func (at *AutoTrader) writeTimeFeasibilityVerdicts(d *kernel.PlanDoc, atr5m floa
 			comp := composeArmStop(sc.Direction, leg.Entry, leg.Stop, atr5m,
 				market.FuturesTickSize(at.futuresSymbol()), d.Levels, kernel.MinSLATRMult(),
 				kernel.MinSLTickClearance, armStopAnchorMaxATR())
+			// Release #25 PK-4 — the executor's own cap verdict, at write (OFF → "").
+			if why := at.atrFloorCapVerdictFor(*sc, comp); why != "" {
+				at.noteATRFloorCapAtWrite(session, sc.ID, why)
+				out = append(out, writeTimeFeasibilityIssue{Scenario: sc.ID, Class: ATRFloorBeyondInvalidationClass, Verbose: why, Kind: "gate"})
+				continue
+			}
 			if comp.Stop > 0 {
 				leg.Stop = comp.Stop
 			}
 		}
-		if v := at.armGateVerdictFor(*sc, leg, bias, nil, atr5m, minQuality, cfg, session, structuralFade); v != "" {
+		if v := at.armGateVerdictFor(*sc, leg, bias, vetoSnap(), atr5m, minQuality, cfg, session, structuralFade); v != "" {
 			out = append(out, writeTimeFeasibilityIssue{Scenario: sc.ID, Class: armRefusalClass(v), Verbose: v, Kind: "gate"})
 			continue
 		}
@@ -209,7 +219,7 @@ func geometryClass(reason string) string {
 func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 	var b strings.Builder
 	b.WriteString("write-time feasibility: ")
-	gateIssues := 0
+	gateIssues, vetoIssues := 0, 0
 	for i, is := range issues {
 		if i > 0 {
 			b.WriteString("; ")
@@ -224,6 +234,11 @@ func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 			b.WriteString(fmt.Sprintf("%s %s trigger %.2f is already %s price %.2f: a stop entry there fills at market on placement — author the trigger ahead of price, or author a reject/limit at the level", is.Scenario, is.Cond, is.Trigger, aboveBelow, is.Price))
 			continue
 		}
+		if is.Kind == "room" {
+			// Release #25 PK-1: the room gate carries its own words + numbers.
+			b.WriteString(fmt.Sprintf("%s %s", is.Scenario, is.Verbose))
+			continue
+		}
 		if is.Kind == "zone" {
 			// W3 (c): the zone refusal carries its own marker ("entry zone:")
 			// so the repair prompt routes RepairEntryZoneLaw.
@@ -231,10 +246,18 @@ func writeTimeFeasibilityHint(issues []writeTimeFeasibilityIssue) string {
 			continue
 		}
 		gateIssues++
+		if is.Class == "veto" {
+			vetoIssues++
+		}
 		b.WriteString(fmt.Sprintf("%s would be refused at arm — %s", is.Scenario, is.Verbose))
 	}
 	if gateIssues > 0 {
 		b.WriteString(" — widen the stop past the min-SL floor / raise the arm R:R / pick a mapped level with an id / choose a different condition")
+		if vetoIssues > 0 {
+			// 2026-10-16: the HTF veto is judged at write on the arm pass's
+			// own snapshot; its fix is the direction, not the geometry.
+			b.WriteString(" / for an HTF veto: author the side the higher-timeframe trend allows, or no arm")
+		}
 	}
 	return b.String()
 }
@@ -313,6 +336,7 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 	sym := at.futuresSymbol()
 	tick := market.FuturesTickSize(sym)
 	bias := biasDirectionFor(d.Bias.Direction)
+	vetoSnap := at.lazyArmVetoSnapshot() // the arm pass's snapshot, never nil (veto_snapshot.go)
 	var out []writeTimeFeasibilityIssue
 	for i := range d.Scenarios {
 		sc := &d.Scenarios[i]
@@ -328,7 +352,7 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 			if kernel.EffectiveArmPolicy(sc.Arm, &leg) != kernel.EntryPolicyMarketInZone {
 				continue
 			}
-			is, label, ok := at.zoneLegVerdict(d, *sc, leg, bias, atr5m, minQuality, cfg, session, tick, zoneMax)
+			is, label, ok := at.zoneLegVerdict(d, *sc, leg, bias, vetoSnap(), atr5m, minQuality, cfg, session, tick, zoneMax)
 			if !ok {
 				out = append(out, is)
 				break // one issue per scenario (the disable is per scenario)
@@ -340,8 +364,9 @@ func (at *AutoTrader) writeTimeZoneVerdicts(d *kernel.PlanDoc, atr5m float64, cf
 }
 
 // zoneLegVerdict judges ONE market_in_zone leg. ok=false → the issue; ok=true
-// → the provenance/geometry label for the INFO line.
-func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, leg kernel.PlanArmLeg, bias string, atr5m float64, minQuality string, cfg *store.StrategyConfig, session string, tick, zoneMax float64) (writeTimeFeasibilityIssue, string, bool) {
+// → the provenance/geometry label for the INFO line. snap is the HTF veto's
+// structure snapshot (armVetoSnapshot) — the far and near edges share it.
+func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, leg kernel.PlanArmLeg, bias string, snap map[string]kernel.StructureState, atr5m float64, minQuality string, cfg *store.StrategyConfig, session string, tick, zoneMax float64) (writeTimeFeasibilityIssue, string, bool) {
 	v := kernel.ArmZoneVerdict(sc, leg.Entry, leg.Stop, leg.Target, sc.Direction, tick, zoneMax)
 	if v.Code != "" {
 		return writeTimeFeasibilityIssue{Scenario: sc.ID, Class: v.Code, Kind: "zone", Cond: sc.Condition,
@@ -349,17 +374,24 @@ func (at *AutoTrader) zoneLegVerdict(d *kernel.PlanDoc, sc kernel.PlanScenario, 
 	}
 	side := strings.ToLower(strings.TrimSpace(sc.Direction))
 	stop := leg.Stop
-	if comp := composeArmStop(side, v.Near, leg.Stop, atr5m, tick, d.Levels, kernel.MinSLATRMult(),
-		kernel.MinSLTickClearance, armStopAnchorMaxATR()); comp.Stop > 0 {
+	comp := composeArmStop(side, v.Near, leg.Stop, atr5m, tick, d.Levels, kernel.MinSLATRMult(),
+		kernel.MinSLTickClearance, armStopAnchorMaxATR())
+	if comp.Stop > 0 {
 		stop = comp.Stop
 	}
+	// Release #25 PK-4 — the executor's own cap verdict, at write (OFF → "").
+	if why := at.atrFloorCapVerdictFor(sc, comp); why != "" {
+		at.noteATRFloorCapAtWrite(session, sc.ID, why)
+		return writeTimeFeasibilityIssue{Scenario: sc.ID, Class: ATRFloorBeyondInvalidationClass, Kind: "gate", Cond: sc.Condition,
+			Verbose: fmt.Sprintf("market_in_zone stop composed from the zone's near edge %.2f: %s", v.Near, why)}, "", false
+	}
 	far := kernel.PlanArmLeg{Entry: v.Far, Stop: stop, Target: leg.Target}
-	g := at.armGateVerdictFor(sc, far, bias, nil, atr5m, minQuality, cfg, session)
+	g := at.armGateVerdictFor(sc, far, bias, snap, atr5m, minQuality, cfg, session)
 	edge := fmt.Sprintf("far edge %.2f", v.Far)
 	if g == "" {
 		near := far
 		near.Entry = v.Near
-		g = at.armGateVerdictFor(sc, near, bias, nil, atr5m, minQuality, cfg, session)
+		g = at.armGateVerdictFor(sc, near, bias, snap, atr5m, minQuality, cfg, session)
 		edge = fmt.Sprintf("near edge %.2f", v.Near)
 	}
 	if g != "" {
@@ -433,4 +465,23 @@ func zoneProvenanceLabel(doc *kernel.PlanDoc, sc kernel.PlanScenario, lo, hi flo
 		kind = "frozen_overlap"
 	}
 	return fmt.Sprintf("%s:%s[%.2f,%.2f]", kind, names, zl, zh)
+}
+
+// noteFlipIncoherentDisabled (R22 F3) — the accepted doc's flip-incoherent
+// arms, already written disabled by kernel.DisableFlipIncoherentArms before the
+// feasibility verdicts ran: ONE WARN each (same shape as the other
+// arm-disabled-at-write lines) and the same per-class counter
+// arm_disabled_at_write:<trader>:<date>:<session>:flip_incoherent. Runs only
+// for the doc that is written — an attempt rejected later never wrote it.
+func (at *AutoTrader) noteFlipIncoherentDisabled(issues []kernel.FlipIncoherence, tradeDate, session string) {
+	for _, is := range issues {
+		at.logWarnf("⚔️ arm disabled at write: %s %s %s (%s)", session, is.Scenario, kernel.FlipIncoherentClass, is.String())
+		if at.store == nil {
+			continue
+		}
+		key := fmt.Sprintf("arm_disabled_at_write:%s:%s:%s:%s", at.id, tradeDate, session, kernel.FlipIncoherentClass)
+		if _, err := store.IncSystemCounter(at.store, key); err != nil {
+			at.logWarnf("⚔️ arm-disabled counter write failed: %v", err)
+		}
+	}
 }

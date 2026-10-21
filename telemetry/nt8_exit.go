@@ -5,6 +5,8 @@
 package telemetry
 
 import (
+	"sync/atomic"
+
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -34,3 +36,27 @@ func IncNT8ExitBusyPark() { NT8ExitBusyParksTotal.Inc() }
 
 // IncNT8ExitBusyParkPersistFailure records one failed post-busy persist write.
 func IncNT8ExitBusyParkPersistFailure() { NT8ExitBusyParkPersistFailuresTotal.Inc() }
+
+// r24 ADDON-CLOSE-ROUTING — every position_close_rejected frame the bot
+// receives: NT8 refused an exit/flatten (e.g. "no market data"), or the AddOn
+// (build 2026-10-14-a+) REFUSED a close it would not route (the named account
+// not found or not SIM, an ambiguous legacy close, an unknown instrument). The
+// position is STILL OPEN in each case; close_sync.go logs the 🚨 line, and
+// this counts it, so a refusal is never only a log line.
+var NT8CloseRejectedTotal = promauto.NewCounter(
+	prometheus.CounterOpts{
+		Name: "vl_nt8_close_rejected_total",
+		Help: "position_close_rejected frames received: an NT8 or AddOn refusal of a close (the position stays open).",
+	},
+)
+
+var nt8CloseRejected atomic.Int64
+
+// IncNT8CloseRejected records one received position_close_rejected frame.
+func IncNT8CloseRejected() {
+	nt8CloseRejected.Add(1)
+	NT8CloseRejectedTotal.Inc()
+}
+
+// NT8CloseRejectedCount is the process-lifetime count IncNT8CloseRejected kept.
+func NT8CloseRejectedCount() int64 { return nt8CloseRejected.Load() }

@@ -39,18 +39,57 @@ func TestReverseISBAtEMA9DefaultIsOn(t *testing.T) {
 
 func TestReverseISBAtEMA9LongAndShort(t *testing.T) {
 	cfg := reverseCfg()
+	// rel22 P2-1: ONE definition of the offset — the kernel authors the wire
+	// price itself (the executor adds nothing to a mentor row), so the entry is
+	// exactly the extreme ± the buffer, 1.5 [D2.1 p1 @ 06:12] (the trade
+	// #627/#628 ruling: the WIRE lands at extreme ± 1.5).
+	entryPts := cfg.ISBBufferPts
 	// uptrend, ISB points SHORT (red candle 1), EMA 9 inside the ISB range
 	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	in, ok, reason := ReverseISBAtEMA9(redPrev, cur, 101, SideLong, cfg)
-	if !ok || in.Side != SideLong || in.Price != 104.5 || in.Stop != 99.5-cfg.ISBBufferPts {
-		t.Fatalf("uptrend reverse: %+v ok=%v reason=%q — want long buy stop at the ISB high, stop other side minus buffer [D5.4]", in, ok, reason)
+	if !ok || in.Side != SideLong || in.Price != 104.5+entryPts || in.Stop != 99.5-cfg.ISBBufferPts {
+		t.Fatalf("uptrend reverse: %+v ok=%v reason=%q — want long buy stop at the ISB high + buffer (wire), stop other side minus buffer [D5.4, D1.4 p1 @ 22:26–23:26]", in, ok, reason)
 	}
 	// downtrend, ISB points LONG (green candle 1)
 	greenPrev := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
 	in, ok, _ = ReverseISBAtEMA9(greenPrev, cur, 101, SideShort, cfg)
-	if !ok || in.Side != SideShort || in.Price != 99.5 || in.Stop != 104.5+cfg.ISBBufferPts {
-		t.Fatalf("downtrend reverse: %+v ok=%v — want short sell stop at the ISB low [D5.4]", in, ok)
+	if !ok || in.Side != SideShort || in.Price != 99.5-entryPts || in.Stop != 104.5+cfg.ISBBufferPts {
+		t.Fatalf("downtrend reverse: %+v ok=%v — want short sell stop at the ISB low − buffer (wire) [D5.4, D1.4 p1 @ 22:26–23:26]", in, ok)
+	}
+}
+
+// TestReverseISBStampsItsCandleForRule5 — M565-2: the reverse ISB at EMA 9
+// stamps the ISB candle's high/low (EntryCandleHigh/Low) exactly like the
+// normal ISB, so rule 5 (the ORB-edge fraction) measures it. Dropping the
+// stamp leaves hi=lo=0 → the measure reads "unmeasured" and rule 5 silently
+// turns off for reverse ISBs → RED.
+func TestReverseISBStampsItsCandleForRule5(t *testing.T) {
+	cfg := reverseCfg()
+	redPrev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
+	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
+	in, ok, _ := ReverseISBAtEMA9(redPrev, cur, 101, SideLong, cfg)
+	if !ok {
+		t.Fatal("fixture: the uptrend reverse ISB must emit")
+	}
+	if in.EntryCandleHigh != cur.High || in.EntryCandleLow != cur.Low {
+		t.Fatalf("the reverse ISB must stamp the ISB candle high/low (rule 5 reads it); got high %.2f low %.2f, want %.2f/%.2f",
+			in.EntryCandleHigh, in.EntryCandleLow, cur.High, cur.Low)
+	}
+}
+
+// TestReverseISBAtEMA9NoTrendFailsClosed is the B6 (L14) call-site pin: with
+// no trend direction the reverse ISB used to fall through to SHORT
+// unconditionally (the `if trend == SideLong … return short` tail). MUTANT:
+// delete the trend=="" guard → ok=true with Side=short → RED.
+func TestReverseISBAtEMA9NoTrendFailsClosed(t *testing.T) {
+	cfg := reverseCfg()
+	// ISB points LONG (green candle 1); trend is unset.
+	greenPrev := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
+	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
+	in, ok, reason := ReverseISBAtEMA9(greenPrev, cur, 101, "", cfg)
+	if ok || in.Side != "" || in.Action != "" {
+		t.Fatalf("no trend → fail closed, never SHORT: got %+v ok=%v reason=%q [D5.4, B6]", in, ok, reason)
 	}
 }
 

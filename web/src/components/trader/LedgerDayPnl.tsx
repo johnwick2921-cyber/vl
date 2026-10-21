@@ -5,7 +5,16 @@
 // SAME number the footer computes (server-side, strict pnl_corrected), with
 // its resolved n and unresolved exclusion count — never a rate or a total
 // without its n.
+//
+// R22 PNL-TRUTH: the day is the CME SESSION day from 17:00 CT (the risk
+// gates' day — it used to be the CT calendar day), the figure is the BOT's
+// (manual NT8 rows excluded, owner ruling R1), and any manual rows in the day
+// are named in the chip instead of vanishing.
 import type { AccountInfo } from '../../types/trading'
+
+function signed(v: number): string {
+  return `${v >= 0 ? '+' : '−'}${Math.abs(v).toFixed(2)}`
+}
 
 export function ledgerDayLabel(
   account: Pick<
@@ -14,6 +23,8 @@ export function ledgerDayLabel(
     | 'ledger_day_resolved'
     | 'ledger_day_unresolved'
     | 'ledger_day_status'
+    | 'ledger_day_manual_excluded'
+    | 'ledger_day_manual_excluded_pnl'
   >
 ): string {
   if (typeof account.ledger_day_pnl !== 'number') {
@@ -22,7 +33,12 @@ export function ledgerDayLabel(
   const sign = account.ledger_day_pnl >= 0 ? '+' : ''
   const resolved = account.ledger_day_resolved ?? 0
   const unresolved = account.ledger_day_unresolved ?? 0
-  return `LEDGER_DAY::${sign}${account.ledger_day_pnl.toFixed(2)} (${resolved} resolved, ${unresolved} unresolved excluded)`
+  let label = `LEDGER_DAY::${sign}${account.ledger_day_pnl.toFixed(2)} (${resolved} resolved, ${unresolved} unresolved excluded)`
+  const manual = account.ledger_day_manual_excluded ?? 0
+  if (manual > 0) {
+    label += ` · manual ${manual} excluded (${signed(account.ledger_day_manual_excluded_pnl ?? 0)})`
+  }
+  return label
 }
 
 export function LedgerDayPnl({ account }: { account: AccountInfo }) {
@@ -30,7 +46,7 @@ export function LedgerDayPnl({ account }: { account: AccountInfo }) {
   return (
     <span
       data-testid="ledger-day-pnl"
-      title="Ledger day total — same rule as the position-history footer: pnl_corrected only; unresolved rows counted and excluded, never coerced"
+      title="Bot P&L for the CME session day (from 17:00 CT — the same day the risk gates count). Same rule as the position-history footer: pnl_corrected only; unresolved rows counted and excluded, never coerced; manual NT8 trades are not the bot's and are counted separately."
       style={{
         color:
           typeof account.ledger_day_pnl === 'number'

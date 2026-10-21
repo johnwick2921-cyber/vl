@@ -62,9 +62,29 @@ func (pb *PositionBuilder) ProcessTradeWithExitReason(
 	if strings.HasPrefix(action, "open_") {
 		return pb.handleOpen(traderID, exchangeID, exchangeType, symbol, side, quantity, price, fee, tradeTimeMs, orderID)
 	} else if strings.HasPrefix(action, "close_") {
-		return pb.handleClose(traderID, exchangeID, exchangeType, symbol, side, quantity, price, fee, realizedPnL, tradeTimeMs, orderID, exitReason)
+		return pb.handleClose(traderID, exchangeID, exchangeType, symbol, side, quantity, price, fee, realizedPnL, tradeTimeMs, orderID, exitReason, true)
 	}
 	return nil
+}
+
+// ProcessTradeCloseUnresolvedPnl records a close whose realized P&L is UNKNOWN
+// (no futures point value for the symbol — P3-1, release #26). It never
+// recomputes a price-delta figure and never stamps pnl_corrected: the row
+// closes with pnl_corrected NULL, which the corrected-column law (canon 40)
+// reads as UNRESOLVED — excluded from every P&L sum and counted. The caller
+// logs and counts the event. Only the NT8 close path should call this.
+func (pb *PositionBuilder) ProcessTradeCloseUnresolvedPnl(
+	traderID, exchangeID, exchangeType, symbol, side, action string,
+	quantity, price, fee float64,
+	tradeTimeMs int64,
+	orderID string,
+	exitReason string,
+) error {
+	if !strings.HasPrefix(action, "close_") {
+		return pb.ProcessTradeWithExitReason(traderID, exchangeID, exchangeType, symbol, side, action,
+			quantity, price, fee, 0, tradeTimeMs, orderID, exitReason)
+	}
+	return pb.handleClose(traderID, exchangeID, exchangeType, symbol, side, quantity, price, fee, 0, tradeTimeMs, orderID, exitReason, false)
 }
 
 // handleOpen handles opening positions (create new or average into existing)
@@ -121,12 +141,17 @@ func (pb *PositionBuilder) handleOpen(
 
 // handleClose handles closing positions (partial or full)
 // tradeTimeMs is Unix milliseconds UTC
+//
+// pnlKnown=false marks the close's P&L as UNKNOWN (no point value): realizedPnL
+// is taken as 0, the price-delta recompute is skipped, and pnl_corrected is left
+// NULL (the corrected-column law reads NULL as UNRESOLVED — excluded + counted).
 func (pb *PositionBuilder) handleClose(
 	traderID, exchangeID, exchangeType, symbol, side string,
 	quantity, price, fee, realizedPnL float64,
 	tradeTimeMs int64,
 	orderID string,
 	exitReason string,
+	pnlKnown bool,
 ) error {
 	// Get OPEN position
 	position, err := pb.positionStore.GetOpenPositionBySymbol(traderID, symbol, side)
@@ -143,8 +168,10 @@ func (pb *PositionBuilder) handleClose(
 
 	const QUANTITY_TOLERANCE = 0.0001
 
-	// Calculate realized PnL if not provided (some venues don't return it)
-	if realizedPnL == 0 && position.EntryPrice > 0 {
+	// Calculate realized PnL if not provided (some venues don't return it).
+	// Skipped when the caller knows the P&L is UNRESOLVED (no point value): a
+	// price-delta × quantity recompute would be a fabricated dollar figure.
+	if pnlKnown && realizedPnL == 0 && position.EntryPrice > 0 {
 		if side == "LONG" {
 			realizedPnL = (price - position.EntryPrice) * quantity
 		} else {

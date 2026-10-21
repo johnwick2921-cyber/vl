@@ -170,6 +170,27 @@ func EncodeVoidLevels(v []VoidLevelRecord) string {
 	return string(b)
 }
 
+// BindPlanToReadFact stamps ONE read-facts row — by the exact id the read's
+// insert returned — with the plan it produced. Called at PLAN-WRITE time (after
+// AppendPlan assigned the version), never at read time: the version is only
+// known once the plan row lands, so a read-time bind could only guess it.
+//
+// The bind is exact, not a "newest unbound row" heuristic: a failed read (facts
+// row written, no plan) can never be bound to a later plan that a different
+// path wrote, because that later path either carries its own facts id or none.
+// WHERE id = ? AND plan_id = '' keeps it idempotent and refuses to re-bind a
+// row that already carries a plan. Returns the number of rows updated (0 when
+// the id is unknown, the row was already bound, or the row is gone).
+func (s *PlannerReadFactsStore) BindPlanToReadFact(readFactID uint, planID string, version int) int64 {
+	if s == nil || s.db == nil || readFactID == 0 || planID == "" || version <= 0 {
+		return 0
+	}
+	res := s.db.Model(&PlannerReadFact{}).
+		Where("id = ? AND plan_id = ''", readFactID).
+		Updates(map[string]any{"plan_id": planID, "version": version})
+	return res.RowsAffected
+}
+
 // LatestReadFact returns the newest row (nil, gorm.ErrRecordNotFound when empty).
 func (s *PlannerReadFactsStore) LatestReadFact() (*PlannerReadFact, error) {
 	if s == nil || s.db == nil {

@@ -4,6 +4,7 @@ import (
 	"os"
 	"testing"
 	"time"
+	"vl/internal/testhome"
 
 	"vl/internal/testtmpfs"
 )
@@ -21,5 +22,5 @@ var prodCurrentPasswordFailSleep = currentPasswordFailSleep
 // internal/testtmpfs).
 func TestMain(m *testing.M) {
 	currentPasswordFailSleep = func(time.Duration) {}
-	os.Exit(testtmpfs.Run(m.Run))
+	os.Exit(testhome.Run(func() int { return testtmpfs.Run(m.Run) }))
 }

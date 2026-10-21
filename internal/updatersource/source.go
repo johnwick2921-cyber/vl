@@ -307,7 +307,13 @@ func (s *Source) commitForTag(ctx context.Context, tag string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	req.Header.Set("Accept", "application/vnd.github+json")
+	// The sha media type (OPS NEW-1, 10-14): GitHub answers the BARE 40-hex
+	// sha as text instead of the whole commit JSON. The JSON carries the
+	// commit's diff — release #22's merge dad0cf768 answered 1,217,057 B, past
+	// the old 1 MiB read cap, and the check failed "commits API body:
+	// unexpected EOF" ("release API unavailable" on the Updates page). The
+	// body size no longer depends on how big the release is.
+	req.Header.Set("Accept", commitShaMediaType)
 	req.Header.Set("User-Agent", "vl-updater")
 	resp, err := s.client.Do(req)
 	if err != nil {
@@ -323,18 +329,29 @@ func (s *Source) commitForTag(ctx context.Context, tag string) (string, error) {
 	default:
 		return "", fmt.Errorf("updatersource: commits API answered %d", resp.StatusCode)
 	}
-	var raw struct {
-		SHA string `json:"sha"`
-	}
-	dec := json.NewDecoder(io.LimitReader(resp.Body, 1<<20))
-	if err := dec.Decode(&raw); err != nil {
+	// Read one byte past the bound so an over-long body is REFUSED, never
+	// truncated into something that might look like a sha.
+	body, err := io.ReadAll(io.LimitReader(resp.Body, commitShaMaxBytes+1))
+	if err != nil {
 		return "", fmt.Errorf("updatersource: commits API body: %w", err)
 	}
-	if !commitishRe.MatchString(raw.SHA) {
+	if len(body) > commitShaMaxBytes {
+		return "", fmt.Errorf("%w: tag %q (commits API answered more than %d bytes — not a bare sha)", ErrReleaseCommitUnknown, tag, commitShaMaxBytes)
+	}
+	sha := strings.TrimSpace(string(body))
+	if !commitishRe.MatchString(sha) {
 		return "", fmt.Errorf("%w: tag %q", ErrReleaseCommitUnknown, tag)
 	}
-	return raw.SHA, nil
+	return sha, nil
 }
+
+// commitShaMediaType asks GET /repos/<r>/commits/<ref> for the bare sha.
+// Verified live 2026-10-14 (v2026.10.14.3): 200, Content-Type
+// "application/vnd.github.sha; charset=utf-8", Content-Length 40.
+const commitShaMediaType = "application/vnd.github.sha"
+
+// commitShaMaxBytes bounds the sha answer: 40 hex plus room for whitespace.
+const commitShaMaxBytes = 64
 
 // Download fetches <tag>.tar.gz into destDir and returns the final path.
 // destDir must be an existing absolute directory. The file is written as

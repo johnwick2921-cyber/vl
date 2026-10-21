@@ -129,45 +129,6 @@ func TestPostBootAckMustBeNewerThanTheKill(t *testing.T) {
 	}
 }
 
-// PIN (dispatch §0, mutant A30): a parked job leaves nt8_updated ONLY on the
-// attended resume verb — never on its own, not when the AddOn already runs
-// the release's build, not on a runner wake, not on a fresh worker.
-func TestTheParkIsLeftOnlyOnTheAttendedResume(t *testing.T) {
-	r := newRig(t, withCSChanged())
-	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated || j.Phase != updaterjob.PhaseDone {
-		t.Fatalf("no park: %s/%s", j.State, j.Phase)
-	}
-	r.f5() // the AddOn now acks the release's build
-	for i := 0; i < 2; i++ {
-		if err := r.drive(); err != nil {
-			t.Fatal(err)
-		}
-	}
-	r.w = r.newWorker()
-	if rep, err := r.w.sweep(); err != nil || rep.Active != boxJobID {
-		t.Fatalf("sweep = %+v, %v", rep, err)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated || j.ResumedAt != nil || r.callCount("activate") != 0 {
-		t.Fatalf("the park was left without a resume: %s/%s resumed_at=%v activate=%d", j.State, j.Phase, j.ResumedAt, r.callCount("activate"))
-	}
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume: %+v", resp)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateComplete || j.ResumedAt == nil {
-		t.Fatalf("after the resume: %s (resumed_at %v)", j.State, j.ResumedAt)
-	}
-}
-
 // PIN (C9 as ruled, mutant A46): verified re-proves the release and the
 // re-verified manifest must BE the verdict's — the same release id, source
 // sha and manifest hash. Any drift refuses the job before the release dir is
@@ -198,83 +159,44 @@ func TestTheReverifiedManifestMustBeTheVerdicts(t *testing.T) {
 
 // PIN (C11 as ruled, mutant A44): drained_acked reads /api/maintenance held
 // for THIS job. The app naming another job (whatever the hold file on disk
-// says) is not drained: recovery_needed with the hold kept, nothing backed up.
+// says) is not drained: reverted_clean — the hold is released (it is ours on
+// disk), the lock is released, nothing was backed up or installed.
 func TestDrainNeedsTheMaintenanceHoldForThisJob(t *testing.T) {
 	r := newRig(t)
 	r.hookAt("drained_acked/started", func() { r.set(func() { r.maintJob = "job-u4-9999abcd" }) })
 	j := r.runToEnd(t)
 	r.noViolations(t)
-	if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "not held for this job") {
-		t.Fatalf("job %s (reason %q), want recovery_needed: the hold is not held for this job", j.State, j.RecoveryReason)
+	if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "not held for this job") {
+		t.Fatalf("job %s (error %q), want reverted_clean: the hold is not held for this job", j.State, j.Error)
 	}
 	if r.callCount("backup") != 0 || r.callCount("activate") != 0 {
 		t.Fatalf("a job the app does not hold went on: %v", r.calls)
 	}
-	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
-		t.Fatalf("hold %s, want kept", s)
+	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldAbsent {
+		t.Fatalf("hold %s, want released (reverted_clean)", s)
 	}
 }
 
 // PIN (C12 as ruled, mutant A18): a release whose signed manifest lists no
-// ninjascript/*.cs cannot prove the AddOn source unchanged — even when the
-// install has none either (two empty sets are not a proof). It parks.
-func TestNT8ParksWhenTheReleaseListsNoCSharp(t *testing.T) {
+// ninjascript/*.cs cannot prove the AddOn source — even when the install has
+// none either (two empty sets are not a proof). The one-click build refuses
+// (reverted_clean, nothing activated): the AddOn cannot be compiled from
+// sources the manifest never signed.
+func TestNoCSharpReleaseIsRevertedClean(t *testing.T) {
 	r := newRig(t)
 	r.noCS = true
 	if err := os.Remove(filepath.Join(r.inst, "ninjascript", "VLTrader.cs")); err != nil {
 		t.Fatal(err)
 	}
-	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateRevertedClean || j.NT8 == nil || !strings.Contains(j.NT8.Reason, "lists no ninjascript/*.cs") {
+		t.Fatalf("job %s decision %+v, want reverted_clean: the release lists no C#", j.State, j.NT8)
 	}
-	j := r.job()
-	if j.State != updaterjob.StateNT8Updated || j.NT8 == nil || !strings.Contains(j.NT8.Reason, "lists no ninjascript/*.cs") {
-		t.Fatalf("job %s decision %+v, want the park: the release lists no C#", j.State, j.NT8)
+	if !strings.Contains(j.Error, "lists no ninjascript/*.cs") {
+		t.Fatalf("error %q must name the unproven AddOn source", j.Error)
 	}
 	if r.callCount("activate") != 0 {
 		t.Fatal("activated without proving the AddOn source")
-	}
-}
-
-// PIN (U4 re-verify note 2, mutant M32 — the verifier's probe P1): a resume
-// while the AddOn still runs the OLD build does NOT leave the park — the
-// owner typed resume but never did the F5. The job stays nt8_updated, nothing
-// is activated, the resume receipt is a refusal and the blocker names both
-// builds. After the F5 (the AddOn now acks the release's build) the next
-// resume leaves the park and the job completes.
-func TestResumeWaitsForTheAddOnBuildToMove(t *testing.T) {
-	r := newRig(t, withCSChanged())
-	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated || j.Phase != updaterjob.PhaseDone {
-		t.Fatalf("fixture: job %s/%s, want parked at nt8_updated/done", j.State, j.Phase)
-	}
-	r.clock.Advance(3 * time.Minute) // the owner takes as long as a real F5 would — but never does it
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume verb: %+v", resp)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	j := r.job()
-	rc := receiptOf(j, "resume")
-	wantWhy := `the AddOn acks build "` + boxOldBuild + `", the release is "` + boxNewBuild + `"`
-	if j.State != updaterjob.StateNT8Updated || r.callCount("activate") != 0 || j.ResumedAt != nil ||
-		!strings.Contains(j.Blocker, "resume refused") || !strings.Contains(j.Blocker, wantWhy) || rc == nil || rc.OK {
-		t.Fatalf("a resume without the F5 left the park: %s/%s activate=%d resumed_at=%v blocker=%q resume receipt=%+v",
-			j.State, j.Phase, r.callCount("activate"), j.ResumedAt, j.Blocker, rc)
-	}
-	r.f5()
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume verb after the F5: %+v", resp)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := r.job(); j.State != updaterjob.StateComplete || r.callCount("activate") != 1 {
-		t.Fatalf("after the F5 the resume ended %s/%s (activate=%d), want complete", j.State, j.Phase, r.callCount("activate"))
 	}
 }

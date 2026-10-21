@@ -2,6 +2,7 @@ package trader
 
 import (
 	"context"
+	"errors"
 	"net"
 	"path/filepath"
 	"strings"
@@ -37,9 +38,9 @@ func TestLateFillSurvivesThePassCancelRequest(t *testing.T) {
 	}
 
 	// The armed pass races in with its own cancel call (the SAME store method
-	// maybeManageArmedOrdersAt uses).
-	if err := ledger.RequestCancel(row.ID, "pass invalidation", time.Now().UnixMilli()); err != nil {
-		t.Fatalf("request cancel: %v", err)
+	// maybeManageArmedOrdersAt uses). Release #22 F-1: refused, typed.
+	if err := ledger.RequestCancel(row.ID, "pass invalidation", time.Now().UnixMilli()); !errors.Is(err, store.ErrArmCancelTerminal) {
+		t.Fatalf("request cancel on a filled row: want store.ErrArmCancelTerminal, got %v", err)
 	}
 	row2, _ := ledger.FindBySignal(at.id, "sig-r2")
 	if row2.State != "filled" {
@@ -351,6 +352,10 @@ func TestStopUnregistersThenSecondRunInstallsCleanly(t *testing.T) {
 		at := &AutoTrader{id: id, store: st, exchange: "ninjatrader", trader: nt, exchangeID: "ex"}
 		at.config.StrategyConfig = &store.StrategyConfig{}
 		at.mcpClient = &fakeDecisionClient{}
+		// A real scan interval: with 0, Run panicked at time.NewTicker right
+		// after the install and the pin only passed because that panic left
+		// the install behind. MENTOR-NY item 3 tears a panicked Run down.
+		at.config.ScanInterval = time.Minute
 		return at
 	}
 	installed := func(at *AutoTrader) bool {

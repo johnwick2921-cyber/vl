@@ -29,47 +29,45 @@ func mentoredTrader(t *testing.T, rc store.RiskControlConfig) *AutoTrader {
 // TestMentorContractsForSizeTable pins EVERY tier at the production call site
 // (mentorContractsFor). A size tier off by one — the CTO's mutant — fails this.
 func TestMentorContractsForSizeTable(t *testing.T) {
-	base, conf, big, reduced, swing4h, spentCap, mx := 5, 10, 20, 3, 3, 2, 20
+	base, conf, big, reduced, swing4h, spentCap, mx := 4, 4, 4, 4, 1, 2, 20
 	cases := []struct {
 		name string
 		in   mentorTierInputs
 		want mentorSizeChoice
 	}{
-		{"base ISB", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5}, mentorSizeChoice{5, "base", ""}},
-		{"base PHL", mentorTierInputs{Setup: "PHL", StopPts: 11.25, TargetPts: 22.5}, mentorSizeChoice{5, "base", ""}},
-		{"confluence", mentorTierInputs{Setup: "PHL", StopPts: 11.25, Confluence: true}, mentorSizeChoice{10, "confluence", ""}},
-		{"big", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{20, "big", ""}},
-		{"big needs 4h AND 1h", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: false}, mentorSizeChoice{10, "confluence", ""}},
-		{"big needs room", mentorTierInputs{Setup: "PHL", StopPts: 19.5, TargetPts: 35, RoomMultiple: 1.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{10, "confluence", ""}},
-		{"big needs target", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 29, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{10, "confluence", ""}},
-		{"stop in the twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46}, mentorSizeChoice{3, "reduced", ""}},
-		{"stop at 20 boundary", mentorTierInputs{Setup: "PLH", StopPts: 20, TargetPts: 40}, mentorSizeChoice{3, "reduced", ""}},
-		{"stop below twenties", mentorTierInputs{Setup: "PLH", StopPts: 19.5, TargetPts: 40}, mentorSizeChoice{5, "base", ""}},
+		{"base ISB", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5}, mentorSizeChoice{4, "base", ""}},
+		{"base PHL", mentorTierInputs{Setup: "PHL", StopPts: 11.25, TargetPts: 22.5}, mentorSizeChoice{4, "base", ""}},
+		{"confluence", mentorTierInputs{Setup: "PHL", StopPts: 11.25, Confluence: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"big", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "big", ""}},
+		{"big needs 4h AND 1h", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: false}, mentorSizeChoice{4, "confluence", ""}},
+		{"big needs room", mentorTierInputs{Setup: "PHL", StopPts: 19.5, TargetPts: 35, RoomMultiple: 1.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"big needs target", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 29, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"stop in the twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46}, mentorSizeChoice{4, "reduced", ""}},
+		{"stop at 20 boundary", mentorTierInputs{Setup: "PLH", StopPts: 20, TargetPts: 40}, mentorSizeChoice{4, "reduced", ""}},
+		{"stop below twenties", mentorTierInputs{Setup: "PLH", StopPts: 19.5, TargetPts: 40}, mentorSizeChoice{4, "base", ""}},
 		// B12 (CTO 1791041016051): the stop-in-the-twenties cut wins over
-		// confluence sizing — 3, never 10/20.
-		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 30, Confluence: true}, mentorSizeChoice{3, "reduced", ""}},
-		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{3, "reduced", ""}},
-		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{3, "reduced", ""}},
-		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{5, "base", ""}},
-		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{3, "swing4h", ""}},
-		{"hard cap", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{20, "big", ""}},
+		// confluence sizing — 4, never the confluence size.
+		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 30, Confluence: true}, mentorSizeChoice{4, "reduced", ""}},
+		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "reduced", ""}},
+		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{4, "reduced", ""}},
+		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{4, "base", ""}},
+		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{1, "swing4h", ""}},
+		{"big tier stays 4 (default)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "big", ""}},
 		// S9 (D5.2 p2 @05:21–05:57, S15 ruling): a strong day cuts the SWING
 		// only — "nhưng chỉ cùng 4 giờ". Other setups keep their tiers.
-		{"strong day does NOT cut big (swing-only)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true, StrongDay: true}, mentorSizeChoice{20, "big", ""}},
-		{"strong day does NOT cut base (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true}, mentorSizeChoice{5, "base", ""}},
-		{"strong day cuts the SWING to 2", mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}, mentorSizeChoice{2, "strong_day", ""}},
-		// ISB at an old high/low → reduce size, tier 3 (owner ruling 00:1x CT,
-		// D4.1 p1 written rule 2).
-		{"ISB at old extreme → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		{"old extreme beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		{"strong day does not beat old extreme (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		{"spent day no longer overrides old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{3, "isb_old_extreme", ""}},
-		// ISB in a range → reduce size, tier 3 (written rule 3, D4.1 p1
-		// @08:05/09:40) — same rank as the old-extreme reduction.
-		{"ISB in range → 3", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
-		{"in range beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
-		{"strong day does not beat in range (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
-		{"spent day no longer overrides in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{3, "isb_in_range", ""}},
+		{"strong day does NOT cut big (swing-only)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true, StrongDay: true}, mentorSizeChoice{4, "big", ""}},
+		{"strong day does NOT cut base (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true}, mentorSizeChoice{4, "base", ""}},
+		{"strong day does NOT raise the SWING above the 1-MNQ base", mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}, mentorSizeChoice{1, "strong_day", ""}},
+		// ISB at an old high/low → the reduced tier 4 (owner order 2026-10-16).
+		{"ISB at old extreme → 4", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBOldExtreme: true}, mentorSizeChoice{4, "isb_old_extreme", ""}},
+		{"old extreme beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBOldExtreme: true}, mentorSizeChoice{4, "isb_old_extreme", ""}},
+		{"strong day does not beat old extreme (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBOldExtreme: true}, mentorSizeChoice{4, "isb_old_extreme", ""}},
+		{"spent day no longer overrides old extreme", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBOldExtreme: true}, mentorSizeChoice{4, "isb_old_extreme", ""}},
+		// ISB in a range → the reduced tier 4 (written rule 3, D4.1 p1).
+		{"ISB in range → 4", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
+		{"in range beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
+		{"strong day does not beat in range (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
+		{"spent day no longer overrides in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -81,6 +79,185 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 				t.Fatalf("got (%d, %s, %q), want (%d, %s)", got.Contracts, got.Tier, got.Why, c.want.Contracts, c.want.Tier)
 			}
 		})
+	}
+}
+
+// TestMentorContractsForClampsAtMax — the size table clamps every tier at
+// mentor_max_contracts (a CEILING, not a tier default). A raised big knob above
+// the cap still comes back at the cap. This is the clamp pin the pure table's
+// old "hard cap" row used to carry (now that the big tier defaults to 5).
+func TestMentorContractsForClampsAtMax(t *testing.T) {
+	in := mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}
+	got, err := mentorContractsFor(in, 5, 5, 30, 3, 1, 2, 20) // big=30, max=20
+	if err != nil {
+		t.Fatalf("mentorContractsFor: %v", err)
+	}
+	if got.Contracts != 20 || got.Tier != "big" {
+		t.Fatalf("big=30 with max=20 must clamp to 20, got (%d, %s)", got.Contracts, got.Tier)
+	}
+}
+
+// TestMentorKnobsSwingDefaultIsOne — FIX-SWING-SIZE-LESSON: the swing tier's
+// shipped default is 1 MNQ, not 3. D5.2 p1 @00:38–00:47 "Em vô đúng 1 MNQ thôi,
+// em không vô nhiều" (I enter exactly 1 MNQ, I don't enter many).
+// course-defaults-30 (owner "fix all"): the swing base is 2 — "đừng vô 1 MNQ…
+// vô ít nhất là 2 MNQ để có đường bán bớt" [D5.2 p2 @06:19–06:23]. Named RED:
+// revert mentorSwing4HContractsDefault to 1 → swing4h != 2 → this fails.
+func TestMentorKnobsSwingDefaultIsOne(t *testing.T) {
+	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{}}}}
+	base, conf, big, reduced, swing4h, _, mx := at.mentorKnobs()
+	if base != 4 || conf != 4 || big != 4 || reduced != 4 || swing4h != 2 || mx != 20 {
+		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (4,4,4,4,2,_,20)", base, conf, big, reduced, swing4h, mx)
+	}
+}
+
+// TestMentorSize4Defaults — MENTOR-SIZE-4 (owner order 2026-10-16, "set to 4 at least, sell 2 first so it's equal"), course
+// 1.1 p2 L1103 "Cái sizing của em Cố định là 5 MNQ" + 3.4 p3 L531 + slide 5):
+// the confluence and big tiers no longer ADD contracts — they size a FIXED 4.
+// Runs the PRODUCTION call site (mentorSizeFor → mentorKnobs →
+// mentorContractsFor) with NO explicit confluence/big knobs, plus the
+// explicit-knob honour path. CTO mutants: restore the 10 confluence default /
+// the 20 big default / ignore the explicit knob → each turns its case RED.
+func TestMentorSize4Defaults(t *testing.T) {
+	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
+	t.Cleanup(func() { mentorConfluenceForIntent = nil })
+
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+
+	// big tier (confluence + 4h&1h agree + room ≥2× + target ≥30) → 4.
+	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
+		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
+	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "big" {
+		t.Fatalf("big tier: got %d %s, want 4 big (fixed 4 MNQ)", got.Contracts, got.Tier)
+	}
+
+	// confluence without 4h&1h agreement → 4.
+	confIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
+		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35}
+	got, err = at.mentorSizeFor(confIn, mentorExtraFor(confIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "confluence" {
+		t.Fatalf("confluence tier: got %d %s, want 4 confluence", got.Contracts, got.Tier)
+	}
+
+	// stop in the twenties → 4.
+	twIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PLH",
+		Price: 21000, Stop: 21023, Target: 21046, StopPts: 23, TargetPts: 46}
+	got, err = at.mentorSizeFor(twIn, mentorExtraFor(twIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "reduced" {
+		t.Fatalf("twenties stop: got %d %s, want 4 reduced", got.Contracts, got.Tier)
+	}
+
+	// course-defaults-30: a 28.25-pt stop (the 10-04 17:01 real case — long
+	// 31128.25 stop 31100) stays in the reduced 4-MNQ band, not the base 4.
+	// Mutant: the band top falls back to 25 (not the mentor_isb_max_pts 30) →
+	// this sizes base 4 → RED.
+	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
+		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
+	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "reduced" {
+		t.Fatalf("28.25-pt stop: got %d %s, want 4 reduced (the 20–<30 band)", got.Contracts, got.Tier)
+	}
+
+	// ISB at an old extreme → 4.
+	extIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
+		Price: 21000, Stop: 20994.25, Target: 21011.5, StopPts: 5.75, TargetPts: 11.5, Flag: mentor.FlagISBAtOldExtreme}
+	got, err = at.mentorSizeFor(extIn, mentorExtraFor(extIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "isb_old_extreme" {
+		t.Fatalf("ISB old extreme: got %d %s, want 4 isb_old_extreme", got.Contracts, got.Tier)
+	}
+
+	// swing → 2 (course-defaults-30). The confluence stub is forced OFF here —
+	// the confluence branch ranks BEFORE the swing branch, so a confluence-true
+	// swing would read as confluence.
+	swIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
+		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24}
+	swExtra := mentorExtraFor(swIn, false)
+	swExtra.Confluence = false
+	got, err = at.mentorSizeFor(swIn, swExtra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("swing: got %d %s, want 2 swing4h", got.Contracts, got.Tier)
+	}
+
+	// P1-5: a SWING4H stop in the 20–<30 band sizes by the swing tier (2), NOT
+	// the reduced 4 — the swing branch ranks BEFORE the reduced band. Mutant:
+	// move the reduced band before the swing branch → this sizes 4 → RED.
+	swBandIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
+		Price: 21000, Stop: 21022, Target: 21044, StopPts: 22, TargetPts: 44}
+	swBandExtra := mentorExtraFor(swBandIn, false)
+	swBandExtra.Confluence = false
+	got, err = at.mentorSizeFor(swBandIn, swBandExtra)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 2 || got.Tier != "swing4h" {
+		t.Fatalf("a swing stop in the 20–<30 band: got %d %s, want 2 swing4h (not the reduced 4)", got.Contracts, got.Tier)
+	}
+
+	// an explicit knob value 10 is still honoured (the owner can choose otherwise).
+	atKnob := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorConfluenceContracts: 10})
+	got, err = atKnob.mentorSizeFor(confIn, mentorExtraFor(confIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 10 || got.Tier != "confluence" {
+		t.Fatalf("explicit mentor_confluence_contracts=10: got %d %s, want 10 confluence", got.Contracts, got.Tier)
+	}
+}
+
+// TestMentorSizeWhyNamesKnobOverride — a size line must be TRUE for every
+// configuration (B-rules): under an owner knob override the Why prints the
+// ACTUAL count and marks the override, never a hardcoded "fixed 4 MNQ".
+func TestMentorSizeWhyNamesKnobOverride(t *testing.T) {
+	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
+	t.Cleanup(func() { mentorConfluenceForIntent = nil })
+
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorBigContracts: 10})
+	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
+		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
+	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 10 || got.Tier != "big" {
+		t.Fatalf("big with knob 10: got %d %s, want 10 big", got.Contracts, got.Tier)
+	}
+	if !strings.Contains(got.Why, "10") || !strings.Contains(got.Why, "override") {
+		t.Fatalf("override Why must name the count and the override: %q", got.Why)
+	}
+	if strings.Contains(got.Why, "fixed 4") {
+		t.Fatalf("override Why must NOT hardcode fixed 4: %q", got.Why)
+	}
+}
+
+// TestStrongDayCapsAtTwoEvenWithRaisedSwingBase — the strong-day band is 1–2,
+// so a RAISED swing knob must never push the strong-day cut above 2 (and never
+// above the base). Base 1 → 1; base 3 → min(2, 3) = 2.
+func TestStrongDayCapsAtTwoEvenWithRaisedSwingBase(t *testing.T) {
+	in := mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}
+	if got, err := mentorContractsFor(in, 5, 10, 20, 3, 1, 2, 20); err != nil || got.Contracts != 1 || got.Tier != "strong_day" {
+		t.Fatalf("strong day with base 1 = (%d,%s,%v), want (1,strong_day,nil)", got.Contracts, got.Tier, err)
+	}
+	if got, err := mentorContractsFor(in, 5, 10, 20, 3, 3, 2, 20); err != nil || got.Contracts != 2 || got.Tier != "strong_day" {
+		t.Fatalf("strong day with base 3 = (%d,%s,%v), want (2,strong_day,nil)", got.Contracts, got.Tier, err)
 	}
 }
 
@@ -216,13 +393,15 @@ func TestMentorSplitLegs(t *testing.T) {
 	}
 }
 
-// TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY.
+// TestMentorLeg1TPForC: C sets leg 1's TP at ≥1:2 AT ENTRY. The 2× is the ONE
+// definition — mentor.Leg1RiskMultiple(true) — that the room check also reads,
+// so a future leg-1 change can never drift from the room rule.
 func TestMentorLeg1TPForC(t *testing.T) {
-	if got := mentorLeg1TPForC(100, 10, "long"); got != 120 {
-		t.Fatalf("C leg-1 TP long = %.2f, want 120 (2R)", got)
+	if got := mentorLeg1TPForC(100, 10, "long"); got != 100+10*mentor.Leg1RiskMultiple(true) {
+		t.Fatalf("C leg-1 TP long = %.2f, want 120 (entry + r × Leg1RiskMultiple(true))", got)
 	}
-	if got := mentorLeg1TPForC(100, 10, "short"); got != 80 {
-		t.Fatalf("C leg-1 TP short = %.2f, want 80 (2R)", got)
+	if got := mentorLeg1TPForC(100, 10, "short"); got != 100-10*mentor.Leg1RiskMultiple(true) {
+		t.Fatalf("C leg-1 TP short = %.2f, want 80", got)
 	}
 }
 
@@ -230,39 +409,62 @@ func TestMentorLeg1TPForC(t *testing.T) {
 // logged and counted; wired actions reach their wires per leg.
 func TestMentorApplyExitResult(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
+	// The unwired path needs moveStopWire nil — but it carries a PRODUCTION
+	// default (exit_mechs_suspend.go:50), so this test must nil it explicitly
+	// to exercise the unwired branch (pre-existing merged-HEAD breakage: the
+	// first block read the production default as "wired" and counted
+	// move_stop_failed instead of move_stop_unwired).
+	oldMoveStopWire := moveStopWire
+	moveStopWire = nil
+	// Release #22: modifyBracketWire now carries a PRODUCTION default (the real
+	// leg-scoped modify_bracket), so the unwired branch must nil it explicitly —
+	// and the cleanup must RESTORE it, never leave the package seam nil.
+	oldModifyWire := modifyBracketWire
+	modifyBracketWire = nil
+	t.Cleanup(func() { moveStopWire = oldMoveStopWire; modifyBracketWire = oldModifyWire })
 	tp := 103.0
 
 	// unwired: both actions counted, never sent.
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{
-		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp,
+		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp, SignalID: "sig-apply",
 	})
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["move_stop_unwired"] != 2 || snap["modify_bracket_unwired"] != 1 {
 		t.Fatalf("unwired actions must be counted (2 move_stop, 1 modify): %v", snap)
 	}
 	// wired: each leg moves and the TP modifies.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	var moved []string
-	var modLeg string
+	var modLeg int
+	var modSig string
 	var modTP float64
 	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
 		moved = append(moved, side)
 		return nil
 	}
-	modifyBracketWire = func(leg string, newTP float64) error { modLeg, modTP = leg, newTP; return nil }
-	t.Cleanup(func() { moveStopWire = nil; modifyBracketWire = nil })
+	modifyBracketWire = func(_ *ntTrader.TCPTrader, signalID, _ string, wireLeg int, newTP float64) error {
+		modSig, modLeg, modTP = signalID, wireLeg, newTP
+		return nil
+	}
 	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{
-		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp,
+		MoveStops: []string{"leg1", "leg2"}, NewStop: 100, ModifyTP: &tp, SignalID: "sig-apply",
 	})
-	if len(moved) != 2 || modLeg != "leg1" || modTP != 103 {
-		t.Fatalf("wired actions: moved=%v modLeg=%q modTP=%.2f", moved, modLeg, modTP)
+	if len(moved) != 2 || modLeg != 1 || modSig != "sig-apply" || modTP != 103 {
+		t.Fatalf("wired actions: moved=%v modSig=%q modLeg=%d modTP=%.2f", moved, modSig, modLeg, modTP)
+	}
+	// a modify with no signal id is refused + counted — never a blank frame.
+	at.resetMentorCountersForTest()
+	modSig = "untouched"
+	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp})
+	if got := at.mentorCountSnapshot()["modify_bracket_no_signal"]; got != 1 || modSig != "untouched" {
+		t.Fatalf("a modify without a signal id must be refused + counted (count %d, sent to %q)", got, modSig)
 	}
 	// a failing modify is counted, not silent.
-	ResetMentorCountersForTest()
-	modifyBracketWire = func(leg string, newTP float64) error { return fmt.Errorf("boom") }
-	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp})
-	if got := MentorCountSnapshot()["modify_bracket_failed"]; got != 1 {
+	at.resetMentorCountersForTest()
+	modifyBracketWire = func(_ *ntTrader.TCPTrader, _, _ string, _ int, _ float64) error { return fmt.Errorf("boom") }
+	at.mentorApplyExitResult(&ntTrader.TCPTrader{}, "long", mentorExitResult{ModifyTP: &tp, SignalID: "sig-apply"})
+	if got := at.mentorCountSnapshot()["modify_bracket_failed"]; got != 1 {
 		t.Fatalf("the failed modify must be counted once, got %d", got)
 	}
 }
@@ -271,7 +473,7 @@ func TestMentorApplyExitResult(t *testing.T) {
 // on the next snapshot is FLATTENED (that leg only, fail-closed).
 func TestMentorConfirmLegProtection(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	var flattened []string
 	flattenLegWire = func(leg string) error { flattened = append(flattened, leg); return nil }
 	t.Cleanup(func() { flattenLegWire = nil })
@@ -281,15 +483,15 @@ func TestMentorConfirmLegProtection(t *testing.T) {
 	if len(flattened) != 2 {
 		t.Fatalf("nil protection source must flatten both legs, flattened=%v", flattened)
 	}
-	snap := MentorCountSnapshot()
+	snap := at.mentorCountSnapshot()
 	if snap["leg_protection_lost_leg1"] != 1 || snap["leg_protection_lost_leg2"] != 1 {
 		t.Fatalf("the lost protection must be counted per leg: %v", snap)
 	}
 	// leg1 confirmed, leg2 not → only leg2 flattens.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	flattened = nil
-	mentorLegProtectedSource = func(leg string) bool { return leg == "leg1" }
-	t.Cleanup(func() { mentorLegProtectedSource = nil })
+	at.mentorLegProtectedSource = func(leg string) bool { return leg == "leg1" }
+	t.Cleanup(func() { at.mentorLegProtectedSource = nil })
 	at.mentorConfirmLegProtection([]string{"leg1", "leg2"})
 	if len(flattened) != 1 || flattened[0] != "leg2" {
 		t.Fatalf("only the unconfirmed leg flattens, flattened=%v", flattened)
@@ -439,13 +641,15 @@ func TestMentorBEHalfDistanceTarget(t *testing.T) {
 
 // TestMentorResonanceFork (EXIT-SPEC-v3 A on SPLIT LEGS): a PHL/PLH fill
 // followed by an ISB in the SAME direction within 3 candles flips the position
-// to A — both stops to BE at that moment and leg 1's TP modified OUT to the
-// runner's target (no 1:1 scale-out). Then A NEVER trails (candles that would
-// trail in B are ignored); it exits only on a BE touch.
+// to A — leg 1's TP stays, the runner's TP is modified OUT to the runner's
+// target. m134 (b)/(c): the flip does NOT move the stop to BE and does NOT
+// write the ArmedBE/Stop belief — the runner's break-even is deferred to the
+// closed-1m exit drive. A NEVER trails (candles that would trail in B are
+// ignored); it exits only on a BE touch.
 func TestMentorResonanceFork(t *testing.T) {
-	ResetMentorCountersForTest()
+	at := funnelAT(t)
 	pos := &mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Leg1TP: 110, Mode: "B"}
-	armed, modifyTP, modifyLeg2TP := mentorMaybeArmResonance(pos, "long", 2, 140)
+	armed, modifyTP, modifyLeg2TP := mentorMaybeArmResonance(at, pos, "long", 2, 140)
 	if !armed {
 		t.Fatal("ISB same side within 3 candles of a PHL fill must arm resonance")
 	}
@@ -462,12 +666,16 @@ func TestMentorResonanceFork(t *testing.T) {
 	if pos.Leg1TP != 110 {
 		t.Fatalf("after the flip leg 1's +1R TP must be UNCHANGED (110), got %.2f", pos.Leg1TP)
 	}
-	if pos.Mode != "A-resonance" || !pos.ArmedBE || pos.Stop != pos.Entry {
-		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, BE stop 100", pos.Mode, pos.ArmedBE, pos.Stop)
+	if pos.Mode != "A-resonance" || pos.ArmedBE || pos.Stop != 90 {
+		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, NOT armed, stop still 90", pos.Mode, pos.ArmedBE, pos.Stop)
 	}
-	if got := MentorCountSnapshot()["resonance_armed"]; got != 1 {
+	if got := at.mentorCountSnapshot()["resonance_armed"]; got != 1 {
 		t.Fatalf("resonance_armed must be counted once, got %d", got)
 	}
+	// m134 (b): the BE is deferred — simulate the exit drive having applied the
+	// runner's break-even (stop → entry) before exercising the pure mode-A exit.
+	pos.Stop = pos.Entry
+	pos.ArmedBE = true
 	// A holds through candles that would trail in B (+1R, +2R highs).
 	for _, cc := range [][2]float64{{105, 101}, {110, 101}, {120, 102}} {
 		if px, why, exited := mentorExitA(*pos, cc[1], cc[0]); exited || px != 0 || why != "" {
@@ -480,24 +688,25 @@ func TestMentorResonanceFork(t *testing.T) {
 	}
 	// refused arms: too late (4th candle), wrong side, non-PHL/PLH origin, the
 	// fill bar itself, already-armed.
-	if armed, _, _ := mentorMaybeArmResonance(pos, "long", 4, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, pos, "long", 4, 0); armed {
 		t.Fatal("an ISB 4 candles after the fill must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PHL", Mode: "B"}, "short", 2, 0); armed {
 		t.Fatal("an ISB against the position must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PHL", Mode: "B"}, "long", 0, 0); armed {
 		t.Fatal("the fill bar itself must NOT arm resonance (within 3 candles AFTER the fill)")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "ISB", Mode: "B"}, "long", 2, 0); armed {
 		t.Fatal("a non-PHL/PLH origin must NOT arm resonance")
 	}
-	if armed, _, _ := mentorMaybeArmResonance(&mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2, 0); armed {
+	if armed, _, _ := mentorMaybeArmResonance(at, &mentorPosition{Origin: "PLH", Mode: "A-resonance"}, "long", 2, 0); armed {
 		t.Fatal("an already-resonant position must NOT re-arm")
 	}
 }
 
-// TestMentorTrailTFKnob: the B candle trail runs on 1m (default) and 30s/45s;
+// TestMentorTrailTFKnob: the B candle trail runs on 1m (default); 30s/45s are
+// REFUSED → 1m and counted (no sub-minute bars exist — EXTRAS-ALIGN item 4);
 // off = the video-8 legacy (superseded); an unknown value refuses to trail
 // fail-closed and is counted.
 func TestMentorTrailTFKnob(t *testing.T) {
@@ -506,19 +715,22 @@ func TestMentorTrailTFKnob(t *testing.T) {
 		t.Fatalf("unset knob → %q, want the 1m default", got)
 	}
 	for _, tc := range []struct{ in, want string }{
-		{"1m", "1m"}, {"30s", "30s"}, {"45s", "45s"}, {"off", "off"}, {" OFF ", "off"},
+		{"1m", "1m"}, {"30s", "1m"}, {"45s", "1m"}, {"off", "off"}, {" OFF ", "off"},
 	} {
 		at.config.StrategyConfig.RiskControl.MentorTrailTF = tc.in
 		if got := at.mentorTrailTF(); got != tc.want {
 			t.Fatalf("trail_tf %q → %q, want %q", tc.in, got, tc.want)
 		}
 	}
-	ResetMentorCountersForTest()
+	if got := at.mentorCountSnapshot()["trail_tf_subminute_refused"]; got != 2 {
+		t.Fatalf("30s and 45s must each be counted as refused, got %d", got)
+	}
+	at.resetMentorCountersForTest()
 	at.config.StrategyConfig.RiskControl.MentorTrailTF = "garbage"
 	if got := at.mentorTrailTF(); got != "off" {
 		t.Fatalf("bad trail_tf → %q, want off (fail-closed, no trail)", got)
 	}
-	if got := MentorCountSnapshot()["trail_tf_bad_value"]; got != 1 {
+	if got := at.mentorCountSnapshot()["trail_tf_bad_value"]; got != 1 {
 		t.Fatalf("the bad trail_tf must be counted once, got %d", got)
 	}
 	if !mentorTrailEnabled("1m") || mentorTrailEnabled("off") {
@@ -528,37 +740,26 @@ func TestMentorTrailTFKnob(t *testing.T) {
 
 // TestMentorExitMechSuspensionAppliesToAIOnly: EXIT_MECHS_SUSPENDED (0B)
 // suspends the AI mechanisms but never the mentor stop moves — the same last
-// hop, two different gates.
+// hop, two different gates. The dead mentorMoveStop path (rel10) was removed;
+// the LIVE mentor stop moves are mentorMoveLegStop (signal-keyed move_stop) and
+// mentorMoveStopBE (moveStopWire) — neither calls exitMechSuspendedRefuse, so
+// the AI suspension never leaks into the mentor path. This test pins that the
+// AI half still refuses when suspended.
 func TestMentorExitMechSuspensionAppliesToAIOnly(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	ResetExitMechSuspendNoticeForTest()
 
-	// the never-widen guard needs a wired open stop (99 → 100.25 tightens).
-	mentorOpenStopSource = func() (float64, bool) { return 99, true }
-	t.Cleanup(func() { mentorOpenStopSource = nil })
-
-	var sent string
-	var sentPx float64
-	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
-		sent, sentPx = side, newStop
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = nil })
-
-	if err := at.mentorMoveStop(&ntTrader.TCPTrader{}, "long", 100.25); err != nil {
-		t.Fatal(err)
-	}
-	if sent != "long" || sentPx != 100.25 {
-		t.Fatalf("mentor stop move did not reach the wire (suspended leak): sent=%q px=%.2f", sent, sentPx)
-	}
 	if !at.exitMechSuspendedRefuse("be40", "test trigger") {
 		t.Fatal("the AI suspension must STILL apply to the AI mechanisms")
 	}
 }
 
 // TestMentorRuleGateR8R9: the injector-side R8/R9 gate (RULES-FIX v3).
-// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the 25-pt ceiling.
+// SWING4H: 30–60 allowed, ~100 refused, EXEMPT from the ISB stop ceiling.
 // R9: target never smaller than stop; spent-day cap 15 skips a stop over 15.
+// course-defaults-30: the non-swing ceiling reads the mentor_isb_max_pts knob
+// (kernel CourseExits.ISBMaxStopPts, default 30) — one number, not two. Mutant:
+// hardcode 30 in R8 (ignore extra.ISBMaxStopPts) → the 25 / 35 knob cases RED.
 func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 60, StopPts: 40, TargetPts: 80}, mentorTierInputs{}); why != "" {
 		t.Fatalf("SWING4H 40-pt stop must pass (30–60 allowed): %q", why)
@@ -569,9 +770,25 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); why == "" {
 		t.Fatal("SWING4H ~100-pt stop must be refused (R8)")
 	}
-	// the swing is the ONLY exemption from the 25-pt ceiling
+	// course-defaults-30: a 28.25-pt ISB stop passes (under the 30-pt ceiling).
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why != "" {
+		t.Fatalf("a 28.25-pt ISB stop must pass R8 (under the 30-pt ceiling): %q", why)
+	}
+	// the swing is the ONLY exemption from the ceiling — 30.00 is refused.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {
+		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling)")
+	}
+	// P2-1: R8 reads the mentor_isb_max_pts knob — a knob of 25 refuses a
+	// 28.25-pt stop (below the 30 default), and a knob of 35 lets a 32-pt
+	// stop through. A hardcoded 30 fails both.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{ISBMaxStopPts: 25}); why == "" || !strings.HasPrefix(why, "R8") {
+		t.Fatalf("with mentor_isb_max_pts=25 a 28.25-pt stop must be refused R8, got %q", why)
+	}
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 68, Target: 164, StopPts: 32, TargetPts: 64}, mentorTierInputs{ISBMaxStopPts: 35}); why != "" {
+		t.Fatalf("with mentor_isb_max_pts=35 a 32-pt stop must pass R8, got %q", why)
+	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 130, StopPts: 30, TargetPts: 30}, mentorTierInputs{}); why == "" {
-		t.Fatal("a non-swing stop over 25 must be refused (R8 ceiling)")
+		t.Fatal("a non-swing stop at/over 30 must be refused (R8 ceiling)")
 	}
 	// R9: target never smaller than stop
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 98, StopPts: 12, TargetPts: 2}, mentorTierInputs{}); why == "" {
@@ -659,8 +876,8 @@ func TestMentorSizeForUsesGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if choice.Contracts != 3 || choice.Tier != "reduced" {
-		t.Fatalf("geometry sizing = %+v, want reduced 3 (a 22-pt stop, no confluence)", choice)
+	if choice.Contracts != 4 || choice.Tier != "reduced" {
+		t.Fatalf("geometry sizing = %+v, want reduced 4 (a 22-pt stop, no confluence)", choice)
 	}
 }
 
@@ -733,7 +950,6 @@ func TestMentorSpentDayClamp(t *testing.T) {
 // TestMentorSizeForCountsAndLogsTier: the AutoTrader entry point counts the
 // tier ("which tier and why") — a silent size choice fails this.
 func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
 		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
@@ -744,7 +960,7 @@ func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
 	if choice.Contracts != mentorBaseContractsDefault || choice.Tier != "base" {
 		t.Fatalf("choice = %+v", choice)
 	}
-	if got := MentorCountSnapshot()["tier_base"]; got != 1 {
+	if got := at.mentorCountSnapshot()["tier_base"]; got != 1 {
 		t.Fatalf("the tier must be counted once, got %d", got)
 	}
 	if choice.Why == "" {
@@ -756,6 +972,7 @@ func TestMentorSizeForCountsAndLogsTier(t *testing.T) {
 // branch per case. Mutants: confluence ignored in the fork (C case RED),
 // mentorLeg1TPForC dropped (C leg-1 TP RED).
 func TestMentorExitFork(t *testing.T) {
+	at := funnelAT(t)
 	cases := []struct {
 		name       string
 		in         mentor.Intent
@@ -780,15 +997,17 @@ func TestMentorExitFork(t *testing.T) {
 	}
 
 	// the A branch: a PHL fill starting as B flips to A on a same-direction
-	// ISB within 3 candles — the REST's stop to BE, no trail, leg 1's +1R TP
-	// unchanged (R-RES).
+	// ISB within 3 candles — the runner's TP beyond the old high, no trail,
+	// leg 1's +1R TP unchanged (R-RES). m134 (b)/(c): the flip does NOT move the
+	// stop to BE or write ArmedBE — the deferred BE runs on the closed-1m exit
+	// drive.
 	pos := &mentorPosition{
 		Origin: "PHL", Side: "long", Entry: 100, Stop: 95, Target: 112, R: 5,
 		Mode: "B", Leg1TP: 105,
 	}
-	armed, modTP, modLeg2 := mentorMaybeArmResonance(pos, "long", 2, 120)
-	if !armed || pos.Mode != "A-resonance" || pos.Stop != pos.Entry || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
-		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
+	armed, modTP, modLeg2 := mentorMaybeArmResonance(at, pos, "long", 2, 120)
+	if !armed || pos.Mode != "A-resonance" || pos.ArmedBE || pos.Stop != 95 || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
+		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s armedBE=%v stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.ArmedBE, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
 	}
 }
 
@@ -797,12 +1016,11 @@ func TestMentorExitFork(t *testing.T) {
 // is observable. Mutant: the fork call removed from mentorPlaceIntent → the
 // counter stays 0 and this test goes RED.
 func TestMentorExitForkAtPlacement(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := time.FixedZone("CT", -5*3600)
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	mentorLatestPriceSource = func() (float64, bool) { return 99, true }
 	t.Cleanup(func() { mentorLatestPriceSource = nil })
 	placed := 0
@@ -819,7 +1037,7 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 	if placed != 1 {
 		t.Fatalf("placement recorder must fire once, got %d", placed)
 	}
-	if got := MentorCountSnapshot()["exit_fork_C"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_fork_C"]; got != 1 {
 		t.Fatalf("exit_fork_C counter = %d, want 1", got)
 	}
 
@@ -830,7 +1048,7 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 		Action: mentor.PlaceStopEntry, Setup: "ISB", Side: mentor.SideShort,
 		Price: 100, Stop: 106, Target: 88, StopPts: 6,
 	}, mentorSizeChoice{Contracts: 5, Tier: "base"}, 0, 0)
-	if got := MentorCountSnapshot()["exit_fork_B"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_fork_B"]; got != 1 {
 		t.Fatalf("exit_fork_B counter = %d, want 1", got)
 	}
 }
@@ -839,10 +1057,11 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 // 1791033257041) at their ruled defaults and the evaluator config wiring.
 // Mutant: any default flipped (e.g. leg budget false) → RED.
 func TestMentorKnobRoutingDefaults(t *testing.T) {
+	at := funnelAT(t)
 	if !mentorLegBudgetEnabled(nil) || !mentorLocationTriggerFilter(nil) {
 		t.Fatal("leg budget and the location trigger filter default ON")
 	}
-	if v := mentorLegResetOn(nil); v != "close" {
+	if v := mentorLegResetOn(at, nil); v != "close" {
 		t.Fatalf("leg reset default = %q, want close", v)
 	}
 	if v := mentorLvlRevisitMinPts(nil); v != 0 {
@@ -860,14 +1079,14 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 		MentorLegBudgetEnabled:      &f,
 		MentorLegResetOn:            "touch",
 		MentorLvlRevisitMinPts:      3,
-		MentorEmaMaxCross30m:        4,
+		MentorEmaMaxCross30m:        intPtr(4),
 		MentorLocationTriggerFilter: &f,
 		MentorLossDeparturePts:      25,
 	}
 	if mentorLegBudgetEnabled(rc) || mentorLocationTriggerFilter(rc) {
 		t.Fatal("explicit false must turn the ON-default knobs OFF")
 	}
-	if v := mentorLegResetOn(rc); v != "touch" {
+	if v := mentorLegResetOn(at, rc); v != "touch" {
 		t.Fatalf("leg reset = %q, want touch", v)
 	}
 	if v := mentorLvlRevisitMinPts(rc); v != 3 {
@@ -875,6 +1094,9 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	}
 	if v := mentorEmaMaxCross30m(rc); v != 4 {
 		t.Fatalf("ema max cross = %d, want 4", v)
+	}
+	if v := mentorEmaMaxCross30m(&store.RiskControlConfig{MentorEmaMaxCross30m: intPtr(0)}); v != 0 {
+		t.Fatalf("ema max cross = %d, want 0 (OFF reachable — W32 F-5: nil→2, &0→off)", v)
 	}
 	if v := mentorLossDeparturePts(rc); v != 25 {
 		t.Fatalf("loss departure = %.2f, want 25", v)
@@ -887,19 +1109,19 @@ func TestMentorKnobRoutingDefaults(t *testing.T) {
 	}
 
 	// a bad leg reset value fails closed to the default and is counted.
-	ResetMentorCountersForTest()
+	at.resetMentorCountersForTest()
 	bad := &store.RiskControlConfig{MentorLegResetOn: "garbage"}
-	if v := mentorLegResetOn(bad); v != "close" {
+	if v := mentorLegResetOn(at, bad); v != "close" {
 		t.Fatalf("bad leg reset = %q, want close (fail closed)", v)
 	}
-	if got := MentorCountSnapshot()["leg_reset_on_bad_value"]; got != 1 {
+	if got := at.mentorCountSnapshot()["leg_reset_on_bad_value"]; got != 1 {
 		t.Fatalf("leg_reset_on_bad_value counter = %d, want 1", got)
 	}
 
 	// The evaluator config builder carries explicit strategy knobs, including
 	// B22's opt-in numeric fallback.
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
-		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: 4, MentorLossDeparturePts: 25})
+	at = mentoredTrader(t, store.RiskControlConfig{MentorMode: true,
+		MentorLvlRevisitMinPts: 3, MentorEmaMaxCross30m: intPtr(4), MentorLossDeparturePts: 25})
 	cfg := at.mentorEvaluatorConfig()
 	if !cfg.Enabled || cfg.LvlRevisitMinPts != 3 || cfg.EmaMaxCross30m != 4 || cfg.LossDeparturePts != 25 {
 		t.Fatalf("evaluator config: enabled=%v revisit=%.2f cross=%d loss_departure=%.2f — want true/3/4/25",

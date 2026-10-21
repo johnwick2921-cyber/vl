@@ -110,8 +110,8 @@ func TestNT8DecisionReadsTheAckNeverAFileDate(t *testing.T) {
 		if j.State != c.state || j.NT8 == nil || j.NT8.Decision != c.dec {
 			t.Fatalf("persisted %s with decision %+v, want %s/%s", j.State, j.NT8, c.state, c.dec)
 		}
-		if c.state == updaterjob.StateNT8Updated && !strings.Contains(j.Blocker, "vl-updater resume "+boxJobID) {
-			t.Fatalf("the park names no attended resume: blocker %q", j.Blocker)
+		if c.state == updaterjob.StateNT8Updated && j.Blocker != "" {
+			t.Fatalf("a changed AddOn no longer parks: blocker %q", j.Blocker)
 		}
 	}
 }
@@ -221,49 +221,28 @@ func TestBootVerifyRollsBackWithoutTheAddOnOrTheReleaseUI(t *testing.T) {
 	}
 }
 
-// PIN (#206 review fold, runner.go:471): when the release's ninjascript/*.cs
-// changed but the author forgot to bump VL_BUILD_ID (the manifest's
-// addon.build_id equals what the OLD AddOn already acks), the build check
-// cannot tell a restarted AddOn from the old one — a resume without any F5
-// used to leave the park and activate a Go/C# mismatch. The proof of a
-// restart is a NEW connection (accept_seq, assigned per connection): the
-// resume must refuse while the AddOn still runs on the park's connection,
-// and pass once an F5 reconnects it.
-func TestResumeNeedsANewConnectionWhenTheCSharpChangedWithoutABuildBump(t *testing.T) {
-	r := newRig(t)
-	writeFile(r.t, filepath.Join(r.relDir, "ninjascript", "VLTrader.cs"), "// C# v2\n")
-	// NO manifestBuild bump: the manifest names boxOldBuild, which the OLD
-	// AddOn acks already.
+// W26 PART C (updater-addon-proof): the release's .cs differ from the install
+// tree's, but the AddOn ALREADY acks the bumped manifest build while the
+// install's own .cs declares the OLD build — the F5 + NT8 restart demonstrably
+// already happened, so decideNT8 must NOT park. The owner who F5'd the night
+// before is not forced to restart NT8 again.
+func TestDecideNT8SkipsWhenTheAddOnAlreadyRunsTheBumpedBuild(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.mu.Lock()
+	r.addonBuild = boxNewBuild
+	r.mu.Unlock()
 	r.install()
 	if err := r.drive(); err != nil {
 		t.Fatal(err)
 	}
-	if j := r.job(); j.State != updaterjob.StateNT8Updated || j.Phase != updaterjob.PhaseDone {
-		t.Fatalf("no park: %s/%s", j.State, j.Phase)
-	}
-	// Resume with no F5: the AddOn is still on the park's connection.
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume verb: %+v", resp)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	j := r.job()
-	if j.State != updaterjob.StateNT8Updated {
-		t.Fatalf("a resume without an F5 left the park: %s (error %q)", j.State, j.Error)
-	}
-	if !strings.Contains(j.Error, "accept_seq") && !strings.Contains(j.Blocker, "accept_seq") {
-		t.Fatalf("the refusal must name the unchanged connection: error %q blocker %q", j.Error, j.Blocker)
-	}
-	// F5 + NT8 restart reconnects the AddOn: the same build id, a NEW seq.
-	r.f5()
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK {
-		t.Fatalf("resume verb after the F5: %+v", resp)
-	}
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
 	if j := r.job(); j.State != updaterjob.StateComplete {
-		t.Fatalf("a resume after the F5 ended %s (error %q)", j.State, j.Error)
+		t.Fatalf("an already-compiled bump must NOT park; got %s (error %q blocker %q)", j.State, j.Error, j.Blocker)
+	}
+	if j := r.job(); j.NT8 == nil || j.NT8.Decision != updaterjob.NT8Skipped {
+		got := "<nil>"
+		if j.NT8 != nil {
+			got = string(j.NT8.Decision) + " reason=" + j.NT8.Reason
+		}
+		t.Fatalf("decision = %s, want %s", got, updaterjob.NT8Skipped)
 	}
 }

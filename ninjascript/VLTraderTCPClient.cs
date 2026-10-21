@@ -34,14 +34,23 @@ namespace NinjaTrader.NinjaScript.AddOns
     public class VLTraderTCPClient : AddOnBase
     {
         // === Connection constants (must match Go-side tcp_server.go) ===
-        private const string GO_SERVER_HOST          = "127.0.0.1";
-        private const int    GO_SERVER_PORT          = 36974; // NOT NT's ATI port 36973
+        // W-FRIEND-HOSTED (DS-103): the AddOn reads Documents\NinjaTrader 8\VL\connect.json once at
+        // activation and OVERRIDES these defaults (see LoadConnectConfig). The defaults are exactly
+        // today's behaviour when the file is absent. A corrupt file is FATAL: we do NOT connect
+        // (never silently fall back to local when the file exists).
+        private const string GO_SERVER_HOST_DEFAULT  = "127.0.0.1";
+        private const int    GO_SERVER_PORT_DEFAULT  = 36974; // NOT NT's ATI port 36973
+        private string        serverHost             = GO_SERVER_HOST_DEFAULT;
+        private int           serverPort             = GO_SERVER_PORT_DEFAULT;
+        private string        connectKey             = "";    // sent in hello (omitempty); never logged
+        private bool          connectConfigCorrupt   = false; // true = refuse to connect
         private const int    HEARTBEAT_INTERVAL_MS   = 30000; // spec L4408
         // F12: the working-order snapshot period. The Go side calls a book older
         // than 2x this STALE (trader.DefaultOrderSnapshotSecs = 30). Changing one
         // without the other changes what "stale" means on only one side.
         private const int    ORDER_SNAPSHOT_INTERVAL_MS = 30000;
         private const int    RECONNECT_INTERVAL_MS   = 5000;  // spec L4415
+        private const int    MAX_RECONNECT_INTERVAL_MS = 60000; // K2 backoff cap
         private const int    STALE_SIGNAL_AGE_SECONDS = 60;   // spec L4414
         private const int    SEEN_SIGNAL_TTL_MINUTES  = 10;   // FIX-DOUBLE-ENTRY: replay dedupe memory (≥10 min per CTO ruling)
         private const int    SEEN_SIGNAL_CAP          = 1024; // FIX-DOUBLE-ENTRY: bounded seen set
@@ -59,12 +68,23 @@ namespace NinjaTrader.NinjaScript.AddOns
         // + the hello epoch fields. 2026-09-23-m21 (M2.1): census `settled`,
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
-        private const string  VL_BUILD_ID             = "2026-10-04-d1";
+        // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
+        // 2026-10-21-b (release #43): strict connect.json, reconnect backoff 5s→60s,
+        //   hello-first write gate, hello-close warning (superseded by -c).
+        private const string  VL_BUILD_ID             = "2026-10-21-c";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
         private TcpClient                client;
         private NetworkStream            stream;
+        // K2 reconnect backoff + logging; K6 server-hello tracking.
+        private int                      reconnectDelayMs     = RECONNECT_INTERVAL_MS;
+        private string                   lastConnectError     = "";
+        private DateTime                 lastErrorLogUtc      = DateTime.MinValue;
+        private bool                     loggedFirstFailure   = false;
+        private bool                     serverHelloReceived  = false; // K6: set on the server's hello reply
+        private bool                     helloWritten         = false; // C13: hello is the first frame (under writeLock)
+        private readonly Random          backoffRng           = new Random();
         private Thread                   readerThread;
         private Thread                   heartbeatThread;
         private CancellationTokenSource  cts;
@@ -108,11 +128,20 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly HashSet<Account> positionSubscribed = new HashSet<Account>();
         private readonly object positionSubLock = new object();
 
-        // PHASE 4 (per-account close) — which account holds each open position, keyed by
-        // ROOT symbol (e.g. "MNQ"). Populated on entry-fill (from e.Order.Account) and
-        // cleared on exit-fill, so HandleClosePosition flattens the CORRECT account
-        // instead of the active one. Back-compat: one trader → resolves to Sim101.
-        private readonly Dictionary<string, Account> positionAccountBySymbol = new Dictionary<string, Account>();
+        // PHASE 4 (per-account close) — which account(s) hold an open position, keyed by
+        // (ROOT symbol, account name): root (e.g. "MNQ") → account name → Account.
+        // Populated on entry-fill (from e.Order.Account), cleared per ACCOUNT when that
+        // account goes flat (OnPositionUpdate).
+        //
+        // AC-1 (2026-10-14-a, release #24): this map was keyed by ROOT alone, and every
+        // entry fill on ANY account overwrote it. One AddOn serves two MNQ traders on two
+        // SIM accounts, so a close for trader A flattened whichever account filled last —
+        // trader B's. A close that NAMES its account (every Go close since P5.4 stamps the
+        // bound account) no longer reads this map at all; it resolves the named account by
+        // name and fails closed when it cannot. The map serves only the legacy close that
+        // names no account, and a fill on one account can never retarget another's entry.
+        private readonly Dictionary<string, Dictionary<string, Account>> positionAccountByAcctRoot =
+            new Dictionary<string, Dictionary<string, Account>>(StringComparer.OrdinalIgnoreCase);
         private readonly object posAcctLock = new object();
 
         private class PendingBracket
@@ -127,6 +156,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             // leg 2 = the runner with TP = Tp. 0 = the single-bracket legacy path.
             public int         Leg1Qty;
             public double      Leg1Tp;
+            // release #31: leg 3 — the runner's FIRST partial (leg2_qty at
+            // leg2_tp, the first line beyond the leg-1 exit); the rest trails.
+            // 0 = the 2-pair plan (no leg 3).
+            public int         Leg2Qty;
+            public double      Leg2Tp;
         }
 
         // A bracket whose entry has FILLED and whose SL/TP now rest at the exchange,
@@ -157,6 +191,13 @@ namespace NinjaTrader.NinjaScript.AddOns
             public int         Leg1Exited; // REVIEW-SPLIT-2 P1 fold: leg-1 contracts already exited (Leg1Qty is NEVER zeroed)
             public double      LastStop;   // last known leg-1 stop price (leg-2 creation after leg 1 exits)
             public double      InitialStop; // the entry's stop price (b.Sl) at bracket creation — leg-2 fallback
+            // release #31: leg 3 — the runner's first partial (SlOrder3/TpOrder3
+            // share their own OCO group). Leg2Tp == 0 → the 2-pair plan (leg 2
+            // is the whole runner). Leg2Qty (above) is leg 2's qty.
+            public double      Leg2Tp;
+            public Order       SlOrder3;
+            public Order       TpOrder3;
+            public string      ExitOco3;
         }
         private readonly Dictionary<string, PlacedBracket> placedBrackets = new Dictionary<string, PlacedBracket>();
 
@@ -238,6 +279,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 sessionAccountsDeclared = true;
             }
             LogInfo("VLTraderTCPClient: account_register allowlist declared (" + parsed.Count + " accounts)");
+            // REL19-ADDON — a newly bound account must get an order_snapshot NOW,
+            // not on the next 30s heartbeat (the update gate + broker-book readers
+            // key by bound account and read NOTHING until the first frame).
+            SendAllOrderSnapshots("account_register");
         }
 
         // Plan 4.4 Stage 1 — multi-timeframe BarsRequest subscriptions. Owns
@@ -266,6 +311,13 @@ namespace NinjaTrader.NinjaScript.AddOns
         private DateTime lastRecreateUtc = DateTime.MinValue;
         private static readonly TimeSpan RecreateDebounce = TimeSpan.FromSeconds(30);
 
+        // P0 feed freshness — latest NT8 price-feed status (ConnectionStatusUpdate)
+        // and a periodic timer that re-emits the feed_status frame with the
+        // barsManager's truthful market-timestamp freshness, so the Go side sees
+        // freshness even without a connection transition.
+        private string currentPriceStatus = "";
+        private Timer feedFreshnessTimer;
+
         protected override void OnStateChange()
         {
             if (State == State.SetDefaults)
@@ -277,6 +329,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             else if (State == State.Active)
             {
+                LoadConnectConfig(); // W-FRIEND-HOSTED: read connect.json BEFORE the reader thread dials
                 cts = new CancellationTokenSource();
                 ResolveAccount();
                 if (account != null)
@@ -306,6 +359,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // names; it never touches the live subscriptions.
                 historyPulls = new VLHistoryPullManager(SendFrame, LogInfo, LogWarn);
 
+                // P0 feed freshness — re-emit feed_status ~1/min so the Go side
+                // sees the truthful market-timestamp freshness even when there is
+                // no connection-status transition (the edge-triggered path alone
+                // would go silent while delayed bars keep arriving).
+                feedFreshnessTimer = new Timer(
+                    FeedFreshnessTick,
+                    null, TimeSpan.FromSeconds(60), TimeSpan.FromSeconds(60));
+
                 // Phase 0 — hook the NT8 data-feed status so BarsRequests get
                 // recreated when the NT8<->provider price feed recovers. Without
                 // this, NT8 silently stops delivering bars after a feed reconnect
@@ -331,7 +392,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 readerThread.Start();
                 heartbeatThread.Start();
                 LogInfo("VLTraderTCPClient: AddOn Active, connecting to "
-                        + GO_SERVER_HOST + ":" + GO_SERVER_PORT);
+                        + serverHost + ":" + serverPort);
             }
             else if (State == State.Terminated)
             {
@@ -348,6 +409,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     try { account.AccountItemUpdate -= OnAccountItemUpdate; } catch { }
                 }
                 try { Connection.ConnectionStatusUpdate -= OnVLConnectionStatusUpdate; } catch { }
+                try { if (feedFreshnessTimer != null) feedFreshnessTimer.Dispose(); } catch { }
                 try { barsManager?.DisposeAll(); } catch { }
                 try { historyPulls?.DisposeAll(); } catch { }
                 try { stream?.Close(); } catch { }
@@ -432,6 +494,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // opens/closes when the feed is down (the SIM rejects "no market
                 // data" — the upstream condition behind the phantom-close mess).
                 // Emitted on every connection-status transition.
+                currentPriceStatus = priceStatus ?? "";
                 SendFeedStatusFrame(priceStatus);
             }
             catch (Exception ex)
@@ -589,17 +652,70 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
-        // === Connection loop with reconnect (spec L4415: every 5s) ===
+        // Reads Documents\NinjaTrader 8\VL\connect.json once at activation. Absent file ->
+        // today's defaults. Corrupt file -> connectConfigCorrupt=true and the loop never dials.
+        private void LoadConnectConfig()
+        {
+            string docs;
+            try { docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
+            catch { docs = ""; }
+            if (string.IsNullOrEmpty(docs)) return; // absent -> defaults
+
+            string path;
+            try { path = Path.Combine(docs, "NinjaTrader 8", "VL", "connect.json"); }
+            catch { return; }
+
+            // C14 — an existing-but-unreadable connect.json is CORRUPT (refuse), not
+            // absent. Only FileNotFound/DirectoryNotFound fall through to the defaults.
+            string json = "";
+            string readErr = null;
+            ConnectJsonRead rr = ConnectJsonParser.ReadConnectJson(path, out json, out readErr);
+            if (rr == ConnectJsonRead.Absent) return; // absent -> defaults (today's behaviour)
+            if (rr == ConnectJsonRead.Unreadable)
+            {
+                connectConfigCorrupt = true;
+                LogWarn("VLTraderTCPClient: connect.json unreadable (" + readErr + ") — will NOT connect");
+                return;
+            }
+
+            string host = ""; int port = 0; string key = ""; string err = null;
+            try { ConnectJsonParser.TryParse(json, out host, out port, out key, out err); }
+            catch (Exception ex) { err = ex.Message; }
+
+            if (err != null)
+            {
+                connectConfigCorrupt = true;
+                LogWarn("VLTraderTCPClient: connect.json invalid (" + err + ") — will NOT connect");
+                return;
+            }
+            if (!string.IsNullOrEmpty(host)) serverHost = host;
+            if (port > 0) serverPort = port;
+            if (!string.IsNullOrEmpty(key)) connectKey = key;
+            // The key is NEVER logged — only its presence.
+            LogInfo("VLTraderTCPClient: connect.json loaded — " + serverHost + ":" + serverPort
+                    + (connectKey.Length > 0 ? " + connect_key" : " (no connect_key)"));
+        }
+
+        // === Connection loop with reconnect (spec L4415; K2 exponential backoff 5s→60s) ===
         private void RunConnectionLoop(CancellationToken ct)
         {
+            if (connectConfigCorrupt)
+            {
+                LogWarn("VLTraderTCPClient: refusing to connect — connect.json is invalid. Fix or remove the file and restart the AddOn.");
+                return;
+            }
             while (!ct.IsCancellationRequested)
             {
                 try
                 {
                     client = new TcpClient();
-                    client.Connect(GO_SERVER_HOST, GO_SERVER_PORT);
+                    client.Connect(serverHost, serverPort);
                     stream = client.GetStream();
                     LogInfo("VLTraderTCPClient: CONNECTED");
+                    // C11 — do NOT reset the backoff/log-throttle here: a refused key
+                    // would otherwise reset it every connect and never grow. The reset
+                    // happens in OnAuthenticated() on the server's hello reply.
+                    serverHelloReceived = false;
                     // W-ONE-BUTTON M2 — a hold belongs to the connection that was
                     // told it. Go re-sends it at accept while held.
                     maintenanceHeld = false;
@@ -628,23 +744,90 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // active account's (companion to the Phase 0 reconnect fix + the
                     // BUG A all-account positions fix).
                     SendAllOpenPositions();
+                    // REL19-ADDON — snapshot EVERY SIM account's working orders on
+                    // (re)connect, not just the active account's (companion to the
+                    // all-account positions/balances fixes). A trader bound to a
+                    // non-active account otherwise reads its book as EMPTY between
+                    // order events → stop moves/cancels unconfirmed.
+                    SendAllOrderSnapshots("connect");
                     RunReadLoop(ct);
                 }
                 catch (Exception ex)
                 {
-                    LogWarn("VLTraderTCPClient: connect failed: " + ex.Message);
+                    LogThrottled("VLTraderTCPClient: connect failed: " + ex.Message);
                 }
                 finally
                 {
+                    // K6 — the server closed before replying to our hello (e.g. a wrong
+                    // connect_key or port). Routed through the same throttle (C12).
+                    if (!serverHelloReceived && helloWritten && !ct.IsCancellationRequested)
+                    {
+                        LogThrottled("VLTraderTCPClient: server closed after hello — check connect_key / port");
+                    }
                     try { stream?.Close(); } catch { }
                     try { client?.Close(); } catch { }
                     stream = null;
                     client = null;
+                    lock (writeLock) { helloWritten = false; } // C13 — next connection's hello must go first
                 }
                 if (!ct.IsCancellationRequested)
                 {
-                    Thread.Sleep(RECONNECT_INTERVAL_MS);
+                    // K2 — cancellation-aware wait, then exponential backoff (jittered, capped).
+                    ct.WaitHandle.WaitOne(reconnectDelayMs);
+                    reconnectDelayMs = NextJitteredBackoffMs(reconnectDelayMs);
                 }
+            }
+        }
+
+        // K2 — exponential backoff 5s→60s with ±500ms jitter. The pure sequence lives in
+        // ReconnectPolicy.NextBackoffMs (unit-tested); the jitter is added here and clamped.
+        private int NextJitteredBackoffMs(int current)
+        {
+            return ReconnectPolicy.NextJitteredBackoffMs(current, RECONNECT_INTERVAL_MS, MAX_RECONNECT_INTERVAL_MS, backoffRng.Next(-500, 501));
+        }
+
+        // C11 — reset the reconnect backoff + log throttle ONLY when the server actually
+        // replies to our hello (authenticated), never on TCP connect: a refused key must
+        // still grow the backoff, and a recovery is only real once we're authenticated.
+        private void OnAuthenticated()
+        {
+            if (reconnectDelayMs != RECONNECT_INTERVAL_MS)
+            {
+                LogInfo("VLTraderTCPClient: connection restored");
+            }
+            reconnectDelayMs = RECONNECT_INTERVAL_MS;
+            loggedFirstFailure = false;
+        }
+
+        // K2/C12 — one throttle for all pre-auth noise (connect failures AND the K6
+        // "server closed after hello" warning): log the FIRST, then only on message
+        // change or every 10 min — a friend bot's NT8 port is closed until its first
+        // trader exists, so refusal is normal at first.
+        private void LogThrottled(string message)
+        {
+            bool log;
+            if (!loggedFirstFailure)
+            {
+                log = true;
+                loggedFirstFailure = true;
+            }
+            else if (message != lastConnectError)
+            {
+                log = true;
+            }
+            else if ((DateTime.UtcNow - lastErrorLogUtc).TotalMinutes >= 10.0)
+            {
+                log = true;
+            }
+            else
+            {
+                log = false;
+            }
+            if (log)
+            {
+                LogWarn(message);
+                lastConnectError = message;
+                lastErrorLogUtc = DateTime.UtcNow;
             }
         }
 
@@ -776,6 +959,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 else if (type == "hello")
                 {
+                    // C11 — authenticate + reset backoff exactly once per connection.
+                    if (!serverHelloReceived)
+                    {
+                        serverHelloReceived = true;
+                        OnAuthenticated();
+                    }
                     // P5.2 — the Go server's hello reply. A version mismatch is
                     // logged LOUDLY (the server side refuses mismatched clients;
                     // this is the symmetric check so the operator sees it from
@@ -820,6 +1009,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             double tp;
             int    leg1Qty = 0;
             double leg1Tp  = 0.0;
+            // release #31 (wire v5, optional): the runner's FIRST partial —
+            // leg2_qty at leg2_tp (the first line beyond the leg-1 exit); the
+            // rest trails. 0/absent → the 2-pair plan (leg 1 + runner).
+            int    leg2Qty = 0;
+            double leg2Tp  = 0.0;
             string signalId;
             string ts;
             // PHASE 2 armed orders (additive, back-compat): order_type
@@ -842,6 +1036,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // fill; 0/absent → the single-bracket legacy path (byte-identical).
                 leg1Qty = GetInt(p, "leg1_qty");
                 leg1Tp  = GetDouble(p, "leg1_tp");
+                // release #31: leg 3 (the runner's first partial).
+                leg2Qty = GetInt(p, "leg2_qty");
+                leg2Tp  = GetDouble(p, "leg2_tp");
                 signalId = GetString(p, "signal_id");
                 ts       = GetString(p, "timestamp");
                 string ot = GetString(p, "order_type");
@@ -966,11 +1163,8 @@ namespace NinjaTrader.NinjaScript.AddOns
             Account resolved = null;   // PHASE 3: the routed submit target (null = active-account fallback)
             if (!string.IsNullOrEmpty(targetAccount))
             {
-                lock (Account.All)
-                {
-                    foreach (var a in Account.All)
-                        if (a.Name == targetAccount) { resolved = a; break; }
-                }
+                // AC-1: the ONE by-name resolver, shared with HandleClosePosition.
+                resolved = FindAccountByName(targetAccount);
                 if (resolved == null)
                 {
                     LogWarn("VLTraderTCPClient: REFUSING order " + signalId + " — target account '"
@@ -1177,6 +1371,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                         Account    = submitAccount,   // PHASE 3: the bracket follows the entry's account
                         Leg1Qty    = leg1Qty,         // REVIEW-353 split
                         Leg1Tp     = leg1Tp,
+                        Leg2Qty    = leg2Qty,         // release #31: runner first partial
+                        Leg2Tp     = leg2Tp,
                     };
                     // PHASE 2 armed orders — resting limit entries are cancelable.
                     if (isLimit) { workingEntries[signalId] = entryOrder; }
@@ -1271,6 +1467,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // REVIEW-353: cancel leg 2's pair too — EVERY bracket of the signal.
                     if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
                     if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
+                    // release #31: leg 3's pair too.
+                    if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
+                    if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try
@@ -1290,74 +1489,236 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
             }
         }
+        // === AC-1 (2026-10-14-a, release #24) — close routing by the NAMED account ===
+        //
+        // FindAccountByName is the ONE by-name account resolver: the entry path
+        // (HandleSignal) and the close path (HandleClosePosition) both call it, so "the
+        // account Go named" means the same thing on both. null = no account of exactly
+        // that name exists in Account.All.
+        private Account FindAccountByName(string name)
+        {
+            if (string.IsNullOrEmpty(name)) return null;
+            lock (Account.All)
+            {
+                foreach (var a in Account.All)
+                    if (a.Name == name) return a;
+            }
+            return null;
+        }
+
+        // RecordPositionOwner / ForgetPositionOwner keep positionAccountByAcctRoot per
+        // (root, account). Caller holds posAcctLock. Forget removes ONLY the named
+        // account's entry: another account's open position on the same root survives.
+        private void RecordPositionOwner(Account acct, string root)
+        {
+            if (acct == null || string.IsNullOrEmpty(root)) return;
+            Dictionary<string, Account> byAcct;
+            if (!positionAccountByAcctRoot.TryGetValue(root, out byAcct))
+            {
+                byAcct = new Dictionary<string, Account>(StringComparer.OrdinalIgnoreCase);
+                positionAccountByAcctRoot[root] = byAcct;
+            }
+            byAcct[acct.Name] = acct;
+        }
+
+        private void ForgetPositionOwner(string acctName, string root)
+        {
+            if (string.IsNullOrEmpty(acctName) || string.IsNullOrEmpty(root)) return;
+            Dictionary<string, Account> byAcct;
+            if (positionAccountByAcctRoot.TryGetValue(root, out byAcct) && byAcct != null)
+            {
+                byAcct.Remove(acctName);
+                if (byAcct.Count == 0) positionAccountByAcctRoot.Remove(root);
+            }
+        }
+
+        // TryAccountPosition reads what `acct` holds on exactly `instrument` (the same
+        // contract Flatten acts on). true + Flat/0 = read, nothing held; false = the
+        // read failed (unknown — never treated as flat by a caller that sizes from it).
+        private bool TryAccountPosition(Account acct, Instrument instrument, out MarketPosition mp, out int qty)
+        {
+            mp = MarketPosition.Flat;
+            qty = 0;
+            if (acct == null || instrument == null) return false;
+            try
+            {
+                string want = instrument.FullName;
+                lock (acct.Positions)
+                {
+                    foreach (Position pos in acct.Positions)
+                    {
+                        if (pos == null || pos.Instrument == null) continue;
+                        if (!string.Equals(pos.Instrument.FullName, want, StringComparison.OrdinalIgnoreCase)) continue;
+                        mp = pos.MarketPosition;
+                        qty = pos.Quantity;
+                        return true;
+                    }
+                }
+                return true;
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: position read on account " + acct.Name + " failed: " + ex.Message);
+                return false;
+            }
+        }
+
+        // RefuseClose — every close this AddOn will not act on is LOUD on both sides: a
+        // WARN here and a position_close_rejected frame to Go (close_sync.go logs
+        // "🚨 NT close REJECTED … STILL OPEN"). The frame carries the account the close
+        // NAMED (else the active account), so it routes to the trader that sent it.
+        private void RefuseClose(string signalId, string root, string side, string acctName, string why)
+        {
+            LogWarn("VLTraderTCPClient: REFUSING close_position " + root + " " + (side ?? "") + " — " + why
+                    + " — position (if any) left OPEN; nothing was flattened");
+            try { SendPositionCloseRejectedFrame(signalId, root, side, why, acctName); }
+            catch (Exception ex) { LogWarn("VLTraderTCPClient: close refusal frame failed: " + ex.Message); }
+        }
+
         private void HandleClosePosition(Dictionary<string, object> p)
         {
             if (p == null) { LogWarn("VLTraderTCPClient: close_position empty payload"); return; }
-            if (account == null) { LogWarn("VLTraderTCPClient: close_position no account"); return; }
+            string symbol = GetString(p, "symbol");
+            string closeSignalId = GetString(p, "signal_id");
+            string sideStr = GetString(p, "side");
+            // AC-1 — the account Go stamped on this close (tcp_trader.go sendCloseAt:
+            // Account = the trader's BOUND account). Read FIRST: when it is named, it is
+            // the ONLY account this close may touch.
+            string namedAccount = GetString(p, "account");
+            string root = symbol ?? "";
             try
             {
-                string symbol = GetString(p, "symbol");
                 string contract = VLContractResolver.ResolveFrontMonthContract(symbol);
                 string how;
                 var instrument = VLInstrumentLookup.Resolve(symbol, LogWarn, out how);
                 if (instrument == null)
                 {
-                    LogWarn("VLTraderTCPClient: close_position instrument not found " + symbol + " (" + contract + ", " + how + ")");
+                    RefuseClose(closeSignalId, root, sideStr, namedAccount,
+                                "instrument not found " + symbol + " (" + contract + ", " + how + ")");
                     return;
                 }
-                // PHASE 4 — resolve the account that actually HOLDS this symbol's open
-                // position (recorded on entry-fill), and flatten THAT account, not the
-                // active one. Back-compat: one trader → the map misses (or returns Sim101)
-                // → byte-identical today. GUARD: never flatten a non-SIM (LIVE) account —
-                // the resolved target must pass IsSimAccount or the close is refused.
+                // The SAME normalized root the entry-fill populate uses (MasterInstrument.Name).
+                try { root = instrument.MasterInstrument.Name; } catch { }
+
                 Account closeTarget = null;
-                // Look up by the SAME normalized root the entry-fill populate used
-                // (MasterInstrument.Name), not the raw wire symbol — so a non-canonical
-                // close symbol can't miss the map and silently fall back to the active
-                // account. Defaults to the raw symbol if MasterInstrument is unavailable.
-                string posKey = symbol;
-                try { posKey = instrument.MasterInstrument.Name; } catch { }
-                lock (posAcctLock) { positionAccountBySymbol.TryGetValue(posKey, out closeTarget); }
-                if (closeTarget == null) closeTarget = account;
-                if (closeTarget == null || !IsSimAccount(closeTarget))
+                string source;
+                if (!string.IsNullOrEmpty(namedAccount))
                 {
-                    LogWarn("VLTraderTCPClient: REFUSING close " + symbol + " — resolved account '"
-                            + (closeTarget != null ? closeTarget.Name : "<null>")
-                            + "' is not a SIM account; position left OPEN");
+                    // NAMED: resolve that account and ONLY that account. Not found =
+                    // REFUSE. Never the map, never the active account: flattening an
+                    // account the frame did not name is the bug this fixes.
+                    closeTarget = FindAccountByName(namedAccount);
+                    source = "payload";
+                    if (closeTarget == null)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, namedAccount,
+                                    "the named account '" + namedAccount + "' was not found in Account.All"
+                                    + " (fail-closed: no other account is used when one is named)");
+                        return;
+                    }
+                }
+                else
+                {
+                    // LEGACY (no account named — a pre-P5.4 single-trader Go): the one
+                    // account the map records for this root, else the active account.
+                    // Two or more holders = ambiguous = REFUSE (fail-closed): the old
+                    // "last fill wins" pick is exactly the cross-account flatten.
+                    var holders = new List<Account>();
+                    lock (posAcctLock)
+                    {
+                        Dictionary<string, Account> byAcct;
+                        if (positionAccountByAcctRoot.TryGetValue(root, out byAcct) && byAcct != null)
+                            foreach (var a in byAcct.Values) if (a != null) holders.Add(a);
+                    }
+                    if (holders.Count > 1)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, "",
+                                    "the frame named no account and " + holders.Count + " accounts hold " + root
+                                    + " (ambiguous — fail-closed; a Go that stamps the bound account routes it)");
+                        return;
+                    }
+                    if (holders.Count == 1) { closeTarget = holders[0]; source = "map"; }
+                    else { closeTarget = account; source = "active"; }
+                    if (closeTarget == null)
+                    {
+                        RefuseClose(closeSignalId, root, sideStr, "", "the frame named no account and no active account is resolved");
+                        return;
+                    }
+                }
+                // GUARD: never flatten a non-SIM (LIVE) account, whatever named it.
+                if (!IsSimAccount(closeTarget))
+                {
+                    RefuseClose(closeSignalId, root, sideStr, closeTarget.Name,
+                                "resolved account '" + closeTarget.Name + "' is not a SIM account");
                     return;
                 }
+
+                int askedQty = GetInt(p, "quantity");
+                MarketPosition heldMp;
+                int heldQty;
+                bool heldKnown = TryAccountPosition(closeTarget, instrument, out heldMp, out heldQty);
+                string held = heldKnown ? (heldMp == MarketPosition.Flat || heldQty == 0 ? "flat" : heldMp + " " + heldQty) : "unknown";
+                LogInfo("VLTraderTCPClient: close_position " + root + " → account=" + closeTarget.Name
+                        + " (from " + source + ") side=" + (sideStr ?? "") + " qty=" + askedQty + " holds=" + held);
+
                 // 4.3 limit-then-market: when limit_price > 0, submit a LIMIT exit
-                // (favorable side) instead of an immediate market flatten. Go sends the
-                // market fallback as a later close_position frame WITHOUT limit_price,
-                // whose Flatten cancels this resting limit. The -lx name routes its fill
-                // to position_close with reason "limit" and cancels the bracket legs.
+                // (favorable side) instead of an immediate market flatten, on the SAME
+                // resolved account. Go sends the market fallback as a later
+                // close_position frame WITHOUT limit_price, whose Flatten cancels this
+                // resting limit. The -lx name routes its fill to position_close with
+                // reason "limit" and cancels the bracket legs.
+                //
+                // AC-1 (2026-10-14-a): the limit is sized to the WHOLE position the
+                // account holds on this contract. Go sends quantity 0 here
+                // (auto_trader_clock.go flattenPosition), which this branch used to turn
+                // into ONE contract: a 5-lot got a 1-lot limit, and that 1-lot's -lx fill
+                // cancelled the bracket of the 4 still open. A held side that disagrees
+                // with the frame, a flat account, or an unreadable position takes the
+                // market flatten below instead — a limit is never sized from a guess and
+                // never opens or adds to a position.
                 double limitPrice = GetDouble(p, "limit_price");
                 if (limitPrice > 0)
                 {
-                    try
+                    bool wantLong = string.Equals(sideStr, "long", StringComparison.OrdinalIgnoreCase);
+                    bool sideMatches = heldKnown && heldQty > 0
+                        && ((wantLong && heldMp == MarketPosition.Long) || (!wantLong && heldMp == MarketPosition.Short));
+                    if (!sideMatches)
                     {
-                        string sideStr = GetString(p, "side");
-                        string signalId = GetString(p, "signal_id");
-                        int closeQty = GetInt(p, "quantity");
-                        if (closeQty <= 0) closeQty = 1;
-                        OrderAction exitAction = string.Equals(sideStr, "long", StringComparison.OrdinalIgnoreCase)
-                            ? OrderAction.Sell : OrderAction.BuyToCover;
-                        var limitOrder = closeTarget.CreateOrder(
-                            instrument, exitAction, OrderType.Limit, OrderEntry.Manual,
-                            TimeInForce.Day, closeQty, limitPrice, 0, string.Empty, signalId + "-lx",
-                            Core.Globals.MaxDate, null);
-                        closeTarget.Submit(new[] { limitOrder });
-                        LogInfo("VLTraderTCPClient: limit exit submitted " + symbol + " " + sideStr
-                                + " qty=" + closeQty + " @ " + limitPrice + " on account=" + closeTarget.Name
-                                + " — Go schedules the market fallback (not yet closed)");
-                        return;
+                        LogWarn("VLTraderTCPClient: limit exit NOT placed on account=" + closeTarget.Name + " " + root
+                                + " — frame side=" + (sideStr ?? "") + " but the account holds " + held
+                                + "; market flatten instead");
                     }
-                    catch (Exception ex)
+                    else
                     {
-                        LogWarn("VLTraderTCPClient: limit exit submit failed (" + ex.Message
-                                + ") — falling back to market flatten");
+                        try
+                        {
+                            int closeQty = heldQty;
+                            if (askedQty > 0 && askedQty != heldQty)
+                                LogInfo("VLTraderTCPClient: limit exit sized to the account's whole position " + heldQty
+                                        + " (frame quantity " + askedQty + " ignored: a close is the whole position)");
+                            OrderAction exitAction = wantLong ? OrderAction.Sell : OrderAction.BuyToCover;
+                            var limitOrder = closeTarget.CreateOrder(
+                                instrument, exitAction, OrderType.Limit, OrderEntry.Manual,
+                                TimeInForce.Day, closeQty, limitPrice, 0, string.Empty, closeSignalId + "-lx",
+                                Core.Globals.MaxDate, null);
+                            closeTarget.Submit(new[] { limitOrder });
+                            LogInfo("VLTraderTCPClient: limit exit submitted " + root + " " + sideStr
+                                    + " qty=" + closeQty + " @ " + limitPrice + " on account=" + closeTarget.Name
+                                    + " — Go schedules the market fallback (not yet closed)");
+                            return;
+                        }
+                        catch (Exception ex)
+                        {
+                            LogWarn("VLTraderTCPClient: limit exit submit failed (" + ex.Message
+                                    + ") — falling back to market flatten");
+                        }
                     }
                 }
+                // MARKET close = a full Flatten of THIS contract on THIS account: it closes
+                // the whole position AND cancels every working order for the contract on
+                // the account (bracket legs and resting entries). KNOWN LIMIT: `quantity`
+                // is not honoured here — no Go path sends a smaller market close while
+                // expecting the rest to stay open (see vltrader_tcp_PROTOCOL.md §1b).
                 closeTarget.Flatten(new[] { instrument });
                 // Flatten is async fire-and-forget: the actual fill (or a REJECT, e.g. "no
                 // market data" with the feed down) arrives later in OnOrderUpdate. This log
@@ -1368,7 +1729,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             catch (Exception ex)
             {
-                LogWarn("VLTraderTCPClient: close_position failed: " + ex.Message);
+                RefuseClose(closeSignalId, root, sideStr, namedAccount, "close_position failed: " + ex.Message);
             }
         }
 
@@ -1479,7 +1840,11 @@ namespace NinjaTrader.NinjaScript.AddOns
             string exitReason = null;
             // REVIEW-353: leg 2's pair is named -sl2/-tp2 but reports the SAME
             // entry signal id (its residual qty drives ApplyNT8Exit's partial path).
-            if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            // Release #31: leg 3's pair is named -sl3/-tp3 and reports the SAME
+            // one signal id too (PROTOCOL.md "one entry order and one signal id").
+            if (signalId.EndsWith("-sl3")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-tp3")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }
+            else if (signalId.EndsWith("-sl2")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 4); }
             else if (signalId.EndsWith("-tp2")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 4); }
             else if (signalId.EndsWith("-sl")) { exitReason = "sl"; signalId = signalId.Substring(0, signalId.Length - 3); }
             else if (signalId.EndsWith("-tp")) { exitReason = "tp"; signalId = signalId.Substring(0, signalId.Length - 3); }
@@ -1540,7 +1905,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // A single bracket's -sl/-tp is the WHOLE position (leg 0); only a
                     // split bracket's -sl/-tp is leg 1.
                     int closeLeg = 0;
-                    if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2"))
+                    if (orderName.EndsWith("-sl3") || orderName.EndsWith("-tp3"))
+                    {
+                        closeLeg = 3;
+                    }
+                    else if (orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2"))
                     {
                         closeLeg = 2;
                     }
@@ -1559,16 +1928,18 @@ namespace NinjaTrader.NinjaScript.AddOns
                                            e.AverageFillPrice, e.Filled, exitReason ?? "manual", exitAcct, closeLeg);
                     // P1-1: clear ONLY the filled leg's references; drop the record
                     // and the A2 identity only when NO live leg remains. A leg-1 TP
-                    // fill must not untrack the runner (leg 2) — its BE/trail
+                    // fill must not untrack the runner (leg 2/3) — its BE/trail
                     // would silently vanish.
                     lock (signalMapLock)
                     {
                         PlacedBracket pb;
                         if (placedBrackets.TryGetValue(signalId, out pb) && pb != null)
                         {
+                            bool isLeg3 = orderName.EndsWith("-sl3") || orderName.EndsWith("-tp3");
                             bool isLeg2 = orderName.EndsWith("-sl2") || orderName.EndsWith("-tp2");
                             bool isLeg1 = orderName.EndsWith("-sl") || orderName.EndsWith("-tp");
-                            if (isLeg2) { pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg2Qty = 0; }
+                            if (isLeg3) { pb.SlOrder3 = null; pb.TpOrder3 = null; }
+                            else if (isLeg2) { pb.SlOrder2 = null; pb.TpOrder2 = null; pb.Leg2Qty = 0; }
                             else if (isLeg1)
                             {
                                 // (a) NEVER zero Leg1Qty — AmendBracketQuantity's split
@@ -1578,15 +1949,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                                 if (pb.SlOrder != null) pb.LastStop = pb.SlOrder.StopPrice;
                                 pb.SlOrder = null; pb.TpOrder = null;
                             }
-                            else { pb.SlOrder = null; pb.TpOrder = null; pb.SlOrder2 = null; pb.TpOrder2 = null; } // manual/flatten: whole position
+                            else { pb.SlOrder = null; pb.TpOrder = null; pb.SlOrder2 = null; pb.TpOrder2 = null; pb.SlOrder3 = null; pb.TpOrder3 = null; } // manual/flatten: whole position
 
                             bool live1 = pb.SlOrder != null || pb.TpOrder != null;
                             bool live2 = pb.SlOrder2 != null || pb.TpOrder2 != null;
+                            bool live3 = pb.SlOrder3 != null || pb.TpOrder3 != null;
                             // (c) remove only when no leg is live AND the entry is no longer
                             // working — a still-working entry can fill again and must find
                             // its bracket record (AmendBracketQuantity).
                             bool entryWorking = workingEntries.ContainsKey(signalId);
-                            if (!live1 && !live2 && !entryWorking)
+                            if (!live1 && !live2 && !live3 && !entryWorking)
                             {
                                 placedBrackets.Remove(signalId);
                                 signalIdentity.Remove(signalId);
@@ -1648,11 +2020,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // PHASE 4: record which account now holds this symbol's open position so a
                 // later close flattens the RIGHT account (not the active one). Sourced from
                 // the order's own account — account-agnostic, correct per routed account.
+                // AC-1: recorded per (root, account) — this fill adds ITS account and never
+                // overwrites another account's entry for the same root.
                 try
                 {
                     string entrySym = e.Order.Instrument.MasterInstrument.Name;
                     if (e.Order.Account != null && !string.IsNullOrEmpty(entrySym))
-                        lock (posAcctLock) { positionAccountBySymbol[entrySym] = e.Order.Account; }
+                        lock (posAcctLock) { RecordPositionOwner(e.Order.Account, entrySym); }
                 }
                 catch (Exception ex)
                 {
@@ -1719,6 +2093,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (sourceHashCache == null) sourceHashCache = ComputeSourceHash();
             if (sourceHashCache.Length > 0) hello["source_hash"] = sourceHashCache;
             hello["activation_nonce"] = activationNonce;
+            if (!string.IsNullOrEmpty(connectKey)) hello["connect_key"] = connectKey; // W-FRIEND-HOSTED
             WriteEnvelope("hello", hello);
         }
 
@@ -2078,10 +2453,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                     lastOrderState[key] = state;
                 }
                 string signalId = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
-                // REVIEW-SPLIT-2 P2-3: strip the leg-2 suffixes first so an
-                // order_update for -sl2/-tp2 reports the SAME base signal id the
-                // Go side tracks (it never sees a dangling "-sl2").
-                if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))
+                // REVIEW-SPLIT-2 P2-3: strip the leg suffixes first so an
+                // order_update for -sl2/-tp2 (and release #31 -sl3/-tp3) reports
+                // the SAME base signal id the Go side tracks (it never sees a
+                // dangling "-sl2" / "-sl3").
+                if (signalId.EndsWith("-sl3") || signalId.EndsWith("-tp3"))
+                    signalId = signalId.Substring(0, signalId.Length - 4);
+                else if (signalId.EndsWith("-sl2") || signalId.EndsWith("-tp2"))
                     signalId = signalId.Substring(0, signalId.Length - 4);
                 else if (signalId.EndsWith("-sl") || signalId.EndsWith("-tp") || signalId.EndsWith("-lx"))
                     signalId = signalId.Substring(0, signalId.Length - 3);
@@ -2422,18 +2800,24 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 Account ba = pb.Account ?? account;
 
-                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only, 0/absent = ALL brackets.
+                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only,
+                // 3 = leg 3 only (release #31), 0/absent = ALL brackets.
                 var slLegs = new List<Order>();
                 var tpLegs = new List<Order>();
-                if (leg != 2)
+                if (leg == 0 || leg == 1)
                 {
                     if (pb.SlOrder != null) slLegs.Add(pb.SlOrder);
                     if (pb.TpOrder != null) tpLegs.Add(pb.TpOrder);
                 }
-                if (leg != 1)
+                if (leg == 0 || leg == 2)
                 {
                     if (pb.SlOrder2 != null) slLegs.Add(pb.SlOrder2);
                     if (pb.TpOrder2 != null) tpLegs.Add(pb.TpOrder2);
+                }
+                if (leg == 0 || leg == 3)
+                {
+                    if (pb.SlOrder3 != null) slLegs.Add(pb.SlOrder3);
+                    if (pb.TpOrder3 != null) tpLegs.Add(pb.TpOrder3);
                 }
 
                 // P1-1b: skip terminal legs (e.g. leg 1 already filled); error only
@@ -2508,10 +2892,12 @@ namespace NinjaTrader.NinjaScript.AddOns
 
                 Account ba = pb.Account ?? account;
 
-                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only, 0/absent = ALL brackets.
+                // REVIEW-353: honour `leg` — 1 = leg 1 only, 2 = leg 2 only,
+                // 3 = leg 3 only (release #31), 0/absent = ALL brackets.
                 var stops = new List<Order>();
-                if (leg != 2 && pb.SlOrder != null) stops.Add(pb.SlOrder);
-                if (leg != 1 && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);
+                if ((leg == 0 || leg == 1) && pb.SlOrder != null) stops.Add(pb.SlOrder);
+                if ((leg == 0 || leg == 2) && pb.SlOrder2 != null) stops.Add(pb.SlOrder2);
+                if ((leg == 0 || leg == 3) && pb.SlOrder3 != null) stops.Add(pb.SlOrder3);
 
                 bool anyLive = false;
                 bool moved = false;
@@ -2654,8 +3040,15 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 else if (leg2Qty > 0)
                 {
-                    // REVIEW-353: TWO OCO pairs under the ONE entry signal id —
-                    // leg 1 (leg1_qty, TP=leg1_tp) + leg 2 (runner, TP=b.Tp).
+                    // release #31: the runner (leg2Qty here = fill − leg 1) may
+                    // split further into leg 2 (the runner's FIRST partial at
+                    // b.Leg2Tp) + leg 3 (the rest, TP = b.Tp). Only when the
+                    // frame carried leg2_qty/leg2_tp AND the runner is larger
+                    // than leg 2 — a 0-qty leg-3 pair is never submitted.
+                    int leg2Partial = (b.Leg2Qty > 0 && b.Leg2Tp > 0) ? Math.Min(b.Leg2Qty, leg2Qty) : 0;
+                    int leg3Qty = leg2Qty - leg2Partial;
+                    bool leg3Wanted = leg2Partial > 0 && leg3Qty > 0;
+
                     string exitOco1 = signalId + "-exit";
                     string exitOco2 = signalId + "-exit2";
                     var sl1 = ba.CreateOrder(
@@ -2666,31 +3059,55 @@ namespace NinjaTrader.NinjaScript.AddOns
                         b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
                         TimeInForce.Gtc, leg1Qty, b.Leg1Tp, 0, exitOco1, signalId + "-tp",
                         Core.Globals.MaxDate, null);
+                    // Leg 2: the runner's first partial when leg 3 exists, else
+                    // the whole runner at the trade target (the pre-v5 2-pair plan).
+                    int pair2Qty = leg3Wanted ? leg2Partial : leg2Qty;
+                    double pair2Tp = leg3Wanted ? b.Leg2Tp : b.Tp;
                     var sl2 = ba.CreateOrder(
                         b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
-                        TimeInForce.Gtc, leg2Qty, 0, b.Sl, exitOco2, signalId + "-sl2",
+                        TimeInForce.Gtc, pair2Qty, 0, b.Sl, exitOco2, signalId + "-sl2",
                         Core.Globals.MaxDate, null);
                     var tp2 = ba.CreateOrder(
                         b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
-                        TimeInForce.Gtc, leg2Qty, b.Tp, 0, exitOco2, signalId + "-tp2",
+                        TimeInForce.Gtc, pair2Qty, pair2Tp, 0, exitOco2, signalId + "-tp2",
                         Core.Globals.MaxDate, null);
-                    ba.Submit(new[] { sl1, tp1, sl2, tp2 });
+                    var orders = new List<Order> { sl1, tp1, sl2, tp2 };
+                    Order sl3 = null, tp3 = null;
+                    string exitOco3 = signalId + "-exit3";
+                    if (leg3Wanted)
+                    {
+                        sl3 = ba.CreateOrder(
+                            b.Instrument, b.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                            TimeInForce.Gtc, leg3Qty, 0, b.Sl, exitOco3, signalId + "-sl3",
+                            Core.Globals.MaxDate, null);
+                        tp3 = ba.CreateOrder(
+                            b.Instrument, b.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                            TimeInForce.Gtc, leg3Qty, b.Tp, 0, exitOco3, signalId + "-tp3",
+                            Core.Globals.MaxDate, null);
+                        orders.Add(sl3); orders.Add(tp3);
+                    }
+                    ba.Submit(orders.ToArray());
                     lock (signalMapLock)
                     {
                         placedBrackets[signalId] = new PlacedBracket
                         {
                             SlOrder = sl1, TpOrder = tp1, SlOrder2 = sl2, TpOrder2 = tp2,
+                            SlOrder3 = sl3, TpOrder3 = tp3,
                             Account = ba, Instrument = b.Instrument, ExitAction = b.ExitAction,
-                            Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, TickSize = tick,
-                            Leg1Qty = b.Leg1Qty, Leg2Qty = leg2Qty, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            Qty = filledQty, ExitOco = exitOco1, ExitOco2 = exitOco2, ExitOco3 = leg3Wanted ? exitOco3 : null,
+                            TickSize = tick,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty,
+                            Leg1Tp = b.Leg1Tp, Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,
                             InitialStop = b.Sl,
                         };
                     }
                     LogInfo("VLTraderTCPClient: placed SPLIT bracket signal_id=" + signalId
                             + " leg1=" + leg1Qty + "@" + b.Leg1Tp
-                            + " leg2=" + leg2Qty + "@" + b.Tp
+                            + " leg2=" + pair2Qty + "@" + pair2Tp
+                            + (leg3Wanted ? " leg3=" + leg3Qty + "@" + b.Tp : "")
                             + " sl=" + b.Sl + " avg_fill=" + avgFillPx
-                            + " oco1=" + exitOco1 + " oco2=" + exitOco2 + " tif=Gtc");
+                            + " oco1=" + exitOco1 + " oco2=" + exitOco2
+                            + (leg3Wanted ? " oco3=" + exitOco3 : "") + " tif=Gtc");
                 }
                 else
                 {
@@ -2714,7 +3131,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                         {
                             SlOrder = sl1, TpOrder = tp1, Account = ba, Instrument = b.Instrument,
                             ExitAction = b.ExitAction, Qty = filledQty, ExitOco = exitOco1, TickSize = tick,
-                            Leg1Qty = b.Leg1Qty, Leg2Qty = 0, Leg1Tp = b.Leg1Tp, RunnerTp = b.Tp,
+                            Leg1Qty = b.Leg1Qty, Leg2Qty = b.Leg2Qty, Leg1Tp = b.Leg1Tp,
+                            Leg2Tp = b.Leg2Tp, RunnerTp = b.Tp,
                             InitialStop = b.Sl,
                         };
                     }
@@ -2767,6 +3185,19 @@ namespace NinjaTrader.NinjaScript.AddOns
                     }
                     if (leg2Qty > 0)
                     {
+                        // release #31: the runner remainder splits into leg 2
+                        // (the first partial, up to the frame's Leg2Qty) + leg 3
+                        // (the rest, TP = RunnerTp). No leg-2 split (Leg2Tp == 0)
+                        // → leg 2 = the whole remainder at the trade target.
+                        int leg2Partial = (pb.Leg2Tp > 0) ? Math.Min(pb.Leg2Qty, leg2Qty) : leg2Qty;
+                        int leg3Qty = leg2Qty - leg2Partial;
+                        double pair2Tp = (leg3Qty > 0) ? pb.Leg2Tp : pb.RunnerTp;
+
+                        // D10 (release #31 fold): leg 2 already exited
+                        // (pb.Leg2Qty == 0) → never create or amend a zero-qty
+                        // -sl2/-tp2; the whole remainder rides leg 3.
+                        if (leg2Partial > 0)
+                        {
                         if (pb.SlOrder2 == null || pb.TpOrder2 == null)
                         {
                             // Leg 2's pair was never placed (partial first fill, or leg 1
@@ -2781,26 +3212,64 @@ namespace NinjaTrader.NinjaScript.AddOns
                                 return;
                             }
                             var sl2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
-                                TimeInForce.Gtc, leg2Qty, 0, stop, oco2, signalId + "-sl2", Core.Globals.MaxDate, null);
+                                TimeInForce.Gtc, leg2Partial, 0, stop, oco2, signalId + "-sl2", Core.Globals.MaxDate, null);
                             var tp2 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.Limit, OrderEntry.Manual,
-                                TimeInForce.Gtc, leg2Qty, pb.RunnerTp, 0, oco2, signalId + "-tp2", Core.Globals.MaxDate, null);
+                                TimeInForce.Gtc, leg2Partial, pair2Tp, 0, oco2, signalId + "-tp2", Core.Globals.MaxDate, null);
                             ba.Submit(new[] { sl2, tp2 });
                             pb.SlOrder2 = sl2; pb.TpOrder2 = tp2; pb.ExitOco2 = oco2;
                             LogInfo("VLTraderTCPClient: leg-2 bracket created signal_id=" + signalId
-                                    + " qty=" + leg2Qty + " tp=" + pb.RunnerTp + " oco=" + oco2);
+                                    + " qty=" + leg2Partial + " tp=" + pair2Tp + " oco=" + oco2);
                         }
                         else
                         {
-                            pb.SlOrder2.QuantityChanged = leg2Qty; changed.Add(pb.SlOrder2);
-                            pb.TpOrder2.QuantityChanged = leg2Qty; changed.Add(pb.TpOrder2);
+                            pb.SlOrder2.QuantityChanged = leg2Partial; changed.Add(pb.SlOrder2);
+                            pb.TpOrder2.QuantityChanged = leg2Partial; changed.Add(pb.TpOrder2);
+                            // release #31 D3: when a later fill grows the runner past
+                            // leg 2's partial, leg 2 was first placed at the trade
+                            // target (the 2-pair plan) — re-price its TP to the leg-2
+                            // line now that leg 3 carries the rest.
+                            double halfTick = (pb.TickSize > 0 ? pb.TickSize : 0.25) / 2.0;
+                            if (Math.Abs(pb.TpOrder2.LimitPrice - pair2Tp) > halfTick)
+                            {
+                                pb.TpOrder2.LimitPriceChanged = pair2Tp;
+                            }
+                        }
+                        }
+                        // leg 3 — the final trailing runner (only when the split is active).
+                        if (leg3Qty > 0)
+                        {
+                            if (pb.SlOrder3 == null || pb.TpOrder3 == null)
+                            {
+                                string oco3 = signalId + "-exit3";
+                                double stop = pb.LastStop > 0 ? pb.LastStop : pb.InitialStop;
+                                if (stop <= 0)
+                                {
+                                    LogError("VLTraderTCPClient: leg-3 bracket NOT created for " + signalId
+                                             + " — no known stop price; position holds " + leg3Qty + " unprotected");
+                                    return;
+                                }
+                                var sl3 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.StopMarket, OrderEntry.Manual,
+                                    TimeInForce.Gtc, leg3Qty, 0, stop, oco3, signalId + "-sl3", Core.Globals.MaxDate, null);
+                                var tp3 = ba.CreateOrder(pb.Instrument, pb.ExitAction, OrderType.Limit, OrderEntry.Manual,
+                                    TimeInForce.Gtc, leg3Qty, pb.RunnerTp, 0, oco3, signalId + "-tp3", Core.Globals.MaxDate, null);
+                                ba.Submit(new[] { sl3, tp3 });
+                                pb.SlOrder3 = sl3; pb.TpOrder3 = tp3; pb.ExitOco3 = oco3;
+                                LogInfo("VLTraderTCPClient: leg-3 bracket created signal_id=" + signalId
+                                        + " qty=" + leg3Qty + " tp=" + pb.RunnerTp + " oco=" + oco3);
+                            }
+                            else
+                            {
+                                pb.SlOrder3.QuantityChanged = leg3Qty; changed.Add(pb.SlOrder3);
+                                pb.TpOrder3.QuantityChanged = leg3Qty; changed.Add(pb.TpOrder3);
+                            }
                         }
                     }
                     if (changed.Count > 0) ba.Change(changed.ToArray());
                     int was = pb.Qty;
-                    lock (signalMapLock) { pb.Qty = filledQty; pb.Leg2Qty = leg2Qty; }
+                    lock (signalMapLock) { pb.Qty = filledQty; }
                     LogInfo("VLTraderTCPClient: SPLIT bracket amended signal_id=" + signalId
                             + " qty " + was + " -> " + filledQty
-                            + " leg1=" + leg1Qty + " leg2=" + leg2Qty + (leg1Gone ? " (leg 1 already exited)" : " (leg 1 filled first)"));
+                            + " leg1=" + leg1Qty + " runner=" + leg2Qty + (leg1Gone ? " (leg 1 already exited)" : " (leg 1 filled first)"));
                     return;
                 }
                 if (pb.SlOrder != null) { pb.SlOrder.QuantityChanged = filledQty; changed.Add(pb.SlOrder); }
@@ -2883,13 +3352,33 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         // TRACK A — emit the NT8 price-feed status so Go can gate opens/closes when
         // the feed is down (the SIM rejects orders with "no market data"). Sent on
-        // every connection-status transition (OnVLConnectionStatusUpdate).
+        // every connection-status transition (OnVLConnectionStatusUpdate) and ~1/min
+        // from the freshness timer. P0: carries the truthful feed freshness — the
+        // newest bar's MARKET timestamp + arrival + provenance — so the Go side can
+        // tell "callbacks flowing but bars delayed" apart from "fresh". mode is
+        // ALWAYS "unknown": no supported NT8 API exposes the market-data
+        // subscription mode (Delayed vs Realtime); we do NOT derive it from the
+        // account type.
+        private void FeedFreshnessTick(object state)
+        {
+            try { SendFeedStatusFrame(currentPriceStatus); } catch { }
+        }
+
         private void SendFeedStatusFrame(string priceStatus)
         {
+            long lastBarT = 0, lastBarArrival = 0;
+            string provenance = "none", timeframe = "", symbol = "";
+            barsManager?.GetFeedFreshness(out lastBarT, out lastBarArrival, out provenance, out timeframe, out symbol);
             var payload = new Dictionary<string, object>
             {
-                ["price_status"] = priceStatus ?? "",
-                ["time"]         = DateTime.UtcNow.ToString("o")
+                ["price_status"]         = priceStatus ?? "",
+                ["time"]                 = DateTime.UtcNow.ToString("o"),
+                ["last_bar_t_ms"]        = lastBarT,
+                ["last_bar_arrival_ms"]  = lastBarArrival,
+                ["last_bar_symbol"]      = symbol,
+                ["last_bar_tf"]          = timeframe,
+                ["mode"]                 = "unknown",
+                ["provenance"]           = provenance
             };
             WriteEnvelope("feed_status", payload);
         }
@@ -3032,16 +3521,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                         // where the position has already settled. In the exit-fill handler
                         // e.Order.Account.Positions can still show the pre-fill quantity,
                         // which wrongly kept the mapping alive past a full close.
-                        lock (posAcctLock)
-                        {
-                            Account owner;
-                            if (positionAccountBySymbol.TryGetValue(flatRoot, out owner)
-                                && owner != null && acc != null
-                                && string.Equals(owner.Name, acc.Name, StringComparison.OrdinalIgnoreCase))
-                            {
-                                positionAccountBySymbol.Remove(flatRoot);
-                            }
-                        }
+                        // AC-1: only THIS account's (root, account) entry is removed — the
+                        // other account's open position on the same root keeps its owner.
+                        if (acc != null)
+                            lock (posAcctLock) { ForgetPositionOwner(acc.Name, flatRoot); }
                     }
                 }
             }
@@ -3088,6 +3571,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // P0-2: the netting-flat sweep must cancel leg 2 too.
                     if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
                     if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
+                    // release #31: leg 3's pair too.
+                    if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
+                    if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try
@@ -3285,6 +3771,41 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        // Stream EVERY target account's working orders — the order-snapshot
+        // analogue of SendAllOpenPositions / SendAllAccountBalances. The periodic
+        // snapshot and the per-order state_change snapshot were active-account-only,
+        // so a trader bound to a NON-active account (e.g. SimAccount1 while the
+        // active account is Sim101) saw NOTHING between its own order events: the
+        // update gate's working_orders leg could not evaluate it, and every
+        // broker-book reader (F1 stop-move verify, cancel-confirm, slot guard, F4
+        // protection, leg 4) read an empty book → stop moves/cancels unconfirmed.
+        // SendOrderSnapshot(acc) already tags each frame with acc.Name and
+        // enumerates acc.Orders under lock, so it is account-correct per call; here
+        // we call it for every target account. (REL19-ADDON.)
+        private void SendAllOrderSnapshots(string reason)
+        {
+            lock (Account.All)
+            {
+                foreach (var a in Account.All)
+                {
+                    if (a == null) continue;
+                    // Target = every SIM account, plus any account the Go side
+                    // DECLARED bound (account_register allowlist), even a non-SIM
+                    // one. Before the allowlist is declared we fail OPEN to the
+                    // SIM set (mirrors SendAllOpenPositions; never brick trading).
+                    bool target = IsSimAccount(a);
+                    if (!target)
+                    {
+                        lock (sessionAccountsLock)
+                        {
+                            target = sessionAccountsDeclared && sessionAccounts.Contains(a.Name);
+                        }
+                    }
+                    if (target) SendOrderSnapshot(a, reason ?? "periodic");
+                }
+            }
+        }
+
         private void OnAccountItemUpdate(object sender, AccountItemEventArgs e)
         {
             // Emit only on cash/PnL changes to limit frame churn.
@@ -3334,9 +3855,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                 };
                 lock (writeLock)
                 {
+                    // C13 — the hello MUST be the first frame on every connection; a
+                    // non-hello frame is dropped until the hello has been written.
+                    if (type != "hello" && !helloWritten) return;
                     stream.Write(header, 0, 4);
                     stream.Write(body, 0, body.Length);
                     stream.Flush();
+                    if (type == "hello") helloWritten = true;
                 }
             }
             catch (Exception ex)
@@ -3364,7 +3889,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // but another thing to get out of step. If the periods ever
                 // diverge this needs its own timer, and the constants sit beside
                 // each other so that is visible.
-                try { SendOrderSnapshot(account, "periodic"); }
+                // REL19-ADDON — stream EVERY target account (all SIM + declared
+                // bound accounts), not just the active one, so a non-active-account
+                // trader gets a fresh working-order book every heartbeat.
+                try { SendAllOrderSnapshots("periodic"); }
                 catch (Exception exSnap)
                 {
                     LogWarn("RunHeartbeatLoop: order_snapshot failed (will retry): " + exSnap.Message);
@@ -3569,168 +4097,5 @@ namespace NinjaTrader.NinjaScript.AddOns
             return 0;
         }
 
-        // === Recursive-descent JSON parser ===
-        private class JsonParser
-        {
-            private readonly string s;
-            private int pos;
-
-            public JsonParser(string input)
-            {
-                s = input ?? string.Empty;
-                pos = 0;
-            }
-
-            public object Parse()
-            {
-                SkipWs();
-                return ParseValue();
-            }
-
-            private object ParseValue()
-            {
-                SkipWs();
-                if (pos >= s.Length) throw new Exception("unexpected EOF");
-                char c = s[pos];
-                if (c == '{') return ParseObject();
-                if (c == '"') return ParseString();
-                if (c == 't' || c == 'f') return ParseBool();
-                if (c == 'n') return ParseNull();
-                if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber();
-                if (c == '[') return ParseArray();
-                throw new Exception("unexpected char '" + c + "' at " + pos);
-            }
-
-            private Dictionary<string, object> ParseObject()
-            {
-                var result = new Dictionary<string, object>();
-                pos++; // consume '{'
-                SkipWs();
-                if (pos < s.Length && s[pos] == '}') { pos++; return result; }
-                while (true)
-                {
-                    SkipWs();
-                    string key = ParseString();
-                    SkipWs();
-                    if (pos >= s.Length || s[pos] != ':') throw new Exception("expected ':' at " + pos);
-                    pos++; // consume ':'
-                    SkipWs();
-                    object value = ParseValue();
-                    result[key] = value;
-                    SkipWs();
-                    if (pos < s.Length && s[pos] == ',') { pos++; continue; }
-                    if (pos < s.Length && s[pos] == '}') { pos++; return result; }
-                    throw new Exception("expected ',' or '}' at " + pos);
-                }
-            }
-
-            private string ParseString()
-            {
-                if (pos >= s.Length || s[pos] != '"') throw new Exception("expected string at " + pos);
-                pos++; // consume opening '"'
-                var sb = new StringBuilder();
-                while (pos < s.Length && s[pos] != '"')
-                {
-                    if (s[pos] == '\\' && pos + 1 < s.Length)
-                    {
-                        char esc = s[pos + 1];
-                        switch (esc)
-                        {
-                            case '"':  sb.Append('"'); pos += 2; break;
-                            case '\\': sb.Append('\\'); pos += 2; break;
-                            case '/':  sb.Append('/'); pos += 2; break;
-                            case 'n':  sb.Append('\n'); pos += 2; break;
-                            case 'r':  sb.Append('\r'); pos += 2; break;
-                            case 't':  sb.Append('\t'); pos += 2; break;
-                            case 'b':  sb.Append('\b'); pos += 2; break;
-                            case 'f':  sb.Append('\f'); pos += 2; break;
-                            case 'u':
-                                if (pos + 5 < s.Length)
-                                {
-                                    sb.Append((char)Convert.ToInt32(s.Substring(pos + 2, 4), 16));
-                                    pos += 6;
-                                }
-                                else
-                                {
-                                    pos++;
-                                }
-                                break;
-                            default: sb.Append(esc); pos += 2; break;
-                        }
-                    }
-                    else
-                    {
-                        sb.Append(s[pos]);
-                        pos++;
-                    }
-                }
-                if (pos >= s.Length) throw new Exception("unterminated string");
-                pos++; // consume closing '"'
-                return sb.ToString();
-            }
-
-            private object ParseNumber()
-            {
-                int start = pos;
-                if (s[pos] == '-') pos++;
-                while (pos < s.Length &&
-                       (char.IsDigit(s[pos]) || s[pos] == '.' ||
-                        s[pos] == 'e' || s[pos] == 'E' ||
-                        s[pos] == '+' || s[pos] == '-'))
-                {
-                    pos++;
-                }
-                string num = s.Substring(start, pos - start);
-                if (num.IndexOfAny(new[] { '.', 'e', 'E' }) >= 0)
-                {
-                    return double.Parse(num, CultureInfo.InvariantCulture);
-                }
-                if (long.TryParse(num, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l))
-                {
-                    return l;
-                }
-                return double.Parse(num, CultureInfo.InvariantCulture);
-            }
-
-            private bool ParseBool()
-            {
-                if (pos + 4 <= s.Length && s.Substring(pos, 4) == "true") { pos += 4; return true; }
-                if (pos + 5 <= s.Length && s.Substring(pos, 5) == "false") { pos += 5; return false; }
-                throw new Exception("invalid bool at " + pos);
-            }
-
-            private object ParseNull()
-            {
-                if (pos + 4 <= s.Length && s.Substring(pos, 4) == "null") { pos += 4; return null; }
-                throw new Exception("invalid null at " + pos);
-            }
-
-            private List<object> ParseArray()
-            {
-                var result = new List<object>();
-                pos++; // consume '['
-                SkipWs();
-                if (pos < s.Length && s[pos] == ']') { pos++; return result; }
-                while (true)
-                {
-                    SkipWs();
-                    result.Add(ParseValue());
-                    SkipWs();
-                    if (pos < s.Length && s[pos] == ',') { pos++; continue; }
-                    if (pos < s.Length && s[pos] == ']') { pos++; return result; }
-                    throw new Exception("expected ',' or ']' at " + pos);
-                }
-            }
-
-            private void SkipWs()
-            {
-                while (pos < s.Length &&
-                       (s[pos] == ' ' || s[pos] == '\t' ||
-                        s[pos] == '\n' || s[pos] == '\r'))
-                {
-                    pos++;
-                }
-            }
-        }
     }
 }

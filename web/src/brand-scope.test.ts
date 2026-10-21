@@ -1,4 +1,29 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baselines advanced 2026-10-21 for release #43 re-integration:
+//   ninjascript/VLTraderTCPClient.cs sha256 803329a0… — reconnect backoff resets
+//     only on the server hello, hello-first write gate, unreadable connect.json
+//     classified corrupt, empty-key error (fix/addon-reconnect-json 9639e2e5b,
+//     DS-103) and VL_BUILD_ID advances to 2026-10-21-c; the order name / account
+//     / signal-id contract is untouched.
+//   provider/ninjatrader/tcp_server.go  sha256 63ce7337… — connect-key auth gate
+//     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
+//     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
+//     and published as s.conn only after a matching hello; the first-hello
+//     deadline is cleared on auth and connGone runs in a closure so a close frees
+//     the slot. Additive; no frame/order/position path changed.
+// Wire baselines advanced 2026-10-19 for P0 feed-freshness (release #40,
+// C# fix/p0-addon-feed-freshness 52a88a004 + Go/UI fix/p0-feed-freshness-status
+// f5ff7e0ae): the additive feed_status freshness field is added to the TCP wire
+// schema (C# AddOn + Go framing + server, changed in lockstep). Additive only —
+// no identifier renamed, no frame/order/position path touched.
+//   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
+//   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
+//   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
+// go.mod baseline advanced 2026-10-20 for GO-2026-6809 (release #42): the go
+//   directive 1.26.9 -> 1.26.10 (crypto/x509 fix); no require line changed.
+// go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):
+//   go 1.26.9 + golang.org/x/net v0.60.0 — clears GO-2026-6617/6613/6612.
+//   sha256 58e9a9bc… — toolchain bump only; no identifier, frame or wire change.
 // Wire baseline advanced 2026-10-04 for the UPDATER-NT8-CLOSED never-connected
 // seed (fix/updater-nt8-never-connected, DS-101):
 //   provider/ninjatrader/tcp_server.go   sha256 5451949a… — Start records the
@@ -67,6 +92,20 @@
 // signToken every mint goes through. The protected guards are byte-untouched:
 // the HMAC signing-method check, `&& token.Valid`, the Issuer, and the
 // blacklist lookup. No identifier renamed.
+// Bar-feed baseline advanced 2026-10-15 for WAVE 26 bar-stale-print (fix/bar-stale-print,
+// PR #537; re-pinned by the CTO on release/2026-10-15-1):
+//   provider/ninjatrader/tcp_server.go sha256 3f59f5a6… — the accept loop and the
+//     bars_subscribe send arm the stale-print guard (NoteReconnect / rebuild
+//     triggers). Additive call sites only; no identifier, frame or wire change.
+// Wire baseline advanced 2026-10-15 for DEADMAN-ACCEPT-NS (fix/deadman-accept-ns,
+// PR #555, DS-101):
+//   provider/ninjatrader/tcp_server.go sha256 8aaa9e53… — acceptClock seam +
+//     acceptNow at the accept: the accept loop stamps the accept instant through
+//     an acceptClock func (nil = time.Now) so a test can state its own, and
+//     SeedPositionsForTest delegates to SeedPositionsForTestAt (receipt instant
+//     passed in). Additive; no identifier, frame or wire change; the accept-time
+//     connection record and the bar-feed guards this pin protects are
+//     byte-untouched.
 // Bar-feed baseline advanced 2026-09-24 for DS-102 U6 (fix/owed-ui-ci-1):
 //   provider/ninjatrader/tcp_server.go — the hello handshake log now renders an
 //     absent NT8 identity as n/a via helloProcessPair (nt8_pid/assembly_mvid;
@@ -322,6 +361,13 @@ import { expect, it } from 'vitest'
 // RENAME-R5 (owner order 2026-10-02 'finish rename'; DS-104, integrated head): the three pre-rename deploy scripts deleted — keys removed, renamed vl-*.sh re-pinned from the merged tree 2026-10-02
 // SPLIT REDESIGN (owner order 2026-10-04 "with everything"; REVIEW-353 + REVIEW-SPLIT-2, DS-103 C# + CTO Go, release/2026-10-05-1): ninjascript/VLTraderTCPClient.cs + provider/ninjatrader/tcp_framing.go re-pinned 2026-10-04 — two OCO pairs per entry (leg1_qty/leg1_tp), leg on move_stop/modify_bracket/position_close; ADDITIVE wire fields, VL_BUILD_ID 2026-10-04-d1 (owner copy + F5 + NT8 restart)
 // SPLIT REVIEW FOLDS (DS-104 review → DS-103 4dddb0993 + 07f562b2b): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-04 — leg-1 exit keeps Leg1Qty (Leg1Exited/LastStop), later fills protect under leg 2, InitialStop fallback, never a 0-priced stop; same build id d1 (not yet installed anywhere)
+// B11 LINK-IDLE (owner order 2026-10-05 "build all"; DS-102 #428, release/2026-10-06-1): provider/ninjatrader/tcp_server.go re-pinned 2026-10-06 — read-idle watcher (NT8_LINK_IDLE_SECONDS, default 60) drops a silent AddOn link outside the CME break and the weekend; wire schema unchanged
+// B11 LINK-IDLE FOLD (CTO verification review 2026-10-06; DS-102 #431): provider/ninjatrader/tcp_server.go re-pinned 2026-10-06 — the read-idle watcher is wg-tracked so Stop() joins it (one line at Start)
+// REL19 (owner merge #485 2026-10-13, DS-101 #484): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-13 — SendAllOrderSnapshots (every SIM + bound account; connect/periodic/account_register), VL_BUILD_ID 2026-10-04-d1 -> 2026-10-13-a (owner copy + F5 + NT8 restart)
+// CT-EVERYWHERE (owner order 2026-10-13 "do all, send all agent out"; DS-103 fix/ct-everywhere): logger/logger.go + deploy/systemd-user/vl-backup.timer re-pinned 2026-10-13 — the compact formatter renders its line timestamp and the log-file date in America/Chicago (CTLocation, LoadLocation with the UTC fail-closed fallback kernel.CTLocation uses; logger cannot import kernel — cycle), never the host zone; the backup timer's two OnCalendar lines gain an America/Chicago zone suffix. No identifier renamed; the log-line shape ("MM-DD HH:MM:SS [LEVEL] caller msg") and the vl_<YYYY-MM-DD>.log name are unchanged, and the timer's schedule (05:00/17:30) is unchanged.
+// ADDON-CLOSE-ROUTING (owner orders 2026-10-14 "recheck verify everything then fix all"; release #24 lane fix/addon-close-routing): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-14 — close_position honours its `account` field (one by-name resolver shared with the entry path; a named account that cannot be resolved is REFUSED, never another account), the position-owner map is keyed by (root, account), every close refusal sends position_close_rejected, and the 4.3 limit exit is sized to the account's whole position; VL_BUILD_ID 2026-10-13-a -> 2026-10-14-a (owner copy + F5 + NT8 restart). No wire shape change.
+// REL31 LEG-3 BRACKET (owner order 2026-10-16 "release #31"; DS-107 fix/leg3-bracket): ninjascript/VLTraderTCPClient.cs + provider/ninjatrader/tcp_framing.go re-pinned 2026-10-16 — an optional THIRD OCO pair (leg2_qty/leg2_tp) so the runner sells half at the first line beyond the leg-1 exit; ADDITIVE wire fields, VL_BUILD_ID 2026-10-16-a (owner copy + F5 + NT8 restart), old AddOn builds get the 2-leg plan.
+// REL31 FOLD #563 (gate fold, DS-108): ninjascript/VLTraderTCPClient.cs re-pinned 2026-10-16 — both strip chains test -sl3/-tp3 before -sl/-tp (D2), the PlacedBracket record keeps the frame's Leg2Qty/Leg2Tp on every branch so AmendBracketQuantity can build leg 3 on a later fill (D3), and leg 2 is never created/amended to a zero qty after its exit (D10). Same build id 2026-10-16-a.
 import baseline from './test/brand-scope-baseline.json'
 
 function verifyScope(path: string, bytes: Buffer, expected: string) {
@@ -419,6 +465,10 @@ it('preserves every existing TypeScript import target in changed files', async (
     'web/src/pages/AgentChatPage.tsx\u0000../components/agent/MarketTicker',
     'web/src/router/AppRoutes.tsx\u0000../pages/BeginnerOnboardingPage',
     'web/src/router/AppRoutes.tsx\u0000../lib/onboarding',
+    // release #22 UI-GUIDE-TRUTH LF-1: /faq now redirects to /guide — the
+    // inherited crypto/Docker FAQ page (with its pkill / delete-the-WAL
+    // advice) is no longer routed:
+    'web/src/router/AppRoutes.tsx\u0000../pages/FAQPage',
   ])
   for (const path of git(['diff', '--name-only', base, '--', '*.ts', '*.tsx'])
     .trim()

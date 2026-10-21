@@ -126,11 +126,23 @@ func finishConfirmation(v *ConfirmVerdict) {
 }
 
 func orderedScenarioConfirm(s PlanScenario, bars []market.Kline, sinceMs, nowMs int64) ConfirmVerdict {
-	v1 := evaluateConfirmAfter(*s.Confirm, bars, sinceMs, nowMs, nil)
+	// R22 F1 (owner R4): a sweep setup's part one counts closes only after the
+	// sweep of its ref (sweep_trigger.go); every other scenario is unchanged.
+	v1, gated := sweepGatedConfirm(s, bars, sinceMs, nowMs)
+	if !gated {
+		// F-1 (planner-touch-fills): a LEVEL play's part one counts only after
+		// the first touch of the level (touch_trigger.go); breakouts unchanged.
+		v1, gated = touchGatedConfirm(s, bars, sinceMs, nowMs)
+	}
+	if !gated {
+		v1 = evaluateConfirmAfter(*s.Confirm, bars, sinceMs, nowMs, nil)
+	}
 	if s.Confirm2 == nil {
 		return v1
 	}
-	ref, ok := ConfirmReferenceInstant(*s.Confirm, bars, sinceMs, nowMs)
+	// Part two chains on part one's OWN event (for an ungated scenario this is
+	// exactly ConfirmReferenceInstant — the same evaluation).
+	ref, ok := v1.EventMs, v1.EventKnown
 	var v2 ConfirmVerdict
 	if !ok {
 		v2 = ConfirmVerdict{Rule: s.Confirm2.Rule, RefPrice: s.Confirm2.RefPrice, Side: s.Confirm2.Side,

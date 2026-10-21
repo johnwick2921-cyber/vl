@@ -7,6 +7,85 @@ import type {
 import { API_BASE, httpClient } from './helpers'
 import { ApiError } from '../httpClient'
 
+/** Mentor "what trades" panel — the live evaluator state (release #10). */
+export interface MentorTruth {
+  enabled: boolean
+  as_of_ms: number
+  /** UG-2 (release #24): the instrument the evaluator reads (e.g. "MNQ"). The
+   * chart draws the mentor overlays only on a tab showing this symbol. Absent
+   * on a pre-#24 server. */
+  symbol?: string
+  htf: {
+    four_h_dir: string
+    four_h_since: number
+    one_h_dir: string
+    one_h_since: number
+    verdict: string
+    verdict_why?: string
+    verdict_side?: string
+    gate_active: boolean
+  }
+  trigger_5m: { dir: string; price: number; since: number }
+  /** ABSENT (undefined) while the evaluator has not built yet — see `computing`. */
+  levels?: {
+    key: string
+    kind: string
+    price: number
+    drawn_at: number
+    visits_today: number
+    merged_from?: number[]
+  }[]
+  /** ABSENT (undefined) while the evaluator has not built yet. */
+  depth?: Record<string, number>
+  /** true when mentor is ON but the evaluator has not built yet (first 1m bar). */
+  computing?: boolean
+  depth_line: string
+  window: { start: string; minutes: number; active: boolean; ended: boolean }
+  done_after_win: boolean
+  done_after_win_why?: string
+  stop_after_loss: boolean
+  stop_after_loss_why?: string
+  /** T7 (release #22) — ABSENT while computing; `[]` once built. VALID trendlines only. */
+  trendlines?: {
+    side: string // 'long' = support, 'short' = resistance
+    p0_ms: number
+    p0_px: number
+    p1_ms: number
+    p1_px: number
+    now_ms: number
+    now_px: number
+    in_level: boolean // false = inside a box this bar (the box wins)
+  }[]
+  /** T7 — the ISB rest boxes the evaluator holds (5m / 15m / 30m). */
+  isb_boxes?: MentorRange[]
+  /** T7 — the 08:30–08:32 opening range, absent until drawn. */
+  orb?: MentorRange
+  /** T7 — the swing line (4h EMA 34), absent until warm, with its order/leg. */
+  swing?: { line: number; pending?: MentorSwingLeg; pos?: MentorSwingLeg }
+}
+
+export interface MentorRange {
+  label: string
+  high: number
+  low: number
+  dir?: string
+  at_ms?: number
+  status?: string
+}
+
+export interface MentorSwingLeg {
+  side: string
+  entry: number
+  stop: number
+  target: number
+  /** UG-1 (release #24), filled leg only: "broker" = `stop` is the leg's
+   * working stop read from NinjaTrader's order book; "entry" = the book could
+   * not be read, so `stop` is the stop the leg was entered with. */
+  stop_source?: 'broker' | 'entry'
+  /** UG-1: the evaluator emitted its +1R break-even move (a request). */
+  moved_be?: boolean
+}
+
 function throwApiError(
   message: string,
   errorKey?: string,
@@ -133,6 +212,17 @@ export const traderApi = {
     )
     if (!result.success) throw new Error('Failed to fetch trader config')
     return result.data!
+  },
+
+  async getMentorTruth(traderId: string, silent = true): Promise<MentorTruth> {
+    const result = await httpClient.request<MentorTruth>(
+      `${API_BASE}/traders/${traderId}/mentor-truth`,
+      { method: 'GET', silent }
+    )
+    if (!result.success || !result.data) {
+      throw new Error('Failed to fetch mentor truth panel')
+    }
+    return result.data
   },
 
   async updateTrader(

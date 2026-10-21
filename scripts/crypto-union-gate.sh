@@ -97,7 +97,7 @@ if [ $((cap_n % 2)) -ne 0 ]; then bad "risk-cap canary list malformed (odd $cap_
 
 # -- sweep the tracked tree (invariant 3 + the 2000 floor)
 LIST=$(mktemp) || { bad "mktemp failed"; echo "== $fail FAIL"; exit 1; }
-trap 'rm -f "$LIST"' EXIT
+trap 'rm -f "${LIST:?}"' EXIT
 git ls-files -z > "$LIST" || { bad "git ls-files failed (never skip)"; echo "== $fail FAIL"; exit 1; }
 nfiles=$(tr -cd '\0' < "$LIST" | wc -c)
 if [ "$nfiles" -lt 2000 ]; then bad "enumeration floor: $nfiles tracked files < 2000"; fi

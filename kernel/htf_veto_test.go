@@ -214,12 +214,20 @@ func TestG1Replay_ShiftDayVetoes(t *testing.T) {
 		}
 	}
 	t.Logf("blocked count=%d Σpnl(blocked)=%+.2f", len(blockedIDs), blockedPnL)
-	// Pin the honest day: the 1h detector never confirms a trend at any entry
-	// instant → zero vetoes (fail-open, never a guess).
-	if len(blockedIDs) != 0 {
-		t.Fatalf("replay: 08-21 1h structure must fail open everywhere (no confirmed trend at any entry), got blocked=%v", blockedIDs)
+	// Pin the honest day: the 1h detector never confirms a 3-swing trend at any
+	// entry instant. F-4 (planner-touch-fills, 2026-10-14) adds ONE veto: #542
+	// (SHORT 08:49, a scratch, $0.00) — the 08:00 1h bar closed 29511.50,
+	// 111.75 pts (> 1×ATR 62.88) above the last swing high 29399.75 with no
+	// 3-swing set yet: a one-way move UP, and a short into it. Every other
+	// entry still fails open (no fabricated trend).
+	if len(blockedIDs) != 1 || blockedIDs[0] != 542 {
+		t.Fatalf("replay: 08-21 1h structure must fail open everywhere except the one-way #542, got blocked=%v", blockedIDs)
 	}
-	// The 1h state at the late-morning entries is RANGING (3 swings, no pair).
+	if _, msg := veto("SHORT", day[9].at); !strings.Contains(msg, "one-way") {
+		t.Fatalf("#542 is vetoed on the one-way evidence, not a 3-swing trend: %q", msg)
+	}
+	// The RAW 1h Trend at the late-morning entries is still RANGING (3 swings,
+	// no pair) — F-4 records one-way evidence beside it, never rewrites it.
 	for _, probe := range []int64{
 		time.Date(2026, 8, 21, 8, 49, 3, 0, CTLocation()).UnixMilli(),
 		time.Date(2026, 8, 21, 10, 47, 45, 0, CTLocation()).UnixMilli(),

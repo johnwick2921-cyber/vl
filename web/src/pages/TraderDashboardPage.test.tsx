@@ -9,6 +9,10 @@ import {
 } from '@testing-library/react'
 import { TraderDashboardPage } from './TraderDashboardPage'
 const lifecycle = vi.hoisted(() => ({ mounts: 0, unmounts: 0 }))
+const mentorPollers = vi.hoisted(() => ({
+  calls: [] as (boolean | undefined)[],
+}))
+const planProps = vi.hoisted(() => ({ mentorTruth: undefined as unknown }))
 vi.mock('../contexts/LanguageContext', () => ({
   useLanguage: () => ({ language: 'en' }),
 }))
@@ -25,7 +29,14 @@ vi.mock('../components/charts/EquityChart', () => ({
   EquityChart: () => <div data-testid="equity-chart" />,
 }))
 vi.mock('../components/plan/PlanCard', () => ({
-  PlanCard: ({ symbol }: { symbol: string }) => {
+  PlanCard: ({
+    symbol,
+    mentorTruth,
+  }: {
+    symbol: string
+    mentorTruth?: unknown
+  }) => {
+    planProps.mentorTruth = mentorTruth
     const [draft, setDraft] = useState('')
     useEffect(() => {
       lifecycle.mounts++
@@ -43,6 +54,15 @@ vi.mock('../components/plan/PlanCard', () => ({
         />
       </div>
     )
+  },
+}))
+vi.mock('../components/mentor/MentorTruthCard', () => ({
+  MentorTruthCard: () => <div data-testid="mentor-truth-card" />,
+}))
+vi.mock('../components/mentor/useMentorTruth', () => ({
+  useMentorTruth: (_traderId: string | undefined, poll?: boolean) => {
+    mentorPollers.calls.push(poll)
+    return { truth: null, stale: false }
   },
 }))
 vi.mock('../components/trader/AccountSelector', () => ({
@@ -116,6 +136,7 @@ function props(futures = true): ComponentProps<typeof TraderDashboardPage> {
 beforeEach(() => {
   lifecycle.mounts = 0
   lifecycle.unmounts = 0
+  mentorPollers.calls = []
   vi.stubGlobal(
     'fetch',
     vi.fn(async () => ({ json: async () => ({ status: 'ok', symbols: [] }) }))
@@ -140,6 +161,16 @@ describe('Dashboard production composition', () => {
       equity.compareDocumentPosition(plan) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy()
     expect(screen.getByText(/ID: test-123/)).toBeInTheDocument()
+  })
+  it('renders exactly one mentor-truth card and one enabled poller on futures', async () => {
+    render(<TraderDashboardPage {...props()} />)
+    await screen.findByTestId('market-chart')
+    expect(screen.getAllByTestId('mentor-truth-card')).toHaveLength(1)
+    // The page feeds its live truth down to PlanCard (so PlanCard must not
+    // start a second poller — pinned in PlanCard.mentor.test.tsx).
+    expect(planProps.mentorTruth).not.toBeUndefined()
+    // The page-level hook is the enabled poller.
+    expect(mentorPollers.calls.some((p) => p !== false)).toBe(true)
   })
   it('preserves the same PlanCard instance and draft while Overview is CSS-hidden', async () => {
     render(<TraderDashboardPage {...props()} />)
@@ -173,5 +204,49 @@ describe('Dashboard production composition', () => {
     const table = screen.getByRole('table')
     expect(table.querySelectorAll('th.hidden,td.hidden')).toHaveLength(0)
     expect(table.closest('.overflow-x-auto')).not.toBeNull()
+  })
+  it('T27: the Value cell shows the API position_value, never price×qty', () => {
+    const p = props()
+    p.positions = [
+      {
+        symbol: 'MNQ',
+        side: 'long',
+        entry_price: 100,
+        mark_price: 101,
+        quantity: 2,
+        leverage: 1,
+        unrealized_pnl: 2,
+        unrealized_pnl_pct: 1,
+        liquidation_price: 0,
+        margin_used: 100,
+        point_value: 2, // $2/pt MNQ
+        position_value: 404, // 2 × 101 × $2/pt
+      },
+    ]
+    render(<TraderDashboardPage {...p} />)
+    // The API's notional wins; the old price×qty (202.00) must never render.
+    expect(screen.getByText('404.00')).toBeTruthy()
+    expect(screen.queryByText('202.00')).toBeNull()
+  })
+  it('T27: a futures row without position_value shows n/a, never a fabricated number', () => {
+    const p = props()
+    p.positions = [
+      {
+        symbol: 'MNQ',
+        side: 'long',
+        entry_price: 100,
+        mark_price: 101,
+        quantity: 2,
+        leverage: 1,
+        unrealized_pnl: 2,
+        unrealized_pnl_pct: 1,
+        liquidation_price: 0,
+        margin_used: 100,
+        // no point_value / position_value → L7: absent, never fabricated
+      },
+    ]
+    render(<TraderDashboardPage {...p} />)
+    expect(screen.getByText('n/a')).toBeTruthy()
+    expect(screen.queryByText('202.00')).toBeNull()
   })
 })

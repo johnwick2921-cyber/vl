@@ -1,11 +1,17 @@
 import { PRODUCT_NAME } from '../constants/branding'
 import { LedgerDayPnl } from '../components/trader/LedgerDayPnl'
-import { useEffect, useState, useRef } from 'react'
+import {
+  accountVsInitialCard,
+  botRecordCard,
+  headerAccountPnl,
+} from '../components/trader/accountPnl'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { mutate } from 'swr'
 import { api } from '../lib/api'
 import { planApi } from '../lib/api/plan'
 import { EquityChart } from '../components/charts/EquityChart'
 import { ChartTabs } from '../components/charts/ChartTabs'
+import { mentorChartLines } from '../components/charts/chartOverlays'
 import { DecisionCard } from '../components/trader/DecisionCard'
 import { DecisionAudit } from '../components/trader/DecisionAudit'
 import { EmergencyFlatButton } from '../components/trader/EmergencyFlatButton'
@@ -26,6 +32,9 @@ import { VlSelect } from '../components/ui/select'
 import { GridRiskPanel } from '../components/strategy/GridRiskPanel'
 import { PlanCard } from '../components/plan/PlanCard'
 import { PictureHtfPanel } from '../components/trader/PictureHtfPanel'
+import { MentorTruthCard } from '../components/mentor/MentorTruthCard'
+import { useMentorTruth } from '../components/mentor/useMentorTruth'
+import { AddonOutdatedBanner } from '../components/friend/AddonOutdatedBanner'
 import type {
   SystemStatus,
   AccountInfo,
@@ -173,6 +182,22 @@ export function TraderDashboardPage({
     }
   }, [selectedTraderId])
   const chartSectionRef = useRef<HTMLDivElement>(null)
+  // MENTOR-TRUTH PANEL — the live evaluator truth ("what trades"), refreshed
+  // every 30s + on focus. The levels are also drawn on the dashboard chart.
+  const { truth: mentor, stale: mentorStale } = useMentorTruth(
+    selectedTrader?.trader_id
+  )
+  // T7 (release #22): every place the evaluator trades — levels, trigger
+  // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the
+  // trendlines as sloped segments.
+  // UG-3 (release #24): a failed refresh keeps the last good read on the
+  // chart, every line marked "stale since HH:MM CT" (never hidden silently).
+  const mentorStaleSinceMs = mentorStale ? (mentor?.as_of_ms ?? 0) : undefined
+  const mentorLevels = useMemo(
+    () => mentorChartLines(mentor, mentorStaleSinceMs),
+    [mentor, mentorStaleSinceMs]
+  )
+  const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -389,6 +414,10 @@ export function TraderDashboardPage({
           </div>
         )}
 
+        {/* Friend mode: connected AddOn older than the manifest — owner's bot
+            never renders this (the friend route 404s there). */}
+        <AddonOutdatedBanner />
+
         {/* Trader Header */}
         <div
           className="mb-6 rounded-lg p-6 animate-scale-in vl-neo-glass group"
@@ -441,6 +470,7 @@ export function TraderDashboardPage({
               {selectedTraderId && (
                 <AccountSelector
                   traderId={selectedTraderId}
+                  isRunning={status?.is_running ?? false}
                   onAccountChanged={() => {
                     // Invalidate every account-scoped SWR key for this trader on
                     // account change so the new account's data is re-fetched.
@@ -577,8 +607,15 @@ export function TraderDashboardPage({
             <div className="flex gap-4">
               <span>LAST_UPDATE::{lastUpdate}</span>
               <span>EQ::{account.total_equity?.toFixed(2)}</span>
-              <span title="NT8-native total P&L (equity − initial balance)">
-                PNL::{account.total_pnl?.toFixed(2)}
+              {/* R22 PNL-TRUTH (P1-2): this chip read "PNL::" over a tooltip
+                  ("equity − initial balance") that described a DIFFERENT
+                  number than the one shown (NT8's session P&L). Label, value
+                  and tooltip now come from one helper. */}
+              <span
+                data-testid="header-account-pnl"
+                title={headerAccountPnl(account).title}
+              >
+                {headerAccountPnl(account).label}
               </span>
               <LedgerDayPnl account={account} />
             </div>
@@ -605,8 +642,13 @@ export function TraderDashboardPage({
                 : `${account?.total_equity?.toFixed(2) ?? '--'}`
             }
             unit={currencyUnit}
-            change={account ? account.total_pnl_pct || 0 : undefined}
-            positive={(account?.total_pnl ?? 0) > 0}
+            change={
+              account ? accountVsInitialCard(account).changePct : undefined
+            }
+            positive={account ? accountVsInitialCard(account).positive : true}
+            subtitle={
+              account ? accountVsInitialCard(account).subtitle : undefined
+            }
             icon="💰"
             loading={!account && !accountFailed}
           />
@@ -626,16 +668,21 @@ export function TraderDashboardPage({
             icon="💳"
             loading={!account && !accountFailed}
           />
+          {/* R22 PNL-TRUTH: was "Total P&L" showing NT8's SESSION figure.
+              It is now the BOT's record (closed bot trades, pnl_corrected)
+              with the manual NT8 trades on their own visible line. */}
           <StatCard
-            title={t('totalPnL', language)}
+            title="Bot P&L (record)"
             value={
               accountFailed && !account
                 ? '--'
-                : `${account?.total_pnl !== undefined && account.total_pnl >= 0 ? '+' : ''}${account?.total_pnl?.toFixed(2) ?? '--'}`
+                : account
+                  ? botRecordCard(account).value
+                  : '--'
             }
             unit={currencyUnit}
-            change={account ? account.total_pnl_pct || 0 : undefined}
-            positive={(account?.total_pnl ?? 0) >= 0}
+            positive={account ? botRecordCard(account).positive : true}
+            subtitle={account ? botRecordCard(account).subtitle : undefined}
             icon="📈"
             loading={!account && !accountFailed}
           />
@@ -741,6 +788,10 @@ export function TraderDashboardPage({
                 selectedTrader.exchange_id,
                 exchanges
               )}
+              mentorLevels={mentorLevels}
+              mentorTrendlines={mentorTrendlines}
+              mentorSymbol={mentor?.symbol}
+              mentorStaleSinceMs={mentorStaleSinceMs}
             />
           </div>
 
@@ -750,6 +801,13 @@ export function TraderDashboardPage({
           >
             <EquityChart traderId={selectedTrader.trader_id} />
           </section>
+          {/* MENTOR-TRUTH PANEL — the live evaluator truth on the dashboard,
+                above the planner card. Hides itself when mentor mode is OFF. */}
+          {isFutures && selectedTrader.trader_id && (
+            <div className="min-w-0 lg:col-span-2">
+              <MentorTruthCard truth={mentor} stale={mentorStale} />
+            </div>
+          )}
           {/* Day Plan card — futures only (day_plan is a futures feature);
                 additive + dormant: renders its no-plan state until a plan arms. */}
           {isFutures && selectedTrader.trader_id && (
@@ -762,6 +820,7 @@ export function TraderDashboardPage({
                   selectedTrader.exchange_id,
                   exchanges
                 )}
+                mentorTruth={mentor}
               />
             </section>
           )}
@@ -920,8 +979,19 @@ export function TraderDashboardPage({
                           <td className="px-1 py-3 font-mono whitespace-nowrap text-right text-vl-neo-text-main">
                             {formatQuantity(pos.quantity)}
                           </td>
-                          <td className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-vl-neo-text-main">
-                            {(pos.quantity * pos.mark_price).toFixed(2)}
+                          <td
+                            className="px-1 py-3 font-mono font-bold whitespace-nowrap text-right text-vl-neo-text-main"
+                            title={
+                              pos.point_value
+                                ? `${pos.point_value} $/pt`
+                                : undefined
+                            }
+                          >
+                            {isFutures
+                              ? pos.position_value != null
+                                ? pos.position_value.toFixed(2)
+                                : 'n/a'
+                              : (pos.quantity * pos.mark_price).toFixed(2)}
                           </td>
                           {!isFutures && (
                             <td className="px-1 py-3 font-mono whitespace-nowrap text-center text-vl-neo-gold hidden md:table-cell">

@@ -166,6 +166,24 @@ func plannerTradeDateCT(now time.Time) string {
 	return now.In(loc).Format("2006-01-02")
 }
 
+// studioCustomPrompt (R22 R4) is the owner's Studio custom_prompt from the SAME
+// config the executor's "# Personalized Strategy" block reads (the strategy
+// engine's config), so the planner and the executor hear one text.
+func (at *AutoTrader) studioCustomPrompt() string {
+	if at == nil {
+		return ""
+	}
+	if at.strategyEngine != nil {
+		if c := at.strategyEngine.GetConfig(); c != nil {
+			return c.CustomPrompt
+		}
+	}
+	if at.config.StrategyConfig != nil {
+		return at.config.StrategyConfig.CustomPrompt
+	}
+	return ""
+}
+
 func shortHash(s string) string {
 	sum := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(sum[:6])
@@ -879,7 +897,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	// The two LOAD rules a level wake obeys are computed only to SAY that the
 	// exemption applied (never to refuse): the class-47 cooldown since the last
 	// wake-authored version, and the shared wake_min_interval_min throttle.
-	if exempt := flipRereadExemptionNote(now, at.lastPlannerWakeAt, cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
+	if exempt := flipRereadExemptionNote(now, at.wakePlannerAt(), cfg.WakeMinIntervalMinutes(), at.lastWakeAuthoredVersionAge(now, tradeDate, session), wakeCooldownMinutes()); exempt != "" {
 		at.logWarnf("🗓️ structure_flip read %s %s v%d — immediate (flip reads are exempt from cooldown/min-interval; cutoff + stream guard still apply): %s",
 			tradeDate, session, row.Version, exempt)
 	}
@@ -899,7 +917,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	at.flipRereadLaunchAt.Store(inflightKey, now)
 	// Ordinary wakes back off from THIS read; the flip read never backed off
 	// from them.
-	at.lastPlannerWakeAt = now
+	at.setWakePlannerAt(now)
 	// BLOCKER 2 — the once-key is NOT set here. It lands only after the
 	// goroutine below has seen a newer active version in the store.
 
@@ -1283,7 +1301,13 @@ func claimPlannerRead(key string) bool {
 	return !loaded
 }
 
-func releasePlannerRead(key string) { plannerReadInFlight.Delete(key) }
+func releasePlannerRead(key string) {
+	plannerReadInFlight.Delete(key)
+	// W26 F-1: a wake deferred by "stream open" re-fires the moment the LAST
+	// claim clears — it must not wait for the next monitor cycle (10-14 the
+	// wake sat parked behind another trader's stream for ~2h).
+	fireDeferredWakeRefires()
+}
 
 // PlannerReadInFlight reports whether a planner read for this trader's chain is
 // currently running (the claim is held). The API exposes it as the card's
@@ -1300,7 +1324,7 @@ func (at *AutoTrader) PlannerReadInFlight(tradeDate, session string) bool {
 // THIS call claimed the read (false = another read was already in flight and
 // this one skipped). The wrapper keeps the old signature for existing callers.
 func (at *AutoTrader) runPlannerReadWithTriggerClaimed(session, tradeDate, triggerOverride string) bool {
-	return at.runPlannerReadWithTriggerClaimedCtx(time.Now(), session, tradeDate, triggerOverride, "", nil, true)
+	return at.runPlannerReadWithTriggerClaimedCtx(traderNow(), session, tradeDate, triggerOverride, "", nil, true)
 }
 
 // runPlannerReadWithTriggerClaimedCtx (P0.4-G, 2026-08-25) is the claimed read
@@ -1434,7 +1458,7 @@ func (at *AutoTrader) runPlannerReadWithTriggerClaimedCtx(now time.Time, session
 	researchTrace := &researchsnapshot.PlanTrace{SnapshotID: input.ResearchSnapshotID, Model: modelID, ConfigVersion: input.AIConfigHash, SystemPrompt: plannerSystemPrompt}
 	// P15 — the authoring clock is the caller's instant, not a fresh wall read.
 	// P15 revert: `now` is the READ instant only; the publish clock stays live.
-	at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, researchTrace, session, tradeDate, triggerOverride, modelID, hash, input.IndicatorsBlock, input.AIConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels(input), failClosed, func(userPrompt string) (string, error) {
+	at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, researchTrace, session, tradeDate, triggerOverride, modelID, hash, input.IndicatorsBlock, input.AIConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels(input), failClosed, input.ReadFactID, func(userPrompt string) (string, error) {
 		mcp.ApplyThinking(client, pMode, pEffort)
 		// PLANNER SPEED WAVE 4 (2026-08-31) — the session planner now rides the
 		// SSE streaming client with the idle watchdog (split deadlines). The
@@ -1471,6 +1495,16 @@ func (at *AutoTrader) runPlannerReadWithTriggerClaimedCtx(now time.Time, session
 			at.logWarnf("🛰 planner call FAILED class=%s provider_row=%s model=%s http_status=%d request_id=%q elapsed=%.1fs idle=%ds total=%ds — %v",
 				mcp.LastErrClass(client), at.config.AIModelID, modelID, mcp.LastHTTPStatus(client), mcp.LastRequestID(client),
 				time.Since(start).Seconds(), int(plannerStreamIdle().Seconds()), int(plannerStreamTotal().Seconds()), err)
+			// F5 (REL17) — a planner 402 raises the SAME P0 outage banner the
+			// decision and watch paths already do (it was silent on this path).
+			if ai402ClearAllOn() && classifyAIError(err) == "ai_payment_402" {
+				at.on402Failure(time.Now(), err)
+			}
+		} else if ai402ClearAllOn() {
+			// F5 (REL17) — a successful planner read clears any latched 402
+			// outage (the planner is the one DeepSeek call mentor mode still
+			// makes, so it is the path that must clear the banner).
+			at.onAISuccess(time.Now())
 		}
 		at.logInfof("🧠 planner call (reasoning=%s wire=%s/%s cap=%d stream idle=%ds total=%ds) completed in %.1fs", modeLabel, pMode, pEffort, cap, int(plannerStreamIdle().Seconds()), int(plannerStreamTotal().Seconds()), time.Since(start).Seconds())
 		// root-fix part B: the live side of the A/B pair.
@@ -1896,11 +1930,20 @@ func clampLine(s string, n int) string {
 // attempt N-1's defect, and (WAVE PLANNER B2 follow-up) persists the AI's RAW
 // answer so a future replay can re-check the same text the live attempt
 // produced.
-func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, hash, userPrompt, raw string, rejectErr error, prevReason *string, factsJSON ...string) {
+//
+// W26 F-1 (2026-10-15): it now RETURNS whether this reject repeated the
+// PREVIOUS attempt's defect (samePlannerDefect). A repeated identical defect
+// is a stuck model — the caller ends the read at once (fail-closed) instead of
+// burning another full ~15 min max-reasoning attempt (the 10-14 read burned
+// attempts 2 AND 3 on the identical "no JSON object found" defect and held the
+// stream ~45 min).
+func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, hash, userPrompt, raw string, rejectErr error, prevReason *string, factsJSON ...string) bool {
 	if rejectErr == nil {
-		return
+		return false
 	}
+	repeated := false
 	if attempt >= 2 && *prevReason != "" && samePlannerDefect(*prevReason, rejectErr.Error()) {
+		repeated = true
 		telemetry.IncRepairRegression(at.id)
 		at.logWarnf("🎯 repair regression: attempt %d repeated the attempt %d defect — %s", attempt, attempt-1, rejectErr.Error())
 	}
@@ -1916,6 +1959,7 @@ func (at *AutoTrader) plannerRejectBookkeeping(attempt int, tradeDate, session, 
 			at.logWarnf("🧾 rejected-prompt persist failed: %v", serr)
 		}
 	}
+	return repeated
 }
 
 // samePlannerDefect compares two reject reasons on a normalized prefix — the
@@ -2039,7 +2083,7 @@ func (at *AutoTrader) runPlannerReadCoreWithFactsGrades(session, tradeDate, trig
 }
 
 func (at *AutoTrader) runPlannerReadCoreWithFactsGradesClock(authoringClock func() time.Time, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
-	return at.runPlannerReadCoreObserved(authoringClock, nil, nil, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels, failClosed, call, extraNoTrade...)
+	return at.runPlannerReadCoreObserved(authoringClock, nil, nil, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt, facts, machineGrades, machineLabels, htfLabels, failClosed, 0, call, extraNoTrade...)
 }
 
 // plannerMaxAttempts is the single source of the attempt-loop bound
@@ -2051,7 +2095,7 @@ const plannerMaxAttempts = 3
 // instant is a SEPARATE clock — nil means the live wall clock — because a
 // frozen publish makes AuthoredBornGroups(read, publish) empty on every seamed
 // read and stamps a CreatedAt that lies by the AI call's duration.
-func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock func() time.Time, researchTrace *researchsnapshot.PlanTrace, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
+func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock func() time.Time, researchTrace *researchsnapshot.PlanTrace, session, tradeDate, triggerOverride, modelID, promptHash, indicatorsBlock, aiConfigHash, requiredBias, prompt string, facts kernel.PlanFacts, machineGrades map[float64]string, machineLabels map[float64]string, htfLabels map[float64]string, failClosed bool, readFactID uint, call func(userPrompt string) (string, error), extraNoTrade ...string) (int, string, error) {
 	// H4/H5 — validation must accept EXACTLY what the config allows: the resolved
 	// max_levels / scenario_cap (hard ceilings 12/5). Before this the parse
 	// hardcoded 8/3, so raising either setting made EVERY read fail-closed into a
@@ -2099,9 +2143,27 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 	resendIdentical := ""        // class 41 M0: the exact prompt a provider-failed attempt sent
 	resendAfterWatchdog := false // the prior attempt died on a watchdog close
 	resendStart := time.Time{}
-	lastAttempt := 0                            // WAVE PLANNER B3 — the final attempt count, recorded by the read line
+	lastAttempt := 0 // WAVE PLANNER B3 — the final attempt count, recorded by the read line
+	// W26 F-1 (2026-10-15): the READ is wall-clock bounded to ONE wake interval,
+	// so a slow max-reasoning attempt (~904s) × 3 can never hold the planner
+	// stream for 45+ min and block every wake behind it (10-14 22:31→23:59).
+	// The per-attempt stream deadline (PlannerStreamTotalSeconds, default 1200s)
+	// still binds each call; this is the read-level ceiling.
+	readIntervalMin := store.DefaultWakeMinIntervalMin
+	if cfg := at.dayPlanCfg(); cfg != nil {
+		readIntervalMin = cfg.WakeMinIntervalMinutes()
+	}
+	// traderNow() is the testable clock (testNow seam) — the wall clock in prod.
+	readDeadline := traderNow().Add(time.Duration(readIntervalMin) * time.Minute)
 	for attempt := 1; attempt <= 3; attempt++ { // 1 + ≤2 retries
 		lastAttempt = attempt
+		if traderNow().After(readDeadline) {
+			if lastErr == nil {
+				lastErr = fmt.Errorf("planner read wall-clock cap (%d min) reached before attempt %d — fail-closed", readIntervalMin, attempt)
+			}
+			at.logWarnf("⛔ planner read wall-clock cap (%d min) reached at attempt %d — fail-closed (no plan written)", readIntervalMin, attempt)
+			break
+		}
 		researchTrace.Finish(lastErr)
 		userPrompt := prompt
 		modeLabel := "author"
@@ -2217,12 +2279,18 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			// being repaired BEFORE bookkeeping rewrites the pointer.
 			// (#213 keeps the raw answer in the bookkeeping — both behaviours.)
 			repairing := prevReason
-			at.plannerRejectBookkeeping(attempt, tradeDate, session, promptHash, userPrompt, lastRaw, lastErr, &prevReason, FactsSnapshotJSON(facts))
+			repeated := at.plannerRejectBookkeeping(attempt, tradeDate, session, promptHash, userPrompt, lastRaw, lastErr, &prevReason, FactsSnapshotJSON(facts))
 			if modeLabel == "repair" {
 				at.recordRepairOutcome(raw, perr, repairing)
 			}
 			rejectBlock = plannerRejectBlock(lastErr, liveConditions, kernel.StructureTrend4h(facts.Structure))
 			rejectHistory = addDistinctReject(rejectHistory, lastErr)
+			if repeated {
+				// W26 F-1: a repeated identical parse defect is a stuck model —
+				// end the read at once, fail-closed (no plan, active plan kept).
+				at.logWarnf("⛔ planner read ends at attempt %d — repeated the attempt %d defect (%s), fail-closed (no plan written)", attempt, attempt-1, lastErr.Error())
+				break
+			}
 			continue
 		}
 		// W6-D (2026-08-25) — the G5 write-time demotion is REMOVED: stamping
@@ -2453,7 +2521,15 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 				// it; the counters themselves stay in B3's lane).
 				prevBornDead = true
 				prevPublishAt = authoredAt
-				at.logWarnf("📐 planner attempt %d/3 born-dead/flip-met refusal: read→publish latency %s — attempt %d re-sights on the fresh tape", attempt, authoredAt.Sub(facts.ReadAt), attempt+1)
+				// F12 (release #32): only claim a fresh-tape re-sight when the
+				// knob is ON AND another attempt remains. The old line said
+				// "attempt 4 re-sights" on the 3/3 attempt, and said "re-sights
+				// on the fresh tape" even with the knob OFF.
+				reSight := ""
+				if at.plannerFreshTapeOn() && attempt < plannerMaxAttempts {
+					reSight = fmt.Sprintf(" — attempt %d re-sights on the fresh tape", attempt+1)
+				}
+				at.logWarnf("📐 planner attempt %d/3 born-dead/flip-met refusal: read→publish latency %s%s", attempt, authoredAt.Sub(facts.ReadAt), reSight)
 				// FIX-PLANNER item 1: a born-dead DEATH goes straight to ONE
 				// fresh-tape repair (the A6 path) instead of burning attempts
 				// 2/3 on the same stale tape. The stop applies only when THIS
@@ -2515,10 +2591,17 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 				kernel.StampAuthoredIdentity(d, facts.IdentityMap)
 			}()
 		}
+		// R22 F3 — flip-line coherence: an arm past its own plan's flip line is
+		// written DISABLED (no repair round-trip; logged + counted on accept).
+		flipOff := kernel.DisableFlipIncoherentArms(d, kernel.FlipIncoherentScenarios(d))
 		// W-EXEC-TRUTH W3 (c): the market_in_zone zone verdicts join the
 		// feasibility issues — NOT gated by the write_time_feasibility knob
 		// (D5); hinted on attempts < max, the arm disabled on the last.
-		feas := at.writeTimeFeasibilityVerdicts(d, atr5m, at.config.StrategyConfig, session)
+		// Release #25 PK-1 (F-2) — the room gate runs FIRST so a
+		// tp1_at_obstacle move is judged by the R:R floor below (OFF → nil,
+		// the doc untouched).
+		feas := at.roomGateAtWrite(d, tradeDate, session)
+		feas = append(feas, at.writeTimeFeasibilityVerdicts(d, atr5m, at.config.StrategyConfig, session)...)
 		feas = append(feas, at.writeTimeZoneVerdicts(d, atr5m, at.config.StrategyConfig, session)...)
 		if len(feas) > 0 {
 			if attempt < plannerMaxAttempts {
@@ -2535,6 +2618,7 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			// last attempt — write the unarmable arms disabled, never a silent write.
 			at.applyWriteTimeArmDisable(d, feas, tradeDate, session)
 		}
+		at.noteFlipIncoherentDisabled(flipOff, tradeDate, session)
 		// S5 (autopsy-response wave) — arm-authored counter: one tick per
 		// arm{} spec written; the before/after gauge of the arming mandate.
 		nArms := 0
@@ -2544,7 +2628,9 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 			}
 		}
 		for i := 0; i < nArms; i++ {
-			telemetry.IncGateBlock(at.id, "arm_authored")
+			// P2-3a (release #26): an arm AUTHORED is an event, not a refusal —
+			// it must not count as a gate-block. Recorded on its own counter.
+			telemetry.IncTraderEvent(at.id, "arm_authored")
 		}
 		if modeLabel == "repair" {
 			// The denominator: an accepted repair is recorded ONLY here, where
@@ -2742,9 +2828,10 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 		at.logWarnf("⚠️ flip/death line side-of-price UNJUDGED: authoring price unknown (facts absent) — the write site never invents a price; the line may sit on the wrong side of price")
 	}
 	docJSON, _ := json.Marshal(doc)
+	planID := at.store.Plan().ResolvePlanID(tradeDate, session, at.id)
 	version, err := at.store.Plan().AppendPlan(&store.PlanDB{
 		CreatedAt:       authoredAt,
-		PlanID:          at.store.Plan().ResolvePlanID(tradeDate, session, at.id),
+		PlanID:          planID,
 		StrategyID:      at.id,
 		TradeDate:       tradeDate,
 		Session:         session,
@@ -2765,9 +2852,26 @@ func (at *AutoTrader) runPlannerReadCoreObserved(authoringClock, publishClock fu
 		at.logErrorf("🗓️ planner: write plan row failed for %s %s: %v", tradeDate, session, err)
 		return 0, lifecycle, err
 	}
-	at.recordPlanIdentity(at.store.Plan().ResolvePlanID(tradeDate, session, at.id), version, identityWarnings, doc, authoredAt)
-	researchTrace.Published(at.store.Plan().ResolvePlanID(tradeDate, session, at.id), version, string(docJSON))
+	at.recordPlanIdentity(planID, version, identityWarnings, doc, authoredAt)
+	researchTrace.Published(planID, version, string(docJSON))
 	at.logInfof("🗓️ PLAN written %s %s v%d (model %s, lifecycle %s, prompt %s, ai_config %s)", tradeDate, session, version, modelID, lifecycle, promptHash, aiConfigHash)
+	at.logInfof("🗣️ owner guidance in the planner prompt for %s %s v%d: %s", tradeDate, session, version, kernel.OwnerGuidanceFingerprint(prompt)) // R22 R4: length + hash, never the text
+	// FIX-READ-FACTS-PLAN-ID (DS-103): bind the read that produced this plan BY
+	// EXACT ID — the id the read's insert returned — so planner_read_facts ↔
+	// plans joins by id. Bound at WRITE time (never read) because AppendPlan
+	// assigns the version inside its single-writer queue. A plan written by a
+	// path with no facts row (readFactID == 0) stays unbound and says so once;
+	// never fall back to "newest unbound row" — that would bind a FAILED read's
+	// facts to a later plan the failed read did not produce.
+	if at.store != nil {
+		if readFactID > 0 {
+			if n := at.store.PlannerReadFacts().BindPlanToReadFact(readFactID, planID, version); n > 0 {
+				at.logInfof("📓 read facts id=%d bound to plan %s v%d", readFactID, planID, version)
+			}
+		} else {
+			at.logWarnf("📓 plan %s v%d has no read facts row — unbound", planID, version)
+		}
+	}
 	at.logPlannerReadLine(session, lastAttempt, rejectHistory, bornCheck.ReadClockPtr(), bornCheck.PublishClockPtr(), lifecycle)
 	// W-EXEC-TRUTH W5 (CTO 1790191033566) — the AI read that supersedes a
 	// version carrying LIVE Picture scenarios re-appends each of them to the
@@ -3335,6 +3439,8 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 		// the weekly-bias context line (soft law, fail-open).
 		CandleTables: candleTables,
 		WeeklyCtx:    weeklyCtx,
+		// R22 R4 (owner ruling): the Studio custom prompt reaches the planner.
+		OwnerNote: at.studioCustomPrompt(),
 	}
 	// VOID PARITY D3 (2026-09-02) — record what the model is TOLD on EVERY read.
 	// Before this a rendered prompt survived only when the read FAILED, so a
@@ -3345,24 +3451,27 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 	at.logInfof("%s", zoneView.Render())
 	in.ResearchSnapshotID = researchID
 	recordResearchCandidates(in.ResearchSnapshotID, symbol, researchRaw, scored, now)
-	at.persistReadFacts(in, voidScope, voidScopeLevels, voidScopeATR, now)
+	in.ReadFactID = at.persistReadFacts(in, voidScope, voidScopeLevels, voidScopeATR, now)
 	return in
 }
 
 // persistReadFacts writes one planner_read_facts row per read. Loud on failure,
-// never fatal.
-func (at *AutoTrader) persistReadFacts(in kernel.PlannerInput, scope kernel.VoidScope, void []kernel.VoidBreakdownLevel, atr5m float64, now time.Time) {
+// never fatal. Returns the inserted row's id (0 when nothing was written), which
+// the plan write carries back so it can bind the facts row to the plan BY ID
+// (FIX-READ-FACTS-PLAN-ID) instead of guessing the newest unbound row.
+func (at *AutoTrader) persistReadFacts(in kernel.PlannerInput, scope kernel.VoidScope, void []kernel.VoidBreakdownLevel, atr5m float64, now time.Time) uint {
 	if at == nil || at.store == nil {
-		return
+		return 0
 	}
 	row := buildReadFactRow(at.id, in, scope, void, atr5m, now)
 	if err := at.store.PlannerReadFacts().SaveReadFact(row); err != nil {
 		at.logWarnf("📓 read-facts write failed: %v", err)
-		return
+		return 0
 	}
-	at.logInfof("📓 read facts: void=%d · floor=%.1f pts (%.1f×ATR5m %.2f) · scope=%s×%d since=%d (cap %d) · horizon %s",
+	at.logInfof("📓 read facts: void=%d · floor=%.1f pts (%.1f×ATR5m %.2f) · scope=%s×%d since=%d (cap %d) · horizon %s · id=%d",
 		row.VoidCount, row.StopFloorPts, row.StopFloorMlt, row.ATR5m, row.ScopeIntv, row.ScopeBars,
-		row.ScopeSinceMs, store.PlannerReadFactsCap, scope.Horizon.Line())
+		row.ScopeSinceMs, store.PlannerReadFactsCap, scope.Horizon.Line(), row.ID)
+	return row.ID
 }
 
 // maybeWriteDigests writes the 3-line session digest at each enabled session's

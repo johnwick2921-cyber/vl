@@ -61,6 +61,10 @@ func TestRecordedDaysCarrySetupAndGeometry(t *testing.T) {
 		bars := loadFixture(t, fix, "1m")
 		cfg := DefaultConfig()
 		cfg.Enabled = true
+		// B52 (release #29) ships ON and changes the box set on these tapes
+		// (post-escape boxes ban the old entries). This A7 invariant is about
+		// Setup tags and entry geometry, not boxes — pin the pre-B52 world.
+		cfg.BoxNewZoneAfterEscape = false
 		e := New(cfg)
 		// The ORB gate is default-ON: preset a drawn + escaped opening range so
 		// the recorded days can emit (the synthetic fixtures do the same). Days

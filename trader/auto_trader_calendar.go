@@ -207,6 +207,16 @@ func (at *AutoTrader) t1WindowsFor(tradeDate string, sess *kernel.SessionDef) []
 	if err == nil && slice != nil {
 		var evs []calendar.Event
 		if json.Unmarshal([]byte(slice.EventsJSON), &evs) == nil {
+			// CAL-EMPTY-DAY — a stored "[]" means "fetched, nothing scheduled":
+			// no windows and NO fail-closed alert (distinct from an ABSENT
+			// slice, which keeps the P0.6 fallback + alert below). Log the
+			// which once per trade date.
+			if len(evs) == 0 {
+				if at.firstFor(&at.lastCalEmptyDate, tradeDate) {
+					at.logInfof("📅 calendar: %s fetched — no events scheduled (no T1 blackout for %s)", tradeDate, sess.Name)
+				}
+				return nil
+			}
 			// W-T1-CURRENCIES (2026-09-18): the ONE split — only events in the
 			// strategy's t1_currencies set (default USD) open HARD windows; the
 			// rest are advisory lines the plan-write path renders (plannerT1Lines)

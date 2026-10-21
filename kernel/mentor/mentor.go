@@ -60,8 +60,10 @@ type LevelKind string
 const (
 	// KindKeyLevel is a colour-change OPEN line on RTH bars (§4.3).
 	KindKeyLevel LevelKind = "key_level"
-	// KindOldExtreme is an old high/low — the bot's swing levels reused
-	// (kernel/levels_swing.go SwingPointLevels).
+	// KindOldExtreme is an old high/low: ONE nearest UNBROKEN old high and ONE
+	// nearest UNBROKEN old low (r22 P1, course §6 "nearest old high" / §2.1
+	// rule 2 / §2.2) — picked from the bot's swing pivots
+	// (kernel/levels_swing.go SwingPointLevels) by swingOldExtremeLevels.
 	KindOldExtreme LevelKind = "old_extreme"
 	// KindEMA34 / KindEMA9 — EMA values promoted to levels (§8, §10, §11).
 	KindEMA34 LevelKind = "ema34"
@@ -86,6 +88,13 @@ const (
 	// nextLevelBeyond can pick it, but it is never touched and never a
 	// PHL/PLH location.
 	KindWickMicroscalp LevelKind = "wick_microscalp"
+	// KindTrendlineTarget is a valid trendline's price as a TARGET-LADDER
+	// level (CE-11/B12, release #25, knob trendline_is_target, default ON):
+	// "Target là về những level kế tiếp… về trendline, anything… những cái mà
+	// nó ngán đường anh chị trên đường đi" [D3.3 p1 @05:18–05:35]. It is never
+	// touched and never a location (the trendline LOCATION stays KindTrendline);
+	// like a key level it is a real obstacle for the room rule.
+	KindTrendlineTarget LevelKind = "trendline_target"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -95,7 +104,25 @@ type Level struct {
 	Kind   LevelKind
 	Price  float64
 	AtTime int64
+
+	// Role is an old extreme's EXPLICIT role — OldHigh or OldLow — taken from
+	// the swing pivot that drew it (r22 P1-4). "" on every other kind. The
+	// PHL/PLH target pick, the target ladder and the leg extreme read it; the
+	// role is never re-inferred from the tape (a later bar revisiting the
+	// price used to relabel an old HIGH as a "low").
+	Role string `json:"role,omitempty"`
+
+	// MergedFrom lists prices a DISPLAY line absorbed. Since r22 the chart
+	// draws the trading old extremes one-for-one (DisplayLevels), so nothing
+	// fills it; it stays on the panel wire as an always-absent field.
+	MergedFrom []float64 `json:"merged_from,omitempty"`
 }
+
+// Old-extreme roles (Level.Role).
+const (
+	OldHigh = "high"
+	OldLow  = "low"
+)
 
 // Intent is one evaluator output.
 type Intent struct {
@@ -117,12 +144,29 @@ type Intent struct {
 	// (the setup carries its own explicit CancelArm instead).
 	ExpiryMs int64
 
+	// ExecTFMin is the frame the entry was READ on: 2 when the X5-10 exec-2m
+	// schedule (Exec2mAfter30m) read the setup on closed 2m candles — the ISB
+	// pair AND PHL/PLH (F2: "Mình trade khung 2 phút … potential high low"
+	// [X8 @15:52–15:57]); 0 = the 1m (every other setup, and every named setup
+	// while the knob is OFF). The trader trails the runner on closed candles of
+	// THIS frame — "nếu như mình trade khung nào thì mình gồng theo khung đó,
+	// theo cây nến của khung đó" [X8 @18:02–18:14].
+	ExecTFMin int
+
 	// RefBarMs (N10) is the reference candle's CLOSE time (ms) — the bar the
 	// entry geometry was measured from. The injector refuses any entry whose
 	// reference candle is not the newest closed bar (a reload replay of stale
 	// box/ISB/PHL returns must never become live orders). 0 = not stamped
 	// (swing — gated by its own 5m watermark instead).
 	RefBarMs int64
+
+	// EntryCandleHigh / EntryCandleLow (release #31 rule 5) are the entry
+	// candle's high and low, stamped ONLY on ISB intents (the candle the ORB
+	// edge rule measures the fraction outside the range from). 0 on every
+	// other intent — a pair with High <= Low is "not stamped" and the rule
+	// does not apply.
+	EntryCandleHigh float64
+	EntryCandleLow  float64
 
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
 	// box edge + a key level inside the box or within 2 pts of its edge +
@@ -152,9 +196,10 @@ type Intent struct {
 	// HTFAgree: the 4h AND 1h triggers BOTH stand and point this entry's side
 	// (D4.4 p1 @16:00 case 1: "4h trigger buy, 1h trigger buy" → trade that
 	// side). The evaluator stamps it on every ENTRY where intents leave Tick;
-	// the trader's size table needs it for the 20-contract tier ("size 20 only
-	// when 4h AND 1h agree and room ≥ 30 pts"). A silent 1h (case 2: follow the
-	// 4h) is NOT agreement.
+	// the trader's size table needs it for the big tier (size stays 4 with
+	// confluence + 4h AND 1h agree + room ≥ 2× + target ≥ 30 pts — owner order
+	// 2026-10-16; the course default 5 MNQ, 1.1 p2 L1103, is superseded). A
+	// silent 1h (case 2: follow the 4h) is NOT agreement.
 	HTFAgree bool
 	// RunnerTarget is the mode-A runner target BEYOND the old high (D2-49 /
 	// D2.4 p1 @01:56: "resonance breaks the old high 70–80%"). The PHL/PLH
@@ -162,6 +207,26 @@ type Intent struct {
 	// 0 = none — in mode A the runner's native TP is removed and the exit is
 	// the BE stop or EOD flat. The trader's resonance arming consumes it.
 	RunnerTarget float64
+	// RunnerPartialTP (release #31) is the runner's FIRST partial line — the
+	// nearest target line (key level / EMA 34/9 / old high-low / HTF trigger)
+	// strictly between the leg-1 exit (1:1) and the trade target, in the trade
+	// direction. The runner of ≥ 2 contracts sells half (rounded down) there;
+	// the rest trails as today. 0 = no line in between → no leg-3 split. The
+	// Tick emit sites stamp it centrally (runnerPartialLine).
+	RunnerPartialTP float64
+}
+
+// Leg1RiskMultiple is the leg-1 take-profit distance in units of R — the ONE
+// definition the exit drive (trader/mentor_mode.go mentorLeg1TPForC) and the
+// room check (eval.go roomRefusal) BOTH read. Normal = 1 (the 1:1 first
+// partial, "bán bớt ở 1:1" [D2.2 p3 @12:13; D1.2 p1 @07:41–08:45]); confluence
+// (mode C) = 2 (hold to 1:2 [D3.4 p3 @07:52–08:07]). The room rule reads this,
+// so a future leg-1 change can never drift from the room check.
+func Leg1RiskMultiple(confluence bool) float64 {
+	if confluence {
+		return 2
+	}
+	return 1
 }
 
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
@@ -186,7 +251,7 @@ type Config struct {
 	EMALocationTFMinutes int
 
 	// Touch / close-side (PLAN v1 §2).
-	TouchBandPts float64 // literal-touch band around a level; default 4.0 (the bot's 16-tick touch band)
+	TouchBandPts float64 // literal-touch band around a level; default 0 = literal touch only (L2 CTO 12:19:20Z); key levels never widen beyond 0
 	// LvlRevisitMinPts — L1 knob (CTO 12:19:20Z): the extra departure distance
 	// (from the level close) a closed non-touching candle needs to END a visit.
 	// Default 0: any closed candle that did not touch ends the visit ("he never
@@ -214,9 +279,11 @@ type Config struct {
 	// D4.2 p2 @05:17–06:37): the gap between an FTGL floor and an FTGH ceiling
 	// must exceed PingPongMinGapPts AND the largest 1m candle of the last
 	// PingPongCandleLookback closed bars must stay at or below
-	// PingPongCandleMaxPts ("nến tầm mười mấy điểm"). The same candle cap and
-	// lookback gate the key-level pair rule (X4 @06:31–08:52: "một cái nến nó
-	// bằng cái rank của 2 cái level rồi thì ngồi im").
+	// PingPongCandleMaxPts ("nến tầm mười mấy điểm"). PingPongCandleMaxPts > 0
+	// also switches on the key-level pair rule (X4 @06:31–08:52: "một cái nến
+	// nó bằng cái rank của 2 cái level rồi thì ngồi im"), which since
+	// MENTOR-NY item 2 reads the CURRENT closed candle only — the lookback
+	// gates the box ping-pong alone.
 	PingPongMinGapPts      float64
 	PingPongCandleMaxPts   float64
 	PingPongCandleLookback int
@@ -235,9 +302,11 @@ type Config struct {
 	EmaMaxCross30m int
 
 	// ISB (PLAN v1 §3).
-	ISBBufferPts   float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
-	ISBStopMinPts  float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
-	ISBTwentiesPts float64 // a stop at/above this ("in the twenties") must not be taken; default 20 [D4.1 p1 @ 05:41]
+	ISBBufferPts  float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
+	ISBStopMinPts float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
+	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
+	// (owner order "move to 30"): an ISB stop < 30 pts is taken, ≥ 30 is
+	// refused — that ceiling now lives in CourseExits.ISBMaxStopPts (default 30).
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
@@ -257,17 +326,22 @@ type Config struct {
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
-	RoomMultiple   float64 // room rule: reward >= RoomMultiple x risk; default 2 [D5.3 p1 @ 09:16]
+	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true: the HTF gate applies only inside the 07:20–07:35 CT
-	// news window; ordinary intraday entries are not HTF-gated. Default false
-	// = the all-day gate (CTO 2026-10-04: U-6 is open — D5.1's later
-	// pre-session routine reads 4h/1h for the whole day). Studio switch:
-	// risk_control.mentor_tuning.htf_gate_news_only.
+	// THƯỜNG"). true: the HTF gate applies only inside the
+	// 07:20–07:35 CT news window; ordinary intraday entries are not
+	// HTF-gated. false (default, owner decision A 2026-10-21 m134 "fix
+	// all"): the 4h/1h direction gate applies ALL DAY — every entry side
+	// must obey the 4h/1h verdict (case 1/2/3). Owner order 2026-10-17 had
+	// set NEWS-ONLY = ON; owner decision A reverses the default. Stored
+	// strategies carry no htf_gate_news_only key, so the new default applies
+	// at the next trader load; an explicit stored true stays news-only, and
+	// none exists today.
+	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
 	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
@@ -280,6 +354,15 @@ type Config struct {
 	// routed Config integration lands.
 	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
+
+	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the
+	// 2026-10-09 owner ruling): the course shuts the WHOLE day on a DayOff —
+	// "Tắt máy nghỉ luôn cho em … Ngày hôm đó không đáng để trade" [D5.1 p1
+	// @19:22–19:40], "tắt máy nghỉ 1 ngày cho lành" [D5.1 p2 @00:01]. Default
+	// false = the whole-day latch (no intraday re-read clears it). true = the
+	// pre-ruling behaviour (re-read 4h/1h on each closed 1h bar; the moment
+	// they agree the DayOff clears one-way to DaySpent).
+	DayOffRecheck bool
 
 	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
 	// windows (FromMs inclusive, ToMs exclusive). The evaluator skips HTF
@@ -299,13 +382,31 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 optional knob (default OFF): after the first 30
-	// minutes of RTH (09:00 CT) the ISB entry is read on the 2m chart instead
-	// of the 1m ("sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:17;
-	// X11 @17:06–17:32]) — the 1m wicks sweep stops, so the 2m read is the
-	// quieter one. The course trades the 1m throughout, so this stays behind a
-	// knob and OFF by default; while OFF the ISB read is byte-identical.
+	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the exec-frame
+	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
+	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
+	// :305-311; re-read 2026-10-16: extra "Routine trước khi trade" part1
+	// @00:41–01:14 "Trong 30 phút đầu giờ em vẫn sẽ trade khung 1 phút… sau
+	// 30 phút em sẽ chuyển qua khung 2 phút", Go over @17:27 "khung 2 phút ít
+	// bị quét râu"): with the knob ON the NAMED setups — the ISB pair AND
+	// PHL/PLH (F2, W-MENTOR-TRANSCRIPT-TRUTH; "Mình trade khung 2 phút …
+	// potential high low" [X8 @15:52–15:57]) — read the 1m ONLY during the RTH
+	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
+	// minute — overnight and the Europe open (3am Texas) included. "Evening
+	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
+	// unimplemented. The MNQ strategy sets no mentor_tuning, so this default
+	// is the live behaviour; an explicit OFF restores the 1m read all day.
 	Exec2mAfter30m bool
+
+	// OrbISBFractionOutside — rule 5 (release #31, default 0.80): an ISB at the
+	// ORB edge trades only when ≥ this fraction of the ISB candle's range
+	// (high − low) lies OUTSIDE the ORB on the trade side — "80% 90% là cái
+	// nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái
+	// resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1
+	// @07:46–09:04]. The measure is the fraction of the candle, NOT a points
+	// distance (that is the separate CE-7 orb_edge_veto_pts). ≤ 0 = the rule
+	// is off.
+	OrbISBFractionOutside float64
 
 	// OrbGateEnabled turns on the §7 step 0 ORB gate (default ON): the high and
 	// low of the FIRST 2-minute candle of the regular session gate every
@@ -322,6 +423,95 @@ type Config struct {
 	// strictly beyond the extreme; "touch": this candle's wick reaching it.
 	LegResetOn string
 
+	// ── COURSE-ENTRY KNOBS (release #25, fix/mentor-course-entries) ────────
+	// Each is its own strategy knob (risk_control.mentor_tuning.<key>); the
+	// default follows the COMMON-25 knob rule: (a) the course says it and no
+	// owner ruling / open question goes against it → ON; (b) otherwise OFF.
+
+	// FifteenMinIBRule — CE-1 (a): inside a standing 15m inside-bar box the
+	// 1m ISB needs a SAME-direction 5m ISB — "Nếu như khung 5 phút xuất hiện
+	// Insaba cho lệnh short thì em trade. Còn không em không trade" [D4.2 p1
+	// @17:09–17:13; @14:24–14:34]. "require_5m_isb" (default) | "no_trade_until_escape"
+	// (option 1, @01:06–01:14) | "off" (the pre-#25 read: the 15m box gate only).
+	FifteenMinIBRule string
+	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
+	// [D4.2 p1 @07:54–08:02]. "first_box" = the 15m/5m conflict ends
+	// when either box escapes; "both_boxes" (default, course-defaults-30) =
+	// it holds until the 5m AND the 15m box have both escaped.
+	TFConflictEnd string
+	// NewsWaitBothLines — CE-3 (b, OQ-6): after the print, an entry needs the
+	// close beyond the 4h trigger line on its side — "Đợi canh nó nằm trên hai
+	// cái đường line này… Hoặc… nằm ở trên cái đường line 4 giờ" [D4.4 p1
+	// @21:55–22:12] — from the print window until the 08:30 CT open (the open
+	// has its own rule, D4.4 p2 @03:51). Default ON (course-defaults-30).
+	NewsWaitBothLines bool
+	// NewsBarsExcluded — CE-4 (a, release #29 rework): "Còn cái khúc mà news
+	// ra rồi thì không tính" [D4.4 p1 @18:18–18:25]. ON FREEZES the pre-print
+	// 1h/4h trigger read from the print window start until the 08:30 CT
+	// day-gate read — the bars still build their whole 1h/4h candles, so
+	// nothing is ever deleted. OFF keeps the item-18 print-window drop
+	// (07:20–07:35). Default ON.
+	NewsBarsExcluded bool
+	// ISBBoxEscapeMode — CE-5 (a): the 5m/15m/30m ISB rest-box escape. "body"
+	// (default) = a 1m candle's OPEN AND CLOSE beyond the edge [D4.1 p1
+	// @20:52–21:02 "cái thân nến… nằm bên ngoài… Cái đó là at least"];
+	// "close" = the pre-#25 close-only test.
+	ISBBoxEscapeMode string
+	// EmaLossRelock — CE-6 (a): after one loss at the EMA 34 —
+	// "until_zone_exit" (default) = back ON once a CLOSED 1m candle lies
+	// completely outside the losing trade's entry-to-stop zone [D4.2 p2
+	// @01:33–01:39 "Đợi xíu nữa nó thoát khỏi cái vùng đó đi. Rồi tôi bật EMA
+	// 34 lên lại"]; "session" = off until the 17:00 CT roll (pre-#25).
+	EmaLossRelock string
+	// OrbEdgeVetoPts — CE-7 (b, OQ-3): an entry within this many points of the
+	// ORB edge is skipped — "điểm entry… nằm gần cái resistance quá thì thôi
+	// bỏ đi" [X5 @08:52–09:09]. No number in the source → 0 = off.
+	OrbEdgeVetoPts float64
+	// D43TrendSource — CE-8 (b, [B] reading): what "the 5m trend" means for
+	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" = the 5m
+	// trigger line; "structure" (default, course-defaults-30) = 5m swing
+	// structure (HH+HL up, LH+LL down) [D4.3 @12:43–12:54, @14:52–15:01].
+	D43TrendSource string
+	// LevelEntriesNeedTriggerSide — CE-9 (b, owner ruled school 1): under
+	// TriggerSchool 1, ALSO bind the 5m trigger side on every level reject
+	// (key level, EMA, trendline, old extreme); school 1 stays at the
+	// FTGL/FTGH box only [D3.4 p1 @17:48–18:00 vs p3 @09:57–10:27]. Default OFF.
+	LevelEntriesNeedTriggerSide bool
+	// TrendlineIsTarget — CE-11/B12 (a): a valid trendline in the path is a
+	// target [D3.3 p1 @05:18–05:35 "Target là về những level kế tiếp… về
+	// trendline, anything"; @07:57–08:04]. Default ON; false = the pre-#25
+	// "location only, never a target".
+	TrendlineIsTarget bool
+	// TrendlineBetweenBoxes — CE-11/B13 (b): a trendline reject between an
+	// FTGL and an FTGH may trade [D3.2 p2 @10:56–11:20] although the same
+	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. Default ON
+	// (course-defaults-30: the course trades it).
+	TrendlineBetweenBoxes bool
+	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
+	// leg closed by a stop-out also resets on a close beyond the losing
+	// trade's wave extreme — "đợi cho nó break được cái đỉnh, hoặc đợi cho nó
+	// break được cái đáy của con sóng đó" [X-FOMO @06:10–06:22]. Default ON.
+	LegResetOnWaveBreak bool
+	// FlagWallTarget — CE-11 (b, ported from PR #416): when ON, a trade taken
+	// INSIDE a live flag (both trendlines exist and are unbroken, the entry
+	// strictly between them) gets the OPPOSITE flag wall as a target candidate
+	// — the target is the NEAREST of {the existing target, the wall}, and the
+	// wall can only bring it CLOSER [X9 @ 05:47–06:12: "target của anh chị là
+	// chỉ là trên cái đỉnh của cái flag… vẫn scalping được, không sai"]. A wall
+	// that leaves < 1:1 refuses the entry (flag_wall_room). Default ON
+	// (course-defaults-30).
+	FlagWallTarget bool
+	// BoxNewZoneAfterEscape — B52 (release #29): when the standing FTGH/FTGL
+	// box escapes (a body close outside its outer edge), the bot may latch ONE
+	// new box on that side, built from failures that form AFTER the escape and
+	// OUTSIDE the old range — "khi nào nó rớt xuống đây, nó bật ngược lên, nó
+	// tạo cái failure to go lower dưới này nè… thì anh chị mới có được cái
+	// range giữa cái này và cái này" [D3.4 p3 recovered2 @00:00–00:21];
+	// "Đừng vẽ vùng thứ 3… Rối lắm" [D3.2 p2 @09:47–09:54] — never a zone
+	// inside the standing range. Default ON (the course); false = today's
+	// one-pair-per-session behaviour exactly.
+	BoxNewZoneAfterEscape bool
+
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
 	// delivered by the trader's fill callback), never from the simulated
@@ -330,6 +520,9 @@ type Config struct {
 	// simulated fill for the kernel's parity tests and any backtest. Default
 	// false (zero value).
 	RealFillOnly bool
+
+	// CourseExits — the release #25 course-exits knobs (course_exits.go).
+	CourseExits CourseExitsCfg
 }
 
 // DefaultConfig returns the mentor defaults per PLAN v1 (knob values start from
@@ -347,11 +540,10 @@ func DefaultConfig() Config {
 
 		EMALocationTFMinutes: 1, // R3: intraday EMA 34 lives on the 1m chart
 
-		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; §8's "KHÔNG ĐƯỢC GẦN ĐỤNG" is the same strictness
+		TouchBandPts: 0, // §3: wait for the LITERAL touch [D3.3 p1 @ 00:13]; D5.2 p2 @18:36–18:45 "gần gần gần đụng … Còn như cái này thì bắt buộc là phải đụng nha"
 
-		ISBBufferPts:   1.5,
-		ISBStopMinPts:  5,
-		ISBTwentiesPts: 20,
+		ISBBufferPts:  1.5,
+		ISBStopMinPts: 5,
 
 		ISBReverseEMA9Enabled: true,
 
@@ -363,20 +555,21 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // U-6 open: D5.1's later routine runs the 4h/1h read all day — the all-day gate stays the default (Studio switch)
+		HTFGateNewsOnly:        false, // D4.4-11: gate ALL DAY (owner decision A 2026-10-21 m134; was news-only owner order 2026-10-17)
 		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
 		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
-		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21
+		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
 		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
 		EmaMaxCross30m:         2,  // E4 (item 16): default ON, most conservative — mentor question open (no count in the course)
 		RangeGapPts:            0,
 
 		DayGateSpentPts:     300,
 		DayGateTargetCapPts: 15,
+		DayOffRecheck:       false, // course-defaults-30: the course shuts the whole day [D5.1 p1 @19:22–19:40]
 
 		Swing: DefaultSwingCfg(),
 
@@ -384,15 +577,54 @@ func DefaultConfig() Config {
 
 		OrbGateEnabled: true,
 
+		// Release #31 rule 4 (X5-10): the ISB-exec schedule defaults ON — 1m
+		// for the first 30 min of RTH, then the 2m.
+		Exec2mAfter30m: true,
+		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
+		OrbISBFractionOutside: 0.80,
+
 		LegBudgetEnabled: true,
 		LegResetOn:       "close",
+
+		CourseExits: DefaultCourseExitsCfg(),
+		// Release #25 course-entry knobs (COMMON-25 knob rule).
+		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
+		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
+		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
+		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+		ISBBoxEscapeMode:      ISBBoxEscapeBody,       // CE-5 (a)
+		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
+		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
+		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
+		TrendlineBetweenBoxes: true,                   // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+		LegResetOnWaveBreak:   true,                   // CE-12 (a)
+		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 	}
 }
 
-// barsTF aggregates 1m bars into the given timeframe on CLOCK-ALIGNED buckets
-// to the CME session open 17:00 CT (17–21, 21–01, 01–05, 05–09, 09–13, 13–16)
-// the way NT8 draws them. Buckets never re-anchor when the window slides or a
-// gap appears.
+// Release #25 course-entry knob values (the ONE spelling the kernel, the
+// trader resolver, the boot line and the guide share).
+const (
+	FifteenMinOff          = "off"
+	FifteenMinRequire5mISB = "require_5m_isb"
+	FifteenMinUntilEscape  = "no_trade_until_escape"
+	TFConflictFirstBox     = "first_box"
+	TFConflictBothBoxes    = "both_boxes"
+	ISBBoxEscapeClose      = "close"
+	ISBBoxEscapeBody       = "body"
+	EmaRelockSession       = "session"
+	EmaRelockUntilZoneExit = "until_zone_exit"
+	D43TrendTriggerLine    = "trigger_line"
+	D43TrendStructure      = "structure"
+)
+
+// barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is
+// EPOCH-aligned (UTC) — identical to a 17:00 CT anchor for every TF used here
+// (1/3/5/15/30/60 all divide 60 minutes, and 17:00 CT sits on a whole UTC
+// hour). Only the 240 bucket is 17:00 CT session-anchored (fourHBucketStart:
+// 17–21, 21–01, 01–05, 05–09, 09–13, 13–16), the way NT8 draws the 4h. Buckets
+// never re-anchor when the window slides or a gap appears.
 func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	if tfMin <= 1 || len(bars) == 0 {
 		return bars
@@ -427,6 +659,46 @@ func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	}
 	flush()
 	return out
+}
+
+// BarsTFHoles reports the OPEN TIMES of aggregate buckets built from a 1m series
+// that have an INTERIOR hole (a missing minute). It is a DIAGNOSTIC only — no
+// production caller: the m148 coverage check keeps partial buckets out of the
+// ring at the rehydrate call site, so a holey bucket never reaches the mentor
+// reads as a full bar; BarsTFHoles exists to name a hole when one is seen
+// elsewhere. The last (possibly forming) bucket is never reported; a short
+// leading bucket (the series starts mid-bucket) is not a hole. PURE — it does
+// not mutate the bars.
+func BarsTFHoles(bars []market.Kline, tfMin int) map[int64]bool {
+	if tfMin <= 1 || len(bars) < 2 {
+		return nil
+	}
+	var holes map[int64]bool
+	var curBucket int64
+	var prevMin int64
+	var gapSeen bool
+	for i, b := range bars {
+		bucket := bucketOpen(b.OpenTime, tfMin)
+		if i == 0 {
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if bucket != curBucket {
+			if gapSeen {
+				if holes == nil {
+					holes = map[int64]bool{}
+				}
+				holes[curBucket] = true
+			}
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if b.OpenTime-prevMin > 60_000 {
+			gapSeen = true
+		}
+		prevMin = b.OpenTime
+	}
+	return holes
 }
 
 // bucketOpen floors an open time to its TF bucket. 1m/5m/15m/1h buckets are

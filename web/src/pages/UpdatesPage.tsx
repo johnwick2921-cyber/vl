@@ -30,6 +30,18 @@ import { loadStoredTraderId } from '../router/selectedTrader'
 
 const POLL_MS = 10_000
 
+// fix/update-says-failed: a job in one of these states is OVER — the result
+// banner owns it. Any other state with a blocker is WAITING (a gate leg
+// re-checking), never "Installing…".
+const TERMINAL_JOB_STATES = new Set([
+  'complete',
+  'rolled_back',
+  'reverted_clean',
+  'recovery_needed',
+  'cancelled',
+  'refused',
+])
+
 function na(lang: 'en' | 'zh' | 'id') {
   return up('notApplicable', lang)
 }
@@ -45,6 +57,96 @@ function Row({ label, value }: { label: string; value: string }) {
   )
 }
 
+// W-ADDON-ONE-CLICK — the owner-facing plain word for a job STEP (the spec's
+// exact sentences). The server sends a raw step name; an unknown one is shown
+// verbatim (truth rule: never fabricate, never drop the server's own text).
+function jobStatusText(
+  step: string | undefined,
+  language: 'en' | 'zh' | 'id'
+): string {
+  const raw = (step ?? '').toLowerCase()
+  if (!raw) return ''
+  if (/addon.?build|building/.test(raw))
+    return up('addonStatusBuilding', language)
+  if (/addon.?place|placing|install.*addon|addon.*install/.test(raw))
+    return up('addonStatusInstalling', language)
+  if (/nt8.?restart|restart/.test(raw))
+    return up('addonStatusRestarting', language)
+  if (/reconnect|wait.*ninja|ninja.*wait|waiting/.test(raw))
+    return up('addonStatusReconnecting', language)
+  if (/addon.?done|addon.?ack|running.*new|done/.test(raw))
+    return up('addonStatusDone', language)
+  return step ?? ''
+}
+
+// fix/update-says-failed: the plain words for a gate leg the server names
+// verbatim. sim_accounts → "NinjaTrader accounts not confirmed SIM (<detail>)";
+// every other text stays the server's own (truth rule: never fabricate, never
+// drop the server's own text).
+function plainReason(raw: string, language: 'en' | 'zh' | 'id'): string {
+  const mark = 'sim_accounts:'
+  const idx = raw.indexOf(mark)
+  if (idx < 0) return raw
+  const detail = raw.slice(idx + mark.length).trim()
+  const plain = up('blockerSimAccounts', language, { detail })
+  return raw.slice(0, idx) + plain
+}
+
+// elapsedSince renders "3m 12s" (or "" when the anchor is absent). The
+// anchor is the job's blocker_since — its updated_at at the moment the blocker
+// was written.
+function elapsedSince(since: string | undefined, now: number): string {
+  if (!since) return ''
+  const t = Date.parse(since)
+  if (Number.isNaN(t)) return ''
+  const s = Math.max(0, Math.floor((now - t) / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  return `${m}m ${s % 60}s`
+}
+
+// W-ADDON-ONE-CLICK "walk away": the RESULT banner for a terminal job state.
+// The new tag is the release being installed (the last Check), the old tag is
+// the running revision (health), and the reason is the worker's own text
+// (recovery_reason or error). An unknown/absent state → null (no banner).
+function jobResultBanner(
+  state: string | undefined,
+  newTag: string | null,
+  oldTag: string | undefined,
+  reason: string,
+  language: 'en' | 'zh' | 'id'
+): { text: string; tone: 'ok' | 'warn' | 'bad' } | null {
+  const plain = plainReason(reason, language)
+  switch (state) {
+    case 'complete':
+      return {
+        text: up('resultDone', language, { tag: newTag || '' }),
+        tone: 'ok',
+      }
+    case 'rolled_back':
+      // a PROVEN rollback: the old build is back and trading normal — not a
+      // failure, the amber "could not finish" stays.
+      return {
+        text: up('resultFailed', language, { tag: oldTag || '', reason: plain }),
+        tone: 'warn',
+      }
+    case 'reverted_clean':
+    case 'refused':
+      // nothing was swapped: the update FAILED and the old build never moved.
+      return {
+        text: up('resultFailedRed', language, { reason: plain }),
+        tone: 'bad',
+      }
+    case 'recovery_needed':
+      return {
+        text: up('resultRecovery', language, { reason: plain }),
+        tone: 'bad',
+      }
+    default:
+      return null
+  }
+}
+
 function Panel({
   title,
   children,
@@ -58,6 +160,27 @@ function Panel({
       {children}
     </div>
   )
+}
+
+// The last polled update-job id, per tab (UI-GUIDE N-5). Every access is
+// guarded: storage can be absent or throw (private window, blocked site
+// data, previews) and the page must still render.
+const LAST_JOB_KEY = 'vl.updates.lastJobID'
+
+function readLastJobID(): string | null {
+  try {
+    return window.sessionStorage.getItem(LAST_JOB_KEY)
+  } catch {
+    return null
+  }
+}
+
+function writeLastJobID(id: string) {
+  try {
+    window.sessionStorage.setItem(LAST_JOB_KEY, id)
+  } catch {
+    // memory only — the panel still shows the job until the tab reloads
+  }
 }
 
 export default function UpdatesPage() {
@@ -86,6 +209,10 @@ export default function UpdatesPage() {
   // install-with-password (owner order 10-02 07:3x CT): the PRIMARY flow.
   const [password, setPassword] = useState('')
   const [advancedOpen, setAdvancedOpen] = useState(false)
+  // W-ADDON-ONE-CLICK: a HELD job is retried from the page with the same
+  // password — never `vl-updater resume` from a terminal.
+  const [retrying, setRetrying] = useState(false)
+  const [retryError, setRetryError] = useState<string | null>(null)
 
   // Panel E — the resolved PivotWindow (W1 effective settings), or null.
   const [pivotWindow, setPivotWindow] = useState<number | null>(null)
@@ -135,8 +262,19 @@ export default function UpdatesPage() {
   // (complete / rolled_back) is the last thing shown, never a frozen
   // snapshot of the moment the hold appeared (#206 review fold). Absent job
   // = "no update job".
-  const [lastJobID, setLastJobID] = useState<string | null>(null)
-  const polledJobID = maintenance?.job_id ?? lastJobID
+  //
+  // UI-GUIDE N-5: a job refused IN PREFLIGHT never writes the hold, so the
+  // hold never names it — the install-pending view does (job_id), and it is
+  // a polled id too. The last id is kept in sessionStorage (this tab only)
+  // so a reload does not drop a refused job from the panel; storage that
+  // throws (private window, blocked site data) falls back to memory.
+  const [lastJobID, setLastJobIDState] = useState<string | null>(readLastJobID)
+  const setLastJobID = useCallback((id: string) => {
+    setLastJobIDState(id)
+    writeLastJobID(id)
+  }, [])
+  const polledJobID =
+    maintenance?.job_id ?? maintenance?.install_pending?.job_id ?? lastJobID
   useEffect(() => {
     if (!polledJobID) {
       setJob(null)
@@ -161,7 +299,9 @@ export default function UpdatesPage() {
   // the hold).
   useEffect(() => {
     if (maintenance?.job_id) setLastJobID(maintenance.job_id)
-  }, [maintenance?.job_id])
+    else if (maintenance?.install_pending?.job_id)
+      setLastJobID(maintenance.install_pending.job_id)
+  }, [maintenance?.job_id, maintenance?.install_pending?.job_id, setLastJobID])
 
   // The receipt download (OQ-7): the route sits behind the M3 gate, so a bare
   // navigation 403s — the receipt is fetched through the API client (which
@@ -287,7 +427,10 @@ export default function UpdatesPage() {
       const err = e as
         | {
             statusCode?: number
-            response?: { status?: number; data?: { error?: string; message?: string } }
+            response?: {
+              status?: number
+              data?: { error?: string; message?: string }
+            }
             message?: string
           }
         | undefined
@@ -352,8 +495,23 @@ export default function UpdatesPage() {
   const releaseId = check?.tag || null
   const availableReady = check?.available === true && check?.ready === true
   const passwordInstallDisabled =
-    installDisabled || installing || !password.trim() || !releaseId ||
+    installDisabled ||
+    installing ||
+    !password.trim() ||
+    !releaseId ||
     !availableReady
+
+  // W-ADDON-ONE-CLICK: Retry is gated on the SAME chain as Update — the
+  // install control enabled (install_enabled AND worker_listening, both
+  // measured) + a typed password + a named job. It does NOT need a verified
+  // release — the job already exists and is held; Retry re-runs it.
+  const retryDisabled =
+    INSTALL_AUTHZ_UNDER_REVIEW ||
+    retrying ||
+    !password.trim() ||
+    status?.install_enabled !== true ||
+    status?.worker_listening !== true ||
+    !polledJobID
 
   const doInstallWithPassword = useCallback(async () => {
     if (INSTALL_AUTHZ_UNDER_REVIEW || installing) return
@@ -372,6 +530,28 @@ export default function UpdatesPage() {
     }
     setInstalling(false)
   }, [releaseId, password, installing])
+
+  // W-ADDON-ONE-CLICK: the page's Retry for a HELD job — the owner's password
+  // (same proof as Update), sent only in the request body, never rendered.
+  // On success the page just re-polls: the worker re-runs the held step and
+  // the next status poll shows the new blocker or the completion. There is no
+  // terminal instruction to show.
+  const doRetry = useCallback(async () => {
+    if (INSTALL_AUTHZ_UNDER_REVIEW || retrying) return
+    const id = polledJobID
+    if (!id || !password.trim()) return
+    setRetrying(true)
+    setRetryError(null)
+    const res = await updatesApi.retry(id, password)
+    if (res.ok) {
+      setPassword('')
+    } else {
+      // the SERVER's own text verbatim (wrong password 403, lockout 429,
+      // worker refused 503) — never a fabricated reason.
+      setRetryError(res.error || 'retry refused')
+    }
+    setRetrying(false)
+  }, [polledJobID, password, retrying])
 
   const askReloadHistory = useCallback(() => {
     setHistoryReply(null)
@@ -480,10 +660,7 @@ export default function UpdatesPage() {
           </button>
         </div>
         {checkError && (
-          <p
-            className="mt-2 text-xs text-red-400"
-            data-testid="check-error"
-          >
+          <p className="mt-2 text-xs text-red-400" data-testid="check-error">
             {up('checkRefused', language, {
               status: checkError.status ? ` (${checkError.status})` : '',
               reason: checkError.reason,
@@ -656,6 +833,16 @@ export default function UpdatesPage() {
         {maintenance?.since !== undefined && maintenance?.since !== null && (
           <Row label="Since" value={maintenance.since} />
         )}
+        {/* release #22: an update job in preflight freezes NEW entries
+            (exits and protection continue) until it ends or times out. */}
+        {maintenance?.install_pending?.pending && (
+          <div data-testid="install-pending">
+            <Row
+              label={up('installPending', language)}
+              value={`${up('installPendingFrozen', language)} · job=${maintenance.install_pending.job_id ?? na(language)} · ${maintenance.install_pending.state ?? na(language)}/${maintenance.install_pending.phase ?? na(language)} · ${up('installPendingClearsBy', language)} ${maintenance.install_pending.clears_by ?? na(language)}`}
+            />
+          </div>
+        )}
         <Row
           label={up('inFlightSends', language)}
           value={String(maintenance?.in_flight_sends ?? 0)}
@@ -712,6 +899,30 @@ export default function UpdatesPage() {
           </p>
         ) : (
           <>
+            {(() => {
+              const b = jobResultBanner(
+                job?.state,
+                check?.tag ?? null,
+                health?.revision,
+                job?.recovery_reason || job?.error || '',
+                language
+              )
+              if (!b) return null
+              const toneClass =
+                b.tone === 'ok'
+                  ? 'border-emerald-600/40 bg-emerald-500/10 text-emerald-300'
+                  : b.tone === 'bad'
+                    ? 'border-red-600/40 bg-red-500/10 text-red-300'
+                    : 'border-amber-600/40 bg-amber-500/10 text-amber-300'
+              return (
+                <div
+                  className={`mb-3 rounded-lg border px-4 py-2 text-sm font-medium ${toneClass}`}
+                  data-testid="update-result-banner"
+                >
+                  {b.text}
+                </div>
+              )
+            })()}
             <Row
               label={up('jobId', language)}
               value={job?.job_id || maintenance?.job_id || na(language)}
@@ -724,11 +935,90 @@ export default function UpdatesPage() {
               }
             />
             {job?.step && (
-              <Row label={up('jobStep', language)} value={job.step} />
+              <Row
+                label={up('jobStep', language)}
+                value={jobStatusText(job.step, language)}
+              />
             )}
             {job?.blocker && (
               <div data-testid="job-blocker">
-                <Row label={up('jobBlocker', language)} value={job.blocker} />
+                <Row
+                  label={up('jobBlocker', language)}
+                  value={plainReason(job.blocker, language)}
+                />
+                {!TERMINAL_JOB_STATES.has(job?.state ?? '') && (
+                  <p
+                    className="mt-2 text-xs text-sky-400 flex items-center gap-1.5"
+                    data-testid="job-waiting"
+                  >
+                    <Loader2 size={13} className="animate-spin" />
+                    {up('waitingFor', language, {
+                      reason: plainReason(job.blocker, language),
+                    })}
+                    {(() => {
+                      const e = elapsedSince(
+                        job.blocker_since,
+                        Date.now()
+                      )
+                      return e
+                        ? ' ' + up('waitingElapsed', language, { time: e })
+                        : ''
+                    })()}
+                  </p>
+                )}
+                <p className="mt-2 text-xs text-zinc-400">
+                  {up('retryBlockerHelp', language)}
+                </p>
+                <input
+                  id="updates-retry-password"
+                  data-testid="retry-password"
+                  type="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
+                  spellCheck={false}
+                  className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder-zinc-600 focus:outline-none focus:border-zinc-500"
+                  placeholder={up('installPasswordPlaceholder', language)}
+                />
+                <button
+                  type="button"
+                  disabled={retryDisabled}
+                  onClick={doRetry}
+                  className="mt-2 inline-flex items-center gap-2 rounded-lg px-4 py-2 text-sm font-medium bg-zinc-700 text-zinc-100 disabled:opacity-50"
+                  data-testid="retry-button"
+                >
+                  {retrying && <Loader2 size={15} className="animate-spin" />}
+                  {retrying
+                    ? up('retrying', language)
+                    : up('retryInstall', language)}
+                </button>
+                {retryError && (
+                  <p
+                    className="mt-1 text-xs text-red-400"
+                    data-testid="retry-error"
+                  >
+                    {retryError}
+                  </p>
+                )}
+              </div>
+            )}
+            {/* release #22: the failure reason was rendered only when the job
+                had no state, and a refused job always has one — the owner saw
+                "refused" and never why. Shown verbatim whenever present. */}
+            {job?.state && job?.error && (
+              <div data-testid="job-error">
+                <Row label={up('jobError', language)} value={job.error} />
+              </div>
+            )}
+            {/* UI-GUIDE N-5: stale at start / stale at resume / the attempts
+                cap put a job in recovery_needed with ONLY a recovery reason
+                (no error) — shown verbatim, as the server wrote it. */}
+            {job?.recovery_reason && (
+              <div data-testid="job-recovery">
+                <Row
+                  label={up('jobRecovery', language)}
+                  value={job.recovery_reason}
+                />
               </div>
             )}
             {job?.timestamps && Object.keys(job.timestamps).length > 0 && (

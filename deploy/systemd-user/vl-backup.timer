@@ -2,10 +2,11 @@
 Description=vl SQLite auto-backup timer — 05:00 + 17:30 CT, twice daily (C1)
 
 [Timer]
-# The host runs in America/Chicago, so these calendar times ARE CT. 05:00 is a
-# quiet pre-open window; 17:30 is just after the 17:00 CME session rollover.
-OnCalendar=*-*-* 05:00:00
-OnCalendar=*-*-* 17:30:00
+# 05:00 is a quiet pre-open window; 17:30 is just after the 17:00 CME session
+# rollover. Both carry an explicit America/Chicago zone suffix so the backups
+# fire at CT wall-clock time on ANY machine zone, not the host's local clock.
+OnCalendar=*-*-* 05:00:00 America/Chicago
+OnCalendar=*-*-* 17:30:00 America/Chicago
 # Run a missed backup as soon as possible (laptop asleep at the scheduled time).
 Persistent=true
 AccuracySec=1min

@@ -16,6 +16,7 @@ import (
 func mtfFixture(t *testing.T, red bool) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -88,10 +89,13 @@ func TestISB15mBoxBlocksCounterDirection(t *testing.T) {
 }
 
 // TestISB15mBoxAllowsSameDirection — D4.1-25/D4.2-02: inside a LONG 15m box a
-// LONG 1m ISB still fires. Mutant: gate on the wrong side → RED.
+// LONG 1m ISB still fires. Mutant: gate on the wrong side → RED. CE-1
+// (release #25): the default 15m_ib_requires_5m_isb also needs a same-way 5m
+// ISB, so a standing LONG 5m box is part of the fixture (D4.2 p1 @14:24–14:34).
 func TestISB15mBoxAllowsSameDirection(t *testing.T) {
 	e, bars, now := mtfFixture(t, false) // long ISB
 	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
 	ins := e.Tick(bars, now)
 	var longISB bool
 	for _, in := range entryIntents(ins) {
@@ -151,5 +155,43 @@ func TestMTFConflictNoConflictWhenSameDirection(t *testing.T) {
 	}
 	if mtfConflict(&ISBBox{Dir: SideShort}, nil) != false {
 		t.Fatal("a lone 5m box must NOT conflict")
+	}
+}
+
+// TestMTFConflictRefusalsAreNamed (W26 P2-1) — the conflict drop of an ISB
+// candidate is no longer silent: in the default first_box mode it is counted
+// under isb_tf_conflict (and NOT under the held-only both_boxes key). Mutant:
+// delete the e.refuse("isb_tf_conflict") call → this test goes RED.
+func TestMTFConflictRefusalsAreNamed(t *testing.T) {
+	e, bars, now := mtfFixture(t, false) // a long ISB would otherwise fire
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+
+	ins := e.Tick(bars, now)
+	if got := entryIntents(ins); len(got) != 0 {
+		t.Fatalf("conflict must refuse every setup, got entries %+v", got)
+	}
+	if e.State.Refusals["isb_tf_conflict"] == 0 {
+		t.Fatalf("first_box conflict must count isb_tf_conflict, got refusals %v", e.State.Refusals)
+	}
+	if e.State.Refusals["isb_tf_conflict_both_boxes"] != 0 {
+		t.Fatalf("first_box mode must NOT count the held-only key isb_tf_conflict_both_boxes, got %v", e.State.Refusals)
+	}
+}
+
+// TestMTFConflictHeldRefusalIsNamed (W26 P2-1) — in both_boxes mode, once ONE
+// box escapes the conflict is still HELD (the latch) until both escape; that
+// held ISB drop is counted under its own key.
+func TestMTFConflictHeldRefusalIsNamed(t *testing.T) {
+	e, bars, now := mtfFixture(t, false)
+	e.Cfg.TFConflictEnd = TFConflictBothBoxes
+	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideShort, AtTime: bars[0].OpenTime}
+	e.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
+
+	e.Tick(bars, now)    // tick 1: conflict fires, the latch is set
+	e.State.ISBBox = nil // the 5m box escapes; the 15m box stands → HELD
+	e.Tick(bars, now)
+	if e.State.Refusals["isb_tf_conflict_both_boxes"] == 0 {
+		t.Fatalf("a held both_boxes conflict must count isb_tf_conflict_both_boxes, got %v", e.State.Refusals)
 	}
 }

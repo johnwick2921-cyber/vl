@@ -15,6 +15,7 @@ import (
 
 	"gorm.io/gorm"
 
+	"vl/internal/updaterjob"
 	"vl/kernel"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -1037,5 +1038,32 @@ func TestWithdrawNeverOnACorruptHold(t *testing.T) {
 	}
 	if v := maintenanceWithdrawView(f.st); v != nil {
 		t.Fatalf("a corrupt hold asks for no withdraw view: %+v", *v)
+	}
+}
+
+// EXECUTION P2-2 (10-14) — an update job in PREFLIGHT froze new entries
+// (install_pending) but left a planner limit resting at NT8, and the
+// preflight's ledger_exposure leg refused the install. The freeze now
+// withdraws resting entries through the same entries-only path: the cancel is
+// sent for the entry's signal, the row goes cancel_pending and settles only on
+// evidence, and nothing touches the stop or the target.
+func TestWithdrawOnInstallPendingPreflight(t *testing.T) {
+	f := withdrawFixture(t, "wd-install-pending", nil)
+	t.Cleanup(resetInstallPendingForTest)
+	row, sid := f.placeResting(t)
+	t1 := f.now.Add(time.Minute)
+	if _, held := MaintenanceHeld(); held {
+		t.Fatal("fixture: this test must run with NO maintenance hold")
+	}
+	writeJob(t, f.dir, pendingJob, updaterjob.StatePreflightOK, updaterjob.PhaseStarted, t1.Add(-4*time.Minute))
+	if _, pending := InstallPending(t1); !pending {
+		t.Fatal("fixture: the job in preflight must read as install pending")
+	}
+	f.setLiveBook(t1, wdEntryOrder(sid))
+	assertWithdrawnThenConfirmed(t, f, row, sid, WithdrawReasonPrefix+"install_pending job "+pendingJob, t1)
+	for _, fr := range f.w.touching(sid) {
+		if fr.Signal != sid || fr.Type != ntwire.FrameCancelOrder {
+			t.Fatalf("the withdraw must cancel the ENTRY only; a frame touched its bracket: %+v", fr)
+		}
 	}
 }

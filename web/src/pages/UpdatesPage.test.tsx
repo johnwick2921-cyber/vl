@@ -82,6 +82,13 @@ const heldMaintenance = {
 
 beforeEach(() => {
   for (const fn of Object.values(mocks)) fn.mockReset()
+  // UI-GUIDE N-5: the page keeps the last job id in sessionStorage; a test
+  // must not inherit the previous test's job.
+  window.sessionStorage.clear()
+  // updatesApi.job always returns a Promise (null when there is no data); the
+  // page now also polls the job install_pending names, so the default must be
+  // the production shape, not mockReset's undefined.
+  mocks.job.mockResolvedValue(null)
   mocks.health.mockResolvedValue({
     status: 'ok',
     time: '2026-09-24T06:00:00Z',
@@ -387,24 +394,21 @@ describe('UpdatesPage', () => {
   it.each([
     ['downloading', 'Downloading…'],
     ['verifying', 'Verifying…'],
-  ])(
-    'renders the server install_state %s',
-    async (installState, label) => {
-      mocks.updatesStatus.mockResolvedValue({
-        status: {
-          enrolled: true,
-          manifest_verifier: 'configured',
-          install_enabled: true,
-          worker_listening: true,
-          install_state: installState,
-        },
-      })
-      render(<UpdatesPage />)
-      await waitFor(() =>
-        expect(screen.getByTestId('install-state')).toHaveTextContent(label)
-      )
-    }
-  )
+  ])('renders the server install_state %s', async (installState, label) => {
+    mocks.updatesStatus.mockResolvedValue({
+      status: {
+        enrolled: true,
+        manifest_verifier: 'configured',
+        install_enabled: true,
+        worker_listening: true,
+        install_state: installState,
+      },
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('install-state')).toHaveTextContent(label)
+    )
+  })
 
   // P-F: the live blocker from the job is shown verbatim (server-formatted).
   it('renders the live job blocker (waiting for the AI plan)', async () => {
@@ -419,6 +423,191 @@ describe('UpdatesPage', () => {
     await waitFor(() =>
       expect(screen.getByTestId('job-blocker')).toHaveTextContent(
         'waiting for the AI plan (started 12:34:56)'
+      )
+    )
+  })
+
+  // fix/update-says-failed: a gate-blocked (non-terminal) job is WAITING, not
+  // installing — the plain reason + the elapsed time since the blocker landed.
+  it('shows Waiting + elapsed for a job blocked at the sim_accounts gate', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    vi.setSystemTime(new Date('2026-10-17T10:00:00Z'))
+    try {
+      mocks.maintenance.mockResolvedValue({ job_id: 'job-sim' })
+      mocks.job.mockResolvedValue({
+        job_id: 'job-sim',
+        state: 'gate_ok',
+        blocker: 'sim_accounts: bound account Sim101 is not SIM-tradeable',
+        blocker_since: '2026-10-17T09:56:00Z', // 4 minutes ago
+      })
+      render(<UpdatesPage />)
+      const waiting = await waitFor(() =>
+        screen.getByTestId('job-waiting')
+      )
+      expect(waiting).toHaveTextContent(
+        'Waiting: NinjaTrader accounts not confirmed SIM (bound account Sim101 is not SIM-tradeable)'
+      )
+      expect(waiting.textContent).toMatch(/elapsed/)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  // fix/update-says-failed: refused and reverted_clean are FAILURES — the red
+  // "Update failed — nothing changed" banner, never the amber "still trading
+  // normal" (that stays for the PROVEN rolled_back only).
+  it.each([
+    ['refused', 'not passed within 10m0s: sim_accounts: bound account Sim101 is not SIM-tradeable'],
+    ['reverted_clean', 'not passed within 10m0s: sim_accounts: bound account Sim101 is not SIM-tradeable'],
+  ])('shows the red failed banner for a %s job', async (state, error) => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-fail' })
+    mocks.job.mockResolvedValue({ job_id: 'job-fail', state, error })
+    render(<UpdatesPage />)
+    const banner = await waitFor(() =>
+      screen.getByTestId('update-result-banner')
+    )
+    expect(banner).toHaveTextContent(
+      'Update failed — nothing changed: not passed within 10m0s: NinjaTrader accounts not confirmed SIM (bound account Sim101 is not SIM-tradeable)'
+    )
+    expect(banner.className).toContain('text-red-300')
+  })
+
+  // The PROVEN rollback keeps the amber "could not finish" — it recovered,
+  // it did not fail.
+  it('keeps the amber banner for a rolled_back job', async () => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-rb' })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-rb',
+      state: 'rolled_back',
+      error: 'AddOn reconnect timed out',
+    })
+    render(<UpdatesPage />)
+    const banner = await waitFor(() =>
+      screen.getByTestId('update-result-banner')
+    )
+    expect(banner).toHaveTextContent('Update could not finish — nothing changed')
+    expect(banner.className).toContain('text-amber-300')
+  })
+
+  // release #22: a refused job HAS a state, so the old render (error only
+  // when state was empty) hid the reason. The reason is shown verbatim.
+  it('shows the refused job’s error next to its state', async () => {
+    mocks.job.mockResolvedValue({
+      job_id: 'job-30a8',
+      state: 'refused',
+      error:
+        'not passed within 10m0s: ledger_exposure: placed/unresolved: armed#363 cancel_pending',
+    })
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-30a8' })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'not passed within 10m0s: ledger_exposure: placed/unresolved: armed#363 cancel_pending'
+      )
+    )
+    expect(screen.getByText('refused')).toBeTruthy()
+  })
+
+  // UI-GUIDE N-5: stale at start / stale at resume / the attempts cap set ONLY
+  // recovery_reason (live job files 39e3d44f…, 878fd3d8…, de4cf900…); the
+  // panel showed such a job with no reason at all.
+  it('shows the recovery reason of a recovery_needed job that has no error', async () => {
+    mocks.job.mockResolvedValue({
+      job_id: 'job-39e3',
+      state: 'recovery_needed',
+      recovery_reason:
+        'stale at resume: older than 30 minutes — never resumed (C21)',
+    })
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-39e3' })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-recovery')).toHaveTextContent(
+        'Recovery' +
+          'stale at resume: older than 30 minutes — never resumed (C21)'
+      )
+    )
+    expect(screen.queryByTestId('job-error')).toBeNull()
+  })
+
+  // UI-GUIDE N-5: a job refused in PREFLIGHT never writes the hold, so only
+  // install_pending names it — the panel must poll that id too.
+  it('polls the job install_pending names when no hold names one', async () => {
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+      install_pending: {
+        pending: true,
+        job_id: 'job-pre1',
+        state: 'preflight',
+        phase: 'started',
+      },
+    })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-pre1',
+      state: 'refused',
+      error: 'not passed within 10m0s: ledger_exposure',
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'not passed within 10m0s: ledger_exposure'
+      )
+    )
+    expect(mocks.job).toHaveBeenCalledWith('job-pre1')
+  })
+
+  // UI-GUIDE N-5: after a reload, the last job the API named is still shown
+  // (sessionStorage), even once nothing names it any more.
+  it('keeps the last job across a reload of the page', async () => {
+    mocks.maintenance.mockResolvedValue({ job_id: 'job-r1' })
+    mocks.job.mockResolvedValue({
+      job_id: 'job-r1',
+      state: 'refused',
+      error: 'preflight refused',
+    })
+    const first = render(<UpdatesPage />)
+    await waitFor(() => expect(screen.getByTestId('job-error')).toBeTruthy())
+    first.unmount()
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+    })
+    mocks.job.mockClear()
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('job-error')).toHaveTextContent(
+        'preflight refused'
+      )
+    )
+    expect(mocks.job).toHaveBeenCalledWith('job-r1')
+  })
+
+  // release #22: the install-pending freeze is visible on the page.
+  it('shows the install-pending entry freeze from /api/maintenance', async () => {
+    mocks.maintenance.mockResolvedValue({
+      held: false,
+      state: 'clear',
+      in_flight_sends: 0,
+      drained: true,
+      addon_ack: null,
+      install_pending: {
+        pending: true,
+        job_id: 'job-30a8',
+        state: 'preflight_ok',
+        phase: 'started',
+        clears_by: '02:09 CT',
+      },
+    })
+    render(<UpdatesPage />)
+    await waitFor(() =>
+      expect(screen.getByTestId('install-pending')).toHaveTextContent(
+        'new entries frozen (exits and protection continue) · job=job-30a8 · preflight_ok/started'
       )
     )
   })
@@ -942,7 +1131,9 @@ describe('UpdatesPage', () => {
     await waitFor(() => expect(screen.getByText('Update now')).toBeTruthy())
     fireEvent.click(screen.getByTestId('check-button'))
     await waitFor(() =>
-      expect(screen.getByTestId('check-button')).toHaveTextContent('Check again')
+      expect(screen.getByTestId('check-button')).toHaveTextContent(
+        'Check again'
+      )
     )
     expect(screen.queryByText('Up to date')).toBeNull()
   })

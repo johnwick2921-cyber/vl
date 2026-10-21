@@ -101,7 +101,7 @@ func TestLatestParsesTagAndCommitish(t *testing.T) {
 		case r.URL.Path == "/repos/"+ReleaseRepo+"/releases/latest":
 			fmt.Fprint(w, `{"tag_name":"v2026.10.01.1","target_commitish":"dev"}`)
 		case r.URL.Path == "/repos/"+ReleaseRepo+"/commits/v2026.10.01.1":
-			fmt.Fprint(w, `{"sha":"`+strings.Repeat("ab", 20)+`"}`)
+			githubCommitAnswer(w, r, strings.Repeat("ab", 20), 0)
 		default:
 			http.NotFound(w, r)
 		}
@@ -129,7 +129,7 @@ func TestLatestResolvesCommitFromTagIsTheLiveFix(t *testing.T) {
 		case r.URL.Path == "/repos/"+ReleaseRepo+"/releases/latest":
 			fmt.Fprint(w, `{"tag_name":"v2026.10.02.1","target_commitish":"dev"}`)
 		case r.URL.Path == "/repos/"+ReleaseRepo+"/commits/v2026.10.02.1":
-			fmt.Fprint(w, `{"sha":"`+sha+`"}`)
+			githubCommitAnswer(w, r, sha, 0)
 		default:
 			http.NotFound(w, r)
 		}
@@ -170,13 +170,14 @@ func TestLatestRefusesInvalidTag(t *testing.T) {
 }
 
 // TestLatestRefusesUnknownOrMalformedCommit: the commits/<tag> answer must be
-// a 40-hex sha — 404 or a non-hex sha refuses fail-closed.
+// a 40-hex sha — 404 or a non-hex sha refuses fail-closed. The bodies are the
+// sha media type's bare text (OPS NEW-1).
 func TestLatestRefusesUnknownOrMalformedCommit(t *testing.T) {
 	for name, body := range map[string]string{
 		"not found":  `{"message":"Not Found"}`,
-		"branch sha": `{"sha":"dev"}`,
-		"short":      `{"sha":"abc123"}`,
-		"upper":      `{"sha":"` + strings.ToUpper(strings.Repeat("ab", 20)) + `"}`,
+		"branch sha": `dev`,
+		"short":      `abc123`,
+		"upper":      strings.ToUpper(strings.Repeat("ab", 20)),
 	} {
 		t.Run(name, func(t *testing.T) {
 			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -321,5 +322,92 @@ func TestDownloadFollowsAllowedRedirectsAndWritesFile(t *testing.T) {
 	b, err := os.ReadFile(got)
 	if err != nil || string(b) != "release tarball bytes" {
 		t.Fatalf("body = %q, %v", b, err)
+	}
+}
+
+// githubCommitAnswer answers GET /repos/<r>/commits/<ref> the way GitHub does
+// (verified live 2026-10-14 against v2026.10.14.3: `Accept:
+// application/vnd.github.sha` → 200, `Content-Type: application/vnd.github.sha;
+// charset=utf-8`, `Content-Length: 40`, the bare sha with no newline). Any
+// other Accept gets the full commit JSON — padded to jsonBytes so a large
+// merge's body (release #22's was 1,217,057 B) can be reproduced.
+func githubCommitAnswer(w http.ResponseWriter, r *http.Request, sha string, jsonBytes int) {
+	if r.Header.Get("Accept") == "application/vnd.github.sha" {
+		w.Header().Set("Content-Type", "application/vnd.github.sha; charset=utf-8")
+		fmt.Fprint(w, sha)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	head := `{"sha":"` + sha + `","files":[{"patch":"`
+	tail := `"}]}`
+	pad := jsonBytes - len(head) - len(tail)
+	if pad < 0 {
+		pad = 0
+	}
+	fmt.Fprint(w, head+strings.Repeat("x", pad)+tail)
+}
+
+// TestCommitForTagReadsOnlyTheBareSha (OPS NEW-1, 10-14): the commits API
+// answer for a big merge is the whole diff — release #22's merge dad0cf768
+// was 1,217,057 B, over the old 1 MiB LimitReader, so the release check
+// failed "commits API body: unexpected EOF" and the Updates page said
+// "release API unavailable". The updater now asks for the sha media type
+// and reads at most 64 bytes, whatever size the commit's diff is.
+func TestCommitForTagReadsOnlyTheBareSha(t *testing.T) {
+	sha := strings.Repeat("e1", 20)
+	var accepts []string
+	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.URL.Path == "/repos/"+ReleaseRepo+"/releases/latest":
+			w.Header().Set("Content-Type", "application/json")
+			fmt.Fprint(w, `{"tag_name":"v2026.10.14.9","target_commitish":"dev"}`)
+		case r.URL.Path == "/repos/"+ReleaseRepo+"/commits/v2026.10.14.9":
+			accepts = append(accepts, r.Header.Get("Accept"))
+			githubCommitAnswer(w, r, sha, 2<<20) // a 2 MiB JSON diff
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+	s := testSource(t, srv, srv, srv, 1<<20, 3)
+	latest, err := s.Latest(context.Background())
+	if err != nil {
+		t.Fatalf("Latest over a 2 MiB commit body: %v (want the bare sha read)", err)
+	}
+	if latest.TargetCommitish != sha {
+		t.Fatalf("commit = %q, want %q", latest.TargetCommitish, sha)
+	}
+	if len(accepts) != 1 || accepts[0] != "application/vnd.github.sha" {
+		t.Fatalf("commits API Accept = %q, want exactly [application/vnd.github.sha]", accepts)
+	}
+}
+
+// TestCommitForTagRefusesANonShaBody: a server that ignores the sha media type
+// (or any body longer than 64 bytes) is refused fail-closed — the release is
+// never offered on a sha the updater did not read whole.
+func TestCommitForTagRefusesANonShaBody(t *testing.T) {
+	for name, body := range map[string]string{
+		"json ignored accept": `{"sha":"` + strings.Repeat("ab", 20) + `"}`,
+		"sha plus junk":       strings.Repeat("ab", 20) + strings.Repeat(" ", 30) + "x",
+		"over 64 bytes":       strings.Repeat("ab", 20) + strings.Repeat("\n", 40),
+	} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch {
+				case r.URL.Path == "/repos/"+ReleaseRepo+"/releases/latest":
+					fmt.Fprint(w, `{"tag_name":"v1.0.0","target_commitish":"dev"}`)
+				case r.URL.Path == "/repos/"+ReleaseRepo+"/commits/v1.0.0":
+					fmt.Fprint(w, body)
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			s := testSource(t, srv, srv, srv, 1<<20, 3)
+			_, err := s.Latest(context.Background())
+			if !errors.Is(err, ErrReleaseCommitUnknown) {
+				t.Fatalf("err = %v, want ErrReleaseCommitUnknown", err)
+			}
+		})
 	}
 }

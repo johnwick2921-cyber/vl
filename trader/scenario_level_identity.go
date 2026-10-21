@@ -3,6 +3,7 @@ package trader
 import (
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"time"
 	"vl/kernel"
 	"vl/levelidentity"
@@ -23,7 +24,7 @@ func (at *AutoTrader) stampPlanIdentity(doc *kernel.PlanDoc, candidates []kernel
 			at.logWarnf("🪪 scenario %s level_id=%v WARN accepted: %s", id, identityIDText(r.LevelID), r.Basis)
 			continue
 		}
-		at.logInfof("🪪 scenario %s level_id=%s formed_close_ms=%d tf=%s", id, *r.LevelID, *r.Level.FormedCloseMs, *r.Level.TF)
+		at.logInfof("🪪 scenario %s level_id=%s formed_close_ms=%s tf=%s", id, identityIDText(r.LevelID), int64PtrText(r.Level.FormedCloseMs), stringPtrText(r.Level.TF))
 	}
 	for _, c := range candidates {
 		if c.ID == nil {
@@ -73,8 +74,43 @@ func (at *AutoTrader) recordIdentityEvent(planID string, version int, scenario, 
 		return
 	}
 	if wrote && kind == "heuristic_disagreed" {
-		at.logWarnf("🪪 heuristic-disagreed plan=%s v%d scenario=%s id=%s candidate=%.2f evaluator=%.2f — recorded; evaluator unchanged", planID, version, scenario, identityIDText(r.LevelID), r.Level.Price, *r.EvaluatorAnchor)
+		at.logWarnf("🪪 heuristic-disagreed plan=%s v%d scenario=%s id=%s candidate=%s evaluator=%s — recorded; evaluator unchanged", planID, version, scenario, identityIDText(r.LevelID), levelPriceText(r), float64PtrText(r.EvaluatorAnchor))
 	}
+}
+
+// int64PtrText / stringPtrText / float64PtrText render a pointer field as its
+// value or "NULL" — the reference-anchor ("ref|") levels have a NULL
+// formed_close_ms (formation close unknown by construction), and the
+// heuristic-disagreed evaluator anchor can be absent, so the identity log lines
+// must never dereference them.
+func int64PtrText(p *int64) string {
+	if p == nil {
+		return "NULL"
+	}
+	return strconv.FormatInt(*p, 10)
+}
+
+func stringPtrText(p *string) string {
+	if p == nil {
+		return "NULL"
+	}
+	return *p
+}
+
+func float64PtrText(p *float64) string {
+	if p == nil {
+		return "NULL"
+	}
+	return strconv.FormatFloat(*p, 'f', 2, 64)
+}
+
+// levelPriceText renders a scenario's resolved level price, or NULL when the
+// level was not resolved (an unresolved identity never has a price to print).
+func levelPriceText(r kernel.ScenarioIdentity) string {
+	if r.Level == nil {
+		return "NULL"
+	}
+	return strconv.FormatFloat(r.Level.Price, 'f', 2, 64)
 }
 func (at *AutoTrader) observeScenarioIdentity(doc *kernel.PlanDoc, planID string, version int, evals []kernel.ScenarioEval, now time.Time) (out map[string]kernel.ScenarioIdentity) {
 	defer at.containLevelIdentity()

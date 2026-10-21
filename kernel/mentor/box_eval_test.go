@@ -63,7 +63,7 @@ func TestBoxEntryIntentTriggerBlock(t *testing.T) {
 func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	cfg.RoomMultiple = 0.3
+	cfg.RoomMultiple = 0 // this pin tests the confluence FLAG, not the room rule
 	b := Box{Kind: FTGL, Top: 96, Bottom: 94}
 	ref := market.Kline{High: 97.5, Low: 96.5, Close: 97} // reject for the long
 	levels := []Level{

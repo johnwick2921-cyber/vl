@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"sort"
 	"time"
 
 	"vl/market"
@@ -60,12 +61,29 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 	}
 	// newest-first keep: a level survives unless a newer kept level sits
 	// within the prune distance.
+	out := pruneLevelsByRecency(cand, cfg.KeyLevelPrunePts)
+	return out
+}
+
+// pruneLevelsByRecency — the D5.3 <20 rule, ONE algorithm shared by the key
+// levels and the old-extreme lines [D5.3 p1 @15:59–16:50]: two lines closer
+// than prunePts → delete one, keep the MORE RECENT (rightmost). Iterates
+// newest-first, so a level survives unless an already-kept NEWER level sits
+// within prunePts. AtTime is the recency key (strictly increasing for key
+// levels, so the result is identical to the pre-refactor inline loop).
+// Returns the survivors oldest-first.
+func pruneLevelsByRecency(levels []Level, prunePts float64) []Level {
+	if len(levels) < 2 {
+		return levels
+	}
+	sorted := make([]Level, len(levels))
+	copy(sorted, levels)
+	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].AtTime > sorted[j].AtTime })
 	var kept []Level
-	for i := len(cand) - 1; i >= 0; i-- {
-		l := cand[i]
+	for _, l := range sorted {
 		drop := false
 		for _, k := range kept {
-			if abs(l.Price-k.Price) < cfg.KeyLevelPrunePts {
+			if abs(l.Price-k.Price) < prunePts {
 				drop = true
 				break
 			}
@@ -74,11 +92,8 @@ func KeyLevels(bars []market.Kline, cfg Config) []Level {
 			kept = append(kept, l)
 		}
 	}
-	out := make([]Level, len(kept))
-	for i, l := range kept {
-		out[len(kept)-1-i] = l // restore time order
-	}
-	return out
+	sort.SliceStable(kept, func(i, j int) bool { return kept[i].AtTime < kept[j].AtTime })
+	return kept
 }
 
 // isPreBucketed1H reports whether the input is a series of ready-made 1H
@@ -194,6 +209,26 @@ func rthOnly(bars []market.Kline) []market.Kline {
 func rthMinuteOf(ms int64) int {
 	t := time.UnixMilli(ms).In(ctime())
 	return t.Hour()*60 + t.Minute()
+}
+
+// exec2mReads2m is the X5-10 timeframe-schedule predicate (ONE definition,
+// read by Tick): with the knob ON the named setups (ISB + PHL/PLH) read the 2m
+// chart at every minute EXCEPT the RTH open +30 minutes (08:30 ≤ t < 09:00 CT),
+// when they stay on the 1m ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1
+// phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight,
+// the Europe open (3am Texas) and the evening are all 2m. The schedule source is
+// ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
+// @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
+// "slow") and is not implemented.
+//
+// `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
+// bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window
+// is judged on the BAR being read, not the tick instant. That keeps the 08:29
+// pre-open bar on the 2m and the 08:59 bar (the last RTH-open+30 minute) on the
+// 1m (fold #565, D6: the old read was off by one candle at both ends).
+func exec2mReads2m(now int64) bool {
+	m := rthMinuteOf(now - 60_000) // the just-closed 1m bar's OPEN minute
+	return m < 8*60+30 || m >= 9*60
 }
 
 // rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs

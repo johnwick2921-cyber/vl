@@ -18,6 +18,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
+	cfg.Exec2mAfter30m = false // the B6 rest/cancel pin reads the 1m touch
 
 	e := New(cfg)
 	e.seeded = true
@@ -27,7 +28,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	e.State.EMA9 = 0
 	e.State.SeedLevels = []Level{
 		{Key: "L", Kind: KindKeyLevel, Price: 29385},
-		{Key: "old-high:29431.75", Kind: KindOldExtreme, Price: 29431.75},
+		{Key: "old-high:29431.75", Kind: KindOldExtreme, Role: OldHigh, Price: 29431.75},
 	}
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}}

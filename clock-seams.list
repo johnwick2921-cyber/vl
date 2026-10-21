@@ -16,6 +16,11 @@
 #   trader/auto_trader_reset.go ForceReset — its time.Now() is a poll DEADLINE
 #     for a real wait on an in-flight read, not a rule. Feeding it fixture time
 #     would change behaviour (instant timeout or none), which this wave forbids.
+#   kernel/risk_limits.go ResetDailyPnL — REMOVED (r22 RISK-GATES, 2026-10-14):
+#     its only production caller was MaybeForceFlat (the Emergency Flat), which
+#     now clears the ONE trader acted on. ResetDailyPnLAt (the global reset)
+#     stays for its tests; the daily-loss latch's own clock seams are the
+#     SetDailyForceFlat / DailyForceFlatReason rows below.
 #   trader/auto_trader_clock.go entryBlockedByLastEntry — REMOVED (W-EXEC-TRUTH W0,
 #     2026-09-23): its only production caller was the AI path's inline chain,
 #     which moved into admitEntry and passes its own clock to
@@ -49,7 +54,8 @@ trader/auto_trader_transition.go:observeTransitionStanddown:observeTransitionSta
 trader/auto_trader_transition.go:maybeWakePlannerOnMSS:maybeWakePlannerOnMSSAt
 trader/auto_trader_weekly.go:weeklyConfluenceShadow:weeklyConfluenceShadowAt
 trader/auto_trader_wake_levels.go:maybeWakePlannerOnLevelEvents:maybeWakePlannerOnLevelEventsAt
-kernel/risk_limits.go:ResetDailyPnL:ResetDailyPnLAt
+kernel/risk_limits.go:SetDailyForceFlat:SetDailyForceFlatAt
+kernel/risk_limits.go:DailyForceFlatReason:DailyForceFlatReasonAt
 provider/ninjatrader/bar_persist.go:barPersistSummary:barPersistSummaryAt
 
 trader/auto_trader_levelstate.go:recordLevelState:recordLevelStateAt

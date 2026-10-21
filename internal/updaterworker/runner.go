@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"vl/internal/updaterjob"
+	"vl/logger"
 )
 
 // ── the runner ──────────────────────────────────────────────────────────────
@@ -50,7 +51,7 @@ func (w *Worker) drive(ctx context.Context, id string) error {
 			return fmt.Errorf("read job %s: %w", id, err)
 		}
 		if updaterjob.Finished(j.State, j.Phase) {
-			w.finished(j)
+			w.finished(ctx, j)
 			return nil
 		}
 		if j.Phase == updaterjob.PhaseStarted {
@@ -88,21 +89,33 @@ func (w *Worker) drive(ctx context.Context, id string) error {
 // latches the worker: install is refused until it is restarted (OQ-3). The
 // main-tree lock is settled EARLIER, in the terminal edge itself (finish's
 // failure edges + stepReleaseHold): a finished job file is immutable.
-func (w *Worker) finished(j updaterjob.Job) {
+func (w *Worker) finished(ctx context.Context, j updaterjob.Job) {
 	w.mu.Lock()
-	defer w.mu.Unlock()
 	if w.active == j.JobID {
 		w.active = ""
 	}
-	if j.State == updaterjob.StateRecoveryNeeded && w.stopped == "" {
+	recovery := j.State == updaterjob.StateRecoveryNeeded && w.stopped == ""
+	if recovery {
 		w.stopped = "recovery_needed: " + j.JobID
 	}
 	w.logf("updater: job %s → %s", j.JobID, j.State)
+	swapped := w.swapPending.Load()
 	// The worker binary was swapped during this job: only NOW, with the swap
 	// receipt and the terminal effects persisted, may serve() exit for the
 	// unit restart.
-	if w.swapPending.Load() {
+	if swapped {
 		closeSwapDone(w)
+	}
+	w.mu.Unlock()
+	// feat/addon-catchup: after a finished install (complete or rolled_back),
+	// an idle worker re-checks the running AddOn and rebuilds it if stale.
+	// Skipped on recovery_needed (the worker latches), on a worker swap (the
+	// NEXT worker's Start re-checks), and on a catch-up itself (a completed
+	// catch-up must not re-trigger another — no loop).
+	if !recovery && !swapped && !j.Catchup {
+		if _, err := w.maybeStartCatchup(ctx); err != nil {
+			w.logf("updater: catch-up check after %s: %v", j.State, err)
+		}
 	}
 }
 
@@ -176,6 +189,14 @@ func (w *Worker) step(ctx context.Context, j updaterjob.Job) stepResult {
 		return w.stepBackup(ctx, j)
 	case updaterjob.StateNT8Skipped, updaterjob.StateNT8Updated:
 		return w.stepNT8(ctx, j)
+	case updaterjob.StateAddonBuilt:
+		return w.stepAddonBuild(ctx, j)
+	case updaterjob.StateAddonPlaced:
+		return w.stepAddonPlace(ctx, j)
+	case updaterjob.StateNT8Restarted:
+		return w.stepNT8Restart(ctx, j)
+	case updaterjob.StateAddonReconnected:
+		return w.stepAddonReconnect(ctx, j)
 	case updaterjob.StateActivated:
 		return w.stepActivate(ctx, j)
 	case updaterjob.StateBooted:
@@ -186,6 +207,8 @@ func (w *Worker) step(ctx context.Context, j updaterjob.Job) stepResult {
 		return w.stepWorkerSwap(ctx, j)
 	case updaterjob.StateRollingBack:
 		return w.stepRollback(ctx, j)
+	case updaterjob.StateRevertedClean:
+		return w.stepRevertClean(ctx, j)
 	case updaterjob.StateComplete, updaterjob.StateRolledBack:
 		return w.stepReleaseHold(ctx, j)
 	}
@@ -218,8 +241,9 @@ func (w *Worker) finish(ctx context.Context, j updaterjob.Job, res stepResult) (
 				res.set(k)
 			}
 			k.Blocker = res.blocker
-			// a rollback keeps WHY it rolled back: M5 shows rolled_back with it
-			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack {
+			// a rollback keeps WHY it rolled back, and a revert keeps WHY it
+			// reverted: M5 shows rolled_back / reverted_clean with it.
+			if k.State != updaterjob.StateRollingBack && k.State != updaterjob.StateRolledBack && k.State != updaterjob.StateRevertedClean {
 				k.Error = ""
 			}
 			return k.Finish(now)
@@ -260,7 +284,25 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 	var set func(k *updaterjob.Job)
 	switch j.State {
 	case updaterjob.StateRequested:
+		if j.Catchup {
+			// Catch-up: straight into the AddOn build — nothing is downloaded,
+			// verified or activated.
+			next = updaterjob.StateCatchup
+			set = func(k *updaterjob.Job) {
+				if k.Addon == nil {
+					k.Addon = &updaterjob.AddonState{}
+				}
+			}
+			break
+		}
 		next = updaterjob.StateDownloaded
+	case updaterjob.StateCatchup:
+		next = updaterjob.StateAddonBuilt
+		set = func(k *updaterjob.Job) {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+		}
 	case updaterjob.StateDownloaded:
 		next = updaterjob.StateVerified
 	case updaterjob.StateVerified:
@@ -280,31 +322,58 @@ func (w *Worker) advance(ctx context.Context, j updaterjob.Job) (parked bool, er
 			next = updaterjob.StateNT8Skipped
 		}
 		set = func(k *updaterjob.Job) { k.NT8 = &d }
-	case updaterjob.StateNT8Updated, updaterjob.StateNT8Skipped:
-		if j.State == updaterjob.StateNT8Updated {
-			k, proceed, err := w.resumeFromPark(ctx, j)
-			if err != nil || !proceed {
-				return true, err
-			}
-			j = k
+	case updaterjob.StateNT8Skipped, updaterjob.StateAddonReconnected:
+		if j.State == updaterjob.StateAddonReconnected && j.Catchup {
+			// Catch-up ends here: the AddOn is built, placed and (if NT8 was
+			// open) proven reconnected. Nothing is activated.
+			next = updaterjob.StateComplete
+			break
 		}
 		// R-i: the LAST re-proof before the point of no return. A failure
-		// here has installed nothing: recovery_needed, hold kept.
+		// here has installed nothing: reverted_clean (self-recovery releases
+		// the hold, the lock, and any placed AddOn).
 		if err := w.reprove(ctx, j); err != nil {
 			if errors.Is(err, errMoved) || ctx.Err() != nil {
 				return false, err
 			}
-			return false, w.toRecovery(j, "ready not re-proven before activate: "+err.Error())
+			return false, w.toRevertClean(ctx, j, "ready not re-proven before activate: "+err.Error())
 		}
 		id, err := w.lib.CurrentIdentity()
 		if err != nil {
-			return false, w.toRecovery(j, "cannot read the running identity before activate: "+err.Error())
+			return false, w.toRevertClean(ctx, j, "cannot read the running identity before activate: "+err.Error())
 		}
 		next = updaterjob.StateActivated
 		set = func(k *updaterjob.Job) {
 			k.IdentityBefore = &id
 			w.setBootWatch(k)
 		}
+	case updaterjob.StateNT8Updated:
+		// W-ADDON-ONE-CLICK: a changed AddOn no longer parks — it builds.
+		next = updaterjob.StateAddonBuilt
+		set = func(k *updaterjob.Job) {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+		}
+	case updaterjob.StateAddonBuilt:
+		next = updaterjob.StateAddonPlaced
+	case updaterjob.StateAddonPlaced:
+		// Restart NT8 only when it was running at press time; the nt8_absent
+		// drain means it was closed — the DLL is placed, the job proceeds.
+		// Catch-up: restart only when NT8 was OPEN at the catch-up's creation,
+		// OR when the no-F5 migration was DEFERRED because NT8 started
+		// mid-catch-up (the restart stops NT8 first, then migrates while it
+		// is closed). A closed catch-up that migrated inline skips the restart.
+		next = updaterjob.StateAddonReconnected
+		if j.Catchup {
+			if j.CatchupNT8Open || (j.Addon != nil && j.Addon.MigrationPending) {
+				next = updaterjob.StateNT8Restarted
+			}
+		} else if j.DrainPath != drainPathNT8Absent {
+			next = updaterjob.StateNT8Restarted
+		}
+	case updaterjob.StateNT8Restarted:
+		next = updaterjob.StateAddonReconnected
 	case updaterjob.StateActivated:
 		next = updaterjob.StateBooted
 	case updaterjob.StateBooted:
@@ -430,12 +499,14 @@ func logPrefixForBinary(binPath string) string {
 	return "vl_"
 }
 
-// predictedLog is <install>/data/<prefix><local date of t>.log — the bot's
-// logger names its file by its BOOT date in its own local zone (logger.go),
+// predictedLog is <install>/data/<prefix><CT date of t>.log — the bot's logger
+// names its file by its BOOT date in America/Chicago (logger.LogFileNameFor),
 // and the worker refuses to run with TZ set so its zone is the bot's. The
-// prefix is chosen from the binary that will run (logPrefixForBinary).
+// prefix is chosen from the binary that will run (logPrefixForBinary). The date
+// comes from logger.CTDate — the SAME function the writer uses — so the file the
+// updater predicts and the file the bot writes agree on any machine zone.
 func (w *Worker) predictedLog(t time.Time, binPath string) string {
-	return filepath.Join(w.cfg.Target.LogDir, logPrefixForBinary(binPath)+t.In(time.Local).Format("2006-01-02")+".log")
+	return filepath.Join(w.cfg.Target.LogDir, logPrefixForBinary(binPath)+logger.CTDate(t)+".log")
 }
 
 // fileSize is the size of path, 0 when absent (a log the new boot creates).
@@ -525,8 +596,15 @@ func (w *Worker) resumeProof(ctx context.Context, j updaterjob.Job, ev map[strin
 	// restart is a NEW connection: accept_seq is assigned per connection,
 	// so the resume demands an ack from a different connection than the one
 	// the park recorded (an F5 + NT8 restart reconnects the AddOn).
+	// W26 PART C (updater-addon-proof): that accept_seq proof is ONLY needed
+	// when the build id was NOT bumped. When it WAS (the install's old build
+	// differs from the manifest's), the acked build == manifest (checked above)
+	// already proves the AddOn was recompiled, so the same accept_seq is fine —
+	// the owner who F5'd the night before is not forced to restart NT8 again.
 	if j.NT8 != nil && j.NT8.CSUnchanged != nil && !*j.NT8.CSUnchanged && a.AcceptSeq == j.NT8.AckAcceptSeq {
-		return fmt.Errorf("the release's %s differs and the AddOn still runs on connection accept_seq=%d — copy it over, F5 and restart NT8, then resume", ninjascriptGlob, a.AcceptSeq)
+		if j.NT8.OldInstallBuildID == "" || j.NT8.OldInstallBuildID == j.NT8.ManifestBuildID {
+			return fmt.Errorf("the release's %s differs and the AddOn still runs on connection accept_seq=%d — copy it over, F5 and restart NT8, then resume", ninjascriptGlob, a.AcceptSeq)
+		}
 	}
 	return nil
 }

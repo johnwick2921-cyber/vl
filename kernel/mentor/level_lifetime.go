@@ -7,7 +7,10 @@ import (
 
 // LevelArmExpiry is THE lifetime of a level ("lvl-") arm (D2-44, item 11): the
 // first-touch order RESTS until the next 15:00 CT — the RTH window end — or an
-// earlier close-through cancel [D2.3 p1 @17:42–19:12]. One definition, read by
+// earlier close-through cancel. The 15:00 RTH-end lifetime is an INFERENCE from
+// the key-level RTH window end: no course timestamp states it (the former
+// [D2.3 p1 @17:42–19:12] was the first-touch reference rule, not an expiry).
+// One definition, read by
 // the trader's injector (mentorIntentExpiry) and by the leg budget's pend
 // simulation (Limits), so the budget never stops watching an order the broker
 // still holds.

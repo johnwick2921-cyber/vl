@@ -249,31 +249,16 @@ func TestStaleJobAtStartIsRecoveryNeededNeverResumed(t *testing.T) {
 	if resp := r.w.Handle(updaterwireStatusOf("")); resp.State != StatusStopped {
 		t.Fatalf("status = %+v, want stopped", resp)
 	}
-
-	// the same rule at the resume verb: a park older than 30 minutes
-	p := newRig(t, withCSChanged())
-	p.install()
-	if err := p.drive(); err != nil {
-		t.Fatal(err)
-	}
-	if j := p.job(); j.State != updaterjob.StateNT8Updated {
-		t.Fatalf("no park: %s", j.State)
-	}
-	p.clock.Advance(31 * time.Minute)
-	if resp := p.w.Handle(resumeRequest(boxJobID)); resp.OK || resp.Error != "stale job recovery needed" {
-		t.Fatalf("resume of a stale park = %+v", resp)
-	}
-	if j := p.job(); j.State != updaterjob.StateRecoveryNeeded || p.callCount("activate") != 0 {
-		t.Fatalf("stale park: %s, activate ran %d times", j.State, p.callCount("activate"))
-	}
 }
 
 // PIN (R-i; verifier D2 + mutants A49/A50): ready is re-proven before EVERY
 // step that changes something — the backup, the AddOn step, the activate on
 // the normal path, AND the activate re-run after a crash inside activated
 // (the resume path never passes through advance's R-i). The box stops being
-// ready at the named boundary; the change never happens, the job goes to
-// recovery_needed with this job's hold kept, and nothing is killed.
+// ready at the named boundary; the change never happens. Before activation the
+// job self-recovers to reverted_clean (hold + lock released, nothing killed);
+// the resumed activate keeps recovery_needed (the first attempt may have
+// swapped).
 func TestReadinessIsReprovedBeforeEveryChange(t *testing.T) {
 	for _, tc := range []struct {
 		at      string // the boundary where the box stops being ready
@@ -313,14 +298,25 @@ func TestReadinessIsReprovedBeforeEveryChange(t *testing.T) {
 			if r.callCount("activate") != 0 || r.callCount("rollback") != 0 {
 				t.Fatalf("a not-ready box was changed: calls %v", r.calls)
 			}
-			if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "ready") {
-				t.Fatalf("job ended %s (reason %q), want recovery_needed: ready not re-proven", j.State, j.RecoveryReason)
+			if tc.crash {
+				// The resumed activate re-proof failure is recovery_needed: the
+				// first attempt may have swapped, so self-recovery cannot say
+				// "nothing changed".
+				if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "ready") {
+					t.Fatalf("job ended %s (reason %q), want recovery_needed: ready not re-proven", j.State, j.RecoveryReason)
+				}
+				if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
+					t.Fatalf("the hold is %s, want this job's (kept at recovery_needed)", s)
+				}
+				return
 			}
-			if prev := j.Transitions[len(j.Transitions)-2].State; prev != tc.atState {
-				t.Fatalf("recovery_needed entered from %s, want from %s", prev, tc.atState)
+			// Before activation the re-proof failure self-recovers: the hold and
+			// lock are released, nothing was installed.
+			if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "ready") {
+				t.Fatalf("job ended %s (error %q), want reverted_clean: ready not re-proven", j.State, j.Error)
 			}
-			if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
-				t.Fatalf("the hold is %s, want this job's (kept at recovery_needed)", s)
+			if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldAbsent {
+				t.Fatalf("the hold is %s, want released (reverted_clean)", s)
 			}
 		})
 	}
@@ -357,40 +353,5 @@ func TestResumeAtRollingBackRereadsTheIdentity(t *testing.T) {
 	}
 	if j.State != updaterjob.StateRolledBack || *j.IdentityRollback != current {
 		t.Fatalf("resumed rollback ended %s with identity_rollback %v (error %q), want rolled_back re-read to %v", j.State, *j.IdentityRollback, j.Error, current)
-	}
-}
-
-// PIN (U4 re-verify note 5, mutant M8c): the runner re-checks the 30-minute
-// rule when it takes a resume off the park (C21) — not only the resume verb.
-// A verb accepted at 29 minutes whose job is 31 minutes old by the time the
-// runner acts is recovery_needed, never resumed, the hold kept.
-func TestAResumeTheRunnerTakesPastThirtyMinutesIsRecoveryNeeded(t *testing.T) {
-	r := newRig(t, withCSChanged())
-	r.install()
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	j := r.job()
-	if j.State != updaterjob.StateNT8Updated {
-		t.Fatalf("no park: %s", j.State)
-	}
-	r.clock.Advance(29*time.Minute - r.clock.Now().Sub(j.CreatedAt) - 3*time.Minute)
-	r.f5() // +3 minutes: the owner did the F5 — the resume proof WOULD pass
-	if age := r.clock.Now().Sub(j.CreatedAt); age >= updaterjob.MaxJobAge {
-		t.Fatalf("fixture: the job is %v old at the verb", age)
-	}
-	if resp := r.w.Handle(resumeRequest(boxJobID)); !resp.OK || resp.State != "resuming" {
-		t.Fatalf("resume verb at 29 minutes = %+v, want accepted", resp)
-	}
-	r.clock.Advance(2 * time.Minute) // the runner acts at 31 minutes
-	if err := r.drive(); err != nil {
-		t.Fatal(err)
-	}
-	j = r.job()
-	if j.State != updaterjob.StateRecoveryNeeded || !strings.Contains(j.RecoveryReason, "stale at resume") || r.callCount("activate") != 0 {
-		t.Fatalf("a resume taken past 30 minutes ended %s (reason %q), activate ran %d times", j.State, j.RecoveryReason, r.callCount("activate"))
-	}
-	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldOurs {
-		t.Fatalf("the hold is %s — recovery_needed never touches it", s)
 	}
 }

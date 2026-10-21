@@ -2,9 +2,11 @@ package manager
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 	"vl/config"
@@ -12,6 +14,7 @@ import (
 	"vl/logger"
 	"vl/safe"
 	"vl/store"
+	"vl/telemetry"
 	"vl/trader"
 )
 
@@ -20,6 +23,70 @@ func traderLogTag(traderID, traderName string) string {
 		return fmt.Sprintf("[trader_id=%s trader_name=%s]", traderID, traderName)
 	}
 	return fmt.Sprintf("[trader_id=%s]", traderID)
+}
+
+// bootSymbolAccountKey canonicalizes the (symbol, account) pair the boot dedup
+// keys on — the SAME normalization the provider's ordered-execution registry
+// uses (uppercase symbol, trimmed account), so the two guards agree on what
+// "same (symbol, account)" means.
+func bootSymbolAccountKey(symbol, account string) string {
+	return strings.ToUpper(strings.TrimSpace(symbol)) + "\x00" + strings.TrimSpace(account)
+}
+
+// bootClaimFor is the REL18-C boot-dedup DECISION: may traderCfg auto-start?
+// It records the (symbol, account) claim for the first trader (returns
+// refused=false) and refuses the second (returns the holder id, refused=true).
+// A nil claim map (per-user reload) or a non-NT/unbound trader always proceeds.
+func (tm *TraderManager) bootClaimFor(exchangeCfg *store.Exchange, traderCfg *store.Trader) (holderID string, refused bool) {
+	if tm.startPassClaims == nil || exchangeCfg.ExchangeType != "ninjatrader" || strings.TrimSpace(traderCfg.Account) == "" {
+		return "", false
+	}
+	key := bootSymbolAccountKey(exchangeCfg.NTInstrumentName, traderCfg.Account)
+	if holder, exists := tm.startPassClaims[key]; exists && holder != traderCfg.ID {
+		return holder, true
+	}
+	tm.startPassClaims[key] = traderCfg.ID
+	return "", false
+}
+
+// shouldAutoStart is the REL18-C item-5 gate addTraderFromStore calls before
+// auto-starting a trader marked running. At boot the first trader on a
+// (symbol, account) claims it and starts; a second is refused (not started,
+// marked not-running, P0). Returns false when the trader must NOT auto-start.
+func (tm *TraderManager) shouldAutoStart(exchangeCfg *store.Exchange, traderCfg *store.Trader, st *store.Store) bool {
+	if holder, refused := tm.bootClaimFor(exchangeCfg, traderCfg); refused {
+		tm.refuseBootDuplicate(traderCfg, exchangeCfg, holder, st)
+		return false
+	}
+	return true
+}
+
+// refuseBootDuplicate handles a REL18-C item-5 refusal: a second trader marked
+// running on an already-claimed (symbol, account) at boot is NOT auto-started.
+// It is loaded (stopped), marked not-running in the DB, and a P0 names both
+// traders. The boot line READS the resolved values (L7) — never asserts.
+func (tm *TraderManager) refuseBootDuplicate(traderCfg *store.Trader, exchangeCfg *store.Exchange, holderID string, st *store.Store) {
+	symbol := strings.TrimSpace(exchangeCfg.NTInstrumentName)
+	account := strings.TrimSpace(traderCfg.Account)
+	telemetry.IncGateBlock(traderCfg.ID, "boot_duplicate_symbol_account")
+	logger.Warnf("⛔ boot: trader %q (%s) NOT auto-started — %s / %s already claimed by trader %q at boot (one trader per symbol,account); marked not-running",
+		traderCfg.Name, traderCfg.ID, symbol, account, holderID)
+	if st != nil {
+		if _, err := st.Alert().Emit(&store.AlertDB{
+			TraderID:  traderCfg.ID,
+			Level:     "P0",
+			Kind:      "boot_duplicate_symbol_account",
+			EventID:   "boot-dup:" + bootSymbolAccountKey(symbol, account),
+			Title:     "Two traders bound to one account — the second was not started",
+			Body:      fmt.Sprintf("At boot, trader %q (%s) was not started because %s / %s is already owned by trader %q (one trader per symbol, account). It was marked not-running.", traderCfg.Name, traderCfg.ID, symbol, account, holderID),
+			CreatedAt: time.Now().Unix(),
+		}); err != nil {
+			logger.Warnf("⛔ boot: P0 alert EMIT failed for refused duplicate %q (%s): %v", traderCfg.Name, traderCfg.ID, err)
+		}
+		if err := st.Trader().UpdateStatus(traderCfg.UserID, traderCfg.ID, false); err != nil {
+			logger.Warnf("⛔ boot: failed to mark refused duplicate %q (%s) not-running: %v", traderCfg.Name, traderCfg.ID, err)
+		}
+	}
 }
 
 // CompetitionCache competition data cache
@@ -35,6 +102,12 @@ type TraderManager struct {
 	loadErrors       map[string]error              // key: trader ID, stores last load error
 	competitionCache *CompetitionCache
 	mu               sync.RWMutex
+	// startPassClaims is the REL18-C boot dedup: one (symbol, account) per
+	// auto-started trader. Key = bootSymbolAccountKey(symbol, account), value =
+	// the trader id that claimed it. nil = not in a boot pass (per-user reloads
+	// do NOT dedup — O3b/O2 own the runtime guard). Written only under tm.mu,
+	// which every loader holds for its whole pass.
+	startPassClaims map[string]string
 }
 
 // NewTraderManager creates a trader manager
@@ -151,17 +224,18 @@ func (tm *TraderManager) GetComparisonData() (map[string]interface{}, error) {
 		status := t.GetStatus()
 
 		traders = append(traders, map[string]interface{}{
-			"trader_id":       t.GetID(),
-			"trader_name":     t.GetName(),
-			"ai_model":        t.GetAIModel(),
-			"exchange":        t.GetExchange(),
-			"total_equity":    account["total_equity"],
-			"total_pnl":       account["total_pnl"],
-			"total_pnl_pct":   account["total_pnl_pct"],
-			"position_count":  account["position_count"],
-			"margin_used_pct": account["margin_used_pct"],
-			"call_count":      status["call_count"],
-			"is_running":      status["is_running"],
+			"trader_id":        t.GetID(),
+			"trader_name":      t.GetName(),
+			"ai_model":         t.GetAIModel(),
+			"exchange":         t.GetExchange(),
+			"total_equity":     account["total_equity"],
+			"total_pnl":        account["total_pnl"],
+			"total_pnl_source": account["total_pnl_source"],
+			"total_pnl_pct":    account["total_pnl_pct"],
+			"position_count":   account["position_count"],
+			"margin_used_pct":  account["margin_used_pct"],
+			"call_count":       status["call_count"],
+			"is_running":       status["is_running"],
 		})
 	}
 
@@ -285,6 +359,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           account["total_equity"],
 					"total_pnl":              account["total_pnl"],
+					"total_pnl_source":       account["total_pnl_source"],
 					"total_pnl_pct":          account["total_pnl_pct"],
 					"position_count":         account["position_count"],
 					"margin_used_pct":        account["margin_used_pct"],
@@ -301,6 +376,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           0.0,
 					"total_pnl":              0.0,
+					"total_pnl_source":       "unavailable",
 					"total_pnl_pct":          0.0,
 					"position_count":         0,
 					"margin_used_pct":        0.0,
@@ -318,6 +394,7 @@ func (tm *TraderManager) getConcurrentTraderData(traders []*trader.AutoTrader) [
 					"exchange":               trader.GetExchange(),
 					"total_equity":           0.0,
 					"total_pnl":              0.0,
+					"total_pnl_source":       "unavailable",
 					"total_pnl_pct":          0.0,
 					"position_count":         0,
 					"margin_used_pct":        0.0,
@@ -378,6 +455,11 @@ func (tm *TraderManager) RemoveTrader(traderID string) {
 	defer tm.mu.Unlock()
 
 	if t, exists := tm.traders[traderID]; exists {
+		// MENTOR-NY item 3: RETIRE first — an instance whose Run was spawned
+		// but has not claimed the trader yet (is_running still false: the
+		// 10-13 16:35:46 reload race) is refused when it gets there, so a
+		// removed instance can never run beside the one loaded after it.
+		t.Retire()
 		// Stop the trader if it's running (this ensures the goroutine exits)
 		status := t.GetStatus()
 		if isRunning, ok := status["is_running"].(bool); ok && isRunning {
@@ -393,6 +475,11 @@ func (tm *TraderManager) RemoveTrader(traderID string) {
 func (tm *TraderManager) LoadUserTradersFromStore(st *store.Store, userID string) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
+
+	// REL18-C: a per-user reload is NOT a boot pass — the runtime guards
+	// (O3b start duplicate + O2 ordered-owner) own dedup here, and the boot
+	// claim map must not leak stale claims from a prior boot.
+	tm.startPassClaims = nil
 
 	// Get all traders for the specified user
 	traders, err := st.Trader().List(userID)
@@ -493,6 +580,10 @@ func (tm *TraderManager) LoadTradersFromStore(st *store.Store) error {
 	tm.mu.Lock()
 	defer tm.mu.Unlock()
 
+	// REL18-C item 5: the boot pass claims one (symbol, account) per running
+	// trader, FIRST by created_at. The map is built during THIS pass only.
+	tm.startPassClaims = make(map[string]string)
+
 	// Get all users
 	userIDs, err := st.User().GetAllIDs()
 	if err != nil {
@@ -514,6 +605,13 @@ func (tm *TraderManager) LoadTradersFromStore(st *store.Store) error {
 	}
 
 	logger.Infof("📋 Total loaded trader configurations: %d", len(allTraders))
+
+	// REL18-C item 5: "the first by created_at" claims the (symbol, account).
+	// List() returns created_at DESC, so sort ASC here so the OLDEST trader
+	// wins the boot claim and a younger duplicate is the one refused.
+	sort.Slice(allTraders, func(i, j int) bool {
+		return allTraders[i].CreatedAt.Before(allTraders[j].CreatedAt)
+	})
 
 	// Get AI model and exchange configs for each trader
 	for _, traderCfg := range allTraders {
@@ -624,6 +722,16 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 		// more than one strategy is bound; this line is where each one reads.
 		logger.Infof("%s", trader.ReplanCapBootLine(strategyConfig.DayPlan))
 		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.BreakerBootLineForStrategy(strategyConfig))
+		// r22 RISK-GATES — what the daily-loss gate does for THIS strategy
+		// (OFF, or ENFORCED with its refuse/cancel/flatten/latch), READ from
+		// the resolver the gate runs.
+		// RT-2 (release #24): a held latch reads LATCHED, whatever the switches.
+		logger.Infof("🛑 [%s] %s", traderCfg.Name, trader.DailyLossGateBootLine(st, traderCfg.ID, strategyConfig, time.Now())) // N9 (release #26) — report-only: the two scopes the gate's legs read,
+		// so the owner sees the trader-wide loss leg vs the account-scoped
+		// trades/profit legs.
+		logger.Infof("📏 [%s] %s", traderCfg.Name, trader.DailyLossScopeBootLine(traderCfg.Account)) // Release #25 planner-knobs — the seven STRICT-12345 loss-fix
+		// switches for THIS strategy, each READ from its resolver + origin.
+		logger.Infof("🧱 [%s] %s", traderCfg.Name, store.PlannerKnobsBootLine(strategyConfig))
 		// W-KNOB-PRUNE (2026-09-18) — every folded knob whose STORED value
 		// differs from its constant, once, so a removed control never keeps
 		// a value silently.
@@ -722,22 +830,42 @@ func (tm *TraderManager) addTraderFromStore(traderCfg *store.Trader, aiModelCfg 
 
 	// Auto-start if trader was running before shutdown
 	if traderCfg.IsRunning {
+		// REL18-C item 5: at BOOT (startPassClaims != nil), one trader per
+		// (symbol, account). The first by created_at claims the pair; a second
+		// trader marked running on the same pair is refused (not auto-started,
+		// marked not-running, P0 + READ boot line). Per-user reloads skip this.
+		if !tm.shouldAutoStart(exchangeCfg, traderCfg, st) {
+			return nil
+		}
 		logger.Infof("%s 🔄 Auto-starting trader (was running before shutdown)...", traderLogTag(traderCfg.ID, traderCfg.Name))
 		safe.GoNet("trader-autostart", traderCfg.ID, func() {
-			trader := at
 			traderName := traderCfg.Name
 			traderID := traderCfg.ID
 			userID := traderCfg.UserID
-			if err := trader.Run(); err != nil {
-				logger.Warnf("%s trader stopped with error: %v", traderLogTag(traderID, traderName), err)
-				// Update database to reflect stopped state
-				if st != nil {
-					_ = st.Trader().UpdateStatus(userID, traderID, false)
-				}
+			if err := at.Run(); err != nil {
+				tm.handleAutoStartRunError(st, traderID, userID, traderName, err)
 			}
 		})
 		logger.Infof("%s ✅ Trader auto-started successfully", traderLogTag(traderCfg.ID, traderCfg.Name))
 	}
 
 	return nil
+}
+
+// handleAutoStartRunError is the SINGLE place the auto-start decides whether a
+// Run error clears is_running. FIX-RUNNING-FLAG: ErrTraderAlreadyRunning (a
+// duplicate self-start — the trader is already running in memory) is a NO-OP and
+// must never write is_running=0 over the live instance; any other error clears
+// it, as before.
+func (tm *TraderManager) handleAutoStartRunError(st *store.Store, traderID, userID, traderName string, runErr error) {
+	if errors.Is(runErr, trader.ErrTraderAlreadyRunning) {
+		return
+	}
+	logger.Warnf("%s trader stopped with error: %v", traderLogTag(traderID, traderName), runErr)
+	// Update database to reflect stopped state
+	if st != nil {
+		if serr := st.Trader().UpdateStatus(userID, traderID, false); serr != nil {
+			logger.Warnf("%s failed to mark trader not-running after it stopped with error: %v", traderLogTag(traderID, traderName), serr)
+		}
+	}
 }

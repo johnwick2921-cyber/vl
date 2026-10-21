@@ -33,9 +33,7 @@ func swingTape(t *testing.T, cur []market.Kline) []market.Kline {
 	return append(closed, cur...)
 }
 
-const swingLineGolden = 10168.16 // EMA 34 of 10000/11000/12000 ≈ 10168.1633
-
-// TestSwing4hRejectShort — resistance: price came from BELOW, the first
+const swingLineGolden = 10168.16 // EMA 34 of 10000/11000/12000 ≈ 10168.1633// TestSwing4hRejectShort — resistance: price came from BELOW, the first
 // touching 5m candle closes BACK below the line → sell stop tight on the
 // reference candle's low (R8: no buffer), stop ~30 pts above the line
 // [D5.2 p3 @ 21:30 corrected; table "Stop (clean rejection)"; R8].
@@ -134,13 +132,10 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
-	if len(out) != 2 {
-		t.Fatalf("intents = %d, want cancel + ISB entry; got %+v", len(out), out)
+	if len(out) != 1 {
+		t.Fatalf("intents = %d, want just the ISB entry (no empty-ArmID cancel for a through-close with nothing resting); got %+v", len(out), out)
 	}
-	if out[0].Action != CancelArm {
-		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
-	}
-	in := out[1]
+	in := out[0]
 	if in.Action != PlaceStopEntry || in.Side != SideShort {
 		t.Fatalf("ISB intent = %+v, want a SHORT stop entry", in)
 	}
@@ -169,13 +164,10 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
-	if len(out) != 2 {
-		t.Fatalf("intents = %d, want cancel + ISB entry (the watch is not 2-candle limited); got %+v", len(out), out)
+	if len(out) != 1 {
+		t.Fatalf("intents = %d, want just the ISB entry (the watch is not 2-candle limited; no empty-ArmID cancel); got %+v", len(out), out)
 	}
-	if out[0].Action != CancelArm {
-		t.Fatalf("first intent = %+v, want CancelArm for the through-close", out[0])
-	}
-	in := out[1]
+	in := out[0]
 	if in.Action != PlaceStopEntry || in.Side != SideLong {
 		t.Fatalf("ISB intent = %+v, want a LONG stop entry (support close-back)", in)
 	}
@@ -350,8 +342,8 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	if entries != 1 {
 		t.Fatalf("stop entries = %d, want 1 (the invalid level refuses the later below-line touch); got %+v", entries, out)
 	}
-	if cancels != 1 {
-		t.Fatalf("cancels = %d, want 1 (the through-cross back); got %+v", cancels, out)
+	if cancels != 0 {
+		t.Fatalf("cancels = %d, want 0 (the through-cross back has nothing resting — no empty-ArmID cancel); got %+v", cancels, out)
 	}
 }
 
@@ -427,6 +419,123 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	}
 }
 
+// TestSwingRebuildPosResumesBEAndHold — FIX-SWING-RESTART: a FILLED swing
+// restored from durable records via RebuildSwingPos resumes break-even at +1R
+// and the hold-close at the 2nd 4h candle after entry. The BE/hold management
+// runs only because RebuildSwingPos set Pos — a mutant that drops the restore
+// leaves Pos nil and this turns RED.
+func TestSwingRebuildPosResumesBEAndHold(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil) // 3 closed 4h buckets (17:00/21:00/01:00)
+	s := &SwingState{}
+	// establish the warm line + LastBarTime from the closed buckets
+	now0 := base[len(base)-1].OpenTime + 60_000
+	_ = SwingTick(s, base, cfg, now0)
+	if s.Line == 0 {
+		t.Fatal("fixture: the swing line must be established")
+	}
+	// a FILLED long swing the trader proved from durable records:
+	// entry 10110, original stop 10050 (risk 60), entry in the 05:00 bucket.
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-rebuilt"}) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// a 5m close at +1R (>= 10170) → break-even
+	beBars := append(base, mk5m(t, 15, 5, 5, 10180, 10190, 10175, 10185))
+	out := SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
+	var be bool
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			be = true
+			if in.ArmID != "swing-rebuilt" {
+				t.Fatalf("BE intent ArmID = %q, want swing-rebuilt", in.ArmID)
+			}
+		}
+	}
+	if !be {
+		t.Fatalf("no BE intent after the rebuild; got %+v", out)
+	}
+	// advance past entryBucket + 2*4h (05:00 + 8h = 13:00) → hold-close
+	late := append(beBars, mk5m(t, 15, 13, 5, 10180, 10190, 10175, 10185))
+	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatalf("no close at the hold limit after the rebuild; got %+v", out2)
+	}
+}
+
+// TestSwingRebuildPosAlreadyAtBESendsNoSecondBE — FIX-SWING-RESTART fold M2: a
+// swing whose live NT8 stop is already at entry (MovedBE true) must NOT get a
+// second ActionMoveStopBE after a restart, even on a +1R close. A mutant that
+// forces MovedBE false in RebuildSwingPos re-sends the BE and this turns RED.
+func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10110, Target: 10250, EntryBucket: fourHBucketStart(entryBar.OpenTime, nil), ArmID: "swing-be-done", MovedBE: true}) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// a 5m close well past +1R (>= 10170) must NOT re-send the BE
+	beBars := append(base, mk5m(t, 15, 5, 5, 10180, 10190, 10175, 10185))
+	out := SwingTick(s, beBars, cfg, beBars[len(beBars)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			t.Fatalf("a swing already at break-even must not re-send MoveStopBE; got %+v", out)
+		}
+	}
+}
+
+// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3: the hold-close
+// fires at the END of the 4h candle after the entry candle, not before. The
+// entry bar sits LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so
+// the bucket math — not a round number — decides the boundary: no close on the
+// last 5m bar before bucket+2×4h (12:55), close ON the first bar at/after it
+// (13:00). A mutant that shifts EntryBucket one 4h candle late misses the 13:00
+// close and this turns RED.
+func TestSwingRebuildPosHoldBoundary(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	// 08:55 is 3h55m into the 05:00 bucket — the entry bucket is 05:00, NOT 08:00.
+	entryBar := mk5m(t, 15, 8, 55, 10100, 10120, 10090, 10110)
+	entryBucket := fourHBucketStart(entryBar.OpenTime, nil)
+	if entryBucket != mk5m(t, 15, 5, 0, 0, 0, 0, 0).OpenTime {
+		t.Fatalf("08:55 must resolve to the 05:00 bucket, got %d", entryBucket)
+	}
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
+		t.Fatal("RebuildSwingPos refused a valid swing")
+	}
+	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
+	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
+	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionClosePosition {
+			t.Fatalf("no hold-close before the boundary; got %+v", out)
+		}
+	}
+	// the FIRST bar at/after the boundary: 13:00 → close
+	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
+	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			closed = true
+		}
+	}
+	if !closed {
+		t.Fatalf("hold-close must fire on the first bar at/after the boundary; got %+v", out2)
+	}
+}
+
 // TestSwingNeverFillsSendsNoManage (S1 pin, production call site SwingTick):
 // a swing intent that never fills must never send MoveStopBE / ClosePosition —
 // the hold close is a phantom that would flatten a DIFFERENT mentor position on
@@ -484,5 +593,40 @@ func TestSwingNeverFillsSendsNoManage(t *testing.T) {
 	}
 	if s.Pos != nil {
 		t.Fatalf("the unfilled swing must not open a position across the hold, got %+v", s.Pos)
+	}
+}
+
+// TestSwingMinStopKnobDefaultOff (W26 P2-4) — the degenerate-geometry floor is
+// OFF by default (R5): the course states no minimum, only the 100-pt ceiling and
+// "a stop near 100 → don't enter".
+func TestSwingMinStopKnobDefaultOff(t *testing.T) {
+	if DefaultSwingCfg().MinStopPts != 0 {
+		t.Fatalf("MinStopPts must default 0 (OFF), got %v", DefaultSwingCfg().MinStopPts)
+	}
+}
+
+// TestSwingMinStopRefusesDegenerate (W26 P2-4) — with the knob ON, a clean-
+// rejection stop narrower than the floor is refused; with the knob OFF (0) the
+// same geometry still emits (today's behaviour). Mutant: delete the
+// `if cfg.MinStopPts > 0 && abs(...)` check in swingRejectIntent → this test
+// goes RED on the ON half.
+func TestSwingMinStopRefusesDegenerate(t *testing.T) {
+	ref := mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160) // closes back below the line
+	line := swingLineGolden                              // ≈ 10168.16
+
+	// OFF (0): the stop ≈ line+30 − ref.Low ≈ 38 pts emits.
+	off, ok := swingRejectIntent(SideShort, ref, line, DefaultSwingCfg())
+	if !ok {
+		t.Fatalf("MinStopPts=0 must not refuse (OFF = today), got %+v", off)
+	}
+
+	// ON (50): a ~38-pt stop is below the floor → refused.
+	on := DefaultSwingCfg()
+	on.MinStopPts = 50
+	if _, ok := swingRejectIntent(SideShort, ref, line, on); ok {
+		t.Fatalf("MinStopPts=50 must refuse a stop narrower than 50 pts")
+	}
+	if SwingMinStopRefused() == 0 {
+		t.Fatalf("the min-stop refusal must be counted")
 	}
 }

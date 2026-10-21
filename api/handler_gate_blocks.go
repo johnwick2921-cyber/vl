@@ -50,7 +50,29 @@ func (s *Server) handleGateBlocks(c *gin.Context) {
 		"session_day_utc": sessionDayUTC,
 		"summary":         telemetry.GateBlockDailySummary(),
 		"by_trader":       table,
+		// STALLED-SETUP ALARM (release #22): the per-trader per-mentor-setup-kind
+		// seen-vs-placed tally (emitted vs reached the ledger), same session-day
+		// rollover. Read-only — the alert is the writer, never the API.
+		"setup_stalls": telemetrySetupStallTable(c),
 	})
+}
+
+// telemetrySetupStallTable renders the stalled-setup snapshot scoped the same
+// way as the gate-block table: full when no trader_id is given, else that
+// trader only. An empty table is [] (computed empty, never nil).
+func telemetrySetupStallTable(c *gin.Context) map[string]map[string]telemetry.SetupStallCount {
+	_, table := telemetry.SetupStallSnapshot()
+	if table == nil {
+		table = map[string]map[string]telemetry.SetupStallCount{}
+	}
+	if tid := c.Query("trader_id"); tid != "" {
+		scoped := map[string]map[string]telemetry.SetupStallCount{}
+		if v, ok := table[tid]; ok {
+			scoped[tid] = v
+		}
+		table = scoped
+	}
+	return table
 }
 
 // P0-cleanup (2026-08-19) — the ONE error surface: structured error events

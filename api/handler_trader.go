@@ -11,6 +11,8 @@ import (
 	"vl/logger"
 	"vl/safe"
 	"vl/store"
+	"vl/telemetry"
+	traderpkg "vl/trader"
 
 	"github.com/gin-gonic/gin"
 	"gorm.io/gorm"
@@ -19,6 +21,13 @@ import (
 const (
 	maxManualAltLeverage = 20
 )
+
+// traderStartReadyTimeout bounds how long handleStartTrader waits for Run's
+// ordered-install verdict before answering 200 (REL18-C FOLD). The install is a
+// local registry write, so it completes in milliseconds; the bound exists so a
+// slow setup can never turn a start into an indefinite HTTP hold. Not a sleep —
+// a select deadline on the ready channel.
+const traderStartReadyTimeout = 5 * time.Second
 
 // AI trader management related structures
 type CreateTraderRequest struct {
@@ -705,6 +714,24 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		return
 	}
 
+	// REL18-C O3b — one trader per (symbol, account): refuse to start when
+	// ANOTHER RUNNING trader already holds the same (symbol, account). This is
+	// the fail-closed mirror of the ordered-execution owner conflict (O2), and
+	// it fires BEFORE any load/start so the DB is never marked running.
+	if fullCfg != nil && fullCfg.Exchange != nil && fullCfg.Trader != nil {
+		symbol := strings.TrimSpace(fullCfg.Exchange.NTInstrumentName)
+		account := strings.TrimSpace(fullCfg.Trader.Account)
+		if otherID, otherName, ok := s.runningTraderOnSameSymbolAccount(userID, traderID, symbol, account); ok {
+			telemetry.IncGateBlock(traderID, "trader_start_duplicate_symbol_account")
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Trader %q is already running on %s / %s — stop it before starting %q on the same (symbol, account).",
+					otherName, symbol, account, traderName),
+				"trader.start.duplicate_symbol_account",
+				mapStringPairs("trader_name", traderName, "other_trader", otherName, "other_trader_id", otherID, "symbol", symbol, "account", account))
+			return
+		}
+	}
+
 	// Check if trader exists in memory and if it's running
 	existingTrader, _ := s.traderManager.GetTrader(traderID)
 	if existingTrader != nil {
@@ -768,18 +795,46 @@ func (s *Server) handleStartTrader(c *gin.Context) {
 		return
 	}
 
+	// REL18-C FOLD — the ordered-install verdict handshake: Run reports nil once
+	// the ordered execution is installed, or the O2 refusal error. Read the
+	// channel BEFORE spawning so both share it; no sleeps-as-sync.
+	ready := trader.RunReadyChan()
+
+	// Mark running BEFORE spawning Run so any later self-refusal (O2 ordered
+	// owner, grid-init error, load error) writes AFTER and always wins the DB
+	// bit — a refused start must never read as running.
+	if err := s.store.Trader().UpdateStatus(userID, traderID, true); err != nil {
+		logger.Warnf("⚠️  Failed to mark trader %s running before start: %v", trader.GetName(), err)
+	}
+
 	// Start trader
 	safe.GoNet("trader-start", traderID, func() {
 		logger.Infof("▶️  Starting trader %s (%s)", traderID, trader.GetName())
 		if err := trader.Run(); err != nil {
+			// FIX-RUNNING-FLAG: a duplicate self-start (already running in
+			// memory) is a NO-OP, not a runtime error.
+			if errors.Is(err, traderpkg.ErrTraderAlreadyRunning) {
+				logger.Infof("🔄 Trader %s is already running — duplicate start ignored", trader.GetName())
+				return
+			}
 			logger.Infof("❌ Trader %s runtime error: %v", trader.GetName(), err)
 		}
 	})
 
-	// Update running status in database
-	err = s.store.Trader().UpdateStatus(userID, traderID, true)
-	if err != nil {
-		logger.Infof("⚠️  Failed to update trader status: %v", err)
+	// Keep the response honest: if Run's ordered install was refused before the
+	// handler returns, answer 409, not "Trader started". A bounded wait only —
+	// if Run has not reached the install yet, the start is assumed to proceed
+	// and the self-refusal above still corrects the DB bit asynchronously.
+	select {
+	case rerr := <-ready:
+		if rerr != nil {
+			SafeConflictWithDetails(c,
+				fmt.Sprintf("Start refused: %s", rerr.Error()),
+				"trader.start.ordered_owner_conflict",
+				mapStringPairs("trader_name", traderName, "trader_id", traderID))
+			return
+		}
+	case <-time.After(traderStartReadyTimeout):
 	}
 
 	logger.Infof("✓ Trader %s started", trader.GetName())

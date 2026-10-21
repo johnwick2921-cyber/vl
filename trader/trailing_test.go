@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	"vl/store"
+	ntTrader "vl/trader/ninjatrader"
 )
 
 // 3B.4 — LONG and SHORT ratchet math (units: price points at every layer).
@@ -136,5 +137,79 @@ func TestTrailingFieldsSurviveStrategyCodec(t *testing.T) {
 	if !hlBool(rc.TrailingEnabled, false) || rc.TrailingATRMult != 2.5 || rc.TrailingATRPeriod != 21 ||
 		rc.TrailingArm != TrailArmAfterPoints || rc.TrailingArmPoints != 35 {
 		t.Errorf("trailing fields lost in the ai_config codec round-trip: %+v", rc)
+	}
+}
+
+// trailCallSiteTrader builds the SAME armed trailing config for both sides of
+// the mentor-mode gate: trailing ENABLED + arm=immediate so the mentor-OFF twin
+// provably moves the stop through moveStopWire.
+func trailCallSiteTrader(mentorOn bool) *AutoTrader {
+	return &AutoTrader{
+		id:       "trail-gate",
+		exchange: "ninjatrader",
+		trader:   &ntTrader.TCPTrader{},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
+			RiskControl: store.RiskControlConfig{
+				MentorMode:       mentorOn,
+				TrailingEnabled:  bp(true),
+				TrailingArm:      TrailArmImmediate,
+				TrailingATRMult:  2.0,
+				TrailingATRPeriod: 14,
+			},
+		}},
+	}
+}
+
+// TestTrailBlockedInMentorMode (FIX-AUTOBE-OFF-IN-MENTOR, owner ruling
+// 2026-10-09): with mentor mode ON the AI-era trail must NOT move a mentor-owned
+// stop. RED (named): delete the mentorEnabled check in maybeTrailStop and
+// moveStopWire fires.
+func TestTrailBlockedInMentorMode(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0") // seam open: removing the mentor gate must make this MOVE (the RED)
+	restore := a3WireBars()
+	defer restore()
+
+	at := trailCallSiteTrader(true)
+	oldWire := moveStopWire
+	moved := false
+	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
+		moved = true
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+
+	at.maybeTrailStop("MNQ", "LONG", 29600, 29700)
+	if moved {
+		t.Fatal("mentor mode ON: the AI-era trail must NOT move the stop")
+	}
+	if len(at.trailStates) != 0 {
+		t.Fatalf("mentor mode ON: the trail must create no state, got %d", len(at.trailStates))
+	}
+}
+
+// TestTrailFiresWhenMentorModeOff — mentor OFF keeps the trail byte-identical:
+// the SAME armed config moves the stop through moveStopWire (so the blocked
+// test above cannot pass on an empty trail path).
+func TestTrailFiresWhenMentorModeOff(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	restore := a3WireBars()
+	defer restore()
+
+	at := trailCallSiteTrader(false)
+	oldWire := moveStopWire
+	var movedTo []float64
+	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error {
+		movedTo = append(movedTo, newStop)
+		return nil
+	}
+	t.Cleanup(func() { moveStopWire = oldWire })
+
+	at.maybeTrailStop("MNQ", "LONG", 29600, 29700)
+	if len(movedTo) != 1 {
+		t.Fatalf("mentor OFF: the armed trail must move the stop once; got %v", movedTo)
+	}
+	// LONG trail = best − mult×ATR, strictly below best (29700) and above 0.
+	if movedTo[0] <= 0 || movedTo[0] >= 29700 {
+		t.Fatalf("mentor OFF: trail level %.2f out of range (0, 29700)", movedTo[0])
 	}
 }

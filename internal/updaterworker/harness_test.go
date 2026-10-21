@@ -15,9 +15,11 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/internal/updaterjob"
 	"vl/internal/updaterwire"
+	"vl/logger"
 	"vl/store"
 )
 
@@ -76,6 +78,7 @@ type box struct {
 	clock *fakeClock
 
 	inst, data, relDir, backupRoot string
+	nt8docs                        string // fake Documents/NinjaTrader 8 (bin/Custom), for the one-click AddOn seam
 
 	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
 	relBinName string // the release dir's binary basename (defaults to binName)
@@ -92,30 +95,52 @@ type box struct {
 	lockAcquireErr      error
 
 	// knobs
-	flat             bool
-	addonConnected   bool
-	pollHook         func() // run at every fake-host sleep boundary (planner-wait tests)
-	addonBuild       string // what the running AddOn reports
-	manifestBuild    string // the signed manifest's addon.build_id
-	refuseBoot       map[string]bool
-	watchFail        map[string]bool
-	rollbackFail     bool
-	rollbackDistFail bool // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
-	badToken         bool // the app refuses the token (401)
-	verdictMissing   bool
-	holdWriteLies    bool          // the hold write lands on disk, then errs (U1 item 9)
-	holdWriteFails   bool          // the hold write errs before anything lands
-	ackStale         bool          // the AddOn's last ack is 20 s old
-	ackJob           string        // the AddOn acks this job id instead of the hold's
-	addonSeq         uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
-	exe              string        // /proc/<MainPID>/exe, when not the install's binary
-	healthRev        string        // /api/health serves this revision instead of the running sha
-	ackLag           time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
-	wallStep         time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
-	maintJob         string        // /api/maintenance names this job instead of the hold's
-	echo500          bool          // the authed endpoints answer 500 echoing the request's Authorization header
-	noCS             bool          // the signed manifest lists no ninjascript/*.cs
-	reverifyTamper   func(*ReleaseFacts)
+	flat                    bool
+	addonConnected          bool
+	pollHook                func()          // run at every fake-host sleep boundary (planner-wait tests)
+	driveCtx                context.Context // non-nil overrides the drive context (cancellation pins)
+	addonBuild              string          // what the running AddOn reports
+	manifestBuild           string          // the signed manifest's addon.build_id
+	refuseBoot              map[string]bool
+	watchFail               map[string]bool
+	rollbackFail            bool
+	rollbackDistFail        bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail        bool   // fakeHost.AddonRestore returns an error
+	noReconnect             bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
+	reconnectSameSeq        bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
+	reconnectOldBuild       bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
+	noRollbackReconnect     bool   // F2: the AddOn does NOT come back after the rollback's second restart
+	addonBuildBeforeRestart string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
+	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
+	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
+	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	startDoesNotBringUp     bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
+	startDelayPolls         int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
+	startDelayRemaining     int    // runtime countdown for startDelayPolls
+	startProbeError         bool   // tasklist errors once after Start-Process (process probe error)
+	startProbeFails         bool   // runtime one-shot for startProbeError
+	startFails              bool   // Start-Process itself returns an error (start command fails)
+	exitWaitProbeError      bool   // tasklist errors once during the exit-wait linger (after the stop)
+	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
+	nt8LingerLeft           int    // the remaining linger polls
+	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
+	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
+	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
+	badToken                bool   // the app refuses the token (401)
+	verdictMissing          bool
+	holdWriteLies           bool          // the hold write lands on disk, then errs (U1 item 9)
+	holdWriteFails          bool          // the hold write errs before anything lands
+	ackStale                bool          // the AddOn's last ack is 20 s old
+	ackJob                  string        // the AddOn acks this job id instead of the hold's
+	addonSeq                uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
+	exe                     string        // /proc/<MainPID>/exe, when not the install's binary
+	healthRev               string        // /api/health serves this revision instead of the running sha
+	ackLag                  time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
+	wallStep                time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
+	maintJob                string        // /api/maintenance names this job instead of the hold's
+	echo500                 bool          // the authed endpoints answer 500 echoing the request's Authorization header
+	noCS                    bool          // the signed manifest lists no ninjascript/*.cs
+	reverifyTamper          func(*ReleaseFacts)
 
 	// UPDATER-NT8-CLOSED knobs
 	addonDownSince time.Duration // >0: the AddOn is disconnected this long (stamped on the fake server's record); the ack is nil and the fake gate attaches its nt8_absent view
@@ -123,6 +148,7 @@ type box struct {
 	absentQueued   int           // nt8_absent leg: queued_signals
 	absentPlanner  bool          // nt8_absent leg: a planner read is in flight
 	absentSim      bool          // nt8_absent leg: the bound account is SIM-tradeable
+	simTradeable   bool          // main-view sim_accounts leg: every bound account is SIM-tradeable (guard #1)
 	absentDbOpen   bool          // nt8_absent leg: an OPEN trader_positions row (the CTO P1 leg)
 	cutoverStale   bool          // P-D ruling item 3: the trader_cutover leg fails with the
 	// production "working_orders: snapshot stale" shape when the
@@ -144,6 +170,25 @@ type box struct {
 	rollbackIDs []Identity
 	rollbackAtt []int   // the job's attempts on disk at each RollbackTo call
 	ackAges     []int64 // every ack age the worker observed, in order
+
+	// W-ADDON-ONE-CLICK self-recovery seam
+	addonRestoreCalls []string
+	addonRestoreErr   error
+
+	// W-FRIEND-HOSTED Segment 5 friend seams
+	friendRegistry      string            // the friends.json bytes ("" = no registry file)
+	friendWebPorts      map[string]int    // name → web_port (the flat probe's baseURL reverse-map)
+	friendFlat          map[string]bool   // name → the flat probe's first answer
+	friendTraders       map[string]int    // name → the traders count the flat reply reports (R11)
+	friendHasTraders    map[string]bool   // name → whether the flat reply carries "traders" (R11)
+	friendFlatAfter     map[string]int    // name → after this many flat probes, flip to true (deferred → flat)
+	friendFlatProbes    map[string]int    // name → count of flat probes
+	friendBootResults   map[string][]bool // name → boot OK answers in order (one per restart)
+	friendBootRev       map[string]string // name → the rev a successful boot reports
+	friendRestartCalls  map[string]int    // name → restart count
+	friendRestartErr    map[string]error  // name → restart error (consumed once)
+	friendBootErr       map[string]error  // name → boot check error (consumed once)
+	friendNotifications []string          // every Notify text, in order
 }
 
 // rig is one worker on one box.
@@ -188,7 +233,20 @@ func withReleaseBinary(binName string) rigOpt {
 func withCSChanged() rigOpt {
 	return func(b *box) {
 		writeFile(b.t, filepath.Join(b.relDir, "ninjascript", "VLTrader.cs"), "// C# v2\n")
+		writeFile(b.t, filepath.Join(b.relDir, "ninjascript", "VLTraderTCPClient.cs"), "// C# v2\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
 		b.manifestBuild = boxNewBuild
+	}
+}
+
+// withStaleAddon (feat/addon-catchup) makes the INSTALLED release ship the NEW
+// AddOn build while NT8 still runs the OLD one — the state the catch-up exists
+// to fix. The fake reports the install's build after the catch-up restart.
+func withStaleAddon() rigOpt {
+	return func(b *box) {
+		writeFile(b.t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"),
+			"// C#\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
+		b.addonBuild = boxOldBuild // NT8 still runs the OLD AddOn
+		b.catchupBuild = boxNewBuild
 	}
 }
 
@@ -200,18 +258,42 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(root) })
 	b := &box{
-		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, time.Local)},
+		t: t, clock: &fakeClock{t: time.Date(2026, 9, 24, 10, 0, 0, 0, logger.CTLocation())},
 		inst: filepath.Join(root, "vl"), backupRoot: filepath.Join(root, "vl-backups", "updater"),
 		binName: "vl-bin",
 		id:      Identity{PID: 4242, StartTicks: 1000}, running: boxOld,
 		flat: true, addonConnected: true, addonBuild: boxOldBuild, manifestBuild: boxOldBuild,
-		absentSim:  true,
-		refuseBoot: map[string]bool{}, watchFail: map[string]bool{},
+		absentSim:    true,
+		simTradeable: true,
+		nt8Running:   true,
+		refuseBoot:   map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
 	b.relDir = filepath.Join(root, "releases", boxNew)
+	// the one-click AddOn build/place/restart seam: a fake NT8 docs dir with
+	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
+	b.nt8docs = filepath.Join(root, "nt8docs")
+	t.Setenv("VL_NT8_DOCS_DIR", b.nt8docs)
+	// Hermetic Windows tools on PATH (W-UPDATER-WINPATH CI fix): addonbuild.Build
+	// resolves a bare powershell.exe / dotnet.exe through exec.LookPath BEFORE
+	// invoking the runWin seam. On a Linux box with no /mnt/c mount that lookup
+	// misses and the fixed WSL mount does not exist, so the build fails before
+	// the fake seam is reached. Provide harmless executables on PATH so the
+	// production resolution finds them and the fake seam runs — never a real
+	// Windows binary.
+	winTools := filepath.Join(root, "wintools")
+	if err := os.MkdirAll(winTools, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	for _, tool := range []string{"powershell.exe", "dotnet.exe"} {
+		if err := os.WriteFile(filepath.Join(winTools, tool), []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	t.Setenv("PATH", winTools+string(os.PathListSeparator)+os.Getenv("PATH"))
+	writeFile(t, filepath.Join(b.nt8docs, "bin", "Custom", ".keep"), "")
 	// the running install (a checkout at boxOld)
 	writeFile(t, filepath.Join(b.inst, b.binName), binaryBody(boxOld))
 	writeFile(t, filepath.Join(b.inst, "deploy", "RELEASE"), boxOld+"\n")
@@ -219,6 +301,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	writeFile(t, filepath.Join(b.inst, "web", "dist", "assets", "app.js"), "old();\n")
 	writeFile(t, filepath.Join(b.inst, calendarFile), "[]\n")
 	writeFile(t, filepath.Join(b.inst, "ninjascript", "VLTrader.cs"), "// C# v1\n")
+	writeFile(t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"), "// C# v1\nprivate const string VL_BUILD_ID = \""+boxOldBuild+"\";\n")
 	writeFile(t, filepath.Join(b.data, "data.db"), "SQLite format 3\x00 fake\n")
 	// the materialized release (activation layout)
 	writeFile(t, filepath.Join(b.relDir, b.binName), binaryBody(boxNew))
@@ -226,6 +309,7 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	writeFile(t, filepath.Join(b.relDir, "web", "dist", "index.html"), "<html>new</html>\n")
 	writeFile(t, filepath.Join(b.relDir, calendarFile), "[]\n")
 	writeFile(t, filepath.Join(b.relDir, "ninjascript", "VLTrader.cs"), "// C# v1\n")
+	writeFile(t, filepath.Join(b.relDir, "ninjascript", "VLTraderTCPClient.cs"), "// C# v1\nprivate const string VL_BUILD_ID = \""+boxOldBuild+"\";\n")
 	writeFile(t, filepath.Join(b.relDir, "manifest.json"), fmt.Sprintf(`{"source_sha":%q,"binary_md5":"","signature_verdict":"sshsig:release:SHA256:fake"}`, boxNew))
 	for _, o := range opts {
 		o(b)
@@ -278,8 +362,8 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 	clearMaintenanceHold = func(d, job string) error {
 		// a re-run clear (crash after the first) finds it already absent:
 		// ours or absent, never another's
-		b.expect("hold_clear", false, updaterjob.StateComplete, updaterjob.StateRolledBack)
-		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs && s != HoldAbsent {
+		b.expectJob("hold_clear", job, false, updaterjob.StateComplete, updaterjob.StateRolledBack, updaterjob.StateRevertedClean)
+		if s, _ := ReadHoldFor(b.data, job); s != HoldOurs && s != HoldAbsent {
 			b.violate("hold_clear with a %s hold on disk", s)
 		}
 		return origC(d, job)
@@ -293,7 +377,179 @@ func (r *rig) newWorker() *Worker {
 	if err != nil {
 		r.t.Fatal(err)
 	}
+	w.runWin = r.box.fakeRunWin
 	return w
+}
+
+// fakeRunWin plays powershell.exe, dotnet.exe and tasklist.exe on Linux
+// (W-ADDON-ONE-CLICK): the no-SDK ps1 build "compiles" by writing a
+// VL.AddOn.dll carrying the AddOn type into the -Out dir; a dotnet build does
+// the same into the -o dir (the fallback, only when the ps1 path is made to
+// fail); tasklist reports whether the fake NT8 process is alive; the
+// powershell CloseMainWindow / Stop-Process / Start-Process commands model the
+// restart seam — a graceful close EXITS the fake NT8 and drops its census ack.
+// No test ever execs a real Windows binary.
+func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]byte, error) {
+	// GAP 2: the PRIMARY build path is build-addon.ps1 via powershell.exe.
+	if strings.Contains(name, "powershell") && winFlag(args, "-Out") != "" {
+		out := winFlag(args, "-Out")
+		wsl := windowsToWSL(out)
+		if err := os.MkdirAll(wsl, 0o755); err != nil {
+			return nil, err
+		}
+		if hasWinFlag(args, "-Custom") {
+			// Release #35: the no-F5 Custom.dll rebuild — write a clean
+			// Custom.dll (no AddOn type) and report the type-list accept.
+			writeFile(b.t, filepath.Join(wsl, "NinjaTrader.Custom.dll"), "fake rebuilt Custom.dll: no AddOn type\n")
+			return []byte("VL_CUSTOM_TYPES_OK\nVL_CUSTOM_DLL=" + out + "\\NinjaTrader.Custom.dll\nVL_CUSTOM_SHA256=fake\n"), nil
+		}
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
+	}
+	if strings.Contains(name, "dotnet") {
+		out := winFlag(args, "-o")
+		wsl := windowsToWSL(out)
+		if err := os.MkdirAll(wsl, 0o755); err != nil {
+			return nil, err
+		}
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
+	}
+	if strings.Contains(name, "tasklist") {
+		b.mu.Lock()
+		if b.startProbeFails {
+			b.startProbeFails = false
+			b.mu.Unlock()
+			return nil, errors.New("fake tasklist probe error")
+		}
+		if !b.nt8Running && b.nt8LingerLeft > 0 && b.exitWaitProbeError {
+			b.exitWaitProbeError = false // one-shot
+			b.mu.Unlock()
+			return nil, errors.New("fake tasklist probe error during exit wait")
+		}
+		running := b.nt8Running
+		if running && b.startDelayRemaining > 0 {
+			// Delayed healthy start: Start-Process launched it, but tasklist
+			// does not see the process for the first N polls.
+			b.startDelayRemaining--
+			running = false
+		}
+		if !running && b.nt8LingerLeft > 0 {
+			running = true
+			b.nt8LingerLeft--
+		}
+		b.mu.Unlock()
+		if running {
+			return []byte("\"NinjaTrader.exe\",\"4242\",\"Console\",\"1\",\"1,234,567 K\"\r\n"), nil
+		}
+		return []byte("INFO: No tasks are running which match the specified criteria.\r\n"), nil
+	}
+	// powershell.exe stop/start: CloseMainWindow exits NT8 (and drops the census
+	// ack) unless it hangs; Stop-Process force-kills; Start-Process brings it
+	// back and models the AddOn reconnect.
+	for _, a := range args {
+		if strings.Contains(a, "CloseMainWindow") {
+			b.mu.Lock()
+			if !b.nt8HangsOnClose {
+				b.nt8Running = false
+				b.addonConnected = false // the census disappears when NT8 exits
+			}
+			if b.flipSimOnClose {
+				b.simTradeable = false
+			}
+			b.mu.Unlock()
+		}
+		if strings.Contains(a, "Stop-Process") {
+			b.mu.Lock()
+			b.nt8Running = false
+			b.addonConnected = false
+			b.nt8LingerLeft = b.nt8ExitLinger // the old process takes a moment to fully exit
+			b.mu.Unlock()
+		}
+		if strings.Contains(a, "Start-Process") {
+			b.mu.Lock()
+			if b.startFails && !b.addonRestored {
+				// FORWARD start only: Start-Process itself errors (the start
+				// command fails, not a launch-then-exit).
+				b.mu.Unlock()
+				return nil, errors.New("fake Start-Process failure")
+			}
+			if b.startDoesNotBringUp && !b.addonRestored {
+				// FORWARD start only: Start-Process returns success but the
+				// launched process is absent (launch-then-immediate-exit) —
+				// reproduce the restart-evidence gap. The rollback's own
+				// re-restart is unaffected so a rollback can still recover.
+				b.nt8Running = false
+				b.addonConnected = false
+				b.mu.Unlock()
+				return []byte(""), nil
+			}
+			b.nt8Running = true
+			b.startDelayRemaining = b.startDelayPolls
+			b.startProbeFails = b.startProbeError
+			if !b.addonRestored {
+				// FORWARD restart: remember what it was running, then bring up
+				// the NEW build on a NEW connection.
+				b.addonBuildBeforeRestart = b.addonBuild
+				if !b.noReconnect {
+					b.addonConnected = true
+					if !b.reconnectOldBuild {
+						target := b.manifestBuild
+						if b.catchupBuild != "" {
+							target = b.catchupBuild // catch-up rebuilds the install's own build
+						}
+						b.addonBuild = target
+					}
+					if !b.reconnectSameSeq {
+						b.addonSeq++
+					}
+				}
+			} else {
+				// ROLLBACK re-restart: the OLD DLL is restored, so the AddOn
+				// comes back on the OLD build over a NEW connection.
+				if !b.noRollbackReconnect && !b.reconnectSameSeq {
+					b.addonSeq++
+					b.addonConnected = true
+				}
+			}
+			b.mu.Unlock()
+		}
+	}
+	return []byte(""), nil
+}
+
+// winFlag returns the argument following -<flag> (e.g. -Out, -o), or "".
+func winFlag(args []string, flag string) string {
+	for i := 0; i+1 < len(args); i++ {
+		if args[i] == flag {
+			return args[i+1]
+		}
+	}
+	return ""
+}
+
+// hasWinFlag reports whether args contains the bare switch <flag> (e.g. -Custom).
+func hasWinFlag(args []string, flag string) bool {
+	for _, a := range args {
+		if a == flag {
+			return true
+		}
+	}
+	return false
+}
+
+// windowsToWSL undoes addonbuild.wslToWindows for the UNC form the build's -o
+// dir uses (\\wsl.localhost\<distro>\tmp\... → /tmp/...).
+func windowsToWSL(p string) string {
+	const prefix = `\\wsl.localhost\`
+	if strings.HasPrefix(p, prefix) {
+		rest := strings.TrimPrefix(p, prefix)
+		if i := strings.IndexByte(rest, '\\'); i >= 0 {
+			rest = rest[i+1:] // drop the distro segment
+		}
+		return "/" + strings.ReplaceAll(rest, "\\", "/")
+	}
+	return strings.ReplaceAll(p, "\\", "/")
 }
 
 // install is the install verb at the production handler.
@@ -306,7 +562,11 @@ func (r *rig) install() {
 
 // drive runs the job to its next stop on the calling goroutine.
 func (r *rig) drive() error {
-	return r.w.drive(context.Background(), boxJobID)
+	ctx := r.box.driveCtx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	return r.w.drive(ctx, boxJobID)
 }
 
 func (r *rig) job() updaterjob.Job {
@@ -344,10 +604,14 @@ func receiptSteps(j updaterjob.Job) []string {
 // expect records a call and checks the job on disk: its own state, started;
 // with afterHold, this job's hold must be on disk too.
 func (b *box) expect(call string, afterHold bool, want ...updaterjob.State) {
+	b.expectJob(call, boxJobID, afterHold, want...)
+}
+
+func (b *box) expectJob(call, jobID string, afterHold bool, want ...updaterjob.State) {
 	b.mu.Lock()
 	b.calls = append(b.calls, call)
 	b.mu.Unlock()
-	j, err := updaterjob.Read(b.data, boxJobID)
+	j, err := updaterjob.Read(b.data, jobID)
 	if err != nil {
 		b.violate("%s: job unreadable: %v", call, err)
 		return
@@ -360,7 +624,7 @@ func (b *box) expect(call string, afterHold bool, want ...updaterjob.State) {
 		b.violate("%s ran while the job on disk is %s/%s (want %v/started)", call, j.State, j.Phase, want)
 	}
 	if afterHold {
-		if s, _ := ReadHoldFor(b.data, boxJobID); s != HoldOurs {
+		if s, _ := ReadHoldFor(b.data, jobID); s != HoldOurs {
 			b.violate("%s ran at %s without this job's hold on disk (%s)", call, j.State, s)
 		}
 	}
@@ -461,7 +725,7 @@ func installHalves(rel, dst Release) error {
 	if err := copyFile(rel.ReleaseFile, dst.ReleaseFile); err != nil {
 		return err
 	}
-	if err := os.RemoveAll(dst.Dist); err != nil {
+	if err := safepath.RemoveAllTemp(dst.Dist); err != nil {
 		return err
 	}
 	return copyTree(rel.Dist, dst.Dist)
@@ -505,7 +769,7 @@ func (b *box) writeBootLine(logPath string) error {
 	now := b.clock.Now().In(time.Local)
 	b.mu.Unlock()
 	line := fmt.Sprintf("%s [%s] main/main.go:322 🔐 BOOT INTEGRITY %s — rev %s · pid %d · built 2026-09-24T00:00:00Z · expected %s · goldens PASS\n",
-		now.Format("01-02 15:04:05"), level, status, sha[:12], pid, sha[:12])
+		logStampCT(now), level, status, sha[:12], pid, sha[:12])
 	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
 	if err != nil {
 		return err
@@ -628,7 +892,7 @@ func (f *fakeRel) Rehash(v Verdict) (int, error) {
 
 func (f *fakeRel) Reverify(v Verdict) (ReleaseFacts, error) {
 	arts := map[string]string{}
-	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", calendarFile, f.b.relBinName} {
+	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", "ninjascript/VLTraderTCPClient.cs", calendarFile, f.b.relBinName} {
 		if f.b.noCS && strings.HasPrefix(rel, "ninjascript/") {
 			continue
 		}
@@ -719,6 +983,110 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 		return h.b.exe, nil
 	}
 	return h.b.instBinary(), nil // R5 removes: vl-bin when the install carries it
+}
+
+// AddonRestore simulates the reverse of addon_place (W-ADDON-ONE-CLICK): it
+// records the backup dir and fails when the test asks it to (the real OSHost
+// MOVE-back is covered by its own unit test; the rig never touches real files
+// here, because tests use fake backup paths).
+func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
+	h.b.mu.Lock()
+	h.b.addonRestoreCalls = append(h.b.addonRestoreCalls, backupDir)
+	err := h.b.addonRestoreErr
+	fail := h.b.addonRestoreFail
+	h.b.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if fail {
+		return fmt.Errorf("addon restore: fake failure")
+	}
+	// The restored DLL is the OLD one: the AddOn now reports the build it ran
+	// before the forward restart, and the next restart is the rollback's.
+	h.b.mu.Lock()
+	h.b.addonBuild = h.b.addonBuildBeforeRestart
+	h.b.addonRestored = true
+	h.b.mu.Unlock()
+	return nil
+}
+
+// FriendFlat plays the friend's health + positions probe from the box knobs.
+func (h *fakeHost) FriendFlat(ctx context.Context, baseURL string) (FriendFlatView, error) {
+	name := h.friendNameForURL(baseURL)
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if h.b.friendFlatProbes == nil {
+		h.b.friendFlatProbes = map[string]int{}
+	}
+	h.b.friendFlatProbes[name]++
+	flat := h.b.friendFlat[name]
+	// flip to true after N probes (deferred → flat)
+	if n, ok := h.b.friendFlatAfter[name]; ok && h.b.friendFlatProbes[name] > n {
+		flat = true
+	}
+	v := FriendFlatView{Flat: flat}
+	if has, ok := h.b.friendHasTraders[name]; ok && has {
+		v.HasTraders = true
+		v.Traders = h.b.friendTraders[name]
+	}
+	return v, nil
+}
+
+func (h *fakeHost) FriendRestart(ctx context.Context, unit string) error {
+	name := strings.TrimSuffix(strings.TrimPrefix(unit, "vl-friend@"), ".service")
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if h.b.friendRestartCalls == nil {
+		h.b.friendRestartCalls = map[string]int{}
+	}
+	h.b.friendRestartCalls[name]++
+	if err, ok := h.b.friendRestartErr[name]; ok {
+		delete(h.b.friendRestartErr, name) // consumed once
+		return err
+	}
+	return nil
+}
+
+func (h *fakeHost) FriendBootOK(ctx context.Context, unit string, since time.Time, expectedSHA string) (bool, string, error) {
+	name := strings.TrimSuffix(strings.TrimPrefix(unit, "vl-friend@"), ".service")
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	if err, ok := h.b.friendBootErr[name]; ok {
+		delete(h.b.friendBootErr, name) // consumed once
+		return false, "", err
+	}
+	restarts := 0
+	if h.b.friendRestartCalls != nil {
+		restarts = h.b.friendRestartCalls[name]
+	}
+	results := h.b.friendBootResults[name]
+	// one result per restart; the LAST restart's result is what a fresh boot
+	// check sees (index restarts-1). Absent result = boot never OK.
+	if restarts > 0 && len(results) >= restarts {
+		ok := results[restarts-1]
+		if ok {
+			return true, h.b.friendBootRev[name], nil
+		}
+		return false, "", nil
+	}
+	return false, "", nil
+}
+
+// friendNameForURL maps a friend baseURL back to the friend name via its web
+// port (the box records name → web_port in friendWebPorts).
+func (h *fakeHost) friendNameForURL(baseURL string) string {
+	port := ""
+	if i := strings.LastIndex(baseURL, ":"); i >= 0 {
+		port = baseURL[i+1:]
+	}
+	h.b.mu.Lock()
+	defer h.b.mu.Unlock()
+	for name, p := range h.b.friendWebPorts {
+		if fmt.Sprintf("%d", p) == port {
+			return name
+		}
+	}
+	return port
 }
 
 // ── the app (httptest) ──────────────────────────────────────────────────────
@@ -820,7 +1188,7 @@ func (b *box) maintenanceView() MaintenanceView {
 func (b *box) gateView() GateView {
 	st := store.ReadMaintenanceHold(b.data)
 	b.mu.Lock()
-	flat, plannerHeld := b.flat, b.plannerInFlight
+	flat, plannerHeld, simTradeable, omitLeg := b.flat, b.plannerInFlight, b.simTradeable, b.omitLeg
 	b.mu.Unlock()
 	a := b.ack()
 	job := "n/a"
@@ -848,6 +1216,13 @@ func (b *box) gateView() GateView {
 	if a != nil {
 		censusAge = fmt.Sprintf("%dms", a.AgeMs)
 	}
+	// The census is the AddOn's own report: it DISAPPEARS when NT8 exits (the
+	// AddOn disconnects). The leg must fail then — reality, not the old fake
+	// that let the census survive signalClose (CTO STOP-AND-FIX 2026-10-17).
+	censusPass, censusDetail := flat && a != nil, fmt.Sprintf("age=%s — flat=%v", censusAge, flat)
+	if a == nil {
+		censusDetail = "no census — the AddOn is disconnected"
+	}
 	legs := []GateLeg{
 		{Name: "hold", Pass: st.Held, Detail: "held=" + fmt.Sprint(st.Held)},
 		{Name: "go_drained", Pass: st.Held, Detail: "barrier engaged"},
@@ -861,15 +1236,30 @@ func (b *box) gateView() GateView {
 		}()},
 		{Name: "traders_nt8", Pass: true, Detail: "1 NT8 trader"},
 		{Name: "addon_ack", Pass: st.Held && a != nil && a.Held && a.JobID == job, Detail: "ack"},
-		{Name: "addon_census", Pass: flat, Detail: fmt.Sprintf("age=%s — flat=%v", censusAge, flat)},
+		{Name: "addon_census", Pass: censusPass, Detail: censusDetail},
 		{Name: "addon_census_prehold", Pass: preholdCensusPass, Detail: preholdCensusDetail},
 		{Name: "ledger_exposure", Pass: flat, Detail: "arms"},
+		{Name: "sim_accounts", Pass: simTradeable, Detail: func() string {
+			if simTradeable {
+				return "1 bound account(s) SIM-tradeable"
+			}
+			return "t1: bound account Sim101 is not SIM-tradeable"
+		}()},
 		{Name: "trader_cutover:t1", Pass: flat && !b.cutoverStale, Detail: func() string {
 			if b.cutoverStale {
 				return "working_orders: snapshot stale (AddOn down)"
 			}
 			return "legs 1,2,4"
 		}()},
+	}
+	if omitLeg != "" {
+		filtered := legs[:0]
+		for _, l := range legs {
+			if l.Name != omitLeg {
+				filtered = append(filtered, l)
+			}
+		}
+		legs = filtered
 	}
 	ready := true
 	for _, l := range legs {

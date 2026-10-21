@@ -170,6 +170,23 @@ export interface DayPlanConfig {
   /** W3 — floor (minutes) on the resolved hold of an ARMED market_in_zone
    *  time_hold scenario, refused at write below it. Absent = 3. */
   min_hold_min?: number
+  /** Release #25 loss-fix switches (STRICT-12345 F-2/F-3/F-5/F-7). Every one
+   *  ships OFF: absent = off (COMMON-25 knob rule case b — planner numbers the
+   *  owner has not given). */
+  /** F-2 room gate — 'off' | 'refuse' | 'tp1_at_obstacle'. Absent = off. */
+  planner_room_gate?: string
+  /** F-2 minimum r_to_obstacle (R). Absent = 1.0; read only when the gate is on. */
+  planner_room_min_r?: number
+  /** F-3 exit on thesis death — 'off' | 'invalidation_only' | 'all'. Absent = off. */
+  planner_exit_on_thesis_death?: string
+  /** F-5 arm no-chase WOULD_REFUSE refuses the placement. Absent = OFF. */
+  planner_no_chase_enforce?: boolean
+  /** F-5 momentum-into-zone ceiling in ATR5m over the last 15 min. 0/absent = OFF. */
+  planner_momentum_into_zone_max_atr?: number
+  /** F-7 the ATR stop floor never widens past the authored invalidation. Absent = OFF. */
+  planner_atr_floor_cap_at_invalidation?: boolean
+  /** W26 stale-zones wake: when EVERY armed market_in_zone leg is > X × ATR5m from price, re-read. 0/absent = OFF. */
+  planner_stale_zones_max_atr?: number
   sessions?: DayPlanSessionOverride[]
 }
 
@@ -285,11 +302,43 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
-  htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (the all-day 4h/1h gate)
-  exec_2m_after_30m?: boolean // X5-10 — unset = OFF (the 1m ISB read)
+  htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (all-day gate; owner decision A 2026-10-21); ON = news-only 07:20–07:35 CT
+  exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m for ISB + PHL/PLH)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
+  // Course-entry knobs (release #25). Unset = the ruled default in brackets.
+  // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
+  '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [both_boxes] (OQ-2)
+  tf_conflict_end?: 'first_box' | 'both_boxes'
+  // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [true]
+  news_wait_both_lines?: boolean
+  // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [true]
+  news_bars_excluded?: boolean
+  // D4.1 p1 @20:52 — ISB rest box escape test [body]
+  isb_box_escape?: 'close' | 'body'
+  // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
+  ema34_loss_relock?: 'session' | 'until_zone_exit'
+  // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
+  orb_edge_veto_pts?: number
+  // rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction outside [0.80]
+  orb_isb_fraction_outside?: number
+  // D4.3 @12:43 — the box-return 5m trend source [structure]
+  d43_trend_source?: 'trigger_line' | 'structure'
+  // D3.4 p1 @17:48 — the 5m trigger side binds every level reject [false]
+  level_entries_need_trigger_side?: boolean
+  // D3.3 p1 @05:18 — a trendline in the path is a target [true]
+  trendline_is_target?: boolean
+  // D3.2 p2 @10:56 — a trendline reject between two boxes may trade [true]
+  trendline_between_boxes?: boolean
+  // X-FOMO @06:10 — a stopped-out leg also resets on a wave break [true]
+  leg_reset_on_wave_break?: boolean
+  // X9 @05:47 — inside a live flag the opposite wall is a closer target (#416) [true]
+  flag_wall_target?: boolean
+  // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
+  // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
+  box_new_zone_after_escape?: boolean
 }
 
 export interface RiskControlConfig {
@@ -313,14 +362,47 @@ export interface RiskControlConfig {
 
   // === Strategy Studio Phase 1 — prop-firm guardrails (Chunks 2-5; surfaced in Chunk 6).
   // The kernel gate reads these exact fields; the toggle (…_enabled) governs enforcement. ===
-  guardrails_enabled?: boolean // master switch (default ON)
+  guardrails_enabled?: boolean // master switch (absent = OFF since r22 — owner R4)
   // Mentor mode (🧑‍🏫) — per strategy, default OFF. Placements also need the
   // server env MENTOR_PLACE=1; without it every intent is a dry run.
   mentor_mode?: boolean
   // Mentor trading window (CT): start HH:MM (default "08:30") and length in
-  // minutes (unset/0 → 60; -1 = no window, entries at any hour). SWING is exempt.
+  // minutes (unset/0 → 60; -1 = no time window — the 15:45 CT entry cutoff
+  // and the 14:45 CT EOD flat still apply, never "any hour"). SWING is exempt.
   mentor_window_start?: string
   mentor_window_minutes?: number
+  // Stop-after-win / done-after-win (mentor day-stop): once a mentor trade
+  // closes today in profit and the day is net positive, refuse new entries
+  // until the next NY open (08:30 CT). Absent = OFF (owner order 2026-10-16:
+  // nil → OFF, an explicit true turns it on).
+  mentor_done_after_win?: boolean
+  // Stop-after-loss (mentor day-stop): once a mentor trade closes today with a
+  // net loss, refuse new entries until the next trading day (17:00 CT).
+  // Absent = OFF (byte-identical to the prior config).
+  mentor_stop_after_loss?: boolean
+  // Runner exit (course-defaults-30, owner "fix all"; release #22): "candle"
+  // (absent = candle) = FIRST break-even at +0.5R before leg 1's 1:1 partial
+  // (mentor_be_before_partial ON), THEN once leg 1's 1:1 take-profit is
+  // CONFIRMED filled at NT8, 1 tick beyond each closed candle; "off" = the
+  // older half-distance rule.
+  mentor_trail_mode?: string
+  // Release #25 course-exits knobs (trader/mentor_course_exits.go). Absent =
+  // the knob-rule default (course-defaults-30, owner "fix all"): first-target
+  // ON, runner ON, resonance runner TP ON, BE-before-partial ON (reverses R3),
+  // candle-3 any-profit ON (today's rule), reverse-ISB-as-PHL ON, EMA 9 visits
+  // shared, ISB max stop 30, keypair ratio 1, box height 0 (off), box fresh
+  // RTH pair OFF.
+  mentor_swing_ema34_is_first_target?: boolean
+  mentor_swing_runner?: boolean
+  mentor_resonance_runner_tp_old_high?: boolean
+  mentor_be_before_partial?: boolean
+  mentor_isb_c3_partial_any_profit?: boolean
+  mentor_reverse_isb_as_phl?: boolean
+  mentor_ema9_visit_cap?: string
+  mentor_isb_max_pts?: number
+  mentor_keypair_candle_ratio?: number
+  mentor_box_fresh_rth_pair?: boolean
+  mentor_box_max_height_pts?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning
@@ -330,6 +412,9 @@ export interface RiskControlConfig {
   // Auto-breakeven (NT8 futures): once +N pts in profit, move the stop to entry.
   breakeven_enabled?: boolean
   breakeven_trigger_points?: number // default 50
+  // F-8 (release #25): breakeven at N × the position's initial risk instead of
+  // points. 0/absent = OFF = the points rule above. AI/planner trades only.
+  breakeven_trigger_r?: number
   // Trailing profit (Phase 3B, NT8 futures only; default OFF)
   trailing_enabled?: boolean
   trailing_atr_mult?: number // default 2.0
@@ -337,7 +422,7 @@ export interface RiskControlConfig {
   trailing_arm?: string // 'after_breakeven' (default) | 'after_trigger_points' | 'immediate'
   trailing_arm_points?: number // used iff after_trigger_points
   daily_loss_limit_usd?: number // daily realized-loss limit (USD)
-  daily_loss_enabled?: boolean // default ON (preserves the live env gate)
+  daily_loss_enabled?: boolean // absent = OFF since r22 (owner R4); the $ keeps its env fallback
   daily_profit_target_usd?: number // daily realized-profit target (USD)
   daily_profit_enabled?: boolean // default OFF
   max_daily_trades?: number // max entries per CME session-day
@@ -349,7 +434,8 @@ export interface RiskControlConfig {
   consecutive_loss_halt?: number | null
   reentry_cooldown_minutes?: number // B7: after a stop-loss, block same-dir re-entry for N min or until price moves ≥1×ATR15 from the stop (0=off; futures-only)
   max_contracts_per_order?: number // futures contracts-per-order clamp
-  max_contracts_enabled?: boolean // default ON
+  planner_contracts?: number // dispatch-31: planner contracts per entry (unset/0 → 1; ≥ 2 splits 2+2 at the first obstacle)
+  max_contracts_enabled?: boolean // parse-only — no consumer (knob registry KnobIneffective)
   max_notional_leverage?: number // futures notional ceiling = equity × this (default 20)
   notional_cap_enabled?: boolean // default ON
   blackout_enabled?: boolean // default OFF

@@ -248,7 +248,7 @@ func TestWatchIsRedOnAPreKillBootLineAndGreenOnAPostKillOne(t *testing.T) {
 
 	// One boot line, timestamped an hour in the PAST, naming the right sha.
 	past := time.Now().Add(-time.Hour)
-	old := fmt.Sprintf("%s [INFO] booted %s\n", past.Format("01-02 15:04:05"), sha)
+	old := fmt.Sprintf("%s [INFO] booted %s\n", logStampCT(past), sha)
 	if err := os.WriteFile(logPath, []byte(old), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -277,7 +277,7 @@ func TestWatchIsRedOnAPreKillBootLineAndGreenOnAPostKillOne(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	fmt.Fprintf(f, "%s [INFO] booted %s\n", anchor.Add(time.Second).Format("01-02 15:04:05"), sha)
+	fmt.Fprintf(f, "%s [INFO] booted %s\n", logStampCT(anchor.Add(time.Second)), sha)
 	f.Close()
 
 	rc, err := Watch(Release{SHA: sha}, Identity{PID: 1}, WatchOpts{LogPath: logPath, HealthURL: srv.URL, Within: 3 * time.Second, Since: anchor})
@@ -359,7 +359,7 @@ func TestWatchAcceptsTheShortRevBootLineTheBotWrites(t *testing.T) {
 	// kill (FLAKE fix; the old time.Now().Add(1s) margin flaked under load).
 	anchor := time.Now()
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
-		anchor.Add(time.Second).Format("01-02 15:04:05"), short)
+		logStampCT(anchor.Add(time.Second)), short)
 	if err := os.WriteFile(logPath, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -414,7 +414,7 @@ func TestWatchProvesABootAgainstThePersistedKillInstantNotNow(t *testing.T) {
 	// The restart happened 10 minutes ago and wrote its boot line then.
 	killedAt := time.Now().Add(-10 * time.Minute)
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
-		killedAt.Add(2*time.Second).Format("01-02 15:04:05"), short)
+		logStampCT(killedAt.Add(2*time.Second)), short)
 	if err := os.WriteFile(logPath, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -453,7 +453,7 @@ func TestWatchStillRefusesABootLineOlderThanTheKillInstant(t *testing.T) {
 	killedAt := time.Now().Add(-5 * time.Minute)
 	// Written BEFORE the kill: the previous boot's line.
 	line := fmt.Sprintf("%s [INFO] 🔐 BOOT INTEGRITY OK — rev %s · built x\n",
-		killedAt.Add(-time.Hour).Format("01-02 15:04:05"), short)
+		logStampCT(killedAt.Add(-time.Hour)), short)
 	if err := os.WriteFile(logPath, []byte(line), 0o644); err != nil {
 		t.Fatal(err)
 	}

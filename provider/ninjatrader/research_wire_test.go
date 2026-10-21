@@ -5,10 +5,10 @@ import (
 	"encoding/json"
 	"math"
 	"net"
-	"vl/researchsnapshot"
 	"path/filepath"
 	"testing"
 	"time"
+	"vl/researchsnapshot"
 )
 
 func TestStageAWireProductionReadLoop(t *testing.T) {
@@ -26,7 +26,7 @@ func TestStageAWireProductionReadLoop(t *testing.T) {
 	server.wg.Add(1)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	go server.readLoop(ctx, left)
+	go server.readLoop(ctx, left, false)
 	frames := []struct {
 		kind    FrameType
 		payload any

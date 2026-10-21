@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { GuidePage, GUIDE_SECTIONS } from './GuidePage'
 import { GUIDE_BUILT_REV } from './types'
+import { guideRevBanner } from './guideRevBanner'
 
 // ── per-knob required-fields lint: EVERY KnobSpec field must be non-empty ──
 describe('knob spec completeness', () => {
@@ -27,12 +28,12 @@ describe('knob spec completeness', () => {
       b.kind === 'knobs' ? b.knobs : []
     ) ?? []
 
-  it('has exactly 162 knob cards (Section 7 census = live-page control count; W7 +6 weekly knobs, min-side card removed 2026-08-31, +2 planner-speed 2026-08-31, +1 planner stream total deadline class 37 2026-09-01, +1 planner stream retry tries+backoff class 41 2026-09-02, +1 fast-mode shadow A/B root-fix 2026-09-02, +1 stop floor + structure anchor 0B 2026-09-02), +1 wake cadence class 47 2026-09-02, −2 weekly knobs retired class 50 (WEEKLY_INVALIDATION_TF_DEFAULT, WEEKLY_COUNTER_MODE — refs-only weekly has no invalidation and no counter), +2 one-setup knobs (switch + min grade) dispatch 102 2026-09-11, +1 structure table (S1, day_plan.structure_map, default OFF) 2026-09-16, +1 by-TF freshness knob (S2, day_plan.levels_fresh_by_tf, default OFF) 2026-09-16, +2 HTF seating knobs (S3: day_plan.htf_seats, day_plan.htf_score_multiplier, both default unchanged) 2026-09-16, +1 flip re-read knob (W-FLIP-REREAD: day_plan.flip_reread, default OFF) 2026-09-17, +1 red-news hard-block currencies (W-T1-CURRENCIES: day_plan.t1_currencies, default USD) 2026-09-18, −9 W-KNOB-PRUNE 2026-09-18 (structure table, HTF score multiplier, max scenarios, acceptance window, evening digest, re-align cap, 1h anchor seat, HTF freshness by TF, min wake interval removed/folded off the page; the 5-toggle wake card became the 1-switch wake card), +1 write-time feasibility knob (W-WRITE-TIME-FEASIBILITY: day_plan.write_time_feasibility, default ON) 2026-09-18, +1 geometry reference levels (W-GEOMETRY-REFUSAL: day_plan.geometry_reference_levels, default ON) 2026-09-18, +1 death re-read (W-DEATH-REREAD: day_plan.death_reread, default ON) 2026-09-18, +1 picture HTF (W-PICTURE-HTF: day_plan.picture_htf, default OFF) 2026-09-20, +4 entry-policy knobs (W-EXEC-TRUTH W3: day_plan.entry_policy_default market_in_zone, zone_max_pts 10, zone_rest_max_min 30, min_hold_min 3) 2026-09-23, +1 planner fresh tape (PLANNER A6: day_plan.planner_fresh_tape, default ON) 2026-09-25, +1 planner contract (WAVE PLANNER A3: day_plan.planner_contract, default ON) 2026-09-25, +1 zone placement reach (PLANNER B1: day_plan.zone_place_within_pts, default 25) 2026-09-25, +9 coin source knobs (FIX-LABELS 2026-09-26: coin_source.* source type/static/excluded/hyper_all/hyper_main — live-page CoinSourceEditor controls, now in the guide), +18 indicator/klines/ranking knobs (FIX-LABELS 2026-09-26: indicators.enable_* blocks, period fields, provider API key, OI/NetFlow/Price rankings, klines TF controls), +15 grid knobs (FIX-LABELS 2026-09-26: grid_config.* — the GridConfig editor live-page controls, now in the guide), +6 picture HTF field knobs (FIX-LABELS 2026-09-26: picture_htf tick_size/pivot_window/swing_lookback/entry_window_sec/freshness_sec/min_rr), +1 cancel-confirm report regime knob (CANCEL_CONFIRM_REQUIRE_REPORT, default OFF) 2026-10-03, +1 mentor stop-limit entries knob (MENTOR_STOP_LIMIT, default OFF) 2026-10-03, −1 same knob removed 2026-10-04 (mentor arms are always stop-limit; the env is no longer read), −1 retired ISB minimum stop card 2026-10-04 (no runtime reader); +55 mentor-mode knobs (including B20–B23, ORB gate, P3 stop rules and the retired ISB minimum-stop field) 2026-10-03, +1 near-box room card (row 24, #356) 2026-10-04, −1 swing target-fallback card retired (R43, #366) 2026-10-04, +2 mentor knobs (PHL entry buffer 1.0, wick microscalp OFF) 2026-10-05, +1 4h/1h gate news-window switch (D4.4-11, default OFF, #397) 2026-10-05, +1 2m ISB execution switch (X5-10, default OFF, #400) 2026-10-05', () => {
-    expect(allKnobs).toHaveLength(162)
+  it('has exactly 163 knob cards (Section 7 census = live-page control count; W7 +6 weekly knobs, min-side card removed 2026-08-31, +2 planner-speed 2026-08-31, +1 planner stream total deadline class 37 2026-09-01, +1 planner stream retry tries+backoff class 41 2026-09-02, +1 fast-mode shadow A/B root-fix 2026-09-02, +1 stop floor + structure anchor 0B 2026-09-02), +1 wake cadence class 47 2026-09-02, −2 weekly knobs retired class 50 (WEEKLY_INVALIDATION_TF_DEFAULT, WEEKLY_COUNTER_MODE — refs-only weekly has no invalidation and no counter), +2 one-setup knobs (switch + min grade) dispatch 102 2026-09-11, +1 structure table (S1, day_plan.structure_map, default OFF) 2026-09-16, +1 by-TF freshness knob (S2, day_plan.levels_fresh_by_tf, default OFF) 2026-09-16, +2 HTF seating knobs (S3: day_plan.htf_seats, day_plan.htf_score_multiplier, both default unchanged) 2026-09-16, +1 flip re-read knob (W-FLIP-REREAD: day_plan.flip_reread, default OFF) 2026-09-17, +1 red-news hard-block currencies (W-T1-CURRENCIES: day_plan.t1_currencies, default USD) 2026-09-18, −9 W-KNOB-PRUNE 2026-09-18 (structure table, HTF score multiplier, max scenarios, acceptance window, evening digest, re-align cap, 1h anchor seat, HTF freshness by TF, min wake interval removed/folded off the page; the 5-toggle wake card became the 1-switch wake card), +1 write-time feasibility knob (W-WRITE-TIME-FEASIBILITY: day_plan.write_time_feasibility, default ON) 2026-09-18, +1 geometry reference levels (W-GEOMETRY-REFUSAL: day_plan.geometry_reference_levels, default ON) 2026-09-18, +1 death re-read (W-DEATH-REREAD: day_plan.death_reread, default ON) 2026-09-18, +1 picture HTF (W-PICTURE-HTF: day_plan.picture_htf, default OFF) 2026-09-20, +4 entry-policy knobs (W-EXEC-TRUTH W3: day_plan.entry_policy_default market_in_zone, zone_max_pts 10, zone_rest_max_min 30, min_hold_min 3) 2026-09-23, +1 planner fresh tape (PLANNER A6: day_plan.planner_fresh_tape, default ON) 2026-09-25, +1 planner contract (WAVE PLANNER A3: day_plan.planner_contract, default ON) 2026-09-25, +1 zone placement reach (PLANNER B1: day_plan.zone_place_within_pts, default 25) 2026-09-25, +9 coin source knobs (FIX-LABELS 2026-09-26: coin_source.* source type/static/excluded/hyper_all/hyper_main — live-page CoinSourceEditor controls, now in the guide), +18 indicator/klines/ranking knobs (FIX-LABELS 2026-09-26: indicators.enable_* blocks, period fields, provider API key, OI/NetFlow/Price rankings, klines TF controls), +15 grid knobs (FIX-LABELS 2026-09-26: grid_config.* — the GridConfig editor live-page controls, now in the guide), +6 picture HTF field knobs (FIX-LABELS 2026-09-26: picture_htf tick_size/pivot_window/swing_lookback/entry_window_sec/freshness_sec/min_rr), +1 cancel-confirm report regime knob (CANCEL_CONFIRM_REQUIRE_REPORT, default OFF) 2026-10-03, +1 mentor stop-limit entries knob (MENTOR_STOP_LIMIT, default OFF) 2026-10-03, −1 same knob removed 2026-10-04 (mentor arms are always stop-limit; the env is no longer read), −1 retired ISB minimum stop card 2026-10-04 (no runtime reader); +55 mentor-mode knobs (including B20–B23, ORB gate, P3 stop rules and the retired ISB minimum-stop field) 2026-10-03, +1 near-box room card (row 24, #356) 2026-10-04, −1 swing target-fallback card retired (R43, #366) 2026-10-04, +2 mentor knobs (PHL entry buffer 1.0, wick microscalp OFF) 2026-10-05, +1 4h/1h gate news-window switch (D4.4-11, default OFF, #397) 2026-10-05, +1 2m ISB execution switch (X5-10, default OFF, #400) 2026-10-05, +1 mentor stop-after-loss switch (D1.2 @23:34, default OFF, #418) 2026-10-06', () => {
+    expect(allKnobs).toHaveLength(203) // −1 retired ISB twenties card (Config.ISBTwentiesPts removed in course-defaults-30; the 30-pt ceiling is the ISB max stop card) 2026-10-16 · +1 planner contracts per entry (dispatch-31: risk_control.planner_contracts, default 1) 2026-10-16 · +1 risk_control.mentor_tuning.orb_isb_fraction_outside (release #31 rule 5, default 0.80) 2026-10-16 · +3 JOB 2.4 hidden-knob cards (regime.transition_standdown, day_plan.structural_stop.round_trip_cost_points, day_plan.fade_or_wide_k) 2026-10-17
   })
 
   it('shows an exact key and live status for every mentor knob', () => {
-    expect(mentorKnobs).toHaveLength(58) // +1 htf_gate_news_only (D4.4-11, #397), +1 exec_2m_after_30m (X5-10, #400) 2026-10-05
+    expect(mentorKnobs).toHaveLength(87) // −1 retired ISB twenties card (Config.ISBTwentiesPts removed in course-defaults-30) 2026-10-16; +1 risk_control.mentor_tuning.orb_isb_fraction_outside (release #31 rule 5, default 0.80) 2026-10-16
     const keys = mentorKnobs.map((knob) => {
       expect(
         knob.settingId,
@@ -53,11 +54,25 @@ describe('knob spec completeness', () => {
         'risk_control.mentor_tuning.level_max_visits',
         'risk_control.mentor_tuning.orb_gate_enabled',
         'risk_control.mentor_tuning.htf_gate_news_only',
+        'risk_control.mentor_tuning.15m_ib_requires_5m_isb',
+        'risk_control.mentor_tuning.tf_conflict_end',
+        'risk_control.mentor_tuning.news_wait_both_lines',
+        'risk_control.mentor_tuning.news_bars_excluded',
+        'risk_control.mentor_tuning.isb_box_escape',
+        'risk_control.mentor_tuning.ema34_loss_relock',
+        'risk_control.mentor_tuning.orb_edge_veto_pts',
+        'risk_control.mentor_tuning.d43_trend_source',
+        'risk_control.mentor_tuning.level_entries_need_trigger_side',
+        'risk_control.mentor_tuning.trendline_is_target',
+        'risk_control.mentor_tuning.trendline_between_boxes',
+        'risk_control.mentor_tuning.leg_reset_on_wave_break',
+        'risk_control.mentor_tuning.flag_wall_target',
         'Config.StopCeilingPts',
         'mentor_done_after_win',
         'mentor_window_start',
         'mentor_window_minutes',
         'mentor_loss_departure_pts',
+        'mentor_stale_data_block',
       ])
     )
   })
@@ -86,10 +101,10 @@ describe('GuidePage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders all 17 sections with deep-link ids', () => {
+  it('renders all 19 sections with deep-link ids', () => {
     render(<GuidePage />)
     expect(screen.getByTestId('guide-page')).toBeTruthy()
-    expect(GUIDE_SECTIONS).toHaveLength(17)
+    expect(GUIDE_SECTIONS).toHaveLength(19)
     for (const s of GUIDE_SECTIONS) {
       const el = document.getElementById(s.id)
       expect(el, `section id #${s.id}`).toBeTruthy()
@@ -149,7 +164,10 @@ describe('GuidePage', () => {
     expect(screen.getByText(/no matches/i)).toBeTruthy()
   })
 
-  it('shows the rev-drift banner when the bot revision differs', async () => {
+  // DR-3 (release #24): the banner the page renders is guideRevBanner's
+  // verdict for THIS bundle's rev — drift for a real sha, "not a release
+  // build" for 'dev' (the vitest bundle), "cannot verify" for 'unknown'.
+  it('shows the banner guideRevBanner names when the bot revision differs', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn().mockResolvedValue({
@@ -158,7 +176,14 @@ describe('GuidePage', () => {
       })
     )
     render(<GuidePage />)
-    expect(await screen.findByTestId('guide-rev-drift')).toBeTruthy()
+    const want = guideRevBanner(GUIDE_BUILT_REV, '0ldcafe12345678')
+    expect(want).not.toBeNull()
+    const el = await screen.findByTestId(`guide-rev-${want!.kind}`)
+    expect(el.textContent).toBe(want!.text)
+    if (GUIDE_BUILT_REV === 'dev') {
+      expect(el.textContent).toMatch(/NOT A RELEASE BUILD/)
+      expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
+    }
   })
 
   it('hides the drift banner when the bot revision matches', async () => {
@@ -205,6 +230,15 @@ describe('GuidePage', () => {
     )
     render(<GuidePage />)
     await act(async () => {})
+    expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
+  })
+
+  // DR-4 (release #22): a failed health read used to look exactly like a
+  // match (no banner). Unverified must say so. Mutant: drop the catch flag → RED.
+  it('says the build cannot be verified when /api/health fails', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('offline')))
+    render(<GuidePage />)
+    expect(await screen.findByTestId('guide-rev-unverified')).toBeTruthy()
     expect(screen.queryByTestId('guide-rev-drift')).toBeNull()
   })
 

@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Obfuscar configuration for the FRIEND add-on (B10.1: the friend gets only
+  VL.AddOn.dll, compiled + scrambled — no .cs file ever reaches their PC).
+
+  NinjaTrader 8 finds the add-on by reflecting over the assembly for the type
+  that derives from AddOnBase, so that ONE type must keep its name; every other
+  type/member is free to be renamed (Obfuscar rewrites same-assembly references
+  consistently). KeepPublicApi also preserves the public surface NT8 calls.
+
+  Run with: Obfuscar.Console.exe Obfuscar.xml   (or `obfuscar.console` via the
+  `Obfuscar.GlobalTool` dotnet tool). Install: `dotnet tool install -g
+  Obfuscar.GlobalTool`.
+
+  The build script (deploy/friend/build-windows.ps1) rewrites InPath/OutPath to
+  the real Windows paths before invoking Obfuscar, so the values here are only
+  the documented defaults.
+-->
+<Obfuscator>
+  <Var name="InPath" value="." />
+  <Var name="OutPath" value=".\obfuscated" />
+  <Var name="KeepPublicApi" value="true" />
+  <Var name="HidePrivateApi" value="true" />
+  <Var name="RenameProperties" value="true" />
+  <Var name="RenameEvents" value="true" />
+  <Var name="RenameFields" value="true" />
+  <Var name="UseUnicodeNames" value="false" />
+  <Var name="HideStrings" value="true" />
+  <Var name="OptimizeMethods" value="true" />
+  <Var name="SuppressIldasm" value="true" />
+  <Var name="ExtraFrameworkFolders" value="" />
+
+  <Module file="$(InPath)\VL.AddOn.dll">
+    <!-- NT8 must still find this type by name. -->
+    <SkipType name="NinjaTrader\.NinjaScript\.AddOns\.VLTraderTCPClient" />
+  </Module>
+</Obfuscator>

@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	"time"
+	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/trader/types"
@@ -153,9 +154,18 @@ func BootSweepBootLine(swept, skippedUnplaced int, leg4Source string) string {
 
 // ledgerOpenOrders renders THIS trader's non-terminal rows. Leg 4 separately
 // counts unplaced ARMED rows; placed/unconfirmed rows cross-check the broker.
+//
+// UG-2 (release #24): every row is an order on THIS trader's instrument
+// (at.futuresSymbol()). A query for another symbol — the chart's ES/AAPL/
+// EUR-USD tab — answers `[]` (that symbol has no ledger rows), not this
+// trader's MNQ orders. An EMPTY symbol is the whole-book question (the dead-man
+// reconcile probe, the post-reconnect sweep) and keeps every row.
 func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error) {
 	if at.store == nil || at.store.ArmedOrders() == nil {
 		return nil, fmt.Errorf("armed_orders ledger unavailable")
+	}
+	if !ledgerSymbolMatches(symbol, at.futuresSymbol()) {
+		return []types.OpenOrder{}, nil
 	}
 	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil {
@@ -168,7 +178,11 @@ func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error)
 		}
 		side := "BUY"
 		posSide := "LONG"
-		if r.Side == "short" {
+		// T6 (class 28): UpsertArm stores the side UPPER ("SHORT"); a literal
+		// "short" compare served every SHORT arm as BUY/LONG on
+		// /api/open-orders and the chart. One canonicalizer, read side too
+		// (legacy lowercase rows predate the write-side fix).
+		if store.CanonicalArmSide(r.Side) == "SHORT" {
 			side, posSide = "SELL", "SHORT"
 		}
 		typ := "LIMIT"
@@ -185,13 +199,49 @@ func (at *AutoTrader) ledgerOpenOrders(symbol string) ([]types.OpenOrder, error)
 			// for arm 117 — at the STOP price, labelled "Limit" — while NT8 had
 			// already refused it and the book stayed empty for 33 minutes.
 			status = "PENDING — awaiting broker receipt"
+		case store.StateCancelPending:
+			// T29 (release #22): a cancel was SENT and not yet confirmed. It is
+			// not a resting order the owner can rely on (row 363 stayed
+			// cancel_pending for hours after the broker book showed it gone).
+			status = "CANCEL_PENDING — cancel sent, not yet confirmed"
+		}
+		// T5 (release #22): the row's own signed size — a mentor arm carries
+		// its contracts (row 362 = 3); a NULL (planner) row keeps the 1 it
+		// always rendered. Price is the ENTRY; StopPrice is the bracket stop.
+		qty := 1.0
+		if r.Contracts != nil && *r.Contracts > 0 {
+			qty = float64(*r.Contracts)
+		}
+		// UG-5 (release #24): a split mentor arm carries leg 1's OWN take-profit
+		// for leg1_qty of its contracts (row 362: 2 of 3 at 30725.25); TargetPx
+		// is the runner's. Both ride the row, so both are served.
+		var leg1TP float64
+		var leg1Qty int
+		if r.Leg1Qty != nil && *r.Leg1Qty > 0 && r.Leg1TP > 0 {
+			leg1TP, leg1Qty = r.Leg1TP, *r.Leg1Qty
 		}
 		out = append(out, types.OpenOrder{
 			OrderID: r.SignalID, Symbol: at.futuresSymbol(), Side: side, PositionSide: posSide,
-			Type: typ, Price: r.EntryPx, StopPrice: r.StopPx, Quantity: 1, Status: status,
-			ArmState: r.State,
-			Source:   "armed_orders ledger (broker acceptance is a separate observation)",
+			Type: typ, Price: r.EntryPx, StopPrice: r.StopPx, Quantity: qty, Status: status,
+			ArmState: r.State, TargetPrice: r.TargetPx, ZoneLo: r.ZoneLo, ZoneHi: r.ZoneHi,
+			Leg1TP: leg1TP, Leg1Qty: leg1Qty,
+			Source: "armed_orders ledger (broker acceptance is a separate observation)",
 		})
 	}
 	return out, nil
+}
+
+// ledgerSymbolMatches (UG-2) reports whether a queried symbol names the
+// trader's instrument: "" = the whole book; otherwise the same CME root
+// ("MNQ", "MNQZ6", "MNQ 12-26" all name MNQ), and a non-futures symbol only on
+// an exact (case-insensitive) match.
+func ledgerSymbolMatches(query, traderSymbol string) bool {
+	q := strings.TrimSpace(query)
+	if q == "" {
+		return true
+	}
+	if qr, tr := market.FuturesRoot(q), market.FuturesRoot(traderSymbol); qr != "" || tr != "" {
+		return qr == tr
+	}
+	return strings.EqualFold(q, strings.TrimSpace(traderSymbol))
 }

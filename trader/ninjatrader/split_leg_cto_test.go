@@ -21,7 +21,7 @@ func TestSplitLeg1TPRoundedOnTheWireAndRecorded(t *testing.T) {
 	s, raw := rawSignalServer(t, ntwire.MinAddonBuildSplitLegs)
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
 	tr.traderID = "split-pin"
-	sid, err := tr.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13)
+	sid, err := tr.PlaceStopEntry("MNQ", "long", 5, 100, 98, 106, 3, 102.13, 0, 0)
 	if err != nil {
 		t.Fatalf("place: %v", err)
 	}
@@ -45,7 +45,7 @@ func TestSplitLeg1TPWrongSideSendsTheSingleBracket(t *testing.T) {
 	s, raw := rawSignalServer(t, ntwire.MinAddonBuildSplitLegs)
 	tr := NewTCPTrader(s, "MNQ", "Sim101")
 	tr.traderID = "split-pin-short"
-	sid, err := tr.PlaceStopEntry("MNQ", "short", 5, 100, 102, 94, 3, 101)
+	sid, err := tr.PlaceStopEntry("MNQ", "short", 5, 100, 102, 94, 3, 101, 0, 0)
 	if err != nil {
 		t.Fatalf("place: %v", err)
 	}
@@ -63,7 +63,7 @@ func TestSplitLeg1TPWrongSideSendsTheSingleBracket(t *testing.T) {
 // only → leg 2's independent 29590 reads as a widen of leg 1's 29600 → RED.
 func TestMoveStopForSignalLegNamesTheLegAndGuardsPerLeg(t *testing.T) {
 	s, st, conn, moves := moveStopServer(t)
-	if err := ntwire.WriteFrame(conn, ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: ntwire.MinAddonBuildSplitLegs}); err != nil {
+	if err := ntwire.WriteFrame(conn, ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: ntwire.MinAddonBuildLeg3}); err != nil {
 		t.Fatal(err)
 	}
 	deadline := time.Now().Add(2 * time.Second)
@@ -82,20 +82,23 @@ func TestMoveStopForSignalLegNamesTheLegAndGuardsPerLeg(t *testing.T) {
 	if err := tr.MoveStopForSignalLeg("sig", "long", 29580, 2); err == nil {
 		t.Fatal("leg 2 widen (29590 → 29580) was NOT refused")
 	}
-	if err := tr.MoveStopForSignalLeg("sig", "long", 29700, 3); err == nil {
-		t.Fatal("leg 3 does not exist — must be refused")
+	if err := tr.MoveStopForSignalLeg("sig", "long", 29700, 3); err != nil {
+		t.Fatalf("leg 3 move (release #31): %v", err)
+	}
+	if err := tr.MoveStopForSignalLeg("sig", "long", 29710, 4); err == nil {
+		t.Fatal("leg 4 does not exist — must be refused")
 	}
 	var got []ntwire.MoveStopPayload
-	for i := 0; i < 2; i++ {
+	for i := 0; i < 3; i++ {
 		select {
 		case p := <-moves:
 			got = append(got, p)
 		case <-time.After(2 * time.Second):
-			t.Fatalf("timed out waiting for move_stop %d/2", i+1)
+			t.Fatalf("timed out waiting for move_stop %d/3", i+1)
 		}
 	}
-	if got[0].Leg != 1 || got[0].NewStopLoss != 29600 || got[1].Leg != 2 || got[1].NewStopLoss != 29590 {
-		t.Fatalf("frames = %+v, want leg 1 @29600 then leg 2 @29590", got)
+	if got[0].Leg != 1 || got[0].NewStopLoss != 29600 || got[1].Leg != 2 || got[1].NewStopLoss != 29590 || got[2].Leg != 3 || got[2].NewStopLoss != 29700 {
+		t.Fatalf("frames = %+v, want leg 1 @29600, leg 2 @29590, leg 3 @29700", got)
 	}
 }
 

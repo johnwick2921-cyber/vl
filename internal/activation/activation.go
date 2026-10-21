@@ -16,12 +16,15 @@ import (
 	"debug/buildinfo"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"time"
+
+	"vl/internal/safepath"
 )
 
 // Release is one versioned runtime on disk: VL_RELEASE_DIR/<sha>/.
@@ -288,14 +291,28 @@ func atomicCopy(src, dst string) error {
 
 // atomicSwapDir puts src's CONTENTS at dst by staging a sibling directory and
 // renaming it into place, so a reader never sees a half-populated dist.
+//
+// Every recursive delete here goes through safepath (owner order 2026-10-17,
+// THE ONE RULE): dst's old contents are renamed to a sibling and removed, so
+// dst itself, the staged sibling and the replaced sibling must each be a
+// removable child of dst's OWN parent (the install's web/ dir) — never empty,
+// relative, "/", a home folder or an ancestor of one.
 func atomicSwapDir(src, dst string) error {
+	parent := filepath.Dir(dst)
+	if err := safepath.Check(parent, dst); err != nil {
+		return fmt.Errorf("swap %s: %w", dst, err)
+	}
 	staged := dst + ".activating"
-	_ = os.RemoveAll(staged)
+	if err := removeStale(parent, staged); err != nil {
+		return err
+	}
 	if err := copyTree(src, staged); err != nil {
 		return err
 	}
 	old := dst + ".replaced"
-	_ = os.RemoveAll(old)
+	if err := removeStale(parent, old); err != nil {
+		return err
+	}
 	if _, err := os.Stat(dst); err == nil {
 		if err := os.Rename(dst, old); err != nil {
 			return err
@@ -305,7 +322,17 @@ func atomicSwapDir(src, dst string) error {
 		_ = os.Rename(old, dst) // put it back rather than leave nothing there
 		return err
 	}
-	_ = os.RemoveAll(old)
+	_ = safepath.RemoveAllUnder(parent, old) // the same path removeStale passed above
+	return nil
+}
+
+// removeStale removes a leftover sibling of the swap. A safepath refusal is
+// returned; a plain removal error is ignored exactly as the old bare
+// os.RemoveAll's was (the copy or rename that follows reports it).
+func removeStale(parent, p string) error {
+	if err := safepath.RemoveAllUnder(parent, p); errors.Is(err, safepath.ErrRefused) {
+		return fmt.Errorf("swap: %w", err)
+	}
 	return nil
 }
 

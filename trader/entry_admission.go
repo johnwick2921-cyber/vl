@@ -270,6 +270,17 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		})
 	}
 
+	// Release #22 OPS-SAFETY — INSTALL PENDING: while an update job is in a
+	// pre-hold state (requested → preflight), NEW entries are frozen so the
+	// bot stops racing the preflight's flat check (10-14: job 30a8bbf6 was
+	// refused after trader 12345 placed at 01:44:00, 4 min into preflight).
+	// Read-only from the job files; clears when the job ends or times out.
+	if reason, pending := InstallPending(now); pending {
+		return at.admitRefuse(in, "install_pending", "install_pending: "+reason, func() {
+			at.logWarnf("⏳ install pending: %s %s REFUSED — %s. Exits and protection continue.", sym, act, reason)
+		})
+	}
+
 	// P3 (ledger-close 2026-08-19) — CONTRACT-ROLL gate for the continuous
 	// symbol: within ROLL_BLOCK_DAYS_BEFORE_EXPIRY of the ACK-resolved front
 	// contract's third-Friday expiry, NEW entries are refused (the dated-code
@@ -279,6 +290,30 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		return at.admitRefuse(in, "contract_roll_resolved", "contract_roll: "+reason, func() {
 			at.logWarnf("📅 contract-roll: %s %s REFUSED — %s. Position management continues; the resolver rolls to the next quarterly.", sym, act, reason)
 		})
+	}
+
+	// r22 RISK-GATES — THE DAILY GUARDRAILS, ON EVERY PATH. Decision, agent
+	// door, planner arms, MENTOR arms and Picture all ask the one verdict
+	// (daily_loss_gate.go): the daily loss limit on the bot's own P&L (latched
+	// until 17:00 CT once hit), the daily profit target and max daily trades —
+	// the same kernel Check the AI decision cycle runs. Before r22 only the AI
+	// decision cycle evaluated them, so the mentor path never saw max trades
+	// and a resting arm filled straight through a hit limit. Inert while the
+	// guardrails master is OFF (the owner's live setting). No mentor waiver.
+	// Only a DEFINITE limit refuses here; an unknown (unresolved close, failed
+	// read) refuses at the mentor's authoring gate only, as before r22.
+	if v := at.dailyGuardVerdictAt(now); v.Refuse && !v.Unverified {
+		logf := func() {
+			at.logWarnf("🔴 daily guardrail: %s %s REFUSED — %s", sym, act, v.Reason)
+		}
+		switch v.Class {
+		case "daily_profit_target":
+			return at.admitRefuse(in, "daily_profit_target", v.Reason, logf)
+		case "max_daily_trades":
+			return at.admitRefuse(in, "max_daily_trades", v.Reason, logf)
+		default:
+			return at.admitRefuse(in, "daily_loss", v.Reason, logf)
+		}
 	}
 
 	if in.Path == admitDecision || in.Path == admitAgent {
@@ -315,8 +350,9 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		}
 	}
 
-	// P2.3 — LAST-ENTRY cutoff: block NEW entries after the day-trader last-entry
-	// time (default 13:00 CT = 14:00 ET). Gated on day_plan → dormant by default.
+	// P2.3 — LAST-ENTRY cutoff: block NEW entries after the session's last-entry
+	// time (session end − DefaultLastEntryOffsetMin = 14:30 CT for NY). Gated on
+	// day_plan → dormant by default.
 	// ALL paths (CTO Q4): an arm placed between the cutoff and the EOD flat is
 	// the class of bug W-EXEC-TRUTH exists for.
 	// B3 N6: a MENTOR arm is exempt from the per-session last-entry cutoff (its
@@ -443,6 +479,34 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		if reason, refused := at.pictureEntryGate(in); refused {
 			return at.admitRefuse(in, "entry_gate", reason, func() {
 				at.logWarnf("🚦 entry-gate REFUSED picture-path: %s", reason)
+			})
+		}
+	}
+
+	// OPS NEW-2 (10-14) — STALE FEED / CLOCK STEP ON PLANNER ARMS. A planner
+	// (or Picture-scenario) arm places a limit off the newest 1m close; with
+	// the NT8 feed dead and the TCP link up, that close is frozen and the limit
+	// lands on a dead price. The AI path has B4 and the mentor path its own
+	// stale block; the arm send point had neither, though the guide said every
+	// NEW entry needs a fresh feed. Same verdict as the mentor block
+	// (kernel.EntryFeedStale: a clock-step hold, the wall bar-age rule, the
+	// monotonic receipt age). Mentor arms keep their own block (mentor_mode.go,
+	// and the mentor-only pass). Refused rows stay armed — a refusal is never a
+	// cancellation — and are logged and counted once per episode per row.
+	// It is the LAST step of the chain: every policy gate above names its own
+	// refusal first (a breached daily loss, a no-trade band), and the one
+	// question left before the send is whether the price it uses is current.
+	if in.Path == admitArm && !in.MentorArm {
+		if stale, why := at.armFeedStale(now); stale {
+			// Counted under the leg that fired: clock_step (the hold after a
+			// wall-clock step) or stale_data (bar age / receipt age). The log
+			// line names the path and the row ([arm <plan:scenario:leg>]).
+			class := "stale_data"
+			if strings.HasPrefix(why, "clock_step") {
+				class = "clock_step"
+			}
+			return at.admitRefuse(in, class, class+": "+why, func() {
+				at.logWarnf("⛔ %s: %s %s REFUSED — %s. A planner arm needs a fresh 1m feed and no clock-step hold; the row stays armed, resting orders are not cancelled, exits and protection continue.", class, sym, act, why)
 			})
 		}
 	}
@@ -669,4 +733,21 @@ func (at *AutoTrader) manualEntryQuantityRefusal(symbol string, quantity float64
 		return fmt.Sprintf("refused: quantity %s exceeds the max-contracts cap %d", q, c), true
 	}
 	return "", false
+}
+
+// armFeedStale is the planner-arm stale-data verdict (OPS NEW-2): the newest
+// 1m bar of the trader's symbol judged by kernel.EntryFeedStale — the SAME
+// one-verdict function the mentor block calls. No bar provider wired (no NT8
+// series at all: sandbox, tests) → not stale, as on the mentor path; a wired
+// live-frame provider that reports no live frame since boot fails CLOSED
+// (stale) even with an empty 1m cache, still behind the clock-step hold.
+func (at *AutoTrader) armFeedStale(now time.Time) (bool, string) {
+	if at == nil || market.FuturesBarsProvider == nil {
+		return false, ""
+	}
+	newestOpen := int64(0)
+	if bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1); len(bars) > 0 {
+		newestOpen = bars[len(bars)-1].OpenTime
+	}
+	return kernel.EntryFeedStale(at.futuresSymbol(), newestOpen, now)
 }

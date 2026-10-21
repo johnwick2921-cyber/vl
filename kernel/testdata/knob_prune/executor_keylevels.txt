@@ -1,12 +1,12 @@
 KEY LEVELS (map, nearest-first; price 20041.83):
-  20040.64  POC                  A  fresh·x11 magnet_meanrevert -1.2
-  20045.77  VWAP+1σ              A  fresh·x13 magnet_meanrevert +3.9
+  20040.64  POC                  A  fresh·x5  magnet_meanrevert -1.2
+  20045.77  VWAP+1σ              A  fresh·x6  magnet_meanrevert +3.9
   20036.56  PDC                  A  fresh·x5  pivot           -5.3
   20056.51  VAH                  A  fresh·x5  react_zone      +14.7
-  20060.46  SWG-H·5m             A  fresh·x13 react_zone      +18.6
-  20075.16  SETT                 A  fresh·x11 pivot           +33.3
-  20079.55  SWG-H·5m             A  fresh·x17 react_zone      +37.7
-  20001.23  VWAP                 A  fresh·x19 magnet_meanrevert -40.6
+  20060.46  SWG-H·5m             A  fresh·x6  react_zone      +18.6
+  20075.16  SETT                 A  fresh·x5  pivot           +33.3
+  20079.55  SWG-H·5m             A  fresh·x5  react_zone      +37.7
+  20001.23  VWAP                 A  fresh·x3  magnet_meanrevert -40.6
 Anchor: react AT these levels (grade A>B>C); between them, a confirmed momentum/breakout may still be traded.
 role playbook: magnet_meanrevert = price gravitates back (fade/reversion setups) · liquidity_break = resting stops (break or sweep-reclaim, never a blind fade) · react_zone = first-touch reaction reference (reject/hold evidence) · target_only = take-profit / invalid reference only, NEVER an entry trigger · pivot = the auction's fulcrum (bias flips measured against it).
 
@@ -21,9 +21,9 @@ MAP (merged references, nearest-first; price 20041.83):
   20001.23  VWAP · RN 20000 [merged x2]                  A  entry-candidate  -40.6 pt / 2.25 ATR  min_tgt≥54.25pts
   20100     RN 20100                                     —  target           +58.17 pt / 3.22 ATR  projection: round number beyond the range (step 100)  min_tgt≥54.25pts
   19900     RN 19900                                     —  target           -141.83 pt / 7.84 ATR  projection: round number beyond the range (step 100)  min_tgt≥54.25pts
-  20184.38  ATR-PROJ-H                                   —  target           +142.55 pt / 7.88 ATR  projection: session open 20019 ± 1×daily-ATR 165.38 [I]  min_tgt≥54.25pts
+  20184.61  ATR-PROJ-H                                   —  target           +142.78 pt / 7.9 ATR  projection: session open 20019 ± 1×daily-ATR 165.61 [I]  min_tgt≥54.25pts
   20200     RN 20200                                     —  target           +158.17 pt / 8.75 ATR  projection: round number beyond the range (step 100)  min_tgt≥54.25pts
-  19853.62  ATR-PROJ-L                                   —  target           -188.21 pt / 10.41 ATR  projection: session open 20019 ± 1×daily-ATR 165.38 [I]  min_tgt≥54.25pts
+  19853.39  ATR-PROJ-L                                   —  target           -188.44 pt / 10.42 ATR  projection: session open 20019 ± 1×daily-ATR 165.61 [I]  min_tgt≥54.25pts
 ENTRY SHORTLIST (reachability order — nearest first; [I] unvalidated, E4 pending):
   1. 20001.23  VWAP · RN 20000                              score 1.44
 Levels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.

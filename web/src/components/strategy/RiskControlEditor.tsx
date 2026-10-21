@@ -8,6 +8,7 @@ import {
 } from '../../riskControlDefaults'
 import { riskControl, ts } from '../../i18n/strategy-translations'
 import type { StudioEffective } from '../../lib/api/strategyEffective'
+import type { EffectiveKnob } from '../../lib/api/strategyEffective'
 import {
   EffectiveLine,
   EffectiveSavedNote,
@@ -15,6 +16,7 @@ import {
 } from './EffectiveChip'
 import { MentorModeToggle } from './MentorModeToggle'
 import { MentorTuningPanel } from './MentorTuningPanel'
+import { MentorCourseExitsPanel } from './MentorCourseExitsPanel'
 
 // ClampedNumberInput edits a single clamped number (e.g. min R/R). It holds the
 // RAW typed text in local state WHILE editing — so clearing + retyping work — and
@@ -97,6 +99,29 @@ interface RiskControlEditorProps {
 
 const RC_PATH = 'ai_config.risk_control.'
 
+// release #32 — the "not applied while mentor mode is ON" caveat is READ from
+// the server's effective origin ("mentor_mode on — saved … not used"), never a
+// typed copy that can drift from the resolver. When the origin marks the knob
+// not-used-in-mentor, the effective value IS the caveat sentence the resolver
+// produced ("not applied while mentor mode is ON (owner ruling …)") — render
+// that verbatim.
+export function mentorNotAppliedCaveat(
+  knob?: EffectiveKnob | null
+): string | null {
+  if (!knob) return null
+  if (
+    !knob.origin.includes('mentor_mode on') ||
+    !knob.origin.includes('not used')
+  )
+    return null
+  if (
+    typeof knob.effective === 'string' &&
+    knob.effective.startsWith('not applied')
+  )
+    return knob.effective
+  return knob.origin
+}
+
 // A small on/off switch (Chunk 6). Writes a guardrail's `…_enabled` flag — these
 // toggles only set kernel-gate guardrail config; they have NO path to the broker-
 // layer live-account block, which stays hard-blocked regardless.
@@ -134,6 +159,8 @@ function Toggle({
 }
 
 // A guardrail row: label + on/off toggle + the value input (dimmed when off).
+// `badge` (optional) renders a warning pill next to the label — e.g. the
+// "NOT ENFORCED — guardrails master is OFF" badge (release #32).
 function GuardrailRow({
   label,
   enabled,
@@ -141,6 +168,7 @@ function GuardrailRow({
   disabled,
   children,
   testId,
+  badge,
 }: {
   label: string
   enabled: boolean
@@ -148,6 +176,7 @@ function GuardrailRow({
   disabled?: boolean
   children: ReactNode
   testId?: string
+  badge?: string
 }) {
   return (
     <div
@@ -162,6 +191,19 @@ function GuardrailRow({
         <label className="text-sm" style={{ color: '#EAECEF' }}>
           {label}
         </label>
+        {badge && (
+          <span
+            data-testid="guardrail-not-enforced-badge"
+            className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+            style={{
+              color: '#F6465D',
+              background: 'rgba(246,70,93,0.12)',
+              border: '1px solid rgba(246,70,93,0.35)',
+            }}
+          >
+            {badge}
+          </span>
+        )}
         <Toggle
           on={enabled}
           onChange={onToggle}
@@ -226,6 +268,10 @@ export function RiskControlEditor({
   const eff = (leaf: string) => effective?.byPath[RC_PATH + leaf]
   const onOff = ts(riskControl.effOnOff, language)
   const valueLbl = ts(riskControl.effValue, language)
+  // release #32 — the guardrails master OFF silently bypasses every child
+  // guardrail (engine_analysis.go:180). The badge makes that visible per row.
+  const guardrailsMasterOn = config.guardrails_enabled === true
+  const notEnforcedBadge = ts(riskControl.notEnforcedBadge, language)
   // The futures risk panel prints the server's resolved value (or n/a).
   const maxContractsText = effectiveValueText(eff('max_contracts_per_order'))
   const notionalText = effectiveValueText(eff('max_notional_leverage'))
@@ -252,6 +298,13 @@ export function RiskControlEditor({
         windowMinutes={config.mentor_window_minutes}
         onWindowStartChange={(v) => updateField('mentor_window_start', v)}
         onWindowMinutesChange={(v) => updateField('mentor_window_minutes', v)}
+        stopAfterWin={config.mentor_done_after_win}
+        onStopAfterWinChange={(v) => updateField('mentor_done_after_win', v)}
+        stopAfterLoss={config.mentor_stop_after_loss}
+        onStopAfterLossChange={(v) => updateField('mentor_stop_after_loss', v)}
+        trailMode={config.mentor_trail_mode}
+        onTrailModeChange={(v) => updateField('mentor_trail_mode', v)}
+        eff={eff}
       />
       {config.mentor_mode === true && (
         <MentorTuningPanel
@@ -259,6 +312,22 @@ export function RiskControlEditor({
           onChange={(v) => updateField('mentor_tuning', v)}
           disabled={disabled}
           language={language}
+          eff={eff}
+        />
+      )}
+      {config.mentor_mode === true && (
+        <MentorCourseExitsPanel
+          values={config}
+          onChange={(key, value) => {
+            if (!disabled) {
+              const next: Record<string, unknown> = { ...config, [key]: value }
+              if (value === undefined) delete next[key]
+              onChange(next as unknown as RiskControlConfig)
+            }
+          }}
+          disabled={disabled}
+          language={language}
+          eff={eff}
         />
       )}
       {/* Hold discipline (hold-lock) — applies to futures + crypto; default OFF */}
@@ -300,6 +369,15 @@ export function RiskControlEditor({
         <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
           {ts(riskControl.breakevenDesc, language)}
         </p>
+        {mentorNotAppliedCaveat(eff('breakeven_enabled')) && (
+          <p
+            data-testid="breakeven-mentor-caveat"
+            className="text-xs mt-2"
+            style={{ color: '#F0B90B' }}
+          >
+            {mentorNotAppliedCaveat(eff('breakeven_enabled'))}
+          </p>
+        )}
         <div className="flex items-center gap-2 mt-2">
           <span className="text-xs" style={{ color: '#848E9C' }}>
             {ts(riskControl.breakevenTrigger, language)}
@@ -314,10 +392,31 @@ export function RiskControlEditor({
             onCommit={(n) => updateField('breakeven_trigger_points', n)}
           />
         </div>
+        {/* Release #25 (F-8) — breakeven in R of the initial risk. 0/absent =
+            OFF = the points rule above (byte-identical). AI/planner only. */}
+        <div className="flex items-center gap-2 mt-2">
+          <span className="text-xs" style={{ color: '#848E9C' }}>
+            {ts(riskControl.breakevenTriggerR, language)}
+          </span>
+          <ClampedNumberInput
+            value={config.breakeven_trigger_r}
+            fallback={0}
+            min={0}
+            max={10}
+            step={0.1}
+            disabled={disabled || config.breakeven_enabled !== true}
+            onCommit={(n) => updateField('breakeven_trigger_r', n)}
+            testId="breakeven-trigger-r-input"
+          />
+        </div>
         <EffectiveLine knob={eff('breakeven_enabled')} label={onOff} />
         <EffectiveLine
           knob={eff('breakeven_trigger_points')}
           label={ts(riskControl.breakevenTrigger, language)}
+        />
+        <EffectiveLine
+          knob={eff('breakeven_trigger_r')}
+          label={ts(riskControl.breakevenTriggerR, language)}
         />
       </div>
 
@@ -339,6 +438,15 @@ export function RiskControlEditor({
         <p className="text-xs mt-2" style={{ color: '#848E9C' }}>
           {ts(riskControl.trailingDesc, language)}
         </p>
+        {mentorNotAppliedCaveat(eff('trailing_enabled')) && (
+          <p
+            data-testid="trailing-mentor-caveat"
+            className="text-xs mt-2"
+            style={{ color: '#F0B90B' }}
+          >
+            {mentorNotAppliedCaveat(eff('trailing_enabled'))}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3 mt-2">
           <span className="text-xs" style={{ color: '#848E9C' }}>
             {ts(riskControl.trailingMult, language)}
@@ -668,6 +776,7 @@ export function RiskControlEditor({
                 step={0.5}
                 disabled={disabled}
                 onCommit={(n) => updateField('min_risk_reward_ratio', n)}
+                testId="min-risk-reward-input"
               />
             </div>
             <EffectiveLine knob={eff('min_risk_reward_ratio')} />
@@ -813,6 +922,19 @@ export function RiskControlEditor({
                   the chip below prints what the server resolves for the saved
                   row (value · origin · scope), never a typed default. */}
             </p>
+            {/* r22 RISK-GATES — mentor entries come from the course rules and
+                carry no AI confidence, so this floor never gates them. */}
+            {config.mentor_mode === true && (
+              <p
+                data-testid="min-confidence-mentor-note"
+                className="text-xs mb-2"
+                style={{ color: '#F0B90B' }}
+              >
+                Does not apply in mentor mode — mentor entries come from the
+                course rules and carry no AI confidence. This floor gates AI
+                decisions only.
+              </p>
+            )}
             <div className="flex items-center gap-2">
               <input
                 type="range"
@@ -852,8 +974,9 @@ export function RiskControlEditor({
               {ts(riskControl.masterSwitch, language)}
             </span>
             <Toggle
-              on={config.guardrails_enabled ?? true}
+              on={config.guardrails_enabled ?? false}
               onChange={(v) => updateField('guardrails_enabled', v)}
+              testId="guardrails-master-toggle"
               disabled={disabled}
             />
           </div>
@@ -871,9 +994,10 @@ export function RiskControlEditor({
         <div className="grid grid-cols-2 gap-4">
           <GuardrailRow
             label={ts(riskControl.dailyLossLimit, language)}
-            enabled={config.daily_loss_enabled ?? true}
+            enabled={config.daily_loss_enabled ?? false}
             onToggle={(v) => updateField('daily_loss_enabled', v)}
             disabled={disabled}
+            badge={guardrailsMasterOn ? undefined : notEnforcedBadge}
           >
             <input
               type="number"
@@ -895,13 +1019,27 @@ export function RiskControlEditor({
               }}
             />
             {/* 6.5 — the silent env fallback, stated (only enforced while the
-                guardrails master is ON) */}
+                guardrails master AND this row are ON — absent reads OFF since
+                r22) */}
             {!config.daily_loss_limit_usd && (
               <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
                 empty/0 → $500 env default (RISK_MAX_DAILY_LOSS_USD) while the
-                master switch is ON
+                master switch AND this row are ON
               </p>
             )}
+            {/* r22 RISK-GATES — what the switch does, in plain words. */}
+            <p
+              data-testid="daily-loss-what-it-does"
+              className="text-xs mt-1"
+              style={{ color: '#848E9C' }}
+            >
+              OFF unless you switch on the master AND this row (the $ field is
+              the limit). When ON: when the bot&apos;s own P&amp;L today
+              (realized + open, manual trades excluded) reaches −limit, every
+              path refuses new entries, resting entry orders are cancelled, the
+              bot&apos;s positions are flattened, and it stays locked until
+              17:00 CT. Mentor mode included.
+            </p>
             <EffectiveLine knob={eff('daily_loss_enabled')} label={onOff} />
             <EffectiveLine
               knob={eff('daily_loss_limit_usd')}
@@ -914,6 +1052,7 @@ export function RiskControlEditor({
             enabled={config.daily_profit_enabled ?? false}
             onToggle={(v) => updateField('daily_profit_enabled', v)}
             disabled={disabled}
+            badge={guardrailsMasterOn ? undefined : notEnforcedBadge}
           >
             <input
               type="number"
@@ -946,6 +1085,7 @@ export function RiskControlEditor({
             enabled={config.max_daily_trades_enabled ?? false}
             onToggle={(v) => updateField('max_daily_trades_enabled', v)}
             disabled={disabled}
+            badge={guardrailsMasterOn ? undefined : notEnforcedBadge}
           >
             <input
               type="number"
@@ -1021,25 +1161,39 @@ export function RiskControlEditor({
               }
               disabled={disabled}
             >
-              <input
-                type="number"
-                value={config.reentry_cooldown_minutes || ''}
-                placeholder="e.g. 20"
-                onChange={(e) =>
-                  updateField(
-                    'reentry_cooldown_minutes',
-                    parseInt(e.target.value) || 0
-                  )
-                }
-                disabled={disabled}
-                min={0}
-                className="w-full px-3 py-2 rounded font-mono"
-                style={{
-                  background: '#1E2329',
-                  border: '1px solid #2B3139',
-                  color: '#EAECEF',
-                }}
-              />
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  value={config.reentry_cooldown_minutes || ''}
+                  placeholder="e.g. 20"
+                  onChange={(e) =>
+                    updateField(
+                      'reentry_cooldown_minutes',
+                      parseInt(e.target.value) || 0
+                    )
+                  }
+                  disabled={disabled}
+                  min={0}
+                  className="w-full px-3 py-2 rounded font-mono"
+                  style={{
+                    background: '#1E2329',
+                    border: '1px solid #2B3139',
+                    color: '#EAECEF',
+                  }}
+                />
+                {/* release #32 — the absent key is 0 = OFF in Go; the toggle
+                    writes 20 only when the owner turns it on. Show the absent
+                    truth instead of an empty field. */}
+                {config.reentry_cooldown_minutes == null && (
+                  <span
+                    data-testid="reentry-cooldown-absent-hint"
+                    className="text-xs whitespace-nowrap"
+                    style={{ color: '#F0B90B' }}
+                  >
+                    OFF (absent = 0)
+                  </span>
+                )}
+              </div>
               <EffectiveLine knob={eff('reentry_cooldown_minutes')} />
             </GuardrailRow>
           )}
@@ -1049,6 +1203,7 @@ export function RiskControlEditor({
             enabled={config.consistency_enabled ?? false}
             onToggle={(v) => updateField('consistency_enabled', v)}
             disabled={disabled}
+            badge={guardrailsMasterOn ? undefined : notEnforcedBadge}
           >
             <input
               type="number"
@@ -1105,6 +1260,31 @@ export function RiskControlEditor({
           </AlwaysOnRow>
 
           <AlwaysOnRow
+            label={ts(riskControl.plannerContractsField, language)}
+            badge={ts(riskControl.alwaysActive, language)}
+          >
+            <input
+              type="number"
+              value={config.planner_contracts ?? ''}
+              placeholder="1"
+              data-testid="planner-contracts-input"
+              onChange={(e) =>
+                updateField('planner_contracts', parseInt(e.target.value) || 0)
+              }
+              disabled={disabled}
+              min={0}
+              max={10}
+              className="w-full px-3 py-2 rounded font-mono"
+              style={{
+                background: '#1E2329',
+                border: '1px solid #2B3139',
+                color: '#EAECEF',
+              }}
+            />
+            <EffectiveLine knob={eff('planner_contracts')} />
+          </AlwaysOnRow>
+
+          <AlwaysOnRow
             label={ts(riskControl.notionalCapField, language)}
             badge={ts(riskControl.alwaysActive, language)}
           >
@@ -1136,6 +1316,7 @@ export function RiskControlEditor({
               enabled={config.blackout_enabled ?? false}
               onToggle={(v) => updateField('blackout_enabled', v)}
               disabled={disabled}
+              badge={guardrailsMasterOn ? undefined : notEnforcedBadge}
             >
               <div className="flex items-center gap-3">
                 <input

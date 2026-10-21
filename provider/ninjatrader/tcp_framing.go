@@ -51,8 +51,16 @@ type SignalPayload struct {
 	// entry frame — leg 1 = ceil(n/2) with its own TP, leg 2 = the runner with
 	// TakeProfit. omitempty → a pre-v4 AddOn sees the single-bracket frame
 	// byte-identical. leg1_qty == 0 → the AddOn places ONE OCO pair as today.
-	Leg1Qty   int     `json:"leg1_qty,omitempty"`
-	Leg1TP    float64 `json:"leg1_tp,omitempty"`
+	Leg1Qty int     `json:"leg1_qty,omitempty"`
+	Leg1TP  float64 `json:"leg1_tp,omitempty"`
+	// Leg2Qty / Leg2TP (release #31, wire v5): the runner's FIRST partial — the
+	// runner sells leg2_qty at leg2_tp (the first line beyond the leg-1 exit),
+	// and the REST trails as today (leg 3 = quantity − leg1_qty − leg2_qty,
+	// TP = TakeProfit). omitempty → a pre-v5 AddOn sees the 2-pair frame
+	// byte-identical. Go zeroes both unless the far side proves
+	// MinAddonBuildLeg3. leg2_qty == 0 → the AddOn places TWO pairs (no leg 3).
+	Leg2Qty   int     `json:"leg2_qty,omitempty"`
+	Leg2TP    float64 `json:"leg2_tp,omitempty"`
 	SignalID  string  `json:"signal_id"` // UUID
 	Timestamp string  `json:"timestamp"` // RFC3339
 	// A2 (G1, wire v3) — identity stamp. trader_id is the OWNING trader; seq is the
@@ -154,6 +162,12 @@ type HelloPayload struct {
 	AssemblyMVID    string `json:"assembly_mvid,omitempty"`
 	SourceHash      string `json:"source_hash,omitempty"`
 	ActivationNonce string `json:"activation_nonce,omitempty"`
+
+	// ConnectKey (W-FRIEND-HOSTED S4) — a friend bot's connect key. When the
+	// server requires NT_CONNECT_KEY, a hello whose ConnectKey does not match
+	// is refused. omitempty keeps the wire byte-identical for an owner AddOn
+	// that does not send it.
+	ConnectKey string `json:"connect_key,omitempty"`
 }
 
 // ── W-ONE-BUTTON M2 site 7 — the installation maintenance frames ───────────
@@ -245,7 +259,8 @@ type ModifyBracketPayload struct {
 	SignalID      string  `json:"signal_id"`
 	NewStopLoss   float64 `json:"new_stop_loss,omitempty"`
 	NewTakeProfit float64 `json:"new_take_profit,omitempty"`
-	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	// Leg (REVIEW-353, wire v4; release #31 wire v5): 1 = leg 1 only, 2 = leg 2
+	// only, 3 = leg 3 only, absent/0 = all.
 	Leg      int    `json:"leg,omitempty"`
 	Account  string `json:"account,omitempty"`
 	TraderID string `json:"trader_id,omitempty"`
@@ -358,6 +373,15 @@ const MinAddonBuildStopSlot = "2026-09-05-g2"
 // therefore ZEROES the split (single bracket, byte-identical) until the far side
 // proves this build.
 const MinAddonBuildSplitLegs = "2026-10-04-d1"
+
+// MinAddonBuildLeg3 is the minimum AddOn build that places a THIRD OCO pair on
+// one entry (release #31: the runner's first partial — leg2_qty at leg2_tp, the
+// rest trails). A pre-v5 AddOn ignores leg2_qty and places the TWO-pair frame
+// (leg 1 + runner) byte-identically, so the Go side ZEROES the leg-2 split until
+// the far side proves this build.
+//
+// The ISO date advances (2026-10-16), per the suffix rule above.
+const MinAddonBuildLeg3 = "2026-10-16-a"
 
 // MinAddonBuildStopLimit is the minimum AddOn build that builds a stop_entry
 // as OrderType.StopLimit (LimitPrice == StopPrice) when the signal carries
@@ -609,6 +633,12 @@ const FrameFeedStatus FrameType = "feed_status"
 type FeedStatusPayload struct {
 	PriceStatus string `json:"price_status"` // "Connected" | "ConnectionLost" | "Connecting" | "Disconnected"
 	Time        string `json:"time"`         // RFC3339
+	// Mode (P0 feed freshness, W-FRIEND-HOSTED follow-up) — the broker's market
+	// data mode, so a broker-reported DELAYED feed is distinguished from a STALE
+	// feed (bar timestamps frozen). "realtime" | "delayed" | "" (absent =
+	// unknown, the legacy AddOn that does not send it). omitempty keeps the wire
+	// byte-identical for an AddOn that omits it.
+	Mode string `json:"mode,omitempty"`
 }
 
 // instrument_info — C#-AddOn → Go-server, additive frame. Carries the RESOLVED
@@ -702,7 +732,8 @@ type MoveStopPayload struct {
 	SignalID    string  `json:"signal_id"`     // the entry's signal_id (the bracket key)
 	NewStopLoss float64 `json:"new_stop_loss"` // tick-rounded new stop price
 	Timestamp   string  `json:"timestamp"`     // RFC3339
-	// Leg (REVIEW-353, wire v4): 1 = leg 1 only, 2 = leg 2 only, absent/0 = all.
+	// Leg (REVIEW-353, wire v4; release #31 wire v5): 1 = leg 1 only, 2 = leg 2
+	// only, 3 = leg 3 only, absent/0 = all.
 	Leg int `json:"leg,omitempty"`
 	// A2 (G1, wire v3) — identity stamp: target account + owning trader + op seq.
 	Account  string `json:"account,omitempty"`
@@ -813,6 +844,10 @@ type BarsUnsubscribePayload struct {
 type AccountInfo struct {
 	Name  string `json:"name"`   // e.g. "Sim101" or "PropAcct"
 	IsSim bool   `json:"is_sim"` // true if this is a simulation account
+	// Connection is the NT8 connection type name (e.g. "SimulationConnection"),
+	// best-effort and absent when the AddOn could not read it. Persisted for
+	// forensics only — the SIM gate reads IsSim, never this string.
+	Connection string `json:"connection,omitempty"`
 }
 
 // AccountsListPayload reports all available NT accounts discovered by the C# AddOn.

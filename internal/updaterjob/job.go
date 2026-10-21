@@ -87,6 +87,19 @@ type Job struct {
 
 	NT8 *NT8Decision `json:"nt8,omitempty"`
 
+	// Catchup marks a worker-internal catch-up job (feat/addon-catchup): it
+	// rebuilds the AddOn from the INSTALLED release's ninjascript — no
+	// download/verify/preflight/hold/activate. CatchupNT8Open records whether
+	// NT8 was open when the job was created: open → build + place + restart +
+	// reconnect; closed → build + place only (the new DLL loads at the next
+	// NT8 start).
+	Catchup        bool `json:"catchup,omitempty"`
+	CatchupNT8Open bool `json:"catchup_nt8_open,omitempty"`
+
+	// Addon is the one-click AddOn flow state (W-ADDON-ONE-CLICK), set after
+	// nt8_updated and carried through addon_built/placed/restarted/reconnected.
+	Addon *AddonState `json:"addon,omitempty"`
+
 	// DrainPath is how the drain passed: "" (the normal ack/census path) or
 	// "nt8_absent" (UPDATER-NT8-CLOSED: the link was down >= 60s and every
 	// ledger leg passed on its own evidence). LinkDownSince is the server's
@@ -97,6 +110,26 @@ type Job struct {
 	ResumedAt       *time.Time `json:"resumed_at,omitempty"`        // the attended resume from nt8_updated
 	LastGoodReceipt *int       `json:"last_good_receipt,omitempty"` // index into receipts (recovery_needed)
 	RecoveryReason  string     `json:"recovery_reason,omitempty"`
+
+	// Friends records the friend-update sweep that follows a COMPLETED owner
+	// install (W-FRIEND-HOSTED Segment 5): each active friend's outcome.
+	// Absent when no sweep ran (no friend surface configured, the registry
+	// was unreadable, or the job ended rolled_back / reverted_clean /
+	// refused) or the sweep found no friends to record.
+	Friends []FriendResult `json:"friends,omitempty"`
+}
+
+// FriendResult is one friend's outcome in the post-complete friend sweep
+// (W-FRIEND-HOSTED). State is one of restarted | deferred | restored-restart |
+// failed | skipped. Rev is the revision the friend's BOOT INTEGRITY line
+// named ("" when the friend did not boot the release).
+type FriendResult struct {
+	Name  string `json:"name"`
+	State string `json:"state"`
+	Rev   string `json:"rev,omitempty"`
+	// Note carries the verbatim reason for a non-restarted state (the boot
+	// error, the defer reason, the skip reason). Absent for a clean restart.
+	Note string `json:"note,omitempty"`
 }
 
 // Transition is one persisted (state, phase) with its time. The list is the
@@ -155,6 +188,13 @@ type NT8Decision struct {
 	AckedAt         string `json:"acked_at,omitempty"`       // addon_ack.received, verbatim
 	AckAcceptSeq    uint64 `json:"ack_accept_seq,omitempty"` // the connection's accept_seq at the park — a new seq proves a new connection
 	CSUnchanged     *bool  `json:"cs_unchanged,omitempty"`
+	// OldInstallBuildID (W26 PART C) is the VL_BUILD_ID the install's OWN
+	// ninjascript declares — "the build the OLD install shipped". It is READ at
+	// the park and persists to the resume, where it distinguishes the #206 hazard
+	// (build id NOT bumped: old install build == manifest build) from the
+	// already-compiled case (bumped: the AddOn can only run the new build if it
+	// was F5'd). Empty when unreadable — the park stays the safe side.
+	OldInstallBuildID string `json:"old_install_build_id,omitempty"`
 	// Absent marks the nt8_absent decision (UPDATER-NT8-CLOSED): NT8 was
 	// closed at the decision, so no ack was read — the decision rests on the
 	// signed manifest vs the install's ninjascript/*.cs content alone.
@@ -163,6 +203,31 @@ type NT8Decision struct {
 	// is closed, so there is nobody to F5 now.
 	Absent bool `json:"absent,omitempty"`
 	F5Owed bool `json:"f5_owed,omitempty"`
+}
+
+// AddonState persists the one-click AddOn flow's inputs across its steps, so a
+// resume mid-flow (or DS-102's rollback) knows exactly what was built, placed
+// and restarted. W-ADDON-ONE-CLICK.
+type AddonState struct {
+	// DllPath is the built VL.AddOn.dll (WSL path) and Sha256 its hex digest.
+	DllPath string `json:"dll_path,omitempty"`
+	Sha256  string `json:"sha256,omitempty"`
+	// BuiltBy records which builder produced the DLL: "roslyn-ps1" (the no-SDK
+	// build-addon.ps1 via NT8's built-in Roslyn) or "dotnet" (the SDK fallback).
+	BuiltBy string `json:"built_by,omitempty"`
+	// MigrationPending is set when the AddOn place is DEFERRED to the restart
+	// step: NT8 was OPEN and NinjaTrader.Custom.dll still held the AddOn type,
+	// so the Custom.dll rebuild + AddOn place run while NT8 is closed (release
+	// #35 FOLD 2), right after the restart's stop and before its start.
+	MigrationPending bool `json:"migration_pending,omitempty"`
+	// BackupDir is where Place MOVED the previous DLL ("" when there was none).
+	BackupDir string `json:"backup_dir,omitempty"`
+	// Restarted records that nt8_restart actually restarted NT8 (so rollback
+	// knows to restart it again with the old DLL restored).
+	Restarted bool `json:"restarted,omitempty"`
+	// OldAcceptSeq is the AddOn connection's accept_seq before the restart — a
+	// NEW accept_seq proves a new connection on reconnect.
+	OldAcceptSeq uint64 `json:"old_accept_seq,omitempty"`
 }
 
 // NT8 decisions.
@@ -211,6 +276,32 @@ func New(jobID, releaseID string, now time.Time) (Job, error) {
 		ReleaseID:   releaseID,
 		State:       StateRequested,
 		Phase:       PhaseDone,
+		CreatedAt:   now,
+		UpdatedAt:   now,
+		Transitions: []Transition{{State: StateRequested, Phase: PhaseDone, At: now, Receipts: 0}},
+		Receipts:    []Receipt{},
+	}, nil
+}
+
+// NewCatchup is the job a worker-internal catch-up writes: it starts at
+// requested/done (the history must start there — Validate), with Catchup set so
+// the runner routes it straight into the addon build instead of the install
+// pipeline. Nothing is downloaded, verified or activated.
+func NewCatchup(jobID string, now time.Time) (Job, error) {
+	if !updaterwire.ValidJobID(jobID) {
+		return Job{}, fmt.Errorf("%w: %q", ErrBadJobID, clip(jobID))
+	}
+	if now.IsZero() {
+		return Job{}, errors.New("updaterjob: NewCatchup needs a clock reading")
+	}
+	now = norm(now)
+	return Job{
+		Schema:      SchemaVersion,
+		JobID:       jobID,
+		ReleaseID:   "catchup",
+		State:       StateRequested,
+		Phase:       PhaseDone,
+		Catchup:     true,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 		Transitions: []Transition{{State: StateRequested, Phase: PhaseDone, At: now, Receipts: 0}},
@@ -424,7 +515,11 @@ func (j Job) Validate() error {
 		// released version could have written — this edge stays legal for
 		// REPLAY only; CheckMove (the live table) still forbids it.
 		legacyBootToComplete := p.State == StateBootVerified && p.Phase == PhaseDone && c.State == StateComplete
-		if !legacyBootToComplete {
+		// LEGACY EDGE (W-ADDON-ONE-CLICK, 2026-10-17): every released worker
+		// before this wave left the nt8_updated park directly for activated
+		// (the attended F5 resume). Replay accepts it; the live table does not.
+		legacyParkLeave := p.State == StateNT8Updated && p.Phase == PhaseDone && c.State == StateActivated
+		if !legacyBootToComplete && !legacyParkLeave {
 			if err := CheckMove(p.State, p.Phase, c.State); err != nil {
 				return bad("transition %d: %v", i, err)
 			}

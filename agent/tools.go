@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -1527,10 +1528,8 @@ func (a *Agent) toolManageModelConfig(storeUserID, argsJSON string) string {
 	if err := mcp.ValidateThinkingKnobs(thinkingMode, reasoningEffort); err != nil {
 		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
-	if trimmed := strings.TrimSpace(args.CustomAPIURL); trimmed != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(trimmed, "#")); err != nil {
-			return fmt.Sprintf(`{"error":"invalid custom_api_url: %s"}`, err)
-		}
+	if err := security.ValidateModelURL(args.CustomAPIURL); err != nil {
+		return fmt.Sprintf(`{"error":"invalid custom_api_url: %s"}`, err)
 	}
 	action := strings.TrimSpace(args.Action)
 	switch action {
@@ -2876,6 +2875,7 @@ func buildTradeHistory(sources []tradeHistorySource, limit int) map[string]any {
 	var trades []map[string]any
 	var totalPnL float64
 	var wins, losses, unresolved int
+	var manual store.ManualExcluded
 	for _, src := range sources {
 		for _, pos := range src.Positions {
 			if pos.CloseReason == store.CloseReasonTestSeam {
@@ -2883,7 +2883,19 @@ func buildTradeHistory(sources []tradeHistorySource, limit int) map[string]any {
 			}
 			pnl, resolved := pos.CorrectedPnL()
 			var pnlField any
-			if resolved {
+			isManual := store.IsManualOrigin(pos.Origin)
+			if isManual {
+				// R22 R1: a manual NT8 trade is listed (origin=manual) but is
+				// NOT the bot's record — it is summed on its own line only.
+				manual.Trades++
+				manual.IDs = append(manual.IDs, pos.ID)
+				if resolved {
+					pnlField = pnl
+					manual.PnL += pnl
+				} else {
+					manual.Unresolved++
+				}
+			} else if resolved {
 				pnlField = pnl
 				totalPnL += pnl
 				if pnl >= 0 {
@@ -2914,6 +2926,7 @@ func buildTradeHistory(sources []tradeHistorySource, limit int) map[string]any {
 				"leverage":    pos.Leverage,
 				"pnl":         pnlField, // corrected value, or null when unresolved
 				"resolved":    resolved,
+				"origin":      store.CanonicalOrigin(pos.Origin),
 				"entry_time":  entryTime,
 				"exit_time":   exitTime,
 			})
@@ -2948,6 +2961,10 @@ func buildTradeHistory(sources []tradeHistorySource, limit int) map[string]any {
 			"win_rate":            fmt.Sprintf("%.1f%%", winRate),
 			"total_pnl":           totalPnL,
 			"pnl_column":          "pnl_corrected (strict; unresolved rows excluded, never coerced)",
+			// R22 R1 — never hidden silently: the manual rows' own line.
+			"manual_excluded_trades": manual.Trades,
+			"manual_excluded_pnl":    math.Round(manual.PnL*100) / 100,
+			"manual_excluded_line":   manual.Line(),
 		},
 	}
 }

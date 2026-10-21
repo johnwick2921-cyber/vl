@@ -206,8 +206,10 @@ func TestEffectiveEnvOrigins(t *testing.T) {
 	config.Init() // RISK_MAX_DAILY_LOSS_USD is read at boot
 
 	s, st, tok := newEffectiveServer(t)
+	// r22: both guardrail switches saved ON — absent reads OFF since r22, and
+	// this row tests the $ VALUE's env fallback, which needs the gate on.
 	effPutStrategy(t, st, "env", effUser, `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
-		"max_contracts_per_order":5,"breakeven_enabled":true}}}`)
+		"max_contracts_per_order":5,"breakeven_enabled":true,"guardrails_enabled":true,"daily_loss_enabled":true}}}`)
 	r := effGet(t, s, tok, "/api/strategies/env/effective")
 	cfg := runtimeConfig(t, st, effUser, "env")
 
@@ -233,7 +235,12 @@ func TestEffectiveEnvOrigins(t *testing.T) {
 	}
 
 	be := effRow(t, r, "ai_config.risk_control.breakeven_enabled")
-	if be.Effective != false || be.Origin != "suspended (EXIT_MECHS_SUSPENDED) — saved true not used" || be.Scope != "process env" {
+	// release #32 (B2 item a): while the 0B seam is suspended the EFFECTIVE
+	// value is the SUSPENDED sentence read from the env the wire gate reads —
+	// never "eff on", never "eff off", never a typed "unset" when the env is set.
+	if be.Effective != "SUSPENDED — env EXIT_MECHS_SUSPENDED=1 (no stop is ever moved)" ||
+		be.Origin != "env EXIT_MECHS_SUSPENDED (0B suspension) — saved true not used" ||
+		be.Scope != "process env" {
 		t.Fatalf("breakeven_enabled while suspended: %+v", be)
 	}
 
@@ -313,8 +320,10 @@ func TestEffectiveSessionScopedRows(t *testing.T) {
 // OFF: a guardrail switched off reads off, with the switch that did it.
 func TestEffectiveOffReadsOff(t *testing.T) {
 	s, st, tok := newEffectiveServer(t)
+	// r22: the master saved ON so the daily-loss switch is the one that did it
+	// (an absent master reads OFF since r22 and would name itself instead).
 	effPutStrategy(t, st, "off", effUser, `{"strategy_type":"ai_trading","ai_config":{"risk_control":{
-		"daily_loss_limit_usd":450,"daily_loss_enabled":false}}}`)
+		"daily_loss_limit_usd":450,"guardrails_enabled":true,"daily_loss_enabled":false}}}`)
 	row := effRow(t, effGet(t, s, tok, "/api/strategies/off/effective"), "ai_config.risk_control.daily_loss_limit_usd")
 	if row.Effective != "off (daily_loss_enabled OFF)" || row.Origin != "saved value (daily_loss_enabled OFF)" {
 		t.Fatalf("daily loss switched off: %+v", row)
@@ -474,4 +483,15 @@ func TestEffectiveCoverageCounted(t *testing.T) {
 
 // effectiveResolvedPin is the number of registered resolvers at this revision
 // (trader/effective_settings.go). Change it ONLY with the table.
-const effectiveResolvedPin = 87 // FIX-PLANNER 2026-09-26: +1 (death_reread_retry_min); PLANNER A6 2026-09-25: +1 (planner_fresh_tape); PLANNER B1 2026-09-25: +1 (zone_place_within_pts); W-EXEC-TRUTH W3: +4 (entry_policy_default, zone_max_pts, zone_rest_max_min, min_hold_min)
+//
+// release #32 (B2 items d–e, 2026-10-16): +19 resolvers for the UI-BLIND rows
+// (ai_config.prompt_sections.role_definition / trading_frequency / entry_standards
+// / decision_process, prompt_variant, strategy_type, ai_config.indicators.rsi_periods,
+// ai_config.indicators.klines.longer_timeframe, ai_config.coin_source.static_coins,
+// grid_config.{stop_loss_pct,symbol,total_investment,lower_price,upper_price,max_drawdown_pct},
+// ai_config.risk_control.{max_margin_usage,min_position_size}, publish_config.{is_public,config_visible}).
+// NOT-IN-PANEL (excluded from the schema walk BY DESIGN — computed/DB/API metadata,
+// never a stored StrategyConfig leaf, so MarshalJSON never writes them and
+// EnumerateSchemaKnobs cannot reach them): model_limits, suggestions, system_prompt,
+// total, updated_at.
+const effectiveResolvedPin = 183 // merge fix/mentor-knob-truth onto release #32: 154 (W32 MENTOR-KNOB-TRUTH 2026-10-16: +58 — mentor_mode; base/confluence/big/reduced/swing4h/spent_day_contracts size rows; mentor_max_contracts stays from MENTOR-SIZE-TRUTH; trail_mode; trail_tf; window_start; window_minutes; stale_data_block, stop_after_loss, day_off_recheck, leg_budget_enabled, leg_reset_on, lvl_revisit_min_pts, ema_max_cross_30m, loc_trigger_filter, loss_departure_pts; 11 course-exit rows; 27 mentor_tuning rows) + 28 (release #32: +6 #569 planner_model/planner_contract/wake_on_15m_zone/wake_on_htf_zone/wake_on_seated_invalidation/wake_on_ifvg; +1 planner_contracts #564; +2 mentor_done_after_win/day_start #568; +19 #570 risk-knob-truth) + 1 (mentor_tuning.orb_isb_fraction_outside — release #31's rule-5 knob, added here so every mentor knob resolves) = 183; W26 PLANNER-STALE-ZONES 2026-10-15: +1 (planner_stale_zones_max_atr); RELEASE #25 PLANNER-KNOBS 2026-10-14: +7 (planner_room_gate, planner_room_min_r, planner_exit_on_thesis_death, planner_no_chase_enforce, planner_momentum_into_zone_max_atr, planner_atr_floor_cap_at_invalidation, breakeven_trigger_r); MENTOR-SIZE-TRUTH 2026-10-06 (release #10, #441): +1 (mentor_max_contracts effective row); FIX-PLANNER 2026-09-26: +1 (death_reread_retry_min); PLANNER A6 2026-09-25: +1 (planner_fresh_tape); PLANNER B1 2026-09-25: +1 (zone_place_within_pts); W-EXEC-TRUTH W3: +4 (entry_policy_default, zone_max_pts, zone_rest_max_min, min_hold_min)

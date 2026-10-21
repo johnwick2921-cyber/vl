@@ -67,6 +67,76 @@ func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) T
 	return next
 }
 
+// TriggerReplay1m advances a trigger line over a closed 1m series EXACTLY as
+// the live path does (release #22 LINES-RESTART): the live bot runs one Tick
+// per closed 1m bar, and each Tick hands TriggerTick the tf buckets as they
+// stand at THAT minute — the forming bucket with the extremes it had so far.
+// So the ORDER in which a bucket broke the prior high and low decides the line
+// [D3.4 p1 @08:19 "the trigger candle need NOT close"; p2 @18:49 "keep the one
+// price is beyond NOW"]. The seed used to read history bucket-complete
+// (TriggerTick over barsTF of the whole series): a bucket that broke both
+// extremes and closed inside moved nothing, while live had flipped at the
+// first break — so every restart could hand the bot a different line (the
+// 10-13 18:57 boot re-seeded the 4h at 30741.25 since 01:00 while the running
+// bot held 30774.25 since 05:00).
+//
+// The replay calls the SAME TriggerTick, minute by minute, with the window
+// the live path would have aggregated: [the last complete bucket, the forming
+// bucket]. Committed buckets are skipped by TriggerTick's own watermark, so
+// the result equals a live evaluator that ticked every bar. bars1m must be
+// closed bars in time order (the caller cuts anything not closed by now).
+func TriggerReplay1m(prev TriggerLine, bars1m []market.Kline, tfMin int, cfg Config) TriggerLine {
+	return TriggerReplay1mFrozen(prev, bars1m, tfMin, cfg, nil)
+}
+
+// TriggerReplay1mFrozen is TriggerReplay1m with a CE-4 freeze: when `frozen`
+// reports a 1m bar's open time, that bar still builds its bucket (the candle
+// stays WHOLE) but fires no break — the trigger read holds its pre-print
+// values until the freeze releases. frozen nil = no freeze (TriggerReplay1m).
+func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, cfg Config, frozen func(openMs int64) bool) TriggerLine {
+	if !cfg.Enabled || len(bars1m) == 0 || tfMin <= 1 {
+		return prev
+	}
+	ms := int64(tfMin) * 60_000
+	next := prev
+	var done, cur market.Kline
+	haveDone, haveCur := false, false
+	window := make([]market.Kline, 0, 2)
+	for _, b := range bars1m {
+		bucket := bucketOpen(b.OpenTime, tfMin)
+		if !haveCur || bucket != cur.OpenTime {
+			if haveCur {
+				done, haveDone = cur, true
+			}
+			// Built exactly like barsTF: the first bar's fields, re-stamped
+			// to the bucket; then High/Low/Close/Volume extended per bar.
+			cur = b
+			cur.OpenTime = bucket
+			cur.CloseTime = bucket + ms - 1
+			haveCur = true
+		} else {
+			if b.High > cur.High {
+				cur.High = b.High
+			}
+			if b.Low < cur.Low {
+				cur.Low = b.Low
+			}
+			cur.Close = b.Close
+			cur.Volume += b.Volume
+		}
+		if frozen != nil && frozen(b.OpenTime) {
+			continue // the bar builds the bucket, but fires no break
+		}
+		window = window[:0]
+		if haveDone {
+			window = append(window, done)
+		}
+		window = append(window, cur)
+		next = TriggerTick(next, window, tfMin, cfg)
+	}
+	return next
+}
+
 // applyBreak runs the §5.1 break logic for one bucket against the previous
 // adjacent bucket (B3: every reversal moves the line ONCE — later breaks in
 // the SAME direction never move it; the NEXT reversal moves it again).
@@ -172,7 +242,7 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 		// REL-5 audit #1: target-only levels (4h trigger, wick microscalp) and
 		// trendlines are never range boundaries — they are locations or target
 		// ladders, not the key levels a mid-range sits between.
-		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline {
+		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline || l.Kind == KindTrendlineTarget {
 			continue
 		}
 		d := l.Price - price

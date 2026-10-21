@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -25,6 +26,7 @@ import (
 	"vl/mcp"
 	_ "vl/mcp/provider"
 	"vl/researchsnapshot"
+	"vl/security"
 	"vl/store"
 	"vl/telegram"
 	"vl/telemetry"
@@ -54,6 +56,32 @@ func main() {
 	config.Init()
 	cfg := config.Get()
 	logger.Info("✅ Configuration loaded")
+
+	// R2: security cannot import config (config → mcp → security cycle), so the
+	// friend-mode redirect guard is wired here from the ONE parser.
+	security.FriendModeEnabled = config.FriendInstanceEnabled
+
+	// W-FRIEND-HOSTED Segment 2: a friend instance boots with the owner-only
+	// surfaces off. Refuse an unsafe bind BEFORE anything listens — a friend
+	// copy must never sit on 0.0.0.0 / :: / an empty address.
+	if cfg.IsFriendInstance() {
+		if err := validateFriendBind(cfg.APIServerHost, os.Getenv("NT_TCP_LISTEN_ADDR")); err != nil {
+			logger.Fatalf("❌ friend instance refused: %v", err)
+		}
+		if !config.ValidFriendName(cfg.FriendName) {
+			logger.Fatalf("❌ friend instance refused: VL_FRIEND_NAME=%q is not a valid friend name (lowercase a-z0-9, 2-20 chars)", cfg.FriendName)
+		}
+		// U7: a friend bot is Fatal unless its own secret material is present —
+		// never the owner's, never the insecure default, never a keyless bot.
+		if why := friendHardGuarantees(cfg, os.Getenv("NT_CONNECT_KEY")); why != "" {
+			logger.Fatalf("❌ friend instance refused: %s", why)
+		}
+		logger.Info(friendBootLine(cfg.FriendName, cfg.APIServerHost, cfg.APIServerPort, ntwire.ListenAddr()))
+	}
+
+	// R6: the Friends page drives `systemctl --user`, which needs the user-bus
+	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
+	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
 
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
@@ -123,9 +151,9 @@ func main() {
 		persistState = "on(db)"
 	}
 	if n, err := st.RevokedTokens().Count(); err == nil {
-		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
+		logger.Infof("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=%d", persistState, n)
 	} else {
-		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · onboarding-beginner=owner-only · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
+		logger.Warnf("🛡 auth hardening (FIX-SEC): login-rate-limit=on(per-ip+per-account) · telegram-bind-code=owner-gated · logout-revocations=%s rows=n/a (read failed: %v)", persistState, err)
 	}
 
 	// P6 (ledger-close 2026-08-19) — WARN+ERROR→DB log shipping. Attached
@@ -138,6 +166,15 @@ func main() {
 			TraderID: traderID, Message: message, FieldsJSON: fieldsJSON,
 		})
 	})
+	// Owner identity (2026-10-14): who the owner-only routes and the Telegram
+	// bot trust, READ from the one resolver both use (store.ResolveOwner) —
+	// never the first-created account by assumption. NONE is a WARN, printed
+	// after the DB log sink is attached so it also lands in log_events.
+	if owner := st.ResolveOwner(); owner.Resolved() {
+		logger.Infof("%s", owner.BootLine())
+	} else {
+		logger.Warnf("%s", owner.BootLine())
+	}
 	// P2-1 — table retention: WIRED but DISABLED (owner ruling 2026-09-26:
 	// "keep the database, we are testing"). Every RETENTION_*_DAYS knob defaults
 	// to 0 = keep forever, so the boot run prunes nothing; the boot line READS
@@ -280,6 +317,43 @@ func main() {
 		}
 	}
 
+	// R22 PNL-TRUTH — OWNER RULING R1 (2026-10-14): the four manual NT8
+	// shorts (#608 #609 #637 #640) leave the BOT record by EXCLUSION —
+	// origin=manual, nothing deleted. NOT flag-guarded: the owner ordered
+	// it, and an env flag the owner cannot see would leave −4,226 on the
+	// dashboard. Guarded instead by the backup (no backup, no write), by a
+	// WHERE on id AND trader id AND the adoption fingerprint, and by
+	// idempotence (a second boot finds nothing pending and takes no backup).
+	//
+	// RT-10 (release #24): it runs BEFORE LoadTradersFromStore. It used to run
+	// after the traders loaded (live 10-14: traders 08:22:38-40, migration
+	// 08:22:50), so the first cycle read the unmigrated rows — hoang's first
+	// track-record line said -4226.18/168 instead of -1024.18/164. It needs
+	// only the store and cfg.DBPath (no trader), and a backup taken before any
+	// trader runs is a quieter copy. One-shot on this box (Pending is 0); it
+	// matters for a fresh install and the partner repo.
+	{
+		ran, backup := store.ManualOriginCounts{}, ""
+		pending, pErr := st.Position().PendingManualOriginWork()
+		switch {
+		case pErr != nil:
+			logger.Errorf("🧾 manual-origin migration NOT run — pending read failed: %v", pErr)
+		case pending.Pending == 0:
+			ran = pending
+		default:
+			if b, bErr := store.BackupBeforeManualOrigin(cfg.DBPath, time.Now().Format("20060102-150405")); bErr != nil {
+				logger.Errorf("🧾 manual-origin migration ABORTED — backup failed, no backup no write: %v", bErr)
+			} else if c, mErr := st.Position().RunManualOriginMigration(); mErr != nil {
+				backup = b
+				logger.Errorf("🧾 manual-origin migration failed: %v (backup %s)", mErr, b)
+			} else {
+				backup, ran = b, c
+				logger.Warnf("🧾 manual-origin migration: marked %d row(s) %v origin=manual (owner ruling R1; NOTHING deleted, P&L untouched) · already=%d skipped=%d · backup %s",
+					c.Marked, c.MarkedIDs, c.Already, c.Skipped, b)
+			}
+		}
+		logger.Infof("🧾 %s", st.Position().ManualOriginBootLine(ran, backup))
+	}
 	// Load all traders from database to memory (may auto-start traders with IsRunning=true)
 	// F12 SINK — REGISTERED BEFORE THE TRADERS LOAD. LoadTradersFromStore builds
 	// the first trader, which lazily starts the TCP server, which reads this
@@ -317,6 +391,25 @@ func main() {
 		}
 	})
 
+	// F35 — persist the AddOn's last accounts_list frame so the installation
+	// gate's sim_accounts leg can vouch for the bound accounts after a restart
+	// with NT8 closed. Losing a write must never cost the wire its account list.
+	ntTrader.SetAccountsListSink(func(accts []ntwire.AccountInfo) {
+		now := time.Now().UnixMilli()
+		rows := make([]store.NTAccountLast, 0, len(accts))
+		for _, a := range accts {
+			rows = append(rows, store.NTAccountLast{
+				Name:         a.Name,
+				IsSim:        a.IsSim,
+				Connection:   a.Connection,
+				ReceivedAtMs: now,
+			})
+		}
+		if err := st.NTAccountsLast().Upsert(rows); err != nil {
+			logger.Warnf("📇 accounts_list: persist failed (live list still served): %v", err)
+		}
+	})
+
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}
@@ -342,6 +435,26 @@ func main() {
 			}
 			logger.Infof("  • %s [%s] %s - AI Model: %s, Exchange: %s",
 				t.Name, idShort, status, t.AIModelID, t.ExchangeID)
+		}
+
+		// FIX-RUNNING-FLAG — boot mismatch WARN: a trader the DB says is STOPPED
+		// but that still has an open position or working (non-terminal) armed
+		// order was almost certainly stopped by the double-start rollback, not by
+		// the owner. READ-only: log a WARN naming the trader; no auto-start change.
+		for _, t := range traders {
+			if t.IsRunning {
+				continue
+			}
+			var openPos, working int
+			if ps, err := st.Position().GetOpenPositions(t.ID); err == nil {
+				openPos = len(ps)
+			}
+			if as, err := st.ArmedOrders().ListNonTerminal(t.ID); err == nil {
+				working = len(as)
+			}
+			if openPos > 0 || working > 0 {
+				logger.Warnf("⚠️  boot mismatch: trader %q (%s) is marked STOPPED (is_running=0) but has %d open position(s) and %d working order(s) — it may have been stopped by a duplicate-start rollback while actually running", t.Name, t.ID, openPos, working)
+			}
 		}
 	}
 
@@ -514,6 +627,9 @@ func main() {
 			}
 			logger.Infof("📐 %s", st.WaveARecordBootLine(armed, ran, backup))
 		}
+		// R22 PNL-TRUTH manual-origin migration: MOVED before the traders load
+		// (RT-10, release #24) — see "R22 PNL-TRUTH — OWNER RULING R1" above
+		// LoadTradersFromStore.
 		// 1B D7 — the calibrated detector and the two tables that record it.
 		logger.Infof("🔬 %s", kernel.DetectorBootLine(st.TouchOutcomes().CountOutcomes(), st.CandidatePool().CountPool()))
 
@@ -591,8 +707,8 @@ func main() {
 			// 101 D2 (2026-09-16) — the chart across the roll. The flag is READ
 			// (A11); the readers it gates live in api/ only and the decision
 			// readers are contract-scoped and untouched (E4).
-			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · step never adjusted · limit max=%d · decision readers=current-contract-only",
-				api.ChartAcrossRollResolved(), 20000)
+			logger.Infof("📈 chart: across-roll=%s · prior contracts fill strictly before the current contract's first live row · prior-segment stitch=%s · limit max=%d · decision readers=current-contract-only",
+				api.ChartAcrossRollResolved(), api.ChartRollStitchResolved(), 20000)
 
 			// ONE SETUP (dispatch 102, 2026-09-10) — D9's two backfills, three-state,
 			// ONE SHOT per trader: verdicts at each episode's OPEN since W2's boot,
@@ -713,6 +829,10 @@ func main() {
 
 	server := api.NewServer(traderManager, st, cryptoService, cfg.APIServerHost, cfg.APIServerPort)
 
+	// R14: the friend alert monitor starts at BOOT (owner only), not on the
+	// first Friends page read.
+	server.StartFriendMonitor()
+
 	// Create hot-reload channel for Telegram bot; wire it to the API server
 	// so that POST /api/telegram can trigger a bot restart when the token changes.
 	telegramReloadCh := make(chan struct{}, 1)
@@ -731,8 +851,12 @@ func main() {
 		}
 	})
 
-	// Start Telegram bot (if TELEGRAM_BOT_TOKEN is configured)
-	safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+	// Start Telegram bot (if TELEGRAM_BOT_TOKEN is configured). A friend
+	// instance has no Telegram (W-FRIEND-HOSTED Segment 2, S7): the agent is
+	// never started, so a leaked owner token in a friend .env cannot post.
+	if !cfg.IsFriendInstance() {
+		safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+	}
 
 	// Wait for interrupt signal
 	quit := make(chan os.Signal, 1)
@@ -786,6 +910,68 @@ func formatTopP(v float64) string {
 		return "omitted"
 	}
 	return fmt.Sprintf("%.2f", v)
+}
+
+// isAllInterfacesHost reports whether a bind host is a bind-everything address:
+// empty, or a literal IP whose IsUnspecified() is true (0.0.0.0 / ::). U11: the
+// check is net.ParseIP-based, not a string switch, so a hostname or a scoped
+// address is never misread as "all interfaces".
+func isAllInterfacesHost(h string) bool {
+	s := strings.TrimSpace(h)
+	if s == "" {
+		return true
+	}
+	ip := net.ParseIP(s)
+	return ip != nil && ip.IsUnspecified()
+}
+
+// validateFriendBind refuses a friend instance whose web or NinjaTrader bind
+// would expose it on every interface. apiHost is cfg.APIServerHost; ntListen is
+// the raw NT_TCP_LISTEN_ADDR env value (host:port, or a bare host). U11: the
+// host must be a LITERAL IP (never a hostname), so the friend bot can only ever
+// bind a concrete tunnel address. Values are READ, never fabricated.
+func validateFriendBind(apiHost, ntListen string) error {
+	if isAllInterfacesHost(apiHost) {
+		return fmt.Errorf("API_SERVER_HOST must be a specific address, not %q", strings.TrimSpace(apiHost))
+	}
+	if net.ParseIP(strings.TrimSpace(apiHost)) == nil {
+		return fmt.Errorf("API_SERVER_HOST must be a literal IP address, got %q", strings.TrimSpace(apiHost))
+	}
+	if ntListen == "" {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must be set to the friend's tunnel address, not empty")
+	}
+	host, _, err := net.SplitHostPort(ntListen)
+	if err != nil {
+		// A bare host (no port) is still a bind target; judge the whole string.
+		host = ntListen
+	}
+	if isAllInterfacesHost(host) {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must not bind every interface, got host %q", strings.TrimSpace(host))
+	}
+	if net.ParseIP(strings.TrimSpace(host)) == nil {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must be a literal IP address, got host %q", strings.TrimSpace(host))
+	}
+	return nil
+}
+
+// friendHardGuarantees returns "" when the friend boot requirements (U7) are
+// met, else the reason the boot must be refused: a friend bot needs its OWN
+// non-empty connect key and a JWT secret that is not the insecure default.
+func friendHardGuarantees(cfg *config.Config, ntConnectKey string) string {
+	if strings.TrimSpace(ntConnectKey) == "" {
+		return "NT_CONNECT_KEY is empty — a friend bot must have its own connect key"
+	}
+	if cfg.JWTSecretIsDefault() {
+		return "JWT_SECRET is the insecure default — a friend bot must have its own secret"
+	}
+	return ""
+}
+
+// friendBootLine renders the friend startup line (W-FRIEND-HOSTED Segment 2).
+// Every field is READ from the caller — the web and NT addresses come off the
+// live config / env, never a literal (boot lines are READ, class 45).
+func friendBootLine(name, webHost string, webPort int, ntAddr string) string {
+	return fmt.Sprintf("👥 friend instance %s · web %s:%d · nt %s", name, webHost, webPort, ntAddr)
 }
 
 // totalUnrecomputable sums the three-state backfill's reason buckets. It is a

@@ -22,6 +22,8 @@ type posRow struct {
 	ExitTime        int64
 	Side            string
 	Quantity        float64
+	EntryQuantity   float64 // the WHOLE position (MATH-EXECUTOR P2-1)
+	Origin          string  // R22 R1: "manual" rows are not the bot's
 	EntryPrice      float64
 	Symbol          string
 	PnlCorrected    *float64
@@ -111,7 +113,8 @@ func loadPositions(gdb *gorm.DB) ([]posRow, error) {
 	var rows []posRow
 	err := gdb.Raw(`
 SELECT p.id AS id, p.entry_time AS entry_time, p.exit_time AS exit_time, p.side AS side,
-       p.quantity AS quantity, p.entry_price AS entry_price, p.symbol AS symbol,
+       p.quantity AS quantity, COALESCE(p.entry_quantity,0) AS entry_quantity, COALESCE(p.origin,'') AS origin,
+       p.entry_price AS entry_price, p.symbol AS symbol,
        p.pnl_corrected AS pnl_corrected, COALESCE(p.source,'') AS source,
        COALESCE(p.plan_id,'') AS plan_id, COALESCE(p.plan_session,'') AS plan_session,
        p.plan_version AS plan_version, COALESCE(p.cited_scenario_id,'') AS cited_scenario_id,
@@ -194,6 +197,12 @@ func BuildAt(now time.Time, positions []posRow, arms map[string]armRow, excs map
 			tbl.Excluded.TestSeam++
 			continue
 		}
+		if store.IsManualOrigin(p.Origin) {
+			// R22 R1: an NT8 position the bot adopted with no order/arm of
+			// its own — not the bot's trade, counted under its own reason.
+			tbl.Excluded.Manual++
+			continue
+		}
 		if p.PlanID == store.PlanUnresolvable {
 			tbl.Excluded.Unresolvable++
 			continue
@@ -243,7 +252,11 @@ func BuildAt(now time.Time, positions []posRow, arms map[string]armRow, excs map
 			r.hasExc = true
 			r.mae, r.mfe = e.MaePts, e.MfePts
 			if pv := market.FuturesPointValue(p.Symbol); pv > 0 {
-				if risk := math.Abs(e.EntryPx-e.StopPxInitial) * e.Size * pv; risk > 0 {
+				// MATH-EXECUTOR P2-1: R is P&L over the risk of the WHOLE
+				// position. trade_excursions.size is stamped at the FIRST
+				// partial fill (1 of a 5-lot on #627 → −5.00R for a −1.00R
+				// trade), so the position's own entry quantity wins.
+				if risk := math.Abs(e.EntryPx-e.StopPxInitial) * wholePositionSize(p, e) * pv; risk > 0 {
 					rr := v / risk
 					r.realizedR = &rr
 				}
@@ -690,4 +703,17 @@ func (t *Table) BootLine() string {
 	}
 	return fmt.Sprintf("📊 expectancy: cells=%d with_n>=%d=%d judged_rollups=%d unresolved=%d excluded_test=%d",
 		len(t.Cells), MinN, withN, judged, t.Excluded.UnresolvedPnL, t.Excluded.TestSeam)
+}
+
+// wholePositionSize is the contract count R is measured over: the position's
+// entry quantity (the whole fill), then its quantity, then — only when the
+// position row carries neither — the excursion row's own size.
+func wholePositionSize(p posRow, e excRow) float64 {
+	if p.EntryQuantity > 0 {
+		return p.EntryQuantity
+	}
+	if p.Quantity > 0 {
+		return p.Quantity
+	}
+	return e.Size
 }

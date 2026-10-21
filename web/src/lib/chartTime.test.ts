@@ -6,7 +6,12 @@
 
 import { describe, it, expect } from 'vitest'
 import { TickMarkType, type Time } from 'lightweight-charts'
-import { ctTickMarkFormatter, ctCrosshairTimeFormatter } from './chartTime'
+import {
+  ctTickMarkFormatter,
+  ctCrosshairTimeFormatter,
+  formatCTDisplayString,
+  formatEquityTimestamp,
+} from './chartTime'
 
 // A bar OPEN-stamped 14:30:00 UTC. In August (CDT, −5) that is 09:30 CT —
 // the NY open. In January (CST, −6) the same wall UTC instant is 08:30 CT.
@@ -51,5 +56,45 @@ describe('pin-to-Houston holds for any viewer timezone', () => {
     // cannot influence it. Render twice with different TZ env hints — vitest
     // runs one process, so assert the value equals the CT truth computed above.
     expect(ctCrosshairTimeFormatter(augEpochS)).toBe('08/18 09:30')
+  })
+})
+
+// F6 equity-chart "Invalid Date" — RED on today's code: `new Date()` on the
+// kernel.FormatCT display string returns Invalid Date, so the axis rendered
+// "Invalid Date" on all 10 ticks. The fix must never parse that string with
+// Date(); it parses by hand or uses the new epoch-ms field.
+describe('formatEquityTimestamp — the equity axis never shows Invalid Date', () => {
+  it('RED (today): new Date() on the CT display string is Invalid Date', () => {
+    const d = new Date('2026-09-17 14:12 CT')
+    expect(Number.isNaN(d.getTime())).toBe(true)
+  })
+
+  it('prefers timestamp_ms and renders MM/DD HH:mm in CT', () => {
+    // 14:12 CT on 2026-09-17 (CDT) = 19:12 UTC.
+    const ms = Date.UTC(2026, 8, 17, 19, 12, 0)
+    expect(formatEquityTimestamp(ms)).toBe('09/17 14:12')
+  })
+
+  it('falls back to the hand-parsed CT string when ms is absent (older server)', () => {
+    expect(formatEquityTimestamp(undefined, '2026-09-17 14:12 CT')).toBe(
+      '09/17 14:12'
+    )
+  })
+
+  it('unparseable input renders "—", never "Invalid Date"', () => {
+    expect(formatEquityTimestamp(undefined, 'garbage')).toBe('—')
+    expect(formatEquityTimestamp(undefined, undefined)).toBe('—')
+    expect(formatEquityTimestamp(NaN, 'garbage')).toBe('—')
+  })
+})
+
+describe('formatCTDisplayString — hand-parses the Go display string', () => {
+  it('reformats by hand without Date()', () => {
+    expect(formatCTDisplayString('2026-09-17 14:12 CT')).toBe('09/17 14:12')
+  })
+  it('rejects non-matching strings', () => {
+    expect(formatCTDisplayString('2026-09-17T14:12:00Z')).toBe('—')
+    expect(formatCTDisplayString('')).toBe('—')
+    expect(formatCTDisplayString(null)).toBe('—')
   })
 })

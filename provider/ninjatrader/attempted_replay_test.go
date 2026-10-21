@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"vl/telemetry"
 )
 
 // FIX-DOUBLE-ENTRY — RED-first tests at the production flush path.
@@ -16,6 +18,13 @@ import (
 
 func newAttemptedHarness(t *testing.T) (*TCPServer, net.Conn, func(sig SignalPayload), func() net.Conn) {
 	t.Helper()
+	// The attempted guard's refusal counter (telemetry.gateBlockCnts) is a
+	// package-global never reset between tests — an absolute-count assertion
+	// breaks at -count=2+ once a prior iteration incremented the same key.
+	// Reset at the START of every harness (and on cleanup) so each test owns
+	// its counters. (TEST-ISOLATION-FLAKES, DS-101.)
+	telemetry.ResetGateBlocksForTest()
+	t.Cleanup(telemetry.ResetGateBlocksForTest)
 	s := NewTCPServer(nil)
 	s.attemptedVerifyWaitOverride = 200 * time.Millisecond
 	srv, cli := net.Pipe()

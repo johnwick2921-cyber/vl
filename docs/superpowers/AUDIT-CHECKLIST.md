@@ -2299,6 +2299,10 @@ never renumbered; a gap means a wave took a later slot to avoid a collision.*
     fails on correct text, so the window was calibrated against the real
     sentences instead.
 
+**[NEW — number assigned at merge] Restart-evidence gap (process launched ≠ process alive).** Root cause: `stepNT8Restart` treated `Start-Process` returning without error as proof NinjaTrader had restarted; a launch-then-immediate-exit was indistinguishable from a healthy restart, so `nt8_restarted` marked "done" while NinjaTrader was down, and the failure only surfaced five minutes later at the AddOn reconnect (then the rollback's own restart failed → recovery_needed). **Probe:** a fake-process fixture where `Start-Process` returns success but `isRunning` stays false — the step must not report success (and must route to recovery, never a clean-revert). **Law:** a start command's exit code proves only "launch attempted", never "process alive"; every restart of an external process is followed by a bounded liveness check and an honest receipt, and a dead process routes to recovery (hold kept), never a clean-revert that releases the hold while the old build is not actually running. Fixed in `internal/updaterworker/addon_steps.go` (`startAndVerifyNT8`) + `nt8_start_verification_test.go`.
+
+**[NEW — number assigned at merge] Recovery instructions must preserve artifacts (never rm -rf, never overwrite-in-place).** Root cause: `RecoveryText` (`internal/updaterworker/recovery.go`) emitted `rm -rf <dist>.recovery.tmp` and `mv -f …recovery.tmp <live>` for the binary/RELEASE restore — a delete and an overwrite-away of the failed artifact, both violations of the owner's no-delete rule, and an AddOn step that said MOVE the backup back (consuming the sole backup). **Probe:** render the reachUnproven recovery text and assert no emitted command contains `rm -rf` or an overwrite (`mv -f`) of a live artifact, and that the AddOn step says COPY (never MOVE/delete) the backup. **Law:** generated recovery instructions MOVE the failed artifact aside under a unique timestamped name (evidence) and COPY snapshots into place — leftovers are moved aside, backups are copied, nothing is deleted or overwritten away; repeatability and interrupted recovery are tested by running the commands twice and by cutting the command before its last move. Fixed in `internal/updaterworker/recovery.go` + `rollback_test.go` + `nt8_start_verification_test.go`.
+
 ## PART 2 — PRE-AUDIT (standing hard rules)
 
 - **R1 fresh evidence only** — produced THIS run: CT-timestamped queries,
@@ -4957,6 +4961,17 @@ fully outside the band.
 own-TF bars (fresh/tested-1/tested-2/stale, re-entry semantics); `normalizeByTFGrade`
 maps the new vocabulary onto the unchanged `freshMult`/`zoneFreshMult` tables; knob default
 OFF so goldens stay byte-identical.
+
+**Recurrence (2026-10-14, fix/trendline-third-touch) — the F1 rule in the mentor
+trendline.** `kernel/mentor/trendline.go` `trendlineScan` counted the FIRST wick
+touch after `P1Idx+1` as the 3rd touch, and that bar is P1's own confirmation
+bar (`swingConfirmed` reads it): on the real MNQ session 10-13, 55 of 120 lines
+went VALID on the bar right after P1 (median +2). Fix: a touch counts only after
+price has LEFT the line — the first confirmed opposite-role swing after P1 whose
+extreme is beyond the touch band — then comes back ("phải VỀ TEST LẦN THỨ 3"
+[D3.2 p2 @03:45]). **Probe:** any "Nth touch / Nth test" counter — does its scan
+start after the structure's own formation AND confirmation bars, and does it ask
+for a departure in between? A fixture whose next bars sit on the line is the RED.
 ## CLASS 135 — A SEAT GUARANTEE UNDONE BY ITS OWN RESTORE SORT (born 2026-08-24, found 2026-09-16 by DS-102, fix/structure-seats-and-relation)
 
 **Shape.** A seating pass promotes a tail candidate into the top-N head, then
@@ -8039,3 +8054,1408 @@ dropped, copy dropped). Reference: kernel/mentor/htf_direction.go HTFAgrees +
 stampHTFAgree (called from the Tick defer), trader/mentor_mode.go
 mentorExtraFor, kernel/mentor/htf_agree_test.go,
 trader/mentor_htfagree_test.go.
+
+## CLASS NN (assigned at merge) — ordered close path skipped the leg-closed hook
+
+symptom: DS-106 (2026-10-11, REL17-SAFETY F3): OnPositionLegClosed fired only
+from the legacy recordClose path (trader/ninjatrader/close_sync.go:214).
+Ordered-owned close frames return early (close_sync.go:52-55) and
+recordCloseOrdered fired only OnPositionClosed (close_sync.go:384), so the
+leg-1 TP receipt latch was dead on the live ordered path. October logs: 0
+"scaled on the broker TP receipt" lines; #641 latched by the I7 snapshot
+fallback at 17:15:00, 24 s after its 17:14:36 TP. probe: every hook fired on
+the legacy close path is also fired on the ordered path. rule: fire the
+leg-closed hook at the same point in recordCloseOrdered as recordClose — after
+the PENDING and refused returns, so it runs only for an APPLIED receipt — and
+pin the three verdicts at the call site (APPLIED fires once; PENDING and
+refused never fire) with a mutant for removing the call. Reference:
+trader/ninjatrader/close_sync.go recordCloseOrdered +
+trader/ninjatrader/leg1_receipt_ordered_test.go.
+
+## CLASS NN (assigned at merge) — display-string timestamp parsed with new Date()
+
+symptom: DS-103 (2026-10-10, REL17-F6): the dashboard equity curve's x-axis
+showed "Invalid Date" on all 10 ticks. GET /api/equity-history sent `timestamp`
+as a display string (`kernel.FormatCT` → "2026-09-17 14:12 CT"), and the web
+ran `new Date(point.timestamp)` on it — a non-ISO display string parses to
+Invalid Date in every browser. Broken since 08-18 ("CT canonical everywhere")
+and invisible until the chart was opened. probe: every API time field the web
+turns into a Date must be epoch ms or ISO-8601; `kernel.FormatCT` strings are
+display-only and must never be parsed — grep each `new Date(`/`Date.parse` call
+in web/src and confirm its input is numeric (epoch s/ms) or ISO, and grep every
+API field built with `kernel.FormatCT` to confirm no consumer parses it. rule:
+when an API field is both shown and used as a time, send a parseable `*_ms`
+(epoch ms) field beside the display string (additive — keep the old field for
+older clients); the web formatter prefers the epoch, falls back to hand-parsing
+the display string, and renders "—" (never "Invalid Date") on anything
+unparseable. Pin at the production call site with a RED on today's code
+(`new Date('YYYY-MM-DD HH:mm CT')` is Invalid Date). Reference:
+api/handler_competition.go handleEquityHistory (TimestampMs), web/src/lib/
+chartTime.ts formatEquityTimestamp/formatCTDisplayString, web/src/components/
+charts/EquityChart.tsx, api/equity_history_timestamp_test.go,
+web/src/lib/chartTime.test.ts.
+
+## CLASS NN (assigned at merge) — 402 outage latch is in-memory and single-caller (banner never clears)
+
+symptom: DS-102 (2026-10-11, REL17-F5): the "AI CREDIT EXHAUSTED" P0 banner was
+raised by `on402Failure` and cleared only by `onAISuccess` — whose sole caller
+was the AI DECISION path (`trader/auto_trader_loop.go:701`). Mentor mode skips
+that path, and the latch `ai402OutageStartMs` lived only in memory, so after any
+restart nothing could ack an open banner. Live: day_plan_alerts id 1205
+(kind ai-payment, 10-07 05:40 CT) stayed acked=0 dismissed=0 for days and
+toasted on every dashboard load. probe: for every alert/banner that is
+auto-cleared on recovery, grep the clear function's callers — a clear with one
+caller (or keyed to an in-memory latch) is a banner that survives the very event
+that should end it. rule: recovery clears by PERSISTED predicate (trader + kind,
+acked=0), not by an in-memory event id; every success call site raises/clears
+through one function; make the latch atomic when other goroutines join. Reference:
+trader/auto_trader_ai402.go (onAISuccess/on402Failure/ai402ClearAllOn) +
+store/alert.go (AckAllByKind) + trader/auto_trader_planner.go (planner call
+site) + trader/auto_trader_watcher.go (watch call site) +
+trader/ai402_test.go (TestOnAISuccessRestartSafeAcksOpenBanner,
+TestPlanner402RaisesOutageBanner, TestPlannerSuccessClearsBanner).
+
+## CLASS NN (assigned at merge) — restart loses exit management (REL17-F2)
+
+symptom: DS-101 (2026-10-11, REL17-SAFETY F2): mentor live positions were
+registered only from in-process fill events, so after a restart the open mentor
+position got no break-even, no 1:1 and no trail. probe: for every piece of
+in-memory state that drives money (the exit-mode map, the live-position
+registry), ask "what rebuilds it after a restart?" — a map that is only written
+on an event is empty on the first pass after boot. rule: rebuild it once at
+boot from the broker's own book (the -sl/-sl2 stops, -tp/-tp2 targets), persist
+the per-arm exit branch at placement (a nullable column), derive it from the
+setup for pre-change rows and log the derivation, and raise a P0 + register
+NOTHING when a needed field is missing — never guess a stop. Reference:
+trader/mentor_live_pos.go mentorRebuildLivePosAtBoot +
+mentorBuildLivePosFromBook, store/armed_orders.go exit_mode column,
+trader/mentor_rebuild_test.go.
+
+## CLASS NN (assigned at merge) — stop move believed without broker confirmation
+
+symptom: the AddOn's move_stop handler replies with NO ack on a refused move
+("no live bracket"), and the Go wire seam's nil return only proves the frame was
+SENT. The mentor driver wrote leg.Stop = next on faith, so the bot believed a
+stop NT8 never applied — the position's recorded stop tightened while the broker
+still rested the old (wider) stop, and the gap was invisible until the next
+order_update that never came. probe: for every write-back of a broker-side value
+(stop, TP, quantity) from a wire seam, ask whether a nil return proves the
+BROKER accepted it or only that the FRAME left — a fire-and-forget move with no
+ack is a belief with no evidence. rule: record a pending check on every sent
+move, re-read the broker's own book (order_snapshot, every 30 s) on the first
+snapshot newer than send+2s, render one verdict (CONFIRMED / NOT-APPLIED + one
+re-send / belief = broker truth on the second miss), never widen, and pin the
+whole sequence at the production call site with mutants for "drop the re-send",
+"drop the belief correction" and "accept any price". Reference:
+trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+mentorRecordPendingStopMove + mentorAdoptBrokerStop,
+trader/ninjatrader/tcp_trader.go OrderSnapshotBook,
+provider/ninjatrader/order_snapshot.go, trader/mentor_stop_move_verify_test.go.
+
+## CLASS NN (assigned at merge) — protection net re-places the ORIGINAL stop
+
+symptom: DS-104 (2026-10-11, REL17-F4): the protection reconciler, when an open
+mentor position is naked at the broker, placed a stop at the ACCEPTED-RISK price
+(or the plan's composed stop) — the ORIGINAL entry stop. The mentor exit drive
+had already moved that stop (break-even / 1:1 / trail) in its own in-memory
+state, so the "protection" the reconciler placed was looser than the stop the
+driver believed it was managing, and if price was already through the moved
+stop the reconciler would place a stop BEHIND the market (it would fill
+instantly, or should have filled). probe: for every safety re-placer, ask which
+copy of the truth it reads — the original or the CURRENT one — and whether
+"through the current stop" is handled at all. rule: when the position is a
+registered mentor live position, place at the driver's CURRENT tightest leg
+stop, and if the last price is through it, FLATTEN at market (P0) instead of
+placing; keep the old path for non-mentor positions. Pin the whole sequence at
+the call sites (naked mentor after BE → place at entry; price through → flatten;
+non-mentor → unchanged) with mutants for "always the accepted-risk stop" and
+"drop the flatten". Reference: trader/protection_reconciler.go
+mentorDriverCurrentStop + adjudicateProtection + actOnProtection,
+trader/protection_reconciler_test.go TestProtectionUsesMentorDriverStop.
+
+## CLASS NN (assigned at merge) — a live-price through-check reads a fallback
+
+symptom: DS-104 (2026-10-11, REL17-F4 P0): the same through-check read
+p["markPrice"], and for NT8 the mark is the newest 5m close which FALLS BACK TO
+ENTRY when the cache has no 5m bars. A mentor break-even stop == entry, so right
+after a restart / reconnect re-seed / feed drop a LONG at BE read
+lastPrice(=entry) <= stop(=entry) → "through" → the reconciler FLATTENED a
+healthy position at market. Even with bars, a stale close can do the same.
+probe: for every comparison that can DESTROY (flatten / force-close / cancel /
+stop-move), name the exact price and ask whether it can be a fallback or a stale
+value. rule: a destructive through-check uses ONLY a FRESH price — the newest 1m
+BarCache close age-checked against the same staleness rule the mentor stale-data
+block uses (kernel.StaleEntryGateFeed, ~75 s); never markPrice, never the entry
+fallback; equal-to-stop counts as through ONLY with a fresh price; no fresh
+price → do NOT flatten, act safely and say the side could not be checked.
+Reference: trader/protection_reconciler.go protectionFreshPrice +
+reconcileProtectionAt + adjudicateProtection,
+trader/protection_reconciler_test.go
+TestProtectionFreshPriceNoFlattenOnStaleOrMissing (no bars / stale / fresh).
+
+## CLASS NN (assigned at merge) — a per-minute P0 alert with a timestamped event id
+
+symptom: DS-104 (2026-10-11, REL17-F4 P2): the flatten alert's event id carried
+now.UnixMilli() and the flatten branch had no `changed` guard, so a failing
+flatten re-raised a NEW P0 and re-sent a close every 60 s. The alert bus is
+idempotent ON THE EVENT ID — a changing timestamp defeats the dedupe. probe: for
+every recurring alert, check (a) whether the event id is stable per episode, and
+(b) whether the raise sits behind the action-transition throttle. rule: dedupe
+the alert per (symbol, side, episode) with a STABLE event id (no timestamp) fired
+only on the transition; keep the retrying ACTION (the close), and log the retry
+count. Reference: trader/protection_reconciler.go actOnProtection
+protectionFlatten + protectionFlattenRetries.
+
+
+## CLASS NN (assigned at merge) — a recovery alert deduped on a STABLE id (only the first episode ever fires)
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-a): the protection-reconciler flatten
+P0 was deduped per (trader, symbol, side) with a STABLE event id. AlertStore.Emit
+refuses any existing (trader_id, event_id) forever, so after the first flatten
+episode in the life of the DB every later episode was silent. probe: for every
+alert whose condition is EPISODIC (it can clear and recur), the event id must
+change per episode — a stable id means "one ever", not "one per occurrence".
+rule: stamp the episode start (the transition INTO the state) into the event id
+and clear it when the state is left; reset the per-episode retry counter on the
+same edge. Reference: trader/protection_reconciler.go actOnProtection
+(protectionFlattenEpisode + protectionFlattenRetries),
+store/alert.go Emit (permanent (trader_id, event_id) dedupe).
+
+## CLASS NN (assigned at merge) — a freshness gate that fail-opens while the market is closed
+
+symptom: DS-102 (2026-10-11, REL17-F4 P1-b): the through-check's freshness came
+from kernel.StaleEntryGateFeed, which returns "not stale" whenever !IsCMEOpen(now)
+so entries are not false-refused during a halt. Reused as a SAFETY-flatten gate,
+that fail-open inverted: during the 16:00–17:00 break or the weekend an hours-old
+close read as fresh and could flatten (or place) a SWING4H held across the break.
+probe: a staleness rule that fail-opens for one purpose (entry gating) must not
+be reused unmodified for the opposite purpose (a destructive auto-action). rule:
+a destructive action's freshness check requires the market to be OPEN, judged
+BEFORE the age check. Reference: trader/protection_reconciler.go
+protectionFreshPrice (IsCMEOpen first, then StaleEntryGateFeed),
+kernel/stale_data.go StaleEntryGateFeed.
+
+## CLASS NN (assigned at merge) — mentor arm identity shared across traders
+
+symptom: REL18-A (2026-10-13, owner runs two mentor traders in one bot, same
+strategy): the live-arm registry was one process-wide map keyed by the bare
+ArmID ("isb-1"), and the ledger key (plan_id "mentor" + scenario) carried no
+trader. Both evaluators restart ArmSeq at 0, so B minted the same ids on the
+same bars: B's CancelArm / day-stop sweep cancelled A's resting entry ON A'S
+ACCOUNT (C# cancels on working.Account), and B's UpsertArm overwrote A's ARMED
+row in place (prices, contracts, leg split, exit_mode).
+probe: any in-memory identity or DB unique key that names a resource ("arm",
+"slot", "position") by a process-local id must carry the OWNER (trader id) when
+two owners can mint the same id. A reader that matches by the bare id is a
+cross-owner collision waiting to happen.
+rule: key by owner+"|"+id; every read verifies the owner; a lookup that would
+resolve another owner's entry is REFUSED (WARN naming both) and never acted on.
+Reference: trader/mentor_actions.go (mentorArmKey, mentorLiveArmFor, mentorPlanID,
+mentorRegisterLiveArmForTest), store/armed_orders.go UpsertArm (plan_id carries
+the trader), trader/armed_ledger_loud.go (fail key +trader_id).
+
+## CLASS NN (assigned at merge) — a per-account snapshot streamed for one account only
+
+symptom: REL19-ADDON (2026-10-13, owner runs two SIM accounts Sim101 +
+SimAccount1): the AddOn sent the PERIODIC order_snapshot only for its single
+active account (account.txt else Sim101); a non-active account got a snapshot
+only on an order state change. The update gate's working_orders leg refused
+(`snapshots are arriving on this link but none for SimAccount1/MNQ`), and every
+broker-book reader keyed by bound account (F1 stop-move verify, cancel-confirm,
+slot guard, F4 protection, leg 4) read NOTHING between order events for a
+non-active-account trader → stop moves/cancels unconfirmed.
+probe: when one link serves MULTIPLE accounts, every per-account frame that was
+extended for positions/balances must also be extended for the working-order
+snapshot — a reader keyed by bound account reads an EMPTY book (not "no answer")
+when its account's frames stop flowing.
+rule: the all-account snapshot enumerates every target account (all SIM + every
+account Go declared bound via account_register) on connect, in the periodic
+heartbeat, and after account_register; the per-order state_change snapshot stays.
+Frame shape is unchanged (the Account field was already there) — no protocol bump.
+Reference: ninjascript/VLTraderTCPClient.cs (SendAllOrderSnapshots, heartbeat
+:3367, connect SendAllOrderSnapshots("connect"), HandleAccountRegister
+SendAllOrderSnapshots("account_register")); Go side already keyed by account —
+provider/ninjatrader/order_snapshot.go OrderSnapshotCache (snapKey per account),
+trader/ninjatrader/tcp_trader.go OrderSnapshotBook → LatestReceived(boundAccount).
+
+## CLASS NN (assigned at merge) — an ops-facing time rendered in the host zone instead of CT
+
+symptom: CT-EVERYWHERE (2026-10-13, owner "why has to make linux system change
+time to chicago"): the trading code is CT-canonical (~45 files route through
+kernel.CTLocation) but two ops surfaces still followed the MACHINE clock —
+(1) vl-backup.timer's OnCalendar had no zone suffix, so the backup fired at
+05:00/17:30 in the host's zone, and (2) the compact log formatter rendered its
+line timestamp and the log-file date in the host zone, so on a non-Chicago box
+the file's date and its line times disagreed near midnight and the updater's
+boot-line predictor (also host-zone) could point at the wrong file and roll
+back a good install.
+probe: grep for the machine-zone forms — time.Local, a bare time.Format of a
+clock/date layout without an explicit .In(zone), an OnCalendar= without a zone
+suffix, `date +%F` in shell — anywhere a rendered time or a named file is read
+by a different component or a person.
+rule: one canonical zone (America/Chicago) for every rendered time AND every
+date-derived FILE NAME; the writer and every predictor/reader of that name
+derive it from the SAME helper (logger.CTDate), never the host clock; systemd
+timers carry an explicit zone suffix.
+Reference: logger/logger.go (ctLocation, CTDate, LogFileNameFor, compactFormatter),
+logger/log_prune.go (pruneOldLogs), internal/updaterworker/runner.go (predictedLog),
+internal/updaterworker/recovery.go (the grep hint), deploy/systemd-user/vl-backup.timer.
+
+## CLASS NN (assigned at merge) — a time-of-day gate read from the tick's clock, not the object's own lifetime
+
+symptom: FIX-LEVEL-WINDOW (2026-10-13, owner "fix all"): mentor level (PHL/PLH)
+orders never rested from 15:00 to midnight CT. `levelArmCancels` computed
+`windowEnd := hh*60+mm >= rthWindowEndMin` from the CURRENT tick's CT wall clock
+— TRUE every minute 15:00–23:59 — so a level arm registered at 16:10 was
+cancelled in the SAME tick it was registered (register at eval.go:1676, sweep
+at eval.go:1695). The arm already HAD the right lifetime — LevelArmExpiry
+(level_lifetime.go), read by the trader's injector and the leg budget — but the
+evaluator's cancel read a second, ambient clock instead of the arm's own expiry.
+probe: for every time-of-day comparison, ask which object's lifetime the gate
+defends and whether it reads THAT object's anchor (placed-at, opened-at) or the
+ambient tick clock. A bare `hh*60+mm >= T` with no upper bound and no
+anchor is true all evening: it acts on every evening event as if the window had
+"ended" at 15:00, when the event's own window may run to the NEXT day's 15:00.
+rule: one definition per lifetime; a gate over an object reads the object's own
+anchor (LevelArmExpiry(PlacedAt)), never the tick's wall clock — so an
+evening-placed object rests to its own expiry and a morning-placed one dies at
+the same 15:00 it always did.
+Reference: kernel/mentor/eval.go levelArmCancels, kernel/mentor/level_lifetime.go
+LevelArmExpiry, trader/mentor_tick.go mentorLevelExpiry, kernel/mentor/eval.go:1071
+Exec2mAfter30m (rthMinuteOf(now) >= 9*60 — same class, default OFF, left and
+reported: the transcript is not in the repo so the 09:00–15:00 bound was not
+chosen).
+
+## CLASS NN (assigned at merge) — stalled mentor setup (STALLED-SETUP-ALARM, 2026-10-13)
+
+The mentor evaluator can keep EMITTING a placement intent for a setup kind and
+never get it to the ledger, silently, for days. On 10-08..10-13 the evening
+level-order path (kernel/mentor/eval.go levelArmCancels, fixed in #495) emitted
+level orders and cancelled them in the SAME Tick: 0 level-arm (lvl-) rows reached
+armed_orders while the evaluator kept finding level touches. Nothing counted
+"seen vs placed", so nobody saw the stall.
+
+Fix (release #22): a per-trader, per-setup-kind (lvl / isb / isb-reverse /
+phl/plh / box / swing), per-CME-session-day seen-vs-placed pair of counters.
+The emit half increments at the dispatch call site (trader/mentor_actions.go
+mentorDispatchIntent, the Place* case) — every placement intent the evaluator
+emitted, whatever the rule gate does next. The placed half increments at the
+ledger-author site (trader/mentor_actions.go mentorArmIntent, after the
+armed_orders row is authored). Counters record, never infer (canon 35): neither
+is derived from the other. A P1 alert fires once per kind per day when a kind
+crosses emitted >= 3 and placed == 0 while mentor mode is on and the market is
+open (kernel.IsCMEOpen); the latch resets on the 17:00 CT session-day rollover.
+Alert-only — no trading behaviour changes. Read-only surface on
+GET /api/risk/gate-blocks (`setup_stalls`).
+
+Reference: telemetry/setup_stall.go (SetupStallAlertDue, RolloverSetupStalls),
+trader/mentor_stall_alarm.go (mentorSetupKind, mentorStallAlarmCheck),
+api/handler_gate_blocks.go (telemetrySetupStallTable).
+
+## CLASS NN (assigned at merge) — a per-object counter keyed on a constant key while the object moves
+
+symptom: r22 LEVELS (10-13 replay, release #22): the mentor B23 visit cap
+("knock knock", 3 visits/day per level) counted `e.State.Visits[lvl.Key]`, and
+the 5m trigger-line retest carried the CONSTANT key "trigger_retest" (the EMA 34
+lines: "ema34" / "ema34_htf"). The trigger line moves on every reversal (~115
+positions a session) and the EMA re-prices every candle, so every position the
+line held was ONE level for the counter: 82 of 88 trigger-retest rejects and 59
+of 65 EMA 34 rejects on 10-13 were refused by `level_visit_cap` — the backtest
+entry he takes live was gone after the third reject of the day at ANY price.
+probe: for every counter / budget / latch keyed by an object id, ask whether the
+id survives a change of the thing the rule is about. A key that is a constant
+string for an object that moves (a line, a re-priced EMA, a rolling window)
+merges every instance into one count. Replay a full session and tabulate the
+refusals by key kind; a single key refusing at many distinct prices is the tell.
+rule: the counter key is the object's REAL identity for the rule being counted
+(here: the trigger line AT ITS PRICE — a reversal draws a new line,
+D3.4 p1 @11:48–13:33); a line the rule does not apply to is exempted by name
+with its own course rule cited (the EMA: crossing/loss rules, D4.2), never
+silently merged.
+Reference: kernel/mentor/eval.go visitKey, visitCapApplies;
+kernel/mentor/r22_levels_replay_test.go TestR22VisitCapPerLevelIdentity1013,
+TestR22VisitCapSeparatesTriggerLinePositions.
+
+## CLASS NN (assigned at merge) — an object's role re-inferred from the tape at read time
+
+symptom: r22 LEVELS: the PHL/PLH target pick read an old extreme's role (high
+vs low) from `oldExtremeIndexes`, which scanned BACKWARD for the LAST bar whose
+high OR low sat within 0.26 of the price — so a later candle revisiting an old
+HIGH (its low touching the price) relabelled it a "low". 41–42 of ~266 PHL
+target picks on 10-13 had the wrong role, and every one was then refused as
+not_higher_low / not_lower_high (the higher-low check read the wrong side of
+the leg). The pivot detector KNEW the role (SWGH / SWGL) and threw it away.
+probe: for every classification read off a stored object (role, side, kind),
+ask whether it is CARRIED from the producer or RE-DERIVED by a reader. A
+re-derivation that scans later data can flip when later data revisits the
+object; mutate the reader's tie-break and watch whether any test notices.
+rule: the producer stamps the classification on the object (Level.Role); every
+reader uses it; an object without it is refused for that use (fail closed),
+never guessed.
+Reference: kernel/mentor/mentor.go Level.Role, kernel/mentor/eval.go
+swingOldExtremeLevels, oldExtremeIndexes, nearestOldExtremeOnSide,
+oldExtremeRoleFits; TestR22PHLTargetExtremeHasTheTradeRole,
+TestR22NearestOldExtremeOnSideSkipsTheWrongRole.
+
+## CLASS NN (assigned at merge) — a level set that keeps members its own rule has invalidated
+
+symptom: r22 LEVELS: the mentor's "old highs/lows" were the 12 raw 5m/15m
+swing pivots (3 highs + 3 lows per TF), never pruned once price traded through
+them: at 09:00 CT on 10-13, 11 of 12 were already broken. The course has ONE
+nearest old high and ONE old low (§6 ladder, §2.1 rule 2, §2.2). The ISB
+"at an old high/low → size 3" zone covered 183 of 390 RTH candles (47%; the
+single-pair reading: 18/390), and morning targets were broken pivots. The chart
+drew a separately cleaned 3–5 lines while trading read the 12 (the class "one
+source, both readers" above), and the boot line `levels 92` counted the 65
+body-deleted key levels with the 27 live ones — the same shape: a set reported
+or consumed with its dead members inside.
+probe: for every derived set a rule consumes, ask what invalidates a member
+(a break, a deletion, an expiry) and whether the set the READER sees has
+already applied it. Count live vs total at a real instant; a reader of the
+total is a reader of the tombstones.
+rule: the set a reader consumes contains only live members, from ONE builder
+that the chart, the trader and the boot line all read; a count prints live and
+dead separately and never their sum as "the levels".
+Reference: kernel/mentor/eval.go swingOldExtremeLevels, oldExtremeBroken;
+kernel/mentor/level_display.go DisplayLevels; kernel/mentor/seed.go SeedLine
+keyLevelCounts; TestR22OldExtremesAreTheNearestUnbrokenPair1013,
+TestR22OldExtremeZoneShareIsTheSinglePair1013,
+TestR22ChartDrawsTheTradingOldExtremes1013, TestR22SeedLineCountsLiveKeyLevels.
+
+## CLASS NN (assigned at merge) — a day-keyed lookup mixes two day-key conventions
+
+The code speaks FOUR day keys and every confirmed R22 time bug mixed two of them:
+(1) `kernel.CMESessionDayKey` — the date of the session's 17:00 CT START (Sunday
+for Monday's session); (2) the TRADING date — the date the session CLOSES on
+(`kernel.CMETradingDateKey`, mentor `tradingDayKey`); (3) the calendar CT date
+(`SessionStateAt`, the rows of `kernel/session_calendar.json`); (4) the NT8 native
+daily open-stamp — trading date − 1 day at 00:00 CT (fixed −24h, so across DST it
+lands on 01:00 CDT or on the PREVIOUS calendar day). Also: an epoch-floored
+10080-minute bucket is a THURSDAY-00:00-UTC week, not a CME week.
+
+Symptoms (all live at 269745e1a): the weekly read fed Thursday-UTC weeks into a
+facts builder written for bars (week 2026-10-12: PWL 30760.75 / PWC 30969.50, truth
+30792.00 / 31108.75; IPDA and NWOG always empty); the half-day early close was
+looked up with key (1) while the calendar is keyed (2)/(3), so 11-27 / 12-24 never
+pulled the last entry or the flat in, and the closed-market skip then ran before
+the EOD flat; the prior-week map projection windowed native dailies by key (4) as
+if it were (2) (215–255 pts off); Monday's "prior day" was key(1) − 1 calendar day
+= Saturday (pdVWAP/SETT/prior profile absent every Monday).
+
+Probe: for every lookup keyed by a date string or a date window, name the key
+convention of the PRODUCER and of the CONSUMER; feed the consumer the producer's
+real output (not a literal date) and read the answer at a Monday, a Sunday
+17:00+, a half-day, and both DST Sundays.
+
+Rule: a day-keyed lookup names its key convention in its parameter name, and its
+test builds the key with the PRODUCTION function at a real instant, never as a
+literal (the `TestFoldOneFactOneOwner` literal "2026-11-27" is the anti-pattern —
+canon 53). Native daily bars are placed by `kernel.NativeDailyTradingDate`, never
+by their stamp; weeks are built from bars stamped at their open
+(`kernel.SessionDaysFromNativeDaily`), never from epoch-floored weeks.
+
+Reference: kernel/weekly_session_days.go, kernel/cme_calendar.go CMETradingDateKey,
+trader/auto_trader_weekly.go weeklyDailyBars/weeklyReadFacts,
+trader/auto_trader_clock.go halfDayCutoffMin, trader/auto_trader_loop.go
+retireBookAfterEarlyCloseAt, kernel/map_projections.go ProjectPriorWeekExtremes,
+kernel/levels_volume.go priorSessionBars; pins TestWeeklyReadUsesCMEWeeks_Live1012,
+TestEarlyCloseDay1127TickSequence, TestR22PriorWeekProjectionUsesTradingDays,
+TestR22MondayPriorDayIsFridaysSession. Review: ~/deck-fix-1005/review-1014/MATH-TIME-DST.md §5.
+
+## CLASS NN (assigned at merge) — an average over a ring window counts a truncated period as complete
+
+A ring/slice of N bars almost never starts on a period boundary, so its OLDEST
+period is cut off at the front. dATR (`DailyRangeProxy`) averaged every
+non-developing session-day in the 2,000-bar 1m ring, including a 96-bar stub
+(10-14 01:44 CT: 179.62 vs ~380, −53%), and every planner band scaled with it. The
+prompt's EMA200 is the same shape in time: 220 bars left 82% of the value as its
+SMA200 seed.
+
+Probe: for any statistic over "completed periods" or any recursive indicator,
+print how many bars the oldest period / the warm-up actually holds at the read
+instant; compare with the value over full history.
+
+Rule: a period counts only when the window holds it WHOLE (or it is read whole from
+a coarser source — the native daily bars for dATR); a recursive indicator prints a
+value only after its warm-up (market.EMAWarmupBars) and n/a before.
+
+Reference: kernel/datr_sessions.go DailyRangeProxyFor, kernel/levels_assemble.go
+DailyRangeProxy, market/data_indicators.go EMAWarmupBars; pins
+TestR22DATRFromCompleteSessions, TestR22DATRIntradayFallbackDropsTruncatedDay,
+TestR22PromptEMA200IsWarmed.
+
+## CLASS NN (assigned at merge) — a restart rebuilds live state through a different path than live built it (LINES-RESTART, release #22)
+
+symptom: a restart changes what the bot trades. The 10-13 18:57 boot re-seeded
+the 4h trigger at 30741.25 "since 2026-10-13T01:00" while the running bot held
+30774.25, moved by the 05:00 bucket (short 08:28, long 08:41 — two moves in one
+4h candle). On the 10-06→10-08 bars a fresh seed disagreed with the continuous
+evaluator's HTF verdict in 19–20 of ~276 ten-minute samples. Same class, other
+objects: the FTGH/FTGL latch keyed on the day-gate key ("" until 08:30) cleared
+at the RTH open and redrew both boxes; the day-gate line printed "@08:30" for a
+10:19 restart re-latch; the 4h swing EMA folded one close per observed flip, so
+a feed gap lost the buckets that opened and closed unseen.
+probe: for every piece of evaluator state the seed rebuilds, run a CONTINUOUS
+evaluator (seed once, Tick every closed bar at BarCloseInstant over the live
+1500-bar slice) against a FRESH SeedFull at many cut points on real bars, and
+compare the state structs — not a summary. Any field the live path computes
+from the ORDER of bars (intrabar breaks, first-latched objects, one-per-tick
+increments) is suspect when the seed computes it from a whole-history
+aggregate. For every latch, name the clock that clears it and check it is the
+object's own day (tradingDayKey, the 17:00 roll), not a neighbouring gate's key.
+rule: the seed REPLAYS the live update rule over the stored bars (same function,
+same window shape, one step per bar) — never a parallel "completed candle"
+path. A latch clears on its own lifetime's boundary. A log line about a read
+names the instant it was READ. A per-tick increment folds everything it missed
+since its last step, or fails closed when it cannot read it.
+Reference: kernel/mentor/filters.go TriggerReplay1m, kernel/mentor/seed.go seed
+(trigger/HTF replay), kernel/mentor/eval.go (box latch on tradingDayKey;
+DayGateReport.ReadAt), trader/mentor_tick.go mentorDayGateLine,
+kernel/mentor/swing4h.go bucketClosesBetween, pins in
+kernel/mentor/restart_parity_test.go (real bars
+testdata/mnq_1m_lines_restart_2026-10.json.gz).
+
+## CLASS NN (assigned at merge) — a drawn object replaced by its newer sibling (LINES-RESTART, release #22)
+
+symptom: 135 of 151 trendlines on 10-13 vanished mid-session without a 5m
+close through them: TrendlinesBuild kept ONE line per side and the newest pair
+replaced the older, while the course keeps every line until it breaks ("never
+erase during the session; DELETE at end of day" [D4.1 p2 @01:17]). 40 of 151
+were drawn THROUGH price between their own anchors ("TRENDLINE chứ không phải
+CẦU TUỘT" [X9 @01:22]).
+probe: replay a real session through the production builder and track every
+drawn object's key tick to tick; any key that disappears must name its death
+(a break, the session end). Check the candles between each object's anchors.
+rule: a stateless rebuild must be MONOTONE in what it has drawn — build every
+qualifying pair, not the latest — and a pair that price crossed is refused and
+counted (trendline_crossed_between_anchors), never drawn.
+Reference: kernel/mentor/trendline.go trendlinesBuild / trendlineCrossed,
+kernel/mentor/eval.go trackTrendlines, TestTrendlinesKeptAllSession1013.
+
+## CLASS NN (assigned at merge) — a seam declared for later wiring and never assigned (log-only forever)
+
+symptom: release #22 (MENTOR-AUDIT P1-2, 2026-10-14): `modifyBracketWire` was
+declared `var modifyBracketWire func(...) error` (nil) on 10-05 "until proven
+on SIM" and nothing ever assigned it. The live drive logged "mentor ISB leg1
+modify_bracket WOULD set TP … UNWIRED" on 7 real trades (rows 254, 273, 281,
+304, 308, 317, 362) and sent nothing; the course rule it carried ("phải BÁN
+BỚT. Bắt buộc") never reached NinjaTrader. The unit tests pinned the LOG
+counter, so they stayed green the whole time. probe: for every package-level
+`var <name>Wire` / seam func var, grep for a NON-test assignment; for every
+production log line containing "WOULD" or "UNWIRED", count its occurrences in
+the live logs — a "would" that fires on real trades is a feature that is not
+there. rule: a seam ships ASSIGNED to the production path at its declaration;
+"not yet proven" is a knob (default OFF) or a boot line that READS the wired
+state, never a nil var. Pin the wire at the production call site (the frame
+the far side reads) and mutate the declaration back to nil — the pin must go
+RED. Reference: trader/mentor_mode.go modifyBracketWire,
+trader/mentor_trail_r22.go mentorISBPartialStep / mentorSendISBPartialTP,
+trader/mentor_r22_exit_test.go TestR22Candle3PartialIsARealModify (mutant M3).
+
+## CLASS NN (assigned at merge) — a pure rule pinned by tests that production never calls
+
+symptom: release #22 (MENTOR-AUDIT P1-3): the course-pure exit model
+`mentorExitB` (break-even for both legs at +1R) carried its own tests, while
+the live drive armed break-even at HALF the distance to the far trade target
+(1.0R–7.2R on every real trade). After leg 1 banked +1R the runner kept its
+full original stop: row 313 (10-12 03:21:40 receipt, 03:22:00 driver line
+`scaled=true armedBE=false stop=31157.50 broker=31157.50`) lost the full 1R
+one candle later. The tests described a rule nobody ran. probe: for each pure
+rule function with tests, list its non-test callers (`grep -rn "<fn>(" --include=*.go
+| grep -v _test`); a rule with zero production callers next to a different
+live rule is a spec split. rule: the rule the tests pin is the rule the drive
+calls — test the drive (the per-candle entry point) with the course's own
+numbers, and delete or mark test-only any parallel model. Reference:
+trader/mentor_mode.go mentorExitB (test-only), trader/mentor_trail_r22.go
+mentorExitDriveCandle, trader/mentor_r22_exit_test.go
+TestR22BEAfterConfirmedPartialThenCandleTrail (the base rule is RED on it).
+
+## CLASS NN (assigned at merge) — a safety guard judged against the bot's belief instead of the broker
+
+symptom: release #22 (MENTOR-AUDIT P2-3): `mentorMoveLegStop`'s never-widen
+check compared the new stop with `leg.Stop` — the driver's BELIEF. A stop the
+owner tightened by hand in NinjaTrader while no move was pending was invisible
+to it, so the next BE/1:1/trail move could LOOSEN it, and the F1 verifier
+would then read broker == want and log CONFIRMED. probe: for every guard that
+protects a broker-side value (stop, size, target), ask which copy it reads —
+the bot's own memory, or the broker's latest book — and what it does when the
+book is stale. rule: judge against the broker's own book before sending: no
+fresh book → refuse (nothing can be judged; not moving cannot widen); no live
+order for the leg → send nothing; broker already tighter → keep it, correct
+the belief, count; equal → nothing to send. Pin with "the owner tightened by
+hand" at the production call site and mutate the broker-tighter branch away.
+Reference: trader/mentor_trail_r22.go mentorJudgeAgainstBroker /
+mentorBrokerLegStopRead, trader/mentor_r22_exit_test.go
+TestR22NeverWidenJudgedAgainstTheBroker (mutant M1).
+
+## CLASS NN (assigned at merge) — a late verdict acted on for a leg that is already closed
+
+symptom: review-1014 EXECUTION F-6 (#651, 10-14 01:04–01:07 CT): leg 1 closed
+by its TP at 01:04:36; at 01:05:00 the driver still sent a break-even move to
+leg 1, then WARNed "NO live stop order … leg 1 — leaving to the protection net"
+at 01:06:00, and WARNed again for leg 2 at 01:07:00 against a position flat
+since 01:06:07. Same pattern on #645 (10-12 03:46:59/03:48:00) and #647
+(10:26:00/10:27:00). A WARN that fires on every winning trade trains the owner
+to ignore the WARN that matters. probe: for every per-leg action and every
+verifier verdict, ask what happens when the leg closed between the send and
+the verdict — is "gone because it filled" distinguished from "gone because NT8
+dropped it"? rule: never send a move to a leg known closed (leg 1 after its
+confirmed partial, a flat side, an unregistered position); a verdict for such a
+leg is recorded (counter) and ignored — no WARN, no re-send, no P0, no belief
+write. Reference: trader/mentor_exit_drive.go mentorVerifyPendingStopMoves +
+the off-mode BE loop, trader/mentor_trail_r22.go mentorLegKnownClosed,
+trader/mentor_r22_exit_test.go TestR22LegClosedNoMoveSent (mutants M4, M5).
+
+## CLASS NN (assigned at merge) — a timeout re-opens an outcome the broker already settled
+
+symptom: release #21's Update was refused for 10 minutes on 10-14 (preflight
+ledger_exposure: armed#363 cancel_pending). NT8 confirmed row 363's cancel at
+01:47:29 CT ("✕ armed S1 cancelled in NT8") and the ordered-execution worker
+wrote 'cancelled'; 4 s later the sync-cancel drain timed out ("armed sync cancel
+UNACKED S1 … held cancel_pending") and its RequestCancel moved the row BACK to
+cancel_pending. The drain then re-sent a cancel every pass for an order NT8 no
+longer had (cancel_attempts=8) until a snapshot settled it at 02:05:00. Root:
+the drain re-read the row only when a frame arrived on ITS channel, but the
+frame was owned by the ordered worker (the drain's copy is OrderedOwned, a
+no-op) and the worker applies it only after the post-update order_snapshot; and
+RequestCancel guarded only 'filled', so every other terminal state could be
+re-opened.
+probe: for every "no answer within T → record the intent" branch, ask (a) does
+it READ the row before it writes, and honour a terminal state it reads; (b) can
+the answer arrive on a path the waiter does not watch (another goroutine,
+another consumer, an ordered worker); (c) does the store write itself refuse to
+move a terminal row (a CAS on the canonical terminal predicate), or does it
+trust every caller to have checked.
+rule: a settled outcome is never re-opened by a timeout. The waiter reads the
+row before a re-send and after the drain and honours a terminal state; the
+store's transition is a CAS on NonTerminalArmStateSQL and refuses typed
+(ErrArmCancelTerminal), logged once and counted; the refusal is a refusal, not
+a failed write (no slot latch).
+Reference: trader/armed_executor.go cancelArmedOrdersSyncWith (re-read before
+attempt 2, honour `final`), store/armed_orders.go RequestCancel /
+refuseTerminalCancel (gate-block request_cancel_terminal,
+arm:request_cancel_terminal_refused), trader/cancel_settle.go
+noteSyncCancelSettledOffDrain (arm:sync_cancel_settled_off_drain),
+trader/armed_ledger_loud.go; pins trader/cancel_settle_r22_test.go
+(TestR22Replay363ConfirmedCancelStaysCancelled — real TCPServer + real ordered
+worker), store/request_cancel_terminal_r22_test.go.
+
+## CLASS NN (assigned at merge) — the ledger keeps the authored price, the wire sends another
+
+symptom: armed_orders.stop_px for row 350 was 30882.7763003284 while NT8's
+stop was 30883 (snapshot 109320); row 347's leg1_tp was 30824.25 while NT8's
+-tp was 30825.25 (108678); row 362's 30725.25 vs 30724.25 (110404). The sender
+rounds every bracket (WireBracket: stop away from the entry, target nearest;
+leg-1 TP re-based on the trigger, then rounded) but the row kept the authored
+numbers, so the accepted-risk record, the desk DRIFT line, the protection net's
+plan stop and a restart's leg-1 TP all read prices NT8 never received.
+probe: for every value a sender TRANSFORMS on the way out (rounding, offset,
+re-base, clamp), find where the ledger records it. A ledger written before the
+transform, and never after, disagrees with the broker by construction. A parity
+test must read the frame's bytes and the row — never rebuild both from the same
+inputs.
+rule: after a successful send, the ledger row records exactly what the frame
+carried (store.RecordWirePrices, CAS on the signal id), computed by the SAME
+function the sender runs (or read from the sender's own record, SplitSentFor).
+Reference: trader/arm_wire_truth.go recordArmWirePrices, store/armed_orders.go
+RecordWirePrices; call sites in trader/armed_executor.go (limit, stop-entry, E2
+seams) and trader/zone_placement.go placeZoneRow; pins
+trader/arm_wire_truth_r22_test.go.
+
+## CLASS NN (assigned at merge) — a sign convention computed two ways (live vs rebuild)
+
+symptom: SWING-RISK (release #22, found by the FULL-DAY-REPLAY harness #505): a
+filled 4h swing moved its stop to break-even AT THE FILL instead of at +1R.
+`SwingState.openPosition` (kernel/mentor/swing4h.go) stored `Risk = Stop − Price`
+for a long and `Price − Stop` for a short — NEGATIVE for both — so
+manageSwingPosition's "+1R" test (`Close >= Entry+Risk` / `Close <= Entry−Risk`)
+read "entry − |R|" and passed on the fill bar. The restart path (#494
+RebuildSwingPos) was handed `|entry − stop|` by the trader — POSITIVE — so the
+SAME swing broke even at +1R only if the bot had restarted in between. Real
+tape (MNQ 10-12): BE at −0.21R, +0.22R and +0.45R; the restarted swing at
++1.00R. Every unit test passed, because each path was tested with its own
+convention.
+probe: for every quantity a state machine can be BUILT two ways (a live event vs
+a restart rebuild, a fill vs a replay, a fresh object vs a deserialised one),
+grep both constructors and ask: is the value computed by ONE function both call,
+or by two expressions? Then drive the SAME scenario through both paths at the
+call site and compare the outcome bar-for-bar.
+rule: one definition (here `mentor.SwingRisk(side, entry, entryStop)`, positive
+on the loss side) called by every constructor; the rebuild takes the RECORD
+(entry + entry stop) and computes the value itself, never a pre-computed number
+from the caller — so the two paths cannot drift. Pin it with a call-site test
+per path asserting the SAME bar (kernel/mentor/swing_risk_test.go) and the
+replay assertion over every emitted break-even (trader/full_day_replay_test.go
+c2_every_swing_break_even_at_or_beyond_1R).
+Reference: kernel/mentor/swing4h.go SwingRisk / openPosition / RebuildSwingPos
+(SwingRebuild), trader/mentor_live_pos.go mentorRebuildSwingArm (EntryStop =
+the armed row's StopPx, never NT8's possibly-moved live stop).
+
+## CLASS NN (assigned at merge) — foreign/manual fills counted as the bot's P&L (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the reconcile loop adopts an NT8 position the bot has no row for and
+materializes it into the trader's ledger. Four MANUAL NT8 shorts (#608 #609
+#637 #640, 40/40/20/20 contracts, Σ −3,202.00) became 75.8% of hoang's
+"−4,226.18 over 168" track record (the bot's own: −1,024.18 over 164). Worse,
+the readers disagreed: deskRealizedToday (the mentor daily-loss gate) dropped
+plan_id='UNRESOLVABLE' rows silently, every other reader kept them — two
+private definitions of "foreign", one never counted.
+probe: for every P&L aggregator over trader_positions ask (a) does it apply the
+ONE bot-origin predicate (store.BotOriginSQL) and (b) does the surface show the
+excluded manual rows as their own counted line. `grep -n BotOriginSQL` must hit
+every store-side entry of store.PnLSurfaces() — TestEveryStorePnLSurfaceAppliesTheBotOriginRule
+fails by name when one does not. Never infer "foreign" from plan_id or
+close_reason.
+rule: origin is a FACT on the row (bot|manual), written where the value enters
+(reconcile adoption with the positive "no evidence of our own entry" verdict;
+the R1 boot migration for the historical rows). Every bot figure excludes
+manual rows and SHOWS them ("Manual (excluded): N trades, ±$X"). Ambiguous
+adoptions stay bot — hiding a bot loss from the bot-only gates is the harmful
+direction.
+Reference: store/manual_origin.go (BotOriginSQL, BotRealizedPnL,
+RunManualOriginMigration), trader/ninjatrader/reconcile.go flagAdoptedManual,
+trader/desk_facts.go deskBotDay.
+
+## CLASS NN (assigned at merge) — a money figure labelled "total" over a session-reset source (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: the dashboard "Total P&L" card and header PNL:: showed total_pnl,
+which for NT8 is RealizedProfitLoss+Unrealized — reset every NT8 session
+(+74.00 on 10-14 = #648 + #651) — under a tooltip "equity − initial balance"
+(that night −2,305.00). Label, value and tooltip described three things.
+probe: for every money figure on a page, trace the value to its source and read
+the label AND the tooltip against that source. Ask: does it reset? whose trades
+is it (bot vs account)? which day boundary?
+rule: one name per figure, carried from the API (nt8_session_pnl,
+account_pnl_vs_initial, bot_record_pnl, total_pnl_source). Account figures are
+labelled as account figures; the bot's record is labelled as the bot's; an
+unknown figure is absent / "n/a", never 0.
+Reference: trader/auto_trader_decision.go GetAccountInfo, api/handler_order.go
+handleAccount, web/src/components/trader/accountPnl.ts.
+
+## CLASS NN (assigned at merge) — more than one "today" (R22 PNL-TRUTH, 2026-10-14)
+
+symptom: four day starts for "today's P&L": CME 17:00 (gates, breaker, desk
+DAY), NY 08:30 (done-after-win), CT midnight (LEDGER_DAY header, the
+position-history footer), NT8's session (PNL::). From 17:00 to 24:00 every
+evening the header's day disagreed with the gates' day.
+probe: grep every P&L "day" window for its boundary; a `time.Date(y,m,d,0,0,0)`
+or a browser `toLocaleDateString` day next to a P&L sum is this class.
+rule: every P&L display and every P&L gate counts from kernel.CMESessionDayStart
+(17:00 CT); the web never computes its own day — the server sends the start
+(ledger_day_start_ms / session_day_start_ms). A deliberately different window
+(done-after-win's NY day, owner ruling 2026-10-09) is a trading rule with its
+own knob and its own name, never a display "today".
+Reference: api/handler_order.go ledgerDayWindow, PositionHistory.tsx
+computeDayTotal(positions, sessionDayStartMs).
+
+## CLASS NN (assigned at merge) — a lifetime documented from one layer while another layer cancels first
+
+symptom: release #21 (c4be11547) taught the guide that a mentor level order
+"placed after 15:00 rests through to 15:00 the NEXT day". The evaluator does
+stamp that expiry. But the trader's EOD flat (auto_trader_clock.go
+enforceEODFlatAt, armed_executor.go cancelIntradayMentorArms) cancels every
+intraday mentor arm whenever no session window is open (14:45–17:00 CT), so the
+order never lives past 14:45, and one authored in the gap dies within ms (DB rows
+256/282/283/343). The fix's census covered "kernel/mentor + trader/mentor_*" and
+never opened the two files that actually ended the order's life.
+probe: for any sentence or code comment that states how long an object lives,
+list EVERY path that can end it: the expiry sweep, the session or EOD cancel, the
+news cancel, the boot sweep, the broker TIF. The documented lifetime is the
+MINIMUM over those paths, never the one the author just edited.
+rule: a lifetime claim is pinned by a test that drives the PRODUCTION pass that
+can end the object, on the SHIPPED configuration (here, the armed pass on the
+default session registry), plus a guide pin that reads the times from that
+registry.
+Reference: trader/guide_mentor_lifetime_test.go
+TestMentorLevelArmLifetimeEndsAtTheEODFlat + TestGuideMentorLevelLifetimeNamesTheEODFlat;
+UI-GUIDE-TRUTH T1.
+
+## CLASS NN (assigned at merge) — a display snapshot taken before the set it shows is complete
+
+symptom: kernel/mentor/eval.go stored `State.Levels = levels` BEFORE the 5m
+trigger retest, the 4h/1h trigger lines, the EMA 34 location, the box edges and
+the trendlines were appended to `levels`. The truth panel and the dashboard chart
+read State.Levels, so every one of those trading locations was invisible (no
+trendline was ever drawn), while the evaluator traded them.
+probe: for every state field a UI or API reads, find the LAST write to the local
+it copies and check that no append, filter or merge follows it in the same tick.
+rule: a display copy is taken after the final mutation, as its own field when the
+earlier copy has a trading reader (State.Levels feeds the fill-drain fallback, so
+it was left byte-identical and State.ChartLevels was added). The test drives a
+real Tick and asserts the appended kinds reach the payload.
+Reference: kernel/mentor/chart_levels_test.go,
+trader/mentor_truth_chart_test.go; UI-GUIDE-TRUTH T7.
+
+## CLASS NN (assigned at merge) — staleness judged on the wall clock fails OPEN on a backward step
+
+symptom: a dead feed reads as fresh while the host clock is stepped back. On
+2026-10-14 the WSL wall clock stepped −125.0 s at 00:23:00 (then +124.4 s 4.9 s
+later) and took 124 smaller backward steps in one night. B4 / the mentor
+stale-data block compared NT8's bar stamp with THIS process's wall clock, so a
+backward step of S seconds made every bar S seconds younger. Verified at base
+9accae11f: the same 200 s-dead feed was REFUSED on the true clock and PLACED
+after a −125 s step (mentorPlaceIntent, injected clock).
+probe: for every freshness / age / timeout gate, ask which clock BOTH ends of
+the subtraction come from. Wall − foreign-stamp is a two-clock comparison that
+moves with every step; time.Since(t) on a time.Now() value is monotonic. Then
+ask what the gate does in each step direction: a gate that fails closed on a
+forward step usually fails OPEN on a backward one.
+rule: an entry gate must have at least one leg that never reads the wall clock
+(here: the monotonic age of the last live 1m frame RECEIVED, BarCache
+LastLiveReceipt), and a wall-vs-monotonic step detector that holds NEW entries
+for a monotonic window after any material step (fail closed, never open).
+Exits and protection never read the hold.
+Reference: kernel/feed_clock.go (FeedStaleAt, EntryFeedStale, clock-step
+guard), provider/ninjatrader/bar_cache.go LastLiveReceipt,
+trader/stale_gate_clock_step_test.go, OPS-SECURITY review 10-14 §8.4.
+
+## CLASS NN (assigned at merge) — a guard that reads the wrong daemon, and samples too rarely to see a step
+
+symptom: the clock guard reported OK all night (status=OK rtc_vs_wsl_s=0
+ntp_offset=n/a) through 50 journald "Time jumped backwards" lines and a 125 s
+step. It read systemd-timesyncd, which is INACTIVE on this box (chronyd and
+Hyper-V TimeSync both discipline the clock), and point-sampled every 15 min.
+The bot's own clock-health line printed timesync{NTP=yes …}, which says
+nothing about steps.
+probe: `systemctl is-active` every daemon a guard names; then ask whether the
+guard's sampling period is shorter than the excursion it must see (a step and
+its correction 4.9 s apart are invisible to minute-scale samples — the net is
+0.6 s).
+rule: the process that depends on the clock measures it itself (wall vs
+monotonic, ~1 s cadence), counts steps by direction, and serves the counters
+on its health surface.
+Reference: kernel/feed_clock.go ClockStepSnapshot, api/handler_health.go
+"clock", kernel/clock_health.go, OPS-SECURITY review 10-14 §8.3.
+
+## CLASS NN (assigned at merge) — an edge-sampled boolean misses a down-and-up between samples
+
+symptom: on 2026-10-14 the NT8 link was force-closed twice (00:21:35,
+00:22:43). The dead-man watchdog compared ONE boolean (IsConnected) once per
+decision cycle; trader 12345, holding position #650, saw connected=true at both
+samples and logged nothing — no entry block, no post-reconnect protection
+re-ask (vl_2026-10-13.log: DOWN/UP/RESUMED only for trader hoang, 53405 /
+53767 / 53791).
+probe: for every "did X happen" check driven by a sampled boolean, ask what
+happens when X and its reversal both land between two samples, and whether the
+sampler can block (runCycle sat 402.5 s in a planner call).
+rule: compare an EPOCH (a counter that only grows per event — here the TCP
+accept sequence) between samples, not a state; and drive safety samplers from
+a beat that cannot block on unrelated work (the per-trader 60 s monitorTick).
+Reference: trader/dead_man_watchdog.go stepEpoch, trader/auto_trader.go
+driveDeadManWatchdog / ninjaLinkEpoch, trader/auto_trader_risk.go monitorTick,
+trader/dead_man_epoch_test.go, EXECUTION review 10-14 F-3.
+
+## CLASS NN (assigned at merge) — a pre-condition wait that the waited-on actor keeps breaking
+
+symptom: the updater's preflight waits (10 min) for the bot to be flat before
+it holds, but nothing told the bot a job was waiting: job 30a8bbf6 sat in
+preflight_ok/started 01:39:53→01:49:53 CT and trader 12345 placed armed S1 at
+01:44:00 (vl_2026-10-13.log 64591); the install was refused on that order.
+Second half: the planner grace applied only to the REPORTED (first failing)
+leg, and planner_in_flight was listed after the census/ledger legs, so a plan
+read running beside an order never got its grace.
+probe: for every "wait until the other side is quiet" loop, ask whether the
+other side knows it is being waited on; and for every "first failing leg"
+report that picks a budget, ask whether the leg order decides the budget.
+rule: the waited-on side freezes the thing being waited on (NEW entries) as
+soon as the wait starts, logged + counted + auto-clearing on the job's end or
+timeout; a benign blocker with its own budget is checked FIRST.
+Reference: trader/install_pending.go, trader/entry_admission.go
+(install_pending), internal/updaterworker/steps.go preflightFlatLegs,
+OPS-SECURITY review 10-14 P1-1.
+
+## CLASS NN (assigned at merge) — a UI field rendered only when ANOTHER field is absent
+
+symptom: the Updates page rendered job.error only when job.state was empty
+(`job?.state || (job?.error ? … : n/a)`); a refused job always has a state, so
+the owner saw "refused" and never why — the reason lived only in the job file.
+probe: grep every `a || (b ? … : …)` / `a ?? b` in a status panel and ask
+whether a and b are ALTERNATIVES or two independent facts.
+rule: independent server fields get independent rows; never an
+either-or chain.
+Reference: web/src/pages/UpdatesPage.tsx (job-error row),
+UpdatesPage.test.tsx, OPS-SECURITY review 10-14 P1-1(c).
+
+## CLASS NN (assigned at merge) — a test that dials the production process
+
+symptom: TestAgentDirectReply built the Telegram agent on port 8080, so every
+`go test ./...` sent four real GETs to the LIVE bot (236 "invalid number of
+segments" 401 lines in vl_2026-10-13.log, bursts of 4). The agent turns HTTP
+errors into reply strings, so the test passed regardless.
+probe: grep *_test.go for the production port and for constructors that take
+a port; ask whether the code under test swallows transport errors (then a
+dial to the wrong place can never fail the test by itself).
+rule: tests talk to httptest servers; packages that build loopback clients
+mount internal/testnet.Guard in TestMain (refuses + records the dial and fails
+the run even when the error is swallowed); the repo census
+TestNoTestNamesTheLiveBotPort keeps new ones out.
+Reference: internal/testnet, telegram/agent/main_test.go,
+OPS-SECURITY review 10-14 P3-1.
+
+## CLASS NN (assigned at merge) — a restore that leaves the WAL beside the restored file
+
+symptom: deploy/RESTORE.md swapped data.db with mv/cp after a kill -9 and never
+touched data.db-wal / -shm. SQLite pairs files by NAME, so the old DB's hot WAL
+replays into the restored file: reproduced on scratch files, the "restored" DB
+read the OLD rows and integrity_check still said ok. kill -9 also triggered
+Restart=on-failure (relaunch in 5 s, mid-copy), and the step-1 glob
+`{vl,<old>}` failed as a redirect.
+probe: for every procedure that replaces a SQLite file, ask where its -wal/-shm
+go, who can open the name in between, and whether the stop is a "failure" to
+the supervisor.
+rule: stop through the supervisor (no relaunch), keep the current DB with
+.backup, move db + -wal + -shm aside TOGETHER, write the restored file with
+.backup, verify, start.
+Reference: deploy/RESTORE.md "Restore the database", OPS-SECURITY review 10-14
+P1-3.
+
+## CLASS NN (assigned at merge) — a sweep setup's trigger read MET from the state the plan was born in
+
+Symptom: a reclaim / sweep_reclaim confirm (a close rule on the reclaimed side)
+reads MET on the FIRST completed close after plan birth because price was
+already on the reclaimed side — no sweep ever happened. #649 (armed_orders 350,
+10-13 ASIA v2 S2, ONH 30849.75): "wait_confirm MET" at 20:15:01 CT, 2.5 min after
+birth, ~55 pts under the ref; the market_in_zone limit filled at 30843.50 with a
+max 1m high of 30844.25 between birth and fill. Row 233 (10-02) is the same.
+Probe: for every filled reclaim-family arm, find the first closed 1m bar after
+plan birth that traded at/through the confirm ref; compare with filled_at_ms.
+Replay the confirm renderer over a decision corpus and count MET lines whose
+scenario has no such bar.
+Rule: an EVENT-sequence trigger (sweep, then close) is evaluated as a sequence —
+the close counts only after the first event is recorded. The arm gate holds
+every leg of a sweep setup until that verdict is MET, whatever wait_confirm the
+plan authored, so no fillable order exists before the trigger.
+Reference: kernel/sweep_trigger.go (firstSweepOfRef, sweepGatedConfirm),
+kernel/confirmation_evidence.go orderedScenarioConfirm, trader/armed_executor.go
+(SweepSetupWaits), trader/sweep_wait.go; replay golden: 1335 MET -> NOT MET.
+
+## CLASS NN (assigned at merge) — a discipline grade computed from links, not from the event
+
+Symptom: #649 graded "A (followed the plan)" — the grade read only the FK link
+(armed_fill -> cited scenario, direction matched), never whether the scenario's
+trigger had happened before the fill.
+Probe: for graded closes citing a sweep setup or a wait_confirm arm, evaluate the
+scenario's confirm at entry_time over the stored bars; any A/B with NOT MET is
+this class.
+Rule: a grade that claims "followed the plan" must read the plan's own trigger
+at the fill instant (the SAME evaluator the gate runs); unknowable (no plan row,
+no bar coverage) leaves the grade unchanged and is never a guessed miss.
+Reference: kernel/adherence.go (AdherenceInput.Trigger), trader/adherence_trigger.go,
+trader/auto_trader_clock.go recordClosedTradeAnalyticsAt.
+
+## CLASS NN (assigned at merge) — a plan whose armed entry contradicts its own flip line
+
+Symptom: an armed scenario entered PAST its own plan's flip line against the
+flip direction can only fill where the plan is about to flip against it. Class
+148 judged the flip line against PRICE; nothing judged it against the plan's own
+entries. Since 09-24: 48 of 231 armed scenarios strictly past the line, 31 on it.
+Probe: plans.doc flip{price,side,flip_to} vs every enabled arm entry whose
+direction != flip_to.
+Rule: write-time relation — such an arm is written disabled
+(arm_disabled_reason flip_incoherent), logged, counted; the prompt states it.
+Reference: kernel/flip_coherence.go, trader/auto_trader_planner.go (before the
+feasibility verdicts), trader/write_time_feasibility.go noteFlipIncoherentDisabled.
+
+## CLASS NN (assigned at merge) — an owner instruction that reaches one AI but not the one that acts
+
+Symptom: the Studio custom_prompt reached only the executor prompts; under
+plan_mode strict only the PLANNER creates entries, and PlannerInput.OwnerNote had
+no producer anywhere (repo-wide grep), so the owner's "No trade inside sideway
+zone" never reached the model that authors entries.
+Probe: for every owner-editable text/knob, grep its consumers and confirm each
+AI that makes the decision it governs reads it; a struct field with zero
+producers is a dead input.
+Rule: one source (the executor's own config), delimited in the planner prompt,
+logged on every plan write as length + short hash — never the text.
+Reference: kernel/owner_guidance.go, kernel/planner_prompt.go,
+trader/auto_trader_planner.go studioCustomPrompt.
+
+## CLASS NN (assigned at merge) — a count summed across a merge double-counts overlapping members
+
+Symptom: collapseLevelClusters did kept.Confluence += member.Confluence + 1. Each
+member's count overlaps the keeper's (a member within tol sits inside the
+keeper's confBand), so the executor's "·xN" read up to x119 while only 10
+families exist (4,308 / 5,714 seated rows differed from their family count).
+Probe: any "+=" of a DISTINCT-count across a merge; compare the displayed N with
+the definition's ceiling.
+Rule: a distinct count merges by set union (or keeps the keeper's already-distinct
+count), never by addition.
+Reference: kernel/levels_score.go collapseLevelClusters.
+
+## CLASS NN (assigned at merge) — a promote/evict loop that never removes the promoted item
+
+Symptom: seatBothSides runs its side rebalance twice and never removed a
+promoted candidate from `rest`; when a side had fewer than MinSideLevels
+candidates, pass 2 promoted the same level again and evicted a different seat
+(read 10969: SWG-L·5m held 2 of 12 seats; OR-H and OB(bear)·1h lost theirs).
+Probe: a multi-pass loop that appends to a result from a pool; assert result
+identities are unique.
+Rule: an item leaves its pool when it is promoted (seatHTFLegacy already did).
+Reference: kernel/levels_score.go seatBothSides.
+
+## CLASS NN (assigned at merge) — a measurement whose inputs are all authored constants
+
+Symptom: the arm-path no-chase measured |authored entry − authored confirm ref| —
+fixed at write, 0.00×ATR for every reject-at-level arm — so it could never see
+a chase (nochase_arm_ok 9,069 vs would_refuse 18).
+Probe: for each "live" measurement, list its inputs; if none changes after the
+plan is written, it is a constant labelled as a measurement.
+Rule: the arm path measures from the live tape price at the pass that places;
+no live price = not measured, counted apart, never "ok".
+Reference: trader/no_chase.go (LivePx/LiveRequired), trader/entry_gate.go entryGateForArm.
+
+## CLASS NN (assigned at merge) — a moving level frozen at plan write and armed hours later
+
+Symptom: #650 (row 355) rested at frozen_line:VWAP[30798.92] written 21:11 CT and
+filled at 00:09 with the session VWAP ~20 pts higher; "reject from VWAP" executed
+far from VWAP.
+Probe: armed rows whose zone_provenance names VWAP/σ-bands/eVWAP; recompute the
+line at placed_at_ms.
+Rule (release #22, owner: observability only): log + count the live-vs-plan drift
+at placement (vwap_drift_at_placement:<session>:<measured|live_unknown|mixed_source>);
+the entry is not changed. Re-pricing is an owner call.
+Reference: trader/vwap_drift.go, trader/zone_placement.go placeZoneRow.
+
+## CLASS NN (assigned at merge) — a guardrail evaluated only inside a cycle one mode never runs (r22 RISK-GATES, 2026-10-14)
+
+Symptom: a risk limit the owner can switch ON is enforced on one entry path and
+silently skipped on another, because it lives inside a cycle that a mode
+bypasses. The daily guardrails (loss, profit target, max trades) lived only in
+kernel/engine_analysis.go's AI decision cycle; mentor mode returns before that
+cycle, so a mentor trader never evaluated max trades or the profit target, its
+daily loss was checked only while AUTHORING a new arm (never on an arm already
+resting at the broker), nothing ever flattened (the guide promised a "60-second
+force-flat sweep"), the trip's only clear was a roll that ran inside the same
+AI cycle, and the loss counted MANUAL trades on one reader and not on another.
+Sibling: the Emergency Flat's reset (MaybeForceFlat → ResetDailyPnL) cleared
+EVERY trader's trip, not the one acted on.
+
+Probe: for every limit with an owner switch, list the entry producers (AI
+decision, agent door, planner arm, mentor arm + mentor authoring, Picture) and
+the wall-clock beat; for each, name the line that refuses/acts — a producer with
+no line is the class. Then check what lifts the trip (who runs it, in which
+mode) and whether every reader of the limit's P&L applies the same exclusions.
+
+Rule: a guardrail is ONE verdict asked by the one admission chain (every path)
+and acted on by the wall-clock monitor beat (mode- and day_plan-independent);
+its trip is a latch stamped with its session-day; its P&L is read in one place;
+an operator reset is scoped to the trader acted on.
+
+Reference: trader/daily_loss_gate.go (botDayPnLAt, dailyGuardVerdictAt,
+dailyLossBeatAt, dailyLossFlattenAt), trader/entry_admission.go (daily
+guardrail step), kernel/risk_limits.go (forceFlatTrip, DailyForceFlatReasonAt,
+DailyGuardrails.lossPnL), kernel/engine_analysis.go MaybeForceFlat;
+review-1014 RISK-PNL P1-3 / P2-2 / P2-3, UI-GUIDE-TRUTH T4 / T33.
+
+## CLASS NN (assigned at merge) — an expiry set AT the decision instant, settled by pass order
+
+symptom: rel22 mentor audit P1-1 (2026-10-14). A mentor ISB arm is authored with
+expiry = the close of the NEXT 1m candle — the very instant the evaluator decides
+keep-or-cancel on that candle [D4.2 p2 @ 08:21–09:01]. The event loop
+(trader/armed_event_pass.go runArmedEventLoop) ran the ARMED pass first and the
+mentor pass second; the FINAL frame that wakes it lands after the wall-clock
+close, so the armed pass always saw the arm expired and cancelled it at NT8 a few
+ms before the evaluator's ExtendArm, which was then refused "row N is not an
+unfilled arm". 39 such log lines 10-04..10-13; 16 resting orders killed (rows 253,
+257, 258, 262, 266, 267, 270, 272, 275, 279, 309, 319, 322, 326, 357, 358), 9 of
+which would have triggered inside the keep window. Every one fell while the
+trader's active plan carried an enabled market_in_zone arm (the flag that makes
+the loop run its armed pass at all); the extends that DID land (10-12 03:55,
+10-13 03:29/04:12/04:13) fell under no_trade/dormant plans.
+probe: for every deadline that a bar-driven decision may move (expiry, rest cap,
+hold window), find EVERY pass that can act on the deadline and ask whether one
+of them can run between the deadline instant and the decision. If the deadline
+equals the decision instant, the order of the passes in each loop IS the rule —
+read it, and pin it with a test that drives the real loop goroutine.
+rule: the pass that DECIDES runs before the pass that ENFORCES the deadline on the
+same wake-up; a refusal caused by losing that race is counted apart
+(extend_lost_expiry_race), read from the row's own state, never inferred.
+Reference: trader/armed_event_pass.go runArmedEventLoop (mentor pass first),
+trader/mentor_actions.go mentorExtendArm + mentorRowTakenByExpiry,
+trader/mentor_keep_race_test.go. Known residue [B]: the 2-min scan and the 5 s
+mentor cadence tick are other passes; neither was the culprit in the 16 rows,
+and the counter will show it if one ever is.
+
+## CLASS NN (assigned at merge) — one number, two definitions (a hidden executor offset)
+
+symptom: rel22 mentor audit P2-1 (2026-10-14). The kernel authored the ISB at the
+extreme ± 1.5 (the course's buffer [D2.1 p1 @ 05:36]) and the executor's
+decideStopEntry added the planner's E7 stop-entry offset (2 ticks = 0.5) on top,
+so every regular ISB reached NT8 at ± 2.0 (row 357: I1 high 30888.75, ledger
+30890.25, wire 30890.75; fills 252/254/261/316/347 each 0.5 past the ledger).
+One setup (the reverse ISB) had been patched to pre-subtract the offset — a
+second definition compensating the first, which is what hid it.
+probe: for every price the kernel authors, compare the ledger value with the
+WIRE value (the placement log's trigger, or the fill). A difference that is not
+the documented rounding is a hidden second definition. Grep for authoring code
+that subtracts an executor constant — compensation is the tell.
+rule: ONE definition per offset, at one call site (stopEntryWireOffset: the E7
+offset for planner stop entries by spec, 0 for mentor rows — the kernel
+authors the course price); the placement line prints the offset it ACTUALLY
+applied (a READ value).
+Reference: trader/armed_executor.go stopEntryWireOffset / decideStopEntry
+(OffsetTicks), kernel/mentor/isb_reverse.go, trader/mentor_isb_offset_test.go.
+Related: "the ledger keeps the authored price, the wire sends another" (the
+ledger RECORDING what was sent); this class is about the value sent being wrong.
+
+## CLASS NN (assigned at merge) — an empty enum value falls through to a default branch
+
+symptom: rel22 mentor audit P2-2 (2026-10-14). The fill path read a mentor
+position's exit mode only from an in-memory staging map; when the staging was
+lost between authoring and fill (a restart, or a second instance of the trader —
+10-13 17:41–17:50 shows two hoang funnel series on one trader id), the position
+registered with Mode "" and the exit drive, which has no case for "", ran mode
+B's stop moves. Row 347 (position 648) logged "mode=" while its row says
+exit_mode='B'. A lost C (confluence: "do NOT move the stop up at all"
+[D4.2 p1 @ 14:57]) would have been driven as B.
+probe: for every switch over a mode/kind/state string, ask what the empty string
+does. If "" reaches the default branch, find every writer of the value and every
+way it can be absent (restart, second instance, partial path).
+rule: resolve "" explicitly at the source with a stated order (staged → persisted
+→ the setup's own rule → the course default, cited) and log + count which source
+was used, once per object.
+Reference: trader/mentor_live_pos.go mentorFillExitMode / mentorNoteFillExitMode,
+trader/mentor_fill_exit_mode_test.go.
+
+## CLASS NN (assigned at merge) — a test fixture in the machine zone passes only on a Chicago box
+
+symptom: release #22 (#514) moved three production reads to explicit America/Chicago (agent schedulerStep, activation lineTime, the briefs). Every local suite was green: the box runs in Chicago. On the UTC CI runner, PR #518 went red in TestSchedulerStepMissedMinuteCatchesUp and in the updater watch tests (TestWatch*, TestAdapterDelegatesToActivation/Watch). Their fixtures built instants with time.Local, or formatted log stamps with the machine zone. Those were 5 h off from the CT the code now reads.
+probe: whenever production code reads a fixed zone, grep its tests for time.Local, for `.Format(` on a log-stamp layout without `.In(`, and for time.Date(..., time.Local). Then run the package under `TZ=UTC go test` before calling it green.
+rule: a test builds its instants in the zone the production code reads (the logger's CT), never the machine zone. "Green locally" is not green until the suite also passes under TZ=UTC.
+Reference: agent/scheduler_step_test.go, internal/activation/logstamp_ct_test.go, internal/updaterworker/logstamp_ct_test.go (logStampCT).
+
+## CLASS NN (assigned at merge) — a confirm counted from plan birth reads MET away from the level
+
+symptom: planner-touch-fills (2026-10-14). Every market_in_zone planner fill since 09-23 went 0 W / 11 L / 1 scratch (−$1,055). A hold / acceptance / reject confirm was evaluated over every 1m close since plan publication: #653 (armed_orders 366) logged "wait_confirm MET (time_hold 3min [stored])" at 08:52:36 CT 10-14 from three closes 40–140 pts ABOVE OR-L 30506.25; the limit then rested "beyond" the zone and filled at 08:57:18 inside a −70 pt dump — the hold was decided (it failed) after the fill. #650 (row 355, a reject touch with no wait_confirm) was never gated at all and filled on a candle that closed BELOW the level; #654 (row 367) was "met" by a FORMING candle that came down from ABOVE onto a short reject's level. #515 had closed the same hole for reclaim only.
+probe: for every confirm that authorizes an order, ask (1) WHERE price was when each counted close printed — is there a requirement that price reached the level first? (2) does a "touch" read the candle's side and its close, or only its range? (3) is a forming bar ever counted? (4) how old may the event be, judged on the event's own time (a backfill after a feed gap re-delivers old bars)? (5) on an empty tape, does the verdict claim a market fact?
+rule: a level play's confirm counts only after a CLOSED 1m bar reached the level since plan birth; a touch is a rejection candle from the trade side that closes back on it; a MET verdict authorizes an arm only while fresh on event times; an empty tape is UNKNOWN and counts nothing. The gate and the grade read the SAME verdict.
+Reference: kernel/touch_trigger.go, kernel/confirm_fresh.go, kernel/sweep_trigger.go (missing_tape), trader/touch_wait.go, trader/armed_executor.go (ArmLegWaitsForConfirm), trader/planner_touch_test.go (the 10-13/10-14 tape).
+
+## CLASS NN (assigned at merge) — a mode needs an input its producer never builds, so the gate is silently dead
+
+symptom: planner-touch-fills (2026-10-14). HTF_VETO_MODE=cross has been LIVE since 08-28 (boot line "htf veto: mode=cross"). Cross requires snap["4h"]; StructureSnapshot builds 5m/15m/1h only, and the cross branch returned (false, "") with NO log when a TF was missing. Zero "htf_veto:" refusals in every log after the switch; on 10-14 the 1h read TRENDING_DOWN through the whole #653 long (decision_records 54873–54883) and nothing refused it. The review blamed "RANGING fails open" — the input was never there.
+probe: for every mode switch, list the inputs each mode reads and find the producer of each; grep the producer for that key. For every fail-open branch, check it LOGS (and counts) — a silent fail-open on a missing input is indistinguishable from "no veto needed". Grep the logs for the gate's refusal string since the mode changed: zero for weeks is a finding, not a quiet market.
+rule: a mode's inputs are built where the mode is read (kernel.StructureSnapshotForVeto adds the native 4h); a missing input fails open LOUDLY, naming the missing key.
+Reference: kernel/structure.go StructureSnapshotForVeto / WithNativeHTFStructure, kernel/htf_veto.go (cross WARN, VetoTrend), trader/planner_touch_test.go TestPlannerTouchHTFVeto653.
+
+## CLASS NN (assigned at merge) — a coherence check judges the authored price, not the price the wire sends
+
+symptom: rescan N6 (2026-10-14). Flip coherence (#515) compared sc.Arm.Entry with the plan's flip line. #650's authored entry 30798.92 sat exactly ON "below 30798.92" (coherent by the #515 default), but a market_in_zone limit is sent at the zone's far edge rounded inward to the tick — 30798.75, strictly past the line.
+probe: for every check on an entry price, ask which price reaches the broker for each entry policy (authored entry, zone far edge, tick-rounded) and judge THAT one.
+rule: judge the wire price (for market_in_zone: long → zone high rounded down, short → zone low rounded up) alongside the authored entry.
+Reference: kernel/flip_coherence.go zoneWireEdge, kernel/flip_wire_edge_test.go.
+
+## CLASS NN (assigned at merge) — a feed gap was never re-requested; refill depended on an unrelated restart
+
+symptom: 2026-10-14 03:44:04 CT NinjaTrader lost Tradovate and its Historical Data Server; "FEED DOWN" every minute 03:54→07:49. At 07:49:55 the AddOn's reconnect rebuilt its BarsRequests and NT8 answered bars=0/1 for every timeframe (its DB did not have the gap yet). Live bars resumed and the store kept a 244-minute MNQ 1m hole, 03:44–07:48; the chart jumped ~200 points across it. The owner reloaded NT8's history at 08:16 and nothing on the bot asked again. The hole filled at 08:22 only because the release #22 boot re-sent bars_subscribe: bars (MNQ, 1m, MNQ 12-26) open_time 03:44–07:47 CT are 244 rows with source=historical. A second, hidden half: the 07:50:20 "🕳 scale check SKIPPED … replay rows held from the store". A replay asked for MID-SESSION lands on minutes that already traded live. The adjacent-pair scale check then never finds a reference, so the replay-hold would have kept even a successful re-request out of the store for the life of the process.
+probe: (1) for every recovery path (reconnect, feed back, NT8 reload), ask what re-asks for the data it missed. Look for a timer, a counter and a re-measure — not a restart. (2) For every "held until verified" door, feed it the case where the verification can never happen (here: a replay whose only reference is minutes away from the next live bar) and see whether the door stays shut forever. (3) Grep the log for a gap the system itself measured ("🕳 bar horizon HOLED … gaps=244") with no action after it.
+rule: a measured gap gets its own detector, its own bounded retry schedule and budget (never the scale-break one-per-boot budget), a re-measure from the store after each attempt, and ONE loud line naming the manual fix when the source itself lacks the data. It never fires while the feed is down. The replay the re-request asked for, which necessarily overlaps live minutes, is judged on those same minutes (same minute, two feeds); every other replay keeps the first-live-bar rule. Closed-market minutes come from the one CME calendar read by trading date, so the evening before a closed holiday is closed too.
+Reference: trader/ninjatrader/bar_holes.go (barHoleTracker, findBarHoles, barHoleExpected), provider/ninjatrader/history_gap_backfill.go (RequestGapBackfillAt), provider/ninjatrader/bar_overlap_verdict.go + bar_cache.go SeedHistorical, trader/ninjatrader/bar_holes_test.go (TestRepro1014A/B), api/handler_health.go bars_holes.
+
+## CLASS NN (assigned at merge) — one break, three definitions (an escape test looser than the course and the bot's own)
+
+symptom: EXTRAS-ALIGN (2026-10-14). The ORB escape was `cur.Close > orb.High` — a 1m candle that opened inside and closed one tick out "escaped". The bot's own box escape (box.go escaped) asks open AND close outside; the course minimum is the BODY outside ("cái THÂN NẾN nằm bên ngoài mà cái râu nến nằm bên trong cái box ok… Cái đó là at least" [D4.1 p1 @20:36–21:03]); X5 asks for the whole candle ("COMPLETELY nằm ở ngoài" [X5 @07:04]). The same file's comment said "BODY closes outside", which is why it read as correct. The trendline break had the instant half of the same shape: brokenBy5m compared the 5m CLOSE with the sloped line read at the bucket OPEN, five minutes before the close it judged. Its close test itself is the course's ("nến nó đụng level mà nó ĐÓNG DƯỚI level — đó đụng trendline… Nó GÃY level… chỉ gãy thôi chứ không phải đảo chiều" [D2.3 p1 @14:36–15:17]). X9's stricter "đóng dưới NGUYÊN CÂY" is an older source and was NOT adopted. A first version of the fix did adopt it, and a transcript-verify lane caught it against the course before merge; that is the reason to re-open the course transcript for every break test before tightening one.
+probe: list every "escape / break / closes through" test in the kernel (grep `Close >`, `Close <` against an edge or a line). For each, name its source and compare with the other structures' tests. A test on a SLOPED line: check the instant the line is read at is the instant of the price it is compared to.
+rule: one sourced break definition per object, stated in ONE helper (orbBodyEscape, box escaped, brokenBy5m). It is the course's own test. An older extra that asks for more is not adopted where the course speaks. A sloped line is read at the instant judged: the candle's close for a close test.
+Reference: kernel/mentor/orb.go orbBodyEscape, kernel/mentor/trendline.go brokenBy5m, kernel/mentor/extras_align_test.go (TestORBEscapeNeedsTheBodyOutsideAtTick, TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove, TestTrendlineBreakReadsTheLineAtTheCloseTime).
+
+## CLASS NN (assigned at merge) — a latch whose lifetime no source gives
+
+symptom: EXTRAS-ALIGN (2026-10-14). The ORB latched the FIRST escape side and refused every opposite-side intraday entry until 15:00 (orb.go `if orb.Escaped != "" { return orb }`). The sources give the side per escape ("Nó thoát ra khỏi đầu nào, nó sẽ đi theo đầu đó" [X5 @02:57–03:02]) and keep it only "cho tới khi nào nó crack" [X7 @07:42–07:51]; none holds it all day. In the 10-11→10-13 replay 10 entries were refused orb_wrong_side by the latch alone (fdr-a; 0 after the fix).
+probe: for every latch (a value set once and never re-read until a reset), find the source line that says how long it lives. "Until the next day" is a lifetime too, so it needs a source. Grep `if x != "" { return` / one-way flags in a per-tick advance.
+rule: a latch lives exactly as long as its source says. When the source gives a condition ("until it cracks"), re-read that condition every tick. Refusals made under the latch stay logged and counted, and every state change of the latch is logged with the candle that made it.
+Reference: kernel/mentor/orb.go ORBAdvance, kernel/mentor/eval.go noteORBEscape, kernel/mentor/extras_align_test.go TestORBSideFollowsTheLatestEscapeAtTick.
+
+## CLASS NN (assigned at merge) — a timeframe knob that moves the entry but not the exit
+
+symptom: EXTRAS-ALIGN (2026-10-14). The X5-10 exec_2m_after_30m knob (#499) moves the ISB read to closed 2m candles, but the runner's trail kept reading closed 1m candles (mentor_tick.go feeds the exit drive 1m bars only). X8 is explicit that the two are one rule: "nếu như mình trade khung nào thì mình gồng theo khung đó, theo cây nến của khung đó… khung 1 phút nó rất dễ bị quét râu" [X8 @18:02–18:14]. Nothing recorded which frame a position was entered on, so the exit could not follow.
+probe: for every knob that changes the frame or source an ENTRY is read on, find every downstream reader of "the candle" for that position (trail, BE, expiry, the partial) and check it either reads the same frame or names a source that says otherwise. Flip the knob ON in a test at the production call sites, end to end, and watch the exit frames.
+rule: the frame a position was entered on rides with it from authoring to fill (Intent.ExecTFMin → mentorExecFrames → mentorLivePos.TrailTFMin). Every frame-dependent exit reads it. When the frame cannot be known (a restart), the fallback is named, logged and counted.
+Reference: kernel/mentor/exec_frame.go ClosedCandleTF, trader/mentor_exit_drive.go mentorExitDrivePos (trailH/trailL), trader/mentor_live_pos.go mentorRebuildTrailFrame, trader/mentor_extras_align_test.go TestExtrasAlign2mEntryTrailsOnClosed2mCandles.
+
+## CLASS NN (assigned at merge) — a knob value the resolver accepts but no data source can serve
+
+symptom: EXTRAS-ALIGN (2026-10-14). mentor_trail_tf accepted "30s" and "45s" (mentor_mode.go mentorTrailTF) and the guide said "30s/45s allowed". The bot has no sub-minute bars (the AddOn streams 1m and up) and the drive read the knob only as on/off, so both values silently ran the 1m trail. The owner could set a value, see it saved, and get a different behaviour with no log.
+probe: for every enum knob, take each accepted value and trace it to the code that behaves differently because of it. Then check the data that code needs exists in this system. An accepted value with no distinct behaviour, or no source for its data, is a finding. So is a guide line describing it.
+rule: a resolver accepts only values the system can honour. A value the system cannot serve is refused at config load: logged, counted, falls back to a named default. The guide says so in the same PR.
+Reference: trader/mentor_mode.go mentorTrailTF / mentorTrailTFLoadCheck, trader/mentor_tick.go mentorSeedAtStart, web/src/guide/content/mentor.ts (Trail timeframe), trader/mentor_extras_align_test.go TestExtrasAlignTrailTFSubMinuteRefusedAtLoad.
+
+## CLASS NN (assigned at merge) — a frame field the receiver never reads: routing by a shared map instead of the payload
+
+symptom: ADDON-CLOSE-ROUTING (release #24, 2026-10-14). Go stamped the trader's bound account on every close_position frame (tcp_trader.go sendCloseAt `Account: t.boundAccount`, since P5.4/A2), and the PROTOCOL doc listed "account routing" for the frame. The AddOn's HandleClosePosition never read `p["account"]`: it flattened `positionAccountBySymbol["MNQ"]`, a map keyed by ROOT alone, overwritten by every entry fill on ANY account and falling back to the AddOn's single active account. With two MNQ traders on two SIM accounts behind one AddOn (live 10-14: Sim101 and SimAccount1), a flat trader's Emergency Flat closed the OTHER trader's position and cancelled its orders, and both 14:45 EOD flats hit whichever account filled last. Entries, meanwhile, DID route by the payload account. The field existed on both sides of the wire, so every review of "is the account sent" said yes. Same build: the 4.3 limit exit turned `quantity 0` into ONE contract (`if (closeQty <= 0) closeQty = 1;`), so a multi-lot position got a 1-lot limit whose -lx fill cancelled the bracket of the contracts still open. The env knob EOD_FLAT_LIMIT_TICKS=2 was set live.
+probe: for every frame type, list each payload field the SENDER sets and grep the RECEIVER's handler for a read of it (`GetString(p, "<field>")` in the C#, the struct field in Go). A field that is sent and never read is a finding, and so is a doc line that describes it. For every routing decision in a handler, ask whether it comes from the payload or from shared state (a map, an "active" default). Shared state that another sender's frames can write is the cross-wire. Then check the two directions of one wire (entry vs close) route the same way, through one resolver.
+rule: when the sender names the target, the receiver resolves exactly that target and fails closed (refuse, log, reply with the reject frame) when it cannot. It never falls back to a shared or default target. Shared state is a legacy fallback only, keyed by everything that distinguishes two senders (here account AND root), and ambiguity is a refusal. One resolver serves every path that resolves the same name. A receiver change to routing ships with a Go call-site pin on every sender path (the frame carries the field) and a source pin on the receiver.
+Reference: ninjascript/VLTraderTCPClient.cs HandleClosePosition / FindAccountByName / RefuseClose / positionAccountByAcctRoot (build 2026-10-14-a), trader/ninjatrader/tcp_trader.go sendCloseAt, trader/addon_close_routing_cs_pin_test.go, trader/close_routing_account_test.go, api/close_routing_account_test.go, ninjascript/vltrader_tcp_PROTOCOL.md §1b.
+
+## CLASS NN (assigned at merge) — a repair path re-applies the ORIGINAL authored price after the live price moved
+
+symptom: EXEC-FOLLOWUPS (release #22 rescan P2-1). The D5 protection net re-placed `armed_orders.stop_px` — the plan's ORIGINAL composed stop — for a non-mentor position whose -sl vanished. Position 654 (SHORT 30456.50, row 367): planner auto-BE moved the live stop 30551.25 → 30456.50 at 10:08:27 (snapshot 112688). Had the -sl been lost, the net would have placed 30551.25: 94.75 pts / $189.50 of risk re-opened. The B1 stop-widen ban guards `move_stop` only, so nothing caught it. `accepted_risk` could not help: the bracket attaches on fill, so `accepted_stop_px` is NULL on every planner row (224–229).
+probe: for every repair / reconcile / re-arm path that RE-CREATES an order, list the price sources it reads and ask, for each, "can the live price have moved since this was written?" (BE, trail, manual move, modify). A source written at authoring is the ORIGINAL; find the record of the latest applied move (per signal, not per side) and the broker's own last-seen price (persisted book history), and check the repair takes the tightest of them.
+rule: a repair never re-applies a price wider than the tightest the broker is known to have held for that signal. The latest move is recorded per signal at send; the persisted book history is the restart-proof fallback; the authored price is used only when neither exists; a fresh price already through the chosen stop flattens instead of placing.
+Reference: trader/protection_reconciler.go adjudicateProtectionWith / knownBrokerStopFor, trader/ninjatrader/tcp_trader.go KnownStopForSignal, store/nt8_order_snapshot.go LatestWithOrderNamed, trader/exec_followups_protection_test.go TestProtectionNetNeverReWidensAMovedStop654 / TestProtectionNetUsesBookHistoryAfterRestart654.
+
+## CLASS NN (assigned at merge) — elapsed time read as absence ("no fill in 45 s" ⇒ "NT8 never confirmed")
+
+symptom: EXEC-FOLLOWUPS (N-B). The C8 sweep dropped every pending entry older than 45 s and printed "NT8 never confirmed". Rows 366 and 367 were Working at NT8 (snapshots 112370 / 112623) when it did; both filled seconds later. Both C8 WARNs since the 08:22 boot were this false case, and the sweep also cleared `lastEntrySignalID` for an order that was still live.
+probe: for every timeout that concludes "it never happened", ask whether the thing can legitimately take longer (a resting limit can rest 30 min). Find the positive evidence the system already holds (broker book, ledger state) and check the timeout consults it. Grep the WARN text against the evidence for the same ids.
+rule: a timeout drops only what the evidence says is absent. Live evidence (a working order in the book, a working ledger row) keeps it; "never confirmed" is printed only when a book received after the send lacks the order; with no evidence at all the line says UNKNOWN. Each outcome names the ids and is counted.
+Reference: trader/ninjatrader/reconcile.go sweepUnconfirmedEntries / c8EntryEvidence, trader/ninjatrader/c8_working_entry_test.go.
+
+## CLASS NN (assigned at merge) — a resume / readiness gate satisfied by the OLD link's cached state
+
+symptom: EXEC-FOLLOWUPS (N-C). After a reconnect the dead-man watchdog resumed entries when `GetPositions` and `GetOpenOrders` merely did not error. Both answer from caches the old connection filled, and with two drivers (runCycle + monitorTick) the reconnect→resume wait could shrink to seconds. The reconnect WARN also still said entries "are MARKET orders" and that cancellation was "a Part A AddOn capability" — false since armed limits and `cancel_order`.
+probe: for every "ready again" check after a reconnect / restart, ask what proves the data was RECEIVED on the new link (a receipt stamp after the connection's accept), not just that a read succeeded. Read every reconnect log line against the current capabilities.
+rule: a resume gate requires evidence stamped after the new connection's accept (positions AND order snapshot); the missing one is named once per connection; reconnect lines describe the system as it is.
+Reference: trader/auto_trader.go watchdogReconcileClean, trader/ninjatrader/tcp_trader.go SnapshotsSinceAccept, provider/ninjatrader/maintenance_wire.go ConnectionRecord.AcceptedAt, trader/dead_man_epoch_test.go TestDeadManResumesOnlyAfterBothSnapshotsOnTheNewLink.
+
+## CLASS NN (assigned at merge) — a boot seed that reads history before the history has arrived, with no re-read after
+
+symptom: MENTOR-SEED-STATE (2026-10-14). The mentor seeded its history-derived state (trigger lines, swing line, 1m EMAs, key-level deletion) from the store at trader construction, 08:22:40 CT. The AddOn's subscribe-time replay — which carried the 03:44–07:47 hole — was HELD by the replay hold and released to the store at 08:23:00. Every piece of that state is advanced incrementally past a watermark (TriggerTick never re-reads a bucket at or below LastBucket), so the partial 1h 07:00 bucket the seed committed stayed: 1h short @30790.75 instead of 30716.00, false moves at 08:48 and 08:56, 4 isb_htf_blocked refusals 08:49–08:55, 1m EMA34 +30.7 pts. #519's hole refill wrote the store and told nothing that had already read it.
+probe: for every component that seeds from a store at boot and then advances past a watermark, list every writer that can put OLDER rows into that store after the seed (replay holds, backfills, gap refills, imports). For each, find the signal the component re-reads on. Reproduce with the boot order of the log: seed on a holed store, release the rows, tick once, compare against a seed on the whole store.
+rule: a write of older history is announced (a generation the reader polls, never a callback into another goroutine's state); the reader re-runs the history-derived half of its seed on the next tick, keeps every latch/arm/position, logs before → after and counts it. The generation is read BEFORE the seed reads the store.
+Reference: trader/ninjatrader/history_refill.go NoteHistoryRefill, trader/ninjatrader/replay_hold.go resolve, trader/ninjatrader/bar_holes.go fillLocked, trader/mentor_reseed.go mentorReseedOnRefill, kernel/mentor/seed.go ReseedState, trader/mentor_reseed_test.go TestMentorReseedsAfterTheHistoryRefill1014.
+
+## CLASS NN (assigned at merge) — a per-session latch a restart rebuilds from "now" instead of replaying
+
+symptom: MENTOR-SEED-STATE (2026-10-14). State.LatchedBoxes (the first FTGH/FTGL of the trading day, "never redrawn" [D4.1 p2 @02:39]) was neither persisted nor replayed, so the 08:22 restart latched whatever the scan picked at 08:24 — FTGH 30878.00–30891.50 / FTGL 30498.00–30586.75 against the running bot's 30792.50–30805.75 / 30767.00–30801.00. With an empty BoxRefs the first tick then walked every historical return of those boxes (trigger_ftgh_sell_zone:6) and armed the B20 upgrade from refused intents. Separately, the latch was output only when the fresh scan carried the role, so a latched box vanished on 50 ticks.
+probe: for every value latched "until the session roll" (or any first-of-day pin), restart a replay at sampled instants of the day and compare the latch to a continuous run. For every incremental walk keyed by a watermark map, check what New() leaves in the map and what the first tick after a restart walks. For every latch, check the OUTPUT path reads the latch, not the input that fed it.
+rule: a restart replays a per-session latch from the session start through the same function the tick runs, on the same window; every walk watermark is stamped at the newest closed bar at seed; the output of a latch is the latch.
+Reference: kernel/mentor/seed.go seedBoxLatch, kernel/mentor/box.go latchBoxes / resolveBarIndexAtOrBefore, kernel/mentor/school_one.go armSchoolOne, kernel/mentor/seed_state_test.go TestRestartReproducesBoxLatch1014 / TestLatchedBoxIsOutputEveryTick1014 / TestRestartIssuesNoHistoricalBoxIntents1014 / TestSchoolOneArmedOnlyBySurvivingEntries1014.
+
+## CLASS NN (assigned at merge) — a "prior session" read from a slice that holds only its tail
+
+symptom: MENTOR-SEED-STATE N4 (2026-10-14). pdVWAP and the prior-day profile read the prior CME session from the 2,000-bar 1m ring. The whole 1,380-bar session fits only until ~03:20 CT; after that both ran on a front-truncated session every day (10-13: pdVWAP −16.23 at 08:30, −29.57 at 11:00, −54.21 at 14:30), and pdProfileCache kept the first, truncated profile for the day, under a key with no symbol. The F-4 class #514 fixed for dATR only.
+probe: for every reader that names a whole period (prior session, prior week, the day's range), take the first bar it read and test it against the period's open (sessionFrontTruncated). Run the reader at 08:30, 11:00 and 14:30 on a real ring and compare with the whole period.
+rule: a period is read whole — from the store when the slice holds only its tail — or refused, logged once and counted; never computed from a tail. Caches of a period are keyed by instrument and period.
+Reference: kernel/levels_volume.go priorSessionFor / PriorSessionBarsProvider / PriorSessionReadCounts, trader/prior_session_provider.go, kernel/levels_volume_n4_test.go.
+
+## CLASS NN (assigned at merge) — a chart line drawn from a value the move never updates
+
+symptom: UI-GUIDE-TRUTH UG-1 (release #24). After the swing's +1R break-even move the chart still drew the ORIGINAL stop. kernel/mentor/swing4h.go manageSwingPosition sets only `MovedBE` and emits the intent; the trader's mentorMoveStopBE sends the move to NT8 and writes the new price nowhere — so the evaluator's `swingPosition.Stop` (the panel's source) stays the entry stop forever. The owner saw risk the account no longer had.
+probe: for every price the chart or a card draws for a LIVE order or position (stop, target, entry), find every code path that MOVES that price at the broker (BE, trail, manual edit, partial) and check the drawn field is written by it — or that the display reads the broker's own book instead. A field written once at entry and drawn for the life of the trade is a finding.
+rule: draw a broker-side price from the broker's latest book (the bound account's order snapshot) and label the source; when the book cannot be read, draw the bot's copy and SAY it is the bot's copy — never a guessed moved price (a refused move must keep showing the stop that is really there).
+Reference: trader/mentor_truth_panel.go mentorSwingStopTruth / mentorSwingBrokerStop, web/src/components/charts/chartOverlays.ts swingStopLabel, trader/ui_guide_truth_r24_test.go TestMentorTruthSwingStopIsTheBrokerStopAfterBreakEven.
+
+## CLASS NN (assigned at merge) — a reader that ignores its scope argument
+
+symptom: UI-GUIDE-TRUTH UG-2 (release #24). `ledgerOpenOrders(symbol)` never read `symbol`, so /api/open-orders answered this trader's MNQ rows for ANY symbol, and the dashboard drew MNQ orders — and the mentor's MNQ levels, which carried no instrument at all — on the ES, AAPL or EUR/USD tab. Nothing failed: every caller that passed "MNQ" got the right answer.
+probe: for every function that takes a scope parameter (symbol, account, trader, session), grep its body for the parameter; an unread scope parameter is a finding. For every overlay payload, check it names the scope it belongs to and that the renderer compares it.
+rule: a scoped reader filters by its scope ("" = explicitly the whole book, documented at the function); a payload drawn per-instrument carries its instrument; a hidden overlay says it is hidden and why.
+Reference: trader/class33_boot_sweep.go ledgerOpenOrders / ledgerSymbolMatches, trader/mentor_truth_panel.go MentorTruthPanel.Symbol, web/src/components/charts/ChartTabs.tsx (mentor-overlay-note), trader/ui_guide_truth_r24_test.go TestLedgerOpenOrdersAnswerOnlyTheTradersSymbol.
+
+## CLASS NN (assigned at merge) — identity by row order: "the first-created account is the owner"
+
+symptom: OWNER-IDENTITY (2026-10-14). Two owner checks took users[0] (UserStore.GetAll orders by created_at) as the box owner: api requireOwner (handler_onboarding.go, the gate on POST /api/telegram/bind-code) and the Telegram bot's identity (telegram/bot.go botIdentity.refresh, which mints the bot's JWT). The comment's premise, "registration closes after the first user", was false on the live box: users rowid 1 = ee3bd00c, a TEST account created 2026-05-29 23:42Z that owns no trader; rowid 2 = 396db319, the owner, created 4 h later, owning both live traders (hoang, 12345). So the owner-only route admitted the test account and refused the owner, and the bot minted its token for an account that owns nothing (its /start showed "Setup required", its agent saw zero traders). Nothing logged which account either check trusted.
+probe: grep for `users[0]`, `GetAll()[0]`, `ids[0]`, `LIMIT 1` / `ORDER BY created_at` on a users or accounts table, and comments saying "first user", "first-created", "single-user". For each, ask what fact actually makes that row the one it wants (ownership of the things being guarded, an explicit enrollment) and whether the box can hold a second row (a test signup before a reset, an import, a seed). Run the check against the live row shapes, read-only.
+rule: an identity that grants rights comes from ONE resolver that reads the fact the right is about (here: the account that owns every trader; the first-created user only when there are no traders), never from row order. When the facts disagree (traders split across accounts, the traders' account missing), the answer is NOBODY: every caller refuses, logged and counted (gate owner_unresolved), and the bot acts for no account. The resolver only reads. A boot line prints who it resolved and by which rule (id prefix only, never an email).
+Reference: store/owner.go (ResolveOwner, resolveOwner, RecordOwnerRefusal, Owner.BootLine), api/handler_onboarding.go requireOwner, telegram/bot.go botIdentity.refresh / actForNobody, store/owner_test.go, api/owner_identity_test.go (TestRequireOwnerTrustsTheTradersOwnerNotTheFirstAccount), telegram/bot_owner_identity_test.go (TestBotRefreshMintsForTheResolvedOwnerNotTheFirstAccount).
+
+## CLASS NN (assigned at merge) — a machine token governed by a deny-list: admitted on every route nobody listed
+
+symptom: P2-8 (rescan OPS-SECURITY-FEED; folded into owner-identity 2026-10-14). `authMiddleware` refused a machine token (`auth.Claims.IsMachine`: the Telegram bot's scope=telegram token, gate-jwt's, bot@internal) only on `machineDeniedRoutes` (credentials, /telegram, /updates, /logout) and admitted it on EVERY other protected route. While the bot acted for a test account that owned nothing this was invisible; the moment owner-identity pointed it at the real owner, one `api_request` call from a steerable LLM could start or resume the owner's live SIM traders, create/update/delete traders, strategies, models and exchanges, place a test trade, arm a plan, or use `POST /api/crypto/decrypt` as a decryption oracle (DS-103 review of #524). The cutover-worker token sat beside it with the opposite (correct) shape: an exact allow-list.
+probe: for every token class that is not a human session (scope claims, service emails), find the ONE place its routes are decided and ask whether it is an allow-list or a deny-list. Register a dummy mutating route in a test under the same middleware and call it with each machine token: a 200 is the finding. Then ask what changed the token's blast radius recently (whose account it acts for).
+rule: a non-human token's reach is an EXACT (method, route) allow-list — reads plus the actions its purpose needs (for the bot: stop, pause, close, flatten — risk-reducing only) — and everything else, including every future route, is refused 403, logged and counted per route. The agent is shown only the routes it may call. Any change that widens WHOSE data a machine token acts on re-reads this list in the same PR.
+Reference: api/machine_action_guard.go (machineActionAllowed, machineReadPostRoutes, machineRiskReducingRoutes, machineActionRefuse), api/server.go authMiddleware, api/route_registry.go GetAPIDocs, api/machine_action_guard_test.go (TestMachineTokenIsRefusedOnANewMutatingRouteByDefault, TestMachineActionGuardCensusOverTheRouter), telegram/agent/prompt.go.
+
+## CLASS NN (assigned at merge) — a send window narrower than the tick that must land in it
+
+symptom: OPS-FOLLOWUPS (2026-10-14). The #23 review proposed sending a gap re-request "only when now.In(CT).Second() < 10" from a tracker that ticks every 15 s. Ticks 15 s apart land at four fixed phases per minute (p, p+15, p+30, p+45). For a ticker that started on :10–:14, NO tick ever lands in [0, 10): the hole would stay due forever and never be asked for, with no line and no counter. The existing 1-hour walk test (ticks at :10/:25/:40/:55) would have caught it only by luck of its fixture's start second.
+probe: for every "only during window W" rule driven by a periodic loop of period P, check W ≥ P (so every phase of the loop lands in it at least once per cycle), or that the loop re-arms at the window's start. Test it as a property over every phase in [0, P), not with one fixture clock.
+rule: a time window gating a periodic sender is at least one period wide, and a test pins "exactly/at least one tick per cycle lands in it" for every ticker phase.
+Reference: trader/ninjatrader/bar_holes.go barHoleSendWindow / barHoleInSendWindow, trader/ninjatrader/bar_holes_test.go TestSendWindowCatchesEveryTickerPhase.
+
+## CLASS NN (assigned at merge) — `git stash pop` in one worktree applies another lane's stash
+
+symptom: OPS-FOLLOWUPS (2026-10-14). refs/stash is ONE stack for the whole repository, shared by every worktree. A lane ran `git stash push <file>` for a RED-at-base run; while its suite waited for a throttle slot another lane pushed its own stash; `git stash pop` then applied fix/planner-touch-fills' kernel changes into the wrong worktree (3 conflicts). Nothing was lost only because a conflicting pop keeps the entry.
+probe: grep lane scripts and dispatch notes for `git stash`. Any lane that stashes while other lanes are active can pop a stranger's entry; `git stash list` shows "WIP on <other branch>" entries.
+rule: lanes never use git stash for base runs. Copy the file aside, `git show HEAD:<file> > <file>`, run, copy back — in one script that restores even when the run waits. If a stash must be touched, address it by SHA and verify the SHA right before `drop`.
+Reference: ~/deck-fix-1005/rel22/fixwave/ops-followups/EVIDENCE.md (the incident), scratchpad redbase.sh pattern.
+
+## CLASS NN (assigned at merge) — a detector whose first look-back stops at the bar before the boot
+
+symptom: release #23 booted 11:22:42 CT 2026-10-14 with ES 1m missing 03:44–07:48 (one stored bar in the span) and /api/health bars_holes read []. The hole detector's first judgement per key looked back only to the stored bar just before the first live minute, so any hole older than the boot was never judged, and the boot replay's released rows never pass through the detector.
+probe: for every detector that judges "new data since the last judgement", ask what its FIRST judgement in a process covers. If it is "since the previous point", state older than the process is invisible. Seed a store with an old defect plus one new event and run the production call site.
+rule: the first judgement per key after boot scans a READ bound (here: the current CME session day from 17:00 CT, or the replay window when shorter), tracks what it finds like a live finding, and says once what it covered and found.
+Reference: trader/ninjatrader/bar_holes.go observeLive / bootScanFromLocked / bootScanLine, trader/ninjatrader/bar_holes_test.go TestBootScanFindsAHoleOlderThanTheBoot.
+
+## CLASS NN (assigned at merge) — a gate the guide promises on every entry path, wired on two of three
+
+symptom: OPS NEW-2 / UI-GUIDE N-4 (2026-10-14). The stale-data verdict and the clock-step hold bound the AI decision path (B4) and the mentor path (kernel.EntryFeedStale), and the guide plus the WARN text said "NEW entries held". Planner arms had no feed check at their send point: on 10-14 09:56:59, inside a clock-step hold, trader 12345 logged "arm S1 leg 1 wait_confirm MET … arming" and placed nothing only because a position was already open.
+probe: for every freshness / hold verdict, list its production callers (grep the verdict function) and compare with the entry producers admitChain serves (decision, agent, arm, picture). A producer with no caller is a finding, and so is a guide sentence that says "every NEW entry".
+rule: one verdict, asked by every producer that sends a price-dependent entry, counted under its own class at that producer, and pinned at the producer's send point (runArmedPlacementAt for arms).
+Reference: trader/entry_admission.go (armFeedStale, the last arm step), trader/arm_stale_gate_test.go, web/src/guide/content/guards.ts (stale data / clock step row).
+
+## CLASS NN (assigned at merge) — a process-wide guard on the real clock leaks into unrelated tests
+
+symptom: OPS-FOLLOWUPS (2026-10-14 15:42:38 CT). The kernel clock-step guard samples the REAL wall clock for the whole process. The box clock stepped +1032 ms during a `TZ=UTC go test ./trader/` run and the guard held NEW entries for 120 s: ~50 placement tests failed together (mentor, planner-arm, Picture, daily-loss, gate parity, the replay fidelity), none of them about clocks. The CT run of the same code minutes earlier was green.
+probe: list every package-level guard that reads time.Now() (or the wall clock) and gates behaviour other tests exercise. Check that the package's TestMain pins it to a steady or injected clock, and that a test which exercises the guard injects its own clock and restores.
+rule: a process-wide safety guard keyed to the real clock gets a steady test clock in TestMain. Only the guard's own tests inject steps. A burst of unrelated failures inside one 2-minute window is read as a clock-step hold first (grep "🕰 clock step" in the run log).
+Reference: trader/testmain_tmpfs_test.go, kernel/feed_clock.go ClockSampleForTest, ~/deck-fix-1005/rel22/fixwave/ops-followups/gate3.log (the failing run), gate4-ct.log / gate4-utc.log (green after).
+
+## CLASS NN (assigned at merge) — a setup's own target measured as its obstacle
+
+symptom: MENTOR-COURSE-EXITS (2026-10-14, transcript verify-D D2-14). The swing's room rule (R68, eval.go runSwing → swingRoomRefused) measured the on-side 5m EMA 34 as an OBSTACLE that needed 2R of room, while swingFirstTarget used that SAME EMA as the swing's first TARGET. With a swing stop ≥ 30 pts, any 5m EMA 34 closer than ~60 pts on the trade side refused the swing — the mentor's own 135-pt showcase (D5.2 p2 frame 14-48, EMA ≈ 47 pts away) among them. The course calls it the target: "Target đầu tiên anh chị, hold thẳng về EMA 34 5 phút luôn cho em" [D5.2 p2 @01:44–01:48]; D5.2 applies no room rule. The second instance of the same item (the resonance runner TP computed and only logged) is the existing "WOULD … UNWIRED" class above (line ~8536), not a new one.
+probe: for every room / obstacle / "too near" gate, list the price it measures against and grep where that same price is used as a target, a take-profit or a leg TP for the same intent. A price that is both the target and the obstacle of one setup is a finding.
+rule: one role per price per setup. The room rule measures the room BEYOND the setup's own target (or not at all where the course gives the setup no room rule); it never measures the distance TO the target as a blocker. A knob may restore the old reading, defaulted by the knob rule.
+Reference: kernel/mentor/course_exits.go swingRoomFilterRefuses, kernel/mentor/eval.go runSwing, kernel/mentor/course_exits_test.go TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle.
+
+## CLASS NN (assigned at merge) — a refused or removed start leaves a live run behind (two loops for one trader id)
+
+symptom: MENTOR-NY (2026-10-14), from 10-13 16:35:42–48 (vl_2026-10-13.log
+19112–19277). Two overlapping start requests for one trader: request B read
+request A's freshly loaded instance as "stopped" (its Run goroutine had not set
+is_running yet) and RemoveTrader dropped it WITHOUT a Stop (it stops only a
+running trader); that instance then ran orphaned beside the one B loaded. B's
+own Run was refused by the ordered-owner check, but only AFTER Run had started
+its armed event loop (which also drives the mentor evaluator), and the refusal
+path cancelled only the stop monitor. Two live evaluators for one trader id
+(funnel bars 44 @17:43:00 / bars 22 @17:43:38) until the 18:57 boot; a blank
+exit mode at fill (the class above) came from the same pair.
+probe: for every start path, list what it starts BEFORE each refusal return, and
+check that each refusal tears ALL of it down. For every "remove from roster",
+ask what happens to an instance whose start has been launched but has not yet
+flipped its running flag. Count live loops per id, not running flags.
+rule: a run CLAIMS its id before it starts anything (one owner per id); an
+instance removed from the roster is retired and can never claim; a newer
+instance stops the older run and waits for it to EXIT before it starts; every
+refusal path, a Stop that lands mid-start, and a panic out of Run tear down
+everything the run started. Every refused start is logged and counted.
+Reference: trader/run_owner.go (claimRunOwner, Retire), trader/auto_trader.go
+Run/teardownRunStarted, manager/trader_manager.go RemoveTrader,
+trader/run_owner_test.go, manager/run_owner_reload_test.go.
+
+## CLASS NN (assigned at merge) — a second latcher bypasses the announcement
+
+symptom: RISK-TRUTH (2026-10-14, rescan N3). The daily-loss trip has two writers of one latch: the 60 s beat's verdict (tripDailyLoss: latch + one 🔴 line + one daily_loss_tripped count + one P0 alert) and the AI decision cycle's kernel guardrail (engine_analysis.go → SetDailyForceFlat: latch only). After a stop-out the kernel path trips 2 s later, first; the beat's verdict then returns early on the latch and never reaches the announcement. The trip was real and silent — the guide promised the line and the counter.
+probe: for every latch, list ALL its writers (grep the setter, not the function you expect). For each writer, trace whether the announce/count/alert runs when THAT writer is first. Drive the test with the "other" writer first.
+rule: the announcement is one function, keyed once per (subject, period), and every path that can FIND the latch already set calls it — not only the path that sets it. A restored latch marks itself announced and logs its own RESTORED line.
+Reference: trader/daily_loss_gate.go announceDailyLossTrip / dailyGuardVerdictAt, kernel/engine_analysis.go (SetDailyForceFlat), trader/daily_loss_truth_test.go TestDailyLossKernelFirstTripIsAnnouncedAndCountedOnce.
+
+## CLASS NN (assigned at merge) — a surface prints the switch while a latch it cannot see decides
+
+symptom: RISK-TRUTH (2026-10-14, rescan N2). The daily-loss verdict checks the latch BEFORE the master switch, and the latch is persisted across a save-reload and a restart. Switching the gate OFF after a trip left entries refused and bot positions re-flattened until 17:00 CT while the trader's boot line said "OFF … nothing refused, cancelled or flattened" and GET /api/risk/status said latched=false after a restart (it read only the in-memory latch, restored on the first beat).
+probe: for every gate with a latch, find each surface that describes it (boot line, status endpoint, guide) and check it reads the latch — in-memory AND persisted — not only the switches. Test: latch held + switch OFF + fresh process.
+rule: a surface describing a gate reads what the gate's verdict reads, in the verdict's order. A held latch is printed as LATCHED with its lift rule, whatever the switches say.
+Reference: trader/daily_loss_gate.go DailyLossLatchStateAt / DailyLossGateBootLine / DailyLossGateStatusAt, manager/trader_manager.go (load line), trader/daily_loss_latch_surface_test.go.
+
+## CLASS NN (assigned at merge) — a restart wipes the evidence and "no evidence" is read as a verdict
+
+symptom: RISK-TRUTH (2026-10-14, rescan N11, reproduced). reconcile flagged an adopted NT8 position origin=manual when nothing evidenced the bot's own entry: the in-memory fill ring and FILLED arms in a window. A resting arm that fills while the process is down loses both — a new process starts with an empty ring, the AddOn replays no fills, and the post-restart order snapshot omits Filled entries, so the arm stays working. The bot's own position was flagged manual: out of the bot record and out of the daily-loss flatten — the harmful direction.
+probe: for every classifier that reads "absence of evidence", list where the evidence lives and what a restart (or a missed frame) does to it. Replay the event during the gap at the production call site on a fresh instance.
+rule: a classification with a harmful branch needs POSITIVE evidence for that branch. Unknown keeps the safe default, logged and counted (kept-bot counter), and the genuine case is pinned so the fix cannot over-correct.
+Reference: trader/ninjatrader/reconcile.go liveBotOrderFor / keepAdoptedBot, telemetry/manual_adoption.go IncManualAdoptKeptBot, trader/ninjatrader/reconcile_restart_gap_origin_test.go.
+
+## CLASS NN (assigned at merge) — a ledger law enforced for ONE policy only
+
+symptom: EXEC-FOLLOWUPS fold (CTO, PR #526). The MANUAL-CANCEL-WINS law ("same plan version + terminal = stays terminal") and the W3 D15 pin ("a row that reached the broker is terminal for its version") were written as one rule. But UpsertArm's broker-reached branch checked `existing.Policy == market_in_zone` before it pinned, and every other policy fell through to the mint. Reproduced through the real arm pass: an owner's cancel in NT8 and a fill→stop-out were both placed again under the same version. Live [A]: after fills, same-version successors 129 and 196 were placed. A second half hid behind the first: the synchronous band/EOD sweep sends the cancel and drains NT8's report BEFORE any RequestCancel. A promptly acked BOT cancel therefore ends "cancelled in NT8" with cancel_requested_at_ms = 0, which reads exactly like the owner's cancel. The live "cancelled in NT8" predecessors (122, 139, 174, 180) do carry a request; they came by the RequestCancel paths. TestZeroBReArmAfterBootSweep checked the owner's row by id only, so it could not see the successor.
+probe: for every ledger law, list the branches that write a row and check each enforces it for every policy / origin / kind. A guard that names one value (`Policy == X`) on a law stated for all is the finding. Test it through the REAL pass (author → place → terminal → author again), and count the rows and the wire frames, not only the original row's state. A dedupe that masks it in a fast test (B3's 55 s window) must be aged out. For "who ended it" rules, check every terminal writer records its cause BEFORE the terminal state lands; a drain that settles the row mid-call skips a stamp written afterwards.
+rule: a same-version row that reached the broker is spent for every market_in_zone ending, and for every other non-mentor policy unless the BOT requested the cancel (cancel_requested_at_ms > 0, stamped at the send). Only a new version or the boot sweep (0B) re-arms a spent slot. The refusal is typed (ErrArmSlotSpent), said once per slot, and counted.
+Reference: store/armed_orders.go UpsertArm (ErrArmSlotSpent, StampCancelRequested), trader/armed_executor.go armSlotSpentRefused + cancelArmedOrdersSyncWith, trader/exec_followups_rearm_test.go.
+
+## CLASS NN (assigned at merge) — a stale print on reconnect (the live side trusted on a scale break)
+
+symptom: WAVE 26 bar-stale-print (10-14 20:00 CT, [A]). NT8 restarted at 19:59 and the first LIVE print carried a day-old price — MNQ 1m o 29931.25 / h 30754.0 / c 30753.75 while the real close was ~29954. The AddOn's BarsRequest rebuild re-emitted the tail of its reloaded series as forming bar_update frames (the fresh request reset its dedup watermark), so the stale bar's high/close merged into the forming minute. It was stored as `live`, so no replay could overwrite it (the store protects live rows). The scale-break guard SAW the mismatch (ES 1m: replay 7743 vs live 7845) and trusted the LIVE side — the stale one — and its one-shot `liveSeen` key plus the "adjacent historical reference only" rule meant MNQ 1m and every higher timeframe were never judged.
+probe: for every guard that resolves a live-vs-replay conflict, ask which side it TRUSTS and whether that side can itself be stale. A one-shot guard (`liveSeen`) and a "first live bar only" rule both leave a mid-session reconnect unprotected: live bars existed before, so the check is spent. Replay the reconnect shape (a stale close ~2.7% from both its own open and the previous close) at the production call site.
+rule: a live print that lands within N seconds of a (re)connect/hello and whose close is impossible against BOTH its own open and the previous bar's close is quarantined (labelled mixed, values untouched, counted) rather than trusted. Outside the window the live feed is trusted as before; a real fast market never trips it (each minute's close stays near its own open).
+Reference: provider/ninjatrader/bar_stale_print.go (NoteReconnect / quarantineStalePrint / StalePrintQuarantined), provider/ninjatrader/bar_stale_print_test.go, api/handler_health.go (bars_stale_prints).
+
+## CLASS NN (assigned at merge) — a fail-closed blocking gate with no upper bound and no owner-facing alert
+
+symptom: W26 deadman-escalation (2026-10-15, r3 P2). The dead-man reconcile gate (trader/auto_trader.go watchdogReconcileClean) blocked NEW entries after an NT8 link drop and held them blocked until BOTH a positions and an order snapshot were received on the NEW connection — correctly fail-closed. But it had no upper bound and only a once-per-state WARN: if the AddOn stopped sending order snapshots (or the snapshot never arrived), the trader stayed entry-blocked forever and the only owner-visible signal was one WARN line at the transition. A block that will not clear is indistinguishable from a block that is still reconciling, until the operator happens to notice no new entries.
+probe: for every fail-closed gate that blocks NEW action, list (a) what ends the block, (b) whether that ending is guaranteed to arrive, and (c) what the OWNER sees when it does not. Grep the setter of the blocked state and list the alert / log / endpoint that reports a block which has stood past a threshold. A gate that blocks forever with no escalating signal is the finding.
+rule: a fail-closed block stays fail-closed — it is never auto-unblocked on a threshold. But a block that has not cleared after N consecutive failed reconcile probes, or T time blocked, fires ONE owner-facing P0 per blocked episode (not once per probe), and the live block is surfaced in a read endpoint (blocked + since + failed-probe count). A clean reconcile ends the episode and re-arms the alert for the next block.
+Reference: trader/dead_man_watchdog.go (deadManStuckProbeMin / deadManStuckAgeMs, beginEpisode/endEpisode/bumpFailedProbe/escalation), trader/auto_trader.go deadManEscalate / HealthDeadMan, api/handler_health.go (nt8.<id>.dead_man), trader/dead_man_escalation_test.go.
+
+## CLASS NN (assigned at merge) — alert dedupe without episode
+
+symptom: ALERT-DOWN-EPISODES (2026-10-15, R3 P2 N1/N2). The run-owner P0
+"trader is DOWN: no evaluator" alert used the fixed event id
+"trader-down-no-evaluator:"+traderID, and the alert store's dedupe (event_id,
+idempotent bus) has NO expiry — so a second down episode was a silent no-op, and
+the SAME alert was also gated on dayPlanEnabled(), so a non-day-plan trader's
+down episode was dropped entirely. A down trader is exactly the owner-facing
+failure that must never be silent.
+probe: for every emitAlert call site, is the event id per-episode or fixed? Does
+the store's dedupe ever expire? Is the emit gated on a per-trader feature flag
+(day_plan) that a DOWN trader may not have? Grep the setter and the store, not
+the kind you expect.
+rule: a recurring event's dedupe key carries an episode marker (the episode start
+instant, or a monotonic counter); ops alerts (down, link, disk, backup, updater,
+bar hole) bypass the day-plan gate, while plan-content alerts keep it.
+Reference: store/alert.go Emit / EpisodeEventID, trader/auto_trader_alerts.go
+emitAlert / isOpsAlertKind, trader/run_owner.go armRunRetry,
+trader/run_owner_alert_episode_test.go.
+
+## CLASS NN (assigned at merge) — one guard threshold applied to every timeframe
+- **Symptom:** a data-quality guard tuned on 1m bars (release #26 stale-print guard, 0.5% "impossible move") ran on every timeframe. In the reconnect window after the 10-15 boot it quarantined the REAL forming 1d and 3d bars of MNQ and ES: `bars_stale_prints` 5,876 in 3 minutes, and readers lost today's daily candle.
+- **Probe:** for any price-move threshold, measure the real distribution per timeframe (p99.9 and max over ≥3,000 bars) before shipping. A threshold that sits inside the normal range of any TF it runs on is a false-positive generator. Read the guard's counter on /api/health right after the first boot. A count that does not stay near 0 is the alarm.
+- **Rule:** a guard judges ONLY the timeframes where its bound clears every real bar by a margin, and names them explicitly. An unknown TF is never judged. A counter of fired actions must be read at boot verification, not just exist.
+- **Reference:** release #27 fix/stale-print-tf-bound (2% on 1m–30m, 1h+ never judged; measured 1m 0.64%, 5m 0.75%, 15m 0.93%, 30m 1.43%, 1h 2.98%, 4h 2.98%, 1d 3.88%).
+  - **Release #28 addendum:** an HTF bar cannot have an extreme its own 1m bars never traded. For 1h/2h/4h the guard compares the bar against its own clean 1m bars, and only when those minutes are complete (ring reach, no hole except the CME break, feed not lagging). Measured real excess: 0.365% max. Daily bars are excluded because their stamp is not the 17:00 session open (measured 1.67%).
+
+## CLASS NN (assigned at merge) — a truncated timestamp compared with a full-resolution one
+- **Symptom:** the dead-man watchdog's resume predicate compared a snapshot's full-resolution receive instant against a connection-accept instant reconstructed from a `*_mono_ms` field (`time.Duration(monoMs) * time.Millisecond`). A snapshot received EARLIER in the SAME millisecond as the accept read as `After` the floor-to-ms accept and counted for the new link — the old link's cached frame proved the new one, which release #22 (N-C) promised never happens. Flaky: only reproducible when an old-link frame landed inside the accept's millisecond (CI #552 run 38818745608).
+- **Probe:** for every `After(` / `Before(` on a timestamp, check whether EITHER operand is derived from a `*_mono_ms` (or `UnixMilli`/`UnixNano`-truncated) field. A truncated instant compared with a full-resolution one flips at the truncation boundary. Tests must state a sub-truncation-unit offset (e.g. accept at `T+0.5ms`, snapshot at `T+0.5ms−1ns`) — not read the instant back from the same accessor under test, which proves only self-consistency.
+- **Rule:** an instant that must be compared for ordering carries its full-resolution `time.Time` (with the monotonic reading) beside the `*_mono_ms` field; the accessor returns the full-resolution stamp. The `*_mono_ms` field stays for duration/age readers (health, maintenance), where sub-millisecond precision is meaningless.
+- **Reference:** release #30 fix/deadman-accept-ns (`ConnectionRecord.acceptAt` beside `AcceptMonoMs`; `AcceptedAt()` returns it; `SeedPositionsForTestAt` + `SetAcceptClockForTest` seams make the same-ms case deterministic; anchored mutant — revert to the ms form — goes RED).
+
+## CLASS NN (assigned at merge) — a restart re-derives a latch the running bot froze earlier
+- **Symptom:** a per-trading-day latch frozen at a fixed instant (the §7 day gate at 08:30 CT) was memory-only. A restart re-latched it from the boot moment's inputs — 10-15 went SPENT at 08:30 then DAY OFF after the 11:32 and 13:43 restarts (165 RTH minutes), and the 13:43 boot lost the 13:00 recheck clear, while a never-restarted bot stayed SPENT.
+- **Probe:** for every latch the evaluator freezes at a named instant (day gate, box latch, DayOff recheck, visit caps), replay the same decision the seed replays the trigger lines from: cut the closed history at that instant and re-derive, then advance the one-way state (rechecks, clears) over the bars closed since. A restart parity test (continuous bot vs fresh seed at the restart instant) must hold at every minute.
+- **Rule:** a latch that the running bot froze at a fixed time is restored from THAT time's read at seed, never re-derived from the boot moment. The boot log names the restoration ("RESTORED from the 08:30 read") and only says "re-read at boot" when the fixed-time read is impossible, with the reason.
+- **Reference:** release #30 fix/mentor-day-latch-seed (SeedDayLatch: 08:30 4h/1h read + frozen Globex run, then replayDayOffRecheck over the 1h closes since; SeedTrendlines marks already-crossed pairs so a restart does not recount trendline_crossed_between_anchors).
+
+## CLASS NN (assigned at merge) — a safety gate fed an empty input on one call path fails open silently on that path
+
+symptom: planner HTF veto snapshot (2026-10-16, owner "fix all now"). HTF_VETO_MODE=cross is LIVE. On 10-15 the log has 136 × "🛡️ HTF veto (cross) SKIPPED — no 1h+4h structure snapshot this cycle; entry proceeds (fail-open)." and 2 real refusals. All 136 come in 68 far/near pairs, each one immediately before a "🎯 zone at write" line: the planner's write-time feasibility check (trader/write_time_feasibility.go) runs the executor's own arm chain (armGateVerdictFor) at write, but it passed a literal `nil` snapshot at all three of its call sites. The arm pass was fed (StructureSnapshotForVeto in the loop, the live-bar pass, the strict nudge and the mentor pass), so the veto worked on ONE path and was dead on the other. The cost: 10-15 10:11:55 NY v4 S1 long written with the veto skipped, then 10:32:59 "arm REFUSED NY S1 leg 1: HTF veto … long vs 1h TRENDING_DOWN + 4h TRENDING_DOWN". The planner was never told why, so it wrote the same shape again (11:39:59 NY S2). The WARN was loud, but it was the wrong WARN: it said "no snapshot this cycle", which reads like the detector was down, when the caller had simply not passed the data. A fail-open that exists for "detector unavailable" cannot tell that case apart from "caller passed nil".
+probe: for every gate with a fail-open-on-missing-input branch, list EVERY production caller and where it gets that input (grep the callee, then read the argument at each call site — a literal `nil`, an empty literal, or a zero struct is the finding). Mirrors and pre-checks (write-time feasibility, previews, dry runs, replays) are callers too, and they are the ones that get built with "nil, we don't have it here". Then grep the logs for the fail-open line and look at the line NEXT to it: if every occurrence sits beside one caller's own log line, that caller is the empty one. A fail-open that fires on every call of one path is never "the detector is flaky".
+rule: an input a safety gate judges is built by ONE builder (trader/veto_snapshot.go armVetoSnapshot), and every caller uses it. A caller never passes a literal nil or empty input to a gate; an AST ratchet over the production files enforces it (TestNoProductionVetoCallPassesNilSnapshot). The fail-open stays, loudly, for the ONE case it was written for: the builder genuinely has no bars.
+Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trader/write_time_feasibility.go (writeTimeFeasibilityVerdicts, writeTimeZoneVerdicts, zoneLegVerdict), kernel/htf_veto.go HTFVetoVerdict, trader/planner_htf_veto_snapshot_test.go (the 10-14 tape at the production call sites + the nil-snapshot AST ratchet).
+
+## CLASS NN (assigned at merge) — a path built from an unvalidated name
+- **Symptom:** a script that moves/removes a per-entity folder splices a user-supplied name straight into a filesystem path (`$ROOT/$name`, `filepath.Join(root, name)`). The name was never checked against a shape contract before it became a path, so `remove.sh ..` resolved to the PARENT of the root and moved `/home/hoang` instead of one friend's folder — a home-wipe-class bug. A "name exists" or "name is non-empty" check is not a validation; neither catches `..`, `.`, `a/b`, or a symlinked name.
+- **Probe:** for every script or code path that builds a path from an external name, feed it `..`, `.`, `a/b`, the empty string, and a name that is a symlink; ask what `realpath` resolves to. Anything outside `$ROOT/` — or equal to `$ROOT` — is the bug. Grep every `rm` / `mv` / `RemoveAll` / `os.Remove` that consumes `$ROOT/$name` or `Join(root, name)`.
+- **Rule:** validate the name against a shape contract (W-FRIEND-HOSTED B2: lowercase a–z0–9, 2–20 chars) BEFORE any path is built, then as a second independent gate `realpath` the resolved target and require it to start with `$ROOT/` and not equal `$ROOT`. Both gates, in that order, every time. The shape check is the primary defence; the realpath check catches symlinks and TOCTOU the shape check cannot see. A friend-folder removal is a MOVE to `~/trash/<date>/`, never a delete.
+- **Reference:** W-FRIEND-HOSTED DS-101 `deploy/friends/remove.sh` (DS-102 REVIEW-BACK, 2026-10-18): `..` moved `/home/hoang`; fixed with the B2 regex + realpath-prefix check + tests for `..`, `.`, `a/b`, `""`, and a symlinked name (CTO ruling 2026-10-18, item 4).
+
+## CLASS NN (assigned at merge) — a new Go package skipped by the release -race list
+- **Symptom:** CI's Go Unit Tests & Coverage job runs `-race` over EVERY package in the repo, including a package newly added by this release, and caught a DATA RACE the local B7 -race pass missed because that new package was not in the local -race list.
+- **Probe:** for every release that adds a Go package, diff the local -race list against `git diff --stat origin/dev...origin/release/...` — any new directory is a package CI will race whether or not it is on the local list.
+- **Rule:** a new Go package must be added to the release -race list (CI races every package; the local list did not — PR #586).
+- **Reference:** PR #586 W-FRIEND-HOSTED: `cmd/vl-friend` `TestWaitUntilFlatWaitsUntilFlat` (`flatwait_test.go:26` write vs `:21` read, test-only) was RED in CI; fixed with `atomic.Bool` @ `1a4a32ed7`.
+
+## CLASS NN (assigned at merge) — an unfilled bar's zero price read as a real price
+- **Symptom:** a frame-aware exit step reads a bar that is still forming (a zero-value `market.Kline`: Close 0). For a SHORT, 0 passes every "price at/below X" test, so the step acts as if price ran far into profit.
+- **Probe:** for every exit/stop/BE step that takes a close/high/low, find each caller that can pass a not-yet-closed bar (`trailBar` with `trailBarOK=false`) and check the step gates on the frame-OK flag AND refuses a non-positive price.
+- **Rule:** a price of 0 is "no price", never a value. Every stage of an exit drive honours the entry's frame gate, not only some stages.
+- **Reference:** 10-20 20:42 CT, Sim101 ISB short 29938 (cf95ee3d), 2m frame: `mentorBEBeforePartialStep` logged "close 0.00 is past half-way 29929.25" and sent BE 29938, and NT8 refused it ("Stop price can't be changed below the market"). Fix branch `fix/mentor-be-zero-close`: stage-0 frameOK gate (`trader/mentor_trail_r22.go`) + `c <= 0` guard (`trader/mentor_course_exits.go`); pin `TestMentorBEBeforePartialWaitsForThe2mFrameShort`, both mutants RED.
+
+## CLASS NN (assigned at merge) — a wrong-unit compare (ns constant vs ms constant)
+- **Symptom:** a "session boundary" hold window compares a NANOSECOND delta against a MILLISECOND threshold (`abs >= sessionBoundaryFreezeMs` where `abs` is `wallNs - prevWallNs - mono`). Inside 15:59–16:01/16:59–17:01 CT, ANY detected step ≥100 ms holds entries for 120 s — the spec, guide and pin all said "steps ≥2 s", but the pin passed only because its fixture used a 2 s step.
+- **Probe:** for every time-threshold comparison, name the unit on BOTH sides of the operator. Grep for `*int64(time.Millisecond)` and `* time.Millisecond` beside `time.Nanosecond` deltas; a mixed pair is a bug.
+- **Rule:** time deltas and thresholds must be in the same unit; multiply the constant (`sessionBoundaryFreezeMs*int64(time.Millisecond)`) rather than pass ms where ns is compared. Pin BOTH sides of the boundary (a 1.0 s step NOT held; a 2.5 s step held).
+- **Reference:** m159 `kernel/feed_clock.go:253`; fixed @1d7c1875f with `TestM149SessionBoundary1sStepNotHeld2p5sStepHeld` (RED at b4a28c346).
+
+## CLASS NN (assigned at merge) — a test that calls the inner helper and misses the production gate order
+- **Symptom:** the resonance-arm fix added a pin that called `mentorArmIntent` directly, while production reaches it through `mentorPlaceIntent`, where a refusal gate runs FIRST and makes the new accept point unreachable — the whole suite stayed green and "resonance can never arm" shipped.
+- **Probe:** every pin that claims a production behavior must drive the PRODUCTION call site (`mentorPlaceIntent`/`mentorDispatchIntent`/`mentorEvalOnce`), not the helper one level down. Re-add the raw-intent loop as a mutant and require the negative pin to go RED.
+- **Rule:** a test that calls the inner function directly does not count as proof. The mutant must traverse the same gate order as production; an unreachable accept point means the gate order changed, and the pin must be re-written at the outer call.
+- **Reference:** m151 `15dd080e7` REVIEW-BACK P1 — `mentorPlaceIntent` runs `mentorAddGate` (mentor_tick.go:657) before `mentorArmIntent` (:737); a same-side ISB is refused at the never-add gate, so arm never fires. Fix @60c0350f2 moves the slot gate before the add gate.
+
+## CLASS NN (assigned at merge) — a gap-skip that fires on every CME session break
+- **Symptom:** an EMA hole-skip guard (`bars[i].OpenTime - bars[i-1].OpenTime > step + step/2 → continue`) fires on EVERY normal gap, not only restart holes: the daily 16:00→17:00 CME break, the 1h 15:00→17:00 gap, weekends, holidays and early closes. Every EMA level on every timeframe shifts on a normal day, and the 125-pt drift it was meant to cure remains (the window stays stretched across the hole).
+- **Probe:** any "skip the bar after a gap" logic must be exercised against a series that crosses 15:55→17:00 and a weekend; the EMA must be byte-identical to the pre-change recurrence.
+- **Rule:** a gap is not a hole. Rebuild the ring from the complete 1m store (union-by-time) instead of skipping the bar after a gap; a detect-only `BarsTFHoles` + a prompt gap warning (which already excludes the 16:00–17:00 break) is the honest signal.
+- **Reference:** m139 DS-104 `b6f43e94b` part (b) REVIEW-BACK; reverted to byte-identical `emaValue`, rebuild moved to RehydrateUnion (`provider/ninjatrader/bar_cache.go`).
+
+## CLASS NN (assigned at merge) — a partial-bucket aggregation inserted as a complete bar
+- **Symptom:** `Aggregate1mToTF` inserts a 5m/1h bucket built from 2 of 5 minutes as a NORMAL bar, with a fake close. A fake bar poisons every downstream EMA/level and the 1h bucket built from 24/60 minutes reads as full.
+- **Probe:** for each aggregate builder, ask "how many 1m bars fed this bucket" before it is inserted. A bucket is inserted only when its coverage is complete enough: missing ≤1 minute AND no run of 2+ consecutive missing minutes (1 missing minute allowed for a quiet no-trade minute).
+- **Rule:** a bucket that fails the coverage test is NOT inserted — it stays a hole, which `BarsTFHoles` and the prompt gap warning report honestly. A missing bar is better than a bar with a fake close. The forming tail bucket is never rebuilt from 1m (the live feed owns it).
+- **Reference:** m148/m149 DS-104 `dfaaddb22`/`d0e698892` — pins (a) 8-min hole → buckets absent (b) 1 missing → inserted (c) mutant "drop the coverage check" RED; tolerance `max(1, tfMin/20)` and no run of 3+ consecutive missing open minutes (m168 DS-104 item 1).
+
+## CLASS NN (assigned at merge) — a fix that deletes a sibling invariant line during a refactor; no test kept the authed conn alive past the pre-auth timeout
+- **Symptom:** a root-fix refactor (never publish a pre-auth conn) deleted the line that CLEARS the first-hello read deadline after auth (`_ = c.SetReadDeadline(time.Time{})`). The pre-auth deadline stayed armed, so an authed keyed connection timed out ~10 s after accept; and a `defer` captured the pre-auth flag at defer time, so the close path took the wrong branch and a reconnect was rejected until a heartbeat write failed.
+- **Probe:** for every `SetReadDeadline`/`SetDeadline`, find where the deadline is armed AND where it is cleared; a pre-auth-only deadline must be cleared the moment auth succeeds. A `defer f(x, flag)` must capture the flag by reference (closure) if the flag flips mid-life.
+- **Rule:** a refactor that removes one line must ask what invariant that line held. Every deadline has both an arm and a clear; every defer that observes mutable state observes it AT CALL TIME.
+- **Reference:** m188 `provider/ninjatrader/tcp_server.go:2185` armed the deadline; 6c6b0d418 deleted the clear added in 31f2b5258; `defer s.connGone(c, pending)` at :2154 captured `pending==true`. Fix branch `fix/m188-ds104-keyed-conn-deadline`.

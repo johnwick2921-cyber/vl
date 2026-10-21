@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"vl/internal/friendmode"
 	"vl/internal/installpath"
 	"vl/logger"
 	"vl/mcp"
@@ -70,6 +71,14 @@ type Config struct {
 	APIServerHost string // interface the HTTP API binds to; default 127.0.0.1 (loopback only)
 	APIServerPort int
 	JWTSecret     string
+
+	// Friend instance (W-FRIEND-HOSTED Segment 2, DS-102): VL_FRIEND_INSTANCE=1
+	// turns this process into a friend's own bot copy. Trading + settings stay
+	// fully functional; the owner-only surfaces (updater, installer,
+	// maintenance, Telegram) are gone and both binds must be specific
+	// addresses (never 0.0.0.0 / :: / empty).
+	FriendInstance bool   // VL_FRIEND_INSTANCE
+	FriendName     string // VL_FRIEND_NAME (lowercase a-z0-9, 2-20 chars)
 
 	// Database configuration
 	DBType string // sqlite or postgres
@@ -170,6 +179,16 @@ func Init() {
 		logger.Warnf("⚠️  JWT_SECRET env var not set; using INSECURE default. " +
 			"Acceptable for localhost-only paper trading. " +
 			"Set JWT_SECRET in .env (e.g. `openssl rand -base64 64`) before any network-exposed deploy.")
+	}
+
+	// W-FRIEND-HOSTED Segment 2: friend-instance flags. VL_FRIEND_INSTANCE is the
+	// ONE parser (FriendInstanceEnabled: "1"/"true", trimmed). The name is
+	// lowercased + trimmed here (the B2 contract: lowercase a-z0-9, 2-20 chars);
+	// an invalid name is NOT refused at load — main.go validates it before boot
+	// (a friend copy with a bad name must not silently run as the owner).
+	if FriendInstanceEnabled() {
+		cfg.FriendInstance = true
+		cfg.FriendName = strings.ToLower(strings.TrimSpace(os.Getenv("VL_FRIEND_NAME")))
 	}
 
 	if v := os.Getenv("API_SERVER_PORT"); v != "" {
@@ -305,6 +324,39 @@ func Get() *Config {
 		Init()
 	}
 	return global
+}
+
+// IsFriendInstance reports whether this process is a friend's bot copy
+// (W-FRIEND-HOSTED Segment 2). A nil receiver reads false — the owner's bot
+// and every test that never calls Init() stay byte-identical.
+func (c *Config) IsFriendInstance() bool {
+	return c != nil && c.FriendInstance
+}
+
+// ValidFriendName enforces the B2 contract for VL_FRIEND_NAME: lowercase a-z0-9,
+// 2-20 characters. It is the ONE canonicalizer for friend names — the
+// provisioner (DS-101), the boot check (main.go) and the owner API (DS-106) all
+// call it rather than re-deriving the regex.
+func ValidFriendName(name string) bool {
+	if len(name) < 2 || len(name) > 20 {
+		return false
+	}
+	for i := 0; i < len(name); i++ {
+		c := name[i]
+		if (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') {
+			continue
+		}
+		return false
+	}
+	return true
+}
+
+// FriendInstanceEnabled is the ONE parser for VL_FRIEND_INSTANCE (S21/R3): "1"
+// or "true" (trimmed, case-insensitive for "true"), anything else false. The
+// canonicalizer lives in internal/friendmode so security can read it without an
+// import cycle (config → mcp → security); this is the config-package facade.
+func FriendInstanceEnabled() bool {
+	return friendmode.Enabled()
 }
 
 // JWTSecretIsDefault reports whether the effective JWT secret is the insecure

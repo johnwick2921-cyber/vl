@@ -36,7 +36,13 @@ func monoMs(t time.Time) int64 { return t.Sub(wireMonoBase).Milliseconds() }
 // connection. Hello and Ack are nil until received on this connection.
 type ConnectionRecord struct {
 	AcceptSeq    uint64                 `json:"accept_seq"`     // 1, 2, 3 … per accept, per process
-	AcceptMonoMs int64                  `json:"accept_mono_ms"` // monotonic ms since process start
+	AcceptMonoMs int64                  `json:"accept_mono_ms"` // monotonic ms since process start (health/maintenance readers)
+	// acceptAt is the FULL-resolution accept instant (wall + monotonic reading)
+	// stamped beside AcceptMonoMs. It is unexported on purpose: JSON cannot
+	// carry a monotonic reading, so a serialized round-trip would silently
+	// truncate it back to the exact bug this field exists to fix. AcceptedAt()
+	// is the only reader and runs in-process on the live record.
+	acceptAt time.Time
 	RemotePort   int                    `json:"remote_port"`
 	Hello        *HelloPayload          `json:"hello"`
 	HelloMonoMs  int64                  `json:"hello_mono_ms,omitempty"`
@@ -117,6 +123,19 @@ func (s *TCPServer) ConnectionRecord() (ConnectionRecord, bool) {
 	return rec, cur != nil && cur == s.maint.conn
 }
 
+// acceptNow is the accept instant the server stamps: the test seam when set,
+// time.Now otherwise (DEADMAN-ACCEPT-NS: a test states its own accept instant
+// so a snapshot received in the same millisecond but BEFORE it is deterministic).
+func (s *TCPServer) acceptNow() time.Time {
+	if s.acceptClock != nil {
+		return s.acceptClock()
+	}
+	return time.Now()
+}
+
+// SetAcceptClockForTest installs the accept-instant seam (tests only).
+func (s *TCPServer) SetAcceptClockForTest(fn func() time.Time) { s.acceptClock = fn }
+
 // beginConnectionRecord starts a fresh record for an accepted connection.
 func (s *TCPServer) beginConnectionRecord(c net.Conn, now time.Time) {
 	port := 0
@@ -126,7 +145,7 @@ func (s *TCPServer) beginConnectionRecord(c net.Conn, now time.Time) {
 	s.maint.mu.Lock()
 	s.maint.seq++
 	s.maint.conn = c
-	s.maint.rec = ConnectionRecord{AcceptSeq: s.maint.seq, AcceptMonoMs: monoMs(now), RemotePort: port}
+	s.maint.rec = ConnectionRecord{AcceptSeq: s.maint.seq, AcceptMonoMs: monoMs(now), acceptAt: now, RemotePort: port}
 	s.maint.mu.Unlock()
 }
 
@@ -229,6 +248,30 @@ func (r ConnectionRecord) AckAge() (time.Duration, bool) {
 		return 0, false
 	}
 	return time.Duration(monoMs(time.Now())-r.AckMonoMs) * time.Millisecond, true
+}
+
+// AcceptedAt is when THIS connection was accepted, at FULL resolution (the
+// wall+monotonic instant stamped at accept). ok=false when no connection was
+// ever accepted. N-C (release #22 rescan): the dead-man watchdog resumes only
+// on snapshots RECEIVED after this instant — a frame from the old link proves
+// nothing about the new one.
+//
+// DEADMAN-ACCEPT-NS (W30, 2026-10-15): this used to reconstruct the instant
+// from AcceptMonoMs (MILLISECOND-truncated), so a snapshot received earlier in
+// the SAME millisecond as the accept compared `After` a truncated instant and
+// counted for the new link. The accept is now stamped full-resolution and
+// returned directly; AcceptMonoMs stays for the health/maintenance readers.
+func (r ConnectionRecord) AcceptedAt() (time.Time, bool) {
+	if r.AcceptSeq == 0 {
+		return time.Time{}, false
+	}
+	if r.acceptAt.IsZero() {
+		// A record reconstructed without the full-resolution stamp (e.g. a
+		// hand-built fixture) falls back to the ms form — never a fabricated
+		// "now", and never compared with more precision than it carries.
+		return wireMonoBase.Add(time.Duration(r.AcceptMonoMs) * time.Millisecond), true
+	}
+	return r.acceptAt, true
 }
 
 // DisconnectedAt is when THIS connection closed, on the process's monotonic

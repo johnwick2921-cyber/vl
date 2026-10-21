@@ -177,17 +177,18 @@ export const planCard: GuideSection = {
       items: [
         {
           label: '↺ Reset planner',
-          api: 'POST /api/plan/reset (api/handler_plan.go:1049)',
+          api: 'POST /api/plan/reset (api/handler_plan.go handlePlanReset → trader/auto_trader_reset.go ForceReset)',
           sideEffects:
             'Abandons the chain (history + death reasons preserved), re-arms the full re-plan budget, clears NO-TRADE, reads a fresh plan now. Positions and brackets never touched.',
-          budget: 'New chain starts at v1 with the full cap (default 4)',
+          budget:
+            'New chain starts at v1 with the full re-plan cap — the session’s or strategy’s replan_cap, shipped default 2 (store/resolve_source.go ReplanCapDefault)',
           undo: 'None — but history stays readable, and nothing is deleted.',
           useWhen:
             'The plan is wrong, stale, or a fail-closed NO-TRADE sits where a tradeable day exists. Confirm text: "Abandon this plan chain and start fresh?"',
         },
         {
           label: '⟳ Re-read',
-          api: 'POST /api/plan/reread (api/handler_plan.go:1001)',
+          api: 'POST /api/plan/reread (api/handler_plan.go handlePlanReread → trader/auto_trader_reread.go ForceReread)',
           sideEffects:
             'One more planner call → a new version on the SAME chain.',
           budget:
@@ -197,18 +198,18 @@ export const planCard: GuideSection = {
         },
         {
           label: '⟳ Re-align plan',
-          api: 'POST /api/plan/realign (api/handler_plan.go:1906)',
+          api: 'POST /api/plan/realign (api/handler_plan.go handlePlanRealign)',
           sideEffects:
             'Planner reviews your edit and proposes a merged plan change ("would become v{n}") — you Apply merge or Keep as-is.',
           budget:
-            "Consumes the re-align budget (5 per plan, or the strategy's stored realign_cap — folded, no control)",
+            "None — this button sends a MANUAL re-align, which bypasses the re-align cap and is not counted against it. The cap (5 per plan, or the strategy's stored realign_cap — folded, no control) limits only the AUTO re-aligns after an owner edit (api/handler_plan.go realignGateDecision)",
           undo: 'Keep as-is declines; applied merges are versions (tappable).',
           useWhen:
             'After an owner level edit you want the planner to re-anchor around.',
         },
         {
           label: 'Approve',
-          api: 'POST /api/plan/approve (api/handler_plan.go:1799)',
+          api: 'POST /api/plan/approve (api/handler_plan.go handlePlanApprove)',
           sideEffects:
             'Grants entries for this CME session-day when approval_required is ON. One click, no modal (by design).',
           budget: 'None — one grant per session-day.',

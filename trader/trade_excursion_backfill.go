@@ -43,8 +43,10 @@ func BackfillExcursions(st *store.Store, symbol, traderID string, from, to time.
 		p := positions[i]
 		res.Scanned++
 		exitMs := p.ExitTime
+		exitFill := p.ExitPrice
 		if exitMs <= 0 {
 			exitMs = p.EntryTime
+			exitFill = 0 // the fill's minute is unknown: do not place it at the entry
 		}
 		// Levels come from the decision that opened the position — read, never
 		// reconstructed. Absent means the ambiguity count stays honest at 0
@@ -70,7 +72,9 @@ func BackfillExcursions(st *store.Store, symbol, traderID string, from, to time.
 		}
 
 		bars := excursionBarsFor(st, p.Symbol, p.EntryTime, exitMs)
-		path := kernel.ComputePathExcursion(p.EntryPrice, p.Side, stop, target, bars, p.EntryTime, exitMs, "1m")
+		// RT-8 — the same exit-minute bound as the live close hook, so a
+		// backfilled row and a live row of one trade agree.
+		path := closedHoldPath(p.EntryPrice, p.Side, stop, target, bars, p.EntryTime, exitMs, exitFill, excursionOneFill(&p))
 		if !path.Computed {
 			res.NoCoverage++
 			if err := st.TradeExcursions().MarkNoCoverage(id); err != nil {

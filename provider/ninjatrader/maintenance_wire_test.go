@@ -60,11 +60,25 @@ func startedServer(t *testing.T, src *holdSrc) *TCPServer {
 
 func dialWire(t *testing.T, s *TCPServer, hello HelloPayload) *wireClient {
 	t.Helper()
+	w := dialWireNoWait(t, s, hello)
+	// GATE 3: in connect-key mode the conn is published only AFTER the hello is
+	// authenticated, so IsConnected() flips true here (not at dial). Without a
+	// key it is already true from accept; the wait is a no-op.
+	if !waitConnected(s, 2*time.Second) {
+		t.Fatal("dial: never became the connected client")
+	}
+	return w
+}
+
+// dialWireNoWait is dialWire WITHOUT the post-hello IsConnected wait — for a
+// hello that is REFUSED (wrong/missing key), which never becomes "connected".
+func dialWireNoWait(t *testing.T, s *TCPServer, hello HelloPayload) *wireClient {
+	t.Helper()
 	var c net.Conn
 	var err error
 	for i := 0; i < 100; i++ { // the single-client slot frees asynchronously after a close
 		c, err = net.Dial("tcp", s.ListenAddrForTest().String())
-		if err == nil && waitConnected(s, 20*time.Millisecond) {
+		if err == nil {
 			break
 		}
 		if c != nil {
@@ -74,7 +88,7 @@ func dialWire(t *testing.T, s *TCPServer, hello HelloPayload) *wireClient {
 		time.Sleep(10 * time.Millisecond)
 	}
 	if c == nil {
-		t.Fatal("dial: never became the connected client")
+		t.Fatal("dial: never connected")
 	}
 	t.Cleanup(func() { _ = c.Close() })
 	w := &wireClient{conn: c, frames: make(chan Envelope, 256)}

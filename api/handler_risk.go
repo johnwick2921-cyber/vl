@@ -21,6 +21,7 @@ import (
 	"vl/kernel"
 	"vl/logger"
 	"vl/provider/ninjatrader"
+	"vl/trader"
 	ntTrader "vl/trader/ninjatrader"
 
 	"github.com/gin-gonic/gin"
@@ -61,11 +62,44 @@ func (a *forceFlatSignalAdapter) ForceFlat(traderID string) error {
 	return nil
 }
 
+// tcpForceFlatSignaler is the TCP bridge's kernel.ForceFlatSignaler. On the TCP
+// path the flatten is REAL — the close_position frame was already sent (stamped
+// with this trader's bound account) when MaybeForceFlat runs — so it reports the
+// send as it happened. It replaces forceFlatSignalAdapter{writer:nil} there,
+// whose "operator must manually flatten on NT chart" line was false after a
+// real send (rescan D-4 / N7). The send is not the close: NT8 confirms each
+// close with a position_close frame (or reports position_close_rejected).
+type tcpForceFlatSignaler struct {
+	account    string // the trader's bound account, READ from the broker
+	openAtSend *int   // open positions NT8 reported at send; nil = that read failed
+}
+
+func (s *tcpForceFlatSignaler) ForceFlat(traderID string) error {
+	if s == nil {
+		return fmt.Errorf("force-flat: nil signaler")
+	}
+	acct := strings.TrimSpace(s.account)
+	if acct == "" {
+		acct = "n/a (unbound)"
+	}
+	open := "unknown (position read failed)"
+	if s.openAtSend != nil {
+		open = fmt.Sprintf("%d", *s.openAtSend)
+	}
+	logger.Warnf("🔴 force-flat: trader=%s close sent to NT8 for account %s (open position(s) at send: %s); confirmed by the position_close frame, not by this send", traderID, acct, open)
+	return nil
+}
+
 // forceFlatResponse is the JSON shape returned by POST /api/risk/force-flat.
 type forceFlatResponse struct {
-	Triggered          bool   `json:"triggered"`
-	TraderID           string `json:"trader_id"`
-	PositionsFlattened int    `json:"positions_flattened"`
+	Triggered bool   `json:"triggered"`
+	TraderID  string `json:"trader_id"`
+	// PositionsFlattened is READ, never a literal (r22, T33 — it used to be a
+	// hard-coded 1): on the TCP bridge, the open positions NT8 reported for
+	// this trader's bound account when the flatten was SENT. null = that read
+	// failed, so the count is unknown. NT8 confirms each close separately
+	// (position_close).
+	PositionsFlattened *int   `json:"positions_flattened"`
 	TimestampUTC       string `json:"timestamp_utc"`
 	LogMessage         string `json:"log_message"`
 	Reason             string `json:"reason,omitempty"`
@@ -103,6 +137,11 @@ func (s *Server) handleForceFlat(c *gin.Context) {
 	// TCP bridge: real flatten via the AddOn (closes at market + cancels the
 	// protective bracket). CloseLong flattens regardless of the held side.
 	if ntTCP, ok := underlying.(*ntTrader.TCPTrader); ok {
+		var openAtSend *int
+		if positions, perr := ntTCP.GetPositions(); perr == nil {
+			n := len(positions)
+			openAtSend = &n
+		}
 		if _, err := ntTCP.CloseLong("", 0); err != nil {
 			c.JSON(http.StatusOK, forceFlatResponse{
 				Triggered:    false,
@@ -114,13 +153,25 @@ func (s *Server) handleForceFlat(c *gin.Context) {
 			return
 		}
 		// Also trip the kill-switch reset side-effect, as the CSV path does.
-		_ = kernel.MaybeForceFlat(traderID, &forceFlatSignalAdapter{writer: nil})
+		// r22 (T4): the reset is THIS trader's only — MaybeForceFlat used to
+		// call ResetDailyPnL(), which lifted EVERY trader's daily-loss trip.
+		// ClearDailyLossLatch also drops this trader's persisted latch so a
+		// restart cannot re-arm what the owner just cleared. If this trader's
+		// own loss still stands, its gate re-trips on the next 60s beat.
+		// r24 (D-4 / N7): the signaler REPORTS the send that just happened —
+		// never the CSV path's "operator must manually flatten" line.
+		_ = kernel.MaybeForceFlat(traderID, &tcpForceFlatSignaler{account: ntTCP.BoundAccount(), openAtSend: openAtSend})
+		at.ClearDailyLossLatch("Emergency Flat")
+		msg := "force-flat: flatten SENT to NinjaTrader (TCP bridge) for this trader's bound account — open positions at send unknown (position read failed); NT8 confirms each close"
+		if openAtSend != nil {
+			msg = fmt.Sprintf("force-flat: flatten SENT to NinjaTrader (TCP bridge) for this trader's bound account — %d open position(s) at send; NT8 confirms each close", *openAtSend)
+		}
 		c.JSON(http.StatusOK, forceFlatResponse{
 			Triggered:          true,
 			TraderID:           traderID,
-			PositionsFlattened: 1,
+			PositionsFlattened: openAtSend,
 			TimestampUTC:       time.Now().UTC().Format(time.RFC3339),
-			LogMessage:         "force-flat: flatten sent to NinjaTrader (TCP bridge)",
+			LogMessage:         msg,
 		})
 		return
 	}
@@ -147,11 +198,12 @@ func (s *Server) handleForceFlat(c *gin.Context) {
 		SafeInternalError(c, "Force flat", err)
 		return
 	}
+	at.ClearDailyLossLatch("Emergency Flat (CSV bridge)")
 
 	c.JSON(http.StatusOK, forceFlatResponse{
 		Triggered:          true,
 		TraderID:           traderID,
-		PositionsFlattened: adapter.flattened,
+		PositionsFlattened: &adapter.flattened,
 		TimestampUTC:       time.Now().UTC().Format(time.RFC3339),
 		LogMessage:         fmt.Sprintf("force-flat invoked for trader=%s (manual close required on NT chart)", traderID),
 	})
@@ -173,6 +225,10 @@ type riskStatusResponse struct {
 	// 2026-09-06). A number that looks like a limit and gates nothing is worse
 	// than no number, because it is acted on.
 	NotEnforced []string `json:"not_enforced,omitempty"`
+	// DailyLossGate is the ENFORCED daily-loss gate (r22 RISK-GATES): the
+	// resolved posture, the latch and the bot-only P&L it judges. Read-only —
+	// a status read never trips anything.
+	DailyLossGate trader.DailyLossGateStatus `json:"daily_loss_gate"`
 }
 
 // handleRiskStatus handles GET /api/risk/status?trader_id=xxx.
@@ -230,6 +286,8 @@ func (s *Server) handleRiskStatus(c *gin.Context) {
 			"daily_loss_limit_usd: the ENV value; when a Studio guardrail is set that value is the enforced one. GET /api/desk renders the resolved limit with its source",
 		},
 	}
+
+	resp.DailyLossGate = at.DailyLossGateStatusAt(time.Now())
 
 	// Best-effort populate live values; failures don't 500 the endpoint.
 	if account, err := at.GetAccountInfo(); err == nil {

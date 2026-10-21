@@ -27,6 +27,7 @@ import (
 	"syscall"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	"vl/auth"
 	"vl/config"
@@ -73,7 +74,7 @@ func newUpdEnv(t *testing.T) *updEnv {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { os.RemoveAll(root) })
+	t.Cleanup(func() { _ = safepath.RemoveAllTemp(root) })
 	dataDir := filepath.Join(root, "data")
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		t.Fatal(err)
@@ -358,8 +359,8 @@ func TestUpdateRoutesAreNotAdvertisedToTheAgent(t *testing.T) {
 			found++
 		}
 	}
-	if found != 6 {
-		t.Fatalf("router has %d /api/updates routes, want 6 (status, check, install, install-with-password, jobs, jobs/receipt)", found)
+	if found != 8 {
+		t.Fatalf("router has %d /api/updates routes, want 8 (status, readiness, check, install, install-with-password, retry, jobs, jobs/receipt)", found)
 	}
 	re := regexp.MustCompile(`s\.route(WithSchema)?\([^)]*"/updates`)
 	for _, f := range []string{"server.go", "handler_updates.go"} {
@@ -465,7 +466,7 @@ func sameTree(a, b map[string]string) bool {
 
 func TestUpdatesRefuseWhenNotEnrolledOrUnsafe(t *testing.T) {
 	cases := map[string]func(t *testing.T, d string){
-		"nothing enrolled": func(t *testing.T, d string) { _ = os.RemoveAll(updateauth.Dir(d)) },
+		"nothing enrolled": func(t *testing.T, d string) { _ = safepath.RemoveAllUnder(d, updateauth.Dir(d)) },
 		"admin absent":     func(t *testing.T, d string) { _ = os.Remove(updateauth.AdminPath(d)) },
 		"key absent":       func(t *testing.T, d string) { _ = os.Remove(updateauth.DeviceKeyPath(d)) },
 		"admin 0644":       func(t *testing.T, d string) { _ = os.Chmod(updateauth.AdminPath(d), 0o644) },

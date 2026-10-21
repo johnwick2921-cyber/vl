@@ -337,6 +337,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 				ctx.TradingStats.SharpeRatio,
 				winLossRatio))
 			sb.WriteString(TrackRecordLine(ctx.TradingStats, LangChinese) + "\n")
+			if ctx.TradingStats.ManualExcludedLine != "" { // RT-4: the manual rows' own counted line
+				sb.WriteString(ctx.TradingStats.ManualExcludedLine + "\n")
+			}
 			sb.WriteString(fmt.Sprintf("平均盈利: +%.2f | 平均亏损: -%.2f | 最大回撤: %.1f%%\n",
 				ctx.TradingStats.AvgWin,
 				ctx.TradingStats.AvgLoss,
@@ -363,6 +366,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 			// P&L-TRUTH WAVE: never a bare total — the figure, its resolved n and
 			// the unresolved exclusion count, in one line the model can use.
 			sb.WriteString(TrackRecordLine(ctx.TradingStats, LangEnglish) + "\n")
+			if ctx.TradingStats.ManualExcludedLine != "" { // RT-4: the manual rows' own counted line
+				sb.WriteString(ctx.TradingStats.ManualExcludedLine + "\n")
+			}
 			sb.WriteString(fmt.Sprintf("Avg Win: +%.2f | Avg Loss: -%.2f | Max Drawdown: %.1f%%\n",
 				ctx.TradingStats.AvgWin,
 				ctx.TradingStats.AvgLoss,
@@ -429,6 +435,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 	// judges; no gate lives here (G1/G4 consume the same snapshot in Go).
 	if e.isFuturesInstrument() && len(ctx.Structure) > 0 {
 		sb.WriteString(StructurePromptLine(ctx.Structure) + "\n\n")
+		if strings.TrimSpace(ctx.StructureGap) != "" {
+			sb.WriteString("BARS HOLE: " + ctx.StructureGap + "\n\n")
+		}
 	}
 
 	sb.WriteString("---\n\n")
@@ -568,7 +577,10 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 				// can't be 0 for a real instrument; 0 means calculateEMA had <period
 				// bars). Omit it + log, rather than feeding the model a fake zero.
 				if v <= 0 {
-					logger.Infof("ℹ️ current_ema%d omitted for %s — thin bar depth (needs %d bars); EMA not warmed up.", p, data.Symbol, p)
+					// R22 F-2: an unwarmed EMA is printed n/a (L7 — a value not
+					// known prints n/a), never an SMA under an EMA label.
+					logger.Infof("ℹ️ current_ema%d n/a for %s — thin bar depth (needs %d bars for a warmed EMA).", p, data.Symbol, market.EMAWarmupBars(p))
+					sb.WriteString(fmt.Sprintf(", current_ema%d = n/a", p))
 					continue
 				}
 				sb.WriteString(fmt.Sprintf(", current_ema%d = %.3f", p, v))
@@ -816,6 +828,10 @@ func FormatIndicatorState(sb *strings.Builder, data *market.TimeframeSeriesData,
 			for _, p := range periods {
 				if len(data.EMAByPeriod[p]) > 0 {
 					sb.WriteString(fmt.Sprintf("EMA%d: %s\n", p, formatFloatSlice(data.EMAByPeriod[p])))
+				} else {
+					// R22 F-2: configured but not warmed on this TF's depth — say
+					// so; never drop the row silently, never print the SMA seed.
+					sb.WriteString(fmt.Sprintf("EMA%d: n/a (not warmed — needs %d bars)\n", p, market.EMAWarmupBars(p)))
 				}
 			}
 		} else {

@@ -82,6 +82,9 @@ func TestKnobPrunePin_ExecutorKeyLevels(t *testing.T) {
 // Planner prompt at the shipped defaults (scenario_cap 3, structure_map OFF,
 // acceptance 5m_close). Pins scenario_cap (folded → constant 3 unless stored)
 // and structure_map (UI removed, default OFF).
+// Re-pinned 2026-10-13 (FIX-PLANNER-TRUTH): the lunch no-trade gate line now
+// states the truth — the arm path enforces the band too (refuses new placements
+// and cancels resting arms) — line 35 only.
 func TestKnobPrunePin_PlannerPromptDefaults(t *testing.T) {
 	p := BuildPlannerPrompt(PlannerInput{MaxLevels: 8, ScenarioCap: 3})
 	knobPruneGolden(t, "planner_prompt_defaults.txt", []byte(p))

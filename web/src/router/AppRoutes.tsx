@@ -17,9 +17,9 @@ import { RegisterPage } from '../components/auth/RegisterPage'
 import { ResetPasswordPage } from '../components/auth/ResetPasswordPage'
 import { SetupPage } from '../components/modals/SetupPage'
 import { AITradersPage } from '../components/trader/AITradersPage'
-import { FAQPage } from '../pages/FAQPage'
 import { AgentChatPage } from '../pages/AgentChatPage'
 import { SettingsPage } from '../pages/SettingsPage'
+import { FriendsPage } from '../pages/FriendsPage'
 import { StrategyStudioPage } from '../pages/StrategyStudioPage'
 import { TraderDashboardPage } from '../pages/TraderDashboardPage'
 import { GuidePage } from '../guide/GuidePage'
@@ -482,13 +482,13 @@ export function AppRoutes() {
             )
           }
         />
+        {/* UI-GUIDE-TRUTH LF-1 (release #22): /faq used to render the
+            inherited crypto/Docker FAQ, incl. "pkill vl" and deleting
+            data.db-wal as "fixes" (a silent no-relaunch and lost writes).
+            The in-app Guide is the one FAQ; the old URL lands there. */}
         <Route
           path={ROUTES.faq}
-          element={
-            <AppChrome currentPage="faq" showFooter={false} wrapInMain={false}>
-              <FAQPage />
-            </AppChrome>
-          }
+          element={<Navigate to={ROUTES.guide} replace />}
         />
         <Route
           path={ROUTES.agent}
@@ -558,6 +558,18 @@ export function AppRoutes() {
             isAuthenticated ? (
               <AppChrome currentPage="guide" animateContent>
                 <GuidePage />
+              </AppChrome>
+            ) : (
+              <Navigate to={ROUTES.login} replace />
+            )
+          }
+        />
+        <Route
+          path={ROUTES.friends}
+          element={
+            isAuthenticated ? (
+              <AppChrome currentPage="friends" showFooter={false}>
+                <FriendsPage />
               </AppChrome>
             ) : (
               <Navigate to={ROUTES.login} replace />

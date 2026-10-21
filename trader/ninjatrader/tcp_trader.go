@@ -486,6 +486,17 @@ func (t *TCPTrader) OrderSnapshotLookup(signalID string) (ntwire.NT8Order, bool)
 	return zero, false
 }
 
+// OrderSnapshotBook returns the broker's latest received order book for the
+// bound account and its local receipt instant — the broker truth the mentor
+// stop-move verifier (F1) reads. ok=false when no snapshot has arrived yet
+// ("no book" and "a book of age 0" must never render as the same one).
+func (t *TCPTrader) OrderSnapshotBook() (ntwire.OrderSnapshotPayload, time.Time, bool) {
+	if t == nil || t.server == nil {
+		return ntwire.OrderSnapshotPayload{}, time.Time{}, false
+	}
+	return t.server.OrderSnapshots().LatestReceived(t.boundAccount)
+}
+
 // feedNowUTC is the latest market bar close, falling back to wall time when
 // absent. It is a market fact, never the creation timestamp of an entry command.
 func (t *TCPTrader) feedNowUTC(symbol string) time.Time {
@@ -501,15 +512,15 @@ func (t *TCPTrader) feedNowUTC(symbol string) time.Time {
 	return time.Now().UTC()
 }
 
-// isAccountTradeable reports whether an order may be sent for `name`: it must be a
-// SIM account (per the C#-reported accounts list, which uses Account.Simulation) AND,
-// if NT_ALLOWED_ACCOUNTS is configured, on that allow-list. This is the hard
-// live/funded-account block (Stage-2 Phase-1). Fail-safe: unknown account → false.
-func (t *TCPTrader) isAccountTradeable(name string) bool {
+// AccountTradeableFromList reports SIM + allow-list for `name` against a
+// caller-supplied account list. The LIVE order path calls it with the wire's
+// live list; the installation gate's sim_accounts leg calls it with the
+// PERSISTED last list when the AddOn is disconnected. A non-SIM account stays
+// non-SIM on either list; missing data fails closed (unknown → false).
+func (t *TCPTrader) AccountTradeableFromList(accts []ntwire.AccountInfo, name string) bool {
 	if name == "" {
 		return false
 	}
-	accts, _ := t.server.GetAccountsList()
 	isSim := false
 	found := false
 	for _, a := range accts {
@@ -531,6 +542,17 @@ func (t *TCPTrader) isAccountTradeable(name string) bool {
 		return false // an allow-list is set and this account isn't on it
 	}
 	return true
+}
+
+// isAccountTradeable reports whether an order may be sent for `name`: it must be a
+// SIM account (per the C#-reported accounts list, which uses Account.Simulation) AND,
+// if NT_ALLOWED_ACCOUNTS is configured, on that allow-list. This is the hard
+// live/funded-account block (Stage-2 Phase-1). Fail-safe: unknown account → false.
+// LIVE-ONLY: it reads the wire's current list, never the persisted fallback — a
+// placed order must be vouched for by the running AddOn, not by history.
+func (t *TCPTrader) isAccountTradeable(name string) bool {
+	accts, _ := t.server.GetAccountsList()
+	return t.AccountTradeableFromList(accts, name)
 }
 
 // IsAccountTradeable is the SIM-only account predicate, exported for the
@@ -704,6 +726,19 @@ func (t *TCPTrader) placeEntryWith(symbol, side string, quantity float64, own *e
 // placeEntry (bound account + SIM + B3 guard); the AddOn submits OrderType.Limit
 // and defers SL/TP to SubmitBracketOnEntryFill, identical to market entries.
 func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, 0, 0, beforeSend...)
+}
+
+// PlaceLimitEntryWithSplit (dispatch-31, owner order 2026-10-16 "set to 4 at
+// least, sell 2 first so it's equal") is PlaceLimitEntry with the leg-1 split:
+// leg1Qty contracts exit at leg1TP (the plan's first obstacle), the runner at
+// the final target. Mirrors placeStopEntry's split handling exactly — the same
+// two-OCO-pair build gate and the same wireLeg1TP rounding/side check.
+func (t *TCPTrader) PlaceLimitEntryWithSplit(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeLimitEntry(symbol, side, quantity, limitPx, sl, tp, leg1Qty, leg1TP, beforeSend...)
+}
+
+func (t *TCPTrader) placeLimitEntry(symbol, side string, quantity float64, limitPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
 	tradeAcct := t.boundAccount
 	if tradeAcct == "" {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s — trader has no bound account", side, symbol)
@@ -738,6 +773,24 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	if rerr != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: refusing armed %s entry on %s: %w", side, symbol, rerr)
 	}
+	// REVIEW-353: only send the split when the far side proves the two-OCO-pair
+	// build. An older AddOn ignores leg1_qty → single bracket, byte-identical
+	// (fail-closed: the split degrades, never half-applies).
+	if leg1Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildSplitLegs) {
+		leg1Qty, leg1TP = 0, 0
+	}
+	// leg1_tp gets the SAME wire treatment as the trade target: nearest tick,
+	// and it must sit on the profit side of the entry. A leg-1 TP that fails
+	// either drops the split (single bracket) — never a leg 1 resting at or
+	// through the entry.
+	if leg1Qty > 0 {
+		var why string
+		leg1TP, why = wireLeg1TP(side, entry, leg1TP, tick)
+		if why != "" {
+			logger.Warnf("⚠️ limit-entry %s %s: split dropped — %s; sending the single bracket", side, symbol, why)
+			leg1Qty, leg1TP = 0, 0
+		}
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{
@@ -753,6 +806,10 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 		Timestamp:  time.Now().UTC().Truncate(time.Millisecond).Format(time.RFC3339Nano),
 		OrderType:  "limit",
 		LimitPrice: entry,
+		// dispatch-31: the split rides the ONE frame — leg1_qty + leg1_tp tell
+		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
+		Leg1Qty: leg1Qty,
+		Leg1TP:  leg1TP,
 	}
 	if err := assertBoundAccount("armed-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit armed entry", err)
@@ -776,6 +833,14 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 	if err := serr; err != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: send armed signal: %w", err)
 	}
+	if leg1Qty > 0 {
+		t.mu.Lock()
+		if t.splitBySignal == nil {
+			t.splitBySignal = map[string]SentSplit{}
+		}
+		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP}
+		t.mu.Unlock()
+	}
 	return signalID, nil
 }
 
@@ -784,8 +849,8 @@ func (t *TCPTrader) PlaceLimitEntry(symbol, side string, quantity float64, limit
 // same bracket-on-fill contract as limits. stopPx is the TRIGGER price (the
 // tick offset is applied by the caller). Back-compat law: the frame is
 // additive JSON — only send it when the far-side AddOn has proven it.
-func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, leg1Qty, leg1TP, beforeSend...)
+func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, false, leg1Qty, leg1TP, leg2Qty, leg2TP, beforeSend...)
 }
 
 // PlaceStopEntryWithLimit (MENTOR STOP-LIMIT, PR B 2026-10-03) is PlaceStopEntry
@@ -795,11 +860,11 @@ func (t *TCPTrader) PlaceStopEntry(symbol, side string, quantity float64, stopPx
 // the order's expiry (expiry_ms, authored by the evaluator's intent) cancels it
 // unfilled when it lapses. Fail-closed: refused when the far side does not
 // prove MinAddonBuildStopLimit (an older AddOn would build StopMarket).
-func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
-	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, leg1Qty, leg1TP, beforeSend...)
+func (t *TCPTrader) PlaceStopEntryWithLimit(symbol, side string, quantity float64, stopPx, sl, tp float64, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
+	return t.placeStopEntry(symbol, side, quantity, stopPx, sl, tp, true, leg1Qty, leg1TP, leg2Qty, leg2TP, beforeSend...)
 }
 
-func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, leg1Qty int, leg1TP float64, beforeSend ...func(string) error) (string, error) {
+func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx, sl, tp float64, stopLimit bool, leg1Qty int, leg1TP float64, leg2Qty int, leg2TP float64, beforeSend ...func(string) error) (string, error) {
 	// CAPABILITY HANDSHAKE — the far-side AddOn must PROVE, by a build_id that
 	// arrived on the wire, that it will BUILD this order correctly. Two distinct
 	// failures live behind this one gate:
@@ -885,6 +950,32 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 			leg1Qty, leg1TP = 0, 0
 		}
 	}
+	// release #31: leg 2 (the runner's first partial) rides the SAME frame, but
+	// ONLY to an AddOn that proves the leg-3 build — an older AddOn ignores
+	// leg2_qty and would place the 2-pair plan (leg 1 + runner) byte-identical.
+	// Degrades to the 2-pair plan, never half-applies.
+	if leg2Qty > 0 && !ntwire.FarSideProven(t.server.FarSideBuildID(), ntwire.MinAddonBuildLeg3) {
+		leg2Qty, leg2TP = 0, 0
+	}
+	// D6 (release #31 fold): leg 2 only exists inside a split — with leg 1
+	// dropped (wireLeg1TP refused), a leg 2 on the frame is an unvalidated,
+	// off-grid price (the wire-leg-2 check below never runs). Zero it so the
+	// frame degrades to the single bracket, never a naked leg-2 pair.
+	if leg2Qty > 0 && leg1Qty <= 0 {
+		logger.Warnf("⚠️ stop-entry %s %s: leg-2 split dropped — leg 1 was dropped; sending the single bracket", side, symbol)
+		leg2Qty, leg2TP = 0, 0
+	}
+	// leg2_tp must sit STRICTLY between leg 1's TP and the trade target (the
+	// runner's first partial sells before the target, never at or through it).
+	// A leg-2 TP that fails drops ONLY leg 2 (the 2-pair plan stands).
+	if leg2Qty > 0 && leg1Qty > 0 {
+		var why string
+		leg2TP, why = wireLeg2TP(side, entry, leg1TP, leg2TP, tp, tick)
+		if why != "" {
+			logger.Warnf("⚠️ stop-entry %s %s: leg-2 split dropped — %s; sending the 2-pair plan", side, symbol, why)
+			leg2Qty, leg2TP = 0, 0
+		}
+	}
 	tid := t.traderID
 	signalID := uuid.NewString()
 	payload := ntwire.SignalPayload{
@@ -905,6 +996,10 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		// the AddOn to place TWO OCO pairs on the one fill (0 = single bracket).
 		Leg1Qty: leg1Qty,
 		Leg1TP:  leg1TP,
+		// release #31: leg2_qty + leg2_tp tell the AddOn to place a THIRD OCO
+		// pair (the runner's first partial); 0 = the 2-pair plan.
+		Leg2Qty: leg2Qty,
+		Leg2TP:  leg2TP,
 	}
 	if err := assertBoundAccount("stop-entry", symbol, payload.Account, t.boundAccount); err != nil {
 		logger.Errorf("🚨 %v — REFUSING to submit stop-entry", err)
@@ -933,7 +1028,7 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 		if t.splitBySignal == nil {
 			t.splitBySignal = map[string]SentSplit{}
 		}
-		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP}
+		t.splitBySignal[signalID] = SentSplit{Leg1Qty: leg1Qty, Leg1TP: leg1TP, Leg2Qty: leg2Qty, Leg2TP: leg2TP}
 		t.mu.Unlock()
 	}
 	return signalID, nil
@@ -943,6 +1038,8 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 type SentSplit struct {
 	Leg1Qty int
 	Leg1TP  float64
+	Leg2Qty int
+	Leg2TP  float64
 }
 
 // SplitSentFor returns the split the entry frame for signalID carried; ok=false
@@ -956,6 +1053,27 @@ func (t *TCPTrader) SplitSentFor(signalID string) (SentSplit, bool) {
 	defer t.mu.Unlock()
 	s, ok := t.splitBySignal[signalID]
 	return s, ok && s.Leg1Qty > 0
+}
+
+// ForgetSignalMaps (UR-FIX U3 + I9) drops the per-signal mentor records — the
+// split and the per-leg live stops. Callers must call it ONLY once the signal is
+// FULLY closed AND its armed row is TERMINAL: the runner still needs the split
+// record (SplitSentFor) and its per-leg stop (MoveStopForSignalLeg) while open,
+// and while the row is still working its REMAINDER may still be at the broker.
+func (t *TCPTrader) ForgetSignalMaps(signalID string) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal != nil {
+		delete(t.splitBySignal, signalID)
+	}
+	if t.stopBySignal != nil {
+		delete(t.stopBySignal, signalID)
+		delete(t.stopBySignal, signalID+"#leg1")
+		delete(t.stopBySignal, signalID+"#leg2")
+	}
 }
 
 // wireLeg1TP rounds leg 1's TP to the nearest tick and checks it sits on the
@@ -977,6 +1095,40 @@ func wireLeg1TP(side string, entry, leg1TP, tick float64) (float64, string) {
 	default:
 		return 0, fmt.Sprintf("unknown side %q", side)
 	}
+	return tp, ""
+}
+
+// wireLeg2TP rounds leg 2's TP (the runner's first partial) to the nearest tick
+// and checks it sits STRICTLY between leg 1's TP and the trade target — the
+// runner sells part before the target, never at or through it. why != "" =
+// refuse the leg-2 split (the 2-pair plan stands).
+func wireLeg2TP(side string, entry, leg1TP, leg2TP, target, tick float64) (float64, string) {
+	if leg2TP <= 0 {
+		return 0, "leg2_tp is not set"
+	}
+	if leg1TP <= 0 || target <= 0 {
+		return 0, "leg2_tp needs a leg-1 TP and a trade target"
+	}
+	tp := RoundToTick(leg2TP, tick)
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		if tp <= leg1TP {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not beyond the long leg-1 TP %.2f", tp, leg1TP)
+		}
+		if tp >= target {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not before the long trade target %.2f", tp, target)
+		}
+	case "short":
+		if tp >= leg1TP {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not beyond the short leg-1 TP %.2f", tp, leg1TP)
+		}
+		if tp <= target {
+			return 0, fmt.Sprintf("leg2_tp %.2f is not before the short trade target %.2f", tp, target)
+		}
+	default:
+		return 0, fmt.Sprintf("unknown side %q", side)
+	}
+	_ = entry
 	return tp, ""
 }
 
@@ -1046,6 +1198,56 @@ func (t *TCPTrader) ModifyBracket(signalID string, newSL, newTP float64) error {
 	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
 		Symbol: t.symbol, SignalID: signalID, NewStopLoss: newSL, NewTakeProfit: newTP,
 		Account: t.boundAccount, TraderID: t.traderID,
+	})
+}
+
+// ModifyBracketLeg (release #22, mentor ISB candle-3 partial) modifies ONE leg
+// of a split bracket in place — leg 1 (-sl/-tp), leg 2 (-sl2/-tp2), leg 3
+// (-sl3/-tp3, release #31), 0 = every leg — through the SAME modify_bracket
+// frame (its `leg` field is wire v4; the AddOn's HandleModifyBracket already
+// honours it, so no C# change). Unlike the unwired ModifyBracket it never puts
+// an off-grid price on the wire (MATH-EXECUTOR P2-2): a TP rounds to the
+// NEAREST tick (the caller has already rounded in its protective direction, so
+// an on-grid price is unchanged) and a stop goes through WireStop (away from
+// the entry). A price <= 0 is "leave that order untouched" (omitted from the
+// frame). Nothing to change, a bad leg or a bad side is an error — never a
+// guessed frame.
+func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newTP float64) error {
+	if strings.TrimSpace(signalID) == "" {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket needs a signal id")
+	}
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 modify must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would apply
+	// the price to legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
+	}
+	if newSL <= 0 && newTP <= 0 {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s has nothing to change", signalID)
+	}
+	tick := InstrumentTickSize(t.symbol)
+	if newTP > 0 {
+		newTP = RoundToTick(newTP, tick)
+	}
+	if newSL > 0 {
+		ws, err := WireStop(side, newSL, tick)
+		if err != nil {
+			return err
+		}
+		newSL = ws
+	}
+	if t.server == nil {
+		return fmt.Errorf("ninjatrader/tcp: modify_bracket for %s: no NT8 server", signalID)
+	}
+	t.mu.Lock()
+	tid := t.traderID
+	t.mu.Unlock()
+	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
+		Symbol: t.symbol, SignalID: signalID, NewStopLoss: newSL, NewTakeProfit: newTP,
+		Leg: leg, Account: t.boundAccount, TraderID: tid,
 	})
 }
 
@@ -1132,6 +1334,43 @@ func (t *TCPTrader) resolveEntrySignalID(symbol, side string) string {
 	return sid
 }
 
+// EntrySignalIDFor is the signal id a side-keyed move_stop (MoveStopToBreakeven)
+// addresses for this trader's symbol — the same resolution, exported so the
+// planner auto-BE verdict (N-G) reads the broker book by the right name.
+func (t *TCPTrader) EntrySignalIDFor(side string) string {
+	if t == nil {
+		return ""
+	}
+	return t.resolveEntrySignalID(t.symbol, side)
+}
+
+// SnapshotsSinceAccept (N-C, release #22 rescan) reports whether a positions
+// snapshot AND an order snapshot for the bound account were RECEIVED on the
+// CURRENT connection — after its accept — and that connection's accept
+// sequence. The dead-man watchdog resumes entries only when both are true:
+// "two reads did not error" can be answered entirely from the old link's
+// cached frames.
+func (t *TCPTrader) SnapshotsSinceAccept() (positions, orders bool, acceptSeq uint64) {
+	if t == nil || t.server == nil {
+		return false, false, 0
+	}
+	rec, ok := t.server.ConnectionRecord()
+	if !ok {
+		return false, false, 0
+	}
+	acceptedAt, okA := rec.AcceptedAt()
+	if !okA {
+		return false, false, rec.AcceptSeq
+	}
+	if _, posAt, _, okP := t.server.PositionsForExecutionReceipt(t.boundAccount, t.symbol); okP && posAt.After(acceptedAt) {
+		positions = true
+	}
+	if _, ordAt, okO := t.server.OrderSnapshots().LatestReceived(t.boundAccount); okO && ordAt.After(acceptedAt) {
+		orders = true
+	}
+	return positions, orders, rec.AcceptSeq
+}
+
 // MoveStopToBreakeven asks the AddOn to move the resting stop for THIS trader's
 // current open position (the last entry's signal_id) to newStop, tick-rounded —
 // WITHOUT closing the position. Errors (no-op) if there is no tracked open entry.
@@ -1184,8 +1423,43 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	// Track the new stop so a subsequent move is checked against it.
 	t.mu.Lock()
 	t.stopLoss[key] = newStop
+	// P2-1 (release #22 rescan) — ALSO record it under the signal the frame
+	// addressed. The side-keyed stopLoss cannot say WHICH position it belongs
+	// to, so the protection net could not use it; the per-signal record can.
+	// Without it, a planner position whose -sl vanished after an auto-BE was
+	// re-protected at the ORIGINAL plan stop (654: 30551.25 instead of the BE
+	// 30456.50 — $189.50 of risk re-opened).
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	t.stopBySignal[sid] = newStop
 	t.mu.Unlock()
 	return nil
+}
+
+// KnownStopForSignal returns the TIGHTEST stop this process has moved for
+// signalID (the single bracket and either split leg), and whether one is
+// known. "Tightest" = closest to price on the protective side: a long's
+// highest stop, a short's lowest. Memory-only: after a restart it is empty and
+// the caller falls back to the broker's book history (P2-1).
+func (t *TCPTrader) KnownStopForSignal(signalID, side string) (float64, bool) {
+	if t == nil || strings.TrimSpace(signalID) == "" {
+		return 0, false
+	}
+	short := strings.EqualFold(strings.TrimSpace(side), "short")
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	best, found := 0.0, false
+	for _, k := range []string{signalID, signalID + "#leg1", signalID + "#leg2"} {
+		v := t.stopBySignal[k]
+		if v <= 0 {
+			continue
+		}
+		if !found || (short && v < best) || (!short && v > best) {
+			best, found = v, true
+		}
+	}
+	return best, found
 }
 
 // MoveStopForSignal (mentor exit-drive, DS-107) asks the AddOn to move the
@@ -1202,15 +1476,22 @@ func (t *TCPTrader) MoveStopForSignal(signalID, side string, newStop float64) er
 }
 
 // MoveStopForSignalLeg is MoveStopForSignal for ONE leg of a split bracket:
-// leg 1 (-sl) or leg 2 (-sl2) under the one signal id; 0 = every leg (the
-// single bracket). The widen ban is judged per leg — both legs share the
-// signal id, so a signal-only key would let one leg's stop judge the other's.
+// leg 1 (-sl), leg 2 (-sl2) or leg 3 (-sl3, release #31) under the one signal
+// id; 0 = every leg (the single bracket). The widen ban is judged per leg —
+// both legs share the signal id, so a signal-only key would let one leg's stop
+// judge the other's.
 func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64, leg int) error {
 	if strings.TrimSpace(signalID) == "" {
 		return fmt.Errorf("ninjatrader/tcp: move_stop needs a signal id")
 	}
-	if leg < 0 || leg > 2 {
-		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1 or 2", leg)
+	if leg < 0 || leg > 3 {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg %d is not 0, 1, 2 or 3", leg)
+	}
+	// D7 (release #31 fold): a leg-3 move must never reach an AddOn below the
+	// leg-3 build — an older AddOn reads leg 3 as "every leg" and would move
+	// legs 1 AND 2 (defence-in-depth; unreachable today).
+	if leg == 3 && !t.FarSideProves(ntwire.MinAddonBuildLeg3) {
+		return fmt.Errorf("ninjatrader/tcp: move_stop leg 3 needs AddOn >= %s (live %s)", ntwire.MinAddonBuildLeg3, t.server.FarSideBuildID())
 	}
 	stopKey := signalID
 	if leg > 0 {
@@ -1371,12 +1652,19 @@ func (t *TCPTrader) PlaceProtectiveStop(symbol, positionSide string, quantity in
 		return fmt.Errorf("ninjatrader/tcp: refusing protective-stop %s %s — qty=%d stop=%.2f; a protective order is never sized or priced from a zero", positionSide, symbol, quantity, stopPrice)
 	}
 	tick := InstrumentTickSize(t.symbol)
+	// P2-1 / P3-1 (release #22 rescan): the stop goes on the grid AWAY from
+	// the entry (WireStop), never to the NEAREST tick — nearest could move a
+	// sub-tick price a fraction of a tick INSIDE the price it was computed at.
+	wireStop, werr := WireStop(positionSide, stopPrice, tick)
+	if werr != nil {
+		return fmt.Errorf("ninjatrader/tcp: refusing protective-stop %s %s stop=%.2f: %w", positionSide, symbol, stopPrice, werr)
+	}
 	return t.server.SendPlaceProtectiveStop(ntwire.PlaceProtectiveStopPayload{
 		Symbol:       symbol,
 		SignalID:     signalID,
 		PositionSide: upperSideStr(positionSide),
 		Quantity:     quantity,
-		StopPrice:    RoundToTick(stopPrice, tick),
+		StopPrice:    wireStop,
 		Reason:       reason,
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
 		Account:      tradeAcct,
@@ -1414,6 +1702,48 @@ func (t *TCPTrader) EntryBracketMapsForTest() (stops, targets map[string]float64
 		targets[k] = v
 	}
 	return stops, targets
+}
+
+// SignalMapsForTest (UR-FIX U3) copies the per-signal mentor maps — the split
+// that went on the wire and the per-leg live stops. Read-only; the mirror of
+// EntryBracketMapsForTest, so the exit-drive full-close pin can assert both are
+// emptied without touching the private fields.
+func (t *TCPTrader) SignalMapsForTest() (splits map[string]SentSplit, stops map[string]float64) {
+	if t == nil {
+		return map[string]SentSplit{}, map[string]float64{}
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	splits = make(map[string]SentSplit, len(t.splitBySignal))
+	for k, v := range t.splitBySignal {
+		splits[k] = v
+	}
+	stops = make(map[string]float64, len(t.stopBySignal))
+	for k, v := range t.stopBySignal {
+		stops[k] = v
+	}
+	return splits, stops
+}
+
+// SeedSignalMapsForTest (UR-FIX U3) stamps the per-signal mentor maps directly.
+// Test-only: the production writers are PlaceStopEntry (splitBySignal) and
+// MoveStopForSignalLeg (stopBySignal), both of which need a connected AddOn.
+func (t *TCPTrader) SeedSignalMapsForTest(signalID string, split SentSplit, stops map[string]float64) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.splitBySignal == nil {
+		t.splitBySignal = map[string]SentSplit{}
+	}
+	t.splitBySignal[signalID] = split
+	if t.stopBySignal == nil {
+		t.stopBySignal = map[string]float64{}
+	}
+	for k, v := range stops {
+		t.stopBySignal[k] = v
+	}
 }
 
 func (t *TCPTrader) CancelAllOrders(symbol string) error {
@@ -1487,11 +1817,35 @@ func (t *TCPTrader) IsFeedConnected() bool { return t.server.IsFeedConnected() }
 // feed_status frame).
 func (t *TCPTrader) FeedStatus() string { return t.server.FeedStatus() }
 
+// FeedMode returns the latest broker market-data mode ("realtime" | "delayed" |
+// "" = UNKNOWN) from the feed_status frame. "" never means realtime.
+func (t *TCPTrader) FeedMode() string { return t.server.FeedMode() }
+
 // IsConnected reports whether the NT8 C# AddOn's TCP socket is currently connected
 // — the RAW link, independent of feed/market-data status. The dead-man watchdog
 // (B5) gates NEW entries on this: a dropped link blocks entries until a clean
 // positions/orders reconciliation.
 func (t *TCPTrader) IsConnected() bool { return t.server.IsConnected() }
+
+// FriendStateKnown (W-FRIEND-HOSTED R9c) reports whether this trader's position
+// state is KNOWN and FRESH enough to answer the friend-flat probe: the NT8 link
+// is connected AND a positions snapshot AND an order snapshot for the bound
+// account were received within maxAge of now. Anything else — disconnected, no
+// snapshot, a snapshot older than maxAge — reads false (never "known" by guess).
+// The 120 s default in the caller is the staleness bound; there is no older
+// snapshot-age knob to reuse, so the bound lives here as the caller's constant.
+func (t *TCPTrader) FriendStateKnown(now time.Time, maxAge time.Duration) bool {
+	if t == nil || t.server == nil || !t.IsConnected() {
+		return false
+	}
+	if _, posAt, _, ok := t.server.PositionsForExecutionReceipt(t.boundAccount, t.symbol); !ok || now.Sub(posAt) > maxAge {
+		return false
+	}
+	if _, ordAt, ok := t.OrderSnapshotBook(); !ok || now.Sub(ordAt) > maxAge {
+		return false
+	}
+	return true
+}
 
 func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	// Read positions for THIS trader's OWN bound account — NOT the shared connection
@@ -1504,6 +1858,14 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	// reflects positions opened MANUALLY in NT8 (the AddOn emits a `positions`
 	// snapshot on select / connect / PositionUpdate).
 	acct := t.boundAccount
+	// Release #9 integration (CTO): a TCPTrader with no server (a fixture, or a
+	// trader built before the TCP server is wired) has no NT8 snapshot — fall to
+	// the fill-derived cache below (UNKNOWN when there is no fill), never a nil
+	// dereference. The mentor exit drive's I7 leg-1-gone check now reads this
+	// every closed candle.
+	if t.server == nil {
+		goto fillDerived
+	}
 	if snap, received, entryAfter, ok := t.server.PositionsForExecutionReceipt(acct, t.symbol); ok &&
 		(entryAfter.IsZero() || received.After(entryAfter)) {
 		// W117 F1 — a snapshot received at-or-before the latest entry receipt
@@ -1541,6 +1903,7 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	}
 
 	// Fallback (no NT8 snapshot yet): the single fill-derived position.
+fillDerived:
 	t.mu.Lock()
 	if !t.hasFill {
 		t.mu.Unlock()
@@ -1556,6 +1919,52 @@ func (t *TCPTrader) GetPositions() ([]map[string]interface{}, error) {
 	}, nil
 }
 
+// positionBracket is the working protective bracket of an OPEN position, read
+// from the broker's own order book (the order_snapshot frame). The AddOn names
+// entry legs by signal id and protective legs with -sl / -tp suffixes. A field
+// is omitted (json:",omitempty") when unknown — never 0 (L7).
+type positionBracket struct {
+	Stop   float64 `json:"stop,omitempty"`
+	Target float64 `json:"target,omitempty"`
+	Source string  `json:"source,omitempty"`
+}
+
+// positionBracketFor reads the working stop/target NT8 holds for one open
+// position from the latest order snapshot. Returns nil when unknown (no book
+// yet, or no working protective orders for the symbol) — the field stays
+// ABSENT, never a zero bracket (T32, ui-studio-truth).
+func (t *TCPTrader) positionBracketFor(symbol string) *positionBracket {
+	if t == nil || t.server == nil {
+		return nil
+	}
+	snap, ok := t.server.OrderSnapshots().Latest(t.boundAccount)
+	if !ok {
+		return nil
+	}
+	b := &positionBracket{Source: "nt8_order_snapshot"}
+	for _, o := range snap.WorkingOrdersFor(symbol) {
+		name := strings.TrimSpace(o.Name)
+		switch {
+		case strings.HasSuffix(name, "-sl"):
+			if o.StopPrice > 0 {
+				b.Stop = o.StopPrice
+			} else if o.LimitPrice > 0 {
+				b.Stop = o.LimitPrice
+			}
+		case strings.HasSuffix(name, "-tp"):
+			if o.LimitPrice > 0 {
+				b.Target = o.LimitPrice
+			} else if o.StopPrice > 0 {
+				b.Target = o.StopPrice
+			}
+		}
+	}
+	if b.Stop <= 0 && b.Target <= 0 {
+		return nil
+	}
+	return b
+}
+
 // positionMap builds the UI/decision-context record for one open position, with
 // uPnL marked off the latest cached bar and the futures point value. Shared by
 // the NT8-snapshot path (truth) and the fill-derived fallback so both produce
@@ -1566,8 +1975,9 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 	// Futures: contract point value (MNQ=$2/pt). positionAmt is signed (short < 0)
 	// per the account-snapshot convention GetAccountInfo expects.
 	pv := market.FuturesPointValue(symbol)
-	if pv <= 0 {
-		pv = 1
+	pvKnown := pv > 0 // L7: an unknown symbol has NO point value — never fabricate 1
+	if !pvKnown {
+		pv = 1 // internal fallback for the uPnL math only (avoid divide-by-zero)
 	}
 	dir := 1.0
 	signedQty := qty
@@ -1594,8 +2004,12 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		// Fallback (multi-position / no account snapshot yet): mark off the latest
 		// 5m BarCache close. Less precise than NT8's live uPnL but self-contained.
 		mark = entry
-		if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
-			mark = bars[len(bars)-1].C
+		// P3 (rel9): a nil server (the GetPositions fillDerived path) has no bar
+		// cache — guard it so the mark falls back to entry, never a nil deref.
+		if t.server != nil {
+			if bars := t.server.BarCache().Get(symbol, "5m"); len(bars) > 0 {
+				mark = bars[len(bars)-1].C
+			}
 		}
 		uPnL = (mark - entry) * dir * qty * pv
 		if entry > 0 {
@@ -1603,7 +2017,7 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		}
 	}
 
-	return map[string]interface{}{
+	out := map[string]interface{}{
 		// snake_case — read by the UI Position type (web/src/types/trading.ts)
 		"symbol":             symbol,
 		"side":               sd,
@@ -1621,6 +2035,20 @@ func (t *TCPTrader) positionMap(symbol, side string, qty, entry float64, uPnLOve
 		"markPrice":        mark,
 		"unRealizedProfit": uPnL,
 	}
+	// T27 (ui-studio-truth): CME futures truth — the per-contract point value
+	// and the notional position value (qty × mark × $/pt). ABSENT when the
+	// point value is unknown (L7: never a fabricated 1 $/pt); the UI then shows
+	// n/a, and the uPnL math above used the internal 1 fallback only.
+	if pvKnown {
+		out["point_value"] = pv
+		out["position_value"] = qty * mark * pv
+	}
+	// T32 (ui-studio-truth): the open position's working stop/target from the
+	// broker order book — ABSENT when unknown (never a zero bracket).
+	if b := t.positionBracketFor(symbol); b != nil {
+		out["bracket"] = b
+	}
+	return out
 }
 
 // DebugPlaceTestTrade places a deterministic 1-contract bracket order on the
@@ -1873,6 +2301,15 @@ func (t *TCPTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, error) {
 // "Duplicate order dropped" never showed an armed refusal. B6: B3 fires at the
 // shared chokepoint (bound to an account, not a trader), so it tallies under
 // the process-wide "" trader bucket. A nil guard admits (done is a no-op).
+// AgeOrderGuardForTest ages the B3 dedupe / rate history by d (test seam: a
+// re-place minutes after the first send is not a B3 duplicate, and a fixture
+// must not need to sleep 55 s to say so).
+func (t *TCPTrader) AgeOrderGuardForTest(d time.Duration) {
+	if t != nil && t.guard != nil {
+		t.guard.ageForTest(d.Milliseconds())
+	}
+}
+
 func (t *TCPTrader) b3Reserve(key string) (done func(sent bool), reason string, ok bool) {
 	if t.guard == nil {
 		return func(bool) {}, "", true

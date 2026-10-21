@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -31,6 +32,14 @@ type Budgets struct {
 	// up to this long for it (preflight, drain, gate) instead of
 	// failing on the step budget. Expiry: preflight refused (no
 	// hold); drain/gate RELEASE the hold and refuse.
+	Transitional time.Duration // W-ADDON-ONE-CLICK wait-don't-refuse: while the
+	// blocker is a transitional connection or a stale census, keep
+	// re-checking up to this long (never less than the step budget)
+	// before self-recovery — a mid-transition NT8 is not a refusal.
+	FriendFlat time.Duration // W-FRIEND-HOSTED: the total time the friend sweep
+	// may wait for an active friend to go flat before giving up for today
+	// (deferred + notify).
+	FriendPoll time.Duration // W-FRIEND-HOSTED: the interval between flat re-checks (60 s).
 }
 
 // DefaultBudgets are the ruled values.
@@ -46,6 +55,9 @@ func DefaultBudgets() Budgets {
 		IdentityRetry: 15 * time.Second,
 		HoldClear:     30 * time.Second,
 		PlannerWait:   15 * time.Minute,
+		Transitional:  10 * time.Minute,
+		FriendFlat:    60 * time.Minute,
+		FriendPoll:    60 * time.Second,
 	}
 }
 
@@ -60,6 +72,12 @@ type Config struct {
 	// Logf is the worker's log (stderr in serve). Nothing it is handed ever
 	// carries the cutover token (TestNoTokenEverReachesTheJobFileOrEvidence).
 	Logf func(format string, args ...any)
+	// FriendRegistry is the friends.json path (the B2 registry). Empty = the
+	// friend sweep is disabled (no friends surface configured).
+	FriendRegistry string
+	// FriendHost is the box's tunnel IP friends reach their bots at. Empty =
+	// the friend sweep is disabled.
+	FriendHost string
 }
 
 // Worker owns ONE durable update job at a time.
@@ -93,10 +111,20 @@ type Worker struct {
 	// cap sends the job to recovery_needed (job de4cf900, 2026-10-04).
 	swapDone chan struct{}
 
+	// notifier is the advisory owner-notification seam (Telegram in
+	// production). nil = log instead (W-FRIEND-HOSTED Segment 5).
+	notifier func(text string)
+
 	// crash is a TEST SEAM: called at every boundary with a point name
 	// ("<state>/started", "<state>/effect", "<state>/done"); a test panics in
 	// it to play a crash there. nil in production.
 	crash func(point string)
+
+	// runWin is the W-ADDON-ONE-CLICK test seam that execs Windows binaries
+	// (dotnet.exe build, powershell.exe restart). nil in production = the real
+	// exec.CommandContext; a test binds a fake so it never starts the real NT8
+	// or dotnet.
+	runWin nt8RunSeam
 }
 
 // New builds a worker. Nothing runs until Start.
@@ -131,7 +159,23 @@ func New(cfg Config, d Deps) (*Worker, error) {
 	if cfg.Logf == nil {
 		cfg.Logf = func(string, ...any) {}
 	}
-	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
+	return &Worker{cfg: cfg, lib: d.Lib, app: d.App, rel: d.Rel, host: d.Host, notifier: d.Notify, resume: map[string]bool{}, wake: make(chan struct{}, 1), swapDone: make(chan struct{})}, nil
+}
+
+// execWindows is the production runWin: it execs a Windows binary (powershell.exe,
+// dotnet.exe, tasklist.exe) from WSL. The worker overrides the runWin seam in the
+// restart/build tests, but the W-UPDATER-WINPATH adapter pins call execWindows
+// directly with harmless stub executables (never the real Windows binaries).
+// W-UPDATER-WINPATH: a bare tool name is resolved to its fixed WSL mount when
+// PATH lacks the Windows dirs (the user unit does not inherit appendWindowsPath),
+// so an already-running worker still restarts/probes NT8 on a Linux-only PATH.
+func execWindows(ctx context.Context, name string, args ...string) ([]byte, error) {
+	resolved, err := resolveWindowsExe(name)
+	if err != nil {
+		return nil, err
+	}
+	cmd := exec.CommandContext(ctx, resolved, args...)
+	return cmd.CombinedOutput()
 }
 
 func (w *Worker) dataDir() string { return w.cfg.Target.DataDir }
@@ -201,6 +245,12 @@ func (w *Worker) Start(ctx context.Context) (StartReport, error) {
 	safe.GoNamed("updater-worker-run", func() { w.run(ctx) })
 	if rep.Active != "" {
 		w.signal()
+		return rep, nil
+	}
+	// feat/addon-catchup: an idle worker checks whether the AddOn NT8 runs is
+	// stale against the installed release, and rebuilds it with no hands.
+	if _, err := w.maybeStartCatchup(ctx); err != nil {
+		w.logf("updater: catch-up check at start: %v", err)
 	}
 	return rep, nil
 }
@@ -270,6 +320,24 @@ func (w *Worker) toRecovery(j updaterjob.Job, reason string) error {
 		return k.Enter(updaterjob.StateRecoveryNeeded, w.now(*k))
 	})
 	return err
+}
+
+// toRevertClean moves j (a DONE pre-activation state) to reverted_clean with
+// the reason as its Error, then runs the revert_clean effect (release the
+// hold, the lock, and any placed AddOn). Nothing was swapped, so the old build
+// keeps running and trading is normal.
+func (w *Worker) toRevertClean(ctx context.Context, j updaterjob.Job, reason string) error {
+	k, err := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
+		k.Error = clipText(reason)
+		return k.Enter(updaterjob.StateRevertedClean, w.now(*k))
+	})
+	if err != nil {
+		return err
+	}
+	if k.Phase == updaterjob.PhaseStarted {
+		return w.execute(ctx, k)
+	}
+	return nil
 }
 
 // markRecovery sets the recovery fields: the reason, and the index of the

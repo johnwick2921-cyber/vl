@@ -29,7 +29,7 @@ func PHLPLH(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config) (Inte
 // price (0 = skip the higher-low / lower-high check). The target is NEAR
 // the old extreme, not at it.
 func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config) (Intent, bool, string) {
-	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg)
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg, false)
 }
 
 // PHLPLHR2Levels is PHLPLHR2 with B15 (CTO 20:48:40Z): the target is the
@@ -39,11 +39,11 @@ func PHLPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 // tiếp… những cái mà nó ngán đường trên đường đi"]. The room rule and the
 // 1:1 floor are measured to that target. nil levels = the old behaviour.
 func PHLPLHR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
-	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
+	return phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, false)
 }
 
 // phlPLHR2 is the shared PHL/PLH core.
-func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config) (Intent, bool, string) {
+func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, confluence bool) (Intent, bool, string) {
 	if !cfg.Enabled {
 		return Intent{}, false, "mentor mode off"
 	}
@@ -106,7 +106,7 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if refuse, why := roomRefusal(price, stop, target, cfg.RoomMultiple); refuse {
+	if refuse, why := roomRefusal(price, stop, target, confluence, cfg.RoomMultiple); refuse {
 		return Intent{}, false, why
 	}
 	setup := "PHL"
@@ -144,14 +144,16 @@ func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg C
 	if levels == nil {
 		return target
 	}
-	ob := nextLevelBeyond(levels, price, side)
+	// R3 (release #30 fold): the EMA 9 / EMA 34 lines are PARTIAL points, not
+	// the trade target — an EMA must not by itself kill a PHL/PLH.
+	ob := nextLevelBeyondNonEMA(levels, price, side)
 	if ob == 0 {
 		return target
 	}
 	switch side {
 	case SideLong:
 		if ob < target {
-			return ob // a key level / EMA 34 / box edge stands in the way
+			return ob // a key level / old high-low / box edge stands in the way
 		}
 	case SideShort:
 		if ob > target {
@@ -188,17 +190,17 @@ func PHLPLHGated(t Touch, oldExtreme Level, extremeIdx, barIdx int, cfg Config, 
 // check). Wired by DS-103 at the evaluator's PHL/PLH call site (CTO box mail
 // 1791003269412: "the PHLPLHR2 call with the prior same-role swing").
 func PHLPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
-	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg, htf, day, dg)
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, nil, cfg, htf, day, dg, false)
 }
 
 // PHLPLHGatedR2Levels is the B15 call the evaluator should use once DS-103
 // merges the patch: the same gates with the first-obstacle target.
-func PHLPLHGatedR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
-	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, htf, day, dg)
+func PHLPLHGatedR2Levels(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate, confluence bool) (Intent, bool, string) {
+	return phlPLHGatedR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, htf, day, dg, confluence)
 }
 
-func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate) (Intent, bool, string) {
-	in, ok, reason := phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg)
+func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing float64, levels []Level, cfg Config, htf HTF, day DayVerdict, dg DayGate, confluence bool) (Intent, bool, string) {
+	in, ok, reason := phlPLHR2(t, oldExtreme, extremeIdx, barIdx, priorSwing, levels, cfg, confluence)
 	if !ok {
 		return in, false, reason
 	}
@@ -219,8 +221,23 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 		}
 		// R9: on a spent day (cap 15), skip any setup whose stop is over 15
 		if risk > dg.TargetCapPts {
-			return in, false, "spent day: stop over the 15-pt cap — skip the setup [R9, D1.2 p1 @ 07:48–09:00]"
+			return in, false, "spent day: stop over the 15-pt cap — skip the setup [derived: D5.1 p1 @20:00 '15 điểm bán' cap + D1.2 p1 @07:48 1:1 floor ⇒ stop ≤ 15]"
 		}
 	}
-	return CapTargetForDay(in, day, dg), true, ""
+	// MENTOR-NY item 1 (supersedes B7/L13): the room rule already ran in
+	// phlPLHR2 on the LEVEL target (the first obstacle / the old extreme), and
+	// that is the course's measure — "Dù target của em là 15 điểm … từ điểm
+	// entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]: the
+	// room is to the level even when the take-profit is the 15-pt spent cap.
+	// B7/L13 re-measured it on the CAPPED target, which demanded stop ≤ 7.5 on
+	// every SPENT day. The cap still shortens the take-profit, and the R9
+	// stop ≤ 15 check above keeps the capped take-profit on the 1:1 floor.
+	capped := CapTargetForDay(in, day, dg)
+	// DS-104 P2-3: on a SPENT day the room to the level must also be ≥
+	// RoomMultiple × the capped take-profit — "target 15 → room 30"
+	// [D5.3 p1 @09:32–09:50]. in.Target is the level (pre-cap).
+	if refuse, why := spentDayRoomRefusal(in.Price, in.Target, capped.Target, day, cfg.RoomMultiple); refuse {
+		return in, false, why
+	}
+	return capped, true, ""
 }

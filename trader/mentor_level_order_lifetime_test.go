@@ -61,7 +61,7 @@ func TestMentorCancelArmClearsEvaluatorLevelArm(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
-	mentorRegisterLiveArm("lvl-9", row.ID, "long", 29392)
+	mentorRegisterLiveArmForTest("lvl-9", at.id, row.ID, "long", 29392)
 
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.CancelArm, ArmID: "lvl-9", Reason: "test close-through"}, mentorTierInputs{}, 1000, 1100)
 
@@ -116,10 +116,19 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 	at.mentorEval = mentor.New(at.mentorEvaluatorConfig())
 	now := mentorLifetimeClock(10, 30)
+	// Pin the mentor clock: mentorEvalOnce's news-calendar / day-stop sweep
+	// reads the REAL wall clock through mentorClockNow(), so on a run whose
+	// wall clock sits inside the 07:20–07:35 CT news window (with no static
+	// calendar slice for that date) the news gate holds fail-closed and cancels
+	// the just-authored level arm — a flaky RED that depends on the hour of the
+	// test run. The assertion below is about the reconcile, never about the
+	// news window, so pin every mentor time gate to the fixed 10:30 CT instant.
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 	in := mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "lvl-77", Side: mentor.SideLong,
 		Price: 29392, Stop: 29385, Target: 29430, Setup: "PHL"}
 	at.mentorArmIntent(in, mentorSizeChoice{Contracts: 1}, now.UnixMilli(), now.UnixMilli(), "B", 0)
-	live, ok := mentorLiveArmFor("lvl-77")
+	live, ok := at.mentorLiveArmFor("lvl-77")
 	if !ok {
 		t.Fatal("mentorArmIntent must register the arm")
 	}
@@ -131,7 +140,10 @@ func TestMentorTickKeepsAProductionAuthoredRestingLevelArm(t *testing.T) {
 		t.Fatalf("precondition: the production scenario is epoch-prefixed, got %q", row.Scenario)
 	}
 	at.mentorEval.State.LevelArms = map[string]mentor.LevelArm{
-		"L": {ArmID: "lvl-77", Side: mentor.SideLong, LevelPrice: 29385},
+		// PlacedAt mirrors the production register (eval.go:1676 sets it to the
+		// placement candle's CloseTime): the level rests until ITS OWN 15:00 CT
+		// expiry (FIX-LEVEL-WINDOW), never cancelled at birth by the wall clock.
+		"L": {ArmID: "lvl-77", Side: mentor.SideLong, LevelPrice: 29385, PlacedAt: now.Add(-time.Minute).UnixMilli() + 59_999},
 	}
 	bars := []market.Kline{
 		{OpenTime: now.Add(-2 * time.Minute).UnixMilli(), CloseTime: now.Add(-2*time.Minute).UnixMilli() + 59_999, Open: 29390, High: 29395, Low: 29388, Close: 29393, Final: true},

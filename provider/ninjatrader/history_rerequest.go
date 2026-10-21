@@ -38,6 +38,10 @@ type historyReplayState struct {
 	mu   sync.Mutex
 	last map[string]time.Time // symbol -> last re-request sent
 	sent map[string]int       // symbol -> count since boot (READ by the summary line)
+	// gap — the GAP-BACKFILL re-request's budget (history_gap_backfill.go),
+	// held here so the protected tcp_server.go stays byte-identical. Its own
+	// mutex and maps: nothing above is read or written by a gap re-request.
+	gap gapBackfillState
 }
 
 // ErrHistoryReplaySpent is returned when the per-boot budget is used: the
@@ -69,6 +73,24 @@ func (s *TCPServer) RequestHistoryReplayAt(symbol string, now time.Time) error {
 	s.histReplay.sent[symbol]++
 	s.histReplay.mu.Unlock()
 
+	payload, err := s.resendBarsSubscribe(symbol)
+	if err != nil {
+		return fmt.Errorf("tcp_server: history replay %s: %w", symbol, err)
+	}
+	if s.logger != nil {
+		s.logger.Info("tcp_server: history replay re-requested after a confirmed scale break", "symbol", symbol,
+			"timeframes", payload.Timeframes, "bars_back", payload.BarsBack, "sent_since_boot", s.histReplay.sent[symbol])
+	}
+	return nil
+}
+
+// resendBarsSubscribe writes the symbol's bars_subscribe frame — the
+// subscription's own timeframes and bars_back — on the live connection. It is
+// THE re-request: the AddOn's N4 path disposes + recreates every BarsRequest
+// for the symbol with its emit cursor at 0, so NT8 replays ≈bars_back per tf
+// from its local DB. Shared by the scale-break re-request above and the
+// gap-backfill re-request (history_gap_backfill.go); each keeps its own budget.
+func (s *TCPServer) resendBarsSubscribe(symbol string) (BarsSubscribePayload, error) {
 	s.barsSubMu.RLock()
 	payload := BarsSubscribePayload{
 		Symbol:     symbol,
@@ -81,20 +103,17 @@ func (s *TCPServer) RequestHistoryReplayAt(symbol string, now time.Time) error {
 	c := s.conn
 	s.connMu.Unlock()
 	if c == nil {
-		return fmt.Errorf("tcp_server: history replay %s: not connected", symbol)
+		return payload, fmt.Errorf("not connected")
 	}
 	s.writeMu.Lock()
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := WriteFrame(c, FrameBarsSubscribe, payload)
 	s.writeMu.Unlock()
 	if err != nil {
-		return fmt.Errorf("tcp_server: history replay %s: send bars_subscribe: %w", symbol, err)
+		return payload, fmt.Errorf("send bars_subscribe: %w", err)
 	}
-	if s.logger != nil {
-		s.logger.Info("tcp_server: history replay re-requested after a confirmed scale break", "symbol", symbol,
-			"timeframes", payload.Timeframes, "bars_back", payload.BarsBack, "sent_since_boot", s.histReplay.sent[symbol])
-	}
-	return nil
+	s.barCache.NoteReconnect(time.Now()) // W26: a resend rebuilds the AddOn's BarsRequests → stale re-emit window
+	return payload, nil
 }
 
 // HistoryReplaysSent is READ by the summary line (A11).

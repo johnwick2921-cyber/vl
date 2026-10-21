@@ -45,9 +45,10 @@ func TestMentorConfluenceUpgradeModePure(t *testing.T) {
 // branch to C and NEVER re-runs the size table (the size-unchanged half of the
 // rule). Mutant: dropping the setMentorExitMode call leaves the branch B → RED.
 func TestMentorConfluenceUpgradeHandler(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	at.setMentorExitMode("long", "B")
+	// B5 (L8): the OPEN position carries its branch on its live-position
+	// struct (set at fill). The upgrade moves it there.
+	at.mentorRegisterLivePos("sig-long", &mentorLivePos{Pos: mentorPosition{Side: "long", Mode: "B"}})
 
 	sized := false
 	mentorSizeForHook = func() { sized = true }
@@ -57,23 +58,23 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 		Reason: "trigger flipped to the long side [B20, D3.4 p3 @09:17]"}
 	at.mentorConfluenceUpgrade(in)
 
-	if got := at.mentorExitMode("long"); got != "C" {
+	if got := at.mentorLivePos["sig-long"].Pos.Mode; got != "C" {
 		t.Fatalf("the upgrade must switch the branch to C, got %q", got)
 	}
 	if sized {
 		t.Fatalf("the upgrade must never re-run the size table")
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("the upgrade must be counted once, got %d", got)
 	}
 
 	// a second upgrade on an already-C position is a counted no-op, never a
 	// second exit_upgrade_c.
 	at.mentorConfluenceUpgrade(in)
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("an already-confluence position must not double-count, got %d", got)
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_noop"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_noop"]; got != 1 {
 		t.Fatalf("the no-op must be counted once, got %d", got)
 	}
 
@@ -81,7 +82,7 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 	sh := in
 	sh.Side = mentor.SideShort
 	at.mentorConfluenceUpgrade(sh)
-	if got := MentorCountSnapshot()["exit_upgrade_no_position"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_no_position"]; got != 1 {
 		t.Fatalf("a no-position upgrade must be counted once, got %d", got)
 	}
 	if got := at.mentorExitMode("short"); got != "" {
@@ -92,9 +93,8 @@ func TestMentorConfluenceUpgradeHandler(t *testing.T) {
 // TestMentorConfluenceUpgradeEndToEnd exercises the evaluator and trader
 // dispatch together. Mutating the production action link leaves the exit on B.
 func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	at.setMentorExitMode("long", "B")
+	at.mentorRegisterLivePos("sig-long", &mentorLivePos{Pos: mentorPosition{Side: "long", Mode: "B"}})
 
 	sized := false
 	mentorSizeForHook = func() { sized = true }
@@ -131,13 +131,13 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 	if e.State.Trigger.Dir != mentor.SideLong || !e.State.SchoolOneUpgraded {
 		t.Fatalf("kernel did not process the long 5m flip: trigger=%+v upgraded=%v", e.State.Trigger, e.State.SchoolOneUpgraded)
 	}
-	if got := at.mentorExitMode("long"); got != "C" {
+	if got := at.mentorLivePos["sig-long"].Pos.Mode; got != "C" {
 		t.Fatalf("the kernel upgrade must switch the open position to exit C, got %q", got)
 	}
 	if sized {
 		t.Fatal("the confluence upgrade must not re-run the size table")
 	}
-	if got := MentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
+	if got := at.mentorCountSnapshot()["exit_upgrade_c"]; got != 1 {
 		t.Fatalf("the kernel-to-trader upgrade must be applied once, got %d", got)
 	}
 }
@@ -145,15 +145,14 @@ func TestMentorConfluenceUpgradeEndToEnd(t *testing.T) {
 // TestMentorPlacementRegistersExitBranch: the entry-time fork (B for a plain
 // ISB) is registered per open position — the state a later upgrade switches.
 func TestMentorPlacementRegistersExitBranch(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong,
-		Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
+		ArmID: "isb-test", Price: 21000, Stop: 20988, Target: 21024, Setup: "ISB", StopPts: 12}
 	choice := mentorSizeChoice{Contracts: 5, Tier: "base", Why: "test"}
 
 	var placed int
@@ -166,7 +165,70 @@ func TestMentorPlacementRegistersExitBranch(t *testing.T) {
 	if placed != 1 {
 		t.Fatalf("a safe-price ISB entry must reach the placement path, placed=%d", placed)
 	}
-	if got := at.mentorExitMode("long"); got != "B" {
-		t.Fatalf("an ISB entry forks B at entry and registers it, got %q", got)
+	// B5 (L8): the branch is registered per ARM (the scenario), never per side.
+	if got := at.mentorExitMode(at.mentorScenarioFor("isb-test")); got != "B" {
+		t.Fatalf("an ISB entry forks B at entry and registers it per arm, got %q", got)
+	}
+}
+
+// TestMentorConfluenceUpgradePersistsExitModeC — MENTOR-NY item 11 (rescan
+// P2-N3, persistence part) at the production call site. The B20 upgrade
+// switched the exit branch to C only in memory (lp.Pos.Mode /
+// setMentorExitMode); after #517 a restart rebuilds a mentor position from the
+// row's exit_mode, so it came back as B (stop moves, BE, trail) instead of C
+// (hold ≥ 1:2, stop untouched). Both a RESTING arm (by row id) and an OPEN
+// position (by signal id) now write exit_mode='C' on their row, counted.
+// MUTANT: drop the persist call → the rows keep 'B' → RED.
+func TestMentorConfluenceUpgradePersistsExitModeC(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, _, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	now := b3Clock(9, 40)
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
+
+	author := func(armID string) mentorLiveArm {
+		at.mentorArmIntent(
+			mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: armID, Side: mentor.SideLong,
+				Price: 29600, Stop: 29590, Target: 29620, Setup: "ISB", ExpiryMs: now.UnixMilli() + 60_000},
+			mentorSizeChoice{Contracts: 1, Tier: "base"}, now.UnixMilli(), now.UnixMilli(), "B", 0)
+		live, ok := at.mentorLiveArmFor(armID)
+		if !ok {
+			t.Fatalf("arm %q not registered", armID)
+		}
+		return live
+	}
+	resting := author("isb-rest")
+	at.setMentorExitMode(resting.Scenario, "B") // the staged branch placement registers
+	open := author("isb-open")
+	if err := ledger.SetSignal(open.RowID, "sig-open"); err != nil {
+		t.Fatal(err)
+	}
+	at.mentorRegisterLivePos("sig-open", &mentorLivePos{
+		Pos:  mentorPosition{Side: "long", Mode: "B"},
+		Legs: [3]mentorLeg{{SignalID: "sig-open", Qty: 1}},
+	})
+
+	at.mentorConfluenceUpgrade(mentor.Intent{Action: mentor.ConfluenceUpgrade, Side: mentor.SideLong,
+		Reason: "trigger flipped to the long side [B20, D3.4 p3 @09:17]"})
+
+	mode := func(rowID int64) string {
+		var r store.ArmedOrderDB
+		if err := ledger.DB().First(&r, rowID).Error; err != nil {
+			t.Fatal(err)
+		}
+		if r.ExitMode == nil {
+			return "<nil>"
+		}
+		return *r.ExitMode
+	}
+	if got := mode(resting.RowID); got != "C" {
+		t.Fatalf("the resting arm's row must persist exit_mode C after the upgrade, got %q", got)
+	}
+	if got := mode(open.RowID); got != "C" {
+		t.Fatalf("the open position's row must persist exit_mode C after the upgrade, got %q", got)
+	}
+	if got := at.mentorCountSnapshot()["exit_upgrade_persisted"]; got != 2 {
+		t.Fatalf("exit_upgrade_persisted = %d, want 2", got)
 	}
 }

@@ -16,8 +16,9 @@ import { planApi } from '../../lib/api/plan'
 
 // Human labels for the gate names telemetry emits. An unknown gate falls back to
 // its raw name rather than being hidden — a refusal we cannot label is still a
-// refusal the owner must see.
-const GATE_LABELS: Record<string, { en: string; icon: string }> = {
+// refusal the owner must see. Exported for the guide's label-list pin
+// (guideTruth.test.ts) — the guide copies these strings, the test proves it.
+export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   feed_down: { en: 'NT8 feed down', icon: '📡' },
   dead_man: { en: 'Dead-man watchdog', icon: '⏱' },
   frozen: { en: 'Trader frozen', icon: '🧊' },
@@ -31,8 +32,14 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   b3_order_dedup: { en: 'Duplicate order dropped', icon: '👯' },
   b3_rate_breaker: { en: 'Order rate breaker', icon: '🚨' },
   level_burned_retouch: { en: 'Burned level re-touched', icon: '🔥' },
-  night_transition: { en: 'Night/day transition', icon: '🌙' },
+  // P2-3a (release #26): a night/day transition is an EVENT, not a refusal —
+  // it no longer reaches the gate-block table, so it has no label here.
   maintenance_hold: { en: 'Update hold (maintenance)', icon: '🔒' },
+  install_pending: { en: 'Update pending (preflight freeze)', icon: '⏳' },
+  // OPS NEW-2 (10-14): planner arms now ask the stale-data verdict; the AI
+  // path's B4 has counted stale_data all along.
+  stale_data: { en: 'Stale 1m feed', icon: '⛔' },
+  clock_step: { en: 'Clock-step hold (wall clock jumped)', icon: '🕰' },
   maintenance_drop: {
     en: 'Queued entry dropped by the update hold',
     icon: '🔒',
@@ -92,6 +99,57 @@ const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   mentor_ai_closes_off: {
     en: 'Mentor mode — AI closes off (mentor-owned position)',
     icon: '🙅',
+  },
+  // r22 RISK-GATES — the daily guardrails on every entry path (pinned by
+  // trader/w0b_guide_test.go), and the trip itself.
+  daily_loss: { en: 'Daily loss limit hit (latched to 17:00 CT)', icon: '🔴' },
+  daily_loss_tripped: {
+    en: 'Daily loss limit TRIPPED (entries cancelled, bot flattened)',
+    icon: '🔴',
+  },
+  daily_profit_target: { en: 'Daily profit target reached', icon: '🎯' },
+  max_daily_trades: { en: 'Max daily trades reached', icon: '🔢' },
+  // r22 RISK-GATES (P2-3) — every mentor placement refusal, by gate.
+  mentor_stale_data: { en: 'Mentor — stale 1m feed', icon: '🧑‍🏫' },
+  mentor_stale_intent: { en: 'Mentor — stale intent', icon: '🧑‍🏫' },
+  mentor_sources_missing: { en: 'Mentor — sources missing', icon: '🧑‍🏫' },
+  mentor_window: { en: 'Mentor — outside trading window', icon: '🧑‍🏫' },
+  mentor_done_after_win: {
+    en: 'Mentor — done for the day (win)',
+    icon: '🧑‍🏫',
+  },
+  mentor_stop_after_loss: { en: 'Mentor — stop after a loss', icon: '🧑‍🏫' },
+  mentor_news_hold: { en: 'Mentor — news hold', icon: '🧑‍🏫' },
+  mentor_never_add: { en: 'Mentor — never add', icon: '🧑‍🏫' },
+  mentor_expiry_missing: {
+    en: 'Mentor — order expiry missing',
+    icon: '🧑‍🏫',
+  },
+  mentor_no_chase: { en: 'Mentor — no chase', icon: '🧑‍🏫' },
+  mentor_daily_loss: { en: 'Mentor — daily loss limit', icon: '🧑‍🏫' },
+  mentor_max_daily_trades: { en: 'Mentor — max daily trades', icon: '🧑‍🏫' },
+  mentor_daily_profit_target: {
+    en: 'Mentor — daily profit target',
+    icon: '🧑‍🏫',
+  },
+  mentor_daily_guardrail_unverified: {
+    en: 'Mentor — daily guardrail unverified',
+    icon: '🧑‍🏫',
+  },
+  // Release #25 (STRICT-12345 F-2/F-3/F-5/F-7/F-8) — the loss-fix switches,
+  // all OFF by default; these count only once the owner turns one on.
+  room_gate: { en: 'Room gate — first obstacle under min R', icon: '🧱' },
+  room_gate_tp1: { en: 'Room gate — TP1 moved to the obstacle', icon: '🧱' },
+  thesis_death_exit: { en: 'Thesis-death exit (planner position)', icon: '🪦' },
+  no_chase_refused: { en: 'No-chase enforced (arm refused)', icon: '🚫' },
+  momentum_into_zone: { en: 'Momentum into the zone too fast', icon: '🌊' },
+  atr_floor_beyond_invalidation: {
+    en: 'ATR stop floor past the authored invalidation',
+    icon: '🛑',
+  },
+  breakeven_r_unknown_risk: {
+    en: 'Breakeven in R — initial risk unknown (points rule used)',
+    icon: '🎯',
   },
 }
 

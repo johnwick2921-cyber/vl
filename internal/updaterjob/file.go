@@ -119,6 +119,7 @@ func privateDirs(dataDir string, create bool) (string, error) {
 			switch {
 			case err == nil:
 				if err := fsyncDir(filepath.Dir(d)); err != nil {
+					//homeguard:allow — removes only the directory d this loop just created (os.Remove cannot empty a tree)
 					_ = os.Remove(d)
 					return "", err
 				}
@@ -523,7 +524,8 @@ func peekState(jobsDir, name string) (State, error) {
 }
 
 // isTerminalJobState reports the terminal states a sweep may skip: complete,
-// refused, rolled_back (worker-self-update P0: the CTO's named set).
+// refused, rolled_back, reverted_clean (worker-self-update P0: the CTO's named
+// set, plus the self-recovery terminal W-ADDON-ONE-CLICK adds).
 func isTerminalJobState(s State) bool {
-	return s == StateComplete || s == StateRefused || s == StateRolledBack
+	return s == StateComplete || s == StateRefused || s == StateRolledBack || s == StateRevertedClean
 }

@@ -287,13 +287,26 @@ func FvgEntryLookbackBars() int {
 
 // AggregateBars buckets a 1m series into bars of `bucketMs` width (open of the
 // first, high/low, close of the last, summed volume). Used for the 5m ATR leg.
+// Epoch-floored: a bar's bucket is OpenTime / bucketMs * bucketMs.
 func AggregateBars(bars []market.Kline, bucketMs int64) []market.Kline {
-	if len(bars) == 0 || bucketMs <= 0 {
+	if bucketMs <= 0 {
+		return nil
+	}
+	return aggregateBarsBy(bars, bucketMs, func(openMs int64) int64 {
+		return openMs / bucketMs * bucketMs
+	})
+}
+
+// aggregateBarsBy is the ONE aggregation loop, shared by AggregateBars (epoch
+// floor) and Aggregate4HCT (17:00 CT anchor) — so the 4h anchor is a bucket-key
+// function, never a second copy of the OHLC merge.
+func aggregateBarsBy(bars []market.Kline, bucketMs int64, key func(openMs int64) int64) []market.Kline {
+	if len(bars) == 0 {
 		return nil
 	}
 	var out []market.Kline
 	for _, b := range bars {
-		bucket := b.OpenTime / bucketMs * bucketMs
+		bucket := key(b.OpenTime)
 		if len(out) == 0 || out[len(out)-1].OpenTime != bucket {
 			out = append(out, market.Kline{OpenTime: bucket, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close, Volume: b.Volume})
 			continue

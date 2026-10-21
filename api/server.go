@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"vl/auth"
+	"vl/config"
 	"vl/crypto"
 	"vl/internal/updateauth"
 	"vl/kernel"
@@ -38,13 +39,25 @@ type Server struct {
 	// in M3) and a clock seam for the install expiry window.
 	updateVerifier updateauth.Verifier
 	updateStart    UpdateStarter
+	updateResume   UpdateResumer
 	updatesNow     func() time.Time
 	// M4 3b-B U5b: VL_UPDATER=1 read once at NewServer (configureUpdater).
 	updaterOn bool
 	// CTO fold 1790280466263: the (route, category) pairs already WARNed
 	// (handler_updates.go updatesForbid).
 	updatesWarned sync.Map
+
+	// friendMode (W-FRIEND-HOSTED Segment 2) is decided ONCE at NewServer: when
+	// set, the update / installer / maintenance routes are not registered (404),
+	// the updater glue is not wired, and the owner API prefix 404s. Everything
+	// else — trading, settings, SIM gate — is unchanged.
+	friendMode bool
 }
+
+// friendModeResolver returns whether this process is a friend instance. It is a
+// var (not a direct config read) so tests can pin friend mode without mutating
+// the global config singleton; production resolves it from config.Get().
+var friendModeResolver = func() bool { return config.Get().IsFriendInstance() }
 
 // NewServer Creates API server. host is the bind interface — pass
 // cfg.APIServerHost; an empty value falls back to the loopback-only default.
@@ -80,6 +93,7 @@ func NewServer(traderManager *manager.TraderManager, st *store.Store, cryptoServ
 		host:                      host,
 		port:                      port,
 		updateVerifier:            updateauth.StubVerifier{},
+		friendMode:                friendModeResolver(),
 	}
 	// M4 3b-B U5b: the updater glue knob (OFF = M3, byte for byte).
 	s.configureUpdater()
@@ -138,8 +152,9 @@ func (s *Server) setupRoutes() {
 		s.route(api, "GET", "/traders", "Public trader list", s.handlePublicTraderList)
 		s.route(api, "GET", "/competition", "Public competition data", s.handlePublicCompetition)
 		s.route(api, "GET", "/top-traders", "Top traders leaderboard", s.handleTopTraders)
-		s.route(api, "GET", "/equity-history", "Equity history for a trader", s.handleEquityHistory)
-		s.route(api, "POST", "/equity-history-batch", "Batch equity history for multiple traders", s.handleEquityHistoryBatch)
+		// R22 PNL-TRUTH (OPS-SECURITY P3-2 / UI-GUIDE-TRUTH §4): equity-history
+		// and its batch twin were PUBLIC here — a trader's whole equity curve
+		// with no token. Moved into the protected group below.
 		s.route(api, "GET", "/traders/:id/public-config", "Public trader configuration", s.handleGetPublicTraderConfig)
 
 		// Market data (no authentication required)
@@ -170,7 +185,36 @@ func (s *Server) setupRoutes() {
 
 		// W-ONE-BUTTON M3: /api/updates* — their OWN gate (uniform 403), raw
 		// g.GET/g.POST so they never enter GetAPIDocs (F1). See handler_updates.go.
-		s.registerUpdateRoutes(api)
+		// W-FRIEND-HOSTED Segment 2: a friend instance never registers these
+		// (404), and its updater glue is never wired (configureUpdater).
+		if !s.friendMode {
+			s.registerUpdateRoutes(api)
+		}
+
+		// W-FRIEND-HOSTED (CTO ruling 2026-10-18 07:36): the friend-flat probe
+		// exists ONLY in friend mode and answers only {flat, at}. DS-105's
+		// updater calls it (no JWT) to decide a restart; never on the owner's bot.
+		if s.friendMode {
+			api.GET("/friend/flat", s.handleFriendFlat)
+
+			// W-FRIEND-HOSTED (CTO 2026-10-21 00:15): the addon-status probe the
+			// friend dashboard banner reads — friend mode only, never the owner.
+			api.GET("/friend/addon-status", s.handleFriendAddonStatus)
+
+			// S14: the identity probe (key_sha256) the friend app uses to prove
+			// "my bot" — friend mode only, never the owner.
+			api.GET("/friend/identity", s.handleFriendIdentity)
+
+			// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts exist
+			// ONLY in friend mode — never registered on the owner's bot
+			// (B5 S12 + R8). The handlers still 404 outside friend mode as
+			// defense in depth. Raw api.GET like /friend/flat so they never
+			// enter GetAPIDocs; public (no auth): the friend app fetches them
+			// before the friend logs in.
+			api.GET("/friend/manifest", s.handleFriendManifest)
+			api.GET("/friend/manifest.sig", s.handleFriendManifestSig)
+			api.GET("/friend/artifact/:name", s.handleFriendArtifact)
+		}
 
 		// Routes requiring authentication
 		protected := api.Group("/", s.authMiddleware(), s.planTraderOwnership())
@@ -185,15 +229,37 @@ func (s *Server) setupRoutes() {
 			// attaches the Bearer token, and the agent calls handlers in-process.
 			s.route(protected, "GET", "/klines", "Candlestick data (?symbol=&interval=&limit=)", s.handleKlines)
 			s.route(protected, "GET", "/klines/svp", "Session Volume Profile (?symbol=&exchange=ninjatrader) — server-computed POC/VAH/VAL + histogram bins", s.handleKlinesSVP)
+			// Account equity curve — JWT-protected (R22; was public). The FE
+			// httpClient attaches the Bearer token on every call.
+			s.route(protected, "GET", "/equity-history", "Equity history for a trader (?trader_id=&account=)", s.handleEquityHistory)
+			s.route(protected, "POST", "/equity-history-batch", "Batch equity history for multiple traders", s.handleEquityHistoryBatch)
 			// Logout (add to blacklist)
 			s.route(protected, "POST", "/logout", "Logout (blacklist token)", s.handleLogout)
 			// Mint a short-lived single-use SSE ticket for the live bar stream (Stage 4).
 			s.route(protected, "POST", "/v1/bars/stream-ticket", "Mint a short-lived SSE stream ticket", s.handleBarsStreamTicket)
 			// P2-12 (audit 0926-system): owner-only one-time code the Telegram
 			// chat must send back before its first /start may bind.
-			s.routeWithSchema(protected, "POST", "/telegram/bind-code", "Issue a one-time Telegram bind code (owner-only)",
-				`Response: {"code":"<8 chars>","expires_in_minutes":10} — send /bind <code> from the chat`,
-				s.handleTelegramBindCode)
+
+			// W-FRIEND-HOSTED Segment 2 / R6: a friend instance has NO Telegram
+			// (S7) — these routes are not registered (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "POST", "/telegram/bind-code", "Issue a one-time Telegram bind code (owner-only)",
+					`Response: {"code":"<8 chars>","expires_in_minutes":10} — send /bind <code> from the chat`,
+					s.handleTelegramBindCode)
+			}
+
+			// W-FRIEND-HOSTED (DS-106): the owner's Friends page API. Owner JWT
+			// only; 404 when VL_FRIEND_INSTANCE=1 (a friend bot has no owner API).
+			s.routeWithSchema(protected, "GET", "/owner/friends", "List friends with live status (owner-only; 404 in friend mode)",
+				`Response: {"friends":[{name,state,web_port,nt_port,key_sha256,created_at,tailscale_device_id,bot_up,nt_connected,last_bar_age_ms,revision,addon_build,app_version,last_seen,probe_error}],"tailscale_key_set":<bool>,"tunnel_ip":"<string>"}. friends is [] when none; live fields are absent (not fabricated) when the friend cannot be probed.`,
+				s.handleOwnerFriendsList)
+			s.routeWithSchema(protected, "POST", "/owner/friends", "Add a friend — provisions and returns the install code ONCE (owner-only)",
+				`Body: {"name":"<lowercase a-z0-9, 2-20 chars>"}. Returns {"friend":{...},"install_code":"<base64url, shown once — not stored or logged>","shown_once":true}. Rate limited.`,
+				s.handleOwnerFriendsAdd)
+			s.routeWithSchema(protected, "POST", "/owner/friends/:name/:action", "Friend action (owner-only): pause | resume | revoke | rotate",
+				`Path: :action = pause (stop unit, state=paused) | resume (start unit, state=active) | revoke (remove.sh MOVES the folder to trash + Tailscale device delete; tailscale:"api_key_missing" when TAILSCALE_API_KEY is unset — never a silent skip) | rotate (new connect key; returns {"install_code":"<base64url, shown once>"}).`,
+				s.handleOwnerFriendAction)
+
 			s.route(protected, "GET", "/agent/preferences", "Get persistent agent preferences", s.handleGetAgentPreferences)
 			s.route(protected, "POST", "/agent/preferences", "Create persistent agent preference", s.handleCreateAgentPreference)
 			s.route(protected, "DELETE", "/agent/preferences/:id", "Delete persistent agent preference", s.handleDeleteAgentPreference)
@@ -215,8 +281,11 @@ func (s *Server) setupRoutes() {
 				`Body: {"confirm":"RESET-ALL-DATA"}. Requires ALLOW_ACCOUNT_RESET=1 in the server environment.`,
 				s.handleResetAccount)
 
-			// Server IP query (requires authentication, for whitelist configuration)
-			s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			// Server IP query (requires authentication, for whitelist configuration).
+			// U8: NOT registered on a friend bot — it leaks the owner's public IP.
+			if !s.friendMode {
+				s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			}
 
 			// AI trader management
 			s.routeWithSchema(protected, "GET", "/my-traders", "List user's traders with status",
@@ -226,6 +295,9 @@ NOTE: The id field is "trader_id" (NOT "id"). Always read trader_id from this en
 			s.routeWithSchema(protected, "GET", "/traders/:id/config", "Get full trader configuration",
 				`:id = trader_id from GET /api/my-traders`,
 				s.handleGetTraderConfig)
+			s.routeWithSchema(protected, "GET", "/traders/:id/mentor-truth", "Mentor 'what trades' panel (live evaluator state, read-only)",
+				`:id = trader_id from GET /api/my-traders. Returns the 4h/1h/5m trigger directions, HTF verdict, mentor key levels + today's visits, history depth, and window/day-stop state. mentor mode OFF -> {"enabled":false}.`,
+				s.handleMentorTruth)
 			s.routeWithSchema(protected, "POST", "/traders", "Create a new AI trader",
 				`Body: {"name":"<string, required>","ai_model_id":"<EXACT id field from GET /api/models — e.g. 'abc123_deepseek', NOT the provider name 'deepseek'>","exchange_id":"<EXACT id field from GET /api/exchanges — e.g. '05785d3b-841e-...', NOT the type name>","strategy_id":"<EXACT id field from GET /api/strategies>","scan_interval_minutes":<int, default 3, minimum 3>}
 IMPORTANT: ai_model_id and exchange_id must be the full "id" value from the Account State, not the provider/type name.`,
@@ -310,20 +382,23 @@ Use this to enable/disable an exchange or update API credentials. The "id" field
 				`:id = EXACT id from GET /api/exchanges. Permanently removes the exchange account and disconnects any traders using it.`,
 				s.handleDeleteExchange)
 
-			// Telegram bot configuration
-			s.routeWithSchema(protected, "GET", "/telegram", "Get Telegram bot configuration",
-				`Returns: {"bot_token":"<string>","model_id":"<EXACT id of configured AI model>","chat_id":"<bound Telegram chat id, empty if not bound>"}`,
-				s.handleGetTelegramConfig)
-			s.routeWithSchema(protected, "POST", "/telegram", "Set Telegram bot token and AI model",
-				`Body: {"bot_token":"<string — Telegram BotFather token>","model_id":"<EXACT id from GET /api/models>"}
+			// Telegram bot configuration — W-FRIEND-HOSTED Segment 2 / R6: a friend
+			// instance has NO Telegram (S7); these routes are not registered (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "GET", "/telegram", "Get Telegram bot configuration",
+					`Returns: {"bot_token":"<string>","model_id":"<EXACT id of configured AI model>","chat_id":"<bound Telegram chat id, empty if not bound>"}`,
+					s.handleGetTelegramConfig)
+				s.routeWithSchema(protected, "POST", "/telegram", "Set Telegram bot token and AI model",
+					`Body: {"bot_token":"<string — Telegram BotFather token>","model_id":"<EXACT id from GET /api/models>"}
 Both fields are required. After saving, the user must send /start in Telegram to bind their account.`,
-				s.handleUpdateTelegramConfig)
-			s.routeWithSchema(protected, "POST", "/telegram/model", "Update Telegram bot AI model only",
-				`Body: {"model_id":"<EXACT id from GET /api/models>"}`,
-				s.handleUpdateTelegramModel)
-			s.routeWithSchema(protected, "DELETE", "/telegram/binding", "Unbind Telegram account",
-				`No body needed. Clears the Telegram chat_id binding so the user can re-bind with /start.`,
-				s.handleUnbindTelegram)
+					s.handleUpdateTelegramConfig)
+				s.routeWithSchema(protected, "POST", "/telegram/model", "Update Telegram bot AI model only",
+					`Body: {"model_id":"<EXACT id from GET /api/models>"}`,
+					s.handleUpdateTelegramModel)
+				s.routeWithSchema(protected, "DELETE", "/telegram/binding", "Unbind Telegram account",
+					`No body needed. Clears the Telegram chat_id binding so the user can re-bind with /start.`,
+					s.handleUnbindTelegram)
+			}
 
 			// Strategy management
 			s.routeWithSchema(protected, "GET", "/strategies", "List user's strategies",
@@ -411,12 +486,17 @@ Returns: [{"symbol":"<string>","side":"long|short","quantity":<float>,"entry_pri
 			s.routeWithSchema(protected, "GET", "/positions/history", "Closed position history",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>`,
 				s.handlePositionHistory)
-			s.routeWithSchema(protected, "POST", "/debug/nt-test-trade", "DEBUG: deterministic 1-contract SIM test trade (futures/NT only)",
-				`Query: ?trader_id=<id>&side=long|short — places one MNQ bracket on the NT SIM account for end-to-end proof (signal→fill→position). SIM/futures only; bypasses AI + risk gate.`,
-				s.handleNTTestTrade)
-			s.routeWithSchema(protected, "POST", "/debug/nt-bars-unsubscribe", "DEBUG: drop an EXTRA bar subscription (P5.1 dispose-one proof; futures/NT only)",
-				`Query: ?trader_id=<id>&symbol=<extra root, e.g. ES> — sends bars_unsubscribe so the AddOn disposes that root's BarsRequests. The PRIMARY trading symbol is refused. Bars-only; no order path.`,
-				s.handleNTBarsUnsubscribe)
+			// W-FRIEND-HOSTED Segment 2 / R6: the NT debug seams (test trade
+			// bypasses AI + risk gate; bar-unsubscribe is a dispose-one proof) are
+			// owner maintenance — a friend instance never registers them (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "POST", "/debug/nt-test-trade", "DEBUG: deterministic 1-contract SIM test trade (futures/NT only)",
+					`Query: ?trader_id=<id>&side=long|short — places one MNQ bracket on the NT SIM account for end-to-end proof (signal→fill→position). SIM/futures only; bypasses AI + risk gate.`,
+					s.handleNTTestTrade)
+				s.routeWithSchema(protected, "POST", "/debug/nt-bars-unsubscribe", "DEBUG: drop an EXTRA bar subscription (P5.1 dispose-one proof; futures/NT only)",
+					`Query: ?trader_id=<id>&symbol=<extra root, e.g. ES> — sends bars_unsubscribe so the AddOn disposes that root's BarsRequests. The PRIMARY trading symbol is refused. Bars-only; no order path.`,
+					s.handleNTBarsUnsubscribe)
+			}
 			s.routeWithSchema(protected, "GET", "/nt/symbols", "P5.3: current NT bar-subscription set + lifecycle states (read-only)",
 				`Query: ?trader_id=<id> — returns {primary, states{SYMBOL:{state,contract,reason}}, runtime_enabled}`,
 				s.handleNTSymbolsList)
@@ -428,9 +508,13 @@ Returns: [{"symbol":"<string>","side":"long|short","quantity":<float>,"entry_pri
 				s.handleNTSymbolsRemove)
 			// BAR-TRUTH WAVE (2026-08-28) — deep backfill + three-way
 			// arbiter (S-1): NT8 replay truth vs cache vs persisted bars.
-			s.routeWithSchema(protected, "POST", "/nt/bar-arbiter", "Owner: deep bars backfill + NT8/cache/DB three-way diff (BAR-TRUTH)",
-				`Body: {"trader_id":"<id>","action":"backfill"|"diff","symbol":"MNQ","timeframe":"1m","bars_back":8640}. backfill sends a one-shot deep bars_subscribe; diff returns the three-way counts+hashes+ATR14(5m)+deltas+drops.`,
-				s.handleBarTruthArbiter)
+			// W-FRIEND-HOSTED Segment 2 / R6: owner maintenance — not registered
+			// on a friend instance (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "POST", "/nt/bar-arbiter", "Owner: deep bars backfill + NT8/cache/DB three-way diff (BAR-TRUTH)",
+					`Body: {"trader_id":"<id>","action":"backfill"|"diff","symbol":"MNQ","timeframe":"1m","bars_back":8640}. backfill sends a one-shot deep bars_subscribe; diff returns the three-way counts+hashes+ATR14(5m)+deltas+drops.`,
+					s.handleBarTruthArbiter)
+			}
 			s.routeWithSchema(protected, "GET", "/trades", "Trade records",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>`,
 				s.handleTrades)
@@ -448,14 +532,18 @@ Returns: [{"symbol":"<string>","side":"long|short","quantity":<float>,"entry_pri
 Returns: {"ready":<bool>,"legs":[{"n":1..5,"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"note":"<string>"}
 Legs: 1 db_open_positions · 2 api_positions · 3 nt8_positions_snapshot · 4 working_orders (broker versus placed/unconfirmed ledger rows) · 5 planner_in_flight. Leg 4's armed_unplaced count is informational: authorized arms without a signal id do not fail it.`,
 				s.handleCutoverGate)
-			s.routeWithSchema(protected, "GET", "/maintenance", "Installation maintenance hold: state, drain and the AddOn's ack (W-ONE-BUTTON M2; read-only)",
-				`Returns: {"held":<bool>,"state":"clear|held|unreadable|unconfigured","job_id":"<string>|null","since":"<RFC3339>|null","reason":"<string>","in_flight_sends":<int>,"drained":<bool>,"addon_ack":{"received":"<RFC3339>","age_ms":<int>,"held":<bool>,"job_id":"<string>","queued_commands":<int>,"build_id":"<string>","accept_seq":<int>}|null}
+			// W-FRIEND-HOSTED Segment 2: the maintenance + installer surfaces are
+			// owner-only — a friend instance never registers them (404).
+			if !s.friendMode {
+				s.routeWithSchema(protected, "GET", "/maintenance", "Installation maintenance hold: state, drain and the AddOn's ack (W-ONE-BUTTON M2; read-only)",
+					`Returns: {"held":<bool>,"state":"clear|held|unreadable|unconfigured","job_id":"<string>|null","since":"<RFC3339>|null","reason":"<string>","in_flight_sends":<int>,"drained":<bool>,"addon_ack":{"received":"<RFC3339>","age_ms":<int>,"held":<bool>,"job_id":"<string>","queued_commands":<int>,"build_id":"<string>","accept_seq":<int>}|null}
 addon_ack is the CURRENT AddOn connection's maintenance_ack only (null before one arrives, and always null for an AddOn older than 2026-09-22-m2). No write route exists.`,
-				s.handleMaintenanceStatus)
-			s.routeWithSchema(protected, "GET", "/installation-gate", "Installation-wide update gate: every trader, every account, one verdict (W-ONE-BUTTON M2; read-only)",
-				`Returns: {"ready":<bool>,"job_id":"<string>|n/a","legs":[{"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"traders":["<id>"],"note":"<string>"}
+					s.handleMaintenanceStatus)
+				s.routeWithSchema(protected, "GET", "/installation-gate", "Installation-wide update gate: every trader, every account, one verdict (W-ONE-BUTTON M2; read-only)",
+					`Returns: {"ready":<bool>,"job_id":"<string>|n/a","legs":[{"name":"<string>","pass":<bool>,"detail":"<string>","source":"<string>"}],"traders":["<id>"],"note":"<string>"}
 Legs: hold · go_drained · in_flight_sends · queued_signals · planner_in_flight (union of every planner-class claim, any trader) · traders_nt8 · addon_ack · addon_census (every connection settled; no position and no working order on ANY account — a connected non-SIM connection is allowed when every account is flat, owner ruling 2026-09-28) · ledger_exposure (all trader ids) · trader_cutover:<id> (legs 1, 2, 4). A leg that cannot be evaluated fails.`,
-				s.handleInstallationGate)
+					s.handleInstallationGate)
+			}
 			s.routeWithSchema(protected, "GET", "/decisions", "AI trading decisions (decision records)",
 				`Query: ?trader_id=<EXACT trader_id from GET /api/my-traders>&limit=<int, default 20>
 Returns: [{"id":"<string>","symbol":"<string>","action":"open_long|open_short|close_long|close_short|hold","confidence":<int>,"reasoning":"<string>","created_at":"<timestamp>"}]`,
@@ -568,20 +656,27 @@ Fetch a specific version's full doc with GET /plan/today?version=<n>.`,
 				s.handlePlanResetStatus)
 			s.routeWithSchema(protected, "POST", "/plan/reset", "Reset the session's plan chain (abandon + fresh budget + fresh plan)",
 				`Body: {"trader_id":"<id>"}. Marks the current chain ABANDONED (append-only history preserved), restores the budget to replan_cap, clears NO-TRADE state, and runs a fresh read with trigger_reason "owner reset". 409 with {error, gate} when refused. Owner sticky levels carry by price identity.`,
-				s.handlePlanReset) // E2 DEBUG SEAM (2026-08-27) — drives the REAL armed
-			// placement path with a TEST-E2 row. Env-gated
-			// (ARMED_TEST_SEAM=on, default OFF) + SIM-only.
-			s.routeWithSchema(protected, "POST", "/armed/test-arm", "E2 seam: place/cancel a TEST-E2 armed order on the real path (env-gated + SIM-only)",
-				`Body: {"trader_id":"<id>","action":"place","side":"long","entry":1,"stop":1,"target":1} or {"action":"cancel","signal_id":"<sid>"}.`,
-				s.handleArmedTestArm)
-			// HISTORY IMPORT (wave 101) — pull years of NAMED-contract minute
-			// history from NT8 through the live wire and write it into the bars
-			// table (contract-stamped, source=historical_import, never
-			// overwrites). Env-gated (HISTORICAL_IMPORT_SEAM=on, default OFF).
-			// Production call sites: 0 — an owner-triggered maintenance path.
-			s.routeWithSchema(protected, "POST", "/admin/bars/import", "Pull one named contract's history into the bars store (env-gated)",
-				`Body: {"symbol":"MNQ","contract":"MNQ 09-23","timeframes":["1m","5m","15m","1h"],"from_ms":0,"to_ms":0}. from_ms=0/to_ms=0 means the contract's whole history. Returns {results:[{contract,timeframe,status,imported,skipped,first_bar_ms,last_bar_ms,unavailable,elapsed_sec}]}. Status is three-state: imported | skipped_only | unavailable | partial. Refuses with 409 when HISTORICAL_IMPORT_SEAM is off.`,
-				s.handleAdminBarsImport)
+				s.handlePlanReset)
+			// E2 DEBUG SEAM (2026-08-27) + HISTORY IMPORT (wave 101) — owner
+			// maintenance seams (env-gated in production, default OFF).
+			// W-FRIEND-HOSTED Segment 2 / R6: a friend instance never registers
+			// them (404) — they are not trading paths.
+			if !s.friendMode {
+				// E2 DEBUG SEAM (2026-08-27) — drives the REAL armed
+				// placement path with a TEST-E2 row. Env-gated
+				// (ARMED_TEST_SEAM=on, default OFF) + SIM-only.
+				s.routeWithSchema(protected, "POST", "/armed/test-arm", "E2 seam: place/cancel a TEST-E2 armed order on the real path (env-gated + SIM-only)",
+					`Body: {"trader_id":"<id>","action":"place","side":"long","entry":1,"stop":1,"target":1} or {"action":"cancel","signal_id":"<sid>"}.`,
+					s.handleArmedTestArm)
+				// HISTORY IMPORT (wave 101) — pull years of NAMED-contract minute
+				// history from NT8 through the live wire and write it into the bars
+				// table (contract-stamped, source=historical_import, never
+				// overwrites). Env-gated (HISTORICAL_IMPORT_SEAM=on, default OFF).
+				// Production call sites: 0 — an owner-triggered maintenance path.
+				s.routeWithSchema(protected, "POST", "/admin/bars/import", "Pull one named contract's history into the bars store (env-gated)",
+					`Body: {"symbol":"MNQ","contract":"MNQ 09-23","timeframes":["1m","5m","15m","1h"],"from_ms":0,"to_ms":0}. from_ms=0/to_ms=0 means the contract's whole history. Returns {results:[{contract,timeframe,status,imported,skipped,first_bar_ms,last_bar_ms,unavailable,elapsed_sec}]}. Status is three-state: imported | skipped_only | unavailable | partial. Refuses with 409 when HISTORICAL_IMPORT_SEAM is off.`,
+					s.handleAdminBarsImport)
+			}
 			s.routeWithSchema(protected, "GET", "/plan/alerts", "In-app alert feed (P0/P1/P2) + unacked count",
 				`Query: ?trader_id=<EXACT trader_id>. Returns: {alerts:[{id,level,kind,title,body,acked,created_at}], unacked:<int>}`,
 				s.handlePlanAlerts)
@@ -955,6 +1050,15 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			}
 		}
 
+		// P2-8 (owner-identity fold): a machine token may READ and REDUCE
+		// risk, never add it — deny by default over every route
+		// (machine_action_guard.go), so a new mutating route is refused
+		// until it is listed on purpose.
+		if claims.IsMachine() && !machineActionAllowed(c.Request.Method, c.FullPath()) {
+			machineActionRefuse(c, claims)
+			return
+		}
+
 		// Store user information in context (user_id, email and the claims
 		// the credential guard reads — credential_guard.go).
 		setAuthContext(c, claims)
@@ -975,28 +1079,9 @@ func (s *Server) Start() error {
 	addr := net.JoinHostPort(host, strconv.Itoa(s.port))
 	logger.Infof("🌐 API server starting at http://%s", addr)
 	logger.Infof("📊 API Documentation:")
-	logger.Infof("  • GET  /api/health           - Health check")
-	logger.Infof("  • GET  /api/traders          - Public AI trader leaderboard top 50 (no auth required)")
-	logger.Infof("  • GET  /api/competition      - Public competition data (no auth required)")
-	logger.Infof("  • GET  /api/top-traders      - Top 5 trader data (no auth required, for performance comparison)")
-	logger.Infof("  • GET  /api/equity-history?trader_id=xxx - Public return rate historical data (no auth required, for competition)")
-	logger.Infof("  • GET  /api/equity-history-batch?trader_ids=a,b,c - Batch get historical data (no auth required, performance comparison optimization)")
-	logger.Infof("  • GET  /api/traders/:id/public-config - Public trader config (no auth required, no sensitive info)")
-	logger.Infof("  • POST /api/traders          - Create new AI trader")
-	logger.Infof("  • DELETE /api/traders/:id    - Delete AI trader")
-	logger.Infof("  • POST /api/traders/:id/start - Start AI trader")
-	logger.Infof("  • POST /api/traders/:id/stop  - Stop AI trader")
-	logger.Infof("  • GET  /api/models           - Get AI model config")
-	logger.Infof("  • PUT  /api/models           - Update AI model config")
-	logger.Infof("  • GET  /api/exchanges        - Get exchange config")
-	logger.Infof("  • PUT  /api/exchanges        - Update exchange config")
-	logger.Infof("  • GET  /api/status?trader_id=xxx     - Specified trader's system status")
-	logger.Infof("  • GET  /api/account?trader_id=xxx    - Specified trader's account info")
-	logger.Infof("  • GET  /api/positions?trader_id=xxx  - Specified trader's position list")
-	logger.Infof("  • GET  /api/decisions?trader_id=xxx  - Specified trader's decision log")
-	logger.Infof("  • GET  /api/decisions/latest?trader_id=xxx - Specified trader's latest decisions")
-	logger.Infof("  • GET  /api/statistics?trader_id=xxx - Specified trader's statistics")
-	logger.Infof("  • GET  /api/performance?trader_id=xxx - Specified trader's AI learning performance analysis")
+	for _, d := range apiBootDocs {
+		logger.Infof("%s", d.line())
+	}
 	logger.Info()
 
 	s.httpServer = &http.Server{
@@ -1019,4 +1104,51 @@ func (s *Server) Shutdown() error {
 // SetTelegramReloadCh sets the channel used to signal the Telegram bot to reload
 func (s *Server) SetTelegramReloadCh(ch chan<- struct{}) {
 	s.telegramReloadCh = ch
+}
+
+// apiBootDoc is one line of the boot-time API documentation. RT-9 (release
+// #24, E-4): the list was a block of literals that went stale — it called
+// /api/equity-history "Public … (no auth required)" and the batch endpoint a
+// GET after R22 moved both behind JWT (the batch is a POST), and it listed a
+// /api/performance route that is not registered at all. The access label is
+// now a field, and TestAPIBootDocsMatchTheRouter sends every line's request
+// through the real router: a public line must not answer 401 without a
+// token, a JWT line must, and every method+path must be registered.
+type apiBootDoc struct {
+	Method string
+	Path   string // as registered; a query string after '?' is documentation only
+	Desc   string
+	Public bool // no auth required (the public /api group); false = JWT
+}
+
+func (d apiBootDoc) line() string {
+	access := "JWT required"
+	if d.Public {
+		access = "no auth required"
+	}
+	return fmt.Sprintf("  • %-6s %s - %s (%s)", d.Method, d.Path, d.Desc, access)
+}
+
+var apiBootDocs = []apiBootDoc{
+	{"GET", "/api/health", "Health check", true},
+	{"GET", "/api/traders", "Public AI trader leaderboard top 50", true},
+	{"GET", "/api/competition", "Public competition data", true},
+	{"GET", "/api/top-traders", "Top 5 trader data, for performance comparison", true},
+	{"GET", "/api/equity-history?trader_id=xxx", "Equity history for a trader", false},
+	{"POST", "/api/equity-history-batch", "Batch equity history for several traders", false},
+	{"GET", "/api/traders/:id/public-config", "Public trader config, no sensitive info", true},
+	{"POST", "/api/traders", "Create new AI trader", false},
+	{"DELETE", "/api/traders/:id", "Delete AI trader", false},
+	{"POST", "/api/traders/:id/start", "Start AI trader", false},
+	{"POST", "/api/traders/:id/stop", "Stop AI trader", false},
+	{"GET", "/api/models", "Get AI model config", false},
+	{"PUT", "/api/models", "Update AI model config", false},
+	{"GET", "/api/exchanges", "Get exchange config", false},
+	{"PUT", "/api/exchanges", "Update exchange config", false},
+	{"GET", "/api/status?trader_id=xxx", "Specified trader's system status", false},
+	{"GET", "/api/account?trader_id=xxx", "Specified trader's account info", false},
+	{"GET", "/api/positions?trader_id=xxx", "Specified trader's position list", false},
+	{"GET", "/api/decisions?trader_id=xxx", "Specified trader's decision log", false},
+	{"GET", "/api/decisions/latest?trader_id=xxx", "Specified trader's latest decisions", false},
+	{"GET", "/api/statistics?trader_id=xxx", "Specified trader's statistics", false},
 }

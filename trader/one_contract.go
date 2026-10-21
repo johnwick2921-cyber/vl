@@ -100,7 +100,8 @@ func (v contractVerdict) Refusal() string {
 func isBracketChild(name string) bool {
 	n := strings.ToLower(strings.TrimSpace(name))
 	return strings.HasSuffix(n, "-sl") || strings.HasSuffix(n, "-tp") || strings.HasSuffix(n, "-lx") ||
-		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2")
+		strings.HasSuffix(n, "-sl2") || strings.HasSuffix(n, "-tp2") ||
+		strings.HasSuffix(n, "-sl3") || strings.HasSuffix(n, "-tp3") // release #31: leg-3 bracket
 }
 
 // adjudicateAccountContract is the whole decision as a PURE function: book in,
@@ -240,6 +241,20 @@ func (at *AutoTrader) cancelOtherArmsInPlan(ledger *store.ArmedOrderStore, rows 
 			continue
 		}
 		if store.IsTerminalArmState(rr.State) {
+			continue
+		}
+		// B4 (L7): a MENTOR placement cancels only its SAME-SLOT siblings — a
+		// re-authorization of the same (scenario, leg_index). The course keeps
+		// every level alive independently: "he saves all levels" (PLAN.md header),
+		// and a level order dies ONLY on a close-through or the window end
+		// [D2.3 p1 @18:01–19:12: "the order RESTS on the first touching candle …
+		// it is CANCELLED when a later candle CLOSES THROUGH the level, or at the
+		// window end"]. The ONE case the course cancels every arm is the 15m/5m
+		// conflict [D4.2 p1 @13:59–14:53], and that is already emitted by the
+		// evaluator as per-ArmID cancels (conflictArmCancels) — this sweep must
+		// not stand in for it. A mentor arm filling must not sweep a resting
+		// level or swing order off the book.
+		if isMentorArmOrigin(placed) && (rr.Scenario != placed.Scenario || rr.LegIndex != placed.LegIndex) {
 			continue
 		}
 		// W5 D9 (CTO 1790191033566) + its mirror (CTO 1790192326583): a

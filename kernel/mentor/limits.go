@@ -83,6 +83,10 @@ type Leg struct {
 	Entries   int     // fills registered in this leg
 	PHLFilled bool    // a PHL/PLH (not an ISB) already filled in this leg
 	Stopped   bool    // a stop-out inside the leg closed it
+	// Wave is the losing trade's wave extreme captured at the stop-out (CE-12,
+	// release #25): the lowest low (long) / highest high (short) from the fill
+	// through the stop-out candle — the G2 B22 wave. 0 = none.
+	Wave float64 `json:",omitempty"`
 }
 
 // Place is the G2 loss box at one place, keyed by the setup's place (R-b).
@@ -311,6 +315,25 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 // the extreme, known at its close, gates the next candle. "touch": this
 // candle's wick reaching the extreme.
 func (l *Limits) resetBreaks(prev, cur market.Kline, cfg Config) {
+	// CE-12 (release #25, knob leg_reset_on_wave_break, default ON): after a
+	// LOSS, the wave's own extreme breaking ALSO opens a new range — "Nếu mà
+	// anh chị đã thua một lệnh á, đợi cho nó break được cái đỉnh, hoặc đợi cho
+	// nó break được cái đáy của con sóng đó, thì nó sẽ tạo 1 cái range mới để
+	// mình tiếp tục mình trade" [X-FOMO @06:10–06:22]. Only a leg a stop-out
+	// closed carries a Wave; a full leg (2 entries, no loss) still resets on
+	// the old extreme alone [X-FOMO @02:19]. Same close/touch parity as below.
+	if cfg.LegResetOnWaveBreak {
+		if lg := l.Long; lg != nil && lg.Stopped && lg.Wave != 0 &&
+			(cfg.LegResetOn == "touch" && cur.Low < lg.Wave || cfg.LegResetOn != "touch" && prev.Close < lg.Wave) {
+			l.Long = nil
+			l.count("leg_reset_wave_break")
+		}
+		if lg := l.Short; lg != nil && lg.Stopped && lg.Wave != 0 &&
+			(cfg.LegResetOn == "touch" && cur.High > lg.Wave || cfg.LegResetOn != "touch" && prev.Close > lg.Wave) {
+			l.Short = nil
+			l.count("leg_reset_wave_break")
+		}
+	}
 	if cfg.LegResetOn == "touch" {
 		if l.Long != nil && cur.High >= l.Long.Extreme {
 			l.Long = nil
@@ -614,6 +637,7 @@ func (l *Limits) loss(t *openTrade) {
 	}
 	if leg := l.leg(t.side); leg != nil {
 		leg.Stopped = true // a stop-out inside the leg closes it
+		leg.Wave = t.wave  // CE-12: the wave the loss happened in
 	}
 }
 
@@ -659,7 +683,7 @@ func (l *Limits) dropPend(armID string) {
 }
 
 // DropArm removes the still-pending simulated order for an ArmID (X-07): the
-// TRADER calls it when it refuses an emitted entry intent (R8 25-pt ceiling,
+// TRADER calls it when it refuses an emitted entry intent (R8 mentor_isb_max_pts ceiling,
 // window, done-after-win, news, no-chase, N4, MENTOR_PLACE off), so a
 // trader-side refusal never phantom-fills on a later candle and spends the G1
 // leg budget or opens a G2 loss box. Already-filled orders live in `open` and
@@ -685,11 +709,12 @@ func (l *Limits) setLeg(side Side, leg *Leg) {
 
 // nearestOldExtreme returns the nearest old-extreme (swing) level beyond
 // price in the trade direction — the G1 leg extreme and the G2 anchor.
-// 0 = none.
+// r22: only the extreme of the trade's role counts (a long leg runs to the old
+// HIGH, a short leg to the old LOW). 0 = none.
 func nearestOldExtreme(levels []Level, price float64, side Side) float64 {
 	best := 0.0
 	for _, lvl := range levels {
-		if lvl.Kind != KindOldExtreme {
+		if lvl.Kind != KindOldExtreme || !oldExtremeRoleFits(lvl, side) {
 			continue
 		}
 		switch side {

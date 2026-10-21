@@ -33,6 +33,35 @@ export interface AccountInfo {
   ledger_day_unresolved?: number
   ledger_day_date?: string
   ledger_day_status?: string
+  // R22 PNL-TRUTH: the ONE "today" is the CME session day from 17:00 CT;
+  // manual NT8 rows (owner ruling R1) are excluded from the bot figure above
+  // and counted here.
+  ledger_day_start_ms?: number
+  ledger_day_manual_excluded?: number
+  ledger_day_manual_excluded_pnl?: number
+  // The BOT's record (all time, bot rows only) and the manual rows' own line.
+  bot_record_pnl?: number
+  bot_record_trades?: number
+  bot_record_unresolved?: number
+  bot_record_status?: string
+  // RT-7 (release #24): the card's scope ("this account" | "all accounts")
+  // and, when scoped, the bot rows on other accounts it leaves out — counted
+  // by the server. Absent = an older server; never rendered as 0.
+  bot_record_scope?: string
+  bot_record_other_accounts_trades?: number
+  bot_record_other_accounts_pnl?: number
+  bot_record_other_accounts_unresolved?: number
+  bot_record_other_accounts_status?: string
+  manual_excluded_trades?: number
+  manual_excluded_pnl?: number
+  manual_excluded_line?: string
+  // ACCOUNT figures, as the broker reports them — each under its own name.
+  // total_pnl holds whatever total_pnl_source names ("nt8_session" or
+  // "equity_minus_initial"); absent fields are unknown, never 0.
+  total_pnl_source?: 'nt8_session' | 'equity_minus_initial'
+  nt8_session_pnl?: number
+  account_pnl_vs_initial?: number
+  account_pnl_vs_initial_pct?: number
   position_count: number
   margin_used: number
   margin_used_pct: number
@@ -61,6 +90,14 @@ export interface Position {
   unrealized_pnl_pct: number
   liquidation_price: number
   margin_used: number
+  /** T27 (ui-studio-truth): CME futures truth — the per-contract point value
+   * ($/pt, e.g. MNQ = 2) and the notional position value (qty × mark × $/pt),
+   * read from the API. Absent on crypto venue answers. */
+  point_value?: number
+  position_value?: number
+  /** T32 (ui-studio-truth): the open position's working stop/target from the
+   * broker's own order book. ABSENT when unknown — never a zero bracket. */
+  bracket?: { stop?: number; target?: number; source?: string }
 }
 
 export interface DecisionAction {
@@ -192,6 +229,9 @@ export interface HistoricalPosition {
   leverage: number
   status: string
   close_reason: string
+  // R22 PNL-TRUTH (owner ruling R1): "manual" = an NT8 position the bot
+  // adopted with no order/arm of its own — listed, never in a bot total.
+  origin?: 'bot' | 'manual' | string
   created_at: string
   updated_at: string
 }
@@ -209,6 +249,12 @@ export interface TraderStats {
   avg_win: number
   avg_loss: number
   max_drawdown_pct: number
+  // R22 PNL-TRUTH (owner ruling R1): the manual NT8 rows left out of every
+  // figure above, as their own line ("Manual (excluded): 4 trades, −$3,202.00").
+  manual_excluded_trades?: number
+  manual_excluded_pnl?: number
+  manual_excluded_ids?: number[]
+  manual_excluded_line?: string
 }
 
 // Matches Go SymbolStats struct exactly
@@ -236,6 +282,10 @@ export interface PositionHistoryResponse {
   stats: TraderStats | null
   symbol_stats: SymbolStats[]
   direction_stats: DirectionStats[]
+  // R22: the CME session day start (17:00 CT) the footer's day total uses.
+  session_day_start_ms?: number
+  // RT-7 (release #24): the scope of `stats` ("all accounts").
+  stats_scope?: string
 }
 
 // Grid Risk Information for frontend display

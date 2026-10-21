@@ -53,7 +53,7 @@ export const expectancy: GuideSection = {
     { kind: 'h', text: 'Which money the table reads' },
     {
       kind: 'p',
-      text: 'pnl_corrected, only. A trade whose corrected P&L is unresolved is EXCLUDED and COUNTED — it never falls back to the raw recorded figure and it never counts as a zero. The count of what was excluded sits beside the table, by reason: unresolved P&L, unresolvable plan link, test-seam artifacts, and rows with no recoverable play. Crypto-era trades from before the day-plan era are ABSENT rather than excluded: they were never in scope, and calling them excluded would imply we looked at them and refused.',
+      text: "pnl_corrected, only. A trade whose corrected P&L is unresolved is EXCLUDED and COUNTED — it never falls back to the raw recorded figure and it never counts as a zero. The count of what was excluded sits beside the table, by reason: unresolved P&L, manual NT8 trades (origin=manual — not the bot's, release #22), unresolvable plan link, test-seam artifacts, and rows with no recoverable play. Realized R is the trade's P&L over the risk of the WHOLE position (entry quantity × stop distance × $/pt); until release #22 it used the first partial fill's size and read a 5-lot's −1.00R as −5.00R. Crypto-era trades from before the day-plan era are ABSENT rather than excluded: they were never in scope, and calling them excluded would imply we looked at them and refused.",
     },
     { kind: 'h', text: 'Blanks are honest, zeros would not be' },
     {

@@ -1,7 +1,9 @@
 package trader
 
 import (
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -10,6 +12,7 @@ import (
 	"gorm.io/gorm/logger"
 
 	"vl/kernel"
+	"vl/kernel/mentor"
 	"vl/store"
 	"vl/store/sqlitedriver"
 )
@@ -31,7 +34,7 @@ func TestMentorSeedAtStart(t *testing.T) {
 			},
 			store: st,
 		}
-		wireMentorPlacementSeams(t)
+		wireMentorPlacementSeams(t, at)
 		at.mentorSeedAtStart()
 
 		if ms := at.mentorEval.SourcesMissing(); len(ms) == 0 {
@@ -60,21 +63,12 @@ func TestMentorSeedAtStart(t *testing.T) {
 			t.Run(tc.name, func(t *testing.T) {
 				st := mentorSeedStore(t)
 				now := tc.instant.UnixMilli()
-				mentorNowSource = func() time.Time { return tc.instant }
-				t.Cleanup(func() { mentorNowSource = nil })
+				setMentorNowSource(func() time.Time { return tc.instant })
+				t.Cleanup(func() { setMentorNowSource(nil) })
 				bh := store.NewBarHistoryStore(st.GormDB())
 				rows1m := mentorSeedBars1m(now)
 				if err := bh.InsertBars(rows1m); err != nil {
 					t.Fatalf("InsertBars: %v", err)
-				}
-				// the exact closed 1m count the seed must report (the fixture seam
-				// returns 9999 — a mutant that fails to wire the seed's depths keeps
-				// that value and must go RED here).
-				n1mClosed := 0
-				for _, r := range rows1m {
-					if r.OpenTimeMs+60_000 <= now {
-						n1mClosed++
-					}
 				}
 				at := &AutoTrader{
 					id: "t-seed-warm",
@@ -85,7 +79,7 @@ func TestMentorSeedAtStart(t *testing.T) {
 					},
 					store: st,
 				}
-				wireMentorPlacementSeams(t)
+				wireMentorPlacementSeams(t, at)
 				at.mentorSeedAtStart()
 
 				if ms := at.mentorEval.SourcesMissing(); len(ms) != 0 {
@@ -94,16 +88,73 @@ func TestMentorSeedAtStart(t *testing.T) {
 				if missing := strings.Join(at.mentorSourcesMissing(), ", "); textHas(missing, "history:") {
 					t.Fatalf("a seeded store must not refuse on history depth: %q", missing)
 				}
-				// the seam serves the seed's own depths (not the test fallback 9999)
-				if d, ok := mentorSourceDepth("1m EMA34"); !ok || d != n1mClosed {
-					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, n1mClosed)
+				// the seam serves the seed's own depths (not the test fallback
+				// 9999): the 1m EMA 34 depth is the evaluator's own closed-1m
+				// count, which since REL10-438-FIXES #3 is read from the
+				// stitched series (the stitched tail is the current contract,
+				// so the EMA value is unchanged; the count drops the newest
+				// contract's pre-roll sparse snapshots).
+				want1m := at.mentorEval.Depths()["1m EMA34"]
+				if d, ok := at.mentorSourceDepth("1m EMA34"); !ok || d != want1m {
+					t.Fatalf("1m EMA34 depth from the seed: %d/%v, want %d/true", d, ok, want1m)
 				}
-				if d, ok := mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
+				if d, ok := at.mentorSourceDepth("4h EMA34"); !ok || d < 102 || d > 110 {
 					t.Fatalf("4h EMA34 depth from the seed: %d/%v, want 102..110/true", d, ok)
 				}
 			})
 		}
 	})
+}
+
+// TestMentorSeedAtStartFirstTickDoesNotReAdvance (DS-105 P3 call-site pin) —
+// after mentorSeedAtStart seeds the trigger/HTF lines via SeedFull, the FIRST
+// evaluator tick over the tail window (a subset of the seeded history) must not
+// re-advance the committed buckets. The kernel pins Seed+Tick directly; this
+// drives the trader call site (mentorSeedAtStart → SeedFull) and then ticks the
+// evaluator the way the tick path does.
+func TestMentorSeedAtStartFirstTickDoesNotReAdvance(t *testing.T) {
+	st := mentorSeedStore(t)
+	now := time.Date(2026, time.September, 16, 12, 0, 0, 0, kernel.CTLocation())
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
+
+	bh := store.NewBarHistoryStore(st.GormDB())
+	rows := mentorSeedBars1m(now.UnixMilli())
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatalf("InsertBars: %v", err)
+	}
+	at := &AutoTrader{
+		id: "t-seed-tick",
+		config: AutoTraderConfig{
+			StrategyConfig: &store.StrategyConfig{
+				RiskControl: store.RiskControlConfig{MentorMode: true},
+			},
+		},
+		store: st,
+	}
+	wireMentorPlacementSeams(t, at)
+	at.mentorSeedAtStart()
+
+	if at.mentorEval == nil {
+		t.Fatal("mentorSeedAtStart must build the evaluator")
+	}
+	beforeTrigger := at.mentorEval.State.Trigger.LastBucket
+	before4h := at.mentorEval.State.HTF.FourH.LastBucket
+	if beforeTrigger == 0 || before4h == 0 {
+		t.Fatalf("the seed must commit trigger/HTF buckets: trigger=%d 4h=%d", beforeTrigger, before4h)
+	}
+
+	// The first tick: the tail window, the same subset the live tick passes.
+	kline := storeBarsToKlines(rows, 60_000)
+	tail := kline[len(kline)-1500:]
+	at.mentorEval.Tick(tail, now.UnixMilli())
+
+	if at.mentorEval.State.Trigger.LastBucket != beforeTrigger {
+		t.Fatalf("first tick re-advanced 5m buckets: %d -> %d", beforeTrigger, at.mentorEval.State.Trigger.LastBucket)
+	}
+	if at.mentorEval.State.HTF.FourH.LastBucket != before4h {
+		t.Fatalf("first tick re-advanced 4h buckets: %d -> %d", before4h, at.mentorEval.State.HTF.FourH.LastBucket)
+	}
 }
 
 // mentorSeedClockInstants is the FLAKE-SEED-CLOCK proof matrix: three fixed
@@ -234,6 +285,126 @@ func mentorSeedBars1mHours(now int64, hours int64) []store.BarHistoryDB {
 			})
 		}
 	}
+	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTimeMs < rows[j].OpenTimeMs })
+	return rows
+}
+
+// TestMentorSeedAtStartBootLineReadsSeededDepth (CTO seedline-truth): the boot
+// line's "4h EMA34 X/102" must be the SAME number the fail-closed gate reads
+// (Depths()["4h EMA34"], from the STITCHED series) — never a recompute from
+// the current contract's own 1m read. With a 2-contract store the two numbers
+// differ, so the old line (SeedLine(State, bars1m, now) over the current
+// contract) printed the wrong series.
+func TestMentorSeedAtStartBootLineReadsSeededDepth(t *testing.T) {
+	st := mentorSeedStore(t)
+	now := time.Date(2026, time.September, 10, 12, 0, 0, 0, kernel.CTLocation())
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
+
+	bh := store.NewBarHistoryStore(st.GormDB())
+	if err := bh.InsertBars(mentorSeedTwoContractRows(t, now)); err != nil {
+		t.Fatalf("InsertBars: %v", err)
+	}
+
+	at := &AutoTrader{
+		id: "t-seedline-truth",
+		config: AutoTraderConfig{
+			StrategyConfig: &store.StrategyConfig{
+				RiskControl: store.RiskControlConfig{MentorMode: true},
+			},
+		},
+		store: st,
+	}
+	wireMentorPlacementSeams(t, at)
+	logBuf := captureTraderLog(t)
+	at.mentorSeedAtStart()
+
+	if at.mentorEval == nil {
+		t.Fatal("mentorSeedAtStart must build the evaluator")
+	}
+	want := at.mentorEval.Depths()["4h EMA34"]
+	if want == 0 {
+		t.Fatal("expected a stitched 4h EMA34 depth, got 0 — the 2-contract stitch did not run")
+	}
+
+	// The fixture must actually diverge: the current contract's own 1m read
+	// (what the old line recomputed) must NOT equal the stitched depth —
+	// otherwise the test would pass on the buggy line by accident.
+	cur, err := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
+	if err != nil {
+		t.Fatalf("current contract read: %v", err)
+	}
+	curK := storeBarsToKlines(cur, 60_000)
+	if cur4h := mentor.SeedDepths(curK, mentorAgg1H(curK), now.UnixMilli())["4h EMA34"]; cur4h == want {
+		t.Fatalf("fixture must diverge: current-contract 4h depth %d == stitched %d", cur4h, want)
+	}
+
+	re := regexp.MustCompile(`mentor seed: 4h EMA34 (\d+)/102`)
+	m := re.FindStringSubmatch(logBuf.String())
+	if m == nil {
+		t.Fatalf("boot line missing 'mentor seed: 4h EMA34 N/102': %q", logBuf.String())
+	}
+	got, err := strconv.Atoi(m[1])
+	if err != nil {
+		t.Fatalf("parse 4h count: %v", err)
+	}
+	if got != want {
+		t.Fatalf("boot line 4h EMA34 %d/102 != Depths()[\"4h EMA34\"] %d — the line must read the seeded depth, not the current contract's bars", got, want)
+	}
+}
+
+// mentorSeedSessionRows builds `hours` of whole-hour-aligned 1m AND native 1h
+// rows for one contract, starting at a 17:00 CT session open. The native 1h is
+// what the roll-gap measurement reads; the 1m is what the seed aggregates.
+func mentorSeedSessionRows(contract string, start time.Time, hours int, base float64) []store.BarHistoryDB {
+	var rows []store.BarHistoryDB
+	for h := 0; h < hours; h++ {
+		h0 := start.Add(time.Duration(h) * time.Hour).UnixMilli()
+		rows = append(rows, store.BarHistoryDB{
+			Symbol: "MNQ", TF: "1h", Contract: contract,
+			Source: store.BarSourceLive, OpenTimeMs: h0,
+			O: base, H: base + 5, L: base - 5, C: base + 1, V: 1,
+		})
+		for m := 0; m < 60; m++ {
+			o := h0 + int64(m)*60_000
+			c := base + float64(m)*0.01
+			rows = append(rows, store.BarHistoryDB{
+				Symbol: "MNQ", TF: "1m", Contract: contract,
+				Source: store.BarSourceLive, OpenTimeMs: o,
+				O: c, H: c + 5, L: c - 5, C: c + 0.5, V: 1,
+			})
+		}
+		base += 10
+	}
+	return rows
+}
+
+// mentorSeedTwoContractRows builds a 2-contract store fixture whose stitched
+// history is LONGER than the current contract's own 1m read:
+//
+//   - MNQ 06-26 (older): three full 24h session days, 09-04..09-06 17:00 CT,
+//     ending 09-07 16:59 CT.
+//   - MNQ 12-26 (newer/current): a 12h PARTIAL pre-roll session at 09-06
+//     17:00 CT (overlaps the older's last full session, so the roll gap is
+//     measurable on session day 09-07), then its dense 24h roll day at 09-07
+//     17:00 CT (key 09-08), then two more full days.
+//
+// The stitched series spans 09-04 17:00 CT → 09-10 16:59 CT (6 session days);
+// the current contract alone spans 09-06 17:00 CT → 09-10 16:59 CT (~3.5
+// session days). Their closed-4h-bucket counts differ — the exact divergence
+// that made the old boot line lie.
+func mentorSeedTwoContractRows(t *testing.T, now time.Time) []store.BarHistoryDB {
+	t.Helper()
+	ct := kernel.CTLocation()
+	sess := func(d, h, m int) time.Time { return time.Date(2026, time.September, d, h, m, 0, 0, ct) }
+	var rows []store.BarHistoryDB
+	rows = append(rows, mentorSeedSessionRows("MNQ 06-26", sess(4, 17, 0), 24, 29000)...)
+	rows = append(rows, mentorSeedSessionRows("MNQ 06-26", sess(5, 17, 0), 24, 29100)...)
+	rows = append(rows, mentorSeedSessionRows("MNQ 06-26", sess(6, 17, 0), 24, 29200)...)
+	rows = append(rows, mentorSeedSessionRows("MNQ 12-26", sess(6, 17, 0), 12, 29500)...) // partial pre-roll
+	rows = append(rows, mentorSeedSessionRows("MNQ 12-26", sess(7, 17, 0), 24, 29600)...) // dense roll day
+	rows = append(rows, mentorSeedSessionRows("MNQ 12-26", sess(8, 17, 0), 24, 29700)...)
+	rows = append(rows, mentorSeedSessionRows("MNQ 12-26", sess(9, 17, 0), 24, 29800)...)
 	sort.Slice(rows, func(i, j int) bool { return rows[i].OpenTimeMs < rows[j].OpenTimeMs })
 	return rows
 }

@@ -64,7 +64,7 @@ func jsonKeys(t *testing.T, v any) []string {
 func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	restoreSeams(t)
 	m5 := m5JobViewKeys(t)
-	if want := []string{"blocker", "error", "job_id", "receipt_url", "state", "status", "step", "timestamps"}; !reflect.DeepEqual(m5, want) {
+	if want := []string{"blocker", "blocker_since", "error", "job_id", "receipt_url", "recovery_reason", "state", "status", "step", "timestamps"}; !reflect.DeepEqual(m5, want) {
 		t.Fatalf("M5 UpdateJobView keys = %v, want %v (M5 changed: re-derive the projection)", m5, want)
 	}
 	var server []string
@@ -160,6 +160,12 @@ func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	if v.Blocker != j.Blocker || v.Error != j.Error {
 		t.Errorf("blocker/error not verbatim: %+v", v)
 	}
+	// blocker_since anchors the page's "Waiting: … elapsed" — the job's
+	// updated_at at the moment the blocker was written. Absent until a blocker
+	// is recorded (the L7 rule: absent ≠ empty).
+	if v.BlockerSince != j.UpdatedAt.UTC().Format(time.RFC3339Nano) {
+		t.Errorf("blocker_since = %q, want %q (the job's updated_at)", v.BlockerSince, j.UpdatedAt.UTC().Format(time.RFC3339Nano))
+	}
 
 	// a job carrying everything the worker persists: none of it leaks
 	sha := "0123456789abcdef0123456789abcdef01234567"
@@ -185,5 +191,43 @@ func TestAPIViewProjectsOnlyComputedFields(t *testing.T) {
 	}
 	if got := jsonKeys(t, View(f)); len(got) > len(server) {
 		t.Errorf("view keys %v exceed M5's", got)
+	}
+}
+
+// TestAPIViewCarriesTheRecoveryReason (UI-GUIDE N-5): three of the four ways a
+// job reaches recovery_needed — stale at start, stale at resume, the attempts
+// cap — set ONLY RecoveryReason, never Error (live job files 39e3d44f…,
+// 878fd3d8…, de4cf900…). The view carried no recovery_reason, so the Updates
+// page showed those jobs with no reason. Built through the production
+// Write/Read like the test above.
+func TestAPIViewCarriesTheRecoveryReason(t *testing.T) {
+	restoreSeams(t)
+	dd := t.TempDir()
+	j := mustNew(t, "job-0061", "v1.2.0", t0)
+	mustWrite(t, dd, j) // a job file is born at requested
+	j.RecoveryReason = "stale at resume: older than 30 minutes — never resumed (C21)"
+	if err := j.Enter(StateRecoveryNeeded, t0.Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, dd, j)
+	got, err := Read(dd, "job-0061")
+	if err != nil {
+		t.Fatal(err)
+	}
+	b, _ := json.Marshal(View(got))
+	var m map[string]any
+	if err := json.Unmarshal(b, &m); err != nil {
+		t.Fatal(err)
+	}
+	if m["recovery_reason"] != j.RecoveryReason {
+		t.Fatalf("a recovery_needed job with no error must carry its recovery_reason verbatim; view = %s", b)
+	}
+	if _, ok := m["error"]; ok {
+		t.Fatalf("no error was recorded — error must stay ABSENT, not be filled from the reason: %s", b)
+	}
+	// and absent when there is none (absent ≠ empty)
+	fresh := mustNew(t, "job-0062", "v1.2.0", t0)
+	if b, _ := json.Marshal(View(fresh)); strings.Contains(string(b), "recovery_reason") {
+		t.Fatalf("no recovery yet — recovery_reason must be absent: %s", b)
 	}
 }

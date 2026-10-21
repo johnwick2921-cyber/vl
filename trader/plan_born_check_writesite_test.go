@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -111,7 +112,7 @@ func w2Candidate(t *testing.T, invalids []string, mutate func(map[string]any)) s
 
 func w2Run(at *AutoTrader, session, date string, read, publish time.Time, replies ...string) (int, string, error, []string) {
 	var prompts []string
-	ver, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return read }, func() time.Time { return publish }, nil, session, date, "", "model", "hash", "", "", "", "FULLPROMPT", kernel.PlanFacts{ReadAt: read}, nil, nil, nil, true, func(p string) (string, error) {
+	ver, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return read }, func() time.Time { return publish }, nil, session, date, "", "model", "hash", "", "", "", "FULLPROMPT", kernel.PlanFacts{ReadAt: read}, nil, nil, nil, true, 0, func(p string) (string, error) {
 		prompts = append(prompts, p)
 		i := len(prompts) - 1
 		if i >= len(replies) {
@@ -396,36 +397,50 @@ func TestTraderNowIsLiveWhenUnseamed(t *testing.T) {
 	}
 }
 
-// slowPlanClient occupies the wire for a measurable duration so the live
-// publish clock's coverage of the AI call is observable at the write site.
-type slowPlanClient struct{ planClient }
+// advancingPlanClient occupies the wire for a fixed duration AND advances the
+// seamed clock by the SAME duration. Together with testNow this makes the
+// publish-clock pin deterministic: publish − read is exactly the call's duration
+// regardless of box load — the live-clock version (time.Sleep + real time.Now)
+// flaked at publish-read=349ms when the box was busy.
+type advancingPlanClient struct {
+	planClient
+	mu  *sync.Mutex
+	now *time.Time
+	dur time.Duration
+}
 
-func (p *slowPlanClient) CallWithMessages(_, user string) (string, error) {
-	time.Sleep(600 * time.Millisecond)
+func (p *advancingPlanClient) CallWithMessages(_, user string) (string, error) {
+	p.mu.Lock()
+	*p.now = p.now.Add(p.dur)
+	p.mu.Unlock()
 	return mapCompliantPlanJSON(user), nil
 }
 
-// TestLivePublishClockCoversTheAICall (skeptic F4, 2026-09-24) — the LIVE
-// publish clock (publishClock nil ⇒ traderNow with testNow nil) must sit AT
-// LEAST the AI call's duration after the read instant on the written row, or
-// every born group closing during the call is never checked. The seamed pins
-// are blind to this: they publish at the seam BY CONTRACT. RED = the P15
-// defect (publishClock := the read-start instant) → publish == read.
-func TestLivePublishClockCoversTheAICall(t *testing.T) {
-	if testNow != nil {
-		t.Fatal("fixture: testNow must be nil — this pin is for the LIVE clock")
-	}
+// TestPublishClockCoversTheAICall (skeptic F4, 2026-09-24) — the publish clock
+// must sit AT LEAST the AI call's duration after the read instant on the written
+// row, or every born group closing during the call is never checked. RED = the
+// P15 defect (publishClock := the read-start instant) → publish == read.
+// Deterministic (TEST-ISOLATION-FLAKES, DS-101): the seamed clock advances BY
+// the call inside the call, so the assertion is exact — never a wall-clock
+// budget that flakes under load. The live-clock version proved the same thing
+// but failed at publish-read=349ms once when the box was busy.
+func TestPublishClockCoversTheAICall(t *testing.T) {
+	base := time.Now()
+	var mu sync.Mutex
+	fake := base
+	testNow = func() time.Time { mu.Lock(); defer mu.Unlock(); return fake }
+	t.Cleanup(func() { testNow = nil })
+
 	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true, ReplanCap: store.IntPtr(4)}})
-	at.mcpClient = &slowPlanClient{}
-	now := time.Now()
-	if !at.runPlannerReadWithTriggerClaimedCtx(now, "NY", "2026-09-01", "owner_reset", "", nil, true) {
+	at.mcpClient = &advancingPlanClient{mu: &mu, now: &fake, dur: 600 * time.Millisecond}
+	if !at.runPlannerReadWithTriggerClaimedCtx(base, "NY", "2026-09-01", "owner_reset", "", nil, true) {
 		t.Fatal("read did not run")
 	}
 	row := latestRow(t, st, "2026-09-01", "NY")
 	if row.ReadClockMs == nil || row.PublishClockMs == nil {
-		t.Fatalf("a live read must stamp both clocks: %+v", row)
+		t.Fatalf("a read must stamp both clocks: %+v", row)
 	}
 	if span := *row.PublishClockMs - *row.ReadClockMs; span < 500 {
-		t.Fatalf("the live publish clock must cover the AI call: publish-read=%dms, want ≥ 500 (the P15 defect stamps 0)", span)
+		t.Fatalf("the publish clock must cover the AI call: publish-read=%dms, want ≥ 500 (the P15 defect stamps 0)", span)
 	}
 }

@@ -472,6 +472,7 @@ var resumeWireDecls = map[string]bool{
 	"Verb.Known":       true, // the fixed verb set
 	"Request":          true, // the Resume *ResumePayload field
 	"NewResume":        true, // THE builder (the CLI's)
+	"ResumeWorker":     true, // W-ADDON-ONE-CLICK: the page Retry's single non-CLI sender (api calls this, never NewResume)
 	"payloadKeys":      true, // resume's payload allow-list
 	"DecodeRequest":    true, // decodes a resume frame via NewResume
 	"Request.Validate": true, // checks the resume payload

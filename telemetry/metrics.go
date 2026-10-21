@@ -57,4 +57,18 @@ var (
 		},
 		[]string{"gate_name"},
 	)
+
+	// TraderEventsTotal counts per-trader EVENTS that are not gate refusals
+	// (an arm authored, a night/day transition). These used to ride inside the
+	// per-session gate-block table, which inflated "what blocked me today" with
+	// things that did not block anything (P2-3a, release #26). Kept as a
+	// counter so the events are still recorded (counters record — canon 35),
+	// just never under the gate-block name.
+	TraderEventsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "vl_trader_events_total",
+			Help: "Number of per-trader events that are not gate refusals (arms authored, night transitions, ...).",
+		},
+		[]string{"trader_id", "event"},
+	)
 )

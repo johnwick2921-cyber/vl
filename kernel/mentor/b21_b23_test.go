@@ -17,6 +17,7 @@ import (
 // PingPongCandleMaxPts ("nến tầm mười mấy điểm").
 func TestPingPongCandleCap(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl"}
 	ceil := Box{Kind: FTGH, Top: 210, Bottom: 160, Key: "ftgh"} // gap 60
 
@@ -52,7 +53,23 @@ func TestPingPongCandleCap(t *testing.T) {
 // swing low 98 (so the higher-low check passes) AND the old high 110. Bar 4
 // is the variable candle: fat (range 10.7 > the 10.5 gap) or thin.
 func b21PairFixture(fat bool) (*Evaluator, []market.Kline, int64) {
+	if fat {
+		return b21PairFixtureMode(b21FatPrior)
+	}
+	return b21PairFixtureMode(b21Thin)
+}
+
+// b21 fixture modes (MENTOR-NY item 2): which candle is fat.
+const (
+	b21Thin     = "thin"      // every candle thin
+	b21FatPrior = "fat-prior" // bar 4 (BEFORE the touch) is the spike
+	b21FatTouch = "fat-touch" // bar 5 — the touch candle as it prints — is the spike
+)
+
+func b21PairFixtureMode(mode string) (*Evaluator, []market.Kline, int64) {
+	fat := mode == b21FatPrior
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -80,11 +97,15 @@ func b21PairFixture(fat bool) (*Evaluator, []market.Kline, int64) {
 		mk(4, 102, bar4h, bar4l, 102.2),
 		mk(5, 102, 103, 99.5, 102.9), // visit 2: touch at K, reject → the PHL reference
 	}
+	if mode == b21FatTouch {
+		// the touch candle itself spans the pair (range 19.0 > the 18.5 gap)
+		bars[5] = mk(5, 102, 118.5, 99.5, 102.9)
+	}
 	now := bars[5].OpenTime + 59_999
 	levels := []Level{
 		{Key: "K", Kind: KindKeyLevel, Price: 99.5},
-		{Key: "KL2", Kind: KindKeyLevel, Price: 118},            // the pair's second level: gap 18.5
-		{Key: "old-high:118", Kind: KindOldExtreme, Price: 118}, // the PHL target (matched to the tape swing at bar 3)
+		{Key: "KL2", Kind: KindKeyLevel, Price: 118},                           // the pair's second level: gap 18.5
+		{Key: "old-high:118", Kind: KindOldExtreme, Role: OldHigh, Price: 118}, // the PHL target (matched to the tape swing at bar 3)
 	}
 	e := New(cfg)
 	e.seeded = true
@@ -109,17 +130,17 @@ func placeEntries(ins []Intent) int {
 
 // TestB21KeyPairCandleTooBig — X4 (@06:31–08:52): a candle as big as the rank
 // of the two levels ("một cái nến nó bằng cái rank của 2 cái level rồi thì
-// ngồi im") — the touched level and the next level must sit farther apart
-// than the largest 1m candle of the last 30. Fat → keypair_candle_too_big,
-// thin → the PHL fires.
+// ngồi im") — sit out. MENTOR-NY item 2: "the candle" is the touch candle AS IT
+// PRINTS (the current closed 1m candle), not the largest of the last 30. Fat
+// touch candle → keypair_candle_too_big; thin → the PHL fires.
 func TestB21KeyPairCandleTooBig(t *testing.T) {
-	e, bars, now := b21PairFixture(true)
+	e, bars, now := b21PairFixtureMode(b21FatTouch)
 	ins := e.Tick(bars, now)
 	// The keypair gate kills the PHL; an ISB on the same pair may still fire
 	// (ISBs are not level-pair entries — the rule is about the level reject).
 	for _, in := range ins {
 		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && strings.HasPrefix(in.Reason, "PHL/PLH") {
-			t.Fatalf("fat candle between K and the old high emitted a PHL entry: %+v", in)
+			t.Fatalf("a touch candle spanning K and the old high emitted a PHL entry: %+v", in)
 		}
 	}
 	if e.State.Refusals["keypair_candle_too_big"] == 0 {
@@ -141,6 +162,52 @@ func TestB21KeyPairCandleTooBig(t *testing.T) {
 	}
 }
 
+// TestMentorNYKeyPairEarlierSpikeDoesNotBlock — MENTOR-NY item 2. A spike one
+// candle BEFORE the touch (bar 4, range 18.8 > the 18.5 pair gap) no longer
+// blocks the pair: the course reads the candle as it prints [X4 @06:31], and
+// the 30-bar lookback was a bot reading ("[C: ours]") that kept the pair
+// blocked for 30 minutes after one spike (10-14: refusals ticked 08:31–09:21).
+// RED before: keypair_candle_too_big and no PHL.
+// MUTANT: compare the gap to largestCandlePts(bars, lookback) again → RED.
+func TestMentorNYKeyPairEarlierSpikeDoesNotBlock(t *testing.T) {
+	e, bars, now := b21PairFixtureMode(b21FatPrior)
+	ins := e.Tick(bars, now)
+	phl := 0
+	for _, in := range ins {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && strings.HasPrefix(in.Reason, "PHL/PLH") {
+			phl++
+		}
+	}
+	if n := e.State.Refusals["keypair_candle_too_big"]; n != 0 || phl != 1 {
+		t.Fatalf("an EARLIER spike blocked the pair: keypair_candle_too_big=%d, PHL entries %d (want 0 and 1); ledger %v", n, phl, e.State.Refusals)
+	}
+}
+
+// TestMentorNYKeyPairCountedOncePerVisit — MENTOR-NY item 2/5: the refusal is
+// counted ONCE per visit of the level, not on every tick the touch stands
+// (the funnel read 133 RTH keypair refusals 10-05..10-14, 19 on 10-14, per
+// tick). Three ticks of one visit with the touch candle fat each time: the
+// count after tick 1 does not grow.
+// MUTANT: e.refuse instead of e.refuseOncePerVisit → RED (count grows).
+func TestMentorNYKeyPairCountedOncePerVisit(t *testing.T) {
+	e, bars, now := b21PairFixtureMode(b21FatTouch)
+	e.Tick(bars, now)
+	first := e.State.Refusals["keypair_candle_too_big"]
+	if first == 0 {
+		t.Fatalf("tick 1 must refuse the fat touch: %v", e.State.Refusals)
+	}
+	for i := 1; i <= 2; i++ {
+		b := bars[len(bars)-1]
+		b.OpenTime += 60_000
+		b.CloseTime += 60_000
+		bars = append(append([]market.Kline{}, bars...), b)
+		e.Tick(bars, now+int64(i)*60_000)
+	}
+	if got := e.State.Refusals["keypair_candle_too_big"]; got != first {
+		t.Fatalf("keypair_candle_too_big grew %d → %d across ticks of ONE visit — it must count once per visit", first, got)
+	}
+}
+
 // ---------- B23: level visit cap ----------
 
 // TestB23LevelVisitCap — B23 (OPEN-NUMBERS Q3, CTO-verified D1.3 p1
@@ -148,6 +215,7 @@ func TestB21KeyPairCandleTooBig(t *testing.T) {
 // the 4th and later refuse, named and counted.
 func TestB23LevelVisitCap(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -198,7 +266,7 @@ func TestB23LevelVisitCap(t *testing.T) {
 // agreeing; when the trigger later flips to the trade's side the evaluator
 // emits ConfluenceUpgrade exactly ONCE.
 func TestB20SchoolOneFlipUpgrade(t *testing.T) {
-	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Price: 130}}
+	oldHighs := []Level{{Key: "old-high:130", Kind: KindOldExtreme, Role: OldHigh, Price: 130}}
 	e, bars, now, _ := b14Fixture(oldHighs, 99.5)
 	if e.Cfg.TriggerSchool != 1 {
 		t.Fatalf("TriggerSchool default = %d, want 1", e.Cfg.TriggerSchool)

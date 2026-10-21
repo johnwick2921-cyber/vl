@@ -62,6 +62,7 @@ func TestClass32AsiaReadFiresAt1630WithFrozenBars(t *testing.T) {
 
 	testNow = func() time.Time { return now }
 	t.Cleanup(func() { testNow = nil })
+	t.Cleanup(func() { waitPlannerIdle(t) }) // runs FIRST (LIFO): the background read must finish before testNow is reset
 
 	if kernel.IsCMEOpen(now) {
 		t.Fatal("fixture: 16:30 must be inside the CME maintenance halt (IsCMEOpen=false)")
@@ -97,6 +98,7 @@ func TestClass32ReadFiresOnceWithFrozenTape(t *testing.T) {
 
 	testNow = func() time.Time { return now }
 	t.Cleanup(func() { testNow = nil })
+	t.Cleanup(func() { waitPlannerIdle(t) }) // runs FIRST (LIFO): the background read must finish before testNow is reset
 
 	at.skipNoNewData(now)
 	at.tickOnce(false)
@@ -144,6 +146,7 @@ func TestClass32FrozenTapeStillSkipsDataWork(t *testing.T) {
 
 	testNow = func() time.Time { return now }
 	t.Cleanup(func() { testNow = nil })
+	t.Cleanup(func() { waitPlannerIdle(t) }) // runs FIRST (LIFO): the background read must finish before testNow is reset
 
 	at.skipNoNewData(now)
 	at.tickOnce(false)
@@ -191,4 +194,24 @@ func TestClass32NewestStoredBarInfo(t *testing.T) {
 	if _, _, have := newestStoredBarInfo("MNQ", "5m", now); have {
 		t.Fatal("nil provider must yield have=false")
 	}
+}
+
+// waitPlannerIdle blocks (≤5 s) until no planner read is in flight, so a
+// test's clock-seam cleanup never races the background read tickOnce started.
+// CI -race on release #33 (10-17): the cleanup's `testNow = nil` raced
+// traderNow() in runPlannerReadCoreObserved, still running after waitPlan saw
+// the plan row. releasePlannerRead is deferred over the whole read, so an
+// empty plannerReadInFlight means the goroutine is past every clock read.
+func waitPlannerIdle(t *testing.T) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		busy := false
+		plannerReadInFlight.Range(func(_, _ any) bool { busy = true; return false })
+		if !busy {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Error("a planner read was still in flight 5 s after the test ended")
 }

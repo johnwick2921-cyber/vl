@@ -66,6 +66,10 @@ type TradingStats struct {
 	AvgWin             float64 `json:"avg_win"`          // Average win
 	AvgLoss            float64 `json:"avg_loss"`         // Average loss
 	MaxDrawdownPct     float64 `json:"max_drawdown_pct"` // Maximum drawdown (%)
+	// RT-4 (release #24): the manual NT8 trades excluded from every figure
+	// above, as the store words them (store.ManualExcluded.Line — READ, never
+	// built here). "" = the caller had no line to give.
+	ManualExcludedLine string `json:"manual_excluded_line,omitempty"`
 }
 
 // RecentOrder recently completed order (for AI input)
@@ -94,6 +98,11 @@ type Context struct {
 	// time, so a legal slow call can never turn a live-at-snapshot feed into
 	// "stale" (stale-bar dispatch 2026-08-19). Prompt-invisible (json:"-").
 	SnapshotMs int64 `json:"-"`
+	// SnapshotAt is the SAME instant as SnapshotMs, kept as the time.Time from
+	// time.Now() so it carries Go's monotonic reading (release #22): B4's
+	// receipt-age leg and clock-step hold measure on it, immune to wall steps.
+	// Zero in fixtures that never went through assembly → those legs skip.
+	SnapshotAt time.Time `json:"-"`
 	// A5 (G5) — prompt-ownership tags: field-name → owning trader_id for each
 	// account-scoped context field the trader populates. Final prompt assembly
 	// asserts every tag == TraderID (the deciding trader); a mismatch is cross-trader
@@ -112,6 +121,11 @@ type Context struct {
 	// (per-TF trend + swings + events); the HTF veto and the prompt line read
 	// it. Prompt-invisible (json:"-"); set by the trader loop each cycle.
 	Structure map[string]StructureState `json:"-"`
+	// StructureGap (m149 2026-10-21) — a bars-HOLE warning for the structure,
+	// carried as its OWN field (never injected into the Structure map as a fake
+	// StructureState). Prompt-visible line appended after StructurePromptLine;
+	// set by the trader loop from kernel.BarsHoleWarning(bars1m, 1).
+	StructureGap string `json:"-"`
 	// G1 (regime wave 2026-08-21) — HTF veto gate inputs: the Studio toggle
 	// (default ON) and the veto timeframe (env HTF_VETO_TF, default 1h).
 	// Prompt-invisible; set by the trader loop each cycle.
@@ -143,6 +157,14 @@ type Context struct {
 	DailyRealizedPnL float64 `json:"-"`
 	TradesToday      int     `json:"-"`
 	TotalRealizedPnL float64 `json:"-"` // all-time realized P&L (Chunk 5 consistency rule)
+
+	// r22 RISK-GATES — the daily-LOSS leg's P&L: the bot's OWN session-day P&L,
+	// realized + open, manual (non-bot) trades excluded. Resolved by the trader
+	// layer's ONE reader (trader/daily_loss_gate.go botDayPnLAt) so the decision
+	// path and every other entry path judge the loss on the same number. Known
+	// false = not resolved this cycle: the leg falls back to DailyRealizedPnL.
+	DailyLossPnL      float64 `json:"-"`
+	DailyLossPnLKnown bool    `json:"-"`
 }
 
 // Decision AI trading decision

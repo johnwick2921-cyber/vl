@@ -10,6 +10,8 @@ import (
 
 func intPtr(v int) *int { return &v }
 
+func floatPtr(v float64) *float64 { return &v }
+
 func tuningTick(t *testing.T, tn *store.MentorTuning) mentor.Config {
 	t.Helper()
 	old := market.FuturesBarsProvider
@@ -41,6 +43,8 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		DayGateSpentPts:        420,
 		DayGateTargetCapPts:    12,
 		SwingMaxStopPts:        80,
+		SwingMinStopPts:        25,
+		OrbISBFractionOutside:  floatPtr(0.55),
 	})
 	checks := []struct {
 		name string
@@ -58,6 +62,8 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"day_gate_spent_pts=420", cfg.DayGateSpentPts == 420},
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
 		{"swing_max_stop_pts=80 (SwingCfg.MaxStopPts)", cfg.Swing.MaxStopPts == 80},
+		{"swing_min_stop_pts=25 (SwingCfg.MinStopPts)", cfg.Swing.MinStopPts == 25},
+		{"orb_isb_fraction_outside=0.55 (rule 5)", cfg.OrbISBFractionOutside == 0.55},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -73,24 +79,47 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	if cfg := tuningTick(t, &store.MentorTuning{OrbGateEnabled: &on, ISBReverseEMA9Enabled: &on}); !cfg.OrbGateEnabled || !cfg.ISBReverseEMA9Enabled {
 		t.Error("explicit true must stay true")
 	}
+	// fold #565 (D5): an explicit orb_isb_fraction_outside=0 turns rule 5 OFF
+	// (the kernel reads <= 0 as off) — not silently back to the 0.80 default.
+	if got := tuningTick(t, &store.MentorTuning{OrbISBFractionOutside: floatPtr(0)}).OrbISBFractionOutside; got != 0 {
+		t.Errorf("explicit orb_isb_fraction_outside=0 must turn the rule off, got %.2f", got)
+	}
+	// unset stays the 0.80 default.
+	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0.80 {
+		t.Errorf("unset orb_isb_fraction_outside must stay 0.80, got %.2f", got)
+	}
 }
 
 // TestMentorTuningDefaultsAreTheRuledOnes — unset resolves to the owner's
 // 2026-10-04 rulings: school 1, spent 300, cap 15 (R-B), ISB reverse ON (R-C),
 // swing max stop 100 (R-D). No block, an empty block and a nil strategy agree.
 func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
+	at := funnelAT(t)
 	for name, rc := range map[string]*store.RiskControlConfig{
 		"nil":   nil,
 		"unset": {MentorMode: true},
 		"empty": {MentorMode: true, MentorTuning: &store.MentorTuning{}},
 	} {
-		got := mentorTuningResolve(rc)
+		got := mentorTuningResolve(at, rc)
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly: false, // D4.4-11: the all-day 4h/1h gate stays the default (U-6 open)
-			Exec2mAfter30m:  false, // X5-10: the 1m ISB read stays the default (course trades the 1m)
-			DayGateSpentPts: 300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			HTFGateNewsOnly:       false, // D4.4-11: all-day default OFF (owner decision A 2026-10-21 m134)
+			Exec2mAfter30m:        true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
+			OrbISBFractionOutside: 0.80,  // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
+			DayGateSpentPts:       300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			// Release #25 course-entry knobs (course-defaults-30 changes).
+			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
+			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
+			NewsBarsExcluded:  true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+			ISBBoxEscapeMode:  mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
+			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
+			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			LegResetOnWaveBreak:   true,
+			// Release #29 B52: a new zone after a range escape — course, no
+			// ruling against → ON (COMMON-25).
+			BoxNewZoneAfterEscape: true,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -98,20 +127,93 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 	}
 }
 
+// TestMentorDayOffRecheckDefaultsOff — P1-7: the LIVE trader resolver
+// (mentor_mode.go:408) must read OFF when the knob is nil/unset (the whole-day
+// latch), and ON only on an explicit true. Mutant: revert to nil → ON → RED.
+func TestMentorDayOffRecheckDefaultsOff(t *testing.T) {
+	on, off := true, false
+	if mentorDayOffRecheck(nil) {
+		t.Fatal("nil rc must read OFF (nil → OFF, the whole-day latch)")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorMode: true}) {
+		t.Fatal("an unset knob must read OFF (nil → OFF)")
+	}
+	if !mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &on}) {
+		t.Fatal("an explicit true must read ON")
+	}
+	if mentorDayOffRecheck(&store.RiskControlConfig{MentorDayOffRecheck: &off}) {
+		t.Fatal("an explicit false must read OFF")
+	}
+}
+
 // TestMentorTuningBadValuesFailClosed — out-of-range values keep the default
 // and are counted, never half-applied.
 func TestMentorTuningBadValuesFailClosed(t *testing.T) {
-	ResetMentorCountersForTest()
-	got := mentorTuningResolve(&store.RiskControlConfig{MentorTuning: &store.MentorTuning{
+	at := funnelAT(t)
+	got := mentorTuningResolve(at, &store.RiskControlConfig{MentorTuning: &store.MentorTuning{
 		TriggerSchool: 3, PingPongMinGapPts: -5, PingPongCandleMaxPts: 9999, PingPongCandleLookback: 9999,
 		LevelMaxVisits: intPtr(99), DayGateSpentPts: 1, DayGateTargetCapPts: 500, SwingMaxStopPts: 5,
+		OrbISBFractionOutside: floatPtr(1.5), // rule 5: (0,1] only; >1 is bad
 	}})
-	want := mentorTuningResolve(nil)
+	want := mentorTuningResolve(at, nil)
 	if got != want {
 		t.Errorf("bad values changed the result: %+v, want defaults %+v", got, want)
 	}
-	if n := MentorCountSnapshot()["tuning_bad_value"]; n != 8 {
-		t.Errorf("tuning_bad_value = %d, want 8 (one per bad field)", n)
+	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 9 {
+		t.Errorf("tuning_bad_value = %d, want 9 (one per bad field)", n)
+	}
+}
+
+// TestMentorISBMaxKnobReachesR8AndBand (re-gate D2) — ONE knob
+// (mentor_isb_max_pts) feeds BOTH the kernel ceiling and the trader R8/band at
+// the production dispatch call site. Mutant M09 (mentor_actions.go:263 wiring
+// dropped) and M10 (band top ignores the knob) → RED.
+func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
+	isb := func(stop float64) mentor.Intent {
+		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "ISB", Side: mentor.SideLong,
+			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
+	}
+	// knob 35: a 32-pt ISB passes R8 (35) and sizes the reduced band (20–<35).
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35})
+	if cfg := at.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 35 {
+		t.Fatalf("kernel ISB max = %g, want 35 (one knob, not two)", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at)
+	at.mentorDispatchIntent(isb(32), mentorTierInputs{}, 1000, 1100)
+	snap := at.mentorCountSnapshot()
+	if snap["refused_r8"] != 0 {
+		t.Fatalf("knob 35: a 32-pt ISB must pass R8, refused_r8=%d", snap["refused_r8"])
+	}
+	if snap["tier_reduced"] != 1 {
+		t.Fatalf("knob 35: a 32-pt ISB must size the reduced 3, tier_reduced=%d", snap["tier_reduced"])
+	}
+
+	// knob 25: a 28.25-pt ISB is refused R8 (25).
+	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25})
+	if cfg := at2.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 25 {
+		t.Fatalf("kernel ISB max = %g, want 25", cfg.CourseExits.ISBMaxStopPts)
+	}
+	resetMentorCounters(at2)
+	at2.mentorDispatchIntent(isb(28.25), mentorTierInputs{}, 1000, 1100)
+	if n := at2.mentorCountSnapshot()["refused_r8"]; n != 1 {
+		t.Fatalf("knob 25: a 28.25-pt ISB must be refused R8, refused_r8=%d", n)
+	}
+}
+
+// TestRetaggedPHLInRangeSizesThree (re-gate D3) — the P2-2 trader half: the ISB
+// location size flags are read for ANY setup, so a reverse ISB retagged PHL that
+// carries isb_in_range still sizes the reduced 4, never base 4. Mutant M13
+// (flags read only for Setup "ISB") → RED.
+func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Setup: "PHL", Side: mentor.SideLong,
+		Price: 21000, Stop: 20988, Target: 21024, StopPts: 12, TargetPts: 24, Flag: mentor.FlagISBInRange}
+	got, err := at.mentorSizeFor(in, mentorTierInputs{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Contracts != 4 || got.Tier != "isb_in_range" {
+		t.Fatalf("a retagged PHL in a range: got %d %s, want 4 isb_in_range", got.Contracts, got.Tier)
 	}
 }
 
@@ -133,22 +235,22 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "SWING4H", Side: mentor.SideLong,
 			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
 	}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(80), mentorTierInputs{}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r8"]; n != 1 {
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 1 {
 		t.Errorf("a swing stop of 80 with swing_max_stop_pts=80 must be refused at the gate (refused_r8=%d)", n)
 	}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(79), mentorTierInputs{}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r8"]; n != 0 {
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 0 {
 		t.Errorf("a swing stop of 79 must pass the R8 gate (refused_r8=%d)", n)
 	}
 
 	spent := mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: "PHL", Side: mentor.SideLong,
 		Price: 30000, Stop: 29987, Target: 30026, StopPts: 13, TargetPts: 26, SpentDay: true, ExpiryMs: 100_000}
-	resetMentorCounters()
+	resetMentorCounters(at)
 	at.mentorDispatchIntent(spent, mentorTierInputs{SpentDay: true}, 1000, 1100)
-	if n := MentorCountSnapshot()["refused_r9"]; n != 1 {
+	if n := at.mentorCountSnapshot()["refused_r9"]; n != 1 {
 		t.Errorf("a spent-day stop of 13 with the cap at 12 must be refused (refused_r9=%d)", n)
 	}
 }

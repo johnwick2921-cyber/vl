@@ -23,6 +23,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/safepath"
 
 	_ "vl/store/sqlitedriver" // the ONE sqlite registration site (census)
 )
@@ -199,7 +200,7 @@ log(){ echo "$*" >> "$J"; }
 unit_file(){ printf '%s' "$ST/units/$1"; }
 is_active(){ [ -f "$ST/active/$1" ]; }
 act(){ mkdir -p "$ST/active"; : > "$ST/active/$1"; }
-deact(){ rm -f "$ST/active/$1"; }
+deact(){ rm -f "${ST:?}/active/$1"; }
 set_mp(){ mkdir -p "$ST/mainpid"; printf '%s' "$1" > "$ST/mainpid/$2"; }
 mp(){ cat "$ST/mainpid/$1" 2>/dev/null || echo 0; }
 usr=0
@@ -396,7 +397,7 @@ ST="$FAKE_STATE"
 case "${1:-}" in
   release)
     echo "release ${2:-}" >> "$ST/release.log"
-    rm -rf "$HOME/<OLD>-main.lock.d"
+    rm -rf "${HOME:?}/<OLD>-main.lock.d"
     exit 0 ;;
   *) exit 0 ;;
 esac
@@ -1148,7 +1149,7 @@ func TestStep0Refusals(t *testing.T) {
 		extra []string
 		want  string
 	}{
-		{"missing old dir", func(fe *fakeEnv) { _ = os.RemoveAll(filepath.Join(fe.home, o)) }, nil, nil, "is missing"},
+		{"missing old dir", func(fe *fakeEnv) { _ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, o)) }, nil, nil, "is missing"},
 		{"vl present", func(fe *fakeEnv) { _ = os.MkdirAll(filepath.Join(fe.home, "vl"), 0o755) }, nil, nil, "already exists"},
 		{"vl lock home present", func(fe *fakeEnv) { _ = os.MkdirAll(filepath.Join(fe.home, "vl-main.lock.d"), 0o755) }, nil, nil, "already exists"},
 		{"foreign session", func(fe *fakeEnv) {
@@ -1196,7 +1197,7 @@ func TestStep0Refusals(t *testing.T) {
 			_ = os.Remove(filepath.Join(fe.relDir, "updater", "vl-updater-bootstrap"))
 		}, nil, nil, "missing updater/vl-updater-bootstrap"},
 		{"missing old updater config", func(fe *fakeEnv) {
-			_ = os.RemoveAll(filepath.Join(fe.home, ".config", o+"-updater"))
+			_ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, ".config", o+"-updater"))
 		}, nil, nil, "trio is incomplete"},
 		{"old updater with --no-updater", nil, func(fe *fakeEnv) []string {
 			return append(fe.argsForward(), "--dry-run", "--no-updater")
@@ -1250,7 +1251,7 @@ func TestStep0Refusals(t *testing.T) {
 func TestNoUpdaterPartnerPath(t *testing.T) {
 	o := oldName()
 	fe := newFakeEnv(t)
-	_ = os.RemoveAll(filepath.Join(fe.home, ".config", o+"-updater"))
+	_ = safepath.RemoveAllUnder(fe.home, filepath.Join(fe.home, ".config", o+"-updater"))
 	_ = os.Remove(filepath.Join(fe.home, "bin", o+"-updater"))
 	_ = os.Remove(filepath.Join(fe.state, "units", o+"-updater"))
 	out, code := fe.run(t, append(fe.argsForward(), "--no-updater")...)
@@ -1267,6 +1268,7 @@ func TestOptionalUnitsAbsent(t *testing.T) {
 	o := oldName()
 	fe := newFakeEnv(t)
 	for _, u := range []string{o + "-backup.service", o + "-backup.timer", o + "-clock-guard.service", o + "-clock-guard.timer"} {
+		//homeguard:allow — fake env under t.TempDir (fe.state/units), fixed unit names
 		_ = os.Remove(filepath.Join(fe.state, "units", u))
 	}
 	out, code := fe.run(t, fe.argsForward()...)

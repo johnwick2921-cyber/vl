@@ -32,7 +32,7 @@ func TestStageAAuthoringAttemptRepairProductionPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	calls := 0
-	version, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, trace, "ASIA", "2026-09-07", "owner_reset", "fixture", "hash", "", "config-fixture", "", "original prompt", kernel.PlanFacts{}, nil, nil, nil, true, func(prompt string) (string, error) {
+	version, lc, err := at.runPlannerReadCoreObserved(func() time.Time { return now }, nil, trace, "ASIA", "2026-09-07", "owner_reset", "fixture", "hash", "", "config-fixture", "", "original prompt", kernel.PlanFacts{}, nil, nil, nil, true, 0, func(prompt string) (string, error) {
 		calls++
 		if calls == 1 {
 			now = now.Add(683700 * time.Millisecond)

@@ -14,7 +14,10 @@ package ninjatrader
 import (
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
+
+	"vl/kernel"
 )
 
 // DefaultBarCacheMaxBars is the per-(symbol, timeframe) ring-buffer
@@ -52,6 +55,32 @@ type BarCache struct {
 	// scale, and cleared by the next SeedHistorical. mismatches keeps every
 	// detection for the boot line; this answers "is the seed I hold bad NOW".
 	seedOffScale map[string]bool
+	// lastLive is, per key, WHEN this process last received a LIVE bar frame
+	// that the ring accepted (bar_update, never a historical seed). It is the
+	// time.Now() of Upsert, so it carries Go's MONOTONIC reading: an age taken
+	// with time.Since is immune to wall-clock steps (release #22 OPS-SAFETY —
+	// the stale gate judged bar age on the wall clock alone and failed OPEN on
+	// a backward step). Read via LastLiveReceipt.
+	lastLive map[string]time.Time
+	// GAP-BACKFILL (2026-10-14): seeds judged by same-minute overlap with live
+	// bars (bar_overlap_verdict.go) — agreed sets the verdict, disagreed leaves
+	// the key armed. Read via OverlapVerdictCounts.
+	overlapAgreed, overlapDisagreed int64
+	// overlapJudgeUntil — per SYMBOL, until when a replay is judged by
+	// same-minute overlap: armed only by the gap-backfill re-request
+	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
+	overlapJudgeUntil map[string]time.Time
+	// lastReconnectUnixNano (WAVE 26) — the wall-clock (UnixNano) instant of the
+	// most recent AddOn (re)connect/hello. The stale-print guard
+	// (bar_stale_print.go) is armed for stalePrintGuardWindow after it.
+	lastReconnectUnixNano atomic.Int64
+	// staleQuarantined (W26 F2/P2) — per (symbol,tf) key, the OPEN-stamp Ts the
+	// STALE-PRINT guard quarantined. ONLY these stay quarantined on a later
+	// "clean" update of the same T. A bar the SCALE-BREAK guard marked mixed is
+	// deliberately NOT in this set: a genuine roll minute must be re-promotable
+	// when the live side proves correct, so the keep-quarantined freeze must
+	// never apply to every mixed bar.
+	staleQuarantined map[string]map[int64]struct{}
 }
 
 // NewBarCache constructs an empty cache. maxBars <= 0 uses
@@ -61,8 +90,55 @@ func NewBarCache(maxBars int) *BarCache {
 		maxBars = DefaultBarCacheMaxBars
 	}
 	return &BarCache{
-		bars:    make(map[string][]Bar),
-		maxBars: maxBars,
+		bars:             make(map[string][]Bar),
+		staleQuarantined: make(map[string]map[int64]struct{}),
+		maxBars:          maxBars,
+	}
+}
+
+// markStaleQuarantined records that the STALE-PRINT guard (not the scale-break
+// guard) quarantined this (key, open-stamp T). It is the ONLY path into the
+// keep-quarantined freeze.
+func (c *BarCache) markStaleQuarantined(key string, t int64) {
+	if c == nil {
+		return
+	}
+	set := c.staleQuarantined[key]
+	if set == nil {
+		set = make(map[int64]struct{})
+		c.staleQuarantined[key] = set
+	}
+	set[t] = struct{}{}
+}
+
+// isStaleQuarantined reports whether this (key, open-stamp T) was quarantined by
+// the stale-print guard. A scale-break mixed bar is NOT in the set.
+func (c *BarCache) isStaleQuarantined(key string, t int64) bool {
+	if c == nil {
+		return false
+	}
+	_, ok := c.staleQuarantined[key][t]
+	return ok
+}
+
+// pruneStaleQuarantined drops set entries whose T is no longer in the ring, so
+// the set stays bounded by the ring when a seed replaces or trims it.
+func (c *BarCache) pruneStaleQuarantined(key string, ring []Bar) {
+	set := c.staleQuarantined[key]
+	if len(set) == 0 {
+		return
+	}
+	present := make(map[int64]bool, len(ring))
+	for _, b := range ring {
+		present[b.T] = true
+	}
+	for t := range set {
+		if !present[t] {
+			delete(set, t)
+		}
+	}
+	if len(set) == 0 {
+		delete(c.staleQuarantined, key)
 	}
 }
 
@@ -297,6 +373,7 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 		stored := make([]Bar, len(bars))
 		copy(stored, bars)
 		c.bars[key] = stored
+		delete(c.staleQuarantined, key) // fresh ring, fresh keep-quarantined set
 		return
 	}
 	if len(bars) == 0 {
@@ -311,6 +388,26 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 		merged = merged[len(merged)-c.maxBars:]
 	}
 	c.bars[key] = merged
+	c.pruneStaleQuarantined(key, merged)
+	// GAP-BACKFILL (2026-10-14): a replay the gap re-request ASKED FOR lands
+	// on minutes that already traded live; it is judged on THOSE minutes, now
+	// — the first-live-bar check can never find an adjacent reference for it
+	// (bar_overlap_verdict.go). Agreement sets the verdict the replay-hold
+	// waits for; disagreement changes nothing. Any other replay is untouched.
+	if until, armed := c.overlapJudgeUntil[symbol]; !armed || time.Now().After(until) {
+		return
+	}
+	if pairs, agree := overlapScaleVerdict(symbol, existing, bars); pairs > 0 {
+		if agree {
+			if c.liveSeen == nil {
+				c.liveSeen = make(map[string]bool)
+			}
+			c.liveSeen[key] = true
+			c.overlapAgreed++
+		} else {
+			c.overlapDisagreed++
+		}
+	}
 }
 
 // mergeBarsByTime merges two ascending-by-T bar slices into one ascending,
@@ -382,22 +479,53 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		bars[i], _ = c.detectScaleMismatch(key, bars[i], now)
 	}
 	existing := c.bars[key]
-	for _, b := range bars {
+	accepted := false
+	for i := range bars {
+		b := bars[i]
+		// WAVE 26 — a live print that lands right after a (re)connect/hello can
+		// carry the AddOn's RELOADED series (a day-old price). Quarantine it
+		// (label mixed) when its close is impossible against both its own open
+		// and the previous ring bar, so no reader takes it.
+		var quarantined bool
+		b, quarantined = c.quarantineStalePrint(symbol, timeframe, b, prevBarBefore(existing, b.T))
+		if !quarantined {
+			b, quarantined = c.quarantineStalePrintHTF(symbol, timeframe, b) // release #28: HTF vs its own 1m bars
+		}
+		bars[i] = b
+		// W26 F2/P2 — record ONLY the stale-print quarantine (not a scale-break
+		// mixed bar) as the one that stays frozen on a later clean update.
+		if quarantined {
+			c.markStaleQuarantined(key, b.T)
+		}
 		if len(existing) == 0 {
 			existing = append(existing, b)
+			accepted = true
 			continue
 		}
 		last := existing[len(existing)-1]
 		switch {
 		case b.T == last.T:
+			// W26 F2: a minute the STALE-PRINT guard quarantined stays
+			// quarantined — a later "clean" update of the same T (a live tick
+			// that returns the close to the real price while the stale extreme
+			// survives) must not re-promote it to live. A scale-break mixed bar
+			// is NOT frozen (a real roll minute re-promotes on proof).
+			if c.isStaleQuarantined(key, b.T) {
+				b.Source = BarSourceMixed
+			}
 			existing[len(existing)-1] = b
+			accepted = true
 		case b.T > last.T:
 			existing = append(existing, b)
+			accepted = true
 			if len(existing) > c.maxBars {
 				// Drop the oldest bar; copy the tail forward in place
 				// to keep the slice's backing array bounded.
+				dropped := existing[0]
 				copy(existing, existing[1:])
 				existing = existing[:c.maxBars]
+				// Prune the keep-quarantined set with the ring (bounded).
+				delete(c.staleQuarantined[key], dropped.T)
 			}
 		default:
 			// W4/D21: a bar's own CLOSE always arrives "backwards". The AddOn
@@ -416,6 +544,11 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 			if b.Final {
 				if idx := indexOfBarT(existing, b.T); idx >= 0 {
 					if !existing[idx].Final {
+						// W26 F2: keep a stale-print-quarantined minute
+						// quarantined on the finalisation path too.
+						if c.isStaleQuarantined(key, b.T) {
+							b.Source = BarSourceMixed
+						}
 						existing[idx] = b
 						c.finalisations++
 					}
@@ -426,6 +559,27 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		}
 	}
 	c.bars[key] = existing
+	// Only a frame that moved the ring's newest bar (a forming-bar update or a
+	// new bar) proves the feed is alive NOW. A finalisation of an older bar or
+	// a refused out-of-order bar does not.
+	if accepted {
+		if c.lastLive == nil {
+			c.lastLive = make(map[string]time.Time)
+		}
+		c.lastLive[key] = now
+	}
+}
+
+// LastLiveReceipt returns when this process last received an accepted LIVE
+// bar frame for (symbol, timeframe), as a time.Time carrying the monotonic
+// clock reading (so time.Since on it ignores wall-clock steps). ok=false: no
+// live frame received since the process started (a historical seed alone
+// never counts — it is a replay, not evidence the feed is alive).
+func (c *BarCache) LastLiveReceipt(symbol, timeframe string) (time.Time, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	t, ok := c.lastLive[barKey(symbol, timeframe)]
+	return t, ok
 }
 
 // indexOfBarT returns the index of the bar stamped t, or -1. The ring is
@@ -511,6 +665,7 @@ func (c *BarCache) PurgeSymbol(symbol string) int {
 		s, _, ok := splitBarKey(k)
 		if ok && strings.EqualFold(s, symbol) {
 			delete(c.bars, k)
+			delete(c.lastLive, k)
 			removed++
 		}
 	}
@@ -603,4 +758,177 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 	}
 	c.bars[key] = merged
 	return added
+}
+
+// Aggregate1mToTF aggregates complete 1m bars into tfMin-minute buckets,
+// epoch-aligned — the same rule as the kernel's barsTF for 3m/5m/15m/30m/1h
+// (each divides 60 minutes and 17:00 CT is a whole UTC hour, so epoch-aligned
+// equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
+// anchor is 17:00 CT, not a whole-epoch multiple.
+//
+// m148/m168 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is
+// NOT inserted — it stays a hole for BarsTFHoles / the prompt gap warning to
+// report honestly, rather than becoming a bar with a fake close.
+//
+// m168 coverage rule (CTO ruling): missing minutes are counted against the
+// bucket's OPEN minutes only — a closed minute (session break, weekend, the
+// halted tail of a shortened early-close day) is not expected and never drops a
+// bucket. Tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3) AND no run of
+// 3 or more consecutive missing open minutes is allowed. The forming tail
+// bucket (the bucket still open at `now`) is NEVER rebuilt from 1m — the live
+// feed owns it; `now <= 0` means "no forming filter" (every bucket is judged).
+func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
+	if tfMin <= 1 || len(bars) == 0 {
+		return bars
+	}
+	ms := int64(tfMin) * 60_000
+	formingBucket := int64(0)
+	if now > 0 {
+		formingBucket = (now / ms) * ms
+	}
+	out := make([]Bar, 0, len(bars)/tfMin)
+	var cur *Bar
+	var present []bool // minute-slot presence within the current bucket
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		if bucketCoverageOK(present, cur.T, tfMin) {
+			out = append(out, *cur)
+		}
+		cur = nil
+		present = nil
+	}
+	for _, b := range bars {
+		bucket := (b.T / ms) * ms
+		if formingBucket > 0 && bucket >= formingBucket {
+			continue // the forming tail is owned by the live feed
+		}
+		if cur == nil || bucket != cur.T {
+			flush()
+			c := b
+			c.T = bucket
+			cur = &c
+			present = make([]bool, tfMin)
+			if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+				present[idx] = true
+			}
+			continue
+		}
+		if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+			present[idx] = true
+		}
+		if b.H > cur.H {
+			cur.H = b.H
+		}
+		if b.L < cur.L {
+			cur.L = b.L
+		}
+		cur.C = b.C
+		cur.V += b.V
+	}
+	flush()
+	return out
+}
+
+// bucketCoverageOK is the m168 coverage rule (CTO ruling 2026-10-21): a bucket
+// is inserted only when its OPEN minutes are covered. A closed minute — a daily
+// break, a weekend, or the halted tail of a shortened early-close day — is not
+// expected and never counts against the bucket, while a quiet no-trade open
+// minute does. The tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3), AND
+// no run of 3 or more CONSECUTIVE missing open minutes is tolerated: a genuine
+// interior hole must stay visible, not be papered over as a full bar.
+//
+// `present` is indexed by the minute slot within the bucket; `bucket` is the
+// bucket's epoch-aligned OPEN time (ms UTC).
+func bucketCoverageOK(present []bool, bucket int64, tfMin int) bool {
+	tol := tfMin / 20
+	if tol < 1 {
+		tol = 1
+	}
+	missing := 0
+	run := 0
+	longest := 0
+	for i := 0; i < len(present); i++ {
+		t := bucket + int64(i)*60_000
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			run = 0 // a closed minute breaks a missing-open run
+			continue
+		}
+		if !present[i] {
+			missing++
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	return missing <= tol && longest < 3
+}
+
+// RehydrateUnion rehydrates a ring from store-derived bars by TIME UNION, not
+// older-only: interior holes are filled and the older end is extended, while
+// every bar the ring already holds wins on overlap — a live bar is never
+// replaced by a stored one. This is the m134 restart-hole fix: a short NT8
+// replay tail leaves an interior gap that RehydrateOlder cannot reach.
+//
+// Same discipline as RehydrateOlder: placeholders are refused at the door, a
+// COLD key is a no-op (the store deepens a live tape, it never substitutes for
+// one), and the result is capped at maxBars keeping the LIVE tail. Returns
+// how many bars were ACTUALLY added.
+func (c *BarCache) RehydrateUnion(symbol, timeframe string, bars []Bar) int {
+	if c == nil || symbol == "" || timeframe == "" || len(bars) == 0 {
+		return 0
+	}
+	bars, bad := dropPlaceholderBars(bars)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropped += int64(bad)
+	key := barKey(symbol, timeframe)
+	existing := c.bars[key]
+	if len(existing) == 0 {
+		return 0 // COLD KEY — the store never substitutes for the live feed.
+	}
+	merged := mergeRehydrateUnion(existing, bars)
+	if len(merged) > c.maxBars {
+		merged = merged[len(merged)-c.maxBars:]
+	}
+	added := len(merged) - len(existing)
+	if added < 0 {
+		added = 0
+	}
+	c.bars[key] = merged
+	return added
+}
+
+// mergeRehydrateUnion merges a live ring with store-derived bars for a
+// rehydrate: on equal T the EXISTING bar wins unconditionally — the store
+// fills only holes and the older end, never replaces a bar the ring holds.
+// m149 (P2): store bars NEWER than the live tail are DROPPED — the live feed
+// owns the forming bar, and letting the store reach ahead made the Upsert
+// out-of-order rule drop the later live updates to that bar, freezing it until
+// the next bucket.
+func mergeRehydrateUnion(existing, incoming []Bar) []Bar {
+	out := make([]Bar, 0, len(existing)+len(incoming))
+	i, j := 0, 0
+	for i < len(existing) && j < len(incoming) {
+		switch {
+		case existing[i].T < incoming[j].T:
+			out = append(out, existing[i])
+			i++
+		case existing[i].T > incoming[j].T:
+			out = append(out, incoming[j])
+			j++
+		default:
+			out = append(out, existing[i]) // existing (live) wins on overlap
+			i++
+			j++
+		}
+	}
+	// Whatever of `existing` remains is the live tail — keep it. `incoming[j:]`
+	// is store bars NEWER than the live tail — dropped (see m149 P2 above).
+	out = append(out, existing[i:]...)
+	return out
 }

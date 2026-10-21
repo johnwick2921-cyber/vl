@@ -152,8 +152,9 @@ func TestDryRunWholeStateMachine(t *testing.T) {
 // PIN: the cutover token reaches NOTHING the worker writes — no job file, no
 // receipt evidence, no error or blocker text, no backup or snapshot file, no
 // log line — on the happy path, the rollback path, a 401 before the hold
-// (refused) and a 401 after it (a blocker, then recovery_needed). The reader
-// itself never prints it (%v, %+v, %#v).
+// (refused) and a 401 after it (a blocker, then reverted_clean — self-recovery
+// releases the hold and lock, nothing was installed). The reader itself never
+// prints it (%v, %+v, %#v).
 func TestNoTokenEverReachesTheJobFileOrEvidence(t *testing.T) {
 	for _, p := range []struct {
 		name  string
@@ -171,7 +172,7 @@ func TestNoTokenEverReachesTheJobFileOrEvidence(t *testing.T) {
 					r.mu.Unlock()
 				}
 			}
-		}, final: updaterjob.StateRecoveryNeeded},
+		}, final: updaterjob.StateRevertedClean},
 		// verifier D5 / mutant A36: an app that answers non-200 with the
 		// request's own Authorization header in its body — the worker's error
 		// (a blocker, a receipt, the recovery reason) never carries the body
@@ -184,7 +185,7 @@ func TestNoTokenEverReachesTheJobFileOrEvidence(t *testing.T) {
 					r.mu.Unlock()
 				}
 			}
-		}, final: updaterjob.StateRecoveryNeeded},
+		}, final: updaterjob.StateRevertedClean},
 	} {
 		t.Run(p.name, func(t *testing.T) {
 			r := newRig(t)
@@ -213,8 +214,8 @@ func TestNoTokenEverReachesTheJobFileOrEvidence(t *testing.T) {
 					t.Fatalf("a 401 in preflight waited %s before refusing", d)
 				}
 			}
-			if p.name == "401 after the hold" && !strings.Contains(j.RecoveryReason, "401") {
-				t.Fatalf("a 401 after the hold is not the blocker that stopped it: %q", j.RecoveryReason)
+			if p.name == "401 after the hold" && !strings.Contains(j.Error, "401") {
+				t.Fatalf("a 401 after the hold is not the blocker that stopped it: %q", j.Error)
 			}
 			haystack := allBytes(t, filepath.Dir(r.inst))
 			haystack["worker log"] = []byte(r.log.String())

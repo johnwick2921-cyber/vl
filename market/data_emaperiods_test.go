@@ -15,12 +15,16 @@ func synthKlines(n int) []Kline {
 	return ks
 }
 
-// TestCalculateTimeframeSeries_EMAPeriods proves the configured-period path is a
-// byte-identical superset of the legacy fixed path: with periods [20,50] the new
-// EMAByPeriod entries equal the legacy EMA20Values/EMA50Values exactly (same calc,
-// same guards), and a custom [9,21,200] populates those keys. nil → no map.
+// TestCalculateTimeframeSeries_EMAPeriods proves the configured-period path is
+// the legacy calculation once WARMED: with periods [20,50] on a tape long enough
+// to warm both (EMAWarmupBars 68 / 165) the EMAByPeriod entries equal the legacy
+// EMA20Values/EMA50Values exactly, and a custom [9,21,200] keeps every
+// configured key PRESENT (EMA200 empty → the prompt prints n/a). nil → no map.
+//
+// R22 F-2: the configured series used to share the legacy "need `period` bars"
+// guard, so a short fetch printed the SMA seed under an EMA label.
 func TestCalculateTimeframeSeries_EMAPeriods(t *testing.T) {
-	klines := synthKlines(60)
+	klines := synthKlines(200)
 
 	// [20,50] → EMAByPeriod must equal the legacy fixed series, value-for-value.
 	s := calculateTimeframeSeries(klines, "5m", 20, IndicatorPeriods{EMA: []int{20, 50}})
@@ -40,6 +44,14 @@ func TestCalculateTimeframeSeries_EMAPeriods(t *testing.T) {
 	}
 	if len(s3.EMAByPeriod[9]) < len(s3.EMAByPeriod[200]) {
 		t.Fatalf("EMA9 should have >= values than EMA200; got %d vs %d", len(s3.EMAByPeriod[9]), len(s3.EMAByPeriod[200]))
+	}
+	if n := len(s3.EMAByPeriod[200]); n != 0 {
+		t.Fatalf("EMA200 on 200 bars is its SMA seed, not an EMA — want no values, got %d", n)
+	}
+	// Thin tape: EMA20 not warmed on 60 bars → present, empty (legacy keeps its own guard).
+	thin := calculateTimeframeSeries(synthKlines(60), "5m", 20, IndicatorPeriods{EMA: []int{20}})
+	if v, ok := thin.EMAByPeriod[20]; !ok || len(v) != 0 {
+		t.Fatalf("EMA20 on 60 bars must be present and empty (not warmed), got ok=%v n=%d", ok, len(v))
 	}
 	// The legacy fixed fields are STILL computed (back-compat readers depend on them).
 	if len(s3.EMA20Values) == 0 {

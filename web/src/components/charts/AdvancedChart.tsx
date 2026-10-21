@@ -24,6 +24,18 @@ import { httpClient } from '../../lib/httpClient'
 import { REFRESH_CHART_MS, REFRESH_OPEN_ORDERS_MS } from '../../lib/autoRefresh'
 import { t } from '../../i18n/translations'
 import {
+  MENTOR_COLOR,
+  mentorTrendSegments,
+  orderPriceLines,
+  ordersForChartSymbol,
+  positionBracketLines,
+  sameChartSymbol,
+  type ChartLineSpec,
+  type ChartOpenOrder,
+  type PositionBracket,
+} from './chartOverlays'
+import type { MentorTruth } from '../../lib/api/traders'
+import {
   calculateSMA,
   calculateEMA,
   calculateBollingerBands,
@@ -42,18 +54,9 @@ interface OrderMarker {
   symbol: string
 }
 
-// Open orders interface (exchange TP/SL orders)
-interface OpenOrder {
-  order_id: string
-  symbol: string
-  side: string // BUY/SELL
-  position_side: string // LONG/SHORT
-  type: string // LIMIT/STOP_MARKET/TAKE_PROFIT_MARKET
-  price: number // Limit order price
-  stop_price: number // Trigger price (SL/TP)
-  quantity: number
-  status: string
-}
+// Open orders (T5, release #22): the shape and the drawing rule live in
+// ./chartOverlays (orderPriceLines) so the tests pin exactly what is drawn.
+type OpenOrder = ChartOpenOrder
 
 interface AdvancedChartProps {
   symbol: string
@@ -63,6 +66,15 @@ interface AdvancedChartProps {
   exchange?: string // Exchange type: ninjatrader only in the vl product.
   onSymbolChange?: (symbol: string) => void // Symbol change callback
   selectedAccount?: string // Dashboard-selected account; open orders stay trader-bound (F31)
+  /** MENTOR-TRUTH PANEL — every horizontal place the mentor evaluator holds
+   * (levels, trigger lines, box edges, ISB boxes, ORB, swing), drawn in a
+   * distinct "mentor" style (chartOverlays.mentorChartLines). */
+  mentorLevels?: ChartLineSpec[]
+  /** T7 (release #22) — the VALID trendlines, drawn as sloped segments. */
+  mentorTrendlines?: MentorTruth['trendlines']
+  /** UG-3 (release #24): set while the mentor read is stale — the last good
+   * read's time; every mentor line then carries "stale since HH:MM CT". */
+  mentorStaleSinceMs?: number
 }
 
 // Indicator configuration
@@ -118,6 +130,9 @@ export function AdvancedChart({
   exchange = 'ninjatrader', // Default to ninjatrader (the only venue)
   onSymbolChange: _onSymbolChange, // Available for future use
   selectedAccount,
+  mentorLevels,
+  mentorTrendlines,
+  mentorStaleSinceMs,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
   const { language } = useLanguage()
@@ -135,7 +150,14 @@ export function AdvancedChart({
     Map<number, { volume: number; quoteVolume: number }>
   >(new Map()) // Store kline extra data
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
+  const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
+  const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
+  // UG-6 (release #24): the open times (UTC s) of the bars this chart drew —
+  // trendline points snap to these, never to a computed grid. Re-set only
+  // when the bar set changes shape (count/first/last), not on every refresh.
+  const [barTimes, setBarTimes] = useState<number[]>([])
+  const barTimesSigRef = useRef('')
 
   // F31 — an open-order snapshot belongs to the view that requested it.
   // A failed refresh is UNKNOWN, never a computed empty list.
@@ -586,6 +608,29 @@ export function AdvancedChart({
     return result.data as OpenOrder[]
   }
 
+  // Fetch the OPEN positions' working brackets (T32, ui-studio-truth): the
+  // stop/target NT8 holds for each filled position, from the broker's own order
+  // book. Absent bracket = draw nothing — never a fabricated SL/TP.
+  const fetchPositionBrackets = async (
+    traderID: string,
+    symbol: string
+  ): Promise<PositionBracket[]> => {
+    const result = await httpClient.request(
+      `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
+      { silent: true }
+    )
+    const list = Array.isArray(result?.data) ? result.data : []
+    return list
+      .filter(
+        (p: any) =>
+          p &&
+          typeof p.bracket === 'object' &&
+          p.bracket !== null &&
+          (!p.symbol || sameChartSymbol(p.symbol, symbol))
+      )
+      .map((p: any) => p.bracket as PositionBracket)
+  }
+
   // Initialize chart
   useEffect(() => {
     if (!chartContainerRef.current) return
@@ -757,6 +802,9 @@ export function AdvancedChart({
   useEffect(() => {
     // Reset initial load flag when symbol/interval changes (for auto-fit)
     isInitialLoadRef.current = true
+    // UG-6: a new view has no bars yet — nothing to snap a trendline to.
+    barTimesSigRef.current = ''
+    setBarTimes([])
 
     // Clear old marker data to prevent stale data in new chart
     currentMarkersDataRef.current = []
@@ -789,6 +837,14 @@ export function AdvancedChart({
         const klineData = await fetchKlineData(symbol, interval)
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
         candlestickSeriesRef.current.setData(klineData)
+        {
+          const times = klineData.map((k: any) => k.time as number)
+          const sig = `${times.length}:${times[0] ?? ''}:${times[times.length - 1] ?? ''}`
+          if (sig !== barTimesSigRef.current) {
+            barTimesSigRef.current = sig
+            setBarTimes(times)
+          }
+        }
         logBarDebug(
           'AdvancedChart',
           klineData.length
@@ -1097,7 +1153,12 @@ export function AdvancedChart({
     const loadOpenOrders = async () => {
       const id = ++request
       try {
-        const openOrders = await fetchOpenOrders(traderID, symbol)
+        // UG-2 (release #24): the server answers per symbol; a row that names
+        // another instrument is still never drawn on this one.
+        const openOrders = ordersForChartSymbol(
+          await fetchOpenOrders(traderID, symbol),
+          symbol
+        )
         if (!owns(id)) return
         console.log('[AdvancedChart] Open orders for price lines:', openOrders)
 
@@ -1131,57 +1192,22 @@ export function AdvancedChart({
               (order.status ?? '').startsWith('PENDING')
             if (notAtBroker) return
 
-            // THE PRICE AND THE LABEL MUST COME FROM THE SAME QUESTION. This
-            // took stop_price for the line and the TYPE for the title, so a
-            // resting LIMIT entry (type "LIMIT", stop_price = its protective
-            // stop) drew ONE line at the STOP labelled "Limit" and never drew
-            // the entry at all. A stop line belongs to a STOP order.
-            const isStopKind =
-              order.type.includes('STOP') || order.type.includes('SL')
-            const linePrice =
-              isStopKind && order.stop_price > 0
-                ? order.stop_price
-                : order.price > 0
-                  ? order.price
-                  : order.stop_price
-            if (linePrice <= 0) return
-
-            // Determine order type
-            const isStopLoss =
-              order.type.includes('STOP') || order.type.includes('SL')
-            const isTakeProfit =
-              order.type.includes('TAKE_PROFIT') || order.type.includes('TP')
-            const isLimit = order.type === 'LIMIT'
-
-            // Set price line style
-            let lineColor = '#F0B90B' // Default yellow
-            const lineStyle = 2 // dashed
-            let title = ''
-
-            if (isStopLoss) {
-              lineColor = '#F6465D' // red - stop loss
-              title = `SL ${order.quantity}`
-            } else if (isTakeProfit) {
-              lineColor = '#0ECB81' // green - take profit
-              title = `TP ${order.quantity}`
-            } else if (isLimit) {
-              lineColor = '#F0B90B' // yellow - limit order
-              title = `Limit ${order.side} ${order.quantity}`
-            } else {
-              title = `${order.type} ${order.quantity}`
-            }
-
-            const priceLine = candlestickSeriesRef.current?.createPriceLine({
-              price: linePrice,
-              color: lineColor,
-              lineWidth: 1,
-              lineStyle: lineStyle,
-              axisLabelVisible: true,
-              title: title,
-            })
-
-            if (priceLine) {
-              priceLinesRef.current.push(priceLine)
+            // THE PRICE AND THE LABEL MUST COME FROM THE SAME QUESTION, and a
+            // LEDGER row is an ENTRY (T5, release #22): a working mentor
+            // stop-entry used to draw as a red "SL 1" at its protective stop,
+            // with no entry line and the wrong size. orderPriceLines owns the
+            // rule (entry at price, side + the row's own size, SL/TP in the
+            // title; a venue's own STOP is still the SL).
+            for (const spec of orderPriceLines(order)) {
+              const priceLine = candlestickSeriesRef.current?.createPriceLine({
+                price: spec.price,
+                color: spec.color ?? '#F0B90B',
+                lineWidth: 1,
+                lineStyle: spec.style ?? 2,
+                axisLabelVisible: true,
+                title: spec.label,
+              })
+              if (priceLine) priceLinesRef.current.push(priceLine)
             }
           })
           console.log(
@@ -1189,6 +1215,31 @@ export function AdvancedChart({
             priceLinesRef.current.length,
             'price lines for pending orders'
           )
+        }
+
+        // T32 (ui-studio-truth): draw the OPEN position's working stop/target
+        // from the broker order book (an absent bracket draws nothing — never a
+        // fabricated SL/TP). A failed positions read must not clear the order
+        // lines already drawn; the brackets simply do not repaint this cycle.
+        try {
+          const brackets = await fetchPositionBrackets(traderID, symbol)
+          if (owns(id) && candlestickSeriesRef.current) {
+            for (const bracket of brackets) {
+              for (const spec of positionBracketLines(bracket)) {
+                const priceLine = candlestickSeriesRef.current.createPriceLine({
+                  price: spec.price,
+                  color: spec.color ?? '#F0B90B',
+                  lineWidth: 1,
+                  lineStyle: spec.style ?? 2,
+                  axisLabelVisible: true,
+                  title: spec.label,
+                })
+                if (priceLine) priceLinesRef.current.push(priceLine)
+              }
+            }
+          }
+        } catch (err) {
+          console.error('[AdvancedChart] Error loading position brackets:', err)
         }
       } catch (err) {
         if (!owns(id)) return
@@ -1220,6 +1271,75 @@ export function AdvancedChart({
       clearInterval(openOrdersInterval)
     }
   }, [symbol, interval, traderID, exchange, selectedAccount])
+
+  // MENTOR-TRUTH PANEL — draw the mentor key levels as price lines in a
+  // distinct style (reuses the same createPriceLine overlay the open orders
+  // use; labelled "mentor"). Cleared and redrawn whenever the levels, the
+  // symbol, or the interval change.
+  useEffect(() => {
+    const series = candlestickSeriesRef.current
+    mentorPriceLinesRef.current.forEach((line) => {
+      try {
+        series?.removePriceLine(line)
+      } catch {
+        // Ignore clear error
+      }
+    })
+    mentorPriceLinesRef.current = []
+
+    const levels = mentorLevels ?? []
+    if (!series || levels.length === 0) return
+
+    levels.forEach((lv) => {
+      if (!(lv.price > 0)) return
+      const line = series.createPriceLine({
+        price: lv.price,
+        color: lv.color ?? MENTOR_COLOR, // distinct mentor amber — not the order yellow/green/red
+        lineWidth: 1,
+        lineStyle: lv.style ?? 2, // dashed, distinct from the solid order lines
+        axisLabelVisible: true,
+        title: lv.label || 'mentor',
+      })
+      if (line) mentorPriceLinesRef.current.push(line)
+    })
+  }, [mentorLevels, symbol, interval])
+
+  // T7 (release #22) — the mentor's VALID trendlines as sloped segments (the
+  // chart had no two-point drawing at all). Snapped to this chart's bar grid.
+  useEffect(() => {
+    const chart = chartRef.current
+    mentorTrendSeriesRef.current.forEach((sr) => {
+      try {
+        chart?.removeSeries(sr as any)
+      } catch {
+        // Ignore clear error
+      }
+    })
+    mentorTrendSeriesRef.current = []
+    if (!chart) return
+    for (const seg of mentorTrendSegments(
+      mentorTrendlines,
+      barTimes,
+      mentorStaleSinceMs
+    )) {
+      const sr = chart.addSeries(LineSeries, {
+        color: seg.color,
+        lineWidth: 1,
+        lineStyle: 2,
+        title: seg.label,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      })
+      sr.setData(
+        seg.points.map((p) => ({
+          time: p.time as UTCTimestamp,
+          value: p.value,
+        }))
+      )
+      mentorTrendSeriesRef.current.push(sr)
+    }
+  }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {

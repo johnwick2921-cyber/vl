@@ -32,6 +32,14 @@ func (stubHost) LockHolder() (string, error)                { return "", nil }
 func (stubHost) LockRelease(string) error                   { return nil }
 func (s stubHost) BuildInfo(string) (string, string, error) { return s.rev, "false", nil }
 func (stubHost) ExeOf(int) (string, error)                  { return "", fmt.Errorf("unused") }
+func (stubHost) AddonRestore(string, string) error          { return nil }
+func (stubHost) FriendFlat(context.Context, string) (FriendFlatView, error) {
+	return FriendFlatView{Flat: true}, nil
+}
+func (stubHost) FriendRestart(context.Context, string) error { return nil }
+func (stubHost) FriendBootOK(context.Context, string, time.Time, string) (bool, string, error) {
+	return true, "", nil
+}
 
 // checkWorker builds a Worker with just enough target for handleCheck.
 func checkWorker(t *testing.T) *Worker {
@@ -65,6 +73,19 @@ func apiJSON(w http.ResponseWriter, status int, body string) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	fmt.Fprint(w, body)
+}
+
+// commitShaAnswer answers commits/<tag> as GitHub does for the sha media type
+// the updater sends (OPS NEW-1): the bare sha as text. Any other Accept gets
+// the commit JSON, so a regression to the JSON read still finds a sha here
+// and only the updatersource pin catches it.
+func commitShaAnswer(w http.ResponseWriter, r *http.Request, sha string) {
+	if r.Header.Get("Accept") == "application/vnd.github.sha" {
+		w.Header().Set("Content-Type", "application/vnd.github.sha; charset=utf-8")
+		fmt.Fprint(w, sha)
+		return
+	}
+	apiJSON(w, 200, `{"sha":"`+sha+`"}`)
 }
 
 func TestReleaseSourceKnobDefaultOff(t *testing.T) {
@@ -114,7 +135,7 @@ func TestHandleCheckUpToDateByCommit(t *testing.T) {
 	rev := "aaaa" + strings.Repeat("bb", 18)
 	srv := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/repos/"+updatersource.ReleaseRepo+"/commits/v9.9.9" {
-			apiJSON(w, 200, `{"sha":"`+rev+`"}`)
+			commitShaAnswer(w, r, rev)
 			return
 		}
 		apiJSON(w, 200, `{"tag_name":"v9.9.9","target_commitish":"dev"}`)
@@ -163,7 +184,7 @@ func TestHandleCheckVerifiedReadyReusesFetchRelease(t *testing.T) {
 			apiJSON(w, 200, `{"tag_name":"`+testReleaseID+`","target_commitish":"dev"}`)
 			return
 		case strings.HasSuffix(r.URL.Path, "/commits/"+testReleaseID):
-			apiJSON(w, 200, `{"sha":"`+testSHA+`"}`)
+			commitShaAnswer(w, r, testSHA)
 			return
 		}
 		b, err := os.ReadFile(rel.archive)

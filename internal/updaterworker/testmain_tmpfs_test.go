@@ -3,10 +3,11 @@ package updaterworker
 import (
 	"os"
 	"testing"
+	"vl/internal/testhome"
 
 	"vl/internal/testtmpfs"
 )
 
 // TestMain keeps t.TempDir() on tmpfs: the per-test SQLite migrations fsync a
 // file on disk (~1.2 s each) and cost ~0.02 s on /dev/shm (internal/testtmpfs).
-func TestMain(m *testing.M) { os.Exit(testtmpfs.Run(m.Run)) }
+func TestMain(m *testing.M) { os.Exit(testhome.Run(func() int { return testtmpfs.Run(m.Run) })) }

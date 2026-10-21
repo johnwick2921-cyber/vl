@@ -165,12 +165,16 @@ it('the length select saves 30/90/120 and "no window" as -1', () => {
   })
 })
 
-it('a stored no-window (-1) reads "any hour" in the select and the preview', () => {
+// UG-4 (release #24): "no window" removes the time window only — never "any
+// hour": the 15:45 CT entry cutoff and the 14:45 CT EOD flat still bind.
+it('a stored no-window (-1) reads "no time window" with the EOD rules in the select and the preview', () => {
   renderEditor({ mentor_window_minutes: -1 })
   expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('-1')
-  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
-    'Mentor trades at any hour'
+  const preview = screen.getByTestId('mentor-window-preview')
+  expect(preview).toHaveTextContent(
+    'No time window — the 15:45 CT entry cutoff and the 14:45 CT EOD flat still apply'
   )
+  expect(preview).not.toHaveTextContent(/any hour/)
 })
 
 it('a stored length outside the presets is still shown, not silently replaced', () => {
@@ -193,4 +197,122 @@ it('the window controls are inert on a read-only strategy', () => {
   )
   expect(screen.getByTestId('mentor-window-start')).toBeDisabled()
   expect(screen.getByTestId('mentor-window-minutes')).toBeDisabled()
+})
+
+// ── stop-after-win switch (mentor_done_after_win, absent = OFF) ──
+
+it('an absent mentor_done_after_win reads OFF', () => {
+  renderEditor({})
+  expect(screen.getByTestId('mentor-stop-after-win')).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+})
+
+it('turning the stop-after-win switch ON saves mentor_done_after_win=true', () => {
+  const { onChange, full } = renderEditor({})
+  fireEvent.click(screen.getByTestId('mentor-stop-after-win'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_done_after_win: true,
+  })
+  // The save payload carries the key as true, not merely an omitted/absent one.
+  expect(JSON.stringify(onChange.mock.calls[0][0])).toContain(
+    '"mentor_done_after_win":true'
+  )
+})
+
+it('turning the stop-after-win switch OFF saves mentor_done_after_win=false', () => {
+  const { onChange, full } = renderEditor({ mentor_done_after_win: true })
+  fireEvent.click(screen.getByTestId('mentor-stop-after-win'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_done_after_win: false,
+  })
+})
+
+it('the stop-after-win switch reads ON only when the stored value is true', () => {
+  renderEditor({ mentor_done_after_win: true })
+  expect(screen.getByTestId('mentor-stop-after-win')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})
+
+it('the winning-trade toggle renders ABOVE the losing-trade one (M15)', () => {
+  renderEditor({})
+  const win = screen.getByTestId('mentor-stop-after-win')
+  const loss = screen.getByTestId('mentor-stop-after-loss')
+  // DOCUMENT_POSITION_FOLLOWING: win precedes loss in document order.
+  expect(
+    win.compareDocumentPosition(loss) & Node.DOCUMENT_POSITION_FOLLOWING
+  ).toBeTruthy()
+})
+
+// ── stop-after-loss switch (mentor_stop_after_loss, absent = OFF) ──
+
+it('an absent mentor_stop_after_loss reads OFF', () => {
+  renderEditor({})
+  expect(screen.getByTestId('mentor-stop-after-loss')).toHaveAttribute(
+    'aria-checked',
+    'false'
+  )
+})
+
+it('turning the stop-after-loss switch ON saves mentor_stop_after_loss=true', () => {
+  const { onChange, full } = renderEditor({})
+  fireEvent.click(screen.getByTestId('mentor-stop-after-loss'))
+  expect(onChange).toHaveBeenCalledWith({
+    ...full,
+    mentor_stop_after_loss: true,
+  })
+  // The save payload carries the key as true, not merely an omitted/absent one.
+  expect(JSON.stringify(onChange.mock.calls[0][0])).toContain(
+    '"mentor_stop_after_loss":true'
+  )
+})
+
+it('the stop-after-loss switch reads ON only when the stored value is true', () => {
+  renderEditor({ mentor_stop_after_loss: true })
+  expect(screen.getByTestId('mentor-stop-after-loss')).toHaveAttribute(
+    'aria-checked',
+    'true'
+  )
+})
+
+it('the stop-after-loss switch is inert on a read-only strategy', () => {
+  const onChange = vi.fn()
+  render(
+    <RiskControlEditor
+      config={{ max_positions: 1 } as RiskControlConfig}
+      onChange={onChange}
+      language="en"
+      disabled
+    />
+  )
+  fireEvent.click(screen.getByTestId('mentor-stop-after-loss'))
+  expect(onChange).not.toHaveBeenCalled()
+})
+
+// Release #22 (course-defaults-30, owner "fix all" — reverses owner ruling R3):
+// the runner-exit knob mentor_trail_mode is a Studio control. Absent reads
+// candle (the server default), a bad stored value shows candle (the server
+// fails closed to it), and a change saves the value through the same
+// RiskControlEditor path as the other mentor knobs.
+it('an absent mentor_trail_mode reads candle', () => {
+  renderEditor({ mentor_mode: true })
+  expect(screen.getByTestId('mentor-trail-mode')).toHaveValue('candle')
+})
+
+it('a bad stored mentor_trail_mode shows candle (the server fails closed to it)', () => {
+  renderEditor({ mentor_mode: true, mentor_trail_mode: 'sideways' })
+  expect(screen.getByTestId('mentor-trail-mode')).toHaveValue('candle')
+})
+
+it('choosing off saves mentor_trail_mode=off', () => {
+  const { onChange, full } = renderEditor({ mentor_mode: true })
+  fireEvent.change(screen.getByTestId('mentor-trail-mode'), {
+    target: { value: 'off' },
+  })
+  expect(onChange).toHaveBeenCalledWith({ ...full, mentor_trail_mode: 'off' })
 })

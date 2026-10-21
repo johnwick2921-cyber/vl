@@ -23,6 +23,7 @@ func TestTriggerRetestWrongWayRefused(t *testing.T) {
 	// the SHORT target's first obstacle and cap the room below 2R — the pin
 	// is the direction gate, not the target geometry.
 	cfg.EMALocationTFMinutes = 0
+	cfg.Exec2mAfter30m = false // the row-56 direction-gate pin reads the 1m touch
 	// TriggerSchool stays 1 (the default) — exactly the school that skips the
 	// LocTriggerFilter side check and needs the row-56 gate.
 
@@ -34,7 +35,7 @@ func TestTriggerRetestWrongWayRefused(t *testing.T) {
 	e.State.EMA9 = 0
 	// An old LOW below the entry — the SHORT target for the (would-be) PLH.
 	e.State.SeedLevels = []Level{
-		{Key: "old-low:29200", Kind: KindOldExtreme, Price: 29200},
+		{Key: "old-low:29200", Kind: KindOldExtreme, Role: OldLow, Price: 29200},
 	}
 	// BUY trigger line at 29300 (its retest is a location).
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}

@@ -14,15 +14,14 @@ import (
 // 4h candles blocks SWING4H entries only: the intraday entries (ISB/PHL/box)
 // pass the placement gate. Any other missing source blocks every entry.
 func TestMentorSeedScopePlacementGate(t *testing.T) {
-	ResetMentorCountersForTest()
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	wireMentorPlacementSeams(t)
+	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
-	mentorNowSource = func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) }
-	t.Cleanup(func() { mentorNowSource = nil })
+	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 9, 0, 0, 0, ct) })
+	t.Cleanup(func() { setMentorNowSource(nil) })
 
 	depth := func(h4, m1 int) {
-		mentorSourceDepthSource = func(name string) (int, bool) {
+		at.mentorSourceDepthSource = func(name string) (int, bool) {
 			switch name {
 			case "4h EMA34":
 				return h4, true
@@ -48,7 +47,7 @@ func TestMentorSeedScopePlacementGate(t *testing.T) {
 	if len(placed) != 1 || placed[0] != "ISB" {
 		t.Fatalf("94/102 4h: want only the ISB placed, got %v", placed)
 	}
-	if got := MentorCountSnapshot()["mentor_sources_missing"]; got != 1 {
+	if got := at.mentorCountSnapshot()["mentor_sources_missing"]; got != 1 {
 		t.Fatalf("the swing refusal must be counted mentor_sources_missing once, got %d", got)
 	}
 	if b := at.mentorSourcesBlocking("ISB"); len(b) != 0 {

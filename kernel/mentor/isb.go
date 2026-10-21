@@ -66,31 +66,36 @@ func curLow(b market.Kline) float64 {
 // Risk = (High − Low) + 2×buffer.
 func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 	long = Intent{
-		Action: PlaceStopLimitEntry,
-		Setup:  "ISB",
-		Side:   SideLong,
-		Price:  candle.High + cfg.ISBBufferPts,
-		Limit:  candle.High + cfg.ISBBufferPts,
-		Stop:   candle.Low - cfg.ISBBufferPts,
-		RefBarMs: candle.CloseTime,
-		Reason: "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
+		Action:          PlaceStopLimitEntry,
+		Setup:           "ISB",
+		Side:            SideLong,
+		Price:           candle.High + cfg.ISBBufferPts,
+		Limit:           candle.High + cfg.ISBBufferPts,
+		Stop:            candle.Low - cfg.ISBBufferPts,
+		RefBarMs:        candle.CloseTime,
+		EntryCandleHigh: candle.High, // release #31 rule 5: the ORB-edge fraction reads this candle
+		EntryCandleLow:  candle.Low,
+		Reason:          "ISB: buy stop-limit above the ISB high + buffer, stop below the ISB low − buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	short = Intent{
-		Action: PlaceStopLimitEntry,
-		Setup:  "ISB",
-		Side:   SideShort,
-		Price:  candle.Low - cfg.ISBBufferPts,
-		Limit:  candle.Low - cfg.ISBBufferPts,
-		Stop:   candle.High + cfg.ISBBufferPts,
-		RefBarMs: candle.CloseTime,
-		Reason: "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
+		Action:          PlaceStopLimitEntry,
+		Setup:           "ISB",
+		Side:            SideShort,
+		Price:           candle.Low - cfg.ISBBufferPts,
+		Limit:           candle.Low - cfg.ISBBufferPts,
+		Stop:            candle.High + cfg.ISBBufferPts,
+		RefBarMs:        candle.CloseTime,
+		EntryCandleHigh: candle.High, // release #31 rule 5
+		EntryCandleLow:  candle.Low,
+		Reason:          "ISB: sell stop-limit below the ISB low − buffer, stop above the ISB high + buffer [D1.4 p1 @ 10:33–11:25, 14:42–14:44, 22:22–22:30, 24:41–24:55]",
 	}
 	return long, short
 }
 
 // ISBStopLimitOrder is the R1 order the evaluator emits: the single stop-limit
 // entry in the CANDLE-1 direction. ok is false (with a cited reason) when the
-// stop is in the twenties — the ONLY stop-size skip R1 has [D4.1 p1 @ 05:41].
+// stop is ≥ the ISB ceiling — the ONLY stop-size skip R1 has (default 30,
+// course-defaults-30) [D4.1 p1 @ 05:41].
 func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, string) {
 	dir := ISBDirection(prev)
 	if dir == "" {
@@ -109,16 +114,16 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 	return dir, short, true, ""
 }
 
-// ISBStopVerdict applies the ONLY stop-size rule R1 has (RULES-FIX-v3): an ISB
-// whose stop is IN THE TWENTIES must NOT be taken [D4.1 p1 @ 05:41]. There is
-// NO fixed 5–6-pt stop and NO ceiling here — the replay's 5–6-pt cap was wrong
-// and killed 17,001 ISBs (CTO, 2026-10-03). "In the twenties" is the window
-// [ISBTwentiesPts, ISBTwentiesPts+10); a stop of thirty-plus is not skipped by
-// R1 (R9's cap is DS-103's wiring, not this verdict).
+// ISBStopVerdict applies the ONLY stop-size rule R1 has (course-defaults-30,
+// owner order "move to 30 at least … fix all"): an ISB whose stop is ≥ 30 pts
+// must NOT be taken; a stop < 30 is TAKEN. There is NO fixed 5–6-pt stop and
+// no "twenties" window any more — the [20,30) skip was REMOVED (it refused
+// 20–30 and let 30+ through, which was backwards). The ≥ 30 ceiling lives in
+// CourseExits.ISBMaxStopPts (default 30, CX-9).
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if stopPts >= cfg.ISBTwentiesPts && stopPts < cfg.ISBTwentiesPts+10 {
-		return stopPts, false, "ISB stop in the twenties — must not be taken [D4.1 p1 @ 05:41]"
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 30)
+		return stopPts, false, ISBMaxStopReason
 	}
 	return stopPts, true, ""
 }
@@ -130,6 +135,10 @@ type ISBArm struct {
 	Inside   int          // candles whose BODIES stayed inside the first ISB since placement
 	Side     Side         // the arm's R1 direction (candle-1 colour) — stored, not derived:
 	// FirstBar is the ISB candle, whose own colour is the OPPOSITE side
+	TFMin    int   // the execution timeframe the arm was READ on (1 or 2) — the
+	// stacking count advances on that frame's candles (fold #565, D1)
+	LastTick int64 // CloseTime of the last candle this arm was ticked with — the
+	// loop skips it on 1m ticks where its frame's candle has not advanced
 }
 
 // ISBStackAdvice is the stacking arithmetic [D4.2 p2 @ 08:49–16:08]:

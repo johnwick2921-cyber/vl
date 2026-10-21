@@ -41,7 +41,7 @@ func TestEscapedISBBoxIsNotRebuiltFromTheSamePair(t *testing.T) {
 	if e.State.ISBBox == nil {
 		t.Fatal("the 5m ISB box must stand once its candle has closed")
 	}
-	tick(mk(11, 101, 101, 98, 99)) // a 1m close below the box low 100.5 → escape
+	tick(mk(11, 100, 101, 98, 99)) // a 1m BODY below the box low 100.5 (open 100, close 99) → escape (CE-5 body default)
 	if e.State.ISBBox != nil {
 		t.Fatalf("a close below the box must delete it: %+v", e.State.ISBBox)
 	}

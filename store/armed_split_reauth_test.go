@@ -53,3 +53,43 @@ func TestUpsertArmCarriesTheSplitThroughReauthorization(t *testing.T) {
 	}
 	check("terminal re-authorization", 6, 4, 103)
 }
+
+// TestUpsertArmUnstampedClearsTheSize (fold-564-b D1): a PLANNER arm sized at
+// its FIRST authorization is CLEARED by an unstamped re-authorization while it
+// is still ARMED (unplaced) — planner_contracts dropped 4→1 mid-arm must lower
+// the row, so placement re-clamps instead of sending a stale 4 past a lowered
+// cap. Working rows never reach this branch (refused by the live-order guard).
+// Mutant: keep the size when the new stamp is nil → RED.
+func TestUpsertArmUnstampedClearsTheSize(t *testing.T) {
+	st, err := New(filepath.Join(t.TempDir(), "split-clear.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	ao := st.ArmedOrders()
+	planner := func(contracts, leg1 int, leg1TP float64) *ArmedOrderDB {
+		return &ArmedOrderDB{TraderID: "t1", PlanID: "planner", Scenario: "lvl-4", Session: "NY",
+			Side: "long", State: StateArmed, EntryPx: 100, StopPx: 95, TargetPx: 110, Kind: "limit",
+			Version: 1, Contracts: IntPtr(contracts), Leg1Qty: IntPtr(leg1), Leg1TP: leg1TP}
+	}
+	read := func() ArmedOrderDB {
+		var r ArmedOrderDB
+		if err := ao.DB().Where("scenario = ?", "lvl-4").First(&r).Error; err != nil {
+			t.Fatal(err)
+		}
+		return r
+	}
+	if err := ao.UpsertArm(planner(4, 2, 105)); err != nil {
+		t.Fatal(err)
+	}
+	// The knob drops 4 → 1: the re-authorization carries NO stamp (nil size).
+	unstamped := planner(0, 0, 0)
+	unstamped.Contracts, unstamped.Leg1Qty, unstamped.Leg1TP = nil, nil, 0
+	if err := ao.UpsertArm(unstamped); err != nil {
+		t.Fatal(err)
+	}
+	r := read()
+	if r.Contracts != nil || r.Leg1Qty != nil || r.Leg1TP != 0 {
+		t.Fatalf("an unstamped refresh must CLEAR the size so placement re-clamps: %+v", r)
+	}
+}

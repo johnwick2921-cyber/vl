@@ -18,13 +18,12 @@ func funnelAT(t *testing.T) *AutoTrader {
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}}},
 	}
 	at.mentorEval = mentor.New(mentor.DefaultConfig())
-	t.Cleanup(ResetMentorCountersForTest)
 	return at
 }
 
 // Pin: a tick with an ORB refusal shows orb_not_drawn:1 in the funnel line.
 func TestMentorFunnelLineShowsOrbRefusal(t *testing.T) {
-	line := mentorFunnelLine(1, 2, map[string]int{"orb_not_drawn": 1}, map[string]int{}, map[string]int{}, 0, 0, 0)
+	line := mentorFunnelLine(1, 2, 0, map[string]int{"orb_not_drawn": 1}, map[string]int{}, map[string]int{}, 0, 0, 0)
 	if !strings.Contains(line, "orb_not_drawn:1") {
 		t.Fatalf("funnel line missing orb_not_drawn:1: %q", line)
 	}
@@ -53,7 +52,7 @@ func TestMentorFunnelSeparatesKernelFills(t *testing.T) {
 	if fills := mentorKernelFills(at); fills["record_fill_from_row"] != 1 {
 		t.Fatalf("a fill counter must render under kernel fills: %v", fills)
 	}
-	line := mentorFunnelLine(1, 2, map[string]int{}, map[string]int{"record_fill_from_row": 1}, map[string]int{}, 0, 0, 0)
+	line := mentorFunnelLine(1, 2, 0, map[string]int{}, map[string]int{"record_fill_from_row": 1}, map[string]int{}, 0, 0, 0)
 	if !strings.Contains(line, "kernel fills {record_fill_from_row:1}") {
 		t.Fatalf("funnel line missing the kernel fills segment: %q", line)
 	}
@@ -64,13 +63,13 @@ func TestMentorFunnelSeparatesKernelFills(t *testing.T) {
 
 // Pin: trader refusals are the refusal-family counters, never stage/tier/OK.
 func TestMentorTraderRefusalsFilters(t *testing.T) {
-	ResetMentorCountersForTest()
-	mentorCount("refused_no_max")
-	mentorCount("refused_no_max")
-	mentorCount("placement_held")
-	mentorCount("armed_base")
-	mentorCount("tier_base")
-	got := mentorTraderRefusals()
+	at := funnelAT(t)
+	at.mentorCount("refused_no_max")
+	at.mentorCount("refused_no_max")
+	at.mentorCount("placement_held")
+	at.mentorCount("armed_base")
+	at.mentorCount("tier_base")
+	got := at.mentorTraderRefusals()
 	if got["refused_no_max"] != 2 {
 		t.Fatalf("refused_no_max = %d, want 2", got["refused_no_max"])
 	}
@@ -100,12 +99,13 @@ func TestMentorFunnelStageBumps(t *testing.T) {
 func TestMentorFunnelTickRecordsBarsIntents(t *testing.T) {
 	at := funnelAT(t)
 	at.mentorEval.State.Refusals = map[string]int{"orb_not_drawn": 1}
-	at.mentorFunnelTick(1, 3)
+	at.mentorFunnelTick(1, []mentor.Intent{{Action: mentor.PlaceStopEntry}, {Action: mentor.LevelInvalid}, {Action: mentor.ConfluenceUpgrade}})
 	f := &at.mentorFunnel
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if f.bars != 1 || f.intents != 3 || f.lastFp == "" {
-		t.Fatalf("bars=%d intents=%d lastFp=%q, want 1/3/non-empty", f.bars, f.intents, f.lastFp)
+	// MENTOR-NY item 10: entries and other actions are counted apart.
+	if f.bars != 1 || f.entries != 1 || f.others != 2 || f.lastFp == "" {
+		t.Fatalf("bars=%d entries=%d others=%d lastFp=%q, want 1/1/2/non-empty", f.bars, f.entries, f.others, f.lastFp)
 	}
 	if !strings.Contains(f.lastFp, "orb_not_drawn:1") {
 		t.Fatalf("fingerprint missing orb_not_drawn:1: %q", f.lastFp)
