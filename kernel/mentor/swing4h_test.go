@@ -373,8 +373,8 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hBEAndHold — BE at +1R, then hold to the close of the 2nd 4h
-// candle after entry [table]. Ticks are incremental: the BE/hold management
+// TestSwing4hBEAndHold — BE at +1R, then hold ONE 4h candle
+// [D5.2 p1 @06:03–06:20]. Ticks are incremental: the BE/hold management
 // runs at the START of a tick over the position's book.
 func TestSwing4hBEAndHold(t *testing.T) {
 	cfg := DefaultSwingCfg()
@@ -405,17 +405,27 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	if !be {
 		t.Fatalf("no BE intent at +1R; got %+v", out)
 	}
-	// advance past the close of the 2nd 4h candle after entry (05:00 + 8h)
-	late := append(beBars, mk5m(t, 15, 13, 5, 10095, 10100, 10090, 10095))
-	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
-	var closed bool
+	// D5.2 p1 @06:03–06:20: hold ONE 4h candle. Entry bucket is 05:00, so the
+	// hold limit is 09:00 — a bar BEFORE 09:00 must NOT close, and the bar
+	// at/after 09:00 must close. MUTANT: Hold4hBars=2 → the 09:05 bar does not
+	// close (holdMs 13:00) → RED.
+	before := append(beBars, mk5m(t, 15, 8, 55, 10095, 10100, 10090, 10095))
+	out2 := SwingTick(s, before, cfg, before[len(before)-1].OpenTime+60_000)
 	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			t.Fatalf("must NOT close before the 1st-4h-candle hold limit (08:55 < 09:00); got %+v", out2)
+		}
+	}
+	atClose := append(before, mk5m(t, 15, 9, 5, 10095, 10100, 10090, 10095))
+	out3 := SwingTick(s, atClose, cfg, atClose[len(atClose)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out3 {
 		if in.Action == ActionClosePosition {
 			closed = true
 		}
 	}
 	if !closed {
-		t.Fatalf("no close at the 2nd-4h-candle hold limit; got %+v", out2)
+		t.Fatalf("no close at the ONE-4h-candle hold limit (09:05 ≥ 09:00); got %+v", out3)
 	}
 }
 
@@ -493,13 +503,12 @@ func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
 	}
 }
 
-// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3: the hold-close
-// fires at the END of the 4h candle after the entry candle, not before. The
-// entry bar sits LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so
-// the bucket math — not a round number — decides the boundary: no close on the
-// last 5m bar before bucket+2×4h (12:55), close ON the first bar at/after it
-// (13:00). A mutant that shifts EntryBucket one 4h candle late misses the 13:00
-// close and this turns RED.
+// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3, m186 D5.2: the
+// hold-close fires at the END of ONE 4h candle (bucket+4h). The entry bar sits
+// LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so the bucket
+// math — not a round number — decides the boundary: no close on a bar before
+// 09:00, close ON the first bar at/after 09:00. A mutant that reverts
+// Hold4hBars to 2 moves the boundary to 13:00 and misses the 09:00 close → RED.
 func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	base := swingTape(t, nil)
@@ -514,16 +523,16 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
-	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
-	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
+	// a 5m bar BEFORE the boundary (holdMs = 05:00 + 1×4h = 09:00): 08:55
+	preBars := append(base, mk5m(t, 15, 8, 55, 10130, 10140, 10125, 10135))
 	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
 	for _, in := range out {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("no hold-close before the boundary; got %+v", out)
+			t.Fatalf("no hold-close before the ONE-candle boundary (08:55 < 09:00); got %+v", out)
 		}
 	}
-	// the FIRST bar at/after the boundary: 13:00 → close
-	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
+	// the FIRST bar at/after the boundary: 09:00 → close
+	postBars := append(preBars, mk5m(t, 15, 9, 0, 10130, 10140, 10125, 10135))
 	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
 	var closed bool
 	for _, in := range out2 {
@@ -532,7 +541,7 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 		}
 	}
 	if !closed {
-		t.Fatalf("hold-close must fire on the first bar at/after the boundary; got %+v", out2)
+		t.Fatalf("hold-close must fire on the first bar at/after the ONE-candle boundary (09:00); got %+v", out2)
 	}
 }
 

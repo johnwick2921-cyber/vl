@@ -39,8 +39,7 @@ import (
 //     the injector must not apply
 //     it to SWING4H).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
-//     fallback); BE at +1R; hold to the close of the 2nd 4h candle after
-//     entry (the method does not state the hold length — knob [C]).
+//     fallback); BE at +1R; hold ONE 4h candle [D5.2 p1 @06:03–06:20].
 //  8. One setup per approach: no new one until price has left the line by
 //     at least the stop distance and comes back. R8: each new 4h candle
 //     re-bases the line and the "used" approach resets.
@@ -74,7 +73,7 @@ type SwingCfg struct {
 	// R34 rules that the ISB watch after a through-close stays open until the
 	// 4h flip (no candle limit). Currently unused by the swing tick.
 	LeewayCandles int
-	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 2 [C]
+	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 1 [D5.2 p1 @06:03–06:20]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -93,7 +92,7 @@ func DefaultSwingCfg() SwingCfg {
 		EntryBufferPts:    0, // R8: no buffer
 		TargetEMA5mPeriod: 34,
 		LeewayCandles:     2,
-		Hold4hBars:        2,
+		Hold4hBars:        1,
 	}
 }
 
@@ -642,7 +641,7 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
 	if cur.OpenTime >= holdMs {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
-			Reason: "swing §8: hold to the close of the 2nd 4h candle after entry"})
+			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
 		s.Pos = nil
 	}
 	return out

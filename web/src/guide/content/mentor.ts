@@ -671,7 +671,7 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold to the close of the 2nd 4h candle after entry',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold ONE 4h candle after entry [D5.2 p1 @06:03–06:20]',
         ],
         [
           'ISB partial',
@@ -1788,7 +1788,7 @@ export const mentor: GuideSection = {
           label: 'Swing runner',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25); size = mentor_swing4h_contracts',
-          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of the 2nd 4h candle (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
+          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of ONE 4h candle [D5.2 p1 @06:03–06:20] (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
           trader:
             'Course: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:08–06:23]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
           consumer:
