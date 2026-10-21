@@ -16,6 +16,9 @@ export interface ChartLineSpec {
 
 /** One sloped segment (a trendline): points in chart time (UTC seconds). */
 export interface TrendSegment {
+  /** A stable identity (side:anchors) so the chart can DIFF series by key
+   * instead of remove/re-add on every poll (m150). */
+  key: string
   label: string
   color: string
   points: { time: number; value: number }[]
@@ -23,6 +26,48 @@ export interface TrendSegment {
   style?: 0 | 1 | 2
   /** m134: VALID = 2, FORMING = 1 (lightweight-charts LineWidth subset). */
   lineWidth?: 1 | 2
+}
+
+/** One EMA curve point snapped to a drawn bar's time. */
+export interface EMACurvePoint {
+  time: number // UTC seconds — a bar the chart actually drew
+  value: number
+}
+
+/**
+ * m150: the EMA 9/34 curve, snapped onto the chart's drawn bars. The backend
+ * series is per-1m-bar (33 h deep); plotting it directly adds extra slots to
+ * the shared time axis (candle gaps) on any other interval. For each drawn bar
+ * we take the LAST EMA value at or before that bar's close and drop anything
+ * before barTimes[0], so every plotted time is a drawn bar.
+ */
+export function mentorEMACurves(
+  emaSeries: MentorTruth['ema_series'],
+  barTimes: readonly number[]
+): { ema9: EMACurvePoint[]; ema34: EMACurvePoint[] } {
+  const ema9: EMACurvePoint[] = []
+  const ema34: EMACurvePoint[] = []
+  const pts = emaSeries ?? []
+  if (pts.length === 0 || barTimes.length === 0) return { ema9, ema34 }
+  const intervalSec = barTimes.length > 1 ? barTimes[1] - barTimes[0] : 0
+  let i = 0
+  let e9 = 0
+  let e34 = 0
+  for (let bi = 0; bi < barTimes.length; bi++) {
+    const bt = barTimes[bi]
+    const closeSec =
+      bi + 1 < barTimes.length ? barTimes[bi + 1] : bt + intervalSec
+    while (i < pts.length && pts[i].ms / 1000 <= closeSec) {
+      e9 = pts[i].ema9
+      e34 = pts[i].ema34
+      i++
+    }
+    if (i > 0) {
+      ema9.push({ time: bt, value: e9 })
+      ema34.push({ time: bt, value: e34 })
+    }
+  }
+  return { ema9, ema34 }
 }
 
 /** The /api/open-orders row as the chart reads it. */
@@ -436,24 +481,51 @@ export function mentorTrendSegments(
   }
   const mark = mentorStaleMark(staleSinceMs)
   const lastBar = barTimes[barTimes.length - 1]
+
+  // m150: FORMING lines are unbounded — every same-role swing pair of the day
+  // becomes its own series, rebuilt each poll. Cap to the NEWEST 3 per side;
+  // VALID lines stay uncapped (they are the ones the bot actually trades).
+  type MentorTrendline = NonNullable<MentorTruth['trendlines']>[number]
+  const FORMING_CAP = 3
+  const formingBySide = new Map<string, MentorTrendline[]>()
+  for (const tl of trendlines ?? []) {
+    if (tl.valid) continue
+    const arr = formingBySide.get(tl.side) ?? []
+    arr.push(tl)
+    formingBySide.set(tl.side, arr)
+  }
+  const formingAllowed = new Set<MentorTrendline>()
+  for (const arr of formingBySide.values()) {
+    arr.sort((a, b) => b.p1_ms - a.p1_ms)
+    for (let i = 0; i < Math.min(arr.length, FORMING_CAP); i++) {
+      formingAllowed.add(arr[i])
+    }
+  }
+
   for (const tl of trendlines ?? []) {
     if (tl.p1_ms === tl.p0_ms) continue
+    if (!tl.valid && !formingAllowed.has(tl)) continue
     const slope = (tl.p1_px - tl.p0_px) / (tl.p1_ms - tl.p0_ms)
     const valueAt = (ms: number) => tl.p0_px + slope * (ms - tl.p0_ms)
-    // m134: VALID extends to the right edge; FORMING stops at its 2nd anchor.
-    const endMs = tl.valid ? lastBar * 1000 : tl.p1_ms
+    // m134: a TRADED valid line extends to the right edge; m150: a valid line
+    // inside a box (not traded) stops at its 2nd anchor and draws muted, and a
+    // FORMING line does the same.
+    const inBox = tl.valid && !tl.in_level
+    const traded = tl.valid && !inBox
+    const endMs = traded ? lastBar * 1000 : tl.p1_ms
     const times = Array.from(
       new Set([tl.p0_ms, tl.p1_ms, endMs].map(snap))
     ).sort((a, b) => a - b)
     if (times.length < 2) continue
     const role = tl.side === 'long' ? 'support' : 'resistance'
     out.push({
+      key: `${tl.side}:${tl.p0_ms}:${tl.p1_ms}`,
       label: tl.valid
-        ? `trend line ✓ (${role}${tl.in_level ? '' : ', inside a box — not traded'})${mark}`
+        ? `trend line ✓ (${role}${inBox ? ', inside a box — not traded' : ''})${mark}`
         : `trend line (${role} — waiting for 3rd touch)${mark}`,
-      color: tl.valid ? MENTOR_COLOR : MENTOR_MUTED_COLOR,
-      style: tl.valid ? 0 : 2,
-      lineWidth: tl.valid ? 2 : 1,
+      color: traded ? MENTOR_COLOR : MENTOR_MUTED_COLOR,
+      style: traded ? 0 : 2,
+      lineWidth: traded ? 2 : 1,
       points: times.map((sec) => ({
         time: sec,
         value: valueAt(sec * 1000),

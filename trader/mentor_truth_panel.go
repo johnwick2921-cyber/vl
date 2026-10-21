@@ -278,9 +278,9 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 			continue // broken by a 5m close, or a degenerate (flat) line
 		}
 		v := MentorTrendlineView{
-			Side:  string(tl.Side),
-			P0Ms:  tl.P0T, P0Px: tl.P0Px,
-			P1Ms:  tl.P1T, P1Px: tl.P1Px,
+			Side: string(tl.Side),
+			P0Ms: tl.P0T, P0Px: tl.P0Px,
+			P1Ms: tl.P1T, P1Px: tl.P1Px,
 			Valid: tl.ValidAt != 0, // m134: FORMING (no 3rd touch) is valid=false
 		}
 		// The level the evaluator placed for this line this bar (only a VALID line

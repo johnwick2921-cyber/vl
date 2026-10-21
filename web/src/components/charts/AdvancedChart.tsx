@@ -25,6 +25,7 @@ import { REFRESH_CHART_MS, REFRESH_OPEN_ORDERS_MS } from '../../lib/autoRefresh'
 import { t } from '../../i18n/translations'
 import {
   MENTOR_COLOR,
+  mentorEMACurves,
   mentorTrendSegments,
   orderPriceLines,
   ordersForChartSymbol,
@@ -154,7 +155,9 @@ export function AdvancedChart({
   >(new Map()) // Store kline extra data
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
   const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
-  const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
+  const mentorTrendSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(
+    new Map()
+  ) // T7 trendline segments, keyed (m150 diff-by-key)
   const mentorEMARef = useRef<ISeriesApi<'Line'>[]>([]) // m134 EMA9/34 curves
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
   // UG-6 (release #24): the open times (UTC s) of the bars this chart drew —
@@ -1312,20 +1315,42 @@ export function AdvancedChart({
   // chart had no two-point drawing at all). Snapped to this chart's bar grid.
   useEffect(() => {
     const chart = chartRef.current
-    mentorTrendSeriesRef.current.forEach((sr) => {
-      try {
-        chart?.removeSeries(sr as any)
-      } catch {
-        // Ignore clear error
-      }
-    })
-    mentorTrendSeriesRef.current = []
     if (!chart) return
-    for (const seg of mentorTrendSegments(
+    const segs = mentorTrendSegments(
       mentorTrendlines,
       barTimes,
       mentorStaleSinceMs
-    )) {
+    )
+    const nextKeys = new Set(segs.map((s) => s.key))
+    // m150: diff by key — remove vanished series, update the rest in place,
+    // and only add series that are new. Never remove/re-add the whole set on
+    // each 30s poll.
+    for (const [key, sr] of mentorTrendSeriesRef.current) {
+      if (!nextKeys.has(key)) {
+        try {
+          chart.removeSeries(sr as any)
+        } catch {
+          // Ignore clear error
+        }
+        mentorTrendSeriesRef.current.delete(key)
+      }
+    }
+    for (const seg of segs) {
+      const data = seg.points.map((p) => ({
+        time: p.time as UTCTimestamp,
+        value: p.value,
+      }))
+      const existing = mentorTrendSeriesRef.current.get(seg.key)
+      if (existing) {
+        existing.applyOptions({
+          color: seg.color,
+          lineWidth: seg.lineWidth ?? 1,
+          lineStyle: seg.style ?? 2,
+          title: seg.label,
+        })
+        existing.setData(data)
+        continue
+      }
       const sr = chart.addSeries(LineSeries, {
         color: seg.color,
         lineWidth: seg.lineWidth ?? 1,
@@ -1335,17 +1360,14 @@ export function AdvancedChart({
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       })
-      sr.setData(
-        seg.points.map((p) => ({
-          time: p.time as UTCTimestamp,
-          value: p.value,
-        }))
-      )
-      mentorTrendSeriesRef.current.push(sr)
+      sr.setData(data)
+      mentorTrendSeriesRef.current.set(seg.key, sr)
     }
   }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
 
   // m134 — the mentor EMA 9/34 curves (a per-bar series, not one flat value).
+  // m150: snapped to the chart's drawn bars (mentorEMACurves) so the 1m series
+  // never adds extra slots to the shared time axis on other intervals.
   useEffect(() => {
     const chart = chartRef.current
     mentorEMARef.current.forEach((sr) => {
@@ -1360,9 +1382,11 @@ export function AdvancedChart({
     const add = (
       label: string,
       color: string,
-      data: { time: UTCTimestamp; value: number }[]
+      data: { time: number; value: number }[]
     ) => {
       if (data.length === 0) return
+      // m150: a disabled period is an all-zero curve — drop it, never draw it.
+      if (data.every((d) => d.value === 0)) return
       const sr = chart.addSeries(LineSeries, {
         color,
         lineWidth: 1,
@@ -1372,21 +1396,15 @@ export function AdvancedChart({
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       })
-      sr.setData(data)
+      sr.setData(
+        data.map((d) => ({ time: d.time as UTCTimestamp, value: d.value }))
+      )
       mentorEMARef.current.push(sr)
     }
-    const pts = mentorEMASeries ?? []
-    add(
-      'EMA 9',
-      '#3B82F6',
-      pts.map((p) => ({ time: (p.ms / 1000) as UTCTimestamp, value: p.ema9 }))
-    )
-    add(
-      'EMA 34',
-      '#EC4899',
-      pts.map((p) => ({ time: (p.ms / 1000) as UTCTimestamp, value: p.ema34 }))
-    )
-  }, [mentorEMASeries, symbol, interval])
+    const curves = mentorEMACurves(mentorEMASeries, barTimes)
+    add('EMA 9', '#3B82F6', curves.ema9)
+    add('EMA 34', '#EC4899', curves.ema34)
+  }, [mentorEMASeries, symbol, interval, barTimes])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {
