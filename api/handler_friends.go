@@ -88,6 +88,11 @@ var tunnelIPOK = func() (ip string, ok bool) {
 	if parsed == nil {
 		return ip, false
 	}
+	// R13: IPv4 only for now — every URL join (http://TUNNEL_IP:port) stays
+	// valid with an IPv4 literal; an IPv6 literal would need brackets.
+	if parsed.To4() == nil {
+		return ip, false
+	}
 	addrs, err := net.InterfaceAddrs()
 	if err != nil {
 		return ip, false
