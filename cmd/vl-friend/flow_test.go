@@ -285,6 +285,69 @@ func TestRunUpdateCheckSwapsAddonWhenFlat(t *testing.T) {
 	}
 }
 
+// TestRunUpdateCheckSkipsWhenDllMatchesManifest — S2: the swap is gated on the
+// ON-DISK sha256, not installed.json alone. If the DLL already matches the
+// manifest, nothing is rewritten. MUTANT: drop the addonNeedsUpdate gate → RED.
+func TestRunUpdateCheckSkipsWhenDllMatchesManifest(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	// installed.json says 36, but the ON-DISK DLL is already the 37 add-on.
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), addonBody(), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := "http://100.64.0.2:18081"
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	dec, err := RunUpdateCheck(context.Background(), d, base, true)
+	if err != nil {
+		t.Fatalf("update errored: %v", err)
+	}
+	if dec.Applied {
+		t.Fatal("the DLL already matched the manifest — nothing may be rewritten")
+	}
+}
+
+// TestInstallFirstRunSwapsExistingAddon — S16: if a VL.AddOn.dll is already
+// there, the first run uses the swap path (move old aside, never truncate).
+func TestInstallFirstRunSwapsExistingAddon(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	ic := goodCode()
+	// A pre-existing add-on DLL (e.g. a previous manual install).
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), []byte("MZ-preexisting"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := installFirstRun(context.Background(), d, encodeInstallCode(ic)); err != nil {
+		t.Fatalf("install refused: %v", err)
+	}
+	if b, err := os.ReadFile(addonDstPath(home)); err != nil || string(b) != string(addonBody()) {
+		t.Fatalf("new add-on not in place: %v %q", err, b)
+	}
+	oldDir := filepath.Join(ntVLdir(home), "old")
+	entries, err := os.ReadDir(oldDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("the pre-existing add-on was not MOVED aside: %v %v", entries, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(oldDir, entries[0].Name())); err != nil || string(b) != "MZ-preexisting" {
+		t.Fatalf("the pre-existing add-on was not preserved: %v %q", err, b)
+	}
+}
+
 // TestRunUpdateCheckRefusesWhenNotFlat — the swap must never happen while the
 // friend has an open position (flat-wait deferral).
 func TestRunUpdateCheckRefusesWhenNotFlat(t *testing.T) {
@@ -972,6 +1035,14 @@ func TestRunInstalledOpensDashboardBeforeUpdatePrompt(t *testing.T) {
 		t.Fatal(err)
 	}
 	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	// An older add-on DLL is present (so S4 does not treat this as a partial
+	// install) — the update check below must offer the update.
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), []byte("MZ-old"), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)

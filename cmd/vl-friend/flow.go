@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -168,10 +170,18 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// [5/6] Place the verified add-on into NinjaTrader (F2: print the resolved
 	// folder so the user can SEE where it is going).
 	d.print("[5/6] Installing the add-on into: " + ntBinCustom)
-	if err := d.mkdirAll(filepath.Dir(addonDstPath(docs)), 0o755); err != nil {
-		return err
+	// S16: if an add-on DLL is already there, use the swap path — never truncate
+	// a loaded DLL. Only ask to close NinjaTrader when one already exists.
+	if _, statErr := d.readFile(addonDstPath(docs)); statErr == nil {
+		deferred, err := waitNinjaTraderClosed(ctx, d)
+		if err != nil {
+			return err
+		}
+		if deferred {
+			return fmt.Errorf("install deferred — close NinjaTrader and run VL-Setup again")
+		}
 	}
-	if err := d.writeFile(addonDstPath(docs), addon, 0o644); err != nil {
+	if err := placeAddon(d, docs, addon); err != nil {
 		return err
 	}
 	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
@@ -872,6 +882,27 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	}
 	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
 
+	// S4: a PARTIAL install (connect.json written but the add-on step failed) is
+	// resumed from the stored config — no install-code prompt, no Tailscale.
+	if _, err := d.readFile(addonDstPath(docs)); err != nil {
+		d.print("VL is installed but the add-on is missing — re-installing it.")
+		m, merr := fetchManifest(ctx, d, base)
+		if merr != nil {
+			return merr
+		}
+		addon, aerr := fetchVerifiedAddon(ctx, d, base, m)
+		if aerr != nil {
+			return aerr
+		}
+		if err := placeAddon(d, docs, addon); err != nil {
+			return err
+		}
+		if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
+			return err
+		}
+		d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
+	}
+
 	// a) no code prompt — announce instead.
 	d.print("VL is already set up on this PC ✓")
 
@@ -972,47 +1003,30 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 	if err != nil {
 		return dec, err
 	}
+	// S2: only swap when the on-disk DLL differs from the manifest (a
+	// missing/torn DLL is repaired, not blindly re-written).
+	if !addonNeedsUpdate(d, docs, m.AddonSHA256) {
+		return dec, nil // already current
+	}
 	// Never update during a trade: wait until the friend bot is flat.
 	if err := waitFlat(ctx, d); err != nil {
 		return dec, err
 	}
-	// F4: never write a locked DLL. NinjaTrader holds VL.AddOn.dll while it
-	// runs; if it is running, ask the user to close it (or defer) and re-check.
-	for {
-		running, err := d.ntRunning(ctx)
-		if err != nil {
-			return dec, err
-		}
-		if !running {
-			break
-		}
-		ans, err := d.readLine("Close NinjaTrader, then press Enter to install the add-on update (or type L for later)")
-		if err != nil {
-			return dec, err
-		}
-		if ans == "L" || ans == "l" {
-			return dec, nil // deferred
-		}
+	// F4: never write a locked DLL — ask the user to close NinjaTrader (or defer).
+	deferred, err := waitNinjaTraderClosed(ctx, d)
+	if err != nil {
+		return dec, err
+	}
+	if deferred {
+		return dec, nil // Later
 	}
 	// m7: re-probe flat right before the swap — a trade may have opened while the
 	// user was closing NinjaTrader.
 	if err := waitFlat(ctx, d); err != nil {
 		return dec, err
 	}
-	// Swap: move the current add-on aside (never delete), write the new one.
-	old := oldAddonTimestampedPath(docs)
-	if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
-		return dec, err
-	}
-	// A rename error is an error (F4), but only when the old DLL exists — a
-	// first-ever update has nothing to move. m6: the backup is timestamped so a
-	// 2nd update never overwrites the 1st.
-	if _, statErr := d.readFile(addonDstPath(docs)); statErr == nil {
-		if err := d.rename(addonDstPath(docs), old); err != nil {
-			return dec, fmt.Errorf("move old add-on: %w", err)
-		}
-	}
-	if err := d.writeFile(addonDstPath(docs), addon, 0o644); err != nil {
+	// S2/S16: atomic swap (write .new → move old aside → rename into place).
+	if err := placeAddon(d, docs, addon); err != nil {
 		return dec, err
 	}
 	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
@@ -1020,6 +1034,73 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 	}
 	dec.Applied = true
 	return dec, nil
+}
+
+// waitNinjaTraderClosed prompts the user to close NinjaTrader (F4) while it is
+// running, re-checking each time. It returns (true, nil) when the user defers
+// ("L"), or (false, nil) once NinjaTrader is closed.
+func waitNinjaTraderClosed(ctx context.Context, d deps) (bool, error) {
+	for {
+		running, err := d.ntRunning(ctx)
+		if err != nil {
+			return false, err
+		}
+		if !running {
+			return false, nil
+		}
+		ans, err := d.readLine("Close NinjaTrader, then press Enter to install the add-on update (or type L for later)")
+		if err != nil {
+			return false, err
+		}
+		if ans == "L" || ans == "l" {
+			return true, nil
+		}
+	}
+}
+
+// addonNeedsUpdate reports whether the on-disk DLL's SHA-256 differs from the
+// manifest's (S2): a missing or torn DLL is "needs update" too, so it is
+// repaired rather than trusted.
+func addonNeedsUpdate(d deps, docs, wantSHA string) bool {
+	b, err := d.readFile(addonDstPath(docs))
+	if err != nil {
+		return true // missing → repair
+	}
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:]) != wantSHA
+}
+
+// placeAddon atomically installs a verified add-on (S2/S16). It writes
+// VL.AddOn.dll.new in the SAME folder, moves the existing DLL aside (timestamped,
+// never deleted), then renames .new into place; on a rename failure the old DLL
+// is moved back. Never truncates a loaded DLL.
+func placeAddon(d deps, docs string, addon []byte) error {
+	dst := addonDstPath(docs)
+	tmp := dst + ".new"
+	if err := d.mkdirAll(filepath.Dir(tmp), 0o755); err != nil {
+		return err
+	}
+	if err := d.writeFile(tmp, addon, 0o644); err != nil {
+		return err
+	}
+	old := ""
+	if _, err := d.readFile(dst); err == nil {
+		old = oldAddonTimestampedPath(docs)
+		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
+			return err
+		}
+		if err := d.rename(dst, old); err != nil {
+			return err
+		}
+	}
+	if err := d.rename(tmp, dst); err != nil {
+		// S2: roll the old DLL back so the PC is never left without an add-on.
+		if old != "" {
+			_ = d.rename(old, dst)
+		}
+		return fmt.Errorf("install add-on: %w", err)
+	}
+	return nil
 }
 
 // waitFlat prints the plain-English wait line and polls the flat probe until
