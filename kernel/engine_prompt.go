@@ -407,20 +407,23 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 		positionSymbols[normalizedSymbol] = true
 	}
 
-	sb.WriteString(fmt.Sprintf("## Candidate Coins (%d coins)\n\n", len(ctx.MarketDataMap)))
-	displayedCount := 0
+	// m150-4: the header counts the candidate coins ACTUALLY shown (positions
+	// excluded), never len(MarketDataMap) — a map entry can exist while a coin is
+	// skipped, and a coin can be listed while its data is absent.
+	candidates := make([]CandidateCoin, 0, len(ctx.CandidateCoins))
 	for _, coin := range ctx.CandidateCoins {
 		// Skip if this coin is already a position (data already shown in positions section)
-		normalizedCoinSymbol := market.Normalize(coin.Symbol)
-		if positionSymbols[normalizedCoinSymbol] {
+		if positionSymbols[market.Normalize(coin.Symbol)] {
 			continue
 		}
-
+		candidates = append(candidates, coin)
+	}
+	sb.WriteString(fmt.Sprintf("## Candidate Coins (%d coins)\n\n", len(candidates)))
+	for i, coin := range candidates {
 		marketData, hasData := ctx.MarketDataMap[coin.Symbol]
-		displayedCount++
 
 		sourceTags := e.formatCoinSourceTag(coin.Sources)
-		sb.WriteString(fmt.Sprintf("### %d. %s%s\n\n", displayedCount, coin.Symbol, sourceTags))
+		sb.WriteString(fmt.Sprintf("### %d. %s%s\n\n", i+1, coin.Symbol, sourceTags))
 		if !hasData {
 			// m134-c: a missing market block is STATED, never silently skipped —
 			// the model must not infer prices the feed did not deliver.
@@ -476,6 +479,11 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		sb.WriteString(e.formatMarketData(marketData))
 
 		sb.WriteString("\n")
+	} else {
+		// m150-4: an OPEN POSITION whose market fetch failed must say so, never
+		// vanish the market block (the same rule as the candidate loop) — the
+		// model must not manage a position on invented prices.
+		sb.WriteString("⚠️ market data unavailable for this symbol this cycle — do NOT infer prices.\n\n")
 	}
 
 	return sb.String()
@@ -537,24 +545,36 @@ func formingBarLine(tf string, tfData *market.TimeframeSeriesData, snapshotMs in
 		tf, ClockCT(time.UnixMilli(closeMs)), ClockCT(time.UnixMilli(closeMs+iv)))
 }
 
-// dailySessionBarLine (m134-a) renders the 1d bar's honesty label from the CME
-// session boundaries. While CME is open the label is FORMING and names the
-// session close (16:00 CT); once the session is closed (the daily 16:00–17:00
-// break, weekends, holidays) it is CLOSED, naming the close that just passed and
-// the next one. Day arithmetic goes through AddDate (DST-safe); the market-open
-// read is IsCMEOpen (holiday/weekend/break aware) — never calendar +24h.
+// dailySessionBarLine (m134-a, m150) renders the 1d bar's honesty label from the
+// CME session boundaries. While CME is open the label is FORMING and names the
+// session's real close (16:00 CT, or the shortened close on a half day). While
+// CME is closed it is CLOSED, naming the close REASON (via CMEClosedReason —
+// weekend / holiday / Friday close / daily break / early close) and the REOPEN
+// instant (via NextCMEOpen) — never an invented close. Day arithmetic goes
+// through AddDate (DST-safe).
 func dailySessionBarLine(snapshotMs int64) string {
 	now := time.UnixMilli(snapshotMs)
-	ct := now.In(CTLocation())
-	nextClose := time.Date(ct.Year(), ct.Month(), ct.Day(), 16, 0, 0, 0, CTLocation())
-	if !ct.Before(nextClose) {
-		nextClose = nextClose.AddDate(0, 0, 1)
-	}
 	if IsCMEOpen(now) {
-		return fmt.Sprintf("current 1d bar: FORMING (closes %s) — prior bars closed\n\n", ClockCT(nextClose))
+		return fmt.Sprintf("current 1d bar: FORMING (closes %s) — prior bars closed\n\n", ClockCT(dailySessionClose(now)))
 	}
-	lastClose := nextClose.AddDate(0, 0, -1)
-	return fmt.Sprintf("current 1d bar: CLOSED at %s (next close %s)\n\n", ClockCT(lastClose), ClockCT(nextClose))
+	_, reason := CMEClosedReason(now)
+	reopen := NextCMEOpen(now)
+	return fmt.Sprintf("current 1d bar: CLOSED (%s); reopens %s\n\n", reason, WeekdayClockCT(reopen))
+}
+
+// dailySessionClose returns the close instant of the CME session containing now.
+// The session opens 17:00 CT and closes 16:00 CT the next calendar day — except
+// when that close day is a SHORTENED session (e.g. 12:15 CT on the day after
+// Thanksgiving and on Christmas Eve), which SessionStateAt names as st.Close.
+// AddDate moves calendar days, so a DST transition cannot shift the 16:00 wall
+// clock (an Add(24h) mutant lands an hour late on 2026-03-08 / 2026-11-01).
+func dailySessionClose(now time.Time) time.Time {
+	start := CMESessionDayStart(now) // 17:00 CT of the session's start day
+	closeDay := start.AddDate(0, 0, 1)
+	if st := SessionStateAt(time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 12, 0, 0, 0, CTLocation())); st.Class == SessionShortened && st.HasClose {
+		return st.Close
+	}
+	return time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 16, 0, 0, 0, CTLocation())
 }
 
 // staleTFLabel (G7) appends a staleness warning under a TF table when the
