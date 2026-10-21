@@ -12,7 +12,7 @@ import (
 // real PowerShell (the owner's box rejected the old "};else{" split). This runs
 // only on Windows, where powershell is available.
 func TestShortcutScriptPowerShellParses(t *testing.T) {
-	ps := shortcutScript("http://100.66.89.106:18081")
+	ps := shortcutScript()
 	check := "$null = [scriptblock]::Create($args[0]); 'ok'"
 	out, err := exec.Command("powershell", "-NoProfile", "-NonInteractive", "-Command", check, ps).CombinedOutput()
 	if err != nil {

@@ -789,21 +789,32 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey stri
 // missing. B1: the if/else is ONE statement — PowerShell rejects "};else{".
 // m10: each .lnk/.url is written only when missing (Test-Path), so a daily click
 // is a no-op, not a rewrite.
-func shortcutScript(appURL string) string {
-	return strings.Join([]string{
+//
+// P1: the dashboard URL is NEVER spliced into the script text — PowerShell 5.1
+// rejects a positional arg after -EncodedCommand, so the caller's trailing arg
+// rides the VL_ARG0 environment variable and the script reads $env:VL_ARG0.
+// The script ends by VERIFYING that every shortcut file really exists: it prints
+// VL_RESULT=ok, or exits 1 naming what is missing.
+func shortcutScript() string {
+	return psPreamble + strings.Join([]string{
 		"$d=[Environment]::GetFolderPath('Desktop')",
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
-		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"$ext='url'",
+		"if(Test-Path $exe){$ext='lnk';$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path -LiteralPath $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=$env:VL_ARG0`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path -LiteralPath $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"$missing=@();foreach($dir in @($d,$s)){$p=\"$dir\\VL.$ext\";if(-not (Test-Path -LiteralPath $p)){$missing+=$p}}",
+		"if($missing.Count -gt 0){[Console]::Error.WriteLine('shortcut missing: '+($missing -join ', '));exit 1}",
+		"'VL_RESULT=ok'",
 	}, ";")
 }
 
 // createDesktopShortcut creates the VL shortcuts (Desktop + Start Menu) opening
 // the friend's dashboard in its own app window (msedge --app), or a .url
 // shortcut to the default browser when Edge is absent. The PowerShell is invoked
-// through d.exec so tests assert the effect without Windows.
+// through d.exec so tests assert the effect without Windows. The URL is the
+// TRAILING argument (the exec seam hands it to the script as $env:VL_ARG0).
 func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
-	if _, err := d.exec(ctx, "powershell", "-NoProfile", "-Command", shortcutScript(appURL)); err != nil {
+	if _, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL); err != nil {
 		return fmt.Errorf("desktop shortcut: %w", err)
 	}
 	return nil
