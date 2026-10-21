@@ -281,8 +281,11 @@ func (s *Server) setupRoutes() {
 				`Body: {"confirm":"RESET-ALL-DATA"}. Requires ALLOW_ACCOUNT_RESET=1 in the server environment.`,
 				s.handleResetAccount)
 
-			// Server IP query (requires authentication, for whitelist configuration)
-			s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			// Server IP query (requires authentication, for whitelist configuration).
+			// U8: NOT registered on a friend bot — it leaks the owner's public IP.
+			if !s.friendMode {
+				s.route(protected, "GET", "/server-ip", "Get server public IP (for exchange whitelist)", s.handleGetServerIP)
+			}
 
 			// AI trader management
 			s.routeWithSchema(protected, "GET", "/my-traders", "List user's traders with status",
