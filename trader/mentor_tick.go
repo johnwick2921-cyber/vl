@@ -770,7 +770,7 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 // mentorLevelExpiry (D2-44, item 11) is the B6 lifetime for a LEVEL order
 // (ArmID prefix "lvl-"): it RESTS until the RTH window end at 15:00 CT, or
 // until the evaluator's close-through sweep cancels it — never the next 1m
-// candle [D2.3 p1 @17:42–18:14, @18:46–19:12]. At or after 15:00 CT it
+// candle [D2.3 p1 @23:16–24:03]. At or after 15:00 CT it
 // fail-safes to tomorrow's 15:00 (placement past RTH is already refused
 // upstream, so this is a guard, never the live path).
 func mentorLevelExpiry(nowMs int64) int64 {

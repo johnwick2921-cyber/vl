@@ -30,7 +30,7 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 }
 
 // HTFVerdict is the three cases verbatim from the mentor's screen
-// [D4.4 p1 @ 16:00]:
+// [D4.4 p1 @14:08–15:34]:
 //
 //  1. 4H trigger + 1h trigger same direction            → trade that side.
 //  2. 4H trigger, 1h "ko có gì hết" (nothing)           → follow the 4h.
@@ -53,7 +53,7 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
-	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @15:09–15:34]"
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the

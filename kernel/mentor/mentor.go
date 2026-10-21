@@ -244,7 +244,7 @@ type Config struct {
 
 	// EMALocationTFMinutes is the LOCATION-GATE EMA 34 timeframe. R3 (RULES
 	// FIX v3, verified): intraday setups use the EMA 34 of the TRADING chart
-	// — the 1m [D5.4 @ 01:00–01:27, 05:21–05:37] — so the default is 1. The
+	// — the 1m [D5.4 @08:12–08:40] — so the default is 1. The
 	// 4h EMA 34 is ONLY for the §8 swing, which carries its own knobs
 	// (SwingCfg) and never reads this [D5.2 p1 @ 05:30–05:43]. Other TFs
 	// (5/15/60/240) remain allowed for experimentation.

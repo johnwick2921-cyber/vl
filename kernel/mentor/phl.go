@@ -68,10 +68,10 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	}
 	if priorSwing != 0 {
 		if side == SideLong && stop <= priorSwing {
-			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p1 R2]"
+			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p3 @08:45–10:02 (srt 08:13–10:29)]"
 		}
 		if side == SideShort && stop >= priorSwing {
-			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p1 R2]"
+			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @08:45–10:02, mirror @14:03–14:22]"
 		}
 	}
 	// The old extreme must be on the TARGET side: long → old high above;
@@ -168,12 +168,12 @@ func phlTarget(oldExtreme Level, price float64, side Side, levels []Level, cfg C
 //
 //		§5.4 (fold item 3): entries only WITH the 4h trigger direction; the 1h
 //		agreeing or silent. A 1h opposite the 4h refuses the setup until it
-//		flips [D4.4 p1 @ 16:00].
+//		flips [D4.4 p1 @15:09–15:34].
 //
 //	  §7 (fold item 4): a SPENT day with a 4h/1h conflict shuts the day off
 //	  (latched at the 08:30 read — a later 1h flip does not reopen it); a
 //	  spent day that agrees caps the target at TargetCapPts
-//	  ("15 điểm bán, 10 điểm bán") [D5.1 p1 @ 15:57]; an unmeasured run
+//	  ("15 điểm bán, 10 điểm bán") [D5.1 p1 @19:56–20:07]; an unmeasured run
 //	  fails closed ("any trade you are vague about — don't" [§12]). On a
 //	  NORMAL day a conflict is §5.4 case 3 — the HTF gate above sits out
 //	  per tick until the 1h flips, not a day off.
@@ -207,7 +207,7 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	if htfOK, side, htfReason := HTFVerdict(htf); !htfOK {
 		return in, false, "HTF direction gate: no trade — " + htfReason
 	} else if side != "" && side != in.Side {
-		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @ 16:00]"
+		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @14:08–15:34]"
 	}
 	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse
 	// every intraday setup through the same helper (dayGateRefusal).
