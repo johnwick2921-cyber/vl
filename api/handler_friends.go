@@ -189,18 +189,20 @@ func saveFriends(rows []friendRecord) error {
 	return os.Rename(tmpName, filepath.Join(dir, "friends.json"))
 }
 
-// findFriend returns the registry row for name (nil when absent).
-func findFriend(name string) *friendRecord {
+// findFriend returns the registry row for name. A read/parse error is returned
+// separately (R16) so a corrupt registry surfaces as 500, not a false "not
+// found" (404).
+func findFriend(name string) (*friendRecord, error) {
 	rows, err := loadFriends()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for i := range rows {
 		if rows[i].Name == name {
-			return &rows[i]
+			return &rows[i], nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 // withFriendLock holds the friends.json.lock flock (LOCK_EX) for the duration
@@ -479,7 +481,12 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 		return
 	}
 
-	row := findFriend(name)
+	row, err := findFriend(name)
+	if err != nil {
+		logger.Errorf("friends add: read registry: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read friends registry"})
+		return
+	}
 	if row == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "friend provisioned but absent from the registry"})
 		return
@@ -505,7 +512,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	name := strings.TrimSpace(c.Param("name"))
 	action := strings.TrimSpace(c.Param("action"))
 
-	row := findFriend(name)
+	row, err := findFriend(name)
+	if err != nil {
+		logger.Errorf("friends %s: read registry: %v", action, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read friends registry"})
+		return
+	}
 	if row == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "friend not found"})
 		return
