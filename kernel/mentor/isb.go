@@ -135,7 +135,7 @@ type ISBArm struct {
 	Inside   int          // candles whose BODIES stayed inside the first ISB since placement
 	Side     Side         // the arm's R1 direction (candle-1 colour) — stored, not derived:
 	// FirstBar is the ISB candle, whose own colour is the OPPOSITE side
-	TFMin    int   // the execution timeframe the arm was READ on (1 or 2) — the
+	TFMin int // the execution timeframe the arm was READ on (1 or 2) — the
 	// stacking count advances on that frame's candles (fold #565, D1)
 	LastTick int64 // CloseTime of the last candle this arm was ticked with — the
 	// loop skips it on 1m ticks where its frame's candle has not advanced

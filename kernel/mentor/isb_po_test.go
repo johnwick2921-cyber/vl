@@ -177,8 +177,8 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 		e := newISBEval(cfg)
 		bars := []market.Kline{
 			rthBars(0, 121, 121.5, 120.5, 120),
-			rthBars(1, 95, 120, 90, 115),   // green candle 1, wide
-			rthBars(2, 100, 117, 90, 101),  // ISB; stop = 27 + 3 = 30 pts
+			rthBars(1, 95, 120, 90, 115),  // green candle 1, wide
+			rthBars(2, 100, 117, 90, 101), // ISB; stop = 27 + 3 = 30 pts
 		}
 		if _, ok, _ := ISBStopVerdict(bars[2], cfg); ok {
 			t.Fatal("fixture: the stop must reach the 30-pt ceiling")
