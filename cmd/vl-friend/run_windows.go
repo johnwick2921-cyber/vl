@@ -175,7 +175,8 @@ func realDeps() deps {
 		openURL: func(ctx context.Context, url string) error {
 			return openDashboardNative(url)
 		},
-		docsDir: windowsDocumentsDir,
+		docsDir:  windowsDocumentsDir,
+		iconDirs: windowsIconDirs,
 		dirExists: func(path string) bool {
 			st, err := os.Stat(path)
 			return err == nil && st.IsDir()
@@ -254,6 +255,23 @@ var singleInstanceHandle windows.Handle
 // corrupted. KnownFolderPath goes straight to the SHGetKnownFolderPath API and
 // returns a UTF-16-decoded Go string, so there is no codepage to lose. The
 // result must be non-empty and absolute; anything else refuses.
+// windowsIconDirs returns the real Desktop and Start Menu Programs folders
+// (Known Folders: OneDrive-redirect safe) for the Go-side icon fallback.
+func windowsIconDirs() ([]string, error) {
+	var out []string
+	for _, id := range []*windows.KNOWNFOLDERID{windows.FOLDERID_Desktop, windows.FOLDERID_Programs} {
+		p, err := windows.KnownFolderPath(id, windows.KF_FLAG_DEFAULT)
+		if err != nil {
+			return nil, err
+		}
+		if p = strings.TrimSpace(p); p == "" || !filepath.IsAbs(p) {
+			return nil, fmt.Errorf("known folder returned %q", p)
+		}
+		out = append(out, p)
+	}
+	return out, nil
+}
+
 func windowsDocumentsDir() (string, error) {
 	p, err := windows.KnownFolderPath(windows.FOLDERID_Documents, windows.KF_FLAG_DEFAULT)
 	if err != nil {

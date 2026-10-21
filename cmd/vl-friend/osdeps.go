@@ -69,6 +69,10 @@ type deps struct {
 	// Documents off the profile, and NinjaTrader + the C# AddOn both read
 	// MyDocuments, so every NT path must be under it.
 	docsDir func() (string, error)
+	// iconDirs returns the real Desktop + Start Menu Programs folders (Known
+	// Folders). Used by the Go-side icon fallback; nil in tests that do not
+	// exercise it.
+	iconDirs func() ([]string, error)
 	// dirExists reports whether a directory exists. Production: os.Stat + IsDir;
 	// used as the F2 exactness proof (NT8 must have created bin\Custom) before any
 	// write.

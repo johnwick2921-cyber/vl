@@ -241,6 +241,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		d.print("warning: could not create the VL icon — " + err.Error())
+		reportDiag(ctx, d, base, "icon-final", err)
 	}
 	if err := writeDashboardREADME(d, docs, base); err != nil {
 		// G11: README is non-fatal.
@@ -860,8 +861,62 @@ func shortcutScript() string {
 // shortcut to the default browser when Edge is absent. The PowerShell is invoked
 // through d.exec so tests assert the effect without Windows. The URL is the
 // TRAILING argument (the exec seam hands it to the script as $env:VL_ARG0).
+// reportDiag sends a short, redacted diagnostic to the friend's OWN bot as a
+// query on the public manifest URL, so the owner's bot log shows the exact
+// reason a step failed on a PC nobody can see (10-21: "exit status 1" with no
+// text). Best effort, 5s, ignored on failure. No secrets: redactTSKeys plus the
+// central redactor in the print seam's patterns.
+func reportDiag(ctx context.Context, d deps, base, what string, err error) {
+	if err == nil || base == "" || d.fetch == nil {
+		return
+	}
+	msg := redactTSKeys(what + ": " + err.Error())
+	if len(msg) > 600 {
+		msg = msg[:600]
+	}
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	_, _ = d.fetch(cctx, base+"/api/friend/manifest?vl_diag="+url.QueryEscape(appVersion+" "+msg))
+}
+
 func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
-	// Bounded (A6): the icon step may never hang the run.
+	psErr := createShortcutPS(ctx, d, appURL)
+	if psErr == nil {
+		return nil
+	}
+	reportDiag(ctx, d, appURL, "icon-ps", psErr)
+	// 10-21 laptop: the PowerShell icon step failed with a bare "exit status
+	// 1". The icon must not depend on PowerShell: write plain VL.url web links
+	// from Go into the real Desktop + Start Menu (a file write, nothing else).
+	if d.iconDirs == nil {
+		return psErr
+	}
+	dirs, err := d.iconDirs()
+	if err != nil {
+		return fmt.Errorf("%v (and Desktop folder: %v)", psErr, err)
+	}
+	body := []byte("[InternetShortcut]\r\nURL=" + appURL + "\r\n")
+	for _, dir := range dirs {
+		if _, err := d.readFile(filepath.Join(dir, "VL.lnk")); err == nil {
+			continue // a .lnk exists: keep it
+		}
+		p := filepath.Join(dir, "VL.url")
+		if _, err := d.readFile(p); err == nil {
+			continue
+		}
+		if err := d.mkdirAll(dir, 0o755); err != nil {
+			return fmt.Errorf("%v (and VL.url: %v)", psErr, err)
+		}
+		if err := d.writeFile(p, body, 0o644); err != nil {
+			return fmt.Errorf("%v (and VL.url: %v)", psErr, err)
+		}
+	}
+	return nil
+}
+
+// createShortcutPS is the PowerShell icon step (.lnk to the local exe with
+// --open, re-targeting a stale one; .url fallback). Bounded (A6).
+func createShortcutPS(ctx context.Context, d deps, appURL string) error {
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL)
@@ -1420,6 +1475,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 		// Never fatal: the URL is printed above, and the update check below
 		// must still run.
 		d.print("warning: could not open the dashboard — open the link above yourself (" + err.Error() + ")")
+		reportDiag(ctx, d, base, "open-dashboard", err)
 	}
 	d.print("Checking for updates…")
 
@@ -1437,6 +1493,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 			// Reported AFTER the local copy below, so a failed check never
 			// skips updating the app copy the icon launches.
 			checkErr = fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
+			reportDiag(ctx, d, base, "update-check", checkErr)
 		}
 	}
 	// G4: exactly one outcome — Updated, app-only note, or deferred. Never
@@ -1455,10 +1512,12 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	d.print(localCopyStatus(d))
 	if err := ensureLocalExe(d); err != nil {
 		d.print("warning: could not update VL's app copy — " + err.Error())
+		reportDiag(ctx, d, base, "local-copy", err)
 	}
 	d.print("Creating the VL icons…")
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		d.print("warning: could not create the VL icon — " + err.Error())
+		reportDiag(ctx, d, base, "icon-final", err)
 	}
 	if checkErr != nil {
 		return checkErr

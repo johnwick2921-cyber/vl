@@ -252,3 +252,41 @@ func TestInstallFirstRunRetriesFirstFetch(t *testing.T) {
 		}
 	}
 }
+
+// TestCreateDesktopShortcutGoFallback — 10-21 laptop: the PowerShell icon step
+// failed ("exit status 1"). The icon must not depend on PowerShell: when it
+// fails, Go writes VL.url into the real Desktop + Start Menu. MUTANT: return
+// psErr without the fallback → RED.
+func TestCreateDesktopShortcutGoFallback(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	desk, progs := filepath.Join(home, "Desktop"), filepath.Join(home, "Programs")
+	d.iconDirs = func() ([]string, error) { return []string{desk, progs}, nil }
+	d.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }
+	if err := createDesktopShortcut(context.Background(), d, "http://100.77.150.109:18081"); err != nil {
+		t.Fatalf("the Go fallback must succeed when PowerShell fails: %v", err)
+	}
+	for _, dir := range []string{desk, progs} {
+		b, err := os.ReadFile(filepath.Join(dir, "VL.url"))
+		if err != nil || !strings.Contains(string(b), "URL=http://100.77.150.109:18081") {
+			t.Fatalf("VL.url not written in %s: %v %q", dir, err, b)
+		}
+	}
+}
+
+// TestReportDiagSendsRedactedReason — 10-21: a failed step reports its reason
+// to the friend's own bot (manifest URL + vl_diag query) so the owner's log
+// shows it. Secrets must never ride along. MUTANT: drop the redaction → RED.
+func TestReportDiagSendsRedactedReason(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	var got string
+	d.fetch = func(_ context.Context, u string) ([]byte, error) { got = u; return nil, nil }
+	reportDiag(context.Background(), d, "http://h:1", "icon-ps", errors.New("boom tskey-auth-SECRET123-abcdef"))
+	if !strings.HasPrefix(got, "http://h:1/api/friend/manifest?vl_diag=") || !strings.Contains(got, "boom") {
+		t.Fatalf("diag not sent: %q", got)
+	}
+	if strings.Contains(got, "SECRET123") {
+		t.Fatalf("a secret leaked into the diag: %q", got)
+	}
+}
