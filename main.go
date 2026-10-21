@@ -26,6 +26,7 @@ import (
 	"vl/mcp"
 	_ "vl/mcp/provider"
 	"vl/researchsnapshot"
+	"vl/security"
 	"vl/store"
 	"vl/telegram"
 	"vl/telemetry"
@@ -55,6 +56,10 @@ func main() {
 	config.Init()
 	cfg := config.Get()
 	logger.Info("✅ Configuration loaded")
+
+	// R2: security cannot import config (config → mcp → security cycle), so the
+	// friend-mode redirect guard is wired here from the ONE parser.
+	security.FriendModeEnabled = config.FriendInstanceEnabled
 
 	// W-FRIEND-HOSTED Segment 2: a friend instance boots with the owner-only
 	// surfaces off. Refuse an unsafe bind BEFORE anything listens — a friend

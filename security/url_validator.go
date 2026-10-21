@@ -23,12 +23,15 @@ func init() {
 		"172.16.0.0/12",  // RFC1918 private
 		"192.168.0.0/16", // RFC1918 private
 		"169.254.0.0/16", // Link-local / Cloud metadata
+		"100.64.0.0/10",  // Tailscale CGNAT (RFC 6598) — R2
 		"0.0.0.0/8",      // Current network
 		"224.0.0.0/4",    // Multicast
 		"240.0.0.0/4",    // Reserved
 		"::1/128",        // IPv6 loopback
 		"fe80::/10",      // IPv6 link-local
 		"fc00::/7",       // IPv6 unique local
+		"64:ff9b::/96",   // NAT64 well-known prefix — R2
+		"2002::/16",      // 6to4 — R2
 	}
 
 	for _, cidr := range privateRanges {
@@ -170,6 +173,23 @@ func ValidateHTTPSURL(rawURL string) error {
 	return ValidateURL(rawURL)
 }
 
+// FriendModeEnabled reports whether this process is a friend instance for the
+// redirect guard (R2). security cannot import config (import cycle:
+// config → mcp → security), so main.go wires it at boot from
+// config.FriendInstanceEnabled — the ONE parser. Default false keeps the
+// owner's lenient behavior until wired.
+var FriendModeEnabled = func() bool { return false }
+
+// redirectValidator is the ONE redirect validator: friend mode demands https on
+// every hop (the friend's key travels over it); the owner's box blocks only
+// private targets via ValidateURL.
+func redirectValidator(rawURL string) error {
+	if FriendModeEnabled() {
+		return ValidateHTTPSURL(rawURL)
+	}
+	return ValidateURL(rawURL)
+}
+
 // SafeHTTPClient returns an HTTP client with SSRF protection
 // It validates URLs and blocks requests to private networks
 // DialerKeepAlive is the ONE source of the TCP keepalive the safe client's
@@ -191,25 +211,38 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 
 	transport := &http.Transport{
 		DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			// Extract host from address
-			host, _, err := net.SplitHostPort(addr)
+			host, port, err := net.SplitHostPort(addr)
 			if err != nil {
 				host = addr
+				port = "443"
 			}
 
-			// Resolve and check the IP
+			// Resolve and check every IP. A private address is refused BEFORE
+			// any dial.
 			ips, err := net.LookupIP(host)
 			if err != nil {
 				return nil, fmt.Errorf("SSRF protection: failed to resolve host %s: %w", host, err)
 			}
 
+			var chosen net.IP
 			for _, ip := range ips {
 				if isPrivateIP(ip) {
 					return nil, fmt.Errorf("SSRF protection: blocked connection to private IP %s", ip)
 				}
+				if chosen == nil {
+					chosen = ip
+				}
+			}
+			if chosen == nil {
+				return nil, fmt.Errorf("SSRF protection: no public IP for %s", host)
 			}
 
-			return dialer.DialContext(ctx, network, addr)
+			// R2: dial the VALIDATED IP, not the original hostname — dialing
+			// the name again would let a DNS rebind resolve to a private IP
+			// after the check above passed (TOCTOU). TLS SNI is unaffected:
+			// http.Transport sets ServerName from the request URL, not the dial
+			// address.
+			return dialer.DialContext(ctx, network, net.JoinHostPort(chosen.String(), port))
 		},
 	}
 
@@ -221,8 +254,9 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 				return fmt.Errorf("too many redirects")
 			}
 
-			// Validate the redirect URL
-			if err := ValidateURL(req.URL.String()); err != nil {
+			// R2: friend mode keeps redirects https-only; the owner's box stays
+			// lenient (ValidateURL blocks private targets, not plain http).
+			if err := redirectValidator(req.URL.String()); err != nil {
 				return fmt.Errorf("SSRF protection: redirect blocked - %w", err)
 			}
 
