@@ -348,6 +348,31 @@ func probeFriend(st *friendStatus) {
 	friendLastSeen.Store(st.Name, seen)
 }
 
+// friendFlatProbe returns (flat, known) for a friend's /api/friend/flat. It is
+// a var so a test can pin a definitive non-flat answer without a live friend.
+var friendFlatProbe = func(row *friendRecord) (flat, known bool) {
+	host := strings.TrimSpace(os.Getenv("TUNNEL_IP"))
+	if host == "" || row.WebPort <= 0 {
+		return false, false
+	}
+	hc := &http.Client{Timeout: 2 * time.Second}
+	resp, err := hc.Get(fmt.Sprintf("http://%s:%d/api/friend/flat", host, row.WebPort))
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, false
+	}
+	var out struct {
+		Flat bool `json:"flat"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, false
+	}
+	return out.Flat, true
+}
+
 func probeFriendManifest(hc *http.Client, host string, port int) *friendManifest {
 	resp, err := hc.Get(fmt.Sprintf("http://%s:%d/api/friend/manifest", host, port))
 	if err != nil {
@@ -490,6 +515,17 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	if row.State == "revoked" && action != "revoke" {
 		c.JSON(http.StatusConflict, gin.H{"error": "friend is revoked"})
 		return
+	}
+	// R15: pause / rotate / revoke WARN when the friend is NOT flat (positions
+	// open or unknown) — stopping or removing it could strand a position.
+	// force=1 overrides. Only a DEFINITIVE non-flat answer refuses; an
+	// unreachable friend cannot be probed, so the action proceeds (a dead bot
+	// must still be revocable).
+	if (action == "pause" || action == "rotate" || action == "revoke") && c.Query("force") != "1" {
+		if flat, known := friendFlatProbe(row); known && !flat {
+			c.JSON(http.StatusConflict, gin.H{"error": "friend is not flat — a position may be open. Pass force=1 to override", "force": true})
+			return
+		}
 	}
 
 	switch action {
