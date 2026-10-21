@@ -757,9 +757,11 @@ func TestRunInstalledPrintsBothLinesAndOpens(t *testing.T) {
 		t.Fatalf("installed run did not ensure the shortcut: %v", rec.execs)
 	}
 
-	// No install-code prompt: readLine is only used for the final "Press Enter".
+	// No FORCED install-code prompt (the S6 gate "Have a new install code?" is
+	// optional and skipped here); readLine must never ask the user to PASTE a
+	// code on the installed path.
 	for _, p := range rec.lines {
-		if strings.Contains(p, "install code") {
+		if strings.Contains(p, "Paste the install code") || strings.Contains(p, "Paste the new install code") {
 			t.Fatalf("runInstalled prompted for an install code: %q", rec.lines)
 		}
 	}
@@ -1297,6 +1299,132 @@ func TestEnsureLocalExeMovesOldCopy(t *testing.T) {
 	ob, err := os.ReadFile(filepath.Join(oldDir, entries[0].Name()))
 	if err != nil || string(ob) != "MZ-old" {
 		t.Fatalf("the old exe was not MOVED to VL\\old\\: %v %q", err, ob)
+	}
+}
+
+// TestApplyNewCodeMovesOldAndSkipsTailscale — S6: on an installed PC, a fresh
+// install code swaps connect.json + vl-app.json and skips `tailscale up` when
+// already Running on our tailnet. The old connect.json is MOVED to
+// VL\old\connect-<ts>.json, never overwritten or deleted.
+func TestApplyNewCodeMovesOldAndSkipsTailscale(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	old := goodCode()
+	if err := writeConnectJSON(d, home, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: old.Name, WebPort: old.WebPort}); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer(old.Host)}
+	d.exec = f.exec
+
+	newIC := goodCode()
+	newIC.Name = "tom2"
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+
+	if err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC)); err != nil {
+		t.Fatalf("applyNewCode refused: %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("tailscale up must NOT run when already Running on our tailnet")
+	}
+
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectKey != newIC.ConnectKey || cfg.Host != newIC.Host || cfg.Port != newIC.NTPort {
+		t.Fatalf("connect.json not swapped to the new code: %+v", cfg)
+	}
+
+	entries, err := os.ReadDir(filepath.Join(ntVLdir(home), "old"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one old connect.json backup in VL\\old\\: %v %v", entries, err)
+	}
+	if !strings.HasPrefix(entries[0].Name(), "connect-") || !strings.HasSuffix(entries[0].Name(), ".json") {
+		t.Fatalf("backup name unexpected: %s", entries[0].Name())
+	}
+	ob, err := os.ReadFile(filepath.Join(ntVLdir(home), "old", entries[0].Name()))
+	if err != nil || !strings.Contains(string(ob), old.ConnectKey) {
+		t.Fatalf("the old connect.json was not moved intact: %v %q", err, ob)
+	}
+}
+
+// TestApplyNewCodeRefusesOtherTailnet — S6: a new code whose bot host is NOT on
+// the local tailnet refuses, and connect.json stays exactly as it was.
+func TestApplyNewCodeRefusesOtherTailnet(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	old := goodCode()
+	if err := writeConnectJSON(d, home, old); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running"}
+	d.exec = f.exec
+
+	newIC := goodCode()
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+	err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC))
+	if err == nil || !strings.Contains(err.Error(), "already logged in") {
+		t.Fatalf("expected 'already logged in' refusal, got %v", err)
+	}
+
+	cfg, rerr := readConnectConfig(d, home)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if cfg.ConnectKey != old.ConnectKey {
+		t.Fatalf("connect.json must be unchanged after a refused new code: %+v", cfg)
+	}
+}
+
+// TestRunInstalledTypeNAppliesNewCode — S6: the installed screen's "Type N" gate
+// applies a pasted new code end-to-end.
+func TestRunInstalledTypeNAppliesNewCode(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	old := goodCode()
+	if err := writeConnectJSON(d, home, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: old.Name, WebPort: old.WebPort}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer(old.Host)}
+	d.exec = f.exec
+	base := fmt.Sprintf("http://%s:%d", old.Host, old.WebPort)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	newIC := goodCode()
+	newIC.Name = "tom2"
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+	queue := []string{"N", encodeInstallCode(newIC)}
+	d.readLine = func(string) (string, error) {
+		if len(queue) == 0 {
+			return "", nil
+		}
+		l := queue[0]
+		queue = queue[1:]
+		return l, nil
+	}
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled with Type N failed: %v", err)
+	}
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectKey != newIC.ConnectKey {
+		t.Fatalf("the new code was not applied: %+v", cfg)
 	}
 }
 

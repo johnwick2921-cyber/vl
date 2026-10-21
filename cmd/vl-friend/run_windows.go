@@ -254,6 +254,17 @@ func run(args []string) error {
 		return nil
 	}
 
+	// --new-code (S6): on an installed PC, apply a fresh install code (the
+	// owner may re-issue one). The console flow lives in flow.go.
+	if len(args) > 0 && args[0] == "--new-code" {
+		if err := runNewCode(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			pauseOnError(d, err.Error())
+			return err
+		}
+		return nil
+	}
+
 	if err := runInner(ctx, d); err != nil {
 		logSetupError(d, err.Error())
 		pauseOnError(d, err.Error())

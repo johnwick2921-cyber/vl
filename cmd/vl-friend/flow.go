@@ -988,6 +988,71 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 	return nil
 }
 
+// runNewCode is the --new-code path: on an already-installed PC, apply a fresh
+// install code (the owner may re-issue one). It joins/verifies Tailscale —
+// skipping `up` when already Running on our tailnet (S5) — then swaps the
+// connect.json + vl-app.json over to the new bot.
+func runNewCode(ctx context.Context, d deps) error {
+	docs, err := d.docsDir()
+	if err != nil {
+		return err
+	}
+	if _, err := d.readFile(connectJSONPath(docs)); err != nil {
+		return fmt.Errorf("VL is not set up on this PC yet — run VL-Setup normally first")
+	}
+	if err := promptAndApplyNewCode(ctx, d, docs); err != nil {
+		return err
+	}
+	return nil
+}
+
+// promptAndApplyNewCode prints the paste prompt and applies the code. It is the
+// shared body of --new-code and the installed-screen "Type N" gate.
+func promptAndApplyNewCode(ctx context.Context, d deps, docs string) error {
+	d.print("Paste the new install code, then press Enter.")
+	code, err := d.readLine("")
+	if err != nil {
+		return err
+	}
+	if err := applyNewCode(ctx, d, docs, code); err != nil {
+		return err
+	}
+	d.print("New install code applied ✓")
+	return nil
+}
+
+// applyNewCode validates the code, joins/verifies the NEW bot's tailnet
+// (tailscaleConnect skips `up` when Running on our tailnet, S5), then MOVES the
+// old connect.json aside (never overwrite/delete — the ONE RULE) and writes the
+// new connect.json + vl-app.json.
+func applyNewCode(ctx context.Context, d deps, docs, code string) error {
+	ic, err := ParseInstallCode(code)
+	if err != nil {
+		// Never echo the code (it holds ts_authkey + connect_key).
+		return fmt.Errorf("invalid install code — check the copy you were sent")
+	}
+	secrets := []string{ic.TSAuthKey, ic.ConnectKey}
+	if err := tailscaleConnect(ctx, d, ic.TSAuthKey, ic.BaseURL()); err != nil {
+		return errors.New(redactSecrets(err.Error(), secrets...))
+	}
+	oldPath := connectJSONPath(docs)
+	backup := filepath.Join(ntVLdir(docs), "old", "connect-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".json")
+	if err := d.mkdirAll(filepath.Dir(backup), 0o755); err != nil {
+		return err
+	}
+	if err := d.rename(oldPath, backup); err != nil {
+		return err
+	}
+	if err := writeConnectJSON(d, docs, ic); err != nil {
+		_ = d.rename(backup, oldPath) // rollback: never leave a PC without connect.json
+		return err
+	}
+	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
+		return err
+	}
+	return nil
+}
+
 // runInstalled is the installed-PC path (connect.json exists): a plain
 // double-click, NO install-code prompt. It announces, runs the update check,
 // ENSUREs the Desktop + Start Menu shortcuts (re-create if missing, never
@@ -1062,6 +1127,15 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 		d.print("A new VL-Setup is available — ask the owner for it.")
 	} else if dec.AddonUpdateAvailable && err == nil {
 		d.print("Update deferred (Later).")
+	}
+
+	// S6: offer a new install code (the owner may re-issue one). Skipping is
+	// the default — this is a gate, never a forced prompt.
+	d.print("Have a new install code? Type N then press Enter (or just press Enter).")
+	if line, _ := d.readLine(""); strings.EqualFold(strings.TrimSpace(line), "N") {
+		if err := promptAndApplyNewCode(ctx, d, docs); err != nil {
+			return err
+		}
 	}
 
 	// e) keep the console readable.
