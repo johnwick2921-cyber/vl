@@ -65,7 +65,12 @@ func TestRunOpenHidesConsoleBeforeAnythingElse(t *testing.T) {
 // confirm with "Code received (hidden)". This is source-structure because
 // run_windows.go only compiles on Windows; the mutant that reverts readLine to
 // a plain bufio echo read (or drops the empty-prompt gate) fails here.
-func TestReadLineInstallCodeEchoOff(t *testing.T) {
+// TestReadSecretEchoOffPinsG7 pins G7: the install code is read by a DEDICATED
+// readSecret seam via term.ReadPassword (echo OFF), and readLine is echo-ON for
+// everything else (y/N, "Type N", pauses). The old S7 empty-prompt heuristic
+// (echo-off on every readLine("")) hid the "Type N" answer — that mutant (or a
+// revert to the heuristic) fails here.
+func TestReadSecretEchoOffPinsG7(t *testing.T) {
 	src, err := os.ReadFile("run_windows.go")
 	if err != nil {
 		t.Fatalf("read run_windows.go: %v", err)
@@ -75,36 +80,32 @@ func TestReadLineInstallCodeEchoOff(t *testing.T) {
 	if !strings.Contains(s, `"golang.org/x/term"`) {
 		t.Fatalf("run_windows.go must import golang.org/x/term for ReadPassword")
 	}
+	// readSecret must exist and read echo-off.
+	sec := `readSecret: func(prompt string) (string, error) {`
+	secIdx := strings.Index(s, sec)
+	if secIdx < 0 {
+		t.Fatalf("run_windows.go must define the %s seam", sec)
+	}
+	secBody := s[secIdx:]
+	if !strings.Contains(secBody, "term.ReadPassword(fd)") {
+		t.Fatalf("readSecret must call term.ReadPassword")
+	}
+	if !strings.Contains(secBody, "term.IsTerminal(fd)") {
+		t.Fatalf("readSecret must guard with term.IsTerminal")
+	}
+	if !strings.Contains(secBody, `"Code received (hidden)"`) {
+		t.Fatalf(`readSecret must confirm with "Code received (hidden)"`)
+	}
+	// readLine must be echo-ON: the ReadPassword call must NOT sit inside the
+	// readLine closure (it moved to readSecret).
 	line := `readLine: func(prompt string) (string, error) {`
-	idx := strings.Index(s, line)
-	if idx < 0 {
+	lineIdx := strings.Index(s, line)
+	if lineIdx < 0 {
 		t.Fatalf("run_windows.go must define the %s seam", line)
 	}
-	body := s[idx:]
-	if !strings.Contains(body, "term.ReadPassword(fd)") {
-		t.Fatalf("readLine must call term.ReadPassword for the secret read")
-	}
-	if !strings.Contains(body, "term.IsTerminal(fd)") {
-		t.Fatalf("readLine must guard the secret read with term.IsTerminal")
-	}
-	if !strings.Contains(body, `"Code received (hidden)"`) {
-		t.Fatalf(`readLine must confirm with "Code received (hidden)"`)
-	}
-	// The secret read is gated on the empty prompt (the install-code call
-	// site) and the confirmation follows the read, so a regression that moves
-	// ReadPassword into the non-empty y/N path (or echoes before the gate)
-	// fails here.
-	gate := strings.Index(body, `prompt == ""`)
-	read := strings.Index(body, "term.ReadPassword(fd)")
-	confirm := strings.Index(body, `"Code received (hidden)"`)
-	if gate < 0 || read < 0 || confirm < 0 {
-		t.Fatalf("gate=%d read=%d confirm=%d (all must be present)", gate, read, confirm)
-	}
-	if read < gate {
-		t.Fatalf("term.ReadPassword must sit INSIDE the prompt == \"\" gate (read at %d, gate at %d)", read, gate)
-	}
-	if confirm < read {
-		t.Fatalf(`"Code received (hidden)" must follow the ReadPassword read (confirm at %d, read at %d)`, confirm, read)
+	lineBody := s[lineIdx:secIdx]
+	if strings.Contains(lineBody, "term.ReadPassword") {
+		t.Fatalf("readLine must NOT call term.ReadPassword (the secret read moved to readSecret)")
 	}
 }
 
@@ -157,17 +158,18 @@ func TestPowerShellOutputForcedUTF8(t *testing.T) {
 	}
 	s := string(src)
 
-	if !strings.Contains(s, `const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"`) {
-		t.Fatalf("run_windows.go must define psUTF8 forcing UTF-8 output")
+	// P2a: the preamble forces UTF-8 no-BOM and silences CLIXML noise.
+	if !strings.Contains(s, `$ProgressPreference='SilentlyContinue'`) {
+		t.Fatalf("the PowerShell preamble must silence progress (CLIXML) noise")
 	}
-	if !strings.Contains(s, `psUTF8 + "$s = Get-AuthenticodeSignature`) {
-		t.Fatalf("verifyMsiSigner must force UTF-8 before parsing the signer subject")
+	if !strings.Contains(s, `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)`) {
+		t.Fatalf("the PowerShell preamble must force UTF-8 no-BOM output")
 	}
-	if !strings.Contains(s, `psUTF8+"if (Get-Process NinjaTrader`) {
-		t.Fatalf("ntRunning must force UTF-8 before parsing its output")
+	if !strings.Contains(s, "psRun(script, msiPath)") {
+		t.Fatalf("verifyMsiSigner must run through psRun")
 	}
-	if !strings.Contains(s, `psUTF8 + "Add-Type -AssemblyName System.Windows.Forms`) {
-		t.Fatalf("messageBox must force UTF-8 before parsing its output")
+	if !strings.Contains(s, "psRun(script, \"\")") {
+		t.Fatalf("ntRunning must run through psRun")
 	}
 }
 
@@ -227,21 +229,150 @@ func TestReadLineEmptyEOFReturnsEOF(t *testing.T) {
 // must render TOPMOST via MessageBoxOptions.ServiceNotification so the dialog is
 // never buried behind other windows. The mutant that drops the option (back to
 // the plain Show(text,caption,buttons,icon) overload) fails here.
-func TestMessageBoxTopmost(t *testing.T) {
+// TestMessageBoxNative pins A5: the messageBox seam must use the NATIVE
+// windows.MessageBox (MB_YESNO|MB_ICONQUESTION|MB_TOPMOST|MB_SETFOREGROUND),
+// not a PowerShell child, and a failure must fall back to msgBoxFallback (H15).
+func TestMessageBoxNative(t *testing.T) {
 	src, err := os.ReadFile("run_windows.go")
 	if err != nil {
 		t.Fatalf("read run_windows.go: %v", err)
 	}
 	s := string(src)
 
-	line := `messageBox: func(text string) bool {`
-	idx := strings.Index(s, line)
-	if idx < 0 {
-		t.Fatalf("run_windows.go must define the %s seam", line)
+	if !strings.Contains(s, "windows.MessageBox(") {
+		t.Fatalf("messageBox must use native windows.MessageBox")
 	}
-	body := s[idx:]
-	if !strings.Contains(body, "[System.Windows.Forms.MessageBoxOptions]::ServiceNotification") {
-		t.Fatalf("messageBox must pass MessageBoxOptions.ServiceNotification (TopMost)")
+	if !strings.Contains(s, "windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND") {
+		t.Fatalf("messageBox must use MB_YESNO|MB_ICONQUESTION|MB_TOPMOST|MB_SETFOREGROUND")
+	}
+	if !strings.Contains(s, "msgBoxFallback(text)") {
+		t.Fatalf("messageBox must fall back to msgBoxFallback on failure (H15)")
+	}
+	if strings.Contains(s, "MessageBoxOptions") {
+		t.Fatalf("messageBox must NOT use PowerShell MessageBoxOptions (native now)")
+	}
+}
+
+// TestFetchUsesTimeoutClient pins G12: the friend-bot fetches (manifest,
+// identity, MSI) go through a 30s-timeout client, never http.DefaultClient (no
+// timeout) which could hang the whole run on a wedged network.
+func TestFetchUsesTimeoutClient(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "friendHTTPClient = &http.Client{Timeout: 30 * time.Second}") {
+		t.Fatalf("run_windows.go must define friendHTTPClient with a 30s timeout")
+	}
+	if !strings.Contains(s, "friendHTTPClient.Do(req)") {
+		t.Fatalf("the fetch seam must call friendHTTPClient.Do")
+	}
+	if strings.Contains(s, "http.DefaultClient.Do(req)") {
+		t.Fatalf("the fetch seam must NOT use http.DefaultClient (no timeout)")
+	}
+}
+
+// TestErrorInfoBoxesTopmostPinsG16 pins the error/info dialog seams: errorBox is
+// OK + Error icon, infoBox is OK + Information icon, both through the same
+// MB_TOPMOST|MB_SETFOREGROUND msgBoxScript. The mutant that makes an error box a
+// Yes/No, or swaps the icons, fails here.
+// TestErrorInfoBoxesNativePinsA5 pins the error/info dialog seams (A5):
+// errorBox is native MB_OK|MB_ICONERROR, infoBox is MB_OK|MB_ICONINFORMATION.
+// The mutant that makes an error box a Yes/No, or swaps the icons, fails here.
+func TestErrorInfoBoxesNativePinsA5(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `errorBox: func(text string) {`) {
+		t.Fatalf("run_windows.go must define errorBox")
+	}
+	if !strings.Contains(s, `infoBox: func(text string) {`) {
+		t.Fatalf("run_windows.go must define infoBox")
+	}
+	if !strings.Contains(s, "windows.MB_OK|windows.MB_ICONERROR|windows.MB_TOPMOST|windows.MB_SETFOREGROUND") {
+		t.Fatalf("errorBox must be MB_OK + MB_ICONERROR")
+	}
+	if !strings.Contains(s, "windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND") {
+		t.Fatalf("infoBox must be MB_OK + MB_ICONINFORMATION")
+	}
+}
+
+// TestSingleInstanceMutexPinsH18c pins the G2/H18c single-instance guard: a
+// named mutex (Local\VL-friend) via OpenMutex-then-CreateMutex so two icon
+// clicks never race placeAddon.
+func TestSingleInstanceMutexPinsH18c(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `Local\VL-friend`) {
+		t.Fatalf("singleInstance must use the named mutex Local\\VL-friend")
+	}
+	if !strings.Contains(s, "windows.OpenMutex(") || !strings.Contains(s, "windows.CreateMutex(") {
+		t.Fatalf("singleInstance must OpenMutex then CreateMutex")
+	}
+}
+
+// TestValidateLocalAppDataPinsH18b pins the LOCALAPPDATA guard: run() must
+// refuse an empty or relative LOCALAPPDATA before anything writes.
+func TestValidateLocalAppDataPinsH18b(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "func validateLocalAppData() error") {
+		t.Fatalf("run_windows.go must define validateLocalAppData")
+	}
+	if !strings.Contains(s, `LOCALAPPDATA is not set`) {
+		t.Fatalf("validateLocalAppData must refuse an empty LOCALAPPDATA")
+	}
+	if !strings.Contains(s, "filepath.IsAbs(dir)") {
+		t.Fatalf("validateLocalAppData must reject a non-absolute LOCALAPPDATA")
+	}
+	// run() must call it BEFORE realDeps().
+	runIdx := strings.Index(s, "func run(args []string) error {")
+	valIdx := strings.Index(s[runIdx:], "validateLocalAppData()")
+	depsIdx := strings.Index(s[runIdx:], "d := realDeps()")
+	if runIdx < 0 || valIdx < 0 || depsIdx < 0 {
+		t.Fatalf("run() must call validateLocalAppData() before realDeps()")
+	}
+	if valIdx > depsIdx {
+		t.Fatalf("validateLocalAppData() must run BEFORE realDeps()")
+	}
+}
+
+// TestCentralRedactorPinsH14b pins the central redactor: run() reads connect.json
+// and registers the connect key, and the print seam + message boxes apply it.
+func TestCentralRedactorPinsH14b(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "func registerCentralSecret(") {
+		t.Fatalf("run_windows.go must define registerCentralSecret")
+	}
+	if !strings.Contains(s, "func redactCentral(") {
+		t.Fatalf("run_windows.go must define redactCentral")
+	}
+	if !strings.Contains(s, "registerCentralSecret(cfg.ConnectKey)") {
+		t.Fatalf("run() must register the connect key from connect.json")
+	}
+	if !strings.Contains(s, "fmt.Println(redactCentral(line))") {
+		t.Fatalf("the print seam must apply redactCentral")
+	}
+	if !strings.Contains(s, "nativeMessageBox(redactCentral(text)") {
+		t.Fatalf("messageBox must apply redactCentral to the text")
 	}
 }
 
@@ -272,19 +403,16 @@ func TestPowerShellNoScriptTextSplicing(t *testing.T) {
 	if strings.Contains(s, `ReplaceAll(msiPath, "'", "''")`) {
 		t.Fatalf("verifyMsiSigner must NOT splice the MSI path with quote-escaping")
 	}
-	if strings.Contains(s, `ReplaceAll(text, "'", "''")`) {
-		t.Fatalf("messageBox must NOT splice the text with quote-escaping")
+	// P1: the controlled value rides VL_ARG0 env (PowerShell 5.1 rejects a
+	// positional arg after -EncodedCommand), read by the script as $env:VL_ARG0.
+	if !strings.Contains(s, `"VL_ARG0="+arg`) {
+		t.Fatalf("psRun must pass the value via the VL_ARG0 env var")
 	}
-	// Both controlled-string call sites must go through -EncodedCommand and
-	// hand the value to the script as $args[0].
-	if !strings.Contains(s, `"-EncodedCommand", psEncodedCommand(script), msiPath`) {
-		t.Fatalf("verifyMsiSigner must pass the path via -EncodedCommand + $args[0]")
+	if !strings.Contains(s, `$env:VL_ARG0`) {
+		t.Fatalf("the scripts must read the value from $env:VL_ARG0")
 	}
-	if !strings.Contains(s, `"-EncodedCommand", psEncodedCommand(script), text`) {
-		t.Fatalf("messageBox must pass the text via -EncodedCommand + $args[0]")
-	}
-	if !strings.Contains(s, `$args[0]`) {
-		t.Fatalf("the encoded scripts must read the controlled string from $args[0]")
+	if strings.Contains(s, `$args[0]`) {
+		t.Fatalf("no script may read $args[0] (PowerShell 5.1 rejects args after -EncodedCommand)")
 	}
 }
 

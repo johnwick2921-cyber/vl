@@ -26,6 +26,17 @@ fi
 # The shared dist dir is OUTSIDE this worktree; only create it (never remove).
 mkdir -p "$OUT"
 
+# G14: embed the VL icon via rsrc → a .syso the Go linker picks up from the
+# package dir. Regenerated every build, never committed (the .syso is
+# gitignored). rsrc (not goversioninfo) — goversioninfo v1.4.0 emits a COFF
+# relocation the Go 1.26 linker rejects ("unknown relocation type 7").
+GVI="$TMP/tools"
+mkdir -p "$GVI"
+GOBIN="$GVI" go install github.com/akavel/rsrc@v0.10.2 >/dev/null 2>&1 \
+  || { echo "rsrc install failed" >&2; exit 1; }
+"$GVI/rsrc" -ico deploy/friend/vl.ico -o cmd/vl-friend/rsrc_windows_amd64.syso \
+  || { echo "rsrc failed" >&2; exit 1; }
+
 # 1. Cross-compile the friend app (trimmed + stripped; the version is stamped in).
 GOOS=windows GOARCH=amd64 go build -trimpath \
   -ldflags="-s -w -X main.appVersion=$APP_VERSION" \

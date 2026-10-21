@@ -247,7 +247,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 func runFirstRun(ctx context.Context, d deps) error {
 	d.print("[1/6] Paste the install code you were sent, then press Enter.")
 	for attempt := 1; ; attempt++ {
-		code, err := d.readLine("")
+		code, err := d.readSecret("")
 		if err != nil {
 			return err
 		}
@@ -459,6 +459,8 @@ func logSetupError(d deps, msg string) {
 // verifies its Authenticode signer is Tailscale Inc BEFORE anything is run.
 // A bad or missing signature refuses (the MSI is never executed).
 func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
+	// G12: tell the user the download started (it is ~12 MB and silent otherwise).
+	d.print("Downloading Tailscale… 12 MB")
 	b, err := d.fetch(ctx, tailscaleMSIURL)
 	if err != nil {
 		return "", fmt.Errorf("download Tailscale installer: %w", err)
@@ -795,7 +797,7 @@ func shortcutScript(appURL string) string {
 		"$d=[Environment]::GetFolderPath('Desktop')",
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
-		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
 	}, ";")
 }
 
@@ -1205,7 +1207,7 @@ func runNewCode(ctx context.Context, d deps) error {
 // shared body of --new-code and the installed-screen "Type N" gate.
 func promptAndApplyNewCode(ctx context.Context, d deps, docs string) error {
 	d.print("Paste the new install code, then press Enter.")
-	code, err := d.readLine("")
+	code, err := d.readSecret("")
 	if err != nil {
 		return err
 	}

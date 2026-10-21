@@ -79,6 +79,11 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.order = append(rec.order, "prompt:"+p)
 			return "", nil
 		},
+		readSecret: func(p string) (string, error) {
+			rec.lines = append(rec.lines, p)
+			rec.order = append(rec.order, "secret:"+p)
+			return "", nil
+		},
 		print: func(l string) {
 			rec.prints = append(rec.prints, l)
 			rec.order = append(rec.order, "print:"+l)
@@ -534,14 +539,11 @@ func TestRunFirstRunPrintsSixStepsInOrder(t *testing.T) {
 	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
 	d.fetch = fetch
 	d.allowedSigners = signers
-	calls := 0
-	d.readLine = func(p string) (string, error) {
+	// G7: the install code is read by readSecret (echo-off); the final
+	// "Press Enter to close" pause stays readLine.
+	d.readSecret = func(p string) (string, error) {
 		rec.lines = append(rec.lines, p)
-		calls++
-		if calls == 1 {
-			return encodeInstallCode(ic), nil
-		}
-		return "", nil
+		return encodeInstallCode(ic), nil
 	}
 
 	if err := runFirstRun(context.Background(), d); err != nil {
@@ -1448,15 +1450,9 @@ func TestRunInstalledTypeNAppliesNewCode(t *testing.T) {
 	newIC := goodCode()
 	newIC.Name = "tom2"
 	newIC.ConnectKey = strings.Repeat("cd", 32)
-	queue := []string{"N", encodeInstallCode(newIC)}
-	d.readLine = func(string) (string, error) {
-		if len(queue) == 0 {
-			return "", nil
-		}
-		l := queue[0]
-		queue = queue[1:]
-		return l, nil
-	}
+	// G7: "Type N" is readLine (echo-on); the code is readSecret (echo-off).
+	d.readLine = func(string) (string, error) { return "N", nil }
+	d.readSecret = func(string) (string, error) { return encodeInstallCode(newIC), nil }
 
 	if err := runInstalled(context.Background(), d, home); err != nil {
 		t.Fatalf("runInstalled with Type N failed: %v", err)
@@ -1874,15 +1870,9 @@ func TestRunIncompleteOffersNewCode(t *testing.T) {
 	newIC := goodCode()
 	newIC.Name = "tom2"
 	newIC.ConnectKey = strings.Repeat("cd", 32)
-	queue := []string{"N", encodeInstallCode(newIC)}
-	d.readLine = func(string) (string, error) {
-		if len(queue) == 0 {
-			return "", nil
-		}
-		l := queue[0]
-		queue = queue[1:]
-		return l, nil
-	}
+	// G7: "Type N" is readLine (echo-on); the code is readSecret (echo-off).
+	d.readLine = func(string) (string, error) { return "N", nil }
+	d.readSecret = func(string) (string, error) { return encodeInstallCode(newIC), nil }
 
 	if err := runIncomplete(context.Background(), d, home); err != nil {
 		t.Fatalf("runIncomplete with Type N failed: %v", err)

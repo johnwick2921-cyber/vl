@@ -33,11 +33,16 @@ type deps struct {
 	mkdirAll   func(path string, perm fs.FileMode) error
 	rename     func(oldpath, newpath string) error
 	readFile   func(path string) ([]byte, error)
-	// readLine prompts the user (install code on first run, update yes/no) and
-	// returns the trimmed answer. autoApprove=true bypasses it in tests. S20:
-	// an empty read at EOF returns io.EOF (never ("", nil)) so callers can
-	// bound a prompt loop instead of spinning on an exhausted stdin.
+	// readLine prompts the user (update yes/no, the "Type N" gate, pauses) and
+	// returns the trimmed answer, ECHO-ON. autoApprove=true bypasses it in tests.
+	// S20: an empty read at EOF returns io.EOF (never ("", nil)) so callers can
+	// bound a prompt loop instead of spinning on an exhausted stdin. G7: the
+	// install code is read by readSecret, NOT here.
 	readLine func(prompt string) (string, error)
+	// readSecret reads the one-time install code ECHO-OFF (term.ReadPassword on
+	// Windows) and confirms "Code received (hidden)". Only the install-code
+	// prompts use it (G7: an empty readLine prompt must NOT hide the answer).
+	readSecret func(prompt string) (string, error)
 	// print writes one plain-English console line (step headers, done lines,
 	// the error screen). Production: fmt.Println; tests: a recorder.
 	print func(line string)
@@ -75,13 +80,19 @@ type deps struct {
 	// installer copies itself to %LOCALAPPDATA%\VL\vl-friend.exe so the desktop
 	// icon can launch --open without the original installer.
 	selfExe func() (string, error)
-	// messageBox shows a Windows Yes/No dialog (no console) and reports whether
-	// the user chose Yes. Production: PowerShell MessageBox; tests: a fake.
+	// messageBox shows a Windows Yes/No dialog (no console, topmost) and reports
+	// whether the user chose Yes. Production: PowerShell MessageBox; tests: a fake.
 	messageBox func(text string) bool
 	// singleInstance reports whether THIS process acquired the single-instance
 	// mutex (G2). A second icon click returns false and just opens the
 	// dashboard — two instances must never race the add-on swap.
 	singleInstance func() bool
+	// errorBox shows an OK + Error-icon dialog (no console, topmost). No Yes/No
+	// — the user just dismisses it (G15/G16).
+	errorBox func(text string)
+	// infoBox shows an OK + Information-icon dialog (no console, topmost). No
+	// Yes/No — the user just dismisses it (G15/G16).
+	infoBox func(text string)
 }
 
 // msiSignature is what verifyMsiSigner reports: the Authenticode status and the
