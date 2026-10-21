@@ -122,15 +122,41 @@ func TestFriendAddonStatusPure(t *testing.T) {
 		wantOutdated      bool
 	}{
 		{"", "", false},
-		{"", "b", false},
-		{"a", "", false},
-		{"a", "a", false},
-		{"a", "b", true},
+		{"", "2026-10-20-a", false},
+		{"2026-10-18-a", "", false},
+		{"2026-10-18-a", "2026-10-18-a", false},
+		{"2026-10-20-a", "2026-10-18-a", false}, // newer-than-latest → not outdated (K4, no downgrade)
+		{"2026-10-18-a", "2026-10-20-a", true},  // older → outdated
+		{"37", "2026-10-20-a", false},           // non-date connected id
+		{"2026-10-18-a", "43", false},           // non-date latest id
+		{"abc", "def", false},                   // non-date both
 	}
 	for _, c := range cases {
 		_, _, got := friendAddonStatus(c.connected, c.latest)
 		if got != c.wantOutdated {
 			t.Errorf("friendAddonStatus(%q,%q).outdated = %v, want %v", c.connected, c.latest, got, c.wantOutdated)
+		}
+	}
+}
+
+func TestDatePrefixedBuildID(t *testing.T) {
+	cases := []struct {
+		id   string
+		want bool
+	}{
+		{"2026-10-18-a", true},
+		{"2026-10-20-b", true},
+		{"2026-01-01", true},
+		{"", false},
+		{"37", false},
+		{"20261021120000", false}, // no dashes
+		{"abc", false},
+		{"2026-1-18-a", false}, // single-digit month
+		{"2026-10-8-a", false}, // single-digit day
+	}
+	for _, c := range cases {
+		if got := datePrefixedBuildID(c.id); got != c.want {
+			t.Errorf("datePrefixedBuildID(%q) = %v, want %v", c.id, got, c.want)
 		}
 	}
 }

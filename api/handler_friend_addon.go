@@ -60,9 +60,34 @@ func (s *Server) latestFriendAddonBuild() string {
 }
 
 // friendAddonStatus is the ONE canonicalizer for "is the connected AddOn
-// outdated": outdated is true only when BOTH builds are known (non-empty) and
-// differ. A missing connected build (NT8 closed) or a missing latest build (no
-// dist yet) reads NOT outdated — never a fabricated "update available".
+// outdated" (K4): outdated is true only when BOTH build ids are known, both are
+// date-prefixed build ids, and the connected id is LEXICALLY OLDER than the
+// latest (the same ordering as FarSideProven, tcp_framing.go). A missing side, a
+// non-date id, or a connected id that is >= latest reads NOT outdated — never a
+// fabricated "update available", never a downgrade.
 func friendAddonStatus(connected, latest string) (connectedBuild, latestBuild string, outdated bool) {
-	return connected, latest, connected != "" && latest != "" && connected != latest
+	comparable := datePrefixedBuildID(connected) && datePrefixedBuildID(latest)
+	return connected, latest, comparable && connected < latest
+}
+
+// datePrefixedBuildID reports whether b is a date-prefixed build id: it starts
+// with YYYY-MM-DD (the AddOn VL_BUILD_ID form, e.g. "2026-10-18-a"). Anything
+// else — empty, a bare number, a timestamp without dashes — is not comparable.
+func datePrefixedBuildID(b string) bool {
+	if len(b) < 10 {
+		return false
+	}
+	for i := 0; i < 10; i++ {
+		switch i {
+		case 4, 7:
+			if b[i] != '-' {
+				return false
+			}
+		default:
+			if b[i] < '0' || b[i] > '9' {
+				return false
+			}
+		}
+	}
+	return true
 }
