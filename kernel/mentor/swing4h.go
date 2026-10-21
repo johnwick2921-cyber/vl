@@ -25,7 +25,12 @@ import (
 //     offset (5–10 pts) sits TOWARD the approaching price — the touch band
 //     is on the approach side only.
 //  4. "First touching candle is the reference; 2 candles of leeway allowed
-//     here only" [p1 @ 15:21] — implemented as the ISB window below.
+//     here only" [D5.2 p1 @15:21–15:48] — the 4h level's touch window is the
+//     FIRST TWO touching 5m candles: the entry may be armed off either of
+//     them, and if either of them CLOSES beyond the level there is NO order
+//     (cancel any resting arm, spend the level). SWING4H-only; every other
+//     setup keeps first-touch = 1 candle. The ISB recovery window after a
+//     through-close is NOT this leeway — R34 keeps it open until the 4h flip.
 //  5. Two cases [p3 @ 21:30, corrected §3]:
 //   - Touch, closes BACK on the approach side (a REJECT) → stop order
 //     beyond that candle. "Stop (clean rejection): ~30 points above the
@@ -69,10 +74,11 @@ type SwingCfg struct {
 	MinStopPts float64
 	EntryBufferPts    float64 // NO buffer — order sits tight on the candle; default 0 [D5.2 p2 @05:02–05:12]
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
-	// LeewayCandles is the reference-leeway knob (R26, P2): the first OR
-	// second touching candle may be the reference. It is NOT the ISB window —
-	// R34 rules that the ISB watch after a through-close stays open until the
-	// 4h flip (no candle limit). Currently unused by the swing tick.
+	// LeewayCandles is the reference-leeway knob [D5.2 p1 @15:21–15:48]: the
+	// first OR second touching candle may be the reference (the 4h level's
+	// touch window = the first LeewayCandles touching 5m candles). It is NOT
+	// the ISB window — R34 rules that the ISB watch after a through-close
+	// stays open until the 4h flip (no candle limit).
 	LeewayCandles int
 	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 1 [D5.2 p1 @06:03–06:20]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
@@ -183,6 +189,10 @@ type swingTouch struct {
 	RefBar   market.Kline // the first touching 5m candle
 	Approach Side         // price came from this side: SideLong = from above
 	Through  bool         // the touch closed THROUGH the line
+	// Touches counts the touching 5m candles this window has consumed [D5.2 p1
+	// @15:21–15:48]: the 4h level's touch window is the first LeewayCandles
+	// touching candles, and the entry may be armed off any of them.
+	Touches int
 }
 
 type swingPosition struct {
@@ -436,14 +446,25 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		if !touchesLineApproach(b, line, cfg.LineOffsetPts, approach) {
 			continue
 		}
-		if approach == SideLong && s.ClearLongAt != 0 && b.Low > s.ClearLongAt {
-			continue // not yet re-armed
-		}
-		if approach == SideShort && s.ClearShortAt != 0 && b.High < s.ClearShortAt {
-			continue // not yet re-armed
+		// Leeway window [D5.2 p1 @15:21–15:48]: the 4h level's touch window is
+		// the FIRST LeewayCandles touching 5m candles (default 2) instead of
+		// one. The entry may be armed off any of them, so the one-setup-per-
+		// approach distance guard is waived while the window is open. Once the
+		// window is spent, the normal first-touch / spent rules apply.
+		inWindow := s.FirstTouch != nil && !s.FirstTouch.Through &&
+			s.FirstTouch.Touches < cfg.LeewayCandles
+		if !inWindow {
+			if approach == SideLong && s.ClearLongAt != 0 && b.Low > s.ClearLongAt {
+				continue // not yet re-armed
+			}
+			if approach == SideShort && s.ClearShortAt != 0 && b.High < s.ClearShortAt {
+				continue // not yet re-armed
+			}
 		}
 		if !closedBack(approach, b.Close, line) {
-			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3].
+			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3]. A
+			// touching candle in the leeway window that closes beyond the level
+			// spends it: NO order, cancel any resting arm [D5.2 p1 @15:21–15:48].
 			// S1: name the resting swing arm so the cancel reaches the right
 			// order, and clear the pending — a cancelled order must never
 			// grow into a phantom position. A through-close with NOTHING
@@ -456,7 +477,17 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 				})
 				s.Pending = nil
 			}
-			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true}
+			touches := 1
+			if s.FirstTouch != nil && !s.FirstTouch.Through {
+				touches = s.FirstTouch.Touches + 1
+			}
+			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true, Touches: touches}
+			continue
+		}
+		// A second touching candle inside the window may re-arm (supersede) only
+		// while NO position owns the level — if the first arm already filled on
+		// this candle, the position is open and there is nothing to supersede.
+		if inWindow && s.Pos != nil {
 			continue
 		}
 		in, eok := swingRejectIntent(approach, b, line, cfg)
@@ -474,12 +505,27 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			in.Target = cut
 		}
 		in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
+		// A later touching candle inside the window supersedes the earlier arm:
+		// the entry re-bases on THIS candle's extreme — either of the first two
+		// touching candles may be the reference [D5.2 p1 @15:21–15:48].
+		if s.Pending != nil {
+			out = append(out, Intent{
+				Action: CancelArm,
+				ArmID:  s.Pending.ArmID,
+				Reason: "swing: re-armed off a later touching candle in the leeway window — supersede the first arm [D5.2 p1 @15:21–15:48]",
+			})
+			s.Pending = nil
+		}
 		if approach == SideLong {
 			s.ClearLongAt = line - cfg.StopBeyondLinePts
 		} else {
 			s.ClearShortAt = line + cfg.StopBeyondLinePts
 		}
-		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach}
+		touches := 1
+		if s.FirstTouch != nil && !s.FirstTouch.Through {
+			touches = s.FirstTouch.Touches + 1
+		}
+		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Touches: touches}
 		s.openPosition(in, now)
 		out = append(out, in)
 	}

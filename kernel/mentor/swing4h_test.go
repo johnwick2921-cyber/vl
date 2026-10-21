@@ -185,6 +185,128 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 	}
 }
 
+// TestSwing4hLeewaySecondTouchArms — [D5.2 p1 @15:21–15:48]: the 4h level's
+// touch window is the FIRST TWO touching 5m candles; the entry may be armed off
+// either ("khung 4 giờ em sẽ du di là 2 cây nến"). Candle 1 rejects (arms a sell
+// stop tight on its low); candle 2 touches again and closes back — the first arm
+// is superseded and the entry re-bases on candle 2's low. Mutant: LeewayCandles=1
+// → the one-setup-per-approach distance guard blocks candle 2 → no supersede and
+// no second PlaceStopEntry → RED.
+func TestSwing4hLeewaySecondTouchArms(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below the line
+		mk5m(t, 15, 5, 5, 10158, 10166, 10155, 10160),  // candle 1: touches, closes back → arm @10155
+		mk5m(t, 15, 5, 10, 10161, 10167, 10162, 10165), // candle 2: touches, closes back, no fill → re-arm @10162
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
+	if len(out) != 3 {
+		t.Fatalf("intents = %d, want [place@10155, supersede-cancel, place@10162]; got %+v", len(out), out)
+	}
+	first, cancel, second := out[0], out[1], out[2]
+	if first.Action != PlaceStopEntry || first.Side != SideShort || abs(first.Price-10155) > 0.01 {
+		t.Fatalf("first intent = %+v, want a SHORT stop entry at 10155 (candle 1's low)", first)
+	}
+	if cancel.Action != CancelArm || cancel.ArmID != first.ArmID {
+		t.Fatalf("supersede cancel = %+v, want CancelArm of the first arm %q", cancel, first.ArmID)
+	}
+	if second.Action != PlaceStopEntry || second.Side != SideShort || abs(second.Price-10162) > 0.01 {
+		t.Fatalf("second intent = %+v, want a SHORT stop entry at 10162 (candle 2's low)", second)
+	}
+	if second.ArmID == first.ArmID {
+		t.Fatalf("the re-armed order must carry a NEW ArmID; got %q twice", second.ArmID)
+	}
+	if s.FirstTouch == nil || s.FirstTouch.Through || s.FirstTouch.Touches != 2 {
+		t.Fatalf("after the window the touch must be non-through with Touches=2; got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewayFirstTouchThroughRefused — [D5.2 p1 @15:21–15:48]: if the
+// FIRST touching candle CLOSES beyond the level there is NO order — "Nếu như 2
+// cây nến đầu tiên nó chạm level mà 1 cây nến sau đó nó đóng ở trên level…
+// Không đặt lệnh". The level is spent (Through) and only the ISB recovery may
+// ever trade it. Mutant: the through-close arms a reject anyway → a
+// PlaceStopEntry appears → RED.
+func TestSwing4hLeewayFirstTouchThroughRefused(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev: below
+		mk5m(t, 15, 5, 5, 10155, 10220, 10150, 10220), // touches, closes THROUGH
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			t.Fatalf("a first-touch through-close must NOT arm a reject; got %+v", out)
+		}
+	}
+	if s.FirstTouch == nil || !s.FirstTouch.Through || s.FirstTouch.Touches != 1 {
+		t.Fatalf("the level must be spent (Through, Touches=1); got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewaySecondTouchThroughCancels — [D5.2 p1 @15:21–15:48]: candle 1
+// rejects and arms; candle 2 (the second touching candle) CLOSES beyond the level
+// → the resting arm is cancelled, NO new order is placed, and the level is spent.
+// Mutant: the through-close leaves the first arm resting → the CancelArm is
+// missing → RED.
+func TestSwing4hLeewaySecondTouchThroughCancels(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below
+		mk5m(t, 15, 5, 5, 10155, 10166, 10150, 10160),  // candle 1: touches, closes back → arm @10150
+		mk5m(t, 15, 5, 10, 10160, 10220, 10155, 10220), // candle 2: touches, closes THROUGH (no fill: low 10155 > 10150)
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
+	if len(out) != 2 {
+		t.Fatalf("intents = %d, want [place@10150, cancel]; got %+v", len(out), out)
+	}
+	if out[0].Action != PlaceStopEntry || abs(out[0].Price-10150) > 0.01 {
+		t.Fatalf("first intent = %+v, want the candle-1 arm at 10150", out[0])
+	}
+	if out[1].Action != CancelArm || out[1].ArmID != out[0].ArmID {
+		t.Fatalf("second intent = %+v, want CancelArm of the candle-1 arm %q", out[1], out[0].ArmID)
+	}
+	if s.FirstTouch == nil || !s.FirstTouch.Through || s.FirstTouch.Touches != 2 {
+		t.Fatalf("the level must be spent by the second through-close (Through, Touches=2); got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewayDoesNotCapISBRecovery — [D5.2 p1 @15:21–15:48] (the
+// anti-leak pin): the leeway is the REJECT touch window ONLY. The ISB recovery
+// after a through-close is NOT capped at LeewayCandles — R34 [D5.2 p2 @10:30]
+// keeps the watch open until the 4h flip. An inside bar that closes back well
+// beyond two candles still enters. (The non-swing 1-candle rule is pinned
+// separately by TestTouchOnlyFirstCandleCounts [D3.3 p1 @00:13] — touch.go is
+// not wired to LeewayCandles.) Mutant: wire LeewayCandles into the ISB watch
+// (cap it at 2 candles) → the entry is refused → RED.
+func TestSwing4hLeewayDoesNotCapISBRecovery(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cfg.LeewayCandles = 2
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10200, 10220, 10190, 10210),  // prev: above the line
+		mk5m(t, 15, 5, 5, 10200, 10200, 10140, 10150),  // touches, closes THROUGH (below)
+		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // no ISB (candle 1)
+		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // no ISB (candle 2 — a 2-candle cap closes here)
+		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideLong {
+		t.Fatalf("intents = %+v, want one LONG ISB entry (the leeway must not cap the ISB watch)", out)
+	}
+	if abs(out[0].Price-10185) > 0.01 {
+		t.Fatalf("ISB entry = %.2f, want 10185 (the ISB candle's high, tight R8)", out[0].Price)
+	}
+}
+
 // TestSwing4hRejectTargetIsOneRFloor — item 24 (R43): the swing first target is
 // max(1R, the 5m EMA 34) [D5.2 p2 @11:00 "TARGET 1-1 TRƯỚC"]. The old 50-pt
 // fallback made a swing with a >50-pt stop carry a target SMALLER than its stop
