@@ -556,3 +556,47 @@ func TestWaitTailscaleApprovedPrintsAuthURL(t *testing.T) {
 		t.Fatalf("the auth key leaked into a print: %q", joined)
 	}
 }
+
+// TestEnsureTailscaleMsiExitCodes — A9: every msiexec exit code maps to plain
+// words for a non-technical user, and none says "run as administrator".
+func TestEnsureTailscaleMsiExitCodes(t *testing.T) {
+	cases := []struct {
+		code int
+		want string // "" = success
+	}{
+		{0, ""},
+		{3010, ""},
+		{1223, "Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again"},
+		{1618, "Windows is busy installing something else. Wait a minute, then run VL-Setup again."},
+		{1602, "The Tailscale install was cancelled. Run VL-Setup again and click Yes."},
+		{1603, "Tailscale could not be installed (error 1603). Restart the PC, then run VL-Setup again. If it happens again, send a photo to the owner."},
+		{1, "Tailscale install failed (exit 1)"},
+		{1638, "Tailscale install failed (exit 1638)"},
+	}
+	for _, c := range cases {
+		err := tailscaleInstallExitError(c.code)
+		if c.want == "" {
+			if err != nil {
+				t.Errorf("code %d: expected ok, got %v", c.code, err)
+			}
+			continue
+		}
+		if err == nil || err.Error() != c.want {
+			t.Errorf("code %d: got %v, want %q", c.code, err, c.want)
+			continue
+		}
+		if strings.Contains(strings.ToLower(err.Error()), "run as administrator") {
+			t.Errorf("code %d: must not tell the user to run as administrator", c.code)
+		}
+	}
+	// And through the real flow: 1618 surfaces its message and skips `up`.
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1618}
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
+	if err == nil || !strings.Contains(err.Error(), "busy installing") {
+		t.Fatalf("1618 must read as busy, got %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("up must not run after a failed install")
+	}
+}
