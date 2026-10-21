@@ -11,7 +11,7 @@ import (
 	"time"
 )
 
-func init() { renamePause = time.Millisecond }
+func init() { renamePause = time.Millisecond; firstFetchPause = time.Millisecond }
 
 // TestRetryRenameSurvivesTransientLock — A7 (owner laptop 10-21: "being used
 // by another process"): a rename that fails twice (Defender holding the
@@ -219,5 +219,36 @@ func TestShortcutScriptRetargetsStaleLnk(t *testing.T) {
 	want := "if((-not (Test-Path -LiteralPath $p)) -or $l.TargetPath -ne $exe -or $l.Arguments -ne '--open'){"
 	if !strings.Contains(s, want) {
 		t.Fatalf("shortcutScript must re-target a stale VL.lnk; script:\n%s", s)
+	}
+}
+
+// TestInstallFirstRunRetriesFirstFetch — F1 10-21: the first manifest fetch runs
+// over a tunnel seconds old. Two transient failures must not fail the install;
+// three must, with "run VL-Setup again". MUTANT: firstFetchTries = 1 → RED.
+func TestInstallFirstRunRetriesFirstFetch(t *testing.T) {
+	for _, tc := range []struct {
+		fails  int
+		wantOK bool
+	}{{2, true}, {3, false}} {
+		home := t.TempDir()
+		d, _ := flowFakeDeps(t, home)
+		ic := goodCode()
+		fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+		left := tc.fails
+		d.fetch = func(ctx context.Context, u string) ([]byte, error) {
+			if strings.HasSuffix(u, "/api/friend/manifest") && left > 0 {
+				left--
+				return nil, errors.New("dial tcp: i/o timeout")
+			}
+			return fetch(ctx, u)
+		}
+		d.allowedSigners = signers
+		err := installFirstRun(context.Background(), d, encodeInstallCode(ic))
+		if tc.wantOK && err != nil {
+			t.Fatalf("%d transient failures must be retried: %v", tc.fails, err)
+		}
+		if !tc.wantOK && (err == nil || !strings.Contains(err.Error(), "run VL-Setup again")) {
+			t.Fatalf("%d failures must fail with a re-run hint, got %v", tc.fails, err)
+		}
 	}
 }

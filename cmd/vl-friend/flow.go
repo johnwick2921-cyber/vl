@@ -176,13 +176,26 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// [4/6] Download the add-on and verify the signed manifest + SHA-256 BEFORE
 	// anything is written.
 	d.print("[4/6] Downloading the VL add-on and checking its signature…")
-	m, err := fetchManifest(ctx, d, base)
-	if err != nil {
-		return err
+	// F1 10-21: this is the FIRST traffic over a brand-new tunnel, seconds after
+	// approval — give it 3 tries, 10s apart, before failing the install.
+	var m FriendManifest
+	var addon []byte
+	for attempt := 1; ; attempt++ {
+		m, err = fetchManifest(ctx, d, base)
+		if err == nil {
+			addon, err = fetchVerifiedAddon(ctx, d, base, m)
+		}
+		if err == nil || attempt == firstFetchTries || ctx.Err() != nil {
+			break
+		}
+		d.print("Still connecting to your bot… trying again")
+		select {
+		case <-ctx.Done():
+		case <-time.After(firstFetchPause):
+		}
 	}
-	addon, err := fetchVerifiedAddon(ctx, d, base, m)
 	if err != nil {
-		return err
+		return fmt.Errorf("%w — run VL-Setup again (you do not need a new code)", err)
 	}
 	d.print("Add-on verified ✓")
 
@@ -1665,6 +1678,13 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 	}
 	return nil
 }
+
+// firstFetchTries / firstFetchPause: the first-run manifest + add-on fetch
+// retries (vars so tests can shorten the pause).
+var (
+	firstFetchTries = 3
+	firstFetchPause = 10 * time.Second
+)
 
 // flatWaitMax caps waitFlat; flatWaitPoll is its poll interval. Vars so tests
 // can shorten them.
