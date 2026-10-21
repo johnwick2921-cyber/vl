@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sync"
 	"testing"
+	"time"
 
 	"vl/kernel/mentor"
 	ntwire "vl/provider/ninjatrader"
@@ -219,6 +220,24 @@ func TestM151ResonanceMinDistance(t *testing.T) {
 	if !p.Pos.ArmedBE {
 		t.Fatal("ArmedBE must be true after the 0.25R BE move")
 	}
+
+	// short side: entry 100, stop 110 → R 10, 0.25R below entry = 97.5.
+	at2, moves2 := newDriveAT(t)
+	ps := &mentorLivePos{
+		Pos: mentorPosition{Symbol: "MNQ", Side: "short", Origin: "PLH", Entry: 100, Stop: 110, Target: 80, R: 10, Mode: "A-resonance"},
+		Legs: [3]mentorLeg{
+			{SignalID: "s-2", Qty: 1, Stop: 110, Final: true},
+		},
+	}
+	at2.mentorRegisterLivePos("s-2", ps)
+	at2.mentorExitDrivePos(nil, ps, 99.75, 101, 99, 0) // entry − 1 tick (0.25) = 99.75 → still above 97.5
+	if n := len(moves2()); n != 0 {
+		t.Fatalf("short entry−1 tick must not move BE: %d moves", n)
+	}
+	at2.mentorExitDrivePos(nil, ps, 97.5, 99, 96, 0) // entry − 0.25R = 97.5
+	if n := len(moves2()); n != 1 || moves2()[0].newStop != 100 {
+		t.Fatalf("short entry−0.25R must move BE to 100: %+v", moves2())
+	}
 }
 
 // ── (g) restart after arm → mode A persisted on the row.
@@ -242,6 +261,34 @@ func TestM151ResonancePersistsModeA(t *testing.T) {
 	}
 	if got.ExitMode == nil || *got.ExitMode != "A-resonance" {
 		t.Fatalf("mode A must be persisted for the restart rebuild: %v", got.ExitMode)
+	}
+}
+
+// m151 (g) restart half: a fresh trader rebuilds mode A from the DB row (the
+// persisted exit_mode), not from any in-memory staged branch.
+func TestM151ResonanceRebuildRestoresAFromRow(t *testing.T) {
+	at, st := f2Trader(t)
+	sig := "aa07e583-0000-0000-0000-0000000000a1"
+	arm := f2Arm(sig, "PHL", 2, 1, 29600, 29590, 29610, mentorExitModePtr("A-resonance"))
+	if err := st.ArmedOrders().UpsertArm(arm); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.Position().CreateOpenPosition(f2Pos(sig, 2, 2, 29600)); err != nil {
+		t.Fatal(err)
+	}
+	f2PinBook(t, []ntwire.NT8Order{
+		f2StopOrder(sig+"-sl", 29590, 1),
+		f2StopOrder(sig+"-sl2", 29590, 1),
+		f2TPOrder(sig+"-tp", 29610),
+	}, true, 0)
+
+	rebuilt, refused, ran := at.mentorRebuildLivePosAtBoot(time.Now())
+	if !ran || rebuilt != 1 || refused != 0 {
+		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
+	}
+	lp := at.mentorLivePos[sig]
+	if lp == nil || lp.Pos.Mode != "A-resonance" {
+		t.Fatalf("a restart must rebuild mode A from the DB row: %+v", lp)
 	}
 }
 

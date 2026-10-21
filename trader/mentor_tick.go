@@ -691,6 +691,20 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 			return
 		}
 	}
+	// ONE WORKING ENTRY PER SIDE (slot; release #30): the reference is the FIRST
+	// working entry; a new same-side arm forms only after the previous one is
+	// filled, cancelled or expired [CTO parity ruling 1791008332386 #1,
+	// generalized from isbArmActive to EVERY kind via the armed ledger]. m151:
+	// this runs BEFORE the add gate — a same-side ISB must pass THIS gate too
+	// before it can arm resonance.
+	if same := at.mentorWorkingSameSideRows(string(in.Side)); len(same) > 0 {
+		at.mentorCount("refused_same_side_working")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — one working entry per side: a %s entry already works (%s) [D1.1 p1 @17:06–17:44]",
+			in.Side, mentorArmIDFromScenario(same[0].Scenario))
+		at.mentorRecordStallRefusal(in, "same_side_working: one working entry per side")
+		at.mentorGateBlock("mentor_same_side_working")
+		return
+	}
 	// NEVER-ADD gate (m151: moved BELOW no-chase, so every other gate has run).
 	// A same-side ISB entry that passes every gate EXCEPT this one is the
 	// resonance HOLD signal — arm resonance (mode A), place nothing. An
@@ -719,21 +733,6 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		// mode B/SWING4H: leg 1's TP is computed later (mentorWireLeg1TP at
 		// placement / the +1R default) — don't print a misleading 0.00.
 		at.logInfof("🧑‍🏫 mentor exit fork: %s — %s", forkMode, forkWhy)
-	}
-	// ONE WORKING ENTRY PER SIDE (release #30): the reference is the FIRST
-	// working entry; a new same-side arm forms only after the previous one is
-	// filled, cancelled or expired [CTO parity ruling 1791008332386 #1,
-	// generalized from isbArmActive to EVERY kind via the armed ledger]. The
-	// never-add gate above covers an OPEN position; this covers a same-side
-	// entry still RESTING (armed/working) — the case where two stop entries can
-	// both fill in one bar (10-02 07:11 ISB-rev + ISB long = 8 MNQ).
-	if same := at.mentorWorkingSameSideRows(string(in.Side)); len(same) > 0 {
-		at.mentorCount("refused_same_side_working")
-		at.logWarnf("🧑‍🏫 mentor placement REFUSED — one working entry per side: a %s entry already works (%s) [D1.1 p1 @17:06–17:44]",
-			in.Side, mentorArmIDFromScenario(same[0].Scenario))
-		at.mentorRecordStallRefusal(in, "same_side_working: one working entry per side")
-		at.mentorGateBlock("mentor_same_side_working")
-		return
 	}
 	// B20: the chosen branch is REGISTERED per open position — a later
 	// confluence upgrade switches it to C (hold ≥ 1:2, size untouched).
