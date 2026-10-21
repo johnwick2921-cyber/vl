@@ -48,7 +48,7 @@ func TestReanchorCMEStubLeavesOtherBarsUntouched(t *testing.T) {
 
 // TestReanchorCMEStubAcrossOffsets pins DST safety for the new 6h/8h/12h cases:
 // the +1h shift must hold in BOTH CT offsets (CDT and CST).
-func TestReanchorCMEStubAcrossOffsets(t *testing.T) {
+func TestReanchorCMEStubAcrossOffsetsAllTFs(t *testing.T) {
 	// July (CDT, UTC-5): 4h stub stored 12:00 CDT → 13:00 CDT.
 	jul := stubMs(2026, 7, 1, 12, 0)
 	if got := ReanchorCMEStub("4h", jul); got != jul+int64(time.Hour/time.Millisecond) {
