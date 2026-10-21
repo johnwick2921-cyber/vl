@@ -227,18 +227,18 @@ func TestCX8EMA9VisitCapModes(t *testing.T) {
 	}
 }
 
-// TestCX9ISBMaxStopRefusedAndNamed — knob mentor_isb_max_pts (default 30 —
-// course-defaults-30: stop < 30 taken, ≥ 30 refused): with the knob at 1 the
-// standard long ISB (stop > 1) is refused and counted "isb_stop_over_max",
-// never folded into "isb_stop_twenties". Mutant: drop the isbOverMaxStop check
-// in ISBStopVerdict → RED.
+// TestCX9ISBMaxStopRefusedAndNamed — knob mentor_isb_max_pts (default 25 — the
+// course's ">25 skip" [D3.3 p1 @02:04]; 20–25 is the reduced tier): with the
+// knob at 1 the standard long ISB (stop > 1) is refused and counted
+// "isb_stop_over_max", never folded into "isb_stop_twenties". Mutant: drop the
+// isbOverMaxStop check in ISBStopVerdict → RED.
 func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
-	if DefaultConfig().CourseExits.ISBMaxStopPts != 30 {
-		t.Fatal("CX-9 default must be 30 (course-defaults-30)")
+	if DefaultConfig().CourseExits.ISBMaxStopPts != 25 {
+		t.Fatal("CX-9 default must be 25 (the course's >25 skip)")
 	}
 	ins, e := scopeISBTick(fullDepth)
 	if entriesOf(ins, "ISB") != 1 {
-		t.Fatalf("control: the ISB must emit with the default 30 (its stop 5 < 30); %+v %v", ins, e.State.Refusals)
+		t.Fatalf("control: the ISB must emit with the default 25 (its stop 5 < 25); %+v %v", ins, e.State.Refusals)
 	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -257,6 +257,28 @@ func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
 	if e2.State.Refusals["isb_stop_over_max"] != 1 || e2.State.Refusals["isb_stop_twenties"] != 0 {
 		t.Fatalf("the refusal must be named isb_stop_over_max: %v", e2.State.Refusals)
 	}
+}
+
+// TestCX9ISBStopBandBoundaries — the course's three bands: <20 normal, 20–25
+// reduced (size table), >25 refused. ISBStopVerdict owns only the refuse edge
+// (strictly ABOVE the ceiling); the reduced band is mentorContractsFor's. The
+// 25.0-pt stop is REDUCED, not refused. Mutant: isbOverMaxStop back to `>=`
+// (instead of `>`) → the 25-pt boundary refuses → RED.
+func TestCX9ISBStopBandBoundaries(t *testing.T) {
+	cfg := DefaultConfig()
+	mk := func(hi, lo float64) market.Kline { return market.Kline{High: hi, Low: lo} }
+	check := func(name string, hi, lo float64, wantOK bool) {
+		t.Helper()
+		if _, ok, _ := ISBStopVerdict(mk(hi, lo), cfg); ok != wantOK {
+			t.Fatalf("%s: ISBStopVerdict ok=%v want %v", name, ok, wantOK)
+		}
+	}
+	// stop = (High−Low) + 2×1.5 buffer.
+	check("19-pt stop", 120, 104, true) // 16+3 = 19 < 20 → normal
+	check("20-pt stop", 120, 103, true) // 17+3 = 20 → reduced (not refused)
+	check("25-pt stop", 120, 98, true)  // 22+3 = 25 → reduced (not refused)
+	check("26-pt stop", 120, 97, false) // 23+3 = 26 > 25 → refused
+	check("30-pt stop", 120, 93, false) // 27+3 = 30 > 25 → refused
 }
 
 // TestCX10KeypairRatio — X4 @06:31 keypair rule with the CX-10 ratio: the thin

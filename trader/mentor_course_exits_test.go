@@ -227,7 +227,7 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 	line := at.mentorCourseExitsBootLine()
 	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=ON",
 		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
-		"isb_max_pts=30", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
+		"isb_max_pts=25", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q missing %q", line, want)
 		}
@@ -235,13 +235,13 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 	// stored values reach the evaluator and the line (READ, never literal).
 	at2, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true,
 		MentorSwingEMA34IsFirstTarget: cxBool(false), MentorReverseISBAsPHL: cxBool(true), MentorEMA9VisitCap: "exempt",
-		MentorISBMaxPts: 25, MentorKeypairCandleRatio: 3, MentorBoxFreshRTHPair: cxBool(true), MentorBoxMaxHeightPts: 40}})
+		MentorISBMaxPts: 26, MentorKeypairCandleRatio: 3, MentorBoxFreshRTHPair: cxBool(true), MentorBoxMaxHeightPts: 40}})
 	c2 := at2.mentorEvaluatorConfig().CourseExits
-	if c2.SwingEMA34IsFirstTarget || !c2.ReverseISBAsPHL || c2.EMA9VisitCap != "exempt" || c2.ISBMaxStopPts != 25 ||
+	if c2.SwingEMA34IsFirstTarget || !c2.ReverseISBAsPHL || c2.EMA9VisitCap != "exempt" || c2.ISBMaxStopPts != 26 ||
 		c2.KeypairCandleRatio != 3 || !c2.BoxFreshRTHPair || c2.BoxMaxHeightPts != 40 {
 		t.Fatalf("stored knobs must reach the evaluator: %+v", c2)
 	}
-	if l2 := at2.mentorCourseExitsBootLine(); !strings.Contains(l2, "swing_ema34_is_first_target=OFF") || !strings.Contains(l2, "isb_max_pts=25") {
+	if l2 := at2.mentorCourseExitsBootLine(); !strings.Contains(l2, "swing_ema34_is_first_target=OFF") || !strings.Contains(l2, "isb_max_pts=26") {
 		t.Fatalf("the boot line must READ the stored values: %q", l2)
 	}
 	// a bad value fails closed and is counted.

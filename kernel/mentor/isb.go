@@ -94,8 +94,8 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 
 // ISBStopLimitOrder is the R1 order the evaluator emits: the single stop-limit
 // entry in the CANDLE-1 direction. ok is false (with a cited reason) when the
-// stop is ≥ the ISB ceiling — the ONLY stop-size skip R1 has (default 30,
-// course-defaults-30) [D4.1 p1 @ 05:41].
+// stop is ABOVE the ISB ceiling — the ONLY stop-size skip R1 has (default 25,
+// the course's ">25 skip") [D3.3 p1 @02:04; D4.1 p1 @05:41].
 func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, string) {
 	dir := ISBDirection(prev)
 	if dir == "" {
@@ -114,15 +114,15 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 	return dir, short, true, ""
 }
 
-// ISBStopVerdict applies the ONLY stop-size rule R1 has (course-defaults-30,
-// owner order "move to 30 at least … fix all"): an ISB whose stop is ≥ 30 pts
-// must NOT be taken; a stop < 30 is TAKEN. There is NO fixed 5–6-pt stop and
-// no "twenties" window any more — the [20,30) skip was REMOVED (it refused
-// 20–30 and let 30+ through, which was backwards). The ≥ 30 ceiling lives in
-// CourseExits.ISBMaxStopPts (default 30, CX-9).
+// ISBStopVerdict applies the ONLY stop-size skip R1 has: an ISB whose stop is
+// ABOVE the ceiling (default 25 — the course's ">25 skip" [D3.3 p1 @02:04]) is
+// REFUSED; a stop in the twenties [20, 25] is the REDUCED tier, handled by the
+// size table (mentorContractsFor), not here. There is NO fixed 5–6-pt stop —
+// the stop is the ISB candle itself [D1.4 p2 @01:57–03:15]. The ceiling lives
+// in CourseExits.ISBMaxStopPts (default 25, CX-9).
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 30)
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 25)
 		return stopPts, false, ISBMaxStopReason
 	}
 	return stopPts, true, ""

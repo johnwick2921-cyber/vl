@@ -165,9 +165,9 @@ func TestTargetFloorOK(t *testing.T) {
 	}
 }
 
-// TestISBSilentDropsAllNamed — CTO E-4, course-defaults-30: the 30-pt stop
-// ceiling (CX-9), the HTF block, the R5 box block, the HTF side mismatch and
-// the DayOff branch all record a named refusal instead of dropping silently.
+// TestISBSilentDropsAllNamed — CTO E-4, the >25 stop ceiling (CX-9), the HTF
+// block, the R5 box block, the HTF side mismatch and the DayOff branch all
+// record a named refusal instead of dropping silently.
 func TestISBSilentDropsAllNamed(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
