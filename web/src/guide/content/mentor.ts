@@ -655,7 +655,7 @@ export const mentor: GuideSection = {
       rows: [
         [
           'A — resonance',
-          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles: the moment that ISB appears, the stop goes to break-even and the trade rides (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER’s take-profit is moved out to the level beyond the old high with a real NinjaTrader modify on the runner’s own leg (release #25, mentor_resonance_runner_tp_old_high, default ON — until then it was only logged “WOULD set TP … UNWIRED”); with no level beyond, or a one-bracket position, the runner keeps its take-profit (counted)',
+          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles, where that ISB passes every placement gate EXCEPT the never-add gate: the position flips to mode A (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER’s take-profit is moved out to the level beyond the old high with a real NinjaTrader modify on the runner’s own leg (release #25, mentor_resonance_runner_tp_old_high, default ON — until then it was only logged “WOULD set TP … UNWIRED”); with no level beyond, or a one-bracket position, the runner keeps its take-profit (counted). The stop does NOT move at the arm: on the CLOSED 1m candle, every open leg moves to break-even only AFTER leg 1’s 1:1 partial is confirmed filled at NinjaTrader, or — with no partial yet — once the close is at least 0.25R beyond entry (a CTO default the owner may change)',
         ],
         [
           'B — normal',
@@ -1803,7 +1803,7 @@ export const mentor: GuideSection = {
           label: 'Resonance runner TP past the old high',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Mode A (a same-direction ISB within 3 candles of a PHL/PLH fill): both stops go to break-even and, with this ON, the RUNNER’s take-profit is moved out to the level beyond the old high with a real modify on the runner’s own wire leg (leg 2). Leg 1’s 1:1 stays. From 10-05 to 10-14 this move was only logged (“WOULD set TP … UNWIRED”).',
+          what: 'Mode A (a same-direction ISB within 3 candles of a PHL/PLH fill, passing every placement gate except the never-add gate): the position flips to mode A and, with this ON, the RUNNER’s take-profit is moved out to the level beyond the old high with a real modify on the runner’s own wire leg (leg 2). Leg 1’s 1:1 stays; the break-even moves later on the closed 1m candle (after the 1:1 partial confirms, or once the close is 0.25R beyond entry — a CTO default the owner may change). From 10-05 to 10-14 this move was only logged (“WOULD set TP … UNWIRED”).',
           trader:
             'Course: “70-80% là nó sẽ phá luôn cái đỉnh bên tay trái” (70–80% it breaks the left high) [D2.4 p1 @02:02–02:09]; “Để stop loss ở break even / Cho nó chạy” (stop at break-even, let it run) [D2.4 p1 @02:24–02:47]. The course names no runner target — “let it run”; moving the cap past the old high is the closest the bracket can get. Case (a): a bug fix — the code computed and logged it but never sent it.',
           consumer:

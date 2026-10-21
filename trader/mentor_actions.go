@@ -480,13 +480,6 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		return
 	}
 	at.mentorRegisterLiveArm(armID, row.ID, side, in.Price, scenario)
-	// m134 (a): resonance arms only from an ISB the ledger ACCEPTED — this is the
-	// accept point (every placement gate passed, the arm row authored with a
-	// nonzero ID). A raw evaluator intent must never arm resonance; the loop in
-	// mentorTick was removed.
-	if isISBEntryIntent(in) {
-		at.mentorArmResonanceOnISB(side)
-	}
 	at.mentorCount("armed_" + choice.Tier)
 	at.mentorFunnel.bumpAuthored() // N12 funnel stage: the arm row was authored
 	// STALLED-SETUP ALARM (release #22): the placed half of the seen-vs-placed

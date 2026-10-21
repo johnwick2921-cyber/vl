@@ -654,12 +654,8 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.mentorGateBlock("mentor_news_hold")
 		return
 	}
-	if refuse, why := at.mentorAddGate(in); refuse {
-		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
-		at.mentorRecordStallRefusal(in, "never_add: "+why)
-		at.mentorGateBlock("mentor_never_add")
-		return
-	}
+	// The never-add gate moved BELOW no-chase (m151): the resonance arm fires at
+	// the add-gate refusal ONLY after every other gate has passed.
 	// §5(a) — the daily guardrails are checked AT PLACEMENT (r22: daily loss
 	// on the bot's own P&L incl. a latched trip, profit target, max daily
 	// trades), and again at the send by the admission chain; the 60s monitor
@@ -694,6 +690,23 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 			at.mentorGateBlock("mentor_no_chase")
 			return
 		}
+	}
+	// NEVER-ADD gate (m151: moved BELOW no-chase, so every other gate has run).
+	// A same-side ISB entry that passes every gate EXCEPT this one is the
+	// resonance HOLD signal — arm resonance (mode A), place nothing. An
+	// opposite-side (no-flip) entry, and every non-ISB same-side entry, is a
+	// normal refusal.
+	if refuse, why := at.mentorAddGate(in); refuse {
+		if isISBEntryIntent(in) {
+			if open := at.mentorOpenSideSource(); open != "" && strings.EqualFold(open, string(in.Side)) {
+				at.mentorArmResonanceOnISB(string(in.Side))
+				return
+			}
+		}
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
+		at.mentorRecordStallRefusal(in, "never_add: "+why)
+		at.mentorGateBlock("mentor_never_add")
+		return
 	}
 	// A/B/C EXIT FORK AT ENTRY (CTO 1791029620038): the branch is chosen from
 	// the intent flags NOW and recorded; the P1 exit loop drives the chosen

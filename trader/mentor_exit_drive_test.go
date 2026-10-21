@@ -706,9 +706,9 @@ func TestMentorResonanceBEFailedMoveDoesNotWriteBelief(t *testing.T) {
 	}
 }
 
-// m134 (a): resonance arms only from an ISB entry the ledger ACCEPTED — the
-// accept point in mentorArmIntent. A raw evaluator intent has no arming path
-// any more (the loop in mentorTick was removed).
+// m151: the resonance arm lives at the never-add gate in mentorPlaceIntent, NOT
+// at the ledger-accept point (mentorArmIntent). A direct accept (the m134 shape)
+// must no longer flip the open position — the arm moved.
 func TestMentorArmResonanceFromAcceptedISBOnly(t *testing.T) {
 	at, st, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
@@ -719,19 +719,14 @@ func TestMentorArmResonanceFromAcceptedISBOnly(t *testing.T) {
 		Legs:          [3]mentorLeg{{SignalID: "sig-phl", Qty: 1, Stop: 90, Final: true}},
 		BarsSinceFill: 1,
 	})
-	// the ACCEPTED ISB entry (the ledger-accept point in mentorArmIntent).
+	// the ledger-accept point no longer arms resonance.
 	at.mentorArmIntent(
 		mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-res", Side: mentor.SideLong,
 			Price: 101, Stop: 100, Target: 112, Setup: "ISB", ExpiryMs: 1_800_000_000_000},
 		mentorSizeChoice{Contracts: 1, Tier: "base"}, 1_800_000_000_000, 1_800_000_000_000, "B", 0)
 	lp := at.mentorLivePos["sig-phl"]
-	if lp == nil || lp.Pos.Mode != "A-resonance" {
-		t.Fatalf("an accepted ISB must arm resonance: %+v", lp)
-	}
-	// m134 (b)/(c): arming did NOT move the stop to BE or write the ArmedBE
-	// belief — the deferred BE runs on the closed-1m exit drive.
-	if lp.Pos.ArmedBE || lp.Pos.Stop != 90 {
-		t.Fatalf("arming must not move the stop: armed=%v stop=%.2f", lp.Pos.ArmedBE, lp.Pos.Stop)
+	if lp == nil || lp.Pos.Mode != "B" {
+		t.Fatalf("the accept point must NOT arm resonance (it moved to the add gate): %+v", lp)
 	}
 }
 
