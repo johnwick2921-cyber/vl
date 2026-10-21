@@ -816,7 +816,9 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int,
 // fallback opens the dashboard in the default browser when the exe copy is
 // missing. B1: the if/else is ONE statement — PowerShell rejects "};else{".
 // m10: each .lnk/.url is written only when missing (Test-Path), so a daily click
-// is a no-op, not a rewrite.
+// is a no-op, not a rewrite. F4 10-21: an EXISTING VL.lnk from an older version
+// (bare 'msedge' target, or msedge --app with no --open) is RE-TARGETED to the
+// local exe + --open; an up-to-date one is left untouched.
 //
 // P1: the dashboard URL is NEVER spliced into the script text — PowerShell 5.1
 // rejects a positional arg after -EncodedCommand, so the caller's trailing arg
@@ -829,7 +831,7 @@ func shortcutScript() string {
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
 		"$ext='url'",
-		"if(Test-Path $exe){$ext='lnk';$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path -LiteralPath $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=$env:VL_ARG0`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path -LiteralPath $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"if(Test-Path $exe){$ext='lnk';$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";$l=$w.CreateShortcut($p);if((-not (Test-Path -LiteralPath $p)) -or $l.TargetPath -ne $exe -or $l.Arguments -ne '--open'){$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=$env:VL_ARG0`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path -LiteralPath $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
 		"$missing=@();foreach($dir in @($d,$s)){$p=\"$dir\\VL.$ext\";if(-not (Test-Path -LiteralPath $p)){$missing+=$p}}",
 		"if($missing.Count -gt 0){[Console]::Error.WriteLine('shortcut missing: '+($missing -join ', '));exit 1}",
 		"'VL_RESULT=ok'",

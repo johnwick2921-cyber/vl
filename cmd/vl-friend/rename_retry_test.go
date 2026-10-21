@@ -208,3 +208,16 @@ func TestWaitFlatIsBounded(t *testing.T) {
 		t.Fatalf("waitFlat must stop at flatWaitMax, took %v", time.Since(start))
 	}
 }
+
+// TestShortcutScriptRetargetsStaleLnk — F4 10-21 (proven on real PS 5.1: a
+// stale VL.lnk pointing at notepad with --app was re-targeted to the local exe
+// + --open; a second run left the mtime unchanged). An EXISTING old-version
+// VL.lnk must be re-targeted, an up-to-date one left alone. MUTANT: back to
+// "create only when missing" → RED.
+func TestShortcutScriptRetargetsStaleLnk(t *testing.T) {
+	s := shortcutScript()
+	want := "if((-not (Test-Path -LiteralPath $p)) -or $l.TargetPath -ne $exe -or $l.Arguments -ne '--open'){"
+	if !strings.Contains(s, want) {
+		t.Fatalf("shortcutScript must re-target a stale VL.lnk; script:\n%s", s)
+	}
+}
