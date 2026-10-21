@@ -306,7 +306,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	if !scaledNow {
 		// stage 0. CX-4 (knob mentor_be_before_partial, default ON —
 		// course-defaults-30): BE at half-way to +1R before the partial
-		// [D1.2 p1 @12:41–13:12].
+		// [D1.2 p1 @12:41–13:12]. A 2m entry waits for its 2m candle to close
+		// (frameOK), like stage 1: until then c is the unfilled trail bar's 0
+		// close, which read as "past half-way" for every short (10-20 20:42 CT,
+		// cf95ee3d: BE sent at "close 0.00", NT8 refused it below the market).
+		if p.TrailTFMin > 1 && !frameOK {
+			return
+		}
 		at.mentorBEBeforePartialStep(nt, p, c)
 		return
 	}

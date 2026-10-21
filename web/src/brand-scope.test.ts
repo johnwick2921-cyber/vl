@@ -7,6 +7,8 @@
 //   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
 //   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
 //   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
+// go.mod baseline advanced 2026-10-20 for GO-2026-6809 (release #42): the go
+//   directive 1.26.9 -> 1.26.10 (crypto/x509 fix); no require line changed.
 // go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):
 //   go 1.26.9 + golang.org/x/net v0.60.0 — clears GO-2026-6617/6613/6612.
 //   sha256 58e9a9bc… — toolchain bump only; no identifier, frame or wire change.
