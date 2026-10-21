@@ -13,7 +13,7 @@ import (
 
 func resetTCPServerSingleton() {
 	tcpServerOnce = sync.Once{}
-	tcpServerInst = nil
+	tcpServerInst.Store(nil)
 	tcpServerErr = nil
 }
 
