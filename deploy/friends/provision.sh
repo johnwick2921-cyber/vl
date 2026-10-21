@@ -48,6 +48,14 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REGISTRY="$ROOT/friends.json"
 DEST="$ROOT/$NAME"
 
+# R6: the bot runs as a system unit with no XDG_RUNTIME_DIR, so `systemctl --user`
+# fails with "No medium found"; set it explicitly (remove.sh does the same).
+export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+export DBUS_SESSION_BUS_ADDRESS="${DBUS_SESSION_BUS_ADDRESS:-unix:path=/run/user/$(id -u)/bus}"
+# R11: umask 077 from the very start, so $ROOT and friends.json are 0700/0600
+# from the moment they are created (not only after the friend folder).
+umask 077
+
 mkdir -p "$ROOT"
 [ -f "$REGISTRY" ] || printf '[]\n' > "$REGISTRY"
 
@@ -57,48 +65,15 @@ REAL_ROOT="$(realpath -m -- "$ROOT")"
 REAL_DEST="$(realpath -m -- "$DEST")"
 case "$REAL_DEST" in
   "$REAL_ROOT"/*) : ;;
-  *) echo "provision: '$NAME' resolves outside $ROOT — refusing" >&2; exit 1 ;;
+  *) echo "provision: '$NAME' resolves outside $ROOT - refusing" >&2; exit 1 ;;
 esac
 [ "$REAL_DEST" != "$REAL_ROOT" ] || { echo "provision: refusing to create the friend root itself" >&2; exit 1; }
 
-# Refuse a second provision of the same name (folder or registry entry).
+# Refuse a second provision of the same name (folder exists).
 if [ -e "$DEST" ]; then
-  echo "provision: '$DEST' already exists — refusing (remove.sh first)" >&2
+  echo "provision: '$DEST' already exists - refusing (remove.sh first)" >&2
   exit 1
 fi
-if grep -q "\"name\": *\"$NAME\"" "$REGISTRY" 2>/dev/null; then
-  echo "provision: friend '$NAME' is already in $REGISTRY — refusing" >&2
-  exit 1
-fi
-
-# Next free N from the registry (B2 ports: web 18080+N, NT 36980+N).
-N="$(python3 - "$REGISTRY" <<'PY'
-import json, os, sys
-reg = sys.argv[1]
-entries = []
-if os.path.exists(reg) and os.path.getsize(reg) > 0:
-    try:
-        entries = json.load(open(reg))
-    except Exception:
-        entries = []
-used = {int(e.get("web_port")) for e in entries if isinstance(e.get("web_port"), int)}
-n = 1
-while (18080 + n) in used:
-    n += 1
-print(n)
-PY
-)"
-WEB_PORT=$((18080 + N))
-NT_PORT=$((36980 + N))
-
-# Refuse if either port is already listening (any mode — the check reads ss via
-# PATH so a test can stub it).
-for p in "$WEB_PORT" "$NT_PORT"; do
-  if ss -ltn 2>/dev/null | grep -qE ":$p[[:space:]]"; then
-    echo "provision: port $p is already in use — refusing" >&2
-    exit 1
-  fi
-done
 
 # Secrets: a fresh random login secret and connect key per friend.
 JWT_SECRET="$(openssl rand -base64 64 | tr -d '\n')"
@@ -110,10 +85,47 @@ DATA_ENCRYPTION_KEY="$(openssl rand -base64 32 | tr -d '\n')"
 RSA_PRIVATE_KEY="$(openssl genrsa 2048 2>/dev/null | awk '{printf "%s\\n", $0}')"
 KEY_SHA="$(printf '%s' "$CONNECT_KEY" | sha256sum | awk '{print $1}')"
 
+# R11: the registry read (duplicate-name check + next-free-N), the port-in-use
+# check, the folder creation and the append are ONE critical section under a
+# single flock (shared with the Go writer). A corrupt registry ABORTS - it is
+# never silently replaced with a one-row list.
+exec 9>>"$REGISTRY.lock"
+flock -x 9
+N="$(python3 - "$REGISTRY" "$NAME" <<'PY'
+import json, os, sys
+reg, name = sys.argv[1:3]
+entries = []
+if os.path.exists(reg) and os.path.getsize(reg) > 0:
+    try:
+        entries = json.load(open(reg))
+    except Exception as e:
+        print("provision: %s is corrupt - refusing to overwrite it: %s" % (reg, e), file=sys.stderr)
+        sys.exit(1)
+for e in entries:
+    if e.get("name") == name:
+        print("provision: friend '%s' is already in the registry - refusing" % name, file=sys.stderr)
+        sys.exit(1)
+used = {int(e.get("web_port")) for e in entries if isinstance(e.get("web_port"), int)}
+n = 1
+while (18080 + n) in used:
+    n += 1
+print(n)
+PY
+)"
+WEB_PORT=$((18080 + N))
+NT_PORT=$((36980 + N))
+
+# Refuse if either port is already listening (any mode - the check reads ss via
+# PATH so a test can stub it).
+for p in "$WEB_PORT" "$NT_PORT"; do
+  if ss -ltn 2>/dev/null | grep -qE ":$p[[:space:]]"; then
+    echo "provision: port $p is already in use - refusing" >&2
+    exit 1
+  fi
+done
+
 # The folder (B2): .env + data/ + symlinks to the owner's web/dist and deploy/RELEASE
-# so the friend always serves the same build as the owner. umask 077 is set FIRST
-# so the friend dir + data/ are 0700 and every file below is 0600 (U16).
-umask 077
+# so the friend always serves the same build as the owner.
 mkdir -p "$DEST/data" "$DEST/web" "$DEST/deploy"
 ln -sfn /home/hoang/vl/web/dist "$DEST/web/dist"
 ln -sfn /home/hoang/vl/deploy/RELEASE "$DEST/deploy/RELEASE"
@@ -132,35 +144,34 @@ VL_FRIEND_NAME=$NAME
 EOF
 chmod 0600 "$DEST/.env"
 
-# Registry: SHA-256 of the key only, never the key itself. The read-modify-write
-# holds an flock on <registry>.lock (shared with the Go writer) and lands the
-# bytes via a temp file + os.replace, never a bare truncate (U17).
+# Registry: SHA-256 of the key only, never the key itself. Still under the same
+# flock; the bytes land via a temp file + os.replace, never a bare truncate (U17).
 python3 - "$REGISTRY" "$NAME" "$WEB_PORT" "$NT_PORT" "$KEY_SHA" <<'PY'
-import datetime, fcntl, json, os, sys, tempfile
+import datetime, json, os, sys, tempfile
 reg, name, web, nt, sha = sys.argv[1:6]
-lock_path = reg + ".lock"
 entries = []
-with open(lock_path, "w") as lf:
-    fcntl.flock(lf, fcntl.LOCK_EX)
-    if os.path.exists(reg) and os.path.getsize(reg) > 0:
-        try:
-            entries = json.load(open(reg))
-        except Exception:
-            entries = []
-    entries.append({
-        "name": name,
-        "web_port": int(web),
-        "nt_port": int(nt),
-        "key_sha256": sha,
-        "state": "active",
-        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-        "tailscale_device_id": "",
-    })
-    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(reg) or ".", prefix=".friends-", suffix=".json.tmp")
-    with os.fdopen(fd, "w") as f:
-        json.dump(entries, f, indent=2)
-    os.replace(tmp, reg)
+if os.path.exists(reg) and os.path.getsize(reg) > 0:
+    try:
+        entries = json.load(open(reg))
+    except Exception as e:
+        print("provision: %s is corrupt - refusing: %s" % (reg, e), file=sys.stderr)
+        sys.exit(1)
+entries.append({
+    "name": name,
+    "web_port": int(web),
+    "nt_port": int(nt),
+    "key_sha256": sha,
+    "state": "active",
+    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+    "tailscale_device_id": "",
+})
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(reg) or ".", prefix=".friends-", suffix=".json.tmp")
+with os.fdopen(fd, "w") as f:
+    json.dump(entries, f, indent=2)
+os.replace(tmp, reg)
 PY
+flock -u 9
+exec 9>&-
 
 # One-time install code (B2), stdout only. The clear key is never written to disk
 # outside the friend's 0600 .env. CONNECT_KEY / TS_AUTHKEY are handed to the
