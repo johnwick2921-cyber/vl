@@ -1421,6 +1421,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	if err := ensureLocalExe(d); err != nil {
 		d.print("warning: could not update VL's app copy — " + err.Error())
 	}
+	d.print("Creating the VL icons…")
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		d.print("warning: could not create the VL icon — " + err.Error())
 	}
