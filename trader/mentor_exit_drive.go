@@ -619,7 +619,9 @@ var mentorLatestPriceSeam = func(at *AutoTrader) (float64, bool) {
 
 // mentorCloseLegAtMarketWire is the last hop for the wrong-side market close
 // (tests substitute it to capture closes; production binds it to the
-// TCPTrader's reduce-only CloseShort/CloseLong on the futures symbol).
+// TCPTrader's CloseShort/CloseLong on the futures symbol). NOTE: the close
+// wire is a FULL FLATTEN of the symbol's position — the qty is advisory and
+// ignored by the AddOn (ClosePositionPayload.Quantity).
 var mentorCloseLegAtMarketWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, side string, qty int) error {
 	if nt == nil {
 		return fmt.Errorf("mentor leg close: no armed trader")
