@@ -78,6 +78,10 @@ type deps struct {
 	// messageBox shows a Windows Yes/No dialog (no console) and reports whether
 	// the user chose Yes. Production: PowerShell MessageBox; tests: a fake.
 	messageBox func(text string) bool
+	// singleInstance reports whether THIS process acquired the single-instance
+	// mutex (G2). A second icon click returns false and just opens the
+	// dashboard — two instances must never race the add-on swap.
+	singleInstance func() bool
 }
 
 // msiSignature is what verifyMsiSigner reports: the Authenticode status and the

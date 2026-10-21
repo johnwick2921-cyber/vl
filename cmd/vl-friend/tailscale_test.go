@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -148,9 +149,11 @@ func (f *tailscaleFake) deps(t *testing.T) deps {
 			}
 			return msiSignature{Status: st, Subject: f.signerSubject}, nil
 		},
-		writeFile: os.WriteFile,
-		readLine:  func(string) (string, error) { return "", nil },
-		print:     func(l string) { f.prints = append(f.prints, l) },
+		writeFile:      os.WriteFile,
+		readLine:       func(string) (string, error) { return "", nil },
+		print:          func(l string) { f.prints = append(f.prints, l) },
+		messageBox:     func(string) bool { return false },
+		singleInstance: func() bool { return true },
 	}
 }
 
@@ -339,13 +342,51 @@ func TestNeverPrintSecrets(t *testing.T) {
 	}
 }
 
+// TestElevatedScriptRunsUpWithArgsKey — G3: the ELEVATED step runs `tailscale up`
+// with the auth key from $args[1] (one UAC prompt covers MSI + up), and the key
+// is NEVER spliced into the script text. MUTANT: splice the key into the script
+// → this test RED.
+func TestElevatedScriptRunsUpWithArgsKey(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
+		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-SECRET123", "http://100.64.0.2:18081"); err != nil {
+		t.Fatalf("install refused: %v", err)
+	}
+	if !strings.Contains(f.installCmd, "up --authkey $key") {
+		t.Fatalf("the elevated step must run `up` with the key from $args[1]: %q", f.installCmd)
+	}
+	if strings.Contains(f.installCmd, "tskey-SECRET123") {
+		t.Fatalf("the key must NOT be spliced into the script text: %q", f.installCmd)
+	}
+}
+
+// TestApprovalTimeoutDedicatedMessage — G5: the approval timeout is the
+// dedicated message (ask the owner, run again with the SAME code), never the
+// generic "nothing was changed / send a photo" framing.
+func TestApprovalTimeoutDedicatedMessage(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "NeedsMachineAuth", approvePolls: 1 << 30}
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
+	if !errors.Is(err, errApprovalTimeout) {
+		t.Fatalf("expected errApprovalTimeout, got %v", err)
+	}
+	msg := userFacing(err)
+	if strings.Contains(msg, "Send a photo") || strings.Contains(msg, "Nothing was changed") {
+		t.Fatalf("the approval message must not carry the generic framing: %q", msg)
+	}
+	if !strings.Contains(msg, "SAME code") {
+		t.Fatalf("missing the SAME code instruction: %q", msg)
+	}
+}
+
 func TestPauseOnErrorWaitsForEnter(t *testing.T) {
 	lines := []string{}
 	d := deps{
 		print:    func(string) {},
 		readLine: func(p string) (string, error) { lines = append(lines, p); return "", nil },
 	}
-	pauseOnError(d, "boom")
+	pauseOnError(d, errors.New("boom"))
 	if len(lines) != 1 {
 		t.Fatalf("pauseOnError must wait once for Enter, got %d reads", len(lines))
 	}
@@ -455,17 +496,20 @@ func TestTailscaleUpTimeoutThenApproved(t *testing.T) {
 	}
 }
 
-// TestTailscaleUpPrefsWriteAccessDenied — W5: the first-ever connection needs
-// admin rights; the raw "prefs write access denied" error maps to an exact
-// instruction, and the auth key never leaks.
+// TestTailscaleUpPrefsWriteAccessDenied — G3: a standard user's `up` denial is
+// NOT answered with "run as administrator" (that switches profiles); it is the
+// redacted raw error, and the auth key never leaks.
 func TestTailscaleUpPrefsWriteAccessDenied(t *testing.T) {
 	shortWaits(t)
 	key := "tskey-SECRET123"
 	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin",
 		upErr: fmt.Errorf("Access denied: tailscaled prefs write access denied")}
 	err := ensureTailscale(context.Background(), f.deps(t), key, "http://100.64.0.2:18081")
-	if err == nil || !strings.Contains(err.Error(), "run VL-Setup as administrator") {
-		t.Fatalf("expected the admin-rights message, got %v", err)
+	if err == nil {
+		t.Fatal("a denied `up` must surface an error")
+	}
+	if strings.Contains(err.Error(), "run VL-Setup as administrator") {
+		t.Fatalf("G3: must NOT tell a standard user to run as administrator: %v", err)
 	}
 	if strings.Contains(err.Error(), key) {
 		t.Fatalf("the auth key leaked into the error: %v", err)

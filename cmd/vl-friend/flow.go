@@ -134,7 +134,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 
 	// [2/6] Tailscale — install (UAC) or note it is already present.
 	d.print("[2/6] Installing Tailscale (the private connection). Windows will ask for permission — click YES.")
-	already, err := ensureTailscaleInstalled(ctx, d)
+	already, err := ensureTailscaleInstalled(ctx, d, ic.TSAuthKey)
 	if err != nil {
 		return err
 	}
@@ -177,7 +177,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// S16: if an add-on DLL is already there, use the swap path — never truncate
 	// a loaded DLL. Only ask to close NinjaTrader when one already exists.
 	if _, statErr := d.readFile(addonDstPath(docs)); statErr == nil {
-		deferred, err := waitNinjaTraderClosed(ctx, d)
+		deferred, err := waitNinjaTraderClosed(ctx, d, false)
 		if err != nil {
 			return err
 		}
@@ -204,34 +204,49 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 		d.print("warning: could not create the VL icon — " + err.Error())
 	}
 	if err := writeDashboardREADME(d, docs, base); err != nil {
-		return err
+		// G11: README is non-fatal.
+		d.print("warning: could not write the README — " + err.Error())
 	}
 	d.print("[6/6] All done ✓. A VL icon is on your desktop. Double-click it, create your login, then add your AI key, your strategy and a trader on your SIM account.")
 	d.print("Your VL dashboard:  " + base)
 	d.print("A VL icon is on your desktop and in the Start Menu.")
 	if err := d.openURL(ctx, base); err != nil {
-		return fmt.Errorf("open dashboard: %w", err)
+		// G11: the dashboard open is non-fatal — the URL is already on screen.
+		d.print("warning: could not open the dashboard — " + err.Error())
 	}
 	return nil
 }
 
 // runFirstRun is the whole first-run console flow: the [1/6] install-code
 // prompt, installFirstRun ([2/6]…[6/6]), then "Press Enter to close". It lives
-// here (not run_windows.go) so a Linux test can assert the step order.
+// here (not run_windows.go) so a Linux test can assert the step order. G8: a
+// bad paste re-prompts up to 3 times, never echoing the code.
 func runFirstRun(ctx context.Context, d deps) error {
 	d.print("[1/6] Paste the install code you were sent, then press Enter.")
-	code, err := d.readLine("")
-	if err != nil {
-		return err
-	}
-	ic, err := ParseInstallCode(code)
-	if err != nil {
-		// Never echo the code (it holds ts_authkey + connect_key).
-		return fmt.Errorf("invalid install code — check the copy you were sent")
-	}
-	secrets := []string{ic.TSAuthKey, ic.ConnectKey}
-	if err := installFirstRun(ctx, d, code); err != nil {
-		return fmt.Errorf("install failed: %s", redactSecrets(err.Error(), secrets...))
+	for attempt := 1; ; attempt++ {
+		code, err := d.readLine("")
+		if err != nil {
+			return err
+		}
+		ic, err := ParseInstallCode(code)
+		if err != nil {
+			// Never echo the code (it holds ts_authkey + connect_key).
+			if attempt >= 3 {
+				return fmt.Errorf("invalid install code — check the copy you were sent")
+			}
+			d.print("That code looks wrong — paste it again.")
+			continue
+		}
+		secrets := []string{ic.TSAuthKey, ic.ConnectKey}
+		if err := installFirstRun(ctx, d, code); err != nil {
+			// G5: the approval-timeout error carries its own instruction — never
+			// wrap it with the generic "install failed" framing.
+			if errors.Is(err, errApprovalTimeout) {
+				return err
+			}
+			return fmt.Errorf("install failed: %s", redactSecrets(err.Error(), secrets...))
+		}
+		break
 	}
 	d.print("Press Enter to close")
 	_, _ = d.readLine("")
@@ -374,13 +389,26 @@ func redactSecrets(s string, secrets ...string) string {
 	return redactTSKeys(s)
 }
 
+// errApprovalTimeout is the sentinel for "the owner has not approved this PC
+// yet" (G5). It carries its own instruction, so the generic "send a photo"
+// framing is never appended to it.
+var errApprovalTimeout = errors.New("the owner has not approved this PC yet")
+
+// userFacing turns an error into the console line. G5: the approval-timeout
+// error is complete and actionable on its own — never append the
+// "nothing was changed / send a photo" framing to it.
+func userFacing(err error) string {
+	if errors.Is(err, errApprovalTimeout) {
+		return "The owner has not approved this PC yet. Ask the owner to approve it, then run VL-Setup again with the SAME code."
+	}
+	return "Something went wrong: " + err.Error() + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner."
+}
+
 // pauseOnError prints the (already-redacted) error screen and waits for Enter
 // so a double-clicked console window does not close before the user reads it
-// (P0 b). The text tells a non-technical user exactly what to do: nothing was
-// changed on NinjaTrader, and to send a photo to the owner. Testable on Linux
-// through the print + readLine seams.
-func pauseOnError(d deps, msg string) {
-	d.print(redactTSKeys("Something went wrong: " + msg + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner."))
+// (P0 b). Testable on Linux through the print + readLine seams.
+func pauseOnError(d deps, err error) {
+	d.print(redactTSKeys(userFacing(err)))
 	d.print("Press Enter to close")
 	_, _ = d.readLine("")
 }
@@ -502,11 +530,10 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 			if timedOut {
 				return waitTailscaleApproved(ctx, d)
 			}
-			// W5: the first-ever connection needs admin rights; say that exactly
-			// instead of a raw `up` failure.
-			if lo := strings.ToLower(err.Error() + " " + string(out)); strings.Contains(lo, "access denied") || strings.Contains(lo, "prefs write access denied") {
-				return fmt.Errorf("Tailscale needs admin rights for the first connection — run VL-Setup as administrator (right-click → Run as administrator)")
-			}
+			// G3: never tell a standard user to "run as administrator" — that
+			// switches profiles and points at the wrong Documents/LOCALAPPDATA.
+			// The elevated MSI step already ran `up`; a refusal here surfaces as
+			// the (redacted) raw error.
 			// Redact the auth key from BOTH the error and the command output —
 			// exec errors can echo the full command line (P0 d: never print keys).
 			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
@@ -571,16 +598,19 @@ func tailscaleSettledState(ctx context.Context, d deps) (string, error) {
 // waitTailscaleApproved polls BackendState until Running, up to a bounded
 // deadline — never silently fails. W5: while waiting it prints the owner's
 // approval URL (from the status AuthURL, never the key) and a "still waiting"
-// line every tailscaleApprovalPrint.
+// line every tailscaleApprovalPrint. G5: the 15-minute budget is measured from
+// NOW (its own context), not eaten by idle time already spent in the caller's
+// 30-minute context; on timeout the error is the dedicated approval message.
 func waitTailscaleApproved(ctx context.Context, d deps) error {
+	actx, cancel := context.WithTimeout(context.Background(), tailscaleApprovalWait)
+	defer cancel()
 	t := time.NewTicker(tailscaleApprovalPoll)
 	defer t.Stop()
 	printT := time.NewTicker(tailscaleApprovalPrint)
 	defer printT.Stop()
-	deadline := time.Now().Add(tailscaleApprovalWait)
 	printedURL := false
 	for {
-		st, err := tailscaleStatus(ctx, d)
+		st, err := tailscaleStatus(actx, d)
 		if err == nil && st.BackendState == "Running" {
 			return nil
 		}
@@ -588,12 +618,9 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 			d.print("Owner approval link: " + st.AuthURL)
 			printedURL = true
 		}
-		if time.Now().After(deadline) {
-			return fmt.Errorf("Tailscale device was not approved within %s", tailscaleApprovalWait)
-		}
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-actx.Done():
+			return errApprovalTimeout
 		case <-printT.C:
 			d.print("Still waiting for the owner to approve…")
 		case <-t.C:
@@ -604,8 +631,10 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 // ensureTailscaleInstalled downloads + verifies + silently installs Tailscale
 // when it is not already present, then waits for it to become ready. It reports
 // whether Tailscale was already installed so the caller can print the skip line
-// ([2/6]). It does NOT join the tailnet.
-func ensureTailscaleInstalled(ctx context.Context, d deps) (bool, error) {
+// ([2/6]). G3: the one-time auth key is passed into the ELEVATED step, so a
+// standard (non-admin) user gets ONE UAC prompt that covers both the MSI and
+// `tailscale up` — never "run as administrator" (which would switch profiles).
+func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool, error) {
 	if _, err := tailscaleBackendState(ctx, d); err == nil {
 		return true, nil
 	}
@@ -613,7 +642,7 @@ func ensureTailscaleInstalled(ctx context.Context, d deps) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	code, err := installTailscaleElevated(ctx, d, msiPath)
+	code, err := installTailscaleElevated(ctx, d, msiPath, authKey)
 	if err != nil {
 		return false, err
 	}
@@ -635,18 +664,24 @@ func ensureTailscaleInstalled(ctx context.Context, d deps) (bool, error) {
 // ensureTailscale keeps the combined install + join shape the tests exercise:
 // install when missing, then join with the one-time auth key.
 func ensureTailscale(ctx context.Context, d deps, authKey, base string) error {
-	if _, err := ensureTailscaleInstalled(ctx, d); err != nil {
+	if _, err := ensureTailscaleInstalled(ctx, d, authKey); err != nil {
 		return err
 	}
 	return tailscaleConnect(ctx, d, authKey, base)
 }
 
 // elevatedInstallScript is the PowerShell that runs ELEVATED. It re-verifies the
-// Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard), quotes the
-// MSI path (S23a: "/i `"<path>`""), and reports UAC cancellation by
+// Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard), quotes
+// the MSI path (S23a: "/i `"<path>`""), and reports UAC cancellation by
 // NativeErrorCode 1223 (W10) — never by matching English text. The MSI path
-// arrives as $args[0] (S18b: no script-text splicing).
+// arrives as $args[0] (S18b: no script-text splicing). G3: after msiexec it runs
+// `tailscale up` with the auth key from $args[1] — one UAC prompt covers both —
+// so a standard user is never told to "run as administrator" (which would switch
+// profiles and point at the wrong Documents/LOCALAPPDATA). The `up` here is
+// best-effort: a failure prints VL_UP_FAILED and the caller retries `up` and
+// surfaces the real error.
 const elevatedInstallScript = `$msi = $args[0]
+$key = $args[1]
 [Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $sig = Get-AuthenticodeSignature -FilePath $msi
 if ($sig.Status -ne 'Valid') { Write-Output 'VL_MSI_NOT_VALID'; exit 2 }
@@ -654,7 +689,11 @@ if (-not ($sig.SignerCertificate.Subject -match 'O=Tailscale Inc\.')) { Write-Ou
 $arg = '/i "' + $msi + '" /quiet /norestart'
 try {
   $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
-  $p.ExitCode
+  Write-Output $p.ExitCode
+  if ($key) {
+    & 'C:\Program Files\Tailscale\tailscale.exe' up --authkey $key --unattended 2>$null | Out-Null
+    if ($LASTEXITCODE -ne 0) { Write-Output ('VL_UP_FAILED:' + $LASTEXITCODE) }
+  }
 } catch {
   if ($_.Exception.InnerException.NativeErrorCode -eq 1223) { Write-Output 'VL_UAC_CANCELLED'; exit 0 }
   throw
@@ -662,26 +701,30 @@ try {
 
 // installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
 // Yes/No prompt (a per-machine /quiet MSI from a non-admin process fails with
-// no prompt — 1603/1625). It returns the msiexec exit code. S8/S23a/W10/S18b:
-// the command is sent via -EncodedCommand with the MSI path as $args[0], the
-// script re-verifies the signature right before msiexec, and a UAC cancel is
-// detected by NativeErrorCode 1223 (never English text).
-func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int, error) {
-	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(elevatedInstallScript), msiPath)
+// no prompt — 1603/1625). It returns the msiexec exit code. S8/S23a/W10/S18b/G3:
+// the command is sent via -EncodedCommand with the MSI path as $args[0] and the
+// auth key as $args[1] (never spliced into the script, never echoed or logged).
+func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey string) (int, error) {
+	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(elevatedInstallScript), msiPath, authKey)
 	if err != nil {
 		return 0, fmt.Errorf("tailscale install: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	switch strings.TrimSpace(string(out)) {
-	case "VL_UAC_CANCELLED":
-		return 1223, nil
-	case "VL_MSI_NOT_VALID", "VL_MSI_BAD_SIGNER":
-		return 0, fmt.Errorf("tailscale install: elevated signature re-verify refused (%s)", strings.TrimSpace(string(out)))
+	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		line = strings.TrimSpace(line)
+		switch {
+		case line == "VL_UAC_CANCELLED":
+			return 1223, nil
+		case line == "VL_MSI_NOT_VALID" || line == "VL_MSI_BAD_SIGNER":
+			return 0, fmt.Errorf("tailscale install: elevated signature re-verify refused (%s)", line)
+		case strings.HasPrefix(line, "VL_UP_FAILED:"):
+			// best-effort join failed; the caller retries `up` and surfaces it.
+			continue
+		}
+		if n, aerr := strconv.Atoi(line); aerr == nil {
+			return n, nil
+		}
 	}
-	code, err := strconv.Atoi(strings.TrimSpace(string(out)))
-	if err != nil {
-		return 0, fmt.Errorf("tailscale install: unreadable exit code %q", strings.TrimSpace(string(out)))
-	}
-	return code, nil
+	return 0, fmt.Errorf("tailscale install: unreadable exit code %q", strings.TrimSpace(string(out)))
 }
 
 // shortcutScript builds the PowerShell that creates the VL shortcuts. It is a
@@ -815,12 +858,21 @@ func resolveDashboardBase(ctx context.Context, d deps) (string, error) {
 	return fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort), nil
 }
 
-// runOpen is the desktop-icon path (vl-friend.exe --open): open the dashboard
-// FIRST, then a quick silent update check (≤5s); only an ADD-ON update shows a
-// Windows dialog (M5). Update now = the verified flat-gated swap with the
-// NT8-running prompt, bounded to its own ctx so it can never hang the icon
-// launch (M3). On any error the mentor sees a dialog "VL could not start…" (I3).
+// runOpen is the desktop-icon path (vl-friend.exe --open): single-instance
+// guarded (G2), open the dashboard FIRST, then the shortcut check (G13), then a
+// quick silent update check (≤5s); only an ADD-ON update shows a Windows dialog
+// (M5). Update now = the verified flat-gated swap with GUI-only prompts (G1),
+// bounded to its own ctx so it can never hang the icon launch (M3).
 func runOpen(ctx context.Context, d deps) error {
+	// G2: a second icon click must not race the add-on swap — it just opens the
+	// dashboard and exits.
+	if !d.singleInstance() {
+		if base, err := resolveDashboardBase(ctx, d); err == nil {
+			_ = d.openURL(ctx, base)
+		}
+		return nil
+	}
+
 	// W13b: migrate a legacy <USERPROFILE>\Documents layout into MyDocuments
 	// (non-fatal).
 	if home, herr := d.homeDir(); herr == nil {
@@ -842,14 +894,15 @@ func runOpen(ctx context.Context, d deps) error {
 		return probeFlat(c, d, base)
 	}
 
-	// M3/F8: open the dashboard FIRST, then offer the update. Shortcut
-	// re-creation is non-fatal and (m10) only writes when missing.
-	if err := createDesktopShortcut(ctx, d, base); err != nil {
-		d.print("warning: could not create the VL icon — " + err.Error())
-	}
+	// G13/F8: open the dashboard FIRST, then re-create a MISSING shortcut
+	// (non-fatal, and the .lnk/.url presence check is in the script).
 	if oerr := d.openURL(ctx, base); oerr != nil {
 		d.messageBox("VL could not start: " + oerr.Error() + ". Send a photo of this to the owner.")
 		return oerr
+	}
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
+		// G1: no console in --open; never print.
+		_ = err
 	}
 
 	// Quick bounded update check; a probe error is shown (m12/W15), never silent.
@@ -863,11 +916,6 @@ func runOpen(ctx context.Context, d deps) error {
 		return nil
 	}
 	if !dec.AddonUpdateAvailable {
-		if dec.AppUpdateAvailable {
-			// M5: an app-only update is a one-time info line, not a dialog on
-			// every click.
-			d.print("A new VL-Setup is available — ask the owner for it.")
-		}
 		return nil
 	}
 
@@ -877,14 +925,14 @@ func runOpen(ctx context.Context, d deps) error {
 		return nil
 	}
 
-	// Update now: the flat wait is bounded to its own ctx (M3, ≤5 min) so the
-	// icon launch can never hang; on a flat timeout it DEFERS (no error) and the
-	// dashboard is already open.
+	// Update now: GUI prompts only, bounded to its own ctx (M3, ≤5 min) so the
+	// icon launch can never hang; on a flat timeout it DEFERS with a message (G2).
 	uctx, ucancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer ucancel()
-	if _, uerr := RunUpdateCheck(uctx, d, base, true); uerr != nil {
+	if _, uerr := RunUpdateCheck(uctx, d, base, true, true); uerr != nil {
 		if errors.Is(uerr, errNotFlat) {
-			return nil // deferred — dashboard is already open
+			d.messageBox("Update postponed — a trade is open. VL will offer it again next time.")
+			return nil
 		}
 		d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
 		return uerr
@@ -1230,18 +1278,20 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 			return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
 		}
 	}
+	// G4: exactly one outcome — Updated, app-only note, or deferred. Never
+	// "Updated ✓" followed by "deferred".
 	if dec.Applied {
 		d.print("Updated ✓ — restart NinjaTrader to load the new add-on.")
-	}
-	if dec.AppUpdateAvailable {
+	} else if dec.AppUpdateAvailable {
 		// F6: there is no self-update — say it honestly.
 		d.print("A new VL-Setup is available — ask the owner for it.")
-	} else if dec.AddonUpdateAvailable && err == nil {
+	} else if dec.AddonUpdateAvailable {
 		d.print("Update deferred (Later).")
 	}
 
 	// S6: offer a new install code (the owner may re-issue one). Skipping is
 	// the default — this is a gate, never a forced prompt.
+	d.print("Answer in this black window ↓")
 	d.print("Have a new install code? Type N then press Enter (or just press Enter).")
 	if line, _ := d.readLine(""); strings.EqualFold(strings.TrimSpace(line), "N") {
 		if err := promptAndApplyNewCode(ctx, d, docs); err != nil {
@@ -1267,8 +1317,10 @@ type UpdateDecision struct {
 // RunUpdateCheck fetches the signed manifest, compares it with what is
 // installed (and the app's own version), and — when an update is available and
 // approved — verifies, waits until flat, then swaps the add-on (old moved to
-// VL\old\, never deleted).
-func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) (UpdateDecision, error) {
+// VL\old\, never deleted). gui selects the --open prompt style (message boxes,
+// no stdin); a readLine error always DEFERS (G1).
+func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool, gui ...bool) (UpdateDecision, error) {
+	isGUI := len(gui) > 0 && gui[0]
 	var dec UpdateDecision
 	m, err := fetchManifest(ctx, d, base)
 	if err != nil {
@@ -1290,11 +1342,17 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 		return dec, nil
 	}
 	if !autoApprove {
+		// G9: point at the console before the first y/N after the browser opened.
+		if !isGUI {
+			d.print("Answer in this black window ↓")
+		}
 		ans, err := d.readLine("VL update available — Update now? (y/N)")
 		if err != nil {
-			return dec, err
+			return dec, nil // G1: a read error defers, never fails
 		}
-		if ans != "y" && ans != "Y" && ans != "yes" {
+		// G10: accept y/yes (case-insensitive); anything else (including n/no)
+		// is Later.
+		if !strings.EqualFold(ans, "y") && !strings.EqualFold(ans, "yes") {
 			return dec, nil // Later: nothing changes
 		}
 	}
@@ -1319,7 +1377,7 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 		return dec, err
 	}
 	// F4: never write a locked DLL — ask the user to close NinjaTrader (or defer).
-	deferred, err := waitNinjaTraderClosed(ctx, d)
+	deferred, err := waitNinjaTraderClosed(ctx, d, isGUI)
 	if err != nil {
 		return dec, err
 	}
@@ -1343,9 +1401,11 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 }
 
 // waitNinjaTraderClosed prompts the user to close NinjaTrader (F4) while it is
-// running, re-checking each time. It returns (true, nil) when the user defers
-// ("L"), or (false, nil) once NinjaTrader is closed.
-func waitNinjaTraderClosed(ctx context.Context, d deps) (bool, error) {
+// running, re-checking each time. It returns (true, nil) when the user defers,
+// or (false, nil) once NinjaTrader is closed. G1: in GUI mode (--open) it uses a
+// Yes/No message box, never stdin; a readLine error is a DEFER, never an error
+// (after FreeConsole stdin is invalid and must not read as "could not start").
+func waitNinjaTraderClosed(ctx context.Context, d deps, gui bool) (bool, error) {
 	for {
 		running, err := d.ntRunning(ctx)
 		if err != nil {
@@ -1354,11 +1414,17 @@ func waitNinjaTraderClosed(ctx context.Context, d deps) (bool, error) {
 		if !running {
 			return false, nil
 		}
+		if gui {
+			if !d.messageBox("Close NinjaTrader, then click Yes to install the add-on update (No = later)") {
+				return true, nil // defer
+			}
+			continue
+		}
 		ans, err := d.readLine("Close NinjaTrader, then press Enter to install the add-on update (or type L for later)")
 		if err != nil {
-			return false, err
+			return true, nil // G1: a read error (detached console) defers, never fails
 		}
-		if ans == "L" || ans == "l" {
+		if strings.EqualFold(ans, "L") {
 			return true, nil
 		}
 	}
@@ -1412,7 +1478,9 @@ func placeAddon(d deps, docs string, addon []byte) error {
 // waitFlat prints the plain-English wait line and polls the flat probe until
 // flat (M3/S13), returning errNotFlat on timeout.
 func waitFlat(ctx context.Context, d deps) error {
-	d.print("Waiting until your trades are flat (NinjaTrader must be open)…")
+	// G6: the next step may ask the user to CLOSE NinjaTrader, so never say
+	// "must be open" here.
+	d.print("Checking that you have no open trade…")
 	return waitUntilFlat(ctx, d.positions, 60*time.Second)
 }
 

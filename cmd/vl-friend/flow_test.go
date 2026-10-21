@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
@@ -98,6 +99,7 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.messages = append(rec.messages, text)
 			return false
 		},
+		singleInstance: func() bool { return true },
 	}
 	return d, rec
 }
@@ -584,7 +586,7 @@ func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
 		print:    func(l string) { prints = append(prints, l) },
 		readLine: func(p string) (string, error) { return "", nil },
 	}
-	pauseOnError(d, "boom")
+	pauseOnError(d, errors.New("boom"))
 	joined := strings.Join(prints, "\n")
 	if !strings.Contains(joined, "Something went wrong: boom") {
 		t.Fatalf("error screen missing the reason: %q", joined)
@@ -1463,6 +1465,75 @@ func TestRunInstalledTypeNAppliesNewCode(t *testing.T) {
 	}
 	if cfg.ConnectKey != newIC.ConnectKey {
 		t.Fatalf("the new code was not applied: %+v", cfg)
+	}
+}
+
+// TestWaitNinjaTraderClosedGUINoStdin — G1: GUI mode (--open) prompts via
+// messageBox, never stdin.
+func TestWaitNinjaTraderClosedGUINoStdin(t *testing.T) {
+	running := true
+	boxes := 0
+	reads := 0
+	d := deps{
+		ntRunning:  func(context.Context) (bool, error) { r := running; running = false; return r, nil },
+		messageBox: func(string) bool { boxes++; return true },
+		readLine:   func(string) (string, error) { reads++; return "", nil },
+	}
+	if _, err := waitNinjaTraderClosed(context.Background(), d, true); err != nil {
+		t.Fatal(err)
+	}
+	if boxes != 1 {
+		t.Fatalf("GUI mode must prompt via messageBox, got %d boxes", boxes)
+	}
+	if reads != 0 {
+		t.Fatalf("GUI mode must not read stdin, got %d reads", reads)
+	}
+}
+
+// TestWaitNinjaTraderClosedReadErrorDefers — G1: a stdin read error (after
+// FreeConsole) DEFERS, never fails the update.
+func TestWaitNinjaTraderClosedReadErrorDefers(t *testing.T) {
+	d := deps{
+		ntRunning: func(context.Context) (bool, error) { return true, nil },
+		readLine:  func(string) (string, error) { return "", fmt.Errorf("stdin closed") },
+	}
+	deferred, err := waitNinjaTraderClosed(context.Background(), d, false)
+	if err != nil {
+		t.Fatalf("a read error must defer, not fail: %v", err)
+	}
+	if !deferred {
+		t.Fatal("a read error must defer")
+	}
+}
+
+// TestRunUpdateCheckAcceptsYesCaseInsensitive — G10: y/yes, any case.
+func TestRunUpdateCheckAcceptsYesCaseInsensitive(t *testing.T) {
+	for _, ans := range []string{"y", "Y", "yes", "YES", "Yes"} {
+		home := t.TempDir()
+		d, _ := flowFakeDeps(t, home)
+		if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(addonDstPath(home), []byte("MZ-old"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		base := "http://100.64.0.2:18081"
+		fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+		d.fetch = fetch
+		d.allowedSigners = signers
+		d.positions = func(context.Context) (float64, error) { return 0, nil }
+		d.readLine = func(string) (string, error) { return ans, nil }
+
+		dec, err := RunUpdateCheck(context.Background(), d, base, false)
+		if err != nil {
+			t.Fatalf("answer %q errored: %v", ans, err)
+		}
+		if !dec.Applied {
+			t.Fatalf("answer %q did not apply", ans)
+		}
 	}
 }
 

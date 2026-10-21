@@ -170,8 +170,26 @@ func realDeps() deps {
 			}
 			return strings.TrimSpace(string(out)) == "True"
 		},
+		// G2: a named mutex makes --open single-instance. The handle is held for
+		// the process lifetime (a named mutex is auto-released on exit); the
+		// second icon click returns false and only opens the dashboard.
+		singleInstance: func() bool {
+			h, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\VL-friend`))
+			if err != nil {
+				return true // fail open
+			}
+			if windows.GetLastError() == windows.ERROR_ALREADY_EXISTS {
+				windows.CloseHandle(h)
+				return false
+			}
+			singleInstanceHandle = h
+			return true
+		},
 	}
 }
+
+// singleInstanceHandle holds the --open mutex for the process lifetime (G2).
+var singleInstanceHandle windows.Handle
 
 // windowsDocumentsDir resolves the Windows Known Folder MyDocuments (F2: the C#
 // AddOn and NinjaTrader read MyDocuments, which OneDrive redirection can move
@@ -251,7 +269,7 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "--repair-icon" {
 		if err := repairIcon(ctx, d); err != nil {
 			logSetupError(d, err.Error())
-			pauseOnError(d, err.Error())
+			pauseOnError(d, err)
 			return err
 		}
 		return nil
@@ -262,7 +280,7 @@ func run(args []string) error {
 	if len(args) > 0 && args[0] == "--new-code" {
 		if err := runNewCode(ctx, d); err != nil {
 			logSetupError(d, err.Error())
-			pauseOnError(d, err.Error())
+			pauseOnError(d, err)
 			return err
 		}
 		return nil
@@ -270,7 +288,7 @@ func run(args []string) error {
 
 	if err := runInner(ctx, d); err != nil {
 		logSetupError(d, err.Error())
-		pauseOnError(d, err.Error())
+		pauseOnError(d, err)
 		return err
 	}
 	return nil
