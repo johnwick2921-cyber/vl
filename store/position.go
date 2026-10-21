@@ -200,8 +200,8 @@ type TraderPosition struct {
 	// E4 (wave 1A, 2026-09-02) — NULLABLE. `float64` with DEFAULT 0 could not
 	// tell a computed zero from a value nobody ever computed, and 517 of 586
 	// closed rows carried the never-computed pair (D15). nil means UNKNOWN.
-	MAE             *float64 `gorm:"column:mae;default:0" json:"mae"`
-	MFE             *float64 `gorm:"column:mfe;default:0" json:"mfe"`
+	MAE *float64 `gorm:"column:mae;default:0" json:"mae"`
+	MFE *float64 `gorm:"column:mfe;default:0" json:"mfe"`
 	// R22 P2 — NULLABLE like mae/mfe: a plan-arm entry carries NO AI
 	// confidence; the old int stored a fabricated 0 (#649/#650). nil = absent.
 	EntryConfidence *int `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
@@ -709,6 +709,28 @@ func (s *PositionStore) GetOpenPositions(traderID string) ([]*TraderPosition, er
 	}
 
 	// Fix EntryQuantity if it's 0
+	for _, pos := range positions {
+		if pos.EntryQuantity == 0 {
+			pos.EntryQuantity = pos.Quantity
+		}
+	}
+	return positions, nil
+}
+
+// GetHistoryPositions is the trade-history list: CLOSED rows PLUS open rows that
+// have already booked a partial leg (realized_pnl != 0) — m232, the owner-visible
+// partial exit. Ordered by the row's last activity (exit_time for closed,
+// updated_at for an open partial). The caller labels an OPEN row "partial".
+func (s *PositionStore) GetHistoryPositions(traderID string, limit int, account ...string) ([]*TraderPosition, error) {
+	var positions []*TraderPosition
+	q := s.db.Where("trader_id = ? AND (status = ? OR (status = ? AND realized_pnl <> 0))", traderID, "CLOSED", "OPEN")
+	if len(account) > 0 && account[0] != "" {
+		q = q.Where("account = ?", account[0])
+	}
+	err := q.Order("COALESCE(exit_time, updated_at) DESC").Limit(limit).Find(&positions).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query position history: %w", err)
+	}
 	for _, pos := range positions {
 		if pos.EntryQuantity == 0 {
 			pos.EntryQuantity = pos.Quantity
