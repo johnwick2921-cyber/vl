@@ -54,6 +54,8 @@ RC=$(provision alice)
 CODE="$(cat "$WORK/out")"
 check "F1 rc is 0" "$RC" "0"
 [ -d "$ROOT/alice/data" ] && ok "F1 data/ exists" || bad "F1 data/ exists" "missing $ROOT/alice/data"
+check "F1 friend dir mode is 700 (U16)" "$(stat -c '%a' "$ROOT/alice" 2>/dev/null)" "700"
+check "F1 data/ mode is 700 (U16)" "$(stat -c '%a' "$ROOT/alice/data" 2>/dev/null)" "700"
 check "F1 .env mode is 600" "$(stat -c '%a' "$ROOT/alice/.env" 2>/dev/null)" "600"
 ENV="$(cat "$ROOT/alice/.env")"
 has    "F1 .env JWT_SECRET set"        "$ENV" "JWT_SECRET="
@@ -188,6 +190,54 @@ PY
 has "F9 code connect_key matches .env" "$DECODED" "\"connect_key\": \"$EVE_KEY\""
 has "F9 code ts_authkey matches input" "$DECODED" '"ts_authkey": "tskey-auth-s10b-test123456789"'
 unset TS_AUTHKEY
+
+echo "== F10: U9 remove refuses a still-active unit =="
+# Stub systemctl: stop/disable succeed; is-active reports per FAKE_ACTIVE.
+cat > "$WORK/bin/systemctl" <<'EOF'
+#!/usr/bin/env bash
+verb=""
+for a in "$@"; do
+  case "$a" in
+    --user|--*) continue ;;
+    *) if [ -z "$verb" ]; then verb="$a"; fi ;;
+  esac
+done
+case "$verb" in
+  stop|disable) exit 0 ;;
+  is-active) if [ "${FAKE_ACTIVE:-0}" = "1" ]; then echo active; exit 0; else echo inactive; exit 3; fi ;;
+esac
+exit 0
+EOF
+chmod +x "$WORK/bin/systemctl"
+export PATH="$WORK/bin:$PATH"
+RC=$(provision frank)
+check "F10 provision frank rc 0" "$RC" "0"
+FAKE_ACTIVE=1 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" frank --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+RC=$?
+check "F10 active remove exits nonzero" "$([ "$RC" -ne 0 ] && echo nonzero || echo zero)" "nonzero"
+[ -d "$ROOT/frank" ] && ok "F10 active remove did not move the folder" || bad "F10 active remove did not move the folder" "$ROOT/frank gone"
+has "F10 names the still-active bot" "$(cat "$WORK/err")" "still active"
+FAKE_ACTIVE=0 REMOVE_CHECK_ACTIVE=1 TRASH_DIR="$WORK/trash" "$REMOVE_SH" frank --root "$ROOT" > "$WORK/out" 2> "$WORK/err"
+RC=$?
+check "F10 inactive remove exits 0" "$RC" "0"
+[ ! -e "$ROOT/frank" ] && ok "F10 inactive remove moved the folder" || bad "F10 inactive remove moved the folder" "$ROOT/frank still present"
+unset FAKE_ACTIVE REMOVE_CHECK_ACTIVE
+
+echo "== F11: U17 registry write holds the flock (blocks a concurrent writer) =="
+REG_LOCK="$ROOT/friends.json.lock"
+[ -f "$REG_LOCK" ] && ok "F11 lock file exists" || bad "F11 lock file exists" "no $REG_LOCK"
+( flock -x "$REG_LOCK" -c 'sleep 3' ) &
+HOLDER=$!
+sleep 0.5
+START=$(date +%s)
+RC=$(provision gina)
+END=$(date +%s)
+DUR=$((END - START))
+check "F11 blocked provision rc 0" "$RC" "0"
+if [ "$DUR" -ge 2 ]; then ok "F11 provision waited for the lock (${DUR}s)"; else bad "F11 provision waited for the lock" "only ${DUR}s (flock not honoured?)"; fi
+wait "$HOLDER" 2>/dev/null || true
+LEFT="$(find "$ROOT" -maxdepth 1 -name '.friends-*.json.tmp' 2>/dev/null | wc -l)"
+check "F11 no leftover .tmp in root" "$LEFT" "0"
 
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1

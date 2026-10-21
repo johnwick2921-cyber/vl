@@ -111,13 +111,14 @@ RSA_PRIVATE_KEY="$(openssl genrsa 2048 2>/dev/null | awk '{printf "%s\\n", $0}')
 KEY_SHA="$(printf '%s' "$CONNECT_KEY" | sha256sum | awk '{print $1}')"
 
 # The folder (B2): .env + data/ + symlinks to the owner's web/dist and deploy/RELEASE
-# so the friend always serves the same build as the owner.
+# so the friend always serves the same build as the owner. umask 077 is set FIRST
+# so the friend dir + data/ are 0700 and every file below is 0600 (U16).
+umask 077
 mkdir -p "$DEST/data" "$DEST/web" "$DEST/deploy"
 ln -sfn /home/hoang/vl/web/dist "$DEST/web/dist"
 ln -sfn /home/hoang/vl/deploy/RELEASE "$DEST/deploy/RELEASE"
 
 # The .env (0600): the friend's own secret, ports bound to the tunnel IP only.
-umask 077
 cat > "$DEST/.env" <<EOF
 JWT_SECRET=$JWT_SECRET
 NT_CONNECT_KEY=$CONNECT_KEY
@@ -131,26 +132,34 @@ VL_FRIEND_NAME=$NAME
 EOF
 chmod 0600 "$DEST/.env"
 
-# Registry: SHA-256 of the key only, never the key itself.
+# Registry: SHA-256 of the key only, never the key itself. The read-modify-write
+# holds an flock on <registry>.lock (shared with the Go writer) and lands the
+# bytes via a temp file + os.replace, never a bare truncate (U17).
 python3 - "$REGISTRY" "$NAME" "$WEB_PORT" "$NT_PORT" "$KEY_SHA" <<'PY'
-import datetime, json, os, sys
+import datetime, fcntl, json, os, sys, tempfile
 reg, name, web, nt, sha = sys.argv[1:6]
+lock_path = reg + ".lock"
 entries = []
-if os.path.exists(reg) and os.path.getsize(reg) > 0:
-    try:
-        entries = json.load(open(reg))
-    except Exception:
-        entries = []
-entries.append({
-    "name": name,
-    "web_port": int(web),
-    "nt_port": int(nt),
-    "key_sha256": sha,
-    "state": "active",
-    "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
-    "tailscale_device_id": "",
-})
-json.dump(entries, open(reg, "w"), indent=2)
+with open(lock_path, "w") as lf:
+    fcntl.flock(lf, fcntl.LOCK_EX)
+    if os.path.exists(reg) and os.path.getsize(reg) > 0:
+        try:
+            entries = json.load(open(reg))
+        except Exception:
+            entries = []
+    entries.append({
+        "name": name,
+        "web_port": int(web),
+        "nt_port": int(nt),
+        "key_sha256": sha,
+        "state": "active",
+        "created_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
+        "tailscale_device_id": "",
+    })
+    fd, tmp = tempfile.mkstemp(dir=os.path.dirname(reg) or ".", prefix=".friends-", suffix=".json.tmp")
+    with os.fdopen(fd, "w") as f:
+        json.dump(entries, f, indent=2)
+    os.replace(tmp, reg)
 PY
 
 # One-time install code (B2), stdout only. The clear key is never written to disk

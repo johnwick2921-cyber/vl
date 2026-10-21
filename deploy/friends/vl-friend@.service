@@ -23,9 +23,13 @@ StartLimitIntervalSec=0
 [Service]
 Type=simple
 WorkingDirectory=/home/hoang/vl-friends/%i
+Environment=VL_FRIEND_INSTANCE=1
+ExecStartPre=/usr/bin/test -r /home/hoang/vl-friends/%i/.env
+ExecStartPre=/bin/bash -c 'h="$(sed -n "s/^API_SERVER_HOST=//p" "/home/hoang/vl-friends/%i/.env" | head -1)"; for _ in $(seq 1 110); do ip -o addr show 2>/dev/null | grep -qF "inet $h/" && exit 0; ip -o addr show 2>/dev/null | grep -qF "inet6 $h/" && exit 0; sleep 1; done; echo "vl-friend@%i: API_SERVER_HOST $h not assigned in 110s" >&2; exit 1'
 ExecStart=/home/hoang/vl/vl-bin
 Restart=on-failure
 RestartSec=5
+TimeoutStartSec=120
 
 [Install]
 WantedBy=default.target

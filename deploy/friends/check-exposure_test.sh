@@ -56,9 +56,9 @@ out="$(bash "$CHECK" --ports "$WILD" 2>&1)" && rc=0 || rc=$?
 if [ "$rc" -ne 0 ]; then ok "E1 wildcard bind exits nonzero"; else bad "E1 wildcard bind exits nonzero" "rc=$rc"; fi
 has "E1 wildcard bind names 0.0.0.0" "$out" "0.0.0.0"
 
-# E2: a loopback bind is ok.
+# E2: a loopback bind is ok when it equals the tunnel IP.
 start_listener 127.0.0.1 "$LOOP"
-out="$(bash "$CHECK" --ports "$LOOP" 2>&1)" && rc=0 || rc=$?
+out="$(bash "$CHECK" --tunnel-ip 127.0.0.1 --ports "$LOOP" 2>&1)" && rc=0 || rc=$?
 if [ "$rc" -eq 0 ]; then ok "E2 loopback bind exits 0"; else bad "E2 loopback bind exits 0" "rc=$rc out=$out"; fi
 has "E2 loopback bind named ok" "$out" "ok:"
 
@@ -71,6 +71,28 @@ has "E3 missing listener says not listening" "$out" "not listening"
 out="$(bash "$CHECK" --probe 127.0.0.1 --ports "$LOOP,$CLOSED" 2>&1)" || true
 has "E4 probe reachable"   "$out" "reachable:   tcp 127.0.0.1:$LOOP"
 has "E5 probe unreachable" "$out" "unreachable: tcp 127.0.0.1:$CLOSED"
+
+# E6: a friend port bound to a NON-tunnel address must FAIL (U18 equality).
+out="$(bash "$CHECK" --tunnel-ip 100.64.0.7 --ports "$LOOP" 2>&1)" && rc=0 || rc=$?
+if [ "$rc" -ne 0 ]; then ok "E6 non-tunnel bind exits nonzero"; else bad "E6 non-tunnel bind exits nonzero" "rc=$rc out=$out"; fi
+has "E6 names the tunnel IP" "$out" "not the tunnel IP"
+
+# E7: two bind lines for one friend port — the wildcard on the SECOND line must
+# still FAIL (U18 "check every ss line", not just the first).
+mkdir -p "$WORK/bin2"
+cat > "$WORK/bin2/ss" <<'EOF'
+#!/usr/bin/env bash
+if printf '%s' "$*" | grep -q "24984"; then
+  printf 'LISTEN 0 128 100.64.0.7:24984 0.0.0.0:*\n'
+  printf 'LISTEN 0 128 0.0.0.0:24984 0.0.0.0:*\n'
+  exit 0
+fi
+exec /usr/bin/ss "$@"
+EOF
+chmod +x "$WORK/bin2/ss"
+out="$(PATH="$WORK/bin2:$PATH" bash "$CHECK" --tunnel-ip 100.64.0.7 --ports 24984 2>&1)" && rc=0 || rc=$?
+if [ "$rc" -ne 0 ]; then ok "E7 second-line wildcard exits nonzero"; else bad "E7 second-line wildcard exits nonzero" "rc=$rc out=$out"; fi
+has "E7 names the wildcard" "$out" "0.0.0.0"
 
 printf '%s\n' "check-exposure_test.sh: PASS=$PASS FAIL=$FAIL"
 [ "$FAIL" -eq 0 ]

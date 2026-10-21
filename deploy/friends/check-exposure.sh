@@ -34,6 +34,7 @@ PORTS=""
 SRC=""
 MODE="bind"
 OWNER_PORTS="8080,36974"
+TUNNEL_IP=""
 
 usage() {
   sed -n '2,40p' "$0" >&2
@@ -45,6 +46,7 @@ while [ $# -gt 0 ]; do
     --ports)       PORTS="${2:?check-exposure: --ports needs a comma list}"; shift 2 ;;
     --owner-ports) OWNER_PORTS="${2:?check-exposure: --owner-ports needs a comma list}"; shift 2 ;;
     --probe)       MODE="probe"; SRC="${2:?check-exposure: --probe needs a HOST}"; shift 2 ;;
+    --tunnel-ip)   TUNNEL_IP="${2:?check-exposure: --tunnel-ip needs an IP}"; shift 2 ;;
     -h|--help)     usage ;;
     *)             echo "check-exposure: unknown arg $1" >&2; usage ;;
   esac
@@ -61,24 +63,37 @@ all_ports() {
     | sort -un
 }
 
-# bind_check reads ss for one port. A missing listener is a FAIL; a wildcard
-# bind (0.0.0.0 / :: / *) is a FAIL (S1). Anything else prints the bound addr.
+# is_owner_port: true when $1 is one of --owner-ports (checked for wildcard only).
+is_owner_port() {
+  case ",$OWNER_PORTS," in *",$1,"*) return 0 ;; *) return 1 ;; esac
+}
+
+# bind_check reads ss for one port (EVERY line, not just the first — a port can
+# be bound on several addresses). A missing listener is a FAIL; a wildcard bind
+# (0.0.0.0 / :: / *) is a FAIL (S1); and for a FRIEND port (require_tunnel=1) the
+# bound address must EQUAL $TUNNEL_IP exactly (U18). Owner ports are wildcard-only.
 bind_check() {
-  local port="$1" line addr
-  line="$(ss -ltnH "sport = :$port" 2>/dev/null | head -1)" || true
-  if [ -z "$line" ]; then
+  local port="$1" require_tunnel="${2:-0}" lines line addr
+  lines="$(ss -ltnH "sport = :$port" 2>/dev/null)" || true
+  if [ -z "$lines" ]; then
     echo "FAIL: port $port is not listening"
     return 1
   fi
-  addr="$(printf '%s' "$line" | awk '{print $4}' | sed 's/:[0-9][0-9]*$//')"
-  case "$addr" in
-    0.0.0.0|\[::\]|::|\*)
-      echo "FAIL: port $port is bound to $addr (all interfaces — reachable from the LAN)"
-      return 1 ;;
-    *)
-      echo "ok:   port $port bound to $addr"
-      return 0 ;;
-  esac
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    addr="$(printf '%s' "$line" | awk '{print $4}' | sed 's/:[0-9][0-9]*$//')"
+    case "$addr" in
+      0.0.0.0|\[::\]|::|\*)
+        echo "FAIL: port $port is bound to $addr (all interfaces — reachable from the LAN)"
+        return 1 ;;
+    esac
+    if [ "$require_tunnel" = "1" ] && [ -n "$TUNNEL_IP" ] && [ "$addr" != "$TUNNEL_IP" ]; then
+      echo "FAIL: port $port is bound to $addr, not the tunnel IP $TUNNEL_IP"
+      return 1
+    fi
+  done <<< "$lines"
+  echo "ok:   port $port bound to $addr"
+  return 0
 }
 
 # probe_port TCP-connects to host:port with a short timeout and reports.
@@ -95,8 +110,10 @@ FAIL=0
 for p in $(all_ports); do
   if [ "$MODE" = "probe" ]; then
     probe_port "$SRC" "$p"
-  elif ! bind_check "$p"; then
-    FAIL=1
+  elif is_owner_port "$p"; then
+    bind_check "$p" 0 || FAIL=1
+  else
+    bind_check "$p" 1 || FAIL=1
   fi
 done
 exit "$FAIL"
