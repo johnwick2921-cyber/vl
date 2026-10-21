@@ -30,6 +30,7 @@ type Trendline struct {
 	FormedAt int   // P1Idx — the line is drawn when P1 closes
 	ValidAt  int   // bar index of the 3rd touch (0 = not yet a location)
 	Dead     bool  // a closed 5m candle CLOSED through the line (brokenBy5m)
+	TFMin    int   // 0 = 1m trendline; 60/240 = PERSISTENT HTF line [D2.3 p1 @04:23–05:41]
 }
 
 // trendlineTouchBandPts is the wick-touch tolerance for a diagonal line (the
@@ -154,7 +155,72 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 			out = append(out, tl)
 		}
 	}
+	// Higher-timeframe lines PERSIST [D2.3 p1 @04:23–05:41]: "Trendline khung
+	// 1h, khung 4h … nó sẽ work forever. Anh chị không cần phải xóa." They are
+	// anchored on the bucketed 1h/4h swings, do NOT die at the session end, and
+	// break only on an HTF close through (not a 5m close).
+	out = append(out, trendlinesBuildTF(bars, 60, now)...)
+	out = append(out, trendlinesBuildTF(bars, 240, now)...)
 	return out, crossed
+}
+
+// trendlinesBuildTF builds PERSISTENT higher-timeframe swing-pair trendlines
+// [D2.3 p1 @04:23–05:41]. Same construction as the 1m lines, except: the swing
+// pairs are found on the bucketed HTF bars (barsTF), there is NO today filter
+// (the lines survive the session end), and the break is read on the HTF close
+// (trendlineScanTF walks the HTF bars as both the bars and the break candles).
+func trendlinesBuildTF(bars []market.Kline, tfMin int, now time.Time) []Trendline {
+	btf := barsTF(bars, tfMin)
+	if len(btf) < 5 {
+		return nil
+	}
+	all := swings3(btf)
+	var out []Trendline
+	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
+		var pts []swingPairAt
+		for _, s := range all {
+			if s.kind == role && swingConfirmed(btf, s) {
+				pts = append(pts, s)
+			}
+		}
+		side := SideLong
+		if role == kernel.KindSWGH {
+			side = SideShort
+		}
+		for j := 1; j < len(pts); j++ {
+			p0, p1 := pts[j-1], pts[j]
+			if p1.idx-p0.idx < 2 {
+				continue // same-role swings are ≥2 HTF bars apart; refuse anything tighter
+			}
+			// must slope: support = a HIGHER low; resistance = a LOWER high.
+			if role == kernel.KindSWGL && p1.price <= p0.price {
+				continue
+			}
+			if role == kernel.KindSWGH && p1.price >= p0.price {
+				continue
+			}
+			tl := Trendline{
+				Side:     side,
+				P0Idx:    p0.idx,
+				P0Px:     p0.price,
+				P0T:      btf[p0.idx].OpenTime,
+				P1Idx:    p1.idx,
+				P1Px:     p1.price,
+				P1T:      btf[p1.idx].OpenTime,
+				FormedAt: p1.idx,
+				TFMin:    tfMin,
+			}
+			if tl.P1T <= tl.P0T {
+				continue
+			}
+			if trendlineCrossed(btf, tl) {
+				continue
+			}
+			tl.ValidAt, tl.Dead = trendlineScanTF(btf, btf, all, tl, now)
+			out = append(out, tl)
+		}
+	}
+	return out
 }
 
 // trendlineCrossed reports a line that price CROSSED between its own anchors:

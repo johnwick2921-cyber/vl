@@ -149,9 +149,11 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 		e.tlCrossed[k] = true
 	}
 	e.tlValid = map[string]bool{}
+	e.tlTF = map[string]int{}
 	for _, tl := range lines {
 		if tl.ValidAt > 0 && !tl.Dead {
 			e.tlValid[tl.key()] = true
+			e.tlTF[tl.key()] = tl.TFMin
 		}
 	}
 }

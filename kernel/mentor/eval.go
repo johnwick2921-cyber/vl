@@ -260,6 +260,7 @@ type Evaluator struct {
 	// restart only initialises them (no burst of "became valid" lines).
 	tlDay     string
 	tlValid   map[string]bool
+	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
 }
 
@@ -304,10 +305,32 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 	first := e.tlValid == nil
 	if e.tlDay != day {
 		if e.tlDay != "" && len(e.tlValid) > 0 {
-			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+			// Only the 1m lines die at the session end [D4.1 p2 @01:17]; the
+			// 1h/4h lines persist [D2.3 p1 @04:23–05:41] and are kept.
+			n := 0
+			for k := range e.tlValid {
+				if e.tlTF[k] == 0 {
+					n++
+				}
+			}
+			if n > 0 {
+				e.note("trendlines deleted at the session end: %d valid 1m line(s) of trading day %s [D4.1 p2 @01:17]", n, e.tlDay)
+			}
 		}
 		e.tlDay = day
-		e.tlValid = map[string]bool{}
+		if e.tlValid == nil {
+			e.tlValid = map[string]bool{}
+		} else {
+			for k, tf := range e.tlTF {
+				if tf == 0 {
+					delete(e.tlValid, k)
+					delete(e.tlTF, k)
+				}
+			}
+		}
+		if e.tlTF == nil {
+			e.tlTF = map[string]int{}
+		}
 		e.tlCrossed = map[string]bool{}
 	}
 	for _, k := range crossed {
@@ -321,14 +344,26 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 		switch {
 		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
 			e.tlValid[k] = true
+			e.tlTF[k] = tl.TFMin
 			if !first {
-				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
-					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				if tl.TFMin > 0 {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a PERSISTENT %dm location until an HTF close breaks it [D2.3 p1 @04:23–05:41]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)), tl.TFMin)
+				} else {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				}
 			}
 		case tl.Dead && e.tlValid[k]:
 			delete(e.tlValid, k)
-			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
-				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			delete(e.tlTF, k)
+			if tl.TFMin > 0 {
+				e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			} else {
+				e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			}
 		}
 	}
 }

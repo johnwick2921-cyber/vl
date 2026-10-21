@@ -667,3 +667,57 @@ func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 		t.Fatalf("no respected level: the trendline must stay; got %+v refused %v", got3, refused3)
 	}
 }
+
+// htfPersistenceTape: 25 hours of 1m bars (day 1 09:00 CT → day 2 10:00 CT)
+// with a single rising-lows 1h support line: the hour-2 low (97) and the
+// hour-5 low (97.5), both confirmed. Everything else is quiet (low 99.5,
+// high 103, close 102) so the only 1h swings are the two anchors and the line
+// is never closed through.
+func htfPersistenceTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := trendlineMk(t0)
+	bars := make([]market.Kline, 25*60)
+	for i := range bars {
+		bars[i] = mk(i, 100, 103, 99.5, 102)
+	}
+	// one 1m bar per hour carries the hour's swing low; the rest of the hour
+	// stays at 99.5 so the bucketed 1h bar's Low is exactly that swing low.
+	bars[2*60].Low = 97   // hour-2 low (P0)
+	bars[3*60].Low = 98   // hour-3 confirms P0
+	bars[5*60].Low = 97.5 // hour-5 low (P1, higher)
+	bars[6*60].Low = 99   // hour-6 confirms P1
+	return bars, mk
+}
+
+// TestTrendlineHTFPersistsAcrossSessionEnd — D2.3 p1 @04:23–05:41: the 1h/4h
+// trendline "works forever — you don't delete it". The 1m lines die at the
+// session end (today-only swing filter), but a 1h line anchored on the
+// PREVIOUS trading day is still built at a later session. RED if the HTF
+// branch inherits the today filter.
+func TestTrendlineHTFPersistsAcrossSessionEnd(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	now := time.UnixMilli(bars[24*60].OpenTime + 59_999).In(ctime()) // day 2, 09:00 CT
+	tls := TrendlinesBuild(bars, now)
+
+	var htf []Trendline
+	for _, tl := range tls {
+		if tl.TFMin == 60 {
+			htf = append(htf, tl)
+		}
+	}
+	if len(htf) == 0 {
+		t.Fatalf("no 1h trendline built at day 2 — the 1h line must persist across the session end; got %+v", tls)
+	}
+	tl := htf[0]
+	if tl.Side != SideLong || tl.P0Px != 97 || tl.P1Px != 97.5 {
+		t.Fatalf("1h support line = %+v, want P0Px=97 P1Px=97.5", tl)
+	}
+	p0Day := tradingDayKey(time.UnixMilli(tl.P0T).In(ctime()))
+	nowDay := tradingDayKey(now)
+	if p0Day == nowDay {
+		t.Fatalf("1h line anchored on trading day %s = the current day — the line did not survive the session end", p0Day)
+	}
+	if tl.Dead {
+		t.Fatalf("1h line is dead at day 2 — want it alive (close 102 never crosses the rising support)")
+	}
+}
