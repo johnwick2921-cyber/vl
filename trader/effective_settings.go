@@ -869,14 +869,14 @@ func buildEffectiveResolvers() map[string]effResolver {
 	// MENTOR-DONE-AFTER-WIN eff (release #32): the switch was UI-BLIND — the
 	// panel said "n/a — no resolver registered" while the gate read it. The
 	// value is on/off from the ONE resolver the gate and the sweep use; the
-	// origin names the owner's nil → OFF ruling when the key is absent.
+	// origin names the course's nil → ON default when the key is absent.
 	add(rcPath+"mentor_done_after_win", "trader.(*AutoTrader).mentorDoneAfterWinEnabled", func(x *effCtx) effResult {
 		on := x.at != nil && x.at.mentorDoneAfterWinEnabled()
 		v := "off"
 		if on {
 			v = "on"
 		}
-		origin := store.SourceShippedDefault + " (owner 2026-10-16: OFF)"
+		origin := store.SourceShippedDefault + " (course default: ON)"
 		if x.st.present {
 			origin = store.SourceSaved
 		}

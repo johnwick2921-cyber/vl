@@ -106,80 +106,80 @@ func TestMentorContractsForClampsAtMax(t *testing.T) {
 func TestMentorKnobsSwingDefaultIsOne(t *testing.T) {
 	at := &AutoTrader{config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{}}}}
 	base, conf, big, reduced, swing4h, _, mx := at.mentorKnobs()
-	if base != 4 || conf != 4 || big != 4 || reduced != 4 || swing4h != 2 || mx != 20 {
-		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (4,4,4,4,2,_,20)", base, conf, big, reduced, swing4h, mx)
+	if base != 5 || conf != 5 || big != 5 || reduced != 3 || swing4h != 2 || mx != 20 {
+		t.Fatalf("default knobs = (%d,%d,%d,%d,%d,_,%d), want (5,5,5,3,2,_,20)", base, conf, big, reduced, swing4h, mx)
 	}
 }
 
-// TestMentorSize4Defaults — MENTOR-SIZE-4 (owner order 2026-10-16, "set to 4 at least, sell 2 first so it's equal"), course
-// 1.1 p2 L1103 "Cái sizing của em Cố định là 5 MNQ" + 3.4 p3 L531 + slide 5):
-// the confluence and big tiers no longer ADD contracts — they size a FIXED 4.
-// Runs the PRODUCTION call site (mentorSizeFor → mentorKnobs →
+// TestMentorSize5Defaults — MENTOR-SIZE-5 (course D1.1 p2 L1103 "Cố định là
+// 5 MNQ"; m186 reverts the 2026-10-16 MENTOR-SIZE-4 flatten): the confluence
+// and big tiers no longer ADD contracts — they size a FIXED 5; the reduced
+// tier sizes 3. Runs the PRODUCTION call site (mentorSizeFor → mentorKnobs →
 // mentorContractsFor) with NO explicit confluence/big knobs, plus the
-// explicit-knob honour path. CTO mutants: restore the 10 confluence default /
-// the 20 big default / ignore the explicit knob → each turns its case RED.
-func TestMentorSize4Defaults(t *testing.T) {
+// explicit-knob honour path. CTO mutants: restore the 4 base / the 4 reduced
+// default / ignore the explicit knob → each turns its case RED.
+func TestMentorSize5Defaults(t *testing.T) {
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })
 
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 
-	// big tier (confluence + 4h&1h agree + room ≥2× + target ≥30) → 4.
+	// big tier (confluence + 4h&1h agree + room ≥2× + target ≥30) → 5.
 	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
 		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
 	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "big" {
-		t.Fatalf("big tier: got %d %s, want 4 big (fixed 4 MNQ)", got.Contracts, got.Tier)
+	if got.Contracts != 5 || got.Tier != "big" {
+		t.Fatalf("big tier: got %d %s, want 5 big (fixed 5 MNQ)", got.Contracts, got.Tier)
 	}
 
-	// confluence without 4h&1h agreement → 4.
+	// confluence without 4h&1h agreement → 5.
 	confIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
 		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35}
 	got, err = at.mentorSizeFor(confIn, mentorExtraFor(confIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "confluence" {
-		t.Fatalf("confluence tier: got %d %s, want 4 confluence", got.Contracts, got.Tier)
+	if got.Contracts != 5 || got.Tier != "confluence" {
+		t.Fatalf("confluence tier: got %d %s, want 5 confluence", got.Contracts, got.Tier)
 	}
 
-	// stop in the twenties → 4.
+	// stop in the twenties → 3.
 	twIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PLH",
 		Price: 21000, Stop: 21023, Target: 21046, StopPts: 23, TargetPts: 46}
 	got, err = at.mentorSizeFor(twIn, mentorExtraFor(twIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "reduced" {
-		t.Fatalf("twenties stop: got %d %s, want 4 reduced", got.Contracts, got.Tier)
+	if got.Contracts != 3 || got.Tier != "reduced" {
+		t.Fatalf("twenties stop: got %d %s, want 3 reduced", got.Contracts, got.Tier)
 	}
 
 	// course-defaults-30: a 28.25-pt stop (the 10-04 17:01 real case — long
-	// 31128.25 stop 31100) stays in the reduced 4-MNQ band, not the base 4.
+	// 31128.25 stop 31100) stays in the reduced 3-MNQ band, not the base 5.
 	// Mutant: the band top falls back to 25 (not the mentor_isb_max_pts 30) →
-	// this sizes base 4 → RED.
+	// this sizes base 5 → RED.
 	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
 	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "reduced" {
-		t.Fatalf("28.25-pt stop: got %d %s, want 4 reduced (the 20–<30 band)", got.Contracts, got.Tier)
+	if got.Contracts != 3 || got.Tier != "reduced" {
+		t.Fatalf("28.25-pt stop: got %d %s, want 3 reduced (the 20–<30 band)", got.Contracts, got.Tier)
 	}
 
-	// ISB at an old extreme → 4.
+	// ISB at an old extreme → 3.
 	extIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 21000, Stop: 20994.25, Target: 21011.5, StopPts: 5.75, TargetPts: 11.5, Flag: mentor.FlagISBAtOldExtreme}
 	got, err = at.mentorSizeFor(extIn, mentorExtraFor(extIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "isb_old_extreme" {
-		t.Fatalf("ISB old extreme: got %d %s, want 4 isb_old_extreme", got.Contracts, got.Tier)
+	if got.Contracts != 3 || got.Tier != "isb_old_extreme" {
+		t.Fatalf("ISB old extreme: got %d %s, want 3 isb_old_extreme", got.Contracts, got.Tier)
 	}
 
 	// swing → 2 (course-defaults-30). The confluence stub is forced OFF here —
@@ -198,8 +198,8 @@ func TestMentorSize4Defaults(t *testing.T) {
 	}
 
 	// P1-5: a SWING4H stop in the 20–<30 band sizes by the swing tier (2), NOT
-	// the reduced 4 — the swing branch ranks BEFORE the reduced band. Mutant:
-	// move the reduced band before the swing branch → this sizes 4 → RED.
+	// the reduced 3 — the swing branch ranks BEFORE the reduced band. Mutant:
+	// move the reduced band before the swing branch → this sizes 3 → RED.
 	swBandIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "SWING4H",
 		Price: 21000, Stop: 21022, Target: 21044, StopPts: 22, TargetPts: 44}
 	swBandExtra := mentorExtraFor(swBandIn, false)
@@ -209,7 +209,7 @@ func TestMentorSize4Defaults(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Contracts != 2 || got.Tier != "swing4h" {
-		t.Fatalf("a swing stop in the 20–<30 band: got %d %s, want 2 swing4h (not the reduced 4)", got.Contracts, got.Tier)
+		t.Fatalf("a swing stop in the 20–<30 band: got %d %s, want 2 swing4h (not the reduced 3)", got.Contracts, got.Tier)
 	}
 
 	// an explicit knob value 10 is still honoured (the owner can choose otherwise).
@@ -225,7 +225,7 @@ func TestMentorSize4Defaults(t *testing.T) {
 
 // TestMentorSizeWhyNamesKnobOverride — a size line must be TRUE for every
 // configuration (B-rules): under an owner knob override the Why prints the
-// ACTUAL count and marks the override, never a hardcoded "fixed 4 MNQ".
+// ACTUAL count and marks the override, never a hardcoded "fixed 5 MNQ".
 func TestMentorSizeWhyNamesKnobOverride(t *testing.T) {
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })
@@ -243,8 +243,8 @@ func TestMentorSizeWhyNamesKnobOverride(t *testing.T) {
 	if !strings.Contains(got.Why, "10") || !strings.Contains(got.Why, "override") {
 		t.Fatalf("override Why must name the count and the override: %q", got.Why)
 	}
-	if strings.Contains(got.Why, "fixed 4") {
-		t.Fatalf("override Why must NOT hardcode fixed 4: %q", got.Why)
+	if strings.Contains(got.Why, "fixed 5") && !strings.Contains(got.Why, "override") {
+		t.Fatalf("override Why must NOT hardcode fixed 5: %q", got.Why)
 	}
 }
 
@@ -870,8 +870,8 @@ func TestMentorSizeForUsesGeometry(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if choice.Contracts != 4 || choice.Tier != "reduced" {
-		t.Fatalf("geometry sizing = %+v, want reduced 4 (a 22-pt stop, no confluence)", choice)
+	if choice.Contracts != 3 || choice.Tier != "reduced" {
+		t.Fatalf("geometry sizing = %+v, want reduced 3 (a 22-pt stop, no confluence)", choice)
 	}
 }
 

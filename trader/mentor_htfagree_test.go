@@ -25,8 +25,8 @@ func TestMentorBigTierReachableOnlyWhen4hAnd1hAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "big" {
-		t.Fatalf("confluence + 4h&1h agree + room 2.9x + target 35: got %d %s, want 4 big (size stays 4)", got.Contracts, got.Tier)
+	if got.Contracts != 5 || got.Tier != "big" {
+		t.Fatalf("confluence + 4h&1h agree + room 2.9x + target 35: got %d %s, want 5 big (size stays 5)", got.Contracts, got.Tier)
 	}
 
 	in.HTFAgree = false
@@ -35,7 +35,7 @@ func TestMentorBigTierReachableOnlyWhen4hAnd1hAgree(t *testing.T) {
 		t.Fatal(err)
 	}
 	if got.Contracts == 20 || got.Tier != "confluence" {
-		t.Fatalf("4h and 1h NOT agreeing: got %d %s, want the confluence tier (4), never 20", got.Contracts, got.Tier)
+		t.Fatalf("4h and 1h NOT agreeing: got %d %s, want the confluence tier (5), never 20", got.Contracts, got.Tier)
 	}
 
 	// the other tier conditions still hold with agreement: a 29-pt target is not big.

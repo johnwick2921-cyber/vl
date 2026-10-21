@@ -38,7 +38,8 @@ import (
 //     (a stop-limit fill always is); an averaged off-grid fill rounds TOWARD
 //     PROFIT so the stop never sits a fraction of a tick on the loss side
 //     (MATH-EXECUTOR P3-1).
-//   - Never widen: "kéo stop loss ra xa" is on the do-not list [D2.3 p1 @18:08]
+//   - Never widen: "kéo stop loss ra xa" is on the do-not list
+//     [D1.2 p2 @00:08–00:24]
 //     — judged here against the BROKER's own stop, not the bot's belief (P2-3).
 
 const (
@@ -307,7 +308,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 	if !scaledNow {
 		// stage 0. CX-4 (knob mentor_be_before_partial, default ON —
 		// course-defaults-30): BE at half-way to +1R before the partial
-		// [D1.2 p1 @12:41–13:12]. A 2m entry waits for its 2m candle to close
+		// [D1.2 p1 @12:34–13:12, @15:56–15:59]. A 2m entry waits for its 2m candle to close
 		// (frameOK), like stage 1: until then c is the unfilled trail bar's 0
 		// close, which read as "past half-way" for every short (10-20 20:42 CT,
 		// cf95ee3d: BE sent at "close 0.00", NT8 refused it below the market).
@@ -474,9 +475,9 @@ func mentorISBMarketableTP(side string, close, tick float64) float64 {
 
 // mentorClampMarketableTP (R-6, fold 2) clamps the marketable limit so it is
 // never a LOSS price: long → ≥ entry + 1 tick; short → ≤ entry − 1 tick
-// [D1.2 p1 @13:31–13:33 "at least tôi phải làm sao cho tôi đừng có bị lỗ"]. A
-// close within 8 ticks of the entry would otherwise book a loss at the candle-3
-// close.
+// [principle D1.2 p1 @13:24–13:33 "at least tôi phải làm sao cho tôi đừng có bị
+// lỗ"; mechanism D1.4 p1 @11:59–13:28]. A close within 8 ticks of the entry
+// would otherwise book a loss at the candle-3 close.
 func mentorClampMarketableTP(side string, want, entry, tick float64) float64 {
 	if tick <= 0 {
 		return want

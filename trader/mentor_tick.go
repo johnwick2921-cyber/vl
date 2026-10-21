@@ -710,7 +710,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// both fill in one bar (10-02 07:11 ISB-rev + ISB long = 8 MNQ).
 	if same := at.mentorWorkingSameSideRows(string(in.Side)); len(same) > 0 {
 		at.mentorCount("refused_same_side_working")
-		at.logWarnf("🧑‍🏫 mentor placement REFUSED — one working entry per side: a %s entry already works (%s) [D1.1 p1 @17:06–17:44]",
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — one working entry per side: a %s entry already works (%s) [D1.1 p1 @17:28–17:44 + CTO parity ruling 1791008332386 #1]",
 			in.Side, mentorArmIDFromScenario(same[0].Scenario))
 		at.mentorRecordStallRefusal(in, "same_side_working: one working entry per side")
 		at.mentorGateBlock("mentor_same_side_working")
@@ -1326,16 +1326,17 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 			at.mentorCount("day_stop_cancel_news")
 		}
 	}
-	// NEVER-ADD [D1.1 p1 @17:06–17:44], now enforced while a position is OPEN,
-	// not only at write time (L4): with B4 more mentor arms rest at the broker
-	// at once, so a second fill while a position is open would ADD (same side)
-	// or REDUCE/FLIP (opposite side) it. Cancel the resting unfilled mentor
-	// arms on BOTH sides, once per open-position episode. SWING4H: the course
-	// is silent on a swing coexisting with an intraday position, so it is
-	// cancelled too (fail-closed: one position at a time).
+	// NEVER-ADD [D1.1 p1 @17:06–17:44 — same side only], now enforced while a
+	// position is OPEN, not only at write time (L4): with B4 more mentor arms
+	// rest at the broker at once, so a second fill while a position is open
+	// would ADD (same side, D1.1) or REDUCE/FLIP (opposite side — the owner's
+	// "no flip" ruling 2026-09-03). Cancel the resting unfilled mentor arms on
+	// BOTH sides, once per open-position episode. SWING4H: the course is silent
+	// on a swing coexisting with an intraday position, so it is cancelled too
+	// (fail-closed: one position at a time).
 	if at.mentorOpenPositionActive() {
 		if !at.mentorNeverAddCancelDone {
-			if at.cancelAllLiveMentorArmsWith("day-stop never-add: a mentor position is open — one position at a time, cancel both sides [D1.1 p1 @17:06–17:44]") {
+			if at.cancelAllLiveMentorArmsWith("day-stop never-add: a mentor position is open — one position at a time, cancel both sides [D1.1 p1 @17:06–17:44 same side; no-flip = owner ruling 2026-09-03 opposite side]") {
 				at.mentorCount("day_stop_cancel_never_add")
 			}
 			at.mentorNeverAddCancelDone = true
@@ -1361,17 +1362,20 @@ func (at *AutoTrader) mentorDoneAfterWinEnabled() bool {
 		return false
 	}
 	v := at.config.StrategyConfig.RiskControl.MentorDoneAfterWin
-	return v != nil && *v
+	if v != nil {
+		return *v
+	}
+	return true // nil → ON (the course default: "làm ơn đóng máy lại" D1.2 p2 @06:09; m186 reverts the 2026-10-16 OFF)
 }
 
 // mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a
 // trade closed in profit AND the day is net positive AND the switch is ON (nil
-// → OFF, owner order 2026-10-16). An unwired or unresolved source is "unknown",
-// not a trip: the placement gate still refuses fail-closed, but the sweep does
-// NOT force-cancel a resting arm on an unknown.
+// → ON, the course default; explicit false turns it off). An unwired or
+// unresolved source is "unknown", not a trip: the placement gate still refuses
+// fail-closed, but the sweep does NOT force-cancel a resting arm on an unknown.
 func (at *AutoTrader) mentorDoneAfterWinTripped() (bool, string) {
 	if !at.mentorDoneAfterWinEnabled() {
-		return false, "" // the switch is OFF (nil → OFF, owner order 2026-10-16)
+		return false, "" // the switch is OFF (an explicit false; nil → ON)
 	}
 	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
 		return false, ""
@@ -1417,17 +1421,17 @@ func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 	}
 	end := open.Add(time.Duration(minutes) * time.Minute)
 	if !now.Before(end) {
-		return true, fmt.Sprintf("the trading window ended at %s CT [D1.2 p1 @23:52–24:59]", kernel.CloseHHMMCT(end))
+		return true, fmt.Sprintf("the trading window ended at %s CT [D1.2 p1 @23:49–24:21, @24:36–24:59]", kernel.CloseHHMMCT(end))
 	}
 	return false, ""
 }
 
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────
 
-// (b) TRADING WINDOW [D1.2 p1 @23:52–24:59]: a fixed window — when it ends, no
-// new entries. Default 08:30–09:30 CT, 60 minutes; knobs for the start and the
-// length (30/60/90/120; -1 disables the window — a stored 0 is "unset", so it
-// resolves to the default 60). The SWING setup is exempt
+// (b) TRADING WINDOW [D1.2 p1 @23:49–24:21, @24:36–24:59]: a fixed window —
+// when it ends, no new entries. Default 08:30–09:30 CT, 60 minutes; knobs for
+// the start and the length (30/60/90/120; -1 disables the window — a stored 0
+// is "unset", so it resolves to the default 60). The SWING setup is exempt
 // (D5.2: the swing may be at any hour).
 const (
 	mentorWindowDefaultStart   = "08:30"
@@ -1462,7 +1466,7 @@ func mentorWindowActive(start string, minutes int, now time.Time) (active bool, 
 	}
 	hour, minute, ok := parseMentorWindowStart(start)
 	if !ok {
-		return false, fmt.Sprintf("trading window start %q unparseable — entries refused (fail-closed) [D1.2 p1 @23:52]", start)
+		return false, fmt.Sprintf("trading window start %q unparseable — entries refused (fail-closed) [D1.2 p1 @23:49–24:21, @24:36–24:59]", start)
 	}
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
@@ -1474,7 +1478,7 @@ func mentorWindowActive(start string, minutes int, now time.Time) (active bool, 
 	if !now.Before(open) && now.Before(end) {
 		return true, ""
 	}
-	return false, fmt.Sprintf("outside the trading window %s–%s CT — no new entries [D1.2 p1 @23:52–24:59]", kernel.CloseHHMMCT(open), kernel.CloseHHMMCT(end))
+	return false, fmt.Sprintf("outside the trading window %s–%s CT — no new entries [D1.2 p1 @23:49–24:21, @24:36–24:59]", kernel.CloseHHMMCT(open), kernel.CloseHHMMCT(end))
 }
 
 func parseMentorWindowStart(start string) (hour, minute int, ok bool) {
@@ -1562,7 +1566,7 @@ func (at *AutoTrader) mentorDoneAfterWinReason() string {
 	if start != mentorDoneAfterWinDayStartDefault {
 		label = "the next trading day (" + start + " CT)"
 	}
-	return fmt.Sprintf("done for the day after a win — a trade closed in profit and the day is net positive; no new entries until %s [D1.2 p1 @20:53–21:16; day boundary = owner ruling 2026-10-09]", label)
+	return fmt.Sprintf("done for the day after a win — a trade closed in profit and the day is net positive; no new entries until %s [rule D1.2 p1 @20:53–21:16 + p2 @05:28–06:27; boundary = owner ruling 2026-10-09 (transcript silent)]", label)
 }
 
 // at.mentorDayNetSource / at.mentorClosedProfitSource are the session seams for (a).
@@ -1572,12 +1576,13 @@ func (at *AutoTrader) mentorDoneAfterWinReason() string {
 // an unknown is not "no win", so the gate fails CLOSED.
 
 // mentorDoneAfterWinGate is the call-site half of (a); the switch is default
-// OFF (nil → OFF, owner order 2026-10-16 — only an explicit true turns it on).
-// FAIL-CLOSED while ON: a missing day-net or closed-profit source refuses the
-// entry — an unknown is not "no win".
+// ON (nil → ON, the course default — only an explicit false turns it off;
+// m186 reverts the 2026-10-16 owner order). FAIL-CLOSED while ON: a missing
+// day-net or closed-profit source refuses the entry — an unknown is not
+// "no win".
 func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 	if !at.mentorDoneAfterWinEnabled() {
-		return false, "" // the switch is OFF (nil → OFF, owner order 2026-10-16)
+		return false, "" // the switch is OFF (an explicit false; nil → ON)
 	}
 	if at.mentorDayNetSource == nil || at.mentorClosedProfitSource == nil {
 		at.mentorCount("done_after_win_no_data")
@@ -1601,7 +1606,9 @@ func (at *AutoTrader) mentorDoneAfterWinGate() (bool, string) {
 // mentorStopAfterLossGate — STOP-AFTER-LOSS (owner "ok" 2026-10-05; FOLD
 // 2026-10-16 reverts course-defaults-30): once a MENTOR trade closes today
 // (17:00 CT session-day) with a net LOSS (both legs combined; pnl_corrected
-// < 0), refuse new mentor entries until the next session day [D1.2 p1 @ 23:34].
+// < 0), refuse new mentor entries until the next session day
+// [D1.2 p1 @23:34–23:46 (personal routine); p2 @02:44–03:27 (general,
+// state-based)].
 // A breakeven close (0) is NOT a loss. The knob is default OFF (nil → OFF;
 // byte-identical while off). FAIL-CLOSED like done-after-win: an unwired source
 // or an UNRESOLVED close refuses, with its own counters.
@@ -1615,17 +1622,17 @@ func (at *AutoTrader) mentorStopAfterLossGate() (bool, string) {
 	if at.mentorClosedLossSource == nil {
 		at.mentorCount("stop_after_loss_no_data")
 		at.logWarnf("🧑‍🏫 mentor stop-after-loss source missing (closed loss) — refusing the entry (fail-closed)")
-		return true, "stop-after-loss: closed-loss source not wired — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+		return true, "stop-after-loss: closed-loss source not wired — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @23:34–23:46 (personal routine); p2 @02:44–03:27 (general, state-based)]"
 	}
 	closed, ok := at.mentorClosedLossSource()
 	if !ok {
 		at.mentorCount("stop_after_loss_unresolved")
 		at.logWarnf("🧑‍🏫 mentor stop-after-loss day UNRESOLVED (a NULL pnl_corrected closed row or a read error) — refusing the entry (fail-closed)")
-		return true, "stop-after-loss: day unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @ 23:34]"
+		return true, "stop-after-loss: day unresolved (a NULL pnl_corrected closed row) — an unknown is not 'no loss'; refusing (fail-closed) [D1.2 p1 @23:34–23:46 (personal routine); p2 @02:44–03:27 (general, state-based)]"
 	}
 	if closed {
 		at.mentorCount("stop_after_loss_refused")
-		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
+		return true, "stop for the day after a loss — a mentor trade closed today with a net loss; no new entries until the next trading day (17:00 CT) [D1.2 p1 @23:34–23:46 (personal routine); p2 @02:44–03:27 (general, state-based)]"
 	}
 	return false, ""
 }
@@ -1656,14 +1663,14 @@ func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 		return false, ""
 	}
 	if closed {
-		return true, "a mentor trade closed today with a net loss — no entries until the next trading day (17:00 CT) [D1.2 p1 @ 23:34]"
+		return true, "a mentor trade closed today with a net loss — no entries until the next trading day (17:00 CT) [D1.2 p1 @23:34–23:46 (personal routine); p2 @02:44–03:27 (general, state-based)]"
 	}
 	return false, ""
 }
 
-// (d) NEVER ADD / AVERAGE [D1.1 p1 @17:06–17:44]: no second same-direction
+// (d) NEVER ADD / AVERAGE [D1.1 p1 @17:00–17:44]: no second same-direction
 // fill while a position is open. The resonance ISB is a hold signal, not an
-// entry.
+// entry [D2.4 p1 @05:41–05:57].
 
 // at.mentorOpenSideSource is the session seam for (d): the side of the open
 // mentor position (nil → none open; the live driver fills it at P1).
@@ -1675,7 +1682,7 @@ func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	if at.mentorOpenSideSource == nil {
 		at.mentorCount("add_no_source")
-		return true, "never-add guard: open-position source not wired — refusing the entry (fail-closed) [D1.1 p1 @17:06–17:44]"
+		return true, "never-add guard: open-position source not wired — refusing the entry (fail-closed) [D1.1 p1 @17:00–17:44]"
 	}
 	open := at.mentorOpenSideSource()
 	if open == "" {
@@ -1683,7 +1690,7 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	}
 	if strings.EqualFold(open, string(in.Side)) {
 		at.mentorCount("add_refused")
-		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
+		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:00–17:44]: %s already open — the resonance ISB is a hold signal, not an entry [D2.4 p1 @05:41–05:57]", open)
 	}
 	// NO FLIP (release #30 fold, CTO ruling): an OPPOSITE-side entry while a
 	// mentor position is open is refused too. At NT8 a same-bar opposite fill

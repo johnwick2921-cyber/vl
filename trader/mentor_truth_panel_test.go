@@ -80,7 +80,7 @@ func TestMentorTruthSnapshotDisabledWhenMentorOff(t *testing.T) {
 // half of "every reader moves together". Mutant: drop the Enabled early-return
 // in mentorDoneAfterWinTripped (or make the card read the day net directly) →
 // RED.
-func TestMentorTruthSnapshotDoneAfterWinOffWithWonDay(t *testing.T) {
+func TestMentorTruthSnapshotDoneAfterWinOnWithWonDay(t *testing.T) {
 	at, st := doneAfterWinRig(t, "") // explicit true, then nil below
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
 	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // the 10-16 #660 shape
@@ -90,8 +90,8 @@ func TestMentorTruthSnapshotDoneAfterWinOffWithWonDay(t *testing.T) {
 	if !ok || !p.Enabled {
 		t.Fatalf("snapshot must be enabled, got ok=%v enabled=%v", ok, p.Enabled)
 	}
-	if p.DoneAfterWin {
-		t.Fatalf("switch OFF (nil) + a won day: the truth card must NOT show done-after-win, got why=%q", p.DoneAfterWinWhy)
+	if !p.DoneAfterWin {
+		t.Fatalf("switch ON (nil, the course default) + a won day: the truth card must show done-after-win, got why=%q", p.DoneAfterWinWhy)
 	}
 }
 
