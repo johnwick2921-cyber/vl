@@ -498,10 +498,6 @@ func disableQuickEdit() {
 // On ANY error it prints the (redacted) reason, writes setup.log, and waits for
 // Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
-	// Owner laptop 10-21: a click inside the console window starts QuickEdit
-	// "Select" mode, which PAUSES every write to the console — the app froze
-	// on "already set up" until Esc. Turn QuickEdit off for this window.
-	disableQuickEdit()
 	// H18b: refuse a missing/relative LOCALAPPDATA before anything writes.
 	if err := validateLocalAppData(); err != nil {
 		fmt.Println("Something went wrong: " + err.Error() + ". Nothing was changed. Send a photo of this window to the owner.")
@@ -515,6 +511,12 @@ func run(args []string) error {
 	if docs, err := d.docsDir(); err == nil {
 		if cfg, err := readConnectConfig(d, docs); err == nil {
 			registerCentralSecret(cfg.ConnectKey)
+			// Owner laptop 10-21: a click inside the console starts QuickEdit
+			// "Select" mode, which PAUSES every write — the app looked frozen
+			// on "already set up". Off on an INSTALLED PC only: on a first run
+			// the mentor may right-click to paste the install code (legacy
+			// Win10 console needs QuickEdit for that) — gate-3 R1.
+			disableQuickEdit()
 		}
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)

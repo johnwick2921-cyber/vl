@@ -488,7 +488,7 @@ func TestWindowsExecNeverWaitsOnInheritedPipe(t *testing.T) {
 
 // TestRunDisablesQuickEditFirst — owner laptop 10-21: a click in the console
 // (QuickEdit "Select") pauses all output, so the app looked frozen. run()
-// must turn QuickEdit off before anything prints. MUTANT: drop the call → RED.
+// turns QuickEdit off on an installed PC. MUTANT: drop the call → RED.
 func TestRunDisablesQuickEditFirst(t *testing.T) {
 	src, err := os.ReadFile("run_windows.go")
 	if err != nil {
@@ -500,10 +500,11 @@ func TestRunDisablesQuickEditFirst(t *testing.T) {
 		t.Fatal("no run()")
 	}
 	body := s[i:]
+	// Installed PC only (gate-3 R1: a first run needs right-click paste).
+	r := strings.Index(body, "registerCentralSecret(cfg.ConnectKey)")
 	q := strings.Index(body, "disableQuickEdit()")
-	p := strings.Index(body, "fmt.Println(")
-	if q < 0 || p < 0 || q > p {
-		t.Fatal("run() must call disableQuickEdit() before the first print")
+	if r < 0 || q < 0 || q < r || q-r > 600 {
+		t.Fatal("run() must call disableQuickEdit() inside the installed-PC (connect.json found) block")
 	}
 	if !strings.Contains(s, "mode &^= windows.ENABLE_QUICK_EDIT_MODE") || !strings.Contains(s, "mode |= windows.ENABLE_EXTENDED_FLAGS") {
 		t.Fatal("disableQuickEdit must clear QUICK_EDIT and set EXTENDED_FLAGS")

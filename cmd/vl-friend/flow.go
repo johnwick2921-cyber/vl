@@ -332,6 +332,10 @@ func tailscaleExec(ctx context.Context, d deps, args ...string) ([]byte, error) 
 
 // tailscaleStatus returns the parsed `tailscale status --json`.
 func tailscaleStatus(ctx context.Context, d deps) (tailscaleStatusJSON, error) {
+	// Gate-3 R1: bounded per call — a status that hangs on a freshly started
+	// service must not sit silent until the 30-min run deadline.
+	ctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
 	out, err := tailscaleExec(ctx, d, "status", "--json")
 	if err != nil {
 		return tailscaleStatusJSON{}, err
