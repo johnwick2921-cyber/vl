@@ -38,6 +38,11 @@ bash deploy/friends/remove.sh tom
 Stops the unit, **moves** the folder to `~/trash/<date>/friend-tom` (never
 deletes), and marks the registry entry `revoked`.
 
+## Friend sweep
+
+After each install the updater restarts every active, flat friend and records `friends:[{name,state,rev,note}]`.
+With `TUNNEL_IP` unset and active friends present it disables the sweep, notifies the owner, and records a `friend sweep disabled: TUNNEL_IP unset` receipt.
+
 ## Tests
 
 ```sh

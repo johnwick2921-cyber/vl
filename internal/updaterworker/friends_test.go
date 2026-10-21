@@ -205,6 +205,47 @@ func TestUpdateFriendsRegistryReadErrorIsAdvisory(t *testing.T) {
 	}
 }
 
+// TestUpdateFriendsNoTunnelIPNotifies pins U13: a registry WITH active friends
+// but no TUNNEL_IP (FriendHost) must NOT vanish silently — the owner gets one
+// notification and the job carries a receipt naming the reason.
+func TestUpdateFriendsNoTunnelIPNotifies(t *testing.T) {
+	r, _ := friendRig(t, []friendRecord{
+		{Name: "tom", WebPort: 18081, State: "active"},
+	})
+	r.w.cfg.FriendHost = "" // TUNNEL_IP unset
+
+	receipts, results := r.w.updateFriends(context.Background(), strings40())
+	if results != nil {
+		t.Fatalf("results = %d, want nil (no friend was restarted)", len(results))
+	}
+	if len(receipts) != 1 {
+		t.Fatalf("receipts = %d, want exactly one", len(receipts))
+	}
+	if receipts[0].Step != "friend sweep disabled: TUNNEL_IP unset" {
+		t.Fatalf("receipt step = %q, want %q", receipts[0].Step, "friend sweep disabled: TUNNEL_IP unset")
+	}
+	if len(r.box.friendNotifications) != 1 {
+		t.Fatalf("notifications = %d, want 1", len(r.box.friendNotifications))
+	}
+	if got := r.box.friendRestartCalls["tom"]; got != 0 {
+		t.Fatalf("tom restarts = %d, want 0 (sweep disabled, never restarted)", got)
+	}
+}
+
+// TestUpdateFriendsNoTunnelIPNoActiveFriends pins the U13 boundary: an unset
+// TUNNEL_IP with NO active friends stays silent (nothing to sweep), matching
+// the no-registry path.
+func TestUpdateFriendsNoTunnelIPNoActiveFriends(t *testing.T) {
+	r, _ := friendRig(t, []friendRecord{
+		{Name: "tom", WebPort: 18081, State: "paused"},
+	})
+	r.w.cfg.FriendHost = ""
+	receipts, results := r.w.updateFriends(context.Background(), strings40())
+	if receipts != nil || results != nil {
+		t.Fatalf("no active friends + no TUNNEL_IP → nothing, got receipts=%d results=%d", len(receipts), len(results))
+	}
+}
+
 // strings40 is a 40-char lowercase hex sha for the friend boot check.
 func strings40() string { return "0123456789abcdef0123456789abcdef01234567" }
 
