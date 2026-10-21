@@ -10,7 +10,7 @@ import (
 // ── item 21 (D4.1-06) — the ISB "in range" size cut is wider than
 // midRangeBoxed: inside the standing 5m ISB box, between two key levels closer
 // than the ping-pong minimum, and (once built) a 15m ISB range. "Khi trade isb
-// in-range bắt buộc giảm size" [D4.1 p1 written rule 3]. ───────────────────────
+// in-range bắt buộc giảm size" [D4.1 p1 @ 04:58–05:04; slide rule 3]. ───────────────────────
 
 func TestISBInRangeInsideStandingBox(t *testing.T) {
 	box := &ISBBox{High: 100, Low: 90}

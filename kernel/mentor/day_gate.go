@@ -13,7 +13,7 @@ import (
 //     already run (Asia high to low, through pre-market);
 //  3. check the 4-HOUR trigger, then the 1-HOUR trigger.
 //
-// Table verbatim [D5.1 p1]:
+// Table verbatim [D5.1 p1 @ 16:05–16:11, @ 19:26, @ 20:02–20:07]:
 //   normal run      + agree    → TRADE, following them
 //   300–400+ pts    + conflict → "TẮT MÁY NGHỈ LUÔN CHO EM" (shut it off)
 //   300–400+ pts    + agree    → trade, but DON'T target big —
@@ -63,7 +63,7 @@ type DayGate struct {
 	// it ranges"].
 	SpentPts float64
 	// TargetCapPts: on a spent day, the target distance cap — 15
-	// ("15 điểm bán, 10 điểm bán" [D5.1 p1]).
+	// ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 20:02–20:06]).
 	TargetCapPts float64
 }
 

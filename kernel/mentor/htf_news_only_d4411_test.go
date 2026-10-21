@@ -99,7 +99,7 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 	}
 
 	if !run(false) {
-		t.Fatal("news-only (switch ON): the 09:05 conflict PHL must EMIT — the HTF gate is off outside the news window [D4.4-11]")
+		t.Fatal("news-only (switch ON): the 09:05 conflict PHL must EMIT — the HTF gate is off outside the news window [D4.4 p1 @ 13:44–14:06]")
 	}
 	if run(true) {
 		t.Fatal("all-day (switch OFF): the same 09:05 conflict PHL must be REFUSED (case 3)")

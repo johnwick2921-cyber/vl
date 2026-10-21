@@ -150,7 +150,7 @@ func TestPHLPLHGatedSpentDayRoomIsToTheLevel(t *testing.T) {
 }
 
 // TestPHLPLHR2HigherLowRequired — R2: a HIGHER low is required; a flat low
-// is an FTGL, not a PHL [D2.2 p1 R2]. The mirror refuses a flat high.
+// is an FTGL, not a PHL [D2.2 p3 @ 04:08–04:14]. The mirror refuses a flat high.
 func TestPHLPLHR2HigherLowRequired(t *testing.T) {
 	cfg := workedCfg()
 	// prior swing low 29,387.5 — the reference low EQUALS it → flat → FTGL
