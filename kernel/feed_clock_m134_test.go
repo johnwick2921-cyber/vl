@@ -42,3 +42,121 @@ func TestM134StaleBarStillBlocks(t *testing.T) {
 		t.Fatalf("the refusal must name the bar-age leg, got %q", why)
 	}
 }
+
+// m149 (a) — a dead 125 s bar plus a −5.9 s step (below the 6 s freeze) must
+// still block via bar_age: raising the freeze to 6 s must not also reopen a
+// genuinely stale feed.
+func TestM149Dead125sBarWithMinus5p9sStepStillBlocksViaBarAge(t *testing.T) {
+	// Land the stepped wall on a clean minute boundary so the B4 formula has
+	// no phase slack: wall0 = 08:59:05.9, a −5.9 s step lands at 08:59:00. A
+	// bar 125 s behind that (08:56:55) is stale via bar_age.
+	wall0 := ctOpen().Add(-54*time.Second - 100*time.Millisecond) // 08:59:05.9
+	clk := NewSteppedClock(wall0)
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Step(-5900 * time.Millisecond) // wall now reads 08:59:00.0
+	if v := ClockStepSnapshot(); v.FreezeSteps != 0 || v.EntryHoldActive {
+		t.Fatalf("a −5.9 s step is below the 6 s freeze and away from the boundary, must not hold: %+v", v)
+	}
+	wallNs, _ := clk.Sample()
+	now := time.Unix(0, wallNs)
+	barOpen := now.UnixMilli() - 125_000
+	stale, why := EntryFeedStale("MNQ", barOpen, now)
+	if !stale || !strings.Contains(why, "bar_age") {
+		t.Fatalf("a 125 s-old bar must still block via bar_age, got stale=%v why=%q", stale, why)
+	}
+}
+
+// m149 (b) — 12 × −4.9 s steps (each below the 6 s freeze, never a hold) with
+// a 136 s-old monotonic receipt must block via receipt_age: the receipt leg is
+// the thing that catches a dead feed the wall rule still reads fresh.
+func TestM149TwelveMinus4p9sStepsWith136sOldReceiptBlocksViaReceiptAge(t *testing.T) {
+	clk := NewSteppedClock(ctOpen())
+	defer ClockSampleForTest(clk.Sample)()
+	recv := time.Now().Add(-136 * time.Second) // carries the monotonic reading
+	FeedLastLiveReceipt = func(string, string) (time.Time, bool) { return recv, true }
+	defer func() { FeedLastLiveReceipt = nil }()
+	ObserveClock()
+	for i := 0; i < 12; i++ {
+		clk.Advance(time.Second)
+		clk.Step(-4900 * time.Millisecond)
+		ObserveClock() // sample each step so they cannot fold into one big jump
+	}
+	if v := ClockStepSnapshot(); v.FreezeSteps != 0 || v.EntryHoldActive {
+		t.Fatalf("12 × −4.9 s steps are each below the freeze and away from the boundary, must not hold: %+v", v)
+	}
+	wallNs, _ := clk.Sample()
+	now := time.Unix(0, wallNs)
+	barOpen := (now.UnixMilli() / 60_000) * 60_000 // fresh on the stepped wall
+	stale, why := EntryFeedStale("MNQ", barOpen, now)
+	if !stale || !strings.Contains(why, "receipt_age") {
+		t.Fatalf("a 136 s-old monotonic receipt must block via receipt_age, got stale=%v why=%q", stale, why)
+	}
+}
+
+// m149 (c) — the freeze boundary pair: 5999 ms is below the 6 s freeze and is
+// counted only; 6000 ms is at the freeze and holds.
+func TestM149ClockStepFreezeBoundary5999vs6000(t *testing.T) {
+	clk := NewSteppedClock(ctOpen())
+	restore := ClockSampleForTest(clk.Sample)
+	ObserveClock()
+	clk.Advance(time.Second)
+	clk.Step(-5999 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); held {
+		restore()
+		t.Fatalf("a −5999 ms step is below the 6000 ms freeze, got held: %q", why)
+	}
+	if v := ClockStepSnapshot(); v.StepsBackward != 1 || v.FreezeSteps != 0 {
+		restore()
+		t.Fatalf("−5999 ms must be counted, not frozen: %+v", v)
+	}
+	restore()
+
+	clk = NewSteppedClock(ctOpen())
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Advance(time.Second)
+	clk.Step(-6000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); !held || !strings.Contains(why, "clock_step") {
+		t.Fatalf("a −6000 ms step must hold NEW entries, got held=%v why=%q", held, why)
+	}
+}
+
+// m149 (d) — an EMPTY 1m cache (newest bar = 0) with a wired receipt provider
+// that reports no live frame since boot must fail CLOSED (stale), not hit the
+// empty-cache fail-open.
+func TestM149EmptyCacheWithWiredProviderNoFrameBlocks(t *testing.T) {
+	defer ClockSampleForTest(NewSteppedClock(ctOpen()).Sample)()
+	FeedLastLiveReceipt = func(string, string) (time.Time, bool) { return time.Time{}, false }
+	defer func() { FeedLastLiveReceipt = nil }()
+	stale, why := FeedStaleAt("MNQ", 0, ctOpen())
+	if !stale || !strings.Contains(why, "since boot") {
+		t.Fatalf("an empty 1m cache with a wired provider reporting no live frame must block (fail closed), got stale=%v why=%q", stale, why)
+	}
+}
+
+// m149 (session boundary) — a 3 s step is below the 6 s freeze, but inside the
+// 15:59–16:01 / 16:59–17:01 CT boundary it can flip IsCMEOpen, so it must
+// still hold NEW entries. The same 3 s step away from the boundary must not.
+func TestM149SessionBoundaryStepBelowFreezeStillHolds(t *testing.T) {
+	boundary := time.Date(2026, 9, 23, 16, 0, 30, 0, CTLocation())
+	clk := NewSteppedClock(boundary)
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Advance(time.Second)
+	clk.Step(-3000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, boundary); !held || !strings.Contains(why, "clock_step") {
+		t.Fatalf("a 3 s step inside the 15:59–16:01 boundary must hold NEW entries, got held=%v why=%q", held, why)
+	}
+
+	clk2 := NewSteppedClock(ctOpen())
+	restore := ClockSampleForTest(clk2.Sample)
+	ObserveClock()
+	clk2.Advance(time.Second)
+	clk2.Step(-3000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, ctOpen()); held {
+		restore()
+		t.Fatalf("a 3 s step away from the boundary must not hold, got %q", why)
+	}
+	restore()
+}

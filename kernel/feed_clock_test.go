@@ -168,12 +168,12 @@ func grepGoOutside(t *testing.T, root, needle string) []string {
 	return hits
 }
 
-// MENTOR-NY item 4 — WSL wall-clock jitter of 1.0–1.2 s (10-14: +1025 ms at
-// 09:56:29, +1192 ms at 10:14:59, two 120 s holds) sat right at the old
-// 1000 ms freeze threshold. The default is now 2000 ms: a 1.2 s step is
-// logged and counted, never held; a 2.5 s step still holds NEW entries for the
-// (unchanged) 120 s. The receipt leg never reads the wall clock and is not
-// touched. MUTANT: defaultClockStepFreezeMs back to 1000 → the 1.2 s case RED.
+// m134 — the freeze default is 6000 ms (was 2000, before that 1000). The
+// 10-14 WSL jitter (1.0–1.2 s) and the 10-21 00:44–04:00 NTP corrections
+// (2–5 s) are all below 6 s, so they are logged and counted, never held; a
+// 7 s step still holds NEW entries for the (unchanged) 120 s. The receipt leg
+// never reads the wall clock and is not touched. MUTANT:
+// defaultClockStepFreezeMs back to 1000 → the 1.2 s case RED.
 func TestClockStepDefaultFreezeIs6sWSLJitterIsCountedNotHeld(t *testing.T) {
 	t.Setenv("CLOCK_STEP_FREEZE_MS", "")
 	t.Setenv("CLOCK_STEP_HOLD_S", "")
