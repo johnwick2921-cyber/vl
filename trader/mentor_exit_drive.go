@@ -475,6 +475,14 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 					applied = true // the broker is already past BE (belief corrected)
 					continue
 				}
+				if errors.Is(err, errMentorStopThroughMarket) {
+					// m198 #43-B: the wrong-side BE closed the WHOLE symbol at
+					// market (the close wire is a full flatten) — the position
+					// is flat, so every remaining leg would be a redundant close
+					// on an already-flat position. Stop the pass.
+					at.mentorCount("stop_move_skipped_leg_closed")
+					return
+				}
 				if !mentorMoveApplied(err) {
 					if !mentorMoveErrAlreadyLogged(err) {
 						at.logWarnf("🧑‍🏫 mentor BE leg %d move FAILED: %v", i, err)

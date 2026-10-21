@@ -338,6 +338,13 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 			moved++
 			continue
 		}
+		if errors.Is(err, errMentorStopThroughMarket) {
+			// m198 #43-B: the wrong-side BE closed the WHOLE symbol at market
+			// (a full flatten) — the position is flat; a sibling leg's move
+			// would be a redundant close on an already-flat position. Stop.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return false
+		}
 		if !mentorMoveApplied(err) {
 			if err != nil && !mentorMoveErrAlreadyLogged(err) {
 				at.logWarnf("🧑‍🏫 mentor BE before the partial: %s leg %d move FAILED: %v", leg.SignalID, leg.Wire, err)
