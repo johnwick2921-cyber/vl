@@ -1,4 +1,13 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baselines advanced 2026-10-21 for release #43:
+//   ninjascript/VLTraderTCPClient.cs sha256 48926f61… — connect.json parsing is
+//     extracted into ninjascript/ConnectJsonParser.cs (fix/addon-reconnect-json
+//     202db52c8, DS-103) and VL_BUILD_ID advances to 2026-10-21-b; the order
+//     name / account / signal-id contract is untouched.
+//   provider/ninjatrader/tcp_server.go  sha256 78744f27… — connect-key auth gate
+//     (fix/connect-key-auth-gate b56e74aa9): the wire server counts connect-key
+//     refusals and exposes them for /api/health under nt_connect_key_refused;
+//     additive, no frame/order/position path changed.
 // Wire baselines advanced 2026-10-19 for P0 feed-freshness (release #40,
 // C# fix/p0-addon-feed-freshness 52a88a004 + Go/UI fix/p0-feed-freshness-status
 // f5ff7e0ae): the additive feed_status freshness field is added to the TCP wire
