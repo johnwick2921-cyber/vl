@@ -15,6 +15,7 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
 	"vl/config"
 	"vl/logger"
@@ -32,7 +33,7 @@ const TransportEnvVar = "NT_TRANSPORT"
 // RemoveTrader + LoadUserTradersFromStore) must NOT re-bind the port.
 var (
 	tcpServerOnce sync.Once
-	tcpServerInst *ntwire.TCPServer
+	tcpServerInst atomic.Pointer[ntwire.TCPServer]
 	tcpServerErr  error
 )
 
@@ -82,7 +83,7 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 			tcpServerErr = fmt.Errorf("transport: start tcp server: %w", err)
 			return
 		}
-		tcpServerInst = server
+		tcpServerInst.Store(server)
 		// F12 — install the forensic sink if one was registered. The store is
 		// NOT imported here: main.go owns the closure, so this package keeps its
 		// single responsibility and the gate's in-memory read stays independent
@@ -98,7 +99,7 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 		// live BarCache (NT8 bars), bypassing the removed crypto providers. Crypto path untouched.
 		wireFuturesBarsProvider(server)
 	})
-	return tcpServerInst, tcpServerErr
+	return tcpServerInst.Load(), tcpServerErr
 }
 
 // TCPServer exposes the singleton wire server for maintenance paths that ride
@@ -114,10 +115,10 @@ func TCPServer() (*ntwire.TCPServer, error) { return getOrStartTCPServer() }
 // when no wire server has been started yet (the counter records, it does not
 // infer).
 func ConnectKeyRefusedCount() int64 {
-	if tcpServerInst == nil {
-		return 0
+	if srv := tcpServerInst.Load(); srv != nil {
+		return srv.ConnectKeyRefused()
 	}
-	return tcpServerInst.ConnectKeyRefused()
+	return 0
 }
 
 // SetTCPServerForTest installs a server as the process singleton so a
@@ -128,7 +129,7 @@ func ConnectKeyRefusedCount() int64 {
 // a later getOrStartTCPServer returns the injected instance instead of binding.
 func SetTCPServerForTest(server *ntwire.TCPServer) {
 	tcpServerOnce.Do(func() {})
-	tcpServerInst = server
+	tcpServerInst.Store(server)
 	tcpServerErr = nil
 }
 

@@ -36,9 +36,6 @@ const (
 	// reaches WSL2 via mirrored networking). NOT 36973 (NT's ATI port).
 	TCPListenAddr = "127.0.0.1:36974"
 
-	// TCPHeartbeatInterval — server pings every 30s per spec L4408.
-	TCPHeartbeatInterval = 30 * time.Second
-
 	// TCPHeartbeatAckTimeout — server closes the connection after this long
 	// without a heartbeat ack per spec L4415.
 	TCPHeartbeatAckTimeout = 60 * time.Second
@@ -63,6 +60,10 @@ const (
 // hello within this window or the connection closes (a silent peer must not
 // hold the single client slot). A var (not const) so tests can shrink it.
 var firstHelloTimeout = 10 * time.Second
+
+// TCPHeartbeatInterval (GATE 3) — server pings every 30s per spec L4408. A var
+// (not const) so the "no heartbeat before auth" pin can shrink it.
+var TCPHeartbeatInterval = 30 * time.Second
 
 // connKeyRefusedLogInterval (U21) — the "connect_key refused" warn is rate-
 // limited to once per peer per minute. A var (not const) so tests can shrink it.
@@ -270,10 +271,13 @@ type TCPServer struct {
 	instrSubs    map[string]chan InstrumentInfoPayload
 	orderUpdSubs map[string]chan OrderUpdatePayload
 
-	// Connection state — single concurrent client (spec L4359).
+	// Connection state — single concurrent client (spec L4359). In connect-key
+	// mode, conn is published ONLY after a matching hello (GATE 3 root fix): a
+	// pre-auth dial sits in pendingConn and is never visible to any writer or to
+	// IsConnected(). Without a key, conn is published at accept as always.
 	connMu        sync.Mutex
 	conn          net.Conn
-	connAuthed    bool // K1: true once the current conn sent a matching hello (or no key required)
+	pendingConn   net.Conn // connect-key mode only: the unauthenticated dial
 	lastAckTime   time.Time
 	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
 
@@ -763,10 +767,12 @@ func connKeyPeerHost(c net.Conn) string {
 	return c.RemoteAddr().String()
 }
 
-// logConnKeyRefused (U21) logs the "connect_key refused" warn at most once per
-// peer (host) per connKeyRefusedLogInterval. The counter (ntConnectKeyRefused)
-// still counts EVERY refusal — only the WARN is rate-limited.
-func (s *TCPServer) logConnKeyRefused(c net.Conn) {
+// logPreAuthRefused (U21/GATE 3) logs a pre-auth refusal WARN at most once per
+// peer (host) per connKeyRefusedLogInterval. Counters are incremented at the
+// call site (e.g. ntConnectKeyRefused); only the WARN is rate-limited here, so
+// a looping keyless peer produces one log line per minute instead of one per
+// 5 s reconnect.
+func (s *TCPServer) logPreAuthRefused(c net.Conn, msg string, args ...any) {
 	host := connKeyPeerHost(c)
 	now := time.Now()
 	s.connKeyRefusedLogMu.Lock()
@@ -785,7 +791,8 @@ func (s *TCPServer) logConnKeyRefused(c net.Conn) {
 	}
 	s.connKeyRefusedLogAt[host] = now
 	s.connKeyRefusedLogMu.Unlock()
-	s.logger.Warn("tcp_server: connect_key refused", "addr", c.RemoteAddr())
+	all := append([]any{"addr", c.RemoteAddr()}, args...)
+	s.logger.Warn(msg, all...)
 }
 
 // NewTCPServer constructs a server bound to ListenAddr(). The listener is
@@ -1565,19 +1572,13 @@ func (s *TCPServer) IsConnected() bool {
 	return s.conn != nil
 }
 
-// connectedAuthed returns the live client conn, or nil when no client is
-// connected OR (K1, connect-key mode) the current client has not yet sent a
-// matching hello. Writers use this so nothing is ever written to an
-// unauthenticated peer.
+// connectedAuthed returns the live client conn (nil when disconnected). Under
+// the GATE 3 root fix, s.conn is ONLY ever an authenticated peer — a pre-auth
+// dial sits in pendingConn, never in s.conn — so every writer that fetches the
+// conn through here can never reach an unauthenticated peer.
 func (s *TCPServer) connectedAuthed() net.Conn {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
-	if s.conn == nil {
-		return nil
-	}
-	if ConnectKey() != "" && !s.connAuthed {
-		return nil
-	}
 	return s.conn
 }
 
@@ -1693,8 +1694,32 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 
-		// Single concurrent client (spec L4359). Any second simultaneous
-		// dial is closed immediately.
+		// GATE 3 root fix — in connect-key mode a pre-auth dial is a PENDING conn,
+		// never published as s.conn. Only a matching hello publishes it. Without a
+		// key (owner box) the conn is published at accept exactly as before.
+		if ConnectKey() != "" {
+			s.connMu.Lock()
+			if s.conn != nil {
+				// An AUTHED incumbent is never preempted (spec L4359).
+				s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
+				_ = c.Close()
+				s.connMu.Unlock()
+				continue
+			}
+			// PREEMPTION: a new dial replaces a waiting (unauthed) pending conn so a
+			// looping keyless peer cannot starve the real AddOn.
+			old := s.pendingConn
+			s.pendingConn = c
+			s.connMu.Unlock()
+			if old != nil {
+				_ = old.Close() // unblocks the old pending readLoop; its cleanup is a no-op
+			}
+			s.wg.Add(1)
+			go s.readLoop(ctx, c, true)
+			continue
+		}
+
+		// No key (owner box): publish at accept, byte-identical to today.
 		s.connMu.Lock()
 		if s.conn != nil {
 			s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
@@ -1703,7 +1728,6 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 		s.conn = c
-		s.connAuthed = ConnectKey() == "" // K1: legacy (no key) is authed on connect
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
@@ -1713,15 +1737,9 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)
-		go s.readLoop(ctx, c)
+		go s.readLoop(ctx, c, false)
 		go s.heartbeatLoop(ctx, c)
-		// W-FRIEND-HOSTED S4 — with a connect key required, nothing is sent to the
-		// peer until its hello carries the matching key (the readLoop runs the
-		// post-accept sends after a successful check). Without a key (the owner's
-		// box) the sends run here, exactly as before.
-		if ConnectKey() == "" {
-			s.sendPostAccept(c)
-		}
+		s.sendPostAccept(c)
 	}
 }
 
@@ -2057,10 +2075,83 @@ func helloProcessPair(pid int, mvid string) (string, string) {
 	return p, m
 }
 
-func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
+// authenticateKeyHello (GATE 3) runs in connect-key mode on a PENDING conn. It
+// checks the key BEFORE the protocol version, then publishes the conn as s.conn
+// — the auth moment — where the connection record, reconnect note, stale-print
+// arm, hello record, reply, heartbeat, and post-accept sends all happen. It
+// returns false when the connection must close. The key is never stored or
+// logged.
+func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env Envelope) bool {
+	var p HelloPayload
+	if err := json.Unmarshal(env.Payload, &p); err != nil {
+		s.logPreAuthRefused(c, "tcp_server: bad hello payload — closing", "err", err)
+		return false
+	}
+	// ORDER (GATE 3): the key check runs BEFORE the protocol-version check, so a
+	// wrong-key peer never learns our version.
+	if key := ConnectKey(); key != "" {
+		if subtle.ConstantTimeCompare([]byte(p.ConnectKey), []byte(key)) != 1 {
+			s.ntConnectKeyRefused.Add(1)
+			s.logPreAuthRefused(c, "tcp_server: connect_key refused")
+			return false // close: no hello reply, no allowlist, no flush
+		}
+	}
+	if p.ProtocolVersion != ProtocolVersion {
+		s.logger.Error("tcp_server: PROTOCOL VERSION MISMATCH — refusing connection",
+			"peer_version", p.ProtocolVersion, "our_version", ProtocolVersion,
+			"source", p.Source,
+			"action", "redeploy the C# AddOn + Go binary in lockstep (cp → F5 → NT8 restart)")
+		return false
+	}
+
+	// Publish only if this conn is still the pending one (a preempting dial must
+	// not be clobbered by a stale readLoop) and no authed incumbent appeared.
+	s.connMu.Lock()
+	if s.pendingConn != c || s.conn != nil {
+		s.connMu.Unlock()
+		return false
+	}
+	s.conn = c
+	s.pendingConn = nil
+	s.lastAckTime = time.Now()
+	s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // the alive clock starts at auth
+	s.connMu.Unlock()
+
+	// The accept-time bookkeeping, now at the moment of auth (GATE 3).
+	s.beginConnectionRecord(c, s.acceptNow())
+	s.attempted.noteReconnect(time.Now())
+	s.barCache.NoteReconnect(time.Now())
+
+	if p.BuildID != "" {
+		if prev, _ := s.farSideBuild.Load().(string); prev != p.BuildID {
+			s.farSideBuild.Store(p.BuildID)
+		}
+	}
+	p.ConnectKey = "" // never store the key in the record
+	s.recordHello(c, p, time.Now())
+	pid, mvid := helloProcessPair(p.NT8PID, p.AssemblyMVID)
+	s.logger.Info("tcp_server: hello handshake OK",
+		"protocol_version", p.ProtocolVersion, "source", p.Source, "build_id", p.BuildID,
+		"nt8_pid", pid, "assembly_mvid", mvid)
+	s.writeMu.Lock()
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := WriteFrame(c, FrameHello, HelloPayload{ProtocolVersion: ProtocolVersion, Source: "vl-go"})
+	s.writeMu.Unlock()
+	if err != nil {
+		s.logger.Warn("tcp_server: write hello reply", "err", err)
+		return false
+	}
+
+	s.wg.Add(1)
+	go s.heartbeatLoop(ctx, c)
+	s.sendPostAccept(c)
+	return true
+}
+
+func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 	researchWire := newResearchWire()
 	defer s.wg.Done()
-	defer s.closeConn()
+	defer s.connGone(c, pending)
 
 	// Plan 1.5.7 — per-connection ctx-cancel watcher unblocks the blocked
 	// ReadFrame on server shutdown by closing this specific conn. Replaces
@@ -2090,7 +2181,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 	// is refused in the FrameHello case below.
 	helloSeen := false
 	legacyWarned := false
-	if ConnectKey() != "" {
+	if pending {
 		_ = c.SetReadDeadline(time.Now().Add(firstHelloTimeout)) // K1: a silent peer must not hold the client slot
 	}
 
@@ -2100,19 +2191,14 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 		// by the peer). The watcher provides the shutdown-responsiveness
 		// the old 2s polling deadline used to.
 		env, err := ReadFrame(c)
-		if err == nil {
-			researchWire.observe(env.Type, env.Payload)
-			s.framesTotal.Add(1)
-			s.lastFrameUnixMs.Store(time.Now().UnixMilli())
-		}
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				s.logger.Info("tcp_server: client disconnected")
 				return
 			}
 			var ne net.Error
-			if errors.As(err, &ne) && ne.Timeout() && !helloSeen && ConnectKey() != "" {
-				s.logger.Warn("tcp_server: no hello within deadline — closing (connect-key mode)", "addr", c.RemoteAddr())
+			if errors.As(err, &ne) && ne.Timeout() && pending {
+				s.logPreAuthRefused(c, "tcp_server: no hello within deadline — closing (connect-key mode)")
 				return
 			}
 			if errors.Is(err, ErrFrameTooLarge) {
@@ -2122,6 +2208,29 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.logger.Warn("tcp_server: read frame error", "err", err)
 			return
 		}
+
+		if pending {
+			// GATE 3 — pre-auth (connect-key mode): only a matching hello is
+			// accepted. Any non-hello frame, malformed hello, wrong key, or
+			// version mismatch closes at once. No per-frame bookkeeping or Info
+			// log runs pre-auth.
+			if env.Type != FrameHello {
+				s.logPreAuthRefused(c, "tcp_server: frame before hello in connect-key mode — closing", "frame", env.Type)
+				return
+			}
+			if !s.authenticateKeyHello(ctx, c, env) {
+				return // closed on refusal/mismatch
+			}
+			researchWire.observe(FrameHello, env.Payload)
+			s.framesTotal.Add(1)
+			pending = false
+			helloSeen = true
+			continue
+		}
+
+		researchWire.observe(env.Type, env.Payload)
+		s.framesTotal.Add(1)
+		s.lastFrameUnixMs.Store(time.Now().UnixMilli())
 
 		// T8 (2026-08-27) — per-frame INFO spam (7.5M bar_update lines/day)
 		// consumed the journald 2G cap in <24h, destroying forensics. bar_update
@@ -2137,28 +2246,22 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			s.logger.Info("tcp_server: received frame", "type", env.Type)
 		}
 
-		// P5.2 — legacy detection: a data frame before any hello means a
-		// pre-P5.2 AddOn. Tolerated (warn once per connection) so the lockstep
-		// deploy window can't kill the feed; an explicit version mismatch is
-		// still refused in the FrameHello case.
-		if !helloSeen && env.Type != FrameHello {
-			if ConnectKey() != "" {
-				s.logger.Warn("tcp_server: frame before hello in connect-key mode — closing", "frame", env.Type, "addr", c.RemoteAddr())
-				return
-			}
-			if !legacyWarned && env.Type != FrameHeartbeat && env.Type != FrameAck {
-				legacyWarned = true
-				s.logger.Warn("tcp_server: data frame before hello — LEGACY (pre-P5.2) AddOn assumed",
-					"first_frame", env.Type,
-					"action", "redeploy the C# AddOn (cp → F5 → NT8 restart) to enable the protocol handshake")
-			}
+		// P5.2 — legacy detection (no-key mode only): a data frame before any
+		// hello means a pre-P5.2 AddOn. Tolerated (warn once per connection) so
+		// the lockstep deploy window can't kill the feed; an explicit version
+		// mismatch is still refused in the FrameHello case.
+		if !helloSeen && !legacyWarned && env.Type != FrameHello && env.Type != FrameHeartbeat && env.Type != FrameAck {
+			legacyWarned = true
+			s.logger.Warn("tcp_server: data frame before hello — LEGACY (pre-P5.2) AddOn assumed",
+				"first_frame", env.Type,
+				"action", "redeploy the C# AddOn (cp → F5 → NT8 restart) to enable the protocol handshake")
 		}
 
 		switch env.Type {
 		case FrameHello:
-			// P5.2 handshake. Version MISMATCH → refuse the connection loudly
-			// (close; never silently misparse a different protocol generation).
-			// Matching hello → reply with ours so the AddOn can verify us too.
+			// P5.2 handshake (no-key / legacy path). Key-mode auth happens in the
+			// pending block above, before this switch is ever reached. Version
+			// MISMATCH → refuse loudly; matching hello → reply with ours.
 			var p HelloPayload
 			if err := json.Unmarshal(env.Payload, &p); err != nil {
 				s.logger.Warn("tcp_server: bad hello payload", "err", err)
@@ -2171,23 +2274,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 					"action", "redeploy the C# AddOn + Go binary in lockstep (cp → F5 → NT8 restart)")
 				return // closes the connection via the deferred cleanup
 			}
-			// W-FRIEND-HOSTED S4 — with NT_CONNECT_KEY set, a hello whose key is
-			// missing or wrong is refused: closed, logged, counted. Constant-time
-			// compare; the key itself is never logged.
-			if key := ConnectKey(); key != "" {
-				if subtle.ConstantTimeCompare([]byte(p.ConnectKey), []byte(key)) != 1 {
-					s.ntConnectKeyRefused.Add(1)
-					s.logConnKeyRefused(c) // U21: rate-limited to once per peer per minute
-					return                 // close: no hello reply, no allowlist, no flush
-				}
-			}
 			helloSeen = true
-			if ConnectKey() != "" {
-				s.connMu.Lock()
-				s.connAuthed = true
-				s.connMu.Unlock()
-				_ = c.SetReadDeadline(time.Time{}) // K1: clear the first-hello deadline
-			}
 			// W26 — the hello precedes the AddOn's first BarsRequest build + the
 			// reloaded-series re-emit; arm the stale-print guard for it.
 			s.barCache.NoteReconnect(time.Now())
@@ -2211,12 +2298,6 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			if err != nil {
 				s.logger.Warn("tcp_server: write hello reply", "err", err)
 				return
-			}
-			// W-FRIEND-HOSTED S4 — the accept loop deferred its post-accept sends
-			// while a connect key is required; run them now that the hello carried
-			// the matching key.
-			if ConnectKey() != "" {
-				s.sendPostAccept(c)
 			}
 
 		case FrameMaintenanceAck:
@@ -2697,13 +2778,8 @@ func (s *TCPServer) heartbeatLoop(ctx context.Context, c net.Conn) {
 				s.connMu.Unlock()
 				return
 			}
-			authed := s.connAuthed || ConnectKey() == ""
 			since := time.Since(s.lastAckTime)
 			s.connMu.Unlock()
-			if !authed {
-				// K1: never heartbeat an unauthenticated peer
-				continue
-			}
 			if since > TCPHeartbeatAckTimeout {
 				s.logger.Warn("tcp_server: heartbeat ack timeout, closing", "since", since)
 				s.closeConn()
@@ -2932,7 +3008,6 @@ func (s *TCPServer) closeConn() {
 	if s.conn != nil {
 		_ = s.conn.Close()
 		s.conn = nil
-		s.connAuthed = false
 		// UPDATER-NT8-CLOSED: stamp the disconnect on the maintenance record
 		// (the nt8_absent verdict measures continuous link-down from THIS
 		// stamp). A new accept replaces the record, so the stamp is cleared
@@ -2957,4 +3032,27 @@ func (s *TCPServer) closeConn() {
 	s.feedMu.Lock()
 	s.feedMode = ""
 	s.feedMu.Unlock()
+}
+
+// connGone (GATE 3) is the readLoop cleanup. It releases this connection's slot
+// only if the loop still owns it: a preempted pending conn must not clear the
+// pending slot now held by its replacement, and an authed readLoop must not
+// clear a conn that was re-published to a newer connection (the stale-readLoop
+// race).
+func (s *TCPServer) connGone(c net.Conn, pending bool) {
+	if pending {
+		s.connMu.Lock()
+		if s.pendingConn == c {
+			s.pendingConn = nil
+		}
+		s.connMu.Unlock()
+		_ = c.Close()
+		return
+	}
+	s.connMu.Lock()
+	isCurrent := s.conn == c
+	s.connMu.Unlock()
+	if isCurrent {
+		s.closeConn()
+	}
 }

@@ -42,7 +42,7 @@ func TestConnectKeyWrongAndMissingRefused(t *testing.T) {
 	t.Setenv("NT_CONNECT_KEY", testConnectKey)
 	s := startedServer(t, nil)
 
-	w := dialWire(t, s, HelloPayload{})
+	w := dialWireNoWait(t, s, HelloPayload{})
 	if n := drainAll(w, 700*time.Millisecond); n != 0 {
 		t.Fatalf("missing key: the server sent %d frame(s), want 0 (nothing before the key check)", n)
 	}
@@ -50,7 +50,7 @@ func TestConnectKeyWrongAndMissingRefused(t *testing.T) {
 		t.Fatalf("missing key: ConnectKeyRefused = %d, want 1", got)
 	}
 
-	w2 := dialWire(t, s, HelloPayload{ConnectKey: "wrong-key"})
+	w2 := dialWireNoWait(t, s, HelloPayload{ConnectKey: "wrong-key"})
 	if n := drainAll(w2, 700*time.Millisecond); n != 0 {
 		t.Fatalf("wrong key: the server sent %d frame(s), want 0", n)
 	}
