@@ -895,6 +895,7 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 	if err != nil {
 		return fmt.Errorf("%v (and Desktop folder: %v)", psErr, err)
 	}
+	reportDiag(ctx, d, appURL, "icon-dirs", errors.New(strings.Join(dirs, " ; ")))
 	body := []byte("[InternetShortcut]\r\nURL=" + appURL + "\r\n")
 	for _, dir := range dirs {
 		// 10-21 laptop [A]: PowerShell HUNG until the cap (killed = "exit

@@ -269,6 +269,16 @@ func windowsIconDirs() ([]string, error) {
 		}
 		out = append(out, p)
 	}
+	// 10-21 laptop: the icon landed "in a different place" than the visible
+	// desktop (OneDrive Desktop redirection can leave Windows reporting one
+	// folder while the user looks at the other). Also cover the plain
+	// %USERPROFILE%\Desktop when it exists and differs.
+	if home, err := os.UserHomeDir(); err == nil {
+		plain := filepath.Join(home, "Desktop")
+		if st, err := os.Stat(plain); err == nil && st.IsDir() && !strings.EqualFold(filepath.Clean(plain), filepath.Clean(out[0])) {
+			out = append(out, plain)
+		}
+	}
 	return out, nil
 }
 
