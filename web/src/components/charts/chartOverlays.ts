@@ -19,6 +19,10 @@ export interface TrendSegment {
   label: string
   color: string
   points: { time: number; value: number }[]
+  /** 0 solid · 1 dotted · 2 dashed (m134: VALID solid, FORMING dashed). */
+  style?: 0 | 1 | 2
+  /** m134: VALID = 2, FORMING = 1 (lightweight-charts LineWidth subset). */
+  lineWidth?: 1 | 2
 }
 
 /** The /api/open-orders row as the chart reads it. */
@@ -52,6 +56,7 @@ export const ORDER_COLORS = {
 } as const
 
 export const MENTOR_COLOR = '#E8A33D' // mentor amber — distinct from order lines
+export const MENTOR_MUTED_COLOR = '#9A8A5E' // m134: a FORMING trendline (waiting for its 3rd touch)
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
 
@@ -303,7 +308,14 @@ export function mentorChartLines(
   if (!truth || !truth.enabled) return []
   const out: ChartLineSpec[] = []
   for (const l of truth.levels ?? []) {
-    if (!(l.price > 0) || l.kind === 'trendline') continue
+    // m134: ema9/ema34 are drawn as CURVES (mentorEMASeries), not flat lines.
+    if (
+      !(l.price > 0) ||
+      l.kind === 'trendline' ||
+      l.kind === 'ema9' ||
+      l.kind === 'ema34'
+    )
+      continue
     const merged = (l.merged_from ?? []).filter((p) => p !== l.price)
     const also =
       merged.length > 0 ? ` · also ${merged.map(fmt).join(', ')}` : ''
@@ -392,14 +404,15 @@ function swingStopLabel(pos: MentorSwingLeg): string {
 }
 
 /**
- * Trendline segments. Each VALID line runs from its first swing anchor to the
- * value it trades at on the current bar (or to its second anchor while a box
- * suppresses it). UG-6 (release #24): every point is snapped to the open time
- * of the chart bar that CONTAINS it — read from the bars the chart actually
- * drew (`barTimes`, UTC seconds, ascending) — and re-valued ON THE SAME LINE.
- * A fixed grid missed 6h/8h/12h/3d/1w (they fell back to 1m) and put 4h/1d on
- * the UTC grid while NT8's bars are session-aligned, so a point could land on
- * a time slot no candle has. No bars yet → nothing to snap to → no segment.
+ * Trendline segments (m134): FORMING lines (two anchors, no 3rd touch) draw as
+ * thin dashed muted "waiting for 3rd touch"; VALID lines (3rd touch, not dead)
+ * draw as solid width-2 "trend line ✓", extended to the right edge. UG-6
+ * (release #24): every point is snapped to the open time of the chart bar that
+ * CONTAINS it — read from the bars the chart actually drew (`barTimes`, UTC
+ * seconds, ascending) — and re-valued ON THE SAME LINE. A fixed grid missed
+ * 6h/8h/12h/3d/1w (they fell back to 1m) and put 4h/1d on the UTC grid while
+ * NT8's bars are session-aligned, so a point could land on a time slot no
+ * candle has. No bars yet → nothing to snap to → no segment.
  */
 export function mentorTrendSegments(
   trendlines: MentorTruth['trendlines'],
@@ -422,19 +435,25 @@ export function mentorTrendSegments(
     return barTimes[lo]
   }
   const mark = mentorStaleMark(staleSinceMs)
+  const lastBar = barTimes[barTimes.length - 1]
   for (const tl of trendlines ?? []) {
     if (tl.p1_ms === tl.p0_ms) continue
     const slope = (tl.p1_px - tl.p0_px) / (tl.p1_ms - tl.p0_ms)
     const valueAt = (ms: number) => tl.p0_px + slope * (ms - tl.p0_ms)
-    const endMs = tl.in_level && tl.now_ms > tl.p1_ms ? tl.now_ms : tl.p1_ms
+    // m134: VALID extends to the right edge; FORMING stops at its 2nd anchor.
+    const endMs = tl.valid ? lastBar * 1000 : tl.p1_ms
     const times = Array.from(
       new Set([tl.p0_ms, tl.p1_ms, endMs].map(snap))
     ).sort((a, b) => a - b)
     if (times.length < 2) continue
     const role = tl.side === 'long' ? 'support' : 'resistance'
     out.push({
-      label: `mentor trendline (${role}${tl.in_level ? '' : ', inside a box — not traded'})${mark}`,
-      color: MENTOR_COLOR,
+      label: tl.valid
+        ? `trend line ✓ (${role}${tl.in_level ? '' : ', inside a box — not traded'})${mark}`
+        : `trend line (${role} — waiting for 3rd touch)${mark}`,
+      color: tl.valid ? MENTOR_COLOR : MENTOR_MUTED_COLOR,
+      style: tl.valid ? 0 : 2,
+      lineWidth: tl.valid ? 2 : 1,
       points: times.map((sec) => ({
         time: sec,
         value: valueAt(sec * 1000),

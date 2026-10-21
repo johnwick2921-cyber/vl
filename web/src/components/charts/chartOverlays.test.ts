@@ -162,20 +162,47 @@ describe('mentorTrendSegments', () => {
           now_ms: t0 + 960_000,
           now_px: 101,
           in_level: true,
+          valid: true,
         },
       ],
       bars(t0, 300_000, 6)
     )
-    expect(seg.label).toBe('mentor trendline (resistance)')
+    expect(seg.label).toBe('trend line ✓ (resistance)')
+    expect(seg.lineWidth).toBe(2)
+    expect(seg.style).toBe(0)
+    // m134: VALID extends to the right edge (the last drawn bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       t0 / 1000,
       (t0 + 600_000) / 1000,
-      (t0 + 900_000) / 1000,
+      (t0 + 1_500_000) / 1000,
     ])
-    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 101.6 at +15m
+    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 95.6 at +25m
     expect(seg.points.map((p) => Math.round(p.value * 100) / 100)).toEqual([
-      110.6, 104.6, 101.6,
+      110.6, 104.6, 95.6,
     ])
+  })
+
+  it('a FORMING line is thin dashed muted and stops at its second anchor', () => {
+    const [seg] = mentorTrendSegments(
+      [
+        {
+          side: 'long',
+          p0_ms: 0,
+          p0_px: 1,
+          p1_ms: 120_000,
+          p1_px: 3,
+          now_ms: 0,
+          now_px: 0,
+          in_level: false,
+          valid: false,
+        },
+      ],
+      bars(0, 60_000, 5)
+    )
+    expect(seg.label).toBe('trend line (support — waiting for 3rd touch)')
+    expect(seg.lineWidth).toBe(1)
+    expect(seg.style).toBe(2)
+    expect(seg.points).toHaveLength(2)
   })
 
   it('ends a box-suppressed line at its second anchor and says it is not traded', () => {
@@ -190,11 +217,14 @@ describe('mentorTrendSegments', () => {
           now_ms: 0,
           now_px: 0,
           in_level: false,
+          valid: true,
         },
       ],
       bars(0, 60_000, 5)
     )
-    expect(seg.points).toHaveLength(2)
+    // m134: a VALID box-suppressed line still extends to the right edge.
+    expect(seg.points).toHaveLength(3)
+    expect(seg.label).toContain('trend line ✓')
     expect(seg.label).toContain('not traded')
   })
 })
@@ -217,14 +247,16 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     now_ms: open + 21 * 3_600_000, // 19:00 UTC → inside the 18:00 bar
     now_px: 116,
     in_level: true,
+    valid: true,
   }
   it('every point is a bar the chart drew (4h, session-aligned)', () => {
     const [seg] = mentorTrendSegments([tl], h4)
     const drawn = new Set(h4)
+    // m134: VALID extends to the right edge (the last drawn 4h bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       (open + 4 * 3_600_000) / 1000,
       (open + 12 * 3_600_000) / 1000,
-      (open + 20 * 3_600_000) / 1000,
+      (open + 28 * 3_600_000) / 1000,
     ])
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
     // re-valued on the same line: slope 1 pt/h → 99 at the 02:00 bar open
@@ -235,7 +267,8 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     const [seg] = mentorTrendSegments([tl], h12)
     const drawn = new Set(h12)
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
-    expect(seg.points).toHaveLength(2)
+    // m134: p0, p1 and the right edge (the last 12h bar).
+    expect(seg.points).toHaveLength(3)
   })
   it('no bars yet → nothing drawn (never a guessed grid)', () => {
     expect(mentorTrendSegments([tl], [])).toEqual([])

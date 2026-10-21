@@ -57,3 +57,31 @@ func emaValue(bars []market.Kline, period int) float64 {
 	}
 	return ema
 }
+
+// ChartEMA is one point of the display-only EMA curve (m134): the EMA 9 and
+// EMA 34 values at a 1m bar's open time.
+type ChartEMA struct {
+	Ms    int64   `json:"ms"`
+	Ema9  float64 `json:"ema9"`
+	Ema34 float64 `json:"ema34"`
+}
+
+// emaSeriesChart builds the per-bar EMA 9/34 curve for the chart (display only,
+// m134). Seeds with the first bar's close — the same recurrence as emaValue —
+// so the tail lands on the same values the EMA levels use.
+func emaSeriesChart(bars []market.Kline, period9, period34 int) []ChartEMA {
+	if len(bars) == 0 {
+		return nil
+	}
+	k9 := 2.0 / float64(period9+1)
+	k34 := 2.0 / float64(period34+1)
+	e9, e34 := bars[0].Close, bars[0].Close
+	out := make([]ChartEMA, 0, len(bars))
+	out = append(out, ChartEMA{Ms: bars[0].OpenTime, Ema9: e9, Ema34: e34})
+	for _, b := range bars[1:] {
+		e9 += k9 * (b.Close - e9)
+		e34 += k34 * (b.Close - e34)
+		out = append(out, ChartEMA{Ms: b.OpenTime, Ema9: e9, Ema34: e34})
+	}
+	return out
+}

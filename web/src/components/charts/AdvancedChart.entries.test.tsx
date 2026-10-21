@@ -165,6 +165,7 @@ it('draws the mentor trendline as a sloped segment and the other mentor places a
           now_ms: t0 + 780_000,
           now_px: 99.2,
           in_level: true,
+          valid: true,
         },
       ]}
     />
@@ -179,17 +180,20 @@ it('draws the mentor trendline as a sloped segment and the other mentor places a
   const lineSeries = state.addSeries.mock.calls.filter(
     (c) =>
       c[0] === 'line' &&
-      String((c[1] as { title?: string }).title).startsWith('mentor trendline')
+      String((c[1] as { title?: string }).title).startsWith('trend line')
   )
   expect(lineSeries).toHaveLength(1)
   const pts = state.lineData.mock.calls.at(-1)?.[0] as {
     time: number
     value: number
   }[]
-  expect(pts.map((p) => p.value)).toEqual([97, 98.2, 99.2])
+  // m134: VALID extends to the right edge (the last drawn 1m bar).
+  expect(pts.map((p) => Math.round(p.value * 100) / 100)).toEqual([
+    97, 98.2, 99.6,
+  ])
   expect(pts.map((p) => p.time)).toEqual([
     (t0 + 120_000) / 1000,
     (t0 + 480_000) / 1000,
-    (t0 + 780_000) / 1000,
+    (t0 + 900_000) / 1000,
   ])
 })

@@ -72,6 +72,8 @@ interface AdvancedChartProps {
   mentorLevels?: ChartLineSpec[]
   /** T7 (release #22) — the VALID trendlines, drawn as sloped segments. */
   mentorTrendlines?: MentorTruth['trendlines']
+  /** m134 — the per-bar EMA 9/34 curve (points), drawn as two curves. */
+  mentorEMASeries?: MentorTruth['ema_series']
   /** UG-3 (release #24): set while the mentor read is stale — the last good
    * read's time; every mentor line then carries "stale since HH:MM CT". */
   mentorStaleSinceMs?: number
@@ -132,6 +134,7 @@ export function AdvancedChart({
   selectedAccount,
   mentorLevels,
   mentorTrendlines,
+  mentorEMASeries,
   mentorStaleSinceMs,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
@@ -152,6 +155,7 @@ export function AdvancedChart({
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
   const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
   const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
+  const mentorEMARef = useRef<ISeriesApi<'Line'>[]>([]) // m134 EMA9/34 curves
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
   // UG-6 (release #24): the open times (UTC s) of the bars this chart drew —
   // trendline points snap to these, never to a computed grid. Re-set only
@@ -1324,8 +1328,8 @@ export function AdvancedChart({
     )) {
       const sr = chart.addSeries(LineSeries, {
         color: seg.color,
-        lineWidth: 1,
-        lineStyle: 2,
+        lineWidth: seg.lineWidth ?? 1,
+        lineStyle: seg.style ?? 2,
         title: seg.label,
         lastValueVisible: false,
         priceLineVisible: false,
@@ -1340,6 +1344,49 @@ export function AdvancedChart({
       mentorTrendSeriesRef.current.push(sr)
     }
   }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
+
+  // m134 — the mentor EMA 9/34 curves (a per-bar series, not one flat value).
+  useEffect(() => {
+    const chart = chartRef.current
+    mentorEMARef.current.forEach((sr) => {
+      try {
+        chart?.removeSeries(sr as any)
+      } catch {
+        // Ignore clear error
+      }
+    })
+    mentorEMARef.current = []
+    if (!chart) return
+    const add = (
+      label: string,
+      color: string,
+      data: { time: UTCTimestamp; value: number }[]
+    ) => {
+      if (data.length === 0) return
+      const sr = chart.addSeries(LineSeries, {
+        color,
+        lineWidth: 1,
+        lineStyle: 0,
+        title: label,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      })
+      sr.setData(data)
+      mentorEMARef.current.push(sr)
+    }
+    const pts = mentorEMASeries ?? []
+    add(
+      'EMA 9',
+      '#3B82F6',
+      pts.map((p) => ({ time: (p.ms / 1000) as UTCTimestamp, value: p.ema9 }))
+    )
+    add(
+      'EMA 34',
+      '#EC4899',
+      pts.map((p) => ({ time: (p.ms / 1000) as UTCTimestamp, value: p.ema34 }))
+    )
+  }, [mentorEMASeries, symbol, interval])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {
