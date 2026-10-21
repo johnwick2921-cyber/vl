@@ -6,6 +6,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -55,8 +56,15 @@ func realDeps() deps {
 				return nil, err
 			}
 			// G12: a 30s timeout on friend-bot calls — a wedged network must not
-			// hang the whole 30-min run on the manifest, identity, or MSI fetch.
-			resp, err := friendHTTPClient.Do(req)
+			// hang the whole 30-min run on the manifest or identity fetch. The
+			// ~38 MB Tailscale MSI gets its own 10-min client: http.Client.Timeout
+			// covers the BODY read, so 30s failed on anything under ~10 Mbps
+			// (gate-3 review 10-21, MAJOR).
+			client := friendHTTPClient
+			if url == tailscaleMSIURL {
+				client = tailscaleDownloadClient
+			}
+			resp, err := client.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -209,12 +217,17 @@ func realDeps() deps {
 		// second icon click returns false and only opens the dashboard.
 		singleInstance: func() bool {
 			h, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\VL-friend`))
+			// x/sys returns a VALID handle AND err=ERROR_ALREADY_EXISTS when the
+			// mutex exists (proven on real Windows, gate-3 10-21) — the old
+			// "err != nil → fail open" made the guard never fire.
+			if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+				if h != 0 {
+					windows.CloseHandle(h)
+				}
+				return false
+			}
 			if err != nil {
 				return true // fail open
-			}
-			if windows.GetLastError() == windows.ERROR_ALREADY_EXISTS {
-				windows.CloseHandle(h)
-				return false
 			}
 			singleInstanceHandle = h
 			return true
@@ -251,6 +264,10 @@ func windowsDocumentsDir() (string, error) {
 // manifest, the identity check, and the Tailscale MSI download must not hang
 // the whole 30-minute run on a wedged network.
 var friendHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// tailscaleDownloadClient fetches the Tailscale MSI (~38 MB). 10 minutes is
+// ~65 KB/s — a weak hotspot still finishes; a dead link still ends.
+var tailscaleDownloadClient = &http.Client{Timeout: 10 * time.Minute}
 
 // cmdOutputStdout runs cmd and returns STDOUT ONLY; stderr is folded into the
 // error text (P2: PowerShell writes CLIXML progress noise to stderr, which must

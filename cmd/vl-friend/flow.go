@@ -461,8 +461,8 @@ func logSetupError(d deps, msg string) {
 // verifies its Authenticode signer is Tailscale Inc BEFORE anything is run.
 // A bad or missing signature refuses (the MSI is never executed).
 func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
-	// G12: tell the user the download started (it is ~12 MB and silent otherwise).
-	d.print("Downloading Tailscale… 12 MB")
+	// G12: tell the user the download started (~38 MB, silent otherwise).
+	d.print("Downloading Tailscale (about 40 MB — on slow internet this can take a few minutes)…")
 	b, err := d.fetch(ctx, tailscaleMSIURL)
 	if err != nil {
 		return "", fmt.Errorf("download Tailscale installer: %w", err)
@@ -998,11 +998,13 @@ func runOpen(ctx context.Context, d deps) error {
 	}
 
 	// Quick bounded update check; a probe error is shown (m12/W15), never silent.
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	// 15s, not 5s: a cold WireGuard/DERP path can take longer than 5s for the
+	// first packet, and a false "cannot reach" box scares a healthy user.
+	cctx, cancel := context.WithTimeout(ctx, 15*time.Second)
 	dec, derr := detectUpdate(cctx, d, base)
 	cancel()
 	if derr != nil {
-		// W15: the 5-second manifest probe failed — the dashboard is already open,
+		// W15: the 15-second manifest probe failed — the dashboard is already open,
 		// so just tell the mentor the bot is unreachable.
 		d.infoBox("VL cannot reach your bot — open Tailscale and check it says Connected.")
 		return nil

@@ -270,8 +270,17 @@ func TestFetchUsesTimeoutClient(t *testing.T) {
 	if !strings.Contains(s, "friendHTTPClient = &http.Client{Timeout: 30 * time.Second}") {
 		t.Fatalf("run_windows.go must define friendHTTPClient with a 30s timeout")
 	}
-	if !strings.Contains(s, "friendHTTPClient.Do(req)") {
-		t.Fatalf("the fetch seam must call friendHTTPClient.Do")
+	if !strings.Contains(s, "client := friendHTTPClient") || !strings.Contains(s, "client.Do(req)") {
+		t.Fatalf("the fetch seam must default to friendHTTPClient")
+	}
+	// Gate-3 10-21 MAJOR: http.Client.Timeout covers the body read, so the
+	// ~38 MB Tailscale MSI needs its own long client. MUTANT: drop the switch
+	// (or shorten the timeout) → RED.
+	if !strings.Contains(s, "if url == tailscaleMSIURL {\n\t\t\t\tclient = tailscaleDownloadClient") {
+		t.Fatalf("the Tailscale MSI must use tailscaleDownloadClient")
+	}
+	if !strings.Contains(s, "tailscaleDownloadClient = &http.Client{Timeout: 10 * time.Minute}") {
+		t.Fatalf("tailscaleDownloadClient must allow 10 minutes for the ~38 MB MSI")
 	}
 	if strings.Contains(s, "http.DefaultClient.Do(req)") {
 		t.Fatalf("the fetch seam must NOT use http.DefaultClient (no timeout)")
@@ -321,6 +330,12 @@ func TestSingleInstanceMutexPinsH18c(t *testing.T) {
 	}
 	if !strings.Contains(s, "windows.OpenMutex(") || !strings.Contains(s, "windows.CreateMutex(") {
 		t.Fatalf("singleInstance must OpenMutex then CreateMutex")
+	}
+	// Gate-3 10-21 [A real Windows]: CreateMutex returns a valid handle AND
+	// err=ERROR_ALREADY_EXISTS for an existing mutex; "err != nil → fail open"
+	// made the guard never fire. MUTANT: drop the errors.Is check → RED.
+	if !strings.Contains(s, "if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {") {
+		t.Fatalf("the deps singleInstance must treat ERROR_ALREADY_EXISTS as 'second instance'")
 	}
 }
 
