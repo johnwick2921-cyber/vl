@@ -45,6 +45,10 @@ type deps struct {
 	// fake. The caller requires Status == "Valid" AND subject contains the
 	// exact org "O=Tailscale Inc.".
 	verifyMsiSigner func(msiPath string) (msiSignature, error)
+	// openURL opens the dashboard in the user's browser: msedge --app when Edge
+	// is present (resolved to a full path), else the default browser. Production:
+	// powershell Start-Process; tests: a fake that records the URL.
+	openURL func(ctx context.Context, url string) error
 }
 
 // msiSignature is what verifyMsiSigner reports: the Authenticode status and the

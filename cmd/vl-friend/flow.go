@@ -157,14 +157,21 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
 
-	// [6/6] Desktop + Start Menu shortcuts, then the final screen (the dashboard
-	// URL is printed so the non-technical owner can also open it by hand).
+	// [6/6] Desktop + Start Menu shortcuts + README, then the final screen, then
+	// OPEN the dashboard so the non-technical owner lands on the login page.
 	appURL := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
 	if err := createDesktopShortcut(ctx, d, appURL); err != nil {
 		return err
 	}
+	if err := writeDashboardREADME(d, home, appURL); err != nil {
+		return err
+	}
 	d.print("[6/6] All done ✓. A VL icon is on your desktop. Double-click it, create your login, then add your AI key, your strategy and a trader on your SIM account.")
-	d.print("Your dashboard: " + appURL + " (also on the VL icon)")
+	d.print("Your VL dashboard:  " + appURL)
+	d.print("A VL icon is on your desktop and in the Start Menu.")
+	if err := d.openURL(ctx, appURL); err != nil {
+		return fmt.Errorf("open dashboard: %w", err)
+	}
 	return nil
 }
 
@@ -470,6 +477,77 @@ func repairIcon(ctx context.Context, d deps) error {
 		return err
 	}
 	d.print("Done ✓ — the VL icon is back on your desktop and Start Menu.")
+	d.print("Press Enter to close")
+	_, _ = d.readLine("")
+	return nil
+}
+
+// writeDashboardREADME writes the dashboard URL into
+// Documents\NinjaTrader 8\VL\README.txt so a new user can find VL later.
+func writeDashboardREADME(d deps, home, appURL string) error {
+	if err := d.mkdirAll(ntVLdir(home), 0o755); err != nil {
+		return err
+	}
+	return d.writeFile(filepath.Join(ntVLdir(home), "README.txt"),
+		[]byte("Your VL dashboard: "+appURL+"\n"), 0o644)
+}
+
+// openScript builds the PowerShell that opens the dashboard: msedge --app when
+// Edge is present (resolved to a full path), else the default browser.
+func openScript(appURL string) string {
+	return strings.Join([]string{
+		"$edge=$null",
+		"foreach($r in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe')){try{$v=(Get-ItemProperty -Path $r -ErrorAction Stop).'(default)';if($v -and (Test-Path $v)){$edge=$v;break}}catch{}}",
+		"if(-not $edge){foreach($p in @(\"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\",\"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe\")){if(Test-Path $p){$edge=$p;break}}}",
+		"if($edge){Start-Process $edge -ArgumentList '--app=" + appURL + "'}else{Start-Process '" + appURL + "'}",
+	}, ";")
+}
+
+// runInstalled is the installed-PC path (connect.json exists): a plain
+// double-click, NO install-code prompt. It announces, runs the update check,
+// ENSUREs the Desktop + Start Menu shortcuts (re-create if missing, never
+// duplicate), then prints + opens the dashboard and waits for Enter.
+func runInstalled(ctx context.Context, d deps, home string) error {
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		return err
+	}
+	st, err := readAppState(d, home)
+	if err != nil {
+		return err
+	}
+	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
+
+	// a) no code prompt — announce instead.
+	d.print("VL is already set up on this PC ✓")
+
+	// b) the update check as today (add-on/app), flat-gated.
+	d.positions = func(ctx context.Context) (float64, error) {
+		return probeFlat(ctx, d, base)
+	}
+	dec, err := RunUpdateCheck(ctx, d, base, false)
+	if err != nil {
+		return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
+	}
+	if dec.Applied {
+		d.print("Updated ✓ — restart NinjaTrader to load the new add-on.")
+	} else if dec.AddonUpdateAvailable || dec.AppUpdateAvailable {
+		d.print("Update deferred (Later).")
+	}
+
+	// c) ENSURE the shortcuts: re-create if missing, never duplicate (the
+	// .lnk/.url are overwritten in place).
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
+		return err
+	}
+
+	// d) print the dashboard URL and open it.
+	d.print("Your VL dashboard: " + base)
+	if err := d.openURL(ctx, base); err != nil {
+		return fmt.Errorf("open dashboard: %w", err)
+	}
+
+	// e) keep the console readable.
 	d.print("Press Enter to close")
 	_, _ = d.readLine("")
 	return nil

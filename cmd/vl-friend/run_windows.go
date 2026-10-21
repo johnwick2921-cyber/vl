@@ -78,6 +78,10 @@ func realDeps() deps {
 			}
 			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
+		openURL: func(ctx context.Context, url string) error {
+			_, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", openScript(url)).CombinedOutput()
+			return err
+		},
 	}
 }
 
@@ -137,34 +141,7 @@ func runInner(ctx context.Context, d deps) error {
 		return runFirstRun(ctx, d)
 	}
 
-	// Every start: check for updates from the friend's own bot.
-	cfg, err := readConnectConfig(d, home)
-	if err != nil {
-		return err
-	}
-	st, err := readAppState(d, home)
-	if err != nil {
-		return err
-	}
-	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
-	// Re-create the VL icons on every normal start so a vanished / OneDrive-moved
-	// icon comes back without a reinstall (B8 live bug). Best-effort: a missing
-	// icon must not fail the update check.
-	_ = createDesktopShortcut(ctx, d, base)
-	// CTO flat-signal ruling (2026-10-18): the flat check reads the friend's
-	// friend-mode-only /api/friend/flat (no dashboard JWT). A probe error is an
-	// error → waitUntilFlat defers (fail closed).
-	d.positions = func(ctx context.Context) (float64, error) {
-		return probeFlat(ctx, d, base)
-	}
-	dec, err := RunUpdateCheck(ctx, d, base, false)
-	if err != nil {
-		return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
-	}
-	if dec.Applied {
-		fmt.Println("Updated ✓ — restart NinjaTrader to load the new add-on.")
-	} else if dec.AddonUpdateAvailable || dec.AppUpdateAvailable {
-		fmt.Println("Update deferred (Later).")
-	}
-	return nil
+	// Installed: announce, update check, ensure icons, print + open the
+	// dashboard. No install-code prompt (CTO 23:47 CT).
+	return runInstalled(ctx, d, home)
 }

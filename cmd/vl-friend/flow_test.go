@@ -19,6 +19,7 @@ type flowRecorder struct {
 	execs  []string
 	lines  []string
 	prints []string
+	opened []string
 }
 
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
@@ -60,6 +61,10 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 		tempDir: func() (string, error) { return t.TempDir(), nil },
 		verifyMsiSigner: func(string) (msiSignature, error) {
 			return msiSignature{Status: "Valid", Subject: "CN=Tailscale Inc., O=Tailscale Inc."}, nil
+		},
+		openURL: func(_ context.Context, url string) error {
+			rec.opened = append(rec.opened, url)
+			return nil
 		},
 	}
 	return d, rec
@@ -453,7 +458,8 @@ func TestRunFirstRunPrintsSixStepsInOrder(t *testing.T) {
 		"Approved ✓",
 		"Add-on verified ✓",
 		"Done ✓. If NinjaTrader is open, close it and open it again.",
-		"Your dashboard: " + fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort) + " (also on the VL icon)",
+		"Your VL dashboard:  " + fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort),
+		"A VL icon is on your desktop and in the Start Menu.",
 		"Press Enter to close",
 	} {
 		if !strings.Contains(joined, needle) {
@@ -553,5 +559,110 @@ func TestRepairIconNotInstalledRefuses(t *testing.T) {
 	d, _ := flowFakeDeps(t, home)
 	if err := repairIcon(context.Background(), d); err == nil {
 		t.Fatal("repairIcon on a not-installed PC was accepted")
+	}
+}
+
+// TestInstallFirstRunOpensDashboardAndWritesREADME — CTO 23:45: at the end of
+// setup the user must SEE where VL is three ways: the [6/6] screen prints the
+// URL big and plain, setup OPENS the dashboard automatically, and README.txt is
+// written. MUTANT: drop the d.openURL call → the opened check RED.
+func TestInstallFirstRunOpensDashboardAndWritesREADME(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := installFirstRun(context.Background(), d, encodeInstallCode(ic)); err != nil {
+		t.Fatalf("install refused: %v", err)
+	}
+	appURL := ic.BaseURL()
+	opened := false
+	for _, u := range rec.opened {
+		if u == appURL {
+			opened = true
+		}
+	}
+	if !opened {
+		t.Fatalf("setup did not auto-open the dashboard; opened=%v", rec.opened)
+	}
+	b, err := os.ReadFile(filepath.Join(ntVLdir(home), "README.txt"))
+	if err != nil {
+		t.Fatalf("README.txt not written: %v", err)
+	}
+	if !strings.Contains(string(b), "Your VL dashboard: "+appURL) {
+		t.Fatalf("README.txt missing the URL: %q", b)
+	}
+	joined := strings.Join(rec.prints, "\n")
+	if !strings.Contains(joined, "Your VL dashboard:  "+appURL) {
+		t.Fatalf("[6/6] screen missing the dashboard URL: %q", rec.prints)
+	}
+	if !strings.Contains(joined, "A VL icon is on your desktop and in the Start Menu.") {
+		t.Fatalf("[6/6] screen missing the icon line: %q", rec.prints)
+	}
+}
+
+// TestRunInstalledPrintsBothLinesAndOpens — CTO 23:47: an installed PC, plain
+// double-click, no args: announce, update check, ensure icons, print + open the
+// dashboard, "Press Enter to close". NO install-code prompt. MUTANT: skip the
+// openURL on the installed path → the opened check RED; skip ensureShortcut →
+// the powershell GetFolderPath check RED.
+func TestRunInstalledPrintsBothLinesAndOpens(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	// No update: manifest build == installed build, so the check does not prompt.
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused: %v", err)
+	}
+
+	joined := strings.Join(rec.prints, "\n")
+	if !strings.Contains(joined, "VL is already set up on this PC ✓") {
+		t.Fatalf("missing 'already set up' line: %q", rec.prints)
+	}
+	if !strings.Contains(joined, "Your VL dashboard: "+base) {
+		t.Fatalf("missing dashboard URL line: %q", rec.prints)
+	}
+
+	opened := false
+	for _, u := range rec.opened {
+		if u == base {
+			opened = true
+		}
+	}
+	if !opened {
+		t.Fatalf("the dashboard was not opened; opened=%v", rec.opened)
+	}
+
+	shortcut := false
+	for _, e := range rec.execs {
+		if strings.HasPrefix(e, "powershell ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
+			shortcut = true
+		}
+	}
+	if !shortcut {
+		t.Fatalf("installed run did not ensure the shortcut: %v", rec.execs)
+	}
+
+	// No install-code prompt: readLine is only used for the final "Press Enter".
+	for _, p := range rec.lines {
+		if strings.Contains(p, "install code") {
+			t.Fatalf("runInstalled prompted for an install code: %q", rec.lines)
+		}
 	}
 }
