@@ -69,7 +69,9 @@ namespace NinjaTrader.NinjaScript.AddOns
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
-        private const string  VL_BUILD_ID             = "2026-10-21-b";
+        // 2026-10-21-b (release #43): strict connect.json, reconnect backoff 5s→60s,
+        //   hello-first write gate, hello-close warning (superseded by -c).
+        private const string  VL_BUILD_ID             = "2026-10-21-c";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -80,8 +82,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         private string                   lastConnectError     = "";
         private DateTime                 lastErrorLogUtc      = DateTime.MinValue;
         private bool                     loggedFirstFailure   = false;
-        private bool                     hadConnectFailure    = false;
         private bool                     serverHelloReceived  = false; // K6: set on the server's hello reply
+        private bool                     helloWritten         = false; // C13: hello is the first frame (under writeLock)
         private readonly Random          backoffRng           = new Random();
         private Thread                   readerThread;
         private Thread                   heartbeatThread;
@@ -663,14 +665,16 @@ namespace NinjaTrader.NinjaScript.AddOns
             try { path = Path.Combine(docs, "NinjaTrader 8", "VL", "connect.json"); }
             catch { return; }
 
-            if (!File.Exists(path)) return; // absent -> defaults (today's behaviour)
-
-            string json;
-            try { json = File.ReadAllText(path); }
-            catch (Exception ex)
+            // C14 — an existing-but-unreadable connect.json is CORRUPT (refuse), not
+            // absent. Only FileNotFound/DirectoryNotFound fall through to the defaults.
+            string json = "";
+            string readErr = null;
+            ConnectJsonRead rr = ConnectJsonParser.ReadConnectJson(path, out json, out readErr);
+            if (rr == ConnectJsonRead.Absent) return; // absent -> defaults (today's behaviour)
+            if (rr == ConnectJsonRead.Unreadable)
             {
                 connectConfigCorrupt = true;
-                LogWarn("VLTraderTCPClient: connect.json unreadable (" + ex.Message + ") — will NOT connect");
+                LogWarn("VLTraderTCPClient: connect.json unreadable (" + readErr + ") — will NOT connect");
                 return;
             }
 
@@ -702,22 +706,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             while (!ct.IsCancellationRequested)
             {
-                bool helloSent = false;
                 try
                 {
                     client = new TcpClient();
                     client.Connect(serverHost, serverPort);
                     stream = client.GetStream();
                     LogInfo("VLTraderTCPClient: CONNECTED");
-                    if (hadConnectFailure)
-                    {
-                        // K2 — log the recovery exactly once per failure episode.
-                        LogInfo("VLTraderTCPClient: connection restored");
-                        hadConnectFailure = false;
-                    }
-                    reconnectDelayMs = RECONNECT_INTERVAL_MS;
-                    loggedFirstFailure = false;
-                    lastConnectError = "";
+                    // C11 — do NOT reset the backoff/log-throttle here: a refused key
+                    // would otherwise reset it every connect and never grow. The reset
+                    // happens in OnAuthenticated() on the server's hello reply.
                     serverHelloReceived = false;
                     // W-ONE-BUTTON M2 — a hold belongs to the connection that was
                     // told it. Go re-sends it at accept while held.
@@ -729,7 +726,6 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // server refuses (closes); we land back in the reconnect
                     // loop with its loud mismatch log explaining why.
                     SendHello();
-                    helloSent = true;
                     LogInfo("VLTraderTCPClient: About to call SendAccountsList");
 
                     // Trigger on connect in case accounts are already loaded
@@ -758,21 +754,21 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 catch (Exception ex)
                 {
-                    LogConnectFailure(ex.Message);
-                    hadConnectFailure = true;
+                    LogThrottled("VLTraderTCPClient: connect failed: " + ex.Message);
                 }
                 finally
                 {
                     // K6 — the server closed before replying to our hello (e.g. a wrong
-                    // connect_key or port). ONE clear warning instead of generic noise.
-                    if (helloSent && !serverHelloReceived && !ct.IsCancellationRequested)
+                    // connect_key or port). Routed through the same throttle (C12).
+                    if (!serverHelloReceived && helloWritten && !ct.IsCancellationRequested)
                     {
-                        LogWarn("VLTraderTCPClient: server closed after hello — check connect_key / port");
+                        LogThrottled("VLTraderTCPClient: server closed after hello — check connect_key / port");
                     }
                     try { stream?.Close(); } catch { }
                     try { client?.Close(); } catch { }
                     stream = null;
                     client = null;
+                    lock (writeLock) { helloWritten = false; } // C13 — next connection's hello must go first
                 }
                 if (!ct.IsCancellationRequested)
                 {
@@ -787,16 +783,27 @@ namespace NinjaTrader.NinjaScript.AddOns
         // ReconnectPolicy.NextBackoffMs (unit-tested); the jitter is added here and clamped.
         private int NextJitteredBackoffMs(int current)
         {
-            int baseMs = ReconnectPolicy.NextBackoffMs(current, MAX_RECONNECT_INTERVAL_MS);
-            int jittered = baseMs + backoffRng.Next(-500, 501);
-            if (jittered < RECONNECT_INTERVAL_MS) jittered = RECONNECT_INTERVAL_MS;
-            if (jittered > MAX_RECONNECT_INTERVAL_MS) jittered = MAX_RECONNECT_INTERVAL_MS;
-            return jittered;
+            return ReconnectPolicy.NextJitteredBackoffMs(current, RECONNECT_INTERVAL_MS, MAX_RECONNECT_INTERVAL_MS, backoffRng.Next(-500, 501));
         }
 
-        // K2 — log the FIRST failure, then only when the error text changes or every 10 min,
-        // so a friend bot whose NT8 port is not open yet (normal at first) doesn't spam every 5s.
-        private void LogConnectFailure(string message)
+        // C11 — reset the reconnect backoff + log throttle ONLY when the server actually
+        // replies to our hello (authenticated), never on TCP connect: a refused key must
+        // still grow the backoff, and a recovery is only real once we're authenticated.
+        private void OnAuthenticated()
+        {
+            if (reconnectDelayMs != RECONNECT_INTERVAL_MS)
+            {
+                LogInfo("VLTraderTCPClient: connection restored");
+            }
+            reconnectDelayMs = RECONNECT_INTERVAL_MS;
+            loggedFirstFailure = false;
+        }
+
+        // K2/C12 — one throttle for all pre-auth noise (connect failures AND the K6
+        // "server closed after hello" warning): log the FIRST, then only on message
+        // change or every 10 min — a friend bot's NT8 port is closed until its first
+        // trader exists, so refusal is normal at first.
+        private void LogThrottled(string message)
         {
             bool log;
             if (!loggedFirstFailure)
@@ -818,7 +825,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             if (log)
             {
-                LogWarn("VLTraderTCPClient: connect failed: " + message);
+                LogWarn(message);
                 lastConnectError = message;
                 lastErrorLogUtc = DateTime.UtcNow;
             }
@@ -952,7 +959,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 else if (type == "hello")
                 {
-                    serverHelloReceived = true; // K6 — the server replied to our hello
+                    // C11 — authenticate + reset backoff exactly once per connection.
+                    if (!serverHelloReceived)
+                    {
+                        serverHelloReceived = true;
+                        OnAuthenticated();
+                    }
                     // P5.2 — the Go server's hello reply. A version mismatch is
                     // logged LOUDLY (the server side refuses mismatched clients;
                     // this is the symmetric check so the operator sees it from
@@ -3843,9 +3855,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                 };
                 lock (writeLock)
                 {
+                    // C13 — the hello MUST be the first frame on every connection; a
+                    // non-hello frame is dropped until the hello has been written.
+                    if (type != "hello" && !helloWritten) return;
                     stream.Write(header, 0, 4);
                     stream.Write(body, 0, body.Length);
                     stream.Flush();
+                    if (type == "hello") helloWritten = true;
                 }
             }
             catch (Exception ex)

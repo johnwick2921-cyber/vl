@@ -4,6 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.IO;
 using System.Text;
 
 namespace NinjaTrader.NinjaScript.AddOns
@@ -25,12 +26,13 @@ namespace NinjaTrader.NinjaScript.AddOns
             var root = parsed as Dictionary<string, object>;
             if (root == null) { err = "connect.json is not a JSON object"; return; }
 
-            // host — REQUIRED when the file exists.
+            // host — REQUIRED when the file exists; trimmed (C15).
             if (root.TryGetValue("host", out object h))
             {
-                if (!(h is string sh) || string.IsNullOrEmpty(sh))
-                { err = "connect.json host must be a non-empty string"; return; }
-                host = sh;
+                if (!(h is string sh)) { err = "connect.json host must be a string"; return; }
+                string trimmed = sh.Trim();
+                if (trimmed.Length == 0) { err = "connect.json host must be a non-empty string"; return; }
+                host = trimmed;
             }
             else { err = "connect.json host is required"; return; }
 
@@ -46,14 +48,28 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             else { err = "connect.json port is required"; return; }
 
-            // connect_key — optional; if present it MUST be a string (no silent fallback).
+            // connect_key — optional; if present it MUST be a non-empty string (C15: empty -> error).
             if (root.TryGetValue("connect_key", out object k))
             {
-                if (!(k is string sk)) { err = "connect.json connect_key must be a string"; return; }
-                if (!string.IsNullOrEmpty(sk)) key = sk;
+                if (!(k is string sk) || sk.Length == 0) { err = "connect.json connect_key must be a non-empty string"; return; }
+                key = sk;
             }
         }
+
+        // C14 — read connect.json, classifying ABSENT (FileNotFound/DirectoryNotFound only)
+        // from UNREADABLE (corrupt: access denied, path is a directory, …). Only absent falls
+        // through to today's defaults; unreadable is a FATAL corrupt config.
+        public static ConnectJsonRead ReadConnectJson(string path, out string json, out string err)
+        {
+            json = ""; err = null;
+            try { json = File.ReadAllText(path); return ConnectJsonRead.Ok; }
+            catch (FileNotFoundException) { return ConnectJsonRead.Absent; }
+            catch (DirectoryNotFoundException) { return ConnectJsonRead.Absent; }
+            catch (Exception ex) { err = ex.Message; return ConnectJsonRead.Unreadable; }
+        }
     }
+
+    internal enum ConnectJsonRead { Ok, Absent, Unreadable }
 
     // Exponential reconnect backoff: 5s -> 10s -> 20s -> 40s -> 60s (cap). Pure so the
     // harness can pin the sequence; the caller adds jitter and clamps to maxMs.
@@ -63,6 +79,15 @@ namespace NinjaTrader.NinjaScript.AddOns
         {
             int doubled = current * 2;
             return doubled > maxMs ? maxMs : doubled;
+        }
+
+        // K2 jitter + clamp — pure and deterministic when jitter is fixed (the harness passes 0).
+        public static int NextJitteredBackoffMs(int current, int minMs, int maxMs, int jitter)
+        {
+            int jittered = NextBackoffMs(current, maxMs) + jitter;
+            if (jittered < minMs) jittered = minMs;
+            if (jittered > maxMs) jittered = maxMs;
+            return jittered;
         }
     }
 
@@ -123,6 +148,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 pos++; // consume ':'
                 SkipWs();
                 object value = ParseValue();
+                if (result.ContainsKey(key)) throw new Exception("duplicate key '" + key + "' at " + pos);
                 result[key] = value;
                 SkipWs();
                 if (pos < s.Length && s[pos] == ',') { pos++; continue; }

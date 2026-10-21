@@ -8,7 +8,7 @@ Spec source: `docs/superpowers/plans/2026-05-22-nq-databento-ninjatrader.md` lin
 
 - TCP loopback: `127.0.0.1:36974` (note: NOT NinjaTrader's ATI port 36973).
 - Single concurrent client: NT8 AddOn → Go server. A second client is rejected.
-- Connection is opened by the C# AddOn at NT8 startup; reconnects every 5 seconds on disconnect.
+- Connection is opened by the C# AddOn at NT8 startup; reconnects with exponential backoff 5s→60s (jittered, capped) on disconnect.
 
 ## Framing
 
@@ -462,7 +462,7 @@ Additive: an OLD Go build ignores the new keys (it only reads `price_status`
 
 ## Failure modes
 - **TCP disconnect**: the server holds the signal queue; on reconnect, it sends pending signals with their original timestamps. The C# AddOn may reject signals older than 60s as stale (emits a `status=rejected` fill).
-- **Heartbeat timeout**: the server closes the connection after 60s without an ack; the C# AddOn reconnects every 5s.
+- **Heartbeat timeout**: the server closes the connection after 60s without an ack; the C# AddOn reconnects with exponential backoff 5s→60s.
 - **Invalid frame** (bad length, >1 MB, malformed JSON): the receiver logs a warning and closes the connection; the other side reconnects.
 - **Order rejection by NT8**: the AddOn emits a fill frame with `status=rejected`; the Go side logs the rejection and does NOT retry.
 
