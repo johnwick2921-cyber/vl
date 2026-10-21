@@ -128,5 +128,8 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// how many live bars were quarantined (labelled mixed) after a reconnect
 	// because their close was impossible against the neighbouring minutes.
 	body["bars_stale_prints"] = ntwire.StalePrintQuarantined()
+	// K1/K7 — the connect-key refusal counter, named as the protocol doc names
+	// it (nt_connect_key_refused). 0 when no key is required or no server runs.
+	body["nt_connect_key_refused"] = ntTrader.ConnectKeyRefusedCount()
 	c.JSON(code, body)
 }

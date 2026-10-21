@@ -91,6 +91,18 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 // error.
 func TCPServer() (*ntwire.TCPServer, error) { return getOrStartTCPServer() }
 
+// ConnectKeyRefusedCount (K1/K7) exposes the singleton wire server's
+// connect-key refusal counter for /api/health under the name the protocol doc
+// uses (`nt_connect_key_refused`). READ-ONLY: it never starts the server — 0
+// when no wire server has been started yet (the counter records, it does not
+// infer).
+func ConnectKeyRefusedCount() int64 {
+	if tcpServerInst == nil {
+		return 0
+	}
+	return tcpServerInst.ConnectKeyRefused()
+}
+
 // SetTCPServerForTest installs a server as the process singleton so a
 // production-call-site test can drive NewTraderFromEnv against a controlled
 // wire WITHOUT binding the live 127.0.0.1:36974 port (the live bot may hold
