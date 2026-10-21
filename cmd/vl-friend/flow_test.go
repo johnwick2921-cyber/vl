@@ -22,8 +22,9 @@ type flowRecorder struct {
 	lines    []string
 	prints   []string
 	opened   []string
-	order    []string // "print:", "prompt:", "open:" — for F8 ordering pins
-	messages []string // MessageBox texts (--open update dialog)
+	order    []string   // "print:", "prompt:", "open:" — for F8 ordering pins
+	messages []string   // MessageBox texts (--open update dialog)
+	rawExecs [][]string // name + args exactly as passed to d.exec (encoded commands NOT decoded)
 }
 
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
@@ -33,7 +34,16 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 	_ = os.WriteFile(filepath.Join(home, "vl-friend.exe"), []byte("MZ-self"), 0o755)
 	d := deps{
 		exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
-			rec.execs = append(rec.execs, name+" "+strings.Join(args, " "))
+			rec.rawExecs = append(rec.rawExecs, append([]string{name}, args...))
+			// P1: scripts ride -EncodedCommand; record the DECODED script so tests
+			// can still assert on its text.
+			shown := append([]string(nil), args...)
+			for i := 0; i+1 < len(shown); i++ {
+				if shown[i] == "-EncodedCommand" {
+					shown[i+1] = decodePSCommand(shown[i+1])
+				}
+			}
+			rec.execs = append(rec.execs, name+" "+strings.Join(shown, " "))
 			// S10: tailscaleExec tries the absolute install path FIRST; route it
 			// to the same state machine as the bare name.
 			if name == tailscaleExeFallback {
@@ -182,7 +192,7 @@ func TestInstallFirstRunPlacesAddonAfterVerify(t *testing.T) {
 	}
 	shortcut := false
 	for _, e := range rec.execs {
-		if strings.HasPrefix(e, "powershell ") {
+		if strings.HasPrefix(e, "powershell.exe ") {
 			shortcut = true
 		}
 	}
@@ -619,7 +629,7 @@ func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
 // when the exe copy is missing. MUTANT: GetFolderPath('Desktop') back to
 // $env:USERPROFILE\Desktop → this test RED.
 func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
-	ps := shortcutScript("http://100.66.89.106:18081")
+	ps := shortcutScript()
 	for _, want := range []string{
 		"[Environment]::GetFolderPath('Desktop')",
 		"[Environment]::GetFolderPath('Programs')",
@@ -628,7 +638,8 @@ func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
 		"VL.lnk",
 		"VL.url",
 		"[InternetShortcut]",
-		"URL=http://100.66.89.106:18081",
+		"URL=$env:VL_ARG0",
+		"VL_RESULT=ok",
 	} {
 		if !strings.Contains(ps, want) {
 			t.Fatalf("shortcut script missing %q:\n%s", want, ps)
@@ -636,6 +647,13 @@ func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
 	}
 	if strings.Contains(ps, "$env:USERPROFILE") {
 		t.Fatalf("shortcut script still hardcodes $env:USERPROFILE (OneDrive-unsafe):\n%s", ps)
+	}
+	// P1: the URL rides $env:VL_ARG0 — never $args, never spliced into the text.
+	if strings.Contains(ps, "$args") || !strings.Contains(ps, "$env:VL_ARG0") || strings.Contains(ps, "100.66.89.106") {
+		t.Fatalf("shortcut script must read $env:VL_ARG0 and carry no $args / literal URL:\n%s", ps)
+	}
+	if !strings.HasPrefix(ps, psPreamble) {
+		t.Fatalf("shortcut script must start with psPreamble:\n%s", ps)
 	}
 	// B1: the if/else must be ONE statement — PowerShell rejects "};else{".
 	if strings.Contains(ps, "};else{") {
@@ -664,7 +682,7 @@ func TestRepairIconRecreatesShortcut(t *testing.T) {
 	}
 	shortcut := false
 	for _, e := range rec.execs {
-		if strings.HasPrefix(e, "powershell ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
+		if strings.HasPrefix(e, "powershell.exe ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
 			shortcut = true
 		}
 	}
@@ -776,7 +794,7 @@ func TestRunInstalledPrintsBothLinesAndOpens(t *testing.T) {
 
 	shortcut := false
 	for _, e := range rec.execs {
-		if strings.HasPrefix(e, "powershell ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
+		if strings.HasPrefix(e, "powershell.exe ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
 			shortcut = true
 		}
 	}
@@ -2064,5 +2082,70 @@ func TestEnsureLocalExeOlderCopyReplacedAndMoved(t *testing.T) {
 	ob, _ := os.ReadFile(filepath.Join(d.localAppDataDir(), "VL", "old", entries[0].Name()))
 	if string(ob) != "MZ-old" {
 		t.Fatalf("the moved backup is wrong: %q", ob)
+// TestShortcutScriptNeverSplicesURL — P1 pin: shortcutScript takes NO URL (the
+// URL rides $env:VL_ARG0), starts with psPreamble, never uses $args, and ends
+// with an existence check (exit 1 / VL_RESULT=ok). The URL is also absent from
+// the script a real createDesktopShortcut call encodes (sentinel URL).
+// MUTANT: splice the URL back into the .url body (e.g. "URL=http://x") → RED.
+func TestShortcutScriptNeverSplicesURL(t *testing.T) {
+	ps := shortcutScript()
+	if strings.Contains(ps, "http") {
+		t.Fatalf("the script must carry no literal URL:\n%s", ps)
+	}
+	if strings.Contains(ps, "$args") || !strings.Contains(ps, "$env:VL_ARG0") {
+		t.Fatalf("shortcutScript must read $env:VL_ARG0 and never use $args:\n%s", ps)
+	}
+	if !strings.HasPrefix(ps, psPreamble) {
+		t.Fatalf("shortcutScript must start with psPreamble:\n%s", ps)
+	}
+	if !strings.Contains(ps, "exit 1") || !strings.HasSuffix(ps, "'VL_RESULT=ok'") {
+		t.Fatalf("shortcutScript must end with an existence check (exit 1 / VL_RESULT=ok):\n%s", ps)
+	}
+	if !strings.Contains(ps, "IconLocation=$exe") {
+		t.Fatalf("shortcutScript lost the IconLocation line:\n%s", ps)
+	}
+}
+
+// TestCreateDesktopShortcutPassesURLAsTrailingArg — P1 pin at the production
+// call site: createDesktopShortcut sends the script via -EncodedCommand with the
+// URL as the TRAILING arg (the exec seam turns it into $env:VL_ARG0), and the
+// URL is not inside the encoded script. MUTANT: back to -Command with the URL
+// spliced → RED.
+func TestCreateDesktopShortcutPassesURLAsTrailingArg(t *testing.T) {
+	d, rec := flowFakeDeps(t, t.TempDir())
+	const url = "http://SENTINEL-HOST-7391:18081"
+	if err := createDesktopShortcut(context.Background(), d, url); err != nil {
+		t.Fatalf("createDesktopShortcut: %v", err)
+	}
+	var got []string
+	for _, e := range rec.rawExecs {
+		if e[0] == "powershell.exe" {
+			got = e
+		}
+	}
+	if got == nil {
+		t.Fatalf("no powershell.exe exec recorded: %v", rec.rawExecs)
+	}
+	if len(got) != 6 || got[1] != "-NoProfile" || got[3] != "-EncodedCommand" || got[5] != url {
+		t.Fatalf("want powershell.exe -NoProfile -NonInteractive -EncodedCommand <script> %s; got %q", url, got)
+	}
+	for _, a := range got {
+		if a == "-Command" {
+			t.Fatalf("must not use -Command: %q", got)
+		}
+	}
+	script := decodePSCommand(got[4])
+	if strings.Contains(script, "SENTINEL-HOST-7391") || !strings.Contains(script, "$env:VL_ARG0") {
+		t.Fatalf("the encoded script must read $env:VL_ARG0, not carry the URL:\n%s", script)
+	}
+}
+
+// TestCreateDesktopShortcutErrorIsReturned — the helper surfaces an exec error
+// (callers decide it is non-fatal: warn + continue).
+func TestCreateDesktopShortcutErrorIsReturned(t *testing.T) {
+	d, _ := flowFakeDeps(t, t.TempDir())
+	d.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }
+	if err := createDesktopShortcut(context.Background(), d, "http://x"); err == nil {
+		t.Fatal("an exec failure must be returned to the (non-fatal) caller")
 	}
 }
