@@ -137,7 +137,7 @@ func TestTrendlineSittingOnLineIsNotThirdTouch(t *testing.T) {
 	if tls[0].ValidAt != 0 {
 		t.Fatalf("ValidAt = %d — a touch by P1's own confirmation bars (price never left the line) was taken as the 3rd touch", tls[0].ValidAt)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a line price never left is not a location — levels=%+v", got)
 	}
 }
@@ -216,7 +216,7 @@ func TestTrendlineReturnThen5mCloseThroughKills(t *testing.T) {
 	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
 		t.Fatalf("after the 5m close through = %+v, want Dead=true ValidAt=0", tls)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a dead line is not a location — levels=%+v", got)
 	}
 }
@@ -391,7 +391,7 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls) != 1 || tls[0].ValidAt != 0 {
 		t.Fatalf("want an unvalidated line, got %+v", tls)
 	}
-	if got := TrendlineLevels(tls, boxes, sit); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, boxes, nil, sit); len(got) != 0 {
 		t.Fatalf("before the 3rd touch the line must not be a location — levels=%+v", got)
 	}
 
@@ -402,7 +402,7 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls2) != 1 || tls2[0].ValidAt != 13 {
 		t.Fatalf("want a validated line, got %+v", tls2)
 	}
-	if got := TrendlineLevels(tls2, boxes2, after); len(got) != 1 {
+	if got, _ := TrendlineLevels(tls2, boxes2, nil, after); len(got) != 1 {
 		t.Fatalf("after the 3rd touch the line must be a location — levels=%+v", got)
 	}
 }
@@ -493,7 +493,7 @@ func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
 		{trendlineMirror(bars), "trendline short"},
 	} {
 		tls := TrendlinesBuild(tc.bars, now)
-		lv := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), tc.bars)
+		lv, _ := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), nil, tc.bars)
 		if len(lv) != 1 {
 			t.Fatalf("want one trendline location, got %+v", lv)
 		}
@@ -629,5 +629,41 @@ func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
 	}
 	if tl, ok := supportLineP0P1(t, bars, time.UnixMilli(now).In(ctime())); ok && tl.ValidAt != 0 {
 		t.Fatalf("the P0/P1 line went valid off a same-role swing: %+v", tl)
+	}
+}
+
+// TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a VALID
+// trendline whose current price sits at/near a RESPECTED level (key level / old
+// extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều lần,
+// đừng chọn cái nó mới tạo"). With no respected level in the way the trendline
+// stays a location. FORMING lines stay non-locations (unchanged).
+func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt == 0 {
+		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
+	}
+	cur := bars[len(bars)-1]
+	price := tls[0].priceAt(cur.OpenTime)
+
+	// A respected key level AT the line → the trendline is refused (level wins).
+	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
+	got, refused := TrendlineLevels(tls, nil, respected, bars)
+	if len(refused) != 1 || len(got) != 0 {
+		t.Fatalf("a respected level at the line must refuse it: got %+v refused %v", got, refused)
+	}
+
+	// A respected level 10 pts away → no refusal (it is not in the way).
+	far := []Level{{Kind: KindKeyLevel, Price: price + 10, Key: "kl:far"}}
+	got2, refused2 := TrendlineLevels(tls, nil, far, bars)
+	if len(got2) != 1 || len(refused2) != 0 {
+		t.Fatalf("a far level must not refuse the line: got %+v refused %v", got2, refused2)
+	}
+
+	// No level in the way → the trendline stays.
+	got3, refused3 := TrendlineLevels(tls, nil, nil, bars)
+	if len(got3) != 1 || len(refused3) != 0 {
+		t.Fatalf("no respected level: the trendline must stay; got %+v refused %v", got3, refused3)
 	}
 }

@@ -1494,7 +1494,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
 	e.trackTrendlines(trendlines, crossed, now)
-	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
+	for _, k := range tlRefused {
+		e.refuse("tl_first_test_level_preferred:" + k)
+	}
+	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —

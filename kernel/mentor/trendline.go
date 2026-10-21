@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"vl/kernel"
@@ -262,17 +263,41 @@ func (t Trendline) key() string {
 	return fmt.Sprintf("%s:%s:%d:%d", KindTrendline, t.Side, t.P0T, t.P1T)
 }
 
+// trendlineLevelPreferPts is the band within which a respected level beats a
+// fresh trendline (D2.3 p1 @02:19–03:45: "chọn cái mà nó đã respect nhiều lần …
+// đừng chọn cái nó mới tạo"). The mentor gives no number; 2 pts matches the old
+// "±2 pts of a box edge" note.
+const trendlineLevelPreferPts = 2.0
+
+// trendlineBeatenByLevel reports whether a respected LEVEL (a key level or an
+// old high/low) sits at/near the trendline's current price — the level wins and
+// the trendline is refused [D2.3 p1 @02:19–03:45]. FORMING lines never enter
+// here: they stay non-locations (the 3rd-touch return rule is unchanged).
+func trendlineBeatenByLevel(respected []Level, price float64) bool {
+	for _, lv := range respected {
+		switch lv.Kind {
+		case KindKeyLevel, KindOldExtreme:
+			if math.Abs(lv.Price-price) <= trendlineLevelPreferPts {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TrendlineLevels exports each VALID, live trendline as a Level whose Price
 // is the line's value at the current bar (a moving line — the touch loop
 // clears its classification only on a visit departure, never on drift alone,
 // item 22). A trendline is a
 // LOCATION only (never a target): after the 3rd touch it enters the set; a
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
-// @04:38]: a trendline whose current price sits within ±2 pts of a box edge
-// is suppressed — the box wins.
-func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) []Level {
+// @04:38]: a trendline whose current price sits within a live box is
+// suppressed — the box wins. A RESPECTED LEVEL (key level / old extreme) at the
+// same price also beats the trendline [D2.3 p1 @02:19–03:45]; its key is
+// returned in refused so the caller counts tl_first_test_level_preferred.
+func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline) (levels []Level, refused []string) {
 	if len(trendlines) == 0 || len(bars) == 0 {
-		return nil
+		return nil, nil
 	}
 	cur := bars[len(bars)-1]
 	var out []Level
@@ -287,7 +312,11 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) [
 		if InsideAnyBox(boxes, price) {
 			continue
 		}
+		if trendlineBeatenByLevel(respected, price) {
+			refused = append(refused, tl.key())
+			continue
+		}
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
-	return out
+	return out, refused
 }
