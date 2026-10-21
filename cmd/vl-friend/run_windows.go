@@ -138,7 +138,11 @@ func realDeps() deps {
 		selfExe:         os.Executable,
 		messageBox: func(text string) bool {
 			esc := strings.ReplaceAll(text, "'", "''")
-			ps := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('" + esc + "','VL','YesNo','Question') -eq 'Yes'"
+			// W9: the MessageBoxOptions.ServiceNotification flag renders the box
+			// TOPMOST, so the update/error dialog is never buried behind the
+			// console or other windows. Buttons stay YesNo + Question here; the
+			// error-vs-update split (OK+Error for failures) is a separate seam.
+			ps := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('" + esc + "','VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
 			cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", ps)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()

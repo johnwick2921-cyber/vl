@@ -196,3 +196,25 @@ func TestReadLineEmptyEOFReturnsEOF(t *testing.T) {
 		t.Fatalf("readLine must return io.EOF on an empty EOF read")
 	}
 }
+
+// TestMessageBoxTopmost pins W9 (the run_windows.go half): the messageBox seam
+// must render TOPMOST via MessageBoxOptions.ServiceNotification so the dialog is
+// never buried behind other windows. The mutant that drops the option (back to
+// the plain Show(text,caption,buttons,icon) overload) fails here.
+func TestMessageBoxTopmost(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	line := `messageBox: func(text string) bool {`
+	idx := strings.Index(s, line)
+	if idx < 0 {
+		t.Fatalf("run_windows.go must define the %s seam", line)
+	}
+	body := s[idx:]
+	if !strings.Contains(body, "[System.Windows.Forms.MessageBoxOptions]::ServiceNotification") {
+		t.Fatalf("messageBox must pass MessageBoxOptions.ServiceNotification (TopMost)")
+	}
+}
