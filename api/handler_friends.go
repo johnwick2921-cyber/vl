@@ -430,9 +430,15 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
 			return
 		}
+		// U3: pause must survive a reboot — stop AND disable.
 		if err := systemctlUser("stop", friendUnit(name)); err != nil {
 			logger.Errorf("friends pause %q: %v", name, err)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "pause failed", "detail": err.Error()})
+			return
+		}
+		if err := systemctlUser("disable", friendUnit(name)); err != nil {
+			logger.Errorf("friends pause %q: disable: %v", name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "pause failed to disable", "detail": err.Error()})
 			return
 		}
 		if err := setFriendState(name, "paused"); err != nil {
@@ -444,6 +450,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	case "resume":
 		if !friendActionAllowed("resume:" + name) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
+			return
+		}
+		// U3: resume = enable --now (enable + start).
+		if err := systemctlUser("enable", friendUnit(name)); err != nil {
+			logger.Errorf("friends resume %q: enable: %v", name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "resume failed to enable", "detail": err.Error()})
 			return
 		}
 		if err := systemctlUser("start", friendUnit(name)); err != nil {

@@ -331,6 +331,32 @@ func TestOwnerFriendsRotateRestartsUnit(t *testing.T) {
 	}
 }
 
+// TestOwnerFriendsPauseDisablesResumeEnables — U3: pause must survive a reboot
+// (stop + disable), resume is enable --now (enable + start).
+func TestOwnerFriendsPauseDisablesResumeEnables(t *testing.T) {
+	e := newUpdEnv(t)
+	friendTestEnv(t, e)
+	writeRegistry(t, `[{"name":"tom","web_port":18081,"nt_port":36981,"key_sha256":"x","state":"active","created_at":"2026-10-18T00:00:00Z","tailscale_device_id":""}]`)
+
+	testSystemctlCalls = nil
+	if w := friendCall(t, e, "POST", "/api/owner/friends/tom/pause", "", e.tok); w.Code != http.StatusOK {
+		t.Fatalf("pause: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	got := append([]string(nil), testSystemctlCalls...)
+	if len(got) != 2 || got[0] != "stop "+friendUnit("tom") || got[1] != "disable "+friendUnit("tom") {
+		t.Fatalf("pause systemctl calls = %v, want [stop, disable] for %s", got, friendUnit("tom"))
+	}
+
+	testSystemctlCalls = nil
+	if w := friendCall(t, e, "POST", "/api/owner/friends/tom/resume", "", e.tok); w.Code != http.StatusOK {
+		t.Fatalf("resume: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+	got = append([]string(nil), testSystemctlCalls...)
+	if len(got) != 2 || got[0] != "enable "+friendUnit("tom") || got[1] != "start "+friendUnit("tom") {
+		t.Fatalf("resume systemctl calls = %v, want [enable, start] for %s", got, friendUnit("tom"))
+	}
+}
+
 func mustEnvConnectKey(t *testing.T, env string) string {
 	t.Helper()
 	for _, ln := range strings.Split(env, "\n") {
