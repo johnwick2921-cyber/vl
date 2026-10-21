@@ -1364,8 +1364,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: the HTF direction gate applies only in the news window (the
-	// course uses the HTF read for news first, not ordinary trading).
+	// D4.4-11: with HTFGateNewsOnly OFF (the all-day default, owner decision A
+	// 2026-10-21) the 4h/1h direction gate applies ALL DAY; ON limits it to the
+	// 07:20–07:35 CT news window. The gate covers ISB, reverse-ISB, PHL/PLH and
+	// box authoring — SWING4H is exempt (runSwing never consults HTFVerdict) and
+	// planner/AI entries carry their own G1 HTF veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
