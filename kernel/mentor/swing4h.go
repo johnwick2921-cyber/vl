@@ -60,7 +60,7 @@ type SwingCfg struct {
 	EMAPeriod         int     // 34
 	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 [D5.2 p2 @22:24–23:05: 5–10]
 	StopBeyondLinePts float64 // clean-rejection stop distance; default 30 (R8: 30–60 allowed)
-	MaxStopPts        float64 // ≥ this → skip; default 100 [table]
+	MaxStopPts        float64 // ~100-pt ceiling, NO skip: the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
 	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
@@ -87,7 +87,7 @@ func DefaultSwingCfg() SwingCfg {
 		EMAPeriod:         34,
 		LineOffsetPts:     5,
 		StopBeyondLinePts: 30,
-		MaxStopPts:        100,
+		MaxStopPts:        100, // ~100-pt ceiling, no skip (m186 D5.2 @21:25-21:43)
 		MinStopPts:        0, // W26 P2-4: OFF by default (R5)
 		EntryBufferPts:    0, // no buffer [D5.2 p2 @05:02–05:12]
 		TargetEMA5mPeriod: 34,
@@ -581,9 +581,7 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 			Stop:   line - cfg.StopBeyondLinePts,
 		}
 	}
-	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
-		return Intent{}, false
-	}
+	// m186 D5.2: NO ~100-pt skip — the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened.
 	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
 		swingMinStopRefused.Add(1)
 		return Intent{}, false
@@ -607,9 +605,7 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	} else {
 		in = Intent{Action: PlaceStopEntry, Setup: "SWING4H", Side: SideLong, Price: ref.High + cfg.EntryBufferPts, Stop: line}
 	}
-	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
-		return Intent{}, false
-	}
+	// m186 D5.2: NO ~100-pt skip — the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened.
 	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
 		swingMinStopRefused.Add(1)
 		return Intent{}, false

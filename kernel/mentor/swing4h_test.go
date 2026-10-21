@@ -277,8 +277,9 @@ func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hStopCeiling100 — R8: 30–60 is allowed, ~100 → DO NOT ENTER
-// [table].
+// TestSwing4hStopCeiling100 — m186 D5.2: 30–60 is allowed; a ~100-pt stop is
+// TAKEN (the mentor softened "Đừng vô" to "take 1-2 MNQ and sit" [D5.2 p2
+// @21:25–21:43]); the old R8 skip is gone.
 func TestSwing4hStopCeiling100(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -288,8 +289,14 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
-	if len(out) != 0 {
-		t.Fatalf("stop ≥ 100 must skip; got %+v", out)
+	found := false
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a ~148-pt swing stop must AUTHOR an entry now (take 1-2 MNQ, no skip); got %+v", out)
 	}
 }
 

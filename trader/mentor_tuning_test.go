@@ -218,10 +218,12 @@ func TestRetaggedPHLInRangeSizesThree(t *testing.T) {
 }
 
 // TestMentorTuningOneValueForGateAndKernel — the trader rule gate and the
-// kernel read the SAME number: with swing_max_stop_pts=80 / day_gate_target_cap
-// =12 the dispatch path refuses at exactly those values, and the evaluator
-// config carries them. Mutant: the dispatch stops filling extra.* from the
-// resolver (gate falls back to 100 / 15) → RED.
+// kernel read the SAME number: the resolver fills extra.* and the evaluator
+// config carries the same values. The swing ~100-pt skip is GONE (m186 D5.2
+// @21:25-21:43: take 1-2 MNQ and sit), so a swing stop of 80 passes even with
+// swing_max_stop_pts=80; the spent-day R9 cap still shares its number with
+// the kernel. Mutant: the dispatch stops filling extra.* from the resolver →
+// RED (the R9 cap falls back to 15 and the spent-day stop passes).
 func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{
 		SwingMaxStopPts: 80, DayGateTargetCapPts: 12,
@@ -237,8 +239,8 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	}
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(80), mentorTierInputs{}, 1000, 1100)
-	if n := at.mentorCountSnapshot()["refused_r8"]; n != 1 {
-		t.Errorf("a swing stop of 80 with swing_max_stop_pts=80 must be refused at the gate (refused_r8=%d)", n)
+	if n := at.mentorCountSnapshot()["refused_r8"]; n != 0 {
+		t.Errorf("a swing stop of 80 must PASS now (no skip, m186 D5.2 @21:25-21:43) (refused_r8=%d)", n)
 	}
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(swing(79), mentorTierInputs{}, 1000, 1100)
@@ -255,8 +257,9 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	}
 }
 
-// The bare table (no strategy) falls back to the kernel defaults, never to a
-// second constant: SWING4H stop 99 passes, 100 refuses (R-D).
+// The bare table (no strategy) falls back to the kernel defaults. SWING4H
+// stops of 99 and 100 both PASS now — the ~100-pt skip is gone (m186 D5.2
+// @21:25-21:43: take 1-2 MNQ and sit).
 func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	in := func(stop float64) mentor.Intent {
 		return mentor.Intent{Setup: "SWING4H", Side: "long", Price: 30000, Stop: 30000 - stop, StopPts: stop, TargetPts: 2 * stop}
@@ -264,8 +267,8 @@ func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	if why := mentorRuleGate(in(99), mentorTierInputs{}); why != "" {
 		t.Errorf("SWING4H 99-pt stop must pass under the 100 default: %q", why)
 	}
-	if why := mentorRuleGate(in(100), mentorTierInputs{}); why == "" {
-		t.Error("SWING4H 100-pt stop must be skipped (R-D: skip at >= 100)")
+	if why := mentorRuleGate(in(100), mentorTierInputs{}); why != "" {
+		t.Errorf("SWING4H 100-pt stop must PASS now (no skip, m186 D5.2 @21:25-21:43): %q", why)
 	}
 }
 
