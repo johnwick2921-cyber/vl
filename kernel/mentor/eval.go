@@ -616,7 +616,7 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 		expired := now >= LevelArmExpiry(arm.PlacedAt)
 		if through || expired {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
-				Reason: "level order rest cancelled — a later candle closed through the level, or the order's own 15:00 CT expiry passed [D2.3 p1 @18:01–19:12; recovered @23:48]"})
+				Reason: "level order rest cancelled — a later candle closed through the level [D2.3 p1 @23:16–24:03], or the order's own 15:00 CT expiry passed [derived: LevelArmExpiry — no course timestamp states a 15:00 expiry; level_lifetime.go flags it as an inference]"})
 			delete(e.State.LevelArms, key)
 		}
 	}

@@ -623,6 +623,9 @@ func TestMentorMoveLegStop_NeverWidens(t *testing.T) {
 // of the whole position past the 1:1 partial).
 func TestMentorArmResonanceOnISB(t *testing.T) {
 	at, moves := newDriveAT(t)
+	// m186 W-MENTOR-EXACT: the runner TP default is OFF (the mentor never places
+	// a runner TP); pin the not_split branch by enabling it explicitly.
+	at.config.StrategyConfig.RiskControl.MentorResonanceRunnerTPOldHigh = cxBool(true)
 	p := bPos("B", "long", 10, 9, 16, 5)
 	p.Pos.Origin = "PHL"
 	p.BarsSinceFill = 1
