@@ -18,37 +18,41 @@ type connectConfig struct {
 	ConnectKey string `json:"connect_key"`
 }
 
-// ntVLdir returns the AddOn's VL settings dir: <home>\Documents\NinjaTrader 8\VL.
-func ntVLdir(home string) string {
-	return filepath.Join(home, "Documents", "NinjaTrader 8", "VL")
+// ntVLdir returns the AddOn's VL settings dir under MyDocuments:
+// <MyDocuments>\NinjaTrader 8\VL. F2: the C# AddOn (VLTraderTCPClient.cs) and
+// NinjaTrader both read Environment.GetFolderPath(MyDocuments) — with OneDrive
+// Known-Folder redirection that is NOT <USERPROFILE>\Documents, so every NT
+// path must sit under MyDocuments.
+func ntVLdir(docs string) string {
+	return filepath.Join(docs, "NinjaTrader 8", "VL")
 }
 
 // connectJSONPath returns the connect.json path.
-func connectJSONPath(home string) string {
-	return filepath.Join(ntVLdir(home), "connect.json")
+func connectJSONPath(docs string) string {
+	return filepath.Join(ntVLdir(docs), "connect.json")
 }
 
 // addonDstPath returns where the compiled (obfuscated) add-on DLL must live:
-// Documents\NinjaTrader 8\bin\Custom\VL.AddOn.dll (B10.1 — never a .cs file).
-func addonDstPath(home string) string {
-	return filepath.Join(home, "Documents", "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll")
+// <MyDocuments>\NinjaTrader 8\bin\Custom\VL.AddOn.dll (B10.1 — never a .cs file).
+func addonDstPath(docs string) string {
+	return filepath.Join(docs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll")
 }
 
 // oldAddonPath returns where the previous add-on is MOVED before a swap:
-// Documents\NinjaTrader 8\VL\old\VL.AddOn.dll (moved, never deleted).
-func oldAddonPath(home string) string {
-	return filepath.Join(ntVLdir(home), "old", "VL.AddOn.dll")
+// <MyDocuments>\NinjaTrader 8\VL\old\VL.AddOn.dll (moved, never deleted).
+func oldAddonPath(docs string) string {
+	return filepath.Join(ntVLdir(docs), "old", "VL.AddOn.dll")
 }
 
 // installedJSONPath records the add-on build the app last installed, so the
 // update check can tell "newer" without reading the DLL.
-func installedJSONPath(home string) string {
-	return filepath.Join(ntVLdir(home), "installed.json")
+func installedJSONPath(docs string) string {
+	return filepath.Join(ntVLdir(docs), "installed.json")
 }
 
 // readConnectConfig reads connect.json (written by the app at install).
-func readConnectConfig(d deps, home string) (connectConfig, error) {
-	b, err := d.readFile(connectJSONPath(home))
+func readConnectConfig(d deps, docs string) (connectConfig, error) {
+	b, err := d.readFile(connectJSONPath(docs))
 	if err != nil {
 		return connectConfig{}, fmt.Errorf("connect.json: %w", err)
 	}
@@ -69,15 +73,15 @@ func connectJSON(ic InstallCode) ([]byte, error) {
 }
 
 // writeConnectJSON writes connect.json (and its parent dir) for the install code.
-func writeConnectJSON(d deps, home string, ic InstallCode) error {
+func writeConnectJSON(d deps, docs string, ic InstallCode) error {
 	b, err := connectJSON(ic)
 	if err != nil {
 		return fmt.Errorf("connect.json: %w", err)
 	}
-	if err := d.mkdirAll(ntVLdir(home), 0o755); err != nil {
+	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return fmt.Errorf("connect.json dir: %w", err)
 	}
-	if err := d.writeFile(connectJSONPath(home), b, 0o600); err != nil {
+	if err := d.writeFile(connectJSONPath(docs), b, 0o600); err != nil {
 		return fmt.Errorf("connect.json: %w", err)
 	}
 	return nil
@@ -91,8 +95,8 @@ type installedState struct {
 
 // readInstalledState returns the recorded state, or a zero value when absent
 // (first run). An unreadable file is an error, not a silent zero.
-func readInstalledState(d deps, home string) (installedState, error) {
-	b, err := d.readFile(installedJSONPath(home))
+func readInstalledState(d deps, docs string) (installedState, error) {
+	b, err := d.readFile(installedJSONPath(docs))
 	if err != nil {
 		return installedState{}, nil // absent on first run
 	}
@@ -104,15 +108,15 @@ func readInstalledState(d deps, home string) (installedState, error) {
 }
 
 // writeInstalledState records the build the app just installed.
-func writeInstalledState(d deps, home string, s installedState) error {
+func writeInstalledState(d deps, docs string, s installedState) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := d.mkdirAll(ntVLdir(home), 0o755); err != nil {
+	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(installedJSONPath(home), b, 0o600)
+	return d.writeFile(installedJSONPath(docs), b, 0o600)
 }
 
 // appState records the fields the app needs on later starts (web_port; the
@@ -123,23 +127,23 @@ type appState struct {
 	WebPort int    `json:"web_port"`
 }
 
-func appStatePath(home string) string {
-	return filepath.Join(ntVLdir(home), "vl-app.json")
+func appStatePath(docs string) string {
+	return filepath.Join(ntVLdir(docs), "vl-app.json")
 }
 
-func writeAppState(d deps, home string, s appState) error {
+func writeAppState(d deps, docs string, s appState) error {
 	b, err := json.MarshalIndent(s, "", "  ")
 	if err != nil {
 		return err
 	}
-	if err := d.mkdirAll(ntVLdir(home), 0o755); err != nil {
+	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(appStatePath(home), b, 0o600)
+	return d.writeFile(appStatePath(docs), b, 0o600)
 }
 
-func readAppState(d deps, home string) (appState, error) {
-	b, err := d.readFile(appStatePath(home))
+func readAppState(d deps, docs string) (appState, error) {
+	b, err := d.readFile(appStatePath(docs))
 	if err != nil {
 		return appState{}, fmt.Errorf("vl-app.json: %w", err)
 	}

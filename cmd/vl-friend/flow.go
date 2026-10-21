@@ -23,15 +23,16 @@ func baseURLFromInstallCode(ic InstallCode) string {
 }
 
 // flatProbeResult is the friend-mode-only flat signal (CTO ruling 2026-10-18):
-// GET /api/friend/flat → {"flat":true|false,"at":<unix ms>} — nothing else.
+// GET /api/friend/flat → {"flat":true|false,"traders":<n>,"at":<unix ms>}.
 type flatProbeResult struct {
-	Flat bool `json:"flat"`
+	Flat    bool `json:"flat"`
+	Traders *int `json:"traders"`
 }
 
 // probeFlat asks the friend bot's /api/friend/flat endpoint and maps it to the
-// positionsProvider contract: 0 = flat, non-zero = open. Any probe error is an
-// error (fail closed): the caller's waitUntilFlat treats it as "not flat" and
-// defers, never swapping mid-trade.
+// positionsProvider contract: 0 = flat/safe, non-zero = open. Any probe error
+// is an error (fail closed): the caller's waitUntilFlat treats it as "not flat"
+// and defers, never swapping mid-trade.
 func probeFlat(ctx context.Context, d deps, base string) (float64, error) {
 	b, err := d.fetch(ctx, base+"/api/friend/flat")
 	if err != nil {
@@ -42,6 +43,12 @@ func probeFlat(ctx context.Context, d deps, base string) (float64, error) {
 		return 0, fmt.Errorf("flat probe: %w", err)
 	}
 	if r.Flat {
+		return 0, nil
+	}
+	// F5/R11: zero traders = nothing to manage → safe. A brand-new friend bot
+	// answers flat=false forever (it has no traders), which would otherwise hang
+	// the update. Missing "traders" field → today's rule (not flat).
+	if r.Traders != nil && *r.Traders == 0 {
 		return 0, nil
 	}
 	return 1, nil
@@ -104,10 +111,11 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err != nil {
 		return err
 	}
-	home, err := d.homeDir()
+	docs, err := d.docsDir()
 	if err != nil {
 		return err
 	}
+	base := baseURLFromInstallCode(ic)
 
 	// [2/6] Tailscale — install (UAC) or note it is already present.
 	d.print("[2/6] Installing Tailscale (the private connection). Windows will ask for permission — click YES.")
@@ -121,20 +129,19 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 
 	// [3/6] Join the tailnet and wait for the owner's approval (if enabled).
 	d.print("[3/6] Connecting this PC… Waiting for the owner to approve it. Tell the owner: 'my PC is waiting for approval'. This window waits up to 15 minutes.")
-	if err := tailscaleConnect(ctx, d, ic.TSAuthKey); err != nil {
+	if err := tailscaleConnect(ctx, d, ic.TSAuthKey, base); err != nil {
 		return err
 	}
 	d.print("Approved ✓")
 
-	if err := writeConnectJSON(d, home, ic); err != nil {
+	if err := writeConnectJSON(d, docs, ic); err != nil {
 		return err
 	}
 	// P0: every installed run reads vl-app.json — write it now from the install
 	// code (name + web_port) so it exists on a real PC, never only in tests.
-	if err := writeAppState(d, home, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
+	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
 		return err
 	}
-	base := baseURLFromInstallCode(ic)
 
 	// [4/6] Download the add-on and verify the signed manifest + SHA-256 BEFORE
 	// anything is written.
@@ -151,30 +158,29 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 
 	// [5/6] Place the verified add-on into NinjaTrader.
 	d.print("[5/6] Installing the add-on into NinjaTrader…")
-	if err := d.mkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+	if err := d.mkdirAll(filepath.Dir(addonDstPath(docs)), 0o755); err != nil {
 		return err
 	}
-	if err := d.writeFile(addonDstPath(home), addon, 0o644); err != nil {
+	if err := d.writeFile(addonDstPath(docs), addon, 0o644); err != nil {
 		return err
 	}
-	if err := writeInstalledState(d, home, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
+	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
 		return err
 	}
 	d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
 
 	// [6/6] Desktop + Start Menu shortcuts + README, then the final screen, then
 	// OPEN the dashboard so the non-technical owner lands on the login page.
-	appURL := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
-	if err := createDesktopShortcut(ctx, d, appURL); err != nil {
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		return err
 	}
-	if err := writeDashboardREADME(d, home, appURL); err != nil {
+	if err := writeDashboardREADME(d, docs, base); err != nil {
 		return err
 	}
 	d.print("[6/6] All done ✓. A VL icon is on your desktop. Double-click it, create your login, then add your AI key, your strategy and a trader on your SIM account.")
-	d.print("Your VL dashboard:  " + appURL)
+	d.print("Your VL dashboard:  " + base)
 	d.print("A VL icon is on your desktop and in the Start Menu.")
-	if err := d.openURL(ctx, appURL); err != nil {
+	if err := d.openURL(ctx, base); err != nil {
 		return fmt.Errorf("open dashboard: %w", err)
 	}
 	return nil
@@ -274,6 +280,23 @@ func pauseOnError(d deps, msg string) {
 	_, _ = d.readLine("")
 }
 
+// setupLogPath returns %LOCALAPPDATA%\VL\setup.log (F7: LOCALAPPDATA, not
+// <home>\AppData\Local).
+func setupLogPath(d deps) string {
+	return filepath.Join(d.localAppDataDir(), "VL", "setup.log")
+}
+
+// logSetupError appends the (already-redacted) error to setup.log; best effort.
+// F7: APPEND, never overwrite — the full error history survives.
+func logSetupError(d deps, msg string) {
+	dir := filepath.Join(d.localAppDataDir(), "VL")
+	if d.mkdirAll(dir, 0o755) != nil {
+		return
+	}
+	prev, _ := d.readFile(setupLogPath(d))
+	_ = d.writeFile(setupLogPath(d), append(prev, []byte(time.Now().Format(time.RFC3339)+" "+msg+"\n")...), 0o600)
+}
+
 // downloadTailscaleMSI downloads the official installer to a temp file and
 // verifies its Authenticode signer is Tailscale Inc BEFORE anything is run.
 // A bad or missing signature refuses (the MSI is never executed).
@@ -328,21 +351,64 @@ func waitTailscaleReady(ctx context.Context, d deps) error {
 	}
 }
 
-// tailscaleConnect joins the tailnet with the one-time auth key: it refuses to
-// --force-reauth over an existing login to ANOTHER network, and then waits
-// (bounded) for device approval if the owner has approval enabled.
-func tailscaleConnect(ctx context.Context, d deps, authKey string) error {
-	state, err := tailscaleBackendState(ctx, d)
-	if err == nil && state != "NeedsLogin" {
+// tailscaleConnect joins the tailnet with the one-time auth key. F3: after a
+// partial failure the PC may already be Running on OUR tailnet with the auth key
+// spent — so Running/NeedsMachineAuth is checked against the friend bot's
+// signature-valid manifest before refusing; NoState/Starting/Stopped poll until
+// the state settles instead of a false "another network" refusal.
+func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
+	state, err := tailscaleSettledState(ctx, d)
+	if err != nil {
+		state = "NeedsLogin" // unsettled: let `up` fail loudly if that is wrong
+	}
+	switch state {
+	case "NeedsLogin":
+		out, err := tailscaleExec(ctx, d, "up", "--authkey="+authKey, "--unattended")
+		if err != nil {
+			// Redact the auth key from BOTH the error and the command output —
+			// exec errors can echo the full command line (P0 d: never print keys).
+			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
+		}
+		return waitTailscaleApproved(ctx, d)
+	case "Running", "NeedsMachineAuth":
+		// Already on a tailnet: it is OURS only if the friend bot's manifest is
+		// reachable and signature-valid at the known address. The auth key is
+		// spent, so a re-run must skip `up` and continue.
+		if _, err := fetchManifest(ctx, d, base); err == nil {
+			return waitTailscaleApproved(ctx, d)
+		}
+		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
+	default:
 		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
 	}
-	out, err := tailscaleExec(ctx, d, "up", "--authkey="+authKey, "--unattended")
-	if err != nil {
-		// Redact the auth key from BOTH the error and the command output —
-		// exec errors can echo the full command line (P0 d: never print keys).
-		return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
+}
+
+// tailscaleSettledState polls BackendState until it leaves the transient states
+// (NoState/Starting/Stopped right after a fresh MSI install), bounded. It
+// returns the settled state, or an error if it never settles.
+func tailscaleSettledState(ctx context.Context, d deps) (string, error) {
+	t := time.NewTicker(tailscaleReadyPoll)
+	defer t.Stop()
+	deadline := time.Now().Add(tailscaleInstallWait)
+	for {
+		state, err := tailscaleBackendState(ctx, d)
+		if err == nil {
+			switch state {
+			case "NoState", "Starting", "Stopped":
+				// keep polling until it settles
+			default:
+				return state, nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return "", fmt.Errorf("Tailscale state did not settle within %s", tailscaleInstallWait)
+		}
+		select {
+		case <-ctx.Done():
+			return "", ctx.Err()
+		case <-t.C:
+		}
 	}
-	return waitTailscaleApproved(ctx, d)
 }
 
 // waitTailscaleApproved polls BackendState until Running, up to a bounded
@@ -401,11 +467,11 @@ func ensureTailscaleInstalled(ctx context.Context, d deps) (bool, error) {
 
 // ensureTailscale keeps the combined install + join shape the tests exercise:
 // install when missing, then join with the one-time auth key.
-func ensureTailscale(ctx context.Context, d deps, authKey string) error {
+func ensureTailscale(ctx context.Context, d deps, authKey, base string) error {
 	if _, err := ensureTailscaleInstalled(ctx, d); err != nil {
 		return err
 	}
-	return tailscaleConnect(ctx, d, authKey)
+	return tailscaleConnect(ctx, d, authKey, base)
 }
 
 // installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
@@ -465,15 +531,15 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 // (VL-Setup.exe --repair-icon). The normal start (runInner) also re-creates a
 // missing icon, so either path fixes a vanished / OneDrive-moved icon.
 func repairIcon(ctx context.Context, d deps) error {
-	home, err := d.homeDir()
+	docs, err := d.docsDir()
 	if err != nil {
 		return err
 	}
-	cfg, err := readConnectConfig(d, home)
+	cfg, err := readConnectConfig(d, docs)
 	if err != nil {
 		return fmt.Errorf("repair icon: not installed yet — run VL-Setup with your install code first")
 	}
-	st, err := loadAppState(ctx, d, home, cfg)
+	st, err := loadAppState(ctx, d, docs, cfg)
 	if err != nil {
 		return err
 	}
@@ -488,12 +554,12 @@ func repairIcon(ctx context.Context, d deps) error {
 }
 
 // writeDashboardREADME writes the dashboard URL into
-// Documents\NinjaTrader 8\VL\README.txt so a new user can find VL later.
-func writeDashboardREADME(d deps, home, appURL string) error {
-	if err := d.mkdirAll(ntVLdir(home), 0o755); err != nil {
+// <MyDocuments>\NinjaTrader 8\VL\README.txt so a new user can find VL later.
+func writeDashboardREADME(d deps, docs, appURL string) error {
+	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(filepath.Join(ntVLdir(home), "README.txt"),
+	return d.writeFile(filepath.Join(ntVLdir(docs), "README.txt"),
 		[]byte("Your VL dashboard: "+appURL+"\n"), 0o644)
 }
 
@@ -515,7 +581,7 @@ func openScript(appURL string) string {
 // answer with a signature-valid manifest (proving it is this friend's bot), then
 // vl-app.json is written. A failed verification is a clear error, never a silent
 // guess.
-func repairAppState(ctx context.Context, d deps, home string, cfg connectConfig) (appState, error) {
+func repairAppState(ctx context.Context, d deps, docs string, cfg connectConfig) (appState, error) {
 	port := cfg.Port - 18900
 	if port < 1 || port > 65535 {
 		return appState{}, fmt.Errorf("cannot find your VL dashboard port — send this to the owner")
@@ -525,31 +591,67 @@ func repairAppState(ctx context.Context, d deps, home string, cfg connectConfig)
 		return appState{}, fmt.Errorf("cannot find your VL dashboard port — send this to the owner")
 	}
 	st := appState{WebPort: port}
-	if err := writeAppState(d, home, st); err != nil {
+	if err := writeAppState(d, docs, st); err != nil {
 		return appState{}, err
 	}
 	return st, nil
 }
 
 // loadAppState reads vl-app.json, repairing it (derive + verify) when missing.
-func loadAppState(ctx context.Context, d deps, home string, cfg connectConfig) (appState, error) {
-	st, err := readAppState(d, home)
+func loadAppState(ctx context.Context, d deps, docs string, cfg connectConfig) (appState, error) {
+	st, err := readAppState(d, docs)
 	if err == nil {
 		return st, nil
 	}
-	return repairAppState(ctx, d, home, cfg)
+	return repairAppState(ctx, d, docs, cfg)
+}
+
+// migrateDocsIfNeeded moves the app's files from <USERPROFILE>\Documents into
+// MyDocuments when Known-Folder redirection differs (F2). Move-only, never
+// delete, and only when the old file exists and the new one does not.
+func migrateDocsIfNeeded(d deps, home, docs string) error {
+	oldDocs := filepath.Join(home, "Documents")
+	if strings.EqualFold(filepath.Clean(oldDocs), filepath.Clean(docs)) {
+		return nil
+	}
+	newVL := ntVLdir(docs)
+	type mv struct{ from, to string }
+	moves := []mv{
+		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "connect.json"), filepath.Join(newVL, "connect.json")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "installed.json"), filepath.Join(newVL, "installed.json")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "vl-app.json"), filepath.Join(newVL, "vl-app.json")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "README.txt"), filepath.Join(newVL, "README.txt")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll"), filepath.Join(docs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "old", "VL.AddOn.dll"), filepath.Join(newVL, "old", "VL.AddOn.dll")},
+	}
+	for _, m := range moves {
+		if _, err := d.readFile(m.from); err != nil {
+			continue // nothing to migrate
+		}
+		if _, err := d.readFile(m.to); err == nil {
+			continue // already migrated
+		}
+		if err := d.mkdirAll(filepath.Dir(m.to), 0o755); err != nil {
+			return err
+		}
+		if err := d.rename(m.from, m.to); err != nil {
+			return err
+		}
+		d.print("Moved " + m.from + " → " + m.to)
+	}
+	return nil
 }
 
 // runInstalled is the installed-PC path (connect.json exists): a plain
 // double-click, NO install-code prompt. It announces, runs the update check,
 // ENSUREs the Desktop + Start Menu shortcuts (re-create if missing, never
 // duplicate), then prints + opens the dashboard and waits for Enter.
-func runInstalled(ctx context.Context, d deps, home string) error {
-	cfg, err := readConnectConfig(d, home)
+func runInstalled(ctx context.Context, d deps, docs string) error {
+	cfg, err := readConnectConfig(d, docs)
 	if err != nil {
 		return err
 	}
-	st, err := loadAppState(ctx, d, home, cfg)
+	st, err := loadAppState(ctx, d, docs, cfg)
 	if err != nil {
 		return err
 	}
@@ -557,6 +659,16 @@ func runInstalled(ctx context.Context, d deps, home string) error {
 
 	// a) no code prompt — announce instead.
 	d.print("VL is already set up on this PC ✓")
+
+	// F8: the dashboard comes FIRST — print the URL, ensure the icons, open it —
+	// so a non-technical user lands on the login page before any y/N question.
+	d.print("Your VL dashboard: " + base)
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
+		return err
+	}
+	if err := d.openURL(ctx, base); err != nil {
+		return fmt.Errorf("open dashboard: %w", err)
+	}
 
 	// b) the update check as today (add-on/app), flat-gated.
 	d.positions = func(ctx context.Context) (float64, error) {
@@ -568,20 +680,12 @@ func runInstalled(ctx context.Context, d deps, home string) error {
 	}
 	if dec.Applied {
 		d.print("Updated ✓ — restart NinjaTrader to load the new add-on.")
-	} else if dec.AddonUpdateAvailable || dec.AppUpdateAvailable {
+	}
+	if dec.AppUpdateAvailable {
+		// F6: there is no self-update — say it honestly.
+		d.print("A new VL-Setup is available — ask the owner for it.")
+	} else if dec.AddonUpdateAvailable {
 		d.print("Update deferred (Later).")
-	}
-
-	// c) ENSURE the shortcuts: re-create if missing, never duplicate (the
-	// .lnk/.url are overwritten in place).
-	if err := createDesktopShortcut(ctx, d, base); err != nil {
-		return err
-	}
-
-	// d) print the dashboard URL and open it.
-	d.print("Your VL dashboard: " + base)
-	if err := d.openURL(ctx, base); err != nil {
-		return fmt.Errorf("open dashboard: %w", err)
 	}
 
 	// e) keep the console readable.
@@ -609,11 +713,11 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 		return dec, err
 	}
 	dec.Manifest = m
-	home, err := d.homeDir()
+	docs, err := d.docsDir()
 	if err != nil {
 		return dec, err
 	}
-	cur, err := readInstalledState(d, home)
+	cur, err := readInstalledState(d, docs)
 	if err != nil {
 		return dec, err
 	}
@@ -631,6 +735,11 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 			return dec, nil // Later: nothing changes
 		}
 	}
+	// F6: only the add-on self-updates. An app-only update is announced honestly
+	// by the caller — nothing is downloaded or swapped here.
+	if !dec.AddonUpdateAvailable {
+		return dec, nil
+	}
 	// Verify again, then download the new add-on (S9: a bad signature or hash
 	// refuses here and nothing below runs).
 	addon, err := fetchVerifiedAddon(ctx, d, base, m)
@@ -641,15 +750,39 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 	if err := waitUntilFlat(ctx, d.positions, 60*time.Second); err != nil {
 		return dec, err
 	}
+	// F4: never write a locked DLL. NinjaTrader holds VL.AddOn.dll while it
+	// runs; if it is running, ask the user to close it (or defer) and re-check.
+	for {
+		running, err := d.ntRunning(ctx)
+		if err != nil {
+			return dec, err
+		}
+		if !running {
+			break
+		}
+		ans, err := d.readLine("Close NinjaTrader, then press Enter to install the add-on update (or type L for later)")
+		if err != nil {
+			return dec, err
+		}
+		if ans == "L" || ans == "l" {
+			return dec, nil // deferred
+		}
+	}
 	// Swap: move the current add-on aside (never delete), write the new one.
-	if err := d.mkdirAll(filepath.Dir(oldAddonPath(home)), 0o755); err != nil {
+	if err := d.mkdirAll(filepath.Dir(oldAddonPath(docs)), 0o755); err != nil {
 		return dec, err
 	}
-	_ = d.rename(addonDstPath(home), oldAddonPath(home)) // absent on first-ever update is fine
-	if err := d.writeFile(addonDstPath(home), addon, 0o644); err != nil {
+	// A rename error is an error (F4), but only when the old DLL exists — a
+	// first-ever update has nothing to move.
+	if _, statErr := d.readFile(addonDstPath(docs)); statErr == nil {
+		if err := d.rename(addonDstPath(docs), oldAddonPath(docs)); err != nil {
+			return dec, fmt.Errorf("move old add-on: %w", err)
+		}
+	}
+	if err := d.writeFile(addonDstPath(docs), addon, 0o644); err != nil {
 		return dec, err
 	}
-	if err := writeInstalledState(d, home, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
+	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
 		return dec, err
 	}
 	dec.Applied = true

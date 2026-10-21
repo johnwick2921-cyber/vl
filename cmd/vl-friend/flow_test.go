@@ -20,6 +20,7 @@ type flowRecorder struct {
 	lines  []string
 	prints []string
 	opened []string
+	order  []string // "print:", "prompt:", "open:" — for F8 ordering pins
 }
 
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
@@ -48,6 +49,7 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			return nil, fmt.Errorf("no fetch mapped for %s", url)
 		},
 		homeDir:   func() (string, error) { return home, nil },
+		docsDir:   func() (string, error) { return home, nil },
 		positions: func(_ context.Context) (float64, error) { return 0, nil },
 		writeFile: os.WriteFile,
 		mkdirAll:  os.MkdirAll,
@@ -55,17 +57,24 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 		readFile:  os.ReadFile,
 		readLine: func(p string) (string, error) {
 			rec.lines = append(rec.lines, p)
+			rec.order = append(rec.order, "prompt:"+p)
 			return "", nil
 		},
-		print:   func(l string) { rec.prints = append(rec.prints, l) },
+		print: func(l string) {
+			rec.prints = append(rec.prints, l)
+			rec.order = append(rec.order, "print:"+l)
+		},
 		tempDir: func() (string, error) { return t.TempDir(), nil },
 		verifyMsiSigner: func(string) (msiSignature, error) {
 			return msiSignature{Status: "Valid", Subject: "CN=Tailscale Inc., O=Tailscale Inc."}, nil
 		},
 		openURL: func(_ context.Context, url string) error {
 			rec.opened = append(rec.opened, url)
+			rec.order = append(rec.order, "open:"+url)
 			return nil
 		},
+		ntRunning:       func(context.Context) (bool, error) { return false, nil },
+		localAppDataDir: func() string { return filepath.Join(home, "AppData", "Local") },
 	}
 	return d, rec
 }
@@ -732,5 +741,230 @@ func TestRunInstalledRepairVerificationFails(t *testing.T) {
 	}
 	if _, statErr := os.Stat(appStatePath(home)); statErr == nil {
 		t.Fatal("vl-app.json must NOT be written when verification fails")
+	}
+}
+
+// TestInstallFirstRunWritesUnderMyDocuments — F2: with MyDocuments !=
+// <USERPROFILE>\Documents (OneDrive redirection), every NT path must land under
+// MyDocuments. MUTANT: path helpers back to <home>\Documents → RED.
+func TestInstallFirstRunWritesUnderMyDocuments(t *testing.T) {
+	home := t.TempDir()
+	docs := filepath.Join(home, "OneDrive", "Documents")
+	d, _ := flowFakeDeps(t, home)
+	d.docsDir = func() (string, error) { return docs, nil }
+	ic := goodCode()
+	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := installFirstRun(context.Background(), d, encodeInstallCode(ic)); err != nil {
+		t.Fatalf("install refused: %v", err)
+	}
+	for _, p := range []string{
+		connectJSONPath(docs),
+		installedJSONPath(docs),
+		appStatePath(docs),
+		addonDstPath(docs),
+		filepath.Join(ntVLdir(docs), "README.txt"),
+	} {
+		if _, err := os.Stat(p); err != nil {
+			t.Fatalf("missing under MyDocuments: %s: %v", p, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(home, "Documents", "NinjaTrader 8")); err == nil {
+		t.Fatal("files were written under <home>\\Documents instead of MyDocuments")
+	}
+}
+
+// TestMigrateDocsMovesLegacyFiles — F2 MIGRATION: files under
+// <USERPROFILE>\Documents move into MyDocuments (never deleted) when the two
+// differ (the owner's laptop layout).
+func TestMigrateDocsMovesLegacyFiles(t *testing.T) {
+	home := t.TempDir()
+	docs := filepath.Join(home, "OneDrive", "Documents")
+	d, _ := flowFakeDeps(t, home)
+
+	oldVL := filepath.Join(home, "Documents", "NinjaTrader 8", "VL")
+	if err := os.MkdirAll(oldVL, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	oldConnect := filepath.Join(oldVL, "connect.json")
+	if err := os.WriteFile(oldConnect, []byte(`{"host":"100.64.0.2","port":36981,"connect_key":"x"}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	oldDLL := filepath.Join(home, "Documents", "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll")
+	if err := os.MkdirAll(filepath.Dir(oldDLL), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(oldDLL, []byte("MZ-old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := migrateDocsIfNeeded(d, home, docs); err != nil {
+		t.Fatalf("migrate failed: %v", err)
+	}
+	if _, err := os.Stat(connectJSONPath(docs)); err != nil {
+		t.Fatalf("connect.json not moved: %v", err)
+	}
+	if _, err := os.Stat(addonDstPath(docs)); err != nil {
+		t.Fatalf("addon not moved: %v", err)
+	}
+	if _, err := os.Stat(oldConnect); err == nil {
+		t.Fatal("legacy connect.json must be moved away (not left in place)")
+	}
+}
+
+// TestProbeFlatZeroTradersSafe — F5/R11: flat==true OR traders==0 → safe; a
+// missing traders field → today's rule (not flat).
+func TestProbeFlatZeroTradersSafe(t *testing.T) {
+	cases := []struct {
+		body string
+		want float64
+	}{
+		{`{"flat":true,"traders":3,"at":1}`, 0},
+		{`{"flat":false,"traders":0,"at":1}`, 0}, // zero traders → safe
+		{`{"flat":false,"traders":5,"at":1}`, 1},
+		{`{"flat":false,"at":1}`, 1}, // missing traders → not flat
+	}
+	for _, c := range cases {
+		d := deps{fetch: func(_ context.Context, u string) ([]byte, error) { return []byte(c.body), nil }}
+		got, err := probeFlat(context.Background(), d, "http://x")
+		if err != nil {
+			t.Fatalf("probeFlat(%s): %v", c.body, err)
+		}
+		if got != c.want {
+			t.Fatalf("probeFlat(%s) = %v, want %v", c.body, got, c.want)
+		}
+	}
+}
+
+// TestRunUpdateCheckWaitsForNinjaTraderClose — F4: never write a locked DLL. If
+// NinjaTrader.exe is running, prompt to close it (or defer) and re-check.
+func TestRunUpdateCheckWaitsForNinjaTraderClose(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), []byte("MZ-old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := "http://100.64.0.2:18081"
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+	running := true
+	d.ntRunning = func(context.Context) (bool, error) { return running, nil }
+	calls := 0
+	d.readLine = func(p string) (string, error) {
+		rec.lines = append(rec.lines, p)
+		calls++
+		if calls == 1 {
+			running = false // the user closed NinjaTrader
+			return "", nil
+		}
+		return "", nil
+	}
+	dec, err := RunUpdateCheck(context.Background(), d, base, true)
+	if err != nil {
+		t.Fatalf("update refused: %v", err)
+	}
+	if !dec.Applied {
+		t.Fatal("update was not applied after NinjaTrader closed")
+	}
+	if !strings.Contains(strings.Join(rec.lines, "\n"), "Close NinjaTrader") {
+		t.Fatalf("the close-NinjaTrader prompt was not shown: %q", rec.lines)
+	}
+}
+
+// TestRunInstalledAnnouncesAppUpdateHonestly — F6: there is no self-update; an
+// app-only update is announced honestly, never silently claimed as applied.
+func TestRunInstalledAnnouncesAppUpdateHonestly(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	man := strings.Replace(manifestText("37"), `"app_version":"1.0.0"`, `"app_version":"1.1.0"`, 1)
+	fetch, signers := fetchMap(t, base, []byte(man), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused: %v", err)
+	}
+	joined := strings.Join(rec.prints, "\n")
+	if !strings.Contains(joined, "A new VL-Setup is available — ask the owner for it.") {
+		t.Fatalf("missing the honest app-update line: %q", rec.prints)
+	}
+}
+
+// TestRunInstalledOpensDashboardBeforeUpdatePrompt — F8: the dashboard opens
+// BEFORE any update y/N question.
+func TestRunInstalledOpensDashboardBeforeUpdatePrompt(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused: %v", err)
+	}
+	openIdx, promptIdx := -1, -1
+	for i, e := range rec.order {
+		if strings.HasPrefix(e, "open:"+base) {
+			openIdx = i
+		}
+		if strings.Contains(e, "Update now?") {
+			promptIdx = i
+		}
+	}
+	if openIdx == -1 || promptIdx == -1 {
+		t.Fatalf("missing events: open=%d prompt=%d order=%v", openIdx, promptIdx, rec.order)
+	}
+	if openIdx > promptIdx {
+		t.Fatalf("the update prompt came BEFORE the dashboard opened (F8): order=%v", rec.order)
+	}
+}
+
+// TestLogSetupErrorAppends — F7: setup.log APPENDS; both errors survive.
+func TestLogSetupErrorAppends(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	logSetupError(d, "first")
+	logSetupError(d, "second")
+	b, err := os.ReadFile(setupLogPath(d))
+	if err != nil {
+		t.Fatalf("setup.log not written: %v", err)
+	}
+	s := string(b)
+	if !strings.Contains(s, "first") || !strings.Contains(s, "second") {
+		t.Fatalf("setup.log must APPEND both errors, got: %q", s)
+	}
+	if strings.Count(s, "second") != 1 {
+		t.Fatalf("setup.log should carry one line per error: %q", s)
 	}
 }

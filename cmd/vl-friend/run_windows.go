@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"time"
 )
@@ -82,23 +81,27 @@ func realDeps() deps {
 			_, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", openScript(url)).CombinedOutput()
 			return err
 		},
+		docsDir: windowsDocumentsDir,
+		ntRunning: func(ctx context.Context) (bool, error) {
+			out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }").CombinedOutput()
+			if err != nil {
+				return false, err
+			}
+			return strings.TrimSpace(string(out)) == "yes", nil
+		},
+		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
 	}
 }
 
-// setupLogPath returns %LOCALAPPDATA%\VL\setup.log (B2: the app keeps its own
-// state under Documents\NinjaTrader 8\VL and %LOCALAPPDATA%\VL).
-func setupLogPath(home string) string {
-	return filepath.Join(home, "AppData", "Local", "VL", "setup.log")
-}
-
-// logSetupError writes the (already-redacted) error to setup.log; best effort.
-func logSetupError(d deps, msg string) {
-	if home, err := d.homeDir(); err == nil {
-		dir := filepath.Join(home, "AppData", "Local", "VL")
-		if d.mkdirAll(dir, 0o755) == nil {
-			_ = d.writeFile(setupLogPath(home), []byte(time.Now().Format(time.RFC3339)+" "+msg+"\n"), 0o600)
-		}
+// windowsDocumentsDir resolves the Windows Known Folder MyDocuments (F2: the C#
+// AddOn and NinjaTrader read MyDocuments, which OneDrive redirection can move
+// off <USERPROFILE>\Documents).
+func windowsDocumentsDir() (string, error) {
+	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('MyDocuments')").CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("resolve Documents: %w: %s", err, strings.TrimSpace(string(out)))
 	}
+	return strings.TrimSpace(string(out)), nil
 }
 
 // run is the app entry: first run = install; every later start = update check.
@@ -135,13 +138,22 @@ func runInner(ctx context.Context, d deps) error {
 	if err != nil {
 		return err
 	}
+	docs, err := d.docsDir()
+	if err != nil {
+		return err
+	}
+	// F2 MIGRATION: an install under <USERPROFILE>\Documents must move into
+	// MyDocuments when Known-Folder redirection put it elsewhere (never delete).
+	if err := migrateDocsIfNeeded(d, home, docs); err != nil {
+		return err
+	}
 
 	// First run: no connect.json yet → the six-step setup console flow.
-	if _, err := d.readFile(connectJSONPath(home)); err != nil {
+	if _, err := d.readFile(connectJSONPath(docs)); err != nil {
 		return runFirstRun(ctx, d)
 	}
 
 	// Installed: announce, update check, ensure icons, print + open the
 	// dashboard. No install-code prompt (CTO 23:47 CT).
-	return runInstalled(ctx, d, home)
+	return runInstalled(ctx, d, docs)
 }

@@ -49,6 +49,16 @@ type deps struct {
 	// is present (resolved to a full path), else the default browser. Production:
 	// powershell Start-Process; tests: a fake that records the URL.
 	openURL func(ctx context.Context, url string) error
+	// docsDir returns the Windows MyDocuments (Known Folder) path — NOT
+	// <USERPROFILE>\Documents. OneDrive Known-Folder redirection moves the real
+	// Documents off the profile, and NinjaTrader + the C# AddOn both read
+	// MyDocuments, so every NT path must be under it.
+	docsDir func() (string, error)
+	// ntRunning reports whether NinjaTrader.exe is running (it locks the loaded
+	// VL.AddOn.dll — never write a locked DLL).
+	ntRunning func(ctx context.Context) (bool, error)
+	// localAppDataDir returns %LOCALAPPDATA% (for setup.log).
+	localAppDataDir func() string
 }
 
 // msiSignature is what verifyMsiSigner reports: the Authenticode status and the

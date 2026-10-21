@@ -116,7 +116,7 @@ func shortWaits(t *testing.T) {
 
 func TestEnsureTailscaleAlreadyInstalledJoins(t *testing.T) {
 	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "Running"}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err != nil {
 		t.Fatalf("already-installed join refused: %v", err)
 	}
 	if !f.upCalled {
@@ -136,7 +136,7 @@ func TestEnsureTailscaleInstallsWhenMissing(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
 		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc., L=Toronto, C=CA"}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err != nil {
 		t.Fatalf("fresh install refused: %v", err)
 	}
 	if !f.downloadCalled || !f.signCalled || !f.msiexecCalled || !f.upCalled {
@@ -151,7 +151,7 @@ func TestInstallRunsElevated(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
 		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err != nil {
 		t.Fatalf("install refused: %v", err)
 	}
 	if !strings.Contains(f.installCmd, "-Verb RunAs") {
@@ -165,7 +165,7 @@ func TestInstallRunsElevated(t *testing.T) {
 func TestEnsureTailscaleInstallFails(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1603}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err == nil {
 		t.Fatal("a failing MSI install was accepted")
 	}
 	if f.upCalled {
@@ -177,7 +177,7 @@ func TestEnsureTailscaleInstallFails(t *testing.T) {
 func TestEnsureTailscaleUserDeclinedUAC(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1223}
-	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret")
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
 	if err == nil || !strings.Contains(err.Error(), "admin rights") {
 		t.Fatalf("expected the 'needs admin rights' message, got %v", err)
 	}
@@ -190,7 +190,7 @@ func TestEnsureTailscaleUACCancelError(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.",
 		msiErr: fmt.Errorf("Start-Process: The operation was canceled by the user")}
-	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret")
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
 	if err == nil || !strings.Contains(err.Error(), "admin rights") {
 		t.Fatalf("a UAC cancel must read as 'needs admin rights', got %v", err)
 	}
@@ -202,7 +202,7 @@ func TestEnsureTailscaleRefusesHashMismatch(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin",
 		signerStatus: "HashMismatch", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err == nil {
 		t.Fatal("a HashMismatch MSI was accepted")
 	}
 	if f.msiexecCalled {
@@ -214,7 +214,7 @@ func TestEnsureTailscaleRefusesWrongOrg(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin",
 		signerStatus: "Valid", signerSubject: "CN=Tailscale Inc., O=Some Other Corp."}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err == nil {
 		t.Fatal("a Valid signature from the wrong org was accepted")
 	}
 	if f.msiexecCalled {
@@ -224,7 +224,7 @@ func TestEnsureTailscaleRefusesWrongOrg(t *testing.T) {
 
 func TestEnsureTailscaleRefusesOtherTailnet(t *testing.T) {
 	f := &tailscaleFake{installed: true, beforeState: "Running"}
-	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret")
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
 	if err == nil || !strings.Contains(err.Error(), "already logged in") {
 		t.Fatalf("expected 'already logged in' refusal, got %v", err)
 	}
@@ -236,7 +236,7 @@ func TestEnsureTailscaleRefusesOtherTailnet(t *testing.T) {
 func TestTailscaleApprovalWaitThenRunning(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "Running", approvePolls: 2}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err != nil {
 		t.Fatalf("approval wait then running refused: %v", err)
 	}
 	if f.polls < 3 {
@@ -247,7 +247,7 @@ func TestTailscaleApprovalWaitThenRunning(t *testing.T) {
 func TestTailscaleApprovalTimeout(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "NeedsMachineAuth", approvePolls: 1 << 30}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err == nil {
 		t.Fatal("a device stuck in NeedsMachineAuth past the deadline was accepted")
 	}
 }
@@ -255,7 +255,7 @@ func TestTailscaleApprovalTimeout(t *testing.T) {
 func TestNeverPrintSecrets(t *testing.T) {
 	key := "tskey-SECRETKEY123"
 	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "Running", upErr: fmt.Errorf("tailscale up --authkey=%s: 401", key)}
-	err := ensureTailscale(context.Background(), f.deps(t), key)
+	err := ensureTailscale(context.Background(), f.deps(t), key, "http://100.64.0.2:18081")
 	if err == nil {
 		t.Fatal("expected an up error")
 	}
@@ -280,5 +280,40 @@ func TestRedactSecrets(t *testing.T) {
 	got := redactSecrets("auth=tskey-abc connect=deadbeef", "tskey-abc", "deadbeef")
 	if strings.Contains(got, "tskey-abc") || strings.Contains(got, "deadbeef") {
 		t.Fatalf("secrets not redacted: %q", got)
+	}
+}
+
+// TestTailscaleConnectSkipsUpWhenOnOurTailnet — F3: after a partial failure the
+// PC is Running on OUR tailnet with the auth key spent; a re-run must skip
+// `tailscale up` and continue when the friend bot's manifest verifies. MUTANT:
+// always refuse non-NeedsLogin → RED.
+func TestTailscaleConnectSkipsUpWhenOnOurTailnet(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running"}
+	d := f.deps(t)
+	ic := goodCode()
+	base := ic.BaseURL()
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := ensureTailscale(context.Background(), d, "tskey-secret", base); err != nil {
+		t.Fatalf("our-tailnet run refused: %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("tailscale up must NOT run when already on our tailnet (auth key is spent)")
+	}
+}
+
+// TestTailscaleConnectRefusesOtherTailnetManifest — F3: Running on a DIFFERENT
+// tailnet (the friend bot's manifest is NOT reachable) must still refuse.
+func TestTailscaleConnectRefusesOtherTailnetManifest(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running"}
+	d := f.deps(t)
+	// fetch serves the MSI bytes (no manifest) → verification fails → refuse.
+	err := ensureTailscale(context.Background(), d, "tskey-secret", "http://100.64.0.2:18081")
+	if err == nil || !strings.Contains(err.Error(), "already logged in") {
+		t.Fatalf("expected 'already logged in' refusal, got %v", err)
 	}
 }
