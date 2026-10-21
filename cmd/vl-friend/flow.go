@@ -896,15 +896,31 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 		return fmt.Errorf("%v (and Desktop folder: %v)", psErr, err)
 	}
 	reportDiag(ctx, d, appURL, "icon-dirs", errors.New(strings.Join(dirs, " ; ")))
-	body := []byte("[InternetShortcut]\r\nURL=" + appURL + "\r\n")
+	// 10-21 laptop: a bare .url shows the browser (Edge) logo. Point its icon
+	// at the local VL exe so it shows the VL logo.
+	bodyS := "[InternetShortcut]\r\nURL=" + appURL + "\r\n"
+	if exe := localExePath(d); exe != "" {
+		if _, err := d.readFile(exe); err == nil {
+			bodyS += "IconFile=" + exe + "\r\nIconIndex=0\r\n"
+		}
+	}
+	body := []byte(bodyS)
 	for _, dir := range dirs {
 		// 10-21 laptop [A]: PowerShell HUNG until the cap (killed = "exit
 		// status 1", empty stderr). An existing VL.lnk may be a stale old one
 		// PowerShell could not re-target, so ALWAYS make sure a working VL.url
 		// exists — never rely on the .lnk when the PowerShell step failed.
 		p := filepath.Join(dir, "VL.url")
-		if _, err := d.readFile(p); err == nil {
-			continue
+		if cur, err := d.readFile(p); err == nil {
+			if bytes.Equal(cur, body) {
+				continue // already the right icon
+			}
+			// Our own older VL.url (e.g. the Edge-logo one): MOVE it aside,
+			// never delete, then write the new one.
+			oldDir := filepath.Join(d.localAppDataDir(), "VL", "old")
+			if d.mkdirAll(oldDir, 0o755) == nil {
+				_ = retryRename(d, p, filepath.Join(oldDir, "VL-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".url"))
+			}
 		}
 		if err := d.mkdirAll(dir, 0o755); err != nil {
 			return fmt.Errorf("%v (and VL.url: %v)", psErr, err)

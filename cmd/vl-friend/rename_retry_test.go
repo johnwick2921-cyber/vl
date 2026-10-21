@@ -263,6 +263,10 @@ func TestCreateDesktopShortcutGoFallback(t *testing.T) {
 	desk, progs := filepath.Join(home, "Desktop"), filepath.Join(home, "Programs")
 	d.iconDirs = func() ([]string, error) { return []string{desk, progs}, nil }
 	d.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }
+	_ = os.MkdirAll(filepath.Dir(localExePath(d)), 0o755)
+	_ = os.WriteFile(localExePath(d), []byte("MZ"), 0o755)
+	_ = os.MkdirAll(progs, 0o755)
+	_ = os.WriteFile(filepath.Join(progs, "VL.url"), []byte("[InternetShortcut]\r\nURL=old\r\n"), 0o644) // an older Edge-logo one
 	// A stale old VL.lnk on the Desktop must NOT stop the fallback (laptop 10-21).
 	_ = os.MkdirAll(desk, 0o755)
 	_ = os.WriteFile(filepath.Join(desk, "VL.lnk"), []byte("stale"), 0o644)
@@ -273,6 +277,9 @@ func TestCreateDesktopShortcutGoFallback(t *testing.T) {
 		b, err := os.ReadFile(filepath.Join(dir, "VL.url"))
 		if err != nil || !strings.Contains(string(b), "URL=http://100.77.150.109:18081") {
 			t.Fatalf("VL.url not written in %s: %v %q", dir, err, b)
+		}
+		if !strings.Contains(string(b), "IconFile=") {
+			t.Fatalf("VL.url must carry the VL logo (IconFile): %q", b)
 		}
 	}
 }
