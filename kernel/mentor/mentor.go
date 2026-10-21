@@ -276,10 +276,12 @@ type Config struct {
 	// no-trade zone and the trigger side for every ISB and non-level entry.
 	TriggerSchool int
 	// PingPong knobs — B21 (10-03 evening, OPEN-NUMBERS Q5, CTO-verified
-	// D4.2 p2 @05:17–06:37): the gap between an FTGL floor and an FTGH ceiling
-	// must exceed PingPongMinGapPts AND the largest 1m candle of the last
-	// PingPongCandleLookback closed bars must stay at or below
-	// PingPongCandleMaxPts ("nến tầm mười mấy điểm"). PingPongCandleMaxPts > 0
+	// D4.2 p2 @05:13–06:37 — "ping-pong needs a big range: ≥100 or above 50
+	// pts; candles 'mười mấy điểm' (about 10–19)"): the gap between an FTGL
+	// floor and an FTGH ceiling must exceed PingPongMinGapPts AND the largest
+	// 1m candle of the last PingPongCandleLookback closed bars must stay at or
+	// below PingPongCandleMaxPts ("nến tầm mười mấy điểm" @05:31–05:37; a
+	// 100-pt range goes with candles ~20 — cap 20 is the fair reading). PingPongCandleMaxPts > 0
 	// also switches on the key-level pair rule (X4 @06:31–08:52: "một cái nến
 	// nó bằng cái rank của 2 cái level rồi thì ngồi im"), which since
 	// MENTOR-NY item 2 reads the CURRENT closed candle only — the lookback
@@ -561,7 +563,7 @@ func DefaultConfig() Config {
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
-		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
+		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:31–05:37; the 100-pt range = candles ~20)
 		PingPongCandleLookback: 30, // B21 [C: ours — the 30-bar window; the 20-pt cap itself matches D4.2 p2 @05:31–05:37]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
 		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
 		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
