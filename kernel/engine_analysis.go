@@ -311,6 +311,15 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 	} else if len(ctx.CandidateCoins) > 0 && ctx.CandidateCoins[0].Symbol != "" {
 		activeSymbol = ctx.CandidateCoins[0].Symbol
 	}
+	// m150-5 — FAIL CLOSED on a missing market block for the PRIMARY symbol: no
+	// data → no AI call this cycle (a decision made on absent prices is a
+	// fabricated decision). Protection is unaffected: resting broker stops stay
+	// in place. Named reason + a gate-block counter, never a silent skip.
+	if _, ok := ctx.MarketDataMap[activeSymbol]; !ok {
+		logger.Warnf("🚫 market_data_unavailable: no market data for the primary symbol %s — skipping the decision cycle (fail closed; broker stops stay in place).", activeSymbol)
+		telemetry.IncGateBlock(ctx.TraderID, "market_data_unavailable")
+		return holdCycle("market_data_unavailable"), nil
+	}
 	var snapshotBars []market.Kline
 	if market.FuturesBarsProvider != nil {
 		snapshotBars = market.FuturesBarsProvider(activeSymbol, AISVPBarInterval, AISVPBarCount)
@@ -810,7 +819,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	// 1. First fetch data for position coins (must fetch)
 	for _, pos := range ctx.Positions {
-		data, err := market.GetWithTimeframesVenue(pos.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
+		data, err := fetchMarketDataWithRetry(pos.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for position %s: %v", pos.Symbol, err)
 			continue
@@ -831,7 +840,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 			continue
 		}
 
-		data, err := market.GetWithTimeframesVenue(coin.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
+		data, err := fetchMarketDataWithRetry(coin.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for %s: %v", coin.Symbol, err)
 			continue
@@ -859,6 +868,32 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	logger.Infof("📊 Successfully fetched multi-timeframe market data for %d coins", len(ctx.MarketDataMap))
 	return nil
+}
+
+// fetchMarketDataWithRetry (m134-c, m150-6) fetches a symbol's multi-timeframe
+// market data with ONE retry for a TRANSIENT miss (empty BarCache on a first
+// read, a still-warming feed). Deterministic failures — a stale feed or a
+// refused venue/symbol — are returned immediately: a retry cannot change them,
+// and re-running a stale read wastes a cycle. The prompt's explicit
+// "market data unavailable" line covers the persistent case.
+func fetchMarketDataWithRetry(symbol, venue string, timeframes []string, primaryTimeframe string, count int, indPeriods market.IndicatorPeriods) (*market.Data, error) {
+	data, err := market.GetWithTimeframesVenue(symbol, venue, timeframes, primaryTimeframe, count, indPeriods)
+	if err == nil || !isTransientFetchError(err) {
+		return data, err
+	}
+	logger.Infof("⚠️  Failed to fetch market data for %s (attempt 1/2): %v — retrying", symbol, err)
+	return market.GetWithTimeframesVenue(symbol, venue, timeframes, primaryTimeframe, count, indPeriods)
+}
+
+// isTransientFetchError reports whether a market fetch error is worth ONE retry.
+// A stale feed ("data is stale") or a refused venue/symbol ("is refused") is
+// deterministic — the same call returns the same error — so it is not retried.
+func isTransientFetchError(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return !strings.Contains(s, "stale") && !strings.Contains(s, "refused")
 }
 
 // ============================================================================
