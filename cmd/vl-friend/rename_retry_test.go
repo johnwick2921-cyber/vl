@@ -110,3 +110,79 @@ func TestRunInstalledOpensDashboardWhenLocalCopyLocked(t *testing.T) {
 		t.Fatalf("the lock must be reported as a warning: %q", rec.prints)
 	}
 }
+
+// TestRunInstalledOpensDashboardBeforeLocalCopyAndSaysVersion — owner laptop
+// 10-21: the window sat on "already set up" (the local copy ran first, and a
+// fresh exe can be held by Defender) and never said it was updating. Order is
+// now: dashboard → update check → "Updating VL old → new…" → copy. MUTANT:
+// move ensureLocalExe back above openURL → RED; drop the status line → RED.
+func TestRunInstalledOpensDashboardBeforeLocalCopyAndSaysVersion(t *testing.T) {
+	prev := appVersion
+	appVersion = "9.9.9"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.1.5\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	var seq []string
+	realOpen := d.openURL
+	d.openURL = func(ctx context.Context, u string) error {
+		seq = append(seq, "open")
+		return realOpen(ctx, u)
+	}
+	realFetch := d.fetch
+	d.fetch = func(ctx context.Context, u string) ([]byte, error) {
+		if strings.HasSuffix(u, "/api/friend/manifest") {
+			seq = append(seq, "check")
+		}
+		return realFetch(ctx, u)
+	}
+	realWrite := d.writeFile
+	d.writeFile = func(p string, b []byte, m os.FileMode) error {
+		if strings.HasPrefix(p, localExePath(d)) {
+			seq = append(seq, "copy")
+		}
+		return realWrite(p, b, m)
+	}
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled: %v", err)
+	}
+	got := strings.Join(seq, ",")
+	// (A "check" before "open" is this fixture's S4 add-on resume — no DLL.)
+	o := strings.Index(got, "open")
+	c := strings.Index(got[o+1:], "check")
+	p := strings.Index(got, "copy")
+	if o < 0 || c < 0 || p < 0 || p < o+1+c {
+		t.Fatalf("want dashboard, then update check, then the local copy; got %q", got)
+	}
+	joined := strings.Join(rec.prints, "\n")
+	for _, want := range []string{"Checking for updates…", "Updating VL 1.1.5 → 9.9.9", "VL 9.9.9 is ready on this PC ✓"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+}

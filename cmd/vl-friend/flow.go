@@ -222,6 +222,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// first. B1: shortcut creation is NON-fatal — warn and continue. A7: so is
 	// the local copy — the icon falls back to the .url shortcut (dashboard in
 	// the browser) and the next run re-copies (A3).
+	d.print(localCopyStatus(d))
 	if err := ensureLocalExe(d); err != nil {
 		d.print("warning: could not copy VL to this PC's app folder — " + err.Error())
 	}
@@ -908,6 +909,27 @@ func ensureLocalExe(d deps) error {
 	return writeFileAtomic(d, localExeVersionPath(d), []byte(appVersion+"\n"), 0o600)
 }
 
+// localCopyStatus says, in plain words, what the local-copy step is about to
+// do — so an installed PC shows "Updating VL 1.1.5 → 1.1.8…" instead of
+// silently swapping files (owner 10-21: "it not read old version").
+func localCopyStatus(d deps) string {
+	if _, err := d.readFile(localExePath(d)); err != nil {
+		return "Installing VL " + appVersion + " on this PC (this can take up to a minute)…"
+	}
+	recorded := ""
+	if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
+		recorded = strings.TrimSpace(string(vb))
+	}
+	switch {
+	case recorded == "":
+		return "Updating VL on this PC to " + appVersion + " (this can take up to a minute)…"
+	case appVersionNewer(appVersion, recorded):
+		return "Updating VL " + recorded + " → " + appVersion + " (this can take up to a minute)…"
+	default:
+		return "VL on this PC is " + recorded + " — up to date."
+	}
+}
+
 // detectUpdate fetches the signed manifest and compares it with what is
 // installed — WITHOUT prompting or applying. runOpen uses it for the quick
 // silent check (≤5s).
@@ -1348,33 +1370,32 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	// a) no code prompt — announce instead.
 	d.print("VL is already set up on this PC ✓")
 
-	// F8: the dashboard comes FIRST — print the URL, ensure the icons, open it —
-	// so a non-technical user lands on the login page before any y/N question.
+	// F8: the dashboard comes FIRST — print the URL and open it — so a
+	// non-technical user lands on the login page before any y/N question.
+	// Owner laptop 10-21: the local-copy step (a fresh 7 MB exe that Windows
+	// Defender may hold for up to a minute) used to run BEFORE the dashboard and
+	// the update check, so the window sat on "already set up" looking frozen,
+	// and never said what it was updating. It now runs LAST, with progress lines.
 	d.print("Your VL dashboard: " + base)
-	// A7 (owner laptop 10-21): a locked file here must never block the
-	// dashboard — warn; the next run re-copies (A3).
-	if err := ensureLocalExe(d); err != nil {
-		d.print("warning: could not update VL's app copy — " + err.Error())
-	}
-	// B1: shortcut creation is NON-fatal — warn and continue to the dashboard.
-	if err := createDesktopShortcut(ctx, d, base); err != nil {
-		d.print("warning: could not create the VL icon — " + err.Error())
-	}
 	if err := d.openURL(ctx, base); err != nil {
 		return fmt.Errorf("open dashboard: %w", err)
 	}
+	d.print("Checking for updates…")
 
 	// b) the update check as today (add-on/app), flat-gated.
 	d.positions = func(ctx context.Context) (float64, error) {
 		return probeFlat(ctx, d, base)
 	}
 	dec, err := RunUpdateCheck(ctx, d, base, false)
+	var checkErr error
 	if err != nil {
 		if errors.Is(err, errNotFlat) {
 			// M3: not flat in time — DEFER, not an error to the user.
 			d.print("Update deferred (Later).")
 		} else {
-			return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
+			// Reported AFTER the local copy below, so a failed check never
+			// skips updating the app copy the icon launches.
+			checkErr = fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
 		}
 	}
 	// G4: exactly one outcome — Updated, app-only note, or deferred. Never
@@ -1387,6 +1408,20 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	} else if dec.AddonUpdateAvailable {
 		d.print("Update deferred (Later).")
 	}
+
+	// The local copy the icon launches + the icons themselves (after the
+	// dashboard + update check, see above). Both NON-fatal (A7/B1).
+	d.print(localCopyStatus(d))
+	if err := ensureLocalExe(d); err != nil {
+		d.print("warning: could not update VL's app copy — " + err.Error())
+	}
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
+		d.print("warning: could not create the VL icon — " + err.Error())
+	}
+	if checkErr != nil {
+		return checkErr
+	}
+	d.print("VL " + appVersion + " is ready on this PC ✓")
 
 	// S6: offer a new install code (the owner may re-issue one). Skipping is
 	// the default — this is a gate, never a forced prompt.
