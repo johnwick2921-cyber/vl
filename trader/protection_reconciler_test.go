@@ -517,7 +517,7 @@ func TestProtectionPendingBoundM203(t *testing.T) {
 
 	t.Run("(a) pending 5 s still defers", func(t *testing.T) {
 		seed(5 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
 		if v.Action != protectionUnknown {
 			t.Fatalf("pending 5 s must defer (unknown), got %s (%s)", v.Action, v.Why)
 		}
@@ -528,7 +528,7 @@ func TestProtectionPendingBoundM203(t *testing.T) {
 
 	t.Run("(b) pending 31 s stops deferring", func(t *testing.T) {
 		seed(31 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
 		if v.Action != protectionPlace {
 			t.Fatalf("pending 31 s must run the normal adjudication (place), got %s (%s)", v.Action, v.Why)
 		}
@@ -539,7 +539,7 @@ func TestProtectionPendingBoundM203(t *testing.T) {
 
 	t.Run("(c) pending then live inside the window", func(t *testing.T) {
 		seed(5 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("Accepted")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("Accepted")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
 		if v.Action != protectionOK {
 			t.Fatalf("a live stop must be OK, got %s (%s)", v.Action, v.Why)
 		}

@@ -235,12 +235,12 @@ func TestProtectionKnownStopThroughPriceFlattens654(t *testing.T) {
 	be := knownBrokerStop{Px: 30456.50, From: "moved this process"}
 	plan := 30551.25
 	fresh := 30470.0
-	v := adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{})
+	v := adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{}, false)
 	if v.Action != protectionFlatten || v.StopPx != 30456.50 {
 		t.Fatalf("through the BE: got %s @ %.2f (%s), want flatten @ 30456.50", v.Action, v.StopPx, v.Why)
 	}
 	fresh = 30440.0 // on the protective side: place the BE, not the plan
-	v = adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{})
+	v = adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{}, false)
 	if v.Action != protectionPlace || v.StopPx != 30456.50 || !strings.Contains(v.Source, "broker_stop") {
 		t.Fatalf("protective side: got %s @ %.2f src=%s, want place @ 30456.50 from broker_stop", v.Action, v.StopPx, v.Source)
 	}
@@ -248,7 +248,7 @@ func TestProtectionKnownStopThroughPriceFlattens654(t *testing.T) {
 	// carries the wider original.
 	acc := 30400.0
 	beL := knownBrokerStop{Px: 30500, From: "book snapshot 1"}
-	v = adjudicateProtectionWith("MNQ", "LONG", 1, nil, true, &acc, 30399.75, nil, &beL, nil, "", time.Time{})
+	v = adjudicateProtectionWith("MNQ", "LONG", 1, nil, true, &acc, 30399.75, nil, &beL, nil, "", time.Time{}, false)
 	if v.Action != protectionPlace || v.StopPx != 30500 {
 		t.Fatalf("LONG: got %s @ %.2f, want place @ 30500 (never the wider accepted 30400)", v.Action, v.StopPx)
 	}
@@ -376,5 +376,66 @@ func TestAcceptedRiskOncePerSignalWithBookQuantity(t *testing.T) {
 	}
 	if rows[0].AcceptedEntryPx == nil || *rows[0].AcceptedEntryPx != 30456.5 {
 		t.Fatalf("N-F: the broker's entry price must still be recorded: %v", rows[0].AcceptedEntryPx)
+	}
+}
+
+// m206 — the per-position consecutive-defer cap. A stream of FRESH pending -sl
+// orders (a NEW name every beat — a mentor trail move re-arms a new pending
+// order on every 1m close, so the m203 30 s per-order clock never trips) must
+// not defer forever. Beat 1 and 2 defer; beat 3 caps: normal adjudication runs,
+// the missing stop is placed, and the deduped P0 fires once.
+// Mutant: delete the cap (the incProtectionDefer >= protectionDeferCapBeats
+// branch in reconcileProtectionAt) → RED (no place by beat 3).
+func TestProtectionDeferCapM206(t *testing.T) {
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
+	noFreshPrice(t) // no fresh price → the net places, never flattens
+	w := newExecWire(t, "m206-defer-cap")
+	w.open654(t) // SHORT MNQ ×1, plan stop 30551.25
+
+	seedPending := func(name string, at time.Time) {
+		w.s.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{{
+			OrderID: "sl-" + name, Symbol: "MNQ", Name: name, Action: "buy", Type: "stop",
+			StopPrice: 30551.25, Quantity: 1, State: "ChangePending",
+		}}}, at)
+	}
+
+	now := time.Now()
+	// Beat 1 and 2: a fresh pending -sl each beat → deferred, no place.
+	seedPending("s-a-sl", now)
+	w.at.reconcileProtectionAt(now, "beat1")
+	if got := len(w.placedStops(t, 0)); got != 0 {
+		t.Fatalf("beat 1 must defer (no place), got %d places", got)
+	}
+	now2 := now.Add(61 * time.Second)
+	seedPending("s-b-sl", now2)
+	w.at.reconcileProtectionAt(now2, "beat2")
+	if got := len(w.placedStops(t, 0)); got != 0 {
+		t.Fatalf("beat 2 must defer (no place), got %d places", got)
+	}
+
+	// Beat 3: the cap fires → normal adjudication → exactly ONE place + the P0.
+	now3 := now2.Add(61 * time.Second)
+	seedPending("s-c-sl", now3)
+	w.at.reconcileProtectionAt(now3, "beat3")
+	stops := w.placedStops(t, 1)
+	if len(stops) != 1 {
+		t.Fatalf("beat 3 must place exactly ONE stop, got %d", len(stops))
+	}
+
+	alerts, err := w.st.Alert().List(w.at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_defer_capped" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the defer cap must raise ONE deduped P0, got %d", n)
+	}
+	if DeferCappedFound(w.at.id) != 1 {
+		t.Fatalf("the defer-cap counter must be 1, got %d", DeferCappedFound(w.at.id))
 	}
 }

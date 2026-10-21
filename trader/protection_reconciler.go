@@ -75,6 +75,18 @@ type protectionVerdict struct {
 	// normal adjudication (not the deferral) and the caller must raise the
 	// deduped P0 "protection_pending_stuck" plus a counter tick.
 	PendingStuck bool
+	// Deferred (m206) is true when this beat's verdict was deferred — the
+	// position was NOT adjudicated (or not placed) because a stop is
+	// mid-flight (a fresh pending -sl). It feeds the per-position
+	// consecutive-defer cap; the move-suppression deferral is detected by the
+	// caller, not here.
+	Deferred bool
+	// Capped (m206) is true when the per-position consecutive-defer cap fired
+	// this beat: normal adjudication ran (pending / suppressed stops are NOT
+	// protection) and the caller must raise the deduped P0
+	// "protection_defer_capped" plus a counter tick, and must NOT re-apply the
+	// move-suppression.
+	Capped bool
 }
 
 // isProtectiveStopFor requires a stop order acting against the position.
@@ -193,7 +205,7 @@ func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
 // already through the FRESH last price flattens rather than places.
 func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
 	acceptedStop *float64, planStop float64, mentorStop *float64, freshPrice *float64) protectionVerdict {
-	return adjudicateProtectionWith(symbol, side, posQty, book, haveBook, acceptedStop, planStop, mentorStop, nil, freshPrice, "", time.Time{})
+	return adjudicateProtectionWith(symbol, side, posQty, book, haveBook, acceptedStop, planStop, mentorStop, nil, freshPrice, "", time.Time{}, false)
 }
 
 // knownBrokerStop is the TIGHTEST stop the broker is known to have held for
@@ -229,6 +241,17 @@ func stopThrough(side string, price, stop float64) bool {
 // 60 s, so the second pass already exceeds 30 s; the pins test 30 s.
 const pendingSLStuckWindow = 30 * time.Second
 
+// protectionMoveSuppressWindow (m198) is how long a place is suppressed after a
+// move_stop frame was SENT for the signal — the stop is mid-flight, not absent.
+const protectionMoveSuppressWindow = 10 * time.Second
+
+// protectionDeferCapBeats (m206) is the consecutive-defer count at which the
+// protection reconciler stops deferring a position and adjudicates normally
+// (pending / suppressed stops are NOT protection). Bounds the worst-case
+// unprotected window to 2 beats (~120 s) no matter how often a fresh pending
+// stop or a move suppression recurs.
+const protectionDeferCapBeats = 3
+
 // pendingSLFirstSeen (m203) records the first pass a pending -sl order was
 // seen, keyed by trader id + order name (the owner's "by order name"). A stop
 // that stays pending past pendingSLStuckWindow stops deferring the verdict.
@@ -256,13 +279,15 @@ func clearPendingSLSeen(traderID, name string) {
 
 // adjudicateProtectionWith is adjudicateProtection plus P2-1's known broker
 // stop. PURE except for the m203 pending-SL clock: traderID+now feed the
-// bounded deferral window for a stop stuck in a pending state. The price order
-// for a non-mentor position is: the tightest stop the broker is KNOWN to have
-// held (never placed wider than it — a BE move must never be undone by the
-// net), else the accepted-risk stop, else the plan's.
+// bounded deferral window for a stop stuck in a pending state. forceNormal
+// (m206) makes a fresh pending -sl count as NOT protection — the consecutive-
+// defer cap's "adjudicate normally" pass. The price order for a non-mentor
+// position is: the tightest stop the broker is KNOWN to have held (never
+// placed wider than it — a BE move must never be undone by the net), else the
+// accepted-risk stop, else the plan's.
 func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
 	acceptedStop *float64, planStop float64, mentorStop *float64, brokerStop *knownBrokerStop, freshPrice *float64,
-	traderID string, now time.Time) (v protectionVerdict) {
+	traderID string, now time.Time, forceNormal bool) (v protectionVerdict) {
 
 	if posQty <= 0 {
 		return protectionVerdict{Action: protectionOK, Why: "no open position"}
@@ -319,7 +344,12 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 			// the normal adjudication (a live stop counts, this one doesn't)
 			// and PendingStuck is set so the caller raises a P0.
 			if namedStop && o.Liveness() == nt.LivenessPending {
-				if traderID != "" && recordPendingSLSeen(traderID, o.Name, now) {
+				if forceNormal {
+					// m206 cap pass: a pending stop is NOT protection — count
+					// it nowhere this beat (it falls through to the
+					// local/dying switch below). The caller already decided
+					// to stop deferring.
+				} else if traderID != "" && recordPendingSLSeen(traderID, o.Name, now) {
 					pendingStuck = true
 				} else {
 					pendingProtection = true
@@ -351,7 +381,7 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 	}
 
 	if pendingProtection {
-		return protectionVerdict{Action: protectionUnknown, NeedQty: posQty, HaveQty: covered,
+		return protectionVerdict{Action: protectionUnknown, NeedQty: posQty, HaveQty: covered, Deferred: true,
 			Why: "a protective stop (-sl) for this position is mid-flight (ChangePending/ChangeSubmitted/Submitted/Initialized) — treating it as possibly live and taking no action this pass"}
 	}
 	if pendingStuck {
@@ -523,6 +553,55 @@ func PendingStuckFound(traderID string) int64 {
 	return 0
 }
 
+// protectionDeferCount (m206) counts CONSECUTIVE beats where the protection
+// verdict was deferred for a position (a fresh pending -sl, or the 10 s
+// move-stop suppression). Keyed by trader id + symbol + side so the
+// sweepStaleProtectionState pass drops it when the position closes.
+var protectionDeferCount sync.Map // trader id + "|" + symbol + "|" + side → *int64
+
+// incProtectionDefer bumps the per-position consecutive-defer count and returns
+// the NEW value.
+func incProtectionDefer(key string) int64 {
+	v, _ := protectionDeferCount.LoadOrStore(key, new(int64))
+	return atomic.AddInt64(v.(*int64), 1)
+}
+
+func resetProtectionDefer(key string) {
+	protectionDeferCount.Delete(key)
+}
+
+// protectionDeferCapped (m206) counts how many times the per-position
+// consecutive-defer cap FIRED (forced a normal adjudication + a P0). Counted,
+// never inferred (checklist 35).
+var protectionDeferCapped sync.Map // trader id → *int64
+
+func incDeferCapped(traderID string) {
+	v, _ := protectionDeferCapped.LoadOrStore(traderID, new(int64))
+	atomic.AddInt64(v.(*int64), 1)
+}
+
+// DeferCappedFound (m206) reads the defer-cap counter for the boot line.
+func DeferCappedFound(traderID string) int64 {
+	if v, ok := protectionDeferCapped.Load(traderID); ok {
+		return atomic.LoadInt64(v.(*int64))
+	}
+	return 0
+}
+
+// moveStopRecentlySent (m206) reports whether a move_stop frame was SENT for
+// signalID within the suppression window — the one place the
+// MoveStopSentRecently seam is read, so the defer counter and the suppression
+// share it.
+func (at *AutoTrader) moveStopRecentlySent(signalID string, now time.Time) bool {
+	if signalID == "" || at == nil || at.trader == nil {
+		return false
+	}
+	sc, ok := at.trader.(interface {
+		MoveStopSentRecently(string, time.Time, time.Duration) bool
+	})
+	return ok && sc.MoveStopSentRecently(signalID, now, protectionMoveSuppressWindow)
+}
+
 // protectionPricesFor resolves the two prices D5 may place at, in the owner's
 // order of preference: the stop the BROKER accepted, else the plan's composed
 // stop. Both may be absent, and absence is reported, never invented (A24).
@@ -659,6 +738,7 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 	sweep(&protectionLastAction)
 	sweep(&protectionFlattenEpisode)
 	sweep(&protectionFlattenRetries)
+	sweep(&protectionDeferCount)
 }
 
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
@@ -749,14 +829,33 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		if fp, ok := protectionFreshPrice(symbol, now); ok {
 			freshPriceP = &fp
 		}
-		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, at.id, now)
+		var ksPtr *knownBrokerStop
+		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, at.id, now, false)
 		// P2-1: only a verdict that would PLACE a non-mentor stop asks for the
 		// tightest stop the broker is known to have held (the book-history read
 		// is a database scan; a protected position never pays for it).
 		if (v.Action == protectionPlace || (v.Action == protectionAlertOnly && v.HaveQty == 0)) && v.Source != "mentor_driver" && !hasMentorStop {
 			if ks, ok := at.knownBrokerStopFor(signalID, side, now); ok {
-				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, &ks, freshPriceP, at.id, now)
+				ksPtr = &ks
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, at.id, now, false)
 			}
+		}
+
+		// m206: the per-position consecutive-defer cap. A deferral is (a) the
+		// pending-defer verdict, or (b) a place suppressed by the 10 s move-stop
+		// window. On the 3rd consecutive deferral stop deferring: adjudicate
+		// normally (pending / suppressed stops are NOT protection), place what is
+		// missing, and raise the deduped P0 once. Reset on any non-deferred beat.
+		deferKey := at.id + "|" + symbol + "|" + side
+		moveSuppressed := v.Action == protectionPlace && at.moveStopRecentlySent(signalID, now)
+		if v.Deferred || moveSuppressed {
+			if incProtectionDefer(deferKey) >= protectionDeferCapBeats {
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, at.id, now, true)
+				v.Capped = true
+				resetProtectionDefer(deferKey)
+			}
+		} else {
+			resetProtectionDefer(deferKey)
 		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
@@ -794,6 +893,19 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 			fmt.Sprintf("%s %s ×%d: a -sl order has stayed pending (ChangePending/ChangeSubmitted/Submitted/Initialized) past the %s deferral bound. Stopped deferring — %s",
 				side, symbol, qty, pendingSLStuckWindow, v.Why))
 		at.logErrorf("🚨 PENDING STOP STUCK (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
+	}
+
+	// m206: the per-position consecutive-defer cap fired — normal adjudication
+	// ran and pending/suppressed stops were NOT protection. Raise the deduped
+	// P0 once and count every pass it fires.
+	if v.Capped {
+		incDeferCapped(at.id)
+		at.emitAlert("P0", "protection_defer_capped",
+			fmt.Sprintf("defercapped:%s:%s", symbol, side),
+			"Protection deferral cap reached",
+			fmt.Sprintf("%s %s ×%d: %d consecutive beats deferred (a pending stop or the move suppression) — adjudicated normally this beat and placed what was missing. %s",
+				side, symbol, qty, protectionDeferCapBeats, v.Why))
+		at.logErrorf("🚨 PROTECTION DEFER CAPPED (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 	}
 
 	switch v.Action {
@@ -840,15 +952,12 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		// whole place action (P0 + placement) — the next pass decides once the
 		// move settles. This is a second belt behind adjudicateProtectionWith's
 		// pendingProtection gate, for the window where the book snapshot predates
-		// the move.
-		if signalID != "" {
-			if sc, ok := at.trader.(interface {
-				MoveStopSentRecently(string, time.Time, time.Duration) bool
-			}); ok && sc.MoveStopSentRecently(signalID, now, 10*time.Second) {
-				at.logWarnf("🧷 protection placement SUPPRESSED (%s): %s %s ×%d — a move_stop was SENT for signal %s within 10 s; the stop is mid-flight, not absent",
-					trigger, side, symbol, qty, shortID(signalID))
-				return
-			}
+		// the move. m206: a Capped verdict has already overridden this — do NOT
+		// suppress again (the cap exists precisely to break this loop).
+		if !v.Capped && at.moveStopRecentlySent(signalID, now) {
+			at.logWarnf("🧷 protection placement SUPPRESSED (%s): %s %s ×%d — a move_stop was SENT for signal %s within 10 s; the stop is mid-flight, not absent",
+				trigger, side, symbol, qty, shortID(signalID))
+			return
 		}
 		incUnprotected(at.id)
 		at.emitAlert("P0", "unprotected_position",
