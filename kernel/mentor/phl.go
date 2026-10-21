@@ -66,6 +66,18 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 		price = t.RefBar.Low - cfg.PHLEntryBufferPts
 		stop = t.RefBar.High
 	}
+	// D3.3 p1 @00:40–01:05 — the EMA34 stop nuance: when the location is the EMA
+	// 34 and the reference candle only TOUCHED it (its wick did not pass through),
+	// the stop goes right AT the EMA 34 (covering it), no extra room. A wick that
+	// already passed through keeps the normal beyond-the-wick stop.
+	if (t.LevelKey == string(KindEMA34) || t.LevelKey == string(KindEMA34HTF)) && t.PriceAtTouch > 0 {
+		if side == SideLong && t.PriceAtTouch < stop {
+			stop = t.PriceAtTouch
+		}
+		if side == SideShort && t.PriceAtTouch > stop {
+			stop = t.PriceAtTouch
+		}
+	}
 	if priorSwing != 0 {
 		if side == SideLong && stop <= priorSwing {
 			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p1 R2]"

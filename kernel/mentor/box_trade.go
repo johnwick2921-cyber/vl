@@ -8,6 +8,10 @@ import (
 
 // Box trade evaluation — BOX REUSE (R1) and CONFLUENCE (R2), CTO rulings
 // 2026-10-03 verified in the sources [A].
+//
+// At an FTGL box (support) you do NOT need a PHL under the second bottom, and
+// you do NOT wait for a close above the EMA 34 before buying — the box path has
+// no EMA or PHL precondition [D3.3 p1 @02:42–03:38, @04:18–04:22].
 
 // BoxReturn is one post-formation return visit [D3.2 p2 @ 06:25: "minh se
 // dung box nay hoai ne" — we use this box again and again]. A visit =

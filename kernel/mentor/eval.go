@@ -634,7 +634,10 @@ func (e *Evaluator) refuse(reason string) {
 
 // boxBanFilter drops entry intents whose entry price — or whose reference
 // candle close — sits INSIDE a box: "NEVER trade inside the box, neither the
-// candle nor your entry point" [D3.2 p1 @ 06:59].
+// candle nor your entry point" [D3.2 p1 @ 06:59]. Leaving the box is NOT itself
+// an entry — after a body exits you still wait for a normal setup, which is then
+// tradable [D3.2 p1 @08:38–08:54; D3.2 p2 @07:38–07:50] (by construction: a
+// break is never an entry, only setups are).
 func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, refusals []string) {
 	if len(boxes) == 0 {
 		return out, nil
@@ -1719,9 +1722,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
-				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the 20–<30 stop band, and a size
-				// flag at an old high/low.
+				// [D4.1 p1 @ 05:19–05:34 plus D3.4 p3 @03:23–03:37 for the
+				// range words; also D3.4 p3 @02:24–02:55]. His conditions stay:
+				// the trigger zone (above), the R5 box (below), the 20–25 stop
+				// band (skip > 25), and a size flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
 				// (1h agreeing or silent); fold item 4: a DayOff shuts the
