@@ -170,6 +170,40 @@ func TestDailySessionBarLine_ClosedNamesReasonAndReopen(t *testing.T) {
 	}
 }
 
+// TestDailySessionBarLine_ClosedDayHalt (m169-1a) — the evening before a FULL
+// CLOSURE holiday is FORMING, but the gate halts at 00:00 CT (the start of the
+// closed day), never 16:00. 2026-11-26 is Thanksgiving (a full-closure holiday).
+func TestDailySessionBarLine_ClosedDayHalt(t *testing.T) {
+	tfData := oneDummy1D()
+
+	// Wednesday 11-25 18:00 CT: the session that opened 11-25 17:00 halts at
+	// 11-26 00:00 (Thanksgiving), not 16:00.
+	if got := formingBarLine("1d", tfData, ctMs(2026, 11, 25, 18, 0)); !strings.Contains(got, "FORMING (closes 00:00 CT)") {
+		t.Fatalf("11-25 18:00 must FORMING close 00:00 CT (the gate's halt); got %q", got)
+	}
+	if got := dailySessionClose(time.UnixMilli(ctMs(2026, 11, 25, 18, 0))); got.UnixMilli() != ctMs(2026, 11, 26, 0, 0) {
+		t.Fatalf("dailySessionClose(11-25 18:00) = %s, want 2026-11-26 00:00 CT", got.In(CTLocation()))
+	}
+}
+
+// TestDailySessionBarLine_2027Covered (m169-2) — 2027 is now a COVERED year, so
+// 2027-01-01 reads "CLOSED (holiday)" with a reopen, never the nested-paren
+// "holiday (calendar year not covered)".
+func TestDailySessionBarLine_2027Covered(t *testing.T) {
+	tfData := oneDummy1D()
+
+	got := formingBarLine("1d", tfData, ctMs(2027, 1, 1, 10, 0))
+	if !strings.Contains(got, "CLOSED (holiday)") {
+		t.Fatalf("2027-01-01 must be CLOSED (holiday) — year is covered; got %q", got)
+	}
+	if strings.Contains(got, "calendar year not covered") || strings.Contains(got, "(holiday (") {
+		t.Fatalf("2027-01-01 must not print the uncovered-year nested-paren message; got %q", got)
+	}
+	if !strings.Contains(got, "reopens") {
+		t.Fatalf("2027-01-01 must print a reopen; got %q", got)
+	}
+}
+
 // TestDailySessionBarLine_DST (m150-3, comment corrected m162) — the 1d label's
 // close reads 16:00 CT wall clock across both 2026 DST transition Sundays. This
 // pin documents the WALL-CLOCK invariant (the close is built by time.Date(…,16),

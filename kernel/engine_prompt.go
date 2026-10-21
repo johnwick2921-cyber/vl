@@ -562,17 +562,28 @@ func dailySessionBarLine(snapshotMs int64) string {
 	return fmt.Sprintf("current 1d bar: CLOSED (%s); reopens %s\n\n", reason, WeekdayClockCT(reopen))
 }
 
-// dailySessionClose returns the close instant of the CME session containing now.
-// The session opens 17:00 CT and closes 16:00 CT the next calendar day — except
-// when that close day is a SHORTENED session (e.g. 12:15 CT on the day after
-// Thanksgiving and on Christmas Eve), which SessionStateAt names as st.Close.
-// AddDate moves calendar days, so a DST transition cannot shift the 16:00 wall
-// clock (an Add(24h) mutant lands an hour late on 2026-03-08 / 2026-11-01).
+// dailySessionClose returns the close/halt instant of the CME session containing
+// now. The session opens 17:00 CT and closes 16:00 CT the next calendar day,
+// except:
+//   - a SHORTENED close day closes at st.Close (12:15 on the day after
+//     Thanksgiving and Christmas Eve);
+//   - a CLOSED close day (a full-closure holiday) HALTS at 00:00 CT — the gate
+//     IsCMEOpen is false for the whole closed day, so the session stops at the
+//     start of the holiday, not at 16:00.
+//
+// AddDate moves calendar days, so a DST transition cannot shift the wall clock.
 func dailySessionClose(now time.Time) time.Time {
 	start := CMESessionDayStart(now) // 17:00 CT of the session's start day
 	closeDay := start.AddDate(0, 0, 1)
-	if st := SessionStateAt(time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 12, 0, 0, 0, CTLocation())); st.Class == SessionShortened && st.HasClose {
-		return st.Close
+	st := SessionStateAt(time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 12, 0, 0, 0, CTLocation()))
+	switch st.Class {
+	case SessionShortened:
+		if st.HasClose {
+			return st.Close
+		}
+	case SessionClosed:
+		// m169-1a: the gate halts at the START of the closed day.
+		return time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 0, 0, 0, 0, CTLocation())
 	}
 	return time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 16, 0, 0, 0, CTLocation())
 }
