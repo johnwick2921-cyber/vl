@@ -79,11 +79,15 @@ func feedReceiptStale(symbol, tf string, at time.Time) (stale bool, ageMs int64,
 
 const (
 	defaultClockStepDetectMs = 100
-	// MENTOR-NY item 4: 2000 ms (was 1000). WSL wall-clock jitter of 1.0–1.2 s
-	// (10-14 RTH: +1025 ms, +1192 ms) sat right at 1000 ms and held entries
-	// 120 s each time; a real step (the 10-14 −125 s / +124 s pair) is far
-	// above 2 s. The hold (120 s) and the receipt leg are unchanged.
-	defaultClockStepFreezeMs = 2000
+	// m134: 6000 ms (was 2000). The 10-14 NTP micro-corrections were 1.0–1.2 s,
+	// but the 10-21 00:44–04:00 steps were 2–5 s — all below a real step, and
+	// every one refused a mentor arm for the full 120 s hold. A sub-6 s step is
+	// now logged and counted, never held: the bar-age wall rule has 1 interval +
+	// grace of slack and the monotonic receipt leg already fails a dead feed
+	// closed, so the freeze only needs to catch a REAL clock jump (the 10-14
+	// −125 s / +124 s pair) and the IsCMEOpen boundary crossing. The hold (120 s)
+	// and the receipt leg are unchanged.
+	defaultClockStepFreezeMs = 6000
 	defaultClockStepHoldS    = 120
 	clockStepSamplePeriod    = time.Second
 )
