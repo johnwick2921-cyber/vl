@@ -881,6 +881,44 @@ func (e *Evaluator) closedBucketsMemo(bars []market.Kline, now int64) []market.K
 }
 
 // closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
+// eveningSlow reports whether the evening/overnight read should drop to the 5m:
+// the night is "slow" when the 1m high-low range since the last RTH close
+// (15:00 CT) is under 100 points. X11 names 100–200 pts as a STRONG night (2m
+// stays fine); the 100-pt cutoff is ours [derived: X11 @17:40–18:26].
+func eveningSlow(now int64, bars []market.Kline) bool {
+	if !inEveningWindow(now) {
+		return false
+	}
+	t := time.UnixMilli(now).In(ctime())
+	rthClose := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	if now < rthClose {
+		// Overnight 00:00–02:59 CT: the evening belongs to yesterday's RTH close.
+		prev := t.AddDate(0, 0, -1)
+		rthClose = time.Date(prev.Year(), prev.Month(), prev.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	}
+	var hi, lo float64
+	have := false
+	for _, b := range bars {
+		if b.OpenTime < rthClose {
+			continue
+		}
+		if !have {
+			hi, lo, have = b.High, b.Low, true
+			continue
+		}
+		if b.High > hi {
+			hi = b.High
+		}
+		if b.Low < lo {
+			lo = b.Low
+		}
+	}
+	if !have {
+		return false // no evening bars yet — stay on the 2m
+	}
+	return hi-lo < 100
+}
+
 func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int64) []market.Kline {
 	agg := e.barsTFMemo(bars, tfMin)
 	if len(agg) > 0 && agg[len(agg)-1].CloseTime >= now {
@@ -1515,25 +1553,42 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	//     ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1 phút … sau 30
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
 	//     @17:08–17:25]).
+	//   • a SLOW evening/overnight (15:00 CT → 03:00 CT, overnight range under
+	//     100 pts) → 5-MINUTE read ("buổi tối mà nó đi chậm thì đánh khung 5
+	//     phút thôi" [X11 @17:40–18:26]; the 100-pt cutoff is ours — X11 only
+	//     names 100–200 pts as a STRONG night where the 2m stays fine
+	//     [derived: X11 @17:40–18:26]).
 	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
-	//     the 1m wicks sweep stops [X5 @00:16; X11 @17:27]), overnight and
-	//     the Europe open (3am Texas) included.
-	// OPEN COURSE QUESTION: "evening slow → 5-minute only" has no number for
-	// "slow" — left unimplemented; the 2m read stays through the evening.
+	//     the 1m wicks sweep stops [X5 @00:16; X11 @17:27]), a strong evening,
+	//     overnight and the Europe open (3am Texas) included.
 	// What STAYS on the 1m: the box/ORB escapes and every higher-TF read — they
 	// are defined on the 1m body close and are NOT one of the three named
 	// setups. While the knob is OFF, execPrev/execCur == prev/cur and the read
 	// is byte-identical to the 1m-only build.
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
 	execPrev, execCur, execTFMin := prev, cur, 1
-	if e.Cfg.Exec2mAfter30m && exec2mReads2m(now) {
-		// closedBucketsTF drops the still-forming last 2m bucket: on a 1m close
-		// that OPENS a 2m bucket, barsTF would flush a half-formed 2m candle and
-		// the read would see it. The read must be the previous two CLOSED 2m
-		// candles (the cb15/cb30 helper path).
-		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) >= 2 {
-			execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
-			execTFMin = 2
+	if e.Cfg.Exec2mAfter30m {
+		want := 2
+		switch {
+		case !exec2mReads2m(now):
+			want = 1
+		case inEveningWindow(now) && eveningSlow(now, bars):
+			want = 5
+		}
+		// closedBucketsTF drops the still-forming last bucket: on a 1m close
+		// that OPENS a 2m/5m bucket, barsTF would flush a half-formed candle and
+		// the read would see it. The read must be the previous two CLOSED
+		// candles (the cb15/cb30 helper path). If the chosen TF has fewer than 2
+		// closed buckets (early in the evening), fall back down 5 → 2 → 1.
+		for tf := want; tf > 1; tf = 2 {
+			if b2 := e.closedBucketsTFMemo(bars, tf, now); len(b2) >= 2 {
+				execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
+				execTFMin = tf
+				break
+			}
+			if tf == 2 {
+				break // no 2 closed 2m candles yet → the 1m read stays
+			}
 		}
 	}
 
@@ -1565,7 +1620,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// candles when the knob is ON and past the RTH open +30 window, the 1m
 		// otherwise (the 1m stays for the first 30 minutes [X5 @00:41–01:14]).
 		tp, tc := prev, cur
-		if execTFMin == 2 {
+		if execTFMin > 1 {
 			tp, tc = execPrev, execCur
 		}
 		intents := visitTick(&tr, lvl, tp, tc, e.Cfg)
