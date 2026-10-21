@@ -205,6 +205,38 @@ func TestRehydrateUnionBootShapeEMA50MatchesRecompute(t *testing.T) {
 	}
 }
 
+// TestRehydrateUnionDropsStoreBarsNewerThanTail is the m149 P2 pin: store bars
+// NEWER than the live tail are dropped, so a later live update to the forming
+// bar REPLACES instead of being refused as out-of-order. MUTANT: re-append
+// incoming[j:] in mergeRehydrateUnion → the tail advances to the store bucket,
+// the live update drops (outOfOrderDrops=1) and the forming bar freezes → RED.
+func TestRehydrateUnionDropsStoreBarsNewerThanTail(t *testing.T) {
+	c := NewBarCache(2500)
+	// Live ring tail at open 11:20 (seed close-stamped 11:25).
+	c.SeedHistorical("MNQ", "5m", []Bar{{T: open5m(11*60 + 25), O: 130, H: 132, L: 128, C: 131}})
+	// Store tape: 11:20 (overlap — existing wins) + 11:25 (NEWER than tail —
+	// must be dropped).
+	store := []Bar{
+		{T: open5m(11*60 + 20), O: 100, H: 103, L: 97, C: 101, Source: BarSourceHistorical},
+		{T: open5m(11*60 + 25), O: 101, H: 104, L: 98, C: 102, Source: BarSourceHistorical},
+	}
+	c.RehydrateUnion("MNQ", "5m", store)
+	after := c.Get("MNQ", "5m")
+	if len(after) != 1 || after[0].T != open5m(11*60+20) || after[0].C != 131 {
+		t.Fatalf("store bars newer than the live tail must be dropped: %+v", after)
+	}
+	// The live feed updates the forming 11:20 bar — it must REPLACE, never drop
+	// as out-of-order.
+	c.Upsert("MNQ", "5m", []Bar{{T: open5m(11*60 + 25), O: 131, H: 134, L: 129, C: 133}})
+	if c.OutOfOrderDrops() != 0 {
+		t.Fatalf("live update to the forming bar was dropped as out-of-order: %d", c.OutOfOrderDrops())
+	}
+	after = c.Get("MNQ", "5m")
+	if after[0].C != 133 {
+		t.Fatalf("forming bar did not update after the rehydrate: %+v", after)
+	}
+}
+
 func ema50(bars []Bar) float64 {
 	k := 2.0 / 51.0
 	ema := bars[0].C

@@ -869,6 +869,10 @@ func (c *BarCache) RehydrateUnion(symbol, timeframe string, bars []Bar) int {
 // mergeRehydrateUnion merges a live ring with store-derived bars for a
 // rehydrate: on equal T the EXISTING bar wins unconditionally — the store
 // fills only holes and the older end, never replaces a bar the ring holds.
+// m149 (P2): store bars NEWER than the live tail are DROPPED — the live feed
+// owns the forming bar, and letting the store reach ahead made the Upsert
+// out-of-order rule drop the later live updates to that bar, freezing it until
+// the next bucket.
 func mergeRehydrateUnion(existing, incoming []Bar) []Bar {
 	out := make([]Bar, 0, len(existing)+len(incoming))
 	i, j := 0, 0
@@ -886,7 +890,8 @@ func mergeRehydrateUnion(existing, incoming []Bar) []Bar {
 			j++
 		}
 	}
+	// Whatever of `existing` remains is the live tail — keep it. `incoming[j:]`
+	// is store bars NEWER than the live tail — dropped (see m149 P2 above).
 	out = append(out, existing[i:]...)
-	out = append(out, incoming[j:]...)
 	return out
 }
