@@ -721,13 +721,17 @@ func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool
 func tailscaleInstallExitError(code int) error {
 	switch code {
 	case 0, 3010:
-		return nil
+		return nil // 3010 = installed, restart required (a success code)
 	case 1223:
 		return fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
 	case 1618:
 		return fmt.Errorf("Windows is busy installing something else. Wait a minute, then run VL-Setup again.")
 	case 1602:
 		return fmt.Errorf("The Tailscale install was cancelled. Run VL-Setup again and click Yes.")
+	case 1638:
+		return fmt.Errorf("Tailscale is already installed. Open Tailscale from the Start menu once, then run VL-Setup again.")
+	case 1641:
+		return nil // installed; Windows started a restart (a success code)
 	case 1603:
 		return fmt.Errorf("Tailscale could not be installed (error 1603). Restart the PC, then run VL-Setup again. If it happens again, send a photo to the owner.")
 	default:
@@ -766,7 +770,7 @@ if ($sig.Status -ne 'Valid') { Write-Output 'VL_RESULT=MSI_NOT_VALID'; exit 0 }
 $org = ''
 foreach ($part in ($sig.SignerCertificate.Subject -split ',')) { $kv = $part.Trim(); if ($kv.StartsWith('O=')) { $org = $kv.Substring(2); break } }
 if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_RESULT=MSI_BAD_SIGNER'; exit 0 }
-$arg = '/i "' + $msi + '" /quiet /norestart'
+$arg = '/i "' + $msi + '" /quiet /norestart TS_NOLAUNCH=1'
 try {
   $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
   Write-Output ('VL_RESULT=' + $p.ExitCode)

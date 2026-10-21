@@ -86,6 +86,13 @@ ADDON_SHA=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_SHA256=//p'
 # Copy the obfuscated DLL from the Windows temp dir into the dist.
 ADDON_LOCAL=$(wslpath -u "$ADDON_WIN")
 cp "$ADDON_LOCAL" "$OUT/VL.AddOn.dll"
+# GATE (10-21): NinjaTrader 8 runs on .NET Framework 4.8. A DLL that references
+# the .NET Core/5+ System.Private.CoreLib cannot load there — builds 46-53 all
+# did (Obfuscar HideStrings, run as a .NET 9 tool). Refuse to ship one.
+if strings -a "$OUT/VL.AddOn.dll" | grep -q 'System\.Private\.CoreLib'; then
+  echo "REFUSED: VL.AddOn.dll references System.Private.CoreLib (.NET 5+) — NinjaTrader 8 (.NET Framework 4.8) cannot load it" >&2
+  exit 1
+fi
 
 # The friend double-clicks a friendly name on first run: VL-Setup.exe is the
 # same self-installing app (first run = install wizard). The owner hands it to

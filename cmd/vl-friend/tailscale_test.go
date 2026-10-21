@@ -597,7 +597,9 @@ func TestEnsureTailscaleMsiExitCodes(t *testing.T) {
 		{1602, "The Tailscale install was cancelled. Run VL-Setup again and click Yes."},
 		{1603, "Tailscale could not be installed (error 1603). Restart the PC, then run VL-Setup again. If it happens again, send a photo to the owner."},
 		{1, "Tailscale install failed (exit 1)"},
-		{1638, "Tailscale install failed (exit 1638)"},
+		{1638, "Tailscale is already installed. Open Tailscale from the Start menu once, then run VL-Setup again."},
+		{1641, ""}, // installed; Windows started a restart (success)
+		{1637, "Tailscale install failed (exit 1637)"},
 	}
 	for _, c := range cases {
 		err := tailscaleInstallExitError(c.code)

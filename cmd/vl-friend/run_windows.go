@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"syscall"
@@ -121,6 +122,9 @@ func realDeps() deps {
 			fmt.Print(prompt)
 			fd := int(os.Stdin.Fd())
 			if term.IsTerminal(fd) {
+				// Right-click paste needs QuickEdit on a legacy console — turn it
+				// on for the paste (an installed PC had it off), off right after.
+				setQuickEdit(true)
 				b, err := term.ReadPassword(fd)
 				// The paste is done (QuickEdit stayed on for right-click paste;
 				// ReadPassword restored it). Now turn it off so a stray click
@@ -469,6 +473,13 @@ func openDashboardNative(url string) error {
 	}
 	done := make(chan error, 1)
 	go func() {
+		// Microsoft: "COM should be initialized before ShellExecute is called"
+		// (shellapi ShellExecuteW). COM init is per OS thread — lock it.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED|windows.COINIT_DISABLE_OLE1DDE) == nil {
+			defer windows.CoUninitialize()
+		}
 		var a *uint16
 		if args != "" {
 			a = windows.StringToUTF16Ptr(args)
@@ -487,13 +498,22 @@ func openDashboardNative(url string) error {
 // ENABLE_EXTENDED_FLAGS, which Windows requires for that bit to apply), so a
 // stray click cannot freeze the app's output. Best-effort: no console (the
 // --open icon path detaches) or a failure leaves the mode unchanged.
-func disableQuickEdit() {
+func disableQuickEdit() { setQuickEdit(false) }
+
+// setQuickEdit turns QuickEdit on or off (with ENABLE_EXTENDED_FLAGS, which
+// Windows requires: "To disable this mode, use ENABLE_EXTENDED_FLAGS without
+// this flag" — learn.microsoft.com SetConsoleMode). Best-effort.
+func setQuickEdit(on bool) {
 	h := windows.Handle(os.Stdin.Fd())
 	var mode uint32
 	if err := windows.GetConsoleMode(h, &mode); err != nil {
 		return
 	}
-	mode &^= windows.ENABLE_QUICK_EDIT_MODE
+	if on {
+		mode |= windows.ENABLE_QUICK_EDIT_MODE
+	} else {
+		mode &^= windows.ENABLE_QUICK_EDIT_MODE
+	}
 	mode |= windows.ENABLE_EXTENDED_FLAGS
 	_ = windows.SetConsoleMode(h, mode)
 }
