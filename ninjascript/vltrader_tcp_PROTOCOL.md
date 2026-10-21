@@ -6,7 +6,7 @@ Spec source: `docs/superpowers/plans/2026-05-22-nq-databento-ninjatrader.md` lin
 
 ## Transport
 
-- TCP loopback: `127.0.0.1:36974` (note: NOT NinjaTrader's ATI port 36973).
+- TCP loopback by default: `127.0.0.1:36974` (note: NOT NinjaTrader's ATI port 36973). The Go side's listen address is overridden by `NT_TCP_LISTEN_ADDR`; the C# AddOn's target is `Documents\NinjaTrader 8\VL\connect.json` (`{host, port, connect_key}`) — absent, it connects to `127.0.0.1:36974` with no key.
 - Single concurrent client: NT8 AddOn → Go server. A second client is rejected.
 - Connection is opened by the C# AddOn at NT8 startup; reconnects every 5 seconds on disconnect.
 
@@ -181,14 +181,14 @@ Outgoing fill notification.
 The C# AddOn sends `hello` as the FIRST frame on every (re)connect; the Go server replies with its own `hello`.
 
 ```json
-{ "type": "hello", "payload": { "protocol_version": 2, "source": "vltrader-addon" } }
+{ "type": "hello", "payload": { "protocol_version": 3, "source": "vltrader-addon" } }
 ```
 
 **Semantics:**
 
-- `protocol_version`: the peer's wire generation (`ProtocolVersion` in `tcp_framing.go` == `PROTOCOL_VERSION` in `VLTraderTCPClient.cs`; v2 = symbol-tagged fills + this handshake). Bump ONLY with a lockstep C#+Go ship.
+- `protocol_version`: the peer's wire generation (`ProtocolVersion` in `tcp_framing.go` == `PROTOCOL_VERSION` in `VLTraderTCPClient.cs`; current = 3). Bump ONLY with a lockstep C#+Go ship.
 - Go server on MISMATCH: logs `PROTOCOL VERSION MISMATCH — refusing connection` and CLOSES (never silently misparses). The AddOn's reconnect loop will retry + log its own mismatch warning from the server's reply.
-- Go server on a connection that NEVER sends hello: tolerated as a LEGACY (pre-v2) AddOn with a one-time warning — so the lockstep deploy window (new Go, not-yet-F5'd C#) cannot brick the bar feed.
+- Go server on a connection that NEVER sends hello: with `NT_CONNECT_KEY` set the connection is CLOSED after 10 s (a silent peer must not squat the single client slot, and any non-hello frame before auth is closed). With NO key it is tolerated as a LEGACY (pre-v2) AddOn with a one-time warning — so the lockstep deploy window (new Go, not-yet-F5'd C#) cannot brick the bar feed.
 - `source`: `"vltrader-addon"` or `"vl-go"` (diagnostics only).
 
 ### 3. `heartbeat` (bidirectional)

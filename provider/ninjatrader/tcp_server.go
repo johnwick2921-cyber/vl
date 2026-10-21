@@ -59,6 +59,11 @@ const (
 	acceptLoopPollInterval = 250 * time.Millisecond
 )
 
+// firstHelloTimeout (K1) — in connect-key mode a peer must send a matching
+// hello within this window or the connection closes (a silent peer must not
+// hold the single client slot). A var (not const) so tests can shrink it.
+var firstHelloTimeout = 10 * time.Second
+
 // TCPServer is the Go-side endpoint of the Plan 1.5 TCP bridge. It owns the
 // listener, exactly one connected client at a time, the pending-signal queue
 // flushed on (re)connect, and the inbound fill channel that TCPTrader reads.
@@ -264,6 +269,7 @@ type TCPServer struct {
 	// Connection state — single concurrent client (spec L4359).
 	connMu        sync.Mutex
 	conn          net.Conn
+	connAuthed    bool // K1: true once the current conn sent a matching hello (or no key required)
 	lastAckTime   time.Time
 	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
 
@@ -628,9 +634,7 @@ func (s *TCPServer) UnsubscribeBarsHistoryFor(requestID string) {
 // over [from, to). Immediate command: errors if no NT client is connected, so
 // the importer can state `unavailable` instead of hanging (three-state honesty).
 func (s *TCPServer) SendBarsHistoryRequest(payload BarsHistoryRequestPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1053,9 +1057,7 @@ func (s *TCPServer) SubscribeBarsSymbol(symbol string) error {
 	s.AddBarsSubscribeSymbols(symbol) // idempotent (dedup)
 	s.setSubState(symbol, "pending", "", "")
 
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("tcp_server: subscribe %s: not connected (registered; will subscribe on reconnect)", symbol)
 	}
@@ -1140,9 +1142,7 @@ func (s *TCPServer) UnsubscribeBarsSymbol(symbol string) error {
 	s.barCache.PurgeSymbol(symbol)
 	s.setSubState(symbol, "unsubscribed", "", "")
 
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("tcp_server: unsubscribe %s: not connected (removed from auto-subscribe list)", symbol)
 	}
@@ -1359,9 +1359,7 @@ func (s *TCPServer) SendSignal(payload SignalPayload) error {
 // Unlike SendSignal it is NOT queued — a close is an immediate command; if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1377,9 +1375,7 @@ func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
 // closing the position (auto-breakeven). Immediate command like
 // SendClosePosition; errors if no client is connected so the caller can report it.
 func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1395,9 +1391,7 @@ func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
 // resting limit entry and/or its bracket legs. Immediate command.
 // SendPlaceProtectiveStop puts a standalone protective stop on the wire (D5).
 func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1410,9 +1404,7 @@ func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) 
 }
 
 func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1427,9 +1419,7 @@ func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
 // SendModifyBracket (PHASE 2 armed orders) asks the AddOn to modify the live
 // bracket SL/TP in place (the safe Change pattern). Immediate command.
 func (s *TCPServer) SendModifyBracket(payload ModifyBracketPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1445,9 +1435,7 @@ func (s *TCPServer) SendModifyBracket(payload ModifyBracketPayload) error {
 // Like SendClosePosition, this is an immediate command (not queued); if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendAccountSelect(payload AccountSelectPayload) error {
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
@@ -1526,6 +1514,22 @@ func (s *TCPServer) IsConnected() bool {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
 	return s.conn != nil
+}
+
+// connectedAuthed returns the live client conn, or nil when no client is
+// connected OR (K1, connect-key mode) the current client has not yet sent a
+// matching hello. Writers use this so nothing is ever written to an
+// unauthenticated peer.
+func (s *TCPServer) connectedAuthed() net.Conn {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if s.conn == nil {
+		return nil
+	}
+	if ConnectKey() != "" && !s.connAuthed {
+		return nil
+	}
+	return s.conn
 }
 
 // Addr returns the actual listening address (useful for tests using :0).
@@ -1650,6 +1654,7 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 		s.conn = c
+		s.connAuthed = ConnectKey() == "" // K1: legacy (no key) is authed on connect
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.connMu.Unlock()
@@ -1803,9 +1808,7 @@ func (s *TCPServer) RequestDeepBarsBackfill(symbol, timeframe string, barsBack i
 		barsBack = 8640 // 6 days of 1m — covers the 08-24+ retention window
 	}
 	s.beginBarTruthCapture(symbol, timeframe)
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return fmt.Errorf("no live NT8 connection")
 	}
@@ -2038,6 +2041,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 	// is refused in the FrameHello case below.
 	helloSeen := false
 	legacyWarned := false
+	if ConnectKey() != "" {
+		_ = c.SetReadDeadline(time.Now().Add(firstHelloTimeout)) // K1: a silent peer must not hold the client slot
+	}
 
 	for {
 		// No SetReadDeadline — ReadFrame blocks until a frame arrives OR
@@ -2053,6 +2059,11 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 		if err != nil {
 			if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) {
 				s.logger.Info("tcp_server: client disconnected")
+				return
+			}
+			var ne net.Error
+			if errors.As(err, &ne) && ne.Timeout() && !helloSeen && ConnectKey() != "" {
+				s.logger.Warn("tcp_server: no hello within deadline — closing (connect-key mode)", "addr", c.RemoteAddr())
 				return
 			}
 			if errors.Is(err, ErrFrameTooLarge) {
@@ -2081,11 +2092,17 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 		// pre-P5.2 AddOn. Tolerated (warn once per connection) so the lockstep
 		// deploy window can't kill the feed; an explicit version mismatch is
 		// still refused in the FrameHello case.
-		if !helloSeen && !legacyWarned && env.Type != FrameHello && env.Type != FrameHeartbeat && env.Type != FrameAck {
-			legacyWarned = true
-			s.logger.Warn("tcp_server: data frame before hello — LEGACY (pre-P5.2) AddOn assumed",
-				"first_frame", env.Type,
-				"action", "redeploy the C# AddOn (cp → F5 → NT8 restart) to enable the protocol handshake")
+		if !helloSeen && env.Type != FrameHello {
+			if ConnectKey() != "" {
+				s.logger.Warn("tcp_server: frame before hello in connect-key mode — closing", "frame", env.Type, "addr", c.RemoteAddr())
+				return
+			}
+			if !legacyWarned && env.Type != FrameHeartbeat && env.Type != FrameAck {
+				legacyWarned = true
+				s.logger.Warn("tcp_server: data frame before hello — LEGACY (pre-P5.2) AddOn assumed",
+					"first_frame", env.Type,
+					"action", "redeploy the C# AddOn (cp → F5 → NT8 restart) to enable the protocol handshake")
+			}
 		}
 
 		switch env.Type {
@@ -2116,6 +2133,12 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 				}
 			}
 			helloSeen = true
+			if ConnectKey() != "" {
+				s.connMu.Lock()
+				s.connAuthed = true
+				s.connMu.Unlock()
+				_ = c.SetReadDeadline(time.Time{}) // K1: clear the first-hello deadline
+			}
 			// W26 — the hello precedes the AddOn's first BarsRequest build + the
 			// reloaded-series re-emit; arm the stale-print guard for it.
 			s.barCache.NoteReconnect(time.Now())
@@ -2625,8 +2648,13 @@ func (s *TCPServer) heartbeatLoop(ctx context.Context, c net.Conn) {
 				s.connMu.Unlock()
 				return
 			}
+			authed := s.connAuthed || ConnectKey() == ""
 			since := time.Since(s.lastAckTime)
 			s.connMu.Unlock()
+			if !authed {
+				// K1: never heartbeat an unauthenticated peer
+				continue
+			}
 			if since > TCPHeartbeatAckTimeout {
 				s.logger.Warn("tcp_server: heartbeat ack timeout, closing", "since", since)
 				s.closeConn()
@@ -2717,9 +2745,7 @@ func (s *TCPServer) flushPendingReportFor(own string) (map[string]bool, error) {
 		return s.dropQueuedWhileHeldFor(own), nil
 	}
 	var heldDropped map[string]bool
-	s.connMu.Lock()
-	c := s.conn
-	s.connMu.Unlock()
+	c := s.connectedAuthed()
 	if c == nil {
 		return nil, nil
 	}
@@ -2857,6 +2883,7 @@ func (s *TCPServer) closeConn() {
 	if s.conn != nil {
 		_ = s.conn.Close()
 		s.conn = nil
+		s.connAuthed = false
 		// UPDATER-NT8-CLOSED: stamp the disconnect on the maintenance record
 		// (the nt8_absent verdict measures continuous link-down from THIS
 		// stamp). A new accept replaces the record, so the stamp is cleared
