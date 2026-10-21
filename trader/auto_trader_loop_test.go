@@ -16,6 +16,8 @@ type MockTrader struct {
 	marketPrice   float64
 	allOrders     []types.OpenOrder
 	closedPnLData []types.ClosedPnLRecord
+
+	placeStopCalls int
 }
 
 func (m *MockTrader) GetBalance() (map[string]interface{}, error) {
@@ -95,6 +97,13 @@ func (m *MockTrader) GetClosedPnL(startTime time.Time, limit int) ([]types.Close
 
 func (m *MockTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, error) {
 	return m.allOrders, nil
+}
+
+// PlaceProtectiveStop records the call so a placement pin can assert the
+// reconciler placed a stop when the position had no cover at all.
+func (m *MockTrader) PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error {
+	m.placeStopCalls++
+	return nil
 }
 
 // TestTraderGetBalanceReturnsErrorBeforeReceived verifies that a trader can signal
