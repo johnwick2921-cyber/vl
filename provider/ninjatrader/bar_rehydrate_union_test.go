@@ -238,10 +238,13 @@ func TestAggregate1mToTFKeepsSundayOpenBucket(t *testing.T) {
 	}
 }
 
-// TestRehydrateUnionColdKeyIsNoOp is the m168 COLD-KEY pin: a store must NEVER
-// substitute for a live feed, so RehydrateUnion on a key the ring has never held
-// adds nothing. MUTANT: drop/weaken the cold-key guard (treat `existing` as nil
-// and proceed) → the store bars fill the empty ring → RED.
+// TestRehydrateUnionColdKeyIsNoOp is the m168 COLD-KEY pin, end to end: a store
+// must NEVER substitute for a live feed, so RehydrateUnion on a key the ring has
+// never held adds nothing. The ENFORCING line is mergeRehydrateUnion — it
+// appends only the live tail (existing[i:]) and never the incoming store bars,
+// so a nil existing merges to empty; RehydrateUnion's cold-key guard is an early
+// return, not the enforcement. The direct pin on that line is
+// TestMergeRehydrateUnionNilExistingIsEmpty.
 func TestRehydrateUnionColdKeyIsNoOp(t *testing.T) {
 	c := NewBarCache(2500)
 	store := []Bar{{T: open5m(10*60 + 5), O: 100, H: 102, L: 98, C: 101, Source: BarSourceHistorical}}
@@ -250,6 +253,19 @@ func TestRehydrateUnionColdKeyIsNoOp(t *testing.T) {
 	}
 	if got := c.Get("MNQ", "5m"); len(got) != 0 {
 		t.Fatalf("cold key must stay empty — the store never substitutes for the live feed: %+v", got)
+	}
+}
+
+// TestMergeRehydrateUnionNilExistingIsEmpty is the m184 direct pin: the enforcing
+// line for the cold-key no-op is the merge itself, not RehydrateUnion's guard.
+// With a nil existing, the merge must return EMPTY — only the live tail is ever
+// appended, the incoming store bars are never appended. MUTANT: re-append
+// `out = append(out, incoming[j:]...)` in mergeRehydrateUnion → the store bars
+// leak in → RED.
+func TestMergeRehydrateUnionNilExistingIsEmpty(t *testing.T) {
+	store := []Bar{{T: open5m(10*60 + 5), O: 100, H: 102, L: 98, C: 101, Source: BarSourceHistorical}}
+	if got := mergeRehydrateUnion(nil, store); len(got) != 0 {
+		t.Fatalf("mergeRehydrateUnion(nil, store) must be empty (the store never substitutes for the live feed), got %+v", got)
 	}
 }
 
