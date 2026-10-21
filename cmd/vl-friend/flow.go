@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path/filepath"
@@ -181,12 +182,12 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	// [6/6] Desktop + Start Menu shortcuts + README, then the final screen, then
 	// OPEN the dashboard so the non-technical owner lands on the login page.
 	// The icon launches vl-friend.exe --open, so copy ourselves to LOCALAPPDATA
-	// first.
+	// first. B1: shortcut creation is NON-fatal — warn and continue.
 	if err := ensureLocalExe(d); err != nil {
 		return err
 	}
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
-		return err
+		d.print("warning: could not create the VL icon — " + err.Error())
 	}
 	if err := writeDashboardREADME(d, docs, base); err != nil {
 		return err
@@ -517,14 +518,15 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int,
 // $env:USERPROFILE\Desktop). The icon launches the LOCAL copy of vl-friend.exe
 // with --open (quick update check + open dashboard); the .url Internet Shortcut
 // fallback opens the dashboard in the default browser when the exe copy is
-// missing.
+// missing. B1: the if/else is ONE statement — PowerShell rejects "};else{".
+// m10: each .lnk/.url is written only when missing (Test-Path), so a daily click
+// is a no-op, not a rewrite.
 func shortcutScript(appURL string) string {
 	return strings.Join([]string{
 		"$d=[Environment]::GetFolderPath('Desktop')",
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
-		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$l=$w.CreateShortcut(\"$dir\\VL.lnk\");$l.TargetPath=$exe;$l.Arguments='--open';$l.Save()}}",
-		"else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";[System.IO.File]::WriteAllText(\"$d\\VL.url\",$u);[System.IO.File]::WriteAllText(\"$s\\VL.url\",$u)}",
+		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
 	}, ";")
 }
 
@@ -620,12 +622,11 @@ func resolveDashboardBase(ctx context.Context, d deps) (string, error) {
 	return fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort), nil
 }
 
-// runOpen is the desktop-icon path (vl-friend.exe --open): a quick silent update
-// check (≤5s, any error just continues), then the dashboard. If an update
-// exists, a Windows Yes/No dialog offers Update now / Later (Update now = the
-// same verified flat-gated swap with the NT8-running prompt). On any error the
-// mentor sees a Windows dialog "VL could not start: <reason>…" — the icon must
-// never fail silently (I3).
+// runOpen is the desktop-icon path (vl-friend.exe --open): open the dashboard
+// FIRST, then a quick silent update check (≤5s); only an ADD-ON update shows a
+// Windows dialog (M5). Update now = the verified flat-gated swap with the
+// NT8-running prompt, bounded to its own ctx so it can never hang the icon
+// launch (M3). On any error the mentor sees a dialog "VL could not start…" (I3).
 func runOpen(ctx context.Context, d deps) error {
 	base, err := resolveDashboardBase(ctx, d)
 	if err != nil {
@@ -633,24 +634,55 @@ func runOpen(ctx context.Context, d deps) error {
 		return err
 	}
 
-	// Quick silent update check; any error just continues.
-	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	dec, derr := detectUpdate(cctx, d, base)
-	cancel()
-	if derr == nil && (dec.AddonUpdateAvailable || dec.AppUpdateAvailable) {
-		if d.messageBox("VL update available — Update now / Later") {
-			if _, uerr := RunUpdateCheck(ctx, d, base, true); uerr != nil {
-				d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
-			}
-		}
+	// B2: wire the production flat probe — runOpen never set d.positions, so an
+	// icon-launched "Update now" used the stub ("flat probe not wired") and hung
+	// until the ctx expired.
+	d.positions = func(c context.Context) (float64, error) {
+		return probeFlat(c, d, base)
 	}
 
-	// Ensure the icons (re-create if missing), then open the dashboard. If the
-	// dashboard still cannot open, tell the mentor.
-	_ = createDesktopShortcut(ctx, d, base)
+	// M3/F8: open the dashboard FIRST, then offer the update. Shortcut
+	// re-creation is non-fatal and (m10) only writes when missing.
+	if err := createDesktopShortcut(ctx, d, base); err != nil {
+		d.print("warning: could not create the VL icon — " + err.Error())
+	}
 	if oerr := d.openURL(ctx, base); oerr != nil {
 		d.messageBox("VL could not start: " + oerr.Error() + ". Send a photo of this to the owner.")
 		return oerr
+	}
+
+	// Quick bounded update check; a probe error is shown (m12), never silent.
+	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	dec, derr := detectUpdate(cctx, d, base)
+	cancel()
+	if derr != nil {
+		d.messageBox("VL could not start: " + derr.Error() + ". Send a photo of this to the owner.")
+		return derr
+	}
+	if !dec.AddonUpdateAvailable {
+		if dec.AppUpdateAvailable {
+			// M5: an app-only update is a one-time info line, not a dialog on
+			// every click.
+			d.print("A new VL-Setup is available — ask the owner for it.")
+		}
+		return nil
+	}
+
+	if !d.messageBox("VL update available — Update now / Later") {
+		return nil
+	}
+
+	// Update now: the flat wait is bounded to its own ctx (M3, ≤5 min) so the
+	// icon launch can never hang; on a flat timeout it DEFERS (no error) and the
+	// dashboard is already open.
+	uctx, ucancel := context.WithTimeout(ctx, 5*time.Minute)
+	defer ucancel()
+	if _, uerr := RunUpdateCheck(uctx, d, base, true); uerr != nil {
+		if errors.Is(uerr, errNotFlat) {
+			return nil // deferred — dashboard is already open
+		}
+		d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
+		return uerr
 	}
 	return nil
 }
@@ -746,13 +778,14 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 		return nil
 	}
 	newVL := ntVLdir(docs)
+	ntBinCustom := filepath.Join(docs, "NinjaTrader 8", "bin", "Custom")
 	type mv struct{ from, to string }
 	moves := []mv{
 		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "connect.json"), filepath.Join(newVL, "connect.json")},
 		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "installed.json"), filepath.Join(newVL, "installed.json")},
 		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "vl-app.json"), filepath.Join(newVL, "vl-app.json")},
 		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "README.txt"), filepath.Join(newVL, "README.txt")},
-		{filepath.Join(oldDocs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll"), filepath.Join(docs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll")},
+		{filepath.Join(oldDocs, "NinjaTrader 8", "bin", "Custom", "VL.AddOn.dll"), filepath.Join(ntBinCustom, "VL.AddOn.dll")},
 		{filepath.Join(oldDocs, "NinjaTrader 8", "VL", "old", "VL.AddOn.dll"), filepath.Join(newVL, "old", "VL.AddOn.dll")},
 	}
 	for _, m := range moves {
@@ -761,6 +794,12 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 		}
 		if _, err := d.readFile(m.to); err == nil {
 			continue // already migrated
+		}
+		// m9: only move the add-on DLL when the F2 proof holds — NinjaTrader has
+		// created bin\Custom. Otherwise skip (and log the skip).
+		if strings.Contains(m.from, filepath.Join("bin", "Custom")) && !d.dirExists(ntBinCustom) {
+			d.print("skipped moving " + m.from + " — NinjaTrader 8 has not created bin\\Custom yet")
+			continue
 		}
 		if err := d.mkdirAll(filepath.Dir(m.to), 0o755); err != nil {
 			return err
@@ -797,8 +836,9 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	if err := ensureLocalExe(d); err != nil {
 		return err
 	}
+	// B1: shortcut creation is NON-fatal — warn and continue to the dashboard.
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
-		return err
+		d.print("warning: could not create the VL icon — " + err.Error())
 	}
 	if err := d.openURL(ctx, base); err != nil {
 		return fmt.Errorf("open dashboard: %w", err)
@@ -810,7 +850,12 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	}
 	dec, err := RunUpdateCheck(ctx, d, base, false)
 	if err != nil {
-		return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
+		if errors.Is(err, errNotFlat) {
+			// M3: not flat in time — DEFER, not an error to the user.
+			d.print("Update deferred (Later).")
+		} else {
+			return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
+		}
 	}
 	if dec.Applied {
 		d.print("Updated ✓ — restart NinjaTrader to load the new add-on.")
@@ -818,7 +863,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	if dec.AppUpdateAvailable {
 		// F6: there is no self-update — say it honestly.
 		d.print("A new VL-Setup is available — ask the owner for it.")
-	} else if dec.AddonUpdateAvailable {
+	} else if dec.AddonUpdateAvailable && err == nil {
 		d.print("Update deferred (Later).")
 	}
 
@@ -881,7 +926,7 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 		return dec, err
 	}
 	// Never update during a trade: wait until the friend bot is flat.
-	if err := waitUntilFlat(ctx, d.positions, 60*time.Second); err != nil {
+	if err := waitFlat(ctx, d); err != nil {
 		return dec, err
 	}
 	// F4: never write a locked DLL. NinjaTrader holds VL.AddOn.dll while it
@@ -902,14 +947,21 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 			return dec, nil // deferred
 		}
 	}
+	// m7: re-probe flat right before the swap — a trade may have opened while the
+	// user was closing NinjaTrader.
+	if err := waitFlat(ctx, d); err != nil {
+		return dec, err
+	}
 	// Swap: move the current add-on aside (never delete), write the new one.
-	if err := d.mkdirAll(filepath.Dir(oldAddonPath(docs)), 0o755); err != nil {
+	old := oldAddonTimestampedPath(docs)
+	if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 		return dec, err
 	}
 	// A rename error is an error (F4), but only when the old DLL exists — a
-	// first-ever update has nothing to move.
+	// first-ever update has nothing to move. m6: the backup is timestamped so a
+	// 2nd update never overwrites the 1st.
 	if _, statErr := d.readFile(addonDstPath(docs)); statErr == nil {
-		if err := d.rename(addonDstPath(docs), oldAddonPath(docs)); err != nil {
+		if err := d.rename(addonDstPath(docs), old); err != nil {
 			return dec, fmt.Errorf("move old add-on: %w", err)
 		}
 	}
@@ -921,6 +973,20 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 	}
 	dec.Applied = true
 	return dec, nil
+}
+
+// waitFlat prints the plain-English wait line and polls the flat probe until
+// flat (M3), returning errNotFlat on timeout.
+func waitFlat(ctx context.Context, d deps) error {
+	d.print("Waiting for your trade to close…")
+	return waitUntilFlat(ctx, d.positions, 60*time.Second)
+}
+
+// oldAddonTimestampedPath returns a timestamped backup path for the old add-on
+// (m6): <MyDocuments>\NinjaTrader 8\VL\old\VL.AddOn-<ts>.dll — never
+// overwritten.
+func oldAddonTimestampedPath(docs string) string {
+	return filepath.Join(ntVLdir(docs), "old", "VL.AddOn-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".dll")
 }
 
 // addonBuildNewer compares build numbers (numeric when both parse; string

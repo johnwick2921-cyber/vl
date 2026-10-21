@@ -274,7 +274,13 @@ func TestRunUpdateCheckSwapsAddonWhenFlat(t *testing.T) {
 	if b, err := os.ReadFile(addonDstPath(home)); err != nil || string(b) != string(addonBody()) {
 		t.Fatalf("new add-on not in place: %v %q", err, b)
 	}
-	if b, err := os.ReadFile(oldAddonPath(home)); err != nil || string(b) != "MZ-old" {
+	// m6: the old add-on is MOVED aside with a timestamped name (never deleted).
+	oldDir := filepath.Join(ntVLdir(home), "old")
+	entries, err := os.ReadDir(oldDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one timestamped backup in VL\\old\\: %v %v", entries, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(oldDir, entries[0].Name())); err != nil || string(b) != "MZ-old" {
 		t.Fatalf("old add-on was not MOVED aside (never deleted): %v %q", err, b)
 	}
 }
@@ -540,6 +546,13 @@ func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
 	}
 	if strings.Contains(ps, "$env:USERPROFILE") {
 		t.Fatalf("shortcut script still hardcodes $env:USERPROFILE (OneDrive-unsafe):\n%s", ps)
+	}
+	// B1: the if/else must be ONE statement — PowerShell rejects "};else{".
+	if strings.Contains(ps, "};else{") {
+		t.Fatalf("shortcut script has an invalid '};else{' split:\n%s", ps)
+	}
+	if !strings.Contains(ps, "}else{") {
+		t.Fatalf("shortcut script is missing the contiguous }else{:\n%s", ps)
 	}
 }
 
@@ -1059,7 +1072,13 @@ func TestRunOpenUpdateDialogYes(t *testing.T) {
 	}
 	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
 	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
-	d.fetch = fetch
+	// B2: runOpen wires d.positions = probeFlat, so the flat endpoint must answer.
+	d.fetch = func(ctx context.Context, u string) ([]byte, error) {
+		if u == base+"/api/friend/flat" {
+			return []byte(`{"flat":true,"traders":1,"at":1}`), nil
+		}
+		return fetch(ctx, u)
+	}
 	d.allowedSigners = signers
 	d.messageBox = func(text string) bool { rec.messages = append(rec.messages, text); return true }
 
