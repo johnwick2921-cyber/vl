@@ -12,6 +12,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"golang.org/x/sys/windows"
 )
 
 // run_windows.go — the real Windows wiring of the friend app. The install /
@@ -118,6 +120,18 @@ func windowsDocumentsDir() (string, error) {
 	return strings.TrimSpace(string(out)), nil
 }
 
+// procFreeConsole is the kernel32 FreeConsole entry point. golang.org/x/sys
+// does not wrap FreeConsole, so it is resolved lazily against kernel32.dll.
+var procFreeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeConsole")
+
+// hideConsole detaches the process from its console (kernel32 FreeConsole).
+// It is called ONLY at the start of the --open path, so the double-clicked
+// desktop icon never flashes a console window. It is a no-op on error: the
+// icon still works, only the window might flash briefly.
+func hideConsole() {
+	procFreeConsole.Call()
+}
+
 // run is the app entry: first run = install; every later start = update check.
 // On ANY error it prints the (redacted) reason, writes setup.log, and waits for
 // Enter so the double-clicked console window does not close (P0 b).
@@ -130,6 +144,11 @@ func run(args []string) error {
 	// ignored), then open the dashboard; if an update exists, a Windows dialog
 	// offers Update now / Later. No console, no install-code prompt.
 	if len(args) > 0 && args[0] == "--open" {
+		// m11: the icon double-click must not flash a console. FreeConsole
+		// detaches this (console-subsystem) process from the console the OS
+		// created at start, before any output is written. Best-effort: a
+		// failure to detach is ignored (a brief flash, never a broken app).
+		hideConsole()
 		if err := runOpen(ctx, d); err != nil {
 			logSetupError(d, err.Error())
 			return err
