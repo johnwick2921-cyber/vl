@@ -50,6 +50,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // without the other changes what "stale" means on only one side.
         private const int    ORDER_SNAPSHOT_INTERVAL_MS = 30000;
         private const int    RECONNECT_INTERVAL_MS   = 5000;  // spec L4415
+        private const int    MAX_RECONNECT_INTERVAL_MS = 60000; // K2 backoff cap
         private const int    STALE_SIGNAL_AGE_SECONDS = 60;   // spec L4414
         private const int    SEEN_SIGNAL_TTL_MINUTES  = 10;   // FIX-DOUBLE-ENTRY: replay dedupe memory (≥10 min per CTO ruling)
         private const int    SEEN_SIGNAL_CAP          = 1024; // FIX-DOUBLE-ENTRY: bounded seen set
@@ -68,12 +69,20 @@ namespace NinjaTrader.NinjaScript.AddOns
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
-        private const string  VL_BUILD_ID             = "2026-10-18-a";
+        private const string  VL_BUILD_ID             = "2026-10-21-b";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
         private TcpClient                client;
         private NetworkStream            stream;
+        // K2 reconnect backoff + logging; K6 server-hello tracking.
+        private int                      reconnectDelayMs     = RECONNECT_INTERVAL_MS;
+        private string                   lastConnectError     = "";
+        private DateTime                 lastErrorLogUtc      = DateTime.MinValue;
+        private bool                     loggedFirstFailure   = false;
+        private bool                     hadConnectFailure    = false;
+        private bool                     serverHelloReceived  = false; // K6: set on the server's hello reply
+        private readonly Random          backoffRng           = new Random();
         private Thread                   readerThread;
         private Thread                   heartbeatThread;
         private CancellationTokenSource  cts;
@@ -641,34 +650,6 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
-        // W-FRIEND-HOSTED (DS-103) — pure, NT8-free parser (unit-testable): extracts
-        // host / port / connect_key from the connect.json text. host == "" means
-        // "keep the default"; err != null means CORRUPT (parse error or a port that is
-        // not a valid TCP port). The key is never echoed into err or any log line.
-        public static void TryParseConnectJson(string json, out string host, out int port, out string key, out string err)
-        {
-            host = ""; port = 0; key = ""; err = null;
-            var root = new JsonParser(json).Parse() as Dictionary<string, object>;
-            if (root == null) { err = "connect.json is not a JSON object"; return; }
-            if (root.TryGetValue("host", out object h) && h is string sh && !string.IsNullOrEmpty(sh))
-            {
-                host = sh;
-            }
-            if (root.TryGetValue("port", out object p))
-            {
-                long pl;
-                if (p is long l) pl = l;
-                else if (p is double d && d == Math.Truncate(d)) pl = (long)d;
-                else { err = "connect.json port is not a whole number"; return; }
-                if (pl <= 0 || pl > 65535) { err = "connect.json port out of range"; return; }
-                port = (int)pl;
-            }
-            if (root.TryGetValue("connect_key", out object k) && k is string sk && !string.IsNullOrEmpty(sk))
-            {
-                key = sk;
-            }
-        }
-
         // Reads Documents\NinjaTrader 8\VL\connect.json once at activation. Absent file ->
         // today's defaults. Corrupt file -> connectConfigCorrupt=true and the loop never dials.
         private void LoadConnectConfig()
@@ -694,7 +675,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
 
             string host = ""; int port = 0; string key = ""; string err = null;
-            try { TryParseConnectJson(json, out host, out port, out key, out err); }
+            try { ConnectJsonParser.TryParse(json, out host, out port, out key, out err); }
             catch (Exception ex) { err = ex.Message; }
 
             if (err != null)
@@ -711,7 +692,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     + (connectKey.Length > 0 ? " + connect_key" : " (no connect_key)"));
         }
 
-        // === Connection loop with reconnect (spec L4415: every 5s) ===
+        // === Connection loop with reconnect (spec L4415; K2 exponential backoff 5s→60s) ===
         private void RunConnectionLoop(CancellationToken ct)
         {
             if (connectConfigCorrupt)
@@ -721,12 +702,23 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
             while (!ct.IsCancellationRequested)
             {
+                bool helloSent = false;
                 try
                 {
                     client = new TcpClient();
                     client.Connect(serverHost, serverPort);
                     stream = client.GetStream();
                     LogInfo("VLTraderTCPClient: CONNECTED");
+                    if (hadConnectFailure)
+                    {
+                        // K2 — log the recovery exactly once per failure episode.
+                        LogInfo("VLTraderTCPClient: connection restored");
+                        hadConnectFailure = false;
+                    }
+                    reconnectDelayMs = RECONNECT_INTERVAL_MS;
+                    loggedFirstFailure = false;
+                    lastConnectError = "";
+                    serverHelloReceived = false;
                     // W-ONE-BUTTON M2 — a hold belongs to the connection that was
                     // told it. Go re-sends it at accept while held.
                     maintenanceHeld = false;
@@ -737,6 +729,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // server refuses (closes); we land back in the reconnect
                     // loop with its loud mismatch log explaining why.
                     SendHello();
+                    helloSent = true;
                     LogInfo("VLTraderTCPClient: About to call SendAccountsList");
 
                     // Trigger on connect in case accounts are already loaded
@@ -765,10 +758,17 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 catch (Exception ex)
                 {
-                    LogWarn("VLTraderTCPClient: connect failed: " + ex.Message);
+                    LogConnectFailure(ex.Message);
+                    hadConnectFailure = true;
                 }
                 finally
                 {
+                    // K6 — the server closed before replying to our hello (e.g. a wrong
+                    // connect_key or port). ONE clear warning instead of generic noise.
+                    if (helloSent && !serverHelloReceived && !ct.IsCancellationRequested)
+                    {
+                        LogWarn("VLTraderTCPClient: server closed after hello — check connect_key / port");
+                    }
                     try { stream?.Close(); } catch { }
                     try { client?.Close(); } catch { }
                     stream = null;
@@ -776,8 +776,51 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 if (!ct.IsCancellationRequested)
                 {
-                    Thread.Sleep(RECONNECT_INTERVAL_MS);
+                    // K2 — cancellation-aware wait, then exponential backoff (jittered, capped).
+                    ct.WaitHandle.WaitOne(reconnectDelayMs);
+                    reconnectDelayMs = NextJitteredBackoffMs(reconnectDelayMs);
                 }
+            }
+        }
+
+        // K2 — exponential backoff 5s→60s with ±500ms jitter. The pure sequence lives in
+        // ReconnectPolicy.NextBackoffMs (unit-tested); the jitter is added here and clamped.
+        private int NextJitteredBackoffMs(int current)
+        {
+            int baseMs = ReconnectPolicy.NextBackoffMs(current, MAX_RECONNECT_INTERVAL_MS);
+            int jittered = baseMs + backoffRng.Next(-500, 501);
+            if (jittered < RECONNECT_INTERVAL_MS) jittered = RECONNECT_INTERVAL_MS;
+            if (jittered > MAX_RECONNECT_INTERVAL_MS) jittered = MAX_RECONNECT_INTERVAL_MS;
+            return jittered;
+        }
+
+        // K2 — log the FIRST failure, then only when the error text changes or every 10 min,
+        // so a friend bot whose NT8 port is not open yet (normal at first) doesn't spam every 5s.
+        private void LogConnectFailure(string message)
+        {
+            bool log;
+            if (!loggedFirstFailure)
+            {
+                log = true;
+                loggedFirstFailure = true;
+            }
+            else if (message != lastConnectError)
+            {
+                log = true;
+            }
+            else if ((DateTime.UtcNow - lastErrorLogUtc).TotalMinutes >= 10.0)
+            {
+                log = true;
+            }
+            else
+            {
+                log = false;
+            }
+            if (log)
+            {
+                LogWarn("VLTraderTCPClient: connect failed: " + message);
+                lastConnectError = message;
+                lastErrorLogUtc = DateTime.UtcNow;
             }
         }
 
@@ -909,6 +952,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 else if (type == "hello")
                 {
+                    serverHelloReceived = true; // K6 — the server replied to our hello
                     // P5.2 — the Go server's hello reply. A version mismatch is
                     // logged LOUDLY (the server side refuses mismatched clients;
                     // this is the symmetric check so the operator sees it from
@@ -4037,168 +4081,5 @@ namespace NinjaTrader.NinjaScript.AddOns
             return 0;
         }
 
-        // === Recursive-descent JSON parser ===
-        private class JsonParser
-        {
-            private readonly string s;
-            private int pos;
-
-            public JsonParser(string input)
-            {
-                s = input ?? string.Empty;
-                pos = 0;
-            }
-
-            public object Parse()
-            {
-                SkipWs();
-                return ParseValue();
-            }
-
-            private object ParseValue()
-            {
-                SkipWs();
-                if (pos >= s.Length) throw new Exception("unexpected EOF");
-                char c = s[pos];
-                if (c == '{') return ParseObject();
-                if (c == '"') return ParseString();
-                if (c == 't' || c == 'f') return ParseBool();
-                if (c == 'n') return ParseNull();
-                if (c == '-' || (c >= '0' && c <= '9')) return ParseNumber();
-                if (c == '[') return ParseArray();
-                throw new Exception("unexpected char '" + c + "' at " + pos);
-            }
-
-            private Dictionary<string, object> ParseObject()
-            {
-                var result = new Dictionary<string, object>();
-                pos++; // consume '{'
-                SkipWs();
-                if (pos < s.Length && s[pos] == '}') { pos++; return result; }
-                while (true)
-                {
-                    SkipWs();
-                    string key = ParseString();
-                    SkipWs();
-                    if (pos >= s.Length || s[pos] != ':') throw new Exception("expected ':' at " + pos);
-                    pos++; // consume ':'
-                    SkipWs();
-                    object value = ParseValue();
-                    result[key] = value;
-                    SkipWs();
-                    if (pos < s.Length && s[pos] == ',') { pos++; continue; }
-                    if (pos < s.Length && s[pos] == '}') { pos++; return result; }
-                    throw new Exception("expected ',' or '}' at " + pos);
-                }
-            }
-
-            private string ParseString()
-            {
-                if (pos >= s.Length || s[pos] != '"') throw new Exception("expected string at " + pos);
-                pos++; // consume opening '"'
-                var sb = new StringBuilder();
-                while (pos < s.Length && s[pos] != '"')
-                {
-                    if (s[pos] == '\\' && pos + 1 < s.Length)
-                    {
-                        char esc = s[pos + 1];
-                        switch (esc)
-                        {
-                            case '"':  sb.Append('"'); pos += 2; break;
-                            case '\\': sb.Append('\\'); pos += 2; break;
-                            case '/':  sb.Append('/'); pos += 2; break;
-                            case 'n':  sb.Append('\n'); pos += 2; break;
-                            case 'r':  sb.Append('\r'); pos += 2; break;
-                            case 't':  sb.Append('\t'); pos += 2; break;
-                            case 'b':  sb.Append('\b'); pos += 2; break;
-                            case 'f':  sb.Append('\f'); pos += 2; break;
-                            case 'u':
-                                if (pos + 5 < s.Length)
-                                {
-                                    sb.Append((char)Convert.ToInt32(s.Substring(pos + 2, 4), 16));
-                                    pos += 6;
-                                }
-                                else
-                                {
-                                    pos++;
-                                }
-                                break;
-                            default: sb.Append(esc); pos += 2; break;
-                        }
-                    }
-                    else
-                    {
-                        sb.Append(s[pos]);
-                        pos++;
-                    }
-                }
-                if (pos >= s.Length) throw new Exception("unterminated string");
-                pos++; // consume closing '"'
-                return sb.ToString();
-            }
-
-            private object ParseNumber()
-            {
-                int start = pos;
-                if (s[pos] == '-') pos++;
-                while (pos < s.Length &&
-                       (char.IsDigit(s[pos]) || s[pos] == '.' ||
-                        s[pos] == 'e' || s[pos] == 'E' ||
-                        s[pos] == '+' || s[pos] == '-'))
-                {
-                    pos++;
-                }
-                string num = s.Substring(start, pos - start);
-                if (num.IndexOfAny(new[] { '.', 'e', 'E' }) >= 0)
-                {
-                    return double.Parse(num, CultureInfo.InvariantCulture);
-                }
-                if (long.TryParse(num, NumberStyles.Integer, CultureInfo.InvariantCulture, out long l))
-                {
-                    return l;
-                }
-                return double.Parse(num, CultureInfo.InvariantCulture);
-            }
-
-            private bool ParseBool()
-            {
-                if (pos + 4 <= s.Length && s.Substring(pos, 4) == "true") { pos += 4; return true; }
-                if (pos + 5 <= s.Length && s.Substring(pos, 5) == "false") { pos += 5; return false; }
-                throw new Exception("invalid bool at " + pos);
-            }
-
-            private object ParseNull()
-            {
-                if (pos + 4 <= s.Length && s.Substring(pos, 4) == "null") { pos += 4; return null; }
-                throw new Exception("invalid null at " + pos);
-            }
-
-            private List<object> ParseArray()
-            {
-                var result = new List<object>();
-                pos++; // consume '['
-                SkipWs();
-                if (pos < s.Length && s[pos] == ']') { pos++; return result; }
-                while (true)
-                {
-                    SkipWs();
-                    result.Add(ParseValue());
-                    SkipWs();
-                    if (pos < s.Length && s[pos] == ',') { pos++; continue; }
-                    if (pos < s.Length && s[pos] == ']') { pos++; return result; }
-                    throw new Exception("expected ',' or ']' at " + pos);
-                }
-            }
-
-            private void SkipWs()
-            {
-                while (pos < s.Length &&
-                       (s[pos] == ' ' || s[pos] == '\t' ||
-                        s[pos] == '\n' || s[pos] == '\r'))
-                {
-                    pos++;
-                }
-            }
-        }
     }
 }
