@@ -145,6 +145,32 @@ func TestWindowsDocumentsDirUsesKnownFolderPath(t *testing.T) {
 	}
 }
 
+// TestPowerShellOutputForcedUTF8 pins the W3 remainder: any PowerShell output
+// this file PARSES (the signer subject, the ntRunning yes/no, the messageBox
+// True/False) must be preceded by [Console]::OutputEncoding=UTF8 so a non-ASCII
+// signer subject is not corrupted by the OEM codepage. The mutant that drops the
+// psUTF8 prefix from verifyMsiSigner fails here.
+func TestPowerShellOutputForcedUTF8(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"`) {
+		t.Fatalf("run_windows.go must define psUTF8 forcing UTF-8 output")
+	}
+	if !strings.Contains(s, `psUTF8 + "$s = Get-AuthenticodeSignature`) {
+		t.Fatalf("verifyMsiSigner must force UTF-8 before parsing the signer subject")
+	}
+	if !strings.Contains(s, `psUTF8+"if (Get-Process NinjaTrader`) {
+		t.Fatalf("ntRunning must force UTF-8 before parsing its output")
+	}
+	if !strings.Contains(s, `psUTF8 + "Add-Type -AssemblyName System.Windows.Forms`) {
+		t.Fatalf("messageBox must force UTF-8 before parsing its output")
+	}
+}
+
 // TestEveryChildGetsNoWindow pins W7: every child process run_windows.go starts
 // must go through noWindow (HideWindow + CREATE_NO_WINDOW), so the friend app
 // never flashes a console window while shelling out. The mutant that drops a

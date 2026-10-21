@@ -102,8 +102,10 @@ func realDeps() deps {
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
 			// S18b: the MSI path is passed as $args[0], never spliced into
-			// script text — no quote-escaping, no injection surface.
-			script := "$s = Get-AuthenticodeSignature -FilePath $args[0]; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+			// script text — no quote-escaping, no injection surface. W3: force
+			// UTF-8 output so a non-ASCII signer subject is not corrupted by the
+			// OEM codepage before we parse it.
+			script := psUTF8 + "$s = Get-AuthenticodeSignature -FilePath $args[0]; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
 			cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(script), msiPath)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
@@ -129,7 +131,7 @@ func realDeps() deps {
 			return err == nil && st.IsDir()
 		},
 		ntRunning: func(ctx context.Context) (bool, error) {
-			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }")
+			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psUTF8+"if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }")
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -145,7 +147,7 @@ func realDeps() deps {
 			// console or other windows. Buttons stay YesNo + Question here; the
 			// error-vs-update split (OK+Error for failures) is a separate seam.
 			// S18b: the text is passed as $args[0], never spliced into script text.
-			script := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
+			script := psUTF8 + "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
 			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(script), text)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
@@ -178,6 +180,11 @@ func windowsDocumentsDir() (string, error) {
 	}
 	return p, nil
 }
+
+// psUTF8 forces PowerShell's console output to UTF-8 before any output this
+// file PARSES is written (W3): without it a non-ASCII signer subject would
+// come back in the OEM codepage and be corrupted before the exact-org check.
+const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
 
 // noWindow marks a child process to never create a console window: HideWindow
 // sets the startup show state to SW_HIDE and CreationFlags adds
