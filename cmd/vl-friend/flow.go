@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -134,19 +135,185 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 
 // ensureTailscale installs Tailscale silently when missing, then joins the
 // tailnet with the one-time auth key from the install code.
-func ensureTailscale(ctx context.Context, d deps, authKey string) error {
-	if _, err := d.exec(ctx, "tailscale", "status"); err != nil {
-		// Not installed: run the official MSI silently (B2 outside ref: the
-		// Tailscale silent Windows install). The installer path is provided by
-		// the Windows runner.
-		if _, err := d.exec(ctx, "tailscaleInstall", authKey); err != nil {
-			return fmt.Errorf("tailscale install: %w", err)
+const (
+	// tailscaleMSIURL is the official silent-installer URL (B2 outside ref:
+	// Tailscale silent Windows install).
+	tailscaleMSIURL = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+	// tailscaleExeFallback is where the MSI installs the CLI; used when the bare
+	// "tailscale" name is not on PATH (same lesson as W-UPDATER-WINPATH).
+	tailscaleExeFallback = `C:\Program Files\Tailscale\tailscale.exe`
+)
+
+// The waits and poll intervals are vars so tests can shorten them.
+var (
+	tailscaleInstallWait  = 5 * time.Minute
+	tailscaleApprovalWait = 15 * time.Minute
+	tailscaleReadyPoll    = 2 * time.Second
+	tailscaleApprovalPoll = 5 * time.Second
+)
+
+// tailscaleStatusJSON is the subset of `tailscale status --json` this flow reads.
+type tailscaleStatusJSON struct {
+	BackendState string `json:"BackendState"`
+}
+
+// tailscaleExec runs a tailscale subcommand, preferring the bare "tailscale"
+// name and falling back to the fixed install path when the bare name is not on
+// PATH.
+func tailscaleExec(ctx context.Context, d deps, args ...string) ([]byte, error) {
+	out, err := d.exec(ctx, "tailscale", args...)
+	if err == nil {
+		return out, nil
+	}
+	return d.exec(ctx, tailscaleExeFallback, args...)
+}
+
+// tailscaleBackendState returns Tailscale's BackendState ("NeedsLogin",
+// "NeedsMachineAuth", "Running", …) from `tailscale status --json`.
+func tailscaleBackendState(ctx context.Context, d deps) (string, error) {
+	out, err := tailscaleExec(ctx, d, "status", "--json")
+	if err != nil {
+		return "", err
+	}
+	var st tailscaleStatusJSON
+	if err := json.Unmarshal(out, &st); err != nil {
+		return "", fmt.Errorf("tailscale status: %w", err)
+	}
+	return st.BackendState, nil
+}
+
+// redactSecrets replaces each secret with "***" so it never reaches stdout,
+// stderr or the setup log. Never print the auth key or the connect key (P0 d).
+func redactSecrets(s string, secrets ...string) string {
+	for _, sec := range secrets {
+		if sec != "" {
+			s = strings.ReplaceAll(s, sec, "***")
 		}
 	}
-	if _, err := d.exec(ctx, "tailscale", "up", "--authkey="+authKey); err != nil {
-		return fmt.Errorf("tailscale up: %w", err)
+	return s
+}
+
+// pauseOnError prints the (already-redacted) error and waits for Enter so a
+// double-clicked console window does not close before the user reads it (P0 b).
+// Testable on Linux through the readLine seam.
+func pauseOnError(d deps, msg string) {
+	fmt.Println("VL-Setup error:", msg)
+	fmt.Println()
+	fmt.Println("Press Enter to close")
+	_, _ = d.readLine("")
+}
+
+// downloadTailscaleMSI downloads the official installer to a temp file and
+// verifies its Authenticode signer is Tailscale Inc BEFORE anything is run.
+// A bad or missing signature refuses (the MSI is never executed).
+func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
+	b, err := d.fetch(ctx, tailscaleMSIURL)
+	if err != nil {
+		return "", fmt.Errorf("download Tailscale installer: %w", err)
 	}
-	return nil
+	dir, err := d.tempDir()
+	if err != nil {
+		return "", err
+	}
+	path := filepath.Join(dir, "tailscale-setup-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".msi")
+	if err := d.writeFile(path, b, 0o600); err != nil {
+		return "", fmt.Errorf("write Tailscale installer: %w", err)
+	}
+	signer, err := d.verifyMsiSigner(path)
+	if err != nil {
+		return "", fmt.Errorf("verify Tailscale installer signature: %w", err)
+	}
+	if !strings.Contains(strings.ToLower(signer), "tailscale") {
+		return "", fmt.Errorf("refusing Tailscale installer: unexpected Authenticode signer %q", signer)
+	}
+	return path, nil
+}
+
+// waitTailscaleReady polls `tailscale status` until the daemon answers
+// (bounded) — i.e. until the silent MSI install has completed far enough that
+// the CLI exists and responds.
+func waitTailscaleReady(ctx context.Context, d deps) error {
+	t := time.NewTicker(tailscaleReadyPoll)
+	defer t.Stop()
+	deadline := time.Now().Add(tailscaleInstallWait)
+	for {
+		if _, err := tailscaleBackendState(ctx, d); err == nil {
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Tailscale did not become ready within %s after install", tailscaleInstallWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// tailscaleUp joins the tailnet with the one-time auth key: it refuses to
+// --force-reauth over an existing login to ANOTHER network, and then waits
+// (bounded) for device approval if the owner has approval enabled.
+func tailscaleUp(ctx context.Context, d deps, authKey string) error {
+	state, err := tailscaleBackendState(ctx, d)
+	if err == nil && state != "NeedsLogin" {
+		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
+	}
+	out, err := tailscaleExec(ctx, d, "up", "--authkey="+authKey, "--unattended")
+	if err != nil {
+		// Redact the auth key from BOTH the error and the command output —
+		// exec errors can echo the full command line (P0 d: never print keys).
+		return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
+	}
+	return waitTailscaleApproved(ctx, d)
+}
+
+// waitTailscaleApproved polls BackendState until Running; while NeedsMachineAuth
+// it announces (once) that the owner must approve the device, then keeps polling
+// up to a bounded deadline — never silently fails.
+func waitTailscaleApproved(ctx context.Context, d deps) error {
+	t := time.NewTicker(tailscaleApprovalPoll)
+	defer t.Stop()
+	deadline := time.Now().Add(tailscaleApprovalWait)
+	announced := false
+	for {
+		state, err := tailscaleBackendState(ctx, d)
+		if err == nil && state == "Running" {
+			return nil
+		}
+		if err == nil && state == "NeedsMachineAuth" && !announced {
+			fmt.Println("Waiting for the owner to approve this PC in Tailscale…")
+			announced = true
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("Tailscale device was not approved within %s", tailscaleApprovalWait)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-t.C:
+		}
+	}
+}
+
+// ensureTailscale makes sure the friend's PC is on the owner's tailnet:
+// download + verify + silently install Tailscale when missing, then join with
+// the one-time auth key.
+func ensureTailscale(ctx context.Context, d deps, authKey string) error {
+	if _, err := tailscaleBackendState(ctx, d); err == nil {
+		return tailscaleUp(ctx, d, authKey)
+	}
+	msiPath, err := downloadTailscaleMSI(ctx, d)
+	if err != nil {
+		return err
+	}
+	if _, err := d.exec(ctx, "msiexec", "/i", msiPath, "/quiet", "/norestart"); err != nil {
+		return fmt.Errorf("tailscale install: %w", err)
+	}
+	if err := waitTailscaleReady(ctx, d); err != nil {
+		return err
+	}
+	return tailscaleUp(ctx, d, authKey)
 }
 
 // createDesktopShortcut makes the VL desktop icon open the friend's dashboard

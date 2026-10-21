@@ -34,6 +34,12 @@ type deps struct {
 	// the embedded friend-distribution public key in production, a test key in
 	// tests. Empty means "no trust" → every signature refuses.
 	allowedSigners []byte
+	// tempDir returns a writable temp dir for downloads (the Tailscale MSI).
+	// Production: os.TempDir(); tests: t.TempDir().
+	tempDir func() (string, error)
+	// verifyMsiSigner returns the Authenticode signer subject of an MSI, or an
+	// error. Production: powershell Get-AuthenticodeSignature; tests: a fake.
+	verifyMsiSigner func(msiPath string) (string, error)
 }
 
 // appVersion / appBuild are the friend app's own version, embedded at build

@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -61,16 +62,54 @@ func realDeps() deps {
 			return strings.TrimSpace(s), nil
 		},
 		allowedSigners: []byte(friendAllowedSigners),
+		tempDir:        func() (string, error) { return os.TempDir(), nil },
+		verifyMsiSigner: func(msiPath string) (string, error) {
+			ps := "(Get-AuthenticodeSignature -FilePath '" +
+				strings.ReplaceAll(msiPath, "'", "''") + "').SignerCertificate.Subject"
+			out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+			if err != nil {
+				return "", fmt.Errorf("Get-AuthenticodeSignature: %w: %s", err, strings.TrimSpace(string(out)))
+			}
+			return strings.TrimSpace(string(out)), nil
+		},
+	}
+}
+
+// setupLogPath returns %LOCALAPPDATA%\VL\setup.log (B2: the app keeps its own
+// state under Documents\NinjaTrader 8\VL and %LOCALAPPDATA%\VL).
+func setupLogPath(home string) string {
+	return filepath.Join(home, "AppData", "Local", "VL", "setup.log")
+}
+
+// logSetupError writes the (already-redacted) error to setup.log; best effort.
+func logSetupError(d deps, msg string) {
+	if home, err := d.homeDir(); err == nil {
+		dir := filepath.Join(home, "AppData", "Local", "VL")
+		if d.mkdirAll(dir, 0o755) == nil {
+			_ = d.writeFile(setupLogPath(home), []byte(time.Now().Format(time.RFC3339)+" "+msg+"\n"), 0o600)
+		}
 	}
 }
 
 // run is the app entry: first run = install; every later start = update check.
+// On ANY error it prints the (redacted) reason, writes setup.log, and waits for
+// Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
 	_ = args
 	d := realDeps()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
+	if err := runInner(ctx, d); err != nil {
+		logSetupError(d, err.Error())
+		pauseOnError(d, err.Error())
+		return err
+	}
+	return nil
+}
+
+// runInner is the actual flow; its errors are already secret-redacted.
+func runInner(ctx context.Context, d deps) error {
 	home, err := d.homeDir()
 	if err != nil {
 		return err
@@ -82,8 +121,14 @@ func run(args []string) error {
 		if err != nil {
 			return err
 		}
+		ic, err := ParseInstallCode(code)
+		if err != nil {
+			// Never echo the code (it holds ts_authkey + connect_key).
+			return fmt.Errorf("invalid install code — check the copy you were sent")
+		}
+		secrets := []string{ic.TSAuthKey, ic.ConnectKey}
 		if err := installFirstRun(ctx, d, code); err != nil {
-			return err
+			return fmt.Errorf("install failed: %s", redactSecrets(err.Error(), secrets...))
 		}
 		fmt.Println("VL installed — open the VL icon on your desktop.")
 		return nil
@@ -107,7 +152,7 @@ func run(args []string) error {
 	}
 	dec, err := RunUpdateCheck(ctx, d, base, false)
 	if err != nil {
-		return err
+		return fmt.Errorf("update check failed: %s", redactSecrets(err.Error(), cfg.ConnectKey))
 	}
 	if dec.Applied {
 		fmt.Println("Updated ✓ — restart NinjaTrader to load the new add-on.")

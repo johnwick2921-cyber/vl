@@ -23,9 +23,23 @@ type flowRecorder struct {
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 	t.Helper()
 	rec := &flowRecorder{}
+	upCalled := false
 	d := deps{
 		exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			rec.execs = append(rec.execs, name+" "+strings.Join(args, " "))
+			// Tailscale state machine: NeedsLogin until "up", then Running — so a
+			// "already installed" happy path proceeds straight to the join.
+			if name == "tailscale" && len(args) > 0 && args[0] == "status" {
+				st := "NeedsLogin"
+				if upCalled {
+					st = "Running"
+				}
+				return []byte(`{"BackendState":"` + st + `"}`), nil
+			}
+			if name == "tailscale" && len(args) > 0 && args[0] == "up" {
+				upCalled = true
+				return nil, nil
+			}
 			return nil, nil
 		},
 		fetch: func(_ context.Context, url string) ([]byte, error) {
@@ -41,6 +55,8 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.lines = append(rec.lines, p)
 			return "", nil
 		},
+		tempDir:         func() (string, error) { return t.TempDir(), nil },
+		verifyMsiSigner: func(string) (string, error) { return "CN=Tailscale Inc.", nil },
 	}
 	return d, rec
 }
