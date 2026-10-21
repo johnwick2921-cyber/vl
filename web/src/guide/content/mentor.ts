@@ -449,7 +449,11 @@ export const mentor: GuideSection = {
           title: 'Smaller size when the ISB is in a range',
           body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"]. The cut beats the confluence size. A spent day does NOT change the size (it cuts the target to 15 pts and the runner to 2 contracts instead).',
           cite: 'D4.1 p1 @04:37–05:04 — "Khi trade isb in-range bắt buộc giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
-        { title: '5m pullback warning', body: 'A 5m candle that breaks the prior 5m candle’s low in a 5m uptrend warns of a pullback, so the entry sizes down to the reduced size (“market chuẩn bị pullback… hạn chế vô lệnh, giảm size lại cũng được” [X11 @13:21–15:02, quote @14:50–15:00]). Optional in the course — built as the reduced tier, tagged [X11].', cite: 'X11 @13:21–15:02 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m' },
+        },
+        {
+          title: '5m pullback warning',
+          body: 'A 5m candle that breaks the prior 5m candle’s low in a 5m uptrend warns of a pullback, so the entry sizes down to the reduced size (“market chuẩn bị pullback… hạn chế vô lệnh, giảm size lại cũng được” [X11 @13:21–15:02, quote @14:50–15:00]). Optional in the course — built as the reduced tier, tagged [X11].',
+          cite: 'X11 @13:21–15:02 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m',
         },
         {
           title: 'Skip a stop of 30 or more',
