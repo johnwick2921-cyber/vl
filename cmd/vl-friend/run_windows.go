@@ -101,10 +101,21 @@ func logSetupError(d deps, msg string) {
 // On ANY error it prints the (redacted) reason, writes setup.log, and waits for
 // Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
-	_ = args
 	d := realDeps()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+
+	// --repair-icon re-creates the desktop + Start Menu icons on an
+	// already-installed PC (B8 live bug: OneDrive desktop redirection hid the
+	// icon). The normal start (runInner) also re-creates a missing icon.
+	if len(args) > 0 && args[0] == "--repair-icon" {
+		if err := repairIcon(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			pauseOnError(d, err.Error())
+			return err
+		}
+		return nil
+	}
 
 	if err := runInner(ctx, d); err != nil {
 		logSetupError(d, err.Error())
@@ -136,6 +147,10 @@ func runInner(ctx context.Context, d deps) error {
 		return err
 	}
 	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
+	// Re-create the VL icons on every normal start so a vanished / OneDrive-moved
+	// icon comes back without a reinstall (B8 live bug). Best-effort: a missing
+	// icon must not fail the update check.
+	_ = createDesktopShortcut(ctx, d, base)
 	// CTO flat-signal ruling (2026-10-18): the flat check reads the friend's
 	// friend-mode-only /api/friend/flat (no dashboard JWT). A probe error is an
 	// error → waitUntilFlat defers (fail closed).

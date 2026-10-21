@@ -157,11 +157,14 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
 
-	// [6/6] Desktop shortcut, then the final screen.
-	if err := createDesktopShortcut(ctx, d, ic); err != nil {
+	// [6/6] Desktop + Start Menu shortcuts, then the final screen (the dashboard
+	// URL is printed so the non-technical owner can also open it by hand).
+	appURL := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
+	if err := createDesktopShortcut(ctx, d, appURL); err != nil {
 		return err
 	}
 	d.print("[6/6] All done ✓. A VL icon is on your desktop. Double-click it, create your login, then add your AI key, your strategy and a trader on your SIM account.")
+	d.print("Your dashboard: " + appURL + " (also on the VL icon)")
 	return nil
 }
 
@@ -416,16 +419,59 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int,
 	return code, nil
 }
 
-// createDesktopShortcut makes the VL desktop icon open the friend's dashboard
-// in its own app window (msedge --app). The PowerShell one-liner is invoked
+// shortcutScript builds the PowerShell that creates the VL shortcuts. It is a
+// separate function so tests can pin the argv: the REAL Desktop + Start Menu
+// (via [Environment]::GetFolderPath — OneDrive Known-Folder safe, NOT
+// $env:USERPROFILE\Desktop), a FULL msedge.exe path (registry App Paths →
+// Program Files fallback — a bare "msedge" name does NOT resolve in a .lnk),
+// and a .url Internet Shortcut fallback when Edge is missing (opens the default
+// browser).
+func shortcutScript(appURL string) string {
+	return strings.Join([]string{
+		"$d=[Environment]::GetFolderPath('Desktop')",
+		"$s=[Environment]::GetFolderPath('Programs')",
+		"$edge=$null",
+		"foreach($r in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe')){try{$v=(Get-ItemProperty -Path $r -ErrorAction Stop).'(default)';if($v -and (Test-Path $v)){$edge=$v;break}}catch{}}",
+		"if(-not $edge){foreach($p in @(\"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\",\"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe\")){if(Test-Path $p){$edge=$p;break}}}",
+		"if($edge){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$l=$w.CreateShortcut(\"$dir\\VL.lnk\");$l.TargetPath=$edge;$l.Arguments='--app=" + appURL + "';$l.Save()}}",
+		"else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";[System.IO.File]::WriteAllText(\"$d\\VL.url\",$u);[System.IO.File]::WriteAllText(\"$s\\VL.url\",$u)}",
+	}, ";")
+}
+
+// createDesktopShortcut creates the VL shortcuts (Desktop + Start Menu) opening
+// the friend's dashboard in its own app window (msedge --app), or a .url
+// shortcut to the default browser when Edge is absent. The PowerShell is invoked
 // through d.exec so tests assert the effect without Windows.
-func createDesktopShortcut(ctx context.Context, d deps, ic InstallCode) error {
-	appURL := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
-	ps := "$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:USERPROFILE+'\\Desktop\\VL.lnk');" +
-		"$s.TargetPath='msedge';$s.Arguments='--app=" + appURL + "';$s.Save()"
-	if _, err := d.exec(ctx, "powershell", "-NoProfile", "-Command", ps); err != nil {
+func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
+	if _, err := d.exec(ctx, "powershell", "-NoProfile", "-Command", shortcutScript(appURL)); err != nil {
 		return fmt.Errorf("desktop shortcut: %w", err)
 	}
+	return nil
+}
+
+// repairIcon re-creates the VL shortcuts on an ALREADY-INSTALLED PC
+// (VL-Setup.exe --repair-icon). The normal start (runInner) also re-creates a
+// missing icon, so either path fixes a vanished / OneDrive-moved icon.
+func repairIcon(ctx context.Context, d deps) error {
+	home, err := d.homeDir()
+	if err != nil {
+		return err
+	}
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		return fmt.Errorf("repair icon: not installed yet — run VL-Setup with your install code first")
+	}
+	st, err := readAppState(d, home)
+	if err != nil {
+		return err
+	}
+	d.print("Re-creating the VL icon…")
+	if err := createDesktopShortcut(ctx, d, fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)); err != nil {
+		return err
+	}
+	d.print("Done ✓ — the VL icon is back on your desktop and Start Menu.")
+	d.print("Press Enter to close")
+	_, _ = d.readLine("")
 	return nil
 }
 

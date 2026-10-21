@@ -453,6 +453,7 @@ func TestRunFirstRunPrintsSixStepsInOrder(t *testing.T) {
 		"Approved ✓",
 		"Add-on verified ✓",
 		"Done ✓. If NinjaTrader is open, close it and open it again.",
+		"Your dashboard: " + fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort) + " (also on the VL icon)",
 		"Press Enter to close",
 	} {
 		if !strings.Contains(joined, needle) {
@@ -483,5 +484,74 @@ func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
 	}
 	if !strings.Contains(joined, "Press Enter to close") {
 		t.Fatalf("error screen missing 'Press Enter to close': %q", joined)
+	}
+}
+
+// TestShortcutScriptTargetsRealDesktopAndEdge — B8 pins: the shortcut script
+// must resolve the REAL Desktop + Start Menu via [Environment]::GetFolderPath
+// (OneDrive Known-Folder safe, NOT $env:USERPROFILE\Desktop), a FULL msedge.exe
+// path (registry App Paths → Program Files), and fall back to a .url Internet
+// Shortcut. MUTANT: GetFolderPath('Desktop') back to $env:USERPROFILE\Desktop →
+// this test RED.
+func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
+	ps := shortcutScript("http://100.66.89.106:18081")
+	for _, want := range []string{
+		"[Environment]::GetFolderPath('Desktop')",
+		"[Environment]::GetFolderPath('Programs')",
+		`App Paths\msedge.exe`,
+		`Microsoft\Edge\Application\msedge.exe`,
+		"VL.lnk",
+		"VL.url",
+		"[InternetShortcut]",
+		"--app=http://100.66.89.106:18081",
+		"URL=http://100.66.89.106:18081",
+	} {
+		if !strings.Contains(ps, want) {
+			t.Fatalf("shortcut script missing %q:\n%s", want, ps)
+		}
+	}
+	if strings.Contains(ps, "$env:USERPROFILE") {
+		t.Fatalf("shortcut script still hardcodes $env:USERPROFILE (OneDrive-unsafe):\n%s", ps)
+	}
+}
+
+// TestRepairIconRecreatesShortcut — B8 live bug: the owner's OneDrive-redirected
+// desktop had no icon. repairIcon (--repair-icon) must re-create it on an
+// already-installed PC; the PowerShell argv must carry GetFolderPath('Desktop').
+func TestRepairIconRecreatesShortcut(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := repairIcon(context.Background(), d); err != nil {
+		t.Fatalf("repairIcon refused: %v", err)
+	}
+	shortcut := false
+	for _, e := range rec.execs {
+		if strings.HasPrefix(e, "powershell ") && strings.Contains(e, "[Environment]::GetFolderPath('Desktop')") {
+			shortcut = true
+		}
+	}
+	if !shortcut {
+		t.Fatalf("repairIcon did not run the shortcut script with GetFolderPath('Desktop'): %v", rec.execs)
+	}
+	joined := strings.Join(rec.prints, "\n")
+	if !strings.Contains(joined, "Done ✓ — the VL icon is back") {
+		t.Fatalf("repairIcon did not confirm: %q", rec.prints)
+	}
+}
+
+// TestRepairIconNotInstalledRefuses — repairIcon on a PC with no connect.json
+// must refuse with a clear message, never guess a URL.
+func TestRepairIconNotInstalledRefuses(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := repairIcon(context.Background(), d); err == nil {
+		t.Fatal("repairIcon on a not-installed PC was accepted")
 	}
 }
