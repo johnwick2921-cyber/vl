@@ -302,7 +302,7 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
-  htf_gate_news_only?: boolean // D4.4-11 — unset = ON (news-only 07:20–07:35 CT)
+  htf_gate_news_only?: boolean // D4.4-11 — unset = OFF (all-day gate; owner decision A 2026-10-21); ON = news-only 07:20–07:35 CT
   exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m for ISB + PHL/PLH)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number

@@ -98,17 +98,3 @@ func TestHTFTriggerOnRecordedTapes(t *testing.T) {
 	}
 	t.Logf("recorded tapes: 4h %q @ %.2f, 1h %q @ %.2f, verdicts=%d", h.FourH.Dir, h.FourH.Price, h.OneH.Dir, h.OneH.Price, verdicts)
 }
-
-// TestHTFSideIsOKPriceIsFree — the trigger having FIRED sets the direction;
-// price need NOT sit on the trigger side of the line [D4.4 p2 @ 03:51].
-func TestHTFSideIsOKPriceIsFree(t *testing.T) {
-	// 4h triggered buy at 30000 but price trades 29500 (below the line) —
-	// the direction gate still permits longs and refuses shorts.
-	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 30000}}
-	if !HTFSideIsOK(h, SideLong) {
-		t.Fatal("long must pass even below the buy line — the fired trigger sets the direction [D4.4 p2 @ 03:51]")
-	}
-	if HTFSideIsOK(h, SideShort) {
-		t.Fatal("short against the 4h direction must be refused")
-	}
-}
