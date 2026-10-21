@@ -409,3 +409,89 @@ func TestProtectionFlattenClearsWhenPositionCloses(t *testing.T) {
 		t.Fatalf("(h) flatten after a position-closing pass must raise a SECOND P0, got %d", n)
 	}
 }
+
+// m198 #43-A (P1, BUG-HUNT-1021 report #2) — a protective stop in a PENDING
+// state (ChangePending/ChangeSubmitted = a move_stop in flight; Submitted/
+// Initialized = a just-sent stop confirming) is NOT "nothing protective".
+// Counting it as neither coverage nor absence let the reconciler fall through
+// to protectionPlace and send a SECOND stop for the same contract — two stops,
+// both filled, an untracked reverse position (10-16 01:18:55). The verdict must
+// be UNKNOWN (take no action) and the next pass decides once the state settles.
+func TestProtectionPendingStopIsNotAbsence(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	stopIn := func(state string, qty int) nt.NT8Order {
+		return nt.NT8Order{Symbol: sym, Name: "sig-sl", Action: "sell", Type: "stop",
+			State: state, StopPrice: 29554, Quantity: qty}
+	}
+	cases := []struct {
+		name string
+		book []nt.NT8Order
+	}{
+		{"ChangePending -sl is a stop mid-flight, not absence", []nt.NT8Order{stopIn("ChangePending", 1)}},
+		{"ChangeSubmitted -sl is a stop mid-flight, not absence", []nt.NT8Order{stopIn("ChangeSubmitted", 1)}},
+		{"Submitted -sl is a stop confirming, not absence", []nt.NT8Order{stopIn("Submitted", 1)}},
+		{"Initialized -sl is a stop confirming, not absence", []nt.NT8Order{stopIn("Initialized", 1)}},
+		{"a live stop plus a pending move is UNVERIFIED, not OK",
+			[]nt.NT8Order{stopIn("Accepted", 1), stopIn("ChangePending", 1)}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			v := adjudicateProtection(sym, side, 1, c.book, true, nil, 29500, nil, nil)
+			if v.Action != protectionUnknown {
+				t.Fatalf("action = %s, want protectionUnknown (why: %s)", v.Action, v.Why)
+			}
+			if v.Why == "" {
+				t.Fatal("verdict must say why")
+			}
+		})
+	}
+}
+
+// m198 #43-A (2) — a move_stop SENT for the signal within 10 s means the stop
+// is mid-flight, not absent. actOnProtection must SUPPRESS the whole
+// protectionPlace action (P0 + placement) in that window.
+func TestProtectionMoveStopSuppressesPlacement(t *testing.T) {
+	at, _ := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-move-suppress"
+	at.exchange = "ninjatrader"
+	mt := &MockTrader{moveStopRecent: map[string]bool{"sig": true}}
+	at.trader = mt
+	place := protectionVerdict{Action: protectionPlace, StopPx: 29500, Source: "accepted_risk", NeedQty: 1, Why: "no stop"}
+	at.actOnProtection(place, "MNQ", "LONG", 1, "sig", "t", 0, time.Now())
+	if mt.placeStopCalls != 0 {
+		t.Fatalf("placeProtectiveStop called %d times; a move_stop sent 0s ago must suppress placement", mt.placeStopCalls)
+	}
+	if UnprotectedFound(at.id) != 0 {
+		t.Fatalf("unprotected counter = %d; a suppressed place must not count the position as unprotected", UnprotectedFound(at.id))
+	}
+}
+
+// m198 #43-A (3) — more live protective quantity than contracts (the
+// double-stop symptom) must WARN + raise a P0 + be COUNTED, and must NOT be
+// auto-cancelled (that is #45).
+func TestProtectionOverCoveredRaisesP0(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-over-covered"
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	protectionOverCovered.Delete(at.id) // fresh counter for this trader id
+	over := protectionVerdict{Action: protectionOK, NeedQty: 1, HaveQty: 2, Why: "2 live protective stop(s) covering 2 of 1"}
+	at.actOnProtection(over, "MNQ", "LONG", 1, "sig", "t", 0, time.Now())
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_over_covered" && strings.HasPrefix(a.EventID, "overcovered:MNQ:LONG:1:2") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("over-coverage must raise ONE P0, got %d", n)
+	}
+	if OverCoveredFound(at.id) != 1 {
+		t.Fatalf("over-covered counter = %d, want 1", OverCoveredFound(at.id))
+	}
+}

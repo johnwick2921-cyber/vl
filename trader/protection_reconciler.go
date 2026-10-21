@@ -235,6 +235,7 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 
 	covered, liveStops, unreadable, unsized := 0, 0, 0, 0
 	localOnly, dying := 0, 0
+	pendingProtection := false
 	for i := range book {
 		o := book[i]
 		if !sameSymbolLoose(o.Symbol, symbol) {
@@ -258,11 +259,21 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 			continue
 		}
 		if !o.IsLiveAtExchange() {
-			// dying, local-only (TriggerPending) or merely pending: NOT
-			// protection at the exchange. Counted nowhere, claimed nowhere —
-			// but NAMED, because "there is a stop object and it is not
-			// protecting you" is a different thing for the owner to read than
-			// "there is no stop at all".
+			// m198 #43-A (P1): a "-sl" order in a PENDING state is a stop
+			// mid-flight, NOT "nothing". ChangePending/ChangeSubmitted = a
+			// move_stop in flight; Submitted/Initialized = a just-sent stop
+			// still confirming. Counting it as neither coverage nor absence
+			// made the reconciler fall through to "NOTHING protective" and
+			// place a SECOND stop — two stops for one contract, both filled,
+			// an untracked reverse position (10-16 01:18:55, signal 6714b4ad).
+			// Treat it as possibly-live: the verdict goes UNKNOWN and no stop
+			// is placed this pass; the next pass decides once the state
+			// settles. (Signal-name scoping is unnecessary: the book is
+			// symbol+side filtered, and the account is netting — one position
+			// per symbol.)
+			if namedStop && o.Liveness() == nt.LivenessPending {
+				pendingProtection = true
+			}
 			switch {
 			case o.IsHeldLocally():
 				localOnly++
@@ -279,6 +290,10 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		covered += o.Quantity
 	}
 
+	if pendingProtection {
+		return protectionVerdict{Action: protectionUnknown, NeedQty: posQty, HaveQty: covered,
+			Why: "a protective stop (-sl) for this position is mid-flight (ChangePending/ChangeSubmitted/Submitted/Initialized) — treating it as possibly live and taking no action this pass"}
+	}
 	if covered >= posQty {
 		return protectionVerdict{Action: protectionOK, NeedQty: posQty, HaveQty: covered,
 			Why: fmt.Sprintf("%d live protective stop(s) at the exchange covering %d of %d", liveStops, covered, posQty)}
@@ -375,6 +390,12 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 // broker, for the boot line. A COUNTER, never an inference (checklist 35).
 var protectionUnprotected sync.Map // trader id → *int64
 
+// protectionOverCovered (m198 #43-A) counts positions found with MORE live
+// protective quantity than contracts — the double-stop symptom (two stops for
+// one contract). Counted, never inferred (checklist 35). NOT auto-cancelled
+// here; that is #45.
+var protectionOverCovered sync.Map // trader id → *int64
+
 // protectionLastAction throttles the log: a verdict repeats every minute while
 // the condition lasts, and only a CHANGE is worth a line.
 var protectionLastAction sync.Map // trader id + symbol + side → string
@@ -401,6 +422,21 @@ func UnprotectedFound(traderID string) int64 {
 func incUnprotected(traderID string) {
 	v, _ := protectionUnprotected.LoadOrStore(traderID, new(int64))
 	atomic.AddInt64(v.(*int64), 1)
+}
+
+// incOverCovered (m198 #43-A) counts an over-covered position finding.
+func incOverCovered(traderID string) {
+	v, _ := protectionOverCovered.LoadOrStore(traderID, new(int64))
+	atomic.AddInt64(v.(*int64), 1)
+}
+
+// OverCoveredFound (m198 #43-A) reads the over-coverage counter for the boot
+// line (A11: READ, never assert).
+func OverCoveredFound(traderID string) int64 {
+	if v, ok := protectionOverCovered.Load(traderID); ok {
+		return atomic.LoadInt64(v.(*int64))
+	}
+	return 0
 }
 
 // protectionPricesFor resolves the two prices D5 may place at, in the owner's
@@ -646,6 +682,20 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		if changed {
 			at.logInfof("🧷 protection OK (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 		}
+		if v.HaveQty > qty {
+			// m198 #43-A (3): more live protective quantity than contracts —
+			// the double-stop symptom (two stops for one contract; live
+			// evidence 10-16 01:18:55 “covering 2 of 1”). WARN + P0 + counted;
+			// NOT auto-cancelled in #43 — that is #45.
+			incOverCovered(at.id)
+			at.emitAlert("P0", "protection_over_covered",
+				fmt.Sprintf("overcovered:%s:%s:%d:%d", symbol, side, qty, v.HaveQty),
+				"Position has MORE protective quantity than contracts",
+				fmt.Sprintf("%s %s ×%d is covered by %d of live stops. Double-stop symptom — a second stop may have been placed while one was mid-flight. NOT auto-cancelled (scheduled for a later wave); check NinjaTrader and cancel the extra stop by hand.",
+					side, symbol, qty, v.HaveQty))
+			at.logErrorf("🚨 OVER-COVERED POSITION (%s): %s %s ×%d covered by %d — %s",
+				trigger, side, symbol, qty, v.HaveQty, v.Why)
+		}
 
 	case protectionUnknown:
 		if changed {
@@ -666,6 +716,21 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 
 	case protectionPlace:
+		// m198 #43-A (2): a move_stop SENT for this signal within the last 10 s
+		// means the stop is mid-flight (ChangePending), not absent. Suppress the
+		// whole place action (P0 + placement) — the next pass decides once the
+		// move settles. This is a second belt behind adjudicateProtectionWith's
+		// pendingProtection gate, for the window where the book snapshot predates
+		// the move.
+		if signalID != "" {
+			if sc, ok := at.trader.(interface {
+				MoveStopSentRecently(string, time.Time, time.Duration) bool
+			}); ok && sc.MoveStopSentRecently(signalID, now, 10*time.Second) {
+				at.logWarnf("🧷 protection placement SUPPRESSED (%s): %s %s ×%d — a move_stop was SENT for signal %s within 10 s; the stop is mid-flight, not absent",
+					trigger, side, symbol, qty, shortID(signalID))
+				return
+			}
+		}
 		incUnprotected(at.id)
 		at.emitAlert("P0", "unprotected_position",
 			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, now.UnixMilli()),
