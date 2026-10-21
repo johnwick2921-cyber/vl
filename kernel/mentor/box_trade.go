@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strconv"
 	"strings"
 
 	"vl/market"
@@ -232,6 +233,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	return []Intent{{
 		AnchorKey:  base,
 		Anchor:     (b.Top + b.Bottom) / 2,
+		ArmID:      "box-" + base + "-" + strconv.FormatInt(ref.CloseTime, 10),
 		Action:     PlaceStopEntry,
 		Setup:      "BOX",
 		Side:       side,
