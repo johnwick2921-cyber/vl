@@ -13,6 +13,8 @@ const state = vi.hoisted(() => ({
   request: vi.fn(),
   addSeries: vi.fn(),
   lineData: vi.fn(),
+  removeSeries: vi.fn(),
+  applyOptions: vi.fn(),
 }))
 vi.mock('../../contexts/LanguageContext', () => ({
   useLanguage: () => ({ language: 'en' }),
@@ -35,6 +37,7 @@ vi.mock('lightweight-charts', () => ({
       state.addSeries(kind, opts)
       return {
         setData: kind === 'line' ? state.lineData : vi.fn(),
+        applyOptions: state.applyOptions,
         priceScale: () => ({ applyOptions: vi.fn() }),
         attachPrimitive: vi.fn(),
         detachPrimitive: vi.fn(),
@@ -44,7 +47,7 @@ vi.mock('lightweight-charts', () => ({
     },
     applyOptions: vi.fn(),
     remove: vi.fn(),
-    removeSeries: vi.fn(),
+    removeSeries: state.removeSeries,
     subscribeCrosshairMove: vi.fn(),
     timeScale: () => ({ fitContent: vi.fn() }),
   }),
@@ -71,6 +74,8 @@ beforeEach(() => {
   state.request.mockReset()
   state.addSeries.mockReset()
   state.lineData.mockReset()
+  state.removeSeries.mockReset()
+  state.applyOptions.mockReset()
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -196,4 +201,91 @@ it('draws the mentor trendline as a sloped segment and the other mentor places a
     (t0 + 480_000) / 1000,
     (t0 + 900_000) / 1000,
   ])
+})
+
+it('m150: trendline series are DIFFED by key — same keys update in place, one vanished key removes exactly one', async () => {
+  vi.useFakeTimers()
+  const t0 = 1789480800000
+  const minuteBars = {
+    success: true,
+    data: Array.from({ length: 16 }, (_, i) => ({
+      openTime: t0 + i * 60_000,
+      open: 30750,
+      high: 30760,
+      low: 30740,
+      close: 30750,
+      volume: 1,
+    })),
+  }
+  state.request.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes('/open-orders?') ? { success: true, data: [] } : minuteBars
+    )
+  )
+  const mk = (side: string, p0: number, p1: number) => ({
+    side,
+    p0_ms: p0,
+    p0_px: 97,
+    p1_ms: p1,
+    p1_px: 98,
+    now_ms: p1,
+    now_px: 98,
+    in_level: true,
+    valid: true,
+  })
+  const two = [
+    mk('long', t0 + 120_000, t0 + 480_000),
+    mk('short', t0 + 240_000, t0 + 600_000),
+  ]
+  const { rerender } = render(
+    <AdvancedChart
+      symbol="MNQ"
+      traderID="trader"
+      interval="1m"
+      mentorTrendlines={two}
+    />
+  )
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  const trendAdds = () =>
+    state.addSeries.mock.calls.filter(
+      (c) =>
+        c[0] === 'line' &&
+        String((c[1] as { title?: string }).title).startsWith('trend line')
+    ).length
+  expect(trendAdds()).toBe(2)
+  const addBefore = state.addSeries.mock.calls.length
+  const removeBefore = state.removeSeries.mock.calls.length
+
+  // Same keys, NEW array reference → the effect re-runs but must update in
+  // place: no removeSeries and no new addSeries.
+  rerender(
+    <AdvancedChart
+      symbol="MNQ"
+      traderID="trader"
+      interval="1m"
+      mentorTrendlines={two.map((t) => ({ ...t }))}
+    />
+  )
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  expect(state.removeSeries.mock.calls.length - removeBefore).toBe(0)
+  expect(state.addSeries.mock.calls.length - addBefore).toBe(0)
+
+  // One key gone → exactly one removeSeries, no re-add of the survivor.
+  rerender(
+    <AdvancedChart
+      symbol="MNQ"
+      traderID="trader"
+      interval="1m"
+      mentorTrendlines={[two[0]]}
+    />
+  )
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  expect(state.removeSeries.mock.calls.length - removeBefore).toBe(1)
+  expect(state.addSeries.mock.calls.length - addBefore).toBe(0)
 })
