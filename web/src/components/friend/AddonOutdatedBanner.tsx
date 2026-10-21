@@ -4,21 +4,32 @@
 import { useEffect, useState } from 'react'
 import { friendsApi } from '../../lib/api/friends'
 
+const POLL_MS = 60_000
+
 export function AddonOutdatedBanner() {
   const [outdated, setOutdated] = useState(false)
 
   useEffect(() => {
     let mounted = true
-    friendsApi
-      .friendAddonStatus()
-      .then((status) => {
-        if (mounted && status && status.outdated) setOutdated(true)
-      })
-      .catch(() => {
-        // 404 / network / any failure = not a friend bot or no signal → hide.
-      })
+
+    const poll = () => {
+      friendsApi
+        .friendAddonStatus()
+        .then((status) => {
+          // setOutdated(!!status?.outdated) so the banner both appears AND
+          // clears once the add-on is updated (or the route stops answering).
+          if (mounted) setOutdated(!!status?.outdated)
+        })
+        .catch(() => {
+          // 404 / network / any failure = not a friend bot or no signal → hide.
+        })
+    }
+
+    poll()
+    const id = setInterval(poll, POLL_MS)
     return () => {
       mounted = false
+      clearInterval(id)
     }
   }, [])
 
