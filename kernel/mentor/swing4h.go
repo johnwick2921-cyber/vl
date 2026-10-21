@@ -39,7 +39,8 @@ import (
 //     the injector must not apply
 //     it to SWING4H).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
-//     fallback); BE at +1R; hold ONE 4h candle [D5.2 p1 @06:03–06:20].
+//     fallback); BE at +1R [D1.2 p1 @12:34–13:12, @15:56–15:59 — the general
+//     1:1 maintenance]; hold ONE 4h candle [D5.2 p1 @06:03–06:20].
 //  8. One setup per approach: no new one until price has left the line by
 //     at least the stop distance and comes back. R8: each new 4h candle
 //     re-bases the line and the "used" approach resets.
@@ -690,9 +691,13 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	cur := bars[len(bars)-1]
 	var out []Intent
 	if !p.MovedBE {
+		// m233: the BE at +1R on a CLOSED 5m candle is the GENERAL 1:1 rule
+		// [D1.2 p1 @12:34–13:12, @15:56–15:59 "Bắt buộc … maintain risk reward
+		// 1-1"] — it applies to every trade, the swing included (D5.2 adds no
+		// exception). A 5m CLOSE at/through +1R moves the stop to break-even.
 		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
 			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
-				Reason: "swing §8: +1R reached — stop to break-even"})
+				Reason: "swing: +1R reached on a 5m close — stop to break-even [D1.2 p1 @12:34–13:12, @15:56–15:59]"})
 			p.MovedBE = true
 		}
 	}

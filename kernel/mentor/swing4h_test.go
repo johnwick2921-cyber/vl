@@ -476,6 +476,47 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	}
 }
 
+// TestSwingRunnerBEAfterPartialOnClosed5m — m233: the swing BE at +1R is the
+// GENERAL 1:1 rule [D1.2 p1 @12:34–13:12, @15:56–15:59], fired on a CLOSED 5m
+// candle. A runner (MovedBE=false, the leg-1 partial already gone) must NOT
+// move to BE on a candle that only touches +1R INTRABAR, and MUST move on the
+// first 5m CLOSE at/through +1R. Mutant: judge the HIGH instead of the CLOSE →
+// the intrabar candle fires BE → RED.
+func TestSwingRunnerBEAfterPartialOnClosed5m(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: fourHBucketStart(entryBar.OpenTime, nil), ArmID: "swing-runner"}) {
+		t.Fatal("RebuildSwingPos refused a valid runner")
+	}
+	// +1R = 10170. A 5m candle that touches it INTRABAR (High 10175) but closes
+	// below (10165) must NOT move the runner to BE.
+	touch := append(base, mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10165))
+	out := SwingTick(s, touch, cfg, touch[len(touch)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			t.Fatalf("intrabar +1R must NOT move the runner to BE (closed 5m candle only); got %+v", out)
+		}
+	}
+	// A 5m candle that CLOSES at/through +1R (10180) must move the runner to BE.
+	closeAt1R := append(touch, mk5m(t, 15, 5, 10, 10165, 10185, 10160, 10180))
+	out2 := SwingTick(s, closeAt1R, cfg, closeAt1R[len(closeAt1R)-1].OpenTime+60_000)
+	var be bool
+	for _, in := range out2 {
+		if in.Action == ActionMoveStopBE {
+			be = true
+			if in.ArmID != "swing-runner" {
+				t.Fatalf("BE intent ArmID = %q, want swing-runner", in.ArmID)
+			}
+		}
+	}
+	if !be {
+		t.Fatalf("a 5m close at +1R must move the runner to BE; got %+v", out2)
+	}
+}
+
 // TestSwingRebuildPosResumesBEAndHold — FIX-SWING-RESTART: a FILLED swing
 // restored from durable records via RebuildSwingPos resumes break-even at +1R
 // and the hold-close at the 2nd 4h candle after entry. The BE/hold management
