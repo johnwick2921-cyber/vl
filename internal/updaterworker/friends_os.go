@@ -101,6 +101,15 @@ func (OSHost) FriendRestart(ctx context.Context, unit string) error {
 	return nil
 }
 
+// friendBootArgs builds the journalctl argv for FriendBootOK. U5: the --since
+// value MUST be the epoch form (@<unix>) — journalctl reads a bare
+// "YYYY-MM-DD HH:MM:SS" as LOCAL time, so a UTC wall-clock string landed five
+// hours in the future on this box and the scan matched nothing (FriendBootOK
+// false for every friend on every update). The epoch form is unambiguous.
+func friendBootArgs(unit string, since time.Time) []string {
+	return []string{"--user", "-u", unit, "--since", fmt.Sprintf("@%d", since.Unix()), "--no-pager", "-o", "cat"}
+}
+
 // FriendBootOK scans the friend unit's journal since `since` for the friend's
 // own BOOT INTEGRITY OK line naming expectedSHA, and fails on any REFUSED
 // line after it. The friend runs the SAME binary as the owner, so the line's
@@ -111,10 +120,9 @@ func (OSHost) FriendBootOK(ctx context.Context, unit string, since time.Time, ex
 		return false, "", fmt.Errorf("friend boot check: %q is not a release sha", expectedSHA)
 	}
 	want := bootOKPrefix + expectedSHA[:bootLineShort] + " ·"
-	// --since <epoch> keeps the scan bounded to this restart; -o cat drops the
+	// --since @<epoch> keeps the scan bounded to this restart; -o cat drops the
 	// journal's own prefix so the boot line starts at column 0.
-	args := []string{"--user", "-u", unit, "--since", since.UTC().Format("2006-01-02 15:04:05"), "--no-pager", "-o", "cat"}
-	cmd := exec.CommandContext(ctx, "journalctl", args...)
+	cmd := exec.CommandContext(ctx, "journalctl", friendBootArgs(unit, since)...)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		// journalctl exits 1 when there are no entries — not an error for us.
