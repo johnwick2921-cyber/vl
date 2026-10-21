@@ -456,6 +456,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "friend not found"})
 		return
 	}
+	// U14: a revoked row accepts NO action except revoke (the Tailscale-only
+	// retry). pause/resume/rotate on a revoked friend are refused.
+	if row.State == "revoked" && action != "revoke" {
+		c.JSON(http.StatusConflict, gin.H{"error": "friend is revoked"})
+		return
+	}
 
 	switch action {
 	case "pause":
