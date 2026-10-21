@@ -790,7 +790,7 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 	if v.PendingStuck {
 		incPendingStuck(at.id)
 		at.emitAlert("P0", "protection_pending_stuck",
-			fmt.Sprintf("stuckpending:%s:%s", symbol, side),
+			fmt.Sprintf("stuckpending:%s:%s:%s:%s", symbol, side, signalID, kernel.CMESessionDayKey(now)),
 			"A protective stop is stuck pending at the broker",
 			fmt.Sprintf("%s %s ×%d: a -sl order has stayed pending with the same price and quantity for 3 passes. It still counts as cover — no action, alert only. %s",
 				side, symbol, qty, v.Why))
@@ -809,7 +809,7 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 			// NOT auto-cancelled in #43 — that is #45.
 			incOverCovered(at.id)
 			at.emitAlert("P0", "protection_over_covered",
-				fmt.Sprintf("overcovered:%s:%s:%d:%d", symbol, side, qty, v.HaveQty),
+				fmt.Sprintf("overcovered:%s:%s:%d:%d:%s:%s", symbol, side, qty, v.HaveQty, signalID, kernel.CMESessionDayKey(now)),
 				"Position has MORE protective quantity than contracts",
 				fmt.Sprintf("%s %s ×%d is covered by %d of live stops. Double-stop symptom — a second stop may have been placed while one was mid-flight. NOT auto-cancelled (scheduled for a later wave); check NinjaTrader and cancel the extra stop by hand.",
 					side, symbol, qty, v.HaveQty))
@@ -832,7 +832,7 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 			// stop beside an existing one risks a double exit — the pre-#43
 			// behaviour). Not counted as "unprotected": it IS partially covered.
 			at.emitAlert("P0", "protection_partial",
-				fmt.Sprintf("partial:%s:%s", symbol, side),
+				fmt.Sprintf("partial:%s:%s:%s:%s", symbol, side, signalID, kernel.CMESessionDayKey(now)),
 				"Position is only partially protected",
 				fmt.Sprintf("%s %s ×%d: %d of %d covered at the broker. No stop placed — placing beside an existing stop could double-exit. %s",
 					side, symbol, qty, v.HaveQty, qty, v.Why))
