@@ -108,7 +108,10 @@ func realDeps() deps {
 			}
 			return trimmed, nil
 		},
-		print:          func(line string) { fmt.Println(line) },
+		// S10: the tskey regex is applied CENTRALLY at the print seam, so a
+		// Tailscale auth key can never reach the console even from a path that
+		// forgot to redact.
+		print:          func(line string) { fmt.Println(redactTSKeys(line)) },
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {

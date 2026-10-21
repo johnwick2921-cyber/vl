@@ -8,9 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/url"
+	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -271,15 +274,19 @@ type tailscaleStatusJSON struct {
 	Peer         map[string]tailscalePeer `json:"Peer"`
 }
 
-// tailscaleExec runs a tailscale subcommand, preferring the bare "tailscale"
-// name and falling back to the fixed install path when the bare name is not on
-// PATH.
+// tailscaleExec runs a tailscale subcommand. S10: the ABSOLUTE install path is
+// tried FIRST (a bare "tailscale" on PATH could be a different binary), and the
+// bare name is used only when the known path does not EXIST — never on any
+// other failure (a daemon error is not fixed by retrying another name).
 func tailscaleExec(ctx context.Context, d deps, args ...string) ([]byte, error) {
-	out, err := d.exec(ctx, "tailscale", args...)
+	out, err := d.exec(ctx, tailscaleExeFallback, args...)
 	if err == nil {
 		return out, nil
 	}
-	return d.exec(ctx, tailscaleExeFallback, args...)
+	if !errors.Is(err, exec.ErrNotFound) && !errors.Is(err, fs.ErrNotExist) {
+		return nil, err
+	}
+	return d.exec(ctx, "tailscale", args...)
 }
 
 // tailscaleStatus returns the parsed `tailscale status --json`.
@@ -345,15 +352,26 @@ func hostOnTailnet(host string, ips, names map[string]bool) bool {
 	return names[strings.ToLower(host)]
 }
 
+// tskeyRe matches a Tailscale auth key (tskey-auth-XXXX…). S10: even when a
+// caller forgets to pass the key explicitly, the regex redacts it.
+var tskeyRe = regexp.MustCompile(`tskey-[A-Za-z0-9_-]+`)
+
+// redactTSKeys replaces every Tailscale auth key with "***" so it can never
+// reach the console or the setup log.
+func redactTSKeys(s string) string {
+	return tskeyRe.ReplaceAllString(s, "***")
+}
+
 // redactSecrets replaces each secret with "***" so it never reaches stdout,
 // stderr or the setup log. Never print the auth key or the connect key (P0 d).
+// S10: it also applies the tskey regex as a backstop.
 func redactSecrets(s string, secrets ...string) string {
 	for _, sec := range secrets {
 		if sec != "" {
 			s = strings.ReplaceAll(s, sec, "***")
 		}
 	}
-	return s
+	return redactTSKeys(s)
 }
 
 // pauseOnError prints the (already-redacted) error screen and waits for Enter
@@ -362,7 +380,7 @@ func redactSecrets(s string, secrets ...string) string {
 // changed on NinjaTrader, and to send a photo to the owner. Testable on Linux
 // through the print + readLine seams.
 func pauseOnError(d deps, msg string) {
-	d.print("Something went wrong: " + msg + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner.")
+	d.print(redactTSKeys("Something went wrong: " + msg + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner."))
 	d.print("Press Enter to close")
 	_, _ = d.readLine("")
 }
@@ -374,14 +392,15 @@ func setupLogPath(d deps) string {
 }
 
 // logSetupError appends the (already-redacted) error to setup.log; best effort.
-// F7: APPEND, never overwrite — the full error history survives.
+// F7: APPEND, never overwrite — the full error history survives. S10: the tskey
+// regex is applied here centrally, so a key can never land in the log.
 func logSetupError(d deps, msg string) {
 	dir := filepath.Join(d.localAppDataDir(), "VL")
 	if d.mkdirAll(dir, 0o755) != nil {
 		return
 	}
 	prev, _ := d.readFile(setupLogPath(d))
-	_ = d.writeFile(setupLogPath(d), append(prev, []byte(time.Now().Format(time.RFC3339)+" "+msg+"\n")...), 0o600)
+	_ = d.writeFile(setupLogPath(d), append(prev, []byte(time.Now().Format(time.RFC3339)+" "+redactTSKeys(msg)+"\n")...), 0o600)
 }
 
 // downloadTailscaleMSI downloads the official installer to a temp file and

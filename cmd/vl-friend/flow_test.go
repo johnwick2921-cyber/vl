@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,6 +33,11 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 	d := deps{
 		exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			rec.execs = append(rec.execs, name+" "+strings.Join(args, " "))
+			// S10: tailscaleExec tries the absolute install path FIRST; route it
+			// to the same state machine as the bare name.
+			if name == tailscaleExeFallback {
+				name = "tailscale"
+			}
 			// Tailscale state machine: NeedsLogin until "up", then Running — so a
 			// "already installed" happy path proceeds straight to the join.
 			if name == "tailscale" && len(args) > 0 && args[0] == "status" {
@@ -1435,4 +1441,68 @@ func containsStr(xs []string, want string) bool {
 		}
 	}
 	return false
+}
+
+// TestTailscaleExecAbsolutePathFirst — S10: the ABSOLUTE install path is tried
+// first; when it succeeds, the bare name is never touched.
+func TestTailscaleExecAbsolutePathFirst(t *testing.T) {
+	var order []string
+	d := deps{exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		order = append(order, name)
+		if name == tailscaleExeFallback {
+			return []byte(`{"BackendState":"Running"}`), nil
+		}
+		return nil, fmt.Errorf("the bare name must not be reached when the absolute path succeeds")
+	}}
+	if _, err := tailscaleExec(context.Background(), d, "status", "--json"); err != nil {
+		t.Fatalf("tailscaleExec failed: %v", err)
+	}
+	if len(order) != 1 || order[0] != tailscaleExeFallback {
+		t.Fatalf("absolute path must be tried first and alone; got %v", order)
+	}
+}
+
+// TestTailscaleExecNoFallbackOnOtherError — S10: a NON-not-found error (daemon
+// down) must NOT fall back to the bare name — retrying a different name cannot
+// fix a daemon error and could run a different binary.
+func TestTailscaleExecNoFallbackOnOtherError(t *testing.T) {
+	calls := 0
+	d := deps{exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		calls++
+		return nil, fmt.Errorf("tailscaled: daemon not running")
+	}}
+	if _, err := tailscaleExec(context.Background(), d, "status", "--json"); err == nil {
+		t.Fatal("expected the daemon error to propagate")
+	}
+	if calls != 1 {
+		t.Fatalf("a non-notfound error must NOT fall back to the bare name; got %d calls", calls)
+	}
+}
+
+// TestTailscaleExecFallsBackOnNotFound — S10: when the absolute path does not
+// EXIST, the bare name is the fallback.
+func TestTailscaleExecFallsBackOnNotFound(t *testing.T) {
+	var order []string
+	d := deps{exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
+		order = append(order, name)
+		if name == tailscaleExeFallback {
+			return nil, fs.ErrNotExist
+		}
+		return []byte(`{"BackendState":"Running"}`), nil
+	}}
+	if _, err := tailscaleExec(context.Background(), d, "status", "--json"); err != nil {
+		t.Fatalf("fallback should succeed: %v", err)
+	}
+	if len(order) != 2 || order[0] != tailscaleExeFallback || order[1] != "tailscale" {
+		t.Fatalf("expected absolute then bare fallback; got %v", order)
+	}
+}
+
+// TestRedactTSKeys — S10: the tskey regex redacts a Tailscale auth key even when
+// no explicit secret is passed.
+func TestRedactTSKeys(t *testing.T) {
+	got := redactSecrets("tailscale up failed: --authkey=tskey-auth-ABC123xyz-456")
+	if strings.Contains(got, "tskey-auth-ABC123xyz-456") {
+		t.Fatalf("tskey not redacted: %q", got)
+	}
 }
