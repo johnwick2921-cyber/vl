@@ -291,7 +291,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	case "A-resonance":
 		// A (resonance): both stops already at BE, leg 1's +1R TP stays (the
 		// 1:1 partial still fires), the RUNNER's TP out to the level beyond
-		// the old high (CX-3), NO trail, NO 1:1 tightening [D2.4 p1]. Nothing
+		// the old high (CX-3), NO trail, NO 1:1 tightening [D2.4 p1 @02:17–02:29]. Nothing
 		// to do on a candle — the native bracket holds.
 		return
 	}
@@ -1188,7 +1188,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 // a same-direction ISB intent appears within 3 candles of the fill: both stops
 // move to break-even NOW, leg 1's +1R TP STAYS (the 1:1 partial still fires),
 // the RUNNER's TP moves out to the level beyond the old high (CX-3), NO trail,
-// NO 1:1 tightening [D2.4 p1]. Called from the
+// NO 1:1 tightening [D2.4 p1 @02:17–02:29]. Called from the
 // evaluator's intent loop when an ISB entry is emitted.
 func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 	if at == nil || !at.mentorEnabled() {
@@ -1227,7 +1227,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		// UNWIRED" and never sent from 10-05 to 10-14. Knob
 		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
 		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
-		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail; the 1:1 partial still fires) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
+		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail; the 1:1 partial still fires) [D2.4 p1 @02:17–02:29]", p.Pos.Symbol, p.Pos.Side)
 	}
 }
 

@@ -575,7 +575,7 @@ func TestMentorExitDrivePosC_NeverMoves(t *testing.T) {
 	assertMoves(t, moves())
 }
 
-// Mode A (resonance): no trail, no 1:1 tightening [D2.4 p1].
+// Mode A (resonance): no trail, no 1:1 tightening [D2.4 p1 @02:17–02:29].
 func TestMentorExitDrivePosA_NoMoves(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("A-resonance", "long", 10, 10, 16, 5)
