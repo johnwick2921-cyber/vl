@@ -4,6 +4,7 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -29,9 +30,21 @@ import (
 func realDeps() deps {
 	return deps{
 		exec: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			// P1: PowerShell 5.1 rejects a positional arg after -EncodedCommand,
+			// so a call that appends a value must move it into VL_ARG0 env. The
+			// script reads $env:VL_ARG0. P2: STDOUT only is returned.
+			if i := indexOf(args, "-EncodedCommand"); i >= 0 && i+2 < len(args) {
+				val := args[i+2]
+				trimmed := append([]string{}, args[:i+2]...)
+				trimmed = append(trimmed, args[i+3:]...)
+				cmd := exec.CommandContext(ctx, name, trimmed...)
+				cmd.Env = append(os.Environ(), "VL_ARG0="+val)
+				noWindow(cmd)
+				return cmdOutputStdout(cmd)
+			}
 			cmd := exec.CommandContext(ctx, name, args...)
 			noWindow(cmd)
-			return cmd.CombinedOutput()
+			return cmdOutputStdout(cmd)
 		},
 		fetch: func(ctx context.Context, url string) ([]byte, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -122,18 +135,17 @@ func realDeps() deps {
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
-			// S18b: the MSI path is passed as $args[0], never spliced into
-			// script text — no quote-escaping, no injection surface. W3: force
-			// UTF-8 output so a non-ASCII signer subject is not corrupted by the
-			// OEM codepage before we parse it.
-			script := psUTF8 + "$s = Get-AuthenticodeSignature -FilePath $args[0]; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(script), msiPath)
-			noWindow(cmd)
-			out, err := cmd.CombinedOutput()
+			// P1: the path rides VL_ARG0 (PowerShell 5.1 rejects args after
+			// -EncodedCommand); P2: only the VL_RESULT line is parsed.
+			script := "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+			out, err := psRun(script, msiPath)
 			if err != nil {
-				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w: %s", err, strings.TrimSpace(string(out)))
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
 			}
-			line := strings.TrimSpace(string(out))
+			line, err := psResultLine(out)
+			if err != nil {
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
+			}
 			status, subject, ok := strings.Cut(line, "|")
 			if !ok {
 				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: unexpected output %q", line)
@@ -141,9 +153,8 @@ func realDeps() deps {
 			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
 		openURL: func(ctx context.Context, url string) error {
-			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(openScript()), url)
-			noWindow(cmd)
-			_, err := cmd.CombinedOutput()
+			// P1: the URL rides VL_ARG0; openScript reads $env:VL_ARG0.
+			_, err := psRun(openScript(), url)
 			return err
 		},
 		docsDir: windowsDocumentsDir,
@@ -152,41 +163,41 @@ func realDeps() deps {
 			return err == nil && st.IsDir()
 		},
 		ntRunning: func(ctx context.Context) (bool, error) {
-			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", psUTF8+"if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }")
-			noWindow(cmd)
-			out, err := cmd.CombinedOutput()
+			script := "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'VL_RESULT=yes' } else { 'VL_RESULT=no' }"
+			out, err := psRun(script, "")
 			if err != nil {
 				return false, err
 			}
-			return strings.TrimSpace(string(out)) == "yes", nil
+			line, err := psResultLine(out)
+			if err != nil {
+				return false, err
+			}
+			return line == "yes", nil
 		},
 		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
 		selfExe:         os.Executable,
 		messageBox: func(text string) bool {
-			// G16: MB_TOPMOST|MB_SETFOREGROUND puts the box on the interactive
-			// desktop (ServiceNotification targets the service desktop — dropped).
-			// Yes/No + Question icon; the error/info boxes are separate seams.
-			// S18b: the text is passed as $args[0], never spliced into script text.
-			script := msgBoxScript("Question", "YesNo") + " -eq 'Yes'"
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(script), text)
-			noWindow(cmd)
-			out, err := cmd.CombinedOutput()
+			// A5: native windows.MessageBox (MB_YESNO|MB_ICONQUESTION|MB_TOPMOST|
+			// MB_SETFOREGROUND), no PowerShell child per box. H15: on failure fall
+			// back to console + setup.log so an error is never invisible.
+			yes, err := nativeMessageBox(text, "VL", windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND)
 			if err != nil {
+				msgBoxFallback(text)
 				return false
 			}
-			return strings.TrimSpace(string(out)) == "True"
+			return yes
 		},
 		errorBox: func(text string) {
-			// G16: OK + Error icon, topmost/foreground. No Yes/No — dismiss only.
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(msgBoxScript("Error", "OK")), text)
-			noWindow(cmd)
-			_, _ = cmd.CombinedOutput()
+			// A5: OK + Error icon, topmost/foreground. No Yes/No — dismiss only.
+			if _, err := nativeMessageBox(text, "VL", windows.MB_OK|windows.MB_ICONERROR|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+				msgBoxFallback(text)
+			}
 		},
 		infoBox: func(text string) {
-			// G16: OK + Information icon, topmost/foreground. No Yes/No.
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(msgBoxScript("Information", "OK")), text)
-			noWindow(cmd)
-			_, _ = cmd.CombinedOutput()
+			// A5: OK + Information icon, topmost/foreground. No Yes/No.
+			if _, err := nativeMessageBox(text, "VL", windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+				msgBoxFallback(text)
+			}
 		},
 	}
 }
@@ -213,22 +224,115 @@ func windowsDocumentsDir() (string, error) {
 	return p, nil
 }
 
-// psUTF8 forces PowerShell's console output to UTF-8 before any output this
-// file PARSES is written (W3): without it a non-ASCII signer subject would
-// come back in the OEM codepage and be corrupted before the exact-org check.
-const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+// psPreamble (P2a) heads EVERY PowerShell script this file runs: it silences
+// the CLIXML progress noise, fails fast on a script error, and forces UTF-8
+// output with no BOM (so a non-ASCII signer subject survives the parse).
+const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
 
 // friendHTTPClient is the 30s-timeout client for friend-bot calls (G12): the
 // manifest, the identity check, and the Tailscale MSI download must not hang
 // the whole 30-minute run on a wedged network.
 var friendHTTPClient = &http.Client{Timeout: 30 * time.Second}
 
-// msgBoxScript builds the PowerShell MessageBox call for a topmost, foreground
-// dialog on the INTERACTIVE desktop (G16). The flags are MB_TOPMOST (0x40000)
-// | MB_SETFOREGROUND (0x10000) — ServiceNotification is NOT used (it targets
-// the service desktop and was dropped per review). The text arrives as $args[0].
-func msgBoxScript(icon, buttons string) string {
-	return psUTF8 + "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','" + buttons + "','" + icon + "','Button1',[System.Windows.Forms.MessageBoxOptions]0x40000 -bor [System.Windows.Forms.MessageBoxOptions]0x10000)"
+// cmdOutputStdout runs cmd and returns STDOUT ONLY; stderr is folded into the
+// error text (P2: PowerShell writes CLIXML progress noise to stderr, which must
+// never corrupt an exit-code or marker parse).
+func cmdOutputStdout(cmd *exec.Cmd) ([]byte, error) {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	if err := cmd.Run(); err != nil {
+		return stdout.Bytes(), fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+// psRun runs a PowerShell script with the controlled value passed via the
+// VL_ARG0 environment variable (P1: PowerShell 5.1 REJECTS a positional arg
+// after -EncodedCommand — "Cannot process command because a command is already
+// specified"), and returns STDOUT only.
+func psRun(script, arg string) ([]byte, error) {
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psPreamble+script))
+	cmd.Env = append(os.Environ(), "VL_ARG0="+arg)
+	noWindow(cmd)
+	return cmdOutputStdout(cmd)
+}
+
+// psResultLine extracts the single VL_RESULT=<value> line from stdout (P2c),
+// ignoring every other line a PowerShell run may emit.
+func psResultLine(stdout []byte) (string, error) {
+	for _, ln := range strings.Split(string(stdout), "\n") {
+		ln = strings.TrimSpace(ln)
+		if v, ok := strings.CutPrefix(ln, "VL_RESULT="); ok {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("no VL_RESULT line in output")
+}
+
+// idYes is the Win32 MessageBoxW return for "Yes" (IDYES).
+const idYes = 6
+
+// nativeMessageBox shows a native Windows message box (A5) — no PowerShell child
+// per box. flags selects buttons/icon/topmost. It reports whether the user chose
+// Yes (only meaningful for MB_YESNO).
+func nativeMessageBox(text, caption string, flags uint32) (bool, error) {
+	t, err := windows.UTF16PtrFromString(text)
+	if err != nil {
+		return false, err
+	}
+	c, err := windows.UTF16PtrFromString(caption)
+	if err != nil {
+		return false, err
+	}
+	ret, err := windows.MessageBox(0, t, c, flags)
+	if err != nil {
+		return false, err
+	}
+	return ret == idYes, nil
+}
+
+// msgBoxFallback is the H15 fallback when a native message box fails: an error
+// must never be invisible — print to the console AND append to setup.log.
+func msgBoxFallback(text string) {
+	fmt.Println(text)
+	if dir := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); dir != "" {
+		p := filepath.Join(dir, "VL", "setup.log")
+		if os.MkdirAll(filepath.Dir(p), 0o755) == nil {
+			if f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+				_, _ = f.Write([]byte(time.Now().Format(time.RFC3339) + " " + text + "\n"))
+				_ = f.Close()
+			}
+		}
+	}
+}
+
+// singleInstance is the G2/H18c guard: a named mutex (Local\VL-friend) so two
+// icon clicks never race placeAddon. It reports whether THIS process owns the
+// mutex (true) or another instance already holds it (false — that instance just
+// opens the dashboard). It fails OPEN on any mutex error (the guard is advisory,
+// never a blocker).
+func singleInstance() bool {
+	name, err := windows.UTF16PtrFromString(`Local\VL-friend`)
+	if err != nil {
+		return true
+	}
+	if h, err := windows.OpenMutex(windows.SYNCHRONIZE, false, name); err == nil {
+		_ = windows.CloseHandle(h)
+		return false // another instance already holds it
+	}
+	_, err = windows.CreateMutex(nil, false, name)
+	return err == nil
+}
+
+// indexOf returns the first index of s in a, or -1.
+func indexOf(a []string, s string) int {
+	for i, v := range a {
+		if v == s {
+			return i
+		}
+	}
+	return -1
 }
 
 // noWindow marks a child process to never create a console window: HideWindow
@@ -252,10 +356,30 @@ func hideConsole() {
 	procFreeConsole.Call()
 }
 
+// validateLocalAppData enforces H18b: LOCALAPPDATA must be set and absolute —
+// otherwise setup.log and the exe copy would land on a relative path (cwd).
+func validateLocalAppData() error {
+	dir := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if dir == "" {
+		return fmt.Errorf("LOCALAPPDATA is not set (Windows should always set it)")
+	}
+	if !filepath.IsAbs(dir) {
+		return fmt.Errorf("LOCALAPPDATA is not an absolute path: %q", dir)
+	}
+	return nil
+}
+
 // run is the app entry: first run = install; every later start = update check.
 // On ANY error it prints the (redacted) reason, writes setup.log, and waits for
 // Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
+	// H18b: refuse a missing/relative LOCALAPPDATA before anything writes.
+	if err := validateLocalAppData(); err != nil {
+		fmt.Println("Something went wrong: " + err.Error() + ". Nothing was changed. Send a photo of this window to the owner.")
+		fmt.Println("Press Enter to close")
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		return err
+	}
 	d := realDeps()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
