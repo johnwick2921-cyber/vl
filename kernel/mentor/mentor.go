@@ -310,7 +310,7 @@ type Config struct {
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
-	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4].
+	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4 p1 @01:26–01:30].
 	ISBReverseEMA9Enabled bool
 	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
 	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m

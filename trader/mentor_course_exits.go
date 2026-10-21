@@ -56,7 +56,7 @@ func mentorISBC3PartialAnyProfit(rc *store.RiskControlConfig) bool {
 }
 
 // mentorReverseISBAsPHL — CX-6, nil → ON (course-defaults-30, owner "fix all"):
-// the mentor names the reverse ISB the Potential Low 2 / Lower High [D5.4].
+// the mentor names the reverse ISB the Potential Low 2 / Lower High [D5.4 p1 @03:01–03:02].
 func mentorReverseISBAsPHL(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorReverseISBAsPHL, true)
 }

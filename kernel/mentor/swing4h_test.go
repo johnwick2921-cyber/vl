@@ -7,7 +7,7 @@ import (
 	"vl/market"
 )
 
-// §8 swing tests, built from the source quotes [D5.2 p1–p3, table] with the
+// §8 swing tests, built from the source quotes [D5.2 p1 @04:36, p2 @18:36–18:41, p3 @21:30] with the
 // corrected §3 (reject = close back on the approach side; through = cancel)
 // and R8 (offset toward the approach, no entry buffer).
 // Bars are synthetic 5m candles in fixed CT (−5); the 4h buckets are
