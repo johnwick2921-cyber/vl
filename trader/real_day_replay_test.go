@@ -399,10 +399,18 @@ func TestRealDayReplay(t *testing.T) {
 			}
 		}
 	}
+	extras := 0
 	for i, a := range replayArms {
-		if !used[i] {
-			fmt.Printf("  EXTRA %s %s entry %.2f stop %.2f target %.2f (%s)\n", a.BornCT, a.Side, a.Entry, a.Stop, a.Target, a.State)
+		if used[i] {
+			continue
 		}
+		// A replay arm that matches a live CANCELLED arm is a faithful replay,
+		// NOT an extra — the live record's arms include cancelled rows (m168).
+		if liveArmMatched(a, rec) {
+			continue
+		}
+		extras++
+		fmt.Printf("  EXTRA %s %s entry %.2f stop %.2f target %.2f (%s)\n", a.BornCT, a.Side, a.Entry, a.Stop, a.Target, a.State)
 	}
 	_ = fix1m
 
@@ -412,6 +420,9 @@ func TestRealDayReplay(t *testing.T) {
 	}
 	if unexplained > 0 {
 		t.Fatalf("%d live mentor trade(s) were neither matched nor given a named refusal reason — attribution is broken", unexplained)
+	}
+	if extras > 0 {
+		t.Fatalf("%d replay arm(s) have NO live counterpart (side+entry+author time) — the replay invented trades the live bot never authored", extras)
 	}
 }
 
@@ -439,6 +450,45 @@ func liveArmCreated(rec rdrLiveRecord, tr rdrLiveTrade) time.Time {
 		return time.Time{}
 	}
 	return time.Time{}
+}
+
+// liveArmMatched reports whether a replay arm has a live armed_orders
+// counterpart (filled OR cancelled): side + entry within 1.0 pt + author
+// instant within ±1 bar (120 s). The live record's arms include cancelled
+// rows, so a cancelled-but-authored arm is a faithful replay, not an extra
+// (m168 item 3).
+func liveArmMatched(a rdrReplayArm, rec rdrLiveRecord) bool {
+	born, err := time.ParseInLocation("01-02 15:04", a.BornCT, kernel.CTLocation())
+	if err != nil {
+		return false
+	}
+	born = time.Date(2026, born.Month(), born.Day(), born.Hour(), born.Minute(), 0, 0, kernel.CTLocation())
+	for i := range rec.Arms {
+		la := &rec.Arms[i]
+		if strings.ToLower(la.Side) != a.Side {
+			continue
+		}
+		d := la.Entry - a.Entry
+		if d < 0 {
+			d = -d
+		}
+		if d > 1.0 {
+			continue
+		}
+		lt, err := parseRdrCreated(la.Created)
+		if err != nil {
+			continue
+		}
+		td := born.Sub(lt).Seconds()
+		if td < 0 {
+			td = -td
+		}
+		if td > 120 {
+			continue
+		}
+		return true
+	}
+	return false
 }
 
 // matchReplayArm finds the replay arm nearest a live trade: same side, entry
