@@ -337,9 +337,10 @@ type Config struct {
 	// HTF-gated. false (default, owner decision A 2026-10-21 m134 "fix
 	// all"): the 4h/1h direction gate applies ALL DAY — every entry side
 	// must obey the 4h/1h verdict (case 1/2/3). Owner order 2026-10-17 had
-	// set NEWS-ONLY = ON; owner decision A reverses the default. The owner's
-	// STORED knob value is sacred — the CTO flips it at release time with a
-	// backup; this code change only moves the DEFAULT.
+	// set NEWS-ONLY = ON; owner decision A reverses the default. Stored
+	// strategies carry no htf_gate_news_only key, so the new default applies
+	// at the next trader load; an explicit stored true stays news-only, and
+	// none exists today.
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
