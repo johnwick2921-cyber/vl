@@ -300,3 +300,33 @@ func TestReportDiagSendsRedactedReason(t *testing.T) {
 		t.Fatalf("a secret leaked into the diag: %q", got)
 	}
 }
+
+// TestShortcutStaleMovedAndGoodCopied — owner 10-21: the app-window VL.lnk was
+// made (Start Menu) but not on the desktop, where a stale first-version VL.lnk
+// sat. The stale one is MOVED aside (never deleted) before PowerShell, and the
+// good one is COPIED to the desktop. MUTANT: drop copyGoodLnk → RED.
+func TestShortcutStaleMovedAndGoodCopied(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	desk, progs := filepath.Join(home, "Desktop"), filepath.Join(home, "Programs")
+	_ = os.MkdirAll(desk, 0o755)
+	_ = os.MkdirAll(progs, 0o755)
+	_ = os.WriteFile(filepath.Join(desk, "VL.lnk"), utf16le("msedge"), 0o644)                          // stale
+	_ = os.WriteFile(filepath.Join(progs, "VL.lnk"), append([]byte("L"), utf16le("--open")...), 0o644) // current
+	d.iconDirs = func() ([]string, error) { return []string{desk, progs}, nil }
+	d.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("killed") }
+	if err := createDesktopShortcut(context.Background(), d, "http://h:1"); err != nil {
+		t.Fatalf("createDesktopShortcut: %v", err)
+	}
+	b, _ := os.ReadFile(filepath.Join(desk, "VL.lnk"))
+	if !lnkIsCurrent(b) {
+		t.Fatalf("the good app-window shortcut must be copied to the desktop; got %q", b)
+	}
+	moved, _ := filepath.Glob(filepath.Join(d.localAppDataDir(), "VL", "old", "VL-*.lnk"))
+	if len(moved) != 1 {
+		t.Fatalf("the stale VL.lnk must be MOVED to VL\\old, got %v", moved)
+	}
+	if _, err := os.Stat(filepath.Join(desk, "VL.url")); err == nil {
+		t.Fatal("no web-link icon is needed when a current .lnk is on the desktop")
+	}
+}

@@ -879,8 +879,75 @@ func reportDiag(ctx context.Context, d deps, base, what string, err error) {
 	_, _ = d.fetch(cctx, base+"/api/friend/manifest?vl_diag="+url.QueryEscape(appVersion+" "+msg))
 }
 
+// lnkIsCurrent reports whether a VL.lnk is the current kind (local exe with
+// --open). Older versions wrote a bare 'msedge' target or msedge --app; those
+// have no "--open" in their UTF-16 argument string.
+func lnkIsCurrent(b []byte) bool {
+	return bytes.Contains(b, utf16le("--open"))
+}
+
+func utf16le(s string) []byte {
+	var out []byte
+	for _, r := range s {
+		out = append(out, byte(r), byte(r>>8))
+	}
+	return out
+}
+
+// moveStaleLnks moves an old-version VL.lnk aside (VL\old, never deleted)
+// BEFORE the PowerShell step: 10-21 laptop, loading a stale shortcut whose
+// target no longer exists makes the shell search for it and hang.
+func moveStaleLnks(d deps, dirs []string) {
+	for _, dir := range dirs {
+		p := filepath.Join(dir, "VL.lnk")
+		b, err := d.readFile(p)
+		if err != nil || lnkIsCurrent(b) {
+			continue
+		}
+		oldDir := filepath.Join(d.localAppDataDir(), "VL", "old")
+		if d.mkdirAll(oldDir, 0o755) == nil {
+			_ = retryRename(d, p, filepath.Join(oldDir, "VL-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".lnk"))
+		}
+	}
+}
+
+// copyGoodLnk copies a current VL.lnk from one icon folder into any other
+// folder that has none (10-21 owner: "it built the app logo with the real
+// window, just not copied to desktop"). A plain file copy — no COM.
+func copyGoodLnk(d deps, dirs []string) {
+	var good []byte
+	for _, dir := range dirs {
+		if b, err := d.readFile(filepath.Join(dir, "VL.lnk")); err == nil && lnkIsCurrent(b) {
+			good = b
+			break
+		}
+	}
+	if good == nil {
+		return
+	}
+	for _, dir := range dirs {
+		p := filepath.Join(dir, "VL.lnk")
+		if b, err := d.readFile(p); err == nil && lnkIsCurrent(b) {
+			continue
+		}
+		if d.mkdirAll(dir, 0o755) == nil {
+			_ = writeFileAtomic(d, p, good, 0o644)
+		}
+	}
+}
+
 func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
+	var dirs []string
+	if d.iconDirs != nil {
+		if ds, err := d.iconDirs(); err == nil {
+			dirs = ds
+			moveStaleLnks(d, dirs)
+		}
+	}
 	psErr := createShortcutPS(ctx, d, appURL)
+	if len(dirs) > 0 {
+		copyGoodLnk(d, dirs)
+	}
 	if psErr == nil {
 		return nil
 	}
@@ -910,6 +977,9 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 		// status 1", empty stderr). An existing VL.lnk may be a stale old one
 		// PowerShell could not re-target, so ALWAYS make sure a working VL.url
 		// exists — never rely on the .lnk when the PowerShell step failed.
+		if b, err := d.readFile(filepath.Join(dir, "VL.lnk")); err == nil && lnkIsCurrent(b) {
+			continue // a current app-window shortcut is there: no web link needed
+		}
 		p := filepath.Join(dir, "VL.url")
 		if cur, err := d.readFile(p); err == nil {
 			if bytes.Equal(cur, body) {
