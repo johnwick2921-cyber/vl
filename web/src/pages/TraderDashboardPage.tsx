@@ -198,6 +198,8 @@ export function TraderDashboardPage({
     [mentor, mentorStaleSinceMs]
   )
   const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
+  // m134 — the per-bar EMA 9/34 curve.
+  const mentorEMASeries = mentor?.enabled ? mentor.ema_series : undefined
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -790,6 +792,7 @@ export function TraderDashboardPage({
               )}
               mentorLevels={mentorLevels}
               mentorTrendlines={mentorTrendlines}
+              mentorEMASeries={mentorEMASeries}
               mentorSymbol={mentor?.symbol}
               mentorStaleSinceMs={mentorStaleSinceMs}
             />
