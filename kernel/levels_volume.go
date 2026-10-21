@@ -423,17 +423,30 @@ func pdVWAPLevelsFor(symbol string, bars []market.Kline, now time.Time) []Detect
 	return captureFormationGroup([]DetectedLevel{lineLevel(KindPDVWAP, v, "pdVWAP", day, false)}, prior[len(prior)-1].CloseTime, len(prior), "prior_vwap_last_source_close", now)
 }
 
+// nativeDailyCloseFor returns the native 1d close (the ~15:00 CT CME settle)
+// and its source bar's CloseTime for a CME trading date ("YYYY-MM-DD"), or 0,0
+// when there is no daily source (or no symbol, or no row). Shared by SETT and
+// PDC (m239a: one source).
+func nativeDailyCloseFor(symbol, tradingDate string) (float64, int64) {
+	if symbol == "" {
+		return 0, 0
+	}
+	for _, d := range DailyBarsFor(symbol, datrDailyFetch) {
+		if NativeDailyTradingDate(d).Format("2006-01-02") == tradingDate && d.Close > 0 {
+			return d.Close, d.CloseTime
+		}
+	}
+	return 0, 0
+}
+
 // SETTLevels (B1) — prior settlement: the native 1d close (the CME settle,
-// about 15:00 CT). The session's final 1m close (16:00 CT) is a "last print",
-// NOT a settlement — it is never emitted as SETT (m239).
+// about 15:00 CT). With no native daily row the session's final 1m close is
+// emitted as "SETT·last print", never presented as the settlement (m239/m239a).
 func SETTLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 	return SETTLevelsFor("", bars, now)
 }
 
-// SETTLevelsFor is SETTLevels for a named instrument: the native 1d close is
-// read from the daily-bar source (market.FuturesBarsProvider "1d"). With no
-// symbol (or no daily source) there is no settle on record, so nothing is
-// emitted — never a mislabelled last-print SETT (m239).
+// SETTLevelsFor is SETTLevels for a named instrument.
 func SETTLevelsFor(symbol string, bars []market.Kline, now time.Time) []DetectedLevel {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
@@ -443,21 +456,29 @@ func SETTLevelsFor(symbol string, bars []market.Kline, now time.Time) []Detected
 	// trading date is CMESessionDayKey(now). The native daily bar for that
 	// trading date carries the ~15:00 CT settle close.
 	tradingDate := CMESessionDayKey(now)
-	sett := 0.0
-	var sourceClose int64
-	if symbol != "" {
-		for _, d := range DailyBarsFor(symbol, datrDailyFetch) {
-			if NativeDailyTradingDate(d).Format("2006-01-02") == tradingDate && d.Close > 0 {
-				sett = d.Close
-				sourceClose = d.CloseTime
-				break
-			}
+	sett, settleClose := nativeDailyCloseFor(symbol, tradingDate)
+	label := "SETT"
+	basis := "native_1d_settle"
+	sourceClose := settleClose
+	sourceCount := 0
+	if sett > 0 {
+		sourceCount = 1 // one native daily bar
+	} else {
+		// No native settle on record — fall back to the prior session's final
+		// 1m close, but LABEL it a last print, never a settlement.
+		prior, _ := priorSessionBars(cb, CMESessionDayStart(now))
+		for _, b := range prior {
+			sett = b.Close
+			sourceClose = b.CloseTime
+			sourceCount++
 		}
+		if sett <= 0 {
+			return nil
+		}
+		label = "SETT·last print"
+		basis = "last_print_source_close"
 	}
-	if sett <= 0 {
-		return nil // no native settle — never emit the last 1m print as SETT
-	}
-	return captureFormationGroup([]DetectedLevel{lineLevel(KindSETT, sett, "SETT", tradingDate, false)}, sourceClose, 1, "native_1d_settle", now)
+	return captureFormationGroup([]DetectedLevel{lineLevel(KindSETT, sett, label, tradingDate, false)}, sourceClose, sourceCount, basis, now)
 }
 
 // MIDOLevels (B1) — the overnight range midpoint: (ONH+ONL)/2 for the CURRENT

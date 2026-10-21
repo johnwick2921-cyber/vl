@@ -114,8 +114,12 @@ func TestN4FrontTruncatedPriorSessionIsRefused(t *testing.T) {
 	if len(got[KindPDVWAP]) != 0 || len(got[KindPOC]) != 0 || len(got[KindVAH]) != 0 || len(got[KindVAL]) != 0 {
 		t.Fatalf("a front-truncated prior session must be refused, drew pdVWAP %v POC %v VAH %v VAL %v", got[KindPDVWAP], got[KindPOC], got[KindVAH], got[KindVAL])
 	}
-	if len(got[KindSETT]) != 0 {
-		t.Fatalf("m239: SETT is the native 1d close; with no daily source it must be absent (never the last 1m print): %v", got[KindSETT])
+	// m239a: with no native daily source SETT falls back to the prior session's
+	// last 1m print, LABELLED "SETT·last print" (never presented as the settle).
+	// The fallback reads the slice directly (priorSessionBars), not the
+	// truncation-guarded priorSessionFor, so it is NOT refused.
+	if v := got[KindSETT]; len(v) != 1 || v[0] != 30877.5 {
+		t.Fatalf("m239a: SETT with no daily source must be the prior session's last 1m print [30877.5] (labelled SETT·last print), got %v", v)
 	}
 	if PriorSessionReadCounts()["prior_session_refused_truncated"] <= before {
 		t.Fatal("the refusal must be counted")

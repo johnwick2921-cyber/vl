@@ -52,29 +52,32 @@ func TestM239PDHSessionDayNotCalendar(t *testing.T) {
 }
 
 // Fix 2 — SETT is the native 1d close (the ~15:00 CT settle), never the
-// session's last 1m print. With no daily source it is ABSENT. Mutant: fall back
-// to the session's last 1m close → SETT returns the wrong value instead of nil
-// → RED.
+// session's last 1m print. With no daily source it falls back to the last 1m
+// close, labelled "SETT·last print" (m239a). Mutant: return nil (or label it
+// "SETT") when there is no daily row → RED.
 func TestM239SETTIsNativeDailyClose(t *testing.T) {
 	loc := chicago()
 	now := time.Date(2026, 10, 21, 12, 0, 0, 0, loc)
 	var bars []market.Kline
+	// The PRIOR session (10-19 17:00 → 10-20 16:00) — its last close is 100.
 	for i := 0; i < 1020; i++ {
-		s := time.Date(2026, 10, 20, 17, 0, 0, 0, loc).Add(time.Duration(i) * time.Minute)
+		s := time.Date(2026, 10, 19, 17, 0, 0, 0, loc).Add(time.Duration(i) * time.Minute)
 		bars = append(bars, market.Kline{OpenTime: s.UnixMilli(), CloseTime: s.Add(time.Minute).UnixMilli() - 1, Open: 100, High: 101, Low: 99, Close: 100, Volume: 10})
 	}
 
-	// No daily source → SETT must be ABSENT (never the last 1m print).
+	// No daily source → SETT falls back to the last 1m print, labelled "last
+	// print", never presented as the settlement.
 	prev := market.FuturesBarsProvider
 	market.FuturesBarsProvider = nil
 	t.Cleanup(func() { market.FuturesBarsProvider = prev })
-	if v := levelMap(SETTLevelsFor("MNQ", bars, now)); len(v) != 0 {
-		t.Fatalf("SETT with no daily source must be absent, got %v", v)
+	fallback := SETTLevelsFor("MNQ", bars, now)
+	if len(fallback) != 1 || fallback[0].Label != "SETT·last print" || fallback[0].Price != 100 {
+		t.Fatalf("SETT with no daily source must be the last print, labelled SETT·last print, got %+v", fallback)
 	}
 
 	// A native 1d bar for the prior session's trading date (10-20) → SETT = its
-	// close. The native daily bar's OpenTime + 24h + slack maps to the trading
-	// date (weekly_session_days.go).
+	// close, labelled SETT. The native daily bar's OpenTime + 24h + slack maps to
+	// the trading date (weekly_session_days.go).
 	settle := 29675.25
 	dailyOpen := time.Date(2026, 10, 19, 0, 0, 0, 0, loc)
 	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
@@ -83,10 +86,56 @@ func TestM239SETTIsNativeDailyClose(t *testing.T) {
 		}
 		return []market.Kline{{OpenTime: dailyOpen.UnixMilli(), CloseTime: dailyOpen.Add(24*time.Hour).UnixMilli() - 1, Open: 30000, High: 30114, Low: 29726.75, Close: settle}}
 	}
-	v := levelMap(SETTLevelsFor("MNQ", bars, now))
-	if v[KindSETT] != settle {
-		t.Fatalf("SETT = %v, want the native 1d close %.2f", v[KindSETT], settle)
+	native := SETTLevelsFor("MNQ", bars, now)
+	if len(native) != 1 || native[0].Label != "SETT" || native[0].Price != settle {
+		t.Fatalf("SETT = %+v, want the native 1d close %.2f labelled SETT", native, settle)
 	}
+}
+
+// m239a — PDC is the SAME source as SETT: the native 1d close. Mutant: use the
+// session's last 1m close (a.closePx) → PDC = 95 instead of the settle → RED.
+func TestM239PDCIsNativeDailyClose(t *testing.T) {
+	loc := chicago()
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, loc)
+	var bars []market.Kline
+	for i := 0; i < 1020; i++ {
+		s := time.Date(2026, 10, 19, 17, 0, 0, 0, loc).Add(time.Duration(i) * time.Minute)
+		bars = append(bars, market.Kline{OpenTime: s.UnixMilli(), CloseTime: s.Add(time.Minute).UnixMilli() - 1, Open: 90, High: 100, Low: 85, Close: 95, Volume: 10})
+	}
+
+	// No daily source → PDC falls back to the last 1m print, labelled "PDC·last
+	// print".
+	prev := market.FuturesBarsProvider
+	market.FuturesBarsProvider = nil
+	t.Cleanup(func() { market.FuturesBarsProvider = prev })
+	fallback := labelMap(ExtractMultiDayLevelsFor("MNQ", bars, DefaultSessionRegistry(), now))
+	if fallback[KindPDC] != "PDC·last print" {
+		t.Fatalf("PDC with no daily source must be labelled PDC·last print, got %q", fallback[KindPDC])
+	}
+
+	// A native 1d bar for the prior session's trading date (10-20) → PDC = the
+	// settle (30007.0), NOT the last print (95).
+	settle := 30007.0
+	dailyOpen := time.Date(2026, 10, 19, 0, 0, 0, 0, loc)
+	market.FuturesBarsProvider = func(symbol, tf string, count int) []market.Kline {
+		if tf != "1d" {
+			return nil
+		}
+		return []market.Kline{{OpenTime: dailyOpen.UnixMilli(), CloseTime: dailyOpen.Add(24*time.Hour).UnixMilli() - 1, Open: 30000, High: 30114, Low: 29726.75, Close: settle}}
+	}
+	got := levelMap(ExtractMultiDayLevelsFor("MNQ", bars, DefaultSessionRegistry(), now))
+	if got[KindPDC] != settle {
+		t.Fatalf("PDC = %v, want the native 1d close %.2f (the settle, not the last print)", got[KindPDC], settle)
+	}
+}
+
+// labelMap returns kind → label for a level slice.
+func labelMap(levels []DetectedLevel) map[LevelKind]string {
+	m := map[LevelKind]string{}
+	for _, l := range levels {
+		m[l.Kind] = l.Label
+	}
+	return m
 }
 
 // Fix 3 — one POC: the prior-day profile uses the SAME SVP definition as the

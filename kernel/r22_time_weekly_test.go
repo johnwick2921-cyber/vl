@@ -218,14 +218,16 @@ func TestR22MondayPriorDayIsFridaysSession(t *testing.T) {
 	// 08:30); with no store to read the whole session from, both are now
 	// REFUSED rather than drawn wrong. The whole-session read is pinned in
 	// levels_volume_n4_test.go.
-	// m239: SETT is now the NATIVE 1d close (the ~15:00 CT settle), never the
-	// session's last 1m print. The symbol-less path has no daily source, so SETT
-	// is absent here (the native-settle path is pinned separately).
+	// m239a: SETT is the native 1d close (the ~15:00 CT settle). The symbol-less
+	// path has no daily source, so SETT falls back to the prior session's last
+	// 1m print — LABELLED "SETT·last print", never the settle. That last print
+	// (31123.25) is known even though the session is front-truncated (the
+	// fallback reads the slice directly, not the truncation-guarded reader).
 	if v := got[KindPDVWAP]; len(v) != 0 {
 		t.Errorf("Monday pdVWAP = %v from a front-truncated Friday session; want it refused (N4)", v)
 	}
-	if v := got[KindSETT]; len(v) != 0 {
-		t.Errorf("Monday SETT = %v; want [] (m239: no native 1d close source in the symbol-less path)", v)
+	if v := got[KindSETT]; len(v) != 1 || v[0] != 31123.25 {
+		t.Errorf("Monday SETT = %v; want [31123.25] (m239a: no native 1d close → last 1m print fallback)", v)
 	}
 	if len(got[KindVAH]) != 0 || len(got[KindVAL]) != 0 {
 		t.Errorf("Monday prior-day profile drawn from a front-truncated Friday session; want it refused (N4)")

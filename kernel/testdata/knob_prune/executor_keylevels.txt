@@ -3,7 +3,7 @@ KEY LEVELS (map, nearest-first; price 20041.83):
   20045.77  VWAP+1σ              A  fresh·x5  magnet_meanrevert +3.9
   20060.46  SWG-H·5m             A  fresh·x6  react_zone      +18.6
   20063.75  VAH                  A  fresh·x6  react_zone      +21.9
-  20075.16  PDC                  A  fresh·x6  pivot           +33.3
+  20075.16  PDC·last print       A  fresh·x6  pivot           +33.3
   20079.55  SWG-H·5m             A  fresh·x6  react_zone      +37.7
   20001.23  VWAP                 A  fresh·x3  magnet_meanrevert -40.6
   20082.73  PDH                  A  fresh·x5  react_zone      +40.9
@@ -15,7 +15,7 @@ MAP (merged references, nearest-first; price 20041.83):
   20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.22 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 1.03 ATR  not-an-entry: nearest opposing reference 14.69 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20063.75  VAH                                          A  target           +21.92 pt / 1.21 ATR  not-an-entry: nearest opposing reference 3.29 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
-  20075.16  PDC                                          A  target           +33.33 pt / 1.84 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
+  20075.16  PDC·last print                               A  target           +33.33 pt / 1.84 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 2.09 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts
   20001.23  VWAP · RN 20000 [merged x2]                  A  entry-candidate  -40.6 pt / 2.25 ATR  min_tgt≥54.25pts
   20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.26 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 27.12 pt minimum  min_tgt≥54.25pts

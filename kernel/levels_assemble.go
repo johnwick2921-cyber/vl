@@ -121,7 +121,7 @@ func AssembleScoredLevels(traderID string, bars []market.Kline, reg SessionRegis
 	tol := 3 * tick
 
 	var all []DetectedLevel
-	all = append(all, ExtractMultiDayLevels(bars, reg, now)...)
+	all = append(all, ExtractMultiDayLevelsFor(symbol, bars, reg, now)...)
 	all = append(all, RoundNumberLevels(price, dATR, proximityK)...)
 	all = append(all, OpeningRangeLevels(bars, reg, now)...)
 	all = append(all, GapLevels(bars, atr, 1.0, now)...)
@@ -176,7 +176,7 @@ func AssembleScoredLevelsMinGrade(traderID string, bars []market.Kline, reg Sess
 	tol := 3 * tick
 
 	var all []DetectedLevel
-	all = append(all, ExtractMultiDayLevels(bars, reg, now)...)
+	all = append(all, ExtractMultiDayLevelsFor(symbol, bars, reg, now)...)
 	all = append(all, RoundNumberLevels(price, dATR, proximityK)...)
 	all = append(all, OpeningRangeLevels(bars, reg, now)...)
 	all = append(all, GapLevels(bars, atr, 1.0, now)...)
@@ -233,7 +233,7 @@ func AssembleResearchLevels(traderID string, bars []market.Kline, reg SessionReg
 	tol := 3 * tick
 
 	var all []DetectedLevel
-	all = append(all, ExtractMultiDayLevels(bars, reg, now)...)
+	all = append(all, ExtractMultiDayLevelsFor(symbol, bars, reg, now)...)
 	all = append(all, RoundNumberLevels(price, dATR, proximityK)...)
 	all = append(all, OpeningRangeLevels(bars, reg, now)...)
 	all = append(all, GapLevels(bars, atr, 1.0, now)...)

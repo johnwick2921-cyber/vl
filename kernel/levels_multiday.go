@@ -42,8 +42,16 @@ func newCalDayAgg() *calDayAgg {
 // ExtractMultiDayLevels returns the structural map levels relative to `now`:
 // PDH/PDL/PDC (prior CME session day, 17:00→16:00 CT — m239), RTH-H/L (that
 // session's NY session), AS/LDN/ON (the current overnight of now's futures
-// session-day), and PW/PM (prior week / month). Closed bars only.
+// session-day), and PW/PM (prior week / month). Closed bars only. PDC reads the
+// native 1d close when the symbol is known (m239a) — see ExtractMultiDayLevelsFor.
 func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Time) []DetectedLevel {
+	return ExtractMultiDayLevelsFor("", bars, reg, now)
+}
+
+// ExtractMultiDayLevelsFor is ExtractMultiDayLevels for a named instrument: PDC
+// is the SAME source as SETT (the native 1d close). With no native daily row
+// PDC is the prior session's last 1m close, labelled "PDC·last print".
+func ExtractMultiDayLevelsFor(symbol string, bars []market.Kline, reg SessionRegistry, now time.Time) []DetectedLevel {
 	loc := chicago()
 	nowMs := now.UnixMilli()
 	nowCT := now.In(loc)
@@ -174,14 +182,6 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 
 	var out []DetectedLevel
 
-	// Prior calendar day (PDH/PDL/PDC + its RTH). Coverage-guarded (P0.4-F,
-	// 2026-08-25): a truncated bucket — bot down part of the day, or a fresh
-	// boot whose 1m ring only reaches the prior day's afternoon — yields a
-	// WRONG low/high/close. Live proof: ASIA v4 anchored its flip on "PDL
-	// 29263.25", which was Friday's close region (PDC 29266.25 − 3.00) read
-	// off a Friday-afternoon-only bucket; the true prior-day low was ~29116.
-	// A day with < priorDayMinBars closed bars is OMITTED — the WARMING badge
-	// surfaces the honest gap instead of a fabricated anchor.
 	// Prior CME session day (PDH/PDL/PDC + that session's RTH). Coverage-guarded
 	// (P0.4-F, 2026-08-25): a truncated bucket — bot down part of the day, or a
 	// fresh boot whose 1m ring only reaches the prior session's afternoon — yields
@@ -189,10 +189,20 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 	// OMITTED.
 	if priorSess := mostRecentPriorDay(cal, nowFut, priorDayMinBars); priorSess != "" {
 		a := cal[priorSess]
+		// m239a: PDC is the SAME source as SETT — the native 1d close (the
+		// ~15:00 CT settle). With no native daily row it falls back to the
+		// session's last 1m close, labelled "PDC·last print", never a settle.
+		// The prior session's trading date is its start date + 1 day.
+		priorStart, _ := time.ParseInLocation("2006-01-02", priorSess, chicago())
+		pdcTradingDate := priorStart.AddDate(0, 0, 1).Format("2006-01-02")
+		pdcPx, pdcLabel := a.closePx, "PDC·last print"
+		if settle, _ := nativeDailyCloseFor(symbol, pdcTradingDate); settle > 0 {
+			pdcPx, pdcLabel = settle, "PDC"
+		}
 		out = append(out,
 			lineLevel(KindPDH, a.high, "PDH", priorSess, true),
 			lineLevel(KindPDL, a.low, "PDL", priorSess, true),
-			lineLevel(KindPDC, a.closePx, "PDC", priorSess, true),
+			lineLevel(KindPDC, pdcPx, pdcLabel, priorSess, true),
 		)
 		if a.hasRTH {
 			out = append(out,

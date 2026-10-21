@@ -23,7 +23,7 @@
       "price": 20075.156272422686,
       "lo": 20075.156272422686,
       "hi": 20075.156272422686,
-      "label": "PDC",
+      "label": "PDC·last print",
       "origin_date": "2030-09-10",
       "htf": true
     },
@@ -10957,6 +10957,15 @@
       "htf": false
     },
     {
+      "kind": "SETT",
+      "price": 20075.156272422686,
+      "lo": 20075.156272422686,
+      "hi": 20075.156272422686,
+      "label": "SETT·last print",
+      "origin_date": "2030-09-11",
+      "htf": false
+    },
+    {
       "kind": "MID-O",
       "price": 20000.191086454397,
       "lo": 20000.191086454397,
@@ -11183,7 +11192,7 @@
       "price": 20075.156272422686,
       "lo": 20075.156272422686,
       "hi": 20075.156272422686,
-      "label": "PDC",
+      "label": "PDC·last print",
       "origin_date": "2030-09-10",
       "htf": true,
       "grade": "A",
@@ -11549,7 +11558,7 @@
       "price": 20075.156272422686,
       "lo": 20075.156272422686,
       "hi": 20075.156272422686,
-      "label": "PDC",
+      "label": "PDC·last print",
       "origin_date": "2030-09-10",
       "htf": true,
       "grade": "A",
@@ -11638,5 +11647,5 @@
   ],
   "Price": 20041.83028958139,
   "DATR": 165.60681154128906,
-  "Rendered": "MAP (merged references, nearest-first; price 20041.83):\n  20040.62  POC                                          A  target           -1.21 pt / 0.06 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.2 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20050     RN 20050 (50)                                B  target           +8.17 pt / 0.41 ATR  not-an-entry: nearest opposing reference 4.23 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20025     RN 20025 (25)                                B  target           -16.83 pt / 0.84 ATR  not-an-entry: nearest opposing reference 15.62 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 0.93 ATR  not-an-entry: nearest opposing reference 10.46 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20063.75  VAH                                          A  target           +21.92 pt / 1.1 ATR  not-an-entry: nearest opposing reference 3.29 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20075.16  PDC                                          A  target           +33.33 pt / 1.67 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 1.89 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20001.23  VWAP                                         A  target           -40.6 pt / 2.03 ATR  not-an-entry: nearest opposing reference 23.77 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.04 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20090.31  VWAP+2σ                                      A  target           +48.48 pt / 2.42 ATR  not-an-entry: nearest opposing reference 7.58 pt away, under the 30 pt minimum  min_tgt≥60pts\n  19975     RN 19975 (25)                                B  target           -66.83 pt / 3.34 ATR  not-an-entry: nearest opposing reference 26.23 pt away, under the 30 pt minimum  min_tgt≥60pts\nENTRY SHORTLIST: none — no reference has a plausible target at the resolved minimum.\nLevels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.\n"
+  "Rendered": "MAP (merged references, nearest-first; price 20041.83):\n  20040.62  POC                                          A  target           -1.21 pt / 0.06 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.2 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20050     RN 20050 (50)                                B  target           +8.17 pt / 0.41 ATR  not-an-entry: nearest opposing reference 4.23 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20025     RN 20025 (25)                                B  target           -16.83 pt / 0.84 ATR  not-an-entry: nearest opposing reference 15.62 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 0.93 ATR  not-an-entry: nearest opposing reference 10.46 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20063.75  VAH                                          A  target           +21.92 pt / 1.1 ATR  not-an-entry: nearest opposing reference 3.29 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20075.16  PDC·last print                               A  target           +33.33 pt / 1.67 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 1.89 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20001.23  VWAP                                         A  target           -40.6 pt / 2.03 ATR  not-an-entry: nearest opposing reference 23.77 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.04 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20090.31  VWAP+2σ                                      A  target           +48.48 pt / 2.42 ATR  not-an-entry: nearest opposing reference 7.58 pt away, under the 30 pt minimum  min_tgt≥60pts\n  19975     RN 19975 (25)                                B  target           -66.83 pt / 3.34 ATR  not-an-entry: nearest opposing reference 26.23 pt away, under the 30 pt minimum  min_tgt≥60pts\nENTRY SHORTLIST: none — no reference has a plausible target at the resolved minimum.\nLevels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.\n"
 }
