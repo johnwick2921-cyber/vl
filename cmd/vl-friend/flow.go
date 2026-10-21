@@ -839,14 +839,18 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int,
 // The script ends by VERIFYING that every shortcut file really exists: it prints
 // VL_RESULT=ok, or exits 1 naming what is missing.
 func shortcutScript() string {
+	// 10-21 laptop: "exit status 1" with no reason. Each icon is now made in a
+	// try/catch: the .lnk first (re-targeting a stale one, see F4), and on ANY
+	// failure a plain VL.url web link instead — so every PC ends with an icon —
+	// and the reason is reported on the VL_RESULT line, never a bare exit code.
 	return psPreamble + strings.Join([]string{
 		"$d=[Environment]::GetFolderPath('Desktop')",
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
-		"$ext='url'",
-		"if(Test-Path $exe){$ext='lnk';$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";$l=$w.CreateShortcut($p);if((-not (Test-Path -LiteralPath $p)) -or $l.TargetPath -ne $exe -or $l.Arguments -ne '--open'){$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=$env:VL_ARG0`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path -LiteralPath $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
-		"$missing=@();foreach($dir in @($d,$s)){$p=\"$dir\\VL.$ext\";if(-not (Test-Path -LiteralPath $p)){$missing+=$p}}",
-		"if($missing.Count -gt 0){[Console]::Error.WriteLine('shortcut missing: '+($missing -join ', '));exit 1}",
+		"$u=\"[InternetShortcut]`r`nURL=$env:VL_ARG0`r`n\"",
+		"$errs=@();$missing=@()",
+		"foreach($dir in @($d,$s)){$ok=$false;if(Test-Path -LiteralPath $exe){try{$w=New-Object -ComObject WScript.Shell;$p=\"$dir\\VL.lnk\";$l=$w.CreateShortcut($p);if((-not (Test-Path -LiteralPath $p)) -or $l.TargetPath -ne $exe -or $l.Arguments -ne '--open'){$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()};$ok=(Test-Path -LiteralPath $p)}catch{$errs+=('lnk '+$dir+': '+$_.Exception.Message)}};if(-not $ok){try{$p=\"$dir\\VL.url\";if(-not (Test-Path -LiteralPath $p)){[System.IO.File]::WriteAllText($p,$u)};$ok=(Test-Path -LiteralPath $p)}catch{$errs+=('url '+$dir+': '+$_.Exception.Message)}};if(-not $ok){$missing+=$dir}}",
+		"if($missing.Count -gt 0){'VL_RESULT=ERR '+(($errs+('missing: '+($missing -join ', '))) -join ' | ');exit 0}",
 		"'VL_RESULT=ok'",
 	}, ";")
 }
@@ -860,8 +864,16 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 	// Bounded (A6): the icon step may never hang the run.
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	if _, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL); err != nil {
+	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL)
+	if err != nil {
 		return fmt.Errorf("desktop shortcut: %w", err)
+	}
+	line, err := psResultLine(out)
+	if err != nil {
+		return fmt.Errorf("desktop shortcut: %w", err)
+	}
+	if rest, ok := strings.CutPrefix(line, "ERR "); ok {
+		return fmt.Errorf("desktop shortcut: %s", rest)
 	}
 	return nil
 }

@@ -44,6 +44,10 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 				}
 			}
 			rec.execs = append(rec.execs, name+" "+strings.Join(shown, " "))
+			// The shortcut script reports VL_RESULT=ok on success.
+			if name == "powershell.exe" && strings.Contains(strings.Join(shown, " "), "VL.lnk") {
+				return []byte("VL_RESULT=ok\n"), nil
+			}
 			// S10: tailscaleExec tries the absolute install path FIRST; route it
 			// to the same state machine as the bare name.
 			if name == tailscaleExeFallback {
@@ -658,9 +662,6 @@ func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
 	// B1: the if/else must be ONE statement — PowerShell rejects "};else{".
 	if strings.Contains(ps, "};else{") {
 		t.Fatalf("shortcut script has an invalid '};else{' split:\n%s", ps)
-	}
-	if !strings.Contains(ps, "}else{") {
-		t.Fatalf("shortcut script is missing the contiguous }else{:\n%s", ps)
 	}
 }
 
@@ -2101,8 +2102,8 @@ func TestShortcutScriptNeverSplicesURL(t *testing.T) {
 	if !strings.HasPrefix(ps, psPreamble) {
 		t.Fatalf("shortcutScript must start with psPreamble:\n%s", ps)
 	}
-	if !strings.Contains(ps, "exit 1") || !strings.HasSuffix(ps, "'VL_RESULT=ok'") {
-		t.Fatalf("shortcutScript must end with an existence check (exit 1 / VL_RESULT=ok):\n%s", ps)
+	if !strings.Contains(ps, "VL_RESULT=ERR ") || !strings.HasSuffix(ps, "'VL_RESULT=ok'") {
+		t.Fatalf("shortcutScript must end with an existence check (VL_RESULT=ERR reason / VL_RESULT=ok):\n%s", ps)
 	}
 	if !strings.Contains(ps, "IconLocation=$exe") {
 		t.Fatalf("shortcutScript lost the IconLocation line:\n%s", ps)
