@@ -192,6 +192,19 @@ export function computeDayTotal(
   return Math.round(total * 100) / 100
 }
 
+// M251-S2: the "time" sort key. An OPEN partial has exit_time=0; sorting on
+// exit_time||0 sank it to the bottom. Use last activity (updated_at) instead,
+// the same fallback computeDayTotal uses. A CLOSED row keeps exit_time.
+export function positionSortTimeMs(p: HistoricalPosition): number {
+  const exitMs = new Date(p.exit_time || 0).getTime()
+  return exitMs > 0 ? exitMs : new Date(p.updated_at || 0).getTime() || 0
+}
+
+// M251-S2: says exactly what computeDayTotal counts. The daily-loss gate is
+// narrower (closed trades only) and the tooltip must not claim otherwise.
+export const SESSION_DAY_TOOLTIP =
+  "Bot P&L in the CME session day (from 17:00 CT — the risk gates' day). Includes partial legs already booked on trades that are still OPEN (dated by last activity); the daily-loss gate counts CLOSED trades only. Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win."
+
 // Stats Card Component with formula tooltip
 function StatCard({
   title,
@@ -738,9 +751,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
       let comparison = 0
       switch (sortBy) {
         case 'time':
-          comparison =
-            new Date(a.exit_time || 0).getTime() -
-            new Date(b.exit_time || 0).getTime()
+          comparison = positionSortTimeMs(a) - positionSortTimeMs(b)
           break
         case 'pnl':
           comparison = (a.realized_pnl || 0) - (b.realized_pnl || 0)
@@ -1295,7 +1306,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 </span>
               </span>
             )}
-            <span title="Bot trades closed in the CME session day (from 17:00 CT — the risk gates' day). Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win.">
+            <span title={SESSION_DAY_TOOLTIP}>
               Session day (from 17:00 CT):{' '}
               {dayTotal === null ? (
                 <span className="font-mono">n/a</span>
