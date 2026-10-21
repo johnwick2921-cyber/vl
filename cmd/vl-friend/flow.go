@@ -968,11 +968,57 @@ func repairAppState(ctx context.Context, d deps, docs string, cfg connectConfig)
 	if _, err := fetchManifest(ctx, d, base); err != nil {
 		return appState{}, fmt.Errorf("cannot find your VL dashboard port — send this to the owner")
 	}
+	// S14: when the bot serves an identity endpoint, prove it is MY bot (the
+	// connect key must match sha256). A bot with a DIFFERENT key refuses; an old
+	// bot that does not serve the endpoint yet fails open (the manifest
+	// signature above already proved authenticity).
+	if err := verifyBotIdentity(ctx, d, base, cfg.ConnectKey); err != nil {
+		if errors.Is(err, errIdentityMismatch) {
+			return appState{}, fmt.Errorf("this is not your VL bot (identity key mismatch) — send this to the owner")
+		}
+		// network / endpoint-missing: fail open.
+	}
 	st := appState{WebPort: port}
 	if err := writeAppState(d, docs, st); err != nil {
 		return appState{}, err
 	}
 	return st, nil
+}
+
+// fetchIdentityKeySHA GETs /api/friend/identity and returns the key_sha256
+// field (DS-102's endpoint). The bot returns sha256(its connect key), so it
+// identifies WHICH bot we are talking to.
+func fetchIdentityKeySHA(ctx context.Context, d deps, base string) (string, error) {
+	b, err := d.fetch(ctx, base+"/api/friend/identity")
+	if err != nil {
+		return "", err
+	}
+	var id struct {
+		KeySHA256 string `json:"key_sha256"`
+	}
+	if err := json.Unmarshal(b, &id); err != nil {
+		return "", fmt.Errorf("identity: %w", err)
+	}
+	return id.KeySHA256, nil
+}
+
+// errIdentityMismatch means the bot at base holds a DIFFERENT connect key than
+// this PC — it is another friend's bot.
+var errIdentityMismatch = errors.New("identity key mismatch")
+
+// verifyBotIdentity proves base is MY bot: GET /api/friend/identity must return
+// sha256(my connect key). A network/unreachable endpoint is also an error — the
+// caller decides whether to fail open (an old bot may not serve it yet).
+func verifyBotIdentity(ctx context.Context, d deps, base, connectKey string) error {
+	got, err := fetchIdentityKeySHA(ctx, d, base)
+	if err != nil {
+		return err
+	}
+	want := sha256.Sum256([]byte(connectKey))
+	if got != hex.EncodeToString(want[:]) {
+		return errIdentityMismatch
+	}
+	return nil
 }
 
 // loadAppState reads vl-app.json, repairing it (derive + verify) when missing.
@@ -1089,6 +1135,15 @@ func applyNewCode(ctx context.Context, d deps, docs, code string) error {
 	secrets := []string{ic.TSAuthKey, ic.ConnectKey}
 	if err := tailscaleConnect(ctx, d, ic.TSAuthKey, ic.BaseURL()); err != nil {
 		return errors.New(redactSecrets(err.Error(), secrets...))
+	}
+	// S14: prove the NEW bot is MY bot before swapping the connect key — a bot
+	// with a different key refuses; an old bot without the identity endpoint
+	// fails open (the tailnet peer check above already passed).
+	if err := verifyBotIdentity(ctx, d, ic.BaseURL(), ic.ConnectKey); err != nil {
+		if errors.Is(err, errIdentityMismatch) {
+			return errors.New("this is not your VL bot (identity key mismatch) — ask the owner for a fresh install code")
+		}
+		// network / endpoint-missing: fail open.
 	}
 	oldPath := connectJSONPath(docs)
 	backup := filepath.Join(ntVLdir(docs), "old", "connect-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".json")

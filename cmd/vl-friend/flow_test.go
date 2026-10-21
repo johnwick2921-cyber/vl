@@ -1443,6 +1443,120 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
+// withIdentity wraps fetchMap's fetch to ALSO serve GET /api/friend/identity
+// with the given key_sha256 (S14).
+func withIdentity(t *testing.T, base string, manifest, addon []byte, keySHA string) (func(context.Context, string) ([]byte, error), []byte) {
+	t.Helper()
+	fetch, signers := fetchMap(t, base, manifest, addon)
+	orig := fetch
+	return func(ctx context.Context, u string) ([]byte, error) {
+		if u == base+"/api/friend/identity" {
+			return []byte(`{"key_sha256":"` + keySHA + `"}`), nil
+		}
+		return orig(ctx, u)
+	}, signers
+}
+
+// TestRepairAppStateRefusesWrongBot — S14: when the bot serves an identity
+// endpoint with a DIFFERENT key, the repair refuses (never silently trusts a
+// different friend's bot).
+func TestRepairAppStateRefusesWrongBot(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
+	wrong := sha256.Sum256([]byte(strings.Repeat("ff", 32)))
+	fetch, signers := withIdentity(t, base, []byte(manifestText("37")), addonBody(), hex.EncodeToString(wrong[:]))
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	err := runInstalled(context.Background(), d, home)
+	if err == nil || !strings.Contains(err.Error(), "identity key mismatch") {
+		t.Fatalf("expected the identity-mismatch error, got %v", err)
+	}
+}
+
+// TestApplyNewCodeRefusesWrongBot — S14: applying a new code whose bot's
+// identity key does not match refuses, and connect.json stays unchanged.
+func TestApplyNewCodeRefusesWrongBot(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	old := goodCode()
+	if err := writeConnectJSON(d, home, old); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer(old.Host)}
+	d.exec = f.exec
+
+	newIC := goodCode()
+	newIC.Name = "tom2"
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+	base := newIC.BaseURL()
+	wrong := sha256.Sum256([]byte(strings.Repeat("00", 32)))
+	d.fetch = func(_ context.Context, u string) ([]byte, error) {
+		if u == base+"/api/friend/identity" {
+			return []byte(`{"key_sha256":"` + hex.EncodeToString(wrong[:]) + `"}`), nil
+		}
+		return nil, fmt.Errorf("no fetch mapped for %s", u)
+	}
+
+	err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC))
+	if err == nil || !strings.Contains(err.Error(), "identity key mismatch") {
+		t.Fatalf("expected identity-mismatch refusal, got %v", err)
+	}
+	cfg, rerr := readConnectConfig(d, home)
+	if rerr != nil {
+		t.Fatal(rerr)
+	}
+	if cfg.ConnectKey != old.ConnectKey {
+		t.Fatalf("connect.json must be unchanged after a refused new code: %+v", cfg)
+	}
+}
+
+// TestApplyNewCodeAcceptsMatchingIdentity — S14: a MATCHING identity key (the
+// bot is MY bot) applies the new code.
+func TestApplyNewCodeAcceptsMatchingIdentity(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	old := goodCode()
+	if err := writeConnectJSON(d, home, old); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer(old.Host)}
+	d.exec = f.exec
+
+	newIC := goodCode()
+	newIC.Name = "tom2"
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+	base := newIC.BaseURL()
+	want := sha256.Sum256([]byte(newIC.ConnectKey))
+	d.fetch = func(_ context.Context, u string) ([]byte, error) {
+		if u == base+"/api/friend/identity" {
+			return []byte(`{"key_sha256":"` + hex.EncodeToString(want[:]) + `"}`), nil
+		}
+		return nil, fmt.Errorf("no fetch mapped for %s", u)
+	}
+
+	if err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC)); err != nil {
+		t.Fatalf("matching identity must accept: %v", err)
+	}
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectKey != newIC.ConnectKey {
+		t.Fatalf("the new code was not applied: %+v", cfg)
+	}
+}
+
 // TestMigrateDocsRenameFailureNonFatal — S23: a migration move that fails warns
 // and continues (never aborts the run).
 func TestMigrateDocsRenameFailureNonFatal(t *testing.T) {
