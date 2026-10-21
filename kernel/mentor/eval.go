@@ -2598,6 +2598,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
+	// D4.4 p2 @04:41–06:00: at the open (08:30–09:30 CT), a with-4h entry is
+	// allowed only after a 5m candle has closed outside the opening 5m range
+	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
+	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
+	out, refused = open5mRangeFilter(out, e.State.HTF, bars, now)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+
 	// Seed depth advances from the evaluator's own state as bars arrive, so a
 	// source that was short at boot clears without a restart.
 	if e.seeded {
