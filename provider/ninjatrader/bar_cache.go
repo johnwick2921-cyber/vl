@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"vl/kernel"
 )
 
 // DefaultBarCacheMaxBars is the per-(symbol, timeframe) ring-buffer
@@ -764,13 +766,17 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 // equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
 // anchor is 17:00 CT, not a whole-epoch multiple.
 //
-// m148 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is NOT
-// inserted — it stays a hole for BarsTFHoles / the prompt gap warning to report
-// honestly, rather than becoming a bar with a fake close. A bucket is inserted
-// only when at most ONE of its tfMin minutes is missing (a quiet no-trade
-// minute must not drop a bar). The forming tail bucket (the bucket still open
-// at `now`) is NEVER rebuilt from 1m — the live feed owns it; `now <= 0` means
-// "no forming filter" (every bucket is judged).
+// m148/m168 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is
+// NOT inserted — it stays a hole for BarsTFHoles / the prompt gap warning to
+// report honestly, rather than becoming a bar with a fake close.
+//
+// m168 coverage rule (CTO ruling): missing minutes are counted against the
+// bucket's OPEN minutes only — a closed minute (session break, weekend, the
+// halted tail of a shortened early-close day) is not expected and never drops a
+// bucket. Tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3) AND no run of
+// 3 or more consecutive missing open minutes is allowed. The forming tail
+// bucket (the bucket still open at `now`) is NEVER rebuilt from 1m — the live
+// feed owns it; `now <= 0` means "no forming filter" (every bucket is judged).
 func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 	if tfMin <= 1 || len(bars) == 0 {
 		return bars
@@ -787,13 +793,7 @@ func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 		if cur == nil {
 			return
 		}
-		missing := 0
-		for _, p := range present {
-			if !p {
-				missing++
-			}
-		}
-		if missing <= 1 {
+		if bucketCoverageOK(present, cur.T, tfMin) {
 			out = append(out, *cur)
 		}
 		cur = nil
@@ -829,6 +829,43 @@ func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 	}
 	flush()
 	return out
+}
+
+// bucketCoverageOK is the m168 coverage rule (CTO ruling 2026-10-21): a bucket
+// is inserted only when its OPEN minutes are covered. A closed minute — a daily
+// break, a weekend, or the halted tail of a shortened early-close day — is not
+// expected and never counts against the bucket, while a quiet no-trade open
+// minute does. The tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3), AND
+// no run of 3 or more CONSECUTIVE missing open minutes is tolerated: a genuine
+// interior hole must stay visible, not be papered over as a full bar.
+//
+// `present` is indexed by the minute slot within the bucket; `bucket` is the
+// bucket's epoch-aligned OPEN time (ms UTC).
+func bucketCoverageOK(present []bool, bucket int64, tfMin int) bool {
+	tol := tfMin / 20
+	if tol < 1 {
+		tol = 1
+	}
+	missing := 0
+	run := 0
+	longest := 0
+	for i := 0; i < len(present); i++ {
+		t := bucket + int64(i)*60_000
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			run = 0 // a closed minute breaks a missing-open run
+			continue
+		}
+		if !present[i] {
+			missing++
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	return missing <= tol && longest < 3
 }
 
 // RehydrateUnion rehydrates a ring from store-derived bars by TIME UNION, not
