@@ -660,6 +660,12 @@ type AutoTrader struct {
 	// before any dispatch. nil in production (never assigned outside tests) —
 	// the tick is byte-identical.
 	mentorIntentTap func(in mentor.Intent)
+	// mentorEvalIntentsSeam (test-only, nil in production) replaces the
+	// evaluator's Tick OUTPUT for one tick: the m134 (a) negative pin feeds a
+	// raw synthetic ISB intent through the PRODUCTION mentorEvalOnce dispatch /
+	// refusal path without building a full kernel ISB state. nil in production —
+	// the tick is byte-identical.
+	mentorEvalIntentsSeam func(bars []market.Kline) []mentor.Intent
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
