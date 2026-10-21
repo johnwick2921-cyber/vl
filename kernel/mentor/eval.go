@@ -2331,9 +2331,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 				continue
 			}
-			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
-			// ONLY in the trigger's direction, whatever the school — a buy-line
-			// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
+			// Row 56 (a) [D3.4 p2 @20:51–21:27 (also @21:55–22:10)]: a
+			// trigger-retest level trades ONLY in the trigger's direction,
+			// whatever the school — a buy-line retest rejecting from below is NOT
+			// a short [CTO ruling 2026-10-04].
 			if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
 				e.refuse("trigger_retest_wrong_way")
 				continue

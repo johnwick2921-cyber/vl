@@ -38,24 +38,26 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		{"base ISB", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5}, mentorSizeChoice{4, "base", ""}},
 		{"base PHL", mentorTierInputs{Setup: "PHL", StopPts: 11.25, TargetPts: 22.5}, mentorSizeChoice{4, "base", ""}},
 		{"confluence", mentorTierInputs{Setup: "PHL", StopPts: 11.25, Confluence: true}, mentorSizeChoice{4, "confluence", ""}},
-		{"big", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "big", ""}},
-		{"big needs 4h AND 1h", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: false}, mentorSizeChoice{4, "confluence", ""}},
-		{"big needs room", mentorTierInputs{Setup: "PHL", StopPts: 19.5, TargetPts: 35, RoomMultiple: 1.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
-		{"big needs target", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 29, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"big trigger removed — HTFAgree+room+target does not add size", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"confluence without HTFAgree", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: false}, mentorSizeChoice{4, "confluence", ""}},
+		{"confluence with small room", mentorTierInputs{Setup: "PHL", StopPts: 19.5, TargetPts: 35, RoomMultiple: 1.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
+		{"confluence with small target", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 29, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
 		{"stop in the twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46}, mentorSizeChoice{4, "reduced", ""}},
-		{"stop at 20 boundary", mentorTierInputs{Setup: "PLH", StopPts: 20, TargetPts: 40}, mentorSizeChoice{4, "reduced", ""}},
+		{"stop at 20 boundary is base (trên 20)", mentorTierInputs{Setup: "PLH", StopPts: 20, TargetPts: 40}, mentorSizeChoice{4, "base", ""}},
+		{"stop at 25 boundary is reduced (25 đổ lại ok)", mentorTierInputs{Setup: "PLH", StopPts: 25, TargetPts: 50}, mentorSizeChoice{4, "reduced", ""}},
+		{"stop over 25 is base here (the evaluator skips it upstream)", mentorTierInputs{Setup: "PLH", StopPts: 28, TargetPts: 56}, mentorSizeChoice{4, "base", ""}},
 		{"stop below twenties", mentorTierInputs{Setup: "PLH", StopPts: 19.5, TargetPts: 40}, mentorSizeChoice{4, "base", ""}},
 		// B12 (CTO 1791041016051): the stop-in-the-twenties cut wins over
 		// confluence sizing — 4, never the confluence size.
 		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 30, Confluence: true}, mentorSizeChoice{4, "reduced", ""}},
-		{"twenties cut beats big", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "reduced", ""}},
+		{"twenties cut beats confluence", mentorTierInputs{Setup: "PHL", StopPts: 22, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "reduced", ""}},
 		{"spent day no longer overrides twenties", mentorTierInputs{Setup: "PLH", StopPts: 23, TargetPts: 46, SpentDay: true}, mentorSizeChoice{4, "reduced", ""}},
 		{"spent day sizes base normally", mentorTierInputs{Setup: "PLH", StopPts: 11.25, TargetPts: 22.5, SpentDay: true}, mentorSizeChoice{4, "base", ""}},
 		{"SWING4H", mentorTierInputs{Setup: "SWING4H", StopPts: 12, TargetPts: 24}, mentorSizeChoice{1, "swing4h", ""}},
-		{"big tier stays 4 (default)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "big", ""}},
+		{"confluence stays base (default)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}, mentorSizeChoice{4, "confluence", ""}},
 		// S9 (D5.2 p2 @05:21–05:57, S15 ruling): a strong day cuts the SWING
 		// only — "nhưng chỉ cùng 4 giờ". Other setups keep their tiers.
-		{"strong day does NOT cut big (swing-only)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true, StrongDay: true}, mentorSizeChoice{4, "big", ""}},
+		{"strong day does NOT cut confluence (swing-only)", mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true, StrongDay: true}, mentorSizeChoice{4, "confluence", ""}},
 		{"strong day does NOT cut base (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true}, mentorSizeChoice{4, "base", ""}},
 		{"strong day does NOT raise the SWING above the 1-MNQ base", mentorTierInputs{Setup: "SWING4H", StopPts: 30, StrongDay: true}, mentorSizeChoice{1, "strong_day", ""}},
 		// ISB at an old high/low → the reduced tier 4 (owner order 2026-10-16).
@@ -83,17 +85,16 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 }
 
 // TestMentorContractsForClampsAtMax — the size table clamps every tier at
-// mentor_max_contracts (a CEILING, not a tier default). A raised big knob above
-// the cap still comes back at the cap. This is the clamp pin the pure table's
-// old "hard cap" row used to carry (now that the big tier defaults to 5).
+// mentor_max_contracts (a CEILING, not a tier default). A raised confluence knob
+// above the cap still comes back at the cap.
 func TestMentorContractsForClampsAtMax(t *testing.T) {
 	in := mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}
-	got, err := mentorContractsFor(in, 5, 5, 30, 3, 1, 2, 20) // big=30, max=20
+	got, err := mentorContractsFor(in, 5, 30, 30, 3, 1, 2, 20) // conf=30, max=20
 	if err != nil {
 		t.Fatalf("mentorContractsFor: %v", err)
 	}
-	if got.Contracts != 20 || got.Tier != "big" {
-		t.Fatalf("big=30 with max=20 must clamp to 20, got (%d, %s)", got.Contracts, got.Tier)
+	if got.Contracts != 20 || got.Tier != "confluence" {
+		t.Fatalf("confluence=30 with max=20 must clamp to 20, got (%d, %s)", got.Contracts, got.Tier)
 	}
 }
 
@@ -124,15 +125,16 @@ func TestMentorSize4Defaults(t *testing.T) {
 
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 
-	// big tier (confluence + 4h&1h agree + room ≥2× + target ≥30) → 4.
+	// W-MENTOR-EXACT: the "big" tier is removed — confluence + 4h&1h agree +
+	// room/target no longer add size; a confluence entry sizes base (4).
 	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
 		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
 	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "big" {
-		t.Fatalf("big tier: got %d %s, want 4 big (fixed 4 MNQ)", got.Contracts, got.Tier)
+	if got.Contracts != 4 || got.Tier != "confluence" {
+		t.Fatalf("confluence (no big tier): got %d %s, want 4 confluence (fixed 4 MNQ)", got.Contracts, got.Tier)
 	}
 
 	// confluence without 4h&1h agreement → 4.
@@ -157,18 +159,17 @@ func TestMentorSize4Defaults(t *testing.T) {
 		t.Fatalf("twenties stop: got %d %s, want 4 reduced", got.Contracts, got.Tier)
 	}
 
-	// course-defaults-30: a 28.25-pt stop (the 10-04 17:01 real case — long
-	// 31128.25 stop 31100) stays in the reduced 4-MNQ band, not the base 4.
-	// Mutant: the band top falls back to 25 (not the mentor_isb_max_pts 30) →
-	// this sizes base 4 → RED.
+	// W-MENTOR-EXACT: a 28.25-pt stop is now SKIPPED by ISBStopVerdict upstream
+	// ("trên nữa thì thôi" — > 25 is not worth trading). At the size-table level
+	// it sizes base; the evaluator never lets it reach sizing.
 	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
 	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "reduced" {
-		t.Fatalf("28.25-pt stop: got %d %s, want 4 reduced (the 20–<30 band)", got.Contracts, got.Tier)
+	if got.Tier == "reduced" {
+		t.Fatalf("28.25-pt stop: got %d %s — a > 25 stop must NOT be the reduced band (the evaluator skips it upstream)", got.Contracts, got.Tier)
 	}
 
 	// ISB at an old extreme → 4.
@@ -230,15 +231,15 @@ func TestMentorSizeWhyNamesKnobOverride(t *testing.T) {
 	mentorConfluenceForIntent = func(in mentor.Intent) bool { return true }
 	t.Cleanup(func() { mentorConfluenceForIntent = nil })
 
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorBigContracts: 10})
-	bigIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorConfluenceContracts: 10})
+	confIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "PHL",
 		Price: 21000, Stop: 20988, Target: 21035, StopPts: 12, TargetPts: 35, HTFAgree: true}
-	got, err := at.mentorSizeFor(bigIn, mentorExtraFor(bigIn, false))
+	got, err := at.mentorSizeFor(confIn, mentorExtraFor(confIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 10 || got.Tier != "big" {
-		t.Fatalf("big with knob 10: got %d %s, want 10 big", got.Contracts, got.Tier)
+	if got.Contracts != 10 || got.Tier != "confluence" {
+		t.Fatalf("confluence with knob 10: got %d %s, want 10 confluence", got.Contracts, got.Tier)
 	}
 	if !strings.Contains(got.Why, "10") || !strings.Contains(got.Why, "override") {
 		t.Fatalf("override Why must name the count and the override: %q", got.Why)
@@ -282,18 +283,18 @@ func TestMentorExtraForCopiesSpentDay(t *testing.T) {
 	}
 }
 
-// TestMentorContractsKnobCap: the owner's per-strategy cap wins over the big
-// tier (never above mentor_max_contracts).
+// TestMentorContractsKnobCap: the owner's per-strategy cap wins over the
+// confluence tier (never above mentor_max_contracts).
 func TestMentorContractsKnobCap(t *testing.T) {
 	in := mentorTierInputs{Setup: "PHL", StopPts: 12, TargetPts: 35, RoomMultiple: 2.5, Confluence: true, HTFAgree: true}
-	got, err := mentorContractsFor(in, 5, 10, 20, 3, 3, 2, 12)
+	got, err := mentorContractsFor(in, 5, 20, 20, 3, 3, 2, 12)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 12 || got.Tier != "big" {
-		t.Fatalf("cap: got %d %s, want 12 big", got.Contracts, got.Tier)
+	if got.Contracts != 12 || got.Tier != "confluence" {
+		t.Fatalf("cap: got %d %s, want 12 confluence", got.Contracts, got.Tier)
 	}
-	if _, err := mentorContractsFor(in, 5, 10, 20, 3, 3, 2, 0); err == nil {
+	if _, err := mentorContractsFor(in, 5, 20, 20, 3, 3, 2, 0); err == nil {
 		t.Fatal("a non-positive max must refuse (fail-closed)")
 	}
 }
@@ -764,17 +765,21 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); why == "" {
 		t.Fatal("SWING4H ~100-pt stop must be refused (R8)")
 	}
-	// course-defaults-30: a 28.25-pt ISB stop passes (under the 30-pt ceiling).
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why != "" {
-		t.Fatalf("a 28.25-pt ISB stop must pass R8 (under the 30-pt ceiling): %q", why)
+	// W-MENTOR-EXACT: a 28.25-pt ISB stop is REFUSED (> 25 — "trên nữa thì thôi").
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R8") {
+		t.Fatalf("a 28.25-pt ISB stop must be refused R8 (> 25 ceiling): %q", why)
+	}
+	// a 24-pt ISB stop passes (under the 25-pt ceiling — the reduce band's top).
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); why != "" {
+		t.Fatalf("a 24-pt ISB stop must pass R8 (under 25): %q", why)
 	}
 	// the swing is the ONLY exemption from the ceiling — 30.00 is refused.
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {
 		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling)")
 	}
 	// P2-1: R8 reads the mentor_isb_max_pts knob — a knob of 25 refuses a
-	// 28.25-pt stop (below the 30 default), and a knob of 35 lets a 32-pt
-	// stop through. A hardcoded 30 fails both.
+	// 28.25-pt stop (the default), and a knob of 35 lets a 32-pt stop through.
+	// A hardcoded 30 fails both.
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{ISBMaxStopPts: 25}); why == "" || !strings.HasPrefix(why, "R8") {
 		t.Fatalf("with mentor_isb_max_pts=25 a 28.25-pt stop must be refused R8, got %q", why)
 	}

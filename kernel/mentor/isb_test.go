@@ -93,13 +93,14 @@ func TestISBStopVerdict(t *testing.T) {
 		span   float64
 		wantOK bool
 	}{
-		{"small 4pt stop", 1.0, true},  // 1 + 3 buffer = 4 — taken (no minimum)
-		{"5pt stop", 2.0, true},        // 2 + 3 = 5
-		{"6pt stop", 3.0, true},        // 3 + 3 = 6
-		{"twenties taken", 17.0, true}, // 17 + 3 = 20 — taken (no twenties skip)
-		{"27pt taken", 24.0, true},     // 24 + 3 = 27 — taken
-		{"30pt refused", 27.0, false},  // 27 + 3 = 30 — at the ceiling
-		{"31pt refused", 28.0, false},  // 28 + 3 = 31 — over the ceiling
+		{"small 4pt stop", 1.0, true},        // 1 + 3 buffer = 4 — taken (no minimum)
+		{"5pt stop", 2.0, true},              // 2 + 3 = 5
+		{"6pt stop", 3.0, true},              // 3 + 3 = 6
+		{"20pt taken (base)", 17.0, true},    // 17 + 3 = 20 — base (the reduce band starts above 20)
+		{"25pt taken (reduced)", 22.0, true}, // 22 + 3 = 25 — "25 đổ lại ok"
+		{"27pt skipped", 24.0, false},        // 24 + 3 = 27 — "trên nữa thì thôi" (> 25)
+		{"30pt skipped", 27.0, false},        // 27 + 3 = 30 — over the ceiling
+		{"31pt skipped", 28.0, false},        // 28 + 3 = 31 — over the ceiling
 	}
 	for _, c := range cases {
 		stop, ok, _ := ISBStopVerdict(market.Kline{High: 100 + c.span/2, Low: 100 - c.span/2}, cfg)

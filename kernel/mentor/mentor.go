@@ -305,8 +305,10 @@ type Config struct {
 	ISBBufferPts  float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
 	ISBStopMinPts float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
 	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
-	// (owner order "move to 30"): an ISB stop < 30 pts is taken, ≥ 30 is
-	// refused — that ceiling now lives in CourseExits.ISBMaxStopPts (default 30).
+	// (owner order "move to 30"); W-MENTOR-EXACT (owner order 2026-10-21) reverts
+	// that: an ISB stop > 25 pts is skipped ("trên nữa thì thôi"), a stop of
+	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts
+	// (default 25).
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
