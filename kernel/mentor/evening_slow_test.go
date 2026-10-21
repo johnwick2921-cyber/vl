@@ -86,3 +86,42 @@ func TestPullbackWarning5m(t *testing.T) {
 		t.Fatal("one candle must not warn")
 	}
 }
+
+// TestX8TrapDodge pins the X8 trap-dodge exit (m186 DS-108): a 2m close through
+// the EMA34 against the 5m trigger trend, with the 5m trigger swept against the
+// position, is a fake breakout → exit. MUTANTS: drop the trigger-side guard, the
+// EMA-side guard, or the empty-trigger guard → RED.
+func TestX8TrapDodge(t *testing.T) {
+	// LONG trap: 5m trigger SELL (swept the prior low) + 2m closed ABOVE the EMA34.
+	if !X8TrapDodge("long", SideShort, 100, 101) {
+		t.Fatal("a 2m close above the EMA34 against a 5m sell trigger must exit the long")
+	}
+	// SHORT trap: 5m trigger BUY + 2m closed BELOW the EMA34.
+	if !X8TrapDodge("short", SideLong, 100, 99) {
+		t.Fatal("a 2m close below the EMA34 against a 5m buy trigger must exit the short")
+	}
+	// The 2m close THROUGH the EMA alone never fires — the 5m sweep is the trigger.
+	if X8TrapDodge("long", SideShort, 100, 99) {
+		t.Fatal("a long with the 2m close below the EMA must not fire")
+	}
+	if X8TrapDodge("short", SideLong, 100, 101) {
+		t.Fatal("a short with the 2m close above the EMA must not fire")
+	}
+	// The 5m trigger on the same side as the position is not a trap.
+	if X8TrapDodge("long", SideLong, 100, 101) {
+		t.Fatal("a long with a 5m buy trigger is not a trap")
+	}
+	if X8TrapDodge("short", SideShort, 100, 99) {
+		t.Fatal("a short with a 5m sell trigger is not a trap")
+	}
+	// No trigger / no EMA / no close → no exit (fail-closed).
+	if X8TrapDodge("long", "", 100, 101) {
+		t.Fatal("an empty trigger must never fire")
+	}
+	if X8TrapDodge("long", SideShort, 0, 101) {
+		t.Fatal("a zero EMA must never fire")
+	}
+	if X8TrapDodge("long", SideShort, 100, 0) {
+		t.Fatal("a zero 2m close must never fire")
+	}
+}

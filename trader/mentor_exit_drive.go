@@ -170,10 +170,52 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 		if p.TrailTFMin > 1 {
 			p.trailBar, p.trailBarOK = mentor.ClosedCandleTF(bars, p.TrailTFMin)
 		}
+		// X8 trap-dodge [X8 part1 @07:31–08:07]: a 2m close through the EMA34
+		// against the 5m trigger trend, with the 5m trigger swept against the
+		// position, is a FAKE breakout — exit, do not sit. Fires before the
+		// normal stop-drive; SWING4H is exempt (held by the 4h).
+		if at.mentorX8TrapDodgeExit(nt, p, bars) {
+			continue
+		}
 		at.mentorExitDrivePos(nt, p, c, h, l, last.OpenTime)
 		brokerStop, brokerKnown := at.mentorBrokerStopForPos(nt, p)
 		at.mentorLogPositionState(&p.Pos, "exit-drive", brokerStop, brokerKnown)
 	}
+}
+
+// mentorX8TrapDodgeExit is the X8 trap-dodge exit [X8 "Cách né trap & Setup
+// gồng lời" part1 @07:31–08:07]: the 2m candle closed through the EMA34 against
+// the 5m trigger trend while the 5m trigger swept against the position — the
+// breakout is a fake, so CLOSE at market and do not sit. The evaluator state
+// (Trigger + EMA34) is read under the N11 mutex (mentorExitDrive runs inside
+// mentorEvalOnce). SWING4H is exempt (held by the 4h, D5.2). Returns true when
+// it fired and the position is being closed.
+func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLivePos, bars []market.Kline) bool {
+	if at == nil || at.mentorEval == nil || p == nil || p.Pos.Symbol == "" || p.Pos.Side == "" {
+		return false
+	}
+	if p.Pos.Mode == "swing" {
+		return false // the swing is held by the 4h — X8 is an intraday rule
+	}
+	two, ok := mentor.ClosedCandleTF(bars, 2)
+	if !ok {
+		return false // never fire on a forming 2m candle
+	}
+	dir := at.mentorEval.State.Trigger.Dir
+	ema34 := at.mentorEval.State.EMA34
+	if !mentor.X8TrapDodge(p.Pos.Side, dir, ema34, two.Close) {
+		return false
+	}
+	at.mentorCount("x8_trap_dodge_exit")
+	at.logWarnf("🧑‍🏫 X8 trap-dodge: %s %s — the 2m closed through the EMA34 (%.2f) against the 5m trigger (%s) and the 5m swept against the position; exiting, not sitting [X8 part1 @07:31–08:07]",
+		p.Pos.Symbol, p.Pos.Side, ema34, dir)
+	if err := mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0); err != nil {
+		at.mentorCount("x8_trap_dodge_close_failed")
+		at.logWarnf("🧑‍🏫 X8 trap-dodge close failed for %s %s: %v", p.Pos.Symbol, p.Pos.Side, err)
+		return false
+	}
+	at.mentorCount("x8_trap_dodge_close_sent")
+	return true
 }
 
 // mentorDriveOpenSides is the loop's open-side read (a seam so the call-site

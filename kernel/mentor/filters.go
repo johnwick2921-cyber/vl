@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"strings"
+
 	"vl/market"
 )
 
@@ -201,6 +203,31 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 		return false, "", "above the sell trigger line — do nothing [D3.4 p1 @ 06:22]"
 	}
 	return true, t.Dir, ""
+}
+
+// X8TrapDodge reports the X8 trap-dodge EXIT [X8 "Cách né trap & Setup gồng lời"
+// part1 @07:31–08:07]: the 2m candle closed THROUGH the EMA34 against the 5m
+// trigger trend while the 5m trigger swept against the position — the breakout
+// is a FAKE and the position must exit, not sit ("thì out lại tại đó chứ đừng
+// ngồi hô").
+//
+//	long:  the 5m trigger is on the SELL side (a candle swept the prior low) AND
+//	       the 2m candle closed ABOVE the EMA34 → exit the long.
+//	short: the 5m trigger is on the BUY side (a candle swept the prior high) AND
+//	       the 2m candle closed BELOW the EMA34 → exit the short.
+//
+// A 2m close through the EMA34 ALONE never fires — the transcript: a close
+// under the EMA34 does not by itself allow a short [X8 @08:17–08:48]; the 5m
+// sweep is the trigger. ema34/close2m <= 0 or an empty trigger = no read, no
+// exit (fail-closed).
+func X8TrapDodge(side string, triggerDir Side, ema34, close2m float64) bool {
+	if ema34 <= 0 || close2m <= 0 || triggerDir == "" {
+		return false
+	}
+	if strings.EqualFold(side, "short") {
+		return triggerDir == SideLong && close2m < ema34
+	}
+	return triggerDir == SideShort && close2m > ema34
 }
 
 // ── 15m/5m ISB conflict [§5.3, D4.2 p1 @ 13:59; §12] ────────────────────────

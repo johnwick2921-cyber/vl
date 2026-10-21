@@ -828,3 +828,83 @@ func TestMentorExitDriveForgetsSignalMapsOnFullCloseOnly(t *testing.T) {
 		}
 	}
 }
+
+// TestMentorX8TrapDodgeExit pins the X8 trap-dodge exit at the production hook
+// (m186 DS-108, [X8 part1 @07:31–08:07]): a LONG with the 5m trigger on the
+// SELL side and a CLOSED 2m candle ABOVE the EMA34 is a fake breakout → a market
+// close is sent through mentorCloseLegAtMarketWire. MUTANT: drop the
+// mentor.X8TrapDodge call in mentorX8TrapDodgeExit → no close → RED.
+func TestMentorX8TrapDodgeExit(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	var mu sync.Mutex
+	var closes []string
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		mu.Lock()
+		closes = append(closes, side)
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	// Two 1m bars in ONE 2m bucket: the second bar closes the 2m candle at 101.5.
+	base := int64(120_000_000_000) // 2m-aligned
+	bars := []market.Kline{
+		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
+		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
+	}
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("a 2m close above the EMA34 against a 5m sell trigger must exit the long")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if len(closes) != 1 || closes[0] != "long" {
+		t.Fatalf("close = %v, want exactly one 'long' market close", closes)
+	}
+}
+
+// TestMentorX8TrapDodgeExemptsSwingAndNonTrap — the swing (held by the 4h) never
+// fires the trap-dodge, and a same-side trigger is not a trap.
+func TestMentorX8TrapDodgeExemptsSwingAndNonTrap(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	closed := false
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, _ int) error {
+		closed = true
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	base := int64(120_000_000_000)
+	bars := []market.Kline{
+		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
+		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
+	}
+	// SWING is exempt.
+	if at.mentorX8TrapDodgeExit(nil, bPos("swing", "long", 100, 98, 104, 1), bars) {
+		t.Fatal("a SWING4H position must not fire the X8 trap-dodge")
+	}
+	// A SHORT with a SELL trigger (same side) is not a trap.
+	if at.mentorX8TrapDodgeExit(nil, bPos("B", "short", 100, 102, 96, 1), bars) {
+		t.Fatal("a short with a 5m sell trigger is not a trap")
+	}
+	if closed {
+		t.Fatal("no close may be sent for a swing or a non-trap")
+	}
+}
