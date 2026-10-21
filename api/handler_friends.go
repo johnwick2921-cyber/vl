@@ -382,7 +382,6 @@ func (s *Server) handleOwnerFriendsList(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "friends page is owner-only"})
 		return
 	}
-	s.ensureFriendMonitor()
 
 	rows, err := loadFriends()
 	if err != nil {
@@ -872,19 +871,45 @@ type friendAlertState struct {
 	lastRelayedReceipt string // dedup key of the last friend update receipt relayed
 }
 
-// ensureFriendMonitor starts the alert loop once (lazily, from the owner's
-// first Friends page read). Safe to call repeatedly. VL_FRIEND_MONITOR_OFF=1
-// keeps it off (tests).
+// ensureFriendMonitor starts the alert loop once (R14: at BOOT via
+// StartFriendMonitor, not on the first page read). Safe to call repeatedly.
+// VL_FRIEND_MONITOR_OFF=1 keeps it off (tests); friend instances never start it.
 func (s *Server) ensureFriendMonitor() {
 	if s.store == nil || os.Getenv("VL_FRIEND_MONITOR_OFF") == "1" {
 		return
 	}
+	if config.FriendInstanceEnabled() {
+		return // owner bot only — a friend has no Friends page and no owner Telegram
+	}
 	friendAlertOnce.Do(func() {
+		s.hydrateFriendAlertDedup()
+
 		stop := make(chan struct{})
 		friendAlertStop = stop
 		safe.GoNamed("friend-alert-loop", func() { s.friendAlertLoop(stop) })
 	})
 }
+
+// hydrateFriendAlertDedup loads the persisted receipt dedup keys into the
+// in-memory map (R14) so a restart does not re-relay every receipt.
+func (s *Server) hydrateFriendAlertDedup() {
+	friendAlertMu.Lock()
+	defer friendAlertMu.Unlock()
+	for name, key := range loadFriendAlertDedup() {
+		stt := friendAlerts[name]
+		if stt == nil {
+			stt = &friendAlertState{}
+			friendAlerts[name] = stt
+		}
+		if key != "" {
+			stt.lastRelayedReceipt = key
+		}
+	}
+}
+
+// StartFriendMonitor is the boot hook for the owner's friend alert loop (R14).
+// A friend instance no-ops.
+func (s *Server) StartFriendMonitor() { s.ensureFriendMonitor() }
 
 func (s *Server) friendAlertLoop(stop chan struct{}) {
 	t := time.NewTicker(friendAlertInterval)
@@ -967,4 +992,14 @@ func resetFriendAlertStateForTest() {
 	friendAlertMu.Lock()
 	friendAlerts = map[string]*friendAlertState{}
 	friendAlertMu.Unlock()
+}
+
+// resetFriendMonitorForTest stops the loop and resets the once so a test can
+// observe StartFriendMonitor from a clean slate (R14).
+func resetFriendMonitorForTest() {
+	if friendAlertStop != nil {
+		close(friendAlertStop)
+		friendAlertStop = nil
+	}
+	friendAlertOnce = sync.Once{}
 }

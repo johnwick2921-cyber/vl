@@ -829,6 +829,10 @@ func main() {
 
 	server := api.NewServer(traderManager, st, cryptoService, cfg.APIServerHost, cfg.APIServerPort)
 
+	// R14: the friend alert monitor starts at BOOT (owner only), not on the
+	// first Friends page read.
+	server.StartFriendMonitor()
+
 	// Create hot-reload channel for Telegram bot; wire it to the API server
 	// so that POST /api/telegram can trigger a bot restart when the token changes.
 	telegramReloadCh := make(chan struct{}, 1)
