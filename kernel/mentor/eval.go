@@ -838,7 +838,7 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
-// compulsory size cut [D4.1 p1 written rule 3].
+// compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
 	flags := isbFlags(cur, levels, boxes)
 	if HasFlag(flags, FlagISBInRange) {
@@ -1414,11 +1414,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: with HTFGateNewsOnly OFF (the all-day default, owner decision A
-	// 2026-10-21) the 4h/1h direction gate applies ALL DAY; ON limits it to the
-	// 07:20–07:35 CT news window. The gate covers ISB, reverse-ISB, PHL/PLH and
-	// box authoring — SWING4H is exempt (runSwing never consults HTFVerdict) and
-	// planner/AI entries carry their own G1 HTF veto.
+	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
+	// 4h/1h direction gate applies inside the 07:20–07:35 CT news window and
+	// the 08:30–09:30 CT open window; OFF (owner decision A 2026-10-21 m134
+	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
+	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
+	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF
+	// veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
@@ -1770,10 +1772,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
-				// [D4.1 p1 @ 05:19–05:34 plus D3.4 p3 @03:23–03:37 for the
-				// range words; also D3.4 p3 @02:24–02:55]. His conditions stay:
-				// the trigger zone (above), the R5 box (below), the 20–25 stop
-				// band (skip > 25), and a size flag at an old high/low.
+				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
+				// (above), the R5 box (below), the 20–<30 stop band, and a size
+				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
 				// (1h agreeing or silent); fold item 4: a DayOff shuts the
@@ -2064,7 +2065,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					in.Target = capped.Target
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
-					// [D4.1 p1 @ 04:37–05:04].
+					// [D4.1 p1 @04:31–05:04; extended to the reverse ISB by bot inference].
 					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
@@ -2655,6 +2656,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// @21:55–22:12]. The 30-second ISB of the same lesson [@23:08–23:13] is
 	// NOT built: no sub-minute bars exist.
 	out, refused = newsWaitFilter(out, e.State.HTF, bars[len(bars)-1].Close, now, e.Cfg)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+
+	// D4.4 p2 @04:41–06:00: at the open (08:30–09:30 CT), a with-4h entry is
+	// allowed only after a 5m candle has closed outside the opening 5m range
+	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
+	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
+	out, refused = open5mRangeFilter(out, e.State.HTF, bars, now)
 	for _, r := range refused {
 		e.refuse(r)
 	}

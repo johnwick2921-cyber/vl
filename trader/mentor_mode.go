@@ -392,15 +392,15 @@ func mentorLvlRevisitMinPts(rc *store.RiskControlConfig) float64 {
 
 // mentorEmaMaxCross30m — E4 knob: refuse the EMA34 setup when the close
 // crossed the line this many times over the last 30 closed 1m candles.
-// Default ON (item 16, CTO 23:49Z): 2 — the most conservative of the replay
-// rows v5_ema_cross2/4. MENTOR QUESTION OPEN: the course states no count
-// (frame D4.2 p1 @22:28 shows the indicator OFF); nil → 2, &0 = OFF (W32 F-5:
-// the documented OFF is now reachable).
+// REMOVED default (#45 — the mentor gives no count: D4.2 p1 @22:27-22:30 is
+// qualitative "xien len xien xuong", and the "not respected → off" rule is
+// E2's loss relock). nil → 0 (OFF); an explicit 2-4 re-enables the numeric
+// gate; &0 = OFF (W32 F-5).
 func mentorEmaMaxCross30m(rc *store.RiskControlConfig) int {
 	if rc != nil && rc.MentorEmaMaxCross30m != nil {
 		return *rc.MentorEmaMaxCross30m
 	}
-	return 2
+	return 0
 }
 
 // mentorLocationTriggerFilter — the 5m trigger filter at locations (L3: kept

@@ -1,6 +1,6 @@
 import { GUIDE_BUILT_REV, type GuideSection, type KnobSpec } from '../types'
 
-// Mentor mode (🧑‍🏫) — the owner's mentor's method, built as a per-strategy
+// Mentor mode (🧑‍🏫) — the owner’s mentor’s method, built as a per-strategy
 // trading mode. Everything below is read from the lane branches that implement
 // it (feat/mentor-eval, feat/mentor-isb, feat/mentor-boxes-swing,
 // feat/mentor-p3). Items not yet merged are marked "live: no — coming".
@@ -294,7 +294,7 @@ export const mentor: GuideSection = {
   num: 17,
   title: 'Mentor Mode',
   tagline:
-    "The mentor's method: three setups, five locations, hard filters, small and patient.",
+    'The mentor’s method: three setups, five locations, hard filters, small and patient.',
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -364,12 +364,12 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
+          body: 'Candle 2’s BODY inside candle 1’s FULL range (wicks included). Direction = candle 1’s colour. Entry at the ISB candle’s own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).',
           tag: 'D1.4 p1',
         },
         {
           title: 'PHL / PLH — the pullback',
-          body: "Uptrend pullback → buy stop at the previous candle's high, stop at that candle's low, target NEAR the old high. Downtrend bounce → the exact mirror. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL). The old high is the nearest UNBROKEN old high, and its role is fixed when it is drawn: a PHL (long) only ever targets an old HIGH and a PLH (short) an old LOW — an old low is never a long's target. Inside a standing 5m (or 15m/30m) ISB box, or between an FTGL and an FTGH, there is no PHL/PLH at all (only the ISB) [D3.4 p2 @07:27–10:35; D3.2 p2 @08:51].",
+          body: 'Uptrend pullback → buy stop at the previous candle’s high, stop at that candle’s low, target NEAR the old high. Downtrend bounce → the exact mirror. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL). The old high is the nearest UNBROKEN old high, and its role is fixed when it is drawn: a PHL (long) only ever targets an old HIGH and a PLH (short) an old LOW — an old low is never a long’s target. Inside a standing 5m (or 15m/30m) ISB box, or between an FTGL and an FTGH, there is no PHL/PLH at all (only the ISB) [D3.4 p2 @07:27–10:35; D3.2 p2 @08:51].',
           tag: 'D2.2 p1',
         },
         {
@@ -396,7 +396,7 @@ export const mentor: GuideSection = {
         ],
         [
           'EMA 34',
-          "The trading chart's EMA 34 — 1m for intraday (R3)",
+          'The trading chart’s EMA 34 — 1m for intraday (R3)',
           'The 4h EMA 34 belongs to the SWING4H setup only',
         ],
         [
@@ -539,7 +539,7 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'ALL DAY (owner decision A 2026-10-21): outside the news window entries are now REFUSED too — when there is no 4h trigger, when the 1h opposes the 4h, or when the entry side opposes the 4h. Scope: this gate covers ISB, reverse-ISB, PHL/PLH and box authoring only. SWING4H is EXEMPT (its own §8 path never consults the 4h/1h verdict), and planner/AI entries have their own G1 HTF veto. The live trader inherits this with no config edit (the default flipped from news-only to all-day). Entries only WITH the 4h trigger. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <bucket CT>", and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed freezes each replayed day\u2019s print-window trigger read exactly as the running bot did (release #29: the read is frozen from the print to the 08:30 CT open — the candles are never rewritten; release #23 dropped the 07:20–07:35 print candles). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the 1m EMA 34/9 and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
+          'NEWS + OPEN (the mentor’s rule; #45 reverts owner decision A 2026-10-21 m134): the 4h/1h direction gate applies inside the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window; outside them, ordinary intraday entries are NOT HTF-gated — when there is no 4h trigger, when the 1h opposes the 4h, or when the entry side opposes the 4h. Scope: this gate covers ISB, reverse-ISB, PHL/PLH and box authoring only. SWING4H is EXEMPT (its own §8 path never consults the 4h/1h verdict), and planner/AI entries have their own G1 HTF veto. The live trader inherits this with no config edit (the default flipped back from all-day to news + open). Entries only WITH the 4h trigger. At the OPEN (08:30–09:30 CT) a with-4h entry additionally waits for the 5m range to break in the 4h’s direction — "không phải là cứ cắm đầu mà cứ vô lệnh buy market … chuyển về khung 5 phút … nó break được cái rank khung 5 phút" [D4.4 p2 @04:41–06:00]; the opening 5m range is the first 5m candle (08:30–08:35) [example: the ORB’s 08:30 anchor]. The 1h counts only when it fired at or after the 4h (an earlier 1h trigger is ignored — it is silent): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <bucket CT>", and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed freezes each replayed day\u2019s print-window trigger read exactly as the running bot did (release #29: the read is frozen from the print to the 08:30 CT open — the candles are never rewritten; release #23 dropped the 07:20–07:35 print candles). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the 1m EMA 34/9 and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
           '—',
         ],
         [
@@ -554,7 +554,7 @@ export const mentor: GuideSection = {
         ],
         [
           'News 07:30 CT (print)',
-          "On a red-folder 07:30 print day (from the day's calendar), a mentor entry is refused through the print window (07:20–07:35 CT); if the calendar slice is missing or unreadable the window is held anyway (fail-closed, counted news_hold_no_calendar); on an ordinary day the window refuses nothing. At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.",
+          'On a red-folder 07:30 print day (from the day’s calendar), a mentor entry is refused through the print window (07:20–07:35 CT); if the calendar slice is missing or unreadable the window is held anyway (fail-closed, counted news_hold_no_calendar); on an ordinary day the window refuses nothing. At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
           'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
         ],
         [
@@ -1002,17 +1002,18 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: '4h/1h gate only in the news window (07:20–07:35 CT)',
+          label:
+            '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4-11: ON = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF (default) = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). Owner decision A 2026-10-21 (m134): the default is now OFF (all-day gate). Owner order 2026-10-17 had set news-only ON by default; the D5.1 all-day read is now the live rule.',
+          what: 'D4.4-11: ON (default) = news + open: the gate applies inside the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the open is like news" D4.4 p2 @00:35–00:46; open length [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those windows are not HTF-gated. OFF = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). #45 reverts owner decision A 2026-10-21 (m134): the default is ON (news-only, the mentor’s news-first rule). The m134 all-day default is reverted.',
           trader:
-            'OFF — owner decision A 2026-10-21 (m134): the all-day gate is the default.',
+            'ON — news + open is the default (the mentor’s rule; #45 reverts owner decision A 2026-10-21 m134).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
           range: 'true / false',
-          systemDefault: 'false',
+          systemDefault: 'true',
           recommended:
-            'OFF — the all-day gate is the default (owner decision A 2026-10-21 m134; owner order 2026-10-17 had set news-only ON: D4.4 p1 @13:55 "đánh níu nên sử dụng cho níu trước đi", @24:48 "em chỉ hướng dẫn mọi người cái news thôi").',
+            'ON — news + open is the default (the mentor’s rule; #45 reverts owner decision A 2026-10-21 m134: D4.4 p1 @13:55 "đánh níu nên sử dụng cho níu trước đi", @24:48 "em chỉ hướng dẫn mọi người cái news thôi"; the open is like news D4.4 p2 @00:35). #43 ships ALL-DAY (decision A); #45 narrows it to news + open per "exactly like mentor", which RE-ALLOWS counter-trend entries outside those windows — the owner must see that.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -1521,13 +1522,13 @@ export const mentor: GuideSection = {
           systemDefault: '0 (OFF)',
           recommended:
             '0 — R5 (new behaviour behind a knob, OFF): the course states no minimum [06-SIZING: 30–60 pt stops, near 100 → "đừng vô"].',
-          whenToTouch: "Only with a new owner ruling; 0 = today's behaviour.",
+          whenToTouch: 'Only with a new owner ruling; 0 = today’s behaviour.',
           perSession: 'No.',
         },
         {
           label: 'Swing entry buffer',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: "Buffer beyond the reference candle's extreme. R8: NO buffer — the order sits tight on the candle, on the wire too (until release #22 the executor added 2 ticks to every mentor stop entry).",
+          what: 'Buffer beyond the reference candle’s extreme. R8: NO buffer — the order sits tight on the candle, on the wire too (until release #22 the executor added 2 ticks to every mentor stop entry).',
           trader: '0.',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.EntryBufferPts',
           range: 'pts',
@@ -1658,12 +1659,12 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → EMA34',
           what: 'Cap crossings around the EMA line in a 30m window (“xien len xien xuong”). The mentor gave no number, so the question is open (Q21).',
           trader:
-            'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
+            'OFF (removed, #45) — the mentor gives no count; the “switched off only while it is not respected” rule is the loss relock (E2), not a cross count.',
           consumer: 'kernel/mentor ema_max_cross_30m',
           range: 'int / 0 = off (reachable since W32)',
-          systemDefault: '2',
+          systemDefault: '0',
           recommended:
-            '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
+            '0 — REMOVED default (#45): “xien len xien xuong” (D4.2 p1 @22:27-22:30) is qualitative; the mentor never gives a count or a window, and the frame at @22:28 shows the indicator already OFF. An explicit 2-4 re-enables the numeric gate.',
           whenToTouch: 'Only when the mentor answers Q21.',
           perSession: 'No.',
         },
