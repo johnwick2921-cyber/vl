@@ -16,17 +16,19 @@ import (
 // two safety invariants S9 demands: verify BEFORE write, and flat BEFORE swap.
 
 type flowRecorder struct {
-	execs  []string
-	lines  []string
-	prints []string
-	opened []string
-	order  []string // "print:", "prompt:", "open:" — for F8 ordering pins
+	execs    []string
+	lines    []string
+	prints   []string
+	opened   []string
+	order    []string // "print:", "prompt:", "open:" — for F8 ordering pins
+	messages []string // MessageBox texts (--open update dialog)
 }
 
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 	t.Helper()
 	rec := &flowRecorder{}
 	upCalled := false
+	_ = os.WriteFile(filepath.Join(home, "vl-friend.exe"), []byte("MZ-self"), 0o755)
 	d := deps{
 		exec: func(_ context.Context, name string, args ...string) ([]byte, error) {
 			rec.execs = append(rec.execs, name+" "+strings.Join(args, " "))
@@ -76,6 +78,11 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 		},
 		ntRunning:       func(context.Context) (bool, error) { return false, nil },
 		localAppDataDir: func() string { return filepath.Join(home, "AppData", "Local") },
+		selfExe:         func() (string, error) { return filepath.Join(home, "vl-friend.exe"), nil },
+		messageBox: func(text string) bool {
+			rec.messages = append(rec.messages, text)
+			return false
+		},
 	}
 	return d, rec
 }
@@ -511,21 +518,20 @@ func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
 
 // TestShortcutScriptTargetsRealDesktopAndEdge — B8 pins: the shortcut script
 // must resolve the REAL Desktop + Start Menu via [Environment]::GetFolderPath
-// (OneDrive Known-Folder safe, NOT $env:USERPROFILE\Desktop), a FULL msedge.exe
-// path (registry App Paths → Program Files), and fall back to a .url Internet
-// Shortcut. MUTANT: GetFolderPath('Desktop') back to $env:USERPROFILE\Desktop →
-// this test RED.
+// (OneDrive Known-Folder safe, NOT $env:USERPROFILE\Desktop), launch the LOCAL
+// copy of vl-friend.exe with --open, and fall back to a .url Internet Shortcut
+// when the exe copy is missing. MUTANT: GetFolderPath('Desktop') back to
+// $env:USERPROFILE\Desktop → this test RED.
 func TestShortcutScriptTargetsRealDesktopAndEdge(t *testing.T) {
 	ps := shortcutScript("http://100.66.89.106:18081")
 	for _, want := range []string{
 		"[Environment]::GetFolderPath('Desktop')",
 		"[Environment]::GetFolderPath('Programs')",
-		`App Paths\msedge.exe`,
-		`Microsoft\Edge\Application\msedge.exe`,
+		`$env:LOCALAPPDATA\VL\vl-friend.exe`,
+		"--open",
 		"VL.lnk",
 		"VL.url",
 		"[InternetShortcut]",
-		"--app=http://100.66.89.106:18081",
 		"URL=http://100.66.89.106:18081",
 	} {
 		if !strings.Contains(ps, want) {
@@ -997,4 +1003,109 @@ func TestLogSetupErrorAppends(t *testing.T) {
 	if strings.Count(s, "second") != 1 {
 		t.Fatalf("setup.log should carry one line per error: %q", s)
 	}
+}
+
+// TestRunOpenOpensDashboardNoUpdate — the desktop icon (--open): no update →
+// dashboard opens, no dialog.
+func TestRunOpenOpensDashboardNoUpdate(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runOpen(context.Background(), d); err != nil {
+		t.Fatalf("runOpen refused: %v", err)
+	}
+	if !containsStr(rec.opened, base) {
+		t.Fatalf("dashboard not opened; opened=%v", rec.opened)
+	}
+	if len(rec.messages) != 0 {
+		t.Fatalf("no dialog expected when there is no update: %v", rec.messages)
+	}
+}
+
+// TestRunOpenUpdateDialogYes — an update exists, the user clicks Yes → the
+// verified swap runs (dec.Applied). MUTANT: skip the messageBox/apply → RED.
+func TestRunOpenUpdateDialogYes(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), []byte("MZ-old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+	d.messageBox = func(text string) bool { rec.messages = append(rec.messages, text); return true }
+
+	if err := runOpen(context.Background(), d); err != nil {
+		t.Fatalf("runOpen refused: %v", err)
+	}
+	if b, err := os.ReadFile(addonDstPath(home)); err != nil || string(b) != string(addonBody()) {
+		t.Fatalf("the update was not applied: %v %q", err, b)
+	}
+	if len(rec.messages) != 1 {
+		t.Fatalf("expected one update dialog, got %v", rec.messages)
+	}
+}
+
+// TestRunOpenNotInstalledNoError — --open on a fresh PC (no connect.json) must
+// not error or crash.
+func TestRunOpenNotInstalledNoError(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := runOpen(context.Background(), d); err != nil {
+		t.Fatalf("runOpen on a not-installed PC must not error, got %v", err)
+	}
+}
+
+// TestEnsureLocalExeCopiesSelf — the installer copies itself to
+// %LOCALAPPDATA%\VL\vl-friend.exe so the icon can launch --open.
+func TestEnsureLocalExeCopiesSelf(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatalf("ensureLocalExe failed: %v", err)
+	}
+	if _, err := os.Stat(localExePath(d)); err != nil {
+		t.Fatalf("vl-friend.exe not copied: %v", err)
+	}
+	// Idempotent: a second call must not error.
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatalf("ensureLocalExe not idempotent: %v", err)
+	}
+}
+
+func containsStr(xs []string, want string) bool {
+	for _, x := range xs {
+		if x == want {
+			return true
+		}
+	}
+	return false
 }

@@ -63,6 +63,13 @@ type deps struct {
 	ntRunning func(ctx context.Context) (bool, error)
 	// localAppDataDir returns %LOCALAPPDATA% (for setup.log).
 	localAppDataDir func() string
+	// selfExe returns the running executable's own path (os.Executable). The
+	// installer copies itself to %LOCALAPPDATA%\VL\vl-friend.exe so the desktop
+	// icon can launch --open without the original installer.
+	selfExe func() (string, error)
+	// messageBox shows a Windows Yes/No dialog (no console) and reports whether
+	// the user chose Yes. Production: PowerShell MessageBox; tests: a fake.
+	messageBox func(text string) bool
 }
 
 // msiSignature is what verifyMsiSigner reports: the Authenticode status and the

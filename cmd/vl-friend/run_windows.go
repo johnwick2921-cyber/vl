@@ -94,6 +94,16 @@ func realDeps() deps {
 			return strings.TrimSpace(string(out)) == "yes", nil
 		},
 		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
+		selfExe:         os.Executable,
+		messageBox: func(text string) bool {
+			esc := strings.ReplaceAll(text, "'", "''")
+			ps := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('" + esc + "','VL','YesNo','Question') -eq 'Yes'"
+			out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", ps).CombinedOutput()
+			if err != nil {
+				return false
+			}
+			return strings.TrimSpace(string(out)) == "True"
+		},
 	}
 }
 
@@ -115,6 +125,17 @@ func run(args []string) error {
 	d := realDeps()
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
+
+	// --open (the desktop icon): quick silent update check (≤5s, errors
+	// ignored), then open the dashboard; if an update exists, a Windows dialog
+	// offers Update now / Later. No console, no install-code prompt.
+	if len(args) > 0 && args[0] == "--open" {
+		if err := runOpen(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			return err
+		}
+		return nil
+	}
 
 	// --repair-icon re-creates the desktop + Start Menu icons on an
 	// already-installed PC (B8 live bug: OneDrive desktop redirection hid the
