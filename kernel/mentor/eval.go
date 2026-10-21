@@ -2380,7 +2380,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.State.EmaPendingEntry = in.Price
 				e.State.EmaPendingStop = in.Stop
 				e.State.EmaPendingTarget = in.Target
-				e.State.EmaPendingExpiry = in.ExpiryMs
+				// #7: a level ('lvl-') order carries ExpiryMs=0 by design (it
+				// rests until LevelArmExpiry); using 0 here made emaLossTick see
+				// `now > 0` (always true) and drop the pending as 'expired
+				// unfilled' on the very next tick, so E2/CE-6 never engaged.
+				// Resolve the same way Limits.pendExpiry does.
+				e.State.EmaPendingExpiry = pendExpiry(in, cur.CloseTime)
 				e.State.EmaPendingFilled = false
 			}
 			// D4.2-06 part 1: mode C also fires on timeframe agreement —
