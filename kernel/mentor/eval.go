@@ -1364,12 +1364,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's news-first
-	// rule) the 4h/1h direction gate applies only inside the 07:20–07:35 CT
-	// news window; OFF (owner decision A 2026-10-21 m134 all-day, REVERTED by
-	// #45) applies it all day. The gate covers ISB, reverse-ISB, PHL/PLH and
-	// box authoring — SWING4H is exempt (runSwing never consults HTFVerdict) and
-	// planner/AI entries carry their own G1 HTF veto.
+	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
+	// 4h/1h direction gate applies inside the 07:20–07:35 CT news window and
+	// the 08:30–09:30 CT open window; OFF (owner decision A 2026-10-21 m134
+	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
+	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
+	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF
+	// veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).

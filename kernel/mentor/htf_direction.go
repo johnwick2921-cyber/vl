@@ -58,18 +58,21 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
 // 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
-// the mentor's rule: news-first) the gate applies only inside the
-// 07:20–07:35 CT news window (the T1 print window time; the calendar-day
-// refinement is the trader's news seam — DS-102 item 18). With the knob off
-// (owner decision A 2026-10-21 m134 all-day, REVERTED by #45) it applies all
-// day.
+// the mentor's rule) the gate applies inside the 07:20–07:35 CT news window
+// (the T1 print window time; the calendar-day refinement is the trader's news
+// seam — DS-102 item 18) AND at the 08:30 OPEN — "open nó cũng giống news thôi"
+// [D4.4 p2 @00:35–00:46]. D4.4 p2 gives no LENGTH for the open window, so use
+// the mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59] →
+// 08:30–09:30 CT. With the knob off (owner decision A 2026-10-21 m134 all-day,
+// REVERTED by #45) it applies all day.
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true
 	}
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
-	return mins >= 7*60+20 && mins <= 7*60+35 // 07:20–07:35 CT
+	// News window 07:20–07:35 CT, or the open window 08:30–09:30 CT.
+	return (mins >= 7*60+20 && mins <= 7*60+35) || (mins >= 8*60+30 && mins <= 9*60+30)
 }
 
 // oneHSilent reports whether the 1h has nothing NEW to say after the 4h:

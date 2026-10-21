@@ -332,13 +332,15 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies only
-	// inside the 07:20–07:35 CT news window; ordinary intraday entries are not
-	// HTF-gated. false (owner decision A 2026-10-21 m134 "fix all", REVERTED
-	// by #45): the 4h/1h direction gate applies ALL DAY. Stored strategies
-	// carry no htf_gate_news_only key, so the new default applies at the next
-	// trader load; an explicit stored false stays all-day, and none exists
-	// today.
+	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies inside
+	// the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the
+	// open is like news" [D4.4 p2 @00:35–00:46]; the open length is
+	// [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
+	// windows are not HTF-gated. false (owner decision A 2026-10-21 m134 "fix
+	// all", REVERTED by #45): the 4h/1h direction gate applies ALL DAY. Stored
+	// strategies carry no htf_gate_news_only key, so the new default applies at
+	// the next trader load; an explicit stored false stays all-day, and none
+	// exists today.
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -553,7 +555,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS-ONLY (the mentor's rule, news-first; #45 reverts owner decision A 2026-10-21 m134 all-day)
+		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS + OPEN windows (the mentor's rule; #45 reverts owner decision A 2026-10-21 m134 all-day)
 		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
 		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,

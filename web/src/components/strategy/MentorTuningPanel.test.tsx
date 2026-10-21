@@ -166,6 +166,6 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     trendline_between_boxes: true, // course-defaults-30
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
-    htf_gate_news_only: true, // D4.4-11 — news-only default ON (the mentor's news-first rule)
+    htf_gate_news_only: true, // D4.4-11 — news + open default ON (the mentor's rule)
   })
 })
