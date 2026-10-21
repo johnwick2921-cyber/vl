@@ -95,8 +95,8 @@ func TestAutoBEBlockedInMentorMode(t *testing.T) {
 		trader:   &ntTrader.TCPTrader{},
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
 			RiskControl: store.RiskControlConfig{
-				MentorMode:            true,
-				BreakevenEnabled:      on,
+				MentorMode:             true,
+				BreakevenEnabled:       on,
 				BreakevenTriggerPoints: 40,
 			},
 		}},
@@ -151,8 +151,8 @@ func TestAutoBEFiresWhenMentorModeOff(t *testing.T) {
 		trader:   &ntTrader.TCPTrader{},
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
 			RiskControl: store.RiskControlConfig{
-				MentorMode:            false,
-				BreakevenEnabled:      on,
+				MentorMode:             false,
+				BreakevenEnabled:       on,
 				BreakevenTriggerPoints: 40,
 			},
 		}},

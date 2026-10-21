@@ -150,10 +150,10 @@ func trailCallSiteTrader(mentorOn bool) *AutoTrader {
 		trader:   &ntTrader.TCPTrader{},
 		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{
 			RiskControl: store.RiskControlConfig{
-				MentorMode:       mentorOn,
-				TrailingEnabled:  bp(true),
-				TrailingArm:      TrailArmImmediate,
-				TrailingATRMult:  2.0,
+				MentorMode:        mentorOn,
+				TrailingEnabled:   bp(true),
+				TrailingArm:       TrailArmImmediate,
+				TrailingATRMult:   2.0,
 				TrailingATRPeriod: 14,
 			},
 		}},

@@ -207,4 +207,3 @@ func TestStopClearsRunningFlag(t *testing.T) {
 		t.Fatalf("after Stop, isRunning must be false so Run can restart")
 	}
 }
-
