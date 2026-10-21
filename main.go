@@ -79,6 +79,10 @@ func main() {
 		logger.Info(friendBootLine(cfg.FriendName, cfg.APIServerHost, cfg.APIServerPort, ntwire.ListenAddr()))
 	}
 
+	// R6: the Friends page drives `systemctl --user`, which needs the user-bus
+	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
+	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
+
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
 	cryptoService, err := crypto.NewCryptoService()

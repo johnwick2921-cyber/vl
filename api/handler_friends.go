@@ -433,7 +433,7 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 
 	// FIXED argv — exec.Command with an explicit slice, never a shell string.
 	cmd := exec.Command(filepath.Join(friendScriptsDir(), "provision.sh"), name)
-	cmd.Env = os.Environ()
+	cmd.Env = friendSystemEnv()
 	out, err := cmd.Output() // stdout = the install code (B2)
 	if err != nil {
 		detail := ""
@@ -543,7 +543,7 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 		if row.State != "revoked" {
 			// 1. remove.sh: stops the unit, MOVES the folder to trash, sets state=revoked.
 			cmd := exec.Command(filepath.Join(friendScriptsDir(), "remove.sh"), name)
-			cmd.Env = os.Environ()
+			cmd.Env = friendSystemEnv()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				logger.Errorf("friends revoke %q: remove.sh failed: %v", name, err)
@@ -619,15 +619,53 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 // friendUnit is the B2 systemd user unit name.
 func friendUnit(name string) string { return "vl-friend@" + name + ".service" }
 
-// systemctlUser runs systemctl --user with a fixed argv (no shell). It is a var
-// so a test can inject a fake without touching the real service manager (S22).
+// friendSystemEnv returns the process env plus XDG_RUNTIME_DIR and
+// DBUS_SESSION_BUS_ADDRESS for the current uid when they are absent (R6). The
+// owner's bot runs as a SYSTEM unit with no user-bus env, so `systemctl --user`
+// otherwise fails with "Failed to connect to bus: No medium found".
+func friendSystemEnv() []string {
+	env := os.Environ()
+	hasXDG, hasDBUS := false, false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "XDG_RUNTIME_DIR=") && len(kv) > len("XDG_RUNTIME_DIR=") {
+			hasXDG = true
+		}
+		if strings.HasPrefix(kv, "DBUS_SESSION_BUS_ADDRESS=") && len(kv) > len("DBUS_SESSION_BUS_ADDRESS=") {
+			hasDBUS = true
+		}
+	}
+	uid := os.Getuid()
+	if !hasXDG {
+		env = append(env, fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid))
+	}
+	if !hasDBUS {
+		env = append(env, fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus", uid))
+	}
+	return env
+}
+
+// systemctlUser runs systemctl --user with a fixed argv (no shell) and the
+// friend user-bus env (R6). It is a var so a test can inject a fake without
+// touching the real service manager (S22).
 var systemctlUser = func(verb, unit string) error {
 	cmd := exec.Command("systemctl", "--user", verb, unit)
+	cmd.Env = friendSystemEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("systemctl --user %s %s: %v (%s)", verb, unit, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// FriendControlSelfCheck probes the user bus the way the Friends page does and
+// returns "✓" when reachable, "✗" otherwise (R6 boot self-check).
+func FriendControlSelfCheck() string {
+	cmd := exec.Command("systemctl", "--user", "show-environment")
+	cmd.Env = friendSystemEnv()
+	if err := cmd.Run(); err != nil {
+		return "✗"
+	}
+	return "✓"
 }
 
 // ---- connect key + install code -------------------------------------------
