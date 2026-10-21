@@ -250,7 +250,8 @@ func (g *clockStepGuard) observe(cfg ClockStepConfig) (stepNs int64, freeze bool
 	}
 	g.haveLast, g.lastStepNs, g.lastStepWall, g.lastStepMono = true, step, wallNs, mono
 	freezeMs := cfg.FreezeMs * int64(time.Millisecond)
-	boundary := abs >= sessionBoundaryFreezeMs && abs < freezeMs && stepIsSessionBoundary(wallNs)
+	boundaryMs := sessionBoundaryFreezeMs * int64(time.Millisecond)
+	boundary := abs >= boundaryMs && abs < freezeMs && stepIsSessionBoundary(wallNs)
 	if abs >= freezeMs || boundary {
 		g.freezeSteps++
 		g.haveFreeze, g.lastFreezeMon, g.lastFreezeBoundary = true, mono, boundary

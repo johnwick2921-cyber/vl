@@ -160,3 +160,33 @@ func TestM149SessionBoundaryStepBelowFreezeStillHolds(t *testing.T) {
 	}
 	restore()
 }
+
+// m149 (session boundary unit pin) — at 15:59:30 CT a 1.0 s step is below the
+// 2 s boundary threshold and must NOT hold; a 2.5 s step is at/above it and
+// must hold. This pin goes RED if the boundary threshold is compared against
+// nanoseconds instead of milliseconds.
+func TestM149SessionBoundary1sStepNotHeld2p5sStepHeld(t *testing.T) {
+	boundary := time.Date(2026, 9, 23, 15, 59, 30, 0, CTLocation())
+
+	clk := NewSteppedClock(boundary)
+	restore := ClockSampleForTest(clk.Sample)
+	ObserveClock()
+	clk.Step(-1000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, boundary); held {
+		restore()
+		t.Fatalf("a 1.0 s step inside the boundary is below the 2 s boundary threshold, must not hold: %q", why)
+	}
+	if v := ClockStepSnapshot(); v.FreezeSteps != 0 {
+		restore()
+		t.Fatalf("a 1.0 s boundary step must not freeze: %+v", v)
+	}
+	restore()
+
+	clk = NewSteppedClock(boundary)
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Step(-2500 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, boundary); !held || !strings.Contains(why, "clock_step") {
+		t.Fatalf("a 2.5 s step inside the boundary must hold NEW entries, got held=%v why=%q", held, why)
+	}
+}
