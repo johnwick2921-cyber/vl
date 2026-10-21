@@ -1004,14 +1004,14 @@ export const mentor: GuideSection = {
         {
           label: '4h/1h gate only in the news window (07:20–07:35 CT)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4-11: ON (default) = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). Owner order 2026-10-17: news-only is ON by default; the D5.1 all-day read stays on the mentor-question list.',
-          trader: 'ON — owner order 2026-10-17: news-only is the default.',
+          what: 'D4.4-11: ON = the 4h/1h direction gate applies ONLY inside the 07:20–07:35 CT news window; ordinary intraday entries are then not HTF-gated. OFF (default) = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). Owner decision A 2026-10-21 (m134): the default is now OFF (all-day gate). Owner order 2026-10-17 had set news-only ON by default; the D5.1 all-day read is now the live rule.',
+          trader: 'OFF — owner decision A 2026-10-21 (m134): the all-day gate is the default.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (HTFGateNewsOnly) · kernel/mentor/htf_direction.go HTFGateActive / HTFVerdict',
           range: 'true / false',
-          systemDefault: 'true',
+          systemDefault: 'false',
           recommended:
-            'ON — news-only is the default (owner order 2026-10-17; D4.4 p1 @13:55 "đánh níu nên sử dụng cho níu trước đi", @24:48 "em chỉ hướng dẫn mọi người cái news thôi").',
+            'OFF — the all-day gate is the default (owner decision A 2026-10-21 m134; owner order 2026-10-17 had set news-only ON: D4.4 p1 @13:55 "đánh níu nên sử dụng cho níu trước đi", @24:48 "em chỉ hướng dẫn mọi người cái news thôi").',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },

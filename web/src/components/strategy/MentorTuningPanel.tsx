@@ -306,7 +306,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
-  htf_gate_news_only: true,
+  htf_gate_news_only: false,
   exec_2m_after_30m: true,
   day_gate_spent_pts: 300,
   day_gate_target_cap_pts: 15,

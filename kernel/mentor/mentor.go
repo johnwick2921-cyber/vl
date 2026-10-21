@@ -332,11 +332,14 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default): the HTF gate applies only inside the
+	// THƯỜNG"). true: the HTF gate applies only inside the
 	// 07:20–07:35 CT news window; ordinary intraday entries are not
-	// HTF-gated. Owner order 2026-10-17: NEWS-ONLY = ON (the course is
-	// news-first — "em chỉ hướng dẫn mọi người cái news thôi" D4.4 p1
-	// @24:48; D5.1's all-day read stays on the mentor-question list).
+	// HTF-gated. false (default, owner decision A 2026-10-21 m134 "fix
+	// all"): the 4h/1h direction gate applies ALL DAY — every entry side
+	// must obey the 4h/1h verdict (case 1/2/3). Owner order 2026-10-17 had
+	// set NEWS-ONLY = ON; owner decision A reverses the default. The owner's
+	// STORED knob value is sacred — the CTO flips it at release time with a
+	// backup; this code change only moves the DEFAULT.
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -551,9 +554,9 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true, // D4.4-11: news-first — the gate only inside 07:20–07:35 CT (owner order 2026-10-17)
-		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
-		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false, // D4.4-11: gate ALL DAY (owner decision A 2026-10-21 m134; was news-only owner order 2026-10-17)
+		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
