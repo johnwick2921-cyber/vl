@@ -178,3 +178,84 @@ func TestM235StaleDataPlacementRefusalLogsAndCounts(t *testing.T) {
 		t.Fatalf("the refusal must log once; log:\n%s", logs.String())
 	}
 }
+
+// TestM235BreakerNotMaskedByWaivedBand is the m235c hole: at 15:20 CT the
+// session gate returns "outside all session windows" (waivable), but a tripped
+// breaker (ConsecutiveLossHalt=1 + one loss) must be re-adjudicated THROUGH the
+// waived band and refuse as consecutive_loss, logged + counted. MUTANT: skip
+// the re-adjudication in adjudicateWithBandWaiver → the verdict stays
+// no_trade_band (waivable) → the arm is placed → RED.
+func TestM235BreakerNotMaskedByWaivedBand(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true, SessionsEnabled: []string{"NY"}}
+	mentorWireSeams(t, at, ledger)
+	logs := captureTraderLog(t)
+	at.config.StrategyConfig.RiskControl.ConsecutiveLossHalt = store.IntPtr(1)
+	now := b3Clock(15, 20) // outside all session windows (NY ends 14:45)
+	neg := -52.0
+	exit := now.Add(-10 * time.Minute)
+	loss := &store.TraderPosition{TraderID: at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+		Quantity: 1, EntryPrice: 100, ExitPrice: 99, RealizedPnL: neg, PnlCorrected: &neg,
+		Status: "CLOSED", CloseReason: "sync",
+		EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli()}
+	if err := st.GormDB().Create(loss).Error; err != nil {
+		t.Fatal(err)
+	}
+	seedM235MentorRow(t, at, ledger, "swing-brk", "SWING4H", now.UnixMilli()+60_000)
+
+	_, before := telemetry.GateBlockSnapshot()
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+	_, table := telemetry.GateBlockSnapshot()
+
+	row := readArmRow(t, ledger, "swing-brk")
+	if row.SignalID != "" {
+		t.Fatalf("the breaker must refuse the mentor arm through the waived band, got signal=%q", row.SignalID)
+	}
+	b := before[at.id]
+	if got := table[at.id]; got["consecutive_loss"]-b["consecutive_loss"] != 1 {
+		t.Fatalf("the refusal must tick consecutive_loss once, got %v (before %v)", got, b)
+	}
+	if !strings.Contains(logs.String(), "🛑 mentor placement REFUSED (consecutive_loss)") {
+		t.Fatalf("the refusal must log once with the reason; log:\n%s", logs.String())
+	}
+}
+
+// TestM235RedNewsBlackoutNotWaivedThroughLunch pins the red-news T1 blackout
+// through a waived band: at 13:00 CT (inside lunch) with a T1 event, the mentor
+// arm is refused under no_trade_band with the red-news reason — never waived as
+// lunch. MUTANT: move the T1 check back BELOW lunch in sessionGateDecision →
+// the 13:00 minute reads 'lunch' (waivable) → the arm is placed → RED.
+func TestM235RedNewsBlackoutNotWaivedThroughLunch(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true, SessionsEnabled: []string{"NY"}}
+	mentorWireSeams(t, at, ledger)
+	logs := captureTraderLog(t)
+	// A T1 (red) print at 13:00 CT = 18:00 UTC on the test date, inside lunch.
+	if _, err := st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{
+		TradeDate: "2026-09-23", Source: "forexfactory",
+		EventsJSON: `[{"time":"2026-09-23T18:00:00Z","currency":"USD","title":"Synthetic FOMC","impact":"T1"}]`,
+		CreatedAt:  time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := b3Clock(13, 0) // inside lunch 12:00–13:30, inside NY
+	seedM235MentorRow(t, at, ledger, "swing-news", "SWING4H", now.UnixMilli()+60_000)
+
+	_, before := telemetry.GateBlockSnapshot()
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+	_, table := telemetry.GateBlockSnapshot()
+
+	row := readArmRow(t, ledger, "swing-news")
+	if row.SignalID != "" {
+		t.Fatalf("the T1 blackout must refuse the mentor arm through lunch, got signal=%q", row.SignalID)
+	}
+	b := before[at.id]
+	if got := table[at.id]; got["no_trade_band"]-b["no_trade_band"] != 1 {
+		t.Fatalf("the refusal must tick no_trade_band once, got %v (before %v)", got, b)
+	}
+	if !strings.Contains(logs.String(), "🛑 mentor placement REFUSED (no_trade_band)") || !strings.Contains(logs.String(), "red-news blackout") {
+		t.Fatalf("the refusal must log once with the red-news reason; log:\n%s", logs.String())
+	}
+}

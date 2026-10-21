@@ -159,7 +159,41 @@ func (at *AutoTrader) sessionRiskGateAt(now time.Time) sessionRiskVerdict {
 			return asForceFlatWindow(adjudicateSessionRisk(0, n, m, bandReason), flatWhy)
 		}
 	}
-	return asForceFlatWindow(adjudicateSessionRisk(losses, n, m, bandReason), flatWhy)
+	verdict := adjudicateWithBandWaiver(losses, n, m, bandReason)
+	return asForceFlatWindow(verdict, flatWhy)
+}
+
+// adjudicateWithBandWaiver applies the #9 + m235 rule: the band verdict stands
+// unless the band reason is a mentor-waivable session-list sub-window (lunch /
+// first-5m / outside-session / sessions_enabled / registry / strategy-off /
+// trade cap), in which case the consecutive-loss breaker is re-evaluated with
+// the band ignored and WINS if it trips — the breaker is a HARD state and must
+// refuse through any waived band.
+func adjudicateWithBandWaiver(losses, n, m int, bandReason string) sessionRiskVerdict {
+	verdict := adjudicateSessionRisk(losses, n, m, bandReason)
+	if isMentorWaivableBandReason(bandReason) {
+		if breaker := adjudicateSessionRisk(losses, n, m, ""); breaker.Refuse {
+			verdict = breaker
+		}
+	}
+	return verdict
+}
+
+// isMentorWaivableBandReason reports whether a band reason string is one the
+// mentor may waive: the day-plan session LIST family (lunch, first-5m,
+// outside all session windows, sessions_enabled / registry / strategy-off,
+// trade cap). The red-news T1 blackout, the consecutive-loss breaker and the
+// force-flat windows are NOT waivable — the breaker is re-adjudicated through
+// a waived band (adjudicateWithBandWaiver) and the T1 blackout is checked
+// BEFORE lunch/first-5m (sessionGateDecision), so neither can be masked.
+func isMentorWaivableBandReason(reason string) bool {
+	return strings.Contains(reason, "lunch no-trade") ||
+		strings.Contains(reason, "first-5m no-trade") ||
+		strings.Contains(reason, "outside all session windows") ||
+		strings.Contains(reason, "not in this strategy's sessions_enabled") ||
+		strings.Contains(reason, "not enabled in the session registry") ||
+		strings.Contains(reason, "switched off for this strategy") ||
+		strings.Contains(reason, "trade cap reached")
 }
 
 // asForceFlatWindow re-labels the window refusal adjudicateSessionRisk made
@@ -194,23 +228,15 @@ func sessionRiskWindowWords(class string) (name, noun string, window bool) {
 // The mentor's OWN window and news gates (mentorWindowGate / mentorNewsGate,
 // SWING4H exempt) are applied at AUTHORING, so the day-plan session LIST must
 // not re-refuse a mentor arm at placement — day-plan session gating applies to
-// planner/AI arms only. Waived: the whole session-gate family (outside all
-// session windows, session-off / sessions_enabled / registry / override, the
-// per-session trade cap, first-5m, lunch). KEPT as mentor safeties: the
-// red-news T1 blackout, the consecutive-loss breaker, and the force-flat
-// windows.
+// planner/AI arms only. KEPT as mentor safeties: the red-news T1 blackout, the
+// consecutive-loss breaker and the force-flat windows. The verdict this reads
+// is adjudicateWithBandWaiver's output, so a tripped breaker or a T1 blackout
+// already surfaced as its OWN class (never no_trade_band) and is not waived.
 func mentorWaivesSessionBand(risk sessionRiskVerdict) bool {
 	if risk.Class != "no_trade_band" {
 		return false
 	}
-	r := risk.Reason
-	return strings.Contains(r, "lunch no-trade") ||
-		strings.Contains(r, "first-5m no-trade") ||
-		strings.Contains(r, "outside all session windows") ||
-		strings.Contains(r, "not in this strategy's sessions_enabled") ||
-		strings.Contains(r, "not enabled in the session registry") ||
-		strings.Contains(r, "switched off for this strategy") ||
-		strings.Contains(r, "trade cap reached")
+	return isMentorWaivableBandReason(risk.Reason)
 }
 
 // SessionRiskBootLine — D5. Every field READ from the code that enforces it
