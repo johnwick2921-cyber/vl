@@ -581,6 +581,60 @@ var mentorMoveStopForSignalWire = func(nt *ntTrader.TCPTrader, signalID, side st
 // the callers skip the WARN (the latch message already logged once).
 var errMentorStopManual = errors.New("mentor stop move: leg under manual management")
 
+// errMentorStopThroughMarket is the sentinel mentorMoveLegStop returns when the
+// new stop is through the market and the leg was CLOSED at market instead —
+// nothing was sent, the leg is closing, and the callers skip their own WARN.
+var errMentorStopThroughMarket = errors.New("mentor stop move: stop through the market — leg closed at market instead")
+
+// mentorStopMoveWrongSide reports whether newStop sits on the WRONG side of the
+// market at price: a stop that NT8 would refuse (a buy stop below the market)
+// or that would trigger immediately (the exit already happened). A short's
+// protective stop is a buy stop and must be ABOVE price; a long's is a sell
+// stop and must be BELOW price.
+func mentorStopMoveWrongSide(side string, newStop, price float64) bool {
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		return newStop <= price
+	}
+	return newStop >= price
+}
+
+// mentorStopMovePriceMaxAge is the wrong-side guard's freshness window: a 1m
+// bar older than this is stale and the move is sent as before (today's
+// behaviour), logged.
+const mentorStopMovePriceMaxAge = 90 * time.Second
+
+// mentorLatestPriceSeam reads the freshest 1m close from BarCache (price,
+// fresh). Tests substitute it to pin the wrong-side guard deterministically.
+var mentorLatestPriceSeam = func(at *AutoTrader) (float64, bool) {
+	if at == nil || market.FuturesBarsProvider == nil {
+		return 0, false
+	}
+	bars := market.FuturesBarsProvider(at.futuresSymbol(), "1m", 1)
+	if len(bars) == 0 {
+		return 0, false
+	}
+	b := bars[len(bars)-1]
+	return b.Close, time.Since(time.UnixMilli(b.OpenTime)) <= mentorStopMovePriceMaxAge
+}
+
+// mentorCloseLegAtMarketWire is the last hop for the wrong-side market close
+// (tests substitute it to capture closes; production binds it to the
+// TCPTrader's reduce-only CloseShort/CloseLong on the futures symbol).
+var mentorCloseLegAtMarketWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, side string, qty int) error {
+	if nt == nil {
+		return fmt.Errorf("mentor leg close: no armed trader")
+	}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		_, err := nt.CloseLong(at.futuresSymbol(), float64(qty))
+		return err
+	case "short":
+		_, err := nt.CloseShort(at.futuresSymbol(), float64(qty))
+		return err
+	}
+	return fmt.Errorf("mentor leg close: unknown side %q", side)
+}
+
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
 // move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08)
 // against the belief AND — release #22, P2-3 — against the BROKER's own stop
@@ -600,6 +654,27 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 	if refuse, why := mentorNeverWiden(side, leg.Stop, newStop); refuse {
 		at.mentorCount("widen_refused")
 		return fmt.Errorf("mentor leg stop move refused: %s", why)
+	}
+	// P0 stop-move-wrong-side (2026-10-21, c6cdfdc3): BEFORE any move_stop, read
+	// the freshest 1m close. A stop through the market (short: newStop <= price;
+	// long: newStop >= price) is refused by NT8 or triggers immediately — the
+	// exit has effectively happened, so CLOSE the leg at market (reduce-only)
+	// instead of sending. A stale price keeps today's behaviour (send), logged.
+	if price, fresh := mentorLatestPriceSeam(at); fresh {
+		if mentorStopMoveWrongSide(side, newStop, price) {
+			at.mentorCount("stop_move_through_market_close")
+			at.logWarnf("🧑‍🏫 mentor stop move %s leg %d → %.2f is through the market (price %.2f) — closing the leg at market instead (= the BE exit)",
+				leg.SignalID, leg.Wire, newStop, price)
+			if err := mentorCloseLegAtMarketWire(at, nt, side, leg.Qty); err != nil {
+				at.mentorCount("close_failed")
+				return err
+			}
+			at.mentorCount("close_sent")
+			return errMentorStopThroughMarket
+		}
+	} else {
+		at.logInfof("🧑‍🏫 mentor stop move %s leg %d → %.2f: no fresh 1m price (stale) to judge wrong-side against — sending as before",
+			leg.SignalID, leg.Wire, newStop)
 	}
 	if err := at.mentorJudgeAgainstBroker(nt, side, leg, newStop); err != nil {
 		return err
