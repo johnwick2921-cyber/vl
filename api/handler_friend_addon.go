@@ -61,13 +61,28 @@ func (s *Server) latestFriendAddonBuild() string {
 
 // friendAddonStatus is the ONE canonicalizer for "is the connected AddOn
 // outdated" (K4): outdated is true only when BOTH build ids are known, both are
-// date-prefixed build ids, and the connected id is LEXICALLY OLDER than the
-// latest (the same ordering as FarSideProven, tcp_framing.go). A missing side, a
-// non-date id, or a connected id that is >= latest reads NOT outdated — never a
-// fabricated "update available", never a downgrade.
+// date-prefixed build ids, and the connected id is OLDER than the latest under
+// the R17 (date, suffix-length, suffix) ordering. A missing side, a non-date id,
+// or a connected id that is >= latest reads NOT outdated — never a fabricated
+// "update available", never a downgrade.
 func friendAddonStatus(connected, latest string) (connectedBuild, latestBuild string, outdated bool) {
 	comparable := datePrefixedBuildID(connected) && datePrefixedBuildID(latest)
-	return connected, latest, comparable && connected < latest
+	return connected, latest, comparable && buildIDLess(connected, latest)
+}
+
+// buildIDLess orders two date-prefixed build ids by (date, suffix-length,
+// suffix) — R17. Plain lexical broke once the suffix grew to two digits:
+// "2026-10-18-9" vs "2026-10-18-10" compares '9' > '1', so the 2-digit build
+// read OLDER. Callers must already have checked datePrefixedBuildID.
+func buildIDLess(a, b string) bool {
+	if a[:10] != b[:10] {
+		return a[:10] < b[:10]
+	}
+	as, bs := a[10:], b[10:]
+	if len(as) != len(bs) {
+		return len(as) < len(bs)
+	}
+	return as < bs
 }
 
 // datePrefixedBuildID reports whether b is a date-prefixed build id: it starts
