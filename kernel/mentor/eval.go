@@ -654,6 +654,50 @@ func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, r
 	return kept, refusals
 }
 
+// phlISBPreferenceFilter — D3.3 p1 @08:12–08:56: when the SAME closed bar at a
+// box produces BOTH a box-edge reject (Setup "BOX" — the mentor's "potential
+// high/low") and an inside bar (ISB) on the SAME side, the mentor goes to the
+// inside bar ("Nên về xuống InstaBar… em lại an toàn với InstaBar hơn") because
+// its stop is smaller. Keep the ISB and refuse the box reject — but ONLY when
+// the ISB's stop distance is <= the box reject's (his reason is the smaller
+// stop); otherwise both stay and the case is noted (never a silent drop).
+// Opposite sides: no precedence — the existing gates decide.
+func phlISBPreferenceFilter(out []Intent) (kept []Intent, refusals []string, notes []string) {
+	type key struct {
+		side Side
+		ref  int64
+	}
+	isbStop := make(map[key]float64)
+	for _, in := range out {
+		if in.Setup == "ISB" && (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) {
+			isbStop[key{in.Side, in.RefBarMs}] = abs(in.Price - in.Stop)
+		}
+	}
+	if len(isbStop) == 0 {
+		return out, nil, nil
+	}
+	kept = out[:0:0]
+	for _, in := range out {
+		if in.Setup != "BOX" || (in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry) {
+			kept = append(kept, in)
+			continue
+		}
+		isb, ok := isbStop[key{in.Side, in.RefBarMs}]
+		if !ok {
+			kept = append(kept, in)
+			continue
+		}
+		boxStop := abs(in.Price - in.Stop)
+		if isb <= boxStop {
+			refusals = append(refusals, "phl_isb_preferred_at_box")
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("phl_isb_keep_both: ISB stop %.1f > box stop %.1f at the box — keeping both [D3.3 p1 @08:12–08:56]", isb, boxStop))
+		kept = append(kept, in)
+	}
+	return kept, refusals, notes
+}
+
 // triggerBoxZoneFilter drops non-swing place entries refused by the B1
 // trigger zone (between an FTGL and the buy line, mirror FTGH + sell line).
 func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Intent, refusals []string) {
@@ -2573,6 +2617,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	out, refused := boxBanFilter(out, boxes, bars[len(bars)-1])
 	for _, r := range refused {
 		e.refuse(r)
+	}
+
+	// D3.3 p1 @08:12–08:56: a box-edge reject and an inside bar on the same
+	// closed bar, same side — the mentor takes the inside bar (smaller stop).
+	out, refused, noted := phlISBPreferenceFilter(out)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+	for _, n := range noted {
+		e.note("%s", n)
 	}
 
 	// B1 trigger zone (10-03 ruling): between an FTGL and the buy line (mirror:

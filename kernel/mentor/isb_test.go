@@ -96,8 +96,10 @@ func TestISBStopVerdict(t *testing.T) {
 		{"small 4pt stop", 1.0, true},        // 1 + 3 buffer = 4 — taken (no minimum)
 		{"5pt stop", 2.0, true},              // 2 + 3 = 5
 		{"6pt stop", 3.0, true},              // 3 + 3 = 6
+		{"19pt taken (base)", 16.0, true},    // 16 + 3 = 19 — under 20
 		{"20pt taken (base)", 17.0, true},    // 17 + 3 = 20 — base (the reduce band starts above 20)
 		{"25pt taken (reduced)", 22.0, true}, // 22 + 3 = 25 — "25 đổ lại ok"
+		{"26pt skipped", 23.0, false},        // 23 + 3 = 26 — "trên nữa thì thôi" (> 25)
 		{"27pt skipped", 24.0, false},        // 24 + 3 = 27 — "trên nữa thì thôi" (> 25)
 		{"30pt skipped", 27.0, false},        // 27 + 3 = 30 — over the ceiling
 		{"31pt skipped", 28.0, false},        // 28 + 3 = 31 — over the ceiling
