@@ -546,25 +546,36 @@ func localExePath(d deps) string {
 }
 
 // ensureLocalExe copies the running executable to %LOCALAPPDATA%\VL\vl-friend.exe
-// if it is not there (idempotent). The old copy is MOVED to VL\old\ (never
-// deleted) when it is replaced.
+// so the desktop icon can launch --open. When the copy already exists and
+// differs (a newer installer ran), the old copy is MOVED to VL\old\ (never
+// deleted) before the new one is written.
 func ensureLocalExe(d deps) error {
 	src, err := d.selfExe()
 	if err != nil {
 		return err
 	}
 	dst := localExePath(d)
-	if _, err := d.readFile(dst); err == nil {
-		return nil // already installed
-	}
-	b, err := d.readFile(src)
+	srcBytes, err := d.readFile(src)
 	if err != nil {
 		return err
+	}
+	if dstBytes, err := d.readFile(dst); err == nil && bytes.Equal(srcBytes, dstBytes) {
+		return nil // already current
+	}
+	// Replace: MOVE the old copy aside (never delete), then write the new.
+	if _, err := d.readFile(dst); err == nil {
+		old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend.exe")
+		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
+			return err
+		}
+		if err := d.rename(dst, old); err != nil {
+			return err
+		}
 	}
 	if err := d.mkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(dst, b, 0o755)
+	return d.writeFile(dst, srcBytes, 0o755)
 }
 
 // detectUpdate fetches the signed manifest and compares it with what is
@@ -762,6 +773,9 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	// F8: the dashboard comes FIRST — print the URL, ensure the icons, open it —
 	// so a non-technical user lands on the login page before any y/N question.
 	d.print("Your VL dashboard: " + base)
+	if err := ensureLocalExe(d); err != nil {
+		return err
+	}
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		return err
 	}

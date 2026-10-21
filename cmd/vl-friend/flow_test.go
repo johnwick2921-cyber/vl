@@ -1101,6 +1101,36 @@ func TestEnsureLocalExeCopiesSelf(t *testing.T) {
 	}
 }
 
+// TestEnsureLocalExeMovesOldCopy — on update, the OLD copy is MOVED to VL\old\
+// (never deleted) and replaced by the new one.
+func TestEnsureLocalExeMovesOldCopy(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	// Pre-seed an OLD copy.
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// The running exe is a NEWER build (flowFakeDeps writes "MZ-self").
+	if err := os.WriteFile(filepath.Join(home, "vl-friend.exe"), []byte("MZ-new"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatalf("ensureLocalExe failed: %v", err)
+	}
+	b, err := os.ReadFile(localExePath(d))
+	if err != nil || string(b) != "MZ-new" {
+		t.Fatalf("the new exe was not installed: %v %q", err, b)
+	}
+	old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend.exe")
+	ob, err := os.ReadFile(old)
+	if err != nil || string(ob) != "MZ-old" {
+		t.Fatalf("the old exe was not MOVED to VL\\old\\: %v %q", err, ob)
+	}
+}
+
 func containsStr(xs []string, want string) bool {
 	for _, x := range xs {
 		if x == want {
