@@ -34,8 +34,8 @@ namespace NinjaTrader.NinjaScript.AddOns
     public class VLTraderTCPClient : AddOnBase
     {
         // === Connection constants (must match Go-side tcp_server.go) ===
-        // W-FRIEND-HOSTED (DS-103): the AddOn reads Documents\NinjaTrader 8\VL\connect.json once at
-        // activation and OVERRIDES these defaults (see LoadConnectConfig). The defaults are exactly
+        // W-FRIEND-HOSTED (DS-103): the AddOn reads connect.json (NT8 user-data dir, MyDocuments
+        // fallback) once at activation and OVERRIDES these defaults (see LoadConnectConfig). The defaults are exactly
         // today's behaviour when the file is absent. A corrupt file is FATAL: we do NOT connect
         // (never silently fall back to local when the file exists).
         private const string GO_SERVER_HOST_DEFAULT  = "127.0.0.1";
@@ -68,7 +68,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // no nested census locks, source_hash at activation. The ISO-date
         // prefix is kept (CTO ruling Q3).
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
-        private const string  VL_BUILD_ID             = "2026-10-18-a";
+        private const string  VL_BUILD_ID             = "2026-10-21-a";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -669,18 +669,15 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
-        // Reads Documents\NinjaTrader 8\VL\connect.json once at activation. Absent file ->
-        // today's defaults. Corrupt file -> connectConfigCorrupt=true and the loop never dials.
+        // Reads connect.json once at activation. Primary: NinjaTrader's real user-data dir
+        // (Globals.UserDataDir — follows the NT8 "Documents folder" option and OneDrive
+        // redirection). Fallback (one release, for 1.1.x installs): the old MyDocuments path.
+        // Absent file -> today's defaults. Corrupt file -> connectConfigCorrupt=true and the
+        // loop never dials.
         private void LoadConnectConfig()
         {
-            string docs;
-            try { docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments); }
-            catch { docs = ""; }
-            if (string.IsNullOrEmpty(docs)) return; // absent -> defaults
-
-            string path;
-            try { path = Path.Combine(docs, "NinjaTrader 8", "VL", "connect.json"); }
-            catch { return; }
+            string path = ResolveConnectConfigPath();
+            if (string.IsNullOrEmpty(path)) return; // absent -> defaults
 
             if (!File.Exists(path)) return; // absent -> defaults (today's behaviour)
 
@@ -709,6 +706,33 @@ namespace NinjaTrader.NinjaScript.AddOns
             // The key is NEVER logged — only its presence.
             LogInfo("VLTraderTCPClient: connect.json loaded — " + serverHost + ":" + serverPort
                     + (connectKey.Length > 0 ? " + connect_key" : " (no connect_key)"));
+        }
+
+        // Resolves the connect.json path to READ: NT8's real user-data dir first
+        // (Globals.UserDataDir, so the AddOn agrees with NinjaTrader regardless of the NT8
+        // "Documents folder" option or OneDrive redirection), then — as a one-release fallback
+        // for 1.1.x installs that wrote the old MyDocuments path — the legacy
+        // <MyDocuments>\NinjaTrader 8\VL\connect.json. Returns "" when neither can be built.
+        private static string ResolveConnectConfigPath()
+        {
+            string primary = "";
+            try { primary = Path.Combine(Globals.UserDataDir, "VL", "connect.json"); }
+            catch { }
+            if (!string.IsNullOrEmpty(primary) && File.Exists(primary)) return primary;
+
+            string legacy = "";
+            try
+            {
+                string docs = Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments);
+                if (!string.IsNullOrEmpty(docs))
+                    legacy = Path.Combine(docs, "NinjaTrader 8", "VL", "connect.json");
+            }
+            catch { }
+            if (!string.IsNullOrEmpty(legacy) && File.Exists(legacy)) return legacy;
+
+            // Neither exists. Prefer the primary path so a file appearing there later is picked
+            // up on the next activation; the caller treats "" as "absent -> defaults".
+            return primary;
         }
 
         // === Connection loop with reconnect (spec L4415: every 5s) ===

@@ -692,8 +692,9 @@ its ISO-date prefix, because the capability floors compare it bytewise.
 
 `hello` (AddOn → Go) gains one additive, `omitempty` field for the friend-hosted
 deploy (release #37): `connect_key` (string). The AddOn reads it from
-`Documents\NinjaTrader 8\VL\connect.json` (`connect_key`); with the file absent
-the field is omitted, keeping the wire byte-identical to today.
+`NinjaTrader 8\VL\connect.json` under NT8's user-data dir (`Globals.UserDataDir`),
+with a one-release fallback to the legacy `Documents\NinjaTrader 8\VL\connect.json`
+path; with the file absent the field is omitted, keeping the wire byte-identical to today.
 
 The Go server checks it only when `NT_CONNECT_KEY` is set in the friend's
 `.env`. A hello that omits the key, or whose key does not match (compared with
