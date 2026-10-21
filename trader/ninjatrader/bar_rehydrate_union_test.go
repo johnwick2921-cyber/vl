@@ -47,9 +47,10 @@ func TestRehydrateRingFromStoreRebuildsHigherTFFrom1m(t *testing.T) {
 		contract = "MNQ 12-26"
 		min      = int64(60_000)
 	)
-	// Complete 1m tape, minutes 0..300 (open-stamped), all live rows.
+	// Complete 1m tape, minutes 0..304 (open-stamped), all live rows — 61
+	// complete 5m buckets.
 	var oneMin []store.BarHistoryDB
-	for m := int64(0); m <= 300; m++ {
+	for m := int64(0); m <= 304; m++ {
 		c := 100 + 0.05*float64(m)
 		oneMin = append(oneMin, store.BarHistoryDB{Symbol: symbol, TF: "1m", OpenTimeMs: m * min, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1, Contract: contract, Source: store.BarSourceLive})
 	}

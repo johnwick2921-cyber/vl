@@ -566,7 +566,7 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 			if len(oneMin) == 0 {
 				continue
 			}
-			bars := ntwire.Aggregate1mToTF(oneMin, tfMin)
+			bars := ntwire.Aggregate1mToTF(oneMin, tfMin, now.UnixMilli())
 			added := cache.RehydrateUnion(symbol, tf, bars)
 			if added == 0 {
 				continue

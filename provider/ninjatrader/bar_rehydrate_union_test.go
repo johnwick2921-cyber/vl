@@ -91,20 +91,71 @@ func TestAggregate1mToTF(t *testing.T) {
 		{T: 120_000, O: 13, H: 15, L: 12, C: 14, V: 1},
 		{T: 180_000, O: 14, H: 16, L: 13, C: 15, V: 1},
 		{T: 240_000, O: 15, H: 17, L: 14, C: 16, V: 1},
+		{T: 300_000, O: 16, H: 18, L: 15, C: 17, V: 1},
+		{T: 360_000, O: 17, H: 19, L: 16, C: 18, V: 1},
+		{T: 420_000, O: 18, H: 20, L: 17, C: 19, V: 1},
+		{T: 480_000, O: 19, H: 21, L: 18, C: 20, V: 1},
+		{T: 540_000, O: 20, H: 22, L: 19, C: 21, V: 1},
 	}
-	got := Aggregate1mToTF(oneMin, 5)
-	if len(got) != 1 {
-		t.Fatalf("want 1 bucket, got %d", len(got))
+	got := Aggregate1mToTF(oneMin, 5, 0)
+	if len(got) != 2 {
+		t.Fatalf("want 2 complete buckets, got %d", len(got))
 	}
 	b := got[0]
 	if b.T != 0 || b.O != 10 || b.H != 17 || b.L != 9 || b.C != 16 || b.V != 5 {
-		t.Fatalf("wrong aggregate: %+v", b)
+		t.Fatalf("wrong aggregate bucket 0: %+v", b)
 	}
-	// A second bucket must start on the next 5-minute boundary.
-	oneMin = append(oneMin, Bar{T: 300_000, O: 16, H: 18, L: 15, C: 17, V: 1})
-	got = Aggregate1mToTF(oneMin, 5)
-	if len(got) != 2 || got[1].T != 300_000 {
-		t.Fatalf("second bucket wrong: %+v", got)
+	if got[1].T != 300_000 || got[1].C != 21 || got[1].H != 22 || got[1].L != 15 {
+		t.Fatalf("wrong aggregate bucket 5: %+v", got[1])
+	}
+}
+
+// TestAggregate1mToTFDropsHoleyBucket is the m148 pin (a): the 00:31→00:39
+// 8-minute hole must leave the touched 5m buckets ABSENT after aggregation, with
+// the complete neighbours still present. MUTANT: drop the coverage check (always
+// insert) → bucket 00:30 is inserted with a fake close → RED.
+func TestAggregate1mToTFDropsHoleyBucket(t *testing.T) {
+	var oneMin []Bar
+	for m := int64(0); m <= 59; m++ {
+		if m >= 31 && m <= 39 {
+			continue // the 8-minute hole
+		}
+		c := 100 + 0.1*float64(m)
+		oneMin = append(oneMin, Bar{T: m * 60_000, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1})
+	}
+	got := Aggregate1mToTF(oneMin, 5, 0)
+	have := map[int64]bool{}
+	for _, b := range got {
+		have[b.T/60_000] = true
+	}
+	if !have[25] {
+		t.Fatalf("complete neighbour bucket 00:25 must be present, got %v", have)
+	}
+	if have[30] {
+		t.Fatalf("holey bucket 00:30 (4 missing minutes) must be absent, got %v", have)
+	}
+	if have[35] {
+		t.Fatalf("bucket 00:35 (all missing) must be absent, got %v", have)
+	}
+	if !have[40] {
+		t.Fatalf("complete neighbour bucket 00:40 must be present, got %v", have)
+	}
+}
+
+// TestAggregate1mToTFAllowsOneMissingMinute is the m148 pin (b): a single quiet
+// no-trade minute must NOT drop a bucket.
+func TestAggregate1mToTFAllowsOneMissingMinute(t *testing.T) {
+	var oneMin []Bar
+	for m := int64(0); m <= 4; m++ {
+		if m == 2 {
+			continue // one quiet minute
+		}
+		c := 100 + 0.1*float64(m)
+		oneMin = append(oneMin, Bar{T: m * 60_000, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1})
+	}
+	got := Aggregate1mToTF(oneMin, 5, 0)
+	if len(got) != 1 {
+		t.Fatalf("a bucket with one missing minute must still be inserted, got %d buckets", len(got))
 	}
 }
 
@@ -114,13 +165,13 @@ func TestAggregate1mToTF(t *testing.T) {
 // MUTANT: RehydrateOlder in place of RehydrateUnion leaves the interior hole
 // and the EMA50 is off by far more than 0.1 → RED.
 func TestRehydrateUnionBootShapeEMA50MatchesRecompute(t *testing.T) {
-	n1m := 301 // minutes 0..300
+	n1m := 305 // minutes 0..304 → 61 complete 5m buckets
 	oneMin := make([]Bar, 0, n1m)
 	for i := 0; i < n1m; i++ {
 		cc := 100 + 0.1*float64(i)
 		oneMin = append(oneMin, Bar{T: int64(i) * 60_000, O: cc - 0.05, H: cc + 0.2, L: cc - 0.2, C: cc, V: 1})
 	}
-	complete5m := Aggregate1mToTF(oneMin, 5) // open-stamped 5m buckets
+	complete5m := Aggregate1mToTF(oneMin, 5, 0) // open-stamped 5m buckets, now=0 → no forming filter
 
 	c := NewBarCache(2500)
 	// Boot-shape ring: replay tail buckets T<=70 and live buckets T>=200, with

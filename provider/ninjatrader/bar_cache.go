@@ -762,31 +762,61 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 // epoch-aligned — the same rule as the kernel's barsTF for 3m/5m/15m/30m/1h
 // (each divides 60 minutes and 17:00 CT is a whole UTC hour, so epoch-aligned
 // equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
-// anchor is 17:00 CT, not a whole-epoch multiple. The caller feeds only the
-// stored 1m tape, which is complete; a bucket missing minutes still folds
-// whatever bars it has (a partial bar is better than an unfilled hole, and the
-// union below never lets it replace a live bar).
-func Aggregate1mToTF(bars []Bar, tfMin int) []Bar {
+// anchor is 17:00 CT, not a whole-epoch multiple.
+//
+// m148 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is NOT
+// inserted — it stays a hole for BarsTFHoles / the prompt gap warning to report
+// honestly, rather than becoming a bar with a fake close. A bucket is inserted
+// only when at most ONE of its tfMin minutes is missing (a quiet no-trade
+// minute must not drop a bar). The forming tail bucket (the bucket still open
+// at `now`) is NEVER rebuilt from 1m — the live feed owns it; `now <= 0` means
+// "no forming filter" (every bucket is judged).
+func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 	if tfMin <= 1 || len(bars) == 0 {
 		return bars
 	}
 	ms := int64(tfMin) * 60_000
+	formingBucket := int64(0)
+	if now > 0 {
+		formingBucket = (now / ms) * ms
+	}
 	out := make([]Bar, 0, len(bars)/tfMin)
 	var cur *Bar
+	var present []bool // minute-slot presence within the current bucket
 	flush := func() {
-		if cur != nil {
-			out = append(out, *cur)
-			cur = nil
+		if cur == nil {
+			return
 		}
+		missing := 0
+		for _, p := range present {
+			if !p {
+				missing++
+			}
+		}
+		if missing <= 1 {
+			out = append(out, *cur)
+		}
+		cur = nil
+		present = nil
 	}
 	for _, b := range bars {
 		bucket := (b.T / ms) * ms
+		if formingBucket > 0 && bucket >= formingBucket {
+			continue // the forming tail is owned by the live feed
+		}
 		if cur == nil || bucket != cur.T {
 			flush()
 			c := b
 			c.T = bucket
 			cur = &c
+			present = make([]bool, tfMin)
+			if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+				present[idx] = true
+			}
 			continue
+		}
+		if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+			present[idx] = true
 		}
 		if b.H > cur.H {
 			cur.H = b.H
