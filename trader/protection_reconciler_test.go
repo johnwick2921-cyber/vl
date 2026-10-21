@@ -66,9 +66,9 @@ func TestProtectionAdjudication(t *testing.T) {
 				State: "TriggerPending", Quantity: 1}},
 			true, 1, px(29554), 0, protectionPlace, "accepted_risk", 29554},
 
-		// PARTIAL COVER IS REPORTED, NOT PATCHED
-		{"partially covered is raised, not doubled",
-			[]nt.NT8Order{live}, true, 2, px(29554), 29500, protectionAlertOnly, "", 0},
+		// PARTIAL COVER IS PATCHED WITH THE DELTA (m207 quantity-aware coverage)
+		{"partially covered places the uncovered delta",
+			[]nt.NT8Order{live}, true, 2, px(29554), 29500, protectionPlace, "accepted_risk", 29554},
 	}
 
 	for _, c := range cases {
@@ -410,35 +410,21 @@ func TestProtectionFlattenClearsWhenPositionCloses(t *testing.T) {
 	}
 }
 
-// m198 #43-A (P1, BUG-HUNT-1021 report #2) — a protective stop in a PENDING
-// state (ChangePending/ChangeSubmitted = a move_stop in flight; Submitted/
-// Initialized = a just-sent stop confirming) is NOT "nothing protective".
-// Counting it as neither coverage nor absence let the reconciler fall through
-// to protectionPlace and send a SECOND stop for the same contract — two stops,
-// both filled, an untracked reverse position (10-16 01:18:55). The verdict must
-// be UNKNOWN (take no action) and the next pass decides once the state settles.
-func TestProtectionPendingStopIsNotAbsence(t *testing.T) {
+// m207 (replaces m198's deferral): a pending -sl COUNTS as coverage by its own
+// quantity — a 1-lot position whose -sl is mid-flight (ChangePending /
+// ChangeSubmitted / Submitted / Initialized) is COVERED, not "nothing", so no
+// second stop is placed. Pin (d): the 10/16 shape.
+func TestProtectionPendingStopCountsAsCoverage(t *testing.T) {
 	const sym, side = "MNQ", "LONG"
 	stopIn := func(state string, qty int) nt.NT8Order {
 		return nt.NT8Order{Symbol: sym, Name: "sig-sl", Action: "sell", Type: "stop",
 			State: state, StopPrice: 29554, Quantity: qty}
 	}
-	cases := []struct {
-		name string
-		book []nt.NT8Order
-	}{
-		{"ChangePending -sl is a stop mid-flight, not absence", []nt.NT8Order{stopIn("ChangePending", 1)}},
-		{"ChangeSubmitted -sl is a stop mid-flight, not absence", []nt.NT8Order{stopIn("ChangeSubmitted", 1)}},
-		{"Submitted -sl is a stop confirming, not absence", []nt.NT8Order{stopIn("Submitted", 1)}},
-		{"Initialized -sl is a stop confirming, not absence", []nt.NT8Order{stopIn("Initialized", 1)}},
-		{"a live stop plus a pending move is UNVERIFIED, not OK",
-			[]nt.NT8Order{stopIn("Accepted", 1), stopIn("ChangePending", 1)}},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			v := adjudicateProtection(sym, side, 1, c.book, true, nil, 29500, nil, nil)
-			if v.Action != protectionUnknown {
-				t.Fatalf("action = %s, want protectionUnknown (why: %s)", v.Action, v.Why)
+	for _, state := range []string{"ChangePending", "ChangeSubmitted", "Submitted", "Initialized"} {
+		t.Run(state, func(t *testing.T) {
+			v := adjudicateProtection(sym, side, 1, []nt.NT8Order{stopIn(state, 1)}, true, nil, 29500, nil, nil)
+			if v.Action != protectionOK {
+				t.Fatalf("a pending %s -sl covering 1 of 1 must be OK (counts), got %s (why: %s)", state, v.Action, v.Why)
 			}
 			if v.Why == "" {
 				t.Fatal("verdict must say why")
@@ -496,11 +482,11 @@ func TestProtectionOverCoveredRaisesP0(t *testing.T) {
 	}
 }
 
-// m203 — the m198 deferral is BOUNDED. A -sl that stays pending forever must
-// not defer forever (the fail-open: a position with no real stop and no alert).
-// After 30 s the deferral stops and the normal adjudication runs.
+// m203 — the 30 s stuck bound on a pending -sl. A pending order counts as
+// coverage for its first 30 s; past that it STOPS counting (the P0 fires) and
+// its quantity becomes the uncovered delta this pass.
 // Mutant: delete the bound (the pendingStuck / recordPendingSLSeen branch) →
-// (b) RED (a 31 s pending would keep returning protectionUnknown instead of
+// (b) RED (a 31 s pending would keep returning protectionOK instead of
 // protectionPlace).
 func TestProtectionPendingBoundM203(t *testing.T) {
 	const sym, side = "MNQ", "LONG"
@@ -515,22 +501,22 @@ func TestProtectionPendingBoundM203(t *testing.T) {
 		pendingSLFirstSeen.Store(traderID+"|m203-sl", &n)
 	}
 
-	t.Run("(a) pending 5 s still defers", func(t *testing.T) {
+	t.Run("(a) pending 5 s still counts", func(t *testing.T) {
 		seed(5 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
-		if v.Action != protectionUnknown {
-			t.Fatalf("pending 5 s must defer (unknown), got %s (%s)", v.Action, v.Why)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		if v.Action != protectionOK {
+			t.Fatalf("pending 5 s must count as coverage (OK), got %s (%s)", v.Action, v.Why)
 		}
 		if v.PendingStuck {
 			t.Fatal("pending 5 s must NOT flag PendingStuck")
 		}
 	})
 
-	t.Run("(b) pending 31 s stops deferring", func(t *testing.T) {
+	t.Run("(b) pending 31 s stops counting", func(t *testing.T) {
 		seed(31 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
 		if v.Action != protectionPlace {
-			t.Fatalf("pending 31 s must run the normal adjudication (place), got %s (%s)", v.Action, v.Why)
+			t.Fatalf("pending 31 s must stop counting (place), got %s (%s)", v.Action, v.Why)
 		}
 		if !v.PendingStuck {
 			t.Fatal("pending 31 s must flag PendingStuck")
@@ -539,7 +525,7 @@ func TestProtectionPendingBoundM203(t *testing.T) {
 
 	t.Run("(c) pending then live inside the window", func(t *testing.T) {
 		seed(5 * time.Second)
-		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("Accepted")}, true, nil, 29500, nil, nil, nil, traderID, now, false)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("Accepted")}, true, nil, 29500, nil, nil, nil, traderID, now)
 		if v.Action != protectionOK {
 			t.Fatalf("a live stop must be OK, got %s (%s)", v.Action, v.Why)
 		}
@@ -579,5 +565,42 @@ func TestProtectionPendingStuckRaisesP0(t *testing.T) {
 	}
 	if PendingStuckFound(at.id) != 2 {
 		t.Fatalf("the stuck counter must tick every pass (2), got %d", PendingStuckFound(at.id))
+	}
+}
+
+// m207 pin (a): leg-1 pending + leg-2 missing → the pending leg's OWN quantity
+// counts, and ONLY the uncovered delta is placed (nothing re-placed for leg 1).
+// Mutant: count pending as full coverage regardless of quantity → RED (OK
+// instead of place); count pending as 0 → RED (place qty 3 instead of 1).
+func TestProtectionPendingCoversOnlyItsLeg(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	book := []nt.NT8Order{
+		{Symbol: sym, Name: "s1-sl", Action: "sell", Type: "stop", State: "ChangePending", Quantity: 2, StopPrice: 29554},
+	}
+	v := adjudicateProtection(sym, side, 3, book, true, px(29554), 29500, nil, nil)
+	if v.Action != protectionPlace {
+		t.Fatalf("leg1 pending (2) + leg2 missing: got %s, want place (why: %s)", v.Action, v.Why)
+	}
+	if v.HaveQty != 2 {
+		t.Fatalf("covered must be 2 (the pending leg's own qty), got %d", v.HaveQty)
+	}
+}
+
+// m207 pin (a) — the place carries ONLY the uncovered delta, never the full
+// position, so a partial cover never re-places the covered legs' quantity.
+func TestProtectionPlaceUsesDeltaQuantity(t *testing.T) {
+	at, _ := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "m207-delta"
+	at.exchange = "ninjatrader"
+	mt := &MockTrader{}
+	at.trader = mt
+	place := protectionVerdict{Action: protectionPlace, StopPx: 29500, Source: "plan", NeedQty: 3, HaveQty: 2,
+		Why: "PARTIALLY protected: 2 of 3 covered — placing ONLY the uncovered 1"}
+	at.actOnProtection(place, "MNQ", "LONG", 3, "sig", "t", 0, time.Now())
+	if mt.placeStopCalls != 1 {
+		t.Fatalf("delta place must send ONE stop, got %d", mt.placeStopCalls)
+	}
+	if mt.placedQty != 1 {
+		t.Fatalf("the placed quantity must be the uncovered delta 1, got %d", mt.placedQty)
 	}
 }

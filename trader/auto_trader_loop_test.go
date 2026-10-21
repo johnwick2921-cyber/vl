@@ -22,6 +22,7 @@ type MockTrader struct {
 	// window, so the protection reconciler must NOT place a second stop.
 	moveStopRecent map[string]bool
 	placeStopCalls int
+	placedQty      int // m207: the quantity the last PlaceProtectiveStop carried
 }
 
 func (m *MockTrader) GetBalance() (map[string]interface{}, error) {
@@ -113,6 +114,7 @@ func (m *MockTrader) MoveStopSentRecently(signalID string, now time.Time, d time
 // assert the reconciler did NOT place a second stop while a move was in flight.
 func (m *MockTrader) PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error {
 	m.placeStopCalls++
+	m.placedQty = quantity
 	return nil
 }
 
