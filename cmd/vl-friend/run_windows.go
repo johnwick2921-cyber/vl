@@ -304,7 +304,13 @@ func psRun(script, arg string) ([]byte, error) {
 	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psPreamble+script))
 	cmd.Env = append(os.Environ(), "VL_ARG0="+arg)
 	noWindow(cmd)
-	return cmdOutputStdout(cmd)
+	out, err := cmdOutputStdout(cmd)
+	if err != nil && ctx.Err() != nil {
+		// Gate-3 R3 [A]: a killed child reports a bare "exit status 1" on
+		// Windows — say what happened.
+		return out, fmt.Errorf("PowerShell step timed out after %s: %w", psRunTimeout, err)
+	}
+	return out, err
 }
 
 // idYes is the Win32 MessageBoxW return for "Yes" (IDYES).
@@ -332,6 +338,8 @@ func nativeMessageBox(text, caption string, flags uint32) (bool, error) {
 // msgBoxFallback is the H15 fallback when a native message box fails: an error
 // must never be invisible — print to the console AND append to setup.log.
 func msgBoxFallback(text string) {
+	// Gate-3 R5: the fallback got the RAW text — redact like every other surface.
+	text = redactCentral(text)
 	fmt.Println(text)
 	if dir := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); dir != "" {
 		p := filepath.Join(dir, "VL", "setup.log")

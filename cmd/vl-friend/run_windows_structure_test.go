@@ -534,3 +534,21 @@ func TestOpenURLIsNativeNotPowerShell(t *testing.T) {
 		}
 	}
 }
+
+// TestFallbackRedactsAndTimeoutIsNamed — gate-3 R5: msgBoxFallback printed and
+// logged the RAW text; gate-3 R3 [A]: a psRun timeout surfaced as a bare
+// "exit status 1". MUTANT: drop either line → RED.
+func TestFallbackRedactsAndTimeoutIsNamed(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+	i := strings.Index(s, "func msgBoxFallback(text string) {")
+	if i < 0 || !strings.Contains(s[i:i+200], "text = redactCentral(text)") {
+		t.Fatal("msgBoxFallback must redact before printing/logging")
+	}
+	if !strings.Contains(s, `"PowerShell step timed out after %s: %w"`) {
+		t.Fatal("psRun must name a timeout")
+	}
+}
