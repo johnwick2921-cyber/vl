@@ -235,12 +235,12 @@ func TestProtectionKnownStopThroughPriceFlattens654(t *testing.T) {
 	be := knownBrokerStop{Px: 30456.50, From: "moved this process"}
 	plan := 30551.25
 	fresh := 30470.0
-	v := adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{})
+	v := adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh)
 	if v.Action != protectionFlatten || v.StopPx != 30456.50 {
 		t.Fatalf("through the BE: got %s @ %.2f (%s), want flatten @ 30456.50", v.Action, v.StopPx, v.Why)
 	}
 	fresh = 30440.0 // on the protective side: place the BE, not the plan
-	v = adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh, "", time.Time{})
+	v = adjudicateProtectionWith("MNQ", "SHORT", 1, nil, true, nil, plan, nil, &be, &fresh)
 	if v.Action != protectionPlace || v.StopPx != 30456.50 || !strings.Contains(v.Source, "broker_stop") {
 		t.Fatalf("protective side: got %s @ %.2f src=%s, want place @ 30456.50 from broker_stop", v.Action, v.StopPx, v.Source)
 	}
@@ -248,7 +248,7 @@ func TestProtectionKnownStopThroughPriceFlattens654(t *testing.T) {
 	// carries the wider original.
 	acc := 30400.0
 	beL := knownBrokerStop{Px: 30500, From: "book snapshot 1"}
-	v = adjudicateProtectionWith("MNQ", "LONG", 1, nil, true, &acc, 30399.75, nil, &beL, nil, "", time.Time{})
+	v = adjudicateProtectionWith("MNQ", "LONG", 1, nil, true, &acc, 30399.75, nil, &beL, nil)
 	if v.Action != protectionPlace || v.StopPx != 30500 {
 		t.Fatalf("LONG: got %s @ %.2f, want place @ 30500 (never the wider accepted 30400)", v.Action, v.StopPx)
 	}
