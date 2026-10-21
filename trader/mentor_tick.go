@@ -223,6 +223,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// arrived since the last tick registers before this tick's placement
 	// decisions read the leg budget / loss box.
 	at.mentorDrainFills()
+	// #47: drain queued broker EXITS too — a real exit closes the matching
+	// Limits.openTrade before this tick's simulate() can phantom-book a
+	// stop-out through the original stop.
+	at.mentorDrainExits()
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}

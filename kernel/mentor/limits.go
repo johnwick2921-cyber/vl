@@ -133,16 +133,17 @@ type pendOrder struct {
 }
 
 type openTrade struct {
-	side   Side
-	stop   float64
-	target float64
-	anchor float64
-	place  string
-	swing  float64
-	box    bool
-	lo     float64
-	hi     float64
-	wave   float64 // wave low (long) / high (short), tracked from the fill candle
+	side    Side
+	stop    float64
+	target  float64
+	anchor  float64
+	place   string
+	swing   float64
+	box     bool
+	lo      float64
+	hi      float64
+	wave    float64 // wave low (long) / high (short), tracked from the fill candle
+	receipt string  // the entry signal id — matches a broker position_close (#47)
 }
 
 // Apply is the single Tick hook (DS-103 merges the call): it advances the
@@ -377,7 +378,7 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.fill(p, cur.Low, cur.High, levels)
+			l.fill(p, cur.Low, cur.High, levels, "")
 			continue
 		}
 		if p.expiry != 0 && now >= p.expiry {
@@ -424,23 +425,24 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 // opens the G2 loss trade. lo/hi seed the B22 wave (the fill candle's
 // low/high); levels feeds registerLeg's old-extreme fallback when the pend
 // carries no leg extreme (nil for a real fill — the pend's legExt wins).
-func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
+func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level, receipt string) {
 	l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
 	wave := lo
 	if p.side == SideShort {
 		wave = hi
 	}
 	t := &openTrade{
-		side:   p.side,
-		stop:   p.stop,
-		target: p.target,
-		anchor: p.anchor,
-		place:  p.place,
-		swing:  p.swing,
-		box:    p.box,
-		lo:     p.lo,
-		hi:     p.hi,
-		wave:   wave, // the fill candle is the entry candle
+		side:    p.side,
+		stop:    p.stop,
+		target:  p.target,
+		anchor:  p.anchor,
+		place:   p.place,
+		swing:   p.swing,
+		box:     p.box,
+		lo:      p.lo,
+		hi:      p.hi,
+		wave:    wave, // the fill candle is the entry candle
+		receipt: receipt,
 	}
 	if stopOutOn(t, lo, hi) {
 		// P2-3: the fill candle already crossed the stop (a late drain misses
@@ -455,11 +457,12 @@ func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
 // pend (a restart dropped the in-memory pends), the armed ledger ROW still
 // carries the trade. A fill registered from the row must never be dropped.
 type FillRow struct {
-	Side   Side
-	Entry  float64
-	Stop   float64
-	Target float64
-	ISB    bool
+	Side     Side
+	Entry    float64
+	Stop     float64
+	Target   float64
+	ISB      bool
+	SignalID string // the entry signal id — matches a broker position_close (#47)
 }
 
 // fillRow registers a REAL fill from the armed row (no pend — a restart) the
@@ -491,7 +494,7 @@ func (l *Limits) fillRow(row *FillRow, lo, hi float64, levels []Level) {
 		// swing is left 0: without the intent's AnchorKey the B22 swing
 		// departure is unavailable; the wave break still frees the place.
 	}
-	l.fill(p, lo, hi, levels)
+	l.fill(p, lo, hi, levels, row.SignalID)
 }
 
 // stopOutOn reports whether the fill candle (lo/hi) already crossed the trade's
@@ -559,7 +562,7 @@ func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRo
 		// old-extreme fallback from the evaluator's levels. Passing nil made a
 		// REAL ISB fill never register a leg: a stop-out never set Stopped and
 		// the next same-side entry was never refused by the G1 leg budget.
-		l.fill(p, lo, hi, levels)
+		l.fill(p, lo, hi, levels, receiptID)
 		l.markFilled(receiptID)
 		return FillConsumed
 	}
@@ -696,6 +699,30 @@ func (l *Limits) dropPend(armID string) {
 // are NOT undone — a fill that happened is real.
 func (l *Limits) DropArm(armID string) {
 	l.dropPend(armID)
+}
+
+// RealExit closes an OPEN loss trade on the broker's exit receipt (#47): the
+// trader's position_close / flat frame names the entry signal id and the exit
+// reason. A broker exit removes the matching openTrade so a later deep retrace
+// through the ORIGINAL stop is not booked as a phantom stop-out. The exit is a
+// LOSS only when the broker closed at the original stop ("sl"); a break-even,
+// trailed stop, partial, news or EOD flat simply drops the trade (it was not a
+// stop-out). Idempotent per signal id.
+func (l *Limits) RealExit(signalID string, wasStop bool) {
+	if signalID == "" {
+		return
+	}
+	for i := range l.open {
+		t := l.open[i]
+		if t.receipt != signalID {
+			continue
+		}
+		l.open = append(l.open[:i], l.open[i+1:]...)
+		if wasStop {
+			l.loss(t) // the ORIGINAL stop filled — a real stop-out loss
+		}
+		return
+	}
 }
 
 func (l *Limits) leg(side Side) *Leg {
