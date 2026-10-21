@@ -573,6 +573,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
 			return
 		}
+		// R7: a paused friend must NOT be restarted by rotate — restart would
+		// start it. Refuse and tell the owner to resume first.
+		if row.State == "paused" {
+			c.JSON(http.StatusConflict, gin.H{"error": "friend is paused — resume first before rotating its key"})
+			return
+		}
 		// U12: the rotated install code carries TUNNEL_IP — refuse when it is
 		// not a local address on this box.
 		if _, ok := tunnelIPOK(); !ok {
