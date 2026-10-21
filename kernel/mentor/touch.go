@@ -71,7 +71,10 @@ func touchesLevel(level Level, approach Side, bar market.Kline, cfg Config) bool
 //  1. WAIT for a literal touch (the candle's range reaches the level)
 //     [D3.3 p1 @ 00:13];
 //  2. only the FIRST touching candle matters — later candles never reclassify
-//     [D3.3 p1 @ 00:31; D5.3 p1 @ 20:40];
+//     [D3.3 p1 @ 00:31; D5.3 p1 @ 20:40]. The 'Thani' student variant — move
+//     the order to a LATER candle that touches and closes the same way, stop
+//     still on the first candle, size CUT — is DECLINED: the mentor's own
+//     method does not move the order [D5.3 p1 @22:14–24:30].
 //  3. REJECT = the candle closes BACK on the approach side → the setup layer
 //     places the stop order beyond the candle. Close THROUGH the line =
 //     the wrong side → CancelArm + LevelInvalid intents.
