@@ -324,3 +324,53 @@ func TestM151ResonanceWrongSideCloseOnce(t *testing.T) {
 		t.Fatalf("the wrong-side close must fire once, not %d times", n)
 	}
 }
+
+// m176 (Sonnet probe 8): a wrong-side BE close is a FULL FLATTEN — exactly ONE
+// close per candle, never one per open leg. The mutant (continue past the
+// through-market close instead of returning) sends N closes on an N-leg
+// position and turns this RED.
+func TestM176ResonanceWrongSideCloseOncePerPosition(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		legs [3]mentorLeg
+	}{
+		{"2-leg", [3]mentorLeg{
+			{SignalID: "s-1", Qty: 1, Stop: 9, Wire: 1},
+			{SignalID: "s-2", Qty: 1, Stop: 9, Wire: 2, Final: true},
+		}},
+		{"3-leg", [3]mentorLeg{
+			{SignalID: "s-1", Qty: 1, Stop: 9, Wire: 1},
+			{SignalID: "s-2", Qty: 1, Stop: 9, Wire: 2},
+			{SignalID: "s-3", Qty: 1, Stop: 9, Wire: 3, Final: true},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			at, _ := newDriveAT(t)
+			oldPrice := mentorLatestPriceSeam
+			mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 9.5, true } // below BE 10 → sell stop through the market
+			t.Cleanup(func() { mentorLatestPriceSeam = oldPrice })
+			var mu sync.Mutex
+			closes := 0
+			oldClose := mentorCloseLegAtMarketWire
+			mentorCloseLegAtMarketWire = func(*AutoTrader, *nttrader.TCPTrader, string, int) error {
+				mu.Lock()
+				closes++
+				mu.Unlock()
+				return nil
+			}
+			t.Cleanup(func() { mentorCloseLegAtMarketWire = oldClose })
+			p := &mentorLivePos{
+				Pos:  mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 10, Stop: 9, Target: 16, R: 2, Mode: "A-resonance", Scaled: true},
+				Legs: tc.legs,
+			}
+			at.mentorRegisterLivePos("s-1", p)
+			at.mentorExitDrivePos(nil, p, 11, 12, 10, 0)
+			mu.Lock()
+			n := closes
+			mu.Unlock()
+			if n != 1 {
+				t.Fatalf("a wrong-side BE must send exactly 1 close for a %s, got %d", tc.name, n)
+			}
+		})
+	}
+}

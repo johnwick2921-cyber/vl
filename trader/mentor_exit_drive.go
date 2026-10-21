@@ -1308,9 +1308,16 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 			// m151 (6): the broker holds a tighter stop; mentorJudgeAgainstBroker
 			// already wrote leg.Stop to it, so the belief matches.
 			brokerTighter = true
-		case errors.Is(err, errMentorLegClosed), errors.Is(err, errMentorStopThroughMarket):
-			// closed on its own TP / closed at market (the BE exit) — not a blocker.
+		case errors.Is(err, errMentorLegClosed):
+			// closed on its own TP — not a blocker.
 			at.mentorCount("stop_move_skipped_leg_closed")
+		case errors.Is(err, errMentorStopThroughMarket):
+			// m176 (Sonnet probe 8): the wrong-side BE closed the WHOLE symbol at
+			// market (the close wire is a full flatten) — the position is flat, so
+			// every remaining open leg would be a redundant close on an
+			// already-flat position. Stop the leg loop here.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return
 		case !mentorMoveApplied(err):
 			allApplied = false
 			if err != nil && !mentorMoveErrAlreadyLogged(err) {
