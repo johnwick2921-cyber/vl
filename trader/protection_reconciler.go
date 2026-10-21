@@ -70,6 +70,11 @@ type protectionVerdict struct {
 	Source  string // accepted_risk | plan
 	NeedQty int
 	HaveQty int
+	// PendingStuck (m203) is true when a protective stop has stayed in a
+	// pending state past the bounded deferral window: the verdict ran the
+	// normal adjudication (not the deferral) and the caller must raise the
+	// deduped P0 "protection_pending_stuck" plus a counter tick.
+	PendingStuck bool
 }
 
 // isProtectiveStopFor requires a stop order acting against the position.
@@ -188,7 +193,7 @@ func protectionFreshPrice(symbol string, now time.Time) (float64, bool) {
 // already through the FRESH last price flattens rather than places.
 func adjudicateProtection(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
 	acceptedStop *float64, planStop float64, mentorStop *float64, freshPrice *float64) protectionVerdict {
-	return adjudicateProtectionWith(symbol, side, posQty, book, haveBook, acceptedStop, planStop, mentorStop, nil, freshPrice)
+	return adjudicateProtectionWith(symbol, side, posQty, book, haveBook, acceptedStop, planStop, mentorStop, nil, freshPrice, "", time.Time{})
 }
 
 // knownBrokerStop is the TIGHTEST stop the broker is known to have held for
@@ -218,12 +223,46 @@ func stopThrough(side string, price, stop float64) bool {
 	return price >= stop
 }
 
+// pendingSLStuckWindow (m203) is how long a protective stop may sit in a
+// pending state before the protection reconciler stops deferring. The owner's
+// spec: "30 s (or 3 monitor passes, whichever is longer)" — the monitor beat is
+// 60 s, so the second pass already exceeds 30 s; the pins test 30 s.
+const pendingSLStuckWindow = 30 * time.Second
+
+// pendingSLFirstSeen (m203) records the first pass a pending -sl order was
+// seen, keyed by trader id + order name (the owner's "by order name"). A stop
+// that stays pending past pendingSLStuckWindow stops deferring the verdict.
+var pendingSLFirstSeen sync.Map // trader id + "|" + order name → *int64 (unix ms)
+
+// recordPendingSLSeen records the first sight of a pending -sl order and
+// reports whether it has been pending past the bound (stuck). The FIRST sight
+// is recorded and is not stuck.
+func recordPendingSLSeen(traderID, name string, now time.Time) (stuck bool) {
+	key := traderID + "|" + name
+	v, loaded := pendingSLFirstSeen.LoadOrStore(key, new(int64))
+	if !loaded {
+		atomic.StoreInt64(v.(*int64), now.UnixMilli())
+		return false
+	}
+	first := atomic.LoadInt64(v.(*int64))
+	return now.Sub(time.UnixMilli(first)) >= pendingSLStuckWindow
+}
+
+// clearPendingSLSeen drops the first-seen stamp for an order once it is no
+// longer pending (it went live, was cancelled, or left the book).
+func clearPendingSLSeen(traderID, name string) {
+	pendingSLFirstSeen.Delete(traderID + "|" + name)
+}
+
 // adjudicateProtectionWith is adjudicateProtection plus P2-1's known broker
-// stop. PURE. The price order for a non-mentor position is: the tightest stop
-// the broker is KNOWN to have held (never placed wider than it — a BE move must
-// never be undone by the net), else the accepted-risk stop, else the plan's.
+// stop. PURE except for the m203 pending-SL clock: traderID+now feed the
+// bounded deferral window for a stop stuck in a pending state. The price order
+// for a non-mentor position is: the tightest stop the broker is KNOWN to have
+// held (never placed wider than it — a BE move must never be undone by the
+// net), else the accepted-risk stop, else the plan's.
 func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
-	acceptedStop *float64, planStop float64, mentorStop *float64, brokerStop *knownBrokerStop, freshPrice *float64) protectionVerdict {
+	acceptedStop *float64, planStop float64, mentorStop *float64, brokerStop *knownBrokerStop, freshPrice *float64,
+	traderID string, now time.Time) (v protectionVerdict) {
 
 	if posQty <= 0 {
 		return protectionVerdict{Action: protectionOK, Why: "no open position"}
@@ -235,7 +274,7 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 
 	covered, liveStops, unreadable, unsized := 0, 0, 0, 0
 	localOnly, dying := 0, 0
-	pendingProtection := false
+	pendingProtection, pendingStuck := false, false
 	for i := range book {
 		o := book[i]
 		if !sameSymbolLoose(o.Symbol, symbol) {
@@ -271,8 +310,24 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 			// settles. (Signal-name scoping is unnecessary: the book is
 			// symbol+side filtered, and the account is netting — one position
 			// per symbol.)
+			//
+			// m203: that deferral is BOUNDED. A -sl that STAYS pending (a
+			// Submitted NT8 never accepts, a ChangePending that never settles,
+			// a lost order_update) must not defer forever — the position would
+			// sit with no real stop and no alert, worse than the double stop.
+			// After pendingSLStuckWindow the deferral stops: the verdict runs
+			// the normal adjudication (a live stop counts, this one doesn't)
+			// and PendingStuck is set so the caller raises a P0.
 			if namedStop && o.Liveness() == nt.LivenessPending {
-				pendingProtection = true
+				if traderID != "" && recordPendingSLSeen(traderID, o.Name, now) {
+					pendingStuck = true
+				} else {
+					pendingProtection = true
+				}
+			} else if namedStop && traderID != "" {
+				// The -sl is no longer pending (dying / local-only / terminal):
+				// any first-seen stamp it carried is stale.
+				clearPendingSLSeen(traderID, o.Name)
 			}
 			switch {
 			case o.IsHeldLocally():
@@ -281,6 +336,11 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 				dying++
 			}
 			continue
+		}
+		// Live at the exchange. A pending -sl that reached here has resolved
+		// (pin c: pending, then live inside the window → OK, no place, no P0).
+		if namedStop && traderID != "" {
+			clearPendingSLSeen(traderID, o.Name)
 		}
 		liveStops++
 		if o.Quantity <= 0 {
@@ -293,6 +353,12 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 	if pendingProtection {
 		return protectionVerdict{Action: protectionUnknown, NeedQty: posQty, HaveQty: covered,
 			Why: "a protective stop (-sl) for this position is mid-flight (ChangePending/ChangeSubmitted/Submitted/Initialized) — treating it as possibly live and taking no action this pass"}
+	}
+	if pendingStuck {
+		// Normal adjudication runs (the stuck stop is not coverage), and every
+		// verdict that follows carries PendingStuck so the caller raises the
+		// bounded-deferral P0 exactly once (deduped by event id).
+		defer func() { v.PendingStuck = true }()
 	}
 	if covered >= posQty {
 		return protectionVerdict{Action: protectionOK, NeedQty: posQty, HaveQty: covered,
@@ -434,6 +500,24 @@ func incOverCovered(traderID string) {
 // line (A11: READ, never assert).
 func OverCoveredFound(traderID string) int64 {
 	if v, ok := protectionOverCovered.Load(traderID); ok {
+		return atomic.LoadInt64(v.(*int64))
+	}
+	return 0
+}
+
+// protectionPendingStuck (m203) counts passes where a protective stop has
+// stayed pending past the bounded deferral window — the fail-open the bound
+// closes. Counted, never inferred (checklist 35).
+var protectionPendingStuck sync.Map // trader id → *int64
+
+func incPendingStuck(traderID string) {
+	v, _ := protectionPendingStuck.LoadOrStore(traderID, new(int64))
+	atomic.AddInt64(v.(*int64), 1)
+}
+
+// PendingStuckFound (m203) reads the stuck-pending counter for the boot line.
+func PendingStuckFound(traderID string) int64 {
+	if v, ok := protectionPendingStuck.Load(traderID); ok {
 		return atomic.LoadInt64(v.(*int64))
 	}
 	return 0
@@ -621,6 +705,28 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		have = false
 	}
 
+	// m203: bound the pending-SL first-seen map — drop stamps for orders that
+	// have LEFT the book entirely (rejected, filled, or the snapshot moved on).
+	// Without this, a later same-named order would read a stale stamp as stuck.
+	// Only with a FRESH book (a stale/absent book must not forget state, A24).
+	if have {
+		bookNames := make(map[string]bool, len(book))
+		for i := range book {
+			bookNames[book[i].Name] = true
+		}
+		prefix := at.id + "|"
+		pendingSLFirstSeen.Range(func(k, _ any) bool {
+			key, ok := k.(string)
+			if !ok || !strings.HasPrefix(key, prefix) {
+				return true
+			}
+			if !bookNames[strings.TrimPrefix(key, prefix)] {
+				pendingSLFirstSeen.Delete(k)
+			}
+			return true
+		})
+	}
+
 	for _, p := range positions {
 		symbol, _ := p["symbol"].(string)
 		side, _ := p["side"].(string)
@@ -643,13 +749,13 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		if fp, ok := protectionFreshPrice(symbol, now); ok {
 			freshPriceP = &fp
 		}
-		v := adjudicateProtection(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, freshPriceP)
+		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, at.id, now)
 		// P2-1: only a verdict that would PLACE a non-mentor stop asks for the
 		// tightest stop the broker is known to have held (the book-history read
 		// is a database scan; a protected position never pays for it).
 		if (v.Action == protectionPlace || (v.Action == protectionAlertOnly && v.HaveQty == 0)) && v.Source != "mentor_driver" && !hasMentorStop {
 			if ks, ok := at.knownBrokerStopFor(signalID, side, now); ok {
-				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, &ks, freshPriceP)
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, &ks, freshPriceP, at.id, now)
 			}
 		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
@@ -675,6 +781,19 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 	if v.Action != protectionFlatten && prevAction == "flatten" {
 		protectionFlattenEpisode.Delete(key)
 		protectionFlattenRetries.Delete(key)
+	}
+
+	// m203: a protective stop stuck in a pending state past the bound — the
+	// deferral stopped and the normal verdict below ran (place/OK/etc.). Raise
+	// the deduped P0 once and count every pass the condition is observed.
+	if v.PendingStuck {
+		incPendingStuck(at.id)
+		at.emitAlert("P0", "protection_pending_stuck",
+			fmt.Sprintf("stuckpending:%s:%s", symbol, side),
+			"A protective stop is stuck pending at the broker",
+			fmt.Sprintf("%s %s ×%d: a -sl order has stayed pending (ChangePending/ChangeSubmitted/Submitted/Initialized) past the %s deferral bound. Stopped deferring — %s",
+				side, symbol, qty, pendingSLStuckWindow, v.Why))
+		at.logErrorf("🚨 PENDING STOP STUCK (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 	}
 
 	switch v.Action {

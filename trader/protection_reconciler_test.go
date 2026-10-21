@@ -495,3 +495,89 @@ func TestProtectionOverCoveredRaisesP0(t *testing.T) {
 		t.Fatalf("over-covered counter = %d, want 1", OverCoveredFound(at.id))
 	}
 }
+
+// m203 — the m198 deferral is BOUNDED. A -sl that stays pending forever must
+// not defer forever (the fail-open: a position with no real stop and no alert).
+// After 30 s the deferral stops and the normal adjudication runs.
+// Mutant: delete the bound (the pendingStuck / recordPendingSLSeen branch) →
+// (b) RED (a 31 s pending would keep returning protectionUnknown instead of
+// protectionPlace).
+func TestProtectionPendingBoundM203(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	const traderID = "m203t"
+	sl := func(state string) nt.NT8Order {
+		return nt.NT8Order{Symbol: sym, Name: "m203-sl", Action: "sell", Type: "stop",
+			State: state, StopPrice: 29554, Quantity: 1}
+	}
+	seed := func(age time.Duration) {
+		var n int64 = now.Add(-age).UnixMilli()
+		pendingSLFirstSeen.Store(traderID+"|m203-sl", &n)
+	}
+
+	t.Run("(a) pending 5 s still defers", func(t *testing.T) {
+		seed(5 * time.Second)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		if v.Action != protectionUnknown {
+			t.Fatalf("pending 5 s must defer (unknown), got %s (%s)", v.Action, v.Why)
+		}
+		if v.PendingStuck {
+			t.Fatal("pending 5 s must NOT flag PendingStuck")
+		}
+	})
+
+	t.Run("(b) pending 31 s stops deferring", func(t *testing.T) {
+		seed(31 * time.Second)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("ChangePending")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		if v.Action != protectionPlace {
+			t.Fatalf("pending 31 s must run the normal adjudication (place), got %s (%s)", v.Action, v.Why)
+		}
+		if !v.PendingStuck {
+			t.Fatal("pending 31 s must flag PendingStuck")
+		}
+	})
+
+	t.Run("(c) pending then live inside the window", func(t *testing.T) {
+		seed(5 * time.Second)
+		v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl("Accepted")}, true, nil, 29500, nil, nil, nil, traderID, now)
+		if v.Action != protectionOK {
+			t.Fatalf("a live stop must be OK, got %s (%s)", v.Action, v.Why)
+		}
+		if v.PendingStuck {
+			t.Fatal("a live stop must NOT flag PendingStuck")
+		}
+		if _, ok := pendingSLFirstSeen.Load(traderID + "|m203-sl"); ok {
+			t.Fatal("the first-seen stamp must clear when the order goes live")
+		}
+	})
+}
+
+// m203 — the stuck P0 is deduped (fires once) and counted (every pass).
+func TestProtectionPendingStuckRaisesP0(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "m203-p0"
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	protectionPendingStuck.Delete(at.id) // fresh counter for this trader id
+	v := protectionVerdict{Action: protectionPlace, StopPx: 29500, Source: "plan", NeedQty: 1, PendingStuck: true, Why: "stuck 31 s"}
+	now := time.Now()
+	at.actOnProtection(v, "MNQ", "LONG", 1, "sig", "t", 0, now)
+	at.actOnProtection(v, "MNQ", "LONG", 1, "sig", "t", 0, now.Add(time.Minute))
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_pending_stuck" && strings.HasPrefix(a.EventID, "stuckpending:MNQ:LONG") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the stuck P0 must be deduped to ONE, got %d", n)
+	}
+	if PendingStuckFound(at.id) != 2 {
+		t.Fatalf("the stuck counter must tick every pass (2), got %d", PendingStuckFound(at.id))
+	}
+}
