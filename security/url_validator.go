@@ -153,6 +153,23 @@ func ValidateURL(rawURL string) error {
 	return nil
 }
 
+// ValidateHTTPSURL is ValidateURL plus a hard requirement that the scheme is
+// https (U19). Friend mode must never accept a plain-http custom endpoint —
+// the friend's key travels over it.
+func ValidateHTTPSURL(rawURL string) error {
+	if rawURL == "" {
+		return &SSRFError{URL: rawURL, Reason: "empty URL"}
+	}
+	parsed, err := url.Parse(rawURL)
+	if err != nil {
+		return &SSRFError{URL: rawURL, Reason: "invalid URL format"}
+	}
+	if !strings.EqualFold(parsed.Scheme, "https") {
+		return &SSRFError{URL: rawURL, Reason: fmt.Sprintf("scheme must be https, got %q", parsed.Scheme)}
+	}
+	return ValidateURL(rawURL)
+}
+
 // SafeHTTPClient returns an HTTP client with SSRF protection
 // It validates URLs and blocks requests to private networks
 // DialerKeepAlive is the ONE source of the TCP keepalive the safe client's

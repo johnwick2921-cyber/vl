@@ -185,11 +185,17 @@ func (s *Server) handleUpdateModelConfigs(c *gin.Context) {
 
 	// Update each model's configuration and track traders that need reload
 	tradersToReload := make(map[string]bool)
+	validator := security.ValidateURL
+	if config.FriendInstanceEnabled() {
+		// U19: friend mode refuses plain-http custom endpoints — the friend's
+		// key travels over that URL, so only https is acceptable.
+		validator = security.ValidateHTTPSURL
+	}
 	for modelID, modelData := range req.Models {
 		// SSRF protection: validate custom_api_url before storing
 		if modelData.CustomAPIURL != "" {
 			cleanURL := strings.TrimSuffix(modelData.CustomAPIURL, "#")
-			if err := security.ValidateURL(cleanURL); err != nil {
+			if err := validator(cleanURL); err != nil {
 				logger.Warnf("Invalid custom_api_url for model %s: %v", modelID, err)
 				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid HTTPS endpoint", modelID)})
 				return
@@ -318,7 +324,12 @@ func (s *Server) handleCreateModelEntry(c *gin.Context) {
 		return
 	}
 	if req.CustomAPIURL != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(req.CustomAPIURL, "#")); err != nil {
+		validator := security.ValidateURL
+		if config.FriendInstanceEnabled() {
+			// U19: friend mode refuses plain-http custom endpoints.
+			validator = security.ValidateHTTPSURL
+		}
+		if err := validator(strings.TrimSuffix(req.CustomAPIURL, "#")); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid custom_api_url: URL must be a valid HTTPS endpoint"})
 			return
 		}
