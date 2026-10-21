@@ -91,10 +91,10 @@ func TestN4PriorSessionReadWholeFromTheStore(t *testing.T) {
 		if v := got[KindPDVWAP]; len(v) != 1 || math.Abs(v[0]-30999.9259) > 0.0001 {
 			t.Fatalf("%02d:%02d pdVWAP = %v, want the whole session's [30999.9259] (the ring's tail gives 30983.70 at 08:30)", hm[0], hm[1], v)
 		}
-		want := map[LevelKind]float64{KindPOC: 30896.4823, KindVAH: 31058.4292, KindVAL: 30846.2229}
+		want := map[LevelKind]float64{KindPOC: 30891.875, KindVAH: 31060, KindVAL: 30848.75}
 		for k, w := range want {
 			if v := got[k]; len(v) != 1 || math.Abs(v[0]-w) > 0.0001 {
-				t.Fatalf("%02d:%02d prior-day %s = %v, want [%.4f] (whole session)", hm[0], hm[1], k, v, w)
+				t.Fatalf("%02d:%02d prior-day %s = %v, want [%.4f] (whole session, m239 SVP 1.25-pt rows)", hm[0], hm[1], k, v, w)
 			}
 		}
 	}
@@ -114,8 +114,8 @@ func TestN4FrontTruncatedPriorSessionIsRefused(t *testing.T) {
 	if len(got[KindPDVWAP]) != 0 || len(got[KindPOC]) != 0 || len(got[KindVAH]) != 0 || len(got[KindVAL]) != 0 {
 		t.Fatalf("a front-truncated prior session must be refused, drew pdVWAP %v POC %v VAH %v VAL %v", got[KindPDVWAP], got[KindPOC], got[KindVAH], got[KindVAL])
 	}
-	if len(got[KindSETT]) != 1 {
-		t.Fatalf("SETT reads the session's LAST bar and stays: %v", got[KindSETT])
+	if len(got[KindSETT]) != 0 {
+		t.Fatalf("m239: SETT is the native 1d close; with no daily source it must be absent (never the last 1m print): %v", got[KindSETT])
 	}
 	if PriorSessionReadCounts()["prior_session_refused_truncated"] <= before {
 		t.Fatal("the refusal must be counted")

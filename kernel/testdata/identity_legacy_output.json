@@ -6,7 +6,7 @@
       "lo": 20082.727898987778,
       "hi": 20082.727898987778,
       "label": "PDH",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": true
     },
     {
@@ -15,16 +15,16 @@
       "lo": 19917.12108744649,
       "hi": 19917.12108744649,
       "label": "PDL",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": true
     },
     {
       "kind": "PDC",
-      "price": 20036.555077631932,
-      "lo": 20036.555077631932,
-      "hi": 20036.555077631932,
+      "price": 20075.156272422686,
+      "lo": 20075.156272422686,
+      "hi": 20075.156272422686,
       "label": "PDC",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": true
     },
     {
@@ -33,7 +33,7 @@
       "lo": 20082.727898987778,
       "hi": 20082.727898987778,
       "label": "RTH-H",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": false
     },
     {
@@ -42,7 +42,7 @@
       "lo": 19918.72688425943,
       "hi": 19918.72688425943,
       "label": "RTH-L",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": false
     },
     {
@@ -10922,27 +10922,27 @@
     },
     {
       "kind": "POC",
-      "price": 20040.636167721033,
-      "lo": 20040.636167721033,
-      "hi": 20040.636167721033,
+      "price": 20040.625,
+      "lo": 20040.625,
+      "hi": 20040.625,
       "label": "POC",
       "origin_date": "2030-09-10",
       "htf": false
     },
     {
       "kind": "VAH",
-      "price": 20056.50682049374,
-      "lo": 20056.50682049374,
-      "hi": 20056.50682049374,
+      "price": 20063.75,
+      "lo": 20063.75,
+      "hi": 20063.75,
       "label": "VAH",
       "origin_date": "2030-09-10",
       "htf": false
     },
     {
       "kind": "VAL",
-      "price": 19951.62250651759,
-      "lo": 19951.62250651759,
-      "hi": 19951.62250651759,
+      "price": 19955,
+      "lo": 19955,
+      "hi": 19955,
       "label": "VAL",
       "origin_date": "2030-09-10",
       "htf": false
@@ -10954,15 +10954,6 @@
       "hi": 20000.509984758497,
       "label": "pdVWAP",
       "origin_date": "2030-09-10",
-      "htf": false
-    },
-    {
-      "kind": "SETT",
-      "price": 20075.156272422686,
-      "lo": 20075.156272422686,
-      "hi": 20075.156272422686,
-      "label": "SETT",
-      "origin_date": "2030-09-11",
       "htf": false
     },
     {
@@ -11098,17 +11089,17 @@
   "Pool": [
     {
       "kind": "POC",
-      "price": 20040.636167721033,
-      "lo": 20040.636167721033,
-      "hi": 20040.636167721033,
+      "price": 20040.625,
+      "lo": 20040.625,
+      "hi": 20040.625,
       "label": "POC",
       "origin_date": "2030-09-10",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 5,
-      "distance": -1.1941218603569723,
+      "confluence": 4,
+      "distance": -1.2052895813903888,
       "role": "magnet_meanrevert"
     },
     {
@@ -11122,24 +11113,9 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 6,
+      "confluence": 5,
       "distance": 3.940486964493175,
       "role": "magnet_meanrevert"
-    },
-    {
-      "kind": "PDC",
-      "price": 20036.555077631932,
-      "lo": 20036.555077631932,
-      "hi": 20036.555077631932,
-      "label": "PDC",
-      "origin_date": "2030-09-11",
-      "htf": true,
-      "grade": "A",
-      "fresh": "fresh",
-      "score": 1.6,
-      "confluence": 5,
-      "distance": -5.275211949458026,
-      "role": "pivot"
     },
     {
       "kind": "RN",
@@ -11152,24 +11128,9 @@
       "grade": "B",
       "fresh": "fresh",
       "score": 0.8800000000000001,
-      "confluence": 6,
+      "confluence": 5,
       "distance": 8.169710418609611,
       "role": "pivot"
-    },
-    {
-      "kind": "VAH",
-      "price": 20056.50682049374,
-      "lo": 20056.50682049374,
-      "hi": 20056.50682049374,
-      "label": "VAH",
-      "origin_date": "2030-09-10",
-      "htf": false,
-      "grade": "A",
-      "fresh": "fresh",
-      "score": 1.2800000000000002,
-      "confluence": 5,
-      "distance": 14.676530912351154,
-      "role": "react_zone"
     },
     {
       "kind": "RN",
@@ -11181,8 +11142,8 @@
       "htf": false,
       "grade": "B",
       "fresh": "fresh",
-      "score": 0.8800000000000001,
-      "confluence": 3,
+      "score": 0.77,
+      "confluence": 2,
       "distance": -16.83028958139039,
       "role": "pivot"
     },
@@ -11203,17 +11164,32 @@
       "role": "react_zone"
     },
     {
-      "kind": "SETT",
-      "price": 20075.156272422686,
-      "lo": 20075.156272422686,
-      "hi": 20075.156272422686,
-      "label": "SETT",
-      "origin_date": "2030-09-11",
+      "kind": "VAH",
+      "price": 20063.75,
+      "lo": 20063.75,
+      "hi": 20063.75,
+      "label": "VAH",
+      "origin_date": "2030-09-10",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
       "score": 1.2800000000000002,
-      "confluence": 5,
+      "confluence": 6,
+      "distance": 21.91971041860961,
+      "role": "react_zone"
+    },
+    {
+      "kind": "PDC",
+      "price": 20075.156272422686,
+      "lo": 20075.156272422686,
+      "hi": 20075.156272422686,
+      "label": "PDC",
+      "origin_date": "2030-09-10",
+      "htf": true,
+      "grade": "A",
+      "fresh": "fresh",
+      "score": 1.6,
+      "confluence": 6,
       "distance": 33.32598284129563,
       "role": "pivot"
     },
@@ -11229,7 +11205,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 5,
+      "confluence": 6,
       "distance": 37.72161086362394,
       "role": "react_zone"
     },
@@ -11254,7 +11230,7 @@
       "lo": 20082.727898987778,
       "hi": 20082.727898987778,
       "label": "PDH",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": true,
       "grade": "A",
       "fresh": "fresh",
@@ -11324,19 +11300,19 @@
       "role": "liquidity_break"
     },
     {
-      "kind": "VAL",
-      "price": 19951.62250651759,
-      "lo": 19951.62250651759,
-      "hi": 19951.62250651759,
-      "label": "VAL",
-      "origin_date": "2030-09-10",
+      "kind": "EQL",
+      "price": 19949.943847034094,
+      "lo": 19949.943847034094,
+      "hi": 19949.943847034094,
+      "label": "EQL",
+      "origin_date": "2030-09-12",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
-      "score": 1.2800000000000002,
+      "score": 1.1199999999999999,
       "confluence": 6,
-      "distance": -90.20778306380089,
-      "role": "react_zone"
+      "distance": -91.88644254729661,
+      "role": "liquidity_break"
     },
     {
       "kind": "SWG-L",
@@ -11391,7 +11367,7 @@
       "lo": 19918.72688425943,
       "hi": 19918.72688425943,
       "label": "RTH-L",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
@@ -11414,6 +11390,21 @@
       "confluence": 5,
       "distance": -129.67806124047638,
       "role": "react_zone"
+    },
+    {
+      "kind": "RN",
+      "price": 19900,
+      "lo": 19900,
+      "hi": 19900,
+      "label": "RN 19900 (100)",
+      "origin_date": "",
+      "htf": false,
+      "grade": "B",
+      "fresh": "fresh",
+      "score": 0.77,
+      "confluence": 2,
+      "distance": -141.8302895813904,
+      "role": "pivot"
     },
     {
       "kind": "IB-L",
@@ -11464,17 +11455,17 @@
   "Seated": [
     {
       "kind": "POC",
-      "price": 20040.636167721033,
-      "lo": 20040.636167721033,
-      "hi": 20040.636167721033,
+      "price": 20040.625,
+      "lo": 20040.625,
+      "hi": 20040.625,
       "label": "POC",
       "origin_date": "2030-09-10",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 5,
-      "distance": -1.1941218603569723,
+      "confluence": 4,
+      "distance": -1.2052895813903888,
       "role": "magnet_meanrevert"
     },
     {
@@ -11488,24 +11479,9 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.4400000000000002,
-      "confluence": 6,
+      "confluence": 5,
       "distance": 3.940486964493175,
       "role": "magnet_meanrevert"
-    },
-    {
-      "kind": "PDC",
-      "price": 20036.555077631932,
-      "lo": 20036.555077631932,
-      "hi": 20036.555077631932,
-      "label": "PDC",
-      "origin_date": "2030-09-11",
-      "htf": true,
-      "grade": "A",
-      "fresh": "fresh",
-      "score": 1.6,
-      "confluence": 5,
-      "distance": -5.275211949458026,
-      "role": "pivot"
     },
     {
       "kind": "RN",
@@ -11518,24 +11494,9 @@
       "grade": "B",
       "fresh": "fresh",
       "score": 0.8800000000000001,
-      "confluence": 6,
+      "confluence": 5,
       "distance": 8.169710418609611,
       "role": "pivot"
-    },
-    {
-      "kind": "VAH",
-      "price": 20056.50682049374,
-      "lo": 20056.50682049374,
-      "hi": 20056.50682049374,
-      "label": "VAH",
-      "origin_date": "2030-09-10",
-      "htf": false,
-      "grade": "A",
-      "fresh": "fresh",
-      "score": 1.2800000000000002,
-      "confluence": 5,
-      "distance": 14.676530912351154,
-      "role": "react_zone"
     },
     {
       "kind": "RN",
@@ -11547,8 +11508,8 @@
       "htf": false,
       "grade": "B",
       "fresh": "fresh",
-      "score": 0.8800000000000001,
-      "confluence": 3,
+      "score": 0.77,
+      "confluence": 2,
       "distance": -16.83028958139039,
       "role": "pivot"
     },
@@ -11569,17 +11530,32 @@
       "role": "react_zone"
     },
     {
-      "kind": "SETT",
-      "price": 20075.156272422686,
-      "lo": 20075.156272422686,
-      "hi": 20075.156272422686,
-      "label": "SETT",
-      "origin_date": "2030-09-11",
+      "kind": "VAH",
+      "price": 20063.75,
+      "lo": 20063.75,
+      "hi": 20063.75,
+      "label": "VAH",
+      "origin_date": "2030-09-10",
       "htf": false,
       "grade": "A",
       "fresh": "fresh",
       "score": 1.2800000000000002,
-      "confluence": 5,
+      "confluence": 6,
+      "distance": 21.91971041860961,
+      "role": "react_zone"
+    },
+    {
+      "kind": "PDC",
+      "price": 20075.156272422686,
+      "lo": 20075.156272422686,
+      "hi": 20075.156272422686,
+      "label": "PDC",
+      "origin_date": "2030-09-10",
+      "htf": true,
+      "grade": "A",
+      "fresh": "fresh",
+      "score": 1.6,
+      "confluence": 6,
       "distance": 33.32598284129563,
       "role": "pivot"
     },
@@ -11595,7 +11571,7 @@
       "grade": "A",
       "fresh": "fresh",
       "score": 1.36,
-      "confluence": 5,
+      "confluence": 6,
       "distance": 37.72161086362394,
       "role": "react_zone"
     },
@@ -11620,7 +11596,7 @@
       "lo": 20082.727898987778,
       "hi": 20082.727898987778,
       "label": "PDH",
-      "origin_date": "2030-09-11",
+      "origin_date": "2030-09-10",
       "htf": true,
       "grade": "A",
       "fresh": "fresh",
@@ -11643,9 +11619,24 @@
       "confluence": 5,
       "distance": 48.480003032818786,
       "role": "react_zone"
+    },
+    {
+      "kind": "RN",
+      "price": 19975,
+      "lo": 19975,
+      "hi": 19975,
+      "label": "RN 19975 (25)",
+      "origin_date": "",
+      "htf": false,
+      "grade": "B",
+      "fresh": "fresh",
+      "score": 0.77,
+      "confluence": 2,
+      "distance": -66.83028958139039,
+      "role": "pivot"
     }
   ],
   "Price": 20041.83028958139,
   "DATR": 165.60681154128906,
-  "Rendered": "MAP (merged references, nearest-first; price 20041.83):\n  20040.64  POC                                          A  target           -1.19 pt / 0.06 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.2 ATR  not-an-entry: nearest opposing reference 5.13 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20036.56  PDC                                          A  target           -5.28 pt / 0.26 ATR  not-an-entry: nearest opposing reference 4.08 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20050     RN 20050 (50)                                B  target           +8.17 pt / 0.41 ATR  not-an-entry: nearest opposing reference 4.23 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20056.51  VAH                                          A  target           +14.68 pt / 0.73 ATR  not-an-entry: nearest opposing reference 6.51 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20025     RN 20025 (25)                                B  target           -16.83 pt / 0.84 ATR  not-an-entry: nearest opposing reference 11.56 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 0.93 ATR  not-an-entry: nearest opposing reference 3.95 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20075.16  SETT                                         A  target           +33.33 pt / 1.67 ATR  not-an-entry: nearest opposing reference 14.7 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 1.89 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20001.23  VWAP                                         A  target           -40.6 pt / 2.03 ATR  not-an-entry: nearest opposing reference 23.77 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.04 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20090.31  VWAP+2σ                                      A  target           +48.48 pt / 2.42 ATR  not-an-entry: nearest opposing reference 7.58 pt away, under the 30 pt minimum  min_tgt≥60pts\nENTRY SHORTLIST: none — no reference has a plausible target at the resolved minimum.\nLevels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.\n"
+  "Rendered": "MAP (merged references, nearest-first; price 20041.83):\n  20040.62  POC                                          A  target           -1.21 pt / 0.06 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20045.77  VWAP+1σ                                      A  target           +3.94 pt / 0.2 ATR  not-an-entry: nearest opposing reference 5.15 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20050     RN 20050 (50)                                B  target           +8.17 pt / 0.41 ATR  not-an-entry: nearest opposing reference 4.23 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20025     RN 20025 (25)                                B  target           -16.83 pt / 0.84 ATR  not-an-entry: nearest opposing reference 15.62 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20060.46  SWG-H·5m · SWG-H·15m                         A  target           +18.63 pt / 0.93 ATR  not-an-entry: nearest opposing reference 10.46 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20063.75  VAH                                          A  target           +21.92 pt / 1.1 ATR  not-an-entry: nearest opposing reference 3.29 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20075.16  PDC                                          A  target           +33.33 pt / 1.67 ATR  not-an-entry: nearest opposing reference 11.41 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20079.55  SWG-H·5m · SWG-H·15m · LDN-H                 A  target           +37.72 pt / 1.89 ATR  not-an-entry: nearest opposing reference 4.4 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20001.23  VWAP                                         A  target           -40.6 pt / 2.03 ATR  not-an-entry: nearest opposing reference 23.77 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20082.73  PDH · SWG-H·5m · SWG-H·15m                   A  target           +40.9 pt / 2.04 ATR  not-an-entry: nearest opposing reference 3.18 pt away, under the 30 pt minimum  min_tgt≥60pts\n  20090.31  VWAP+2σ                                      A  target           +48.48 pt / 2.42 ATR  not-an-entry: nearest opposing reference 7.58 pt away, under the 30 pt minimum  min_tgt≥60pts\n  19975     RN 19975 (25)                                B  target           -66.83 pt / 3.34 ATR  not-an-entry: nearest opposing reference 26.23 pt away, under the 30 pt minimum  min_tgt≥60pts\nENTRY SHORTLIST: none — no reference has a plausible target at the resolved minimum.\nLevels excluded from the shortlist remain on the map as target/obstacle/invalidation — exclusion is not invalidation.\n"
 }

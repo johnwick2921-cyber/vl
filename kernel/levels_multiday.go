@@ -12,7 +12,8 @@ import (
 // Pure + deterministic: given intraday bars, the session registry, and `now`,
 // derive the day-trader map's structural levels (facts=Go). Bars are tagged by
 // CME session (via the P0.3 registry) and grouped by CT calendar day / futures
-// session-day, per the contract's level naming (PDH = calendar-day only).
+// session-day, per the contract's level naming (PDH/PDL/PDC = the prior CME
+// session, 17:00→16:00 CT — m239).
 //
 // Only levels that HAVE data are emitted — a missing window (cold start, thin
 // cache) simply omits that level, which the WARMING badge surfaces honestly. No
@@ -28,7 +29,7 @@ type calDayAgg struct {
 	rthCount        int
 	rthHigh, rthLow float64
 	hasRTH          bool
-	count           int // closed bars in this calendar-day bucket
+	count           int // closed bars in this CME session-day bucket (m239)
 }
 
 func newCalDayAgg() *calDayAgg {
@@ -39,14 +40,13 @@ func newCalDayAgg() *calDayAgg {
 }
 
 // ExtractMultiDayLevels returns the structural map levels relative to `now`:
-// PDH/PDL/PDC (prior calendar day), RTH-H/L (prior day's NY session), AS/LDN/ON
-// (the current overnight of now's futures session-day), and PW/PM (prior week /
-// month). Closed bars only.
+// PDH/PDL/PDC (prior CME session day, 17:00→16:00 CT — m239), RTH-H/L (that
+// session's NY session), AS/LDN/ON (the current overnight of now's futures
+// session-day), and PW/PM (prior week / month). Closed bars only.
 func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Time) []DetectedLevel {
 	loc := chicago()
 	nowMs := now.UnixMilli()
 	nowCT := now.In(loc)
-	todayCal := nowCT.Format("2006-01-02")
 	nowFut := CMESessionDayKey(now)
 
 	weekStart := startOfWeekCT(nowCT)
@@ -56,7 +56,8 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 	priorMonthStart := monthStart.AddDate(0, -1, 0)
 	priorMonthEnd := monthStart
 
-	cal := map[string]*calDayAgg{}
+	cal := map[string]*calDayAgg{} // CME session-day buckets (PDH/PDL/PDC/RTH)
+	calDays := map[string]int{}    // calendar-day bar counts (PW/PM coverage only)
 	var asH, asL, ldnH, ldnL float64 = math.Inf(-1), math.Inf(1), math.Inf(-1), math.Inf(1)
 	var hasAS, hasLDN bool
 	var asClose, ldnClose, pwClose, pmClose int64
@@ -71,12 +72,16 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 			continue // closed bars only
 		}
 		bt := time.UnixMilli(b.OpenTime).In(loc)
-		calKey := bt.Format("2006-01-02")
+		// m239: PDH/PDL/PDC bucket by the CME session day (17:00→16:00 CT), NOT
+		// the calendar day — a calendar bucket mixes the prior session's evening
+		// into the next day's levels. PDC = that session's last close.
+		sessKey := CMESessionDayKey(bt)
+		calDays[bt.Format("2006-01-02")]++
 
-		a := cal[calKey]
+		a := cal[sessKey]
 		if a == nil {
 			a = newCalDayAgg()
-			cal[calKey] = a
+			cal[sessKey] = a
 		}
 		a.count++
 		if b.High > a.high {
@@ -177,17 +182,22 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 	// off a Friday-afternoon-only bucket; the true prior-day low was ~29116.
 	// A day with < priorDayMinBars closed bars is OMITTED — the WARMING badge
 	// surfaces the honest gap instead of a fabricated anchor.
-	if priorCal := mostRecentPriorDay(cal, todayCal, priorDayMinBars); priorCal != "" {
-		a := cal[priorCal]
+	// Prior CME session day (PDH/PDL/PDC + that session's RTH). Coverage-guarded
+	// (P0.4-F, 2026-08-25): a truncated bucket — bot down part of the day, or a
+	// fresh boot whose 1m ring only reaches the prior session's afternoon — yields
+	// a WRONG low/high/close. A session with < priorDayMinBars closed bars is
+	// OMITTED.
+	if priorSess := mostRecentPriorDay(cal, nowFut, priorDayMinBars); priorSess != "" {
+		a := cal[priorSess]
 		out = append(out,
-			lineLevel(KindPDH, a.high, "PDH", priorCal, true),
-			lineLevel(KindPDL, a.low, "PDL", priorCal, true),
-			lineLevel(KindPDC, a.closePx, "PDC", priorCal, true),
+			lineLevel(KindPDH, a.high, "PDH", priorSess, true),
+			lineLevel(KindPDL, a.low, "PDL", priorSess, true),
+			lineLevel(KindPDC, a.closePx, "PDC", priorSess, true),
 		)
 		if a.hasRTH {
 			out = append(out,
-				lineLevel(KindRTHH, a.rthHigh, "RTH-H", priorCal, false),
-				lineLevel(KindRTHL, a.rthLow, "RTH-L", priorCal, false),
+				lineLevel(KindRTHH, a.rthHigh, "RTH-H", priorSess, false),
+				lineLevel(KindRTHL, a.rthLow, "RTH-L", priorSess, false),
 			)
 		}
 	}
@@ -221,14 +231,14 @@ func ExtractMultiDayLevels(bars []market.Kline, reg SessionRegistry, now time.Ti
 	// the bogus PWL 29220.25 that seven NY plans traded as overhead supply.
 	// These HTF anchors need real multi-day coverage; thin buckets are
 	// omitted (the durable session-profile store is their proper source).
-	if hasPW && pwCovered(cal, priorWeekStart, priorWeekEnd, priorWeekMinBars) {
+	if hasPW && pwCovered(calDays, priorWeekStart, priorWeekEnd, priorWeekMinBars) {
 		wLabel := priorWeekStart.Format("2006-01-02")
 		out = append(out,
 			lineLevel(KindPWH, pwH, "PWH", wLabel, true),
 			lineLevel(KindPWL, pwL, "PWL", wLabel, true),
 		)
 	}
-	if hasPM && pmCovered(cal, priorMonthStart, priorMonthEnd, priorMonthMinBars) {
+	if hasPM && pmCovered(calDays, priorMonthStart, priorMonthEnd, priorMonthMinBars) {
 		mLabel := priorMonthStart.Format("2006-01")
 		out = append(out,
 			lineLevel(KindPMH, pmH, "PMH", mLabel, true),
@@ -288,25 +298,25 @@ func mostRecentPriorDay(cal map[string]*calDayAgg, todayCal string, minBars int)
 }
 
 // pwCovered reports whether the [start, end) week window has ≥ minBars closed
-// bars across its calendar-day buckets.
-func pwCovered(cal map[string]*calDayAgg, start, end time.Time, minBars int) bool {
+// bars across its calendar-day counts.
+func pwCovered(calDays map[string]int, start, end time.Time, minBars int) bool {
 	n := 0
-	for k, a := range cal {
+	for k, c := range calDays {
 		d, err := time.ParseInLocation("2006-01-02", k, chicago())
 		if err != nil {
 			continue
 		}
 		if !d.Before(start) && d.Before(end) {
-			n += a.count
+			n += c
 		}
 	}
 	return n >= minBars
 }
 
 // pmCovered reports whether the [start, end) month window has ≥ minBars closed
-// bars across its calendar-day buckets.
-func pmCovered(cal map[string]*calDayAgg, start, end time.Time, minBars int) bool {
-	return pwCovered(cal, start, end, minBars)
+// bars across its calendar-day counts.
+func pmCovered(calDays map[string]int, start, end time.Time, minBars int) bool {
+	return pwCovered(calDays, start, end, minBars)
 }
 
 // startOfWeekCT returns Monday 00:00 of t's ISO week, in t's location.

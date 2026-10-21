@@ -81,7 +81,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'PDH/PDL/PDC',
-          def: 'Prior-day high/low/close — the dealing-range anchors.',
+          def: 'Prior CME session (17:00→16:00 CT) high/low/close — the dealing-range anchors (m239: the session day, never the calendar day).',
         },
         {
           term: 'Plan mode',

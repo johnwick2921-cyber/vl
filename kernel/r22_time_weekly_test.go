@@ -217,13 +217,15 @@ func TestR22MondayPriorDayIsFridaysSession(t *testing.T) {
 	// from that tail (the rescan's oracle: +11.33 against the whole session at
 	// 08:30); with no store to read the whole session from, both are now
 	// REFUSED rather than drawn wrong. The whole-session read is pinned in
-	// levels_volume_n4_test.go. SETT (the session's LAST bar) still proves the
-	// prior session picked is FRIDAY's, not Saturday's.
+	// levels_volume_n4_test.go.
+	// m239: SETT is now the NATIVE 1d close (the ~15:00 CT settle), never the
+	// session's last 1m print. The symbol-less path has no daily source, so SETT
+	// is absent here (the native-settle path is pinned separately).
 	if v := got[KindPDVWAP]; len(v) != 0 {
 		t.Errorf("Monday pdVWAP = %v from a front-truncated Friday session; want it refused (N4)", v)
 	}
-	if v := got[KindSETT]; len(v) != 1 || v[0] != 31123.25 {
-		t.Errorf("Monday SETT = %v; want [31123.25] (Friday 15:59 close)", v)
+	if v := got[KindSETT]; len(v) != 0 {
+		t.Errorf("Monday SETT = %v; want [] (m239: no native 1d close source in the symbol-less path)", v)
 	}
 	if len(got[KindVAH]) != 0 || len(got[KindVAL]) != 0 {
 		t.Errorf("Monday prior-day profile drawn from a front-truncated Friday session; want it refused (N4)")
