@@ -16,8 +16,9 @@ import (
 // two safety invariants S9 demands: verify BEFORE write, and flat BEFORE swap.
 
 type flowRecorder struct {
-	execs []string
-	lines []string
+	execs  []string
+	lines  []string
+	prints []string
 }
 
 func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
@@ -55,6 +56,7 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.lines = append(rec.lines, p)
 			return "", nil
 		},
+		print:   func(l string) { rec.prints = append(rec.prints, l) },
 		tempDir: func() (string, error) { return t.TempDir(), nil },
 		verifyMsiSigner: func(string) (msiSignature, error) {
 			return msiSignature{Status: "Valid", Subject: "CN=Tailscale Inc., O=Tailscale Inc."}, nil
@@ -402,5 +404,84 @@ func TestProbeFlat(t *testing.T) {
 				t.Fatalf("q=%v want %v", q, c.wantQ)
 			}
 		})
+	}
+}
+
+// TestRunFirstRunPrintsSixStepsInOrder — CTO "instruction fix": the setup
+// window must tell the (non-technical) owner what to do at every step, in plain
+// English, numbered [1/6]…[6/6], in order. MUTANT: drop or reorder a step
+// header → this test RED.
+func TestRunFirstRunPrintsSixStepsInOrder(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+	calls := 0
+	d.readLine = func(p string) (string, error) {
+		rec.lines = append(rec.lines, p)
+		calls++
+		if calls == 1 {
+			return encodeInstallCode(ic), nil
+		}
+		return "", nil
+	}
+
+	if err := runFirstRun(context.Background(), d); err != nil {
+		t.Fatalf("runFirstRun failed: %v", err)
+	}
+
+	var headers []string
+	for _, l := range rec.prints {
+		if len(l) >= 5 && l[0] == '[' && l[2] == '/' && l[4] == ']' {
+			headers = append(headers, l)
+		}
+	}
+	want := []string{"[1/6]", "[2/6]", "[3/6]", "[4/6]", "[5/6]", "[6/6]"}
+	if len(headers) != len(want) {
+		t.Fatalf("expected %d step headers, got %d: %q", len(want), len(headers), rec.prints)
+	}
+	for i, h := range headers {
+		if !strings.HasPrefix(h, want[i]) {
+			t.Fatalf("step headers out of order: got %q, want %q first", headers, want[i])
+		}
+	}
+	joined := strings.Join(rec.prints, "\n")
+	for _, needle := range []string{
+		"Tailscale is already installed ✓",
+		"Approved ✓",
+		"Add-on verified ✓",
+		"Done ✓. If NinjaTrader is open, close it and open it again.",
+		"Press Enter to close",
+	} {
+		if !strings.Contains(joined, needle) {
+			t.Fatalf("missing %q in step output:\n%s", needle, joined)
+		}
+	}
+}
+
+// TestPauseOnErrorPrintsPhotoLine — CTO error screen: "Something went wrong:
+// <reason>… Send a photo of this window to the owner." + "Press Enter to
+// close". MUTANT: drop the "Send a photo" line → this test RED.
+func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
+	var prints []string
+	d := deps{
+		print:    func(l string) { prints = append(prints, l) },
+		readLine: func(p string) (string, error) { return "", nil },
+	}
+	pauseOnError(d, "boom")
+	joined := strings.Join(prints, "\n")
+	if !strings.Contains(joined, "Something went wrong: boom") {
+		t.Fatalf("error screen missing the reason: %q", joined)
+	}
+	if !strings.Contains(joined, "Nothing was changed on NinjaTrader") {
+		t.Fatalf("error screen missing the 'Nothing was changed' line: %q", joined)
+	}
+	if !strings.Contains(joined, "Send a photo of this window to the owner") {
+		t.Fatalf("error screen missing the 'Send a photo' line: %q", joined)
+	}
+	if !strings.Contains(joined, "Press Enter to close") {
+		t.Fatalf("error screen missing 'Press Enter to close': %q", joined)
 	}
 }

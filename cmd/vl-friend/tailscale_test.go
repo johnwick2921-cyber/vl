@@ -266,7 +266,10 @@ func TestNeverPrintSecrets(t *testing.T) {
 
 func TestPauseOnErrorWaitsForEnter(t *testing.T) {
 	lines := []string{}
-	d := deps{readLine: func(p string) (string, error) { lines = append(lines, p); return "", nil }}
+	d := deps{
+		print:    func(string) {},
+		readLine: func(p string) (string, error) { lines = append(lines, p); return "", nil },
+	}
 	pauseOnError(d, "boom")
 	if len(lines) != 1 {
 		t.Fatalf("pauseOnError must wait once for Enter, got %d reads", len(lines))

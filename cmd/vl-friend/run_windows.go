@@ -61,6 +61,7 @@ func realDeps() deps {
 			}
 			return strings.TrimSpace(s), nil
 		},
+		print:          func(line string) { fmt.Println(line) },
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
@@ -120,23 +121,9 @@ func runInner(ctx context.Context, d deps) error {
 		return err
 	}
 
-	// First run: no connect.json yet → ask for the install code.
+	// First run: no connect.json yet → the six-step setup console flow.
 	if _, err := d.readFile(connectJSONPath(home)); err != nil {
-		code, err := d.readLine("Paste your VL install code: ")
-		if err != nil {
-			return err
-		}
-		ic, err := ParseInstallCode(code)
-		if err != nil {
-			// Never echo the code (it holds ts_authkey + connect_key).
-			return fmt.Errorf("invalid install code — check the copy you were sent")
-		}
-		secrets := []string{ic.TSAuthKey, ic.ConnectKey}
-		if err := installFirstRun(ctx, d, code); err != nil {
-			return fmt.Errorf("install failed: %s", redactSecrets(err.Error(), secrets...))
-		}
-		fmt.Println("VL installed — open the VL icon on your desktop.")
-		return nil
+		return runFirstRun(ctx, d)
 	}
 
 	// Every start: check for updates from the friend's own bot.

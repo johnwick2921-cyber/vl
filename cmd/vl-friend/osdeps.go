@@ -30,6 +30,9 @@ type deps struct {
 	// readLine prompts the user (install code on first run, update yes/no) and
 	// returns the trimmed answer. autoApprove=true bypasses it in tests.
 	readLine func(prompt string) (string, error)
+	// print writes one plain-English console line (step headers, done lines,
+	// the error screen). Production: fmt.Println; tests: a recorder.
+	print func(line string)
 	// allowedSigners is the trust anchor the flow verifies manifests against:
 	// the embedded friend-distribution public key in production, a test key in
 	// tests. Empty means "no trust" → every signature refuses.

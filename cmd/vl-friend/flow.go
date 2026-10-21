@@ -96,7 +96,9 @@ func fetchVerifiedAddon(ctx context.Context, d deps, base string, m FriendManife
 }
 
 // installFirstRun runs the first-run install: (a) Tailscale, (b) connect.json,
-// (c) download + verify + place the add-on, (d) the desktop shortcut.
+// (c) download + verify + place the add-on, (d) the desktop shortcut. It prints
+// the plain-English step screens [2/6]…[6/6] (the non-technical-owner order);
+// [1/6] and the final "Press Enter to close" live in runFirstRun.
 func installFirstRun(ctx context.Context, d deps, code string) error {
 	ic, err := ParseInstallCode(code)
 	if err != nil {
@@ -106,13 +108,32 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err != nil {
 		return err
 	}
-	if err := ensureTailscale(ctx, d, ic.TSAuthKey); err != nil {
+
+	// [2/6] Tailscale — install (UAC) or note it is already present.
+	d.print("[2/6] Installing Tailscale (the private connection). Windows will ask for permission — click YES.")
+	already, err := ensureTailscaleInstalled(ctx, d)
+	if err != nil {
 		return err
 	}
+	if already {
+		d.print("Tailscale is already installed ✓")
+	}
+
+	// [3/6] Join the tailnet and wait for the owner's approval (if enabled).
+	d.print("[3/6] Connecting this PC… Waiting for the owner to approve it. Tell the owner: 'my PC is waiting for approval'. This window waits up to 15 minutes.")
+	if err := tailscaleConnect(ctx, d, ic.TSAuthKey); err != nil {
+		return err
+	}
+	d.print("Approved ✓")
+
 	if err := writeConnectJSON(d, home, ic); err != nil {
 		return err
 	}
 	base := baseURLFromInstallCode(ic)
+
+	// [4/6] Download the add-on and verify the signed manifest + SHA-256 BEFORE
+	// anything is written.
+	d.print("[4/6] Downloading the VL add-on and checking its signature…")
 	m, err := fetchManifest(ctx, d, base)
 	if err != nil {
 		return err
@@ -121,6 +142,10 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err != nil {
 		return err
 	}
+	d.print("Add-on verified ✓")
+
+	// [5/6] Place the verified add-on into NinjaTrader.
+	d.print("[5/6] Installing the add-on into NinjaTrader…")
 	if err := d.mkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
 		return err
 	}
@@ -130,7 +155,37 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err := writeInstalledState(d, home, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
 		return err
 	}
-	return createDesktopShortcut(ctx, d, ic)
+	d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
+
+	// [6/6] Desktop shortcut, then the final screen.
+	if err := createDesktopShortcut(ctx, d, ic); err != nil {
+		return err
+	}
+	d.print("[6/6] All done ✓. A VL icon is on your desktop. Double-click it, create your login, then add your AI key, your strategy and a trader on your SIM account.")
+	return nil
+}
+
+// runFirstRun is the whole first-run console flow: the [1/6] install-code
+// prompt, installFirstRun ([2/6]…[6/6]), then "Press Enter to close". It lives
+// here (not run_windows.go) so a Linux test can assert the step order.
+func runFirstRun(ctx context.Context, d deps) error {
+	d.print("[1/6] Paste the install code you were sent, then press Enter.")
+	code, err := d.readLine("")
+	if err != nil {
+		return err
+	}
+	ic, err := ParseInstallCode(code)
+	if err != nil {
+		// Never echo the code (it holds ts_authkey + connect_key).
+		return fmt.Errorf("invalid install code — check the copy you were sent")
+	}
+	secrets := []string{ic.TSAuthKey, ic.ConnectKey}
+	if err := installFirstRun(ctx, d, code); err != nil {
+		return fmt.Errorf("install failed: %s", redactSecrets(err.Error(), secrets...))
+	}
+	d.print("Press Enter to close")
+	_, _ = d.readLine("")
+	return nil
 }
 
 // ensureTailscale installs Tailscale silently when missing, then joins the
@@ -193,13 +248,14 @@ func redactSecrets(s string, secrets ...string) string {
 	return s
 }
 
-// pauseOnError prints the (already-redacted) error and waits for Enter so a
-// double-clicked console window does not close before the user reads it (P0 b).
-// Testable on Linux through the readLine seam.
+// pauseOnError prints the (already-redacted) error screen and waits for Enter
+// so a double-clicked console window does not close before the user reads it
+// (P0 b). The text tells a non-technical user exactly what to do: nothing was
+// changed on NinjaTrader, and to send a photo to the owner. Testable on Linux
+// through the print + readLine seams.
 func pauseOnError(d deps, msg string) {
-	fmt.Println("VL-Setup error:", msg)
-	fmt.Println()
-	fmt.Println("Press Enter to close")
+	d.print("Something went wrong: " + msg + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner.")
+	d.print("Press Enter to close")
 	_, _ = d.readLine("")
 }
 
@@ -257,10 +313,10 @@ func waitTailscaleReady(ctx context.Context, d deps) error {
 	}
 }
 
-// tailscaleUp joins the tailnet with the one-time auth key: it refuses to
+// tailscaleConnect joins the tailnet with the one-time auth key: it refuses to
 // --force-reauth over an existing login to ANOTHER network, and then waits
 // (bounded) for device approval if the owner has approval enabled.
-func tailscaleUp(ctx context.Context, d deps, authKey string) error {
+func tailscaleConnect(ctx context.Context, d deps, authKey string) error {
 	state, err := tailscaleBackendState(ctx, d)
 	if err == nil && state != "NeedsLogin" {
 		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
@@ -274,22 +330,17 @@ func tailscaleUp(ctx context.Context, d deps, authKey string) error {
 	return waitTailscaleApproved(ctx, d)
 }
 
-// waitTailscaleApproved polls BackendState until Running; while NeedsMachineAuth
-// it announces (once) that the owner must approve the device, then keeps polling
-// up to a bounded deadline — never silently fails.
+// waitTailscaleApproved polls BackendState until Running, up to a bounded
+// deadline — never silently fails. The [3/6] screen already tells the user the
+// owner must approve the device, so this only polls.
 func waitTailscaleApproved(ctx context.Context, d deps) error {
 	t := time.NewTicker(tailscaleApprovalPoll)
 	defer t.Stop()
 	deadline := time.Now().Add(tailscaleApprovalWait)
-	announced := false
 	for {
 		state, err := tailscaleBackendState(ctx, d)
 		if err == nil && state == "Running" {
 			return nil
-		}
-		if err == nil && state == "NeedsMachineAuth" && !announced {
-			fmt.Println("Waiting for the owner to approve this PC in Tailscale…")
-			announced = true
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("Tailscale device was not approved within %s", tailscaleApprovalWait)
@@ -302,41 +353,51 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 	}
 }
 
-// ensureTailscale makes sure the friend's PC is on the owner's tailnet:
-// download + verify + silently install Tailscale when missing, then join with
-// the one-time auth key.
-func ensureTailscale(ctx context.Context, d deps, authKey string) error {
+// ensureTailscaleInstalled downloads + verifies + silently installs Tailscale
+// when it is not already present, then waits for it to become ready. It reports
+// whether Tailscale was already installed so the caller can print the skip line
+// ([2/6]). It does NOT join the tailnet.
+func ensureTailscaleInstalled(ctx context.Context, d deps) (bool, error) {
 	if _, err := tailscaleBackendState(ctx, d); err == nil {
-		return tailscaleUp(ctx, d, authKey)
+		return true, nil
 	}
 	msiPath, err := downloadTailscaleMSI(ctx, d)
 	if err != nil {
-		return err
+		return false, err
 	}
 	code, err := installTailscaleElevated(ctx, d, msiPath)
 	if err != nil {
-		return err
+		return false, err
 	}
 	// REVIEW-BACK 1: 0 or 3010 (reboot required) = ok; 1223 = the user clicked No
 	// on the UAC prompt.
 	switch code {
 	case 0, 3010:
 	case 1223:
-		return fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
+		return false, fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
 	default:
-		return fmt.Errorf("Tailscale install failed (exit %d)", code)
+		return false, fmt.Errorf("Tailscale install failed (exit %d)", code)
 	}
 	if err := waitTailscaleReady(ctx, d); err != nil {
+		return false, err
+	}
+	return false, nil
+}
+
+// ensureTailscale keeps the combined install + join shape the tests exercise:
+// install when missing, then join with the one-time auth key.
+func ensureTailscale(ctx context.Context, d deps, authKey string) error {
+	if _, err := ensureTailscaleInstalled(ctx, d); err != nil {
 		return err
 	}
-	return tailscaleUp(ctx, d, authKey)
+	return tailscaleConnect(ctx, d, authKey)
 }
 
 // installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
 // Yes/No prompt (a per-machine /quiet MSI from a non-admin process fails with
 // no prompt — 1603/1625). It returns the msiexec exit code.
 func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int, error) {
-	fmt.Println("Windows will ask for permission to install Tailscale — click Yes")
+	// The [2/6] screen already tells the user Windows will ask for permission.
 	escaped := strings.ReplaceAll(msiPath, "'", "''")
 	ps := "$p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList '/i','" + escaped + "','/quiet','/norestart'; $p.ExitCode"
 	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-Command", ps)
