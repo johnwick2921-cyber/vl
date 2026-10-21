@@ -130,6 +130,12 @@ func TestFriendAddonStatusPure(t *testing.T) {
 		{"37", "2026-10-20-a", false},           // non-date connected id
 		{"2026-10-18-a", "43", false},           // non-date latest id
 		{"abc", "def", false},                   // non-date both
+		// R17: (date, suffix-length, suffix) ordering — plain lexical gets the
+		// two-digit suffix wrong ('9' > '1').
+		{"2026-10-18-9", "2026-10-18-10", true}, // 9 < 10 by length
+		{"2026-10-18-a", "2026-10-18-b", true},  // same-length lexical
+		{"2026-10-18", "2026-10-18-a", true},    // no suffix < suffix
+		{"2026-10-19-a", "2026-10-18-b", false}, // later date
 	}
 	for _, c := range cases {
 		_, _, got := friendAddonStatus(c.connected, c.latest)

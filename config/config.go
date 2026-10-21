@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"vl/internal/friendmode"
 	"vl/internal/installpath"
 	"vl/logger"
 	"vl/mcp"
@@ -350,13 +351,12 @@ func ValidFriendName(name string) bool {
 	return true
 }
 
-// FriendInstanceEnabled is the ONE parser for VL_FRIEND_INSTANCE (S21): "1" or
-// "true" (trimmed, case-insensitive for "true"), anything else false. config.Init,
-// api.handler_friends.friendInstance and api.handler_friend_manifest.friendModeOn
-// all call it — there is no second reading of the env flag.
+// FriendInstanceEnabled is the ONE parser for VL_FRIEND_INSTANCE (S21/R3): "1"
+// or "true" (trimmed, case-insensitive for "true"), anything else false. The
+// canonicalizer lives in internal/friendmode so security can read it without an
+// import cycle (config → mcp → security); this is the config-package facade.
 func FriendInstanceEnabled() bool {
-	v := strings.TrimSpace(os.Getenv("VL_FRIEND_INSTANCE"))
-	return v == "1" || strings.EqualFold(v, "true")
+	return friendmode.Enabled()
 }
 
 // JWTSecretIsDefault reports whether the effective JWT secret is the insecure

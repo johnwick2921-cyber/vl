@@ -81,8 +81,9 @@ type friendJobProbe struct {
 
 // latestFriendJobReceipts returns the newest job file's friends[] receipts, or
 // nil when there is no data dir, no jobs dir, or no job carries receipts.
-// Read-only: it never writes and never opens the database.
-func latestFriendJobReceipts() []friendJobReceipt {
+// Read-only: it never writes and never opens the database. It is a var so a
+// test can pin a receipt without a real updater job dir (R14).
+var latestFriendJobReceipts = func() []friendJobReceipt {
 	dataDir := trader.MaintenanceDataDir()
 	if dataDir == "" {
 		return nil
@@ -156,6 +157,7 @@ func friendReceiptMessage(rc friendJobReceipt) string {
 // key). Pure except for the in-memory dedup map.
 func (s *Server) relayFriendReceipts() []string {
 	var msgs []string
+	dirty := false
 	for _, rc := range latestFriendJobReceipts() {
 		key := fmt.Sprintf("%s|%s|%s|%s", rc.Name, rc.State, rc.Rev, rc.Note)
 		stt := s.friendAlertStateFor(rc.Name)
@@ -164,8 +166,83 @@ func (s *Server) relayFriendReceipts() []string {
 		}
 		if msg := friendReceiptMessage(rc); msg != "" {
 			stt.lastRelayedReceipt = key
+			dirty = true
 			msgs = append(msgs, msg)
 		}
 	}
+	if dirty {
+		s.persistFriendAlertDedup()
+	}
 	return msgs
+}
+
+// ── R14: receipt dedup keys persist across restarts ────────────────────────
+//
+// The updater's job file is the durable record; this monitor's dedup map was
+// in-memory only, so a restart re-relayed every receipt. The keys now persist
+// in the owner's data dir (atomic temp+rename, never a bare truncate).
+
+func friendAlertDedupPath() string {
+	d := trader.MaintenanceDataDir()
+	if d == "" {
+		return ""
+	}
+	return filepath.Join(d, "friends-alert-dedup.json")
+}
+
+func loadFriendAlertDedup() map[string]string {
+	out := map[string]string{}
+	p := friendAlertDedupPath()
+	if p == "" {
+		return out
+	}
+	b, err := os.ReadFile(p)
+	if err != nil {
+		return out // missing/corrupt → empty (never fatal)
+	}
+	_ = json.Unmarshal(b, &out)
+	return out
+}
+
+func saveFriendAlertDedup(m map[string]string) {
+	p := friendAlertDedupPath()
+	if p == "" {
+		return
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return
+	}
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return
+	}
+	tmp, err := os.CreateTemp(dir, ".friends-alert-dedup-*.tmp")
+	if err != nil {
+		return
+	}
+	tmpName := tmp.Name()
+	defer func() { _ = os.Remove(tmpName) }() //homeguard:allow — removes this function's own os.CreateTemp file; no-op after the rename
+	if _, err := tmp.Write(b); err != nil {
+		_ = tmp.Close()
+		return
+	}
+	if err := tmp.Close(); err != nil {
+		return
+	}
+	_ = os.Rename(tmpName, p)
+}
+
+// persistFriendAlertDedup snapshots the in-memory receipt dedup keys and writes
+// them durably (R14). Called after a receipt is newly relayed.
+func (s *Server) persistFriendAlertDedup() {
+	friendAlertMu.Lock()
+	m := map[string]string{}
+	for name, stt := range friendAlerts {
+		if stt.lastRelayedReceipt != "" {
+			m[name] = stt.lastRelayedReceipt
+		}
+	}
+	friendAlertMu.Unlock()
+	saveFriendAlertDedup(m)
 }

@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"vl/config"
@@ -85,6 +86,11 @@ var tunnelIPOK = func() (ip string, ok bool) {
 	}
 	parsed := net.ParseIP(ip)
 	if parsed == nil {
+		return ip, false
+	}
+	// R13: IPv4 only for now — every URL join (http://TUNNEL_IP:port) stays
+	// valid with an IPv4 literal; an IPv6 literal would need brackets.
+	if parsed.To4() == nil {
 		return ip, false
 	}
 	addrs, err := net.InterfaceAddrs()
@@ -183,48 +189,74 @@ func saveFriends(rows []friendRecord) error {
 	return os.Rename(tmpName, filepath.Join(dir, "friends.json"))
 }
 
-// findFriend returns the registry row for name (nil when absent).
-func findFriend(name string) *friendRecord {
+// findFriend returns the registry row for name. A read/parse error is returned
+// separately (R16) so a corrupt registry surfaces as 500, not a false "not
+// found" (404).
+func findFriend(name string) (*friendRecord, error) {
 	rows, err := loadFriends()
 	if err != nil {
-		return nil
+		return nil, err
 	}
 	for i := range rows {
 		if rows[i].Name == name {
-			return &rows[i]
+			return &rows[i], nil
 		}
 	}
-	return nil
+	return nil, nil
+}
+
+// withFriendLock holds the friends.json.lock flock (LOCK_EX) for the duration
+// of fn (R4). The provision/remove scripts take the SAME lock file (U17), so
+// the Go read-modify-write serializes with the scripts' temp+rename writes.
+func withFriendLock(fn func() error) error {
+	dir := friendRoot()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "friends.json.lock"), os.O_CREATE|os.O_RDWR, 0o644)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
+	}
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return fn()
 }
 
 // setFriendState rewrites the named row's state in place.
 func setFriendState(name, state string) error {
-	rows, err := loadFriends()
-	if err != nil {
-		return err
-	}
-	for i := range rows {
-		if rows[i].Name == name {
-			rows[i].State = state
-			return saveFriends(rows)
+	return withFriendLock(func() error {
+		rows, err := loadFriends()
+		if err != nil {
+			return err
 		}
-	}
-	return fmt.Errorf("friend %q not in registry", name)
+		for i := range rows {
+			if rows[i].Name == name {
+				rows[i].State = state
+				return saveFriends(rows)
+			}
+		}
+		return fmt.Errorf("friend %q not in registry", name)
+	})
 }
 
 // setFriendKeySHA256 rewrites the named row's key_sha256.
 func setFriendKeySHA256(name, sha string) error {
-	rows, err := loadFriends()
-	if err != nil {
-		return err
-	}
-	for i := range rows {
-		if rows[i].Name == name {
-			rows[i].KeySHA256 = sha
-			return saveFriends(rows)
+	return withFriendLock(func() error {
+		rows, err := loadFriends()
+		if err != nil {
+			return err
 		}
-	}
-	return fmt.Errorf("friend %q not in registry", name)
+		for i := range rows {
+			if rows[i].Name == name {
+				rows[i].KeySHA256 = sha
+				return saveFriends(rows)
+			}
+		}
+		return fmt.Errorf("friend %q not in registry", name)
+	})
 }
 
 // ---- rate limiting (S10: rate-limit Add / New key) ------------------------
@@ -318,6 +350,31 @@ func probeFriend(st *friendStatus) {
 	friendLastSeen.Store(st.Name, seen)
 }
 
+// friendFlatProbe returns (flat, known) for a friend's /api/friend/flat. It is
+// a var so a test can pin a definitive non-flat answer without a live friend.
+var friendFlatProbe = func(row *friendRecord) (flat, known bool) {
+	host := strings.TrimSpace(os.Getenv("TUNNEL_IP"))
+	if host == "" || row.WebPort <= 0 {
+		return false, false
+	}
+	hc := &http.Client{Timeout: 2 * time.Second}
+	resp, err := hc.Get(fmt.Sprintf("http://%s:%d/api/friend/flat", host, row.WebPort))
+	if err != nil {
+		return false, false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return false, false
+	}
+	var out struct {
+		Flat bool `json:"flat"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return false, false
+	}
+	return out.Flat, true
+}
+
 func probeFriendManifest(hc *http.Client, host string, port int) *friendManifest {
 	resp, err := hc.Get(fmt.Sprintf("http://%s:%d/api/friend/manifest", host, port))
 	if err != nil {
@@ -352,7 +409,6 @@ func (s *Server) handleOwnerFriendsList(c *gin.Context) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "friends page is owner-only"})
 		return
 	}
-	s.ensureFriendMonitor()
 
 	rows, err := loadFriends()
 	if err != nil {
@@ -408,7 +464,7 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 
 	// FIXED argv — exec.Command with an explicit slice, never a shell string.
 	cmd := exec.Command(filepath.Join(friendScriptsDir(), "provision.sh"), name)
-	cmd.Env = os.Environ()
+	cmd.Env = friendSystemEnv()
 	out, err := cmd.Output() // stdout = the install code (B2)
 	if err != nil {
 		detail := ""
@@ -425,7 +481,12 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 		return
 	}
 
-	row := findFriend(name)
+	row, err := findFriend(name)
+	if err != nil {
+		logger.Errorf("friends add: read registry: %v", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read friends registry"})
+		return
+	}
 	if row == nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "friend provisioned but absent from the registry"})
 		return
@@ -451,7 +512,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	name := strings.TrimSpace(c.Param("name"))
 	action := strings.TrimSpace(c.Param("action"))
 
-	row := findFriend(name)
+	row, err := findFriend(name)
+	if err != nil {
+		logger.Errorf("friends %s: read registry: %v", action, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to read friends registry"})
+		return
+	}
 	if row == nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "friend not found"})
 		return
@@ -461,6 +527,17 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	if row.State == "revoked" && action != "revoke" {
 		c.JSON(http.StatusConflict, gin.H{"error": "friend is revoked"})
 		return
+	}
+	// R15: pause / rotate / revoke WARN when the friend is NOT flat (positions
+	// open or unknown) — stopping or removing it could strand a position.
+	// force=1 overrides. Only a DEFINITIVE non-flat answer refuses; an
+	// unreachable friend cannot be probed, so the action proceeds (a dead bot
+	// must still be revocable).
+	if (action == "pause" || action == "rotate" || action == "revoke") && c.Query("force") != "1" {
+		if flat, known := friendFlatProbe(row); known && !flat {
+			c.JSON(http.StatusConflict, gin.H{"error": "friend is not flat — a position may be open. Pass force=1 to override", "force": true})
+			return
+		}
 	}
 
 	switch action {
@@ -518,7 +595,7 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 		if row.State != "revoked" {
 			// 1. remove.sh: stops the unit, MOVES the folder to trash, sets state=revoked.
 			cmd := exec.Command(filepath.Join(friendScriptsDir(), "remove.sh"), name)
-			cmd.Env = os.Environ()
+			cmd.Env = friendSystemEnv()
 			out, err := cmd.CombinedOutput()
 			if err != nil {
 				logger.Errorf("friends revoke %q: remove.sh failed: %v", name, err)
@@ -536,6 +613,13 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts, "warning": "set TAILSCALE_API_KEY to remove the friend's device from the tailnet"})
 				return
 			}
+			if ts == "no_tag_device" {
+				// R10: local revoke is done; no device carries tag:<name> to
+				// delete. A distinct surfaced message, NOT a 500 retry loop.
+				logger.Warnf("friends revoke %q: no tailscale device carries tag:%s", name, name)
+				c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts, "warning": "no Tailscale device carries tag:" + name + " — remove it on the Tailscale machines page"})
+				return
+			}
 			// U4: the device was NOT deleted → explicit non-200.
 			logger.Warnf("friends revoke %q: tailscale device delete not done: %s", name, ts)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "revoked locally but the Tailscale device was not deleted", "detail": ts})
@@ -546,6 +630,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	case "rotate":
 		if !friendActionAllowed("rotate:" + name) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
+			return
+		}
+		// R7: a paused friend must NOT be restarted by rotate — restart would
+		// start it. Refuse and tell the owner to resume first.
+		if row.State == "paused" {
+			c.JSON(http.StatusConflict, gin.H{"error": "friend is paused — resume first before rotating its key"})
 			return
 		}
 		// U12: the rotated install code carries TUNNEL_IP — refuse when it is
@@ -594,15 +684,53 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 // friendUnit is the B2 systemd user unit name.
 func friendUnit(name string) string { return "vl-friend@" + name + ".service" }
 
-// systemctlUser runs systemctl --user with a fixed argv (no shell). It is a var
-// so a test can inject a fake without touching the real service manager (S22).
+// friendSystemEnv returns the process env plus XDG_RUNTIME_DIR and
+// DBUS_SESSION_BUS_ADDRESS for the current uid when they are absent (R6). The
+// owner's bot runs as a SYSTEM unit with no user-bus env, so `systemctl --user`
+// otherwise fails with "Failed to connect to bus: No medium found".
+func friendSystemEnv() []string {
+	env := os.Environ()
+	hasXDG, hasDBUS := false, false
+	for _, kv := range env {
+		if strings.HasPrefix(kv, "XDG_RUNTIME_DIR=") && len(kv) > len("XDG_RUNTIME_DIR=") {
+			hasXDG = true
+		}
+		if strings.HasPrefix(kv, "DBUS_SESSION_BUS_ADDRESS=") && len(kv) > len("DBUS_SESSION_BUS_ADDRESS=") {
+			hasDBUS = true
+		}
+	}
+	uid := os.Getuid()
+	if !hasXDG {
+		env = append(env, fmt.Sprintf("XDG_RUNTIME_DIR=/run/user/%d", uid))
+	}
+	if !hasDBUS {
+		env = append(env, fmt.Sprintf("DBUS_SESSION_BUS_ADDRESS=unix:path=/run/user/%d/bus", uid))
+	}
+	return env
+}
+
+// systemctlUser runs systemctl --user with a fixed argv (no shell) and the
+// friend user-bus env (R6). It is a var so a test can inject a fake without
+// touching the real service manager (S22).
 var systemctlUser = func(verb, unit string) error {
 	cmd := exec.Command("systemctl", "--user", verb, unit)
+	cmd.Env = friendSystemEnv()
 	out, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("systemctl --user %s %s: %v (%s)", verb, unit, err, strings.TrimSpace(string(out)))
 	}
 	return nil
+}
+
+// FriendControlSelfCheck probes the user bus the way the Friends page does and
+// returns "✓" when reachable, "✗" otherwise (R6 boot self-check).
+func FriendControlSelfCheck() string {
+	cmd := exec.Command("systemctl", "--user", "show-environment")
+	cmd.Env = friendSystemEnv()
+	if err := cmd.Run(); err != nil {
+		return "✗"
+	}
+	return "✓"
 }
 
 // ---- connect key + install code -------------------------------------------
@@ -703,7 +831,10 @@ func tailscaleDeleteDevice(row *friendRecord, name string) (string, bool) {
 			return "tag_lookup_failed:" + err.Error(), false
 		}
 		if id == "" {
-			return "no_device_id", false
+			// R10: distinct — the friend has no stored device id AND no device
+			// carries tag:<name>. Not a retryable 500: the owner removes it on
+			// the machines page.
+			return "no_tag_device", false
 		}
 		deviceID = id
 	}
@@ -788,19 +919,45 @@ type friendAlertState struct {
 	lastRelayedReceipt string // dedup key of the last friend update receipt relayed
 }
 
-// ensureFriendMonitor starts the alert loop once (lazily, from the owner's
-// first Friends page read). Safe to call repeatedly. VL_FRIEND_MONITOR_OFF=1
-// keeps it off (tests).
+// ensureFriendMonitor starts the alert loop once (R14: at BOOT via
+// StartFriendMonitor, not on the first page read). Safe to call repeatedly.
+// VL_FRIEND_MONITOR_OFF=1 keeps it off (tests); friend instances never start it.
 func (s *Server) ensureFriendMonitor() {
 	if s.store == nil || os.Getenv("VL_FRIEND_MONITOR_OFF") == "1" {
 		return
 	}
+	if config.FriendInstanceEnabled() {
+		return // owner bot only — a friend has no Friends page and no owner Telegram
+	}
 	friendAlertOnce.Do(func() {
+		s.hydrateFriendAlertDedup()
+
 		stop := make(chan struct{})
 		friendAlertStop = stop
 		safe.GoNamed("friend-alert-loop", func() { s.friendAlertLoop(stop) })
 	})
 }
+
+// hydrateFriendAlertDedup loads the persisted receipt dedup keys into the
+// in-memory map (R14) so a restart does not re-relay every receipt.
+func (s *Server) hydrateFriendAlertDedup() {
+	friendAlertMu.Lock()
+	defer friendAlertMu.Unlock()
+	for name, key := range loadFriendAlertDedup() {
+		stt := friendAlerts[name]
+		if stt == nil {
+			stt = &friendAlertState{}
+			friendAlerts[name] = stt
+		}
+		if key != "" {
+			stt.lastRelayedReceipt = key
+		}
+	}
+}
+
+// StartFriendMonitor is the boot hook for the owner's friend alert loop (R14).
+// A friend instance no-ops.
+func (s *Server) StartFriendMonitor() { s.ensureFriendMonitor() }
 
 func (s *Server) friendAlertLoop(stop chan struct{}) {
 	t := time.NewTicker(friendAlertInterval)
@@ -883,4 +1040,14 @@ func resetFriendAlertStateForTest() {
 	friendAlertMu.Lock()
 	friendAlerts = map[string]*friendAlertState{}
 	friendAlertMu.Unlock()
+}
+
+// resetFriendMonitorForTest stops the loop and resets the once so a test can
+// observe StartFriendMonitor from a clean slate (R14).
+func resetFriendMonitorForTest() {
+	if friendAlertStop != nil {
+		close(friendAlertStop)
+		friendAlertStop = nil
+	}
+	friendAlertOnce = sync.Once{}
 }

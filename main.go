@@ -26,6 +26,7 @@ import (
 	"vl/mcp"
 	_ "vl/mcp/provider"
 	"vl/researchsnapshot"
+	"vl/security"
 	"vl/store"
 	"vl/telegram"
 	"vl/telemetry"
@@ -56,6 +57,10 @@ func main() {
 	cfg := config.Get()
 	logger.Info("✅ Configuration loaded")
 
+	// R2: security cannot import config (config → mcp → security cycle), so the
+	// friend-mode redirect guard is wired here from the ONE parser.
+	security.FriendModeEnabled = config.FriendInstanceEnabled
+
 	// W-FRIEND-HOSTED Segment 2: a friend instance boots with the owner-only
 	// surfaces off. Refuse an unsafe bind BEFORE anything listens — a friend
 	// copy must never sit on 0.0.0.0 / :: / an empty address.
@@ -73,6 +78,10 @@ func main() {
 		}
 		logger.Info(friendBootLine(cfg.FriendName, cfg.APIServerHost, cfg.APIServerPort, ntwire.ListenAddr()))
 	}
+
+	// R6: the Friends page drives `systemctl --user`, which needs the user-bus
+	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
+	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
 
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
@@ -819,6 +828,10 @@ func main() {
 	}
 
 	server := api.NewServer(traderManager, st, cryptoService, cfg.APIServerHost, cfg.APIServerPort)
+
+	// R14: the friend alert monitor starts at BOOT (owner only), not on the
+	// first Friends page read.
+	server.StartFriendMonitor()
 
 	// Create hot-reload channel for Telegram bot; wire it to the API server
 	// so that POST /api/telegram can trigger a bot restart when the token changes.
