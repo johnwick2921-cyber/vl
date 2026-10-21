@@ -1373,6 +1373,10 @@ func TestApplyNewCodeMovesOldAndSkipsTailscale(t *testing.T) {
 	newIC := goodCode()
 	newIC.Name = "tom2"
 	newIC.ConnectKey = strings.Repeat("cd", 32)
+	base := newIC.BaseURL()
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
 
 	if err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC)); err != nil {
 		t.Fatalf("applyNewCode refused: %v", err)
@@ -1390,15 +1394,24 @@ func TestApplyNewCodeMovesOldAndSkipsTailscale(t *testing.T) {
 	}
 
 	entries, err := os.ReadDir(filepath.Join(ntVLdir(home), "old"))
-	if err != nil || len(entries) != 1 {
-		t.Fatalf("expected exactly one old connect.json backup in VL\\old\\: %v %v", entries, err)
+	if err != nil || len(entries) != 2 {
+		t.Fatalf("expected connect.json + vl-app.json backups in VL\\old\\: %v %v", entries, err)
 	}
-	if !strings.HasPrefix(entries[0].Name(), "connect-") || !strings.HasSuffix(entries[0].Name(), ".json") {
-		t.Fatalf("backup name unexpected: %s", entries[0].Name())
+	foundConnect := false
+	for _, e := range entries {
+		if !strings.HasPrefix(e.Name(), "connect-") && !strings.HasPrefix(e.Name(), "vl-app-") {
+			t.Fatalf("backup name unexpected: %s", e.Name())
+		}
+		if strings.HasPrefix(e.Name(), "connect-") {
+			foundConnect = true
+			ob, err := os.ReadFile(filepath.Join(ntVLdir(home), "old", e.Name()))
+			if err != nil || !strings.Contains(string(ob), old.ConnectKey) {
+				t.Fatalf("the old connect.json was not moved intact: %v %q", err, ob)
+			}
+		}
 	}
-	ob, err := os.ReadFile(filepath.Join(ntVLdir(home), "old", entries[0].Name()))
-	if err != nil || !strings.Contains(string(ob), old.ConnectKey) {
-		t.Fatalf("the old connect.json was not moved intact: %v %q", err, ob)
+	if !foundConnect {
+		t.Fatal("the old connect.json backup was not found")
 	}
 }
 
@@ -1649,12 +1662,15 @@ func TestApplyNewCodeRefusesWrongBot(t *testing.T) {
 	newIC.ConnectKey = strings.Repeat("cd", 32)
 	base := newIC.BaseURL()
 	wrong := sha256.Sum256([]byte(strings.Repeat("00", 32)))
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	orig := fetch
 	d.fetch = func(_ context.Context, u string) ([]byte, error) {
 		if u == base+"/api/friend/identity" {
 			return []byte(`{"key_sha256":"` + hex.EncodeToString(wrong[:]) + `"}`), nil
 		}
-		return nil, fmt.Errorf("no fetch mapped for %s", u)
+		return orig(context.Background(), u)
 	}
+	d.allowedSigners = signers
 
 	err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC))
 	if err == nil || !strings.Contains(err.Error(), "identity key mismatch") {
@@ -1687,12 +1703,15 @@ func TestApplyNewCodeAcceptsMatchingIdentity(t *testing.T) {
 	newIC.ConnectKey = strings.Repeat("cd", 32)
 	base := newIC.BaseURL()
 	want := sha256.Sum256([]byte(newIC.ConnectKey))
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	orig := fetch
 	d.fetch = func(_ context.Context, u string) ([]byte, error) {
 		if u == base+"/api/friend/identity" {
 			return []byte(`{"key_sha256":"` + hex.EncodeToString(want[:]) + `"}`), nil
 		}
-		return nil, fmt.Errorf("no fetch mapped for %s", u)
+		return orig(context.Background(), u)
 	}
+	d.allowedSigners = signers
 
 	if err := applyNewCode(context.Background(), d, home, encodeInstallCode(newIC)); err != nil {
 		t.Fatalf("matching identity must accept: %v", err)
@@ -1876,6 +1895,10 @@ func TestRunIncompleteOffersNewCode(t *testing.T) {
 	newIC := goodCode()
 	newIC.Name = "tom2"
 	newIC.ConnectKey = strings.Repeat("cd", 32)
+	base := newIC.BaseURL()
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
 	// G7: "Type N" is readLine (echo-on); the code is readSecret (echo-off).
 	d.readLine = func(string) (string, error) { return "N", nil }
 	d.readSecret = func(string) (string, error) { return encodeInstallCode(newIC), nil }

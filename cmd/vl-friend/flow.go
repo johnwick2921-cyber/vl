@@ -164,17 +164,9 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	d.print("Approved ✓")
 
-	if err := writeConnectJSON(d, docs, ic); err != nil {
-		return err
-	}
-	// P0: every installed run reads vl-app.json — write it now from the install
-	// code (name + web_port) so it exists on a real PC, never only in tests.
-	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
-		return err
-	}
-
 	// [4/6] Download the add-on and verify the signed manifest + SHA-256 BEFORE
-	// anything is written.
+	// anything is written (H2: connect.json / vl-app.json are written only after
+	// the manifest signature, the DLL hash, and the identity check all pass).
 	d.print("[4/6] Downloading the VL add-on and checking its signature…")
 	m, err := fetchManifest(ctx, d, base)
 	if err != nil {
@@ -184,7 +176,24 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err != nil {
 		return err
 	}
+	// H9: prove it is MY bot before any write.
+	if err := verifyBotIdentity(ctx, d, base, ic.ConnectKey); err != nil {
+		if errors.Is(err, errIdentityMismatch) {
+			return errors.New("this is not your VL bot (identity key mismatch) — ask the owner for a fresh install code")
+		}
+		// network / endpoint-missing: fail open (the manifest signature above
+		// already proved authenticity).
+	}
 	d.print("Add-on verified ✓")
+
+	// H2: only NOW write connect.json + vl-app.json — after every verification
+	// above passed.
+	if err := writeConnectJSON(d, docs, ic); err != nil {
+		return err
+	}
+	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
+		return err
+	}
 
 	// [5/6] Place the verified add-on into NinjaTrader (F2: print the resolved
 	// folder so the user can SEE where it is going).
@@ -829,18 +838,23 @@ func localExeVersionPath(d deps) string {
 // the recorded copy version — an older installer must not downgrade the copy
 // the icon launches.
 func ensureLocalExe(d deps) error {
-	// Newer-only gate: if the recorded copy version is current-or-newer, skip.
-	if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
-		recorded := strings.TrimSpace(string(vb))
-		if recorded != "" && !appVersionNewer(appVersion, recorded) {
-			return nil
+	dst := localExePath(d)
+	_, dstErr := d.readFile(dst)
+	// A3: if the copy is GONE (Defender quarantine), always copy — even when the
+	// recorded version is current. Otherwise a dead icon would persist forever.
+	if !(dstErr != nil && errors.Is(dstErr, fs.ErrNotExist)) {
+		// Newer-only gate: if the recorded copy version is current-or-newer, skip.
+		if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
+			recorded := strings.TrimSpace(string(vb))
+			if recorded != "" && !appVersionNewer(appVersion, recorded) {
+				return nil
+			}
 		}
 	}
 	src, err := d.selfExe()
 	if err != nil {
 		return err
 	}
-	dst := localExePath(d)
 	srcBytes, err := d.readFile(src)
 	if err != nil {
 		return err
@@ -1197,11 +1211,16 @@ func runNewCode(ctx context.Context, d deps) error {
 	if err := promptAndApplyNewCode(ctx, d, docs); err != nil {
 		return err
 	}
+	// H16: keep the console readable until the mentor presses Enter.
+	d.print("Press Enter to close")
+	_, _ = d.readLine("")
 	return nil
 }
 
 // promptAndApplyNewCode prints the paste prompt and applies the code. It is the
-// shared body of --new-code and the installed-screen "Type N" gate.
+// shared body of --new-code and the installed-screen "Type N" gate. H16: on
+// success it tells the mentor to restart NinjaTrader and refreshes the README +
+// shortcut to the new URL (non-fatal).
 func promptAndApplyNewCode(ctx context.Context, d deps, docs string) error {
 	d.print("Paste the new install code, then press Enter.")
 	code, err := d.readSecret("")
@@ -1211,7 +1230,15 @@ func promptAndApplyNewCode(ctx context.Context, d deps, docs string) error {
 	if err := applyNewCode(ctx, d, docs, code); err != nil {
 		return err
 	}
+	ic, err := ParseInstallCode(code)
+	if err != nil {
+		return err
+	}
+	base := ic.BaseURL()
 	d.print("New install code applied ✓")
+	d.print("Restart NinjaTrader to use the new code.")
+	_ = writeDashboardREADME(d, docs, base)
+	_ = createDesktopShortcut(ctx, d, base)
 	return nil
 }
 
@@ -1241,28 +1268,76 @@ func applyNewCode(ctx context.Context, d deps, docs, code string) error {
 	if err := tailscaleConnect(ctx, d, ic.TSAuthKey, ic.BaseURL()); err != nil {
 		return errors.New(redactSecrets(err.Error(), secrets...))
 	}
-	// S14: prove the NEW bot is MY bot before swapping the connect key — a bot
-	// with a different key refuses; an old bot without the identity endpoint
-	// fails open (the tailnet peer check above already passed).
+	// H9: prove the NEW bot is reachable, signed, and MY bot before any write —
+	// a bot with a different key refuses; an old bot without the identity
+	// endpoint fails open (the tailnet peer check above already passed).
+	if _, err := fetchManifest(ctx, d, ic.BaseURL()); err != nil {
+		return fmt.Errorf("cannot reach your VL bot — %s", redactSecrets(err.Error(), secrets...))
+	}
 	if err := verifyBotIdentity(ctx, d, ic.BaseURL(), ic.ConnectKey); err != nil {
 		if errors.Is(err, errIdentityMismatch) {
 			return errors.New("this is not your VL bot (identity key mismatch) — ask the owner for a fresh install code")
 		}
 		// network / endpoint-missing: fail open.
 	}
+
+	// H10: write BOTH new files to temp, move BOTH old files aside, then rename
+	// both into place; roll both back on any failure — never leave a torn pair.
 	oldPath := connectJSONPath(docs)
-	backup := filepath.Join(ntVLdir(docs), "old", "connect-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".json")
-	if err := d.mkdirAll(filepath.Dir(backup), 0o755); err != nil {
+	appPath := appStatePath(docs)
+	ts := strconv.FormatInt(time.Now().UnixNano(), 10)
+	oldBackup := filepath.Join(ntVLdir(docs), "old", "connect-"+ts+".json")
+	appBackup := filepath.Join(ntVLdir(docs), "old", "vl-app-"+ts+".json")
+	cb, err := connectJSON(ic)
+	if err != nil {
 		return err
 	}
-	if err := d.rename(oldPath, backup); err != nil {
+	ab, err := json.MarshalIndent(appState{Name: ic.Name, WebPort: ic.WebPort}, "", "  ")
+	if err != nil {
 		return err
 	}
-	if err := writeConnectJSON(d, docs, ic); err != nil {
-		_ = d.rename(backup, oldPath) // rollback: never leave a PC without connect.json
+	if err := d.mkdirAll(filepath.Dir(oldBackup), 0o755); err != nil {
 		return err
 	}
-	if err := writeAppState(d, docs, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
+	tmpConnect, tmpApp := oldPath+".new", appPath+".new"
+	if err := d.writeFile(tmpConnect, cb, 0o600); err != nil {
+		return err
+	}
+	if err := d.writeFile(tmpApp, ab, 0o600); err != nil {
+		return err
+	}
+	hadOldConnect, hadOldApp := false, false
+	if _, err := d.readFile(oldPath); err == nil {
+		if err := d.rename(oldPath, oldBackup); err != nil {
+			return err
+		}
+		hadOldConnect = true
+	}
+	if _, err := d.readFile(appPath); err == nil {
+		if err := d.rename(appPath, appBackup); err != nil {
+			if hadOldConnect {
+				_ = d.rename(oldBackup, oldPath)
+			}
+			return err
+		}
+		hadOldApp = true
+	}
+	if err := d.rename(tmpConnect, oldPath); err != nil {
+		if hadOldApp {
+			_ = d.rename(appBackup, appPath)
+		}
+		if hadOldConnect {
+			_ = d.rename(oldBackup, oldPath)
+		}
+		return err
+	}
+	if err := d.rename(tmpApp, appPath); err != nil {
+		if hadOldApp {
+			_ = d.rename(appBackup, appPath)
+		}
+		if hadOldConnect {
+			_ = d.rename(oldBackup, oldPath)
+		}
 		return err
 	}
 	return nil
