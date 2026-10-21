@@ -35,11 +35,14 @@ export interface EMACurvePoint {
 }
 
 /**
- * m150: the EMA 9/34 curve, snapped onto the chart's drawn bars. The backend
- * series is per-1m-bar (33 h deep); plotting it directly adds extra slots to
- * the shared time axis (candle gaps) on any other interval. For each drawn bar
- * we take the LAST EMA value at or before that bar's close and drop anything
- * before barTimes[0], so every plotted time is a drawn bar.
+ * m150/m169: the EMA 9/34 curve, snapped onto the chart's drawn bars. The
+ * backend series is per-1m-bar (33 h deep); plotting it directly adds extra
+ * slots to the shared time axis (candle gaps) on any other interval. For each
+ * drawn bar we take the LAST 1m EMA whose own bar has CLOSED at or before the
+ * drawn bar's close (open + 60 s <= close) and drop anything before
+ * barTimes[0], so every plotted time is a drawn bar and the curve never leads
+ * price by one bar (a point stamped at a bar's open already folds in that
+ * bar's close, so it must not be read until the bar has closed).
  */
 export function mentorEMACurves(
   emaSeries: MentorTruth['ema_series'],
@@ -49,6 +52,7 @@ export function mentorEMACurves(
   const ema34: EMACurvePoint[] = []
   const pts = emaSeries ?? []
   if (pts.length === 0 || barTimes.length === 0) return { ema9, ema34 }
+  const EMA_BAR_MS = 60_000 // the backend series is per-1m-bar
   const intervalSec = barTimes.length > 1 ? barTimes[1] - barTimes[0] : 0
   let i = 0
   let e9 = 0
@@ -57,7 +61,10 @@ export function mentorEMACurves(
     const bt = barTimes[bi]
     const closeSec =
       bi + 1 < barTimes.length ? barTimes[bi + 1] : bt + intervalSec
-    while (i < pts.length && pts[i].ms / 1000 <= closeSec) {
+    // m169: include a point only once its OWN bar has closed. `ms <= close`
+    // included the 1m bar that OPENS at the close, whose value already folds
+    // in that bar's close — one bar of look-ahead on a 1m chart.
+    while (i < pts.length && pts[i].ms + EMA_BAR_MS <= closeSec * 1000) {
       e9 = pts[i].ema9
       e34 = pts[i].ema34
       i++

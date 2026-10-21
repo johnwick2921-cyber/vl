@@ -1402,8 +1402,10 @@ export function AdvancedChart({
       mentorEMARef.current.push(sr)
     }
     const curves = mentorEMACurves(mentorEMASeries, barTimes)
-    add('EMA 9', '#3B82F6', curves.ema9)
-    add('EMA 34', '#EC4899', curves.ema34)
+    // m169: the backend series is always the 1-MINUTE EMA — label it so a 1h/4h
+    // chart never reads "EMA 9/34" as that chart's own timeframe EMA.
+    add('1m EMA 9', '#3B82F6', curves.ema9)
+    add('1m EMA 34', '#EC4899', curves.ema34)
   }, [mentorEMASeries, symbol, interval, barTimes])
 
   // Handle order marker show/hide separately to avoid reloading data

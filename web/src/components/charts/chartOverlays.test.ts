@@ -516,12 +516,35 @@ describe('mentorEMACurves (m150 snap)', () => {
     expect(curves.ema9.map((p) => p.time)).toEqual(fiveM)
   })
 
-  it('takes the LAST EMA value at or before each bar close', () => {
+  it('takes the LAST EMA value whose own 1m bar has closed at or before each bar close', () => {
     const curves = mentorEMACurves(ema, fiveM)
-    // bar[0] (t0): close = t0+5m → last point with ms <= that is ema[4] (ema9=104)
+    // bar[0] (t0): close = t0+5m → the last point with open+60s <= close is
+    // ema[4] (open t0+2m → closes t0+3m), value 104.
     expect(curves.ema9[0].value).toBe(104)
     // every later bar keeps 104 (the series ends before them)
     expect(curves.ema9.every((p) => p.value === 104)).toBe(true)
+  })
+
+  it('m169: never looks ahead — a point that OPENS at the bar close is excluded until its own bar has closed', () => {
+    // 5m bars [t0, t0+5m]; 1m points at t0+3m (closes t0+4m), t0+4m (closes
+    // t0+5m == bar[0] close) and t0+5m (opens AT bar[0] close, closes t0+6m).
+    const straddle = [
+      { ms: t0 + 180_000, ema9: 1, ema34: 10 },
+      { ms: t0 + 240_000, ema9: 2, ema34: 20 },
+      { ms: t0 + 300_000, ema9: 3, ema34: 30 },
+    ]
+    const twoBars = bars(t0, 300_000, 2)
+    const curves = mentorEMACurves(straddle, twoBars)
+    // bar[0] close t0+5m: the t0+5m point (open == close) is NOT yet valid.
+    expect(curves.ema9.map((p) => p.time)).toEqual([
+      t0 / 1000,
+      (t0 + 300_000) / 1000,
+    ])
+    expect(curves.ema9[0].value).toBe(2)
+    expect(curves.ema34[0].value).toBe(20)
+    // bar[1] close t0+10m: the t0+5m point has now closed → it is the value.
+    expect(curves.ema9[1].value).toBe(3)
+    expect(curves.ema34[1].value).toBe(30)
   })
 
   it('an empty series or no bars yields empty curves', () => {
