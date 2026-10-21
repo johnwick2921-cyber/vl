@@ -35,25 +35,44 @@ type tailscaleFake struct {
 	polls          int
 	installCmd     string
 	execNames      []string
+	statusCalls    int    // # of `tailscale status` calls so far
+	statusErrStart int    // first status call index that errors (0 = never)
+	statusErrCount int    // # of consecutive status calls that error from statusErrStart
+	statusJSON     string // verbatim status JSON for every status call (overrides state machine)
+}
+
+// status models one `tailscale status` invocation. The BARE and the fixed-path
+// binaries share one counter (they see the same daemon), so a transient daemon
+// failure makes BOTH attempts fail — exactly what tailscaleExec's fallback does.
+func (f *tailscaleFake) status() ([]byte, error) {
+	if !f.installed {
+		return nil, fmt.Errorf("tailscale: executable not found")
+	}
+	f.statusCalls++
+	if f.statusErrStart != 0 && f.statusCalls >= f.statusErrStart &&
+		f.statusCalls < f.statusErrStart+f.statusErrCount {
+		return nil, fmt.Errorf("tailscale status: transient failure")
+	}
+	if f.statusJSON != "" {
+		return []byte(f.statusJSON), nil
+	}
+	st := f.beforeState
+	if f.upCalled {
+		f.polls++
+		if f.polls <= f.approvePolls {
+			st = "NeedsMachineAuth"
+		} else {
+			st = f.afterUpState
+		}
+	}
+	return []byte(`{"BackendState":"` + st + `"}`), nil
 }
 
 func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]byte, error) {
 	f.execNames = append(f.execNames, name)
 	switch {
 	case name == "tailscale" && len(args) > 0 && args[0] == "status":
-		if !f.installed {
-			return nil, fmt.Errorf("tailscale: executable not found")
-		}
-		st := f.beforeState
-		if f.upCalled {
-			f.polls++
-			if f.polls <= f.approvePolls {
-				st = "NeedsMachineAuth"
-			} else {
-				st = f.afterUpState
-			}
-		}
-		return []byte(`{"BackendState":"` + st + `"}`), nil
+		return f.status()
 	case name == "tailscale" && len(args) > 0 && args[0] == "up":
 		f.upCalled = true
 		if f.upErr != nil {
@@ -61,6 +80,9 @@ func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]
 		}
 		return nil, nil
 	case name == tailscaleExeFallback:
+		if len(args) > 0 && args[0] == "status" {
+			return f.status()
+		}
 		return f.exec(context.Background(), "tailscale", args...)
 	case name == "powershell.exe" && len(args) >= 4 && args[2] == "-EncodedCommand":
 		script := decodePSCommand(args[3])
@@ -322,19 +344,24 @@ func TestRedactSecrets(t *testing.T) {
 	}
 }
 
-// TestTailscaleConnectSkipsUpWhenOnOurTailnet — F3: after a partial failure the
+// statusWithPeer builds a `tailscale status --json` body where the friend bot
+// appears as a peer at peerIP (and the local node is a different 100.x IP).
+func statusWithPeer(peerIP string) string {
+	return `{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.5"],"DNSName":"friend.example.ts.net.","HostName":"friend-pc"},"Peer":{"` +
+		peerIP + `":{"TailscaleIPs":["` + peerIP + `"],"DNSName":"vl-bot.example.ts.net.","HostName":"vl-bot"}}}`
+}
+
+// TestTailscaleConnectSkipsUpWhenOnOurTailnet — S5: after a partial failure the
 // PC is Running on OUR tailnet with the auth key spent; a re-run must skip
-// `tailscale up` and continue when the friend bot's manifest verifies. MUTANT:
-// always refuse non-NeedsLogin → RED.
+// `tailscale up` and continue when the bot host is among the status peers (an
+// identity proof, not an HTTP fetch). MUTANT: always refuse non-NeedsLogin → RED.
 func TestTailscaleConnectSkipsUpWhenOnOurTailnet(t *testing.T) {
 	shortWaits(t)
-	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running"}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer("100.64.0.2")}
 	d := f.deps(t)
 	ic := goodCode()
 	base := ic.BaseURL()
-	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
-	d.fetch = fetch
-	d.allowedSigners = signers
 
 	if err := ensureTailscale(context.Background(), d, "tskey-secret", base); err != nil {
 		t.Fatalf("our-tailnet run refused: %v", err)
@@ -344,15 +371,58 @@ func TestTailscaleConnectSkipsUpWhenOnOurTailnet(t *testing.T) {
 	}
 }
 
-// TestTailscaleConnectRefusesOtherTailnetManifest — F3: Running on a DIFFERENT
-// tailnet (the friend bot's manifest is NOT reachable) must still refuse.
-func TestTailscaleConnectRefusesOtherTailnetManifest(t *testing.T) {
+// TestTailscaleConnectHostNameMatchesMagicDNS — S5: the install code may carry a
+// MagicDNS host name instead of an IP; it matches a peer's DNSName.
+func TestTailscaleConnectHostNameMatchesMagicDNS(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer("100.64.0.2")}
+	d := f.deps(t)
+	ic := goodCode()
+	ic.Host = "vl-bot.example.ts.net"
+	base := ic.BaseURL()
+
+	if err := ensureTailscale(context.Background(), d, "tskey-secret", base); err != nil {
+		t.Fatalf("MagicDNS host must match a peer DNSName: %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("tailscale up must NOT run when the MagicDNS host matches a peer")
+	}
+}
+
+// TestTailscaleConnectRefusesOtherTailnetPeer — S5: Running on a DIFFERENT
+// tailnet (the bot host is NOT among the peers) must still refuse.
+func TestTailscaleConnectRefusesOtherTailnetPeer(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running"}
 	d := f.deps(t)
-	// fetch serves the MSI bytes (no manifest) → verification fails → refuse.
 	err := ensureTailscale(context.Background(), d, "tskey-secret", "http://100.64.0.2:18081")
 	if err == nil || !strings.Contains(err.Error(), "already logged in") {
 		t.Fatalf("expected 'already logged in' refusal, got %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("up must NOT run over another tailnet (no --force-reauth)")
+	}
+}
+
+// TestTailscaleConnectTransientStatusFailureNotWrongNetwork — S5: a TRANSIENT
+// `tailscale status` failure must NOT read as "another network". MUTANT: return
+// the "already logged in" error on any status error → RED.
+func TestTailscaleConnectTransientStatusFailureNotWrongNetwork(t *testing.T) {
+	shortWaits(t)
+	// The peer-lookup status call is #3. It fails transiently for BOTH the bare
+	// name and the fixed-path fallback (calls 3-4); waitTailscaleApproved's poll
+	// (call 5) succeeds.
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusErrStart: 3, statusErrCount: 2}
+	d := f.deps(t)
+	ic := goodCode()
+	base := ic.BaseURL()
+
+	if err := ensureTailscale(context.Background(), d, "tskey-secret", base); err != nil {
+		t.Fatalf("a transient status failure must not read as another network: %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("up must NOT run on a transient status failure")
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/url"
 	"path/filepath"
 	"strconv"
@@ -253,9 +254,18 @@ var (
 	tailscaleApprovalPoll = 5 * time.Second
 )
 
+// tailscalePeer is one node (Self or a Peer) in `tailscale status --json`.
+type tailscalePeer struct {
+	TailscaleIPs []string `json:"TailscaleIPs"`
+	DNSName      string   `json:"DNSName"`
+	HostName     string   `json:"HostName"`
+}
+
 // tailscaleStatusJSON is the subset of `tailscale status --json` this flow reads.
 type tailscaleStatusJSON struct {
-	BackendState string `json:"BackendState"`
+	BackendState string                   `json:"BackendState"`
+	Self         tailscalePeer            `json:"Self"`
+	Peer         map[string]tailscalePeer `json:"Peer"`
 }
 
 // tailscaleExec runs a tailscale subcommand, preferring the bare "tailscale"
@@ -281,6 +291,50 @@ func tailscaleBackendState(ctx context.Context, d deps) (string, error) {
 		return "", fmt.Errorf("tailscale status: %w", err)
 	}
 	return st.BackendState, nil
+}
+
+// tailscaleTailnet returns the set of Tailscale IPs and DNS/host names present
+// on the LOCAL tailnet (Self + every Peer). S5: this is the identity proof that
+// a Running device is on OUR tailnet — a local CLI call, never an HTTP fetch
+// that a transient bot/network blip could fail and misread as "wrong network".
+func tailscaleTailnet(ctx context.Context, d deps) (ips, names map[string]bool, err error) {
+	out, err := tailscaleExec(ctx, d, "status", "--json")
+	if err != nil {
+		return nil, nil, err
+	}
+	var st tailscaleStatusJSON
+	if err := json.Unmarshal(out, &st); err != nil {
+		return nil, nil, fmt.Errorf("tailscale status: %w", err)
+	}
+	ips = map[string]bool{}
+	names = map[string]bool{}
+	add := func(n tailscalePeer) {
+		for _, ip := range n.TailscaleIPs {
+			ips[ip] = true
+		}
+		if dns := strings.TrimSuffix(n.DNSName, "."); dns != "" {
+			names[strings.ToLower(dns)] = true
+		}
+		if hn := n.HostName; hn != "" {
+			names[strings.ToLower(hn)] = true
+		}
+	}
+	add(st.Self)
+	for _, p := range st.Peer {
+		add(p)
+	}
+	return ips, names, nil
+}
+
+// hostOnTailnet reports whether the bot host from the install code appears on
+// the local tailnet. A literal IP must be one of a node's TailscaleIPs; a DNS
+// name must match a node's DNSName (MagicDNS) or HostName.
+func hostOnTailnet(host string, ips, names map[string]bool) bool {
+	host = strings.TrimSuffix(host, ".")
+	if net.ParseIP(host) != nil {
+		return ips[host]
+	}
+	return names[strings.ToLower(host)]
 }
 
 // redactSecrets replaces each secret with "***" so it never reaches stdout,
@@ -419,10 +473,21 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 		// for the owner to approve it. Never refuse this as "another network".
 		return waitTailscaleApproved(ctx, d)
 	case "Running":
-		// Already on a tailnet: it is OURS only if the friend bot's manifest is
-		// reachable and signature-valid at the known address. The auth key is
-		// spent, so a re-run must skip `up` and continue.
-		if _, err := fetchManifest(ctx, d, base); err == nil {
+		// S5: prove OUR tailnet by IDENTITY — the bot host must appear among
+		// `tailscale status --json` peers — never by an HTTP fetch. The auth key
+		// is spent, so a re-run must skip `up` and continue when it is ours.
+		u, err := url.Parse(base)
+		if err != nil {
+			return fmt.Errorf("install code base URL: %w", err)
+		}
+		ips, names, err := tailscaleTailnet(ctx, d)
+		if err != nil {
+			// The CLI hiccupped (daemon restart, first status after install).
+			// Never misread that as a wrong network: the [4/6] manifest fetch is
+			// the real proof downstream.
+			return waitTailscaleApproved(ctx, d)
+		}
+		if hostOnTailnet(u.Hostname(), ips, names) {
 			return waitTailscaleApproved(ctx, d)
 		}
 		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
