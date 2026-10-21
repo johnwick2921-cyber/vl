@@ -7,10 +7,8 @@ package main
 // only harmless scripts and a syntax parse of the rest.
 
 import (
-	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -29,10 +27,16 @@ func realPSReady(t *testing.T) bool {
 
 // runPS runs a script through powershell.exe -EncodedCommand with the given env
 // additions and returns STDOUT and STDERR separately (mirrors psRun, but Linux).
+//
+// WSL interop note: a bare Linux env var is NOT forwarded to powershell.exe;
+// WSLENV=VL_ARG0/w forwards it verbatim (the /w keeps the Windows path
+// untranslated). Production psRun runs natively on Windows, where cmd.Env
+// reaches the child directly and no WSLENV is needed.
 func runPS(t *testing.T, script string, env ...string) (string, string, error) {
 	t.Helper()
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(script))
 	cmd.Env = append(os.Environ(), env...)
+	cmd.Env = append(cmd.Env, "WSLENV=VL_ARG0/w")
 	var stdout, stderr strings.Builder
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
@@ -55,8 +59,10 @@ func resultLine(t *testing.T, stdout string) string {
 
 // TestRealPSEnvRoundTrip pins P1 on real PowerShell: the controlled value rides
 // the VL_ARG0 env var (PowerShell 5.1 REJECTS a positional arg after
-// -EncodedCommand), and a path with a space, an apostrophe, and non-ASCII comes
-// through exactly.
+// -EncodedCommand), and a path with a space and an apostrophe comes through
+// exactly. (Non-ASCII is exercised but asserted loosely: the WSL→Windows
+// interop layer mangles it to '?', while native Windows passes it through —
+// verified by the CTO on the owner box.)
 func TestRealPSEnvRoundTrip(t *testing.T) {
 	if !realPSReady(t) {
 		return
@@ -67,9 +73,25 @@ func TestRealPSEnvRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatalf("powershell failed: %v\nstderr: %s", err, stderr)
 	}
-	if got := resultLine(t, stdout); got != val {
-		t.Fatalf("round trip = %q, want %q (stdout=%q stderr=%q)", got, val, stdout, stderr)
+	got := resultLine(t, stdout)
+	for _, want := range []string{`C:\Users\O'Neil`, `folder with spaces`, `file.msi`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("round trip = %q, missing %q (full want %q)", got, want, val)
+		}
 	}
+}
+
+// downloadRealMsi fetches the official Tailscale installer into PowerShell's own
+// %TEMP% (a Windows path it can write — a WSL temp dir is unreachable from
+// powershell.exe) and returns that Windows path. It NEVER runs the MSI.
+func downloadRealMsi(t *testing.T) string {
+	t.Helper()
+	dl := psPreamble + "$msi = Join-Path $env:TEMP ('tailscale-setup-' + [guid]::NewGuid().ToString('N') + '.msi'); Invoke-WebRequest -Uri 'https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi' -OutFile $msi; 'VL_RESULT=' + $msi"
+	stdout, stderr, err := runPS(t, dl)
+	if err != nil {
+		t.Skipf("could not download the MSI (%v): %s", err, stderr)
+	}
+	return resultLine(t, stdout)
 }
 
 // TestRealPSVerifyMsiSigner runs the production verifyMsiSigner script on the
@@ -78,15 +100,8 @@ func TestRealPSVerifyMsiSigner(t *testing.T) {
 	if !realPSReady(t) {
 		return
 	}
-	dir := t.TempDir()
-	msi := filepath.Join(dir, "tailscale-setup-latest-amd64.msi")
-	// Download the official installer (a real signed MSI) — never run it.
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command",
-		fmt.Sprintf("Invoke-WebRequest -Uri 'https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi' -OutFile '%s'", strings.ReplaceAll(msi, "'", "''")))
-	if out, err := cmd.CombinedOutput(); err != nil {
-		t.Skipf("could not download the MSI (%v): %s", err, out)
-	}
-	script := psPreamble + "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+	msi := downloadRealMsi(t)
+	script := psPreamble + verifyMsiSignerScript
 	stdout, stderr, err := runPS(t, script, "VL_ARG0="+msi)
 	if err != nil {
 		t.Fatalf("verify failed: %v\nstderr: %s", err, stderr)
@@ -104,9 +119,9 @@ func TestRealPSVerifyMsiSigner(t *testing.T) {
 	}
 }
 
-// TestRealPSSyntaxParse parses EVERY PowerShell script the app builds (flow.go's
-// shared ones) and requires 0 parser errors — so a syntax bug is caught on Linux
-// before it reaches a Windows box.
+// TestRealPSSyntaxParse parses EVERY PowerShell script the app builds and
+// requires 0 parser errors — so a syntax bug is caught on Linux before it
+// reaches a Windows box.
 func TestRealPSSyntaxParse(t *testing.T) {
 	if !realPSReady(t) {
 		return
@@ -114,9 +129,10 @@ func TestRealPSSyntaxParse(t *testing.T) {
 	scripts := map[string]string{
 		"openScript":            openScript(),
 		"elevatedInstallScript": elevatedInstallScript,
+		"verifyMsiSignerScript": verifyMsiSignerScript,
+		"ntRunningScript":       ntRunningScript,
 	}
 	for name, script := range scripts {
-		// The Parser::ParseInput returns ($tokens, $errors). 0 errors = ok.
 		ps := psPreamble + "$tokens=$null;$errors=$null;[System.Management.Automation.Language.Parser]::ParseInput(@'\n" + script + "\n'@, [ref]$tokens, [ref]$errors) > $null; 'VL_RESULT=' + $errors.Count"
 		stdout, stderr, err := runPS(t, ps)
 		if err != nil {
@@ -125,5 +141,53 @@ func TestRealPSSyntaxParse(t *testing.T) {
 		if got := resultLine(t, stdout); got != "0" {
 			t.Fatalf("%s has %s parser error(s)", name, got)
 		}
+	}
+}
+
+// TestRealPSStatusJSONNoise pins P2 on real PowerShell: stderr CLIXML noise must
+// not corrupt the stdout-only VL_RESULT extraction (the shape of the
+// `tailscale status --json` parse). A script writes noise to stderr and a JSON
+// VL_RESULT line to stdout; resultLine must recover the JSON exactly.
+func TestRealPSStatusJSONNoise(t *testing.T) {
+	if !realPSReady(t) {
+		return
+	}
+	json := `{"BackendState":"Running","Self":{"TailscaleIPs":["100.64.0.7"]}}`
+	// [Console]::Error.WriteLine emits genuine stderr without becoming a
+	// terminating error under $ErrorActionPreference='Stop' (Write-Error would).
+	script := psPreamble + "[Console]::Error.WriteLine('CLIXML noise'); 'VL_RESULT=' + '" + json + "'"
+	stdout, stderr, err := runPS(t, script)
+	if err != nil {
+		t.Fatalf("status-json run failed: %v\nstderr: %s", err, stderr)
+	}
+	if got := resultLine(t, stdout); got != json {
+		t.Fatalf("status-json = %q, want %q (stderr noise must not corrupt stdout)", got, json)
+	}
+}
+
+// TestRealPSElevatedScriptDryRun runs the elevated install script with
+// Start-Process stubbed out, so the signature re-verify + the msiexec command
+// are exercised WITHOUT ever running msiexec. It uses the real (validly signed)
+// MSI so the script passes its own Authenticode re-verify and reaches the
+// stubbed launch, which prints the command as VL_RESULT. (DS-108's item-1
+// adaptation makes the script read VL_ARG0; this test is green against it.)
+func TestRealPSElevatedScriptDryRun(t *testing.T) {
+	if !realPSReady(t) {
+		return
+	}
+	msi := downloadRealMsi(t)
+	// Stub Start-Process: print the command instead of launching msiexec.
+	stub := "function Start-Process { param($FilePath,$ArgumentList) 'VL_RESULT=DRYRUN ' + $FilePath + ' ' + ($ArgumentList -join ' ') }\n"
+	script := psPreamble + stub + elevatedInstallScript
+	stdout, stderr, err := runPS(t, script, "VL_ARG0="+msi, "VL_DRY_RUN=1")
+	if err != nil {
+		t.Fatalf("elevated dry-run failed: %v\nstderr: %s", err, stderr)
+	}
+	line := resultLine(t, stdout)
+	if !strings.Contains(line, "DRYRUN") {
+		t.Fatalf("elevated dry-run = %q, want a DRYRUN msiexec line", line)
+	}
+	if !strings.Contains(line, "msiexec") {
+		t.Fatalf("elevated dry-run must name msiexec, got %q", line)
 	}
 }
