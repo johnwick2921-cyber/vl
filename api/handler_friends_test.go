@@ -68,6 +68,10 @@ func friendTestEnv(t *testing.T, e *updEnv) {
 		return nil
 	}
 	t.Cleanup(func() { systemctlUser = prevSystemctl; testSystemctlCalls = nil })
+	// U12: pin TUNNEL_IP as valid without a real tunnel interface.
+	prevTunnel := tunnelIPOK
+	tunnelIPOK = func() (string, bool) { return "100.64.0.7", true }
+	t.Cleanup(func() { tunnelIPOK = prevTunnel })
 }
 
 func writeFriendScript(t *testing.T, e *updEnv, name, content string) string {

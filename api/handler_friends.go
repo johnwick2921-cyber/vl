@@ -21,6 +21,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"os/exec"
@@ -71,6 +72,31 @@ func friendRoot() string {
 		return v
 	}
 	return defaultFriendRoot
+}
+
+// tunnelIPOK reports whether TUNNEL_IP is set, parses as a literal IP, and is
+// actually assigned to a local interface (U12). A friend Add/rotate refuses when
+// it is not: the install code would carry a host the friend's box cannot reach.
+// It is a var so a test can pin the answer without a real tunnel interface.
+var tunnelIPOK = func() (ip string, ok bool) {
+	ip = strings.TrimSpace(os.Getenv("TUNNEL_IP"))
+	if ip == "" {
+		return "", false
+	}
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip, false
+	}
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ip, false
+	}
+	for _, a := range addrs {
+		if n, ok := a.(*net.IPNet); ok && n.IP.Equal(parsed) {
+			return ip, true
+		}
+	}
+	return ip, false
 }
 
 // friendScriptsDir is where DS-101's provision.sh / remove.sh live.
@@ -373,6 +399,13 @@ func (s *Server) handleOwnerFriendsAdd(c *gin.Context) {
 	}
 	name := strings.TrimSpace(req.Name)
 
+	// U12: refuse to add a friend when the tunnel address is not a local IP —
+	// the install code would point at a host the friend's box cannot reach.
+	if _, ok := tunnelIPOK(); !ok {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "TUNNEL_IP is empty or not an address on this box — set it before adding a friend"})
+		return
+	}
+
 	// FIXED argv — exec.Command with an explicit slice, never a shell string.
 	cmd := exec.Command(filepath.Join(friendScriptsDir(), "provision.sh"), name)
 	cmd.Env = os.Environ()
@@ -493,6 +526,12 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 	case "rotate":
 		if !friendActionAllowed("rotate:" + name) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
+			return
+		}
+		// U12: the rotated install code carries TUNNEL_IP — refuse when it is
+		// not a local address on this box.
+		if _, ok := tunnelIPOK(); !ok {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "TUNNEL_IP is empty or not an address on this box — set it before rotating a key"})
 			return
 		}
 		newKey, err := newConnectKey()
