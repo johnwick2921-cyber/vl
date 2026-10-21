@@ -95,52 +95,56 @@ type box struct {
 	lockAcquireErr      error
 
 	// knobs
-	flat                    bool
-	addonConnected          bool
-	pollHook                func()          // run at every fake-host sleep boundary (planner-wait tests)
-	driveCtx                context.Context // non-nil overrides the drive context (cancellation pins)
-	addonBuild              string          // what the running AddOn reports
-	manifestBuild           string          // the signed manifest's addon.build_id
-	refuseBoot              map[string]bool
-	watchFail               map[string]bool
-	rollbackFail            bool
-	rollbackDistFail        bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
-	addonRestoreFail        bool   // fakeHost.AddonRestore returns an error
-	noReconnect             bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
-	reconnectSameSeq        bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
-	reconnectOldBuild       bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
-	noRollbackReconnect     bool   // F2: the AddOn does NOT come back after the rollback's second restart
-	addonBuildBeforeRestart string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
-	addonRestored           bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
-	nt8Running              bool   // the fake NT8 process is alive (tasklist sees it)
-	nt8HangsOnClose         bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
-	startDoesNotBringUp     bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
-	startDelayPolls         int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
-	startDelayRemaining     int    // runtime countdown for startDelayPolls
-	startProbeError         bool   // tasklist errors once after Start-Process (process probe error)
-	startProbeFails         bool   // runtime one-shot for startProbeError
-	startFails              bool   // Start-Process itself returns an error (start command fails)
-	exitWaitProbeError      bool   // tasklist errors once during the exit-wait linger (after the stop)
-	nt8ExitLinger           int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
-	nt8LingerLeft           int    // the remaining linger polls
-	flipSimOnClose          bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
-	catchupBuild            string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
-	omitLeg                 string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
-	badToken                bool   // the app refuses the token (401)
-	verdictMissing          bool
-	holdWriteLies           bool          // the hold write lands on disk, then errs (U1 item 9)
-	holdWriteFails          bool          // the hold write errs before anything lands
-	ackStale                bool          // the AddOn's last ack is 20 s old
-	ackJob                  string        // the AddOn acks this job id instead of the hold's
-	addonSeq                uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
-	exe                     string        // /proc/<MainPID>/exe, when not the install's binary
-	healthRev               string        // /api/health serves this revision instead of the running sha
-	ackLag                  time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
-	wallStep                time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
-	maintJob                string        // /api/maintenance names this job instead of the hold's
-	echo500                 bool          // the authed endpoints answer 500 echoing the request's Authorization header
-	noCS                    bool          // the signed manifest lists no ninjascript/*.cs
-	reverifyTamper          func(*ReleaseFacts)
+	flat                         bool
+	addonConnected               bool
+	pollHook                     func()          // run at every fake-host sleep boundary (planner-wait tests)
+	driveCtx                     context.Context // non-nil overrides the drive context (cancellation pins)
+	addonBuild                   string          // what the running AddOn reports
+	manifestBuild                string          // the signed manifest's addon.build_id
+	refuseBoot                   map[string]bool
+	watchFail                    map[string]bool
+	rollbackFail                 bool
+	rollbackDistFail             bool   // RollbackTo restores binary+RELEASE, fails at dist, no kill of its own
+	addonRestoreFail             bool   // fakeHost.AddonRestore returns an error
+	noReconnect                  bool   // the AddOn never reconnects after the NT8 restart (guard #3 timeout)
+	reconnectSameSeq             bool   // the AddOn reconnects on the SAME accept_seq after restart (#5a)
+	reconnectOldBuild            bool   // the AddOn reconnects reporting the OLD build after restart (#5b)
+	noRollbackReconnect          bool   // F2: the AddOn does NOT come back after the rollback's second restart
+	addonBuildBeforeRestart      string // the build the AddOn ran before the FORWARD restart (captured at Start-Process)
+	addonRestored                bool   // fakeHost.AddonRestore ran: the OLD DLL is back in bin/Custom
+	nt8Running                   bool   // the fake NT8 process is alive (tasklist sees it)
+	nt8HangsOnClose              bool   // TOCTOU: CloseMainWindow does NOT exit NT8 (a dialog/hang)
+	startDoesNotBringUp          bool   // Start-Process returns success but NT8 never comes up (restart-evidence gap)
+	startDelayPolls              int    // Start-Process launches, but tasklist does not see NT8 for this many polls (delayed healthy start)
+	startDelayRemaining          int    // runtime countdown for startDelayPolls
+	startProbeError              bool   // tasklist errors once after Start-Process (process probe error)
+	startProbeErrorCount         int    // tasklist errors this many times after Start-Process (m246 transient retry)
+	startProbeErrorPersistent    bool   // tasklist errors on EVERY call after Start-Process (m246 deadline-fail)
+	startProbeFailsLeft          int    // runtime countdown for startProbeError / startProbeErrorCount
+	startProbePersist            bool   // runtime persistent for startProbeErrorPersistent
+	startFails                   bool   // Start-Process itself returns an error (start command fails)
+	exitWaitProbeError           bool   // tasklist errors once during the exit-wait linger (after the stop)
+	exitWaitProbeErrorPersistent bool   // tasklist errors on EVERY call during the exit-wait linger
+	nt8ExitLinger                int    // W-UPDATER-WINPATH (d): after a stop, tasklist keeps reporting NT8 for this many polls (the old process fully exiting)
+	nt8LingerLeft                int    // the remaining linger polls
+	flipSimOnClose               bool   // TOCTOU: the sim_accounts leg flips FAIL when the graceful close runs
+	catchupBuild                 string // feat/addon-catchup: the install's own AddOn build (the fake reports it after the catch-up restart, instead of manifestBuild)
+	omitLeg                      string // the fake gate omits this leg entirely (guard #1 missing-leg pin)
+	badToken                     bool   // the app refuses the token (401)
+	verdictMissing               bool
+	holdWriteLies                bool          // the hold write lands on disk, then errs (U1 item 9)
+	holdWriteFails               bool          // the hold write errs before anything lands
+	ackStale                     bool          // the AddOn's last ack is 20 s old
+	ackJob                       string        // the AddOn acks this job id instead of the hold's
+	addonSeq                     uint64        // the AddOn's connection accept_seq (a reconnect = a new seq)
+	exe                          string        // /proc/<MainPID>/exe, when not the install's binary
+	healthRev                    string        // /api/health serves this revision instead of the running sha
+	ackLag                       time.Duration // the AddOn's last ack is this much older than the 5 s tick (age stays consistent)
+	wallStep                     time.Duration // a wall-clock step: shifts the RENDERED received time only; AgeMs stays monotonic
+	maintJob                     string        // /api/maintenance names this job instead of the hold's
+	echo500                      bool          // the authed endpoints answer 500 echoing the request's Authorization header
+	noCS                         bool          // the signed manifest lists no ninjascript/*.cs
+	reverifyTamper               func(*ReleaseFacts)
 
 	// UPDATER-NT8-CLOSED knobs
 	addonDownSince time.Duration // >0: the AddOn is disconnected this long (stamped on the fake server's record); the ack is nil and the fake gate attaches its nt8_absent view
@@ -417,13 +421,15 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 	}
 	if strings.Contains(name, "tasklist") {
 		b.mu.Lock()
-		if b.startProbeFails {
-			b.startProbeFails = false
+		if b.startProbePersist || b.startProbeFailsLeft > 0 {
+			if b.startProbeFailsLeft > 0 {
+				b.startProbeFailsLeft--
+			}
 			b.mu.Unlock()
 			return nil, errors.New("fake tasklist probe error")
 		}
-		if !b.nt8Running && b.nt8LingerLeft > 0 && b.exitWaitProbeError {
-			b.exitWaitProbeError = false // one-shot
+		if !b.nt8Running && b.nt8LingerLeft > 0 && (b.exitWaitProbeError || b.exitWaitProbeErrorPersistent) {
+			b.exitWaitProbeError = false // one-shot consumed
 			b.mu.Unlock()
 			return nil, errors.New("fake tasklist probe error during exit wait")
 		}
@@ -486,7 +492,15 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			}
 			b.nt8Running = true
 			b.startDelayRemaining = b.startDelayPolls
-			b.startProbeFails = b.startProbeError
+			b.startProbeFailsLeft = 0
+			b.startProbePersist = b.startProbeErrorPersistent
+			if !b.startProbePersist {
+				if b.startProbeErrorCount > 0 {
+					b.startProbeFailsLeft = b.startProbeErrorCount
+				} else if b.startProbeError {
+					b.startProbeFailsLeft = 1
+				}
+			}
 			if !b.addonRestored {
 				// FORWARD restart: remember what it was running, then bring up
 				// the NEW build on a NEW connection.
