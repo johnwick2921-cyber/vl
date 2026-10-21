@@ -1720,7 +1720,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the >25 stop band, and a size
+				// (above), the R5 box (below), the 20–<30 stop band, and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -1731,8 +1731,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
 					// CANDLE-1 colour direction [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
-					// The stop-size skip (>25) is D3.3 p1 @02:04; 20–25 is the
-					// reduced tier (mentorContractsFor).
+					// (The stop-size skip is DS-104's ISB stop band — D3.3/D4.1.)
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
@@ -1934,7 +1933,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.ExecTFMin = execTFMin
 			}
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
-			// runs through the SAME gates as the normal ISB — the >25
+			// runs through the SAME gates as the normal ISB — the 20–<30
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
 			// the near-box rule (row 24) — before any target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the

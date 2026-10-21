@@ -82,9 +82,9 @@ func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 	}
 }
 
-// TestISBStopVerdict — m187 (the course's >25 skip [D3.3 p1 @02:04]): NO fixed
-// 5–6-pt stop. An ISB stop ≤ 25 pts is TAKEN (the reduced tier handles 20–25 in
-// the size table); > 25 is REFUSED (CourseExits.ISBMaxStopPts default 25).
+// TestISBStopVerdict — course-defaults-30 (owner order "move to 30 at least …
+// fix all"): NO fixed 5–6-pt stop and NO "twenties" window. An ISB stop < 30
+// pts is TAKEN; ≥ 30 is REFUSED (CourseExits.ISBMaxStopPts default 30).
 func TestISBStopVerdict(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -93,13 +93,13 @@ func TestISBStopVerdict(t *testing.T) {
 		span   float64
 		wantOK bool
 	}{
-		{"small 4pt stop", 1.0, true}, // 1 + 3 buffer = 4 — taken (no minimum)
-		{"5pt stop", 2.0, true},       // 2 + 3 = 5
-		{"6pt stop", 3.0, true},       // 3 + 3 = 6
-		{"twenties 20pt", 17.0, true}, // 17 + 3 = 20 — reduced tier, not refused
-		{"25pt boundary", 22.0, true}, // 22 + 3 = 25 — reduced tier, not refused
-		{"26pt refused", 23.0, false}, // 23 + 3 = 26 — over the ceiling
-		{"31pt refused", 28.0, false}, // 28 + 3 = 31 — over the ceiling
+		{"small 4pt stop", 1.0, true},  // 1 + 3 buffer = 4 — taken (no minimum)
+		{"5pt stop", 2.0, true},        // 2 + 3 = 5
+		{"6pt stop", 3.0, true},        // 3 + 3 = 6
+		{"twenties taken", 17.0, true}, // 17 + 3 = 20 — taken (no twenties skip)
+		{"27pt taken", 24.0, true},     // 24 + 3 = 27 — taken
+		{"30pt refused", 27.0, false},  // 27 + 3 = 30 — at the ceiling
+		{"31pt refused", 28.0, false},  // 28 + 3 = 31 — over the ceiling
 	}
 	for _, c := range cases {
 		stop, ok, _ := ISBStopVerdict(market.Kline{High: 100 + c.span/2, Low: 100 - c.span/2}, cfg)

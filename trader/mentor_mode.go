@@ -46,7 +46,7 @@ const (
 
 	mentorTargetBigPts       = 30.0 // target ≥ this for the big tier
 	mentorRoomBigMultiple    = 2.0  // room ≥ this × risk for the big tier
-	mentorStopTwentiesMinPts = 20.0 // stop ≥ 20 and ≤ the ISB ceiling → reduced [D3.3 p1 @ 01:09]; the band top is the mentor_isb_max_pts knob (default 25 — one number, no second constant)
+	mentorStopTwentiesMinPts = 20.0 // stop ≥ 20 and < the ISB ceiling → reduced [D3.3 p1 @ 01:09]; the band top is the mentor_isb_max_pts knob (default 30 — one number, no second constant)
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -69,7 +69,7 @@ type mentorTierInputs struct {
 	// constant.
 	SwingMaxStopPts    float64
 	SpentDayStopCapPts float64
-	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 25)
+	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 30)
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -140,19 +140,19 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: fmt.Sprintf(
 			"SWING4H setup — %d MNQ (course 2: 'Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt' [D5.2 p2 @06:08–06:23])", swing4h)}, nil
 	}
-	// B12 (CTO 1791041016051): a stop in the 20–ceiling band cuts to the
-	// reduced tier (owner order 2026-10-16: 4; DS-101 makes it 3 per the course
-	// chop 5→3) and wins over confluence sizing — "reduce size or don't trade"
-	// [D3.3 p1 @ 01:09] is a rule about the STOP, so it outranks the confluence
-	// tier. The band top is the mentor_isb_max_pts knob (kernel
-	// CourseExits.ISBMaxStopPts, default 25) — one number, not two (P2-1).
+	// B12 (CTO 1791041016051): a stop in the 20–<ceiling band cuts to the
+	// reduced tier (4 under owner order 2026-10-16) and wins over confluence
+	// sizing — "reduce size or don't trade" [D3.3 p1 @ 01:09] is a rule about
+	// the STOP, so it outranks the confluence tier. The band top is the
+	// mentor_isb_max_pts knob (kernel CourseExits.ISBMaxStopPts, default 30) —
+	// one number, not two (P2-1).
 	bandTop := in.ISBMaxStopPts
 	if bandTop <= 0 {
 		bandTop = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
 	}
-	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts <= bandTop {
+	if in.StopPts >= mentorStopTwentiesMinPts && in.StopPts < bandTop {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
-			"stop %.1f pts in the 20–%.0f band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts, bandTop)}, nil
+			"stop %.1f pts in the 20–<%.0f band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts, bandTop)}, nil
 	}
 	if in.Confluence && in.HTFAgree && in.RoomMultiple >= mentorRoomBigMultiple && in.TargetPts >= mentorTargetBigPts {
 		n := clamp(big)
@@ -635,14 +635,14 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 		}
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
-		// (CourseExits.ISBMaxStopPts, default 25). One number, not two (P2-1):
+		// (CourseExits.ISBMaxStopPts, default 30). One number, not two (P2-1):
 		// a raised knob must also raise the trader's own ceiling.
 		isbMax := extra.ISBMaxStopPts
 		if isbMax <= 0 {
 			isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
 		}
-		if stop > isbMax {
-			return fmt.Sprintf("R8: stop %.1f pts over the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, isbMax)
+		if stop >= isbMax {
+			return fmt.Sprintf("R8: stop %.1f pts at/over the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, isbMax)
 		}
 	}
 	if target > 0 && target < stop {

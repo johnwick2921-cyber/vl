@@ -65,7 +65,7 @@ func TestMentorSize4ArmRowSplitsTwoTwo(t *testing.T) {
 
 // TestMentorSize4DispatchSizesFour drives mentorDispatchIntent (the production
 // injector switch) for every intraday tier and pins the sized count: base /
-// ISB in range / ISB old extreme / 20–25 stop / confluence / big → 4; swing →
+// ISB in range / ISB old extreme / 20–30 stop / confluence / big → 4; swing →
 // 2. Mutant: any default back to 5 or 3 → the recorder sees a different count
 // → RED.
 func TestMentorSize4DispatchSizesFour(t *testing.T) {
@@ -92,7 +92,7 @@ func TestMentorSize4DispatchSizesFour(t *testing.T) {
 		{"base ISB", base("ISB", 5.75, 11.5), mentorTierInputs{}, 4},
 		{"ISB in range", func() mentor.Intent { in := base("ISB", 5.75, 11.5); in.Flag = mentor.FlagISBInRange; return in }(), mentorTierInputs{}, 4},
 		{"ISB old extreme", func() mentor.Intent { in := base("ISB", 5.75, 11.5); in.Flag = mentor.FlagISBAtOldExtreme; return in }(), mentorTierInputs{}, 4},
-		{"20-25 stop", base("PLH", 25, 50), mentorTierInputs{}, 4},
+		{"20-30 stop", base("PLH", 25, 50), mentorTierInputs{}, 4},
 		{"confluence", func() mentor.Intent { in := base("PHL", 12, 35); in.Confluence = true; return in }(), mentorTierInputs{}, 4},
 		{"big", func() mentor.Intent { in := base("PHL", 12, 35); in.Confluence = true; return in }(), mentorTierInputs{RoomMultiple: 2.5, HTFAgree: true}, 4},
 		{"swing", base("SWING4H", 12, 24), mentorTierInputs{}, 2},

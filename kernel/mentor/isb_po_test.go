@@ -165,9 +165,9 @@ func TestTargetFloorOK(t *testing.T) {
 	}
 }
 
-// TestISBSilentDropsAllNamed — CTO E-4, the >25 stop ceiling (CX-9), the HTF
-// block, the R5 box block, the HTF side mismatch and the DayOff branch all
-// record a named refusal instead of dropping silently.
+// TestISBSilentDropsAllNamed — CTO E-4, course-defaults-30: the 30-pt stop
+// ceiling (CX-9), the HTF block, the R5 box block, the HTF side mismatch and
+// the DayOff branch all record a named refusal instead of dropping silently.
 func TestISBSilentDropsAllNamed(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
@@ -177,8 +177,8 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 		e := newISBEval(cfg)
 		bars := []market.Kline{
 			rthBars(0, 121, 121.5, 120.5, 120),
-			rthBars(1, 95, 120, 90, 115),  // green candle 1, wide
-			rthBars(2, 100, 117, 90, 101), // ISB; stop = 27 + 3 = 30 pts
+			rthBars(1, 95, 120, 90, 115),   // green candle 1, wide
+			rthBars(2, 100, 117, 90, 101),  // ISB; stop = 27 + 3 = 30 pts
 		}
 		if _, ok, _ := ISBStopVerdict(bars[2], cfg); ok {
 			t.Fatal("fixture: the stop must reach the 30-pt ceiling")

@@ -144,21 +144,21 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 	}
 }
 
-// R85 reworked: the reverse ISB obeys the SAME stop ceiling as the normal ISB
-// — CourseExits.ISBMaxStopPts default 25 (the course's >25 skip). The
-// fixture's inside candle gives a 5-pt stop, so with the default it FIRES
-// (retagged PHL by CX-6); with the knob at 4 the same
+// R85 reworked by course-defaults-30: the reverse ISB obeys the SAME stop
+// ceiling as the normal ISB — CourseExits.ISBMaxStopPts default 30 (stop < 30
+// taken, ≥ 30 refused). The fixture's inside candle gives a 5-pt stop, so with
+// the default it FIRES (retagged PHL by CX-6); with the knob at 4 the same
 // 5-pt stop is refused and counted "isbrev_stop_over_max". Mutant: drop the
 // isbOverMaxStop check in ISBStopVerdict → RED (the reverse fires under the
 // knob). The fired-intent filter matches the RETAGGED PHL, so a regression
 // that silently drops the intent (or un-retags it) fails here too.
 func TestReverseISBSkipsTheTwenties(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	if e.Cfg.CourseExits.ISBMaxStopPts != 25 {
-		t.Fatalf("CX-9 default must be 25 (the course's >25 skip); got %g", e.Cfg.CourseExits.ISBMaxStopPts)
+	if e.Cfg.CourseExits.ISBMaxStopPts != 30 {
+		t.Fatalf("CX-9 default must be 30; got %g", e.Cfg.CourseExits.ISBMaxStopPts)
 	}
 	ins := e.Tick(bars, now)
-	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 25-pt
+	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 30-pt
 	// ceiling. Assert the intent is PRESENT (the old loop asserted nothing).
 	var fired *Intent
 	for i := range ins {
