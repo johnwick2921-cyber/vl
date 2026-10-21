@@ -104,6 +104,12 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.messages = append(rec.messages, text)
 			return false
 		},
+		errorBox: func(text string) {
+			rec.messages = append(rec.messages, text)
+		},
+		infoBox: func(text string) {
+			rec.messages = append(rec.messages, text)
+		},
 		singleInstance: func() bool { return true },
 	}
 	return d, rec

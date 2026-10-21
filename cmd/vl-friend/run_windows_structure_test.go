@@ -152,19 +152,23 @@ func TestWindowsDocumentsDirUsesKnownFolderPath(t *testing.T) {
 // signer subject is not corrupted by the OEM codepage. The mutant that drops the
 // psUTF8 prefix from verifyMsiSigner fails here.
 func TestPowerShellOutputForcedUTF8(t *testing.T) {
-	src, err := os.ReadFile("run_windows.go")
+	osSrc, err := os.ReadFile("osdeps.go")
+	if err != nil {
+		t.Fatalf("read osdeps.go: %v", err)
+	}
+	// P2a: psPreamble lives in osdeps.go (shared with flow.go on Linux).
+	if !strings.Contains(string(osSrc), `$ProgressPreference='SilentlyContinue'`) {
+		t.Fatalf("the PowerShell preamble must silence progress (CLIXML) noise")
+	}
+	if !strings.Contains(string(osSrc), `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)`) {
+		t.Fatalf("the PowerShell preamble must force UTF-8 no-BOM output")
+	}
+
+	rw, err := os.ReadFile("run_windows.go")
 	if err != nil {
 		t.Fatalf("read run_windows.go: %v", err)
 	}
-	s := string(src)
-
-	// P2a: the preamble forces UTF-8 no-BOM and silences CLIXML noise.
-	if !strings.Contains(s, `$ProgressPreference='SilentlyContinue'`) {
-		t.Fatalf("the PowerShell preamble must silence progress (CLIXML) noise")
-	}
-	if !strings.Contains(s, `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)`) {
-		t.Fatalf("the PowerShell preamble must force UTF-8 no-BOM output")
-	}
+	s := string(rw)
 	if !strings.Contains(s, "psRun(script, msiPath)") {
 		t.Fatalf("verifyMsiSigner must run through psRun")
 	}

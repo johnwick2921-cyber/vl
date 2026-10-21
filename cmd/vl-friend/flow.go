@@ -722,34 +722,32 @@ func ensureTailscale(ctx context.Context, d deps, authKey, base string) error {
 	return tailscaleConnect(ctx, d, authKey, base)
 }
 
-// elevatedInstallScript is the PowerShell that runs ELEVATED. It re-verifies the
-// Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard), quotes
-// the MSI path (S23a: "/i `"<path>`""), and reports UAC cancellation by
-// NativeErrorCode 1223 (W10) — never by matching English text. The MSI path
-// arrives as $args[0] (S18b: no script-text splicing). G3: after msiexec it runs
-// `tailscale up` with the auth key from $args[1] — one UAC prompt covers both —
-// so a standard user is never told to "run as administrator" (which would switch
-// profiles and point at the wrong Documents/LOCALAPPDATA). The `up` here is
-// best-effort: a failure prints VL_UP_FAILED and the caller retries `up` and
-// surfaces the real error.
-const elevatedInstallScript = `$msi = $args[0]
-$key = $args[1]
-[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+// elevatedInstallScript is the PowerShell that runs ELEVATED. P2a: it starts
+// with the psPreamble. P1: the MSI path arrives in $env:VL_ARG0 and the auth
+// key in $env:VL_ARG1 (never positional args, never spliced). It re-verifies
+// the Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard) and
+// parses the signer DN for an EXACT O= (H13). UAC cancellation is reported by
+// NativeErrorCode 1223 (W10) — never English text. G3/H14a: after msiexec it
+// runs `tailscale up` with the key from the TS_AUTHKEY ENV (never argv), so one
+// UAC prompt covers both and a standard user is never told to "run as
+// administrator". P2c: it prints ONE marker line VL_RESULT=<msiexec exit code>.
+const elevatedInstallScript = psPreamble + `$msi = $env:VL_ARG0
+$key = $env:VL_ARG1
 $sig = Get-AuthenticodeSignature -FilePath $msi
-if ($sig.Status -ne 'Valid') { Write-Output 'VL_MSI_NOT_VALID'; exit 2 }
+if ($sig.Status -ne 'Valid') { Write-Output 'VL_RESULT=MSI_NOT_VALID'; exit 2 }
 $org = ''
 foreach ($part in ($sig.SignerCertificate.Subject -split ',')) { $kv = $part.Trim(); if ($kv.StartsWith('O=')) { $org = $kv.Substring(2); break } }
-if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_MSI_BAD_SIGNER'; exit 3 }
+if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_RESULT=MSI_BAD_SIGNER'; exit 3 }
 $arg = '/i "' + $msi + '" /quiet /norestart'
 try {
   $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
-  Write-Output $p.ExitCode
+  Write-Output ('VL_RESULT=' + $p.ExitCode)
   if ($key) {
-    & 'C:\Program Files\Tailscale\tailscale.exe' up --authkey $key --unattended 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) { Write-Output ('VL_UP_FAILED:' + $LASTEXITCODE) }
+    $env:TS_AUTHKEY = $key
+    & 'C:\Program Files\Tailscale\tailscale.exe' up --unattended 2>$null | Out-Null
   }
 } catch {
-  if ($_.Exception.InnerException.NativeErrorCode -eq 1223) { Write-Output 'VL_UAC_CANCELLED'; exit 0 }
+  if ($_.Exception.InnerException.NativeErrorCode -eq 1223) { Write-Output 'VL_RESULT=UAC_CANCELLED'; exit 0 }
   throw
 }`
 
@@ -763,24 +761,23 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey stri
 	if err != nil {
 		return 0, fmt.Errorf("tailscale install: %w: %s", err, strings.TrimSpace(string(out)))
 	}
-	for _, line := range strings.Split(strings.TrimSpace(string(out)), "\n") {
-		line = strings.TrimSpace(line)
-		switch {
-		case line == "VL_UAC_CANCELLED":
-			return 1223, nil
-		case line == "VL_MSI_NOT_VALID" || line == "VL_MSI_BAD_SIGNER":
-			// H18a: a signature-verify failure is most likely an update being
-			// published mid-flight — tell the user to retry shortly.
-			return 0, fmt.Errorf("the Tailscale installer signature did not verify (%s) — try again in a minute (an update was being published)", line)
-		case strings.HasPrefix(line, "VL_UP_FAILED:"):
-			// best-effort join failed; the caller retries `up` and surfaces it.
-			continue
-		}
-		if n, aerr := strconv.Atoi(line); aerr == nil {
-			return n, nil
-		}
+	line, err := psResultLine(out)
+	if err != nil {
+		return 0, fmt.Errorf("tailscale install: %w", err)
 	}
-	return 0, fmt.Errorf("tailscale install: unreadable exit code %q", strings.TrimSpace(string(out)))
+	switch line {
+	case "UAC_CANCELLED":
+		return 1223, nil
+	case "MSI_NOT_VALID", "MSI_BAD_SIGNER":
+		// H18a: a signature-verify failure is most likely an update being
+		// published mid-flight — tell the user to retry shortly.
+		return 0, fmt.Errorf("the Tailscale installer signature did not verify (%s) — try again in a minute (an update was being published)", line)
+	}
+	code, err := strconv.Atoi(line)
+	if err != nil {
+		return 0, fmt.Errorf("tailscale install: unreadable exit code %q", line)
+	}
+	return code, nil
 }
 
 // shortcutScript builds the PowerShell that creates the VL shortcuts. It is a
@@ -939,7 +936,7 @@ func runOpen(ctx context.Context, d deps) error {
 
 	base, err := resolveDashboardBase(ctx, d)
 	if err != nil {
-		d.messageBox("VL could not start: " + err.Error() + ". Send a photo of this to the owner.")
+		d.errorBox("VL could not start: " + err.Error() + ". Send a photo of this to the owner.")
 		return err
 	}
 
@@ -953,7 +950,7 @@ func runOpen(ctx context.Context, d deps) error {
 	// G13/F8: open the dashboard FIRST, then re-create a MISSING shortcut
 	// (non-fatal, and the .lnk/.url presence check is in the script).
 	if oerr := d.openURL(ctx, base); oerr != nil {
-		d.messageBox("VL could not start: " + oerr.Error() + ". Send a photo of this to the owner.")
+		d.errorBox("VL could not start: " + oerr.Error() + ". Send a photo of this to the owner.")
 		return oerr
 	}
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
@@ -968,7 +965,7 @@ func runOpen(ctx context.Context, d deps) error {
 	if derr != nil {
 		// W15: the 5-second manifest probe failed — the dashboard is already open,
 		// so just tell the mentor the bot is unreachable.
-		d.messageBox("VL cannot reach your bot — open Tailscale and check it says Connected.")
+		d.infoBox("VL cannot reach your bot — open Tailscale and check it says Connected.")
 		return nil
 	}
 	if !dec.AddonUpdateAvailable {
@@ -988,15 +985,15 @@ func runOpen(ctx context.Context, d deps) error {
 	dec2, uerr := RunUpdateCheck(uctx, d, base, true, true)
 	if uerr != nil {
 		if errors.Is(uerr, errNotFlat) {
-			d.messageBox("Update postponed — a trade is open. VL will offer it again next time.")
+			d.infoBox("Update postponed — a trade is open. VL will offer it again next time.")
 			return nil
 		}
-		d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
+		d.errorBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
 		return uerr
 	}
 	// H4: announce only when the swap actually applied.
 	if dec2.Applied {
-		d.messageBox("Updated ✓ — restart NinjaTrader to load it.")
+		d.infoBox("Updated ✓ — restart NinjaTrader to load it.")
 	}
 	return nil
 }
@@ -1048,15 +1045,15 @@ func writeDashboardREADME(d deps, docs, appURL string) error {
 }
 
 // openScript builds the PowerShell that opens the dashboard: msedge --app when
-// Edge is present (resolved to a full path), else the default browser. S18b: the
-// URL arrives as $args[0] (the caller sends it via -EncodedCommand) — never
-// spliced into the script text.
+// Edge is present (resolved to a full path), else the default browser. P1: the
+// URL arrives in $env:VL_ARG0 (PowerShell 5.1 rejects a positional arg after
+// -EncodedCommand) — never spliced into the script text.
 func openScript() string {
 	return strings.Join([]string{
 		"$edge=$null",
 		"foreach($r in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe')){try{$v=(Get-ItemProperty -Path $r -ErrorAction Stop).'(default)';if($v -and (Test-Path $v)){$edge=$v;break}}catch{}}",
 		"if(-not $edge){foreach($p in @(\"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\",\"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe\")){if(Test-Path $p){$edge=$p;break}}}",
-		"if($edge){Start-Process $edge -ArgumentList ('--app=' + $args[0])}else{Start-Process $args[0]}",
+		"if($edge){Start-Process $edge -ArgumentList ('--app=' + $env:VL_ARG0)}else{Start-Process $env:VL_ARG0}",
 	}, ";")
 }
 

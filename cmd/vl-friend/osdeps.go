@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/base64"
+	"fmt"
 	"io/fs"
+	"strings"
 	"unicode/utf16"
 )
 
@@ -116,6 +118,26 @@ func psEncodedCommand(script string) string {
 		b = append(b, byte(c), byte(c>>8))
 	}
 	return base64.StdEncoding.EncodeToString(b)
+}
+
+// psPreamble (P2a) heads EVERY PowerShell script the app runs: it silences the
+// CLIXML progress noise, fails fast on a script error, and forces UTF-8 output
+// with no BOM (so a non-ASCII signer subject survives the parse). Lives here
+// (not run_windows.go) so flow.go scripts can prefix it without breaking the
+// Linux test build.
+const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
+
+// psResultLine extracts the single VL_RESULT=<value> line from stdout (P2c),
+// ignoring every other line a PowerShell run may emit. Lives here so flow.go's
+// parsers can share it on Linux.
+func psResultLine(stdout []byte) (string, error) {
+	for _, ln := range strings.Split(string(stdout), "\n") {
+		ln = strings.TrimSpace(ln)
+		if v, ok := strings.CutPrefix(ln, "VL_RESULT="); ok {
+			return v, nil
+		}
+	}
+	return "", fmt.Errorf("no VL_RESULT line in output")
 }
 
 // appVersion / appBuild are the friend app's own version, embedded at build

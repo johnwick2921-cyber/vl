@@ -32,14 +32,16 @@ func realDeps() deps {
 	return deps{
 		exec: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			// P1: PowerShell 5.1 rejects a positional arg after -EncodedCommand,
-			// so a call that appends a value must move it into VL_ARG0 env. The
-			// script reads $env:VL_ARG0. P2: STDOUT only is returned.
+			// so trailing values move into VL_ARG0 / VL_ARG1 env. The scripts
+			// read $env:VL_ARG0 / $env:VL_ARG1. P2: STDOUT only is returned.
 			if i := indexOf(args, "-EncodedCommand"); i >= 0 && i+2 < len(args) {
-				val := args[i+2]
+				vals := args[i+2:]
 				trimmed := append([]string{}, args[:i+2]...)
-				trimmed = append(trimmed, args[i+3:]...)
 				cmd := exec.CommandContext(ctx, name, trimmed...)
-				cmd.Env = append(os.Environ(), "VL_ARG0="+val)
+				cmd.Env = append(os.Environ(), "VL_ARG0="+vals[0])
+				if len(vals) > 1 {
+					cmd.Env = append(cmd.Env, "VL_ARG1="+vals[1])
+				}
 				noWindow(cmd)
 				return cmdOutputStdout(cmd)
 			}
@@ -245,11 +247,6 @@ func windowsDocumentsDir() (string, error) {
 	return p, nil
 }
 
-// psPreamble (P2a) heads EVERY PowerShell script this file runs: it silences
-// the CLIXML progress noise, fails fast on a script error, and forces UTF-8
-// output with no BOM (so a non-ASCII signer subject survives the parse).
-const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
-
 // friendHTTPClient is the 30s-timeout client for friend-bot calls (G12): the
 // manifest, the identity check, and the Tailscale MSI download must not hang
 // the whole 30-minute run on a wedged network.
@@ -277,18 +274,6 @@ func psRun(script, arg string) ([]byte, error) {
 	cmd.Env = append(os.Environ(), "VL_ARG0="+arg)
 	noWindow(cmd)
 	return cmdOutputStdout(cmd)
-}
-
-// psResultLine extracts the single VL_RESULT=<value> line from stdout (P2c),
-// ignoring every other line a PowerShell run may emit.
-func psResultLine(stdout []byte) (string, error) {
-	for _, ln := range strings.Split(string(stdout), "\n") {
-		ln = strings.TrimSpace(ln)
-		if v, ok := strings.CutPrefix(ln, "VL_RESULT="); ok {
-			return v, nil
-		}
-	}
-	return "", fmt.Errorf("no VL_RESULT line in output")
 }
 
 // idYes is the Win32 MessageBoxW return for "Yes" (IDYES).

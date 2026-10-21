@@ -107,10 +107,10 @@ func (f *tailscaleFake) exec(ctx context.Context, name string, args ...string) (
 		f.msiexecCalled = true
 		if f.msiErr != nil {
 			// Simulate the elevated script's UAC-cancel marker (W10: 1223).
-			return []byte("VL_UAC_CANCELLED"), nil
+			return []byte("VL_RESULT=UAC_CANCELLED"), nil
 		}
 		f.installed = true
-		return []byte(strconv.Itoa(f.msiExitCode)), nil
+		return []byte("VL_RESULT=" + strconv.Itoa(f.msiExitCode)), nil
 	}
 	return nil, nil
 }
@@ -153,8 +153,11 @@ func (f *tailscaleFake) deps(t *testing.T) deps {
 		},
 		writeFile:      os.WriteFile,
 		readLine:       func(string) (string, error) { return "", nil },
+		readSecret:     func(string) (string, error) { return "", nil },
 		print:          func(l string) { f.prints = append(f.prints, l) },
 		messageBox:     func(string) bool { return false },
+		errorBox:       func(string) {},
+		infoBox:        func(string) {},
 		singleInstance: func() bool { return true },
 	}
 }
@@ -344,10 +347,10 @@ func TestNeverPrintSecrets(t *testing.T) {
 	}
 }
 
-// TestElevatedScriptRunsUpWithArgsKey — G3: the ELEVATED step runs `tailscale up`
-// with the auth key from $args[1] (one UAC prompt covers MSI + up), and the key
-// is NEVER spliced into the script text. MUTANT: splice the key into the script
-// → this test RED.
+// TestElevatedScriptRunsUpWithArgsKey — G3/H14a: the ELEVATED step runs
+// `tailscale up` with the key from the TS_AUTHKEY env (one UAC covers MSI + up),
+// and the key is NEVER spliced into the script text. MUTANT: splice the key into
+// the script → this test RED.
 func TestElevatedScriptRunsUpWithArgsKey(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
@@ -355,8 +358,8 @@ func TestElevatedScriptRunsUpWithArgsKey(t *testing.T) {
 	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-SECRET123", "http://100.64.0.2:18081"); err != nil {
 		t.Fatalf("install refused: %v", err)
 	}
-	if !strings.Contains(f.installCmd, "up --authkey $key") {
-		t.Fatalf("the elevated step must run `up` with the key from $args[1]: %q", f.installCmd)
+	if !strings.Contains(f.installCmd, "up --unattended") || !strings.Contains(f.installCmd, "$env:TS_AUTHKEY") {
+		t.Fatalf("the elevated step must run `up` with the key from TS_AUTHKEY: %q", f.installCmd)
 	}
 	if strings.Contains(f.installCmd, "tskey-SECRET123") {
 		t.Fatalf("the key must NOT be spliced into the script text: %q", f.installCmd)
