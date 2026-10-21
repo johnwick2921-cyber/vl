@@ -131,7 +131,7 @@ func realDeps() deps {
 			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
 		openURL: func(ctx context.Context, url string) error {
-			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", openScript(url))
+			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(openScript()), url)
 			noWindow(cmd)
 			_, err := cmd.CombinedOutput()
 			return err

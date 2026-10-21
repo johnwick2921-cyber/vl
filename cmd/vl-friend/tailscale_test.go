@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strconv"
@@ -61,16 +62,34 @@ func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]
 		return nil, nil
 	case name == tailscaleExeFallback:
 		return f.exec(context.Background(), "tailscale", args...)
-	case name == "powershell.exe" && len(args) > 0 && strings.Contains(args[len(args)-1], "Start-Process msiexec"):
-		f.installCmd = args[len(args)-1]
+	case name == "powershell.exe" && len(args) >= 4 && args[2] == "-EncodedCommand":
+		script := decodePSCommand(args[3])
+		if !strings.Contains(script, "Start-Process msiexec") {
+			return nil, nil
+		}
+		f.installCmd = script
 		f.msiexecCalled = true
 		if f.msiErr != nil {
-			return nil, f.msiErr
+			// Simulate the elevated script's UAC-cancel marker (W10: 1223).
+			return []byte("VL_UAC_CANCELLED"), nil
 		}
 		f.installed = true
 		return []byte(strconv.Itoa(f.msiExitCode)), nil
 	}
 	return nil, nil
+}
+
+// decodePSCommand reverses psEncodedCommand (base64 UTF-16LE) for the test fake.
+func decodePSCommand(b64 string) string {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return ""
+	}
+	var sb strings.Builder
+	for i := 0; i+1 < len(raw); i += 2 {
+		sb.WriteRune(rune(uint16(raw[i]) | uint16(raw[i+1])<<8))
+	}
+	return sb.String()
 }
 
 func (f *tailscaleFake) deps(t *testing.T) deps {
@@ -157,8 +176,12 @@ func TestInstallRunsElevated(t *testing.T) {
 	if !strings.Contains(f.installCmd, "-Verb RunAs") {
 		t.Fatalf("the install did not run elevated; command was %q", f.installCmd)
 	}
-	if !strings.Contains(f.installCmd, "'/quiet'") || !strings.Contains(f.installCmd, "'/norestart'") {
+	if !strings.Contains(f.installCmd, "/quiet") || !strings.Contains(f.installCmd, "/norestart") {
 		t.Fatalf("the install args are wrong; command was %q", f.installCmd)
+	}
+	// S18b: the MSI path is passed as $args[0], not spliced into the script.
+	if strings.Contains(f.installCmd, "MZ-fake-msi") {
+		t.Fatalf("the MSI path must not be spliced into the script: %q", f.installCmd)
 	}
 }
 

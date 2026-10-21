@@ -522,21 +522,41 @@ func ensureTailscale(ctx context.Context, d deps, authKey, base string) error {
 	return tailscaleConnect(ctx, d, authKey, base)
 }
 
+// elevatedInstallScript is the PowerShell that runs ELEVATED. It re-verifies the
+// Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard), quotes the
+// MSI path (S23a: "/i `"<path>`""), and reports UAC cancellation by
+// NativeErrorCode 1223 (W10) — never by matching English text. The MSI path
+// arrives as $args[0] (S18b: no script-text splicing).
+const elevatedInstallScript = `$msi = $args[0]
+[Console]::OutputEncoding=[System.Text.Encoding]::UTF8
+$sig = Get-AuthenticodeSignature -FilePath $msi
+if ($sig.Status -ne 'Valid') { Write-Output 'VL_MSI_NOT_VALID'; exit 2 }
+if (-not ($sig.SignerCertificate.Subject -match 'O=Tailscale Inc\.')) { Write-Output 'VL_MSI_BAD_SIGNER'; exit 3 }
+$arg = '/i "' + $msi + '" /quiet /norestart'
+try {
+  $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
+  $p.ExitCode
+} catch {
+  if ($_.Exception.InnerException.NativeErrorCode -eq 1223) { Write-Output 'VL_UAC_CANCELLED'; exit 0 }
+  throw
+}`
+
 // installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
 // Yes/No prompt (a per-machine /quiet MSI from a non-admin process fails with
-// no prompt — 1603/1625). It returns the msiexec exit code.
+// no prompt — 1603/1625). It returns the msiexec exit code. S8/S23a/W10/S18b:
+// the command is sent via -EncodedCommand with the MSI path as $args[0], the
+// script re-verifies the signature right before msiexec, and a UAC cancel is
+// detected by NativeErrorCode 1223 (never English text).
 func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int, error) {
-	// The [2/6] screen already tells the user Windows will ask for permission.
-	escaped := strings.ReplaceAll(msiPath, "'", "''")
-	ps := "$p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList '/i','" + escaped + "','/quiet','/norestart'; $p.ExitCode"
-	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-Command", ps)
+	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(elevatedInstallScript), msiPath)
 	if err != nil {
-		// UAC declined makes Start-Process throw "canceled by the user" (1223).
-		msg := strings.ToLower(string(out) + " " + err.Error())
-		if strings.Contains(msg, "1223") || strings.Contains(msg, "canceled by the user") || strings.Contains(msg, "cancelled by the user") {
-			return 1223, nil
-		}
-		return 0, fmt.Errorf("tailscale install: %w", err)
+		return 0, fmt.Errorf("tailscale install: %w: %s", err, strings.TrimSpace(string(out)))
+	}
+	switch strings.TrimSpace(string(out)) {
+	case "VL_UAC_CANCELLED":
+		return 1223, nil
+	case "VL_MSI_NOT_VALID", "VL_MSI_BAD_SIGNER":
+		return 0, fmt.Errorf("tailscale install: elevated signature re-verify refused (%s)", strings.TrimSpace(string(out)))
 	}
 	code, err := strconv.Atoi(strings.TrimSpace(string(out)))
 	if err != nil {
@@ -782,13 +802,15 @@ func writeDashboardREADME(d deps, docs, appURL string) error {
 }
 
 // openScript builds the PowerShell that opens the dashboard: msedge --app when
-// Edge is present (resolved to a full path), else the default browser.
-func openScript(appURL string) string {
+// Edge is present (resolved to a full path), else the default browser. S18b: the
+// URL arrives as $args[0] (the caller sends it via -EncodedCommand) — never
+// spliced into the script text.
+func openScript() string {
 	return strings.Join([]string{
 		"$edge=$null",
 		"foreach($r in @('HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe','HKCU:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\msedge.exe')){try{$v=(Get-ItemProperty -Path $r -ErrorAction Stop).'(default)';if($v -and (Test-Path $v)){$edge=$v;break}}catch{}}",
 		"if(-not $edge){foreach($p in @(\"${env:ProgramFiles(x86)}\\Microsoft\\Edge\\Application\\msedge.exe\",\"$env:ProgramFiles\\Microsoft\\Edge\\Application\\msedge.exe\")){if(Test-Path $p){$edge=$p;break}}}",
-		"if($edge){Start-Process $edge -ArgumentList '--app=" + appURL + "'}else{Start-Process '" + appURL + "'}",
+		"if($edge){Start-Process $edge -ArgumentList ('--app=' + $args[0])}else{Start-Process $args[0]}",
 	}, ";")
 }
 
