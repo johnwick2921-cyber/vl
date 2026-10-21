@@ -262,6 +262,7 @@ type Evaluator struct {
 	tlValid   map[string]bool
 	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
+	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
 }
 
 // maxNotes bounds the undrained note buffer (replays and tests never drain).
@@ -295,12 +296,58 @@ func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []m
 		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
 }
 
+// htFTrendlines maintains the PERSISTENT higher-timeframe trendlines in
+// evaluator state [D2.3 p1 @04:23–05:41]: the anchors are kept across the
+// window slide (the 25-hour rebuild window does NOT delete a 1h/4h line), a
+// line dies only on a close-through on its OWN timeframe, and a 3rd touch
+// latches once it happens. New lines whose anchors are inside the current
+// window are folded in; every held line is then break-checked by time. It
+// returns the live lines (to join the level set) and the ones that broke
+// this tick (for the note).
+func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, broken []Trendline) {
+	if e.tlHTF == nil {
+		e.tlHTF = map[string]Trendline{}
+	}
+	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
+	// line and must not re-bucket the whole window for each one.
+	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
+	for _, tf := range []int{60, 240} {
+		for _, tl := range trendlinesBuildTF(bars, tf, now) {
+			k := tl.key()
+			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
+				continue // keep the latched-valid line; never regress it
+			}
+			e.tlHTF[k] = tl
+		}
+	}
+	for k, tl := range e.tlHTF {
+		btf := tfBars[tl.TFMin]
+		if btf == nil {
+			btf = barsTF(bars, tl.TFMin)
+		}
+		if tl.Dead || trendlineHTFBroken(tl, btf, now) {
+			tl.Dead = true
+			delete(e.tlHTF, k)
+			broken = append(broken, tl)
+			continue
+		}
+		if tl.ValidAt == 0 {
+			if va := trendlineHTFTouch(tl, btf, now); va > 0 {
+				tl.ValidAt = va
+			}
+		}
+		e.tlHTF[k] = tl
+		live = append(live, tl)
+	}
+	return live, broken
+}
+
 // trackTrendlines counts each crossed-between-anchors pair once per trading
 // day (refusal "trendline_crossed_between_anchors") and records a change line
 // when a line turns VALID (a location) or a valid line is broken by a 5m
 // close. The session roll clears both sets — the lines die at day end
 // [D4.1 p2 @01:17].
-func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+func (e *Evaluator) trackTrendlines(lines, broken []Trendline, crossed []string, now int64) {
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	first := e.tlValid == nil
 	if e.tlDay != day {
@@ -338,6 +385,18 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 			e.tlCrossed[k] = true
 			e.refuse("trendline_crossed_between_anchors")
 		}
+	}
+	// Persistent HTF lines that broke THIS tick are already removed from
+	// tlHTF; they never enter `lines`, so they are noted here.
+	for _, tl := range broken {
+		k := tl.key()
+		if !e.tlValid[k] {
+			continue // existed but never valid — a silent discard
+		}
+		delete(e.tlValid, k)
+		delete(e.tlTF, k)
+		e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+			tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
 	}
 	for _, tl := range lines {
 		k := tl.key()
@@ -1526,9 +1585,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
+	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
-	e.trackTrendlines(trendlines, crossed, now)
+	e.trackTrendlines(trendlines, htfBroken, crossed, now)
 	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
 	for _, k := range tlRefused {
 		e.refuse("tl_first_test_level_preferred:" + k)

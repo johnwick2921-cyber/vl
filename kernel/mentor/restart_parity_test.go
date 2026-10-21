@@ -313,7 +313,6 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 	end := time.Date(2026, time.October, 13, 16, 0, 0, 0, ctime()).UnixMilli()
 	prevDrawn := map[string]Trendline{}
 	drawn, vanished, validErased, crossedDrawn, validSeen, maxLive := map[string]bool{}, 0, 0, 0, map[string]bool{}, 0
-	htfVanished := 0
 	for i, b := range bars {
 		now := BarCloseInstant(b)
 		if now <= open || now > end {
@@ -331,14 +330,8 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 			cur[k] = tl
 			if !drawn[k] {
 				drawn[k] = true
-				// re-resolve the anchors in this window and test the candles
-				// between — on the line's OWN timeframe bars (the HTF line's
-				// P0Idx/P1Idx index the bucketed bars, not the 1m window).
-				checkBars := win
-				if tl.TFMin > 0 {
-					checkBars = barsTF(win, tl.TFMin)
-				}
-				if trendlineCrossed(checkBars, tl) {
+				// re-resolve the anchors in this window and test the candles between
+				if trendlineCrossed(win, tl) {
 					crossedDrawn++
 				}
 			}
@@ -348,14 +341,6 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 		}
 		for k, p := range prevDrawn {
 			if _, ok := cur[k]; ok {
-				continue
-			}
-			if p.TFMin > 0 {
-				// HTF lines are window-limited: when their anchor scrolls out
-				// of the last-1500-bars window they are no longer rebuilt.
-				// That is a data-depth limit, not the R4 mid-session erase the
-				// 1m invariant pins [D2.3 p1 @04:23–05:41].
-				htfVanished++
 				continue
 			}
 			vanished++
@@ -371,12 +356,12 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 			maxLive = live
 		}
 	}
-	t.Logf("10-13 session: %d distinct lines drawn · %d 1m lines vanished mid-session · %d VALID 1m lines erased · %d HTF lines scrolled out of the window · %d valid ever · max %d valid+unbroken at once · %d drawn through price between anchors", len(drawn), vanished, validErased, htfVanished, len(validSeen), maxLive, crossedDrawn)
+	t.Logf("10-13 session: %d distinct lines drawn · %d vanished mid-session · %d VALID lines erased · %d valid ever · max %d valid+unbroken at once · %d drawn through price between anchors", len(drawn), vanished, validErased, len(validSeen), maxLive, crossedDrawn)
 	if len(validSeen) == 0 {
 		t.Fatal("control: no trendline ever turned valid on 10-13 — the pin would be vacuous")
 	}
 	if vanished != 0 || validErased != 0 {
-		t.Errorf("%d 1m lines (%d VALID) vanished mid-session without a 5m-close break — R4: never erased during the session", vanished, validErased)
+		t.Errorf("%d drawn lines (%d VALID) vanished mid-session without a 5m-close break — R4: never erased during the session", vanished, validErased)
 	}
 	if crossedDrawn != 0 {
 		t.Errorf("%d lines were drawn through price between their own anchors", crossedDrawn)

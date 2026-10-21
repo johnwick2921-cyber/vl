@@ -155,12 +155,6 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 			out = append(out, tl)
 		}
 	}
-	// Higher-timeframe lines PERSIST [D2.3 p1 @04:23–05:41]: "Trendline khung
-	// 1h, khung 4h … nó sẽ work forever. Anh chị không cần phải xóa." They are
-	// anchored on the bucketed 1h/4h swings, do NOT die at the session end, and
-	// break only on an HTF close through (not a 5m close).
-	out = append(out, trendlinesBuildTF(bars, 60, now)...)
-	out = append(out, trendlinesBuildTF(bars, 240, now)...)
 	return out, crossed
 }
 
@@ -221,6 +215,69 @@ func trendlinesBuildTF(bars []market.Kline, tfMin int, now time.Time) []Trendlin
 		}
 	}
 	return out
+}
+
+// trendlineHTFBroken reports whether a persisted HTF line is now broken — a
+// closed HTF candle (the line's own timeframe) CLOSED through it since the
+// line was drawn. The line's anchor indices are meaningless once the window
+// has slid past them, so the scan is purely by TIME: every closed bucketed
+// candle after P1T is tested, not just the ones after a stored index.
+// A line in evaluator state was unbroken on the previous tick, so this only
+// needs to see the candles the current window can supply.
+func trendlineHTFBroken(tl Trendline, btf []market.Kline, now time.Time) bool {
+	nowMs := now.UnixMilli()
+	for _, b := range btf {
+		if b.CloseTime >= nowMs || b.CloseTime <= tl.P1T {
+			continue // still forming, or before the line was drawn
+		}
+		if tl.brokenBy5m(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// trendlineHTFTouch returns a non-zero value once price has LEFT a persisted
+// HTF line and come BACK to touch it — the 3rd touch that makes it a location
+// [D3.2 p2 @03:45] — read on the line's own timeframe, purely by TIME. A line
+// that is already valid never calls this (validity is latched in state).
+func trendlineHTFTouch(tl Trendline, btf []market.Kline, now time.Time) int {
+	nowMs := now.UnixMilli()
+	all := swings3(btf)
+	leave := -1
+	for _, s := range all {
+		if btf[s.idx].OpenTime <= tl.P1T || s.idx+1 >= len(btf) {
+			continue
+		}
+		if btf[s.idx+1].CloseTime == 0 || btf[s.idx+1].CloseTime >= nowMs {
+			continue // the confirming bar has not closed yet
+		}
+		if !swingConfirmed(btf, s) {
+			continue
+		}
+		p := tl.priceAt(btf[s.idx].OpenTime)
+		if tl.Side == SideLong && s.kind == kernel.KindSWGH && s.price > p+trendlineTouchBandPts {
+			leave = s.idx
+			break
+		}
+		if tl.Side == SideShort && s.kind == kernel.KindSWGL && s.price < p-trendlineTouchBandPts {
+			leave = s.idx
+			break
+		}
+	}
+	if leave < 0 {
+		return 0 // price never left the line — no return, not a location
+	}
+	for i := leave + 1; i < len(btf); i++ {
+		c := btf[i]
+		if c.CloseTime == 0 || c.CloseTime >= nowMs {
+			continue
+		}
+		if tl.touch(c) {
+			return i
+		}
+	}
+	return 0
 }
 
 // trendlineCrossed reports a line that price CROSSED between its own anchors:

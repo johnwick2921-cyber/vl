@@ -37,20 +37,20 @@ func SeedDayLatch(e *Evaluator, bars1m []market.Kline, now int64) {
 	v, _ := DayGateVerdict(m.Run, m.OK, conflict, dg)
 	e.State.Day = DayLatch{Key: key, Verdict: v}
 	e.State.DayGateReport = DayGateReport{
-		Key:       key,
-		Verdict:   v,
-		RunPts:    m.Run,
-		HaveRun:   m.OK,
-		HiPx:      m.Hi,
-		HiAt:      m.HiAt,
-		LoPx:      m.Lo,
-		LoAt:      m.LoAt,
-		FourHDir:  four.Dir,
-		OneHDir:   one.Dir,
-		Conflict:  conflict,
-		SpentPts:  dg.SpentPts,
-		ReadAt:    open,
-		Restored:  true,
+		Key:      key,
+		Verdict:  v,
+		RunPts:   m.Run,
+		HaveRun:  m.OK,
+		HiPx:     m.Hi,
+		HiAt:     m.HiAt,
+		LoPx:     m.Lo,
+		LoAt:     m.LoAt,
+		FourHDir: four.Dir,
+		OneHDir:  one.Dir,
+		Conflict: conflict,
+		SpentPts: dg.SpentPts,
+		ReadAt:   open,
+		Restored: true,
 	}
 	// Replay the one-way DayOff recheck over the 1h closes since 08:30: a clear
 	// that happened before the restart stays cleared.
@@ -141,7 +141,8 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 	if e == nil {
 		return
 	}
-	lines, crossed := trendlinesBuild(closedOnly(bars1m, now), time.UnixMilli(now))
+	closed := closedOnly(bars1m, now)
+	lines, crossed := trendlinesBuild(closed, time.UnixMilli(now))
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	e.tlDay = day
 	e.tlCrossed = map[string]bool{}
@@ -154,6 +155,23 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 		if tl.ValidAt > 0 && !tl.Dead {
 			e.tlValid[tl.key()] = true
 			e.tlTF[tl.key()] = tl.TFMin
+		}
+	}
+	// Persistent HTF lines: seed from the FULL history — the live tick's
+	// 25-hour window cannot rebuild anchors older than that [D2.3 p1
+	// @04:23–05:41]. The store's stitched series reaches ≥102 closed 4h
+	// candles, so 1h/4h anchors survive the restart.
+	e.tlHTF = map[string]Trendline{}
+	for _, tf := range []int{60, 240} {
+		for _, tl := range trendlinesBuildTF(closed, tf, time.UnixMilli(now)) {
+			if tl.Dead {
+				continue
+			}
+			e.tlHTF[tl.key()] = tl
+			if tl.ValidAt > 0 {
+				e.tlValid[tl.key()] = true
+				e.tlTF[tl.key()] = tl.TFMin
+			}
 		}
 	}
 }

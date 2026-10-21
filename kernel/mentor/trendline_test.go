@@ -668,17 +668,17 @@ func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 	}
 }
 
-// htfPersistenceTape: 25 hours of 1m bars (day 1 09:00 CT → day 2 10:00 CT)
+// htfPersistenceTape: 40 hours of 1m bars (day 1 09:00 CT → day 2 01:00 CT)
 // with a single rising-lows 1h support line: the hour-2 low (97) and the
 // hour-5 low (97.5), both confirmed. Everything else is quiet (low 99.5,
-// high 103, close 102) so the only 1h swings are the two anchors and the line
-// is never closed through.
+// high 111, close 110) so the only 1h swings are the two anchors and the line
+// (slope 0.5/3 ≈ 0.17 per hour) is never closed through across the 40 hours.
 func htfPersistenceTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := trendlineMk(t0)
-	bars := make([]market.Kline, 25*60)
+	bars := make([]market.Kline, 40*60)
 	for i := range bars {
-		bars[i] = mk(i, 100, 103, 99.5, 102)
+		bars[i] = mk(i, 100, 111, 99.5, 110)
 	}
 	// one 1m bar per hour carries the hour's swing low; the rest of the hour
 	// stays at 99.5 so the bucketed 1h bar's Low is exactly that swing low.
@@ -689,35 +689,49 @@ func htfPersistenceTape() ([]market.Kline, func(i int, o, h, l, c float64) marke
 	return bars, mk
 }
 
-// TestTrendlineHTFPersistsAcrossSessionEnd — D2.3 p1 @04:23–05:41: the 1h/4h
-// trendline "works forever — you don't delete it". The 1m lines die at the
-// session end (today-only swing filter), but a 1h line anchored on the
-// PREVIOUS trading day is still built at a later session. RED if the HTF
-// branch inherits the today filter.
-func TestTrendlineHTFPersistsAcrossSessionEnd(t *testing.T) {
+// TestHTFTrendlinePersistsAcrossWindowScroll — D2.3 p1 @04:23–05:41: the 1h/4h
+// line "works forever, no need to delete". The evaluator keeps the anchors in
+// STATE, so a 1h line whose P0 anchor scrolled out of the 25-hour rebuild
+// window is still drawn. RED if the HTF line vanishes with its anchor.
+func TestHTFTrendlinePersistsAcrossWindowScroll(t *testing.T) {
 	bars, _ := htfPersistenceTape()
-	now := time.UnixMilli(bars[24*60].OpenTime + 59_999).In(ctime()) // day 2, 09:00 CT
-	tls := TrendlinesBuild(bars, now)
-
-	var htf []Trendline
-	for _, tl := range tls {
-		if tl.TFMin == 60 {
-			htf = append(htf, tl)
+	e := &Evaluator{}
+	open := bars[0].OpenTime
+	end := bars[len(bars)-1].OpenTime + 59_999
+	live1h := 0
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= open || now > end {
+			continue
+		}
+		live, _ := e.htFTrendlines(lrWindow(bars, i), time.UnixMilli(now))
+		live1h = 0
+		for _, tl := range live {
+			if tl.TFMin == 60 {
+				live1h++
+			}
 		}
 	}
-	if len(htf) == 0 {
-		t.Fatalf("no 1h trendline built at day 2 — the 1h line must persist across the session end; got %+v", tls)
+	// At the last tick the window starts ~15 hours in; the hour-2 P0 anchor is
+	// long gone from the rebuild window, yet the line must still be held.
+	if live1h == 0 {
+		t.Fatalf("the 1h line vanished once its anchor scrolled out of the window — want it held in evaluator state")
 	}
-	tl := htf[0]
-	if tl.Side != SideLong || tl.P0Px != 97 || tl.P1Px != 97.5 {
-		t.Fatalf("1h support line = %+v, want P0Px=97 P1Px=97.5", tl)
+}
+
+// TestSeedTrendlinesSeedsHTF — a restart restores the persistent 1h/4h lines
+// from the full history: SeedTrendlines folds the bucketed swing pairs into
+// e.tlHTF, so the live tick starts with the anchors that predate its window.
+func TestSeedTrendlinesSeedsHTF(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	e := &Evaluator{}
+	SeedTrendlines(e, bars, bars[len(bars)-1].OpenTime+59_999)
+	if len(e.tlHTF) == 0 {
+		t.Fatalf("seed did not populate tlHTF — want the 1h/4h anchors restored from history")
 	}
-	p0Day := tradingDayKey(time.UnixMilli(tl.P0T).In(ctime()))
-	nowDay := tradingDayKey(now)
-	if p0Day == nowDay {
-		t.Fatalf("1h line anchored on trading day %s = the current day — the line did not survive the session end", p0Day)
-	}
-	if tl.Dead {
-		t.Fatalf("1h line is dead at day 2 — want it alive (close 102 never crosses the rising support)")
+	for k, tl := range e.tlHTF {
+		if tl.TFMin == 60 && (tl.P0Px != 97 || tl.P1Px != 97.5) {
+			t.Fatalf("seeded 1h line %s = %+v, want P0Px=97 P1Px=97.5", k, tl)
+		}
 	}
 }
