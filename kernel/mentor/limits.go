@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -175,7 +176,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 		l.Places = nil
 		l.pend = nil
 		l.open = nil
-		l.filled = nil  // FU-1: the receipt dedupe dies with the trading day
+		l.filled = nil   // FU-1: the receipt dedupe dies with the trading day
 		l.Counters = nil // FU-1: the fill-path counters die with the day
 	} else if l.dayKey == "" {
 		l.dayKey = day
@@ -251,19 +252,19 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
-				side:   in.Side,
-				entry:  in.Price,
-				stop:   in.Stop,
-				target: in.Target,
-				expiry: pendExpiry(in, now),
-				armID:  in.ArmID,
-				legExt: ext,
-				anchor: ref.anchor,
-				place:  ref.key,
-				swing:  ext, // B22: the prior swing on the target side at entry
-				box:    ref.box,
-				lo:     ref.lo,
-				hi:     ref.hi,
+				side:     in.Side,
+				entry:    in.Price,
+				stop:     in.Stop,
+				target:   in.Target,
+				expiry:   pendExpiry(in, now),
+				armID:    in.ArmID,
+				legExt:   ext,
+				anchor:   ref.anchor,
+				place:    ref.key,
+				swing:    ext, // B22: the prior swing on the target side at entry
+				box:      ref.box,
+				lo:       ref.lo,
+				hi:       ref.hi,
 				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		case PlaceStopLimitEntry:
@@ -286,18 +287,18 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
-				side:   in.Side,
-				entry:  in.Price,
-				stop:   in.Stop,
-				target: in.Target,
-				expiry: pendExpiry(in, now),
-				isISB:  true,
-				armID:  in.ArmID,
-				anchor: in.Price, // the ISB band: the loss is boxed by price band
-				place:  isbBandKey(in.Price, in.Stop),
-				box:    true,
-				lo:     math.Min(in.Price, in.Stop),
-				hi:     math.Max(in.Price, in.Stop),
+				side:     in.Side,
+				entry:    in.Price,
+				stop:     in.Stop,
+				target:   in.Target,
+				expiry:   pendExpiry(in, now),
+				isISB:    true,
+				armID:    in.ArmID,
+				anchor:   in.Price, // the ISB band: the loss is boxed by price band
+				place:    isbBandKey(in.Price, in.Stop),
+				box:      true,
+				lo:       math.Min(in.Price, in.Stop),
+				hi:       math.Max(in.Price, in.Stop),
 				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		default:
@@ -553,7 +554,12 @@ func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRo
 	}
 	p := l.takePend(armID)
 	if p != nil {
-		l.fill(p, lo, hi, nil)
+		// #5: pass levels — an ISB pend carries no legExt (Apply sets it only
+		// on the PlaceStopEntry/PHL branch), so registerLeg must resolve the
+		// old-extreme fallback from the evaluator's levels. Passing nil made a
+		// REAL ISB fill never register a leg: a stop-out never set Stopped and
+		// the next same-side entry was never refused by the G1 leg budget.
+		l.fill(p, lo, hi, levels)
 		l.markFilled(receiptID)
 		return FillConsumed
 	}
@@ -738,8 +744,14 @@ func placeKey(price float64) string {
 
 // placeID is the G2 registry key: the setup's place key when the emit site
 // named one (the level key, the box edge key, the EMA key), else the
-// quarter-tick anchor price. "" = no place (a plain ISB).
+// quarter-tick anchor price. "" = no place (a plain ISB). A trigger-line
+// retest is keyed BY PRICE (like visitKey, r22 P1-2): each position the 5m
+// trigger line has held is its own support/resistance line, so losses at
+// different line positions must not merge into one place.
 func placeID(anchorKey string, anchor float64) string {
+	if anchorKey == string(KindTriggerRetest) {
+		return fmt.Sprintf("%s@%.2f", anchorKey, anchor)
+	}
 	if anchorKey != "" {
 		return anchorKey
 	}
