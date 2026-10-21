@@ -219,12 +219,18 @@ func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
 	if err := d.writeFile(path, b, 0o600); err != nil {
 		return "", fmt.Errorf("write Tailscale installer: %w", err)
 	}
-	signer, err := d.verifyMsiSigner(path)
+	sig, err := d.verifyMsiSigner(path)
 	if err != nil {
 		return "", fmt.Errorf("verify Tailscale installer signature: %w", err)
 	}
-	if !strings.Contains(strings.ToLower(signer), "tailscale") {
-		return "", fmt.Errorf("refusing Tailscale installer: unexpected Authenticode signer %q", signer)
+	// REVIEW-BACK 2: a tampered MSI keeps its certificate (Status becomes
+	// HashMismatch), so the STATUS is the tamper gate — and the subject must be
+	// the exact org, not merely "contains tailscale".
+	if sig.Status != "Valid" {
+		return "", fmt.Errorf("refusing Tailscale installer: Authenticode status %q (not Valid)", sig.Status)
+	}
+	if !strings.Contains(sig.Subject, "O=Tailscale Inc.") {
+		return "", fmt.Errorf("refusing Tailscale installer: unexpected signer %q (want O=Tailscale Inc.)", sig.Subject)
 	}
 	return path, nil
 }
@@ -307,13 +313,46 @@ func ensureTailscale(ctx context.Context, d deps, authKey string) error {
 	if err != nil {
 		return err
 	}
-	if _, err := d.exec(ctx, "msiexec", "/i", msiPath, "/quiet", "/norestart"); err != nil {
-		return fmt.Errorf("tailscale install: %w", err)
+	code, err := installTailscaleElevated(ctx, d, msiPath)
+	if err != nil {
+		return err
+	}
+	// REVIEW-BACK 1: 0 or 3010 (reboot required) = ok; 1223 = the user clicked No
+	// on the UAC prompt.
+	switch code {
+	case 0, 3010:
+	case 1223:
+		return fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
+	default:
+		return fmt.Errorf("Tailscale install failed (exit %d)", code)
 	}
 	if err := waitTailscaleReady(ctx, d); err != nil {
 		return err
 	}
 	return tailscaleUp(ctx, d, authKey)
+}
+
+// installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
+// Yes/No prompt (a per-machine /quiet MSI from a non-admin process fails with
+// no prompt — 1603/1625). It returns the msiexec exit code.
+func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int, error) {
+	fmt.Println("Windows will ask for permission to install Tailscale — click Yes")
+	escaped := strings.ReplaceAll(msiPath, "'", "''")
+	ps := "$p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList '/i','" + escaped + "','/quiet','/norestart'; $p.ExitCode"
+	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-Command", ps)
+	if err != nil {
+		// UAC declined makes Start-Process throw "canceled by the user" (1223).
+		msg := strings.ToLower(string(out) + " " + err.Error())
+		if strings.Contains(msg, "1223") || strings.Contains(msg, "canceled by the user") || strings.Contains(msg, "cancelled by the user") {
+			return 1223, nil
+		}
+		return 0, fmt.Errorf("tailscale install: %w", err)
+	}
+	code, err := strconv.Atoi(strings.TrimSpace(string(out)))
+	if err != nil {
+		return 0, fmt.Errorf("tailscale install: unreadable exit code %q", strings.TrimSpace(string(out)))
+	}
+	return code, nil
 }
 
 // createDesktopShortcut makes the VL desktop icon open the friend's dashboard

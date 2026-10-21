@@ -63,14 +63,19 @@ func realDeps() deps {
 		},
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
-		verifyMsiSigner: func(msiPath string) (string, error) {
-			ps := "(Get-AuthenticodeSignature -FilePath '" +
-				strings.ReplaceAll(msiPath, "'", "''") + "').SignerCertificate.Subject"
+		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
+			esc := strings.ReplaceAll(msiPath, "'", "''")
+			ps := "$s = Get-AuthenticodeSignature -FilePath '" + esc + "'; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
 			out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
 			if err != nil {
-				return "", fmt.Errorf("Get-AuthenticodeSignature: %w: %s", err, strings.TrimSpace(string(out)))
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w: %s", err, strings.TrimSpace(string(out)))
 			}
-			return strings.TrimSpace(string(out)), nil
+			line := strings.TrimSpace(string(out))
+			status, subject, ok := strings.Cut(line, "|")
+			if !ok {
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: unexpected output %q", line)
+			}
+			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
 	}
 }

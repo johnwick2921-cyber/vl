@@ -4,31 +4,35 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
 )
 
 // tailscale_test.go — the first-run Tailscale flow (P0 fix): MSI download +
-// Authenticode verify, PATH fallback, other-tailnet refusal, device-approval
-// wait and timeout, and the never-print-secrets rule. All over fakes; no real
-// Windows action.
+// Authenticode verify, elevated install (UAC), PATH fallback, other-tailnet
+// refusal, device-approval wait and timeout, and never-print-secrets. All over
+// fakes; no real Windows action.
 
 type tailscaleFake struct {
-	installed      bool   // `tailscale status` answers? flips true after msiexec
+	installed      bool   // `tailscale status` answers? flips true after a successful install
 	beforeState    string // BackendState before "up"
 	afterUpState   string // BackendState after "up" (once approvePolls exhausted)
 	approvePolls   int    // # of post-up status polls returning NeedsMachineAuth
 	upErr          error
-	msiexecErr     error
-	signer         string
+	signerStatus   string // Authenticode Status (default "Valid")
+	signerSubject  string // signer certificate subject
 	signerErr      error
 	fetchErr       error
+	msiExitCode    int   // exit code the elevated install returns (default 0)
+	msiErr         error // UAC-cancel style error from the elevated install
 	upCalled       bool
 	msiexecCalled  bool
 	downloadCalled bool
 	signCalled     bool
 	polls          int
+	installCmd     string
 	execNames      []string
 }
 
@@ -57,13 +61,14 @@ func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]
 		return nil, nil
 	case name == tailscaleExeFallback:
 		return f.exec(context.Background(), "tailscale", args...)
-	case name == "msiexec":
+	case name == "powershell.exe" && len(args) > 0 && strings.Contains(args[len(args)-1], "Start-Process msiexec"):
+		f.installCmd = args[len(args)-1]
 		f.msiexecCalled = true
-		f.installed = true
-		if f.msiexecErr != nil {
-			return nil, f.msiexecErr
+		if f.msiErr != nil {
+			return nil, f.msiErr
 		}
-		return nil, nil
+		f.installed = true
+		return []byte(strconv.Itoa(f.msiExitCode)), nil
 	}
 	return nil, nil
 }
@@ -80,12 +85,16 @@ func (f *tailscaleFake) deps(t *testing.T) deps {
 			return []byte("MZ-fake-msi"), nil
 		},
 		tempDir: func() (string, error) { return t.TempDir(), nil },
-		verifyMsiSigner: func(string) (string, error) {
+		verifyMsiSigner: func(string) (msiSignature, error) {
 			f.signCalled = true
 			if f.signerErr != nil {
-				return "", f.signerErr
+				return msiSignature{}, f.signerErr
 			}
-			return f.signer, nil
+			st := f.signerStatus
+			if st == "" {
+				st = "Valid"
+			}
+			return msiSignature{Status: st, Subject: f.signerSubject}, nil
 		},
 		writeFile: os.WriteFile,
 		readLine:  func(string) (string, error) { return "", nil },
@@ -125,19 +134,37 @@ func TestEnsureTailscaleAlreadyInstalledJoins(t *testing.T) {
 
 func TestEnsureTailscaleInstallsWhenMissing(t *testing.T) {
 	shortWaits(t)
-	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running", signer: "CN=Tailscale Inc."}
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
+		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc., L=Toronto, C=CA"}
 	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
 		t.Fatalf("fresh install refused: %v", err)
 	}
 	if !f.downloadCalled || !f.signCalled || !f.msiexecCalled || !f.upCalled {
-		t.Fatalf("expected download+verify+msiexec+up, got download=%v sign=%v msiexec=%v up=%v",
+		t.Fatalf("expected download+verify+elevated-install+up, got download=%v sign=%v install=%v up=%v",
 			f.downloadCalled, f.signCalled, f.msiexecCalled, f.upCalled)
+	}
+}
+
+// REVIEW-BACK 1 pin: the install must run ELEVATED (Start-Process -Verb RunAs).
+// MUTANT: drop "-Verb RunAs" from the command -> this test RED.
+func TestInstallRunsElevated(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
+		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err != nil {
+		t.Fatalf("install refused: %v", err)
+	}
+	if !strings.Contains(f.installCmd, "-Verb RunAs") {
+		t.Fatalf("the install did not run elevated; command was %q", f.installCmd)
+	}
+	if !strings.Contains(f.installCmd, "'/quiet'") || !strings.Contains(f.installCmd, "'/norestart'") {
+		t.Fatalf("the install args are wrong; command was %q", f.installCmd)
 	}
 }
 
 func TestEnsureTailscaleInstallFails(t *testing.T) {
 	shortWaits(t)
-	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signer: "CN=Tailscale Inc.", msiexecErr: fmt.Errorf("msi exit 1603")}
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1603}
 	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
 		t.Fatal("a failing MSI install was accepted")
 	}
@@ -146,14 +173,52 @@ func TestEnsureTailscaleInstallFails(t *testing.T) {
 	}
 }
 
-func TestEnsureTailscaleRefusesBadSigner(t *testing.T) {
+// REVIEW-BACK 1: exit 1223 = the user clicked No on the UAC prompt.
+func TestEnsureTailscaleUserDeclinedUAC(t *testing.T) {
 	shortWaits(t)
-	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signer: "CN=Evil Corp."}
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1223}
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret")
+	if err == nil || !strings.Contains(err.Error(), "admin rights") {
+		t.Fatalf("expected the 'needs admin rights' message, got %v", err)
+	}
+	if f.upCalled {
+		t.Fatal("up must not run after a declined UAC")
+	}
+}
+
+func TestEnsureTailscaleUACCancelError(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.",
+		msiErr: fmt.Errorf("Start-Process: The operation was canceled by the user")}
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret")
+	if err == nil || !strings.Contains(err.Error(), "admin rights") {
+		t.Fatalf("a UAC cancel must read as 'needs admin rights', got %v", err)
+	}
+}
+
+// REVIEW-BACK 2 pins: a tampered MSI (HashMismatch) refuses even with the right
+// subject; a Valid signature from the WRONG org refuses.
+func TestEnsureTailscaleRefusesHashMismatch(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin",
+		signerStatus: "HashMismatch", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
 	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
-		t.Fatal("an MSI with a non-Tailscale Authenticode signer was accepted")
+		t.Fatal("a HashMismatch MSI was accepted")
 	}
 	if f.msiexecCalled {
-		t.Fatal("msiexec must NOT run on a bad-signer MSI")
+		t.Fatal("msiexec must NOT run on a HashMismatch MSI")
+	}
+}
+
+func TestEnsureTailscaleRefusesWrongOrg(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin",
+		signerStatus: "Valid", signerSubject: "CN=Tailscale Inc., O=Some Other Corp."}
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret"); err == nil {
+		t.Fatal("a Valid signature from the wrong org was accepted")
+	}
+	if f.msiexecCalled {
+		t.Fatal("msiexec must NOT run on a wrong-org MSI")
 	}
 }
 

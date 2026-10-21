@@ -55,8 +55,10 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 			rec.lines = append(rec.lines, p)
 			return "", nil
 		},
-		tempDir:         func() (string, error) { return t.TempDir(), nil },
-		verifyMsiSigner: func(string) (string, error) { return "CN=Tailscale Inc.", nil },
+		tempDir: func() (string, error) { return t.TempDir(), nil },
+		verifyMsiSigner: func(string) (msiSignature, error) {
+			return msiSignature{Status: "Valid", Subject: "CN=Tailscale Inc., O=Tailscale Inc."}, nil
+		},
 	}
 	return d, rec
 }

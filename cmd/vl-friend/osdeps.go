@@ -37,9 +37,19 @@ type deps struct {
 	// tempDir returns a writable temp dir for downloads (the Tailscale MSI).
 	// Production: os.TempDir(); tests: t.TempDir().
 	tempDir func() (string, error)
-	// verifyMsiSigner returns the Authenticode signer subject of an MSI, or an
-	// error. Production: powershell Get-AuthenticodeSignature; tests: a fake.
-	verifyMsiSigner func(msiPath string) (string, error)
+	// verifyMsiSigner returns the Authenticode STATUS + signer subject of an MSI,
+	// or an error. Production: powershell Get-AuthenticodeSignature; tests: a
+	// fake. The caller requires Status == "Valid" AND subject contains the
+	// exact org "O=Tailscale Inc.".
+	verifyMsiSigner func(msiPath string) (msiSignature, error)
+}
+
+// msiSignature is what verifyMsiSigner reports: the Authenticode status and the
+// signer certificate subject. A tampered MSI keeps its certificate but its
+// Status becomes HashMismatch — so Status, not the subject, is the tamper gate.
+type msiSignature struct {
+	Status  string // "Valid", "HashMismatch", "NotSigned", "UnknownError", …
+	Subject string // signer certificate subject, e.g. "CN=Tailscale Inc., O=Tailscale Inc., …"
 }
 
 // appVersion / appBuild are the friend app's own version, embedded at build
