@@ -40,6 +40,17 @@ export const friendsApp: GuideSection = {
       kind: 'p',
       text: 'Each time the app starts it asks their bot for a signed version list. When the add-on or the app is newer, a pop-up says “VL update available — Update now / Later”. Update now downloads the new build, checks its signature and its SHA-256 (a bad download refuses and nothing changes), waits until the bot is flat, moves the old add-on aside (never deletes it), and asks them to restart NinjaTrader. It never updates during a trade.',
     },
+    { kind: 'h', text: 'Out-of-date add-on banner' },
+    {
+      kind: 'callout',
+      title: 'The dashboard says when the add-on is old',
+      items: [
+        {
+          title: 'A banner on the friend’s dashboard',
+          body: 'When the add-on the friend is running is older than the latest build, their dashboard shows a banner: “Your NinjaTrader add-on is out of date — double-click the VL icon to update.” The owner’s dashboard never shows this banner.',
+        },
+      ],
+    },
     { kind: 'h', text: 'connect.json — the add-on’s connection settings' },
     {
       kind: 'p',
