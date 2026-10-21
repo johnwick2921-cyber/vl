@@ -718,11 +718,27 @@ func localExePath(d deps) string {
 	return filepath.Join(d.localAppDataDir(), "VL", "vl-friend.exe")
 }
 
+// localExeVersionPath records the version of the LOCAL copy (S23), written
+// beside it when the copy is made.
+func localExeVersionPath(d deps) string {
+	return localExePath(d) + ".version"
+}
+
 // ensureLocalExe copies the running executable to %LOCALAPPDATA%\VL\vl-friend.exe
 // so the desktop icon can launch --open. When the copy already exists and
 // differs (a newer installer ran), the old copy is MOVED to VL\old\ (never
 // deleted) before the new one is written.
+// S23 / DS-104 I2: it replaces the copy ONLY when the running exe is NEWER than
+// the recorded copy version — an older installer must not downgrade the copy
+// the icon launches.
 func ensureLocalExe(d deps) error {
+	// Newer-only gate: if the recorded copy version is current-or-newer, skip.
+	if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
+		recorded := strings.TrimSpace(string(vb))
+		if recorded != "" && !appVersionNewer(appVersion, recorded) {
+			return nil
+		}
+	}
 	src, err := d.selfExe()
 	if err != nil {
 		return err
@@ -733,7 +749,8 @@ func ensureLocalExe(d deps) error {
 		return err
 	}
 	if dstBytes, err := d.readFile(dst); err == nil && bytes.Equal(srcBytes, dstBytes) {
-		return nil // already current
+		// Already byte-identical: record the version and stop (idempotent).
+		return writeFileAtomic(d, localExeVersionPath(d), []byte(appVersion+"\n"), 0o600)
 	}
 	// Replace: MOVE the old copy aside (never delete), then write the new. The
 	// old file is timestamped so a re-run never overwrites a previous backup.
@@ -749,7 +766,10 @@ func ensureLocalExe(d deps) error {
 	if err := d.mkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(dst, srcBytes, 0o755)
+	if err := d.writeFile(dst, srcBytes, 0o755); err != nil {
+		return err
+	}
+	return writeFileAtomic(d, localExeVersionPath(d), []byte(appVersion+"\n"), 0o600)
 }
 
 // detectUpdate fetches the signed manifest and compares it with what is
@@ -997,10 +1017,14 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 			continue
 		}
 		if err := d.mkdirAll(filepath.Dir(m.to), 0o755); err != nil {
-			return err
+			// S23: a migration failure is NON-fatal — warn and continue; never
+			// abort the whole run over a best-effort move.
+			d.print("warning: could not move " + m.from + " — " + err.Error())
+			continue
 		}
 		if err := d.rename(m.from, m.to); err != nil {
-			return err
+			d.print("warning: could not move " + m.from + " — " + err.Error())
+			continue
 		}
 		d.print("Moved " + m.from + " → " + m.to)
 	}

@@ -1443,6 +1443,87 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
+// TestMigrateDocsRenameFailureNonFatal — S23: a migration move that fails warns
+// and continues (never aborts the run).
+func TestMigrateDocsRenameFailureNonFatal(t *testing.T) {
+	home := t.TempDir()
+	docs := filepath.Join(home, "OneDrive", "Documents")
+	d, rec := flowFakeDeps(t, home)
+	oldVL := filepath.Join(home, "Documents", "NinjaTrader 8", "VL")
+	if err := os.MkdirAll(oldVL, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(oldVL, "connect.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d.rename = func(string, string) error { return fmt.Errorf("boom") }
+	if err := migrateDocsIfNeeded(d, home, docs); err != nil {
+		t.Fatalf("a migration failure must be non-fatal: %v", err)
+	}
+	joined := strings.Join(rec.prints, "\n")
+	if !strings.Contains(joined, "warning: could not move") {
+		t.Fatalf("expected a warning print, got: %q", rec.prints)
+	}
+}
+
+// TestEnsureLocalExeSkipsWhenCopyNewer — S23 / DS-104 I2: an OLDER running exe
+// must not downgrade the local copy the icon launches.
+func TestEnsureLocalExeSkipsWhenCopyNewer(t *testing.T) {
+	prev := appVersion
+	appVersion = "1.0.0"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-newer"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.1.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(localExePath(d))
+	if string(b) != "MZ-newer" {
+		t.Fatalf("the newer copy must NOT be downgraded: %q", b)
+	}
+}
+
+// TestEnsureLocalExeReplacesWhenRunningNewer — S23: a NEWER running exe replaces
+// the older copy (and records its version).
+func TestEnsureLocalExeReplacesWhenRunningNewer(t *testing.T) {
+	prev := appVersion
+	appVersion = "1.2.0"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.1.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(localExePath(d))
+	if string(b) != "MZ-self" {
+		t.Fatalf("the running exe (newer) must replace the copy: %q", b)
+	}
+	vb, _ := os.ReadFile(localExeVersionPath(d))
+	if strings.TrimSpace(string(vb)) != "1.2.0" {
+		t.Fatalf("the copy version was not recorded: %q", vb)
+	}
+}
+
 // TestWriteFileAtomicSuccess — S19: temp-then-rename replaces the file and
 // leaves no .tmp behind.
 func TestWriteFileAtomicSuccess(t *testing.T) {
