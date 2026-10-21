@@ -65,7 +65,12 @@ func TestRunOpenHidesConsoleBeforeAnythingElse(t *testing.T) {
 // confirm with "Code received (hidden)". This is source-structure because
 // run_windows.go only compiles on Windows; the mutant that reverts readLine to
 // a plain bufio echo read (or drops the empty-prompt gate) fails here.
-func TestReadLineInstallCodeEchoOff(t *testing.T) {
+// TestReadSecretEchoOffPinsG7 pins G7: the install code is read by a DEDICATED
+// readSecret seam via term.ReadPassword (echo OFF), and readLine is echo-ON for
+// everything else (y/N, "Type N", pauses). The old S7 empty-prompt heuristic
+// (echo-off on every readLine("")) hid the "Type N" answer — that mutant (or a
+// revert to the heuristic) fails here.
+func TestReadSecretEchoOffPinsG7(t *testing.T) {
 	src, err := os.ReadFile("run_windows.go")
 	if err != nil {
 		t.Fatalf("read run_windows.go: %v", err)
@@ -75,36 +80,32 @@ func TestReadLineInstallCodeEchoOff(t *testing.T) {
 	if !strings.Contains(s, `"golang.org/x/term"`) {
 		t.Fatalf("run_windows.go must import golang.org/x/term for ReadPassword")
 	}
+	// readSecret must exist and read echo-off.
+	sec := `readSecret: func(prompt string) (string, error) {`
+	secIdx := strings.Index(s, sec)
+	if secIdx < 0 {
+		t.Fatalf("run_windows.go must define the %s seam", sec)
+	}
+	secBody := s[secIdx:]
+	if !strings.Contains(secBody, "term.ReadPassword(fd)") {
+		t.Fatalf("readSecret must call term.ReadPassword")
+	}
+	if !strings.Contains(secBody, "term.IsTerminal(fd)") {
+		t.Fatalf("readSecret must guard with term.IsTerminal")
+	}
+	if !strings.Contains(secBody, `"Code received (hidden)"`) {
+		t.Fatalf(`readSecret must confirm with "Code received (hidden)"`)
+	}
+	// readLine must be echo-ON: the ReadPassword call must NOT sit inside the
+	// readLine closure (it moved to readSecret).
 	line := `readLine: func(prompt string) (string, error) {`
-	idx := strings.Index(s, line)
-	if idx < 0 {
+	lineIdx := strings.Index(s, line)
+	if lineIdx < 0 {
 		t.Fatalf("run_windows.go must define the %s seam", line)
 	}
-	body := s[idx:]
-	if !strings.Contains(body, "term.ReadPassword(fd)") {
-		t.Fatalf("readLine must call term.ReadPassword for the secret read")
-	}
-	if !strings.Contains(body, "term.IsTerminal(fd)") {
-		t.Fatalf("readLine must guard the secret read with term.IsTerminal")
-	}
-	if !strings.Contains(body, `"Code received (hidden)"`) {
-		t.Fatalf(`readLine must confirm with "Code received (hidden)"`)
-	}
-	// The secret read is gated on the empty prompt (the install-code call
-	// site) and the confirmation follows the read, so a regression that moves
-	// ReadPassword into the non-empty y/N path (or echoes before the gate)
-	// fails here.
-	gate := strings.Index(body, `prompt == ""`)
-	read := strings.Index(body, "term.ReadPassword(fd)")
-	confirm := strings.Index(body, `"Code received (hidden)"`)
-	if gate < 0 || read < 0 || confirm < 0 {
-		t.Fatalf("gate=%d read=%d confirm=%d (all must be present)", gate, read, confirm)
-	}
-	if read < gate {
-		t.Fatalf("term.ReadPassword must sit INSIDE the prompt == \"\" gate (read at %d, gate at %d)", read, gate)
-	}
-	if confirm < read {
-		t.Fatalf(`"Code received (hidden)" must follow the ReadPassword read (confirm at %d, read at %d)`, confirm, read)
+	lineBody := s[lineIdx:secIdx]
+	if strings.Contains(lineBody, "term.ReadPassword") {
+		t.Fatalf("readLine must NOT call term.ReadPassword (the secret read moved to readSecret)")
 	}
 }
 
@@ -240,8 +241,62 @@ func TestMessageBoxTopmost(t *testing.T) {
 		t.Fatalf("run_windows.go must define the %s seam", line)
 	}
 	body := s[idx:]
-	if !strings.Contains(body, "[System.Windows.Forms.MessageBoxOptions]::ServiceNotification") {
-		t.Fatalf("messageBox must pass MessageBoxOptions.ServiceNotification (TopMost)")
+	// G16: MB_TOPMOST (0x40000) | MB_SETFOREGROUND (0x10000) on the interactive
+	// desktop — ServiceNotification was dropped (it targets the service desktop).
+	if !strings.Contains(body, "0x40000") || !strings.Contains(body, "0x10000") {
+		t.Fatalf("messageBox must use MB_TOPMOST(0x40000)|MB_SETFOREGROUND(0x10000)")
+	}
+	if strings.Contains(s, "::ServiceNotification") {
+		t.Fatalf("messageBox must NOT use MessageBoxOptions::ServiceNotification")
+	}
+}
+
+// TestFetchUsesTimeoutClient pins G12: the friend-bot fetches (manifest,
+// identity, MSI) go through a 30s-timeout client, never http.DefaultClient (no
+// timeout) which could hang the whole run on a wedged network.
+func TestFetchUsesTimeoutClient(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "friendHTTPClient = &http.Client{Timeout: 30 * time.Second}") {
+		t.Fatalf("run_windows.go must define friendHTTPClient with a 30s timeout")
+	}
+	if !strings.Contains(s, "friendHTTPClient.Do(req)") {
+		t.Fatalf("the fetch seam must call friendHTTPClient.Do")
+	}
+	if strings.Contains(s, "http.DefaultClient.Do(req)") {
+		t.Fatalf("the fetch seam must NOT use http.DefaultClient (no timeout)")
+	}
+}
+
+// TestErrorInfoBoxesTopmostPinsG16 pins the error/info dialog seams: errorBox is
+// OK + Error icon, infoBox is OK + Information icon, both through the same
+// MB_TOPMOST|MB_SETFOREGROUND msgBoxScript. The mutant that makes an error box a
+// Yes/No, or swaps the icons, fails here.
+func TestErrorInfoBoxesTopmostPinsG16(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `errorBox: func(text string) {`) {
+		t.Fatalf("run_windows.go must define errorBox")
+	}
+	if !strings.Contains(s, `infoBox: func(text string) {`) {
+		t.Fatalf("run_windows.go must define infoBox")
+	}
+	if !strings.Contains(s, `msgBoxScript("Error", "OK")`) {
+		t.Fatalf("errorBox must be OK + Error icon")
+	}
+	if !strings.Contains(s, `msgBoxScript("Information", "OK")`) {
+		t.Fatalf("infoBox must be OK + Information icon")
+	}
+	if !strings.Contains(s, `msgBoxScript("Question", "YesNo")`) {
+		t.Fatalf("messageBox must be YesNo + Question icon")
 	}
 }
 

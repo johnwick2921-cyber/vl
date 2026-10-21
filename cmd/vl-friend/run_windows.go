@@ -38,7 +38,9 @@ func realDeps() deps {
 			if err != nil {
 				return nil, err
 			}
-			resp, err := http.DefaultClient.Do(req)
+			// G12: a 30s timeout on friend-bot calls — a wedged network must not
+			// hang the whole 30-min run on the manifest, identity, or MSI fetch.
+			resp, err := friendHTTPClient.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -71,29 +73,9 @@ func realDeps() deps {
 		rename:   os.Rename,
 		readFile: os.ReadFile,
 		readLine: func(prompt string) (string, error) {
+			// G7: readLine is ALWAYS echo-on — it serves y/N, the "Type N" gate,
+			// and pauses. The install code goes through readSecret.
 			fmt.Print(prompt)
-			// S7: the install code is read with an EMPTY prompt (runFirstRun's
-			// [1/6] step); the "Press Enter to close" pauses also pass "" but
-			// discard the result. An empty prompt therefore means "secret": read
-			// echo-OFF so the one-time code never appears on the console, and no
-			// later error screen can show it — the OS terminal echo was what
-			// leaked the pasted code before. The y/N prompts pass non-empty text
-			// and keep normal echo.
-			if prompt == "" {
-				fd := int(os.Stdin.Fd())
-				if term.IsTerminal(fd) {
-					b, err := term.ReadPassword(fd)
-					fmt.Println()
-					if err != nil {
-						return "", err
-					}
-					s := strings.TrimSpace(string(b))
-					if s != "" {
-						fmt.Println("Code received (hidden)")
-					}
-					return s, nil
-				}
-			}
 			r := bufio.NewReader(os.Stdin)
 			s, err := r.ReadString('\n')
 			if err != nil && err != io.EOF {
@@ -101,12 +83,37 @@ func realDeps() deps {
 			}
 			trimmed := strings.TrimSpace(s)
 			// S20: an empty read at EOF must return io.EOF, not ("", nil) —
-			// otherwise a prompt loop (e.g. the "close NinjaTrader" wait) spins
-			// forever on an exhausted stdin.
+			// otherwise a prompt loop spins forever on an exhausted stdin.
 			if err == io.EOF && trimmed == "" {
 				return "", io.EOF
 			}
 			return trimmed, nil
+		},
+		readSecret: func(prompt string) (string, error) {
+			// G7: the install code is read echo-OFF so the pasted one-time code
+			// never appears on the console (and no later error screen can show
+			// it). Non-terminal stdin falls back to a normal read (piped input is
+			// not echoed anyway).
+			fmt.Print(prompt)
+			fd := int(os.Stdin.Fd())
+			if term.IsTerminal(fd) {
+				b, err := term.ReadPassword(fd)
+				fmt.Println()
+				if err != nil {
+					return "", err
+				}
+				s := strings.TrimSpace(string(b))
+				if s != "" {
+					fmt.Println("Code received (hidden)")
+				}
+				return s, nil
+			}
+			r := bufio.NewReader(os.Stdin)
+			s, err := r.ReadString('\n')
+			if err != nil && err != io.EOF {
+				return "", err
+			}
+			return strings.TrimSpace(s), nil
 		},
 		// S10: the tskey regex is applied CENTRALLY at the print seam, so a
 		// Tailscale auth key can never reach the console even from a path that
@@ -156,12 +163,11 @@ func realDeps() deps {
 		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
 		selfExe:         os.Executable,
 		messageBox: func(text string) bool {
-			// W9: the MessageBoxOptions.ServiceNotification flag renders the box
-			// TOPMOST, so the update/error dialog is never buried behind the
-			// console or other windows. Buttons stay YesNo + Question here; the
-			// error-vs-update split (OK+Error for failures) is a separate seam.
+			// G16: MB_TOPMOST|MB_SETFOREGROUND puts the box on the interactive
+			// desktop (ServiceNotification targets the service desktop — dropped).
+			// Yes/No + Question icon; the error/info boxes are separate seams.
 			// S18b: the text is passed as $args[0], never spliced into script text.
-			script := psUTF8 + "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
+			script := msgBoxScript("Question", "YesNo") + " -eq 'Yes'"
 			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(script), text)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
@@ -169,6 +175,18 @@ func realDeps() deps {
 				return false
 			}
 			return strings.TrimSpace(string(out)) == "True"
+		},
+		errorBox: func(text string) {
+			// G16: OK + Error icon, topmost/foreground. No Yes/No — dismiss only.
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(msgBoxScript("Error", "OK")), text)
+			noWindow(cmd)
+			_, _ = cmd.CombinedOutput()
+		},
+		infoBox: func(text string) {
+			// G16: OK + Information icon, topmost/foreground. No Yes/No.
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(msgBoxScript("Information", "OK")), text)
+			noWindow(cmd)
+			_, _ = cmd.CombinedOutput()
 		},
 	}
 }
@@ -199,6 +217,19 @@ func windowsDocumentsDir() (string, error) {
 // file PARSES is written (W3): without it a non-ASCII signer subject would
 // come back in the OEM codepage and be corrupted before the exact-org check.
 const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
+
+// friendHTTPClient is the 30s-timeout client for friend-bot calls (G12): the
+// manifest, the identity check, and the Tailscale MSI download must not hang
+// the whole 30-minute run on a wedged network.
+var friendHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// msgBoxScript builds the PowerShell MessageBox call for a topmost, foreground
+// dialog on the INTERACTIVE desktop (G16). The flags are MB_TOPMOST (0x40000)
+// | MB_SETFOREGROUND (0x10000) — ServiceNotification is NOT used (it targets
+// the service desktop and was dropped per review). The text arrives as $args[0].
+func msgBoxScript(icon, buttons string) string {
+	return psUTF8 + "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','" + buttons + "','" + icon + "','Button1',[System.Windows.Forms.MessageBoxOptions]0x40000 -bor [System.Windows.Forms.MessageBoxOptions]0x10000)"
+}
 
 // noWindow marks a child process to never create a console window: HideWindow
 // sets the startup show state to SW_HIDE and CreationFlags adds
