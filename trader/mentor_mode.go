@@ -285,8 +285,10 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 //
 // NEVER blocks exits or protection: the exit drive, BE/stop moves, closes and
 // cancels do not consult this. Already-resting broker orders are NOT cancelled
-// here — that is a separate decision. Fail-open when the provider is absent
-// (crypto / test) or the cache is empty (the seed + FEED DOWN alert own cold).
+// here — that is a separate decision. Fail-open only when the provider is
+// absent (crypto / test); a wired live-frame provider reporting no live 1m
+// frame since boot fails CLOSED even with an empty cache (the seed + FEED DOWN
+// alert own the truly-unwired cold start).
 func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	stale, _ := at.mentorStaleDataBlockedWhy(now)
 	return stale

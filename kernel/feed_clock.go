@@ -260,14 +260,30 @@ func (g *clockStepGuard) observe(cfg ClockStepConfig) (stepNs int64, freeze bool
 	return step, false
 }
 
-// stepIsSessionBoundary reports whether a wall instant sits inside the CME
-// open/close boundary windows (15:59–16:01 and 16:59–17:01 CT), where a 2–6 s
-// wall step can flip IsCMEOpen across 16:00 / 17:00.
+// stepIsSessionBoundary reports whether a wall instant sits inside a window
+// where a 2–6 s wall step can flip IsCMEOpen: ±60 s around the daily break
+// (16:00 close / 17:00 reopen CT) and, on a shortened session day, ±60 s
+// around the session's early close (e.g. 12:15 CT on 11-27 / 12-24). The
+// post-step wall reading is what we judge, so a step that landed inside the
+// window is the one that could have crossed the boundary.
 func stepIsSessionBoundary(wallNs int64) bool {
 	ct := time.Unix(0, wallNs).In(CTLocation())
 	sec := ct.Hour()*3600 + ct.Minute()*60 + ct.Second()
 	in := func(a, b int) bool { return sec >= a && sec <= b }
-	return in(15*3600+59*60, 16*3600+1*60) || in(16*3600+59*60, 17*3600+1*60)
+	if in(15*3600+59*60, 16*3600+1*60) || in(16*3600+59*60, 17*3600+1*60) {
+		return true
+	}
+	// A shortened session (early close) is the OTHER instant IsCMEOpen flips —
+	// not just 16:00/17:00. The close is resolved through the session calendar
+	// (SessionStateAt), never a hard-coded time.
+	if st := SessionStateAt(ct); st.Class == SessionShortened && st.HasClose {
+		close := st.Close.In(CTLocation())
+		closeSec := close.Hour()*3600 + close.Minute()*60 + close.Second()
+		if sec >= closeSec-60 && sec <= closeSec+60 {
+			return true
+		}
+	}
+	return false
 }
 
 // ObserveClock takes one sample and logs any step it sees (every step at or
@@ -403,9 +419,11 @@ func StartClockStepSampler() {
 
 // FeedStaleAt is the FEED question for the 1m series of symbol: is its price
 // current? It is the wall rule (barIsStale, CME-open/halt aware, unknown bar →
-// not stale) OR the monotonic receipt leg. It never reads the clock-step hold,
-// so protection can use it. now is the wall instant the caller evaluates at; a
-// now from time.Now() also carries the monotonic reading the receipt leg uses.
+// not stale) OR the monotonic receipt leg — which fails CLOSED when a wired
+// provider reports no live frame since boot, even with an empty 1m cache. It
+// never reads the clock-step hold, so protection can use it. now is the wall
+// instant the caller evaluates at; a now from time.Now() also carries the
+// monotonic reading the receipt leg uses.
 func FeedStaleAt(symbol string, newestBarOpenMs int64, now time.Time) (bool, string) {
 	if !IsCMEOpen(now) {
 		return false, ""
@@ -421,7 +439,7 @@ func FeedStaleAt(symbol string, newestBarOpenMs int64, now time.Time) (bool, str
 		return true, "receipt_age: no live 1m frame received since boot (monotonic)"
 	}
 	if newestBarOpenMs <= 0 {
-		return false, "" // no 1m series at all: the documented fail-open, unchanged
+		return false, "" // no 1m series at all, and no wired no-live-frame provider: the documented fail-open
 	}
 	if stale, age, known := feedReceiptStale(symbol, "1m", recvClock(now)); known && stale {
 		return true, fmt.Sprintf("receipt_age: last live 1m frame received %ds ago on the monotonic clock (> %ds)", age/1000, receiptMaxAgeMs(60_000)/1000)

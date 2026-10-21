@@ -190,3 +190,71 @@ func TestM149SessionBoundary1sStepNotHeld2p5sStepHeld(t *testing.T) {
 		t.Fatalf("a 2.5 s step inside the boundary must hold NEW entries, got held=%v why=%q", held, why)
 	}
 }
+
+// m168 (1) — the 15:59–16:01 / 16:59–17:01 windows are pinned exhaustively:
+// inside → a 3 s step holds, a 1 s step does not; outside → a 3 s step does not;
+// the inclusive edges hold; and a FORWARD step holds like a backward one.
+func TestM168SessionBoundaryWindowPins(t *testing.T) {
+	at := func(h, m, s int) time.Time { return time.Date(2026, 9, 23, h, m, s, 0, CTLocation()) }
+	cases := []struct {
+		name   string
+		wall0  time.Time
+		stepMs int64
+		held   bool
+	}{
+		{"16:59:30 -3s holds", at(16, 59, 30), -3000, true},
+		{"16:59:30 -1s not held", at(16, 59, 30), -1000, false},
+		{"17:00:30 -3s holds", at(17, 0, 30), -3000, true},
+		{"17:00:30 -1s not held", at(17, 0, 30), -1000, false},
+		{"15:58:30 -3s not held", at(15, 58, 30), -3000, false},
+		{"16:01:30 -3s not held", at(16, 1, 30), -3000, false},
+		{"edge 15:59:00 +3s holds", at(15, 58, 57), 3000, true}, // lands exactly 15:59:00
+		{"edge 17:01:00 +3s holds", at(17, 0, 57), 3000, true},  // lands exactly 17:01:00
+		{"forward 16:59:30 +3s holds", at(16, 59, 30), 3000, true},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			clk := NewSteppedClock(c.wall0)
+			defer ClockSampleForTest(clk.Sample)()
+			ObserveClock()
+			clk.Step(time.Duration(c.stepMs) * time.Millisecond)
+			held, why := EntryFeedStale("MNQ", 0, c.wall0)
+			if held != c.held {
+				t.Fatalf("step %+dms landing at %s: held=%v (%q), want %v", c.stepMs, clkSampleWall(t, clk), held, why, c.held)
+			}
+		})
+	}
+}
+
+// clkSampleWall returns the wall reading of a SteppedClock formatted HH:MM:SS.
+func clkSampleWall(t *testing.T, c *SteppedClock) string {
+	t.Helper()
+	wallNs, _ := c.Sample()
+	return time.Unix(0, wallNs).In(CTLocation()).Format("15:04:05")
+}
+
+// m168 (2) — a shortened session (early close) is a boundary too: on
+// 2026-11-27 (Day after Thanksgiving, close 12:15 CT) a 3 s step landing at
+// 12:14:59 is inside the close ±60 s window and must hold.
+func TestM168SessionBoundaryEarlyClose(t *testing.T) {
+	wall0 := time.Date(2026, 11, 27, 12, 14, 56, 0, CTLocation()) // +3 s → 12:14:59
+	clk := NewSteppedClock(wall0)
+	defer ClockSampleForTest(clk.Sample)()
+	ObserveClock()
+	clk.Step(3000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, wall0); !held || !strings.Contains(why, "clock_step") {
+		t.Fatalf("a 3 s step landing at 12:14:59 on the 12:15 early-close day must hold, got held=%v why=%q", held, why)
+	}
+
+	// Control: 12:13:30, outside the close ±60 s window → a 3 s step must NOT hold.
+	wall0b := time.Date(2026, 11, 27, 12, 13, 30, 0, CTLocation())
+	clk2 := NewSteppedClock(wall0b)
+	restore := ClockSampleForTest(clk2.Sample)
+	ObserveClock()
+	clk2.Step(-3000 * time.Millisecond)
+	if held, why := EntryFeedStale("MNQ", 0, wall0b); held {
+		restore()
+		t.Fatalf("a 3 s step at 12:13:30 on the early-close day is outside the window, must not hold: %q", why)
+	}
+	restore()
+}
