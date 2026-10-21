@@ -87,6 +87,13 @@ type rdrLiveCal struct {
 	Events string `json:"events"`
 }
 
+// rdrBarRef is one bar's diffed refusal counters (per-bar attribution).
+type rdrBarRef struct {
+	ct     string
+	trader map[string]int
+	kernel map[string]int
+}
+
 // rdrReplayArm is one armed_orders row the replay authored, at its terminal
 // state when the drive ended.
 type rdrReplayArm struct {
@@ -278,8 +285,31 @@ func TestRealDayReplay(t *testing.T) {
 	w.setNow(replayFromMs)
 	w.cur.Store(int64(start - 1))
 
+	// Per-bar refusal attribution: the trader counters + kernel refusals that
+	// fired on each bar, so a dropped live trade names its reason.
+	var barRefs []rdrBarRef
+
 	for i := start; i < end; i++ {
+		beforeT := ft.at.mentorCountSnapshot()
+		beforeK := mentorKernelRefusals(ft.at)
 		w.step(i, w.traders, l)
+		afterT := ft.at.mentorCountSnapshot()
+		afterK := mentorKernelRefusals(ft.at)
+		dt := map[string]int{}
+		for k, v := range afterT {
+			if d := v - beforeT[k]; d > 0 {
+				dt[k] = d
+			}
+		}
+		dk := map[string]int{}
+		for k, v := range afterK {
+			if d := v - beforeK[k]; d > 0 {
+				dk[k] = d
+			}
+		}
+		if len(dt) > 0 || len(dk) > 0 {
+			barRefs = append(barRefs, rdrBarRef{ct: fdrCT(w.bars[i].CloseTime + 1), trader: dt, kernel: dk})
+		}
 	}
 	w.scanLedger(l, end-1)
 
@@ -308,7 +338,7 @@ func TestRealDayReplay(t *testing.T) {
 		}
 		best := matchReplayArm(tr, replayArms)
 		if best == nil {
-			fmt.Printf("%-4d %-5s %-9.2f %-9s %-9s %-7s %s\n", tr.ID, strings.ToLower(tr.Side), tr.Entry, "-", "-", "-", "NOT AUTHORED (refused)")
+			fmt.Printf("%-4d %-5s %-9.2f %-9s %-9s %-7s %s\n", tr.ID, strings.ToLower(tr.Side), tr.Entry, "-", "-", "-", "NOT AUTHORED — "+refusalFor(t, rec, tr, barRefs))
 			continue
 		}
 		verdict := "taken"
@@ -358,4 +388,78 @@ func matchReplayArm(tr rdrLiveTrade, arms []rdrReplayArm) *rdrReplayArm {
 		return nil
 	}
 	return &arms[best]
+}
+
+// parseRdrCreated parses the live armed_orders created_at, which SQLite returns
+// as "2006-01-02 15:04:05.999999999-07:00" (space, not the RFC3339 T).
+func parseRdrCreated(s string) (time.Time, error) {
+	for _, layout := range []string{"2006-01-02 15:04:05.999999999-07:00", "2006-01-02 15:04:05.999999999Z07:00", time.RFC3339Nano} {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unparseable created_at %q", s)
+}
+
+// refusalFor names the replay refusal for a live trade that was NOT authored:
+// the live arm's created instant (from the record) maps to the replay bar whose
+// close is nearest, and that bar's diffed trader/kernel refusals are reported.
+func refusalFor(t *testing.T, rec rdrLiveRecord, tr rdrLiveTrade, refs []rdrBarRef) string {
+	side := strings.ToLower(tr.Side)
+	// The live arm that produced this trade (same side, entry within 0.5).
+	var created time.Time
+	for _, a := range rec.Arms {
+		if strings.ToLower(a.Side) != side {
+			continue
+		}
+		d := a.Entry - tr.Entry
+		if d < 0 {
+			d = -d
+		}
+		if d > 0.5 {
+			continue
+		}
+		if c, err := parseRdrCreated(a.Created); err == nil {
+			created = c
+			break
+		}
+	}
+	if created.IsZero() {
+		return "no matching live arm"
+	}
+	// Find the replay bar closest to the live arm's authoring instant.
+	best := -1
+	bestD := time.Duration(1<<63 - 1)
+	for i, r := range refs {
+		ct, err := time.ParseInLocation("01-02 15:04", r.ct, kernel.CTLocation())
+		if err != nil {
+			continue
+		}
+		// The bar's close year is the replay year (2026); the live created is UTC.
+		ct = time.Date(2026, ct.Month(), ct.Day(), ct.Hour(), ct.Minute(), 0, 0, kernel.CTLocation())
+		d := created.Sub(ct)
+		if d < 0 {
+			d = -d
+		}
+		if d < bestD {
+			bestD, best = d, i
+		}
+	}
+	if best < 0 {
+		return "no refusal bars recorded"
+	}
+	r := refs[best]
+	var parts []string
+	for _, k := range []string{"htf_blocked", "isb_htf_blocked", "isb_htf_side_mismatch", "phl_htf_blocked", "isb_stop_over_max", "isb_target_below_floor", "phl_target_below_floor", "room", "loss_box_blocked", "leg_budget_second_phl", "news_hold_no_calendar", "refused_same_side_working"} {
+		if v := r.kernel[k]; v > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+		}
+		if v := r.trader[k]; v > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+		}
+	}
+	if len(parts) == 0 {
+		return fmt.Sprintf("no named refusal at %s (kernel %v trader %v)", r.ct, r.kernel, r.trader)
+	}
+	return fmt.Sprintf("@%s %s", r.ct, strings.Join(parts, " "))
 }
