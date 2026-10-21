@@ -14,8 +14,10 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
@@ -254,6 +256,7 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 // here (not run_windows.go) so a Linux test can assert the step order. G8: a
 // bad paste re-prompts up to 3 times, never echoing the code.
 func runFirstRun(ctx context.Context, d deps) error {
+	resetTouched()
 	d.print("[1/6] Paste the install code you were sent, then press Enter.")
 	for attempt := 1; ; attempt++ {
 		code, err := d.readSecret("")
@@ -288,13 +291,19 @@ func runFirstRun(ctx context.Context, d deps) error {
 // ensureTailscale installs Tailscale silently when missing, then joins the
 // tailnet with the one-time auth key from the install code.
 const (
-	// tailscaleMSIURL is the official silent-installer URL (B2 outside ref:
-	// Tailscale silent Windows install).
-	tailscaleMSIURL = "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
 	// tailscaleExeFallback is where the MSI installs the CLI; used when the bare
 	// "tailscale" name is not on PATH (same lesson as W-UPDATER-WINPATH).
 	tailscaleExeFallback = `C:\Program Files\Tailscale\tailscale.exe`
 )
+
+// tailscaleMSIURL is the official silent-installer URL, picked by the host's
+// architecture (A10).
+func tailscaleMSIURL() string {
+	if runtime.GOARCH == "arm64" {
+		return "https://pkgs.tailscale.com/stable/tailscale-setup-latest-arm64.msi"
+	}
+	return "https://pkgs.tailscale.com/stable/tailscale-setup-latest-amd64.msi"
+}
 
 // The waits and poll intervals are vars so tests can shorten them.
 var (
@@ -426,14 +435,38 @@ func redactSecrets(s string, secrets ...string) string {
 // framing is never appended to it.
 var errApprovalTimeout = errors.New("the owner has not approved this PC yet")
 
+// H6: track what this run wrote, so the error screen says what changed instead
+// of falsely claiming "nothing was changed on NinjaTrader". Single-instance
+// (the --open mutex) means no two runs race these flags.
+var (
+	wroteAddon  atomic.Bool
+	wroteConfig atomic.Bool
+)
+
+// resetTouched clears the H6 write trackers at the start of a top-level run.
+func resetTouched() {
+	wroteAddon.Store(false)
+	wroteConfig.Store(false)
+}
+
 // userFacing turns an error into the console line. G5: the approval-timeout
-// error is complete and actionable on its own — never append the
-// "nothing was changed / send a photo" framing to it.
+// error is complete and actionable on its own. H6: "Nothing was changed" is
+// only said when nothing was written.
 func userFacing(err error) string {
 	if errors.Is(err, errApprovalTimeout) {
 		return "The owner has not approved this PC yet. Ask the owner to approve it, then run VL-Setup again with the SAME code."
 	}
-	return "Something went wrong: " + err.Error() + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner."
+	var changed []string
+	if wroteAddon.Load() {
+		changed = append(changed, "the add-on was replaced")
+	}
+	if wroteConfig.Load() {
+		changed = append(changed, "the connection settings were updated")
+	}
+	if len(changed) == 0 {
+		return "Something went wrong: " + err.Error() + ". Nothing was changed on NinjaTrader. Send a photo of this window to the owner."
+	}
+	return "Something went wrong: " + err.Error() + ". What changed: " + strings.Join(changed, "; ") + ". Send a photo of this window to the owner."
 }
 
 // pauseOnError prints the (already-redacted) error screen and waits for Enter
@@ -470,7 +503,7 @@ func logSetupError(d deps, msg string) {
 func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
 	// G12: tell the user the download started (it is ~12 MB and silent otherwise).
 	d.print("Downloading Tailscale… 12 MB")
-	b, err := d.fetch(ctx, tailscaleMSIURL)
+	b, err := d.fetch(ctx, tailscaleMSIURL())
 	if err != nil {
 		return "", fmt.Errorf("download Tailscale installer: %w", err)
 	}
@@ -707,12 +740,18 @@ func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool
 	if err != nil {
 		return false, err
 	}
-	// REVIEW-BACK 1: 0 or 3010 (reboot required) = ok; 1223 = the user clicked No
-	// on the UAC prompt.
+	// A9: map the msiexec exit codes to plain English. 0 or 3010 (reboot
+	// required) = ok; 1223 = the user declined UAC (a standard user must ask the
+	// PC's owner/administrator — NEVER "run as administrator", G3); 1618 =
+	// another install is in flight; 1603/1602 = generic MSI failure.
 	switch code {
 	case 0, 3010:
 	case 1223:
-		return false, fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
+		return false, fmt.Errorf("Windows did not show the permission prompt, or it was declined — ask the PC's owner/administrator to approve the prompt, then run VL-Setup again")
+	case 1618:
+		return false, fmt.Errorf("Windows is busy installing something else — wait a minute and run VL-Setup again")
+	case 1603, 1602:
+		return false, fmt.Errorf("Windows blocked the Tailscale install (exit %d) — restart the PC and run VL-Setup again", code)
 	default:
 		return false, fmt.Errorf("Tailscale install failed (exit %d)", code)
 	}
@@ -797,22 +836,28 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey stri
 // fallback opens the dashboard in the default browser when the exe copy is
 // missing. B1: the if/else is ONE statement — PowerShell rejects "};else{".
 // m10: each .lnk/.url is written only when missing (Test-Path), so a daily click
-// is a no-op, not a rewrite.
+// is a no-op, not a rewrite. A13: the .lnk WindowStyle=7 (minimized) so a
+// double-click never flashes a console. A6: it ends by failing (exit 1) when no
+// shortcut was created — no silent non-terminating failure.
 func shortcutScript(appURL string) string {
 	return strings.Join([]string{
 		"$d=[Environment]::GetFolderPath('Desktop')",
 		"$s=[Environment]::GetFolderPath('Programs')",
 		"$exe=\"$env:LOCALAPPDATA\\VL\\vl-friend.exe\"",
-		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"if(Test-Path $exe){$w=New-Object -ComObject WScript.Shell;foreach($dir in @($d,$s)){$p=\"$dir\\VL.lnk\";if(-not (Test-Path $p)){$l=$w.CreateShortcut($p);$l.TargetPath=$exe;$l.Arguments='--open';$l.IconLocation=$exe;$l.WindowStyle=7;$l.Save()}}}else{$u=\"[InternetShortcut]`r`nURL=" + appURL + "`r`n\";foreach($dir in @($d,$s)){$p=\"$dir\\VL.url\";if(-not (Test-Path $p)){[System.IO.File]::WriteAllText($p,$u)}}}",
+		"$made=(Test-Path (Join-Path $d 'VL.lnk')) -or (Test-Path (Join-Path $d 'VL.url')) -or (Test-Path (Join-Path $s 'VL.lnk')) -or (Test-Path (Join-Path $s 'VL.url'));if(-not $made){exit 1}",
 	}, ";")
 }
 
 // createDesktopShortcut creates the VL shortcuts (Desktop + Start Menu) opening
 // the friend's dashboard in its own app window (msedge --app), or a .url
-// shortcut to the default browser when Edge is absent. The PowerShell is invoked
-// through d.exec so tests assert the effect without Windows.
+// shortcut to the default browser when Edge is absent. A6: it runs under its own
+// 15s context (the dashboard is already open) so a stuck PowerShell can never
+// hang the run.
 func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
-	if _, err := d.exec(ctx, "powershell", "-NoProfile", "-Command", shortcutScript(appURL)); err != nil {
+	sctx, cancel := context.WithTimeout(ctx, 15*time.Second)
+	defer cancel()
+	if _, err := d.exec(sctx, "powershell", "-NoProfile", "-Command", shortcutScript(appURL)); err != nil {
 		return fmt.Errorf("desktop shortcut: %w", err)
 	}
 	return nil
@@ -939,6 +984,7 @@ func runOpen(ctx context.Context, d deps) error {
 		}
 		return nil
 	}
+	resetTouched()
 
 	// W13b: migrate a legacy <USERPROFILE>\Documents layout into MyDocuments
 	// (non-fatal).
@@ -1201,6 +1247,7 @@ func migrateDocsIfNeeded(d deps, home, docs string) error {
 // skipping `up` when already Running on our tailnet (S5) — then swaps the
 // connect.json + vl-app.json over to the new bot.
 func runNewCode(ctx context.Context, d deps) error {
+	resetTouched()
 	docs, err := d.docsDir()
 	if err != nil {
 		return err
@@ -1343,18 +1390,33 @@ func applyNewCode(ctx context.Context, d deps, docs, code string) error {
 	return nil
 }
 
+// offerNewCodeOnError prints the error and the "Type N" gate so a broken
+// install can be recovered with a fresh code (H3). If the user types N it
+// applies a new code; otherwise it returns the original error.
+func offerNewCodeOnError(ctx context.Context, d deps, docs string, err error) error {
+	d.print("VL could not finish: " + err.Error())
+	d.print("Answer in this black window ↓")
+	d.print("Have a new install code? Type N then press Enter (or just press Enter to close).")
+	if line, _ := d.readLine(""); strings.EqualFold(strings.TrimSpace(line), "N") {
+		return promptAndApplyNewCode(ctx, d, docs)
+	}
+	return err
+}
+
 // runInstalled is the installed-PC path (connect.json exists): a plain
 // double-click, NO install-code prompt. It announces, runs the update check,
 // ENSUREs the Desktop + Start Menu shortcuts (re-create if missing, never
 // duplicate), then prints + opens the dashboard and waits for Enter.
 func runInstalled(ctx context.Context, d deps, docs string) error {
+	resetTouched()
 	cfg, err := readConnectConfig(d, docs)
 	if err != nil {
 		return err
 	}
 	st, err := loadAppState(ctx, d, docs, cfg)
 	if err != nil {
-		return err
+		// H3: recover a broken install with a fresh code, not just an error.
+		return offerNewCodeOnError(ctx, d, docs, err)
 	}
 	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
 
@@ -1364,17 +1426,17 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 		d.print("VL is installed but the add-on is missing — re-installing it.")
 		m, merr := fetchManifest(ctx, d, base)
 		if merr != nil {
-			return merr
+			return offerNewCodeOnError(ctx, d, docs, merr)
 		}
 		addon, aerr := fetchVerifiedAddon(ctx, d, base, m)
 		if aerr != nil {
-			return aerr
+			return offerNewCodeOnError(ctx, d, docs, aerr)
 		}
 		if err := placeAddon(d, docs, m.AddonBuild, addon); err != nil {
-			return err
+			return offerNewCodeOnError(ctx, d, docs, err)
 		}
 		if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
-			return err
+			return offerNewCodeOnError(ctx, d, docs, err)
 		}
 		d.print("Done ✓. If NinjaTrader is open, close it and open it again.")
 	}
@@ -1386,14 +1448,16 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	// so a non-technical user lands on the login page before any y/N question.
 	d.print("Your VL dashboard: " + base)
 	if err := ensureLocalExe(d); err != nil {
-		return err
+		return offerNewCodeOnError(ctx, d, docs, err)
 	}
 	// B1: shortcut creation is NON-fatal — warn and continue to the dashboard.
 	if err := createDesktopShortcut(ctx, d, base); err != nil {
 		d.print("warning: could not create the VL icon — " + err.Error())
 	}
+	// H3: a failed dashboard open is NON-fatal — warn and still run the update
+	// check (the mentor may not want the browser to pop up).
 	if err := d.openURL(ctx, base); err != nil {
-		return fmt.Errorf("open dashboard: %w", err)
+		d.print("warning: could not open the dashboard — " + err.Error())
 	}
 
 	// b) the update check as today (add-on/app), flat-gated.
@@ -1626,7 +1690,7 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 			return err
 		}
-		if err := d.rename(dst, old); err != nil {
+		if err := retryRename(d, dst, old); err != nil {
 			return err
 		}
 	} else if !errors.Is(err, fs.ErrNotExist) {
@@ -1634,15 +1698,16 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 		// blind.
 		return fmt.Errorf("read existing add-on: %w", err)
 	}
-	if err := d.rename(tmp, dst); err != nil {
+	if err := retryRename(d, tmp, dst); err != nil {
 		// S2: roll the old DLL back so the PC is never left without an add-on.
 		if old != "" {
-			if rb := d.rename(old, dst); rb != nil {
+			if rb := retryRename(d, old, dst); rb != nil {
 				return fmt.Errorf("install add-on: %w (and could not restore the previous add-on from %s: %v)", err, old, rb)
 			}
 		}
 		return fmt.Errorf("install add-on: %w", err)
 	}
+	wroteAddon.Store(true)
 	return nil
 }
 

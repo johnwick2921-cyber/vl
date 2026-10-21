@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io/fs"
 	"path/filepath"
+	"time"
 )
 
 // connect.go — the AddOn settings file (B2 contract). The app writes
@@ -82,6 +83,24 @@ func connectJSON(ic InstallCode) ([]byte, error) {
 	}, "", "  ")
 }
 
+// renamePause is the retry delay for a rename that hits a transient lock (A7).
+// A var so tests can shorten it.
+var renamePause = 200 * time.Millisecond
+
+// retryRename renames, retrying briefly on transient locks — OneDrive/Defender
+// hold a just-written file for a moment and return a sharing violation or
+// access denied (A7).
+func retryRename(d deps, oldpath, newpath string) error {
+	var err error
+	for i := 0; i < 10; i++ {
+		if err = d.rename(oldpath, newpath); err == nil {
+			return nil
+		}
+		time.Sleep(renamePause)
+	}
+	return err
+}
+
 // writeFileAtomic writes data to a temp file then renames it into place (S19).
 // A reader therefore sees either the complete OLD file or the complete NEW file
 // — never a half-written one (a crash mid-write must not corrupt a state file).
@@ -90,7 +109,7 @@ func writeFileAtomic(d deps, path string, data []byte, perm fs.FileMode) error {
 	if err := d.writeFile(tmp, data, perm); err != nil {
 		return err
 	}
-	return d.rename(tmp, path)
+	return retryRename(d, tmp, path)
 }
 
 // writeConnectJSON writes connect.json (and its parent dir) for the install code.
@@ -105,6 +124,7 @@ func writeConnectJSON(d deps, docs string, ic InstallCode) error {
 	if err := writeFileAtomic(d, connectJSONPath(docs), b, 0o600); err != nil {
 		return fmt.Errorf("connect.json: %w", err)
 	}
+	wroteConfig.Store(true)
 	return nil
 }
 
@@ -164,7 +184,11 @@ func writeAppState(d deps, docs string, s appState) error {
 	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return writeFileAtomic(d, appStatePath(docs), b, 0o600)
+	if err := writeFileAtomic(d, appStatePath(docs), b, 0o600); err != nil {
+		return err
+	}
+	wroteConfig.Store(true)
+	return nil
 }
 
 func readAppState(d deps, docs string) (appState, error) {

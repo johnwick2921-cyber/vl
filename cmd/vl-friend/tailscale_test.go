@@ -245,8 +245,8 @@ func TestEnsureTailscaleUserDeclinedUAC(t *testing.T) {
 	shortWaits(t)
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.", msiExitCode: 1223}
 	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
-	if err == nil || !strings.Contains(err.Error(), "admin rights") {
-		t.Fatalf("expected the 'needs admin rights' message, got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "permission prompt") {
+		t.Fatalf("expected the 'ask the owner/administrator' message, got %v", err)
 	}
 	if f.upCalled {
 		t.Fatal("up must not run after a declined UAC")
@@ -258,8 +258,8 @@ func TestEnsureTailscaleUACCancelError(t *testing.T) {
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc.",
 		msiErr: fmt.Errorf("Start-Process: The operation was canceled by the user")}
 	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
-	if err == nil || !strings.Contains(err.Error(), "admin rights") {
-		t.Fatalf("a UAC cancel must read as 'needs admin rights', got %v", err)
+	if err == nil || !strings.Contains(err.Error(), "permission prompt") {
+		t.Fatalf("a UAC cancel must read as 'ask the owner/administrator', got %v", err)
 	}
 }
 

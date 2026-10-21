@@ -591,6 +591,7 @@ func TestRunFirstRunPrintsSixStepsInOrder(t *testing.T) {
 // <reason>… Send a photo of this window to the owner." + "Press Enter to
 // close". MUTANT: drop the "Send a photo" line → this test RED.
 func TestPauseOnErrorPrintsPhotoLine(t *testing.T) {
+	resetTouched()
 	var prints []string
 	d := deps{
 		print:    func(l string) { prints = append(prints, l) },
@@ -1830,6 +1831,10 @@ func TestWriteFileAtomicSuccess(t *testing.T) {
 // TestWriteFileAtomicRenameFailureKeepsOld — S19: a failed rename must leave the
 // OLD file intact (never a half-written state file).
 func TestWriteFileAtomicRenameFailureKeepsOld(t *testing.T) {
+	prev := renamePause
+	renamePause = time.Millisecond
+	defer func() { renamePause = prev }()
+
 	dir := t.TempDir()
 	path := filepath.Join(dir, "vl-app.json")
 	if err := os.WriteFile(path, []byte("OLD"), 0o600); err != nil {
