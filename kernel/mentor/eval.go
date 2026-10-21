@@ -1364,9 +1364,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: with HTFGateNewsOnly OFF (the all-day default, owner decision A
-	// 2026-10-21) the 4h/1h direction gate applies ALL DAY; ON limits it to the
-	// 07:20–07:35 CT news window. The gate covers ISB, reverse-ISB, PHL/PLH and
+	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's news-first
+	// rule) the 4h/1h direction gate applies only inside the 07:20–07:35 CT
+	// news window; OFF (owner decision A 2026-10-21 m134 all-day, REVERTED by
+	// #45) applies it all day. The gate covers ISB, reverse-ISB, PHL/PLH and
 	// box authoring — SWING4H is exempt (runSwing never consults HTFVerdict) and
 	// planner/AI entries carry their own G1 HTF veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)

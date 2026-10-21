@@ -57,11 +57,12 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
-// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly off (the default,
-// owner decision A 2026-10-21: gate ALL DAY) the gate applies all day. With the
-// knob on (news-first, owner order 2026-10-17) it applies only inside the
+// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
+// the mentor's rule: news-first) the gate applies only inside the
 // 07:20–07:35 CT news window (the T1 print window time; the calendar-day
-// refinement is the trader's news seam — DS-102 item 18).
+// refinement is the trader's news seam — DS-102 item 18). With the knob off
+// (owner decision A 2026-10-21 m134 all-day, REVERTED by #45) it applies all
+// day.
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true

@@ -3,9 +3,10 @@ package mentor
 // D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h direction gate is for NEWS
 // first, not ordinary trading yet ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI.
 // ĐỪNG SỬ DỤNG CHO [trade] THƯỜNG" / "đánh ĐẦU GIỜ hay là đánh THƯỜNG — CHƯA
-// TỚI LÚC ĐÂU"). Owner decision A 2026-10-21 m134: HTFGateNewsOnly now defaults
-// OFF (gate all day). With the knob ON it applies only inside the 07:20–07:35
-// CT news window; with the knob OFF the gate applies all day.
+// TỚI LÚC ĐÂU"). #45 reverts owner decision A 2026-10-21 m134: HTFGateNewsOnly
+// now defaults ON (news-first, the mentor's rule). With the knob ON it applies
+// only inside the 07:20–07:35 CT news window; with the knob OFF the gate applies
+// all day (explicit).
 
 import (
 	"math"
@@ -18,8 +19,8 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default OFF (all-day gate; owner decision A 2026-10-21)")
+	if !cfg.HTFGateNewsOnly {
+		t.Fatal("HTFGateNewsOnly must default ON (news-only; the mentor's rule — #45 reverts owner decision A 2026-10-21)")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {
@@ -49,7 +50,7 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 // TestHTFGateNewsOnlyTick pins the Tick call site for BOTH knob settings: at
 // 09:05 CT (outside the news window) a 4h/1h CONFLICT refuses a long PHL only
 // when the gate applies. news-only (knob ON) → the gate is off outside the
-// window → the conflict PHL EMITS. all-day (knob OFF, the m134 default) → the
+// window → the conflict PHL EMITS. all-day (knob OFF, explicit) → the
 // same tick refuses it (case 3).
 // MUTANT: drop the GateOff set in Tick (or the GateOff check in HTFVerdict) →
 // the 09:05 conflict PHL is refused under news-only → RED.
