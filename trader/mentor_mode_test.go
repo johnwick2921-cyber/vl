@@ -68,6 +68,8 @@ func TestMentorContractsForSizeTable(t *testing.T) {
 		{"in range beats confluence", mentorTierInputs{Setup: "ISB", StopPts: 11.25, Confluence: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
 		{"strong day does not beat in range (swing-only)", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, StrongDay: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
 		{"spent day no longer overrides in range", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, SpentDay: true, ISBInRange: true}, mentorSizeChoice{4, "isb_in_range", ""}},
+		// X11 pullback warning → the reduced tier (size down).
+		{"pullback warn → 4", mentorTierInputs{Setup: "ISB", StopPts: 5.75, TargetPts: 11.5, PullbackWarn: true}, mentorSizeChoice{4, "pullback_warn", ""}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {

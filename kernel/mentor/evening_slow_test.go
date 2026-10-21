@@ -60,3 +60,29 @@ func TestEveningWindowAndSlowNight(t *testing.T) {
 		t.Fatalf("the 09:00 RTH minute must never read the evening 5m")
 	}
 }
+
+// TestPullbackWarning5m pins the X11 pullback-warning size cut (m186 DS-108):
+// the latest closed 5m candle breaking the PRIOR bullish 5m candle's low warns
+// of a pullback ("giảm size lại cũng được"). MUTANT: drop the uptrend guard or
+// the low-break → RED.
+func TestPullbackWarning5m(t *testing.T) {
+	b := func(o, h, l, c float64) market.Kline {
+		return market.Kline{Open: o, High: h, Low: l, Close: c}
+	}
+	// Bullish prior candle, latest candle breaks its low → warning.
+	if !pullbackWarning5m([]market.Kline{b(100, 110, 99, 105), b(105, 108, 97, 101)}) {
+		t.Fatal("a 5m candle breaking the prior bullish low must warn")
+	}
+	// Prior candle not bullish → no warning.
+	if pullbackWarning5m([]market.Kline{b(105, 110, 99, 100), b(100, 108, 97, 101)}) {
+		t.Fatal("no uptrend (prior not bullish) must not warn")
+	}
+	// Latest low above the prior low → no warning.
+	if pullbackWarning5m([]market.Kline{b(100, 110, 99, 105), b(105, 108, 100, 101)}) {
+		t.Fatal("a candle holding above the prior low must not warn")
+	}
+	// Fewer than two candles → no warning.
+	if pullbackWarning5m([]market.Kline{b(100, 110, 99, 105)}) {
+		t.Fatal("one candle must not warn")
+	}
+}

@@ -247,6 +247,10 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// pullbackWarn5m is the X11 pullback warning for THIS tick (transient, not
+	// serialized): the latest closed 5m candle broke the prior one's low in a
+	// 5m uptrend → size down [X11 @13:21–15:02].
+	pullbackWarn5m bool
 	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
 	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
 	// valid or dying, a swing-line gap fold). The trader drains them with
@@ -789,8 +793,37 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
 // compulsory size cut [D4.1 p1 written rule 3].
+// joinFlag ORs a flag onto a "|"-joined flag string (idempotent).
+func joinFlag(flags, want string) string {
+	if flags == "" {
+		return want
+	}
+	if HasFlag(flags, want) {
+		return flags
+	}
+	return flags + "|" + want
+}
+
+// pullbackWarning5m reports the X11 pullback warning: the latest closed 5m
+// candle broke the previous one's LOW while that previous candle was bullish
+// (a 5m uptrend) — "market chuẩn bị pullback … hạn chế vô lệnh, giảm size lại
+// cũng được" [X11 @13:21–15:02, quote @14:50–15:00].
+func pullbackWarning5m(b5 []market.Kline) bool {
+	if len(b5) < 2 {
+		return false
+	}
+	prev, cur := b5[len(b5)-2], b5[len(b5)-1]
+	if prev.Close <= prev.Open {
+		return false // not a 5m uptrend
+	}
+	return cur.Low < prev.Low
+}
+
 func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
 	flags := isbFlags(cur, levels, boxes)
+	if e.pullbackWarn5m {
+		flags = joinFlag(flags, FlagPullbackWarn)
+	}
 	if HasFlag(flags, FlagISBInRange) {
 		return flags
 	}
@@ -1591,6 +1624,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 		}
 	}
+	// X11 pullback warning (size cut, this tick): a 5m candle that broke the
+	// prior 5m candle's low in a 5m uptrend [X11 @13:21–15:02, quote @14:50–15:00].
+	e.pullbackWarn5m = pullbackWarning5m(e.closedBucketsTFMemo(bars, 5, now))
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
 	// loop (BOX PATH DECISION, CTO 12:38:50Z): the box path is DS-106's

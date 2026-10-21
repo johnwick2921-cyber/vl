@@ -62,6 +62,7 @@ type mentorTierInputs struct {
 	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
 	ISBOldExtreme bool    // ISB at an old high/low → the reduced tier (4 under owner order 2026-10-16) [D4.1 p1 @04:37–05:04 rule 2]
 	ISBInRange    bool    // ISB traded inside a range → the reduced tier (4 under owner order 2026-10-16) [D4.1 p1 @04:37–05:04 rule 3]
+	PullbackWarn  bool    // X11: 5m candle broke the prior 5m low in a 5m uptrend → size down [X11 @13:21–15:02]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
@@ -119,6 +120,11 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// the old-extreme reduction; strong day and spent day (2) win.
 	if in.ISBInRange {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_in_range", Why: "ISB traded inside a range → the reduced tier (owner order 2026-10-16: 4) [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
+	}
+	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend →
+	// size down ("giảm size lại cũng được") [X11 @13:21–15:02, quote @14:50–15:00].
+	if in.PullbackWarn {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil
 	}
 	// SWING4H ranks BEFORE the reduced stop band (P1-5): a swing stop sits AT
 	// the 4h line (swing4h.go:606-608) and can be any size under 100, so a
@@ -680,6 +686,7 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	// caller can forget them.
 	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
 	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
+	extra.PullbackWarn = extra.PullbackWarn || mentor.HasFlag(in.Flag, mentor.FlagPullbackWarn)
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this
