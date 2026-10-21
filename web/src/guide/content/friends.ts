@@ -25,7 +25,7 @@ export const friends: GuideSection = {
     { kind: 'h', text: 'Pause · Resume · Revoke · New key' },
     {
       kind: 'p',
-      text: 'Pause stops the friend’s unit (their bot stops running; their folder and key stay). Resume starts it again. Revoke stops the unit, MOVES the friend’s folder to the trash (never deletes it) and removes their Tailscale device — the device removal needs the owner’s TAILSCALE_API_KEY; when that key is not set the page says so instead of skipping it silently. New key rotates the friend’s connect key and returns a new install code (shown once): the old key stops working the moment the new one is written.',
+      text: 'Pause stops the friend’s unit (their bot stops running; their folder and key stay). Resume starts it again. Revoke stops the unit, MOVES the friend’s folder to the trash (never deletes it) and removes their Tailscale device — the device removal needs the owner’s TAILSCALE_API_KEY; when that key is not set the page says so instead of skipping it silently. Tailscale convention: tag each friend’s device tag:<name> (e.g. tag:friend1) so revoke can find it by tag when the registry has no device id; if no device carries the tag, the page says exactly that and asks you to remove it on the Tailscale machines page. New key rotates the friend’s connect key and returns a new install code (shown once): the old key stops working the moment the new one is written.',
     },
     { kind: 'h', text: 'Alerts' },
     {

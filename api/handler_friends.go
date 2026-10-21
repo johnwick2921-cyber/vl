@@ -561,6 +561,13 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 				c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts, "warning": "set TAILSCALE_API_KEY to remove the friend's device from the tailnet"})
 				return
 			}
+			if ts == "no_tag_device" {
+				// R10: local revoke is done; no device carries tag:<name> to
+				// delete. A distinct surfaced message, NOT a 500 retry loop.
+				logger.Warnf("friends revoke %q: no tailscale device carries tag:%s", name, name)
+				c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts, "warning": "no Tailscale device carries tag:" + name + " — remove it on the Tailscale machines page"})
+				return
+			}
 			// U4: the device was NOT deleted → explicit non-200.
 			logger.Warnf("friends revoke %q: tailscale device delete not done: %s", name, ts)
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "revoked locally but the Tailscale device was not deleted", "detail": ts})
@@ -772,7 +779,10 @@ func tailscaleDeleteDevice(row *friendRecord, name string) (string, bool) {
 			return "tag_lookup_failed:" + err.Error(), false
 		}
 		if id == "" {
-			return "no_device_id", false
+			// R10: distinct — the friend has no stored device id AND no device
+			// carries tag:<name>. Not a retryable 500: the owner removes it on
+			// the machines page.
+			return "no_tag_device", false
 		}
 		deviceID = id
 	}
