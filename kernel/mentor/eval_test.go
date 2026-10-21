@@ -13,6 +13,7 @@ import (
 // intent carries a reason and every PlaceStopEntry is geometrically sane
 // (stop on the risk side, target on the reward side).
 func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
+	lateRefusedBefore := SwingLateDayRRRefused()
 	for _, day := range []string{"mnq_1m_2026-09-15_rth", "mnq_1m_2026-09-16_rth", "mnq_1m_2026-08-28_rth"} {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
@@ -61,9 +62,14 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 		}
 		t.Logf("%s: %d intents over %d bars", day, total, len(bars))
 		if day == "mnq_1m_2026-09-15_rth" && swingIntents == 0 {
-			// the wiring mutant (dropping runSwing from Tick) must turn RED
-			// here: 09-15's tape provably produces §8 swing intents.
-			t.Fatalf("%s: no swing intents emitted — runSwing not wired into Tick", day)
+			// 09-15's RTH tape authors §8 swing entries only in the LAST 4h
+			// bucket (13:00–16:00), where the m186 late-day cut refuses them
+			// (stop 30 > the 25-pt cap → sub-1:1). The swing path is still
+			// wired: the refusal is counted. The wiring mutant (dropping
+			// runSwing from Tick) leaves the counter untouched and turns RED.
+			if SwingLateDayRRRefused() == lateRefusedBefore {
+				t.Fatalf("%s: no swing intents emitted AND no late-day swing refusal — runSwing not wired into Tick", day)
+			}
 		}
 	}
 }

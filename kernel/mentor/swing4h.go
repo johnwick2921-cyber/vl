@@ -109,6 +109,53 @@ func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
 // SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
 func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 
+// lateDaySwingTargetCap is the late-day swing target cap (mid of 20–30
+// [D5.2 p2 @07:21]).
+const lateDaySwingTargetCap = 25.0
+
+// swingLateDayRRRefused counts a late-day swing refused because the capped
+// target falls below the stop distance — 1:1 is mandatory "trong bất kỳ tình
+// huống nào" [D1.2 p1 @08:02], never ship a sub-1:1 trade.
+var swingLateDayRRRefused atomic.Int64
+
+// SwingLateDayRRRefused exposes the counter for tests and telemetry.
+func SwingLateDayRRRefused() int64 { return swingLateDayRRRefused.Load() }
+
+// lastSessionBucket returns the OPEN (ms) of the LAST 4h trading bucket of the
+// CME session containing now — 13:00 CT on a normal day (the 12:00 stub
+// re-anchored to 13:00); the bucket holding the shortened close on an
+// early-close day. [derived: D5.2 p2 @07:00–07:58 "market sắp đóng cửa" → the
+// last 4h bucket]
+func lastSessionBucket(now int64) int64 {
+	st := kernel.SessionStateAt(time.UnixMilli(now))
+	var closeMs int64
+	if st.Class == kernel.SessionShortened && st.HasClose {
+		closeMs = st.Close.UnixMilli()
+	} else {
+		start := kernel.CMESessionDayStart(time.UnixMilli(now))
+		closeMs = start.AddDate(0, 0, 1).Add(-time.Hour).UnixMilli()
+	}
+	return kernel.FourHBucketStart(closeMs, nil)
+}
+
+// lateDaySwingCut applies the late-day swing target cut: an entry authored
+// inside the LAST 4h bucket has its target capped at lateDaySwingTargetCap.
+// ok=false → the capped target is below the stop distance (risk) — 1:1 is
+// mandatory "trong bất kỳ tình huống nào" [D1.2 p1 @08:02] — REFUSE.
+func lateDaySwingCut(entryBucket, now int64, target, risk float64) (cut float64, late, ok bool) {
+	if entryBucket != lastSessionBucket(now) {
+		return target, false, true
+	}
+	cut = target
+	if cut > lateDaySwingTargetCap {
+		cut = lateDaySwingTargetCap
+	}
+	if cut < risk {
+		return cut, true, false
+	}
+	return cut, true, true
+}
+
 // SwingState is everything the swing machine carries between ticks. It is
 // rebuildable: replaying the same 5m series from a zero state reproduces it.
 type SwingState struct {
@@ -366,6 +413,13 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
+					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+						if !ok {
+							swingLateDayRRRefused.Add(1)
+							continue
+						}
+						in.Target = cut
+					}
 					in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
 					s.openPosition(in, now)
 					out = append(out, in)
@@ -410,6 +464,14 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
+		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+			if !ok {
+				swingLateDayRRRefused.Add(1)
+				s.FirstTouch = nil
+				continue
+			}
+			in.Target = cut
+		}
 		in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
 		if approach == SideLong {
 			s.ClearLongAt = line - cfg.StopBeyondLinePts

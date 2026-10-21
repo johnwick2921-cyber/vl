@@ -300,6 +300,46 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 	}
 }
 
+// TestLateDaySwingCut — m186 D5.2 late-day target cut [derived: D5.2 p2
+// @07:00–07:58]. Inside the LAST 4h bucket (13:00 CT normal) the target is
+// capped at 25 (mid 20–30 [D5.2 p2 @07:21]); if the capped target < the stop
+// distance the entry is REFUSED (1:1 mandatory "trong bất kỳ tình huống nào"
+// [D1.2 p1 @08:02]). Outside the bucket → unchanged.
+func TestLateDaySwingCut(t *testing.T) {
+	// Sep 15 2026 is a normal session day (16:00 CT close).
+	sep15_1400 := time.Date(2026, 9, 15, 14, 0, 0, 0, ctime()).UnixMilli()
+	sep15_1300 := time.Date(2026, 9, 15, 13, 0, 0, 0, ctime()).UnixMilli()
+	last := lastSessionBucket(sep15_1400)
+	if last != sep15_1300 {
+		t.Fatalf("lastSessionBucket(14:00 CT) = %s, want 13:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
+	}
+
+	// inside the late bucket, stop 20 → target 25 taken (25 >= 20)
+	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 25, 20); !late || !ok || cut != 25 {
+		t.Fatalf("stop 20 in-bucket: cut=%v late=%v ok=%v, want 25 true true", cut, late, ok)
+	}
+	// inside the late bucket, stop 40 → refused (capped 25 < 40)
+	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 50, 40); !late || ok || cut != 25 {
+		t.Fatalf("stop 40 in-bucket: cut=%v late=%v ok=%v, want 25 true false", cut, late, ok)
+	}
+	// outside the late bucket (09:00) → unchanged
+	outside := time.Date(2026, 9, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	if cut, late, ok := lateDaySwingCut(outside, outside, 50, 40); late || !ok || cut != 50 {
+		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 50 false true", cut, late, ok)
+	}
+}
+
+// TestLastSessionBucketEarlyClose — a shortened-close day's last bucket is the
+// bucket holding the close, not 13:00. 2026-12-24 closes at 12:15 CT → 09:00.
+func TestLastSessionBucketEarlyClose(t *testing.T) {
+	now := time.Date(2026, 12, 24, 10, 0, 0, 0, ctime()).UnixMilli()
+	last := lastSessionBucket(now)
+	want := time.Date(2026, 12, 24, 9, 0, 0, 0, ctime()).UnixMilli()
+	if last != want {
+		t.Fatalf("lastSessionBucket(12-24 10:00 CT) = %s, want 09:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
+	}
+}
+
 // TestSwing4hHardInvariantCounter — the stop must sit on the correct side of
 // the entry, else no intent and the counter ticks (log + counter).
 func TestSwing4hHardInvariantCounter(t *testing.T) {
