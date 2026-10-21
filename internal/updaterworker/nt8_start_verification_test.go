@@ -80,6 +80,16 @@ func TestNT8StartVerificationProbeErrorIsRecoveryNeeded(t *testing.T) {
 	if r.callCount("activate") != 0 {
 		t.Fatalf("activate ran %d times before NT8 liveness was proven", r.callCount("activate"))
 	}
+	// m246: the persistent probe error is named in the receipt.
+	found := false
+	for _, rc := range j.Receipts {
+		if rc.Step == "nt8_restart" && rc.Evidence != nil && strings.Contains(rc.Evidence["nt8_start_probe_error"], "tasklist") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("the nt8_restart receipt must record nt8_start_probe_error")
+	}
 }
 
 // A canceled context mid-way through the post-start liveness wait (production

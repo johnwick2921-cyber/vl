@@ -1,6 +1,8 @@
 package updaterworker
 
 import (
+	"context"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +13,19 @@ import (
 // m246 (P0, the owner's #43 Update left NinjaTrader closed). Two bugs:
 //   1. one transient tasklist/interop error aborted a bounded NT8 wait;
 //   2. the revert path restored the old AddOn but never started NT8.
+
+// isRunning must carry the tasklist stderr into its error so the receipt names
+// the real failure (never a bare "exit status 1").
+func TestNT8IsRunningCarriesStderr(t *testing.T) {
+	run := func(_ context.Context, name string, args ...string) ([]byte, error) {
+		return []byte("tasklist error output: access denied\r\n"), errors.New("exit status 1")
+	}
+	r := newNT8Restart(run, "", nil)
+	_, err := r.isRunning(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "stderr: tasklist error output: access denied") {
+		t.Fatalf("isRunning error must carry the stderr, got %v", err)
+	}
+}
 
 // A couple of transient tasklist failures after Start-Process are retried and
 // the restart completes. MUTANT: fail the wait on the first probe error (the

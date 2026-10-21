@@ -476,6 +476,7 @@ func (w *Worker) startAndVerifyNT8(ctx context.Context, r nt8Restart, ev map[str
 	startDeadline := startStart.Add(nt8StartWait)
 	confirmed, lastErr := w.nt8PollRunning(ctx, r, true, startDeadline)
 	if lastErr != nil {
+		ev["nt8_start_probe_error"] = clipText(lastErr.Error())
 		return fmt.Errorf("the NinjaTrader liveness probe kept failing after the start: %w", lastErr)
 	}
 	if !confirmed {
@@ -520,7 +521,10 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		// Poll IsRunning every 2 s up to nt8CloseWait. If NT8 exited on its own,
 		// no re-check and no force. A transient tasklist error is retried; when
 		// the deadline passes without a confirmed exit, NT8 is force-stopped.
-		exited, _ := w.nt8PollRunning(ctx, r, false, w.host.Now().Add(nt8CloseWait))
+		exited, closeProbeErr := w.nt8PollRunning(ctx, r, false, w.host.Now().Add(nt8CloseWait))
+		if closeProbeErr != nil {
+			ev["nt8_close_probe_error"] = clipText(closeProbeErr.Error())
+		}
 		if !exited {
 			// NT8 is STILL running (a dialog, a hang). The AddOn is still
 			// connected, so the census is valid — re-check the gate right before
@@ -548,6 +552,7 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 			ev["nt8_exit_wait"] = "timeout_still_running"
 			nt8Down = true
 			if lastErr != nil {
+				ev["nt8_exit_probe_error"] = clipText(lastErr.Error())
 				return fmt.Errorf("NinjaTrader did not confirm a full exit within %s of the stop (the liveness probe kept failing: %w)", nt8ExitWait, lastErr)
 			}
 			return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
