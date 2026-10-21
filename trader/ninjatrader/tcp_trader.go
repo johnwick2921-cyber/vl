@@ -52,11 +52,6 @@ type TCPTrader struct {
 	// the SAME side, so the side-keyed stopLoss cannot guard both). Keyed by
 	// signal id; read first, with stopLoss as the fallback. Guarded by mu.
 	stopBySignal map[string]float64
-	// moveStopSentAt (m198 #43-A) stamps when a move_stop frame was last SENT
-	// for a signal id, so the protection reconciler can suppress a duplicate
-	// standalone stop for a few seconds after the move (a ChangePending stop is
-	// not "nothing"). Guarded by mu.
-	moveStopSentAt map[string]time.Time
 	// splitBySignal records the split that actually went on the wire for an
 	// entry signal (leg 1 qty + its tick-rounded TP) — after the far-side
 	// build gate and the leg1_tp check, which can both drop it. The mentor
@@ -1536,29 +1531,8 @@ func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64,
 		t.stopBySignal = map[string]float64{}
 	}
 	t.stopBySignal[stopKey] = newStop
-	if t.moveStopSentAt == nil {
-		t.moveStopSentAt = map[string]time.Time{}
-	}
-	t.moveStopSentAt[signalID] = time.Now()
 	t.mu.Unlock()
 	return nil
-}
-
-// MoveStopSentRecently (m198 #43-A) reports whether a move_stop frame was SENT
-// for signalID within the last d. The protection reconciler uses it to suppress
-// a duplicate standalone stop while a move is still in flight (a ChangePending
-// stop is not "nothing").
-func (t *TCPTrader) MoveStopSentRecently(signalID string, now time.Time, d time.Duration) bool {
-	if t == nil || strings.TrimSpace(signalID) == "" {
-		return false
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	at, ok := t.moveStopSentAt[signalID]
-	if !ok {
-		return false
-	}
-	return now.Sub(at) < d
 }
 
 // assertBoundAccount (A1/G3) is the pre-submit identity invariant: the account an

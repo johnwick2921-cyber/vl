@@ -17,12 +17,7 @@ type MockTrader struct {
 	allOrders     []types.OpenOrder
 	closedPnLData []types.ClosedPnLRecord
 
-	// moveStopRecent (m198 #43-A): when set, MoveStopSentRecently reports true
-	// for the signal id — simulates a move_stop sent within the suppression
-	// window, so the protection reconciler must NOT place a second stop.
-	moveStopRecent map[string]bool
 	placeStopCalls int
-	placedQty      int // m207: the quantity the last PlaceProtectiveStop carried
 }
 
 func (m *MockTrader) GetBalance() (map[string]interface{}, error) {
@@ -104,17 +99,10 @@ func (m *MockTrader) GetOpenOrders(symbol string) ([]types.OpenOrder, error) {
 	return m.allOrders, nil
 }
 
-// MoveStopSentRecently (m198 #43-A) reports whether a move_stop was SENT for
-// signalID within the suppression window. Mock: driven by moveStopRecent.
-func (m *MockTrader) MoveStopSentRecently(signalID string, now time.Time, d time.Duration) bool {
-	return m.moveStopRecent[signalID]
-}
-
-// PlaceProtectiveStop (m198 #43-A) records the call so a suppression pin can
-// assert the reconciler did NOT place a second stop while a move was in flight.
+// PlaceProtectiveStop records the call so a placement pin can assert the
+// reconciler placed a stop when the position had no cover at all.
 func (m *MockTrader) PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error {
 	m.placeStopCalls++
-	m.placedQty = quantity
 	return nil
 }
 

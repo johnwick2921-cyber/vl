@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -223,49 +224,58 @@ func stopThrough(side string, price, stop float64) bool {
 	return price >= stop
 }
 
-// pendingSLStuckWindow (m203) is how long a protective stop may sit in a
-// pending state and still COUNT as coverage. Past this bound the order stops
-// counting (its quantity becomes the uncovered delta) and the m203 P0 fires.
-// The owner's spec: "30 s (or 3 monitor passes, whichever is longer)" — the
-// monitor beat is 60 s, so the second pass already exceeds 30 s; the pins test
-// 30 s.
-const pendingSLStuckWindow = 30 * time.Second
+// protectiveSLNameRe (m217) matches a protective-stop order name: "-sl" or a
+// numbered leg "-sl2" / "-sl3" (the "-sl"-only HasSuffix missed leg 2/3).
+var protectiveSLNameRe = regexp.MustCompile(`(?i)-sl[0-9]*$`)
 
-// protectionMoveSuppressWindow (m198) is how long a place is suppressed after a
-// move_stop frame was SENT for the signal — the stop is mid-flight, not absent.
-const protectionMoveSuppressWindow = 10 * time.Second
-
-// pendingSLFirstSeen (m203) records the first pass a pending -sl order was
-// seen, keyed by trader id + order name (the owner's "by order name"). A stop
-// that stays pending past pendingSLStuckWindow stops counting as coverage.
-var pendingSLFirstSeen sync.Map // trader id + "|" + order name → *int64 (unix ms)
-
-// recordPendingSLSeen records the first sight of a pending -sl order and
-// reports whether it has been pending past the bound (stuck). The FIRST sight
-// is recorded and is not stuck.
-func recordPendingSLSeen(traderID, name string, now time.Time) (stuck bool) {
-	key := traderID + "|" + name
-	v, loaded := pendingSLFirstSeen.LoadOrStore(key, new(int64))
-	if !loaded {
-		atomic.StoreInt64(v.(*int64), now.UnixMilli())
-		return false
-	}
-	first := atomic.LoadInt64(v.(*int64))
-	return now.Sub(time.UnixMilli(first)) >= pendingSLStuckWindow
+// isProtectiveSLName reports whether an order name is a protective-stop name
+// ("<signal>-sl", "<signal>-sl2", "<signal>-sl3", …).
+func isProtectiveSLName(name string) bool {
+	return protectiveSLNameRe.MatchString(strings.TrimSpace(name))
 }
 
-// clearPendingSLSeen drops the first-seen stamp for an order once it is no
+// pendingSLSeen records the last sighting of a pending -sl order, so a stop
+// stuck UNCHANGED (same stopPrice + quantity) for 3 consecutive passes is
+// flagged. Purely observational — it never changes coverage.
+type pendingSLSeen struct {
+	StopPrice float64
+	Qty       int
+	Count     int
+}
+
+// pendingSLSeenMap keys pending -sl sightings by trader id + order name. Each
+// key is written by exactly one trader's monitor goroutine (single writer).
+var pendingSLSeenMap sync.Map // trader id + "|" + order name → *pendingSLSeen
+
+// pendingSLStuckSeen records a pending -sl sighting and reports whether the SAME
+// (name, stopPrice, qty) has now been pending for 3 consecutive passes (stuck).
+func pendingSLStuckSeen(traderID, name string, stopPrice float64, qty int) bool {
+	key := traderID + "|" + name
+	v, _ := pendingSLSeenMap.LoadOrStore(key, new(pendingSLSeen))
+	p := v.(*pendingSLSeen)
+	if p.StopPrice == stopPrice && p.Qty == qty {
+		p.Count++
+	} else {
+		p.StopPrice = stopPrice
+		p.Qty = qty
+		p.Count = 1
+	}
+	return p.Count >= 3
+}
+
+// clearPendingSLSeen drops the sighting record for an order once it is no
 // longer pending (it went live, was cancelled, or left the book).
 func clearPendingSLSeen(traderID, name string) {
-	pendingSLFirstSeen.Delete(traderID + "|" + name)
+	pendingSLSeenMap.Delete(traderID + "|" + name)
 }
 
 // adjudicateProtectionWith is adjudicateProtection plus P2-1's known broker
-// stop. PURE except for the m203 pending-SL clock: traderID+now feed the
-// bounded window after which a pending -sl STOPS counting as coverage. The
-// price order for a non-mentor position is: the tightest stop the broker is
-// KNOWN to have held (never placed wider than it — a BE move must never be
-// undone by the net), else the accepted-risk stop, else the plan's.
+// stop. PURE except for the m217 pending-SL stuck bookkeeping: traderID+now
+// feed the 3-consecutive-unchanged-pass alert (observational only — it never
+// changes coverage). The price order for a non-mentor position is: the tightest
+// stop the broker is KNOWN to have held (never placed wider than it — a BE move
+// must never be undone by the net), else the accepted-risk stop, else the
+// plan's.
 func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Order, haveBook bool,
 	acceptedStop *float64, planStop float64, mentorStop *float64, brokerStop *knownBrokerStop, freshPrice *float64,
 	traderID string, now time.Time) (v protectionVerdict) {
@@ -290,7 +300,7 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		// named order whose shape is unreadable, and that is live (or whose state
 		// cannot be read), is POSSIBLE protection — neither coverage nor absence
 		// is proved.
-		namedStop := strings.HasSuffix(strings.ToLower(strings.TrimSpace(o.Name)), "-sl")
+		namedStop := isProtectiveSLName(o.Name)
 		if namedStop && (strings.TrimSpace(o.Type) == "" || strings.TrimSpace(o.Action) == "") &&
 			(o.IsLiveAtExchange() || !o.IsStateReadable()) {
 			unreadable++
@@ -304,8 +314,8 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 			continue
 		}
 		if o.IsLiveAtExchange() {
-			// A live -sl counts its OWN quantity. A pending stamp it carried
-			// has resolved (pin c: pending then live → OK, no place, no P0).
+			// A live -sl counts its OWN quantity. A pending sighting it carried
+			// has resolved.
 			if namedStop && traderID != "" {
 				clearPendingSLSeen(traderID, o.Name)
 			}
@@ -319,16 +329,17 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		}
 		// Not live at the exchange.
 		if namedStop && o.Liveness() == nt.LivenessPending {
-			// m207 quantity-aware coverage: a pending -sl COUNTS as coverage by
-			// its OWN quantity (m198's deferral is gone). The m203 30 s stuck
-			// bound stays: a pending order past the bound STOPS counting (the P0
-			// fires), so its quantity becomes the uncovered delta this pass.
-			if traderID != "" && recordPendingSLSeen(traderID, o.Name, now) {
-				pendingStuck = true // past the bound: not coverage this pass
-			} else if o.Quantity > 0 {
-				covered += o.Quantity // still settling: counts
+			// m217: a pending -sl ALWAYS counts as cover by its own quantity
+			// (m198's deferral and m203's stop-counting bound are gone). Stuck is
+			// ALERT-ONLY: the same (name, stopPrice, qty) pending on 3 consecutive
+			// passes raises the P0, but the order keeps counting and never places.
+			if o.Quantity > 0 {
+				covered += o.Quantity
 			} else {
 				unsized++
+			}
+			if traderID != "" && pendingSLStuckSeen(traderID, o.Name, o.StopPrice, o.Quantity) {
+				pendingStuck = true
 			}
 			continue
 		}
@@ -345,9 +356,9 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 	}
 
 	if pendingStuck {
-		// A pending -sl STOPPED counting this pass. Every verdict that follows
-		// carries PendingStuck so the caller raises the deduped m203 P0 exactly
-		// once (by event id).
+		// A pending -sl has been unchanged for 3 passes. Every verdict that
+		// follows carries PendingStuck so the caller raises the deduped
+		// "protection_pending_stuck" P0 exactly once (by event id) — ALERT only.
 		defer func() { v.PendingStuck = true }()
 	}
 	if covered >= posQty {
@@ -362,42 +373,38 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		return protectionVerdict{Action: protectionUnknown, NeedQty: posQty, HaveQty: covered,
 			Why: fmt.Sprintf("%d protective stop(s) carry no quantity — coverage UNKNOWN, so no second stop is placed", unsized)}
 	}
+	if covered > 0 {
+		// m217 partial cover: ALERT-ONLY, never place (a second stop beside an
+		// existing one risks a double exit — the pre-#43 behaviour).
+		return protectionVerdict{Action: protectionAlertOnly, NeedQty: posQty, HaveQty: covered,
+			Why: fmt.Sprintf("PARTIALLY protected: %d of %d covered (live + settling) — raised, not placed", covered, posQty)}
+	}
 
-	// covered < posQty — place ONLY the uncovered delta (m207 quantity-aware
-	// coverage: no deferral, no alert-only for partial cover).
-	delta := posQty - covered
+	// covered == 0: NOTHING protective at the exchange. The only placement path.
 	notProtection := ""
 	if localOnly > 0 || dying > 0 {
 		notProtection = fmt.Sprintf(" (%d held locally by NT8 and %d being cancelled — present, but not protection at the exchange)", localOnly, dying)
 	}
-	gap := "NO protective order at the broker for an open position"
-	if covered > 0 {
-		gap = fmt.Sprintf("PARTIALLY protected: %d of %d covered — placing ONLY the uncovered %d", covered, posQty, delta)
-	}
-
 	// REL17-F4: a registered mentor live position places at the driver's CURRENT
-	// stop, never the original. A full flatten (the through-market close) is a
-	// WHOLE-position close, so it only applies when NOTHING is covered — a
-	// partially covered position's delta must never flatten the covered legs.
+	// stop, never the original. If a FRESH last price is already through that
+	// stop, the stop would have filled — flatten at market instead of placing a
+	// stop that is already behind the market.
 	if mentorStop != nil && *mentorStop > 0 {
 		checked := " — no fresh last price, so the protective side could NOT be checked"
 		if freshPrice != nil && *freshPrice > 0 {
-			if covered == 0 {
-				long := strings.EqualFold(side, "LONG")
-				through := (long && *freshPrice <= *mentorStop) || (!long && *freshPrice >= *mentorStop)
-				if through {
-					return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
-						NeedQty: posQty, HaveQty: covered,
-						Why: fmt.Sprintf("%s and the mentor driver's stop %.2f is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", gap, *mentorStop, *freshPrice)}
-				}
-				checked = fmt.Sprintf(" — fresh last price %.2f is on the protective side", *freshPrice)
+			long := strings.EqualFold(side, "LONG")
+			through := (long && *freshPrice <= *mentorStop) || (!long && *freshPrice >= *mentorStop)
+			if through {
+				return protectionVerdict{Action: protectionFlatten, StopPx: *mentorStop,
+					NeedQty: posQty,
+					Why:     fmt.Sprintf("NO protective order at the broker and the mentor driver's stop %.2f is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", *mentorStop, *freshPrice)}
 			}
-			// covered > 0: the delta is for the uncovered legs — no through-check
-			// (a partial delta must never flatten the covered legs).
+			checked = fmt.Sprintf(" — fresh last price %.2f is on the protective side", *freshPrice)
 		}
 		return protectionVerdict{Action: protectionPlace, StopPx: *mentorStop, Source: "mentor_driver",
-			NeedQty: posQty, HaveQty: covered,
-			Why: gap + notProtection + fmt.Sprintf("%s; placing the driver's CURRENT (moved BE/1:1/trail) stop for the uncovered %d, not the original", checked, delta)}
+			NeedQty: posQty,
+			Why: "NO protective order at the broker for an open mentor position" + notProtection +
+				fmt.Sprintf("%s; placing the driver's CURRENT (moved BE/1:1/trail) stop, not the original", checked)}
 	}
 	// P2-1 (release #22 rescan): a stop the broker is KNOWN to have held for
 	// THIS position's signal — moved by auto-BE / a trail, or read from the
@@ -411,10 +418,10 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 		if acceptedStop != nil && *acceptedStop > 0 && stopTighter(side, *acceptedStop, px) {
 			px, src = *acceptedStop, "accepted_risk"
 		}
-		if covered == 0 && freshPrice != nil && *freshPrice > 0 && stopThrough(side, *freshPrice, px) {
+		if freshPrice != nil && *freshPrice > 0 && stopThrough(side, *freshPrice, px) {
 			return protectionVerdict{Action: protectionFlatten, StopPx: px, Source: src,
-				NeedQty: posQty, HaveQty: covered,
-				Why: fmt.Sprintf("%s and the tightest known stop %.2f (%s) is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", gap, px, src, *freshPrice)}
+				NeedQty: posQty,
+				Why:     fmt.Sprintf("NO protective order at the broker and the tightest known stop %.2f (%s) is already through the fresh last price %.2f — the stop would have filled, so the position is flattened", px, src, *freshPrice)}
 		}
 		checked := " — no fresh last price, so the protective side could NOT be checked"
 		if freshPrice != nil && *freshPrice > 0 {
@@ -425,22 +432,20 @@ func adjudicateProtectionWith(symbol, side string, posQty int, book []nt.NT8Orde
 			planNote = fmt.Sprintf(", NOT the plan's original %.2f", planStop)
 		}
 		return protectionVerdict{Action: protectionPlace, StopPx: px, Source: src,
-			NeedQty: posQty, HaveQty: covered,
-			Why: gap + notProtection +
-				fmt.Sprintf(" — placing the TIGHTEST stop the broker is known to have held (%.2f from %s) for the uncovered %d%s%s", px, src, delta, planNote, checked)}
+			NeedQty: posQty,
+			Why: "NO protective order at the broker for an open position" + notProtection +
+				fmt.Sprintf(" — placing the TIGHTEST stop the broker is known to have held (%.2f from %s)%s%s", px, src, planNote, checked)}
 	}
 	if acceptedStop != nil && *acceptedStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: *acceptedStop, Source: "accepted_risk",
-			NeedQty: posQty, HaveQty: covered,
-			Why: gap + notProtection + fmt.Sprintf(" — placing the stop the broker itself accepted for the uncovered %d", delta)}
+			NeedQty: posQty, Why: "NO protective order at the broker for an open position" + notProtection + " — placing the stop the broker itself accepted"}
 	}
 	if planStop > 0 {
 		return protectionVerdict{Action: protectionPlace, StopPx: planStop, Source: "plan",
-			NeedQty: posQty, HaveQty: covered,
-			Why: gap + notProtection + fmt.Sprintf(" — no accepted-risk record, placing the plan's composed stop for the uncovered %d", delta)}
+			NeedQty: posQty, Why: "NO protective order at the broker for an open position" + notProtection + ", and no accepted-risk record — placing the plan's composed stop"}
 	}
-	return protectionVerdict{Action: protectionAlertOnly, NeedQty: posQty, HaveQty: covered,
-		Why: gap + notProtection + ", and NO price to place one at (no accepted-risk record, no composed plan stop) — raised, not invented"}
+	return protectionVerdict{Action: protectionAlertOnly, NeedQty: posQty,
+		Why: "NO protective order at the broker for an open position" + notProtection + ", and NO price to place one at (no accepted-risk record, no composed plan stop) — raised, not invented"}
 }
 
 // ── THE WIRED HALF ───────────────────────────────────────────────────────────
@@ -514,19 +519,6 @@ func PendingStuckFound(traderID string) int64 {
 		return atomic.LoadInt64(v.(*int64))
 	}
 	return 0
-}
-
-// moveStopRecentlySent reports whether a move_stop frame was SENT for signalID
-// within the suppression window (m198, scoped by m207 to the just-moved
-// signal's own gap).
-func (at *AutoTrader) moveStopRecentlySent(signalID string, now time.Time) bool {
-	if signalID == "" || at == nil || at.trader == nil {
-		return false
-	}
-	sc, ok := at.trader.(interface {
-		MoveStopSentRecently(string, time.Time, time.Duration) bool
-	})
-	return ok && sc.MoveStopSentRecently(signalID, now, protectionMoveSuppressWindow)
 }
 
 // protectionPricesFor resolves the two prices D5 may place at, in the owner's
@@ -711,23 +703,24 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		have = false
 	}
 
-	// m203: bound the pending-SL first-seen map — drop stamps for orders that
+	// m217: bound the pending-SL sighting map — drop records for orders that
 	// have LEFT the book entirely (rejected, filled, or the snapshot moved on).
-	// Without this, a later same-named order would read a stale stamp as stuck.
-	// Only with a FRESH book (a stale/absent book must not forget state, A24).
+	// Without this, a later same-named order would read a stale sighting as
+	// stuck. Only with a FRESH book (a stale/absent book must not forget state,
+	// A24).
 	if have {
 		bookNames := make(map[string]bool, len(book))
 		for i := range book {
 			bookNames[book[i].Name] = true
 		}
 		prefix := at.id + "|"
-		pendingSLFirstSeen.Range(func(k, _ any) bool {
+		pendingSLSeenMap.Range(func(k, _ any) bool {
 			key, ok := k.(string)
 			if !ok || !strings.HasPrefix(key, prefix) {
 				return true
 			}
 			if !bookNames[strings.TrimPrefix(key, prefix)] {
-				pendingSLFirstSeen.Delete(k)
+				pendingSLSeenMap.Delete(k)
 			}
 			return true
 		})
@@ -791,16 +784,16 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		protectionFlattenRetries.Delete(key)
 	}
 
-	// m203: a protective stop stayed pending past the bound and STOPPED counting
-	// as coverage this pass. Raise the deduped P0 once and count every pass the
-	// condition is observed.
+	// m217: a pending -sl has been UNCHANGED (same name, stopPrice, qty) for 3
+	// consecutive passes — ALERT-ONLY, the order keeps counting as cover. Raise
+	// the deduped P0 once and count every pass the condition is observed.
 	if v.PendingStuck {
 		incPendingStuck(at.id)
 		at.emitAlert("P0", "protection_pending_stuck",
 			fmt.Sprintf("stuckpending:%s:%s", symbol, side),
 			"A protective stop is stuck pending at the broker",
-			fmt.Sprintf("%s %s ×%d: a -sl order has stayed pending (ChangePending/ChangeSubmitted/Submitted/Initialized) past the %s bound — it stopped counting as coverage. %s",
-				side, symbol, qty, pendingSLStuckWindow, v.Why))
+			fmt.Sprintf("%s %s ×%d: a -sl order has stayed pending with the same price and quantity for 3 passes. It still counts as cover — no action, alert only. %s",
+				side, symbol, qty, v.Why))
 		at.logErrorf("🚨 PENDING STOP STUCK (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 	}
 
@@ -834,6 +827,19 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		if !changed {
 			return
 		}
+		if v.HaveQty > 0 {
+			// m217 partial cover: ALERT-ONLY, deduped, never place (a second
+			// stop beside an existing one risks a double exit — the pre-#43
+			// behaviour). Not counted as "unprotected": it IS partially covered.
+			at.emitAlert("P0", "protection_partial",
+				fmt.Sprintf("partial:%s:%s", symbol, side),
+				"Position is only partially protected",
+				fmt.Sprintf("%s %s ×%d: %d of %d covered at the broker. No stop placed — placing beside an existing stop could double-exit. %s",
+					side, symbol, qty, v.HaveQty, qty, v.Why))
+			at.logErrorf("🚨 PARTIAL PROTECTION (%s): %s %s ×%d — %d of %d covered — %s",
+				trigger, side, symbol, qty, v.HaveQty, qty, v.Why)
+			return
+		}
 		incUnprotected(at.id)
 		at.emitAlert("P0", "unprotected_position",
 			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, now.UnixMilli()),
@@ -843,22 +849,6 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — %s", trigger, side, symbol, qty, v.Why)
 
 	case protectionPlace:
-		// m198 #43-A (2), scoped by m207: a move_stop SENT for this signal
-		// within the last 10 s means that signal's stop is mid-flight, not
-		// absent — but ONLY when NOTHING is covered (HaveQty == 0, so the place
-		// is the whole position = the just-moved signal's own gap). A delta
-		// place (HaveQty > 0) is for OTHER legs' missing quantity and is never
-		// suppressed.
-		if v.HaveQty == 0 && at.moveStopRecentlySent(signalID, now) {
-			at.logWarnf("🧷 protection placement SUPPRESSED (%s): %s %s ×%d — a move_stop was SENT for signal %s within 10 s; the stop is mid-flight, not absent",
-				trigger, side, symbol, qty, shortID(signalID))
-			return
-		}
-		// m207: place ONLY the uncovered delta (posQty − covered).
-		placeQty := qty - v.HaveQty
-		if placeQty <= 0 {
-			placeQty = qty
-		}
 		incUnprotected(at.id)
 		at.emitAlert("P0", "unprotected_position",
 			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, now.UnixMilli()),
@@ -878,7 +868,7 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		if signalID == "" {
 			signalID = fmt.Sprintf("recon-%s-%d", strings.ToLower(symbol), now.UnixMilli())
 		}
-		if err := placer.PlaceProtectiveStop(symbol, side, placeQty, v.StopPx, signalID,
+		if err := placer.PlaceProtectiveStop(symbol, side, qty, v.StopPx, signalID,
 			"d5-reconciler:"+trigger); err != nil {
 			// The build gate lives behind this error. Naming it is the point:
 			// an old AddOn cannot honour the frame, and pretending otherwise
@@ -889,11 +879,11 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 			// trail. The NEXT 1-minute pass re-attempts once the reconnect hello
 			// re-proves the far-side build (FIX-P1A).
 			at.logWarnf("🧷 protection PLACEMENT REFUSED: trader=%s %s %s ×%d stop=%.2f — %v",
-				at.id, side, symbol, placeQty, v.StopPx, err)
+				at.id, side, symbol, qty, v.StopPx, err)
 			return
 		}
 		at.logWarnf("🧷 protective stop SENT: %s %s ×%d stop=%.2f source=%s signal=%s — SENT is not CONFIRMED; the next pass reads the book",
-			side, symbol, placeQty, v.StopPx, v.Source, shortID(signalID))
+			side, symbol, qty, v.StopPx, v.Source, shortID(signalID))
 
 	case protectionFlatten:
 		incUnprotected(at.id)
