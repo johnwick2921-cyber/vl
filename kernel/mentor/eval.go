@@ -788,7 +788,7 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
-// compulsory size cut [D4.1 p1 written rule 3].
+// compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
 	flags := isbFlags(cur, levels, boxes)
 	if HasFlag(flags, FlagISBInRange) {
@@ -1719,7 +1719,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
-				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
+				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
 				// (above), the R5 box (below), the 20–<30 stop band, and a size
 				// flag at an old high/low.
 				//
@@ -2012,7 +2012,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					in.Target = capped.Target
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
-					// [D4.1 p1 @ 04:37–05:04].
+					// [D4.1 p1 @04:31–05:04; extended to the reverse ISB by bot inference].
 					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite

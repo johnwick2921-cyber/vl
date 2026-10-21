@@ -352,7 +352,7 @@ type Config struct {
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
-	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
+	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @16:05-16:11]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
 	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the

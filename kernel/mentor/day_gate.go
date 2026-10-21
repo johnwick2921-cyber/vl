@@ -335,7 +335,7 @@ func DayGateVerdict(run float64, haveRun bool, conflict bool, g DayGate) (DayVer
 		return DayOff, "spent AND 4h/1h conflict at the pre-open read — 'TẮT MÁY NGHỈ LUÔN CHO EM', no trades today [D5.1 p1 @ 19:22]"
 	}
 	if run >= g.SpentPts {
-		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [D5.1 p1 @ 15:57]"
+		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [300-400 @16:05-16:11; 15/10 @19:56-20:07]"
 	}
 	return DayTrade, ""
 }

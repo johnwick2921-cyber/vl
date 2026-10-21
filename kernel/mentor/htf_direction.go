@@ -30,7 +30,7 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 }
 
 // HTFVerdict is the three cases verbatim from the mentor's screen
-// [D4.4 p1 @ 16:00]:
+// [D4.4 p1 @14:08–15:34 — the written list; first spoken 05:17–06:46. @16:00 only restates case 1]:
 //
 //  1. 4H trigger + 1h trigger same direction            → trade that side.
 //  2. 4H trigger, 1h "ko có gì hết" (nothing)           → follow the 4h.
@@ -53,7 +53,7 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
-	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @15:09–15:34 (also 13:15–13:27, 06:08–06:46, 11:37–12:34)]"
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
@@ -101,7 +101,7 @@ func HTFAgreement(h HTF) (ok bool, dir Side) {
 }
 
 // HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
-// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:00]. Case 2
+// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:10–16:20 (also 05:04–05:15)]. Case 2
 // (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3
 // (opposite) never reaches an entry. It gates the 20-contract size tier.
 func HTFAgrees(h HTF, side Side) bool {
