@@ -23,6 +23,11 @@ if [ ! -f "$KEY" ]; then
   exit 1
 fi
 
+# One temp dir for the whole build (rsrc + Obfuscar + the manifest). It must
+# exist BEFORE the rsrc step: under set -u an unset $TMP aborts the build.
+TMP=$(mktemp -d) || exit 1
+trap 'rm -rf "${TMP:?}"' EXIT   # our own mktemp under /tmp — allowed cleanup
+
 # The shared dist dir is OUTSIDE this worktree; only create it (never remove).
 mkdir -p "$OUT"
 
@@ -44,8 +49,6 @@ GOOS=windows GOARCH=amd64 go build -trimpath \
 
 # 2. Obfuscated add-on DLL on Windows (NT8's compiler + Obfuscar), into a fresh
 #    temp dir. The PowerShell script prints the obfuscated DLL path + sha.
-TMP=$(mktemp -d) || exit 1
-trap 'rm -rf "${TMP:?}"' EXIT   # our own mktemp under /tmp — allowed cleanup
 
 WIN_SRC=$(wslpath -w "$PWD/ninjascript")
 WIN_OUT=$(wslpath -w "$TMP/addon")
