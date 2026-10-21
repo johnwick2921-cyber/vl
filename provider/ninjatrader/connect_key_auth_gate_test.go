@@ -1,7 +1,11 @@
 package ninjatrader
 
 import (
+	"bytes"
+	"context"
+	"log/slog"
 	"net"
+	"strings"
 	"testing"
 	"time"
 )
@@ -158,5 +162,52 @@ func TestConnectKeySilentPeerClosedThenRealAddOnConnects(t *testing.T) {
 	}
 	if got := s.ConnectKeyRefused(); got != 0 {
 		t.Fatalf("silent peer was counted as a key refusal (%d), want 0 (it never sent a hello)", got)
+	}
+}
+
+// sendWrongHelloAndWaitRefusal dials, sends a wrong-key hello, and blocks until
+// the refusal counter moves past `before` (the readLoop handles it async).
+func sendWrongHelloAndWaitRefusal(t *testing.T, s *TCPServer, before int64) {
+	t.Helper()
+	c := rawDial(t, s)
+	if err := WriteFrame(c, FrameHello, HelloPayload{ProtocolVersion: ProtocolVersion, Source: "vltrader-addon", ConnectKey: "wrong-key"}); err != nil {
+		t.Fatalf("write hello: %v", err)
+	}
+	deadline := time.Now().Add(3 * time.Second)
+	for time.Now().Before(deadline) {
+		if s.ConnectKeyRefused() > before {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatal("refusal was never counted")
+}
+
+// TestConnectKeyRefusedWarnRateLimited — U21: the "connect_key refused" WARN is
+// logged at most once per peer per minute, while the counter still records every
+// refusal. A wrong-key AddOn reconnecting every 5 s increments the counter 12×
+// but writes ONE warn line.
+//
+// MUTANT: log unconditionally (drop logConnKeyRefused) → the warn fires twice
+// here → RED.
+func TestConnectKeyRefusedWarnRateLimited(t *testing.T) {
+	t.Setenv("NT_CONNECT_KEY", testConnectKey)
+	var buf bytes.Buffer
+	s := NewTCPServer(slog.New(slog.NewTextHandler(&buf, nil)))
+	s.SetAddrForTest("127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	if err := s.Start(ctx); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = s.Stop(); cancel() })
+
+	sendWrongHelloAndWaitRefusal(t, s, 0)
+	sendWrongHelloAndWaitRefusal(t, s, 1)
+
+	if got := s.ConnectKeyRefused(); got != 2 {
+		t.Fatalf("refusal counter = %d, want 2 (counts every refusal)", got)
+	}
+	if n := strings.Count(buf.String(), "connect_key refused"); n != 1 {
+		t.Fatalf("warn logged %d times, want 1 (rate-limited to once per peer per minute)", n)
 	}
 }

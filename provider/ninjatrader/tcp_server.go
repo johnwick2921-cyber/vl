@@ -64,6 +64,10 @@ const (
 // hold the single client slot). A var (not const) so tests can shrink it.
 var firstHelloTimeout = 10 * time.Second
 
+// connKeyRefusedLogInterval (U21) — the "connect_key refused" warn is rate-
+// limited to once per peer per minute. A var (not const) so tests can shrink it.
+var connKeyRefusedLogInterval = time.Minute
+
 // TCPServer is the Go-side endpoint of the Plan 1.5 TCP bridge. It owns the
 // listener, exactly one connected client at a time, the pending-signal queue
 // flushed on (re)connect, and the inbound fill channel that TCPTrader reads.
@@ -272,6 +276,13 @@ type TCPServer struct {
 	connAuthed    bool // K1: true once the current conn sent a matching hello (or no key required)
 	lastAckTime   time.Time
 	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
+
+	// U21 — rate-limit the "connect_key refused" warn to once per peer per
+	// minute (a wrong-key AddOn reconnecting every 5 s must not flood the
+	// journal). connKeyRefusedLogAt keys on the peer HOST (not host:port,
+	// which changes every reconnect).
+	connKeyRefusedLogMu sync.Mutex
+	connKeyRefusedLogAt map[string]time.Time
 
 	// writeMu serializes all writes to a connected client's net.Conn.
 	// Both heartbeatLoop and readLoop (handling client heartbeats) write
@@ -738,6 +749,44 @@ func ConnectKey() string {
 // ConnectKeyRefused returns the count of hellos refused for a missing or wrong
 // connect key (W-FRIEND-HOSTED S4). 0 when no key is required.
 func (s *TCPServer) ConnectKeyRefused() int64 { return s.ntConnectKeyRefused.Load() }
+
+// connKeyPeerHost returns the host part of the peer's address — the identity
+// U21 rate-limits on. A reconnect reuses the host with a fresh source port, so
+// keying on host:port would never rate-limit; keying on host does.
+func connKeyPeerHost(c net.Conn) string {
+	if c == nil || c.RemoteAddr() == nil {
+		return "<unknown>"
+	}
+	if host, _, err := net.SplitHostPort(c.RemoteAddr().String()); err == nil {
+		return host
+	}
+	return c.RemoteAddr().String()
+}
+
+// logConnKeyRefused (U21) logs the "connect_key refused" warn at most once per
+// peer (host) per connKeyRefusedLogInterval. The counter (ntConnectKeyRefused)
+// still counts EVERY refusal — only the WARN is rate-limited.
+func (s *TCPServer) logConnKeyRefused(c net.Conn) {
+	host := connKeyPeerHost(c)
+	now := time.Now()
+	s.connKeyRefusedLogMu.Lock()
+	if s.connKeyRefusedLogAt == nil {
+		s.connKeyRefusedLogAt = make(map[string]time.Time)
+	}
+	if last, ok := s.connKeyRefusedLogAt[host]; ok && now.Sub(last) < connKeyRefusedLogInterval {
+		s.connKeyRefusedLogMu.Unlock()
+		return
+	}
+	// Prune stale peers so the map stays bounded.
+	for h, last := range s.connKeyRefusedLogAt {
+		if now.Sub(last) >= connKeyRefusedLogInterval {
+			delete(s.connKeyRefusedLogAt, h)
+		}
+	}
+	s.connKeyRefusedLogAt[host] = now
+	s.connKeyRefusedLogMu.Unlock()
+	s.logger.Warn("tcp_server: connect_key refused", "addr", c.RemoteAddr())
+}
 
 // NewTCPServer constructs a server bound to ListenAddr(). The listener is
 // not opened until Start. Pass nil to use the default slog logger.
@@ -2128,8 +2177,8 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn) {
 			if key := ConnectKey(); key != "" {
 				if subtle.ConstantTimeCompare([]byte(p.ConnectKey), []byte(key)) != 1 {
 					s.ntConnectKeyRefused.Add(1)
-					s.logger.Warn("tcp_server: connect_key refused", "addr", c.RemoteAddr())
-					return // close: no hello reply, no allowlist, no flush
+					s.logConnKeyRefused(c) // U21: rate-limited to once per peer per minute
+					return                 // close: no hello reply, no allowlist, no flush
 				}
 			}
 			helloSeen = true
