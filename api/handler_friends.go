@@ -28,6 +28,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"time"
 
 	"vl/config"
@@ -197,34 +198,58 @@ func findFriend(name string) *friendRecord {
 	return nil
 }
 
-// setFriendState rewrites the named row's state in place.
-func setFriendState(name, state string) error {
-	rows, err := loadFriends()
+// withFriendLock holds the friends.json.lock flock (LOCK_EX) for the duration
+// of fn (R4). The provision/remove scripts take the SAME lock file (U17), so
+// the Go read-modify-write serializes with the scripts' temp+rename writes.
+func withFriendLock(fn func() error) error {
+	dir := friendRoot()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(filepath.Join(dir, "friends.json.lock"), os.O_CREATE|os.O_RDWR, 0o644)
 	if err != nil {
 		return err
 	}
-	for i := range rows {
-		if rows[i].Name == name {
-			rows[i].State = state
-			return saveFriends(rows)
-		}
+	defer f.Close()
+	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
+		return err
 	}
-	return fmt.Errorf("friend %q not in registry", name)
+	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
+	return fn()
+}
+
+// setFriendState rewrites the named row's state in place.
+func setFriendState(name, state string) error {
+	return withFriendLock(func() error {
+		rows, err := loadFriends()
+		if err != nil {
+			return err
+		}
+		for i := range rows {
+			if rows[i].Name == name {
+				rows[i].State = state
+				return saveFriends(rows)
+			}
+		}
+		return fmt.Errorf("friend %q not in registry", name)
+	})
 }
 
 // setFriendKeySHA256 rewrites the named row's key_sha256.
 func setFriendKeySHA256(name, sha string) error {
-	rows, err := loadFriends()
-	if err != nil {
-		return err
-	}
-	for i := range rows {
-		if rows[i].Name == name {
-			rows[i].KeySHA256 = sha
-			return saveFriends(rows)
+	return withFriendLock(func() error {
+		rows, err := loadFriends()
+		if err != nil {
+			return err
 		}
-	}
-	return fmt.Errorf("friend %q not in registry", name)
+		for i := range rows {
+			if rows[i].Name == name {
+				rows[i].KeySHA256 = sha
+				return saveFriends(rows)
+			}
+		}
+		return fmt.Errorf("friend %q not in registry", name)
+	})
 }
 
 // ---- rate limiting (S10: rate-limit Add / New key) ------------------------
