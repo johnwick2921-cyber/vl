@@ -417,13 +417,16 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 		}
 
 		marketData, hasData := ctx.MarketDataMap[coin.Symbol]
-		if !hasData {
-			continue
-		}
 		displayedCount++
 
 		sourceTags := e.formatCoinSourceTag(coin.Sources)
 		sb.WriteString(fmt.Sprintf("### %d. %s%s\n\n", displayedCount, coin.Symbol, sourceTags))
+		if !hasData {
+			// m134-c: a missing market block is STATED, never silently skipped —
+			// the model must not infer prices the feed did not deliver.
+			sb.WriteString("⚠️ market data unavailable for this symbol this cycle — do NOT infer prices.\n\n")
+			continue
+		}
 		sb.WriteString(e.formatMarketData(marketData))
 
 		sb.WriteString("\n")
@@ -513,6 +516,13 @@ func formingBarLine(tf string, tfData *market.TimeframeSeriesData, snapshotMs in
 	if snapshotMs <= 0 || tfData == nil || len(tfData.Klines) == 0 {
 		return ""
 	}
+	// m134-a: the 1d bar is a CME session bar (17:00 CT open → 16:00 CT close),
+	// NOT a calendar +24h bar. The stored 1d bar is calendar-day (00:00 open), so
+	// `open + 24h` labels a live session "CLOSED at 00:00 CT" all day (528/658
+	// prompts). The session's honest close is 16:00 CT.
+	if tf == "1d" {
+		return dailySessionBarLine(snapshotMs)
+	}
 	iv := tfIntervalMs(tf)
 	if iv <= 0 {
 		return "" // only intraday TFs carry the label (1m/5m/15m…)
@@ -525,6 +535,26 @@ func formingBarLine(tf string, tfData *market.TimeframeSeriesData, snapshotMs in
 	}
 	return fmt.Sprintf("current %s bar: CLOSED at %s (next close %s)\n\n",
 		tf, ClockCT(time.UnixMilli(closeMs)), ClockCT(time.UnixMilli(closeMs+iv)))
+}
+
+// dailySessionBarLine (m134-a) renders the 1d bar's honesty label from the CME
+// session boundaries. While CME is open the label is FORMING and names the
+// session close (16:00 CT); once the session is closed (the daily 16:00–17:00
+// break, weekends, holidays) it is CLOSED, naming the close that just passed and
+// the next one. Day arithmetic goes through AddDate (DST-safe); the market-open
+// read is IsCMEOpen (holiday/weekend/break aware) — never calendar +24h.
+func dailySessionBarLine(snapshotMs int64) string {
+	now := time.UnixMilli(snapshotMs)
+	ct := now.In(CTLocation())
+	nextClose := time.Date(ct.Year(), ct.Month(), ct.Day(), 16, 0, 0, 0, CTLocation())
+	if !ct.Before(nextClose) {
+		nextClose = nextClose.AddDate(0, 0, 1)
+	}
+	if IsCMEOpen(now) {
+		return fmt.Sprintf("current 1d bar: FORMING (closes %s) — prior bars closed\n\n", ClockCT(nextClose))
+	}
+	lastClose := nextClose.AddDate(0, 0, -1)
+	return fmt.Sprintf("current 1d bar: CLOSED at %s (next close %s)\n\n", ClockCT(lastClose), ClockCT(nextClose))
 }
 
 // staleTFLabel (G7) appends a staleness warning under a TF table when the
@@ -557,6 +587,15 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 	var sb strings.Builder
 	indicators := e.config.Indicators
 
+	// m134-b: the headline EMA values are computed on the PRIMARY timeframe, so
+	// the label names it — "current_ema50(5m)" — instead of an anonymous
+	// "current_ema50". An empty primary TF leaves the legacy label byte-identical.
+	primaryTF := e.config.Indicators.Klines.PrimaryTimeframe
+	tfSuffix := ""
+	if primaryTF != "" {
+		tfSuffix = "(" + primaryTF + ")"
+	}
+
 	// Clearly label the coin symbol
 	sb.WriteString(fmt.Sprintf("=== %s Market Data ===\n\n", data.Symbol))
 	sb.WriteString(fmt.Sprintf("current_price = %.4f", data.CurrentPrice))
@@ -577,13 +616,13 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 					// R22 F-2: an unwarmed EMA is printed n/a (L7 — a value not
 					// known prints n/a), never an SMA under an EMA label.
 					logger.Infof("ℹ️ current_ema%d n/a for %s — thin bar depth (needs %d bars for a warmed EMA).", p, data.Symbol, market.EMAWarmupBars(p))
-					sb.WriteString(fmt.Sprintf(", current_ema%d = n/a", p))
+					sb.WriteString(fmt.Sprintf(", current_ema%d%s = n/a", p, tfSuffix))
 					continue
 				}
-				sb.WriteString(fmt.Sprintf(", current_ema%d = %.3f", p, v))
+				sb.WriteString(fmt.Sprintf(", current_ema%d%s = %.3f", p, tfSuffix, v))
 			}
 		} else if data.CurrentEMA20 > 0 {
-			sb.WriteString(fmt.Sprintf(", current_ema20 = %.3f", data.CurrentEMA20))
+			sb.WriteString(fmt.Sprintf(", current_ema20%s = %.3f", tfSuffix, data.CurrentEMA20))
 		} else {
 			logger.Infof("ℹ️ current_ema20 omitted for %s — thin bar depth (needs 20 bars); EMA not warmed up.", data.Symbol)
 		}

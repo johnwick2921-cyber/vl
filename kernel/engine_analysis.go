@@ -810,7 +810,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	// 1. First fetch data for position coins (must fetch)
 	for _, pos := range ctx.Positions {
-		data, err := market.GetWithTimeframesVenue(pos.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
+		data, err := fetchMarketDataWithRetry(pos.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for position %s: %v", pos.Symbol, err)
 			continue
@@ -831,7 +831,7 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 			continue
 		}
 
-		data, err := market.GetWithTimeframesVenue(coin.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
+		data, err := fetchMarketDataWithRetry(coin.Symbol, engine.venue, timeframes, primaryTimeframe, klineCount, indPeriods)
 		if err != nil {
 			logger.Infof("⚠️  Failed to fetch market data for %s: %v", coin.Symbol, err)
 			continue
@@ -859,6 +859,20 @@ func fetchMarketDataWithStrategy(ctx *Context, engine *StrategyEngine) error {
 
 	logger.Infof("📊 Successfully fetched multi-timeframe market data for %d coins", len(ctx.MarketDataMap))
 	return nil
+}
+
+// fetchMarketDataWithRetry (m134-c) fetches a symbol's multi-timeframe market
+// data with ONE retry. A transient miss (empty BarCache on a first read, a
+// still-warming feed) used to drop the market block from the prompt silently;
+// the retry recovers the common case, and the prompt's explicit
+// "market data unavailable" line covers the persistent one.
+func fetchMarketDataWithRetry(symbol, venue string, timeframes []string, primaryTimeframe string, count int, indPeriods market.IndicatorPeriods) (*market.Data, error) {
+	data, err := market.GetWithTimeframesVenue(symbol, venue, timeframes, primaryTimeframe, count, indPeriods)
+	if err == nil {
+		return data, nil
+	}
+	logger.Infof("⚠️  Failed to fetch market data for %s (attempt 1/2): %v — retrying", symbol, err)
+	return market.GetWithTimeframesVenue(symbol, venue, timeframes, primaryTimeframe, count, indPeriods)
 }
 
 // ============================================================================
