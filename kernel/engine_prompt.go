@@ -435,6 +435,9 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 	// judges; no gate lives here (G1/G4 consume the same snapshot in Go).
 	if e.isFuturesInstrument() && len(ctx.Structure) > 0 {
 		sb.WriteString(StructurePromptLine(ctx.Structure) + "\n\n")
+		if strings.TrimSpace(ctx.StructureGap) != "" {
+			sb.WriteString("BARS HOLE: " + ctx.StructureGap + "\n\n")
+		}
 	}
 
 	sb.WriteString("---\n\n")

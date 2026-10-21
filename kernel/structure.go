@@ -65,31 +65,39 @@ type StructureOneWay struct {
 // StructureTFs are the per-TF detectors the wave builds (2.1).
 var StructureTFs = []string{"5m", "15m", "1h"}
 
-// StructureGapKey is the reserved snapshot key under which StructureSnapshot
-// records a bars-HOLE warning (m134). It is not a timeframe; StructurePromptLine
-// renders it as its own advisory clause.
-const StructureGapKey = "_gap"
-
-// BarsHoleWarning reports a HOLE in a bar series (m134): a gap longer than one
-// bar interval between consecutive bars, where a missing minute is a CME-OPEN
-// trading minute. A pure session break (16:00→17:00 CT, a weekend) has no open
-// minute missing and does NOT warn. The forming tail never trips it. Returns
-// "" when the series is contiguous.
+// BarsHoleWarning reports the LATEST HOLE inside the last 6 hours of a bar
+// series (m134/m149): a gap longer than one bar interval between consecutive
+// bars, counting only the CME-OPEN missing minutes. A pure session break
+// (16:00→17:00 CT, a weekend) has no open minute missing and does NOT warn;
+// the forming tail never trips it. Returns "" when the series is contiguous or
+// every hole is older than 6 h (a stale hole must not warn for hours).
 func BarsHoleWarning(bars []market.Kline, tfMin int) string {
 	if tfMin <= 0 || len(bars) < 2 {
 		return ""
 	}
 	step := int64(tfMin) * 60_000
-	for i := 1; i < len(bars); i++ {
+	newest := bars[len(bars)-1].OpenTime
+	sixH := int64(6 * 60 * 60 * 1000)
+	for i := len(bars) - 1; i >= 1; i-- {
 		d := bars[i].OpenTime - bars[i-1].OpenTime
 		if d <= step {
 			continue
 		}
+		if bars[i].OpenTime < newest-sixH {
+			break // every older gap is outside the 6 h window
+		}
 		prev := bars[i-1].OpenTime
 		next := bars[i].OpenTime
-		if IsCMEOpen(time.UnixMilli(prev+step)) || IsCMEOpen(time.UnixMilli(next-step)) {
-			return fmt.Sprintf("gap %s → %s CT (%d missing open minute(s))", ClockCT(time.UnixMilli(prev)), ClockCT(time.UnixMilli(next)), (d-step)/60_000)
+		open := 0
+		for m := prev + step; m < next; m += step {
+			if IsCMEOpen(time.UnixMilli(m)) {
+				open++
+			}
 		}
+		if open == 0 {
+			continue // a pure session break — no open minute missing
+		}
+		return fmt.Sprintf("gap %s → %s (%d open minute(s) missing)", ClockCT(time.UnixMilli(prev)), ClockCT(time.UnixMilli(next)), open)
 	}
 	return ""
 }
@@ -501,9 +509,9 @@ func StructureSnapshot(bars1m []market.Kline, nowMs int64) map[string]StructureS
 			snap[tf] = state
 		}
 	}
-	if w := BarsHoleWarning(bars1m, 1); w != "" {
-		snap[StructureGapKey] = StructureState{Trend: "bars hole: " + w}
-	}
+	// m149: a bars hole is NOT injected here as a fake StructureState — the
+	// caller carries it as its own Context field (ctx.StructureGap), so the
+	// persisted structure map stays per-TF truth.
 	return snap
 }
 
@@ -572,9 +580,6 @@ func StructurePromptLine(snap map[string]StructureState) string {
 			label += fmt.Sprintf(" (%s %.2f @%s)", st.Swing.Kind, st.Swing.Price, structureClockCT(st.Swing.TimeMs))
 		}
 		parts = append(parts, label)
-	}
-	if g, ok := snap[StructureGapKey]; ok && strings.TrimSpace(g.Trend) != "" {
-		parts = append(parts, g.Trend)
 	}
 	var lastEv *StructureEvent
 	var lastTF string

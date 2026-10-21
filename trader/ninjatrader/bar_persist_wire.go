@@ -513,6 +513,17 @@ func resetAfterBackfillHookForTest() {
 // and WeeklyShadowRefs (1 → 3). The RULE (kernel.RVBaselineFrom5mDays) is
 // byte-for-byte unchanged and pinned so by an E7 golden.
 //
+// m134 / m149 (2026-10-21) — the "non-1m rings keep exactly what the AddOn
+// seeded" line above is now STALE for the epoch-aligned aggregate TFs
+// (3m/5m/15m/30m/1h): those are REBUILT from the stored 1m tape by time-UNION
+// (RehydrateUnion), so their OLDER end now comes from 1m aggregates, not from
+// the AddOn seed or the store's native rows for that TF. That MOVES the same
+// computed values the 09-09 measurement named — min5Long and RVBaseline are
+// served from 1m-derived 5m now (condition (b) ResolveRVBaselineTape), so the
+// measured 0.9% disagreement between stored-5m and 1m-agg-5m is the reason this
+// is the CORRECT source, not a regression. Native rows still extend the older
+// end beyond the 1m retention (m149 P2).
+//
 // A10: a failed store read WARNs and boot continues. Nothing here gates,
 // refuses, blocks or blanks.
 func rehydrateRingFromStore(bh *store.BarHistoryStore, server *ntwire.TCPServer, now time.Time) {
@@ -559,25 +570,24 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		if tfMin := rehydrateTFMinutes(tf); tfMin > 0 {
 			oneMin, err := rehydrate1mBarsFor(bh, symbol, contract, reseeded, &rehydrate1mMemo)
 			if err != nil {
-				failed++
-				logger.Warnf("🧯 ring rehydrate %s %s (from 1m) FAILED: %v — boot continues on the AddOn seed alone (%d bars)", symbol, tf, err, before)
-				continue
+				// m149 P2: a failed 1m read does NOT skip the native rows —
+				// the older end still comes from the store's own rows.
+				logger.Warnf("🧯 ring rehydrate %s %s (from 1m) FAILED: %v — native rows still rehydrate the older end", symbol, tf, err)
+			} else if len(oneMin) > 0 {
+				bars := ntwire.Aggregate1mToTF(oneMin, tfMin, now.UnixMilli())
+				if added := cache.RehydrateUnion(symbol, tf, bars); added > 0 {
+					totalAdded += added
+					deepened++
+					after := cache.Get(symbol, tf)
+					h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
+					logger.Infof("🧯 ring rehydrated %s %s FROM 1M [m134 2026-10-21]: nt8=%d 1m_bars=%d total=%d/%d (+%d union — interior holes filled, live bars win on overlap) · contract=%s (%s) · %s",
+						symbol, tf, before, len(oneMin), len(after), cache.MaxBars(), added, contract, src, h.Line())
+				}
 			}
-			if len(oneMin) == 0 {
-				continue
-			}
-			bars := ntwire.Aggregate1mToTF(oneMin, tfMin)
-			added := cache.RehydrateUnion(symbol, tf, bars)
-			if added == 0 {
-				continue
-			}
-			totalAdded += added
-			deepened++
-			after := cache.Get(symbol, tf)
-			h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
-			logger.Infof("🧯 ring rehydrated %s %s FROM 1M [m134 2026-10-21]: nt8=%d 1m_bars=%d total=%d/%d (+%d union — interior holes filled, live bars win on overlap) · contract=%s (%s) · %s",
-				symbol, tf, before, len(oneMin), len(after), cache.MaxBars(), added, contract, src, h.Line())
-			continue
+			// m149 P2: fall through — the native stored rows extend the OLDER
+			// end beyond the 1m retention, and historical_import rows are not
+			// bypassed. RehydrateOlder is strictly-older, so it never disturbs
+			// what the 1m union just wrote.
 		}
 		rows, err := bh.LastNBarsOn(symbol, tf, contract, cache.MaxBars())
 		// A9 — every bar the filter kept OUT is counted, per contract, so the
@@ -754,6 +764,10 @@ func rehydrateRowsFor(rows []store.BarHistoryDB, reseeded bool) (kept []store.Ba
 // rehydrateBarsFromRows applies guard (ii): EVERY row enters the ring stamped
 // historical. The scale check, the merge and the persister then treat it as
 // the replay it is to this process — never as a sacred live bar.
+//
+// Final is left false on rehydrated bars (it predates the m134 wave): the
+// AddOn's Final proof is a LIVE-boundary fact this process has not witnessed
+// for a stored row, so a rehydrated bar is "unproven closed", never "closed".
 func rehydrateBarsFromRows(rows []store.BarHistoryDB) []ntwire.Bar {
 	bars := make([]ntwire.Bar, 0, len(rows))
 	for _, r := range rows {

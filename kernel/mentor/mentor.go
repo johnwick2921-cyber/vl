@@ -662,10 +662,13 @@ func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 }
 
 // BarsTFHoles reports the OPEN TIMES of aggregate buckets built from a 1m series
-// that have an INTERIOR hole (a missing minute) — m134 (b): a holey bucket must
-// be marked so the mentor's HTF reads can skip it. The last (possibly forming)
-// bucket is never reported; a short leading bucket (the series starts mid-bucket)
-// is not a hole. PURE — it does not mutate the bars.
+// that have an INTERIOR hole (a missing minute). It is a DIAGNOSTIC only — no
+// production caller: the m148 coverage check keeps partial buckets out of the
+// ring at the rehydrate call site, so a holey bucket never reaches the mentor
+// reads as a full bar; BarsTFHoles exists to name a hole when one is seen
+// elsewhere. The last (possibly forming) bucket is never reported; a short
+// leading bucket (the series starts mid-bucket) is not a hole. PURE — it does
+// not mutate the bars.
 func BarsTFHoles(bars []market.Kline, tfMin int) map[int64]bool {
 	if tfMin <= 1 || len(bars) < 2 {
 		return nil

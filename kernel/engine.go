@@ -121,6 +121,11 @@ type Context struct {
 	// (per-TF trend + swings + events); the HTF veto and the prompt line read
 	// it. Prompt-invisible (json:"-"); set by the trader loop each cycle.
 	Structure map[string]StructureState `json:"-"`
+	// StructureGap (m149 2026-10-21) — a bars-HOLE warning for the structure,
+	// carried as its OWN field (never injected into the Structure map as a fake
+	// StructureState). Prompt-visible line appended after StructurePromptLine;
+	// set by the trader loop from kernel.BarsHoleWarning(bars1m, 1).
+	StructureGap string `json:"-"`
 	// G1 (regime wave 2026-08-21) — HTF veto gate inputs: the Studio toggle
 	// (default ON) and the veto timeframe (env HTF_VETO_TF, default 1h).
 	// Prompt-invisible; set by the trader loop each cycle.

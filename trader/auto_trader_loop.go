@@ -412,6 +412,7 @@ func (at *AutoTrader) runCycle() error {
 	if market.FuturesBarsProvider != nil {
 		bars1m := market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 		ctx.Structure = kernel.StructureSnapshotForVeto(at.futuresSymbol(), bars1m, time.Now().UnixMilli()) // F-4: + the native 4h the cross veto needs
+		ctx.StructureGap = kernel.BarsHoleWarning(bars1m, 1)                                                // m149: a bars hole is its own field, never a fake StructureState
 		if blob, jerr := json.Marshal(ctx.Structure); jerr == nil {
 			record.StructureJSON = string(blob)
 		}
