@@ -185,11 +185,12 @@ func (at *AutoTrader) mentorEnqueueFill(r store.ArmedOrderDB, u ntwire.OrderUpda
 	// P1-2: carry the armed-row fallback so a fill with no pend (a restart
 	// dropped the in-memory pends) registers from the row, never dropped.
 	row := &mentor.FillRow{
-		Side:   mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
-		Entry:  r.EntryPx,
-		Stop:   r.StopPx,
-		Target: r.TargetPx,
-		ISB:    strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+		Side:     mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+		Entry:    r.EntryPx,
+		Stop:     r.StopPx,
+		Target:   r.TargetPx,
+		ISB:      strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+		SignalID: u.SignalID, // #47: match a later broker position_close
 	}
 	select {
 	case at.mentorFillCh <- mentorFillReceipt{receiptID: u.SignalID, armID: armID, lo: lo, hi: hi, row: row}:
@@ -228,6 +229,45 @@ func (at *AutoTrader) mentorDrainFills() {
 				// the levels) and keep draining the pend-backed receipts.
 				at.mentorDeferredFills = append(at.mentorDeferredFills, f)
 			}
+		default:
+			return
+		}
+	}
+}
+
+// mentorExitReceipt is a broker exit receipt queued from the close-sync
+// goroutine to the evaluator drain (#47). signalID is the entry signal id;
+// wasStop is true when the broker closed at the ORIGINAL stop ("sl") — a
+// break-even, trailed stop, partial, news or EOD flat exits with wasStop=false.
+type mentorExitReceipt struct {
+	signalID string
+	wasStop  bool
+}
+
+// mentorEnqueueExit queues a broker position_close receipt for the mentor
+// limits (#47). Non-blocking: a full queue drops it (counted).
+func (at *AutoTrader) mentorEnqueueExit(signalID string, wasStop bool) {
+	if at == nil || at.mentorExitCh == nil || signalID == "" {
+		return
+	}
+	select {
+	case at.mentorExitCh <- mentorExitReceipt{signalID: signalID, wasStop: wasStop}:
+	default:
+		at.mentorCount("record_exit_queue_full")
+	}
+}
+
+// mentorDrainExits drains the broker-exit queue into the evaluator's Limits
+// (#47). It MUST be called with mentorEvalMu held (mentorEvalOnce is the
+// production caller). Nil-safe.
+func (at *AutoTrader) mentorDrainExits() {
+	if at == nil || at.mentorExitCh == nil || at.mentorEval == nil {
+		return
+	}
+	for {
+		select {
+		case x := <-at.mentorExitCh:
+			at.mentorEval.State.Limits.RealExit(x.signalID, x.wasStop)
 		default:
 			return
 		}
