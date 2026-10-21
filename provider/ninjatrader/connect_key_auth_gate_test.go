@@ -329,6 +329,31 @@ func TestConnectKeyLoopingKeylessRedialRealAddOnConnects(t *testing.T) {
 	}
 }
 
+// TestConnectKeyPreemptedPendingConnIsClosed — when a new dial preempts a waiting
+// pending conn, the OLD pending conn is actually CLOSED (fd/goroutine hygiene):
+// its readLoop unblocks and exits, so a looping keyless peer cannot accumulate
+// goroutines. DS-107's minor note.
+//
+// MUTANT: stop closing the old pending conn on preemption → the first conn stays
+// open → expectClosed times out → RED.
+func TestConnectKeyPreemptedPendingConnIsClosed(t *testing.T) {
+	t.Setenv("NT_CONNECT_KEY", testConnectKey)
+	s := startedServer(t, nil)
+
+	first := rawDial(t, s)
+	time.Sleep(30 * time.Millisecond) // let the accept loop register the first pending conn
+	second := rawDial(t, s)           // this preempts the first pending conn
+
+	// The preempted conn must have been CLOSED by the server.
+	expectClosed(t, first, 3*time.Second)
+
+	// The replacement is still the pending conn (not yet authed).
+	if s.IsConnected() {
+		t.Fatal("the replacement pending peer must still read IsConnected()==false")
+	}
+	_ = second
+}
+
 // TestConnectKeySignalQueuedBeforeAuthDeliveredAfterAuth — a signal queued while
 // the peer is pending IS delivered once the peer authenticates (flush runs at
 // auth, not before).
