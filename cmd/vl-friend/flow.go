@@ -333,15 +333,29 @@ func downloadTailscaleMSI(ctx context.Context, d deps) (string, error) {
 		return "", fmt.Errorf("verify Tailscale installer signature: %w", err)
 	}
 	// REVIEW-BACK 2: a tampered MSI keeps its certificate (Status becomes
-	// HashMismatch), so the STATUS is the tamper gate — and the subject must be
-	// the exact org, not merely "contains tailscale".
+	// HashMismatch), so the STATUS is the tamper gate — and S9: the ORG is parsed
+	// from the DN and compared EXACTLY (O == "Tailscale Inc."), never a
+	// substring match.
 	if sig.Status != "Valid" {
 		return "", fmt.Errorf("refusing Tailscale installer: Authenticode status %q (not Valid)", sig.Status)
 	}
-	if !strings.Contains(sig.Subject, "O=Tailscale Inc.") {
+	if signerOrg(sig.Subject) != "Tailscale Inc." {
 		return "", fmt.Errorf("refusing Tailscale installer: unexpected signer %q (want O=Tailscale Inc.)", sig.Subject)
 	}
 	return path, nil
+}
+
+// signerOrg parses an X.509 subject DN ("CN=…, O=…, …") and returns the O= value
+// (EXACT, S9). A cert from another org whose CN merely contains "tailscale"
+// refuses.
+func signerOrg(subject string) string {
+	for _, part := range strings.Split(subject, ",") {
+		kv := strings.TrimSpace(part)
+		if strings.HasPrefix(kv, "O=") {
+			return strings.TrimSpace(strings.TrimPrefix(kv, "O="))
+		}
+	}
+	return ""
 }
 
 // waitTailscaleReady polls `tailscale status` until the daemon answers
@@ -378,6 +392,11 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 	}
 	switch state {
 	case "NeedsLogin":
+		// S11: an empty auth key cannot join a fresh device — fail early rather
+		// than running `up --authkey=` and failing with a spent/blank key.
+		if authKey == "" {
+			return fmt.Errorf("This install code has no Tailscale key — ask the owner for a new code")
+		}
 		out, err := tailscaleExec(ctx, d, "up", "--authkey="+authKey, "--unattended")
 		if err != nil {
 			// Redact the auth key from BOTH the error and the command output —
@@ -385,7 +404,11 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
 		}
 		return waitTailscaleApproved(ctx, d)
-	case "Running", "NeedsMachineAuth":
+	case "NeedsMachineAuth":
+		// S5: mid-approval — the device is ALREADY on our tailnet and just waiting
+		// for the owner to approve it. Never refuse this as "another network".
+		return waitTailscaleApproved(ctx, d)
+	case "Running":
 		// Already on a tailnet: it is OURS only if the friend bot's manifest is
 		// reachable and signature-valid at the known address. The auth key is
 		// spent, so a re-run must skip `up` and continue.
@@ -599,6 +622,7 @@ func detectUpdate(ctx context.Context, d deps, base string) (UpdateDecision, err
 	if err != nil {
 		return dec, err
 	}
+	dec.CurrentBuild = cur.AddonBuild
 	dec.AddonUpdateAvailable = addonBuildNewer(m.AddonBuild, cur.AddonBuild)
 	dec.AppUpdateAvailable = appVersionNewer(m.AppVersion, appVersion)
 	return dec, nil
@@ -628,6 +652,14 @@ func resolveDashboardBase(ctx context.Context, d deps) (string, error) {
 // NT8-running prompt, bounded to its own ctx so it can never hang the icon
 // launch (M3). On any error the mentor sees a dialog "VL could not start…" (I3).
 func runOpen(ctx context.Context, d deps) error {
+	// W13b: migrate a legacy <USERPROFILE>\Documents layout into MyDocuments
+	// (non-fatal).
+	if home, herr := d.homeDir(); herr == nil {
+		if docs, derr := d.docsDir(); derr == nil {
+			_ = migrateDocsIfNeeded(d, home, docs)
+		}
+	}
+
 	base, err := resolveDashboardBase(ctx, d)
 	if err != nil {
 		d.messageBox("VL could not start: " + err.Error() + ". Send a photo of this to the owner.")
@@ -651,13 +683,15 @@ func runOpen(ctx context.Context, d deps) error {
 		return oerr
 	}
 
-	// Quick bounded update check; a probe error is shown (m12), never silent.
+	// Quick bounded update check; a probe error is shown (m12/W15), never silent.
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	dec, derr := detectUpdate(cctx, d, base)
 	cancel()
 	if derr != nil {
-		d.messageBox("VL could not start: " + derr.Error() + ". Send a photo of this to the owner.")
-		return derr
+		// W15: the 5-second manifest probe failed — the dashboard is already open,
+		// so just tell the mentor the bot is unreachable.
+		d.messageBox("VL cannot reach your bot — open Tailscale and check it says Connected.")
+		return nil
 	}
 	if !dec.AddonUpdateAvailable {
 		if dec.AppUpdateAvailable {
@@ -668,7 +702,9 @@ func runOpen(ctx context.Context, d deps) error {
 		return nil
 	}
 
-	if !d.messageBox("VL update available — Update now / Later") {
+	// M4: the dialog names the build it would move between.
+	msg := fmt.Sprintf("VL update available (add-on %s → %s). Yes = update now, No = later.", dec.CurrentBuild, dec.Manifest.AddonBuild)
+	if !d.messageBox(msg) {
 		return nil
 	}
 
@@ -684,6 +720,8 @@ func runOpen(ctx context.Context, d deps) error {
 		d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
 		return uerr
 	}
+	// W8b: tell the mentor the add-on updated and NinjaTrader must be restarted.
+	d.messageBox("Updated ✓ — restart NinjaTrader to load it.")
 	return nil
 }
 
@@ -691,6 +729,13 @@ func runOpen(ctx context.Context, d deps) error {
 // (VL-Setup.exe --repair-icon). The normal start (runInner) also re-creates a
 // missing icon, so either path fixes a vanished / OneDrive-moved icon.
 func repairIcon(ctx context.Context, d deps) error {
+	// W13b: migrate a legacy <USERPROFILE>\Documents layout into MyDocuments
+	// (non-fatal).
+	if home, herr := d.homeDir(); herr == nil {
+		if docs, derr := d.docsDir(); derr == nil {
+			_ = migrateDocsIfNeeded(d, home, docs)
+		}
+	}
 	docs, err := d.docsDir()
 	if err != nil {
 		return err
@@ -876,6 +921,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 // UpdateDecision is what RunUpdateCheck reports.
 type UpdateDecision struct {
 	Manifest             FriendManifest
+	CurrentBuild         string
 	AddonUpdateAvailable bool
 	AppUpdateAvailable   bool
 	Applied              bool
@@ -900,6 +946,7 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 	if err != nil {
 		return dec, err
 	}
+	dec.CurrentBuild = cur.AddonBuild
 	dec.AddonUpdateAvailable = addonBuildNewer(m.AddonBuild, cur.AddonBuild)
 	dec.AppUpdateAvailable = appVersionNewer(m.AppVersion, appVersion)
 	if !dec.AddonUpdateAvailable && !dec.AppUpdateAvailable {
@@ -976,9 +1023,9 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool) 
 }
 
 // waitFlat prints the plain-English wait line and polls the flat probe until
-// flat (M3), returning errNotFlat on timeout.
+// flat (M3/S13), returning errNotFlat on timeout.
 func waitFlat(ctx context.Context, d deps) error {
-	d.print("Waiting for your trade to close…")
+	d.print("Waiting until your trades are flat (NinjaTrader must be open)…")
 	return waitUntilFlat(ctx, d.positions, 60*time.Second)
 }
 

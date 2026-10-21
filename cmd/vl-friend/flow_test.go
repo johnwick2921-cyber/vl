@@ -1088,8 +1088,15 @@ func TestRunOpenUpdateDialogYes(t *testing.T) {
 	if b, err := os.ReadFile(addonDstPath(home)); err != nil || string(b) != string(addonBody()) {
 		t.Fatalf("the update was not applied: %v %q", err, b)
 	}
-	if len(rec.messages) != 1 {
-		t.Fatalf("expected one update dialog, got %v", rec.messages)
+	// M4: the dialog names the builds; W8b: an applied update is announced.
+	if len(rec.messages) != 2 {
+		t.Fatalf("expected the update dialog + the applied message, got %v", rec.messages)
+	}
+	if !strings.Contains(rec.messages[0], "add-on 36 → 37") {
+		t.Fatalf("the dialog must name the build transition: %v", rec.messages)
+	}
+	if !strings.Contains(rec.messages[1], "Updated ✓") {
+		t.Fatalf("the applied message must tell the mentor to restart: %v", rec.messages)
 	}
 }
 

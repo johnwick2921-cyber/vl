@@ -222,6 +222,22 @@ func TestEnsureTailscaleRefusesWrongOrg(t *testing.T) {
 	}
 }
 
+// TestEnsureTailscaleRefusesSuffixOrg — S9: the O= value is matched EXACTLY. A
+// cert whose org is "Tailscale Inc. Extra" (or whose CN merely contains
+// "tailscale") refuses. MUTANT: substring match (Contains "O=Tailscale Inc.") →
+// this test RED.
+func TestEnsureTailscaleRefusesSuffixOrg(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin",
+		signerStatus: "Valid", signerSubject: "CN=Tailscale Inc., O=Tailscale Inc. Extra"}
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err == nil {
+		t.Fatal("an org that only PREFIXES 'Tailscale Inc.' was accepted")
+	}
+	if f.msiexecCalled {
+		t.Fatal("msiexec must NOT run on a suffix-org MSI")
+	}
+}
+
 func TestEnsureTailscaleRefusesOtherTailnet(t *testing.T) {
 	f := &tailscaleFake{installed: true, beforeState: "Running"}
 	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")

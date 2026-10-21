@@ -50,7 +50,9 @@ func installedJSONPath(docs string) string {
 	return filepath.Join(ntVLdir(docs), "installed.json")
 }
 
-// readConnectConfig reads connect.json (written by the app at install).
+// readConnectConfig reads connect.json (written by the app at install). S18: the
+// host and port are re-validated on read — a hand-edited or corrupt connect.json
+// refuses rather than pointing the app at a bogus address.
 func readConnectConfig(d deps, docs string) (connectConfig, error) {
 	b, err := d.readFile(connectJSONPath(docs))
 	if err != nil {
@@ -59,6 +61,12 @@ func readConnectConfig(d deps, docs string) (connectConfig, error) {
 	var c connectConfig
 	if err := json.Unmarshal(b, &c); err != nil {
 		return connectConfig{}, fmt.Errorf("connect.json: %w", err)
+	}
+	if c.Host == "" || !hostRe.MatchString(c.Host) {
+		return connectConfig{}, fmt.Errorf("connect.json: invalid host %q", c.Host)
+	}
+	if c.Port < 1 || c.Port > 65535 {
+		return connectConfig{}, fmt.Errorf("connect.json: port out of range")
 	}
 	return c, nil
 }

@@ -14,6 +14,9 @@ import (
 var (
 	friendNameRe = regexp.MustCompile(`^[a-z0-9]{2,20}$`)
 	sha256HexRe  = regexp.MustCompile(`^[0-9a-f]{64}$`)
+	// hostRe accepts an IPv4 literal or a DNS hostname (S18): no scheme, no port,
+	// no spaces.
+	hostRe = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9.-]{0,252}[a-zA-Z0-9])?$`)
 )
 
 // InstallCode is the decoded install code.
@@ -44,8 +47,8 @@ func ParseInstallCode(code string) (InstallCode, error) {
 	if !friendNameRe.MatchString(ic.Name) {
 		return InstallCode{}, fmt.Errorf("install code: invalid friend name %q", ic.Name)
 	}
-	if ic.Host == "" {
-		return InstallCode{}, fmt.Errorf("install code: empty host")
+	if ic.Host == "" || !hostRe.MatchString(ic.Host) {
+		return InstallCode{}, fmt.Errorf("install code: invalid host %q", ic.Host)
 	}
 	if ic.NTPort < 1 || ic.NTPort > 65535 || ic.WebPort < 1 || ic.WebPort > 65535 {
 		return InstallCode{}, fmt.Errorf("install code: port out of range")
