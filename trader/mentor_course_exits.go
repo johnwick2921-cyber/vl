@@ -310,6 +310,12 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 	if pos.ArmedBE || pos.R <= 0 || !mentorBEBeforePartialOn(at.mentorRiskControl()) {
 		return false
 	}
+	if c <= 0 {
+		// No close is not a close: a 0 reads as "past half-way" for a short
+		// and would send a break-even NT8 refuses below the market.
+		at.mentorCount("be_before_partial_no_close")
+		return false
+	}
 	side := pos.Side
 	long := side == "long"
 	half := pos.Entry + pos.R/2
