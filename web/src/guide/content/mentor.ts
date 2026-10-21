@@ -1886,7 +1886,7 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
           what: 'Refuse an ISB (and the reverse ISB) whose stop is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — "trên nữa thì thôi" [D3.3 p1 @02:04–02:08]): a stop of 20–25 pts is the REDUCED tier, a stop above 25 is REFUSED. This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop above it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–25 reduced band.',
           trader:
-            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The OWNER moved the line to 30 (10-16 "fix all").',
+            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The line is the course-exact 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — “trên nữa thì thôi” [D3.3 p1 @02:04–02:08]).',
           consumer:
             'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
           range:
