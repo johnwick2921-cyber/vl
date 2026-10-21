@@ -37,6 +37,7 @@ type tailscaleFake struct {
 	signCalled     bool
 	polls          int
 	installCmd     string
+	installArgs    []string // trailing values after the -EncodedCommand payload
 	execNames      []string
 	authURL        string // injected into status JSON while NeedsMachineAuth
 	prints         []string
@@ -104,6 +105,7 @@ func (f *tailscaleFake) exec(ctx context.Context, name string, args ...string) (
 			return nil, nil
 		}
 		f.installCmd = script
+		f.installArgs = append([]string{}, args[4:]...)
 		f.msiexecCalled = true
 		if f.msiErr != nil {
 			// Simulate the elevated script's UAC-cancel marker (W10: 1223).
@@ -347,22 +349,43 @@ func TestNeverPrintSecrets(t *testing.T) {
 	}
 }
 
-// TestElevatedScriptRunsUpWithArgsKey — G3/H14a: the ELEVATED step runs
-// `tailscale up` with the key from the TS_AUTHKEY env (one UAC covers MSI + up),
-// and the key is NEVER spliced into the script text. MUTANT: splice the key into
-// the script → this test RED.
-func TestElevatedScriptRunsUpWithArgsKey(t *testing.T) {
+// TestElevatedScriptNeverCarriesAuthKey — CTO 10-21: the install step runs
+// msiexec ONLY. Its old in-script `tailscale up` had no timeout and, proven on
+// real PowerShell 5.1, threw under $ErrorActionPreference='Stop' on any stderr
+// line — failing a good install. The key never reaches the install process
+// (not in the script, not as a trailing value); the join is tailscaleConnect's
+// `up --authkey`. Every outcome exits 0 so the marker parse is reached.
+// MUTANT: put `up --unattended` (or the key as a trailing value) back → RED.
+func TestElevatedScriptNeverCarriesAuthKey(t *testing.T) {
 	shortWaits(t)
+	const key = "tskey-SECRET123"
 	f := &tailscaleFake{installed: false, beforeState: "NeedsLogin", afterUpState: "Running",
 		signerSubject: "CN=Tailscale Inc., O=Tailscale Inc."}
-	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-SECRET123", "http://100.64.0.2:18081"); err != nil {
-		t.Fatalf("install refused: %v", err)
+	_ = ensureTailscale(context.Background(), f.deps(t), key, "http://100.64.0.2:18081")
+	if !f.msiexecCalled {
+		t.Fatal("the install step did not run")
 	}
-	if !strings.Contains(f.installCmd, "up --unattended") || !strings.Contains(f.installCmd, "$env:TS_AUTHKEY") {
-		t.Fatalf("the elevated step must run `up` with the key from TS_AUTHKEY: %q", f.installCmd)
+	for _, bad := range []string{"tailscale.exe", " up ", "TS_AUTHKEY", "VL_ARG1", key, "exit 2", "exit 3"} {
+		if strings.Contains(f.installCmd, bad) {
+			t.Fatalf("the install script must not contain %q:\n%s", bad, f.installCmd)
+		}
 	}
-	if strings.Contains(f.installCmd, "tskey-SECRET123") {
-		t.Fatalf("the key must NOT be spliced into the script text: %q", f.installCmd)
+	if len(f.installArgs) != 1 {
+		t.Fatalf("the install step must get exactly ONE trailing value (the MSI path), got %d", len(f.installArgs))
+	}
+	for _, a := range f.installArgs {
+		if strings.Contains(a, key) {
+			t.Fatal("the auth key reached the install process")
+		}
+	}
+	joined := false
+	for _, a := range f.upArgs {
+		if a == "--authkey="+key {
+			joined = true
+		}
+	}
+	if !joined {
+		t.Fatalf("tailscaleConnect must join with the key after the install: %v", f.upArgs)
 	}
 }
 

@@ -2082,6 +2082,9 @@ func TestEnsureLocalExeOlderCopyReplacedAndMoved(t *testing.T) {
 	ob, _ := os.ReadFile(filepath.Join(d.localAppDataDir(), "VL", "old", entries[0].Name()))
 	if string(ob) != "MZ-old" {
 		t.Fatalf("the moved backup is wrong: %q", ob)
+	}
+}
+
 // TestShortcutScriptNeverSplicesURL — P1 pin: shortcutScript takes NO URL (the
 // URL rides $env:VL_ARG0), starts with psPreamble, never uses $args, and ends
 // with an existence check (exit 1 / VL_RESULT=ok). The URL is also absent from

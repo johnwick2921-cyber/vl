@@ -557,8 +557,7 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 			}
 			// G3: never tell a standard user to "run as administrator" — that
 			// switches profiles and points at the wrong Documents/LOCALAPPDATA.
-			// The elevated MSI step already ran `up`; a refusal here surfaces as
-			// the (redacted) raw error.
+			// A refusal here surfaces as the (redacted) raw error.
 			// Redact the auth key from BOTH the error and the command output —
 			// exec errors can echo the full command line (P0 d: never print keys).
 			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
@@ -683,9 +682,9 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 // ensureTailscaleInstalled downloads + verifies + silently installs Tailscale
 // when it is not already present, then waits for it to become ready. It reports
 // whether Tailscale was already installed so the caller can print the skip line
-// ([2/6]). G3: the one-time auth key is passed into the ELEVATED step, so a
-// standard (non-admin) user gets ONE UAC prompt that covers both the MSI and
-// `tailscale up` — never "run as administrator" (which would switch profiles).
+// ([2/6]). The user gets ONE UAC prompt (msiexec only) and is never told to
+// "run as administrator" (which would switch profiles). The auth key is NOT
+// used here: tailscaleConnect joins with it afterwards.
 func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool, error) {
 	if _, err := tailscaleBackendState(ctx, d); err == nil {
 		return true, nil
@@ -694,7 +693,7 @@ func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool
 	if err != nil {
 		return false, err
 	}
-	code, err := installTailscaleElevated(ctx, d, msiPath, authKey)
+	code, err := installTailscaleElevated(ctx, d, msiPath)
 	if err != nil {
 		return false, err
 	}
@@ -743,25 +742,27 @@ func ensureTailscale(ctx context.Context, d deps, authKey, base string) error {
 // key in $env:VL_ARG1 (never positional args, never spliced). It re-verifies
 // the Authenticode signature IMMEDIATELY before msiexec (S8 TOCTOU guard) and
 // parses the signer DN for an EXACT O= (H13). UAC cancellation is reported by
-// NativeErrorCode 1223 (W10) — never English text. G3/H14a: after msiexec it
-// runs `tailscale up` with the key from the TS_AUTHKEY ENV (never argv), so one
-// UAC prompt covers both and a standard user is never told to "run as
-// administrator". P2c: it prints ONE marker line VL_RESULT=<msiexec exit code>.
+// NativeErrorCode 1223 (W10) — never English text. P2c: it prints ONE marker
+// line VL_RESULT=<msiexec exit code | marker>, and every outcome exits 0 so the
+// seam reaches the marker parse (a non-zero exit returns an error first).
+//
+// CTO 10-21: it does NOT run `tailscale up`. Only msiexec is elevated, so the
+// script's `up` ran at the same privilege as tailscaleConnect's — redundant,
+// with no timeout (`up` blocks while device approval is pending), and proven on
+// real PowerShell 5.1 to THROW under $ErrorActionPreference='Stop' on any
+// stderr line from the exe, failing a good install. The join is
+// tailscaleConnect's job (timeout, approval wait, redaction); the auth key
+// never enters this process.
 const elevatedInstallScript = psPreamble + `$msi = $env:VL_ARG0
-$key = $env:VL_ARG1
 $sig = Get-AuthenticodeSignature -FilePath $msi
-if ($sig.Status -ne 'Valid') { Write-Output 'VL_RESULT=MSI_NOT_VALID'; exit 2 }
+if ($sig.Status -ne 'Valid') { Write-Output 'VL_RESULT=MSI_NOT_VALID'; exit 0 }
 $org = ''
 foreach ($part in ($sig.SignerCertificate.Subject -split ',')) { $kv = $part.Trim(); if ($kv.StartsWith('O=')) { $org = $kv.Substring(2); break } }
-if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_RESULT=MSI_BAD_SIGNER'; exit 3 }
+if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_RESULT=MSI_BAD_SIGNER'; exit 0 }
 $arg = '/i "' + $msi + '" /quiet /norestart'
 try {
   $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
   Write-Output ('VL_RESULT=' + $p.ExitCode)
-  if ($key) {
-    $env:TS_AUTHKEY = $key
-    & 'C:\Program Files\Tailscale\tailscale.exe' up --unattended 2>$null | Out-Null
-  }
 } catch {
   if ($_.Exception.InnerException.NativeErrorCode -eq 1223) { Write-Output 'VL_RESULT=UAC_CANCELLED'; exit 0 }
   throw
@@ -769,11 +770,11 @@ try {
 
 // installTailscaleElevated starts msiexec ELEVATED so Windows shows the UAC
 // Yes/No prompt (a per-machine /quiet MSI from a non-admin process fails with
-// no prompt — 1603/1625). It returns the msiexec exit code. S8/S23a/W10/S18b/G3:
-// the command is sent via -EncodedCommand with the MSI path as $args[0] and the
-// auth key as $args[1] (never spliced into the script, never echoed or logged).
-func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey string) (int, error) {
-	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(elevatedInstallScript), msiPath, authKey)
+// no prompt — 1603/1625). It returns the msiexec exit code. S8/S23a/W10/S18b:
+// the command is sent via -EncodedCommand; the MSI path is the one trailing
+// value (it rides $env:VL_ARG0, never spliced into the script).
+func installTailscaleElevated(ctx context.Context, d deps, msiPath string) (int, error) {
+	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(elevatedInstallScript), msiPath)
 	if err != nil {
 		return 0, fmt.Errorf("tailscale install: %w: %s", err, strings.TrimSpace(string(out)))
 	}

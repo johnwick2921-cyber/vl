@@ -127,6 +127,14 @@ func psEncodedCommand(script string) string {
 // Linux test build.
 const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
 
+// verifyMsiSignerScript is the production Authenticode check (P1/P2 shape): the
+// MSI path rides $env:VL_ARG0 and the result is one VL_RESULT=<status>|<subject>
+// line. Shared (no build tag) so the Linux realps_test.go runs the exact string.
+const verifyMsiSignerScript = "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+
+// ntRunningScript reports whether NinjaTrader.exe is running (P2 shape).
+const ntRunningScript = "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'VL_RESULT=yes' } else { 'VL_RESULT=no' }"
+
 // psResultLine extracts the single VL_RESULT=<value> line from stdout (P2c),
 // ignoring every other line a PowerShell run may emit. Lives here so flow.go's
 // parsers can share it on Linux.

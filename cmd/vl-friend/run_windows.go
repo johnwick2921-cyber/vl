@@ -141,7 +141,7 @@ func realDeps() deps {
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
 			// P1: the path rides VL_ARG0 (PowerShell 5.1 rejects args after
 			// -EncodedCommand); P2: only the VL_RESULT line is parsed.
-			script := "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+			script := verifyMsiSignerScript
 			out, err := psRun(script, msiPath)
 			if err != nil {
 				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
@@ -167,7 +167,7 @@ func realDeps() deps {
 			return err == nil && st.IsDir()
 		},
 		ntRunning: func(ctx context.Context) (bool, error) {
-			script := "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'VL_RESULT=yes' } else { 'VL_RESULT=no' }"
+			script := ntRunningScript
 			out, err := psRun(script, "")
 			if err != nil {
 				return false, err
