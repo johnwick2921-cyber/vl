@@ -62,6 +62,31 @@ func TestHTFVerdictNo4hFailClosed(t *testing.T) {
 	}
 }
 
+// TestHTFVerdictPriceIsFree — D4-80 [D4.4 p2 @ 03:51]: the trigger having FIRED
+// sets the direction; price need NOT sit on the trigger side of the line. A 4h
+// buy at 30000 with price trading 29500 (below the line) still verdicts long,
+// and refuses short. HTFVerdict never consults price by construction — this pin
+// guards the D4-80 semantic that was formerly carried by the removed
+// HTFSideIsOK helper.
+func TestHTFVerdictPriceIsFree(t *testing.T) {
+	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 30000}}
+	if ok, side, _ := HTFVerdict(h); !ok || side != SideLong {
+		t.Fatalf("4h long @30000: ok=%v side=%q, want long regardless of price below the line [D4.4 p2 @ 03:51]", ok, side)
+	}
+	if HTFSideMustBeAllowed(h, SideShort) {
+		t.Fatal("short against the 4h direction must be refused")
+	}
+}
+
+// HTFSideMustBeAllowed is a tiny test-local helper: an entry side obeys the gate
+// when the verdict opens and names that side. It exists only to let the
+// price-is-free pin assert the SHORT refusal without resurrecting the dead
+// HTFSideIsOK production helper.
+func HTFSideMustBeAllowed(h HTF, side Side) bool {
+	ok, want, _ := HTFVerdict(h)
+	return ok && want == side
+}
+
 // TestHTFTriggerOnRecordedTapes — canon 53: replay the recorded 4h and 1h
 // tapes (db-copy, MNQ 12-26) in lockstep. Invariant: once the 4h line is
 // drawn, the verdict never names a side other than the 4h side — a trade is
