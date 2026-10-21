@@ -165,9 +165,7 @@ func realDeps() deps {
 			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
 		openURL: func(ctx context.Context, url string) error {
-			// P1: the URL rides VL_ARG0; openScript reads $env:VL_ARG0.
-			_, err := psRun(openScript(), url)
-			return err
+			return openDashboardNative(url)
 		},
 		docsDir: windowsDocumentsDir,
 		dirExists: func(path string) bool {
@@ -436,6 +434,41 @@ func validateLocalAppData() error {
 		return fmt.Errorf("LOCALAPPDATA is not an absolute path: %q", dir)
 	}
 	return nil
+}
+
+// openDashboardNative opens the dashboard with ShellExecute (what Explorer
+// uses) — Edge in app mode when installed, else the default browser. Owner
+// laptop 10-21 [A]: 1.2.0 printed "Opening your dashboard…" and the laptop
+// never even requested the page — the PowerShell child that ran Start-Process
+// hung. ShellExecute needs no child process and returns as soon as the launch
+// is handed to the shell; it runs on its own goroutine with a 15s cap so even
+// a stuck shell cannot hold the run.
+func openDashboardNative(url string) error {
+	file, args := url, ""
+	for _, p := range []string{
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
+	} {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			file, args = p, "--app="+url
+			break
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		var a *uint16
+		if args != "" {
+			a = windows.StringToUTF16Ptr(args)
+		}
+		done <- windows.ShellExecute(0, windows.StringToUTF16Ptr("open"), windows.StringToUTF16Ptr(file), a, nil, windows.SW_SHOWNORMAL)
+	}()
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("the browser did not start within 15s")
+	}
 }
 
 // disableQuickEdit clears ENABLE_QUICK_EDIT_MODE on the console input (with

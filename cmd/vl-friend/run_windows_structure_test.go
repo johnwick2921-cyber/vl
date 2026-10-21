@@ -509,3 +509,28 @@ func TestRunDisablesQuickEditFirst(t *testing.T) {
 		t.Fatal("disableQuickEdit must clear QUICK_EDIT and set EXTENDED_FLAGS")
 	}
 }
+
+// TestOpenURLIsNativeNotPowerShell — owner laptop 10-21 [A]: 1.2.0 stopped on
+// "Opening your dashboard…" and the page was never requested: the PowerShell
+// child running Start-Process hung. openURL must use ShellExecute (no child
+// process), bounded. MUTANT: route openURL back through psRun → RED.
+func TestOpenURLIsNativeNotPowerShell(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+	i := strings.Index(s, "openURL: func(ctx context.Context, url string) error {")
+	if i < 0 {
+		t.Fatal("no openURL seam")
+	}
+	body := s[i : i+200]
+	if !strings.Contains(body, "openDashboardNative(url)") || strings.Contains(body, "psRun(") {
+		t.Fatalf("openURL must call openDashboardNative, never psRun:\n%s", body)
+	}
+	for _, want := range []string{"windows.ShellExecute(", "case <-time.After(15 * time.Second):", `"--app="+url`} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("openDashboardNative must contain %q", want)
+		}
+	}
+}
