@@ -700,17 +700,33 @@ func ensureTailscaleInstalled(ctx context.Context, d deps, authKey string) (bool
 	}
 	// REVIEW-BACK 1: 0 or 3010 (reboot required) = ok; 1223 = the user clicked No
 	// on the UAC prompt.
-	switch code {
-	case 0, 3010:
-	case 1223:
-		return false, fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
-	default:
-		return false, fmt.Errorf("Tailscale install failed (exit %d)", code)
+	if err := tailscaleInstallExitError(code); err != nil {
+		return false, err
 	}
 	if err := waitTailscaleReady(ctx, d); err != nil {
 		return false, err
 	}
 	return false, nil
+}
+
+// tailscaleInstallExitError maps the elevated msiexec exit code to a plain-words
+// error for a non-technical user (A9). nil = success (0, or 3010 = reboot
+// required but installed). It never tells the user to "run as administrator".
+func tailscaleInstallExitError(code int) error {
+	switch code {
+	case 0, 3010:
+		return nil
+	case 1223:
+		return fmt.Errorf("Tailscale needs admin rights — click Yes in the Windows permission prompt, then run VL-Setup again")
+	case 1618:
+		return fmt.Errorf("Windows is busy installing something else. Wait a minute, then run VL-Setup again.")
+	case 1602:
+		return fmt.Errorf("The Tailscale install was cancelled. Run VL-Setup again and click Yes.")
+	case 1603:
+		return fmt.Errorf("Tailscale could not be installed (error 1603). Restart the PC, then run VL-Setup again. If it happens again, send a photo to the owner.")
+	default:
+		return fmt.Errorf("Tailscale install failed (exit %d)", code)
+	}
 }
 
 // ensureTailscale keeps the combined install + join shape the tests exercise:
@@ -829,29 +845,37 @@ func localExeVersionPath(d deps) string {
 // the recorded copy version — an older installer must not downgrade the copy
 // the icon launches.
 func ensureLocalExe(d deps) error {
-	// Newer-only gate: if the recorded copy version is current-or-newer, skip.
-	if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
-		recorded := strings.TrimSpace(string(vb))
-		if recorded != "" && !appVersionNewer(appVersion, recorded) {
-			return nil
+	dst := localExePath(d)
+	// A3: a missing destination exe (Defender quarantine, a cleanup tool, the
+	// owner deleting it) must ALWAYS be re-copied, even when the recorded
+	// .version is current — otherwise the desktop icon is dead forever.
+	dstBytes, dstErr := d.readFile(dst)
+	dstMissing := errors.Is(dstErr, fs.ErrNotExist)
+	// Newer-only gate: if the exe exists and the recorded copy version is
+	// current-or-newer, skip.
+	if !dstMissing {
+		if vb, err := d.readFile(localExeVersionPath(d)); err == nil {
+			recorded := strings.TrimSpace(string(vb))
+			if recorded != "" && !appVersionNewer(appVersion, recorded) {
+				return nil
+			}
 		}
 	}
 	src, err := d.selfExe()
 	if err != nil {
 		return err
 	}
-	dst := localExePath(d)
 	srcBytes, err := d.readFile(src)
 	if err != nil {
 		return err
 	}
-	if dstBytes, err := d.readFile(dst); err == nil && bytes.Equal(srcBytes, dstBytes) {
+	if dstErr == nil && bytes.Equal(srcBytes, dstBytes) {
 		// Already byte-identical: record the version and stop (idempotent).
 		return writeFileAtomic(d, localExeVersionPath(d), []byte(appVersion+"\n"), 0o600)
 	}
 	// Replace: MOVE the old copy aside (never delete), then write the new. The
 	// old file is timestamped so a re-run never overwrites a previous backup.
-	if _, err := d.readFile(dst); err == nil {
+	if dstErr == nil {
 		old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".exe")
 		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 			return err
@@ -863,7 +887,8 @@ func ensureLocalExe(d deps) error {
 	if err := d.mkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
-	if err := d.writeFile(dst, srcBytes, 0o755); err != nil {
+	// Atomic: temp file then rename, so the icon never launches a half-written exe.
+	if err := writeFileAtomic(d, dst, srcBytes, 0o755); err != nil {
 		return err
 	}
 	return writeFileAtomic(d, localExeVersionPath(d), []byte(appVersion+"\n"), 0o600)

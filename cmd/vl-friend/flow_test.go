@@ -1972,3 +1972,97 @@ func TestRedactTSKeys(t *testing.T) {
 		t.Fatalf("tskey not redacted: %q", got)
 	}
 }
+
+// TestEnsureLocalExeRecopiesWhenExeMissing — A3: the recorded .version is
+// current but the exe itself is gone (Defender quarantine). It must be copied
+// again, or the desktop icon is dead forever.
+func TestEnsureLocalExeRecopiesWhenExeMissing(t *testing.T) {
+	prev := appVersion
+	appVersion = "1.2.0"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// .version says current, the exe is NOT there.
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.2.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatal(err)
+	}
+	b, err := os.ReadFile(localExePath(d))
+	if err != nil || string(b) != "MZ-self" {
+		t.Fatalf("a missing exe must be re-copied even when .version is current: %v %q", err, b)
+	}
+	if _, err := os.Stat(localExePath(d) + ".tmp"); err == nil {
+		t.Fatal("the atomic temp file was left behind")
+	}
+}
+
+// TestEnsureLocalExeUntouchedWhenSameVersion — A3: exe present + same version
+// is not touched (no copy, no backup).
+func TestEnsureLocalExeUntouchedWhenSameVersion(t *testing.T) {
+	prev := appVersion
+	appVersion = "1.2.0"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-existing"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.2.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(localExePath(d))
+	if string(b) != "MZ-existing" {
+		t.Fatalf("an up-to-date exe must not be touched: %q", b)
+	}
+	if _, err := os.Stat(filepath.Join(d.localAppDataDir(), "VL", "old")); err == nil {
+		t.Fatal("no backup should be made when nothing is replaced")
+	}
+}
+
+// TestEnsureLocalExeOlderCopyReplacedAndMoved — A3: exe present + older version
+// is replaced, and the old one is MOVED to VL\old\ (never deleted).
+func TestEnsureLocalExeOlderCopyReplacedAndMoved(t *testing.T) {
+	prev := appVersion
+	appVersion = "1.2.0"
+	defer func() { appVersion = prev }()
+
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(filepath.Dir(localExePath(d)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExePath(d), []byte("MZ-old"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(localExeVersionPath(d), []byte("1.1.0\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureLocalExe(d); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(localExePath(d))
+	if string(b) != "MZ-self" {
+		t.Fatalf("the older copy was not replaced: %q", b)
+	}
+	entries, err := os.ReadDir(filepath.Join(d.localAppDataDir(), "VL", "old"))
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected the old exe moved to VL\\old\\: %v %v", entries, err)
+	}
+	ob, _ := os.ReadFile(filepath.Join(d.localAppDataDir(), "VL", "old", entries[0].Name()))
+	if string(ob) != "MZ-old" {
+		t.Fatalf("the moved backup is wrong: %q", ob)
+	}
+}
