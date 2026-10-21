@@ -716,8 +716,9 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 		}
 		reason += "the newest 1m bar is older than 2 minutes — check the NT8 data connection"
 	}
-	// m134 DS-108 (c): the 500–700 s lag band names the concrete fix, not just
-	// "older than 2 minutes" — this is the early warning before FEED DOWN.
+	// m134 DS-108 (c): the soft lag band (just under FEED DOWN) names the
+	// concrete fix, not just "older than 2 minutes" — this is the early
+	// warning before FEED DOWN.
 	if at.feedLagActiveForDesk() {
 		state = "stale"
 		if reason != "" {

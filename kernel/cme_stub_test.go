@@ -40,11 +40,15 @@ func TestReanchorCMEStubCorrectsThe1600Stub(t *testing.T) {
 	}
 }
 
-// TestReanchorCMEStubDST pins the fix across the CDT/CST boundary: the stub is
-// the bar that ENDS at 16:00 CT, whatever the UTC offset is that day.
-func TestReanchorCMEStubDST(t *testing.T) {
+// TestReanchorCMEStubAcrossOffsets pins the +1h shift in BOTH CT offsets. The
+// re-anchor reads the 16:00 close on the WALL clock through the location-aware
+// time.Add, and a 12:00→16:00 2h/4h window never spans the 02:00 DST transition
+// (CME bars do not cross it), so there is no DST-transition case to pin — the
+// two offsets are the only variance. (m169 DS-108 item 4: the old name claimed
+// a "CDT/CST boundary" pin that no case actually crossed.)
+func TestReanchorCMEStubAcrossOffsets(t *testing.T) {
 	loc := CTLocation()
-	// 2026-03-09 is still CST (UTC-6); 16:00 CT = 22:00 UTC.
+	// 2026-03-09 is CST (UTC-6); 16:00 CT = 22:00 UTC.
 	mar := time.Date(2026, 3, 9, 12, 0, 0, 0, loc).UnixMilli() // 4h stub open 12:00 CT
 	if got := ReanchorCMEStub("4h", mar); got != mar+int64(time.Hour/time.Millisecond) {
 		t.Fatalf("CST stub: got %s, want +1h", time.UnixMilli(got).In(loc).Format("15:04"))

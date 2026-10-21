@@ -8,9 +8,9 @@ import (
 )
 
 // TestFeedLagAlarmSustainsThenFires pins m134 DS-108 (c): a newest-bar age in
-// the 500–700 s band arms the alarm, fires the WARN exactly once after 3
-// minutes, and resets when the feed recovers. MUTANT: drop the 3-minute
-// sustain (fire on first sight) or never reset → RED.
+// the soft band just under FEED DOWN arms the alarm, fires the WARN exactly
+// once after 3 minutes, and resets when the feed recovers. MUTANT: drop the
+// 3-minute sustain (fire on first sight) or never reset → RED.
 func TestFeedLagAlarmSustainsThenFires(t *testing.T) {
 	at, _ := feedTrader(t)
 	now := cmeOpenNow(t)
@@ -62,24 +62,24 @@ func TestFeedLagAlarmSustainsThenFires(t *testing.T) {
 }
 
 // TestFeedLagAlarmIgnoresOtherTFsAndNonBand pins the boundary: a non-ninjatrader
-// trader never arms, and an age below 500s or above 700s never arms.
+// trader never arms, and an age below the band or at/above FEED DOWN never arms.
 func TestFeedLagAlarmBoundaries(t *testing.T) {
 	at, _ := feedTrader(t)
 	now := cmeOpenNow(t)
 
-	// Age 480s (< 500) → not in band.
+	// Age 480s (below the band) → not in band.
 	bar := market.Kline{OpenTime: now.Add(-540 * time.Second).UnixMilli()}
 	withProvider(t, []market.Kline{bar, bar})
 	at.feedLagAlarmTick(now)
 	if at.feedLagActiveForDesk() {
-		t.Fatal("480s must not arm the 500-700s band")
+		t.Fatal("480s must not arm the soft band")
 	}
 
-	// Age 720s (> 700) → the hard FEED DOWN owns it, not this alarm.
+	// Age 720s (>= FEED DOWN) → the hard FEED DOWN owns it, not this alarm.
 	bar2 := market.Kline{OpenTime: now.Add(-780 * time.Second).UnixMilli()}
 	withProvider(t, []market.Kline{bar2, bar2})
 	at.feedLagAlarmTick(now)
 	if at.feedLagActiveForDesk() {
-		t.Fatal("720s must not arm the 500-700s band")
+		t.Fatal("720s must not arm the soft band")
 	}
 }

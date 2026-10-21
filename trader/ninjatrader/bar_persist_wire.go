@@ -55,7 +55,10 @@ func contractFor(bh *store.BarHistoryStore, server *ntwire.TCPServer, symbol str
 // the callback writes can be pinned at the CALL SITE the worker actually
 // invokes (A29: built is not wired). The frame's `historical` flag names the
 // feed; a bar the ring has already labelled mixed (a boot minute across two
-// scales) keeps that label whichever feed carried it.
+// scales) keeps that label whichever feed carried it. The 2h/4h 16:00-close
+// stub is ALSO re-anchored at ring ingress (m169 DS-108 item 1); this call is
+// idempotent and still corrects the historical raw-frame path, whose bars arrive
+// close-stamped and bypass the ring on their way to the persister.
 func barRowsForPersist(symbol, tf, contract string, historical bool, closed []ntwire.Bar) []store.BarHistoryDB {
 	feedSrc := store.BarSourceLive
 	if historical {
@@ -295,6 +298,9 @@ func WireBarPersistence(st *store.Store) {
 // INSERT OR IGNORE) and logs the spec boot line. Returns the flushed count so
 // the caller can retry while the AddOn's bars_historical replay is still
 // arriving (the cache is empty for the first seconds after a Go restart).
+// The 2h/4h 16:00-close stub is also re-anchored at ring ingress; this call is
+// idempotent, so a bar the ring already re-anchored is left as-is (m169 DS-108
+// item 1).
 func backfillBars(bh *store.BarHistoryStore, server *ntwire.TCPServer) int {
 	now := time.Now().UnixMilli()
 	total, held := 0, 0

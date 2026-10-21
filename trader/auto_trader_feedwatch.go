@@ -63,20 +63,27 @@ func (at *AutoTrader) feedNewestBarAge(now time.Time) (time.Duration, bool) {
 
 // ── FEED-LAG ALARM (m134 DS-108 (c)) ────────────────────────────────────────
 //
-// The hard FEED DOWN (checkFeedDown) fires at ~10 min. A lag of 500–700 s
-// (~8–11 min late) that PERSISTS for 3 minutes is the soft, loud early warning:
-// one WARN per episode plus a dashboard line naming the fix. It sits on the
-// 60 s monitor beat (monitorTick), independent of the decision cycle, so a
+// The hard FEED DOWN (checkFeedDown) fires at feedDownAfter() — the ONE feed
+// policy's flat threshold, default 600 s. The soft alarm band is the 100 s
+// window JUST UNDER that hard line (m169: derived, was hard-coded 500–700 s
+// and overlapped FEED DOWN above 600 s, firing a duplicate). A lag in that
+// band that PERSISTS for 3 minutes is the soft, loud early warning: one WARN
+// per episode plus a dashboard line naming the fix. It sits on the 60 s
+// monitor beat (monitorTick), independent of the decision cycle, so a
 // late-but-not-dead feed is announced instead of silently chugging on stale
-// bars (the 10-min lag that used to be silent).
+// bars (the ~10-min lag that used to be silent). While a position is open the
+// hard FEED DOWN tightens to INTRADE_FEED_ALERT_S (120 s), far below this band,
+// so the soft alarm is a FLAT-state warning by construction.
 
-const (
-	feedLagBandLow  = 500 * time.Second
-	feedLagBandHigh = 700 * time.Second
-	feedLagSustain  = 3 * time.Minute
-)
+const feedLagSustain = 3 * time.Minute
 
-// feedLagAlarmTick advances the 500–700 s feed-lag alarm episode (one beat).
+// feedLagBandLow / feedLagBandHigh bound the soft alarm BELOW the hard FEED
+// DOWN, read from the ONE feed policy so a threshold change moves the band
+// with it (m169 DS-108 item 3).
+func feedLagBandLow() time.Duration  { return feedDownAfter() - 100*time.Second }
+func feedLagBandHigh() time.Duration { return feedDownAfter() }
+
+// feedLagAlarmTick advances the feed-lag alarm episode (one beat).
 func (at *AutoTrader) feedLagAlarmTick(now time.Time) {
 	if at.config.Exchange != "ninjatrader" || !kernel.IsCMEOpen(now) {
 		at.feedLagMu.Lock()
@@ -86,11 +93,12 @@ func (at *AutoTrader) feedLagAlarmTick(now time.Time) {
 	}
 	age, haveBars := at.feedNewestBarAge(now)
 	at.feedLagMu.Lock()
-	inBand := haveBars && age >= feedLagBandLow && age <= feedLagBandHigh
+	inBand := haveBars && age >= feedLagBandLow() && age <= feedLagBandHigh()
 	if !inBand {
 		if at.feedLagActive || at.feedLagSaid {
-			// recovered (< 500 s) or crossed into the hard FEED DOWN (> 700 s):
-			// the episode is over; a NEW one re-arms.
+			// recovered (below the band) or crossed into the hard
+			// FEED DOWN (age > feedDownAfter()): the episode is
+			// over; a NEW one re-arms.
 			at.feedLagEnteredAt, at.feedLagSaid, at.feedLagActive = time.Time{}, false, false
 		}
 		at.feedLagMu.Unlock()
@@ -112,8 +120,8 @@ func (at *AutoTrader) feedLagAlarmTick(now time.Time) {
 	}
 }
 
-// feedLagActiveForDesk reports whether the 500–700 s band is active right now,
-// so the FEED dashboard line names the fix.
+// feedLagActiveForDesk reports whether the soft lag band (just under FEED DOWN)
+// is active right now, so the FEED dashboard line names the fix.
 func (at *AutoTrader) feedLagActiveForDesk() bool {
 	at.feedLagMu.Lock()
 	defer at.feedLagMu.Unlock()
