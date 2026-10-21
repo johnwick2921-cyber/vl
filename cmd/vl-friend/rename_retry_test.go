@@ -186,3 +186,25 @@ func TestRunInstalledOpensDashboardBeforeLocalCopyAndSaysVersion(t *testing.T) {
 		}
 	}
 }
+
+// TestWaitFlatIsBounded — gate-3 R4 10-21: waitFlat had no deadline of its own
+// (60s was the poll interval), so an open trade sat for the run's 30 min.
+// MUTANT: drop the WithTimeout → this test hangs past its deadline → RED.
+func TestWaitFlatIsBounded(t *testing.T) {
+	pm, pp := flatWaitMax, flatWaitPoll
+	flatWaitMax, flatWaitPoll = 50*time.Millisecond, 5*time.Millisecond
+	defer func() { flatWaitMax, flatWaitPoll = pm, pp }()
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	d.positions = func(context.Context) (float64, error) { return 1, nil } // a trade stays open
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := waitFlat(ctx, d)
+	if !errors.Is(err, errNotFlat) {
+		t.Fatalf("want errNotFlat, got %v", err)
+	}
+	if time.Since(start) > time.Second {
+		t.Fatalf("waitFlat must stop at flatWaitMax, took %v", time.Since(start))
+	}
+}

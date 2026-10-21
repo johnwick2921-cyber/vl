@@ -1655,13 +1655,24 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 	return nil
 }
 
+// flatWaitMax caps waitFlat; flatWaitPoll is its poll interval. Vars so tests
+// can shorten them.
+var (
+	flatWaitMax  = 2 * time.Minute
+	flatWaitPoll = 10 * time.Second
+)
+
 // waitFlat prints the plain-English wait line and polls the flat probe until
-// flat (M3/S13), returning errNotFlat on timeout.
+// flat (M3/S13), returning errNotFlat after flatWaitMax. Gate-3 R4 10-21: the
+// 60s value was the poll INTERVAL with no deadline of its own, so an open
+// trade or an erroring probe sat on this line for the run's full 30 min.
 func waitFlat(ctx context.Context, d deps) error {
 	// G6: the next step may ask the user to CLOSE NinjaTrader, so never say
 	// "must be open" here.
 	d.print("Checking that you have no open trade…")
-	return waitUntilFlat(ctx, d.positions, 60*time.Second)
+	wctx, cancel := context.WithTimeout(ctx, flatWaitMax)
+	defer cancel()
+	return waitUntilFlat(wctx, d.positions, flatWaitPoll)
 }
 
 // oldAddonTimestampedPath returns a timestamped backup path for the old add-on
