@@ -3001,10 +3001,15 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		if c.OpenTime <= e.State.Seed1HWatermark || keyLevel1HCandleCloseTime(c.OpenTime) > now {
 			continue
 		}
-		e.State.SeedLevels, e.State.Seed1HLastColour =
-			keyLevelsAppend(e.State.SeedLevels, c, e.State.Seed1HLastColour, e.Cfg.KeyLevelPrunePts)
 		e.State.Seed1HWatermark = c.OpenTime
 		e.State.Seed1HBars = append(e.State.Seed1HBars, c)
+		// m202 #28: rebuild the kept set from the FULL 1H series (newest-first
+		// against the FINAL kept set — keyLevelsFromCandles) instead of the old
+		// incremental prune, which dropped a level a fresh restart keeps: a chain
+		// A<B<C with |A-B|<prune, |B-C|<prune, |A-C|>=prune kept A on the full
+		// walk but dropped it incrementally. Same rule as the seed at seed.go:216.
+		e.State.SeedLevels = keyLevelsFromCandles(e.State.Seed1HBars, e.Cfg.KeyLevelPrunePts)
+		e.State.Seed1HLastColour = candleColour(c)
 	}
 
 	var out []Level
