@@ -20,7 +20,7 @@ def main() -> None:
     con = sqlite3.connect(f"file:{db}?mode=ro", uri=True)
     cur = con.cursor()
 
-    warm = 1787760000000  # 2026-10-01 00:00 CT warm-up (20 days: levels/old-extremes/EMA seed)
+    warm = 1787760000000  # 2026-08-26 16:00 UTC warm-up (~56 days: levels/old-extremes/EMA seed)
     def bars(tf):
         cur.execute(
             "SELECT open_time_ms, o, h, l, c, contract FROM bars "

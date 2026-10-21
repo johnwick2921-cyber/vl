@@ -20,9 +20,9 @@ import (
 	"vl/store"
 )
 
-// rdrAddonBuild is the AddOn build the live bot ran over 10-20/21 (far-side
-// build_id=2026-10-16-a, read from the live log).
-const rdrAddonBuild = "2026-10-16-a"
+// rdrAddonBuild is the AddOn build the live bot ran over 10-20/21 (m168:
+// 2026-10-18-a).
+const rdrAddonBuild = "2026-10-18-a"
 
 // ── REAL-DAY REPLAY (m157) ─────────────────────────────────────────────────
 //
@@ -47,9 +47,9 @@ const rdrAddonBuild = "2026-10-16-a"
 //     and partial fills are not modeled;
 //   - the replay bar clock runs at replay speed, so any wall-clock-dependent
 //     path (entry-latch evidence age, C8 sweep) is played at replay cadence;
-//   - the replay calendar is EMPTY (no red-folder news windows) unless a
-//     calendar fixture is added — a news day would freeze the 1h/4h triggers
-//     differently;
+//   - the replay calendar is the LIVE slice (10-19..10-21, exported from the
+//     DB), NOT empty — a news day freezes the 1h/4h triggers via the real
+//     slice;
 //   - BE moves and the exit drive are the PRODUCTION kernel, but their inputs
 //     are the simulated fills, so an exit time may shift a bar.
 type rdrLiveTrade struct {
@@ -79,6 +79,11 @@ type rdrLiveRecord struct {
 	Trades   []rdrLiveTrade `json:"trades"`
 	Arms     []rdrLiveArm   `json:"arms"`
 	Calendar []rdrLiveCal   `json:"calendar"`
+	// ClockSteps is the live wall-vs-monotonic step series the guard saw on
+	// the live day: [[ts_utc_ms, step_ms], …]. step_ms is signed (negative =
+	// backward). Injected into the replay so the clock-step hold reproduces
+	// the live entry refusals (m168 item 2).
+	ClockSteps [][2]int64 `json:"clock_steps"`
 }
 
 type rdrLiveCal struct {
@@ -276,14 +281,43 @@ func TestRealDayReplay(t *testing.T) {
 	acct := "Sim101"
 	ft := &fdrTrader{id: "8d5c8af5_8ef641a7-815c-4bb5-9798-b070b67d7998_deepseek_1781246265", account: acct, levelPx: map[string]float64{}}
 	w.traders = []*fdrTrader{ft}
-	w.newFdrTrader(ft, cfg)
-	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
 
 	start := w.barIndexAtOrAfter(replayFromMs)
 	// Replay through the newest bar whose close we know (the fixture's last bar).
 	end := len(w.bars)
+	// The seed clock MUST be the replay clock BEFORE the seed runs — a seed at
+	// the zero time (1970-01-01) blocks SWING4H (m168 item 1).
 	w.setNow(replayFromMs)
 	w.cur.Store(int64(start - 1))
+
+	// m168 item 2: install the live wall-vs-monotonic clock so the clock-step
+	// hold reproduces the live entry refusals. The SteppedClock's mono advances
+	// in lockstep with the replay wall; each live step is applied as a pure wall
+	// Step and observed, so a >= CLOCK_STEP_FREEZE_MS step holds new entries for
+	// 120 s of mono time exactly as on the live box. The freeze threshold is the
+	// env (CLOCK_STEP_FREEZE_MS): the control run sets it to the live build's
+	// 2000 ms to reproduce the refusals; the #43 head's default 6000 ms treats
+	// the same sub-6 s steps as noise — the fix under test.
+	clk := kernel.NewSteppedClock(time.UnixMilli(replayFromMs))
+	restoreClock := kernel.ClockSampleForTest(clk.Sample)
+	defer restoreClock()
+	var clkStepIdx, clkMonoMs int64
+	applyClockStepsUpTo := func(untilMs int64) {
+		if untilMs > clkMonoMs {
+			clk.Advance(time.Duration(untilMs-clkMonoMs) * time.Millisecond)
+			clkMonoMs = untilMs
+		}
+		for clkStepIdx < int64(len(rec.ClockSteps)) && rec.ClockSteps[clkStepIdx][0] <= untilMs {
+			s := rec.ClockSteps[clkStepIdx]
+			clk.Step(time.Duration(s[1]) * time.Millisecond)
+			kernel.ObserveClock()
+			clkStepIdx++
+		}
+	}
+	applyClockStepsUpTo(replayFromMs) // prime the guard's first sample at the replay start
+
+	w.newFdrTrader(ft, cfg)
+	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
 
 	// Per-bar refusal attribution: the trader counters + kernel refusals that
 	// fired on each bar, so a dropped live trade names its reason.
@@ -292,6 +326,7 @@ func TestRealDayReplay(t *testing.T) {
 	for i := start; i < end; i++ {
 		beforeT := ft.at.mentorCountSnapshot()
 		beforeK := mentorKernelRefusals(ft.at)
+		applyClockStepsUpTo(w.bars[i].CloseTime) // live steps that fired at/before this bar close (m168 item 2)
 		w.step(i, w.traders, l)
 		afterT := ft.at.mentorCountSnapshot()
 		afterK := mentorKernelRefusals(ft.at)
@@ -330,17 +365,25 @@ func TestRealDayReplay(t *testing.T) {
 
 	fmt.Printf("\n=== REAL-DAY REPLAY DIFF (live trades %d, replay arms %d) ===\n", len(rec.Trades), len(replayArms))
 	fmt.Printf("%-4s %-5s %-9s %-9s %-9s %-7s %s\n", "id", "side", "liveEntry", "replayEntry", "replayStop", "state", "verdict")
+	// m168: the harness must be able to FAIL. A mentor trade that is neither
+	// matched nor given a NAMED refusal reason is a harness bug, not a result.
+	unexplained := 0
 	for _, tr := range rec.Trades {
 		// Only the mentor trader's trades (the other account's rows are not
 		// driven here).
 		if !strings.Contains(tr.TraderID, "1781246265") {
 			continue
 		}
-		best := matchReplayArm(tr, replayArms)
-		if best == nil {
-			fmt.Printf("%-4d %-5s %-9.2f %-9s %-9s %-7s %s\n", tr.ID, strings.ToLower(tr.Side), tr.Entry, "-", "-", "-", "NOT AUTHORED — "+refusalFor(t, rec, tr, barRefs))
+		idx := matchReplayArm(tr, liveArmCreated(rec, tr), replayArms)
+		if idx < 0 {
+			reason := refusalFor(t, rec, tr, barRefs)
+			if strings.HasPrefix(reason, "no ") || reason == "" {
+				unexplained++
+			}
+			fmt.Printf("%-4d %-5s %-9.2f %-9s %-9s %-7s %s\n", tr.ID, strings.ToLower(tr.Side), tr.Entry, "-", "-", "-", "NOT AUTHORED — "+reason)
 			continue
 		}
+		best := replayArms[idx]
 		verdict := "taken"
 		if best.State != "filled" && best.State != "working" && best.State != "armed" {
 			verdict = "taken→" + best.State
@@ -348,27 +391,64 @@ func TestRealDayReplay(t *testing.T) {
 		fmt.Printf("%-4d %-5s %-9.2f %-9.2f %-9.2f %-7s %s\n", tr.ID, strings.ToLower(tr.Side), tr.Entry, best.Entry, best.Stop, best.State, verdict)
 	}
 	fmt.Printf("\nReplay arms the live bot did NOT author (or authored at a different time):\n")
-	used := map[*rdrReplayArm]bool{}
+	used := map[int]bool{}
 	for _, tr := range rec.Trades {
 		if strings.Contains(tr.TraderID, "1781246265") {
-			if a := matchReplayArm(tr, replayArms); a != nil {
-				used[a] = true
+			if idx := matchReplayArm(tr, liveArmCreated(rec, tr), replayArms); idx >= 0 {
+				used[idx] = true
 			}
 		}
 	}
-	for _, a := range replayArms {
-		if !used[&a] {
+	for i, a := range replayArms {
+		if !used[i] {
 			fmt.Printf("  EXTRA %s %s entry %.2f stop %.2f target %.2f (%s)\n", a.BornCT, a.Side, a.Entry, a.Stop, a.Target, a.State)
 		}
 	}
 	_ = fix1m
+
+	// m168: the harness FAILS when it cannot explain itself.
+	if len(replayArms) == 0 {
+		t.Fatalf("the replay authored ZERO mentor arms — the seed is broken (check the warm-up depth and the seed clock)")
+	}
+	if unexplained > 0 {
+		t.Fatalf("%d live mentor trade(s) were neither matched nor given a named refusal reason — attribution is broken", unexplained)
+	}
 }
 
-// matchReplayArm finds the replay arm nearest a live trade: same side and
-// entry within 1.0 pt.
-func matchReplayArm(tr rdrLiveTrade, arms []rdrReplayArm) *rdrReplayArm {
+// liveArmCreated returns the live armed_orders author instant for a trade
+// (side + entry within 1.5 pt), or zero if the record has no arm for it. The
+// author instant — not the fill — is the correct anchor for a replay arm whose
+// born time is the bar close (the fill can land a bar later; m168 item 3).
+func liveArmCreated(rec rdrLiveRecord, tr rdrLiveTrade) time.Time {
+	side := strings.ToLower(tr.Side)
+	for i := range rec.Arms {
+		a := &rec.Arms[i]
+		if strings.ToLower(a.Side) != side {
+			continue
+		}
+		d := a.Entry - tr.Entry
+		if d < 0 {
+			d = -d
+		}
+		if d > 1.5 {
+			continue
+		}
+		if t, err := parseRdrCreated(a.Created); err == nil {
+			return t
+		}
+		return time.Time{}
+	}
+	return time.Time{}
+}
+
+// matchReplayArm finds the replay arm nearest a live trade: same side, entry
+// within 1.0 pt, AND born within ±1 bar (±120 s) of the LIVE ARM's author
+// instant (author→author, not fill→bar-close). Price alone matched too much
+// (m168 item 3).
+func matchReplayArm(tr rdrLiveTrade, liveCreated time.Time, arms []rdrReplayArm) int {
 	side := strings.ToLower(tr.Side)
 	best := -1
+	bestScore := -1.0
 	for i := range arms {
 		if arms[i].Side != side {
 			continue
@@ -380,14 +460,26 @@ func matchReplayArm(tr rdrLiveTrade, arms []rdrReplayArm) *rdrReplayArm {
 		if d > 1.0 {
 			continue
 		}
-		if best < 0 || d < (arms[best].Entry-tr.Entry) || d == (arms[best].Entry-tr.Entry) {
-			best = i
+		if !liveCreated.IsZero() {
+			born, err := time.ParseInLocation("01-02 15:04", arms[i].BornCT, kernel.CTLocation())
+			if err != nil {
+				continue
+			}
+			born = time.Date(2026, born.Month(), born.Day(), born.Hour(), born.Minute(), 0, 0, kernel.CTLocation())
+			td := born.Sub(liveCreated).Seconds()
+			if td < 0 {
+				td = -td
+			}
+			if td > 120 {
+				continue
+			}
+		}
+		score := d // price error dominates; time is a tiebreak
+		if best < 0 || score < bestScore {
+			best, bestScore = i, score
 		}
 	}
-	if best < 0 {
-		return nil
-	}
-	return &arms[best]
+	return best
 }
 
 // parseRdrCreated parses the live armed_orders created_at, which SQLite returns
