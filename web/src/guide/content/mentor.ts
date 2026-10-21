@@ -364,7 +364,7 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip only when the stop is in the 20–<30 band. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
+          body: "Candle 2's BODY inside candle 1's FULL range (wicks included). Direction = candle 1's colour. Entry at the ISB candle's own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).",
           tag: 'D1.4 p1',
         },
         {
@@ -452,8 +452,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Skip a stop of 30 or more',
-          body: 'An ISB stop of 30 pts or more must not be taken (course-defaults-30, owner order "move to 30 at least… fix all" — DEVIATES from the course\u2019s twenties skip [D4.1 p1 @05:41]: the [20,30) window no longer refuses). A stop under 30 is taken. The trader-side sizing cuts a stop of 20–<30 pts to the reduced 3-contract tier (the mentor_isb_max_pts knob top).',
-          cite: 'Course-defaults-30 (owner order 10-16) — CourseExits.ISBMaxStopPts 30 · D4.1 p1 @05:41 (the course says "twenties… đừng vô"; the owner moved the line to 30)',
+          body: 'An ISB stop above 25 pts must not be taken ("trên nữa thì thôi" [D3.3 p1 @02:04–02:08] — those orders are not worth trading). A stop of 20–25 pts cuts to the reduced tier ("giảm size" [D3.3 p1 @01:09–01:20]); a stop of 20 or less keeps the base size. This reverts course-defaults-30 (owner order "move to 30") — the course skips the twenties [D4.1 p1 @05:41].',
+          cite: 'W-MENTOR-EXACT (owner order 10-21 "i want all exactly like mentor") — CourseExits.ISBMaxStopPts 25 · D3.3 p1 @01:09–02:09 (20–25 reduce, > 25 skip) · D4.1 p1 @05:41 (twenties skip)',
         },
       ],
     },
@@ -478,7 +478,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Every box return trades',
-          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates.',
+          body: 'The box is drawn from two touches — the extreme and the next confirmed swing after it that failed to exceed it ("lần thứ 3 mới vô lệnh": the 3rd touch is the trade). Each return visit gets a reference candle and the same reject rule (close OUTSIDE the box on the approach side = trade; close inside = cancel). EVERY return trades, the first one included. An escape does not delete the box; boxes die at end of day only. After a body escape the role flips (Uno Reverse): a broken FTGH becomes support and a broken FTGL becomes resistance, and the next returns come from the new side with the same reject rule and gates. On the SAME closed bar, when a box-edge reject and an inside bar both fire on the same side, the mentor goes to the inside bar ("Nên về xuống InstaBar… em lại an toàn với InstaBar hơn") — the box reject is refused as phl_isb_preferred_at_box, but ONLY when the inside bar\'s stop is no larger than the box reject\'s (his reason is the smaller stop); otherwise both stay [D3.3 p1 @08:12–08:56].',
           cite: 'R1 · D3.2 p2 @06:25 · D14 slide 17 · X2 @02:36–03:25',
         },
         {
@@ -498,7 +498,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Intraday confluence (exit C, size 4)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 4 — the confluence and big tiers no longer add contracts (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”; the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ” is superseded).',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 4 — confluence is a longer hold, it never adds contracts, and the big tier is removed [D3.4 p3 @07:52] (owner order 2026-10-16, “set to 4 at least, sell 2 first so it’s equal”; the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ” is superseded).',
           cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
         },
         {
@@ -545,7 +545,7 @@ export const mentor: GuideSection = {
         [
           'Room rule',
           'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 30 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 25 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
         ],
         [
           'ORB gate (opening range)',
@@ -620,7 +620,7 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '4', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop 20–<30 pts; also an ISB at an old high/low or inside a range)',
+          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range)',
           '4',
           'mentor_reduced_contracts',
         ],
@@ -799,14 +799,14 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–<ceiling pts, where the ceiling is the mentor_isb_max_pts knob (default 30 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in [20,30) sizes swing4h, not the reduced 4). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. Owner order 2026-10-16: this band no longer cuts below 4.',
+          what: 'Size when the stop is 20–25 pts, where the ceiling is the mentor_isb_max_pts knob (default 25 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner.',
           trader: '4 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
           systemDefault: '4',
           recommended:
-            '4 — Owner ruling 2026-10-16: the reduced tier no longer cuts below 4 (top = mentor_isb_max_pts, default 30). An ISB at an old high/low or in a range also sizes 4.',
-          whenToTouch: 'With the 20–<30 reduced band.',
+            '4 — W-MENTOR-EXACT: the reduced tier is a 20–25 pt stop (top = mentor_isb_max_pts, default 25). An ISB at an old high/low or in a range also sizes the reduced tier.',
+          whenToTouch: 'With the 20–25 reduced band.',
           perSession: 'No.',
         },
         {
@@ -1299,7 +1299,7 @@ export const mentor: GuideSection = {
         {
           label: 'Stop ceiling',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 30, the SAME knob the trader R8 gate reads), which this value does not move.',
+          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 25, the SAME knob the trader R8 gate reads), which this value does not move.',
           trader: '25 pts — the SWING4H is exempt (its ceiling is 100).',
           consumer:
             'kernel/mentor/mentor.go StopCeilingPts — read only by kernel/mentor/phl.go phlPLHR2 and kernel/mentor/box_trade.go boxEntryIntent',
@@ -1499,7 +1499,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing max stop',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 30).',
+          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 25).',
           trader: '100 pts.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts)',
@@ -1884,9 +1884,9 @@ export const mentor: GuideSection = {
           label: 'ISB max stop',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Refuse an ISB (and the reverse ISB) whose stop is at or above this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 30 (course-defaults-30, owner order "move to 30 at least … fix all" — DEVIATES from the course’s twenties skip [D4.1 p1 @05:41]): an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED. The pre-30 code had it backwards (it refused the 20–30 "twenties" window and let 30+ through). This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop at/over it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–<ceiling reduced band.',
+          what: 'Refuse an ISB (and the reverse ISB) whose stop is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — "trên nữa thì thôi" [D3.3 p1 @02:04–02:08]): a stop of 20–25 pts is the REDUCED tier, a stop above 25 is REFUSED. This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop above it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–25 reduced band.',
           trader:
-            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The OWNER moved the line to 30 (10-16 "fix all").',
+            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The line is the course-exact 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — “trên nữa thì thôi” [D3.3 p1 @02:04–02:08]).',
           consumer:
             'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
           range:

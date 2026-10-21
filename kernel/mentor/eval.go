@@ -637,7 +637,10 @@ func (e *Evaluator) refuse(reason string) {
 
 // boxBanFilter drops entry intents whose entry price — or whose reference
 // candle close — sits INSIDE a box: "NEVER trade inside the box, neither the
-// candle nor your entry point" [D3.2 p1 @ 06:59].
+// candle nor your entry point" [D3.2 p1 @ 06:59]. Leaving the box is NOT itself
+// an entry — after a body exits you still wait for a normal setup, which is then
+// tradable [D3.2 p1 @08:38–08:54; D3.2 p2 @07:38–07:50] (by construction: a
+// break is never an entry, only setups are).
 func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, refusals []string) {
 	if len(boxes) == 0 {
 		return out, nil
@@ -652,6 +655,50 @@ func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, r
 		kept = append(kept, in)
 	}
 	return kept, refusals
+}
+
+// phlISBPreferenceFilter — D3.3 p1 @08:12–08:56: when the SAME closed bar at a
+// box produces BOTH a box-edge reject (Setup "BOX" — the mentor's "potential
+// high/low") and an inside bar (ISB) on the SAME side, the mentor goes to the
+// inside bar ("Nên về xuống InstaBar… em lại an toàn với InstaBar hơn") because
+// its stop is smaller. Keep the ISB and refuse the box reject — but ONLY when
+// the ISB's stop distance is <= the box reject's (his reason is the smaller
+// stop); otherwise both stay and the case is noted (never a silent drop).
+// Opposite sides: no precedence — the existing gates decide.
+func phlISBPreferenceFilter(out []Intent) (kept []Intent, refusals []string, notes []string) {
+	type key struct {
+		side Side
+		ref  int64
+	}
+	isbStop := make(map[key]float64)
+	for _, in := range out {
+		if in.Setup == "ISB" && (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) {
+			isbStop[key{in.Side, in.RefBarMs}] = abs(in.Price - in.Stop)
+		}
+	}
+	if len(isbStop) == 0 {
+		return out, nil, nil
+	}
+	kept = out[:0:0]
+	for _, in := range out {
+		if in.Setup != "BOX" || (in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry) {
+			kept = append(kept, in)
+			continue
+		}
+		isb, ok := isbStop[key{in.Side, in.RefBarMs}]
+		if !ok {
+			kept = append(kept, in)
+			continue
+		}
+		boxStop := abs(in.Price - in.Stop)
+		if isb <= boxStop {
+			refusals = append(refusals, "phl_isb_preferred_at_box")
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("phl_isb_keep_both: ISB stop %.1f > box stop %.1f at the box — keeping both [D3.3 p1 @08:12–08:56]", isb, boxStop))
+		kept = append(kept, in)
+	}
+	return kept, refusals, notes
 }
 
 // triggerBoxZoneFilter drops non-swing place entries refused by the B1
@@ -1723,9 +1770,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
-				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the 20–<30 stop band, and a size
-				// flag at an old high/low.
+				// [D4.1 p1 @ 05:19–05:34 plus D3.4 p3 @03:23–03:37 for the
+				// range words; also D3.4 p3 @02:24–02:55]. His conditions stay:
+				// the trigger zone (above), the R5 box (below), the 20–25 stop
+				// band (skip > 25), and a size flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
 				// (1h agreeing or silent); fold item 4: a DayOff shuts the
@@ -2335,9 +2383,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 				continue
 			}
-			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
-			// ONLY in the trigger's direction, whatever the school — a buy-line
-			// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
+			// Row 56 (a) [D3.4 p2 @20:51–21:27 (also @21:55–22:10)]: a
+			// trigger-retest level trades ONLY in the trigger's direction,
+			// whatever the school — a buy-line retest rejecting from below is NOT
+			// a short [CTO ruling 2026-10-04].
 			if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
 				e.refuse("trigger_retest_wrong_way")
 				continue
@@ -2572,6 +2621,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	out, refused := boxBanFilter(out, boxes, bars[len(bars)-1])
 	for _, r := range refused {
 		e.refuse(r)
+	}
+
+	// D3.3 p1 @08:12–08:56: a box-edge reject and an inside bar on the same
+	// closed bar, same side — the mentor takes the inside bar (smaller stop).
+	out, refused, noted := phlISBPreferenceFilter(out)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+	for _, n := range noted {
+		e.note("%s", n)
 	}
 
 	// B1 trigger zone (10-03 ruling): between an FTGL and the buy line (mirror:

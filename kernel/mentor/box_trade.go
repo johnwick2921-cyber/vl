@@ -8,6 +8,10 @@ import (
 
 // Box trade evaluation — BOX REUSE (R1) and CONFLUENCE (R2), CTO rulings
 // 2026-10-03 verified in the sources [A].
+//
+// At an FTGL box (support) you do NOT need a PHL under the second bottom, and
+// you do NOT wait for a close above the EMA 34 before buying — the box path has
+// no EMA or PHL precondition [D3.3 p1 @02:42–03:38, @04:18–04:22].
 
 // BoxReturn is one post-formation return visit [D3.2 p2 @ 06:25: "minh se
 // dung box nay hoai ne" — we use this box again and again]. A visit =
@@ -119,10 +123,12 @@ func boxEffectiveKind(b Box) BoxKind {
 
 // pingPongVerdict — PING PONG (CTO 13:24:53Z): when the entry sits between
 // an FTGL floor and an FTGH ceiling, the edge trade is allowed only when the
-// gap between the floor TOP and the ceiling BOTTOM is >= 50 pts
-// ("danh ping pong — KHONG DUOC DANH GIUA", D3.2 p2 @07:50-09:14; D4.2 p2
-// @05:17). Below 50 pts it is refused: ping_pong_range_too_small. With fewer
-// than two boxes around the price there is no ping-pong context.
+// gap between the floor TOP and the ceiling BOTTOM is >= 50 pts — the NUMBER
+// comes from D4.2 p2 @05:13–06:37 ("ping-pong needs a big range: range >= 100
+// or above 50 pts; candles 'mười mấy điểm'"). D3.2 p2 @07:50–09:14 stays for
+// the mid-range concept only ("không được đánh giữa" — don't trade the middle).
+// Below 50 pts it is refused: ping_pong_range_too_small. With fewer than two
+// boxes around the price there is no ping-pong context.
 // largestCandlePts — B21: the largest 1m range (High−Low) over the last
 // `lookback` closed bars; 0 when lookback <= 0 or the slice is empty.
 func largestCandlePts(bars []market.Kline, lookback int) float64 {
