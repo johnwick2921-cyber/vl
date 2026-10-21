@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -114,11 +115,15 @@ type installedState struct {
 }
 
 // readInstalledState returns the recorded state, or a zero value when absent
-// (first run). An unreadable file is an error, not a silent zero.
+// (first run). H4: only a genuine NOT-EXIST reads as absent — any other read
+// error (permissions, torn file) aborts.
 func readInstalledState(d deps, docs string) (installedState, error) {
 	b, err := d.readFile(installedJSONPath(docs))
 	if err != nil {
-		return installedState{}, nil // absent on first run
+		if errors.Is(err, fs.ErrNotExist) {
+			return installedState{}, nil // absent on first run
+		}
+		return installedState{}, fmt.Errorf("installed.json: %w", err)
 	}
 	var s installedState
 	if err := json.Unmarshal(b, &s); err != nil {

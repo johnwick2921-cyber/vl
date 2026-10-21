@@ -117,6 +117,8 @@ func fetchMap(t *testing.T, base string, manifest, addon []byte) (func(context.C
 		base + "/api/friend/manifest.sig":   sig,
 		base + "/api/friend/artifact/addon": addon,
 		base + "/api/friend/artifact/app":   []byte("fakeapp"),
+		// H1: the flat probe is flat and KNOWN by default (a bot with a live NT8).
+		base + "/api/friend/flat": []byte(`{"flat":true,"traders":1,"at":1,"known":true,"last_known_flat_ms":1}`),
 	}
 	fn := func(_ context.Context, url string) ([]byte, error) {
 		b, ok := table[url]
@@ -1534,6 +1536,48 @@ func TestRunUpdateCheckAcceptsYesCaseInsensitive(t *testing.T) {
 		if !dec.Applied {
 			t.Fatalf("answer %q did not apply", ans)
 		}
+	}
+}
+
+// TestRunUpdateCheckAppliesWhenKnownGoesUnknown — H1: after the user closes
+// NinjaTrader the bot goes known→unknown (it can no longer see NT8), but the
+// last-known-flat instant did not move backwards → the update still applies.
+func TestRunUpdateCheckAppliesWhenKnownGoesUnknown(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "36", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Dir(addonDstPath(home)), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(addonDstPath(home), []byte("MZ-old"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	base := "http://100.64.0.2:18081"
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	flatCalls := 0
+	orig := fetch
+	d.fetch = func(ctx context.Context, u string) ([]byte, error) {
+		if u == base+"/api/friend/flat" {
+			flatCalls++
+			if flatCalls <= 1 {
+				return []byte(`{"flat":true,"traders":1,"at":1,"known":true,"last_known_flat_ms":100}`), nil
+			}
+			return []byte(`{"flat":false,"traders":1,"at":2,"known":false,"last_known_flat_ms":100}`), nil
+		}
+		return orig(ctx, u)
+	}
+	d.fetch = fetch
+	d.allowedSigners = signers
+	d.positions = func(context.Context) (float64, error) { return 0, nil }
+
+	dec, err := RunUpdateCheck(context.Background(), d, base, true)
+	if err != nil {
+		t.Fatalf("update errored: %v", err)
+	}
+	if !dec.Applied {
+		t.Fatal("the update must apply when the bot goes known→unknown with no change while closing")
 	}
 }
 

@@ -30,7 +30,8 @@ type tailscaleFake struct {
 	msiExitCode    int   // exit code the elevated install returns (default 0)
 	msiErr         error // UAC-cancel style error from the elevated install
 	upCalled       bool
-	upHangs        bool // `tailscale up` blocks until its ctx is done (models a hang)
+	upHangs        bool     // `tailscale up` blocks until its ctx is done (models a hang)
+	upArgs         []string // args of the last `tailscale up` call
 	msiexecCalled  bool
 	downloadCalled bool
 	signCalled     bool
@@ -83,6 +84,7 @@ func (f *tailscaleFake) exec(ctx context.Context, name string, args ...string) (
 		return f.status()
 	case name == "tailscale" && len(args) > 0 && args[0] == "up":
 		f.upCalled = true
+		f.upArgs = append([]string(nil), args...)
 		if f.upHangs {
 			<-ctx.Done()
 			return nil, ctx.Err()
@@ -358,6 +360,25 @@ func TestElevatedScriptRunsUpWithArgsKey(t *testing.T) {
 	}
 	if strings.Contains(f.installCmd, "tskey-SECRET123") {
 		t.Fatalf("the key must NOT be spliced into the script text: %q", f.installCmd)
+	}
+}
+
+// TestTailscaleStoppedTurnsOnNoAuthKey — H8: the "Stopped" state is its own
+// case: it turns Tailscale back on with NO auth key, then verifies identity.
+func TestTailscaleStoppedTurnsOnNoAuthKey(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "Stopped", afterUpState: "Running"}
+	err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081")
+	if err == nil {
+		t.Fatal("expected the identity check to refuse (the fake has no peers)")
+	}
+	if !f.upCalled {
+		t.Fatal("the Stopped state must run `tailscale up`")
+	}
+	for _, a := range f.upArgs {
+		if strings.HasPrefix(a, "--authkey=") {
+			t.Fatalf("the Stopped state must NOT pass an auth key: %v", f.upArgs)
+		}
 	}
 }
 

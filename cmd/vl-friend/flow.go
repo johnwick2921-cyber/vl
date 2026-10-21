@@ -31,9 +31,28 @@ func baseURLFromInstallCode(ic InstallCode) string {
 
 // flatProbeResult is the friend-mode-only flat signal (CTO ruling 2026-10-18):
 // GET /api/friend/flat → {"flat":true|false,"traders":<n>,"at":<unix ms>}.
+// H1 adds "known" and "last_known_flat_ms": known=false means the bot cannot
+// currently see NinjaTrader (e.g. the user just closed it), and
+// last_known_flat_ms is the latest ms at which every trader was known AND flat
+// (0 = never).
 type flatProbeResult struct {
-	Flat    bool `json:"flat"`
-	Traders *int `json:"traders"`
+	Flat            bool  `json:"flat"`
+	Traders         *int  `json:"traders"`
+	Known           bool  `json:"known"`
+	LastKnownFlatMs int64 `json:"last_known_flat_ms"`
+}
+
+// probeFlatState returns the RAW /api/friend/flat state (H1).
+func probeFlatState(ctx context.Context, d deps, base string) (flatProbeResult, error) {
+	b, err := d.fetch(ctx, base+"/api/friend/flat")
+	if err != nil {
+		return flatProbeResult{}, fmt.Errorf("flat probe: %w", err)
+	}
+	var r flatProbeResult
+	if err := json.Unmarshal(b, &r); err != nil {
+		return flatProbeResult{}, fmt.Errorf("flat probe: %w", err)
+	}
+	return r, nil
 }
 
 // probeFlat asks the friend bot's /api/friend/flat endpoint and maps it to the
@@ -41,13 +60,9 @@ type flatProbeResult struct {
 // is an error (fail closed): the caller's waitUntilFlat treats it as "not flat"
 // and defers, never swapping mid-trade.
 func probeFlat(ctx context.Context, d deps, base string) (float64, error) {
-	b, err := d.fetch(ctx, base+"/api/friend/flat")
+	r, err := probeFlatState(ctx, d, base)
 	if err != nil {
-		return 0, fmt.Errorf("flat probe: %w", err)
-	}
-	var r flatProbeResult
-	if err := json.Unmarshal(b, &r); err != nil {
-		return 0, fmt.Errorf("flat probe: %w", err)
+		return 0, err
 	}
 	if r.Flat {
 		return 0, nil
@@ -184,8 +199,16 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 		if deferred {
 			return fmt.Errorf("install deferred — close NinjaTrader and run VL-Setup again")
 		}
+		// H11: a first run that REPLACES an existing DLL is flat-gated too —
+		// never swap over an open position.
+		d.positions = func(c context.Context) (float64, error) {
+			return probeFlat(c, d, base)
+		}
+		if err := waitFlat(ctx, d); err != nil {
+			return err
+		}
 	}
-	if err := placeAddon(d, docs, addon); err != nil {
+	if err := placeAddon(d, docs, m.AddonBuild, addon); err != nil {
 		return err
 	}
 	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
@@ -542,29 +565,53 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 	case "NeedsMachineAuth":
 		// S5: mid-approval — the device is ALREADY on our tailnet and just waiting
 		// for the owner to approve it. Never refuse this as "another network".
-		return waitTailscaleApproved(ctx, d)
+		if err := waitTailscaleApproved(ctx, d); err != nil {
+			return err
+		}
+		// H8: after approval, re-verify the tailnet identity before continuing.
+		return verifyOurTailnet(ctx, d, base)
+	case "Stopped":
+		// H8: Tailscale is installed but turned off — turn it back on with NO
+		// auth key, then verify identity.
+		d.print("Tailscale is turned off — turning it on…")
+		upCtx, cancel := context.WithTimeout(ctx, tailscaleUpTimeout)
+		_, err := tailscaleExec(upCtx, d, "up", "--unattended")
+		cancel()
+		if err != nil {
+			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error(), authKey))
+		}
+		if err := waitTailscaleApproved(ctx, d); err != nil {
+			return err
+		}
+		return verifyOurTailnet(ctx, d, base)
 	case "Running":
 		// S5: prove OUR tailnet by IDENTITY — the bot host must appear among
 		// `tailscale status --json` peers — never by an HTTP fetch. The auth key
 		// is spent, so a re-run must skip `up` and continue when it is ours.
-		u, err := url.Parse(base)
-		if err != nil {
-			return fmt.Errorf("install code base URL: %w", err)
-		}
-		ips, names, err := tailscaleTailnet(ctx, d)
-		if err != nil {
-			// The CLI hiccupped (daemon restart, first status after install).
-			// Never misread that as a wrong network: the [4/6] manifest fetch is
-			// the real proof downstream.
-			return waitTailscaleApproved(ctx, d)
-		}
-		if hostOnTailnet(u.Hostname(), ips, names) {
-			return waitTailscaleApproved(ctx, d)
-		}
-		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
+		return verifyOurTailnet(ctx, d, base)
 	default:
 		return fmt.Errorf("this PC is already logged in to another Tailscale network (state %q). Log out of Tailscale first, then run VL-Setup again", state)
 	}
+}
+
+// verifyOurTailnet proves the bot host is on OUR tailnet by IDENTITY (S5): the
+// host (literal IP or MagicDNS name) must appear among Self + every Peer's
+// TailscaleIPs/DNSName/HostName in `tailscale status --json`. A transient CLI
+// failure is NOT a refusal — the flow proceeds and the [4/6] manifest fetch is
+// the real proof downstream.
+func verifyOurTailnet(ctx context.Context, d deps, base string) error {
+	u, err := url.Parse(base)
+	if err != nil {
+		return fmt.Errorf("install code base URL: %w", err)
+	}
+	ips, names, err := tailscaleTailnet(ctx, d)
+	if err != nil {
+		return waitTailscaleApproved(ctx, d)
+	}
+	if hostOnTailnet(u.Hostname(), ips, names) {
+		return waitTailscaleApproved(ctx, d)
+	}
+	return fmt.Errorf("this PC is already logged in to another Tailscale network. Log out of Tailscale first, then run VL-Setup again")
 }
 
 // tailscaleSettledState polls BackendState until it leaves the transient states
@@ -578,9 +625,10 @@ func tailscaleSettledState(ctx context.Context, d deps) (string, error) {
 		state, err := tailscaleBackendState(ctx, d)
 		if err == nil {
 			switch state {
-			case "NoState", "Starting", "Stopped":
+			case "NoState", "Starting":
 				// keep polling until it settles
 			default:
+				// "Stopped" settles too (H8) — it is handled as its own state.
 				return state, nil
 			}
 		}
@@ -614,8 +662,10 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 		if err == nil && st.BackendState == "Running" {
 			return nil
 		}
-		if err == nil && !printedURL && st.AuthURL != "" {
-			d.print("Owner approval link: " + st.AuthURL)
+		// H17: the approval link is printed ONLY while NeedsMachineAuth, labelled
+		// for the owner; NeedsLogin prints nothing (never a login token).
+		if err == nil && !printedURL && st.BackendState == "NeedsMachineAuth" && st.AuthURL != "" {
+			d.print("Approval link (for the owner): " + st.AuthURL)
 			printedURL = true
 		}
 		select {
@@ -685,7 +735,9 @@ $key = $args[1]
 [Console]::OutputEncoding=[System.Text.Encoding]::UTF8
 $sig = Get-AuthenticodeSignature -FilePath $msi
 if ($sig.Status -ne 'Valid') { Write-Output 'VL_MSI_NOT_VALID'; exit 2 }
-if (-not ($sig.SignerCertificate.Subject -match 'O=Tailscale Inc\.')) { Write-Output 'VL_MSI_BAD_SIGNER'; exit 3 }
+$org = ''
+foreach ($part in ($sig.SignerCertificate.Subject -split ',')) { $kv = $part.Trim(); if ($kv.StartsWith('O=')) { $org = $kv.Substring(2); break } }
+if ($org -ne 'Tailscale Inc.') { Write-Output 'VL_MSI_BAD_SIGNER'; exit 3 }
 $arg = '/i "' + $msi + '" /quiet /norestart'
 try {
   $p = Start-Process msiexec -Verb RunAs -Wait -PassThru -ArgumentList $arg
@@ -715,7 +767,9 @@ func installTailscaleElevated(ctx context.Context, d deps, msiPath, authKey stri
 		case line == "VL_UAC_CANCELLED":
 			return 1223, nil
 		case line == "VL_MSI_NOT_VALID" || line == "VL_MSI_BAD_SIGNER":
-			return 0, fmt.Errorf("tailscale install: elevated signature re-verify refused (%s)", line)
+			// H18a: a signature-verify failure is most likely an update being
+			// published mid-flight — tell the user to retry shortly.
+			return 0, fmt.Errorf("the Tailscale installer signature did not verify (%s) — try again in a minute (an update was being published)", line)
 		case strings.HasPrefix(line, "VL_UP_FAILED:"):
 			// best-effort join failed; the caller retries `up` and surfaces it.
 			continue
@@ -929,7 +983,8 @@ func runOpen(ctx context.Context, d deps) error {
 	// icon launch can never hang; on a flat timeout it DEFERS with a message (G2).
 	uctx, ucancel := context.WithTimeout(ctx, 5*time.Minute)
 	defer ucancel()
-	if _, uerr := RunUpdateCheck(uctx, d, base, true, true); uerr != nil {
+	dec2, uerr := RunUpdateCheck(uctx, d, base, true, true)
+	if uerr != nil {
 		if errors.Is(uerr, errNotFlat) {
 			d.messageBox("Update postponed — a trade is open. VL will offer it again next time.")
 			return nil
@@ -937,8 +992,10 @@ func runOpen(ctx context.Context, d deps) error {
 		d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
 		return uerr
 	}
-	// W8b: tell the mentor the add-on updated and NinjaTrader must be restarted.
-	d.messageBox("Updated ✓ — restart NinjaTrader to load it.")
+	// H4: announce only when the swap actually applied.
+	if dec2.Applied {
+		d.messageBox("Updated ✓ — restart NinjaTrader to load it.")
+	}
 	return nil
 }
 
@@ -1239,7 +1296,7 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 		if aerr != nil {
 			return aerr
 		}
-		if err := placeAddon(d, docs, addon); err != nil {
+		if err := placeAddon(d, docs, m.AddonBuild, addon); err != nil {
 			return err
 		}
 		if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
@@ -1370,12 +1427,24 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool, 
 	// S2: only swap when the on-disk DLL differs from the manifest (a
 	// missing/torn DLL is repaired, not blindly re-written).
 	if !addonNeedsUpdate(d, docs, m.AddonSHA256) {
-		return dec, nil // already current
+		// H4: the DLL already matches — record the build so the check stays
+		// consistent, then stop (nothing to swap).
+		if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
+			return dec, err
+		}
+		return dec, nil
 	}
 	// Never update during a trade: wait until the friend bot is flat.
 	if err := waitFlat(ctx, d); err != nil {
 		return dec, err
 	}
+	// H1: record T0 — the latest known-flat instant — right BEFORE asking the
+	// user to close NinjaTrader.
+	st0, err := probeFlatState(ctx, d, base)
+	if err != nil {
+		return dec, err
+	}
+	t0 := st0.LastKnownFlatMs
 	// F4: never write a locked DLL — ask the user to close NinjaTrader (or defer).
 	deferred, err := waitNinjaTraderClosed(ctx, d, isGUI)
 	if err != nil {
@@ -1384,13 +1453,18 @@ func RunUpdateCheck(ctx context.Context, d deps, base string, autoApprove bool, 
 	if deferred {
 		return dec, nil // Later
 	}
-	// m7: re-probe flat right before the swap — a trade may have opened while the
-	// user was closing NinjaTrader.
-	if err := waitFlat(ctx, d); err != nil {
+	// H1: after NT closed the bot may go known→unknown (it can no longer see
+	// NinjaTrader). Accept only if still flat, or if unknown AND the
+	// last-known-flat instant did not move backwards while the user closed NT.
+	st1, err := probeFlatState(ctx, d, base)
+	if err != nil {
 		return dec, err
 	}
+	if !st1.Flat && !(st1.Known == false && st1.LastKnownFlatMs >= t0) {
+		return dec, errNotFlat
+	}
 	// S2/S16: atomic swap (write .new → move old aside → rename into place).
-	if err := placeAddon(d, docs, addon); err != nil {
+	if err := placeAddon(d, docs, m.AddonBuild, addon); err != nil {
 		return dec, err
 	}
 	if err := writeInstalledState(d, docs, installedState{AddonBuild: m.AddonBuild, AppVersion: appVersion}); err != nil {
@@ -1445,10 +1519,27 @@ func addonNeedsUpdate(d deps, docs, wantSHA string) bool {
 // placeAddon atomically installs a verified add-on (S2/S16). It writes
 // VL.AddOn.dll.new in the SAME folder, moves the existing DLL aside (timestamped,
 // never deleted), then renames .new into place; on a rename failure the old DLL
-// is moved back. Never truncates a loaded DLL.
-func placeAddon(d deps, docs string, addon []byte) error {
+// is moved back. Never truncates a loaded DLL. H7: it refuses to DOWNGRADE
+// (install an older build over a newer one) unless neither the DLL nor
+// installed.json exists. H12: "absent" means fs.ErrNotExist only (any other read
+// error aborts), the bin\Custom write is gated on the F2 dirExists proof, and a
+// failed rollback reports the backup path.
+func placeAddon(d deps, docs, build string, addon []byte) error {
+	ntBinCustom := filepath.Join(docs, "NinjaTrader 8", "bin", "Custom")
+	if !d.dirExists(ntBinCustom) {
+		return fmt.Errorf("NinjaTrader 8 has not created its folders — open NinjaTrader 8 once, then run VL-Setup again")
+	}
 	dst := addonDstPath(docs)
 	tmp := dst + ".new"
+
+	// H7: never downgrade — refuse to install an older build over a newer
+	// recorded one. A fresh install (no installed.json) has no "current" build
+	// to protect, so the check is a no-op there.
+	cur, _ := readInstalledState(d, docs)
+	if cur.AddonBuild != "" && addonBuildNewer(cur.AddonBuild, build) {
+		return fmt.Errorf("refusing to replace a newer add-on (build %s) with an older one (build %s)", cur.AddonBuild, build)
+	}
+
 	if err := d.mkdirAll(filepath.Dir(tmp), 0o755); err != nil {
 		return err
 	}
@@ -1464,11 +1555,17 @@ func placeAddon(d deps, docs string, addon []byte) error {
 		if err := d.rename(dst, old); err != nil {
 			return err
 		}
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		// H12: a read error on the existing DLL aborts — never write over it
+		// blind.
+		return fmt.Errorf("read existing add-on: %w", err)
 	}
 	if err := d.rename(tmp, dst); err != nil {
 		// S2: roll the old DLL back so the PC is never left without an add-on.
 		if old != "" {
-			_ = d.rename(old, dst)
+			if rb := d.rename(old, dst); rb != nil {
+				return fmt.Errorf("install add-on: %w (and could not restore the previous add-on from %s: %v)", err, old, rb)
+			}
 		}
 		return fmt.Errorf("install add-on: %w", err)
 	}
