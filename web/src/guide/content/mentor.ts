@@ -1658,12 +1658,12 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → EMA34',
           what: 'Cap crossings around the EMA line in a 30m window (“xien len xien xuong”). The mentor gave no number, so the question is open (Q21).',
           trader:
-            'ON — 2 crosses in 30m refuse the EMA34 setup (the most conservative reading).',
+            'OFF (removed, #45) — the mentor gives no count; the “switched off only while it is not respected” rule is the loss relock (E2), not a cross count.',
           consumer: 'kernel/mentor ema_max_cross_30m',
           range: 'int / 0 = off (reachable since W32)',
-          systemDefault: '2',
+          systemDefault: '0',
           recommended:
-            '2 — item 16 (2026-10-04): gate the line that trades, default ON; the course states no count (frame D4.2 p1 @22:28 shows the indicator OFF), so 2 = the most conservative of v5_ema_cross2/4 and stays flagged mentor-question-open.',
+            '0 — REMOVED default (#45): “xien len xien xuong” (D4.2 p1 @22:27-22:30) is qualitative; the mentor never gives a count or a window, and the frame at @22:28 shows the indicator already OFF. An explicit 2-4 re-enables the numeric gate.',
           whenToTouch: 'Only when the mentor answers Q21.',
           perSession: 'No.',
         },

@@ -293,12 +293,12 @@ type Config struct {
 	LevelMaxVisits int
 	// EmaMaxCross30m — E4 knob (CTO 12:27:25Z): refuse the EMA34 setup when the
 	// close crossed the line this many times over the last 30 closed 1m candles
-	// ("xien len xien xuong", D4.2 p1 @ 22:27). Default ON (item 16, CTO
-	// 23:49Z): 2 — the most conservative of the replay sensitivity rows
-	// v5_ema_cross2 / v5_ema_cross4. MENTOR QUESTION OPEN: the course states no
-	// count and no window — at the exact second he says "xiên lên xiên xuống"
-	// the frame D4.2 p1 @22:28 shows the indicator already OFF the chart, so
-	// 2 is our reading, not his number (reread OPEN-NUMBERS Q4). 0 = OFF.
+	// ("xien len xien xuong", D4.2 p1 @ 22:27). Default REMOVED (#45): 0 — the
+	// mentor gives no count and no window; at the exact second he says "xiên lên
+	// xiên xuống" the frame D4.2 p1 @22:28 shows the indicator already OFF, so
+	// the number is ours, not his. The mentor's actual rule — "switched off only
+	// while it is not respected" — is E2's loss relock, not a cross count. An
+	// explicit 2-4 re-enables the numeric gate. 0 = OFF.
 	EmaMaxCross30m int
 
 	// ISB (PLAN v1 §3).
@@ -560,9 +560,9 @@ func DefaultConfig() Config {
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
 		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
-		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
+		PingPongCandleLookback: 30, // B21 [C: ours — the 30-bar window; the 20-pt cap itself matches D4.2 p2 @05:31–05:37]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
 		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
-		EmaMaxCross30m:         2,  // E4 (item 16): default ON, most conservative — mentor question open (no count in the course)
+		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
 		RangeGapPts:            0,
 
 		DayGateSpentPts:     300,
