@@ -32,11 +32,14 @@ import (
 //
 //  2. CLOCK-STEP HOLD. A sampler compares wall-clock elapsed with monotonic
 //     elapsed between two reads. Any difference at or above CLOCK_STEP_FREEZE_MS
-//     (default 2000 ms — MENTOR-NY item 4, was 1000) is a STEP: it is logged and counted, and NEW entries
+//     (default 6000 ms — m134, was 2000) is a STEP: it is logged and counted, and NEW entries
 //     are refused for CLOCK_STEP_HOLD_S (default 120 s) of MONOTONIC time after
-//     the last such step. A smaller step (>= CLOCK_STEP_DETECT_MS, default
-//     100 ms) is logged and counted only: it cannot open the gate, because the
-//     receipt leg does not read the wall clock at all.
+//     the last such step. A step of 2–6 s is logged and counted only — EXCEPT
+//     inside the CME open/close boundary (15:59–16:01 and 16:59–17:01 CT),
+//     where any step >= 2 s still holds, because it can flip IsCMEOpen. A
+//     smaller step (>= CLOCK_STEP_DETECT_MS, default 100 ms) is logged and
+//     counted only: it cannot open the gate, because the receipt leg does not
+//     read the wall clock at all.
 //
 // Exits and protection never consult the hold; protection reads only the
 // FEED legs (FeedStaleAt), so a price is judged on whether frames arrive, not
@@ -79,13 +82,22 @@ func feedReceiptStale(symbol, tf string, at time.Time) (stale bool, ageMs int64,
 
 const (
 	defaultClockStepDetectMs = 100
-	// MENTOR-NY item 4: 2000 ms (was 1000). WSL wall-clock jitter of 1.0–1.2 s
-	// (10-14 RTH: +1025 ms, +1192 ms) sat right at 1000 ms and held entries
-	// 120 s each time; a real step (the 10-14 −125 s / +124 s pair) is far
-	// above 2 s. The hold (120 s) and the receipt leg are unchanged.
-	defaultClockStepFreezeMs = 2000
+	// m134: 6000 ms (was 2000). The 10-14 NTP micro-corrections were 1.0–1.2 s,
+	// but the 10-21 00:44–04:00 steps were 2–5 s — all below a real step, and
+	// every one refused a mentor arm for the full 120 s hold. A sub-6 s step is
+	// now logged and counted, never held: the bar-age wall rule has 1 interval +
+	// grace of slack and the monotonic receipt leg already fails a dead feed
+	// closed, so the freeze only needs to catch a REAL clock jump (the 10-14
+	// −125 s / +124 s pair) and the IsCMEOpen boundary crossing. The hold (120 s)
+	// and the receipt leg are unchanged.
+	defaultClockStepFreezeMs = 6000
 	defaultClockStepHoldS    = 120
 	clockStepSamplePeriod    = time.Second
+
+	// m149: a step of 2–6 s inside the CME open/close boundary (15:59–16:01 and
+	// 16:59–17:01 CT) can flip IsCMEOpen across 16:00/17:00, so it still holds
+	// even though it is below the 6 s freeze threshold.
+	sessionBoundaryFreezeMs = 2000
 )
 
 func envInt(name string, def int64) int64 {
@@ -172,22 +184,23 @@ type ClockStepView struct {
 }
 
 type clockStepGuard struct {
-	mu            sync.Mutex
-	have          bool
-	prevWallNs    int64
-	prevMono      time.Duration
-	samples       int64
-	back, fwd     int64
-	freezeSteps   int64
-	largestBack   int64 // ns, negative
-	largestFwd    int64 // ns
-	haveLast      bool
-	lastStepNs    int64
-	lastStepWall  int64
-	lastStepMono  time.Duration
-	haveFreeze    bool
-	lastFreezeMon time.Duration
-	samplerOn     bool
+	mu                 sync.Mutex
+	have               bool
+	prevWallNs         int64
+	prevMono           time.Duration
+	samples            int64
+	back, fwd          int64
+	freezeSteps        int64
+	largestBack        int64 // ns, negative
+	largestFwd         int64 // ns
+	haveLast           bool
+	lastStepNs         int64
+	lastStepWall       int64
+	lastStepMono       time.Duration
+	haveFreeze         bool
+	lastFreezeMon      time.Duration
+	lastFreezeBoundary bool
+	samplerOn          bool
 }
 
 var clockSteps = &clockStepGuard{}
@@ -200,7 +213,7 @@ func resetClockStepsForTest() {
 	g.have, g.prevWallNs, g.prevMono, g.samples = false, 0, 0, 0
 	g.back, g.fwd, g.freezeSteps, g.largestBack, g.largestFwd = 0, 0, 0, 0, 0
 	g.haveLast, g.lastStepNs, g.lastStepWall, g.lastStepMono = false, 0, 0, 0
-	g.haveFreeze, g.lastFreezeMon = false, 0
+	g.haveFreeze, g.lastFreezeMon, g.lastFreezeBoundary = false, 0, false
 }
 
 // observe takes ONE sample under the lock (so two goroutines can never fold
@@ -236,12 +249,41 @@ func (g *clockStepGuard) observe(cfg ClockStepConfig) (stepNs int64, freeze bool
 		}
 	}
 	g.haveLast, g.lastStepNs, g.lastStepWall, g.lastStepMono = true, step, wallNs, mono
-	if abs >= cfg.FreezeMs*int64(time.Millisecond) {
+	freezeMs := cfg.FreezeMs * int64(time.Millisecond)
+	boundaryMs := sessionBoundaryFreezeMs * int64(time.Millisecond)
+	boundary := abs >= boundaryMs && abs < freezeMs && stepIsSessionBoundary(wallNs)
+	if abs >= freezeMs || boundary {
 		g.freezeSteps++
-		g.haveFreeze, g.lastFreezeMon = true, mono
+		g.haveFreeze, g.lastFreezeMon, g.lastFreezeBoundary = true, mono, boundary
 		return step, true
 	}
 	return step, false
+}
+
+// stepIsSessionBoundary reports whether a wall instant sits inside a window
+// where a 2–6 s wall step can flip IsCMEOpen: ±60 s around the daily break
+// (16:00 close / 17:00 reopen CT) and, on a shortened session day, ±60 s
+// around the session's early close (e.g. 12:15 CT on 11-27 / 12-24). The
+// post-step wall reading is what we judge, so a step that landed inside the
+// window is the one that could have crossed the boundary.
+func stepIsSessionBoundary(wallNs int64) bool {
+	ct := time.Unix(0, wallNs).In(CTLocation())
+	sec := ct.Hour()*3600 + ct.Minute()*60 + ct.Second()
+	in := func(a, b int) bool { return sec >= a && sec <= b }
+	if in(15*3600+59*60, 16*3600+1*60) || in(16*3600+59*60, 17*3600+1*60) {
+		return true
+	}
+	// A shortened session (early close) is the OTHER instant IsCMEOpen flips —
+	// not just 16:00/17:00. The close is resolved through the session calendar
+	// (SessionStateAt), never a hard-coded time.
+	if st := SessionStateAt(ct); st.Class == SessionShortened && st.HasClose {
+		close := st.Close.In(CTLocation())
+		closeSec := close.Hour()*3600 + close.Minute()*60 + close.Second()
+		if sec >= closeSec-60 && sec <= closeSec+60 {
+			return true
+		}
+	}
+	return false
 }
 
 // ObserveClock takes one sample and logs any step it sees (every step at or
@@ -297,8 +339,14 @@ func clockStepHeldAt(at time.Time) (bool, string) {
 	if left < 0 {
 		left = 0
 	}
-	return true, fmt.Sprintf("clock_step: wall clock stepped %+dms vs monotonic; entries held %s more (hold %ds after any step >= %dms)",
-		g.lastStepNs/int64(time.Millisecond), left, cfg.HoldS, cfg.FreezeMs)
+	threshold := cfg.FreezeMs
+	boundaryNote := ""
+	if g.lastFreezeBoundary {
+		threshold = sessionBoundaryFreezeMs
+		boundaryNote = " (session boundary)"
+	}
+	return true, fmt.Sprintf("clock_step: wall clock stepped %+dms vs monotonic; entries held %s more (hold %ds after any step >= %dms%s)",
+		g.lastStepNs/int64(time.Millisecond), left, cfg.HoldS, threshold, boundaryNote)
 }
 
 // ClockStepSnapshot is the guard's state for /api/health and the clock lines.
@@ -371,9 +419,11 @@ func StartClockStepSampler() {
 
 // FeedStaleAt is the FEED question for the 1m series of symbol: is its price
 // current? It is the wall rule (barIsStale, CME-open/halt aware, unknown bar →
-// not stale) OR the monotonic receipt leg. It never reads the clock-step hold,
-// so protection can use it. now is the wall instant the caller evaluates at; a
-// now from time.Now() also carries the monotonic reading the receipt leg uses.
+// not stale) OR the monotonic receipt leg — which fails CLOSED when a wired
+// provider reports no live frame since boot, even with an empty 1m cache. It
+// never reads the clock-step hold, so protection can use it. now is the wall
+// instant the caller evaluates at; a now from time.Now() also carries the
+// monotonic reading the receipt leg uses.
 func FeedStaleAt(symbol string, newestBarOpenMs int64, now time.Time) (bool, string) {
 	if !IsCMEOpen(now) {
 		return false, ""
@@ -381,13 +431,17 @@ func FeedStaleAt(symbol string, newestBarOpenMs int64, now time.Time) (bool, str
 	if StaleEntryGateFeed(newestBarOpenMs, now) {
 		return true, fmt.Sprintf("bar_age: newest 1m bar opened %ds ago on the wall clock (B4 rule)", (now.UnixMilli()-newestBarOpenMs)/1000)
 	}
+	// m149 P2: a wired receipt provider with NO live frame since boot fails
+	// CLOSED even when the 1m cache is empty (newest bar = 0). The empty-cache
+	// fail-open below must not run before this leg — the 2 s freeze hold used
+	// to cover it by accident; at 6 s nothing does.
+	if stale, age, known := feedReceiptStale(symbol, "1m", recvClock(now)); known && stale && age < 0 {
+		return true, "receipt_age: no live 1m frame received since boot (monotonic)"
+	}
 	if newestBarOpenMs <= 0 {
-		return false, "" // no 1m series at all: the documented fail-open, unchanged
+		return false, "" // no 1m series at all, and no wired no-live-frame provider: the documented fail-open
 	}
 	if stale, age, known := feedReceiptStale(symbol, "1m", recvClock(now)); known && stale {
-		if age < 0 {
-			return true, "receipt_age: no live 1m frame received since boot (monotonic)"
-		}
 		return true, fmt.Sprintf("receipt_age: last live 1m frame received %ds ago on the monotonic clock (> %ds)", age/1000, receiptMaxAgeMs(60_000)/1000)
 	}
 	return false, ""

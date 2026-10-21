@@ -285,8 +285,10 @@ func mentorStaleDataBlockEnabled(rc *store.RiskControlConfig) bool {
 //
 // NEVER blocks exits or protection: the exit drive, BE/stop moves, closes and
 // cancels do not consult this. Already-resting broker orders are NOT cancelled
-// here — that is a separate decision. Fail-open when the provider is absent
-// (crypto / test) or the cache is empty (the seed + FEED DOWN alert own cold).
+// here — that is a separate decision. Fail-open only when the provider is
+// absent (crypto / test); a wired live-frame provider reporting no live 1m
+// frame since boot fails CLOSED even with an empty cache (the seed + FEED DOWN
+// alert own the truly-unwired cold start).
 func (at *AutoTrader) mentorStaleDataBlocked(now time.Time) bool {
 	stale, _ := at.mentorStaleDataBlockedWhy(now)
 	return stale
@@ -1134,8 +1136,12 @@ func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string
 		return false, 0, 0
 	}
 	pos.Mode = "A-resonance"
-	pos.ArmedBE = true
-	pos.Stop = pos.Entry
+	// m134 (b)/(c): arming resonance does NOT move any stop or write the
+	// ArmedBE/Stop belief. The runner's break-even is deferred to the closed-1m
+	// exit drive (mentorExitDriveResonance): only AFTER the 1:1 partial is
+	// confirmed, or once price is on the profit side — and the belief is written
+	// only after the broker applied the move. [D2.4 p1 @03:36–03:45 "mình bán bớt
+	// rồi… thì cứ để break even cho nó chạy".]
 	// D2-49: the runner aims past the old high — move its TP beyond, or remove
 	// it when no level sits beyond (fail-closed: the runner then exits only via
 	// the BE stop or EOD flat, never capped at the near-old-high).

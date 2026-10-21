@@ -641,9 +641,11 @@ func TestMentorBEHalfDistanceTarget(t *testing.T) {
 
 // TestMentorResonanceFork (EXIT-SPEC-v3 A on SPLIT LEGS): a PHL/PLH fill
 // followed by an ISB in the SAME direction within 3 candles flips the position
-// to A — both stops to BE at that moment and leg 1's TP modified OUT to the
-// runner's target (no 1:1 scale-out). Then A NEVER trails (candles that would
-// trail in B are ignored); it exits only on a BE touch.
+// to A — leg 1's TP stays, the runner's TP is modified OUT to the runner's
+// target. m134 (b)/(c): the flip does NOT move the stop to BE and does NOT
+// write the ArmedBE/Stop belief — the runner's break-even is deferred to the
+// closed-1m exit drive. A NEVER trails (candles that would trail in B are
+// ignored); it exits only on a BE touch.
 func TestMentorResonanceFork(t *testing.T) {
 	at := funnelAT(t)
 	pos := &mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Leg1TP: 110, Mode: "B"}
@@ -664,12 +666,16 @@ func TestMentorResonanceFork(t *testing.T) {
 	if pos.Leg1TP != 110 {
 		t.Fatalf("after the flip leg 1's +1R TP must be UNCHANGED (110), got %.2f", pos.Leg1TP)
 	}
-	if pos.Mode != "A-resonance" || !pos.ArmedBE || pos.Stop != pos.Entry {
-		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, BE stop 100", pos.Mode, pos.ArmedBE, pos.Stop)
+	if pos.Mode != "A-resonance" || pos.ArmedBE || pos.Stop != 90 {
+		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, NOT armed, stop still 90", pos.Mode, pos.ArmedBE, pos.Stop)
 	}
 	if got := at.mentorCountSnapshot()["resonance_armed"]; got != 1 {
 		t.Fatalf("resonance_armed must be counted once, got %d", got)
 	}
+	// m134 (b): the BE is deferred — simulate the exit drive having applied the
+	// runner's break-even (stop → entry) before exercising the pure mode-A exit.
+	pos.Stop = pos.Entry
+	pos.ArmedBE = true
 	// A holds through candles that would trail in B (+1R, +2R highs).
 	for _, cc := range [][2]float64{{105, 101}, {110, 101}, {120, 102}} {
 		if px, why, exited := mentorExitA(*pos, cc[1], cc[0]); exited || px != 0 || why != "" {
@@ -991,15 +997,17 @@ func TestMentorExitFork(t *testing.T) {
 	}
 
 	// the A branch: a PHL fill starting as B flips to A on a same-direction
-	// ISB within 3 candles — the REST's stop to BE, no trail, leg 1's +1R TP
-	// unchanged (R-RES).
+	// ISB within 3 candles — the runner's TP beyond the old high, no trail,
+	// leg 1's +1R TP unchanged (R-RES). m134 (b)/(c): the flip does NOT move the
+	// stop to BE or write ArmedBE — the deferred BE runs on the closed-1m exit
+	// drive.
 	pos := &mentorPosition{
 		Origin: "PHL", Side: "long", Entry: 100, Stop: 95, Target: 112, R: 5,
 		Mode: "B", Leg1TP: 105,
 	}
 	armed, modTP, modLeg2 := mentorMaybeArmResonance(at, pos, "long", 2, 120)
-	if !armed || pos.Mode != "A-resonance" || pos.Stop != pos.Entry || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
-		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
+	if !armed || pos.Mode != "A-resonance" || pos.ArmedBE || pos.Stop != 95 || modTP != 0 || pos.Leg1TP != 105 || modLeg2 != 120 || pos.Target != 120 {
+		t.Fatalf("the A flip must arm and move the runner beyond the old high: armed=%v mode=%s armedBE=%v stop=%.2f modTP=%.2f leg1TP=%.2f modLeg2=%.2f target=%.2f", armed, pos.Mode, pos.ArmedBE, pos.Stop, modTP, pos.Leg1TP, modLeg2, pos.Target)
 	}
 }
 

@@ -300,6 +300,19 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	if !ok {
 		return
 	}
+	// P0 stop-move-wrong-side (2026-10-21): a BE stop through the market would
+	// be refused by NT8 or trigger immediately — close at market instead, never
+	// send. A stale price keeps today's behaviour (send).
+	if price, fresh := mentorLatestPriceSeam(at); fresh && mentorStopMoveWrongSide(side, entryPrice, price) {
+		at.mentorCount("stop_move_through_market_close")
+		at.logWarnf("⚠️ auto-breakeven: %s %s stop would move to entry %.2f but the market is already through it (price %.2f) — closing at market instead (= the BE exit)",
+			symbol, side, entryPrice, price)
+		if err := mentorCloseLegAtMarketWire(at, ntTCP, side, 0); err != nil {
+			at.logWarnf("⚠️ auto-breakeven: close-at-market failed for %s %s: %v", symbol, side, err)
+		}
+		// Idempotent: the position is closing, never re-offer BE for it.
+		return
+	}
 	if err := moveStopWire(ntTCP, side, entryPrice); err != nil {
 		at.logWarnf("⚠️ auto-breakeven: move-stop send failed for %s %s: %v", symbol, side, err)
 		at.breakevenMu.Lock()
@@ -647,6 +660,12 @@ type AutoTrader struct {
 	// before any dispatch. nil in production (never assigned outside tests) —
 	// the tick is byte-identical.
 	mentorIntentTap func(in mentor.Intent)
+	// mentorEvalIntentsSeam (test-only, nil in production) replaces the
+	// evaluator's Tick OUTPUT for one tick: the m134 (a) negative pin feeds a
+	// raw synthetic ISB intent through the PRODUCTION mentorEvalOnce dispatch /
+	// refusal path without building a full kernel ISB state. nil in production —
+	// the tick is byte-identical.
+	mentorEvalIntentsSeam func(bars []market.Kline) []mentor.Intent
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by

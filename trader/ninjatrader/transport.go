@@ -15,7 +15,9 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"sync/atomic"
 
+	"vl/config"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
 	"vl/trader/types"
@@ -31,7 +33,7 @@ const TransportEnvVar = "NT_TRANSPORT"
 // RemoveTrader + LoadUserTradersFromStore) must NOT re-bind the port.
 var (
 	tcpServerOnce sync.Once
-	tcpServerInst *ntwire.TCPServer
+	tcpServerInst atomic.Pointer[ntwire.TCPServer]
 	tcpServerErr  error
 )
 
@@ -55,6 +57,16 @@ var accountsListSink func([]ntwire.AccountInfo)
 // SetAccountsListSink registers the hook. Call before the first trader is built.
 func SetAccountsListSink(fn func([]ntwire.AccountInfo)) { accountsListSink = fn }
 
+// U6: in friend mode a cached NT bind error is FATAL (so systemd's
+// Restart=on-failure retries) instead of being cached for the process life. The
+// owner's box keeps the cached-error behavior. Both are seams so a test can
+// force friend mode and intercept the fatal without os.Exit.
+var friendModeEnabled = config.FriendInstanceEnabled
+
+var bindErrorFatal = func(err error) {
+	logger.Fatalf("transport: friend-mode NT bind error is fatal (Restart=on-failure will retry): %v", err)
+}
+
 // getOrStartTCPServer lazily starts the singleton TCP server on first call.
 // Subsequent calls return the same instance. The startup error (if any) is
 // cached and returned to every caller so a bind failure surfaces consistently.
@@ -62,10 +74,16 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 	tcpServerOnce.Do(func() {
 		server := ntwire.NewTCPServer(nil)
 		if err := server.Start(context.Background()); err != nil {
+			if friendModeEnabled() {
+				// U6: fatal, so Restart=on-failure retries. In production
+				// bindErrorFatal exits; in tests it records and we fall through
+				// to the cache so the test can assert the error too.
+				bindErrorFatal(err)
+			}
 			tcpServerErr = fmt.Errorf("transport: start tcp server: %w", err)
 			return
 		}
-		tcpServerInst = server
+		tcpServerInst.Store(server)
 		// F12 — install the forensic sink if one was registered. The store is
 		// NOT imported here: main.go owns the closure, so this package keeps its
 		// single responsibility and the gate's in-memory read stays independent
@@ -81,7 +99,7 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 		// live BarCache (NT8 bars), bypassing the removed crypto providers. Crypto path untouched.
 		wireFuturesBarsProvider(server)
 	})
-	return tcpServerInst, tcpServerErr
+	return tcpServerInst.Load(), tcpServerErr
 }
 
 // TCPServer exposes the singleton wire server for maintenance paths that ride
@@ -91,6 +109,18 @@ func getOrStartTCPServer() (*ntwire.TCPServer, error) {
 // error.
 func TCPServer() (*ntwire.TCPServer, error) { return getOrStartTCPServer() }
 
+// ConnectKeyRefusedCount (K1/K7) exposes the singleton wire server's
+// connect-key refusal counter for /api/health under the name the protocol doc
+// uses (`nt_connect_key_refused`). READ-ONLY: it never starts the server — 0
+// when no wire server has been started yet (the counter records, it does not
+// infer).
+func ConnectKeyRefusedCount() int64 {
+	if srv := tcpServerInst.Load(); srv != nil {
+		return srv.ConnectKeyRefused()
+	}
+	return 0
+}
+
 // SetTCPServerForTest installs a server as the process singleton so a
 // production-call-site test can drive NewTraderFromEnv against a controlled
 // wire WITHOUT binding the live 127.0.0.1:36974 port (the live bot may hold
@@ -99,7 +129,7 @@ func TCPServer() (*ntwire.TCPServer, error) { return getOrStartTCPServer() }
 // a later getOrStartTCPServer returns the injected instance instead of binding.
 func SetTCPServerForTest(server *ntwire.TCPServer) {
 	tcpServerOnce.Do(func() {})
-	tcpServerInst = server
+	tcpServerInst.Store(server)
 	tcpServerErr = nil
 }
 

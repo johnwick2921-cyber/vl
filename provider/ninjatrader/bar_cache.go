@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"vl/kernel"
 )
 
 // DefaultBarCacheMaxBars is the per-(symbol, timeframe) ring-buffer
@@ -756,4 +758,177 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 	}
 	c.bars[key] = merged
 	return added
+}
+
+// Aggregate1mToTF aggregates complete 1m bars into tfMin-minute buckets,
+// epoch-aligned — the same rule as the kernel's barsTF for 3m/5m/15m/30m/1h
+// (each divides 60 minutes and 17:00 CT is a whole UTC hour, so epoch-aligned
+// equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
+// anchor is 17:00 CT, not a whole-epoch multiple.
+//
+// m148/m168 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is
+// NOT inserted — it stays a hole for BarsTFHoles / the prompt gap warning to
+// report honestly, rather than becoming a bar with a fake close.
+//
+// m168 coverage rule (CTO ruling): missing minutes are counted against the
+// bucket's OPEN minutes only — a closed minute (session break, weekend, the
+// halted tail of a shortened early-close day) is not expected and never drops a
+// bucket. Tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3) AND no run of
+// 3 or more consecutive missing open minutes is allowed. The forming tail
+// bucket (the bucket still open at `now`) is NEVER rebuilt from 1m — the live
+// feed owns it; `now <= 0` means "no forming filter" (every bucket is judged).
+func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
+	if tfMin <= 1 || len(bars) == 0 {
+		return bars
+	}
+	ms := int64(tfMin) * 60_000
+	formingBucket := int64(0)
+	if now > 0 {
+		formingBucket = (now / ms) * ms
+	}
+	out := make([]Bar, 0, len(bars)/tfMin)
+	var cur *Bar
+	var present []bool // minute-slot presence within the current bucket
+	flush := func() {
+		if cur == nil {
+			return
+		}
+		if bucketCoverageOK(present, cur.T, tfMin) {
+			out = append(out, *cur)
+		}
+		cur = nil
+		present = nil
+	}
+	for _, b := range bars {
+		bucket := (b.T / ms) * ms
+		if formingBucket > 0 && bucket >= formingBucket {
+			continue // the forming tail is owned by the live feed
+		}
+		if cur == nil || bucket != cur.T {
+			flush()
+			c := b
+			c.T = bucket
+			cur = &c
+			present = make([]bool, tfMin)
+			if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+				present[idx] = true
+			}
+			continue
+		}
+		if idx := int((b.T - bucket) / 60_000); idx >= 0 && idx < tfMin {
+			present[idx] = true
+		}
+		if b.H > cur.H {
+			cur.H = b.H
+		}
+		if b.L < cur.L {
+			cur.L = b.L
+		}
+		cur.C = b.C
+		cur.V += b.V
+	}
+	flush()
+	return out
+}
+
+// bucketCoverageOK is the m168 coverage rule (CTO ruling 2026-10-21): a bucket
+// is inserted only when its OPEN minutes are covered. A closed minute — a daily
+// break, a weekend, or the halted tail of a shortened early-close day — is not
+// expected and never counts against the bucket, while a quiet no-trade open
+// minute does. The tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3), AND
+// no run of 3 or more CONSECUTIVE missing open minutes is tolerated: a genuine
+// interior hole must stay visible, not be papered over as a full bar.
+//
+// `present` is indexed by the minute slot within the bucket; `bucket` is the
+// bucket's epoch-aligned OPEN time (ms UTC).
+func bucketCoverageOK(present []bool, bucket int64, tfMin int) bool {
+	tol := tfMin / 20
+	if tol < 1 {
+		tol = 1
+	}
+	missing := 0
+	run := 0
+	longest := 0
+	for i := 0; i < len(present); i++ {
+		t := bucket + int64(i)*60_000
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			run = 0 // a closed minute breaks a missing-open run
+			continue
+		}
+		if !present[i] {
+			missing++
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	return missing <= tol && longest < 3
+}
+
+// RehydrateUnion rehydrates a ring from store-derived bars by TIME UNION, not
+// older-only: interior holes are filled and the older end is extended, while
+// every bar the ring already holds wins on overlap — a live bar is never
+// replaced by a stored one. This is the m134 restart-hole fix: a short NT8
+// replay tail leaves an interior gap that RehydrateOlder cannot reach.
+//
+// Same discipline as RehydrateOlder: placeholders are refused at the door, a
+// COLD key is a no-op (the store deepens a live tape, it never substitutes for
+// one), and the result is capped at maxBars keeping the LIVE tail. Returns
+// how many bars were ACTUALLY added.
+func (c *BarCache) RehydrateUnion(symbol, timeframe string, bars []Bar) int {
+	if c == nil || symbol == "" || timeframe == "" || len(bars) == 0 {
+		return 0
+	}
+	bars, bad := dropPlaceholderBars(bars)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropped += int64(bad)
+	key := barKey(symbol, timeframe)
+	existing := c.bars[key]
+	if len(existing) == 0 {
+		return 0 // COLD KEY — the store never substitutes for the live feed.
+	}
+	merged := mergeRehydrateUnion(existing, bars)
+	if len(merged) > c.maxBars {
+		merged = merged[len(merged)-c.maxBars:]
+	}
+	added := len(merged) - len(existing)
+	if added < 0 {
+		added = 0
+	}
+	c.bars[key] = merged
+	return added
+}
+
+// mergeRehydrateUnion merges a live ring with store-derived bars for a
+// rehydrate: on equal T the EXISTING bar wins unconditionally — the store
+// fills only holes and the older end, never replaces a bar the ring holds.
+// m149 (P2): store bars NEWER than the live tail are DROPPED — the live feed
+// owns the forming bar, and letting the store reach ahead made the Upsert
+// out-of-order rule drop the later live updates to that bar, freezing it until
+// the next bucket.
+func mergeRehydrateUnion(existing, incoming []Bar) []Bar {
+	out := make([]Bar, 0, len(existing)+len(incoming))
+	i, j := 0, 0
+	for i < len(existing) && j < len(incoming) {
+		switch {
+		case existing[i].T < incoming[j].T:
+			out = append(out, existing[i])
+			i++
+		case existing[i].T > incoming[j].T:
+			out = append(out, incoming[j])
+			j++
+		default:
+			out = append(out, existing[i]) // existing (live) wins on overlap
+			i++
+			j++
+		}
+	}
+	// Whatever of `existing` remains is the live tail — keep it. `incoming[j:]`
+	// is store bars NEWER than the live tail — dropped (see m149 P2 above).
+	out = append(out, existing[i:]...)
+	return out
 }

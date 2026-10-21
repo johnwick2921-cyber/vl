@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"os"
 	"sort"
 	"strconv"
@@ -22,6 +21,7 @@ import (
 
 	"vl/manager"
 	"vl/mcp"
+	"vl/security"
 	"vl/store"
 )
 
@@ -188,7 +188,9 @@ func (a *Agent) loadAIClientFromStoreUser(storeUserID string) (mcp.AIClient, str
 				continue
 			}
 
-			httpClient := &http.Client{Timeout: 60 * time.Second}
+			// R1: the custom-URL model client must ride the SSRF-guarded client
+			// (DNS rebind + redirect-to-loopback blocked), not a bare http.Client.
+			httpClient := security.SafeHTTPClient(60 * time.Second)
 			client := mcp.NewClient(mcp.WithHTTPClient(httpClient))
 			client.SetAPIKey(apiKey, customAPIURL, modelName)
 			mcp.ApplyThinking(client, model.ThinkingMode, model.ReasoningEffort)

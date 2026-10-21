@@ -2,6 +2,7 @@
 import type {
   AddFriendResponse,
   FriendActionResponse,
+  FriendAddonStatus,
   FriendsListResponse,
 } from '../../types'
 import { API_BASE, httpClient } from './helpers'
@@ -38,5 +39,21 @@ export const friendsApi = {
     if (!result.success)
       throw new Error(result.message || `Failed to ${action} friend`)
     return result.data!
+  },
+
+  // Friend bot only: whether the connected AddOn is older than the manifest.
+  // Silent (no toast) and null on 404 — the owner bot has no friend route,
+  // which is exactly the "hidden on the owner's bot" signal.
+  async friendAddonStatus(): Promise<FriendAddonStatus | null> {
+    try {
+      const result = await httpClient.request<FriendAddonStatus>(
+        `${API_BASE}/friend/addon-status`,
+        { method: 'GET', silent: true }
+      )
+      if (!result.success || !result.data) return null
+      return result.data
+    } catch {
+      return null
+    }
   },
 }

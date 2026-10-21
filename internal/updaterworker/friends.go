@@ -101,7 +101,7 @@ func (w *Worker) friendBaseURL(port int) string {
 // returned receipts + results are persisted with the step's DONE transition.
 func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Receipt, []updaterjob.FriendResult) {
 	cfg := w.cfg
-	if strings.TrimSpace(cfg.FriendRegistry) == "" || strings.TrimSpace(cfg.FriendHost) == "" {
+	if strings.TrimSpace(cfg.FriendRegistry) == "" {
 		return nil, nil // no friend surface configured: no sweep, friends stays absent
 	}
 	start := w.host.Now()
@@ -109,13 +109,10 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 	if err != nil {
 		rc := w.receipt("friends_sweep", start, map[string]string{"registry": cfg.FriendRegistry}, err)
 		w.notify("⚠️ Friend update skipped — could not read the friend registry: " + err.Error())
-		return []Receipt{rc}, nil
-	}
-	var results []updaterjob.FriendResult
-	var receipts []Receipt
-	ev := map[string]string{
-		"registry": cfg.FriendRegistry,
-		"host":     cfg.FriendHost,
+		// R8: persist a synthetic friends[] entry so api/friend_alert.go relays
+		// it to the owner's Telegram — a notify alone only logs.
+		results := []updaterjob.FriendResult{{Name: "*", State: string(FriendFailed), Note: "friend sweep disabled: registry unreadable"}}
+		return []Receipt{rc}, results
 	}
 	active := 0
 	for _, fr := range rows {
@@ -123,7 +120,26 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 			active++
 		}
 	}
-	ev["active_friends"] = fmt.Sprintf("%d", active)
+	// U13: a registry WITH active friends but NO TUNNEL_IP (FriendHost) used to
+	// fall through the registry-or-host early return and vanish — no receipt,
+	// no owner ping. Now the owner is told and the receipt says why. R8: the
+	// synthetic friends[] entry is what api/friend_alert.go actually relays.
+	if strings.TrimSpace(cfg.FriendHost) == "" {
+		if active > 0 {
+			w.notify("⚠️ Friend sweep disabled — TUNNEL_IP (FriendHost) is unset; the friends' tunnel URLs cannot be built.")
+			ev := map[string]string{"registry": cfg.FriendRegistry, "active_friends": fmt.Sprintf("%d", active)}
+			results := []updaterjob.FriendResult{{Name: "*", State: string(FriendFailed), Note: "friend sweep disabled: TUNNEL_IP unset"}}
+			return []Receipt{w.receipt("friend sweep disabled: TUNNEL_IP unset", start, ev, nil)}, results
+		}
+		return nil, nil // no active friends: nothing to sweep
+	}
+	var results []updaterjob.FriendResult
+	var receipts []Receipt
+	ev := map[string]string{
+		"registry":       cfg.FriendRegistry,
+		"host":           cfg.FriendHost,
+		"active_friends": fmt.Sprintf("%d", active),
+	}
 	receipts = append(receipts, w.receipt("friends_sweep", start, ev, nil))
 	for _, fr := range rows {
 		if fr.State != "active" {

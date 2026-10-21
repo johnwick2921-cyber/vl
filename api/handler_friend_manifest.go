@@ -7,6 +7,8 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+
+	"vl/config"
 )
 
 // handler_friend_manifest.go — B2 contract + B5 S9: the friend bot serves the
@@ -36,11 +38,10 @@ func (s *Server) resolveFriendDistDir() string {
 	return filepath.Join(friendDistRoot, strings.TrimSpace(string(b)))
 }
 
-// friendModeOn reports friend mode. It reads the env flag directly so this file
-// does not depend on the config plumbing DS-102 owns (the flag contract is
-// env VL_FRIEND_INSTANCE=1 — B2).
+// friendModeOn reports friend mode via the ONE parser (config.FriendInstanceEnabled,
+// S21) so this file does not depend on the config plumbing DS-102 owns.
 func friendModeOn() bool {
-	return os.Getenv("VL_FRIEND_INSTANCE") == "1"
+	return config.FriendInstanceEnabled()
 }
 
 // handleFriendManifest serves GET /api/friend/manifest — the manifest JSON.

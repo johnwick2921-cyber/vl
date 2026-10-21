@@ -65,6 +65,43 @@ type StructureOneWay struct {
 // StructureTFs are the per-TF detectors the wave builds (2.1).
 var StructureTFs = []string{"5m", "15m", "1h"}
 
+// BarsHoleWarning reports the LATEST HOLE inside the last 6 hours of a bar
+// series (m134/m149): a gap longer than one bar interval between consecutive
+// bars, counting only the CME-OPEN missing minutes. A pure session break
+// (16:00→17:00 CT, a weekend) has no open minute missing and does NOT warn;
+// the forming tail never trips it. Returns "" when the series is contiguous or
+// every hole is older than 6 h (a stale hole must not warn for hours).
+func BarsHoleWarning(bars []market.Kline, tfMin int) string {
+	if tfMin <= 0 || len(bars) < 2 {
+		return ""
+	}
+	step := int64(tfMin) * 60_000
+	newest := bars[len(bars)-1].OpenTime
+	sixH := int64(6 * 60 * 60 * 1000)
+	for i := len(bars) - 1; i >= 1; i-- {
+		d := bars[i].OpenTime - bars[i-1].OpenTime
+		if d <= step {
+			continue
+		}
+		if bars[i].OpenTime < newest-sixH {
+			break // every older gap is outside the 6 h window
+		}
+		prev := bars[i-1].OpenTime
+		next := bars[i].OpenTime
+		open := 0
+		for m := prev + step; m < next; m += step {
+			if IsCMEOpen(time.UnixMilli(m)) {
+				open++
+			}
+		}
+		if open == 0 {
+			continue // a pure session break — no open minute missing
+		}
+		return fmt.Sprintf("gap %s → %s (%d open minute(s) missing)", ClockCT(time.UnixMilli(prev)), ClockCT(time.UnixMilli(next)), open)
+	}
+	return ""
+}
+
 // structureTFMinutes is the bar length table for the structure detectors
 // (5m/15m/1h only — the acceptance resolver is rule-scoped and would fold 1h
 // into its 5m default).
@@ -472,6 +509,9 @@ func StructureSnapshot(bars1m []market.Kline, nowMs int64) map[string]StructureS
 			snap[tf] = state
 		}
 	}
+	// m149: a bars hole is NOT injected here as a fake StructureState — the
+	// caller carries it as its own Context field (ctx.StructureGap), so the
+	// persisted structure map stays per-TF truth.
 	return snap
 }
 

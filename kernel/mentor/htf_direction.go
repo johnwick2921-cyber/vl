@@ -57,11 +57,11 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
-// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
-// owner order 2026-10-17) the gate applies only inside the 07:20–07:35 CT news
-// window (the T1 print window time; the calendar-day refinement is the
-// trader's news seam — DS-102 item 18). With the knob off (the legacy all-day
-// gate) the gate applies all day.
+// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly off (the default,
+// owner decision A 2026-10-21: gate ALL DAY) the gate applies all day. With the
+// knob on (news-first, owner order 2026-10-17) it applies only inside the
+// 07:20–07:35 CT news window (the T1 print window time; the calendar-day
+// refinement is the trader's news seam — DS-102 item 18).
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true
@@ -116,13 +116,4 @@ func stampHTFAgree(out []Intent, h HTF) {
 			out[i].HTFAgree = HTFAgrees(h, out[i].Side)
 		}
 	}
-}
-
-// HTFSideIsOK reports whether an entry side obeys the HTF gate. The trigger
-// having FIRED sets the direction — price need NOT sit on the trigger side of
-// the line [D4.4 p2 @ 03:51: "Price need NOT be on the 'right' side of the
-// trigger line — the trigger having FIRED sets the direction"].
-func HTFSideIsOK(h HTF, side Side) bool {
-	ok, want, _ := HTFVerdict(h)
-	return ok && want == side
 }

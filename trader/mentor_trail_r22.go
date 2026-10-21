@@ -163,7 +163,8 @@ func mentorMoveErrAlreadyLogged(err error) bool {
 		errors.Is(err, errMentorStopBookUnknown) ||
 		errors.Is(err, errMentorLegClosed) ||
 		errors.Is(err, errMentorStopBrokerTighter) ||
-		errors.Is(err, errMentorStopAtBroker)
+		errors.Is(err, errMentorStopAtBroker) ||
+		errors.Is(err, errMentorStopThroughMarket)
 }
 
 // mentorBrokerLegStopRead reads the broker's OWN stop for one wire leg from the

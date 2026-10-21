@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"vl/internal/friendmode"
 	"vl/internal/installpath"
 	"vl/logger"
 	"vl/mcp"
@@ -180,12 +181,12 @@ func Init() {
 			"Set JWT_SECRET in .env (e.g. `openssl rand -base64 64`) before any network-exposed deploy.")
 	}
 
-	// W-FRIEND-HOSTED Segment 2: friend-instance flags. VL_FRIEND_INSTANCE is an
-	// exact "1" match (the same strictness as every other VL_ knob). The name is
+	// W-FRIEND-HOSTED Segment 2: friend-instance flags. VL_FRIEND_INSTANCE is the
+	// ONE parser (FriendInstanceEnabled: "1"/"true", trimmed). The name is
 	// lowercased + trimmed here (the B2 contract: lowercase a-z0-9, 2-20 chars);
 	// an invalid name is NOT refused at load — main.go validates it before boot
 	// (a friend copy with a bad name must not silently run as the owner).
-	if os.Getenv("VL_FRIEND_INSTANCE") == "1" {
+	if FriendInstanceEnabled() {
 		cfg.FriendInstance = true
 		cfg.FriendName = strings.ToLower(strings.TrimSpace(os.Getenv("VL_FRIEND_NAME")))
 	}
@@ -348,6 +349,14 @@ func ValidFriendName(name string) bool {
 		return false
 	}
 	return true
+}
+
+// FriendInstanceEnabled is the ONE parser for VL_FRIEND_INSTANCE (S21/R3): "1"
+// or "true" (trimmed, case-insensitive for "true"), anything else false. The
+// canonicalizer lives in internal/friendmode so security can read it without an
+// import cycle (config → mcp → security); this is the config-package facade.
+func FriendInstanceEnabled() bool {
+	return friendmode.Enabled()
 }
 
 // JWTSecretIsDefault reports whether the effective JWT secret is the insecure

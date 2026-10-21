@@ -186,14 +186,12 @@ func (s *Server) handleUpdateModelConfigs(c *gin.Context) {
 	// Update each model's configuration and track traders that need reload
 	tradersToReload := make(map[string]bool)
 	for modelID, modelData := range req.Models {
-		// SSRF protection: validate custom_api_url before storing
-		if modelData.CustomAPIURL != "" {
-			cleanURL := strings.TrimSuffix(modelData.CustomAPIURL, "#")
-			if err := security.ValidateURL(cleanURL); err != nil {
-				logger.Warnf("Invalid custom_api_url for model %s: %v", modelID, err)
-				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid HTTPS endpoint", modelID)})
-				return
-			}
+		// SSRF protection: validate custom_api_url before storing (R3 — the ONE
+		// helper reads friend mode and demands https there).
+		if err := security.ValidateModelURL(modelData.CustomAPIURL); err != nil {
+			logger.Warnf("Invalid custom_api_url for model %s: %v", modelID, err)
+			c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Invalid custom_api_url for model %s: URL must be a valid HTTPS endpoint", modelID)})
+			return
 		}
 
 		// Find traders using this AI model BEFORE updating
@@ -317,11 +315,9 @@ func (s *Server) handleCreateModelEntry(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "provider is required"})
 		return
 	}
-	if req.CustomAPIURL != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(req.CustomAPIURL, "#")); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid custom_api_url: URL must be a valid HTTPS endpoint"})
-			return
-		}
+	if err := security.ValidateModelURL(req.CustomAPIURL); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid custom_api_url: URL must be a valid HTTPS endpoint"})
+		return
 	}
 	enabled := true
 	if req.Enabled != nil {

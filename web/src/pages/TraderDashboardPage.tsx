@@ -34,6 +34,7 @@ import { PlanCard } from '../components/plan/PlanCard'
 import { PictureHtfPanel } from '../components/trader/PictureHtfPanel'
 import { MentorTruthCard } from '../components/mentor/MentorTruthCard'
 import { useMentorTruth } from '../components/mentor/useMentorTruth'
+import { AddonOutdatedBanner } from '../components/friend/AddonOutdatedBanner'
 import type {
   SystemStatus,
   AccountInfo,
@@ -412,6 +413,10 @@ export function TraderDashboardPage({
             entries blocked; stops, targets and position management continue
           </div>
         )}
+
+        {/* Friend mode: connected AddOn older than the manifest — owner's bot
+            never renders this (the friend route 404s there). */}
+        <AddonOutdatedBanner />
 
         {/* Trader Header */}
         <div

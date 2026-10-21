@@ -53,6 +53,12 @@ func TestHealthReportsRealState(t *testing.T) {
 	if tr, ok := body["traders_running"].(float64); !ok || tr != 0 {
 		t.Fatalf("traders_running must be 0, got %v", body["traders_running"])
 	}
+	// K1/K7 — the connect-key refusal counter is exposed under the protocol
+	// doc's name, and reads 0 when no wire server is running (records, never
+	// infers).
+	if kr, ok := body["nt_connect_key_refused"].(float64); !ok || kr != 0 {
+		t.Fatalf("nt_connect_key_refused must be present and 0 with no wire server, got %v", body["nt_connect_key_refused"])
+	}
 
 	// A CLOSED database must flip the endpoint to 503 — the old handler
 	// answered 200 to a dead DB.

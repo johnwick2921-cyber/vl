@@ -40,3 +40,12 @@ export interface FriendActionResponse {
   install_code?: string
   shown_once?: boolean
 }
+
+// Friend-mode add-on status (GET /api/friend/addon-status, friend bot only).
+// The owner bot has no such route (404) — that absence is how the frontend
+// knows to hide the out-of-date banner on the owner's dashboard.
+export interface FriendAddonStatus {
+  connected_build: string
+  latest_build: string
+  outdated: boolean
+}

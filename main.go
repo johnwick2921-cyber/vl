@@ -26,6 +26,7 @@ import (
 	"vl/mcp"
 	_ "vl/mcp/provider"
 	"vl/researchsnapshot"
+	"vl/security"
 	"vl/store"
 	"vl/telegram"
 	"vl/telemetry"
@@ -56,6 +57,10 @@ func main() {
 	cfg := config.Get()
 	logger.Info("✅ Configuration loaded")
 
+	// R2: security cannot import config (config → mcp → security cycle), so the
+	// friend-mode redirect guard is wired here from the ONE parser.
+	security.FriendModeEnabled = config.FriendInstanceEnabled
+
 	// W-FRIEND-HOSTED Segment 2: a friend instance boots with the owner-only
 	// surfaces off. Refuse an unsafe bind BEFORE anything listens — a friend
 	// copy must never sit on 0.0.0.0 / :: / an empty address.
@@ -66,8 +71,17 @@ func main() {
 		if !config.ValidFriendName(cfg.FriendName) {
 			logger.Fatalf("❌ friend instance refused: VL_FRIEND_NAME=%q is not a valid friend name (lowercase a-z0-9, 2-20 chars)", cfg.FriendName)
 		}
+		// U7: a friend bot is Fatal unless its own secret material is present —
+		// never the owner's, never the insecure default, never a keyless bot.
+		if why := friendHardGuarantees(cfg, os.Getenv("NT_CONNECT_KEY")); why != "" {
+			logger.Fatalf("❌ friend instance refused: %s", why)
+		}
 		logger.Info(friendBootLine(cfg.FriendName, cfg.APIServerHost, cfg.APIServerPort, ntwire.ListenAddr()))
 	}
+
+	// R6: the Friends page drives `systemctl --user`, which needs the user-bus
+	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
+	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
 
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
@@ -815,6 +829,10 @@ func main() {
 
 	server := api.NewServer(traderManager, st, cryptoService, cfg.APIServerHost, cfg.APIServerPort)
 
+	// R14: the friend alert monitor starts at BOOT (owner only), not on the
+	// first Friends page read.
+	server.StartFriendMonitor()
+
 	// Create hot-reload channel for Telegram bot; wire it to the API server
 	// so that POST /api/telegram can trigger a bot restart when the token changes.
 	telegramReloadCh := make(chan struct{}, 1)
@@ -894,25 +912,30 @@ func formatTopP(v float64) string {
 	return fmt.Sprintf("%.2f", v)
 }
 
-// isAllInterfacesHost reports whether a bind host is a bind-everything address
-// (empty, 0.0.0.0 or ::). It is the ONE canonicalizer for the friend bind
-// refusal (W-FRIEND-HOSTED Segment 2) — the check the mutant test removes to
-// prove the rail is load-bearing.
+// isAllInterfacesHost reports whether a bind host is a bind-everything address:
+// empty, or a literal IP whose IsUnspecified() is true (0.0.0.0 / ::). U11: the
+// check is net.ParseIP-based, not a string switch, so a hostname or a scoped
+// address is never misread as "all interfaces".
 func isAllInterfacesHost(h string) bool {
-	switch strings.TrimSpace(h) {
-	case "", "0.0.0.0", "::":
+	s := strings.TrimSpace(h)
+	if s == "" {
 		return true
 	}
-	return false
+	ip := net.ParseIP(s)
+	return ip != nil && ip.IsUnspecified()
 }
 
 // validateFriendBind refuses a friend instance whose web or NinjaTrader bind
 // would expose it on every interface. apiHost is cfg.APIServerHost; ntListen is
-// the raw NT_TCP_LISTEN_ADDR env value (host:port, or a bare host). Values are
-// READ, never fabricated: "" names an unset variable.
+// the raw NT_TCP_LISTEN_ADDR env value (host:port, or a bare host). U11: the
+// host must be a LITERAL IP (never a hostname), so the friend bot can only ever
+// bind a concrete tunnel address. Values are READ, never fabricated.
 func validateFriendBind(apiHost, ntListen string) error {
 	if isAllInterfacesHost(apiHost) {
 		return fmt.Errorf("API_SERVER_HOST must be a specific address, not %q", strings.TrimSpace(apiHost))
+	}
+	if net.ParseIP(strings.TrimSpace(apiHost)) == nil {
+		return fmt.Errorf("API_SERVER_HOST must be a literal IP address, got %q", strings.TrimSpace(apiHost))
 	}
 	if ntListen == "" {
 		return fmt.Errorf("NT_TCP_LISTEN_ADDR must be set to the friend's tunnel address, not empty")
@@ -925,7 +948,23 @@ func validateFriendBind(apiHost, ntListen string) error {
 	if isAllInterfacesHost(host) {
 		return fmt.Errorf("NT_TCP_LISTEN_ADDR must not bind every interface, got host %q", strings.TrimSpace(host))
 	}
+	if net.ParseIP(strings.TrimSpace(host)) == nil {
+		return fmt.Errorf("NT_TCP_LISTEN_ADDR must be a literal IP address, got host %q", strings.TrimSpace(host))
+	}
 	return nil
+}
+
+// friendHardGuarantees returns "" when the friend boot requirements (U7) are
+// met, else the reason the boot must be refused: a friend bot needs its OWN
+// non-empty connect key and a JWT secret that is not the insecure default.
+func friendHardGuarantees(cfg *config.Config, ntConnectKey string) string {
+	if strings.TrimSpace(ntConnectKey) == "" {
+		return "NT_CONNECT_KEY is empty — a friend bot must have its own connect key"
+	}
+	if cfg.JWTSecretIsDefault() {
+		return "JWT_SECRET is the insecure default — a friend bot must have its own secret"
+	}
+	return ""
 }
 
 // friendBootLine renders the friend startup line (W-FRIEND-HOSTED Segment 2).

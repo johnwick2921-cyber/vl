@@ -332,11 +332,15 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default): the HTF gate applies only inside the
+	// THƯỜNG"). true: the HTF gate applies only inside the
 	// 07:20–07:35 CT news window; ordinary intraday entries are not
-	// HTF-gated. Owner order 2026-10-17: NEWS-ONLY = ON (the course is
-	// news-first — "em chỉ hướng dẫn mọi người cái news thôi" D4.4 p1
-	// @24:48; D5.1's all-day read stays on the mentor-question list).
+	// HTF-gated. false (default, owner decision A 2026-10-21 m134 "fix
+	// all"): the 4h/1h direction gate applies ALL DAY — every entry side
+	// must obey the 4h/1h verdict (case 1/2/3). Owner order 2026-10-17 had
+	// set NEWS-ONLY = ON; owner decision A reverses the default. Stored
+	// strategies carry no htf_gate_news_only key, so the new default applies
+	// at the next trader load; an explicit stored true stays news-only, and
+	// none exists today.
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -551,9 +555,9 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true, // D4.4-11: news-first — the gate only inside 07:20–07:35 CT (owner order 2026-10-17)
-		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
-		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false, // D4.4-11: gate ALL DAY (owner decision A 2026-10-21 m134; was news-only owner order 2026-10-17)
+		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
@@ -655,6 +659,46 @@ func barsTF(bars []market.Kline, tfMin int) []market.Kline {
 	}
 	flush()
 	return out
+}
+
+// BarsTFHoles reports the OPEN TIMES of aggregate buckets built from a 1m series
+// that have an INTERIOR hole (a missing minute). It is a DIAGNOSTIC only — no
+// production caller: the m148 coverage check keeps partial buckets out of the
+// ring at the rehydrate call site, so a holey bucket never reaches the mentor
+// reads as a full bar; BarsTFHoles exists to name a hole when one is seen
+// elsewhere. The last (possibly forming) bucket is never reported; a short
+// leading bucket (the series starts mid-bucket) is not a hole. PURE — it does
+// not mutate the bars.
+func BarsTFHoles(bars []market.Kline, tfMin int) map[int64]bool {
+	if tfMin <= 1 || len(bars) < 2 {
+		return nil
+	}
+	var holes map[int64]bool
+	var curBucket int64
+	var prevMin int64
+	var gapSeen bool
+	for i, b := range bars {
+		bucket := bucketOpen(b.OpenTime, tfMin)
+		if i == 0 {
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if bucket != curBucket {
+			if gapSeen {
+				if holes == nil {
+					holes = map[int64]bool{}
+				}
+				holes[curBucket] = true
+			}
+			curBucket, prevMin, gapSeen = bucket, b.OpenTime, false
+			continue
+		}
+		if b.OpenTime-prevMin > 60_000 {
+			gapSeen = true
+		}
+		prevMin = b.OpenTime
+	}
+	return holes
 }
 
 // bucketOpen floors an open time to its TF bucket. 1m/5m/15m/1h buckets are
