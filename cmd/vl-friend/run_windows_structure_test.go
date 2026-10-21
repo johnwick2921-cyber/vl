@@ -152,9 +152,10 @@ func TestWindowsDocumentsDirUsesKnownFolderPath(t *testing.T) {
 // signer subject is not corrupted by the OEM codepage. The mutant that drops the
 // psUTF8 prefix from verifyMsiSigner fails here.
 func TestPowerShellOutputForcedUTF8(t *testing.T) {
-	src, err := os.ReadFile("run_windows.go")
+	// psPreamble now lives in osdeps.go (shared with the Linux realps_test.go).
+	src, err := os.ReadFile("osdeps.go")
 	if err != nil {
-		t.Fatalf("read run_windows.go: %v", err)
+		t.Fatalf("read osdeps.go: %v", err)
 	}
 	s := string(src)
 
@@ -165,11 +166,11 @@ func TestPowerShellOutputForcedUTF8(t *testing.T) {
 	if !strings.Contains(s, `[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false)`) {
 		t.Fatalf("the PowerShell preamble must force UTF-8 no-BOM output")
 	}
-	if !strings.Contains(s, "psRun(script, msiPath)") {
-		t.Fatalf("verifyMsiSigner must run through psRun")
+	if !strings.Contains(s, "verifyMsiSignerScript = ") {
+		t.Fatalf("osdeps.go must define verifyMsiSignerScript (shared for realps)")
 	}
-	if !strings.Contains(s, "psRun(script, \"\")") {
-		t.Fatalf("ntRunning must run through psRun")
+	if !strings.Contains(s, "ntRunningScript = ") {
+		t.Fatalf("osdeps.go must define ntRunningScript (shared for realps)")
 	}
 }
 

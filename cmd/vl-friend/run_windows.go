@@ -139,7 +139,7 @@ func realDeps() deps {
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
 			// P1: the path rides VL_ARG0 (PowerShell 5.1 rejects args after
 			// -EncodedCommand); P2: only the VL_RESULT line is parsed.
-			script := "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+			script := verifyMsiSignerScript
 			out, err := psRun(script, msiPath)
 			if err != nil {
 				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
@@ -165,7 +165,7 @@ func realDeps() deps {
 			return err == nil && st.IsDir()
 		},
 		ntRunning: func(ctx context.Context) (bool, error) {
-			script := "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'VL_RESULT=yes' } else { 'VL_RESULT=no' }"
+			script := ntRunningScript
 			out, err := psRun(script, "")
 			if err != nil {
 				return false, err
@@ -244,11 +244,6 @@ func windowsDocumentsDir() (string, error) {
 	}
 	return p, nil
 }
-
-// psPreamble (P2a) heads EVERY PowerShell script this file runs: it silences
-// the CLIXML progress noise, fails fast on a script error, and forces UTF-8
-// output with no BOM (so a non-ASCII signer subject survives the parse).
-const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
 
 // friendHTTPClient is the 30s-timeout client for friend-bot calls (G12): the
 // manifest, the identity check, and the Tailscale MSI download must not hang

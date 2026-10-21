@@ -103,6 +103,20 @@ type msiSignature struct {
 	Subject string // signer certificate subject, e.g. "CN=Tailscale Inc., O=Tailscale Inc., …"
 }
 
+// psPreamble (P2a) heads EVERY PowerShell script the app runs: it silences the
+// CLIXML progress noise, fails fast on a script error, and forces UTF-8 output
+// with no BOM (so a non-ASCII signer subject survives the parse). It lives here
+// (not run_windows.go) so the Linux realps_test.go can exercise the exact string.
+const psPreamble = "$ProgressPreference='SilentlyContinue';$ErrorActionPreference='Stop';[Console]::OutputEncoding=[Text.UTF8Encoding]::new($false);"
+
+// verifyMsiSignerScript is the production Authenticode check (P1/P2 shape): the
+// MSI path rides $env:VL_ARG0 and the result is one VL_RESULT=<status>|<subject>
+// line. Shared so the Linux realps_test.go runs the exact string.
+const verifyMsiSignerScript = "$s = Get-AuthenticodeSignature -FilePath $env:VL_ARG0; 'VL_RESULT=' + $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+
+// ntRunningScript reports whether NinjaTrader.exe is running (P2 shape).
+const ntRunningScript = "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'VL_RESULT=yes' } else { 'VL_RESULT=no' }"
+
 // psEncodedCommand base64-encodes a PowerShell command as UTF-16LE — the format
 // powershell.exe -EncodedCommand expects. S18b: a command sent this way, with any
 // user/controlled string handed to the script as $args[0], is NEVER spliced into
