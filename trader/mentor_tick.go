@@ -1986,6 +1986,78 @@ func (at *AutoTrader) mentorSeedAtStart() {
 		at.mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
 	}
+	// #13: rebuild the G1 leg budget + G2 loss-box registry from today's REAL
+	// fills and closed stop-outs (Limits is in-memory only — a restart wiped
+	// "two losses at one place = OFF" and the stopped-leg block). Runs AFTER
+	// the seed so State.Levels is set for the row-fallback old-extreme
+	// resolution. Best-effort: a read error leaves the fresh (empty) Limits.
+	at.mentorRebuildLimitsAtBoot()
+}
+
+// mentorRebuildLimitsAtBoot (#13) replays today's session-day FILLED mentor arms
+// (non-swing) into Limits.RecordFill via the row fallback (the in-memory pends
+// died with the process), then today's CLOSED stop-outs into Limits.RealExit
+// with wasStop — so a restart re-derives the legs, the per-place loss counts and
+// the stopped-leg block. The swing never enters Limits (its own machine).
+func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
+	if at == nil || at.store == nil || at.mentorEval == nil {
+		return
+	}
+	now := mentorClockNow()
+	since := kernel.CMESessionDayStart(now).UnixMilli()
+	levels := at.mentorEval.State.Levels
+
+	fills, err := at.store.ArmedOrders().ListFilled(at.id, 500)
+	if err != nil {
+		at.mentorCount("limits_rebuild_fill_read_error")
+		at.logWarnf("🧑‍🏫 limits rebuild: filled-arm read failed (%v) — G1/G2 not rebuilt", err)
+		return
+	}
+	rebuiltFills := 0
+	for i := range fills {
+		r := &fills[i]
+		if !isMentorArmOrigin(*r) || strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H") {
+			continue
+		}
+		if r.SignalID == "" || r.EntryPx == 0 || r.FillPrice == 0 {
+			continue
+		}
+		if r.UpdatedAt.UnixMilli() < since {
+			continue // a prior session-day's fill must not re-spend today's budget
+		}
+		row := &mentor.FillRow{
+			Side:     mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+			Entry:    r.EntryPx,
+			Stop:     r.StopPx,
+			Target:   r.TargetPx,
+			ISB:      strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+			SignalID: r.SignalID,
+		}
+		at.mentorEval.State.Limits.RecordFill(r.SignalID, "", r.FillPrice, r.FillPrice, row, levels)
+		rebuiltFills++
+	}
+
+	closed, err := at.store.Position().GetClosedPositions(at.id, 500)
+	if err != nil {
+		at.mentorCount("limits_rebuild_close_read_error")
+		at.logWarnf("🧑‍🏫 limits rebuild: closed-position read failed (%v) — stop-outs not replayed", err)
+		return
+	}
+	rebuiltStops := 0
+	for _, pos := range closed {
+		if pos == nil || pos.EntryOrderID == "" || pos.EntryTime < since {
+			continue
+		}
+		if pos.CloseReason != store.CloseReasonStop {
+			continue // only the original stop is a G1/G2 loss
+		}
+		at.mentorEval.State.Limits.RealExit(pos.EntryOrderID, true)
+		rebuiltStops++
+	}
+	if rebuiltFills > 0 || rebuiltStops > 0 {
+		at.mentorCount("limits_rebuilt")
+		at.logInfof("🧑‍🏫 limits rebuild: %d fills + %d stop-outs replayed into G1/G2 (%s)", rebuiltFills, rebuiltStops, now.Format("15:04:05 CT"))
+	}
 }
 
 // mentorFullKeyLevelHistory reads the contracts' 1m NEWEST→OLDEST and stitches
