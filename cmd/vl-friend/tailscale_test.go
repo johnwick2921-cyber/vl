@@ -29,12 +29,15 @@ type tailscaleFake struct {
 	msiExitCode    int   // exit code the elevated install returns (default 0)
 	msiErr         error // UAC-cancel style error from the elevated install
 	upCalled       bool
+	upHangs        bool // `tailscale up` blocks until its ctx is done (models a hang)
 	msiexecCalled  bool
 	downloadCalled bool
 	signCalled     bool
 	polls          int
 	installCmd     string
 	execNames      []string
+	authURL        string // injected into status JSON while NeedsMachineAuth
+	prints         []string
 	statusCalls    int    // # of `tailscale status` calls so far
 	statusErrStart int    // first status call index that errors (0 = never)
 	statusErrCount int    // # of consecutive status calls that error from statusErrStart
@@ -65,16 +68,24 @@ func (f *tailscaleFake) status() ([]byte, error) {
 			st = f.afterUpState
 		}
 	}
-	return []byte(`{"BackendState":"` + st + `"}`), nil
+	body := `{"BackendState":"` + st + `"`
+	if st == "NeedsMachineAuth" && f.authURL != "" {
+		body += `,"AuthURL":"` + f.authURL + `"`
+	}
+	return []byte(body + `}`), nil
 }
 
-func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]byte, error) {
+func (f *tailscaleFake) exec(ctx context.Context, name string, args ...string) ([]byte, error) {
 	f.execNames = append(f.execNames, name)
 	switch {
 	case name == "tailscale" && len(args) > 0 && args[0] == "status":
 		return f.status()
 	case name == "tailscale" && len(args) > 0 && args[0] == "up":
 		f.upCalled = true
+		if f.upHangs {
+			<-ctx.Done()
+			return nil, ctx.Err()
+		}
 		if f.upErr != nil {
 			return nil, f.upErr
 		}
@@ -83,7 +94,7 @@ func (f *tailscaleFake) exec(_ context.Context, name string, args ...string) ([]
 		if len(args) > 0 && args[0] == "status" {
 			return f.status()
 		}
-		return f.exec(context.Background(), "tailscale", args...)
+		return f.exec(ctx, "tailscale", args...)
 	case name == "powershell.exe" && len(args) >= 4 && args[2] == "-EncodedCommand":
 		script := decodePSCommand(args[3])
 		if !strings.Contains(script, "Start-Process msiexec") {
@@ -139,20 +150,23 @@ func (f *tailscaleFake) deps(t *testing.T) deps {
 		},
 		writeFile: os.WriteFile,
 		readLine:  func(string) (string, error) { return "", nil },
+		print:     func(l string) { f.prints = append(f.prints, l) },
 	}
 }
 
 func shortWaits(t *testing.T) {
 	t.Helper()
-	prev := []time.Duration{tailscaleReadyPoll, tailscaleApprovalPoll, tailscaleInstallWait, tailscaleApprovalWait}
+	prev := []time.Duration{tailscaleReadyPoll, tailscaleApprovalPoll, tailscaleInstallWait, tailscaleApprovalWait, tailscaleUpTimeout, tailscaleApprovalPrint}
 	t.Cleanup(func() {
-		tailscaleReadyPoll, tailscaleApprovalPoll, tailscaleInstallWait, tailscaleApprovalWait =
-			prev[0], prev[1], prev[2], prev[3]
+		tailscaleReadyPoll, tailscaleApprovalPoll, tailscaleInstallWait, tailscaleApprovalWait, tailscaleUpTimeout, tailscaleApprovalPrint =
+			prev[0], prev[1], prev[2], prev[3], prev[4], prev[5]
 	})
 	tailscaleReadyPoll = 2 * time.Millisecond
 	tailscaleApprovalPoll = 2 * time.Millisecond
 	tailscaleInstallWait = 100 * time.Millisecond
 	tailscaleApprovalWait = 100 * time.Millisecond
+	tailscaleUpTimeout = 50 * time.Millisecond
+	tailscaleApprovalPrint = 20 * time.Millisecond
 }
 
 func TestEnsureTailscaleAlreadyInstalledJoins(t *testing.T) {
@@ -424,5 +438,56 @@ func TestTailscaleConnectTransientStatusFailureNotWrongNetwork(t *testing.T) {
 	}
 	if f.upCalled {
 		t.Fatal("up must NOT run on a transient status failure")
+	}
+}
+
+// TestTailscaleUpTimeoutThenApproved — W5: `tailscale up` hangs (daemon still
+// applying the key), its short ctx times out, and that is NOT a failure: the
+// flow proceeds to waitTailscaleApproved and finishes once Running.
+func TestTailscaleUpTimeoutThenApproved(t *testing.T) {
+	shortWaits(t)
+	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "Running", upHangs: true}
+	if err := ensureTailscale(context.Background(), f.deps(t), "tskey-secret", "http://100.64.0.2:18081"); err != nil {
+		t.Fatalf("an up timeout must not fail the join: %v", err)
+	}
+	if !f.upCalled {
+		t.Fatal("tailscale up must have been attempted")
+	}
+}
+
+// TestTailscaleUpPrefsWriteAccessDenied — W5: the first-ever connection needs
+// admin rights; the raw "prefs write access denied" error maps to an exact
+// instruction, and the auth key never leaks.
+func TestTailscaleUpPrefsWriteAccessDenied(t *testing.T) {
+	shortWaits(t)
+	key := "tskey-SECRET123"
+	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin",
+		upErr: fmt.Errorf("Access denied: tailscaled prefs write access denied")}
+	err := ensureTailscale(context.Background(), f.deps(t), key, "http://100.64.0.2:18081")
+	if err == nil || !strings.Contains(err.Error(), "run VL-Setup as administrator") {
+		t.Fatalf("expected the admin-rights message, got %v", err)
+	}
+	if strings.Contains(err.Error(), key) {
+		t.Fatalf("the auth key leaked into the error: %v", err)
+	}
+}
+
+// TestWaitTailscaleApprovedPrintsAuthURL — W5: while waiting, the owner's
+// approval URL (from the status AuthURL) is printed exactly once, and the auth
+// key is never printed.
+func TestWaitTailscaleApprovedPrintsAuthURL(t *testing.T) {
+	shortWaits(t)
+	key := "tskey-SECRET123"
+	f := &tailscaleFake{installed: true, beforeState: "NeedsLogin", afterUpState: "Running",
+		approvePolls: 1, authURL: "https://login.tailscale.com/a/abc123"}
+	if err := ensureTailscale(context.Background(), f.deps(t), key, "http://100.64.0.2:18081"); err != nil {
+		t.Fatalf("join refused: %v", err)
+	}
+	joined := strings.Join(f.prints, "\n")
+	if !strings.Contains(joined, "https://login.tailscale.com/a/abc123") {
+		t.Fatalf("the approval URL was not printed; prints: %q", joined)
+	}
+	if strings.Contains(joined, key) {
+		t.Fatalf("the auth key leaked into a print: %q", joined)
 	}
 }

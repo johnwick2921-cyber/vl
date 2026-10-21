@@ -248,10 +248,12 @@ const (
 
 // The waits and poll intervals are vars so tests can shorten them.
 var (
-	tailscaleInstallWait  = 5 * time.Minute
-	tailscaleApprovalWait = 15 * time.Minute
-	tailscaleReadyPoll    = 2 * time.Second
-	tailscaleApprovalPoll = 5 * time.Second
+	tailscaleInstallWait   = 5 * time.Minute
+	tailscaleApprovalWait  = 15 * time.Minute
+	tailscaleReadyPoll     = 2 * time.Second
+	tailscaleApprovalPoll  = 5 * time.Second
+	tailscaleUpTimeout     = 30 * time.Second
+	tailscaleApprovalPrint = time.Minute
 )
 
 // tailscalePeer is one node (Self or a Peer) in `tailscale status --json`.
@@ -264,6 +266,7 @@ type tailscalePeer struct {
 // tailscaleStatusJSON is the subset of `tailscale status --json` this flow reads.
 type tailscaleStatusJSON struct {
 	BackendState string                   `json:"BackendState"`
+	AuthURL      string                   `json:"AuthURL"`
 	Self         tailscalePeer            `json:"Self"`
 	Peer         map[string]tailscalePeer `json:"Peer"`
 }
@@ -279,16 +282,25 @@ func tailscaleExec(ctx context.Context, d deps, args ...string) ([]byte, error) 
 	return d.exec(ctx, tailscaleExeFallback, args...)
 }
 
-// tailscaleBackendState returns Tailscale's BackendState ("NeedsLogin",
-// "NeedsMachineAuth", "Running", …) from `tailscale status --json`.
-func tailscaleBackendState(ctx context.Context, d deps) (string, error) {
+// tailscaleStatus returns the parsed `tailscale status --json`.
+func tailscaleStatus(ctx context.Context, d deps) (tailscaleStatusJSON, error) {
 	out, err := tailscaleExec(ctx, d, "status", "--json")
 	if err != nil {
-		return "", err
+		return tailscaleStatusJSON{}, err
 	}
 	var st tailscaleStatusJSON
 	if err := json.Unmarshal(out, &st); err != nil {
-		return "", fmt.Errorf("tailscale status: %w", err)
+		return tailscaleStatusJSON{}, fmt.Errorf("tailscale status: %w", err)
+	}
+	return st, nil
+}
+
+// tailscaleBackendState returns Tailscale's BackendState ("NeedsLogin",
+// "NeedsMachineAuth", "Running", …) from `tailscale status --json`.
+func tailscaleBackendState(ctx context.Context, d deps) (string, error) {
+	st, err := tailscaleStatus(ctx, d)
+	if err != nil {
+		return "", err
 	}
 	return st.BackendState, nil
 }
@@ -298,13 +310,9 @@ func tailscaleBackendState(ctx context.Context, d deps) (string, error) {
 // a Running device is on OUR tailnet — a local CLI call, never an HTTP fetch
 // that a transient bot/network blip could fail and misread as "wrong network".
 func tailscaleTailnet(ctx context.Context, d deps) (ips, names map[string]bool, err error) {
-	out, err := tailscaleExec(ctx, d, "status", "--json")
+	st, err := tailscaleStatus(ctx, d)
 	if err != nil {
 		return nil, nil, err
-	}
-	var st tailscaleStatusJSON
-	if err := json.Unmarshal(out, &st); err != nil {
-		return nil, nil, fmt.Errorf("tailscale status: %w", err)
 	}
 	ips = map[string]bool{}
 	names = map[string]bool{}
@@ -446,9 +454,10 @@ func waitTailscaleReady(ctx context.Context, d deps) error {
 
 // tailscaleConnect joins the tailnet with the one-time auth key. F3: after a
 // partial failure the PC may already be Running on OUR tailnet with the auth key
-// spent — so Running/NeedsMachineAuth is checked against the friend bot's
-// signature-valid manifest before refusing; NoState/Starting/Stopped poll until
-// the state settles instead of a false "another network" refusal.
+// spent — so Running is checked by IDENTITY (the bot host among the status
+// peers, S5) and NeedsMachineAuth just waits for approval; NoState/Starting/
+// Stopped poll until the state settles instead of a false "another network"
+// refusal.
 func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 	state, err := tailscaleSettledState(ctx, d)
 	if err != nil {
@@ -461,8 +470,23 @@ func tailscaleConnect(ctx context.Context, d deps, authKey, base string) error {
 		if authKey == "" {
 			return fmt.Errorf("This install code has no Tailscale key — ask the owner for a new code")
 		}
-		out, err := tailscaleExec(ctx, d, "up", "--authkey="+authKey, "--unattended")
+		// W5: `tailscale up` can block indefinitely while the daemon applies the
+		// key. Give it its own short context; a timeout is NOT a failure — it
+		// means "still connecting", so waitTailscaleApproved then polls to
+		// Running.
+		upCtx, cancel := context.WithTimeout(ctx, tailscaleUpTimeout)
+		out, err := tailscaleExec(upCtx, d, "up", "--authkey="+authKey, "--unattended")
+		timedOut := upCtx.Err() == context.DeadlineExceeded
+		cancel()
 		if err != nil {
+			if timedOut {
+				return waitTailscaleApproved(ctx, d)
+			}
+			// W5: the first-ever connection needs admin rights; say that exactly
+			// instead of a raw `up` failure.
+			if lo := strings.ToLower(err.Error() + " " + string(out)); strings.Contains(lo, "access denied") || strings.Contains(lo, "prefs write access denied") {
+				return fmt.Errorf("Tailscale needs admin rights for the first connection — run VL-Setup as administrator (right-click → Run as administrator)")
+			}
 			// Redact the auth key from BOTH the error and the command output —
 			// exec errors can echo the full command line (P0 d: never print keys).
 			return fmt.Errorf("tailscale up: %s", redactSecrets(err.Error()+" "+string(out), authKey))
@@ -525,16 +549,24 @@ func tailscaleSettledState(ctx context.Context, d deps) (string, error) {
 }
 
 // waitTailscaleApproved polls BackendState until Running, up to a bounded
-// deadline — never silently fails. The [3/6] screen already tells the user the
-// owner must approve the device, so this only polls.
+// deadline — never silently fails. W5: while waiting it prints the owner's
+// approval URL (from the status AuthURL, never the key) and a "still waiting"
+// line every tailscaleApprovalPrint.
 func waitTailscaleApproved(ctx context.Context, d deps) error {
 	t := time.NewTicker(tailscaleApprovalPoll)
 	defer t.Stop()
+	printT := time.NewTicker(tailscaleApprovalPrint)
+	defer printT.Stop()
 	deadline := time.Now().Add(tailscaleApprovalWait)
+	printedURL := false
 	for {
-		state, err := tailscaleBackendState(ctx, d)
-		if err == nil && state == "Running" {
+		st, err := tailscaleStatus(ctx, d)
+		if err == nil && st.BackendState == "Running" {
 			return nil
+		}
+		if err == nil && !printedURL && st.AuthURL != "" {
+			d.print("Owner approval link: " + st.AuthURL)
+			printedURL = true
 		}
 		if time.Now().After(deadline) {
 			return fmt.Errorf("Tailscale device was not approved within %s", tailscaleApprovalWait)
@@ -542,6 +574,8 @@ func waitTailscaleApproved(ctx context.Context, d deps) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
+		case <-printT.C:
+			d.print("Still waiting for the owner to approve…")
 		case <-t.C:
 		}
 	}
