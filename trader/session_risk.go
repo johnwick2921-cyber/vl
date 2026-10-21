@@ -188,16 +188,29 @@ func sessionRiskWindowWords(class string) (name, noun string, window bool) {
 	return "", "", false
 }
 
-// mentorWaivesSessionBand (B3 Q1 + N5) reports whether the session-risk refusal
-// is one the mentor ignores: ONLY the lunch window and the first-N (first-5m)
-// window. Every other class — the consecutive-loss breaker, the red-news T1
-// blackout, the per-session trade cap, the force-flat windows, outside-session
-// and session-off — still refuses a mentor arm.
+// mentorWaivesSessionBand (B3 Q1 + N5, expanded m235) reports whether the
+// session-risk refusal is one the mentor ignores.
+//
+// The mentor's OWN window and news gates (mentorWindowGate / mentorNewsGate,
+// SWING4H exempt) are applied at AUTHORING, so the day-plan session LIST must
+// not re-refuse a mentor arm at placement — day-plan session gating applies to
+// planner/AI arms only. Waived: the whole session-gate family (outside all
+// session windows, session-off / sessions_enabled / registry / override, the
+// per-session trade cap, first-5m, lunch). KEPT as mentor safeties: the
+// red-news T1 blackout, the consecutive-loss breaker, and the force-flat
+// windows.
 func mentorWaivesSessionBand(risk sessionRiskVerdict) bool {
 	if risk.Class != "no_trade_band" {
 		return false
 	}
-	return strings.Contains(risk.Reason, "lunch no-trade") || strings.Contains(risk.Reason, "first-5m no-trade")
+	r := risk.Reason
+	return strings.Contains(r, "lunch no-trade") ||
+		strings.Contains(r, "first-5m no-trade") ||
+		strings.Contains(r, "outside all session windows") ||
+		strings.Contains(r, "not in this strategy's sessions_enabled") ||
+		strings.Contains(r, "not enabled in the session registry") ||
+		strings.Contains(r, "switched off for this strategy") ||
+		strings.Contains(r, "trade cap reached")
 }
 
 // SessionRiskBootLine — D5. Every field READ from the code that enforces it
