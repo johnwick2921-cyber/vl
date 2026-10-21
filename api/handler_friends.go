@@ -29,6 +29,7 @@ import (
 	"sync"
 	"time"
 
+	"vl/config"
 	"vl/logger"
 	"vl/safe"
 	"vl/telemetry"
@@ -38,10 +39,10 @@ import (
 
 // ---- friend mode (B2) -----------------------------------------------------
 
-// friendInstance reports whether this process is a friend bot (VL_FRIEND_INSTANCE=1).
+// friendInstance reports whether this process is a friend bot (the ONE parser
+// config.FriendInstanceEnabled — S21).
 func friendInstance() bool {
-	v := strings.TrimSpace(os.Getenv("VL_FRIEND_INSTANCE"))
-	return v == "1" || strings.EqualFold(v, "true")
+	return config.FriendInstanceEnabled()
 }
 
 // friendMode404 aborts with 404 when this process is a friend instance (B2:
@@ -496,6 +497,15 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to update the registry", "detail": err.Error()})
 			return
 		}
+		// S22: the friend bot read NT_CONNECT_KEY once at boot — restart it so
+		// the rotated key takes effect and the OLD key is refused on the next
+		// hello. The key is already rotated in .env + registry; a failed restart
+		// is reported, never silent.
+		if err := systemctlUser("restart", friendUnit(name)); err != nil {
+			logger.Errorf("friends rotate %q: restart: %v", name, err)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "key rotated but the friend bot restart failed — restart " + friendUnit(name) + " manually", "detail": err.Error()})
+			return
+		}
 		code := buildInstallCode(friendInstallCode{
 			V: 1, Name: name,
 			Host:    strings.TrimSpace(os.Getenv("TUNNEL_IP")),
@@ -513,8 +523,9 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 // friendUnit is the B2 systemd user unit name.
 func friendUnit(name string) string { return "vl-friend@" + name + ".service" }
 
-// systemctlUser runs systemctl --user with a fixed argv (no shell).
-func systemctlUser(verb, unit string) error {
+// systemctlUser runs systemctl --user with a fixed argv (no shell). It is a var
+// so a test can inject a fake without touching the real service manager (S22).
+var systemctlUser = func(verb, unit string) error {
 	cmd := exec.Command("systemctl", "--user", verb, unit)
 	out, err := cmd.CombinedOutput()
 	if err != nil {

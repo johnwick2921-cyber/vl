@@ -201,6 +201,10 @@ func (s *Server) setupRoutes() {
 			// friend dashboard banner reads — friend mode only, never the owner.
 			api.GET("/friend/addon-status", s.handleFriendAddonStatus)
 
+			// S14: the identity probe (key_sha256) the friend app uses to prove
+			// "my bot" — friend mode only, never the owner.
+			api.GET("/friend/identity", s.handleFriendIdentity)
+
 			// W-FRIEND-HOSTED S8 (DS-108): the friend manifest + artifacts exist
 			// ONLY in friend mode — never registered on the owner's bot
 			// (B5 S12 + R8). The handlers still 404 outside friend mode as

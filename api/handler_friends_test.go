@@ -27,6 +27,9 @@ import (
 	"testing"
 )
 
+// testSystemctlCalls records every (verb unit) pair the S22 recording fake saw.
+var testSystemctlCalls []string
+
 func friendCall(t *testing.T, e *updEnv, method, path, body, tok string) *httptest.ResponseRecorder {
 	t.Helper()
 	var rd *strings.Reader
@@ -57,6 +60,14 @@ func friendTestEnv(t *testing.T, e *updEnv) {
 	t.Setenv("VL_FRIEND_MONITOR_OFF", "1")
 	t.Setenv("TUNNEL_IP", "")
 	t.Setenv("TAILSCALE_API_KEY", "")
+	// S22: a friend test never touches the real service manager — install a
+	// recording fake (the production default is restored on cleanup).
+	prevSystemctl := systemctlUser
+	systemctlUser = func(verb, unit string) error {
+		testSystemctlCalls = append(testSystemctlCalls, verb+" "+unit)
+		return nil
+	}
+	t.Cleanup(func() { systemctlUser = prevSystemctl; testSystemctlCalls = nil })
 }
 
 func writeFriendScript(t *testing.T, e *updEnv, name, content string) string {
@@ -289,6 +300,34 @@ func TestOwnerFriendsRotateReKeysOnce(t *testing.T) {
 	}
 	if ic["connect_key"] != newKey {
 		t.Fatalf("install code connect_key = %v, want %q", ic["connect_key"], newKey)
+	}
+}
+
+// TestOwnerFriendsRotateRestartsUnit — S22: after a successful rotate, the owner
+// API restarts the friend unit so the rotated NT_CONNECT_KEY is re-read and the
+// OLD key is refused on the next hello. The restart is the DS-102-scoped half;
+// the key check itself is the connect-key server's (DS-104).
+func TestOwnerFriendsRotateRestartsUnit(t *testing.T) {
+	e := newUpdEnv(t)
+	friendTestEnv(t, e)
+	root := os.Getenv("VL_FRIENDS_ROOT")
+	writeRegistry(t, `[{"name":"tom","web_port":18081,"nt_port":36981,"key_sha256":"oldsha","state":"active","created_at":"2026-10-18T00:00:00Z","tailscale_device_id":""}]`)
+	if err := os.MkdirAll(filepath.Join(root, "tom"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "tom", ".env"), []byte("JWT_SECRET=x\nNT_CONNECT_KEY=oldkey\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	testSystemctlCalls = nil
+	w := friendCall(t, e, "POST", "/api/owner/friends/tom/rotate", "", e.tok)
+	if w.Code != http.StatusOK {
+		t.Fatalf("rotate: want 200, got %d (%s)", w.Code, w.Body.String())
+	}
+
+	got := append([]string(nil), testSystemctlCalls...)
+	if len(got) != 1 || got[0] != "restart "+friendUnit("tom") {
+		t.Fatalf("systemctl calls = %v, want exactly [%q]", got, "restart "+friendUnit("tom"))
 	}
 }
 
