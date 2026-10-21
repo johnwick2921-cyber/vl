@@ -757,3 +757,106 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 	c.bars[key] = merged
 	return added
 }
+
+// Aggregate1mToTF aggregates complete 1m bars into tfMin-minute buckets,
+// epoch-aligned — the same rule as the kernel's barsTF for 3m/5m/15m/30m/1h
+// (each divides 60 minutes and 17:00 CT is a whole UTC hour, so epoch-aligned
+// equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
+// anchor is 17:00 CT, not a whole-epoch multiple. The caller feeds only the
+// stored 1m tape, which is complete; a bucket missing minutes still folds
+// whatever bars it has (a partial bar is better than an unfilled hole, and the
+// union below never lets it replace a live bar).
+func Aggregate1mToTF(bars []Bar, tfMin int) []Bar {
+	if tfMin <= 1 || len(bars) == 0 {
+		return bars
+	}
+	ms := int64(tfMin) * 60_000
+	out := make([]Bar, 0, len(bars)/tfMin)
+	var cur *Bar
+	flush := func() {
+		if cur != nil {
+			out = append(out, *cur)
+			cur = nil
+		}
+	}
+	for _, b := range bars {
+		bucket := (b.T / ms) * ms
+		if cur == nil || bucket != cur.T {
+			flush()
+			c := b
+			c.T = bucket
+			cur = &c
+			continue
+		}
+		if b.H > cur.H {
+			cur.H = b.H
+		}
+		if b.L < cur.L {
+			cur.L = b.L
+		}
+		cur.C = b.C
+		cur.V += b.V
+	}
+	flush()
+	return out
+}
+
+// RehydrateUnion rehydrates a ring from store-derived bars by TIME UNION, not
+// older-only: interior holes are filled and the older end is extended, while
+// every bar the ring already holds wins on overlap — a live bar is never
+// replaced by a stored one. This is the m134 restart-hole fix: a short NT8
+// replay tail leaves an interior gap that RehydrateOlder cannot reach.
+//
+// Same discipline as RehydrateOlder: placeholders are refused at the door, a
+// COLD key is a no-op (the store deepens a live tape, it never substitutes for
+// one), and the result is capped at maxBars keeping the LIVE tail. Returns
+// how many bars were ACTUALLY added.
+func (c *BarCache) RehydrateUnion(symbol, timeframe string, bars []Bar) int {
+	if c == nil || symbol == "" || timeframe == "" || len(bars) == 0 {
+		return 0
+	}
+	bars, bad := dropPlaceholderBars(bars)
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.dropped += int64(bad)
+	key := barKey(symbol, timeframe)
+	existing := c.bars[key]
+	if len(existing) == 0 {
+		return 0 // COLD KEY — the store never substitutes for the live feed.
+	}
+	merged := mergeRehydrateUnion(existing, bars)
+	if len(merged) > c.maxBars {
+		merged = merged[len(merged)-c.maxBars:]
+	}
+	added := len(merged) - len(existing)
+	if added < 0 {
+		added = 0
+	}
+	c.bars[key] = merged
+	return added
+}
+
+// mergeRehydrateUnion merges a live ring with store-derived bars for a
+// rehydrate: on equal T the EXISTING bar wins unconditionally — the store
+// fills only holes and the older end, never replaces a bar the ring holds.
+func mergeRehydrateUnion(existing, incoming []Bar) []Bar {
+	out := make([]Bar, 0, len(existing)+len(incoming))
+	i, j := 0, 0
+	for i < len(existing) && j < len(incoming) {
+		switch {
+		case existing[i].T < incoming[j].T:
+			out = append(out, existing[i])
+			i++
+		case existing[i].T > incoming[j].T:
+			out = append(out, incoming[j])
+			j++
+		default:
+			out = append(out, existing[i]) // existing (live) wins on overlap
+			i++
+			j++
+		}
+	}
+	out = append(out, existing[i:]...)
+	out = append(out, incoming[j:]...)
+	return out
+}
