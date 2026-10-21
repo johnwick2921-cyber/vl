@@ -180,8 +180,12 @@ export function computeDayTotal(
   let total = 0
   for (const p of positions) {
     if (kinds.get(p.id) !== 'normal') continue
+    // m240: an OPEN partial has exit_time=0 — its booked leg P&L is visible
+    // (visibleTotal sums it as a normal resolved row), so its day must fall out
+    // by last activity (updated_at), never be dropped. A CLOSED row keeps exit_time.
     const exitMs = new Date(p.exit_time || 0).getTime()
-    if (!exitMs || exitMs < sessionDayStartMs) continue
+    const dayTs = exitMs || new Date(p.updated_at || 0).getTime()
+    if (!dayTs || dayTs < sessionDayStartMs) continue
     if (typeof p.pnl_corrected !== 'number' || isNaN(p.pnl_corrected)) continue
     total += p.pnl_corrected
   }
@@ -482,6 +486,21 @@ function PositionRow({
               title="Manual NT8 trade: the bot adopted this position with no order or arm of its own. It is listed here but is NOT in any bot total (owner ruling R1)."
             >
               MANUAL · excluded
+            </span>
+          )}
+          {(position.status === 'OPEN' ||
+            position.pnl_status === 'partial') && (
+            <span
+              data-testid="partial-open-badge"
+              className="px-2 py-0.5 rounded text-xs font-semibold"
+              style={{
+                background: '#0E3A5C',
+                color: '#5EA8F7',
+                border: '1px solid #1D5A87',
+              }}
+              title="Position still open — a leg has already closed, so the P&L shown is the realized partial only, not the final trade."
+            >
+              partial · open
             </span>
           )}
           {kind === 'unresolved' && (
