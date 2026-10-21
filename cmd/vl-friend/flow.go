@@ -1040,6 +1040,18 @@ func promptAndApplyNewCode(ctx context.Context, d deps, docs string) error {
 	return nil
 }
 
+// runIncomplete handles an existing-but-UNREADABLE connect.json (S19): that is
+// an INCOMPLETE install, not a first run and not a healthy install. It offers a
+// new install code; otherwise it returns a clear error.
+func runIncomplete(ctx context.Context, d deps, docs string) error {
+	d.print("VL setup is incomplete (connect.json is unreadable).")
+	d.print("Have a new install code? Type N then press Enter (or just press Enter to close).")
+	if line, _ := d.readLine(""); strings.EqualFold(strings.TrimSpace(line), "N") {
+		return promptAndApplyNewCode(ctx, d, docs)
+	}
+	return fmt.Errorf("VL setup is incomplete — connect.json is unreadable")
+}
+
 // applyNewCode validates the code, joins/verifies the NEW bot's tailnet
 // (tailscaleConnect skips `up` when Running on our tailnet, S5), then MOVES the
 // old connect.json aside (never overwrite/delete — the ONE RULE) and writes the

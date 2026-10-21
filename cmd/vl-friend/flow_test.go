@@ -1443,6 +1443,134 @@ func containsStr(xs []string, want string) bool {
 	return false
 }
 
+// TestWriteFileAtomicSuccess — S19: temp-then-rename replaces the file and
+// leaves no .tmp behind.
+func TestWriteFileAtomicSuccess(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vl-app.json")
+	if err := os.WriteFile(path, []byte("OLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := deps{writeFile: os.WriteFile, rename: os.Rename}
+	if err := writeFileAtomic(d, path, []byte("NEW"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "NEW" {
+		t.Fatalf("file not atomically replaced: %q", b)
+	}
+	if _, err := os.Stat(path + ".tmp"); err == nil {
+		t.Fatal("the .tmp file must be gone after a successful rename")
+	}
+}
+
+// TestWriteFileAtomicRenameFailureKeepsOld — S19: a failed rename must leave the
+// OLD file intact (never a half-written state file).
+func TestWriteFileAtomicRenameFailureKeepsOld(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vl-app.json")
+	if err := os.WriteFile(path, []byte("OLD"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	d := deps{
+		writeFile: os.WriteFile,
+		rename:    func(string, string) error { return fmt.Errorf("rename failed") },
+	}
+	if err := writeFileAtomic(d, path, []byte("NEW"), 0o600); err == nil {
+		t.Fatal("expected the rename error to propagate")
+	}
+	b, _ := os.ReadFile(path)
+	if string(b) != "OLD" {
+		t.Fatalf("the old file must survive a failed rename: %q", b)
+	}
+}
+
+// TestRunInstalledRepairsOutOfRangeWebPort — S19: a vl-app.json with an
+// out-of-range web_port is corrupt; it is repaired (derive + verify), never used.
+func TestRunInstalledRepairsOutOfRangeWebPort(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 0}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused on an out-of-range web_port: %v", err)
+	}
+	b, _ := os.ReadFile(appStatePath(home))
+	if !strings.Contains(string(b), fmt.Sprintf("%d", ic.WebPort)) {
+		t.Fatalf("vl-app.json not repaired to the derived port: %q", b)
+	}
+}
+
+// TestRunIncompleteOffersNewCode — S19: an existing-but-unreadable connect.json
+// is an INCOMPLETE install; "Type N" applies a fresh code.
+func TestRunIncompleteOffersNewCode(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(ntVLdir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(connectJSONPath(home), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := &tailscaleFake{installed: true, beforeState: "Running", afterUpState: "Running",
+		statusJSON: statusWithPeer("100.64.0.2")}
+	d.exec = f.exec
+
+	newIC := goodCode()
+	newIC.Name = "tom2"
+	newIC.ConnectKey = strings.Repeat("cd", 32)
+	queue := []string{"N", encodeInstallCode(newIC)}
+	d.readLine = func(string) (string, error) {
+		if len(queue) == 0 {
+			return "", nil
+		}
+		l := queue[0]
+		queue = queue[1:]
+		return l, nil
+	}
+
+	if err := runIncomplete(context.Background(), d, home); err != nil {
+		t.Fatalf("runIncomplete with Type N failed: %v", err)
+	}
+	cfg, err := readConnectConfig(d, home)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ConnectKey != newIC.ConnectKey {
+		t.Fatalf("the new code was not applied: %+v", cfg)
+	}
+}
+
+// TestRunIncompleteNoCodeReturnsError — S19: skipping the new-code offer on an
+// incomplete install is a clear error, not a silent first-run.
+func TestRunIncompleteNoCodeReturnsError(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	if err := os.MkdirAll(ntVLdir(home), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(connectJSONPath(home), []byte("{bad"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := runIncomplete(context.Background(), d, home)
+	if err == nil || !strings.Contains(err.Error(), "incomplete") {
+		t.Fatalf("expected the incomplete error, got %v", err)
+	}
+}
+
 // TestTailscaleExecAbsolutePathFirst — S10: the ABSOLUTE install path is tried
 // first; when it succeeds, the bare name is never touched.
 func TestTailscaleExecAbsolutePathFirst(t *testing.T) {

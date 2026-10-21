@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"io/fs"
 	"path/filepath"
 )
 
@@ -80,6 +81,17 @@ func connectJSON(ic InstallCode) ([]byte, error) {
 	}, "", "  ")
 }
 
+// writeFileAtomic writes data to a temp file then renames it into place (S19).
+// A reader therefore sees either the complete OLD file or the complete NEW file
+// — never a half-written one (a crash mid-write must not corrupt a state file).
+func writeFileAtomic(d deps, path string, data []byte, perm fs.FileMode) error {
+	tmp := path + ".tmp"
+	if err := d.writeFile(tmp, data, perm); err != nil {
+		return err
+	}
+	return d.rename(tmp, path)
+}
+
 // writeConnectJSON writes connect.json (and its parent dir) for the install code.
 func writeConnectJSON(d deps, docs string, ic InstallCode) error {
 	b, err := connectJSON(ic)
@@ -89,7 +101,7 @@ func writeConnectJSON(d deps, docs string, ic InstallCode) error {
 	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return fmt.Errorf("connect.json dir: %w", err)
 	}
-	if err := d.writeFile(connectJSONPath(docs), b, 0o600); err != nil {
+	if err := writeFileAtomic(d, connectJSONPath(docs), b, 0o600); err != nil {
 		return fmt.Errorf("connect.json: %w", err)
 	}
 	return nil
@@ -124,7 +136,7 @@ func writeInstalledState(d deps, docs string, s installedState) error {
 	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(installedJSONPath(docs), b, 0o600)
+	return writeFileAtomic(d, installedJSONPath(docs), b, 0o600)
 }
 
 // appState records the fields the app needs on later starts (web_port; the
@@ -147,7 +159,7 @@ func writeAppState(d deps, docs string, s appState) error {
 	if err := d.mkdirAll(ntVLdir(docs), 0o755); err != nil {
 		return err
 	}
-	return d.writeFile(appStatePath(docs), b, 0o600)
+	return writeFileAtomic(d, appStatePath(docs), b, 0o600)
 }
 
 func readAppState(d deps, docs string) (appState, error) {
@@ -158,6 +170,11 @@ func readAppState(d deps, docs string) (appState, error) {
 	var s appState
 	if err := json.Unmarshal(b, &s); err != nil {
 		return appState{}, fmt.Errorf("vl-app.json: %w", err)
+	}
+	// S19: a WebPort outside 1..65535 is corrupt — treat it as missing so the
+	// caller repairs it (derive + verify) rather than joining a bogus port.
+	if s.WebPort < 1 || s.WebPort > 65535 {
+		return appState{}, fmt.Errorf("vl-app.json: web_port out of range")
 	}
 	return s, nil
 }

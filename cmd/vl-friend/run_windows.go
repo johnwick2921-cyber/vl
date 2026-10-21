@@ -297,6 +297,12 @@ func runInner(ctx context.Context, d deps) error {
 		return runFirstRun(ctx, d)
 	}
 
+	// S19: an existing-but-UNREADABLE connect.json is an INCOMPLETE install —
+	// not first-run and not a healthy install. Offer a new install code.
+	if _, err := readConnectConfig(d, docs); err != nil {
+		return runIncomplete(ctx, d, docs)
+	}
+
 	// Installed: announce, update check, ensure icons, print + open the
 	// dashboard. No install-code prompt (CTO 23:47 CT).
 	return runInstalled(ctx, d, docs)
