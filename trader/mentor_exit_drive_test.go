@@ -437,6 +437,49 @@ func TestMentorExitDriveCandleBEWaitsForThe2mFrame(t *testing.T) {
 	assertMoves(t, moves(), driveMove{"entry", "long", 100})
 }
 
+// TestMentorBEBeforePartialWaitsForThe2mFrameShort — live 10-20 20:42 CT
+// (cf95ee3d, ISB short 29938, 2m frame): stage 0's BE-before-partial read the
+// still-forming 2m trail bar's 0 close, "past half-way" for any short, and sent
+// a BE stop NT8 refused below the market. A 2m short with its 2m candle still
+// forming must move nothing, and a 0 close must never arm BE; once the 2m
+// candle closes past half-way, BE arms. MUTANTS: drop the stage-0 frameOK gate
+// → the first assertion RED; drop the c<=0 guard → the second RED.
+func TestMentorBEBeforePartialWaitsForThe2mFrameShort(t *testing.T) {
+	at, moves := newDriveAT(t)
+	// short entry 100, stop 102 (R 2), half-way to +1R = 99.
+	p := bPos("ISB", "short", 100, 102, 96, 2)
+	p.Pos.Leg1, p.Pos.Leg2, p.Pos.Leg1TP = 1, 1, 98
+	p.Legs[0] = mentorLeg{SignalID: "entry", Qty: 1, TP: 98, Stop: 102, Final: false, Wire: 1}
+	p.Legs[1] = mentorLeg{SignalID: "entry", Qty: 1, TP: 96, Stop: 102, Final: true, Wire: 2}
+	p.TrailTFMin = 2
+
+	// The 2m candle is still forming (frameOK=false): even a close past
+	// half-way (a stale/half-formed value) must not arm BE.
+	at.mentorExitDriveCandle(nil, p, 98.75, 99.5, 98.5, false, false, true, false, [3]bool{})
+	if p.Pos.ArmedBE {
+		t.Fatal("a 2m short must not arm BE while its 2m candle is still forming")
+	}
+	if got := moves(); len(got) != 0 {
+		t.Fatalf("no BE move while the 2m candle forms; moves=%+v", got)
+	}
+
+	// A 0 close with frameOK set must still never arm BE.
+	at.mentorExitDriveCandle(nil, p, 0, 0, 0, false, false, true, true, [3]bool{})
+	if p.Pos.ArmedBE {
+		t.Fatal("a 0 close is not a close: it must never arm BE")
+	}
+	if got := moves(); len(got) != 0 {
+		t.Fatalf("no BE move on a 0 close; moves=%+v", got)
+	}
+
+	// The 2m candle closes past half-way (98.75 <= 99): BE arms, both legs.
+	at.mentorExitDriveCandle(nil, p, 98.75, 99.5, 98.5, false, false, true, true, [3]bool{})
+	if !p.Pos.ArmedBE {
+		t.Fatal("BE must arm once the 2m candle closes past half-way")
+	}
+	assertMoves(t, moves(), driveMove{"entry", "short", 100}, driveMove{"entry", "short", 100})
+}
+
 // item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's
 // close (BarsSinceFill == 1), logged once, and never re-fires on later candles.
 // item 8 live-loop pin: the ISB partial is resolved ONCE at the fill candle's

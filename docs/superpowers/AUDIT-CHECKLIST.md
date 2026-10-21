@@ -9423,3 +9423,9 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** for every release that adds a Go package, diff the local -race list against `git diff --stat origin/dev...origin/release/...` — any new directory is a package CI will race whether or not it is on the local list.
 - **Rule:** a new Go package must be added to the release -race list (CI races every package; the local list did not — PR #586).
 - **Reference:** PR #586 W-FRIEND-HOSTED: `cmd/vl-friend` `TestWaitUntilFlatWaitsUntilFlat` (`flatwait_test.go:26` write vs `:21` read, test-only) was RED in CI; fixed with `atomic.Bool` @ `1a4a32ed7`.
+
+## CLASS NN (assigned at merge) — an unfilled bar's zero price read as a real price
+- **Symptom:** a frame-aware exit step reads a bar that is still forming (a zero-value `market.Kline`: Close 0). For a SHORT, 0 passes every "price at/below X" test, so the step acts as if price ran far into profit.
+- **Probe:** for every exit/stop/BE step that takes a close/high/low, find each caller that can pass a not-yet-closed bar (`trailBar` with `trailBarOK=false`) and check the step gates on the frame-OK flag AND refuses a non-positive price.
+- **Rule:** a price of 0 is "no price", never a value. Every stage of an exit drive honours the entry's frame gate, not only some stages.
+- **Reference:** 10-20 20:42 CT, Sim101 ISB short 29938 (cf95ee3d), 2m frame: `mentorBEBeforePartialStep` logged "close 0.00 is past half-way 29929.25" and sent BE 29938, and NT8 refused it ("Stop price can't be changed below the market"). Fix branch `fix/mentor-be-zero-close`: stage-0 frameOK gate (`trader/mentor_trail_r22.go`) + `c <= 0` guard (`trader/mentor_course_exits.go`); pin `TestMentorBEBeforePartialWaitsForThe2mFrameShort`, both mutants RED.
