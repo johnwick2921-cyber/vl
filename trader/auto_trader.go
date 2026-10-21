@@ -723,8 +723,9 @@ type AutoTrader struct {
 	feedLinkUpAt  time.Time
 	feedGraceSaid time.Time
 	// feedLagMu guards the FEED-LAG alarm episode (m134 DS-108 (c)): the newest
-	// NT8 bar age sitting in the 500–700 s band for > 3 min is LOUD — a WARN
-	// plus a dashboard line — before the hard 10-min FEED DOWN fires.
+	// NT8 bar age sitting in the soft band just under FEED DOWN (feedDownAfter()
+	// ∓ 100 s) for > 3 min is LOUD — a WARN plus a dashboard line — the early
+	// warning before the hard FEED DOWN fires.
 	feedLagMu        sync.Mutex
 	feedLagEnteredAt time.Time // zero = outside the band
 	feedLagSaid      bool      // the WARN already fired for this episode
