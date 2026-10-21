@@ -1730,8 +1730,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("isb_htf_blocked")
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
-					// CANDLE-1 colour direction (the only skip: a stop in
-					// the 20–<30 band) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// CANDLE-1 colour direction [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// The stop-size skip (20–<30) is D4.1 p1 @05:41; the code now
+					// TAKES 20–<30 (refuses >=30) per owner order course-defaults-30.
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.

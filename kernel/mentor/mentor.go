@@ -321,7 +321,7 @@ type Config struct {
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
-	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; worked example 5–15 [D2.2 p1 @ 06:50])
+	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
 	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
 
 	// Filters (PLAN v1 §4).
