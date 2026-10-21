@@ -254,7 +254,16 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// The evaluator's clock is the instant the last bar CLOSED: every closedness
 	// test inside Tick then reads the just-closed bar as closed, never as forming
 	// (an OpenTime clock made the ORB escape unreachable and lagged every gate).
-	intents := at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	// mentorEvalIntentsSeam (test-only, nil in production) supplies the intents
+	// for this tick — the m134 (a) negative pin drives the PRODUCTION dispatch /
+	// refusal below with a raw synthetic ISB intent; the (removed) raw-intent
+	// loop a mutant re-adds would see these same intents.
+	var intents []mentor.Intent
+	if at.mentorEvalIntentsSeam != nil {
+		intents = at.mentorEvalIntentsSeam(bars)
+	} else {
+		intents = at.mentorEval.Tick(bars, mentor.BarCloseInstant(last))
+	}
 	// FULL-DAY-REPLAY observer (test-only, nil in production): sees every
 	// intent this tick emitted before anything acts on it.
 	if tap := at.mentorIntentTap; tap != nil {

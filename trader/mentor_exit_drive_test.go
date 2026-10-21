@@ -735,6 +735,69 @@ func TestMentorArmResonanceFromAcceptedISBOnly(t *testing.T) {
 	}
 }
 
+// m134 (a) NEGATIVE pin at the production call site (mentorEvalOnce): a raw ISB
+// entry intent the ledger REFUSES must NOT arm resonance and must NOT request a
+// stop move. The mutant (DS-102 re-adding the raw-intent loop in mentorEvalOnce)
+// arms resonance from the raw intent BEFORE the dispatch refuses it → Mode flips
+// to A → this pin goes RED.
+func TestMentorEvalOnceRawRefusedISBDoesNotArmResonance(t *testing.T) {
+	at, st, _, _ := mentorB3Rig(t)
+	defer st.Close()
+	oldBarsProvider := market.FuturesBarsProvider
+	market.FuturesBarsProvider = func(_, _ string, _ int) []market.Kline { return nil }
+	t.Cleanup(func() { market.FuturesBarsProvider = oldBarsProvider })
+	// an open PHL long position filled one closed candle ago (would resonate).
+	at.mentorRegisterLivePos("sig-phl", &mentorLivePos{
+		Pos:           mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Mode: "B"},
+		Legs:          [3]mentorLeg{{SignalID: "sig-phl", Qty: 1, Stop: 90, Final: true}},
+		BarsSinceFill: 1,
+	})
+	// capture any stop move the production tick requests.
+	oldBroker := mentorBrokerLegStopRead
+	mentorBrokerLegStopRead = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, leg *mentorLeg) (float64, int) {
+		return leg.Stop, mentorBrokerStopLive
+	}
+	t.Cleanup(func() { mentorBrokerLegStopRead = oldBroker })
+	var mu sync.Mutex
+	moves := 0
+	oldMove := mentorMoveStopForSignalWire
+	mentorMoveStopForSignalWire = func(_ *nttrader.TCPTrader, _, _ string, _ float64, _ int) error {
+		mu.Lock()
+		moves++
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { mentorMoveStopForSignalWire = oldMove })
+	// a raw ISB entry intent the ledger REFUSES: long with the target BELOW the
+	// entry → mentorRuleGate refuses "bad geometry" before any placement — it
+	// never reaches the accept point in mentorArmIntent.
+	at.mentorEvalIntentsSeam = func([]market.Kline) []mentor.Intent {
+		return []mentor.Intent{{Action: mentor.PlaceStopLimitEntry, Setup: "ISB", Side: mentor.SideLong,
+			Price: 101, Stop: 100, Target: 99}}
+	}
+	t.Cleanup(func() { at.mentorEvalIntentsSeam = nil })
+	bars := []market.Kline{
+		{OpenTime: 1_000_000, CloseTime: 1_000_059, Open: 100, High: 101, Low: 99, Close: 100.5},
+		{OpenTime: 1_000_060, CloseTime: 1_000_119, Open: 100.5, High: 102, Low: 100, Close: 101},
+	}
+	at.mentorEvalOnce(bars)
+	lp := at.mentorLivePos["sig-phl"]
+	if lp == nil || lp.Pos.Mode != "B" {
+		t.Fatalf("a REFUSED raw ISB must NOT arm resonance: mode=%s", func() string {
+			if lp == nil {
+				return "<nil>"
+			}
+			return lp.Pos.Mode
+		}())
+	}
+	mu.Lock()
+	n := moves
+	mu.Unlock()
+	if n != 0 {
+		t.Fatalf("a REFUSED raw ISB must not request a stop move: %d", n)
+	}
+}
+
 // The resonance trigger is an ISB entry intent (not a cancel/close action).
 func TestIsISBEntryIntent(t *testing.T) {
 	if !isISBEntryIntent(mentor.Intent{Setup: "ISB", Action: mentor.PlaceStopEntry}) {
