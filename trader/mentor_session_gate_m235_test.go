@@ -86,6 +86,30 @@ func TestM235IntradayMentorArmStillCancelledAtEODFlat(t *testing.T) {
 	}
 }
 
+// TestM235PlannerArmKeepsItsOwnPathAt1520 pins the CTO's "planner arms keep
+// their own path": in the SAME mentor+day-plan rig at 15:20 CT, the SWING4H
+// mentor arm is placed while a PLANNER arm is NOT (the session-end cancel keeps
+// it off the wire — the mentor pass places only isMentorArmOrigin rows).
+func TestM235PlannerArmKeepsItsOwnPathAt1520(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, ledger := m235Rig(t)
+	mentorWireSeams(t, at, ledger)
+	now := b3Clock(15, 20)
+	seedM235MentorRow(t, at, ledger, "swing-pin", "SWING4H", now.UnixMilli()+60_000)
+	seedPlannerArmedRow(t, at, ledger, "planner-pin")
+
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+
+	mentorRow := readArmRow(t, ledger, "swing-pin")
+	plannerRow := readArmRow(t, ledger, "planner-pin")
+	if mentorRow.SignalID == "" || store.IsTerminalArmState(mentorRow.State) {
+		t.Fatalf("the SWING4H mentor arm must be placed, got state=%q signal=%q", mentorRow.State, mentorRow.SignalID)
+	}
+	if plannerRow.SignalID != "" {
+		t.Fatalf("the planner arm must NOT be placed at 15:20 CT (no active session), got signal=%q state=%q", plannerRow.SignalID, plannerRow.State)
+	}
+}
+
 // TestM235RefusedMentorArmLogsAndCounts pins the new observability on the
 // KEPT session-risk refusal (the consecutive-loss breaker): the refusal must
 // log once with the reason AND tick the per-session gate-block counter.
