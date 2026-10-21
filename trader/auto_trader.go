@@ -309,6 +309,14 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 			symbol, side, entryPrice, price)
 		if err := mentorCloseLegAtMarketWire(at, ntTCP, side, 0); err != nil {
 			at.logWarnf("⚠️ auto-breakeven: close-at-market failed for %s %s: %v", symbol, side, err)
+			// m198 #43-C: the close never went out — retry the BE next cycle,
+			// exactly like the moveStopWire failure branch below. Leaving
+			// breakevenDone=true here silently discarded the BE for the life
+			// of the position (pruned only when flat).
+			at.breakevenMu.Lock()
+			at.breakevenDone[key] = false
+			at.breakevenMu.Unlock()
+			return
 		}
 		// Idempotent: the position is closing, never re-offer BE for it.
 		return
