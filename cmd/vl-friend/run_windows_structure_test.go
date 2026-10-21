@@ -58,3 +58,52 @@ func TestRunOpenHidesConsoleBeforeAnythingElse(t *testing.T) {
 		t.Fatalf("run_windows.go must import golang.org/x/sys/windows")
 	}
 }
+
+// TestReadLineInstallCodeEchoOff pins S7: the install code is read with an
+// EMPTY prompt, so the readLine seam treats an empty prompt as a secret — it
+// must read through golang.org/x/term ReadPassword (terminal echo OFF) and
+// confirm with "Code received (hidden)". This is source-structure because
+// run_windows.go only compiles on Windows; the mutant that reverts readLine to
+// a plain bufio echo read (or drops the empty-prompt gate) fails here.
+func TestReadLineInstallCodeEchoOff(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `"golang.org/x/term"`) {
+		t.Fatalf("run_windows.go must import golang.org/x/term for ReadPassword")
+	}
+	line := `readLine: func(prompt string) (string, error) {`
+	idx := strings.Index(s, line)
+	if idx < 0 {
+		t.Fatalf("run_windows.go must define the %s seam", line)
+	}
+	body := s[idx:]
+	if !strings.Contains(body, "term.ReadPassword(fd)") {
+		t.Fatalf("readLine must call term.ReadPassword for the secret read")
+	}
+	if !strings.Contains(body, "term.IsTerminal(fd)") {
+		t.Fatalf("readLine must guard the secret read with term.IsTerminal")
+	}
+	if !strings.Contains(body, `"Code received (hidden)"`) {
+		t.Fatalf(`readLine must confirm with "Code received (hidden)"`)
+	}
+	// The secret read is gated on the empty prompt (the install-code call
+	// site) and the confirmation follows the read, so a regression that moves
+	// ReadPassword into the non-empty y/N path (or echoes before the gate)
+	// fails here.
+	gate := strings.Index(body, `prompt == ""`)
+	read := strings.Index(body, "term.ReadPassword(fd)")
+	confirm := strings.Index(body, `"Code received (hidden)"`)
+	if gate < 0 || read < 0 || confirm < 0 {
+		t.Fatalf("gate=%d read=%d confirm=%d (all must be present)", gate, read, confirm)
+	}
+	if read < gate {
+		t.Fatalf("term.ReadPassword must sit INSIDE the prompt == \"\" gate (read at %d, gate at %d)", read, gate)
+	}
+	if confirm < read {
+		t.Fatalf(`"Code received (hidden)" must follow the ReadPassword read (confirm at %d, read at %d)`, confirm, read)
+	}
+}

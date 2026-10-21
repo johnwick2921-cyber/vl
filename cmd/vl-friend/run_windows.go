@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"golang.org/x/sys/windows"
+	"golang.org/x/term"
 )
 
 // run_windows.go — the real Windows wiring of the friend app. The install /
@@ -55,6 +56,28 @@ func realDeps() deps {
 		readFile:  os.ReadFile,
 		readLine: func(prompt string) (string, error) {
 			fmt.Print(prompt)
+			// S7: the install code is read with an EMPTY prompt (runFirstRun's
+			// [1/6] step); the "Press Enter to close" pauses also pass "" but
+			// discard the result. An empty prompt therefore means "secret": read
+			// echo-OFF so the one-time code never appears on the console, and no
+			// later error screen can show it — the OS terminal echo was what
+			// leaked the pasted code before. The y/N prompts pass non-empty text
+			// and keep normal echo.
+			if prompt == "" {
+				fd := int(os.Stdin.Fd())
+				if term.IsTerminal(fd) {
+					b, err := term.ReadPassword(fd)
+					fmt.Println()
+					if err != nil {
+						return "", err
+					}
+					s := strings.TrimSpace(string(b))
+					if s != "" {
+						fmt.Println("Code received (hidden)")
+					}
+					return s, nil
+				}
+			}
 			r := bufio.NewReader(os.Stdin)
 			s, err := r.ReadString('\n')
 			if err != nil && err != io.EOF {
