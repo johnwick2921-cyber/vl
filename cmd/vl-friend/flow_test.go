@@ -124,6 +124,12 @@ func TestInstallFirstRunPlacesAddonAfterVerify(t *testing.T) {
 	if _, err := os.Stat(connectJSONPath(home)); err != nil {
 		t.Fatalf("connect.json not written: %v", err)
 	}
+	// P0 pin (a): the FS starts EMPTY (home=t.TempDir) and installFirstRun must
+	// write vl-app.json — a real PC never runs a test to pre-seed it. MUTANT:
+	// drop the writeAppState call in installFirstRun → this stat fails.
+	if _, err := os.Stat(appStatePath(home)); err != nil {
+		t.Fatalf("vl-app.json not written by installFirstRun: %v", err)
+	}
 	if _, err := os.Stat(installedJSONPath(home)); err != nil {
 		t.Fatalf("installed.json not written: %v", err)
 	}
@@ -664,5 +670,67 @@ func TestRunInstalledPrintsBothLinesAndOpens(t *testing.T) {
 		if strings.Contains(p, "install code") {
 			t.Fatalf("runInstalled prompted for an install code: %q", rec.lines)
 		}
+	}
+}
+
+// TestRunInstalledRepairsMissingAppState — P0 pin (b): the owner's laptop is
+// installed with 1.1.2 and has NO vl-app.json (connect.json only). An installed
+// run must REPAIR it (derive web_port = nt_port − 18900, verify the manifest),
+// write vl-app.json, and open the dashboard. MUTANT: drop the repair
+// (readAppState hard-fails) → this test RED.
+func TestRunInstalledRepairsMissingAppState(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	// connect.json only — deliberately NO vl-app.json (the 1.1.x laptop state).
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	// Candidate port = 36981 − 18900 = 18081 = ic.WebPort; serve the manifest there.
+	base := fmt.Sprintf("http://%s:%d", ic.Host, ic.WebPort)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused on a laptop with no vl-app.json: %v", err)
+	}
+	if _, err := os.Stat(appStatePath(home)); err != nil {
+		t.Fatalf("vl-app.json not written after repair: %v", err)
+	}
+	opened := false
+	for _, u := range rec.opened {
+		if u == base {
+			opened = true
+		}
+	}
+	if !opened {
+		t.Fatalf("dashboard not opened after repair; opened=%v", rec.opened)
+	}
+}
+
+// TestRunInstalledRepairVerificationFails — P0 pin (c): when the candidate port
+// does NOT answer with a signature-valid manifest, the run must fail with the
+// clear error and write NOTHING (never guess silently).
+func TestRunInstalledRepairVerificationFails(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	// No fetch mapped → the candidate-port manifest verification fails.
+	err := runInstalled(context.Background(), d, home)
+	if err == nil || !strings.Contains(err.Error(), "cannot find your VL dashboard port") {
+		t.Fatalf("expected the clear 'cannot find' error, got %v", err)
+	}
+	if _, statErr := os.Stat(appStatePath(home)); statErr == nil {
+		t.Fatal("vl-app.json must NOT be written when verification fails")
 	}
 }

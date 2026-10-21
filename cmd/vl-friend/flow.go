@@ -129,6 +129,11 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	if err := writeConnectJSON(d, home, ic); err != nil {
 		return err
 	}
+	// P0: every installed run reads vl-app.json — write it now from the install
+	// code (name + web_port) so it exists on a real PC, never only in tests.
+	if err := writeAppState(d, home, appState{Name: ic.Name, WebPort: ic.WebPort}); err != nil {
+		return err
+	}
 	base := baseURLFromInstallCode(ic)
 
 	// [4/6] Download the add-on and verify the signed manifest + SHA-256 BEFORE
@@ -468,7 +473,7 @@ func repairIcon(ctx context.Context, d deps) error {
 	if err != nil {
 		return fmt.Errorf("repair icon: not installed yet — run VL-Setup with your install code first")
 	}
-	st, err := readAppState(d, home)
+	st, err := loadAppState(ctx, d, home, cfg)
 	if err != nil {
 		return err
 	}
@@ -503,6 +508,38 @@ func openScript(appURL string) string {
 	}, ";")
 }
 
+// repairAppState re-derives the dashboard web port when vl-app.json is missing
+// (P0: every 1.1.x install never wrote it, so an installed run must repair, not
+// fail). Candidate = connect.json nt_port − 18900 (B2: web 18080+N, nt 36980+N).
+// The candidate is VERIFIED before it is trusted: GET /api/friend/manifest must
+// answer with a signature-valid manifest (proving it is this friend's bot), then
+// vl-app.json is written. A failed verification is a clear error, never a silent
+// guess.
+func repairAppState(ctx context.Context, d deps, home string, cfg connectConfig) (appState, error) {
+	port := cfg.Port - 18900
+	if port < 1 || port > 65535 {
+		return appState{}, fmt.Errorf("cannot find your VL dashboard port — send this to the owner")
+	}
+	base := fmt.Sprintf("http://%s:%d", cfg.Host, port)
+	if _, err := fetchManifest(ctx, d, base); err != nil {
+		return appState{}, fmt.Errorf("cannot find your VL dashboard port — send this to the owner")
+	}
+	st := appState{WebPort: port}
+	if err := writeAppState(d, home, st); err != nil {
+		return appState{}, err
+	}
+	return st, nil
+}
+
+// loadAppState reads vl-app.json, repairing it (derive + verify) when missing.
+func loadAppState(ctx context.Context, d deps, home string, cfg connectConfig) (appState, error) {
+	st, err := readAppState(d, home)
+	if err == nil {
+		return st, nil
+	}
+	return repairAppState(ctx, d, home, cfg)
+}
+
 // runInstalled is the installed-PC path (connect.json exists): a plain
 // double-click, NO install-code prompt. It announces, runs the update check,
 // ENSUREs the Desktop + Start Menu shortcuts (re-create if missing, never
@@ -512,7 +549,7 @@ func runInstalled(ctx context.Context, d deps, home string) error {
 	if err != nil {
 		return err
 	}
-	st, err := readAppState(d, home)
+	st, err := loadAppState(ctx, d, home, cfg)
 	if err != nil {
 		return err
 	}
