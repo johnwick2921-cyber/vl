@@ -107,3 +107,92 @@ func TestReadLineInstallCodeEchoOff(t *testing.T) {
 		t.Fatalf(`"Code received (hidden)" must follow the ReadPassword read (confirm at %d, read at %d)`, confirm, read)
 	}
 }
+
+// TestWindowsDocumentsDirUsesKnownFolderPath pins W3: resolving MyDocuments must
+// go through the SHGetKnownFolderPath API (windows.KnownFolderPath) — never a
+// PowerShell child whose output codepage corrupts non-ASCII paths — and must
+// reject an empty or non-absolute result. The mutant that re-adds the
+// `[Environment]::GetFolderPath` shell-out (or drops the emptiness/absoluteness
+// gate) fails here.
+func TestWindowsDocumentsDirUsesKnownFolderPath(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	fn := `func windowsDocumentsDir() (string, error) {`
+	idx := strings.Index(s, fn)
+	if idx < 0 {
+		t.Fatalf("run_windows.go must define %s", fn)
+	}
+	body := s[idx:]
+
+	if !strings.Contains(body, "windows.KnownFolderPath(") {
+		t.Fatalf("windowsDocumentsDir must call windows.KnownFolderPath")
+	}
+	if !strings.Contains(body, "windows.FOLDERID_Documents") {
+		t.Fatalf("windowsDocumentsDir must request windows.FOLDERID_Documents")
+	}
+	if strings.Contains(body, "[Environment]::GetFolderPath") {
+		t.Fatalf("windowsDocumentsDir must NOT shell out to PowerShell GetFolderPath (OEM-codepage corruption)")
+	}
+	if !strings.Contains(body, "filepath.IsAbs(p)") {
+		t.Fatalf("windowsDocumentsDir must gate on filepath.IsAbs(p)")
+	}
+	if !strings.Contains(body, `p == ""`) {
+		t.Fatalf("windowsDocumentsDir must reject an empty result")
+	}
+}
+
+// TestEveryChildGetsNoWindow pins W7: every child process run_windows.go starts
+// must go through noWindow (HideWindow + CREATE_NO_WINDOW), so the friend app
+// never flashes a console window while shelling out. The mutant that drops a
+// noWindow(cmd) call (leaving a child that can pop a console) fails here.
+func TestEveryChildGetsNoWindow(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, `HideWindow: true`) {
+		t.Fatalf("noWindow must set HideWindow: true")
+	}
+	if !strings.Contains(s, `CreationFlags: windows.CREATE_NO_WINDOW`) {
+		t.Fatalf("noWindow must set CreationFlags: windows.CREATE_NO_WINDOW")
+	}
+
+	// Every exec.Command / exec.CommandContext child must be paired with a
+	// noWindow(cmd) call in the same function body.
+	cmds := strings.Count(s, "exec.Command")
+	noWindows := strings.Count(s, "noWindow(cmd)")
+	if cmds != noWindows {
+		t.Fatalf("exec.Command sites = %d but noWindow(cmd) calls = %d — every child must be hidden", cmds, noWindows)
+	}
+}
+
+// TestReadLineEmptyEOFReturnsEOF pins S20: an empty read at EOF must return
+// io.EOF (never ("", nil)), otherwise the "close NinjaTrader" prompt loop spins
+// forever on an exhausted stdin. The mutant that reverts to returning the
+// trimmed empty string with nil error fails here.
+func TestReadLineEmptyEOFReturnsEOF(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	line := `readLine: func(prompt string) (string, error) {`
+	idx := strings.Index(s, line)
+	if idx < 0 {
+		t.Fatalf("run_windows.go must define the %s seam", line)
+	}
+	body := s[idx:]
+	if !strings.Contains(body, `err == io.EOF && trimmed == ""`) {
+		t.Fatalf("readLine must detect an empty read at EOF")
+	}
+	if !strings.Contains(body, `return "", io.EOF`) {
+		t.Fatalf("readLine must return io.EOF on an empty EOF read")
+	}
+}

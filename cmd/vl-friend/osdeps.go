@@ -28,7 +28,9 @@ type deps struct {
 	rename    func(oldpath, newpath string) error
 	readFile  func(path string) ([]byte, error)
 	// readLine prompts the user (install code on first run, update yes/no) and
-	// returns the trimmed answer. autoApprove=true bypasses it in tests.
+	// returns the trimmed answer. autoApprove=true bypasses it in tests. S20:
+	// an empty read at EOF returns io.EOF (never ("", nil)) so callers can
+	// bound a prompt loop instead of spinning on an exhausted stdin.
 	readLine func(prompt string) (string, error)
 	// print writes one plain-English console line (step headers, done lines,
 	// the error screen). Production: fmt.Println; tests: a recorder.

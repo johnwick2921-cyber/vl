@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/windows"
@@ -27,6 +29,7 @@ func realDeps() deps {
 	return deps{
 		exec: func(ctx context.Context, name string, args ...string) ([]byte, error) {
 			cmd := exec.CommandContext(ctx, name, args...)
+			noWindow(cmd)
 			return cmd.CombinedOutput()
 		},
 		fetch: func(ctx context.Context, url string) ([]byte, error) {
@@ -83,7 +86,14 @@ func realDeps() deps {
 			if err != nil && err != io.EOF {
 				return "", err
 			}
-			return strings.TrimSpace(s), nil
+			trimmed := strings.TrimSpace(s)
+			// S20: an empty read at EOF must return io.EOF, not ("", nil) —
+			// otherwise a prompt loop (e.g. the "close NinjaTrader" wait) spins
+			// forever on an exhausted stdin.
+			if err == io.EOF && trimmed == "" {
+				return "", io.EOF
+			}
+			return trimmed, nil
 		},
 		print:          func(line string) { fmt.Println(line) },
 		allowedSigners: []byte(friendAllowedSigners),
@@ -91,7 +101,9 @@ func realDeps() deps {
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
 			esc := strings.ReplaceAll(msiPath, "'", "''")
 			ps := "$s = Get-AuthenticodeSignature -FilePath '" + esc + "'; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
-			out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps).CombinedOutput()
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps)
+			noWindow(cmd)
+			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w: %s", err, strings.TrimSpace(string(out)))
 			}
@@ -103,7 +115,9 @@ func realDeps() deps {
 			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
 		},
 		openURL: func(ctx context.Context, url string) error {
-			_, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", openScript(url)).CombinedOutput()
+			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-Command", openScript(url))
+			noWindow(cmd)
+			_, err := cmd.CombinedOutput()
 			return err
 		},
 		docsDir: windowsDocumentsDir,
@@ -112,7 +126,9 @@ func realDeps() deps {
 			return err == nil && st.IsDir()
 		},
 		ntRunning: func(ctx context.Context) (bool, error) {
-			out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }").CombinedOutput()
+			cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }")
+			noWindow(cmd)
+			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return false, err
 			}
@@ -123,7 +139,9 @@ func realDeps() deps {
 		messageBox: func(text string) bool {
 			esc := strings.ReplaceAll(text, "'", "''")
 			ps := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('" + esc + "','VL','YesNo','Question') -eq 'Yes'"
-			out, err := exec.Command("powershell.exe", "-NoProfile", "-Command", ps).CombinedOutput()
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", ps)
+			noWindow(cmd)
+			out, err := cmd.CombinedOutput()
 			if err != nil {
 				return false
 			}
@@ -135,12 +153,32 @@ func realDeps() deps {
 // windowsDocumentsDir resolves the Windows Known Folder MyDocuments (F2: the C#
 // AddOn and NinjaTrader read MyDocuments, which OneDrive redirection can move
 // off <USERPROFILE>\Documents).
+//
+// W3: this used to shell out to PowerShell `[Environment]::GetFolderPath(...)`
+// and parse its stdout — the child's output codepage is the console OEM
+// codepage, so a non-ASCII path (e.g. "C:\Users\Tomás\Documents") was
+// corrupted. KnownFolderPath goes straight to the SHGetKnownFolderPath API and
+// returns a UTF-16-decoded Go string, so there is no codepage to lose. The
+// result must be non-empty and absolute; anything else refuses.
 func windowsDocumentsDir() (string, error) {
-	out, err := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "[Environment]::GetFolderPath('MyDocuments')").CombinedOutput()
+	p, err := windows.KnownFolderPath(windows.FOLDERID_Documents, windows.KF_FLAG_DEFAULT)
 	if err != nil {
-		return "", fmt.Errorf("resolve Documents: %w: %s", err, strings.TrimSpace(string(out)))
+		return "", fmt.Errorf("resolve Documents: %w", err)
 	}
-	return strings.TrimSpace(string(out)), nil
+	p = strings.TrimSpace(p)
+	if p == "" || !filepath.IsAbs(p) {
+		return "", fmt.Errorf("resolve Documents: KnownFolderPath returned %q", p)
+	}
+	return p, nil
+}
+
+// noWindow marks a child process to never create a console window: HideWindow
+// sets the startup show state to SW_HIDE and CreationFlags adds
+// CREATE_NO_WINDOW. W7: EVERY child this file starts (powershell.exe, and the
+// generic exec seam used for tailscale and the elevated install) must pass
+// through it, so the friend app never flashes a console while it shells out.
+func noWindow(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
 }
 
 // procFreeConsole is the kernel32 FreeConsole entry point. golang.org/x/sys
