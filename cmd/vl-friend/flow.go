@@ -897,9 +897,10 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 	}
 	body := []byte("[InternetShortcut]\r\nURL=" + appURL + "\r\n")
 	for _, dir := range dirs {
-		if _, err := d.readFile(filepath.Join(dir, "VL.lnk")); err == nil {
-			continue // a .lnk exists: keep it
-		}
+		// 10-21 laptop [A]: PowerShell HUNG until the cap (killed = "exit
+		// status 1", empty stderr). An existing VL.lnk may be a stale old one
+		// PowerShell could not re-target, so ALWAYS make sure a working VL.url
+		// exists — never rely on the .lnk when the PowerShell step failed.
 		p := filepath.Join(dir, "VL.url")
 		if _, err := d.readFile(p); err == nil {
 			continue
@@ -917,10 +918,15 @@ func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
 // createShortcutPS is the PowerShell icon step (.lnk to the local exe with
 // --open, re-targeting a stale one; .url fallback). Bounded (A6).
 func createShortcutPS(ctx context.Context, d deps, appURL string) error {
-	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	// 10s (was 30s): on the laptop the step hung, and the Go fallback makes
+	// the icon anyway — don't make the user wait.
+	ctx, cancel := context.WithTimeout(ctx, shortcutPSTimeout)
 	defer cancel()
 	out, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL)
 	if err != nil {
+		if ctx.Err() != nil {
+			return fmt.Errorf("desktop shortcut: PowerShell did not finish within %s (killed): %w", shortcutPSTimeout, err)
+		}
 		return fmt.Errorf("desktop shortcut: %w", err)
 	}
 	line, err := psResultLine(out)
@@ -1749,6 +1755,9 @@ func placeAddon(d deps, docs, build string, addon []byte) error {
 	}
 	return nil
 }
+
+// shortcutPSTimeout caps the PowerShell icon step (the Go fallback covers it).
+var shortcutPSTimeout = 10 * time.Second
 
 // firstFetchTries / firstFetchPause: the first-run manifest + add-on fetch
 // retries (vars so tests can shorten the pause).

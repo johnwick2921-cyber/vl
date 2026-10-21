@@ -263,6 +263,9 @@ func TestCreateDesktopShortcutGoFallback(t *testing.T) {
 	desk, progs := filepath.Join(home, "Desktop"), filepath.Join(home, "Programs")
 	d.iconDirs = func() ([]string, error) { return []string{desk, progs}, nil }
 	d.exec = func(context.Context, string, ...string) ([]byte, error) { return nil, errors.New("exit status 1") }
+	// A stale old VL.lnk on the Desktop must NOT stop the fallback (laptop 10-21).
+	_ = os.MkdirAll(desk, 0o755)
+	_ = os.WriteFile(filepath.Join(desk, "VL.lnk"), []byte("stale"), 0o644)
 	if err := createDesktopShortcut(context.Background(), d, "http://100.77.150.109:18081"); err != nil {
 		t.Fatalf("the Go fallback must succeed when PowerShell fails: %v", err)
 	}
