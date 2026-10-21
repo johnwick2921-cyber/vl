@@ -2151,7 +2151,9 @@ func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env En
 func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 	researchWire := newResearchWire()
 	defer s.wg.Done()
-	defer s.connGone(c, pending)
+	// m188 B1b: a closure, so connGone sees the post-auth value of pending
+	// (a plain defer captures pending==true and never frees s.conn).
+	defer func() { s.connGone(c, pending) }()
 
 	// Plan 1.5.7 — per-connection ctx-cancel watcher unblocks the blocked
 	// ReadFrame on server shutdown by closing this specific conn. Replaces
@@ -2223,6 +2225,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			}
 			researchWire.observe(FrameHello, env.Payload)
 			s.framesTotal.Add(1)
+			// m188 B1: clear the first-hello deadline once authenticated, or the
+			// next ReadFrame times out firstHelloTimeout after accept.
+			_ = c.SetReadDeadline(time.Time{})
 			pending = false
 			helloSeen = true
 			continue
