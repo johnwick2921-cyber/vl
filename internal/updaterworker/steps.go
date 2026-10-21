@@ -1090,6 +1090,38 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 	return res
 }
 
+// ensureNT8RunningAfterStop (m246) brings NinjaTrader back up after the updater
+// stopped it earlier in the job. If NT8 is already running (the migration
+// fallback restarts it on the old files before a revert), it does nothing. If
+// the start cannot be proven, it sends the loud owner alert and returns the
+// error so the caller fails the job to recovery_needed — a revert must never
+// silently strand the owner on a closed NinjaTrader.
+func (w *Worker) ensureNT8RunningAfterStop(ctx context.Context) error {
+	const alert = "NT8 is CLOSED — open it"
+	r := newNT8Restart(w.winSeam(), addonExe(), w.host.Sleep)
+	running, err := r.isRunning(ctx)
+	if err != nil {
+		// One transient probe error: retry once, then decide. We must never
+		// Start-Process over an NT8 that is actually still up (a second
+		// instance).
+		if serr := w.host.Sleep(ctx, nt8RestartPoll); serr == nil {
+			running, err = r.isRunning(ctx)
+		}
+		if err != nil {
+			w.notify(alert)
+			return fmt.Errorf("%s (could not confirm whether NinjaTrader is running: %v)", alert, err)
+		}
+	}
+	if running {
+		return nil
+	}
+	if err := w.startAndVerifyNT8(ctx, r, map[string]string{}); err != nil {
+		w.notify(alert + ": " + err.Error())
+		return fmt.Errorf("%s (%v)", alert, err)
+	}
+	return nil
+}
+
 // stepRevertClean is the pre-activation self-recovery (W-ADDON-ONE-CLICK,
 // owner order "click and walk away"): a refusal or timeout BEFORE the point
 // of no return releases the hold, releases the main-tree lock, and MOVES any
@@ -1137,6 +1169,19 @@ func (w *Worker) stepRevertClean(ctx context.Context, j updaterjob.Job) stepResu
 			return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
 		}
 		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
+	}
+
+	// 2b. m246: the nt8_restart step stopped NinjaTrader and the job is now
+	// reverting — restoring the old AddOn alone leaves NT8 closed. Bring it
+	// back up (or loudly alert the owner), so a revert never strands the owner
+	// on a closed NinjaTrader.
+	if j.Addon != nil && j.Addon.StoppedNT8 {
+		rs := w.host.Now()
+		if nerr := w.ensureNT8RunningAfterStop(ctx); nerr != nil {
+			receipts = append(receipts, w.receipt("nt8_restart_after_revert", rs, map[string]string{"outcome": "failed"}, nerr))
+			return stepResult{receipts: receipts, err: nerr, reason: "revert_clean: " + clipText(nerr.Error())}
+		}
+		receipts = append(receipts, w.receipt("nt8_restart_after_revert", rs, map[string]string{"outcome": "running"}, nil))
 	}
 
 	// 3. Release OUR main-tree lock (a foreign holder is never touched).

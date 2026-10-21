@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	"vl/internal/addonbuild"
 	"vl/internal/updaterjob"
@@ -439,6 +440,30 @@ func isRegularFile(p string) bool {
 // and the job ends reverted_clean. If NT8 exits on its own, there is no
 // re-check and no force — it closed itself, and nothing can trade while closed.
 
+// nt8PollRunning polls r.isRunning for `want` until deadline. A transient probe
+// error (tasklist exit 1, WSL interop hiccup, vsock accept failure) is RETRIED
+// until the deadline — one hiccup must not abort a bounded wait (m246). It
+// returns confirmed=true when the state matched `want` before the deadline;
+// otherwise lastErr is the most recent probe error (nil when the deadline simply
+// passed with the state never matching).
+func (w *Worker) nt8PollRunning(ctx context.Context, r nt8Restart, want bool, deadline time.Time) (bool, error) {
+	var lastErr error
+	for {
+		running, err := r.isRunning(ctx)
+		if err != nil {
+			lastErr = err
+		} else if running == want {
+			return true, nil
+		}
+		if !w.host.Now().Before(deadline) {
+			return false, lastErr
+		}
+		if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
+			return false, err
+		}
+	}
+}
+
 // startAndVerifyNT8 starts NinjaTrader and proves it is actually running with a
 // bounded process check. Start-Process succeeding proves only "process
 // started", never "AddOn ready" — the AddOn-ready proof (build id + a new
@@ -449,21 +474,14 @@ func (w *Worker) startAndVerifyNT8(ctx context.Context, r nt8Restart, ev map[str
 	}
 	startStart := w.host.Now()
 	startDeadline := startStart.Add(nt8StartWait)
-	for {
-		running, err := r.isRunning(ctx)
-		if err != nil {
-			return err
-		}
-		if running {
-			break
-		}
-		if !w.host.Now().Before(startDeadline) {
-			ev["nt8_start_wait"] = "timeout_not_running"
-			return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
-		}
-		if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-			return err
-		}
+	confirmed, lastErr := w.nt8PollRunning(ctx, r, true, startDeadline)
+	if lastErr != nil {
+		ev["nt8_start_probe_error"] = clipText(lastErr.Error())
+		return fmt.Errorf("the NinjaTrader liveness probe kept failing after the start: %w", lastErr)
+	}
+	if !confirmed {
+		ev["nt8_start_wait"] = "timeout_not_running"
+		return fmt.Errorf("NinjaTrader did not come up within %s of the start", nt8StartWait)
 	}
 	ev["nt8_start_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(startStart).Milliseconds(), 10)
 	return nil
@@ -488,25 +506,24 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		if err := r.signalClose(ctx); err != nil {
 			return err
 		}
+		// m246: the point of no return — the updater is now stopping NT8. Record
+		// it on the job so the revert path brings NinjaTrader back up (restoring
+		// the old AddOn alone leaves NT8 closed, the owner's #43 Update failure).
+		if _, uerr := w.update(j.JobID, j.State, j.Phase, func(k *updaterjob.Job) error {
+			if k.Addon == nil {
+				k.Addon = &updaterjob.AddonState{}
+			}
+			k.Addon.StoppedNT8 = true
+			return nil
+		}); uerr != nil {
+			return fmt.Errorf("the NT8 stop could not be recorded on the job: %w", uerr)
+		}
 		// Poll IsRunning every 2 s up to nt8CloseWait. If NT8 exited on its own,
-		// no re-check and no force.
-		exited := false
-		deadline := w.host.Now().Add(nt8CloseWait)
-		for {
-			running, err := r.isRunning(ctx)
-			if err != nil {
-				return err
-			}
-			if !running {
-				exited = true
-				break
-			}
-			if !w.host.Now().Before(deadline) {
-				break
-			}
-			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-				return err
-			}
+		// no re-check and no force. A transient tasklist error is retried; when
+		// the deadline passes without a confirmed exit, NT8 is force-stopped.
+		exited, closeProbeErr := w.nt8PollRunning(ctx, r, false, w.host.Now().Add(nt8CloseWait))
+		if closeProbeErr != nil {
+			ev["nt8_close_probe_error"] = clipText(closeProbeErr.Error())
 		}
 		if !exited {
 			// NT8 is STILL running (a dialog, a hang). The AddOn is still
@@ -527,29 +544,18 @@ func (w *Worker) stepNT8Restart(ctx context.Context, j updaterjob.Job) stepResul
 		// process released the port. Poll IsRunning, bounded; record the wait.
 		exitStart := w.host.Now()
 		exitDeadline := exitStart.Add(nt8ExitWait)
-		for {
-			running, err := r.isRunning(ctx)
-			if err != nil {
-				// NT8 was stopped; the liveness probe failed, so liveness is
-				// unproven — recovery_needed, never a false-clean revert.
-				nt8Down = true
-				return err
+		exited, lastErr := w.nt8PollRunning(ctx, r, false, exitDeadline)
+		if !exited {
+			// The OLD process is still running (or liveness never confirmed)
+			// while the NEW DLL is already on disk — a mixed state, not a clean
+			// one. recovery_needed (hold kept) until the human resolves it.
+			ev["nt8_exit_wait"] = "timeout_still_running"
+			nt8Down = true
+			if lastErr != nil {
+				ev["nt8_exit_probe_error"] = clipText(lastErr.Error())
+				return fmt.Errorf("NinjaTrader did not confirm a full exit within %s of the stop (the liveness probe kept failing: %w)", nt8ExitWait, lastErr)
 			}
-			if !running {
-				break
-			}
-			if !w.host.Now().Before(exitDeadline) {
-				// The OLD process is still running while the NEW DLL is already
-				// on disk — a mixed state, not a clean one. recovery_needed
-				// (hold kept) until the human resolves it.
-				ev["nt8_exit_wait"] = "timeout_still_running"
-				nt8Down = true
-				return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
-			}
-			if err := w.host.Sleep(ctx, nt8RestartPoll); err != nil {
-				nt8Down = true
-				return err
-			}
+			return fmt.Errorf("NinjaTrader did not fully exit within %s of the stop — not starting a second instance", nt8ExitWait)
 		}
 		ev["nt8_exit_wait_ms"] = strconv.FormatInt(w.host.Now().Sub(exitStart).Milliseconds(), 10)
 		// FOLD 2: a deferred migration (NT8 was open and Custom.dll still held
