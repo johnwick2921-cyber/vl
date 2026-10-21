@@ -1074,13 +1074,79 @@ func TestRunOpenUpdateDialogYes(t *testing.T) {
 	}
 }
 
-// TestRunOpenNotInstalledNoError — --open on a fresh PC (no connect.json) must
-// not error or crash.
-func TestRunOpenNotInstalledNoError(t *testing.T) {
+// TestRunOpenNotInstalledShowsError — I3: --open on a fresh PC (no connect.json)
+// must never fail silently; the mentor sees "VL could not start".
+func TestRunOpenNotInstalledShowsError(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	if err := runOpen(context.Background(), d); err == nil {
+		t.Fatal("runOpen on a not-installed PC must return an error")
+	}
+	if len(rec.messages) != 1 || !strings.Contains(rec.messages[0], "VL could not start") {
+		t.Fatalf("the mentor must see 'VL could not start': %v", rec.messages)
+	}
+}
+
+// TestRunOpenOpenFailureShowsMessage — I3: if the dashboard cannot be opened,
+// the mentor sees a dialog (never silent).
+func TestRunOpenOpenFailureShowsMessage(t *testing.T) {
+	home := t.TempDir()
+	d, rec := flowFakeDeps(t, home)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+	d.openURL = func(context.Context, string) error { return fmt.Errorf("browser failed") }
+
+	if err := runOpen(context.Background(), d); err == nil {
+		t.Fatal("runOpen must return the open error")
+	}
+	found := false
+	for _, m := range rec.messages {
+		if strings.Contains(m, "VL could not start") {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("the mentor must see 'VL could not start': %v", rec.messages)
+	}
+}
+
+// TestRunInstalledEnsuresLocalExe — I1: an installed run with NO local exe must
+// install it (so the icon can launch --open), not fall back to the .url.
+func TestRunInstalledEnsuresLocalExe(t *testing.T) {
 	home := t.TempDir()
 	d, _ := flowFakeDeps(t, home)
-	if err := runOpen(context.Background(), d); err != nil {
-		t.Fatalf("runOpen on a not-installed PC must not error, got %v", err)
+	ic := goodCode()
+	if err := writeConnectJSON(d, home, ic); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeAppState(d, home, appState{Name: "friend1", WebPort: 18081}); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeInstalledState(d, home, installedState{AddonBuild: "37", AppVersion: "1.0.0"}); err != nil {
+		t.Fatal(err)
+	}
+	base := fmt.Sprintf("http://%s:%d", ic.Host, 18081)
+	fetch, signers := fetchMap(t, base, []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	if err := runInstalled(context.Background(), d, home); err != nil {
+		t.Fatalf("runInstalled refused: %v", err)
+	}
+	if _, err := os.Stat(localExePath(d)); err != nil {
+		t.Fatalf("the local exe was not installed by the installed run: %v", err)
 	}
 }
 
@@ -1124,8 +1190,14 @@ func TestEnsureLocalExeMovesOldCopy(t *testing.T) {
 	if err != nil || string(b) != "MZ-new" {
 		t.Fatalf("the new exe was not installed: %v %q", err, b)
 	}
-	old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend.exe")
-	ob, err := os.ReadFile(old)
+	// The old copy is MOVED to VL\old\ with a timestamped name (never deleted,
+	// never overwritten).
+	oldDir := filepath.Join(d.localAppDataDir(), "VL", "old")
+	entries, err := os.ReadDir(oldDir)
+	if err != nil || len(entries) != 1 {
+		t.Fatalf("expected exactly one timestamped backup in VL\\old\\: %v %v", entries, err)
+	}
+	ob, err := os.ReadFile(filepath.Join(oldDir, entries[0].Name()))
 	if err != nil || string(ob) != "MZ-old" {
 		t.Fatalf("the old exe was not MOVED to VL\\old\\: %v %q", err, ob)
 	}

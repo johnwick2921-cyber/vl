@@ -562,9 +562,10 @@ func ensureLocalExe(d deps) error {
 	if dstBytes, err := d.readFile(dst); err == nil && bytes.Equal(srcBytes, dstBytes) {
 		return nil // already current
 	}
-	// Replace: MOVE the old copy aside (never delete), then write the new.
+	// Replace: MOVE the old copy aside (never delete), then write the new. The
+	// old file is timestamped so a re-run never overwrites a previous backup.
 	if _, err := d.readFile(dst); err == nil {
-		old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend.exe")
+		old := filepath.Join(d.localAppDataDir(), "VL", "old", "vl-friend-"+strconv.FormatInt(time.Now().UnixNano(), 10)+".exe")
 		if err := d.mkdirAll(filepath.Dir(old), 0o755); err != nil {
 			return err
 		}
@@ -601,24 +602,36 @@ func detectUpdate(ctx context.Context, d deps, base string) (UpdateDecision, err
 	return dec, nil
 }
 
-// runOpen is the desktop-icon path (vl-friend.exe --open): a quick silent update
-// check (≤5s, any error just continues), then the dashboard. If an update
-// exists, a Windows Yes/No dialog offers Update now / Later (Update now = the
-// same verified flat-gated swap with the NT8-running prompt).
-func runOpen(ctx context.Context, d deps) error {
+// resolveDashboardBase resolves the friend dashboard URL from the installed
+// config (repairing vl-app.json if needed).
+func resolveDashboardBase(ctx context.Context, d deps) (string, error) {
 	docs, err := d.docsDir()
 	if err != nil {
-		return nil // not resolvable — nothing to open
+		return "", err
 	}
 	cfg, err := readConnectConfig(d, docs)
 	if err != nil {
-		return nil // not installed — nothing to open
+		return "", err
 	}
 	st, err := loadAppState(ctx, d, docs, cfg)
 	if err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort), nil
+}
+
+// runOpen is the desktop-icon path (vl-friend.exe --open): a quick silent update
+// check (≤5s, any error just continues), then the dashboard. If an update
+// exists, a Windows Yes/No dialog offers Update now / Later (Update now = the
+// same verified flat-gated swap with the NT8-running prompt). On any error the
+// mentor sees a Windows dialog "VL could not start: <reason>…" — the icon must
+// never fail silently (I3).
+func runOpen(ctx context.Context, d deps) error {
+	base, err := resolveDashboardBase(ctx, d)
+	if err != nil {
+		d.messageBox("VL could not start: " + err.Error() + ". Send a photo of this to the owner.")
 		return err
 	}
-	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
 
 	// Quick silent update check; any error just continues.
 	cctx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -626,15 +639,20 @@ func runOpen(ctx context.Context, d deps) error {
 	cancel()
 	if derr == nil && (dec.AddonUpdateAvailable || dec.AppUpdateAvailable) {
 		if d.messageBox("VL update available — Update now / Later") {
-			if _, err := RunUpdateCheck(ctx, d, base, true); err != nil {
-				// even on an update failure, open the dashboard below
+			if _, uerr := RunUpdateCheck(ctx, d, base, true); uerr != nil {
+				d.messageBox("VL could not start: " + uerr.Error() + ". Send a photo of this to the owner.")
 			}
 		}
 	}
 
-	// Ensure the icons (re-create if missing), then open the dashboard.
+	// Ensure the icons (re-create if missing), then open the dashboard. If the
+	// dashboard still cannot open, tell the mentor.
 	_ = createDesktopShortcut(ctx, d, base)
-	return d.openURL(ctx, base)
+	if oerr := d.openURL(ctx, base); oerr != nil {
+		d.messageBox("VL could not start: " + oerr.Error() + ". Send a photo of this to the owner.")
+		return oerr
+	}
+	return nil
 }
 
 // repairIcon re-creates the VL shortcuts on an ALREADY-INSTALLED PC
@@ -654,6 +672,9 @@ func repairIcon(ctx context.Context, d deps) error {
 		return err
 	}
 	d.print("Re-creating the VL icon…")
+	if err := ensureLocalExe(d); err != nil {
+		return err
+	}
 	if err := createDesktopShortcut(ctx, d, fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)); err != nil {
 		return err
 	}
