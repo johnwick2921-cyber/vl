@@ -834,6 +834,9 @@ func shortcutScript() string {
 // through d.exec so tests assert the effect without Windows. The URL is the
 // TRAILING argument (the exec seam hands it to the script as $env:VL_ARG0).
 func createDesktopShortcut(ctx context.Context, d deps, appURL string) error {
+	// Bounded (A6): the icon step may never hang the run.
+	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 	if _, err := d.exec(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(shortcutScript()), appURL); err != nil {
 		return fmt.Errorf("desktop shortcut: %w", err)
 	}
@@ -1377,8 +1380,11 @@ func runInstalled(ctx context.Context, d deps, docs string) error {
 	// the update check, so the window sat on "already set up" looking frozen,
 	// and never said what it was updating. It now runs LAST, with progress lines.
 	d.print("Your VL dashboard: " + base)
+	d.print("Opening your dashboard…")
 	if err := d.openURL(ctx, base); err != nil {
-		return fmt.Errorf("open dashboard: %w", err)
+		// Never fatal: the URL is printed above, and the update check below
+		// must still run.
+		d.print("warning: could not open the dashboard — open the link above yourself (" + err.Error() + ")")
 	}
 	d.print("Checking for updates…")
 

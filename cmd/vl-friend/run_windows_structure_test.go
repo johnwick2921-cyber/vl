@@ -462,3 +462,50 @@ func TestAppendFileSeamUsesOAppend(t *testing.T) {
 		t.Fatalf("osdeps.go must declare the appendFile seam")
 	}
 }
+
+// TestWindowsExecNeverWaitsOnInheritedPipe — owner laptop 10-21: VL froze on
+// "already set up" after starting Edge. Proven on real Windows: a process the
+// child starts can inherit our pipe and hold cmd.Run until IT exits (6.8s for
+// ping; Edge = forever); WaitDelay 2s released it at 2.2s with ErrWaitDelay.
+// MUTANT: drop the WaitDelay default, or treat ErrWaitDelay as failure → RED.
+func TestWindowsExecNeverWaitsOnInheritedPipe(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+	for _, want := range []string{
+		"cmd.WaitDelay = 3 * time.Second",
+		"!errors.Is(err, exec.ErrWaitDelay)",
+		"context.WithTimeout(context.Background(), psRunTimeout)",
+		"exec.CommandContext(ctx, \"powershell.exe\"",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("run_windows.go must contain %q", want)
+		}
+	}
+}
+
+// TestRunDisablesQuickEditFirst — owner laptop 10-21: a click in the console
+// (QuickEdit "Select") pauses all output, so the app looked frozen. run()
+// must turn QuickEdit off before anything prints. MUTANT: drop the call → RED.
+func TestRunDisablesQuickEditFirst(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+	i := strings.Index(s, "func run(args []string) error {")
+	if i < 0 {
+		t.Fatal("no run()")
+	}
+	body := s[i:]
+	q := strings.Index(body, "disableQuickEdit()")
+	p := strings.Index(body, "fmt.Println(")
+	if q < 0 || p < 0 || q > p {
+		t.Fatal("run() must call disableQuickEdit() before the first print")
+	}
+	if !strings.Contains(s, "mode &^= windows.ENABLE_QUICK_EDIT_MODE") || !strings.Contains(s, "mode |= windows.ENABLE_EXTENDED_FLAGS") {
+		t.Fatal("disableQuickEdit must clear QUICK_EDIT and set EXTENDED_FLAGS")
+	}
+}

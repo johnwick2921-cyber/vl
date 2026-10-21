@@ -276,18 +276,34 @@ func cmdOutputStdout(cmd *exec.Cmd) ([]byte, error) {
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
+	// Owner laptop 10-21: a process the child starts (Edge via Start-Process)
+	// can inherit our stdout/stderr pipe, and Run then waits for THAT process
+	// to exit — VL froze on "already set up" with Edge open. Proven on real
+	// Windows: an inherited pipe held Run 6.8s; WaitDelay 2s released it at
+	// 2.2s with exec.ErrWaitDelay. The child itself has exited by then, so
+	// ErrWaitDelay is success with whatever output arrived.
+	if cmd.WaitDelay == 0 {
+		cmd.WaitDelay = 3 * time.Second
+	}
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
 		return stdout.Bytes(), fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
 }
+
+// psRunTimeout bounds every psRun (signature check, NinjaTrader check, open
+// dashboard).
+const psRunTimeout = 60 * time.Second
 
 // psRun runs a PowerShell script with the controlled value passed via the
 // VL_ARG0 environment variable (P1: PowerShell 5.1 REJECTS a positional arg
 // after -EncodedCommand — "Cannot process command because a command is already
 // specified"), and returns STDOUT only.
 func psRun(script, arg string) ([]byte, error) {
-	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psPreamble+script))
+	// Bounded: no PowerShell step may hang the run (owner laptop 10-21).
+	ctx, cancel := context.WithTimeout(context.Background(), psRunTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psPreamble+script))
 	cmd.Env = append(os.Environ(), "VL_ARG0="+arg)
 	noWindow(cmd)
 	return cmdOutputStdout(cmd)
@@ -422,10 +438,29 @@ func validateLocalAppData() error {
 	return nil
 }
 
+// disableQuickEdit clears ENABLE_QUICK_EDIT_MODE on the console input (with
+// ENABLE_EXTENDED_FLAGS, which Windows requires for that bit to apply), so a
+// stray click cannot freeze the app's output. Best-effort: no console (the
+// --open icon path detaches) or a failure leaves the mode unchanged.
+func disableQuickEdit() {
+	h := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(h, &mode); err != nil {
+		return
+	}
+	mode &^= windows.ENABLE_QUICK_EDIT_MODE
+	mode |= windows.ENABLE_EXTENDED_FLAGS
+	_ = windows.SetConsoleMode(h, mode)
+}
+
 // run is the app entry: first run = install; every later start = update check.
 // On ANY error it prints the (redacted) reason, writes setup.log, and waits for
 // Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
+	// Owner laptop 10-21: a click inside the console window starts QuickEdit
+	// "Select" mode, which PAUSES every write to the console — the app froze
+	// on "already set up" until Esc. Turn QuickEdit off for this window.
+	disableQuickEdit()
 	// H18b: refuse a missing/relative LOCALAPPDATA before anything writes.
 	if err := validateLocalAppData(); err != nil {
 		fmt.Println("Something went wrong: " + err.Error() + ". Nothing was changed. Send a photo of this window to the owner.")
