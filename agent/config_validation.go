@@ -50,10 +50,8 @@ func (v modelConfigValidator) Validate() error {
 	if _, ok := supportedModelProvider[provider]; !ok {
 		return fmt.Errorf("unsupported provider: %s", provider)
 	}
-	if trimmed := strings.TrimSpace(v.customAPIURL); trimmed != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(trimmed, "#")); err != nil {
-			return fmt.Errorf("invalid custom_api_url: %w", err)
-		}
+	if err := security.ValidateModelURL(v.customAPIURL); err != nil {
+		return fmt.Errorf("invalid custom_api_url: %w", err)
 	}
 	if v.enabled && !modelConfigUsable(provider, v.modelID, strings.TrimSpace(v.apiKey), strings.TrimSpace(v.customAPIURL), strings.TrimSpace(v.customModelName)) {
 		return fmt.Errorf("cannot enable model config before a usable API key, URL, and model are configured")

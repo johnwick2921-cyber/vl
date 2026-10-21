@@ -9,6 +9,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"vl/internal/friendmode"
 )
 
 // Private/Reserved IP ranges that should be blocked to prevent SSRF
@@ -174,11 +176,10 @@ func ValidateHTTPSURL(rawURL string) error {
 }
 
 // FriendModeEnabled reports whether this process is a friend instance for the
-// redirect guard (R2). security cannot import config (import cycle:
-// config → mcp → security), so main.go wires it at boot from
-// config.FriendInstanceEnabled — the ONE parser. Default false keeps the
-// owner's lenient behavior until wired.
-var FriendModeEnabled = func() bool { return false }
+// redirect guard (R2) and the model-URL validator (R3). It defaults to the ONE
+// parser (internal/friendmode) so tests using t.Setenv see it live; main.go may
+// pin it to config.FriendInstanceEnabled for explicitness.
+var FriendModeEnabled = friendmode.Enabled
 
 // redirectValidator is the ONE redirect validator: friend mode demands https on
 // every hop (the friend's key travels over it); the owner's box blocks only
@@ -188,6 +189,21 @@ func redirectValidator(rawURL string) error {
 		return ValidateHTTPSURL(rawURL)
 	}
 	return ValidateURL(rawURL)
+}
+
+// ValidateModelURL is the ONE validator for a user-supplied model custom_api_url
+// (R3): friend mode demands https; the owner's box stays lenient. Empty means
+// "use the provider default" and is accepted; a trailing "#" fragment the UI
+// appends is trimmed.
+func ValidateModelURL(rawURL string) error {
+	clean := strings.TrimSuffix(strings.TrimSpace(rawURL), "#")
+	if clean == "" {
+		return nil
+	}
+	if FriendModeEnabled() {
+		return ValidateHTTPSURL(clean)
+	}
+	return ValidateURL(clean)
 }
 
 // SafeHTTPClient returns an HTTP client with SSRF protection

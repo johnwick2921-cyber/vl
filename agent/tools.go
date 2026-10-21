@@ -1528,10 +1528,8 @@ func (a *Agent) toolManageModelConfig(storeUserID, argsJSON string) string {
 	if err := mcp.ValidateThinkingKnobs(thinkingMode, reasoningEffort); err != nil {
 		return fmt.Sprintf(`{"error":%q}`, err.Error())
 	}
-	if trimmed := strings.TrimSpace(args.CustomAPIURL); trimmed != "" {
-		if err := security.ValidateURL(strings.TrimSuffix(trimmed, "#")); err != nil {
-			return fmt.Sprintf(`{"error":"invalid custom_api_url: %s"}`, err)
-		}
+	if err := security.ValidateModelURL(args.CustomAPIURL); err != nil {
+		return fmt.Sprintf(`{"error":"invalid custom_api_url: %s"}`, err)
 	}
 	action := strings.TrimSpace(args.Action)
 	switch action {
