@@ -289,10 +289,14 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		// risk reward 1-2"]. No action.
 		return
 	case "A-resonance":
-		// A (resonance): both stops already at BE, leg 1's +1R TP stays (the
-		// 1:1 partial still fires), the RUNNER's TP out to the level beyond
-		// the old high (CX-3), NO trail, NO 1:1 tightening [D2.4 p1]. Nothing
-		// to do on a candle — the native bracket holds.
+		// A (resonance): leg 1's +1R TP stays (the 1:1 partial still fires),
+		// the RUNNER's TP out to the level beyond the old high (CX-3), NO
+		// trail, NO 1:1 tightening [D2.4 p1]. m134 (b)/(d): the runner's stop
+		// is NOT moved at arm — the deferred break-even runs on this CLOSED 1m
+		// candle (after the 1:1 partial is confirmed, or once price is on the
+		// profit side).
+		scaledNow, _ := at.mentorScaledState(p)
+		at.mentorExitDriveResonance(nt, p, c, scaledNow, at.mentorExitedLegs(p))
 		return
 	}
 
@@ -1184,12 +1188,15 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 	at.mentorSweepManualLatches(nt)
 }
 
-// mentorArmResonanceOnISB flips an open PHL/PLH position into mode A the moment
-// a same-direction ISB intent appears within 3 candles of the fill: both stops
-// move to break-even NOW, leg 1's +1R TP STAYS (the 1:1 partial still fires),
-// the RUNNER's TP moves out to the level beyond the old high (CX-3), NO trail,
-// NO 1:1 tightening [D2.4 p1]. Called from the
-// evaluator's intent loop when an ISB entry is emitted.
+// mentorArmResonanceOnISB flips an open PHL/PLH position into mode A when a
+// same-direction ISB entry is ACCEPTED into the ledger within 3 candles of the
+// fill: leg 1's +1R TP STAYS (the 1:1 partial still fires), the RUNNER's TP
+// moves out to the level beyond the old high (CX-3), NO trail, NO 1:1
+// tightening [D2.4 p1]. m134 (b)/(c): arming does NOT move any stop — the
+// runner's break-even is deferred to the closed-1m exit drive
+// (mentorExitDriveResonance), so a refused/reversed ISB can no longer drag an
+// open position's stop to the wrong side. Called from the ledger-accept point
+// in mentorArmIntent (m134 (a)), never from a raw intent.
 func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 	if at == nil || !at.mentorEnabled() {
 		return
@@ -1206,29 +1213,77 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		if !armed {
 			continue
 		}
-		// Move BOTH legs' stops to BE immediately (the resonance arms "at that
-		// moment", not on the next candle).
-		for i := range p.Legs {
-			leg := &p.Legs[i]
-			if leg.SignalID == "" || leg.Qty <= 0 {
-				continue
-			}
-			if err := at.mentorMoveLegStop(nt, p.Pos.Side, leg, p.Pos.Entry); !mentorMoveApplied(err) {
-				if !mentorMoveErrAlreadyLogged(err) {
-					at.logWarnf("🧑‍🏫 mentor resonance BE leg %d move FAILED: %v", i, err)
-				}
-				continue
-			}
-			leg.Stop = p.Pos.Entry
-		}
 		// Mode A, CX-3 (release #25): the RUNNER's TP moves out to the level
 		// beyond the old high through the leg-scoped modify_bracket (wire leg
 		// 2) — leg 1's +1R TP stays (R-RES). It was logged as "WOULD set TP …
 		// UNWIRED" and never sent from 10-05 to 10-14. Knob
 		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
 		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
-		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (BE, no trail; the 1:1 partial still fires) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
+		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
 	}
+}
+
+// mentorExitDriveResonance is the mode-A runner break-even on one CLOSED 1m
+// candle (plan §Exits B). m134 (b)/(d): the runner's stop moves to break-even
+// only AFTER the 1:1 partial is confirmed (scaledNow) OR once price is on the
+// profit side of break-even — never at arm, never on a forming candle. Once
+// armed, mode A holds the native bracket (no trail, no 1:1 tightening).
+// m134 (c): the leg.Stop / ArmedBE belief is written ONLY after the broker
+// applied the move (mentorMoveApplied), so a refused or failed move never
+// writes the belief and is re-tried on the next closed candle.
+func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64, scaledNow bool, exited [3]bool) {
+	if p == nil || p.Pos.ArmedBE {
+		return
+	}
+	pos := &p.Pos
+	runners := mentorRunnerLegs(p, exited)
+	if len(runners) == 0 {
+		return
+	}
+	side := pos.Side
+	tick := at.mentorInstrumentTick()
+	be := mentorBEStopPrice(side, pos.Entry, tick)
+	// (b)/(d): before the partial is confirmed, the runner's stop stays put
+	// unless the close is already on the profit side of break-even by at least
+	// a tick — a break-even stop only protects once price is past it.
+	onProfitSide := (side == "long" && c >= be+tick) || (side != "long" && c <= be-tick)
+	if !scaledNow && !onProfitSide {
+		at.mentorCount("resonance_be_waiting")
+		return
+	}
+	appliedAny := false
+	brokerTighter := false
+	for _, leg := range runners {
+		err := at.mentorMoveLegStop(nt, side, leg, be)
+		if errors.Is(err, errMentorStopBrokerTighter) {
+			brokerTighter = true
+			appliedAny = true
+			continue
+		}
+		if errors.Is(err, errMentorLegClosed) {
+			at.mentorCount("stop_move_skipped_leg_closed")
+			continue
+		}
+		if !mentorMoveApplied(err) {
+			if err != nil && !mentorMoveErrAlreadyLogged(err) {
+				at.logWarnf("🧑‍🏫 mentor resonance BE runner leg %d move FAILED: %v", leg.Wire, err)
+			}
+			continue
+		}
+		leg.Stop = be
+		appliedAny = true
+	}
+	if !appliedAny {
+		return
+	}
+	pos.Stop = be
+	pos.ArmedBE = true
+	if brokerTighter {
+		at.mentorCount("resonance_be_broker_tighter")
+	} else {
+		at.mentorCount("resonance_be_after_partial_or_profit")
+	}
+	at.logInfof("🧑‍🏫 mentor resonance BE: %s runner stop(s) → %.2f (entry %.2f) [D2.4 p1 @03:36–03:45]", runners[0].SignalID, be, pos.Entry)
 }
 
 // pokeMentorExitDrive wakes the per-trader event loop after a mentor fill so

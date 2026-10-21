@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -616,11 +617,13 @@ func TestMentorMoveLegStop_NeverWidens(t *testing.T) {
 	assertMoves(t, moves())
 }
 
-// A same-side ISB within 3 candles of a PHL/PLH fill arms mode A: the single
-// leg to BE now. Release #25 (CX-3): the runner-TP move is SENT on the runner's
-// own wire leg (TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg); a SINGLE bracket
-// has no separate runner, so nothing is sent and it is counted (never a modify
-// of the whole position past the 1:1 partial).
+// A same-side ISB within 3 candles of a PHL/PLH fill arms mode A, but m134 (b)
+// /(c): arming does NOT move any stop and does NOT write the ArmedBE belief —
+// the runner's break-even is deferred to the closed-1m exit drive. Release #25
+// (CX-3): the runner-TP move is SENT on the runner's own wire leg
+// (TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg); a SINGLE bracket has no
+// separate runner, so nothing is sent and it is counted (never a modify of the
+// whole position past the 1:1 partial).
 func TestMentorArmResonanceOnISB(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 9, 16, 5)
@@ -629,13 +632,106 @@ func TestMentorArmResonanceOnISB(t *testing.T) {
 	p.RunnerTarget = 20
 	at.mentorRegisterLivePos("sig-1", p)
 	at.mentorArmResonanceOnISB("long")
-	if p.Pos.Mode != "A-resonance" || !p.Pos.ArmedBE {
-		t.Fatalf("resonance not armed: mode=%s armed=%v", p.Pos.Mode, p.Pos.ArmedBE)
+	if p.Pos.Mode != "A-resonance" || p.Pos.ArmedBE || p.Pos.Stop != 9 {
+		t.Fatalf("resonance arm: mode=%s armed=%v stop=%.2f — want A-resonance, NOT armed, stop still 9", p.Pos.Mode, p.Pos.ArmedBE, p.Pos.Stop)
 	}
-	assertMoves(t, moves(), driveMove{"entry", "long", 10})
+	assertMoves(t, moves())
 	snap := at.mentorCountSnapshot()
 	if snap["resonance_armed"] != 1 || snap["resonance_runner_tp_not_split"] != 1 {
 		t.Fatalf("resonance counters: armed=%d runner_tp_not_split=%d, want 1/1", snap["resonance_armed"], snap["resonance_runner_tp_not_split"])
+	}
+}
+
+// m134 (b)/(d): the runner's break-even goes out on the CLOSED 1m candle once
+// price is on the profit side of break-even — even before the 1:1 partial is
+// confirmed. A candle NOT on the profit side (and no confirmed partial) moves
+// nothing.
+func TestMentorResonanceBEDeferredToClosedCandle(t *testing.T) {
+	at, moves := newDriveAT(t)
+	p := bPos("B", "long", 10, 9, 16, 5)
+	p.Pos.Origin = "PHL"
+	p.Pos.Mode = "A-resonance"
+	p.BarsSinceFill = 1
+	at.mentorRegisterLivePos("sig-1", p)
+	// Not on the profit side, partial not confirmed → nothing moves (wait).
+	at.mentorExitDrivePos(nil, p, 10.0, 10.5, 9.5, 0)
+	assertMoves(t, moves())
+	// On the profit side (close ≥ BE + tick = 10.25) → the runner's stop → BE.
+	at.mentorExitDrivePos(nil, p, 10.5, 11.0, 10.0, 0)
+	assertMoves(t, moves(), driveMove{"entry", "long", 10})
+	if !p.Pos.ArmedBE || p.Pos.Stop != 10 {
+		t.Fatalf("BE after the profit-side close: armed=%v stop=%.2f — want armed, stop 10", p.Pos.ArmedBE, p.Pos.Stop)
+	}
+	snap := at.mentorCountSnapshot()
+	if snap["resonance_be_after_partial_or_profit"] != 1 {
+		t.Fatalf("resonance_be_after_partial_or_profit = %d, want 1", snap["resonance_be_after_partial_or_profit"])
+	}
+}
+
+// m134 (b): once the 1:1 partial is CONFIRMED (Scaled), the runner's break-even
+// goes out on the next closed candle even when the close is only just past BE.
+func TestMentorResonanceBEAfterPartialConfirmed(t *testing.T) {
+	at, moves := newDriveAT(t)
+	p := bPos("B", "long", 10, 9, 16, 5)
+	p.Pos.Origin = "PHL"
+	p.Pos.Mode = "A-resonance"
+	p.Pos.Scaled = true // leg 1's +1R partial confirmed filled at NT8
+	p.BarsSinceFill = 1
+	at.mentorRegisterLivePos("sig-1", p)
+	at.mentorExitDrivePos(nil, p, 10.0, 10.5, 9.5, 0)
+	assertMoves(t, moves(), driveMove{"entry", "long", 10})
+	if !p.Pos.ArmedBE || p.Pos.Stop != 10 {
+		t.Fatalf("BE after the confirmed partial: armed=%v stop=%.2f — want armed, stop 10", p.Pos.ArmedBE, p.Pos.Stop)
+	}
+}
+
+// m134 (c): a FAILED BE move never writes the ArmedBE/Stop belief (the leg
+// belief stays too) — BE is re-tried on the next closed candle.
+func TestMentorResonanceBEFailedMoveDoesNotWriteBelief(t *testing.T) {
+	at, _ := newDriveAT(t)
+	p := bPos("B", "long", 10, 9, 16, 5)
+	p.Pos.Origin = "PHL"
+	p.Pos.Mode = "A-resonance"
+	p.BarsSinceFill = 1
+	at.mentorRegisterLivePos("sig-1", p)
+	old := mentorMoveStopForSignalWire
+	mentorMoveStopForSignalWire = func(_ *nttrader.TCPTrader, _, _ string, _ float64, _ int) error {
+		return fmt.Errorf("broker refused")
+	}
+	t.Cleanup(func() { mentorMoveStopForSignalWire = old })
+	// on the profit side → the BE move is attempted but NOT applied.
+	at.mentorExitDrivePos(nil, p, 10.5, 11.0, 10.0, 0)
+	if p.Pos.ArmedBE || p.Pos.Stop != 9 || p.Legs[0].Stop != 9 {
+		t.Fatalf("a failed BE move must not write the belief: armed=%v stop=%.2f legStop=%.2f", p.Pos.ArmedBE, p.Pos.Stop, p.Legs[0].Stop)
+	}
+}
+
+// m134 (a): resonance arms only from an ISB entry the ledger ACCEPTED — the
+// accept point in mentorArmIntent. A raw evaluator intent has no arming path
+// any more (the loop in mentorTick was removed).
+func TestMentorArmResonanceFromAcceptedISBOnly(t *testing.T) {
+	at, st, ledger, _ := mentorB3Rig(t)
+	mentorWireSeams(t, at, ledger)
+	defer st.Close()
+	// an open PHL long position filled one closed candle ago.
+	at.mentorRegisterLivePos("sig-phl", &mentorLivePos{
+		Pos:           mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 100, Stop: 90, Target: 130, R: 10, Mode: "B"},
+		Legs:          [3]mentorLeg{{SignalID: "sig-phl", Qty: 1, Stop: 90, Final: true}},
+		BarsSinceFill: 1,
+	})
+	// the ACCEPTED ISB entry (the ledger-accept point in mentorArmIntent).
+	at.mentorArmIntent(
+		mentor.Intent{Action: mentor.PlaceStopLimitEntry, ArmID: "isb-res", Side: mentor.SideLong,
+			Price: 101, Stop: 100, Target: 112, Setup: "ISB", ExpiryMs: 1_800_000_000_000},
+		mentorSizeChoice{Contracts: 1, Tier: "base"}, 1_800_000_000_000, 1_800_000_000_000, "B", 0)
+	lp := at.mentorLivePos["sig-phl"]
+	if lp == nil || lp.Pos.Mode != "A-resonance" {
+		t.Fatalf("an accepted ISB must arm resonance: %+v", lp)
+	}
+	// m134 (b)/(c): arming did NOT move the stop to BE or write the ArmedBE
+	// belief — the deferred BE runs on the closed-1m exit drive.
+	if lp.Pos.ArmedBE || lp.Pos.Stop != 90 {
+		t.Fatalf("arming must not move the stop: armed=%v stop=%.2f", lp.Pos.ArmedBE, lp.Pos.Stop)
 	}
 }
 
