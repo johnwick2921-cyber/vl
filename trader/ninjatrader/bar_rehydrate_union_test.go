@@ -82,3 +82,61 @@ func TestRehydrateRingFromStoreRebuildsHigherTFFrom1m(t *testing.T) {
 		}
 	}
 }
+
+// TestRehydrateRingFromStoreKeepsOlderNativeDepthWhen1mShort is the m149 P2
+// native-fallback pin: a 1h ring whose 1m tape covers only the LAST minutes
+// still keeps its OLDER native 1h depth — the union order is live > 1m-aggregate
+// (where 1m coverage exists) > native rows for older history. MUTANT: `continue`
+// when the 1m tape yields no aggregate → the native rows are skipped and the
+// older depth is lost → RED.
+func TestRehydrateRingFromStoreKeepsOlderNativeDepthWhen1mShort(t *testing.T) {
+	st, err := store.New(filepath.Join(t.TempDir(), "rehydrate-native.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+
+	const (
+		symbol   = "MNQ"
+		contract = "MNQ 12-26"
+		min      = int64(60_000)
+	)
+	// 1m tape: only minutes 300..304 (the last 5 minutes) — too little to build
+	// any complete 1h bucket, and nothing older.
+	var oneMin []store.BarHistoryDB
+	for m := int64(300); m <= 304; m++ {
+		oneMin = append(oneMin, store.BarHistoryDB{Symbol: symbol, TF: "1m", OpenTimeMs: m * min, O: 100, H: 101, L: 99, C: 100.5, V: 1, Contract: contract, Source: store.BarSourceLive})
+	}
+	if err := bh.InsertBars(oneMin); err != nil {
+		t.Fatal(err)
+	}
+	// Native 1h rows OLDER than the 1m window: minutes 0, 60, 120, 180.
+	var oneH []store.BarHistoryDB
+	for m := int64(0); m < 300; m += 60 {
+		oneH = append(oneH, store.BarHistoryDB{Symbol: symbol, TF: "1h", OpenTimeMs: m * min, O: 200, H: 201, L: 199, C: 200.5, V: 1, Contract: contract, Source: store.BarSourceLive})
+	}
+	if err := bh.InsertBars(oneH); err != nil {
+		t.Fatal(err)
+	}
+
+	server := ntwire.NewTCPServer(nil)
+	// Live 1h ring: the newest bucket (open 300) only. SeedHistorical stamps
+	// close→open, so hand close-stamped (open+60m).
+	server.BarCache().SeedHistorical(symbol, "1h", []ntwire.Bar{{T: (300 + 60) * min, O: 300, H: 301, L: 299, C: 300.5}})
+	rehydrateRingFromStore(bh, server, time.Now())
+
+	got := server.BarCache().Get(symbol, "1h")
+	have := map[int64]bool{}
+	for _, b := range got {
+		have[b.T/min] = true
+	}
+	for _, m := range []int64{0, 60, 120, 180, 300} {
+		if !have[m] {
+			t.Fatalf("older native 1h depth lost at minute %d (1m tape too short, native rows skipped): %v", m, have)
+		}
+	}
+}
