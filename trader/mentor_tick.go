@@ -268,7 +268,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// decision was silent in the log — only the refusal counters showed it).
 	if rep := at.mentorEval.State.DayGateReport; rep.Key != "" && rep.Key != at.mentorDayGateReportLogged {
 		at.mentorDayGateReportLogged = rep.Key
-		at.logInfof("%s", mentorDayGateLine(rep))
+		// m134 DS-108 (b): the §7 verdict is WARN so it reaches the persisted
+		// log_events (which stores only error+warning) — the owner ruling
+		// 2026-10-09 day-gate line was INFO and silently invisible.
+		at.logWarnf("%s", mentorDayGateLine(rep))
 	}
 	// MENTOR-NY item 5: the ORB state, READ from the evaluator — the range
 	// once per day, the escape side + time when it first appears and on every
