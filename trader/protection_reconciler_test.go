@@ -66,7 +66,7 @@ func TestProtectionAdjudication(t *testing.T) {
 				State: "TriggerPending", Quantity: 1}},
 			true, 1, px(29554), 0, protectionPlace, "accepted_risk", 29554},
 
-		// PARTIAL COVER IS REPORTED, NOT PATCHED
+		// PARTIAL COVER IS RAISED, NOT PATCHED (m217: pre-#43 behaviour)
 		{"partially covered is raised, not doubled",
 			[]nt.NT8Order{live}, true, 2, px(29554), 29500, protectionAlertOnly, "", 0},
 	}
@@ -407,5 +407,194 @@ func TestProtectionFlattenClearsWhenPositionCloses(t *testing.T) {
 	}
 	if n != 2 {
 		t.Fatalf("(h) flatten after a position-closing pass must raise a SECOND P0, got %d", n)
+	}
+}
+
+// m207 (replaces m198's deferral): a pending -sl COUNTS as coverage by its own
+// quantity — a 1-lot position whose -sl is mid-flight (ChangePending /
+// ChangeSubmitted / Submitted / Initialized) is COVERED, not "nothing", so no
+// second stop is placed. Pin (d): the 10/16 shape.
+func TestProtectionPendingStopCountsAsCoverage(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	stopIn := func(state string, qty int) nt.NT8Order {
+		return nt.NT8Order{Symbol: sym, Name: "sig-sl", Action: "sell", Type: "stop",
+			State: state, StopPrice: 29554, Quantity: qty}
+	}
+	for _, state := range []string{"ChangePending", "ChangeSubmitted", "Submitted", "Initialized"} {
+		t.Run(state, func(t *testing.T) {
+			v := adjudicateProtection(sym, side, 1, []nt.NT8Order{stopIn(state, 1)}, true, nil, 29500, nil, nil)
+			if v.Action != protectionOK {
+				t.Fatalf("a pending %s -sl covering 1 of 1 must be OK (counts), got %s (why: %s)", state, v.Action, v.Why)
+			}
+			if v.Why == "" {
+				t.Fatal("verdict must say why")
+			}
+		})
+	}
+}
+
+// m198 #43-A (3) — more live protective quantity than contracts (the
+// double-stop symptom) must WARN + raise a P0 + be COUNTED, and must NOT be
+// auto-cancelled (that is #45).
+func TestProtectionOverCoveredRaisesP0(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "f4-over-covered"
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	protectionOverCovered.Delete(at.id) // fresh counter for this trader id
+	over := protectionVerdict{Action: protectionOK, NeedQty: 1, HaveQty: 2, Why: "2 live protective stop(s) covering 2 of 1"}
+	at.actOnProtection(over, "MNQ", "LONG", 1, "sig", "t", 0, time.Now())
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_over_covered" && strings.HasPrefix(a.EventID, "overcovered:MNQ:LONG:1:2") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("over-coverage must raise ONE P0, got %d", n)
+	}
+	if OverCoveredFound(at.id) != 1 {
+		t.Fatalf("over-covered counter = %d, want 1", OverCoveredFound(at.id))
+	}
+}
+
+// m217 — the stuck detection is ALERT-ONLY and keyed by (name, stopPrice, qty)
+// unchanged for 3 consecutive passes. A repeated modify that CHANGES the price
+// (Sonnet probe A) never trips it; it keeps counting as cover and never places.
+// Mutant: count pending as 0 → pin (a) RED.
+func TestProtectionPendingStuckThreeUnchangedPasses(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	const traderID = "m217e"
+	now := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	clearPendingSLSeen(traderID, "s1-sl")
+	sl := func(stopPrice float64, qty int) nt.NT8Order {
+		return nt.NT8Order{Symbol: sym, Name: "s1-sl", Action: "sell", Type: "stop",
+			State: "ChangePending", StopPrice: stopPrice, Quantity: qty}
+	}
+
+	v := adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl(29554, 1)}, true, nil, 29500, nil, nil, nil, traderID, now)
+	if v.Action != protectionOK || v.PendingStuck {
+		t.Fatalf("pass 1 must be OK and not stuck, got %s stuck=%v", v.Action, v.PendingStuck)
+	}
+	v = adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl(29554, 1)}, true, nil, 29500, nil, nil, nil, traderID, now)
+	if v.Action != protectionOK || v.PendingStuck {
+		t.Fatalf("pass 2 must be OK and not stuck, got %s stuck=%v", v.Action, v.PendingStuck)
+	}
+	v = adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl(29554, 1)}, true, nil, 29500, nil, nil, nil, traderID, now)
+	if v.Action != protectionOK || !v.PendingStuck {
+		t.Fatalf("pass 3 (unchanged) must be OK and STUCK, got %s stuck=%v", v.Action, v.PendingStuck)
+	}
+	// A CHANGED price resets the count — not stuck again.
+	v = adjudicateProtectionWith(sym, side, 1, []nt.NT8Order{sl(29560, 1)}, true, nil, 29500, nil, nil, nil, traderID, now)
+	if v.Action != protectionOK || v.PendingStuck {
+		t.Fatalf("a changed price must reset the stuck count (OK, not stuck), got %s stuck=%v", v.Action, v.PendingStuck)
+	}
+}
+
+// m203 — the stuck P0 is deduped (fires once) and counted (every pass).
+func TestProtectionPendingStuckRaisesP0(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "m203-p0"
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{}
+	protectionPendingStuck.Delete(at.id) // fresh counter for this trader id
+	v := protectionVerdict{Action: protectionPlace, StopPx: 29500, Source: "plan", NeedQty: 1, PendingStuck: true, Why: "stuck 31 s"}
+	now := time.Now()
+	at.actOnProtection(v, "MNQ", "LONG", 1, "sig", "t", 0, now)
+	at.actOnProtection(v, "MNQ", "LONG", 1, "sig", "t", 0, now.Add(time.Minute))
+
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_pending_stuck" && strings.HasPrefix(a.EventID, "stuckpending:MNQ:LONG") {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("the stuck P0 must be deduped to ONE, got %d", n)
+	}
+	if PendingStuckFound(at.id) != 2 {
+		t.Fatalf("the stuck counter must tick every pass (2), got %d", PendingStuckFound(at.id))
+	}
+}
+
+// m217 pin (b): leg-1 pending + leg-2 missing → the pending leg's OWN quantity
+// counts, and the verdict is ALERT-ONLY (partial), never a place. Mutant: count
+// pending as full coverage regardless of qty → RED (OK instead of partial);
+// count pending as 0 → RED (full place instead of partial).
+func TestProtectionPendingCoversOnlyItsLeg(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	book := []nt.NT8Order{
+		{Symbol: sym, Name: "s1-sl", Action: "sell", Type: "stop", State: "ChangePending", Quantity: 2, StopPrice: 29554},
+	}
+	v := adjudicateProtection(sym, side, 3, book, true, px(29554), 29500, nil, nil)
+	if v.Action != protectionAlertOnly {
+		t.Fatalf("leg1 pending (2) + leg2 missing: got %s, want alertOnly (partial) (why: %s)", v.Action, v.Why)
+	}
+	if v.HaveQty != 2 {
+		t.Fatalf("covered must be 2 (the pending leg's own qty), got %d", v.HaveQty)
+	}
+}
+
+// m217 pin (c): a pending "-sl2" (leg 2) is recognised and counted — the old
+// "-sl"-only HasSuffix missed leg 2/3. Mutant: the old suffix → RED.
+func TestProtectionPendingSL2Counted(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	book := []nt.NT8Order{
+		{Symbol: sym, Name: "s1-sl2", Action: "sell", Type: "stop", State: "ChangePending", Quantity: 1, StopPrice: 29554},
+	}
+	v := adjudicateProtection(sym, side, 1, book, true, nil, 29500, nil, nil)
+	if v.Action != protectionOK {
+		t.Fatalf("a pending -sl2 covering 1 of 1 must be OK (counted), got %s (why: %s)", v.Action, v.Why)
+	}
+}
+
+// m217 pin (f): a quantity-amend reporting the OLD qty (Sonnet probe B) → the
+// partial P0, no place (never a delta on top of the amend).
+func TestProtectionAmendOldQtyIsPartial(t *testing.T) {
+	const sym, side = "MNQ", "LONG"
+	book := []nt.NT8Order{
+		{Symbol: sym, Name: "s1-sl", Action: "sell", Type: "stop", State: "ChangePending", Quantity: 1, StopPrice: 29554},
+	}
+	// posQty 3, the pending reports the OLD qty 1 → covered 1 < 3 → partial.
+	v := adjudicateProtection(sym, side, 3, book, true, nil, 29500, nil, nil)
+	if v.Action != protectionAlertOnly || v.HaveQty != 1 {
+		t.Fatalf("an amend reporting old qty must be partial (alertOnly, covered 1), got %s covered=%d", v.Action, v.HaveQty)
+	}
+}
+
+// m217 pin (b) end-to-end: a partial cover raises P0 "protection_partial"
+// (deduped) and never places.
+func TestProtectionPartialRaisesP0NoPlace(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "m217-partial"
+	at.exchange = "ninjatrader"
+	mt := &MockTrader{}
+	at.trader = mt
+	v := protectionVerdict{Action: protectionAlertOnly, NeedQty: 3, HaveQty: 2, Why: "PARTIALLY protected: 2 of 3 covered"}
+	at.actOnProtection(v, "MNQ", "LONG", 3, "sig", "t", 0, time.Now())
+	if mt.placeStopCalls != 0 {
+		t.Fatalf("a partial cover must NOT place, got %d places", mt.placeStopCalls)
+	}
+	alerts, err := st.Alert().List(at.id, 50)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n := 0
+	for _, a := range alerts {
+		if a.Kind == "protection_partial" {
+			n++
+		}
+	}
+	if n != 1 {
+		t.Fatalf("partial cover must raise ONE protection_partial P0, got %d", n)
 	}
 }
