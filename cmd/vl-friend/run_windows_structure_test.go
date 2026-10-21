@@ -350,6 +350,32 @@ func TestValidateLocalAppDataPinsH18b(t *testing.T) {
 	}
 }
 
+// TestCentralRedactorPinsH14b pins the central redactor: run() reads connect.json
+// and registers the connect key, and the print seam + message boxes apply it.
+func TestCentralRedactorPinsH14b(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "func registerCentralSecret(") {
+		t.Fatalf("run_windows.go must define registerCentralSecret")
+	}
+	if !strings.Contains(s, "func redactCentral(") {
+		t.Fatalf("run_windows.go must define redactCentral")
+	}
+	if !strings.Contains(s, "registerCentralSecret(cfg.ConnectKey)") {
+		t.Fatalf("run() must register the connect key from connect.json")
+	}
+	if !strings.Contains(s, "fmt.Println(redactCentral(line))") {
+		t.Fatalf("the print seam must apply redactCentral")
+	}
+	if !strings.Contains(s, "nativeMessageBox(redactCentral(text)") {
+		t.Fatalf("messageBox must apply redactCentral to the text")
+	}
+}
+
 // TestPowerShellNoScriptTextSplicing pins S18b (the run_windows.go half): the
 // controlled strings (the MSI path in verifyMsiSigner and the text in
 // messageBox) must ride -EncodedCommand + $args[0] — never be spliced into the

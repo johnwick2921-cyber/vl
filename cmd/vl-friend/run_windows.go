@@ -14,6 +14,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -128,10 +129,11 @@ func realDeps() deps {
 			}
 			return strings.TrimSpace(s), nil
 		},
-		// S10: the tskey regex is applied CENTRALLY at the print seam, so a
-		// Tailscale auth key can never reach the console even from a path that
-		// forgot to redact.
-		print:          func(line string) { fmt.Println(redactTSKeys(line)) },
+		// H14b: the print seam applies the CENTRAL redactor — the tskey regex
+		// plus the connect key read from connect.json at run() start — so a
+		// secret can never reach the console even from a path that forgot to
+		// redact.
+		print:          func(line string) { fmt.Println(redactCentral(line)) },
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
@@ -178,9 +180,10 @@ func realDeps() deps {
 		selfExe:         os.Executable,
 		messageBox: func(text string) bool {
 			// A5: native windows.MessageBox (MB_YESNO|MB_ICONQUESTION|MB_TOPMOST|
-			// MB_SETFOREGROUND), no PowerShell child per box. H15: on failure fall
-			// back to console + setup.log so an error is never invisible.
-			yes, err := nativeMessageBox(text, "VL", windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND)
+			// MB_SETFOREGROUND), no PowerShell child per box. H14b: the text is
+			// centrally redacted. H15: on failure fall back to console + setup.log
+			// so an error is never invisible.
+			yes, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND)
 			if err != nil {
 				msgBoxFallback(text)
 				return false
@@ -189,13 +192,13 @@ func realDeps() deps {
 		},
 		errorBox: func(text string) {
 			// A5: OK + Error icon, topmost/foreground. No Yes/No — dismiss only.
-			if _, err := nativeMessageBox(text, "VL", windows.MB_OK|windows.MB_ICONERROR|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+			if _, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_OK|windows.MB_ICONERROR|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
 				msgBoxFallback(text)
 			}
 		},
 		infoBox: func(text string) {
 			// A5: OK + Information icon, topmost/foreground. No Yes/No.
-			if _, err := nativeMessageBox(text, "VL", windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+			if _, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
 				msgBoxFallback(text)
 			}
 		},
@@ -356,6 +359,36 @@ func hideConsole() {
 	procFreeConsole.Call()
 }
 
+// centralSecrets holds the connect key read from connect.json at run() start
+// (H14b), so EVERY output surface — print, setup.log, pause, message box —
+// redacts it (a backstop on top of the tskey regex).
+var centralSecrets struct {
+	mu   sync.Mutex
+	vals []string
+}
+
+func registerCentralSecret(sec string) {
+	if sec == "" {
+		return
+	}
+	centralSecrets.mu.Lock()
+	centralSecrets.vals = append(centralSecrets.vals, sec)
+	centralSecrets.mu.Unlock()
+}
+
+// redactCentral applies the registered secrets then the tskey regex backstop.
+func redactCentral(s string) string {
+	centralSecrets.mu.Lock()
+	vals := append([]string{}, centralSecrets.vals...)
+	centralSecrets.mu.Unlock()
+	for _, sec := range vals {
+		if sec != "" {
+			s = strings.ReplaceAll(s, sec, "***")
+		}
+	}
+	return redactTSKeys(s)
+}
+
 // validateLocalAppData enforces H18b: LOCALAPPDATA must be set and absolute —
 // otherwise setup.log and the exe copy would land on a relative path (cwd).
 func validateLocalAppData() error {
@@ -381,6 +414,13 @@ func run(args []string) error {
 		return err
 	}
 	d := realDeps()
+	// H14b: register the connect key with the CENTRAL redactor before any
+	// output is written (best-effort — a missing connect.json is first run).
+	if docs, err := d.docsDir(); err == nil {
+		if cfg, err := readConnectConfig(d, docs); err == nil {
+			registerCentralSecret(cfg.ConnectKey)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
