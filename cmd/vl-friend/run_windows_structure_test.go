@@ -218,3 +218,40 @@ func TestMessageBoxTopmost(t *testing.T) {
 		t.Fatalf("messageBox must pass MessageBoxOptions.ServiceNotification (TopMost)")
 	}
 }
+
+// TestPowerShellNoScriptTextSplicing pins S18b (the run_windows.go half): the
+// controlled strings (the MSI path in verifyMsiSigner and the text in
+// messageBox) must ride -EncodedCommand + $args[0] — never be spliced into the
+// script text with quote-escaping. The mutant that re-adds the
+// strings.ReplaceAll(...,"'","”") splicing fails here.
+func TestPowerShellNoScriptTextSplicing(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	if !strings.Contains(s, "func psEncodedCommand(script string) string") {
+		t.Fatalf("run_windows.go must define psEncodedCommand")
+	}
+	if !strings.Contains(s, "utf16.Encode") || !strings.Contains(s, "base64.StdEncoding") {
+		t.Fatalf("psEncodedCommand must base64-encode UTF-16LE")
+	}
+	if strings.Contains(s, `ReplaceAll(msiPath, "'", "''")`) {
+		t.Fatalf("verifyMsiSigner must NOT splice the MSI path with quote-escaping")
+	}
+	if strings.Contains(s, `ReplaceAll(text, "'", "''")`) {
+		t.Fatalf("messageBox must NOT splice the text with quote-escaping")
+	}
+	// Both controlled-string call sites must go through -EncodedCommand and
+	// hand the value to the script as $args[0].
+	if !strings.Contains(s, `"-EncodedCommand", psEncodedCommand(script), msiPath`) {
+		t.Fatalf("verifyMsiSigner must pass the path via -EncodedCommand + $args[0]")
+	}
+	if !strings.Contains(s, `"-EncodedCommand", psEncodedCommand(script), text`) {
+		t.Fatalf("messageBox must pass the text via -EncodedCommand + $args[0]")
+	}
+	if !strings.Contains(s, `$args[0]`) {
+		t.Fatalf("the encoded scripts must read the controlled string from $args[0]")
+	}
+}

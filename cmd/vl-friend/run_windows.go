@@ -5,6 +5,7 @@ package main
 import (
 	"bufio"
 	"context"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -14,6 +15,7 @@ import (
 	"strings"
 	"syscall"
 	"time"
+	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/term"
@@ -99,9 +101,10 @@ func realDeps() deps {
 		allowedSigners: []byte(friendAllowedSigners),
 		tempDir:        func() (string, error) { return os.TempDir(), nil },
 		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
-			esc := strings.ReplaceAll(msiPath, "'", "''")
-			ps := "$s = Get-AuthenticodeSignature -FilePath '" + esc + "'; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", ps)
+			// S18b: the MSI path is passed as $args[0], never spliced into
+			// script text — no quote-escaping, no injection surface.
+			script := "$s = Get-AuthenticodeSignature -FilePath $args[0]; $s.Status.ToString() + '|' + $s.SignerCertificate.Subject"
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(script), msiPath)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -137,13 +140,13 @@ func realDeps() deps {
 		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
 		selfExe:         os.Executable,
 		messageBox: func(text string) bool {
-			esc := strings.ReplaceAll(text, "'", "''")
 			// W9: the MessageBoxOptions.ServiceNotification flag renders the box
 			// TOPMOST, so the update/error dialog is never buried behind the
 			// console or other windows. Buttons stay YesNo + Question here; the
 			// error-vs-update split (OK+Error for failures) is a separate seam.
-			ps := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show('" + esc + "','VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
-			cmd := exec.Command("powershell.exe", "-NoProfile", "-Command", ps)
+			// S18b: the text is passed as $args[0], never spliced into script text.
+			script := "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.MessageBox]::Show($args[0],'VL','YesNo','Question','Button1',[System.Windows.Forms.MessageBoxOptions]::ServiceNotification) -eq 'Yes'"
+			cmd := exec.Command("powershell.exe", "-NoProfile", "-EncodedCommand", psEncodedCommand(script), text)
 			noWindow(cmd)
 			out, err := cmd.CombinedOutput()
 			if err != nil {
@@ -183,6 +186,20 @@ func windowsDocumentsDir() (string, error) {
 // through it, so the friend app never flashes a console while it shells out.
 func noWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+}
+
+// psEncodedCommand base64-encodes a PowerShell command as UTF-16LE — the format
+// powershell.exe -EncodedCommand expects. S18b: a command sent this way, with any
+// user/controlled string handed to the script as $args[0], is NEVER spliced into
+// script text, so there is no quote-escaping to get wrong and no injection
+// surface in the path/text.
+func psEncodedCommand(script string) string {
+	u := utf16.Encode([]rune(script))
+	b := make([]byte, 0, len(u)*2)
+	for _, c := range u {
+		b = append(b, byte(c), byte(c>>8))
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // procFreeConsole is the kernel32 FreeConsole entry point. golang.org/x/sys
