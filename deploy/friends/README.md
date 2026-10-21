@@ -41,7 +41,7 @@ deletes), and marks the registry entry `revoked`.
 ## Friend sweep
 
 After each install the updater restarts every active, flat friend and records `friends:[{name,state,rev,note}]`.
-With `TUNNEL_IP` unset and active friends present it disables the sweep, notifies the owner, and records a `friend sweep disabled: TUNNEL_IP unset` receipt.
+`TUNNEL_IP` is the box's Tailscale address (set it in `~/.config/vl-updater/env`); with `TUNNEL_IP` unset and active friends present the sweep records a synthetic `{name:"*", state:"failed", note:"friend sweep disabled: TUNNEL_IP unset"}` entry (and the same for an unreadable registry) that the owner's Telegram alert relays.
 
 ## Tests
 

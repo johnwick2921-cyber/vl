@@ -9,6 +9,11 @@
 #      VL_RELEASE_DIR (absolute, OUTSIDE the install — the same containment
 #      the worker enforces, internal/updaterworker/releaseroot.go) and
 #      VL_CUTOVER_TOKEN (non-empty; never printed here).
+#      Optional: TUNNEL_IP=<the box's Tailscale address> enables the friend
+#      sweep after an install (W-FRIEND-HOSTED). Unset + active friends →
+#      the sweep records a synthetic friends[] entry "friend sweep disabled:
+#      TUNNEL_IP unset" (state failed) and the owner's Telegram alert relays
+#      it (internal/updaterworker/friends.go updateFriends).
 #   3. go build -trimpath, then `go version -m` must report vcs.modified=false
 #      and vcs.revision=<sha> — a dirty or mis-labelled build is refused.
 #   4. The unit template at THAT sha is copied into ~/.config/systemd/user/

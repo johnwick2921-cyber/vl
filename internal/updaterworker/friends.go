@@ -109,7 +109,10 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 	if err != nil {
 		rc := w.receipt("friends_sweep", start, map[string]string{"registry": cfg.FriendRegistry}, err)
 		w.notify("⚠️ Friend update skipped — could not read the friend registry: " + err.Error())
-		return []Receipt{rc}, nil
+		// R8: persist a synthetic friends[] entry so api/friend_alert.go relays
+		// it to the owner's Telegram — a notify alone only logs.
+		results := []updaterjob.FriendResult{{Name: "*", State: string(FriendFailed), Note: "friend sweep disabled: registry unreadable"}}
+		return []Receipt{rc}, results
 	}
 	active := 0
 	for _, fr := range rows {
@@ -119,12 +122,14 @@ func (w *Worker) updateFriends(ctx context.Context, expectedSHA string) ([]Recei
 	}
 	// U13: a registry WITH active friends but NO TUNNEL_IP (FriendHost) used to
 	// fall through the registry-or-host early return and vanish — no receipt,
-	// no owner ping. Now the owner is told and the receipt says why.
+	// no owner ping. Now the owner is told and the receipt says why. R8: the
+	// synthetic friends[] entry is what api/friend_alert.go actually relays.
 	if strings.TrimSpace(cfg.FriendHost) == "" {
 		if active > 0 {
 			w.notify("⚠️ Friend sweep disabled — TUNNEL_IP (FriendHost) is unset; the friends' tunnel URLs cannot be built.")
 			ev := map[string]string{"registry": cfg.FriendRegistry, "active_friends": fmt.Sprintf("%d", active)}
-			return []Receipt{w.receipt("friend sweep disabled: TUNNEL_IP unset", start, ev, nil)}, nil
+			results := []updaterjob.FriendResult{{Name: "*", State: string(FriendFailed), Note: "friend sweep disabled: TUNNEL_IP unset"}}
+			return []Receipt{w.receipt("friend sweep disabled: TUNNEL_IP unset", start, ev, nil)}, results
 		}
 		return nil, nil // no active friends: nothing to sweep
 	}
