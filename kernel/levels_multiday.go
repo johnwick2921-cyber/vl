@@ -309,9 +309,15 @@ func pmCovered(cal map[string]*calDayAgg, start, end time.Time, minBars int) boo
 	return pwCovered(cal, start, end, minBars)
 }
 
-// startOfWeekCT returns Monday 00:00 of t's ISO week, in t's location.
+// startOfWeekCT returns Monday 00:00 CT of the CME week t belongs to: Sunday
+// rolls FORWARD to the next Monday (the CME week opens Sunday 17:00 CT, so a
+// Sunday-evening instant belongs to the week starting the NEXT day). Same
+// convention as weekStartMonday — the two must agree or PWH/PWL drift a week
+// on Sunday evening [bug-hunt #32].
 func startOfWeekCT(t time.Time) time.Time {
-	daysSinceMon := (int(t.Weekday()) + 6) % 7 // Sun=0 → 6, Mon=1 → 0, ...
 	d := time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, t.Location())
-	return d.AddDate(0, 0, -daysSinceMon)
+	if wd := d.Weekday(); wd == time.Sunday {
+		return d.AddDate(0, 0, 1)
+	}
+	return d.AddDate(0, 0, -int(d.Weekday()-time.Monday))
 }
