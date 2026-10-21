@@ -61,9 +61,18 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 		dirExists: func(string) bool { return true }, // NT8 has run once (bin\Custom exists)
 		positions: func(_ context.Context) (float64, error) { return 0, nil },
 		writeFile: os.WriteFile,
-		mkdirAll:  os.MkdirAll,
-		rename:    os.Rename,
-		readFile:  os.ReadFile,
+		appendFile: func(path string, data []byte, perm fs.FileMode) error {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, perm)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.Write(data)
+			return err
+		},
+		mkdirAll: os.MkdirAll,
+		rename:   os.Rename,
+		readFile: os.ReadFile,
 		readLine: func(p string) (string, error) {
 			rec.lines = append(rec.lines, p)
 			rec.order = append(rec.order, "prompt:"+p)
@@ -1094,6 +1103,29 @@ func TestLogSetupErrorAppends(t *testing.T) {
 	}
 	if strings.Count(s, "second") != 1 {
 		t.Fatalf("setup.log should carry one line per error: %q", s)
+	}
+}
+
+// TestLogSetupErrorUsesAppendFile — S17: logSetupError must go through the
+// O_APPEND seam (never read+write), and S10: the tskey regex redacts centrally.
+func TestLogSetupErrorUsesAppendFile(t *testing.T) {
+	var appended []byte
+	called := false
+	d := deps{
+		localAppDataDir: func() string { return t.TempDir() },
+		mkdirAll:        func(string, fs.FileMode) error { return nil },
+		appendFile: func(_ string, data []byte, _ fs.FileMode) error {
+			called = true
+			appended = append(appended, data...)
+			return nil
+		},
+	}
+	logSetupError(d, "boom tskey-auth-SECRET123")
+	if !called {
+		t.Fatal("logSetupError must use appendFile, not read+write")
+	}
+	if strings.Contains(string(appended), "tskey-auth-SECRET123") {
+		t.Fatalf("the tskey must be redacted in the log: %q", appended)
 	}
 }
 

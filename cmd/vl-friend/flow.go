@@ -392,15 +392,16 @@ func setupLogPath(d deps) string {
 }
 
 // logSetupError appends the (already-redacted) error to setup.log; best effort.
-// F7: APPEND, never overwrite — the full error history survives. S10: the tskey
-// regex is applied here centrally, so a key can never land in the log.
+// F7: APPEND, never overwrite — the full error history survives. S17: it uses
+// the O_APPEND seam (a TRUE append), never read-modify-write (which raced and
+// dropped concurrent lines). S10: the tskey regex is applied centrally here.
 func logSetupError(d deps, msg string) {
 	dir := filepath.Join(d.localAppDataDir(), "VL")
 	if d.mkdirAll(dir, 0o755) != nil {
 		return
 	}
-	prev, _ := d.readFile(setupLogPath(d))
-	_ = d.writeFile(setupLogPath(d), append(prev, []byte(time.Now().Format(time.RFC3339)+" "+redactTSKeys(msg)+"\n")...), 0o600)
+	line := time.Now().Format(time.RFC3339) + " " + redactTSKeys(msg) + "\n"
+	_ = d.appendFile(setupLogPath(d), []byte(line), 0o600)
 }
 
 // downloadTailscaleMSI downloads the official installer to a temp file and
