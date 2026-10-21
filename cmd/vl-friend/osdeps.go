@@ -54,6 +54,10 @@ type deps struct {
 	// Documents off the profile, and NinjaTrader + the C# AddOn both read
 	// MyDocuments, so every NT path must be under it.
 	docsDir func() (string, error)
+	// dirExists reports whether a directory exists. Production: os.Stat + IsDir;
+	// used as the F2 exactness proof (NT8 must have created bin\Custom) before any
+	// write.
+	dirExists func(path string) bool
 	// ntRunning reports whether NinjaTrader.exe is running (it locks the loaded
 	// VL.AddOn.dll — never write a locked DLL).
 	ntRunning func(ctx context.Context) (bool, error)

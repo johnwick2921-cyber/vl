@@ -117,6 +117,14 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	base := baseURLFromInstallCode(ic)
 
+	// F2 exactness (owner 00:05): prove NT8 has created its folders BEFORE any
+	// write — <MyDocuments>\NinjaTrader 8\bin\Custom must exist. If not, write
+	// NOTHING.
+	ntBinCustom := filepath.Join(docs, "NinjaTrader 8", "bin", "Custom")
+	if !d.dirExists(ntBinCustom) {
+		return fmt.Errorf("Open NinjaTrader 8 once (so it creates its folders), then run VL-Setup again")
+	}
+
 	// [2/6] Tailscale — install (UAC) or note it is already present.
 	d.print("[2/6] Installing Tailscale (the private connection). Windows will ask for permission — click YES.")
 	already, err := ensureTailscaleInstalled(ctx, d)
@@ -156,8 +164,9 @@ func installFirstRun(ctx context.Context, d deps, code string) error {
 	}
 	d.print("Add-on verified ✓")
 
-	// [5/6] Place the verified add-on into NinjaTrader.
-	d.print("[5/6] Installing the add-on into NinjaTrader…")
+	// [5/6] Place the verified add-on into NinjaTrader (F2: print the resolved
+	// folder so the user can SEE where it is going).
+	d.print("[5/6] Installing the add-on into: " + ntBinCustom)
 	if err := d.mkdirAll(filepath.Dir(addonDstPath(docs)), 0o755); err != nil {
 		return err
 	}

@@ -82,6 +82,10 @@ func realDeps() deps {
 			return err
 		},
 		docsDir: windowsDocumentsDir,
+		dirExists: func(path string) bool {
+			st, err := os.Stat(path)
+			return err == nil && st.IsDir()
+		},
 		ntRunning: func(ctx context.Context) (bool, error) {
 			out, err := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-Command", "if (Get-Process NinjaTrader -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }").CombinedOutput()
 			if err != nil {

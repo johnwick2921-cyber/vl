@@ -50,6 +50,7 @@ func flowFakeDeps(t *testing.T, home string) (deps, *flowRecorder) {
 		},
 		homeDir:   func() (string, error) { return home, nil },
 		docsDir:   func() (string, error) { return home, nil },
+		dirExists: func(string) bool { return true }, // NT8 has run once (bin\Custom exists)
 		positions: func(_ context.Context) (float64, error) { return 0, nil },
 		writeFile: os.WriteFile,
 		mkdirAll:  os.MkdirAll,
@@ -773,6 +774,35 @@ func TestInstallFirstRunWritesUnderMyDocuments(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(home, "Documents", "NinjaTrader 8")); err == nil {
 		t.Fatal("files were written under <home>\\Documents instead of MyDocuments")
+	}
+}
+
+// TestInstallFirstRunRefusesMissingNTFolder — F2 exactness (owner 00:05): before
+// ANY write, <MyDocuments>\NinjaTrader 8\bin\Custom must exist (NT8 creates it
+// on first start). Missing → clear error, NOTHING written. MUTANT: drop the
+// dirExists check → this test RED.
+func TestInstallFirstRunRefusesMissingNTFolder(t *testing.T) {
+	home := t.TempDir()
+	d, _ := flowFakeDeps(t, home)
+	d.dirExists = func(string) bool { return false } // NT8 has never run
+	ic := goodCode()
+	fetch, signers := fetchMap(t, ic.BaseURL(), []byte(manifestText("37")), addonBody())
+	d.fetch = fetch
+	d.allowedSigners = signers
+
+	err := installFirstRun(context.Background(), d, encodeInstallCode(ic))
+	if err == nil || !strings.Contains(err.Error(), "Open NinjaTrader 8 once") {
+		t.Fatalf("expected the 'Open NinjaTrader 8 once' error, got %v", err)
+	}
+	for _, p := range []string{
+		connectJSONPath(home),
+		appStatePath(home),
+		addonDstPath(home),
+		installedJSONPath(home),
+	} {
+		if _, statErr := os.Stat(p); statErr == nil {
+			t.Fatalf("nothing may be written when bin\\Custom is missing, but %s exists", p)
+		}
 	}
 }
 
