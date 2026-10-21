@@ -122,6 +122,10 @@ func realDeps() deps {
 			fd := int(os.Stdin.Fd())
 			if term.IsTerminal(fd) {
 				b, err := term.ReadPassword(fd)
+				// The paste is done (QuickEdit stayed on for right-click paste;
+				// ReadPassword restored it). Now turn it off so a stray click
+				// cannot freeze the rest of the install (final-run F1).
+				disableQuickEdit()
 				fmt.Println()
 				if err != nil {
 					return "", err

@@ -553,3 +553,18 @@ func TestFallbackRedactsAndTimeoutIsNamed(t *testing.T) {
 		t.Fatal("psRun must name a timeout")
 	}
 }
+
+// TestReadSecretDisablesQuickEditAfterPaste — final-run F1: a first run keeps
+// QuickEdit for right-click paste, then must turn it off right after the code
+// is read. MUTANT: drop the call → RED.
+func TestReadSecretDisablesQuickEditAfterPaste(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+	i := strings.Index(s, "b, err := term.ReadPassword(fd)")
+	if i < 0 || !strings.Contains(s[i:i+400], "disableQuickEdit()") {
+		t.Fatal("readSecret must call disableQuickEdit() right after ReadPassword")
+	}
+}
