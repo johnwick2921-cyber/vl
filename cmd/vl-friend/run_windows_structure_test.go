@@ -257,10 +257,16 @@ func TestPowerShellNoScriptTextSplicing(t *testing.T) {
 	}
 	s := string(src)
 
-	if !strings.Contains(s, "func psEncodedCommand(script string) string") {
-		t.Fatalf("run_windows.go must define psEncodedCommand")
+	// psEncodedCommand now lives in osdeps.go (shared with flow.go) so the
+	// Linux test build can use it too.
+	osdeps, err := os.ReadFile("osdeps.go")
+	if err != nil {
+		t.Fatalf("read osdeps.go: %v", err)
 	}
-	if !strings.Contains(s, "utf16.Encode") || !strings.Contains(s, "base64.StdEncoding") {
+	if !strings.Contains(string(osdeps), "func psEncodedCommand(script string) string") {
+		t.Fatalf("osdeps.go must define psEncodedCommand (shared with flow.go)")
+	}
+	if !strings.Contains(string(osdeps), "utf16.Encode") || !strings.Contains(string(osdeps), "base64.StdEncoding") {
 		t.Fatalf("psEncodedCommand must base64-encode UTF-16LE")
 	}
 	if strings.Contains(s, `ReplaceAll(msiPath, "'", "''")`) {
@@ -279,5 +285,33 @@ func TestPowerShellNoScriptTextSplicing(t *testing.T) {
 	}
 	if !strings.Contains(s, `$args[0]`) {
 		t.Fatalf("the encoded scripts must read the controlled string from $args[0]")
+	}
+}
+
+// TestAppendFileSeamUsesOAppend pins S17: the appendFile seam must be a TRUE
+// append (os.O_APPEND|os.O_CREATE|os.O_WRONLY via os.OpenFile), never a
+// read-modify-write that races and drops concurrent log lines. The mutant that
+// reverts to readFile+writeFile (or os.WriteFile) fails here.
+func TestAppendFileSeamUsesOAppend(t *testing.T) {
+	src, err := os.ReadFile("run_windows.go")
+	if err != nil {
+		t.Fatalf("read run_windows.go: %v", err)
+	}
+	s := string(src)
+
+	line := `appendFile: func(path string, data []byte, perm fs.FileMode) error {`
+	if !strings.Contains(s, line) {
+		t.Fatalf("run_windows.go must define the %s seam", line)
+	}
+	if !strings.Contains(s, "os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, perm)") {
+		t.Fatalf("appendFile must open with O_APPEND|O_CREATE|O_WRONLY")
+	}
+
+	osdeps, err := os.ReadFile("osdeps.go")
+	if err != nil {
+		t.Fatalf("read osdeps.go: %v", err)
+	}
+	if !strings.Contains(string(osdeps), "appendFile func(path string, data []byte, perm fs.FileMode) error") {
+		t.Fatalf("osdeps.go must declare the appendFile seam")
 	}
 }

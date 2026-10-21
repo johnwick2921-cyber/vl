@@ -5,9 +5,9 @@ package main
 import (
 	"bufio"
 	"context"
-	"encoding/base64"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
@@ -15,7 +15,6 @@ import (
 	"strings"
 	"syscall"
 	"time"
-	"unicode/utf16"
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/term"
@@ -56,9 +55,21 @@ func realDeps() deps {
 			return 0, fmt.Errorf("flat probe not wired")
 		},
 		writeFile: os.WriteFile,
-		mkdirAll:  os.MkdirAll,
-		rename:    os.Rename,
-		readFile:  os.ReadFile,
+		// S17: a TRUE append — O_APPEND, never read-modify-write — so
+		// logSetupError's error history can never be clobbered by a concurrent
+		// line (the old read+write raced and dropped lines).
+		appendFile: func(path string, data []byte, perm fs.FileMode) error {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, perm)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.Write(data)
+			return err
+		},
+		mkdirAll: os.MkdirAll,
+		rename:   os.Rename,
+		readFile: os.ReadFile,
 		readLine: func(prompt string) (string, error) {
 			fmt.Print(prompt)
 			// S7: the install code is read with an EMPTY prompt (runFirstRun's
@@ -193,20 +204,6 @@ const psUTF8 = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8;"
 // through it, so the friend app never flashes a console while it shells out.
 func noWindow(cmd *exec.Cmd) {
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
-}
-
-// psEncodedCommand base64-encodes a PowerShell command as UTF-16LE — the format
-// powershell.exe -EncodedCommand expects. S18b: a command sent this way, with any
-// user/controlled string handed to the script as $args[0], is NEVER spliced into
-// script text, so there is no quote-escaping to get wrong and no injection
-// surface in the path/text.
-func psEncodedCommand(script string) string {
-	u := utf16.Encode([]rune(script))
-	b := make([]byte, 0, len(u)*2)
-	for _, c := range u {
-		b = append(b, byte(c), byte(c>>8))
-	}
-	return base64.StdEncoding.EncodeToString(b)
 }
 
 // procFreeConsole is the kernel32 FreeConsole entry point. golang.org/x/sys

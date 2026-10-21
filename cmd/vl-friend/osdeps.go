@@ -2,7 +2,9 @@ package main
 
 import (
 	"context"
+	"encoding/base64"
 	"io/fs"
+	"unicode/utf16"
 )
 
 // osdeps.go — the OS side effects the install/update flow needs. Everything is
@@ -24,9 +26,13 @@ type deps struct {
 	// writeFile / mkdirAll / rename are thin fs wrappers. rename only MOVES
 	// (the old add-on is moved aside to VL\old\, never deleted — THE ONE RULE).
 	writeFile func(path string, data []byte, perm fs.FileMode) error
-	mkdirAll  func(path string, perm fs.FileMode) error
-	rename    func(oldpath, newpath string) error
-	readFile  func(path string) ([]byte, error)
+	// appendFile opens path with O_APPEND|O_CREATE|O_WRONLY and writes data — a
+	// TRUE append, never read-modify-write (S17: logSetupError must append, and
+	// a read+write race could drop a concurrent error line).
+	appendFile func(path string, data []byte, perm fs.FileMode) error
+	mkdirAll   func(path string, perm fs.FileMode) error
+	rename     func(oldpath, newpath string) error
+	readFile   func(path string) ([]byte, error)
 	// readLine prompts the user (install code on first run, update yes/no) and
 	// returns the trimmed answer. autoApprove=true bypasses it in tests. S20:
 	// an empty read at EOF returns io.EOF (never ("", nil)) so callers can
@@ -80,6 +86,21 @@ type deps struct {
 type msiSignature struct {
 	Status  string // "Valid", "HashMismatch", "NotSigned", "UnknownError", …
 	Subject string // signer certificate subject, e.g. "CN=Tailscale Inc., O=Tailscale Inc., …"
+}
+
+// psEncodedCommand base64-encodes a PowerShell command as UTF-16LE — the format
+// powershell.exe -EncodedCommand expects. S18b: a command sent this way, with any
+// user/controlled string handed to the script as $args[0], is NEVER spliced into
+// script text, so there is no quote-escaping to get wrong and no injection
+// surface in the path/text. Lives here (not run_windows.go) so flow.go can use
+// it too without breaking the Linux test build.
+func psEncodedCommand(script string) string {
+	u := utf16.Encode([]rune(script))
+	b := make([]byte, 0, len(u)*2)
+	for _, c := range u {
+		b = append(b, byte(c), byte(c>>8))
+	}
+	return base64.StdEncoding.EncodeToString(b)
 }
 
 // appVersion / appBuild are the friend app's own version, embedded at build
