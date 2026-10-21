@@ -154,11 +154,15 @@ json.dump(entries, open(reg, "w"), indent=2)
 PY
 
 # One-time install code (B2), stdout only. The clear key is never written to disk
-# outside the friend's 0600 .env.
+# outside the friend's 0600 .env. CONNECT_KEY / TS_AUTHKEY are handed to the
+# python3 helper via the ENVIRONMENT, never argv (argv is visible in `ps` and
+# /proc/<pid>/cmdline to any local user, S10b).
 TS_AUTHKEY="${TS_AUTHKEY:-}"
-python3 - "$NAME" "$TUNNEL_IP" "$NT_PORT" "$WEB_PORT" "$CONNECT_KEY" "$TS_AUTHKEY" <<'PY'
-import base64, json, sys
-name, host, nt, web, key, tsk = sys.argv[1:7]
+CONNECT_KEY="$CONNECT_KEY" TS_AUTHKEY="$TS_AUTHKEY" python3 - "$NAME" "$TUNNEL_IP" "$NT_PORT" "$WEB_PORT" <<'PY'
+import base64, json, os, sys
+name, host, nt, web = sys.argv[1:5]
+key = os.environ["CONNECT_KEY"]
+tsk = os.environ.get("TS_AUTHKEY", "")
 obj = {"v": 1, "name": name, "host": host, "nt_port": int(nt),
        "web_port": int(web), "connect_key": key, "ts_authkey": tsk}
 raw = json.dumps(obj, separators=(",", ":")).encode()

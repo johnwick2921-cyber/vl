@@ -156,5 +156,39 @@ for who in carol dave; do
   fi
 done
 
+echo "== F9: CONNECT_KEY / TS_AUTHKEY never in python3 argv (S10b) =="
+# Wrap `python3` (PATH-scoped, same dir as the ss stub) to record its argv; the
+# real python3 is resolved BEFORE the wrapper shadows it. The fix must hand the
+# two secrets via the environment, so the clear key / auth key must never appear
+# in any helper's argv (which `ps` and /proc/<pid>/cmdline would expose).
+REAL_PY3="$(command -v python3)"
+PYLOG="$WORK/py-argv.log"
+: > "$PYLOG"
+cat > "$WORK/bin/python3" <<EOF
+#!/usr/bin/env bash
+printf '%s\n' "\$@" >> "$PYLOG"
+exec "$REAL_PY3" "\$@"
+EOF
+chmod +x "$WORK/bin/python3"
+export PATH="$WORK/bin:$PATH"
+export TS_AUTHKEY="tskey-auth-s10b-test123456789"
+RC=$(provision eve)
+check "F9 rc is 0" "$RC" "0"
+EVE_KEY="$(grep '^NT_CONNECT_KEY=' "$ROOT/eve/.env" | cut -d= -f2)"
+ARGV_ALL="$(cat "$PYLOG")"
+hasnt "F9 connect key absent from every python3 argv" "$ARGV_ALL" "$EVE_KEY"
+hasnt "F9 ts_authkey absent from every python3 argv" "$ARGV_ALL" "tskey-auth-s10b-test123456789"
+CODE="$(cat "$WORK/out")"
+DECODED="$(python3 - "$CODE" <<'PY'
+import base64, json, sys
+c = sys.argv[1] + "=" * (-len(sys.argv[1]) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(c))))
+PY
+)"
+has "F9 code connect_key matches .env" "$DECODED" "\"connect_key\": \"$EVE_KEY\""
+has "F9 code ts_authkey matches input" "$DECODED" '"ts_authkey": "tskey-auth-s10b-test123456789"'
+unset TS_AUTHKEY
+
 printf '\n== %d pass / %d fail ==\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ] || exit 1
+
