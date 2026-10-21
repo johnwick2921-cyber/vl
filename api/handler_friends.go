@@ -513,19 +513,33 @@ func (s *Server) handleOwnerFriendAction(c *gin.Context) {
 			c.JSON(http.StatusTooManyRequests, gin.H{"error": "rate limited — wait and retry"})
 			return
 		}
-		// 1. remove.sh: stops the unit, MOVES the folder to trash, sets state=revoked.
-		cmd := exec.Command(filepath.Join(friendScriptsDir(), "remove.sh"), name)
-		cmd.Env = os.Environ()
-		out, err := cmd.CombinedOutput()
-		if err != nil {
-			logger.Errorf("friends revoke %q: remove.sh failed: %v", name, err)
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke failed", "detail": strings.TrimSpace(string(out))})
-			return
+		// U4: a revoke on an ALREADY-revoked row runs only the Tailscale step
+		// (retryable) — the folder is already gone, so remove.sh must not run.
+		if row.State != "revoked" {
+			// 1. remove.sh: stops the unit, MOVES the folder to trash, sets state=revoked.
+			cmd := exec.Command(filepath.Join(friendScriptsDir(), "remove.sh"), name)
+			cmd.Env = os.Environ()
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				logger.Errorf("friends revoke %q: remove.sh failed: %v", name, err)
+				c.JSON(http.StatusInternalServerError, gin.H{"error": "revoke failed", "detail": strings.TrimSpace(string(out))})
+				return
+			}
 		}
-		// 2. Tailscale device delete — never a silent skip when the key is missing.
-		ts, tsOK := tailscaleDeleteDevice(row)
+		// 2. Tailscale device delete — with tag lookup when no device id (U4).
+		ts, tsOK := tailscaleDeleteDevice(row, name)
 		if !tsOK {
+			if ts == "api_key_missing" {
+				// Surfaced warning, never a silent skip (S11): the owner must
+				// set TAILSCALE_API_KEY. Not an error — the local revoke is done.
+				logger.Warnf("friends revoke %q: tailscale device delete not done: %s", name, ts)
+				c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts, "warning": "set TAILSCALE_API_KEY to remove the friend's device from the tailnet"})
+				return
+			}
+			// U4: the device was NOT deleted → explicit non-200.
 			logger.Warnf("friends revoke %q: tailscale device delete not done: %s", name, ts)
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "revoked locally but the Tailscale device was not deleted", "detail": ts})
+			return
 		}
 		c.JSON(http.StatusOK, gin.H{"name": name, "state": "revoked", "tailscale": ts})
 
@@ -672,16 +686,26 @@ func setFriendEnvKey(name, key string) error {
 // production value is the real api.tailscale.com.
 var tailscaleAPIBase = "https://api.tailscale.com"
 
-// tailscaleDeleteDevice deletes the friend's Tailscale device via the API.
-// Returns a status string and whether the delete happened (a missing key or an
-// unknown device is surfaced — never a silent skip, S11/B2).
-func tailscaleDeleteDevice(row *friendRecord) (string, bool) {
+// tailscaleDeleteDevice deletes the friend's Tailscale device via the API. U4:
+// when the registry has no device id, it looks the device up by tag (tag:<name>)
+// and deletes that. Returns (state, ok); ok=false means the device was NOT
+// deleted (the caller decides whether that is a surfaced warning or an error).
+func tailscaleDeleteDevice(row *friendRecord, name string) (string, bool) {
 	key := strings.TrimSpace(os.Getenv("TAILSCALE_API_KEY"))
 	if key == "" {
 		return "api_key_missing", false
 	}
-	if strings.TrimSpace(row.TailscaleDeviceID) == "" {
-		return "no_device_id", false
+	deviceID := strings.TrimSpace(row.TailscaleDeviceID)
+	if deviceID == "" {
+		// U4: no stored device id — resolve it from the friend's tag.
+		id, err := tailscaleDeviceIDByTag(key, name)
+		if err != nil {
+			return "tag_lookup_failed:" + err.Error(), false
+		}
+		if id == "" {
+			return "no_device_id", false
+		}
+		deviceID = id
 	}
 	// The literal path element "device" is reserved by the update-auth census
 	// (a fragment of the enrollment filename device.key, spelled only in
@@ -689,7 +713,7 @@ func tailscaleDeleteDevice(row *friendRecord) (string, bool) {
 	// at runtime so the census does not misread it as the enrollment key — the
 	// two are unrelated.
 	deviceSeg := strings.Join([]string{"dev", "ice"}, "")
-	req, err := http.NewRequest(http.MethodDelete, tailscaleAPIBase+"/api/v2/"+deviceSeg+"/"+row.TailscaleDeviceID, nil)
+	req, err := http.NewRequest(http.MethodDelete, tailscaleAPIBase+"/api/v2/"+deviceSeg+"/"+deviceID, nil)
 	if err != nil {
 		return "request_error", false
 	}
@@ -706,6 +730,42 @@ func tailscaleDeleteDevice(row *friendRecord) (string, bool) {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 		return fmt.Sprintf("http %d %s", resp.StatusCode, strings.TrimSpace(string(b))), false
 	}
+}
+
+// tailscaleDeviceIDByTag lists the tailnet's devices and returns the id of the
+// device carrying tag:<name> ("" when none). U4.
+func tailscaleDeviceIDByTag(key, name string) (string, error) {
+	req, err := http.NewRequest(http.MethodGet, tailscaleAPIBase+"/api/v2/tailnet/-/devices", nil)
+	if err != nil {
+		return "", err
+	}
+	req.SetBasicAuth(key, "")
+	resp, err := (&http.Client{Timeout: 10 * time.Second}).Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("tailnet devices http %d", resp.StatusCode)
+	}
+	var out struct {
+		Devices []struct {
+			ID   string   `json:"id"`
+			Tags []string `json:"tags"`
+		} `json:"devices"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
+		return "", err
+	}
+	tag := "tag:" + name
+	for _, d := range out.Devices {
+		for _, t := range d.Tags {
+			if t == tag {
+				return d.ID, nil
+			}
+		}
+	}
+	return "", nil
 }
 
 // ---- Telegram alerts ------------------------------------------------------
