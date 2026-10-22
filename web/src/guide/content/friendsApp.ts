@@ -21,9 +21,11 @@ export const friendsApp: GuideSection = {
         {
           title: 'Install',
           steps: [
-            'They already have NinjaTrader 8 with live MNQ data and their own SIM account.',
-            'They run VL-Setup.exe and paste the install code you sent (shown once, in the Friends page).',
-            'The app quietly installs Tailscale, writes its connection settings, downloads and verifies the compiled add-on, and places a VL icon on their desktop.',
+            'They already have NinjaTrader 8 with live MNQ data and their own SIM account, and have opened NinjaTrader 8 at least once (setup stops with a message if NinjaTrader’s folders do not exist yet).',
+            'They run VL-Setup.exe and paste the install code you sent (shown once, in the Friends page) — step [1/6].',
+            'Steps [2/6] and [3/6]: the app installs Tailscale (Windows asks permission once — they click Yes) and joins your tailnet, then waits up to 15 minutes for YOU to approve their device in Tailscale.',
+            'Steps [4/6] and [5/6]: it downloads the compiled add-on, checks its signature and SHA-256, and places VL.AddOn.dll in Documents\\NinjaTrader 8\\bin\\Custom. If NinjaTrader is open they must close it and open it again once so it loads the add-on.',
+            'Step [6/6]: it puts a VL icon on their desktop and Start Menu and opens their dashboard.',
           ],
         },
         {
@@ -38,7 +40,7 @@ export const friendsApp: GuideSection = {
     { kind: 'h', text: 'The update pop-up' },
     {
       kind: 'p',
-      text: 'Each time the app starts it asks their bot for a signed version list. When the add-on or the app is newer, a pop-up says “VL update available — Update now / Later”. Update now downloads the new build, checks its signature and its SHA-256 (a bad download refuses and nothing changes), waits until the bot is flat, moves the old add-on aside (never deletes it), and asks them to restart NinjaTrader. It never updates during a trade.',
+      text: 'Each time the friend double-clicks the VL icon, the app opens their dashboard and then asks their bot for a signed version list (up to 15 seconds). Only a newer ADD-ON triggers a pop-up: “VL update available (add-on old → new). Yes = update now, No = later.” Yes downloads the new build and checks its signature and SHA-256 (a bad download refuses and nothing changes), waits until the bot is flat, asks them to close NinjaTrader, moves the old add-on aside (never deletes it) and swaps the new one in, then says “restart NinjaTrader to load it”. If a trade is open it says the update is postponed and offers it again next time. An app-only update is not downloaded by this pop-up. If the bot cannot be reached the app says “VL cannot reach your bot — open Tailscale and check it says Connected.”',
     },
     { kind: 'h', text: 'Out-of-date add-on banner' },
     {
