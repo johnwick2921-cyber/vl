@@ -159,7 +159,31 @@ func (at *AutoTrader) sessionRiskGateAt(now time.Time) sessionRiskVerdict {
 			return asForceFlatWindow(adjudicateSessionRisk(0, n, m, bandReason), flatWhy)
 		}
 	}
-	return asForceFlatWindow(adjudicateSessionRisk(losses, n, m, bandReason), flatWhy)
+	verdict := adjudicateWithBandWaiver(losses, n, m, bandReason)
+	return asForceFlatWindow(verdict, flatWhy)
+}
+
+// adjudicateWithBandWaiver applies the #9 rule: the band verdict stands unless
+// the band reason is a mentor-waivable sub-window (lunch / first-5m), in which
+// case the consecutive-loss breaker is re-evaluated with the band ignored and
+// WINS if it trips — the breaker is a HARD state and must refuse through a
+// lunch or first-5m window.
+func adjudicateWithBandWaiver(losses, n, m int, bandReason string) sessionRiskVerdict {
+	verdict := adjudicateSessionRisk(losses, n, m, bandReason)
+	if isMentorWaivableBandReason(bandReason) {
+		if breaker := adjudicateSessionRisk(losses, n, m, ""); breaker.Refuse {
+			verdict = breaker
+		}
+	}
+	return verdict
+}
+
+// isMentorWaivableBandReason reports whether a band reason string is one the
+// mentor may waive: ONLY the lunch and first-5m sub-windows. The red-news T1
+// blackout, the force-flat windows, the trade cap, outside-session and
+// session-off are NOT waivable.
+func isMentorWaivableBandReason(reason string) bool {
+	return strings.Contains(reason, "lunch no-trade") || strings.Contains(reason, "first-5m no-trade")
 }
 
 // asForceFlatWindow re-labels the window refusal adjudicateSessionRisk made
@@ -197,7 +221,7 @@ func mentorWaivesSessionBand(risk sessionRiskVerdict) bool {
 	if risk.Class != "no_trade_band" {
 		return false
 	}
-	return strings.Contains(risk.Reason, "lunch no-trade") || strings.Contains(risk.Reason, "first-5m no-trade")
+	return isMentorWaivableBandReason(risk.Reason)
 }
 
 // SessionRiskBootLine — D5. Every field READ from the code that enforces it

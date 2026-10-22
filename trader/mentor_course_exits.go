@@ -117,11 +117,11 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ReverseISBAsPHL:       mentorReverseISBAsPHL(rc),
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
-		ISBMaxPts:             30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
+		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
 		BoxFreshRTHPair:       rc != nil && mentorBoolKnob(rc.MentorBoxFreshRTHPair, false),
 	}
 	if rc != nil {
-		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 30, "isb_max_pts")
+		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
 	}
@@ -341,6 +341,13 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 		if errors.Is(err, errMentorStopBrokerTighter) {
 			moved++
 			continue
+		}
+		if errors.Is(err, errMentorStopThroughMarket) {
+			// m198 #43-B: the wrong-side BE closed the WHOLE symbol at market
+			// (a full flatten) — the position is flat; a sibling leg's move
+			// would be a redundant close on an already-flat position. Stop.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return false
 		}
 		if !mentorMoveApplied(err) {
 			if err != nil && !mentorMoveErrAlreadyLogged(err) {

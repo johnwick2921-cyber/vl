@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/market"
 	"vl/store"
 	"vl/telemetry"
 )
@@ -34,9 +35,15 @@ func TestExecHoldPathsCountGateBlocks(t *testing.T) {
 	pinDecisionCycleNow(t)
 
 	trader := "p27-holder"
+	// The active symbol defaults to MNQ with no positions/candidates; supply its
+	// market data so the m150-5 fail-closed gate (market_data_unavailable) does
+	// NOT fire first — these HOLD branches exercise the AI call paths.
 	ctx := &Context{
 		TraderID: trader,
 		Account:  AccountInfo{TotalEquity: 60000},
+		MarketDataMap: map[string]*market.Data{
+			"MNQ": {Symbol: "MNQ", CurrentPrice: 30000},
+		},
 	}
 	engine := &StrategyEngine{config: &store.StrategyConfig{
 		RiskControl: store.RiskControlConfig{MaxPositions: 1},
@@ -57,10 +64,12 @@ func TestExecHoldPathsCountGateBlocks(t *testing.T) {
 	}
 
 	// Case 2 — executor_plan_gate: a VALID open decision against a dead plan
-	// must HOLD with the typed refusal and count its class.
+	// must HOLD with the typed refusal and count its class. The take_profit is
+	// ≥3× the risk so the R:R gate (now reachable with market data present)
+	// passes first and the plan gate is what refuses.
 	ctx.ExecutorPlanDead = "plan machine-dead (test)"
 	valid := &mockAIClient{replies: []string{
-		`{"action":"open_long","symbol":"MNQ","entry":30000,"stop_loss":29900,"take_profit":30200,"reasoning":"test","leverage":1,"confidence":80,"position_size_usd":60000}`,
+		`{"action":"open_long","symbol":"MNQ","entry":30000,"stop_loss":29900,"take_profit":30400,"reasoning":"test","leverage":1,"confidence":80,"position_size_usd":60000}`,
 	}}
 	fd2, err2 := GetFullDecisionWithStrategy(ctx, valid, engine, "futures")
 	if err2 != nil {

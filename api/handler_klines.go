@@ -10,6 +10,7 @@ import (
 	"time"
 	"vl/store"
 
+	"vl/kernel"
 	"vl/logger"
 	"vl/market"
 	"vl/provider/alpaca"
@@ -278,7 +279,7 @@ func klinesWithAggregatedDepth(base []market.Kline, provider func(string, string
 		if len(raw) == 0 {
 			continue
 		}
-		agg := market.AggregateToTF(raw, finerMins, mins)
+		agg := kernel.AggregateSessionAnchored(raw, tf)
 		older := make([]market.Kline, 0, len(agg))
 		for _, k := range agg {
 			// Closed buckets only; when the base exists, only buckets strictly

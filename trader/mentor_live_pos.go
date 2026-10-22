@@ -152,6 +152,27 @@ func mentorRunnerLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
 	return out
 }
 
+// mentorResonanceOpenLegs (m151 fix 2) returns EVERY open leg of a live position
+// — leg 1 (wire 1) included — for the mode-A deferred break-even. The course
+// moves the whole position to BE ("stop at break-even, let it run" [D2.4
+// @02:29]); the runner-only helper (mentorRunnerLegs) is the trail's shape, not
+// the resonance's. Excluded: empty legs and legs whose own TP receipt already
+// closed them (the Exited snapshot).
+func mentorResonanceOpenLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
+	if p == nil {
+		return nil
+	}
+	var out []*mentorLeg
+	for i := range p.Legs {
+		leg := &p.Legs[i]
+		if leg.SignalID == "" || leg.Qty <= 0 || exited[i] {
+			continue
+		}
+		out = append(out, leg)
+	}
+	return out
+}
+
 // mentorFillExitMode resolves the exit branch a FILLED mentor arm is driven by
 // (P2-2, rel22 mentor audit). It is never "": the exit drive has no case for
 // an empty mode and ran B's stop moves on it — row 347 (10-13 17:50:54 CT) was
@@ -547,6 +568,17 @@ func (at *AutoTrader) mentorLatchLeg1Scaled(key string, atMs int64) bool {
 func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	if at == nil || p.SignalID == "" {
 		return
+	}
+	// #47: a broker exit that FLATTENS the signal closes its Limits.openTrade —
+	// the ORIGINAL stop ("sl") is the only exit that counts as a loss; a
+	// break-even, trailed stop, partial, manual, news or EOD flat drops it.
+	switch {
+	case p.ExitReason == "sl":
+		at.mentorEnqueueExit(p.SignalID, true)
+	case p.ExitReason == "manual":
+		at.mentorEnqueueExit(p.SignalID, false)
+	case p.ExitReason == "tp" && p.Leg == 2:
+		at.mentorEnqueueExit(p.SignalID, false) // the runner scaled — the position is flat
 	}
 	if p.Leg == 1 && p.ExitReason == "tp" {
 		if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
