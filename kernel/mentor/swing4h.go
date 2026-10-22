@@ -11,7 +11,7 @@ import (
 	"vl/market"
 )
 
-// §8 — THE SWING SETUP, 4-hour EMA 34 → 5-minute [D5.2], with the corrected
+// §8 — THE SWING SETUP, 4-hour EMA 34 → 5-minute [D5.2 p1 @04:36], with the corrected
 // §3 (reject = close back on the APPROACH side; close through = wrong way)
 // and the RULES-FIX v3 corrections (R8):
 //
@@ -462,9 +462,11 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			}
 		}
 		if !closedBack(approach, b.Close, line) {
+
 			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3]. A
 			// touching candle in the leeway window that closes beyond the level
 			// spends it: NO order, cancel any resting arm [D5.2 p1 @15:21–15:48].
+
 			// S1: name the resting swing arm so the cancel reaches the right
 			// order, and clear the pending — a cancelled order must never
 			// grow into a phantom position. A through-close with NOTHING
@@ -473,7 +475,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 				out = append(out, Intent{
 					Action: CancelArm,
 					ArmID:  s.Pending.ArmID,
-					Reason: "swing: touch closed through the line — cancel, invalid for this approach [D5.2 p3 @ 21:30, corrected §3]",
+					Reason: "swing: touch closed through the line — cancel, invalid for this approach [D5.2 p3 @ 21:30, corrected section 3]",
 				})
 				s.Pending = nil
 			}

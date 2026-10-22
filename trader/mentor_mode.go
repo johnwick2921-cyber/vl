@@ -639,9 +639,11 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	stop := mentorIntentRisk(in)
 	target := mentorIntentTargetPts(in)
 	if swing {
+
 		// m186 D5.2: NO ~100-pt skip — the mentor softened "Đừng vô" to "take
 		// 1-2 MNQ and sit" [D5.2 p2 @21:25–21:43]. The swing's 2-MNQ tier
 		// already sizes the risk down; the stop is never widened (invariant).
+
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
 		// (CourseExits.ISBMaxStopPts, default 25). One number, not two (P2-1):
@@ -663,7 +665,7 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	if spentCap <= 0 {
 		spentCap = mentor.DefaultConfig().DayGateTargetCapPts
 	}
-	// R13 [D5.2 §6]: DayOff does not stop the swing, so the spent-day stop cap
+	// R13 [D5.2 p1 @06:03–06:20] (course section 6): DayOff does not stop the swing, so the spent-day stop cap
 	// must not either — the overnight SWING4H is exempt from the R9 cap.
 	if extra.SpentDay && !swing && stop > spentCap {
 		return fmt.Sprintf("R9: spent day cap %.0f — stop %.1f pts skips", spentCap, stop)

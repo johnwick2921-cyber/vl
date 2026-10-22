@@ -326,7 +326,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// item 18 part 2 (R12): at print −10m on a red-folder print day, cancel
 	// live INTRADAY mentor arms by ArmID and flatten intraday mentor positions
 	// BEFORE the 07:30 print. SWING4H arms and positions are exempt (the course
-	// holds the swing by the 4h [D5.2]). Idempotent: retried each bar in the
+	// holds the swing by the 4h [D5.2 p1 @06:03–06:20]). Idempotent: retried each bar in the
 	// window; no-ops once flat. Runs under the N11 mutex so the ArmID cancel
 	// can clear the evaluator's LevelArms safely.
 	at.mentorNewsCancelFlattenAt(mentorClockNow())
@@ -1203,7 +1203,7 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 // red-folder print day [D4.4 p1 @20:44–21:46]. It is the DESTRUCTIVE half of
 // the news window: the hold above refuses NEW placements through the print;
 // this sweep clears what already REMAINS before the 07:30 print. SWING4H arms
-// and positions are exempt (the course holds the swing by the 4h [D5.2]).
+// and positions are exempt (the course holds the swing by the 4h [D5.2 p1 @06:03–06:20]).
 // Idempotent by construction: an already-cancelled arm and an already-closed
 // position both no-op, so the sweep may run on every bar of the window.
 // The calendar is REQUIRED — a destructive flatten must not fire on a
@@ -1267,7 +1267,7 @@ func (at *AutoTrader) cancelAllLiveMentorArmsWith(reason string) bool {
 }
 
 // cancelLiveMentorArms is the shared sweep body. swingExempt skips "swing-…"
-// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2]); the
+// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2 p1 @06:03–06:20]); the
 // never-add sweep passes false (no exemption).
 //
 // I5/I3: the entries are COPIED under mentorLiveMu before iterating (a
@@ -1328,7 +1328,7 @@ func (at *AutoTrader) mentorOpenPositionActive() bool {
 // (the placement path), so a resting arm placed earlier could still fill after
 // the day had been shut. This sweep trips them EVERY TICK and cancels the
 // resting unfilled intraday arms. Idempotent: an already-cancelled arm no-ops.
-// SWING4H is exempt (the course holds the swing by the 4h [D5.2]).
+// SWING4H is exempt (the course holds the swing by the 4h [D5.2 p1 @06:03–06:20]).
 //
 // The sweep cancels only on a DEFINITE trip. An UNRESOLVED read (done-after-win
 // day data missing, or a NULL pnl_corrected row) does NOT force-cancel — the

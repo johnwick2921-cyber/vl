@@ -2156,7 +2156,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// R7 (RULES-FIX-v3, behind its own knob, default ON since R-C): the reverse
 	// ISB at EMA 9 — an ISB that points AGAINST the trend with price at the EMA 9
-	// trades WITH the trend [D5.4].
+	// trades WITH the trend [D5.4 p1 @04:16–04:20].
 	//
 	// P2-1 (L7): the reverse ISB was dropped silently while the 15m/5m conflict
 	// stood. Name and count it; no behaviour change (the !conflict path below

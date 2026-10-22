@@ -26,7 +26,7 @@ func TestReverseISBAtEMA9KnobOff(t *testing.T) {
 	prev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	if in, ok, _ := ReverseISBAtEMA9(prev, cur, 101, SideLong, cfg); ok || in.Action != "" {
-		t.Fatalf("knob off must emit nothing; got %+v ok=%v [D5.4; L4]", in, ok)
+		t.Fatalf("knob off must emit nothing; got %+v ok=%v [D5.4 p1 @01:26–01:30; L4]", in, ok)
 	}
 }
 
@@ -89,7 +89,7 @@ func TestReverseISBAtEMA9NoTrendFailsClosed(t *testing.T) {
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	in, ok, reason := ReverseISBAtEMA9(greenPrev, cur, 101, "", cfg)
 	if ok || in.Side != "" || in.Action != "" {
-		t.Fatalf("no trend → fail closed, never SHORT: got %+v ok=%v reason=%q [D5.4, B6]", in, ok, reason)
+		t.Fatalf("no trend → fail closed, never SHORT: got %+v ok=%v reason=%q [D5.4 p1 @04:16–04:20, B6]", in, ok, reason)
 	}
 }
 
@@ -99,15 +99,15 @@ func TestReverseISBAtEMA9Refusals(t *testing.T) {
 	cur := market.Kline{Open: 102, Close: 104, High: 104.5, Low: 99.5}
 	// ISB already points WITH the trend → nothing
 	if _, ok, _ := ReverseISBAtEMA9(redPrev, cur, 101, SideShort, cfg); ok {
-		t.Fatal("an ISB pointing with the trend is not a reverse [D5.4]")
+		t.Fatal("an ISB pointing with the trend is not a reverse [D5.4 p1 @01:26–01:30]")
 	}
 	// price never reached the EMA 9 (loose touch required)
 	if _, ok, _ := ReverseISBAtEMA9(redPrev, cur, 120, SideLong, cfg); ok {
-		t.Fatal("no EMA 9 touch, no reverse [D5.4]")
+		t.Fatal("no EMA 9 touch, no reverse [D5.4 p1 @01:26–01:30]")
 	}
 	// not an ISB at all
 	notISB := market.Kline{Open: 102, Close: 108, High: 108.5, Low: 100}
 	if _, ok, _ := ReverseISBAtEMA9(redPrev, notISB, 101, SideLong, cfg); ok {
-		t.Fatal("a non-ISB pair is not a reverse [D5.4]")
+		t.Fatal("a non-ISB pair is not a reverse [D5.4 p1 @01:26–01:30]")
 	}
 }
