@@ -5181,6 +5181,22 @@ day.
   ordinary assertion failure. A census of a failure mode must be built from the
   mode (which clock reaches a gate), not from the symptom it happened to show
   the day it was written.
+- **DISCHARGED (m392, 2026-10-22, DS-108, fix/m392-ds108-utc-trader-tests
+  @024328c58).** Same class, third instance: the session-day FILTER, not a
+  no-trade band. `TestMentorRebuildLimitsAtBoot` /
+  `TestMentorRebuildLimitsBootBEStopDropsNotBooks`
+  (trader/mentor_rebuild_limits_test.go) seeded `pos.EntryTime = now-10m` from
+  `time.Now()` while `mentorRebuildLimitsAtBoot` filters by
+  `kernel.CMESessionDayStart(mentorClockNow())` (trader/mentor_tick.go:2020);
+  within [17:00, 17:10) CT the stop-out replay is skipped → `Leg.Stopped` false
+  → RED. `TestMentorTransientHoldThenFillStillOneLeg`
+  (trader/mentor_g1g2_real_fill_test.go) called `Limits.Apply` twice 60 s apart
+  from `time.Now()`; straddling 17:00 CT flips `tradingDayKey`
+  (kernel/mentor/limits.go:171) and wipes `l.pend` → the fill never registers →
+  RED. Fixed (test-only): pin the mentor clock seam (`setMentorNowSource`) to a
+  fixed 12:00 CT instant and seed from the SAME instant. Mutants at the failing
+  hour (17:04 CT and 16:59:30 CT) RED before the pin, green after. Full
+  ./trader/ green in CT and UTC at the fix.
 
 ## CLASS 139 — A HOLD THAT RESTARTS ON EVERY RE-READ: hysteresis anchored to the version, not the plan (born 2026-08-21 with the regime wave's G3 hold, reported by the owner 2026-09-17 "it went up all night and never flipped", fix/flip-hold-anchor, W-FLIP-HOLD-ANCHOR)
 
