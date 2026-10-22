@@ -1203,27 +1203,40 @@ func TestMentorX8ExitDoesNotFlattenOtherArms(t *testing.T) {
 	}
 }
 
-// TestMentorX8LimitRoundsToTick (m390): the X8 marketable limit must land ON a
-// tick boundary — NT8 rejects an off-grid limit price. A fresh price that is
-// not a multiple of the tick (101.53) leaves `price − collar` off-grid; the
-// limit is RoundToTick'd onto the MNQ 0.25 grid. MUTANT: drop the RoundToTick
-// in mentorX8SendExit → the limit stays 96.53 (off-grid) → RED.
-func TestMentorX8LimitRoundsToTick(t *testing.T) {
+// TestMentorX8LimitRoundsToTickDirectionally (m390): the X8 marketable limit
+// must land ON a tick boundary AND round AWAY from the market so it stays
+// marketable — a sell exit (long close) rounds DOWN, a buy exit (short close)
+// rounds UP. Nearest rounding would move each half a tick toward the market.
+// MUTANT: replace WireStop with nearest RoundToTick in mentorX8SendExit →
+// long 96.63 → 96.75 (up, less marketable) → RED.
+func TestMentorX8LimitRoundsToTickDirectionally(t *testing.T) {
+	// LONG (sell exit): fresh 101.63 → raw limit 96.63 → rounds DOWN to 96.50.
 	at, p, limits, _ := x8B1Setup(t, true)
 	oldP := mentorLatestPriceSeam
-	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.53, true }
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.63, true }
 	t.Cleanup(func() { mentorLatestPriceSeam = oldP })
-
-	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
-	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
-		t.Fatal("X8 must fire")
+	if err := at.mentorX8SendExit(nil, p); err != nil {
+		t.Fatalf("long send exit: %v", err)
 	}
 	if len(*limits) != 1 {
 		t.Fatalf("want exactly one limit, got %v", *limits)
 	}
-	want := 96.50 // RoundToTick(101.53 − 20×0.25, 0.25) — on the 0.25 grid
-	if (*limits)[0] != want {
-		t.Fatalf("limit = %.4f, want %.2f (round-ticked to the MNQ 0.25 grid)", (*limits)[0], want)
+	if (*limits)[0] != 96.50 {
+		t.Fatalf("long sell limit = %.4f, want 96.50 (rounded DOWN onto the 0.25 grid)", (*limits)[0])
+	}
+
+	// SHORT (buy exit): fresh 101.37 → raw limit 106.37 → rounds UP to 106.50.
+	ats, ps, limitsS, _ := x8B1Setup(t, true)
+	ps.Pos.Side = "short"
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.37, true }
+	if err := ats.mentorX8SendExit(nil, ps); err != nil {
+		t.Fatalf("short send exit: %v", err)
+	}
+	if len(*limitsS) != 1 {
+		t.Fatalf("short: want exactly one limit, got %v", *limitsS)
+	}
+	if (*limitsS)[0] != 106.50 {
+		t.Fatalf("short buy limit = %.4f, want 106.50 (rounded UP onto the 0.25 grid)", (*limitsS)[0])
 	}
 }
 
