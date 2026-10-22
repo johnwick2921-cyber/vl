@@ -250,4 +250,3 @@ func TestMentorFillAfterRestartDefersUntilLevels(t *testing.T) {
 		t.Fatalf("the row fallback must be counted once, got %v", at.mentorEval.State.Limits.Counters)
 	}
 }
-

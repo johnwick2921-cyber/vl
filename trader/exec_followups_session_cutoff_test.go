@@ -58,7 +58,7 @@ func TestArmNotAuthoredPastLastEntry(t *testing.T) {
 // already refused: after the cutoff NOTHING more is counted as a zone verdict.
 func TestZoneVerdictNotCountedPastLastEntry(t *testing.T) {
 	r := newZoneRig(t, "ni-zone", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
-	r.setTape(zoneTapeReacted(99.0, r.now)) // #525 F-1: the leg waits for its reaction AT the level first
+	r.setTape(zoneTapeReacted(99.0, r.now))   // #525 F-1: the leg waits for its reaction AT the level first
 	r.at.maybeManageArmedOrdersAt(nil, r.now) // authored + WAITING short_of_zone (count 1)
 	if n := r.armRefusals("market_in_zone:short_of_zone"); n != 1 {
 		t.Fatalf("fixture: before the cutoff the wait is counted once, got %d", n)

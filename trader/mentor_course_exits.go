@@ -49,7 +49,8 @@ func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
 }
 
 // mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
-// — reverses R3): BE at half-way to +1R is MANDATORY [D1.2 p1 @12:34–13:12, @15:57].
+// — reverses R3): BE at half-way to +1R is MANDATORY [D1.2 p1 @12:34–13:12,
+// @15:56–15:59].
 func mentorBEBeforePartialOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorBEBeforePartial, true)
 }
@@ -365,7 +366,7 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 	pos.ArmedBE = true
 	pos.Stop = be
 	at.mentorCount("be_before_partial")
-	at.logInfof("🧑‍🏫 mentor BE before the partial: close %.2f is past half-way %.2f to +1R — stops → break-even %.2f (entry %.2f) [D1.2 p1 @12:41–13:12, @15:57; mentor_be_before_partial ON — overrides owner ruling R3's after-partial BE]",
+	at.logInfof("🧑‍🏫 mentor BE before the partial: close %.2f is past half-way %.2f to +1R — stops → break-even %.2f (entry %.2f) [D1.2 p1 @12:34–13:12, @15:56–15:59; mentor_be_before_partial ON — overrides owner ruling R3's after-partial BE]",
 		c, half, be, pos.Entry)
 	return true
 }

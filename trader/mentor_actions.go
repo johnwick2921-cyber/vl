@@ -902,7 +902,7 @@ func (at *AutoTrader) mentorCancelOtherWorkingOnFill(filled store.ArmedOrderDB) 
 			continue
 		}
 		if side != "" && strings.EqualFold(strings.TrimSpace(other.Side), side) {
-			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [D1.1 p1 @17:06–17:44]")
+			at.mentorCancelRestingRow(other, "one working entry per side — the same-side entry filled, cancel the rest (OCO) [derived from D1.1 p1 @17:28–17:44 + CTO parity ruling 1791008332386 #1]")
 		} else {
 			at.mentorCancelRestingRow(other, "no flip: a position opened — cancel the opposite-side resting entry before it can net/flip [owner ruling 2026-09-03]")
 		}

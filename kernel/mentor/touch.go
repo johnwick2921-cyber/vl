@@ -119,12 +119,12 @@ func TouchTick(t *Touch, level Level, prevClose float64, bar market.Kline, cfg C
 	return []Intent{
 		{
 			Action:   CancelArm,
-			Reason:   "first touch closed on the wrong side — cancel [D4.1 p1 @ 14:14]",
+			Reason:   "first touch closed on the wrong side — cancel [D4.1 p1 @ 14:14; do not catch the knife D1.1 p1 @14:59–16:31]",
 			LevelKey: level.Key,
 		},
 		{
 			Action:   LevelInvalid,
-			Reason:   "first touch closed on the wrong side — level invalid, ISB-only after [D5.2 p1 @ 19:51]",
+			Reason:   "first touch closed on the wrong side — level invalid, ISB-only after [D5.2 p1 @ 19:51; do not catch the knife D1.1 p1 @14:59–16:31]",
 			LevelKey: level.Key,
 		},
 	}

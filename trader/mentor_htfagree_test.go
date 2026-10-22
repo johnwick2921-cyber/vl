@@ -27,8 +27,8 @@ func TestMentorConfluenceNeverAddsSizeRegardlessOfHTFAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "confluence" {
-		t.Fatalf("confluence + 4h&1h agree: got %d %s, want 4 confluence (no big tier)", got.Contracts, got.Tier)
+	if got.Contracts != 5 || got.Tier != "confluence" {
+		t.Fatalf("confluence + 4h&1h agree: got %d %s, want 5 confluence (no big tier)", got.Contracts, got.Tier)
 	}
 
 	in.HTFAgree = false
@@ -36,8 +36,8 @@ func TestMentorConfluenceNeverAddsSizeRegardlessOfHTFAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Contracts != 4 || got.Tier != "confluence" {
-		t.Fatalf("confluence without 4h&1h agree: got %d %s, want 4 confluence", got.Contracts, got.Tier)
+	if got.Contracts != 5 || got.Tier != "confluence" {
+		t.Fatalf("confluence without 4h&1h agree: got %d %s, want 5 confluence", got.Contracts, got.Tier)
 	}
 
 	// A 29-pt target also sizes confluence — the old "big needs target" gate is gone.
@@ -47,7 +47,7 @@ func TestMentorConfluenceNeverAddsSizeRegardlessOfHTFAgree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.Tier != "confluence" || got.Contracts != 4 {
-		t.Fatalf("a 29-pt confluence target: got %d %s, want 4 confluence", got.Contracts, got.Tier)
+	if got.Tier != "confluence" || got.Contracts != 5 {
+		t.Fatalf("a 29-pt confluence target: got %d %s, want 5 confluence", got.Contracts, got.Tier)
 	}
 }

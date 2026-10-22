@@ -2174,9 +2174,9 @@ type RiskControlConfig struct {
 	MentorTrailMode string `json:"mentor_trail_mode,omitempty"`
 	// STOP RULES (owner ruling 00:1x CT "exactly like he said") — class rules,
 	// NOT his personal routine. The window is default ON; done-after-win is
-	// default OFF (owner order 2026-10-16):
+	// default ON (the course default; m186 reverts the 2026-10-16 owner order):
 	// (a) done for the day after a winning close with the day net positive
-	//     (nil → OFF, owner order 2026-10-16; explicit true enables);
+	//     (nil → ON; an explicit false disables);
 	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
 	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
