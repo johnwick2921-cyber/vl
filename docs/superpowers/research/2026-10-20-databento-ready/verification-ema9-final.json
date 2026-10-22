@@ -1,0 +1,49 @@
+{
+  "engine_sha256": "3ad686016253f6fd093e2cd4e7b030d570c2199242bb971764211387565aa5d4",
+  "runs": [
+    {
+      "timezone": "America/Chicago",
+      "tests": 15,
+      "pass_all": true,
+      "synthetic_oracle_cases": 600
+    },
+    {
+      "timezone": "UTC",
+      "tests": 15,
+      "pass_all": true,
+      "synthetic_oracle_cases": 600
+    }
+  ],
+  "mutants": [
+    {
+      "name": "wrong_alpha",
+      "assertion_failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "wick_instead_of_close",
+      "assertion_failures": 3,
+      "errors": 0
+    },
+    {
+      "name": "skip_receive_gate",
+      "assertion_failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "allow_equality",
+      "assertion_failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "enter_confirmation_close",
+      "assertion_failures": 8,
+      "errors": 0
+    },
+    {
+      "name": "wrong_stop",
+      "assertion_failures": 1,
+      "errors": 0
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "all_entry_pairs_match": true,
+  "all_trade_arithmetic_reconciles": true,
+  "candidate_rows": 732,
+  "engine_sha256": "3ad686016253f6fd093e2cd4e7b030d570c2199242bb971764211387565aa5d4",
+  "no_same_candle_entries": true,
+  "oracle_checked_rows": 714,
+  "provider_quality_excluded_rows": 18,
+  "status": "PASS_WITH_DISCLOSED_ASSUMPTIONS",
+  "word_table_cells_match_csv": true
+}
