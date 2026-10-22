@@ -25,6 +25,7 @@ import { REFRESH_CHART_MS, REFRESH_OPEN_ORDERS_MS } from '../../lib/autoRefresh'
 import { t } from '../../i18n/translations'
 import {
   MENTOR_COLOR,
+  mentorEMACurves,
   mentorTrendSegments,
   orderPriceLines,
   ordersForChartSymbol,
@@ -72,6 +73,8 @@ interface AdvancedChartProps {
   mentorLevels?: ChartLineSpec[]
   /** T7 (release #22) — the VALID trendlines, drawn as sloped segments. */
   mentorTrendlines?: MentorTruth['trendlines']
+  /** m134 — the per-bar EMA 9/34 curve (points), drawn as two curves. */
+  mentorEMASeries?: MentorTruth['ema_series']
   /** UG-3 (release #24): set while the mentor read is stale — the last good
    * read's time; every mentor line then carries "stale since HH:MM CT". */
   mentorStaleSinceMs?: number
@@ -132,6 +135,7 @@ export function AdvancedChart({
   selectedAccount,
   mentorLevels,
   mentorTrendlines,
+  mentorEMASeries,
   mentorStaleSinceMs,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
@@ -151,7 +155,10 @@ export function AdvancedChart({
   >(new Map()) // Store kline extra data
   const priceLinesRef = useRef<any[]>([]) // Store open order price lines
   const mentorPriceLinesRef = useRef<any[]>([]) // MENTOR-TRUTH PANEL key-level lines
-  const mentorTrendSeriesRef = useRef<ISeriesApi<'Line'>[]>([]) // T7 trendline segments
+  const mentorTrendSeriesRef = useRef<Map<string, ISeriesApi<'Line'>>>(
+    new Map()
+  ) // T7 trendline segments, keyed (m150 diff-by-key)
+  const mentorEMARef = useRef<ISeriesApi<'Line'>[]>([]) // m134 EMA9/34 curves
   const latestKlinesRef = useRef<Kline[]>([]) // Most recent klines, for indicator re-render on toggle (1b)
   // UG-6 (release #24): the open times (UTC s) of the bars this chart drew —
   // trendline points snap to these, never to a computed grid. Re-set only
@@ -1308,38 +1315,98 @@ export function AdvancedChart({
   // chart had no two-point drawing at all). Snapped to this chart's bar grid.
   useEffect(() => {
     const chart = chartRef.current
-    mentorTrendSeriesRef.current.forEach((sr) => {
+    if (!chart) return
+    const segs = mentorTrendSegments(
+      mentorTrendlines,
+      barTimes,
+      mentorStaleSinceMs
+    )
+    const nextKeys = new Set(segs.map((s) => s.key))
+    // m150: diff by key — remove vanished series, update the rest in place,
+    // and only add series that are new. Never remove/re-add the whole set on
+    // each 30s poll.
+    for (const [key, sr] of mentorTrendSeriesRef.current) {
+      if (!nextKeys.has(key)) {
+        try {
+          chart.removeSeries(sr as any)
+        } catch {
+          // Ignore clear error
+        }
+        mentorTrendSeriesRef.current.delete(key)
+      }
+    }
+    for (const seg of segs) {
+      const data = seg.points.map((p) => ({
+        time: p.time as UTCTimestamp,
+        value: p.value,
+      }))
+      const existing = mentorTrendSeriesRef.current.get(seg.key)
+      if (existing) {
+        existing.applyOptions({
+          color: seg.color,
+          lineWidth: seg.lineWidth ?? 1,
+          lineStyle: seg.style ?? 2,
+          title: seg.label,
+        })
+        existing.setData(data)
+        continue
+      }
+      const sr = chart.addSeries(LineSeries, {
+        color: seg.color,
+        lineWidth: seg.lineWidth ?? 1,
+        lineStyle: seg.style ?? 2,
+        title: seg.label,
+        lastValueVisible: false,
+        priceLineVisible: false,
+        crosshairMarkerVisible: false,
+      })
+      sr.setData(data)
+      mentorTrendSeriesRef.current.set(seg.key, sr)
+    }
+  }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
+
+  // m134 — the mentor EMA 9/34 curves (a per-bar series, not one flat value).
+  // m150: snapped to the chart's drawn bars (mentorEMACurves) so the 1m series
+  // never adds extra slots to the shared time axis on other intervals.
+  useEffect(() => {
+    const chart = chartRef.current
+    mentorEMARef.current.forEach((sr) => {
       try {
         chart?.removeSeries(sr as any)
       } catch {
         // Ignore clear error
       }
     })
-    mentorTrendSeriesRef.current = []
+    mentorEMARef.current = []
     if (!chart) return
-    for (const seg of mentorTrendSegments(
-      mentorTrendlines,
-      barTimes,
-      mentorStaleSinceMs
-    )) {
+    const add = (
+      label: string,
+      color: string,
+      data: { time: number; value: number }[]
+    ) => {
+      if (data.length === 0) return
+      // m150: a disabled period is an all-zero curve — drop it, never draw it.
+      if (data.every((d) => d.value === 0)) return
       const sr = chart.addSeries(LineSeries, {
-        color: seg.color,
+        color,
         lineWidth: 1,
-        lineStyle: 2,
-        title: seg.label,
+        lineStyle: 0,
+        title: label,
         lastValueVisible: false,
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       })
       sr.setData(
-        seg.points.map((p) => ({
-          time: p.time as UTCTimestamp,
-          value: p.value,
-        }))
+        data.map((d) => ({ time: d.time as UTCTimestamp, value: d.value }))
       )
-      mentorTrendSeriesRef.current.push(sr)
+      mentorEMARef.current.push(sr)
     }
-  }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
+    const curves = mentorEMACurves(mentorEMASeries, barTimes)
+    // m169: the backend series is always the 1-MINUTE EMA — label it so a 1h/4h
+    // chart never reads "EMA 9/34" as that chart's own timeframe EMA.
+    add('1m EMA 9', '#3B82F6', curves.ema9)
+    add('1m EMA 34', '#EC4899', curves.ema34)
+  }, [mentorEMASeries, symbol, interval, barTimes])
 
   // Handle order marker show/hide separately to avoid reloading data
   useEffect(() => {

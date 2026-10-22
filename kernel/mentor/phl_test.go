@@ -65,6 +65,44 @@ func TestPHLEntryBufferKnob(t *testing.T) {
 	}
 }
 
+// TestPHLEMA34StopNuance — D3.3 p1 @00:40–01:05: when the PHL location is the
+// EMA 34 and the reference candle only TOUCHED it (no wick through), the stop
+// sits right AT the EMA 34; a wick that passed through keeps the normal
+// beyond-the-wick stop. MUTANT: drop the PriceAtTouch branch in phlPLHR2 → the
+// no-wick-through stop comes back at the candle low instead of the EMA 34 → RED.
+func TestPHLEMA34StopNuance(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	ema := 95.0
+	oldHigh := Level{Key: "old-high", Kind: KindOldExtreme, Role: OldHigh, Price: 140}
+	// No wick through: candle low (96) sits ABOVE the EMA 34 → stop = the EMA 34.
+	touch := Touch{
+		LevelKey: string(KindEMA34), Outcome: TouchReject,
+		RefBar:         market.Kline{High: 101, Low: 96, Close: 98},
+		ApproachedFrom: SideLong, PriceAtTouch: ema,
+	}
+	in, ok, reason := PHLPLH(touch, oldHigh, 0, 3, cfg)
+	if !ok {
+		t.Fatalf("EMA34 PHL refused: %s", reason)
+	}
+	if in.Stop != ema {
+		t.Fatalf("no wick through: stop = %.2f, want the EMA 34 price %.2f", in.Stop, ema)
+	}
+	// Wick through: candle low (93) sits BELOW the EMA 34 → stop = the candle low.
+	touch2 := Touch{
+		LevelKey: string(KindEMA34), Outcome: TouchReject,
+		RefBar:         market.Kline{High: 101, Low: 93, Close: 98},
+		ApproachedFrom: SideLong, PriceAtTouch: ema,
+	}
+	in2, ok2, reason2 := PHLPLH(touch2, oldHigh, 0, 3, cfg)
+	if !ok2 {
+		t.Fatalf("EMA34 PHL refused: %s", reason2)
+	}
+	if in2.Stop != 93 {
+		t.Fatalf("wick through: stop = %.2f, want the candle low 93", in2.Stop)
+	}
+}
+
 // TestPHLPLHRequiresThreeCandlesFromOldExtreme — [D4.1 p1 @ 09:40 written]:
 // "Phải đợi đi xa đỉnh/đáy cũ trước đó (ít nhất là 3 cây nến backtest)".
 func TestPHLPLHRequiresThreeCandlesFromOldExtreme(t *testing.T) {

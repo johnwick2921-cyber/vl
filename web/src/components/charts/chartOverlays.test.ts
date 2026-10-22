@@ -6,6 +6,7 @@ import type { MentorTruth } from '../../lib/api/traders'
 import {
   chartFuturesRoot,
   mentorChartLines,
+  mentorEMACurves,
   mentorStaleMark,
   mentorTrendSegments,
   orderPriceLines,
@@ -162,23 +163,27 @@ describe('mentorTrendSegments', () => {
           now_ms: t0 + 960_000,
           now_px: 101,
           in_level: true,
+          valid: true,
         },
       ],
       bars(t0, 300_000, 6)
     )
-    expect(seg.label).toBe('mentor trendline (resistance)')
+    expect(seg.label).toBe('trend line ✓ (resistance)')
+    expect(seg.lineWidth).toBe(2)
+    expect(seg.style).toBe(0)
+    // m134: VALID extends to the right edge (the last drawn bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       t0 / 1000,
       (t0 + 600_000) / 1000,
-      (t0 + 900_000) / 1000,
+      (t0 + 1_500_000) / 1000,
     ])
-    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 101.6 at +15m
+    // slope = -6 / 600000 per ms: 110.6 at t0, 104.6 at +10m, 95.6 at +25m
     expect(seg.points.map((p) => Math.round(p.value * 100) / 100)).toEqual([
-      110.6, 104.6, 101.6,
+      110.6, 104.6, 95.6,
     ])
   })
 
-  it('ends a box-suppressed line at its second anchor and says it is not traded', () => {
+  it('a FORMING line is thin dashed muted and stops at its second anchor', () => {
     const [seg] = mentorTrendSegments(
       [
         {
@@ -190,12 +195,41 @@ describe('mentorTrendSegments', () => {
           now_ms: 0,
           now_px: 0,
           in_level: false,
+          valid: false,
         },
       ],
       bars(0, 60_000, 5)
     )
+    expect(seg.label).toBe('trend line (support — waiting for 3rd touch)')
+    expect(seg.lineWidth).toBe(1)
+    expect(seg.style).toBe(2)
     expect(seg.points).toHaveLength(2)
+  })
+
+  it('ends a box-suppressed line at its second anchor, muted, and says it is not traded', () => {
+    const [seg] = mentorTrendSegments(
+      [
+        {
+          side: 'long',
+          p0_ms: 0,
+          p0_px: 1,
+          p1_ms: 120_000,
+          p1_px: 3,
+          now_ms: 0,
+          now_px: 0,
+          in_level: false,
+          valid: true,
+        },
+      ],
+      bars(0, 60_000, 5)
+    )
+    // m150: a VALID line inside a box (not traded) is muted + thin + dashed and
+    // stops at its second anchor — it no longer extends to the right edge.
+    expect(seg.points).toHaveLength(2)
+    expect(seg.label).toContain('trend line ✓')
     expect(seg.label).toContain('not traded')
+    expect(seg.lineWidth).toBe(1)
+    expect(seg.style).toBe(2)
   })
 })
 
@@ -217,14 +251,16 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     now_ms: open + 21 * 3_600_000, // 19:00 UTC → inside the 18:00 bar
     now_px: 116,
     in_level: true,
+    valid: true,
   }
   it('every point is a bar the chart drew (4h, session-aligned)', () => {
     const [seg] = mentorTrendSegments([tl], h4)
     const drawn = new Set(h4)
+    // m134: VALID extends to the right edge (the last drawn 4h bar).
     expect(seg.points.map((p) => p.time)).toEqual([
       (open + 4 * 3_600_000) / 1000,
       (open + 12 * 3_600_000) / 1000,
-      (open + 20 * 3_600_000) / 1000,
+      (open + 28 * 3_600_000) / 1000,
     ])
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
     // re-valued on the same line: slope 1 pt/h → 99 at the 02:00 bar open
@@ -235,7 +271,8 @@ describe('UG-6 mentorTrendSegments snaps to the chart bar times', () => {
     const [seg] = mentorTrendSegments([tl], h12)
     const drawn = new Set(h12)
     for (const p of seg.points) expect(drawn.has(p.time)).toBe(true)
-    expect(seg.points).toHaveLength(2)
+    // m134: p0, p1 and the right edge (the last 12h bar).
+    expect(seg.points).toHaveLength(3)
   })
   it('no bars yet → nothing drawn (never a guessed grid)', () => {
     expect(mentorTrendSegments([tl], [])).toEqual([])
@@ -453,5 +490,113 @@ describe('positionBracketLines (T32)', () => {
     ).toEqual([])
     expect(positionBracketLines(undefined)).toEqual([])
     expect(positionBracketLines(null)).toEqual([])
+  })
+})
+
+// m150 — the EMA 9/34 curve is snapped to the drawn bars (it is a 1m series
+// served to charts on any interval; plotted raw it adds extra time slots).
+describe('mentorEMACurves (m150 snap)', () => {
+  const t0 = 1789480800000 // a 5m bar open
+  // 5m chart bars
+  const fiveM = bars(t0, 300_000, 4)
+  // 1m EMA series reaching 33h back — starts well left of barTimes[0].
+  const ema = Array.from({ length: 5 }, (_, i) => ({
+    ms: t0 - 120_000 + i * 60_000, // -2m, -1m, 0, +1m, +2m
+    ema9: 100 + i,
+    ema34: 200 + i,
+  }))
+
+  it('plots only at drawn bar times, never at the raw 1m times', () => {
+    const curves = mentorEMACurves(ema, fiveM)
+    const drawn = new Set(fiveM)
+    for (const p of [...curves.ema9, ...curves.ema34]) {
+      expect(drawn.has(p.time)).toBe(true)
+    }
+    // Every drawn bar gets a point; the pre-chart -2m/-1m points are dropped.
+    expect(curves.ema9.map((p) => p.time)).toEqual(fiveM)
+  })
+
+  it('takes the LAST EMA value whose own 1m bar has closed at or before each bar close', () => {
+    const curves = mentorEMACurves(ema, fiveM)
+    // bar[0] (t0): close = t0+5m → the last point with open+60s <= close is
+    // ema[4] (open t0+2m → closes t0+3m), value 104.
+    expect(curves.ema9[0].value).toBe(104)
+    // every later bar keeps 104 (the series ends before them)
+    expect(curves.ema9.every((p) => p.value === 104)).toBe(true)
+  })
+
+  it('m169: never looks ahead — a point that OPENS at the bar close is excluded until its own bar has closed', () => {
+    // 5m bars [t0, t0+5m]; 1m points at t0+3m (closes t0+4m), t0+4m (closes
+    // t0+5m == bar[0] close) and t0+5m (opens AT bar[0] close, closes t0+6m).
+    const straddle = [
+      { ms: t0 + 180_000, ema9: 1, ema34: 10 },
+      { ms: t0 + 240_000, ema9: 2, ema34: 20 },
+      { ms: t0 + 300_000, ema9: 3, ema34: 30 },
+    ]
+    const twoBars = bars(t0, 300_000, 2)
+    const curves = mentorEMACurves(straddle, twoBars)
+    // bar[0] close t0+5m: the t0+5m point (open == close) is NOT yet valid.
+    expect(curves.ema9.map((p) => p.time)).toEqual([
+      t0 / 1000,
+      (t0 + 300_000) / 1000,
+    ])
+    expect(curves.ema9[0].value).toBe(2)
+    expect(curves.ema34[0].value).toBe(20)
+    // bar[1] close t0+10m: the t0+5m point has now closed → it is the value.
+    expect(curves.ema9[1].value).toBe(3)
+    expect(curves.ema34[1].value).toBe(30)
+  })
+
+  it('an empty series or no bars yields empty curves', () => {
+    expect(mentorEMACurves([], fiveM)).toEqual({ ema9: [], ema34: [] })
+    expect(mentorEMACurves(ema, [])).toEqual({ ema9: [], ema34: [] })
+  })
+})
+
+// m150 — FORMING trendlines are capped at the newest 3 per side.
+describe('mentorTrendSegments forming cap (m150)', () => {
+  const t0 = 1789480800000
+  const mk = (side: string, p1Ms: number, valid = false) => ({
+    side,
+    p0_ms: p1Ms - 120_000,
+    p0_px: 100,
+    p1_ms: p1Ms,
+    p1_px: 102,
+    now_ms: p1Ms,
+    now_px: 102,
+    in_level: true,
+    valid,
+  })
+  const grid = bars(t0, 300_000, 40)
+
+  it('keeps only the newest 3 forming lines per side', () => {
+    const tls = [
+      mk('long', t0 + 1 * 300_000),
+      mk('long', t0 + 2 * 300_000),
+      mk('long', t0 + 3 * 300_000),
+      mk('long', t0 + 4 * 300_000), // newest long
+      mk('long', t0 + 5 * 300_000), // newest long (dropped: older than 3)
+      mk('short', t0 + 6 * 300_000),
+    ]
+    const segs = mentorTrendSegments(tls, grid)
+    const long = segs.filter((s) => s.key.startsWith('long:'))
+    const short = segs.filter((s) => s.key.startsWith('short:'))
+    expect(long).toHaveLength(3)
+    expect(short).toHaveLength(1)
+    // The kept forming longs are the newest 3: +3m, +4m, +5m (p1_ms desc).
+    expect(long.map((s) => s.key).sort()).toEqual(
+      [
+        `long:${t0 + 3 * 300_000 - 120_000}:${t0 + 3 * 300_000}`,
+        `long:${t0 + 4 * 300_000 - 120_000}:${t0 + 4 * 300_000}`,
+        `long:${t0 + 5 * 300_000 - 120_000}:${t0 + 5 * 300_000}`,
+      ].sort()
+    )
+  })
+
+  it('VALID lines are never capped', () => {
+    const tls = Array.from({ length: 8 }, (_, i) =>
+      mk('long', t0 + i * 300_000, true)
+    )
+    expect(mentorTrendSegments(tls, grid)).toHaveLength(8)
   })
 })

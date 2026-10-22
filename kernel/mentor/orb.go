@@ -75,9 +75,23 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 		} else {
 			return orb
 		}
-		// P5 (493c7ead8): fall through — the escape test runs on the SAME closed
-		// candle that completed the 2m ORB. Returning here skipped the 08:32
-		// escape candle and latched one tick late (08:33).
+		// P5 (493c7ead8): the escape test runs on the SAME closed candle that
+		// completed the 2m ORB — the 08:32 candle is in the replay below.
+		// m202 #8: a mid-RTH restart (or reload) loses the in-memory escape, and
+		// the old code tested only the LAST bar, so Escaped came from one candle
+		// instead of the latest escape in history. Walk EVERY closed 1m candle
+		// from the 08:32 open to `now` through orbBodyEscape — Escaped ends as
+		// the latest escape [X5 @02:57; X7 @07:42].
+		start := day + int64(rthOpen+2)*60_000 // the 08:32 candle open
+		for _, b := range bars {
+			if b.OpenTime < start || b.CloseTime > now {
+				continue
+			}
+			if side := orbBodyEscape(orb, b); side != "" {
+				orb.Escaped = side
+			}
+		}
+		return orb
 	}
 	if len(bars) == 0 {
 		return orb

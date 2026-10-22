@@ -114,12 +114,13 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 	return dir, short, true, ""
 }
 
-// ISBStopVerdict applies the ONLY stop-size rule R1 has (course-defaults-30,
-// owner order "move to 30 at least … fix all"): an ISB whose stop is ≥ 30 pts
-// must NOT be taken; a stop < 30 is TAKEN. There is NO fixed 5–6-pt stop and
-// no "twenties" window any more — the [20,30) skip was REMOVED (it refused
-// 20–30 and let 30+ through, which was backwards). The ≥ 30 ceiling lives in
-// CourseExits.ISBMaxStopPts (default 30, CX-9).
+// ISBStopVerdict applies the only stop-size skip R1 has (W-MENTOR-EXACT, owner
+// order 2026-10-21): an ISB whose stop is ABOVE 25 pts must NOT be taken
+// ("trên nữa thì thôi" [D3.3 p1 @02:04]); a stop of 20–25 pts is the REDUCED
+// tier ("giảm size" [D3.3 p1 @01:09]), applied by the size table. There is NO
+// fixed 5–6-pt stop. The skip ceiling lives in CourseExits.ISBMaxStopPts
+// (default 25, CX-9) — the old course-defaults-30 (take 20–29 at full size) is
+// reverted.
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
 	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 30)
@@ -135,7 +136,7 @@ type ISBArm struct {
 	Inside   int          // candles whose BODIES stayed inside the first ISB since placement
 	Side     Side         // the arm's R1 direction (candle-1 colour) — stored, not derived:
 	// FirstBar is the ISB candle, whose own colour is the OPPOSITE side
-	TFMin    int   // the execution timeframe the arm was READ on (1 or 2) — the
+	TFMin int // the execution timeframe the arm was READ on (1 or 2) — the
 	// stacking count advances on that frame's candles (fold #565, D1)
 	LastTick int64 // CloseTime of the last candle this arm was ticked with — the
 	// loop skips it on 1m ticks where its frame's candle has not advanced

@@ -223,6 +223,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// arrived since the last tick registers before this tick's placement
 	// decisions read the leg budget / loss box.
 	at.mentorDrainFills()
+	// #47: drain queued broker EXITS too — a real exit closes the matching
+	// Limits.openTrade before this tick's simulate() can phantom-book a
+	// stop-out through the original stop.
+	at.mentorDrainExits()
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}
@@ -277,7 +281,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// decision was silent in the log — only the refusal counters showed it).
 	if rep := at.mentorEval.State.DayGateReport; rep.Key != "" && rep.Key != at.mentorDayGateReportLogged {
 		at.mentorDayGateReportLogged = rep.Key
-		at.logInfof("%s", mentorDayGateLine(rep))
+		// m134 DS-108 (b): the §7 verdict is WARN so it reaches the persisted
+		// log_events (which stores only error+warning) — the owner ruling
+		// 2026-10-09 day-gate line was INFO and silently invisible.
+		at.logWarnf("%s", mentorDayGateLine(rep))
 	}
 	// MENTOR-NY item 5: the ORB state, READ from the evaluator — the range
 	// once per day, the escape side + time when it first appears and on every
@@ -788,9 +795,12 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 // mentorLevelExpiry (D2-44, item 11) is the B6 lifetime for a LEVEL order
 // (ArmID prefix "lvl-"): it RESTS until the RTH window end at 15:00 CT, or
 // until the evaluator's close-through sweep cancels it — never the next 1m
-// candle [D2.3 p1 @17:42–18:14, @18:46–19:12]. At or after 15:00 CT it
-// fail-safes to tomorrow's 15:00 (placement past RTH is already refused
-// upstream, so this is a guard, never the live path).
+// candle. The close-through cancel is [D2.3 p1 @23:16–24:03] ("a later candle
+// closes through the level → cancel"). The 15:00 CT end is an INFERENCE — no
+// course timestamp states it (level_lifetime.go admits it) — so it carries no
+// course tag. At or after 15:00 CT it fail-safes to tomorrow's 15:00
+// (placement past RTH is already refused upstream, so this is a guard, never
+// the live path).
 func mentorLevelExpiry(nowMs int64) int64 {
 	return mentor.LevelArmExpiry(nowMs) // one definition, shared with the leg budget
 }
@@ -1257,8 +1267,8 @@ func (at *AutoTrader) cancelAllLiveMentorArmsWith(reason string) bool {
 }
 
 // cancelLiveMentorArms is the shared sweep body. swingExempt skips "swing-…"
-// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2]); the
-// never-add sweep passes false (no exemption).
+// arms (the news/window/day-stop cancels hold the swing by the 4h
+// [D5.2 p2 @06:27–06:30]); the never-add sweep passes false (no exemption).
 //
 // I5/I3: the entries are COPIED under mentorLiveMu before iterating (a
 // concurrent write must not race the iteration or the len), the sweep acts only
@@ -1518,7 +1528,7 @@ func parseMentorWindowStart(start string) (hour, minute int, ok bool) {
 // mentorWindowGate is the call-site half of (b); SWING4H is exempt.
 func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 	if strings.EqualFold(in.Setup, "SWING4H") {
-		return false, "" // D5.2: the swing may be at any hour
+		return false, "" // [D5.2 p2 @06:27–06:30]: "Không cần Asia… Khi nào nó đụng email 34 là được" — the swing is taken at any hour, whenever price touches the 4h EMA 34
 	}
 	start, minutes := at.mentorWindowKnobs()
 	active, why := mentorWindowActive(start, minutes, mentorClockNow())
@@ -1701,7 +1711,7 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	}
 	if strings.EqualFold(open, string(in.Side)) {
 		at.mentorCount("add_refused")
-		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
+		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry [D2.4 p1 @05:41–05:57]", open)
 	}
 	// NO FLIP (release #30 fold, CTO ruling): an OPPOSITE-side entry while a
 	// mentor position is open is refused too. At NT8 a same-bar opposite fill
@@ -1711,7 +1721,7 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	// now matches. Once flat, the next tick may place the other side (the box
 	// "Uno reverse" still trades after the stop, never before).
 	at.mentorCount("mentor_no_flip")
-	return true, fmt.Sprintf("no flip: %s open — flat first [owner ruling 2026-09-03]", open)
+	return true, fmt.Sprintf("no flip: %s open — flat first [derived: owner ruling 2026-09-03 (planner: no adds, no flips); course silent on flips]", open)
 }
 
 // mentorDailyLossGate is the §5(a) placement-time daily guardrail check: a
@@ -1981,6 +1991,78 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if len(missing) > 0 {
 		at.mentorCount("seed_missing")
 		at.logErrorf("%s", mentorSeedRefusalLine(missing))
+	}
+	// #13: rebuild the G1 leg budget + G2 loss-box registry from today's REAL
+	// fills and closed stop-outs (Limits is in-memory only — a restart wiped
+	// "two losses at one place = OFF" and the stopped-leg block). Runs AFTER
+	// the seed so State.Levels is set for the row-fallback old-extreme
+	// resolution. Best-effort: a read error leaves the fresh (empty) Limits.
+	at.mentorRebuildLimitsAtBoot()
+}
+
+// mentorRebuildLimitsAtBoot (#13) replays today's session-day FILLED mentor arms
+// (non-swing) into Limits.RecordFill via the row fallback (the in-memory pends
+// died with the process), then today's CLOSED stop-outs into Limits.RealExit
+// with wasStop — so a restart re-derives the legs, the per-place loss counts and
+// the stopped-leg block. The swing never enters Limits (its own machine).
+func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
+	if at == nil || at.store == nil || at.mentorEval == nil {
+		return
+	}
+	now := mentorClockNow()
+	since := kernel.CMESessionDayStart(now).UnixMilli()
+	levels := at.mentorEval.State.Levels
+
+	fills, err := at.store.ArmedOrders().ListFilled(at.id, 500)
+	if err != nil {
+		at.mentorCount("limits_rebuild_fill_read_error")
+		at.logWarnf("🧑‍🏫 limits rebuild: filled-arm read failed (%v) — G1/G2 not rebuilt", err)
+		return
+	}
+	rebuiltFills := 0
+	for i := range fills {
+		r := &fills[i]
+		if !isMentorArmOrigin(*r) || strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H") {
+			continue
+		}
+		if r.SignalID == "" || r.EntryPx == 0 || r.FillPrice == 0 {
+			continue
+		}
+		if r.UpdatedAt.UnixMilli() < since {
+			continue // a prior session-day's fill must not re-spend today's budget
+		}
+		row := &mentor.FillRow{
+			Side:     mentor.Side(strings.ToLower(strings.TrimSpace(r.Side))),
+			Entry:    r.EntryPx,
+			Stop:     r.StopPx,
+			Target:   r.TargetPx,
+			ISB:      strings.EqualFold(strings.TrimSpace(r.Condition), "ISB"),
+			SignalID: r.SignalID,
+		}
+		at.mentorEval.State.Limits.RecordFill(r.SignalID, "", r.FillPrice, r.FillPrice, row, levels)
+		rebuiltFills++
+	}
+
+	closed, err := at.store.Position().GetClosedPositions(at.id, 500)
+	if err != nil {
+		at.mentorCount("limits_rebuild_close_read_error")
+		at.logWarnf("🧑‍🏫 limits rebuild: closed-position read failed (%v) — stop-outs not replayed", err)
+		return
+	}
+	rebuiltStops := 0
+	for _, pos := range closed {
+		if pos == nil || pos.EntryOrderID == "" || pos.EntryTime < since {
+			continue
+		}
+		if pos.CloseReason != store.CloseReasonStop {
+			continue // only the original stop is a G1/G2 loss
+		}
+		at.mentorEval.State.Limits.RealExit(pos.EntryOrderID, true)
+		rebuiltStops++
+	}
+	if rebuiltFills > 0 || rebuiltStops > 0 {
+		at.mentorCount("limits_rebuilt")
+		at.logInfof("🧑‍🏫 limits rebuild: %d fills + %d stop-outs replayed into G1/G2 (%s)", rebuiltFills, rebuiltStops, now.Format("15:04:05 CT"))
 	}
 }
 
