@@ -200,7 +200,9 @@ func TestEmaCrossingGatesTradedLine(t *testing.T) {
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
-	// EmaMaxCross30m stays at its item-16 default (2 = ON).
+	// EmaMaxCross30m: the default is now OFF (removed, #45 — the mentor gives
+	// no count), so pin the numeric gate ON explicitly for this location pin.
+	cfg.EmaMaxCross30m = 2
 
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {

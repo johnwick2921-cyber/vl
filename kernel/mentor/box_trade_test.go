@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -46,6 +47,25 @@ func TestBoxReturnBarsEveryVisit(t *testing.T) {
 	}
 	if BoxReturnReject(b, bars[4]) || BoxReturnReject(b, bars[6]) {
 		t.Fatal("a touch closing inside the box is a CANCEL, not a reject")
+	}
+}
+
+// TestBoxEntryIntentMintsArmID — bug-hunt #18: the BOX intent must carry a
+// stable ArmID so a real fill matches its Limits pend (and the G2 box identity
+// survives the fill). Mutant (blank the ArmID) → RED.
+func TestBoxEntryIntentMintsArmID(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.LocTriggerFilter = false
+	cfg.PingPongCandleMaxPts = 0
+	b := Box{Kind: FTGL, Top: 98, Bottom: 95, Key: "ftgl:98.00:95.00"}
+	ref := market.Kline{OpenTime: 12_345_000, CloseTime: 12_345_000 + 59_999, High: 99, Low: 96, Close: 98.5}
+	lvls := []Level{{Key: "old_extreme:110", Kind: KindOldExtreme, Price: 110}}
+	out := boxEntryIntent(ref, b, []Box{b}, lvls, TriggerLine{}, nil, cfg)
+	if len(out) != 1 {
+		t.Fatalf("boxEntryIntent = %d intents, want 1", len(out))
+	}
+	if out[0].ArmID == "" || !strings.HasPrefix(out[0].ArmID, "box-") {
+		t.Fatalf("BOX intent must mint a stable ArmID, got %q", out[0].ArmID)
 	}
 }
 
