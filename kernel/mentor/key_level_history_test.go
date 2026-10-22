@@ -101,35 +101,64 @@ func TestRollDayKeyFindsFirstDenseSessionDay(t *testing.T) {
 	}
 }
 
-// TestMeasureRollGapLastFullSessionBeforeRoll — the gap is the median over the
-// LAST FULL session day before the roll (>=10 overlapping native 1h bars), NOT
-// the whole overlap. Session 09-14 has 9 bars (<10) and must be skipped in
-// favour of 09-11 (23 bars).
+// TestMeasureRollGapLastFullSessionBeforeRoll — the gap is measured on the
+// SESSION-OPEN EVENING (17:00–23:59 CT) of the LAST FULL session day before the
+// roll (>=10 overlapping native 1h bars for the day selection). Session 09-14
+// has 9 bars (<10) and must be skipped in favour of 09-11 (23 bars).
 func TestMeasureRollGapLastFullSessionBeforeRoll(t *testing.T) {
-	// Session 09-11: 23 overlapping native 1h bars. Session 09-14: only 9
-	// (17:00→01:00, the live MNQ 09-26 tail shape) — below the 10-bar floor.
+	// Session 09-11: 23 overlapping native 1h bars. Session 09-14: only 8
+	// (02:00→09:00 — the roll-day tail shape: the newer contract's first live
+	// bars land mid-session, AFTER the 17:00 evening) — below the 10-bar floor
+	// and with ZERO evening overlap.
 	newer1h := append(
 		native1hSession(2026, 9, 10, 17, 110, 110),
-		native1hN(2026, 9, 13, 17, 9, 110, 110)...)
+		native1hN(2026, 9, 14, 2, 8, 110, 110)...)
 	older1h := append(
 		native1hSession(2026, 9, 10, 17, 100, 100),
-		native1hN(2026, 9, 13, 17, 9, 100, 100)...)
+		native1hN(2026, 9, 14, 2, 8, 100, 100)...)
 	rollDay := "2026-09-15"
 
 	got := lastFullOverlapBefore(newer1h, older1h, rollDay)
 	if got != "2026-09-11" {
 		t.Fatalf("lastFullOverlapBefore = %q, want 2026-09-11 (09-14 has <10 bars)", got)
 	}
+	// The evening (17:00–23:59) holds 7 of the 23 native 1h bars; the gap is
+	// the median over those 7, not the whole 23.
 	gap, ok := measureRollGap(newer1h, older1h, got)
-	if !ok || gap.N != 23 || gap.Gap != 10 {
-		t.Fatalf("measureRollGap = %+v, %v; want N=23 gap=10", gap, ok)
+	if !ok || gap.N != 7 || gap.Gap != 10 {
+		t.Fatalf("measureRollGap = %+v, %v; want N=7 gap=10", gap, ok)
 	}
 	if gap.Min != 10 || gap.Max != 10 {
 		t.Fatalf("spread = [%.2f..%.2f], want [10..10]", gap.Min, gap.Max)
 	}
-	// The 9-bar day must NOT produce a measured gap.
+	// A session whose evening has FEWER than minEveningOverlap overlapping
+	// bars must NOT produce a measured gap (the roll-day tail shape: the newer
+	// contract's first live bars land mid-session, after the evening).
 	if _, ok := measureRollGap(newer1h, older1h, "2026-09-14"); ok {
-		t.Fatal("measureRollGap on the 9-bar day must be ok=false")
+		t.Fatal("measureRollGap on a session with <7 evening bars must be ok=false")
+	}
+}
+
+// TestMeasureRollGapUsesSessionOpenEvening pins the m335 fix: the gap is read
+// at the SESSION OPEN (the 17:00–23:59 evening), NOT the whole-day median. The
+// Sep/Dec basis is stable ~10 through the evening and drifts UP to ~20 through
+// RTH (the real 2026-09-11 shape: 291 evening → 299.75 RTH close). MUTANT: drop
+// the sessionOpenEveningCT filter in measureRollGap → the whole-day median
+// (20) wins → RED.
+func TestMeasureRollGapUsesSessionOpenEvening(t *testing.T) {
+	// older (09-26): close 100 all session. newer (12-26): close 110 in the
+	// evening (basis 10), close 120 overnight+RTH (basis 20).
+	older1h := native1hSession(2026, 9, 10, 17, 100, 100)
+	newer1h := make([]market.Kline, 0, 23)
+	newer1h = append(newer1h, native1hN(2026, 9, 10, 17, 7, 110, 110)...) // 17:00–23:00
+	newer1h = append(newer1h, native1hN(2026, 9, 11, 0, 16, 120, 120)...) // 00:00–15:00
+
+	gap, ok := measureRollGap(newer1h, older1h, "2026-09-11")
+	if !ok || gap.N != 7 || gap.Gap != 10 {
+		t.Fatalf("measureRollGap = %+v, %v; want the evening median N=7 gap=10 (the RTH drift to 20 must not leak in)", gap, ok)
+	}
+	if gap.Min != 10 || gap.Max != 10 {
+		t.Fatalf("spread = [%.2f..%.2f], want [10..10]", gap.Min, gap.Max)
 	}
 }
 
