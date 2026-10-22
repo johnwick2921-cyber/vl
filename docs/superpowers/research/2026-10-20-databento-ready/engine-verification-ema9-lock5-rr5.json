@@ -1,0 +1,14 @@
+{
+  "tests_per_timezone": 16,
+  "timezones": [
+    "America/Chicago",
+    "UTC"
+  ],
+  "random_paths_per_timezone": 6000,
+  "mutations": {
+    "wrong_target": "caught",
+    "late_arm": "caught",
+    "wrong_lock": "caught"
+  },
+  "engine_sha256": "ed46a6e06242719ddc8882fd9eb90ced666a9088cde491936c2560d6e68d163a"
+}
