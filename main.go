@@ -83,6 +83,10 @@ func main() {
 	// env a SYSTEM unit lacks. Report reachability once at boot (never fatal).
 	logger.Info("friends control: systemctl --user reachable " + api.FriendControlSelfCheck())
 
+	// m386: the Friends page is OFF unless VL_FRIENDS_PAGE=1. The boot line reads
+	// the live flag so a box can be told at a glance whether the surface exists.
+	logger.Infof("👥 friends page: %s (VL_FRIENDS_PAGE)", friendsPageWord(cfg.FriendsPage))
+
 	// Initialize encryption service BEFORE database (so EncryptedString can decrypt on read)
 	logger.Info("🔐 Initializing encryption service...")
 	cryptoService, err := crypto.NewCryptoService()
@@ -972,6 +976,16 @@ func friendHardGuarantees(cfg *config.Config, ntConnectKey string) string {
 // live config / env, never a literal (boot lines are READ, class 45).
 func friendBootLine(name, webHost string, webPort int, ntAddr string) string {
 	return fmt.Sprintf("👥 friend instance %s · web %s:%d · nt %s", name, webHost, webPort, ntAddr)
+}
+
+// friendsPageWord renders the m386 boot-line word ("on"/"off") for the
+// VL_FRIENDS_PAGE flag — one place, so the boot line and any future reader
+// agree on the wording.
+func friendsPageWord(enabled bool) string {
+	if enabled {
+		return "on"
+	}
+	return "off"
 }
 
 // totalUnrecomputable sums the three-state backfill's reason buckets. It is a
