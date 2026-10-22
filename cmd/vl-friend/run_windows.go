@@ -22,6 +22,8 @@ import (
 
 	"golang.org/x/sys/windows"
 	"golang.org/x/term"
+
+	"vl/safe"
 )
 
 // run_windows.go — the real Windows wiring of the friend app. The install /
@@ -500,7 +502,7 @@ func openDashboardNative(url string) error {
 		}
 	}
 	done := make(chan error, 1)
-	go func() {
+	safe.GoNamed("vl-friend-shellexecute", func() {
 		// Microsoft: "COM should be initialized before ShellExecute is called"
 		// (shellapi ShellExecuteW). COM init is per OS thread — lock it.
 		runtime.LockOSThread()
@@ -513,7 +515,7 @@ func openDashboardNative(url string) error {
 			a = windows.StringToUTF16Ptr(args)
 		}
 		done <- windows.ShellExecute(0, windows.StringToUTF16Ptr("open"), windows.StringToUTF16Ptr(file), a, nil, windows.SW_SHOWNORMAL)
-	}()
+	})
 	select {
 	case err := <-done:
 		return err
