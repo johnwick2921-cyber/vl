@@ -273,7 +273,19 @@ func newRealDayWorld(t *testing.T, dir string, replayFromMs int64) (*fdrWorld, [
 // modeled).
 func TestRealDayReplay(t *testing.T) {
 	dir := rdrDir(t)
-	const replayFromMs = 1792533600000 // 10-20 17:00 CT
+	replayFromMs := int64(1792533600000) // 10-20 17:00 CT (default)
+	endMs := int64(0)
+	if day := os.Getenv("REAL_DAY"); day != "" {
+		// One CME session-day: seed at the prior calendar day 17:00 CT, run to
+		// this day's 16:00 CT (m280 per-day replay).
+		d, err := time.ParseInLocation("2006-01-02", day, kernel.CTLocation())
+		if err != nil {
+			t.Fatalf("REAL_DAY %q: %v", day, err)
+		}
+		prev := d.AddDate(0, 0, -1)
+		replayFromMs = time.Date(prev.Year(), prev.Month(), prev.Day(), 17, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+		endMs = time.Date(d.Year(), d.Month(), d.Day(), 16, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+	}
 	w, fix1m, _ := newRealDayWorld(t, dir, replayFromMs)
 	rec := loadRealDayRecord(t, dir)
 	cfg := loadRealDayStrategy(t, dir)
@@ -283,8 +295,12 @@ func TestRealDayReplay(t *testing.T) {
 	w.traders = []*fdrTrader{ft}
 
 	start := w.barIndexAtOrAfter(replayFromMs)
-	// Replay through the newest bar whose close we know (the fixture's last bar).
+	// Replay through the newest bar whose close we know (the fixture's last bar),
+	// or the session close when REAL_DAY is set.
 	end := len(w.bars)
+	if endMs > 0 {
+		end = w.barIndexAtOrAfter(endMs)
+	}
 	// The seed clock MUST be the replay clock BEFORE the seed runs — a seed at
 	// the zero time (1970-01-01) blocks SWING4H (m168 item 1).
 	w.setNow(replayFromMs)
