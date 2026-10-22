@@ -87,6 +87,11 @@ type mentorLivePos struct {
 	// (every other setup, and every named setup when exec_2m_after_30m is
 	// explicitly OFF).
 	TrailTFMin int
+	// X8Exited (m262 one-shot latch): the X8 trap-dodge market close was
+	// SENT for this position — never send a second close while the fill is in
+	// flight (never rely on NT8 idempotence). Set before the send; reset on a
+	// failed send so the next candle may retry. Guarded by mentorExitMu.
+	X8Exited bool
 	// trailBar / trailBarOK: the closed TrailTFMin candle THIS drive pass
 	// trails on, set by mentorExitDrive for a 2m position (ok=false while the
 	// 2m candle is still forming — the trail waits for it to close).

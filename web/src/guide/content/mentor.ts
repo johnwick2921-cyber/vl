@@ -452,6 +452,11 @@ export const mentor: GuideSection = {
           cite: 'D4.1 p1 @04:37–05:04 — "Khi trade isb in-range bắt buộc giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
+          title: '5m pullback warning',
+          body: 'A 5m candle that breaks the prior 5m candle’s low in a 5m uptrend warns of a pullback, so the entry sizes down to the reduced size (“market chuẩn bị pullback… hạn chế vô lệnh, giảm size lại cũng được” [X11 @13:21–15:02, quote @14:50–15:00]). Optional in the course — built as the reduced tier, tagged [X11].',
+          cite: 'X11 @13:21–15:02 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m',
+        },
+        {
           title: 'Skip a stop of 30 or more',
           body: 'An ISB stop above 25 pts must not be taken ("trên nữa thì thôi" [D3.3 p1 @02:04–02:08] — those orders are not worth trading). A stop of 20–25 pts cuts to the reduced tier ("giảm size" [D3.3 p1 @01:09–01:20]); a stop of 20 or less keeps the base size. This reverts course-defaults-30 (owner order "move to 30") — the course skips the twenties [D4.1 p1 @05:41].',
           cite: 'W-MENTOR-EXACT (owner order 10-21 "i want all exactly like mentor") — CourseExits.ISBMaxStopPts 25 · D3.3 p1 @01:09–02:09 (20–25 reduce, > 25 skip) · D4.1 p1 @05:41 (twenties skip)',
@@ -560,7 +565,7 @@ export const mentor: GuideSection = {
         ],
         [
           '2m execution — ISB + PHL/PLH (1m only in the first 30 min of RTH)',
-          'ON by default — the named setups (ISB + PHL/PLH) are read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute they are the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. "Evening slow → 5m" is an open course question (no number for "slow"). The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
+          'ON by default — the named setups (ISB + PHL/PLH) are read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute they are the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff is ours — X11 names 100–200 pts as a STRONG night, where the 2m stays [derived: X11 @17:40–18:26]. The higher-timeframe lines, the boxes and the ORB escape always stay on the 1m. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
           'mentor_exec_2m_after_30m = true (default ON) · X5 @00:07–01:17 · X11 @17:06–19:35 · "Routine trước khi trade" @00:41–01:14',
         ],
         [
@@ -621,7 +626,7 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '4', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range)',
+          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range; the 5m pullback warning)',
           '4',
           'mentor_reduced_contracts',
         ],
@@ -694,6 +699,17 @@ export const mentor: GuideSection = {
           'EOD flat',
           'No intraday exit path rides through the end of the day. At the EOD flat the bot first cancels the resting intraday orders, then reads its open positions and closes each one through the trader close path — at market by default (the server setting EOD_FLAT_LIMIT_TICKS above 0 tries a limit first, then market). An A, B or C trade or an ISB runner still open is closed there, target or not. Only the SWING4H position is exempt — held by the 4h (log "SWING4H position … EXEMPT — held by the 4h"). When: whenever no session window is open — from the NY close at 14:45 CT until the 17:00 CT reopen, so the first bot cycle at or after 14:45 CT closes it — or earlier inside a session when a registered half-day (or a session’s eod_flat_offset_min) pulls the flat in. It runs while mentor mode (or the day plan) is ON. A position the broker reports but the bot’s own table does not is never auto-closed: the bot logs "NOT FLAT" for the owner and counts flat_claim_refused_broker_disagrees. (trader/auto_trader_clock.go enforceEODFlatAt → flattenPosition)',
         ],
+      ],
+    },
+    {
+      kind: 'callout',
+      title: 'X8 trap-dodge exit',
+      items: [
+        {
+          title: 'A fake breakout through the EMA 34 exits the position',
+          body: 'When a position is open, a CLOSED 2m candle that closes through the EMA 34 against the 5m trigger trend — ABOVE it while the 5m trigger is on the SELL side (a candle swept the prior low), BELOW it while the trigger is on the BUY side — is the fake breakout the course warns about ("thì out lại tại đó chứ đừng ngồi hô"). The bot exits the position at market through the trader close path and cancels the bracket; the SWING4H is exempt (held by the 4h). A 2m close through the EMA 34 alone never fires — the 5m sweep is the trigger [X8 part1 @07:31–08:07].',
+          cite: 'X8 "Cách né trap & Setup gồng lời" part1 @07:31–08:07 · kernel/mentor/filters.go X8TrapDodge · trader/mentor_exit_drive.go mentorX8TrapDodgeExit',
+        },
       ],
     },
     {
@@ -1022,7 +1038,7 @@ export const mentor: GuideSection = {
           label:
             '2m execution — ISB + PHL/PLH (1m only in the first 30 min of RTH)',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). "Evening slow → 5m" is an open course question (no number for "slow"). The ISB pair and PHL/PLH swap; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
+          what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff is ours — X11 names 100–200 pts as a STRONG night, where the 2m stays [derived: X11 @17:40–18:26]. The ISB pair and PHL/PLH swap; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
             'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu").',
           consumer:

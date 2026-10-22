@@ -89,6 +89,10 @@ const (
 	fdrSwingTargetPts       = 130.0
 )
 
+// fdrActiveFixturePath is the fixture newFdrWorld loads. The multi-day replay
+// swaps it for its own tape; the default is the full-day fixture.
+var fdrActiveFixturePath = fdrFixturePath
+
 // fdrLiveArm is one row the LIVE bot authored for trader hoang between the
 // 00:59:15 seed and 05:00 CT 10-13 (data.db armed_orders, created_at is UTC).
 type fdrLiveArm struct {
@@ -190,7 +194,7 @@ type fixtureBar struct {
 // the seed's roll-gap measurement — the live store's native 1h retention).
 func loadFullDayFixture(t *testing.T) ([]fixtureBar, []fixtureBar) {
 	t.Helper()
-	raw, err := os.ReadFile(fdrFixturePath)
+	raw, err := os.ReadFile(fdrActiveFixturePath)
 	if err != nil {
 		t.Fatalf("read fixture: %v", err)
 	}

@@ -289,7 +289,7 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 	// Get closed positions (ITEM 2 per-account: scope the list to the selected
 	// account when provided; aggregate stats below remain trader-scoped pending
 	// trade data — there are no closed positions yet to exercise them).
-	positions, err := store.Position().GetClosedPositions(trader.GetID(), limit, c.Query("account"))
+	positions, err := store.Position().GetHistoryPositions(trader.GetID(), limit, c.Query("account"))
 	if err != nil {
 		SafeInternalError(c, "Get position history", err)
 		return
@@ -345,6 +345,10 @@ func annotatePositionHistory(positions []*storepkg.TraderPosition) ([]positionHi
 		if p == nil || p.PnlCorrected == nil {
 			status = "unresolved"
 			unresolved++
+		} else if p.Status == "OPEN" {
+			// m232: an OPEN row that booked a partial leg — label it "partial" so
+			// the UI shows the realized partial P&L, not a blank.
+			status = "partial"
 		}
 		rows = append(rows, positionHistoryRow{TraderPosition: p, PnlStatus: status})
 	}

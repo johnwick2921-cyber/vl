@@ -732,6 +732,10 @@ func bucketOpen(openMs int64, tfMin int) int64 {
 const (
 	FlagISBAtOldExtreme = "isb_at_old_extreme"
 	FlagISBInRange      = "isb_in_range"
+	// FlagPullbackWarn is the X11 pullback-warning size cut: a 5m candle that
+	// breaks the prior 5m candle's low in a 5m uptrend warns of a pullback, so
+	// the entry sizes down [X11 @13:21–15:02, quote @14:50–15:00].
+	FlagPullbackWarn = "pullback_warn"
 )
 
 // HasFlag reports whether the "|"-joined Intent.Flag contains the exact flag.

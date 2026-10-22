@@ -91,6 +91,14 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // pair (the session-end death). The line becomes a location on the 3rd touch
 // (a return, trendlineScan) and is discarded by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
+	// X9 @03:35–03:55: "Thường em sẽ vẽ trendline khung 2 phút, nó sẽ clear hơn.
+	// Tại vì mình trade khung 2 phút. Và khung 1 phút, nó rất clear luôn." The
+	// mentor prefers the 2m and endorses the 1m ("rất clear luôn"). This builds
+	// the 1m construction — the mentor-endorsed stable one. A 2m construction is
+	// NOT built: it must still enforce "TRENDLINE chứ không phải CẦU TUỘT" at the
+	// 1m level (a 2m candle hides a 1m cross-through between its anchors), and a
+	// naive 2m union breaks the session-parity invariant (forming 2m candles
+	// vanish lines). Follow-up if the owner wants the 2m drawn as a separate set.
 	lines, _ := trendlinesBuild(bars, now)
 	return lines
 }

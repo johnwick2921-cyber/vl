@@ -233,6 +233,14 @@ func exec2mReads2m(now int64) bool {
 	return m < 8*60+30 || m >= 9*60
 }
 
+// inEveningWindow reports whether the just-closed 1m bar is in the evening /
+// overnight window: after the RTH close (15:00 CT) and before the Europe open
+// (03:00 CT the next day) [X11 @17:40–18:26].
+func inEveningWindow(now int64) bool {
+	m := rthMinuteOf(now - 60_000)
+	return m >= 15*60 || m < 3*60
+}
+
 // rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs
 // to: candles open at :30 (08:30, 09:30, …) — a bar at hh:29 belongs to
 // the previous hour's candle, hh:30 starts the current one. DST-safe via
