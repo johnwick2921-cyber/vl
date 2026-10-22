@@ -873,18 +873,48 @@ func TestSwingHoldDeadlineBuckets(t *testing.T) {
 		{"5min before bucket end", at(time.October, 14, 8, 55), 1, at(time.October, 14, 13, 0)},
 		// 12:55 sits in the 09:00 bucket: holds through the 13:00 bucket
 		// (cut by the 16:00 halt), ends at the 17:00 anchor.
-		{"12:55 -> 13:00 bucket", at(time.October, 14, 12, 55), 1, at(time.October, 14, 17, 0)},
-		{"09:05 N=2", at(time.October, 14, 9, 5), 2, at(time.October, 14, 21, 0)},
+		{"12:55 -> capped at the 16:00 halt", at(time.October, 14, 12, 55), 1, at(time.October, 14, 16, 0)},
+		{"09:05 N=2 capped 16:00", at(time.October, 14, 9, 5), 2, at(time.October, 14, 16, 0)},
 		// entered in the 13:00 (halt-cut) bucket: next candle is 17:00-21:00.
-		{"in the 13:00 bucket", at(time.October, 14, 15, 30), 1, at(time.October, 14, 21, 0)},
-		// Friday 15:30 CT: the Fri 17:00 bucket never trades; the first candle
-		// after entry is Sun 17:00-21:00, ends 21:00 Sunday.
-		{"friday 15:30", at(time.October, 16, 15, 30), 1, at(time.October, 18, 21, 0)},
+		{"in the 13:00 bucket -> 16:00", at(time.October, 14, 15, 30), 1, at(time.October, 14, 16, 0)},
+		{"tuesday 17:05 uncapped", at(time.October, 13, 17, 5), 1, at(time.October, 14, 1, 0)},
+		// Friday 15:30 CT: never held through the weekend, capped at 16:00.
+		{"friday 15:30 -> Fri 16:00", at(time.October, 16, 15, 30), 1, at(time.October, 16, 16, 0)},
 	}
 	for _, c := range cases {
 		eb := fourHBucketStart(c.entry, nil)
 		if got := SwingHoldDeadline(eb, c.n); got != c.want {
 			t.Errorf("%s: deadline %s, want %s", c.name, time.UnixMilli(got).In(ct), time.UnixMilli(c.want).In(ct))
 		}
+	}
+}
+
+// TestSwingHoldCapFlattensOnLastBarBeforeHalt: a swing entered 12:55 (09:00
+// bucket) is flattened on the 15:55 bar (closes at the 16:00 halt) and NOT
+// carried through it; no close earlier. Mutant: remove the market-close cap →
+// no close on 15:55 → RED.
+func TestSwingHoldCapFlattensOnLastBarBeforeHalt(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	eb := fourHBucketStart(mk5m(t, 15, 12, 55, 0, 0, 0, 0).OpenTime, nil)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: eb, ArmID: "swing-cap"}) {
+		t.Fatal("rebuild refused")
+	}
+	closes := func(h, m int) bool {
+		bars := append(base, mk5m(t, 15, h, m, 10130, 10140, 10125, 10135))
+		for _, in := range SwingTick(s, bars, cfg, bars[len(bars)-1].OpenTime+60_000) {
+			if in.Action == ActionClosePosition {
+				return true
+			}
+		}
+		return false
+	}
+	if closes(15, 50) {
+		t.Fatal("closed too early (15:50)")
+	}
+	if !closes(15, 55) {
+		t.Fatal("must flatten on the 15:55 bar (last before the 16:00 halt)")
 	}
 }

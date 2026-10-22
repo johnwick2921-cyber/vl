@@ -679,7 +679,7 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold ONE full 4h candle after the entry candle (the hold ends at the close of the next 4h candle on the 17:00 CT grid — a swing entered late in its candle is NOT closed minutes later; the 13:00 candle is cut by the 16:00 halt, and the weekend gap holds to the first Sunday-evening candle) [D5.2 p1 @06:03–06:20]',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold ONE full 4h candle after the entry candle (the hold ends at the close of the next 4h candle on the 17:00 CT grid — a swing entered late in its candle is NOT closed minutes later — but it is NEVER carried through the 16:00 CT halt or a weekend: the deadline is capped at the market close) [D5.2 p1 @06:03–06:20]',
         ],
         [
           'ISB partial',
@@ -1584,7 +1584,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing hold bars',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: 'Hold to the close of the N-th 4h candle AFTER the entry candle (the entry candle itself never counts; real 17:00 CT-anchored candles, skipping closed ones).',
+          what: 'Hold to the close of the N-th 4h candle AFTER the entry candle (the entry candle itself never counts; real 17:00 CT-anchored candles; capped at the market close — never held through the 16:00 CT halt or a weekend).',
           trader:
             '1 — hold to the close of ONE full 4h candle after the entry candle [D5.2 p1 @06:03–06:20].',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars',

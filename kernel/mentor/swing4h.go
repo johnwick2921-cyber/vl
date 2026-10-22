@@ -738,8 +738,20 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 // never entryBucket + n*4h: the 13:00 bucket is cut by the 16:00-17:00 halt,
 // and a bucket that opens while the CME is closed (weekend, holiday) is not a
 // candle — it is skipped, so a Friday swing holds through the first CANDLES of
-// the new week, not an empty Friday-evening bucket. n < 1 counts as 1.
+// the new week, not an empty Friday-evening bucket. n < 1 counts as 1. The
+// deadline is capped at the next market close (never held through the halt or
+// a weekend) — see swingHold.
 func SwingHoldDeadline(entryBucket int64, n int) int64 {
+	d, _ := swingHold(entryBucket, n)
+	return d
+}
+
+// swingHold returns the hold deadline and whether it was CAPPED at a market
+// close. A swing is NEVER carried through a market close (daily halt, weekend,
+// holiday): if the CME closes before the stepped candle end, the deadline is
+// that close (the first closed minute, found with kernel.IsCMEOpen), and the
+// position is flattened on the last bar before it.
+func swingHold(entryBucket int64, n int) (int64, bool) {
 	if n < 1 {
 		n = 1
 	}
@@ -747,7 +759,12 @@ func SwingHoldDeadline(entryBucket int64, n int) int64 {
 	for step := 0; step < n+1; step++ {
 		b = nextTradingFourHBucket(b)
 	}
-	return b
+	for t := entryBucket; t < b; t += 5 * 60_000 {
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			return t, true
+		}
+	}
+	return b, false
 }
 
 // nextTradingFourHBucket returns the start of the first 4h bucket after b that
@@ -788,8 +805,10 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 			p.MovedBE = true
 		}
 	}
-	holdMs := SwingHoldDeadline(p.EntryBucket, cfg.Hold4hBars)
-	if cur.OpenTime >= holdMs {
+	holdMs, capped := swingHold(p.EntryBucket, cfg.Hold4hBars)
+	// A capped deadline is a market close: the last bar BEFORE it (whose own
+	// close lands on the halt) is the one that flattens — there is no bar at it.
+	if cur.OpenTime >= holdMs || (capped && cur.OpenTime+5*60_000 >= holdMs) {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
 			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
 		s.Pos = nil
