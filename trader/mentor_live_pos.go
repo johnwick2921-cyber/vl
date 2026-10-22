@@ -581,17 +581,18 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	case p.ExitReason == "sl":
 		// #47 P1: the AddOn derives exit_reason from the ORDER NAME suffix, and
 		// a MOVED stop (break-even or trail) keeps "-sl" — so the fill PRICE,
-		// not the reason, decides. A "sl" fill is a loss ONLY at-or-past the
-		// ORIGINAL stop (ledger stop_px, one-sided) on the losing side of entry.
+		// not the reason, decides. m308 P2(a): a loss is simply "the fill is on
+		// the losing side of ENTRY by more than one tick" — a tightened 1:1 stop
+		// still on the loss side IS a loss, BE and profitable trails are not.
 		// Q3 ruling (CTO): the mentor counts a TRADE, not a leg — a leg-1 stop
 		// with the runner still live is UNDECIDED and the defer is INTENDED:
 		// neither drop nor book, the runner's own receipt decides the one trade.
 		if p.Leg == 1 && at.mentorRunnerStillOpen(p.SignalID) {
 			break
 		}
-		stopPx, entryPx := at.mentorLedgerStopEntry(p.SignalID)
+		entryPx := at.mentorLedgerEntry(p.SignalID)
 		tick := market.FuturesTickSize(p.Symbol)
-		at.mentorEnqueueExit(p.SignalID, mentorStopFillIsLoss(p.PositionSide, p.ExitPrice, stopPx, entryPx, tick))
+		at.mentorEnqueueExit(p.SignalID, mentorStopFillIsLoss(p.PositionSide, p.ExitPrice, entryPx, tick))
 	case p.ExitReason == "manual":
 		at.mentorEnqueueExit(p.SignalID, false)
 	case p.ExitReason == "tp" && p.Leg == 2:
@@ -612,18 +613,17 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	}
 }
 
-// mentorStopFillIsLoss (#47 P1) decides whether a broker "sl" exit is a real
-// stop-out loss. The AddOn derives exit_reason from the ORDER NAME suffix
-// (VLTraderTCPClient.cs): a stop MOVED to break-even or trailed keeps "-sl", so
-// the fill PRICE — not the reason — decides. A "sl" fill is a loss ONLY when it
-// fills AT OR PAST the ORIGINAL stop on the losing side of entry: a break-even
-// fill (≈ entry) or a trailed stop in profit is NOT a loss. The at-or-past test
-// is ONE-SIDED (m294, DS-106): slippage THROUGH the stop is the worst loss and
-// still counts — a long stop at 95 filled at 94 is a loss, not a miss. A missing
-// fill/stop price fails CLOSED to loss=true (the pre-#47 reading of a named stop
-// exit).
-func mentorStopFillIsLoss(side string, fillPx, stopPx, entryPx, tick float64) bool {
-	if fillPx <= 0 || stopPx <= 0 {
+// mentorStopFillIsLoss (#47 P1, m308 P2(a)) decides whether a broker "sl" exit
+// is a real stop-out loss. The AddOn derives exit_reason from the ORDER NAME
+// suffix (VLTraderTCPClient.cs): a stop MOVED to break-even, trailed, or
+// tightened to 1:1 keeps "-sl", so the fill PRICE — not the reason — decides.
+// The rule is simply: a loss = the fill is on the losing side of ENTRY by more
+// than one tick (long: fill < entry − tick; short: fill > entry + tick). A
+// break-even fill (≈ entry) or a trailed stop in profit is NOT a loss; a slipped
+// or tightened stop still on the loss side IS. A missing fill/entry price fails
+// CLOSED to loss=true (the pre-#47 reading of a named stop exit).
+func mentorStopFillIsLoss(side string, fillPx, entryPx, tick float64) bool {
+	if fillPx <= 0 || entryPx <= 0 {
 		return true
 	}
 	if tick <= 0 {
@@ -631,51 +631,35 @@ func mentorStopFillIsLoss(side string, fillPx, stopPx, entryPx, tick float64) bo
 	}
 	switch strings.ToLower(strings.TrimSpace(side)) {
 	case "long":
-		// At or past the stop: fill <= stop + tick (+1e-9). A fill ABOVE that is
-		// a moved stop (break-even or trail) — not a loss.
-		if fillPx > stopPx+tick+1e-9 {
-			return false
-		}
-		if entryPx <= 0 {
-			return true // at/past the original stop and no entry known — a loss
-		}
-		return fillPx < entryPx
+		return fillPx < entryPx-tick
 	case "short":
-		// At or past the stop: fill >= stop − tick (−1e-9). A fill BELOW that is
-		// a moved stop (break-even or trail) — not a loss.
-		if fillPx < stopPx-tick-1e-9 {
-			return false
-		}
-		if entryPx <= 0 {
-			return true // at/past the original stop and no entry known — a loss
-		}
-		return fillPx > entryPx
+		return fillPx > entryPx+tick
 	default:
-		return true // unknown side at the original stop — a loss
+		return true // unknown side — fail closed
 	}
 }
 
-// mentorLedgerStopEntry reads a signal's ORIGINAL stop and fill entry from the
-// armed-orders ledger. The live position's stop is the CURRENT (possibly moved)
-// stop; the ledger's stop_px is the authored original (#47 P1). Returns 0,0 when
-// the row is unreadable — the caller fails closed to loss=true.
-func (at *AutoTrader) mentorLedgerStopEntry(signalID string) (stopPx, entryPx float64) {
+// mentorLedgerEntry reads a signal's FILL entry from the armed-orders ledger
+// (FillPrice, falling back to the authored EntryPx). The live position's entry
+// is the same value but may be gone by the time a whole-position close receipt
+// arrives; the ledger survives. Returns 0 when unreadable — the caller fails
+// closed to loss=true.
+func (at *AutoTrader) mentorLedgerEntry(signalID string) float64 {
 	if at == nil || at.store == nil || signalID == "" {
-		return 0, 0
+		return 0
 	}
 	ledger := at.store.ArmedOrders()
 	if ledger == nil {
-		return 0, 0
+		return 0
 	}
 	var r store.ArmedOrderDB
 	if err := ledger.DB().Where("signal_id = ?", signalID).First(&r).Error; err != nil {
-		return 0, 0
+		return 0
 	}
-	entryPx = r.FillPrice
-	if entryPx <= 0 {
-		entryPx = r.EntryPx
+	if r.FillPrice > 0 {
+		return r.FillPrice
 	}
-	return r.StopPx, entryPx
+	return r.EntryPx
 }
 
 // mentorRunnerStillOpen reports whether a leg-1 stop exit leaves a runner
