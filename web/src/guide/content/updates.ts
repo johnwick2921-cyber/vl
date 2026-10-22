@@ -59,7 +59,7 @@ export const updates: GuideSection = {
     { kind: 'h', text: 'NT8 closed when you press Update' },
     {
       kind: 'p',
-      text: 'If NinjaTrader is closed when you press Update, and has been closed for at least 60 seconds, the job takes the “NT8 closed” path. The build and place steps still run: the new AddOn file is built, the old one is MOVED to the backup folder, the new one is copied in and checked. The updater does NOT restart NinjaTrader and does not wait for a reconnect. When the job says complete, YOU open NinjaTrader — it loads the new AddOn on that start. Nothing else is owed and there is no "resume" step. If NinjaTrader is open, the updater closes and reopens it itself, and only when every trader is flat and on SIM. If NinjaTrader connects again before the hold is placed, the normal open path applies instead.',
+      text: 'If NinjaTrader is closed when you press Update, and has been closed for at least 60 seconds, the job takes the “NT8 closed” path. The build and place steps still run: the new AddOn file is built, the old one is MOVED to the backup folder, the new one is copied in and checked. The updater does NOT restart NinjaTrader and does not wait for a reconnect. When the job says complete, YOU open NinjaTrader — it loads the new AddOn on that start. Nothing is owed and there is no "resume" step. If NinjaTrader is open, the updater closes and reopens it itself, and only when every trader is flat and on SIM. If NinjaTrader connects again before the hold is placed, the normal open path applies instead.',
     },
     { kind: 'h', text: 'The AddOn file is checked after it is placed' },
     {
