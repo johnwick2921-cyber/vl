@@ -1108,24 +1108,23 @@ func (at *AutoTrader) eodSessionFlatAt(reg kernel.SessionRegistry, sess *kernel.
 //
 //   - the T1 force-flat LEAD: t1ForceFlatDue's [W.Start − t1ForceFlatLead,
 //     W.End]. Inside the blackout itself the no-trade band refuses first, so
-//     this is what closes [W.Start − 2m, W.Start).
+//     this is what closes [W.Start − 2m, W.Start). The lead is
+//     session-INDEPENDENT and is evaluated BEFORE the active-session check
+//     (m308): it refuses between sessions and while the session is off, where
+//     the mentor waives the band.
 //   - the in-session EOD flat (eodSessionFlatAt), which is earlier than the
 //     last-entry cutoff only when a session's eod_flat_offset_min exceeds its
-//     last_entry_offset_min (nothing validates that pair). Between sessions the
-//     band already refuses ("outside all session windows").
+//     last_entry_offset_min (nothing validates that pair). It requires an
+//     active session — between sessions there is no in-session flat to be past.
 //
-// Same preconditions as the enforce functions: Day Plan on and an active
-// session. Calendar windows come from currentT1Windows, whose static fallback
-// keeps this fail-closed when the slice is missing — or, when the caller has
-// just read them for the session gate at the same now, from t1 (nil = not
-// read; read here).
+// Preconditions: Day Plan on. Calendar windows come from currentT1Windows
+// (which, since m308, reads even with no active session — the strategy's
+// t1_currencies alone scopes the blackout), whose static fallback keeps this
+// fail-closed when the slice is missing — or, when the caller has just read
+// them for the session gate at the same now, from t1 (nil = not read; read
+// here).
 func (at *AutoTrader) forceFlatWindowAt(now time.Time, t1 *[]kernel.CTWindow) (string, bool) {
 	if !at.dayPlanEnabled() {
-		return "", false
-	}
-	reg := at.sessionRegistry(now)
-	sess, ok := reg.ActiveSession(now)
-	if !ok {
 		return "", false
 	}
 	var windows []kernel.CTWindow
@@ -1134,8 +1133,17 @@ func (at *AutoTrader) forceFlatWindowAt(now time.Time, t1 *[]kernel.CTWindow) (s
 	} else {
 		windows = at.currentT1Windows(now)
 	}
+	// m308 — the T1 force-flat LEAD is session-INDEPENDENT (it is just the
+	// T-2m window before the blackout): evaluate it BEFORE the active-session
+	// check so it refuses between sessions / while the session is off, where
+	// the mentor waives the band.
 	if label := t1ForceFlatDue(ctMinutesNow(now), windows, t1ForceFlatLead); label != "" {
 		return fmt.Sprintf("📰 T1 force-flat window: %s (entries refused from T-%dm before the blackout — the window positions are flattened in)", label, t1ForceFlatLead), true
+	}
+	reg := at.sessionRegistry(now)
+	sess, ok := reg.ActiveSession(now)
+	if !ok {
+		return "", false
 	}
 	if hhmm, past, okC := at.eodSessionFlatAt(reg, sess, now); okC && past {
 		return fmt.Sprintf("🕒 EOD flat: past the %s flat %s CT — entries refused after the flat, not only at last-entry", sess.Name, hhmm), true

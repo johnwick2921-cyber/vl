@@ -77,6 +77,7 @@ func (at *AutoTrader) armAdmitted(r store.ArmedOrderDB, side string, price float
 		Path: admitArm, Symbol: at.futuresSymbol(), Action: action, Now: now, Key: key, Price: price,
 		Source:    r.Source, // W5 D21 — a Picture-sourced row faces Picture's running / Day Plan checks
 		MentorArm: isMentorArmOrigin(r),
+		Swing:     strings.EqualFold(strings.TrimSpace(r.Condition), "SWING4H"),
 	}); refused {
 		return false, refusal
 	}

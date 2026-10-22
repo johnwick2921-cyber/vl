@@ -47,21 +47,29 @@ func (at *AutoTrader) sessionEntryBlockedT1At(now time.Time) (string, bool, *[]k
 		return "", false, nil
 	}
 	reg := at.sessionRegistry(now)
+	// m308 — read the T1 windows FIRST and refuse the red-news blackout BEFORE
+	// any session-list band reason. The mentor waives the session-list band
+	// (session off, trade cap, outside-window, lunch, first-5m) but NEVER the
+	// T1 blackout — so the blackout must win over every waivable reason. The
+	// windows are read once here and handed back to forceFlatWindowAt.
+	windows := at.currentT1Windows(now)
+	if label, blocked := kernel.InT1Blackout(ctMinutesNow(now), windows); blocked {
+		return "🔴 red-news blackout: " + label, true, &windows
+	}
 	// W9 + PART A — the strategy's session enable gates ENTRIES too (not just reads),
 	// through the SAME resolver the read scheduler uses: an explicit per-session
 	// toggle wins, otherwise registry + sessions_enabled. A session the owner
 	// switched off admits no entries even in advisory mode.
 	if sess, ok := reg.ActiveSession(now); ok {
 		if runnable, why := at.sessionRunnable(sess); !runnable {
-			return why, true, nil
+			return why, true, &windows
 		}
 		// W15.B — per-session trade cap (the override was persisted + rendered but
 		// enforced by NOTHING). Absent → no cap, shipped behavior unchanged.
 		if why, blocked := at.sessionTradeCapBlocked(sess, now); blocked {
-			return why, true, nil
+			return why, true, &windows
 		}
 	}
-	windows := at.currentT1Windows(now)
 	why, blocked := sessionGateDecision(reg, now, windows, at.sessionRunnable)
 	return why, blocked, &windows
 }
