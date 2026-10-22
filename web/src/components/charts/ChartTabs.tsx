@@ -25,6 +25,8 @@ interface ChartTabsProps {
   mentorLevels?: ChartLineSpec[]
   /** T7 (release #22) — the mentor's valid trendlines (sloped segments). */
   mentorTrendlines?: MentorTruth['trendlines']
+  /** m134 — the per-bar EMA 9/34 curve (points). */
+  mentorEMASeries?: MentorTruth['ema_series']
   /** UG-2 (release #24): the instrument the mentor overlays belong to
    * (/api/mentor/truth `symbol`). They are drawn ONLY on a tab showing it. */
   mentorSymbol?: string
@@ -143,6 +145,7 @@ export function ChartTabs({
   selectedAccount,
   mentorLevels,
   mentorTrendlines,
+  mentorEMASeries,
   mentorSymbol,
   mentorStaleSinceMs,
 }: ChartTabsProps) {
@@ -533,6 +536,7 @@ export function ChartTabs({
                 mentorTrendlines={
                   mentorOnThisTab ? mentorTrendlines : undefined
                 }
+                mentorEMASeries={mentorOnThisTab ? mentorEMASeries : undefined}
                 mentorStaleSinceMs={mentorStaleSinceMs}
               />
             </motion.div>

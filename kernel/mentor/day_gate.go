@@ -59,11 +59,14 @@ const (
 // CTO; until it lands, DefaultDayGate supplies the method defaults).
 type DayGate struct {
 	// SpentPts: a run at/above this before the open means "already run"
-	// — 300 [D5.1 p1 @ 15:57 "Already run 300–400 before the open → 80–90%
+	// — 300 [D5.1 p1 @16:05-16:11 "Already run 300–400 before the open → 80–90%
 	// it ranges"].
 	SpentPts float64
 	// TargetCapPts: on a spent day, the target distance cap — 15
-	// ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 20:02–20:06]).
+	// ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 20:02–20:06]). The mentor is
+	// flexible 10–15; the 15 cap is the upper bound and a target ≤ 15 (10
+	// included) passes through unchanged — the 10-vs-15 pick itself is his
+	// discretion, not a stated rule.
 	TargetCapPts float64
 }
 
@@ -335,7 +338,7 @@ func DayGateVerdict(run float64, haveRun bool, conflict bool, g DayGate) (DayVer
 		return DayOff, "spent AND 4h/1h conflict at the pre-open read — 'TẮT MÁY NGHỈ LUÔN CHO EM', no trades today [D5.1 p1 @ 19:22]"
 	}
 	if run >= g.SpentPts {
-		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [D5.1 p1 @ 15:57]"
+		return DaySpent, "already run 300–400+ before the open — trade but don't target big, 15/10 pt sales [300-400 @16:05-16:11; 15/10 @19:56-20:07]"
 	}
 	return DayTrade, ""
 }
