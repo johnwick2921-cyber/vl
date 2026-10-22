@@ -200,6 +200,17 @@ export function TraderDashboardPage({
   const mentorTrendlines = mentor?.enabled ? mentor.trendlines : undefined
   // m134 — the per-bar EMA 9/34 curve.
   const mentorEMASeries = mentor?.enabled ? mentor.ema_series : undefined
+  // m325 — the EMA34 location line's CURRENT value (kind ema34_htf), drawn as a
+  // short right-edge segment, never a full-width flat line through history.
+  const mentorEMALocationPrice = useMemo(
+    () =>
+      mentor?.enabled
+        ? (mentor.levels ?? []).find(
+            (l) => l.kind === 'ema34_htf' && l.price > 0
+          )?.price
+        : undefined,
+    [mentor]
+  )
   // Plan 4 Task 23.4 — Dashboard tab switcher (Overview / Decisions).
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'decisions'>(
     'overview'
@@ -795,6 +806,7 @@ export function TraderDashboardPage({
               mentorEMASeries={mentorEMASeries}
               mentorSymbol={mentor?.symbol}
               mentorStaleSinceMs={mentorStaleSinceMs}
+              mentorEMALocationPrice={mentorEMALocationPrice}
             />
           </div>
 

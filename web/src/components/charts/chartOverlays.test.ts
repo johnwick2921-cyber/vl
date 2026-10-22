@@ -7,6 +7,7 @@ import {
   chartFuturesRoot,
   mentorChartLines,
   mentorEMACurves,
+  mentorEMALocationSegment,
   mentorStaleMark,
   mentorTrendSegments,
   orderPriceLines,
@@ -111,7 +112,9 @@ describe('mentorChartLines', () => {
     expect(byLabel['mentor old high/low · also 30110']).toBe(30100)
     expect(byLabel['mentor 5m trigger']).toBe(30050)
     expect(byLabel['mentor 4h trigger']).toBe(29900)
-    expect(byLabel['mentor EMA34 location']).toBe(30020)
+    // m325: the EMA34 location line is NOT a flat line — it is a short
+    // right-edge segment (mentorEMALocationSegment), never a full-width line.
+    expect(byLabel['mentor EMA34 location']).toBeUndefined()
     expect(byLabel['mentor box top']).toBe(30200)
     expect(byLabel['mentor box bottom']).toBe(30180)
     expect(byLabel['mentor ISB 5m high']).toBe(30060)
@@ -122,6 +125,47 @@ describe('mentorChartLines', () => {
     expect(byLabel['swing position TP']).toBe(29900)
     // A trendline is sloped: never drawn as a flat line at today's value.
     expect(lines.some((l) => l.label.includes('trendline'))).toBe(false)
+  })
+
+  it('never draws ema34 / ema9 / ema34_htf as flat lines (key_level still drawn)', () => {
+    const lines = mentorChartLines(
+      truth({
+        levels: [
+          {
+            key: 'kl',
+            kind: 'key_level',
+            price: 30000,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'e34',
+            kind: 'ema34',
+            price: 29609.78,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'e9',
+            kind: 'ema9',
+            price: 29612.99,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+          {
+            key: 'ehtf',
+            kind: 'ema34_htf',
+            price: 29609.52,
+            drawn_at: 0,
+            visits_today: 0,
+          },
+        ],
+      })
+    )
+    expect(lines.some((l) => l.label === 'mentor key level')).toBe(true)
+    expect(
+      lines.some((l) => l.label.includes('EMA34') || l.label.includes('EMA9'))
+    ).toBe(false)
   })
 
   it('draws nothing when mentor mode is off, and nothing invented while computing', () => {
@@ -148,6 +192,29 @@ describe('mentorChartLines', () => {
 // The chart's 5m bars from t0 (UTC seconds) — what AdvancedChart drew.
 const bars = (t0Ms: number, stepMs: number, n: number) =>
   Array.from({ length: n }, (_, i) => (t0Ms + i * stepMs) / 1000)
+
+describe('mentorEMALocationSegment', () => {
+  it('draws the EMA34 location as a SHORT right-edge segment, never a flat line', () => {
+    const t0 = 1789480800000
+    const b = bars(t0, 300_000, 6) // 6 five-minute bars, UTC seconds
+    const seg = mentorEMALocationSegment(30020, b)
+    expect(seg).not.toBeNull()
+    expect(seg!.key).toBe('ema34_htf')
+    expect(seg!.label).toBe('EMA34 location (current value)')
+    expect(seg!.points).toHaveLength(2)
+    // both points hold the CURRENT value, spanning only the last drawn bar.
+    expect(seg!.points[0].value).toBe(30020)
+    expect(seg!.points[1].value).toBe(30020)
+    expect(seg!.points[0].time).toBe(b[b.length - 2])
+    expect(seg!.points[1].time).toBe(b[b.length - 1])
+  })
+
+  it('returns null with no price or no bars', () => {
+    expect(mentorEMALocationSegment(undefined, [1])).toBeNull()
+    expect(mentorEMALocationSegment(0, [1])).toBeNull()
+    expect(mentorEMALocationSegment(30020, [])).toBeNull()
+  })
+})
 
 describe('mentorTrendSegments', () => {
   it('snaps anchors to the bar grid and re-values them on the same line', () => {
