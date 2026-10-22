@@ -146,6 +146,18 @@ type Transition struct {
 	Receipts int `json:"receipts"`
 }
 
+// AddonProven reports whether the job has moved PAST boot_verified — a
+// transition to worker_swapped or complete exists. Once proven, the AddOn must
+// never be touched again (m343: no late revert or catch-up overwrite).
+func (j Job) AddonProven() bool {
+	for _, t := range j.Transitions {
+		if t.State == StateWorkerSwapped || t.State == StateComplete {
+			return true
+		}
+	}
+	return false
+}
+
 // Receipt mirrors activation.Receipt field for field — names, types, order
 // and JSON tags (TestReceiptTagsMatchActivationGolden) — so the worker can
 // convert one into the other directly and the job file carries the library's
@@ -234,6 +246,18 @@ type AddonState struct {
 	// OldAcceptSeq is the AddOn connection's accept_seq before the restart — a
 	// NEW accept_seq proves a new connection on reconnect.
 	OldAcceptSeq uint64 `json:"old_accept_seq,omitempty"`
+	// ExpectedBuild is the build id the placed AddOn DLL must embed (m355): for
+	// a catch-up it is the VERIFIED installed-release artifact's signed-manifest
+	// addon.build_id — never oldInstallBuildID() (the install tree's own
+	// ninjascript is not a proof and can be stale + self-consistent). Set when
+	// the catch-up job is created; verify-on-place and the reconnect compare
+	// against it.
+	ExpectedBuild string `json:"expected_build,omitempty"`
+	// PreJobBuild is the AddOn build the box ran BEFORE this job (the pre-job
+	// maintenance ack), recorded at creation/decision (m357 D). verify-on-restore
+	// uses it to accept a LEGACY backup with no addon-backup.meta sidecar: the
+	// backup's embedded build id must equal it.
+	PreJobBuild string `json:"pre_job_build,omitempty"`
 }
 
 // NT8 decisions.
