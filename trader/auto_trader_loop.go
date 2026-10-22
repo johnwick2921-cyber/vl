@@ -969,8 +969,16 @@ func (at *AutoTrader) runCycle() error {
 func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	now := traderNow() // class 32 trader clock (== time.Now() in production; test seam)
 	open := kernel.IsCMEOpen(now)
+	wasClosed := at.cmePrevOpen != nil && !*at.cmePrevOpen
 	at.noteCMESessionEdgeAt(open, now)
 	if open {
+		// m244 — the first open cycle after a closed period sweeps due expiries
+		// BEFORE any new work: an expiry inside the break never got its inline
+		// sweep (the pass is CME-open-gated), and the resting order can fill on
+		// the reopen. Row 410: expiry 16:59:59.999 filled 17:00:40.
+		if wasClosed {
+			at.sweepDueExpiriesAtReopen(now)
+		}
 		return false
 	}
 	// R22 P1-B — retire the book on an EARLY-CLOSE afternoon BEFORE skipping.
