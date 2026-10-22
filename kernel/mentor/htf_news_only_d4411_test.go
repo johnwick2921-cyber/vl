@@ -33,7 +33,7 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 		{7, 30, true},
 		{7, 35, true},
 		{7, 36, false},
-		// The open window 08:30–09:30 CT — the open is like news [D4.4 p2].
+		// The open window 08:30–09:30 CT — the open is like news [D4.4 p2 @ 00:35–00:40].
 		{8, 29, false},
 		{8, 30, true},
 		{9, 0, true},
