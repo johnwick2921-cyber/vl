@@ -246,6 +246,13 @@ type AddonState struct {
 	// OldAcceptSeq is the AddOn connection's accept_seq before the restart — a
 	// NEW accept_seq proves a new connection on reconnect.
 	OldAcceptSeq uint64 `json:"old_accept_seq,omitempty"`
+	// ExpectedBuild is the build id the placed AddOn DLL must embed (m355): for
+	// a catch-up it is the VERIFIED installed-release artifact's signed-manifest
+	// addon.build_id — never oldInstallBuildID() (the install tree's own
+	// ninjascript is not a proof and can be stale + self-consistent). Set when
+	// the catch-up job is created; verify-on-place and the reconnect compare
+	// against it.
+	ExpectedBuild string `json:"expected_build,omitempty"`
 }
 
 // NT8 decisions.

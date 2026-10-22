@@ -213,6 +213,9 @@ func TestJobFileSchemaGolden(t *testing.T) {
 	// them (absent ≠ false).
 	delete(want, "catchup")
 	delete(want, "catchup_nt8_open")
+	// addon.expected_build (m355) is set only when a catch-up job is created —
+	// the install path never writes it (absent ≠ empty).
+	delete(want, "addon.expected_build")
 	// friends (W-FRIEND-HOSTED Segment 5) is written only by the worker's
 	// post-complete friend sweep, which the golden's install path does not
 	// run (no friend registry configured): absent ≠ empty, like the others.

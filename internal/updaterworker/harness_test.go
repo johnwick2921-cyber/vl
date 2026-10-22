@@ -15,6 +15,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"vl/internal/installpath"
 	"vl/internal/safepath"
 
 	"vl/internal/updaterjob"
@@ -78,6 +79,8 @@ type box struct {
 	clock *fakeClock
 
 	inst, data, relDir, backupRoot string
+	releaseRoot                    string // VL_RELEASE_DIR (the root b.relDir and the verified running release live under)
+	runningReleaseBuild            string // the build id the VERIFIED running release declares (m355 catch-up source)
 	nt8docs                        string // fake Documents/NinjaTrader 8 (bin/Custom), for the one-click AddOn seam
 
 	binName    string // the install binary basename (vl-bin or vl-bin — R5 removes the vl form)
@@ -242,13 +245,66 @@ func withCSChanged() rigOpt {
 	}
 }
 
-// withStaleAddon (feat/addon-catchup) makes the INSTALLED release ship the NEW
-// AddOn build while NT8 still runs the OLD one — the state the catch-up exists
-// to fix. The fake reports the install's build after the catch-up restart.
+// withVerifiedRunningRelease materializes the VERIFIED installed release for
+// the RUNNING binary (boxOld) under VL_RELEASE_DIR — the artifact a catch-up
+// compiles from (m355). build is the build id its ninjascript declares ("" =
+// boxOldBuild). It also writes the verdict that names it, so catchupAddonFacts
+// can re-prove it. Without this, no verified artifact exists and a catch-up
+// SKIPS (never InstallDir/ninjascript).
+func withVerifiedRunningRelease(build string) rigOpt {
+	return func(b *box) {
+		if build == "" {
+			build = boxOldBuild
+		}
+		b.runningReleaseBuild = build
+		dir := filepath.Join(b.releaseRoot, boxOld)
+		writeFile(b.t, filepath.Join(dir, b.binName), binaryBody(boxOld))
+		writeFile(b.t, filepath.Join(dir, "RELEASE"), boxOld+"\n")
+		writeFile(b.t, filepath.Join(dir, "web", "dist", "index.html"), "<html>running</html>\n")
+		writeFile(b.t, filepath.Join(dir, calendarFile), "[]\n")
+		writeFile(b.t, filepath.Join(dir, "ninjascript", "VLTrader.cs"), "// C# running\n")
+		writeFile(b.t, filepath.Join(dir, "ninjascript", "VLTraderTCPClient.cs"),
+			"// C# running\nprivate const string VL_BUILD_ID = \""+build+"\";\n")
+		writeFile(b.t, filepath.Join(dir, "manifest.json"),
+			fmt.Sprintf(`{"source_sha":%q,"binary_md5":"","signature_verdict":"sshsig:release:SHA256:fake"}`, boxOld))
+		writeRunningVerdict(b.t, b, boxOld, dir)
+	}
+}
+
+// writeRunningVerdict writes the verdict file naming the verified running
+// release (source_sha → release_dir) under <data>/updater/verdicts/, so
+// verdictForSourceSHA finds it. 0600 — ReadVerdict refuses a group/other-
+// readable file.
+func writeRunningVerdict(t *testing.T, b *box, sha, dir string) {
+	t.Helper()
+	releaseID := "vr-" + sha[:12] // one verdict per source sha (never collides)
+	vdir := filepath.Join(b.data, "updater", "verdicts")
+	if err := os.MkdirAll(vdir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	body := fmt.Sprintf(`{"schema":1,"release_id":%q,"source_sha":%q,"release_dir":%q,"signer":"release","signer_fingerprint":%q,"hashalg":"sha512","manifest_sha256":%q,"artifacts":5,"verified_at":"2026-10-21T00:00:00Z"}`+"\n",
+		releaseID, sha, dir, "SHA256:"+strings.Repeat("A", 42)+"0", strings.Repeat("ab", 32))
+	if err := os.WriteFile(filepath.Join(vdir, releaseID+".json"), []byte(body), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// withInstalledReleaseVerdict writes the verdict file naming the release being
+// installed (boxNew → relDir), so AFTER an install the running build's verified
+// artifact is resolvable by the catch-up (m355).
+func withInstalledReleaseVerdict() rigOpt {
+	return func(b *box) {
+		writeRunningVerdict(b.t, b, boxNew, b.relDir)
+	}
+}
+
+// withStaleAddon (feat/addon-catchup) makes the VERIFIED installed release
+// (the running binary's own release dir) ship the NEW AddOn build while NT8
+// still runs the OLD one — the state the catch-up exists to fix (m355). The
+// fake reports the install's build after the catch-up restart.
 func withStaleAddon() rigOpt {
 	return func(b *box) {
-		writeFile(b.t, filepath.Join(b.inst, "ninjascript", "VLTraderTCPClient.cs"),
-			"// C#\nprivate const string VL_BUILD_ID = \""+boxNewBuild+"\";\n")
+		withVerifiedRunningRelease(boxNewBuild)(b)
 		b.addonBuild = boxOldBuild // NT8 still runs the OLD AddOn
 		b.catchupBuild = boxNewBuild
 	}
@@ -275,7 +331,18 @@ func newRig(t *testing.T, opts ...rigOpt) *rig {
 		refuseBoot:   map[string]bool{}, watchFail: map[string]bool{},
 	}
 	b.data = filepath.Join(b.inst, "data")
-	b.relDir = filepath.Join(root, "releases", boxNew)
+	// m355: the release root is configured NOW (the one resolver), so the
+	// catch-up can resolve the VERIFIED installed release the same way the
+	// worker does on the box (<VL_RELEASE_DIR>/<running revision>).
+	b.releaseRoot = filepath.Join(root, "releases")
+	if err := os.MkdirAll(b.releaseRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("VL_RELEASE_DIR", b.releaseRoot)
+	installpath.ResetReleaseDirForTest()
+	t.Cleanup(installpath.ResetReleaseDirForTest)
+	b.runningReleaseBuild = boxOldBuild
+	b.relDir = filepath.Join(b.releaseRoot, boxNew)
 	// the one-click AddOn build/place/restart seam: a fake NT8 docs dir with
 	// bin/Custom, so addonbuild never touches the real /mnt/c tree.
 	b.nt8docs = filepath.Join(root, "nt8docs")
@@ -905,19 +972,27 @@ func (f *fakeRel) Rehash(v Verdict) (int, error) {
 }
 
 func (f *fakeRel) Reverify(v Verdict) (ReleaseFacts, error) {
+	dir := v.ReleaseDir
 	arts := map[string]string{}
+	// The signed manifest's build id: the NEXT release's for the install path,
+	// the RUNNING release's for a catch-up re-proof (m355 — the catch-up must
+	// expect the verified running release's build, not the next release's).
+	build := f.b.manifestBuild
+	if filepath.Clean(dir) != filepath.Clean(f.b.relDir) {
+		build = f.b.runningReleaseBuild
+	}
 	for _, rel := range []string{"web/dist/index.html", "ninjascript/VLTrader.cs", "ninjascript/VLTraderTCPClient.cs", calendarFile, f.b.relBinName} {
 		if f.b.noCS && strings.HasPrefix(rel, "ninjascript/") {
 			continue
 		}
-		sum, err := sha256File(filepath.Join(f.b.relDir, filepath.FromSlash(rel)))
+		sum, err := sha256File(filepath.Join(dir, filepath.FromSlash(rel)))
 		if err != nil {
 			return ReleaseFacts{}, err
 		}
 		arts[rel] = sum
 	}
 	facts := ReleaseFacts{ReleaseID: v.ReleaseID, SourceSHA: v.SourceSHA, ManifestSHA256: v.ManifestSHA256,
-		SignerFingerprint: v.SignerFingerprint, AddonBuildID: f.b.manifestBuild, Artifacts: arts}
+		SignerFingerprint: v.SignerFingerprint, AddonBuildID: build, Artifacts: arts}
 	if f.b.reverifyTamper != nil {
 		f.b.reverifyTamper(&facts)
 	}

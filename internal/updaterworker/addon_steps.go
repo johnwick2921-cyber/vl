@@ -47,8 +47,9 @@ func (w *Worker) winSeam() nt8RunSeam {
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a
 // worker-made dir under /tmp — never the NT8 folder. SourceDir is the
 // RELEASE's ninjascript/*.cs (the NEW AddOn sources), never the install's —
-// EXCEPT for a catch-up job, which rebuilds the INSTALLED release's own
-// ninjascript (nothing new is being installed).
+// EXCEPT for a catch-up job, which rebuilds the VERIFIED installed release's
+// own ninjascript (m355: <VL_RELEASE_DIR>/<running revision>/ninjascript —
+// NEVER the install tree's, which is not a proof and can be stale).
 func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	docsDir, err := addonDocsDir()
 	if err != nil {
@@ -56,7 +57,10 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	}
 	src := ""
 	if j.Catchup {
-		src = filepath.Join(w.cfg.Target.InstallDir, "ninjascript")
+		src, err = w.catchupAddonSource()
+		if err != nil {
+			return addonbuild.Config{}, err
+		}
 	} else {
 		if j.Release == nil || j.Release.Dir == "" {
 			return addonbuild.Config{}, errors.New("addon build without a verified release dir")
@@ -77,8 +81,10 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 // build error refuses the update BEFORE any hold, kill or place — the page
 // shows the compiler error. A release whose signed manifest lists no
 // ninjascript/*.cs cannot be compiled from its own unproven sources: refused.
-// A CATCH-UP job builds the INSTALLED release's own ninjascript instead — the
-// install tree is what's running, no verdict is owed.
+// A CATCH-UP job builds the VERIFIED installed release's own ninjascript
+// (m355: <VL_RELEASE_DIR>/<running revision>/ninjascript, re-proved through its
+// verdict + SSHSIG) instead — the running release's proven sources, never the
+// install tree's stale copy.
 func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
@@ -284,6 +290,14 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		if deferred {
 			return "", nil
 		}
+		// m355 rule 3 — NEVER DOWNGRADE: a catch-up only places a build that
+		// is strictly newer than what the box runs (the ack) or loads (the
+		// placed DLL). Refused here means bin\Custom is untouched.
+		if j.Catchup {
+			if derr := w.catchupNeverDowngrade(ctx, cfg.DocsDir, w.wantAddonBuild(j)); derr != nil {
+				return "", derr
+			}
+		}
 		b, err := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 		if err != nil {
 			return "", fmt.Errorf("addon place: %w", err)
@@ -419,6 +433,13 @@ func (w *Worker) migrateRebuildPlaceWhileClosed(ctx context.Context, j updaterjo
 	if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
 		restoreAll()
 		return errors.New("migration place without a built AddOn DLL")
+	}
+	// m355 rule 3 — NEVER DOWNGRADE, also on the deferred-migration place path.
+	if j.Catchup {
+		if derr := w.catchupNeverDowngrade(ctx, docs, w.wantAddonBuild(j)); derr != nil {
+			restoreAll()
+			return derr
+		}
 	}
 	abak, perr2 := addonbuild.Place(cfg, j.Addon.DllPath, j.Addon.Sha256, j.JobID)
 	if perr2 != nil {
@@ -637,10 +658,12 @@ func (w *Worker) stepAddonReconnect(ctx context.Context, j updaterjob.Job) stepR
 	}
 	wantBuild := ""
 	if j.Catchup {
-		// Catch-up rebuilds the INSTALLED release's AddOn: the reconnect must
-		// prove that build (the nt8 decision never ran, so ManifestBuildID is
-		// not the target).
-		wantBuild = w.oldInstallBuildID()
+		// Catch-up rebuilds the VERIFIED installed release's AddOn (m355): the
+		// reconnect must prove the persisted expected build — never
+		// oldInstallBuildID() (the nt8 decision never ran).
+		if j.Addon != nil {
+			wantBuild = j.Addon.ExpectedBuild
+		}
 	} else if j.NT8 != nil {
 		wantBuild = j.NT8.ManifestBuildID
 	}

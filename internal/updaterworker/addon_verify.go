@@ -78,11 +78,16 @@ func verifyAddonPlace(docsDir, wantBuild string) error {
 }
 
 // wantAddonBuild is the ONE resolution of the expected AddOn build for a job
-// (mirrors stepAddonReconnect): a catch-up rebuilds the INSTALLED release, an
-// install must match the signed manifest's addon.build_id.
+// (mirrors stepAddonReconnect): a catch-up must match the VERIFIED installed
+// release's signed-manifest build (persisted on the job at creation — m355,
+// never oldInstallBuildID()), an install must match the signed manifest's
+// addon.build_id.
 func (w *Worker) wantAddonBuild(j updaterjob.Job) string {
 	if j.Catchup {
-		return w.oldInstallBuildID()
+		if j.Addon != nil {
+			return j.Addon.ExpectedBuild
+		}
+		return ""
 	}
 	if j.NT8 != nil {
 		return j.NT8.ManifestBuildID
