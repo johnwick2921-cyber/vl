@@ -71,7 +71,10 @@ func touchesLevel(level Level, approach Side, bar market.Kline, cfg Config) bool
 //  1. WAIT for a literal touch (the candle's range reaches the level)
 //     [D3.3 p1 @ 00:13];
 //  2. only the FIRST touching candle matters — later candles never reclassify
-//     [D3.3 p1 @ 00:31; D5.3 p1 @ 20:40];
+//     [D3.3 p1 @ 00:31; D5.3 p1 @ 20:40]. The 'Thani' student variant — move
+//     the order to a LATER candle that touches and closes the same way, stop
+//     still on the first candle, size CUT — is DECLINED: the mentor's own
+//     method does not move the order [D5.3 p1 @22:14–24:30].
 //  3. REJECT = the candle closes BACK on the approach side → the setup layer
 //     places the stop order beyond the candle. Close THROUGH the line =
 //     the wrong side → CancelArm + LevelInvalid intents.
@@ -131,8 +134,11 @@ func TouchTick(t *Touch, level Level, prevClose float64, bar market.Kline, cfg C
 // reference candle [D5.2 p3 @ 17:32] — at a RESISTANCE (came from below) the
 // candle closed back below → SELL stop under RefBar.Low; at a SUPPORT (came
 // from above) it closed back above → BUY stop over RefBar.High, buffered by
-// ISBBufferPts [D2.1 p1 @ 05:36]. Stop and target are completed by the setup
+// ISBBufferPts [D2.1 p1 @05:57–06:16 (ISB only)]. Stop and target are completed by the setup
 // layer (PHL/PLH commit); here only the order side and trigger price are known.
+// It is always a STOP order, never a limit: "Không bao giờ đặt một lệnh limit"
+// — wait for the reaction, never buy/sell a level retest ahead of it
+// [D2.2 p2 @10:10–13:54].
 func RejectEntry(t Touch, cfg Config) (side Side, price float64, ok bool) {
 	if t.Outcome != TouchReject {
 		return "", 0, false

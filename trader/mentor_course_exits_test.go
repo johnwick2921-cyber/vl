@@ -26,17 +26,16 @@ func cxBool(v bool) *bool { return &v }
 // TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg — D2.4 p1 @01:58–02:09 "70-80% là
 // nó sẽ phá luôn cái đỉnh bên tay trái" + @02:24–02:47 "để stop loss ở break
 // even, cho nó chạy": a same-direction ISB within 3 candles of a PLH fill arms
-// mode A — both stops to BE, and (knob ON, the default) the RUNNER's TP moves
+// mode A — both stops to BE, and (knob ON, EXPLICIT — the W-MENTOR-EXACT default
+// is now OFF because the mentor never places a runner TP) the RUNNER's TP moves
 // out to the level beyond the old extreme through a REAL modify_bracket on wire
-// leg 2; leg 1's +1R TP is never touched. It was logged "WOULD set TP …
-// UNWIRED" and never sent. Knob OFF: logged only, no frame.
+// leg 2; leg 1's +1R TP is never touched. Knob OFF (now the default): logged
+// only, no frame.
 func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 	const beyond = 30680.00 // the level beyond the old low (short) the evaluator stamped
 	for _, on := range []bool{true, false} {
 		rc := store.RiskControlConfig{}
-		if !on {
-			rc.MentorResonanceRunnerTPOldHigh = cxBool(false)
-		}
+		rc.MentorResonanceRunnerTPOldHigh = cxBool(on)
 		b := r22Fixture(t, rc)
 		b.positions("short", 3)
 		b.book(r22FullBook(r22Stop)...)
@@ -225,7 +224,7 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 		t.Fatalf("absent keys must resolve to the kernel defaults: %+v vs %+v", cfg.CourseExits, d)
 	}
 	line := at.mentorCourseExitsBootLine()
-	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=ON",
+		for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=OFF",
 		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
 		"isb_max_pts=25", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {

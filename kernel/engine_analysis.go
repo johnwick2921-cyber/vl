@@ -436,7 +436,7 @@ func GetFullDecisionWithStrategy(ctx *Context, mcpClient mcp.AIClient, engine *S
 					// seated band. Same family as the bias-tree fix: day anchors
 					// are FACTS at any distance — stamp them from the FULL
 					// detector universe (seated values win).
-					if univ := ExtractMultiDayLevels(snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), snapshotNow); len(univ) > 0 {
+					if univ := ExtractMultiDayLevelsFor(activeSymbol, snapshotBars, ResolvedSessionRegistryFor(ctx.TraderID), snapshotNow); len(univ) > 0 {
 						ApplyUniverseDayAnchors(&bc, univ)
 					}
 					engine.SetBiasContext(bc.Line())
