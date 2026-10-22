@@ -1,0 +1,39 @@
+{
+  "engine_sha256": "d7c95913d05f1b93c195bf8c890870dccdaccbceee81e798a7b104b9487ff00a",
+  "mutants": [
+    {
+      "assertion_failures": 3,
+      "name": "unsafe_activation"
+    },
+    {
+      "assertion_failures": 4,
+      "name": "wrong_lock"
+    },
+    {
+      "assertion_failures": 8,
+      "name": "wrong_target"
+    },
+    {
+      "assertion_failures": 1,
+      "name": "short_sign"
+    },
+    {
+      "assertion_failures": 1,
+      "name": "ignore_cutoff"
+    }
+  ],
+  "runs": [
+    {
+      "passed": true,
+      "random_oracle_cases": 4000,
+      "tests": 13,
+      "timezone": "America/Chicago"
+    },
+    {
+      "passed": true,
+      "random_oracle_cases": 4000,
+      "tests": 13,
+      "timezone": "UTC"
+    }
+  ]
+}
