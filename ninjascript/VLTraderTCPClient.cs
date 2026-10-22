@@ -1472,8 +1472,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                     }
                 }
                 // QUEUE-47: cancel EVERY matched bracket, and retire a key from
-                // tracking only after that bracket's OWN orders were cancelled — a
-                // failed cancel leaves the key so a retry can still find the bracket.
+                // tracking only after that bracket's OWN orders were cancelled. A
+                // failed cancel leaves the key; nothing re-drives it — the legs
+                // settle through order_update or a later sweep (the next netting
+                // flat via CancelAllBracketsFor, or the next close).
                 foreach (var v in victims)
                 {
                     PlacedBracket pb = v.Value;
