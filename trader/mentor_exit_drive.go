@@ -197,6 +197,9 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 	if p.Pos.Mode == "swing" {
 		return false // the swing is held by the 4h — X8 is an intraday rule
 	}
+	if at.mentorX8LimitFallback(nt, p) {
+		return true
+	}
 	two, ok := mentor.ClosedCandleTF(bars, 2)
 	if !ok {
 		return false // never fire on a forming 2m candle
@@ -222,7 +225,7 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 	at.mentorCount("x8_trap_dodge_exit")
 	at.logWarnf("🧑‍🏫 X8 trap-dodge: %s %s — the 2m closed through the EMA34 (%.2f) against the 5m trigger (%s) and the 5m swept against the position; exiting, not sitting [X8 part1 @07:31–08:07]",
 		p.Pos.Symbol, p.Pos.Side, ema34, dir)
-	if err := mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0); err != nil {
+	if err := at.mentorX8SendExit(nt, p); err != nil {
 		at.mentorCount("x8_trap_dodge_close_failed")
 		at.logWarnf("🧑‍🏫 X8 trap-dodge close failed for %s %s: %v", p.Pos.Symbol, p.Pos.Side, err)
 		at.mentorExitMu.Lock()
@@ -231,6 +234,84 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 		return false
 	}
 	at.mentorCount("x8_trap_dodge_close_sent")
+	return true
+}
+
+// B1 (m329, #45 money review): a market close_position is Account.Flatten at
+// NT8 (ninjascript/VLTraderTCPClient.cs "closeTarget.Flatten"), which cancels
+// EVERY working order for the instrument on the account — including other
+// resting mentor stop-entry arms that have nothing to do with this position
+// ("cancelled in NT8"). X8 therefore exits with a MARKETABLE LIMIT instead
+// (close_position with limit_price through the market, collar below): the AddOn
+// submits one "-lx" limit, and its fill cancels only THIS position's bracket
+// (CancelBracketsFor). No fresh price, or a send error, takes the old market
+// flatten (a close always wins over preserving an arm). If the position is
+// still open mentorX8LimitFallbackAfter later, ONE market flatten finishes it.
+const (
+	mentorX8LimitCollarTicks   = 20
+	mentorX8LimitFallbackAfter = 15 * time.Second
+)
+
+// mentorX8LimitWire sends the marketable-limit exit (seam for tests).
+var mentorX8LimitWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, side string, limit float64) error {
+	if nt == nil {
+		return fmt.Errorf("mentor X8 limit close: no armed trader")
+	}
+	_, err := nt.CloseWithLimit(at.futuresSymbol(), strings.ToLower(strings.TrimSpace(side)), 0, limit)
+	return err
+}
+
+// mentorX8SendExit sends X8's single exit order for the position.
+func (at *AutoTrader) mentorX8SendExit(nt *ntTrader.TCPTrader, p *mentorLivePos) error {
+	if price, fresh := mentorLatestPriceSeam(at); fresh && price > 0 {
+		tick := market.FuturesTickSize(at.futuresSymbol())
+		if tick > 0 {
+			collar := float64(mentorX8LimitCollarTicks) * tick
+			limit := price - collar // long: sell through the bid
+			if strings.EqualFold(strings.TrimSpace(p.Pos.Side), "short") {
+				limit = price + collar
+			}
+			if limit > 0 {
+				err := mentorX8LimitWire(at, nt, p.Pos.Side, limit)
+				if err == nil {
+					at.mentorExitMu.Lock()
+					p.X8LimitAt = time.Now()
+					at.mentorExitMu.Unlock()
+					at.mentorCount("x8_trap_dodge_limit_exit")
+					at.logInfof("🧑‍🏫 X8 trap-dodge: marketable limit exit %s %s @ %.2f (only this position's bracket is cancelled; other resting arms stay)", p.Pos.Symbol, p.Pos.Side, limit)
+					return nil
+				}
+				at.logWarnf("🧑‍🏫 X8 trap-dodge: limit exit failed (%v) — market flatten instead", err)
+			}
+		}
+	}
+	return mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0)
+}
+
+// mentorX8LimitFallback: the X8 limit was sent and the position is STILL open
+// (this runs only for open positions) after the grace window — send ONE market
+// flatten. Returns true while the X8 exit is in flight / just finished.
+func (at *AutoTrader) mentorX8LimitFallback(nt *ntTrader.TCPTrader, p *mentorLivePos) bool {
+	at.mentorExitMu.Lock()
+	if !p.X8Exited || p.X8LimitAt.IsZero() {
+		at.mentorExitMu.Unlock()
+		return false
+	}
+	if p.X8MarketFallback || time.Since(p.X8LimitAt) < mentorX8LimitFallbackAfter {
+		at.mentorExitMu.Unlock()
+		return false
+	}
+	p.X8MarketFallback = true
+	at.mentorExitMu.Unlock()
+	at.mentorCount("x8_trap_dodge_market_fallback")
+	at.logWarnf("🧑‍🏫 X8 trap-dodge: limit exit on %s %s unfilled after %s — market flatten", p.Pos.Symbol, p.Pos.Side, mentorX8LimitFallbackAfter)
+	if err := mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0); err != nil {
+		at.mentorCount("x8_trap_dodge_close_failed")
+		at.logWarnf("🧑‍🏫 X8 market fallback failed for %s %s: %v", p.Pos.Symbol, p.Pos.Side, err)
+		at.mentorExitMu.Lock()
+		p.X8MarketFallback = false
+		at.mentorExitMu.Unlock()
+	}
 	return true
 }
 

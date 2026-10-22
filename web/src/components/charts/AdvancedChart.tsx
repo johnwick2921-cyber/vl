@@ -25,6 +25,7 @@ import { t } from '../../i18n/translations'
 import {
   MENTOR_COLOR,
   mentorEMACurves,
+  mentorEMALocationSegment,
   mentorTrendSegments,
   orderPriceLines,
   ordersForChartSymbol,
@@ -82,6 +83,9 @@ interface AdvancedChartProps {
   /** UG-3 (release #24): set while the mentor read is stale — the last good
    * read's time; every mentor line then carries "stale since HH:MM CT". */
   mentorStaleSinceMs?: number
+  /** m325 — the EMA34 location line's CURRENT value (kind ema34_htf), drawn as
+   * a short right-edge segment, never a full-width flat line through history. */
+  mentorEMALocationPrice?: number
 }
 
 // Indicator configuration
@@ -141,6 +145,7 @@ export function AdvancedChart({
   mentorTrendlines,
   mentorEMASeries,
   mentorStaleSinceMs,
+  mentorEMALocationPrice,
 }: AdvancedChartProps) {
   void _onSymbolChange // Prevent unused warning
   const { language } = useLanguage()
@@ -1246,6 +1251,14 @@ export function AdvancedChart({
       barTimes,
       mentorStaleSinceMs
     )
+    // m325: the EMA34 location line is a short right-edge segment, never a
+    // full-width flat line through history.
+    const emaLoc = mentorEMALocationSegment(
+      mentorEMALocationPrice,
+      barTimes,
+      mentorStaleSinceMs
+    )
+    if (emaLoc) segs.push(emaLoc)
     const nextKeys = new Set(segs.map((s) => s.key))
     // m150: diff by key — remove vanished series, update the rest in place,
     // and only add series that are new. Never remove/re-add the whole set on
@@ -1288,7 +1301,14 @@ export function AdvancedChart({
       sr.setData(data)
       mentorTrendSeriesRef.current.set(seg.key, sr)
     }
-  }, [mentorTrendlines, symbol, interval, barTimes, mentorStaleSinceMs])
+  }, [
+    mentorTrendlines,
+    symbol,
+    interval,
+    barTimes,
+    mentorStaleSinceMs,
+    mentorEMALocationPrice,
+  ])
 
   // m134 — the mentor EMA 9/34 curves (a per-bar series, not one flat value).
   // m150: snapped to the chart's drawn bars (mentorEMACurves) so the 1m series

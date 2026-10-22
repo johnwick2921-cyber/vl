@@ -82,6 +82,35 @@ func TestMentorStopFillIsLossTightenedStop(t *testing.T) {
 	}
 }
 
+// TestMentorStopFillIsLossTickBoundary is the m315 #46 pin: the threshold is
+// EXACTLY one tick — entry ±1 tick is NOT a loss, entry ∓2 ticks on the losing
+// side IS. The earlier pins (fills far from the boundary) would not catch a
+// 3-tick threshold shift; these rows pin the 1-tick boundary on both sides.
+func TestMentorStopFillIsLossTickBoundary(t *testing.T) {
+	cases := []struct {
+		name  string
+		side  string
+		fill  float64
+		entry float64
+		want  bool
+	}{
+		{"long entry−1 tick (within BE tolerance)", "long", 99.75, 100.0, false},
+		{"long entry−2 ticks (loss)", "long", 99.50, 100.0, true},
+		{"long entry+1 tick (profit)", "long", 100.25, 100.0, false},
+		{"long entry+2 ticks (profit)", "long", 100.50, 100.0, false},
+		{"short entry+1 tick (within BE tolerance)", "short", 100.25, 100.0, false},
+		{"short entry+2 ticks (loss)", "short", 100.50, 100.0, true},
+		{"short entry−1 tick (profit)", "short", 99.75, 100.0, false},
+		{"short entry−2 ticks (profit)", "short", 99.50, 100.0, false},
+	}
+	for _, c := range cases {
+		if got := mentorStopFillIsLoss(c.side, c.fill, c.entry, 0.25); got != c.want {
+			t.Errorf("%s: mentorStopFillIsLoss(%q, %.2f, %.2f, 0.25) = %v, want %v",
+				c.name, c.side, c.fill, c.entry, got, c.want)
+		}
+	}
+}
+
 // TestMentorMarkLeg1ScaledBEStopNoLoss is the call-site pin: a whole-position
 // "sl" receipt whose fill is at break-even (not the original stop) enqueues
 // wasStop=false — no loss booked.

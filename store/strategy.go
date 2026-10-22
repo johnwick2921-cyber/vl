@@ -2000,8 +2000,9 @@ type MentorTuning struct {
 	// and any setup whose stop is over the cap is skipped (R9).
 	DayGateSpentPts     float64 `json:"day_gate_spent_pts,omitempty"`
 	DayGateTargetCapPts float64 `json:"day_gate_target_cap_pts,omitempty"`
-	// SwingMaxStopPts: SWING4H skips at a stop >= this (R-D, default 100). The
-	// trader rule gate and the kernel swing gate read this ONE value.
+	// SwingMaxStopPts: a SWING4H stop >= this is SIZED DOWN to <= 2 MNQ (B5; never
+	// skipped, never widened; default 100). The trader size table and the kernel
+	// swing config read this ONE value.
 	SwingMaxStopPts float64 `json:"swing_max_stop_pts,omitempty"`
 	// SwingMinStopPts (W26 P2-4): SWING4H skips at a stop NARROWER than this.
 	// 0 = OFF (the course states no minimum — only the 100-pt ceiling and "a

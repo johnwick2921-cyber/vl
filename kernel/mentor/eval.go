@@ -60,6 +60,10 @@ type State struct {
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
 	Refusals map[string]int `json:"refusals,omitempty"`
+	// Counters is the B-rules NON-refusal event ledger (m296): events that
+	// neither drop nor refuse an intent but must still be diffable against the
+	// replay funnel (e.g. the open5m fail-open on a missing range).
+	Counters map[string]int `json:"counters,omitempty"`
 	// Trigger is the 5m trigger-line state (§5.1).
 	Trigger TriggerLine `json:"trigger"`
 	// HTF is the §5.4 4h/1h direction state (DS-106, fold item 3).
@@ -744,6 +748,15 @@ func (e *Evaluator) refuse(reason string) {
 	e.State.Refusals[reason]++
 }
 
+// count records a B-rules NON-refusal event (m296): an event that neither drops
+// nor refuses an intent but must still be diffable against the replay funnel.
+func (e *Evaluator) count(reason string) {
+	if e.State.Counters == nil {
+		e.State.Counters = map[string]int{}
+	}
+	e.State.Counters[reason]++
+}
+
 // boxBanFilter drops entry intents whose entry price — or whose reference
 // candle close — sits INSIDE a box: "NEVER trade inside the box, neither the
 // candle nor your entry point" [D3.2 p1 @ 06:59]. Leaving the box is NOT itself
@@ -948,8 +961,6 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
-
-
 
 // compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 // joinFlag ORs a flag onto a "|"-joined flag string (idempotent).
@@ -2885,9 +2896,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// allowed only after a 5m candle has closed outside the opening 5m range
 	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
 	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
-	out, refused = open5mRangeFilter(out, e.State.HTF, bars, now)
+	out, refused, open5mNotes := open5mRangeFilter(out, e.State.HTF, bars, now)
 	for _, r := range refused {
 		e.refuse(r)
+	}
+	for _, n := range open5mNotes {
+		e.note("%s", n)
+		if n == open5mMissingNote {
+			e.count(open5mMissingNote)
+		}
 	}
 
 	// Seed depth advances from the evaluator's own state as bars arrive, so a

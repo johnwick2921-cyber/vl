@@ -33,6 +33,9 @@ interface ChartTabsProps {
   /** UG-3 (release #24): the last good mentor read's time while the read is
    * stale — the lines stay drawn and are marked "stale since HH:MM CT". */
   mentorStaleSinceMs?: number
+  /** m325 — the EMA34 location line's CURRENT value (kind ema34_htf), drawn as
+   * a short right-edge segment, never a full-width flat line through history. */
+  mentorEMALocationPrice?: number
 }
 
 type ChartTab = 'equity' | 'kline'
@@ -148,6 +151,7 @@ export function ChartTabs({
   mentorEMASeries,
   mentorSymbol,
   mentorStaleSinceMs,
+  mentorEMALocationPrice,
 }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
@@ -538,6 +542,9 @@ export function ChartTabs({
                 }
                 mentorEMASeries={mentorOnThisTab ? mentorEMASeries : undefined}
                 mentorStaleSinceMs={mentorStaleSinceMs}
+                mentorEMALocationPrice={
+                  mentorOnThisTab ? mentorEMALocationPrice : undefined
+                }
               />
             </motion.div>
           )}
