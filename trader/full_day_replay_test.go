@@ -1135,7 +1135,7 @@ func (w *fdrWorld) injectSwingFill(ft *fdrTrader, i int) fdrSwing {
 		stop: entry - fdrSwingRiskPts, target: entry + fdrSwingTargetPts, risk: fdrSwingRiskPts, fillBar: i,
 		armID: "swing-" + strconv.FormatInt(b.OpenTime-b.OpenTime%300_000, 10), signalID: "fdr-injected-swing-" + ft.id}
 	sw.entryBucket = kernel.FourHBucketStart(b.OpenTime-b.OpenTime%300_000, kernel.CTLocation())
-	sw.holdMs = sw.entryBucket + int64(ft.at.mentorEval.Cfg.Swing.Hold4hBars)*4*3_600_000
+	sw.holdMs = mentor.SwingHoldDeadline(sw.entryBucket, ft.at.mentorEval.Cfg.Swing.Hold4hBars)
 	ledger := w.st.ArmedOrders()
 	row := &store.ArmedOrderDB{
 		TraderID: ft.id, PlanID: mentorPlanID(ft.id), Version: 1, Session: "MENTOR",

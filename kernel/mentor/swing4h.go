@@ -80,7 +80,7 @@ type SwingCfg struct {
 	// the ISB window — R34 rules that the ISB watch after a through-close
 	// stays open until the 4h flip (no candle limit).
 	LeewayCandles int
-	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 1 [D5.2 p1 @06:03–06:20]
+	Hold4hBars    int // hold to the close of the N-th 4h candle AFTER the entry candle (SwingHoldDeadline); default 1 [D5.2 p1 @06:03–06:20]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -730,6 +730,45 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	return in, true
 }
 
+// SwingHoldDeadline is the open-stamp (ms) of the first 5m bar at/after which
+// the swing's hold is over: the CLOSE of the n-th 4h candle AFTER the entry
+// candle (m332 B4). The entry candle itself is never one of the n — a swing
+// entered late in its bucket must not be closed minutes later. Candles are
+// stepped through the real 17:00 CT-anchored buckets (kernel.FourHBucketStart),
+// never entryBucket + n*4h: the 13:00 bucket is cut by the 16:00-17:00 halt,
+// and a bucket that opens while the CME is closed (weekend, holiday) is not a
+// candle — it is skipped, so a Friday swing holds through the first CANDLES of
+// the new week, not an empty Friday-evening bucket. n < 1 counts as 1.
+func SwingHoldDeadline(entryBucket int64, n int) int64 {
+	if n < 1 {
+		n = 1
+	}
+	b := entryBucket
+	for step := 0; step < n+1; step++ {
+		b = nextTradingFourHBucket(b)
+	}
+	return b
+}
+
+// nextTradingFourHBucket returns the start of the first 4h bucket after b that
+// opens while the CME is open (bounded; falls back to b+4h).
+func nextTradingFourHBucket(b int64) int64 {
+	const fourH = 4 * 3600_000
+	cur := b
+	for i := 0; i < 128; i++ {
+		// probe past the boundary: a bucket is 4h except around DST/early closes
+		next := fourHBucketStart(cur+fourH, ctime())
+		for next <= cur {
+			next = fourHBucketStart(next+30*60_000, ctime())
+		}
+		cur = next
+		if kernel.IsCMEOpen(time.UnixMilli(cur)) {
+			return cur
+		}
+	}
+	return b + fourH
+}
+
 // manageSwingPosition emits the BE and hold-close intents for an open swing.
 func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Intent {
 	p := s.Pos
@@ -749,7 +788,7 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 			p.MovedBE = true
 		}
 	}
-	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
+	holdMs := SwingHoldDeadline(p.EntryBucket, cfg.Hold4hBars)
 	if cur.OpenTime >= holdMs {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
 			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
