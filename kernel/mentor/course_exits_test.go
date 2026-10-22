@@ -77,6 +77,33 @@ func TestCX1SwingEMA34IsTheFirstTargetNotAnObstacle(t *testing.T) {
 	}
 }
 
+// TestSWING4HExemptFromHTFGate pins m168: the all-day 4h/1h direction gate
+// covers ISB / reverse-ISB / PHL-PLH / box authoring, but SWING4H is
+// INTENTIONALLY exempt — its §8 runSwing path never consults HTFVerdict. With a
+// 4h/1h CONFLICT the gate refuses every other setup (case 3), yet the swing
+// still emits. MUTANT: add an HTFVerdict gate to runSwing → the swing is
+// refused under this conflict → RED.
+func TestSWING4HExemptFromHTFGate(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.HTFGateNewsOnly = false // the all-day gate (owner decision A 2026-10-21)
+	bars, now := cx1SwingTape(t)
+	e := New(cfg)
+	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
+	// A 4h/1h CONFLICT far from the tape's ~10100 prices, so the tick's own
+	// HTFAdvance cannot move either line (no bucket breaks a 19000/20000 line).
+	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 20000}, OneH: TriggerLine{Dir: SideShort, Price: 19000}}
+	seededWith(e, fullDepth, now)
+	ints := e.Tick(bars, now)
+	if entriesOf(ints, "SWING4H") != 1 {
+		t.Fatalf("SWING4H must emit despite the 4h/1h conflict (exempt); intents %+v refusals %v", ints, e.State.Refusals)
+	}
+	// The gate is live under this exact state: the conflict still refuses case 3.
+	if ok, _, _ := HTFVerdict(e.State.HTF); ok {
+		t.Fatalf("the conflict HTF must still refuse the gate; ok=%v", ok)
+	}
+}
+
 // TestCX6ReverseISBTaggedPHLWhenOn — D5.4 @03:52–03:56 "Nó là bộ tên solo 2,
 // chứ nó không phải là Insa 3": knob ON (the course-defaults-30 default) tags
 // the reverse ISB PHL (long) and KEEPS the ISB location size flags (P2-2); OFF
@@ -206,12 +233,12 @@ func TestCX8EMA9VisitCapModes(t *testing.T) {
 // never folded into "isb_stop_twenties". Mutant: drop the isbOverMaxStop check
 // in ISBStopVerdict → RED.
 func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
-	if DefaultConfig().CourseExits.ISBMaxStopPts != 30 {
-		t.Fatal("CX-9 default must be 30 (course-defaults-30)")
+	if DefaultConfig().CourseExits.ISBMaxStopPts != 25 {
+		t.Fatal("CX-9 default must be 25 (W-MENTOR-EXACT: 20–25 reduced, > 25 skipped)")
 	}
 	ins, e := scopeISBTick(fullDepth)
 	if entriesOf(ins, "ISB") != 1 {
-		t.Fatalf("control: the ISB must emit with the default 30 (its stop 5 < 30); %+v %v", ins, e.State.Refusals)
+		t.Fatalf("control: the ISB must emit with the default 25 (its stop 5 < 25); %+v %v", ins, e.State.Refusals)
 	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true

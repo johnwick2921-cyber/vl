@@ -2447,10 +2447,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                 string state = e.OrderState.ToString().ToLowerInvariant();
                 string key = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
                 if (string.IsNullOrEmpty(key)) return;
+                // bug-hunt #4: de-dupe on (state, cumulative filled) — a second
+                // PartFilled with a LARGER cumulative e.Filled must be SENT (Go's
+                // only cumulative-quantity feed is order_update), not suppressed
+                // as "the same state".
+                string filled = e.Filled.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                string stateKey = state + ":" + filled;
                 lock (signalMapLock)
                 {
-                    if (lastOrderState.TryGetValue(key, out var prev) && prev == state) return;
-                    lastOrderState[key] = state;
+                    if (lastOrderState.TryGetValue(key, out var prev) && prev == stateKey) return;
+                    lastOrderState[key] = stateKey;
                 }
                 string signalId = orderName.Length > 0 ? orderName : (e.Order.Oco ?? "");
                 // REVIEW-SPLIT-2 P2-3: strip the leg suffixes first so an

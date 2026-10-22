@@ -80,7 +80,7 @@ func htfFeedBars(bars []market.Kline, windows []PrintWindow) []market.Kline {
 // trigger read until the 08:30 CT day-gate read (newsHTFFrozen), and no bar is
 // ever deleted: the candles stay whole. news_bars_excluded now defaults ON
 // (COMMON-25 case a: the course line, no ruling against); CE-3 (news_wait_both_lines)
-// stays default OFF (case b).
+// stays default ON (course-defaults-30; see mentor.go:593).
 
 // newsPeriodEnd is the end of the news period that a print window opens: the
 // 08:30 CT RTH open of the print's CT day (never before the window's own end).

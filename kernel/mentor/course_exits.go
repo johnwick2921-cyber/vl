@@ -43,12 +43,12 @@ type CourseExitsCfg struct {
 	// EMA9VisitCap (CX-8, case b, default "shared" — the course states no EMA 9
 	// visit rule): shared | per_level | exempt.
 	EMA9VisitCap string
-	// ISBMaxStopPts (CX-9, default 30 — course-defaults-30, owner order "move
-	// to 30 at least … fix all", DEVIATES from the course's twenties skip
-	// [D4.1 p1 @05:41]): refuse an ISB (and the reverse ISB) whose stop is
-	// at/above this many points. The [20,30) "twenties" window no longer
-	// refuses — an ISB stop < 30 is TAKEN, ≥ 30 is REFUSED (the pre-30 code
-	// had it backwards: it refused 20–30 and let 30+ through).
+	// ISBMaxStopPts (CX-9, default 25 — W-MENTOR-EXACT, owner order 2026-10-21
+	// "i want all exactly like mentor"): refuse an ISB (and the reverse ISB)
+	// whose stop is ABOVE this many points ("trên nữa thì thôi" [D3.3 p1
+	// @02:04–02:08]). A stop of 20–25 pts is the REDUCED tier ("giảm size"
+	// [D3.3 p1 @01:09–01:20]). The old course-defaults-30 (take 20–29 at full
+	// size, refuse ≥ 30) is reverted.
 	ISBMaxStopPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
 	// out when the gap to the next key level is ≤ ratio × the largest recent
@@ -72,7 +72,7 @@ func DefaultCourseExitsCfg() CourseExitsCfg {
 		ReverseISBAsPHL:         true, // course-defaults-30 [D5.4 @03:52–03:56, @07:33]
 		EMA9VisitCap:            EMA9VisitShared,
 		KeypairCandleRatio:      1,
-		ISBMaxStopPts:           30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
+		ISBMaxStopPts:           25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
 	}
 }
 
@@ -119,10 +119,11 @@ func swingRoomFilterRefuses(cfg Config, in Intent, obstacle float64) bool {
 	return swingRoomRefused(in, obstacle, cfg.RoomMultiple)
 }
 
-// isbOverMaxStop (CX-9): an ISB stop at/above the knob is refused. 0 → 30
-// (the knob has no OFF — unset/0 resolves to the 30 default).
+// isbOverMaxStop (CX-9): an ISB stop ABOVE the knob is refused ("trên nữa thì
+// thôi" [D3.3 p1 @02:04–02:08]). 0 → 25 (the knob has no OFF — unset/0 resolves
+// to the 25 default).
 func isbOverMaxStop(stopPts float64, cfg Config) bool {
-	return cfg.CourseExits.ISBMaxStopPts > 0 && stopPts >= cfg.CourseExits.ISBMaxStopPts
+	return cfg.CourseExits.ISBMaxStopPts > 0 && stopPts > cfg.CourseExits.ISBMaxStopPts
 }
 
 // keypairCandleRatio (CX-10) resolves the ratio; ≤ 0 → 1 (today).
@@ -251,7 +252,7 @@ func (e *Evaluator) buildBoxes(bars []market.Kline, now int64) []Box {
 }
 
 // ISBMaxStopReason is the CX-9 refusal reason ISBStopVerdict returns.
-const ISBMaxStopReason = "ISB stop at/above mentor_isb_max_pts — refused [CX-9 knob, default 30 — course-defaults-30 owner order: stop < 30 taken, ≥ 30 refused]"
+const ISBMaxStopReason = "ISB stop above mentor_isb_max_pts — refused [CX-9 knob, default 25 — W-MENTOR-EXACT: 20–25 reduced, > 25 skipped]"
 
 // isbStopRefusal names the ISB stop refusal counter: <prefix>stop_over_max for
 // the CX-9 knob. (The pre-30 <prefix>stop_twenties name is retired with the
