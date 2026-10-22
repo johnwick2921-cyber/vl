@@ -58,6 +58,22 @@ func emaValue(bars []market.Kline, period int) float64 {
 	return ema
 }
 
+// EMAOnTF computes the standard EMA (seeded with the first close, k = 2/(n+1))
+// over the bars aggregated to tfMin-minute CLOSED candles. It returns 0 when
+// there are no closed candles or period <= 0. Used by the X8 trap-dodge exit to
+// read the EMA34 on the 2m chart the mentor actually trades ("mình trade khung 2
+// phút") — NOT the evaluator's 1m EMA34 (State.EMA34), which was the m308 bug.
+func EMAOnTF(bars []market.Kline, tfMin, period int) float64 {
+	if len(bars) == 0 || period <= 0 {
+		return 0
+	}
+	tf := closedBucketsTF(bars, tfMin, BarCloseInstant(bars[len(bars)-1]))
+	if len(tf) == 0 {
+		return 0
+	}
+	return emaValue(tf, period)
+}
+
 // ChartEMA is one point of the display-only EMA curve (m134): the EMA 9 and
 // EMA 34 values at a 1m bar's open time.
 type ChartEMA struct {

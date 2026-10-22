@@ -1014,12 +1014,10 @@ func TestMentorX8TrapDodgeExit(t *testing.T) {
 	}
 	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
 
-	// Two 1m bars in ONE 2m bucket: the second bar closes the 2m candle at 101.5.
+	// Two 2m closes at 100 seed the 2m EMA34 at 100; the third closes at 101.5
+	// (State.EMA34 is no longer read by X8 — the line is built from the 2m bars).
 	base := int64(120_000_000_000) // 2m-aligned
-	bars := []market.Kline{
-		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
-		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
-	}
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
 	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
 		t.Fatal("a 2m close above the EMA34 against a 5m sell trigger must exit the long")
 	}
@@ -1050,10 +1048,7 @@ func TestMentorX8TrapDodgeExemptsSwingAndNonTrap(t *testing.T) {
 	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
 
 	base := int64(120_000_000_000)
-	bars := []market.Kline{
-		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
-		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
-	}
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
 	// SWING is exempt.
 	if at.mentorX8TrapDodgeExit(nil, bPos("swing", "long", 100, 98, 104, 1), bars) {
 		t.Fatal("a SWING4H position must not fire the X8 trap-dodge")
@@ -1094,10 +1089,7 @@ func TestMentorX8TrapDodgeOneShot(t *testing.T) {
 	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
 
 	base := int64(120_000_000_000)
-	bars := []market.Kline{
-		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
-		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
-	}
+	bars := x8TwoMCandles(base, 100, 100, 101.5)
 	// Two candles in a row that both meet X8.
 	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
 		t.Fatal("the first trap candle must exit")
@@ -1109,5 +1101,55 @@ func TestMentorX8TrapDodgeOneShot(t *testing.T) {
 	defer mu.Unlock()
 	if closes != 1 {
 		t.Fatalf("closes = %d, want exactly 1 (the one-shot latch)", closes)
+	}
+}
+
+// x8TwoMCandles builds one CLOSED 2m candle per close value: two 1m bars in one
+// 2m bucket, both closing at the same price, so the 2m candle close is exactly
+// that price. base must be 2m-aligned.
+func x8TwoMCandles(base int64, closes ...float64) []market.Kline {
+	bars := make([]market.Kline, 0, len(closes)*2)
+	for i, c := range closes {
+		o := base + int64(i)*120_000
+		bars = append(bars,
+			market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: c, High: c + 1, Low: c - 1, Close: c, Final: true},
+			market.Kline{OpenTime: o + 60_000, CloseTime: o + 119_999, Open: c, High: c + 1, Low: c - 1, Close: c, Final: true},
+		)
+	}
+	return bars
+}
+
+// TestMentorX8TrapDodgeUses2mEMA34 pins the m308 fix: X8 compares the closed 2m
+// candle against the EMA34 built from the 2m closes, NOT the evaluator's 1m
+// EMA34 (State.EMA34). The 2m EMA34 (100, from three 2m closes at 100) and the
+// 1m EMA34 (State.EMA34 = 101) STRADDLE the 2m close (100.5): the 2m read says
+// "above the EMA34 → exit", the 1m read says "below → sit". MUTANT: revert
+// mentorX8TrapDodgeExit to ema34 := at.mentorEval.State.EMA34 → the long does
+// NOT exit → RED.
+func TestMentorX8TrapDodgeUses2mEMA34(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 101 // the 1m EMA34 — ABOVE the 2m close; must NOT be read
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	closes := 0
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		closes++
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	bars := x8TwoMCandles(120_000_000_000, 100, 100, 100, 100.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("a 2m close (100.5) above the 2m EMA34 (100) against a 5m sell trigger must exit — the 1m EMA34 (101) says sit and must not be read")
+	}
+	if closes != 1 {
+		t.Fatalf("closes = %d, want exactly 1", closes)
 	}
 }

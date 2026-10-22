@@ -202,7 +202,10 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 		return false // never fire on a forming 2m candle
 	}
 	dir := at.mentorEval.State.Trigger.Dir
-	ema34 := at.mentorEval.State.EMA34
+	// m308: X8 compares the closed 2m candle against the EMA34 on the 2m chart
+	// the mentor actually trades ("mình trade khung 2 phút"), not the evaluator's
+	// 1m EMA34 (State.EMA34). Build the EMA from the closed 2m series.
+	ema34 := mentor.EMAOnTF(bars, 2, at.mentorEval.Cfg.EMAPeriod34)
 	if !mentor.X8TrapDodge(p.Pos.Side, dir, ema34, two.Close) {
 		return false
 	}
