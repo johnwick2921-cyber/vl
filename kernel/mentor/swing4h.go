@@ -120,9 +120,9 @@ func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 // [D5.2 p2 @07:21]).
 const lateDaySwingTargetCap = 25.0
 
-// swingLateDayRRRefused counts a late-day swing refused because the capped
-// target falls below the stop distance — 1:1 is mandatory "trong bất kỳ tình
-// huống nào" [D1.2 p1 @08:02], never ship a sub-1:1 trade.
+// swingLateDayRRRefused counts a late-day swing refused because the cut is
+// impossible (risk ≤ 0). A wide stop is NOT a refusal: the target is cut to
+// 1:1 (m331 B3).
 var swingLateDayRRRefused atomic.Int64
 
 // SwingLateDayRRRefused exposes the counter for tests and telemetry.
@@ -146,21 +146,32 @@ func lastSessionBucket(now int64) int64 {
 }
 
 // lateDaySwingCut applies the late-day swing target cut: an entry authored
-// inside the LAST 4h bucket has its target capped at lateDaySwingTargetCap.
-// ok=false → the capped target is below the stop distance (risk) — 1:1 is
-// mandatory "trong bất kỳ tình huống nào" [D1.2 p1 @08:02] — REFUSE.
-func lateDaySwingCut(entryBucket, now int64, target, risk float64) (cut float64, late, ok bool) {
+// inside the LAST 4h bucket has its target DISTANCE capped at
+// lateDaySwingTargetCap (25 pts), but never below 1R (the stop distance):
+// 1:1 is the floor "trong bất kỳ tình huống nào" [D1.2 p1 @08:02], so a
+// stop wider than the cap gets target = entry ± risk (cut to 1:1), it is NOT
+// refused. target/cut are PRICES (as Intent.Target); the cap applies to the
+// distance |target−entry|. ok=false ONLY when the cut is impossible: risk ≤ 0
+// (no stop distance to size 1:1 from) — the swing's own invariant already
+// refuses that earlier, this is the backstop.
+func lateDaySwingCut(entryBucket, now int64, side Side, entry, target, risk float64) (cut float64, late, ok bool) {
 	if entryBucket != lastSessionBucket(now) {
 		return target, false, true
 	}
-	cut = target
-	if cut > lateDaySwingTargetCap {
-		cut = lateDaySwingTargetCap
+	if risk <= 0 {
+		return target, true, false
 	}
-	if cut < risk {
-		return cut, true, false
+	dist := abs(target - entry)
+	if dist > lateDaySwingTargetCap {
+		dist = lateDaySwingTargetCap
 	}
-	return cut, true, true
+	if dist < risk {
+		dist = risk // 1:1 floor — cut to 1:1, never sub-1:1, never refuse
+	}
+	if side == SideShort {
+		return entry - dist, true, true
+	}
+	return entry + dist, true, true
 }
 
 // SwingState is everything the swing machine carries between ticks. It is
@@ -424,7 +435,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 						if !ok {
 							swingLateDayRRRefused.Add(1)
 							continue
@@ -498,7 +509,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 			if !ok {
 				swingLateDayRRRefused.Add(1)
 				s.FirstTouch = nil
