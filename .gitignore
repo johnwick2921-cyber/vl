@@ -145,11 +145,13 @@ PR_DESCRIPTION.md
 # Go build artifacts
 /vl
 /vl-bin*
+/nofx-bin*
 /vl-updater*
 /sandbox-seed
 
 # Compiled binaries (defensive; the vl form is anchored at /vl-bin* above)
 vl-bin*
+nofx-bin*
 /nq_smoke
 
 # Local environment backups (not for commit)

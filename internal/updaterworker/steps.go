@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -39,6 +40,28 @@ const (
 	// wall-clock step.
 	ackDistinct = time.Second
 )
+
+// gitStatusPorcelain runs `git -C dir status --porcelain` and returns the first
+// three non-empty lines (best-effort: a non-git install dir yields ""). A
+// package var so tests can stub it. m385: it names WHAT a dirty install tree
+// holds, instead of the preflight refusing with a bare "modified=true".
+var gitStatusPorcelain = func(dir string) string {
+	cmd := exec.Command("git", "-C", dir, "status", "--porcelain")
+	out, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+	var lines []string
+	for _, l := range strings.Split(strings.TrimSpace(string(out)), "\n") {
+		if l = strings.TrimSpace(l); l != "" {
+			lines = append(lines, l)
+		}
+		if len(lines) == 3 {
+			break
+		}
+	}
+	return strings.Join(lines, "; ")
+}
 
 // preflightFlatLegs: the pre-hold flat probe (C22) — every non-hold leg that
 // can fail on a live position, a working order, an arm or a planner read, or
@@ -266,6 +289,13 @@ func (w *Worker) stepPreflight(ctx context.Context, j updaterjob.Job) stepResult
 		}
 		ev["install_sha"], ev["install_modified"] = rev, orNA(mod)
 		if rev != inst.SHA || mod != "false" {
+			// m385: a dirty install tree refuses every Update — name WHAT is
+			// dirty (the first git status lines) instead of a bare modified=true.
+			if mod == "true" {
+				if dirty := gitStatusPorcelain(w.cfg.Target.InstallDir); dirty != "" {
+					return fmt.Errorf("the install binary was built from a dirty tree — %s (rev %s, recorded clean %s)", dirty, rev, inst.SHA)
+				}
+			}
 			return fmt.Errorf("the install binary is %s (modified=%s), not the clean %s the job recorded", rev, orNA(mod), inst.SHA)
 		}
 		marker, err := os.ReadFile(inst.ReleaseFile)
