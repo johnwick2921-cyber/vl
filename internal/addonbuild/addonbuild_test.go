@@ -529,6 +529,24 @@ func TestPs1ParityWithDeploy(t *testing.T) {
 	}
 }
 
+// TestPs1NormalModeRequiresCustomDir pins the m385 GAP-388 fail-fast: in NORMAL
+// mode (neither -Probe nor -Custom) build-addon.ps1 must refuse when -CustomDir
+// is absent, instead of compiling without the NT8 references (NinjaTrader.Custom.dll
+// + the csproj mirror) and emitting hundreds of "type not found" errors — the
+// partner box's first build failed with 388 of them. The deploy/addon copy is
+// held byte-identical by TestPs1ParityWithDeploy.
+func TestPs1NormalModeRequiresCustomDir(t *testing.T) {
+	ps1 := BuildPs1()
+	for _, want := range []string{
+		"-CustomDir is required in normal mode",
+		"-not $Probe -and -not $Custom",
+	} {
+		if !strings.Contains(ps1, want) {
+			t.Fatalf("build-addon.ps1 must fail fast without -CustomDir in normal mode: missing %q", want)
+		}
+	}
+}
+
 func TestBuilderCsParityWithDeploy(t *testing.T) {
 	deploy, err := os.ReadFile(filepath.Join("..", "..", "deploy", "addon", "VLCustomBuilder.cs"))
 	if err != nil {

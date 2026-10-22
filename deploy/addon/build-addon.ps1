@@ -45,6 +45,17 @@ function Fail([string]$msg) {
     exit 1
 }
 
+# GAP 388 (m385): in NORMAL mode the AddOn's base types come from
+# NinjaTrader.Custom.dll and the csproj reference mirror, BOTH of which live
+# under -CustomDir (Documents\NinjaTrader 8\bin\Custom). Without it the compile
+# runs with no NT8 references and emits hundreds of "type not found" errors
+# (the partner box's first build: 388). Refuse up front with the exact fix
+# instead of compiling blind. -Probe compiles a trivial empty class and -Custom
+# already fails fast on its own, so only the normal VL.AddOn build is guarded.
+if (-not $Probe -and -not $Custom -and -not $CustomDir) {
+    Fail "-CustomDir is required in normal mode (the Documents\NinjaTrader 8\bin\Custom dir) - pass -CustomDir '<path>' alongside -Src and -Out"
+}
+
 if (-not $NT8Bin) { $NT8Bin = 'C:\Program Files\NinjaTrader 8\bin' }
 
 # -- Load Roslyn from NT8's bin (the no-SDK compiler) ------------------------
