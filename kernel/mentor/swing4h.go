@@ -116,13 +116,14 @@ func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
 // SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
 func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 
-// lateDaySwingTargetCap is the late-day swing target cap (mid of 20–30
-// [D5.2 p2 @07:21]).
-const lateDaySwingTargetCap = 25.0
+// lateDaySwingTargetCap is the late-day swing target ceiling: the top of the
+// mentor's 20–30 [D5.2 p2 @07:21] (CTO ruling m331 B3; was 25). A code
+// constant, not a stored knob — every live trader resolves to it.
+const lateDaySwingTargetCap = 30.0
 
-// swingLateDayRRRefused counts a late-day swing refused because the cut is
-// impossible (risk ≤ 0). A wide stop is NOT a refusal: the target is cut to
-// 1:1 (m331 B3).
+// swingLateDayRRRefused counts a late-day swing refused (reason
+// swing_late_day_rr): the stop is wider than the 30-pt late-day target
+// ceiling, so the cut cannot meet 1:1 — or risk ≤ 0.
 var swingLateDayRRRefused atomic.Int64
 
 // SwingLateDayRRRefused exposes the counter for tests and telemetry.
@@ -145,33 +146,30 @@ func lastSessionBucket(now int64) int64 {
 	return kernel.FourHBucketStart(closeMs, nil)
 }
 
-// lateDaySwingCut applies the late-day swing target cut: an entry authored
-// inside the LAST 4h bucket has its target DISTANCE capped at
-// lateDaySwingTargetCap (25 pts), but never below 1R (the stop distance):
-// 1:1 is the floor "trong bất kỳ tình huống nào" [D1.2 p1 @08:02], so a
-// stop wider than the cap gets target = entry ± risk (cut to 1:1), it is NOT
-// refused. target/cut are PRICES (as Intent.Target); the cap applies to the
-// distance |target−entry|. ok=false ONLY when the cut is impossible: risk ≤ 0
-// (no stop distance to size 1:1 from) — the swing's own invariant already
-// refuses that earlier, this is the backstop.
+// lateDaySwingCut applies the late-day swing target cut (CTO ruling m331 B3).
+// Two course constraints: cut the target to 20–30 pts near the close
+// [D5.2 p2 @07:21] AND 1:1 is the floor in every situation [D1.2 p1 @08:02].
+// Both hold only when risk ≤ 30, so inside the LAST 4h bucket:
+//   - risk > lateDaySwingTargetCap → ok=false (REFUSE, "late-day cut 20–30
+//     pts cannot meet 1:1 with a <risk>-pt stop"); also risk ≤ 0;
+//   - else the target DISTANCE becomes min(dist, 30); a distance already
+//     below risk is left to the non-late 1:1 gate (unchanged).
+// target/cut are PRICES (as Intent.Target); the cap applies to |target−entry|.
 func lateDaySwingCut(entryBucket, now int64, side Side, entry, target, risk float64) (cut float64, late, ok bool) {
 	if entryBucket != lastSessionBucket(now) {
 		return target, false, true
 	}
-	if risk <= 0 {
+	if risk <= 0 || risk > lateDaySwingTargetCap {
 		return target, true, false
 	}
 	dist := abs(target - entry)
-	if dist > lateDaySwingTargetCap {
-		dist = lateDaySwingTargetCap
-	}
-	if dist < risk {
-		dist = risk // 1:1 floor — cut to 1:1, never sub-1:1, never refuse
+	if dist <= lateDaySwingTargetCap {
+		return target, true, true
 	}
 	if side == SideShort {
-		return entry - dist, true, true
+		return entry - lateDaySwingTargetCap, true, true
 	}
-	return entry + dist, true, true
+	return entry + lateDaySwingTargetCap, true, true
 }
 
 // SwingState is everything the swing machine carries between ticks. It is
