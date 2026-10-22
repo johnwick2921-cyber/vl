@@ -581,10 +581,11 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	case p.ExitReason == "sl":
 		// #47 P1: the AddOn derives exit_reason from the ORDER NAME suffix, and
 		// a MOVED stop (break-even or trail) keeps "-sl" — so the fill PRICE,
-		// not the reason, decides. A "sl" fill is a loss ONLY at the ORIGINAL
-		// stop (ledger stop_px ± tick) on the losing side of entry. A leg-1
-		// stop with the runner still live (P3) leaves the trade undecided:
-		// neither drop nor book — the runner's own receipt decides.
+		// not the reason, decides. A "sl" fill is a loss ONLY at-or-past the
+		// ORIGINAL stop (ledger stop_px, one-sided) on the losing side of entry.
+		// Q3 ruling (CTO): the mentor counts a TRADE, not a leg — a leg-1 stop
+		// with the runner still live is UNDECIDED and the defer is INTENDED:
+		// neither drop nor book, the runner's own receipt decides the one trade.
 		if p.Leg == 1 && at.mentorRunnerStillOpen(p.SignalID) {
 			break
 		}
@@ -615,10 +616,12 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 // stop-out loss. The AddOn derives exit_reason from the ORDER NAME suffix
 // (VLTraderTCPClient.cs): a stop MOVED to break-even or trailed keeps "-sl", so
 // the fill PRICE — not the reason — decides. A "sl" fill is a loss ONLY when it
-// fills at the ORIGINAL stop (stop_px ± one tick) AND on the losing side of
-// entry: a break-even fill (≈ entry) or a trailed stop in profit is NOT a loss.
-// A missing fill/stop price fails CLOSED to loss=true (the pre-#47 reading of a
-// named stop exit).
+// fills AT OR PAST the ORIGINAL stop on the losing side of entry: a break-even
+// fill (≈ entry) or a trailed stop in profit is NOT a loss. The at-or-past test
+// is ONE-SIDED (m294, DS-106): slippage THROUGH the stop is the worst loss and
+// still counts — a long stop at 95 filled at 94 is a loss, not a miss. A missing
+// fill/stop price fails CLOSED to loss=true (the pre-#47 reading of a named stop
+// exit).
 func mentorStopFillIsLoss(side string, fillPx, stopPx, entryPx, tick float64) bool {
 	if fillPx <= 0 || stopPx <= 0 {
 		return true
@@ -626,17 +629,26 @@ func mentorStopFillIsLoss(side string, fillPx, stopPx, entryPx, tick float64) bo
 	if tick <= 0 {
 		tick = 0.25
 	}
-	atOriginal := math.Abs(fillPx-stopPx) <= tick+1e-9
-	if !atOriginal {
-		return false // a break-even or trailed stop — not a loss
-	}
-	if entryPx <= 0 {
-		return true // at the original stop and no entry known — a loss
-	}
 	switch strings.ToLower(strings.TrimSpace(side)) {
 	case "long":
+		// At or past the stop: fill <= stop + tick (+1e-9). A fill ABOVE that is
+		// a moved stop (break-even or trail) — not a loss.
+		if fillPx > stopPx+tick+1e-9 {
+			return false
+		}
+		if entryPx <= 0 {
+			return true // at/past the original stop and no entry known — a loss
+		}
 		return fillPx < entryPx
 	case "short":
+		// At or past the stop: fill >= stop − tick (−1e-9). A fill BELOW that is
+		// a moved stop (break-even or trail) — not a loss.
+		if fillPx < stopPx-tick-1e-9 {
+			return false
+		}
+		if entryPx <= 0 {
+			return true // at/past the original stop and no entry known — a loss
+		}
 		return fillPx > entryPx
 	default:
 		return true // unknown side at the original stop — a loss

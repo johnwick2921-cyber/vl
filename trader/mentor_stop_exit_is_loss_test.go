@@ -38,6 +38,24 @@ func TestMentorStopFillIsLossOriginalStop(t *testing.T) {
 	}
 }
 
+// TestMentorStopFillIsLossSlippageLong is the m294 one-sided slippage pin: a
+// long stop at 95.00 filled at 94.00 (4 ticks THROUGH the stop) is the worst
+// loss and must still count. MUTANT: restore math.Abs(fill-stop) <= tick → the
+// 1.0-pt gap fails the two-sided band → no loss → RED.
+func TestMentorStopFillIsLossSlippageLong(t *testing.T) {
+	if !mentorStopFillIsLoss("long", 94.0, 95.0, 100.0, 0.25) {
+		t.Fatal("a long stop at 95 filled at 94 (slippage) must be a loss")
+	}
+}
+
+// TestMentorStopFillIsLossSlippageShort is the mirror: a short stop at 105.00
+// filled at 106.00 (4 ticks through) must count. MUTANT: math.Abs again → RED.
+func TestMentorStopFillIsLossSlippageShort(t *testing.T) {
+	if !mentorStopFillIsLoss("short", 106.0, 105.0, 100.0, 0.25) {
+		t.Fatal("a short stop at 105 filled at 106 (slippage) must be a loss")
+	}
+}
+
 // TestMentorStopFillIsLossTrailInProfit is the trail pin: a trailed stop fill on
 // the WINNING side of entry is not a loss.
 func TestMentorStopFillIsLossTrailInProfit(t *testing.T) {
