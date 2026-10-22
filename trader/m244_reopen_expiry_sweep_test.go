@@ -85,6 +85,12 @@ func TestM244ReopenExpirySweepOnlyOnTheEdge(t *testing.T) {
 	prev := testNow
 	testNow = func() time.Time { return now }
 	t.Cleanup(func() { testNow = prev })
+	// Fresh empty book like pin 1: without it cancelSafetyFor refuses
+	// fail-closed and the row stays working EVEN under the mutant
+	// (wasClosed := true), so the pin could not go RED.
+	if srv := at.armedTrader().GetServer(); srv != nil {
+		srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, now)
+	}
 
 	seedM244Arm(t, at, ledger, "rest-due", store.StateWorking, "sig-rest-due", now.UnixMilli()-60_000)
 
