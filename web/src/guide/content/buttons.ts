@@ -60,7 +60,7 @@ export const buttons: GuideSection = {
         },
         {
           label: '🧹 Clear (chat)',
-          api: 'AgentPage quick chip',
+          api: 'AgentChatPage quick chip',
           sideEffects: 'Clears the chat history / context window.',
           budget: 'None.',
           undo: 'History is gone — not recoverable.',

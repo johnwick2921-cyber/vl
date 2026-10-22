@@ -121,12 +121,12 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did the bot flatten at 14:45?',
-          a: 'EOD flat, and only for a Day-Plan or mentor trader: the one EOD-flat rule (enforceEODFlatAt) does nothing for a trader with neither on. For those, the session ends flat by design — resting entries are cancelled first, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is exempt and held through the close (it is managed by the 4h candle), and SWING4H mentor arms are not cancelled.',
+          a: 'EOD flat, and only for a Day-Plan or mentor trader: the one EOD-flat rule (enforceEODFlatAt) does nothing for a trader with neither on. For those, the session ends flat by design — resting entries are cancelled first, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is exempt from this 14:45 flat and held on its 4h candle (its arms are not cancelled either) — but a swing is never carried through a market close: the swing hold is cut at the 16:00 CT halt or a weekend, and the position is flattened on the last bar before it.',
           link: '#trading-day',
         },
         {
           q: 'NT8 is down — what do I do?',
-          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (copy → F5 compile → full restart), then verify the TCP reconnect. Right after the link comes back (or the bot starts) the bars it holds are the old ones from the store, so for up to 90 s it says “⏳ feed: waiting for the first live bar after reconnect” instead of FEED DOWN, and counts it; the first live bar ends the wait, and if none arrives in those 90 s “🚨 FEED DOWN” fires exactly as before.',
+          a: 'Nothing on the bot first: no bars means no decisions, and the gates (feed down / dead-man) say so. Fix NT8 + the AddOn connection (the Update button builds, places and verifies the AddOn DLL for you — no manual copy or F5, and it also works with NT8 closed; the AddOn only loads at the next NT8 start), then verify the TCP reconnect. Right after the link comes back (or the bot starts) the bars it holds are the old ones from the store, so for up to 90 s it says “⏳ feed: waiting for the first live bar after reconnect” instead of FEED DOWN, and counts it; the first live bar ends the wait, and if none arrives in those 90 s “🚨 FEED DOWN” fires exactly as before.',
           link: '#routines',
         },
         {
