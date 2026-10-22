@@ -94,6 +94,25 @@ if strings -a "$OUT/VL.AddOn.dll" | grep -q 'System\.Private\.CoreLib'; then
   exit 1
 fi
 
+# GATE (m391): CLR4 load harness — actually LOAD the obfuscated DLL on .NET
+# Framework 4.8 and PrepareMethod every declared method/ctor. A DLL that cannot
+# resolve/load on NT8's CLR fails here even if the strings check passed.
+LH_PS_OUT=$(powershell.exe -NoProfile -ExecutionPolicy Bypass -File \
+  "$PWD/deploy/friend/load-harness/run-load-harness.ps1" \
+  -Dll "$ADDON_WIN" \
+  -OutExe "$(wslpath -w "$TMP/LoadHarness.exe")" \
+  -Cs "$(wslpath -w "$PWD/deploy/friend/load-harness/LoadHarness.cs")" \
+  -ProbeDir "$NT8_BIN" 2>&1) || {
+    echo "$LH_PS_OUT" >&2
+    echo "load-harness gate failed" >&2
+    exit 1
+  }
+echo "$LH_PS_OUT"
+printf '%s\n' "$LH_PS_OUT" | grep -q 'RESULT fail=0 corelib=0' || {
+  echo "load-harness: non-zero fail/corelib in obfuscated VL.AddOn.dll" >&2
+  exit 1
+}
+
 # The friend double-clicks a friendly name on first run: VL-Setup.exe is the
 # same self-installing app (first run = install wizard). The owner hands it to
 # the friend alongside the install code.
