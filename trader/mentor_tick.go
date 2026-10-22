@@ -795,9 +795,12 @@ func mentorIntentExpiry(in mentor.Intent, barCloseMs int64) int64 {
 // mentorLevelExpiry (D2-44, item 11) is the B6 lifetime for a LEVEL order
 // (ArmID prefix "lvl-"): it RESTS until the RTH window end at 15:00 CT, or
 // until the evaluator's close-through sweep cancels it — never the next 1m
-// candle [D2.3 p1 @17:42–18:14, @18:46–19:12]. At or after 15:00 CT it
-// fail-safes to tomorrow's 15:00 (placement past RTH is already refused
-// upstream, so this is a guard, never the live path).
+// candle. The close-through cancel is [D2.3 p1 @23:16–24:03] ("a later candle
+// closes through the level → cancel"). The 15:00 CT end is an INFERENCE — no
+// course timestamp states it (level_lifetime.go admits it) — so it carries no
+// course tag. At or after 15:00 CT it fail-safes to tomorrow's 15:00
+// (placement past RTH is already refused upstream, so this is a guard, never
+// the live path).
 func mentorLevelExpiry(nowMs int64) int64 {
 	return mentor.LevelArmExpiry(nowMs) // one definition, shared with the leg budget
 }
@@ -1708,7 +1711,7 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	}
 	if strings.EqualFold(open, string(in.Side)) {
 		at.mentorCount("add_refused")
-		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry", open)
+		return true, fmt.Sprintf("never add/average [D1.1 p1 @17:06–17:44]: %s already open — the resonance ISB is a hold signal, not an entry [D2.4 p1 @05:41–05:57]", open)
 	}
 	// NO FLIP (release #30 fold, CTO ruling): an OPPOSITE-side entry while a
 	// mentor position is open is refused too. At NT8 a same-bar opposite fill
@@ -1718,7 +1721,7 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	// now matches. Once flat, the next tick may place the other side (the box
 	// "Uno reverse" still trades after the stop, never before).
 	at.mentorCount("mentor_no_flip")
-	return true, fmt.Sprintf("no flip: %s open — flat first [owner ruling 2026-09-03]", open)
+	return true, fmt.Sprintf("no flip: %s open — flat first [derived: owner ruling 2026-09-03 (planner: no adds, no flips); course silent on flips]", open)
 }
 
 // mentorDailyLossGate is the §5(a) placement-time daily guardrail check: a
