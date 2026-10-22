@@ -55,11 +55,11 @@ func TestMentorI6ReceiptMidCandleTrailsNextCandle(t *testing.T) {
 	assertMoves(t, moves(),
 		driveMove{"sig-split", "long", 10}, driveMove{"sig-split", "long", 10},
 		driveMove{"sig-split", "long", 12})
-	// Candle 2 closes (open 2000 > receipt): the trail applies (low 13.5, AT).
+	// Candle 2 closes (open 2000 > receipt): the trail applies (low 13.5 − 1 tick = 13.25).
 	at.mentorExitDrivePos(nil, lp, 14, 14.5, 13.5, 2000)
 	assertMoves(t, moves(),
 		driveMove{"sig-split", "long", 10}, driveMove{"sig-split", "long", 10},
-		driveMove{"sig-split", "long", 12}, driveMove{"sig-split", "long", 13.5})
+		driveMove{"sig-split", "long", 12}, driveMove{"sig-split", "long", 13.25})
 }
 
 // I7: when the broker snapshot shows the side reduced to the runner's qty (leg 1

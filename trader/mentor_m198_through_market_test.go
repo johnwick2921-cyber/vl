@@ -143,9 +143,10 @@ func TestM198BEAfterPartialStopsOnThroughMarket(t *testing.T) {
 }
 
 // TestM198CandleTrailStopsOnThroughMarket — the candle-trail loop
-// (mentorExitDriveCandle, ArmedBE=true) moves each RUNNER to AT the
-// closed candle. A through-market trail (the fresh 1m seam is below the new
-// candle-trail stop) must close once, not per runner.
+// (mentorExitDriveCandle, ArmedBE=true) moves each RUNNER to one tick beyond
+// the closed candle's low (long) / high (short). A through-market trail (the
+// fresh 1m seam is below the new candle-trail stop) must close once, not per
+// runner.
 func TestM198CandleTrailStopsOnThroughMarket(t *testing.T) {
 	for _, tc := range m198RunnerLegs() {
 		t.Run(tc.name, func(t *testing.T) {

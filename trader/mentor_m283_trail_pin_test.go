@@ -5,16 +5,16 @@ import (
 	"time"
 )
 
-// TestM283SingleBracketTrailAtTheExtreme pins m283 P2: the single-bracket /
-// off-mode runner trail in mentorExitDrivePos must read the SAME candle
-// extreme as mentorCandleTrailStop (AT the low/high — never one tick beyond).
-// Before the fix the inline path computed trailL − tick / trailH + tick while
-// mentorCandleTrailStop (the split runner's path) used AT, so the two paths
-// disagreed by one tick.
+// TestM283SingleBracketTrailOneTickBeyond pins m283 P2: the single-bracket /
+// off-mode runner trail in mentorExitDrivePos must read the SAME price as
+// mentorCandleTrailStop — one tick BEYOND the closed candle's low (long) /
+// high (short). Before the fix the inline path computed trailL − tick /
+// trailH + tick while mentorCandleTrailStop used AT, so the two paths disagreed
+// by one tick.
 //
-// Mutant: re-add the tick offset (trailL − tick / trailH + tick) → the move
-// lands at 12.25 instead of 12.50 → RED.
-func TestM283SingleBracketTrailAtTheExtreme(t *testing.T) {
+// Mutant: drop the tick offset (AT the low) → the move lands at 12.50 instead
+// of 12.25 → RED.
+func TestM283SingleBracketTrailOneTickBeyond(t *testing.T) {
 	at, moves := newDriveAT(t) // mentor_trail_mode=off → reaches the inline trail path
 	T := int64(1_000_000)
 	oldNow := getMentorNowSource()
@@ -33,20 +33,20 @@ func TestM283SingleBracketTrailAtTheExtreme(t *testing.T) {
 	at.mentorRegisterLivePos("sig-m283", lp)
 
 	// A closed candle whose low (12.50) is tighter than the 1:1 rule (2·13−16=10)
-	// → the runner trails to AT the low.
+	// → the runner trails to one tick beyond the low (12.25).
 	at.mentorExitDrivePos(nil, lp, 13, 13.5, 12.5, T+60_000)
 
 	got := moves()
 	if len(got) != 1 {
 		t.Fatalf("want exactly 1 trail move, got %+v", got)
 	}
-	if got[0].newStop != 12.50 {
-		t.Fatalf("the single-bracket trail must sit AT the candle low 12.50 (never one tick beyond); got %.2f", got[0].newStop)
+	if got[0].newStop != 12.25 {
+		t.Fatalf("the single-bracket trail must sit one tick BEYOND the candle low 12.50 → 12.25; got %.2f", got[0].newStop)
 	}
 
 	// The split runner's path (mentorCandleTrailStop) must agree with the same
-	// candle: both helpers return the same price.
-	if cand := mentorCandleTrailStop("long", 13.5, 12.5, at.mentorInstrumentTick()); cand != 12.50 {
-		t.Fatalf("mentorCandleTrailStop = %.2f, want 12.50 — the two paths must agree", cand)
+	// candle: both helpers return the same beyond price.
+	if cand := mentorCandleTrailStop("long", 13.5, 12.5, at.mentorInstrumentTick()); cand != 12.25 {
+		t.Fatalf("mentorCandleTrailStop = %.2f, want 12.25 — the two paths must agree", cand)
 	}
 }

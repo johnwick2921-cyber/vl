@@ -30,8 +30,9 @@ import (
 //     the drive runs on closed 1m candles.
 //   - Wick or body: the candle's LOW for a long / HIGH for a short — "đặt ở DƯỚI
 //     ĐÁY cây nến … tới khi nào có một cây nến QUÉT CÁI ĐÁY thì … OUT" [X8
-//     @15:40–17:13]: the low (a wick extreme), not the body — AT it, never one
-//     tick beyond (m283 P2; the former item-7 tick offset was removed).
+//     @15:40–17:13]: the low (a wick extreme), not the body — the stop sits one
+//     tick BEYOND it (m283 P2: a mere touch is not the break the course means,
+//     D2.4 p1 @08:11–08:24).
 //   - Break-even = the entry: "move the stop up to break-even (10)" — the entry
 //     of 10 [D1.2 p1 @10:31–15:20]. The course is SILENT on ± ticks: the
 //     conservative default here is the entry EXACTLY when it is on the tick grid
@@ -99,25 +100,24 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 	return math.Ceil(entry/tick-mentorGridEps) * tick
 }
 
-// mentorCandleTrailStop is the candle trail for ONE closed candle: AT its low
-// (long) / high (short) — the course puts the stop at the candle extreme and
-// says nothing about a tick offset [D2.4 p1 @07:01–08:49] ("Đặt ở dưới đáy cây
-// nến đó"; "Em move lên đây"). Rounded AWAY from the market (long down, short
-// up), so rounding never pulls it inside the rule. (The former 1-tick-beyond
-// offset was an item-7 ruling, not the course — removed under W-MENTOR-EXACT.)
+// mentorCandleTrailStop is the candle trail for ONE closed candle: one tick
+// BEYOND its low (long) / high (short). The mentor's reason is the candle
+// BREAKING past the prior extreme — "khi nào có một cây nến VƯỢT QUA được đáy
+// cây nến trước đó … nó sẽ đi theo cái hướng mà nó phá" [D2.4 p1 @08:11–08:24,
+// @08:46–08:49] — so a stop AT the low would fire on a mere touch, not a break;
+// "đặt ở DƯỚI đáy cây nến 2 phút đó" [X8 part1 @16:18–16:31]. Rounded AWAY from
+// the market (long down, short up), so rounding never pulls it inside the rule.
 func mentorCandleTrailStop(side string, h, l, tick float64) float64 {
 	if strings.EqualFold(side, "short") {
-		v := h
-		if tick <= 0 {
-			return v
+		if tick > 0 {
+			return math.Ceil((h+tick)/tick-mentorGridEps) * tick
 		}
-		return math.Ceil(v/tick-mentorGridEps) * tick
+		return h
 	}
-	v := l
-	if tick <= 0 {
-		return v
+	if tick > 0 {
+		return math.Floor((l-tick)/tick+mentorGridEps) * tick
 	}
-	return math.Floor(v/tick+mentorGridEps) * tick
+	return l
 }
 
 // mentorPartialTPPrice rounds the ISB candle-3 partial's leg-1 TP to the tick
@@ -295,7 +295,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //  1. confirmed, BE not armed → the runner's stop goes to break-even; that
 //     candle only arms BE.
 //  2. BE armed → on every closed candle that OPENED after the confirmation
-//     (I6), the runner's stop goes AT that candle's low (long) /
+//     (I6), the runner's stop goes one tick BEYOND that candle's low (long) /
 //     high (short) — only when that is TIGHTER; a lower low (long) / higher
 //     high (short) moves nothing. trail_tf=off stops at stage 1.
 //
@@ -431,7 +431,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		frame = fmt.Sprintf("%dm", p.TrailTFMin)
 		at.mentorCount("trail_candle_moved_2m")
 	}
-	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — AT the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
+	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @08:11; X8 @16:18, @18:02 the frame the entry was read on]",
 		runners[0].SignalID, cand, frame, word, extreme)
 }
 
