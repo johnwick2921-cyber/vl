@@ -39,10 +39,11 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
-  '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)': {
-    settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
-    live: true,
-  },
+  '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)':
+    {
+      settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
+      live: true,
+    },
   '2m execution — ISB + PHL/PLH (1m only in the first 30 min of RTH)': {
     settingId: 'risk_control.mentor_tuning.exec_2m_after_30m',
     live: true,
