@@ -39,7 +39,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
-  '4h/1h gate only in the news window (07:20–07:35 CT)': {
+  '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)': {
     settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
     live: true,
   },
