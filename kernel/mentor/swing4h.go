@@ -463,7 +463,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		}
 		if !closedBack(approach, b.Close, line) {
 
-			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3]. A
+			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30] (corrected §3). A
 			// touching candle in the leeway window that closes beyond the level
 			// spends it: NO order, cancel any resting arm [D5.2 p1 @15:21–15:48].
 

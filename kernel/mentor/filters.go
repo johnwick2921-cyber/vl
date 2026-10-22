@@ -231,7 +231,7 @@ func X8TrapDodge(side string, triggerDir Side, ema34, close2m float64) bool {
 	return triggerDir == SideShort && close2m > ema34
 }
 
-// ── 15m/5m ISB conflict [§5.3, D4.2 p1 @ 13:59; §12] ────────────────────────
+// ── 15m/5m ISB conflict (§5.3, §12) [D4.2 p1 @ 13:59] ───────────────────────
 
 // 2–3 adjacent 5m candles churning and going nowhere = a 15m inside bar
 // [@ 00:00]. Same direction → trade; OPPOSITE directions → DO NOT TRADE AT ALL

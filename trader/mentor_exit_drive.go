@@ -346,7 +346,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	case "A-resonance":
 		// A (resonance): leg 1's +1R TP stays (the 1:1 partial still fires),
 		// the RUNNER's TP out to the level beyond the old high (CX-3), NO
-		// trail, NO 1:1 tightening [D2.4 p1]. m134 (b)/(d): the runner's stop
+		// trail, NO 1:1 tightening [D2.4 p1 @00:24–00:30, @02:24–02:47]. m134 (b)/(d): the runner's stop
 		// is NOT moved at arm — the deferred break-even runs on this CLOSED 1m
 		// candle (after the 1:1 partial is confirmed, or once price is on the
 		// profit side).
@@ -1260,7 +1260,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 // same-direction ISB entry passes every placement gate EXCEPT the never-add
 // gate, within 3 candles of the fill: leg 1's +1R TP STAYS (the 1:1 partial
 // still fires), the RUNNER's TP moves out to the level beyond the old high
-// (CX-3), NO trail, NO 1:1 tightening [D2.4 p1]. m134 (b)/(c): arming does NOT
+// (CX-3), NO trail, NO 1:1 tightening [D2.4 p1 @00:24–00:30, @02:24–02:47]. m134 (b)/(c): arming does NOT
 // move any stop — the break-even is deferred to the closed-1m exit drive
 // (mentorExitDriveResonance). m151: called from the add-gate refusal in
 // mentorPlaceIntent (the resonance ISB is a hold signal, not an entry), and the
@@ -1290,7 +1290,7 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		// UNWIRED" and never sent from 10-05 to 10-14. Knob
 		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
 		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
-		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1]", p.Pos.Symbol, p.Pos.Side)
+		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1 @00:24–00:30, @02:24–02:47]", p.Pos.Symbol, p.Pos.Side)
 	}
 }
 
