@@ -3,7 +3,6 @@ import {
   createChart,
   IChartApi,
   ISeriesApi,
-  Time,
   UTCTimestamp,
   CandlestickSeries,
   LineSeries,
@@ -35,6 +34,11 @@ import {
   type ChartOpenOrder,
   type PositionBracket,
 } from './chartOverlays'
+import {
+  buildTradeMarkers,
+  intervalToSeconds,
+  type TradeMarkerInput,
+} from './tradeMarkers'
 import type { MentorTruth } from '../../lib/api/traders'
 import {
   calculateSMA,
@@ -192,6 +196,10 @@ export function AdvancedChart({
   const [error, setError] = useState<string | null>(null)
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false)
   const [showOrderMarkers, setShowOrderMarkers] = useState(true) // Order marker toggle, default on
+  // m242 F4: the toggle is read through a ref so the 5s refresh closure never
+  // sees a stale value (the inline closure captured the state at mount).
+  const showOrderMarkersRef = useRef(showOrderMarkers)
+  showOrderMarkersRef.current = showOrderMarkers
   const isInitialLoadRef = useRef(true) // Track if this is initial load
   const [tooltipData, setTooltipData] = useState<any>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
@@ -403,7 +411,7 @@ export function AdvancedChart({
   const fetchOrders = async (
     traderID: string,
     symbol: string
-  ): Promise<OrderMarker[]> => {
+  ): Promise<OrderMarker[] | null> => {
     try {
       console.log(
         '[AdvancedChart] Fetching orders for trader:',
@@ -504,7 +512,9 @@ export function AdvancedChart({
       return markers
     } catch (err) {
       console.error('[AdvancedChart] Error fetching orders:', err)
-      return []
+      // m242 F4: an error is UNRESOLVED, not an empty order list — returning
+      // null keeps the last good markers instead of wiping the chart.
+      return null
     }
   }
 
@@ -518,66 +528,93 @@ export function AdvancedChart({
   const fetchPositionMarkers = async (
     traderID: string,
     symbol: string
-  ): Promise<OrderMarker[]> => {
+  ): Promise<TradeMarkerInput[] | null> => {
     try {
-      const result = await httpClient.request(
+      // Closed (and closed-with-partial) rows carry both the entry and the exit.
+      const history = await httpClient.request(
         `/api/positions/history?trader_id=${traderID}&limit=200`,
         { silent: true }
       )
-      const positions = result?.data?.positions || result?.data || []
-      const list = Array.isArray(positions) ? positions : []
-      const markers: OrderMarker[] = []
+      const closedRows = Array.isArray(
+        history?.data?.positions || history?.data
+      )
+        ? history.data.positions || history.data
+        : []
 
-      list.forEach((p: any) => {
+      const markers: TradeMarkerInput[] = []
+      const pushEntry = (p: any) => {
         const sym = p.symbol || p.Symbol
         if (sym && symbol && sym !== symbol) return
         const isLong = (p.side || p.Side || '').toUpperCase() === 'LONG'
         const positionSide: 'long' | 'short' = isLong ? 'long' : 'short'
-
-        // Entry marker: a long is opened with a BUY, a short with a SELL.
-        const entryPrice = p.entry_price ?? p.EntryPrice
-        const entryTime = p.entry_time ?? p.EntryTime
+        const entryPrice = p.entry_price ?? p.EntryPrice ?? p.avg_entry_price
+        const entryTime =
+          p.entry_time ?? p.EntryTime ?? p.created_at ?? p.CreatedAt
         if (entryPrice && entryTime) {
-          markers.push({
-            time: parseCustomTime(entryTime),
-            price: entryPrice,
-            side: positionSide,
-            rawSide: isLong ? 'buy' : 'sell',
-            action: 'open',
-            symbol: sym,
-          })
+          const time = parseCustomTime(entryTime)
+          if (time > 0 && entryPrice > 0) {
+            markers.push({
+              time,
+              price: Number(entryPrice),
+              side: positionSide,
+              rawSide: isLong ? 'buy' : 'sell',
+              action: 'open',
+              symbol: sym,
+            })
+          }
         }
+      }
 
-        // Exit marker (closed only): a long exits with a SELL, a short with a
-        // BUY-to-cover.
+      closedRows.forEach((p: any) => {
+        pushEntry(p)
+        const isLong = (p.side || p.Side || '').toUpperCase() === 'LONG'
+        const positionSide: 'long' | 'short' = isLong ? 'long' : 'short'
         const exitPrice = p.exit_price ?? p.ExitPrice
         const exitTime = p.exit_time ?? p.ExitTime
         const status = (p.status || p.Status || '').toUpperCase()
+        // Exit marker (closed only): a long exits with a SELL, a short with a
+        // BUY-to-cover.
         if (status === 'CLOSED' && exitPrice && exitTime) {
-          markers.push({
-            time: parseCustomTime(exitTime),
-            price: exitPrice,
-            side: positionSide,
-            rawSide: isLong ? 'sell' : 'buy',
-            action: 'close',
-            symbol: sym,
-          })
+          const time = parseCustomTime(exitTime)
+          if (time > 0 && exitPrice > 0) {
+            markers.push({
+              time,
+              price: Number(exitPrice),
+              side: positionSide,
+              rawSide: isLong ? 'sell' : 'buy',
+              action: 'close',
+              symbol: p.symbol || p.Symbol,
+            })
+          }
         }
       })
 
-      // Drop any rows with an unparseable time/price (parseCustomTime → 0).
-      const valid = markers.filter((m) => m.time > 0 && m.price > 0)
+      // F2: an OPEN position has no history row, so its entry marker comes from
+      // /api/positions (the same response the bracket lines already consume).
+      const open = await httpClient.request(
+        `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
+        { silent: true }
+      )
+      const openRows = Array.isArray(open?.data) ? open.data : []
+      openRows.forEach((p: any) => {
+        const status = (p.status || p.Status || '').toUpperCase()
+        if (status === 'CLOSED') return
+        pushEntry(p)
+      })
+
       console.log(
         '[AdvancedChart] Position-sourced markers (NT8):',
-        valid.length,
+        markers.length,
         'from',
-        list.length,
-        'positions'
+        closedRows.length,
+        'closed +',
+        openRows.length,
+        'open'
       )
-      return valid
+      return markers
     } catch (err) {
       console.error('[AdvancedChart] Error fetching position markers:', err)
-      return []
+      return null
     }
   }
 
@@ -941,119 +978,15 @@ export function AdvancedChart({
               : await fetchOrders(traderID, symbol)
           console.log('[AdvancedChart] Received orders:', orders)
 
-          if (orders.length > 0) {
-            console.log(
-              '[AdvancedChart] Creating markers from',
-              orders.length,
-              'orders'
+          // m242 F4: a fetch ERROR (null) keeps the last good markers — never
+          // wipe the chart on a transient failure.
+          if (orders !== null) {
+            // F0: the pure builder replaces the inline snap/group code.
+            const markers = buildTradeMarkers(
+              orders as TradeMarkerInput[],
+              klineData.map((k: any) => k.time as number),
+              intervalToSeconds(interval)
             )
-
-            // Extract sorted kline time array
-            const klineTimes = klineData.map((k: any) => k.time as number)
-            const klineMinTime = klineTimes[0] || 0
-            const klineMaxTime = klineTimes[klineTimes.length - 1] || 0
-            console.log(
-              '[AdvancedChart] Kline time range:',
-              klineMinTime,
-              '-',
-              klineMaxTime,
-              '(',
-              klineTimes.length,
-              'candles)'
-            )
-
-            // Binary search: find the kline candle for the order time
-            // Return the largest kline time <= orderTime
-            const findCandleTime = (orderTime: number): number | null => {
-              if (orderTime < klineMinTime || orderTime > klineMaxTime) {
-                return null // Out of range
-              }
-
-              let left = 0
-              let right = klineTimes.length - 1
-
-              while (left < right) {
-                const mid = Math.ceil((left + right + 1) / 2)
-                if (klineTimes[mid] <= orderTime) {
-                  left = mid
-                } else {
-                  right = mid - 1
-                }
-              }
-
-              return klineTimes[left]
-            }
-
-            // Group orders by kline time
-            const ordersByCandle = new Map<
-              number,
-              { buys: number; sells: number }
-            >()
-
-            orders.forEach((order) => {
-              // Use binary search to find matching kline candle time
-              const candleTime = findCandleTime(order.time)
-
-              if (candleTime === null) {
-                console.warn(
-                  '[AdvancedChart] ⚠️ Skipping order outside kline range:',
-                  order.time,
-                  '(',
-                  new Date(order.time * 1000).toISOString(),
-                  ')'
-                )
-                return
-              }
-
-              const existing = ordersByCandle.get(candleTime) || {
-                buys: 0,
-                sells: 0,
-              }
-              if (order.rawSide === 'buy') {
-                existing.buys++
-              } else {
-                existing.sells++
-              }
-              ordersByCandle.set(candleTime, existing)
-            })
-
-            // Create markers for each kline with orders
-            const markers: Array<{
-              time: Time
-              position: 'belowBar' | 'aboveBar'
-              color: string
-              shape: 'circle'
-              text: string
-              size: number
-            }> = []
-
-            ordersByCandle.forEach((counts, candleTime) => {
-              // Show buy markers (green, below bar)
-              if (counts.buys > 0) {
-                markers.push({
-                  time: candleTime as Time,
-                  position: 'belowBar' as const,
-                  color: '#0ECB81',
-                  shape: 'circle' as const,
-                  text: counts.buys > 1 ? `B${counts.buys}` : 'B',
-                  size: 1,
-                })
-              }
-              // Show sell markers (red, above bar)
-              if (counts.sells > 0) {
-                markers.push({
-                  time: candleTime as Time,
-                  position: 'aboveBar' as const,
-                  color: '#F6465D',
-                  shape: 'circle' as const,
-                  text: counts.sells > 1 ? `S${counts.sells}` : 'S',
-                  size: 1,
-                })
-              }
-            })
-
-            // Sort by time (lightweight-charts requires chronological order)
-            markers.sort((a, b) => (a.time as number) - (b.time as number))
 
             console.log(
               '[AdvancedChart] Valid markers:',
@@ -1061,15 +994,10 @@ export function AdvancedChart({
               'out of',
               orders.length
             )
-
             console.log(
               '[AdvancedChart] Setting',
               markers.length,
               'markers on candlestick series'
-            )
-            console.log(
-              '[AdvancedChart] Markers data:',
-              JSON.stringify(markers, null, 2)
             )
 
             try {
@@ -1077,7 +1005,7 @@ export function AdvancedChart({
               currentMarkersDataRef.current = markers
 
               // Using v5 API: createSeriesMarkers
-              const markersToShow = showOrderMarkers ? markers : []
+              const markersToShow = showOrderMarkersRef.current ? markers : []
 
               if (seriesMarkersRef.current) {
                 // If already exists, update markers
@@ -1099,14 +1027,11 @@ export function AdvancedChart({
               console.error('[AdvancedChart] ❌ Failed to set markers:', err)
             }
           } else {
-            console.log('[AdvancedChart] No orders found, clearing markers')
-            try {
-              if (seriesMarkersRef.current) {
-                seriesMarkersRef.current.setMarkers([])
-              }
-            } catch (err) {
-              console.error('[AdvancedChart] Failed to clear markers:', err)
-            }
+            // m242 F4: the fetch failed — keep the last good markers instead
+            // of wiping the chart on a transient error.
+            console.warn(
+              '[AdvancedChart] Marker fetch failed — keeping the last good markers'
+            )
           }
         } else {
           console.log('[AdvancedChart] Skipping markers:', {

@@ -87,6 +87,11 @@ func (r nt8Restart) forceStop(ctx context.Context) error {
 func (r nt8Restart) isRunning(ctx context.Context) (bool, error) {
 	out, err := r.run(ctx, "tasklist.exe", "/FI", "IMAGENAME eq "+nt8ImageName, "/FO", "CSV", "/NH")
 	if err != nil {
+		// execWindows uses CombinedOutput: on a run error the stderr is in out.
+		// Keep it (m246 — the receipt names the stderr, never just "exit 1").
+		if trimmed := strings.TrimSpace(string(out)); trimmed != "" {
+			return false, fmt.Errorf("tasklist: %w (stderr: %s)", err, trimmed)
+		}
 		return false, fmt.Errorf("tasklist: %w", err)
 	}
 	for _, line := range strings.Split(string(out), "\n") {
