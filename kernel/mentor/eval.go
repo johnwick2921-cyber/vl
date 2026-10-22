@@ -949,6 +949,8 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
 
+
+
 // compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 // joinFlag ORs a flag onto a "|"-joined flag string (idempotent).
 func joinFlag(flags, want string) string {

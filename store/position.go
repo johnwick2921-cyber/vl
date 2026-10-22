@@ -648,6 +648,9 @@ func (s *PositionStore) ReducePositionQuantity(id int64, reduceQty float64, exit
 			"exit_time":    nowMs,
 			"close_reason": ExitCauseFromBroker(exitReason),
 			"updated_at":   nowMs,
+			// M251-S2: realized_pnl just changed, so any earlier pnl_corrected is stale.
+			"pnl_corrected":       nil,
+			"pnl_correction_note": "auto-close via partial reduction — pnl_corrected reset (UNRESOLVED until the true total is stamped)",
 		}).Error
 	}
 
