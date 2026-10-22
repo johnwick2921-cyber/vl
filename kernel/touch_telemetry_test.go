@@ -106,6 +106,32 @@ func TestTouchEpisodeOpenClose(t *testing.T) {
 	}
 }
 
+// TestTouchOrphanedEpisodeClosed — bug-hunt #21: a level that drops out of the
+// seated set (or a session-day roll) left its episode active forever, rendering
+// as a ghost TOUCH line. TouchUpdate now closes and returns it. Mutant (drop the
+// orphan sweep) → RED.
+func TestTouchOrphanedEpisodeClosed(t *testing.T) {
+	uid := "t-orphan"
+	start := time.Date(2026, 8, 26, 14, 0, 0, 0, time.UTC)
+	bars := touchBars(start, [][5]float64{
+		{100, 101, 99, 100, 10},  // far
+		{100, 101, 99, 100, 10},  // far
+		{100, 102, 100, 101, 12}, // approaches → OPEN (dist 1 <= band)
+	})
+	lv := touchLevels(100)
+	runTouch(uid, "MNQ", bars, lv, 2.0, 3)
+	if got := len(ActiveTouchEpisodes(uid, "MNQ", 100)); got != 1 {
+		t.Fatalf("fixture: want 1 active episode, got %d", got)
+	}
+	closed := TouchUpdate(uid, "MNQ", bars, nil, 2.0, start.Add(4*time.Minute))
+	if len(closed) != 1 {
+		t.Fatalf("orphaned episode must close when its level leaves the seated set, got %d", len(closed))
+	}
+	if got := len(ActiveTouchEpisodes(uid, "MNQ", 100)); got != 0 {
+		t.Fatalf("orphaned episode must not stay active, got %d", got)
+	}
+}
+
 // TestTouchPenetrationMath (T5) — wick vs body penetration and close-side math
 // on a golden fixture: price probes through the level on a wick, closes back
 // below → wick-through, 1m reject.

@@ -332,12 +332,14 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		// T1 + per-session trade cap), refusal only — the arm pass's own caller
 		// keeps its band-time cancel of resting arms.
 		if risk := at.sessionRiskGateAt(now); risk.Refuse {
-			// B3 (release #3b) Q1 + N5: a MENTOR arm waives ONLY the lunch and
-			// first-N windows. The consecutive-loss breaker, the red-news T1
-			// blackout, the per-session trade cap, the force-flat windows and
-			// outside-session/session-off all still refuse.
+			// B3 (release #3b) Q1 + N5, expanded m235: a MENTOR arm waives the
+			// day-plan session LIST (lunch / first-N / outside-session /
+			// sessions_enabled / registry / override / trade cap) — the mentor's
+			// own window + news gates govern at authoring. KEPT as mentor
+			// safeties: the red-news T1 blackout, the consecutive-loss breaker
+			// and the force-flat windows.
 			if in.Path == admitArm && in.MentorArm && mentorWaivesSessionBand(risk) {
-				// lunch / first-N: the mentor has its own window/day rules.
+				// session list: the mentor has its own window/day rules.
 			} else {
 				return at.admitRefuse(in, risk.Class, risk.Reason, func() {
 					at.logWarnf("🛑 session risk: %s %s REFUSED — %s", sym, act, risk.Reason)

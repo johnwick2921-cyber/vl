@@ -45,7 +45,7 @@ export interface MentorTruth {
   done_after_win_why?: string
   stop_after_loss: boolean
   stop_after_loss_why?: string
-  /** T7 (release #22) — ABSENT while computing; `[]` once built. VALID trendlines only. */
+  /** T7 (release #22) — ABSENT while computing; `[]` once built. FORMING + VALID trendlines (m134). */
   trendlines?: {
     side: string // 'long' = support, 'short' = resistance
     p0_ms: number
@@ -55,7 +55,10 @@ export interface MentorTruth {
     now_ms: number
     now_px: number
     in_level: boolean // false = inside a box this bar (the box wins)
+    valid: boolean // m134: true = 3rd touch seen (a location); false = forming (waiting)
   }[]
+  /** m134 — the per-bar EMA 9/34 curve, ABSENT while computing; `[]` once built. */
+  ema_series?: { ms: number; ema9: number; ema34: number }[]
   /** T7 — the ISB rest boxes the evaluator holds (5m / 15m / 30m). */
   isb_boxes?: MentorRange[]
   /** T7 — the 08:30–08:32 opening range, absent until drawn. */

@@ -186,7 +186,7 @@ func mentorResonanceOpenLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
 //     between authoring and fill;
 //  3. the setup's own rule: SWING4H holds by the 4h → "swing";
 //  4. the COURSE default, B "normal" — trail every closed candle
-//     [00-METHOD §6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
+//     [00-METHOD section 6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
 //     exit-mode default exists to read first (no such knob).
 //
 // class is the counter suffix (exit_mode_<class>); why is the log text.
@@ -568,6 +568,17 @@ func (at *AutoTrader) mentorLatchLeg1Scaled(key string, atMs int64) bool {
 func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	if at == nil || p.SignalID == "" {
 		return
+	}
+	// #47: a broker exit that FLATTENS the signal closes its Limits.openTrade —
+	// the ORIGINAL stop ("sl") is the only exit that counts as a loss; a
+	// break-even, trailed stop, partial, manual, news or EOD flat drops it.
+	switch {
+	case p.ExitReason == "sl":
+		at.mentorEnqueueExit(p.SignalID, true)
+	case p.ExitReason == "manual":
+		at.mentorEnqueueExit(p.SignalID, false)
+	case p.ExitReason == "tp" && p.Leg == 2:
+		at.mentorEnqueueExit(p.SignalID, false) // the runner scaled — the position is flat
 	}
 	if p.Leg == 1 && p.ExitReason == "tp" {
 		if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {

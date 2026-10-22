@@ -143,6 +143,41 @@ func TestNakedPOCRetireOnTouch(t *testing.T) {
 	}
 }
 
+// TestNakedPOCFrontTruncatedDaySkipped — bug-hunt #24: the 1m ring holds about
+// 1.45 sessions, so the prior day is a front-truncated tail through the NY
+// session. NakedPOCLevels must NOT build a naked POC from that tail (its mode
+// is not the session POC); the stored-profile provider supplies the whole one.
+// Mutant (drop the sessionFrontTruncated guard) → RED.
+func TestNakedPOCFrontTruncatedDaySkipped(t *testing.T) {
+	loc := CTLocation()
+	// The ring opens mid-prior-session (10:00 CT) — the 17:00→10:00 part of
+	// session-day 08-23 is missing, so that day is front-truncated.
+	tt := time.Date(2026, 8, 24, 10, 0, 0, 0, loc)
+	var bars []market.Kline
+	for tt.Hour() < 17 {
+		bars = append(bars, market.Kline{
+			OpenTime: tt.UnixMilli(), Open: 100, High: 101, Low: 99, Close: 100,
+			Volume: 10, CloseTime: tt.Add(time.Minute).UnixMilli() - 1,
+		})
+		tt = tt.Add(time.Minute)
+	}
+	// Current session (08-24 17:00 → 08-25 10:00): price far from 100.
+	end := time.Date(2026, 8, 25, 10, 0, 0, 0, loc)
+	for tt.Before(end) {
+		bars = append(bars, market.Kline{
+			OpenTime: tt.UnixMilli(), Open: 110, High: 111, Low: 109, Close: 110,
+			Volume: 10, CloseTime: tt.Add(time.Minute).UnixMilli() - 1,
+		})
+		tt = tt.Add(time.Minute)
+	}
+	out := NakedPOCLevels(bars, end)
+	for _, l := range out {
+		if l.Kind == KindNPOC {
+			t.Fatalf("front-truncated prior day must not emit a naked POC; got %+v", l)
+		}
+	}
+}
+
 // TestRoleAssignment: kind base roles + state overrides (consumed → target_only,
 // far-HTF → target_only).
 func TestRoleAssignment(t *testing.T) {
