@@ -19,10 +19,10 @@ import (
 // TestMentorStopFillIsLossBE is the pure pin: a break-even "sl" fill (exit ≈
 // entry, NOT at the original stop) is NOT a loss.
 func TestMentorStopFillIsLossBE(t *testing.T) {
-	if mentorStopFillIsLoss("long", 100.0, 95.0, 100.0, 0.25) {
+	if mentorStopFillIsLoss("long", 100.0, 100.0, 0.25) {
 		t.Fatal("a break-even fill (exit ≈ entry) must not be a loss")
 	}
-	if mentorStopFillIsLoss("short", 100.0, 105.0, 100.0, 0.25) {
+	if mentorStopFillIsLoss("short", 100.0, 100.0, 0.25) {
 		t.Fatal("a break-even fill (exit ≈ entry) must not be a loss (short)")
 	}
 }
@@ -30,10 +30,10 @@ func TestMentorStopFillIsLossBE(t *testing.T) {
 // TestMentorStopFillIsLossOriginalStop is the pure pin: an ORIGINAL-stop fill on
 // the losing side of entry IS a loss.
 func TestMentorStopFillIsLossOriginalStop(t *testing.T) {
-	if !mentorStopFillIsLoss("long", 95.0, 95.0, 100.0, 0.25) {
+	if !mentorStopFillIsLoss("long", 95.0, 100.0, 0.25) {
 		t.Fatal("a long fill at the original stop below entry must be a loss")
 	}
-	if !mentorStopFillIsLoss("short", 105.0, 105.0, 100.0, 0.25) {
+	if !mentorStopFillIsLoss("short", 105.0, 100.0, 0.25) {
 		t.Fatal("a short fill at the original stop above entry must be a loss")
 	}
 }
@@ -43,7 +43,7 @@ func TestMentorStopFillIsLossOriginalStop(t *testing.T) {
 // loss and must still count. MUTANT: restore math.Abs(fill-stop) <= tick → the
 // 1.0-pt gap fails the two-sided band → no loss → RED.
 func TestMentorStopFillIsLossSlippageLong(t *testing.T) {
-	if !mentorStopFillIsLoss("long", 94.0, 95.0, 100.0, 0.25) {
+	if !mentorStopFillIsLoss("long", 94.0, 100.0, 0.25) {
 		t.Fatal("a long stop at 95 filled at 94 (slippage) must be a loss")
 	}
 }
@@ -51,7 +51,7 @@ func TestMentorStopFillIsLossSlippageLong(t *testing.T) {
 // TestMentorStopFillIsLossSlippageShort is the mirror: a short stop at 105.00
 // filled at 106.00 (4 ticks through) must count. MUTANT: math.Abs again → RED.
 func TestMentorStopFillIsLossSlippageShort(t *testing.T) {
-	if !mentorStopFillIsLoss("short", 106.0, 105.0, 100.0, 0.25) {
+	if !mentorStopFillIsLoss("short", 106.0, 100.0, 0.25) {
 		t.Fatal("a short stop at 105 filled at 106 (slippage) must be a loss")
 	}
 }
@@ -59,11 +59,26 @@ func TestMentorStopFillIsLossSlippageShort(t *testing.T) {
 // TestMentorStopFillIsLossTrailInProfit is the trail pin: a trailed stop fill on
 // the WINNING side of entry is not a loss.
 func TestMentorStopFillIsLossTrailInProfit(t *testing.T) {
-	if mentorStopFillIsLoss("long", 110.0, 95.0, 100.0, 0.25) {
+	if mentorStopFillIsLoss("long", 110.0, 100.0, 0.25) {
 		t.Fatal("a long trail in profit must not be a loss")
 	}
-	if mentorStopFillIsLoss("short", 90.0, 105.0, 100.0, 0.25) {
+	if mentorStopFillIsLoss("short", 90.0, 100.0, 0.25) {
 		t.Fatal("a short trail in profit must not be a loss")
+	}
+}
+
+// TestMentorStopFillIsLossTightenedStop is the m308 P2(a) pin: a stop tightened
+// by 1:1 (mentorRR11Stop) that is still on the LOSS side reads as a LOSS under
+// the entry-side rule. Probe from the CTO: long entry 100, original stop 95,
+// tightened stop 96, fill 96 — the old original-stop rule said "not a loss" but
+// the trade lost 4 pts. MUTANT: restore the original-stop test (fill at stop_px
+// ± tick) → the 96 fill is not at 95 → no loss → RED.
+func TestMentorStopFillIsLossTightenedStop(t *testing.T) {
+	if !mentorStopFillIsLoss("long", 96.0, 100.0, 0.25) {
+		t.Fatal("a long tightened stop at 96 (entry 100, lost 4 pts) must be a loss")
+	}
+	if !mentorStopFillIsLoss("short", 104.0, 100.0, 0.25) {
+		t.Fatal("a short tightened stop at 104 (entry 100, lost 4 pts) must be a loss")
 	}
 }
 
