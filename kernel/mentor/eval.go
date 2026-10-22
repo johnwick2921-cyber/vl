@@ -53,6 +53,9 @@ type State struct {
 	// nothing that trades reads them, so Levels above stays byte-identical.
 	ChartLevels     []Level     `json:"-"`
 	ChartTrendlines []Trendline `json:"-"`
+	// ChartEMA (m134) is the display-only per-bar EMA 9/34 curve, read from the
+	// same tick as ChartTrendlines. Nothing that trades reads it.
+	ChartEMA []ChartEMA `json:"-"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -1496,6 +1499,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
+	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;

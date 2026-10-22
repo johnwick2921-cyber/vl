@@ -71,7 +71,7 @@ func fullJob(t *testing.T, dd string) Job {
 	j.Addon = &AddonState{DllPath: "/tmp/vl-addon-build/" + id + "/ps1-out/VL.AddOn.dll", Sha256: "fedcba9876543210fedcba9876543210fedcba98",
 		BuiltBy:          "roslyn-ps1",
 		MigrationPending: true,
-		BackupDir:        "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, OldAcceptSeq: 7}
+		BackupDir:        "/mnt/c/Users/hoang/Documents/NinjaTrader 8/bin/Custom/AddOns/.vl-backups/VL.AddOn.dll.bak", Restarted: true, StoppedNT8: true, OldAcceptSeq: 7}
 	step(t, dd, &j, &now, StateAddonBuilt)
 	step(t, dd, &j, &now, StateAddonPlaced)
 	step(t, dd, &j, &now, StateNT8Restarted)

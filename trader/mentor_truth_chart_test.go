@@ -84,6 +84,14 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 || !tl.InLevel || tl.NowMs != bars[13].OpenTime {
 		t.Errorf("trendline view = %+v, want the support line 97→98.2 trading at bar 13", tl)
 	}
+	if !tl.Valid {
+		t.Errorf("the 3rd-touch support line must be valid=true (m134): %+v", tl)
+	}
+	if p.EMASeries == nil || len(*p.EMASeries) == 0 {
+		t.Errorf("ema_series must be sent after a real Tick (m134 curve)")
+	} else if last := (*p.EMASeries)[len(*p.EMASeries)-1]; last.Ema9 <= 0 || last.Ema34 <= 0 {
+		t.Errorf("ema_series tail = %+v, want positive ema9/ema34", last)
+	}
 	if p.ISBBoxes == nil || len(*p.ISBBoxes) != 1 || (*p.ISBBoxes)[0].Label != "ISB 5m" {
 		t.Errorf("isb boxes = %+v, want the one 5m rest box", p.ISBBoxes)
 	}
@@ -99,10 +107,42 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`} {
+	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`, `"valid":`, `"ema_series":[`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("payload lacks %s: %s", key, b)
 		}
+	}
+}
+
+// m134 — a line with two anchors but no 3rd touch yet is FORMING: it is sent
+// with valid=false so the chart draws it thin/dashed "waiting for 3rd touch".
+func TestMentorTruthSnapshotSendsFormingTrendlines(t *testing.T) {
+	at := truthAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	at.mentorEval = mentor.New(cfg)
+	ev := at.mentorEval
+
+	bars := mentorChartTape()
+	// Tick through bar 10: P1 (bar 8) has formed the line, no 3rd touch yet and
+	// no 5m close through — the line is FORMING (ValidAt==0, Dead==false).
+	sub := bars[:11]
+	now := mentor.BarCloseInstant(sub[len(sub)-1])
+	ev.Tick(sub, now)
+
+	p, ok := at.MentorTruthSnapshot(time.UnixMilli(now))
+	if !ok {
+		t.Fatalf("snapshot not ok")
+	}
+	if p.Trendlines == nil || len(*p.Trendlines) == 0 {
+		t.Fatalf("a forming line must be sent: %+v", p.Trendlines)
+	}
+	tl := (*p.Trendlines)[0]
+	if tl.Valid {
+		t.Errorf("forming line reported valid=true, want valid=false: %+v", tl)
+	}
+	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 {
+		t.Errorf("forming line = %+v, want the support line 97→98.2", tl)
 	}
 }
 

@@ -225,6 +225,12 @@ type AddonState struct {
 	// Restarted records that nt8_restart actually restarted NT8 (so rollback
 	// knows to restart it again with the old DLL restored).
 	Restarted bool `json:"restarted,omitempty"`
+	// StoppedNT8 records that nt8_restart STOPPED NinjaTrader (graceful close
+	// then a confirmed full exit). The revert path uses it: once the updater
+	// stopped NT8, a revert that restores the old AddOn must ALSO bring NT8
+	// back up (or loudly alert the owner) — the restore alone leaves NT8 closed
+	// (m246, the owner's #43 Update left NinjaTrader down).
+	StoppedNT8 bool `json:"stopped_nt8,omitempty"`
 	// OldAcceptSeq is the AddOn connection's accept_seq before the restart — a
 	// NEW accept_seq proves a new connection on reconnect.
 	OldAcceptSeq uint64 `json:"old_accept_seq,omitempty"`

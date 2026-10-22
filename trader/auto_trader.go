@@ -736,6 +736,14 @@ type AutoTrader struct {
 	feedGraceMu   sync.Mutex
 	feedLinkUpAt  time.Time
 	feedGraceSaid time.Time
+	// feedLagMu guards the FEED-LAG alarm episode (m134 DS-108 (c)): the newest
+	// NT8 bar age sitting in the soft band just under FEED DOWN (feedDownAfter()
+	// ∓ 100 s) for > 3 min is LOUD — a WARN plus a dashboard line — the early
+	// warning before the hard FEED DOWN fires.
+	feedLagMu        sync.Mutex
+	feedLagEnteredAt time.Time // zero = outside the band
+	feedLagSaid      bool      // the WARN already fired for this episode
+	feedLagActive    bool      // the band is active right now (dashboard line)
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still
