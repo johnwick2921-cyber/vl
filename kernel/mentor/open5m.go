@@ -88,22 +88,28 @@ func open5mBroken(bars []market.Kline, now int64, high, low float64) (brokeLong,
 // sits on the WRONG side of the 4h trigger line — a 4h buy with price still
 // below the 4h trigger line (or a 4h sell with price still above). With price
 // already on the 4h's side the 4h is confirmed and no 5m break is required.
-func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (out []Intent, refusals []string) {
+// open5mMissingNote is the note key emitted when the filter fails OPEN because
+// the opening 5m range is undrawn at/after 08:35 (a truncated series or a data
+// gap). The caller turns the note's key into a counter (e.count) so the event is
+// diffable against the replay funnel.
+const open5mMissingNote = "open5m_range_missing"
+
+func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (out []Intent, refusals []string, notes []string) {
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
 	if mins < 8*60+30 || mins > 9*60+30 {
-		return ints, nil
+		return ints, nil, nil
 	}
 	dir := h.FourH.Dir
 	if dir == "" {
-		return ints, nil // no 4h trigger — nothing to confirm
+		return ints, nil, nil // no 4h trigger — nothing to confirm
 	}
 	if len(bars) == 0 {
-		return ints, nil
+		return ints, nil, nil
 	}
 	px := bars[len(bars)-1].Close
 	if !open5mGateApplies(dir, px, h.FourH.Price) {
-		return ints, nil // price already on the 4h side — the 4h is confirmed
+		return ints, nil, nil // price already on the 4h side — the 4h is confirmed
 	}
 	high, low, drawn := open5mRange(bars, now)
 	var brokeLong, brokeShort bool
@@ -118,7 +124,8 @@ func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (ou
 	default:
 		// At/after 08:35 a missing range means the series is truncated (a test
 		// fixture or a data gap) — fail OPEN: the ORB and the HTF gate still hold.
-		return ints, nil
+		// The fail-open is LOUD (a note + a counter), never silent.
+		return ints, nil, []string{open5mMissingNote}
 	}
 	out = make([]Intent, 0, len(ints))
 	for _, in := range ints {
@@ -137,7 +144,7 @@ func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (ou
 		}
 		refusals = append(refusals, "open_5m_range_not_broken")
 	}
-	return out, refusals
+	return out, refusals, notes
 }
 
 // open5mGateApplies is the D4.4 p2 @05:45–05:50 narrower condition: the 5m-drop

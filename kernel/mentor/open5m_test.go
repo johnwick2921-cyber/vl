@@ -58,7 +58,7 @@ func TestOpen5mRangeBreak(t *testing.T) {
 	}
 
 	// A with-4h long entry before the 5m break is REFUSED.
-	kept, refused := open5mRangeFilter([]Intent{longEntry()}, h, bars, now)
+	kept, refused, _ := open5mRangeFilter([]Intent{longEntry()}, h, bars, now)
 	if len(kept) != 0 || len(refused) != 1 || refused[0] != "open_5m_range_not_broken" {
 		t.Fatalf("pre-break: kept=%d refused=%v, want 0 kept / [open_5m_range_not_broken]", len(kept), refused)
 	}
@@ -76,7 +76,7 @@ func TestOpen5mRangeBreak(t *testing.T) {
 	if bl, bs := open5mBroken(bars, now2, high, low); !bl || bs {
 		t.Fatalf("open5mBroken after the break = long %v short %v, want true false", bl, bs)
 	}
-	kept, refused = open5mRangeFilter([]Intent{longEntry()}, h, bars, now2)
+	kept, refused, _ = open5mRangeFilter([]Intent{longEntry()}, h, bars, now2)
 	if len(kept) != 1 || len(refused) != 0 {
 		t.Fatalf("post-break: kept=%d refused=%v, want 1 kept / none", len(kept), refused)
 	}
@@ -85,14 +85,14 @@ func TestOpen5mRangeBreak(t *testing.T) {
 	// HTF gate, not this filter.
 	swing := Intent{Action: PlaceStopEntry, Side: SideLong, Reason: "swing", Price: 100.6}
 	short := Intent{Action: PlaceStopEntry, Side: SideShort, Reason: "PHL", Price: 99.0}
-	kept2, _ := open5mRangeFilter([]Intent{swing, short}, h, bars, now2)
+	kept2, _, _ := open5mRangeFilter([]Intent{swing, short}, h, bars, now2)
 	if len(kept2) != 2 {
 		t.Fatalf("swing + off-4h must pass through: kept=%d, want 2", len(kept2))
 	}
 
 	// Outside the open window the filter does nothing.
 	after := auditMs(2026, 9, 15, 10, 0, 0)
-	kept3, _ := open5mRangeFilter([]Intent{longEntry()}, h, bars, after)
+	kept3, _, _ := open5mRangeFilter([]Intent{longEntry()}, h, bars, after)
 	if len(kept3) != 1 {
 		t.Fatalf("outside the open window the filter must not gate: kept=%d, want 1", len(kept3))
 	}
@@ -142,7 +142,7 @@ func TestOpen5mGateSkippedWhenPriceOnFourHSide(t *testing.T) {
 	now := auditMs(2026, 9, 15, 8, 40, 0) // 08:40 CT — inside the open window
 	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 100.5}}
 
-	kept, refused := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 101.3, Stop: 100.8, Target: 102.5}}, h, bars, now)
+	kept, refused, _ := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 101.3, Stop: 100.8, Target: 102.5}}, h, bars, now)
 	if len(kept) != 1 || len(refused) != 0 {
 		t.Fatalf("price on the 4h side must pass through: kept=%d refused=%v, want 1/none", len(kept), refused)
 	}
@@ -170,8 +170,38 @@ func TestOpen5mGateRefusesDuringFormingRange(t *testing.T) {
 		t.Fatal("fixture: the opening 5m must not be drawn at 08:33")
 	}
 
-	kept, refused := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 100.6, Stop: 99.5, Target: 102.0}}, h, bars, now)
+	kept, refused, _ := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 100.6, Stop: 99.5, Target: 102.0}}, h, bars, now)
 	if len(kept) != 0 || len(refused) != 1 || refused[0] != "open_5m_range_not_broken" {
 		t.Fatalf("forming range + wrong-side price must refuse: kept=%d refused=%v, want 0/[open_5m_range_not_broken]", len(kept), refused)
+	}
+}
+
+// TestOpen5mGateMissingRangeFailOpenEmitsNote pins m296: at/after 08:35 with an
+// UNDRAWN opening 5m range (a truncated series / data gap) the filter fails OPEN
+// — the intents pass through AND the fail-open is LOUD (the note is emitted),
+// never silent. MUTANT: drop the note (return ints,nil,nil) → the note pin RED.
+func TestOpen5mGateMissingRangeFailOpenEmitsNote(t *testing.T) {
+	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	// No 08:30–08:34 opening bars — the range can never be drawn, even at 09:01.
+	bars := []market.Kline{
+		mk(9, 0, 100.0, 101.0, 99.0, 100.0),
+		mk(9, 1, 100.0, 100.4, 99.6, 99.8),
+	}
+	now := auditMs(2026, 9, 15, 9, 1, 30) // 09:01:30 CT — after 08:35
+	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 102.0}}
+	if _, _, drawn := open5mRange(bars, now); drawn {
+		t.Fatal("fixture: the opening 5m range must be undrawn (no 08:30–08:34 bars)")
+	}
+
+	entry := Intent{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 100.6, Stop: 99.5, Target: 102.0}
+	kept, refused, notes := open5mRangeFilter([]Intent{entry}, h, bars, now)
+	if len(kept) != 1 || len(refused) != 0 {
+		t.Fatalf("a missing range at/after 08:35 must fail OPEN: kept=%d refused=%v, want 1/none", len(kept), refused)
+	}
+	if len(notes) != 1 || notes[0] != open5mMissingNote {
+		t.Fatalf("the fail-open must emit the missing-range note, got %v", notes)
 	}
 }
