@@ -250,7 +250,7 @@ describe('mentorTrendSegments', () => {
     ])
   })
 
-  it('a FORMING line is thin dashed muted and stops at its second anchor', () => {
+  it('a FORMING line is thin dashed muted, says "waiting for 3rd touch", and extends dashed to the right edge', () => {
     const [seg] = mentorTrendSegments(
       [
         {
@@ -268,12 +268,16 @@ describe('mentorTrendSegments', () => {
       bars(0, 60_000, 5)
     )
     expect(seg.label).toBe('trend line (support — waiting for 3rd touch)')
+    expect(seg.label).not.toContain('not traded')
     expect(seg.lineWidth).toBe(1)
     expect(seg.style).toBe(2)
-    expect(seg.points).toHaveLength(2)
+    // m328: a forming line extends DASHED to the right edge ("kéo dài"), never
+    // mislabelled "not traded" and never stopped at its second anchor.
+    expect(seg.points).toHaveLength(3)
+    expect(seg.points[seg.points.length - 1].time).toBe(240_000 / 1000)
   })
 
-  it('ends a box-suppressed line at its second anchor, muted, and says it is not traded', () => {
+  it('a box-suppressed VALID line is muted dashed, says "not traded", and extends dashed to the right edge', () => {
     const [seg] = mentorTrendSegments(
       [
         {
@@ -290,13 +294,14 @@ describe('mentorTrendSegments', () => {
       ],
       bars(0, 60_000, 5)
     )
-    // m150: a VALID line inside a box (not traded) is muted + thin + dashed and
-    // stops at its second anchor — it no longer extends to the right edge.
-    expect(seg.points).toHaveLength(2)
+    // m328: a VALID line inside a box (not traded) is muted + thin + dashed but
+    // STILL extends to the right edge — only a traded valid line is solid.
     expect(seg.label).toContain('trend line ✓')
     expect(seg.label).toContain('not traded')
     expect(seg.lineWidth).toBe(1)
     expect(seg.style).toBe(2)
+    expect(seg.points).toHaveLength(3)
+    expect(seg.points[seg.points.length - 1].time).toBe(240_000 / 1000)
   })
 })
 
