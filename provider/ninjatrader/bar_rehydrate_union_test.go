@@ -1,6 +1,11 @@
 package ninjatrader
 
-import "testing"
+import (
+	"testing"
+	"time"
+
+	"vl/kernel"
+)
 
 // ── m134 PINS (2026-10-21) — RehydrateUnion fills an INTERIOR restart hole ──
 //
@@ -84,78 +89,183 @@ func TestRehydrateOlderLeavesInteriorHole(t *testing.T) {
 	t.Fatalf("expected the interior hole to survive RehydrateOlder (older-only)")
 }
 
-func TestAggregate1mToTF(t *testing.T) {
-	oneMin := []Bar{
-		{T: 0, O: 10, H: 12, L: 9, C: 11, V: 1},
-		{T: 60_000, O: 11, H: 14, L: 10, C: 13, V: 1},
-		{T: 120_000, O: 13, H: 15, L: 12, C: 14, V: 1},
-		{T: 180_000, O: 14, H: 16, L: 13, C: 15, V: 1},
-		{T: 240_000, O: 15, H: 17, L: 14, C: 16, V: 1},
-		{T: 300_000, O: 16, H: 18, L: 15, C: 17, V: 1},
-		{T: 360_000, O: 17, H: 19, L: 16, C: 18, V: 1},
-		{T: 420_000, O: 18, H: 20, L: 17, C: 19, V: 1},
-		{T: 480_000, O: 19, H: 21, L: 18, C: 20, V: 1},
-		{T: 540_000, O: 20, H: 22, L: 19, C: 21, V: 1},
+// oneMinFromCT builds one 1m bar per minute for `n` minutes starting at `base`
+// (already in CT), skipping the given minute offsets (indexed from 0).
+func oneMinFromCT(base time.Time, n int, skip ...int) []Bar {
+	skipSet := make(map[int]bool, len(skip))
+	for _, s := range skip {
+		skipSet[s] = true
 	}
+	bars := make([]Bar, 0, n)
+	for i := 0; i < n; i++ {
+		if skipSet[i] {
+			continue
+		}
+		c := float64(1000 + i) // integer prices — exact in float64, so == is safe
+		bars = append(bars, Bar{T: base.Add(time.Duration(i) * time.Minute).UnixMilli(), O: c, H: c + 2, L: c - 2, C: c, V: 1})
+	}
+	return bars
+}
+
+// bucketKeys indexes aggregated buckets by their minute offset from `base`.
+func bucketKeys(bars []Bar, base time.Time) map[int]bool {
+	m := make(map[int]bool, len(bars))
+	for _, b := range bars {
+		m[int((b.T-base.UnixMilli())/60_000)] = true
+	}
+	return m
+}
+
+func TestAggregate1mToTF(t *testing.T) {
+	base := time.Date(2026, 10, 20, 10, 0, 0, 0, kernel.CTLocation()) // a Tuesday, RTH open
+	oneMin := oneMinFromCT(base, 10)
 	got := Aggregate1mToTF(oneMin, 5, 0)
 	if len(got) != 2 {
 		t.Fatalf("want 2 complete buckets, got %d", len(got))
 	}
 	b := got[0]
-	if b.T != 0 || b.O != 10 || b.H != 17 || b.L != 9 || b.C != 16 || b.V != 5 {
+	if b.T != base.UnixMilli() || b.O != 1000 || b.H != 1006 || b.L != 998 || b.C != 1004 || b.V != 5 {
 		t.Fatalf("wrong aggregate bucket 0: %+v", b)
 	}
-	if got[1].T != 300_000 || got[1].C != 21 || got[1].H != 22 || got[1].L != 15 {
+	if got[1].T != base.Add(5*time.Minute).UnixMilli() || got[1].C != 1009 || got[1].H != 1011 || got[1].L != 1003 {
 		t.Fatalf("wrong aggregate bucket 5: %+v", got[1])
 	}
 }
 
-// TestAggregate1mToTFDropsHoleyBucket is the m148 pin (a): the 00:31→00:39
+// TestAggregate1mToTFDropsHoleyBucket is the m148 pin (a): the minute 31→39
 // 8-minute hole must leave the touched 5m buckets ABSENT after aggregation, with
 // the complete neighbours still present. MUTANT: drop the coverage check (always
-// insert) → bucket 00:30 is inserted with a fake close → RED.
+// insert) → bucket 10:30 is inserted with a fake close → RED.
 func TestAggregate1mToTFDropsHoleyBucket(t *testing.T) {
-	var oneMin []Bar
-	for m := int64(0); m <= 59; m++ {
-		if m >= 31 && m <= 39 {
-			continue // the 8-minute hole
-		}
-		c := 100 + 0.1*float64(m)
-		oneMin = append(oneMin, Bar{T: m * 60_000, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1})
-	}
+	base := time.Date(2026, 10, 20, 10, 0, 0, 0, kernel.CTLocation()) // Tuesday RTH
+	oneMin := oneMinFromCT(base, 60, 31, 32, 33, 34, 35, 36, 37, 38, 39)
 	got := Aggregate1mToTF(oneMin, 5, 0)
-	have := map[int64]bool{}
-	for _, b := range got {
-		have[b.T/60_000] = true
-	}
+	have := bucketKeys(got, base)
 	if !have[25] {
-		t.Fatalf("complete neighbour bucket 00:25 must be present, got %v", have)
+		t.Fatalf("complete neighbour bucket 10:25 must be present, got %v", have)
 	}
 	if have[30] {
-		t.Fatalf("holey bucket 00:30 (4 missing minutes) must be absent, got %v", have)
+		t.Fatalf("holey bucket 10:30 (4 missing minutes) must be absent, got %v", have)
 	}
 	if have[35] {
-		t.Fatalf("bucket 00:35 (all missing) must be absent, got %v", have)
+		t.Fatalf("bucket 10:35 (all missing) must be absent, got %v", have)
 	}
 	if !have[40] {
-		t.Fatalf("complete neighbour bucket 00:40 must be present, got %v", have)
+		t.Fatalf("complete neighbour bucket 10:40 must be present, got %v", have)
 	}
 }
 
 // TestAggregate1mToTFAllowsOneMissingMinute is the m148 pin (b): a single quiet
 // no-trade minute must NOT drop a bucket.
 func TestAggregate1mToTFAllowsOneMissingMinute(t *testing.T) {
-	var oneMin []Bar
-	for m := int64(0); m <= 4; m++ {
-		if m == 2 {
-			continue // one quiet minute
-		}
-		c := 100 + 0.1*float64(m)
-		oneMin = append(oneMin, Bar{T: m * 60_000, O: c, H: c + 0.2, L: c - 0.2, C: c, V: 1})
-	}
+	base := time.Date(2026, 10, 20, 10, 0, 0, 0, kernel.CTLocation())
+	oneMin := oneMinFromCT(base, 5, 2) // one quiet minute
 	got := Aggregate1mToTF(oneMin, 5, 0)
 	if len(got) != 1 {
 		t.Fatalf("a bucket with one missing minute must still be inserted, got %d buckets", len(got))
+	}
+}
+
+// TestAggregate1mToTFKeepsEarlyCloseBucket is the m168 early-close pin: the
+// 12:00 30m/1h bucket on a 12:15-close day has only 15 OPEN minutes (12:00–
+// 12:14); the rest are the halted tail. Counting ALL minutes would read 15 (30m)
+// / 45 (1h) missing and drop it; counting OPEN minutes keeps it. MUTANT: count
+// every minute (the pre-m168 rule) → the 12:00 bucket disappears → RED.
+func TestAggregate1mToTFKeepsEarlyCloseBucket(t *testing.T) {
+	// 2026-11-27 is the Friday after Thanksgiving — shortened, close 12:15 CT.
+	base := time.Date(2026, 11, 27, 8, 0, 0, 0, kernel.CTLocation())
+	// Complete 1m bars 08:00..12:14 (255 minutes).
+	oneMin := oneMinFromCT(base, 4*60+15)
+	noon := time.Date(2026, 11, 27, 12, 0, 0, 0, kernel.CTLocation())
+	for _, tc := range []struct {
+		tfMin int
+	}{
+		{30},
+		{60},
+	} {
+		got := Aggregate1mToTF(oneMin, tc.tfMin, 0)
+		have := bucketKeys(got, base)
+		noonOff := int((noon.UnixMilli() - base.UnixMilli()) / 60_000)
+		if !have[noonOff] {
+			t.Fatalf("%dm: the 12:00 bucket on an early-close day must be kept (open minutes complete), got %v", tc.tfMin, have)
+		}
+		// The 12:30 bucket is entirely inside the halted tail — never built.
+		if have[noonOff+tc.tfMin] {
+			t.Fatalf("%dm: the 12:30 bucket (all halted) must be absent", tc.tfMin)
+		}
+	}
+}
+
+// TestAggregate1mToTFCoverageTolerance is the m168 tolerance + run pin: missing
+// OPEN minutes are counted against max(1, tfMin/20) and a run of ≥3 consecutive
+// missing open minutes drops the bucket whatever the total.
+func TestAggregate1mToTFCoverageTolerance(t *testing.T) {
+	base := time.Date(2026, 10, 20, 10, 0, 0, 0, kernel.CTLocation()) // Tuesday RTH
+	cases := []struct {
+		name  string
+		tfMin int
+		n     int
+		skip  []int
+		kept  bool
+	}{
+		{"5m one missing kept", 5, 5, []int{0}, true},
+		{"5m two missing dropped", 5, 5, []int{0, 2}, false},
+		{"1h two missing kept", 60, 60, []int{5, 25}, true},
+		{"1h three spread missing kept", 60, 60, []int{5, 25, 45}, true},
+		{"1h three consecutive missing dropped", 60, 60, []int{5, 6, 7}, false},
+		{"1h four missing dropped", 60, 60, []int{5, 25, 45, 50}, false},
+	}
+	for _, tc := range cases {
+		got := Aggregate1mToTF(oneMinFromCT(base, tc.n, tc.skip...), tc.tfMin, 0)
+		have := bucketKeys(got, base)
+		if have[0] != tc.kept {
+			t.Fatalf("%s: kept=%v, want %v (buckets %v)", tc.name, have[0], tc.kept, have)
+		}
+	}
+}
+
+// TestAggregate1mToTFKeepsSundayOpenBucket is the m168 Sunday-open pin: the
+// first 5m bucket after the Sunday 17:00 CT open with a quiet first minute must
+// still be inserted (the minute is OPEN — the Sunday open is a whole-hour
+// boundary, so the 17:00 bucket is all open minutes).
+func TestAggregate1mToTFKeepsSundayOpenBucket(t *testing.T) {
+	// 2026-10-25 is a Sunday; Globex opens 17:00 CT.
+	base := time.Date(2026, 10, 25, 17, 0, 0, 0, kernel.CTLocation())
+	oneMin := oneMinFromCT(base, 5, 0) // 17:00 quiet, 17:01..17:04 present
+	got := Aggregate1mToTF(oneMin, 5, 0)
+	if len(got) != 1 {
+		t.Fatalf("the Sunday-open 5m bucket with a quiet first minute must be kept, got %d buckets", len(got))
+	}
+}
+
+// TestRehydrateUnionColdKeyIsNoOp is the m168 COLD-KEY pin, end to end: a store
+// must NEVER substitute for a live feed, so RehydrateUnion on a key the ring has
+// never held adds nothing. The ENFORCING line is mergeRehydrateUnion — it
+// appends only the live tail (existing[i:]) and never the incoming store bars,
+// so a nil existing merges to empty; RehydrateUnion's cold-key guard is an early
+// return, not the enforcement. The direct pin on that line is
+// TestMergeRehydrateUnionNilExistingIsEmpty.
+func TestRehydrateUnionColdKeyIsNoOp(t *testing.T) {
+	c := NewBarCache(2500)
+	store := []Bar{{T: open5m(10*60 + 5), O: 100, H: 102, L: 98, C: 101, Source: BarSourceHistorical}}
+	if added := c.RehydrateUnion("MNQ", "5m", store); added != 0 {
+		t.Fatalf("cold key must add nothing, got %d", added)
+	}
+	if got := c.Get("MNQ", "5m"); len(got) != 0 {
+		t.Fatalf("cold key must stay empty — the store never substitutes for the live feed: %+v", got)
+	}
+}
+
+// TestMergeRehydrateUnionNilExistingIsEmpty is the m184 direct pin: the enforcing
+// line for the cold-key no-op is the merge itself, not RehydrateUnion's guard.
+// With a nil existing, the merge must return EMPTY — only the live tail is ever
+// appended, the incoming store bars are never appended. MUTANT: re-append
+// `out = append(out, incoming[j:]...)` in mergeRehydrateUnion → the store bars
+// leak in → RED.
+func TestMergeRehydrateUnionNilExistingIsEmpty(t *testing.T) {
+	store := []Bar{{T: open5m(10*60 + 5), O: 100, H: 102, L: 98, C: 101, Source: BarSourceHistorical}}
+	if got := mergeRehydrateUnion(nil, store); len(got) != 0 {
+		t.Fatalf("mergeRehydrateUnion(nil, store) must be empty (the store never substitutes for the live feed), got %+v", got)
 	}
 }
 

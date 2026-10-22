@@ -227,7 +227,7 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 	line := at.mentorCourseExitsBootLine()
 	for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=ON",
 		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
-		"isb_max_pts=30", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
+		"isb_max_pts=25", "keypair_candle_ratio=1", "box_fresh_rth_pair=OFF", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q missing %q", line, want)
 		}

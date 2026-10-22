@@ -782,7 +782,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
 	})
 	mentorRCRow("mentor_lvl_revisit_min_pts", "mentorLvlRevisitMinPts (default 0)", func(rc store.RiskControlConfig) any { return mentorLvlRevisitMinPts(&rc) })
-	mentorRCRow("mentor_ema_max_cross_30m", "mentorEmaMaxCross30m (default 2)", func(rc store.RiskControlConfig) any { return mentorEmaMaxCross30m(&rc) })
+	mentorRCRow("mentor_ema_max_cross_30m", "mentorEmaMaxCross30m (default 0 — removed; the mentor gives no count)", func(rc store.RiskControlConfig) any { return mentorEmaMaxCross30m(&rc) })
 	mentorRCRow("mentor_loc_trigger_filter", "mentorLocationTriggerFilter (nil → ON; inert under school 1 unless level_entries_need_trigger_side)", func(rc store.RiskControlConfig) any { return mentorLocationTriggerFilter(&rc) })
 	mentorRCRow("mentor_loss_departure_pts", "mentorLossDeparturePts (default 0)", func(rc store.RiskControlConfig) any { return mentorLossDeparturePts(&rc) })
 

@@ -359,6 +359,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 				at.mentorCount("stop_move_skipped_leg_closed")
 				continue
 			}
+			if errors.Is(err, errMentorStopThroughMarket) {
+				// m198 #43-B: the wrong-side BE closed the WHOLE symbol at
+				// market (a full flatten) — the position is flat; a sibling
+				// leg's move would be a redundant close. Stop the pass.
+				at.mentorCount("stop_move_skipped_leg_closed")
+				return
+			}
 			if !mentorMoveApplied(err) {
 				if err != nil && !mentorMoveErrAlreadyLogged(err) {
 					at.logWarnf("🧑‍🏫 mentor BE after the +1R partial: %s leg %d move FAILED: %v", leg.SignalID, leg.Wire, err)
@@ -391,6 +398,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 			continue // a lower low (long) / higher high (short): never a widen, nothing to send
 		}
 		err := at.mentorMoveLegStop(nt, side, leg, cand)
+		if errors.Is(err, errMentorStopThroughMarket) {
+			// m198 #43-B: the wrong-side trail closed the WHOLE symbol at
+			// market (a full flatten) — the position is flat; a sibling leg's
+			// move would be a redundant close. Stop the pass.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return
+		}
 		if !mentorMoveApplied(err) {
 			if errors.Is(err, errMentorLegClosed) {
 				at.mentorCount("stop_move_skipped_leg_closed")
