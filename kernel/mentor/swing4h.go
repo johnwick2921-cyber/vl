@@ -71,7 +71,7 @@ type SwingCfg struct {
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
 	// R5: new behaviour behind a knob that defaults OFF.
-	MinStopPts float64
+	MinStopPts        float64
 	EntryBufferPts    float64 // NO buffer — order sits tight on the candle; default 0 [D5.2 p2 @05:02–05:12]
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
 	// LeewayCandles is the reference-leeway knob [D5.2 p1 @15:21–15:48]: the
@@ -95,8 +95,8 @@ func DefaultSwingCfg() SwingCfg {
 		LineOffsetPts:     5,
 		StopBeyondLinePts: 30,
 		MaxStopPts:        100, // ~100-pt ceiling, no skip (m186 D5.2 @21:25-21:43)
-		MinStopPts:        0, // W26 P2-4: OFF by default (R5)
-		EntryBufferPts:    0, // no buffer [D5.2 p2 @05:02–05:12]
+		MinStopPts:        0,   // W26 P2-4: OFF by default (R5)
+		EntryBufferPts:    0,   // no buffer [D5.2 p2 @05:02–05:12]
 		TargetEMA5mPeriod: 34,
 		LeewayCandles:     2,
 		Hold4hBars:        1,
