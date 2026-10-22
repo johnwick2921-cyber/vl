@@ -93,6 +93,24 @@ func TestSplitAddonCancelAllBrackets(t *testing.T) {
 	}
 }
 
+// TestSplitAddonOrderUpdateDedupeStateAndFilled — bug-hunt #4: the AddOn de-dupes
+// order_update on (state, cumulative filled), not state alone, so a second
+// PartFilled with a LARGER cumulative e.Filled is sent (Go's only cumulative-qty
+// feed) instead of suppressed. Mutant (state-only dedupe) → RED.
+func TestSplitAddonOrderUpdateDedupeStateAndFilled(t *testing.T) {
+	src := readSplitAddonSource(t)
+	for _, want := range []string{
+		`string filled = e.Filled.ToString("R", System.Globalization.CultureInfo.InvariantCulture);`,
+		`string stateKey = state + ":" + filled;`,
+		`if (lastOrderState.TryGetValue(key, out var prev) && prev == stateKey) return;`,
+		`lastOrderState[key] = stateKey;`,
+	} {
+		if !strings.Contains(src, want) {
+			t.Errorf("AddOn lost the (state, filled) order_update de-dupe: missing %q", want)
+		}
+	}
+}
+
 // TestSplitAddonLegFieldOnMoveModify pins the `leg` field: move_stop and
 // modify_bracket honour 1/2/absent=all. Mutant: drop the leg parse → RED.
 func TestSplitAddonLegFieldOnMoveModify(t *testing.T) {

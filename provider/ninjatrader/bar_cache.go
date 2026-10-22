@@ -16,6 +16,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"vl/kernel"
 )
 
 // DefaultBarCacheMaxBars is the per-(symbol, timeframe) ring-buffer
@@ -271,6 +273,22 @@ func OpenStampBars(bars []Bar, timeframe string) []Bar {
 	return openStampBars(bars, timeframe)
 }
 
+// reanchorStubBars shifts the NT8-native 2h/4h/6h/8h/12h 16:00-close stub +1h
+// in place (#34, m220 DS-104 — extends m169 DS-108's 2h/4h ingress). It runs
+// at WIRE INGRESS on OPEN-stamped bars, so the ring and the store agree on ONE
+// stamp: before this the ring kept NT8's 12:00/14:00 while the persister wrote
+// 13:00/15:00 — the chart splice showed two candles for one stub and boot
+// backfill doubled it. The persister and backfill read the already-re-anchored
+// ring.
+func reanchorStubBars(tf string, bars []Bar) []Bar {
+	for i := range bars {
+		if o := kernel.ReanchorCMEStub(tf, bars[i].T); o != bars[i].T {
+			bars[i].T = o
+		}
+	}
+	return bars
+}
+
 // timeframeMs mirrors the coded TF vocabulary (bars_market_bridge.go keeps the
 // kernel-side twin; both fall back to 1m).
 func timeframeMs(timeframe string) int64 {
@@ -332,6 +350,7 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	}
 	bars, bad := dropPlaceholderBars(bars)
 	bars = openStampBars(bars, timeframe)         // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars)      // #34: 16:00-close stub +1h at ingress
 	bars = stampSource(bars, BarSourceHistorical) // BAR-SOURCE WAVE: a replay is a replay
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -460,8 +479,9 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		return
 	}
 	bars, bad := dropPlaceholderBars(bars)
-	bars = openStampBars(bars, timeframe)   // close-stamp → OPEN-stamp, once, for every reader
-	bars = stampSource(bars, BarSourceLive) // BAR-SOURCE WAVE: the minute as it traded
+	bars = openStampBars(bars, timeframe)    // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars) // #34: 16:00-close stub +1h at ingress
+	bars = stampSource(bars, BarSourceLive)  // BAR-SOURCE WAVE: the minute as it traded
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dropped += int64(bad)
@@ -764,13 +784,17 @@ func (c *BarCache) RehydrateOlder(symbol, timeframe string, bars []Bar) int {
 // equals CT-aligned). Session-anchored TFs (2h/4h) are NOT built here; their
 // anchor is 17:00 CT, not a whole-epoch multiple.
 //
-// m148 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is NOT
-// inserted — it stays a hole for BarsTFHoles / the prompt gap warning to report
-// honestly, rather than becoming a bar with a fake close. A bucket is inserted
-// only when at most ONE of its tfMin minutes is missing (a quiet no-trade
-// minute must not drop a bar). The forming tail bucket (the bucket still open
-// at `now`) is NEVER rebuilt from 1m — the live feed owns it; `now <= 0` means
-// "no forming filter" (every bucket is judged).
+// m148/m168 (2026-10-21): a bucket whose 1m coverage is NOT complete enough is
+// NOT inserted — it stays a hole for BarsTFHoles / the prompt gap warning to
+// report honestly, rather than becoming a bar with a fake close.
+//
+// m168 coverage rule (CTO ruling): missing minutes are counted against the
+// bucket's OPEN minutes only — a closed minute (session break, weekend, the
+// halted tail of a shortened early-close day) is not expected and never drops a
+// bucket. Tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3) AND no run of
+// 3 or more consecutive missing open minutes is allowed. The forming tail
+// bucket (the bucket still open at `now`) is NEVER rebuilt from 1m — the live
+// feed owns it; `now <= 0` means "no forming filter" (every bucket is judged).
 func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 	if tfMin <= 1 || len(bars) == 0 {
 		return bars
@@ -787,13 +811,7 @@ func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 		if cur == nil {
 			return
 		}
-		missing := 0
-		for _, p := range present {
-			if !p {
-				missing++
-			}
-		}
-		if missing <= 1 {
+		if bucketCoverageOK(present, cur.T, tfMin) {
 			out = append(out, *cur)
 		}
 		cur = nil
@@ -829,6 +847,43 @@ func Aggregate1mToTF(bars []Bar, tfMin int, now int64) []Bar {
 	}
 	flush()
 	return out
+}
+
+// bucketCoverageOK is the m168 coverage rule (CTO ruling 2026-10-21): a bucket
+// is inserted only when its OPEN minutes are covered. A closed minute — a daily
+// break, a weekend, or the halted tail of a shortened early-close day — is not
+// expected and never counts against the bucket, while a quiet no-trade open
+// minute does. The tolerance is max(1, tfMin/20) (5m/15m/30m → 1, 1h → 3), AND
+// no run of 3 or more CONSECUTIVE missing open minutes is tolerated: a genuine
+// interior hole must stay visible, not be papered over as a full bar.
+//
+// `present` is indexed by the minute slot within the bucket; `bucket` is the
+// bucket's epoch-aligned OPEN time (ms UTC).
+func bucketCoverageOK(present []bool, bucket int64, tfMin int) bool {
+	tol := tfMin / 20
+	if tol < 1 {
+		tol = 1
+	}
+	missing := 0
+	run := 0
+	longest := 0
+	for i := 0; i < len(present); i++ {
+		t := bucket + int64(i)*60_000
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			run = 0 // a closed minute breaks a missing-open run
+			continue
+		}
+		if !present[i] {
+			missing++
+			run++
+			if run > longest {
+				longest = run
+			}
+		} else {
+			run = 0
+		}
+	}
+	return missing <= tol && longest < 3
 }
 
 // RehydrateUnion rehydrates a ring from store-derived bars by TIME UNION, not

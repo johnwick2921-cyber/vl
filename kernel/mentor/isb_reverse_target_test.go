@@ -152,13 +152,13 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 // isbOverMaxStop check in ISBStopVerdict → RED (the reverse fires under the
 // knob). The fired-intent filter matches the RETAGGED PHL, so a regression
 // that silently drops the intent (or un-retags it) fails here too.
-func TestReverseISBSkipsTheTwenties(t *testing.T) {
+func TestReverseISBSkipsOverTheCeiling(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	if e.Cfg.CourseExits.ISBMaxStopPts != 30 {
-		t.Fatalf("CX-9 default must be 30; got %g", e.Cfg.CourseExits.ISBMaxStopPts)
+	if e.Cfg.CourseExits.ISBMaxStopPts != 25 {
+		t.Fatalf("CX-9 default must be 25 (W-MENTOR-EXACT); got %g", e.Cfg.CourseExits.ISBMaxStopPts)
 	}
 	ins := e.Tick(bars, now)
-	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 30-pt
+	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 25-pt
 	// ceiling. Assert the intent is PRESENT (the old loop asserted nothing).
 	var fired *Intent
 	for i := range ins {
