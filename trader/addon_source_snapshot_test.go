@@ -10,6 +10,7 @@
 package trader
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"os"
@@ -23,8 +24,8 @@ import (
 // VL_BUILD_ID the snapshot was taken at. Bumping the AddOn means BOTH the C#
 // VL_BUILD_ID and these two constants move together.
 const (
-	addonSourceSnapshotBuild = "2026-10-22-a"
-	addonSourceSnapshotSHA   = "da0a55eb4cc8defc7a1274b093e0a414615ba3d7be50337e3d3d651578095162"
+	addonSourceSnapshotBuild = "2026-10-22-b"
+	addonSourceSnapshotSHA   = "0dfd5a1d33c9bec80b4465ec9ccce2c86c20bba433c49b82ebd93ab372fa84f7"
 )
 
 const addonSourceDir = "../ninjascript"
@@ -83,4 +84,33 @@ func TestAddonSourceSnapshotTracksBuildID(t *testing.T) {
 	}
 	t.Fatalf("ninjascript/*.cs changed and VL_BUILD_ID moved to %q — record it: addonSourceSnapshotBuild=%q and addonSourceSnapshotSHA=%s",
 		id, id, sum)
+}
+
+// TestAddonSourceForbidsRFormatOnIntegralFields — m373 P0: e.Filled is an int,
+// so `e.Filled.ToString("R", …)` throws a FormatException on EVERY order_update
+// ("R" is float/double-only), which starved Go of order_update frames since the
+// #45 boot (47× "order_update frame failed: Format specifier was invalid" in the
+// NT8 log). The double/float uses of "R" in the JSON value emitter (v is double /
+// v is float f) are LEGITIMATE and must stay. MUTANT: restore `.Filled.ToString("R"`
+// (or `.Quantity.ToString("R"`) → this test RED.
+func TestAddonSourceForbidsRFormatOnIntegralFields(t *testing.T) {
+	forbidden := []string{
+		`.Filled.ToString("R"`,
+		`.Quantity.ToString("R"`,
+	}
+	matches, err := filepath.Glob(addonSourceDir + "/*.cs")
+	if err != nil {
+		t.Fatalf("glob ninjascript/*.cs: %v", err)
+	}
+	for _, path := range matches {
+		b, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read %s: %v", path, err)
+		}
+		for _, pat := range forbidden {
+			if bytes.Contains(b, []byte(pat)) {
+				t.Fatalf("%s contains %q — an int/long field formatted with \"R\" throws FormatException; drop the \"R\" (m373)", path, pat)
+			}
+		}
+	}
 }
