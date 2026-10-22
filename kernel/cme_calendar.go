@@ -59,7 +59,7 @@ func CMEClosedReason(t time.Time) (closed bool, reason string) {
 			return true, "calendar close time unreadable — treated as closed"
 		}
 		if st.UncoveredFallback {
-			return true, "holiday (calendar year not covered)"
+			return true, "holiday — calendar year not covered"
 		}
 		return true, "holiday"
 	case SessionShortened:

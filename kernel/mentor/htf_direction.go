@@ -30,7 +30,7 @@ func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
 }
 
 // HTFVerdict is the three cases verbatim from the mentor's screen
-// [D4.4 p1 @ 16:00]:
+// [D4.4 p1 @14:08–15:34 — the written list; first spoken 05:17–06:46. @16:00 only restates case 1]:
 //
 //  1. 4H trigger + 1h trigger same direction            → trade that side.
 //  2. 4H trigger, 1h "ko có gì hết" (nothing)           → follow the 4h.
@@ -53,22 +53,26 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
-	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 16:00; §12]"
+	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @15:09–15:34 (also 13:15–13:27, 06:08–06:46, 11:37–12:34)]"
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
-// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly off (the default,
-// owner decision A 2026-10-21: gate ALL DAY) the gate applies all day. With the
-// knob on (news-first, owner order 2026-10-17) it applies only inside the
-// 07:20–07:35 CT news window (the T1 print window time; the calendar-day
-// refinement is the trader's news seam — DS-102 item 18).
+// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
+// the mentor's rule) the gate applies inside the 07:20–07:35 CT news window
+// (the T1 print window time; the calendar-day refinement is the trader's news
+// seam — DS-102 item 18) AND at the 08:30 OPEN — "open nó cũng giống news thôi"
+// [D4.4 p2 @00:35–00:46]. D4.4 p2 gives no LENGTH for the open window, so use
+// the mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59] →
+// 08:30–09:30 CT. With the knob off (owner decision A 2026-10-21 m134 all-day,
+// REVERTED by #45) it applies all day.
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true
 	}
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
-	return mins >= 7*60+20 && mins <= 7*60+35 // 07:20–07:35 CT
+	// News window 07:20–07:35 CT, or the open window 08:30–09:30 CT.
+	return (mins >= 7*60+20 && mins <= 7*60+35) || (mins >= 8*60+30 && mins <= 9*60+30)
 }
 
 // oneHSilent reports whether the 1h has nothing NEW to say after the 4h:
@@ -101,7 +105,7 @@ func HTFAgreement(h HTF) (ok bool, dir Side) {
 }
 
 // HTFAgrees reports whether the 4h AND the 1h trigger BOTH stand and point
-// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:00]. Case 2
+// the entry's side — case 1 of the mentor's screen [D4.4 p1 @16:10–16:20 (also 05:04–05:15)]. Case 2
 // (1h "ko có gì hết", follow the 4h) trades but is not agreement; case 3
 // (opposite) never reaches an entry. It gates the 20-contract size tier.
 func HTFAgrees(h HTF, side Side) bool {

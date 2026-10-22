@@ -273,6 +273,22 @@ func OpenStampBars(bars []Bar, timeframe string) []Bar {
 	return openStampBars(bars, timeframe)
 }
 
+// reanchorStubBars shifts the NT8-native 2h/4h/6h/8h/12h 16:00-close stub +1h
+// in place (#34, m220 DS-104 — extends m169 DS-108's 2h/4h ingress). It runs
+// at WIRE INGRESS on OPEN-stamped bars, so the ring and the store agree on ONE
+// stamp: before this the ring kept NT8's 12:00/14:00 while the persister wrote
+// 13:00/15:00 — the chart splice showed two candles for one stub and boot
+// backfill doubled it. The persister and backfill read the already-re-anchored
+// ring.
+func reanchorStubBars(tf string, bars []Bar) []Bar {
+	for i := range bars {
+		if o := kernel.ReanchorCMEStub(tf, bars[i].T); o != bars[i].T {
+			bars[i].T = o
+		}
+	}
+	return bars
+}
+
 // timeframeMs mirrors the coded TF vocabulary (bars_market_bridge.go keeps the
 // kernel-side twin; both fall back to 1m).
 func timeframeMs(timeframe string) int64 {
@@ -334,6 +350,7 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	}
 	bars, bad := dropPlaceholderBars(bars)
 	bars = openStampBars(bars, timeframe)         // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars)      // #34: 16:00-close stub +1h at ingress
 	bars = stampSource(bars, BarSourceHistorical) // BAR-SOURCE WAVE: a replay is a replay
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -462,8 +479,9 @@ func (c *BarCache) Upsert(symbol, timeframe string, bars []Bar) {
 		return
 	}
 	bars, bad := dropPlaceholderBars(bars)
-	bars = openStampBars(bars, timeframe)   // close-stamp → OPEN-stamp, once, for every reader
-	bars = stampSource(bars, BarSourceLive) // BAR-SOURCE WAVE: the minute as it traded
+	bars = openStampBars(bars, timeframe)    // close-stamp → OPEN-stamp, once, for every reader
+	bars = reanchorStubBars(timeframe, bars) // #34: 16:00-close stub +1h at ingress
+	bars = stampSource(bars, BarSourceLive)  // BAR-SOURCE WAVE: the minute as it traded
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.dropped += int64(bad)
