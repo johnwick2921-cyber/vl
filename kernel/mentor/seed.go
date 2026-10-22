@@ -255,6 +255,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.EMA34 = emaFromCloses(closes, e.Cfg.EMAPeriod34)
 		e.State.EMA9 = emaFromCloses(closes, e.Cfg.EMAPeriod9)
 		e.State.Seed1mWatermark = last.CloseTime
+		e.State.EMA34Warmed = true
 	}
 
 	// The swing's 4h EMA 34 line: the last 34 closed 4h candles (17:00 anchor).
