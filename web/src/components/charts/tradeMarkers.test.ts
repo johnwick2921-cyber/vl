@@ -4,12 +4,15 @@
 //
 // P1 (same-5m / different-1m snap): two fills inside ONE 5m candle snap to the
 //   SAME candle open; two fills one minute apart on a 1m chart snap to
-//   DIFFERENT candles. Mutant: snap by nearest candle (rounding) instead of the
-//   candle whose open <= t → the same-candle pair splits (RED).
+//   DIFFERENT candles. Mutant (verified RED): flip the binary search to round
+//   UP — return the SMALLEST candle open >= t instead of the largest <= t — so
+//   a fill snaps one candle late: t0+30 on 5m lands at t0+300, and t0+30 on 1m
+//   lands at t0+60 (the pair no longer shares a candle).
 // P3 (interval switch re-snap): the SAME trade list re-snaps when the interval
-//   changes. A fill at t0+90s snaps to t0 on 5m but to t0+60 on 1m. Mutant:
-//   hard-code intervalSec to 300 → the 1m build returns t0 instead of t0+60
-//   (RED).
+//   changes. A fill at t0+90s snaps to t0 on 5m but to t0+60 on 1m. Mutant
+//   (verified RED): replace the binary-search snap with a FIXED 300s bucket
+//   (Math.floor((t − klineMinTime) / 300) × 300 + klineMinTime) that ignores the
+//   passed intervalSec → the 1m build returns t0 instead of t0+60.
 
 import { describe, expect, it } from 'vitest'
 import {
