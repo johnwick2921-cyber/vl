@@ -23,8 +23,24 @@ if [ ! -f "$KEY" ]; then
   exit 1
 fi
 
+# One temp dir for the whole build (rsrc + Obfuscar + the manifest). It must
+# exist BEFORE the rsrc step: under set -u an unset $TMP aborts the build.
+TMP=$(mktemp -d) || exit 1
+trap 'rm -rf "${TMP:?}"' EXIT   # our own mktemp under /tmp — allowed cleanup
+
 # The shared dist dir is OUTSIDE this worktree; only create it (never remove).
 mkdir -p "$OUT"
+
+# G14: embed the VL icon via rsrc → a .syso the Go linker picks up from the
+# package dir. Regenerated every build, never committed (the .syso is
+# gitignored). rsrc (not goversioninfo) — goversioninfo v1.4.0 emits a COFF
+# relocation the Go 1.26 linker rejects ("unknown relocation type 7").
+GVI="$TMP/tools"
+mkdir -p "$GVI"
+GOBIN="$GVI" go install github.com/akavel/rsrc@v0.10.2 >/dev/null 2>&1 \
+  || { echo "rsrc install failed" >&2; exit 1; }
+"$GVI/rsrc" -ico deploy/friend/vl.ico -o cmd/vl-friend/rsrc_windows_amd64.syso \
+  || { echo "rsrc failed" >&2; exit 1; }
 
 # 1. Cross-compile the friend app (trimmed + stripped; the version is stamped in).
 GOOS=windows GOARCH=amd64 go build -trimpath \
@@ -33,8 +49,6 @@ GOOS=windows GOARCH=amd64 go build -trimpath \
 
 # 2. Obfuscated add-on DLL on Windows (NT8's compiler + Obfuscar), into a fresh
 #    temp dir. The PowerShell script prints the obfuscated DLL path + sha.
-TMP=$(mktemp -d) || exit 1
-trap 'rm -rf "${TMP:?}"' EXIT   # our own mktemp under /tmp — allowed cleanup
 
 WIN_SRC=$(wslpath -w "$PWD/ninjascript")
 WIN_OUT=$(wslpath -w "$TMP/addon")
@@ -72,6 +86,13 @@ ADDON_SHA=$(printf '%s\n' "$PS_OUT" | sed -n 's/^VL_ADDON_OBFUSCATED_SHA256=//p'
 # Copy the obfuscated DLL from the Windows temp dir into the dist.
 ADDON_LOCAL=$(wslpath -u "$ADDON_WIN")
 cp "$ADDON_LOCAL" "$OUT/VL.AddOn.dll"
+# GATE (10-21): NinjaTrader 8 runs on .NET Framework 4.8. A DLL that references
+# the .NET Core/5+ System.Private.CoreLib cannot load there — builds 46-53 all
+# did (Obfuscar HideStrings, run as a .NET 9 tool). Refuse to ship one.
+if strings -a "$OUT/VL.AddOn.dll" | grep -q 'System\.Private\.CoreLib'; then
+  echo "REFUSED: VL.AddOn.dll references System.Private.CoreLib (.NET 5+) — NinjaTrader 8 (.NET Framework 4.8) cannot load it" >&2
+  exit 1
+fi
 
 # The friend double-clicks a friendly name on first run: VL-Setup.exe is the
 # same self-installing app (first run = install wizard). The owner hands it to
