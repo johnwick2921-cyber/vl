@@ -38,7 +38,7 @@ import (
 //     (a stop-limit fill always is); an averaged off-grid fill rounds TOWARD
 //     PROFIT so the stop never sits a fraction of a tick on the loss side
 //     (MATH-EXECUTOR P3-1).
-//   - Never widen: "kéo stop loss ra xa" is on the do-not list [D2.3 p1 @18:08]
+//   - Never widen: "kéo stop loss ra xa" is on the do-not list [D1.2 p2 @00:08–00:24]
 //     — judged here against the BROKER's own stop, not the bot's belief (P2-3).
 
 const (

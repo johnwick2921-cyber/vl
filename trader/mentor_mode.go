@@ -624,13 +624,9 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	stop := mentorIntentRisk(in)
 	target := mentorIntentTargetPts(in)
 	if swing {
-		swingMax := extra.SwingMaxStopPts
-		if swingMax <= 0 {
-			swingMax = mentor.DefaultSwingCfg().MaxStopPts
-		}
-		if stop >= swingMax {
-			return fmt.Sprintf("R8: SWING4H stop %.1f pts — a stop at or over %.0f is skipped [D5.2; owner ruling 2026-10-04 R-D] (the ISB stop ceiling does not apply to the swing)", stop, swingMax)
-		}
+		// m186 D5.2: NO ~100-pt skip — the mentor softened "Đừng vô" to "take
+		// 1-2 MNQ and sit" [D5.2 p2 @21:25–21:43]. The swing's 2-MNQ tier
+		// already sizes the risk down; the stop is never widened (invariant).
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
 		// (CourseExits.ISBMaxStopPts, default 25). One number, not two (P2-1):
@@ -1289,16 +1285,16 @@ func mentorSpentDayClamp(contracts, spentCap int) int {
 	return contracts
 }
 
-// mentorNeverWiden is the pure guard (owner ruling (c), D2.3 p1 @18:08
+// mentorNeverWiden is the pure guard (owner ruling (c), D1.2 p2 @00:08–00:24
 // "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp"): a
 // stop amendment that increases open risk is refused — a long stop may only
 // move UP, a short stop only DOWN. Equal is not a widen.
 func mentorNeverWiden(side string, curStop, newStop float64) (refuse bool, why string) {
 	switch {
 	case side == "long" && newStop < curStop:
-		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: long stop %.2f → %.2f increases open risk [D1.2 p2 @00:08–00:24]", curStop, newStop)
 	case side == "short" && newStop > curStop:
-		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D2.3 p1 @18:08]", curStop, newStop)
+		return true, fmt.Sprintf("stop widen refused: short stop %.2f → %.2f increases open risk [D1.2 p2 @00:08–00:24]", curStop, newStop)
 	}
 	return false, ""
 }

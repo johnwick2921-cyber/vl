@@ -375,7 +375,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'SWING4H — 4h EMA 34',
-          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → do not enter. One setup per approach until price leaves the line by the stop distance. The line folds EVERY closed 4h candle — after a feed gap of 4h or more the candles that opened and closed unseen are folded from the bars on the next tick ("swing 4h EMA34 line folded N 4h closes after a feed gap"). A gap longer than the live slice (~25 h) hides closes the bot cannot read: the line is marked STALE and SWING4H entries are refused (counted swing_line_gap_stale) until a restart — or a history refill (see the re-seed below) — reseeds it from the store; never a guessed line.',
+          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel; closes back → 5m inside bar with the stop AT the line. Stop ~100 → take 1–2 MNQ and sit (the swing’s 2-MNQ tier sizes the risk down — no skip) [D5.2 p2 @21:25–21:43]. One setup per approach until price leaves the line by the stop distance. Late in the day — an entry inside the LAST 4h bucket (13:00–16:00 CT normal; the shortened close’s bucket on early-close days) — the target is cut to min(planned, 25) [derived: D5.2 p2 @07:00–07:58 “market sắp đóng cửa” → the last 4h bucket; 25 = mid 20–30 @07:21]; if that falls below the stop distance the entry is REFUSED (1:1 mandatory, counted swing_late_day_rr [D1.2 p1 @08:02]). The line folds EVERY closed 4h candle — after a feed gap of 4h or more the candles that opened and closed unseen are folded from the bars on the next tick ("swing 4h EMA34 line folded N 4h closes after a feed gap"). A gap longer than the live slice (~25 h) hides closes the bot cannot read: the line is marked STALE and SWING4H entries are refused (counted swing_line_gap_stale) until a restart — or a history refill (see the re-seed below) — reseeds it from the store; never a guessed line.',
           tag: 'D5.2',
         },
       ],
@@ -593,7 +593,7 @@ export const mentor: GuideSection = {
         {
           title: 'Never widen a stop, never add, never flip',
           body: 'A stop only ever moves toward break-even. Never add to a position, and never flip while one is open: ANY entry (same or opposite side) is refused while a mentor position is open — flat first (owner ruling 2026-09-03 "no adds, no flips"). Once flat, the next tick may place the other side (the box "Uno reverse" trades after the stop, never before). A fill also cancels every other working mentor entry on both sides (one working entry per side + OCO) before it can fill.',
-          cite: 'D2.3 p1 @18:08 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle); owner ruling 2026-09-03 "no adds, no flips" — live',
+          cite: 'D1.2 p2 @00:08–00:24 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never move your buy stop down to the next candle); owner ruling 2026-09-03 "no adds, no flips" — live',
         },
         {
           title: '"One loss → done" is NOT used',
@@ -672,7 +672,7 @@ export const mentor: GuideSection = {
         ],
         [
           'SWING4H',
-          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold to the close of the 2nd 4h candle after entry',
+          'First target = at least 1R: the warmed 5m EMA 34 when it sits FURTHER than 1R on the profitable side, else exactly 1R (the old 50-pt fallback is gone — kernel/mentor/swing4h.go swingFirstTarget); BE at +1R; hold ONE 4h candle after entry [D5.2 p1 @06:03–06:20]',
         ],
         [
           'ISB partial',
@@ -1554,12 +1554,12 @@ export const mentor: GuideSection = {
         {
           label: 'Swing leeway candles',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: 'After a through-close, the window for the 5m inside-bar entry.',
+          what: 'The 4h level touch window is the first 2 touching 5m candles. The entry may be armed off either of them; if either of those two candles closes beyond the level there is NO order (cancel any resting arm, spend the level). SWING4H only — every other setup keeps first-touch = 1 candle.',
           trader: '2 candles.',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.LeewayCandles',
           range: 'candles',
           systemDefault: '2',
-          recommended: '2 — D5.2 p1 @ 15:21.',
+          recommended: '2 — D5.2 p1 @ 15:21–15:48.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
@@ -1730,7 +1730,7 @@ export const mentor: GuideSection = {
           label: 'Trading window start',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Trading window start (CT)"',
-          what: 'The CT time when the entry window opens; the rule blocks new entries outside the window.',
+          what: 'The CT time when the entry window opens; the rule blocks new entries outside the window. The 4h swing is NOT limited by this window: the mentor takes it whenever price touches the 4h EMA 34 (Ngày 5.2 @06:27).',
           trader:
             '08:30 CT by default; SWING4H is exempt. A time box under the Mentor mode switch: type or pick HH:MM (anything else is not saved and the box says so). A line under it previews the window ("Mentor trades 08:30–09:30 CT"). Press Save like the switch: the running trader reloads, no restart. The window may cross midnight: 23:00 with 120 minutes is open until 01:00 CT the next day.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
@@ -1744,7 +1744,7 @@ export const mentor: GuideSection = {
           label: 'Trading window length',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Window length"',
-          what: 'How long the entry window stays open after its start time; SWING4H is exempt.',
+          what: 'How long the entry window stays open after its start time; SWING4H is exempt. The 4h swing is NOT limited by this window: the mentor takes it whenever price touches the 4h EMA 34 (Ngày 5.2 @06:27).',
           trader:
             '60 minutes by default; an unset/zero strategy value inherits 60. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (EOD rules still apply)", which saves -1 and removes the time window only — not any hour: no NEW mentor entry from 15:45 CT until the 17:00 CT reopen (trader/mentor_mode.go mentorPastDailyHaltCutoff), and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed (trader/auto_trader_clock.go enforceEODFlatAt; the SWING4H is exempt from the flat). A set window only adds a further limit. A stored 0 cannot mean "no window" because 0 means unset. Same Save, same reload as the switch.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
@@ -1790,7 +1790,7 @@ export const mentor: GuideSection = {
           label: 'Swing runner',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25); size = mentor_swing4h_contracts',
-          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of the 2nd 4h candle (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
+          what: 'With 2+ swing contracts, split the swing: leg 1 (half, rounded up) takes profit at the first target (max(1R, the 5m EMA 34)); the runner is held by the 4h — break-even at +1R and the close at the end of ONE 4h candle [D5.2 p1 @06:03–06:20] (the swing’s own rules), with its take-profit capped at max(100 pts, 2× the first-target distance). The hold-close never closes more than NinjaTrader still holds. With 1 contract the switch does nothing (counted swing_runner_needs_2_contracts).',
           trader:
             'Course: “Nhưng đừng vô 1 MNQ / Vô Addict là 2 của MNQ để có đường bắn bớt” (not 1 MNQ — at least 2, so you can take some off) [D5.2 p2 @06:08–06:23]; “gồng theo khung 4 giờ” [D5.2 p1 @05:52]; “hô tới đâu luôn” [D5.2 p2 @05:50]. He swings 1 MNQ himself (“Em vô đúng 1 MNQ thôi” [D5.2 p1 @00:43]). The 100-pt cap is the top of the course’s 50–100 pts per 4h candle — the course names no runner take-profit [C]. Case (b): sizing is the owner’s call.',
           consumer:

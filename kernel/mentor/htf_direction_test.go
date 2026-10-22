@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-// §5.4 [D4.4 p1 @ 16:00] — the three cases, verbatim from the mentor's screen:
+// §5.4 [D4.4 p1 @14:08–15:34] — the three cases, verbatim from the mentor's screen:
 //   1. 4H trigger Buy, 1h trigger buy  → trade.
 //   2. 4h trigger buy, 1h ko có gì hết → follow the 4h.
 //   3. 4h trigger buy, 1h trigger sell → sit out until the 1h flips.

@@ -178,8 +178,8 @@ func (at *AutoTrader) mentorSwingContractsRead() int {
 // mentorSwingRunnerMinPts is the runner's take-profit distance floor: the top
 // of the course's per-4h-candle band ("50–100 points per 4-hour candle",
 // 00-METHOD §8 table, D5.2). The runner is held by the 4h (BE at +1R, the
-// hold-close at the end of the 2nd 4h candle — the swing's own rules); this TP
-// only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
+// hold-close at the end of ONE 4h candle [D5.2 p1 @06:03–06:20] — the swing's
+// own rules); this TP only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
 const mentorSwingRunnerMinPts = 100.0
 
 // mentorSwingRunnerLegs is the CX-2 split for a SWING4H arm with the runner

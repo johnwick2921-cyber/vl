@@ -13,7 +13,7 @@ import (
 //
 //   - a key level (§4.3);
 //   - the EMA 34 of the trading chart — R3: the 1m EMA 34 for intraday setups
-//     [D5.4 @ 01:00–01:27, 05:21–05:37] (knob EMALocationTFMinutes, default 1;
+//     [D5.4 @08:12–08:40] (knob EMALocationTFMinutes, default 1;
 //     other TFs 5/15/60/240 allowed for experimentation; the 4h EMA 34 is ONLY
 //     the §8 swing's, never this gate [D5.2 p1 @ 05:30–05:43]);
 //   - the 5m trigger-line retest [D3.4 p2 @ 20:51];

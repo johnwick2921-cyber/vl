@@ -49,7 +49,7 @@ func TestLocationBareSwingIsNotALocation(t *testing.T) {
 
 // TestLocationEMA34Default1m — R3 (RULES FIX v3, verified): intraday setups
 // use the EMA 34 of the TRADING chart, i.e. the 1m — the DEFAULT knob is 1
-// [D5.4 @ 01:00–01:27, 05:21–05:37]. The 4h EMA 34 belongs ONLY to the swing.
+// [D5.4 @08:12–08:40]. The 4h EMA 34 belongs ONLY to the swing.
 // Other TFs (here 5m) stay allowed for experimentation.
 func TestLocationEMA34Default1m(t *testing.T) {
 	cfg := DefaultConfig()
