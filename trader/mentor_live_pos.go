@@ -579,7 +579,19 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 	// break-even, trailed stop, partial, manual, news or EOD flat drops it.
 	switch {
 	case p.ExitReason == "sl":
-		at.mentorEnqueueExit(p.SignalID, true)
+		// #47 P1: the AddOn derives exit_reason from the ORDER NAME suffix, and
+		// a MOVED stop (break-even or trail) keeps "-sl" — so the fill PRICE,
+		// not the reason, decides. A "sl" fill is a loss ONLY at-or-past the
+		// ORIGINAL stop (ledger stop_px, one-sided) on the losing side of entry.
+		// Q3 ruling (CTO): the mentor counts a TRADE, not a leg — a leg-1 stop
+		// with the runner still live is UNDECIDED and the defer is INTENDED:
+		// neither drop nor book, the runner's own receipt decides the one trade.
+		if p.Leg == 1 && at.mentorRunnerStillOpen(p.SignalID) {
+			break
+		}
+		stopPx, entryPx := at.mentorLedgerStopEntry(p.SignalID)
+		tick := market.FuturesTickSize(p.Symbol)
+		at.mentorEnqueueExit(p.SignalID, mentorStopFillIsLoss(p.PositionSide, p.ExitPrice, stopPx, entryPx, tick))
 	case p.ExitReason == "manual":
 		at.mentorEnqueueExit(p.SignalID, false)
 	case p.ExitReason == "tp" && p.Leg == 2:
@@ -598,6 +610,95 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 			at.logInfof("🧑‍🏫 mentor leg 2 (runner partial) closed on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
 		}
 	}
+}
+
+// mentorStopFillIsLoss (#47 P1) decides whether a broker "sl" exit is a real
+// stop-out loss. The AddOn derives exit_reason from the ORDER NAME suffix
+// (VLTraderTCPClient.cs): a stop MOVED to break-even or trailed keeps "-sl", so
+// the fill PRICE — not the reason — decides. A "sl" fill is a loss ONLY when it
+// fills AT OR PAST the ORIGINAL stop on the losing side of entry: a break-even
+// fill (≈ entry) or a trailed stop in profit is NOT a loss. The at-or-past test
+// is ONE-SIDED (m294, DS-106): slippage THROUGH the stop is the worst loss and
+// still counts — a long stop at 95 filled at 94 is a loss, not a miss. A missing
+// fill/stop price fails CLOSED to loss=true (the pre-#47 reading of a named stop
+// exit).
+func mentorStopFillIsLoss(side string, fillPx, stopPx, entryPx, tick float64) bool {
+	if fillPx <= 0 || stopPx <= 0 {
+		return true
+	}
+	if tick <= 0 {
+		tick = 0.25
+	}
+	switch strings.ToLower(strings.TrimSpace(side)) {
+	case "long":
+		// At or past the stop: fill <= stop + tick (+1e-9). A fill ABOVE that is
+		// a moved stop (break-even or trail) — not a loss.
+		if fillPx > stopPx+tick+1e-9 {
+			return false
+		}
+		if entryPx <= 0 {
+			return true // at/past the original stop and no entry known — a loss
+		}
+		return fillPx < entryPx
+	case "short":
+		// At or past the stop: fill >= stop − tick (−1e-9). A fill BELOW that is
+		// a moved stop (break-even or trail) — not a loss.
+		if fillPx < stopPx-tick-1e-9 {
+			return false
+		}
+		if entryPx <= 0 {
+			return true // at/past the original stop and no entry known — a loss
+		}
+		return fillPx > entryPx
+	default:
+		return true // unknown side at the original stop — a loss
+	}
+}
+
+// mentorLedgerStopEntry reads a signal's ORIGINAL stop and fill entry from the
+// armed-orders ledger. The live position's stop is the CURRENT (possibly moved)
+// stop; the ledger's stop_px is the authored original (#47 P1). Returns 0,0 when
+// the row is unreadable — the caller fails closed to loss=true.
+func (at *AutoTrader) mentorLedgerStopEntry(signalID string) (stopPx, entryPx float64) {
+	if at == nil || at.store == nil || signalID == "" {
+		return 0, 0
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return 0, 0
+	}
+	var r store.ArmedOrderDB
+	if err := ledger.DB().Where("signal_id = ?", signalID).First(&r).Error; err != nil {
+		return 0, 0
+	}
+	entryPx = r.FillPrice
+	if entryPx <= 0 {
+		entryPx = r.EntryPx
+	}
+	return r.StopPx, entryPx
+}
+
+// mentorRunnerStillOpen reports whether a leg-1 stop exit leaves a runner
+// (wire leg 2/3) still live — the trade is undecided and the runner's own
+// receipt decides loss vs drop (#47 P3). A live position that is missing (a
+// restart without the split record) reads false: the receipt is judged on its
+// own fill price.
+func (at *AutoTrader) mentorRunnerStillOpen(signalID string) bool {
+	if at == nil || signalID == "" {
+		return false
+	}
+	at.mentorExitMu.Lock()
+	defer at.mentorExitMu.Unlock()
+	lp, ok := at.mentorLivePos[signalID]
+	if !ok || lp == nil {
+		return false
+	}
+	for i := 1; i < len(lp.Legs); i++ {
+		if lp.Legs[i].SignalID != "" && lp.Legs[i].Qty > 0 && !lp.Legs[i].Exited {
+			return true
+		}
+	}
+	return false
 }
 
 // mentorMarkLeg2Exited marks a live position's wire-2 leg (the runner partial)

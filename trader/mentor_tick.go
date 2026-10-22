@@ -2064,6 +2064,13 @@ func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
 		if pos.CloseReason != store.CloseReasonStop {
 			continue // only the original stop is a G1/G2 loss
 		}
+		// #47 P1: a break-even or trailed stop keeps CloseReasonStop but is NOT
+		// a loss — only an ORIGINAL-stop fill on the losing side of entry is.
+		stopPx, _ := at.mentorLedgerStopEntry(pos.EntryOrderID)
+		tick := market.FuturesTickSize(pos.Symbol)
+		if !mentorStopFillIsLoss(pos.Side, pos.ExitPrice, stopPx, pos.EntryPrice, tick) {
+			continue
+		}
 		at.mentorEval.State.Limits.RealExit(pos.EntryOrderID, true)
 		rebuiltStops++
 	}
