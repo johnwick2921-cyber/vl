@@ -100,18 +100,21 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 	return math.Ceil(entry/tick-mentorGridEps) * tick
 }
 
-// mentorCandleTrailStop is the candle trail for ONE closed candle: 1 tick
-// beyond its low (long) / high (short), on the grid and rounded AWAY from the
-// market (long down, short up), so rounding never pulls it inside the rule.
+// mentorCandleTrailStop is the candle trail for ONE closed candle: AT its low
+// (long) / high (short) — the course puts the stop at the candle extreme and
+// says nothing about a tick offset [D2.4 p1 @07:01–08:49] ("Đặt ở dưới đáy cây
+// nến đó"; "Em move lên đây"). Rounded AWAY from the market (long down, short
+// up), so rounding never pulls it inside the rule. (The former 1-tick-beyond
+// offset was an item-7 ruling, not the course — removed under W-MENTOR-EXACT.)
 func mentorCandleTrailStop(side string, h, l, tick float64) float64 {
 	if strings.EqualFold(side, "short") {
-		v := h + tick
+		v := h
 		if tick <= 0 {
 			return v
 		}
 		return math.Ceil(v/tick-mentorGridEps) * tick
 	}
-	v := l - tick
+	v := l
 	if tick <= 0 {
 		return v
 	}
