@@ -192,6 +192,12 @@ func restoreMigratedSources(docsDir, jobID string) {
 func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResult {
 	start := w.host.Now()
 	ev := map[string]string{}
+	// m343 guard #3: a job that has already boot-verified must never touch the
+	// AddOn again (no late place/revert/catch-up overwrite).
+	if j.AddonProven() {
+		return stepResult{receipts: []Receipt{w.receipt("addon_place", start,
+			map[string]string{"skipped": "boot_verified"}, nil)}}
+	}
 	// Catch-up records the pre-restart accept_seq from the live hello (there is
 	// no nt8 decision to read it from).
 	var preSeq uint64
@@ -283,6 +289,18 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 			return "", fmt.Errorf("addon place: %w", err)
 		}
 		ev["backup_dir"] = b
+		// m343 verify-on-place: read back the EMBEDDED build id and refuse+revert
+		// when it is not the release's expected build (the 10-21 18:31 stale
+		// placement was never checked). With no prior DLL (b == "") there is
+		// nothing to revert to — refuse and leave it to the owner.
+		if b != "" {
+			if verr := verifyAddonPlace(cfg.DocsDir, w.wantAddonBuild(j)); verr != nil {
+				if rerr := w.host.AddonRestore(cfg.DocsDir, b); rerr != nil {
+					return "", fmt.Errorf("%v; and the old AddOn could not be restored: %w", verr, rerr)
+				}
+				return "", verr
+			}
+		}
 		return b, nil
 	}()
 	res := stepResult{receipts: []Receipt{w.receipt("addon_place", start, ev, err)}, err: err}

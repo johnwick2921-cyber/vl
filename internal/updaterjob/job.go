@@ -146,6 +146,18 @@ type Transition struct {
 	Receipts int `json:"receipts"`
 }
 
+// AddonProven reports whether the job has moved PAST boot_verified — a
+// transition to worker_swapped or complete exists. Once proven, the AddOn must
+// never be touched again (m343: no late revert or catch-up overwrite).
+func (j Job) AddonProven() bool {
+	for _, t := range j.Transitions {
+		if t.State == StateWorkerSwapped || t.State == StateComplete {
+			return true
+		}
+	}
+	return false
+}
+
 // Receipt mirrors activation.Receipt field for field — names, types, order
 // and JSON tags (TestReceiptTagsMatchActivationGolden) — so the worker can
 // convert one into the other directly and the job file carries the library's

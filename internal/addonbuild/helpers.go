@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
 
@@ -126,6 +127,44 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	return out.Close()
+}
+
+// buildIDRe matches the VL_BUILD_ID value shape: YYYY-MM-DD-<suffix>. The .cs
+// declares `private const string VL_BUILD_ID = "2026-10-21-c";`; in the compiled
+// DLL the literal sits in the .NET user-string heap as UTF-16LE, so the raw
+// bytes hold the ASCII characters at the EVEN offsets. A first ASCII pass is
+// harmless (the UTF-16 form contains NULs the regex cannot cross).
+var buildIDRe = regexp.MustCompile(`20[0-9]{2}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+`)
+
+// BuildIDFromDLL extracts the VL_BUILD_ID string embedded in a compiled
+// VL.AddOn.dll (UTF-16LE first, raw-ASCII fallback). "" when absent.
+func BuildIDFromDLL(path string) (string, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return buildIDFromBytes(b), nil
+}
+
+func buildIDFromBytes(b []byte) string {
+	if m := buildIDRe.FindString(string(b)); m != "" {
+		return m
+	}
+	if len(b) >= 2 {
+		even := make([]byte, 0, len(b)/2)
+		odd := make([]byte, 0, len(b)/2)
+		for i := 0; i+1 < len(b); i += 2 {
+			even = append(even, b[i])
+			odd = append(odd, b[i+1])
+		}
+		if m := buildIDRe.FindString(string(even)); m != "" {
+			return m
+		}
+		if m := buildIDRe.FindString(string(odd)); m != "" {
+			return m
+		}
+	}
+	return ""
 }
 
 func isDir(p string) bool {

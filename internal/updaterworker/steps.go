@@ -1002,16 +1002,21 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 	// restore or restart makes the rollback fail → recovery_needed.
 	if j.Addon != nil && j.Addon.BackupDir != "" {
 		as := w.host.Now()
-		docsDir, derr := addonDocsDir()
-		if derr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
-			return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
+		// m343: a job that already boot-verified must never touch the AddOn again.
+		if j.AddonProven() {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "skipped": "boot_verified"}, nil))
+		} else {
+			docsDir, derr := addonDocsDir()
+			if derr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+				return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
+			}
+			if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); aerr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
+				return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		}
-		if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); aerr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
-			return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
-		}
-		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		// The place step restarted NT8 — restart it again so the old DLL loads.
 		if j.Addon.Restarted {
 			rs := w.host.Now()
@@ -1161,16 +1166,21 @@ func (w *Worker) stepRevertClean(ctx context.Context, j updaterjob.Job) stepResu
 	// back, never delete). Empty means the place step never ran: nothing to do.
 	if j.Addon != nil && j.Addon.BackupDir != "" {
 		as := w.host.Now()
-		docsDir, derr := addonDocsDir()
-		if derr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
-			return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
+		// m343: a job that already boot-verified must never touch the AddOn again.
+		if j.AddonProven() {
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "skipped": "boot_verified"}, nil))
+		} else {
+			docsDir, derr := addonDocsDir()
+			if derr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
+				return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
+			}
+			if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); rerr != nil {
+				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
+				return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
+			}
+			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 		}
-		if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); rerr != nil {
-			receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
-			return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
-		}
-		receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir, "outcome": "restored"}, nil))
 	}
 
 	// 2b. m246: the nt8_restart step stopped NinjaTrader and the job is now
