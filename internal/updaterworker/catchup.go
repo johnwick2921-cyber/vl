@@ -117,7 +117,9 @@ func (w *Worker) maybeStartCatchup(ctx context.Context) (bool, error) {
 	// m355 rule 2: the expected build is the VERIFIED artifact's signed-manifest
 	// build, persisted so verify-on-place and the reconnect compare the SAME
 	// value the catch-up was decided against — never oldInstallBuildID().
-	j.Addon = &updaterjob.AddonState{ExpectedBuild: d.facts.AddonBuildID}
+	// m357 D: also record the pre-job running build, so a legacy backup (no
+	// meta sidecar) can only be accepted when it embeds that build.
+	j.Addon = &updaterjob.AddonState{ExpectedBuild: d.facts.AddonBuildID, PreJobBuild: d.running}
 	if !d.nt8Open {
 		// Release #35: a catch-up that saw NT8 closed must carry the same
 		// NT8-closed state an install does, so stepAddonPlace runs the no-F5

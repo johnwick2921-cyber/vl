@@ -1011,7 +1011,7 @@ func (w *Worker) stepRollback(ctx context.Context, j updaterjob.Job) stepResult 
 				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
 				return stepResult{receipts: receipts, err: derr, reason: clipText("the previous AddOn could not be restored after the rollback: " + derr.Error())}
 			}
-			if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); aerr != nil {
+			if aerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir, w.preJobBuild(j)); aerr != nil {
 				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, aerr))
 				return stepResult{receipts: receipts, err: aerr, reason: clipText("the previous AddOn could not be restored after the rollback: " + aerr.Error())}
 			}
@@ -1175,7 +1175,7 @@ func (w *Worker) stepRevertClean(ctx context.Context, j updaterjob.Job) stepResu
 				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, derr))
 				return stepResult{receipts: receipts, err: derr, reason: "revert_clean: the AddOn could not be restored: " + clipText(derr.Error())}
 			}
-			if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir); rerr != nil {
+			if rerr := w.host.AddonRestore(docsDir, j.Addon.BackupDir, w.preJobBuild(j)); rerr != nil {
 				receipts = append(receipts, w.receipt("addon_restore", as, map[string]string{"backup_dir": j.Addon.BackupDir}, rerr))
 				return stepResult{receipts: receipts, err: rerr, reason: "revert_clean: the AddOn could not be restored: " + clipText(rerr.Error())}
 			}

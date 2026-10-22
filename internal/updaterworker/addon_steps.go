@@ -213,6 +213,7 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		}
 	}
 	deferred := false
+	recoveryNeeded := false
 	backupDir, err := func() (string, error) {
 		if j.Addon == nil || j.Addon.DllPath == "" || j.Addon.Sha256 == "" {
 			return "", errors.New("addon_place without a built DLL")
@@ -309,8 +310,15 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		// nothing to revert to — refuse and leave it to the owner.
 		if b != "" {
 			if verr := verifyAddonPlace(cfg.DocsDir, w.wantAddonBuild(j)); verr != nil {
-				if rerr := w.host.AddonRestore(cfg.DocsDir, b); rerr != nil {
-					return "", fmt.Errorf("%v; and the old AddOn could not be restored: %w", verr, rerr)
+				if rerr := w.host.AddonRestore(cfg.DocsDir, b, w.preJobBuild(j)); rerr != nil {
+					// m357 C: the unverified NEW DLL must not stay live — move it
+					// aside (never delete) and end recovery_needed, loudly.
+					if qerr := quarantineUnverifiedAddon(cfg.DocsDir, b); qerr != nil {
+						return "", fmt.Errorf("%v; the old AddOn could not be restored (%v) and the unverified DLL could not be moved aside: %w", verr, rerr, qerr)
+					}
+					ev["unverified_dll"] = "quarantined"
+					recoveryNeeded = true
+					return "", fmt.Errorf("%v; the old AddOn could not be restored (%v) — the unverified DLL was moved aside", verr, rerr)
 				}
 				return "", verr
 			}
@@ -319,7 +327,11 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 	}()
 	res := stepResult{receipts: []Receipt{w.receipt("addon_place", start, ev, err)}, err: err}
 	if err != nil {
-		res.failTo, res.reason = updaterjob.StateRevertedClean, "the AddOn place failed: "+clipText(err.Error())
+		if recoveryNeeded {
+			res.failTo, res.reason = updaterjob.StateRecoveryNeeded, "the AddOn place failed and the unverified DLL was moved aside: "+clipText(err.Error())
+		} else {
+			res.failTo, res.reason = updaterjob.StateRevertedClean, "the AddOn place failed: "+clipText(err.Error())
+		}
 		return res
 	}
 	res.set = func(k *updaterjob.Job) {

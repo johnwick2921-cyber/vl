@@ -452,6 +452,24 @@ func (r *rig) newWorker() *Worker {
 	return w
 }
 
+// expectedAddonBuild is the build id the box's build step produces (m357 A:
+// the fake DLL must embed a build id so verify-on-place does not refuse it) —
+// the catch-up's running release when one is set, else the manifest build.
+func (b *box) expectedAddonBuild() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.catchupBuild != "" {
+		return b.catchupBuild
+	}
+	return b.manifestBuild
+}
+
+// fakeAddonDLLText renders a fake compiled DLL whose bytes embed exactly ONE
+// build id (ASCII), the shape addonbuild.BuildIDFromDLL scans.
+func fakeAddonDLLText(id string) string {
+	return "fake AddOn DLL: type " + addonTypeName + "\nVL_BUILD_ID=\"" + id + "\"\n"
+}
+
 // fakeRunWin plays powershell.exe, dotnet.exe and tasklist.exe on Linux
 // (W-ADDON-ONE-CLICK): the no-SDK ps1 build "compiles" by writing a
 // VL.AddOn.dll carrying the AddOn type into the -Out dir; a dotnet build does
@@ -474,7 +492,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 			writeFile(b.t, filepath.Join(wsl, "NinjaTrader.Custom.dll"), "fake rebuilt Custom.dll: no AddOn type\n")
 			return []byte("VL_CUSTOM_TYPES_OK\nVL_CUSTOM_DLL=" + out + "\\NinjaTrader.Custom.dll\nVL_CUSTOM_SHA256=fake\n"), nil
 		}
-		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), fakeAddonDLLText(b.expectedAddonBuild()))
 		return []byte("VL_ADDON_DLL=" + out + "\nVL_ADDON_SHA256=fake\n"), nil
 	}
 	if strings.Contains(name, "dotnet") {
@@ -483,7 +501,7 @@ func (b *box) fakeRunWin(ctx context.Context, name string, args ...string) ([]by
 		if err := os.MkdirAll(wsl, 0o755); err != nil {
 			return nil, err
 		}
-		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), "fake AddOn DLL: type "+addonTypeName+"\n")
+		writeFile(b.t, filepath.Join(wsl, "VL.AddOn.dll"), fakeAddonDLLText(b.expectedAddonBuild()))
 		return []byte("Build succeeded.\n    0 Warning(s)\n    0 Error(s)\n"), nil
 	}
 	if strings.Contains(name, "tasklist") {
@@ -1078,7 +1096,7 @@ func (h *fakeHost) ExeOf(pid int) (string, error) {
 // records the backup dir and fails when the test asks it to (the real OSHost
 // MOVE-back is covered by its own unit test; the rig never touches real files
 // here, because tests use fake backup paths).
-func (h *fakeHost) AddonRestore(docsDir, backupDir string) error {
+func (h *fakeHost) AddonRestore(docsDir, backupDir, preJobBuild string) error {
 	h.b.mu.Lock()
 	h.b.addonRestoreCalls = append(h.b.addonRestoreCalls, backupDir)
 	err := h.b.addonRestoreErr

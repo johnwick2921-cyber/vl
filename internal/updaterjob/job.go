@@ -253,6 +253,11 @@ type AddonState struct {
 	// the catch-up job is created; verify-on-place and the reconnect compare
 	// against it.
 	ExpectedBuild string `json:"expected_build,omitempty"`
+	// PreJobBuild is the AddOn build the box ran BEFORE this job (the pre-job
+	// maintenance ack), recorded at creation/decision (m357 D). verify-on-restore
+	// uses it to accept a LEGACY backup with no addon-backup.meta sidecar: the
+	// backup's embedded build id must equal it.
+	PreJobBuild string `json:"pre_job_build,omitempty"`
 }
 
 // NT8 decisions.

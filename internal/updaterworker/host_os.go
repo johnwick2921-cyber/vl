@@ -68,12 +68,14 @@ func (OSHost) Now() time.Time { return time.Now() }
 //
 // m343 — verify-on-restore: the backup must carry the proof addonbuild.Place
 // recorded (sha256 + build id) and still hash to it, or the restore is refused
-// (an unverified backup is never moved back over a placed DLL).
-func (OSHost) AddonRestore(docsDir, backupDir string) error {
+// (an unverified backup is never moved back over a placed DLL). A LEGACY backup
+// with no sidecar (m357 D) is accepted only when its embedded build id equals
+// preJobBuild — the build the box ran before the job.
+func (OSHost) AddonRestore(docsDir, backupDir, preJobBuild string) error {
 	if backupDir == "" {
 		return nil // nothing was backed up, nothing to restore
 	}
-	if err := verifyAddonBackup(backupDir); err != nil {
+	if err := verifyAddonBackup(backupDir, preJobBuild); err != nil {
 		return err
 	}
 	dest := filepath.Join(docsDir, "bin", "Custom", "VL.AddOn.dll")

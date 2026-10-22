@@ -32,7 +32,7 @@ func (stubHost) LockHolder() (string, error)                { return "", nil }
 func (stubHost) LockRelease(string) error                   { return nil }
 func (s stubHost) BuildInfo(string) (string, string, error) { return s.rev, "false", nil }
 func (stubHost) ExeOf(int) (string, error)                  { return "", fmt.Errorf("unused") }
-func (stubHost) AddonRestore(string, string) error          { return nil }
+func (stubHost) AddonRestore(string, string, string) error  { return nil }
 func (stubHost) FriendFlat(context.Context, string) (FriendFlatView, error) {
 	return FriendFlatView{Flat: true}, nil
 }

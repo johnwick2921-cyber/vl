@@ -48,6 +48,36 @@ func TestBuildIDFromDLLReadsUTF16(t *testing.T) {
 	}
 }
 
+// PIN m357 B — a DLL whose bytes hold MORE THAN ONE DISTINCT id-shaped value is
+// refused (a stale id in a comment or resource must never be picked by offset).
+// The SAME id appearing in both the raw and UTF-16 forms is one id, not two.
+// MUTANT: return the FIRST match in buildIDFromBytes → the two-id case yields
+// the stale id → RED.
+func TestBuildIDFromDLLRefusesTwoDistinctIDs(t *testing.T) {
+	dir := t.TempDir()
+	two := filepath.Join(dir, "two.dll")
+	if err := os.WriteFile(two, []byte("stale 2026-10-10-z in a comment, real 2026-10-21-c"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildIDFromDLL(two); err == nil {
+		t.Fatal("a DLL with two distinct build ids must be refused")
+	}
+	// The UTF-16 form repeats the same id: still one id, no refusal.
+	same := filepath.Join(dir, "same.dll")
+	utf16 := make([]byte, 0, 2*len("2026-10-21-c"))
+	for i := 0; i < len("2026-10-21-c"); i++ {
+		utf16 = append(utf16, "2026-10-21-c"[i], 0)
+	}
+	// a raw ASCII copy of the SAME id too — same value, not two distinct.
+	body := append([]byte("build=2026-10-21-c "), utf16...)
+	if err := os.WriteFile(same, body, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := BuildIDFromDLL(same); err != nil || got != "2026-10-21-c" {
+		t.Fatalf("BuildIDFromDLL(same id twice) = %q, %v; want 2026-10-21-c, nil", got, err)
+	}
+}
+
 // PIN m343 Place records the backup proof — the sidecar next to the backed-up
 // DLL holds the OLD DLL's sha256 + build id. MUTANT: drop WriteAddonBackupMeta
 // in Place → no sidecar → RED.

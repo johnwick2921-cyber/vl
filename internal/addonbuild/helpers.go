@@ -137,18 +137,40 @@ func copyFile(src, dst string) error {
 var buildIDRe = regexp.MustCompile(`20[0-9]{2}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+`)
 
 // BuildIDFromDLL extracts the VL_BUILD_ID string embedded in a compiled
-// VL.AddOn.dll (UTF-16LE first, raw-ASCII fallback). "" when absent.
+// VL.AddOn.dll. It fails closed (m357 B): when the bytes hold MORE THAN ONE
+// DISTINCT id-shaped value, the first match is not trustworthy (a stale id in a
+// comment or resource) and the read is refused — never a silent first-match.
+// "" (with nil error) when absent.
 func BuildIDFromDLL(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
 		return "", err
 	}
-	return buildIDFromBytes(b), nil
+	return buildIDFromBytes(b)
 }
 
-func buildIDFromBytes(b []byte) string {
-	if m := buildIDRe.FindString(string(b)); m != "" {
-		return m
+// buildIDFromBytes scans the raw bytes (ASCII) and then the even/odd bytes of
+// the UTF-16LE form, and returns the ONE distinct build id found. More than one
+// distinct id is refused (m357 B).
+func buildIDFromBytes(b []byte) (string, error) {
+	var only string
+	have := false
+	record := func(m string) error {
+		if m == "" {
+			return nil
+		}
+		if !have {
+			only, have = m, true
+			return nil
+		}
+		if m != only {
+			return fmt.Errorf("the DLL holds more than one distinct build id (%q and %q) — refusing to guess", only, m)
+		}
+		return nil
+	}
+
+	if err := recordIDs(buildIDRe.FindAllString(string(b), -1), record); err != nil {
+		return "", err
 	}
 	if len(b) >= 2 {
 		even := make([]byte, 0, len(b)/2)
@@ -157,14 +179,28 @@ func buildIDFromBytes(b []byte) string {
 			even = append(even, b[i])
 			odd = append(odd, b[i+1])
 		}
-		if m := buildIDRe.FindString(string(even)); m != "" {
-			return m
+		if err := recordIDs(buildIDRe.FindAllString(string(even), -1), record); err != nil {
+			return "", err
 		}
-		if m := buildIDRe.FindString(string(odd)); m != "" {
-			return m
+		if err := recordIDs(buildIDRe.FindAllString(string(odd), -1), record); err != nil {
+			return "", err
 		}
 	}
-	return ""
+	if !have {
+		return "", nil
+	}
+	return only, nil
+}
+
+// recordIDs records every matched id-shaped value through record; the first
+// DIFFERENT value refuses (m357 B).
+func recordIDs(matches []string, record func(string) error) error {
+	for _, m := range matches {
+		if err := record(m); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func isDir(p string) bool {
