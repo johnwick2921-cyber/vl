@@ -263,7 +263,9 @@ type Evaluator struct {
 	// restart only initialises them (no burst of "became valid" lines).
 	tlDay     string
 	tlValid   map[string]bool
+	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
+	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
 }
 
 // maxNotes bounds the undrained note buffer (replays and tests never drain).
@@ -297,20 +299,88 @@ func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []m
 		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
 }
 
+// htFTrendlines maintains the PERSISTENT higher-timeframe trendlines in
+// evaluator state [D2.3 p1 @04:23–05:41]: the anchors are kept across the
+// window slide (the 25-hour rebuild window does NOT delete a 1h/4h line), a
+// line dies only on a close-through on its OWN timeframe, and a 3rd touch
+// latches once it happens. New lines whose anchors are inside the current
+// window are folded in; every held line is then break-checked by time. It
+// returns the live lines (to join the level set) and the ones that broke
+// this tick (for the note).
+func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, broken []Trendline) {
+	if e.tlHTF == nil {
+		e.tlHTF = map[string]Trendline{}
+	}
+	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
+	// line and must not re-bucket the whole window for each one.
+	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
+	for _, tf := range []int{60, 240} {
+		for _, tl := range trendlinesBuildTF(bars, tf, now) {
+			k := tl.key()
+			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
+				continue // keep the latched-valid line; never regress it
+			}
+			e.tlHTF[k] = tl
+		}
+	}
+	for k, tl := range e.tlHTF {
+		btf := tfBars[tl.TFMin]
+		if btf == nil {
+			btf = barsTF(bars, tl.TFMin)
+		}
+		if tl.Dead || trendlineHTFBroken(tl, btf, now) {
+			tl.Dead = true
+			delete(e.tlHTF, k)
+			broken = append(broken, tl)
+			continue
+		}
+		if tl.ValidAt == 0 {
+			if va := trendlineHTFTouch(tl, btf, now); va > 0 {
+				tl.ValidAt = va
+			}
+		}
+		e.tlHTF[k] = tl
+		live = append(live, tl)
+	}
+	return live, broken
+}
+
 // trackTrendlines counts each crossed-between-anchors pair once per trading
 // day (refusal "trendline_crossed_between_anchors") and records a change line
 // when a line turns VALID (a location) or a valid line is broken by a 5m
 // close. The session roll clears both sets — the lines die at day end
 // [D4.1 p2 @01:17].
-func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+func (e *Evaluator) trackTrendlines(lines, broken []Trendline, crossed []string, now int64) {
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	first := e.tlValid == nil
 	if e.tlDay != day {
 		if e.tlDay != "" && len(e.tlValid) > 0 {
-			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+			// Only the 1m lines die at the session end [D4.1 p2 @01:17]; the
+			// 1h/4h lines persist [D2.3 p1 @04:23–05:41] and are kept.
+			n := 0
+			for k := range e.tlValid {
+				if e.tlTF[k] == 0 {
+					n++
+				}
+			}
+			if n > 0 {
+				e.note("trendlines deleted at the session end: %d valid 1m line(s) of trading day %s [D4.1 p2 @01:17]", n, e.tlDay)
+			}
 		}
 		e.tlDay = day
-		e.tlValid = map[string]bool{}
+		if e.tlValid == nil {
+			e.tlValid = map[string]bool{}
+		} else {
+			for k, tf := range e.tlTF {
+				if tf == 0 {
+					delete(e.tlValid, k)
+					delete(e.tlTF, k)
+				}
+			}
+		}
+		if e.tlTF == nil {
+			e.tlTF = map[string]int{}
+		}
 		e.tlCrossed = map[string]bool{}
 	}
 	for _, k := range crossed {
@@ -319,19 +389,43 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 			e.refuse("trendline_crossed_between_anchors")
 		}
 	}
+	// Persistent HTF lines that broke THIS tick are already removed from
+	// tlHTF; they never enter `lines`, so they are noted here.
+	for _, tl := range broken {
+		k := tl.key()
+		if !e.tlValid[k] {
+			continue // existed but never valid — a silent discard
+		}
+		delete(e.tlValid, k)
+		delete(e.tlTF, k)
+		e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+			tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+	}
 	for _, tl := range lines {
 		k := tl.key()
 		switch {
 		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
 			e.tlValid[k] = true
+			e.tlTF[k] = tl.TFMin
 			if !first {
-				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
-					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				if tl.TFMin > 0 {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a PERSISTENT %dm location until an HTF close breaks it [D2.3 p1 @04:23–05:41]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)), tl.TFMin)
+				} else {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				}
 			}
 		case tl.Dead && e.tlValid[k]:
 			delete(e.tlValid, k)
-			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
-				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			delete(e.tlTF, k)
+			if tl.TFMin > 0 {
+				e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			} else {
+				e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			}
 		}
 	}
 }
@@ -619,7 +713,7 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 		expired := now >= LevelArmExpiry(arm.PlacedAt)
 		if through || expired {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
-				Reason: "level order rest cancelled — a later candle closed through the level, or the order's own 15:00 CT expiry passed [D2.3 p1 @18:01–19:12; recovered @23:48]"})
+				Reason: "level order rest cancelled — a later candle closed through the level [D2.3 p1 @23:16–24:03], or the order's own 15:00 CT expiry passed [derived: LevelArmExpiry — no course timestamp states a 15:00 expiry; level_lifetime.go flags it as an inference]"})
 			delete(e.State.LevelArms, key)
 		}
 	}
@@ -1543,10 +1637,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
+	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
-	e.trackTrendlines(trendlines, crossed, now)
-	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	e.trackTrendlines(trendlines, htfBroken, crossed, now)
+	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
+	for _, k := range tlRefused {
+		e.refuse("tl_first_test_level_preferred:" + k)
+	}
+	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
