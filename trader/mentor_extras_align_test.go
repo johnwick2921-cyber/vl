@@ -145,9 +145,10 @@ func extrasAlignDrive(t *testing.T, b *r22Bridge, sig string, leg1TP, stop float
 // TestExtrasAlign2mEntryTrailsOnClosed2mCandles — item 3 RED→GREEN. The ISB
 // was read on the 2m (exec_2m_after_30m ON); its runner must trail on CLOSED
 // 2m candles: nothing on the 1m close that only half-fills a 2m candle, then
-// AT the 2m candle's low (107.5) when it closes. Pre-fix
-// the runner trailed every 1m close (107.25 on candle 2, 107.75 on candle 3)
-// — the "khung 1 phút rất dễ bị quét râu" sweep X8 trails the 2m to avoid.
+// one tick beyond the 2m candle's low (107.25 = 107.5 − 1 tick) when it closes.
+// Pre-fix the runner trailed every 1m close (107.25 on candle 2, 107.75 on
+// candle 3) — the "khung 1 phút rất dễ bị quét râu" sweep X8 trails the 2m to
+// avoid.
 func TestExtrasAlign2mEntryTrailsOnClosed2mCandles(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	in := x2mISBIntent(t, true)
@@ -156,8 +157,8 @@ func TestExtrasAlign2mEntryTrailsOnClosed2mCandles(t *testing.T) {
 	if len(after2) != 1 {
 		t.Fatalf("a 2m entry must NOT trail on a 1m close that only half-fills its 2m candle (X8 @18:02); moves after candle 2: %+v", after2)
 	}
-	if len(after3) != 2 || after3[1].Leg != 2 || after3[1].NewStopLoss != 107.5 {
-		t.Fatalf("when the 2m candle closes the runner trails AT ITS low (107.5); moves: %+v", after3)
+	if len(after3) != 2 || after3[1].Leg != 2 || after3[1].NewStopLoss != 107.25 {
+		t.Fatalf("when the 2m candle closes the runner trails one tick beyond ITS low (107.25); moves: %+v", after3)
 	}
 	if n := b.at.mentorCountSnapshot()["trail_candle_moved_2m"]; n != 1 {
 		t.Fatalf("the 2m trail move must be counted (trail_candle_moved_2m), got %d", n)
@@ -166,17 +167,17 @@ func TestExtrasAlign2mEntryTrailsOnClosed2mCandles(t *testing.T) {
 
 // TestExtrasAlign1mEntryTrailsAsBefore — the knob OFF (the live default): the
 // ISB is read on the 1m, carries no frame, and its runner trails every closed
-// 1m candle (107.5 on candle 2, 108 on candle 3, at the low).
+// 1m candle (107.25 on candle 2, 107.75 on candle 3 — the low − 1 tick).
 func TestExtrasAlign1mEntryTrailsAsBefore(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	in := x2mISBIntent(t, false)
 	sig, _, leg1TP, stop := extrasAlignFillISB(t, b, in)
 	after2, after3, _ := extrasAlignDrive(t, b, sig, leg1TP, stop, 2, 3)
-	if len(after2) != 2 || after2[1].NewStopLoss != 107.5 {
-		t.Fatalf("knob OFF: the runner trails the 1m candle 2 (low 107.5); moves: %+v", after2)
+	if len(after2) != 2 || after2[1].NewStopLoss != 107.25 {
+		t.Fatalf("knob OFF: the runner trails the 1m candle 2 (low 107.5 − 1 tick = 107.25); moves: %+v", after2)
 	}
-	if len(after3) != 3 || after3[2].NewStopLoss != 108 {
-		t.Fatalf("knob OFF: the runner trails the 1m candle 3 (low 108); moves: %+v", after3)
+	if len(after3) != 3 || after3[2].NewStopLoss != 107.75 {
+		t.Fatalf("knob OFF: the runner trails the 1m candle 3 (low 108 − 1 tick = 107.75); moves: %+v", after3)
 	}
 	if n := b.at.mentorCountSnapshot()["trail_candle_moved_2m"]; n != 0 {
 		t.Fatalf("knob OFF: no 2m trail, got %d", n)
