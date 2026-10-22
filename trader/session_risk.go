@@ -138,13 +138,19 @@ func (at *AutoTrader) sessionRiskGateAt(now time.Time) sessionRiskVerdict {
 	flatWhy := ""
 	if !blocked {
 		bandReason = ""
-		// W1b E13 — the force-flat windows (T1 lead, in-session EOD flat) are
-		// refused like the band (a window, checked first), on both triggers
-		// and at the send point. Read HERE, before the loss-run query: that
-		// query fails OPEN below, and a window is a fact about the clock that
-		// no database hiccup may skip. Counted under their OWN class,
-		// force_flat_window (W1b E13 repair — counters record, never infer);
-		// the pass's cancel of resting arms keys on sessionRiskWindowWords.
+	}
+	// m308 — the force-flat windows (T1 lead, in-session EOD flat) refuse on
+	// EVERY path, NOT only when the band is open: a mentor arm waives the band
+	// but never a force-flat window, so a blocked band must not skip them. Read
+	// HERE, before the loss-run query: that query fails OPEN below, and a
+	// window is a fact about the clock that no database hiccup may skip.
+	// Counted under their OWN class, force_flat_window (W1b E13 repair —
+	// counters record, never infer); the pass's cancel of resting arms keys on
+	// sessionRiskWindowWords. The red-news T1 blackout is checked FIRST (inside
+	// sessionEntryBlockedT1At) and keeps precedence over the overlapping lead:
+	// inside the blackout the verdict stays no_trade_band with the red-news
+	// reason.
+	if !strings.Contains(bandReason, "red-news blackout") {
 		if why, due := at.forceFlatWindowAt(now, t1); due {
 			bandReason, flatWhy = why, why
 		}
