@@ -290,6 +290,14 @@ func NakedPOCLevels(bars []market.Kline, now time.Time) []DetectedLevel {
 		if len(dayBars) == 0 {
 			continue
 		}
+		// N4 guard (bug-hunt #24): the 1m ring holds ~1.45 sessions, so the
+		// prior day is a front-truncated tail for most of the NY session. A POC
+		// built from that tail is NOT the session POC ("nPOC" at the wrong
+		// price) — skip it; the stored-profile provider supplies the
+		// whole-session nPOC for that day.
+		if sessionFrontTruncated(dayBars[0].OpenTime) {
+			continue
+		}
 		prof := profileLevels(dayBars, "", "")
 		if len(prof) == 0 {
 			continue

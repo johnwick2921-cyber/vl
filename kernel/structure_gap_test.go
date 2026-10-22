@@ -78,6 +78,22 @@ func TestBarsHoleWarningLatestHoleOnly(t *testing.T) {
 	}
 }
 
+// TestBarsHoleWarningNoEarlyClose pins m168 (b): a shortened-day gap from the
+// last pre-close bar to the daily reopen is NOT a hole — the early-close tail is
+// halted, so no OPEN minute is missing. BarsHoleWarning must respect early-close
+// days, not just the 16:00/17:00 daily break.
+func TestBarsHoleWarningNoEarlyClose(t *testing.T) {
+	// 2026-12-24 is Christmas Eve — a Thursday, shortened, close 12:15 CT, then
+	// the ordinary daily reopen at 17:00 CT.
+	ct := time.Date(2026, 12, 24, 12, 14, 0, 0, CTLocation())  // last pre-close bar
+	next := time.Date(2026, 12, 24, 17, 0, 0, 0, CTLocation()) // daily reopen
+	a := market.Kline{OpenTime: ct.UnixMilli()}
+	b := market.Kline{OpenTime: next.UnixMilli()}
+	if w := BarsHoleWarning([]market.Kline{a, b}, 1); w != "" {
+		t.Fatalf("an early-close gap must not warn (no open minute missing), got %q", w)
+	}
+}
+
 // TestBarsHoleWarningContiguous pins the no-hole case.
 func TestBarsHoleWarningContiguous(t *testing.T) {
 	ct := time.Date(2026, 10, 20, 10, 0, 0, 0, CTLocation())

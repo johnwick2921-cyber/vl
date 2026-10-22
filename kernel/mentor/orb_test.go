@@ -58,6 +58,48 @@ func TestORBDrawsAndTestsTheSameClosedCandle(t *testing.T) {
 	}
 }
 
+// TestORBRestartReplaysEscapeHistory — m202 #8: a mid-RTH restart loses the
+// in-memory escape; the old code re-derived it from the LAST bar only. A fresh
+// ORBAdvance must walk every closed candle since the 08:32 open, so Escaped is
+// the LATEST escape in history. MUTANT: test only bars[len(bars)-1] (the old
+// body) → Escaped="" instead of long → RED.
+func TestORBRestartReplaysEscapeHistory(t *testing.T) {
+	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(8, 30, 24820, 24844, 24814, 24830), // ORB high 24844, low 24814
+		mk(8, 31, 24830, 24836, 24816, 24820),
+		mk(8, 32, 24830, 24840, 24820, 24825), // inside — no escape
+		mk(8, 33, 24825, 24835, 24818, 24822), // inside
+		mk(8, 34, 24822, 24838, 24820, 24824), // inside
+		mk(8, 35, 24846, 24870, 24845, 24860), // BODY wholly above the high → long escape
+		mk(8, 36, 24830, 24840, 24820, 24825), // chops back inside the range
+		mk(8, 37, 24825, 24835, 24818, 24822), // inside
+		mk(8, 38, 24822, 24838, 24820, 24824), // inside
+		mk(8, 39, 24825, 24835, 24818, 24822), // inside
+		mk(8, 40, 24822, 24838, 24820, 24824), // inside — the LAST bar is NOT an escape
+	}
+	// The continuous bot: incremental ticks, each with the tape up to `now` —
+	// the escape latches at the 08:35 candle and survives the chop.
+	var orb ORB
+	for i := range bars {
+		orb = ORBAdvance(orb, bars[:i+1], bars[i].CloseTime)
+	}
+	if orb.Escaped != SideLong {
+		t.Fatalf("continuous bot: escape = %q, want long (latched at 08:35)", orb.Escaped)
+	}
+	// The restarted bot: a fresh ORB with the SAME bars, one ORBAdvance at 08:40.
+	re := ORBAdvance(ORB{}, bars, auditMs(2026, 9, 15, 8, 40, 59))
+	if !re.Drawn || re.High != 24844 || re.Low != 24814 {
+		t.Fatalf("restarted ORB = %+v, want drawn 24844/24814", re)
+	}
+	if re.Escaped != SideLong {
+		t.Fatalf("restarted bot: escape = %q, want long (the latest escape in history, not the last bar)", re.Escaped)
+	}
+}
+
 // TestORBGateWorkedExample — the seen example: Mon 22 Sep '25, ORB
 // 24,814.00–24,844.00; price clears 24,844.00 → longs only. Inside the ORB
 // nothing trades and there is no reversal at the edges; the escape only picks

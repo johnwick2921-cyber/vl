@@ -309,6 +309,14 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 			symbol, side, entryPrice, price)
 		if err := mentorCloseLegAtMarketWire(at, ntTCP, side, 0); err != nil {
 			at.logWarnf("⚠️ auto-breakeven: close-at-market failed for %s %s: %v", symbol, side, err)
+			// m198 #43-C: the close never went out — retry the BE next cycle,
+			// exactly like the moveStopWire failure branch below. Leaving
+			// breakevenDone=true here silently discarded the BE for the life
+			// of the position (pruned only when flat).
+			at.breakevenMu.Lock()
+			at.breakevenDone[key] = false
+			at.breakevenMu.Unlock()
+			return
 		}
 		// Idempotent: the position is closing, never re-offer BE for it.
 		return
@@ -660,6 +668,12 @@ type AutoTrader struct {
 	// before any dispatch. nil in production (never assigned outside tests) —
 	// the tick is byte-identical.
 	mentorIntentTap func(in mentor.Intent)
+	// mentorEvalIntentsSeam (test-only, nil in production) replaces the
+	// evaluator's Tick OUTPUT for one tick: the m134 (a) negative pin feeds a
+	// raw synthetic ISB intent through the PRODUCTION mentorEvalOnce dispatch /
+	// refusal path without building a full kernel ISB state. nil in production —
+	// the tick is byte-identical.
+	mentorEvalIntentsSeam func(bars []market.Kline) []mentor.Intent
 	// mentorPendingStopMoves is the F1 stop-move TRUTH registry: one entry per
 	// (signal, wire leg) stop move that has been SENT but not yet VERIFIED
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
@@ -682,6 +696,11 @@ type AutoTrader struct {
 	// cross-goroutine evaluator mutation. Bounded; a full channel drops the
 	// receipt (counted).
 	mentorFillCh chan mentorFillReceipt
+	// mentorExitCh carries broker position_close receipts (the signal id + the
+	// exit reason) from the close-sync goroutine to the evaluator drain, so a
+	// real exit closes the matching Limits.openTrade under mentorEvalMu (#47).
+	// Bounded; a full channel drops the receipt (counted).
+	mentorExitCh chan mentorExitReceipt
 	// mentorDeferredFills holds FU-1 receipts whose row fallback needs
 	// State.Levels (R1: the first post-restart Tick has not set them yet).
 	// Only the drain, under mentorEvalMu, touches it.
@@ -722,6 +741,14 @@ type AutoTrader struct {
 	feedGraceMu   sync.Mutex
 	feedLinkUpAt  time.Time
 	feedGraceSaid time.Time
+	// feedLagMu guards the FEED-LAG alarm episode (m134 DS-108 (c)): the newest
+	// NT8 bar age sitting in the soft band just under FEED DOWN (feedDownAfter()
+	// ∓ 100 s) for > 3 min is LOUD — a WARN plus a dashboard line — the early
+	// warning before the hard FEED DOWN fires.
+	feedLagMu        sync.Mutex
+	feedLagEnteredAt time.Time // zero = outside the band
+	feedLagSaid      bool      // the WARN already fired for this episode
+	feedLagActive    bool      // the band is active right now (dashboard line)
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still
@@ -1223,6 +1250,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		positionMentorOwned:   make(map[string]bool),
 		kickCh:                make(chan string, 4),
 		mentorFillCh:          make(chan mentorFillReceipt, 256),
+		mentorExitCh:          make(chan mentorExitReceipt, 256),
 		monitorWg:             sync.WaitGroup{},
 		peakPnLCache:          make(map[string]float64),
 		peakPnLCacheMutex:     sync.RWMutex{},

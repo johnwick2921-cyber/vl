@@ -123,5 +123,16 @@ export const tradingDay: GuideSection = {
       kind: 'p',
       text: 'At EOD flat (and T1 force-flat) a Day-Plan or mentor trader cancels its resting entries first, then closes open positions at MARKET by default. The limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0): it first works a LIMIT that many ticks favorable of the last 1m close, then goes to MARKET after EOD_FLAT_MARKET_AFTER_SEC (0 or unset = 10 s) (trader/auto_trader_clock.go flattenPosition). Why 14:45: on a half-day (the session calendar lists it — e.g. 12:15 CT on 11-27 and 12-24) the flat is pulled IN to the early close and the last entry to the early close minus its offset, looked up on the date the session closes. At the early close the market is already shut, so for a Day-Plan or mentor trader the closed-market path runs the same flat (arms cancelled first, then positions) before it idles (trader/auto_trader_loop.go retireBookAfterEarlyCloseAt → enforceEODFlatAt, which does nothing unless Day Plan or mentor mode is on).',
     },
+    {
+      kind: 'callout',
+      title: 'CME holiday calendar — 2026 verified, 2027 errs CLOSED',
+      items: [
+        {
+          title: '2027 holidays are provisional',
+          body: 'The session calendar (kernel/session_calendar.json) drives the CME open/closed gate. 2026 is verified against CME Group; 2027 rows are computed from the 2026 Globex schedule and ERR CLOSED — a guessed trading day is worse than a missed one — until the published 2027 holiday PDFs are checked. Resolve each 2027 row before 2027-01-01: verify against the 2027 CME holiday calendar and set closed/shortened + close_ct.',
+          cite: 'kernel/session_calendar.json · https://www.cmegroup.com/trading-hours.html',
+        },
+      ],
+    },
   ],
 }

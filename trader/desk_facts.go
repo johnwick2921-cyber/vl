@@ -716,6 +716,16 @@ func (at *AutoTrader) deskFeed(now time.Time) DeskLine {
 		}
 		reason += "the newest 1m bar is older than 2 minutes — check the NT8 data connection"
 	}
+	// m134 DS-108 (c): the soft lag band (just under FEED DOWN) names the
+	// concrete fix, not just "older than 2 minutes" — this is the early
+	// warning before FEED DOWN.
+	if at.feedLagActiveForDesk() {
+		state = "stale"
+		if reason != "" {
+			reason += "; "
+		}
+		reason += "NinjaTrader bars ~10 min late — restart NinjaTrader"
+	}
 	if !linkKnown {
 		state = "unknown"
 		if reason != "" {

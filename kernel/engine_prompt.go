@@ -407,23 +407,29 @@ func (e *StrategyEngine) BuildUserPrompt(ctx *Context) string {
 		positionSymbols[normalizedSymbol] = true
 	}
 
-	sb.WriteString(fmt.Sprintf("## Candidate Coins (%d coins)\n\n", len(ctx.MarketDataMap)))
-	displayedCount := 0
+	// m150-4: the header counts the candidate coins ACTUALLY shown (positions
+	// excluded), never len(MarketDataMap) — a map entry can exist while a coin is
+	// skipped, and a coin can be listed while its data is absent.
+	candidates := make([]CandidateCoin, 0, len(ctx.CandidateCoins))
 	for _, coin := range ctx.CandidateCoins {
 		// Skip if this coin is already a position (data already shown in positions section)
-		normalizedCoinSymbol := market.Normalize(coin.Symbol)
-		if positionSymbols[normalizedCoinSymbol] {
+		if positionSymbols[market.Normalize(coin.Symbol)] {
 			continue
 		}
-
+		candidates = append(candidates, coin)
+	}
+	sb.WriteString(fmt.Sprintf("## Candidate Coins (%d coins)\n\n", len(candidates)))
+	for i, coin := range candidates {
 		marketData, hasData := ctx.MarketDataMap[coin.Symbol]
-		if !hasData {
-			continue
-		}
-		displayedCount++
 
 		sourceTags := e.formatCoinSourceTag(coin.Sources)
-		sb.WriteString(fmt.Sprintf("### %d. %s%s\n\n", displayedCount, coin.Symbol, sourceTags))
+		sb.WriteString(fmt.Sprintf("### %d. %s%s\n\n", i+1, coin.Symbol, sourceTags))
+		if !hasData {
+			// m134-c: a missing market block is STATED, never silently skipped —
+			// the model must not infer prices the feed did not deliver.
+			sb.WriteString("⚠️ market data unavailable for this symbol this cycle — do NOT infer prices.\n\n")
+			continue
+		}
 		sb.WriteString(e.formatMarketData(marketData))
 
 		sb.WriteString("\n")
@@ -476,6 +482,11 @@ func (e *StrategyEngine) formatPositionInfo(index int, pos PositionInfo, ctx *Co
 		sb.WriteString(e.formatMarketData(marketData))
 
 		sb.WriteString("\n")
+	} else {
+		// m150-4: an OPEN POSITION whose market fetch failed must say so, never
+		// vanish the market block (the same rule as the candidate loop) — the
+		// model must not manage a position on invented prices.
+		sb.WriteString("⚠️ market data unavailable for this symbol this cycle — do NOT infer prices.\n\n")
 	}
 
 	return sb.String()
@@ -516,6 +527,13 @@ func formingBarLine(tf string, tfData *market.TimeframeSeriesData, snapshotMs in
 	if snapshotMs <= 0 || tfData == nil || len(tfData.Klines) == 0 {
 		return ""
 	}
+	// m134-a: the 1d bar is a CME session bar (17:00 CT open → 16:00 CT close),
+	// NOT a calendar +24h bar. The stored 1d bar is calendar-day (00:00 open), so
+	// `open + 24h` labels a live session "CLOSED at 00:00 CT" all day (528/658
+	// prompts). The session's honest close is 16:00 CT.
+	if tf == "1d" {
+		return dailySessionBarLine(snapshotMs)
+	}
 	iv := tfIntervalMs(tf)
 	if iv <= 0 {
 		return "" // only intraday TFs carry the label (1m/5m/15m…)
@@ -528,6 +546,49 @@ func formingBarLine(tf string, tfData *market.TimeframeSeriesData, snapshotMs in
 	}
 	return fmt.Sprintf("current %s bar: CLOSED at %s (next close %s)\n\n",
 		tf, ClockCT(time.UnixMilli(closeMs)), ClockCT(time.UnixMilli(closeMs+iv)))
+}
+
+// dailySessionBarLine (m134-a, m150) renders the 1d bar's honesty label from the
+// CME session boundaries. While CME is open the label is FORMING and names the
+// session's real close (16:00 CT, or the shortened close on a half day). While
+// CME is closed it is CLOSED, naming the close REASON (via CMEClosedReason —
+// weekend / holiday / Friday close / daily break / early close) and the REOPEN
+// instant (via NextCMEOpen) — never an invented close. Day arithmetic goes
+// through AddDate (DST-safe).
+func dailySessionBarLine(snapshotMs int64) string {
+	now := time.UnixMilli(snapshotMs)
+	if IsCMEOpen(now) {
+		return fmt.Sprintf("current 1d bar: FORMING (closes %s) — prior bars closed\n\n", ClockCT(dailySessionClose(now)))
+	}
+	_, reason := CMEClosedReason(now)
+	reopen := NextCMEOpen(now)
+	return fmt.Sprintf("current 1d bar: CLOSED (%s); reopens %s\n\n", reason, WeekdayClockCT(reopen))
+}
+
+// dailySessionClose returns the close/halt instant of the CME session containing
+// now. The session opens 17:00 CT and closes 16:00 CT the next calendar day,
+// except:
+//   - a SHORTENED close day closes at st.Close (12:15 on the day after
+//     Thanksgiving and Christmas Eve);
+//   - a CLOSED close day (a full-closure holiday) HALTS at 00:00 CT — the gate
+//     IsCMEOpen is false for the whole closed day, so the session stops at the
+//     start of the holiday, not at 16:00.
+//
+// AddDate moves calendar days, so a DST transition cannot shift the wall clock.
+func dailySessionClose(now time.Time) time.Time {
+	start := CMESessionDayStart(now) // 17:00 CT of the session's start day
+	closeDay := start.AddDate(0, 0, 1)
+	st := SessionStateAt(time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 12, 0, 0, 0, CTLocation()))
+	switch st.Class {
+	case SessionShortened:
+		if st.HasClose {
+			return st.Close
+		}
+	case SessionClosed:
+		// m169-1a: the gate halts at the START of the closed day.
+		return time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 0, 0, 0, 0, CTLocation())
+	}
+	return time.Date(closeDay.Year(), closeDay.Month(), closeDay.Day(), 16, 0, 0, 0, CTLocation())
 }
 
 // staleTFLabel (G7) appends a staleness warning under a TF table when the
@@ -560,6 +621,15 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 	var sb strings.Builder
 	indicators := e.config.Indicators
 
+	// m134-b: the headline EMA values are computed on the PRIMARY timeframe, so
+	// the label names it — "current_ema50(5m)" — instead of an anonymous
+	// "current_ema50". An empty primary TF leaves the legacy label byte-identical.
+	primaryTF := e.config.Indicators.Klines.PrimaryTimeframe
+	tfSuffix := ""
+	if primaryTF != "" {
+		tfSuffix = "(" + primaryTF + ")"
+	}
+
 	// Clearly label the coin symbol
 	sb.WriteString(fmt.Sprintf("=== %s Market Data ===\n\n", data.Symbol))
 	sb.WriteString(fmt.Sprintf("current_price = %.4f", data.CurrentPrice))
@@ -580,13 +650,13 @@ func (e *StrategyEngine) formatMarketData(data *market.Data) string {
 					// R22 F-2: an unwarmed EMA is printed n/a (L7 — a value not
 					// known prints n/a), never an SMA under an EMA label.
 					logger.Infof("ℹ️ current_ema%d n/a for %s — thin bar depth (needs %d bars for a warmed EMA).", p, data.Symbol, market.EMAWarmupBars(p))
-					sb.WriteString(fmt.Sprintf(", current_ema%d = n/a", p))
+					sb.WriteString(fmt.Sprintf(", current_ema%d%s = n/a", p, tfSuffix))
 					continue
 				}
-				sb.WriteString(fmt.Sprintf(", current_ema%d = %.3f", p, v))
+				sb.WriteString(fmt.Sprintf(", current_ema%d%s = %.3f", p, tfSuffix, v))
 			}
 		} else if data.CurrentEMA20 > 0 {
-			sb.WriteString(fmt.Sprintf(", current_ema20 = %.3f", data.CurrentEMA20))
+			sb.WriteString(fmt.Sprintf(", current_ema20%s = %.3f", tfSuffix, data.CurrentEMA20))
 		} else {
 			logger.Infof("ℹ️ current_ema20 omitted for %s — thin bar depth (needs 20 bars); EMA not warmed up.", data.Symbol)
 		}

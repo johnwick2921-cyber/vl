@@ -53,6 +53,9 @@ type State struct {
 	// nothing that trades reads them, so Levels above stays byte-identical.
 	ChartLevels     []Level     `json:"-"`
 	ChartTrendlines []Trendline `json:"-"`
+	// ChartEMA (m134) is the display-only per-bar EMA 9/34 curve, read from the
+	// same tick as ChartTrendlines. Nothing that trades reads it.
+	ChartEMA []ChartEMA `json:"-"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -645,7 +648,10 @@ func (e *Evaluator) refuse(reason string) {
 
 // boxBanFilter drops entry intents whose entry price — or whose reference
 // candle close — sits INSIDE a box: "NEVER trade inside the box, neither the
-// candle nor your entry point" [D3.2 p1 @ 06:59].
+// candle nor your entry point" [D3.2 p1 @ 06:59]. Leaving the box is NOT itself
+// an entry — after a body exits you still wait for a normal setup, which is then
+// tradable [D3.2 p1 @08:38–08:54; D3.2 p2 @07:38–07:50] (by construction: a
+// break is never an entry, only setups are).
 func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, refusals []string) {
 	if len(boxes) == 0 {
 		return out, nil
@@ -660,6 +666,50 @@ func boxBanFilter(out []Intent, boxes []Box, cur market.Kline) (kept []Intent, r
 		kept = append(kept, in)
 	}
 	return kept, refusals
+}
+
+// phlISBPreferenceFilter — D3.3 p1 @08:12–08:56: when the SAME closed bar at a
+// box produces BOTH a box-edge reject (Setup "BOX" — the mentor's "potential
+// high/low") and an inside bar (ISB) on the SAME side, the mentor goes to the
+// inside bar ("Nên về xuống InstaBar… em lại an toàn với InstaBar hơn") because
+// its stop is smaller. Keep the ISB and refuse the box reject — but ONLY when
+// the ISB's stop distance is <= the box reject's (his reason is the smaller
+// stop); otherwise both stay and the case is noted (never a silent drop).
+// Opposite sides: no precedence — the existing gates decide.
+func phlISBPreferenceFilter(out []Intent) (kept []Intent, refusals []string, notes []string) {
+	type key struct {
+		side Side
+		ref  int64
+	}
+	isbStop := make(map[key]float64)
+	for _, in := range out {
+		if in.Setup == "ISB" && (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) {
+			isbStop[key{in.Side, in.RefBarMs}] = abs(in.Price - in.Stop)
+		}
+	}
+	if len(isbStop) == 0 {
+		return out, nil, nil
+	}
+	kept = out[:0:0]
+	for _, in := range out {
+		if in.Setup != "BOX" || (in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry) {
+			kept = append(kept, in)
+			continue
+		}
+		isb, ok := isbStop[key{in.Side, in.RefBarMs}]
+		if !ok {
+			kept = append(kept, in)
+			continue
+		}
+		boxStop := abs(in.Price - in.Stop)
+		if isb <= boxStop {
+			refusals = append(refusals, "phl_isb_preferred_at_box")
+			continue
+		}
+		notes = append(notes, fmt.Sprintf("phl_isb_keep_both: ISB stop %.1f > box stop %.1f at the box — keeping both [D3.3 p1 @08:12–08:56]", isb, boxStop))
+		kept = append(kept, in)
+	}
+	return kept, refusals, notes
 }
 
 // triggerBoxZoneFilter drops non-swing place entries refused by the B1
@@ -800,7 +850,7 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
-// compulsory size cut [D4.1 p1 written rule 3].
+// compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
 	flags := isbFlags(cur, levels, boxes)
 	if HasFlag(flags, FlagISBInRange) {
@@ -1376,11 +1426,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: with HTFGateNewsOnly OFF (the all-day default, owner decision A
-	// 2026-10-21) the 4h/1h direction gate applies ALL DAY; ON limits it to the
-	// 07:20–07:35 CT news window. The gate covers ISB, reverse-ISB, PHL/PLH and
-	// box authoring — SWING4H is exempt (runSwing never consults HTFVerdict) and
-	// planner/AI entries carry their own G1 HTF veto.
+	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
+	// 4h/1h direction gate applies inside the 07:20–07:35 CT news window and
+	// the 08:30–09:30 CT open window; OFF (owner decision A 2026-10-21 m134
+	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
+	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
+	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF
+	// veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
@@ -1508,6 +1560,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.trackTrendlines(trendlines, crossed, now)
 	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
+	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;
@@ -1733,7 +1786,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// OWNER RULING 2026-10-03 ("exactly like he said"): the ISB is
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
-				// [D4.1 p1 @ 05:15]. His conditions stay: the trigger zone
+				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
 				// (above), the R5 box (below), the 20–<30 stop band, and a size
 				// flag at an old high/low.
 				//
@@ -2026,7 +2079,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					in.Target = capped.Target
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
-					// [D4.1 p1 @ 04:37–05:04].
+					// [D4.1 p1 @04:31–05:04; extended to the reverse ISB by bot inference].
 					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
@@ -2345,9 +2398,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 				continue
 			}
-			// Row 56 (a) [D3.2 p1 @ 21:53–23:08]: a trigger-retest level trades
-			// ONLY in the trigger's direction, whatever the school — a buy-line
-			// retest rejecting from below is NOT a short [CTO ruling 2026-10-04].
+			// Row 56 (a) [D3.4 p2 @20:51–21:27 (also @21:55–22:10)]: a
+			// trigger-retest level trades ONLY in the trigger's direction,
+			// whatever the school — a buy-line retest rejecting from below is NOT
+			// a short [CTO ruling 2026-10-04].
 			if lvl.Kind == KindTriggerRetest && in.Side != e.State.Trigger.Dir {
 				e.refuse("trigger_retest_wrong_way")
 				continue
@@ -2394,7 +2448,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.State.EmaPendingEntry = in.Price
 				e.State.EmaPendingStop = in.Stop
 				e.State.EmaPendingTarget = in.Target
-				e.State.EmaPendingExpiry = in.ExpiryMs
+				// #7: a level ('lvl-') order carries ExpiryMs=0 by design (it
+				// rests until LevelArmExpiry); using 0 here made emaLossTick see
+				// `now > 0` (always true) and drop the pending as 'expired
+				// unfilled' on the very next tick, so E2/CE-6 never engaged.
+				// Resolve the same way Limits.pendExpiry does.
+				e.State.EmaPendingExpiry = pendExpiry(in, cur.CloseTime)
 				e.State.EmaPendingFilled = false
 			}
 			// D4.2-06 part 1: mode C also fires on timeframe agreement —
@@ -2592,6 +2651,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
+	// D3.3 p1 @08:12–08:56: a box-edge reject and an inside bar on the same
+	// closed bar, same side — the mentor takes the inside bar (smaller stop).
+	out, refused, noted := phlISBPreferenceFilter(out)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+	for _, n := range noted {
+		e.note("%s", n)
+	}
+
 	// B1 trigger zone (10-03 ruling): between an FTGL and the buy line (mirror:
 	// FTGH + sell line) NO entry, ISB included; price must escape both. The
 	// swing runs its own machine and is exempt (orbGateFilter pattern).
@@ -2614,6 +2683,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// @21:55–22:12]. The 30-second ISB of the same lesson [@23:08–23:13] is
 	// NOT built: no sub-minute bars exist.
 	out, refused = newsWaitFilter(out, e.State.HTF, bars[len(bars)-1].Close, now, e.Cfg)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+
+	// D4.4 p2 @04:41–06:00: at the open (08:30–09:30 CT), a with-4h entry is
+	// allowed only after a 5m candle has closed outside the opening 5m range
+	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
+	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
+	out, refused = open5mRangeFilter(out, e.State.HTF, bars, now)
 	for _, r := range refused {
 		e.refuse(r)
 	}
@@ -3023,10 +3101,15 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		if c.OpenTime <= e.State.Seed1HWatermark || keyLevel1HCandleCloseTime(c.OpenTime) > now {
 			continue
 		}
-		e.State.SeedLevels, e.State.Seed1HLastColour =
-			keyLevelsAppend(e.State.SeedLevels, c, e.State.Seed1HLastColour, e.Cfg.KeyLevelPrunePts)
 		e.State.Seed1HWatermark = c.OpenTime
 		e.State.Seed1HBars = append(e.State.Seed1HBars, c)
+		// m202 #28: rebuild the kept set from the FULL 1H series (newest-first
+		// against the FINAL kept set — keyLevelsFromCandles) instead of the old
+		// incremental prune, which dropped a level a fresh restart keeps: a chain
+		// A<B<C with |A-B|<prune, |B-C|<prune, |A-C|>=prune kept A on the full
+		// walk but dropped it incrementally. Same rule as the seed at seed.go:216.
+		e.State.SeedLevels = keyLevelsFromCandles(e.State.Seed1HBars, e.Cfg.KeyLevelPrunePts)
+		e.State.Seed1HLastColour = candleColour(c)
 	}
 
 	var out []Level

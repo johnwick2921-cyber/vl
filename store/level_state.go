@@ -286,7 +286,14 @@ func AgedFreshness(cur *LevelStateDB, now time.Time) string {
 	if !cur.Consumed && cur.Freshness != FreshnessDone {
 		return cur.Freshness
 	}
-	last := cur.UpdatedAt
+	// Age from the CONSUMING TOUCH, not updated_at [bug-hunt #53]: EnsureLevel
+	// refreshes updated_at every cycle for every seated level, so a burned
+	// level that keeps reappearing near price read days==0 ("done") forever.
+	// last_play_ms is stamped by MarkConsumed at the consumption instant.
+	last := time.UnixMilli(cur.LastPlayMs)
+	if cur.LastPlayMs == 0 {
+		last = cur.UpdatedAt
+	}
 	if last.IsZero() {
 		last = cur.CreatedAt
 	}

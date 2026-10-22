@@ -48,8 +48,15 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 func isOpsAlertKind(kind string) bool {
 	switch kind {
 	case "trader_down_no_evaluator", // the run-owner "trader is DOWN" P0
-		"feed-down",                 // the NT8 link/feed down P0
-		"dead_man_reconcile_stuck":  // DS-102 #538: dead-man reconcile block with no upper bound
+		"feed-down",                // the NT8 link/feed down P0
+		"dead_man_reconcile_stuck", // DS-102 #538: dead-man reconcile block with no upper bound
+		// m226: protection alerts are the only signal for a position whose stop is
+		// missing, partial or stuck — they must reach the desk even when the
+		// trader runs without a day plan (every mentor trader).
+		"unprotected_position",
+		"protection_partial",
+		"protection_pending_stuck",
+		"protection_over_covered":
 		return true
 	}
 	return false
