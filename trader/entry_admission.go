@@ -87,6 +87,10 @@ type admitIntent struct {
 	// pass the AI-entries-off gate even though they carry no Decision.
 	// Planner arms leave it false and stay refused while mentor_mode is ON.
 	MentorArm bool
+	// Swing marks a SWING4H mentor arm (m314): the one setup exempt from the
+	// EOD-flat ENTRY refusal — the course holds the swing by the 4h. The T1
+	// red-news blackout and the T1 force-flat lead still refuse every setup.
+	Swing bool
 }
 
 func (in admitIntent) side() string {
@@ -337,9 +341,12 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 			// sessions_enabled / registry / override / trade cap) — the mentor's
 			// own window + news gates govern at authoring. KEPT as mentor
 			// safeties: the red-news T1 blackout, the consecutive-loss breaker
-			// and the force-flat windows.
-			if in.Path == admitArm && in.MentorArm && mentorWaivesSessionBand(risk) {
-				// session list: the mentor has its own window/day rules.
+			// and the force-flat windows. m314: the ONE force-flat window a
+			// SWING4H arm is exempt from is the in-session EOD flat (the course
+			// holds the swing by the 4h); the T1 blackout and the T1 lead still
+			// refuse every setup.
+			if in.Path == admitArm && in.MentorArm && (mentorWaivesSessionBand(risk) || (in.Swing && isEODFlatWindowRisk(risk))) {
+				// session list / EOD-flat-for-swing: the mentor has its own rules.
 			} else {
 				return at.admitRefuse(in, risk.Class, risk.Reason, func() {
 					at.logWarnf("🛑 session risk: %s %s REFUSED — %s", sym, act, risk.Reason)

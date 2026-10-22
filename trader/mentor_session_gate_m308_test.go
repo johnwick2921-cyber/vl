@@ -74,13 +74,14 @@ func TestM308RedNewsBlackoutNotWaivedOutsideSessionWindow(t *testing.T) {
 	}
 }
 
-// TestM308EODForceFlatNotWaivedThroughTradeCap pins the second mask: inside NY
-// (active session), the per-session trade cap is reached (a WAIVABLE band
-// reason) while the in-session EOD flat (eod_flat_offset_min=15 → 14:30) is
-// already past at 14:40 CT — the mentor arm must be REFUSED under
-// force_flat_window, never waived as "trade cap reached". MUTANT: gate
-// forceFlatWindowAt back behind `!blocked` in sessionRiskGateAt → the trade-cap
-// band is waived and the arm is placed → RED.
+// TestM308EODForceFlatNotWaivedThroughTradeCap pins the second m308 mask AND
+// the m314 intraday side: inside NY (active session), the per-session trade cap
+// is reached (a WAIVABLE band reason) while the in-session EOD flat
+// (eod_flat_offset_min=15 → 14:30) is already past at 14:40 CT — an INTRADAY
+// (ISB) mentor arm must be REFUSED under force_flat_window, never waived as
+// "trade cap reached". MUTANT (m308): gate forceFlatWindowAt back behind
+// `!blocked` in sessionRiskGateAt → the trade-cap band is waived and the arm is
+// placed → RED.
 func TestM308EODForceFlatNotWaivedThroughTradeCap(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, ledger := m235Rig(t)
@@ -91,21 +92,46 @@ func TestM308EODForceFlatNotWaivedThroughTradeCap(t *testing.T) {
 	mentorWireSeams(t, at, ledger)
 	logs := captureTraderLog(t)
 	now := b3Clock(14, 40) // inside NY (ends 14:45), past the 14:30 EOD flat
-	seedM235MentorRow(t, at, ledger, "swing-eod", "SWING4H", now.UnixMilli()+60_000)
+	seedM235MentorRow(t, at, ledger, "isb-eod", "ISB", now.UnixMilli()+60_000)
 
 	_, before := telemetry.GateBlockSnapshot()
 	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
 	_, table := telemetry.GateBlockSnapshot()
 
-	row := readArmRow(t, ledger, "swing-eod")
+	row := readArmRow(t, ledger, "isb-eod")
 	if row.SignalID != "" {
-		t.Fatalf("the EOD force-flat must refuse the mentor arm through the waived trade cap, got signal=%q state=%q", row.SignalID, row.State)
+		t.Fatalf("the EOD force-flat must refuse the intraday mentor arm through the waived trade cap, got signal=%q state=%q", row.SignalID, row.State)
 	}
 	b := before[at.id]
 	if got := table[at.id]; got["force_flat_window"]-b["force_flat_window"] != 1 {
 		t.Fatalf("the refusal must tick force_flat_window once, got %v (before %v)", got, b)
 	}
-	if !strings.Contains(logs.String(), "🛑 mentor placement REFUSED (force_flat_window)") || !strings.Contains(logs.String(), "EOD flat") {
-		t.Fatalf("the refusal must log once with the EOD flat reason; log:\n%s", logs.String())
+	if !strings.Contains(logs.String(), "EOD flat") {
+		t.Fatalf("the refusal must log the EOD flat reason; log:\n%s", logs.String())
+	}
+}
+
+// TestM308SwingArmPlacedPastEODFlat pins the m314 swing exemption: at the SAME
+// instant as the intraday pin above (14:40 CT, past the 14:30 EOD flat, trade
+// cap reached), a SWING4H mentor arm is PLACED — it waives both the trade-cap
+// band and the in-session EOD flat (the course holds the swing by the 4h,
+// D5.2). MUTANT: drop the swing exemption (isEODFlatWindowRisk) → the swing is
+// refused force_flat_window, never placed → RED.
+func TestM308SwingArmPlacedPastEODFlat(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, ledger := m235Rig(t)
+	flat15, cap0 := 15, 0
+	at.config.StrategyConfig.DayPlan.Sessions = []store.DayPlanSessionOverride{
+		{Session: "NY", MaxTrades: &cap0, EODFlatOffsetMin: &flat15},
+	}
+	mentorWireSeams(t, at, ledger)
+	now := b3Clock(14, 40) // inside NY (ends 14:45), past the 14:30 EOD flat
+	seedM235MentorRow(t, at, ledger, "swing-eod", "SWING4H", now.UnixMilli()+60_000)
+
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+
+	row := readArmRow(t, ledger, "swing-eod")
+	if row.SignalID == "" || store.IsTerminalArmState(row.State) {
+		t.Fatalf("a SWING4H mentor arm must be placed past the EOD flat (held by the 4h), got state=%q signal=%q", row.State, row.SignalID)
 	}
 }

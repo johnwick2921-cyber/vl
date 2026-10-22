@@ -245,6 +245,16 @@ func mentorWaivesSessionBand(risk sessionRiskVerdict) bool {
 	return isMentorWaivableBandReason(risk.Reason)
 }
 
+// isEODFlatWindowRisk (m314) reports whether the session-risk refusal is the
+// in-session EOD-flat ENTRY window — the ONE force-flat window a SWING4H mentor
+// arm is exempt from (the course holds the swing by the 4h, D5.2). The T1
+// red-news blackout (class no_trade_band) and the T1 force-flat LEAD (the other
+// force_flat_window reason) still refuse every setup: no swing entry into a
+// news print.
+func isEODFlatWindowRisk(risk sessionRiskVerdict) bool {
+	return risk.Class == "force_flat_window" && strings.Contains(risk.Reason, "EOD flat")
+}
+
 // SessionRiskBootLine — D5. Every field READ from the code that enforces it
 // (A11); the labels are part of the line because a number without its evidence
 // tier is a number someone will later mistake for a measurement.

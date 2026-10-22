@@ -3249,7 +3249,13 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	// breaker, the red-news T1 blackout and the force-flat windows still refuse.
 	// Every refusal logs once per (class, reason) change and ticks the gate-block
 	// counter (bug-hunt #40 — never silent).
-	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) {
+	//
+	// m314 — the in-session EOD-flat window is the ONE force-flat refusal a
+	// SWING4H arm waives (the course holds the swing by the 4h), so this
+	// PASS-level refusal lets the EOD flat through and the per-row admission
+	// check decides per intent: SWING4H places, intraday (ISB) stays refused.
+	// The T1 blackout and the T1 force-flat lead still refuse the whole pass.
+	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) && !isEODFlatWindowRisk(risk) {
 		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class+":"+risk.Reason) {
 			at.logWarnf("🛑 mentor placement REFUSED (%s): %s", risk.Class, risk.Reason)
 		}
