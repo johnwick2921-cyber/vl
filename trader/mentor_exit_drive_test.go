@@ -524,9 +524,10 @@ func TestMentorExitDrivePosB_ArmsBE(t *testing.T) {
 // The single leg trails only AFTER the 1:1 point (entry + R) printed on a
 // PRIOR candle (CTO gate, release #4: the course trails the runner after the
 // 1:1 point), then takes the TIGHTER of the live 1:1 and the candle trail, the
-// trail sitting 1 TICK beyond the candle's low (item 7 ruling [X8 @15:40–17:13]).
-// Mutants: trail straight after BE (candle 1 moves to 11.75) → RED; trail at
-// the low exactly (13.5) → RED.
+// trail sitting AT the candle's low (m283 P2 — the same rule as
+// mentorCandleTrailStop [D2.4 p1 @08:30–08:32; X8 @15:40–17:13]).
+// Mutants: trail straight after BE (candle 1 moves to 11.75) → RED; trail one
+// tick BEYOND the low (13.25) → RED.
 func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	at, moves := newDriveAT(t)
 	p := bPos("B", "long", 10, 10, 16, 5) // R = 2 → the 1:1 point is 12
@@ -538,9 +539,9 @@ func TestMentorExitDrivePosB_SingleLegTrails(t *testing.T) {
 	if !p.Pos.Scaled {
 		t.Fatal("the 1:1 point printed — Scaled must be set")
 	}
-	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 − 1 tick = 13.25 → 13.25.
+	// Candle 2: 1:1 = 2·14−16 = 12; trail = low 13.5 (AT) → 13.5.
 	at.mentorExitDrivePos(nil, p, 14, 14.5, 13.5, 0)
-	assertMoves(t, moves(), driveMove{"entry", "long", 13.25})
+	assertMoves(t, moves(), driveMove{"entry", "long", 13.5})
 }
 
 // e2e pin (CTO 2026-10-04): ONE filled row registers the single-leg live

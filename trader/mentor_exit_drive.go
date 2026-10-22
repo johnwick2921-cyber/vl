@@ -478,7 +478,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	// ── R3 (release #22, mentor_trail_mode=candle, the default): a SPLIT
 	// position's runner goes to break-even once leg 1's partial is CONFIRMED
-	// filled at NT8, then trails 1 tick beyond each closed candle. A single
+	// filled at NT8, then trails AT each closed candle. A single
 	// bracket has no leg-1 partial to confirm and keeps the rule below.
 	if leg1OnWire && mentorRunnerLeg(p) != nil && at.mentorTrailMode() == mentorTrailModeCandle {
 		// fold #565 (D8): the BE close is the entry's frame close — a 2m entry's
@@ -608,14 +608,14 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 				}
 				applyTrail = trail && trailOK && trailScaledBefore // the 1:1 point printed on a PRIOR candle (of the trail frame)
 				if applyTrail {
-					// Item 7 ruling [X8 @15:40–17:13]: 1 tick BEYOND the closed
-					// candle's low (long) / high (short), never exactly at it —
-					// the candle of the frame the entry was read on.
-					if long {
-						trailPrice = trailL - at.mentorInstrumentTick()
-					} else {
-						trailPrice = trailH + at.mentorInstrumentTick()
-					}
+					// m283 P2: AT the closed candle's low (long) / high (short) —
+					// never one tick beyond — the SAME rule as
+					// mentorCandleTrailStop [D2.4 p1 @08:30–08:32 "Em để ngay
+					// đây"; X8 @15:40–17:13 the frame the entry was read on].
+					// One function, one price: both the split runner's candle
+					// trail (mentorExitDriveCandle) and this single-bracket /
+					// off-mode trail read the extreme through the same helper.
+					trailPrice = mentorCandleTrailStop(side, trailH, trailL, at.mentorInstrumentTick())
 				}
 			}
 			next := mentorLegStopB(side, leg.Stop, c, target, trailPrice, applyTrail)

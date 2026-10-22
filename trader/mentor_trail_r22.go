@@ -30,8 +30,8 @@ import (
 //     the drive runs on closed 1m candles.
 //   - Wick or body: the candle's LOW for a long / HIGH for a short — "đặt ở DƯỚI
 //     ĐÁY cây nến … tới khi nào có một cây nến QUÉT CÁI ĐÁY thì … OUT" [X8
-//     @15:40–17:13]: the low (a wick extreme), not the body. 1 tick BEYOND it
-//     (item-7 ruling), never exactly at it.
+//     @15:40–17:13]: the low (a wick extreme), not the body — AT it, never one
+//     tick beyond (m283 P2; the former item-7 tick offset was removed).
 //   - Break-even = the entry: "move the stop up to break-even (10)" — the entry
 //     of 10 [D1.2 p1 @10:31–15:20]. The course is SILENT on ± ticks: the
 //     conservative default here is the entry EXACTLY when it is on the tick grid
@@ -295,7 +295,7 @@ func (at *AutoTrader) mentorJudgeAgainstBroker(nt *ntTrader.TCPTrader, side stri
 //  1. confirmed, BE not armed → the runner's stop goes to break-even; that
 //     candle only arms BE.
 //  2. BE armed → on every closed candle that OPENED after the confirmation
-//     (I6), the runner's stop goes 1 tick beyond that candle's low (long) /
+//     (I6), the runner's stop goes AT that candle's low (long) /
 //     high (short) — only when that is TIGHTER; a lower low (long) / higher
 //     high (short) moves nothing. trail_tf=off stops at stage 1.
 //
@@ -431,7 +431,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		frame = fmt.Sprintf("%dm", p.TrailTFMin)
 		at.mentorCount("trail_candle_moved_2m")
 	}
-	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — 1 tick beyond the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
+	at.logInfof("🧑‍🏫 mentor candle trail: %s runner stop(s) → %.2f — AT the closed %s candle's %s %.2f [R3; D2.4 p1 @07:01; X8 @15:40, @18:02 the frame the entry was read on]",
 		runners[0].SignalID, cand, frame, word, extreme)
 }
 

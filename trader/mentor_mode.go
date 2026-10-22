@@ -893,7 +893,7 @@ func mentorIntentTargetPts(in mentor.Intent) float64 {
 //	        Leg 1's TP at 2× risk is set AT ENTRY (mentorLeg1TPForC).
 //	B     — normal: leg 1 exits at its +1R TP; the runner's stop follows
 //	        mentor_trail_mode (R3, release #22): candle (default) = break-even
-//	        once leg 1's partial is CONFIRMED filled at NT8, then 1 tick beyond
+//	        once leg 1's partial is CONFIRMED filled at NT8, then AT
 //	        each closed candle; off = BE at half the distance to the TRADE's
 //	        target, live 1:1, trail after the 1:1 point. A PHL/PLH fill starts
 //	        as B with the resonance watch armed: a same-direction ISB within 3
@@ -912,7 +912,7 @@ func mentorExitFork(in mentor.Intent, confluence bool) (mode string, leg1TP floa
 	case in.Setup == "PHL" || in.Setup == "PLH":
 		return "B", 0, "PHL/PLH: B at entry, resonance watch armed — a same-direction ISB within 3 candles flips to A (BE, no trail; the 1:1 partial still fires)"
 	default:
-		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then 1 tick beyond each closed 1m candle; off: BE at half the distance to the TRADE's target"
+		return "B", 0, "normal: leg 1 TP +1R; runner per mentor_trail_mode — candle (default): BE once leg 1's partial FILLS at NT8, then AT each closed 1m candle; off: BE at half the distance to the TRADE's target"
 	}
 }
 
