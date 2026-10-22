@@ -13,6 +13,11 @@
 //     #46: m373 (P0, DS-103) fixes order_update FormatException — e.Filled is an
 //     int so ToString("R") throws on every order_update (47× in NT8 log since
 //     #45 boot); drops "R", bumps VL_BUILD_ID to 2026-10-22-b. Contract untouched.
+//     #48: m387 (DS-102) CancelBracketsFor cancels EVERY (account,root)-matched
+//     bracket and retires each key only after its own orders were cancelled
+//     (QUEUE-47); adds the anchored VL_BUILD_ID_ANCHOR marker and bumps
+//     VL_BUILD_ID to 2026-10-22-c. Wire / order-name / account / signal-id
+//     contract untouched.
 //   provider/ninjatrader/tcp_server.go  sha256 a59169a4… — connect-key auth gate
 //     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
 //     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
