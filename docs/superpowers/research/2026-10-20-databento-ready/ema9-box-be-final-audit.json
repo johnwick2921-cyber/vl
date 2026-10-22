@@ -1,0 +1,8 @@
+{
+  "all_arithmetic_reconciled": true,
+  "all_rows": 732,
+  "entry_rows": 688,
+  "source_entry_parity": true,
+  "status": "PASS_WITH_ASSUMPTIONS",
+  "word_cells_match": true
+}
