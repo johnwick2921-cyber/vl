@@ -310,6 +310,12 @@ func IsTier1Kind(k LevelKind) bool { return isTier1Kind(k) }
 // those surfaces carry).
 func IsTier1Label(label string) bool {
 	l := strings.ToUpper(strings.TrimSpace(label))
+	// m265: "PDC·last print" / "SETT·last print" are the SAME structural family
+	// as PDC / SETT — split the leading token at "·" (as structuralPrefix does)
+	// so the fallback labels keep Tier-1 instead of degrading to an inert label.
+	if i := strings.Index(l, "·"); i > 0 {
+		l = strings.TrimSpace(l[:i])
+	}
 	switch {
 	case l == "PDH", l == "PDL", l == "PDC", strings.HasPrefix(l, "RTH-"):
 		return true

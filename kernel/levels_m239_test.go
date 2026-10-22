@@ -168,3 +168,37 @@ func TestM239POCMatchesSVP(t *testing.T) {
 		t.Fatalf("SVP POC %.4f is not a row midpoint on the %.2f-pt grid", wantPOC, SVPRowHeight)
 	}
 }
+
+// Fix 4 (m265) — the "·last print" fallback labels keep their structural
+// family. IsTier1Label and KindForLabel were exact-match, so "PDC·last print" /
+// "SETT·last print" lost Tier-1 and became the inert KindRound in planner
+// scoring. Mutant: exact match (drop the leading-token split) → these degrade
+// to KindRound / not-Tier-1 → RED.
+func TestM239LastPrintLabelsKeepTier1AndKind(t *testing.T) {
+	cases := []struct {
+		label string
+		kind  LevelKind
+		role  LevelRole
+	}{
+		{"PDC·last print", KindPDC, RolePivot},
+		{"SETT·last print", KindSETT, RolePivot},
+	}
+	for _, c := range cases {
+		if !IsTier1Label(c.label) {
+			t.Errorf("%q must stay Tier-1", c.label)
+		}
+		if got := KindForLabel(c.label); got != c.kind {
+			t.Errorf("KindForLabel(%q) = %v, want %v", c.label, got, c.kind)
+		}
+		if got := RoleForLabel(c.label); got != c.role {
+			t.Errorf("RoleForLabel(%q) = %v, want %v", c.label, got, c.role)
+		}
+	}
+	// The bare labels must still resolve (no regression).
+	if KindForLabel("PDC") != KindPDC || KindForLabel("SETT") != KindSETT {
+		t.Fatal("bare PDC/SETT must still resolve")
+	}
+	if !IsTier1Label("PDC") || !IsTier1Label("SETT") {
+		t.Fatal("bare PDC/SETT must stay Tier-1")
+	}
+}
