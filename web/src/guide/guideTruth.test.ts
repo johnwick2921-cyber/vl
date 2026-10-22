@@ -15,9 +15,16 @@ const repo = (p: string) =>
 const web = (p: string) => readFileSync(resolve(process.cwd(), p), 'utf8')
 
 function goConst(src: string, name: string): string {
-  const m = src.match(new RegExp(`\\b${name}\\s*=\\s*([0-9.]+)`))
+  const m = src.match(
+    new RegExp(`\\b${name}\\s*=\\s*([A-Za-z_][A-Za-z0-9_]*|\\d+(?:\\.\\d+)?)`)
+  )
   if (!m) throw new Error(`Go constant ${name} not found — re-anchor this pin`)
-  return m[1]
+  const val = m[1]
+  // m186 d3-exact aliases the confluence/big tiers to the base constant
+  // (mentorConfluenceContractsDefault = mentorBaseContractsDefault): follow the
+  // alias chain to the numeric literal the guide actually pins, instead of
+  // failing the regex on a non-numeric RHS. Decimal literals (1.5) stay intact.
+  return /^[0-9]/.test(val) ? val : goConst(src, val)
 }
 
 const knobs = (sectionId: string): KnobSpec[] =>
