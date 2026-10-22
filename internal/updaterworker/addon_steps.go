@@ -40,13 +40,16 @@ func addonDocsDir() (string, error) {
 // It is wrapped with the m388 WSL interop-timeout retry: a transient
 // "UtilAcceptVsock … accept4 failed 110" (Windows and WSL briefly fail to talk
 // to each other) is retried a bounded number of times; any other failure stays
-// immediate.
+// immediate. Before a retry of a Start-Process the worker checks whether NT8 is
+// already running (m388 follow-up) so it never launches a second NinjaTrader.
 func (w *Worker) winSeam() nt8RunSeam {
 	raw := w.runWin
 	if raw == nil {
 		raw = execWindows
 	}
-	return retryWSLInterop(raw, w.host.Sleep, w.logf)
+	return retryWSLInterop(raw, w.host.Sleep, w.logf, func(ctx context.Context, name string, args []string) bool {
+		return w.nt8StartLanded(ctx, raw, name, args)
+	})
 }
 
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a

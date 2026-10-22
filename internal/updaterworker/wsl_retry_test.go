@@ -3,6 +3,7 @@ package updaterworker
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -25,7 +26,7 @@ func TestRetryWSLInteropRetriesThenSucceeds(t *testing.T) {
 	seam := retryWSLInterop(run, func(_ context.Context, d time.Duration) error {
 		sleeps = append(sleeps, d)
 		return nil
-	}, func(f string, a ...any) { logs = append(logs, f) })
+	}, func(f string, a ...any) { logs = append(logs, f) }, nil)
 
 	out, err := seam(context.Background(), "tasklist.exe", "/FI", "x")
 	if err != nil {
@@ -56,7 +57,7 @@ func TestRetryWSLInteropOnlyRetriesOnTheSignature(t *testing.T) {
 	seam := retryWSLInterop(run, func(_ context.Context, d time.Duration) error {
 		sleeps = append(sleeps, d)
 		return nil
-	}, func(f string, a ...any) { logs = append(logs, f) })
+	}, func(f string, a ...any) { logs = append(logs, f) }, nil)
 
 	_, err := seam(context.Background(), "dotnet.exe", "build")
 	if err == nil {
@@ -67,6 +68,83 @@ func TestRetryWSLInteropOnlyRetriesOnTheSignature(t *testing.T) {
 	}
 	if len(sleeps) != 0 || len(logs) != 0 {
 		t.Fatalf("sleeps=%d logs=%d, want 0/0 for a non-signature failure", len(sleeps), len(logs))
+	}
+}
+
+// TestRetryWSLInteropOneMarkerIsNotEnough: "UtilAcceptVsock" alone (without
+// "accept4 failed") is a near-miss — the interop signature needs BOTH markers,
+// so a one-marker failure must not retry.
+func TestRetryWSLInteropOneMarkerIsNotEnough(t *testing.T) {
+	calls := 0
+	run := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		calls++
+		return []byte("<3>WSL: UtilAcceptVsock:271: some other error"), errors.New("exit status 1")
+	}
+	seam := retryWSLInterop(run, func(_ context.Context, d time.Duration) error { return nil },
+		func(string, ...any) {}, nil)
+	_, err := seam(context.Background(), "tasklist.exe", "/FI", "x")
+	if err == nil {
+		t.Fatal("a near-miss failure must propagate")
+	}
+	if calls != 1 {
+		t.Fatalf("runner called %d times, want 1 (one marker only = no retry)", calls)
+	}
+}
+
+// TestRetryWSLInteropCancelledContextStopsTheLoop: a cancelled context (the
+// sleep returns ctx.Err()) stops the retry loop after ONE call and returns the
+// original error — no further re-issue.
+func TestRetryWSLInteropCancelledContextStopsTheLoop(t *testing.T) {
+	calls := 0
+	run := func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		calls++
+		return []byte(wslSig), errors.New("exit status 1")
+	}
+	seam := retryWSLInterop(run, func(context.Context, time.Duration) error {
+		return context.Canceled
+	}, func(string, ...any) {}, nil)
+	_, err := seam(context.Background(), "tasklist.exe", "/FI", "x")
+	if err == nil {
+		t.Fatal("the original error must propagate on a cancelled retry")
+	}
+	if calls != 1 {
+		t.Fatalf("runner called %d times, want 1 (cancelled ctx stops the loop)", calls)
+	}
+}
+
+// TestWinSeamStartAlreadyLandedDoesNotReissue is the m388 follow-up (a) pin:
+// a Start-Process that fails with the interop signature but whose NT8 launch
+// actually landed must NOT be re-issued — before the retry the worker asks
+// tasklist, sees NT8 running, and returns success after ONE Start-Process call.
+func TestWinSeamStartAlreadyLandedDoesNotReissue(t *testing.T) {
+	r := newRig(t)
+	startCalls := 0
+	tasklistCalls := 0
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		joined := strings.Join(args, " ")
+		if strings.Contains(joined, "Start-Process") {
+			startCalls++
+			return []byte(wslSig), errors.New("exit status 1")
+		}
+		if strings.Contains(name, "tasklist") {
+			tasklistCalls++
+			return []byte(`"NinjaTrader.exe","1234","Console"`), nil
+		}
+		return nil, nil
+	}
+
+	out, err := r.w.winSeam()(context.Background(), "powershell.exe", "-Command", "Start-Process -FilePath 'C:\\Program Files\\NinjaTrader 8\\bin\\NinjaTrader.exe'")
+	if err != nil {
+		t.Fatalf("start must read as success once NT8 is already running: %v", err)
+	}
+	if string(out) != "" {
+		t.Fatalf("out = %q, want empty on a landed start", out)
+	}
+	if startCalls != 1 {
+		t.Fatalf("Start-Process issued %d times, want 1 (not re-issued)", startCalls)
+	}
+	if tasklistCalls == 0 {
+		t.Fatal("the isRunning guard never ran — the retry guard must check tasklist before re-issuing")
 	}
 }
 

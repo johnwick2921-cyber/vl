@@ -65,12 +65,22 @@ func wslInteropTimeout(out []byte, err error) bool {
 // ONLY on the WSL interop-timeout signature. Three tries total (two retries,
 // 5 s then 15 s backoff); each retry is logged. Any other failure is returned
 // immediately, and a cancelled context stops the loop.
-func retryWSLInterop(run nt8RunSeam, sleep func(context.Context, time.Duration) error, logf func(string, ...any)) nt8RunSeam {
+//
+// landed, when non-nil, is consulted BEFORE each retry: if it reports that the
+// command's effect already landed despite the interop error (m388 follow-up:
+// a Start-Process whose NT8 launch actually succeeded), the command is NOT
+// re-issued and the wrapper returns success. This closes the one non-idempotent
+// call the retry could otherwise duplicate.
+func retryWSLInterop(run nt8RunSeam, sleep func(context.Context, time.Duration) error, logf func(string, ...any), landed func(context.Context, string, []string) bool) nt8RunSeam {
 	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
 		for attempt := 0; ; attempt++ {
 			out, err := run(ctx, name, args...)
 			if err == nil || !wslInteropTimeout(out, err) || attempt >= len(wslInteropBackoffs) {
 				return out, err
+			}
+			if landed != nil && landed(ctx, name, args) {
+				logf("🔁 WSL interop timeout on %s (try %d/3) but the effect already landed — not re-issuing", name, attempt+1)
+				return nil, nil
 			}
 			logf("🔁 WSL interop timeout on %s (try %d/3): %s — retrying in %s", name, attempt+1, clipText(err.Error()), wslInteropBackoffs[attempt])
 			if serr := sleep(ctx, wslInteropBackoffs[attempt]); serr != nil {
@@ -78,6 +88,23 @@ func retryWSLInterop(run nt8RunSeam, sleep func(context.Context, time.Duration) 
 			}
 		}
 	}
+}
+
+// nt8StartLanded is the m388 follow-up idempotency guard for the ONE
+// non-idempotent Windows call the retry could duplicate: a Start-Process for
+// NinjaTrader.exe. If a start "failed" with the interop signature but the
+// launch actually landed, re-issuing would start a SECOND NinjaTrader. Before
+// any retry of a Start-Process command the worker asks tasklist whether NT8 is
+// already running; if it is, the retry is skipped and the start is treated as
+// success. Every other command returns false (its retry is safe: builds
+// overwrite, CloseMainWindow/Stop-Process are idempotent, tasklist is
+// read-only). The probe runs on the same raw seam so tests can fake it.
+func (w *Worker) nt8StartLanded(ctx context.Context, run nt8RunSeam, name string, args []string) bool {
+	if !strings.Contains(strings.Join(args, " "), "Start-Process") {
+		return false
+	}
+	running, err := newNT8Restart(run, addonExe(), w.host.Sleep).isRunning(ctx)
+	return err == nil && running
 }
 
 // nt8Restart stops and starts NT8 through the run seam, with a sleep seam for
