@@ -390,3 +390,61 @@ func TestD2CensusSeesNestedSkipNamedDirs(t *testing.T) {
 			len(missed), len(dirs), n, strings.Join(missed, "\n\t"))
 	}
 }
+
+// PIN m326 — the served 4h series must never carry the NT8-native 16:00-close
+// stub. A legacy row stored at 12:00 CT (the 4h 13:00 bucket one hour early, by
+// a pre-m220/m134 binary) re-anchors +1h on READ, and when the corrected 13:00
+// row is ALSO present the two collapse to ONE bar. MUTANT: drop the re-anchor
+// (ot = r.OpenTimeMs in storeRowsToKlines) → the 12:00 bar is served alongside
+// the 13:00 → RED.
+func TestStoreRowsToKlinesReanchorsTheLegacy4hStub(t *testing.T) {
+	loc := kernel.CTLocation()
+	ms := func(y int, mo time.Month, d, h, m int) int64 {
+		return time.Date(y, mo, d, h, m, 0, 0, loc).UnixMilli()
+	}
+	// Same trade date: the legacy stub (12:00) and the corrected bucket (13:00)
+	// with IDENTICAL OHLC (the stub is an exact copy of the 13:00 bucket), plus
+	// the neighbours 09:00 and 17:00.
+	rows := []store.BarHistoryDB{
+		{Symbol: "MNQ", TF: "4h", Contract: "MNQ 12-26", OpenTimeMs: ms(2026, 10, 20, 9, 0), O: 100, H: 102, L: 98, C: 101, Source: store.BarSourceHistorical},
+		{Symbol: "MNQ", TF: "4h", Contract: "MNQ 12-26", OpenTimeMs: ms(2026, 10, 20, 12, 0), O: 101, H: 105, L: 100, C: 104, Source: store.BarSourceLive},
+		{Symbol: "MNQ", TF: "4h", Contract: "MNQ 12-26", OpenTimeMs: ms(2026, 10, 20, 13, 0), O: 101, H: 105, L: 100, C: 104, Source: store.BarSourceLive},
+		{Symbol: "MNQ", TF: "4h", Contract: "MNQ 12-26", OpenTimeMs: ms(2026, 10, 20, 17, 0), O: 104, H: 106, L: 103, C: 105, Source: store.BarSourceLive},
+	}
+	got := storeRowsToKlines(rows, "4h")
+	wantHours := []int{9, 13, 17}
+	if len(got) != len(wantHours) {
+		t.Fatalf("served %d bars, want %d (the 12:00 stub must collapse into 13:00): %+v", len(got), len(wantHours), got)
+	}
+	for i, k := range got {
+		if h := time.UnixMilli(k.OpenTime).In(loc).Hour(); h != wantHours[i] {
+			t.Fatalf("bar %d opens at %s CT, want hour %d — the served series must be 17,21,01,05,09,13 only",
+				i, time.UnixMilli(k.OpenTime).In(loc).Format("15:04"), wantHours[i])
+		}
+	}
+	// The corrected 13:00 OHLC survives the collapse (it is the later stamp).
+	if got[1].Open != 101 || got[1].Close != 104 {
+		t.Fatalf("the 13:00 bucket must keep the corrected OHLC, got %+v", got[1])
+	}
+}
+
+// PIN m326 (legacy-only form) — a store that holds ONLY the legacy stub (no
+// corrected partner, the pre-fix old-contract case) still serves 13:00, never
+// 12:00.
+func TestStoreRowsToKlinesReanchorsALoneLegacyStub(t *testing.T) {
+	loc := kernel.CTLocation()
+	ms := func(h, m int) int64 { return time.Date(2026, 10, 20, h, m, 0, 0, loc).UnixMilli() }
+	rows := []store.BarHistoryDB{
+		{Symbol: "MNQ", TF: "4h", Contract: "MNQ 09-26", OpenTimeMs: ms(12, 0), O: 101, H: 105, L: 100, C: 104, Source: store.BarSourceLive},
+	}
+	got := storeRowsToKlines(rows, "4h")
+	if len(got) != 1 {
+		t.Fatalf("served %d bars, want 1", len(got))
+	}
+	if h := time.UnixMilli(got[0].OpenTime).In(loc).Hour(); h != 13 {
+		t.Fatalf("a lone legacy stub served at %s CT, want 13:00", time.UnixMilli(got[0].OpenTime).In(loc).Format("15:04"))
+	}
+	if got[0].OpenTime != ms(13, 0) {
+		t.Fatalf("re-anchored open = %d, want %d (13:00 CT)", got[0].OpenTime, ms(13, 0))
+	}
+}
