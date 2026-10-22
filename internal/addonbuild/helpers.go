@@ -136,11 +136,16 @@ func copyFile(src, dst string) error {
 // harmless (the UTF-16 form contains NULs the regex cannot cross).
 var buildIDRe = regexp.MustCompile(`20[0-9]{2}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+`)
 
+// buildIDAnchorRe matches the m387 anchored marker: the literal "VL_BUILD_ID="
+// immediately followed by a build id — the form the .cs folds from
+// `"VL_BUILD_ID=" + VL_BUILD_ID` (VL_BUILD_ID_ANCHOR), so the Go read-back can
+// anchor to the constant instead of any id-shaped value in a comment or resource.
+var buildIDAnchorRe = regexp.MustCompile(`VL_BUILD_ID=([0-9]{4}-[0-9]{2}-[0-9]{2}-[A-Za-z0-9]+)`)
+
 // BuildIDFromDLL extracts the VL_BUILD_ID string embedded in a compiled
-// VL.AddOn.dll. It fails closed (m357 B): when the bytes hold MORE THAN ONE
-// DISTINCT id-shaped value, the first match is not trustworthy (a stale id in a
-// comment or resource) and the read is refused — never a silent first-match.
-// "" (with nil error) when absent.
+// VL.AddOn.dll. It prefers the ANCHORED marker (m387); when none is present it
+// fails closed (m357 B): more than one DISTINCT id-shaped value is refused —
+// never a silent first-match. "" (with nil error) when absent.
 func BuildIDFromDLL(path string) (string, error) {
 	b, err := os.ReadFile(path)
 	if err != nil {
@@ -149,10 +154,17 @@ func BuildIDFromDLL(path string) (string, error) {
 	return buildIDFromBytes(b)
 }
 
-// buildIDFromBytes scans the raw bytes (ASCII) and then the even/odd bytes of
-// the UTF-16LE form, and returns the ONE distinct build id found. More than one
-// distinct id is refused (m357 B).
+// buildIDFromBytes first scans for the anchored VL_BUILD_ID= marker (m387) and
+// returns that id when exactly one distinct anchored id is found; otherwise it
+// falls back to the raw ASCII / UTF-16LE even/odd scan that returns the ONE
+// distinct id-shaped value and refuses on more than one (m357 B).
 func buildIDFromBytes(b []byte) (string, error) {
+	if id, err := anchoredBuildID(b); err != nil {
+		return "", err
+	} else if id != "" {
+		return id, nil
+	}
+
 	var only string
 	have := false
 	record := func(m string) error {
@@ -183,6 +195,57 @@ func buildIDFromBytes(b []byte) (string, error) {
 			return "", err
 		}
 		if err := recordIDs(buildIDRe.FindAllString(string(odd), -1), record); err != nil {
+			return "", err
+		}
+	}
+	if !have {
+		return "", nil
+	}
+	return only, nil
+}
+
+// anchoredBuildID returns the ONE distinct build id carried by the anchored
+// VL_BUILD_ID= marker across the raw / even / odd streams; "" when absent, and
+// an error when two DISTINCT anchored ids are present.
+func anchoredBuildID(b []byte) (string, error) {
+	var only string
+	have := false
+	record := func(m string) error {
+		if m == "" {
+			return nil
+		}
+		if !have {
+			only, have = m, true
+			return nil
+		}
+		if m != only {
+			return fmt.Errorf("the DLL holds more than one anchored build id (%q and %q) — refusing to guess", only, m)
+		}
+		return nil
+	}
+	capture := func(s string) error {
+		for _, m := range buildIDAnchorRe.FindAllStringSubmatch(s, -1) {
+			if err := record(m[1]); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	if err := capture(string(b)); err != nil {
+		return "", err
+	}
+	if len(b) >= 2 {
+		even := make([]byte, 0, len(b)/2)
+		odd := make([]byte, 0, len(b)/2)
+		for i := 0; i+1 < len(b); i += 2 {
+			even = append(even, b[i])
+			odd = append(odd, b[i+1])
+		}
+		if err := capture(string(even)); err != nil {
+			return "", err
+		}
+		if err := capture(string(odd)); err != nil {
 			return "", err
 		}
 	}
