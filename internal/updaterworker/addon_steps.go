@@ -37,11 +37,16 @@ func addonDocsDir() (string, error) {
 }
 
 // winSeam is the Windows subprocess seam (dotnet.exe build, powershell.exe restart).
+// It is wrapped with the m388 WSL interop-timeout retry: a transient
+// "UtilAcceptVsock … accept4 failed 110" (Windows and WSL briefly fail to talk
+// to each other) is retried a bounded number of times; any other failure stays
+// immediate.
 func (w *Worker) winSeam() nt8RunSeam {
-	if w.runWin != nil {
-		return w.runWin
+	raw := w.runWin
+	if raw == nil {
+		raw = execWindows
 	}
-	return execWindows
+	return retryWSLInterop(raw, w.host.Sleep, w.logf)
 }
 
 // addonConfig assembles the addonbuild.Config for THIS job. WorkDir is a

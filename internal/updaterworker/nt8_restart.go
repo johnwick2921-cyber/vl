@@ -40,6 +40,46 @@ func addonExe() string {
 // powershell.exe; tests bind a fake.
 type nt8RunSeam func(ctx context.Context, name string, args ...string) ([]byte, error)
 
+// wslInteropBackoffs are the m388 retry sleeps between tries (three tries
+// total, so two sleeps).
+var wslInteropBackoffs = []time.Duration{5 * time.Second, 15 * time.Second}
+
+// wslInteropTimeout reports whether a failed Windows exec is the WSL
+// interop-timeout the owner saw ("<3>WSL … UtilAcceptVsock:271: accept4 failed
+// 110"): Windows and WSL briefly fail to talk to each other and the vsock
+// accept call times out. The match is specific — BOTH markers must be present
+// in the command's output (or the error) — so an unrelated failure is never
+// retried.
+func wslInteropTimeout(out []byte, err error) bool {
+	if err == nil {
+		return false
+	}
+	text := string(out)
+	if text == "" {
+		text = err.Error()
+	}
+	return strings.Contains(text, "UtilAcceptVsock") && strings.Contains(text, "accept4 failed")
+}
+
+// retryWSLInterop wraps the Windows exec seam with a bounded retry that fires
+// ONLY on the WSL interop-timeout signature. Three tries total (two retries,
+// 5 s then 15 s backoff); each retry is logged. Any other failure is returned
+// immediately, and a cancelled context stops the loop.
+func retryWSLInterop(run nt8RunSeam, sleep func(context.Context, time.Duration) error, logf func(string, ...any)) nt8RunSeam {
+	return func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		for attempt := 0; ; attempt++ {
+			out, err := run(ctx, name, args...)
+			if err == nil || !wslInteropTimeout(out, err) || attempt >= len(wslInteropBackoffs) {
+				return out, err
+			}
+			logf("🔁 WSL interop timeout on %s (try %d/3): %s — retrying in %s", name, attempt+1, clipText(err.Error()), wslInteropBackoffs[attempt])
+			if serr := sleep(ctx, wslInteropBackoffs[attempt]); serr != nil {
+				return out, err
+			}
+		}
+	}
+}
+
 // nt8Restart stops and starts NT8 through the run seam, with a sleep seam for
 // the graceful-close wait and the reconnect poll (both bounded, both fakeable).
 type nt8Restart struct {
