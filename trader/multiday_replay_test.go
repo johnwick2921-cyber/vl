@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
@@ -185,13 +186,26 @@ func TestMultiDayReplay(t *testing.T) {
 	fdrActiveFixturePath = mdrFixturePath
 	t.Cleanup(func() { fdrActiveFixturePath = oldPath })
 
-	w := newFdrWorld(t, mdrSeedMs, []string{mdrAccount}, map[string]bool{mdrAccount: true}, mdrAddonBuild)
+	seedMs, endMs := mdrSeedMs, mdrWindowEndMs
+	if day := os.Getenv("MDR_DAY"); day != "" {
+		// One CME session-day: seed at the PREVIOUS calendar day 17:00 CT, run
+		// to this day's 16:00 CT (the full-day replay's seed shape).
+		d, err := time.ParseInLocation("2006-01-02", day, kernel.CTLocation())
+		if err != nil {
+			t.Fatalf("MDR_DAY %q: %v", day, err)
+		}
+		prev := d.AddDate(0, 0, -1)
+		seedMs = time.Date(prev.Year(), prev.Month(), prev.Day(), 17, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+		endMs = time.Date(d.Year(), d.Month(), d.Day(), 16, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+	}
+
+	w := newFdrWorld(t, seedMs, []string{mdrAccount}, map[string]bool{mdrAccount: true}, mdrAddonBuild)
 	w.mdrStoreCalendar()
 	cfg := loadReplayStrategy(t)
 
-	start := w.barIndexAtOrAfter(mdrSeedMs)
-	end := w.barIndexAtOrAfter(mdrWindowEndMs)
-	w.setNow(mdrSeedMs)
+	start := w.barIndexAtOrAfter(seedMs)
+	end := w.barIndexAtOrAfter(endMs)
+	w.setNow(seedMs)
 	w.cur.Store(int64(start - 1))
 	ft := &fdrTrader{id: mdrTraderID, account: mdrAccount, levelPx: map[string]float64{}}
 	w.traders = []*fdrTrader{ft}
