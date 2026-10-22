@@ -100,7 +100,7 @@ func TestSplitAddonCancelAllBrackets(t *testing.T) {
 func TestSplitAddonOrderUpdateDedupeStateAndFilled(t *testing.T) {
 	src := readSplitAddonSource(t)
 	for _, want := range []string{
-		`string filled = e.Filled.ToString("R", System.Globalization.CultureInfo.InvariantCulture);`,
+		`string filled = e.Filled.ToString(System.Globalization.CultureInfo.InvariantCulture);`,
 		`string stateKey = state + ":" + filled;`,
 		`if (lastOrderState.TryGetValue(key, out var prev) && prev == stateKey) return;`,
 		`lastOrderState[key] = stateKey;`,

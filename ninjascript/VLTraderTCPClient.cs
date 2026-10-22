@@ -73,7 +73,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         //   hello-first write gate, hello-close warning (superseded by -c).
         // 2026-10-22-a (release #46): order_update de-dupe keys on state+filled
         //   (m227 bug-hunt #4) — the #45 source change shipped under the same id.
-        private const string  VL_BUILD_ID             = "2026-10-22-a";
+        private const string  VL_BUILD_ID             = "2026-10-22-b";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
@@ -2453,7 +2453,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // PartFilled with a LARGER cumulative e.Filled must be SENT (Go's
                 // only cumulative-quantity feed is order_update), not suppressed
                 // as "the same state".
-                string filled = e.Filled.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+                string filled = e.Filled.ToString(System.Globalization.CultureInfo.InvariantCulture);
                 string stateKey = state + ":" + filled;
                 lock (signalMapLock)
                 {
