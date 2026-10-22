@@ -198,6 +198,9 @@ type State struct {
 	// Keyed by the level key so a resting order is never re-emitted (B16: one
 	// intent per reference).
 	LevelArms map[string]LevelArm `json:"level_arms,omitempty"`
+	// RollingPHL is the D2.2 pullback-continuation rolling stop-entry state
+	// (m216: the pullback leg only — level touches stay first-touch-fixed).
+	RollingPHL RollingPHL `json:"rolling_phl,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
@@ -267,7 +270,9 @@ type Evaluator struct {
 	// restart only initialises them (no burst of "became valid" lines).
 	tlDay     string
 	tlValid   map[string]bool
+	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
+	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
 }
 
 // maxNotes bounds the undrained note buffer (replays and tests never drain).
@@ -301,20 +306,88 @@ func (e *Evaluator) noteTriggerMove(name string, prev, cur TriggerLine, bars []m
 		name, from, cur.Dir, cur.Price, kernel.TableTimeCT(time.UnixMilli(cur.MovedAt)), at)
 }
 
+// htFTrendlines maintains the PERSISTENT higher-timeframe trendlines in
+// evaluator state [D2.3 p1 @04:23–05:41]: the anchors are kept across the
+// window slide (the 25-hour rebuild window does NOT delete a 1h/4h line), a
+// line dies only on a close-through on its OWN timeframe, and a 3rd touch
+// latches once it happens. New lines whose anchors are inside the current
+// window are folded in; every held line is then break-checked by time. It
+// returns the live lines (to join the level set) and the ones that broke
+// this tick (for the note).
+func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, broken []Trendline) {
+	if e.tlHTF == nil {
+		e.tlHTF = map[string]Trendline{}
+	}
+	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
+	// line and must not re-bucket the whole window for each one.
+	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
+	for _, tf := range []int{60, 240} {
+		for _, tl := range trendlinesBuildTF(bars, tf, now) {
+			k := tl.key()
+			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
+				continue // keep the latched-valid line; never regress it
+			}
+			e.tlHTF[k] = tl
+		}
+	}
+	for k, tl := range e.tlHTF {
+		btf := tfBars[tl.TFMin]
+		if btf == nil {
+			btf = barsTF(bars, tl.TFMin)
+		}
+		if tl.Dead || trendlineHTFBroken(tl, btf, now) {
+			tl.Dead = true
+			delete(e.tlHTF, k)
+			broken = append(broken, tl)
+			continue
+		}
+		if tl.ValidAt == 0 {
+			if va := trendlineHTFTouch(tl, btf, now); va > 0 {
+				tl.ValidAt = va
+			}
+		}
+		e.tlHTF[k] = tl
+		live = append(live, tl)
+	}
+	return live, broken
+}
+
 // trackTrendlines counts each crossed-between-anchors pair once per trading
 // day (refusal "trendline_crossed_between_anchors") and records a change line
 // when a line turns VALID (a location) or a valid line is broken by a 5m
 // close. The session roll clears both sets — the lines die at day end
 // [D4.1 p2 @01:17].
-func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int64) {
+func (e *Evaluator) trackTrendlines(lines, broken []Trendline, crossed []string, now int64) {
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	first := e.tlValid == nil
 	if e.tlDay != day {
 		if e.tlDay != "" && len(e.tlValid) > 0 {
-			e.note("trendlines deleted at the session end: %d valid line(s) of trading day %s [D4.1 p2 @01:17]", len(e.tlValid), e.tlDay)
+			// Only the 1m lines die at the session end [D4.1 p2 @01:17]; the
+			// 1h/4h lines persist [D2.3 p1 @04:23–05:41] and are kept.
+			n := 0
+			for k := range e.tlValid {
+				if e.tlTF[k] == 0 {
+					n++
+				}
+			}
+			if n > 0 {
+				e.note("trendlines deleted at the session end: %d valid 1m line(s) of trading day %s [D4.1 p2 @01:17]", n, e.tlDay)
+			}
 		}
 		e.tlDay = day
-		e.tlValid = map[string]bool{}
+		if e.tlValid == nil {
+			e.tlValid = map[string]bool{}
+		} else {
+			for k, tf := range e.tlTF {
+				if tf == 0 {
+					delete(e.tlValid, k)
+					delete(e.tlTF, k)
+				}
+			}
+		}
+		if e.tlTF == nil {
+			e.tlTF = map[string]int{}
+		}
 		e.tlCrossed = map[string]bool{}
 	}
 	for _, k := range crossed {
@@ -323,19 +396,43 @@ func (e *Evaluator) trackTrendlines(lines []Trendline, crossed []string, now int
 			e.refuse("trendline_crossed_between_anchors")
 		}
 	}
+	// Persistent HTF lines that broke THIS tick are already removed from
+	// tlHTF; they never enter `lines`, so they are noted here.
+	for _, tl := range broken {
+		k := tl.key()
+		if !e.tlValid[k] {
+			continue // existed but never valid — a silent discard
+		}
+		delete(e.tlValid, k)
+		delete(e.tlTF, k)
+		e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+			tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+	}
 	for _, tl := range lines {
 		k := tl.key()
 		switch {
 		case tl.ValidAt > 0 && !tl.Dead && !e.tlValid[k]:
 			e.tlValid[k] = true
+			e.tlTF[k] = tl.TFMin
 			if !first {
-				e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
-					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				if tl.TFMin > 0 {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a PERSISTENT %dm location until an HTF close breaks it [D2.3 p1 @04:23–05:41]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)), tl.TFMin)
+				} else {
+					e.note("trendline VALID (3rd touch, a return) %s %.2f→%.2f (%s → %s CT) — a location until a 5m close breaks it or the session ends [D3.2 p2 @03:45]",
+						tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+				}
 			}
 		case tl.Dead && e.tlValid[k]:
 			delete(e.tlValid, k)
-			e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
-				tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			delete(e.tlTF, k)
+			if tl.TFMin > 0 {
+				e.note("trendline BROKEN by an HTF close %s %.2f→%.2f (%s → %s CT) — discarded [D2.3 p1 @04:23–05:41]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			} else {
+				e.note("trendline BROKEN by a 5m close %s %.2f→%.2f (%s → %s CT) — discarded [X9 @06:20–06:47]",
+					tl.Side, tl.P0Px, tl.P1Px, kernel.CloseHHMMCT(time.UnixMilli(tl.P0T)), kernel.CloseHHMMCT(time.UnixMilli(tl.P1T)))
+			}
 		}
 	}
 }
@@ -607,6 +704,14 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 	}
 	var out []Intent
 	for key, arm := range e.State.LevelArms {
+		// The rolling pullback order is NOT a level order: its "level" is the
+		// old extreme far above/below the entry, so the close-through sweep
+		// must never cancel it (price is always on the pullback side of the
+		// old extreme). The rolling path owns its own invalidation and the
+		// trader's reconcile clears it on fill.
+		if key == rollingLevelKey {
+			continue
+		}
 		through := false
 		if cur.CloseTime > arm.PlacedAt {
 			through = arm.Side == SideLong && cur.Close < arm.LevelPrice ||
@@ -623,7 +728,7 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 		expired := now >= LevelArmExpiry(arm.PlacedAt)
 		if through || expired {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
-				Reason: "level order rest cancelled — a later candle closed through the level, or the order's own 15:00 CT expiry passed [D2.3 p1 @18:01–19:12; recovered @23:48]"})
+				Reason: "level order rest cancelled — a later candle closed through the level [D2.3 p1 @23:16–24:03], or the order's own 15:00 CT expiry passed [derived: LevelArmExpiry — no course timestamp states a 15:00 expiry; level_lifetime.go flags it as an inference]"})
 			delete(e.State.LevelArms, key)
 		}
 	}
@@ -730,7 +835,8 @@ func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Inte
 
 // midRangeBoxed reports whether price sits between an FTGL floor box below
 // and an FTGH ceiling box above — the mid-range ban with NO width threshold
-// (CTO 1791003862333): "between two boxes: NO PHL, NO PLH, only the ISB".
+// (CTO 1791003862333): "between two boxes: NO PHL, NO PLH, only the ISB"
+// [D3.2 p2 @08:34–08:55; D2.2 p3 @14:03–16:03 "chỉ được đánh insaba"].
 func midRangeBoxed(boxes []Box, price float64) bool {
 	var floor, ceil bool
 	for _, b := range boxes {
@@ -1613,10 +1719,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
+	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
-	e.trackTrendlines(trendlines, crossed, now)
-	levels = append(levels, TrendlineLevels(trendlines, boxes, bars)...)
+	e.trackTrendlines(trendlines, htfBroken, crossed, now)
+	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
+	for _, k := range tlRefused {
+		e.refuse("tl_first_test_level_preferred:" + k)
+	}
+	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
@@ -1633,7 +1745,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// EVERY setup the transcript names — the ISB pair AND PHL/PLH ("Lớp học
 	// của mình chỉ only đúng 3 setup: inside bar, potential high or low,
 	// potential low or high" [X11 @07:09–07:30]; "Mình trade khung 2 phút …
-	// potential high low" [X8 @15:52–15:57]):
+	// potential high low" [X8 @15:52–15:57]). The frame is 1m at most 2m —
+	// "chúng ta chỉ trade ở khung 1 phút, maximum là khung 2 phút thôi"
+	// [D1.4 p1 @01:45–01:51]:
 	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
 	//     ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1 phút … sau 30
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
@@ -1873,8 +1987,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("isb_htf_blocked")
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
-					// CANDLE-1 colour direction (the only skip: a stop in
-					// the 20–<30 band) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// CANDLE-1 colour direction [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// (The stop-size skip is DS-104's ISB stop band — D3.3/D4.1.)
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
@@ -2711,6 +2825,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §8 SWING4H (DS-106 slice) on FINAL 5m bars only — the still-forming
 	// bucket is excluded (CTO wiring ruling 2026-10-03).
 	out = append(out, runSwing(e, bars, now)...)
+
+	// §2.2 D2.2 pullback-continuation: the ROLLING PHL/PLH stop entry (m216
+	// scope — the pullback leg only; a drawn-level touch stays first-touch-fixed
+	// in the touch loop above). It is gated by the same 15m/5m conflict the
+	// level and box paths are.
+	if !conflict {
+		out = append(out, e.rollingPHLTick(bars, execCur, execTFMin, oldExtremes, levels, dg)...)
+	}
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
 	// the candle nor the entry point [D3.2 p1 @ 06:59].

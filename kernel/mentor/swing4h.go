@@ -25,7 +25,12 @@ import (
 //     offset (5–10 pts) sits TOWARD the approaching price — the touch band
 //     is on the approach side only.
 //  4. "First touching candle is the reference; 2 candles of leeway allowed
-//     here only" [p1 @ 15:21] — implemented as the ISB window below.
+//     here only" [D5.2 p1 @15:21–15:48] — the 4h level's touch window is the
+//     FIRST TWO touching 5m candles: the entry may be armed off either of
+//     them, and if either of them CLOSES beyond the level there is NO order
+//     (cancel any resting arm, spend the level). SWING4H-only; every other
+//     setup keeps first-touch = 1 candle. The ISB recovery window after a
+//     through-close is NOT this leeway — R34 keeps it open until the 4h flip.
 //  5. Two cases [p3 @ 21:30, corrected §3]:
 //   - Touch, closes BACK on the approach side (a REJECT) → stop order
 //     beyond that candle. "Stop (clean rejection): ~30 points above the
@@ -39,8 +44,8 @@ import (
 //     the injector must not apply
 //     it to SWING4H).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
-//     fallback); BE at +1R; hold to the close of the 2nd 4h candle after
-//     entry (the method does not state the hold length — knob [C]).
+//     fallback); BE at +1R [D1.2 p1 @12:34–13:12, @15:56–15:59 — the general
+//     1:1 maintenance]; hold ONE 4h candle [D5.2 p1 @06:03–06:20].
 //  8. One setup per approach: no new one until price has left the line by
 //     at least the stop distance and comes back. R8: each new 4h candle
 //     re-bases the line and the "used" approach resets.
@@ -59,22 +64,23 @@ const (
 // SwingCfg holds the §8 knobs.
 type SwingCfg struct {
 	EMAPeriod         int     // 34
-	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 (R8: 5–10)
+	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 [D5.2 p2 @22:24–23:05: 5–10]
 	StopBeyondLinePts float64 // clean-rejection stop distance; default 30 (R8: 30–60 allowed)
-	MaxStopPts        float64 // ≥ this → skip; default 100 [table]
+	MaxStopPts        float64 // ~100-pt ceiling, NO skip: the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
 	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
 	// R5: new behaviour behind a knob that defaults OFF.
 	MinStopPts float64
-	EntryBufferPts    float64 // R8: NO buffer — order sits tight on the candle; default 0
+	EntryBufferPts    float64 // NO buffer — order sits tight on the candle; default 0 [D5.2 p2 @05:02–05:12]
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
-	// LeewayCandles is the reference-leeway knob (R26, P2): the first OR
-	// second touching candle may be the reference. It is NOT the ISB window —
-	// R34 rules that the ISB watch after a through-close stays open until the
-	// 4h flip (no candle limit). Currently unused by the swing tick.
+	// LeewayCandles is the reference-leeway knob [D5.2 p1 @15:21–15:48]: the
+	// first OR second touching candle may be the reference (the 4h level's
+	// touch window = the first LeewayCandles touching 5m candles). It is NOT
+	// the ISB window — R34 rules that the ISB watch after a through-close
+	// stays open until the 4h flip (no candle limit).
 	LeewayCandles int
-	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 2 [C]
+	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 1 [D5.2 p1 @06:03–06:20]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -88,12 +94,12 @@ func DefaultSwingCfg() SwingCfg {
 		EMAPeriod:         34,
 		LineOffsetPts:     5,
 		StopBeyondLinePts: 30,
-		MaxStopPts:        100,
+		MaxStopPts:        100, // ~100-pt ceiling, no skip (m186 D5.2 @21:25-21:43)
 		MinStopPts:        0, // W26 P2-4: OFF by default (R5)
-		EntryBufferPts:    0, // R8: no buffer
+		EntryBufferPts:    0, // no buffer [D5.2 p2 @05:02–05:12]
 		TargetEMA5mPeriod: 34,
 		LeewayCandles:     2,
-		Hold4hBars:        2,
+		Hold4hBars:        1,
 	}
 }
 
@@ -109,6 +115,53 @@ func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
 
 // SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
 func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
+
+// lateDaySwingTargetCap is the late-day swing target cap (mid of 20–30
+// [D5.2 p2 @07:21]).
+const lateDaySwingTargetCap = 25.0
+
+// swingLateDayRRRefused counts a late-day swing refused because the capped
+// target falls below the stop distance — 1:1 is mandatory "trong bất kỳ tình
+// huống nào" [D1.2 p1 @08:02], never ship a sub-1:1 trade.
+var swingLateDayRRRefused atomic.Int64
+
+// SwingLateDayRRRefused exposes the counter for tests and telemetry.
+func SwingLateDayRRRefused() int64 { return swingLateDayRRRefused.Load() }
+
+// lastSessionBucket returns the OPEN (ms) of the LAST 4h trading bucket of the
+// CME session containing now — 13:00 CT on a normal day (the 12:00 stub
+// re-anchored to 13:00); the bucket holding the shortened close on an
+// early-close day. [derived: D5.2 p2 @07:00–07:58 "market sắp đóng cửa" → the
+// last 4h bucket]
+func lastSessionBucket(now int64) int64 {
+	st := kernel.SessionStateAt(time.UnixMilli(now))
+	var closeMs int64
+	if st.Class == kernel.SessionShortened && st.HasClose {
+		closeMs = st.Close.UnixMilli()
+	} else {
+		start := kernel.CMESessionDayStart(time.UnixMilli(now))
+		closeMs = start.AddDate(0, 0, 1).Add(-time.Hour).UnixMilli()
+	}
+	return kernel.FourHBucketStart(closeMs, nil)
+}
+
+// lateDaySwingCut applies the late-day swing target cut: an entry authored
+// inside the LAST 4h bucket has its target capped at lateDaySwingTargetCap.
+// ok=false → the capped target is below the stop distance (risk) — 1:1 is
+// mandatory "trong bất kỳ tình huống nào" [D1.2 p1 @08:02] — REFUSE.
+func lateDaySwingCut(entryBucket, now int64, target, risk float64) (cut float64, late, ok bool) {
+	if entryBucket != lastSessionBucket(now) {
+		return target, false, true
+	}
+	cut = target
+	if cut > lateDaySwingTargetCap {
+		cut = lateDaySwingTargetCap
+	}
+	if cut < risk {
+		return cut, true, false
+	}
+	return cut, true, true
+}
 
 // SwingState is everything the swing machine carries between ticks. It is
 // rebuildable: replaying the same 5m series from a zero state reproduces it.
@@ -136,6 +189,10 @@ type swingTouch struct {
 	RefBar   market.Kline // the first touching 5m candle
 	Approach Side         // price came from this side: SideLong = from above
 	Through  bool         // the touch closed THROUGH the line
+	// Touches counts the touching 5m candles this window has consumed [D5.2 p1
+	// @15:21–15:48]: the 4h level's touch window is the first LeewayCandles
+	// touching candles, and the entry may be armed off any of them.
+	Touches int
 }
 
 type swingPosition struct {
@@ -367,6 +424,13 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
+					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+						if !ok {
+							swingLateDayRRRefused.Add(1)
+							continue
+						}
+						in.Target = cut
+					}
 					in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
 					s.openPosition(in, now)
 					out = append(out, in)
@@ -382,14 +446,25 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		if !touchesLineApproach(b, line, cfg.LineOffsetPts, approach) {
 			continue
 		}
-		if approach == SideLong && s.ClearLongAt != 0 && b.Low > s.ClearLongAt {
-			continue // not yet re-armed
-		}
-		if approach == SideShort && s.ClearShortAt != 0 && b.High < s.ClearShortAt {
-			continue // not yet re-armed
+		// Leeway window [D5.2 p1 @15:21–15:48]: the 4h level's touch window is
+		// the FIRST LeewayCandles touching 5m candles (default 2) instead of
+		// one. The entry may be armed off any of them, so the one-setup-per-
+		// approach distance guard is waived while the window is open. Once the
+		// window is spent, the normal first-touch / spent rules apply.
+		inWindow := s.FirstTouch != nil && !s.FirstTouch.Through &&
+			s.FirstTouch.Touches < cfg.LeewayCandles
+		if !inWindow {
+			if approach == SideLong && s.ClearLongAt != 0 && b.Low > s.ClearLongAt {
+				continue // not yet re-armed
+			}
+			if approach == SideShort && s.ClearShortAt != 0 && b.High < s.ClearShortAt {
+				continue // not yet re-armed
+			}
 		}
 		if !closedBack(approach, b.Close, line) {
-			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3].
+			// closes THROUGH → CANCEL [D5.2 p3 @ 21:30, corrected §3]. A
+			// touching candle in the leeway window that closes beyond the level
+			// spends it: NO order, cancel any resting arm [D5.2 p1 @15:21–15:48].
 			// S1: name the resting swing arm so the cancel reaches the right
 			// order, and clear the pending — a cancelled order must never
 			// grow into a phantom position. A through-close with NOTHING
@@ -402,7 +477,17 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 				})
 				s.Pending = nil
 			}
-			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true}
+			touches := 1
+			if s.FirstTouch != nil && !s.FirstTouch.Through {
+				touches = s.FirstTouch.Touches + 1
+			}
+			s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Through: true, Touches: touches}
+			continue
+		}
+		// A second touching candle inside the window may re-arm (supersede) only
+		// while NO position owns the level — if the first arm already filled on
+		// this candle, the position is open and there is nothing to supersede.
+		if inWindow && s.Pos != nil {
 			continue
 		}
 		in, eok := swingRejectIntent(approach, b, line, cfg)
@@ -411,13 +496,36 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
+		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+			if !ok {
+				swingLateDayRRRefused.Add(1)
+				s.FirstTouch = nil
+				continue
+			}
+			in.Target = cut
+		}
 		in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
+		// A later touching candle inside the window supersedes the earlier arm:
+		// the entry re-bases on THIS candle's extreme — either of the first two
+		// touching candles may be the reference [D5.2 p1 @15:21–15:48].
+		if s.Pending != nil {
+			out = append(out, Intent{
+				Action: CancelArm,
+				ArmID:  s.Pending.ArmID,
+				Reason: "swing: re-armed off a later touching candle in the leeway window — supersede the first arm [D5.2 p1 @15:21–15:48]",
+			})
+			s.Pending = nil
+		}
 		if approach == SideLong {
 			s.ClearLongAt = line - cfg.StopBeyondLinePts
 		} else {
 			s.ClearShortAt = line + cfg.StopBeyondLinePts
 		}
-		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach}
+		touches := 1
+		if s.FirstTouch != nil && !s.FirstTouch.Through {
+			touches = s.FirstTouch.Touches + 1
+		}
+		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Touches: touches}
 		s.openPosition(in, now)
 		out = append(out, in)
 	}
@@ -582,9 +690,7 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 			Stop:   line - cfg.StopBeyondLinePts,
 		}
 	}
-	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
-		return Intent{}, false
-	}
+	// m186 D5.2: NO ~100-pt skip — the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened.
 	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
 		swingMinStopRefused.Add(1)
 		return Intent{}, false
@@ -608,9 +714,7 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	} else {
 		in = Intent{Action: PlaceStopEntry, Setup: "SWING4H", Side: SideLong, Price: ref.High + cfg.EntryBufferPts, Stop: line}
 	}
-	if abs(in.Stop-in.Price) >= cfg.MaxStopPts {
-		return Intent{}, false
-	}
+	// m186 D5.2: NO ~100-pt skip — the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened.
 	if cfg.MinStopPts > 0 && abs(in.Stop-in.Price) < cfg.MinStopPts {
 		swingMinStopRefused.Add(1)
 		return Intent{}, false
@@ -633,16 +737,20 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	cur := bars[len(bars)-1]
 	var out []Intent
 	if !p.MovedBE {
+		// m233: the BE at +1R on a CLOSED 5m candle is the GENERAL 1:1 rule
+		// [D1.2 p1 @12:34–13:12, @15:56–15:59 "Bắt buộc … maintain risk reward
+		// 1-1"] — it applies to every trade, the swing included (D5.2 adds no
+		// exception). A 5m CLOSE at/through +1R moves the stop to break-even.
 		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
 			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
-				Reason: "swing §8: +1R reached — stop to break-even"})
+				Reason: "swing: +1R reached on a 5m close — stop to break-even [D1.2 p1 @12:34–13:12, @15:56–15:59]"})
 			p.MovedBE = true
 		}
 	}
 	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
 	if cur.OpenTime >= holdMs {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
-			Reason: "swing §8: hold to the close of the 2nd 4h candle after entry"})
+			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
 		s.Pos = nil
 	}
 	return out

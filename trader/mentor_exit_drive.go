@@ -337,7 +337,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	switch pos.Mode {
 	case "swing":
-		// SWING: no moves — the swing rules own it [D4.2].
+		// SWING: no moves — the swing rules own it [D5.2 p1 @05:52–06:09].
 		return
 	case "C":
 		// C (confluence): the stop NEVER moves [D3.4 p3 @07:38: "hold… at least
@@ -705,7 +705,7 @@ var mentorCloseLegAtMarketWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, si
 }
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
-// move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08)
+// move_stop frame, guarded by mentorNeverWiden (never widen, D1.2 p2 @00:08–00:24)
 // against the belief AND — release #22, P2-3 — against the BROKER's own stop
 // (mentorJudgeAgainstBroker): no fresh book refuses, no live stop for the leg
 // sends nothing (F-6), a broker stop already tighter is kept. A latched leg

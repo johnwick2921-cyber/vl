@@ -14,7 +14,9 @@ import (
 //
 //  1. bars = 1H RTH only: candles anchored at 08:30 CT (first candle
 //     08:30–09:29), external (ETH) candles excluded [slide 31: "Khung 1H ONLY
-//     · Không tính external hours · Bắt đầu từ lúc market open"];
+//     · Không tính external hours · Bắt đầu từ lúc market open"]; levels are
+//     drawn on the RTH session only, never the Asia/Europe ETH session
+//     [D5.3 p1 @12:57–13:50].
 //  2. each candle colour (close > open = green) is one trend;
 //  3. at EVERY colour change a line is drawn at the OPEN of the SECOND candle
 //     (red → green: open of the green candle; green → red: open of the red).

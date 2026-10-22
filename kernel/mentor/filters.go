@@ -284,7 +284,8 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 }
 
 // SetupPermittedVerdict gates a setup kind by the mid-range filter: in the
-// middle of a range only the ISB survives [D3.2 p2 @ 08:34].
+// middle of a range only the ISB survives [D3.2 p2 @ 08:34; D2.2 p3 @14:03–16:03
+// "Ở giữa rank không được đánh potential high low, chỉ được đánh insaba"].
 func SetupPermittedVerdict(kind string, levels []Level, price float64, cfg Config) (ok bool, reason string) {
 	if !MidRange(levels, price, cfg) {
 		return true, ""

@@ -191,7 +191,7 @@ func mentorResonanceOpenLegs(p *mentorLivePos, exited [3]bool) []*mentorLeg {
 //     between authoring and fill;
 //  3. the setup's own rule: SWING4H holds by the 4h → "swing";
 //  4. the COURSE default, B "normal" — trail every closed candle
-//     [00-METHOD §6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
+//     [00-METHOD section 6 "Mode B — normal", D2.4 p1 @ 07:01]. No strategy-level
 //     exit-mode default exists to read first (no such knob).
 //
 // class is the counter suffix (exit_mode_<class>); why is the log text.

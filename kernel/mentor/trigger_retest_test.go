@@ -8,7 +8,7 @@ import (
 	"vl/market"
 )
 
-// TestTriggerRetestWrongWayRefused — row 56 (a) [D3.2 p1 @ 21:53–23:08]: a
+// TestTriggerRetestWrongWayRefused — row 56 (a) [D3.4 p2 @20:51–21:27 (also @21:55–22:10)]: a
 // trigger-retest level trades ONLY in the trigger's direction, whatever the
 // school. A BUY trigger line whose retest rejects from BELOW would map to a
 // SELL (RejectEntry: resistance reject → short) — school 1 skips the trigger

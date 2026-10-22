@@ -256,7 +256,7 @@ func TestSeedTrendlinesMarksCrossed(t *testing.T) {
 		}
 	}
 	before := e.State.Refusals["trendline_crossed_between_anchors"]
-	e.trackTrendlines(lines, crossed, now)
+	e.trackTrendlines(lines, nil, crossed, now)
 	if got := e.State.Refusals["trendline_crossed_between_anchors"]; got != before {
 		t.Fatalf("the first tick recounted already-crossed pairs: %d → %d", before, got)
 	}
