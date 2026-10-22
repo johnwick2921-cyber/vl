@@ -514,12 +514,13 @@ export function mentorTrendSegments(
     if (!tl.valid && !formingAllowed.has(tl)) continue
     const slope = (tl.p1_px - tl.p0_px) / (tl.p1_ms - tl.p0_ms)
     const valueAt = (ms: number) => tl.p0_px + slope * (ms - tl.p0_ms)
-    // m134: a TRADED valid line extends to the right edge; m150: a valid line
-    // inside a box (not traded) stops at its 2nd anchor and draws muted, and a
-    // FORMING line does the same.
+    // m134/m328: EVERY trendline extends to the right edge ("kéo dài" — the
+    // mentor physically extends the line to see where price meets it). Only a
+    // TRADED valid line is solid; a valid line inside a box (not traded) and a
+    // FORMING line extend DASHED + muted to the right edge too.
     const inBox = tl.valid && !tl.in_level
     const traded = tl.valid && !inBox
-    const endMs = traded ? lastBar * 1000 : tl.p1_ms
+    const endMs = lastBar * 1000
     const times = Array.from(
       new Set([tl.p0_ms, tl.p1_ms, endMs].map(snap))
     ).sort((a, b) => a - b)
