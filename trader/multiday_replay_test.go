@@ -181,17 +181,26 @@ func TestMultiDayReplay(t *testing.T) {
 	if os.Getenv("MULTI_DAY_REPLAY") != "1" {
 		t.Skip("the multi-day replay (10-13 → 10-21) runs with MULTI_DAY_REPLAY=1")
 	}
+	mdrRun(t, mdrFixturePath, mdrSeedMs, mdrWindowEndMs, "MULTI-DAY")
+}
+
+// mdrRun is the replay body shared by TestMultiDayReplay (10-13 → 10-21, the
+// default) and TestDayReplay (one session-day fixture, m277): the production
+// mentor path over fixture bars [seedMs, endMs). Behaviour for the default
+// arguments is byte-for-byte what TestMultiDayReplay did before the split.
+func mdrRun(t *testing.T, fixture string, seedMs, endMs int64, label string) {
+	t.Helper()
 	oldPath := fdrActiveFixturePath
-	fdrActiveFixturePath = mdrFixturePath
+	fdrActiveFixturePath = fixture
 	t.Cleanup(func() { fdrActiveFixturePath = oldPath })
 
-	w := newFdrWorld(t, mdrSeedMs, []string{mdrAccount}, map[string]bool{mdrAccount: true}, mdrAddonBuild)
+	w := newFdrWorld(t, seedMs, []string{mdrAccount}, map[string]bool{mdrAccount: true}, mdrAddonBuild)
 	w.mdrStoreCalendar()
 	cfg := loadReplayStrategy(t)
 
-	start := w.barIndexAtOrAfter(mdrSeedMs)
-	end := w.barIndexAtOrAfter(mdrWindowEndMs)
-	w.setNow(mdrSeedMs)
+	start := w.barIndexAtOrAfter(seedMs)
+	end := w.barIndexAtOrAfter(endMs)
+	w.setNow(seedMs)
 	w.cur.Store(int64(start - 1))
 	ft := &fdrTrader{id: mdrTraderID, account: mdrAccount, levelPx: map[string]float64{}}
 	w.traders = []*fdrTrader{ft}
@@ -203,8 +212,8 @@ func TestMultiDayReplay(t *testing.T) {
 		w.addon.mdrTouchFill()
 		w.addon.settle()
 	}
-	t.Logf("MULTI-DAY replayed %d bars (%s → %s CT) in %s wall",
-		end-start, fdrCT(w.bars[start].OpenTime), fdrCT(w.bars[end-1].CloseTime+1), time.Since(wall).Round(time.Second))
+	t.Logf("%s replayed %d bars (%s → %s CT) in %s wall",
+		label, end-start, fdrCT(w.bars[start].OpenTime), fdrCT(w.bars[end-1].CloseTime+1), time.Since(wall).Round(time.Second))
 
 	trades := w.mdrTrades()
 	t.Logf("TRADES %d:", len(trades))
