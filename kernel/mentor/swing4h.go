@@ -122,8 +122,8 @@ func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 const lateDaySwingTargetCap = 30.0
 
 // swingLateDayRRRefused counts a late-day swing refused (reason
-// swing_late_day_rr): the stop is wider than the 30-pt late-day target
-// ceiling, so the cut cannot meet 1:1 — or risk ≤ 0.
+// swing_late_day_rr): only the risk ≤ 0 backstop — a wide stop is never
+// refused, its target stays at 1:1.
 var swingLateDayRRRefused atomic.Int64
 
 // SwingLateDayRRRefused exposes the counter for tests and telemetry.
@@ -146,30 +146,36 @@ func lastSessionBucket(now int64) int64 {
 	return kernel.FourHBucketStart(closeMs, nil)
 }
 
-// lateDaySwingCut applies the late-day swing target cut (CTO ruling m331 B3).
-// Two course constraints: cut the target to 20–30 pts near the close
-// [D5.2 p2 @07:21] AND 1:1 is the floor in every situation [D1.2 p1 @08:02].
-// Both hold only when risk ≤ 30, so inside the LAST 4h bucket:
-//   - risk > lateDaySwingTargetCap → ok=false (REFUSE, "late-day cut 20–30
-//     pts cannot meet 1:1 with a <risk>-pt stop"); also risk ≤ 0;
-//   - else the target DISTANCE becomes min(dist, 30); a distance already
-//     below risk is left to the non-late 1:1 gate (unchanged).
-// target/cut are PRICES (as Intent.Target); the cap applies to |target−entry|.
+// lateDaySwingCut applies the late-day swing target cut (CTO final ruling
+// m331 B3). Two course constraints: cut the target to 20–30 pts near the
+// close [D5.2 p2 @07:21], but 1:1 is mandatory in every situation
+// [03-CHECKLIST.md:160; DAY-5.md:117 "big stop → keep 1:1"]. So inside the
+// LAST 4h bucket the target distance becomes max(risk, min(dist, 30)): the cut
+// goes only as far as the 1:1 floor allows. A distance already below risk is
+// returned unchanged for the existing non-late 1:1 gate. The ONLY refusal is
+// risk ≤ 0 (backstop). target/cut are PRICES; the cap applies to |target−entry|.
 func lateDaySwingCut(entryBucket, now int64, side Side, entry, target, risk float64) (cut float64, late, ok bool) {
 	if entryBucket != lastSessionBucket(now) {
 		return target, false, true
 	}
-	if risk <= 0 || risk > lateDaySwingTargetCap {
+	if risk <= 0 {
 		return target, true, false
 	}
 	dist := abs(target - entry)
-	if dist <= lateDaySwingTargetCap {
+	if dist < risk {
 		return target, true, true
 	}
-	if side == SideShort {
-		return entry - lateDaySwingTargetCap, true, true
+	cutDist := dist
+	if cutDist > lateDaySwingTargetCap {
+		cutDist = lateDaySwingTargetCap
 	}
-	return entry + lateDaySwingTargetCap, true, true
+	if cutDist < risk {
+		cutDist = risk // 1:1 floor
+	}
+	if side == SideShort {
+		return entry - cutDist, true, true
+	}
+	return entry + cutDist, true, true
 }
 
 // SwingState is everything the swing machine carries between ticks. It is
