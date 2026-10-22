@@ -6,12 +6,14 @@ import (
 	"vl/kernel"
 )
 
-// #9 — a mentor arm waives ONLY the lunch and first-5m sub-windows. The red-news
-// T1 blackout and the consecutive-loss breaker must still refuse it. Two masks
-// are fixed: (1) sessionGateDecision returned lunch BEFORE the T1 blackout, so
-// an FOMC/Fed-minutes 13:00 CT print inside the 12:00–13:30 lunch window read
-// 'lunch' and was waived; (2) the band verdict returned before the breaker, so
-// a tripped breaker was never evaluated during lunch/first-5m.
+// #9 (+ m235) — a mentor arm waives the day-plan session LIST (lunch / first-5m
+// / outside-session / sessions_enabled / registry / strategy-off / trade cap).
+// The red-news T1 blackout and the consecutive-loss breaker must still refuse it
+// THROUGH a waived band. Two masks are fixed: (1) sessionGateDecision returned
+// lunch BEFORE the T1 blackout, so an FOMC/Fed-minutes 13:00 CT print inside the
+// 12:00–13:30 lunch window read 'lunch' and was waived; (2) the band verdict
+// returned before the breaker, so a tripped breaker was never evaluated during a
+// waived band.
 // MUTANT: move the T1 check back below lunch in sessionGateDecision → the 13:00
 // FOMC minute reads 'lunch' → RED.
 func TestSessionGateDecisionT1WinsOverLunch(t *testing.T) {
@@ -55,8 +57,9 @@ func TestSessionRiskBreakerNotMaskedByLunch(t *testing.T) {
 	}
 }
 
-// isMentorWaivableBandReason: only lunch and first-5m; the T1 blackout and the
-// breaker text are hard.
+// isMentorWaivableBandReason: the day-plan session LIST family (lunch, first-5m,
+// outside-session, sessions_enabled / registry / strategy-off, trade cap); the
+// T1 blackout, the force-flat windows and the breaker text are hard.
 func TestMentorWaivableBandReasonClassification(t *testing.T) {
 	cases := []struct {
 		reason string
@@ -64,6 +67,11 @@ func TestMentorWaivableBandReasonClassification(t *testing.T) {
 	}{
 		{"no_trade_band: lunch no-trade window (12:00–13:30 CT)", true},
 		{"no_trade_band: NY first-5m no-trade window", true},
+		{"no_trade_band: outside all session windows (overnight/interim)", true},
+		{"no_trade_band: LONDON not in this strategy's sessions_enabled", true},
+		{"no_trade_band: LONDON not enabled in the session registry", true},
+		{"no_trade_band: LONDON switched off for this strategy", true},
+		{"no_trade_band: NY trade cap reached (3/3 this session)", true},
 		{"no_trade_band: 🔴 red-news blackout: FOMC 13:00 CT ±15m", false},
 		{"force_flat_window: T1 lead flat", false},
 		{"consecutive_loss_halt: 9 consecutive losing trades", false},

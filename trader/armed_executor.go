@@ -3232,6 +3232,10 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	// when the feed is fresh — nothing is cancelled by this (resting broker
 	// orders are untouched; that is a separate decision).
 	if at.mentorStaleDataBlocked(now) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_stale_data", "stale_data") {
+			at.logWarnf("🛑 mentor placement REFUSED (stale_data): the live 1m feed is stale — mentor arms stay armed and retry when fresh")
+		}
+		telemetry.IncGateBlock(at.id, "stale_data")
 		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
 		return
 	}
@@ -3239,15 +3243,17 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
-	// B3 Q1 + N5 — the mentor ignores ONLY the lunch and first-N windows. The
-	// consecutive-loss breaker, the red-news T1 blackout, the per-session trade
-	// cap, the force-flat windows and outside-session/session-off all still
-	// refuse (session_risk.go labels them one class; mentorWaivesSessionBand
-	// splits the lunch/first-N sub-windows).
+	// B3 Q1 + N5, expanded m235 — the mentor ignores the day-plan session LIST
+	// (outside-session, session-off, sessions_enabled, trade cap, lunch, first-N):
+	// the mentor's own window/news gates govern at authoring. The consecutive-loss
+	// breaker, the red-news T1 blackout and the force-flat windows still refuse.
+	// Every refusal logs once per (class, reason) change and ticks the gate-block
+	// counter (bug-hunt #40 — never silent).
 	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) {
-		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class+":"+risk.Reason) {
 			at.logWarnf("🛑 mentor placement REFUSED (%s): %s", risk.Class, risk.Reason)
 		}
+		telemetry.IncGateBlock(at.id, risk.Class)
 		scope.note(scope.scenarioOrEmpty(), "refused: "+risk.Class+": "+risk.Reason)
 		return
 	}
