@@ -73,10 +73,10 @@ func TestPreflightRefusalsNeverHold(t *testing.T) {
 // m385: a dirty install tree refuses every Update — the preflight refusal must
 // NAME the cause (the first git-status lines), not a bare modified=true.
 // MUTANT: drop the gitStatusPorcelain enrichment in stepPreflight → the error
-// loses "nofx-bin" → RED.
+// loses the named dirty file → RED.
 func TestPreflightDirtyTreeNamesTheCause(t *testing.T) {
 	orig := gitStatusPorcelain
-	gitStatusPorcelain = func(dir string) string { return "?? nofx-bin" }
+	gitStatusPorcelain = func(dir string) string { return "?? stray-bin" }
 	t.Cleanup(func() { gitStatusPorcelain = orig })
 
 	r := newRig(t)
@@ -88,7 +88,7 @@ func TestPreflightDirtyTreeNamesTheCause(t *testing.T) {
 	j := r.job()
 	if j.State != updaterjob.StateRefused ||
 		!strings.Contains(j.Error, "built from a dirty tree") ||
-		!strings.Contains(j.Error, "nofx-bin") {
+		!strings.Contains(j.Error, "stray-bin") {
 		t.Fatalf("job %s (error %q), want refused naming the dirty file", j.State, j.Error)
 	}
 }
