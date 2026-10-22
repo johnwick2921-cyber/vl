@@ -168,84 +168,28 @@ func priorDayProfileLevelsFor(symbol string, bars []market.Kline, now time.Time)
 	return out
 }
 
-// profileLevels computes POC + 70% value area from a closed 1m series.
+// profileLevels computes POC + 70% value area from a closed 1m series, using
+// the SAME SVP definition as the chart (m239): 1.25-pt rows with each bar's
+// volume spread across the rows its range overlaps — one POC, never a second
+// close-binned value 7+ pts away.
 // prefix labels the rows ("pd" for the prior-day profile, "" for session).
 func profileLevels(bars []market.Kline, dayKey, prefix string) []DetectedLevel {
 	if len(bars) == 0 {
 		return nil
 	}
-	const binCount = 120
-	var hi, lo float64
-	for i, b := range bars {
-		if i == 0 || b.High > hi {
-			hi = b.High
-		}
-		if i == 0 || b.Low < lo {
-			lo = b.Low
-		}
-	}
-	if hi <= lo {
-		return nil
-	}
-	bin := (hi - lo) / binCount
-	if bin <= 0 {
-		bin = 0.25
-	}
-	vols := make([]float64, binCount)
-	total := 0.0
+	hist := make(map[int]float64, 128)
 	for _, b := range bars {
-		idx := int((b.Close - lo) / bin)
-		if idx < 0 {
-			idx = 0
-		}
-		if idx >= binCount {
-			idx = binCount - 1
-		}
-		vols[idx] += b.Volume
-		total += b.Volume
+		svpAddBar(hist, b.Low, b.High, b.Volume)
 	}
+	poc, vaLow, vaHigh, _, total := svpValueArea(hist, SVPValueAreaPercent)
 	if total <= 0 {
 		return nil
 	}
-	pocIdx, pocV := 0, vols[0]
-	for i, v := range vols {
-		if v > pocV {
-			pocIdx, pocV = i, v
-		}
-	}
-	poc := lo + (float64(pocIdx)+0.5)*bin
-	// 70% value area: walk down/up from the POC bin until ≥70% of volume.
-	need := 0.70 * total
-	acc := pocV
-	loIdx, hiIdx := pocIdx, pocIdx
-	for acc < need {
-		below := loIdx - 1
-		above := hiIdx + 1
-		up := 0.0
-		down := 0.0
-		if above < binCount {
-			up = vols[above]
-		}
-		if below >= 0 {
-			down = vols[below]
-		}
-		if up >= down && above < binCount {
-			hiIdx = above
-			acc += up
-		} else if below >= 0 {
-			loIdx = below
-			acc += down
-		} else if above < binCount {
-			hiIdx = above
-			acc += up
-		} else {
-			break
-		}
-	}
-	vah := lo + (float64(hiIdx)+1)*bin
-	val := lo + float64(loIdx)*bin
+	pocPx := (float64(poc) + 0.5) * SVPRowHeight // row midpoint (the SVP POC)
+	vah := float64(vaHigh+1) * SVPRowHeight      // top edge of the top VA row
+	val := float64(vaLow) * SVPRowHeight         // bottom edge of the bottom VA row
 	return []DetectedLevel{
-		lineLevel(KindPOC, poc, prefix+"POC", dayKey, false),
+		lineLevel(KindPOC, pocPx, prefix+"POC", dayKey, false),
 		lineLevel(KindVAH, vah, prefix+"VAH", dayKey, false),
 		lineLevel(KindVAL, val, prefix+"VAL", dayKey, false),
 	}
@@ -487,29 +431,62 @@ func pdVWAPLevelsFor(symbol string, bars []market.Kline, now time.Time) []Detect
 	return captureFormationGroup([]DetectedLevel{lineLevel(KindPDVWAP, v, "pdVWAP", day, false)}, prior[len(prior)-1].CloseTime, len(prior), "prior_vwap_last_source_close", now)
 }
 
-// SETTLevels (B1) — prior settlement, approximated by the prior session-day's
-// FINAL 1m close (the 16:00 CT CME settle). Settlement is the official
-// overnight reference — breakouts are measured against it, not midnight.
+// nativeDailyCloseFor returns the native 1d close (the ~15:00 CT CME settle)
+// and its source bar's CloseTime for a CME trading date ("YYYY-MM-DD"), or 0,0
+// when there is no daily source (or no symbol, or no row). Shared by SETT and
+// PDC (m239a: one source).
+func nativeDailyCloseFor(symbol, tradingDate string) (float64, int64) {
+	if symbol == "" {
+		return 0, 0
+	}
+	for _, d := range DailyBarsFor(symbol, datrDailyFetch) {
+		if NativeDailyTradingDate(d).Format("2006-01-02") == tradingDate && d.Close > 0 {
+			return d.Close, d.CloseTime
+		}
+	}
+	return 0, 0
+}
+
+// SETTLevels (B1) — prior settlement: the native 1d close (the CME settle,
+// about 15:00 CT). With no native daily row the session's final 1m close is
+// emitted as "SETT·last print", never presented as the settlement (m239/m239a).
 func SETTLevels(bars []market.Kline, now time.Time) []DetectedLevel {
+	return SETTLevelsFor("", bars, now)
+}
+
+// SETTLevelsFor is SETTLevels for a named instrument.
+func SETTLevelsFor(symbol string, bars []market.Kline, now time.Time) []DetectedLevel {
 	cb := closedBars(bars, now)
 	if len(cb) == 0 {
 		return nil
 	}
-	prior, _ := priorSessionBars(cb, CMESessionDayStart(now))
-	var sett float64
-	var day string
-	var sourceClose int64
-	var sourceCount int
-	for _, b := range prior {
-		sett = b.Close
-		sourceClose = b.CloseTime
-		sourceCount++
-		day = time.UnixMilli(b.OpenTime).In(CTLocation()).Format("2006-01-02")
+	// The prior CME session closes on the current session's START date, so its
+	// trading date is CMESessionDayKey(now). The native daily bar for that
+	// trading date carries the ~15:00 CT settle close.
+	tradingDate := CMESessionDayKey(now)
+	sett, settleClose := nativeDailyCloseFor(symbol, tradingDate)
+	label := "SETT"
+	basis := "native_1d_settle"
+	sourceClose := settleClose
+	sourceCount := 0
+	if sett > 0 {
+		sourceCount = 1 // one native daily bar
+	} else {
+		// No native settle on record — fall back to the prior session's final
+		// 1m close, but LABEL it a last print, never a settlement.
+		prior, _ := priorSessionBars(cb, CMESessionDayStart(now))
+		for _, b := range prior {
+			sett = b.Close
+			sourceClose = b.CloseTime
+			sourceCount++
+		}
+		if sett <= 0 {
+			return nil
+		}
+		label = "SETT·last print"
+		basis = "last_print_source_close"
 	}
-	if sett <= 0 {
-		return nil
-	}
-	return captureFormationGroup([]DetectedLevel{lineLevel(KindSETT, sett, "SETT", day, false)}, sourceClose, sourceCount, "settlement_proxy_source_close", now)
+	return captureFormationGroup([]DetectedLevel{lineLevel(KindSETT, sett, label, tradingDate, false)}, sourceClose, sourceCount, basis, now)
 }
 
 // MIDOLevels (B1) — the overnight range midpoint: (ONH+ONL)/2 for the CURRENT
@@ -572,7 +549,7 @@ func VolumeLevelsFor(symbol string, bars []market.Kline, now time.Time) []Detect
 	out = append(out, priorDayProfileLevelsFor(symbol, bars, now)...)
 	out = append(out, NakedPOCLevels(bars, now)...)
 	out = append(out, pdVWAPLevelsFor(symbol, bars, now)...)
-	out = append(out, SETTLevels(bars, now)...)
+	out = append(out, SETTLevelsFor(symbol, bars, now)...)
 	out = append(out, MIDOLevels(bars, now)...)
 	return out
 }

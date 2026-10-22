@@ -3280,7 +3280,7 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 	// universe day-anchors stamped on (post-roll the seated table drops
 	// PDH/PDL — the 17:46/19:02 ASIA reads rendered "no PDH/PDL anchor").
 	bcFacts := kernel.ComputeBiasContext(bars, scored, now)
-	kernel.ApplyUniverseDayAnchors(&bcFacts, kernel.ExtractMultiDayLevels(bars, reg, now))
+	kernel.ApplyUniverseDayAnchors(&bcFacts, kernel.ExtractMultiDayLevelsFor(symbol, bars, reg, now))
 
 	// W2b (weekly-bias wave) — PLANNER EYES: the raw candle tables (12×15m ·
 	// 12×1h · 8×4h · 8×daily) built from the 1m slice via kernel.AggregateBars.
