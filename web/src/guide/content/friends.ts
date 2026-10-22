@@ -12,6 +12,10 @@ export const friends: GuideSection = {
       kind: 'p',
       text: 'Friends is the owner-only screen for granting and removing access. A friend runs VL on their own PC; their bot runs on this box in its own folder (/home/hoang/vl-friends/<name>) with its own database and its own secret, and never receives the source code. Everything on the page is READ from this bot’s own /api/owner/friends — the live columns (bot up · NT connected · last bar age · add-on / app version · last seen) are probed by the bot over the friend’s own health endpoint, never reached into directly. A value the bot cannot tell you prints “—” — it is never invented.',
     },
+    {
+      kind: 'p',
+      text: 'The Friends page is OFF by default: this box shows no Friends entry in the navigation, /api/owner/friends answers 404, the friend monitor and alerts stay off, and an Update does not sweep the friend registry. To turn it on, set VL_FRIENDS_PAGE=1 in this bot’s .env and restart the bot — the boot line prints “👥 friends page: on”. A box that runs the page without the flag has none of the friends surface (and no friend sweep after an update).',
+    },
     { kind: 'h', text: 'The columns' },
     {
       kind: 'p',

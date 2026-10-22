@@ -77,6 +77,9 @@ export interface HealthStatus {
   status?: string
   time?: string
   revision?: string
+  // m386: the Friends page flag (VL_FRIENDS_PAGE). Absent (older bot) or false
+  // → the Friends nav + route are hidden and /api/owner/friends 404s.
+  friends_page?: boolean
 }
 
 // INSTALL_AUTHZ_UNDER_REVIEW is the ONE constant gating the install control.

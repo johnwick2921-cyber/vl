@@ -6,6 +6,7 @@ import { Menu, X, ChevronDown, Settings } from 'lucide-react'
 import { UpdateBadge } from '../updates/UpdateBadge'
 import { t, type Language } from '../../i18n/translations'
 import { getCurrentPageForPath, ROUTES, type Page } from '../../router/paths'
+import { useFriendsPageEnabled } from '../../hooks/useFriendsPageEnabled'
 
 interface HeaderBarProps {
   onLoginClick?: () => void
@@ -38,6 +39,9 @@ export default function HeaderBar({
   const [userDropdownOpen, setUserDropdownOpen] = useState(false)
   const dropdownRef = useRef<HTMLDivElement>(null)
   const userDropdownRef = useRef<HTMLDivElement>(null)
+  // m386: the Friends nav entry is hidden unless VL_FRIENDS_PAGE=1 (the flag
+  // comes from /api/health; false while unknown).
+  const friendsPageEnabled = useFriendsPageEnabled()
   const resolvedCurrentPage =
     currentPage ?? getCurrentPageForPath(location.pathname)
 
@@ -130,12 +134,16 @@ export default function HeaderBar({
                   label: '📖 Guide',
                   requiresAuth: true,
                 },
-                {
-                  page: 'friends',
-                  path: ROUTES.friends,
-                  label: t('friendsNav', language),
-                  requiresAuth: true,
-                },
+                ...(friendsPageEnabled
+                  ? [
+                      {
+                        page: 'friends' as const,
+                        path: ROUTES.friends,
+                        label: t('friendsNav', language),
+                        requiresAuth: true,
+                      },
+                    ]
+                  : []),
               ]
 
               const handleNavClick = (tab: (typeof navTabs)[0]) => {
@@ -371,12 +379,16 @@ export default function HeaderBar({
                       label: '📖 Guide',
                       requiresAuth: true,
                     },
-                    {
-                      page: 'friends',
-                      path: ROUTES.friends,
-                      label: t('friendsNav', language),
-                      requiresAuth: true,
-                    },
+                    ...(friendsPageEnabled
+                      ? [
+                          {
+                            page: 'friends' as const,
+                            path: ROUTES.friends,
+                            label: t('friendsNav', language),
+                            requiresAuth: true,
+                          },
+                        ]
+                      : []),
                   ]
 
                   const handleMobileNavClick = (tab: (typeof navTabs)[0]) => {
