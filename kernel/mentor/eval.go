@@ -165,6 +165,11 @@ type State struct {
 	Seed1mWatermark         int64   `json:"seed_1m_watermark,omitempty"`
 	EMA34                   float64 `json:"ema34,omitempty"` // 1m EMA 34 (incremental)
 	EMA9                    float64 `json:"ema9,omitempty"`  // 1m EMA 9 (incremental)
+	// EMA34Warmed (m327 b) marks that the seed actually folded ≥1 closed 1m bar
+	// into State.EMA34 — a nil-bar / fail-closed seed leaves it false, so the
+	// EMA-location level must NOT read the garbage State.EMA34 that seededLevels
+	// would advance from 0. Never reset to false once the EMA is warm.
+	EMA34Warmed bool `json:"ema34_warmed,omitempty"`
 
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
@@ -1695,7 +1700,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			levels = append(levels, wl)
 		}
 	}
-	if el, ok := EMALocationLevel(bars, e.Cfg); ok {
+	if el, ok := e.emaLocationLevel(bars, e.Cfg); ok {
 		levels = append(levels, el)
 	}
 
@@ -3273,6 +3278,22 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 		out = append(out, in)
 	}
 	return out, dropped
+}
+
+// emaLocationLevel (m327 b) is the location-gate EMA 34 line, from ONE source.
+// At EMALocationTFMinutes==1 the line IS the evaluator's own incremental 1m
+// EMA 34 (State.EMA34) — the same number the KindEMA34 level carries, never a
+// second EMA computed over the tick slice's head (which used to diverge by the
+// slice-head seed). At any other TF it is the emaValue over the requested TF's
+// closed buckets (EMALocationLevel). It only reads State.EMA34 once the seed
+// actually folded a 1m bar into it (EMA34Warmed): a nil-bar / fail-closed seed
+// leaves it cold and seededLevels would advance State.EMA34 from 0 into garbage
+// — in that case it falls back to EMALocationLevel.
+func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
+	if cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
+		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34}, true
+	}
+	return EMALocationLevel(bars, cfg)
 }
 
 // seededLevels is the Tick level source after Seed: SeedLevels (full stored

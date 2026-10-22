@@ -584,6 +584,12 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 				if added := cache.RehydrateUnion(symbol, tf, bars); added > 0 {
 					totalAdded += added
 					deepened++
+					// m327 (a): the aggregate tf was REBUILT from the STORE's 1m
+					// tape — the 1m store has history the boot seed may have
+					// missed (a restart hole healed after the seed). Announce the
+					// refill so the mentor tick re-seeds its 1m-derived state
+					// (EMA9/34, trigger lines) from the healed series.
+					NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s %s from 1m (+%d union)", symbol, tf, added))
 					after := cache.Get(symbol, tf)
 					h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
 					logger.Infof("🧯 ring rehydrated %s %s FROM 1M [m134 2026-10-21]: nt8=%d 1m_bars=%d total=%d/%d (+%d union — interior holes filled, live bars win on overlap) · contract=%s (%s) · %s",
@@ -635,6 +641,13 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		}
 		totalAdded += added
 		deepened++
+		// m327 (a): the 1m ring deepened from the store — the store now holds
+		// 1m history the boot seed may have missed (a restart hole healed after
+		// the seed). Announce the refill so the mentor tick re-seeds its
+		// history-derived state (EMA9/34, trigger lines) from the healed series.
+		if tf == "1m" {
+			NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s 1m (+%d older)", symbol, added))
+		}
 		after := cache.Get(symbol, tf)
 		h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
 		// nt8=<what the ring held from NT8 before> store_live/store_hist=<what

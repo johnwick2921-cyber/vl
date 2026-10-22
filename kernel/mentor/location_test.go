@@ -119,3 +119,43 @@ func TestPHLPLHGatedByLocationAtEvalLevel(t *testing.T) {
 		t.Fatal("key level must pass levelIsLocation")
 	}
 }
+
+// TestEMALocationLevelTF1UsesStateEMA34 is the m327 (b) pin: at
+// EMALocationTFMinutes==1 the location-gate EMA 34 (KindEMA34HTF) is the SAME
+// number as the evaluator's incremental State.EMA34 — one source, never a second
+// EMA seeded at the tick slice's head (the old emaValue over bars diverged by
+// the slice-head seed). MUTANT: fall back to EMALocationLevel at tf=1 → the
+// level price ≠ State.EMA34 on a window where the slice-head EMA diverges → RED.
+func TestEMALocationLevelTF1UsesStateEMA34(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.EMALocationTFMinutes = 1
+
+	// The tick slice is a short WINDOW whose head is far from the converged EMA,
+	// but the evaluator's State.EMA34 was seeded from long history.
+	var bars []market.Kline
+	price := 30000.0
+	for i := 0; i < 300; i++ {
+		price += 1.0
+		bars = append(bars, market.Kline{
+			OpenTime:  int64(i) * 60_000,
+			CloseTime: int64(i)*60_000 + 59_999,
+			Open:      price - 1, High: price + 1, Low: price - 2, Close: price,
+		})
+	}
+	e := &Evaluator{State: State{EMA34: 30123.45, EMA34Warmed: true}} // long-history seeded
+	lvl, ok := e.emaLocationLevel(bars, cfg)
+	if !ok || lvl.Kind != KindEMA34HTF {
+		t.Fatalf("emaLocationLevel tf=1 = %+v ok=%v, want the EMA34HTF level", lvl, ok)
+	}
+	if lvl.Price != e.State.EMA34 {
+		t.Fatalf("tf=1 EMA34HTF price %.4f ≠ State.EMA34 %.4f (must be one source)",
+			lvl.Price, e.State.EMA34)
+	}
+	// At a different TF the level is the emaValue over that TF's buckets.
+	cfg.EMALocationTFMinutes = 5
+	lvl5, ok := e.emaLocationLevel(bars, cfg)
+	if !ok || lvl5.Kind != KindEMA34HTF || lvl5.Price == e.State.EMA34 {
+		t.Fatalf("tf=5 must keep the emaValue-over-5m path, got %+v ok=%v", lvl5, ok)
+	}
+}

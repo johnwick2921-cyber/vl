@@ -87,11 +87,14 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	if !tl.Valid {
 		t.Errorf("the 3rd-touch support line must be valid=true (m134): %+v", tl)
 	}
-	if p.EMASeries == nil || len(*p.EMASeries) == 0 {
-		t.Errorf("ema_series must be sent after a real Tick (m134 curve)")
-	} else if last := (*p.EMASeries)[len(*p.EMASeries)-1]; last.Ema9 <= 0 || last.Ema34 <= 0 {
-		t.Errorf("ema_series tail = %+v, want positive ema9/ema34", last)
+	if p.EMASeries != nil && len(*p.EMASeries) > 0 {
+		if last := (*p.EMASeries)[len(*p.EMASeries)-1]; last.Ema9 <= 0 || last.Ema34 <= 0 {
+			t.Errorf("ema_series tail = %+v, want positive ema9/ema34", last)
+		}
 	}
+	// NOTE (m327 c): a 14-bar tape is SHORTER than the EMA warm-up head, so the
+	// unconverged head is dropped and ema_series may be ABSENT here — the
+	// converged-curve pin lives in TestMentorTruthSnapshotSendsEMAseries.
 	if p.ISBBoxes == nil || len(*p.ISBBoxes) != 1 || (*p.ISBBoxes)[0].Label != "ISB 5m" {
 		t.Errorf("isb boxes = %+v, want the one 5m rest box", p.ISBBoxes)
 	}
@@ -107,10 +110,45 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`, `"valid":`, `"ema_series":[`} {
+	for _, key := range []string{`"trendlines":[`, `"isb_boxes":[`, `"orb":{`, `"kind":"trendline"`, `"valid":`} {
 		if !strings.Contains(string(b), key) {
 			t.Errorf("payload lacks %s: %s", key, b)
 		}
+	}
+}
+
+// TestMentorTruthSnapshotSendsEMAseries is the m327 (c) call-site pin: on a
+// tape LONGER than the EMA warm-up head, the snapshot must carry a non-empty
+// ema_series whose tail is positive — and every point is converged (the head is
+// dropped). MUTANT: emit the unconverged head (seed at window start) → the
+// first emitted points differ from a long-seeded EMA → RED (pinned at the kernel
+// level by TestEMASeriesChartConvergedHead).
+func TestMentorTruthSnapshotSendsEMAseries(t *testing.T) {
+	at := truthAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	at.mentorEval = mentor.New(cfg)
+	ev := at.mentorEval
+
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+	bars := make([]market.Kline, 400) // > 6×34 warm-up
+	for i := range bars {
+		c := 100.0 + float64(i%7)
+		bars[i] = market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: c - 1, High: c + 1, Low: c - 2, Close: c}
+	}
+	now := mentor.BarCloseInstant(bars[len(bars)-1])
+	ev.Tick(bars, now)
+
+	p, ok := at.MentorTruthSnapshot(time.UnixMilli(now))
+	if !ok {
+		t.Fatalf("snapshot not ok")
+	}
+	if p.EMASeries == nil || len(*p.EMASeries) == 0 {
+		t.Fatalf("ema_series must be sent on a tape longer than the warm-up head")
+	}
+	last := (*p.EMASeries)[len(*p.EMASeries)-1]
+	if last.Ema9 <= 0 || last.Ema34 <= 0 {
+		t.Fatalf("ema_series tail = %+v, want positive ema9/ema34", last)
 	}
 }
 

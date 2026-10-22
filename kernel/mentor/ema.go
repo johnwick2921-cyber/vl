@@ -90,6 +90,12 @@ type ChartEMA struct {
 // A non-positive period disables that curve (its values stay 0 across the whole
 // series and the frontend drops the all-zero curve) — guarding against
 // k = 2/(n+1) dividing by zero or emitting a nonsense value for a bad config.
+//
+// m327 (c): the first `warmup` points are DROPPED (the unconverged head) — an
+// EMA seeded at the slice head needs ~6×period bars before the seed's error
+// decays below 0.01 pts, so the head used to be up to 6.9 pts off a
+// long-seeded EMA. Every EMITTED point is now converged (within 0.01 of an EMA
+// seeded from long history); the curve simply starts `warmup` bars in.
 func emaSeriesChart(bars []market.Kline, period9, period34 int) []ChartEMA {
 	if len(bars) == 0 {
 		return nil
@@ -108,16 +114,39 @@ func emaSeriesChart(bars []market.Kline, period9, period34 int) []ChartEMA {
 	if period34 <= 0 {
 		e34 = 0
 	}
-	out := make([]ChartEMA, 0, len(bars))
-	out = append(out, ChartEMA{Ms: bars[0].OpenTime, Ema9: e9, Ema34: e34})
-	for _, b := range bars[1:] {
-		if period9 > 0 {
-			e9 += k9 * (b.Close - e9)
+	warmup := emaWarmupBars(period9, period34)
+	capHint := len(bars) - warmup
+	if capHint < 0 {
+		capHint = 0 // the whole window is unconverged head — emit nothing
+	}
+	out := make([]ChartEMA, 0, capHint)
+	for i := range bars {
+		if i > 0 {
+			if period9 > 0 {
+				e9 += k9 * (bars[i].Close - e9)
+			}
+			if period34 > 0 {
+				e34 += k34 * (bars[i].Close - e34)
+			}
 		}
-		if period34 > 0 {
-			e34 += k34 * (b.Close - e34)
+		if i >= warmup {
+			out = append(out, ChartEMA{Ms: bars[i].OpenTime, Ema9: e9, Ema34: e34})
 		}
-		out = append(out, ChartEMA{Ms: b.OpenTime, Ema9: e9, Ema34: e34})
 	}
 	return out
+}
+
+// emaWarmupBars returns the number of head bars to DROP so every emitted EMA
+// point is converged (m327 c): 6×period decays the seed's weight to < 1e-5,
+// so even a 1000-pt seed error shrinks below 0.01 pts. The max over the enabled
+// periods wins — a disabled period contributes 0.
+func emaWarmupBars(period9, period34 int) int {
+	w := 0
+	if period9 > 0 && 6*period9 > w {
+		w = 6 * period9
+	}
+	if period34 > 0 && 6*period34 > w {
+		w = 6 * period34
+	}
+	return w
 }
