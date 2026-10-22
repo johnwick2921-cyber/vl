@@ -114,7 +114,7 @@ For the partner box (`vlautoagenttraderv1`):
 - Boxes without gcc build with `-tags cgofree` (the sqlite driver's pure-Go
   backend). The one-click Update installs the **prebuilt** release binary, so
   gcc is never required for updates.
-- The legacy binary name `nofx-bin` is gone — move any stale `nofx-bin` out of
+- The legacy pre-rename binary is gone — move any stale copy of it out of
   the tree (it is git-ignored, not built).
 
 ## deploy/RELEASE is tracked (build-THEN-stamp)
