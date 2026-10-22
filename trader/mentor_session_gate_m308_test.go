@@ -135,3 +135,50 @@ func TestM308SwingArmPlacedPastEODFlat(t *testing.T) {
 		t.Fatalf("a SWING4H mentor arm must be placed past the EOD flat (held by the 4h), got state=%q signal=%q", row.State, row.SignalID)
 	}
 }
+
+// TestM308SwingRefusedByT1ForceFlatLead pins the m314 boundary on the OTHER
+// side: a SWING4H arm is exempt ONLY from the EOD-flat window — inside the T1
+// force-flat LEAD (T-2m before the blackout) it is still REFUSED under
+// force_flat_window with the T1 lead reason (no swing entry into a news print).
+// MUTANT: make isEODFlatWindowRisk match the T1 lead too → the swing is waived
+// and placed → RED.
+func TestM308SwingRefusedByT1ForceFlatLead(t *testing.T) {
+	t.Setenv("MENTOR_STOP_LIMIT", "on")
+	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true, SessionsEnabled: []string{"NY"}}
+	mentorWireSeams(t, at, ledger)
+	logs := captureTraderLog(t)
+	// F6 drift: the fixture day is not the wall-clock day; hold the drift at 0
+	// so the T1 windows are NOT widened (a 2m widen equals the lead and would
+	// hide it behind the blackout).
+	prev := clockHoldDriftFn
+	clockHoldDriftFn = func(string) (int64, bool) { return 0, true }
+	t.Cleanup(func() { clockHoldDriftFn = prev })
+	// A USD T1 print at 10:15 CT = 15:15 UTC (CDT) → blackout 10:00–10:30,
+	// force-flat lead from 09:58.
+	if _, err := st.Calendar().SaveSliceIfAbsent(&store.CalendarSliceDB{
+		TradeDate: "2026-09-23", Source: "forexfactory",
+		EventsJSON: `[{"time":"2026-09-23T15:15:00Z","currency":"USD","title":"Synthetic CPI","impact":"T1"}]`,
+		CreatedAt:  time.Now().UnixMilli(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	now := b3Clock(9, 58) // inside the lead (09:58–10:00), before the blackout
+	seedM235MentorRow(t, at, ledger, "swing-lead", "SWING4H", now.UnixMilli()+60_000)
+
+	_, before := telemetry.GateBlockSnapshot()
+	at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+	_, table := telemetry.GateBlockSnapshot()
+
+	row := readArmRow(t, ledger, "swing-lead")
+	if row.SignalID != "" {
+		t.Fatalf("the T1 force-flat lead must refuse the SWING4H arm, got signal=%q state=%q", row.SignalID, row.State)
+	}
+	b := before[at.id]
+	if got := table[at.id]; got["force_flat_window"]-b["force_flat_window"] != 1 {
+		t.Fatalf("the refusal must tick force_flat_window once, got %v (before %v)", got, b)
+	}
+	if !strings.Contains(logs.String(), "T1 force-flat window") {
+		t.Fatalf("the refusal must log the T1 force-flat lead reason; log:\n%s", logs.String())
+	}
+}
