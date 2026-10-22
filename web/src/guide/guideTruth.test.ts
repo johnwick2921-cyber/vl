@@ -375,6 +375,8 @@ describe("JOB 2.4 — hidden-knob cards state the code default and 'No Studio co
     expect(k.where).toMatch(/No Studio control/)
     expect(k.systemDefault).toMatch(/ON/)
     // the shipped default is the nil branch of TransitionStanddownEnabled
-    expect(stratSrc).toMatch(/if c\.Regime == nil \|\| c\.Regime\.TransitionStanddown == nil \{\s*return true/)
+    expect(stratSrc).toMatch(
+      /if c\.Regime == nil \|\| c\.Regime\.TransitionStanddown == nil \{\s*return true/
+    )
   })
 })

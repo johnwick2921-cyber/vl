@@ -131,8 +131,11 @@ func TouchTick(t *Touch, level Level, prevClose float64, bar market.Kline, cfg C
 // reference candle [D5.2 p3 @ 17:32] — at a RESISTANCE (came from below) the
 // candle closed back below → SELL stop under RefBar.Low; at a SUPPORT (came
 // from above) it closed back above → BUY stop over RefBar.High, buffered by
-// ISBBufferPts [D2.1 p1 @ 05:36]. Stop and target are completed by the setup
+// ISBBufferPts [D2.1 p1 @05:57–06:16 (ISB only)]. Stop and target are completed by the setup
 // layer (PHL/PLH commit); here only the order side and trigger price are known.
+// It is always a STOP order, never a limit: "Không bao giờ đặt một lệnh limit"
+// — wait for the reaction, never buy/sell a level retest ahead of it
+// [D2.2 p2 @10:10–13:54].
 func RejectEntry(t Touch, cfg Config) (side Side, price float64, ok bool) {
 	if t.Outcome != TouchReject {
 		return "", 0, false

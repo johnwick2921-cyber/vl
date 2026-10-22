@@ -769,7 +769,8 @@ type mentorPosition struct {
 
 // mentorSplitLegs splits n into leg 1 (ceil(n/2)) and leg 2 (the runner).
 // runnerCap (spent day: 2) caps the runner so at most that many contracts run
-// after leg 1. Parity: ceil(n/2) equals DS-108's replay half.
+// after leg 1. Parity: ceil(n/2) equals DS-108's replay half. Leg 1 is the 1:1
+// partial — "anh làm gì anh cũng phải bán bớt ở 1:1" [D2.2 p3 @12:13–12:26].
 func mentorSplitLegs(n, runnerCap int) (leg1, leg2 int) {
 	if n <= 0 {
 		return 0, 0

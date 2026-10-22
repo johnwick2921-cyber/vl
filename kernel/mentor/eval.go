@@ -198,6 +198,9 @@ type State struct {
 	// Keyed by the level key so a resting order is never re-emitted (B16: one
 	// intent per reference).
 	LevelArms map[string]LevelArm `json:"level_arms,omitempty"`
+	// RollingPHL is the D2.2 pullback-continuation rolling stop-entry state
+	// (m216: the pullback leg only — level touches stay first-touch-fixed).
+	RollingPHL RollingPHL `json:"rolling_phl,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
@@ -697,6 +700,14 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 	}
 	var out []Intent
 	for key, arm := range e.State.LevelArms {
+		// The rolling pullback order is NOT a level order: its "level" is the
+		// old extreme far above/below the entry, so the close-through sweep
+		// must never cancel it (price is always on the pullback side of the
+		// old extreme). The rolling path owns its own invalidation and the
+		// trader's reconcile clears it on fill.
+		if key == rollingLevelKey {
+			continue
+		}
 		through := false
 		if cur.CloseTime > arm.PlacedAt {
 			through = arm.Side == SideLong && cur.Close < arm.LevelPrice ||
@@ -820,7 +831,8 @@ func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Inte
 
 // midRangeBoxed reports whether price sits between an FTGL floor box below
 // and an FTGH ceiling box above — the mid-range ban with NO width threshold
-// (CTO 1791003862333): "between two boxes: NO PHL, NO PLH, only the ISB".
+// (CTO 1791003862333): "between two boxes: NO PHL, NO PLH, only the ISB"
+// [D3.2 p2 @08:34–08:55; D2.2 p3 @14:03–16:03 "chỉ được đánh insaba"].
 func midRangeBoxed(boxes []Box, price float64) bool {
 	var floor, ceil bool
 	for _, b := range boxes {
@@ -1663,7 +1675,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// EVERY setup the transcript names — the ISB pair AND PHL/PLH ("Lớp học
 	// của mình chỉ only đúng 3 setup: inside bar, potential high or low,
 	// potential low or high" [X11 @07:09–07:30]; "Mình trade khung 2 phút …
-	// potential high low" [X8 @15:52–15:57]):
+	// potential high low" [X8 @15:52–15:57]). The frame is 1m at most 2m —
+	// "chúng ta chỉ trade ở khung 1 phút, maximum là khung 2 phút thôi"
+	// [D1.4 p1 @01:45–01:51]:
 	//   • RTH open +30 minutes (08:30 ≤ t < 09:00 CT) → 1-MINUTE read only
 	//     ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1 phút … sau 30
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
@@ -1883,8 +1897,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse("isb_htf_blocked")
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
-					// CANDLE-1 colour direction (the only skip: a stop in
-					// the 20–<30 band) [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// CANDLE-1 colour direction [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
+					// (The stop-size skip is DS-104's ISB stop band — D3.3/D4.1.)
 					// R5: while the box stands nothing trades inside it except a
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
@@ -2721,6 +2735,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §8 SWING4H (DS-106 slice) on FINAL 5m bars only — the still-forming
 	// bucket is excluded (CTO wiring ruling 2026-10-03).
 	out = append(out, runSwing(e, bars, now)...)
+
+	// §2.2 D2.2 pullback-continuation: the ROLLING PHL/PLH stop entry (m216
+	// scope — the pullback leg only; a drawn-level touch stays first-touch-fixed
+	// in the touch loop above). It is gated by the same 15m/5m conflict the
+	// level and box paths are.
+	if !conflict {
+		out = append(out, e.rollingPHLTick(bars, execCur, execTFMin, oldExtremes, levels, dg)...)
+	}
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
 	// the candle nor the entry point [D3.2 p1 @ 06:59].

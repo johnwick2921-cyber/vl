@@ -325,8 +325,16 @@ type Config struct {
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
-	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; worked example 5–15 [D2.2 p1 @ 06:50])
+	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
 	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
+	// RollingPHL (m216/m225, DS-102) turns on the D2.2 pullback-continuation
+	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
+	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
+	// until it fills. Level touches stay first-touch-fixed (touch.go). Default
+	// OFF — it is a NEW #45 entry source; the multi-day replay re-baseline
+	// (DS-108) flips it ON before the #45 merge [D2.2 p1 @02:44–03:34,
+	// 11:05–11:36].
+	RollingPHL bool
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
@@ -556,6 +564,7 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 		PHLEntryBufferPts:        1.0,
+		RollingPHL:               false, // D2.2 pullback-continuation rolling stop entry — OFF until the #45 replay re-baseline flips it ON [@02:44–03:34, 11:05–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
