@@ -24,6 +24,23 @@ func mkNT8(t *testing.T, root, user string, withCustom bool) string {
 	return docs
 }
 
+// mkNT8OneDrive builds a OneDrive-redirected NT8 docs dir: the localized
+// Documents folder name (m385 — e.g. "Tài liệu") sits under OneDrive.
+func mkNT8OneDrive(t *testing.T, root, user, localized string, withCustom bool) string {
+	t.Helper()
+	docs := filepath.Join(root, user, "OneDrive", localized, "NinjaTrader 8")
+	if withCustom {
+		if err := os.MkdirAll(filepath.Join(docs, "bin", "Custom"), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	} else {
+		if err := os.MkdirAll(docs, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	return docs
+}
+
 // useTempWindowsTools points the fixed Windows tool paths at temp files so a
 // bare powershell.exe / dotnet.exe name resolves on any box (the real /mnt/c
 // paths may not exist in the test env). It restores the real paths on cleanup.
@@ -92,14 +109,21 @@ func TestResolveWindowsExe(t *testing.T) {
 }
 
 func TestDetect(t *testing.T) {
-	orig := nt8DocsGlob
-	t.Cleanup(func() { nt8DocsGlob = orig })
+	origDocs, origOneDrive := nt8DocsGlob, nt8OneDriveGlob
+	t.Cleanup(func() { nt8DocsGlob, nt8OneDriveGlob = origDocs, origOneDrive })
+	// Point BOTH globs at the fixture root: the plain Documents path AND the
+	// OneDrive-redirected path (m385). A subtest that leaves one unset would
+	// otherwise scan the real /mnt/c and find the host's NT8 install.
+	setGlobs := func(root string) {
+		nt8DocsGlob = filepath.Join(root, "*", "Documents", "NinjaTrader 8")
+		nt8OneDriveGlob = filepath.Join(root, "*", "OneDrive", "*", "NinjaTrader 8")
+	}
 
 	t.Run("single", func(t *testing.T) {
 		root := t.TempDir()
 		alice := mkNT8(t, root, "alice", true)
 		mkNT8(t, root, "bob", false)
-		nt8DocsGlob = filepath.Join(root, "*", "Documents", "NinjaTrader 8")
+		setGlobs(root)
 		got, err := Detect()
 		if err != nil {
 			t.Fatalf("Detect = %v, want nil", err)
@@ -113,7 +137,7 @@ func TestDetect(t *testing.T) {
 		root := t.TempDir()
 		mkNT8(t, root, "alice", true)
 		mkNT8(t, root, "bob", true)
-		nt8DocsGlob = filepath.Join(root, "*", "Documents", "NinjaTrader 8")
+		setGlobs(root)
 		_, err := Detect()
 		if err == nil || !strings.Contains(err.Error(), "multiple") {
 			t.Fatalf("Detect err = %v, want multiple-candidates error", err)
@@ -124,10 +148,39 @@ func TestDetect(t *testing.T) {
 		root := t.TempDir()
 		mkNT8(t, root, "alice", false)
 		mkNT8(t, root, "bob", false)
-		nt8DocsGlob = filepath.Join(root, "*", "Documents", "NinjaTrader 8")
+		setGlobs(root)
 		_, err := Detect()
 		if err == nil || !strings.Contains(err.Error(), "no Documents/NinjaTrader 8") {
 			t.Fatalf("Detect err = %v, want no-candidate error", err)
+		}
+	})
+
+	// m385: Windows folder redirection moves Documents under OneDrive with a
+	// LOCALIZED folder name (e.g. "Tài liệu") — Detect must find the single
+	// bin/Custom candidate there too. MUTANT: drop the OneDrive glob from
+	// Detect → no candidate → RED.
+	t.Run("onedrive redirect localized", func(t *testing.T) {
+		root := t.TempDir()
+		od := mkNT8OneDrive(t, root, "alice", "Tài liệu", true)
+		mkNT8(t, root, "bob", false) // a plain-Documents dir without Custom must not win
+		setGlobs(root)
+		got, err := Detect()
+		if err != nil {
+			t.Fatalf("Detect = %v, want the OneDrive dir", err)
+		}
+		if got != od {
+			t.Fatalf("Detect = %q, want %q", got, od)
+		}
+	})
+
+	t.Run("onedrive plus documents is multiple", func(t *testing.T) {
+		root := t.TempDir()
+		mkNT8(t, root, "alice", true)                     // plain Documents, with Custom
+		mkNT8OneDrive(t, root, "alice", "Tài liệu", true) // OneDrive redirect, with Custom
+		setGlobs(root)
+		_, err := Detect()
+		if err == nil || !strings.Contains(err.Error(), "multiple") {
+			t.Fatalf("Detect err = %v, want multiple-candidates error", err)
 		}
 	})
 }
