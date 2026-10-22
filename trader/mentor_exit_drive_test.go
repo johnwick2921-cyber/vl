@@ -1203,6 +1203,30 @@ func TestMentorX8ExitDoesNotFlattenOtherArms(t *testing.T) {
 	}
 }
 
+// TestMentorX8LimitRoundsToTick (m390): the X8 marketable limit must land ON a
+// tick boundary — NT8 rejects an off-grid limit price. A fresh price that is
+// not a multiple of the tick (101.53) leaves `price − collar` off-grid; the
+// limit is RoundToTick'd onto the MNQ 0.25 grid. MUTANT: drop the RoundToTick
+// in mentorX8SendExit → the limit stays 96.53 (off-grid) → RED.
+func TestMentorX8LimitRoundsToTick(t *testing.T) {
+	at, p, limits, _ := x8B1Setup(t, true)
+	oldP := mentorLatestPriceSeam
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.53, true }
+	t.Cleanup(func() { mentorLatestPriceSeam = oldP })
+
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("X8 must fire")
+	}
+	if len(*limits) != 1 {
+		t.Fatalf("want exactly one limit, got %v", *limits)
+	}
+	want := 96.50 // RoundToTick(101.53 − 20×0.25, 0.25) — on the 0.25 grid
+	if (*limits)[0] != want {
+		t.Fatalf("limit = %.4f, want %.2f (round-ticked to the MNQ 0.25 grid)", (*limits)[0], want)
+	}
+}
+
 func TestMentorX8StalePriceFallsBackToMarketFlatten(t *testing.T) {
 	at, p, limits, markets := x8B1Setup(t, false)
 	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)

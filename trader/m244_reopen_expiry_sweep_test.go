@@ -106,10 +106,12 @@ func TestM244ReopenExpirySweepOnlyOnTheEdge(t *testing.T) {
 // m330 B2 — the one-shot reopen sweep runs once per closed->open edge. A cancel
 // refused for a TRANSIENT reason (no fresh broker book) used to be dropped with
 // `continue`, leaving the row working with no second chance from this path.
-// It must be queued (cancel_pending) so the settlement pass re-requests it,
-// the same retry the inline sweep gets. MUTANT: restore the `continue` on the
-// no-book refusal in sweepDueExpiriesAtReopen → row stays working → RED.
-func TestM330B2ReopenSweepTransientRefusalIsQueuedForRetry(t *testing.T) {
+// It must go cancel_pending so the settlement pass re-requests it (the same
+// retry the inline sweep gets). This pin asserts the QUEUE state only — the
+// settlement pass's actual re-request is owned by its own pin, not here.
+// MUTANT: restore the `continue` on the no-book refusal in
+// sweepDueExpiriesAtReopen → row stays working → RED.
+func TestM330B2ReopenSweepTransientRefusalGoesCancelPending(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
 	now := b3Clock(17, 1)
 	// Deliberately NO fresh snapshot at the pinned clock: the verdict is the

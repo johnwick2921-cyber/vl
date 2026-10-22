@@ -267,9 +267,12 @@ func (at *AutoTrader) mentorX8SendExit(nt *ntTrader.TCPTrader, p *mentorLivePos)
 		tick := market.FuturesTickSize(at.futuresSymbol())
 		if tick > 0 {
 			collar := float64(mentorX8LimitCollarTicks) * tick
-			limit := price - collar // long: sell through the bid
+			// m390: the limit must land ON a tick boundary — NT8 rejects an
+			// off-grid limit price, and a fresh price that is not a multiple
+			// of the tick leaves `price ± collar` off-grid.
+			limit := ntTrader.RoundToTick(price-collar, tick) // long: sell through the bid
 			if strings.EqualFold(strings.TrimSpace(p.Pos.Side), "short") {
-				limit = price + collar
+				limit = ntTrader.RoundToTick(price+collar, tick)
 			}
 			if limit > 0 {
 				err := mentorX8LimitWire(at, nt, p.Pos.Side, limit)
