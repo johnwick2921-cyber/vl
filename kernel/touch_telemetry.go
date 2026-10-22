@@ -273,6 +273,37 @@ func TouchUpdate(traderID, symbol string, bars []market.Kline, levels []ScoredLe
 			closed = append(closed, *ep)
 		}
 	}
+	// bug-hunt #21: an episode whose level dropped out of the seated set, or
+	// whose session-day rolled (the key embeds the session-day), is never
+	// visited again — it stayed active forever and rendered as a ghost TOUCH
+	// line. Close it, persist it, and drop the state (the store ordinal seed
+	// restores continuity if the level re-seats).
+	currentKeys := make(map[string]bool, len(levels))
+	for _, l := range levels {
+		if l.Price > 0 {
+			currentKeys[touchKey(traderID, symbol, l.Label, l.Price, sessionDay)] = true
+		}
+	}
+	prefix := traderID + "|" + symbol + "|"
+	for k, st := range touchRegistry.states {
+		if !strings.HasPrefix(k, prefix) || st.active == nil || currentKeys[k] {
+			continue
+		}
+		ep := st.active
+		ep.BarsIn = 0
+		for _, b := range st.ring {
+			if b.OpenTime >= ep.OpenedAtMs {
+				ep.BarsIn++
+			}
+		}
+		ep.ClosedAtMs = last.CloseTime
+		ep.VolRatio = volRatio(st.ring, ep.OpenedAtMs, volWindow)
+		ep.ApproachATR = approachATR(st.ring, ep.OpenedAtMs, apprWindow, atr)
+		ep.Shape = classifyShape(ep)
+		st.last = ep
+		delete(touchRegistry.states, k)
+		closed = append(closed, *ep)
+	}
 	_ = price
 	return closed
 }

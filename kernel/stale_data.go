@@ -172,17 +172,22 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			b4Refuse(d, ctx, why)
 			continue
 		}
-		if tf, _, _, _ := staleEntryFeed(md, evalMs); tf == "1m" {
-			if stale, age, known := feedReceiptStale(d.Symbol, "1m", ctx.SnapshotAt); known && stale {
-				why := "receipt_age: no live 1m frame received since boot (monotonic)"
-				if age >= 0 {
-					why = fmt.Sprintf("receipt_age: last live 1m frame received %ds before the snapshot on the monotonic clock (> %ds)", age/1000, receiptMaxAgeMs(60_000)/1000)
-				}
-				b4Refuse(d, ctx, why)
-				continue
-			}
+		// m168: the receipt leg runs whenever a provider is wired, not only when
+		// the freshest subscribed TF is 1m — a dead feed on 5m-only must not slip
+		// through the monotonic leg. The freshest TF is what the receipt ages.
+		tf, wallAge, wallLimit, wallStale := staleEntryFeed(md, evalMs)
+		if tf == "" {
+			tf = "1m"
 		}
-		if tf, age, limit, stale := staleEntryFeed(md, evalMs); stale {
+		if stale, age, known := feedReceiptStale(d.Symbol, tf, ctx.SnapshotAt); known && stale {
+			why := fmt.Sprintf("receipt_age: no live %s frame received since boot (monotonic)", tf)
+			if age >= 0 {
+				why = fmt.Sprintf("receipt_age: last live %s frame received %ds before the snapshot on the monotonic clock (> %ds)", tf, age/1000, receiptMaxAgeMs(tfIntervalMs(tf))/1000)
+			}
+			b4Refuse(d, ctx, why)
+			continue
+		}
+		if wallStale {
 			// 2.4 — every discard self-diagnoses: live-feed age + clock drift +
 			// a verdict hint, so "feed or clock or math" is one glance.
 			feedAge, drift := liveFeedDiagnostics(d.Symbol, nowMs)
@@ -192,12 +197,12 @@ func applyStaleDataBlock(fd *FullDecision, ctx *Context, nowMs int64) {
 			// same skew, so drift past C2 tolerance explains BOTH readings.
 			case absI64(drift) > C2ToleranceMs():
 				hint = "clock"
-			case feedAge < 0 || feedAge > limit:
+			case feedAge < 0 || feedAge > wallLimit:
 				hint = "feed" // the LIVE cache is also old → the wire really gapped
 			}
 			logger.Warnf("⛔ stale_bar_discarded tf=%s age=%ds thresh=%ds drift_ms=%+d feed_last_bar_age=%ds verdict_hint=%s — %s %s → WAIT (exits unaffected)",
-				tf, age/1000, limit/1000, drift, feedAge/1000, hint, d.Symbol, d.Action)
-			reason := fmt.Sprintf("freshest %s bar %dms old (>%dms) hint=%s", tf, age, limit, hint)
+				tf, wallAge/1000, wallLimit/1000, drift, feedAge/1000, hint, d.Symbol, d.Action)
+			reason := fmt.Sprintf("freshest %s bar %dms old (>%dms) hint=%s", tf, wallAge, wallLimit, hint)
 			d.RefusalReason = "stale-data: " + reason
 			d.Action = "wait"
 			telemetry.IncGateBlock(ctx.TraderID, "stale_data")

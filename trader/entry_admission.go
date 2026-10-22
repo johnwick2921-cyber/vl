@@ -739,8 +739,8 @@ func (at *AutoTrader) manualEntryQuantityRefusal(symbol string, quantity float64
 // 1m bar of the trader's symbol judged by kernel.EntryFeedStale — the SAME
 // one-verdict function the mentor block calls. No bar provider wired (no NT8
 // series at all: sandbox, tests) → not stale, as on the mentor path; a wired
-// provider with no 1m bar is the kernel's documented unknown-bar fail-open,
-// still behind the clock-step hold.
+// live-frame provider that reports no live frame since boot fails CLOSED
+// (stale) even with an empty 1m cache, still behind the clock-step hold.
 func (at *AutoTrader) armFeedStale(now time.Time) (bool, string) {
 	if at == nil || market.FuturesBarsProvider == nil {
 		return false, ""

@@ -38,9 +38,14 @@ func mentorSwingRunnerOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorSwingRunner, true)
 }
 
-// mentorResonanceRunnerTPOn — CX-3, nil → ON (case a, a bug fix).
+// mentorResonanceRunnerTPOn — CX-3, nil → OFF (W-MENTOR-EXACT m186). The
+// "runner TP out to the level beyond the old high" was the bot's own inference:
+// D2.4 @01:58–02:09 only says "70-80% nó sẽ phá luôn cái đỉnh bên tay trái" +
+// "để stop loss ở break even, cho nó chạy" — the mentor never places a TP for
+// the runner. Default OFF now lets the runner run (BE stop, no trail, no TP
+// cap), which is exactly "cho nó chạy".
 func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
-	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, true)
+	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, false)
 }
 
 // mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
@@ -112,11 +117,11 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ReverseISBAsPHL:       mentorReverseISBAsPHL(rc),
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
-		ISBMaxPts:             30, // course-defaults-30: stop < 30 taken, ≥ 30 refused
+		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
 		BoxFreshRTHPair:       rc != nil && mentorBoolKnob(rc.MentorBoxFreshRTHPair, false),
 	}
 	if rc != nil {
-		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 30, "isb_max_pts")
+		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
 	}
@@ -240,8 +245,7 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 // ── CX-3: the resonance runner's TP, really sent ───────────────────────────
 
 // mentorResonanceRunnerTP sends the mode-A runner TP move the evaluator's
-// RunnerTarget asks for (the level beyond the old high — "70-80% là nó sẽ phá
-// luôn cái đỉnh bên tay trái" [D2.4 p1 @01:58–02:09]) through the SAME
+// RunnerTarget asks for (the level beyond the old high) through the SAME
 // leg-scoped modify_bracket path the ISB candle-3 partial uses
 // (modifyBracketWire), addressed to the RUNNER (wire leg 2). Leg 1's +1R TP
 // stays (R-RES). Every branch that sends nothing is logged AND counted.
@@ -337,6 +341,13 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 		if errors.Is(err, errMentorStopBrokerTighter) {
 			moved++
 			continue
+		}
+		if errors.Is(err, errMentorStopThroughMarket) {
+			// m198 #43-B: the wrong-side BE closed the WHOLE symbol at market
+			// (a full flatten) — the position is flat; a sibling leg's move
+			// would be a redundant close on an already-flat position. Stop.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return false
 		}
 		if !mentorMoveApplied(err) {
 			if err != nil && !mentorMoveErrAlreadyLogged(err) {

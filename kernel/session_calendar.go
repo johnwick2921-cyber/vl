@@ -238,7 +238,7 @@ func SessionStateAt(now time.Time) SessionState {
 		st.UncoveredFallback = true
 		st.Source = "year not covered by the calendar — the superseded holiday boolean is deciding, which errs CLOSED"
 		if isCMEHoliday(ct) {
-			st.Class, st.Name = SessionClosed, "holiday (uncovered year)"
+			st.Class, st.Name = SessionClosed, "holiday, uncovered year"
 			return st
 		}
 		st.Class = SessionNormal

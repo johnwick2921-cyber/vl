@@ -9429,3 +9429,33 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** for every exit/stop/BE step that takes a close/high/low, find each caller that can pass a not-yet-closed bar (`trailBar` with `trailBarOK=false`) and check the step gates on the frame-OK flag AND refuses a non-positive price.
 - **Rule:** a price of 0 is "no price", never a value. Every stage of an exit drive honours the entry's frame gate, not only some stages.
 - **Reference:** 10-20 20:42 CT, Sim101 ISB short 29938 (cf95ee3d), 2m frame: `mentorBEBeforePartialStep` logged "close 0.00 is past half-way 29929.25" and sent BE 29938, and NT8 refused it ("Stop price can't be changed below the market"). Fix branch `fix/mentor-be-zero-close`: stage-0 frameOK gate (`trader/mentor_trail_r22.go`) + `c <= 0` guard (`trader/mentor_course_exits.go`); pin `TestMentorBEBeforePartialWaitsForThe2mFrameShort`, both mutants RED.
+
+## CLASS NN (assigned at merge) — a wrong-unit compare (ns constant vs ms constant)
+- **Symptom:** a "session boundary" hold window compares a NANOSECOND delta against a MILLISECOND threshold (`abs >= sessionBoundaryFreezeMs` where `abs` is `wallNs - prevWallNs - mono`). Inside 15:59–16:01/16:59–17:01 CT, ANY detected step ≥100 ms holds entries for 120 s — the spec, guide and pin all said "steps ≥2 s", but the pin passed only because its fixture used a 2 s step.
+- **Probe:** for every time-threshold comparison, name the unit on BOTH sides of the operator. Grep for `*int64(time.Millisecond)` and `* time.Millisecond` beside `time.Nanosecond` deltas; a mixed pair is a bug.
+- **Rule:** time deltas and thresholds must be in the same unit; multiply the constant (`sessionBoundaryFreezeMs*int64(time.Millisecond)`) rather than pass ms where ns is compared. Pin BOTH sides of the boundary (a 1.0 s step NOT held; a 2.5 s step held).
+- **Reference:** m159 `kernel/feed_clock.go:253`; fixed @1d7c1875f with `TestM149SessionBoundary1sStepNotHeld2p5sStepHeld` (RED at b4a28c346).
+
+## CLASS NN (assigned at merge) — a test that calls the inner helper and misses the production gate order
+- **Symptom:** the resonance-arm fix added a pin that called `mentorArmIntent` directly, while production reaches it through `mentorPlaceIntent`, where a refusal gate runs FIRST and makes the new accept point unreachable — the whole suite stayed green and "resonance can never arm" shipped.
+- **Probe:** every pin that claims a production behavior must drive the PRODUCTION call site (`mentorPlaceIntent`/`mentorDispatchIntent`/`mentorEvalOnce`), not the helper one level down. Re-add the raw-intent loop as a mutant and require the negative pin to go RED.
+- **Rule:** a test that calls the inner function directly does not count as proof. The mutant must traverse the same gate order as production; an unreachable accept point means the gate order changed, and the pin must be re-written at the outer call.
+- **Reference:** m151 `15dd080e7` REVIEW-BACK P1 — `mentorPlaceIntent` runs `mentorAddGate` (mentor_tick.go:657) before `mentorArmIntent` (:737); a same-side ISB is refused at the never-add gate, so arm never fires. Fix @60c0350f2 moves the slot gate before the add gate.
+
+## CLASS NN (assigned at merge) — a gap-skip that fires on every CME session break
+- **Symptom:** an EMA hole-skip guard (`bars[i].OpenTime - bars[i-1].OpenTime > step + step/2 → continue`) fires on EVERY normal gap, not only restart holes: the daily 16:00→17:00 CME break, the 1h 15:00→17:00 gap, weekends, holidays and early closes. Every EMA level on every timeframe shifts on a normal day, and the 125-pt drift it was meant to cure remains (the window stays stretched across the hole).
+- **Probe:** any "skip the bar after a gap" logic must be exercised against a series that crosses 15:55→17:00 and a weekend; the EMA must be byte-identical to the pre-change recurrence.
+- **Rule:** a gap is not a hole. Rebuild the ring from the complete 1m store (union-by-time) instead of skipping the bar after a gap; a detect-only `BarsTFHoles` + a prompt gap warning (which already excludes the 16:00–17:00 break) is the honest signal.
+- **Reference:** m139 DS-104 `b6f43e94b` part (b) REVIEW-BACK; reverted to byte-identical `emaValue`, rebuild moved to RehydrateUnion (`provider/ninjatrader/bar_cache.go`).
+
+## CLASS NN (assigned at merge) — a partial-bucket aggregation inserted as a complete bar
+- **Symptom:** `Aggregate1mToTF` inserts a 5m/1h bucket built from 2 of 5 minutes as a NORMAL bar, with a fake close. A fake bar poisons every downstream EMA/level and the 1h bucket built from 24/60 minutes reads as full.
+- **Probe:** for each aggregate builder, ask "how many 1m bars fed this bucket" before it is inserted. A bucket is inserted only when its coverage is complete enough: missing ≤1 minute AND no run of 2+ consecutive missing minutes (1 missing minute allowed for a quiet no-trade minute).
+- **Rule:** a bucket that fails the coverage test is NOT inserted — it stays a hole, which `BarsTFHoles` and the prompt gap warning report honestly. A missing bar is better than a bar with a fake close. The forming tail bucket is never rebuilt from 1m (the live feed owns it).
+- **Reference:** m148/m149 DS-104 `dfaaddb22`/`d0e698892` — pins (a) 8-min hole → buckets absent (b) 1 missing → inserted (c) mutant "drop the coverage check" RED; tolerance `max(1, tfMin/20)` and no run of 3+ consecutive missing open minutes (m168 DS-104 item 1).
+
+## CLASS NN (assigned at merge) — a fix that deletes a sibling invariant line during a refactor; no test kept the authed conn alive past the pre-auth timeout
+- **Symptom:** a root-fix refactor (never publish a pre-auth conn) deleted the line that CLEARS the first-hello read deadline after auth (`_ = c.SetReadDeadline(time.Time{})`). The pre-auth deadline stayed armed, so an authed keyed connection timed out ~10 s after accept; and a `defer` captured the pre-auth flag at defer time, so the close path took the wrong branch and a reconnect was rejected until a heartbeat write failed.
+- **Probe:** for every `SetReadDeadline`/`SetDeadline`, find where the deadline is armed AND where it is cleared; a pre-auth-only deadline must be cleared the moment auth succeeds. A `defer f(x, flag)` must capture the flag by reference (closure) if the flag flips mid-life.
+- **Rule:** a refactor that removes one line must ask what invariant that line held. Every deadline has both an arm and a clear; every defer that observes mutable state observes it AT CALL TIME.
+- **Reference:** m188 `provider/ninjatrader/tcp_server.go:2185` armed the deadline; 6c6b0d418 deleted the clear added in 31f2b5258; `defer s.connGone(c, pending)` at :2154 captured `pending==true`. Fix branch `fix/m188-ds104-keyed-conn-deadline`.

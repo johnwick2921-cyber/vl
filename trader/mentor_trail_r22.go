@@ -99,18 +99,21 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 	return math.Ceil(entry/tick-mentorGridEps) * tick
 }
 
-// mentorCandleTrailStop is the candle trail for ONE closed candle: 1 tick
-// beyond its low (long) / high (short), on the grid and rounded AWAY from the
-// market (long down, short up), so rounding never pulls it inside the rule.
+// mentorCandleTrailStop is the candle trail for ONE closed candle: AT its low
+// (long) / high (short) — the course puts the stop at the candle extreme and
+// says nothing about a tick offset [D2.4 p1 @07:01–08:49] ("Đặt ở dưới đáy cây
+// nến đó"; "Em move lên đây"). Rounded AWAY from the market (long down, short
+// up), so rounding never pulls it inside the rule. (The former 1-tick-beyond
+// offset was an item-7 ruling, not the course — removed under W-MENTOR-EXACT.)
 func mentorCandleTrailStop(side string, h, l, tick float64) float64 {
 	if strings.EqualFold(side, "short") {
-		v := h + tick
+		v := h
 		if tick <= 0 {
 			return v
 		}
 		return math.Ceil(v/tick-mentorGridEps) * tick
 	}
-	v := l - tick
+	v := l
 	if tick <= 0 {
 		return v
 	}
@@ -358,6 +361,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 				at.mentorCount("stop_move_skipped_leg_closed")
 				continue
 			}
+			if errors.Is(err, errMentorStopThroughMarket) {
+				// m198 #43-B: the wrong-side BE closed the WHOLE symbol at
+				// market (a full flatten) — the position is flat; a sibling
+				// leg's move would be a redundant close. Stop the pass.
+				at.mentorCount("stop_move_skipped_leg_closed")
+				return
+			}
 			if !mentorMoveApplied(err) {
 				if err != nil && !mentorMoveErrAlreadyLogged(err) {
 					at.logWarnf("🧑‍🏫 mentor BE after the +1R partial: %s leg %d move FAILED: %v", leg.SignalID, leg.Wire, err)
@@ -390,6 +400,13 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 			continue // a lower low (long) / higher high (short): never a widen, nothing to send
 		}
 		err := at.mentorMoveLegStop(nt, side, leg, cand)
+		if errors.Is(err, errMentorStopThroughMarket) {
+			// m198 #43-B: the wrong-side trail closed the WHOLE symbol at
+			// market (a full flatten) — the position is flat; a sibling leg's
+			// move would be a redundant close. Stop the pass.
+			at.mentorCount("stop_move_skipped_leg_closed")
+			return
+		}
 		if !mentorMoveApplied(err) {
 			if errors.Is(err, errMentorLegClosed) {
 				at.mentorCount("stop_move_skipped_leg_closed")

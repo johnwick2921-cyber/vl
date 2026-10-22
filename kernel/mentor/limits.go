@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
@@ -132,16 +133,17 @@ type pendOrder struct {
 }
 
 type openTrade struct {
-	side   Side
-	stop   float64
-	target float64
-	anchor float64
-	place  string
-	swing  float64
-	box    bool
-	lo     float64
-	hi     float64
-	wave   float64 // wave low (long) / high (short), tracked from the fill candle
+	side    Side
+	stop    float64
+	target  float64
+	anchor  float64
+	place   string
+	swing   float64
+	box     bool
+	lo      float64
+	hi      float64
+	wave    float64 // wave low (long) / high (short), tracked from the fill candle
+	receipt string  // the entry signal id — matches a broker position_close (#47)
 }
 
 // Apply is the single Tick hook (DS-103 merges the call): it advances the
@@ -175,7 +177,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 		l.Places = nil
 		l.pend = nil
 		l.open = nil
-		l.filled = nil  // FU-1: the receipt dedupe dies with the trading day
+		l.filled = nil   // FU-1: the receipt dedupe dies with the trading day
 		l.Counters = nil // FU-1: the fill-path counters die with the day
 	} else if l.dayKey == "" {
 		l.dayKey = day
@@ -251,19 +253,19 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
-				side:   in.Side,
-				entry:  in.Price,
-				stop:   in.Stop,
-				target: in.Target,
-				expiry: pendExpiry(in, now),
-				armID:  in.ArmID,
-				legExt: ext,
-				anchor: ref.anchor,
-				place:  ref.key,
-				swing:  ext, // B22: the prior swing on the target side at entry
-				box:    ref.box,
-				lo:     ref.lo,
-				hi:     ref.hi,
+				side:     in.Side,
+				entry:    in.Price,
+				stop:     in.Stop,
+				target:   in.Target,
+				expiry:   pendExpiry(in, now),
+				armID:    in.ArmID,
+				legExt:   ext,
+				anchor:   ref.anchor,
+				place:    ref.key,
+				swing:    ext, // B22: the prior swing on the target side at entry
+				box:      ref.box,
+				lo:       ref.lo,
+				hi:       ref.hi,
 				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		case PlaceStopLimitEntry:
@@ -286,18 +288,18 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			}
 			kept = append(kept, in)
 			l.pend = append(l.pend, &pendOrder{
-				side:   in.Side,
-				entry:  in.Price,
-				stop:   in.Stop,
-				target: in.Target,
-				expiry: pendExpiry(in, now),
-				isISB:  true,
-				armID:  in.ArmID,
-				anchor: in.Price, // the ISB band: the loss is boxed by price band
-				place:  isbBandKey(in.Price, in.Stop),
-				box:    true,
-				lo:     math.Min(in.Price, in.Stop),
-				hi:     math.Max(in.Price, in.Stop),
+				side:     in.Side,
+				entry:    in.Price,
+				stop:     in.Stop,
+				target:   in.Target,
+				expiry:   pendExpiry(in, now),
+				isISB:    true,
+				armID:    in.ArmID,
+				anchor:   in.Price, // the ISB band: the loss is boxed by price band
+				place:    isbBandKey(in.Price, in.Stop),
+				box:      true,
+				lo:       math.Min(in.Price, in.Stop),
+				hi:       math.Max(in.Price, in.Stop),
 				realFill: cfg.RealFillOnly, // FU-1: live arms fill by the real fill, never the candle
 			})
 		default:
@@ -376,7 +378,7 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.fill(p, cur.Low, cur.High, levels)
+			l.fill(p, cur.Low, cur.High, levels, "")
 			continue
 		}
 		if p.expiry != 0 && now >= p.expiry {
@@ -423,23 +425,24 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 // opens the G2 loss trade. lo/hi seed the B22 wave (the fill candle's
 // low/high); levels feeds registerLeg's old-extreme fallback when the pend
 // carries no leg extreme (nil for a real fill — the pend's legExt wins).
-func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
+func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level, receipt string) {
 	l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
 	wave := lo
 	if p.side == SideShort {
 		wave = hi
 	}
 	t := &openTrade{
-		side:   p.side,
-		stop:   p.stop,
-		target: p.target,
-		anchor: p.anchor,
-		place:  p.place,
-		swing:  p.swing,
-		box:    p.box,
-		lo:     p.lo,
-		hi:     p.hi,
-		wave:   wave, // the fill candle is the entry candle
+		side:    p.side,
+		stop:    p.stop,
+		target:  p.target,
+		anchor:  p.anchor,
+		place:   p.place,
+		swing:   p.swing,
+		box:     p.box,
+		lo:      p.lo,
+		hi:      p.hi,
+		wave:    wave, // the fill candle is the entry candle
+		receipt: receipt,
 	}
 	if stopOutOn(t, lo, hi) {
 		// P2-3: the fill candle already crossed the stop (a late drain misses
@@ -454,11 +457,12 @@ func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level) {
 // pend (a restart dropped the in-memory pends), the armed ledger ROW still
 // carries the trade. A fill registered from the row must never be dropped.
 type FillRow struct {
-	Side   Side
-	Entry  float64
-	Stop   float64
-	Target float64
-	ISB    bool
+	Side     Side
+	Entry    float64
+	Stop     float64
+	Target   float64
+	ISB      bool
+	SignalID string // the entry signal id — matches a broker position_close (#47)
 }
 
 // fillRow registers a REAL fill from the armed row (no pend — a restart) the
@@ -490,7 +494,7 @@ func (l *Limits) fillRow(row *FillRow, lo, hi float64, levels []Level) {
 		// swing is left 0: without the intent's AnchorKey the B22 swing
 		// departure is unavailable; the wave break still frees the place.
 	}
-	l.fill(p, lo, hi, levels)
+	l.fill(p, lo, hi, levels, row.SignalID)
 }
 
 // stopOutOn reports whether the fill candle (lo/hi) already crossed the trade's
@@ -553,7 +557,12 @@ func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRo
 	}
 	p := l.takePend(armID)
 	if p != nil {
-		l.fill(p, lo, hi, nil)
+		// #5: pass levels — an ISB pend carries no legExt (Apply sets it only
+		// on the PlaceStopEntry/PHL branch), so registerLeg must resolve the
+		// old-extreme fallback from the evaluator's levels. Passing nil made a
+		// REAL ISB fill never register a leg: a stop-out never set Stopped and
+		// the next same-side entry was never refused by the G1 leg budget.
+		l.fill(p, lo, hi, levels, receiptID)
 		l.markFilled(receiptID)
 		return FillConsumed
 	}
@@ -692,6 +701,30 @@ func (l *Limits) DropArm(armID string) {
 	l.dropPend(armID)
 }
 
+// RealExit closes an OPEN loss trade on the broker's exit receipt (#47): the
+// trader's position_close / flat frame names the entry signal id and the exit
+// reason. A broker exit removes the matching openTrade so a later deep retrace
+// through the ORIGINAL stop is not booked as a phantom stop-out. The exit is a
+// LOSS only when the broker closed at the original stop ("sl"); a break-even,
+// trailed stop, partial, news or EOD flat simply drops the trade (it was not a
+// stop-out). Idempotent per signal id.
+func (l *Limits) RealExit(signalID string, wasStop bool) {
+	if signalID == "" {
+		return
+	}
+	for i := range l.open {
+		t := l.open[i]
+		if t.receipt != signalID {
+			continue
+		}
+		l.open = append(l.open[:i], l.open[i+1:]...)
+		if wasStop {
+			l.loss(t) // the ORIGINAL stop filled — a real stop-out loss
+		}
+		return
+	}
+}
+
 func (l *Limits) leg(side Side) *Leg {
 	if side == SideLong {
 		return l.Long
@@ -738,8 +771,14 @@ func placeKey(price float64) string {
 
 // placeID is the G2 registry key: the setup's place key when the emit site
 // named one (the level key, the box edge key, the EMA key), else the
-// quarter-tick anchor price. "" = no place (a plain ISB).
+// quarter-tick anchor price. "" = no place (a plain ISB). A trigger-line
+// retest is keyed BY PRICE (like visitKey, r22 P1-2): each position the 5m
+// trigger line has held is its own support/resistance line, so losses at
+// different line positions must not merge into one place.
 func placeID(anchorKey string, anchor float64) string {
+	if anchorKey == string(KindTriggerRetest) {
+		return fmt.Sprintf("%s@%.2f", anchorKey, anchor)
+	}
 	if anchorKey != "" {
 		return anchorKey
 	}

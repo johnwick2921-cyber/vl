@@ -76,6 +76,11 @@ type ArmedOrderDB struct {
 	// armed pass sends this count for origin=mentor rows (clamped to the
 	// trader's max) and REFUSES a mentor row without one — never sent as 1.
 	Contracts *int
+	// MentorSnapshot (m134 DS-108, observability): the JSON evaluator snapshot
+	// the arm was authored under (EMA9/34, 1h/4h/5m triggers, HTF verdict, ORB,
+	// valid/forming trendlines, swing, nearest levels). NULL on every historical
+	// and non-mentor row = absent, never fabricated.
+	MentorSnapshot *string `gorm:"column:mentor_snapshot_json"`
 	// Leg1Qty / Leg1TP (REVIEW-353 redesign, 2026-10-04): the split AT ENTRY
 	// rides the ONE entry frame — leg 1 = ceil(n/2) with its OWN TP at +1R (or
 	// ≥2R for mode C), leg 2 = the runner (TP = TargetPx). NULL / 0 = the
@@ -337,6 +342,9 @@ func (s *ArmedOrderStore) Migrate() error {
 			// NULL = ABSENT on every historical and non-mentor row — a mentor
 			// row without one is REFUSED by the armed pass, never sent as 1.
 			{"contracts", "INTEGER"},
+			// m134 DS-108 (a): the per-arm evaluator snapshot (JSON). NULL on
+			// every historical and non-mentor row = absent, never fabricated.
+			{"mentor_snapshot_json", "TEXT"},
 			// REVIEW-353 split-at-entry redesign: leg 1 qty + its own TP ride
 			// the ONE entry frame. NULL/0 = single-bracket legacy.
 			{"leg1_qty", "INTEGER"},
@@ -602,6 +610,9 @@ func (s *ArmedOrderStore) UpsertArm(row *ArmedOrderDB) error {
 				// REL17-F2: the persisted exit branch follows the re-authorization
 				// (a re-armed stop re-chooses the fork).
 				"exit_mode": row.ExitMode,
+				// m134 DS-108 (a): the per-arm eval snapshot follows the
+				// re-authorization too (a re-armed stop re-snapshots the state).
+				"mentor_snapshot_json": row.MentorSnapshot,
 			}
 			return s.db.Model(&existing).Updates(armedUpdates).Error
 		}
