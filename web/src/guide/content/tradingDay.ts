@@ -39,7 +39,7 @@ export const tradingDay: GuideSection = {
           time: '14:45',
           label: 'EOD flat',
           detail:
-            'For a Day-Plan or mentor trader, every resting entry is cancelled first (intraday mentor orders included), then open positions are force-flattened at session end — a market close by default; the limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0; R-A15 ruling). A SWING4H mentor position and its order are exempt (held by the 4h). No new entry is accepted after the flat; mentor mode places no new entry from 15:45 CT until the 17:00 reopen.',
+            'For a Day-Plan or mentor trader, every resting entry is cancelled first (intraday mentor orders included), then open positions are force-flattened at session end — a market close by default; the limit-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0 (default 0; R-A15 ruling). A SWING4H mentor position and its order are exempt from this flat (held by the 4h): the swing is held through one 4h candle AFTER its entry candle, but is never carried through the 16:00 CT halt or a weekend or holiday close — it is flattened on the last bar before the market closes (kernel/mentor/swing4h.go swingHold). No new entry is accepted after the flat; mentor mode places no new entry from 15:45 CT until the 17:00 reopen.',
         },
         {
           time: '16:00–17:00',
