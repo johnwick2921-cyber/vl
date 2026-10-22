@@ -38,9 +38,14 @@ func mentorSwingRunnerOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorSwingRunner, true)
 }
 
-// mentorResonanceRunnerTPOn — CX-3, nil → ON (case a, a bug fix).
+// mentorResonanceRunnerTPOn — CX-3, nil → OFF (W-MENTOR-EXACT m186). The
+// "runner TP out to the level beyond the old high" was the bot's own inference:
+// D2.4 @01:58–02:09 only says "70-80% nó sẽ phá luôn cái đỉnh bên tay trái" +
+// "để stop loss ở break even, cho nó chạy" — the mentor never places a TP for
+// the runner. Default OFF now lets the runner run (BE stop, no trail, no TP
+// cap), which is exactly "cho nó chạy".
 func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
-	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, true)
+	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, false)
 }
 
 // mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
@@ -173,8 +178,8 @@ func (at *AutoTrader) mentorSwingContractsRead() int {
 // mentorSwingRunnerMinPts is the runner's take-profit distance floor: the top
 // of the course's per-4h-candle band ("50–100 points per 4-hour candle",
 // 00-METHOD §8 table, D5.2). The runner is held by the 4h (BE at +1R, the
-// hold-close at the end of the 2nd 4h candle — the swing's own rules); this TP
-// only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
+// hold-close at the end of ONE 4h candle [D5.2 p1 @06:03–06:20] — the swing's
+// own rules); this TP only caps it. [C] the course names no runner TP: "hô tới đâu luôn".
 const mentorSwingRunnerMinPts = 100.0
 
 // mentorSwingRunnerLegs is the CX-2 split for a SWING4H arm with the runner
@@ -240,8 +245,7 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 // ── CX-3: the resonance runner's TP, really sent ───────────────────────────
 
 // mentorResonanceRunnerTP sends the mode-A runner TP move the evaluator's
-// RunnerTarget asks for (the level beyond the old high — "70-80% là nó sẽ phá
-// luôn cái đỉnh bên tay trái" [D2.4 p1 @01:58–02:09]) through the SAME
+// RunnerTarget asks for (the level beyond the old high) through the SAME
 // leg-scoped modify_bracket path the ISB candle-3 partial uses
 // (modifyBracketWire), addressed to the RUNNER (wire leg 2). Leg 1's +1R TP
 // stays (R-RES). Every branch that sends nothing is logged AND counted.

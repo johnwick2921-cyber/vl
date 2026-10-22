@@ -185,6 +185,128 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 	}
 }
 
+// TestSwing4hLeewaySecondTouchArms — [D5.2 p1 @15:21–15:48]: the 4h level's
+// touch window is the FIRST TWO touching 5m candles; the entry may be armed off
+// either ("khung 4 giờ em sẽ du di là 2 cây nến"). Candle 1 rejects (arms a sell
+// stop tight on its low); candle 2 touches again and closes back — the first arm
+// is superseded and the entry re-bases on candle 2's low. Mutant: LeewayCandles=1
+// → the one-setup-per-approach distance guard blocks candle 2 → no supersede and
+// no second PlaceStopEntry → RED.
+func TestSwing4hLeewaySecondTouchArms(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below the line
+		mk5m(t, 15, 5, 5, 10158, 10166, 10155, 10160),  // candle 1: touches, closes back → arm @10155
+		mk5m(t, 15, 5, 10, 10161, 10167, 10162, 10165), // candle 2: touches, closes back, no fill → re-arm @10162
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
+	if len(out) != 3 {
+		t.Fatalf("intents = %d, want [place@10155, supersede-cancel, place@10162]; got %+v", len(out), out)
+	}
+	first, cancel, second := out[0], out[1], out[2]
+	if first.Action != PlaceStopEntry || first.Side != SideShort || abs(first.Price-10155) > 0.01 {
+		t.Fatalf("first intent = %+v, want a SHORT stop entry at 10155 (candle 1's low)", first)
+	}
+	if cancel.Action != CancelArm || cancel.ArmID != first.ArmID {
+		t.Fatalf("supersede cancel = %+v, want CancelArm of the first arm %q", cancel, first.ArmID)
+	}
+	if second.Action != PlaceStopEntry || second.Side != SideShort || abs(second.Price-10162) > 0.01 {
+		t.Fatalf("second intent = %+v, want a SHORT stop entry at 10162 (candle 2's low)", second)
+	}
+	if second.ArmID == first.ArmID {
+		t.Fatalf("the re-armed order must carry a NEW ArmID; got %q twice", second.ArmID)
+	}
+	if s.FirstTouch == nil || s.FirstTouch.Through || s.FirstTouch.Touches != 2 {
+		t.Fatalf("after the window the touch must be non-through with Touches=2; got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewayFirstTouchThroughRefused — [D5.2 p1 @15:21–15:48]: if the
+// FIRST touching candle CLOSES beyond the level there is NO order — "Nếu như 2
+// cây nến đầu tiên nó chạm level mà 1 cây nến sau đó nó đóng ở trên level…
+// Không đặt lệnh". The level is spent (Through) and only the ISB recovery may
+// ever trade it. Mutant: the through-close arms a reject anyway → a
+// PlaceStopEntry appears → RED.
+func TestSwing4hLeewayFirstTouchThroughRefused(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),     // prev: below
+		mk5m(t, 15, 5, 5, 10155, 10220, 10150, 10220), // touches, closes THROUGH
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			t.Fatalf("a first-touch through-close must NOT arm a reject; got %+v", out)
+		}
+	}
+	if s.FirstTouch == nil || !s.FirstTouch.Through || s.FirstTouch.Touches != 1 {
+		t.Fatalf("the level must be spent (Through, Touches=1); got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewaySecondTouchThroughCancels — [D5.2 p1 @15:21–15:48]: candle 1
+// rejects and arms; candle 2 (the second touching candle) CLOSES beyond the level
+// → the resting arm is cancelled, NO new order is placed, and the level is spent.
+// Mutant: the through-close leaves the first arm resting → the CancelArm is
+// missing → RED.
+func TestSwing4hLeewaySecondTouchThroughCancels(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below
+		mk5m(t, 15, 5, 5, 10155, 10166, 10150, 10160),  // candle 1: touches, closes back → arm @10150
+		mk5m(t, 15, 5, 10, 10160, 10220, 10155, 10220), // candle 2: touches, closes THROUGH (no fill: low 10155 > 10150)
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
+	if len(out) != 2 {
+		t.Fatalf("intents = %d, want [place@10150, cancel]; got %+v", len(out), out)
+	}
+	if out[0].Action != PlaceStopEntry || abs(out[0].Price-10150) > 0.01 {
+		t.Fatalf("first intent = %+v, want the candle-1 arm at 10150", out[0])
+	}
+	if out[1].Action != CancelArm || out[1].ArmID != out[0].ArmID {
+		t.Fatalf("second intent = %+v, want CancelArm of the candle-1 arm %q", out[1], out[0].ArmID)
+	}
+	if s.FirstTouch == nil || !s.FirstTouch.Through || s.FirstTouch.Touches != 2 {
+		t.Fatalf("the level must be spent by the second through-close (Through, Touches=2); got %+v", s.FirstTouch)
+	}
+}
+
+// TestSwing4hLeewayDoesNotCapISBRecovery — [D5.2 p1 @15:21–15:48] (the
+// anti-leak pin): the leeway is the REJECT touch window ONLY. The ISB recovery
+// after a through-close is NOT capped at LeewayCandles — R34 [D5.2 p2 @10:30]
+// keeps the watch open until the 4h flip. An inside bar that closes back well
+// beyond two candles still enters. (The non-swing 1-candle rule is pinned
+// separately by TestTouchOnlyFirstCandleCounts [D3.3 p1 @00:13] — touch.go is
+// not wired to LeewayCandles.) Mutant: wire LeewayCandles into the ISB watch
+// (cap it at 2 candles) → the entry is refused → RED.
+func TestSwing4hLeewayDoesNotCapISBRecovery(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cfg.LeewayCandles = 2
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10200, 10220, 10190, 10210),  // prev: above the line
+		mk5m(t, 15, 5, 5, 10200, 10200, 10140, 10150),  // touches, closes THROUGH (below)
+		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // no ISB (candle 1)
+		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // no ISB (candle 2 — a 2-candle cap closes here)
+		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideLong {
+		t.Fatalf("intents = %+v, want one LONG ISB entry (the leeway must not cap the ISB watch)", out)
+	}
+	if abs(out[0].Price-10185) > 0.01 {
+		t.Fatalf("ISB entry = %.2f, want 10185 (the ISB candle's high, tight R8)", out[0].Price)
+	}
+}
+
 // TestSwing4hRejectTargetIsOneRFloor — item 24 (R43): the swing first target is
 // max(1R, the 5m EMA 34) [D5.2 p2 @11:00 "TARGET 1-1 TRƯỚC"]. The old 50-pt
 // fallback made a swing with a >50-pt stop carry a target SMALLER than its stop
@@ -277,8 +399,9 @@ func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hStopCeiling100 — R8: 30–60 is allowed, ~100 → DO NOT ENTER
-// [table].
+// TestSwing4hStopCeiling100 — m186 D5.2: 30–60 is allowed; a ~100-pt stop is
+// TAKEN (the mentor softened "Đừng vô" to "take 1-2 MNQ and sit" [D5.2 p2
+// @21:25–21:43]); the old R8 skip is gone.
 func TestSwing4hStopCeiling100(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -288,8 +411,54 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
-	if len(out) != 0 {
-		t.Fatalf("stop ≥ 100 must skip; got %+v", out)
+	found := false
+	for _, in := range out {
+		if in.Action == PlaceStopEntry {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("a ~148-pt swing stop must AUTHOR an entry now (take 1-2 MNQ, no skip); got %+v", out)
+	}
+}
+
+// TestLateDaySwingCut — m186 D5.2 late-day target cut [derived: D5.2 p2
+// @07:00–07:58]. Inside the LAST 4h bucket (13:00 CT normal) the target is
+// capped at 25 (mid 20–30 [D5.2 p2 @07:21]); if the capped target < the stop
+// distance the entry is REFUSED (1:1 mandatory "trong bất kỳ tình huống nào"
+// [D1.2 p1 @08:02]). Outside the bucket → unchanged.
+func TestLateDaySwingCut(t *testing.T) {
+	// Sep 15 2026 is a normal session day (16:00 CT close).
+	sep15_1400 := time.Date(2026, 9, 15, 14, 0, 0, 0, ctime()).UnixMilli()
+	sep15_1300 := time.Date(2026, 9, 15, 13, 0, 0, 0, ctime()).UnixMilli()
+	last := lastSessionBucket(sep15_1400)
+	if last != sep15_1300 {
+		t.Fatalf("lastSessionBucket(14:00 CT) = %s, want 13:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
+	}
+
+	// inside the late bucket, stop 20 → target 25 taken (25 >= 20)
+	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 25, 20); !late || !ok || cut != 25 {
+		t.Fatalf("stop 20 in-bucket: cut=%v late=%v ok=%v, want 25 true true", cut, late, ok)
+	}
+	// inside the late bucket, stop 40 → refused (capped 25 < 40)
+	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 50, 40); !late || ok || cut != 25 {
+		t.Fatalf("stop 40 in-bucket: cut=%v late=%v ok=%v, want 25 true false", cut, late, ok)
+	}
+	// outside the late bucket (09:00) → unchanged
+	outside := time.Date(2026, 9, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	if cut, late, ok := lateDaySwingCut(outside, outside, 50, 40); late || !ok || cut != 50 {
+		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 50 false true", cut, late, ok)
+	}
+}
+
+// TestLastSessionBucketEarlyClose — a shortened-close day's last bucket is the
+// bucket holding the close, not 13:00. 2026-12-24 closes at 12:15 CT → 09:00.
+func TestLastSessionBucketEarlyClose(t *testing.T) {
+	now := time.Date(2026, 12, 24, 10, 0, 0, 0, ctime()).UnixMilli()
+	last := lastSessionBucket(now)
+	want := time.Date(2026, 12, 24, 9, 0, 0, 0, ctime()).UnixMilli()
+	if last != want {
+		t.Fatalf("lastSessionBucket(12-24 10:00 CT) = %s, want 09:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
 	}
 }
 
@@ -373,8 +542,8 @@ func TestSwing4hFlipOnNewBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hBEAndHold — BE at +1R, then hold to the close of the 2nd 4h
-// candle after entry [table]. Ticks are incremental: the BE/hold management
+// TestSwing4hBEAndHold — BE at +1R, then hold ONE 4h candle
+// [D5.2 p1 @06:03–06:20]. Ticks are incremental: the BE/hold management
 // runs at the START of a tick over the position's book.
 func TestSwing4hBEAndHold(t *testing.T) {
 	cfg := DefaultSwingCfg()
@@ -405,17 +574,68 @@ func TestSwing4hBEAndHold(t *testing.T) {
 	if !be {
 		t.Fatalf("no BE intent at +1R; got %+v", out)
 	}
-	// advance past the close of the 2nd 4h candle after entry (05:00 + 8h)
-	late := append(beBars, mk5m(t, 15, 13, 5, 10095, 10100, 10090, 10095))
-	out2 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
-	var closed bool
+	// D5.2 p1 @06:03–06:20: hold ONE 4h candle. Entry bucket is 05:00, so the
+	// hold limit is 09:00 — a bar BEFORE 09:00 must NOT close, and the bar
+	// at/after 09:00 must close. MUTANT: Hold4hBars=2 → the 09:05 bar does not
+	// close (holdMs 13:00) → RED.
+	before := append(beBars, mk5m(t, 15, 8, 55, 10095, 10100, 10090, 10095))
+	out2 := SwingTick(s, before, cfg, before[len(before)-1].OpenTime+60_000)
 	for _, in := range out2 {
+		if in.Action == ActionClosePosition {
+			t.Fatalf("must NOT close before the 1st-4h-candle hold limit (08:55 < 09:00); got %+v", out2)
+		}
+	}
+	atClose := append(before, mk5m(t, 15, 9, 5, 10095, 10100, 10090, 10095))
+	out3 := SwingTick(s, atClose, cfg, atClose[len(atClose)-1].OpenTime+60_000)
+	var closed bool
+	for _, in := range out3 {
 		if in.Action == ActionClosePosition {
 			closed = true
 		}
 	}
 	if !closed {
-		t.Fatalf("no close at the 2nd-4h-candle hold limit; got %+v", out2)
+		t.Fatalf("no close at the ONE-4h-candle hold limit (09:05 ≥ 09:00); got %+v", out3)
+	}
+}
+
+// TestSwingRunnerBEAfterPartialOnClosed5m — m233: the swing BE at +1R is the
+// GENERAL 1:1 rule [D1.2 p1 @12:34–13:12, @15:56–15:59], fired on a CLOSED 5m
+// candle. A runner (MovedBE=false, the leg-1 partial already gone) must NOT
+// move to BE on a candle that only touches +1R INTRABAR, and MUST move on the
+// first 5m CLOSE at/through +1R. Mutant: judge the HIGH instead of the CLOSE →
+// the intrabar candle fires BE → RED.
+func TestSwingRunnerBEAfterPartialOnClosed5m(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	entryBar := mk5m(t, 15, 5, 0, 10100, 10120, 10090, 10110)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: fourHBucketStart(entryBar.OpenTime, nil), ArmID: "swing-runner"}) {
+		t.Fatal("RebuildSwingPos refused a valid runner")
+	}
+	// +1R = 10170. A 5m candle that touches it INTRABAR (High 10175) but closes
+	// below (10165) must NOT move the runner to BE.
+	touch := append(base, mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10165))
+	out := SwingTick(s, touch, cfg, touch[len(touch)-1].OpenTime+60_000)
+	for _, in := range out {
+		if in.Action == ActionMoveStopBE {
+			t.Fatalf("intrabar +1R must NOT move the runner to BE (closed 5m candle only); got %+v", out)
+		}
+	}
+	// A 5m candle that CLOSES at/through +1R (10180) must move the runner to BE.
+	closeAt1R := append(touch, mk5m(t, 15, 5, 10, 10165, 10185, 10160, 10180))
+	out2 := SwingTick(s, closeAt1R, cfg, closeAt1R[len(closeAt1R)-1].OpenTime+60_000)
+	var be bool
+	for _, in := range out2 {
+		if in.Action == ActionMoveStopBE {
+			be = true
+			if in.ArmID != "swing-runner" {
+				t.Fatalf("BE intent ArmID = %q, want swing-runner", in.ArmID)
+			}
+		}
+	}
+	if !be {
+		t.Fatalf("a 5m close at +1R must move the runner to BE; got %+v", out2)
 	}
 }
 
@@ -493,13 +713,12 @@ func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
 	}
 }
 
-// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3: the hold-close
-// fires at the END of the 4h candle after the entry candle, not before. The
-// entry bar sits LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so
-// the bucket math — not a round number — decides the boundary: no close on the
-// last 5m bar before bucket+2×4h (12:55), close ON the first bar at/after it
-// (13:00). A mutant that shifts EntryBucket one 4h candle late misses the 13:00
-// close and this turns RED.
+// TestSwingRebuildPosHoldBoundary — FIX-SWING-RESTART fold M3, m186 D5.2: the
+// hold-close fires at the END of ONE 4h candle (bucket+4h). The entry bar sits
+// LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so the bucket
+// math — not a round number — decides the boundary: no close on a bar before
+// 09:00, close ON the first bar at/after 09:00. A mutant that reverts
+// Hold4hBars to 2 moves the boundary to 13:00 and misses the 09:00 close → RED.
 func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	base := swingTape(t, nil)
@@ -514,16 +733,16 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
-	// last 5m bar BEFORE the boundary (holdMs = 05:00 + 2×4h = 13:00): 12:55
-	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
+	// a 5m bar BEFORE the boundary (holdMs = 05:00 + 1×4h = 09:00): 08:55
+	preBars := append(base, mk5m(t, 15, 8, 55, 10130, 10140, 10125, 10135))
 	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
 	for _, in := range out {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("no hold-close before the boundary; got %+v", out)
+			t.Fatalf("no hold-close before the ONE-candle boundary (08:55 < 09:00); got %+v", out)
 		}
 	}
-	// the FIRST bar at/after the boundary: 13:00 → close
-	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
+	// the FIRST bar at/after the boundary: 09:00 → close
+	postBars := append(preBars, mk5m(t, 15, 9, 0, 10130, 10140, 10125, 10135))
 	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
 	var closed bool
 	for _, in := range out2 {
@@ -532,7 +751,7 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 		}
 	}
 	if !closed {
-		t.Fatalf("hold-close must fire on the first bar at/after the boundary; got %+v", out2)
+		t.Fatalf("hold-close must fire on the first bar at/after the ONE-candle boundary (09:00); got %+v", out2)
 	}
 }
 

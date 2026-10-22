@@ -23,13 +23,19 @@ import (
 //     (Until rel22 this file pre-subtracted the executor's 0.5 — a second
 //     definition of the same number; trade #627/#628 ruling kept, one source.)
 //   - cancel if the next candle does not fill (the evaluator runs the same
-//     ISB stacking arithmetic on the emitted arm);
+//     ISB stacking arithmetic on the emitted arm) [D5.4 p1 @06:11–06:31,
+//     07:05–07:12];
 //   - stop = the other side of the ISB candle plus the buffer (already ±
 //     ISBBufferPts; it is a stop-loss, not an entry, so the wire offset does
 //     not apply).
 //
 // The 1m is preferred but any TF pair that satisfies IsISB qualifies — the
 // caller passes the timeframe it trades.
+//
+// DIAGNOSTIC [D5.4 p1 @05:44–06:02]: in a downtrend that pulls back to EMA 9,
+// a reverse ISB there says it continues down; NOTHING at EMA 9 says it keeps
+// going up toward EMA 34. This is chart-reading only — the bot does not gate
+// on it.
 
 // ReverseISBAtEMA9 evaluates one candidate ISB candle pair against the 1m EMA 9
 // value and the bigger trend. ok=false carries a cited reason (knob off, not an

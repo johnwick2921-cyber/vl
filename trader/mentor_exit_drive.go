@@ -282,7 +282,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 
 	switch pos.Mode {
 	case "swing":
-		// SWING: no moves — the swing rules own it [D5.2 p1 @ 05:52–06:09].
+		// SWING: no moves — the swing rules own it [D5.2 p1 @05:52–06:09].
 		return
 	case "C":
 		// C (confluence): the stop NEVER moves [D3.4 p3 @07:38: "hold… at least
@@ -305,7 +305,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	if p.SpentDay {
 		if runner := mentorRunnerLeg(p); runner != nil && runner.Qty > mentorSpentDayRunnerCap {
 			at.mentorCount("spent_day_runner_over_cap")
-			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1 p1 @ 16:29]", runner.Qty, mentorSpentDayRunnerCap)
+			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1 p1 @16:24-16:31]", runner.Qty, mentorSpentDayRunnerCap)
 		}
 	}
 
@@ -650,7 +650,7 @@ var mentorCloseLegAtMarketWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, si
 }
 
 // mentorMoveLegStop sends one leg's stop move through the signal-keyed
-// move_stop frame, guarded by mentorNeverWiden (never widen, D2.3 p1 @18:08)
+// move_stop frame, guarded by mentorNeverWiden (never widen, D1.2 p2 @00:08–00:24)
 // against the belief AND — release #22, P2-3 — against the BROKER's own stop
 // (mentorJudgeAgainstBroker): no fresh book refuses, no live stop for the leg
 // sends nothing (F-6), a broker stop already tighter is kept. A latched leg

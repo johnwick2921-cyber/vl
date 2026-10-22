@@ -80,10 +80,10 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	}
 	if priorSwing != 0 {
 		if side == SideLong && stop <= priorSwing {
-			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p3 @ 04:08–04:14]"
+			return Intent{}, false, "not a higher low — a flat low is an FTGL, not a PHL [D2.2 p3 @08:45–10:02]"
 		}
 		if side == SideShort && stop >= priorSwing {
-			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @ 04:08–04:14]"
+			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @08:45–10:02, mirror @14:03–14:22]"
 		}
 	}
 	// The old extreme must be on the TARGET side: long → old high above;

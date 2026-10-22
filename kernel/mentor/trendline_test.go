@@ -137,7 +137,7 @@ func TestTrendlineSittingOnLineIsNotThirdTouch(t *testing.T) {
 	if tls[0].ValidAt != 0 {
 		t.Fatalf("ValidAt = %d — a touch by P1's own confirmation bars (price never left the line) was taken as the 3rd touch", tls[0].ValidAt)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a line price never left is not a location — levels=%+v", got)
 	}
 }
@@ -216,7 +216,7 @@ func TestTrendlineReturnThen5mCloseThroughKills(t *testing.T) {
 	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
 		t.Fatalf("after the 5m close through = %+v, want Dead=true ValidAt=0", tls)
 	}
-	if got := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), bars); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now), nil, bars); len(got) != 0 {
 		t.Fatalf("a dead line is not a location — levels=%+v", got)
 	}
 }
@@ -391,7 +391,7 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls) != 1 || tls[0].ValidAt != 0 {
 		t.Fatalf("want an unvalidated line, got %+v", tls)
 	}
-	if got := TrendlineLevels(tls, boxes, sit); len(got) != 0 {
+	if got, _ := TrendlineLevels(tls, boxes, nil, sit); len(got) != 0 {
 		t.Fatalf("before the 3rd touch the line must not be a location — levels=%+v", got)
 	}
 
@@ -402,7 +402,7 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls2) != 1 || tls2[0].ValidAt != 13 {
 		t.Fatalf("want a validated line, got %+v", tls2)
 	}
-	if got := TrendlineLevels(tls2, boxes2, after); len(got) != 1 {
+	if got, _ := TrendlineLevels(tls2, boxes2, nil, after); len(got) != 1 {
 		t.Fatalf("after the 3rd touch the line must be a location — levels=%+v", got)
 	}
 }
@@ -493,7 +493,7 @@ func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
 		{trendlineMirror(bars), "trendline short"},
 	} {
 		tls := TrendlinesBuild(tc.bars, now)
-		lv := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), tc.bars)
+		lv, _ := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), nil, tc.bars)
 		if len(lv) != 1 {
 			t.Fatalf("want one trendline location, got %+v", lv)
 		}
@@ -629,5 +629,109 @@ func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
 	}
 	if tl, ok := supportLineP0P1(t, bars, time.UnixMilli(now).In(ctime())); ok && tl.ValidAt != 0 {
 		t.Fatalf("the P0/P1 line went valid off a same-role swing: %+v", tl)
+	}
+}
+
+// TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a VALID
+// trendline whose current price sits at/near a RESPECTED level (key level / old
+// extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều lần,
+// đừng chọn cái nó mới tạo"). With no respected level in the way the trendline
+// stays a location. FORMING lines stay non-locations (unchanged).
+func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt == 0 {
+		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
+	}
+	cur := bars[len(bars)-1]
+	price := tls[0].priceAt(cur.OpenTime)
+
+	// A respected key level AT the line → the trendline is refused (level wins).
+	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
+	got, refused := TrendlineLevels(tls, nil, respected, bars)
+	if len(refused) != 1 || len(got) != 0 {
+		t.Fatalf("a respected level at the line must refuse it: got %+v refused %v", got, refused)
+	}
+
+	// A respected level 10 pts away → no refusal (it is not in the way).
+	far := []Level{{Kind: KindKeyLevel, Price: price + 10, Key: "kl:far"}}
+	got2, refused2 := TrendlineLevels(tls, nil, far, bars)
+	if len(got2) != 1 || len(refused2) != 0 {
+		t.Fatalf("a far level must not refuse the line: got %+v refused %v", got2, refused2)
+	}
+
+	// No level in the way → the trendline stays.
+	got3, refused3 := TrendlineLevels(tls, nil, nil, bars)
+	if len(got3) != 1 || len(refused3) != 0 {
+		t.Fatalf("no respected level: the trendline must stay; got %+v refused %v", got3, refused3)
+	}
+}
+
+// htfPersistenceTape: 40 hours of 1m bars (day 1 09:00 CT → day 2 01:00 CT)
+// with a single rising-lows 1h support line: the hour-2 low (97) and the
+// hour-5 low (97.5), both confirmed. Everything else is quiet (low 99.5,
+// high 111, close 110) so the only 1h swings are the two anchors and the line
+// (slope 0.5/3 ≈ 0.17 per hour) is never closed through across the 40 hours.
+func htfPersistenceTape() ([]market.Kline, func(i int, o, h, l, c float64) market.Kline) {
+	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
+	mk := trendlineMk(t0)
+	bars := make([]market.Kline, 40*60)
+	for i := range bars {
+		bars[i] = mk(i, 100, 111, 99.5, 110)
+	}
+	// one 1m bar per hour carries the hour's swing low; the rest of the hour
+	// stays at 99.5 so the bucketed 1h bar's Low is exactly that swing low.
+	bars[2*60].Low = 97   // hour-2 low (P0)
+	bars[3*60].Low = 98   // hour-3 confirms P0
+	bars[5*60].Low = 97.5 // hour-5 low (P1, higher)
+	bars[6*60].Low = 99   // hour-6 confirms P1
+	return bars, mk
+}
+
+// TestHTFTrendlinePersistsAcrossWindowScroll — D2.3 p1 @04:23–05:41: the 1h/4h
+// line "works forever, no need to delete". The evaluator keeps the anchors in
+// STATE, so a 1h line whose P0 anchor scrolled out of the 25-hour rebuild
+// window is still drawn. RED if the HTF line vanishes with its anchor.
+func TestHTFTrendlinePersistsAcrossWindowScroll(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	e := &Evaluator{}
+	open := bars[0].OpenTime
+	end := bars[len(bars)-1].OpenTime + 59_999
+	live1h := 0
+	for i, b := range bars {
+		now := BarCloseInstant(b)
+		if now <= open || now > end {
+			continue
+		}
+		live, _ := e.htFTrendlines(lrWindow(bars, i), time.UnixMilli(now))
+		live1h = 0
+		for _, tl := range live {
+			if tl.TFMin == 60 {
+				live1h++
+			}
+		}
+	}
+	// At the last tick the window starts ~15 hours in; the hour-2 P0 anchor is
+	// long gone from the rebuild window, yet the line must still be held.
+	if live1h == 0 {
+		t.Fatalf("the 1h line vanished once its anchor scrolled out of the window — want it held in evaluator state")
+	}
+}
+
+// TestSeedTrendlinesSeedsHTF — a restart restores the persistent 1h/4h lines
+// from the full history: SeedTrendlines folds the bucketed swing pairs into
+// e.tlHTF, so the live tick starts with the anchors that predate its window.
+func TestSeedTrendlinesSeedsHTF(t *testing.T) {
+	bars, _ := htfPersistenceTape()
+	e := &Evaluator{}
+	SeedTrendlines(e, bars, bars[len(bars)-1].OpenTime+59_999)
+	if len(e.tlHTF) == 0 {
+		t.Fatalf("seed did not populate tlHTF — want the 1h/4h anchors restored from history")
+	}
+	for k, tl := range e.tlHTF {
+		if tl.TFMin == 60 && (tl.P0Px != 97 || tl.P1Px != 97.5) {
+			t.Fatalf("seeded 1h line %s = %+v, want P0Px=97 P1Px=97.5", k, tl)
+		}
 	}
 }
