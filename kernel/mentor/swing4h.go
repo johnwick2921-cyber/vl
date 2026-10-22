@@ -116,13 +116,14 @@ func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
 // SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
 func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 
-// lateDaySwingTargetCap is the late-day swing target cap (mid of 20–30
-// [D5.2 p2 @07:21]).
-const lateDaySwingTargetCap = 25.0
+// lateDaySwingTargetCap is the late-day swing target ceiling: the top of the
+// mentor's 20–30 [D5.2 p2 @07:21] (CTO ruling m331 B3; was 25). A code
+// constant, not a stored knob — every live trader resolves to it.
+const lateDaySwingTargetCap = 30.0
 
-// swingLateDayRRRefused counts a late-day swing refused because the capped
-// target falls below the stop distance — 1:1 is mandatory "trong bất kỳ tình
-// huống nào" [D1.2 p1 @08:02], never ship a sub-1:1 trade.
+// swingLateDayRRRefused counts a late-day swing refused (reason
+// swing_late_day_rr): only the risk ≤ 0 backstop — a wide stop is never
+// refused, its target stays at 1:1.
 var swingLateDayRRRefused atomic.Int64
 
 // SwingLateDayRRRefused exposes the counter for tests and telemetry.
@@ -145,22 +146,36 @@ func lastSessionBucket(now int64) int64 {
 	return kernel.FourHBucketStart(closeMs, nil)
 }
 
-// lateDaySwingCut applies the late-day swing target cut: an entry authored
-// inside the LAST 4h bucket has its target capped at lateDaySwingTargetCap.
-// ok=false → the capped target is below the stop distance (risk) — 1:1 is
-// mandatory "trong bất kỳ tình huống nào" [D1.2 p1 @08:02] — REFUSE.
-func lateDaySwingCut(entryBucket, now int64, target, risk float64) (cut float64, late, ok bool) {
+// lateDaySwingCut applies the late-day swing target cut (CTO final ruling
+// m331 B3). Two course constraints: cut the target to 20–30 pts near the
+// close [D5.2 p2 @07:21], but 1:1 is mandatory in every situation
+// [03-CHECKLIST.md:160; DAY-5.md:117 "big stop → keep 1:1"]. So inside the
+// LAST 4h bucket the target distance becomes max(risk, min(dist, 30)): the cut
+// goes only as far as the 1:1 floor allows. A distance already below risk is
+// returned unchanged for the existing non-late 1:1 gate. The ONLY refusal is
+// risk ≤ 0 (backstop). target/cut are PRICES; the cap applies to |target−entry|.
+func lateDaySwingCut(entryBucket, now int64, side Side, entry, target, risk float64) (cut float64, late, ok bool) {
 	if entryBucket != lastSessionBucket(now) {
 		return target, false, true
 	}
-	cut = target
-	if cut > lateDaySwingTargetCap {
-		cut = lateDaySwingTargetCap
+	if risk <= 0 {
+		return target, true, false
 	}
-	if cut < risk {
-		return cut, true, false
+	dist := abs(target - entry)
+	if dist < risk {
+		return target, true, true
 	}
-	return cut, true, true
+	cutDist := dist
+	if cutDist > lateDaySwingTargetCap {
+		cutDist = lateDaySwingTargetCap
+	}
+	if cutDist < risk {
+		cutDist = risk // 1:1 floor
+	}
+	if side == SideShort {
+		return entry - cutDist, true, true
+	}
+	return entry + cutDist, true, true
 }
 
 // SwingState is everything the swing machine carries between ticks. It is
@@ -424,7 +439,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 						if !ok {
 							swingLateDayRRRefused.Add(1)
 							continue
@@ -498,7 +513,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 			if !ok {
 				swingLateDayRRRefused.Add(1)
 				s.FirstTouch = nil

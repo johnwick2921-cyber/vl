@@ -425,9 +425,8 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 
 // TestLateDaySwingCut — m186 D5.2 late-day target cut [derived: D5.2 p2
 // @07:00–07:58]. Inside the LAST 4h bucket (13:00 CT normal) the target is
-// capped at 25 (mid 20–30 [D5.2 p2 @07:21]); if the capped target < the stop
-// distance the entry is REFUSED (1:1 mandatory "trong bất kỳ tình huống nào"
-// [D1.2 p1 @08:02]). Outside the bucket → unchanged.
+// capped at 30 pts (top of 20–30 [D5.2 p2 @07:21]); a stop wider than 30 cannot
+// meet 1:1 under that cut → REFUSED [D1.2 p1 @08:02] (m331 B3 CTO ruling).
 func TestLateDaySwingCut(t *testing.T) {
 	// Sep 15 2026 is a normal session day (16:00 CT close).
 	sep15_1400 := time.Date(2026, 9, 15, 14, 0, 0, 0, ctime()).UnixMilli()
@@ -437,18 +436,32 @@ func TestLateDaySwingCut(t *testing.T) {
 		t.Fatalf("lastSessionBucket(14:00 CT) = %s, want 13:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
 	}
 
-	// inside the late bucket, stop 20 → target 25 taken (25 >= 20)
-	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 25, 20); !late || !ok || cut != 25 {
-		t.Fatalf("stop 20 in-bucket: cut=%v late=%v ok=%v, want 25 true true", cut, late, ok)
+	// PRICES (Intent.Target is a price). Long entry 30000.
+	cases := []struct {
+		name         string
+		side         Side
+		target, risk float64
+		wantCut      float64
+		wantOK       bool
+	}{
+		{"risk20 dist50 -> dist30", SideLong, 30050, 20, 30030, true},
+		{"risk30 dist50 -> 30 (1:1)", SideLong, 30050, 30, 30030, true},
+		{"risk40 dist50 -> 40 (floor)", SideLong, 30050, 40, 30040, true},
+		{"short risk40 dist50 -> 40", SideShort, 29950, 40, 29960, true},
+		{"risk25 dist22 -> untouched (non-late 1:1 gate)", SideLong, 30022, 25, 30022, true},
+		{"short risk20 dist50 -> dist30", SideShort, 29950, 20, 29970, true},
+		{"risk0 -> refused", SideLong, 30050, 0, 30050, false},
 	}
-	// inside the late bucket, stop 40 → refused (capped 25 < 40)
-	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 50, 40); !late || ok || cut != 25 {
-		t.Fatalf("stop 40 in-bucket: cut=%v late=%v ok=%v, want 25 true false", cut, late, ok)
+	for _, c := range cases {
+		cut, late, ok := lateDaySwingCut(last, sep15_1400, c.side, 30000, c.target, c.risk)
+		if !late || ok != c.wantOK || cut != c.wantCut {
+			t.Fatalf("%s: cut=%v late=%v ok=%v, want %v true %v", c.name, cut, late, ok, c.wantCut, c.wantOK)
+		}
 	}
 	// outside the late bucket (09:00) → unchanged
 	outside := time.Date(2026, 9, 15, 9, 0, 0, 0, ctime()).UnixMilli()
-	if cut, late, ok := lateDaySwingCut(outside, outside, 50, 40); late || !ok || cut != 50 {
-		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 50 false true", cut, late, ok)
+	if cut, late, ok := lateDaySwingCut(outside, outside, SideLong, 30000, 30050, 40); late || !ok || cut != 30050 {
+		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 30050 false true", cut, late, ok)
 	}
 }
 
@@ -847,6 +860,69 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 	}
 	if SwingMinStopRefused() == 0 {
 		t.Fatalf("the min-stop refusal must be counted")
+	}
+}
+
+// lateTape: closed 4h buckets 17:00,21:00,01:00,05:00,09:00 CT, then the
+// current 13:00 CT bucket (the LAST 4h bucket of a normal session) holds cur.
+func lateTape(t *testing.T, cur []market.Kline) []market.Kline {
+	t.Helper()
+	closed := []market.Kline{
+		mk5m(t, 14, 17, 5, 9999, 10000, 9998, 10000),
+		mk5m(t, 14, 21, 5, 10999, 11000, 10998, 11000),
+		mk5m(t, 15, 1, 5, 11999, 12000, 11998, 12000),
+		mk5m(t, 15, 5, 5, 11999, 12000, 11998, 12000),
+		mk5m(t, 15, 9, 5, 11999, 12000, 11998, 12000),
+	}
+	return append(closed, cur...)
+}
+
+// TestSwing4hLateDayRejectEnteredAtOneToOne — m331 B3 CTO final ruling [D5.2
+// p2 @07:21 cut to <=30; 03-CHECKLIST.md:160 1:1 floor]: a clean rejection in
+// the LAST 4h bucket with the DEFAULT stop (risk > 30) is ENTERED with target
+// = entry - risk (1:1); the cut never goes below 1:1. Early bucket unchanged.
+// Mutants: old price-vs-distance compare / floor removed -> RED.
+func TestSwing4hLateDayRejectEnteredAtOneToOne(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	probe := &SwingState{}
+	far := []market.Kline{mk5m(t, 15, 13, 0, 5000, 5001, 4999, 5000)}
+	SwingTick(probe, lateTape(t, far), cfg, far[0].OpenTime+60_000)
+	line := probe.Line
+	if line <= 0 {
+		t.Fatalf("line not seeded: %v", line)
+	}
+	// touch the placed line (line-offset), close back below -> clean reject
+	lo := line - cfg.LineOffsetPts - 1
+	cur := []market.Kline{
+		mk5m(t, 15, 13, 0, line-50, line-40, line-55, line-45), // prev: below the line
+		mk5m(t, 15, 13, 5, lo+0.4, line+5, lo, lo+0.5),         // touches, closes back below
+	}
+	s := &SwingState{}
+	out := SwingTick(s, lateTape(t, cur), cfg, cur[1].OpenTime+60_000)
+	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideShort {
+		t.Fatalf("late-bucket clean rejection with the default stop must ENTER, got %+v", out)
+	}
+	in := out[0]
+	risk := abs(in.Stop - in.Price)
+	if risk <= lateDaySwingTargetCap {
+		t.Fatalf("test premise: default-stop risk %.2f must exceed %.0f", risk, lateDaySwingTargetCap)
+	}
+	if abs((in.Price-in.Target)-risk) > 0.01 {
+		t.Fatalf("late target = %.2f, want entry-risk = %.2f (1:1)", in.Target, in.Price-risk)
+	}
+
+	// early bucket (05:00 CT current bucket): not late, target untouched (>= 1R)
+	early := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),
+	}
+	s2 := &SwingState{}
+	out2 := SwingTick(s2, swingTape(t, early), cfg, early[1].OpenTime+60_000)
+	if len(out2) != 1 {
+		t.Fatalf("early bucket: intents = %d, want 1", len(out2))
+	}
+	if _, late, _ := lateDaySwingCut(s2.BucketStart, early[1].OpenTime, out2[0].Side, out2[0].Price, out2[0].Target, abs(out2[0].Stop-out2[0].Price)); late {
+		t.Fatal("05:00 CT bucket must not be late")
 	}
 }
 
