@@ -83,6 +83,11 @@ func open5mBroken(bars []market.Kline, now int64, high, low float64) (brokeLong,
 // a with-4h entry is allowed only after a 5m candle has CLOSED outside the
 // opening 5m range in the 4h's direction. The swing is exempt (it never consults
 // the 4h). Off-4h entries are the HTF gate's job, not this filter's.
+//
+// D4.4 p2 @05:45–05:50 narrows WHEN the 5m-drop rule applies: only while price
+// sits on the WRONG side of the 4h trigger line — a 4h buy with price still
+// below the 4h trigger line (or a 4h sell with price still above). With price
+// already on the 4h's side the 4h is confirmed and no 5m break is required.
 func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (out []Intent, refusals []string) {
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
@@ -93,11 +98,28 @@ func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (ou
 	if dir == "" {
 		return ints, nil // no 4h trigger — nothing to confirm
 	}
-	high, low, drawn := open5mRange(bars, now)
-	if !drawn {
-		return ints, nil // before 08:35 the opening 5m is still forming (the ORB holds)
+	if len(bars) == 0 {
+		return ints, nil
 	}
-	brokeLong, brokeShort := open5mBroken(bars, now, high, low)
+	px := bars[len(bars)-1].Close
+	if !open5mGateApplies(dir, px, h.FourH.Price) {
+		return ints, nil // price already on the 4h side — the 4h is confirmed
+	}
+	high, low, drawn := open5mRange(bars, now)
+	var brokeLong, brokeShort bool
+	switch {
+	case drawn:
+		brokeLong, brokeShort = open5mBroken(bars, now, high, low)
+	case now < dayStartCT(now)+int64(8*60+35)*60_000:
+		// Before 08:35 the opening 5m is still forming — no 5m close outside the
+		// range can have happened yet, so broke* stay false and a with-4h entry
+		// on the wrong side of the 4h line is REFUSED below (the old pass-through
+		// left the 08:32–08:34 ORB-escaped gap unguarded).
+	default:
+		// At/after 08:35 a missing range means the series is truncated (a test
+		// fixture or a data gap) — fail OPEN: the ORB and the HTF gate still hold.
+		return ints, nil
+	}
 	out = make([]Intent, 0, len(ints))
 	for _, in := range ints {
 		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry || strings.HasPrefix(in.Reason, "swing") {
@@ -116,4 +138,21 @@ func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (ou
 		refusals = append(refusals, "open_5m_range_not_broken")
 	}
 	return out, refusals
+}
+
+// open5mGateApplies is the D4.4 p2 @05:45–05:50 narrower condition: the 5m-drop
+// rule applies only while the current price is on the WRONG side of the 4h
+// trigger line — a 4h buy trigger with price still below the 4h trigger line, or
+// a 4h sell with price still above — "Nếu mà bây giờ 4 giờ Trigger, mà nó nằm
+// dưới cái đường Trigger của khung 4 giờ, thì mình cứ coi theo khung 5 phút
+// thôi". Price already on the 4h's side means the 4h is confirmed.
+func open5mGateApplies(dir Side, px, trigger float64) bool {
+	switch dir {
+	case SideLong:
+		return px < trigger
+	case SideShort:
+		return px > trigger
+	default:
+		return false
+	}
 }

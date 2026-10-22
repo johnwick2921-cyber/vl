@@ -38,7 +38,11 @@ func TestOpen5mRangeBreak(t *testing.T) {
 	bars := append(append([]market.Kline{}, openBars...), inside...)
 	now := auditMs(2026, 9, 15, 9, 0, 0) // 09:00 CT — open window
 
-	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 100.0}}
+	// The 4h trigger line sits ABOVE the current price (102.0): price pulled
+	// back below it after the 4h triggered buy — the D4.4 p2 @05:45–05:50 case
+	// where the 5m-drop rule APPLIES. (With price on the 4h's side the filter
+	// would not gate at all — see TestOpen5mGateSkippedWhenPriceOnFourHSide.)
+	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 102.0}}
 
 	longEntry := func() Intent {
 		return Intent{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 100.6, Stop: 99.5, Target: 102.0}
@@ -91,5 +95,83 @@ func TestOpen5mRangeBreak(t *testing.T) {
 	kept3, _ := open5mRangeFilter([]Intent{longEntry()}, h, bars, after)
 	if len(kept3) != 1 {
 		t.Fatalf("outside the open window the filter must not gate: kept=%d, want 1", len(kept3))
+	}
+}
+
+// TestOpen5mGateApplies pins the D4.4 p2 @05:45–05:50 narrower condition: the
+// 5m-drop rule applies only while price is on the WRONG side of the 4h trigger
+// line — a long 4h with price below the line, a short 4h with price above.
+func TestOpen5mGateApplies(t *testing.T) {
+	if !open5mGateApplies(SideLong, 100.0, 101.0) {
+		t.Fatal("a long 4h with price below the trigger line must gate")
+	}
+	if open5mGateApplies(SideLong, 101.0, 101.0) {
+		t.Fatal("a long 4h with price AT the trigger line must not gate")
+	}
+	if open5mGateApplies(SideLong, 102.0, 101.0) {
+		t.Fatal("a long 4h with price above the trigger line must not gate")
+	}
+	if !open5mGateApplies(SideShort, 101.0, 100.0) {
+		t.Fatal("a short 4h with price above the trigger line must gate")
+	}
+	if open5mGateApplies(SideShort, 99.0, 100.0) {
+		t.Fatal("a short 4h with price below the trigger line must not gate")
+	}
+	if open5mGateApplies("", 100.0, 101.0) {
+		t.Fatal("no 4h direction must never gate")
+	}
+}
+
+// TestOpen5mGateSkippedWhenPriceOnFourHSide pins the narrowing at the filter:
+// with price already on the 4h's side (a long 4h and price above the trigger
+// line), a with-4h entry passes through even before any 5m break — the 4h is
+// confirmed and no 5m drop is required.
+func TestOpen5mGateSkippedWhenPriceOnFourHSide(t *testing.T) {
+	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	bars := []market.Kline{
+		mk(8, 30, 100.0, 100.5, 99.5, 100.2),
+		mk(8, 31, 100.2, 100.4, 99.6, 100.1),
+		mk(8, 32, 100.1, 100.3, 99.2, 100.0),
+		mk(8, 33, 100.0, 100.2, 99.0, 99.8),
+		mk(8, 34, 99.8, 100.1, 99.4, 100.0),
+		mk(8, 35, 101.0, 101.2, 100.8, 101.1), // price already above the 4h line
+	}
+	now := auditMs(2026, 9, 15, 8, 40, 0) // 08:40 CT — inside the open window
+	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 100.5}}
+
+	kept, refused := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 101.3, Stop: 100.8, Target: 102.5}}, h, bars, now)
+	if len(kept) != 1 || len(refused) != 0 {
+		t.Fatalf("price on the 4h side must pass through: kept=%d refused=%v, want 1/none", len(kept), refused)
+	}
+}
+
+// TestOpen5mGateRefusesDuringFormingRange pins the ORB 08:32–08:34 bypass-gap
+// fix: before 08:35 the opening 5m is still forming (no break can have closed),
+// so a with-4h entry on the WRONG side of the 4h line is REFUSED, not passed
+// through as the old `!drawn → return ints,nil` did.
+func TestOpen5mGateRefusesDuringFormingRange(t *testing.T) {
+	mk := func(hh, mm int, o, h, l, c float64) market.Kline {
+		ot := auditMs(2026, 9, 15, hh, mm, 0)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
+	}
+	// Only 08:30–08:33 present: the opening 5m range is NOT drawn yet.
+	bars := []market.Kline{
+		mk(8, 30, 100.0, 100.5, 99.5, 100.2),
+		mk(8, 31, 100.2, 100.4, 99.6, 100.1),
+		mk(8, 32, 100.1, 100.3, 99.2, 100.0),
+		mk(8, 33, 100.0, 100.2, 99.0, 99.8),
+	}
+	now := auditMs(2026, 9, 15, 8, 33, 30) // 08:33:30 CT — ORB drawn, opening 5m forming
+	h := HTF{FourH: TriggerLine{Dir: SideLong, Price: 102.0}}
+	if _, _, drawn := open5mRange(bars, now); drawn {
+		t.Fatal("fixture: the opening 5m must not be drawn at 08:33")
+	}
+
+	kept, refused := open5mRangeFilter([]Intent{{Action: PlaceStopEntry, Side: SideLong, Reason: "PHL", Price: 100.6, Stop: 99.5, Target: 102.0}}, h, bars, now)
+	if len(kept) != 0 || len(refused) != 1 || refused[0] != "open_5m_range_not_broken" {
+		t.Fatalf("forming range + wrong-side price must refuse: kept=%d refused=%v, want 0/[open_5m_range_not_broken]", len(kept), refused)
 	}
 }
