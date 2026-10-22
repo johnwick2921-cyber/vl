@@ -9,7 +9,7 @@ import (
 // Filters is the direction-and-context gate set (PLAN v1 §4). Every filter is
 // pure: bars/levels in, a verdict out.
 
-// ── 5-minute trigger line [§5.1, D3.4 p1 @ 04:02–13:33] ─────────────────────
+// ── 5-minute trigger line (§5.1) [D3.4 p1 @ 04:02–13:33] ─────────────────────
 // BUY trigger = a 5m candle breaks the previous candle's HIGH; SELL = breaks
 // the previous LOW [@ 04:02, 08:04]. A line is drawn at the BROKEN extreme,
 // WICK INCLUDED [@ 04:28]. Entries only on the trigger side [@ 10:21]. The
@@ -205,6 +205,7 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 	return true, t.Dir, ""
 }
 
+
 // X8TrapDodge reports the X8 trap-dodge EXIT [X8 "Cách né trap & Setup gồng lời"
 // part1 @07:31–08:07]: the 2m candle closed THROUGH the EMA34 against the 5m
 // trigger trend while the 5m trigger swept against the position — the breakout
@@ -231,6 +232,7 @@ func X8TrapDodge(side string, triggerDir Side, ema34, close2m float64) bool {
 }
 
 // ── 15m/5m ISB conflict [§5.3, D4.2 p1 @ 13:59; §12] ────────────────────────
+
 // 2–3 adjacent 5m candles churning and going nowhere = a 15m inside bar
 // [@ 00:00]. Same direction → trade; OPPOSITE directions → DO NOT TRADE AT ALL
 // [@ 14:35].
@@ -255,7 +257,7 @@ func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
 	return ISBDirection(p5) != ISBDirection(p15)
 }
 
-// ── mid-range [§12, D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
+// ── mid-range (§12) [D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
 // The middle of any range: between two levels → PHL/PLH banned, ISB only.
 
 // MidRange reports price sitting between two levels, each within

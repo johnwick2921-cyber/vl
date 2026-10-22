@@ -53,7 +53,7 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if oneHSilent(h) || h.OneH.Dir == h.FourH.Dir {
 		return true, h.FourH.Dir, ""
 	}
-	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @15:09–15:34 (also 13:15–13:27, 06:08–06:46, 11:37–12:34)]"
+	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 15:09–15:33] (§12)"
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the

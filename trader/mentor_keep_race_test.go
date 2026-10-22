@@ -13,9 +13,9 @@ import (
 
 // ── P1-1 (rel22 mentor audit) — the ISB "keep" must win the expiry race ─────
 //
-// The course [D4.2 p2 @ 08:21–09:01; 00-METHOD §2.1 stacking table]: when the
+// The course [D4.2 p2 @ 08:21–09:01] (00-METHOD §2.1 stacking table): when the
 // candle after the inside bar does not fill but its BODY stays inside I1, KEEP
-// the order (stack candles 2 and 3) — "một cái EXCUSE DUY NHẤT" [@ 09:41].
+// the order (stack candles 2 and 3) — "1 cái excuse duy nhất" [@ 09:43].
 //
 // Every mentor ISB arm is authored with expiry = the close of the NEXT candle,
 // i.e. exactly the instant the evaluator decides keep-or-cancel. On the live
