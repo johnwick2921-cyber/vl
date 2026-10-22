@@ -377,7 +377,17 @@ func detectHTFLevels(fetch func(tf string, count int) []market.Kline, timeframes
 			continue
 		}
 		seen[tf] = true
-		cb := closedBars(fetch(tf, htfDetectionFetchBars), now)
+		raw := fetch(tf, htfDetectionFetchBars)
+		if tf == "1d" {
+			// #15 (m220): a native daily bar is open-stamped (D-1) 00:00 CT with
+			// CloseTime (D-1) 23:59:59.999 — ~16h BEFORE the real 16:00 CT session
+			// close. closedBars would therefore treat the still-forming session as
+			// final from D 00:00 CT. Re-stamp to CME session days (17:00 CT open,
+			// 16:00 CT close) so the forming session is dropped until it actually
+			// closes — the same conversion the weekly read already applies.
+			raw = SessionDaysFromNativeDaily(raw)
+		}
+		cb := closedBars(raw, now)
 		if len(cb) < htfMinClosedBars {
 			// D1 — a timeframe with too few bars for the definition emits
 			// NOTHING and says so. A level built from a partial window is worse

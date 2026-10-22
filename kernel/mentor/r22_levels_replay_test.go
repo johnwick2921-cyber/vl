@@ -41,6 +41,10 @@ func r22Cfg() Config {
 	// The recorded 10-12/10-13 days ran the 1m read (exec_2m defaulted OFF
 	// then) — pin it so the r22 level expectations hold.
 	cfg.Exec2mAfter30m = false
+	// EmaMaxCross30m now defaults OFF (#45 — the mentor gives no count); the
+	// r22 refusal-counter test must still see the E4 gate fire on the recorded
+	// days, so pin it ON explicitly.
+	cfg.EmaMaxCross30m = 2
 	return cfg
 }
 

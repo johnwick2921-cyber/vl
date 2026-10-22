@@ -305,7 +305,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 	if p.SpentDay {
 		if runner := mentorRunnerLeg(p); runner != nil && runner.Qty > mentorSpentDayRunnerCap {
 			at.mentorCount("spent_day_runner_over_cap")
-			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1]", runner.Qty, mentorSpentDayRunnerCap)
+			at.logWarnf("🧑‍🏫 mentor spent-day runner %d over the cap %d — asserting, not reducing [D5.1 p1 @16:24-16:31]", runner.Qty, mentorSpentDayRunnerCap)
 		}
 	}
 

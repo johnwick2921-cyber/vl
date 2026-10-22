@@ -27,6 +27,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/kernel"
 	"vl/telemetry"
 )
 
@@ -1996,12 +1997,25 @@ var (
 // sampleIngestDepth updates the peak-depth high-water mark and resets it at
 // the CME 17:00 CT session roll (per-session peak, FORENSICS HYGIENE).
 func sampleIngestDepth(depth int) {
-	now := time.Now()
-	day := int64(now.Year()*10000 + int(now.Month())*100 + now.Day())
-	if now.Hour() == 17 {
-		if ingestPeakDay.CompareAndSwap(ingestPeakDay.Load(), day) && ingestPeakDay.Load() == day {
-			ingestPeakDepth.Store(0)
-		}
+	sampleIngestDepthAt(depth, time.Now())
+}
+
+// sampleIngestDepthAt is sampleIngestDepth with an explicit `now` seam so a
+// pin can drive the 17:00 roll deterministically (#36, m220).
+func sampleIngestDepthAt(depth int, now time.Time) {
+	// The session day is the 17:00 CT roll date, NOT the host-local calendar
+	// day — the old code read host-local now.Hour() and would also mis-reset
+	// on a box whose TZ is not America/Chicago.
+	sd := kernel.CMESessionDayStart(now)
+	day := int64(sd.Year()*10000 + int(sd.Month())*100 + sd.Day())
+	// Reset ONCE per session roll: CAS against the PREVIOUSLY stored day. The
+	// old pattern CompareAndSwap(ingestPeakDay.Load(), day) fed its own fresh
+	// Load back as the "old" value, so it succeeded on EVERY call for the whole
+	// 17:00 hour and zeroed the peak exactly during the reopen burst — when the
+	// high-water mark is most valuable.
+	prev := ingestPeakDay.Load()
+	if prev != day && ingestPeakDay.CompareAndSwap(prev, day) {
+		ingestPeakDepth.Store(0)
 	}
 	for {
 		cur := ingestPeakDepth.Load()

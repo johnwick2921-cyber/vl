@@ -43,10 +43,14 @@ type MentorTruthPanel struct {
 	ISBBoxes   *[]MentorRangeView     `json:"isb_boxes,omitempty"`
 	ORB        *MentorRangeView       `json:"orb,omitempty"`   // absent until the 08:30–08:32 range is drawn
 	Swing      *MentorSwingView       `json:"swing,omitempty"` // absent until the 4h EMA 34 is warm
+	// EMASeries (m134) is the per-bar EMA 9/34 curve (points) — ABSENT while
+	// computing, `[]` once built.
+	EMASeries *[]MentorEMAPoint `json:"ema_series,omitempty"`
 }
 
-// MentorTrendlineView is one VALID, live trendline (3rd touch seen, no 5m close
-// through): the two swing anchors and the value at the current bar.
+// MentorTrendlineView is one live trendline: FORMING (two anchors, no 3rd
+// touch yet — valid=false) or VALID (3rd touch seen, no 5m close through —
+// valid=true). Dead lines (broken by a 5m close) are never sent.
 type MentorTrendlineView struct {
 	Side    string  `json:"side"` // "long" = support (rising lows), "short" = resistance
 	P0Ms    int64   `json:"p0_ms"`
@@ -56,6 +60,14 @@ type MentorTrendlineView struct {
 	NowMs   int64   `json:"now_ms"`
 	NowPx   float64 `json:"now_px"`
 	InLevel bool    `json:"in_level"` // false = suppressed this bar (inside a box: the box wins)
+	Valid   bool    `json:"valid"`    // m134: true = 3rd touch seen (a location); false = forming
+}
+
+// MentorEMAPoint is one point of the EMA 9/34 curve (m134).
+type MentorEMAPoint struct {
+	Ms    int64   `json:"ms"`
+	Ema9  float64 `json:"ema9"`
+	Ema34 float64 `json:"ema34"`
 }
 
 // MentorRangeView is a high/low range the evaluator holds (an ISB rest box or
@@ -198,6 +210,7 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		}
 
 		p.Trendlines, p.ISBBoxes, p.ORB, p.Swing = mentorChartObjects(&st, drawn)
+		p.EMASeries = mentorEMASeries(&st)
 		if p.Swing != nil && p.Swing.Pos != nil && st.Swing.Pos != nil {
 			swingArmID = st.Swing.Pos.ArmID
 		}
@@ -242,18 +255,36 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 	return p, true
 }
 
+// mentorEMASeries copies the evaluator's per-bar EMA 9/34 curve (display only,
+// m134). nil when the evaluator has not built one yet.
+func mentorEMASeries(st *mentor.State) *[]MentorEMAPoint {
+	if len(st.ChartEMA) == 0 {
+		return nil
+	}
+	pts := make([]MentorEMAPoint, 0, len(st.ChartEMA))
+	for _, c := range st.ChartEMA {
+		pts = append(pts, MentorEMAPoint{Ms: c.Ms, Ema9: c.Ema9, Ema34: c.Ema34})
+	}
+	return &pts
+}
+
 // mentorChartObjects (T7, release #22) copies the evaluator's non-level
 // objects into the panel views. Pure over the copied State; nothing is drawn
 // that the evaluator did not hold this tick.
 func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendlineView, *[]MentorRangeView, *MentorRangeView, *MentorSwingView) {
 	tls := []MentorTrendlineView{}
 	for _, tl := range st.ChartTrendlines {
-		if tl.ValidAt == 0 || tl.Dead || tl.P1T == tl.P0T {
-			continue // not yet a location (no 3rd touch) or closed through
+		if tl.Dead || tl.P1T == tl.P0T {
+			continue // broken by a 5m close, or a degenerate (flat) line
 		}
-		v := MentorTrendlineView{Side: string(tl.Side), P0Ms: tl.P0T, P0Px: tl.P0Px, P1Ms: tl.P1T, P1Px: tl.P1Px}
-		// The level the evaluator placed for this line this bar (same line =
-		// same value at the level's bar). None = suppressed (inside a box).
+		v := MentorTrendlineView{
+			Side: string(tl.Side),
+			P0Ms: tl.P0T, P0Px: tl.P0Px,
+			P1Ms: tl.P1T, P1Px: tl.P1Px,
+			Valid: tl.ValidAt != 0, // m134: FORMING (no 3rd touch) is valid=false
+		}
+		// The level the evaluator placed for this line this bar (only a VALID line
+		// is a location; a forming line has no level). None = suppressed (box).
 		for _, lv := range drawn {
 			if lv.Kind != mentor.KindTrendline || lv.AtTime <= tl.P1T {
 				continue
