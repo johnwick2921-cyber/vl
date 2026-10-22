@@ -360,12 +360,15 @@ export function mentorChartLines(
   if (!truth || !truth.enabled) return []
   const out: ChartLineSpec[] = []
   for (const l of truth.levels ?? []) {
-    // m134: ema9/ema34 are drawn as CURVES (mentorEMASeries), not flat lines.
+    // m134/m325: ema9/ema34 are drawn as CURVES (mentorEMASeries), not flat
+    // lines; ema34_htf (the EMA34 location line) is drawn as a short right-edge
+    // segment by mentorEMALocationSegment, never a full-width flat line.
     if (
       !(l.price > 0) ||
       l.kind === 'trendline' ||
       l.kind === 'ema9' ||
-      l.kind === 'ema34'
+      l.kind === 'ema34' ||
+      l.kind === 'ema34_htf'
     )
       continue
     const merged = (l.merged_from ?? []).filter((p) => p !== l.price)
@@ -440,6 +443,36 @@ export function mentorChartLines(
   return out
     .filter((l) => l.price > 0)
     .map((l) => (mark ? { ...l, label: l.label + mark } : l))
+}
+
+/**
+ * m325: the EMA34 location line (kind ema34_htf) must never draw as a
+ * full-width flat line through history — it is a CURRENT-VALUE snapshot. It is
+ * drawn instead as a SHORT horizontal segment at the right edge (the last
+ * drawn bar). The truth payload does not carry the ema34_tf knob, so we cannot
+ * know whether it is the 1m EMA34 (already drawn as a curve) or a
+ * higher-timeframe EMA with no curve — so we always keep it short, which is
+ * correct in both cases and never a flat line through every candle.
+ */
+export function mentorEMALocationSegment(
+  price: number | undefined,
+  barTimes: readonly number[],
+  staleSinceMs?: number
+): TrendSegment | null {
+  if (!(price && price > 0) || barTimes.length === 0) return null
+  const last = barTimes[barTimes.length - 1]
+  const prev = barTimes.length > 1 ? barTimes[barTimes.length - 2] : last
+  return {
+    key: 'ema34_htf',
+    label: `EMA34 location (current value)${mentorStaleMark(staleSinceMs)}`,
+    color: MENTOR_COLOR,
+    style: 2,
+    lineWidth: 1,
+    points: [
+      { time: prev, value: price },
+      { time: last, value: price },
+    ],
+  }
 }
 
 /** UG-1 (release #24): the filled swing leg's stop says where it was read. */
