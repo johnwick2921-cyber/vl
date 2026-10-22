@@ -206,12 +206,25 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 	if !mentor.X8TrapDodge(p.Pos.Side, dir, ema34, two.Close) {
 		return false
 	}
+	// m262 one-shot latch: once the market close is SENT for this position,
+	// never send a second close while the fill is in flight (never rely on
+	// "NT8 is idempotent"). Two candles that both meet X8 → exactly ONE close.
+	at.mentorExitMu.Lock()
+	if p.X8Exited {
+		at.mentorExitMu.Unlock()
+		return false
+	}
+	p.X8Exited = true
+	at.mentorExitMu.Unlock()
 	at.mentorCount("x8_trap_dodge_exit")
 	at.logWarnf("🧑‍🏫 X8 trap-dodge: %s %s — the 2m closed through the EMA34 (%.2f) against the 5m trigger (%s) and the 5m swept against the position; exiting, not sitting [X8 part1 @07:31–08:07]",
 		p.Pos.Symbol, p.Pos.Side, ema34, dir)
 	if err := mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0); err != nil {
 		at.mentorCount("x8_trap_dodge_close_failed")
 		at.logWarnf("🧑‍🏫 X8 trap-dodge close failed for %s %s: %v", p.Pos.Symbol, p.Pos.Side, err)
+		at.mentorExitMu.Lock()
+		p.X8Exited = false // no fill in flight — the next candle may retry
+		at.mentorExitMu.Unlock()
 		return false
 	}
 	at.mentorCount("x8_trap_dodge_close_sent")

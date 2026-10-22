@@ -908,3 +908,48 @@ func TestMentorX8TrapDodgeExemptsSwingAndNonTrap(t *testing.T) {
 		t.Fatal("no close may be sent for a swing or a non-trap")
 	}
 }
+
+// TestMentorX8TrapDodgeOneShot pins the m262 one-shot latch: two candles in a
+// row that BOTH meet the X8 trap-dodge send exactly ONE market close — never a
+// second close while the first fill is in flight. MUTANT: drop the p.X8Exited
+// latch → the second candle sends a second close → RED.
+func TestMentorX8TrapDodgeOneShot(t *testing.T) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.EMA34 = 100
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+
+	p := bPos("B", "long", 100, 98, 104, 1)
+
+	var mu sync.Mutex
+	closes := 0
+	old := mentorCloseLegAtMarketWire
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, qty int) error {
+		mu.Lock()
+		closes++
+		mu.Unlock()
+		return nil
+	}
+	t.Cleanup(func() { mentorCloseLegAtMarketWire = old })
+
+	base := int64(120_000_000_000)
+	bars := []market.Kline{
+		{OpenTime: base, CloseTime: base + 59_999, Open: 100, High: 102, Low: 99, Close: 101, Final: true},
+		{OpenTime: base + 60_000, CloseTime: base + 119_999, Open: 101, High: 103, Low: 100, Close: 101.5, Final: true},
+	}
+	// Two candles in a row that both meet X8.
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("the first trap candle must exit")
+	}
+	if at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("the second trap candle must NOT send a second close (latched)")
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	if closes != 1 {
+		t.Fatalf("closes = %d, want exactly 1 (the one-shot latch)", closes)
+	}
+}
