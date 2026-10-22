@@ -632,11 +632,14 @@ func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
 	}
 }
 
-// TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a VALID
-// trendline whose current price sits at/near a RESPECTED level (key level / old
-// extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều lần,
-// đừng chọn cái nó mới tạo"). With no respected level in the way the trendline
-// stays a location. FORMING lines stay non-locations (unchanged).
+// TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a
+// trendline on its FIRST test (ValidAt == the current bar, the 3rd touch that
+// just closed) whose current price sits at/near a RESPECTED level (key level /
+// old extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều
+// lần, đừng chọn cái nó mới tạo"). With no respected level in the way the
+// trendline stays a location. FORMING lines stay non-locations (unchanged).
+// The past-first-test case (m311) is pinned in
+// TestTrendlineLevelPrefersLevelOnlyOnFirstTest.
 func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 	bars, _ := trendlineReturnTape()
 	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
@@ -665,6 +668,41 @@ func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 	got3, refused3 := TrendlineLevels(tls, nil, nil, bars)
 	if len(got3) != 1 || len(refused3) != 0 {
 		t.Fatalf("no respected level: the trendline must stay; got %+v refused %v", got3, refused3)
+	}
+}
+
+// TestTrendlineLevelPrefersLevelOnlyOnFirstTest (m311 #46b) — the level beats
+// the trendline ONLY on its first test. Extend the return tape two quiet bars
+// past the 3rd touch (bar 13): the line is now VALID and past its 3rd-touch
+// return, so a respected level AT the line must NOT suppress it. Mutant (drop
+// the first-test gate) refuses the line → RED.
+func TestTrendlineLevelPrefersLevelOnlyOnFirstTest(t *testing.T) {
+	bars, mk := trendlineReturnTape()
+	// Two quiet bars past the 3rd touch: lows (100) stay above the line
+	// (99.4 at bar 14, 99.6 at bar 15) — no touch, no 5m close through.
+	bars = append(bars,
+		mk(14, 101, 101.5, 100, 101),
+		mk(15, 101, 101.5, 100, 101),
+	)
+	now := time.UnixMilli(bars[15].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	var tl Trendline
+	for _, x := range tls {
+		if x.Side == SideLong && x.ValidAt != 0 {
+			tl = x
+		}
+	}
+	if tl.ValidAt != 13 {
+		t.Fatalf("fixture: want the line valid at bar 13 (past its first test), got %+v", tls)
+	}
+	cur := bars[len(bars)-1]
+	price := tl.priceAt(cur.OpenTime)
+
+	// A respected key level AT the line, past the first test: the line stands.
+	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
+	got, refused := TrendlineLevels(tls, nil, respected, bars)
+	if len(got) != 1 || len(refused) != 0 {
+		t.Fatalf("past the first test a nearby level must NOT suppress the line: got %+v refused %v", got, refused)
 	}
 }
 
