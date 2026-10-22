@@ -5,6 +5,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"vl/kernel/mentor"
 	"vl/market"
@@ -1151,5 +1152,80 @@ func TestMentorX8TrapDodgeUses2mEMA34(t *testing.T) {
 	}
 	if closes != 1 {
 		t.Fatalf("closes = %d, want exactly 1", closes)
+	}
+}
+
+// B1 (m329): X8 must not Flatten the account's other resting arms. It exits
+// with ONE marketable limit (its fill cancels only this position's bracket);
+// the market flatten (which cancels every working order for the instrument)
+// is not sent. MUTANT: send mentorCloseLegAtMarketWire straight away in
+// mentorX8SendExit -> market closes = 1, limits = 0 -> RED.
+func x8B1Setup(t *testing.T, fresh bool) (*AutoTrader, *mentorLivePos, *[]float64, *[]string) {
+	at, _ := newDriveAT(t)
+	cfg := mentor.DefaultConfig()
+	cfg.Enabled = true
+	e := mentor.New(cfg)
+	e.State.Trigger = mentor.TriggerLine{Dir: mentor.SideShort, Price: 99}
+	at.mentorEval = e
+	p := bPos("B", "long", 100, 98, 104, 1)
+	var limits []float64
+	var markets []string
+	oldL, oldM, oldP := mentorX8LimitWire, mentorCloseLegAtMarketWire, mentorLatestPriceSeam
+	mentorX8LimitWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, _ string, l float64) error {
+		limits = append(limits, l)
+		return nil
+	}
+	mentorCloseLegAtMarketWire = func(_ *AutoTrader, _ *nttrader.TCPTrader, side string, _ int) error {
+		markets = append(markets, side)
+		return nil
+	}
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 101.5, fresh }
+	t.Cleanup(func() { mentorX8LimitWire, mentorCloseLegAtMarketWire, mentorLatestPriceSeam = oldL, oldM, oldP })
+	return at, p, &limits, &markets
+}
+
+func TestMentorX8ExitDoesNotFlattenOtherArms(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, true)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("X8 must fire")
+	}
+	if len(*markets) != 0 {
+		t.Fatalf("X8 sent a market flatten %v — that cancels every other resting arm at NT8", *markets)
+	}
+	if len(*limits) != 1 || (*limits)[0] >= 101.5 {
+		t.Fatalf("want exactly one marketable limit below the bid for a long, got %v", *limits)
+	}
+	// a second candle meeting X8 while the limit is in flight sends nothing more
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*limits) != 1 || len(*markets) != 0 {
+		t.Fatalf("one-shot broken: limits=%v markets=%v", *limits, *markets)
+	}
+}
+
+func TestMentorX8StalePriceFallsBackToMarketFlatten(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, false)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	if !at.mentorX8TrapDodgeExit(nil, p, bars) {
+		t.Fatal("X8 must fire")
+	}
+	if len(*limits) != 0 || len(*markets) != 1 {
+		t.Fatalf("no fresh price: want one market close, got limits=%v markets=%v", *limits, *markets)
+	}
+}
+
+func TestMentorX8UnfilledLimitGetsOneMarketFallback(t *testing.T) {
+	at, p, limits, markets := x8B1Setup(t, true)
+	bars := x8TwoMCandles(int64(120_000_000_000), 100, 100, 101.5)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*markets) != 0 {
+		t.Fatalf("fallback fired inside the grace window: %v", *markets)
+	}
+	p.X8LimitAt = time.Now().Add(-mentorX8LimitFallbackAfter - time.Second)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	at.mentorX8TrapDodgeExit(nil, p, bars)
+	if len(*limits) != 1 || len(*markets) != 1 {
+		t.Fatalf("want 1 limit then exactly 1 market fallback, got limits=%v markets=%v", *limits, *markets)
 	}
 }

@@ -92,6 +92,12 @@ type mentorLivePos struct {
 	// flight (never rely on NT8 idempotence). Set before the send; reset on a
 	// failed send so the next candle may retry. Guarded by mentorExitMu.
 	X8Exited bool
+	// X8LimitAt / X8MarketFallback (B1, m329): X8 exits with a marketable
+	// limit (so it does not Flatten away other resting arms); X8LimitAt is when
+	// it was sent, X8MarketFallback latches the single market follow-up if the
+	// position is still open after the grace window. Guarded by mentorExitMu.
+	X8LimitAt        time.Time
+	X8MarketFallback bool
 	// trailBar / trailBarOK: the closed TrailTFMin candle THIS drive pass
 	// trails on, set by mentorExitDrive for a 2m position (ok=false while the
 	// 2m candle is still forming — the trail waits for it to close).
