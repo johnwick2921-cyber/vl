@@ -522,6 +522,10 @@ export const status: GuideSection = {
       kind: 'p',
       text: "The planner's tape is NT8's own (CTO ruling under the owner's delegation, 2026-09-16). Every planner door — the 12,000-bar 1m candle tape, the weekly reader's weeks and window, the POC-touch historical leg — reads only bars NT8 produced (live, or replay verified on the live scale); imported history never reaches a decision, while the chart keeps it, labelled. On 2026-09-16, 426 imported 12-26 1m bars sat inside the planner's tape. Removing them moves what the regime baseline and the levels are fed, so the '🧮 planner tape' boot line prints the import count on the contract, the tape length and the regime baseline BOTH ways, measured through the same estimator (the rule did not change — the same input both ways is a zero delta).",
     },
+    {
+      kind: 'p',
+      text: "Healing a hole after a restart. The 3m/5m/15m/30m/1h rings are rebuilt from the complete stored 1m tape at boot ('🧯 ring rehydrated … FROM 1M'), so a hole left in the middle by a short NT8 replay is filled. When that rebuild adds bars the mentor had not seen, the mentor re-reads its 1m-derived state from the healed series on its next tick — trigger lines, swing line, 1m EMA 9/34 — and keeps its latches, positions, arms and legs. The log says '🧑‍🏫 mentor re-seed after a history refill (…)' with the before and after values, and the change is counted.",
+    },
     { kind: 'h', text: 'Bar holes — the bot refills them itself' },
     {
       kind: 'p',
