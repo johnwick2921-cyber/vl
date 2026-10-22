@@ -1267,8 +1267,8 @@ func (at *AutoTrader) cancelAllLiveMentorArmsWith(reason string) bool {
 }
 
 // cancelLiveMentorArms is the shared sweep body. swingExempt skips "swing-…"
-// arms (the news/window/day-stop cancels hold the swing by the 4h
-// [D5.2 p2 @06:27–06:30]); the never-add sweep passes false (no exemption).
+// arms (the news/window/day-stop cancels hold the swing by the 4h [D5.2]); the
+// never-add sweep passes false (no exemption).
 //
 // I5/I3: the entries are COPIED under mentorLiveMu before iterating (a
 // concurrent write must not race the iteration or the len), the sweep acts only
@@ -1528,7 +1528,7 @@ func parseMentorWindowStart(start string) (hour, minute int, ok bool) {
 // mentorWindowGate is the call-site half of (b); SWING4H is exempt.
 func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 	if strings.EqualFold(in.Setup, "SWING4H") {
-		return false, "" // [D5.2 p2 @06:27–06:30]: "Không cần Asia… Khi nào nó đụng email 34 là được" — the swing is taken at any hour, whenever price touches the 4h EMA 34
+		return false, "" // D5.2: the swing may be at any hour
 	}
 	start, minutes := at.mentorWindowKnobs()
 	active, why := mentorWindowActive(start, minutes, mentorClockNow())

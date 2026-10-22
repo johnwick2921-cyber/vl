@@ -1583,12 +1583,12 @@ export const mentor: GuideSection = {
           label: 'Swing hold bars',
           where: 'Strategy → Mentor mode → SWING4H',
           what: 'Hold to the close of the N-th 4h candle after entry.',
-          trader: '2 — the method does not state the hold length.',
+          trader:
+            '1 — hold to the close of ONE 4h candle after entry [D5.2 p1 @06:03–06:20].',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.Hold4hBars',
           range: '4h candles',
-          systemDefault: '2',
-          recommended:
-            '2 [C] — Engineering rule: the method does not state the hold length, not from the course.',
+          systemDefault: '1',
+          recommended: '1 — D5.2 p1 @ 06:03–06:20.',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },
