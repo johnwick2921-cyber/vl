@@ -1,13 +1,15 @@
 package mentor
 
 import (
+	"strings"
+
 	"vl/market"
 )
 
 // Filters is the direction-and-context gate set (PLAN v1 §4). Every filter is
 // pure: bars/levels in, a verdict out.
 
-// ── 5-minute trigger line [§5.1, D3.4 p1 @ 04:02–13:33] ─────────────────────
+// ── 5-minute trigger line (§5.1) [D3.4 p1 @ 04:02–13:33] ─────────────────────
 // BUY trigger = a 5m candle breaks the previous candle's HIGH; SELL = breaks
 // the previous LOW [@ 04:02, 08:04]. A line is drawn at the BROKEN extreme,
 // WICK INCLUDED [@ 04:28]. Entries only on the trigger side [@ 10:21]. The
@@ -203,7 +205,34 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 	return true, t.Dir, ""
 }
 
-// ── 15m/5m ISB conflict [§5.3, D4.2 p1 @ 13:59; §12] ────────────────────────
+
+// X8TrapDodge reports the X8 trap-dodge EXIT [X8 "Cách né trap & Setup gồng lời"
+// part1 @07:31–08:07]: the 2m candle closed THROUGH the EMA34 against the 5m
+// trigger trend while the 5m trigger swept against the position — the breakout
+// is a FAKE and the position must exit, not sit ("thì out lại tại đó chứ đừng
+// ngồi hô").
+//
+//	long:  the 5m trigger is on the SELL side (a candle swept the prior low) AND
+//	       the 2m candle closed ABOVE the EMA34 → exit the long.
+//	short: the 5m trigger is on the BUY side (a candle swept the prior high) AND
+//	       the 2m candle closed BELOW the EMA34 → exit the short.
+//
+// A 2m close through the EMA34 ALONE never fires — the transcript: a close
+// under the EMA34 does not by itself allow a short [X8 @08:17–08:48]; the 5m
+// sweep is the trigger. ema34/close2m <= 0 or an empty trigger = no read, no
+// exit (fail-closed).
+func X8TrapDodge(side string, triggerDir Side, ema34, close2m float64) bool {
+	if ema34 <= 0 || close2m <= 0 || triggerDir == "" {
+		return false
+	}
+	if strings.EqualFold(side, "short") {
+		return triggerDir == SideLong && close2m < ema34
+	}
+	return triggerDir == SideShort && close2m > ema34
+}
+
+// ── 15m/5m ISB conflict (§5.3, §12) [D4.2 p1 @ 13:59] ───────────────────────
+
 // 2–3 adjacent 5m candles churning and going nowhere = a 15m inside bar
 // [@ 00:00]. Same direction → trade; OPPOSITE directions → DO NOT TRADE AT ALL
 // [@ 14:35].
@@ -228,7 +257,7 @@ func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
 	return ISBDirection(p5) != ISBDirection(p15)
 }
 
-// ── mid-range [§12, D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
+// ── mid-range (§12) [D3.2 p2 @ 08:34; D3.4 p3 @ 01:44] ───────────────────────
 // The middle of any range: between two levels → PHL/PLH banned, ISB only.
 
 // MidRange reports price sitting between two levels, each within
@@ -257,7 +286,8 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 }
 
 // SetupPermittedVerdict gates a setup kind by the mid-range filter: in the
-// middle of a range only the ISB survives [D3.2 p2 @ 08:34].
+// middle of a range only the ISB survives [D3.2 p2 @ 08:34; D2.2 p3 @14:03–16:03
+// "Ở giữa rank không được đánh potential high low, chỉ được đánh insaba"].
 func SetupPermittedVerdict(kind string, levels []Level, price float64, cfg Config) (ok bool, reason string) {
 	if !MidRange(levels, price, cfg) {
 		return true, ""

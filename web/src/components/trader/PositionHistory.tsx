@@ -180,13 +180,30 @@ export function computeDayTotal(
   let total = 0
   for (const p of positions) {
     if (kinds.get(p.id) !== 'normal') continue
+    // m240: an OPEN partial has exit_time=0 — its booked leg P&L is visible
+    // (visibleTotal sums it as a normal resolved row), so its day must fall out
+    // by last activity (updated_at), never be dropped. A CLOSED row keeps exit_time.
     const exitMs = new Date(p.exit_time || 0).getTime()
-    if (!exitMs || exitMs < sessionDayStartMs) continue
+    const dayTs = exitMs || new Date(p.updated_at || 0).getTime()
+    if (!dayTs || dayTs < sessionDayStartMs) continue
     if (typeof p.pnl_corrected !== 'number' || isNaN(p.pnl_corrected)) continue
     total += p.pnl_corrected
   }
   return Math.round(total * 100) / 100
 }
+
+// M251-S2: the "time" sort key. An OPEN partial has exit_time=0; sorting on
+// exit_time||0 sank it to the bottom. Use last activity (updated_at) instead,
+// the same fallback computeDayTotal uses. A CLOSED row keeps exit_time.
+export function positionSortTimeMs(p: HistoricalPosition): number {
+  const exitMs = new Date(p.exit_time || 0).getTime()
+  return exitMs > 0 ? exitMs : new Date(p.updated_at || 0).getTime() || 0
+}
+
+// M251-S2: says exactly what computeDayTotal counts. The daily-loss gate is
+// narrower (closed trades only) and the tooltip must not claim otherwise.
+export const SESSION_DAY_TOOLTIP =
+  "Bot P&L in the CME session day (from 17:00 CT — the risk gates' day). Includes partial legs already booked on trades that are still OPEN (dated by last activity); the daily-loss gate counts CLOSED trades only. Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win."
 
 // Stats Card Component with formula tooltip
 function StatCard({
@@ -484,6 +501,21 @@ function PositionRow({
               MANUAL · excluded
             </span>
           )}
+          {(position.status === 'OPEN' ||
+            position.pnl_status === 'partial') && (
+            <span
+              data-testid="partial-open-badge"
+              className="px-2 py-0.5 rounded text-xs font-semibold"
+              style={{
+                background: '#0E3A5C',
+                color: '#5EA8F7',
+                border: '1px solid #1D5A87',
+              }}
+              title="Position still open — a leg has already closed, so the P&L shown is the realized partial only, not the final trade."
+            >
+              partial · open
+            </span>
+          )}
           {kind === 'unresolved' && (
             <span
               className="px-2 py-0.5 rounded text-xs font-semibold"
@@ -719,9 +751,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
       let comparison = 0
       switch (sortBy) {
         case 'time':
-          comparison =
-            new Date(a.exit_time || 0).getTime() -
-            new Date(b.exit_time || 0).getTime()
+          comparison = positionSortTimeMs(a) - positionSortTimeMs(b)
           break
         case 'pnl':
           comparison = (a.realized_pnl || 0) - (b.realized_pnl || 0)
@@ -1276,7 +1306,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
                 </span>
               </span>
             )}
-            <span title="Bot trades closed in the CME session day (from 17:00 CT — the risk gates' day). Same exclusion rule as the ledger: unknown / test-seam / duplicate / manual rows excluded, corrections win.">
+            <span title={SESSION_DAY_TOOLTIP}>
               Session day (from 17:00 CT):{' '}
               {dayTotal === null ? (
                 <span className="font-mono">n/a</span>

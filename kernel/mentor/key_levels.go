@@ -14,7 +14,9 @@ import (
 //
 //  1. bars = 1H RTH only: candles anchored at 08:30 CT (first candle
 //     08:30–09:29), external (ETH) candles excluded [slide 31: "Khung 1H ONLY
-//     · Không tính external hours · Bắt đầu từ lúc market open"];
+//     · Không tính external hours · Bắt đầu từ lúc market open"]; levels are
+//     drawn on the RTH session only, never the Asia/Europe ETH session
+//     [D5.3 p1 @12:57–13:50].
 //  2. each candle colour (close > open = green) is one trend;
 //  3. at EVERY colour change a line is drawn at the OPEN of the SECOND candle
 //     (red → green: open of the green candle; green → red: open of the red).
@@ -229,6 +231,14 @@ func rthMinuteOf(ms int64) int {
 func exec2mReads2m(now int64) bool {
 	m := rthMinuteOf(now - 60_000) // the just-closed 1m bar's OPEN minute
 	return m < 8*60+30 || m >= 9*60
+}
+
+// inEveningWindow reports whether the just-closed 1m bar is in the evening /
+// overnight window: after the RTH close (15:00 CT) and before the Europe open
+// (03:00 CT the next day) [X11 @17:40–18:26].
+func inEveningWindow(now int64) bool {
+	m := rthMinuteOf(now - 60_000)
+	return m >= 15*60 || m < 3*60
 }
 
 // rthHourAnchor returns the open epoch of the RTH 1h candle a bar belongs

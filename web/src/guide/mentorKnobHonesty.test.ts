@@ -3,6 +3,8 @@
 // defaults that have neither a store field nor a Studio control are code
 // constants, and their cards must say so instead of pointing at a control that
 // does not exist.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GUIDE_SECTIONS } from './GuidePage'
 
@@ -54,5 +56,16 @@ describe('mentor guide knob honesty', () => {
     expect(
       mentorKnobs.find((k) => k.settingId === 'Config.ISBStopMinPts')
     ).toBeUndefined()
+  })
+
+  it('Swing hold bars systemDefault matches kernel/mentor DefaultSwingCfg.Hold4hBars', () => {
+    const go = readFileSync(
+      resolve(process.cwd(), '..', 'kernel/mentor/swing4h.go'),
+      'utf8'
+    )
+    const m = /Hold4hBars:\s+(\d+),/.exec(go)
+    expect(m).not.toBeNull()
+    const card = mentorKnobs.find((k) => k.settingId === 'SwingCfg.Hold4hBars')
+    expect(card?.systemDefault).toBe(m![1])
   })
 })

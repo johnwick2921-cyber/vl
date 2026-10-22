@@ -3,9 +3,11 @@ package mentor
 // D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h direction gate is for NEWS
 // first, not ordinary trading yet ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI.
 // ĐỪNG SỬ DỤNG CHO [trade] THƯỜNG" / "đánh ĐẦU GIỜ hay là đánh THƯỜNG — CHƯA
-// TỚI LÚC ĐÂU"). Owner decision A 2026-10-21 m134: HTFGateNewsOnly now defaults
-// OFF (gate all day). With the knob ON it applies only inside the 07:20–07:35
-// CT news window; with the knob OFF the gate applies all day.
+// TỚI LÚC ĐÂU"). #45 reverts owner decision A 2026-10-21 m134: HTFGateNewsOnly
+// now defaults ON (the mentor's rule). With the knob ON it applies inside the
+// 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the open is
+// like news" [D4.4 p2 @00:35–00:46]; open length [example: D1.2 p1
+// @23:52–24:59]). With the knob OFF the gate applies all day (explicit).
 
 import (
 	"math"
@@ -18,8 +20,8 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default OFF (all-day gate; owner decision A 2026-10-21)")
+	if !cfg.HTFGateNewsOnly {
+		t.Fatal("HTFGateNewsOnly must default ON (news + open windows; the mentor's rule — #45 reverts owner decision A 2026-10-21)")
 	}
 	cfg.HTFGateNewsOnly = true
 	cases := []struct {
@@ -31,6 +33,12 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 		{7, 30, true},
 		{7, 35, true},
 		{7, 36, false},
+		// The open window 08:30–09:30 CT — the open is like news [D4.4 p2 @ 00:35–00:40].
+		{8, 29, false},
+		{8, 30, true},
+		{9, 0, true},
+		{9, 30, true},
+		{9, 31, false},
 		{10, 0, false},
 	}
 	for _, c := range cases {
@@ -47,19 +55,19 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 }
 
 // TestHTFGateNewsOnlyTick pins the Tick call site for BOTH knob settings: at
-// 09:05 CT (outside the news window) a 4h/1h CONFLICT refuses a long PHL only
-// when the gate applies. news-only (knob ON) → the gate is off outside the
-// window → the conflict PHL EMITS. all-day (knob OFF, the m134 default) → the
-// same tick refuses it (case 3).
+// 10:05 CT (outside both the news and the open window) a 4h/1h CONFLICT refuses
+// a long PHL only when the gate applies. news+open (knob ON) → the gate is off
+// outside the windows → the conflict PHL EMITS. all-day (knob OFF, explicit) →
+// the same tick refuses it (case 3).
 // MUTANT: drop the GateOff set in Tick (or the GateOff check in HTFVerdict) →
-// the 09:05 conflict PHL is refused under news-only → RED.
+// the 10:05 conflict PHL is refused under news+open → RED.
 func TestHTFGateNewsOnlyTick(t *testing.T) {
 	run := func(allDay bool) bool {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.EMALocationTFMinutes = 0
-		cfg.Exec2mAfter30m = false // the 09:05 conflict-PHL pin reads the 1m touch
+		cfg.Exec2mAfter30m = false // the 10:05 conflict-PHL pin reads the 1m touch
 		cfg.HTFGateNewsOnly = !allDay
 
 		e := New(cfg)
@@ -77,15 +85,19 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 		// CONFLICT: 4h long vs 1h short — case 3 sits out when the gate is on.
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}, OneH: TriggerLine{Dir: SideShort, Price: 29200}}
 
-		bars := []market.Kline{
-			rthBars(0, 29400, 29410, 29335, 29405),
-			rthBars(1, 29420, 29430, 29415, 29425),
-			rthBars(2, 29425, 29431.75, 29420, 29428),
-			rthBars(3, 29410, 29415, 29400, 29408),
-			rthBars(4, 29400, 29405, 29395, 29398),
-			rthBars(5, 29395, 29397, 29386, 29392),
+		b := func(i int, o, h, l, c float64) market.Kline {
+			ot := auditMs(2026, 9, 15, 10, 0, 0) + int64(i)*60_000
+			return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c}
 		}
-		now := bars[5].CloseTime + 1 // 09:05 CT — outside the 07:20–07:35 news window
+		bars := []market.Kline{
+			b(0, 29400, 29410, 29335, 29405),
+			b(1, 29420, 29430, 29415, 29425),
+			b(2, 29425, 29431.75, 29420, 29428),
+			b(3, 29410, 29415, 29400, 29408),
+			b(4, 29400, 29405, 29395, 29398),
+			b(5, 29395, 29397, 29386, 29392),
+		}
+		now := bars[5].CloseTime + 1 // 10:05 CT — outside the 07:20–07:35 news and 08:30–09:30 open windows
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 29300, Low: 29200, Drawn: true, Escaped: SideLong}
 		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 
@@ -99,9 +111,9 @@ func TestHTFGateNewsOnlyTick(t *testing.T) {
 	}
 
 	if !run(false) {
-		t.Fatal("news-only (switch ON): the 09:05 conflict PHL must EMIT — the HTF gate is off outside the news window [D4.4-11]")
+		t.Fatal("news+open (switch ON): the 10:05 conflict PHL must EMIT — the HTF gate is off outside the news and open windows [D4.4 p1 @ 13:44–14:06]")
 	}
 	if run(true) {
-		t.Fatal("all-day (switch OFF): the same 09:05 conflict PHL must be REFUSED (case 3)")
+		t.Fatal("all-day (switch OFF): the same 10:05 conflict PHL must be REFUSED (case 3)")
 	}
 }

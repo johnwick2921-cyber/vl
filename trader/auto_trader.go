@@ -696,6 +696,11 @@ type AutoTrader struct {
 	// cross-goroutine evaluator mutation. Bounded; a full channel drops the
 	// receipt (counted).
 	mentorFillCh chan mentorFillReceipt
+	// mentorExitCh carries broker position_close receipts (the signal id + the
+	// exit reason) from the close-sync goroutine to the evaluator drain, so a
+	// real exit closes the matching Limits.openTrade under mentorEvalMu (#47).
+	// Bounded; a full channel drops the receipt (counted).
+	mentorExitCh chan mentorExitReceipt
 	// mentorDeferredFills holds FU-1 receipts whose row fallback needs
 	// State.Levels (R1: the first post-restart Tick has not set them yet).
 	// Only the drain, under mentorEvalMu, touches it.
@@ -1245,6 +1250,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		positionMentorOwned:   make(map[string]bool),
 		kickCh:                make(chan string, 4),
 		mentorFillCh:          make(chan mentorFillReceipt, 256),
+		mentorExitCh:          make(chan mentorExitReceipt, 256),
 		monitorWg:             sync.WaitGroup{},
 		peakPnLCache:          make(map[string]float64),
 		peakPnLCacheMutex:     sync.RWMutex{},

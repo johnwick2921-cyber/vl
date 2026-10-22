@@ -5,7 +5,7 @@ import (
 )
 
 // R7 — the reverse ISB at EMA 9 (RULES-FIX-v3, a setup behind its OWN knob
-// ISBReverseEMA9Enabled, default ON since the 2026-10-04 owner ruling) [D5.4]:
+// ISBReverseEMA9Enabled, default ON since the 2026-10-04 owner ruling) [D5.4 p1 @01:26–01:30]:
 //
 //   - price must actually reach EMA 9 (a loose touch is OK);
 //   - in an uptrend, an ISB that points SHORT at EMA 9 → go LONG with a buy
@@ -23,37 +23,43 @@ import (
 //     (Until rel22 this file pre-subtracted the executor's 0.5 — a second
 //     definition of the same number; trade #627/#628 ruling kept, one source.)
 //   - cancel if the next candle does not fill (the evaluator runs the same
-//     ISB stacking arithmetic on the emitted arm);
+//     ISB stacking arithmetic on the emitted arm) [D5.4 p1 @06:11–06:31,
+//     07:05–07:12];
 //   - stop = the other side of the ISB candle plus the buffer (already ±
 //     ISBBufferPts; it is a stop-loss, not an entry, so the wire offset does
 //     not apply).
 //
 // The 1m is preferred but any TF pair that satisfies IsISB qualifies — the
 // caller passes the timeframe it trades.
+//
+// DIAGNOSTIC [D5.4 p1 @05:44–06:02]: in a downtrend that pulls back to EMA 9,
+// a reverse ISB there says it continues down; NOTHING at EMA 9 says it keeps
+// going up toward EMA 34. This is chart-reading only — the bot does not gate
+// on it.
 
 // ReverseISBAtEMA9 evaluates one candidate ISB candle pair against the 1m EMA 9
 // value and the bigger trend. ok=false carries a cited reason (knob off, not an
 // ISB, no EMA-9 touch, or the ISB already points WITH the trend).
 func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Config) (Intent, bool, string) {
 	if !cfg.ISBReverseEMA9Enabled {
-		return Intent{}, false, "reverse ISB at EMA 9: knob off [D5.4]"
+		return Intent{}, false, "reverse ISB at EMA 9: knob off [D5.4 p1 @01:26–01:30]"
 	}
 	if !IsISB(prev, cur) {
-		return Intent{}, false, "reverse ISB at EMA 9: not an ISB [D5.4]"
+		return Intent{}, false, "reverse ISB at EMA 9: not an ISB [D5.4 p1 @01:26–01:30]"
 	}
 	if trend == "" {
 		// B6 (L14): with no trend direction the reverse ISB used to fall
 		// through to SHORT unconditionally. Fail closed [D5.4: "đánh theo xu
 		// hướng" — the trend must exist].
-		return Intent{}, false, "reverse ISB at EMA 9: no trend direction — fail-closed [D5.4, B6]"
+		return Intent{}, false, "reverse ISB at EMA 9: no trend direction — fail-closed [D5.4 p1 @04:16–04:20, B6]"
 	}
 	dir := ISBDirection(prev)
 	if dir == trend {
-		return Intent{}, false, "reverse ISB at EMA 9: the ISB already points with the trend — no reverse [D5.4]"
+		return Intent{}, false, "reverse ISB at EMA 9: the ISB already points with the trend — no reverse [D5.4 p1 @01:26–01:30]"
 	}
 	// Loose touch: the EMA 9 value sits inside the ISB candle's wick range.
 	if ema9 < cur.Low || ema9 > cur.High {
-		return Intent{}, false, "reverse ISB at EMA 9: price did not reach the EMA 9 [D5.4]"
+		return Intent{}, false, "reverse ISB at EMA 9: price did not reach the EMA 9 [D5.4 p1 @01:26–01:30]"
 	}
 	entry := cfg.ISBBufferPts // the course's 1.5 [D2.1 p1 @ 06:12]; the wire adds nothing (rel22 P2-1)
 	if trend == SideLong {

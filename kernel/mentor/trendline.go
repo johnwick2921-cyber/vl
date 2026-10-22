@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"math"
 	"time"
 
 	"vl/kernel"
@@ -29,6 +30,7 @@ type Trendline struct {
 	FormedAt int   // P1Idx — the line is drawn when P1 closes
 	ValidAt  int   // bar index of the 3rd touch (0 = not yet a location)
 	Dead     bool  // a closed 5m candle CLOSED through the line (brokenBy5m)
+	TFMin    int   // 0 = 1m trendline; 60/240 = PERSISTENT HTF line [D2.3 p1 @04:23–05:41]
 }
 
 // trendlineTouchBandPts is the wick-touch tolerance for a diagonal line (the
@@ -89,6 +91,14 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // pair (the session-end death). The line becomes a location on the 3rd touch
 // (a return, trendlineScan) and is discarded by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
+	// X9 @03:35–03:55: "Thường em sẽ vẽ trendline khung 2 phút, nó sẽ clear hơn.
+	// Tại vì mình trade khung 2 phút. Và khung 1 phút, nó rất clear luôn." The
+	// mentor prefers the 2m and endorses the 1m ("rất clear luôn"). This builds
+	// the 1m construction — the mentor-endorsed stable one. A 2m construction is
+	// NOT built: it must still enforce "TRENDLINE chứ không phải CẦU TUỘT" at the
+	// 1m level (a 2m candle hides a 1m cross-through between its anchors), and a
+	// naive 2m union breaks the session-parity invariant (forming 2m candles
+	// vanish lines). Follow-up if the owner wants the 2m drawn as a separate set.
 	lines, _ := trendlinesBuild(bars, now)
 	return lines
 }
@@ -154,6 +164,128 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 		}
 	}
 	return out, crossed
+}
+
+// trendlinesBuildTF builds PERSISTENT higher-timeframe swing-pair trendlines
+// [D2.3 p1 @04:23–05:41]. Same construction as the 1m lines, except: the swing
+// pairs are found on the bucketed HTF bars (barsTF), there is NO today filter
+// (the lines survive the session end), and the break is read on the HTF close
+// (trendlineScanTF walks the HTF bars as both the bars and the break candles).
+func trendlinesBuildTF(bars []market.Kline, tfMin int, now time.Time) []Trendline {
+	btf := barsTF(bars, tfMin)
+	if len(btf) < 5 {
+		return nil
+	}
+	all := swings3(btf)
+	var out []Trendline
+	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
+		var pts []swingPairAt
+		for _, s := range all {
+			if s.kind == role && swingConfirmed(btf, s) {
+				pts = append(pts, s)
+			}
+		}
+		side := SideLong
+		if role == kernel.KindSWGH {
+			side = SideShort
+		}
+		for j := 1; j < len(pts); j++ {
+			p0, p1 := pts[j-1], pts[j]
+			if p1.idx-p0.idx < 2 {
+				continue // same-role swings are ≥2 HTF bars apart; refuse anything tighter
+			}
+			// must slope: support = a HIGHER low; resistance = a LOWER high.
+			if role == kernel.KindSWGL && p1.price <= p0.price {
+				continue
+			}
+			if role == kernel.KindSWGH && p1.price >= p0.price {
+				continue
+			}
+			tl := Trendline{
+				Side:     side,
+				P0Idx:    p0.idx,
+				P0Px:     p0.price,
+				P0T:      btf[p0.idx].OpenTime,
+				P1Idx:    p1.idx,
+				P1Px:     p1.price,
+				P1T:      btf[p1.idx].OpenTime,
+				FormedAt: p1.idx,
+				TFMin:    tfMin,
+			}
+			if tl.P1T <= tl.P0T {
+				continue
+			}
+			if trendlineCrossed(btf, tl) {
+				continue
+			}
+			tl.ValidAt, tl.Dead = trendlineScanTF(btf, btf, all, tl, now)
+			out = append(out, tl)
+		}
+	}
+	return out
+}
+
+// trendlineHTFBroken reports whether a persisted HTF line is now broken — a
+// closed HTF candle (the line's own timeframe) CLOSED through it since the
+// line was drawn. The line's anchor indices are meaningless once the window
+// has slid past them, so the scan is purely by TIME: every closed bucketed
+// candle after P1T is tested, not just the ones after a stored index.
+// A line in evaluator state was unbroken on the previous tick, so this only
+// needs to see the candles the current window can supply.
+func trendlineHTFBroken(tl Trendline, btf []market.Kline, now time.Time) bool {
+	nowMs := now.UnixMilli()
+	for _, b := range btf {
+		if b.CloseTime >= nowMs || b.CloseTime <= tl.P1T {
+			continue // still forming, or before the line was drawn
+		}
+		if tl.brokenBy5m(b) {
+			return true
+		}
+	}
+	return false
+}
+
+// trendlineHTFTouch returns a non-zero value once price has LEFT a persisted
+// HTF line and come BACK to touch it — the 3rd touch that makes it a location
+// [D3.2 p2 @03:45] — read on the line's own timeframe, purely by TIME. A line
+// that is already valid never calls this (validity is latched in state).
+func trendlineHTFTouch(tl Trendline, btf []market.Kline, now time.Time) int {
+	nowMs := now.UnixMilli()
+	all := swings3(btf)
+	leave := -1
+	for _, s := range all {
+		if btf[s.idx].OpenTime <= tl.P1T || s.idx+1 >= len(btf) {
+			continue
+		}
+		if btf[s.idx+1].CloseTime == 0 || btf[s.idx+1].CloseTime >= nowMs {
+			continue // the confirming bar has not closed yet
+		}
+		if !swingConfirmed(btf, s) {
+			continue
+		}
+		p := tl.priceAt(btf[s.idx].OpenTime)
+		if tl.Side == SideLong && s.kind == kernel.KindSWGH && s.price > p+trendlineTouchBandPts {
+			leave = s.idx
+			break
+		}
+		if tl.Side == SideShort && s.kind == kernel.KindSWGL && s.price < p-trendlineTouchBandPts {
+			leave = s.idx
+			break
+		}
+	}
+	if leave < 0 {
+		return 0 // price never left the line — no return, not a location
+	}
+	for i := leave + 1; i < len(btf); i++ {
+		c := btf[i]
+		if c.CloseTime == 0 || c.CloseTime >= nowMs {
+			continue
+		}
+		if tl.touch(c) {
+			return i
+		}
+	}
+	return 0
 }
 
 // trendlineCrossed reports a line that price CROSSED between its own anchors:
@@ -262,17 +394,41 @@ func (t Trendline) key() string {
 	return fmt.Sprintf("%s:%s:%d:%d", KindTrendline, t.Side, t.P0T, t.P1T)
 }
 
+// trendlineLevelPreferPts is the band within which a respected level beats a
+// fresh trendline (D2.3 p1 @02:19–03:45: "chọn cái mà nó đã respect nhiều lần …
+// đừng chọn cái nó mới tạo"). The mentor gives no number; 2 pts matches the old
+// "±2 pts of a box edge" note.
+const trendlineLevelPreferPts = 2.0
+
+// trendlineBeatenByLevel reports whether a respected LEVEL (a key level or an
+// old high/low) sits at/near the trendline's current price — the level wins and
+// the trendline is refused [D2.3 p1 @02:19–03:45]. FORMING lines never enter
+// here: they stay non-locations (the 3rd-touch return rule is unchanged).
+func trendlineBeatenByLevel(respected []Level, price float64) bool {
+	for _, lv := range respected {
+		switch lv.Kind {
+		case KindKeyLevel, KindOldExtreme:
+			if math.Abs(lv.Price-price) <= trendlineLevelPreferPts {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // TrendlineLevels exports each VALID, live trendline as a Level whose Price
 // is the line's value at the current bar (a moving line — the touch loop
 // clears its classification only on a visit departure, never on drift alone,
 // item 22). A trendline is a
 // LOCATION only (never a target): after the 3rd touch it enters the set; a
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
-// @04:38]: a trendline whose current price sits within ±2 pts of a box edge
-// is suppressed — the box wins.
-func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) []Level {
+// @04:38]: a trendline whose current price sits within a live box is
+// suppressed — the box wins. A RESPECTED LEVEL (key level / old extreme) at the
+// same price also beats the trendline [D2.3 p1 @02:19–03:45]; its key is
+// returned in refused so the caller counts tl_first_test_level_preferred.
+func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline) (levels []Level, refused []string) {
 	if len(trendlines) == 0 || len(bars) == 0 {
-		return nil
+		return nil, nil
 	}
 	cur := bars[len(bars)-1]
 	var out []Level
@@ -287,7 +443,11 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, bars []market.Kline) [
 		if InsideAnyBox(boxes, price) {
 			continue
 		}
+		if trendlineBeatenByLevel(respected, price) {
+			refused = append(refused, tl.key())
+			continue
+		}
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
-	return out
+	return out, refused
 }

@@ -3161,6 +3161,64 @@ func (at *AutoTrader) armedPassDormant() bool {
 	return !at.dayPlanEnabled() && !at.mentorEnabled()
 }
 
+// sweepDueExpiriesAtReopen (m244) cancels every resting order whose authored
+// expiry fell inside the just-ended CME closed period, BEFORE any new work
+// (authoring or placement) runs on the first open cycle.
+//
+// Expiry is Go-side (ledger ExpiryMs, swept in runArmedPlacementAtFiltered only
+// during an OPEN cycle), and the whole cycle is CME-open-gated
+// (cmeSessionClosedSkip) with a 3-minute closed backoff. An expiry inside the
+// 16:00–17:00 daily break (or any closed window) is therefore never swept at
+// its due time — the resting NT8 stop-limit survives the break and can fill on
+// the reopen before the first open cycle sweeps it (row 410: expiry
+// 16:59:59.999, filled 17:00:40). This runs at the closed→open EDGE only, so
+// the cancel reaches the broker on the earliest open cycle, before placement.
+func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
+	nt := at.armedTrader()
+	if nt == nil || at.store == nil {
+		return
+	}
+	ledger := at.store.ArmedOrders()
+	if ledger == nil {
+		return
+	}
+	rows, err := ledger.ListNonTerminal(at.id)
+	if err != nil {
+		return
+	}
+	n := 0
+	for _, r := range rows {
+		if r.TraderID != at.id || !armExpired(r, now.UnixMilli()) {
+			continue
+		}
+		if store.IsUnplacedArm(r.State, r.SignalID) {
+			// Never reached the broker: nothing rests to fill — retire the
+			// authorization in the ledger (the same shape the inline expiry
+			// sweep uses).
+			at.armLifecycleWrite("set_state(expired)", r,
+				ledger.SetState(r.ID, "expired", "stop-limit expiry elapsed — never placed (reopen sweep)"))
+			n++
+			continue
+		}
+		if strings.TrimSpace(r.SignalID) != "" {
+			if v := at.cancelSafetyFor(r, now); !v.Allow {
+				at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED %s %s signal=%s — %s", r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+				continue
+			}
+			if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+				at.logWarnf("✕ reopen expiry sweep: cancel SEND failed %s %s: %v", r.Session, r.Scenario, cerr)
+				continue
+			}
+		}
+		at.armLifecycleWrite("request_cancel(expiry_elapsed)", r,
+			ledger.RequestCancel(r.ID, "stop-limit expiry elapsed (reopen sweep)", now.UnixMilli()))
+		n++
+	}
+	if n > 0 {
+		at.logWarnf("🧹 reopen expiry sweep: %d due arm(s) cancelled/expired before any new work on the first open cycle", n)
+	}
+}
+
 // mentorOnlyPlacementPass is the B3 (release #3b) mentor-only placement path.
 // It runs the SAME placement engine as the planner pass — admission chain,
 // maintenance hold, one-contract guard, the account/SIM gate, the slot guard,
@@ -3174,6 +3232,10 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	// when the feed is fresh — nothing is cancelled by this (resting broker
 	// orders are untouched; that is a separate decision).
 	if at.mentorStaleDataBlocked(now) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_stale_data", "stale_data") {
+			at.logWarnf("🛑 mentor placement REFUSED (stale_data): the live 1m feed is stale — mentor arms stay armed and retry when fresh")
+		}
+		telemetry.IncGateBlock(at.id, "stale_data")
 		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
 		return
 	}
@@ -3181,15 +3243,23 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	if market.FuturesBarsProvider != nil {
 		bars = market.FuturesBarsProvider(at.futuresSymbol(), kernel.AISVPBarInterval, kernel.AISVPBarCount)
 	}
-	// B3 Q1 + N5 — the mentor ignores ONLY the lunch and first-N windows. The
-	// consecutive-loss breaker, the red-news T1 blackout, the per-session trade
-	// cap, the force-flat windows and outside-session/session-off all still
-	// refuse (session_risk.go labels them one class; mentorWaivesSessionBand
-	// splits the lunch/first-N sub-windows).
-	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) {
-		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class) {
+	// B3 Q1 + N5, expanded m235 — the mentor ignores the day-plan session LIST
+	// (outside-session, session-off, sessions_enabled, trade cap, lunch, first-N):
+	// the mentor's own window/news gates govern at authoring. The consecutive-loss
+	// breaker, the red-news T1 blackout and the force-flat windows still refuse.
+	// Every refusal logs once per (class, reason) change and ticks the gate-block
+	// counter (bug-hunt #40 — never silent).
+	//
+	// m314 — the in-session EOD-flat window is the ONE force-flat refusal a
+	// SWING4H arm waives (the course holds the swing by the 4h), so this
+	// PASS-level refusal lets the EOD flat through and the per-row admission
+	// check decides per intent: SWING4H places, intraday (ISB) stays refused.
+	// The T1 blackout and the T1 force-flat lead still refuse the whole pass.
+	if risk := at.sessionRiskGateAt(now); risk.Refuse && !mentorWaivesSessionBand(risk) && !isEODFlatWindowRisk(risk) {
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_session_risk", risk.Class+":"+risk.Reason) {
 			at.logWarnf("🛑 mentor placement REFUSED (%s): %s", risk.Class, risk.Reason)
 		}
+		telemetry.IncGateBlock(at.id, risk.Class)
 		scope.note(scope.scenarioOrEmpty(), "refused: "+risk.Class+": "+risk.Reason)
 		return
 	}

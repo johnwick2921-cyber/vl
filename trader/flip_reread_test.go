@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -409,5 +410,66 @@ func TestFlipRereadAsiaV13ReplayFixture(t *testing.T) {
 	}
 	if got := versionLifecycle(t, st, td, "ASIA", at.id, 1); got != "dormant" {
 		t.Fatalf("the dormant plan must stand, got %q", got)
+	}
+}
+
+// TestFlipRereadSeamCapturedAtLaunch pins the m283 fix: the read seam
+// (flipRereadRun) is captured BEFORE the goroutine launches, so a swap after
+// launch (the test's t.Cleanup restoring the original seam, or a neighbouring
+// test installing its recorder) can never race the in-flight goroutine's read
+// of the package global. The race detector is the mutant gate: revert the
+// runRead capture (read the global inside the goroutine) and this test churns
+// flipRereadRun from the test goroutine with NO synchronisation against the
+// launched read, so the write/read pair on the global is a data race -race
+// flags — and the read observes recB, failing the assertion below.
+func TestFlipRereadSeamCapturedAtLaunch(t *testing.T) {
+	t.Setenv("FLIP_ATR_BUFFER", "0")
+	t.Setenv("DORMANT_MIN_HOLD_MIN", "0")
+	cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true, ReplanCap: store.IntPtr(4), SessionsEnabled: []string{"NY"}, FlipReread: true}}
+	at, _ := resetTrader(t, cfg)
+	now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
+	testNow = func() time.Time { return now }
+	defer func() { testNow = nil }()
+	defer func() { market.FuturesBarsProvider = nil; traderTestBarsInstalled = false }()
+
+	td := "2026-08-18"
+	doc := kernel.PlanDoc{Bias: kernel.PlanBias{Direction: "long"}, FlipStructured: &kernel.PlanCondition{Price: 100, Side: "below", Rule: "2x5m", FlipTo: "short"}}
+	seedActivePlan(t, at, td, "NY", now.Add(-40*time.Minute), doc)
+	seedFlipBars(100, 96, 6*time.Minute, now)
+
+	var aCalls, bCalls int32
+	recA := func(at *AutoTrader, now time.Time, session, tradeDate, prior string, row *store.PlanDB, failClosed bool) bool {
+		atomic.AddInt32(&aCalls, 1)
+		return true
+	}
+	recB := func(at *AutoTrader, now time.Time, session, tradeDate, prior string, row *store.PlanDB, failClosed bool) bool {
+		atomic.AddInt32(&bCalls, 1)
+		return true
+	}
+	orig := flipRereadRun
+	flipRereadRun = recA
+	t.Cleanup(func() { flipRereadRun = orig })
+
+	// Fire the flip (marks v1 dormant) and launch the read through the SAME
+	// production path the sibling tests use.
+	at.maybeRunSessionReadsAt(now)
+	defer drainReReads(t)
+	// Churn the global with NO synchronisation against the launched goroutine.
+	// With the fix the goroutine reads the CAPTURED recA and recB is never
+	// called; with the mutant it reads the global (recB) mid-churn, which both
+	// fails the assertion and is a data race -race reports.
+	for i := 0; i < 200000; i++ {
+		flipRereadRun = recB
+	}
+	flipRereadRun = recA
+
+	if !waitFor(t, 5*time.Second, func() bool { return atomic.LoadInt32(&aCalls)+atomic.LoadInt32(&bCalls) == 1 }) {
+		t.Fatalf("the flip read never fired: aCalls=%d bCalls=%d", atomic.LoadInt32(&aCalls), atomic.LoadInt32(&bCalls))
+	}
+	if got := atomic.LoadInt32(&bCalls); got != 0 {
+		t.Fatalf("the in-flight read observed a post-launch seam (recB called %d times) — the seam is not captured at launch", got)
+	}
+	if got := atomic.LoadInt32(&aCalls); got != 1 {
+		t.Fatalf("the in-flight read must call the launch-time seam exactly once, aCalls=%d", got)
 	}
 }

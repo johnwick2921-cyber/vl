@@ -109,6 +109,32 @@ describe('ONE "today" — the CME session day from 17:00 CT', () => {
   it('without the server session start the day total is unknown (null), never a guess', () => {
     expect(computeDayTotal([row({ pnl_corrected: 5 })])).toBeNull()
   })
+  it('m240 — an OPEN partial (exit_time 0) counts by its last activity, so the day total agrees with the visible total', () => {
+    const start = Date.now() - 3600_000
+    const openPartial = row({
+      id: 100,
+      status: 'OPEN',
+      pnl_status: 'partial',
+      exit_time: '', // 0 on an open row
+      exit_price: 0,
+      pnl_corrected: 10,
+      updated_at: new Date(start + 1000).toISOString(),
+    })
+    expect(computeDayTotal([openPartial], start)).toBe(10)
+  })
+  it('m240 — an OPEN partial last active BEFORE the session start stays out of the day total', () => {
+    const start = Date.now() - 60_000
+    const openPartial = row({
+      id: 101,
+      status: 'OPEN',
+      pnl_status: 'partial',
+      exit_time: '',
+      exit_price: 0,
+      pnl_corrected: 10,
+      updated_at: new Date(start - 1000).toISOString(),
+    })
+    expect(computeDayTotal([openPartial], start)).toBe(0)
+  })
   it('LEDGER_DAY names manual rows in the day instead of dropping them', () => {
     expect(
       ledgerDayLabel({

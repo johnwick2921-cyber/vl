@@ -35,8 +35,9 @@ import (
 //     [D3.2 p2 @ 06:21]. Valid by construction — no 3rd-touch TEST for the
 //     box [@ 03:45]; the 3rd-touch rule belongs to the TRADE [@ 04:29],
 //     exposed as Box.Touches.
-//   - Deleted only on escape (a BODY closes outside) [D3.2 p1 @ 19:05;
-//     D3.4 p2 @ 12:11] or at the end of the day [D4.1 p2 @ 02:39–03:31].
+//   - Deleted at the end of the day [D4.1 p2 @ 02:39–03:09 (end of day only)].
+//     (An escaped BODY does NOT delete the box — see B4; the earlier "escape
+//     deletes" gloss was stale.)
 //   - "NEVER trade inside the box" [D3.2 p1 @ 06:59] → InsideAnyBox.
 //   - "Draw TWO zones, never a third." [D3.2 p2 @ 09:14] → one floor +
 //     one ceiling.

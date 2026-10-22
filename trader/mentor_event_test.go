@@ -188,8 +188,8 @@ func TestMentorDoneAfterWinGateAtPlacementCallSite(t *testing.T) {
 		t.Fatal("the pure rule: only a winning close AND a positive day end the day")
 	}
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	// owner order 2026-10-16: nil → OFF — this test exercises the ON path, so
-	// the switch is explicit true.
+	// m186: nil → ON — this test exercises the ON path explicitly, so the
+	// switch is set true regardless of the default.
 	on := true
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = &on
 	wireMentorPlacementSeams(t, at)

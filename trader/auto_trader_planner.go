@@ -942,6 +942,14 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 	// Non-fatal and async, exactly like the level-event wake: a read that
 	// does not land a newer active version keeps the dormant plan and clears
 	// the once-key so the dormant branch retries next cycle.
+	//
+	// m283 FLAKE: capture the read seam BEFORE the goroutine launches. The seam
+	// is a package global that tests swap (installFlipRecorder) and restore in
+	// t.Cleanup, and the goroutine outlives the launch. Reading the global
+	// inside the goroutine races the cleanup's write (the shared-global flake
+	// class the CTO named); the captured value is stable for the goroutine's
+	// whole life.
+	runRead := flipRereadRun
 	at.goNetted("flip-reread", func() {
 		defer flipRereadInFlight.Delete(inflightKey)
 		// BLOCKER 3(b) — the row may have been re-armed between the dormant
@@ -955,7 +963,7 @@ func (at *AutoTrader) maybeRereadAfterFlip(now time.Time, session, tradeDate str
 			at.logWarnf("🗓️ structure_flip read %s %s v%d — SKIPPED before the read: the row is %q, no longer dormant; nothing authored, the once-key stays clear.", tradeDate, session, row.Version, lc)
 			return
 		}
-		if !flipRereadRun(at, now, session, tradeDate, prior, row, false) {
+		if !runRead(at, now, session, tradeDate, prior, row, false) {
 			at.logWarnf("🗓️ structure_flip read %s %s v%d did not complete — the dormant plan stands; the once-key is cleared for a retry next cycle.", tradeDate, session, row.Version)
 			_ = at.store.SetSystemConfig(flipRereadDoneKey(row), "0")
 			return
@@ -3280,7 +3288,7 @@ func (at *AutoTrader) assemblePlannerInputWithCtx(now time.Time, session, tradeD
 	// universe day-anchors stamped on (post-roll the seated table drops
 	// PDH/PDL — the 17:46/19:02 ASIA reads rendered "no PDH/PDL anchor").
 	bcFacts := kernel.ComputeBiasContext(bars, scored, now)
-	kernel.ApplyUniverseDayAnchors(&bcFacts, kernel.ExtractMultiDayLevels(bars, reg, now))
+	kernel.ApplyUniverseDayAnchors(&bcFacts, kernel.ExtractMultiDayLevelsFor(symbol, bars, reg, now))
 
 	// W2b (weekly-bias wave) — PLANNER EYES: the raw candle tables (12×15m ·
 	// 12×1h · 8×4h · 8×daily) built from the 1m slice via kernel.AggregateBars.

@@ -244,7 +244,7 @@ type Config struct {
 
 	// EMALocationTFMinutes is the LOCATION-GATE EMA 34 timeframe. R3 (RULES
 	// FIX v3, verified): intraday setups use the EMA 34 of the TRADING chart
-	// — the 1m [D5.4 @ 01:00–01:27, 05:21–05:37] — so the default is 1. The
+	// — the 1m [D5.4 @08:12–08:40] — so the default is 1. The
 	// 4h EMA 34 is ONLY for the §8 swing, which carries its own knobs
 	// (SwingCfg) and never reads this [D5.2 p1 @ 05:30–05:43]. Other TFs
 	// (5/15/60/240) remain allowed for experimentation.
@@ -276,10 +276,12 @@ type Config struct {
 	// no-trade zone and the trigger side for every ISB and non-level entry.
 	TriggerSchool int
 	// PingPong knobs — B21 (10-03 evening, OPEN-NUMBERS Q5, CTO-verified
-	// D4.2 p2 @05:17–06:37): the gap between an FTGL floor and an FTGH ceiling
-	// must exceed PingPongMinGapPts AND the largest 1m candle of the last
-	// PingPongCandleLookback closed bars must stay at or below
-	// PingPongCandleMaxPts ("nến tầm mười mấy điểm"). PingPongCandleMaxPts > 0
+	// D4.2 p2 @05:13–06:37 — "ping-pong needs a big range: ≥100 or above 50
+	// pts; candles 'mười mấy điểm' (about 10–19)"): the gap between an FTGL
+	// floor and an FTGH ceiling must exceed PingPongMinGapPts AND the largest
+	// 1m candle of the last PingPongCandleLookback closed bars must stay at or
+	// below PingPongCandleMaxPts ("nến tầm mười mấy điểm" @05:31–05:37; a
+	// 100-pt range goes with candles ~20 — cap 20 is the fair reading). PingPongCandleMaxPts > 0
 	// also switches on the key-level pair rule (X4 @06:31–08:52: "một cái nến
 	// nó bằng cái rank của 2 cái level rồi thì ngồi im"), which since
 	// MENTOR-NY item 2 reads the CURRENT closed candle only — the lookback
@@ -293,24 +295,26 @@ type Config struct {
 	LevelMaxVisits int
 	// EmaMaxCross30m — E4 knob (CTO 12:27:25Z): refuse the EMA34 setup when the
 	// close crossed the line this many times over the last 30 closed 1m candles
-	// ("xien len xien xuong", D4.2 p1 @ 22:27). Default ON (item 16, CTO
-	// 23:49Z): 2 — the most conservative of the replay sensitivity rows
-	// v5_ema_cross2 / v5_ema_cross4. MENTOR QUESTION OPEN: the course states no
-	// count and no window — at the exact second he says "xiên lên xiên xuống"
-	// the frame D4.2 p1 @22:28 shows the indicator already OFF the chart, so
-	// 2 is our reading, not his number (reread OPEN-NUMBERS Q4). 0 = OFF.
+	// ("xien len xien xuong", D4.2 p1 @ 22:27). Default REMOVED (#45): 0 — the
+	// mentor gives no count and no window; at the exact second he says "xiên lên
+	// xiên xuống" the frame D4.2 p1 @22:28 shows the indicator already OFF, so
+	// the number is ours, not his. The mentor's actual rule — "switched off only
+	// while it is not respected" — is E2's loss relock, not a cross count. An
+	// explicit 2-4 re-enables the numeric gate. 0 = OFF.
 	EmaMaxCross30m int
 
 	// ISB (PLAN v1 §3).
 	ISBBufferPts  float64 // order buffer beyond the wick extremes, BOTH sides; default 1.5 [D1.4 p1 @ 22:22–22:30]
 	ISBStopMinPts float64 // RETIRED for ISB by RULES-FIX-v3 (no fixed stop size); kept for the other setups
 	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
-	// (owner order "move to 30"): an ISB stop < 30 pts is taken, ≥ 30 is
-	// refused — that ceiling now lives in CourseExits.ISBMaxStopPts (default 30).
+	// (owner order "move to 30"); W-MENTOR-EXACT (owner order 2026-10-21) reverts
+	// that: an ISB stop > 25 pts is skipped ("trên nữa thì thôi"), a stop of
+	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts
+	// (default 25).
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
-	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4].
+	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4 p1 @01:26–01:30].
 	ISBReverseEMA9Enabled bool
 	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
 	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m
@@ -321,8 +325,16 @@ type Config struct {
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
-	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; worked example 5–15 [D2.2 p1 @ 06:50])
+	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
 	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
+	// RollingPHL (m216/m225, DS-102) turns on the D2.2 pullback-continuation
+	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
+	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
+	// until it fills. Level touches stay first-touch-fixed (touch.go). Default
+	// OFF — it is a NEW #45 entry source; the multi-day replay re-baseline
+	// (DS-108) flips it ON before the #45 merge [D2.2 p1 @02:44–03:34,
+	// 11:05–11:36].
+	RollingPHL bool
 
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
@@ -332,15 +344,15 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true: the HTF gate applies only inside the
-	// 07:20–07:35 CT news window; ordinary intraday entries are not
-	// HTF-gated. false (default, owner decision A 2026-10-21 m134 "fix
-	// all"): the 4h/1h direction gate applies ALL DAY — every entry side
-	// must obey the 4h/1h verdict (case 1/2/3). Owner order 2026-10-17 had
-	// set NEWS-ONLY = ON; owner decision A reverses the default. Stored
-	// strategies carry no htf_gate_news_only key, so the new default applies
-	// at the next trader load; an explicit stored true stays news-only, and
-	// none exists today.
+	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies inside
+	// the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the
+	// open is like news" [D4.4 p2 @00:35–00:46]; the open length is
+	// [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
+	// windows are not HTF-gated. false (owner decision A 2026-10-21 m134 "fix
+	// all", REVERTED by #45): the 4h/1h direction gate applies ALL DAY. Stored
+	// strategies carry no htf_gate_news_only key, so the new default applies at
+	// the next trader load; an explicit stored false stays all-day, and none
+	// exists today.
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -352,7 +364,7 @@ type Config struct {
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
-	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @ 15:57]
+	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @16:05-16:11]
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
 	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the
@@ -552,19 +564,20 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 		PHLEntryBufferPts:        1.0,
+		RollingPHL:               false, // D2.2 pullback-continuation rolling stop entry — OFF until the #45 replay re-baseline flips it ON [@02:44–03:34, 11:05–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // D4.4-11: gate ALL DAY (owner decision A 2026-10-21 m134; was news-only owner order 2026-10-17)
-		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
-		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS + OPEN windows (the mentor's rule; #45 reverts owner decision A 2026-10-21 m134 all-day)
+		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
-		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:17–06:37)
-		PingPongCandleLookback: 30, // B21 [C: ours]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
+		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:31–05:37; the 100-pt range = candles ~20)
+		PingPongCandleLookback: 30, // B21 [C: ours — the 30-bar window; the 20-pt cap itself matches D4.2 p2 @05:31–05:37]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
 		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
-		EmaMaxCross30m:         2,  // E4 (item 16): default ON, most conservative — mentor question open (no count in the course)
+		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
 		RangeGapPts:            0,
 
 		DayGateSpentPts:     300,
@@ -719,6 +732,10 @@ func bucketOpen(openMs int64, tfMin int) int64 {
 const (
 	FlagISBAtOldExtreme = "isb_at_old_extreme"
 	FlagISBInRange      = "isb_in_range"
+	// FlagPullbackWarn is the X11 pullback-warning size cut: a 5m candle that
+	// breaks the prior 5m candle's low in a 5m uptrend warns of a pullback, so
+	// the entry sizes down [X11 @13:21–15:02, quote @14:50–15:00].
+	FlagPullbackWarn = "pullback_warn"
 )
 
 // HasFlag reports whether the "|"-joined Intent.Flag contains the exact flag.

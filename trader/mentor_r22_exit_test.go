@@ -271,11 +271,11 @@ func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
 	}
 	b.book(r22RunnerBook(r22Entry)...) // NT8 applied it
 
-	// candle 3 (opened after the receipt) — high 30730.00 → trail to 30730.25.
+	// candle 3 (opened after the receipt) — high 30730.00 → trail to 30730.25 (high + 1 tick).
 	b.candle(r22Minute(3), 30725.00, 30730.00, 30720.00, 30722.00)
 	got = b.waitMoves(2)
 	if len(got) != 2 || got[1].Leg != 2 || got[1].NewStopLoss != 30730.25 {
-		t.Fatalf("the trail must move leg 2 to 1 tick above the closed candle's high (30730.25); got %+v", got)
+		t.Fatalf("the trail must move leg 2 to one tick beyond the closed candle's high (30730.25); got %+v", got)
 	}
 	if n := b.at.mentorCountSnapshot()["stop_move_confirmed"]; n != 1 {
 		t.Fatalf("the BE move must be CONFIRMED from the broker book, stop_move_confirmed=%d", n)
@@ -287,11 +287,11 @@ func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
 	if got = b.waitMoves(2); len(got) != 2 {
 		t.Fatalf("a higher high must move nothing for a short; got %+v", got)
 	}
-	// candle 5 — a lower high (30726.50) → 30726.75.
+	// candle 5 — a lower high (30726.50) → 30726.75 (high + 1 tick).
 	b.candle(r22Minute(5), 30733.00, 30726.50, 30715.00, 30716.00)
 	got = b.waitMoves(3)
 	if len(got) != 3 || got[2].NewStopLoss != 30726.75 {
-		t.Fatalf("a lower high must trail the stop down to 30726.75; got %+v", got)
+		t.Fatalf("a lower high must trail the stop down to 30726.75 (high + 1 tick); got %+v", got)
 	}
 	for _, m := range got {
 		if m.Leg != 2 {
@@ -361,7 +361,7 @@ func TestR22RefusedBENeverArmsInBelief(t *testing.T) {
 
 // TestR22LongTrailHigherLowUpLowerLowNoMove — the long mirror at the wire, with
 // an off-grid averaged entry: BE rounds TOWARD PROFIT (30820.10 → 30820.25);
-// a higher low moves the stop up to 1 tick under it; a lower low moves nothing.
+// a higher low moves the stop up to one tick below it (the low − 1 tick — D2.4 @08:11–08:24); a lower low moves nothing.
 func TestR22LongTrailHigherLowUpLowerLowNoMove(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	sig := "68be9062-a901-418f-b3de-59e1882f79c2"
@@ -375,10 +375,10 @@ func TestR22LongTrailHigherLowUpLowerLowNoMove(t *testing.T) {
 		t.Fatalf("BE on an off-grid long entry 30820.10 must round toward profit to 30820.25; got %+v", got)
 	}
 	b.book(r22StopOrder(sig+"-sl2", 30820.25, 1), r22TP(sig+"-tp2", 30839.00, 1))
-	b.candle(r22Minute(1), 30825.00, 30828.00, 30823.00, 30827.00) // higher low 30823 → 30822.75
+	b.candle(r22Minute(1), 30825.00, 30828.00, 30823.00, 30827.00) // higher low 30823 → 30822.75 (low − 1 tick)
 	got = b.waitMoves(2)
 	if len(got) != 2 || got[1].NewStopLoss != 30822.75 {
-		t.Fatalf("a higher low must move the stop UP to 30822.75; got %+v", got)
+		t.Fatalf("a higher low must move the stop UP to 30822.75 (low − 1 tick); got %+v", got)
 	}
 	b.book(r22StopOrder(sig+"-sl2", 30822.75, 1), r22TP(sig+"-tp2", 30839.00, 1))
 	b.candle(r22Minute(2), 30827.00, 30829.00, 30821.00, 30824.00) // lower low → no move
@@ -389,10 +389,10 @@ func TestR22LongTrailHigherLowUpLowerLowNoMove(t *testing.T) {
 
 // TestR22NeverWidenJudgedAgainstTheBroker — P2-3 at the wire: the owner moved
 // the runner's stop BY HAND to 30728.00 (tighter than the bot's belief
-// 30742.25). The next candle's trail candidate 30730.25 is tighter than the
+// 30742.25). The next candle's trail candidate 30730.00 is tighter than the
 // belief but WIDER than the broker: nothing is sent, the refusal is counted,
 // and the belief takes the broker's stop. Mutant M1 (drop the broker-tighter
-// refusal) sends 30730.25 → RED.
+// refusal) sends 30730.00 → RED.
 func TestR22NeverWidenJudgedAgainstTheBroker(t *testing.T) {
 	b := r22Fixture(t, store.RiskControlConfig{})
 	b.positions("short", 1)
@@ -655,8 +655,8 @@ func TestR22Candle3PartialLosingCloseDoesNothing(t *testing.T) {
 
 // TestR22RestartMidTrailResumesTheStage — after a restart the stage is
 // re-derived from the ledger + the broker (the rebuild inside the production
-// drive): (a) leg 1 gone and the runner already trailed to 30730.25 → the next
-// candle TRAILS (30726.75), no BE re-send; (b) leg 1 gone and the runner still
+// drive): (a) leg 1 gone and the runner already trailed to 30730.00 → the next
+// candle TRAILS (30726.75, high + 1 tick), no BE re-send; (b) leg 1 gone and the runner still
 // at the original stop → the next candle sends BE.
 func TestR22RestartMidTrailResumesTheStage(t *testing.T) {
 	for _, tc := range []struct {
@@ -664,7 +664,7 @@ func TestR22RestartMidTrailResumesTheStage(t *testing.T) {
 		runnerStop float64
 		want       float64
 	}{
-		{"trail stage", 30730.25, 30726.75},
+		{"trail stage", 30730.00, 30726.75},
 		{"BE stage", r22Stop, r22Entry},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

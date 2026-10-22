@@ -15,8 +15,8 @@ import (
 
 func doneAfterWinRig(t *testing.T, dayStart string) (*AutoTrader, *store.Store) {
 	t.Helper()
-	// owner order 2026-10-16: nil → OFF — these NY-day pins exercise the ON
-	// path, so the switch is explicit true.
+	// m186: nil → ON (the course default). These NY-day pins exercise the ON
+	// path explicitly so they stay exact regardless of the nil default.
 	rc := store.RiskControlConfig{MentorMode: true, MentorDoneAfterWin: bp(true)}
 	if dayStart != "" {
 		rc.MentorDoneAfterWinDayStart = dayStart
@@ -62,27 +62,27 @@ func pinDoneAfterWinClock(t *testing.T, d, h, m int) {
 	setMentorNowSource(func() time.Time { return fixed })
 }
 
-// ── MENTOR-DONE-AFTER-WIN default OFF (owner order 2026-10-16) ─────────────
-// The switch is nil → OFF (owner order 2026-10-16: "it's been off … follow
-// it"); only an EXPLICIT true turns the rule on. These pins run the production
+// ── MENTOR-DONE-AFTER-WIN default ON (the course default; m186) ────────────
+// The switch is nil → ON (the course default, D1.2 p2 @06:09 "làm ơn đóng máy
+// lại"); only an EXPLICIT false turns it off. These pins run the production
 // gate AND the sweep half (mentorDoneAfterWinTripped — the same function the
 // truth panel and the day-stop cancel read).
 
-// TestDoneAfterWinNilDefaultsOff is the ANCHORED MUTANT: if the nil default is
-// flipped back to ON, the #660 scratch (+$31.50 at 11:02 on a net-positive day)
-// refuses again and this test goes RED. Production call site: the gate and the
-// sweep.
-func TestDoneAfterWinNilDefaultsOff(t *testing.T) {
+// TestDoneAfterWinNilDefaultsOn is the ANCHORED MUTANT: if the nil default is
+// flipped back to OFF, the #660 scratch (+$31.50 at 11:02 on a net-positive day)
+// no longer refuses and this test goes RED. Production call site: the gate and
+// the sweep.
+func TestDoneAfterWinNilDefaultsOn(t *testing.T) {
 	at, st := doneAfterWinRig(t, "") // explicit true, then nil it below
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
 	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // 10-16 #660: a +$31.50 scratch
 
 	pinDoneAfterWinClock(t, 8, 11, 3)
-	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
-		t.Fatalf("nil → OFF: the +$31.50 scratch must NOT stop the day (refused: %s)", why)
+	if refuse, why := at.mentorDoneAfterWinGate(); !refuse || why == "" {
+		t.Fatalf("nil → ON: the +$31.50 scratch must stop the day (refuse=%v why=%q)", refuse, why)
 	}
-	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
-		t.Fatal("nil → OFF: the sweep must NOT trip on the scratch win")
+	if trip, why := at.mentorDoneAfterWinTripped(); !trip || why == "" {
+		t.Fatalf("nil → ON: the sweep must trip on the scratch win (trip=%v why=%q)", trip, why)
 	}
 }
 

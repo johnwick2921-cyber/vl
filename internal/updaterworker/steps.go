@@ -1074,11 +1074,13 @@ func (w *Worker) stepReleaseHold(ctx context.Context, j updaterjob.Job) stepResu
 	// is advisory: it never returns an error, so a friend failure can never
 	// send the owner's proven install to recovery_needed.
 	var friends []updaterjob.FriendResult
-	if err == nil && j.State == updaterjob.StateComplete {
-		sha := ""
-		if j.Release != nil {
-			sha = j.Release.SHA
-		}
+	// A CATCH-UP job (AddOn rebuild only) swaps no binary and carries no
+	// Release: sweeping then restarted every friend against an empty expected
+	// sha, so each restart was followed by a "boot check: \"\" is not a
+	// release sha" failure (2026-10-21 18:31:08, catchup-dmawoxw8lv4t). Friends
+	// are swept only by an install that has a release sha to prove.
+	if err == nil && j.State == updaterjob.StateComplete && !j.Catchup && j.Release != nil {
+		sha := j.Release.SHA
 		freceipts, fresults := w.updateFriends(ctx, sha)
 		receipts = append(receipts, freceipts...)
 		friends = fresults

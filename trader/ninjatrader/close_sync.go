@@ -4,6 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/json"
 	"fmt"
+	"math"
 	"strings"
 	"time"
 
@@ -234,7 +235,12 @@ func (t *TCPTrader) recordClose(
 			// column is non-NULL on every NEW close. The Δ≥$0.50 class-killer
 			// WARN lives inside the stamp. Skipped when the P&L is unknown: the
 			// row stays pnl_corrected NULL = UNRESOLVED.
-			st.StampPnlCorrectedOnClose(owner.ID, realizedPnL, realizedPnL)
+			//
+			// M251-S2: the builder writes realized_pnl = prior booked partial +
+			// this leg, so the stamp must be the TRUE TOTAL, not the leg alone
+			// (a +10 partial then a -20 leg is -10, not -20).
+			total := math.Round((owner.RealizedPnL+realizedPnL)*100) / 100
+			st.StampPnlCorrectedOnClose(owner.ID, total, total)
 		}
 		// WARN (honest-logs 2026-08-19): a position close with realized P&L is
 		// owner-visible truth — must reach the log_events sink + dashboard even

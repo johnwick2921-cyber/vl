@@ -200,8 +200,8 @@ type TraderPosition struct {
 	// E4 (wave 1A, 2026-09-02) — NULLABLE. `float64` with DEFAULT 0 could not
 	// tell a computed zero from a value nobody ever computed, and 517 of 586
 	// closed rows carried the never-computed pair (D15). nil means UNKNOWN.
-	MAE             *float64 `gorm:"column:mae;default:0" json:"mae"`
-	MFE             *float64 `gorm:"column:mfe;default:0" json:"mfe"`
+	MAE *float64 `gorm:"column:mae;default:0" json:"mae"`
+	MFE *float64 `gorm:"column:mfe;default:0" json:"mfe"`
 	// R22 P2 — NULLABLE like mae/mfe: a plan-arm entry carries NO AI
 	// confidence; the old int stored a fabricated 0 (#649/#650). nil = absent.
 	EntryConfidence *int `gorm:"column:entry_confidence;default:0" json:"entry_confidence"`
@@ -487,14 +487,16 @@ func (s *PositionStore) Create(pos *TraderPosition) error {
 func (s *PositionStore) ClosePosition(id int64, exitPrice float64, exitOrderID string, realizedPnL float64, fee float64, closeReason string) (bool, error) {
 	nowMs := time.Now().UTC().UnixMilli()
 	res := s.db.Model(&TraderPosition{}).Where("id = ? AND status = ?", id, "OPEN").Updates(map[string]interface{}{
-		"exit_price":    exitPrice,
-		"exit_order_id": exitOrderID,
-		"exit_time":     nowMs,
-		"realized_pnl":  realizedPnL,
-		"fee":           fee,
-		"status":        "CLOSED",
-		"close_reason":  closeReason,
-		"updated_at":    nowMs,
+		"exit_price":          exitPrice,
+		"exit_order_id":       exitOrderID,
+		"exit_time":           nowMs,
+		"realized_pnl":        realizedPnL,
+		"fee":                 fee,
+		"status":              "CLOSED",
+		"close_reason":        closeReason,
+		"pnl_corrected":       nil,
+		"pnl_correction_note": "reconcile close — pnl_corrected reset (a booked partial may be omitted; UNRESOLVED until the true total is stamped)",
+		"updated_at":          nowMs,
 	})
 	return res.RowsAffected > 0, res.Error
 }
@@ -516,6 +518,7 @@ func (s *PositionStore) ClosePositionUnresolved(id int64, note string) (bool, er
 		"fee":                 0.0,
 		"status":              "CLOSED",
 		"close_reason":        CloseReasonUnresolved,
+		"pnl_corrected":       nil,
 		"pnl_correction_note": note,
 		"updated_at":          nowMs,
 	})
@@ -645,6 +648,9 @@ func (s *PositionStore) ReducePositionQuantity(id int64, reduceQty float64, exit
 			"exit_time":    nowMs,
 			"close_reason": ExitCauseFromBroker(exitReason),
 			"updated_at":   nowMs,
+			// M251-S2: realized_pnl just changed, so any earlier pnl_corrected is stale.
+			"pnl_corrected":       nil,
+			"pnl_correction_note": "auto-close via partial reduction — pnl_corrected reset (UNRESOLVED until the true total is stamped)",
 		}).Error
 	}
 
@@ -681,15 +687,17 @@ func (s *PositionStore) ClosePositionFully(id int64, exitPrice float64, exitOrde
 	}
 
 	return s.db.Model(&TraderPosition{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"quantity":      quantity,
-		"exit_price":    exitPrice,
-		"exit_order_id": exitOrderID,
-		"exit_time":     exitTimeMs,
-		"realized_pnl":  totalRealizedPnL,
-		"fee":           totalFee,
-		"status":        "CLOSED",
-		"close_reason":  closeReason,
-		"updated_at":    time.Now().UTC().UnixMilli(),
+		"quantity":            quantity,
+		"exit_price":          exitPrice,
+		"exit_order_id":       exitOrderID,
+		"exit_time":           exitTimeMs,
+		"realized_pnl":        totalRealizedPnL,
+		"fee":                 totalFee,
+		"status":              "CLOSED",
+		"close_reason":        closeReason,
+		"pnl_corrected":       nil,
+		"pnl_correction_note": "close — pnl_corrected reset (a booked partial may be omitted; UNRESOLVED until the true total is stamped)",
+		"updated_at":          time.Now().UTC().UnixMilli(),
 	}).Error
 }
 
@@ -709,6 +717,28 @@ func (s *PositionStore) GetOpenPositions(traderID string) ([]*TraderPosition, er
 	}
 
 	// Fix EntryQuantity if it's 0
+	for _, pos := range positions {
+		if pos.EntryQuantity == 0 {
+			pos.EntryQuantity = pos.Quantity
+		}
+	}
+	return positions, nil
+}
+
+// GetHistoryPositions is the trade-history list: CLOSED rows PLUS open rows that
+// have already booked a partial leg (realized_pnl != 0) — m232, the owner-visible
+// partial exit. Ordered by the row's last activity (exit_time for closed,
+// updated_at for an open partial). The caller labels an OPEN row "partial".
+func (s *PositionStore) GetHistoryPositions(traderID string, limit int, account ...string) ([]*TraderPosition, error) {
+	var positions []*TraderPosition
+	q := s.db.Where("trader_id = ? AND (status = ? OR (status = ? AND realized_pnl <> 0))", traderID, "CLOSED", "OPEN")
+	if len(account) > 0 && account[0] != "" {
+		q = q.Where("account = ?", account[0])
+	}
+	err := q.Order("CASE WHEN exit_time > 0 THEN exit_time ELSE updated_at END DESC").Limit(limit).Find(&positions).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to query position history: %w", err)
+	}
 	for _, pos := range positions {
 		if pos.EntryQuantity == 0 {
 			pos.EntryQuantity = pos.Quantity
@@ -966,14 +996,16 @@ func (s *PositionStore) nullEntryConfidence(pos *TraderPosition, absent bool) er
 // exitTimeMs is Unix milliseconds UTC
 func (s *PositionStore) ClosePositionWithAccurateData(id int64, exitPrice float64, exitOrderID string, exitTimeMs int64, realizedPnL float64, fee float64, closeReason string) error {
 	return s.db.Model(&TraderPosition{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"exit_price":    exitPrice,
-		"exit_order_id": exitOrderID,
-		"exit_time":     exitTimeMs,
-		"realized_pnl":  realizedPnL,
-		"fee":           fee,
-		"status":        "CLOSED",
-		"close_reason":  closeReason,
-		"updated_at":    time.Now().UTC().UnixMilli(),
+		"exit_price":          exitPrice,
+		"exit_order_id":       exitOrderID,
+		"exit_time":           exitTimeMs,
+		"realized_pnl":        realizedPnL,
+		"fee":                 fee,
+		"status":              "CLOSED",
+		"close_reason":        closeReason,
+		"pnl_corrected":       nil,
+		"pnl_correction_note": "close — pnl_corrected reset (a booked partial may be omitted; UNRESOLVED until the true total is stamped)",
+		"updated_at":          time.Now().UTC().UnixMilli(),
 	}).Error
 }
 
