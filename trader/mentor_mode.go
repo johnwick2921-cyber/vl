@@ -58,19 +58,18 @@ const (
 // mentorTierInputs is everything the size table reads. The trader computes
 // these from the intent + evaluator filters; tests pin the table itself.
 type mentorTierInputs struct {
-	Setup         string  // "ISB", "PHL", "PLH", "SWING4H"
-	StopPts       float64 // |entry - stop|
-	TargetPts     float64 // |target - entry|
-	RoomMultiple  float64 // reward/risk actually available
-	Confluence    bool    // box/zone + key level + 5m trigger agreeing (§6)
-	HTFAgree      bool    // 4h AND 1h agree
-	SpentDay      bool    // §7 spent day
-	StrongDay     bool    // S9: 5m candles running 50–80 pts → size 1–2
+	Setup        string  // "ISB", "PHL", "PLH", "SWING4H"
+	StopPts      float64 // |entry - stop|
+	TargetPts    float64 // |target - entry|
+	RoomMultiple float64 // reward/risk actually available
+	Confluence   bool    // box/zone + key level + 5m trigger agreeing (§6)
+	HTFAgree     bool    // 4h AND 1h agree
+	SpentDay     bool    // §7 spent day
+	StrongDay    bool    // S9: 5m candles running 50–80 pts → size 1–2
 
-	ISBOldExtreme bool    // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
-	ISBInRange    bool    // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
-	PullbackWarn  bool    // X11: 5m candle broke the prior 5m low in a 5m uptrend → size down [X11 @13:21–15:02]
-
+	ISBOldExtreme bool // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
+	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
+	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend → size down [X11 @13:21–15:02]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
