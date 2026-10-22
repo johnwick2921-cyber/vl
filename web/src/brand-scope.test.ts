@@ -1,12 +1,15 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
 // Wire baselines advanced 2026-10-21 for release #43 re-integration:
-//   ninjascript/VLTraderTCPClient.cs sha256 de57c6c1… — reconnect backoff resets
+//   ninjascript/VLTraderTCPClient.cs sha256 2ddf4fad… — reconnect backoff resets
 //     only on the server hello, hello-first write gate, unreadable connect.json
 //     classified corrupt, empty-key error (fix/addon-reconnect-json 9639e2e5b,
 //     DS-103) and VL_BUILD_ID advances to 2026-10-21-c; the order name / account
 //     / signal-id contract is untouched. #45: bug-hunt #4 (m227 25e3743dc, DS-103)
 //     re-keys the order_update de-dupe to state:filled so each larger PartFilled
 //     partial is sent — the order-name / account / signal-id contract is untouched.
+//     #46: m337 (f9dfe5e14, DS-103) bumps VL_BUILD_ID to 2026-10-22-a and adds a
+//     sha256 guard over all 6 ninjascript/*.cs files (trader/addon_source_snapshot_test.go);
+//     the wire / order-name / account / signal-id contract is untouched.
 //   provider/ninjatrader/tcp_server.go  sha256 a59169a4… — connect-key auth gate
 //     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
 //     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
