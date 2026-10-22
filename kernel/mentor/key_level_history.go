@@ -17,20 +17,24 @@ import (
 // @11:20), so older contracts are stitched onto today's contract price scale
 // through a MEASURED roll gap — never a guessed one.
 
-// Roll-gap rule (CTO REL10-438-FIXES #1):
+// Roll-gap rule (CTO REL10-438-FIXES #1; m335 correction):
 //   - The ROLL of a pair = the first session day (17:00 CT flip) on which the
 //     NEWER contract has >= denseFront1mMin 1m bars (dense live/front).
 //   - The gap = the median of (newer.close − older.close) over the overlapping
-//     NATIVE 1h bars of the last FULL session day before the roll — the last
-//     session day before the roll day with at least minRollOverlap overlapping
-//     1h bars. The whole-overlap median is wrong: the spread ranges widely
-//     (measured 258.25..352.25 over 1493 bars), so the gap must be read at the
-//     roll boundary, not across three months.
-//   - Fewer than minRollOverlap overlapping bars → no measured gap → the
+//     NATIVE 1h bars of the SESSION-OPEN EVENING (17:00–23:59 CT) of the last
+//     FULL session day before the roll — the last session day before the roll
+//     day with at least minRollOverlap overlapping 1h bars. The whole-day
+//     median is WRONG (m335): the Sep/Dec basis is stable ~291 through the
+//     evening, then DRIFTS UP through RTH (measured 289.25..299.75 on
+//     2026-09-11 alone; the whole-day median 293.0 reads 2.00 high vs the
+//     served klines' 291 roll basis). The gap must be read at the roll
+//     boundary (the 17:00 session open), before the RTH drift.
+//   - Fewer than minEveningOverlap evening bars → no measured gap → the
 //     stitch STOPS (never guess a gap).
 const (
-	denseFront1mMin = 1000
-	minRollOverlap  = 10
+	denseFront1mMin   = 1000
+	minRollOverlap    = 10
+	minEveningOverlap = 7 // the evening session (17:00–23:59 CT) holds 7 native 1h bars
 )
 
 // Contract1M is one contract's 1m history (ascending OpenTime), on its OWN
@@ -146,26 +150,28 @@ func lastFullOverlapBefore(newer1h, older1h []market.Kline, rollDay string) stri
 }
 
 // measureRollGap returns the median of (newer.close − older.close) over the
-// native 1h bars of both contracts at the SAME OpenTime on the given session
-// day, plus that day's min/max spread. ok=false when fewer than
-// minRollOverlap bars overlap that day.
+// SESSION-OPEN EVENING (17:00–23:59 CT) native 1h bars of both contracts at
+// the SAME OpenTime on the given session day, plus that evening's min/max
+// spread. ok=false when fewer than minEveningOverlap bars overlap that
+// evening. The evening — not the whole day — is the roll boundary: the basis
+// is stable there and drifts up through RTH (m335).
 func measureRollGap(newer1h, older1h []market.Kline, day string) (RollGap, bool) {
 	m := make(map[int64]float64, len(newer1h))
 	for _, b := range newer1h {
-		if sessionKeyCT(b.OpenTime) == day {
+		if sessionKeyCT(b.OpenTime) == day && sessionOpenEveningCT(b.OpenTime) {
 			m[b.OpenTime] = b.Close
 		}
 	}
 	var diffs []float64
 	for _, b := range older1h {
-		if sessionKeyCT(b.OpenTime) != day {
+		if sessionKeyCT(b.OpenTime) != day || !sessionOpenEveningCT(b.OpenTime) {
 			continue
 		}
 		if nc, has := m[b.OpenTime]; has {
 			diffs = append(diffs, nc-b.Close)
 		}
 	}
-	if len(diffs) < minRollOverlap {
+	if len(diffs) < minEveningOverlap {
 		return RollGap{}, false
 	}
 	sort.Float64s(diffs)
@@ -176,6 +182,13 @@ func measureRollGap(newer1h, older1h []market.Kline, day string) (RollGap, bool)
 		Min: diffs[0],
 		Max: diffs[len(diffs)-1],
 	}, true
+}
+
+// sessionOpenEveningCT reports whether a bar opens in the evening session
+// (17:00–23:59 CT) — the hours right after the 17:00 CT session flip, before
+// the RTH basis drift. The roll gap is measured there.
+func sessionOpenEveningCT(ms int64) bool {
+	return time.UnixMilli(ms).In(ctime()).Hour() >= 17
 }
 
 // backAdjust shifts every OHLC of bars by gap onto the newest contract's

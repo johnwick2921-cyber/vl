@@ -60,6 +60,10 @@ type State struct {
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
 	Refusals map[string]int `json:"refusals,omitempty"`
+	// Counters is the B-rules NON-refusal event ledger (m296): events that
+	// neither drop nor refuse an intent but must still be diffable against the
+	// replay funnel (e.g. the open5m fail-open on a missing range).
+	Counters map[string]int `json:"counters,omitempty"`
 	// Trigger is the 5m trigger-line state (§5.1).
 	Trigger TriggerLine `json:"trigger"`
 	// HTF is the §5.4 4h/1h direction state (DS-106, fold item 3).
@@ -161,6 +165,11 @@ type State struct {
 	Seed1mWatermark         int64   `json:"seed_1m_watermark,omitempty"`
 	EMA34                   float64 `json:"ema34,omitempty"` // 1m EMA 34 (incremental)
 	EMA9                    float64 `json:"ema9,omitempty"`  // 1m EMA 9 (incremental)
+	// EMA34Warmed (m327 b) marks that the seed actually folded ≥1 closed 1m bar
+	// into State.EMA34 — a nil-bar / fail-closed seed leaves it false, so the
+	// EMA-location level must NOT read the garbage State.EMA34 that seededLevels
+	// would advance from 0. Never reset to false once the EMA is warm.
+	EMA34Warmed bool `json:"ema34_warmed,omitempty"`
 
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
@@ -744,6 +753,15 @@ func (e *Evaluator) refuse(reason string) {
 	e.State.Refusals[reason]++
 }
 
+// count records a B-rules NON-refusal event (m296): an event that neither drops
+// nor refuses an intent but must still be diffable against the replay funnel.
+func (e *Evaluator) count(reason string) {
+	if e.State.Counters == nil {
+		e.State.Counters = map[string]int{}
+	}
+	e.State.Counters[reason]++
+}
+
 // boxBanFilter drops entry intents whose entry price — or whose reference
 // candle close — sits INSIDE a box: "NEVER trade inside the box, neither the
 // candle nor your entry point" [D3.2 p1 @ 06:59]. Leaving the box is NOT itself
@@ -948,8 +966,6 @@ func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
 // isbFlagsFor is the production flag resolver: isbFlags plus the WIDENED rule-3
 // "in range" (item 21) — the standing 5m ISB box and the narrow (< ping-pong
 // minimum) range also set isb_in_range, so an ISB inside them gets the
-
-
 
 // compulsory size cut [D4.1 p1 @04:47–05:04 written rule 3].
 // joinFlag ORs a flag onto a "|"-joined flag string (idempotent).
@@ -1684,7 +1700,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			levels = append(levels, wl)
 		}
 	}
-	if el, ok := EMALocationLevel(bars, e.Cfg); ok {
+	if el, ok := e.emaLocationLevel(bars, e.Cfg); ok {
 		levels = append(levels, el)
 	}
 
@@ -2885,9 +2901,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// allowed only after a 5m candle has closed outside the opening 5m range
 	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
 	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
-	out, refused = open5mRangeFilter(out, e.State.HTF, bars, now)
+	out, refused, open5mNotes := open5mRangeFilter(out, e.State.HTF, bars, now)
 	for _, r := range refused {
 		e.refuse(r)
+	}
+	for _, n := range open5mNotes {
+		e.note("%s", n)
+		if n == open5mMissingNote {
+			e.count(open5mMissingNote)
+		}
 	}
 
 	// Seed depth advances from the evaluator's own state as bars arrive, so a
@@ -3256,6 +3278,22 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 		out = append(out, in)
 	}
 	return out, dropped
+}
+
+// emaLocationLevel (m327 b) is the location-gate EMA 34 line, from ONE source.
+// At EMALocationTFMinutes==1 the line IS the evaluator's own incremental 1m
+// EMA 34 (State.EMA34) — the same number the KindEMA34 level carries, never a
+// second EMA computed over the tick slice's head (which used to diverge by the
+// slice-head seed). At any other TF it is the emaValue over the requested TF's
+// closed buckets (EMALocationLevel). It only reads State.EMA34 once the seed
+// actually folded a 1m bar into it (EMA34Warmed): a nil-bar / fail-closed seed
+// leaves it cold and seededLevels would advance State.EMA34 from 0 into garbage
+// — in that case it falls back to EMALocationLevel.
+func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
+	if cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
+		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34}, true
+	}
+	return EMALocationLevel(bars, cfg)
 }
 
 // seededLevels is the Tick level source after Seed: SeedLevels (full stored

@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/market"
 )
 
@@ -424,9 +425,8 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 
 // TestLateDaySwingCut — m186 D5.2 late-day target cut [derived: D5.2 p2
 // @07:00–07:58]. Inside the LAST 4h bucket (13:00 CT normal) the target is
-// capped at 25 (mid 20–30 [D5.2 p2 @07:21]); if the capped target < the stop
-// distance the entry is REFUSED (1:1 mandatory "trong bất kỳ tình huống nào"
-// [D1.2 p1 @08:02]). Outside the bucket → unchanged.
+// capped at 30 pts (top of 20–30 [D5.2 p2 @07:21]); a stop wider than 30 cannot
+// meet 1:1 under that cut → REFUSED [D1.2 p1 @08:02] (m331 B3 CTO ruling).
 func TestLateDaySwingCut(t *testing.T) {
 	// Sep 15 2026 is a normal session day (16:00 CT close).
 	sep15_1400 := time.Date(2026, 9, 15, 14, 0, 0, 0, ctime()).UnixMilli()
@@ -436,18 +436,32 @@ func TestLateDaySwingCut(t *testing.T) {
 		t.Fatalf("lastSessionBucket(14:00 CT) = %s, want 13:00 CT", time.UnixMilli(last).In(ctime()).Format("15:04"))
 	}
 
-	// inside the late bucket, stop 20 → target 25 taken (25 >= 20)
-	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 25, 20); !late || !ok || cut != 25 {
-		t.Fatalf("stop 20 in-bucket: cut=%v late=%v ok=%v, want 25 true true", cut, late, ok)
+	// PRICES (Intent.Target is a price). Long entry 30000.
+	cases := []struct {
+		name         string
+		side         Side
+		target, risk float64
+		wantCut      float64
+		wantOK       bool
+	}{
+		{"risk20 dist50 -> dist30", SideLong, 30050, 20, 30030, true},
+		{"risk30 dist50 -> 30 (1:1)", SideLong, 30050, 30, 30030, true},
+		{"risk40 dist50 -> 40 (floor)", SideLong, 30050, 40, 30040, true},
+		{"short risk40 dist50 -> 40", SideShort, 29950, 40, 29960, true},
+		{"risk25 dist22 -> untouched (non-late 1:1 gate)", SideLong, 30022, 25, 30022, true},
+		{"short risk20 dist50 -> dist30", SideShort, 29950, 20, 29970, true},
+		{"risk0 -> refused", SideLong, 30050, 0, 30050, false},
 	}
-	// inside the late bucket, stop 40 → refused (capped 25 < 40)
-	if cut, late, ok := lateDaySwingCut(last, sep15_1400, 50, 40); !late || ok || cut != 25 {
-		t.Fatalf("stop 40 in-bucket: cut=%v late=%v ok=%v, want 25 true false", cut, late, ok)
+	for _, c := range cases {
+		cut, late, ok := lateDaySwingCut(last, sep15_1400, c.side, 30000, c.target, c.risk)
+		if !late || ok != c.wantOK || cut != c.wantCut {
+			t.Fatalf("%s: cut=%v late=%v ok=%v, want %v true %v", c.name, cut, late, ok, c.wantCut, c.wantOK)
+		}
 	}
 	// outside the late bucket (09:00) → unchanged
 	outside := time.Date(2026, 9, 15, 9, 0, 0, 0, ctime()).UnixMilli()
-	if cut, late, ok := lateDaySwingCut(outside, outside, 50, 40); late || !ok || cut != 50 {
-		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 50 false true", cut, late, ok)
+	if cut, late, ok := lateDaySwingCut(outside, outside, SideLong, 30000, 30050, 40); late || !ok || cut != 30050 {
+		t.Fatalf("outside bucket: cut=%v late=%v ok=%v, want 30050 false true", cut, late, ok)
 	}
 }
 
@@ -575,17 +589,16 @@ func TestSwing4hBEAndHold(t *testing.T) {
 		t.Fatalf("no BE intent at +1R; got %+v", out)
 	}
 	// D5.2 p1 @06:03–06:20: hold ONE 4h candle. Entry bucket is 05:00, so the
-	// hold limit is 09:00 — a bar BEFORE 09:00 must NOT close, and the bar
-	// at/after 09:00 must close. MUTANT: Hold4hBars=2 → the 09:05 bar does not
-	// close (holdMs 13:00) → RED.
-	before := append(beBars, mk5m(t, 15, 8, 55, 10095, 10100, 10090, 10095))
+	// hold ends at the close of the NEXT 4h candle (09:00 bucket) = 13:00 — a bar BEFORE 13:00 must NOT close, and the bar
+	// at/after 13:00 must close. MUTANT: old entryBucket+N*4h → closes at 09:00 → RED.
+	before := append(beBars, mk5m(t, 15, 12, 55, 10095, 10100, 10090, 10095))
 	out2 := SwingTick(s, before, cfg, before[len(before)-1].OpenTime+60_000)
 	for _, in := range out2 {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("must NOT close before the 1st-4h-candle hold limit (08:55 < 09:00); got %+v", out2)
+			t.Fatalf("must NOT close before the 1st-4h-candle hold limit (12:55 < 13:00); got %+v", out2)
 		}
 	}
-	atClose := append(before, mk5m(t, 15, 9, 5, 10095, 10100, 10090, 10095))
+	atClose := append(before, mk5m(t, 15, 13, 5, 10095, 10100, 10090, 10095))
 	out3 := SwingTick(s, atClose, cfg, atClose[len(atClose)-1].OpenTime+60_000)
 	var closed bool
 	for _, in := range out3 {
@@ -594,7 +607,7 @@ func TestSwing4hBEAndHold(t *testing.T) {
 		}
 	}
 	if !closed {
-		t.Fatalf("no close at the ONE-4h-candle hold limit (09:05 ≥ 09:00); got %+v", out3)
+		t.Fatalf("no close at the ONE-4h-candle hold limit (13:05 ≥ 13:00); got %+v", out3)
 	}
 }
 
@@ -717,7 +730,7 @@ func TestSwingRebuildPosAlreadyAtBESendsNoSecondBE(t *testing.T) {
 // hold-close fires at the END of ONE 4h candle (bucket+4h). The entry bar sits
 // LATE in its 4h bucket (08:55 = 3h55m into the 05:00 bucket), so the bucket
 // math — not a round number — decides the boundary: no close on a bar before
-// 09:00, close ON the first bar at/after 09:00. A mutant that reverts
+// 09:00, close ON the first bar at/after 13:00. A mutant that reverts
 // Hold4hBars to 2 moves the boundary to 13:00 and misses the 09:00 close → RED.
 func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	cfg := DefaultSwingCfg()
@@ -733,16 +746,16 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: entryBucket, ArmID: "swing-late"}) {
 		t.Fatal("RebuildSwingPos refused a valid swing")
 	}
-	// a 5m bar BEFORE the boundary (holdMs = 05:00 + 1×4h = 09:00): 08:55
-	preBars := append(base, mk5m(t, 15, 8, 55, 10130, 10140, 10125, 10135))
+	// a 5m bar BEFORE the boundary (holdMs = close of the 09:00 candle = 13:00): 12:55
+	preBars := append(base, mk5m(t, 15, 12, 55, 10130, 10140, 10125, 10135))
 	out := SwingTick(s, preBars, cfg, preBars[len(preBars)-1].OpenTime+60_000)
 	for _, in := range out {
 		if in.Action == ActionClosePosition {
-			t.Fatalf("no hold-close before the ONE-candle boundary (08:55 < 09:00); got %+v", out)
+			t.Fatalf("no hold-close before the ONE-candle boundary (12:55 < 13:00); got %+v", out)
 		}
 	}
 	// the FIRST bar at/after the boundary: 09:00 → close
-	postBars := append(preBars, mk5m(t, 15, 9, 0, 10130, 10140, 10125, 10135))
+	postBars := append(preBars, mk5m(t, 15, 13, 0, 10130, 10140, 10125, 10135))
 	out2 := SwingTick(s, postBars, cfg, postBars[len(postBars)-1].OpenTime+60_000)
 	var closed bool
 	for _, in := range out2 {
@@ -751,7 +764,7 @@ func TestSwingRebuildPosHoldBoundary(t *testing.T) {
 		}
 	}
 	if !closed {
-		t.Fatalf("hold-close must fire on the first bar at/after the ONE-candle boundary (09:00); got %+v", out2)
+		t.Fatalf("hold-close must fire on the first bar at/after the ONE-candle boundary (13:00); got %+v", out2)
 	}
 }
 
@@ -801,7 +814,7 @@ func TestSwingNeverFillsSendsNoManage(t *testing.T) {
 	if s.Pos != nil {
 		t.Fatalf("a bar that does not trade through the entry must not open a position, got %+v", s.Pos)
 	}
-	// The hold boundary (Hold4hBars=1 → the 05:00 bucket holds to 09:00): the
+	// The hold boundary (Hold4hBars=1 → the 05:00 bucket holds to 13:00): the
 	// doji at 10156 neither fills the sell stop nor touches the flipped line.
 	late := append(rest, mk5m(t, 15, 9, 5, 10156, 10156, 10156, 10156))
 	out3 := SwingTick(s, late, cfg, late[len(late)-1].OpenTime+60_000)
@@ -847,5 +860,137 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 	}
 	if SwingMinStopRefused() == 0 {
 		t.Fatalf("the min-stop refusal must be counted")
+	}
+}
+
+// lateTape: closed 4h buckets 17:00,21:00,01:00,05:00,09:00 CT, then the
+// current 13:00 CT bucket (the LAST 4h bucket of a normal session) holds cur.
+func lateTape(t *testing.T, cur []market.Kline) []market.Kline {
+	t.Helper()
+	closed := []market.Kline{
+		mk5m(t, 14, 17, 5, 9999, 10000, 9998, 10000),
+		mk5m(t, 14, 21, 5, 10999, 11000, 10998, 11000),
+		mk5m(t, 15, 1, 5, 11999, 12000, 11998, 12000),
+		mk5m(t, 15, 5, 5, 11999, 12000, 11998, 12000),
+		mk5m(t, 15, 9, 5, 11999, 12000, 11998, 12000),
+	}
+	return append(closed, cur...)
+}
+
+// TestSwing4hLateDayRejectEnteredAtOneToOne — m331 B3 CTO final ruling [D5.2
+// p2 @07:21 cut to <=30; 03-CHECKLIST.md:160 1:1 floor]: a clean rejection in
+// the LAST 4h bucket with the DEFAULT stop (risk > 30) is ENTERED with target
+// = entry - risk (1:1); the cut never goes below 1:1. Early bucket unchanged.
+// Mutants: old price-vs-distance compare / floor removed -> RED.
+func TestSwing4hLateDayRejectEnteredAtOneToOne(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	probe := &SwingState{}
+	far := []market.Kline{mk5m(t, 15, 13, 0, 5000, 5001, 4999, 5000)}
+	SwingTick(probe, lateTape(t, far), cfg, far[0].OpenTime+60_000)
+	line := probe.Line
+	if line <= 0 {
+		t.Fatalf("line not seeded: %v", line)
+	}
+	// touch the placed line (line-offset), close back below -> clean reject
+	lo := line - cfg.LineOffsetPts - 1
+	cur := []market.Kline{
+		mk5m(t, 15, 13, 0, line-50, line-40, line-55, line-45), // prev: below the line
+		mk5m(t, 15, 13, 5, lo+0.4, line+5, lo, lo+0.5),         // touches, closes back below
+	}
+	s := &SwingState{}
+	out := SwingTick(s, lateTape(t, cur), cfg, cur[1].OpenTime+60_000)
+	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideShort {
+		t.Fatalf("late-bucket clean rejection with the default stop must ENTER, got %+v", out)
+	}
+	in := out[0]
+	risk := abs(in.Stop - in.Price)
+	if risk <= lateDaySwingTargetCap {
+		t.Fatalf("test premise: default-stop risk %.2f must exceed %.0f", risk, lateDaySwingTargetCap)
+	}
+	if abs((in.Price-in.Target)-risk) > 0.01 {
+		t.Fatalf("late target = %.2f, want entry-risk = %.2f (1:1)", in.Target, in.Price-risk)
+	}
+
+	// early bucket (05:00 CT current bucket): not late, target untouched (>= 1R)
+	early := []market.Kline{
+		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),
+	}
+	s2 := &SwingState{}
+	out2 := SwingTick(s2, swingTape(t, early), cfg, early[1].OpenTime+60_000)
+	if len(out2) != 1 {
+		t.Fatalf("early bucket: intents = %d, want 1", len(out2))
+	}
+	if _, late, _ := lateDaySwingCut(s2.BucketStart, early[1].OpenTime, out2[0].Side, out2[0].Price, out2[0].Target, abs(out2[0].Stop-out2[0].Price)); late {
+		t.Fatal("05:00 CT bucket must not be late")
+	}
+}
+
+// TestSwingHoldDeadlineBuckets (m332 B4, run under TZ=America/Chicago and UTC):
+// the hold ends at the close of the N-th 4h candle AFTER the entry candle,
+// stepped through the real 17:00 CT-anchored buckets — halt and weekend aware.
+// Mutant: holdMs = entryBucket + N*4h (the old arithmetic) → every row but the
+// first N=... differs → RED.
+func TestSwingHoldDeadlineBuckets(t *testing.T) {
+	ct := kernel.CTLocation()
+	at := func(m time.Month, d, h, mi int) int64 {
+		return time.Date(2026, m, d, h, mi, 0, 0, ct).UnixMilli()
+	}
+	cases := []struct {
+		name  string
+		entry int64 // entry time
+		n     int
+		want  int64
+	}{
+		// Wed 2026-10-14. Entry early in the 05:00 bucket: holds the whole
+		// 09:00 candle, ends at 13:00.
+		{"early in bucket", at(time.October, 14, 5, 5), 1, at(time.October, 14, 13, 0)},
+		// 5 min before the 05:00 bucket ends: still the 09:00 candle, 13:00.
+		{"5min before bucket end", at(time.October, 14, 8, 55), 1, at(time.October, 14, 13, 0)},
+		// 12:55 sits in the 09:00 bucket: holds through the 13:00 bucket
+		// (cut by the 16:00 halt), ends at the 17:00 anchor.
+		{"12:55 -> capped at the 16:00 halt", at(time.October, 14, 12, 55), 1, at(time.October, 14, 16, 0)},
+		{"09:05 N=2 capped 16:00", at(time.October, 14, 9, 5), 2, at(time.October, 14, 16, 0)},
+		// entered in the 13:00 (halt-cut) bucket: next candle is 17:00-21:00.
+		{"in the 13:00 bucket -> 16:00", at(time.October, 14, 15, 30), 1, at(time.October, 14, 16, 0)},
+		{"tuesday 17:05 uncapped", at(time.October, 13, 17, 5), 1, at(time.October, 14, 1, 0)},
+		// Friday 15:30 CT: never held through the weekend, capped at 16:00.
+		{"friday 15:30 -> Fri 16:00", at(time.October, 16, 15, 30), 1, at(time.October, 16, 16, 0)},
+	}
+	for _, c := range cases {
+		eb := fourHBucketStart(c.entry, nil)
+		if got := SwingHoldDeadline(eb, c.n); got != c.want {
+			t.Errorf("%s: deadline %s, want %s", c.name, time.UnixMilli(got).In(ct), time.UnixMilli(c.want).In(ct))
+		}
+	}
+}
+
+// TestSwingHoldCapFlattensOnLastBarBeforeHalt: a swing entered 12:55 (09:00
+// bucket) is flattened on the 15:55 bar (closes at the 16:00 halt) and NOT
+// carried through it; no close earlier. Mutant: remove the market-close cap →
+// no close on 15:55 → RED.
+func TestSwingHoldCapFlattensOnLastBarBeforeHalt(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	base := swingTape(t, nil)
+	s := &SwingState{}
+	_ = SwingTick(s, base, cfg, base[len(base)-1].OpenTime+60_000)
+	eb := fourHBucketStart(mk5m(t, 15, 12, 55, 0, 0, 0, 0).OpenTime, nil)
+	if !s.RebuildSwingPos(SwingRebuild{Side: SideLong, Entry: 10110, EntryStop: 10050, LiveStop: 10050, Target: 10250, EntryBucket: eb, ArmID: "swing-cap"}) {
+		t.Fatal("rebuild refused")
+	}
+	closes := func(h, m int) bool {
+		bars := append(base, mk5m(t, 15, h, m, 10130, 10140, 10125, 10135))
+		for _, in := range SwingTick(s, bars, cfg, bars[len(bars)-1].OpenTime+60_000) {
+			if in.Action == ActionClosePosition {
+				return true
+			}
+		}
+		return false
+	}
+	if closes(15, 50) {
+		t.Fatal("closed too early (15:50)")
+	}
+	if !closes(15, 55) {
+		t.Fatal("must flatten on the 15:55 bar (last before the 16:00 halt)")
 	}
 }

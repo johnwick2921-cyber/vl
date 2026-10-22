@@ -568,6 +568,12 @@ func clipBuildOut(out []byte) string {
 // returns the backup directory it created (or "" when there was nothing to back
 // up). On a sha mismatch the old DLL stays safe in the backup dir; the worker
 // must not let NT8 start until it restores or replaces the dest DLL.
+//
+// m343 (2026-10-22) — the backup is RECORDED, not just moved: Place writes a
+// sidecar meta (AddonBackupMetaName) next to the backed-up DLL with its sha256
+// and embedded build id, read at the moment it was moved out, so a later
+// restore can refuse a backup whose bytes no longer match what was recorded
+// (verify-on-restore).
 func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 	destDir := filepath.Join(c.DocsDir, "bin", "Custom")
 	if !isDir(destDir) {
@@ -581,8 +587,12 @@ func Place(c Config, dll, sha, jobID string) (backupDir string, err error) {
 		if err := os.MkdirAll(backupDir, 0o755); err != nil {
 			return "", fmt.Errorf("addonbuild: mkdir backup: %w", err)
 		}
-		if err := os.Rename(destDll, filepath.Join(backupDir, "VL.AddOn.dll")); err != nil {
+		backupDll := filepath.Join(backupDir, "VL.AddOn.dll")
+		if err := os.Rename(destDll, backupDll); err != nil {
 			return "", fmt.Errorf("addonbuild: move old dll: %w", err)
+		}
+		if err := WriteAddonBackupMeta(backupDir, backupDll); err != nil {
+			return "", fmt.Errorf("addonbuild: record backup meta: %w", err)
 		}
 	}
 

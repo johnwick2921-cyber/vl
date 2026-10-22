@@ -254,6 +254,13 @@ func (storeUnavailableError) Error() string { return "no store attached — dept
 // storeRowsToKlines adapts stored rows to the ONE Kline shape every reader uses.
 // CloseTime is derived from the timeframe exactly as the NT8 bridge derives it,
 // so a store-sourced bar and a ring-sourced bar are indistinguishable downstream.
+//
+// m326 (2026-10-22) — the read path RE-ANCHORS the NT8-native 16:00-close stub.
+// Rows persisted by a pre-m220/m134 binary sit ONE HOUR EARLY (the 4h 13:00
+// bucket at 12:00 CT, the 2h 15:00 bucket at 14:00 CT); ReanchorCMEStub is
+// idempotent (a correct row is untouched, a legacy stub shifts +1h), and when
+// BOTH the legacy and the corrected row are present they collapse to ONE bar —
+// the later, corrected stamp wins. No store write: this is display/read-only.
 func storeRowsToKlines(rows []store.BarHistoryDB, tf string) []market.Kline {
 	if len(rows) == 0 {
 		return nil
@@ -261,9 +268,14 @@ func storeRowsToKlines(rows []store.BarHistoryDB, tf string) []market.Kline {
 	durMs, _ := kernel.TFDurationMs(tf)
 	out := make([]market.Kline, 0, len(rows))
 	for _, r := range rows {
-		k := market.Kline{OpenTime: r.OpenTimeMs, Open: r.O, High: r.H, Low: r.L, Close: r.C, Volume: r.V}
+		ot := kernel.ReanchorCMEStub(tf, r.OpenTimeMs)
+		k := market.Kline{OpenTime: ot, Open: r.O, High: r.H, Low: r.L, Close: r.C, Volume: r.V}
 		if durMs > 0 {
-			k.CloseTime = r.OpenTimeMs + durMs - 1
+			k.CloseTime = ot + durMs - 1
+		}
+		if len(out) > 0 && out[len(out)-1].OpenTime == ot {
+			out[len(out)-1] = k // the corrected (later) stamp wins over the legacy stub
+			continue
 		}
 		out = append(out, k)
 	}

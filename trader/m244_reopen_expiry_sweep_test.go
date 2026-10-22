@@ -102,3 +102,53 @@ func TestM244ReopenExpirySweepOnlyOnTheEdge(t *testing.T) {
 		t.Fatalf("a fresh boot into an open market must NOT sweep (no edge), got state=%q", got.State)
 	}
 }
+
+// m330 B2 — the one-shot reopen sweep runs once per closed->open edge. A cancel
+// refused for a TRANSIENT reason (no fresh broker book) used to be dropped with
+// `continue`, leaving the row working with no second chance from this path.
+// It must be queued (cancel_pending) so the settlement pass re-requests it,
+// the same retry the inline sweep gets. MUTANT: restore the `continue` on the
+// no-book refusal in sweepDueExpiriesAtReopen → row stays working → RED.
+func TestM330B2ReopenSweepTransientRefusalIsQueuedForRetry(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	now := b3Clock(17, 1)
+	// Deliberately NO fresh snapshot at the pinned clock: the verdict is the
+	// transient "no broker book" refusal.
+	closed := false
+	at.cmePrevOpen = &closed
+	prev := testNow
+	testNow = func() time.Time { return now }
+	t.Cleanup(func() { testNow = prev })
+	seedM244Arm(t, at, ledger, "rest-due", store.StateWorking, "sig-rest-due", now.UnixMilli()-60_000)
+
+	at.sweepDueExpiriesAtReopen(now)
+
+	if got := readArmRow(t, ledger, "rest-due"); got.State != store.StateCancelPending {
+		t.Fatalf("a transiently-refused cancel must be queued (cancel_pending) for the settlement retry, got state=%q", got.State)
+	}
+}
+
+// A partially filled arm is never touched by the one-shot sweep, even when the
+// verdict would allow the cancel (entry resting, fresh book). The inline pass
+// owns it (remainder-only cancel + exit-drive hand-off).
+func TestM330B2ReopenSweepNeverTouchesPartiallyFilledArm(t *testing.T) {
+	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+	now := b3Clock(17, 1)
+	if srv := at.armedTrader().GetServer(); srv != nil {
+		srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, now)
+	}
+	prev := testNow
+	testNow = func() time.Time { return now }
+	t.Cleanup(func() { testNow = prev })
+	seedM244Arm(t, at, ledger, "partial", store.StateWorking, "sig-partial", now.UnixMilli()-60_000)
+	row := readArmRow(t, ledger, "partial")
+	if err := ledger.SetFillQuantity(row.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+
+	at.sweepDueExpiriesAtReopen(now)
+
+	if got := readArmRow(t, ledger, "partial"); got.State != store.StateWorking {
+		t.Fatalf("a partially filled arm must never be cancelled by the one-shot sweep, got state=%q", got.State)
+	}
+}

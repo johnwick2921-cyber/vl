@@ -39,6 +39,11 @@ type armCancelVerdict struct {
 	Why   string
 }
 
+// armCancelNoBookWhy is the refusal reason for an unreadable/stale broker book.
+// It is the ONE transient refusal (the book comes back); every other refusal is
+// a safety verdict about the arm itself. m330 B2 keys the sweep retry on it.
+const armCancelNoBookWhy = "no broker book — the entry cannot be shown to be resting, and cancelling blind can take a live protective stop with it"
+
 // entryIsResting reports whether the book holds a WORKING order that IS this
 // signal's entry — a bare name, not a bracket child.
 //
@@ -120,7 +125,7 @@ func adjudicateArmCancelWith(ledgerState, signalID string, book []nt.NT8Order, h
 	// THE BOOK DECIDES. The ledger is a memory; at 23:37:02 it was a minute out
 	// of date and that minute cost a stop.
 	if !haveBook {
-		return armCancelVerdict{false, "no broker book — the entry cannot be shown to be resting, and cancelling blind can take a live protective stop with it"}
+		return armCancelVerdict{false, armCancelNoBookWhy}
 	}
 	resting, children := entryIsResting(book, signalID)
 	if resting {

@@ -402,8 +402,12 @@ const trendlineLevelPreferPts = 2.0
 
 // trendlineBeatenByLevel reports whether a respected LEVEL (a key level or an
 // old high/low) sits at/near the trendline's current price — the level wins and
-// the trendline is refused [D2.3 p1 @02:19–03:45]. FORMING lines never enter
-// here: they stay non-locations (the 3rd-touch return rule is unchanged).
+// the trendline is refused [D2.3 p1 @02:19–03:45]. m311 (#46b): for the intraday
+// (1m) line this is consulted ONLY on the line's FIRST test — the 3rd touch that
+// JUST closed (ValidAt == the current bar) — a valid line past its 3rd-touch
+// return has itself been respected and is no longer suppressed (see
+// TrendlineLevels). FORMING lines never enter here: they stay non-locations
+// (the 3rd-touch return rule is unchanged).
 func trendlineBeatenByLevel(respected []Level, price float64) bool {
 	for _, lv := range respected {
 		switch lv.Kind {
@@ -424,13 +428,16 @@ func trendlineBeatenByLevel(respected []Level, price float64) bool {
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
 // @04:38]: a trendline whose current price sits within a live box is
 // suppressed — the box wins. A RESPECTED LEVEL (key level / old extreme) at the
-// same price also beats the trendline [D2.3 p1 @02:19–03:45]; its key is
-// returned in refused so the caller counts tl_first_test_level_preferred.
+// same price also beats the trendline [D2.3 p1 @02:19–03:45] — but (m311, #46b)
+// ONLY on the trendline's FIRST test: a valid line past its 3rd-touch return
+// has itself been respected and is no longer suppressed. Its key is returned
+// in refused so the caller counts tl_first_test_level_preferred.
 func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline) (levels []Level, refused []string) {
 	if len(trendlines) == 0 || len(bars) == 0 {
 		return nil, nil
 	}
 	cur := bars[len(bars)-1]
+	lastIdx := len(bars) - 1
 	var out []Level
 	for _, tl := range trendlines {
 		if tl.ValidAt == 0 || tl.Dead {
@@ -443,7 +450,12 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bar
 		if InsideAnyBox(boxes, price) {
 			continue
 		}
-		if trendlineBeatenByLevel(respected, price) {
+		// m311 (#46b): the level beats an intraday (1m) trendline only on its
+		// FIRST test — the 3rd touch that just closed (ValidAt == the current
+		// bar). A valid line past its 3rd-touch return is no longer suppressed
+		// [D2.3 p1 @02:19–03:45]. Persistent HTF lines keep the preference
+		// unchanged (their ValidAt is an HTF-bar index, not comparable here).
+		if (tl.TFMin != 0 || tl.ValidAt == lastIdx) && trendlineBeatenByLevel(respected, price) {
 			refused = append(refused, tl.key())
 			continue
 		}

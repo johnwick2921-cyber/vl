@@ -71,7 +71,7 @@ type SwingCfg struct {
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
 	// R5: new behaviour behind a knob that defaults OFF.
-	MinStopPts float64
+	MinStopPts        float64
 	EntryBufferPts    float64 // NO buffer — order sits tight on the candle; default 0 [D5.2 p2 @05:02–05:12]
 	TargetEMA5mPeriod int     // first target EMA period on 5m; default 34
 	// LeewayCandles is the reference-leeway knob [D5.2 p1 @15:21–15:48]: the
@@ -80,7 +80,7 @@ type SwingCfg struct {
 	// the ISB window — R34 rules that the ISB watch after a through-close
 	// stays open until the 4h flip (no candle limit).
 	LeewayCandles int
-	Hold4hBars    int // hold to the close of the N-th 4h candle after entry; default 1 [D5.2 p1 @06:03–06:20]
+	Hold4hBars    int // hold to the close of the N-th 4h candle AFTER the entry candle (SwingHoldDeadline); default 1 [D5.2 p1 @06:03–06:20]
 	// Respects5mZone — gate swing entries on the 5m trigger-line zone.
 	// Default false: §8 is a self-contained 4h → 5m procedure; nothing in
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
@@ -95,8 +95,8 @@ func DefaultSwingCfg() SwingCfg {
 		LineOffsetPts:     5,
 		StopBeyondLinePts: 30,
 		MaxStopPts:        100, // ~100-pt ceiling, no skip (m186 D5.2 @21:25-21:43)
-		MinStopPts:        0, // W26 P2-4: OFF by default (R5)
-		EntryBufferPts:    0, // no buffer [D5.2 p2 @05:02–05:12]
+		MinStopPts:        0,   // W26 P2-4: OFF by default (R5)
+		EntryBufferPts:    0,   // no buffer [D5.2 p2 @05:02–05:12]
 		TargetEMA5mPeriod: 34,
 		LeewayCandles:     2,
 		Hold4hBars:        1,
@@ -116,13 +116,14 @@ func SwingInvalidStops() int64 { return swingInvalidStops.Load() }
 // SwingMinStopRefused exposes the min-stop counter (W26 P2-4).
 func SwingMinStopRefused() int64 { return swingMinStopRefused.Load() }
 
-// lateDaySwingTargetCap is the late-day swing target cap (mid of 20–30
-// [D5.2 p2 @07:21]).
-const lateDaySwingTargetCap = 25.0
+// lateDaySwingTargetCap is the late-day swing target ceiling: the top of the
+// mentor's 20–30 [D5.2 p2 @07:21] (CTO ruling m331 B3; was 25). A code
+// constant, not a stored knob — every live trader resolves to it.
+const lateDaySwingTargetCap = 30.0
 
-// swingLateDayRRRefused counts a late-day swing refused because the capped
-// target falls below the stop distance — 1:1 is mandatory "trong bất kỳ tình
-// huống nào" [D1.2 p1 @08:02], never ship a sub-1:1 trade.
+// swingLateDayRRRefused counts a late-day swing refused (reason
+// swing_late_day_rr): only the risk ≤ 0 backstop — a wide stop is never
+// refused, its target stays at 1:1.
 var swingLateDayRRRefused atomic.Int64
 
 // SwingLateDayRRRefused exposes the counter for tests and telemetry.
@@ -145,22 +146,36 @@ func lastSessionBucket(now int64) int64 {
 	return kernel.FourHBucketStart(closeMs, nil)
 }
 
-// lateDaySwingCut applies the late-day swing target cut: an entry authored
-// inside the LAST 4h bucket has its target capped at lateDaySwingTargetCap.
-// ok=false → the capped target is below the stop distance (risk) — 1:1 is
-// mandatory "trong bất kỳ tình huống nào" [D1.2 p1 @08:02] — REFUSE.
-func lateDaySwingCut(entryBucket, now int64, target, risk float64) (cut float64, late, ok bool) {
+// lateDaySwingCut applies the late-day swing target cut (CTO final ruling
+// m331 B3). Two course constraints: cut the target to 20–30 pts near the
+// close [D5.2 p2 @07:21], but 1:1 is mandatory in every situation
+// [03-CHECKLIST.md:160; DAY-5.md:117 "big stop → keep 1:1"]. So inside the
+// LAST 4h bucket the target distance becomes max(risk, min(dist, 30)): the cut
+// goes only as far as the 1:1 floor allows. A distance already below risk is
+// returned unchanged for the existing non-late 1:1 gate. The ONLY refusal is
+// risk ≤ 0 (backstop). target/cut are PRICES; the cap applies to |target−entry|.
+func lateDaySwingCut(entryBucket, now int64, side Side, entry, target, risk float64) (cut float64, late, ok bool) {
 	if entryBucket != lastSessionBucket(now) {
 		return target, false, true
 	}
-	cut = target
-	if cut > lateDaySwingTargetCap {
-		cut = lateDaySwingTargetCap
+	if risk <= 0 {
+		return target, true, false
 	}
-	if cut < risk {
-		return cut, true, false
+	dist := abs(target - entry)
+	if dist < risk {
+		return target, true, true
 	}
-	return cut, true, true
+	cutDist := dist
+	if cutDist > lateDaySwingTargetCap {
+		cutDist = lateDaySwingTargetCap
+	}
+	if cutDist < risk {
+		cutDist = risk // 1:1 floor
+	}
+	if side == SideShort {
+		return entry - cutDist, true, true
+	}
+	return entry + cutDist, true, true
 }
 
 // SwingState is everything the swing machine carries between ticks. It is
@@ -424,7 +439,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+					if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 						if !ok {
 							swingLateDayRRRefused.Add(1)
 							continue
@@ -498,7 +513,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))
-		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Target, abs(in.Stop-in.Price)); late {
+		if cut, late, ok := lateDaySwingCut(s.BucketStart, b.OpenTime, in.Side, in.Price, in.Target, abs(in.Stop-in.Price)); late {
 			if !ok {
 				swingLateDayRRRefused.Add(1)
 				s.FirstTouch = nil
@@ -730,6 +745,62 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	return in, true
 }
 
+// SwingHoldDeadline is the open-stamp (ms) of the first 5m bar at/after which
+// the swing's hold is over: the CLOSE of the n-th 4h candle AFTER the entry
+// candle (m332 B4). The entry candle itself is never one of the n — a swing
+// entered late in its bucket must not be closed minutes later. Candles are
+// stepped through the real 17:00 CT-anchored buckets (kernel.FourHBucketStart),
+// never entryBucket + n*4h: the 13:00 bucket is cut by the 16:00-17:00 halt,
+// and a bucket that opens while the CME is closed (weekend, holiday) is not a
+// candle — it is skipped, so a Friday swing holds through the first CANDLES of
+// the new week, not an empty Friday-evening bucket. n < 1 counts as 1. The
+// deadline is capped at the next market close (never held through the halt or
+// a weekend) — see swingHold.
+func SwingHoldDeadline(entryBucket int64, n int) int64 {
+	d, _ := swingHold(entryBucket, n)
+	return d
+}
+
+// swingHold returns the hold deadline and whether it was CAPPED at a market
+// close. A swing is NEVER carried through a market close (daily halt, weekend,
+// holiday): if the CME closes before the stepped candle end, the deadline is
+// that close (the first closed minute, found with kernel.IsCMEOpen), and the
+// position is flattened on the last bar before it.
+func swingHold(entryBucket int64, n int) (int64, bool) {
+	if n < 1 {
+		n = 1
+	}
+	b := entryBucket
+	for step := 0; step < n+1; step++ {
+		b = nextTradingFourHBucket(b)
+	}
+	for t := entryBucket; t < b; t += 5 * 60_000 {
+		if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			return t, true
+		}
+	}
+	return b, false
+}
+
+// nextTradingFourHBucket returns the start of the first 4h bucket after b that
+// opens while the CME is open (bounded; falls back to b+4h).
+func nextTradingFourHBucket(b int64) int64 {
+	const fourH = 4 * 3600_000
+	cur := b
+	for i := 0; i < 128; i++ {
+		// probe past the boundary: a bucket is 4h except around DST/early closes
+		next := fourHBucketStart(cur+fourH, ctime())
+		for next <= cur {
+			next = fourHBucketStart(next+30*60_000, ctime())
+		}
+		cur = next
+		if kernel.IsCMEOpen(time.UnixMilli(cur)) {
+			return cur
+		}
+	}
+	return b + fourH
+}
+
 // manageSwingPosition emits the BE and hold-close intents for an open swing.
 func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Intent {
 	p := s.Pos
@@ -749,8 +820,10 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 			p.MovedBE = true
 		}
 	}
-	holdMs := p.EntryBucket + int64(cfg.Hold4hBars)*4*3600_000
-	if cur.OpenTime >= holdMs {
+	holdMs, capped := swingHold(p.EntryBucket, cfg.Hold4hBars)
+	// A capped deadline is a market close: the last bar BEFORE it (whose own
+	// close lands on the halt) is the one that flattens — there is no bar at it.
+	if cur.OpenTime >= holdMs || (capped && cur.OpenTime+5*60_000 >= holdMs) {
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
 			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
 		s.Pos = nil

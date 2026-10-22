@@ -71,7 +71,9 @@ namespace NinjaTrader.NinjaScript.AddOns
         // 2026-10-14-a (release #24, AC-1): close_position honours its `account` field.
         // 2026-10-21-b (release #43): strict connect.json, reconnect backoff 5s→60s,
         //   hello-first write gate, hello-close warning (superseded by -c).
-        private const string  VL_BUILD_ID             = "2026-10-21-c";
+        // 2026-10-22-a (release #46): order_update de-dupe keys on state+filled
+        //   (m227 bug-hunt #4) — the #45 source change shipped under the same id.
+        private const string  VL_BUILD_ID             = "2026-10-22-a";
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===

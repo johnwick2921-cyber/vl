@@ -3200,14 +3200,26 @@ func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
 			n++
 			continue
 		}
+		if r.State == store.StateWorking && r.FillQuantity > 0 {
+			// Partially filled: the inline pass cancels only the REMAINDER and
+			// hands the filled part to the exit drive. Never touched here.
+			continue
+		}
 		if strings.TrimSpace(r.SignalID) != "" {
+			// m330 B2: this sweep runs once, at the closed->open edge. A cancel
+			// refused for a TRANSIENT reason (no fresh broker book, send failed)
+			// must not be dropped — fall through to RequestCancel so the row goes
+			// cancel_pending and the settlement pass re-requests it (the same
+			// safety-gated retry the inline sweep uses). A SAFETY refusal
+			// (filled / entry gone with children) stays final.
 			if v := at.cancelSafetyFor(r, now); !v.Allow {
-				at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED %s %s signal=%s — %s", r.Session, r.Scenario, shortID(r.SignalID), v.Why)
-				continue
-			}
-			if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
-				at.logWarnf("✕ reopen expiry sweep: cancel SEND failed %s %s: %v", r.Session, r.Scenario, cerr)
-				continue
+				if v.Why != armCancelNoBookWhy {
+					at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					continue
+				}
+				at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED (transient, queued for retry) arm=%d %s %s signal=%s — %s", r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+			} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
+				at.logWarnf("✕ reopen expiry sweep: cancel SEND failed (queued for retry) arm=%d %s %s: %v", r.ID, r.Session, r.Scenario, cerr)
 			}
 		}
 		at.armLifecycleWrite("request_cancel(expiry_elapsed)", r,
