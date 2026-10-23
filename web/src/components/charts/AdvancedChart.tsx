@@ -1341,8 +1341,15 @@ export function AdvancedChart({
         priceLineVisible: false,
         crosshairMarkerVisible: false,
       })
+      // m397: a drawn bar with no EMA point (a hole in the backend series) gets
+      // a whitespace item so the line visibly breaks instead of bridging.
+      const byTime = new Map(data.map((d) => [d.time, d.value]))
       sr.setData(
-        data.map((d) => ({ time: d.time as UTCTimestamp, value: d.value }))
+        barTimes.map((t) =>
+          byTime.has(t)
+            ? { time: t as UTCTimestamp, value: byTime.get(t) as number }
+            : { time: t as UTCTimestamp }
+        )
       )
       mentorEMARef.current.push(sr)
     }

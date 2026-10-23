@@ -635,7 +635,20 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		rows, importExcluded := rehydrateRowsFor(rows, reseeded)
 		// guard (ii)
 		bars := rehydrateBarsFromRows(rows)
-		added := cache.RehydrateOlder(symbol, tf, bars)
+		// m395: the 1m ring itself must fill INTERIOR holes, not only extend
+		// the older end. A short NT8 replay tail at boot leaves a hole (m395:
+		// 10-22 00:11→07:50 CT, 458 min) that RehydrateOlder cannot reach — the
+		// store is complete, so time-union heals it. The aggregate TFs already
+		// rebuild from the 1m tape above (m134); the 1m was left on the
+		// older-only path and kept the hole.
+		var added int
+		mode := "older"
+		if tf == "1m" {
+			added = cache.RehydrateUnion(symbol, tf, bars)
+			mode = "union"
+		} else {
+			added = cache.RehydrateOlder(symbol, tf, bars)
+		}
 		if added == 0 {
 			continue
 		}
@@ -646,7 +659,7 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		// the seed). Announce the refill so the mentor tick re-seeds its
 		// history-derived state (EMA9/34, trigger lines) from the healed series.
 		if tf == "1m" {
-			NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s 1m (+%d older)", symbol, added))
+			NoteHistoryRefill(symbol, "1m", added, fmt.Sprintf("ring rehydrate %s 1m (+%d %s)", symbol, added, mode))
 		}
 		after := cache.Get(symbol, tf)
 		h := kernel.HorizonOf(barsToKlines(after, tf), tf, cache.MaxBars(), now)
@@ -655,8 +668,8 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		// (iii), counted in rehydrateRowsFor; LastNBarsOn filters only
 		// mixed+off-scale and hands imports to its callers> total=<t>/cap —
 		// every number READ, the [O] naming the ruling.
-		logger.Infof("🧯 ring rehydrated %s %s [O 2026-09-16]: nt8=%d store_live=%d store_hist=%d (post-drop excluded=%v) import=%d (refused at the door — guard iii) total=%d/%d (+%d older, all entered as historical — guard ii) · contract=%s (%s) · %s",
-			symbol, tf, before, storeLive, storeHist, reseeded, importExcluded, len(after), cache.MaxBars(), added, contract, src, h.Line())
+		logger.Infof("🧯 ring rehydrated %s %s [O 2026-09-16]: nt8=%d store_live=%d store_hist=%d (post-drop excluded=%v) import=%d (refused at the door — guard iii) total=%d/%d (+%d %s, all entered as historical — guard ii) · contract=%s (%s) · %s",
+			symbol, tf, before, storeLive, storeHist, reseeded, importExcluded, len(after), cache.MaxBars(), added, mode, contract, src, h.Line())
 	}
 	logger.Infof("🧯 ring rehydrate done [O \"i want fuull data\" 2026-09-16]: %d of %d symbol×tf pairs deepened, +%d bars total, %d read failure(s), %d pair(s) not selected · every rehydrated row enters as historical (replay-grade to this process); the regime baseline is served from the %s tail (condition (b)) · store retention %s=%dd (the ring is the cache; the store is the horizon)",
 		deepened, len(pairs), totalAdded, failed, skipped, rehydrateTimeframe, rehydrateTimeframe, store.RetentionDaysFor(rehydrateTimeframe))
