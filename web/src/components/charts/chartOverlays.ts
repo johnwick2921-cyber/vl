@@ -43,6 +43,8 @@ export interface EMACurvePoint {
  * barTimes[0], so every plotted time is a drawn bar and the curve never leads
  * price by one bar (a point stamped at a bar's open already folds in that
  * bar's close, so it must not be read until the bar has closed).
+ * m397: a bar whose newest usable point is stale (a hole in the series) gets
+ * NO point, so the caller draws a gap instead of a held flat line.
  */
 export function mentorEMACurves(
   emaSeries: MentorTruth['ema_series'],
@@ -53,7 +55,19 @@ export function mentorEMACurves(
   const pts = emaSeries ?? []
   if (pts.length === 0 || barTimes.length === 0) return { ema9, ema34 }
   const EMA_BAR_MS = 60_000 // the backend series is per-1m-bar
-  const intervalSec = barTimes.length > 1 ? barTimes[1] - barTimes[0] : 0
+  // The chart's nominal interval: the smallest positive bar spacing (robust to
+  // a session-break gap between the first two bars).
+  let intervalSec = 0
+  for (let k = 1; k < barTimes.length; k++) {
+    const d = barTimes[k] - barTimes[k - 1]
+    if (d > 0 && (intervalSec === 0 || d < intervalSec)) intervalSec = d
+  }
+  // m397: a bar is drawn only while the newest consumed 1m point is no more
+  // than ONE chart interval (min one 1m bar) older than the bar's nominal
+  // window end. A hole in the backend series (e.g. a bot restart) must leave a
+  // visible gap, never a held flat value. Tolerance = one interval: it admits
+  // a single missing 1m bar on a 1m chart and ordinary lag on higher charts.
+  const toleranceMs = Math.max(intervalSec, EMA_BAR_MS / 1000) * 1000
   let i = 0
   let e9 = 0
   let e34 = 0
@@ -69,7 +83,10 @@ export function mentorEMACurves(
       e34 = pts[i].ema34
       i++
     }
-    if (i > 0) {
+    const nominalCloseMs =
+      (bt + Math.max(intervalSec, EMA_BAR_MS / 1000)) * 1000
+    const newestClosedMs = i > 0 ? pts[i - 1].ms + EMA_BAR_MS : -Infinity
+    if (i > 0 && nominalCloseMs - newestClosedMs <= toleranceMs) {
       ema9.push({ time: bt, value: e9 })
       ema34.push({ time: bt, value: e34 })
     }
