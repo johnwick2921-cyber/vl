@@ -98,9 +98,16 @@ func ssIndexOf(bars []market.Kline, openMs int64) int {
 
 // ssSeed is what mentorSeedAtStart does: a fresh evaluator, the history's print
 // windows set, SeedFull on every bar closed by now.
+// ssPin1mBoxes pins the box frame to the 1m for a test whose oracle is the 1m
+// builder (m410: with Exec2mAfter30m ON the boxes draw on the traded 2m frame).
+var ssPin1mBoxes bool
+
 func ssSeed(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
 	hist := closedOnly(bars, now)
 	e := New(lrProdCfg())
+	if ssPin1mBoxes {
+		e.Cfg.Exec2mAfter30m = false
+	}
 	e.Cfg.PrintWindows = windows
 	SeedFull(e, hist, keyLevel1HBars(hist), now)
 	return e
@@ -298,6 +305,8 @@ func TestSeedHonoursPrintWindowsRestartParity1014(t *testing.T) {
 // 30586.75. A restart at any instant of the session now reproduces the
 // continuous latch. Mutant: no seedBoxLatch in seed() → RED.
 func TestRestartReproducesBoxLatch1014(t *testing.T) {
+	ssPin1mBoxes = true // m410: the pinned oracle (boxes.py) is the 1m builder
+	defer func() { ssPin1mBoxes = false }()
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	key := func(m map[string]Box) string {

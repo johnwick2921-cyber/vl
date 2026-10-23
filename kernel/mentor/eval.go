@@ -262,6 +262,9 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// boxFrameTF is the frame new boxes draw on for the Tick in flight (m410),
+	// "" = the configured base frame. Set at the top of the box section.
+	boxFrameTF string
 	// pullbackWarn5m is the X11 pullback warning for THIS tick (transient, not
 	// serialized): the latest closed 5m candle broke the prior one's low in a
 	// 5m uptrend → size down [X11 @13:21–15:02].
@@ -1715,6 +1718,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
 	// join the level set as locations (used again and again) and the box
 	// interior bans entries.
+	// m410: the frame new boxes draw on this tick.
+	e.boxFrameTF = e.boxFrameCfg(now).TF
 	boxes := e.buildBoxes(bars, now) // CX-11: fresh RTH pair + max height (knobs; OFF = BoxesBuild)
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới

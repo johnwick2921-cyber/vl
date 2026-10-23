@@ -24,6 +24,7 @@ func urFixSlidingMk(t0 int64) func(i int, o, h, l, c float64) market.Kline {
 func TestUrFixLatchedBoxFlipAndTouchesAcrossSlidingWindow(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
