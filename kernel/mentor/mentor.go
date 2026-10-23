@@ -405,9 +405,10 @@ type Config struct {
 	// potential high low" [X8 @15:52–15:57]) — read the 1m ONLY during the RTH
 	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
 	// minute — overnight and the Europe open (3am Texas) included. "Evening
-	// slow → 5m" is an OPEN COURSE QUESTION (no number for "slow"); left
-	// unimplemented. The MNQ strategy sets no mentor_tuning, so this default
-	// is the live behaviour; an explicit OFF restores the 1m read all day.
+	// slow → 5m" IS implemented (eval.go eveningSlow: a slow evening/overnight
+	// reads the 5m — the 100-pt range cutoff is ours, ruling R1). The MNQ
+	// strategy sets no mentor_tuning, so this default is the live behaviour; an
+	// explicit OFF restores the 1m read all day.
 	Exec2mAfter30m bool
 
 	// OrbISBFractionOutside — rule 5 (release #31, default 0.80): an ISB at the

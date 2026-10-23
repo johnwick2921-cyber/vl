@@ -220,8 +220,10 @@ func rthMinuteOf(ms int64) int {
 // phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight,
 // the Europe open (3am Texas) and the evening are all 2m. The schedule source is
 // ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
-// @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
-// "slow") and is not implemented.
+// @17:06–19:35); "evening slow → 5m" IS implemented (eval.go eveningSlow: a
+// slow evening/overnight reads the 5m — the 100-pt range cutoff is ours,
+// ruling R1). This predicate returns only the 1m-vs-2m half of the schedule;
+// the 5m half is applied by the Tick's `want = 5` branch after this predicate.
 //
 // `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
 // bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window
