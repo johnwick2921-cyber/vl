@@ -635,7 +635,21 @@ func rehydrateRingFromStoreWith(bh *store.BarHistoryStore, server *ntwire.TCPSer
 		rows, importExcluded := rehydrateRowsFor(rows, reseeded)
 		// guard (ii)
 		bars := rehydrateBarsFromRows(rows)
-		added := cache.RehydrateOlder(symbol, tf, bars)
+		// m395: the 1m ring is UNION-rehydrated, not older-only. NT8's replay can
+		// leave an INTERIOR hole in the 1m ring (10-22: 00:11→07:50 CT, 458 min)
+		// while the store, written live by the previous run, holds every minute.
+		// RehydrateOlder takes only bars strictly OLDER than the ring's oldest,
+		// so it can never reach an interior gap; every consumer of the 1m ring
+		// (the mentor tick's EMA/trigger/level/trendline window, the chart EMA
+		// curve) then ran across the hole. RehydrateUnion fills holes AND extends
+		// the older end; the live ring still wins every overlap and store bars
+		// newer than the live tail are dropped (m149 P2).
+		var added int
+		if tf == "1m" {
+			added = cache.RehydrateUnion(symbol, tf, bars)
+		} else {
+			added = cache.RehydrateOlder(symbol, tf, bars)
+		}
 		if added == 0 {
 			continue
 		}
