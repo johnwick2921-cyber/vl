@@ -572,8 +572,8 @@ describe('mentorEMACurves (m150 snap)', () => {
   // 5m chart bars
   const fiveM = bars(t0, 300_000, 4)
   // 1m EMA series reaching 33h back — starts well left of barTimes[0].
-  const ema = Array.from({ length: 5 }, (_, i) => ({
-    ms: t0 - 120_000 + i * 60_000, // -2m, -1m, 0, +1m, +2m
+  const ema = Array.from({ length: 25 }, (_, i) => ({
+    ms: t0 - 120_000 + i * 60_000, // -2m .. +22m (covers all four 5m bars)
     ema9: 100 + i,
     ema34: 200 + i,
   }))
@@ -591,10 +591,9 @@ describe('mentorEMACurves (m150 snap)', () => {
   it('takes the LAST EMA value whose own 1m bar has closed at or before each bar close', () => {
     const curves = mentorEMACurves(ema, fiveM)
     // bar[0] (t0): close = t0+5m → the last point with open+60s <= close is
-    // ema[4] (open t0+2m → closes t0+3m), value 104.
-    expect(curves.ema9[0].value).toBe(104)
-    // every later bar keeps 104 (the series ends before them)
-    expect(curves.ema9.every((p) => p.value === 104)).toBe(true)
+    // ema[6] (open t0+4m → closes t0+5m), value 106.
+    expect(curves.ema9[0].value).toBe(106)
+    expect(curves.ema9[1].value).toBe(111)
   })
 
   it('m169: never looks ahead — a point that OPENS at the bar close is excluded until its own bar has closed', () => {
@@ -617,6 +616,54 @@ describe('mentorEMACurves (m150 snap)', () => {
     // bar[1] close t0+10m: the t0+5m point has now closed → it is the value.
     expect(curves.ema9[1].value).toBe(3)
     expect(curves.ema34[1].value).toBe(30)
+  })
+
+  it('m397: a 458-min hole in the series leaves NO held flat values and drawing resumes after it', () => {
+    const m = 60_000
+    const bars1m = bars(t0, m, 600) // 600 continuous 1m candles
+    const holeFrom = 50 // minutes after t0
+    const holeLen = 458
+    const series = Array.from({ length: 600 }, (_, i) => ({
+      ms: t0 + i * m,
+      ema9: 1000 + i,
+      ema34: 2000 + i,
+    })).filter((p) => {
+      const k = (p.ms - t0) / m
+      return k < holeFrom || k >= holeFrom + holeLen
+    })
+    const c = mentorEMACurves(series, bars1m)
+    const drawn = new Set(c.ema9.map((p) => (p.time * 1000 - t0) / m))
+    // inside the hole (past one tolerance interval) nothing is drawn
+    for (let k = holeFrom + 3; k < holeFrom + holeLen; k++) {
+      expect(drawn.has(k)).toBe(false)
+    }
+    // at most ONE bar (the one-1m-bar tolerance) inside the hole holds a value
+    const inHole = c.ema9.filter((p) => {
+      const k = (p.time * 1000 - t0) / m
+      return k >= holeFrom && k < holeFrom + holeLen
+    })
+    expect(inHole.length).toBeLessThanOrEqual(1)
+    // before the hole and after it drawing is live
+    expect(drawn.has(holeFrom - 1)).toBe(true)
+    expect(drawn.has(holeFrom + holeLen + 1)).toBe(true)
+    expect(drawn.has(599)).toBe(true)
+  })
+
+  it('m397: a 5m chart also breaks across a hole but not across ordinary lag', () => {
+    const five = bars(t0, 300_000, 120)
+    const series = Array.from({ length: 600 }, (_, i) => ({
+      ms: t0 + i * 60_000,
+      ema9: i,
+      ema34: i,
+    })).filter((p) => {
+      const k = (p.ms - t0) / 60_000
+      return k < 100 || k >= 400
+    })
+    const c = mentorEMACurves(series, five)
+    const idx = new Set(c.ema9.map((p) => (p.time * 1000 - t0) / 300_000))
+    expect(idx.has(10)).toBe(true) // before the hole
+    expect(idx.has(30)).toBe(false) // inside
+    expect(idx.has(90)).toBe(true) // after (k=450)
   })
 
   it('an empty series or no bars yields empty curves', () => {
