@@ -183,6 +183,16 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 	}
 }
 
+// x8FrameMin is the frame the X8 trap-dodge reads its candle and EMA34 on: the
+// position's ENTRY frame (TrailTFMin 1, 2 or 5). 0 = unknown (an old position,
+// a restart rebuild) → the 2m the exit always used.
+func (p *mentorLivePos) x8FrameMin() int {
+	if p != nil && p.TrailTFMin >= 1 {
+		return p.TrailTFMin
+	}
+	return 2
+}
+
 // mentorX8TrapDodgeExit is the X8 trap-dodge exit [X8 "Cách né trap & Setup
 // gồng lời" part1 @07:31–08:07]: the 2m candle closed through the EMA34 against
 // the 5m trigger trend while the 5m trigger swept against the position — the
@@ -200,15 +210,20 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 	if at.mentorX8LimitFallback(nt, p) {
 		return true
 	}
-	two, ok := mentor.ClosedCandleTF(bars, 2)
+	// m409: the X8 frame is the frame the ENTRY was read on ("trade khung nào
+	// thì BẬT KHUNG ĐÓ", D5.4 @08:15) — 1m in the first 30 min, 2m after, 5m on
+	// a slow evening. An unknown frame (0: restart rebuild / old position) keeps
+	// today's 2m, byte-identical.
+	tf := p.x8FrameMin()
+	two, ok := mentor.ClosedCandleTF(bars, tf)
 	if !ok {
-		return false // never fire on a forming 2m candle
+		return false // never fire on a forming entry-frame candle
 	}
 	dir := at.mentorEval.State.Trigger.Dir
 	// m308: X8 compares the closed 2m candle against the EMA34 on the 2m chart
 	// the mentor actually trades ("mình trade khung 2 phút"), not the evaluator's
 	// 1m EMA34 (State.EMA34). Build the EMA from the closed 2m series.
-	ema34 := mentor.EMAOnTF(bars, 2, at.mentorEval.Cfg.EMAPeriod34)
+	ema34 := mentor.EMAOnTF(bars, tf, at.mentorEval.Cfg.EMAPeriod34)
 	if !mentor.X8TrapDodge(p.Pos.Side, dir, ema34, two.Close) {
 		return false
 	}
@@ -223,8 +238,8 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 	p.X8Exited = true
 	at.mentorExitMu.Unlock()
 	at.mentorCount("x8_trap_dodge_exit")
-	at.logWarnf("🧑‍🏫 X8 trap-dodge: %s %s — the 2m closed through the EMA34 (%.2f) against the 5m trigger (%s) and the 5m swept against the position; exiting, not sitting [X8 part1 @07:31–08:07]",
-		p.Pos.Symbol, p.Pos.Side, ema34, dir)
+	at.logWarnf("🧑‍🏫 X8 trap-dodge: %s %s — the %dm closed through the EMA34 (%.2f) against the 5m trigger (%s) and the 5m swept against the position; exiting, not sitting [X8 part1 @07:31–08:07]",
+		p.Pos.Symbol, p.Pos.Side, tf, ema34, dir)
 	if err := at.mentorX8SendExit(nt, p); err != nil {
 		at.mentorCount("x8_trap_dodge_close_failed")
 		at.logWarnf("🧑‍🏫 X8 trap-dodge close failed for %s %s: %v", p.Pos.Symbol, p.Pos.Side, err)

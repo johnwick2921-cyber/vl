@@ -436,8 +436,11 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// the entry was READ on rides to the fill, so the runner trails on it.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), in.ExecTFMin)
 	} else {
-		// a 1m entry: no stale frame from an earlier arm of the same scenario.
-		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))
+		// a 1m entry: store 1 (m409) — overwrites any stale frame from an earlier
+		// arm of the same scenario AND tells the X8 trap-dodge "1m", not "unknown"
+		// (absent/0 = unknown → 2m). Every `TrailTFMin > 1` trail check treats 1
+		// exactly like 0.
+		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), 1)
 	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {
