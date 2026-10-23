@@ -13,6 +13,11 @@
 //     #46: m373 (P0, DS-103) fixes order_update FormatException — e.Filled is an
 //     int so ToString("R") throws on every order_update (47× in NT8 log since
 //     #45 boot); drops "R", bumps VL_BUILD_ID to 2026-10-22-b. Contract untouched.
+//     #48: m387 (DS-102) CancelBracketsFor cancels EVERY (account,root)-matched
+//     bracket and retires each key only after its own orders were cancelled
+//     (QUEUE-47); adds the anchored VL_BUILD_ID_ANCHOR marker and bumps
+//     VL_BUILD_ID to 2026-10-22-c. Wire / order-name / account / signal-id
+//     contract untouched.
 //   provider/ninjatrader/tcp_server.go  sha256 a59169a4… — connect-key auth gate
 //     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
 //     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
@@ -29,6 +34,11 @@
 //   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
 //   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
 //   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
+// go.mod baseline advanced 2026-10-22 for m391 (release #48): the friend app
+//   (cmd/vl-friend) merged from friend/build63 @2ebcd2ee0 promotes
+//   golang.org/x/sys v0.48.0 and golang.org/x/term v0.46.0 from indirect to
+//   direct (cmd/vl-friend/run_windows.go imports both). No wire/identifier
+//   change; the app exe remains byte-identical (fb20c28a).
 // go.mod baseline advanced 2026-10-20 for GO-2026-6809 (release #42): the go
 //   directive 1.26.9 -> 1.26.10 (crypto/x509 fix); no require line changed.
 // go.mod baseline advanced 2026-10-13 for GO-VULN-1026 (owner order 2026-10-13):

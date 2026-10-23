@@ -4,14 +4,26 @@ package main
 
 import (
 	"bufio"
+	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"net/http"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"sync"
+	"syscall"
 	"time"
+
+	"golang.org/x/sys/windows"
+	"golang.org/x/term"
+
+	"vl/safe"
 )
 
 // run_windows.go — the real Windows wiring of the friend app. The install /
@@ -23,15 +35,39 @@ import (
 func realDeps() deps {
 	return deps{
 		exec: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			// P1: PowerShell 5.1 rejects a positional arg after -EncodedCommand,
+			// so trailing values move into VL_ARG0 / VL_ARG1 env. The scripts
+			// read $env:VL_ARG0 / $env:VL_ARG1. P2: STDOUT only is returned.
+			if i := indexOf(args, "-EncodedCommand"); i >= 0 && i+2 < len(args) {
+				vals := args[i+2:]
+				trimmed := append([]string{}, args[:i+2]...)
+				cmd := exec.CommandContext(ctx, name, trimmed...)
+				cmd.Env = append(os.Environ(), "VL_ARG0="+vals[0])
+				if len(vals) > 1 {
+					cmd.Env = append(cmd.Env, "VL_ARG1="+vals[1])
+				}
+				noWindow(cmd)
+				return cmdOutputStdout(cmd)
+			}
 			cmd := exec.CommandContext(ctx, name, args...)
-			return cmd.CombinedOutput()
+			noWindow(cmd)
+			return cmdOutputStdout(cmd)
 		},
 		fetch: func(ctx context.Context, url string) ([]byte, error) {
 			req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 			if err != nil {
 				return nil, err
 			}
-			resp, err := http.DefaultClient.Do(req)
+			// G12: a 30s timeout on friend-bot calls — a wedged network must not
+			// hang the whole 30-min run on the manifest or identity fetch. The
+			// ~38 MB Tailscale MSI gets its own 10-min client: http.Client.Timeout
+			// covers the BODY read, so 30s failed on anything under ~10 Mbps
+			// (gate-3 review 10-21, MAJOR).
+			client := friendHTTPClient
+			if url == tailscaleMSIURL {
+				client = tailscaleDownloadClient
+			}
+			resp, err := client.Do(req)
 			if err != nil {
 				return nil, err
 			}
@@ -48,11 +84,64 @@ func realDeps() deps {
 			return 0, fmt.Errorf("flat probe not wired")
 		},
 		writeFile: os.WriteFile,
-		mkdirAll:  os.MkdirAll,
-		rename:    os.Rename,
-		readFile:  os.ReadFile,
+		// S17: a TRUE append — O_APPEND, never read-modify-write — so
+		// logSetupError's error history can never be clobbered by a concurrent
+		// line (the old read+write raced and dropped lines).
+		appendFile: func(path string, data []byte, perm fs.FileMode) error {
+			f, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, perm)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+			_, err = f.Write(data)
+			return err
+		},
+		mkdirAll: os.MkdirAll,
+		rename:   os.Rename,
+		readFile: os.ReadFile,
 		readLine: func(prompt string) (string, error) {
+			// G7: readLine is ALWAYS echo-on — it serves y/N, the "Type N" gate,
+			// and pauses. The install code goes through readSecret.
 			fmt.Print(prompt)
+			r := bufio.NewReader(os.Stdin)
+			s, err := r.ReadString('\n')
+			if err != nil && err != io.EOF {
+				return "", err
+			}
+			trimmed := strings.TrimSpace(s)
+			// S20: an empty read at EOF must return io.EOF, not ("", nil) —
+			// otherwise a prompt loop spins forever on an exhausted stdin.
+			if err == io.EOF && trimmed == "" {
+				return "", io.EOF
+			}
+			return trimmed, nil
+		},
+		readSecret: func(prompt string) (string, error) {
+			// G7: the install code is read echo-OFF so the pasted one-time code
+			// never appears on the console (and no later error screen can show
+			// it). Non-terminal stdin falls back to a normal read (piped input is
+			// not echoed anyway).
+			fmt.Print(prompt)
+			fd := int(os.Stdin.Fd())
+			if term.IsTerminal(fd) {
+				// Right-click paste needs QuickEdit on a legacy console — turn it
+				// on for the paste (an installed PC had it off), off right after.
+				setQuickEdit(true)
+				b, err := term.ReadPassword(fd)
+				// The paste is done (QuickEdit stayed on for right-click paste;
+				// ReadPassword restored it). Now turn it off so a stray click
+				// cannot freeze the rest of the install (final-run F1).
+				disableQuickEdit()
+				fmt.Println()
+				if err != nil {
+					return "", err
+				}
+				s := strings.TrimSpace(string(b))
+				if s != "" {
+					fmt.Println("Code received (hidden)")
+				}
+				return s, nil
+			}
 			r := bufio.NewReader(os.Stdin)
 			s, err := r.ReadString('\n')
 			if err != nil && err != io.EOF {
@@ -60,59 +149,508 @@ func realDeps() deps {
 			}
 			return strings.TrimSpace(s), nil
 		},
+		// H14b: the print seam applies the CENTRAL redactor — the tskey regex
+		// plus the connect key read from connect.json at run() start — so a
+		// secret can never reach the console even from a path that forgot to
+		// redact.
+		print:          func(line string) { fmt.Println(redactCentral(line)) },
 		allowedSigners: []byte(friendAllowedSigners),
+		tempDir:        func() (string, error) { return os.TempDir(), nil },
+		verifyMsiSigner: func(msiPath string) (msiSignature, error) {
+			// P1: the path rides VL_ARG0 (PowerShell 5.1 rejects args after
+			// -EncodedCommand); P2: only the VL_RESULT line is parsed.
+			script := verifyMsiSignerScript
+			out, err := psRun(script, msiPath)
+			if err != nil {
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
+			}
+			line, err := psResultLine(out)
+			if err != nil {
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: %w", err)
+			}
+			status, subject, ok := strings.Cut(line, "|")
+			if !ok {
+				return msiSignature{}, fmt.Errorf("Get-AuthenticodeSignature: unexpected output %q", line)
+			}
+			return msiSignature{Status: strings.TrimSpace(status), Subject: strings.TrimSpace(subject)}, nil
+		},
+		openURL: func(ctx context.Context, url string) error {
+			return openDashboardNative(url)
+		},
+		docsDir:  windowsDocumentsDir,
+		iconDirs: windowsIconDirs,
+		dirExists: func(path string) bool {
+			st, err := os.Stat(path)
+			return err == nil && st.IsDir()
+		},
+		ntRunning: func(ctx context.Context) (bool, error) {
+			script := ntRunningScript
+			out, err := psRun(script, "")
+			if err != nil {
+				return false, err
+			}
+			line, err := psResultLine(out)
+			if err != nil {
+				return false, err
+			}
+			return line == "yes", nil
+		},
+		localAppDataDir: func() string { return os.Getenv("LOCALAPPDATA") },
+		selfExe:         os.Executable,
+		messageBox: func(text string) bool {
+			// A5: native windows.MessageBox (MB_YESNO|MB_ICONQUESTION|MB_TOPMOST|
+			// MB_SETFOREGROUND), no PowerShell child per box. H14b: the text is
+			// centrally redacted. H15: on failure fall back to console + setup.log
+			// so an error is never invisible.
+			yes, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_YESNO|windows.MB_ICONQUESTION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND)
+			if err != nil {
+				msgBoxFallback(text)
+				return false
+			}
+			return yes
+		},
+		errorBox: func(text string) {
+			// A5: OK + Error icon, topmost/foreground. No Yes/No — dismiss only.
+			if _, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_OK|windows.MB_ICONERROR|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+				msgBoxFallback(text)
+			}
+		},
+		infoBox: func(text string) {
+			// A5: OK + Information icon, topmost/foreground. No Yes/No.
+			if _, err := nativeMessageBox(redactCentral(text), "VL", windows.MB_OK|windows.MB_ICONINFORMATION|windows.MB_TOPMOST|windows.MB_SETFOREGROUND); err != nil {
+				msgBoxFallback(text)
+			}
+		},
+		// G2: a named mutex makes --open single-instance. The handle is held for
+		// the process lifetime (a named mutex is auto-released on exit); the
+		// second icon click returns false and only opens the dashboard.
+		singleInstance: func() bool {
+			h, err := windows.CreateMutex(nil, false, windows.StringToUTF16Ptr(`Local\VL-friend`))
+			// x/sys returns a VALID handle AND err=ERROR_ALREADY_EXISTS when the
+			// mutex exists (proven on real Windows, gate-3 10-21) — the old
+			// "err != nil → fail open" made the guard never fire.
+			if errors.Is(err, windows.ERROR_ALREADY_EXISTS) {
+				if h != 0 {
+					windows.CloseHandle(h)
+				}
+				return false
+			}
+			if err != nil {
+				return true // fail open
+			}
+			singleInstanceHandle = h
+			return true
+		},
 	}
 }
 
+// singleInstanceHandle holds the --open mutex for the process lifetime (G2).
+var singleInstanceHandle windows.Handle
+
+// windowsDocumentsDir resolves the Windows Known Folder MyDocuments (F2: the C#
+// AddOn and NinjaTrader read MyDocuments, which OneDrive redirection can move
+// off <USERPROFILE>\Documents).
+//
+// W3: this used to shell out to PowerShell `[Environment]::GetFolderPath(...)`
+// and parse its stdout — the child's output codepage is the console OEM
+// codepage, so a non-ASCII path (e.g. "C:\Users\Tomás\Documents") was
+// corrupted. KnownFolderPath goes straight to the SHGetKnownFolderPath API and
+// returns a UTF-16-decoded Go string, so there is no codepage to lose. The
+// result must be non-empty and absolute; anything else refuses.
+// windowsIconDirs returns the real Desktop and Start Menu Programs folders
+// (Known Folders: OneDrive-redirect safe) for the Go-side icon fallback.
+func windowsIconDirs() ([]string, error) {
+	var out []string
+	for _, id := range []*windows.KNOWNFOLDERID{windows.FOLDERID_Desktop, windows.FOLDERID_Programs} {
+		p, err := windows.KnownFolderPath(id, windows.KF_FLAG_DEFAULT)
+		if err != nil {
+			return nil, err
+		}
+		if p = strings.TrimSpace(p); p == "" || !filepath.IsAbs(p) {
+			return nil, fmt.Errorf("known folder returned %q", p)
+		}
+		out = append(out, p)
+	}
+	// 10-21 laptop: the icon landed "in a different place" than the visible
+	// desktop (OneDrive Desktop redirection can leave Windows reporting one
+	// folder while the user looks at the other). Also cover the plain
+	// %USERPROFILE%\Desktop when it exists and differs.
+	if home, err := os.UserHomeDir(); err == nil {
+		plain := filepath.Join(home, "Desktop")
+		if st, err := os.Stat(plain); err == nil && st.IsDir() && !strings.EqualFold(filepath.Clean(plain), filepath.Clean(out[0])) {
+			out = append(out, plain)
+		}
+	}
+	return out, nil
+}
+
+func windowsDocumentsDir() (string, error) {
+	p, err := windows.KnownFolderPath(windows.FOLDERID_Documents, windows.KF_FLAG_DEFAULT)
+	if err != nil {
+		return "", fmt.Errorf("resolve Documents: %w", err)
+	}
+	p = strings.TrimSpace(p)
+	if p == "" || !filepath.IsAbs(p) {
+		return "", fmt.Errorf("resolve Documents: KnownFolderPath returned %q", p)
+	}
+	return p, nil
+}
+
+// friendHTTPClient is the 30s-timeout client for friend-bot calls (G12): the
+// manifest, the identity check, and the Tailscale MSI download must not hang
+// the whole 30-minute run on a wedged network.
+var friendHTTPClient = &http.Client{Timeout: 30 * time.Second}
+
+// tailscaleDownloadClient fetches the Tailscale MSI (~38 MB). 10 minutes is
+// ~65 KB/s — a weak hotspot still finishes; a dead link still ends.
+var tailscaleDownloadClient = &http.Client{Timeout: 10 * time.Minute}
+
+// cmdOutputStdout runs cmd and returns STDOUT ONLY; stderr is folded into the
+// error text (P2: PowerShell writes CLIXML progress noise to stderr, which must
+// never corrupt an exit-code or marker parse).
+func cmdOutputStdout(cmd *exec.Cmd) ([]byte, error) {
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	// Owner laptop 10-21: a process the child starts (Edge via Start-Process)
+	// can inherit our stdout/stderr pipe, and Run then waits for THAT process
+	// to exit — VL froze on "already set up" with Edge open. Proven on real
+	// Windows: an inherited pipe held Run 6.8s; WaitDelay 2s released it at
+	// 2.2s with exec.ErrWaitDelay. The child itself has exited by then, so
+	// ErrWaitDelay is success with whatever output arrived.
+	if cmd.WaitDelay == 0 {
+		cmd.WaitDelay = 3 * time.Second
+	}
+	if err := cmd.Run(); err != nil && !errors.Is(err, exec.ErrWaitDelay) {
+		return stdout.Bytes(), fmt.Errorf("%w: %s", err, strings.TrimSpace(stderr.String()))
+	}
+	return stdout.Bytes(), nil
+}
+
+// psRunTimeout bounds every psRun (signature check, NinjaTrader check, open
+// dashboard).
+const psRunTimeout = 60 * time.Second
+
+// psRun runs a PowerShell script with the controlled value passed via the
+// VL_ARG0 environment variable (P1: PowerShell 5.1 REJECTS a positional arg
+// after -EncodedCommand — "Cannot process command because a command is already
+// specified"), and returns STDOUT only.
+func psRun(script, arg string) ([]byte, error) {
+	// Bounded: no PowerShell step may hang the run (owner laptop 10-21).
+	ctx, cancel := context.WithTimeout(context.Background(), psRunTimeout)
+	defer cancel()
+	cmd := exec.CommandContext(ctx, "powershell.exe", "-NoProfile", "-NonInteractive", "-EncodedCommand", psEncodedCommand(psPreamble+script))
+	cmd.Env = append(os.Environ(), "VL_ARG0="+arg)
+	noWindow(cmd)
+	out, err := cmdOutputStdout(cmd)
+	if err != nil && ctx.Err() != nil {
+		// Gate-3 R3 [A]: a killed child reports a bare "exit status 1" on
+		// Windows — say what happened.
+		return out, fmt.Errorf("PowerShell step timed out after %s: %w", psRunTimeout, err)
+	}
+	return out, err
+}
+
+// idYes is the Win32 MessageBoxW return for "Yes" (IDYES).
+const idYes = 6
+
+// nativeMessageBox shows a native Windows message box (A5) — no PowerShell child
+// per box. flags selects buttons/icon/topmost. It reports whether the user chose
+// Yes (only meaningful for MB_YESNO).
+func nativeMessageBox(text, caption string, flags uint32) (bool, error) {
+	t, err := windows.UTF16PtrFromString(text)
+	if err != nil {
+		return false, err
+	}
+	c, err := windows.UTF16PtrFromString(caption)
+	if err != nil {
+		return false, err
+	}
+	ret, err := windows.MessageBox(0, t, c, flags)
+	if err != nil {
+		return false, err
+	}
+	return ret == idYes, nil
+}
+
+// msgBoxFallback is the H15 fallback when a native message box fails: an error
+// must never be invisible — print to the console AND append to setup.log.
+func msgBoxFallback(text string) {
+	// Gate-3 R5: the fallback got the RAW text — redact like every other surface.
+	text = redactCentral(text)
+	fmt.Println(text)
+	if dir := strings.TrimSpace(os.Getenv("LOCALAPPDATA")); dir != "" {
+		p := filepath.Join(dir, "VL", "setup.log")
+		if os.MkdirAll(filepath.Dir(p), 0o755) == nil {
+			if f, err := os.OpenFile(p, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600); err == nil {
+				_, _ = f.Write([]byte(time.Now().Format(time.RFC3339) + " " + text + "\n"))
+				_ = f.Close()
+			}
+		}
+	}
+}
+
+// singleInstance is the G2/H18c guard: a named mutex (Local\VL-friend) so two
+// icon clicks never race placeAddon. It reports whether THIS process owns the
+// mutex (true) or another instance already holds it (false — that instance just
+// opens the dashboard). It fails OPEN on any mutex error (the guard is advisory,
+// never a blocker).
+func singleInstance() bool {
+	name, err := windows.UTF16PtrFromString(`Local\VL-friend`)
+	if err != nil {
+		return true
+	}
+	if h, err := windows.OpenMutex(windows.SYNCHRONIZE, false, name); err == nil {
+		_ = windows.CloseHandle(h)
+		return false // another instance already holds it
+	}
+	_, err = windows.CreateMutex(nil, false, name)
+	return err == nil
+}
+
+// indexOf returns the first index of s in a, or -1.
+func indexOf(a []string, s string) int {
+	for i, v := range a {
+		if v == s {
+			return i
+		}
+	}
+	return -1
+}
+
+// noWindow marks a child process to never create a console window: HideWindow
+// sets the startup show state to SW_HIDE and CreationFlags adds
+// CREATE_NO_WINDOW. W7: EVERY child this file starts (powershell.exe, and the
+// generic exec seam used for tailscale and the elevated install) must pass
+// through it, so the friend app never flashes a console while it shells out.
+func noWindow(cmd *exec.Cmd) {
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: windows.CREATE_NO_WINDOW}
+}
+
+// procFreeConsole is the kernel32 FreeConsole entry point. golang.org/x/sys
+// does not wrap FreeConsole, so it is resolved lazily against kernel32.dll.
+var procFreeConsole = windows.NewLazySystemDLL("kernel32.dll").NewProc("FreeConsole")
+
+// hideConsole detaches the process from its console (kernel32 FreeConsole).
+// It is called ONLY at the start of the --open path, so the double-clicked
+// desktop icon never flashes a console window. It is a no-op on error: the
+// icon still works, only the window might flash briefly.
+func hideConsole() {
+	procFreeConsole.Call()
+}
+
+// centralSecrets holds the connect key read from connect.json at run() start
+// (H14b), so EVERY output surface — print, setup.log, pause, message box —
+// redacts it (a backstop on top of the tskey regex).
+var centralSecrets struct {
+	mu   sync.Mutex
+	vals []string
+}
+
+func registerCentralSecret(sec string) {
+	if sec == "" {
+		return
+	}
+	centralSecrets.mu.Lock()
+	centralSecrets.vals = append(centralSecrets.vals, sec)
+	centralSecrets.mu.Unlock()
+}
+
+// redactCentral applies the registered secrets then the tskey regex backstop.
+func redactCentral(s string) string {
+	centralSecrets.mu.Lock()
+	vals := append([]string{}, centralSecrets.vals...)
+	centralSecrets.mu.Unlock()
+	for _, sec := range vals {
+		if sec != "" {
+			s = strings.ReplaceAll(s, sec, "***")
+		}
+	}
+	return redactTSKeys(s)
+}
+
+// validateLocalAppData enforces H18b: LOCALAPPDATA must be set and absolute —
+// otherwise setup.log and the exe copy would land on a relative path (cwd).
+func validateLocalAppData() error {
+	dir := strings.TrimSpace(os.Getenv("LOCALAPPDATA"))
+	if dir == "" {
+		return fmt.Errorf("LOCALAPPDATA is not set (Windows should always set it)")
+	}
+	if !filepath.IsAbs(dir) {
+		return fmt.Errorf("LOCALAPPDATA is not an absolute path: %q", dir)
+	}
+	return nil
+}
+
+// openDashboardNative opens the dashboard with ShellExecute (what Explorer
+// uses) — Edge in app mode when installed, else the default browser. Owner
+// laptop 10-21 [A]: 1.2.0 printed "Opening your dashboard…" and the laptop
+// never even requested the page — the PowerShell child that ran Start-Process
+// hung. ShellExecute needs no child process and returns as soon as the launch
+// is handed to the shell; it runs on its own goroutine with a 15s cap so even
+// a stuck shell cannot hold the run.
+func openDashboardNative(url string) error {
+	file, args := url, ""
+	for _, p := range []string{
+		filepath.Join(os.Getenv("ProgramFiles(x86)"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("ProgramFiles"), "Microsoft", "Edge", "Application", "msedge.exe"),
+		filepath.Join(os.Getenv("LOCALAPPDATA"), "Microsoft", "Edge", "Application", "msedge.exe"),
+	} {
+		if st, err := os.Stat(p); err == nil && !st.IsDir() {
+			file, args = p, "--app="+url
+			break
+		}
+	}
+	done := make(chan error, 1)
+	safe.GoNamed("vl-friend-shellexecute", func() {
+		// Microsoft: "COM should be initialized before ShellExecute is called"
+		// (shellapi ShellExecuteW). COM init is per OS thread — lock it.
+		runtime.LockOSThread()
+		defer runtime.UnlockOSThread()
+		if windows.CoInitializeEx(0, windows.COINIT_APARTMENTTHREADED|windows.COINIT_DISABLE_OLE1DDE) == nil {
+			defer windows.CoUninitialize()
+		}
+		var a *uint16
+		if args != "" {
+			a = windows.StringToUTF16Ptr(args)
+		}
+		done <- windows.ShellExecute(0, windows.StringToUTF16Ptr("open"), windows.StringToUTF16Ptr(file), a, nil, windows.SW_SHOWNORMAL)
+	})
+	select {
+	case err := <-done:
+		return err
+	case <-time.After(15 * time.Second):
+		return fmt.Errorf("the browser did not start within 15s")
+	}
+}
+
+// disableQuickEdit clears ENABLE_QUICK_EDIT_MODE on the console input (with
+// ENABLE_EXTENDED_FLAGS, which Windows requires for that bit to apply), so a
+// stray click cannot freeze the app's output. Best-effort: no console (the
+// --open icon path detaches) or a failure leaves the mode unchanged.
+func disableQuickEdit() { setQuickEdit(false) }
+
+// setQuickEdit turns QuickEdit on or off (with ENABLE_EXTENDED_FLAGS, which
+// Windows requires: "To disable this mode, use ENABLE_EXTENDED_FLAGS without
+// this flag" — learn.microsoft.com SetConsoleMode). Best-effort.
+func setQuickEdit(on bool) {
+	h := windows.Handle(os.Stdin.Fd())
+	var mode uint32
+	if err := windows.GetConsoleMode(h, &mode); err != nil {
+		return
+	}
+	if on {
+		mode |= windows.ENABLE_QUICK_EDIT_MODE
+	} else {
+		mode &^= windows.ENABLE_QUICK_EDIT_MODE
+	}
+	mode |= windows.ENABLE_EXTENDED_FLAGS
+	_ = windows.SetConsoleMode(h, mode)
+}
+
 // run is the app entry: first run = install; every later start = update check.
+// On ANY error it prints the (redacted) reason, writes setup.log, and waits for
+// Enter so the double-clicked console window does not close (P0 b).
 func run(args []string) error {
-	_ = args
+	// H18b: refuse a missing/relative LOCALAPPDATA before anything writes.
+	if err := validateLocalAppData(); err != nil {
+		fmt.Println("Something went wrong: " + err.Error() + ". Nothing was changed. Send a photo of this window to the owner.")
+		fmt.Println("Press Enter to close")
+		_, _ = bufio.NewReader(os.Stdin).ReadString('\n')
+		return err
+	}
 	d := realDeps()
-	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	// H14b: register the connect key with the CENTRAL redactor before any
+	// output is written (best-effort — a missing connect.json is first run).
+	if docs, err := d.docsDir(); err == nil {
+		if cfg, err := readConnectConfig(d, docs); err == nil {
+			registerCentralSecret(cfg.ConnectKey)
+			// Owner laptop 10-21: a click inside the console starts QuickEdit
+			// "Select" mode, which PAUSES every write — the app looked frozen
+			// on "already set up". Off on an INSTALLED PC only: on a first run
+			// the mentor may right-click to paste the install code (legacy
+			// Win10 console needs QuickEdit for that) — gate-3 R1.
+			disableQuickEdit()
+		}
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	defer cancel()
 
+	// --open (the desktop icon): quick silent update check (≤5s, errors
+	// ignored), then open the dashboard; if an update exists, a Windows dialog
+	// offers Update now / Later. No console, no install-code prompt.
+	if len(args) > 0 && args[0] == "--open" {
+		// m11: the icon double-click must not flash a console. FreeConsole
+		// detaches this (console-subsystem) process from the console the OS
+		// created at start, before any output is written. Best-effort: a
+		// failure to detach is ignored (a brief flash, never a broken app).
+		hideConsole()
+		if err := runOpen(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			return err
+		}
+		return nil
+	}
+
+	// --repair-icon re-creates the desktop + Start Menu icons on an
+	// already-installed PC (B8 live bug: OneDrive desktop redirection hid the
+	// icon). The normal start (runInner) also re-creates a missing icon.
+	if len(args) > 0 && args[0] == "--repair-icon" {
+		if err := repairIcon(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			pauseOnError(d, err)
+			return err
+		}
+		return nil
+	}
+
+	// --new-code (S6): on an installed PC, apply a fresh install code (the
+	// owner may re-issue one). The console flow lives in flow.go.
+	if len(args) > 0 && args[0] == "--new-code" {
+		if err := runNewCode(ctx, d); err != nil {
+			logSetupError(d, err.Error())
+			pauseOnError(d, err)
+			return err
+		}
+		return nil
+	}
+
+	if err := runInner(ctx, d); err != nil {
+		logSetupError(d, err.Error())
+		pauseOnError(d, err)
+		return err
+	}
+	return nil
+}
+
+// runInner is the actual flow; its errors are already secret-redacted.
+func runInner(ctx context.Context, d deps) error {
 	home, err := d.homeDir()
 	if err != nil {
 		return err
 	}
-
-	// First run: no connect.json yet → ask for the install code.
-	if _, err := d.readFile(connectJSONPath(home)); err != nil {
-		code, err := d.readLine("Paste your VL install code: ")
-		if err != nil {
-			return err
-		}
-		if err := installFirstRun(ctx, d, code); err != nil {
-			return err
-		}
-		fmt.Println("VL installed — open the VL icon on your desktop.")
-		return nil
+	docs, err := d.docsDir()
+	if err != nil {
+		return err
+	}
+	// F2 MIGRATION: an install under <USERPROFILE>\Documents must move into
+	// MyDocuments when Known-Folder redirection put it elsewhere (never delete).
+	if err := migrateDocsIfNeeded(d, home, docs); err != nil {
+		return err
 	}
 
-	// Every start: check for updates from the friend's own bot.
-	cfg, err := readConnectConfig(d, home)
-	if err != nil {
-		return err
+	// First run: no connect.json yet → the six-step setup console flow.
+	if _, err := d.readFile(connectJSONPath(docs)); err != nil {
+		return runFirstRun(ctx, d)
 	}
-	st, err := readAppState(d, home)
-	if err != nil {
-		return err
+
+	// S19: an existing-but-UNREADABLE connect.json is an INCOMPLETE install —
+	// not first-run and not a healthy install. Offer a new install code.
+	if _, err := readConnectConfig(d, docs); err != nil {
+		return runIncomplete(ctx, d, docs)
 	}
-	base := fmt.Sprintf("http://%s:%d", cfg.Host, st.WebPort)
-	// CTO flat-signal ruling (2026-10-18): the flat check reads the friend's
-	// friend-mode-only /api/friend/flat (no dashboard JWT). A probe error is an
-	// error → waitUntilFlat defers (fail closed).
-	d.positions = func(ctx context.Context) (float64, error) {
-		return probeFlat(ctx, d, base)
-	}
-	dec, err := RunUpdateCheck(ctx, d, base, false)
-	if err != nil {
-		return err
-	}
-	if dec.Applied {
-		fmt.Println("Updated ✓ — restart NinjaTrader to load the new add-on.")
-	} else if dec.AddonUpdateAvailable || dec.AppUpdateAvailable {
-		fmt.Println("Update deferred (Later).")
-	}
-	return nil
+
+	// Installed: announce, update check, ensure icons, print + open the
+	// dashboard. No install-code prompt (CTO 23:47 CT).
+	return runInstalled(ctx, d, docs)
 }

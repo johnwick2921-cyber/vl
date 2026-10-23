@@ -70,6 +70,29 @@ func TestPreflightRefusalsNeverHold(t *testing.T) {
 	}
 }
 
+// m385: a dirty install tree refuses every Update — the preflight refusal must
+// NAME the cause (the first git-status lines), not a bare modified=true.
+// MUTANT: drop the gitStatusPorcelain enrichment in stepPreflight → the error
+// loses the named dirty file → RED.
+func TestPreflightDirtyTreeNamesTheCause(t *testing.T) {
+	orig := gitStatusPorcelain
+	gitStatusPorcelain = func(dir string) string { return "?? stray-bin" }
+	t.Cleanup(func() { gitStatusPorcelain = orig })
+
+	r := newRig(t)
+	writeFile(r.t, filepath.Join(r.inst, "vl-bin"), "VLBIN rev="+boxOld+" modified=true\n")
+	r.install()
+	if err := r.drive(); err != nil {
+		t.Fatal(err)
+	}
+	j := r.job()
+	if j.State != updaterjob.StateRefused ||
+		!strings.Contains(j.Error, "built from a dirty tree") ||
+		!strings.Contains(j.Error, "stray-bin") {
+		t.Fatalf("job %s (error %q), want refused naming the dirty file", j.State, j.Error)
+	}
+}
+
 // The preflight leg list must demand the PRE-HOLD census leg, never the drain
 // one: addon_census can never pass before a hold exists (the wire only sends
 // maintenance frames while held), so demanding it refuses every install on a

@@ -4,10 +4,25 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
 	"vl/store"
 )
+
+// f2PinClock pins the mentor clock seam to a fixed mid-session instant far from
+// the 17:00 CT CME session boundary and returns it. mentorRebuildLimitsAtBoot
+// reads mentorClockNow() (the seam) while the seed below uses the returned
+// instant — the two must be the SAME instant. The old time.Now() seed made
+// these tests wall-clock flaky: pos.EntryTime = now-10m lands in the PREVIOUS
+// session (skipped by the session-day filter) whenever now is within 10 minutes
+// after 17:00 CT.
+func f2PinClock(t *testing.T) time.Time {
+	now := time.Date(2026, 10, 22, 12, 0, 0, 0, kernel.CTLocation())
+	setMentorNowSource(func() time.Time { return now })
+	t.Cleanup(func() { setMentorNowSource(nil) })
+	return now
+}
 
 // #13 — Limits (the G1 leg budget + G2 loss box) is in-memory only, so a
 // restart wiped "two losses at one place = OFF" and the stopped-leg block.
@@ -24,7 +39,7 @@ func TestMentorRebuildLimitsAtBoot(t *testing.T) {
 		{Key: "key_level:97", Kind: mentor.KindKeyLevel, Price: 97},
 	}
 
-	now := time.Now()
+	now := f2PinClock(t)
 	sig := "aa07e583-0000-0000-0000-000000000099"
 	// A FILLED mentor PHL arm from today.
 	arm := f2Arm(sig, "PHL", 2, 0, 90, 88, 99, nil)
@@ -74,7 +89,7 @@ func TestMentorRebuildLimitsSkipsSwingAndOldDays(t *testing.T) {
 	at.mentorEval = mentor.New(mentor.DefaultConfig())
 	at.mentorEval.State.Levels = []mentor.Level{{Key: "old_extreme:100", Kind: mentor.KindOldExtreme, Price: 100}}
 
-	now := time.Now()
+	now := f2PinClock(t)
 	// A SWING4H arm (exempt) and an old-day PHL arm (stale).
 	swing := f2Arm("sig-sw", "SWING4H", 2, 0, 90, 88, 99, nil)
 	swing.UpdatedAt = now
@@ -102,7 +117,7 @@ func TestMentorRebuildLimitsBootBEStopDropsNotBooks(t *testing.T) {
 		{Key: "old_extreme:100", Kind: mentor.KindOldExtreme, Price: 100},
 	}
 
-	now := time.Now()
+	now := f2PinClock(t)
 	sig := "aa07e583-0000-0000-0000-0000000000be"
 	// A FILLED mentor PHL arm from today (entry 90, original stop 88).
 	arm := f2Arm(sig, "PHL", 2, 0, 90, 88, 99, nil)

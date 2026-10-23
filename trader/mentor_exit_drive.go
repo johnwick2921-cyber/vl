@@ -269,7 +269,18 @@ func (at *AutoTrader) mentorX8SendExit(nt *ntTrader.TCPTrader, p *mentorLivePos)
 			collar := float64(mentorX8LimitCollarTicks) * tick
 			limit := price - collar // long: sell through the bid
 			if strings.EqualFold(strings.TrimSpace(p.Pos.Side), "short") {
-				limit = price + collar
+				limit = price + collar // short: buy through the ask
+			}
+			// m390: the limit must land ON a tick boundary, and it must round
+			// AWAY from the market so it stays marketable — a sell exit (long
+			// close) rounds DOWN, a buy exit (short close) rounds UP. Nearest
+			// rounding could move it half a tick toward the market. Same
+			// direction as WireStop (away from the entry); an unknown side
+			// fails closed to the market flatten (never guess).
+			if wl, err := ntTrader.WireStop(p.Pos.Side, limit, tick); err == nil {
+				limit = wl
+			} else {
+				limit = 0
 			}
 			if limit > 0 {
 				err := mentorX8LimitWire(at, nt, p.Pos.Side, limit)

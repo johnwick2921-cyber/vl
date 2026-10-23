@@ -78,6 +78,32 @@ func TestBuildIDFromDLLRefusesTwoDistinctIDs(t *testing.T) {
 	}
 }
 
+// PIN m387 — BuildIDFromDLL prefers the ANCHORED marker the .cs folds
+// ("VL_BUILD_ID=" + VL_BUILD_ID) over any id-shaped value in a comment or
+// resource. The m357 B >1-distinct fail-closed stays as the fallback when no
+// anchor is present. MUTANT: drop the anchored pass in buildIDFromBytes → the
+// stale comment id wins (or the read refuses) → RED.
+func TestBuildIDFromDLLPrefersTheAnchoredID(t *testing.T) {
+	dir := t.TempDir()
+	// a stale id in a "comment" + the anchored marker carrying the REAL id.
+	dll := filepath.Join(dir, "anchored.dll")
+	if err := os.WriteFile(dll, []byte("// old build was 2026-10-10-z\nVL_BUILD_ID=2026-10-22-c\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, err := BuildIDFromDLL(dll)
+	if err != nil || got != "2026-10-22-c" {
+		t.Fatalf("BuildIDFromDLL(anchored) = %q, %v; want 2026-10-22-c — the anchored id must win over the stale comment id", got, err)
+	}
+	// two DISTINCT anchors refuse (fail closed).
+	two := filepath.Join(dir, "two-anchors.dll")
+	if err := os.WriteFile(two, []byte("VL_BUILD_ID=2026-10-22-c\nVL_BUILD_ID=2026-10-21-b\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BuildIDFromDLL(two); err == nil {
+		t.Fatal("two distinct anchored build ids must be refused")
+	}
+}
+
 // PIN m343 Place records the backup proof — the sidecar next to the backed-up
 // DLL holds the OLD DLL's sha256 + build id. MUTANT: drop WriteAddonBackupMeta
 // in Place → no sidecar → RED.

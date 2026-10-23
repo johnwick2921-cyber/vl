@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -35,11 +36,21 @@ func realFillAT(t *testing.T) (*AutoTrader, *store.Store, *store.ArmedOrderStore
 	return at, st, ledger
 }
 
+// realFillNowMs pins the real-fill tests to a fixed mid-session instant far
+// from the 17:00 CT CME session boundary. seedRealFillPend's Apply and
+// TestMentorTransientHoldThenFillStillOneLeg's own Apply are ~60s apart; when
+// the pair straddles 17:00 CT the trading-day key flips and Limits.Apply wipes
+// l.pend → RED. Both call sites use this fixed instant so the straddle cannot
+// happen.
+func realFillNowMs() int64 {
+	return time.Date(2026, 10, 22, 12, 0, 0, 0, kernel.CTLocation()).UnixMilli()
+}
+
 // seedRealFillPend registers a real-fill pend for armID through the REAL
 // Limits.Apply (the production placement-time hook).
 func seedRealFillPend(t *testing.T, at *AutoTrader, armID string) {
 	t.Helper()
-	now := time.Now().UnixMilli()
+	now := realFillNowMs()
 	levels := []mentor.Level{{Key: "old_extreme:29650", Kind: mentor.KindOldExtreme, Price: 29650}}
 	prev := market.Kline{Open: 29500, High: 29590, Low: 29450, Close: 29580}
 	cur := market.Kline{Open: 29580, High: 29590, Low: 29500, Close: 29550}
@@ -128,7 +139,7 @@ func TestMentorTransientHoldThenFillStillOneLeg(t *testing.T) {
 	at.mentorEval.State.Limits.Apply(nil,
 		market.Kline{Open: 29580, High: 29590, Low: 29500, Close: 29550},
 		market.Kline{Open: 29590, High: 29620, Low: 29540, Close: 29610},
-		time.Now().UnixMilli()+60_000, nil, at.mentorEval.Cfg)
+		realFillNowMs()+60_000, nil, at.mentorEval.Cfg)
 	if at.mentorEval.State.Limits.Long != nil {
 		t.Fatalf("real-fill-only: the held pend must not fill on a candle touch")
 	}

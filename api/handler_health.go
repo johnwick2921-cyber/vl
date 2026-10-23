@@ -6,6 +6,7 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"vl/config"
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
@@ -111,6 +112,9 @@ func (s *Server) handleHealth(c *gin.Context) {
 		"db":              dbStatus,
 		"nt8":             nt8,
 		"traders_running": running,
+		// m386: the Friends page flag for the web (nav + route). READ value; the
+		// web hides the Friends surface when false. The owner API 404s the same way.
+		"friends_page": config.FriendsPageEnabled(),
 		// Release #22 OPS-SAFETY: the bot's own wall-vs-monotonic clock-step
 		// counters (backward/forward, largest, last, whether NEW entries are
 		// held right now). Read values; last_* absent until a step is seen.
