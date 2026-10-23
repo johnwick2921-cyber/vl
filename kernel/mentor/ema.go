@@ -51,6 +51,18 @@ func emaScheduleTF(cfg Config, knobTF int, now int64) int {
 	return 1
 }
 
+// EMAUsed is the EMA 9/34 the engine actually read on its last tick and the
+// frame label ("1m" or "2m") it was read on: the 2m incremental line when the
+// last tick's execution schedule said 2m (State.EMAFrame) and that line has
+// formed, else the 1m line. The owner-facing snapshots print this, never the
+// bare 1m State.EMA9/EMA34.
+func (s *State) EMAUsed() (ema9, ema34 float64, frame string) {
+	if s.EMAFrame == 2 && s.EMA2mWarmed {
+		return s.EMA9x2, s.EMA34x2, "2m"
+	}
+	return s.EMA9, s.EMA34, "1m"
+}
+
 // EMALevelsAt is EMALevels on the execution-frame schedule (emaScheduleTF).
 // now == 0 means no clock: the configured EMATFMinutes is used as-is.
 func EMALevelsAt(bars []market.Kline, cfg Config, now int64) []Level {

@@ -956,8 +956,7 @@ export const mentor: GuideSection = {
         {
           label: 'EMA timeframe',
           where: 'Strategy → Mentor mode → indicators',
-          what:
-            'The TF the EMA 34/9 lines are computed on. While "2m execution" is ON and this stays at 1, the lines follow the execution frame (1m 08:30–09:00 CT, 2m otherwise); any value above 1 is an explicit override.',
+          what: 'The TF the EMA 34/9 lines are computed on. While "2m execution" is ON and this stays at 1, the lines follow the execution frame (1m 08:30–09:00 CT, 2m otherwise); any value above 1 is an explicit override.',
           trader:
             '1m, or the execution frame (2m after 09:00 CT) with 2m execution ON.',
           consumer: 'kernel/mentor/mentor.go EMATFMinutes',

@@ -479,6 +479,7 @@ func (e *Evaluator) SeedBoxLine() string {
 type ReseedSnapshot struct {
 	FourH, OneH, FiveM TriggerLine
 	EMA34, EMA9        float64
+	EMAFrame           string // "1m" or "2m": the frame EMA34/EMA9 were read on
 	SwingLine          float64
 	SwingCount         int
 	SwingStale         bool
@@ -495,9 +496,10 @@ type ReseedReport struct {
 
 func (e *Evaluator) reseedSnapshot() ReseedSnapshot {
 	live, del := e.keyLevelCounts()
+	ema9, ema34, frame := e.State.EMAUsed()
 	return ReseedSnapshot{
 		FourH: e.State.HTF.FourH, OneH: e.State.HTF.OneH, FiveM: e.State.Trigger,
-		EMA34: e.State.EMA34, EMA9: e.State.EMA9,
+		EMA34: ema34, EMA9: ema9, EMAFrame: frame,
 		SwingLine: e.State.Swing.Line, SwingCount: e.State.Swing.EmaCount, SwingStale: e.State.Swing.LineStale,
 		KeyLive: live, KeyDel: del,
 		Bars1m: e.State.Seed1mWatermark,
@@ -547,8 +549,8 @@ func (r ReseedReport) Line() string {
 		trig("4h trigger", b.FourH, a.FourH),
 		trig("1h trigger", b.OneH, a.OneH),
 		trig("5m trigger", b.FiveM, a.FiveM),
-		num("1m EMA34", b.EMA34, a.EMA34),
-		num("1m EMA9", b.EMA9, a.EMA9),
+		num(a.EMAFrame+" EMA34", b.EMA34, a.EMA34),
+		num(a.EMAFrame+" EMA9", b.EMA9, a.EMA9),
 		num("swing 4h EMA34 line", b.SwingLine, a.SwingLine),
 	}
 	if b.SwingStale != a.SwingStale {

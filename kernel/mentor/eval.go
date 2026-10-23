@@ -180,6 +180,10 @@ type State struct {
 	EMA9x2          float64 `json:"ema9_2m,omitempty"`
 	Seed2mWatermark int64   `json:"seed_2m_watermark,omitempty"`
 	EMA2mWarmed     bool    `json:"ema2m_warmed,omitempty"`
+	// EMAFrame is the frame (1 or 2) the EMA lines were last read on; 0 = not
+	// read yet (or knob OFF). A 1<->2 change starts a fresh visit for the EMA
+	// keys only (resetEMAVisitsOnFrameSwitch).
+	EMAFrame int `json:"ema_frame,omitempty"`
 
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
@@ -1713,6 +1717,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if el, ok := e.emaLocationLevel(bars, e.Cfg, now); ok {
 		levels = append(levels, el)
 	}
+	e.resetEMAVisitsOnFrameSwitch(now)
 
 	// §7 step 0: the ORB gate advances every tick (drawn at 08:32 CT; the
 	// side is the side of the LATEST 1m candle whose BODY is wholly outside —
@@ -3381,6 +3386,35 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
 	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
+}
+
+// resetEMAVisitsOnFrameSwitch starts a FRESH visit for the EMA 9 / EMA 34 /
+// EMA 34 location keys when the execution-frame schedule moves the EMA lines
+// between the 1m and the 2m (08:30 and 09:00 CT). Touch, ISB-only and visit-cap
+// state is keyed by the CONSTANT level key, so without this a wrong-way first
+// touch recorded against the 1m line would invalidate the new 2m line, which sits
+// at a different price. Only those three keys are touched; no other level.
+func (e *Evaluator) resetEMAVisitsOnFrameSwitch(now int64) {
+	if !e.Cfg.Exec2mAfter30m || e.Cfg.EMATFMinutes > 1 {
+		return
+	}
+	frame := emaScheduleTF(e.Cfg, e.Cfg.EMATFMinutes, now)
+	prev := e.State.EMAFrame
+	e.State.EMAFrame = frame
+	if prev == 0 || prev == frame {
+		return
+	}
+	for _, key := range []string{string(KindEMA34), string(KindEMA9), string(KindEMA34HTF)} {
+		delete(e.State.Touches, key)
+		delete(e.State.ISBOnly, key)
+		delete(e.State.VisitCapRefused, key)
+		delete(e.State.Visits, key)
+		for vk := range e.State.Visits { // EMA 9 per-level mode: "ema9@price"
+			if strings.HasPrefix(vk, key+"@") {
+				delete(e.State.Visits, vk)
+			}
+		}
+	}
 }
 
 // foldClosed2mEMA advances the incremental 2m EMA 34/9 over the 2m buckets that
