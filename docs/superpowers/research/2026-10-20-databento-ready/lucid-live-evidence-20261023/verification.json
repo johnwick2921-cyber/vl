@@ -1,0 +1,43 @@
+{
+  "live_summaries_matched": 24,
+  "new50k_summaries_matched": 6,
+  "ledger_rows": 700,
+  "new50k_ledger_rows": 148,
+  "tests_per_timezone": 9,
+  "random_accounts_per_timezone": 3000,
+  "mutants": [
+    {
+      "name": "carry_50k",
+      "failures": 6,
+      "errors": 0
+    },
+    {
+      "name": "wrong_initial_floor",
+      "failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "same_day_reuse",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "omit_fee",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "lose_buffer",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "strict_breach",
+      "result": "Equivalent on fixed 3/6 MNQ cent lattice; not claimed detected"
+    }
+  ],
+  "hashes": {
+    "new50k_summary.csv": "0ca1d5b21e6cc4522f33755e1d31900ad15291fcfa7c462f4051a7d542f9c7f3",
+    "new50k_ledger.csv": "a181b0ca42c11b7404a385c98c819799feb0621c5dcdbaecc77b0317520fa34b"
+  }
+}

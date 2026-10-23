@@ -1,0 +1,11 @@
+{
+  "engine_sha256": "c4b8b991e2978bee49fdacbf06a9b61b7f8c58928906930bfe1ce02cae323ff9",
+  "inputs": {
+    "/home/hoang/fleet-1017/out/lucid50k-EDA-3v6-20261022/paths.json": "75c8244d905eb440eeeb665b19a06b25c626ae7c39b8b29306c1c56a48839676",
+    "/home/hoang/fleet-1017/out/lucid50k-EDA-payout-20261023/summary.csv": "d0d5f7907c642a34d552e100b55a51acefd83f843dc36707b2142abbd6333841"
+  },
+  "artifacts": {
+    "summary.csv": "42fa9c79b05d0bf74911bf480b7ef86a55e71bba45caa7160073142130a6958b",
+    "ledger.csv": "03c580c90432a3c4517e46e0b17589a05716a1d6564ee3219c5f79f68a3f540a"
+  }
+}

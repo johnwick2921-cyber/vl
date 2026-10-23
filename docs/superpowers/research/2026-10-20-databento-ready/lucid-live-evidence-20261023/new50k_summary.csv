@@ -1,0 +1,7 @@
+method,execution,transition_after,prior_sim_received_cents,qty,status,last_day,trades,payout_count,gross_withdrawn_cents,received_cents,ending_balance_cents,final_floor_cents,trading_net_cents
+E,trade_print_proxy,2026-01-27,377325,3,END_OF_VALID_SAMPLE,2026-04-17,53,0,0,0,5141600,4984350,141600
+E,trade_print_proxy,2026-01-21,771030,6,MLL_BREACH,2026-02-19,19,1,68400,61560,5009900,5010000,78300
+E,stress1tick,2026-01-27,372600,3,END_OF_VALID_SAMPLE,2026-04-17,53,0,0,0,5136350,4979400,136350
+E,stress1tick,2026-01-21,763470,6,MLL_BREACH,2026-02-19,19,1,67500,60750,5009900,5010000,77400
+A,trade_print_proxy,2026-01-12,859590,6,MLL_BREACH,2026-01-14,2,0,0,0,4799900,4800000,-200100
+A,stress1tick,2026-01-12,858510,6,MLL_BREACH,2026-01-14,2,0,0,0,4799900,4800000,-200100
