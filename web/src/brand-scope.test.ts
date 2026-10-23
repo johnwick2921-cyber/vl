@@ -18,6 +18,11 @@
 //     (QUEUE-47); adds the anchored VL_BUILD_ID_ANCHOR marker and bumps
 //     VL_BUILD_ID to 2026-10-22-c. Wire / order-name / account / signal-id
 //     contract untouched.
+//     #48.2: m400 (DS-102) makes VL_BUILD_ID_ANCHOR static readonly (not const)
+//     so the folded marker is a #US user string with a terminal byte instead of
+//     a #Blob const blob that the INSTALLED older reader misread as a trailing
+//     '0'; bumps VL_BUILD_ID to 2026-10-22-d. Wire / order-name / account /
+//     signal-id contract untouched.
 //   provider/ninjatrader/tcp_server.go  sha256 a59169a4… — connect-key auth gate
 //     root fix (fix/connect-key-auth-gate e64281dca, DS-104) + m188 keyed-conn
 //     deadline fix (7f1a89133, CTO): a pre-auth dial is held as a pending conn
