@@ -77,11 +77,19 @@ namespace NinjaTrader.NinjaScript.AddOns
         //   FormatException on every order_update — format with InvariantCulture.
         // 2026-10-22-c (release #48 m387): CancelBracketsFor cancels EVERY matched
         //   bracket; the build id also travels as the anchored VL_BUILD_ID_ANCHOR.
-        private const string  VL_BUILD_ID             = "2026-10-22-c";
-        // m387 anchor: the id also travels as a folded user string "VL_BUILD_ID=<id>"
+        // 2026-10-22-d (release #48.2 m400): the anchor is now static READONLY, not
+        //   const — a const anchor sat in the #Blob heap IMMEDIATELY after the id
+        //   blob (no terminal byte), so the INSTALLED #46.1 reader read the next
+        //   blob's 0x30 size byte as a trailing '0' ("2026-10-22-c0") and refused.
+        private const string  VL_BUILD_ID             = "2026-10-22-d";
+        // m400 anchor: the id also travels as a folded user string "VL_BUILD_ID=<id>"
         // (referenced in the CONNECTED log) so internal/addonbuild.BuildIDFromDLL can
-        // anchor to the constant instead of any id-shaped value in a comment or resource.
-        private const string  VL_BUILD_ID_ANCHOR      = "VL_BUILD_ID=" + VL_BUILD_ID;
+        // anchor to the constant instead of any id-shaped value in a comment or
+        // resource. static readonly (NOT const): a const anchor lands in the #Blob
+        // heap with no terminal byte, and its 0x30 size byte can be misread as a
+        // trailing '0' by the INSTALLED (older) reader's even-byte scan. A #US
+        // user string carries a terminal byte, which stops that scan.
+        private static readonly string VL_BUILD_ID_ANCHOR = "VL_BUILD_ID=" + VL_BUILD_ID;
         private const int    MAX_FRAME_BYTES         = 1 << 20; // 1 MB, spec L4376
 
         // === State ===
