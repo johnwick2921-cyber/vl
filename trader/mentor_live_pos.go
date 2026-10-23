@@ -85,7 +85,9 @@ type mentorLivePos struct {
 	// schedule read the setup — the ISB pair or PHL/PLH — on closed 2m candles
 	// (carried from the intent's ExecTFMin via mentorExecFrames); 0 = the 1m
 	// (every other setup, and every named setup when exec_2m_after_30m is
-	// explicitly OFF).
+	// explicitly OFF). m409: 1 = an entry KNOWN to be read on the 1m (the trail
+	// treats 1 like 0; the X8 trap-dodge reads the 1m EMA34 on it); 0 = unknown
+	// (old position / restart rebuild) → X8 keeps the 2m.
 	TrailTFMin int
 	// X8Exited (m262 one-shot latch): the X8 trap-dodge market close was
 	// SENT for this position — never send a second close while the fill is in
@@ -766,8 +768,8 @@ var mentorRunnerTargets sync.Map
 // mentorExecFrames carries an intent's ExecTFMin (the frame its entry was READ
 // on — 2 under the X5-10 exec-2m schedule) from the authoring
 // (mentorArmIntent, keyed trader+scenario) to the fill-time live position, the
-// same way as mentorRunnerTargets: no schema change. Only a 2m entry is stored;
-// a 1m entry leaves no key (absent = the 1m).
+// same way as mentorRunnerTargets: no schema change. m409: a 1m entry stores 1,
+// a 2m/5m entry its frame; absent = unknown (the X8 trap-dodge keeps the 2m).
 var mentorExecFrames sync.Map
 
 // ── REL17-F2 RESTART REBUILD ────────────────────────────────────────────────
