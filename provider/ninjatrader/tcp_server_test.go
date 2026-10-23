@@ -3,20 +3,13 @@ package ninjatrader
 import (
 	"context"
 	"net"
-	"sync"
 	"testing"
 	"time"
 )
 
-// freeEphemeralAddr binds 127.0.0.1:0 and KEEPS the listener open until the
-// test ends, returning its real address. Pass the server through
-// useReservedAddr so Start adopts that exact listener: the port is never
-// closed and re-bound, so two parallel suite runs cannot collide on it (m398).
-var (
-	reservedMu sync.Mutex
-	reserved   = map[string]net.Listener{}
-)
-
+// freeEphemeralAddr returns a 127.0.0.1 address with an unused port. We bind
+// briefly to find a free port, close it, and return the string. There's a
+// small race window vs the next bind; tests retry implicitly via test harness.
 func freeEphemeralAddr(t *testing.T) string {
 	t.Helper()
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -24,35 +17,13 @@ func freeEphemeralAddr(t *testing.T) string {
 		t.Fatalf("free port: %v", err)
 	}
 	addr := ln.Addr().String()
-	reservedMu.Lock()
-	reserved[addr] = ln
-	reservedMu.Unlock()
-	t.Cleanup(func() {
-		reservedMu.Lock()
-		delete(reserved, addr)
-		reservedMu.Unlock()
-		_ = ln.Close() // already-closed after Stop is fine
-	})
+	_ = ln.Close()
 	return addr
-}
-
-// useReservedAddr points srv at addr, handing it the pre-bound listener on the
-// first use; a second server on the same addr (restart tests) binds normally.
-func useReservedAddr(t *testing.T, srv *TCPServer, addr string) {
-	t.Helper()
-	srv.SetAddrForTest(addr)
-	reservedMu.Lock()
-	ln := reserved[addr]
-	delete(reserved, addr)
-	reservedMu.Unlock()
-	if ln != nil {
-		srv.SetPreBoundListenerForTest(ln)
-	}
 }
 
 func TestTCPServer_StartStop(t *testing.T) {
 	srv := NewTCPServer(nil)
-	useReservedAddr(t, srv, freeEphemeralAddr(t))
+	srv.SetAddrForTest(freeEphemeralAddr(t))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -76,7 +47,7 @@ func TestTCPServer_StartStop(t *testing.T) {
 func TestTCPServer_AcceptSingleClient_RejectSecond(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -120,7 +91,7 @@ func TestTCPServer_AcceptSingleClient_RejectSecond(t *testing.T) {
 
 func TestTCPServer_ContextCancellation(t *testing.T) {
 	srv := NewTCPServer(nil)
-	useReservedAddr(t, srv, freeEphemeralAddr(t))
+	srv.SetAddrForTest(freeEphemeralAddr(t))
 	ctx, cancel := context.WithCancel(context.Background())
 	if err := srv.Start(ctx); err != nil {
 		t.Fatalf("Start: %v", err)
@@ -143,7 +114,7 @@ func TestTCPServer_ContextCancellation(t *testing.T) {
 func TestTCPServer_SendSignal_QueuedOnDisconnect(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -184,7 +155,7 @@ func TestTCPServer_StaleSignalDropped(t *testing.T) {
 	}
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	// Override stale cutoff to 100ms so the test doesn't take 60s.
 	srv.SetStaleSignalAgeForTest(100 * time.Millisecond)
 
@@ -224,7 +195,7 @@ func TestTCPServer_StaleSignalDropped(t *testing.T) {
 func TestTCPServer_FillRoundTrip(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -286,7 +257,7 @@ func TestTCPServer_IdleConnectionSurvives(t *testing.T) {
 	}
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -338,7 +309,7 @@ func TestTCPServer_IdleConnectionSurvives(t *testing.T) {
 func TestTCPServer_ShutdownUnblocksIdleRead(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {

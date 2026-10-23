@@ -25,7 +25,7 @@ import (
 func TestTCPServer_BarsReceivePath_Historical(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -82,7 +82,7 @@ func TestTCPServer_BarsReceivePath_Historical(t *testing.T) {
 func TestTCPServer_BarsReceivePath_UpdateMultiBar(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {

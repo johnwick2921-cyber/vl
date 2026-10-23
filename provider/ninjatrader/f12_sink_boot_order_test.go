@@ -37,7 +37,7 @@ func TestSinkInstalledBeforeStartPersistsTheFirstFrame(t *testing.T) {
 
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 
 	// ORDER UNDER TEST: sink first, start second.
 	var fired atomic.Int64
@@ -115,7 +115,7 @@ func TestSinkInstalledBeforeStartPersistsTheFirstFrame(t *testing.T) {
 // which is the point. An invariant nothing asserts is a comment.
 func TestSinkRegisteredAfterStartIsNotInstalled(t *testing.T) {
 	srv := NewTCPServer(nil)
-	useReservedAddr(t, srv, freeEphemeralAddr(t))
+	srv.SetAddrForTest(freeEphemeralAddr(t))
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {

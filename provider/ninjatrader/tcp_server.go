@@ -78,7 +78,6 @@ type TCPServer struct {
 	histReplay historyReplayState // 101 D1'(3a)
 	addr       string
 	listener   net.Listener
-	preBound   net.Listener // test-only seam (SetPreBoundListenerForTest); nil in production
 
 	// U1 wire-liveness (stale-bar dispatch 2026-08-19): every inbound frame
 	// bumps these; a 60s reporter line answers "feed or math" in one glance.
@@ -1298,13 +1297,7 @@ func (s *TCPServer) barsSubscribePayloads() []BarsSubscribePayload {
 // Start binds the listener and spins up the accept loop. The returned error
 // is non-nil only if the bind fails. Stop releases the port.
 func (s *TCPServer) Start(ctx context.Context) error {
-	var ln net.Listener
-	var err error
-	if s.preBound != nil {
-		ln, s.preBound = s.preBound, nil // tests only: a listener bound BEFORE Start (no close/rebind race)
-	} else {
-		ln, err = net.Listen("tcp", s.addr)
-	}
+	ln, err := net.Listen("tcp", s.addr)
 	if err != nil {
 		return fmt.Errorf("tcp_server: listen %s: %w", s.addr, err)
 	}
@@ -1610,11 +1603,6 @@ func (s *TCPServer) SetStaleSignalAgeForTest(d time.Duration) {
 // need an ephemeral port via "127.0.0.1:0"). Production callers leave the
 // constructor default in place.
 func (s *TCPServer) SetAddrForTest(addr string) { s.addr = addr }
-
-// SetPreBoundListenerForTest hands Start an already-bound listener so a test
-// never closes and re-binds a "free" port (m398: that race collided across
-// parallel suite runs). Production never calls it; the default bind is unchanged.
-func (s *TCPServer) SetPreBoundListenerForTest(ln net.Listener) { s.preBound = ln }
 
 // SetListeningSinceForTest sets the listener-up stamp (tests only: simulates
 // how long the bot has been up with no AddOn connection).

@@ -36,7 +36,7 @@ func TestLinkIdleClosesOnOpenSessionSilence(t *testing.T) {
 
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -123,7 +123,7 @@ func TestLinkIdleDoesNotCloseAFreshConnection(t *testing.T) {
 	t.Setenv("NT8_LINK_IDLE_SECONDS", "10")
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -167,7 +167,7 @@ func TestLinkIdleFiresWhenStaleAndOpen(t *testing.T) {
 	}
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {

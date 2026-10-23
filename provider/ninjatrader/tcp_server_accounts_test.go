@@ -17,7 +17,7 @@ import (
 func TestTCPServer_AccountsListReceivePath(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -86,7 +86,7 @@ func TestTCPServer_AccountsListReceivePath(t *testing.T) {
 func TestTCPServer_AccountSelectRoundTrip(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -167,7 +167,7 @@ func TestTCPServer_AccountSelectRoundTrip(t *testing.T) {
 func TestTCPServer_AccountsListThreadSafety(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -243,7 +243,7 @@ func TestTCPServer_AccountsListThreadSafety(t *testing.T) {
 func TestTCPServer_CurrentAccountUpdatesOnSelect(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	useReservedAddr(t, srv, addr)
+	srv.SetAddrForTest(addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
