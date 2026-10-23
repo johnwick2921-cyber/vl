@@ -1,0 +1,50 @@
+{
+  "status": "PASS",
+  "tests_per_timezone": 9,
+  "random_accounts_per_timezone": 3000,
+  "timezones": [
+    "America/Chicago",
+    "UTC"
+  ],
+  "summary_rows": 12,
+  "ledger_rows": 672,
+  "payout_rows": 44,
+  "all_rows_reconciled": true,
+  "mutations": [
+    {
+      "name": "buffer_missing",
+      "failures": 4,
+      "errors": 0
+    },
+    {
+      "name": "half_profit_removed",
+      "result": "EQUIVALENT under owner buffer and cap; not claimed caught"
+    },
+    {
+      "name": "four_days",
+      "failures": 5,
+      "errors": 0
+    },
+    {
+      "name": "no_cycle_reset",
+      "failures": 4,
+      "errors": 0
+    },
+    {
+      "name": "wrong_split",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "six_payouts",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "no_balance_deduction",
+      "failures": 6,
+      "errors": 0
+    }
+  ],
+  "engine_sha256": "8062640bfac203e2b9ddf3b5cde41106493377f32375364ed2fa8e4db7eb20fa"
+}
