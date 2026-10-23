@@ -34,30 +34,71 @@ func TestEveningWindowAndSlowNight(t *testing.T) {
 		}
 	}
 
-	// eveningSlow: a night whose 1m range since the 15:00 CT close is < 100 pts.
-	evening := ct(2026, 9, 15, 18, 0)
-	close15 := ct(2026, 9, 15, 15, 0)
-	slow := []market.Kline{
-		{OpenTime: close15, High: 120, Low: 119, Close: 119.5},
-		{OpenTime: close15 + 60_000, High: 121, Low: 118, Close: 120},
+	// eveningSlow (m408): rolling 60m window inside the 17:00 CT session only.
+	mk := func(d, fromH, fromM, toH, toM int, lo, hi float64) []market.Kline {
+		var out []market.Kline
+		for ts := ct(2026, 9, d, fromH, fromM); ts < ct(2026, 9, d, toH, toM); ts += 60_000 {
+			out = append(out, market.Kline{OpenTime: ts, Low: lo, High: hi, Close: lo})
+		}
+		return out
 	}
-	if !eveningSlow(evening, slow) {
-		t.Fatalf("a 2-pt night must be slow (5m), got fast")
+	join := func(parts ...[]market.Kline) []market.Kline {
+		var out []market.Kline
+		for _, p := range parts {
+			out = append(out, p...)
+		}
+		return out
 	}
-	strong := []market.Kline{
-		{OpenTime: close15, High: 120, Low: 119, Close: 119.5},
-		{OpenTime: close15 + 60_000, High: 230, Low: 119, Close: 225}, // 111-pt range
+	now2100 := ct(2026, 9, 15, 21, 0)
+
+	// A quiet 20:00-21:00 after a busy 17:00-18:00 IS slow (impossible before).
+	quietAfterBusy := join(mk(15, 17, 0, 18, 0, 0, 300), mk(15, 20, 0, 21, 0, 100, 110))
+	if !eveningSlow(now2100, quietAfterBusy) {
+		t.Fatal("quiet 20:00-21:00 after a busy 17:00-18:00 must be slow")
 	}
-	if eveningSlow(evening, strong) {
-		t.Fatalf("a 111-pt night must be strong (2m), got slow")
+	// Busy inside the window -> not slow.
+	if eveningSlow(now2100, join(mk(15, 20, 0, 21, 0, 100, 110), mk(15, 20, 30, 20, 31, 100, 230))) {
+		t.Fatal("a 130-pt range inside the last 60m must not be slow")
 	}
-	// No evening bars yet → not slow (stay 2m).
-	if eveningSlow(evening, nil) {
-		t.Fatalf("no evening bars must not read slow")
+	// 15:00-16:59 bars never count.
+	dayHour := mk(15, 15, 0, 17, 0, 0, 500)
+	if !eveningSlow(now2100, join(dayHour, mk(15, 20, 0, 21, 0, 100, 110))) {
+		t.Fatal("15:00-16:59 bars must never count toward the evening range")
 	}
-	// Outside the evening window → never slow.
-	if eveningSlow(ct(2026, 9, 15, 9, 0), slow) {
-		t.Fatalf("the 09:00 RTH minute must never read the evening 5m")
+	// Just after the 17:00 reopen: under one full window of evening -> 2m, even
+	// when the pre-17:00 bars are flat (they must not fill the window).
+	if eveningSlow(ct(2026, 9, 15, 17, 30), join(mk(15, 16, 0, 17, 0, 100, 101), mk(15, 17, 0, 17, 30, 100, 101))) {
+		t.Fatal("before a full 17:00-based window has elapsed the read stays on the 2m")
+	}
+	if eveningSlow(ct(2026, 9, 15, 16, 30), mk(15, 15, 30, 16, 30, 100, 101)) {
+		t.Fatal("the 16:00-17:00 break is never slow")
+	}
+	// After midnight the session is anchored to yesterday's 17:00 reopen.
+	if !eveningSlow(ct(2026, 9, 16, 1, 0), mk(16, 0, 0, 1, 0, 100, 110)) {
+		t.Fatal("a quiet 00:00-01:00 must be slow")
+	}
+	// 03:00 Europe open forces the 2m even on a dead tape.
+	dead := mk(16, 1, 30, 3, 30, 100, 101)
+	if eveningSlow(ct(2026, 9, 16, 3, 1), dead) || eveningSlow(ct(2026, 9, 16, 3, 30), dead) {
+		t.Fatal("03:00 CT onward must force the 2m")
+	}
+	// Threshold: range exactly 100 is NOT slow and stays so every tick while
+	// that bar is in the window (no flip-flop); 99.75 is slow.
+	edge := join(mk(15, 20, 0, 21, 0, 100, 150), []market.Kline{{OpenTime: ct(2026, 9, 15, 20, 10), Low: 50, High: 150}})
+	for _, off := range []int64{0, 60_000, 120_000} {
+		if eveningSlow(now2100+off, edge) {
+			t.Fatal("a 100-pt window range must not read slow (strictly under)")
+		}
+	}
+	edge[len(edge)-1].Low = 50.25
+	if !eveningSlow(now2100, edge) {
+		t.Fatal("a 99.75-pt window range must read slow")
+	}
+	if eveningSlow(now2100, nil) {
+		t.Fatal("no bars must not read slow")
+	}
+	if eveningSlow(ct(2026, 9, 15, 9, 0), mk(15, 8, 0, 9, 0, 1, 2)) {
+		t.Fatal("the 09:00 RTH minute must never read the evening 5m")
 	}
 }
 
