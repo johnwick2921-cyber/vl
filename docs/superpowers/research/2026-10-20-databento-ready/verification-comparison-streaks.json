@@ -1,0 +1,12 @@
+{
+  "source_hashes": {
+    "/home/hoang/fleet-1017/out/orb-six-month-stop-variants-20261020/trades.csv": "a57cf75425f6886a4946488f3e323d42d02c36b4b50b58ba3c1959a4e16dd777",
+    "/home/hoang/fleet-1017/out/orb-body-confirmed-retest-20261020/trades.csv": "02a1be6154af216117c396c11dcdc8efde54d1221072ea27d386b999a340eebd",
+    "/home/hoang/fleet-1017/out/orb-six-month-retest-20261020/trades.csv": "29bc8c9346ecd8aa5ba603d60d3d5ce0564940d171dff23316832e3a9b44e40b",
+    "/home/hoang/fleet-1017/out/orb-ema9-halfbox-20261022/trades.csv": "1f5dc8cc6460e3d4ecc942bd30444e363be46c1055eb887fcd30f36ff9f6dfc0",
+    "/home/hoang/fleet-1017/out/orb-ema9-box-lock-20261022/trades.csv": "36f417873f294eb2e54995a21561387f6c2b35e1e333a468a4f2d35568962e91"
+  },
+  "summary_decimal_reconciled": true,
+  "docx_tables_match_calculations": true,
+  "streak_definition": "Consecutive weekdays; all unavailable/non-win/non-loss days break corresponding run; weekends skipped"
+}

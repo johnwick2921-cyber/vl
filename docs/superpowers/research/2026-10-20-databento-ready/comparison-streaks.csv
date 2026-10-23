@@ -1,0 +1,7 @@
+id,method,entries,TP,SL,LOCK,open,win_pct_entries,win_pct_closed,won_points,lost_points,net_points,max_win_day,max_loss_day,win_streak_days,loss_streak_days
+A,"Breakout ngay — ORB5m; SL cả box, TP cả box",121,65,54,0,2,53.72%,54.62%,6072.50,-4324.00,1748.50,244.5,-163.25,6,7
+B,"Full-body → limit retest — ORB5m; SL cả box, TP cả box",89,48,37,0,4,53.93%,56.47%,4507.50,-3003.75,1503.75,244.5,-163.25,4,3
+C,"Breakout → limit retest touch — ORB5m; SL cả box, TP cả box",119,63,54,0,2,52.94%,53.85%,5801.50,-4324.00,1477.50,244.5,-163.25,6,7
+D,"Full-body → limit retest — ORB5m; SL nửa box, TP cả box",89,35,51,0,3,39.33%,40.70%,3520.75,-2071.875,1448.875,244.5,-93.25,4,6
+E,"EMA9 — ORB2m; SL nửa box, TP cả box; không dời stop",115,47,67,0,1,40.87%,41.23%,3415.50,-2131.875,1283.625,150.75,-66.75,5,5
+F,"EMA9 — ORB2m; SL nửa box, TP cả box; +1R khóa +5",115,29,51,34,1,54.78%,55.26%,2314.75,-1627.125,687.625,118.0,-66.75,5,3
