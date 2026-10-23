@@ -54,7 +54,10 @@ export function mentorEMACurves(
   const ema34: EMACurvePoint[] = []
   const pts = emaSeries ?? []
   if (pts.length === 0 || barTimes.length === 0) return { ema9, ema34 }
-  const EMA_BAR_MS = 60_000 // the backend series is per-1m-bar
+  // m402: each point carries its own bar length (tf_min 1 or 2; absent = 1).
+  const barMsOf = (pt: { tf_min?: number }) =>
+    pt.tf_min === 2 ? 120_000 : 60_000
+  const EMA_BAR_MS = 60_000 // the 1m floor for the interval / nominal window
   // The chart's nominal interval: the smallest positive bar spacing (robust to
   // a session-break gap between the first two bars).
   let intervalSec = 0
@@ -67,7 +70,6 @@ export function mentorEMACurves(
   // window end. A hole in the backend series (e.g. a bot restart) must leave a
   // visible gap, never a held flat value. Tolerance = one interval: it admits
   // a single missing 1m bar on a 1m chart and ordinary lag on higher charts.
-  const toleranceMs = Math.max(intervalSec, EMA_BAR_MS / 1000) * 1000
   let i = 0
   let e9 = 0
   let e34 = 0
@@ -78,20 +80,34 @@ export function mentorEMACurves(
     // m169: include a point only once its OWN bar has closed. `ms <= close`
     // included the 1m bar that OPENS at the close, whose value already folds
     // in that bar's close — one bar of look-ahead on a 1m chart.
-    while (i < pts.length && pts[i].ms + EMA_BAR_MS <= closeSec * 1000) {
+    while (i < pts.length && pts[i].ms + barMsOf(pts[i]) <= closeSec * 1000) {
       e9 = pts[i].ema9
       e34 = pts[i].ema34
       i++
     }
     const nominalCloseMs =
       (bt + Math.max(intervalSec, EMA_BAR_MS / 1000)) * 1000
-    const newestClosedMs = i > 0 ? pts[i - 1].ms + EMA_BAR_MS : -Infinity
+    const newestBarMs = i > 0 ? barMsOf(pts[i - 1]) : EMA_BAR_MS
+    const newestClosedMs = i > 0 ? pts[i - 1].ms + newestBarMs : -Infinity
+    // m402: tolerance covers one chart interval OR one bar of the newest
+    // point's own frame (a 2m point is naturally up to 2m behind a 1m bar).
+    const toleranceMs = Math.max(intervalSec * 1000, newestBarMs)
     if (i > 0 && nominalCloseMs - newestClosedMs <= toleranceMs) {
       ema9.push({ time: bt, value: e9 })
       ema34.push({ time: bt, value: e34 })
     }
   }
   return { ema9, ema34 }
+}
+
+/**
+ * m402: the frame (1 or 2 minutes) the engine's EMA is using NOW = the tf_min
+ * of the LAST point (the series is sorted by ms). Absent tf_min = 1 (older
+ * backend).
+ */
+export function mentorEMATf(emaSeries: MentorTruth['ema_series']): 1 | 2 {
+  const pts = emaSeries ?? []
+  return pts.length > 0 && pts[pts.length - 1].tf_min === 2 ? 2 : 1
 }
 
 /** The /api/open-orders row as the chart reads it. */
@@ -474,14 +490,15 @@ export function mentorChartLines(
 export function mentorEMALocationSegment(
   price: number | undefined,
   barTimes: readonly number[],
-  staleSinceMs?: number
+  staleSinceMs?: number,
+  emaTf: 1 | 2 = 1
 ): TrendSegment | null {
   if (!(price && price > 0) || barTimes.length === 0) return null
   const last = barTimes[barTimes.length - 1]
   const prev = barTimes.length > 1 ? barTimes[barTimes.length - 2] : last
   return {
     key: 'ema34_htf',
-    label: `EMA34 location (current value)${mentorStaleMark(staleSinceMs)}`,
+    label: `EMA34 location (${emaTf}m, current value)${mentorStaleMark(staleSinceMs)}`,
     color: MENTOR_COLOR,
     style: 2,
     lineWidth: 1,
