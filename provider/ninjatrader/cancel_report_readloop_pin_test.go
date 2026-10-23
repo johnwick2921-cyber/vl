@@ -17,7 +17,7 @@ func TestCancelReportEchoDroppedAtTheReadLoopWhenRegimeOFF(t *testing.T) {
 	t.Setenv("CANCEL_CONFIRM_REQUIRE_REPORT", "")
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	srv.SetAddrForTest(addr)
+	useReservedAddr(t, srv, addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -50,7 +50,7 @@ func TestCancelReportEchoPassesWhenRegimeON(t *testing.T) {
 	t.Setenv("CANCEL_CONFIRM_REQUIRE_REPORT", "1")
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	srv.SetAddrForTest(addr)
+	useReservedAddr(t, srv, addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
