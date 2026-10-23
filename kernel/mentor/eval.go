@@ -281,6 +281,7 @@ type Evaluator struct {
 	tlValid   map[string]bool
 	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
+	tlCarry   map[string]carriedTL // m407: valid intraday lines latched across the 08:30/09:00 build-frame switch
 	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
 }
 
@@ -1738,7 +1739,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
+	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
+	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	frame := 1
+	if exec2m {
+		frame = 2
+	}
+	trendlines = e.carryIntradayLines(trendlines, bars, time.UnixMilli(now), frame, e.Cfg.Exec2mAfter30m)
 	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
 	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)

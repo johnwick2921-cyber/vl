@@ -30,6 +30,7 @@ type Trendline struct {
 	FormedAt int   // P1Idx — the line is drawn when P1 closes
 	ValidAt  int   // bar index of the 3rd touch (0 = not yet a location)
 	Dead     bool  // a closed 5m candle CLOSED through the line (brokenBy5m)
+	carried  bool  // m407: latched across an intraday frame switch — already past its first test (never re-suppressed by m311)
 	TFMin    int   // 0 = 1m trendline; 60/240 = PERSISTENT HTF line [D2.3 p1 @04:23–05:41]
 }
 
@@ -115,6 +116,7 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 //   - "Thường em sẽ vẽ trendline KHUNG 2 PHÚT — nó sẽ CLEAR HƠN, tại vì MÌNH
 //     TRADE khung 2 phút và khung 1 phút." [Cách vẽ trendline p1, R5, X9
 //     @03:35–03:49].
+//
 // With the knob Exec2mAfter30m ON and the ONE schedule predicate
 // exec2mReads2m(now) true (the caller passes exec2m), the swings, the slope
 // rule, the not-crossed rule and the 3rd-touch return are read on CLOSED 2m
@@ -501,7 +503,7 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bar
 		// bar). A valid line past its 3rd-touch return is no longer suppressed
 		// [D2.3 p1 @02:19–03:45]. Persistent HTF lines keep the preference
 		// unchanged (their ValidAt is an HTF-bar index, not comparable here).
-		if (tl.TFMin != 0 || tl.ValidAt == lastIdx) && trendlineBeatenByLevel(respected, price) {
+		if (tl.TFMin != 0 || (!tl.carried && tl.ValidAt == lastIdx)) && trendlineBeatenByLevel(respected, price) {
 			refused = append(refused, tl.key())
 			continue
 		}
