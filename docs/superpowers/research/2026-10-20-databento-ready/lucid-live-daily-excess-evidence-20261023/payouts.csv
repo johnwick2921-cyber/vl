@@ -1,0 +1,9 @@
+method,qty,execution,day,gross_cents,received_cents,after_cents
+E,6,trade_print_proxy,2026-01-29,11700,10530,210000
+E,6,trade_print_proxy,2026-02-02,56700,51030,210000
+E,6,trade_print_proxy,2026-02-03,81600,73440,210000
+E,6,trade_print_proxy,2026-02-09,3300,2970,210000
+E,6,stress1tick,2026-01-29,11100,9990,210000
+E,6,stress1tick,2026-02-02,56400,50760,210000
+E,6,stress1tick,2026-02-03,81600,73440,210000
+E,6,stress1tick,2026-02-09,2700,2430,210000

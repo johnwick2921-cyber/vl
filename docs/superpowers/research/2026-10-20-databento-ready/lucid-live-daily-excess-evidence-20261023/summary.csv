@@ -1,0 +1,9 @@
+method,qty,execution,status,first_day,last_day,trades,balance_cents,floor_cents,trading_net_cents,gross_withdrawn_cents,received_cents,first_bonus_objectives_day,bonus_credited_cents,payout_count
+E,3,trade_print_proxy,END_OF_VALID_SAMPLE,2026-01-28,2026-04-17,53,141600,-15650,141600,0,0,,0,0
+E,6,trade_print_proxy,LIVE_MLL_BREACH,2026-01-22,2026-02-17,17,9900,10000,163200,153300,137970,,0,4
+E,3,stress1tick,END_OF_VALID_SAMPLE,2026-01-28,2026-04-17,53,136350,-20600,136350,0,0,,0,0
+E,6,stress1tick,LIVE_MLL_BREACH,2026-01-22,2026-02-17,17,9900,10000,161700,151800,136620,,0,4
+A,3,trade_print_proxy,NO_FIFTH_PAYOUT_TRANSITION,,,0,,,,,,,0,0
+A,6,trade_print_proxy,LIVE_MLL_BREACH,2026-01-13,2026-01-14,2,-200100,-200000,-200100,0,0,,0,0
+A,3,stress1tick,NO_FIFTH_PAYOUT_TRANSITION,,,0,,,,,,,0,0
+A,6,stress1tick,LIVE_MLL_BREACH,2026-01-13,2026-01-14,2,-200100,-200000,-200100,0,0,,0,0

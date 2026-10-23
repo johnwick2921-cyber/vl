@@ -1,0 +1,20 @@
+{
+  "status": "PASS",
+  "source_hashes": {
+    "/home/hoang/fleet-1017/out/lucid50k-EDA-3v6-20261022/paths.json": "75c8244d905eb440eeeb665b19a06b25c626ae7c39b8b29306c1c56a48839676",
+    "/home/hoang/fleet-1017/out/lucid50k-EDA-payout-20261023/summary.csv": "d0d5f7907c642a34d552e100b55a51acefd83f843dc36707b2142abbd6333841"
+  },
+  "engine_sha256": "c4b8b991e2978bee49fdacbf06a9b61b7f8c58928906930bfe1ce02cae323ff9",
+  "runner_sha256": "6efaffa0fda8a821ba4a7df59b7f84266909df1a42ddc8804432ee36f3fefaa1",
+  "independent_decimal_oracle": true,
+  "all_nonbreach_days_withdraw_exact_excess": true,
+  "payouts_leave_exactly_210000_cents": true,
+  "summary_rows": 8,
+  "ledger_rows": 144,
+  "payout_rows": 8,
+  "artifacts": {
+    "summary.csv": "414308ba4b6bd68856f8b9e99c176f9ff2395b910a25f222fee240b4b46c26e3",
+    "ledger.csv": "fea83604194807a6b8e15a982f6e644898ba1dc099352dddfa9af1e4c37523e3",
+    "payouts.csv": "e54767c2dc8f87d76440e9fcfe303f3c05a9e20e2913fcd567672fcadeebfa6f"
+  }
+}
