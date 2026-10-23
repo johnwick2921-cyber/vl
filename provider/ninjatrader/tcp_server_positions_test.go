@@ -16,7 +16,7 @@ import (
 func TestTCPServer_PositionsReceivePath(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	srv.SetAddrForTest(addr)
+	useReservedAddr(t, srv, addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
@@ -92,7 +92,7 @@ func TestTCPServer_PositionsReceivePath(t *testing.T) {
 func TestFramePositionsAfterEntryReceiptServesSnapshot(t *testing.T) {
 	srv := NewTCPServer(nil)
 	addr := freeEphemeralAddr(t)
-	srv.SetAddrForTest(addr)
+	useReservedAddr(t, srv, addr)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	if err := srv.Start(ctx); err != nil {
