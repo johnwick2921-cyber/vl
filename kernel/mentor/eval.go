@@ -171,6 +171,16 @@ type State struct {
 	// would advance from 0. Never reset to false once the EMA is warm.
 	EMA34Warmed bool `json:"ema34_warmed,omitempty"`
 
+	// M401: the incremental 2m EMA 34/9 over CLOSED 2m buckets, the frame the
+	// EMA levels + EMA34 location read outside 08:30–09:00 CT when
+	// Exec2mAfter30m is ON. Only maintained while the knob is ON (zero and
+	// omitted otherwise). Seed2mWatermark is the CloseTime of the last folded
+	// 2m bucket.
+	EMA34x2         float64 `json:"ema34_2m,omitempty"`
+	EMA9x2          float64 `json:"ema9_2m,omitempty"`
+	Seed2mWatermark int64   `json:"seed_2m_watermark,omitempty"`
+	EMA2mWarmed     bool    `json:"ema2m_warmed,omitempty"`
+
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
 	EmaPendingSide   Side    `json:"ema_pending_side,omitempty"`
@@ -502,7 +512,7 @@ func swingPointNow(now int64) int64 { return now + 1 }
 func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
-	out = append(out, EMALevels(bars, cfg)...)
+	out = append(out, EMALevelsAt(bars, cfg, now)...)
 	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
 }
@@ -1700,7 +1710,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			levels = append(levels, wl)
 		}
 	}
-	if el, ok := e.emaLocationLevel(bars, e.Cfg); ok {
+	if el, ok := e.emaLocationLevel(bars, e.Cfg, now); ok {
 		levels = append(levels, el)
 	}
 
@@ -1750,7 +1760,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
-	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
+	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                        // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;
@@ -3289,11 +3299,22 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 // actually folded a 1m bar into it (EMA34Warmed): a nil-bar / fail-closed seed
 // leaves it cold and seededLevels would advance State.EMA34 from 0 into garbage
 // — in that case it falls back to EMALocationLevel.
-func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
-	if cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
+//
+// M401: with Exec2mAfter30m ON the line follows the execution-frame schedule
+// (emaScheduleTF): the 2m EMA 34 outside 08:30–09:00 CT — State.EMA34x2, the
+// same number the KindEMA34 level carries then — and the 1m line inside it.
+func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config, now int64) (Level, bool) {
+	tf := emaScheduleTF(cfg, cfg.EMALocationTFMinutes, now)
+	if tf == 2 && cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA2mWarmed && e.State.EMA34x2 > 0 {
+		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34x2}, true
+	}
+	if tf == 2 && cfg.EMALocationTFMinutes == 1 && e != nil && e.seeded && !e.State.EMA2mWarmed {
+		tf = 1 // seeded but the 2m line has not formed: the 1m line stands (as the KindEMA34 level does)
+	}
+	if tf == 1 && cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
 		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34}, true
 	}
-	return EMALocationLevel(bars, cfg)
+	return EMALocationLevelAt(bars, cfg, now)
 }
 
 // seededLevels is the Tick level source after Seed: SeedLevels (full stored
@@ -3344,12 +3365,45 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		e.State.Seed1HLastColour = candleColour(c)
 	}
 
+	// M401: fold the closed 2m buckets the same incremental way, and read the
+	// EMA 9/34 levels on the frame the execution schedule names at `now`.
+	ema34, ema9 := e.State.EMA34, e.State.EMA9
+	if e.Cfg.Exec2mAfter30m && e.Cfg.EMATFMinutes <= 1 {
+		e.foldClosed2mEMA(bars, now)
+		if emaScheduleTF(e.Cfg, e.Cfg.EMATFMinutes, now) == 2 && e.State.EMA2mWarmed {
+			ema34, ema9 = e.State.EMA34x2, e.State.EMA9x2
+		}
+	}
+
 	var out []Level
 	out = append(out, e.State.SeedLevels...)
-	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: e.State.EMA34})
-	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: e.State.EMA9})
+	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: ema34})
+	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
 	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
+}
+
+// foldClosed2mEMA advances the incremental 2m EMA 34/9 over the 2m buckets that
+// CLOSED since Seed2mWatermark (CloseTime < now — the forming bucket is never
+// folded). Only a SEEDED 2m EMA advances (see seedHistoryState).
+func (e *Evaluator) foldClosed2mEMA(bars []market.Kline, now int64) {
+	if !e.State.EMA2mWarmed {
+		return // never cold-started off the tick slice: the 1m line stands
+	}
+	start := sort.Search(len(bars), func(i int) bool { return bars[i].OpenTime > e.State.Seed2mWatermark })
+	if start >= len(bars) {
+		return
+	}
+	k34 := 2.0 / float64(e.Cfg.EMAPeriod34+1)
+	k9 := 2.0 / float64(e.Cfg.EMAPeriod9+1)
+	for _, b := range barsTF(bars[start:], 2) {
+		if b.CloseTime >= now {
+			break // still forming
+		}
+		e.State.EMA34x2 += k34 * (b.Close - e.State.EMA34x2)
+		e.State.EMA9x2 += k9 * (b.Close - e.State.EMA9x2)
+		e.State.Seed2mWatermark = b.CloseTime
+	}
 }
 
 // advanceKeyLevelDeletion walks the KEY-LEVEL deletion over only the NEW

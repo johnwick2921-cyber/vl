@@ -131,7 +131,7 @@ func TestMentorTruthSnapshotSendsEMAseries(t *testing.T) {
 	ev := at.mentorEval
 
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()
-	bars := make([]market.Kline, 400) // > 6×34 warm-up
+	bars := make([]market.Kline, 900) // > 6×34 warm-up on the 2m frame (M401: the tape is 09:00+ CT = 2m period, so 204 2m bars = 408 1m bars of head are dropped)
 	for i := range bars {
 		c := 100.0 + float64(i%7)
 		bars[i] = market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: c - 1, High: c + 1, Low: c - 2, Close: c}

@@ -144,7 +144,7 @@ func TestEMALocationLevelTF1UsesStateEMA34(t *testing.T) {
 		})
 	}
 	e := &Evaluator{State: State{EMA34: 30123.45, EMA34Warmed: true}} // long-history seeded
-	lvl, ok := e.emaLocationLevel(bars, cfg)
+	lvl, ok := e.emaLocationLevel(bars, cfg, 0)
 	if !ok || lvl.Kind != KindEMA34HTF {
 		t.Fatalf("emaLocationLevel tf=1 = %+v ok=%v, want the EMA34HTF level", lvl, ok)
 	}
@@ -154,7 +154,7 @@ func TestEMALocationLevelTF1UsesStateEMA34(t *testing.T) {
 	}
 	// At a different TF the level is the emaValue over that TF's buckets.
 	cfg.EMALocationTFMinutes = 5
-	lvl5, ok := e.emaLocationLevel(bars, cfg)
+	lvl5, ok := e.emaLocationLevel(bars, cfg, 0)
 	if !ok || lvl5.Kind != KindEMA34HTF || lvl5.Price == e.State.EMA34 {
 		t.Fatalf("tf=5 must keep the emaValue-over-5m path, got %+v ok=%v", lvl5, ok)
 	}

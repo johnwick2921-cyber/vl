@@ -257,6 +257,28 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.Seed1mWatermark = last.CloseTime
 		e.State.EMA34Warmed = true
 	}
+	// M401: the 2m EMA 34/9 over the closed 2m buckets of the same history
+	// (only while the schedule knob is ON; a re-seed recomputes it from scratch).
+	e.State.EMA34x2, e.State.EMA9x2, e.State.Seed2mWatermark, e.State.EMA2mWarmed = 0, 0, 0, false
+	if e.Cfg.Exec2mAfter30m && len(closes) > 0 {
+		var closed1m []market.Kline
+		for _, b := range bars1m {
+			if b.CloseTime <= now {
+				closed1m = append(closed1m, b)
+			}
+		}
+		// Formed only: at least EMAPeriod34 closed 2m candles of history.
+		if b2 := closedBucketsTF(closed1m, 2, now); len(b2) > 0 && len(b2) >= e.Cfg.EMAPeriod34 {
+			c2 := make([]float64, len(b2))
+			for i, b := range b2 {
+				c2[i] = b.Close
+			}
+			e.State.EMA34x2 = emaFromCloses(c2, e.Cfg.EMAPeriod34)
+			e.State.EMA9x2 = emaFromCloses(c2, e.Cfg.EMAPeriod9)
+			e.State.Seed2mWatermark = b2[len(b2)-1].CloseTime
+			e.State.EMA2mWarmed = true
+		}
+	}
 
 	// The swing's 4h EMA 34 line: the last 34 closed 4h candles (17:00 anchor).
 	// The swing's 4h EMA line: the canonical recurrence over ALL closed 4h

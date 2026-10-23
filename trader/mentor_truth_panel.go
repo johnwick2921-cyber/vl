@@ -68,6 +68,9 @@ type MentorEMAPoint struct {
 	Ms    int64   `json:"ms"`
 	Ema9  float64 `json:"ema9"`
 	Ema34 float64 `json:"ema34"`
+	// TFMin (M401) is the frame the engine used for this point: 1 or 2. Ms is
+	// the open of that frame's bar (closed 2m bars only in a 2m period).
+	TFMin int `json:"tf_min"`
 }
 
 // MentorRangeView is a high/low range the evaluator holds (an ISB rest box or
@@ -263,7 +266,7 @@ func mentorEMASeries(st *mentor.State) *[]MentorEMAPoint {
 	}
 	pts := make([]MentorEMAPoint, 0, len(st.ChartEMA))
 	for _, c := range st.ChartEMA {
-		pts = append(pts, MentorEMAPoint{Ms: c.Ms, Ema9: c.Ema9, Ema34: c.Ema34})
+		pts = append(pts, MentorEMAPoint{Ms: c.Ms, Ema9: c.Ema9, Ema34: c.Ema34, TFMin: c.TFMin})
 	}
 	return &pts
 }
