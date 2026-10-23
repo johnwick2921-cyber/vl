@@ -69,6 +69,10 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 		bs := feedSrc
 		if b.Source == ntwire.BarSourceMixed {
 			bs = store.BarSourceMixed
+		} else if !historical && !b.Final {
+			// m416: the wall clock says closed, the AddOn never said final — the
+			// last forming snapshot. Stored correctable, never as sacred live.
+			bs = store.BarSourceLivePartial
 		}
 		rows = append(rows, store.BarHistoryDB{
 			Symbol: symbol, TF: tf, OpenTimeMs: kernel.ReanchorCMEStub(tf, b.T),

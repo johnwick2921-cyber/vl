@@ -149,6 +149,13 @@ const (
 	BarSourceLive       = "live"
 	BarSourceHistorical = "historical"
 	BarSourceMixed      = "mixed"
+	// BarSourceLivePartial (m416) marks a live 1m/HTF bar that the wall clock
+	// says is closed but the AddOn never proved final: the last forming snapshot
+	// the wire delivered. It is real tape at the live scale (readers take it, see
+	// IsReadableSource) but it is a SNAPSHOT, so it is correctable: a live final
+	// overwrites it (live overwrites anything) and a historical replay row may
+	// replace it. It never overwrites a live, mixed or historical row itself.
+	BarSourceLivePartial = "live_partial"
 	// BarSourceOffScale marks a row MEASURED to hold an unverified replay's
 	// values on another price scale than the live feed (the 2026-09-10 boots,
 	// before the replay hold existed). Written only by the migration's measured
@@ -342,7 +349,7 @@ func (s *BarHistoryStore) InsertBars(rows []BarHistoryDB) error {
 				return fmt.Errorf("bars: refusing %s %s @%d with no contract — the subscription's resolved contract must be stamped at write time (roll wave 2026-09-10)", r.Symbol, r.TF, r.OpenTimeMs)
 			}
 			src := strings.TrimSpace(r.Source)
-			if src != BarSourceLive && src != BarSourceHistorical && src != BarSourceMixed {
+			if src != BarSourceLive && src != BarSourceHistorical && src != BarSourceMixed && src != BarSourceLivePartial {
 				return fmt.Errorf("bars: refusing %s %s @%d with source %q — every bar names its feed: live, historical or mixed (bar-source wave 2026-09-10)", r.Symbol, r.TF, r.OpenTimeMs, r.Source)
 			}
 			placeholders = append(placeholders, "(?,?,?,?,?,?,?,?,?,?,?)")
@@ -367,7 +374,10 @@ func (s *BarHistoryStore) InsertBars(rows []BarHistoryDB) error {
 		q := "INSERT INTO bars(symbol, tf, open_time_ms, o, h, l, c, v, convention, contract, source) VALUES " +
 			strings.Join(placeholders, ",") +
 			" ON CONFLICT(" + barsConflictTarget() + ") DO UPDATE SET o=excluded.o, h=excluded.h, l=excluded.l, c=excluded.c, v=excluded.v, convention=excluded.convention, contract=excluded.contract, source=excluded.source" +
-			" WHERE NOT (bars.source IN ('live','mixed') AND excluded.source = 'historical')"
+			" WHERE NOT (bars.source IN ('live','mixed') AND excluded.source = 'historical')" +
+			// m416: a partial snapshot fills absent keys and refreshes another
+			// partial, but never displaces a final (live), a replay or a quarantine.
+			" AND NOT (bars.source != 'live_partial' AND excluded.source = 'live_partial')"
 		if err := s.db.Exec(q, args...).Error; err != nil {
 			return err
 		}

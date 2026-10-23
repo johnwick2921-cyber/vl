@@ -54,6 +54,8 @@ var (
 	persistLastFrameAt           atomic.Int64 // unix seconds of the last LIVE bar frame (W1 quiet-wire awareness)
 	persistAlarmAt               atomic.Int64 // unix seconds of the last watchdog ERROR (dedup)
 	ingestDropOld                atomic.Int64 // ingest channel drop-oldest events
+	ingestFinalKept              atomic.Int64 // m416: final-carrying frames spared by an eviction
+	ingestFinalDropped           atomic.Int64 // m416: final-carrying frames lost (queue held only finals)
 	ingestDropCur                atomic.Int64 // ingest channel drop-current events
 	ingestDropHist               atomic.Int64 // historical batch drops
 	ingestLastSum                atomic.Int64
@@ -355,15 +357,17 @@ func ingestDropSummary() {
 	}
 	if ingestLastSum.CompareAndSwap(ingestLastSum.Load(), now) {
 		old := ingestDropOld.Swap(0)
+		fKept := ingestFinalKept.Swap(0)
+		fLost := ingestFinalDropped.Swap(0)
 		cur := ingestDropCur.Swap(0)
 		hist := ingestDropHist.Swap(0)
-		if old == 0 && cur == 0 && hist == 0 {
+		if old == 0 && cur == 0 && hist == 0 && fLost == 0 {
 			// Zero-drop minute: silent (the peak keeps sampling for the next
 			// non-zero minute; no line).
 			return
 		}
-		logger.Warnf("bars: ingest drop summary: intrabar_dropped=%d current_dropped=%d historical_dropped=%d peak_depth=%d/%d (1-line/min; intra-bar drops self-heal on the next tick — closed bars are NEVER dropped on this path)",
-			old, cur, hist,
+		logger.Warnf("bars: ingest drop summary: intrabar_dropped=%d current_dropped=%d historical_dropped=%d final_kept=%d final_dropped=%d peak_depth=%d/%d (1-line/min; intra-bar drops self-heal on the next tick; a frame carrying a final bar is evicted only when the queue holds nothing else — final_dropped must be 0)",
+			old, cur, hist, fKept, fLost,
 			ingestPeakDepth.Swap(0), ingestQueueCap())
 	}
 }
