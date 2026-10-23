@@ -1,0 +1,11 @@
+{
+  "status": "PASS",
+  "summary_rows": 8,
+  "accounts": 36,
+  "ledger_rows": 944,
+  "payout_rows": 60,
+  "all_entry_days_consumed_once": true,
+  "independent_Decimal_accounts": true,
+  "tests_per_timezone": 14,
+  "random_rebuy_sequences_per_timezone": 1000
+}

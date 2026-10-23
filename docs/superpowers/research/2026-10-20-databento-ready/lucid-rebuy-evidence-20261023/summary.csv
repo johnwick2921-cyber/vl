@@ -1,0 +1,9 @@
+qty,accounts_used,replacements,breached_accounts,five_payout_accounts,trades,payout_count,gross_withdrawn_cents,received_cents,last_balance_cents,last_status,purchase_cost_cents,net_after_purchase_cents,method,execution
+3,3,2,2,0,121,7,773250,695925,5212400,END_OF_VALID_SAMPLE,,,A,trade_print_proxy
+6,9,8,7,1,121,10,1815900,1634310,5276500,END_OF_VALID_SAMPLE,,,A,trade_print_proxy
+3,3,2,2,0,121,7,768000,691200,5211800,END_OF_VALID_SAMPLE,,,A,stress1tick
+6,9,8,7,1,121,10,1811400,1630260,5275000,END_OF_VALID_SAMPLE,,,A,stress1tick
+3,2,1,0,1,115,5,419250,377325,5141600,END_OF_VALID_SAMPLE,,,E,trade_print_proxy
+6,4,3,2,1,115,8,1135400,1021860,5192900,END_OF_VALID_SAMPLE,,,E,trade_print_proxy
+3,2,1,0,1,115,5,414000,372600,5136350,END_OF_VALID_SAMPLE,,,E,stress1tick
+6,4,3,2,1,115,8,1121600,1009440,5191700,END_OF_VALID_SAMPLE,,,E,stress1tick
