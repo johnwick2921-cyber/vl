@@ -1738,7 +1738,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
 	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
 	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)

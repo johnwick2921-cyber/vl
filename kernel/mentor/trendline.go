@@ -91,14 +91,10 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 // pair (the session-end death). The line becomes a location on the 3rd touch
 // (a return, trendlineScan) and is discarded by a 5m close through.
 func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
-	// X9 @03:35–03:55: "Thường em sẽ vẽ trendline khung 2 phút, nó sẽ clear hơn.
-	// Tại vì mình trade khung 2 phút. Và khung 1 phút, nó rất clear luôn." The
-	// mentor prefers the 2m and endorses the 1m ("rất clear luôn"). This builds
-	// the 1m construction — the mentor-endorsed stable one. A 2m construction is
-	// NOT built: it must still enforce "TRENDLINE chứ không phải CẦU TUỘT" at the
-	// 1m level (a 2m candle hides a 1m cross-through between its anchors), and a
-	// naive 2m union breaks the session-parity invariant (forming 2m candles
-	// vanish lines). Follow-up if the owner wants the 2m drawn as a separate set.
+	// This public entry is the 1m construction (display/test callers). The
+	// evaluator's Tick and SeedTrendlines build through trendlinesBuildExec, which
+	// reads the 2m frame after the RTH open +30 min (m407: X9 @03:35–03:49 "Thường
+	// em sẽ vẽ trendline khung 2 phút").
 	lines, _ := trendlinesBuild(bars, now)
 	return lines
 }
@@ -107,11 +103,46 @@ func TrendlinesBuild(bars []market.Kline, now time.Time) []Trendline {
 // because price crossed the line between its anchors (Tick counts each once
 // per trading day — a drawing refusal is never silent).
 func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, crossed []string) {
-	all := swings3(bars)
+	return trendlinesBuildFrame(bars, bars, false, now)
+}
+
+// trendlinesBuildExec is the INTRADAY trendline build on the EXECUTION frame
+// (m407). The mentor draws his trendlines on the 2-minute chart and trades the
+// 1m only in the first 30 minutes after the 08:30 CT open:
+//   - "Em lúc nào cũng prefer trade khung 2 phút … Trong dòng 30 phút đầu giờ
+//     em vẫn sẽ trade khung 1 phút … sau 30 phút em sẽ chuyển qua khung 2 phút
+//     em trade" [Routine trước khi trade p1 @00:00:34–00:01:14];
+//   - "Thường em sẽ vẽ trendline KHUNG 2 PHÚT — nó sẽ CLEAR HƠN, tại vì MÌNH
+//     TRADE khung 2 phút và khung 1 phút." [Cách vẽ trendline p1, R5, X9
+//     @03:35–03:49].
+// With the knob Exec2mAfter30m ON and the ONE schedule predicate
+// exec2mReads2m(now) true (the caller passes exec2m), the swings, the slope
+// rule, the not-crossed rule and the 3rd-touch return are read on CLOSED 2m
+// candles; the 5m-close break and the trading-day filter are unchanged. During
+// 08:30 <= t < 09:00 CT (and with the knob OFF) it is the 1m build,
+// byte-identical to trendlinesBuild. The "at least 5 bars apart" spacing stays
+// in BARS of the build frame — the course gives no number (open mentor
+// question), none is invented. The 1H/4H builders are untouched.
+func trendlinesBuildExec(bars []market.Kline, now time.Time, exec2m bool) (out []Trendline, crossed []string) {
+	if exec2m {
+		if frame := closedBucketsTF(bars, 2, now.UnixMilli()); len(frame) >= 5 {
+			return trendlinesBuildFrame(bars, frame, true, now)
+		}
+	}
+	return trendlinesBuildFrame(bars, bars, false, now)
+}
+
+// trendlinesBuildFrame is the construction over `fb`, the build frame: the 1m
+// bars themselves, or (coarse) their closed 2m buckets. `bars` (1m) feed the 5m
+// break. On a coarse frame P0Idx/P1Idx/FormedAt are indices into the FRAME and
+// ValidAt is re-expressed as the 1m index of the last minute of the touching
+// candle, so ValidAt == lastIdx still means "the 3rd touch JUST closed".
+func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (out []Trendline, crossed []string) {
+	all := swings3(fb)
 	today := tradingDayKey(now.In(ctime()))
 	var seq []swingPairAt
 	for _, s := range all {
-		if tradingDayKey(time.UnixMilli(bars[s.idx].OpenTime).In(ctime())) == today {
+		if tradingDayKey(time.UnixMilli(fb[s.idx].OpenTime).In(ctime())) == today {
 			seq = append(seq, s)
 		}
 	}
@@ -121,7 +152,7 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 		// confirmation). The D2-28 lesson — fractals pair pullback noise.
 		var pts []swingPairAt
 		for _, s := range seq {
-			if s.kind == role && swingConfirmed(bars, s) {
+			if s.kind == role && swingConfirmed(fb, s) {
 				pts = append(pts, s)
 			}
 		}
@@ -146,24 +177,39 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 				Side:     side,
 				P0Idx:    p0.idx,
 				P0Px:     p0.price,
-				P0T:      bars[p0.idx].OpenTime,
+				P0T:      fb[p0.idx].OpenTime,
 				P1Idx:    p1.idx,
 				P1Px:     p1.price,
-				P1T:      bars[p1.idx].OpenTime,
+				P1T:      fb[p1.idx].OpenTime,
 				FormedAt: p1.idx,
 			}
 			if tl.P1T <= tl.P0T {
 				continue
 			}
-			if trendlineCrossed(bars, tl) {
+			if trendlineCrossed(fb, tl) {
 				crossed = append(crossed, tl.key())
 				continue
 			}
-			tl.ValidAt, tl.Dead = trendlineScanTF(bars, b5, all, tl, now)
+			tl.ValidAt, tl.Dead = trendlineScanTF(fb, b5, all, tl, now)
+			if coarse && tl.ValidAt > 0 {
+				tl.ValidAt = oneMinIdxAtClose(bars, fb[tl.ValidAt].CloseTime)
+			}
 			out = append(out, tl)
 		}
 	}
 	return out, crossed
+}
+
+// oneMinIdxAtClose returns the index of the last 1m bar closing at or before
+// closeMs — the last minute of a coarser candle. Never 0 (0 means "not valid").
+func oneMinIdxAtClose(bars []market.Kline, closeMs int64) int {
+	idx := 1
+	for i, b := range bars {
+		if b.CloseTime <= closeMs {
+			idx = i
+		}
+	}
+	return idx
 }
 
 // trendlinesBuildTF builds PERSISTENT higher-timeframe swing-pair trendlines
