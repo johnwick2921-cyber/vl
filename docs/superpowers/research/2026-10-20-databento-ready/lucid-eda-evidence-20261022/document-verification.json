@@ -1,0 +1,10 @@
+{
+  "pdf_pages": 3,
+  "all_twelve_net_values_present": true,
+  "docx_tables_verified": true,
+  "sha256": {
+    "REPORT.md": "80b8764af0a18b4a44668a986eed82659a133e750b4cd998667ad1a9ab00b2ef",
+    "EDA-verified.pdf": "4d4bc5f36caa28508da22bc0cbcba0e5be36d3ad0b1b9ac152e7145d8b9ccd2d",
+    "EDA-verified.docx": "1cdbb1ac0f7a5259714807c148378f3368547b19c527ba3d53c0bca0280295b9"
+  }
+}

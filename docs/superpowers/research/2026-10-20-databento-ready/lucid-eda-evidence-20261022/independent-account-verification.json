@@ -1,0 +1,178 @@
+{
+  "status": "PASS",
+  "account_rows": 12,
+  "ledger_rows": 1140,
+  "rolling_windows": 1072,
+  "independent_arithmetic": "Decimal dollars; no replay imports",
+  "artifacts_sha256_verified": true,
+  "stats": [
+    {
+      "method": "E",
+      "execution": "trade_print_proxy",
+      "qty": 3,
+      "rolling20_breaches": 0,
+      "rolling20_windows": 96,
+      "min_day_cents": -40350,
+      "max_day_cents": 90150,
+      "outcomes": {
+        "TP": 47,
+        "SL": 67,
+        "CUTOFF_PROXY": 1
+      }
+    },
+    {
+      "method": "E",
+      "execution": "trade_print_proxy",
+      "qty": 6,
+      "rolling20_breaches": 33,
+      "rolling20_windows": 96,
+      "min_day_cents": -80700,
+      "max_day_cents": 180300,
+      "outcomes": {
+        "TP": 47,
+        "SL": 67,
+        "CUTOFF_PROXY": 1
+      }
+    },
+    {
+      "method": "E",
+      "execution": "stress1tick",
+      "qty": 3,
+      "rolling20_breaches": 0,
+      "rolling20_windows": 96,
+      "min_day_cents": -40500,
+      "max_day_cents": 90150,
+      "outcomes": {
+        "TP": 47,
+        "SL": 67,
+        "CUTOFF_PROXY": 1
+      }
+    },
+    {
+      "method": "E",
+      "execution": "stress1tick",
+      "qty": 6,
+      "rolling20_breaches": 33,
+      "rolling20_windows": 96,
+      "min_day_cents": -81000,
+      "max_day_cents": 180300,
+      "outcomes": {
+        "TP": 47,
+        "SL": 67,
+        "CUTOFF_PROXY": 1
+      }
+    },
+    {
+      "method": "D",
+      "execution": "trade_print_proxy",
+      "qty": 3,
+      "rolling20_breaches": 6,
+      "rolling20_windows": 70,
+      "min_day_cents": -56250,
+      "max_day_cents": 146400,
+      "outcomes": {
+        "SL": 51,
+        "TP": 35,
+        "CUTOFF_PROXY": 3
+      }
+    },
+    {
+      "method": "D",
+      "execution": "trade_print_proxy",
+      "qty": 6,
+      "rolling20_breaches": 35,
+      "rolling20_windows": 70,
+      "min_day_cents": -51300,
+      "max_day_cents": 109800,
+      "outcomes": {
+        "SL": 7,
+        "TP": 1,
+        "MLL_BREACH": 1
+      }
+    },
+    {
+      "method": "D",
+      "execution": "stress1tick",
+      "qty": 3,
+      "rolling20_breaches": 6,
+      "rolling20_windows": 70,
+      "min_day_cents": -56400,
+      "max_day_cents": 146400,
+      "outcomes": {
+        "SL": 52,
+        "TP": 34,
+        "CUTOFF_PROXY": 3
+      }
+    },
+    {
+      "method": "D",
+      "execution": "stress1tick",
+      "qty": 6,
+      "rolling20_breaches": 35,
+      "rolling20_windows": 70,
+      "min_day_cents": -51600,
+      "max_day_cents": 109800,
+      "outcomes": {
+        "SL": 7,
+        "TP": 1,
+        "MLL_BREACH": 1
+      }
+    },
+    {
+      "method": "A",
+      "execution": "trade_print_proxy",
+      "qty": 3,
+      "rolling20_breaches": 43,
+      "rolling20_windows": 102,
+      "min_day_cents": -98250,
+      "max_day_cents": 146400,
+      "outcomes": {
+        "TP": 65,
+        "SL": 54,
+        "CUTOFF_PROXY": 2
+      }
+    },
+    {
+      "method": "A",
+      "execution": "trade_print_proxy",
+      "qty": 6,
+      "rolling20_breaches": 73,
+      "rolling20_windows": 102,
+      "min_day_cents": -196500,
+      "max_day_cents": 292800,
+      "outcomes": {
+        "TP": 65,
+        "SL": 54,
+        "CUTOFF_PROXY": 2
+      }
+    },
+    {
+      "method": "A",
+      "execution": "stress1tick",
+      "qty": 3,
+      "rolling20_breaches": 52,
+      "rolling20_windows": 102,
+      "min_day_cents": -98400,
+      "max_day_cents": 146400,
+      "outcomes": {
+        "TP": 65,
+        "SL": 54,
+        "CUTOFF_PROXY": 2
+      }
+    },
+    {
+      "method": "A",
+      "execution": "stress1tick",
+      "qty": 6,
+      "rolling20_breaches": 73,
+      "rolling20_windows": 102,
+      "min_day_cents": -196800,
+      "max_day_cents": 292800,
+      "outcomes": {
+        "TP": 65,
+        "SL": 54,
+        "CUTOFF_PROXY": 2
+      }
+    }
+  ]
+}

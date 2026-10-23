@@ -1,0 +1,62 @@
+{
+  "EDA_sha256": "c5bcfb29f57b8d5355f9209e20f369b562ea2bbd1aa13c07d1b14cb2e4229de8",
+  "tests_per_timezone": 26,
+  "CT_UTC": "PASS",
+  "EDA_random_paths_per_timezone": 5000,
+  "EDA_mutations": [
+    {
+      "name": "A_wrong_half_stop",
+      "failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "D_ignore_entry_gap",
+      "failures": 1,
+      "errors": 0
+    },
+    {
+      "name": "D_fill_touch_in_stress",
+      "failures": 2,
+      "errors": 0
+    },
+    {
+      "name": "entry_slip_omitted",
+      "failures": 1,
+      "errors": 0
+    }
+  ],
+  "account_engine": {
+    "tests_per_timezone": 16,
+    "CT_and_UTC_pass": true,
+    "random_exit_paths_per_timezone": 4000,
+    "random_account_paths_per_timezone": 2000,
+    "mutations": [
+      {
+        "mutation": "fee_omitted",
+        "failures": 4,
+        "errors": 0
+      },
+      {
+        "mutation": "wrong_point_value",
+        "failures": 4,
+        "errors": 0
+      },
+      {
+        "mutation": "strict_breach",
+        "failures": 1,
+        "errors": 0
+      },
+      {
+        "mutation": "floor_not_capped",
+        "failures": 2,
+        "errors": 0
+      },
+      {
+        "mutation": "wrong_target",
+        "failures": 2,
+        "errors": 0
+      }
+    ],
+    "engine_sha256": "3f6afebe89fd8d6c347bef89c3ad2dd80d4be0676296ee6e62a76fba355a4ecc"
+  }
+}

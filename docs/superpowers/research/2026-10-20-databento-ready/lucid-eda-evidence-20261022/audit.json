@@ -1,0 +1,17 @@
+{
+  "account_engine_sha256": "3f6afebe89fd8d6c347bef89c3ad2dd80d4be0676296ee6e62a76fba355a4ecc",
+  "artifacts": {
+    "accounts.csv": "acd85c1f1ec347d8609455510bb005bcd4de02c23edb3fc68c1bda4ee2eb2c41",
+    "ledger.csv": "75ba6f4663d5cc6fab25b2fabf5a2ef099dfc2e7a38737fb8215a036ca40d3eb",
+    "paths.json": "75c8244d905eb440eeeb665b19a06b25c626ae7c39b8b29306c1c56a48839676",
+    "rolling20.csv": "83cb789e78e69f67ded10552741d143bfdda2f79da1c3ebc5ef3a7048b9925b8"
+  },
+  "engine_sha256": "c5bcfb29f57b8d5355f9209e20f369b562ea2bbd1aa13c07d1b14cb2e4229de8",
+  "paths": 732,
+  "source_hashes": {
+    "/home/hoang/fleet-1017/out/orb-body-confirmed-retest-20261020/trades.csv": "02a1be6154af216117c396c11dcdc8efde54d1221072ea27d386b999a340eebd",
+    "/home/hoang/fleet-1017/out/orb-ema9-halfbox-20261022/trades.csv": "1f5dc8cc6460e3d4ecc942bd30444e363be46c1055eb887fcd30f36ff9f6dfc0",
+    "/home/hoang/fleet-1017/out/orb-six-month-stop-variants-20261020/trades.csv": "a57cf75425f6886a4946488f3e323d42d02c36b4b50b58ba3c1959a4e16dd777"
+  },
+  "warmup_sha256": "bb96bd2ab59433a6bbc6c53a262910927249b9c06e643d047542938a947d9816"
+}
