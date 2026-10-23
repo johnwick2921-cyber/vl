@@ -25,6 +25,7 @@ import { t } from '../../i18n/translations'
 import {
   MENTOR_COLOR,
   mentorEMACurves,
+  mentorEMATf,
   mentorEMALocationSegment,
   mentorTrendSegments,
   orderPriceLines,
@@ -1256,7 +1257,8 @@ export function AdvancedChart({
     const emaLoc = mentorEMALocationSegment(
       mentorEMALocationPrice,
       barTimes,
-      mentorStaleSinceMs
+      mentorStaleSinceMs,
+      mentorEMATf(mentorEMASeries)
     )
     if (emaLoc) segs.push(emaLoc)
     const nextKeys = new Set(segs.map((s) => s.key))
@@ -1308,6 +1310,7 @@ export function AdvancedChart({
     barTimes,
     mentorStaleSinceMs,
     mentorEMALocationPrice,
+    mentorEMASeries,
   ])
 
   // m134 — the mentor EMA 9/34 curves (a per-bar series, not one flat value).
@@ -1354,10 +1357,12 @@ export function AdvancedChart({
       mentorEMARef.current.push(sr)
     }
     const curves = mentorEMACurves(mentorEMASeries, barTimes)
-    // m169: the backend series is always the 1-MINUTE EMA — label it so a 1h/4h
+    // m169: the backend series is the engine's execution-frame EMA — label it so a 1h/4h
     // chart never reads "EMA 9/34" as that chart's own timeframe EMA.
-    add('1m EMA 9', '#3B82F6', curves.ema9)
-    add('1m EMA 34', '#EC4899', curves.ema34)
+    // m402: the label names the frame the engine uses NOW (last point's tf).
+    const tf = mentorEMATf(mentorEMASeries)
+    add(`${tf}m EMA 9`, '#3B82F6', curves.ema9)
+    add(`${tf}m EMA 34`, '#EC4899', curves.ema34)
   }, [mentorEMASeries, symbol, interval, barTimes])
 
   // Handle order marker show/hide separately to avoid reloading data

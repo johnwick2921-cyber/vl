@@ -7,6 +7,7 @@ import {
   chartFuturesRoot,
   mentorChartLines,
   mentorEMACurves,
+  mentorEMATf,
   mentorEMALocationSegment,
   mentorStaleMark,
   mentorTrendSegments,
@@ -200,7 +201,7 @@ describe('mentorEMALocationSegment', () => {
     const seg = mentorEMALocationSegment(30020, b)
     expect(seg).not.toBeNull()
     expect(seg!.key).toBe('ema34_htf')
-    expect(seg!.label).toBe('EMA34 location (current value)')
+    expect(seg!.label).toBe('EMA34 location (1m, current value)')
     expect(seg!.points).toHaveLength(2)
     // both points hold the CURRENT value, spanning only the last drawn bar.
     expect(seg!.points[0].value).toBe(30020)
@@ -669,6 +670,92 @@ describe('mentorEMACurves (m150 snap)', () => {
   it('an empty series or no bars yields empty curves', () => {
     expect(mentorEMACurves([], fiveM)).toEqual({ ema9: [], ema34: [] })
     expect(mentorEMACurves(ema, [])).toEqual({ ema9: [], ema34: [] })
+  })
+})
+
+// m402 — the engine's EMA follows the mentor's execution frame: 1m for the
+// first 30 min after the 08:30 CT open, then 2m. Each point is read only after
+// ITS OWN bar (60s or 120s) has closed.
+describe('mentorEMACurves (m402 per-point tf_min)', () => {
+  const t0 = 1789480800000
+  const m = 60_000
+  const mixed = [
+    // 1m points: minutes 0..29 (value = minute)
+    ...Array.from({ length: 30 }, (_, i) => ({
+      ms: t0 + i * m,
+      ema9: i,
+      ema34: 500 + i,
+      tf_min: 1 as const,
+    })),
+    // 2m points: bar opens at minutes 30,32,..,58 (value = 1000 + minute)
+    ...Array.from({ length: 15 }, (_, j) => ({
+      ms: t0 + (30 + 2 * j) * m,
+      ema9: 1000 + 30 + 2 * j,
+      ema34: 1500 + 30 + 2 * j,
+      tf_min: 2 as const,
+    })),
+  ]
+  const at = (c: { time: number; value: number }[], minute: number) =>
+    c.find((p) => p.time === t0 / 1000 + minute * 60)?.value
+
+  it('5m chart: correct value per drawn bar, no look-ahead', () => {
+    const c = mentorEMACurves(mixed, bars(t0, 300_000, 12))
+    expect(at(c.ema9, 0)).toBe(4) // close 5m -> 1m pt 4
+    expect(at(c.ema9, 25)).toBe(29) // close 30m -> 1m pt 29
+    // bar 30 (close 35m): 2m pt 32 (closes 34) yes, pt 34 (closes 36) NO
+    expect(at(c.ema9, 30)).toBe(1032)
+    expect(at(c.ema34, 30)).toBe(1532)
+    // bar 35 (close 40m): pt 38 closes 40 -> 1038; pt 40 must not be read
+    expect(at(c.ema9, 35)).toBe(1038)
+    expect(c.ema9.length).toBe(12)
+  })
+
+  it('1m chart: switches at the boundary, 2m points wait for their own close, no flat hold', () => {
+    const c = mentorEMACurves(mixed, bars(t0, m, 60))
+    expect(at(c.ema9, 29)).toBe(29) // close 30m -> 1m pt 29
+    expect(at(c.ema9, 30)).toBe(29) // 2m pt 30 closes 32 -> not yet
+    expect(at(c.ema9, 31)).toBe(1030) // close 32m -> 2m pt 30 closed
+    expect(at(c.ema9, 32)).toBe(1030)
+    expect(at(c.ema9, 33)).toBe(1032)
+    expect(at(c.ema9, 58)).toBe(1056) // close 59m -> 2m pt 58 NOT yet
+    expect(at(c.ema9, 59)).toBe(1058)
+    // every bar drawn: a 2m point's natural lag is not mistaken for a hole
+    expect(c.ema9.length).toBe(60)
+  })
+
+  it('1m chart: a missing 2m span breaks the line instead of holding flat', () => {
+    const holed = mixed.filter(
+      (p) => !(p.tf_min === 2 && p.ms >= t0 + 40 * m && p.ms < t0 + 52 * m)
+    )
+    const c = mentorEMACurves(holed, bars(t0, m, 60))
+    expect(at(c.ema9, 50)).toBeUndefined()
+    expect(at(c.ema9, 58)).toBeDefined()
+  })
+
+  it('absent tf_min behaves exactly as 1m (legacy payload)', () => {
+    const legacy = Array.from({ length: 25 }, (_, i) => ({
+      ms: t0 - 120_000 + i * m,
+      ema9: 100 + i,
+      ema34: 200 + i,
+    }))
+    const tagged = legacy.map((p) => ({ ...p, tf_min: 1 as const }))
+    const five = bars(t0, 300_000, 4)
+    expect(mentorEMACurves(legacy, five)).toEqual(mentorEMACurves(tagged, five))
+    expect(mentorEMACurves(legacy, five).ema9[0].value).toBe(106)
+    expect(mentorEMATf(legacy)).toBe(1)
+  })
+
+  it('labels follow the LAST point tf_min', () => {
+    expect(mentorEMATf(mixed)).toBe(2)
+    expect(mentorEMATf(mixed.slice(0, 30))).toBe(1)
+    expect(mentorEMATf(undefined)).toBe(1)
+    const bt = [t0 / 1000, t0 / 1000 + 60]
+    expect(mentorEMALocationSegment(100, bt, undefined, 2)!.label).toBe(
+      'EMA34 location (2m, current value)'
+    )
+    expect(mentorEMALocationSegment(100, bt, undefined, 1)!.label).toBe(
+      'EMA34 location (1m, current value)'
+    )
   })
 })
 

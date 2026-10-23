@@ -58,7 +58,13 @@ export interface MentorTruth {
     valid: boolean // m134: true = 3rd touch seen (a location); false = forming (waiting)
   }[]
   /** m134 — the per-bar EMA 9/34 curve, ABSENT while computing; `[]` once built. */
-  ema_series?: { ms: number; ema9: number; ema34: number }[]
+  ema_series?: {
+    ms: number
+    ema9: number
+    ema34: number
+    /** m402: the frame the engine used (1 or 2 min); ABSENT on an older backend = 1. */
+    tf_min?: 1 | 2
+  }[]
   /** T7 — the ISB rest boxes the evaluator holds (5m / 15m / 30m). */
   isb_boxes?: MentorRange[]
   /** T7 — the 08:30–08:32 opening range, absent until drawn. */
