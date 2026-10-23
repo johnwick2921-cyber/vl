@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"sort"
+
 	"vl/market"
 )
 
@@ -13,10 +15,74 @@ import (
 // (default 1m — the frame the evaluator ticks on; the 4h-EMA swing setup is
 // out of P2 scope per PLAN v1 and stays a knob of the TF).
 func EMALevels(bars []market.Kline, cfg Config) []Level {
+	return EMALevelsAt(bars, cfg, 0)
+}
+
+// emaScheduleTF is the M401 EXECUTION-FRAME schedule for the EMA lines: the
+// timeframe the EMA 9/34 levels and the EMA34 location line are computed on at
+// the instant `now` (the just-closed 1m bar's close instant). With
+// Exec2mAfter30m ON and the TF knob left at its default (<= 1), it is the SAME
+// frame the named setups read — exec2mReads2m, ONE clock rule: 1m during
+// 08:30 <= t < 09:00 CT, 2m at every other minute. The evening-slow 5m branch
+// of the setup read is deliberately NOT mirrored (tf is 1 or 2 only). An
+// explicit knobTF > 1 stays an experimentation override and wins; knob OFF (or
+// now == 0, the legacy no-clock callers) returns knobTF unchanged.
+//
+// Course basis (owner ordered, CTO override 2026-10-23), raw transcripts:
+//   - "Em lúc nào cũng prefer trade khung 2 phút … Trong 30 phút đầu giờ em
+//     vẫn sẽ trade khung 1 phút … Nhưng sau 30 phút em sẽ chuyển qua khung 2
+//     phút em trade, khi nến đã bắt đầu ổn định rồi" [extra/transcripts/Routine
+//     trước khi trade/part1.srt @00:00:34–00:01:14];
+//   - "Nó phải đóng qua EMA 34 … cây nến 2 phút … Nó bóng above cái EMA 34 …
+//     Mình sẽ vô lon" — the ENTRY condition is read against the EMA34 on the
+//     2-minute candles he trades [extra/transcripts/Cách né trap & Setup gồng
+//     lời/part1.srt @00:02:05–00:02:48];
+//   - "anh TRADE KHUNG NÀO thì anh BẬT KHUNG ĐÓ" [D5.4 @08:15].
+//
+// The 2m line is used only once it has formed: at least EMAPeriod34 closed 2m
+// candles (the callers fall back to the 1m line below that).
+func emaScheduleTF(cfg Config, knobTF int, now int64) int {
+	if !cfg.Exec2mAfter30m || now == 0 || knobTF > 1 {
+		return knobTF
+	}
+	if exec2mReads2m(now) {
+		return 2
+	}
+	return 1
+}
+
+// EMAUsed is the EMA 9/34 the engine actually read on its last tick and the
+// frame label ("1m" or "2m") it was read on: the 2m incremental line when the
+// last tick's execution schedule said 2m (State.EMAFrame) and that line has
+// formed, else the 1m line. The owner-facing snapshots print this, never the
+// bare 1m State.EMA9/EMA34.
+func (s *State) EMAUsed() (ema9, ema34 float64, frame string) {
+	if s.EMAFrame == 2 && s.EMA2mWarmed {
+		return s.EMA9x2, s.EMA34x2, "2m"
+	}
+	return s.EMA9, s.EMA34, "1m"
+}
+
+// EMALevelsAt is EMALevels on the execution-frame schedule (emaScheduleTF).
+// now == 0 means no clock: the configured EMATFMinutes is used as-is.
+func EMALevelsAt(bars []market.Kline, cfg Config, now int64) []Level {
 	if !cfg.Enabled || len(bars) == 0 || cfg.EMAPeriod34 <= 0 && cfg.EMAPeriod9 <= 0 {
 		return nil
 	}
-	tf := barsTF(bars, cfg.EMATFMinutes)
+	tfMin := emaScheduleTF(cfg, cfg.EMATFMinutes, now)
+	var tf []market.Kline
+	if tfMin != cfg.EMATFMinutes {
+		// Scheduled frame: CLOSED candles only (the forming bucket is dropped).
+		tf = closedBucketsTF(bars, tfMin, now)
+		if len(tf) == 0 || len(tf) < cfg.EMAPeriod34 {
+			// Fewer closed 2m candles than the EMA 34 period: the line has not
+			// formed on that frame (a bare tape, never a live one) - the 1m line
+			// stands rather than an EMA seeded off a couple of buckets.
+			tf = barsTF(bars, cfg.EMATFMinutes)
+		}
+	} else {
+		tf = barsTF(bars, tfMin)
+	}
 	if len(tf) == 0 {
 		return nil
 	}
@@ -80,6 +146,9 @@ type ChartEMA struct {
 	Ms    int64   `json:"ms"`
 	Ema9  float64 `json:"ema9"`
 	Ema34 float64 `json:"ema34"`
+	// TFMin is the timeframe the point was computed on: 1 or 2 (M401). Ms is the
+	// open time of that frame's bar.
+	TFMin int `json:"tf_min"`
 }
 
 // emaSeriesChart builds the per-bar EMA 9/34 curve for the chart (display only,
@@ -97,6 +166,40 @@ type ChartEMA struct {
 // long-seeded EMA. Every EMITTED point is now converged (within 0.01 of an EMA
 // seeded from long history); the curve simply starts `warmup` bars in.
 func emaSeriesChart(bars []market.Kline, period9, period34 int) []ChartEMA {
+	return emaSeriesTF(bars, period9, period34, 1)
+}
+
+// emaSeriesChartSched is the M401 chart curve: the EMA the engine ACTUALLY used
+// at each point. With Exec2mAfter30m ON, points in a 1m period (08:30 <= t <
+// 09:00 CT) are per-1m-bar EMA values (tf_min 1) and points in a 2m period are
+// one per CLOSED 2m bar, ms = that 2m bar's open, 2m EMA values (tf_min 2). The
+// period of a point is judged by exec2mReads2m at the bar's CLOSE instant — the
+// same predicate and the same instant Tick judges the level frame on. Sorted by
+// ms. Each series keeps its own m327 warmup. Knob OFF: the 1m curve, unchanged.
+func emaSeriesChartSched(bars []market.Kline, cfg Config) []ChartEMA {
+	one := emaSeriesTF(bars, cfg.EMAPeriod9, cfg.EMAPeriod34, 1)
+	if !cfg.Exec2mAfter30m || cfg.EMATFMinutes > 1 || len(bars) == 0 {
+		return one
+	}
+	out := make([]ChartEMA, 0, len(one))
+	for _, p := range one {
+		if !exec2mReads2m(p.Ms + 60_000) { // 1m bar close instant
+			out = append(out, p)
+		}
+	}
+	two := emaSeriesTF(closedBucketsTF(bars, 2, BarCloseInstant(bars[len(bars)-1])), cfg.EMAPeriod9, cfg.EMAPeriod34, 2)
+	for _, p := range two {
+		if exec2mReads2m(p.Ms + 120_000) { // 2m bar close instant
+			out = append(out, p)
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool { return out[i].Ms < out[j].Ms })
+	return out
+}
+
+// emaSeriesTF is the per-bar EMA 9/34 curve over bars that are ALREADY on the
+// tfMin frame (tf_min is stamped on every point).
+func emaSeriesTF(bars []market.Kline, period9, period34, tfMin int) []ChartEMA {
 	if len(bars) == 0 {
 		return nil
 	}
@@ -130,7 +233,7 @@ func emaSeriesChart(bars []market.Kline, period9, period34 int) []ChartEMA {
 			}
 		}
 		if i >= warmup {
-			out = append(out, ChartEMA{Ms: bars[i].OpenTime, Ema9: e9, Ema34: e34})
+			out = append(out, ChartEMA{Ms: bars[i].OpenTime, Ema9: e9, Ema34: e34, TFMin: tfMin})
 		}
 	}
 	return out

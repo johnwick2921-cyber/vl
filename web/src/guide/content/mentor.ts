@@ -397,7 +397,7 @@ export const mentor: GuideSection = {
         ],
         [
           'EMA 34',
-          'The trading chart’s EMA 34 — 1m for intraday (R3)',
+          'The trading chart’s EMA 34 — on the frame you trade (R3, M401): 1m from 08:30 to 09:00 CT, 2m otherwise while "2m execution" is ON; 1m all day when it is OFF',
           'The 4h EMA 34 belongs to the SWING4H setup only',
         ],
         [
@@ -956,13 +956,14 @@ export const mentor: GuideSection = {
         {
           label: 'EMA timeframe',
           where: 'Strategy → Mentor mode → indicators',
-          what: 'The TF the EMA 34/9 lines are computed on.',
-          trader: '1m.',
+          what: 'The TF the EMA 34/9 lines are computed on. While "2m execution" is ON and this stays at 1, the lines follow the execution frame (1m 08:30–09:00 CT, 2m otherwise); any value above 1 is an explicit override.',
+          trader:
+            '1m, or the execution frame (2m after 09:00 CT) with 2m execution ON.',
           consumer: 'kernel/mentor/mentor.go EMATFMinutes',
           range: 'minutes',
           systemDefault: '1',
           recommended:
-            '1 — Engineering rule: the EMA lines are computed on the 1m, not from the course.',
+            '1 — the lines follow the execution frame ("anh TRADE KHUNG NÀO thì anh BẬT KHUNG ĐÓ" [D5.4 @08:15]; "sau 30 phút em sẽ chuyển qua khung 2 phút" [Routine trước khi trade part1 @00:00:34–00:01:14]); with 2m execution OFF it is the 1m all day.',
           whenToTouch: 'Experimentation only.',
           perSession: 'No.',
         },
@@ -971,7 +972,7 @@ export const mentor: GuideSection = {
           where: 'Strategy → Mentor mode → locations',
           what: 'The EMA 34 timeframe for the LOCATION gate (R3: intraday = the trading chart).',
           trader:
-            '1m — the intraday EMA 34 lives on the 1m chart; the 4h EMA 34 is ONLY the swing.',
+            'The EMA 34 of the frame you trade — 1m 08:30–09:00 CT, 2m otherwise with 2m execution ON (1m all day when OFF); the 4h EMA 34 is ONLY the swing.',
           consumer: 'kernel/mentor/mentor.go EMALocationTFMinutes',
           range: 'minutes',
           systemDefault: '1',
@@ -1042,7 +1043,7 @@ export const mentor: GuideSection = {
           where: 'Strategy → Risk control → Mentor method numbers',
           what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (17:00–03:00 CT evening session only — never the 15:00–17:00 day-session hour or the 16:00 break; the 1m range of the last 60 minutes under 100 pts, judged once a full 60-minute window of the evening has elapsed, so 5m starts no earlier than 18:00 CT and a quiet late night can be slow again after a busy open; back to the 2m the moment the window range reaches 100; from 03:00 CT the 2m is forced; the 60-minute window is our choice, to be confirmed with the mentor) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff is ours — X11 names 100–200 pts as a STRONG night, where the 2m stays [derived: X11 @17:40–18:26]. The ISB pair and PHL/PLH swap; the higher-TF lines, the boxes and the ORB escape always stay on the 1m. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
-            'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu").',
+            'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu"). The EMA 9/34 levels and the EMA 34 location line move to the 2m on the same schedule (M401), and the chart’s EMA curve carries the frame it was drawn on (tf_min).',
           consumer:
             'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
           range: 'true / false',

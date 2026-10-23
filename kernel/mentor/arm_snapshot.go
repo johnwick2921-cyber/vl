@@ -74,9 +74,10 @@ type SnapshotLevel struct {
 // ArmSnapshot renders the per-arm snapshot at authoring time. entryPrice
 // anchors the nearest-levels pick; a 0 entry just skips that section.
 func (s *State) ArmSnapshot(entryPrice float64) ArmSnapshot {
+	ema9, ema34, _ := s.EMAUsed() // the EMA the engine used (1m or 2m by the execution schedule)
 	a := ArmSnapshot{
-		EMA9:      s.EMA9,
-		EMA34:     s.EMA34,
+		EMA9:      ema9,
+		EMA34:     ema34,
 		Trigger5m: SnapshotTrigger{Dir: string(s.Trigger.Dir), Price: s.Trigger.Price},
 		Trigger1h: SnapshotTrigger{Dir: string(s.HTF.OneH.Dir), Price: s.HTF.OneH.Price},
 		Trigger4h: SnapshotTrigger{Dir: string(s.HTF.FourH.Dir), Price: s.HTF.FourH.Price},

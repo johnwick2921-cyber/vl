@@ -524,7 +524,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: "Healing a hole after a restart. The 3m/5m/15m/30m/1h rings are rebuilt from the complete stored 1m tape at boot ('🧯 ring rehydrated … FROM 1M'), so a hole left in the middle by a short NT8 replay is filled. When that rebuild adds bars the mentor had not seen, the mentor re-reads its 1m-derived state from the healed series on its next tick — trigger lines, swing line, 1m EMA 9/34 — and keeps its latches, positions, arms and legs. The log says '🧑‍🏫 mentor re-seed after a history refill (…)' with the before and after values, and the change is counted.",
+      text: "Healing a hole after a restart. The 3m/5m/15m/30m/1h rings are rebuilt from the complete stored 1m tape at boot ('🧯 ring rehydrated … FROM 1M'), so a hole left in the middle by a short NT8 replay is filled. When that rebuild adds bars the mentor had not seen, the mentor re-reads its 1m-derived state from the healed series on its next tick — trigger lines, swing line, EMA 9/34 (on the mentor’s execution frame — 1m for the first 30 minutes after the 08:30 CT open, then 2m) — and keeps its latches, positions, arms and legs. The log says '🧑‍🏫 mentor re-seed after a history refill (…)' with the before and after values, and the change is counted.",
     },
     { kind: 'h', text: 'Bar holes — the bot refills them itself' },
     {
