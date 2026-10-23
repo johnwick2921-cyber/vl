@@ -1,7 +1,9 @@
 package mentor
 
 import (
+	"fmt"
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,5 +198,186 @@ func TestM410EscapeStaysOneMinuteBodyClose(t *testing.T) {
 	}
 	if tf2 := barsForTF(bars, "2m"); escaped(tf2, b, 0) {
 		t.Fatal("control: the 2m candle body straddles the top; the 2m read must NOT call it an escape")
+	}
+}
+
+// ── REVIEW-BACK (DS-105): knob-ON pins through the production Tick path ─────
+
+// m410Double turns a 2m-shaped template into a 1m tape: every template bar
+// becomes TWO identical 1m bars, so the 2m aggregate reproduces the template
+// exactly while the 1m series has NO swing at all (a swing needs a strictly
+// lower low / higher high than its left neighbour, and each 1m bar equals its
+// predecessor). Any box drawn on this tape therefore proves the 2m frame.
+func m410Double(tpl []market.Kline, startMin int) []market.Kline {
+	t0 := time.Date(2026, time.September, 15, startMin/60, startMin%60, 0, 0, ctime()).UnixMilli()
+	out := make([]market.Kline, 0, 2*len(tpl))
+	for i, b := range tpl {
+		for j := 0; j < 2; j++ {
+			o := t0 + int64(2*i+j)*60_000
+			out = append(out, market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: b.Open, High: b.High, Low: b.Low, Close: b.Close})
+		}
+	}
+	return out
+}
+
+// m410TickAll ticks the production call site on every closed 1m bar with the
+// production clock (BarCloseInstant).
+func m410TickAll(e *Evaluator, bars []market.Kline) {
+	for k := 3; k <= len(bars); k++ {
+		e.Tick(bars[:k], BarCloseInstant(bars[k-1]))
+	}
+}
+
+// TestM410B52NewZoneOnTwoMinuteFrame — pin 1: a 2m-drawn FTGL escapes (the
+// 1m body close) and the NEXT zone is drawn on the frame of the current time
+// (2m, B52). The 1m view of this tape has no swings, so the boxes can only
+// come from the 2m frame. Mutant (force 1m) → RED.
+func TestM410B52NewZoneOnTwoMinuteFrame(t *testing.T) {
+	tpl, _ := b52Tape()
+	bars := m410Double(tpl, 9*60+26) // 09:26 → 10:00 CT: all on the 2m schedule
+	cfg := m410Cfg(true)
+	e := New(cfg)
+	m410TickAll(e, bars)
+	first := e.State.LatchedBoxes["ftgl"]
+	if first.Key != "ftgl:96.80:96.00" || first.TF != "2m" {
+		t.Fatalf("first FTGL = %+v, want ftgl:96.80:96.00 drawn on the 2m", first)
+	}
+	nb, ok := b52LastBox(e.State.PostEscapeBoxes, FTGL)
+	if !ok {
+		t.Fatalf("no post-escape FTGL after the 1m-body escape — post = %+v", e.State.PostEscapeBoxes)
+	}
+	if nb.Bottom != 92 || nb.Top != 92.9 || nb.TF != "2m" {
+		t.Fatalf("new zone = %+v, want [92, 92.9] drawn on the 2m (the frame of the current time)", nb)
+	}
+	if nb.Top > first.Bottom {
+		t.Fatalf("new zone not outside the old floor: %+v", nb)
+	}
+}
+
+// TestM410ISBBoxBanOnTwoMinuteBox — pin 2: an ISB box standing over a 2m-drawn
+// box's return refuses the box entry (box_isb_ban); the control (no ISB box)
+// trades it, so the ban is what removed the entry. Mutant (force 1m) → the
+// control emits no entry → RED.
+func TestM410ISBBoxBanOnTwoMinuteBox(t *testing.T) {
+	tpl := []market.Kline{
+		{Open: 100, High: 101, Low: 99, Close: 100},
+		{Open: 100, High: 102, Low: 99, Close: 101},
+		{Open: 101, High: 103, Low: 95, Close: 96},
+		{Open: 96.5, High: 97, Low: 96, Close: 96.8},
+		{Open: 96.8, High: 97, Low: 96.2, Close: 96.8},
+		{Open: 96.8, High: 97, Low: 95.5, Close: 96},
+		{Open: 96.2, High: 97, Low: 95.8, Close: 96.8},
+		{Open: 96.5, High: 97.1, Low: 95.9, Close: 97},
+	}
+	bars := m410Double(tpl, 9*60+44) // 09:44 → 10:00 CT
+	fixture := func() *Evaluator {
+		cfg := m410Cfg(true)
+		cfg.RoomMultiple = 0.05
+		e := New(cfg)
+		now := BarCloseInstant(bars[len(bars)-1])
+		e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
+		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 93}}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
+		return e
+	}
+	boxEntries := func(ins []Intent) int {
+		n := 0
+		for _, in := range ins {
+			if strings.HasPrefix(in.Reason, "box edge return") {
+				n++
+			}
+		}
+		return n
+	}
+	run := func(e *Evaluator) (entries int) {
+		for k := 3; k <= len(bars); k++ {
+			entries += boxEntries(e.Tick(bars[:k], BarCloseInstant(bars[k-1])))
+		}
+		return entries
+	}
+	control := fixture()
+	if n := run(control); n == 0 {
+		t.Fatalf("control: the 2m-drawn box emitted no box-edge entry (latched %+v, refusals %v) — the pin would be vacuous", control.State.LatchedBoxes, control.State.Refusals)
+	}
+	if b := control.State.LatchedBoxes["ftgl"]; b.TF != "2m" {
+		t.Fatalf("control box %+v is not 2m-drawn", b)
+	}
+	banned := fixture()
+	banned.State.ISBBox = &ISBBox{High: 100, Low: 90}
+	if n := run(banned); n != 0 {
+		t.Fatalf("an ISB box over the 2m box's return still emitted %d box entries, want 0", n)
+	}
+	if banned.State.Refusals["box_isb_ban"] == 0 {
+		t.Fatalf("ledger = %v, want box_isb_ban counted", banned.State.Refusals)
+	}
+}
+
+// TestM410TwoMinuteBoxEdgesAreLocations — pin 3: after a tick at 10:00 CT the
+// 2m box's FTGH/FTGL edges are in the evaluator's level set (the set the
+// location gate and the chart read). Mutant (force 1m) → no box, no edges → RED.
+func TestM410TwoMinuteBoxEdgesAreLocations(t *testing.T) {
+	tpl, _ := b52Tape()
+	bars := m410Double(tpl, 9*60+26)
+	e := New(m410Cfg(true))
+	m410TickAll(e, bars)
+	if last := time.UnixMilli(bars[len(bars)-1].OpenTime).In(ctime()); last.Hour() != 9 || last.Minute() != 59 {
+		t.Fatalf("fixture's last bar opens %s, want 09:59 (the 10:00 tick)", last.Format("15:04"))
+	}
+	box := e.State.LatchedBoxes["ftgl"]
+	if box.TF != "2m" {
+		t.Fatalf("latched FTGL %+v is not 2m-drawn", box)
+	}
+	var top, bottom bool
+	for _, l := range e.State.ChartLevels {
+		if l.Key == box.Key+":top" && l.Kind == KindFTGHEdge && l.Price == box.Top {
+			top = true
+		}
+		if l.Key == box.Key+":bottom" && l.Kind == KindFTGLEdge && l.Price == box.Bottom {
+			bottom = true
+		}
+	}
+	if !top || !bottom {
+		t.Fatalf("2m box edges missing from the level set (top=%v bottom=%v): %+v", top, bottom, e.State.ChartLevels)
+	}
+}
+
+// TestM410RestartParityOnTwoMinuteFrame — pin 4: on the real 10-13/10-14 tape
+// with Exec2mAfter30m ON (the production default) a restart (seed replay)
+// reproduces the continuous bot's 2m-frame box latch at every sampled instant.
+// It pins the seed-cut rule (8 bars of margin + a 2m-bucket-aligned window
+// start). Mutant (cut at first-2, no alignment) → the restart redraws a box →
+// RED.
+func TestM410RestartParityOnTwoMinuteFrame(t *testing.T) {
+	ssPin1mBoxes = false
+	all := loadSeedStateFixture(t)
+	full := ssTape(all, true, 1<<62)
+	key := func(m map[string]Box) string {
+		var parts []string
+		for _, k := range []string{"ftgl", "ftgh"} {
+			if b, ok := m[k]; ok {
+				parts = append(parts, fmt.Sprintf("%s %.2f–%.2f formed %s tf=%s", k, b.Bottom, b.Top, lrCT(time.UnixMilli(b.FormedAtMs)), b.TF))
+			}
+		}
+		return strings.Join(parts, " · ")
+	}
+	samples, twoM := 0, 0
+	ssLive(t, full, 1791992400000, func(i int, live *Evaluator, _ []Intent) { // → 10:40 CT
+		if (i % 13) != 0 {
+			return
+		}
+		samples++
+		re := ssSeed(full, BarCloseInstant(full[i]), ssCPI)
+		if key(re.State.LatchedBoxes) != key(live.State.LatchedBoxes) {
+			t.Fatalf("%s CT: restart latch [%s] ≠ continuous [%s]", lrCT(time.UnixMilli(full[i].OpenTime)), key(re.State.LatchedBoxes), key(live.State.LatchedBoxes))
+		}
+		for _, b := range live.State.LatchedBoxes {
+			if b.TF == "2m" {
+				twoM++
+				break
+			}
+		}
+	})
+	if samples == 0 || twoM == 0 {
+		t.Fatalf("vacuous: %d samples, %d with a 2m-drawn latched box", samples, twoM)
 	}
 }
