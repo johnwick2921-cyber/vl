@@ -243,7 +243,8 @@ func TestSeedTrendlinesMarksCrossed(t *testing.T) {
 	e := New(dsCfg())
 	SeedTrendlines(e, bars, now)
 
-	lines, crossed := trendlinesBuild(closedOnly(bars, now), time.UnixMilli(now))
+	// m407: the same frame the seed (and Tick) build on — 2m at 16:00 CT.
+	lines, crossed := trendlinesBuildExec(closedOnly(bars, now), time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
 	if len(crossed) == 0 {
 		t.Fatal("the 10-15 fixture must carry crossed-between-anchors pairs for this test to pin anything")
 	}

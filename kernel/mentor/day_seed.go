@@ -142,7 +142,7 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 		return
 	}
 	closed := closedOnly(bars1m, now)
-	lines, crossed := trendlinesBuild(closed, time.UnixMilli(now))
+	lines, crossed := trendlinesBuildExec(closed, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	e.tlDay = day
 	e.tlCrossed = map[string]bool{}

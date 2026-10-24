@@ -49,7 +49,7 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
-	cfg.Exec2mAfter30m = false // m410: the tape pins 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
+	cfg.Exec2mAfter30m = false // m410 + m407: this 14-minute 1m tape pins the 1m box geometry and the 1m trendline build (the 2m frame draws from 09:00 and has too few candles here)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 	// The 4h trigger line and the ORB are evaluator state the tick carries
@@ -159,6 +159,7 @@ func TestMentorTruthSnapshotSendsFormingTrendlines(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m407: this 14-minute 1m tape pins the 1m trendline build (the 2m frame has too few candles to draw)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 
