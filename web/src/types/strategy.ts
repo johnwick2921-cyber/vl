@@ -303,7 +303,7 @@ export interface MentorTuning {
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
   htf_gate_news_only?: boolean // D4.4-11 — unset = ON (news 07:20–07:35 + open 08:30–09:30 CT; the mentor's rule); OFF = all-day gate
-  exec_2m_after_30m?: boolean // X5-10 — unset = ON (1m for the first 30 min, then 2m for ISB + PHL/PLH)
+  exec_2m_after_30m?: boolean // X5-10 — unset = ON (execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number
