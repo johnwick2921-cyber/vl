@@ -2352,10 +2352,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// Stacking ticks for live arms (§2.1): bodies staying inside the first ISB.
-	// fold #565 (D1): each arm advances on ITS OWN frame's closed candle — a 2m
-	// arm counts 2m candles (ticked only when its 2m candle advanced), a 1m arm
-	// counts 1m candles exactly as before.
-	var arm2m []market.Kline // lazy: the closed 2m buckets, for 2m arms
+	// fold #565 (D1) + m406: each arm advances on ITS OWN frame's closed candle —
+	// a 2m arm counts 2m candles, a 1m arm counts 1m candles exactly as before,
+	// and a 5m arm (the evening-slow leg) counts 5m candles. The pre-m406 code
+	// hard-coded 2 here, so a 5m arm ticked on 2m candles and its 4th-candle
+	// cancel landed on the wrong candle size [N12, D4.2 p2 @08:21–09:01].
+	armBuckets := map[int][]market.Kline{} // closed buckets per arm TF (memoised)
 	for id, arm := range e.State.ISBArms {
 		if arm.Inside < 0 {
 			delete(e.State.ISBArms, id)
@@ -2366,15 +2368,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		tickBar := cur
 		if arm.TFMin > 1 {
-			if arm2m == nil {
-				arm2m = e.closedBucketsTFMemo(bars, 2, now)
+			buckets, ok := armBuckets[arm.TFMin]
+			if !ok {
+				buckets = e.closedBucketsTFMemo(bars, arm.TFMin, now)
+				armBuckets[arm.TFMin] = buckets
 			}
-			if len(arm2m) == 0 {
-				continue // no closed 2m candle yet — a 2m arm cannot tick
+			if len(buckets) == 0 {
+				continue // no closed candle yet on this arm's frame
 			}
-			tickBar = arm2m[len(arm2m)-1]
+			tickBar = buckets[len(buckets)-1]
 			if tickBar.CloseTime <= arm.LastTick {
-				continue // the arm's 2m candle has not advanced this tick
+				continue // the arm's candle has not advanced this tick
 			}
 		}
 		var cancelled bool

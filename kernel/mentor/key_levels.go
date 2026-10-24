@@ -222,6 +222,8 @@ func rthMinuteOf(ms int64) int {
 // ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
 // @17:06–19:35); "evening slow → 5m" is layered on top by eveningSlow (eval.go;
 // the cutoff number is ours, the course gives none).
+// This predicate returns only the 1m-vs-2m half of the schedule; the 5m half
+// is applied by the Tick's `want = 5` branch after this predicate.
 //
 // `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
 // bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window
