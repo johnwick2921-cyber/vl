@@ -548,7 +548,7 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 	fixture := func(htf HTF, day DayLatch) (*Evaluator, []market.Kline, int64) {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
-		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
+		cfg.Exec2mAfter30m = false  // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0

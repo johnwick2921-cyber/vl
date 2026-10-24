@@ -39,8 +39,8 @@ func TestUrFixLatchedBoxFlipAndTouchesAcrossSlidingWindow(t *testing.T) {
 		mk(5, 100, 102, 99, 101),    // extreme high 102 (confirmed by bar 6)
 		mk(6, 101, 101, 100, 100.5), // confirms bar 5
 		mk(7, 100, 100, 99, 99.5),
-		mk(8, 99.5, 101.5, 99, 100), // partner high 101.5 (later, lower)
-		mk(9, 100, 101, 99, 100),    // confirms partner → box born (FormedAt 9)
+		mk(8, 99.5, 101.5, 99, 100),    // partner high 101.5 (later, lower)
+		mk(9, 100, 101, 99, 100),       // confirms partner → box born (FormedAt 9)
 		mk(10, 101, 102.1, 100.5, 101), // wick touches the top 102 → Touches 1
 		mk(11, 103, 105, 102.5, 104),   // BODY escape: open/close above the top
 	}
