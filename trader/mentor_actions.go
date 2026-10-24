@@ -435,12 +435,17 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// X8 @18:02–18:14 "trade khung nào thì gồng theo khung đó": the frame
 		// the entry was READ on rides to the fill, so the runner trails on it.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), in.ExecTFMin)
-	} else {
-		// a 1m entry: store 1 (m409) — overwrites any stale frame from an earlier
-		// arm of the same scenario AND tells the X8 trap-dodge "1m", not "unknown"
-		// (absent/0 = unknown → 2m). Every `TrailTFMin > 1` trail check treats 1
-		// exactly like 0.
+	} else if in.ExecTFMin == 1 {
+		// A 1m entry: the X8 trap-dodge and the trail read the 1m. m417 stamps
+		// 1 at every kernel site (ISB / reverse-ISB / level-PHL / rolling-PHL)
+		// and on the box's drawn frame, so this branch is now LIVE, not dead.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), 1)
+	} else {
+		// ExecTFMin == 0 = the frame is UNKNOWN (an ORB/trendline entry — every
+		// other setup whose authoring site does not stamp). m417: Delete so the
+		// X8 trap-dodge falls back to the 2m (the pre-m409 behaviour) instead of
+		// reading the 1m on an entry whose frame was never recorded.
+		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))
 	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
 	if side != "long" && side != "short" {

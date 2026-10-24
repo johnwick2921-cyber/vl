@@ -52,8 +52,8 @@ func TestExec2mISBIntentCarriesItsFrame(t *testing.T) {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the ISB")
 	}
 	for _, in := range gotOff {
-		if in.ExecTFMin != 0 {
-			t.Fatalf("knob OFF: a 1m ISB must carry no frame stamp (byte-identical), got ExecTFMin=%d", in.ExecTFMin)
+		if in.ExecTFMin != 1 {
+			t.Fatalf("knob OFF: a 1m ISB must carry ExecTFMin=1 (m417 stamps the 1m), got ExecTFMin=%d", in.ExecTFMin)
 		}
 	}
 	on := DefaultConfig()
