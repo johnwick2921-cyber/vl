@@ -26,7 +26,7 @@ func (s *BarHistoryStore) FirstLiveOn(symbol, tf, contract string) (openMs int64
 		return 0, false, nil
 	}
 	var row BarHistoryDB
-	res := s.db.Where("symbol = ? AND tf = ? AND contract = ? AND source = ?", symbol, tf, contract, BarSourceLive).
+	res := s.db.Where("symbol = ? AND tf = ? AND contract = ? AND source IN (?, ?)", symbol, tf, contract, BarSourceLive, BarSourceLivePartial).
 		Order("open_time_ms ASC").Limit(1).Find(&row)
 	if res.Error != nil {
 		return 0, false, res.Error
@@ -45,6 +45,8 @@ func priorSourceRank(src string) int {
 	switch src {
 	case BarSourceLive:
 		return 0
+	case BarSourceLivePartial:
+		return 1
 	case BarSourceHistorical:
 		return 1
 	case BarSourceHistoricalImport:

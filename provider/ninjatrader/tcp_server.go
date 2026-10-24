@@ -192,6 +192,7 @@ type TCPServer struct {
 	// socket read (which would block heartbeats → spurious reconnect).
 	barCache      *BarCache
 	barIngestCh   chan barIngestMsg
+	ingestEnqMu   sync.Mutex           // m416: serialises live enqueue + final-preserving eviction
 	barsSubscribe BarsSubscribePayload // sent on each (re)connect after flushPending
 	barsSubMu     sync.RWMutex         // protects barsSubscribe + extraBarsSymbols
 	// P5.1 — EXTRA symbol roots auto-subscribed alongside the primary on each
@@ -2030,6 +2031,10 @@ func (s *TCPServer) enqueueBarUpdate(symbol, timeframe, contract string, bars []
 	// stale edge-triggered feed_status). Cheap atomic store on the hot path.
 	s.lastBarNano.Store(time.Now().UnixNano())
 	msg := barIngestMsg{historical: false, symbol: symbol, timeframe: timeframe, contract: contract, bars: bars}
+	// m416: every live producer serialises here so the full-queue eviction below
+	// can pop and re-push without another producer interleaving.
+	s.ingestEnqMu.Lock()
+	defer s.ingestEnqMu.Unlock()
 	select {
 	case s.barIngestCh <- msg:
 		sampleIngestDepth(len(s.barIngestCh))
@@ -2040,20 +2045,90 @@ func (s *TCPServer) enqueueBarUpdate(symbol, timeframe, contract string, bars []
 		return
 	default:
 	}
-	// Channel full — drop oldest (counted, summarized 1-line/min), retry.
+	// Channel full — evict (counted, summarized 1-line/min), retry.
 	sampleIngestDepth(len(s.barIngestCh))
-	select {
-	case <-s.barIngestCh:
-		ingestDropOld.Add(1)
-		ingestDropSummary()
-	default:
+	s.evictForIngest(msg)
+}
+
+// barsCarryFinal reports whether any bar in the frame is the AddOn's one-shot
+// close (final=true). Losing such a frame loses the only proof the minute
+// closed (m416: M415 root cause).
+func barsCarryFinal(bars []Bar) bool {
+	for i := range bars {
+		if bars[i].Final {
+			return true
+		}
 	}
-	select {
-	case s.barIngestCh <- msg:
-	default:
+	return false
+}
+
+// evictForIngest makes room for msg on a FULL ingest channel without ever
+// discarding a frame that carries a final bar while a non-final frame is
+// queued (m416 B). It pops from the head: the first non-final frame is the
+// victim (dropped, counted as the usual drop-oldest); final-carrying frames
+// popped on the way are re-queued behind the survivors (final_kept). Overload
+// may therefore deliver a kept final slightly later than its neighbours — the
+// cache accepts a final for a bar it already holds at any later point, which is
+// the whole reason a late final is still worth delivering. If the queue holds
+// ONLY finals, an incoming non-final frame is the one dropped; an incoming
+// final then displaces the oldest final (final_dropped, the unavoidable loss,
+// counted separately and loud in the summary). The cap is unchanged.
+// Caller holds ingestEnqMu.
+func (s *TCPServer) evictForIngest(msg barIngestMsg) {
+	var kept []barIngestMsg
+	dropped := false
+	for n := len(s.barIngestCh); n > 0 && !dropped; n-- {
+		select {
+		case head := <-s.barIngestCh:
+			if barsCarryFinal(head.bars) {
+				kept = append(kept, head)
+				continue
+			}
+			ingestDropOld.Add(1)
+			dropped = true
+		default:
+			n = 0
+		}
+	}
+	requeue := func(m barIngestMsg) bool {
+		select {
+		case s.barIngestCh <- m:
+			return true
+		default:
+			return false
+		}
+	}
+	if !dropped && len(kept) > 0 {
+		// Only finals were queued.
+		if barsCarryFinal(msg.bars) {
+			ingestFinalDropped.Add(1) // oldest final displaced by a newer final
+			kept = kept[1:]
+			dropped = true
+		} else {
+			ingestDropCur.Add(1) // incoming forming frame is the one lost
+			for _, k := range kept {
+				if !requeue(k) {
+					ingestFinalDropped.Add(1)
+				}
+			}
+			ingestFinalKept.Add(int64(len(kept)))
+			ingestDropSummary()
+			return
+		}
+	}
+	for _, k := range kept {
+		if !requeue(k) {
+			ingestFinalDropped.Add(1)
+		}
+	}
+	ingestFinalKept.Add(int64(len(kept)))
+	if !requeue(msg) {
+		if barsCarryFinal(msg.bars) {
+			ingestFinalDropped.Add(1)
+		}
 		ingestDropCur.Add(1)
-		ingestDropSummary()
 	}
+	ingestDropSummary()
 }
 
 // enqueueBarHistorical posts a bars_historical message to the ingest
