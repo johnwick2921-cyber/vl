@@ -157,9 +157,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 	in.AnchorKey = rollingLevelKey
 	in.Anchor = ex.level.Price
 	in.Reason = "PHL/PLH rolling pullback: " + in.Reason
-	if execTFMin > 1 {
-		in.ExecTFMin = execTFMin
-	}
+	in.ExecTFMin = execTFMin // 1m, 2m or 5m (m417)
 	in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
 	in.Confluence = false
 

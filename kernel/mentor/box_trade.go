@@ -184,6 +184,28 @@ func pingPongVerdict(boxes []Box, bars []market.Kline, price float64, cfg Config
 	return true, ""
 }
 
+// boxFrameMin returns the frame the box was DRAWN on as minutes: 1 (the base
+// 1m), 2 (a "2m" box or a base-2m config), 5 (a 5mha box). The X8 trap-dodge
+// and the runner trail read the ENTRY's frame, and the entry's frame is the
+// box's drawn frame [D4.1 "trade khung nào vẽ khung đó" @22:57–23:21] — m417.
+func boxFrameMin(b Box, cfg Config) int {
+	if b.TF == "2m" {
+		return 2
+	}
+	if b.TF == "5mha" {
+		return 5
+	}
+	// b.TF == "" → the configured base frame (DefaultBoxCfg: "1m").
+	switch cfg.Box.TF {
+	case "2m":
+		return 2
+	case "5mha":
+		return 5
+	default:
+		return 1
+	}
+}
+
 // boxEntryIntent is the CALL SITE of the box trade: one return visit's
 // reference candle becomes a stop order [D3.4 p3 @ 07:02 — "stop order away
 // from the box, with the REJECTING candle as the reference"] when the
@@ -247,6 +269,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		Stop:       stop,
 		Target:     target,
 		RefBarMs:   ref.CloseTime,
+		ExecTFMin:  boxFrameMin(b, cfg),
 		Confluence: fl.On,
 		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]",
 	}}

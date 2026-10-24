@@ -2175,11 +2175,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								chosen.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 								// X8 @18:02–18:14 "trade khung nào thì gồng theo khung
 								// đó": the runner trails on the frame the entry was
-								// READ on. Stamped only for a 2m read (knob OFF → 0,
-								// the intent is byte-identical).
-								if execTFMin > 1 {
-									chosen.ExecTFMin = execTFMin
-								}
+								// READ on — 1m, 2m or 5m (m417: the 1m stamp is REAL,
+								// so the X8 trap-dodge reads the 1m on a 1m entry).
+								chosen.ExecTFMin = execTFMin
 								e.State.ArmSeq++
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
@@ -2236,10 +2234,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
 			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
-			// X8 @18:02–18:14: the trail frame follows the entry frame.
-			if execTFMin > 1 {
-				in.ExecTFMin = execTFMin
-			}
+			// X8 @18:02–18:14: the trail frame follows the entry frame
+			// (1m, 2m or 5m — m417).
+			in.ExecTFMin = execTFMin
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the 20–<30
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
@@ -2667,10 +2664,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			// F2: the PHL/PLH was read on the exec frame — stamp it so the
 			// runner trails on closed candles of THAT frame ("trade khung nào
-			// thì gồng theo khung đó" [X8 @18:02–18:14]).
-			if execTFMin > 1 {
-				in.ExecTFMin = execTFMin
-			}
+			// thì gồng theo khung đó" [X8 @18:02–18:14]); 1m, 2m or 5m (m417).
+			in.ExecTFMin = execTFMin
 			// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
 			// old high ("resonance breaks the old high 70–80%"). Stamp the next
 			// level beyond the old extreme; 0 = none → the runner's native TP

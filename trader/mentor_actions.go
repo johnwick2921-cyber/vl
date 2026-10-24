@@ -436,16 +436,15 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// the entry was READ on rides to the fill, so the runner trails on it.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), in.ExecTFMin)
 	} else if in.ExecTFMin == 1 {
-		// An explicit 1m stamp tells the X8 trap-dodge "1m". No kernel site
-		// stamps 1 today (ISB / reverse-ISB / level-PHL / rolling-PHL all gate
-		// their stamp on `execTFMin > 1`), so this branch is reserved; it keeps
-		// the m409 seam alive without widening it.
+		// A 1m entry: the X8 trap-dodge and the trail read the 1m. m417 stamps
+		// 1 at every kernel site (ISB / reverse-ISB / level-PHL / rolling-PHL)
+		// and on the box's drawn frame, so this branch is now LIVE, not dead.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), 1)
 	} else {
-		// ExecTFMin == 0 = the frame is UNKNOWN (a box/ORB/trendline entry, or a
-		// 1m read whose authoring site did not stamp). m417: Delete so the X8
-		// trap-dodge falls back to the 2m (the pre-m409 behaviour) instead of
-		// reading the 1m on a 2m-drawn box at 11:00 CT.
+		// ExecTFMin == 0 = the frame is UNKNOWN (an ORB/trendline entry — every
+		// other setup whose authoring site does not stamp). m417: Delete so the
+		// X8 trap-dodge falls back to the 2m (the pre-m409 behaviour) instead of
+		// reading the 1m on an entry whose frame was never recorded.
 		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))
 	}
 	side := strings.ToLower(strings.TrimSpace(string(in.Side)))
