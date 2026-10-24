@@ -235,13 +235,16 @@ func boxBuildBars(bars []market.Kline, now int64, cfg Config) []market.Kline {
 // BoxesBuild(bars, …).
 func (e *Evaluator) buildBoxes(bars []market.Kline, now int64) []Box {
 	src := boxBuildBars(bars, now, e.Cfg)
-	boxes := BoxesBuild(src, e.Cfg.Box, time.UnixMilli(now))
-	if len(src) != len(bars) && len(boxes) > 0 {
-		cfg := e.Cfg.Box
-		if cfg.TF == "" {
-			cfg = DefaultBoxCfg()
+	base := e.baseBoxCfg()
+	build := e.boxFrameCfg(now)
+	boxes := BoxesBuild(src, build, time.UnixMilli(now))
+	if build.TF != base.TF {
+		for i := range boxes {
+			boxes[i].TF = build.TF // m410: drawn on the frame traded at draw time
 		}
-		full := barsForTF(bars, cfg.TF)
+	}
+	if len(src) != len(bars) && len(boxes) > 0 {
+		full := barsForTF(bars, build.TF)
 		for i := range boxes {
 			if idx, ok := resolveBarIndex(full, boxes[i].FormedAtMs); ok {
 				boxes[i].FormedAt = idx
@@ -249,6 +252,40 @@ func (e *Evaluator) buildBoxes(bars []market.Kline, now int64) []Box {
 		}
 	}
 	return e.filterTallBoxes(boxes)
+}
+
+// baseBoxCfg is the configured box frame (Config.Box, default when unset).
+func (e *Evaluator) baseBoxCfg() BoxCfg {
+	cfg := e.Cfg.Box
+	if cfg.TF == "" {
+		cfg = DefaultBoxCfg()
+	}
+	return cfg
+}
+
+// boxFrameCfg is the frame a box is DRAWN on at `now` (m410). "Anh chị trade
+// khung nào anh chị là vẽ khung đó ... trade khung 2 phút, anh chị vẽ khung 2
+// phút" [D4.1 p1 @22:57-23:14]: with Exec2mAfter30m ON the boxes are drawn on
+// closed 2m candles at every minute the exec schedule trades the 2m
+// (exec2mReads2m: everything except 08:30 <= t < 09:00 CT), and stay on the 1m
+// through the RTH-open +30 minutes. Only the default 1m base frame is
+// overridden (an explicit 2m/5mha setting is the owner's choice); knob OFF
+// gives the base frame exactly.
+func (e *Evaluator) boxFrameCfg(now int64) BoxCfg {
+	cfg := e.baseBoxCfg()
+	if e.Cfg.Exec2mAfter30m && cfg.TF == "1m" && exec2mReads2m(now) {
+		cfg.TF = "2m"
+	}
+	return cfg
+}
+
+// boxBuildCfg is the frame NEW boxes draw on for the tick in flight (set by
+// Tick from boxFrameCfg); with no tick frame set it is cfg unchanged.
+func (e *Evaluator) boxBuildCfg(cfg BoxCfg) BoxCfg {
+	if e.boxFrameTF != "" {
+		cfg.TF = e.boxFrameTF
+	}
+	return cfg
 }
 
 // ISBMaxStopReason is the CX-9 refusal reason ISBStopVerdict returns.

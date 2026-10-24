@@ -387,18 +387,34 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// so the window is cut there (same boxes, a fraction of the work). The
 		// aggregated TFs (2m, 5m Heikin Ashi) depend on the window's start and
 		// keep the live window exactly.
-		if cfg.TF == "1m" && lo < first-2 {
-			lo = first - 2
+		// m410: a 2m box frame needs 2 left 2m neighbours (4 1m bars) and a
+		// window that starts on a 2m bucket, so the cut keeps 8 bars of margin.
+		cut := first - 2
+		if e.Cfg.Exec2mAfter30m {
+			cut = first - 8
+		}
+		if cfg.TF == "1m" && lo < cut {
+			lo = cut
 		}
 		if lo < 0 {
 			lo = 0
 		}
+		if e.Cfg.Exec2mAfter30m {
+			// m410: a 2m box frame needs the window to START on a 2m bucket.
+			for lo > 0 && bucketOpen(closed1m[lo].OpenTime, 2) != closed1m[lo].OpenTime {
+				lo--
+			}
+		}
 		w := closed1m[lo : j+1]
+		build := e.boxFrameCfg(at) // m410: the frame this tick draws boxes on
 		// Once both roles are latched the first box never changes, so the
 		// full BoxesBuild scan is skipped — only the B52 new-zone check below
 		// still needs the window.
 		if len(latched) < 2 {
-			for _, b := range BoxesBuild(w, cfg, time.UnixMilli(at)) {
+			for _, b := range BoxesBuild(w, build, time.UnixMilli(at)) {
+				if build.TF != cfg.TF {
+					b.TF = build.TF
+				}
 				if _, ok := latched[string(b.Kind)]; !ok {
 					latched[string(b.Kind)] = b
 				}
@@ -409,21 +425,15 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// latched, exactly as the tick does. The replay runs to the end of the
 		// day (escapes happen long after the first boxes form).
 		if e.Cfg.BoxNewZoneAfterEscape {
-			wTF := barsForTF(w, cfg.TF)
 			for _, kind := range []BoxKind{FTGL, FTGH} {
 				active, ok := activeBoxOfPair(latched, post, kind)
 				if !ok {
 					continue
 				}
-				idx, ok := resolveBarIndex(wTF, active.FormedAtMs)
-				if !ok {
+				if _, escapedYet := boxEscapeOpenMs(w, active, cfg); !escapedYet {
 					continue
 				}
-				active.FormedAt = idx
-				if _, escapedYet := boxEscapeIndex(wTF, active, idx); !escapedYet {
-					continue
-				}
-				nb := boxAfterEscapeBuild(w, cfg, active)
+				nb := boxAfterEscapeBuildFrame(w, build, cfg, active)
 				if nb == nil || postHasBox(post, nb.Key) {
 					continue
 				}

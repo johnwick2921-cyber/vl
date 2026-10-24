@@ -49,6 +49,7 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: the tape pins 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 	// The 4h trigger line and the ORB are evaluator state the tick carries
