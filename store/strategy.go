@@ -1990,10 +1990,10 @@ type MentorTuning struct {
 	// 07:20–07:35 CT news window (nil → OFF = all-day gate; owner decision A
 	// 2026-10-21 m134).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
-	// Exec2mAfter30m (X5-10): after the first 30 minutes of RTH (09:00 CT)
-	// the named setups — the ISB pair AND PHL/PLH — are read on the 2m chart
-	// (nil → ON since release #31; the course trades the 1m for the first 30
-	// min, then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
+	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
+	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
+	// and the X8 exit (nil → ON since release #31; the course trades the 1m
+	// for the first 30 min, then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
