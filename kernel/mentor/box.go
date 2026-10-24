@@ -91,6 +91,14 @@ type Box struct {
 	// the NEW side with the same reject rule and the same gates (HTF, ORB,
 	// ping-pong). The edges do not move; only the role flips.
 	Flipped bool
+	// TF is the frame this box was DRAWN on when it differs from the
+	// configured base frame — "2m" for a box drawn while the exec-frame
+	// schedule trades the 2m (m410, Exec2mAfter30m). "" = the base frame
+	// (Config.Box.TF): every box before m410, and every box while the knob is
+	// OFF, so a knob-OFF run carries no new state. A "2m" box keeps FormedAt
+	// as a 1m-window index (the walk and the D14 escape read the 1m), and its
+	// touches count on closed 2m candles.
+	TF string
 }
 
 // BoxCfg holds the §4.1 knobs.
@@ -155,12 +163,81 @@ func HeikinAshi(bars []market.Kline) []market.Kline {
 func barsForTF(bars []market.Kline, tf string) []market.Kline {
 	switch tf {
 	case "2m":
-		return barsTF(bars, 2)
+		return dropFormingTail(bars, barsTF(bars, 2), 2)
 	case "5mha":
 		return HeikinAshi(barsTF(bars, 5))
 	default:
 		return bars
 	}
+}
+
+// dropFormingTail drops the last aggregate bucket when the 1m series ends
+// before that bucket's close — a half-formed candle must never be a swing, a
+// confirming bar or a partner (m410: boxes read CLOSED 2m candles only).
+func dropFormingTail(src, agg []market.Kline, tfMin int) []market.Kline {
+	if len(src) == 0 || len(agg) == 0 {
+		return agg
+	}
+	if src[len(src)-1].OpenTime+60_000 < agg[len(agg)-1].CloseTime+1 {
+		return agg[:len(agg)-1]
+	}
+	return agg
+}
+
+// refreshBox re-resolves a latched box's window index, touch count and D14
+// flip from its stable time anchor. A base-frame box (TF "") reads
+// barsForTF(bars, cfg.TF) exactly as before m410. A "2m" box (m410) counts
+// touches on closed 2m candles, but its FormedAt is the 1m index of the
+// formation bucket's LAST minute and the D14 escape reads the 1m body close
+// ("box escape = 1m body close" [D4.1 p1 @20:38–20:45]). Absent anchor → fail
+// closed: the last known values stand.
+func refreshBox(bars []market.Kline, b *Box, cfg BoxCfg) {
+	if b.TF != "2m" {
+		tfBars := barsForTF(bars, cfg.TF)
+		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
+			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
+			b.Flipped = escaped(tfBars, *b, idx)
+			b.FormedAt = idx
+		}
+		return
+	}
+	tf2 := barsForTF(bars, "2m")
+	i2, ok2 := resolveBarIndex(tf2, b.FormedAtMs)
+	i1, ok1 := resolveBarIndex(bars, b.FormedAtMs)
+	if !ok2 || !ok1 || i1+1 >= len(bars) {
+		return
+	}
+	b.Touches = countBoxTouches(tf2, *b, i2, cfg)
+	b.FormedAt = i1 + 1
+	b.Flipped = escaped(bars, *b, b.FormedAt)
+}
+
+// boxEscapeOpenMs returns the OpenTime of the first closed candle after
+// formation whose whole BODY closed outside the box — read on the box's own
+// frame for a base-frame box and on the 1m for a "2m" box (the escape stays a
+// 1m body close). ok=false when absent or not escaped.
+func boxEscapeOpenMs(bars []market.Kline, old Box, baseCfg BoxCfg) (int64, bool) {
+	if old.TF == "2m" {
+		i1, ok := resolveBarIndex(bars, old.FormedAtMs)
+		if !ok || i1+1 >= len(bars) {
+			return 0, false
+		}
+		esc, ok := boxEscapeIndex(bars, old, i1+1)
+		if !ok {
+			return 0, false
+		}
+		return bars[esc].OpenTime, true
+	}
+	tfBars := barsForTF(bars, baseCfg.TF)
+	idx, ok := resolveBarIndex(tfBars, old.FormedAtMs)
+	if !ok {
+		return 0, false
+	}
+	esc, ok := boxEscapeIndex(tfBars, old, idx)
+	if !ok {
+		return 0, false
+	}
+	return tfBars[esc].OpenTime, true
 }
 
 // swings3 is the role detector [B]: a rolling 3-candle extreme — candle i is
@@ -364,7 +441,6 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		e.State.LatchedBoxes[role] = b
 		e.note("box latched %s %.2f–%.2f (formed %s CT) — stands to the 17:00 CT session roll, never redrawn [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)))
 	}
-	tfBars := barsForTF(bars, cfg.TF)
 	// Refresh the first boxes (touch count + D14 flip + window index).
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		role := string(kind)
@@ -377,18 +453,14 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 		// the touch count AND the D14 flip. Absent anchor (the formation bar
 		// scrolled out of the window) → fail closed: keep the last known
 		// values, never recompute on a stale index.
-		if idx, ok := resolveBarIndex(tfBars, latched.FormedAtMs); ok {
-			latched.Touches = countBoxTouches(tfBars, latched, idx, cfg)
-			latched.Flipped = escaped(tfBars, latched, idx)
-			latched.FormedAt = idx
-		}
+		refreshBox(bars, &latched, cfg)
 		e.State.LatchedBoxes[role] = latched // write the refreshed copy back
 	}
 	// B52 (release #29): after a standing box escapes, latch ONE new same-role
 	// box outside the old range, per further escape. The old box keeps its
 	// flipped role (D14); the new box is that role's active box.
 	if e.Cfg.BoxNewZoneAfterEscape {
-		e.latchPostEscapeBoxes(bars, cfg)
+		e.latchPostEscapeBoxes(bars, cfg, e.boxBuildCfg(cfg))
 	}
 	// CTO ruling (fold-551): AT MOST TWO ZONES LIVE. After a new-zone latch the
 	// live set is the NEW zone + the zone it escaped from (flipped); every
@@ -431,31 +503,22 @@ func liveBoxes(latched map[string]Box, post []Box) []Box {
 // post-escape box of that role, else the first-latched box. One box per escape:
 // once latched, the new box is the active box and blocks another until IT
 // escapes. Dedup by Key so a replay of the same tick never double-latches.
-func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg BoxCfg) {
-	tfBars := barsForTF(bars, cfg.TF)
+func (e *Evaluator) latchPostEscapeBoxes(bars []market.Kline, cfg, buildCfg BoxCfg) {
 	// Refresh the post-escape boxes first (touches + D14 flip + window index).
 	for i := range e.State.PostEscapeBoxes {
-		b := &e.State.PostEscapeBoxes[i]
-		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
-			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
-			b.Flipped = escaped(tfBars, *b, idx)
-			b.FormedAt = idx
-		}
+		refreshBox(bars, &e.State.PostEscapeBoxes[i], cfg)
 	}
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		active, ok := e.activeBoxOf(kind)
 		if !ok {
 			continue
 		}
-		idx, ok := resolveBarIndex(tfBars, active.FormedAtMs)
-		if !ok {
-			continue // F551-1(c): the seed skips here — the tick must too (never escape-check on a stale FormedAt)
-		}
-		active.FormedAt = idx
-		if _, escapedYet := boxEscapeIndex(tfBars, active, active.FormedAt); !escapedYet {
+		// F551-1(c): the seed skips an absent anchor — the tick must too (never
+		// escape-check on a stale FormedAt).
+		if _, escapedYet := boxEscapeOpenMs(bars, active, cfg); !escapedYet {
 			continue
 		}
-		nb := boxAfterEscapeBuild(bars, cfg, active)
+		nb := boxAfterEscapeBuildFrame(bars, buildCfg, cfg, active)
 		if nb == nil {
 			continue
 		}
@@ -620,10 +683,26 @@ func boxEscapeIndex(bars []market.Kline, b Box, formedAt int) (int, bool) {
 // same-role swings, the second fails to break the first; wick of the first to
 // the nearest body of the second). Returns nil when no such box exists yet.
 func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
+	return boxAfterEscapeBuildFrame(bars, cfg, cfg, old)
+}
+
+// boxAfterEscapeBuildFrame is boxAfterEscapeBuild with the two frames named:
+// buildCfg is the frame the NEW box is drawn on (m410: the 2m while the exec
+// schedule trades it), baseCfg the configured base frame the OLD box was read
+// on when it carries no TF. With buildCfg == baseCfg it is byte-identical to
+// the pre-m410 build.
+func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old Box) *Box {
+	cfg := buildCfg
 	tfBars := barsForTF(bars, cfg.TF)
-	esc, ok := boxEscapeIndex(tfBars, old, old.FormedAt)
+	escMs, ok := boxEscapeOpenMs(bars, old, baseCfg)
 	if !ok {
 		return nil
+	}
+	esc, ok := resolveBarIndex(tfBars, escMs)
+	if !ok {
+		// the escaping 1m bar sits inside a 2m bucket: the swing must open
+		// strictly AFTER it — the first bucket opening after escMs.
+		esc = sort.Search(len(tfBars), func(i int) bool { return tfBars[i].OpenTime > escMs }) - 1
 	}
 	role := kernel.KindSWGL
 	if old.Kind == FTGH {
@@ -707,6 +786,10 @@ func boxAfterEscapeBuild(bars []market.Kline, cfg BoxCfg, old Box) *Box {
 	b.FormedAt = seq[nearest].idx + 1
 	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
 	b.Flipped = escaped(tfBars, *b, b.FormedAt)
+	if buildCfg.TF != baseCfg.TF && buildCfg.TF == "2m" {
+		b.TF = "2m"
+		refreshBox(bars, b, baseCfg) // FormedAt/Flipped onto the 1m window
+	}
 	return b
 }
 

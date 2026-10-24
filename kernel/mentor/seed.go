@@ -257,6 +257,28 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.Seed1mWatermark = last.CloseTime
 		e.State.EMA34Warmed = true
 	}
+	// M401: the 2m EMA 34/9 over the closed 2m buckets of the same history
+	// (only while the schedule knob is ON; a re-seed recomputes it from scratch).
+	e.State.EMA34x2, e.State.EMA9x2, e.State.Seed2mWatermark, e.State.EMA2mWarmed = 0, 0, 0, false
+	if e.Cfg.Exec2mAfter30m && len(closes) > 0 {
+		var closed1m []market.Kline
+		for _, b := range bars1m {
+			if b.CloseTime <= now {
+				closed1m = append(closed1m, b)
+			}
+		}
+		// Formed only: at least EMAPeriod34 closed 2m candles of history.
+		if b2 := closedBucketsTF(closed1m, 2, now); len(b2) > 0 && len(b2) >= e.Cfg.EMAPeriod34 {
+			c2 := make([]float64, len(b2))
+			for i, b := range b2 {
+				c2[i] = b.Close
+			}
+			e.State.EMA34x2 = emaFromCloses(c2, e.Cfg.EMAPeriod34)
+			e.State.EMA9x2 = emaFromCloses(c2, e.Cfg.EMAPeriod9)
+			e.State.Seed2mWatermark = b2[len(b2)-1].CloseTime
+			e.State.EMA2mWarmed = true
+		}
+	}
 
 	// The swing's 4h EMA 34 line: the last 34 closed 4h candles (17:00 anchor).
 	// The swing's 4h EMA line: the canonical recurrence over ALL closed 4h
@@ -365,18 +387,34 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// so the window is cut there (same boxes, a fraction of the work). The
 		// aggregated TFs (2m, 5m Heikin Ashi) depend on the window's start and
 		// keep the live window exactly.
-		if cfg.TF == "1m" && lo < first-2 {
-			lo = first - 2
+		// m410: a 2m box frame needs 2 left 2m neighbours (4 1m bars) and a
+		// window that starts on a 2m bucket, so the cut keeps 8 bars of margin.
+		cut := first - 2
+		if e.Cfg.Exec2mAfter30m {
+			cut = first - 8
+		}
+		if cfg.TF == "1m" && lo < cut {
+			lo = cut
 		}
 		if lo < 0 {
 			lo = 0
 		}
+		if e.Cfg.Exec2mAfter30m {
+			// m410: a 2m box frame needs the window to START on a 2m bucket.
+			for lo > 0 && bucketOpen(closed1m[lo].OpenTime, 2) != closed1m[lo].OpenTime {
+				lo--
+			}
+		}
 		w := closed1m[lo : j+1]
+		build := e.boxFrameCfg(at) // m410: the frame this tick draws boxes on
 		// Once both roles are latched the first box never changes, so the
 		// full BoxesBuild scan is skipped — only the B52 new-zone check below
 		// still needs the window.
 		if len(latched) < 2 {
-			for _, b := range BoxesBuild(w, cfg, time.UnixMilli(at)) {
+			for _, b := range BoxesBuild(w, build, time.UnixMilli(at)) {
+				if build.TF != cfg.TF {
+					b.TF = build.TF
+				}
 				if _, ok := latched[string(b.Kind)]; !ok {
 					latched[string(b.Kind)] = b
 				}
@@ -387,21 +425,15 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// latched, exactly as the tick does. The replay runs to the end of the
 		// day (escapes happen long after the first boxes form).
 		if e.Cfg.BoxNewZoneAfterEscape {
-			wTF := barsForTF(w, cfg.TF)
 			for _, kind := range []BoxKind{FTGL, FTGH} {
 				active, ok := activeBoxOfPair(latched, post, kind)
 				if !ok {
 					continue
 				}
-				idx, ok := resolveBarIndex(wTF, active.FormedAtMs)
-				if !ok {
+				if _, escapedYet := boxEscapeOpenMs(w, active, cfg); !escapedYet {
 					continue
 				}
-				active.FormedAt = idx
-				if _, escapedYet := boxEscapeIndex(wTF, active, idx); !escapedYet {
-					continue
-				}
-				nb := boxAfterEscapeBuild(w, cfg, active)
+				nb := boxAfterEscapeBuildFrame(w, build, cfg, active)
 				if nb == nil || postHasBox(post, nb.Key) {
 					continue
 				}
@@ -457,6 +489,7 @@ func (e *Evaluator) SeedBoxLine() string {
 type ReseedSnapshot struct {
 	FourH, OneH, FiveM TriggerLine
 	EMA34, EMA9        float64
+	EMAFrame           string // "1m" or "2m": the frame EMA34/EMA9 were read on
 	SwingLine          float64
 	SwingCount         int
 	SwingStale         bool
@@ -473,9 +506,10 @@ type ReseedReport struct {
 
 func (e *Evaluator) reseedSnapshot() ReseedSnapshot {
 	live, del := e.keyLevelCounts()
+	ema9, ema34, frame := e.State.EMAUsed()
 	return ReseedSnapshot{
 		FourH: e.State.HTF.FourH, OneH: e.State.HTF.OneH, FiveM: e.State.Trigger,
-		EMA34: e.State.EMA34, EMA9: e.State.EMA9,
+		EMA34: ema34, EMA9: ema9, EMAFrame: frame,
 		SwingLine: e.State.Swing.Line, SwingCount: e.State.Swing.EmaCount, SwingStale: e.State.Swing.LineStale,
 		KeyLive: live, KeyDel: del,
 		Bars1m: e.State.Seed1mWatermark,
@@ -525,8 +559,8 @@ func (r ReseedReport) Line() string {
 		trig("4h trigger", b.FourH, a.FourH),
 		trig("1h trigger", b.OneH, a.OneH),
 		trig("5m trigger", b.FiveM, a.FiveM),
-		num("1m EMA34", b.EMA34, a.EMA34),
-		num("1m EMA9", b.EMA9, a.EMA9),
+		num(a.EMAFrame+" EMA34", b.EMA34, a.EMA34),
+		num(a.EMAFrame+" EMA9", b.EMA9, a.EMA9),
 		num("swing 4h EMA34 line", b.SwingLine, a.SwingLine),
 	}
 	if b.SwingStale != a.SwingStale {

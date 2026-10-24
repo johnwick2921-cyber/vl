@@ -217,11 +217,13 @@ func rthMinuteOf(ms int64) int {
 // read by Tick): with the knob ON the named setups (ISB + PHL/PLH) read the 2m
 // chart at every minute EXCEPT the RTH open +30 minutes (08:30 ≤ t < 09:00 CT),
 // when they stay on the 1m ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1
-// phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight,
-// the Europe open (3am Texas) and the evening are all 2m. The schedule source is
+// phút … sau 30 phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14]). Overnight
+// and the Europe open (3am Texas) are 2m; the evening is 2m unless eveningSlow. The schedule source is
 // ~/mm-course/extra/notes/05-EXTRA.md:305-311 (X5 @00:07–01:17, X11
-// @17:06–19:35); "evening slow → 5m" is an OPEN COURSE QUESTION (no number for
-// "slow") and is not implemented.
+// @17:06–19:35); "evening slow → 5m" is layered on top by eveningSlow (eval.go;
+// the cutoff number is ours, the course gives none).
+// This predicate returns only the 1m-vs-2m half of the schedule; the 5m half
+// is applied by the Tick's `want = 5` branch after this predicate.
 //
 // `now` is the instant the just-closed 1m bar CLOSED (BarCloseInstant = the
 // bar's CloseTime + 1), so the bar's OPEN minute is `now − 60_000` — the window

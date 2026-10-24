@@ -18,6 +18,7 @@ import (
 func TestRel9BoxRefsAdvancesAcrossSlidingWindow(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -28,17 +29,17 @@ func TestRel9BoxRefsAdvancesAcrossSlidingWindow(t *testing.T) {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
 	}
 	bars := []market.Kline{
-		mk(0, 100, 101, 99, 100.5),     // pad
-		mk(1, 100, 101, 99, 100.5),     // pad
-		mk(2, 100, 101, 99, 100.5),     // pad
-		mk(3, 100, 101, 99, 100.5),     // (was bar 0)
-		mk(4, 100, 103, 99, 101),       // (was bar 1)
-		mk(5, 104, 106, 102, 104.5),    // top 1: extreme high 106
-		mk(6, 104, 105, 103.5, 104),    // confirms top 1
+		mk(0, 100, 101, 99, 100.5),  // pad
+		mk(1, 100, 101, 99, 100.5),  // pad
+		mk(2, 100, 101, 99, 100.5),  // pad
+		mk(3, 100, 101, 99, 100.5),  // (was bar 0)
+		mk(4, 100, 103, 99, 101),    // (was bar 1)
+		mk(5, 104, 106, 102, 104.5), // top 1: extreme high 106
+		mk(6, 104, 105, 103.5, 104), // confirms top 1
 		mk(7, 104, 104.5, 102.5, 103.2),
-		mk(8, 103.5, 106, 102.5, 103.2), // top 2: wick 106
-		mk(9, 102.5, 103.5, 101, 102.2), // top 2 confirming bar → box born (FormedAt 9)
-		mk(10, 102.5, 103, 102, 102.5),  // no touch
+		mk(8, 103.5, 106, 102.5, 103.2),  // top 2: wick 106
+		mk(9, 102.5, 103.5, 101, 102.2),  // top 2 confirming bar → box born (FormedAt 9)
+		mk(10, 102.5, 103, 102, 102.5),   // no touch
 		mk(11, 102, 103.6, 101.5, 102.6), // return #1 (touches bottom, closes below)
 		mk(12, 103, 103.8, 101.5, 102.4), // return #2
 	}

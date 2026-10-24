@@ -103,8 +103,8 @@ func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 	if len(gotOff) == 0 {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the PHL")
 	}
-	if gotOff[0].Price != 103 || gotOff[0].ExecTFMin != 0 {
-		t.Fatalf("knob OFF: the 1m PHL must be entry 103 (high 102 + 1.0) with ExecTFMin 0, got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
+	if gotOff[0].Price != 103 || gotOff[0].ExecTFMin != 1 {
+		t.Fatalf("knob OFF: the 1m PHL must be entry 103 (high 102 + 1.0) with ExecTFMin 1 (m417), got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
 	}
 
 	// ON at 09:05: the 2m read — entry at the closed 2m candle's high 105.4 +
@@ -133,7 +133,7 @@ func TestF2Exec2mPHLScheduleAtTick(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("fixture: knob ON inside the RTH open +30 window, the 1m read must emit the PHL")
 	}
-	if got[0].Price != 103 || got[0].ExecTFMin != 0 {
-		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 103, ExecTFMin 0), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
+	if got[0].Price != 103 || got[0].ExecTFMin != 1 {
+		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 103, ExecTFMin 1 — m417), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
 	}
 }

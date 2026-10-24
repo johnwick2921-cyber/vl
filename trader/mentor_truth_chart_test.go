@@ -49,6 +49,7 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410 + m407: this 14-minute 1m tape pins the 1m box geometry and the 1m trendline build (the 2m frame draws from 09:00 and has too few candles here)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 	// The 4h trigger line and the ORB are evaluator state the tick carries
@@ -131,7 +132,7 @@ func TestMentorTruthSnapshotSendsEMAseries(t *testing.T) {
 	ev := at.mentorEval
 
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, kernel.CTLocation()).UnixMilli()
-	bars := make([]market.Kline, 400) // > 6×34 warm-up
+	bars := make([]market.Kline, 900) // > 6×34 warm-up on the 2m frame (M401: the tape is 09:00+ CT = 2m period, so 204 2m bars = 408 1m bars of head are dropped)
 	for i := range bars {
 		c := 100.0 + float64(i%7)
 		bars[i] = market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: c - 1, High: c + 1, Low: c - 2, Close: c}
@@ -158,6 +159,7 @@ func TestMentorTruthSnapshotSendsFormingTrendlines(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m407: this 14-minute 1m tape pins the 1m trendline build (the 2m frame has too few candles to draw)
 	at.mentorEval = mentor.New(cfg)
 	ev := at.mentorEval
 

@@ -171,6 +171,20 @@ type State struct {
 	// would advance from 0. Never reset to false once the EMA is warm.
 	EMA34Warmed bool `json:"ema34_warmed,omitempty"`
 
+	// M401: the incremental 2m EMA 34/9 over CLOSED 2m buckets, the frame the
+	// EMA levels + EMA34 location read outside 08:30–09:00 CT when
+	// Exec2mAfter30m is ON. Only maintained while the knob is ON (zero and
+	// omitted otherwise). Seed2mWatermark is the CloseTime of the last folded
+	// 2m bucket.
+	EMA34x2         float64 `json:"ema34_2m,omitempty"`
+	EMA9x2          float64 `json:"ema9_2m,omitempty"`
+	Seed2mWatermark int64   `json:"seed_2m_watermark,omitempty"`
+	EMA2mWarmed     bool    `json:"ema2m_warmed,omitempty"`
+	// EMAFrame is the frame (1 or 2) the EMA lines were last read on; 0 = not
+	// read yet (or knob OFF). A 1<->2 change starts a fresh visit for the EMA
+	// keys only (resetEMAVisitsOnFrameSwitch).
+	EMAFrame int `json:"ema_frame,omitempty"`
+
 	// E2 (CTO 12:27:25Z): the EMA34 loss machinery — the pending stop of the
 	// last emitted EMA setup, and the one-loss block until a departure.
 	EmaPendingSide   Side    `json:"ema_pending_side,omitempty"`
@@ -262,6 +276,9 @@ type Evaluator struct {
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
 	// its own memo (a package-global cache would cross the streams).
 	tfMemo map[int]tfMemoEntry
+	// boxFrameTF is the frame new boxes draw on for the Tick in flight (m410),
+	// "" = the configured base frame. Set at the top of the box section.
+	boxFrameTF string
 	// pullbackWarn5m is the X11 pullback warning for THIS tick (transient, not
 	// serialized): the latest closed 5m candle broke the prior one's low in a
 	// 5m uptrend → size down [X11 @13:21–15:02].
@@ -281,6 +298,7 @@ type Evaluator struct {
 	tlValid   map[string]bool
 	tlTF      map[string]int // trendline key → TFMin (0 = 1m; 60/240 = persistent HTF) [D2.3 p1 @04:23–05:41]
 	tlCrossed map[string]bool
+	tlCarry   map[string]carriedTL // m407: valid intraday lines latched across the 08:30/09:00 build-frame switch
 	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
 }
 
@@ -502,7 +520,7 @@ func swingPointNow(now int64) int64 { return now + 1 }
 func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
-	out = append(out, EMALevels(bars, cfg)...)
+	out = append(out, EMALevelsAt(bars, cfg, now)...)
 	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
 }
@@ -1700,9 +1718,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			levels = append(levels, wl)
 		}
 	}
-	if el, ok := e.emaLocationLevel(bars, e.Cfg); ok {
+	if el, ok := e.emaLocationLevel(bars, e.Cfg, now); ok {
 		levels = append(levels, el)
 	}
+	e.resetEMAVisitsOnFrameSwitch(now)
 
 	// §7 step 0: the ORB gate advances every tick (drawn at 08:32 CT; the
 	// side is the side of the LATEST 1m candle whose BODY is wholly outside —
@@ -1715,6 +1734,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
 	// join the level set as locations (used again and again) and the box
 	// interior bans entries.
+	// m410: the frame new boxes draw on this tick.
+	e.boxFrameTF = e.boxFrameCfg(now).TF
 	boxes := e.buildBoxes(bars, now) // CX-11: fresh RTH pair + max height (knobs; OFF = BoxesBuild)
 	// D4.1-22: the first box per role per day is latched — never redrawn on a
 	// later higher high / lower low ("không vẽ cái box khác… y nguyên đó tới
@@ -1738,7 +1759,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// swings joined, valid only after the 3rd touch, discarded by a 5m close
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
-	trendlines, crossed := trendlinesBuild(bars, time.UnixMilli(now))
+	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
+	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	frame := 1
+	if exec2m {
+		frame = 2
+	}
+	trendlines = e.carryIntradayLines(trendlines, bars, time.UnixMilli(now), frame, e.Cfg.Exec2mAfter30m)
 	htfLive, htfBroken := e.htFTrendlines(bars, time.UnixMilli(now))
 	trendlines = append(trendlines, htfLive...)
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
@@ -1750,7 +1777,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
-	e.State.ChartEMA = emaSeriesChart(bars, e.Cfg.EMAPeriod9, e.Cfg.EMAPeriod34)               // m134: display EMA curve
+	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                        // m134: display EMA curve
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;
@@ -1885,7 +1912,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// ADVANCED — a 2m read on an odd 1m minute sees the same 2m candle as the
 	// previous tick, so the placement (and the reverse ISB) runs once per 2m
 	// candle, never re-emitted one minute later.
-	isbEval := execCur.CloseTime != e.State.LastISBEvalClose
+	// m417 F2: ADVANCED means STRICTLY newer (`>`, not `!=`). On a frame flip
+	// (5m→2m at 18:15) the exec candle can be OLDER than the watermark — the
+	// 2m close 18:14 vs the 5m close 18:15 — and `!=` would move the watermark
+	// BACKWARDS and re-evaluate the ISB pair on a stale candle.
+	isbEval := execCur.CloseTime > e.State.LastISBEvalClose
 	if isbEval {
 		e.State.LastISBEvalClose = execCur.CloseTime
 	}
@@ -2144,11 +2175,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								chosen.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
 								// X8 @18:02–18:14 "trade khung nào thì gồng theo khung
 								// đó": the runner trails on the frame the entry was
-								// READ on. Stamped only for a 2m read (knob OFF → 0,
-								// the intent is byte-identical).
-								if execTFMin > 1 {
-									chosen.ExecTFMin = execTFMin
-								}
+								// READ on — 1m, 2m or 5m (m417: the 1m stamp is REAL,
+								// so the X8 trap-dodge reads the 1m on a 1m entry).
+								chosen.ExecTFMin = execTFMin
 								e.State.ArmSeq++
 								id := fmt.Sprintf("isb-%d", e.State.ArmSeq)
 								// the ISB candle is the 1st inside candle (Inside=1), so the
@@ -2205,10 +2234,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// N12: an R7 reverse ISB fills by the close of the NEXT candle on
 			// the execution timeframe (the R1 family rule).
 			in.ExpiryMs = execCur.CloseTime + int64(execTFMin)*60_000
-			// X8 @18:02–18:14: the trail frame follows the entry frame.
-			if execTFMin > 1 {
-				in.ExecTFMin = execTFMin
-			}
+			// X8 @18:02–18:14: the trail frame follows the entry frame
+			// (1m, 2m or 5m — m417).
+			in.ExecTFMin = execTFMin
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the 20–<30
 			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
@@ -2309,10 +2337,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// Stacking ticks for live arms (§2.1): bodies staying inside the first ISB.
-	// fold #565 (D1): each arm advances on ITS OWN frame's closed candle — a 2m
-	// arm counts 2m candles (ticked only when its 2m candle advanced), a 1m arm
-	// counts 1m candles exactly as before.
-	var arm2m []market.Kline // lazy: the closed 2m buckets, for 2m arms
+	// fold #565 (D1) + m406: each arm advances on ITS OWN frame's closed candle —
+	// a 2m arm counts 2m candles, a 1m arm counts 1m candles exactly as before,
+	// and a 5m arm (the evening-slow leg) counts 5m candles. The pre-m406 code
+	// hard-coded 2 here, so a 5m arm ticked on 2m candles and its 4th-candle
+	// cancel landed on the wrong candle size [N12, D4.2 p2 @08:21–09:01].
+	armBuckets := map[int][]market.Kline{} // closed buckets per arm TF (memoised)
 	for id, arm := range e.State.ISBArms {
 		if arm.Inside < 0 {
 			delete(e.State.ISBArms, id)
@@ -2323,15 +2353,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		tickBar := cur
 		if arm.TFMin > 1 {
-			if arm2m == nil {
-				arm2m = e.closedBucketsTFMemo(bars, 2, now)
+			buckets, ok := armBuckets[arm.TFMin]
+			if !ok {
+				buckets = e.closedBucketsTFMemo(bars, arm.TFMin, now)
+				armBuckets[arm.TFMin] = buckets
 			}
-			if len(arm2m) == 0 {
-				continue // no closed 2m candle yet — a 2m arm cannot tick
+			if len(buckets) == 0 {
+				continue // no closed candle yet on this arm's frame
 			}
-			tickBar = arm2m[len(arm2m)-1]
+			tickBar = buckets[len(buckets)-1]
 			if tickBar.CloseTime <= arm.LastTick {
-				continue // the arm's 2m candle has not advanced this tick
+				continue // the arm's candle has not advanced this tick
 			}
 		}
 		var cancelled bool
@@ -2632,10 +2664,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			// F2: the PHL/PLH was read on the exec frame — stamp it so the
 			// runner trails on closed candles of THAT frame ("trade khung nào
-			// thì gồng theo khung đó" [X8 @18:02–18:14]).
-			if execTFMin > 1 {
-				in.ExecTFMin = execTFMin
-			}
+			// thì gồng theo khung đó" [X8 @18:02–18:14]); 1m, 2m or 5m (m417).
+			in.ExecTFMin = execTFMin
 			// D2-49 / D2.4 p1 @01:56: the mode-A runner target goes BEYOND the
 			// old high ("resonance breaks the old high 70–80%"). Stamp the next
 			// level beyond the old extreme; 0 = none → the runner's native TP
@@ -3289,11 +3319,22 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 // actually folded a 1m bar into it (EMA34Warmed): a nil-bar / fail-closed seed
 // leaves it cold and seededLevels would advance State.EMA34 from 0 into garbage
 // — in that case it falls back to EMALocationLevel.
-func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
-	if cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
+//
+// M401: with Exec2mAfter30m ON the line follows the execution-frame schedule
+// (emaScheduleTF): the 2m EMA 34 outside 08:30–09:00 CT — State.EMA34x2, the
+// same number the KindEMA34 level carries then — and the 1m line inside it.
+func (e *Evaluator) emaLocationLevel(bars []market.Kline, cfg Config, now int64) (Level, bool) {
+	tf := emaScheduleTF(cfg, cfg.EMALocationTFMinutes, now)
+	if tf == 2 && cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA2mWarmed && e.State.EMA34x2 > 0 {
+		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34x2}, true
+	}
+	if tf == 2 && cfg.EMALocationTFMinutes == 1 && e != nil && e.seeded && !e.State.EMA2mWarmed {
+		tf = 1 // seeded but the 2m line has not formed: the 1m line stands (as the KindEMA34 level does)
+	}
+	if tf == 1 && cfg.EMALocationTFMinutes == 1 && e != nil && e.State.EMA34Warmed && e.State.EMA34 > 0 {
 		return Level{Key: string(KindEMA34HTF), Kind: KindEMA34HTF, Price: e.State.EMA34}, true
 	}
-	return EMALocationLevel(bars, cfg)
+	return EMALocationLevelAt(bars, cfg, now)
 }
 
 // seededLevels is the Tick level source after Seed: SeedLevels (full stored
@@ -3344,12 +3385,74 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 		e.State.Seed1HLastColour = candleColour(c)
 	}
 
+	// M401: fold the closed 2m buckets the same incremental way, and read the
+	// EMA 9/34 levels on the frame the execution schedule names at `now`.
+	ema34, ema9 := e.State.EMA34, e.State.EMA9
+	if e.Cfg.Exec2mAfter30m && e.Cfg.EMATFMinutes <= 1 {
+		e.foldClosed2mEMA(bars, now)
+		if emaScheduleTF(e.Cfg, e.Cfg.EMATFMinutes, now) == 2 && e.State.EMA2mWarmed {
+			ema34, ema9 = e.State.EMA34x2, e.State.EMA9x2
+		}
+	}
+
 	var out []Level
 	out = append(out, e.State.SeedLevels...)
-	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: e.State.EMA34})
-	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: e.State.EMA9})
+	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: ema34})
+	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
 	out = append(out, swingOldExtremeLevels(bars, now)...)
 	return out
+}
+
+// resetEMAVisitsOnFrameSwitch starts a FRESH visit for the EMA 9 / EMA 34 /
+// EMA 34 location keys when the execution-frame schedule moves the EMA lines
+// between the 1m and the 2m (08:30 and 09:00 CT). Touch, ISB-only and visit-cap
+// state is keyed by the CONSTANT level key, so without this a wrong-way first
+// touch recorded against the 1m line would invalidate the new 2m line, which sits
+// at a different price. Only those three keys are touched; no other level.
+func (e *Evaluator) resetEMAVisitsOnFrameSwitch(now int64) {
+	if !e.Cfg.Exec2mAfter30m || e.Cfg.EMATFMinutes > 1 {
+		return
+	}
+	frame := emaScheduleTF(e.Cfg, e.Cfg.EMATFMinutes, now)
+	prev := e.State.EMAFrame
+	e.State.EMAFrame = frame
+	if prev == 0 || prev == frame {
+		return
+	}
+	for _, key := range []string{string(KindEMA34), string(KindEMA9), string(KindEMA34HTF)} {
+		delete(e.State.Touches, key)
+		delete(e.State.ISBOnly, key)
+		delete(e.State.VisitCapRefused, key)
+		delete(e.State.Visits, key)
+		for vk := range e.State.Visits { // EMA 9 per-level mode: "ema9@price"
+			if strings.HasPrefix(vk, key+"@") {
+				delete(e.State.Visits, vk)
+			}
+		}
+	}
+}
+
+// foldClosed2mEMA advances the incremental 2m EMA 34/9 over the 2m buckets that
+// CLOSED since Seed2mWatermark (CloseTime < now — the forming bucket is never
+// folded). Only a SEEDED 2m EMA advances (see seedHistoryState).
+func (e *Evaluator) foldClosed2mEMA(bars []market.Kline, now int64) {
+	if !e.State.EMA2mWarmed {
+		return // never cold-started off the tick slice: the 1m line stands
+	}
+	start := sort.Search(len(bars), func(i int) bool { return bars[i].OpenTime > e.State.Seed2mWatermark })
+	if start >= len(bars) {
+		return
+	}
+	k34 := 2.0 / float64(e.Cfg.EMAPeriod34+1)
+	k9 := 2.0 / float64(e.Cfg.EMAPeriod9+1)
+	for _, b := range barsTF(bars[start:], 2) {
+		if b.CloseTime >= now {
+			break // still forming
+		}
+		e.State.EMA34x2 += k34 * (b.Close - e.State.EMA34x2)
+		e.State.EMA9x2 += k9 * (b.Close - e.State.EMA9x2)
+		e.State.Seed2mWatermark = b.CloseTime
+	}
 }
 
 // advanceKeyLevelDeletion walks the KEY-LEVEL deletion over only the NEW

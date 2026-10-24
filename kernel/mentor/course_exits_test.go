@@ -301,6 +301,7 @@ func TestCX11BoxMaxHeight(t *testing.T) {
 	for _, maxH := range []float64{0, 1.5} {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
+		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
@@ -326,6 +327,7 @@ func TestCX11FreshRTHPair(t *testing.T) {
 	for _, on := range []bool{false, true} {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
+		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.KeyLevelTFMinutes = 1
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0

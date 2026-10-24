@@ -32,7 +32,7 @@ func TestPersisterStoresTwoContractsForTheSameMinute(t *testing.T) {
 	base := int64(1_789_000_000_000)
 	// the September minute as it traded (a live frame), then December's replay
 	// of the SAME minute after the re-subscribe ACKed "MNQ 12-26"
-	sep := []ntwire.Bar{{T: base, O: 29000, H: 29010, L: 28990, C: 29005, V: 1, Source: ntwire.BarSourceLive}}
+	sep := []ntwire.Bar{{T: base, O: 29000, H: 29010, L: 28990, C: 29005, V: 1, Final: true, Source: ntwire.BarSourceLive}}
 	dec := []ntwire.Bar{{T: base, O: 29290, H: 29300, L: 29280, C: 29295, V: 1, Source: ntwire.BarSourceHistorical}}
 	if err := bh.InsertBars(barRowsForPersist("MNQ", "1m", "MNQ 09-26", false, sep)); err != nil {
 		t.Fatalf("sep: %v", err)

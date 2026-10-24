@@ -24,6 +24,7 @@ import (
 func b52Cfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.Exec2mAfter30m = false // m410: the B52 pins are 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0

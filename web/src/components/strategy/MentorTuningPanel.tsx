@@ -93,9 +93,9 @@ const COPY = {
     es: 'Compuerta 4h/1h solo en la ventana de noticias (07:20–07:35 CT)',
   },
   exec2m: {
-    zh: '09:00 CT 后改用 2 分钟执行（ISB + PHL/PLH）',
-    en: 'Read ISB + PHL/PLH on the 2m after 09:00 CT',
-    es: 'Leer ISB + PHL/PLH en 2m después de las 09:00 CT',
+    zh: '执行周期：09:00 CT 后为 2 分钟（08:30–09:00 为 1 分钟）— ISB + PHL/PLH、EMA 9/34、箱体、趋势线与 X8 离场',
+    en: 'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
+    es: 'Marco de ejecución: 2m después de las 09:00 CT (1m 08:30–09:00) para ISB + PHL/PLH, EMA 9/34, cajas, líneas de tendencia y la salida X8',
   },
   pingGap: {
     zh: '箱体乒乓最小宽度（点）',

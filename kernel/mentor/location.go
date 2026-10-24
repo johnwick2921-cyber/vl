@@ -124,10 +124,24 @@ func levelIsLocation(lvl Level, levels []Level) bool {
 // evaluator's PHL/PLH entry-level check, where the touched level itself must
 // be a location). R3: default tf = 1m (intraday chart).
 func EMALocationLevel(bars []market.Kline, cfg Config) (Level, bool) {
+	return EMALocationLevelAt(bars, cfg, 0)
+}
+
+// EMALocationLevelAt is EMALocationLevel on the M401 execution-frame schedule
+// (emaScheduleTF; now == 0 = no clock, the configured TF as-is).
+func EMALocationLevelAt(bars []market.Kline, cfg Config, now int64) (Level, bool) {
 	if !cfg.Enabled || len(bars) == 0 || cfg.EMALocationTFMinutes <= 0 {
 		return Level{}, false
 	}
-	v := emaValue(barsTF(bars, cfg.EMALocationTFMinutes), cfg.EMAPeriod34)
+	tfMin := emaScheduleTF(cfg, cfg.EMALocationTFMinutes, now)
+	tf := barsTF(bars, tfMin)
+	if tfMin != cfg.EMALocationTFMinutes {
+		tf = closedBucketsTF(bars, tfMin, now)
+		if len(tf) == 0 || len(tf) < cfg.EMAPeriod34 {
+			tf = barsTF(bars, cfg.EMALocationTFMinutes) // 2m line not formed yet: the 1m line stands
+		}
+	}
+	v := emaValue(tf, cfg.EMAPeriod34)
 	return Level{
 		Key:   string(KindEMA34HTF),
 		Kind:  KindEMA34HTF,

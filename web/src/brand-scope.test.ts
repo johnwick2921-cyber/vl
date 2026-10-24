@@ -1,4 +1,7 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baseline advanced 2026-10-23 for m416 (fix/m416-sonnet-final-bar-persist), Go-only:
+//   provider/ninjatrader/tcp_server.go  sha256 d399f97d… — enqueueBarUpdate eviction now spares
+//     final-carrying frames (evictForIngest, ingestEnqMu). No wire schema change.
 // Wire baselines advanced 2026-10-21 for release #43 re-integration:
 //   ninjascript/VLTraderTCPClient.cs sha256 65b120fa… — reconnect backoff resets
 //     only on the server hello, hello-first write gate, unreadable connect.json

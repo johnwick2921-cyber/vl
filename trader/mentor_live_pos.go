@@ -81,11 +81,12 @@ type mentorLivePos struct {
 	ModeWhy    string
 	// TrailTFMin is the frame the ENTRY was read on, and so the frame the
 	// runner trails on: "nếu như mình trade khung nào thì mình gồng theo khung
-	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 2 = the X5-10 exec-2m
-	// schedule read the setup — the ISB pair or PHL/PLH — on closed 2m candles
-	// (carried from the intent's ExecTFMin via mentorExecFrames); 0 = the 1m
-	// (every other setup, and every named setup when exec_2m_after_30m is
-	// explicitly OFF).
+	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 1 = a 1m entry, 2 = a
+	// 2m entry, 5 = a 5m entry (carried from the intent's ExecTFMin via
+	// mentorExecFrames; m417 stamps the frame at every kernel authoring site and
+	// on the box's drawn frame). 0 = unknown (an ORB/trendline entry, an old
+	// position, a restart rebuild) → the X8 trap-dodge keeps the 2m. Every
+	// `TrailTFMin > 1` trail check treats 1 exactly like 0 (both trail the 1m).
 	TrailTFMin int
 	// X8Exited (m262 one-shot latch): the X8 trap-dodge market close was
 	// SENT for this position — never send a second close while the fill is in
@@ -312,7 +313,7 @@ func (at *AutoTrader) mentorBuildLivePos(r store.ArmedOrderDB, u ntwire.OrderUpd
 	}
 	// X8 @18:02–18:14: the runner trails on the frame the entry was read on —
 	// carried from the intent's ExecTFMin, keyed trader+scenario like the
-	// runner target. Absent → the 1m (TrailTFMin 0).
+	// runner target. Absent → unknown (TrailTFMin 0 → the X8 reads the 2m).
 	if v, ok := mentorExecFrames.Load(mentorRunnerTargetKey(at.id, r.Scenario)); ok {
 		lp.TrailTFMin, _ = v.(int)
 	}
@@ -766,8 +767,8 @@ var mentorRunnerTargets sync.Map
 // mentorExecFrames carries an intent's ExecTFMin (the frame its entry was READ
 // on — 2 under the X5-10 exec-2m schedule) from the authoring
 // (mentorArmIntent, keyed trader+scenario) to the fill-time live position, the
-// same way as mentorRunnerTargets: no schema change. Only a 2m entry is stored;
-// a 1m entry leaves no key (absent = the 1m).
+// same way as mentorRunnerTargets: no schema change. m409: a 1m entry stores 1,
+// a 2m/5m entry its frame; absent = unknown (the X8 trap-dodge keeps the 2m).
 var mentorExecFrames sync.Map
 
 // ── REL17-F2 RESTART REBUILD ────────────────────────────────────────────────
