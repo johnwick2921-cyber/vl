@@ -1107,53 +1107,25 @@ func (e *Evaluator) closedBucketsMemo(bars []market.Kline, now int64) []market.K
 }
 
 // closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
-// eveningSlowWindowMin / eveningSlowRangePts: the "slow evening" test (m408).
-// The 100-pt cutoff is ours (X11 @17:40–18:26 names 100–200 pts as a STRONG
-// night, gives no number for slow). The 60-minute rolling window is a [C]
-// choice (no course number, no prior constant) for the owner and mentor to
-// confirm.
-const (
-	eveningSlowWindowMin = 60
-	eveningSlowRangePts  = 100.0
-)
-
-// eveningSlow reports whether the evening/overnight read should drop to the 5m
-// ("evening, when it is slow: trade the 5m ONLY" [X11 @17:06–19:35]).
-//
-// Measured over the CURRENT evening session only (17:00 CT reopen → 03:00 CT
-// Europe open; the 15:00–17:00 day-session hour and the 16:00–17:00 break never
-// count) and over a ROLLING recent window (eveningSlowWindowMin), not the whole
-// night, so a busy 17:00–18:00 does not lock the night out of "slow".
-// Slow = the 1m high−low range of the last full window is strictly under
-// eveningSlowRangePts. Hysteresis [C]: "slow" needs one FULL window of
-// evening bars (so 5m starts no earlier than 18:00 CT) and a range under the
-// cutoff the whole window; the moment the window range reaches the cutoff it is
-// 2m again. From 03:00 CT inEveningWindow is false → the 2m is forced.
+// eveningSlow reports whether the evening/overnight read should drop to the 5m:
+// the night is "slow" when the 1m high-low range since the last RTH close
+// (15:00 CT) is under 100 points. X11 names 100–200 pts as a STRONG night (2m
+// stays fine); the 100-pt cutoff is ours [derived: X11 @17:40–18:26].
 func eveningSlow(now int64, bars []market.Kline) bool {
 	if !inEveningWindow(now) {
 		return false
 	}
-	// inEveningWindow reads the minute of now-60s; use the same basis so the
-	// session anchor agrees with it at the 03:00 / 17:00 edges.
-	ref := now - 60_000
-	m := rthMinuteOf(ref)
-	if m >= 15*60 && m < 17*60 {
-		return false // 15:00–17:00: day-session tail + CME break, not "evening"
-	}
-	t := time.UnixMilli(ref).In(ctime())
-	day := t
-	if m < 3*60 {
-		day = t.AddDate(0, 0, -1) // after midnight: the session opened yesterday 17:00
-	}
-	sessionStart := time.Date(day.Year(), day.Month(), day.Day(), 17, 0, 0, 0, ctime()).UnixMilli()
-	winStart := now - eveningSlowWindowMin*60_000
-	if winStart < sessionStart {
-		return false // less than one full window of evening: stay on the 2m
+	t := time.UnixMilli(now).In(ctime())
+	rthClose := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	if now < rthClose {
+		// Overnight 00:00–02:59 CT: the evening belongs to yesterday's RTH close.
+		prev := t.AddDate(0, 0, -1)
+		rthClose = time.Date(prev.Year(), prev.Month(), prev.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
 	}
 	var hi, lo float64
 	have := false
 	for _, b := range bars {
-		if b.OpenTime < winStart || b.OpenTime >= now {
+		if b.OpenTime < rthClose {
 			continue
 		}
 		if !have {
@@ -1168,9 +1140,9 @@ func eveningSlow(now int64, bars []market.Kline) bool {
 		}
 	}
 	if !have {
-		return false // no bars in the window — stay on the 2m
+		return false // no evening bars yet — stay on the 2m
 	}
-	return hi-lo < eveningSlowRangePts
+	return hi-lo < 100
 }
 
 func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int64) []market.Kline {
@@ -1827,8 +1799,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	//     ("Trong dòng 30 phút đầu giờ em vẫn sẽ trade khung 1 phút … sau 30
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
 	//     @17:08–17:25]).
-	//   • a SLOW evening/overnight (17:00 CT → 03:00 CT; the last 60 min's 1m range
-	//     under 100 pts — m408) → 5-MINUTE read ("buổi tối mà nó đi chậm thì đánh khung 5
+	//   • a SLOW evening/overnight (15:00 CT → 03:00 CT, overnight range under
+	//     100 pts) → 5-MINUTE read ("buổi tối mà nó đi chậm thì đánh khung 5
 	//     phút thôi" [X11 @17:40–18:26]; the 100-pt cutoff is ours — X11 only
 	//     names 100–200 pts as a STRONG night where the 2m stays fine
 	//     [derived: X11 @17:40–18:26]).

@@ -405,8 +405,9 @@ type Config struct {
 	// potential high low" [X8 @15:52–15:57]) — read the 1m ONLY during the RTH
 	// open +30 minutes (08:30 ≤ t < 09:00 CT), and the 2m at every other
 	// minute — overnight and the Europe open (3am Texas) included. "Evening
-	// slow → 5m" is implemented by eveningSlow (eval.go; the 100-pt cutoff and
-	// 60-min window are ours). The MNQ strategy sets no mentor_tuning, so this default
+	// slow → 5m" is implemented by eveningSlow (eval.go; the 100-pt cutoff is
+	// ours and the range is measured since the 15:00 CT RTH close — how "slow" is
+	// measured is an open mentor question). The MNQ strategy sets no mentor_tuning, so this default
 	// is the live behaviour; an explicit OFF restores the 1m read all day.
 	Exec2mAfter30m bool
 
