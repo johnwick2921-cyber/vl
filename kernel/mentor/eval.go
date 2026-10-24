@@ -1912,7 +1912,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// ADVANCED — a 2m read on an odd 1m minute sees the same 2m candle as the
 	// previous tick, so the placement (and the reverse ISB) runs once per 2m
 	// candle, never re-emitted one minute later.
-	isbEval := execCur.CloseTime != e.State.LastISBEvalClose
+	// m417 F2: ADVANCED means STRICTLY newer (`>`, not `!=`). On a frame flip
+	// (5m→2m at 18:15) the exec candle can be OLDER than the watermark — the
+	// 2m close 18:14 vs the 5m close 18:15 — and `!=` would move the watermark
+	// BACKWARDS and re-evaluate the ISB pair on a stale candle.
+	isbEval := execCur.CloseTime > e.State.LastISBEvalClose
 	if isbEval {
 		e.State.LastISBEvalClose = execCur.CloseTime
 	}
