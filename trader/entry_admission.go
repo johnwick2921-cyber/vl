@@ -225,7 +225,10 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// blocked until a clean positions/orders reconciliation, so we never open on
 	// top of a state we haven't re-verified across a link gap. State is advanced
 	// once per cycle in runCycle (driveDeadManWatchdog); here we only enforce.
-	if at.deadMan.entriesBlocked() {
+	// m425b S5: that cached state is up to 60s old, so admission ALSO samples
+	// the live link + connection epoch (a drop, or a drop and reconnect inside
+	// the window, must not let an arm through).
+	if at.deadManEntriesBlockedNow() {
 		return at.admitRefuse(in, "dead_man", "dead_man_watchdog: awaiting reconciliation after link gap", func() {
 			at.logWarnf("⛔ dead-man watchdog: %s %s REFUSED — NT8 link not yet reconciled after a disconnect; entries resume after a clean reconciliation.", sym, act)
 		})

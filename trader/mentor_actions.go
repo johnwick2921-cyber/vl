@@ -298,7 +298,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	tuned := mentorTuningResolve(at, at.mentorRiskControl())
 	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
 	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 30) —
+	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 25) —
 	// one number, not two (P2-1).
 	extra.ISBMaxStopPts = mentorCourseExitsResolve(at, at.mentorRiskControl()).ISBMaxPts
 	if why := mentorRuleGate(in, extra); why != "" {
@@ -311,11 +311,13 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 		// STALLED-SETUP ALARM (release #22): the LAST refusal reason rides the
 		// per-kind tally so a stalled setup's alert names why it died.
 		at.mentorRecordStallRefusal(in, why)
+		at.mentorGateBlock(mentorRuleGateClass(rule))
 		return
 	}
 	choice, err := at.mentorSizeFor(in, extra)
 	if err != nil {
 		at.mentorRecordStallRefusal(in, "size: "+err.Error())
+		at.mentorGateBlock("mentor_size_refused")
 		return
 	}
 	at.mentorCount("intent_" + in.Setup)
@@ -324,9 +326,28 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 			in.Setup, in.Side, choice.Contracts, in.Price, in.Stop, in.Target, choice.Tier)
 		at.mentorCount("placement_held")
 		at.mentorRecordStallRefusal(in, "MENTOR_PLACE off (dry run)")
+		at.mentorGateBlock("mentor_place_off")
 		return
 	}
 	at.mentorPlaceIntent(in, choice, lastCloseTime, emitMs)
+}
+
+// mentorRuleGateClass maps a mentorRuleGate reason prefix ("r8", "r9", "bad
+// geometry", "untagged setup", ...) to a STABLE gate-block class name for
+// GET /api/risk/gate-blocks (m425b S4). Unknown prefixes collapse to
+// mentor_rule_other so the table's keys stay a closed set.
+func mentorRuleGateClass(rule string) string {
+	switch rule {
+	case "r8":
+		return "mentor_rule_r8"
+	case "r9":
+		return "mentor_rule_r9"
+	case "bad geometry":
+		return "mentor_bad_geometry"
+	case "untagged setup":
+		return "mentor_untagged_setup"
+	}
+	return "mentor_rule_other"
 }
 
 // mentorDropEvalArm drops EVERY evaluator trace of a refused entry (X-07 +

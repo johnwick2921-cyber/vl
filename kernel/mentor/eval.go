@@ -2879,11 +2879,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						tSide, tPrice = SideShort, bars[r.RefBar].Low
 					}
 					if ok, ts, _ := TriggerVerdict(e.State.Trigger, tPrice); !ok || ts != "" && ts != tSide {
-						e.refuse("isb_trigger_side")
+						e.refuse("box_trigger_side")
 						continue
 					}
 				}
-				for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
+				boxIntents, boxWhy := boxEntryIntentWhy(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg)
+				if boxWhy != "" {
+					e.refuse(boxWhy) // m425b S4b: no silent drop inside boxEntryIntent
+				}
+				for _, in := range boxIntents {
 					// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
 					// the same day/HTF gates as every other setup —
 					// the 4h/1h direction, the day-off and the spent cap.

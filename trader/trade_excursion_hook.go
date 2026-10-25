@@ -281,8 +281,8 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 		}
 		if err := at.store.TradeExcursions().Close(row.ID, store.TradeExcursionClose{
 			ExitPx: p.ExitPrice, ExitTs: exitMs, ExitReason: p.CloseReason,
-			StopPxFinal:  row.StopPxInitial, // no trail wave yet; the initial stop is the final one
-			PnlCorrected: p.PnlCorrected,    // A22 — corrected only; nil stays NULL
+			StopPxFinal:  at.excursionFinalStop(row, p, exitMs), // m425b E1: the REAL last working stop, or NULL
+			PnlCorrected: p.PnlCorrected,                        // A22 — corrected only; nil stays NULL
 			Ambiguous:    ambiguous,
 			Size:         excursionWholeSize(p), // MATH-EXECUTOR P2-1: not the first partial
 		}); err != nil {
@@ -292,6 +292,30 @@ func (at *AutoTrader) excursionOnClose(p *store.TraderPosition) {
 			row.ID, p.ID, p.ExitPrice, p.CloseReason, ambiguous)
 		return nil
 	})
+}
+
+// excursionFinalStop (m425b E1) is the last working stop the position had when
+// it closed. It was always written as the INITIAL stop ("no trail wave yet"),
+// so a BE'd trade read as if it had exited at its original stop (689: 29058.25
+// stored vs a 29117.5 real BE exit). Source: the stop move this process last
+// sent for the side at/after the entry. If none was sent AND this process
+// watched the whole trade (it was built before the entry), the stop never
+// moved, so the initial stop IS the final. Otherwise it is unknowable (restart
+// mid-trade, non-NT trader) and the answer is nil -> NULL, never a guess.
+func (at *AutoTrader) excursionFinalStop(row *store.TradeExcursion, p *store.TraderPosition, exitMs int64) *float64 {
+	nt := at.armedTrader()
+	if nt == nil || row == nil || p == nil {
+		return nil
+	}
+	if rec, ok := nt.LastStopMove(p.Side); ok && rec.AtMs >= row.EntryTs && rec.Px > 0 {
+		px := rec.Px
+		return &px
+	}
+	if c := nt.CreatedMs(); c > 0 && c <= row.EntryTs && row.StopPxInitial > 0 {
+		px := row.StopPxInitial
+		return &px
+	}
+	return nil
 }
 
 // excursionWholeSize is the closed position's whole contract count: its entry
