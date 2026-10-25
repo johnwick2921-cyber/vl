@@ -80,6 +80,14 @@ export interface HealthStatus {
   // m386: the Friends page flag (VL_FRIENDS_PAGE). Absent (older bot) or false
   // → the Friends nav + route are hidden and /api/owner/friends 404s.
   friends_page?: boolean
+  // m420b → m420a/B6: market/feed truth for the top status banner. Absent (an
+  // older bot) → the banner renders nothing; it never infers either state.
+  cme_open?: boolean
+  feed_stale?: boolean
+  // optional extras: seconds the feed has been down (market-open time only),
+  // and the server's own next-reopen instant (RFC3339).
+  feed_stale_secs?: number
+  cme_reopens_at?: string
 }
 
 // INSTALL_AUTHZ_UNDER_REVIEW is the ONE constant gating the install control.

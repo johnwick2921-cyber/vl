@@ -401,6 +401,21 @@ export const planStrings = {
   // ── alert center ──
   alerts: { en: 'Alerts', zh: '提醒', id: 'Peringatan' },
   noAlerts: { en: 'No alerts', zh: '暂无提醒', id: 'Tidak ada peringatan' },
+  cmeClosedBanner: {
+    en: 'CME CLOSED — reopens {when}',
+    zh: 'CME 休市 — {when} 重新开盘',
+    id: 'CME TUTUP — buka lagi {when}',
+  },
+  feedDownBanner: {
+    en: 'FEED DOWN {age}',
+    zh: '行情中断 {age}',
+    id: 'FEED MATI {age}',
+  },
+  olderUnacked: {
+    en: '{n} older unacked',
+    zh: '{n} 条较早未确认',
+    id: '{n} lama belum diakui',
+  },
   markRead: { en: 'Mark read', zh: '标记已读', id: 'Tandai dibaca' },
   markAllRead: {
     en: 'Mark all read',

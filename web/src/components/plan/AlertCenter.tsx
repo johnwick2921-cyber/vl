@@ -4,13 +4,14 @@
 // by alert id so a poll refresh never re-toasts. Levels: P0 = toast + banner ·
 // P1 = feed · P2 = digest (muted, collapsed count).
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Language } from '../../i18n/translations'
 import { tp } from '../../i18n/plan-translations'
 import { usePlanAlerts } from './usePlan'
 import { api } from '../../lib/api'
 import type { PlanAlert, AlertLevel } from '../../lib/api/plan'
+import { cmeSessionStartUnix, isInfoAlertKind } from './cmeSession'
 
 const levelColor = (l: AlertLevel) =>
   l === 'P0'
@@ -131,7 +132,7 @@ export function AlertCenter({
   traderId?: string
   language: Language
 }) {
-  const { alerts, unacked, mutate } = usePlanAlerts(traderId)
+  const { alerts, unacked, loaded, mutate } = usePlanAlerts(traderId)
 
   // ITEM 5 — the feed can be cleared; the underlying event rows survive.
   const dismiss = async (alert: PlanAlert) => {
@@ -158,8 +159,18 @@ export function AlertCenter({
   const toastedRef = useRef<Set<number>>(new Set())
   const seededRef = useRef(false)
 
-  // fire a toast for each NEW unacked P0 (never the initial backlog).
+  // m420a/B1 — a different trader is a different feed: forget what the last
+  // one seeded, or its backlog would re-toast (or never seed) here.
   useEffect(() => {
+    toastedRef.current = new Set()
+    seededRef.current = false
+  }, [traderId])
+
+  // fire a toast for each NEW unacked P0 (never the initial backlog). The seed
+  // waits for the first REAL response: while SWR is loading `alerts` is the
+  // empty fallback, and seeding on it left the whole backlog "new".
+  useEffect(() => {
+    if (!loaded) return
     if (!seededRef.current) {
       for (const a of alerts) toastedRef.current.add(a.id)
       seededRef.current = true
@@ -174,7 +185,7 @@ export function AlertCenter({
         })
       }
     }
-  }, [alerts])
+  }, [alerts, loaded])
 
   const ack = async (id: number) => {
     if (!traderId) return
@@ -191,10 +202,23 @@ export function AlertCenter({
     await mutate()
   }
 
+  // recomputed whenever the feed polls, so the 17:00 CT roll is picked up
+  // without an impure Date.now() in the render body
+  const sessionStart = useMemo(() => cmeSessionStartUnix(), [alerts])
+
   if (!traderId) return null
 
   // the top unacked P0 → persistent banner until ack
-  const bannerAlert = alerts.find((a) => a.level === 'P0' && !a.acked)
+  // m420a/B2 — only a P0 raised in the current CME session-day may light the
+  // banner; informational kinds (close/fill) never do; the month-old backlog
+  // is a count link instead.
+  const unackedP0 = alerts.filter(
+    (a) => a.level === 'P0' && !a.acked && !isInfoAlertKind(a.kind)
+  )
+  const bannerAlert = unackedP0.find((a) => a.created_at >= sessionStart)
+  const olderUnacked = unackedP0.filter(
+    (a) => a.created_at < sessionStart
+  ).length
   // P2 digest: collapse to a count line rather than individual rows
   const p2Count = alerts.filter((a) => a.level === 'P2' && !a.acked).length
   const feedAlerts = alerts.filter((a) => a.level !== 'P2')
@@ -280,6 +304,20 @@ export function AlertCenter({
             {tp('markRead', language)}
           </button>
         </div>
+      )}
+
+      {olderUnacked > 0 && (
+        <button
+          data-testid="alert-older-unacked"
+          onClick={() => setOpen(true)}
+          className="self-start text-[10px] underline"
+          style={{
+            color: 'var(--vl-muted)',
+            fontFamily: 'var(--vl-font-ui)',
+          }}
+        >
+          {tp('olderUnacked', language, { n: olderUnacked })}
+        </button>
       )}
 
       {/* feed dropdown */}

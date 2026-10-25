@@ -9487,3 +9487,9 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** run BOTH readers (the installed one and the current one) over every freshly built DLL — `deploy/addon/check-dll-readers.sh <dll>` must report the same single id from each; and hexdump the #Blob heap around the id to confirm no id-shaped value sits adjacent.
 - **Rule:** an AddOn marker that changes the compiled metadata layout must be validated against the reader that is INSTALLED during the update, not just the new one. A `const string` sits in the #Blob heap with NO terminal byte, so a following const blob's compressed-size byte (0x30 = ASCII '0') is read as a trailing '0' by an even/odd byte scan and the id is seen twice, distinct. Emit the marker as `static readonly` (a #US user string carries a terminal byte) and VERIFY against the real DLL — do not assume.
 - **Reference:** m400 `ninjascript/VLTraderTCPClient.cs` VL_BUILD_ID_ANCHOR (const → static readonly), VL_BUILD_ID → 2026-10-22-d; pins `TestLegacyReaderRefusesTheAdjacentConstBlob` (synthetic 0x30-adjacency heap) + `TestCheckDLLReadersAgree` (script-driven, both readers agree); job b61cf8439e4445291097c812cc00133e.
+
+## m420a (banners, web) — CLASS NN (assigned at merge) — a client "seed" taken on a loading placeholder
+- **Symptom:** every page load re-toasted the whole P0 backlog, and the red banner stayed lit from month-old rows (also informational "close"/"fill" kinds stored as P0).
+- **Probe:** any `seeded` / `seen` ref populated from a hook's `data ?? []` fallback; any "newest unacked" banner with no age or kind bound.
+- **Rule:** seed only once `data !== undefined`, reset the seed when the key (trader) changes, and bound a persistent banner by the current CME session-day (17:00 CT) and by kind.
+- **Reference:** `web/src/components/plan/AlertCenter.banners.test.tsx` (mutants: drop `if (!loaded) return`; revert the banner to `alerts.find(P0 && !acked)` — both RED).
