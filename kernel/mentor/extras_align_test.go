@@ -132,22 +132,19 @@ func TestORBSideFollowsTheLatestEscapeAtTick(t *testing.T) {
 	}
 }
 
-// TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove — item 5 at the call
-// site, the COURSE's test (CTO fold on #520). "Em hỏi là bây giờ nến nó đụng
-// level mà nó ĐÓNG DƯỚI level — đó đụng TRENDLINE nó thể hiện việc gì? … Nó
-// GÃY level… Ngay đây nó chỉ gãy thôi chứ không phải đảo chiều… không thể nào
-// nó vừa đóng dưới level là nó đảo chiều được" [D2.3 p1 @14:36–15:17]: a
-// CLOSE through the line breaks it. X9's older "đóng dưới NGUYÊN CÂY" (the
-// whole candle) is NOT adopted — the Sep-26 course is newer and wins. The
-// 09:10 bucket closes at 98.1, below the line, with its high (102) far above
-// it: the line is dead.
-func TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove(t *testing.T) {
+// TestTrendlineCloseThroughWithTheWickAboveIsNotABreak — m423 at the call
+// site, OWNER RULING 2026-10-25: a break is a 5m candle WHOLLY beyond the line
+// ("đóng dưới NGUYÊN CÂY" [X9 @06:28–06:45]), body AND wicks. The 09:10 bucket
+// closes at 98.1, below the line, but its high (102) is far above it: a close
+// beyond the line alone is NOT a break — the line lives. (Pre-m423 the close
+// alone killed it, the CTO fold on #520.)
+func TestTrendlineCloseThroughWithTheWickAboveIsNotABreak(t *testing.T) {
 	bars, mk := trendlineReturnTape()
 	bars = append(bars, mk(14, 101.2, 101.3, 98.0, 98.1))
 	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
 	tls := TrendlinesBuild(bars, now)
-	if len(tls) != 1 || !tls[0].Dead || tls[0].ValidAt != 0 {
-		t.Fatalf("lines = %+v — a 5m CLOSE below the support line breaks it even with the candle's HIGH above it (D2.3 p1 @14:36–15:17)", tls)
+	if len(tls) != 1 || tls[0].Dead || tls[0].ValidAt == 0 {
+		t.Fatalf("lines = %+v — a 5m close below the support line with the candle's HIGH above it is NOT a break (owner ruling 2026-10-25)", tls)
 	}
 }
 
