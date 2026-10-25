@@ -114,6 +114,7 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   mentor_stale_intent: { en: 'Mentor — stale intent', icon: '🧑‍🏫' },
   mentor_sources_missing: { en: 'Mentor — sources missing', icon: '🧑‍🏫' },
   mentor_window: { en: 'Mentor — outside trading window', icon: '🧑‍🏫' },
+  mentor_eod_flat: { en: 'Mentor — end-of-day flat window', icon: '🧑‍🏫' },
   mentor_done_after_win: {
     en: 'Mentor — done for the day (win)',
     icon: '🧑‍🏫',
