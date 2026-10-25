@@ -1,6 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, screen, cleanup } from '@testing-library/react'
-import { PositionHistory } from './PositionHistory'
+import {
+  PositionHistory,
+  pnlSortKey,
+  comparePnl,
+  pointValueFor,
+  formatFee,
+} from './PositionHistory'
 import type { HistoricalPosition } from '../../types'
 
 // Trading-P2 RED→GREEN (audit/0926-trading-pipeline, the 618 class): a NULL
@@ -89,5 +95,92 @@ describe('PositionHistory — NULL pnl_corrected reads unresolved', () => {
     expect((await screen.findAllByText('-32.00')).length).toBeGreaterThan(0)
     expect(screen.queryByText('unresolved')).toBeNull()
     expect(screen.queryByText(/unresolved$/)).toBeNull()
+  })
+})
+
+// ── C13 (release #50): VALUE x point value, pnl_corrected sort, footer label,
+// "-0.00" fee. All through the production render of PositionHistory.
+describe('PositionHistory — C13 table honesty', () => {
+  it('VALUE column multiplies by the $/pt (MNQ $2): 5 x 20000 x 2 = 200.00K', async () => {
+    mockResponse([
+      row({
+        id: 1,
+        quantity: 5,
+        entry_quantity: 5,
+        entry_price: 20000,
+        pnl_corrected: 10,
+      }),
+    ])
+    render(<PositionHistory traderId="t1" />)
+    expect(await screen.findByText('200.00K')).toBeTruthy()
+    expect(screen.queryByText('100.00K')).toBeNull()
+  })
+
+  it('zero fee reads "0.00" (never "-0.00") in the row and the stats card', async () => {
+    mockResponse([row({ id: 1, pnl_corrected: 10, fee: 0 })])
+    const { container } = render(<PositionHistory traderId="t1" />)
+    await screen.findByText(/Session day/)
+    expect(container.textContent).not.toContain('-0.00')
+  })
+
+  it('footer total is labelled "(last N loaded)"', async () => {
+    mockResponse([
+      row({ id: 1, pnl_corrected: 10 }),
+      row({ id: 2, pnl_corrected: 20, entry_time: '2026-09-24T15:00:00Z' }),
+    ])
+    render(<PositionHistory traderId="t1" />)
+    expect(await screen.findByText(/last 2 loaded/)).toBeTruthy()
+  })
+
+  it('P&L sort uses pnl_corrected and puts NULL (unresolved) last', async () => {
+    const a = row({
+      id: 1,
+      realized_pnl: 999,
+      pnl_corrected: 5,
+      exit_price: 30001,
+      exit_time: new Date().toISOString(),
+    })
+    const b = row({
+      id: 2,
+      realized_pnl: 1,
+      pnl_corrected: 50,
+      exit_price: 30002,
+      exit_time: new Date().toISOString(),
+    })
+    const c = row({
+      id: 3,
+      realized_pnl: 5000,
+      exit_price: 30003,
+      exit_time: new Date().toISOString(),
+    })
+    delete (c as Partial<HistoricalPosition>).pnl_corrected
+    expect(pnlSortKey(a)).toBe(5)
+    expect(pnlSortKey(c)).toBeNull()
+    const sorted = (order: 'asc' | 'desc') =>
+      [a, b, c]
+        .sort((x, y) => {
+          const r = comparePnl(x, y)
+          if (r !== null) return r
+          const cmp = (pnlSortKey(x) as number) - (pnlSortKey(y) as number)
+          return order === 'desc' ? -cmp : cmp
+        })
+        .map((p) => p.id)
+    expect(sorted('asc')).toEqual([1, 2, 3])
+    expect(sorted('desc')).toEqual([2, 1, 3])
+  })
+})
+
+describe('pointValueFor / formatFee', () => {
+  it('table + row override + unknown', () => {
+    expect(pointValueFor({ symbol: 'MNQ' })).toBe(2)
+    expect(pointValueFor({ symbol: 'MNQ 06-26' })).toBe(2)
+    expect(pointValueFor({ symbol: 'NQ' })).toBe(20)
+    expect(pointValueFor({ symbol: 'MNQ', point_value: 5 })).toBe(5)
+    expect(pointValueFor({ symbol: 'XYZ' })).toBe(1)
+  })
+  it('formatFee', () => {
+    expect(formatFee(0)).toBe('0.00')
+    expect(formatFee(1.24)).toBe('-1.24')
+    expect(formatFee(0.005)).toBe('-0.0050')
   })
 })

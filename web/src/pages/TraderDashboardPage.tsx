@@ -415,7 +415,7 @@ export function TraderDashboardPage({
 
   return (
     <DeepVoidBackground className="min-h-screen pb-12" disableAnimation>
-      <div className="w-full px-4 md:px-8 relative z-10 pt-6">
+      <div className="w-full px-2 sm:px-4 md:px-8 relative z-10 pt-6">
         {/* P2 ledger-close — live pause banner on the trading view (CT-pinned) */}
         {isPauseActive(status?.stop_until) && (
           <div
@@ -433,13 +433,13 @@ export function TraderDashboardPage({
 
         {/* Trader Header */}
         <div
-          className="mb-6 rounded-lg p-6 animate-scale-in vl-neo-glass group"
+          className="mb-6 rounded-lg p-3 sm:p-6 animate-scale-in vl-neo-glass group"
           style={{
             background:
               'linear-gradient(135deg, rgba(15, 23, 42, 0.6) 0%, rgba(15, 23, 42, 0.4) 100%)',
           }}
         >
-          <div className="flex items-start justify-between mb-4">
+          <div className="flex flex-wrap items-start justify-between gap-3 mb-4">
             <h2 className="text-2xl font-bold flex items-center gap-4 text-vl-neo-text-main">
               <div className="relative">
                 <PunkAvatar
@@ -462,7 +462,7 @@ export function TraderDashboardPage({
               </div>
             </h2>
 
-            <div className="flex items-center gap-4">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-4 max-w-full">
               {/* P2 ledger-close — stop_until pause (owner control) */}
               <PauseButton
                 traderId={selectedTrader.trader_id}
@@ -591,7 +591,7 @@ export function TraderDashboardPage({
         )}
 
         {/* Debug Info */}
-        <div className="mb-4 px-3 py-1.5 rounded bg-black/40 border border-white/5 text-[10px] font-mono text-vl-neo-text-muted flex justify-between items-center opacity-60 hover:opacity-100 transition-opacity">
+        <div className="mb-4 px-3 py-1.5 rounded bg-black/40 border border-white/5 text-[10px] font-mono text-vl-neo-text-muted flex flex-wrap gap-x-4 gap-y-1 justify-between items-center opacity-60 hover:opacity-100 transition-opacity">
           <span
             style={{
               color:
@@ -617,7 +617,7 @@ export function TraderDashboardPage({
             {health.revision ? ` · REV::${health.revision}` : ''}
           </span>
           {account ? (
-            <div className="flex gap-4">
+            <div className="flex flex-wrap gap-x-4 gap-y-1">
               <span>LAST_UPDATE::{lastUpdate}</span>
               <span>EQ::{account.total_equity?.toFixed(2)}</span>
               {/* R22 PNL-TRUTH (P1-2): this chip read "PNL::" over a tooltip

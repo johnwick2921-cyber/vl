@@ -395,6 +395,73 @@ function DirectionStatsCard({
   )
 }
 
+// C13: USD value of a 1.00-point move for ONE contract — mirrors
+// market/futures_symbol.go futuresPointValues (the Go side is the source of
+// truth). The history wire row has no point_value field today; a row-level
+// point_value (if the server ever sends one) wins over the table. Unknown
+// symbol -> 1 (no multiplier), never a guess.
+const POINT_VALUE_BY_ROOT: Record<string, number> = {
+  NQ: 20,
+  MNQ: 2,
+  ES: 50,
+  MES: 5,
+  RTY: 50,
+  M2K: 5,
+  YM: 5,
+  MYM: 0.5,
+  CL: 1000,
+  MCL: 100,
+  NG: 10000,
+  GC: 100,
+  MGC: 10,
+  SI: 5000,
+  ZB: 1000,
+  ZN: 1000,
+  ZF: 1000,
+  ZT: 2000,
+}
+
+export function pointValueFor(p: {
+  symbol?: string
+  point_value?: number
+}): number {
+  if (typeof p.point_value === 'number' && p.point_value > 0) {
+    return p.point_value
+  }
+  // "MNQ", "MNQ 06-26", "MNQ.c.0" -> root "MNQ"
+  const root = (p.symbol || '').toUpperCase().split(/[\s.]/)[0]
+  return POINT_VALUE_BY_ROOT[root] ?? 1
+}
+
+// null = both resolved (caller compares the numbers and applies the order);
+// otherwise the final comparator result with unresolved rows pinned LAST.
+export function comparePnl(
+  a: HistoricalPosition,
+  b: HistoricalPosition
+): number | null {
+  const ak = pnlSortKey(a)
+  const bk = pnlSortKey(b)
+  if (ak !== null && bk !== null) return null
+  if (ak === bk) return 0
+  return ak === null ? 1 : -1
+}
+
+// Fee text: a zero (or sub-cent-rounding-to-zero-after-negation) fee reads
+// "0.00", never "-0.00".
+export function formatFee(fee: number): string {
+  const f = fee || 0
+  if (f <= 0) return '0.00'
+  return '-' + (f < 0.01 ? f.toFixed(4) : f.toFixed(2))
+}
+
+// P&L sort key: the DISPLAYED figure (pnl_corrected). NULL = unresolved, which
+// sorts LAST in either direction (see the sort below).
+export function pnlSortKey(p: HistoricalPosition): number | null {
+  return typeof p.pnl_corrected === 'number' && !isNaN(p.pnl_corrected)
+    ? p.pnl_corrected
+    : null
+}
+
 // Position Row Component
 function PositionRow({
   position,
@@ -561,7 +628,7 @@ function PositionRow({
         className="py-3 px-4 text-right font-mono"
         style={{ color: '#EAECEF' }}
       >
-        {formatNumber(entryPrice * displayQty)}
+        {formatNumber(entryPrice * displayQty * pointValueFor(position))}
       </td>
 
       {/* P&L */}
@@ -608,10 +675,7 @@ function PositionRow({
         className="py-3 px-4 text-right font-mono text-xs"
         style={{ color: '#848E9C' }}
       >
-        -
-        {(position.fee || 0) < 0.01 && (position.fee || 0) > 0
-          ? (position.fee || 0).toFixed(4)
-          : (position.fee || 0).toFixed(2)}
+        {formatFee(position.fee || 0)}
       </td>
 
       {/* Duration */}
@@ -753,9 +817,13 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
         case 'time':
           comparison = positionSortTimeMs(a) - positionSortTimeMs(b)
           break
-        case 'pnl':
-          comparison = (a.realized_pnl || 0) - (b.realized_pnl || 0)
+        case 'pnl': {
+          // C13: sort by the DISPLAYED figure; NULL (unresolved) always last.
+          const r = comparePnl(a, b)
+          if (r !== null) return r
+          comparison = (pnlSortKey(a) as number) - (pnlSortKey(b) as number)
           break
+        }
         case 'pnl_pct': {
           const aPrice = a.entry_price || 1
           const bPrice = b.entry_price || 1
@@ -946,7 +1014,7 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
               formatNumber(stats.total_pnl || 0)
             }
             color={(stats.total_pnl || 0) >= 0 ? '#0ECB81' : '#F6465D'}
-            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: -${formatNumber(stats.total_fee || 0)}`}
+            subtitle={`Bot trades only · ${historyScopeLabel(statsScope)} · ${stats.manual_excluded_line ?? 'Manual (excluded): n/a'} · ${t('positionHistory.fee', language)}: ${(stats.total_fee || 0) > 0 ? '-' + formatNumber(stats.total_fee || 0) : '0.00'}`}
             metricKey="total_return"
             language={language}
           />
@@ -1295,7 +1363,14 @@ export function PositionHistory({ traderId }: PositionHistoryProps) {
             </span>
             {totalFilteredCount > 0 && (
               <span>
-                {t('positionHistory.totalPnL', language)}:{' '}
+                {t('positionHistory.totalPnL', language)}{' '}
+                <span
+                  title="Sum of the rows loaded here only (not the all-history card above). Unresolved rows are excluded."
+                  style={{ color: '#848E9C' }}
+                >
+                  (last {positions.length} loaded)
+                </span>
+                :{' '}
                 <span
                   style={{
                     color: visibleTotal >= 0 ? '#0ECB81' : '#F6465D',

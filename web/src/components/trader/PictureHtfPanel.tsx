@@ -3,6 +3,7 @@
 // broker field renders as a dash, never a fabricated success.
 
 import { useEffect, useState } from 'react'
+import { httpClient } from '../../lib/httpClient'
 
 export interface PictureHtfRow {
   opp_key: string
@@ -142,12 +143,17 @@ export function PictureHtfPanel({ traderId }: { traderId: string }) {
     if (!traderId) return
     let live = true
     const poll = () => {
-      fetch(
-        `/api/picture-htf/opportunities?trader_id=${encodeURIComponent(traderId)}`
-      )
-        .then((r) => r.json())
-        .then((j) => {
+      // C11: the shared httpClient attaches the Bearer token; the old bare
+      // fetch() had no auth header, so every poll was a 401 and the panel was
+      // always empty.
+      httpClient
+        .request<{ rows?: PictureHtfRow[]; plan_links_unread?: string }>(
+          `/api/picture-htf/opportunities?trader_id=${encodeURIComponent(traderId)}`,
+          { silent: true }
+        )
+        .then((res) => {
           if (!live) return
+          const j = res.success ? res.data : undefined
           setRows(Array.isArray(j?.rows) ? j.rows : [])
           setLinksUnread(
             typeof j?.plan_links_unread === 'string' ? j.plan_links_unread : ''
