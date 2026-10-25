@@ -281,3 +281,21 @@ func easterSunday(year int) time.Time {
 	day := ((h + l - 7*m + 114) % 31) + 1
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
 }
+
+// CMEOpenSpanStart returns the start of the CURRENT continuous CME open span
+// containing t (the most recent closed->open edge), or t itself when the market
+// is closed at t. IsCMEOpen only changes state on hour boundaries, so the walk
+// goes back one hour at a time (capped at 14 days). m420b/B5: a feed-gap age is
+// never allowed to reach back before this instant, so closed-market time (the
+// weekend, the 16:00-17:00 halt) is never counted as "feed down".
+func CMEOpenSpanStart(t time.Time) time.Time {
+	if !IsCMEOpen(t) {
+		return t
+	}
+	ct := t.In(CTLocation())
+	cur := time.Date(ct.Year(), ct.Month(), ct.Day(), ct.Hour(), 0, 0, 0, CTLocation())
+	for i := 0; i < 24*14 && IsCMEOpen(cur.Add(-time.Hour)); i++ {
+		cur = cur.Add(-time.Hour)
+	}
+	return cur
+}

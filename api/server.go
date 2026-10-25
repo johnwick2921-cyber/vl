@@ -47,6 +47,13 @@ type Server struct {
 	// (handler_updates.go updatesForbid).
 	updatesWarned sync.Map
 
+	// m420b/B4: the latest updater check, cached with a timestamp so
+	// GET /api/updates can affirm update_available / latest_tag only while
+	// fresh. updCheckStop ends the background loop at Shutdown.
+	updCheck     updateCheckCache
+	updCheckOnce sync.Once
+	updCheckStop chan struct{}
+
 	// friendMode (W-FRIEND-HOSTED Segment 2) is decided ONCE at NewServer: when
 	// set, the update / installer / maintenance routes are not registered (404),
 	// the updater glue is not wired, and the owner API prefix 404s. Everything
@@ -1088,11 +1095,13 @@ func (s *Server) Start() error {
 		Addr:    addr,
 		Handler: s.router,
 	}
+	s.startUpdateCheckLoop()
 	return s.httpServer.ListenAndServe()
 }
 
 // Shutdown Gracefully shutdown server
 func (s *Server) Shutdown() error {
+	s.stopUpdateCheckLoop()
 	if s.httpServer == nil {
 		return nil
 	}
