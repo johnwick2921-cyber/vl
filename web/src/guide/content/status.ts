@@ -479,7 +479,7 @@ export const status: GuideSection = {
         'Mentor — max daily trades',
         'Mentor — daily profit target',
         'Mentor — daily guardrail unverified',
-        'Mentor — end-of-day flat window',
+        'Mentor — flat window (EOD / forced flat)',
         'Mentor — rule R8 refused',
         'Mentor — rule R9 refused',
         'Mentor — other rule refused',
