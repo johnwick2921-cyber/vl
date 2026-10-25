@@ -214,8 +214,16 @@ func boxFrameMin(b Box, cfg Config) int {
 // the box, the stop ceiling, the §6 target ladder and the room rule. The R2
 // confluence flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38] rides the intent.
 func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, bars []market.Kline, cfg Config) []Intent {
+	out, _ := boxEntryIntentWhy(ref, b, boxes, levels, trig, bars, cfg)
+	return out
+}
+
+// boxEntryIntentWhy is boxEntryIntent plus the NAMED refusal (m425b S4b): every
+// path that drops the box return returns a stable reason ("" when an intent is
+// emitted), so the evaluator can count it instead of losing it silently.
+func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, trig TriggerLine, bars []market.Kline, cfg Config) ([]Intent, string) {
 	if !BoxReturnReject(b, ref) {
-		return nil // close inside the box = cancel
+		return nil, "box_close_inside" // close inside the box = cancel
 	}
 	// D14 "Uno Reverse": the entry side is the box's CURRENT role — a flipped
 	// FTGH (broken ceiling → support) enters LONG, a flipped FTGL enters SHORT.
@@ -229,31 +237,31 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 	}
 	if cfg.LocTriggerFilter && cfg.TriggerSchool != 1 {
 		if ok, ts, _ := TriggerVerdict(trig, price); !ok || ts != "" && ts != side {
-			return nil
+			return nil, "box_trigger_side"
 		}
 	}
 	// PING PONG (CTO 13:24:53Z): between two boxes the edge trade is legal
 	// only when the gap is >= 50 pts — below that, refused (the MIDDLE is for
 	// ping pong, not the edges, and a narrow range cannot support the bounce).
 	if ok, _ := pingPongVerdict(boxes, bars, price, cfg); !ok {
-		return nil
+		return nil, "box_ping_pong"
 	}
 	if InsideAnyBox(boxes, price) {
-		return nil
+		return nil, "box_inside_box"
 	}
 	risk := abs(price - stop)
 	if risk > cfg.StopCeilingPts {
-		return nil
+		return nil, "box_stop_ceiling"
 	}
 	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
 	if target == 0 {
-		return nil // no level beyond → no setup [D4.1 p1 @ 01:45]
+		return nil, "box_no_target" // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
 	fl := ConfluenceVerdict(b, side, trig)
 	if abs(target-price) < cfg.RoomMultiple*risk*Leg1RiskMultiple(fl.On) {
-		return nil
+		return nil, "box_room"
 	}
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the
 	// ":top"/":bottom" suffix, the anchor is the box MIDPOINT (the replay's).
@@ -272,7 +280,7 @@ func boxEntryIntent(ref market.Kline, b Box, boxes []Box, levels []Level, trig T
 		ExecTFMin:  boxFrameMin(b, cfg),
 		Confluence: fl.On,
 		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]",
-	}}
+	}}, ""
 }
 
 // ConfluenceFlag is the R2 output for DS-102's exit-C / size-10 branch.
