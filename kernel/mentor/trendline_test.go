@@ -310,8 +310,14 @@ func TestTrendlineBrokenByWholeCandleOverItsWholeLife(t *testing.T) {
 	}
 	htf := tl
 	htf.TFMin = 60
-	if !htf.brokenBy5m(b5(101, 98.0, 98.5)) {
-		t.Fatal("a persistent HTF line keeps its HTF-close break [D2.3 p1 @14:36–15:17]")
+	// m428 R1 (owner Q3, 2026-10-25): the persistent HTF line breaks like the
+	// intraday one — a closed 5m candle WHOLLY beyond it. The old HTF-close break
+	// (a close below with the high above) is overturned.
+	if htf.brokenBy5m(b5(101, 98.0, 98.5)) {
+		t.Fatal("m428 R1: an HTF line is NOT broken by a close beyond it while the wick is still back on it")
+	}
+	if !htf.brokenBy5m(b5(98.5, 97.9, 98.0)) {
+		t.Fatal("m428 R1: an HTF line is broken by a 5m candle wholly beyond it, like the intraday line")
 	}
 }
 

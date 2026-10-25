@@ -72,6 +72,7 @@ func (e *Evaluator) SeedChartDisplay(bars []market.Kline, now int64) {
 	// Trendlines: the pure builder only (no carry, no HTF tracking, no refuse).
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
 	trendlines, _ := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	trendlines = dropDeadTrendlines(trendlines) // m428 R3
 	tlLevels, _ := TrendlineLevels(trendlines, boxes, levels, bars)
 	levels = append(levels, tlLevels...)
 

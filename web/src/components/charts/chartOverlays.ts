@@ -355,7 +355,13 @@ export function mentorKindLabel(kind: string, key = ''): string {
     case 'key_level':
       return 'key level'
     case 'old_extreme':
-      return 'old high/low'
+      // m428 R2: two same-role swing wicks at nearly the same price are a flat
+      // support / resistance (still an old low / high for the trading rules).
+      return key.includes('flat_support')
+        ? 'support'
+        : key.includes('flat_resistance')
+          ? 'resistance'
+          : 'old high/low'
     case 'ema34':
       return 'EMA34'
     case 'ema9':
