@@ -1550,7 +1550,7 @@ export function AdvancedChart({
       )}
       {/* Compact Professional Header */}
       <div
-        className="flex items-center justify-between px-4 py-2"
+        className="flex flex-wrap items-center justify-between gap-y-1 px-2 sm:px-4 py-2"
         style={{
           borderBottom: '1px solid rgba(43, 49, 57, 0.6)',
           background: '#0D1117',

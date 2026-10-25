@@ -8,6 +8,7 @@ import { ScenarioList } from './ScenarioList'
 import { PictureGateChip } from './PictureGateChip'
 import { SessionPlanCard } from './SessionPlanCard'
 import { PictureHtfPanel } from '../trader/PictureHtfPanel'
+import { httpClient } from '../../lib/httpClient'
 import { DayPlanEditor } from '../strategy/DayPlanEditor'
 import type { PlanOrderLeg, PlanScenario, PlanToday } from '../../lib/api/plan'
 
@@ -419,10 +420,10 @@ describe('PictureHtfPanel — a planned opportunity links to its Day Plan scenar
     created_at_ms: 1790190000000,
   }
   const serve = (body: unknown) =>
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({ json: async () => body })
-    )
+    vi.spyOn(httpClient, 'request').mockResolvedValue({
+      success: true,
+      data: body,
+    })
 
   it('renders "→ Day Plan P1 · <plan_id> v<n>" from plan_link', async () => {
     serve({

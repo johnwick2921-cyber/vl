@@ -98,3 +98,40 @@ describe('formatCTDisplayString — hand-parses the Go display string', () => {
     expect(formatCTDisplayString(null)).toBe('—')
   })
 })
+
+describe('ctTickMarkFormatter — C10 month/year follow the app language', () => {
+  const sep = Date.UTC(2026, 8, 15, 18, 0, 0) / 1000
+  const setLang = (l: string | null) => {
+    if (l === null) localStorage.removeItem('language')
+    else localStorage.setItem('language', l)
+  }
+  it('en → "Sep" (never "9月")', () => {
+    setLang('en')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+  })
+  it('no saved language → en', () => {
+    setLang(null)
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+  })
+  it('zh → "9月"', () => {
+    setLang('zh')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('9月')
+    setLang(null)
+  })
+  it('id → "Sep"', () => {
+    setLang('id')
+    expect(ctTickMarkFormatter(sep as Time, TickMarkType.Month)).toBe('Sep')
+    setLang(null)
+  })
+  it('year is CT-dated: 02:00 UTC Jan 1 is still 2025 in CT', () => {
+    setLang('en')
+    const t = Date.UTC(2026, 0, 1, 2, 0, 0) / 1000
+    expect(ctTickMarkFormatter(t as Time, TickMarkType.Year)).toBe('2025')
+  })
+  it('a UTC-midnight day tick is labelled by its CT date (19:00 CDT prior day)', () => {
+    const utcMidnight = Date.UTC(2026, 8, 16, 0, 0, 0) / 1000
+    expect(
+      ctTickMarkFormatter(utcMidnight as Time, TickMarkType.DayOfMonth)
+    ).toBe('09/15')
+  })
+})
