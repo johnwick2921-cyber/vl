@@ -355,8 +355,9 @@ func TestSeedFailClosedTick(t *testing.T) {
 		t.Fatalf("control placements = %d, want 1 (tape must emit when unseeded)", p)
 	}
 
-	// Seeded with a missing source: the same tape must refuse entries, but
-	// the ISB stacking cancel still flows.
+	// Seeded with a missing source: the same tape must refuse entries. m425a
+	// S1: the refused entry's arm is un-registered, so NO stacking cancel flows
+	// for the never-authored arm (it used to emit CancelArm for a phantom).
 	seeded := setup()
 	Seed(seeded, nil, bars[len(bars)-1].CloseTime)
 	if len(seeded.SourcesMissing()) == 0 {
@@ -366,8 +367,8 @@ func TestSeedFailClosedTick(t *testing.T) {
 	if p != 0 {
 		t.Fatalf("seeded-missing placements = %d, want 0 (fail-closed)", p)
 	}
-	if c == 0 {
-		t.Fatalf("seeded-missing cancels = 0, want the stacking cancel to flow")
+	if c != 0 {
+		t.Fatalf("seeded-missing cancels = %d, want 0 (m425a S1: a fail-closed-dropped entry leaves no phantom arm to cancel)", c)
 	}
 }
 

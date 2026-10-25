@@ -577,6 +577,26 @@ func (at *AutoTrader) mentorNoteORB(orb mentor.ORB, closeMs int64) []string {
 	return out
 }
 
+// mentorEODFlatAuthorRefusal (m425a S3) refuses to AUTHOR an intraday mentor
+// arm inside the EOD-flat window. It asks the SAME two questions the rest of
+// the system asks — never a copy of the times: forceFlatWindowAt (the entry
+// admission gate's force-flat / in-session EOD-flat window) and the session
+// registry's ActiveSession (the armed pass's "session ended (EOD flat)"
+// cancel, armed_executor.go). SWING4H is exempt, exactly as it is at
+// admission (the course holds the swing by the 4h, D5.2).
+func (at *AutoTrader) mentorEODFlatAuthorRefusal(in mentor.Intent, now time.Time) (bool, string) {
+	if strings.EqualFold(in.Setup, "SWING4H") {
+		return false, ""
+	}
+	if why, due := at.forceFlatWindowAt(now, nil); due {
+		return true, why
+	}
+	if _, active := at.sessionRegistry(now).ActiveSession(now); !active {
+		return true, "session ended (EOD flat) — the armed pass cancels an intraday mentor arm the moment the session is over"
+	}
+	return false, ""
+}
+
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
 // expiry guard, no-chase, the exit fork) and hands the intent to the ONE
 // mentor entry path (mentorDirectPlace): a ledger arm with origin=mentor and
@@ -641,6 +661,17 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		at.mentorRecordStallRefusal(in, "window: "+why)
 		at.mentorGateBlock("mentor_window")
+		return
+	}
+	// m425a S3: no INTRADAY arm is authored inside the EOD-flat window — the
+	// armed pass cancels intraday mentor arms the instant the session has
+	// ended, so an arm authored at 15:30:00.081 / 15:35:00.084 CT (rows 447 /
+	// 448, 10-23) lived 10 ms and wrote a ledger row for nothing.
+	if refuse, why := at.mentorEODFlatAuthorRefusal(in, mentorClockNow()); refuse {
+		at.mentorCount("placement_refused_eod_flat")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — eod_flat: %s", why)
+		at.mentorRecordStallRefusal(in, "eod_flat: "+why)
+		at.mentorGateBlock("mentor_eod_flat")
 		return
 	}
 	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
