@@ -122,3 +122,11 @@ func (c *BarCache) OverlapVerdictCounts() (agreed, disagreed int64) {
 	defer c.mu.RUnlock()
 	return c.overlapAgreed, c.overlapDisagreed
 }
+
+// OverlapScaleVerdict (m424, P1b) exports overlapScaleVerdict so the trader
+// layer can judge a held replay against the LIVE rows the STORE already holds
+// when the market is closed and no live frame will ever arrive to judge it.
+// existing must carry Source=live for the rows to count (same rule as the ring).
+func OverlapScaleVerdict(symbol string, existing, incoming []Bar) (pairs int, agree bool) {
+	return overlapScaleVerdict(symbol, existing, incoming)
+}

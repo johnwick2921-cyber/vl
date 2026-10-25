@@ -188,6 +188,9 @@ func WireBarPersistence(st *store.Store) {
 					// into a periodic data race (CI -race, api package).
 					barHolesServer.Store(server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
+					// m424 — session-final bar flush + closed-market replay-hold settle.
+					bf := newBreakFlusher(server.BarCache, newBarPersister(bh, serverFn), bh) // the same closure type a frame reaches
+					safe.GoNet("nt8-bar-break-flush", "", bf.run)
 					backfilled := backfillBars(bh, server)
 					if backfilled == 0 {
 						// Cache still empty (replay in flight) — retry a few

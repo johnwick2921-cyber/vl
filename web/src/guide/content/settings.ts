@@ -1930,11 +1930,11 @@ export const settings: GuideSection = {
         },
         {
           title: 'BARS_HOLE_MIN_GAP_MIN = 3',
-          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
+          body: "Bar-hole threshold: this many OPEN-market minutes with no stored 1m bar between two stored bars is a hole, and the bot re-requests NinjaTrader's history for it at +1/+3/+10/+30 min (never while the feed is down), then every 15 min while CME is open (8 slow tries per hole in total) after one loud UNFILLED line naming the NT8 history reload; requests go out only in the first 15 s of a minute, and a hole older than NT8's 2000-bar replay reach is retired. The daily break, weekends and holiday closes never count. Only 1m is tracked: a re-request rebuilds every timeframe's history at once, so a 1m hole's refill also heals the 2m/5m bars. The boot line '🕳 bar-hole backfill:' prints the value and its source.",
         },
         {
           title: 'PERSIST_STALL_WATCHDOG_S = 60',
-          body: 'Bar-persist silence alarm: no successful flush for N seconds while live bar frames are FLOWING → loud ERROR (the Friday ~2h GORM stall can never go silent again). Frame-aware: an idle wire (weekend, the daily break, NT8 closed) stays silent — no cry-wolf.',
+          body: 'Bar-persist silence alarm: no successful flush for N seconds while live bar frames are FLOWING → loud ERROR (the Friday ~2h GORM stall can never go silent again). Frame-aware: an idle wire (weekend, the daily break, NT8 closed) stays silent — no cry-wolf. At the 16:00 CT break and the weekend close the bot also writes the LAST bar(s) of the session from the ring (live if NT8 said final, live_partial if not; a better stored row is never overwritten), and a replay held across a restart inside the break is judged against the stored live rows (released if on the same price scale, discarded if not).',
         },
       ],
     },

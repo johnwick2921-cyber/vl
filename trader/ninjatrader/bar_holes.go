@@ -61,6 +61,14 @@ import (
 //     so the freeze ends before the boundary.
 //  6. SHOW. /api/health serves the open holes as read values.
 
+// WHY 1m ONLY (m424 P3, decided not extended). A gap re-request is the AddOn's
+// bars_subscribe resend: it rebuilds EVERY timeframe's BarsRequest and replays
+// ≈bars_back bars per tf, so the refill a 1m hole triggers already heals the
+// 2m/5m bars spanning it. A separate 2m/5m detector would send the same single
+// request on the same budget, and would need its own reach arithmetic (the
+// retire rule counts 1m open minutes) and a per-tf minute width in findBarHoles
+// — new code paths for no additional healing. A 5m-only hole (1m intact) is not
+// a real shape: the 5m bar is built by NT8 from the same ticks.
 const (
 	barHoleTF            = "1m"
 	barHoleMinGapDefault = 3
