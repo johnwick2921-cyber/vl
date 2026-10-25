@@ -193,7 +193,7 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 	// m421a C4: 2m is a DISPLAY timeframe aggregated from the 1m ring (the
 	// mentor trades the 2m; kernel/mentor bucketOpen floors on the epoch).
 	if strings.EqualFold(strings.TrimSpace(interval), "2m") {
-		return klinesTwoMinute(provider(symbol, "1m", limit*2+2), limit, time.Now()), nil
+		return klinesTwoMinute(provider(symbol, "1m", limit*2+2), limit, klinesNow()), nil
 	}
 	klines := provider(symbol, interval, limit)
 	if klines == nil {
@@ -212,7 +212,7 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 	if s.store != nil && len(klines) < limit {
 		if contract, ok := s.store.BarHistory().LatestContract(symbol); ok {
 			current = contract
-			klines = trader.BarsWithStoreDepthDisplay(klines, s.store, contract, symbol, interval, limit, time.Now())
+			klines = trader.BarsWithStoreDepthDisplay(klines, s.store, contract, symbol, interval, limit, klinesNow())
 		}
 	}
 	// 101 D2 (owner ruling 2026-09-16) — THE CHART ACROSS THE ROLL. When the
@@ -243,7 +243,7 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 	// is contract-pure (purged on roll), so the aggregate never mixes
 	// contracts, and a forming bucket is never served.
 	if len(klines) < limit {
-		klines = klinesWithAggregatedDepth(klines, provider, symbol, interval, limit, time.Now())
+		klines = klinesWithAggregatedDepth(klines, provider, symbol, interval, limit, klinesNow())
 	}
 	return klines, nil
 }
@@ -253,6 +253,11 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 // exists only where 1m bars exist (the 16:00-17:00 CT break yields none; never
 // invented). A bucket whose end is <= now is closed (Final=true); the last
 // still-forming one is served with Final=false (omitted on the wire). PURE.
+// klinesNow is the clock every kline-assembly "is this bucket still forming"
+// decision reads (m427/12): a package seam so a test pins the instant instead of
+// racing the wall clock across a bucket boundary. Production: time.Now.
+var klinesNow = time.Now
+
 func klinesTwoMinute(oneMin []market.Kline, limit int, now time.Time) []market.Kline {
 	const span = int64(2 * 60_000)
 	nowMs := now.UnixMilli()

@@ -18,7 +18,14 @@ func TestKlines2mAggregatesFrom1mAcrossBreakAndMarksForming(t *testing.T) {
 	one := func(ms int64, o, h, l, c, v float64) market.Kline {
 		return market.Kline{OpenTime: ms, Open: o, High: h, Low: l, Close: c, Volume: v}
 	}
-	forming := time.Now().Truncate(2 * time.Minute) // current even-minute bucket start
+	// m427/12: the clock is injected (klinesNow) so the forming bucket is
+	// deterministic — the old time.Now() pair raced a 2-minute boundary.
+	// 18:03:30 CT: the forming bucket is the even-minute 18:02 CT.
+	pinned := time.Date(2026, 10, 20, 18, 3, 30, 0, loc)
+	prevNow := klinesNow
+	klinesNow = func() time.Time { return pinned }
+	defer func() { klinesNow = prevNow }()
+	forming := pinned.Truncate(2 * time.Minute) // current even-minute bucket start
 	raw := []market.Kline{
 		one(at(15, 57), 1, 2, 0, 1.5, 1), // odd minute: belongs to the 15:56 bucket
 		one(at(15, 58), 2, 5, 1, 4, 2),
