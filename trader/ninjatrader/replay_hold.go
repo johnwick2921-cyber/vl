@@ -79,6 +79,36 @@ func (h *replayHold) add(symbol, tf string, rows []store.BarHistoryDB) {
 	h.pending[k] = merged
 }
 
+// peek returns a copy of the rows held for one key (ascending), nil if none.
+func (h *replayHold) peek(symbol, tf string) []store.BarHistoryDB {
+	if h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	rows := h.pending[holdKey(symbol, tf)]
+	return append([]store.BarHistoryDB(nil), rows...)
+}
+
+// heldKeys lists the (symbol, tf) pairs that currently hold rows.
+func (h *replayHold) heldKeys() [][2]string {
+	if h == nil {
+		return nil
+	}
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var out [][2]string
+	for k, rows := range h.pending {
+		if len(rows) == 0 {
+			continue
+		}
+		if i := strings.Index(k, "|"); i > 0 {
+			out = append(out, [2]string{k[:i], k[i+1:]})
+		}
+	}
+	return out
+}
+
 // resolve applies the ring's verdict for one key. It is called on EVERY live
 // frame for the key, before the frame's own rows are written, and is a no-op
 // when nothing is held or the ring has not judged the seed yet.
