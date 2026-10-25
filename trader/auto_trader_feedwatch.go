@@ -36,6 +36,25 @@ func intradeFeedAlertAfter() time.Duration {
 	return time.Duration(kernel.LoadFeedPolicy().InPositionAlertMs) * time.Millisecond
 }
 
+// FeedDownAfter is the exported flat-state feed threshold (B6: /api/health
+// feed_stale reuses the SAME constant the FEED DOWN alert uses).
+func FeedDownAfter() time.Duration { return feedDownAfter() }
+
+// ClampFeedGap (m420b/B5) returns the feed-gap start and age: the later of the
+// newest bar's stamp and the start of the current CME open span, so time while
+// the market was closed is never counted. Closed at now: age 0.
+func ClampFeedGap(now time.Time, newestStamp time.Time) (gapStart time.Time, age time.Duration) {
+	gapStart = newestStamp
+	if span := kernel.CMEOpenSpanStart(now); span.After(gapStart) {
+		gapStart = span
+	}
+	age = now.Sub(gapStart)
+	if age < 0 {
+		age = 0
+	}
+	return gapStart, age
+}
+
 // holdingOpenPosition reports whether this trader has any OPEN position row.
 // Deliberately NOT gated on day_plan (unlike skipWhileOpen): the tightened
 // in-position feed alert protects every held futures trade.
@@ -145,12 +164,16 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		threshold = intradeFeedAlertAfter()
 	}
 	age, haveBars := at.feedNewestBarAge(now)
-	if haveBars && age <= threshold {
-		return
+	var gapStart time.Time
+	if haveBars {
+		// m420b/B5: clamp to the start of the current CME open span.
+		gapStart, age = ClampFeedGap(now, now.Add(-age))
+		if age <= threshold {
+			return
+		}
 	}
-	gapStart := now.Add(-age)
 	if !haveBars {
-		gapStart = at.startTime // never had a bar this process — gap since boot
+		gapStart, _ = ClampFeedGap(now, at.startTime) // never had a bar this process — gap since boot
 		if now.Sub(gapStart) <= threshold {
 			return // give a fresh boot the same grace as a gap
 		}
@@ -174,8 +197,8 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		return
 	}
 	title := "NT8 bar feed DOWN"
-	body := fmt.Sprintf("No bar frames for %s while the market is open. Nothing can trade and the planner will refuse to run until bars return. Start/check NinjaTrader on Windows.",
-		now.Sub(gapStart).Round(time.Minute))
+	body := fmt.Sprintf("No bar frames since %s (%s) while CME is open. Nothing can trade and the planner will refuse to run until bars return. Start/check NinjaTrader on Windows.",
+		kernel.ClockCT(gapStart), now.Sub(gapStart).Round(time.Minute))
 	if holding {
 		title = "⚠ NO DATA WHILE POSITION OPEN — check NT8"
 		body = fmt.Sprintf("A position is OPEN and no bar frame has arrived for %s (in-position threshold %s). The NT8-side OCO bracket still protects the trade, but the bot is price-blind: check NinjaTrader on Windows now.",
@@ -184,7 +207,7 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	at.logErrorf("🚨 FEED DOWN: no NT8 bar for %s while CME is OPEN (newest-bar stamp age; threshold %s; holding=%v). Charts, detectors and the planner are all blind. Check NT8 on the Windows side — the AddOn reconnects on its own.",
 		now.Sub(gapStart).Round(time.Second), threshold, holding)
 	at.emitAlert("P0", "feed-down",
-		fmt.Sprintf("feeddown:%s", gapStart.UTC().Format("2006-01-02T15:04")),
+		fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart)),
 		title, body)
 }
 

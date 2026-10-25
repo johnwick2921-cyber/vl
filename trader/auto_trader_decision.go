@@ -626,8 +626,8 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			default:
 				at.logWarnf("📐 excursion NOT opened for chat position pos=%d %s %s: its own stop/target unknown (stop=%.2f target=%.2f) — never resolved from an AI decision", pos.ID, symbol, side, manual.stop, manual.target)
 			}
-			// W6 — P0 fill alert.
-			at.emitAlert("P0", "fill", fmt.Sprintf("fill:%d", pos.ID),
+			// W6 — fill alert (P1 informational: m420b/B2).
+			at.emitAlert("P1", "fill", fmt.Sprintf("fill:%d", pos.ID),
 				fmt.Sprintf("Filled %s %s @ %.2f", side, symbol, price), "")
 		}
 

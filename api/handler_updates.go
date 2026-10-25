@@ -564,18 +564,31 @@ func (s *Server) handleUpdatesStatus(c *gin.Context) {
 	// close as a clean EOF). No dial when install is not enabled — a
 	// configuration-only answer carries false, never a guess.
 	workerListening := false
+	installState := ""
 	if enabled {
 		if wc, err := updaterwire.DialWorkerBounded(trader.MaintenanceDataDir(), workerProbeTimeout); err == nil {
-			_ = wc.Close()
 			workerListening = true
+			installState = workerInstallState(wc)
+			_ = wc.Close()
 		}
 	}
-	c.JSON(http.StatusOK, gin.H{
+	body := gin.H{
 		"enrolled":          true,
 		"manifest_verifier": verifier,
 		"install_enabled":   enabled,
 		"worker_listening":  workerListening,
-	})
+	}
+	// m420b/B4: affirm update_available / latest_tag ONLY from a fresh cached
+	// check, install_state ONLY when the worker answered; otherwise the keys
+	// are ABSENT and the badge reads Unknown (never a fabricated verdict).
+	if avail, tag, ok := s.updCheck.fresh(time.Now()); ok {
+		body["update_available"] = avail
+		body["latest_tag"] = tag
+	}
+	if installState != "" {
+		body["install_state"] = installState
+	}
+	c.JSON(http.StatusOK, body)
 }
 
 // handleUpdatesReadiness — GET /api/updates/readiness (W-ADDON-ONE-CLICK).
@@ -662,12 +675,15 @@ func (s *Server) handleUpdatesCheck(c *gin.Context) {
 	case "off":
 		c.JSON(http.StatusOK, gin.H{"checked": false, "reason": "no release source in this build"})
 	case "rate_limited":
+		s.updCheck.note(resp.State, checkDetail{}, time.Now())
 		c.JSON(http.StatusOK, gin.H{"checked": false, "reason": "rate limited, try later"})
 	case "up_to_date":
 		d := checkDetailFrom(resp.Detail)
+		s.updCheck.note(resp.State, d, time.Now())
 		c.JSON(http.StatusOK, updatescheck.UpToDate(d.detail()))
 	case "verified_ready":
 		d := checkDetailFrom(resp.Detail)
+		s.updCheck.note(resp.State, d, time.Now())
 		c.JSON(http.StatusOK, updatescheck.VerifiedReady(d.detail()))
 	case "error":
 		d := checkDetailFrom(resp.Detail)
