@@ -323,9 +323,16 @@ func TestM410TwoMinuteBoxEdgesAreLocations(t *testing.T) {
 	if last := time.UnixMilli(bars[len(bars)-1].OpenTime).In(ctime()); last.Hour() != 9 || last.Minute() != 59 {
 		t.Fatalf("fixture's last bar opens %s, want 09:59 (the 10:00 tick)", last.Format("15:04"))
 	}
-	box := e.State.LatchedBoxes["ftgl"]
+	// the LIVE floor (m423 T3: the newest of the role — a post-escape floor
+	// replaces the first-latched one in the level set).
+	var box Box
+	for _, b := range liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes) {
+		if b.Kind == FTGL {
+			box = b
+		}
+	}
 	if box.TF != "2m" {
-		t.Fatalf("latched FTGL %+v is not 2m-drawn", box)
+		t.Fatalf("live FTGL %+v is not 2m-drawn", box)
 	}
 	var top, bottom bool
 	for _, l := range e.State.ChartLevels {

@@ -169,8 +169,19 @@ var fdrR23Dropped = map[int64]string{
 
 // fdrExpectedArms is the live set plus the deliberate r22 divergences, minus
 // the deliberate r23 drops, in bar-close order.
+// fdrM423Arms — arms the release #50 (m423) build authors on purpose that the
+// live release #21 bot did not. OWNER RULING 2026-10-25: a trendline is broken
+// only by a 5m candle WHOLLY beyond it (X9 @06:28–06:45), not by a close beyond
+// the line alone, so a line the old close-only test discarded stays a live
+// location: the 02:43 CT PLH short 30682.50 / stop 30695.25 (level lvl-2) is the
+// one extra arm on this 10-13 night (every other row realigns unchanged).
+var fdrM423Arms = []fdrLiveArm{
+	{0, "02:43", "m423: a trendline the close-only break discarded stays live (whole-candle 5m break)", "short", 30682.5, 30695.25, 0},
+}
+
 func fdrExpectedArms() []fdrLiveArm {
 	out := append([]fdrLiveArm{}, fdrR22Arms...)
+	out = append(out, fdrM423Arms...)
 	for _, a := range fdrLiveArms {
 		if _, dropped := fdrR23Dropped[a.id]; !dropped {
 			out = append(out, a)
@@ -1084,7 +1095,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		t.Logf("  %-5s live %-50s | harness %s", mark, lv, hv)
 	}
 	if mismatch != 0 {
-		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrR23Dropped))
+		t.Fatalf("FIDELITY: %d of %d rows differ from the live 11 + %d r22 arms + %d m423 arms − %d r23 drops (see the table)", mismatch, n, len(fdrR22Arms), len(fdrM423Arms), len(fdrR23Dropped))
 	}
 }
 

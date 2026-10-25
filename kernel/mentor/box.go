@@ -462,38 +462,40 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 	if e.Cfg.BoxNewZoneAfterEscape {
 		e.latchPostEscapeBoxes(bars, cfg, e.boxBuildCfg(cfg))
 	}
-	// CTO ruling (fold-551): AT MOST TWO ZONES LIVE. After a new-zone latch the
-	// live set is the NEW zone + the zone it escaped from (flipped); every
-	// older zone (the old opposite box, earlier flipped boxes) retires — no
-	// ladder ("đừng vẽ vùng thứ 3… rối lắm" [D3.2 p2 @09:47–09:51]).
+	// AT MOST TWO ZONES LIVE — one floor, one ceiling (m423 T3; fold-551 kept
+	// the escaped zone and could return two floors): the newest box of each
+	// role retires every older one — no ladder ("đừng vẽ vùng thứ 3… rối lắm"
+	// [D3.2 p2 @09:47–09:51]).
 	return liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes)
 }
 
-// liveBoxes is the LIVE box set under the 2-zone ruling (fold-551): before any
-// escape the first boxes (FTGL then FTGH); after a new-zone latch exactly the
-// newest zone plus the zone it escaped from (the immediately-previous same-role
-// post-escape box, else that role's first box). Every other box is retired from
-// the live reads (inside_any_box / near_box / between-boxes). The ladder is
-// still kept in State.PostEscapeBoxes for the replay and the latch counter.
+// liveBoxes is the LIVE box set: at most ONE floor and ONE ceiling — the
+// course draws one of each ("đừng vẽ vùng thứ 3… rối lắm" [D3.2 p2 @09:47–09:51];
+// one floor + one ceiling [D3.2 p2 @09:14]). Per role (FTGL floor, FTGH ceiling)
+// it is the NEWEST box of that role: the newest post-escape box, else the role's
+// first-latched box (m423 T3). The pre-m423 rule kept the newest zone plus the
+// zone it escaped from, which — when one role escaped — returned two floors and
+// NO ceiling, dropping the standing ceiling from every live read
+// (inside_any_box / near_box / between-boxes). Every other box is retired from
+// the live reads; the ladder is still kept in State.PostEscapeBoxes for the
+// replay and the latch counter. Order: floor, then ceiling.
 func liveBoxes(latched map[string]Box, post []Box) []Box {
-	if len(post) == 0 {
-		out := make([]Box, 0, len(latched))
-		for _, kind := range []BoxKind{FTGL, FTGH} {
-			if b, ok := latched[string(kind)]; ok {
-				out = append(out, b)
+	out := make([]Box, 0, 2)
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		picked := false
+		for i := len(post) - 1; i >= 0; i-- {
+			if post[i].Kind == kind {
+				out = append(out, post[i])
+				picked = true
+				break
 			}
 		}
-		return out
-	}
-	newest := post[len(post)-1]
-	out := []Box{newest}
-	for i := len(post) - 2; i >= 0; i-- {
-		if post[i].Kind == newest.Kind {
-			return append(out, post[i])
+		if picked {
+			continue
 		}
-	}
-	if b, ok := latched[string(newest.Kind)]; ok {
-		out = append(out, b)
+		if b, ok := latched[string(kind)]; ok {
+			out = append(out, b)
+		}
 	}
 	return out
 }
