@@ -58,3 +58,42 @@ func TestM424BreakFlushTailSkipsReplayBars(t *testing.T) {
 		t.Fatalf("tail = %+v", got)
 	}
 }
+
+// m427/6 — the CREDIT decision through the real worker. A panicking persister
+// is handed 3 bars via the production fan-out; a healthy one is handed 1 bar
+// next. persistFlushed must move by exactly the healthy 1 — the 3 panicked bars
+// are never credited. (TestM424Persister… above calls runPersister directly; the
+// `if runPersister(...) { persistFlushed.Add }` line in startPersistWorker was
+// unpinned: replacing it with an unconditional Add survived.)
+// Mutant: `runPersister(fn, m); if true { persistFlushed.Add(...) }` -> RED.
+func TestM427WorkerDoesNotCreditAPanickedPersisterAsFlushed(t *testing.T) {
+	startPersistWorker()
+	prevPanics := persistFlushPanics.Load()
+	flushed0 := persistFlushed.Load()
+	SetBarPersister(func(_ bool, sym, _ string, _ []Bar) {
+		if sym == "M427PANIC" {
+			panic("boom m427 worker")
+		}
+	})
+	t.Cleanup(func() { SetBarPersister(nil) })
+	old := time.Now().Add(-time.Hour).UnixMilli()
+	fanOutBarPersist(func(string, ...interface{}) {}, false, "M427PANIC", "1m",
+		[]Bar{{T: old, C: 1, Final: true}, {T: old + 60_000, C: 1, Final: true}, {T: old + 120_000, C: 1, Final: true}})
+	deadline := time.Now().Add(3 * time.Second)
+	for persistFlushPanics.Load() == prevPanics && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	if persistFlushPanics.Load() == prevPanics {
+		t.Fatal("worker did not count the panic")
+	}
+	// the healthy marker: 1 bar, credited
+	fanOutBarPersist(func(string, ...interface{}) {}, false, "M427OK", "1m", []Bar{{T: old, C: 1, Final: true}})
+	deadline = time.Now().Add(3 * time.Second)
+	for persistFlushed.Load()-flushed0 < 1 && time.Now().Before(deadline) {
+		time.Sleep(10 * time.Millisecond)
+	}
+	time.Sleep(700 * time.Millisecond) // two more worker ticks: any wrongly credited batch has landed
+	if got := persistFlushed.Load() - flushed0; got != 1 {
+		t.Fatalf("persistFlushed moved by %d, want exactly 1 (the healthy bar; the 3 panicked bars must not be credited)", got)
+	}
+}

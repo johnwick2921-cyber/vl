@@ -1,11 +1,14 @@
 package ninjatrader
 
 import (
+	"bytes"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"vl/kernel"
+	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
@@ -250,5 +253,74 @@ func TestM426FailedBreakFlushIsRetriedNextTick(t *testing.T) {
 	f.tick()
 	if r, ok := m424Get(t, bh, "1m", ct1023(15, 59, 0)); !ok || r.C != 29003 {
 		t.Fatalf("the retry never landed the session-final bar: %+v ok=%v", r, ok)
+	}
+}
+
+// m427/7 — the `seen` dedupe. Two ticks on an UNCHANGED ring tail while the
+// market stays closed persist once and log the 🔔 line once (a weekend would
+// otherwise rewrite the same tail and repeat the line every 30 s). A changed
+// tail (a final landing later) is handed over again.
+// Mutant: `if f.seen[key] == fp { continue }` -> `if false {` -> RED.
+func TestM427BreakFlushDedupesAnUnchangedTail(t *testing.T) {
+	bh := m424Store(t)
+	if err := bh.InsertBars([]store.BarHistoryDB{m424Row("1m", ct1023(15, 40, 0), 29000, store.BarSourceLive)}); err != nil {
+		t.Fatal(err)
+	}
+	ring := ntwire.NewBarCache(500)
+	ring.Upsert("MNQ", "1m", []ntwire.Bar{
+		{T: ct1023(16, 0, 0).UnixMilli(), O: 1, H: 3, L: 0, C: 29003, V: 10},
+	})
+	var buf bytes.Buffer
+	prev := logger.Log.Out
+	logger.Log.SetOutput(&buf)
+	t.Cleanup(func() { logger.Log.SetOutput(prev) })
+
+	now := ct1023(16, 0, 30)
+	f := m424Flusher(t, bh, ring, &now)
+	calls := 0
+	inner := f.persist
+	f.persist = func(h bool, sym, tf string, bars []ntwire.Bar) { calls++; inner(h, sym, tf, bars) }
+
+	f.tick()
+	now = ct1023(16, 1, 0)
+	f.tick()
+	if calls != 1 {
+		t.Fatalf("persist called %d times over two ticks on an unchanged tail, want 1", calls)
+	}
+	if n := strings.Count(buf.String(), "persisted the session's last"); n != 1 {
+		t.Fatalf("the 🔔 line was logged %d times, want 1; log: %q", n, buf.String())
+	}
+
+	// the tail changes (a final lands): handed over again, logged again
+	ring.Upsert("MNQ", "1m", []ntwire.Bar{
+		{T: ct1023(16, 0, 0).UnixMilli(), O: 1, H: 3, L: 0, C: 29003, V: 10, Final: true},
+	})
+	now = ct1023(16, 2, 0)
+	f.tick()
+	if calls != 2 {
+		t.Fatalf("a changed tail must be handed over again: calls=%d, want 2", calls)
+	}
+}
+
+// m427/7 — settleHold counts only LIVE store rows as evidence. A store holding
+// only a HISTORICAL row for the same minutes (a prior release, or a replay of
+// another feed) is not a live pair: with a 290-pt-off held replay the verdict
+// must be "no pair -> hold kept", not "disagree -> discarded".
+// Mutant: `r.Source == store.BarSourceLive` -> `true` -> the hold is discarded -> RED.
+func TestM427SettleHoldIgnoresHistoricalStoreRowsAsEvidence(t *testing.T) {
+	bh := m424Store(t)
+	if err := bh.InsertBars([]store.BarHistoryDB{
+		m424Row("1m", ct1023(15, 56, 0), 29000, store.BarSourceHistorical),
+		m424Row("1m", ct1023(15, 57, 0), 29001, store.BarSourceHistorical),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	f := m424Flusher(t, bh, ntwire.NewBarCache(500), new(time.Time))
+	now := ct1023(16, 10, 0)
+	f.clock = func() time.Time { return now }
+	m424HeldReplay(f, 290)
+	f.tick()
+	if n := len(f.hold.peek("MNQ", "1m")); n != 4 {
+		t.Fatalf("hold = %d row(s), want all 4 kept: a historical store row is not a live pair", n)
 	}
 }
