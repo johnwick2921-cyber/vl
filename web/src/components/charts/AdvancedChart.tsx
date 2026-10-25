@@ -209,6 +209,11 @@ export function AdvancedChart({
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // m427/3: the interval whose last /api/klines answer was an EMPTY array (an
+  // older backend without that TF, or an empty ring right after boot). Keyed by
+  // the interval so a TF switch never shows the previous TF's note; polling
+  // continues, and the note clears the moment bars arrive.
+  const [emptyBarsFor, setEmptyBarsFor] = useState<string | null>(null)
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false)
   const [showOrderMarkers, setShowOrderMarkers] = useState(true) // Order marker toggle, default on
   // m242 F4: the toggle is read through a ref so the 5s refresh closure never
@@ -946,6 +951,7 @@ export function AdvancedChart({
         const klineData = await fetchKlineData(symbol, interval)
         if (!live || !candlestickSeriesRef.current) return
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
+        setEmptyBarsFor(klineData.length === 0 ? interval : null)
         candlestickSeriesRef.current.setData(klineData)
         {
           const times = klineData.map((k: any) => k.time as number)
@@ -1831,6 +1837,25 @@ export function AdvancedChart({
           ref={chartContainerRef}
           style={{ height: '100%', width: '100%' }}
         />
+
+        {emptyBarsFor === interval && !error && (
+          <div
+            role="status"
+            data-testid="chart-no-bars"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          >
+            <span
+              className="px-3 py-1 rounded text-xs"
+              style={{
+                color: '#848E9C',
+                background: 'rgba(11, 14, 17, 0.7)',
+                border: '1px solid rgba(43, 49, 57, 0.6)',
+              }}
+            >
+              No bars yet for {interval}
+            </span>
+          </div>
+        )}
 
         {/* OHLC Tooltip */}
         {tooltipData && (
