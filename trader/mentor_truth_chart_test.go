@@ -67,7 +67,7 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 		t.Fatalf("snapshot not ok")
 	}
 	kinds := map[string]int{}
-	for _, lv := range p.Levels {
+	for _, lv := range *p.Levels {
 		kinds[lv.Kind]++
 	}
 	for _, want := range []string{"trendline", "htf_trigger"} {

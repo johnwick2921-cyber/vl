@@ -35,6 +35,9 @@ export interface MentorTruth {
     visits_today: number
     merged_from?: number[]
   }[]
+  /** m422: ms of the last close the boot display seed drew from; set only
+   *  until the first real tick (overlays are "as of last close"). */
+  chart_seeded_at?: number
   /** ABSENT (undefined) while the evaluator has not built yet. */
   depth?: Record<string, number>
   /** true when mentor is ON but the evaluator has not built yet (first 1m bar). */

@@ -53,7 +53,7 @@ func TestMentorTruthSnapshotReflectsSeededEvaluator(t *testing.T) {
 	if p.Trigger5m.Dir != "long" || p.Trigger5m.Price != 30000 || p.Trigger5m.Since != 3000 {
 		t.Fatalf("5m trigger = %+v, want long @30000 since 3000", p.Trigger5m)
 	}
-	if len(p.Levels) != 1 || p.Levels[0].Kind != "key_level" || p.Levels[0].Price != 30000 || p.Levels[0].VisitsToday != 2 {
+	if p.Levels == nil || len(*p.Levels) != 1 || (*p.Levels)[0].Kind != "key_level" || (*p.Levels)[0].Price != 30000 || (*p.Levels)[0].VisitsToday != 2 {
 		t.Fatalf("levels = %+v, want one key_level @30000 visited 2x today", p.Levels)
 	}
 	if p.Window.Start != "08:30" || p.Window.Minutes != 60 {
