@@ -190,6 +190,11 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 		logger.Warnf("⚠️ klines: FuturesBarsProvider unbound (no NT8 trader loaded); returning empty for %s", symbol)
 		return []market.Kline{}, nil
 	}
+	// m421a C4: 2m is a DISPLAY timeframe aggregated from the 1m ring (the
+	// mentor trades the 2m; kernel/mentor bucketOpen floors on the epoch).
+	if strings.EqualFold(strings.TrimSpace(interval), "2m") {
+		return klinesTwoMinute(provider(symbol, "1m", limit*2+2), limit, time.Now()), nil
+	}
 	klines := provider(symbol, interval, limit)
 	if klines == nil {
 		klines = []market.Kline{}
@@ -241,6 +246,44 @@ func (s *Server) getKlinesFromNinjaTrader(symbol, interval string, limit int) ([
 		klines = klinesWithAggregatedDepth(klines, provider, symbol, interval, limit, time.Now())
 	}
 	return klines, nil
+}
+
+// klinesTwoMinute aggregates 1m bars into 2m candles on EVEN CT minutes
+// (epoch floor of 120s, identical to kernel/mentor bucketOpen(ms, 2)). A bucket
+// exists only where 1m bars exist (the 16:00-17:00 CT break yields none; never
+// invented). A bucket whose end is <= now is closed (Final=true); the last
+// still-forming one is served with Final=false (omitted on the wire). PURE.
+func klinesTwoMinute(oneMin []market.Kline, limit int, now time.Time) []market.Kline {
+	const span = int64(2 * 60_000)
+	nowMs := now.UnixMilli()
+	out := make([]market.Kline, 0, len(oneMin)/2+1)
+	for _, b := range oneMin {
+		bucket := b.OpenTime / span * span
+		if n := len(out); n > 0 && out[n-1].OpenTime == bucket {
+			agg := &out[n-1]
+			if b.High > agg.High {
+				agg.High = b.High
+			}
+			if b.Low < agg.Low {
+				agg.Low = b.Low
+			}
+			agg.Close = b.Close
+			agg.Volume += b.Volume
+			continue
+		}
+		out = append(out, market.Kline{
+			OpenTime: bucket, CloseTime: bucket + span - 1,
+			Open: b.Open, High: b.High, Low: b.Low, Close: b.Close,
+			Volume: b.Volume, Contract: b.Contract,
+		})
+	}
+	for i := range out {
+		out[i].Final = out[i].OpenTime+span <= nowMs
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[len(out)-limit:]
+	}
+	return out
 }
 
 // klinesFinerRungFetch is how many bars the finer aggregation rung may fetch
