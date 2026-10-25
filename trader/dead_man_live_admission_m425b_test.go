@@ -101,3 +101,24 @@ func TestM425bAdmissionSeesReplacedLinkEpoch(t *testing.T) {
 		t.Fatalf("a link replaced between samples must refuse at admission, got %q", rec)
 	}
 }
+
+// m427/8 — the haveEpoch guard in entriesBlockedLive. A FRESH watchdog has never
+// sampled an epoch (w.epoch is 0, haveEpoch false): the first live epoch it is
+// shown (7) is the baseline, not a "replaced link". Without the guard every
+// entry was refused as dead_man from boot until the first ~60 s cycle.
+// Positive control: once an epoch has been sampled, a different one blocks.
+// Mutant: `if w.haveEpoch && epoch != w.epoch` -> `if epoch != w.epoch` -> RED.
+func TestM427FreshWatchdogDoesNotBlockOnTheFirstEpoch(t *testing.T) {
+	w := &deadManWatchdog{}
+	if w.entriesBlockedLive(true, true, 7, true) {
+		t.Fatal("a fresh watchdog (no epoch sampled yet) refused entries on the first live epoch 7")
+	}
+	// the first cycle samples epoch 7
+	w.stepEpoch(true, 7, true, time.Now().UnixMilli(), func() bool { return true })
+	if w.entriesBlockedLive(true, true, 7, true) {
+		t.Fatal("same epoch after the baseline must not block")
+	}
+	if !w.entriesBlockedLive(true, true, 8, true) {
+		t.Fatal("a different epoch after the baseline is a replaced link and must block")
+	}
+}
