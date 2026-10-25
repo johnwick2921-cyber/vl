@@ -99,6 +99,14 @@ func (at *AutoTrader) ninjaLinkEpoch() (uint64, bool) {
 	return rec.AcceptSeq, true
 }
 
+// deadManEntriesBlockedNow is the ADMISSION-time dead-man read: the cached
+// watchdog state plus a live sample of the NT8 link and connection epoch (S5).
+func (at *AutoTrader) deadManEntriesBlockedNow() bool {
+	connected, ok := at.ninjaLinkConnected()
+	epoch, epochKnown := at.ninjaLinkEpoch()
+	return at.deadMan.entriesBlockedLive(connected, ok, epoch, epochKnown)
+}
+
 // driveDeadManWatchdog (B5) advances the dead-man watchdog once per cycle from the
 // NT8 TCP link. A dropped link blocks NEW entries (open-position management/exits
 // are never gated); on reconnect it sweeps any unfilled entries and holds entries
@@ -134,11 +142,25 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 		at.reconcileProtectionAt(time.Now(), "reconnect")
 	case wdResumed:
 		at.logInfof("✅ dead-man watchdog: clean positions/orders reconciliation — NEW entries RESUMED.")
+		at.ackDeadManStuck()
 	}
 	// W26: escalate a reconcile block that will not clear (order snapshots
 	// stopped) — one P0 per episode, entries stay BLOCKED.
 	at.deadManEscalate(time.Now())
 	return ev
+}
+
+// ackDeadManStuck (m420b/B3) clears every open dead_man_reconcile_stuck banner
+// for this trader. The episode that raised it is over (watchdog resumed, or the
+// trader (re)started with the watchdog not blocked), and AckAllByKind is
+// restart-safe: a fresh process has no memory of the old episode's event id.
+func (at *AutoTrader) ackDeadManStuck() {
+	if at == nil || at.store == nil {
+		return
+	}
+	if _, err := at.store.Alert().AckAllByKind(at.id, "dead_man_reconcile_stuck"); err != nil {
+		at.logWarnf("dead-man: could not ack stale reconcile_stuck alerts: %v", err)
+	}
 }
 
 // deadManEscalate (W26) fires ONE P0 `dead_man_reconcile_stuck` alert per blocked
@@ -610,6 +632,12 @@ type AutoTrader struct {
 	// mentorSeedHistGen (release #23 N1) is the MNQ 1m history-refill
 	// generation this evaluator's state was last seeded at (mentor_reseed.go).
 	mentorSeedHistGen uint64
+	// mentorChartSeedGen (m427/2) is the refill generation the DISPLAY-ONLY chart
+	// seed was last built at. Separate from mentorSeedHistGen on purpose: the
+	// closed-market chart rebuild must never claim the generation the first real
+	// Tick's state re-seed (mentorReseedOnRefill) is waiting on. Touched only
+	// under mentorEvalMu (and once at seed time).
+	mentorChartSeedGen uint64
 	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
 	// counted. The recheck clears at most once per trading day, so the value
 	// is a stable per-process dedup key. Read/written only inside
@@ -1405,6 +1433,11 @@ func (at *AutoTrader) Run() error {
 	at.kickPending.Store(false)
 	registerPostExitDispatch(at) // Phase 4: close events → one post-exit rescan
 	at.startTime = time.Now()
+	// m420b/B3: a fresh run whose watchdog is not blocked has no live
+	// reconcile-stuck episode; clear any stale banner a dead process left.
+	if !at.deadMan.entriesBlocked() {
+		at.ackDeadManStuck()
+	}
 
 	// P2 (ledger-close 2026-08-19) — restore an owner pause across restart.
 	at.loadPersistedPause()

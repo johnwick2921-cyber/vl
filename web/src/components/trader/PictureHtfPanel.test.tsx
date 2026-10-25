@@ -5,6 +5,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { PictureHtfPanel } from './PictureHtfPanel'
+import { httpClient } from '../../lib/httpClient'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -39,12 +40,10 @@ const ROW = {
 
 describe('PictureHtfPanel', () => {
   it('renders intended geometry and the broker answer side by side', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        json: async () => ({ rows: [ROW], count: 1 }),
-      })
-    )
+    vi.spyOn(httpClient, 'request').mockResolvedValue({
+      success: true,
+      data: { rows: [ROW], count: 1 },
+    })
     render(<PictureHtfPanel traderId="trader-1" />)
     await waitFor(() => expect(screen.getByText('LONG')).toBeTruthy())
     expect(screen.getByText(/resistance 101\.00/)).toBeTruthy()
@@ -55,17 +54,54 @@ describe('PictureHtfPanel', () => {
   })
 
   it('shows the dormant state when nothing is recorded', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        json: async () => ({ rows: [], count: 0 }),
-      })
-    )
+    vi.spyOn(httpClient, 'request').mockResolvedValue({
+      success: true,
+      data: { rows: [], count: 0 },
+    })
     render(<PictureHtfPanel traderId="trader-1" />)
     await waitFor(() =>
       expect(
         screen.getByText(/No two-picture opportunities recorded/)
       ).toBeTruthy()
     )
+  })
+
+  // C11 pin: the poll must carry the Bearer token (a bare fetch() had none ->
+  // 401 every 30s -> panel always empty). Drives the REAL httpClient with a
+  // capturing axios adapter.
+  it('C11: the poll sends the Authorization header via the shared client', async () => {
+    localStorage.setItem('auth_token', 'tok-123')
+    const seen: Array<Record<string, unknown>> = []
+    const inst = (
+      httpClient as unknown as {
+        axiosInstance: { defaults: { adapter: unknown } }
+      }
+    ).axiosInstance
+    const prev = inst.defaults.adapter
+    inst.defaults.adapter = async (cfg: {
+      headers: { get?: (k: string) => unknown } & Record<string, unknown>
+      url?: string
+    }) => {
+      seen.push({
+        auth: cfg.headers.get ? cfg.headers.get('Authorization') : undefined,
+        url: cfg.url,
+      })
+      return {
+        data: { rows: [ROW], count: 1 },
+        status: 200,
+        statusText: 'OK',
+        headers: {},
+        config: cfg,
+      }
+    }
+    try {
+      render(<PictureHtfPanel traderId="trader-1" />)
+      await waitFor(() => expect(screen.getByText('LONG')).toBeTruthy())
+      expect(seen[0].auth).toBe('Bearer tok-123')
+      expect(String(seen[0].url)).toContain('/api/picture-htf/opportunities')
+    } finally {
+      inst.defaults.adapter = prev
+      localStorage.removeItem('auth_token')
+    }
   })
 })

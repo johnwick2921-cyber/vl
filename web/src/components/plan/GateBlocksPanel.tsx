@@ -114,6 +114,10 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   mentor_stale_intent: { en: 'Mentor — stale intent', icon: '🧑‍🏫' },
   mentor_sources_missing: { en: 'Mentor — sources missing', icon: '🧑‍🏫' },
   mentor_window: { en: 'Mentor — outside trading window', icon: '🧑‍🏫' },
+  mentor_eod_flat: {
+    en: 'Mentor — flat window (EOD / forced flat)',
+    icon: '🧑‍🏫',
+  },
   mentor_done_after_win: {
     en: 'Mentor — done for the day (win)',
     icon: '🧑‍🏫',
@@ -136,6 +140,20 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Mentor — daily guardrail unverified',
     icon: '🧑‍🏫',
   },
+  // m426 (review of m425b) — the mentor refusal classes the gate-blocks table
+  // now counts by name (trader/mentor_actions.go), so the panel shows words.
+  mentor_rule_r8: { en: 'Mentor — rule R8 refused', icon: '🧑‍🏫' },
+  mentor_rule_r9: { en: 'Mentor — rule R9 refused', icon: '🧑‍🏫' },
+  mentor_rule_other: { en: 'Mentor — other rule refused', icon: '🧑‍🏫' },
+  mentor_bad_geometry: { en: 'Mentor — bad stop/target geometry', icon: '🧑‍🏫' },
+  mentor_untagged_setup: { en: 'Mentor — untagged setup', icon: '🧑‍🏫' },
+  mentor_size_refused: { en: 'Mentor — size refused', icon: '🧑‍🏫' },
+  mentor_same_side_working: {
+    en: 'Mentor — same-side order already working',
+    icon: '🧑‍🏫',
+  },
+  mentor_resonance_hold: { en: 'Mentor — resonance hold', icon: '🧑‍🏫' },
+  mentor_place_off: { en: 'Mentor — placement off (dry run)', icon: '🧑‍🏫' },
   // Release #25 (STRICT-12345 F-2/F-3/F-5/F-7/F-8) — the loss-fix switches,
   // all OFF by default; these count only once the owner turns one on.
   room_gate: { en: 'Room gate — first obstacle under min R', icon: '🧱' },

@@ -91,9 +91,11 @@ func CMEClosedReason(t time.Time) (closed bool, reason string) {
 // NextCMEOpen returns the earliest instant strictly after t at which the market
 // re-opens (IsCMEOpen flips true). It walks forward hour-by-hour using IsCMEOpen
 // itself as the oracle, so it stays exactly consistent with the gate — holidays
-// and DST included — instead of duplicating the schedule. Hour granularity is
-// exact: IsCMEOpen only changes state on hour boundaries (it inspects ct.Hour(),
-// the weekday, and the holiday date). The 14-day cap is a safety backstop; the
+// and DST included — instead of duplicating the schedule. IsCMEOpen does NOT
+// flip only on hour boundaries: an early-close day (calendar row with a close_ct)
+// flips at its stated minute (2026-11-27 12:14:59.999 is open, 12:15:00 is not).
+// So the walk finds the first open HOUR, then refines back to the exact MINUTE
+// of the closed->open edge (m427). The 14-day cap is a safety backstop; the
 // longest real closed stretch is ~3 days, so it never triggers in practice.
 func NextCMEOpen(t time.Time) time.Time {
 	chicago := CTLocation()
@@ -103,6 +105,18 @@ func NextCMEOpen(t time.Time) time.Time {
 	for i := 0; i < 24*14; i++ {
 		cur = cur.Add(time.Hour)
 		if IsCMEOpen(cur) {
+			// Refine to the minute: a reopen that is not on the hour is found
+			// by stepping back while the previous minute is still open and
+			// still strictly after t. A closed t never refines into itself.
+			if !IsCMEOpen(t) {
+				for i := 0; i < 60; i++ {
+					prev := cur.Add(-time.Minute)
+					if !prev.After(t) || !IsCMEOpen(prev) {
+						break
+					}
+					cur = prev
+				}
+			}
 			return cur
 		}
 	}
@@ -280,4 +294,37 @@ func easterSunday(year int) time.Time {
 	month := (h + l - 7*m + 114) / 31
 	day := ((h + l - 7*m + 114) % 31) + 1
 	return time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+}
+
+// CMEOpenSpanStart returns the start of the CURRENT continuous CME open span
+// containing t (the most recent closed->open edge), or t itself when the market
+// is closed at t. IsCMEOpen can change state mid-hour (an early-close day flips
+// at its stated minute, e.g. 12:15 CT), so the walk goes back one hour at a time
+// (capped at 14 days) and then refines to the exact minute of the edge (m427).
+// m420b/B5: a feed-gap age is
+// never allowed to reach back before this instant, so closed-market time (the
+// weekend, the 16:00-17:00 halt) is never counted as "feed down".
+func CMEOpenSpanStart(t time.Time) time.Time {
+	if !IsCMEOpen(t) {
+		return t
+	}
+	ct := t.In(CTLocation())
+	cur := time.Date(ct.Year(), ct.Month(), ct.Day(), ct.Hour(), 0, 0, 0, CTLocation())
+	if !IsCMEOpen(cur) {
+		// The open edge is inside t's own hour (a mid-hour reopen): walk forward.
+		for i := 0; i < 60 && cur.Before(t); i++ {
+			cur = cur.Add(time.Minute)
+			if IsCMEOpen(cur) {
+				return cur
+			}
+		}
+		return t
+	}
+	for i := 0; i < 24*14 && IsCMEOpen(cur.Add(-time.Hour)); i++ {
+		cur = cur.Add(-time.Hour)
+	}
+	for i := 0; i < 60 && IsCMEOpen(cur.Add(-time.Minute)); i++ {
+		cur = cur.Add(-time.Minute)
+	}
+	return cur
 }

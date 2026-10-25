@@ -325,13 +325,14 @@ func b52LiveBoxKeys(e *Evaluator) []string {
 	return out
 }
 
-// TestB52TwoLiveZonesRetireOlder — the CTO 2-zone ruling (fold-551): three
-// successive FTGL escapes latch F0→P1→P2→P3, and after EACH latch exactly TWO
-// zones are live — the newest plus the zone it escaped from. Every older zone
-// retires from the live reads. The ladder still counts (PostEscapeBoxes grows
-// 1→2→3). Mutant: liveBoxes returns all boxes (drop the retire) → the live set
-// after P2/P3 grows past 2 → RED.
-func TestB52TwoLiveZonesRetireOlder(t *testing.T) {
+// TestB52OneLiveZonePerRoleRetiresOlder — one floor, one ceiling (m423 T3,
+// superseding the fold-551 "newest + the zone it escaped from", which returned
+// two floors): three successive FTGL escapes latch F0→P1→P2→P3, and after EACH
+// latch exactly ONE floor is live — the newest. Every older zone retires from
+// the live reads. The ladder still counts (PostEscapeBoxes grows 1→2→3).
+// Mutant: liveBoxes returns the newest plus the one it escaped from (the
+// pre-m423 rule) → two floors live → RED.
+func TestB52OneLiveZonePerRoleRetiresOlder(t *testing.T) {
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
@@ -391,11 +392,11 @@ func TestB52TwoLiveZonesRetireOlder(t *testing.T) {
 		case 8: // F0 latched, no escape yet
 			check(i, 0, []string{"ftgl:96.80:96.00"})
 		case 17: // P1 latched
-			check(i, 1, []string{"ftgl:92.90:92.00", "ftgl:96.80:96.00"})
-		case 26: // P2 latched — F0 retires
-			check(i, 2, []string{"ftgl:88.90:88.00", "ftgl:92.90:92.00"})
-		case 35: // P3 latched — P1 retires
-			check(i, 3, []string{"ftgl:84.90:84.00", "ftgl:88.90:88.00"})
+			check(i, 1, []string{"ftgl:92.90:92.00"})
+		case 26: // P2 latched — F0 and P1 retire
+			check(i, 2, []string{"ftgl:88.90:88.00"})
+		case 35: // P3 latched — only the newest floor lives
+			check(i, 3, []string{"ftgl:84.90:84.00"})
 		}
 	}
 }
@@ -476,5 +477,39 @@ func TestB52NewZoneAfterEscape1014(t *testing.T) {
 	}
 	if nb.Top > old.Bottom {
 		t.Fatalf("new FTGL [%.2f, %.2f] is not below the old floor %.2f", nb.Bottom, nb.Top, old.Bottom)
+	}
+}
+
+// TestLiveBoxesKeepsTheCeilingWhenTheFloorEscapes — m423 T3. The standing
+// ceiling (the first-latched FTGH) is NOT dropped when the floor escapes and a
+// new floor latches: the live set is ONE floor (the newest) + ONE ceiling, never
+// two floors and no ceiling [D3.2 p2 @09:14]. A second post-escape floor and a
+// post-escape ceiling each replace only their own role. Mutant (the pre-m423
+// newest + same-kind rule) returns [P2, P1] with no ceiling → RED.
+func TestLiveBoxesKeepsTheCeilingWhenTheFloorEscapes(t *testing.T) {
+	f0 := Box{Kind: FTGL, Key: "ftgl:96.80:96.00", Bottom: 96, Top: 96.8}
+	c0 := Box{Kind: FTGH, Key: "ftgh:110.00:109.00", Bottom: 109, Top: 110}
+	p1 := Box{Kind: FTGL, Key: "ftgl:92.90:92.00", Bottom: 92, Top: 92.9}
+	p2 := Box{Kind: FTGL, Key: "ftgl:88.90:88.00", Bottom: 88, Top: 88.9}
+	latched := map[string]Box{"ftgl": f0, "ftgh": c0}
+	keys := func(bs []Box) string {
+		var out []string
+		for _, b := range bs {
+			out = append(out, b.Key)
+		}
+		return strings.Join(out, ",")
+	}
+	if got := keys(liveBoxes(latched, nil)); got != f0.Key+","+c0.Key {
+		t.Fatalf("no escape: live = %s, want the floor then the ceiling", got)
+	}
+	if got := keys(liveBoxes(latched, []Box{p1})); got != p1.Key+","+c0.Key {
+		t.Fatalf("one floor escape: live = %s, want the new floor + the standing ceiling", got)
+	}
+	if got := keys(liveBoxes(latched, []Box{p1, p2})); got != p2.Key+","+c0.Key {
+		t.Fatalf("two floor escapes: live = %s, want ONLY the newest floor + the ceiling", got)
+	}
+	c1 := Box{Kind: FTGH, Key: "ftgh:120.00:119.00", Bottom: 119, Top: 120}
+	if got := keys(liveBoxes(latched, []Box{p1, c1})); got != p1.Key+","+c1.Key {
+		t.Fatalf("a post-escape ceiling replaces only the ceiling: live = %s", got)
 	}
 }

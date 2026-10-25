@@ -70,7 +70,15 @@ export function usePlanAlerts(traderId?: string) {
     () => api.getPlanAlerts(traderId as string),
     { refreshInterval: ALERTS_REFRESH_MS, revalidateOnFocus: false }
   )
-  return { alerts: data?.alerts ?? [], unacked: data?.unacked ?? 0, mutate }
+  // m420a/B1 — `loaded` is false while SWR has no response yet (data is
+  // undefined), when `alerts` is only the empty fallback. The toast seed must
+  // wait for it, or the real backlog arrives AFTER the seed and re-toasts.
+  return {
+    alerts: data?.alerts ?? [],
+    unacked: data?.unacked ?? 0,
+    loaded: data !== undefined,
+    mutate,
+  }
 }
 
 // W-OWNER-LEVELS-UI — the sticky owner levels for this trader + symbol, judged

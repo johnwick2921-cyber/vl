@@ -8,6 +8,9 @@ import {
   mentorChartLines,
   mentorEMACurves,
   mentorEMATf,
+  mentorBoxRects,
+  AXIS_LABEL_MIN_GAP,
+  dedupeAxisLabels,
   mentorEMALocationSegment,
   mentorStaleMark,
   mentorTrendSegments,
@@ -109,21 +112,23 @@ describe('mentorChartLines', () => {
       })
     )
     const byLabel = Object.fromEntries(lines.map((l) => [l.label, l.price]))
-    expect(byLabel['mentor key level']).toBe(30000)
-    expect(byLabel['mentor old high/low · also 30110']).toBe(30100)
-    expect(byLabel['mentor 5m trigger']).toBe(30050)
-    expect(byLabel['mentor 4h trigger']).toBe(29900)
+    expect(byLabel['mentor key level 30000']).toBe(30000)
+    expect(byLabel['mentor old high/low 30100 · also 30110']).toBe(30100)
+    expect(byLabel['mentor 5m trigger 30050']).toBe(30050)
+    // 4h trigger and the swing TP both sit at 29900 -> ONE merged axis label
+    expect(byLabel['mentor 4h trigger 29900 + swing position TP']).toBe(29900)
     // m325: the EMA34 location line is NOT a flat line — it is a short
     // right-edge segment (mentorEMALocationSegment), never a full-width line.
     expect(byLabel['mentor EMA34 location']).toBeUndefined()
-    expect(byLabel['mentor box top']).toBe(30200)
-    expect(byLabel['mentor box bottom']).toBe(30180)
+    // m421b: a paired top/bottom is a RECTANGLE (mentorBoxRects), not 2 lines
+    expect(byLabel['mentor box top']).toBeUndefined()
+    expect(byLabel['mentor box bottom']).toBeUndefined()
     expect(byLabel['mentor ISB 5m high']).toBe(30060)
     expect(byLabel['mentor ISB 5m low']).toBe(30040)
     expect(byLabel['mentor ORB high (escaped long)']).toBe(30070)
     expect(byLabel['mentor swing line (4h EMA34)']).toBe(29800)
     expect(byLabel['swing position SL']).toBe(29780)
-    expect(byLabel['swing position TP']).toBe(29900)
+    expect(lines.filter((l) => l.price === 29900)).toHaveLength(2)
     // A trendline is sloped: never drawn as a flat line at today's value.
     expect(lines.some((l) => l.label.includes('trendline'))).toBe(false)
   })
@@ -163,7 +168,7 @@ describe('mentorChartLines', () => {
         ],
       })
     )
-    expect(lines.some((l) => l.label === 'mentor key level')).toBe(true)
+    expect(lines.some((l) => l.label === 'mentor key level 30000')).toBe(true)
     expect(
       lines.some((l) => l.label.includes('EMA34') || l.label.includes('EMA9'))
     ).toBe(false)
@@ -414,7 +419,7 @@ describe('UG-3 stale mentor lines are marked, never hidden', () => {
   it('every horizontal line carries "stale since HH:MM CT"', () => {
     const lines = mentorChartLines(t, asOf)
     expect(lines).toHaveLength(1)
-    expect(lines[0].label).toBe('mentor key level · stale since 10:07 CT')
+    expect(lines[0].label).toBe('mentor key level 30000 · stale since 10:07 CT')
     expect(lines[0].price).toBe(30000)
   })
   it('trendlines carry it too', () => {
@@ -422,7 +427,7 @@ describe('UG-3 stale mentor lines are marked, never hidden', () => {
     expect(seg.label).toContain('stale since 10:07 CT')
   })
   it('a fresh read carries no mark', () => {
-    expect(mentorChartLines(t)[0].label).toBe('mentor key level')
+    expect(mentorChartLines(t)[0].label).toBe('mentor key level 30000')
     expect(mentorStaleMark(undefined)).toBe('')
   })
 })
@@ -804,5 +809,107 @@ describe('mentorTrendSegments forming cap (m150)', () => {
       mk('long', t0 + i * 300_000, true)
     )
     expect(mentorTrendSegments(tls, grid)).toHaveLength(8)
+  })
+})
+
+describe('m421b C6: boxes as rectangles, distinct labels, de-stacked axis', () => {
+  const lvl = (key: string, kind: string, price: number, extra = {}) => ({
+    key,
+    kind,
+    price,
+    drawn_at: 0,
+    visits_today: 0,
+    ...extra,
+  })
+  const boxLevels = (extra = {}) => [
+    lvl('ftgh:29100.00:29080.00:top', 'ftgh_edge', 29100, extra),
+    lvl('ftgh:29100.00:29080.00:bottom', 'ftgl_edge', 29080, extra),
+  ]
+  const bars = [1000, 1060, 1120, 1180, 1240]
+
+  it('a paired box is ONE rectangle (formation -> last bar) and no dotted lines', () => {
+    const t = truth({ levels: boxLevels({ drawn_at: 1100_000 }) })
+    const rects = mentorBoxRects(t, bars)
+    expect(rects).toHaveLength(1)
+    expect(rects[0]).toMatchObject({
+      top: 29100,
+      bottom: 29080,
+      startTime: 1060, // snapped to the bar at/before 1100 s
+      endTime: 1240, // live: the last bar
+    })
+    expect(mentorChartLines(t).some((l) => l.label.includes('box'))).toBe(false)
+  })
+
+  it('uses the box own end time when it ended; falls back to the first bar with no start', () => {
+    const ended = mentorBoxRects(
+      truth({ levels: boxLevels({ formed_ms: 1060_000, ended_ms: 1180_000 }) }),
+      bars
+    )
+    expect([ended[0].startTime, ended[0].endTime]).toEqual([1060, 1180])
+    const nostart = mentorBoxRects(truth({ levels: boxLevels() }), bars)
+    expect(nostart[0].startTime).toBe(1000)
+    expect(mentorBoxRects(truth({ levels: boxLevels() }), [])).toEqual([])
+  })
+
+  it('an unpaired edge stays a line', () => {
+    const t = truth({
+      levels: [lvl('ftgh:1:2:top', 'ftgh_edge', 29100)],
+    })
+    expect(mentorBoxRects(t, bars)).toEqual([])
+    expect(mentorChartLines(t).map((l) => l.label)).toEqual(['mentor box top'])
+  })
+
+  it('key levels carry distinct labels', () => {
+    const labels = mentorChartLines(
+      truth({
+        levels: [
+          lvl('key_level:29029.75:1', 'key_level', 29029.75),
+          lvl('old_extreme:29177.75', 'old_extreme', 29177.75),
+        ],
+      })
+    ).map((l) => l.label)
+    expect(labels).toEqual([
+      'mentor key level 29029.75',
+      'mentor old high/low 29177.75',
+    ])
+  })
+
+  it('keeps every line but shows ONE axis label per cluster', () => {
+    const out = dedupeAxisLabels([
+      { price: 100, label: 'old high' },
+      { price: 100.25, label: 'ISB 5m high' },
+      { price: 200, label: 'far' },
+    ])
+    expect(out).toHaveLength(3)
+    expect(out[0].label).toBe('old high + ISB 5m high')
+    expect(out[0].axisLabel).toBeUndefined()
+    expect(out[1].axisLabel).toBe(false)
+    expect(out[2]).toEqual({ price: 200, label: 'far' })
+  })
+
+  // m427/11 — the cluster edge. Two lines EXACTLY AXIS_LABEL_MIN_GAP (4) apart
+  // are NOT a cluster (the test is `< minGap`); 3.99 apart is.
+  it('lines exactly 4 pts apart keep their own axis labels; 3.99 apart merge', () => {
+    expect(AXIS_LABEL_MIN_GAP).toBe(4)
+    const exact = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 104, label: 'b' },
+    ])
+    expect(exact[0].label).toBe('a')
+    expect(exact[1].axisLabel).toBeUndefined()
+    expect(exact[1].label).toBe('b')
+    const inside = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 103.99, label: 'b' },
+    ])
+    expect(inside[0].label).toBe('a + b')
+    expect(inside[1].axisLabel).toBe(false)
+  })
+  it('lines 2 pts apart merge under the DEFAULT gap (not a 1-pt gap)', () => {
+    const out = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 102, label: 'b' },
+    ])
+    expect(out[1].axisLabel).toBe(false)
   })
 })

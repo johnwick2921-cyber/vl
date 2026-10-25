@@ -52,6 +52,12 @@ type TCPTrader struct {
 	// the SAME side, so the side-keyed stopLoss cannot guard both). Keyed by
 	// signal id; read first, with stopLoss as the fallback. Guarded by mu.
 	stopBySignal map[string]float64
+	// lastStopMove (m425b E1) is the last stop move THIS process sent per side
+	// (any path, any leg), with its wall-clock ms — the source of the excursion
+	// row's stop_px_final. createdMs lets a reader tell "never moved while this
+	// process watched" from "this process did not see the whole trade".
+	lastStopMove map[string]StopMoveRecord
+	createdMs    int64
 	// splitBySignal records the split that actually went on the wire for an
 	// entry signal (leg 1 qty + its tick-rounded TP) — after the far-side
 	// build gate and the leg1_tp check, which can both drop it. The mentor
@@ -300,6 +306,7 @@ func NewTCPTrader(server *ntwire.TCPServer, symbol string, account ...string) *T
 		server:    server,
 		symbol:    symbol,
 		stopLoss:  map[string]float64{},
+		createdMs: time.Now().UnixMilli(),
 		takePrft:  map[string]float64{},
 		guard:     newOrderGuard(),
 		pending:   map[string]string{},
@@ -1245,10 +1252,16 @@ func (t *TCPTrader) ModifyBracketLeg(signalID, side string, leg int, newSL, newT
 	t.mu.Lock()
 	tid := t.traderID
 	t.mu.Unlock()
-	return t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
+	if err := t.server.SendModifyBracket(ntwire.ModifyBracketPayload{
 		Symbol: t.symbol, SignalID: signalID, NewStopLoss: newSL, NewTakeProfit: newTP,
 		Leg: leg, Account: t.boundAccount, TraderID: tid,
-	})
+	}); err != nil {
+		return err
+	}
+	if newSL > 0 {
+		t.noteStopMove(side, newSL)
+	}
+	return nil
 }
 
 // OrderUpdates returns THIS trader's order_update stream (per symbol+account).
@@ -1423,6 +1436,7 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	// Track the new stop so a subsequent move is checked against it.
 	t.mu.Lock()
 	t.stopLoss[key] = newStop
+	t.noteStopMoveLocked(side, newStop)
 	// P2-1 (release #22 rescan) — ALSO record it under the signal the frame
 	// addressed. The side-keyed stopLoss cannot say WHICH position it belongs
 	// to, so the protection net could not use it; the per-signal record can.
@@ -1531,6 +1545,7 @@ func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64,
 		t.stopBySignal = map[string]float64{}
 	}
 	t.stopBySignal[stopKey] = newStop
+	t.noteStopMoveLocked(side, newStop)
 	t.mu.Unlock()
 	return nil
 }

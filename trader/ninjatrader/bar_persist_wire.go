@@ -85,13 +85,35 @@ func barRowsForPersist(symbol, tf, contract string, historical bool, closed []nt
 	return rows
 }
 
+// persistReport carries the outcome of the persister's last call to a caller
+// that must know whether the write landed (m426). A nil report is a no-op.
+type persistReport struct {
+	ok  bool
+	why string
+}
+
+func (r *persistReport) set(ok bool, why string) {
+	if r != nil {
+		r.ok, r.why = ok, why
+	}
+}
+
 // newBarPersister builds THE persister closure WireBarPersistence installs
 // (GAP-BACKFILL 2026-10-14: lifted out of the sync.Once, unchanged except for
 // the hole report after a live write, so a production-call-site test can drive
 // this exact closure against its own wire and store). server() is the wire the
 // closure reads verdicts and contracts from.
-func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer) func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+//
+// m426: the optional rep receives the OUTCOME of the last call (the persister's
+// signature is fixed by ntwire.SetBarPersister and returns nothing). Only the
+// m424 break flusher passes one; the frame-ingest call site is unchanged.
+func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer, rep ...*persistReport) func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+	var out *persistReport
+	if len(rep) > 0 {
+		out = rep[0]
+	}
 	return func(historical bool, symbol, tf string, bars []ntwire.Bar) {
+		out.set(false, "")
 		srv := server()
 		// BAR-SOURCE WAVE — a LIVE frame is the moment the ring has judged
 		// the replay it holds; release or discard the held replay rows for
@@ -109,6 +131,7 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 			closed = ntwire.OpenStampBars(closed, tf)
 		}
 		if len(closed) == 0 {
+			out.set(true, "")
 			return
 		}
 		// ROLL WAVE — stamp the contract the AddOn most recently named.
@@ -117,6 +140,7 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 		contract, src := contractFor(bh, srv, symbol)
 		if contract == "" {
 			logger.Warnf("bars: persist %s %s SKIPPED %d bar(s) — no contract has been named this process and the store holds none; a bar on an unknown price scale is not written (roll wave)", symbol, tf, len(closed))
+			out.set(false, "no contract known")
 			return
 		}
 		if src == "store-fallback" {
@@ -130,12 +154,15 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer)
 			// AN UNVERIFIED REPLAY IS NOT THE RECORD. Held until the first
 			// live bar lets the ring judge its scale; see replayHold.
 			barReplayHold.add(symbol, tf, rows)
+			out.set(true, "")
 			return
 		}
 		if err := bh.InsertBars(rows); err != nil {
 			logger.Warnf("bars: persist %s %s failed: %v (never blocks the loop)", symbol, tf, err)
+			out.set(false, err.Error())
 			return
 		}
+		out.set(true, "")
 		// GAP-BACKFILL (2026-10-14) — a live 1m bar that lands after a run of
 		// missing open minutes opens a HOLE, and the tracker re-requests NT8's
 		// history for it on its own schedule (bar_holes.go).
@@ -188,6 +215,10 @@ func WireBarPersistence(st *store.Store) {
 					// into a periodic data race (CI -race, api package).
 					barHolesServer.Store(server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
+					// m424 — session-final bar flush + closed-market replay-hold settle.
+					rep := &persistReport{}
+					bf := newBreakFlusher(server.BarCache, newBarPersister(bh, serverFn, rep), bh, rep) // the same closure type a frame reaches
+					safe.GoNet("nt8-bar-break-flush", "", bf.run)
 					backfilled := backfillBars(bh, server)
 					if backfilled == 0 {
 						// Cache still empty (replay in flight) — retry a few

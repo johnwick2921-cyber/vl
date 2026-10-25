@@ -10,6 +10,7 @@ import (
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
+	"vl/trader"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -19,8 +20,11 @@ import (
 // dead (the API cannot serve anything real without it). NT8 down is 200 with
 // status "degraded" — cutover scripts read `revision` from this endpoint and
 // must keep working while the AddOn is restarting.
+// healthNow is the clock seam for handleHealth (tests pin an open / closed CME instant).
+var healthNow = time.Now
+
 func (s *Server) handleHealth(c *gin.Context) {
-	now := time.Now()
+	now := healthNow()
 
 	dbStatus := "ok"
 	if s.store == nil || s.store.DB() == nil {
@@ -47,7 +51,11 @@ func (s *Server) handleHealth(c *gin.Context) {
 		// and the current blocked episode. READ values; since_ms = 0 when not
 		// blocked; probes = consecutive failed reconcile probes in this episode.
 		DeadMan *deadManHealthInfo `json:"dead_man,omitempty"`
+		// m420b/B6: feedStale is internal (surfaced as the top-level feed_stale).
+		feedStale bool
+		staleSecs int64
 	}
+	cmeOpen := kernel.IsCMEOpen(now) // READ from the calendar, never a literal
 	nt8 := map[string]nt8Info{}
 	running := 0
 	if s.traderManager != nil {
@@ -79,6 +87,19 @@ func (s *Server) handleHealth(c *gin.Context) {
 			}
 			if ageMs, ok := at.HealthLastBarAgeMs(now); ok {
 				info.LastBarAgeMs = &ageMs
+				// m420b/B6: stale only while CME is open, and the age never
+				// counts closed-market time (clamped to the open span).
+				if cmeOpen {
+					newest := now.Add(-time.Duration(ageMs) * time.Millisecond)
+					_, clamped := trader.ClampFeedGap(now, newest.Add(time.Minute)) // OpenTime + 1m = NT8's own stamp
+					info.feedStale = clamped > trader.FeedDownAfter()
+					info.staleSecs = int64(clamped / time.Second)
+				}
+			} else if cmeOpen && info.Link != "up" {
+				// m426: CME open, the NT8 link not up and NO bar at all (a boot
+				// with NT8 closed) is a dead feed, not a healthy one. There is
+				// no age to report, so feed_stale_secs stays 0/absent.
+				info.feedStale = true
 			}
 			if blocked, sinceMs, probes := at.HealthDeadMan(); blocked {
 				info.DeadMan = &deadManHealthInfo{Blocked: true, SinceMs: sinceMs, Probes: probes}
@@ -96,11 +117,21 @@ func (s *Server) handleHealth(c *gin.Context) {
 	case "unavailable":
 		status = "degraded"
 	}
+	// m420b/B6: the NT8 leg degrades the top-level status ONLY while CME is
+	// open (feed stale or a dead-man block; a down link shows up as a stale feed). A Disconnected
+	// weekend is the market being closed, not the bot being unwell.
+	feedStale := false
+	var staleSecs int64
 	if code == http.StatusOK {
 		for _, info := range nt8 {
-			if info.Link != "up" {
+			if info.feedStale {
+				feedStale = true
+				if info.staleSecs > staleSecs {
+					staleSecs = info.staleSecs
+				}
+			}
+			if cmeOpen && (info.feedStale || info.DeadMan != nil) {
 				status = "degraded"
-				break
 			}
 		}
 	}
@@ -112,6 +143,8 @@ func (s *Server) handleHealth(c *gin.Context) {
 		"db":              dbStatus,
 		"nt8":             nt8,
 		"traders_running": running,
+		"cme_open":        cmeOpen,
+		"feed_stale":      feedStale,
 		// m386: the Friends page flag for the web (nav + route). READ value; the
 		// web hides the Friends surface when false. The owner API 404s the same way.
 		"friends_page": config.FriendsPageEnabled(),
@@ -119,6 +152,14 @@ func (s *Server) handleHealth(c *gin.Context) {
 		// counters (backward/forward, largest, last, whether NEW entries are
 		// held right now). Read values; last_* absent until a step is seen.
 		"clock": kernel.ClockStepSnapshot(),
+	}
+	// m420b: the web banner's extra facts, READ from the calendar / the clamped
+	// gap. feed_stale_secs only while feed_stale; cme_reopens_at only while closed.
+	if feedStale {
+		body["feed_stale_secs"] = staleSecs
+	}
+	if !cmeOpen {
+		body["cme_reopens_at"] = kernel.NextCMEOpen(now).UTC().Format(time.RFC3339)
 	}
 	// GAP-BACKFILL (2026-10-14): the open 1m bar holes the bot is refilling
 	// from NT8 by itself, and the refill counters. READ values: [] = the

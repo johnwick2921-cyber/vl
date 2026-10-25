@@ -26,15 +26,19 @@ type MentorTruthPanel struct {
 	// Levels/Depth are ABSENT (omitempty) while the evaluator has not been
 	// built yet, and `Computing` flags that state; once the evaluator exists an
 	// empty level set is `[]` and an empty depth is `{}` (canon: absent ≠ []).
-	Levels           []MentorLevelView `json:"levels,omitempty"`
-	Depth            map[string]int    `json:"depth,omitempty"`
-	Computing        bool              `json:"computing,omitempty"`
-	DepthLine        string            `json:"depth_line"`
-	Window           MentorWindowView  `json:"window"`
-	DoneAfterWin     bool              `json:"done_after_win"`
-	DoneAfterWinWhy  string            `json:"done_after_win_why,omitempty"`
-	StopAfterLoss    bool              `json:"stop_after_loss"`
-	StopAfterLossWhy string            `json:"stop_after_loss_why,omitempty"`
+	Levels    *[]MentorLevelView `json:"levels,omitempty"`
+	Depth     map[string]int     `json:"depth,omitempty"`
+	Computing bool               `json:"computing,omitempty"`
+	// ChartSeededAt (m422) is the ms of the last close the boot display seed
+	// drew from; set only while no real Tick has run since. The chart shows
+	// "as of last close HH:MM CT".
+	ChartSeededAt    int64            `json:"chart_seeded_at,omitempty"`
+	DepthLine        string           `json:"depth_line"`
+	Window           MentorWindowView `json:"window"`
+	DoneAfterWin     bool             `json:"done_after_win"`
+	DoneAfterWinWhy  string           `json:"done_after_win_why,omitempty"`
+	StopAfterLoss    bool             `json:"stop_after_loss"`
+	StopAfterLossWhy string           `json:"stop_after_loss_why,omitempty"`
 
 	// T7 (release #22) — the OTHER places the evaluator trades, read from the
 	// same tick, so the chart can draw them. Pointers: ABSENT while computing,
@@ -128,12 +132,18 @@ type MentorTriggerView struct {
 
 // MentorLevelView is one mentor key level in effect, with today's visits.
 type MentorLevelView struct {
-	Key         string    `json:"key"`
-	Kind        string    `json:"kind"`
-	Price       float64   `json:"price"`
-	DrawnAt     int64     `json:"drawn_at"` // AtTime ms
-	VisitsToday int       `json:"visits_today"`
-	MergedFrom  []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
+	Key         string  `json:"key"`
+	Kind        string  `json:"kind"`
+	Price       float64 `json:"price"`
+	DrawnAt     int64   `json:"drawn_at"` // AtTime ms
+	VisitsToday int     `json:"visits_today"`
+	// FormedMs / TF (m421b, additive) — box-edge levels only: the box's
+	// formation-bar open (ms) and its frame ("1m"/"2m"/...), so the chart can
+	// draw the box as a rectangle. No ended_ms: an escaped box is dropped
+	// from the set, so a listed box is always live.
+	FormedMs   int64     `json:"formed_ms,omitempty"`
+	TF         string    `json:"tf,omitempty"`
+	MergedFrom []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
 }
 
 // MentorWindowView is the trading-window knob's live state.
@@ -151,7 +161,6 @@ type MentorWindowView struct {
 func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool) {
 	p := MentorTruthPanel{
 		AsOfMs: now.UnixMilli(),
-		Levels: []MentorLevelView{},
 		Depth:  map[string]int{},
 	}
 	if at == nil {
@@ -201,8 +210,22 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 		if len(drawn) == 0 {
 			drawn = st.Levels
 		}
+		lvs := []MentorLevelView{} // built-but-empty serialises as [] (absent ≠ [])
+		p.ChartSeededAt = st.ChartSeededAt
 		for _, lv := range mentor.DisplayLevels(drawn, ev.Cfg.KeyLevelPrunePts) {
-			p.Levels = append(p.Levels, MentorLevelView{
+			boxTF := ""
+			if lv.FormedMs > 0 {
+				boxTF = lv.TF
+				if boxTF == "" {
+					boxTF = ev.Cfg.Box.TF
+				}
+				if boxTF == "" {
+					boxTF = "1m"
+				}
+			}
+			lvs = append(lvs, MentorLevelView{
+				FormedMs:    lv.FormedMs,
+				TF:          boxTF,
 				Key:         lv.Key,
 				Kind:        string(lv.Kind),
 				Price:       lv.Price,
@@ -211,6 +234,7 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 				MergedFrom:  lv.MergedFrom,
 			})
 		}
+		p.Levels = &lvs
 
 		p.Trendlines, p.ISBBoxes, p.ORB, p.Swing = mentorChartObjects(&st, drawn)
 		p.EMASeries = mentorEMASeries(&st)

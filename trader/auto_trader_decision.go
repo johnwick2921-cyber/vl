@@ -302,7 +302,7 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 		// Calculate P&L percentage (based on margin)
 		pnlPct := calculatePnLPercentage(unrealizedPnl, marginUsed)
 
-		result = append(result, map[string]interface{}{
+		row := map[string]interface{}{
 			"symbol":             symbol,
 			"side":               side,
 			"entry_price":        entryPrice,
@@ -313,7 +313,25 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 			"unrealized_pnl_pct": pnlPct,
 			"liquidation_price":  liquidationPrice,
 			"margin_used":        marginUsed,
-		})
+		}
+		// m421a C1 — pass the broker's UI-only keys through when PRESENT (the
+		// fixed key list above used to drop them, so the chart never drew the
+		// open position's SL/TP lines): the working bracket, the contract point
+		// value and the notional value. Absent upstream stays absent.
+		for _, k := range []string{"bracket", "point_value", "position_value"} {
+			if v, ok := pos[k]; ok && v != nil {
+				row[k] = v
+			}
+		}
+		// entry_time (ms) is the position's REAL open time from the trader_positions
+		// row; absent when the store has no OPEN row (never fabricated from
+		// "first seen", which a restart resets).
+		if at.store != nil {
+			if dbPos, derr := at.store.Position().GetOpenPositionBySymbol(at.id, symbol, side); derr == nil && dbPos != nil && dbPos.EntryTime > 0 {
+				row["entry_time"] = dbPos.EntryTime
+			}
+		}
+		result = append(result, row)
 	}
 
 	return result, nil
@@ -608,8 +626,8 @@ func (at *AutoTrader) recordPositionChangeAs(orderID, symbol, side, action strin
 			default:
 				at.logWarnf("📐 excursion NOT opened for chat position pos=%d %s %s: its own stop/target unknown (stop=%.2f target=%.2f) — never resolved from an AI decision", pos.ID, symbol, side, manual.stop, manual.target)
 			}
-			// W6 — P0 fill alert.
-			at.emitAlert("P0", "fill", fmt.Sprintf("fill:%d", pos.ID),
+			// W6 — fill alert (P1 informational: m420b/B2).
+			at.emitAlert("P1", "fill", fmt.Sprintf("fill:%d", pos.ID),
 				fmt.Sprintf("Filled %s %s @ %.2f", side, symbol, price), "")
 		}
 

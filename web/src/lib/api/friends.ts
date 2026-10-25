@@ -9,6 +9,17 @@ import { API_BASE, httpClient } from './helpers'
 
 export type FriendAction = 'pause' | 'resume' | 'revoke' | 'rotate'
 
+// The owner bot has no /friend/addon-status route, so the probe 404s. That 404
+// is the expected "owner bot" signal, but the browser logs every failed request
+// to the console (not suppressible from JS) — and the banner re-polls every
+// 60s. Latch the first 404 so the console shows it at most once per page load.
+// The route set is fixed at server boot, so a 404 cannot turn into a 200
+// without a reload. Exported reset is for tests only.
+let ownerBotNoFriendRoute = false
+export function resetFriendAddonProbeForTest(): void {
+  ownerBotNoFriendRoute = false
+}
+
 export const friendsApi = {
   async listFriends(): Promise<FriendsListResponse> {
     const result = await httpClient.get<FriendsListResponse>(
@@ -45,6 +56,7 @@ export const friendsApi = {
   // Silent (no toast) and null on 404 — the owner bot has no friend route,
   // which is exactly the "hidden on the owner's bot" signal.
   async friendAddonStatus(): Promise<FriendAddonStatus | null> {
+    if (ownerBotNoFriendRoute) return null
     try {
       const result = await httpClient.request<FriendAddonStatus>(
         `${API_BASE}/friend/addon-status`,
@@ -52,7 +64,10 @@ export const friendsApi = {
       )
       if (!result.success || !result.data) return null
       return result.data
-    } catch {
+    } catch (e) {
+      // httpClient throws Error('API not found') for a 404.
+      if (e instanceof Error && e.message === 'API not found')
+        ownerBotNoFriendRoute = true
       return null
     }
   },

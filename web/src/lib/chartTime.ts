@@ -23,7 +23,32 @@ function timeToMs(time: Time): number {
   return Date.UTC(time.year, time.month - 1, time.day) // BusinessDay
 }
 
-/** X-axis tick labels in CT, respecting the granularity the lib asks for. */
+/** The app language the owner picked (LanguageContext persists it under
+ *  localStorage 'language'). The lib calls tickMarkFormatter outside React, so
+ *  the formatter reads the persisted choice at call time. Unknown/blocked → en. */
+function chartLocale(): string {
+  let lang: string | null = null
+  try {
+    lang = localStorage.getItem('language')
+  } catch {
+    /* storage blocked — default en */
+  }
+  // en → "Sep", zh → "9月", id → "Sep" (id-ID short month for September).
+  if (lang === 'zh') return 'zh-CN'
+  if (lang === 'id') return 'id-ID'
+  return 'en-US'
+}
+
+/** X-axis tick labels in CT, respecting the granularity the lib asks for.
+ *
+ *  Year/Month labels follow the app language (C10: they used to be hard-wired
+ *  to zh-CN, so the English UI showed "9月"). Day/intraday labels are numeric
+ *  (MM/DD, HH:mm) and stay locale-neutral.
+ *
+ *  DAY BOUNDARIES: lightweight-charts decides WHICH bar starts a new day from
+ *  the UTC calendar day (UTC midnight = 19:00 CDT / 18:00 CST) and that is not
+ *  configurable. We cannot move the boundary, so we label the tick by the CT
+ *  date of the instant it lands on — never the UTC date. */
 export function ctTickMarkFormatter(
   time: Time,
   tickMarkType: TickMarkType
@@ -31,9 +56,15 @@ export function ctTickMarkFormatter(
   const d = new Date(timeToMs(time))
   switch (tickMarkType) {
     case TickMarkType.Year:
-      return d.toLocaleString('zh-CN', { year: 'numeric', timeZone: CHART_TZ })
+      return d.toLocaleString(chartLocale(), {
+        year: 'numeric',
+        timeZone: CHART_TZ,
+      })
     case TickMarkType.Month:
-      return d.toLocaleString('zh-CN', { month: 'short', timeZone: CHART_TZ })
+      return d.toLocaleString(chartLocale(), {
+        month: 'short',
+        timeZone: CHART_TZ,
+      })
     case TickMarkType.DayOfMonth:
       return d.toLocaleString('zh-CN', {
         month: '2-digit',

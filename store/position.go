@@ -192,8 +192,13 @@ type TraderPosition struct {
 	Status            string   `gorm:"column:status;default:OPEN;index:idx_positions_status" json:"status"`
 	CloseReason       string   `gorm:"column:close_reason;default:''" json:"close_reason"`
 	Source            string   `gorm:"column:source;default:system" json:"source"`
-	CreatedAt         int64    `gorm:"column:created_at" json:"created_at"` // Unix milliseconds UTC
-	UpdatedAt         int64    `gorm:"column:updated_at" json:"updated_at"` // Unix milliseconds UTC
+	// m425b E3: GORM auto-stamps an int64 field NAMED CreatedAt/UpdatedAt in
+	// SECONDS unless the tag says otherwise, so every Updates() that did not set
+	// updated_at itself wrote seconds into a milliseconds column (rows 691-697
+	// vs 690). The tags below make the auto-stamp milliseconds like every
+	// explicit writer; PositionEpochMs tolerates the old second-valued rows.
+	CreatedAt int64 `gorm:"column:created_at;autoCreateTime:milli" json:"created_at"` // Unix milliseconds UTC
+	UpdatedAt int64 `gorm:"column:updated_at;autoUpdateTime:milli" json:"updated_at"` // Unix milliseconds UTC
 	// P2.4 — excursion analytics (additive, futures day-plan): max adverse /
 	// favorable excursion over the hold (points) + the AI's entry confidence.
 	// Zero when not computed (crypto / pre-migration).
@@ -735,7 +740,7 @@ func (s *PositionStore) GetHistoryPositions(traderID string, limit int, account 
 	if len(account) > 0 && account[0] != "" {
 		q = q.Where("account = ?", account[0])
 	}
-	err := q.Order("CASE WHEN exit_time > 0 THEN exit_time ELSE updated_at END DESC").Limit(limit).Find(&positions).Error
+	err := q.Order("CASE WHEN exit_time > 0 THEN exit_time WHEN updated_at > 0 AND updated_at < 100000000000 THEN updated_at * 1000 ELSE updated_at END DESC").Limit(limit).Find(&positions).Error
 	if err != nil {
 		return nil, fmt.Errorf("failed to query position history: %w", err)
 	}
@@ -1038,3 +1043,17 @@ func (p *TraderPosition) CorrectedPnL() (float64, bool) {
 
 // IsUnresolved reports whether the row carries no verified P&L.
 func (p *TraderPosition) IsUnresolved() bool { return p.PnlCorrected == nil }
+
+// PositionEpochMs normalizes a trader_positions timestamp to Unix milliseconds.
+// Rows written before m425b E3 may hold SECONDS in updated_at (GORM's default
+// auto-stamp); any value below 1e11 (year 5138 in seconds, 1973 in ms) is
+// seconds. 0 and negatives pass through. No DB rewrite: readers call this.
+func PositionEpochMs(v int64) int64 {
+	if v > 0 && v < 100_000_000_000 {
+		return v * 1000
+	}
+	return v
+}
+
+// UpdatedAtMs is UpdatedAt in milliseconds whatever unit the row was written in.
+func (p *TraderPosition) UpdatedAtMs() int64 { return PositionEpochMs(p.UpdatedAt) }

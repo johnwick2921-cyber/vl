@@ -18,12 +18,14 @@ import {
   SessionVolumeProfile,
   type SvpProfileData,
 } from './primitives/SessionVolumeProfile'
+import { MentorBoxes } from './primitives/MentorBoxes'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { httpClient } from '../../lib/httpClient'
 import { REFRESH_CHART_MS, REFRESH_OPEN_ORDERS_MS } from '../../lib/autoRefresh'
 import { t } from '../../i18n/translations'
 import {
   MENTOR_COLOR,
+  mentorBoxRects,
   mentorEMACurves,
   mentorEMATf,
   mentorEMALocationSegment,
@@ -81,6 +83,8 @@ interface AdvancedChartProps {
   mentorTrendlines?: MentorTruth['trendlines']
   /** m134 — the per-bar EMA 9/34 curve (points), drawn as two curves. */
   mentorEMASeries?: MentorTruth['ema_series']
+  /** m421b: the full truth, for the FTGH/FTGL box rectangles. */
+  mentorTruth?: MentorTruth | null
   /** UG-3 (release #24): set while the mentor read is stale — the last good
    * read's time; every mentor line then carries "stale since HH:MM CT". */
   mentorStaleSinceMs?: number
@@ -99,6 +103,9 @@ interface IndicatorConfig {
 }
 
 // Get quote currency unit
+// C14 (m421a): closed-trade history refresh cadence for the chart markers.
+const POSITION_HISTORY_REFRESH_MS = 30_000
+
 const getQuoteUnit = (exchange: string): string => {
   if (['alpaca'].includes(exchange)) {
     return 'USD'
@@ -145,6 +152,7 @@ export function AdvancedChart({
   mentorLevels,
   mentorTrendlines,
   mentorEMASeries,
+  mentorTruth,
   mentorStaleSinceMs,
   mentorEMALocationPrice,
 }: AdvancedChartProps) {
@@ -160,6 +168,7 @@ export function AdvancedChart({
   const seriesMarkersRef = useRef<any>(null) // Markers primitive for v5
   const currentMarkersDataRef = useRef<any[]>([]) // Store current marker data
   const svpPrimitiveRef = useRef<SessionVolumeProfile | null>(null) // SVP profile primitive
+  const mentorBoxesRef = useRef<MentorBoxes | null>(null) // m421b FTGH/FTGL rectangles
   const klineDataRef = useRef<
     Map<number, { volume: number; quoteVolume: number }>
   >(new Map()) // Store kline extra data
@@ -200,6 +209,11 @@ export function AdvancedChart({
 
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // m427/3: the interval whose last /api/klines answer was an EMPTY array (an
+  // older backend without that TF, or an empty ring right after boot). Keyed by
+  // the interval so a TF switch never shows the previous TF's note; polling
+  // continues, and the note clears the moment bars arrive.
+  const [emptyBarsFor, setEmptyBarsFor] = useState<string | null>(null)
   const [showIndicatorPanel, setShowIndicatorPanel] = useState(false)
   const [showOrderMarkers, setShowOrderMarkers] = useState(true) // Order marker toggle, default on
   // m242 F4: the toggle is read through a ref so the 5s refresh closure never
@@ -277,6 +291,25 @@ export function AdvancedChart({
   // refresh would clear the user's just-toggled indicators every 5s (1b).
   const indicatorsRef = useRef(indicators)
   indicatorsRef.current = indicators
+  // m421b C7: the Volume toggle. loadData's closure is from the render that
+  // started the effect, so it must read indicatorsRef, never `indicators`.
+  const applyVolume = (klineData: Kline[]) => {
+    const vs = volumeSeriesRef.current
+    if (!vs) return
+    const on = indicatorsRef.current.find((i) => i.id === 'volume')?.enabled
+    vs.setData(
+      on
+        ? (klineData.map((k: Kline) => ({
+            time: k.time,
+            value: k.volume || 0,
+            color:
+              k.close >= k.open
+                ? 'rgba(14, 203, 129, 0.5)'
+                : 'rgba(246, 70, 93, 0.5)',
+          })) as any)
+        : []
+    )
+  }
 
   // Fetch kline data from service
   const fetchKlineData = async (symbol: string, interval: string) => {
@@ -531,16 +564,48 @@ export function AdvancedChart({
   // row → an entry marker (long=BUY/green "B", short=SELL/red "S") and, when closed,
   // an exit marker (the opposite side). Same OrderMarker shape, so the existing
   // marker-draw + B/S toggle are unchanged.
+  const historyCacheRef = useRef<{
+    traderID: string
+    openCount: number
+    at: number
+    data: any
+  } | null>(null)
   const fetchPositionMarkers = async (
     traderID: string,
     symbol: string
   ): Promise<TradeMarkerInput[] | null> => {
     try {
-      // Closed (and closed-with-partial) rows carry both the entry and the exit.
-      const history = await httpClient.request(
-        `/api/positions/history?trader_id=${traderID}&limit=200`,
+      // C14 (m421a): the closed-trade history is ~35KB and only changes when a
+      // trade opens/closes, so it is re-fetched at most every 30s — or at once
+      // when the trader changes or the OPEN-position count changes (a new
+      // trade). The small open-positions read still runs every tick.
+      const open = await httpClient.request(
+        `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
         { silent: true }
       )
+      const openRows = Array.isArray(open?.data) ? open.data : []
+      const cache = historyCacheRef.current
+      let historyData = cache?.data
+      if (
+        !cache ||
+        cache.traderID !== traderID ||
+        cache.openCount !== openRows.length ||
+        Date.now() - cache.at >= POSITION_HISTORY_REFRESH_MS
+      ) {
+        // Closed (and closed-with-partial) rows carry both the entry and the exit.
+        const history = await httpClient.request(
+          `/api/positions/history?trader_id=${traderID}&limit=200`,
+          { silent: true }
+        )
+        historyData = history
+        historyCacheRef.current = {
+          traderID,
+          openCount: openRows.length,
+          at: Date.now(),
+          data: history,
+        }
+      }
+      const history = historyData
       const closedRows = Array.isArray(
         history?.data?.positions || history?.data
       )
@@ -597,11 +662,6 @@ export function AdvancedChart({
 
       // F2: an OPEN position has no history row, so its entry marker comes from
       // /api/positions (the same response the bracket lines already consume).
-      const open = await httpClient.request(
-        `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
-        { silent: true }
-      )
-      const openRows = Array.isArray(open?.data) ? open.data : []
       openRows.forEach((p: any) => {
         const status = (p.status || p.Status || '').toUpperCase()
         if (status === 'CLOSED') return
@@ -844,6 +904,7 @@ export function AdvancedChart({
         candlestickSeriesRef.current.detachPrimitive(svpPrimitiveRef.current)
         svpPrimitiveRef.current = null
       }
+      mentorBoxesRef.current = null // goes with the chart (m421b)
       chart.remove()
     }
   }, []) // Chart is created once, ResizeObserver handles dimension changes
@@ -867,8 +928,11 @@ export function AdvancedChart({
       seriesMarkersRef.current = null
     }
 
+    // m421b: a stale run (TF switch / unmount) must never touch the disposed
+    // chart ("Object is disposed").
+    let live = true
     const loadData = async (isRefresh = false) => {
-      if (!candlestickSeriesRef.current) return
+      if (!live || !candlestickSeriesRef.current) return
 
       console.log(
         '[AdvancedChart] Loading data for',
@@ -885,7 +949,9 @@ export function AdvancedChart({
       try {
         // 1. Fetch kline data
         const klineData = await fetchKlineData(symbol, interval)
+        if (!live || !candlestickSeriesRef.current) return
         console.log('[AdvancedChart] Loaded', klineData.length, 'klines')
+        setEmptyBarsFor(klineData.length === 0 ? interval : null)
         candlestickSeriesRef.current.setData(klineData)
         {
           const times = klineData.map((k: any) => k.time as number)
@@ -943,26 +1009,8 @@ export function AdvancedChart({
           })
         }
 
-        // 2. Display volume
-        if (volumeSeriesRef.current) {
-          const volumeEnabled = indicators.find(
-            (i) => i.id === 'volume'
-          )?.enabled
-          if (volumeEnabled) {
-            const volumeData = klineData.map((k: Kline) => ({
-              time: k.time,
-              value: k.volume || 0,
-              color:
-                k.close >= k.open
-                  ? 'rgba(14, 203, 129, 0.5)'
-                  : 'rgba(246, 70, 93, 0.5)',
-            }))
-            volumeSeriesRef.current.setData(volumeData as any)
-          } else {
-            // Clear data when volume is disabled
-            volumeSeriesRef.current.setData([])
-          }
-        }
+        // 2. Display volume (reads indicatorsRef — m421b C7)
+        applyVolume(klineData)
 
         // 3. Add indicators
         updateIndicators(klineData)
@@ -982,6 +1030,7 @@ export function AdvancedChart({
             exchange === 'ninjatrader'
               ? await fetchPositionMarkers(traderID, symbol)
               : await fetchOrders(traderID, symbol)
+          if (!live || !candlestickSeriesRef.current) return
           console.log('[AdvancedChart] Received orders:', orders)
 
           // m242 F4: a fetch ERROR (null) keeps the last good markers — never
@@ -1053,6 +1102,7 @@ export function AdvancedChart({
         }
         setLoading(false)
       } catch (err: any) {
+        if (!live) return
         console.error('[AdvancedChart] Error loading data:', err)
         setError(err.message || 'Failed to load chart data')
         setLoading(false)
@@ -1072,11 +1122,27 @@ export function AdvancedChart({
         refreshing = false
       })
     }, REFRESH_CHART_MS)
-    return () => clearInterval(refreshInterval)
+    return () => {
+      live = false
+      clearInterval(refreshInterval)
+    }
   }, [symbol, interval, traderID, exchange])
 
   // Refresh open order price lines separately (every 60s, avoid frequent exchange API calls)
   useEffect(() => {
+    // m421b C9: a trader/symbol change (or no trader) must drop the previous
+    // trader's order + bracket lines at once — never leave them on B's chart.
+    const clearOrderLines = () => {
+      priceLinesRef.current.forEach((line) => {
+        try {
+          candlestickSeriesRef.current?.removePriceLine(line)
+        } catch {
+          // Ignore clear error
+        }
+      })
+      priceLinesRef.current = []
+    }
+    clearOrderLines()
     if (!traderID || !candlestickSeriesRef.current) return
     let live = true
     let request = 0
@@ -1207,6 +1273,7 @@ export function AdvancedChart({
       live = false
       clearTimeout(initialTimeout)
       clearInterval(openOrdersInterval)
+      clearOrderLines()
     }
   }, [symbol, interval, traderID, exchange, selectedAccount])
 
@@ -1235,12 +1302,36 @@ export function AdvancedChart({
         color: lv.color ?? MENTOR_COLOR, // distinct mentor amber — not the order yellow/green/red
         lineWidth: 1,
         lineStyle: lv.style ?? 2, // dashed, distinct from the solid order lines
-        axisLabelVisible: true,
-        title: lv.label || 'mentor',
+        axisLabelVisible: lv.axisLabel !== false,
+        title: lv.label,
       })
       if (line) mentorPriceLinesRef.current.push(line)
     })
   }, [mentorLevels, symbol, interval])
+
+  // m421b C6 — FTGH/FTGL boxes as filled rectangles (formation -> end / last
+  // bar) via a series primitive, snapped to the drawn bars.
+  useEffect(() => {
+    const series = candlestickSeriesRef.current
+    if (!series) return
+    const rects = mentorBoxRects(mentorTruth, barTimes, mentorStaleSinceMs)
+    if (rects.length === 0) {
+      if (mentorBoxesRef.current) {
+        try {
+          series.detachPrimitive(mentorBoxesRef.current)
+        } catch {
+          // chart already disposed
+        }
+        mentorBoxesRef.current = null
+      }
+      return
+    }
+    if (!mentorBoxesRef.current) {
+      mentorBoxesRef.current = new MentorBoxes()
+      series.attachPrimitive(mentorBoxesRef.current)
+    }
+    mentorBoxesRef.current.setData(rects)
+  }, [mentorTruth, barTimes, mentorStaleSinceMs, symbol, interval])
 
   // T7 (release #22) — the mentor's VALID trendlines as sloped segments (the
   // chart had no two-point drawing at all). Snapped to this chart's bar grid.
@@ -1502,6 +1593,7 @@ export function AdvancedChart({
     if (latestKlinesRef.current.length > 0) {
       updateIndicators(latestKlinesRef.current)
     }
+    applyVolume(latestKlinesRef.current)
     // Attach/update/detach the SVP primitive on toggle (idempotent).
     void syncSVP()
   }, [indicators])
@@ -1550,7 +1642,7 @@ export function AdvancedChart({
       )}
       {/* Compact Professional Header */}
       <div
-        className="flex items-center justify-between px-4 py-2"
+        className="flex flex-wrap items-center justify-between gap-y-1 px-2 sm:px-4 py-2"
         style={{
           borderBottom: '1px solid rgba(43, 49, 57, 0.6)',
           background: '#0D1117',
@@ -1745,6 +1837,25 @@ export function AdvancedChart({
           ref={chartContainerRef}
           style={{ height: '100%', width: '100%' }}
         />
+
+        {emptyBarsFor === interval && !error && (
+          <div
+            role="status"
+            data-testid="chart-no-bars"
+            className="absolute inset-0 flex items-center justify-center pointer-events-none"
+          >
+            <span
+              className="px-3 py-1 rounded text-xs"
+              style={{
+                color: '#848E9C',
+                background: 'rgba(11, 14, 17, 0.7)',
+                border: '1px solid rgba(43, 49, 57, 0.6)',
+              }}
+            >
+              No bars yet for {interval}
+            </span>
+          </div>
+        )}
 
         {/* OHLC Tooltip */}
         {tooltipData && (

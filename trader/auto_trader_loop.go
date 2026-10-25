@@ -987,6 +987,10 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
 	// 12-24 carried resting arms and open positions over the holiday.
 	at.retireBookAfterEarlyCloseAt(now)
+	// m427/2 — a replay hold released on a closed market bumps the history
+	// refill generation, but the only re-seed reader is the mentor Tick, which
+	// never runs while CME is shut. Rebuild the DISPLAY-ONLY chart seed here.
+	at.mentorRefreshChartSeedOnClosed(now)
 	// E5 (owner ruling 2026-09-07): mark the cycle as having taken the closed
 	// path, so the loop's overrun check can tell the deliberate backoff from a
 	// fault. Set BEFORE the sleep: a Stop() during the backoff still leaves a

@@ -577,6 +577,33 @@ func (at *AutoTrader) mentorNoteORB(orb mentor.ORB, closeMs int64) []string {
 	return out
 }
 
+// mentorEODFlatAuthorRefusal (m425a S3) refuses to AUTHOR an intraday mentor
+// arm inside the EOD-flat window. It asks the SAME two questions the rest of
+// the system asks — never a copy of the times: forceFlatWindowAt (the entry
+// admission gate's force-flat / in-session EOD-flat window) and the session
+// registry's ActiveSession (the armed pass's "session ended (EOD flat)"
+// cancel, armed_executor.go). SWING4H is exempt, exactly as it is at
+// admission (the course holds the swing by the 4h, D5.2).
+func (at *AutoTrader) mentorEODFlatAuthorRefusal(in mentor.Intent, now time.Time) (bool, string) {
+	if strings.EqualFold(in.Setup, "SWING4H") {
+		return false, ""
+	}
+	if why, due := at.forceFlatWindowAt(now, nil); due {
+		return true, why
+	}
+	// m426: mirror the armed pass EXACTLY — it cancels "session ended (EOD
+	// flat)" only when there is NO active AI day plan (plan == nil && !sessOK,
+	// armed_executor.go). With a plan active the arm would survive there, so
+	// authoring must not refuse on this clause either.
+	if kernel.ActivePlanFor(at.id, at.futuresSymbol()) != nil {
+		return false, ""
+	}
+	if _, active := at.sessionRegistry(now).ActiveSession(now); !active {
+		return true, "session ended (EOD flat) — the armed pass cancels an intraday mentor arm the moment the session is over"
+	}
+	return false, ""
+}
+
 // mentorPlaceIntent runs the placement gates (sources wired, stop rules,
 // expiry guard, no-chase, the exit fork) and hands the intent to the ONE
 // mentor entry path (mentorDirectPlace): a ledger arm with origin=mentor and
@@ -641,6 +668,17 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.logWarnf("🧑‍🏫 mentor placement REFUSED — %s", why)
 		at.mentorRecordStallRefusal(in, "window: "+why)
 		at.mentorGateBlock("mentor_window")
+		return
+	}
+	// m425a S3: no INTRADAY arm is authored inside the EOD-flat window — the
+	// armed pass cancels intraday mentor arms the instant the session has
+	// ended, so an arm authored at 15:30:00.081 / 15:35:00.084 CT (rows 447 /
+	// 448, 10-23) lived 10 ms and wrote a ledger row for nothing.
+	if refuse, why := at.mentorEODFlatAuthorRefusal(in, mentorClockNow()); refuse {
+		at.mentorCount("placement_refused_eod_flat")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — eod_flat: %s", why)
+		at.mentorRecordStallRefusal(in, "eod_flat: "+why)
+		at.mentorGateBlock("mentor_eod_flat")
 		return
 	}
 	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
@@ -721,6 +759,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		if isISBEntryIntent(in) {
 			if open := at.mentorOpenSideSource(); open != "" && strings.EqualFold(open, string(in.Side)) {
 				at.mentorArmResonanceOnISB(string(in.Side))
+				at.mentorGateBlock("mentor_resonance_hold")
 				return
 			}
 		}
@@ -1928,6 +1967,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// N1 (release #23): the refill generation is read BEFORE the store, so a
 	// replay released while the seed reads it still triggers a re-seed.
 	at.mentorSeedHistGen, _ = mentorRefillGeneration()
+	at.mentorChartSeedGen = at.mentorSeedHistGen
 	// The seed clock reads the mentor seam (mentorNowSource) so tests can pin a
 	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
 	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
@@ -1975,6 +2015,11 @@ func (at *AutoTrader) mentorSeedAtStart() {
 			mentor.SeedTrendlines(at.mentorEval, bars1m, now) // B3
 		})
 	}
+	// m422 (C5): paint the chart's overlays from the last close so a restart on
+	// a closed market is not blank until the next bar. Display only; reads the
+	// CURRENT-CONTRACT tick window (the ~1500 closed 1m bars Tick reads), never
+	// the stitched back-adjusted series above.
+	at.mentorSeedChartDisplay(bars1m)
 	// The evaluator's own depth (computed from the stitched series) is the
 	// single source of truth for the per-source refusal seam.
 	depths := at.mentorEval.Depths()
@@ -2380,4 +2425,24 @@ func MentorLatencyBootLine() string {
 		return "🧑‍🏫 mentor eval latency (close→ack): n=0 p50=n/a p95=n/a (target <1s, WARN >3s)"
 	}
 	return fmt.Sprintf("🧑‍🏫 mentor eval latency (close→ack): n=%d p50=%dms p95=%dms (target <1s, WARN >3s)", n, p50, p95)
+}
+
+// mentorSeedChartDisplay (m422, C5) runs mentor.SeedChartDisplay over the tick
+// window: the live provider's closed bars when it has them, else the tail of
+// the store's current-contract 1m read (the same contract Tick reads).
+func (at *AutoTrader) mentorSeedChartDisplay(storeBars1m []market.Kline) {
+	var win []market.Kline
+	if market.FuturesBarsProvider != nil {
+		win = mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
+	}
+	if len(win) == 0 {
+		win = storeBars1m
+		if n := len(win); n > mentorBars1mDepth {
+			win = win[n-mentorBars1mDepth:]
+		}
+	}
+	if len(win) < 2 {
+		return
+	}
+	at.mentorEval.SeedChartDisplay(win, mentor.BarCloseInstant(win[len(win)-1]))
 }

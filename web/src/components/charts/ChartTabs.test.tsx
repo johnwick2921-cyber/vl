@@ -155,4 +155,18 @@ describe('UG-2 mentor overlays follow the symbol', () => {
       'mentor lines: MNQ · stale since 10:07 CT'
     )
   })
+
+  it('m421b C8: an EMA-only read still shows the overlays (ema_series counts)', () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="MNQ"
+        mentorEMASeries={[{ ms: 1, ema9: 1, ema34: 2 }]}
+        mentorSymbol="MNQ"
+      />
+    )
+    expect(screen.getByTestId('mentor-overlay-note')).toBeInTheDocument()
+  })
 })

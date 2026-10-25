@@ -928,8 +928,8 @@ func (at *AutoTrader) recordClosedTradeAnalyticsAt(now time.Time, p *store.Trade
 		at.logWarnf("📐🎓 %s pos=%d entered BEFORE its cited scenario's trigger (%s) — graded %s, not \"followed the plan\": %s", p.Symbol, p.ID, p.CitedScenarioID, grade, trigWhy)
 	}
 
-	// W6 — P0 close+P&L alert.
-	at.emitAlert("P0", "close", fmt.Sprintf("close:%d", p.ID),
+	// W6 — close+P&L alert (P1 informational: m420b/B2).
+	at.emitAlert("P1", "close", fmt.Sprintf("close:%d", p.ID),
 		fmt.Sprintf("Closed %s — P&L %.2f", p.Symbol, p.EffectivePnL()),
 		fmt.Sprintf("adherence %s (%s)", grade, kernel.AdherenceLabel(grade)))
 

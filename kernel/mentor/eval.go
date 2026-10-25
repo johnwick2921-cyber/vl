@@ -56,6 +56,9 @@ type State struct {
 	// ChartEMA (m134) is the display-only per-bar EMA 9/34 curve, read from the
 	// same tick as ChartTrendlines. Nothing that trades reads it.
 	ChartEMA []ChartEMA `json:"-"`
+	// ChartSeededAt (m422) is the ms instant SeedChartDisplay filled the three
+	// display sets above at boot; the first real Tick clears it. Display only.
+	ChartSeededAt int64 `json:"-"`
 	// Refusals is the B-rules refusal ledger (CTO 13:51:31Z): every filter
 	// that DROPS an intent names its reason and counts it, like the replay
 	// funnel stages — DS-105 diffs these against the replay.
@@ -196,6 +199,15 @@ type State struct {
 	EmaLossPrice     float64 `json:"ema_loss_price,omitempty"`
 	EmaLossBarTime   int64   `json:"ema_loss_bar_time,omitempty"`
 	EmaBlocked       bool    `json:"ema_blocked,omitempty"`
+	// EmaPendingArmID (m425a S2) is the "lvl-" ArmID the pending belongs to, so
+	// a refused/dropped intent can retract exactly its own pending (a refused
+	// EMA34 intent must never be booked as a loss — ema_rules.go).
+	EmaPendingArmID string `json:"ema_pending_arm_id,omitempty"`
+	// RefusedLevelTouch (m425a S2) maps a level key to the CloseTime of the
+	// touch reference bar whose intent the TRADER refused. The refusal does not
+	// end the touch (it stays TouchReject), so without this the level was
+	// re-emitted every minute for the rest of the visit.
+	RefusedLevelTouch map[string]int64 `json:"refused_level_touch,omitempty"`
 	// EmaBlockDayKey is the 17:00 CT session-day key of the E2 block (B8): the
 	// block lifts at the next rollover, like the G2 loss boxes.
 	EmaBlockDayKey string `json:"ema_block_day_key,omitempty"`
@@ -959,13 +971,63 @@ func (e *Evaluator) DropArm(armID string) {
 	if e == nil || armID == "" {
 		return
 	}
-	if _, ok := e.State.ISBArms[armID]; ok {
-		delete(e.State.ISBArms, armID)
+	// m425a S2: a trader-side refusal of a LEVEL/PHL intent ends that touch for
+	// that level — remember the reference bar so the (still TouchReject) level
+	// is not re-emitted every minute. The rolling pullback order is exempt: it
+	// re-arms on a NEW reference candle by design.
+	for key, arm := range e.State.LevelArms {
+		if arm.ArmID != armID || key == rollingLevelKey {
+			continue
+		}
+		if tr, ok := e.State.Touches[key]; ok && tr.RefBar.CloseTime != 0 {
+			if e.State.RefusedLevelTouch == nil {
+				e.State.RefusedLevelTouch = map[string]int64{}
+			}
+			e.State.RefusedLevelTouch[key] = tr.RefBar.CloseTime
+		}
+	}
+	e.unregisterArm(armID)
+}
+
+// unregisterArm removes EVERY evaluator registration of an entry ArmID that
+// will never be authored (m425a S1): ISBArms, the swing Pending, the LevelArms
+// entry (incl. the rolling PHL order and its RollingPHL state) and the EMA34
+// pending. A phantom arm blocks the next same-side setup (isb_arm_active /
+// phl_level_arm_resting) and emits ExtendArm/CancelArm for an order that was
+// never authored. A FILLED swing position is never touched. Idempotent.
+func (e *Evaluator) unregisterArm(armID string) {
+	if e == nil || armID == "" {
 		return
 	}
+	delete(e.State.ISBArms, armID)
 	if e.State.Swing.Pending != nil && e.State.Swing.Pending.ArmID == armID {
 		e.State.Swing.Pending = nil
 	}
+	for key, arm := range e.State.LevelArms {
+		if arm.ArmID == armID {
+			delete(e.State.LevelArms, key)
+		}
+	}
+	if e.State.RollingPHL.ArmID == armID {
+		e.State.RollingPHL = RollingPHL{}
+	}
+	if e.State.EmaPendingArmID == armID {
+		e.State.EmaPendingSide = ""
+		e.State.EmaPendingFilled = false
+		e.State.EmaPendingArmID = ""
+	}
+}
+
+// entryArmIDs lists the ArmIDs of the entry intents (the placements that
+// registered an arm) in out.
+func entryArmIDs(out []Intent) map[string]bool {
+	ids := map[string]bool{}
+	for _, in := range out {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.ArmID != "" {
+			ids[in.ArmID] = true
+		}
+	}
+	return ids
 }
 
 // isbFlags returns the ISB size flags for the injector (rule 2: at an old
@@ -1778,6 +1840,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
 	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                        // m134: display EMA curve
+	e.State.ChartSeededAt = 0                                                                  // m422: a real Tick replaces the boot display seed
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;
@@ -2436,6 +2499,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if tr.Outcome != TouchReject || e.State.ISBOnly[lvl.Key] {
 				continue
 			}
+			// m425a S2: the TRADER refused this touch's intent (DropArm recorded
+			// the reference bar) — the touch stays TouchReject but does not
+			// re-emit; a NEW touch (new reference bar) is evaluated normally.
+			if ref, refused := e.State.RefusedLevelTouch[lvl.Key]; refused && ref == tr.RefBar.CloseTime {
+				continue
+			}
 			// B23 visit cap ("knock knock", D1.3 p1 @10:32–11:43): the first
 			// LevelMaxVisits visits of the day trade; the rest refuse. The
 			// refusal counts ONCE per visit (CTO 01:19Z, DS-105): a capped
@@ -2695,6 +2764,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// Resolve the same way Limits.pendExpiry does.
 				e.State.EmaPendingExpiry = pendExpiry(in, cur.CloseTime)
 				e.State.EmaPendingFilled = false
+				e.State.EmaPendingArmID = id
 			}
 			// D4.2-06 part 1: mode C also fires on timeframe agreement —
 			// 15m = 5m = entry side AND the 5m trigger agrees [D4.2 p1 @14:57].
@@ -2809,11 +2879,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						tSide, tPrice = SideShort, bars[r.RefBar].Low
 					}
 					if ok, ts, _ := TriggerVerdict(e.State.Trigger, tPrice); !ok || ts != "" && ts != tSide {
-						e.refuse("isb_trigger_side")
+						e.refuse("box_trigger_side")
 						continue
 					}
 				}
-				for _, in := range boxEntryIntent(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg) {
+				boxIntents, boxWhy := boxEntryIntentWhy(bars[r.RefBar], b, boxes, levels, e.State.Trigger, bars, e.Cfg)
+				if boxWhy != "" {
+					e.refuse(boxWhy) // m425b S4b: no silent drop inside boxEntryIntent
+				}
+				for _, in := range boxIntents {
 					// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
 					// the same day/HTF gates as every other setup —
 					// the 4h/1h direction, the day-off and the spent cap.
@@ -2886,6 +2960,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
 	// the candle nor the entry point [D3.2 p1 @ 06:59].
+	// m425a S1: snapshot the entry ArmIDs that REGISTERED an arm; every one the
+	// late filters below (or the limits hook) drop is un-registered after.
+	registeredArms := entryArmIDs(out)
 	out, refused := boxBanFilter(out, boxes, bars[len(bars)-1])
 	for _, r := range refused {
 		e.refuse(r)
@@ -2971,27 +3048,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	// REL-5 audit #3: a leg-budget / loss-box drop must not leave a stale
 	// ISBArms entry (a stale arm suppresses a legitimate same-side ISB via
-	// isbArmActive). Snapshot the emitted ISB ArmIDs, then delete the arms the
-	// limits hook dropped.
-	emittedISB := map[string]bool{}
-	for _, in := range intraday {
-		if in.Setup == "ISB" && in.ArmID != "" {
-			emittedISB[in.ArmID] = true
-		}
-	}
+	// isbArmActive).
 	keptIntraday := e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg)
-	keptISB := map[string]bool{}
-	for _, in := range keptIntraday {
-		if in.Setup == "ISB" && in.ArmID != "" {
-			keptISB[in.ArmID] = true
-		}
-	}
-	for id := range emittedISB {
-		if !keptISB[id] {
-			delete(e.State.ISBArms, id)
-		}
-	}
 	out = append(keptIntraday, swings...)
+	// m425a S1: ANY entry dropped after its arm registered (late filters or the
+	// limits hook) un-registers that arm — ISB, level, rolling PHL, EMA pending.
+	survived := entryArmIDs(out)
+	for id := range registeredArms {
+		if !survived[id] {
+			e.unregisterArm(id)
+		}
+	}
 
 	// release #31 (leg-3 bracket): stamp the runner's FIRST partial line on
 	// every entry intent — the first target line strictly between the 1:1 leg-1

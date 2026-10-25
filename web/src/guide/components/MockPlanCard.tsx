@@ -32,7 +32,7 @@ export function MockPlanCard() {
   return (
     <div
       data-testid="mock-plan-card"
-      className="rounded-xl p-4 flex flex-col gap-2"
+      className="rounded-xl p-4 flex flex-col gap-2 min-w-0 w-full break-words"
       style={{
         background: 'var(--vl-card)',
         border: '1px solid var(--vl-hair)',
@@ -40,7 +40,7 @@ export function MockPlanCard() {
       }}
     >
       {/* header: title + version chips + lifecycle */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <span
           className="text-sm font-bold"
           style={{ color: 'var(--vl-ivory)' }}
@@ -129,7 +129,7 @@ export function MockPlanCard() {
       ].map((l) => (
         <div
           key={l.price + l.label}
-          className="flex items-center gap-2 text-[11px]"
+          className="flex flex-wrap items-center gap-2 text-[11px]"
           style={
             l.consumedDim
               ? { opacity: 0.5, fontFamily: 'var(--vl-font-ui)' }
@@ -175,7 +175,7 @@ export function MockPlanCard() {
         Scenarios ({resolvedMode})
       </div>
       <div className="flex flex-col gap-1">
-        <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <StatusDot status="armed" language="en" />
           <span className="font-bold" style={{ color: 'var(--vl-gold)' }}>
             S1
@@ -186,7 +186,7 @@ export function MockPlanCard() {
           </span>
           <span style={muted}>sweep 29628.75 ONH and reclaim inside</span>
         </div>
-        <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <StatusDot status="waiting" language="en" />
           <span className="font-bold" style={{ color: 'var(--vl-gold)' }}>
             S2
@@ -222,7 +222,7 @@ export function MockPlanCard() {
             }}
           />
         </div>
-        <div className="flex items-center gap-2 text-[11px]">
+        <div className="flex flex-wrap items-center gap-2 text-[11px]">
           <StatusDot status="armed" language="en" />
           <span className="font-bold" style={{ color: 'var(--vl-gold)' }}>
             S3

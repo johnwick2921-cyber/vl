@@ -157,7 +157,9 @@ export function ResolvedKnobPanel({
             data-testid="knob-row"
             className="flex flex-wrap gap-x-2 text-xs"
           >
-            <span className="font-mono text-slate-300">{k.path}</span>
+            <span className="font-mono text-slate-300 min-w-0 break-all">
+              {k.path}
+            </span>
             <span className={STATUS_TONE[k.status] ?? 'text-slate-400'}>
               {k.ui_label}
             </span>
