@@ -176,7 +176,7 @@ function BlockView({ block }: { block: GuideBlock }) {
       )
     case 'cards':
       return (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {block.cards.map((c, i) => (
             <article
               key={i}
@@ -379,7 +379,7 @@ function BlockView({ block }: { block: GuideBlock }) {
       )
     case 'glossary':
       return (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {block.terms.map((t, i) => (
             <article
               key={i}
@@ -407,7 +407,7 @@ function BlockView({ block }: { block: GuideBlock }) {
       )
     case 'knobs':
       return (
-        <div className="grid gap-2 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {block.knobs.map((k, i) => (
             <KnobCard key={i} knob={k} />
           ))}

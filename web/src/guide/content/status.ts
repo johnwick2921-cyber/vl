@@ -374,6 +374,11 @@ export const status: GuideSection = {
       kind: 'p',
       text: "An in-app alert is raised on the trader's alert center. Plan-content alerts (a died plan, a fill, a level event) are raised only for a day-plan trader, because that is where they render. Ops alerts are different: a trader that is DOWN, or whose NT8 feed is down, raises its P0 alert even when the trader has no day plan — the alert center is the only surface a down trader has, so gating it on day_plan would hide exactly the failure the owner must see. A recurring down is not silently deduped: every down episode is its own alert row (the dedupe key carries the episode instant), so a trader that goes down twice shows two banners, not one.",
     },
+    { kind: 'h', text: 'Banners — what lights up red, and what does not' },
+    {
+      kind: 'p',
+      text: 'The red alert-center banner shows only an unacknowledged P0 raised in the current CME session-day (the day rolls at 17:00 CT). Older unacknowledged P0 rows collapse to a small "N older unacked" link that opens the feed, and the informational kinds "close" and "fill" never light the banner even if an old row says P0. Opening the page no longer re-toasts the existing backlog: the toast baseline is taken only after the first real alert response, and again when you switch trader. A thin line under the header says "CME CLOSED — reopens <day HH:MM CT>" when the market is closed, or "FEED DOWN <age>" when the market is open and the NT8 feed is stale; an older bot that does not report those two health fields shows no line at all — it never guesses.',
+    },
     { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
     {
       kind: 'p',

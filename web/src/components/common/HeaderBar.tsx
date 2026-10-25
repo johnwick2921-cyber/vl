@@ -5,6 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 import { Menu, X, ChevronDown, Settings } from 'lucide-react'
 import { UpdateBadge } from '../updates/UpdateBadge'
 import { t, type Language } from '../../i18n/translations'
+import { StatusBanner } from './StatusBanner'
 import { getCurrentPageForPath, ROUTES, type Page } from '../../router/paths'
 import { useFriendsPageEnabled } from '../../hooks/useFriendsPageEnabled'
 
@@ -320,6 +321,11 @@ export default function HeaderBar({
           )}
         </motion.button>
       </div>
+
+      {/* m420a/B6 — CME-closed / feed-down line. It sits in the <nav> itself,
+          so the one mount shows under the header on desktop AND mobile (the
+          mobile overlay below starts at top:64px, under this nav's z-50). */}
+      <StatusBanner language={language} />
 
       {/* Mobile Menu Overlay */}
       <AnimatePresence>

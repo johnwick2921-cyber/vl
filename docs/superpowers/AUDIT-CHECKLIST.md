@@ -9498,3 +9498,8 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** grep web/src for bare `fetch(` of `/api/` (must go through httpClient); grep `toLocaleString('zh-CN'` outside numeric-only formats; for every table column, compare what the sort/total uses against what the cell displays; check mobile (390px) for `flex` rows without `flex-wrap`.
 - **Rule:** the figure on screen, the figure sorted on and the figure totalled must be the same field; a derived figure carries its unit multiplier; a total names its scope; API calls carry auth via the shared client.
 - **Reference:** branch `fix/m421c-chart-ui`; pins in chartTime.test.ts, PictureHtfPanel.test.tsx, PositionHistory.unresolved.test.tsx, TraderDashboardPage.mobile.test.ts.
+## m420a (banners, web) — CLASS NN (assigned at merge) — a client "seed" taken on a loading placeholder
+- **Symptom:** every page load re-toasted the whole P0 backlog, and the red banner stayed lit from month-old rows (also informational "close"/"fill" kinds stored as P0).
+- **Probe:** any `seeded` / `seen` ref populated from a hook's `data ?? []` fallback; any "newest unacked" banner with no age or kind bound.
+- **Rule:** seed only once `data !== undefined`, reset the seed when the key (trader) changes, and bound a persistent banner by the current CME session-day (17:00 CT) and by kind.
+- **Reference:** `web/src/components/plan/AlertCenter.banners.test.tsx` (mutants: drop `if (!loaded) return`; revert the banner to `alerts.find(P0 && !acked)` — both RED).
