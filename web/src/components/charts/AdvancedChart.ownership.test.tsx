@@ -219,3 +219,27 @@ it('C9: a trader change removes the previous trader order lines', async () => {
   expect(state.removeLine).toHaveBeenCalled()
   rerender(<AdvancedChart symbol="MNQ" />) // no trader at all
 })
+
+// m421b: a stale loadData (after a TF switch) must never touch the chart.
+// Mutant: drop the `live` checks -> the stale 200 bars overwrite the 300 ones.
+it('a stale kline response after a TF switch is discarded', async () => {
+  vi.useFakeTimers()
+  let finishOld!: (value: unknown) => void
+  state.request.mockImplementation((url: string) =>
+    url.includes('interval=1m')
+      ? new Promise((resolve) => {
+          finishOld = resolve
+        })
+      : Promise.resolve(bars(300))
+  )
+  const { rerender } = render(<AdvancedChart symbol="MNQ" interval="1m" />)
+  rerender(<AdvancedChart symbol="MNQ" interval="5m" />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(10)
+  })
+  const calls = () => state.candles.mock.calls.length
+  const before = calls()
+  expect(before).toBeGreaterThan(0)
+  await act(async () => finishOld(bars(200)))
+  expect(calls()).toBe(before)
+})

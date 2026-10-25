@@ -133,6 +133,12 @@ type MentorLevelView struct {
 	Price       float64   `json:"price"`
 	DrawnAt     int64     `json:"drawn_at"` // AtTime ms
 	VisitsToday int       `json:"visits_today"`
+	// FormedMs / TF (m421b, additive) — box-edge levels only: the box's
+	// formation-bar open (ms) and its frame ("1m"/"2m"/...), so the chart can
+	// draw the box as a rectangle. No ended_ms: an escaped box is dropped
+	// from the set, so a listed box is always live.
+	FormedMs    int64     `json:"formed_ms,omitempty"`
+	TF          string    `json:"tf,omitempty"`
 	MergedFrom  []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
 }
 
@@ -202,7 +208,19 @@ func (at *AutoTrader) MentorTruthSnapshot(now time.Time) (MentorTruthPanel, bool
 			drawn = st.Levels
 		}
 		for _, lv := range mentor.DisplayLevels(drawn, ev.Cfg.KeyLevelPrunePts) {
+			boxTF := ""
+			if lv.FormedMs > 0 {
+				boxTF = lv.TF
+				if boxTF == "" {
+					boxTF = ev.Cfg.Box.TF
+				}
+				if boxTF == "" {
+					boxTF = "1m"
+				}
+			}
 			p.Levels = append(p.Levels, MentorLevelView{
+				FormedMs:    lv.FormedMs,
+				TF:          boxTF,
 				Key:         lv.Key,
 				Kind:        string(lv.Kind),
 				Price:       lv.Price,
