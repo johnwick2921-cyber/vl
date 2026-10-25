@@ -12,6 +12,9 @@ export interface ChartLineSpec {
   label: string
   color?: string
   style?: 0 | 1 | 2
+  /** m421b: false = draw the line + title but no right-axis label (a nearby
+   * line already carries the axis label; see dedupeAxisLabels). */
+  axisLabel?: boolean
 }
 
 /** One sloped segment (a trendline): points in chart time (UTC seconds). */
@@ -392,6 +395,7 @@ export function mentorChartLines(
 ): ChartLineSpec[] {
   if (!truth || !truth.enabled) return []
   const out: ChartLineSpec[] = []
+  const pairedEdges = pairedBoxEdgeKeys(truth)
   for (const l of truth.levels ?? []) {
     // m134/m325: ema9/ema34 are drawn as CURVES (mentorEMASeries), not flat
     // lines; ema34_htf (the EMA34 location line) is drawn as a short right-edge
@@ -407,9 +411,10 @@ export function mentorChartLines(
     const merged = (l.merged_from ?? []).filter((p) => p !== l.price)
     const also =
       merged.length > 0 ? ` · also ${merged.map(fmt).join(', ')}` : ''
+    if (pairedEdges.has(l.key)) continue // drawn as a rectangle (mentorBoxRects)
     out.push({
       price: l.price,
-      label: `mentor ${mentorKindLabel(l.kind, l.key)}${also}`,
+      label: `mentor ${mentorLevelLabel(l)}${also}`,
       color: MENTOR_COLOR,
       style: 2,
     })
@@ -473,9 +478,165 @@ export function mentorChartLines(
       })
   }
   const mark = mentorStaleMark(staleSinceMs)
+  return dedupeAxisLabels(
+    out
+      .filter((l) => l.price > 0)
+      .map((l) => (mark ? { ...l, label: l.label + mark } : l))
+  )
+}
+
+/** m421b: a level's chart label names its kind AND its price, so two key
+ * levels (an old high, a 1H open) are told apart instead of all reading
+ * "mentor key level". */
+export function mentorLevelLabel(l: {
+  kind: string
+  key: string
+  price: number
+}): string {
+  const base = mentorKindLabel(l.kind, l.key)
+  switch (l.kind) {
+    case 'key_level':
+      return `${base} ${fmt(l.price)}`
+    case 'old_extreme':
+      return `${base} ${fmt(l.price)}`
+    case 'trigger_retest':
+    case 'htf_trigger':
+    case 'wick_microscalp':
+      return `${base} ${fmt(l.price)}`
+    default:
+      return base
+  }
+}
+
+/** Price distance (points) under which two right-axis labels would overlap. */
+export const AXIS_LABEL_MIN_GAP = 4
+
+/**
+ * m421b: when several lines sit within `minGap` points of each other, keep
+ * every LINE but show ONE axis label per cluster: the first (by input order)
+ * keeps its label and absorbs the others' titles; the rest lose their axis
+ * label and title. Never drops a line.
+ */
+export function dedupeAxisLabels(
+  specs: ChartLineSpec[],
+  minGap = AXIS_LABEL_MIN_GAP
+): ChartLineSpec[] {
+  const order = specs
+    .map((s, i) => ({ s, i }))
+    .sort((a, b) => a.s.price - b.s.price || a.i - b.i)
+  const out: ChartLineSpec[] = specs.map((s) => ({ ...s }))
+  let k = 0
+  while (k < order.length) {
+    let j = k + 1
+    while (j < order.length && order[j].s.price - order[j - 1].s.price < minGap)
+      j++
+    if (j - k > 1) {
+      const cluster = order.slice(k, j).sort((a, b) => a.i - b.i)
+      const head = cluster[0].i
+      out[head].label = cluster.map((c) => c.s.label).join(' + ')
+      for (const c of cluster.slice(1)) {
+        out[c.i].axisLabel = false
+        out[c.i].label = ''
+      }
+    }
+    k = j
+  }
   return out
-    .filter((l) => l.price > 0)
-    .map((l) => (mark ? { ...l, label: l.label + mark } : l))
+}
+
+/** One FTGH/FTGL box as a filled rectangle (m421b). Times are UTC seconds of
+ * bars the chart actually drew. */
+export interface MentorBoxRect {
+  key: string
+  label: string
+  top: number
+  bottom: number
+  startTime: number
+  endTime: number
+  color: string
+  fill: string
+}
+
+type BoxLevel = NonNullable<MentorTruth['levels']>[number]
+
+function boxEdgePairs(
+  truth: MentorTruth | null | undefined
+): { base: string; top: BoxLevel; bottom: BoxLevel }[] {
+  if (!truth || !truth.enabled) return []
+  const tops = new Map<string, BoxLevel>()
+  const bottoms = new Map<string, BoxLevel>()
+  for (const l of truth.levels ?? []) {
+    if (!(l.price > 0)) continue
+    if (l.kind === 'ftgh_edge' && l.key.endsWith(':top'))
+      tops.set(l.key.slice(0, -4), l)
+    else if (l.kind === 'ftgl_edge' && l.key.endsWith(':bottom'))
+      bottoms.set(l.key.slice(0, -7), l)
+  }
+  const out: { base: string; top: BoxLevel; bottom: BoxLevel }[] = []
+  for (const [base, top] of tops) {
+    const bottom = bottoms.get(base)
+    if (bottom) out.push({ base, top, bottom })
+  }
+  return out
+}
+
+/** Keys of the box edges that mentorBoxRects draws as a rectangle (they are
+ * then NOT also drawn as horizontal lines). */
+export function pairedBoxEdgeKeys(
+  truth: MentorTruth | null | undefined
+): Set<string> {
+  const s = new Set<string>()
+  for (const p of boxEdgePairs(truth)) {
+    s.add(p.top.key)
+    s.add(p.bottom.key)
+  }
+  return s
+}
+
+/**
+ * m421b: each box = a rectangle from its formation to its end (or the last
+ * bar while it is live). Start = the level's formed_ms, else drawn_at (>0),
+ * else the first drawn bar; end = ended_ms, else the last drawn bar. Both are
+ * snapped onto drawn bars (barTimes ascending, UTC seconds). Nothing is
+ * drawn when there are no bars.
+ */
+export function mentorBoxRects(
+  truth: MentorTruth | null | undefined,
+  barTimes: number[],
+  staleSinceMs?: number
+): MentorBoxRect[] {
+  if (barTimes.length === 0) return []
+  const first = barTimes[0]
+  const last = barTimes[barTimes.length - 1]
+  const snap = (sec: number): number => {
+    let r = first
+    for (const t of barTimes) {
+      if (t <= sec) r = t
+      else break
+    }
+    return r
+  }
+  const mark = mentorStaleMark(staleSinceMs)
+  const out: MentorBoxRect[] = []
+  for (const { base, top, bottom } of boxEdgePairs(truth)) {
+    const startMs = top.formed_ms ?? (top.drawn_at > 0 ? top.drawn_at : 0)
+    const start = startMs > 0 ? snap(Math.floor(startMs / 1000)) : first
+    const end = top.ended_ms ? snap(Math.floor(top.ended_ms / 1000)) : last
+    if (end < start) continue
+    const kind = base.startsWith('ftgl') ? 'FTGL' : 'FTGH'
+    const tf = top.tf ? ` ${top.tf}` : ''
+    out.push({
+      key: base,
+      label: `mentor ${kind} box${tf} ${fmt(top.price)}-${fmt(bottom.price)}${mark}`,
+      top: top.price,
+      bottom: bottom.price,
+      startTime: start,
+      endTime: end,
+      color: MENTOR_COLOR,
+      fill: 'rgba(232, 163, 61, 0.14)',
+    })
+  }
+  return out
 }
 
 /**

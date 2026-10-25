@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 import {
   mentorStaleMark,
+  pairedBoxEdgeKeys,
   sameChartSymbol,
   type ChartLineSpec,
 } from './chartOverlays'
@@ -27,6 +28,8 @@ interface ChartTabsProps {
   mentorTrendlines?: MentorTruth['trendlines']
   /** m134 — the per-bar EMA 9/34 curve (points). */
   mentorEMASeries?: MentorTruth['ema_series']
+  /** m421b: the full truth, for the FTGH/FTGL box rectangles. */
+  mentorTruth?: MentorTruth | null
   /** UG-2 (release #24): the instrument the mentor overlays belong to
    * (/api/mentor/truth `symbol`). They are drawn ONLY on a tab showing it. */
   mentorSymbol?: string
@@ -151,6 +154,7 @@ export function ChartTabs({
   mentorLevels,
   mentorTrendlines,
   mentorEMASeries,
+  mentorTruth,
   mentorSymbol,
   mentorStaleSinceMs,
   mentorEMALocationPrice,
@@ -242,8 +246,13 @@ export function ChartTabs({
   // UG-2 (release #24): a mentor level is a price on ONE instrument. Draw the
   // overlays only on a tab showing that instrument — and SAY they are hidden
   // anywhere else (never a silent hide). No symbol named → not drawn.
+  // m421b: the EMA curve and the box rectangles count too (they are not in
+  // mentorLevels), so the EMA is not hidden when there are no levels/lines.
   const hasMentorOverlays =
-    (mentorLevels?.length ?? 0) > 0 || (mentorTrendlines?.length ?? 0) > 0
+    (mentorLevels?.length ?? 0) > 0 ||
+    (mentorTrendlines?.length ?? 0) > 0 ||
+    (mentorEMASeries?.length ?? 0) > 0 ||
+    pairedBoxEdgeKeys(mentorTruth).size > 0
   const mentorOnThisTab =
     hasMentorOverlays && sameChartSymbol(chartSymbol, mentorSymbol)
 
@@ -543,6 +552,7 @@ export function ChartTabs({
                   mentorOnThisTab ? mentorTrendlines : undefined
                 }
                 mentorEMASeries={mentorOnThisTab ? mentorEMASeries : undefined}
+                mentorTruth={mentorOnThisTab ? mentorTruth : undefined}
                 mentorStaleSinceMs={mentorStaleSinceMs}
                 mentorEMALocationPrice={
                   mentorOnThisTab ? mentorEMALocationPrice : undefined

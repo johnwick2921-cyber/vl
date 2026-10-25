@@ -838,8 +838,8 @@ func BoxEdgeLocations(boxes []Box) []Level {
 	var out []Level
 	for _, b := range boxes {
 		out = append(out,
-			Level{Key: b.Key + ":top", Kind: KindFTGHEdge, Price: b.Top},
-			Level{Key: b.Key + ":bottom", Kind: KindFTGLEdge, Price: b.Bottom},
+			Level{Key: b.Key + ":top", Kind: KindFTGHEdge, Price: b.Top, FormedMs: b.FormedAtMs, TF: b.TF},
+			Level{Key: b.Key + ":bottom", Kind: KindFTGLEdge, Price: b.Bottom, FormedMs: b.FormedAtMs, TF: b.TF},
 		)
 	}
 	return out

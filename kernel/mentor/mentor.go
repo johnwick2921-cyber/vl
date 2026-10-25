@@ -116,6 +116,14 @@ type Level struct {
 	// draws the trading old extremes one-for-one (DisplayLevels), so nothing
 	// fills it; it stays on the panel wire as an always-absent field.
 	MergedFrom []float64 `json:"merged_from,omitempty"`
+
+	// FormedMs / TF (m421b) are set on FTGH/FTGL box-edge locations only: the
+	// box's formation-bar open (Box.FormedAtMs) and the frame it was drawn on
+	// (Box.TF; "" = the base frame). Display-only — the chart draws the box
+	// as a rectangle from FormedMs. A box that escapes is dropped from the
+	// set, so no end time is ever known: the panel omits ended_ms.
+	FormedMs int64  `json:"formed_ms,omitempty"`
+	TF       string `json:"tf,omitempty"`
 }
 
 // Old-extreme roles (Level.Role).
