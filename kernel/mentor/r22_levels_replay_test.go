@@ -319,9 +319,10 @@ func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 	// a sloped trendline that the close-time read killed at 23:57 now stays alive
 	// and is the nearer target, so the one trigger-retest PHL of that day (31256)
 	// is refused by the target floor (phl_target_below_floor) instead of placed.
-	// The retest is still evaluated and either placed or floor-refused — never lost.
-	if total < 2 || atTrigger == 0 && e.State.Refusals["phl_target_below_floor"] == 0 {
-		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 2 and the trigger retest placed or floor-refused", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
+	// The retest is still evaluated — pinned EXACTLY (CTO, #50): no trigger-line
+	// placement and at least one floor refusal, so any later shift is seen.
+	if total < 2 || atTrigger != 0 || e.State.Refusals["phl_target_below_floor"] == 0 {
+		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 2, 0 at the trigger line, >= 1 floor-refused (m427 whole-life break)", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
 	}
 }
 
