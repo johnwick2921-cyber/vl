@@ -128,18 +128,18 @@ type MentorTriggerView struct {
 
 // MentorLevelView is one mentor key level in effect, with today's visits.
 type MentorLevelView struct {
-	Key         string    `json:"key"`
-	Kind        string    `json:"kind"`
-	Price       float64   `json:"price"`
-	DrawnAt     int64     `json:"drawn_at"` // AtTime ms
-	VisitsToday int       `json:"visits_today"`
+	Key         string  `json:"key"`
+	Kind        string  `json:"kind"`
+	Price       float64 `json:"price"`
+	DrawnAt     int64   `json:"drawn_at"` // AtTime ms
+	VisitsToday int     `json:"visits_today"`
 	// FormedMs / TF (m421b, additive) — box-edge levels only: the box's
 	// formation-bar open (ms) and its frame ("1m"/"2m"/...), so the chart can
 	// draw the box as a rectangle. No ended_ms: an escaped box is dropped
 	// from the set, so a listed box is always live.
-	FormedMs    int64     `json:"formed_ms,omitempty"`
-	TF          string    `json:"tf,omitempty"`
-	MergedFrom  []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
+	FormedMs   int64     `json:"formed_ms,omitempty"`
+	TF         string    `json:"tf,omitempty"`
+	MergedFrom []float64 `json:"merged_from,omitempty"` // always empty since r22 (DisplayLevels merges nothing); kept for wire compatibility
 }
 
 // MentorWindowView is the trading-window knob's live state.
