@@ -534,19 +534,28 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 		for _, id := range registryOnly {
 			registry[id] = true
 		}
-		liveSource := haveWire && wire.Connected
+		wireUp := haveWire && wire.Connected
 		var persisted []store.NTAccountLast
 		lastSeen := "never"
-		if !liveSource && st != nil && st.NTAccountsLast() != nil {
-			rows, err := st.NTAccountsLast().List()
-			if err != nil {
-				return false, "persisted account list read failed: " + err.Error()
+		persistedLoaded := false
+		loadPersisted := func() error {
+			if persistedLoaded {
+				return nil
 			}
-			persisted = rows
-			if ms, ok := st.NTAccountsLast().LatestReceivedAt(); ok {
-				lastSeen = store.LastSeenCT(ms)
+			persistedLoaded = true
+			if st != nil && st.NTAccountsLast() != nil {
+				rows, err := st.NTAccountsLast().List()
+				if err != nil {
+					return err
+				}
+				persisted = rows
+				if ms, ok := st.NTAccountsLast().LatestReceivedAt(); ok {
+					lastSeen = store.LastSeenCT(ms)
+				}
 			}
+			return nil
 		}
+		usedPersisted, usedEmpty := 0, 0
 		var bad []string
 		checked := 0
 		for _, id := range ids {
@@ -565,11 +574,29 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 				bad = append(bad, fmt.Sprintf("%s: bound to no account", id))
 				continue
 			}
-			if liveSource {
+			// m430 (owner 2026-10-25 09:14 CT, "Update must work in ANY
+			// scenario"): NT8 linked but its broker connection down sends an
+			// accounts_list frame with count=0. An EMPTY live list is "no
+			// evidence", not "not SIM" — it takes the persisted-census path
+			// exactly like the NT8-closed case (same fail-closed rules). A
+			// NON-empty live list stays authoritative: a bound account that
+			// is missing from it or non-SIM still FAILS.
+			emptyLive := wireUp && nt.LiveAccountCount() == 0
+			if wireUp && !emptyLive {
 				if !nt.IsAccountTradeable(name) {
 					bad = append(bad, fmt.Sprintf("%s: bound account %s is not SIM-tradeable (live)", id, name))
 				}
 				continue
+			}
+			if err := loadPersisted(); err != nil {
+				return false, "persisted account list read failed: " + err.Error()
+			}
+			why := "NT8 closed"
+			if emptyLive {
+				why = "NT8 linked but its account list is empty"
+				usedEmpty++
+			} else {
+				usedPersisted++
 			}
 			var acct *store.NTAccountLast
 			for i := range persisted {
@@ -579,7 +606,7 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 				}
 			}
 			if acct == nil {
-				bad = append(bad, fmt.Sprintf("%s: bound account %s — NT8 closed and no persisted account (last seen %s) — fail-closed", id, name, lastSeen))
+				bad = append(bad, fmt.Sprintf("%s: bound account %s — %s and no persisted account (last seen %s) — fail-closed", id, name, why, lastSeen))
 				continue
 			}
 			if !nt.AccountTradeableFromList([]ntwire.AccountInfo{{Name: acct.Name, IsSim: acct.IsSim}}, name) {
@@ -592,10 +619,13 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 		if checked == 0 {
 			return false, "no NT8 trader bound to an account — nothing to vouch for (fail-closed)"
 		}
-		if liveSource {
-			return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (live)", checked)
+		switch {
+		case usedEmpty > 0:
+			return true, fmt.Sprintf("%d bound account(s) SIM-tradeable — NT8 linked but its account list is empty, using the last census (persisted, last seen %s)", checked, lastSeen)
+		case usedPersisted > 0:
+			return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (persisted, last seen %s)", checked, lastSeen)
 		}
-		return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (persisted, last seen %s)", checked, lastSeen)
+		return true, fmt.Sprintf("%d bound account(s) SIM-tradeable (live)", checked)
 	}
 	leg("sim_accounts", "each bound trading account via IsAccountTradeable (live) or the last persisted accounts frame (F35) — the SIM-only order predicate, never weakened", simAccountsLeg)
 
