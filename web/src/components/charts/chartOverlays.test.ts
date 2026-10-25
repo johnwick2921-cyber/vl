@@ -9,6 +9,7 @@ import {
   mentorEMACurves,
   mentorEMATf,
   mentorBoxRects,
+  AXIS_LABEL_MIN_GAP,
   dedupeAxisLabels,
   mentorEMALocationSegment,
   mentorStaleMark,
@@ -884,5 +885,31 @@ describe('m421b C6: boxes as rectangles, distinct labels, de-stacked axis', () =
     expect(out[0].axisLabel).toBeUndefined()
     expect(out[1].axisLabel).toBe(false)
     expect(out[2]).toEqual({ price: 200, label: 'far' })
+  })
+
+  // m427/11 — the cluster edge. Two lines EXACTLY AXIS_LABEL_MIN_GAP (4) apart
+  // are NOT a cluster (the test is `< minGap`); 3.99 apart is.
+  it('lines exactly 4 pts apart keep their own axis labels; 3.99 apart merge', () => {
+    expect(AXIS_LABEL_MIN_GAP).toBe(4)
+    const exact = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 104, label: 'b' },
+    ])
+    expect(exact[0].label).toBe('a')
+    expect(exact[1].axisLabel).toBeUndefined()
+    expect(exact[1].label).toBe('b')
+    const inside = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 103.99, label: 'b' },
+    ])
+    expect(inside[0].label).toBe('a + b')
+    expect(inside[1].axisLabel).toBe(false)
+  })
+  it('lines 2 pts apart merge under the DEFAULT gap (not a 1-pt gap)', () => {
+    const out = dedupeAxisLabels([
+      { price: 100, label: 'a' },
+      { price: 102, label: 'b' },
+    ])
+    expect(out[1].axisLabel).toBe(false)
   })
 })
