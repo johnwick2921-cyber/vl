@@ -55,9 +55,11 @@ type CourseExitsCfg struct {
 	// 1m candle ("một cái nến nó bằng cái range của 2 cái level rồi thì ngồi
 	// im" [X4 @06:31]). No course ratio is spoken → 1.
 	KeypairCandleRatio float64
-	// BoxFreshRTHPair (CX-11, case b, default OFF): the FTGH/FTGL latch gets a
-	// FRESH pair at the 08:30 CT RTH open, built from RTH candles only (today:
-	// one pair per 17:00 CT session).
+	// BoxFreshRTHPair (CX-11 case b; m429 default ON, owner ruling 2026-10-25
+	// "if there is a new box use it, if not use the old box"): a fresh
+	// FTGH/FTGL that forms in RTH (after 08:30 CT, built from RTH candles only)
+	// REPLACES the evening box of THAT role; a role with no fresh RTH box keeps
+	// its evening box. OFF: one box per role per 17:00 CT session.
 	BoxFreshRTHPair bool
 	// BoxMaxHeightPts (CX-11, case b, default 0 = off): a built box taller than
 	// this is not a box (never latched, never a location/ban). The course
@@ -69,6 +71,7 @@ type CourseExitsCfg struct {
 func DefaultCourseExitsCfg() CourseExitsCfg {
 	return CourseExitsCfg{
 		SwingEMA34IsFirstTarget: true,
+		BoxFreshRTHPair:         true, // m429 R4: owner ruling 2026-10-25
 		ReverseISBAsPHL:         true, // course-defaults-30 [D5.4 @03:52–03:56, @07:33]
 		EMA9VisitCap:            EMA9VisitShared,
 		KeypairCandleRatio:      1,
@@ -201,15 +204,38 @@ func boxRTHWindow(now int64, cfg Config) bool {
 	return m >= 8*60+30 && m < 17*60
 }
 
-// boxLatchDayKey (CX-11) is the latch key: the trading day, plus "|rth" while
-// the fresh-RTH-pair knob is in force — so the latch clears ONCE at 08:30 CT
-// and the RTH pair is drawn fresh.
+// boxLatchDayKey is the latch key: the trading day. m429: the old "|rth"
+// suffix is gone — the latch no longer clears at 08:30; the fresh RTH box
+// replaces the evening box PER ROLE (freshRTHReplaces), so a role with no
+// fresh box keeps its evening box, and a restart inside RTH keeps the seeded
+// latch (the seed stored the plain day key, the tick compared "...|rth").
 func boxLatchDayKey(now int64, cfg Config) string {
-	k := tradingDayKey(time.UnixMilli(now).In(ctime()))
-	if boxRTHWindow(now, cfg) {
-		k += "|rth"
+	return tradingDayKey(time.UnixMilli(now).In(ctime()))
+}
+
+// freshRTHReplaces (m429 R4) reports whether nb (a box built from the RTH
+// slice) replaces old (the role's latched box): the knob is ON, nb formed in
+// RTH (08:30 <= t < 17:00 CT) and old formed before that day's 08:30 open. An
+// RTH-formed latched box is never replaced (the first RTH box stands).
+func (e *Evaluator) freshRTHReplaces(old, nb Box) bool {
+	if !boxRTHWindow(nb.FormedAtMs, e.Cfg) {
+		return false
 	}
-	return k
+	return old.FormedAtMs < rthOpenMs(nb.FormedAtMs)
+}
+
+// dropPreRTHPost retires the same-role post-escape boxes that formed before
+// the RTH open nb formed after: they belonged to the evening box nb replaced.
+func dropPreRTHPost(post []Box, nb Box) []Box {
+	open := rthOpenMs(nb.FormedAtMs)
+	out := post[:0:0]
+	for _, p := range post {
+		if p.Kind == nb.Kind && p.FormedAtMs < open {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
 }
 
 // boxBuildBars (CX-11) is the bar slice the boxes are built from: every bar

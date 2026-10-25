@@ -119,7 +119,7 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
 		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
-		BoxFreshRTHPair:       rc != nil && mentorBoolKnob(rc.MentorBoxFreshRTHPair, false),
+		BoxFreshRTHPair:       rc == nil || mentorBoolKnob(rc.MentorBoxFreshRTHPair, true),
 	}
 	if rc != nil {
 		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")

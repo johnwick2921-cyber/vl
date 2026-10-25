@@ -1808,7 +1808,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// and redrew both boxes on a higher high / lower low.
 	if boxDay := boxLatchDayKey(now, e.Cfg); e.State.LatchedBoxesDay != boxDay {
 		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
-			e.note("box latch cleared at the 17:00 CT session roll (or the 08:30 CT fresh RTH pair, mentor_box_fresh_rth_pair): trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
 		}
 		e.State.LatchedBoxes = nil
 		e.State.PostEscapeBoxes = nil // B52: the new-zone boxes die with the day too

@@ -409,7 +409,7 @@ export const mentor: GuideSection = {
         [
           'Box edge',
           'FTGH/FTGL boxes, drawn on the frame the bot TRADES — 1m regular candles from the 08:30 CT open to 09:00, closed 2m candles from 09:00 on while exec_2m_after_30m is ON (all-1m while it is OFF) [D4.1 p1 @22:57–23:21: "you trade the 2-minute, you draw the 2-minute"]; a box keeps the frame it was drawn on. A box entry trails, breaks even and runs the X8 exit on the frame the box was DRAWN on (m417). Paired by role with no tolerance — the extreme (lowest low / highest high) pairs with the NEXT confirmed swing AFTER it that fails to exceed it (a higher low / lower high); the trade is the 3rd touch',
-          'A box edge is used again and again; an escape (a 1m BODY closes outside — always the 1m, also for a 2m-drawn box) does NOT kill the box — it stays and every later return trades [B4] until a newer box of the same role forms: one floor and one ceiling are live at a time [D3.2 p2 @09:14]. The first FTGH and the first FTGL of the trading day are latched until the 17:00 CT session roll — never redrawn at the 08:30 open or on a later higher high / lower low [D4.1 p2 @02:39, @02:58]; the log says "box latched …" and "box latch cleared at the 17:00 CT session roll". A restart REPLAYS the latch from the 17:00 roll minute by minute, so it lands on the boxes the running bot drew (boot line "mentor seed: box latch replayed from the 17:00 CT roll … FTGH … · FTGL …") and judges only the returns that come AFTER the restart — the old ones are history. A latched box stands on EVERY tick, also when that minute\u2019s fresh scan would not draw its role (release #23: it used to vanish on those ticks — 50 on 10-14)',
+          'A box edge is used again and again; an escape (a 1m BODY closes outside — always the 1m, also for a 2m-drawn box) does NOT kill the box — it stays and every later return trades [B4] until a newer box of the same role forms: one floor and one ceiling are live at a time [D3.2 p2 @09:14]. The first FTGH and the first FTGL of the trading day are latched until the 17:00 CT session roll — never redrawn on a later higher high / lower low; the one exception (owner 2026-10-25, m429): a fresh box that forms in RTH (after 08:30 CT) REPLACES the evening box of the same role, and a role with no fresh RTH box keeps its evening box [D4.1 p2 @02:39, @02:58]; the log says "box latched …" and "box latch cleared at the 17:00 CT session roll". A restart REPLAYS the latch from the 17:00 roll minute by minute, so it lands on the boxes the running bot drew (boot line "mentor seed: box latch replayed from the 17:00 CT roll … FTGH … · FTGL …") and judges only the returns that come AFTER the restart — the old ones are history. A latched box stands on EVERY tick, also when that minute\u2019s fresh scan would not draw its role (release #23: it used to vanish on those ticks — 50 on 10-14)',
         ],
         [
           'Trendline',
@@ -1939,16 +1939,17 @@ export const mentor: GuideSection = {
           label: 'Fresh RTH box pair',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'ON: at 08:30 CT the FTGH/FTGL latch clears once and the RTH pair is drawn from RTH candles only (until 17:00 CT). OFF (default): one pair per 17:00 CT session — an overnight box stands through RTH.',
+          what: 'ON (default, owner ruling 2026-10-25 "if there is a new box use it, if not use the old box"): a fresh FTGH/FTGL that forms in RTH (after 08:30 CT, built from RTH candles only) REPLACES the evening (17:00+) box of THAT role; a role with no fresh RTH box keeps its evening box, and a box formed in RTH stands to the session roll. OFF: one box per role per 17:00 CT session — an overnight box stands through RTH.',
           trader:
             'Not stated in the course (no fresh pair at the open). The course does state a NEW zone after price leaves the range and builds a new FTGL (“khi nào nó rớt xuống đây nó bật ngược lên nó tạo cái failure to go lower dưới này … thì anh chị mới có được cái range” [D3.4 p3 @00:00–00:21]) — that rule is NOT built in #25 — and “để nguyên đó tới cuối ngày” for a drawn box [D4.1 p2 @02:57–03:08]. Case (b), OFF.',
           consumer:
-            'kernel/mentor/course_exits.go boxLatchDayKey / boxBuildBars ← kernel/mentor/eval.go (box build + latch)',
+            'kernel/mentor/course_exits.go boxBuildBars / freshRTHReplaces ← kernel/mentor/box.go latchBoxes + seed.go seedBoxLatch',
           range: 'ON / OFF',
-          systemDefault: 'OFF',
+          systemDefault: 'ON',
           recommended:
-            'OFF — Owner setting: open decision (MENTOR-SETUPS §4.1); not from the course (case b).',
-          whenToTouch: 'When overnight boxes keep starving the RTH session.',
+            'ON — Owner ruling 2026-10-25 (m429): new box if one forms, otherwise the old one.',
+          whenToTouch:
+            'Switch OFF only to get one box per role per 17:00 CT session again.',
           perSession: 'No — per strategy.',
         },
         {

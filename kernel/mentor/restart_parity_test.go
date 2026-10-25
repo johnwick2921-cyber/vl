@@ -71,11 +71,18 @@ func loadLinesRestartFixture(t *testing.T) map[string][]market.Kline {
 // DefaultConfig + Enabled + RealFillOnly, with the 10-13/10-14 historical pin
 // (news_bars_excluded OFF — the live bot on those days ran the item-18
 // print-window drop, not the release #29 freeze; release #25 CE-4 did not exist).
+// lrFreshRTHOff pins the pre-m429 "evening box stands through RTH" world for
+// the tests whose oracle is that latch (the m429 default replaces it per role).
+var lrFreshRTHOff bool
+
 func lrProdCfg() Config {
 	c := DefaultConfig()
 	c.Enabled = true
 	c.RealFillOnly = true
 	c.NewsBarsExcluded = false // historical 10-13/10-14 pin (pre-#25 CE-4)
+	if lrFreshRTHOff {
+		c.CourseExits.BoxFreshRTHPair = false // m429: the latch-mechanics pins predate the fresh-RTH default
+	}
 	return c
 }
 
@@ -216,6 +223,8 @@ func containsStr(s, sub string) bool {
 // clears only at the 17:00 CT session roll. Production call site: Tick on the
 // real 10-12/10-13 bars. Mutant: key the latch on e.State.Day.Key again → RED.
 func TestBoxLatchHoldsThroughRTHOpenUntil1700(t *testing.T) {
+	lrFreshRTHOff = true
+	defer func() { lrFreshRTHOff = false }()
 	bars := loadLinesRestartFixture(t)["B"]
 	open := time.Date(2026, time.October, 12, 17, 0, 0, 0, ctime()).UnixMilli()
 	rth := time.Date(2026, time.October, 13, 8, 30, 0, 0, ctime()).UnixMilli()

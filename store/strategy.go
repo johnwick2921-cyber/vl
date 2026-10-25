@@ -2247,7 +2247,7 @@ type RiskControlConfig struct {
 	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
 	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
-	//   CX-11 MentorBoxFreshRTHPair — nil → OFF; MentorBoxMaxHeightPts — 0 → off.
+	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
 	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
 	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
