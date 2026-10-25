@@ -721,6 +721,7 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		if isISBEntryIntent(in) {
 			if open := at.mentorOpenSideSource(); open != "" && strings.EqualFold(open, string(in.Side)) {
 				at.mentorArmResonanceOnISB(string(in.Side))
+				at.mentorGateBlock("mentor_resonance_hold")
 				return
 			}
 		}
