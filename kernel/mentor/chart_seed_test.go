@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"vl/market"
 )
 
 // m422 (C5) pins. Production call sites: Evaluator.Tick (what the seed must
@@ -141,5 +143,53 @@ func TestChartDisplayFieldsAreReadOnlyByDisplayCode(t *testing.T) {
 	}
 	if len(bad) > 0 {
 		t.Fatalf("display-only fields read outside the allow-list (they must never feed trading):\n%s", strings.Join(bad, "\n"))
+	}
+}
+
+// m427/10 — the latch-day gate in SeedChartDisplay. A latched-box set belongs to
+// the trading day (and RTH/ETH window) it was latched in; a boot after the 17:00
+// roll must not draw YESTERDAY's boxes. Control: a latch stamped with today's key
+// draws both edges; the same boxes stamped with the prior session-day key draw none.
+// Mutant: `LatchedBoxesDay == boxLatchDayKey(now, e.Cfg)` -> `!=` -> RED.
+func TestM427SeedChartDisplayLatchDayGate(t *testing.T) {
+	bars := []market.Kline{
+		rthBars(0, 100, 101, 99, 100.5),
+		rthBars(1, 100.5, 101.5, 99.5, 100),
+		rthBars(2, 100, 101, 99.5, 100.2),
+	}
+	now := BarCloseInstant(bars[len(bars)-1])
+	build := func(dayKey string) *Evaluator {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		e := New(cfg)
+		e.State.LatchedBoxes = map[string]Box{"ftgh": {Key: "box:test", Top: 150, Bottom: 140}}
+		e.State.LatchedBoxesDay = dayKey
+		e.SeedChartDisplay(bars, now)
+		return e
+	}
+	edges := func(e *Evaluator) int {
+		n := 0
+		for _, l := range e.State.ChartLevels {
+			if l.Key == "box:test:top" || l.Key == "box:test:bottom" {
+				n++
+			}
+		}
+		return n
+	}
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	today := boxLatchDayKey(now, cfg)
+	if n := edges(build(today)); n != 2 {
+		t.Fatalf("control: a same-day latch must draw both box edges, got %d", n)
+	}
+	prior := tradingDayKey(time.UnixMilli(now).In(ctime()).AddDate(0, 0, -1))
+	if prior == today {
+		t.Fatal("fixture: the prior-day key must differ from today's")
+	}
+	if n := edges(build(prior)); n != 0 {
+		t.Fatalf("a latch stamped with the PRIOR session-day key must draw no box edges, got %d", n)
+	}
+	if n := edges(build("")); n != 0 {
+		t.Fatalf("an unstamped latch must draw no box edges, got %d", n)
 	}
 }
