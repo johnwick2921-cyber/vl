@@ -234,3 +234,23 @@ func TestM425aRefusedEMA34BooksNoLoss(t *testing.T) {
 		t.Fatalf("phantom EmaBlocked booked from a refused (never-placed) EMA34 intent")
 	}
 }
+
+// m426 (review of m425a S2): the refusal binds to ONE touch (its reference bar).
+// A refusal recorded for an EARLIER touch A of the same level key must not
+// silence the current touch B — B emits normally. Mutant: `ref == tr.RefBar.CloseTime`
+// -> `ref != 0` in the touch loop (any refusal silences the level forever) -> FAIL.
+func TestM426NewTouchAfterRefusalStillEmits(t *testing.T) {
+	e, bars, in := m425aLevelFixture(t, KindKeyLevel, "L")
+	e.DropArm(in.ArmID)
+	// pretend touch A (an older reference bar) was the refused one
+	for k, ref := range e.State.RefusedLevelTouch {
+		e.State.RefusedLevelTouch[k] = ref - 60_000
+	}
+	if len(e.State.RefusedLevelTouch) == 0 {
+		t.Fatal("precondition: DropArm recorded no refusal")
+	}
+	e.State.ISBBox, e.State.ISBBox15m, e.State.ISBBox30m = nil, nil, nil
+	if got := m425aPHLCount(e.Tick(bars, bars[len(bars)-1].CloseTime+1)); got == 0 {
+		t.Fatal("a refusal of an earlier touch silenced a NEW touch of the same level")
+	}
+}

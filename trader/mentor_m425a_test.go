@@ -115,3 +115,26 @@ func m425aGateBlocks(traderID, gate string) int {
 	_, tbl := telemetry.GateBlockSnapshot()
 	return tbl[traderID][gate]
 }
+
+// m426 (review of m425a S3): authoring and the armed pass agree in BOTH plan
+// states. The armed pass cancels "session ended (EOD flat)" only when no AI day
+// plan is active, so in the 14:45-17:00 gap an arm is refused with no plan and
+// authored with one. Mutant: drop the ActivePlanFor early return -> the plan
+// state is refused too -> FAIL.
+func TestM426EODFlatAuthoringMirrorsArmedPassPlanCondition(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: -1})
+	now := time.Date(2026, 10, 23, 15, 30, 0, 0, kernel.CTLocation())
+	in := mentor.Intent{Setup: "ISB"}
+	t.Cleanup(func() { kernel.SetTraderPlanProviders(at.id, kernel.TraderPlanProviders{}) })
+
+	kernel.SetTraderPlanProviders(at.id, kernel.TraderPlanProviders{ActivePlan: func(string) *kernel.ActivePlan { return nil }})
+	if refuse, _ := at.mentorEODFlatAuthorRefusal(in, now); !refuse {
+		t.Fatal("no active plan + session ended: the armed pass cancels, so authoring must refuse")
+	}
+	kernel.SetTraderPlanProviders(at.id, kernel.TraderPlanProviders{ActivePlan: func(string) *kernel.ActivePlan {
+		return &kernel.ActivePlan{Session: "NY"}
+	}})
+	if refuse, why := at.mentorEODFlatAuthorRefusal(in, now); refuse {
+		t.Fatalf("active plan: the armed pass keeps the arm, so authoring must not refuse: %s", why)
+	}
+}

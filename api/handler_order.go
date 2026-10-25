@@ -332,6 +332,11 @@ func (s *Server) handlePositionHistory(c *gin.Context) {
 type positionHistoryRow struct {
 	*storepkg.TraderPosition
 	PnlStatus string `json:"pnl_status"` // "resolved" | "unresolved"
+	// m426 (E3 reader): these shadow the embedded row's fields in the JSON so a
+	// legacy second-valued row (ids 691-697) reaches the UI in milliseconds via
+	// store.PositionEpochMs instead of rendering as 1970.
+	UpdatedAt int64 `json:"updated_at"`
+	CreatedAt int64 `json:"created_at"`
 }
 
 // annotatePositionHistory stamps every row with its corrected-column status and
@@ -350,7 +355,12 @@ func annotatePositionHistory(positions []*storepkg.TraderPosition) ([]positionHi
 			// the UI shows the realized partial P&L, not a blank.
 			status = "partial"
 		}
-		rows = append(rows, positionHistoryRow{TraderPosition: p, PnlStatus: status})
+		row := positionHistoryRow{TraderPosition: p, PnlStatus: status}
+		if p != nil {
+			row.UpdatedAt = p.UpdatedAtMs()
+			row.CreatedAt = storepkg.PositionEpochMs(p.CreatedAt)
+		}
+		rows = append(rows, row)
 	}
 	return rows, unresolved
 }

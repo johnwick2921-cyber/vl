@@ -591,6 +591,13 @@ func (at *AutoTrader) mentorEODFlatAuthorRefusal(in mentor.Intent, now time.Time
 	if why, due := at.forceFlatWindowAt(now, nil); due {
 		return true, why
 	}
+	// m426: mirror the armed pass EXACTLY — it cancels "session ended (EOD
+	// flat)" only when there is NO active AI day plan (plan == nil && !sessOK,
+	// armed_executor.go). With a plan active the arm would survive there, so
+	// authoring must not refuse on this clause either.
+	if kernel.ActivePlanFor(at.id, at.futuresSymbol()) != nil {
+		return false, ""
+	}
 	if _, active := at.sessionRegistry(now).ActiveSession(now); !active {
 		return true, "session ended (EOD flat) — the armed pass cancels an intraday mentor arm the moment the session is over"
 	}
