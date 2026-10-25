@@ -1975,6 +1975,11 @@ func (at *AutoTrader) mentorSeedAtStart() {
 			mentor.SeedTrendlines(at.mentorEval, bars1m, now) // B3
 		})
 	}
+	// m422 (C5): paint the chart's overlays from the last close so a restart on
+	// a closed market is not blank until the next bar. Display only; reads the
+	// CURRENT-CONTRACT tick window (the ~1500 closed 1m bars Tick reads), never
+	// the stitched back-adjusted series above.
+	at.mentorSeedChartDisplay(bars1m)
 	// The evaluator's own depth (computed from the stitched series) is the
 	// single source of truth for the per-source refusal seam.
 	depths := at.mentorEval.Depths()
@@ -2380,4 +2385,24 @@ func MentorLatencyBootLine() string {
 		return "🧑‍🏫 mentor eval latency (close→ack): n=0 p50=n/a p95=n/a (target <1s, WARN >3s)"
 	}
 	return fmt.Sprintf("🧑‍🏫 mentor eval latency (close→ack): n=%d p50=%dms p95=%dms (target <1s, WARN >3s)", n, p50, p95)
+}
+
+// mentorSeedChartDisplay (m422, C5) runs mentor.SeedChartDisplay over the tick
+// window: the live provider's closed bars when it has them, else the tail of
+// the store's current-contract 1m read (the same contract Tick reads).
+func (at *AutoTrader) mentorSeedChartDisplay(storeBars1m []market.Kline) {
+	var win []market.Kline
+	if market.FuturesBarsProvider != nil {
+		win = mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
+	}
+	if len(win) == 0 {
+		win = storeBars1m
+		if n := len(win); n > mentorBars1mDepth {
+			win = win[n-mentorBars1mDepth:]
+		}
+	}
+	if len(win) < 2 {
+		return
+	}
+	at.mentorEval.SeedChartDisplay(win, mentor.BarCloseInstant(win[len(win)-1]))
 }
