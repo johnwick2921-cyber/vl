@@ -144,8 +144,9 @@ func TestM425aRefusedPHLNotReEmitted(t *testing.T) {
 	// the next minutes: price stays near the level, the touch (RefBar) is unchanged.
 	cur := bars
 	for i := 4; i <= 6; i++ {
-		b := rthBars(i, 29392, 29396, 29388, 29394)
+		b := rthBars(i, 29386, 29392, 29380, 29390)
 		cur = append(append([]market.Kline{}, cur...), b)
+		e.State.ISBBox, e.State.ISBBox15m, e.State.ISBBox30m = nil, nil, nil // isolate the re-emit gate from the 5m box ban
 		if got := m425aPHLCount(e.Tick(cur, b.CloseTime+1)); got != 0 {
 			t.Fatalf("minute %d: the refused PHL touch was re-emitted (%d) — a trader-side refusal must end the touch", i, got)
 		}
