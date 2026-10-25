@@ -99,6 +99,9 @@ interface IndicatorConfig {
 }
 
 // Get quote currency unit
+// C14 (m421a): closed-trade history refresh cadence for the chart markers.
+const POSITION_HISTORY_REFRESH_MS = 30_000
+
 const getQuoteUnit = (exchange: string): string => {
   if (['alpaca'].includes(exchange)) {
     return 'USD'
@@ -531,16 +534,48 @@ export function AdvancedChart({
   // row → an entry marker (long=BUY/green "B", short=SELL/red "S") and, when closed,
   // an exit marker (the opposite side). Same OrderMarker shape, so the existing
   // marker-draw + B/S toggle are unchanged.
+  const historyCacheRef = useRef<{
+    traderID: string
+    openCount: number
+    at: number
+    data: any
+  } | null>(null)
   const fetchPositionMarkers = async (
     traderID: string,
     symbol: string
   ): Promise<TradeMarkerInput[] | null> => {
     try {
-      // Closed (and closed-with-partial) rows carry both the entry and the exit.
-      const history = await httpClient.request(
-        `/api/positions/history?trader_id=${traderID}&limit=200`,
+      // C14 (m421a): the closed-trade history is ~35KB and only changes when a
+      // trade opens/closes, so it is re-fetched at most every 30s — or at once
+      // when the trader changes or the OPEN-position count changes (a new
+      // trade). The small open-positions read still runs every tick.
+      const open = await httpClient.request(
+        `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
         { silent: true }
       )
+      const openRows = Array.isArray(open?.data) ? open.data : []
+      const cache = historyCacheRef.current
+      let historyData = cache?.data
+      if (
+        !cache ||
+        cache.traderID !== traderID ||
+        cache.openCount !== openRows.length ||
+        Date.now() - cache.at >= POSITION_HISTORY_REFRESH_MS
+      ) {
+        // Closed (and closed-with-partial) rows carry both the entry and the exit.
+        const history = await httpClient.request(
+          `/api/positions/history?trader_id=${traderID}&limit=200`,
+          { silent: true }
+        )
+        historyData = history
+        historyCacheRef.current = {
+          traderID,
+          openCount: openRows.length,
+          at: Date.now(),
+          data: history,
+        }
+      }
+      const history = historyData
       const closedRows = Array.isArray(
         history?.data?.positions || history?.data
       )
@@ -597,11 +632,6 @@ export function AdvancedChart({
 
       // F2: an OPEN position has no history row, so its entry marker comes from
       // /api/positions (the same response the bracket lines already consume).
-      const open = await httpClient.request(
-        `/api/positions?trader_id=${encodeURIComponent(traderID)}`,
-        { silent: true }
-      )
-      const openRows = Array.isArray(open?.data) ? open.data : []
       openRows.forEach((p: any) => {
         const status = (p.status || p.Status || '').toUpperCase()
         if (status === 'CLOSED') return

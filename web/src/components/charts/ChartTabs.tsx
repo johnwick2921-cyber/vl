@@ -41,6 +41,7 @@ interface ChartTabsProps {
 type ChartTab = 'equity' | 'kline'
 type Interval =
   | '1m'
+  | '2m'
   | '3m'
   | '5m'
   | '15m'
@@ -113,6 +114,7 @@ const INTERVALS: { value: Interval; label: string }[] = [
 // Every button maps to a subscribed BarCache series. Crypto INTERVALS untouched.
 const NINJATRADER_INTERVALS: { value: Interval; label: string }[] = [
   { value: '1m', label: '1m' },
+  { value: '2m', label: '2m' },
   { value: '3m', label: '3m' },
   { value: '5m', label: '5m' },
   { value: '15m', label: '15m' },
