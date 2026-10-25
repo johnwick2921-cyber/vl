@@ -1,4 +1,4 @@
-import { act, render, screen } from '@testing-library/react'
+import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { AdvancedChart } from './AdvancedChart'
 const state = vi.hoisted(() => ({
@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   attach: vi.fn(),
   request: vi.fn(),
   remove: vi.fn(),
+  volume: vi.fn(),
 }))
 vi.mock('../../contexts/LanguageContext', () => ({
   useLanguage: () => ({ language: 'en' }),
@@ -27,7 +28,12 @@ vi.mock('lightweight-charts', () => ({
   createSeriesMarkers: () => ({ setMarkers: vi.fn() }),
   createChart: () => ({
     addSeries: (kind: string) => ({
-      setData: kind === 'candles' ? state.candles : vi.fn(),
+      setData:
+        kind === 'candles'
+          ? state.candles
+          : kind === 'volume'
+            ? state.volume
+            : vi.fn(),
       priceScale: () => ({ applyOptions: vi.fn() }),
       attachPrimitive: state.attach,
       detachPrimitive: vi.fn(),
@@ -61,6 +67,7 @@ beforeEach(() => {
   state.attach.mockReset()
   state.request.mockReset()
   state.remove.mockReset()
+  state.volume.mockReset()
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -169,4 +176,46 @@ it('discards a pending order result after changing the selected account', async 
   )
   expect(state.line).not.toHaveBeenCalled()
   expect(screen.getByRole('status').textContent).toContain('awaiting snapshot')
+})
+
+// m421b C7: the Volume toggle used to read a stale `indicators` closure.
+// Mutant: read `indicators` again in applyVolume -> the toggle-off never clears.
+it('C7: unchecking Volume clears the volume series (toggle is live)', async () => {
+  vi.useFakeTimers()
+  state.request.mockImplementation(() => Promise.resolve(bars(200)))
+  render(<AdvancedChart symbol="MNQ" traderID="trader" />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  expect(state.volume.mock.calls.at(-1)?.[0]).toHaveLength(1) // drawn
+  fireEvent.click(screen.getByText('Indicators'))
+  fireEvent.click(screen.getAllByRole('checkbox')[0]) // Volume row
+  expect(state.volume.mock.calls.at(-1)?.[0]).toEqual([])
+  fireEvent.click(screen.getAllByRole('checkbox')[0])
+  expect(state.volume.mock.calls.at(-1)?.[0]).toHaveLength(1)
+})
+
+// m421b C9: trader A's order/bracket lines must not linger on trader B.
+it('C9: a trader change removes the previous trader order lines', async () => {
+  vi.useFakeTimers()
+  state.request.mockImplementation((url: string) =>
+    Promise.resolve(
+      url.includes('/open-orders?')
+        ? {
+            success: true,
+            data: [{ type: 'LIMIT', price: 200, stop_price: 190, quantity: 1 }],
+          }
+        : bars(200)
+    )
+  )
+  const { rerender } = render(<AdvancedChart symbol="MNQ" traderID="A" />)
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(1000)
+  })
+  expect(state.line).toHaveBeenCalled()
+  state.removeLine.mockClear()
+  state.request.mockImplementation(() => new Promise(() => {}))
+  rerender(<AdvancedChart symbol="MNQ" traderID="B" />)
+  expect(state.removeLine).toHaveBeenCalled()
+  rerender(<AdvancedChart symbol="MNQ" />) // no trader at all
 })

@@ -34,6 +34,12 @@ export interface MentorTruth {
     drawn_at: number
     visits_today: number
     merged_from?: number[]
+    /** m421b, additive: box edges (ftgh_edge/ftgl_edge) may carry the box's
+     * formation / end time (ms) and frame; absent today = the chart falls
+     * back to drawn_at, then the first drawn bar. */
+    formed_ms?: number
+    ended_ms?: number
+    tf?: string
   }[]
   /** ABSENT (undefined) while the evaluator has not built yet. */
   depth?: Record<string, number>

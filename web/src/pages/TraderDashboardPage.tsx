@@ -803,6 +803,7 @@ export function TraderDashboardPage({
               )}
               mentorLevels={mentorLevels}
               mentorTrendlines={mentorTrendlines}
+              mentorTruth={mentor}
               mentorEMASeries={mentorEMASeries}
               mentorSymbol={mentor?.symbol}
               mentorStaleSinceMs={mentorStaleSinceMs}
