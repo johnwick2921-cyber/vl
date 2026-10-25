@@ -99,6 +99,14 @@ func (at *AutoTrader) ninjaLinkEpoch() (uint64, bool) {
 	return rec.AcceptSeq, true
 }
 
+// deadManEntriesBlockedNow is the ADMISSION-time dead-man read: the cached
+// watchdog state plus a live sample of the NT8 link and connection epoch (S5).
+func (at *AutoTrader) deadManEntriesBlockedNow() bool {
+	connected, ok := at.ninjaLinkConnected()
+	epoch, epochKnown := at.ninjaLinkEpoch()
+	return at.deadMan.entriesBlockedLive(connected, ok, epoch, epochKnown)
+}
+
 // driveDeadManWatchdog (B5) advances the dead-man watchdog once per cycle from the
 // NT8 TCP link. A dropped link blocks NEW entries (open-position management/exits
 // are never gated); on reconnect it sweeps any unfilled entries and holds entries
