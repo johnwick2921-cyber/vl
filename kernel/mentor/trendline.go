@@ -91,9 +91,13 @@ func (t Trendline) touch(c market.Kline) bool {
 
 // brokenBy5m reports a CLOSED 5m candle WHOLLY beyond the line — body AND
 // wicks: the whole candle below a support line, the whole candle above a
-// resistance line, judged against the line's value at that candle's CLOSE time
-// (the instant the candle is judged; a line is never read five minutes early). Owner
-// ruling 2026-10-25: "Đóng trên rồi đóng dưới, đóng dưới NGUYÊN CÂY luôn…
+// resistance line, judged over the candle's WHOLE LIFE (m427): the line is read at
+// the candle's open time AND its close time, and the candle must be beyond BOTH —
+// a support line is broken only when High < min(line@open, line@close), a
+// resistance line only when Low > max(line@open, line@close). On a sloped line a
+// candle that traded on the line's own side earlier in its five minutes is NOT
+// wholly beyond it (a rising support 100 -> 105 with High 104 is not broken).
+// Owner ruling 2026-10-25: "Đóng trên rồi đóng dưới, đóng dưới NGUYÊN CÂY luôn…
 // Không đợi khung 15 phút, đợi khung 5 phút thôi" [X9 @06:28–06:45]. A close
 // beyond the line with a wick still back at it is NOT a break (the pre-m423
 // close-only test, which the 10-14 fold kept over this reading, is replaced).
@@ -103,11 +107,15 @@ func (t Trendline) brokenBy5m(b market.Kline) bool {
 	if t.TFMin != 0 {
 		return t.brokenByClose(b)
 	}
-	p := t.priceAt(b.CloseTime)
-	if t.Side == SideLong {
-		return b.High < p
+	pc := t.priceAt(b.CloseTime)
+	po := t.priceAt(b.OpenTime)
+	if b.CloseTime <= b.OpenTime {
+		po = pc
 	}
-	return b.Low > p
+	if t.Side == SideLong {
+		return b.High < math.Min(po, pc)
+	}
+	return b.Low > math.Max(po, pc)
 }
 
 // brokenByClose is the HTF break: a closed higher-timeframe candle whose CLOSE

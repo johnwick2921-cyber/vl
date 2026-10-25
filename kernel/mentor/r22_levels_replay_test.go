@@ -304,7 +304,7 @@ func TestR22VisitCapSeparatesTriggerLinePositions(t *testing.T) {
 // in the r22 PR body.
 func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 	total, atTrigger := 0, 0
-	r22Replay(t, "mnq_1m_2026-10-12_session", r22Open1012, r22Cfg(), func(_ *Evaluator, _ []market.Kline, out []Intent) {
+	e := r22Replay(t, "mnq_1m_2026-10-12_session", r22Open1012, r22Cfg(), func(_ *Evaluator, _ []market.Kline, out []Intent) {
 		for _, in := range out {
 			if in.Action != PlaceStopEntry || in.Setup != "PHL" && in.Setup != "PLH" {
 				continue
@@ -315,8 +315,13 @@ func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 			}
 		}
 	})
-	if atTrigger == 0 || total < 2 {
-		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest), want >= 2 with >= 1 at the trigger line", total, atTrigger)
+	// m427: with the owner's whole-candle break read over the candle's whole life
+	// a sloped trendline that the close-time read killed at 23:57 now stays alive
+	// and is the nearer target, so the one trigger-retest PHL of that day (31256)
+	// is refused by the target floor (phl_target_below_floor) instead of placed.
+	// The retest is still evaluated and either placed or floor-refused — never lost.
+	if total < 2 || atTrigger == 0 && e.State.Refusals["phl_target_below_floor"] == 0 {
+		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 2 and the trigger retest placed or floor-refused", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
 	}
 }
 

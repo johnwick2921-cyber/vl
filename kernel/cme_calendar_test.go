@@ -152,7 +152,9 @@ func TestNextCMEOpen(t *testing.T) {
 // ordinary 17:00 reopen must still be exact.
 func TestM427EarlyCloseMinuteEdges(t *testing.T) {
 	ch := CTLocation()
-	d := func(y int, m time.Month, dd, h, mi, s, ns int) time.Time { return time.Date(y, m, dd, h, mi, s, ns, ch) }
+	d := func(y int, m time.Month, dd, h, mi, s, ns int) time.Time {
+		return time.Date(y, m, dd, h, mi, s, ns, ch)
+	}
 	lastOpen := d(2026, 11, 27, 12, 14, 59, 999_000_000)
 	firstClosed := d(2026, 11, 27, 12, 15, 0, 0)
 	if !IsCMEOpen(lastOpen) || IsCMEOpen(firstClosed) {

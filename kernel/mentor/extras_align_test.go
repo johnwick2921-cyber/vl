@@ -25,9 +25,9 @@ import (
 //   E5 whole-candle break (X9, not adopted) — trendline.go brokenBy5m
 //      `return b.Close < p` → `return b.High < p`
 //      → TestTrendlineCloseThroughIsABreakEvenWithTheWickAbove RED.
-//   E5b open-time line — trendline.go brokenBy5m
-//      `p := t.priceAt(b.CloseTime)` → `p := t.priceAt(b.OpenTime)`
-//      → TestTrendlineBreakReadsTheLineAtTheCloseTime RED.
+//   E5b close-only line (m427) — trendline.go brokenBy5m
+//      `b.High < math.Min(po, pc)` → `b.High < pc`
+//      → TestM427SlopedLineBreakNeedsTheWholeCandleBeyondBothEnds RED.
 
 // orbDayBars: a flat pre-open, then the 08:30/08:31 ORB 99–101.
 func orbDayBars(day int64) []market.Kline {
@@ -148,24 +148,42 @@ func TestTrendlineCloseThroughWithTheWickAboveIsNotABreak(t *testing.T) {
 	}
 }
 
-// TestTrendlineBreakReadsTheLineAtTheCloseTime — item 5, the line value. The
-// 09:10 bucket (bars 10–14) closes at 99.0: BELOW the rising support line at
-// its CLOSE time (≈99.6) but ABOVE the line's value at the bucket OPEN (98.6).
-// Read at the close — the instant the close is judged — it is a close through
-// → Dead. Pre-fix the line was read at the open, five minutes of slope early,
-// and the close never counted (RED).
+// TestTrendlineBreakReadsTheLineAtTheCloseTime — item 5 + m427, the line value.
+// The 09:10 bucket (bars 10–14) closes at 99.0: BELOW the rising support line at
+// its CLOSE time (≈99.6) but its HIGH (99.4) is ABOVE the line's value at the
+// bucket OPEN (98.6) — the candle traded on the support side, so it is NOT wholly
+// beyond the line and does not break it (m427: the line is judged over the
+// candle's whole life, not only at the close). A bucket wholly below the line at
+// both ends (high 98.5 < 98.6) does break it.
 func TestTrendlineBreakReadsTheLineAtTheCloseTime(t *testing.T) {
 	bars, mk := trendlineBars()
-	bars = append(bars,
+	straddle := append(append([]market.Kline(nil), bars...),
 		mk(10, 99.3, 99.4, 98.9, 99.0),
 		mk(11, 99.0, 99.3, 98.8, 98.9),
 		mk(12, 98.9, 99.2, 98.7, 98.8),
 		mk(13, 98.8, 99.1, 98.6, 98.7),
 		mk(14, 98.7, 99.0, 98.5, 99.0), // bucket 10–14: high 99.4, close 99.0
 	)
-	now := time.UnixMilli(bars[14].OpenTime + 60_000).In(ctime())
-	tls := TrendlinesBuild(bars, now)
-	if len(tls) != 1 || !tls[0].Dead {
-		t.Fatalf("lines = %+v — a 5m close below the line at its CLOSE time must break it", tls)
+	now := time.UnixMilli(straddle[14].OpenTime + 60_000).In(ctime())
+	tls := TrendlinesBuild(straddle, now)
+	if len(tls) != 1 || tls[0].Dead {
+		t.Fatalf("lines = %+v — high 99.4 is above the line at the bucket OPEN (98.6): not wholly beyond, must stay alive", tls)
+	}
+	below := append(append([]market.Kline(nil), bars...),
+		mk(10, 98.4, 98.5, 98.2, 98.3),
+		mk(11, 98.3, 98.5, 98.1, 98.2),
+		mk(12, 98.2, 98.4, 98.0, 98.1),
+		mk(13, 98.1, 98.3, 98.0, 98.2),
+		mk(14, 98.2, 98.4, 98.0, 98.1), // bucket 10–14: high 98.5 < 98.6 (open) and < ≈99.6 (close)
+	)
+	now = time.UnixMilli(below[14].OpenTime + 60_000).In(ctime())
+	var dead bool
+	for _, tl := range TrendlinesBuild(below, now) {
+		if tl.P1Idx == 8 && tl.Dead {
+			dead = true
+		}
+	}
+	if !dead {
+		t.Fatalf("a bucket wholly below the line at its open AND close must break it")
 	}
 }
