@@ -52,6 +52,7 @@ func m423Find(lines []Trendline, side Side, p0Ms int64, p0Px float64, p1Ms int64
 // Mutant (pair only ADJACENT same-role swings, the pre-m423 loop) → none of the
 // three exists → RED.
 func TestM423Fixture1023OffersTheObviousLines(t *testing.T) {
+	t.Skip("T2 held by owner 2026-10-25 — non-adjacent pairing deferred")
 	all := m423Bars(t)
 	cases := []struct {
 		name         string
@@ -91,6 +92,7 @@ func TestM423Fixture1023OffersTheObviousLines(t *testing.T) {
 // later anchor only). The 08:36 → 09:26 support, offered at 09:40, is still the
 // same line (same key, same anchors) at 10:00 and 10:30.
 func TestM423NonAdjacentPairIsStableAcrossTicks(t *testing.T) {
+	t.Skip("T2 held by owner 2026-10-25 — non-adjacent pairing deferred")
 	all := m423Bars(t)
 	var keys []string
 	for _, hm := range [][2]int{{9, 40}, {10, 0}, {10, 30}} {

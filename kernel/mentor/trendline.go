@@ -129,8 +129,7 @@ func (t Trendline) brokenByClose(b market.Kline) bool {
 // Release #22 (owner ruling R4, course D4.1): EVERY consecutive pair of
 // today's qualifying same-role swings draws a line — at least 5 bars apart,
 // sloped, and NOT crossed by price between its own anchors (see
-// trendlineCrossed) — plus (m423 T2) the one non-adjacent partner that is the
-// most significant extreme (bestNonAdjacentPartner). A drawn line stays on the
+// trendlineCrossed). A drawn line stays on the
 // chart until a 5m candle wholly beyond it breaks it (Dead) or the session ends: "Extend right; never erase during the
 // session; DELETE at end of day" [D4.1 p2 @01:17]; "nó BREAK QUA rồi thì
 // MÌNH BỎ" [X9 @00:54–01:00]. The old rule kept ONE line per side — the
@@ -198,13 +197,6 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 		}
 	}
 	b5 := barsTF(bars, 5)
-	dayStart := len(fb)
-	for i, b := range fb {
-		if tradingDayKey(time.UnixMilli(b.OpenTime).In(ctime())) == today {
-			dayStart = i
-			break
-		}
-	}
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
 		// STRUCTURAL swings only: confirmed two-sided (left fractal + right
 		// confirmation). The D2-28 lesson — fractals pair pullback noise.
@@ -218,19 +210,11 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 		if role == kernel.KindSWGH {
 			side = SideShort
 		}
-		taken := map[int][]Trendline{} // P0 frame index → its non-adjacent lines drawn so far
 		for j := 1; j < len(pts); j++ {
 			p1 := pts[j]
-			// The adjacent pair (release #22) plus, for the same later anchor, the
-			// ONE non-adjacent partner that is the most significant extreme (m423
-			// T2): the mentor joins the big low to the next higher low, not only
-			// neighbours — the day's obvious line is rarely between two neighbours.
-			cands := []swingPairAt{pts[j-1]}
-			if best, ok := bestNonAdjacentPartner(fb, b5, pts[:j-1], p1, role, dayStart, taken); ok {
-				cands = append(cands, best)
-				taken[best.idx] = append(taken[best.idx], Trendline{Side: side, P0Px: best.price, P0T: fb[best.idx].OpenTime, P1Px: p1.price, P1T: fb[p1.idx].OpenTime})
-			}
-			for _, p0 := range cands {
+			// Release #22 (owner ruling R4): every consecutive pair. The m423
+			// non-adjacent pairing (T2) is held by the owner, 2026-10-25.
+			for _, p0 := range []swingPairAt{pts[j-1]} {
 				tl, ok := newSlopedLine(fb, role, side, p0, p1)
 				if !ok {
 					continue
@@ -278,61 +262,6 @@ func newSlopedLine(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 s
 		return Trendline{}, false
 	}
 	return tl, true
-}
-
-// swingStanding is how many frame bars (back to the trading day's first bar)
-// the swing stood as the extreme before it: the bars between it and the nearest
-// earlier bar that went as far or further. A day low that nothing undercut
-// since the open scores its whole distance from the open; a minor higher low
-// scores a few. It reads only history before the swing, so it never changes
-// once the swing exists. The significance of an anchor (m423 T2).
-func swingStanding(fb []market.Kline, s swingPairAt, dayStart int) int {
-	n := 0
-	for k := s.idx - 1; k >= dayStart && k >= 0; k-- {
-		if s.kind == kernel.KindSWGL && fb[k].Low <= s.price {
-			break
-		}
-		if s.kind == kernel.KindSWGH && fb[k].High >= s.price {
-			break
-		}
-		n++
-	}
-	return n
-}
-
-// bestNonAdjacentPartner picks, for the later anchor p1, the ONE earlier
-// non-adjacent same-role swing (the candidates exclude the immediately
-// preceding swing, which the adjacent pair already covers) whose line is a real
-// trendline — sloped, 5+ bars, and not crossed by any candle between its
-// anchors — and that is the most significant extreme: the one that stood the
-// longest as the extreme (swingStanding), the earlier one on a tie. The choice
-// reads history up to p1 only, so a drawn line is rebuilt identically on every
-// later tick. Deterministic; no slope or length number is added (open mentor Q2).
-// One extreme never fans out (fanCovered): while a non-adjacent line from the
-// same anchor still stands and p1 does not pierce it, the anchor offers no second
-// one — a redraw appears only once price has undercut / overshot the old line.
-// The old line is NOT erased by the redraw (R4: a drawn line stays until a 5m
-// candle breaks it).
-func bestNonAdjacentPartner(fb, b5 []market.Kline, earlier []swingPairAt, p1 swingPairAt, role kernel.LevelKind, dayStart int, taken map[int][]Trendline) (swingPairAt, bool) {
-	var best swingPairAt
-	bestScore, found := -1, false
-	side := SideLong
-	if role == kernel.KindSWGH {
-		side = SideShort
-	}
-	for _, p0 := range earlier {
-		tl, ok := newSlopedLine(fb, role, side, p0, p1)
-		if !ok || trendlineCrossed(fb, tl) {
-			continue
-		}
-		if fanCovered(taken[p0.idx], b5, p1, tl.P1T) {
-			continue
-		}
-		if sc := swingStanding(fb, p0, dayStart); sc > bestScore {
-			best, bestScore, found = p0, sc, true
-		}
-	}
-	return best, found
 }
 
 // oneMinIdxAtClose returns the index of the last 1m bar closing at or before
@@ -639,38 +568,4 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bar
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
 	return out, refused
-}
-
-// fanCovered reports whether the later anchor p1 would only fan out from an
-// earlier non-adjacent line of the same anchor that still serves: that line is
-// still standing when p1 forms (at p1T: no CLOSED 5m candle, closed by then, has
-// gone wholly beyond it since its own second anchor) AND p1 does not pierce it
-// (p1 sits on its near side or within the touch band of it). A new line from the
-// same extreme is a redraw — drawn when price has undercut (support) / overshot
-// (resistance) the old one by more than the band — never a steeper sibling or a
-// copy of a line price is still respecting.
-func fanCovered(lines []Trendline, b5 []market.Kline, p1 swingPairAt, p1T int64) bool {
-	for _, tl := range lines {
-		broken := false
-		for _, b := range b5 {
-			if b.CloseTime > p1T {
-				break
-			}
-			if b.OpenTime > tl.P1T && tl.brokenBy5m(b) {
-				broken = true
-				break
-			}
-		}
-		if broken {
-			continue
-		}
-		at := tl.priceAt(p1T)
-		if tl.Side == SideLong && p1.price >= at-trendlineTouchBandPts {
-			return true
-		}
-		if tl.Side == SideShort && p1.price <= at+trendlineTouchBandPts {
-			return true
-		}
-	}
-	return false
 }
