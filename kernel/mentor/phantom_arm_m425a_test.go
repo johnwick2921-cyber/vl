@@ -254,3 +254,57 @@ func TestM426NewTouchAfterRefusalStillEmits(t *testing.T) {
 		t.Fatal("a refusal of an earlier touch silenced a NEW touch of the same level")
 	}
 }
+
+// m427/9 — the ROLLING PHL order through DropArm. The trader refuses the rolling
+// pullback order: (a) RollingPHL is zeroed (no phantom roll left to block the
+// next same-side setup or to emit a CancelArm for an order never authored),
+// (b) NO RefusedLevelTouch is recorded for the rolling key — the rolling order
+// re-arms on a NEW reference candle by design — even when a Touches row for the
+// key exists with a reference bar, and (c) the next reference candle re-arms.
+// Mutants: drop `|| key == rollingLevelKey` in DropArm -> (b) RED;
+// `if e.State.RollingPHL.ArmID == armID` -> `if false` in unregisterArm -> (a) RED.
+func TestM427DropArmOnTheRollingPHLZeroesItAndNeverMarksARefusedTouch(t *testing.T) {
+	e, bars, _ := rollingFixture()
+	placed := rollingPlaceEntries(e.Tick(bars, bars[5].OpenTime+59_999))
+	if len(placed) != 1 {
+		t.Fatalf("control: the rolling order must place once, got %d", len(placed))
+	}
+	armID := placed[0].ArmID
+	if e.State.RollingPHL.ArmID != armID || e.State.LevelArms[rollingLevelKey].ArmID != armID {
+		t.Fatalf("control: the rolling arm must be registered: %+v", e.State.RollingPHL)
+	}
+	// A touch row under the rolling key with a reference bar: the shape that
+	// would make the S2 refusal mark fire if the exemption were gone.
+	if e.State.Touches == nil {
+		e.State.Touches = map[string]Touch{}
+	}
+	e.State.Touches[rollingLevelKey] = Touch{Outcome: TouchReject, RefBar: bars[5], ApproachedFrom: SideLong}
+
+	e.DropArm(armID)
+
+	if e.State.RollingPHL != (RollingPHL{}) {
+		t.Fatalf("(a) a refused rolling order left a phantom RollingPHL: %+v", e.State.RollingPHL)
+	}
+	if _, ok := e.State.LevelArms[rollingLevelKey]; ok {
+		t.Fatal("the rolling LevelArms entry must be gone")
+	}
+	if _, ok := e.State.RefusedLevelTouch[rollingLevelKey]; ok {
+		t.Fatalf("(b) a refused rolling order must NOT record RefusedLevelTouch (it re-arms by design): %+v", e.State.RefusedLevelTouch)
+	}
+
+	// (c) a NEW reference candle re-arms. (The synthetic Touches row only probes the
+	// exemption above; a live touch-reject would own the entry, so drop it first.)
+	delete(e.State.Touches, rollingLevelKey)
+	t0 := bars[0].OpenTime
+	next := append(append([]market.Kline{}, bars...), market.Kline{OpenTime: t0 + 6*60_000, CloseTime: t0 + 6*60_000 + 59_000, Open: 113, High: 114, Low: 108, Close: 109})
+	ins := e.Tick(next, next[6].OpenTime+59_999)
+	for _, in := range ins {
+		if in.Action == CancelArm && in.ArmID == armID {
+			t.Fatalf("a CancelArm was emitted for the dropped (never authored) rolling order %s", armID)
+		}
+	}
+	re := rollingPlaceEntries(ins)
+	if len(re) != 1 || re[0].ArmID == armID {
+		t.Fatalf("(c) the next reference candle must re-arm the rolling order under a NEW id, got %+v", re)
+	}
+}
