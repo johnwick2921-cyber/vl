@@ -1967,6 +1967,7 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// N1 (release #23): the refill generation is read BEFORE the store, so a
 	// replay released while the seed reads it still triggers a re-seed.
 	at.mentorSeedHistGen, _ = mentorRefillGeneration()
+	at.mentorChartSeedGen = at.mentorSeedHistGen
 	// The seed clock reads the mentor seam (mentorNowSource) so tests can pin a
 	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
 	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.

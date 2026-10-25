@@ -632,6 +632,12 @@ type AutoTrader struct {
 	// mentorSeedHistGen (release #23 N1) is the MNQ 1m history-refill
 	// generation this evaluator's state was last seeded at (mentor_reseed.go).
 	mentorSeedHistGen uint64
+	// mentorChartSeedGen (m427/2) is the refill generation the DISPLAY-ONLY chart
+	// seed was last built at. Separate from mentorSeedHistGen on purpose: the
+	// closed-market chart rebuild must never claim the generation the first real
+	// Tick's state re-seed (mentorReseedOnRefill) is waiting on. Touched only
+	// under mentorEvalMu (and once at seed time).
+	mentorChartSeedGen uint64
 	// mentorDayOffClearLogged is the DayRecheck.ClearedAt value last WARN'd +
 	// counted. The recheck clears at most once per trading day, so the value
 	// is a stable per-process dedup key. Read/written only inside

@@ -88,6 +88,46 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 	at.mentorRefreshDepths()
 }
 
+// mentorRefreshChartSeedOnClosed (m427/2) rebuilds the boot DISPLAY seed
+// (mentor.SeedChartDisplay, via mentorSeedChartDisplay) when the history-refill
+// generation moved after it was built, on a CLOSED market where no Tick has run
+// since boot (ChartSeededAt != 0). Without it a restart in the 16:00-17:00 break
+// or over a weekend showed the pre-release store's levels / EMA / lines, marked
+// "as of last close", until the first bar at the reopen — the replay hold is
+// released ~30 s after boot, and the only re-seed reader is the Tick.
+//
+// DISPLAY ONLY, same contract as m422: it writes through SeedChartDisplay alone
+// (ChartLevels/ChartTrendlines/ChartEMA/ChartSeededAt), reads the same current-
+// contract store window, and tracks its OWN generation (mentorChartSeedGen) so
+// it never claims the one the first real Tick's state re-seed waits on. A no-op
+// when the market is open (the Tick path owns it), after any Tick, or when the
+// generation has not moved.
+func (at *AutoTrader) mentorRefreshChartSeedOnClosed(now time.Time) {
+	if at == nil || at.store == nil || kernel.IsCMEOpen(now) {
+		return
+	}
+	at.mentorEvalMu.Lock()
+	defer at.mentorEvalMu.Unlock()
+	if at.mentorEval == nil || at.mentorEval.State.ChartSeededAt == 0 {
+		return // no evaluator, or a real Tick already replaced the display seed
+	}
+	gen, _ := mentorRefillGeneration()
+	if gen == at.mentorChartSeedGen {
+		return
+	}
+	at.mentorChartSeedGen = gen
+	bh := store.NewBarHistoryStore(at.store.GormDB())
+	rows, err := bh.LastNBarsCurrentContract(mentorSeedSymbol, "1m", mentorSeedBars1mN)
+	if err != nil {
+		at.mentorCount("chart_reseed_closed_refused")
+		at.logWarnf("🧑‍🏫 chart display re-seed after a history refill REFUSED — 1m store read failed (%v); display kept as it was", err)
+		return
+	}
+	at.mentorSeedChartDisplay(storeBarsToKlines(rows, 60_000))
+	at.mentorCount("chart_reseed_closed")
+	at.logInfof("🧑‍🏫 chart display re-seeded on the closed market after a history refill (display only)")
+}
+
 // mentorDayEventsOnForTest is the per-date calendar seam (tests; nil → the
 // stored slice for that date).
 var mentorDayEventsOnForTest func(date string) ([]calendar.Event, bool)

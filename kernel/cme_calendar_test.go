@@ -146,3 +146,35 @@ func TestNextCMEOpen(t *testing.T) {
 		})
 	}
 }
+
+// m427/1: IsCMEOpen flips mid-hour on an early-close day (2026-11-27 12:15 CT).
+// NextCMEOpen / CMEOpenSpanStart must agree with it to the minute, and the
+// ordinary 17:00 reopen must still be exact.
+func TestM427EarlyCloseMinuteEdges(t *testing.T) {
+	ch := CTLocation()
+	d := func(y int, m time.Month, dd, h, mi, s, ns int) time.Time { return time.Date(y, m, dd, h, mi, s, ns, ch) }
+	lastOpen := d(2026, 11, 27, 12, 14, 59, 999_000_000)
+	firstClosed := d(2026, 11, 27, 12, 15, 0, 0)
+	if !IsCMEOpen(lastOpen) || IsCMEOpen(firstClosed) {
+		t.Fatalf("premise: 12:14:59.999 open=%v 12:15:00 open=%v", IsCMEOpen(lastOpen), IsCMEOpen(firstClosed))
+	}
+	sun := d(2026, 11, 29, 17, 0, 0, 0)
+	for _, from := range []time.Time{firstClosed, d(2026, 11, 27, 12, 40, 0, 0), d(2026, 11, 28, 9, 0, 0, 0)} {
+		if got := NextCMEOpen(from); !got.Equal(sun) {
+			t.Errorf("NextCMEOpen(%v) = %v want %v", from, got.In(ch), sun)
+		}
+	}
+	// Open span ending on the early close starts at the same instant seen from
+	// the last open millisecond and from a minute earlier.
+	a, b := CMEOpenSpanStart(lastOpen), CMEOpenSpanStart(lastOpen.Add(-time.Minute))
+	if !a.Equal(b) || !IsCMEOpen(a) || IsCMEOpen(a.Add(-time.Minute)) {
+		t.Errorf("span start at early-close edge: a=%v b=%v", a.In(ch), b.In(ch))
+	}
+	// The 17:00 reopen (Sunday evening) is exact from inside the span.
+	if got := CMEOpenSpanStart(d(2026, 11, 29, 17, 30, 0, 0)); !got.Equal(sun) {
+		t.Errorf("span start after reopen = %v want %v", got.In(ch), sun)
+	}
+	if got := CMEOpenSpanStart(d(2026, 11, 29, 17, 0, 0, 0)); !got.Equal(sun) {
+		t.Errorf("span start at 17:00:00 = %v want %v", got.In(ch), sun)
+	}
+}
