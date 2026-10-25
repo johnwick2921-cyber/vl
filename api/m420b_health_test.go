@@ -32,6 +32,9 @@ func healthAt(t *testing.T, now time.Time, newestBarOpen time.Time, deadMan bool
 	oldNow, oldProv := healthNow, market.FuturesBarsProvider
 	healthNow = func() time.Time { return now }
 	market.FuturesBarsProvider = func(string, string, int) []market.Kline {
+		if newestBarOpen.IsZero() { // m426: no bar at all
+			return nil
+		}
 		return []market.Kline{{OpenTime: newestBarOpen.UnixMilli()}}
 	}
 	t.Cleanup(func() { healthNow, market.FuturesBarsProvider = oldNow, oldProv })
@@ -102,4 +105,20 @@ func TestM420bHealthStatusFollowsTheCMEClock(t *testing.T) {
 	// 5. 5 min after the 17:00 reopen, newest bar from 15:59: closed time is not counted.
 	reopen := ctInstant(t, "2026-08-17", "17:05")
 	check("reopen clamp", healthAt(t, reopen, ctInstant(t, "2026-08-17", "15:59"), false), "ok", true, false)
+}
+
+// m426 (review of m420b): CME open + NT8 link not up + NO bar (a boot with NT8
+// closed) must read degraded/feed_stale; a closed weekend in the same state
+// stays ok. Mutant: drop the `else if cmeOpen && Link != "up"` arm -> RED.
+func TestM426HealthOpenMarketNoBarLinkDownIsDegraded(t *testing.T) {
+	mon := ctInstant(t, "2026-08-17", "12:00")
+	sat := ctInstant(t, "2026-08-22", "12:00")
+	b := healthAt(t, mon, time.Time{}, false)
+	if b["status"] != "degraded" || b["cme_open"] != true || b["feed_stale"] != true {
+		t.Fatalf("open+no bar+link down: status=%v cme_open=%v feed_stale=%v, want degraded/true/true", b["status"], b["cme_open"], b["feed_stale"])
+	}
+	b = healthAt(t, sat, time.Time{}, false)
+	if b["status"] != "ok" || b["feed_stale"] != false {
+		t.Fatalf("closed weekend+no bar+link down must stay ok: status=%v feed_stale=%v", b["status"], b["feed_stale"])
+	}
 }

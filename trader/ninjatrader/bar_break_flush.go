@@ -57,6 +57,7 @@ type breakFlusher struct {
 	mu      sync.Mutex
 	ring    func() *ntwire.BarCache
 	persist func(historical bool, symbol, tf string, bars []ntwire.Bar)
+	rep     *persistReport // m426: outcome of the last persist call; nil = assume success
 	st      breakFlushStore
 	hold    *replayHold
 	insert  func([]store.BarHistoryDB) error
@@ -66,9 +67,9 @@ type breakFlusher struct {
 	flushed int               // bars handed over, for the log line
 }
 
-func newBreakFlusher(ring func() *ntwire.BarCache, persist func(bool, string, string, []ntwire.Bar), bh *store.BarHistoryStore) *breakFlusher {
+func newBreakFlusher(ring func() *ntwire.BarCache, persist func(bool, string, string, []ntwire.Bar), bh *store.BarHistoryStore, rep *persistReport) *breakFlusher {
 	return &breakFlusher{
-		ring: ring, persist: persist, st: bh, hold: barReplayHold, insert: bh.InsertBars,
+		ring: ring, persist: persist, rep: rep, st: bh, hold: barReplayHold, insert: bh.InsertBars,
 		clock: time.Now, isOpen: kernel.IsCMEOpen, seen: map[string]string{},
 	}
 }
@@ -118,8 +119,16 @@ func (f *breakFlusher) flushRing(now time.Time) {
 		if f.seen[key] == fp {
 			continue
 		}
-		f.seen[key] = fp
 		f.persist(false, sym, tf, tail)
+		// m426: `seen` is set only when the write LANDED. A failed write
+		// ("database is locked", no contract yet) is retried next tick instead
+		// of the session-final bar being lost for the whole break.
+		if f.rep != nil && !f.rep.ok {
+			logger.Warnf("bars: market closed (%s) — session-final %s %s flush NOT persisted (%s); retrying next tick (m424/m426)",
+				kernel.ClockCTSeconds(now), sym, tf, f.rep.why)
+			continue
+		}
+		f.seen[key] = fp
 		f.flushed += len(tail)
 		logger.Infof("🔔 bars: market closed (%s) — persisted the session's last %d %s %s bar(s) from the ring, last open %s (m424)",
 			kernel.ClockCTSeconds(now), len(tail), sym, tf, kernel.ClockCTSeconds(time.UnixMilli(tail[len(tail)-1].T)))

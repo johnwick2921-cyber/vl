@@ -4,14 +4,18 @@
 // by alert id so a poll refresh never re-toasts. Levels: P0 = toast + banner ·
 // P1 = feed · P2 = digest (muted, collapsed count).
 
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { Language } from '../../i18n/translations'
 import { tp } from '../../i18n/plan-translations'
 import { usePlanAlerts } from './usePlan'
 import { api } from '../../lib/api'
 import type { PlanAlert, AlertLevel } from '../../lib/api/plan'
-import { cmeSessionStartUnix, isInfoAlertKind } from './cmeSession'
+import {
+  cmeSessionStartUnix,
+  isInfoAlertKind,
+  isStandingAlertKind,
+} from './cmeSession'
 
 const levelColor = (l: AlertLevel) =>
   l === 'P0'
@@ -202,9 +206,14 @@ export function AlertCenter({
     await mutate()
   }
 
-  // recomputed whenever the feed polls, so the 17:00 CT roll is picked up
-  // without an impure Date.now() in the render body
-  const sessionStart = useMemo(() => cmeSessionStartUnix(), [alerts])
+  // m426: a minute clock tick (not the alerts reference) drives the session
+  // start, so the 17:00 CT roll is picked up even when the feed does not change.
+  const [clockMs, setClockMs] = useState(() => Date.now())
+  useEffect(() => {
+    const id = setInterval(() => setClockMs(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+  const sessionStart = cmeSessionStartUnix(clockMs)
 
   if (!traderId) return null
 
@@ -215,10 +224,11 @@ export function AlertCenter({
   const unackedP0 = alerts.filter(
     (a) => a.level === 'P0' && !a.acked && !isInfoAlertKind(a.kind)
   )
-  const bannerAlert = unackedP0.find((a) => a.created_at >= sessionStart)
-  const olderUnacked = unackedP0.filter(
-    (a) => a.created_at < sessionStart
-  ).length
+  // m426: a STANDING condition (auto-acked when it ends) stays up regardless of age.
+  const inBanner = (a: PlanAlert) =>
+    a.created_at >= sessionStart || isStandingAlertKind(a.kind)
+  const bannerAlert = unackedP0.find(inBanner)
+  const olderUnacked = unackedP0.filter((a) => !inBanner(a)).length
   // P2 digest: collapse to a count line rather than individual rows
   const p2Count = alerts.filter((a) => a.level === 'P2' && !a.acked).length
   const feedAlerts = alerts.filter((a) => a.level !== 'P2')

@@ -89,3 +89,52 @@ describe('B2 — banner only for a P0 raised this CME session-day', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Feed down NOW')
   })
 })
+
+describe('m426 — standing conditions stay in the banner; the session start follows a clock tick', () => {
+  it('an unacked dead_man_reconcile_stuck from before the 17:00 roll still lights the banner; a feed-down of the same age does not', async () => {
+    const start = cmeSessionStartUnix(Date.now())
+    vi.spyOn(api, 'getPlanAlerts').mockResolvedValue({
+      alerts: [
+        alert({ id: 21, created_at: start - 1800, title: 'old feed' }),
+        alert({
+          id: 22,
+          kind: 'dead_man_reconcile_stuck',
+          created_at: start - 1800,
+          title: 'Dead-man stuck',
+        }),
+      ],
+      unacked: 2,
+    })
+    render(<AlertCenter traderId="m426-standing" language="en" />)
+    expect(await screen.findByRole('alert')).toHaveTextContent('Dead-man stuck')
+    expect(screen.getByTestId('alert-older-unacked')).toHaveTextContent(
+      '1 older unacked'
+    )
+  })
+
+  it('crossing 17:00 CT on the clock tick moves a feed-down out of the banner with no new poll', async () => {
+    vi.useFakeTimers({ toFake: ['setInterval', 'clearInterval', 'Date'] })
+    try {
+      // Mon 2026-08-17 16:59:30 CT (CDT = UTC-5)
+      vi.setSystemTime(new Date('2026-08-17T21:59:30Z'))
+      const created = Math.floor(Date.now() / 1000) - 30
+      vi.spyOn(api, 'getPlanAlerts').mockResolvedValue({
+        alerts: [
+          alert({ id: 31, created_at: created, title: 'pre-roll feed' }),
+        ],
+        unacked: 1,
+      })
+      render(<AlertCenter traderId="m426-tick" language="en" />)
+      expect(await screen.findByRole('alert')).toHaveTextContent(
+        'pre-roll feed'
+      )
+      await act(async () => {
+        vi.advanceTimersByTime(61_000) // past 17:00:00 CT
+      })
+      expect(screen.queryByRole('alert')).toBeNull()
+      expect(screen.getByTestId('alert-older-unacked')).toBeTruthy()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})

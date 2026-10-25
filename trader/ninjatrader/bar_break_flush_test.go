@@ -40,7 +40,8 @@ func m424Row(tf string, at time.Time, c float64, src string) store.BarHistoryDB 
 // store and a real ring, with a settable clock — the production composition.
 func m424Flusher(t *testing.T, bh *store.BarHistoryStore, ring *ntwire.BarCache, now *time.Time) *breakFlusher {
 	t.Helper()
-	f := newBreakFlusher(func() *ntwire.BarCache { return ring }, newBarPersister(bh, func() *ntwire.TCPServer { return nil }), bh)
+	rep := &persistReport{}
+	f := newBreakFlusher(func() *ntwire.BarCache { return ring }, newBarPersister(bh, func() *ntwire.TCPServer { return nil }, rep), bh, rep)
 	f.hold = newReplayHold(0)
 	f.clock = func() time.Time { return *now }
 	return f
@@ -219,5 +220,35 @@ func TestM424RestartInBreakDiscardsOffScaleHoldsWithoutEvidenceAndWaitsWhenOpen(
 	f.tick()
 	if n := len(f.hold.peek("MNQ", "1m")); n == 0 {
 		t.Fatal("hold settled while the market was open")
+	}
+}
+
+// m426 (review of m424): the first write fails (no contract known: the store
+// holds none and no AddOn ACK) — `seen` must NOT be set, so the next tick,
+// once a contract exists, lands the session-final bar. Mutant: set seen before
+// the persist (the m424 original) → the second tick skips and the bar is lost.
+func TestM426FailedBreakFlushIsRetriedNextTick(t *testing.T) {
+	bh := m424Store(t) // empty: contractFor finds nothing
+	ring := ntwire.NewBarCache(500)
+	ring.Upsert("MNQ", "1m", []ntwire.Bar{
+		{T: ct1023(15, 59, 0).Add(time.Minute).UnixMilli(), O: 1, H: 3, L: 0, C: 29003, V: 10, Final: true},
+	})
+	now := ct1023(16, 0, 30)
+	f := m424Flusher(t, bh, ring, &now)
+	f.tick()
+	if _, ok := m424Get(t, bh, "1m", ct1023(15, 59, 0)); ok {
+		t.Fatal("bar written with no contract known")
+	}
+	if len(f.seen) != 0 || f.flushed != 0 {
+		t.Fatalf("a failed write was recorded as flushed: seen=%v flushed=%d", f.seen, f.flushed)
+	}
+	// a contract appears (the store now holds a row for it)
+	if err := bh.InsertBars([]store.BarHistoryDB{m424Row("1m", ct1023(15, 40, 0), 29000, store.BarSourceLive)}); err != nil {
+		t.Fatal(err)
+	}
+	now = ct1023(16, 1, 0)
+	f.tick()
+	if r, ok := m424Get(t, bh, "1m", ct1023(15, 59, 0)); !ok || r.C != 29003 {
+		t.Fatalf("the retry never landed the session-final bar: %+v ok=%v", r, ok)
 	}
 }

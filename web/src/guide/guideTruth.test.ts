@@ -349,6 +349,25 @@ describe("C9 — the gate-label list is the panel's own map", () => {
   })
 })
 
+// m426: every mentor gate class the Go side can tick has a panel label (a gate
+// without one shows its raw counter name). Scans the production literals.
+// Mutant: delete a mentor_* GATE_LABELS entry → RED.
+describe('m426 — every mentor gate-block class has a panel label', () => {
+  it('labels each mentorGateBlock literal and mentorRuleGateClass result', () => {
+    const src = repo('trader/mentor_tick.go') + repo('trader/mentor_actions.go')
+    const names = new Set<string>()
+    for (const m of src.matchAll(/mentorGateBlock\("(mentor_[a-z0-9_]+)"\)/g))
+      names.add(m[1])
+    for (const m of src.matchAll(
+      /return "(mentor_(?:rule|bad|untagged)[a-z0-9_]*)"/g
+    ))
+      names.add(m[1])
+    expect(names.size).toBeGreaterThan(15)
+    for (const n of names)
+      expect(GATE_LABELS[n], `GATE_LABELS lacks ${n}`).toBeDefined()
+  })
+})
+
 // JOB 2.4 (knob recheck fixes, 2026-10-17): the three recheck-HIDDEN knobs that
 // had NO guide card at all now have one, each saying "No Studio control" and
 // stating the CODE default. Mutant: reword the default (or drop "No Studio

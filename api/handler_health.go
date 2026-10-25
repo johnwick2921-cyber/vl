@@ -95,6 +95,11 @@ func (s *Server) handleHealth(c *gin.Context) {
 					info.feedStale = clamped > trader.FeedDownAfter()
 					info.staleSecs = int64(clamped / time.Second)
 				}
+			} else if cmeOpen && info.Link != "up" {
+				// m426: CME open, the NT8 link not up and NO bar at all (a boot
+				// with NT8 closed) is a dead feed, not a healthy one. There is
+				// no age to report, so feed_stale_secs stays 0/absent.
+				info.feedStale = true
 			}
 			if blocked, sinceMs, probes := at.HealthDeadMan(); blocked {
 				info.DeadMan = &deadManHealthInfo{Blocked: true, SinceMs: sinceMs, Probes: probes}

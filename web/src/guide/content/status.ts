@@ -377,7 +377,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Banners — what lights up red, and what does not' },
     {
       kind: 'p',
-      text: 'The red alert-center banner shows only an unacknowledged P0 raised in the current CME session-day (the day rolls at 17:00 CT). Older unacknowledged P0 rows collapse to a small "N older unacked" link that opens the feed, and the informational kinds "close" and "fill" never light the banner even if an old row says P0. Opening the page no longer re-toasts the existing backlog: the toast baseline is taken only after the first real alert response, and again when you switch trader. A thin line under the header says "CME CLOSED — reopens <day HH:MM CT>" when the market is closed, or "FEED DOWN <age>" when the market is open and the NT8 feed is stale; an older bot that does not report those two health fields shows no line at all — it never guesses.',
+      text: 'The red alert-center banner shows only an unacknowledged P0 raised in the current CME session-day (the day rolls at 17:00 CT). The one exception is a standing condition that clears itself (a dead-man reconcile block): it stays in the banner past the 17:00 CT roll until it is acknowledged or the condition ends. Older unacknowledged P0 rows of any other kind collapse to a small "N older unacked" link that opens the feed, and the informational kinds "close" and "fill" never light the banner even if an old row says P0. Opening the page no longer re-toasts the existing backlog: the toast baseline is taken only after the first real alert response, and again when you switch trader. A thin line under the header says "CME CLOSED — reopens <day HH:MM CT>" when the market is closed, or "FEED DOWN <age>" when the market is open and the NT8 feed is stale; an older bot that does not report those two health fields shows no line at all — it never guesses.',
     },
     { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
     {
@@ -416,7 +416,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (61)',
+      title: 'every human label the gate panel has (71)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
@@ -479,6 +479,16 @@ export const status: GuideSection = {
         'Mentor — max daily trades',
         'Mentor — daily profit target',
         'Mentor — daily guardrail unverified',
+        'Mentor — end-of-day flat window',
+        'Mentor — rule R8 refused',
+        'Mentor — rule R9 refused',
+        'Mentor — other rule refused',
+        'Mentor — bad stop/target geometry',
+        'Mentor — untagged setup',
+        'Mentor — size refused',
+        'Mentor — same-side order already working',
+        'Mentor — resonance hold',
+        'Mentor — placement off (dry run)',
         '',
         'A gate with no label here shows its raw counter name — e.g. one_entry_latch:<reason>.',
         '',
@@ -552,7 +562,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Health + telemetry reads (FIX-OPS 2026-09-26)' },
     {
       kind: 'p',
-      text: "GET /api/health now reports real state, not a liveness constant: db is ok|unavailable|dead (a DEAD database answers 503 — everything else stays 200), nt8 carries each running trader's feed_status and newest-1m-bar age, traders_running counts running traders, and time is a real RFC3339 timestamp (it used to be null). Cutover scripts still read revision from it. GET /api/telemetry (read-only, auth'd) serves the previously write-only counters: far arms, repair regression, shadowed arm refusals, research-snapshot drops/rows, weekly snapshot, GA4 send failures and log-event drop counts. GA4 sends now count every non-2xx and transport failure instead of swallowing them. Two top-level fields read the CME calendar, not a literal: cme_open (is the market open right now) and feed_stale (true only while cme_open AND the newest bar is older than the FEED DOWN threshold; the age never counts closed-market time). status is degraded only while cme_open AND (feed_stale OR a dead-man block) — a Disconnected weekend reads ok.",
+      text: "GET /api/health now reports real state, not a liveness constant: db is ok|unavailable|dead (a DEAD database answers 503 — everything else stays 200), nt8 carries each running trader's feed_status and newest-1m-bar age, traders_running counts running traders, and time is a real RFC3339 timestamp (it used to be null). Cutover scripts still read revision from it. GET /api/telemetry (read-only, auth'd) serves the previously write-only counters: far arms, repair regression, shadowed arm refusals, research-snapshot drops/rows, weekly snapshot, GA4 send failures and log-event drop counts. GA4 sends now count every non-2xx and transport failure instead of swallowing them. Two top-level fields read the CME calendar, not a literal: cme_open (is the market open right now) and feed_stale (true only while cme_open AND either the newest bar is older than the FEED DOWN threshold — the age never counts closed-market time — or the NT8 link is not up and there is no bar at all, e.g. a boot with NT8 closed). status is degraded only while cme_open AND (feed_stale OR a dead-man block) — a Disconnected weekend reads ok.",
     },
     { kind: 'h', text: 'Dead-man reconcile block — and the stuck alert' },
     {

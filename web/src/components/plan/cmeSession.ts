@@ -94,3 +94,11 @@ export function formatCT(ms: number): string {
 export function isInfoAlertKind(kind: string): boolean {
   return kind === 'close' || kind === 'fill'
 }
+
+// m426: kinds whose alert auto-resolves the moment the condition ends (the
+// backend acks them on recovery). While unacked they describe a STANDING
+// condition, so they stay in the red banner past the 17:00 CT roll; every other
+// kind keeps the session filter so an old backlog never relights.
+export function isStandingAlertKind(kind: string): boolean {
+  return kind === 'dead_man_reconcile_stuck'
+}
