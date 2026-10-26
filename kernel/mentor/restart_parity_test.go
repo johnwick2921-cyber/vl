@@ -199,7 +199,10 @@ func TestRestartBootLine1013(t *testing.T) {
 			live.State.HTF.FourH.Dir, live.State.HTF.FourH.Price, lrCT(time.UnixMilli(live.State.HTF.FourH.MovedAt)))
 	}
 	line := re.SeedLine(2)
-	const want = "4h trigger long @30774.25 since 2026-10-13T05:00"
+	// B3 (W7): "since" is the BREAK MINUTE (08:41 inside the 05:00 4h bucket),
+	// no longer the bucket open — an earlier 1h trigger is judged against the
+	// real instant the 4h fired.
+	const want = "4h trigger long @30774.25 since 2026-10-13T08:41"
 	if !containsStr(line, want) {
 		t.Fatalf("boot line %q must carry %q (direction, price AND since, read from the seeded state)", line, want)
 	}

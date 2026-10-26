@@ -175,8 +175,10 @@ func TestReseedAfterHistoryRefill1014(t *testing.T) {
 
 	e := ssSeed(holed, ssSeedNow, ssCPI)
 	// Control: the holed seed IS the live 08:22:40 boot line [A, vl_2026-10-14.log:12869].
-	if got := ssLine(e.State.HTF.OneH); got != "short@30790.75 since 10-14 07:00" {
-		t.Fatalf("control: the holed seed must reproduce the live boot's 1h line short@30790.75 since 10-14 07:00, got %s", got)
+	if got := ssLine(e.State.HTF.OneH); got != "short@30790.75 since 10-14 07:48" {
+		// B3 (W7): the live boot line printed the 07:00 BUCKET open; the line
+		// now carries the break minute (07:48, the first bar after the hole).
+		t.Fatalf("control: the holed seed must reproduce the live boot's 1h line short@30790.75 since 10-14 07:48 (break minute; the bucket was 07:00), got %s", got)
 	}
 	if got := ssLine(e.State.HTF.FourH); got != "short@30745.50 since 10-14 01:00" {
 		t.Fatalf("control: the holed seed's 4h line, got %s (live boot: short @30745.50 since 01:00)", got)
@@ -200,8 +202,10 @@ func TestReseedAfterHistoryRefill1014(t *testing.T) {
 		t.Fatalf("re-seed ≠ full-tape seed: 1h %s vs %s · 4h %s vs %s · 5m %s vs %s",
 			ssLine(e.State.HTF.OneH), ssLine(truth.State.HTF.OneH), ssLine(e.State.HTF.FourH), ssLine(truth.State.HTF.FourH), ssLine(e.State.Trigger), ssLine(truth.State.Trigger))
 	}
-	if got := ssLine(e.State.HTF.OneH); got != "short@30716.00 since 10-14 07:00" {
-		t.Fatalf("the re-seeded 1h line must be the never-stopped truth short@30716.00 since 10-14 07:00 (trig.py), got %s", got)
+	if got := ssLine(e.State.HTF.OneH); got != "short@30716.00 since 10-14 07:35" {
+		// B3 (W7): "since" is the break minute (07:35, the first bar after the
+		// print-window drop) — the 07:00 1h BUCKET it sits in is no longer the stamp.
+		t.Fatalf("the re-seeded 1h line must be the never-stopped truth short@30716.00 since 10-14 07:35 (break minute; bucket 07:00), got %s", got)
 	}
 	if e.State.EMA34 != truth.State.EMA34 || e.State.EMA9 != truth.State.EMA9 || e.State.Swing.Line != truth.State.Swing.Line {
 		t.Fatalf("re-seed EMA34/EMA9/swing %.4f/%.4f/%.4f ≠ full-tape %.4f/%.4f/%.4f",

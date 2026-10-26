@@ -24,8 +24,18 @@ type HTF struct {
 // trigger lines (aggregated by the evaluator from the 1m series). Pure:
 // state in, state out.
 func HTFAdvance(h HTF, bars4h, bars1h []market.Kline, cfg Config) HTF {
-	h.FourH = TriggerTick(h.FourH, bars4h, 240, cfg)
-	h.OneH = TriggerTick(h.OneH, bars1h, 60, cfg)
+	return HTFAdvanceAt(h, bars4h, bars1h, cfg, 0)
+}
+
+// HTFAdvanceAt is HTFAdvance with the BREAK INSTANT: breakAt is the open time
+// of the 1m bar the evaluator is ticking on. A line that moves on the forming
+// (tail) bucket this tick is stamped MovedAt = breakAt, the minute it really
+// fired, not the bucket open — so oneHSilent compares real instants, not 4h
+// vs 1h bucket opens [B3; D4.4 p1 @18:36; p2 @03:10]. breakAt 0 = bucket open
+// (the legacy stamp).
+func HTFAdvanceAt(h HTF, bars4h, bars1h []market.Kline, cfg Config, breakAt int64) HTF {
+	h.FourH = triggerTickAt(h.FourH, bars4h, 240, cfg, breakAt)
+	h.OneH = triggerTickAt(h.OneH, bars1h, 60, cfg, breakAt)
 	return h
 }
 
@@ -58,21 +68,44 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
 // 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
-// the mentor's rule) the gate applies inside the 07:20–07:35 CT news window
-// (the T1 print window time; the calendar-day refinement is the trader's news
-// seam — DS-102 item 18) AND at the 08:30 OPEN — "open nó cũng giống news thôi"
-// [D4.4 p2 @00:35–00:46]. D4.4 p2 gives no LENGTH for the open window, so use
-// the mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59] →
-// 08:30–09:30 CT. With the knob off (owner decision A 2026-10-21 m134 all-day,
-// REVERTED by #45) it applies all day.
+// the mentor's rule) the gate applies
+//
+//   - on a PRINT DAY (cfg.PrintWindows lists today's red-folder 07:30 print),
+//     from the print window's start (07:20 CT) through the 08:30 CT open — the
+//     whole news period, because the post-print news trade lives in
+//     07:35–08:30 and the course locks it to the 4h: "có news hay không có
+//     news đi nữa thì mình nhắm theo khung 4 giờ … khung 4 giờ trigger buy mà
+//     khung 1 giờ trigger sell … nghỉ trade khúc đó" [D4.4 p1 @13:18–13:33,
+//     @18:03–18:52] (A9). On a day with NO print the 07:20–07:35 window is
+//     ordinary trading, and the gate "NÊN SỬ DỤNG CHO NEWS TRƯỚC … đừng sử
+//     dụng cho thường" [@14:01–14:06] is not applied there (R7). The trader
+//     holds the 07:20–07:35 window fail-closed when the calendar is missing,
+//     so an empty list never opens that window to an entry; AND
+//   - at the 08:30 OPEN — "open nó cũng giống news thôi" [D4.4 p2 @00:35–00:46].
+//     D4.4 p2 gives no LENGTH for the open window, so the 60 minutes
+//     08:30–09:30 CT is OURS (owner-accepted INVENTED, borrowed from the
+//     mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59]; B28 —
+//     a mentor question: how long after the open does the 4h/1h read govern?).
+//
+// With the knob off (owner decision A 2026-10-21 m134 all-day, REVERTED by
+// #45) it applies all day.
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true
 	}
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
-	// News window 07:20–07:35 CT, or the open window 08:30–09:30 CT.
-	return (mins >= 7*60+20 && mins <= 7*60+35) || (mins >= 8*60+30 && mins <= 9*60+30)
+	// The open window 08:30–09:30 CT, every day.
+	if mins >= 8*60+30 && mins <= 9*60+30 {
+		return true
+	}
+	// The news period: print-window start to the 08:30 CT open, print days only.
+	for _, w := range cfg.PrintWindows {
+		if now >= w.FromMs && now < newsPeriodEnd(w) {
+			return true
+		}
+	}
+	return false
 }
 
 // oneHSilent reports whether the 1h has nothing NEW to say after the 4h:
