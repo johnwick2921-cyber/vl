@@ -32,6 +32,7 @@ import (
 
 	"vl/internal/friendmode"
 	"vl/logger"
+	"vl/safe"
 )
 
 const (
@@ -66,7 +67,7 @@ func New(send func(text string)) *Pusher {
 		now:     time.Now,
 		enabled: func() bool { return !friendmode.Enabled() },
 	}
-	go p.worker()
+	safe.GoNamed("owner-push", p.worker)
 	return p
 }
 
