@@ -458,8 +458,8 @@ export const mentor: GuideSection = {
         },
         {
           title: '5m pullback warning',
-          body: 'A 5m candle that breaks the prior 5m candle’s low in a 5m uptrend warns of a pullback, so the entry sizes down to the reduced size (“market chuẩn bị pullback… hạn chế vô lệnh, giảm size lại cũng được” [X11 @13:21–15:02, quote @14:50–15:00]). Optional in the course — built as the reduced tier, tagged [X11].',
-          cite: 'X11 @13:21–15:02 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m',
+          body: 'In a 5m UPTREND (the 5m swing structure: higher high and higher low), a closed 5m candle that breaks the prior 5m candle’s low warns that a pullback is coming, so a LONG ISB sizes down to the reduced size (“market chuẩn bị pullback… hạn chế vô lệnh, giảm size lại cũng được” [Go over lớp học @00:14:50–00:15:02]). The mirror is built: in a 5m DOWNTREND a candle that breaks the prior candle’s HIGH warns a SHORT (“cũng ngược lại” [@00:15:05–00:15:17]). The warning is DIRECTION-AWARE since release #52: it cuts only the entry that trades WITH the 5m trend; a short taken in the uptrend’s own pullback (or a long in the downtrend’s bounce) is the trade the warning predicts and keeps its size. No clear 5m structure means no warning. Scope: ISB and reverse ISB only. The course calls the cut optional (“cũng được”) and the bot applies it as mandatory; extending it to PHL/PLH and making it optional are open owner calls.',
+          cite: 'Go over lớp học part1 @00:13:21–00:15:19 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m / isbFlagsFor (side-aware) · kernel/mentor/box.go structureTrend5m',
         },
         {
           title: 'Skip a stop of 30 or more',

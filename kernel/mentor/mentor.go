@@ -757,8 +757,9 @@ const (
 	FlagISBAtOldExtreme = "isb_at_old_extreme"
 	FlagISBInRange      = "isb_in_range"
 	// FlagPullbackWarn is the X11 pullback-warning size cut: a 5m candle that
-	// breaks the prior 5m candle's low in a 5m uptrend warns of a pullback, so
-	// the entry sizes down [X11 @13:21–15:02, quote @14:50–15:00].
+	// breaks the prior 5m candle's low in a 5m uptrend (mirror: the high in a
+	// downtrend) warns an entry WITH that trend, so it sizes down [Go over lớp
+	// học @00:13:21–00:15:19]. Stamped per entry side (C52-W10 B20).
 	FlagPullbackWarn = "pullback_warn"
 )
 
