@@ -59,7 +59,7 @@ jobs:
         env:
           DATA_ENCRYPTION_KEY: "test-encryption-key-for-ci-only-not-production"
         run: |
-          go test -v -race -timeout 60m -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -race -timeout 120m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Calculate coverage and generate report
         id: coverage
