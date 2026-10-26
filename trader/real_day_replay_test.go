@@ -740,9 +740,90 @@ func parseRdrCreated(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unparseable created_at %q", s)
 }
 
+// rdrAttributionWindow is how far (either side) of a live arm's authoring
+// instant the replay's refusal bars are searched. The live author instant is
+// the CLOSE of the execution-frame candle (1m, 2m after 09:00 CT's 30m rule, or
+// a 5m frame), and the replay evaluates every 1m bar, so the kernel's refusal
+// for the same setup can land on a neighbouring 1m bar: up to one 5m frame
+// either side (m431: trade 690's isbrev_target_below_floor was one bar off).
+const rdrAttributionWindow = 5 * time.Minute
+
+// rdrRefusalShaped reports whether a trader counter name is a refusal/hold
+// (not an extend_ok / intent_<setup> / tier_<size> tally).
+func rdrRefusalShaped(k string) bool {
+	for _, w := range []string{"refus", "blocked", "invalid", "floor", "hold", "freeze", "halt", "room", "eod"} {
+		if strings.Contains(k, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// rdrNamedRefusals lists the entry-blocking refusals recorded on one replay
+// bar: EVERY kernel refusal counter (the kernel's State.Refusals / limits maps
+// hold nothing but refusals), plus the trader-side counters except the
+// arm-management races (cancel/close/extend of a row that is already gone),
+// which say nothing about why an entry was not authored. Sorted, "k=n".
+func rdrNamedRefusals(r rdrBarRef) []string {
+	var parts []string
+	for k, v := range r.kernel {
+		if v > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+		}
+	}
+	for k, v := range r.trader {
+		if v <= 0 || strings.HasPrefix(k, "cancel_") || strings.HasPrefix(k, "close_") || k == "extend_refused" {
+			continue
+		}
+		// The trader counter map also holds non-refusal tallies (extend_ok,
+		// intent_<setup>, tier_<size>): keep only the refusal-shaped names.
+		if !rdrRefusalShaped(k) {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+	}
+	sort.Strings(parts)
+	return parts
+}
+
+// rdrAttribute names the replay's refusal for a live arm authored at `created`:
+// among the replay bars within rdrAttributionWindow that carry at least one
+// named refusal, the NEAREST one wins. A window with no refusal bar returns a
+// "no ..." string, which the caller counts as UNEXPLAINED (the harness must be
+// able to fail on a genuinely unattributed trade).
+func rdrAttribute(created time.Time, refs []rdrBarRef) string {
+	best := -1
+	bestD := time.Duration(1<<63 - 1)
+	var bestParts []string
+	for i, r := range refs {
+		ct, err := time.ParseInLocation("01-02 15:04", r.ct, kernel.CTLocation())
+		if err != nil {
+			continue
+		}
+		// The bar's close year is the replay year (2026); the live created is UTC.
+		ct = time.Date(2026, ct.Month(), ct.Day(), ct.Hour(), ct.Minute(), 0, 0, kernel.CTLocation())
+		d := created.Sub(ct)
+		if d < 0 {
+			d = -d
+		}
+		if d > rdrAttributionWindow || d >= bestD {
+			continue
+		}
+		parts := rdrNamedRefusals(r)
+		if len(parts) == 0 {
+			continue
+		}
+		bestD, best, bestParts = d, i, parts
+	}
+	if best < 0 {
+		return fmt.Sprintf("no named refusal within %s of the live arm", rdrAttributionWindow)
+	}
+	return fmt.Sprintf("@%s (%+ds) %s", refs[best].ct, int(bestD.Seconds()), strings.Join(bestParts, " "))
+}
+
 // refusalFor names the replay refusal for a live trade that was NOT authored:
-// the live arm's created instant (from the record) maps to the replay bar whose
-// close is nearest, and that bar's diffed trader/kernel refusals are reported.
+// the live arm's created instant (from the record) is matched to the replay
+// bars within rdrAttributionWindow whose diffed trader/kernel refusals name why.
 func refusalFor(t *testing.T, rec rdrLiveRecord, tr rdrLiveTrade, refs []rdrBarRef) string {
 	side := strings.ToLower(tr.Side)
 	// The live arm that produced this trade (same side, entry within 0.5).
@@ -766,41 +847,7 @@ func refusalFor(t *testing.T, rec rdrLiveRecord, tr rdrLiveTrade, refs []rdrBarR
 	if created.IsZero() {
 		return "no matching live arm"
 	}
-	// Find the replay bar closest to the live arm's authoring instant.
-	best := -1
-	bestD := time.Duration(1<<63 - 1)
-	for i, r := range refs {
-		ct, err := time.ParseInLocation("01-02 15:04", r.ct, kernel.CTLocation())
-		if err != nil {
-			continue
-		}
-		// The bar's close year is the replay year (2026); the live created is UTC.
-		ct = time.Date(2026, ct.Month(), ct.Day(), ct.Hour(), ct.Minute(), 0, 0, kernel.CTLocation())
-		d := created.Sub(ct)
-		if d < 0 {
-			d = -d
-		}
-		if d < bestD {
-			bestD, best = d, i
-		}
-	}
-	if best < 0 {
-		return "no refusal bars recorded"
-	}
-	r := refs[best]
-	var parts []string
-	for _, k := range []string{"htf_blocked", "isb_htf_blocked", "isb_htf_side_mismatch", "phl_htf_blocked", "isb_stop_over_max", "isb_target_below_floor", "phl_target_below_floor", "room", "loss_box_blocked", "leg_budget_second_phl", "news_hold_no_calendar", "refused_same_side_working"} {
-		if v := r.kernel[k]; v > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
-		}
-		if v := r.trader[k]; v > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
-		}
-	}
-	if len(parts) == 0 {
-		return fmt.Sprintf("no named refusal at %s (kernel %v trader %v)", r.ct, r.kernel, r.trader)
-	}
-	return fmt.Sprintf("@%s %s", r.ct, strings.Join(parts, " "))
+	return rdrAttribute(created, refs)
 }
 
 // C52-W4 REAL_DAY_REPLAY note (A5 part 1, reverse ISB at EMA 9 reads the 2m

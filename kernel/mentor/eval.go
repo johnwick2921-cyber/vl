@@ -1057,6 +1057,47 @@ func (e *Evaluator) unregisterArm(armID string) {
 	}
 }
 
+// heldArmIDs lists every entry ArmID the evaluator currently has registered:
+// ISBArms, the swing Pending, the LevelArms (incl. the rolling PHL order) and
+// the EMA34 pending. It is the "before" snapshot of the m431 exit pass.
+func (e *Evaluator) heldArmIDs() map[string]bool {
+	ids := make(map[string]bool, len(e.State.ISBArms)+len(e.State.LevelArms)+3)
+	for id := range e.State.ISBArms {
+		ids[id] = true
+	}
+	if p := e.State.Swing.Pending; p != nil && p.ArmID != "" {
+		ids[p.ArmID] = true
+	}
+	for _, arm := range e.State.LevelArms {
+		if arm.ArmID != "" {
+			ids[arm.ArmID] = true
+		}
+	}
+	if e.State.RollingPHL.ArmID != "" {
+		ids[e.State.RollingPHL.ArmID] = true
+	}
+	if e.State.EmaPendingArmID != "" {
+		ids[e.State.EmaPendingArmID] = true
+	}
+	return ids
+}
+
+// unregisterDroppedArms is the single exit pass (m425a S1, widened by m431):
+// every arm registered since the `held` snapshot whose entry is not among the
+// intents leaving Tick was dropped by some filter after it registered, so it is
+// un-registered — it would otherwise block the next same-side setup and later
+// emit ExtendArm/CancelArm for an order that was never authored. An arm that
+// was already held when the Tick began is left alone (its lifecycle is the
+// cancel/extend path's).
+func (e *Evaluator) unregisterDroppedArms(held map[string]bool, out []Intent) {
+	survived := entryArmIDs(out)
+	for id := range e.heldArmIDs() {
+		if !held[id] && !survived[id] {
+			e.unregisterArm(id)
+		}
+	}
+}
+
 // entryArmIDs lists the ArmIDs of the entry intents (the placements that
 // registered an arm) in out.
 func entryArmIDs(out []Intent) map[string]bool {
@@ -1729,7 +1770,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// FTGH return set it and the bot logged a spurious "confluence upgrade
 	// IGNORED").
 	var schoolOne []schoolOneKey
+	// m431 (release #52): ONE un-registration mechanism for a dropped entry.
+	// Snapshot the ArmIDs the evaluator already held when this Tick began; on
+	// the way out (every return path, AFTER the leave-stamp and the deferred
+	// flag-wall target pass) any arm that was registered DURING this Tick and
+	// whose entry is not among the intents that actually leave is un-registered.
+	// The old m425a S1 pass sat mid-Tick and so missed every drop made after it:
+	// the flag_wall_room refusal left ISBArms[isb-17] registered on the 10-23
+	// 12:22 tape, which then emitted ExtendArm/CancelArm for an order never
+	// authored.
+	armsAtStart := e.heldArmIDs()
 	defer func() {
+		defer func() { e.unregisterDroppedArms(armsAtStart, out) }()
 		if out == nil {
 			return
 		}
@@ -3087,9 +3139,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
 	// the candle nor the entry point [D3.2 p1 @ 06:59].
-	// m425a S1: snapshot the entry ArmIDs that REGISTERED an arm; every one the
-	// late filters below (or the limits hook) drop is un-registered after.
-	registeredArms := entryArmIDs(out)
+	// m425a S1 / m431: an entry the late filters below (or the limits hook, or
+	// the deferred leave passes) drop is un-registered by Tick's single exit
+	// pass (unregisterDroppedArms).
 	out, refused := boxBanFilter(out, boxes, bars[len(bars)-1])
 	for _, r := range refused {
 		e.refuse(r)
@@ -3178,15 +3230,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// isbArmActive).
 	keptIntraday := e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg)
 	out = append(keptIntraday, swings...)
-	// m425a S1: ANY entry dropped after its arm registered (late filters or the
-	// limits hook) un-registers that arm — ISB, level, rolling PHL, EMA pending.
-	survived := entryArmIDs(out)
-	for id := range registeredArms {
-		if !survived[id] {
-			e.unregisterArm(id)
-		}
-	}
-
 	// release #31 (leg-3 bracket): stamp the runner's FIRST partial line on
 	// every entry intent — the first target line strictly between the 1:1 leg-1
 	// exit and the trade target. The trader sends leg2_qty/leg2_tp only when the
