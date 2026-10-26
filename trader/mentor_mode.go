@@ -69,7 +69,7 @@ type mentorTierInputs struct {
 
 	ISBOldExtreme bool // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
 	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
-	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend → size down [X11 @13:21–15:02]
+	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend (mirror: the high in a downtrend) against an entry WITH that trend → size down [Go over lớp học @00:13:21–00:15:19]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
@@ -155,7 +155,8 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	if in.ISBInRange {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_in_range", Why: "ISB traded inside a range → the reduced tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
-	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend →
+	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend
+	// (mirror for a downtrend; the flag is already side-aware, C52-W10 B20) →
 	// size down ("giảm size lại cũng được") [X11 @13:21–15:02, quote @14:50–15:00].
 	if in.PullbackWarn {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil

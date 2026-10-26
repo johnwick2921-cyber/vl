@@ -152,6 +152,27 @@ const rdrAddonBuild = "2026-10-18-a"
 //     attribution gap, unchanged by this wave (2 / 1 / 1 trades).
 //
 
+// REAL_DAY_REPLAY note, release #52 W10 (fix/c52-w10, B20 direction-aware 5m
+// pullback warning; A10 NOT built: the plan records two conflicting course
+// statements), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|
+// 22|23, TZ=America/Chicago, before = 1fd721a2f, after = this branch. The diff
+// tables, arm lists and every refusal/funnel line are IDENTICAL on all three
+// days (the flag only changes the SIZE tier, which the replay does not print).
+// The flag stamps themselves (ISB intents carrying pullback_warn, counted with a
+// temporary print at isbFlagsFor, removed) CHANGE: base 7 / 0 / 4 on 10-21 / 10-22
+// / 10-23 (11 stamps: 9 SHORT, 2 LONG), branch 3 / 2 / 2 (7 stamps: 5 SHORT,
+// 2 LONG). The base rule was "previous 5m candle green and this candle broke
+// its low", side-blind; the branch reads the 5m swing structure (HH+HL up, LH+LL
+// down), warns only the side that trades WITH that trend, and adds the mirror.
+// Sample stamps (CT, intent close time): base only, 10-20 17:45 short, 10-20
+// 17:55 short, 10-21 02:55 long, 10-21 11:19 short, 10-21 13:03 short, 10-21
+// 15:55 short, 10-22 17:19 short, 10-22 18:29 short, 10-23 13:53 short, 10-23
+// 15:29 short; branch only, 10-21 10:59 long, 10-21 13:35 short, 10-21 18:15
+// short, 10-21 21:09 short, 10-23 06:11 short, 10-23 13:57 short; both, 10-21 11:21 long. (Times are
+// evaluator ticks, not necessarily armed or filled trades.) The "attribution is
+// broken" assertion at the end already fails on both and is not part of this
+// change.
+
 // REAL_DAY_REPLAY note, release #52 W3 (fix/c52-w3, level-arm lifecycle A4 a+b;
 // B13 and B23 not built), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
 // REAL_DAY=2026-10-21|22|23, TZ=America/Chicago, before = d3dfe91fc eval.go,

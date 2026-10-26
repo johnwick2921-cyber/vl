@@ -292,9 +292,11 @@ type Evaluator struct {
 	// "" = the configured base frame. Set at the top of the box section.
 	boxFrameTF string
 	// pullbackWarn5m is the X11 pullback warning for THIS tick (transient, not
-	// serialized): the latest closed 5m candle broke the prior one's low in a
-	// 5m uptrend → size down [X11 @13:21–15:02].
-	pullbackWarn5m bool
+	// serialized): the ENTRY SIDE the warning applies to ("" = none). A 5m
+	// uptrend whose latest closed candle broke the prior one's low warns LONG
+	// entries; the mirror (5m downtrend, prior high broken) warns SHORT entries
+	// → size down [X11 @13:21–15:02]. C52-W10 (B20).
+	pullbackWarn5m Side
 	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
 	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
 	// valid or dying, a swing-line gap fold). The trader drains them with
@@ -1096,24 +1098,38 @@ func joinFlag(flags, want string) string {
 	return flags + "|" + want
 }
 
-// pullbackWarning5m reports the X11 pullback warning: the latest closed 5m
-// candle broke the previous one's LOW while that previous candle was bullish
-// (a 5m uptrend) — "market chuẩn bị pullback … hạn chế vô lệnh, giảm size lại
-// cũng được" [X11 @13:21–15:02, quote @14:50–15:00].
-func pullbackWarning5m(b5 []market.Kline) bool {
+// pullbackWarning5m reports the X11 pullback warning as the ENTRY SIDE it
+// warns ("" = no warning): in a 5m UPTREND, a closed 5m candle that breaks the
+// previous candle's LOW means "market chuẩn bị pullback … hạn chế vô lệnh,
+// giảm size lại cũng được" — the warning is for a LONG, i.e. trading WITH the
+// 5m trend; the mirror ("cũng ngược lại": 5m downtrend, the next candle breaks
+// the previous candle's HIGH) warns a SHORT [Go over lớp học part1.srt
+// @00:13:21–00:15:19, quote @00:14:50–00:15:02]. A SHORT taken in the uptrend's
+// own pullback is not warned (C52-W10 B20: it was cut before, the warning was
+// side-blind). The 5m trend is the swing STRUCTURE read (structureTrend5m,
+// higher high + higher low / lower high + lower low), not "the previous candle
+// is green"; no clear structure means no warning.
+func pullbackWarning5m(b5 []market.Kline) Side {
 	if len(b5) < 2 {
-		return false
+		return ""
 	}
 	prev, cur := b5[len(b5)-2], b5[len(b5)-1]
-	if prev.Close <= prev.Open {
-		return false // not a 5m uptrend
+	switch structureTrend5m(b5) {
+	case SideLong:
+		if cur.Low < prev.Low {
+			return SideLong
+		}
+	case SideShort:
+		if cur.High > prev.High {
+			return SideShort
+		}
 	}
-	return cur.Low < prev.Low
+	return ""
 }
 
-func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
+func (e *Evaluator) isbFlagsFor(cur market.Kline, side Side, levels []Level, boxes []Box) string {
 	flags := isbFlags(cur, levels, boxes)
-	if e.pullbackWarn5m {
+	if e.pullbackWarn5m != "" && side == e.pullbackWarn5m {
 		flags = joinFlag(flags, FlagPullbackWarn)
 	}
 	if HasFlag(flags, FlagISBInRange) {
@@ -1974,7 +1990,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 	// X11 pullback warning (size cut, this tick): a 5m candle that broke the
-	// prior 5m candle's low in a 5m uptrend [X11 @13:21–15:02, quote @14:50–15:00].
+	// prior 5m candle's low in a 5m uptrend (mirror: the prior high in a 5m
+	// downtrend) [X11 @13:21–15:02, quote @14:50–15:00]. C52-W10 (B20).
 	e.pullbackWarn5m = pullbackWarning5m(e.closedBucketsTFMemo(bars, 5, now))
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
@@ -2302,7 +2319,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
 								// @ 04:37–05:04]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
-								chosen.Flag = e.isbFlagsFor(execCur, levels, boxes)
+								chosen.Flag = e.isbFlagsFor(execCur, chosen.Side, levels, boxes)
 								// N12: a single ISB fills by the close of the NEXT
 								// candle on the execution timeframe (1m default; 2m
 								// under X5-10) or it is cancelled ("cancel if the
@@ -2460,7 +2477,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
 					// [D4.1 p1 @04:31–05:04; extended to the reverse ISB by bot inference].
-					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
+					in.Flag = e.isbFlagsFor(execCur, in.Side, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
 					// stop orders on one candle) — drop any same-pair normal ISB

@@ -56,19 +56,19 @@ func TestISBFlagsForWidensInRange(t *testing.T) {
 	e := New(DefaultConfig())
 	e.State.ISBBox = &ISBBox{High: 100, Low: 90}
 	cur := market.Kline{High: 96, Low: 94, Close: 95}
-	if f := e.isbFlagsFor(cur, nil, nil); f != FlagISBInRange {
+	if f := e.isbFlagsFor(cur, SideLong, nil, nil); f != FlagISBInRange {
 		t.Fatalf("ISB inside the 5m box must carry isb_in_range, got %q", f)
 	}
 	// outside the box, no old extreme → no flags.
 	e.State.ISBBox = &ISBBox{High: 100, Low: 90}
 	cur2 := market.Kline{High: 106, Low: 104, Close: 105}
-	if f := e.isbFlagsFor(cur2, nil, nil); f != "" {
+	if f := e.isbFlagsFor(cur2, SideLong, nil, nil); f != "" {
 		t.Fatalf("outside the box with no other range the flags must be empty, got %q", f)
 	}
 }
 
 // TestISBInRangeFlagOnTick — item 21 (D4.1-06) Tick-level pin at the emit call
-// site (`chosen.Flag = e.isbFlagsFor(cur, levels, boxes)`): an ISB whose candle
+// site (`chosen.Flag = e.isbFlagsFor(cur, side, levels, boxes)`): an ISB whose candle
 // sits inside the standing 5m ISB box emits with isb_in_range. The unit pin
 // (TestISBFlagsForWidensInRange) exercises the resolver directly; this pin
 // catches a revert of the CALL SITE to the old `isbFlags`. Mutant
