@@ -23,7 +23,7 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 	if !at.dayPlanEnabled() && !isOpsAlertKind(kind) {
 		return
 	}
-	if _, err := at.store.Alert().Emit(&store.AlertDB{
+	row := &store.AlertDB{
 		TraderID:  at.id,
 		Level:     level,
 		Kind:      kind,
@@ -31,7 +31,14 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		Title:     title,
 		Body:      body,
 		CreatedAt: time.Now().Unix(),
-	}); err != nil {
+	}
+	created, err := at.store.Alert().Emit(row)
+	if err == nil && created {
+		// m432: a NEW ops P0 also reaches the owner's phone (outbound, async,
+		// deduped, rate-limited; never blocks this caller).
+		at.maybeOwnerPush(row, ownerPushClock())
+	}
+	if err != nil {
 		// P0-cleanup — an alert that vanishes on DB write failure is a silent
 		// hole in the one owner-facing surface.
 		at.logErrorf("🚨 alert EMIT failed (%s %s): %v — body: %s", level, kind, err, body)
@@ -49,6 +56,7 @@ func isOpsAlertKind(kind string) bool {
 	switch kind {
 	case "trader_down_no_evaluator", // the run-owner "trader is DOWN" P0
 		"feed-down",                // the NT8 link/feed down P0
+		alertKindBarHoleUnfilled,   // m432: NT8 has no history for a bar hole — reload it
 		"dead_man_reconcile_stuck", // DS-102 #538: dead-man reconcile block with no upper bound
 		// m226: protection alerts are the only signal for a position whose stop is
 		// missing, partial or stuck — they must reach the desk even when the
