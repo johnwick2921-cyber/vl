@@ -46,6 +46,7 @@ func mentorChartTape() []market.Kline {
 }
 
 func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
@@ -156,6 +157,7 @@ func TestMentorTruthSnapshotSendsEMAseries(t *testing.T) {
 // m134 — a line with two anchors but no 3rd touch yet is FORMING: it is sent
 // with valid=false so the chart draws it thin/dashed "waiting for 3rd touch".
 func TestMentorTruthSnapshotSendsFormingTrendlines(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true

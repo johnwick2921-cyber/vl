@@ -113,7 +113,7 @@ func sameCarriedAnchors(a, b Trendline, frame int) bool {
 func intradayBrokenBy5m(tl Trendline, b5 []market.Kline, now time.Time) bool {
 	nowMs := now.UnixMilli()
 	for _, b := range b5 {
-		if b.CloseTime >= nowMs || b.OpenTime <= tl.P1T {
+		if b.CloseTime >= nowMs || b.OpenTime < tl.breakScanFrom() {
 			continue
 		}
 		if tl.brokenBy5m(b) {

@@ -306,7 +306,8 @@ func TestTriggerMoveIsLogged1014(t *testing.T) {
 	t.Fatalf("no change line for the 10-14 01:00 4h move; notes=%q", notes)
 }
 
-// TestTrendlinesKeptAllSession1013 — owner ruling R4 + course D4.1 ("Extend
+// TestTrendlinesKeptAllSession1013 (m428: an UNBROKEN line is kept all session; the
+// single non-adjacent line per side may be replaced, R5) — owner ruling R4 + course D4.1 ("Extend
 // right; never erase during the session; DELETE at end of day" [D4.1 p2
 // @01:17]); the 3rd-touch rule (#504) is unchanged. MATH-LEVELS-LINES #6
 // measured on 10-13: ONE line per side, the newest pair replacing the older —
@@ -348,8 +349,30 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 				validSeen[k] = true
 			}
 		}
+		anchors := map[int64]bool{}
+		for _, p := range prevDrawn {
+			anchors[p.P0T], anchors[p.P1T] = true, true
+		}
+		for _, c := range cur {
+			anchors[c.P0T], anchors[c.P1T] = true, true
+		}
+		skips := func(l Trendline) bool { // a non-adjacent line: an anchor lies strictly between its two
+			for a := range anchors {
+				if a > l.P0T && a < l.P1T {
+					return true
+				}
+			}
+			return false
+		}
 		for k, p := range prevDrawn {
 			if _, ok := cur[k]; ok {
+				continue
+			}
+			// m428 R5 (owner 2026-10-25): the ONE non-adjacent line per side may be replaced by
+			// a better / continuing one while it is still FORMING — the only drawn line that
+			// may leave without a break. A VALID line is never replaced (counted below).
+			replaced := skips(p) && !(p.ValidAt > 0 && !p.Dead)
+			if replaced {
 				continue
 			}
 			vanished++

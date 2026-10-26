@@ -360,6 +360,7 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
 	// line and must not re-bucket the whole window for each one.
 	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
+	b5 := barsTF(bars, 5) // m428 R1: an HTF line breaks on a closed 5m candle wholly beyond it
 	for _, tf := range []int{60, 240} {
 		for _, tl := range trendlinesBuildTF(bars, tf, now) {
 			k := tl.key()
@@ -374,7 +375,7 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 		if btf == nil {
 			btf = barsTF(bars, tl.TFMin)
 		}
-		if tl.Dead || trendlineHTFBroken(tl, btf, now) {
+		if tl.Dead || trendlineHTFBroken(tl, b5, now) {
 			tl.Dead = true
 			delete(e.tlHTF, k)
 			broken = append(broken, tl)
@@ -534,7 +535,7 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevelsAt(bars, cfg, now)...)
 	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return out
+	return withFlatSR(out, bars, cfg, now) // m428 R2: flat swing pairs are support/resistance levels
 }
 
 // swingOldExtremeLevels is the old-high/low set — the ONE source the trading
@@ -1833,6 +1834,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
 	e.trackTrendlines(trendlines, htfBroken, crossed, now)
+	trendlines = dropDeadTrendlines(trendlines) // m428 R3: a broken line is deleted — not drawn, not a level, not carried (trackTrendlines already noted it)
 	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
 	for _, k := range tlRefused {
 		e.refuse("tl_first_test_level_preferred:" + k)
@@ -3467,7 +3469,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: ema34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
 	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return out
+	return withFlatSR(out, bars, e.Cfg, now) // m428 R2
 }
 
 // resetEMAVisitsOnFrameSwitch starts a FRESH visit for the EMA 9 / EMA 34 /

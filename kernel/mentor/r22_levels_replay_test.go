@@ -79,7 +79,9 @@ func r22Replay(t *testing.T, fixture string, open int64, cfg Config, each func(e
 func r22OldExtremePrices(levels []Level) []float64 {
 	var ps []float64
 	for _, l := range levels {
-		if l.Kind == KindOldExtreme {
+		// m428 R2: a flat support/resistance (two same-role swings at the same price) is
+		// an EXTRA old low/high level beside the nearest pair — this pin counts the pivot pair.
+		if l.Kind == KindOldExtreme && !strings.Contains(l.Key, "flat_") {
 			ps = append(ps, l.Price)
 		}
 	}
