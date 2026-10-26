@@ -370,8 +370,14 @@ func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) 
 // extreme on this tape) — the refusal PROVES the location gate passed, because
 // a non-location level is skipped silently before that step.
 func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
-	bars, _ := trendlineReturnTape()
-	now := bars[13].OpenTime + 59_999
+	bars, mk := trendlineReturnTape()
+	// c52 W9 B7-R7: the FTGL box top (98.3) sits 0.9 pt under the fresh line, so
+	// ON ITS FIRST TEST the box edge beats the line (the mentor's FTGH/FTGL
+	// example). A 4th touch (bar 14: low 99.3 vs the line's 99.4, a rejection;
+	// still inside the forming 09:10 5m bucket) puts the line past its first
+	// test, where it is a location (m311) — the gate this test pins.
+	bars = append(bars, mk(14, 101, 101.5, 99.3, 101))
+	now := bars[14].OpenTime + 59_999
 
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
@@ -384,7 +390,7 @@ func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
 		t.Fatalf("no valid support trendline in %+v", tls)
 	}
 
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[13].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[14].OpenTime))
 	e.Tick(bars, now)
 	if e.State.Refusals["phl_no_old_extreme_on_side"] == 0 {
 		t.Fatalf("valid trendline did not pass the location gate — refusals=%v", e.State.Refusals)
@@ -831,5 +837,33 @@ func TestM427SlopedLineBreakNeedsTheWholeCandleBeyondBothEnds(t *testing.T) {
 	}
 	if !res.brokenBy5m(cand(110, 105.1)) {
 		t.Fatal("Low 105.1 is above the line at the open (105) and the close (≈100): broken")
+	}
+}
+
+// TestC52W9B7R7FTGBoxEdgeBeatsFreshTrendline (c52 W9 B7-R7) — the mentor's own
+// example is the FAILURE-TO-GO-HIGHER / LOWER box that "nó đang rất là respect"
+// against a trendline price "về test lần đầu tiên" [D2.3 p1 @01:44–01:52,
+// @02:19]. An FTGH/FTGL box EDGE at the line's price therefore refuses the
+// fresh line, exactly like a key level; a far edge does not. MUTANT: drop
+// KindFTGHEdge/KindFTGLEdge from trendlineBeatenByLevel → the line stays → RED.
+func TestC52W9B7R7FTGBoxEdgeBeatsFreshTrendline(t *testing.T) {
+	bars, _ := trendlineReturnTape()
+	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
+	tls := TrendlinesBuild(bars, now)
+	if len(tls) != 1 || tls[0].ValidAt == 0 {
+		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
+	}
+	price := tls[0].priceAt(bars[len(bars)-1].OpenTime)
+	for _, kind := range []LevelKind{KindFTGLEdge, KindFTGHEdge} {
+		at := []Level{{Kind: kind, Price: price + 1.5, Key: "box:edge"}}
+		got, refused := TrendlineLevels(tls, nil, at, bars)
+		if len(refused) != 1 || len(got) != 0 {
+			t.Fatalf("%s edge 1.5 pt from the fresh line must refuse it: got %+v refused %v", kind, got, refused)
+		}
+		far := []Level{{Kind: kind, Price: price + 10, Key: "box:far"}}
+		got, refused = TrendlineLevels(tls, nil, far, bars)
+		if len(got) != 1 || len(refused) != 0 {
+			t.Fatalf("%s edge 10 pts away must not refuse: got %+v refused %v", kind, got, refused)
+		}
 	}
 }

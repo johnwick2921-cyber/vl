@@ -15,8 +15,11 @@ import (
 // assignment up beside `e.State.Levels = levels` → this test goes RED (no
 // trendline, no HTF trigger, no box edge in the chart set).
 func TestTickChartLevelsCarryEveryAppendedPlace(t *testing.T) {
-	bars, _ := trendlineReturnTape()
-	now := bars[13].OpenTime + 59_999
+	bars, mk := trendlineReturnTape()
+	// c52 W9 B7-R7: bar 14 is a 4th touch so the line is past its first test (at
+	// the first test the FTGL box top 0.9 pt below it beats it as a Level).
+	bars = append(bars, mk(14, 101, 101.5, 99.3, 101))
+	now := bars[14].OpenTime + 59_999
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
 	for _, x := range tls {
@@ -27,7 +30,7 @@ func TestTickChartLevelsCarryEveryAppendedPlace(t *testing.T) {
 	if tl.ValidAt == 0 {
 		t.Fatalf("fixture: no valid support trendline in %+v", tls)
 	}
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[13].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[14].OpenTime))
 	e.Tick(bars, now)
 
 	kinds := map[LevelKind]int{}

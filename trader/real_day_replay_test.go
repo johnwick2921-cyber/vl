@@ -41,6 +41,26 @@ const rdrAddonBuild = "2026-10-18-a"
 //   - strategy_a5b7662e.json  the live strategy config JSON
 //   - live_record.json     {trades:[…], arms:[…]}
 //
+// REAL_DAY_REPLAY NOTE c52 W9 (trendline + flag wall, B7-R7 / B21 / B22), run
+// on 75707f1ed (base) vs fix/c52-w9, REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
+// REAL_DAY=2026-10-21|22|23, TZ=America/Chicago. The "attribution is broken"
+// failure below is identical on both sides: it is not a W9 effect.
+//
+//	10-21: entry intents 32 -> 37, flag_wall_room 5 -> 1, replay arms 23 -> 22.
+//	  Arm set: ADDED 10-20 18:34 short 29857.50 (new); 10-21 15:10 long 30049.75
+//	  and 15:50 long 30038.25 (gone), 10-21 13:55 long 30033.75 (new). Cause [B],
+//	  from the refusal counts, not traced arm by arm: fewer flag_wall_room
+//	  refusals (B21 nearest flag, B22 PHL/PLH only), and the arms after a
+//	  changed one shift with the day state. tl_first_test_level_preferred: +2
+//	  lines (a 1H long line, 3 ticks; a 1m short line, 1 tick) now lose to an
+//	  FTGH/FTGL box edge within 2 pts (B7-R7).
+//	10-22: no change (same arm set, same refusals).
+//	10-23: entry intents 19 -> 20, flag_wall_room 1 -> 0, flag_wall_target_used
+//	  3 -> 2 (non-PHL/PLH entries no longer cut), replay arms 14 -> 15 with the
+//	  same ADDED entry lines, +1 line (long, 1m) preferred over a box edge.
+//
+// Live trades 13 / 10 and their matched/unmatched split are unchanged.
+//
 // HONEST LIMITS (do not fake parity):
 //   - fills are SIMULATED: the replay's ledger row flips to `filled` on a
 //     candle touching the entry, not on a broker receipt; NT8 fill/ack latency
