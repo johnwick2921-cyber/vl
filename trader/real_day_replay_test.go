@@ -52,6 +52,25 @@ const rdrAddonBuild = "2026-10-18-a"
 //     slice;
 //   - BE moves and the exit drive are the PRODUCTION kernel, but their inputs
 //     are the simulated fills, so an exit time may shift a bar.
+// C52-W4 REAL_DAY_REPLAY note (A5 part 1, reverse ISB at EMA 9 reads the 2m
+// EMA 9 on a 2m exec pair). Run vs base 75707f1ed, same box and load, REAL_DAY
+// 2026-10-21 / 22 / 23 (the replay's PASS/FAIL is the same on both trees: its
+// "neither matched nor named" attribution gate was already red on the base).
+// Arms that change (placed stop-entry set diffed):
+//   - 10-21 day (dir /tmp/realday-1021): 10-20 17:42 SHORT 29925.50 (reverse
+//     ISB, tagged PHL) is no longer placed - the 1m EMA 9 touched the 2m ISB
+//     candle, the 2m EMA 9 does not; 10-21 03:44 SHORT 29802.00 and 10-21 08:24
+//     LONG 29882.00 likewise (the base ones were refused at the wire by the B3
+//     dupe/rate guard anyway). 10-20 17:16 SHORT 29937.25 is now a NORMAL ISB
+//     (isb-2-...): the base reverse ISB on that pair used to suppress it (R85
+//     suppressSamePairCounterISB), and with no reverse the normal ISB arms.
+//     Live trade #666's refusal label moves from refused_same_side_working to
+//     isb_trigger_side_mismatch (still not authored).
+//   - 10-22 day: placed-arm set identical (replay-arm count 14 -> 13 is a
+//     non-placed arm, not an authored order).
+//   - 10-23 day: identical.
+// No other arm changed. Which frame the EMA is read on for the 5m slow-evening
+// pair is unchanged (owner Q9).
 type rdrLiveTrade struct {
 	ID       int     `json:"id"`
 	Side     string  `json:"side"`
