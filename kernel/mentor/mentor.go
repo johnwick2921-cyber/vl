@@ -339,9 +339,9 @@ type Config struct {
 	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
 	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
 	// until it fills. Level touches stay first-touch-fixed (touch.go). Default
-	// OFF — it is a NEW #45 entry source; the multi-day replay re-baseline
-	// (DS-108) flips it ON before the #45 merge [D2.2 p1 @02:44–03:34,
-	// 11:05–11:36].
+	// ON since c52 W6 (owner order 2026-10-26 "align everything to the course"),
+	// behind the pullback-colour precondition and the 5m trigger-side gate in
+	// rolling_phl.go [D2.2 p1 @01:52–03:34, 10:47–11:36; X8 @06:25, 08:37].
 	RollingPHL bool
 
 	// Filters (PLAN v1 §4).
@@ -573,7 +573,7 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 		PHLEntryBufferPts:        1.0,
-		RollingPHL:               false, // D2.2 pullback-continuation rolling stop entry — OFF until the #45 replay re-baseline flips it ON [@02:44–03:34, 11:05–11:36]
+		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,

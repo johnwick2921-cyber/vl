@@ -41,6 +41,16 @@ const rdrAddonBuild = "2026-10-18-a"
 //   - strategy_a5b7662e.json  the live strategy config JSON
 //   - live_record.json     {trades:[…], arms:[…]}
 //
+// c52 W6 NOTE (RollingPHL default ON + pullback-colour + 5m-trigger gates,
+// 2026-10-26): replayed 10-21 / 10-22 / 10-23 (REAL_DAY_REPLAY=/tmp/realday-
+// 1021|1022|1023) with the flag OFF (base 75707f1ed), ON with the new gates,
+// and ON with both gates bypassed: the ADDED-arm list and the live-trade
+// verdict rows were IDENTICAL in all three runs on all three days (zero rolling
+// arms). On 10-21 the roll was reached on 1091 ticks and stopped at "no HTF
+// trend direction" on 1065, "level touch owns the entry" on 8, "too close to
+// the old extreme" on 4, "no old extreme" on 1. So no arm changes in this
+// replay set: the flip is dormant here, not proven by it.
+//
 // HONEST LIMITS (do not fake parity):
 //   - fills are SIMULATED: the replay's ledger row flips to `filled` on a
 //     candle touching the entry, not on a broker receipt; NT8 fill/ack latency
