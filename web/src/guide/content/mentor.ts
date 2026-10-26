@@ -39,7 +39,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_ema9_enabled',
     live: true,
   },
-  '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)':
+  '4h/1h gate only in the news + open windows (print day 07:20–08:30, open 08:30–09:30 CT)':
     {
       settingId: 'risk_control.mentor_tuning.htf_gate_news_only',
       live: true,
@@ -1024,7 +1024,7 @@ export const mentor: GuideSection = {
         },
         {
           label:
-            '4h/1h gate only in the news + open windows (07:20–07:35 and 08:30–09:30 CT)',
+            '4h/1h gate only in the news + open windows (print day 07:20–08:30, open 08:30–09:30 CT)',
           where: 'Strategy → Risk control → Mentor method numbers',
           what: 'D4.4-11: ON (default) = news + open: the gate applies on a red-folder PRINT day from 07:20 CT through the 08:30 CT open (W7: the post-print news trade follows the 4h; 4h/1h opposite sits out — D4.4 p1 @13:18–13:33, @18:03–18:52) AND in the 08:30–09:30 CT open window ("the open is like news" D4.4 p2 @00:35–00:46). The 60-minute open window is OURS: the course gives no length (borrowed from the mentor’s 60-minute entry window [example: D1.2 p1 @23:52–24:59]; owner-accepted INVENTED; mentor question B28 open). On a day with no print the 07:20–07:35 window is ordinary trading and is not gated; ordinary intraday entries outside those windows are not HTF-gated. OFF = the all-day gate (no 4h trigger means nothing to follow, and a 1h against the 4h sits out all day). The course: "Đánh thường đánh níu cũng được / Nhưng mà đánh níu nên sử dụng cho níu trước đi / Đừng sử dụng cho thường / Thường bắt đầu khó lắm" (D4.4 p1 @13:55–14:06 — trading normal or news is fine, but use the HTF read for news first) and "em chỉ hướng dẫn mọi người cái news thôi" (D4.4 p1 @24:48–24:51). #45 reverts owner decision A 2026-10-21 (m134): the default is ON (news-only, the mentor’s news-first rule). The m134 all-day default is reverted.',
           trader:

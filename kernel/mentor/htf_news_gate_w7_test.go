@@ -214,3 +214,32 @@ func TestEarlier1hTriggerIgnoredByBreakInstant(t *testing.T) {
 		t.Fatalf("restart parity: live %+v != seed %+v", live, seed)
 	}
 }
+
+// TestEarlier1hTriggerTickStampsBreakMinute is the Tick-level companion of the
+// B3 pin above: the production Tick must hand HTFAdvanceAt the ticked 1m bar's
+// open as the break minute, so the boot-line "since" of the 4h/1h lines is the
+// minute each really fired (01:05 for the 1h, 01:10 for the 4h).
+// MUTANT: eval.go Tick passes breakAt=0 -> the lines stamp the bucket open
+// (01:00) and this test is RED.
+func TestEarlier1hTriggerTickStampsBreakMinute(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	e.seeded = true
+	e.State.Seed1mWatermark = math.MaxInt64
+	e.State.Seed1HWatermark = math.MaxInt64
+	bars := b3Tape()
+	for i := range bars {
+		e.Tick(bars[:i+1], bars[i].CloseTime+1)
+	}
+	h := e.State.HTF
+	if h.FourH.Dir != SideLong || h.OneH.Dir != SideShort {
+		t.Fatalf("fixture: want 4h BUY / 1h SELL, got %s / %s", h.FourH.Dir, h.OneH.Dir)
+	}
+	if want := auditMs(2026, 9, 15, 1, 10, 0); h.FourH.MovedAt != want {
+		t.Fatalf("Tick: 4h MovedAt = %d, want the break minute 01:10 (%d)", h.FourH.MovedAt, want)
+	}
+	if want := auditMs(2026, 9, 15, 1, 5, 0); h.OneH.MovedAt != want {
+		t.Fatalf("Tick: 1h MovedAt = %d, want the break minute 01:05 (%d)", h.OneH.MovedAt, want)
+	}
+}

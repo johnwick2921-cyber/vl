@@ -127,7 +127,7 @@ type MentorHTFView struct {
 type MentorTriggerView struct {
 	Dir   string  `json:"dir"`
 	Price float64 `json:"price"`
-	Since int64   `json:"since"` // MovedAt (bucket open ms)
+	Since int64   `json:"since"` // MovedAt (5m: bucket open ms; 4h/1h: the 1m break minute, W7 B3)
 }
 
 // MentorLevelView is one mentor key level in effect, with today's visits.
