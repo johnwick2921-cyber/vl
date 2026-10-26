@@ -109,11 +109,21 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 	// nến đỏ … Nó rớt ngược lại" [D2.2 p1 @01:52–01:57]), in a downtrend it is
 	// GREEN ("bật nến xanh" [D2.2 p1 @10:47–10:51; @10:58]). A with-trend candle
 	// is the impulse, not the pullback — arming a stop on it chased the move.
-	// A with-trend candle mid-pullback does NOT kill a resting order (the stop
-	// on the previous pullback candle's extreme still stands and fills the
-	// moment price exceeds it); it just does not roll or start one.
-	if !rollingPullbackCandle(execCur, side) {
-		return nil
+	// A with-trend candle mid-pullback does NOT roll or start a stop (the stop on
+	// the previous pullback candle's extreme still stands and fills the moment
+	// price exceeds it) — but it still runs EVERY invalidation below (side
+	// flipped, old extreme gone, higher-low broken, trigger disagrees) and
+	// cancels a resting order whose leg died. Skipping only the ROLL (not the
+	// checks) is the D1 fix: an early return here let a resting long survive an
+	// HTF flip to short whenever the next candle happened to be with-trend.
+	withTrend := !rollingPullbackCandle(execCur, side)
+	if withTrend && st.ArmID == "" {
+		return nil // nothing resting to invalidate, nothing to start
+	}
+	// The resting order belongs to the OTHER side (HTF flipped): it is dead
+	// whatever the new side's checks below say.
+	if withTrend && st.Side != side {
+		return e.rollingCancel(st, "the HTF side flipped — cancel the resting roll of the old side")
 	}
 
 	// 2. The target is the NEAREST old extreme on the trade side (B14b), read
@@ -169,6 +179,12 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 			e.refuseOncePerVisit(fmt.Sprintf("%s@%d", rollingLevelKey, execCur.CloseTime), "rolling_phl_trigger_side")
 			return e.rollingCancel(st, "the 5m trigger side disagrees with the rolling leg — cancel the resting roll [X8 part1 @06:25, 08:37–08:48]")
 		}
+	}
+
+	// A with-trend candle only validates: the leg is still alive, so the
+	// resting order stands and nothing new is emitted (D1).
+	if withTrend {
+		return nil
 	}
 
 	// Already armed on THIS candle: a 1m tick on an odd minute re-reads the same

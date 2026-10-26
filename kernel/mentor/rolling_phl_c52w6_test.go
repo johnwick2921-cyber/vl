@@ -140,3 +140,58 @@ func TestC52W6RollingCancelsRestingWhenTriggerFlips(t *testing.T) {
 		t.Fatalf("the resting roll must be cancelled on the trigger flip: %+v", ins)
 	}
 }
+
+// TestC52W6RollingWithTrendCandleStillCancelsOnSideFlip — D1 (review of
+// c2eda1428): a resting LONG roll, the 4h flips SHORT, and the next closed
+// candle is RED (with-trend for the new short side). The colour gate must skip
+// only the ROLL: the stale long stop is cancelled and the state is cleared.
+// Also the HTF-lost and trigger-flip variants on a with-trend candle.
+// Mutant: restore the early `return nil` on a with-trend candle (before the
+// invalidation checks) → the stale long buy stop survives → RED.
+func TestC52W6RollingWithTrendCandleStillCancelsOnSideFlip(t *testing.T) {
+	cases := []struct {
+		name string
+		mut  func(e *Evaluator)
+		bar  func(t0 int64) market.Kline
+	}{
+		{"side flipped long->short, red (with-trend for short) candle",
+			func(e *Evaluator) { e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 140}} },
+			func(t0 int64) market.Kline { return rollingKline(t0, 6, 113, 114, 108, 109) }},
+		{"HTF direction lost, green (with-trend for long) candle",
+			func(e *Evaluator) { e.State.HTF = HTF{} },
+			func(t0 int64) market.Kline { return rollingKline(t0, 6, 113, 118.5, 112.5, 118) }},
+		{"5m trigger flipped against the long, green (with-trend) candle",
+			func(e *Evaluator) {
+				e.Cfg.LocTriggerFilter = true
+				e.State.Trigger = TriggerLine{Dir: SideShort, Price: 200}
+			},
+			func(t0 int64) market.Kline { return rollingKline(t0, 6, 113, 118.5, 112.5, 118) }},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			e, bars, now := rollingFixture()
+			if len(rollingPlaceEntries(e.Tick(bars, now))) != 1 {
+				t.Fatal("setup: the first roll must arm")
+			}
+			first := e.State.RollingPHL.ArmID
+			next := append(append([]market.Kline{}, bars...), c.bar(bars[0].OpenTime))
+			c.mut(e)
+			ins := e.Tick(next, next[6].OpenTime+59_999)
+			cancelled := false
+			for _, in := range ins {
+				if in.Action == CancelArm && in.ArmID == first {
+					cancelled = true
+				}
+				if in.Action == PlaceStopEntry && in.Setup == "PHL" {
+					t.Fatalf("a with-trend candle must never roll/arm: %+v", in)
+				}
+			}
+			if !cancelled {
+				t.Fatalf("the stale resting roll %s must be cancelled: %+v", first, ins)
+			}
+			if e.State.RollingPHL.ArmID != "" {
+				t.Fatalf("rolling state must be cleared, got %+v", e.State.RollingPHL)
+			}
+		})
+	}
+}
