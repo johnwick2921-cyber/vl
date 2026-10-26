@@ -1216,6 +1216,31 @@ func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int6
 	return agg
 }
 
+// reverseISBEMA9 is the EMA 9 the reverse ISB (R7) tests the exec candle
+// against, on the frame the pair is read on (C52-W4, A5 part 1) [Ngày 5.4 ISB
+// đảo chiều part1.srt @00:08:15–00:08:40: "anh trade khung nào thì anh bật khung
+// đó, khung M1 cũng được, khung M2 cũng được"].
+//
+//   - 1m exec frame: the 1m EMA 9, unchanged.
+//   - 2m exec frame: the 2m EMA 9 - the SAME line the bot draws and the EMA 9
+//     level carries (State.EMA9x2) when that incremental line has folded
+//     exactly through execCur (Seed2mWatermark == execCur.CloseTime proves it is
+//     in step with the candle under test); otherwise the EMA over the closed 2m
+//     buckets (EMAOnTF's arithmetic).
+//   - 5m evening exec frame: UNCHANGED, the 1m EMA 9. There is no course basis
+//     for the evening frame (owner Q9 unanswered), so the 5m path is left alone.
+func (e *Evaluator) reverseISBEMA9(bars []market.Kline, execCur market.Kline, execTFMin int, now int64) float64 {
+	if execTFMin == 2 {
+		if e.State.EMA2mWarmed && e.State.EMA9x2 > 0 && e.State.Seed2mWatermark == execCur.CloseTime {
+			return e.State.EMA9x2
+		}
+		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) > 0 {
+			return emaValue(b2, e.Cfg.EMAPeriod9)
+		}
+	}
+	return emaValue(bars, e.Cfg.EMAPeriod9)
+}
+
 // nextLevelBeyond is the §6 target ladder [D3.3 p1 @ 05:07]: the NEAREST level
 // beyond price in the trade direction ("the first thing standing in your way").
 // 0 = no level beyond.
@@ -2277,7 +2302,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// still does not run). Release #30: isbrev_tf_conflict / isbrev_day_off
 	// count only a REAL reverse-ISB candidate (an ISB at the EMA 9 pointing
 	// against the trend) — before they fired for every ISB.
-	revEma9 := emaValue(bars, e.Cfg.EMAPeriod9)
+	//
+	// C52-W4 (A5, frame fix): the EMA 9 is read on the frame the pair is read on —
+	// "anh trade khung nào thì anh bật khung đó, khung M1 cũng được, khung M2
+	// cũng được" [Ngày 5.4 ISB đảo chiều part1.srt @00:08:15–00:08:40]. It used
+	// to be the raw 1m EMA 9 against 2m candles. The 5m evening path is NOT
+	// changed (Q9 unanswered): it keeps the 1m EMA 9.
+	revEma9 := e.reverseISBEMA9(bars, execCur, execTFMin, now)
 	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, e.State.Trigger.Dir, e.Cfg)
 	if isbEval && conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
 		e.refuse("isbrev_tf_conflict")
