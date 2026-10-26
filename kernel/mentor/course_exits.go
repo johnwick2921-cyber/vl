@@ -51,8 +51,8 @@ type CourseExitsCfg struct {
 	// size, refuse ≥ 30) is reverted.
 	ISBMaxStopPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
-	// out when the gap to the next key level is ≤ ratio × the largest recent
-	// 1m candle ("một cái nến nó bằng cái range của 2 cái level rồi thì ngồi
+	// out when the gap to the next key level is ≤ ratio × the current closed
+	// 1m candle (High-Low, eval.go) ("một cái nến nó bằng cái range của 2 cái level rồi thì ngồi
 	// im" [X4 @06:31]). No course ratio is spoken → 1.
 	KeypairCandleRatio float64
 	// BoxFreshRTHPair (CX-11 case b; m429 default ON, owner ruling 2026-10-25

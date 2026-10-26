@@ -96,8 +96,8 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 
 // ISBStopLimitOrder is the R1 order the evaluator emits: the single stop-limit
 // entry in the CANDLE-1 direction. ok is false (with a cited reason) when the
-// stop is ≥ the ISB ceiling — the ONLY stop-size skip R1 has (default 30,
-// course-defaults-30) [D4.1 p1 @ 05:41].
+// stop is ≥ the ISB ceiling — the ONLY stop-size skip R1 has (default 25 =
+// ISBMaxStopPts) [D4.1 p1 @ 05:41].
 func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, string) {
 	dir := ISBDirection(prev)
 	if dir == "" {

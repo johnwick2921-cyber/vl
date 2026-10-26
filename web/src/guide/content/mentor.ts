@@ -552,7 +552,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'A loss at a place blocks it',
-          body: 'After a LOSS at a level, a box edge or the EMA line (entry filled, then the stop hit), that place is blocked until a departure candle. Two losses at one place → that place is off for the day (the “off for the day” part is OURS, stricter than the course: “thua 2 lần ở cùng 1 chỗ thì là mọi người đang sai” — wrap the zone and wait for a departure, no day-long rule is stated [D4.2 p2 @06:37–07:13]).',
+          body: 'After a LOSS at a level, a box edge or the EMA line (entry filled, then the stop hit), that place is blocked until a departure candle. Two losses at one place → that place is off for the day (the “off for the day” part is OURS, stricter than the course: “thua 2 lần ở cùng 1 chỗ thì là mọi người đang sai” — and “đừng trade ở 1 khu vực, trade hoài ngay chỗ đó không có được cái gì đâu”; no day-long rule is stated, and the departure wait is OURS [D4.2 p2 @06:58–07:37]).',
           cite: 'E2 · G2 · D4.2 p2 @01:56',
         },
         {
