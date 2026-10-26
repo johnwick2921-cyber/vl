@@ -267,9 +267,10 @@ func TestM434BestPartnerMatchesReference(t *testing.T) {
 						pts = append(pts, s)
 					}
 				}
-				for j := 2; j < len(pts); j++ {
-					wb, wok := m434RefBestNonAdjacentPartner(fb, pts[:j-1], pts[j], role, dayStart)
-					gb, gok := bestNonAdjacentPartner(fb, pts[:j-1], pts[j], role, dayStart, newStandingMemo(fb, dayStart))
+				picker := newPartnerPicker(fb, role, dayStart)
+				for j := 1; j < len(pts); j++ {
+					wb, wok := m434RefBestNonAdjacentPartner(fb, pts[:max(j-1, 0)], pts[j], role, dayStart)
+					gb, gok := picker.pick(pts, j)
 					if wb != gb || wok != gok {
 						t.Fatalf("scale %v exec2m %v role %v j=%d: got (%+v,%v) want (%+v,%v)", scale, exec2m, role, j, gb, gok, wb, wok)
 					}
@@ -325,5 +326,143 @@ func BenchmarkM434TickR22(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		e := New(cfg)
 		e.Tick(win, BarCloseInstant(win[len(win)-1]))
+	}
+}
+
+// TestM434PartnerPickSkipsLosingCrossedScans — the PERF pin through the
+// production build (trendlinesBuildExec on the busy recorded 10-13 day, 14:30
+// CT): the number of candles its trendlineCrossed scans examine is at most three quarters of what (measured 0.56) scoring every candidate (the 75707f1ed loop) pays. Mutant: the
+// partner pick scores every candidate again (drop the `sc <= bestScore` skip)
+// -> the ratio is 1 -> RED.
+func TestM434PartnerPickSkipsLosingCrossedScans(t *testing.T) {
+	old := flatNearScale
+	flatNearScale = 1
+	defer func() { flatNearScale = old }()
+	bars := loadFixture(t, "mnq_1m_2026-10-13_session", "1m")
+	cut := time.Date(2026, time.October, 13, 14, 30, 0, 0, ctime()).UnixMilli()
+	n := 0
+	for n < len(bars) && bars[n].OpenTime < cut {
+		n++
+	}
+	win := bars[n-1500 : n]
+	now := time.UnixMilli(BarCloseInstant(win[len(win)-1]))
+
+	scans := 0
+	crossedProbe = func(n int) { scans += n }
+	defer func() { crossedProbe = nil }()
+	trendlinesBuildExec(win, now, false)
+	got := scans
+
+	// Reference count: every candidate that is a real sloped line pays a scan,
+	// plus the build's own per-line scans (the adjacent pair and the offered
+	// partner), which both paths pay identically.
+	fb := win
+	today := tradingDayKey(now.In(ctime()))
+	all := swings3(fb)
+	dayStart := len(fb)
+	for i, b := range fb {
+		if tradingDayKey(time.UnixMilli(b.OpenTime).In(ctime())) == today {
+			dayStart = i
+			break
+		}
+	}
+	_ = dayStart
+	want := 0
+	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
+		side := SideLong
+		if role == kernel.KindSWGH {
+			side = SideShort
+		}
+		var pts []swingPairAt
+		for _, s := range all {
+			if s.kind == role && swingConfirmed(fb, s) && tradingDayKey(time.UnixMilli(fb[s.idx].OpenTime).In(ctime())) == today {
+				pts = append(pts, s)
+			}
+		}
+		for j := 1; j < len(pts); j++ {
+			for _, p0 := range pts[:max(j-1, 0)] {
+				if tl, ok := newSlopedLine(fb, role, side, p0, pts[j]); ok {
+					for i := tl.P0Idx + 1; i < tl.P1Idx && i < len(fb); i++ {
+						want++
+						if tl.wickBeyond(fb[i]) {
+							break
+						}
+					}
+				}
+			}
+		}
+	}
+	t.Logf("candles examined by crossed scans: optimised build %d, scoring-every-candidate partner pick alone costs %d", got, want)
+	if want < 5000 {
+		t.Fatalf("fixture too quiet: only %d candles scanned by the reference", want)
+	}
+	if got*4 > want*3 {
+		t.Fatalf("build examined %d candles in crossed scans, the reference partner pick alone examines %d: the partner pick scores losing candidates again", got, want)
+	}
+}
+
+// TestM434CrossedMatchesWickBeyond — the hoisted trendlineCrossed equals the
+// loop over Trendline.wickBeyond (the 75707f1ed body) for random lines and
+// candles on both sides, including zero-width candles (CloseTime <= OpenTime)
+// and wicks within a hair of the touch band.
+func TestM434CrossedMatchesWickBeyond(t *testing.T) {
+	seed := uint64(0x9E3779B97F4A7C15)
+	rnd := func() float64 { // xorshift64*, deterministic
+		seed ^= seed >> 12
+		seed ^= seed << 25
+		seed ^= seed >> 27
+		return float64((seed*0x2545F4914F6CDD1D)>>11) / float64(1<<53)
+	}
+	hits, misses := 0, 0
+	for trial := 0; trial < 4000; trial++ {
+		n := 8 + int(rnd()*40)
+		bars := make([]market.Kline, n)
+		t0 := int64(1_790_000_000_000)
+		px := 30000 + rnd()*100
+		for i := range bars {
+			o := t0 + int64(i)*60_000
+			px += (rnd() - 0.5) * 6
+			h := px + rnd()*3
+			l := px - rnd()*3
+			bars[i] = market.Kline{OpenTime: o, CloseTime: o + 59_999, Open: px, Close: px, High: h, Low: l}
+			if rnd() < 0.05 {
+				bars[i].CloseTime = bars[i].OpenTime // zero-width
+			}
+		}
+		p0, p1 := int(rnd()*float64(n/2)), n/2+int(rnd()*float64(n/2))
+		if p1 >= n {
+			p1 = n - 1
+		}
+		if p1-p0 < 2 {
+			continue
+		}
+		side := SideLong
+		if rnd() < 0.5 {
+			side = SideShort
+		}
+		tl := Trendline{Side: side, P0Idx: p0, P1Idx: p1, P0T: bars[p0].OpenTime, P1T: bars[p1].OpenTime}
+		if side == SideLong {
+			tl.P0Px, tl.P1Px = bars[p0].Low, bars[p1].Low
+		} else {
+			tl.P0Px, tl.P1Px = bars[p0].High, bars[p1].High
+		}
+		want := false
+		for i := tl.P0Idx + 1; i < tl.P1Idx && i < len(bars); i++ {
+			if tl.wickBeyond(bars[i]) {
+				want = true
+				break
+			}
+		}
+		if got := trendlineCrossed(bars, tl); got != want {
+			t.Fatalf("trial %d: trendlineCrossed=%v, wickBeyond loop=%v (line %+v)", trial, got, want, tl)
+		}
+		if want {
+			hits++
+		} else {
+			misses++
+		}
+	}
+	if hits < 200 || misses < 200 {
+		t.Fatalf("degenerate corpus: %d crossed, %d clean", hits, misses)
 	}
 }
