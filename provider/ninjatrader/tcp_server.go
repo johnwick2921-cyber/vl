@@ -129,6 +129,10 @@ type TCPServer struct {
 	// can vouch for SIM accounts after a restart with NT8 closed). Optional for
 	// the same reason as orderSnapCB.
 	accountsCB func([]AccountInfo)
+	// positionsCB (m433) is the optional persistence hook for the positions
+	// frame: the account and how many NON-FLAT positions it carried. nil = no
+	// store wired (tests). It never gates the in-memory cache.
+	positionsCB func(account string, openCount int)
 
 	// FIX-DOUBLE-ENTRY (CTO ruling, 2026-09-26) — reconnect-relative broker
 	// truth for attempted entry frames (see attempted_guard.go). Never cleared
@@ -947,6 +951,11 @@ func (s *TCPServer) SetAccountsList(accounts []AccountInfo, current string) {
 // wiring time; nil disables persistence (a store failure must never cost the
 // wire its account list).
 func (s *TCPServer) SetAccountsSink(fn func([]AccountInfo)) { s.accountsCB = fn }
+
+// SetPositionsSink installs the positions persistence hook (m433). Called once
+// at wiring time; nil disables persistence. A store failure must never cost the
+// wire its positions cache.
+func (s *TCPServer) SetPositionsSink(fn func(account string, openCount int)) { s.positionsCB = fn }
 
 // SetBarsSubscribe overrides the auto-subscribe parameters sent on each
 // (re)connect. Stage 3 will call this with the active strategy's
@@ -2785,6 +2794,18 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			// snapshot after the first entry receipt was refused as stale.
 			s.acctPositionsReceived[p.Account] = time.Now()
 			s.acctMu.Unlock()
+			// m433 — persist the last frame (nil hook = no store wired). Outside
+			// the lock: the hook does a DB write. p.Positions is local to this
+			// readLoop iteration.
+			if cb := s.positionsCB; cb != nil {
+				open := 0
+				for _, pos := range p.Positions {
+					if pos.Quantity != 0 {
+						open++
+					}
+				}
+				cb(p.Account, open)
+			}
 			s.logger.Info("tcp_server: positions snapshot", "account", p.Account, "count", len(p.Positions))
 
 		case FramePositionCloseRejected:

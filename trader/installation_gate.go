@@ -666,15 +666,26 @@ func InstallationGateStatus(loaded map[string]*AutoTrader, st *store.Store) (g I
 		at := at
 		leg("trader_cutover:"+at.id, "CutoverGateStatus legs 1 (db_open_positions), 2 (api_positions), 4 (working_orders)", func() (bool, string) {
 			var failed, passed []string
-			for _, l := range installationTraderCutover(at) {
+			legs := installationTraderCutover(at)
+			for _, l := range legs {
 				if l.N == 3 || l.N == 5 {
 					continue // 3 → traders_nt8 + addon_census; 5 → planner_in_flight
 				}
 				if l.Pass {
 					passed = append(passed, l.Name)
-				} else {
-					failed = append(failed, l.Name+": "+l.Detail)
+					continue
 				}
+				// m433: a leg 2/4 that failed only because the broker is QUIET
+				// may be accepted on the broker's last flat answers (CME closed,
+				// DB flat, ledger flat) — see installation_gate_m433.go.
+				if relax, why := m433Relax(at, st, l.N, legs); relax {
+					passed = append(passed, l.Name+" ("+why+")")
+					continue
+				} else if why != "" {
+					failed = append(failed, l.Name+": "+l.Detail+" ["+why+"]")
+					continue
+				}
+				failed = append(failed, l.Name+": "+l.Detail)
 			}
 			if len(failed) > 0 {
 				return false, strings.Join(failed, " | ")

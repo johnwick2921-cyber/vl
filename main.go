@@ -415,6 +415,16 @@ func main() {
 		}
 	})
 
+	// m433 (release #52) — persist the AddOn's last positions frame per account
+	// so the installation gate can quote "the last broker answer before the link
+	// went quiet" after a restart with the broker connection down. Evidence for
+	// one gate rule only; a failed write never costs the wire its cache.
+	ntTrader.SetPositionsSink(func(account string, openCount int) {
+		if err := st.NTPositionsLast().Upsert(account, openCount, time.Now().UnixMilli()); err != nil {
+			logger.Warnf("📇 positions: persist failed (live cache still served): %v", err)
+		}
+	})
+
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}

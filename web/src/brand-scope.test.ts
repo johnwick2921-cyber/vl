@@ -1,4 +1,8 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baseline advanced 2026-10-26 for m433 (fix/m433-install-gate-broker-down), Go-only:
+//   provider/ninjatrader/tcp_server.go  sha256 f5d05417… — the FramePositions case hands an
+//     optional persistence hook (SetPositionsSink) the account and its non-flat count, after
+//     the cache write and outside the lock. ADDITIVE: no wire schema change, no guard removed.
 // Wire baseline advanced 2026-10-23 for m416 (fix/m416-sonnet-final-bar-persist), Go-only:
 //   provider/ninjatrader/tcp_server.go  sha256 d399f97d… — enqueueBarUpdate eviction now spares
 //     final-carrying frames (evictForIngest, ingestEnqMu). No wire schema change.
