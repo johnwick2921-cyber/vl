@@ -41,6 +41,17 @@ const rdrAddonBuild = "2026-10-18-a"
 //   - strategy_a5b7662e.json  the live strategy config JSON
 //   - live_record.json     {trades:[…], arms:[…]}
 //
+// C52 W1 replay note (confluence A1/A2/B9, base 75707f1ed vs the W1 branch, the
+// three days REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23):
+// the diff tables (live trades, replay arms, ADDED arms) are IDENTICAL on all
+// three days. One arm changes arm: the 10-23 03:34 CT ISB long (entry 29277.75,
+// stop 29264.50, authored as replay row 10, cancelled) forks C with leg-1 TP
+// 29304.25 (2R) instead of B, because the 15m/5m/1m ISBs align and the old
+// MTF trigger conjunct no longer refuses it (B9). No box arm changes fork on
+// those days (A1). The confluence leg-1 TP move (A2) never fires: 10-22 has
+// four RESTING arms upgraded to C (isb-2, isb-3, mentor-1793007641765732667,
+// box-ftgl:29516.00:29505.75-1792653599999), none fills in the replay.
+//
 // HONEST LIMITS (do not fake parity):
 //   - fills are SIMULATED: the replay's ledger row flips to `filled` on a
 //     candle touching the entry, not on a broker receipt; NT8 fill/ack latency

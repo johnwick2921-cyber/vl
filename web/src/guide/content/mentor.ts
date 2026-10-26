@@ -505,8 +505,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Intraday confluence (exit C, size 5)',
-          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. No key-level condition [B3]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align AND the 5m trigger agrees (an ISB/PHL/PLH, not just a box) [D4.2 p1 @14:57]. Then: hold at least 1:2, the stop is never moved up (exit C), size 5 — confluence is a longer hold, it never adds contracts, and the big tier is removed [D3.4 p3 @07:52] (the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ”; m186 reverts the 2026-10-16 “set to 4” flatten).',
-          cite: 'R2 · D3.4 p3 @07:38 · D4.2 p1 @14:57',
+          body: 'LONG = entry at an FTGL AND the 5m BUY trigger agrees; SHORT = entry at an FTGH AND the 5m SELL trigger agrees. The trigger is judged at the price you actually enter at (the rejecting candle’s high for a long, low for a short), NOT at the box edge — a buy line that sits between the box top and your entry counts, because you enter above it [D3.4 p3 @07:49–08:01; C52 W1]. No key-level condition [B3]. If you entered first and the trigger flips to your side afterwards, the trade upgrades to C and leg 1’s take-profit is moved from 1R out to 2R at NinjaTrader (a real modify on leg 1; a leg 1 that already took its 1R partial, or a one-bracket position, has nothing to move) — “vô rồi mới đợi trigger… hold at least risk reward 1-2” [D3.4 p3 @10:07–10:33, @11:01–11:05]. It also fires on timeframe agreement: the 15m ISB, the 5m ISB and the entry side all align (an ISB/PHL/PLH, not just a box) — the 5m trigger line is NOT part of this rule: D4.2 names only the three timeframes agreeing, opposite higher frames = no trade [D4.2 p1 @12:16–12:47, @14:30–14:52, @15:16–15:36; C52 W1 B9, owner order 2026-10-26]. Then: hold at least 1:2, the stop is never moved up (exit C), size 5 — confluence is a longer hold, it never adds contracts, and the big tier is removed [D3.4 p3 @07:52] (the course 1.1 L1103 “Cái sizing của em Cố định là 5 MNQ”; m186 reverts the 2026-10-16 “set to 4” flatten).',
+          cite: 'R2 · D3.4 p3 @07:38, @07:49–08:01, @10:07–10:33 · D4.2 p1 @12:16–12:47, @15:16–15:36',
         },
         {
           title: 'A loss at a place blocks it',
@@ -672,7 +672,7 @@ export const mentor: GuideSection = {
         ],
         [
           'C — confluence',
-          'Leg 1 holds to at least 1:2 — the stop does not move up',
+          'Leg 1 holds to at least 1:2 — the stop does not move up. A trade that BECOMES confluence after the entry (the trigger flips to its side) gets leg 1’s take-profit moved to 2R with a real NinjaTrader modify, tried up to 3 times and checked against the broker book [D3.4 p3 @10:07–10:33]',
         ],
         [
           'Wire 1:1 check',

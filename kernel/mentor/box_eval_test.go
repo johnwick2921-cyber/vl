@@ -92,6 +92,39 @@ func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
 	}
 }
 
+// C52 W1 A1 at the PRODUCTION call site (boxEntryIntent): the buy line sits
+// ABOVE the box top and the rejecting candle's high (the real entry) is above
+// the line. The pre-fix verdict read the box edge (96 < 97), found the price
+// "below the buy line", and left Confluence false; the entry is at 97.5, above
+// the line, so the intent must carry Confluence=true. Short mirror included.
+func TestBoxEntryIntentConfluenceUsesRealEntryNotBoxEdge(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.RoomMultiple = 0 // the flag, not the room rule
+	b := Box{Kind: FTGL, Top: 96, Bottom: 94}
+	ref := market.Kline{High: 97.5, Low: 96.5, Close: 97} // long entry 97.5
+	levels := []Level{{Kind: KindKeyLevel, Price: 99.5}}
+	trig := TriggerLine{Dir: SideLong, Price: 97} // above the box top 96, below the entry 97.5
+	o := boxEntryIntent(ref, b, []Box{b}, levels, trig, nil, cfg)
+	if len(o) != 1 || !o[0].Confluence || o[0].Side != SideLong {
+		t.Fatalf("line above the box top, entry above the line: want LONG Confluence=true, got %+v", o)
+	}
+	// An entry BELOW the line is not confluence (TriggerVerdict at the entry).
+	trigHigh := TriggerLine{Dir: SideLong, Price: 98}
+	if o := boxEntryIntent(ref, b, []Box{b}, levels, trigHigh, nil, cfg); len(o) == 1 && o[0].Confluence {
+		t.Fatalf("entry 97.5 below the buy line 98 must not confluence, got %+v", o)
+	}
+
+	c := Box{Kind: FTGH, Top: 105, Bottom: 102}
+	refS := market.Kline{High: 104.5, Low: 100.5, Close: 101} // short entry 100.5
+	lv := []Level{{Kind: KindKeyLevel, Price: 98}}
+	sell := TriggerLine{Dir: SideShort, Price: 101.5} // below the box bottom 102, above the entry 100.5
+	o = boxEntryIntent(refS, c, []Box{c}, lv, sell, nil, cfg)
+	if len(o) != 1 || !o[0].Confluence || o[0].Side != SideShort {
+		t.Fatalf("short mirror: want SHORT Confluence=true, got %+v", o)
+	}
+}
+
 // R1 at the CALL SITE [D3.2 p2 @ 06:25]: Tick evaluates EVERY return visit
 // of a live box — two reject returns in the day emit two box intents — and
 // each return exactly once (BoxRefs dedup).

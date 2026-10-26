@@ -2199,7 +2199,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							chosen.Target = target
 							// D4.2-06 part 1: confluence is computed BEFORE the room
 							// check — a confluence entry's leg 1 is 2R, so its room is 4R.
-							confluence := MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)
+							confluence := MTFConfluence(side, cb5, cb15)
 							// B9 [D5.1 p1 @16:24, @19:11-20:07]: ISBs obey the spent-day
 							// cap too ("15 điểm bán, 10 điểm bán"). A cap that breaks the
 							// 1:1 floor refuses (same reason as an uncapped short target).
@@ -2365,7 +2365,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.Target = target
 				// Confluence is computed before the room check — a confluence
 				// reverse ISB's leg 1 is 2R, so its room is 4R.
-				confluence := MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
+				confluence := MTFConfluence(in.Side, cb5, cb15)
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
@@ -2691,13 +2691,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's
-			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). Use the PHL's
-			// own entry price (RefBar extreme + the PHL buffer).
-			phlEntry := tr.RefBar.High + e.Cfg.PHLEntryBufferPts
-			if side == SideShort {
-				phlEntry = tr.RefBar.Low - e.Cfg.PHLEntryBufferPts
-			}
-			confluence := MTFConfluence(side, e.State.Trigger, phlEntry, cb5, cb15)
+			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). C52 W1 B9: the
+			// MTF read no longer takes an entry price (no trigger conjunct).
+			confluence := MTFConfluence(side, cb5, cb15)
 			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
 			if !ok {
 				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.

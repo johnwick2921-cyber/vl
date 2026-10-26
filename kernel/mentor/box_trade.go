@@ -259,7 +259,7 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	}
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
-	fl := ConfluenceVerdict(b, side, trig)
+	fl := ConfluenceVerdict(b, side, trig, price)
 	if abs(target-price) < cfg.RoomMultiple*risk*Leg1RiskMultiple(fl.On) {
 		return nil, "box_room"
 	}
@@ -293,18 +293,26 @@ type ConfluenceFlag struct {
 
 // ConfluenceVerdict evaluates the R2 confluence test [00-METHOD Risk-reward,
 // D3.4 p3 @ 07:38] for one box trade setup. side is the trade side; trig is the
-// 5m trigger line. Fail-closed: no trigger line (empty direction) can never
+// 5m trigger line; entry is the trade's REAL entry price (the rejecting
+// candle's high for a long, low for a short — the stop order's price, box_trade
+// boxEntryIntentWhy). Fail-closed: no trigger line (empty direction) can never
 // agree, so confluence stays off.
+//
 // ConfluenceVerdict is B3 (10-03 ruling, D3.4 p3 @07:38–08:22): confluence
 // = an FTGL/FTGH entry + the 5m trigger agrees — NO key-level condition. LONG
 // = FTGL (support); SHORT = FTGH. Feeds DS-102's exit-C / size-10.
-func ConfluenceVerdict(b Box, side Side, trig TriggerLine) ConfluenceFlag {
+//
+// C52 W1 A1 [D3.4 p3 @07:49–08:01 "vô lệnh ngay failure to go lower… mà nó
+// còn có trigger buy setup nữa thì tự tin, mạnh mẽ, hold… risk reward 1-2";
+// frame part3_07-50: the buy line sits ABOVE the box top]: the trigger is
+// judged at the price the trade ACTUALLY enters at, never at the box edge.
+// The edge (b.Top / b.Bottom) lies on the far side of a trigger line that sits
+// between the edge and the entry, so the old edge read refused confluence for
+// exactly the entries triggerBoxZoneVerdict lets through (a long can only be
+// emitted at or above the buy line).
+func ConfluenceVerdict(b Box, side Side, trig TriggerLine, entry float64) ConfluenceFlag {
 	if side != SideLong && side != SideShort {
 		return ConfluenceFlag{}
-	}
-	entry := b.Top
-	if side == SideShort {
-		entry = b.Bottom
 	}
 	if ok, trigSide, _ := TriggerVerdict(trig, entry); !ok || trigSide == "" || trigSide != side {
 		return ConfluenceFlag{}

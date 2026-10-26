@@ -62,7 +62,7 @@ type mentorTierInputs struct {
 	StopPts      float64 // |entry - stop|
 	TargetPts    float64 // |target - entry|
 	RoomMultiple float64 // reward/risk actually available
-	Confluence   bool    // box/zone + key level + 5m trigger agreeing (§6)
+	Confluence   bool    // box entry + 5m trigger agreeing at the real entry, or 15m/5m/1m ISBs aligned (§6; C52 W1)
 	HTFAgree     bool    // 4h AND 1h agree
 	SpentDay     bool    // §7 spent day
 	StrongDay    bool    // S9: 5m candles running 50–80 pts → size 1–2
@@ -883,8 +883,8 @@ func mentorLeg1TPForC(entry, r float64, side string) float64 {
 
 // mentorConfluenceForIntent is the R2 seam (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
-// confluence flag (box edge + key level inside the box or within 2 pts of its
-// edge + 5m trigger agrees). Wired by mentorWiring to the evaluator's tagged
+// confluence flag (box entry + the 5m trigger agrees at the real entry price,
+// or the 15m/5m/1m ISBs aligned — C52 W1 A1/B9). Wired by mentorWiring to the evaluator's tagged
 // in.Confluence; nil → false — C (size 5) never fires with no wiring.
 var mentorConfluenceForIntent func(in mentor.Intent) bool
 
@@ -1221,9 +1221,11 @@ func mentorExitHold(pos mentorPosition, l, h float64, reason string) (exitPrice 
 	return 0, "", false
 }
 
-// mentorExitC applies the confluence hold (C): the stop NEVER moves and there
-// is NO scale-out — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
-// ENTRY (mentorLeg1TPForC); the driver never modifies it.
+// mentorExitC applies the confluence hold (C): the stop NEVER moves and leg 1
+// does not leave at 1R — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
+// ENTRY for a confluence entry (mentorLeg1TPForC); a trade that became C AFTER
+// its entry (mentorConfluenceUpgrade) has that TP moved out to 2× by
+// mentorLeg1TPToC (C52 W1 A2), which the mode-C drive case also re-checks.
 func mentorExitC(pos mentorPosition, l, h float64) (exitPrice float64, exitReason string, exited bool) {
 	return mentorExitHold(pos, l, h, "stop")
 }
