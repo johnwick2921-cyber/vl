@@ -410,13 +410,23 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 		// Once both roles are latched the first box never changes, so the
 		// full BoxesBuild scan is skipped — only the B52 new-zone check below
 		// still needs the window.
-		if len(latched) < 2 {
-			for _, b := range BoxesBuild(w, build, time.UnixMilli(at)) {
+		// m429 R4: with the fresh-RTH knob ON a role latched in the evening can
+		// still be REPLACED by a box that forms in RTH, so the scan must reach
+		// RTH — it builds from the RTH slice exactly as the tick does
+		// (boxBuildBars), never the full window, and applies the SAME replace
+		// rule (freshRTHReplaces) the tick's latchBoxes applies.
+		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at)
+		if len(latched) < 2 || rthScan {
+			for _, b := range BoxesBuild(boxBuildBars(w, at, e.Cfg), build, time.UnixMilli(at)) {
 				if build.TF != cfg.TF {
 					b.TF = build.TF
 				}
-				if _, ok := latched[string(b.Kind)]; !ok {
+				old, ok := latched[string(b.Kind)]
+				if !ok {
 					latched[string(b.Kind)] = b
+				} else if e.freshRTHReplaces(old, b) {
+					latched[string(b.Kind)] = b
+					post = dropPreRTHPost(post, b)
 				}
 			}
 		}
@@ -439,10 +449,11 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 				}
 				post = append(post, *nb)
 			}
-		} else if len(latched) >= 2 {
+		} else if len(latched) >= 2 && !e.freshRTHPending(latched, at) {
 			// The pre-B52 fast path: stop once both roles are latched — a
 			// latched role never changes, so a normal day costs a few dozen
 			// scans, a day where one role never forms costs one scan per minute.
+			// (m429: not while an evening box can still be replaced in RTH.)
 			break
 		}
 	}
@@ -465,6 +476,29 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 			e.State.BoxRefs[b.Key] = newest
 		}
 	}
+}
+
+// eveningLatched reports whether any latched box formed before the RTH open of
+// the CT day `at` falls on (a candidate for the m429 fresh-RTH replacement).
+func eveningLatched(latched map[string]Box, at int64) bool {
+	open := rthOpenMs(at)
+	for _, b := range latched {
+		if b.FormedAtMs < open {
+			return true
+		}
+	}
+	return false
+}
+
+// freshRTHPending (m429) reports whether the seed replay must keep scanning
+// past "both roles latched": the knob is ON and a latched box is still an
+// evening box that today's RTH (not yet over at `at`) can replace.
+func (e *Evaluator) freshRTHPending(latched map[string]Box, at int64) bool {
+	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at) {
+		return false
+	}
+	t := time.UnixMilli(at).In(ctime())
+	return t.Hour()*60+t.Minute() < 17*60 // before the 17:00 roll the RTH may still produce a box
 }
 
 // SeedBoxLine is the boot line for the replayed box latch — every field READ

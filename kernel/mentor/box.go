@@ -435,7 +435,15 @@ func (e *Evaluator) latchBoxes(fresh []Box, bars []market.Kline, cfg BoxCfg) []B
 	}
 	for _, b := range fresh {
 		role := string(b.Kind)
-		if _, ok := e.State.LatchedBoxes[role]; ok {
+		if old, ok := e.State.LatchedBoxes[role]; ok {
+			// m429 (R4, owner 2026-10-25 "if there is a new box use it, if not
+			// use the old box"): a fresh RTH box of this role replaces the
+			// evening one; a role with no fresh RTH box keeps its evening box.
+			if e.freshRTHReplaces(old, b) {
+				e.State.LatchedBoxes[role] = b
+				e.State.PostEscapeBoxes = dropPreRTHPost(e.State.PostEscapeBoxes, b)
+				e.note("box %s replaced by the fresh RTH box %.2f–%.2f (formed %s CT; evening box %.2f–%.2f formed %s CT) — mentor_box_fresh_rth_pair [D4.1 p2 @02:39]", strings.ToUpper(role), b.Bottom, b.Top, kernel.TableTimeCT(time.UnixMilli(b.FormedAtMs)), old.Bottom, old.Top, kernel.TableTimeCT(time.UnixMilli(old.FormedAtMs)))
+			}
 			continue
 		}
 		e.State.LatchedBoxes[role] = b
