@@ -110,3 +110,65 @@ func TestHTFTriggerLevelNeverBecomesALocation(t *testing.T) {
 		t.Fatal("the 4h trigger line must never be a PHL/PLH location")
 	}
 }
+
+// Release #52 B5 — the 1H trigger line is NOT a target. The course names the
+// 4h line ("Về lại 4 giờ nè anh chị" [D4.4 p2 @05:04–05:44], one worked example)
+// and never the 1h. Production call site: Evaluator.Tick (the ladder) and
+// SeedChartDisplay (the boot-time chart set).
+//
+// Mutant (RED, then restored): re-add to eval.go Tick, after the 4h append,
+//
+//	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
+//	    levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
+//	}
+//
+// → TestISBTargetIgnoresThe1hTriggerLine RED (target 110 instead of 120).
+func TestISBTargetIgnoresThe1hTriggerLine(t *testing.T) {
+	e, bars, now := htfTargetFixture(t)
+	// 4h silent; the 1h trigger sits at 110, between the entry (104.5) and the
+	// next key level (120).
+	e.State.HTF = HTF{OneH: TriggerLine{Dir: SideLong, Price: 110}}
+	ins := e.Tick(bars, now)
+	var isb *Intent
+	for i := range ins {
+		in := &ins[i]
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup == "ISB" {
+			isb = in
+			break
+		}
+	}
+	if isb == nil {
+		t.Fatalf("the long ISB must fire; intents %+v refusals %v", ins, e.State.Refusals)
+	}
+	if isb.Target != 120 {
+		t.Fatalf("ISB target = %.2f, want 120 (the next key level — the 1h line is not a target); intents %+v", isb.Target, ins)
+	}
+	for _, l := range e.State.ChartLevels {
+		if l.Key == "htf_1h_trigger" {
+			t.Fatalf("the chart set still carries the 1h trigger as a target-ladder line: %+v", l)
+		}
+	}
+}
+
+// TestChartSeedCarriesThe4hLineNotThe1h — the boot-time chart set mirrors the
+// Tick ladder: the 4h trigger line is drawn, the 1h line is not.
+func TestChartSeedCarriesThe4hLineNotThe1h(t *testing.T) {
+	e, bars, now := htfTargetFixture(t)
+	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 110}, OneH: TriggerLine{Dir: SideLong, Price: 108}}
+	e.SeedChartDisplay(bars, now)
+	var has4h, has1h bool
+	for _, l := range e.State.ChartLevels {
+		switch l.Key {
+		case "htf_4h_trigger":
+			has4h = true
+		case "htf_1h_trigger":
+			has1h = true
+		}
+	}
+	if !has4h {
+		t.Fatalf("the chart seed lost the 4h trigger line: %+v", e.State.ChartLevels)
+	}
+	if has1h {
+		t.Fatalf("the chart seed still carries the 1h trigger line as a target-ladder level")
+	}
+}

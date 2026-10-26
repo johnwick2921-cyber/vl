@@ -840,6 +840,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("leg_reset_on_wave_break", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LegResetOnWaveBreak })
 	mentorTuningRow("flag_wall_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FlagWallTarget })
 	mentorTuningRow("box_new_zone_after_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.BoxNewZoneAfterEscape })
+	mentorTuningRow("orb_escape_completely", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEscapeCompletely })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).

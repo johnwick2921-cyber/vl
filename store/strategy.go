@@ -2053,6 +2053,10 @@ type MentorTuning struct {
 	// outside the old range (nil → ON) [D3.4 p3 recovered2 @00:00–00:21;
 	// "Đừng vẽ vùng thứ 3… Rối lắm" D3.2 p2 @09:47–09:54; D4.1 p2 @02:38].
 	BoxNewZoneAfterEscape *bool `json:"box_new_zone_after_escape,omitempty"`
+	// Release #52 B19: the ORB opens only on a candle COMPLETELY outside the
+	// 2-minute range, wicks included (nil/false → OFF = the body test)
+	// [extra "Routine trước khi trade" part1 @06:47–07:16].
+	OrbEscapeCompletely *bool `json:"orb_escape_completely,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

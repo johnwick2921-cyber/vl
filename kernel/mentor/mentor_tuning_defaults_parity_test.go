@@ -115,6 +115,7 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"leg_reset_on_wave_break", cfg.LegResetOnWaveBreak},
 		{"flag_wall_target", cfg.FlagWallTarget},
 		{"box_new_zone_after_escape", cfg.BoxNewZoneAfterEscape},
+		{"orb_escape_completely", cfg.OrbEscapeCompletely},
 	}
 
 	for _, r := range rows {

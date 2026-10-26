@@ -99,6 +99,7 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['trendline_is_target', 'off', false],
   ['trendline_between_boxes', 'on', true],
   ['leg_reset_on_wave_break', 'off', false],
+  ['orb_escape_completely', 'on', true], // release #52 B19
 ]
 
 it.each(COURSE_ENTRY_WRITES)(
@@ -166,6 +167,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     trendline_between_boxes: true, // course-defaults-30
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
+    orb_escape_completely: false, // release #52 B19 — body test until the owner rules
     htf_gate_news_only: true, // D4.4-11 — news + open default ON (the mentor's rule)
   })
 })

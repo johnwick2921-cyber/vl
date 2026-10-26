@@ -33,6 +33,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"trendline_between_boxes=true (course-defaults-30)", cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break=true (a)", cfg.LegResetOnWaveBreak},
 		{"flag_wall_target=true (course-defaults-30)", cfg.FlagWallTarget},
+		{"orb_escape_completely=false (release #52 B19: body test until the owner rules)", !cfg.OrbEscapeCompletely},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -57,6 +58,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		TrendlineBetweenBoxes:       &on,
 		LegResetOnWaveBreak:         &off,
 		FlagWallTarget:              &on,
+		OrbEscapeCompletely:         &on,
 	})
 	checks := []struct {
 		name string
@@ -75,6 +77,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		{"trendline_between_boxes", cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break", !cfg.LegResetOnWaveBreak},
 		{"flag_wall_target", cfg.FlagWallTarget},
+		{"orb_escape_completely", cfg.OrbEscapeCompletely},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -100,7 +103,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=body", "trendline_is_target=true"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=body", "trendline_is_target=true", "orb_escape_completely=false"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

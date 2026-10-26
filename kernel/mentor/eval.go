@@ -1794,8 +1794,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Trigger.Dir != "" && e.State.Trigger.Price != 0 {
 		levels = append(levels, Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: e.State.Trigger.Price})
 	}
-	// D4.4-15: the 4h/1h trigger lines join the TARGET LADDER (never the
-	// location set) — a trade's target can be the higher-TF trigger line when
+	// D4.4-15: the 4h trigger line joins the TARGET LADDER (never the
+	// location set) — a trade's target can be the 4h trigger line when
 	// it sits between the entry and the next level [D4.4 p2 @05:04–06:02
 	// "TARGET MÌNH VỀ LẠI 4 GIỜ nè anh chị… CÁI LỆNH TRĂM ĐIỂM của mình LÀ VỀ
 	// ĐÂY"]. Target-only: the touch loop skips KindHTFTrigger and
@@ -1803,9 +1803,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.HTF.FourH.Dir != "" && e.State.HTF.FourH.Price != 0 {
 		levels = append(levels, Level{Key: "htf_4h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.FourH.Price})
 	}
-	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
-		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
-	}
+	// Release #52 B5: the 1H trigger line is NOT a target. The
+	// course names the 4h line as the target ("Về lại 4 giờ nè anh chị" [D4.4
+	// p2 @05:04–05:44], one worked example) and never the 1h; the 1h line only
+	// gates direction (htf_direction.go). It used to join the ladder at every
+	// hour (htf_1h_trigger) and stopped ISB/PHL targets short at a 1h line.
 	// D4.3 wick microscalp (advanced, knob OFF by default): 2+ consecutive 5m
 	// candles rejecting with same-way wicks put a bounded target at their far
 	// wick — target-only (the touch loop skips KindWickMicroscalp).
@@ -1824,7 +1826,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// open AND close [D4.1 p1 @20:36; X5 @02:57; X7 @07:42]). Every escape and
 	// every side switch is logged once, with the candle that made it.
 	prevORB := e.State.ORB
-	e.State.ORB = ORBAdvance(prevORB, bars, now)
+	e.State.ORB = ORBAdvanceMode(prevORB, bars, now, e.Cfg.OrbEscapeCompletely)
 	e.noteORBEscape(prevORB, e.State.ORB, bars[len(bars)-1])
 
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
