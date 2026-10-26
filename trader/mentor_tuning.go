@@ -42,6 +42,7 @@ type mentorTuned struct {
 	ISBBoxEscapeMode            string
 	EmaLossRelock               string
 	OrbEdgeVetoPts              float64
+	OrbEscapeCompletely         bool
 	OrbISBFractionOutside       float64
 	D43TrendSource              string
 	LevelEntriesNeedTriggerSide bool
@@ -76,6 +77,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBBoxEscapeMode:            d.ISBBoxEscapeMode,
 		EmaLossRelock:               d.EmaLossRelock,
 		OrbEdgeVetoPts:              d.OrbEdgeVetoPts,
+		OrbEscapeCompletely:         d.OrbEscapeCompletely,
 		OrbISBFractionOutside:       d.OrbISBFractionOutside,
 		D43TrendSource:              d.D43TrendSource,
 		LevelEntriesNeedTriggerSide: d.LevelEntriesNeedTriggerSide,
@@ -191,6 +193,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.LegResetOnWaveBreak, &out.LegResetOnWaveBreak)
 	flag(t.FlagWallTarget, &out.FlagWallTarget)
 	flag(t.BoxNewZoneAfterEscape, &out.BoxNewZoneAfterEscape)
+	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
 	return out
 }
 
@@ -217,6 +220,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBBoxEscapeMode = t.ISBBoxEscapeMode
 	cfg.EmaLossRelock = t.EmaLossRelock
 	cfg.OrbEdgeVetoPts = t.OrbEdgeVetoPts
+	cfg.OrbEscapeCompletely = t.OrbEscapeCompletely
 	cfg.OrbISBFractionOutside = t.OrbISBFractionOutside
 	cfg.D43TrendSource = t.D43TrendSource
 	cfg.LevelEntriesNeedTriggerSide = t.LevelEntriesNeedTriggerSide
@@ -236,7 +240,7 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v",
 		id, t.FifteenMinIBRule, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
-		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape)
+		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely)
 }

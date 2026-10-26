@@ -339,6 +339,10 @@ export interface MentorTuning {
   // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
   // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
   box_new_zone_after_escape?: boolean
+  // Release #52 B19 — the ORB opens only on a candle COMPLETELY outside the
+  // 2-minute range, wicks included; "Routine trước khi trade" part1
+  // @06:47–07:16 [false = the body test]
+  orb_escape_completely?: boolean
 }
 
 export interface RiskControlConfig {

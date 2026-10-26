@@ -79,8 +79,9 @@ const (
 	// after the 3rd touch; discarded by a 5m close through. Location only,
 	// never a target.
 	KindTrendline LevelKind = "trendline"
-	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
-	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// KindHTFTrigger is the 4h trigger line as a TARGET-LADDER level only
+	// (D4.4-15; release #52 B5: the 1h line is no longer a target — the course
+	// names only the 4h line [D4.4 p2 @05:04–05:44]): it joins the level set so nextLevelBeyond can pick it, but it
 	// is never touched, never located and never a PHL/PLH place.
 	KindHTFTrigger LevelKind = "htf_trigger"
 	// KindWickMicroscalp is the D4.3 wick-microscalp target (D4.3-02/-07): the
@@ -488,6 +489,16 @@ type Config struct {
 	// ORB edge is skipped — "điểm entry… nằm gần cái resistance quá thì thôi
 	// bỏ đi" [X5 @08:52–09:09]. No number in the source → 0 = off.
 	OrbEdgeVetoPts float64
+	// OrbEscapeCompletely — release #52 B19 (knob orb_escape_completely,
+	// default OFF): ON = the ORB opens only when a 1m candle lies COMPLETELY
+	// outside the 2-minute range, wicks included (low above the high / high
+	// below the low); OFF = today's body test (open AND close beyond the
+	// edge). The ORB source: "Completely nằm ở ngoài… Còn không nếu mà nó vẫn
+	// còn vòng vòng trong ORB 2 phút mình không trade" [extra "Routine trước
+	// khi trade" part1 @06:47–07:16]. The wick reading is the X7 ping-pong
+	// definition carried to the ORB [X7 @09:21–11:07] — an analogy [B], so the
+	// default flip is the owner's call.
+	OrbEscapeCompletely bool
 	// D43TrendSource — CE-8 (b, [B] reading): what "the 5m trend" means for
 	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" = the 5m
 	// trigger line; "structure" (default, course-defaults-30) = 5m swing

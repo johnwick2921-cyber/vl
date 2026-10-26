@@ -52,6 +52,19 @@ const rdrAddonBuild = "2026-10-18-a"
 //     slice;
 //   - BE moves and the exit drive are the PRODUCTION kernel, but their inputs
 //     are the simulated fills, so an exit time may shift a bar.
+
+// REAL_DAY_REPLAY note, release #52 W8 (fix/c52-w8; replays REAL_DAY_REPLAY=
+// /tmp/realday-1021|1022|1023 with REAL_DAY=2026-10-21|22|23, before = the
+// 1h rung re-added, after = this branch; the "attribution is broken" assertion
+// at the end already fails on both and is not part of this change):
+//   - B5 (the 1h trigger line is no longer a target rung): ONE arm changes over
+//     the three days: 10-23 03:48 short entry 29229.00 stop 29241.50, target
+//     29188.50 -> 29168.56 (a 1h line at 29188.50 no longer stops it; the next
+//     level beyond is the target). 10-21 and 10-22: every arm identical.
+//   - B19 (orb_escape_completely, default OFF): no arm changes (the knob is
+//     off in the replay config); ON would move only WHEN the ORB opens.
+//   - B6 (label only) and B4 (not built, needs a mentor answer): no change.
+
 type rdrLiveTrade struct {
 	ID       int     `json:"id"`
 	Side     string  `json:"side"`

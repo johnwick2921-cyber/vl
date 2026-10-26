@@ -82,6 +82,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.orb_isb_fraction_outside',
     live: true,
   },
+  'ORB escape: completely outside': {
+    settingId: 'risk_control.mentor_tuning.orb_escape_completely',
+    live: true,
+  },
   'Box-return 5m trend source': {
     settingId: 'risk_control.mentor_tuning.d43_trend_source',
     live: true,
@@ -494,9 +498,9 @@ export const mentor: GuideSection = {
           cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:52–21:02 (body escape) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box)',
         },
         {
-          title: 'The 4h/1h trigger line is a target, never a location',
-          body: 'The 4h (and 1h) trigger line joins the target ladder as target-only: the next-level target can land on it when it sits between the entry and the next key level, but it is never a PHL/PLH location and the touch loop never classifies it.',
-          cite: 'D4.4 p2 @05:04–06:02 · kernel/mentor/mentor.go KindHTFTrigger · kernel/mentor/eval.go (htf_4h_trigger / htf_1h_trigger levels; the touch loop skips KindHTFTrigger) · kernel/mentor/location.go levelIsLocation',
+          title: 'The 4h trigger line is a target, never a location',
+          body: 'The 4h trigger line joins the target ladder as target-only: the next-level target can land on it when it sits between the entry and the next key level, but it is never a PHL/PLH location and the touch loop never classifies it. The 1h trigger line is NOT a target (release #52 B5): the course names the 4h line as the way back ("Về lại 4 giờ nè anh chị") and never the 1h; the 1h only decides direction.',
+          cite: 'D4.4 p2 @05:04–05:44 · kernel/mentor/mentor.go KindHTFTrigger · kernel/mentor/eval.go (htf_4h_trigger level only; the touch loop skips KindHTFTrigger) · kernel/mentor/chart_seed.go · kernel/mentor/location.go levelIsLocation',
         },
         {
           title: 'Wick microscalp (advanced, OFF by default)',
@@ -556,13 +560,13 @@ export const mentor: GuideSection = {
         ],
         [
           'ORB gate (opening range)',
-          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt. An ISB whose entry candle is not mostly OUTSIDE the range on the trade side is also skipped (the separate rule-5 card below, counter orb_isb_mostly_inside).',
-          'orb_gate_enabled = true (default ON) · X5 @01:52, 02:36, 02:57–03:47, 05:42 · X7 @07:42–07:51 · D4.1 p1 @20:36',
+          'ORB = the high and the low of the FIRST 2-minute candle of the regular session (08:30–08:32 CT), drawn only once that candle has completed. NO trade inside the ORB and NO reversal trade at either edge. Trade only after price has LEFT the box — escape test: a 1m candle whose BODY is wholly outside, its open AND its close beyond the edge (the course minimum, the same test as the box escape [D4.1 p1 @20:36]; a candle that opens inside and closes one tick out is NOT an escape; the ORB source itself says "completely outside" [extra "Routine trước khi trade" part1 @06:47–07:16], so the wick-inclusive test is the knob orb_escape_completely, default OFF — the wick reading is an analogy to the X7 ping-pong box [X7 @09:21–11:07], the owner flips it). Direction follows the side of the LATEST escape: below → shorts only (ISB short / PLH); above → longs only. It is not locked for the day: a later 1m body wholly beyond the OTHER edge switches the side ("cho tới khi nào nó crack" [X7 @07:42–07:51]); a candle that only pushes back inside switches nothing. Every escape and every switch is logged with its candle. The escape picks the side; it is NOT an entry. No ORB for pre-market. The SWING4H is exempt. An ISB whose entry candle is not mostly OUTSIDE the range on the trade side is also skipped (the separate rule-5 card below, counter orb_isb_mostly_inside).',
+          'orb_gate_enabled = true (default ON) · orb_escape_completely = false (default OFF) · X5 @01:52, 02:36, 02:57–03:47, 05:42 · X7 @07:42–07:51 · D4.1 p1 @20:36 (the FTGH/FTGL box minimum, the body test) · "Routine trước khi trade" part1 @06:47–07:16 (completely outside)',
         ],
         [
           'News 07:30 CT (print)',
-          'On a red-folder 07:30 print day (from the day’s calendar), a mentor entry is refused through the print window (07:20–07:35 CT); if the calendar slice is missing or unreadable the window is held anyway (fail-closed, counted news_hold_no_calendar); on an ordinary day the window refuses nothing. At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
-          'F11 · R12 · D4.4 p1 @18:13, @22:15, @20:44–21:46',
+          'On a red-folder 07:30 print day (from the day’s calendar), a mentor entry is refused through the print window (07:20–07:35 CT); if the calendar slice is missing or unreadable the window is held anyway (fail-closed, counted news_hold_no_calendar); on an ordinary day the window refuses nothing. At print −10m on a red-folder print day, live INTRADAY mentor arms are cancelled by ArmID and intraday mentor positions are flattened before the 07:30 print — the SWING4H is exempt (held by the 4h). The cancel-and-flatten at −10m is our conservative reading [B], not a course sentence: the course gives three reasons not to be IN the print (the candle jerks and "banh 2 đầu", the machine can lag, and you cannot size the candle) and "if you cannot get out, you are blown too" — it never says to close an open trade before it. Whether an open runner is held through the print is a question for the mentor. The 07:30 print candle never moves the 1h/4h trigger lines: the evaluator drops the print-window bars from the higher-timeframe feed, so a news spike is not a real break.',
+          'F11 · R12 · D4.4 p1 @18:13, @22:15 · the −10m flatten is an inference [B] from D4.4 p1 @20:44–21:46 (10-04 CTO re-read DAY-4 row D4.4-08), not a course instruction',
         ],
         [
           'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
@@ -1171,6 +1175,20 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: 'ORB escape: completely outside',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B19. The ORB source: "Completely nằm ở ngoài, completely nằm ở ngoài mình mới trade. Còn không nếu mà nó vẫn còn vòng vòng trong ORB 2 phút mình không trade" (trade only when the candle is COMPLETELY outside; while it still hovers in the 2-minute ORB, no trade) [extra "Routine trước khi trade" part1 @06:47–07:16]. OFF (default) = the ORB opens on a 1m candle whose BODY is wholly outside (open AND close beyond the edge, wicks may stay inside — the minimum the course gives for the FTGH/FTGL box, D4.1 p1 @20:36). ON = the ORB opens only when the whole candle, wicks included, is outside (low above the ORB high for a long, high below the ORB low for a short). The wick reading is the X7 ping-pong definition ("a touching wick does not count" [X7 @09:21–11:07]) carried to the ORB — an analogy, not a sentence about the ORB — so the default stays OFF until the owner rules. Changes only WHEN the ORB opens (first hour); the side rule, the edge veto and the ISB fraction rule are untouched.',
+          trader: 'OFF — the body test; the wick reading is our analogy [B].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (OrbEscapeCompletely) · kernel/mentor/orb.go orbEscapeSide',
+          range: 'true / false',
+          systemDefault: 'false (off)',
+          recommended:
+            'OFF until the owner rules — "Routine trước khi trade" part1 @06:47–07:16 says "completely" but X7 @09:21–11:07 defines it only for the ping-pong box.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
           label: 'Box-return 5m trend source',
           where: 'Strategy → Risk control → Mentor method numbers',
           what: 'D4.3 @12:43–12:54 "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì nó đang là xu hướng gì — Giảm" (read left to right: a high, a lower high, a lower high — what trend is it? Down). The D4.3 "no box return against the 5m trend" gate (refusal box_against_5m_trend) reads its trend from: structure (default, course-defaults-30) = 5m swing structure (higher highs + higher lows = up; lower highs + lower lows = down; mixed = no trend, no veto); trigger_line = the 5m trigger line.',
@@ -1469,7 +1487,7 @@ export const mentor: GuideSection = {
         {
           label: 'ORB entry gate',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Require price to escape the first 2-minute RTH opening range before intraday entries (a 1m BODY wholly outside — open AND close); after that only the side of the latest escape trades — a later body escape beyond the other edge switches it. The 4h swing setup is exempt.',
+          what: 'Require price to escape the first 2-minute RTH opening range before intraday entries (a 1m BODY wholly outside — open AND close; the wick-inclusive "completely outside" test is the separate knob orb_escape_completely, OFF by default); after that only the side of the latest escape trades — a later body escape beyond the other edge switches it. The 4h swing setup is exempt.',
           trader: 'ON — no entry inside the opening range.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (OrbGateEnabled)',

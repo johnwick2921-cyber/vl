@@ -1239,7 +1239,14 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 
 // mentorNewsCancelFlattenAt (item 18 part 2, R12) cancels live INTRADAY mentor
 // arms by ArmID and flattens intraday mentor positions at print −10m on a
-// red-folder print day [D4.4 p1 @20:44–21:46]. It is the DESTRUCTIVE half of
+// red-folder print day. INFERENCE [B], not a course instruction (release #52
+// B6): D4.4 p1 @20:44–21:46 gives three reasons not to be IN the print (the
+// candle jerks and "banh 2 đầu", the machine can lag, you cannot size the
+// candle) and "lát không out lệnh được cũng banh"; no sentence says to close
+// an open trade before it. The flatten is the 10-04 CTO re-read (DAY-4 row
+// D4.4-08, "PARTIAL"), kept as the conservative reading until the owner
+// rules; whether an open runner is held through the print is a mentor
+// question. It is the DESTRUCTIVE half of
 // the news window: the hold above refuses NEW placements through the print;
 // this sweep clears what already REMAINS before the 07:30 print. SWING4H arms
 // and positions are exempt (the course holds the swing by the 4h [D5.2 p1 @06:03–06:20]).

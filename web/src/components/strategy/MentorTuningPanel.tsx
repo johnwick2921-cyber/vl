@@ -35,6 +35,7 @@ type BoolKey =
   | 'leg_reset_on_wave_break'
   | 'flag_wall_target'
   | 'box_new_zone_after_escape'
+  | 'orb_escape_completely'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -258,6 +259,11 @@ const COPY = {
     en: 'Inside a flag: the opposite flag wall is a closer target',
     es: 'Dentro de una bandera: la pared opuesta es un objetivo más cercano',
   },
+  orbCompletely: {
+    zh: '开盘区间：蜡烛（含影线）须完全在区间外才算突破',
+    en: 'Opening range: the candle must be completely outside, wicks included',
+    es: 'Rango de apertura: la vela debe estar completamente fuera, mechas incluidas',
+  },
   boxNewZone: {
     zh: '箱体突破后在区间外绘制新箱体',
     en: 'After a box escapes, draw one new box outside the range',
@@ -326,6 +332,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   leg_reset_on_wave_break: true, // (a)
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
+  orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -550,6 +557,7 @@ export function MentorTuningPanel({
         {boolField('leg_reset_on_wave_break', COPY.legWave)}
         {boolField('flag_wall_target', COPY.flagWall)}
         {boolField('box_new_zone_after_escape', COPY.boxNewZone)}
+        {boolField('orb_escape_completely', COPY.orbCompletely)}
       </div>
     </div>
   )
