@@ -71,6 +71,10 @@ type mentorLivePos struct {
 	// limit does not re-render CONFIRMED (and re-count it) every candle. A new
 	// modify (a new want) resets it to 0.
 	TPModConfirmedWant float64
+	// ConfTPTries (C52 W1 A2) counts the sends of the confluence leg-1 TP move
+	// (mentorLeg1TPToC) so a broker that keeps refusing it is tried a bounded
+	// number of times, not once a candle forever. Guarded by mentorExitMu.
+	ConfTPTries int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the

@@ -177,8 +177,10 @@ type Intent struct {
 	EntryCandleLow  float64
 
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
-	// box edge + a key level inside the box or within 2 pts of its edge +
-	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.
+	// a BOX entry whose 5m trigger agrees AT THE REAL ENTRY PRICE (not the box
+	// edge, C52 W1 A1; no key-level condition, B3), or an ISB/PHL/PLH entry with
+	// the 15m ISB, 5m ISB and entry side all aligned (MTFConfluence, D4.2 p1
+	// @12:16-12:47; no trigger conjunct, C52 W1 B9) — the exit-C branch reads it.
 	Confluence bool
 	// Anchor / AnchorKey name the G2 place the setup was taken at (CTO R-b
 	// 2026-10-03): the level price, the box edge, or the EMA — NOT the old

@@ -451,7 +451,12 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		return
 	case "C":
 		// C (confluence): the stop NEVER moves [D3.4 p3 @07:38: "hold… at least
-		// risk reward 1-2"]. No action.
+		// risk reward 1-2"]. The only action is the C52 W1 A2 reconcile: a
+		// position that became C AFTER its entry frame carried the +1R leg-1 TP
+		// (an upgrade of a still-resting arm that has now filled, a retry of a
+		// refused send) gets that TP moved out to 2R. A C entry whose leg-1 TP is
+		// already ~2R is untouched.
+		at.mentorLeg1TPToC(nt, p, "mode C reconcile")
 		return
 	case "A-resonance":
 		// A (resonance): leg 1's +1R TP stays (the 1:1 partial still fires),

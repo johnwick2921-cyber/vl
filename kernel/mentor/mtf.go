@@ -35,15 +35,18 @@ func MTFAligned(bars5m, bars15m []market.Kline, side Side) bool {
 }
 
 // MTFConfluence is D4.2-06 part 1: mode C also fires on timeframe agreement —
-// the 15m ISB, the 5m ISB and the entry side align (MTFAligned) AND the 5m
-// trigger agrees with that side. Fail-closed: a silent trigger (empty
-// direction) can never agree, and a trigger opposite the entry refuses.
-func MTFConfluence(side Side, trig TriggerLine, entryPrice float64, bars5m, bars15m []market.Kline) bool {
-	if !MTFAligned(bars5m, bars15m, side) {
-		return false
-	}
-	if ok, trigSide, _ := TriggerVerdict(trig, entryPrice); !ok || trigSide == "" || trigSide != side {
-		return false
-	}
-	return true
+// the 15m ISB, the 5m ISB and the entry side align (MTFAligned), nothing else.
+//
+// C52 W1 B9 (owner order 2026-10-26 "align everything to the course"): D4.2
+// p1 @12:16–12:47 / @15:16–15:36 says the 15m, 5m and 1m inside bars agreeing
+// is the whole reason to hold ("cộng hưởng quá nhiều thứ… khung 15 phút nó
+// cũng kêu mình làm vậy, khung 5 phút nó cũng kêu mình làm vậy") and
+// @14:30–14:52 says opposite higher frames = no trade. Neither D4.2 part
+// mentions the 5m trigger line. The trigger conjunct that used to sit here was
+// borrowed from the BOX confluence of D3.4 p3 @07:38 (ConfluenceVerdict), a
+// different setup; it is dropped so the MTF rule is the D4.2 rule. An
+// opposite trigger is still refused where it always was (the entry filters),
+// not here.
+func MTFConfluence(side Side, bars5m, bars15m []market.Kline) bool {
+	return MTFAligned(bars5m, bars15m, side)
 }

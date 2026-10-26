@@ -985,6 +985,12 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		lp.Pos.Mode = next
 		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
+		// C52 W1 A2 [D3.4 p3 @10:07–10:33, @11:01–11:05 "vô rồi mới đợi
+		// trigger… thấy trigger buy setup luôn thì hold, at least risk reward
+		// 1-2"]: the branch switch alone left leg 1's TP at +1R on the wire (it
+		// was set at entry). Move it out to 2R now, through the same leg-scoped
+		// modify_bracket the other leg-1 TP moves use.
+		at.mentorLeg1TPToC(at.armedTrader(), lp, "confluence upgrade")
 		at.mentorPersistUpgradedExitMode("open position "+lp.Legs[0].SignalID, func(l *store.ArmedOrderStore) (int64, error) {
 			return l.SetExitModeBySignal(lp.Legs[0].SignalID, next)
 		})
