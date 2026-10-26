@@ -359,10 +359,10 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 	}
 	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
 	// line and must not re-bucket the whole window for each one.
-	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
-	b5 := barsTF(bars, 5) // m428 R1: an HTF line breaks on a closed 5m candle wholly beyond it
+	tfBars := map[int][]market.Kline{60: e.barsTFMemo(bars, 60), 240: e.barsTFMemo(bars, 240)}
+	b5 := e.barsTFMemo(bars, 5) // m428 R1: an HTF line breaks on a closed 5m candle wholly beyond it
 	for _, tf := range []int{60, 240} {
-		for _, tl := range trendlinesBuildTF(bars, tf, now) {
+		for _, tl := range trendlinesBuildTFFrames(bars, tfBars[tf], b5, tf, now) {
 			k := tl.key()
 			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
 				continue // keep the latched-valid line; never regress it
@@ -373,7 +373,7 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 	for k, tl := range e.tlHTF {
 		btf := tfBars[tl.TFMin]
 		if btf == nil {
-			btf = barsTF(bars, tl.TFMin)
+			btf = e.barsTFMemo(bars, tl.TFMin)
 		}
 		if tl.Dead || trendlineHTFBroken(tl, b5, now) {
 			tl.Dead = true
@@ -1823,7 +1823,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
-	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	trendlines, crossed := trendlinesBuildExecB5(bars, e.barsTFMemo(bars, 5), time.UnixMilli(now), exec2m)
 	frame := 1
 	if exec2m {
 		frame = 2
