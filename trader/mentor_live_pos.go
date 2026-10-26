@@ -102,7 +102,7 @@ type mentorLivePos struct {
 	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 1 = a 1m entry, 2 = a
 	// 2m entry, 5 = a 5m entry (carried from the intent's ExecTFMin via
 	// mentorExecFrames; m417 stamps the frame at every kernel authoring site and
-	// on the box's drawn frame). 0 = unknown (an ORB/trendline entry, an old
+	// on the box's drawn frame). 0 = unknown (an ORB entry, an old
 	// position, a restart rebuild) → the X8 trap-dodge keeps the 2m. Every
 	// `TrailTFMin > 1` trail check treats 1 exactly like 0 (both trail the 1m).
 	TrailTFMin int

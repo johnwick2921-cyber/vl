@@ -462,8 +462,9 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 		// and on the box's drawn frame, so this branch is now LIVE, not dead.
 		mentorExecFrames.Store(mentorRunnerTargetKey(at.id, scenario), 1)
 	} else {
-		// ExecTFMin == 0 = the frame is UNKNOWN (an ORB/trendline entry — every
-		// other setup whose authoring site does not stamp). m417: Delete so the
+		// ExecTFMin == 0 = the frame is UNKNOWN (an ORB entry, or a frame lost at
+		// a restart — a level PHL/PLH incl. one at a trendline location IS
+		// stamped, eval.go ~2862; c52 W12 comment fix). m417: Delete so the
 		// X8 trap-dodge falls back to the 2m (the pre-m409 behaviour) instead of
 		// reading the 1m on an entry whose frame was never recorded.
 		mentorExecFrames.Delete(mentorRunnerTargetKey(at.id, scenario))

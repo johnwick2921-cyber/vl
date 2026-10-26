@@ -1983,10 +1983,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
 	//     @17:08–17:25]).
 	//   • a SLOW evening/overnight (15:00 CT → 03:00 CT, overnight range under
-	//     100 pts) → 5-MINUTE read ("buổi tối mà nó đi chậm thì đánh khung 5
-	//     phút thôi" [X11 @17:40–18:26]; the 100-pt cutoff is ours — X11 only
-	//     names 100–200 pts as a STRONG night where the 2m stays fine
-	//     [derived: X11 @17:40–18:26]).
+	//     100 pts) → 5-MINUTE read ("Trade khung 5 phút only / Cho buổi tối"
+	//     [X11 @17:40–18:32, the quote is @18:03–18:07; the transcript has no
+	//     "đi chậm thì đánh khung 5 phút thôi" sentence — that wording was ours];
+	//     the 100-pt cutoff is ours — X11 only names 100–200 pts as a STRONG
+	//     night where the 2m stays fine [derived: X11 @17:40–18:26]).
 	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
 	//     the 1m wicks sweep stops [X5 @00:16; X11 @17:27]), a strong evening,
 	//     overnight and the Europe open (3am Texas) included.
@@ -2212,7 +2213,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the 20–<30 stop band, and a size
+				// (above), the R5 box (below), the stop ceiling (stop > ISBMaxStopPts, default 25, is skipped; 20–25 is the reduced tier), and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -2428,9 +2429,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// (1m, 2m or 5m — m417).
 			in.ExecTFMin = execTFMin
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
-			// runs through the SAME gates as the normal ISB — the 20–<30
-			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
-			// the near-box rule (row 24) — before any target is set.
+			// runs through the SAME gates as the normal ISB — the stop-ceiling
+			// skip [D4.1 p1 @ 05:41; ISBStopVerdict, default 25], the 4h HTF
+			// verdict and side, and the near-box rule (row 24) — before any
+			// target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
@@ -3429,7 +3431,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [D5.2 p2 @ 18:36–18:41]).
 	ints = dropStaleSwingIntents(ints, closed)
 	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
-	// C5: the trigger-zone drop names its reason.
+	// C5: the trigger-side drop names its reason (isb_trigger_side).
 	for i := 0; i < dropped; i++ {
 		e.refuse("isb_trigger_side")
 	}
@@ -3484,8 +3486,13 @@ func dropStaleSwingIntents(ints []Intent, closed []market.Kline) []Intent {
 	return out
 }
 
-// swingZoneGate drops swing intents whose entry price sits between two
-// opposing trigger lines, but ONLY when the knob is on (respect = true).
+// swingZoneGate drops swing intents on the wrong side of the ONE 5m trigger
+// line (TriggerVerdict: a buy line allows longs above it only, a sell line
+// shorts below it only), but ONLY when the knob is on (respect = true). It
+// does NOT test the FTGL-to-buy-line / FTGH-to-sell-line no-trade zone — that
+// is triggerBoxZoneVerdict, which the swing path does not call. The old
+// "between two opposing trigger lines" wording was a misread: there is one
+// line, moved on a reversal [D3.4 p1 @16:38–17:19; B1 10-03 ruling].
 func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 	if !respect {
 		return ints, 0
@@ -3494,7 +3501,7 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 	dropped := 0
 	for _, in := range ints {
 		if ok, _, _ := TriggerVerdict(t, in.Price); !ok {
-			dropped++ // in the two-trigger zone — no trade at all there
+			dropped++ // wrong side of the one trigger line — no trade there
 			continue
 		}
 		out = append(out, in)

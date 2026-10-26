@@ -125,7 +125,7 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 // reverted.
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 30)
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 25)
 		return stopPts, false, ISBMaxStopReason
 	}
 	return stopPts, true, ""
