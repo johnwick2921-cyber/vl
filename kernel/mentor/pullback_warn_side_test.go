@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"math"
 	"testing"
 	"time"
 
@@ -216,5 +217,93 @@ func TestPullbackWarnOnISBTick(t *testing.T) {
 	}
 	if got := e.isbFlagsFor(probe, SideShort, nil, nil); !HasFlag(got, FlagPullbackWarn) {
 		t.Fatalf("mirror: the Tick must warn a SHORT in a 5m downtrend whose last candle broke the prior high, got %q", got)
+	}
+}
+
+// pwScaled maps the pw fixture highs/lows onto the reverse-ISB fixture's price
+// band (~99-104, around its 101 tape) keeping the swing ORDER, so the 1m EMA 9
+// of the tape still sits inside the ISB candle.
+func pwScaled(hl [][2]float64, base float64, bull bool) []pwCandle {
+	var out []pwCandle
+	for _, x := range hl {
+		out = append(out, pwCandle{hi: base + 0.3*x[0], lo: base + 0.3*x[1], bull: bull})
+	}
+	return out
+}
+
+// pwReverseTick runs the PRODUCTION Tick on isbReverseFixture (a LONG reverse
+// ISB at the EMA 9: SHORT-pointing pair, trigger LONG) with the 40 flat 1m bars
+// replaced by a synthetic 5m history, and returns the emitted reverse intent.
+func pwReverseTick(t *testing.T, hl [][2]float64, bull bool, base float64) (Intent, *Evaluator) {
+	t.Helper()
+	e, bars, now := isbReverseFixture(t)
+	isbPair := bars[len(bars)-2:]
+	t0 := isbPair[0].OpenTime - int64(len(hl))*5*60_000
+	var hist []market.Kline
+	for n, sp := range pwScaled(hl, base, bull) {
+		first, last := sp.lo, sp.hi
+		if !sp.bull {
+			first, last = sp.hi, sp.lo
+		}
+		mk := func(i int, o, h, l, c float64) {
+			ot := t0 + int64(n*5+i)*60_000
+			hist = append(hist, market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: o, High: h, Low: l, Close: c})
+		}
+		mk(0, first, first, first, first)
+		mk(1, first, sp.hi, sp.lo, last)
+		mk(2, last, sp.hi, sp.lo, first)
+		mk(3, first, sp.hi, sp.lo, last)
+		mk(4, last, last, last, last)
+	}
+	bars = append(hist, isbPair...)
+	// Pin the 5m trigger LONG (the reverse ISB's side): a broken 5m low would
+	// flip a live trigger to sell; this fixture pins the SIZE FLAG, not the trigger.
+	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 101, LastBucket: math.MaxInt64}
+	// As in pwTick: the synthetic history draws its own 15m/30m inside pairs;
+	// mark them already seen (this fixture pins the size flag, not the box gates).
+	for _, tf := range []int{15, 30} {
+		cb := e.closedBucketsTFMemo(bars, tf, now)
+		if len(cb) >= 2 {
+			if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok {
+				if tf == 15 {
+					e.State.LastISBBox15mAt = bx.AtTime
+				} else {
+					e.State.LastISBBox30mAt = bx.AtTime
+				}
+			}
+		}
+	}
+	ins := e.Tick(bars, now)
+	for _, in := range ins {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "ISB" || in.Setup == "PHL") && in.Side == SideLong {
+			return in, e
+		}
+	}
+	t.Fatalf("the reverse LONG ISB must emit; got %+v (refusals %v)", ins, e.State.Refusals)
+	return Intent{}, e
+}
+
+// TestPullbackWarnOnReverseISBTick pins the REVERSE ISB emit site
+// (`in.Flag = e.isbFlagsFor(execCur, in.Side, levels, boxes)`) through the
+// production Tick. A reverse LONG ISB in a 5m uptrend whose last candle broke
+// the prior low is the warned side (carries pullback_warn); the same reverse
+// LONG in a 5m downtrend whose last candle broke the prior high is the
+// UNwarned side (the warning is for the SHORT), so it must not carry it.
+// MUTANT: flip the side argument at the reverse site (in.Side -> opposite) →
+// the warned case loses the flag and the unwarned case gains it (RED).
+func TestPullbackWarnOnReverseISBTick(t *testing.T) {
+	in, e := pwReverseTick(t, pwUp, true, 99)
+	if e.pullbackWarn5m != SideLong {
+		t.Fatalf("fixture: the 5m uptrend must warn the LONG, got %q", e.pullbackWarn5m)
+	}
+	if !HasFlag(in.Flag, FlagPullbackWarn) {
+		t.Fatalf("a reverse LONG ISB in a 5m uptrend whose last candle broke the prior low must carry pullback_warn, got %q (%+v)", in.Flag, in)
+	}
+	in, e = pwReverseTick(t, pwDown, false, 97)
+	if e.pullbackWarn5m != SideShort {
+		t.Fatalf("fixture: the 5m downtrend must warn the SHORT, got %q", e.pullbackWarn5m)
+	}
+	if HasFlag(in.Flag, FlagPullbackWarn) {
+		t.Fatalf("a reverse LONG ISB must NOT carry pullback_warn when the warning is for the SHORT, got %q", in.Flag)
 	}
 }
