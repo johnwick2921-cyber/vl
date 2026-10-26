@@ -61,6 +61,15 @@ const rdrAddonBuild = "2026-10-18-a"
 //     the three days: 10-23 03:48 short entry 29229.00 stop 29241.50, target
 //     29188.50 -> 29168.56 (a 1h line at 29188.50 no longer stops it; the next
 //     level beyond is the target). 10-21 and 10-22: every arm identical.
+//     INTENT-LEVEL (funnel counter) changes from B5, same days, deterministic
+//     (base vs base and branch vs branch identical), authored/placed/filled
+//     counts identical on all three days. 10-21 branch vs base:
+//     phl_target_below_floor 8 -> 4, trigger_ftgh_sell_zone 5 -> 8, room
+//     36 -> 37, new flag_wall_target_used:1, ISB arm sequence isb-22 -> isb-25
+//     (same trigger and price). 10-22: phl_day_off 2 -> 14, room 9 -> 8. With
+//     the 1h rung re-added the 10-21/22 counters equal base exactly. VISIBLE
+//     LOSS: the 1h trigger line also leaves the chart/ChartLevels/Truth-card
+//     level set (the 4h line stays drawn); guide cards updated to say so.
 //   - B19 (orb_escape_completely, default OFF): no arm changes (the knob is
 //     off in the replay config); ON would move only WHEN the ORB opens.
 //   - B6 (label only) and B4 (not built, needs a mentor answer): no change.
