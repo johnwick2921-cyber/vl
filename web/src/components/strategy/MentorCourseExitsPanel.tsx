@@ -39,7 +39,7 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_be_before_partial: true,
   mentor_isb_c3_partial_any_profit: true,
   mentor_reverse_isb_as_phl: true,
-  mentor_box_fresh_rth_pair: false,
+  mentor_box_fresh_rth_pair: true,
   mentor_ema9_visit_cap: 'shared',
   mentor_swing4h_contracts: 2,
   mentor_isb_max_pts: 30,
@@ -92,9 +92,9 @@ const COPY = {
     es: 'Tratar el ISB inverso como PHL/PLH',
   },
   mentor_box_fresh_rth_pair: {
-    zh: '08:30 CT 重新画 RTH 箱体',
-    en: 'Fresh FTGH/FTGL pair at the 08:30 CT RTH open',
-    es: 'Nuevo par FTGH/FTGL en la apertura RTH 08:30 CT',
+    zh: 'RTH 新箱体取代夜盘箱体(同方向)',
+    en: 'A fresh RTH FTGH/FTGL replaces the evening box of its role',
+    es: 'Un FTGH/FTGL nuevo de RTH reemplaza la caja nocturna de su rol',
   },
   mentor_ema9_visit_cap: {
     zh: 'EMA 9 触碰次数上限',

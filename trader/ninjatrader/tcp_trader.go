@@ -570,6 +570,16 @@ func (t *TCPTrader) IsAccountTradeable(name string) bool {
 	return t.isAccountTradeable(name)
 }
 
+// LiveAccountCount is how many accounts the wire's LIVE accounts_list holds
+// right now (0 = none received, or NT8 linked with its broker connection down
+// so the AddOn sent an empty frame). READ-ONLY, for the installation gate's
+// sim_accounts leg to tell an EMPTY live list from an account missing out of a
+// NON-empty one (m430). It never feeds an order path.
+func (t *TCPTrader) LiveAccountCount() int {
+	accts, _ := t.server.GetAccountsList()
+	return len(accts)
+}
+
 // entryBracket is a market entry's OWN stop and target, carried INTO the send
 // (W1b FOLD-3) instead of through the shared (symbol, side) maps.
 type entryBracket struct{ stop, target float64 }

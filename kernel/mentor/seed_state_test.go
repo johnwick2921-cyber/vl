@@ -305,8 +305,9 @@ func TestSeedHonoursPrintWindowsRestartParity1014(t *testing.T) {
 // 30586.75. A restart at any instant of the session now reproduces the
 // continuous latch. Mutant: no seedBoxLatch in seed() → RED.
 func TestRestartReproducesBoxLatch1014(t *testing.T) {
-	ssPin1mBoxes = true // m410: the pinned oracle (boxes.py) is the 1m builder
-	defer func() { ssPin1mBoxes = false }()
+	ssPin1mBoxes = true  // m410: the pinned oracle (boxes.py) is the 1m builder
+	lrFreshRTHOff = true // m429: boxes.py predates the fresh-RTH replacement
+	defer func() { ssPin1mBoxes = false; lrFreshRTHOff = false }()
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	key := func(m map[string]Box) string {

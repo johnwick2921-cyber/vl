@@ -179,14 +179,47 @@ var fdrM423Arms = []fdrLiveArm{
 	{0, "02:43", "m423: a trendline the close-only break discarded stays live (whole-candle 5m break)", "short", 30682.5, 30695.25, 0},
 }
 
+// fdrM428Dropped / fdrM428Arms — owner ruling R2 (2026-10-25, Q2): two same-role
+// swing wicks at (nearly) the same price are a flat SUPPORT / RESISTANCE with the
+// trading semantics of an old low / old high of their role (the nearer one of the
+// role replaces the pivot-picked old extreme). On this 10-13 night that moves the
+// nearest old high: a flat resistance (30770.25 at 03:46) sits within a few pts
+// above the 03:46-04:33 ISB longs, so those are no longer authored, and the 03:28
+// long / 02:09 short change with the reshuffled old extremes; the 03:31 and 03:39 longs the N7 pick had dropped are
+// authored again (the flat resistance replaces the 30769.50 pivot high they
+// bumped into). Probed on the 10-13 fixture: with the flat levels OFF all nine
+// rows MATCH unchanged (R1/R3/R5 do not touch this night). Keyed by bar-close minute.
+var fdrM428Dropped = map[string]string{
+	"02:09": "R2: the flat support/resistance reshuffles the old extremes — the r22 02:09 ISB short is not authored",
+	"03:28": "R2: flat levels replace the nearest old high/low — 03:28 long not authored",
+	"03:46": "R2: the flat resistance 30770.25 is the nearest old high — not authored",
+	"03:48": "R2: the flat resistance is the nearest old high — not authored",
+	"03:50": "R2: the flat resistance is the nearest old high — not authored",
+	"04:31": "R2: flat resistance — not authored",
+	"04:33": "R2: flat resistance — not authored",
+}
+
+var fdrM428Arms = []fdrLiveArm{
+	{0, "03:31", "m428: flat resistance replaces the 30769.50 pivot high the N7 pick had hit", "long", 30766.25, 30753.75, 0},
+	{0, "03:39", "m428: flat resistance replaces the 30769.50 pivot high the N7 pick had hit", "long", 30764.75, 30753.25, 0},
+}
+
 func fdrExpectedArms() []fdrLiveArm {
 	out := append([]fdrLiveArm{}, fdrR22Arms...)
 	out = append(out, fdrM423Arms...)
+	out = append(out, fdrM428Arms...)
 	for _, a := range fdrLiveArms {
 		if _, dropped := fdrR23Dropped[a.id]; !dropped {
 			out = append(out, a)
 		}
 	}
+	kept := out[:0]
+	for _, a := range out {
+		if _, drop := fdrM428Dropped[a.barCT]; !drop || a.id == 0 && a.barCT != "02:09" {
+			kept = append(kept, a)
+		}
+	}
+	out = kept
 	sort.SliceStable(out, func(i, j int) bool { return out[i].barCT < out[j].barCT })
 	return out
 }

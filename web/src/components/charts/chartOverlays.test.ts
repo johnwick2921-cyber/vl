@@ -6,6 +6,8 @@ import type { MentorTruth } from '../../lib/api/traders'
 import {
   chartFuturesRoot,
   mentorChartLines,
+  mentorLevelLabel,
+  mentorKindLabel,
   mentorEMACurves,
   mentorEMATf,
   mentorBoxRects,
@@ -911,5 +913,27 @@ describe('m421b C6: boxes as rectangles, distinct labels, de-stacked axis', () =
       { price: 102, label: 'b' },
     ])
     expect(out[1].axisLabel).toBe(false)
+  })
+})
+
+describe('m428 R2 flat support / resistance labels', () => {
+  it('names a flat swing pair "support" / "resistance", an ordinary old extreme stays "old high/low"', () => {
+    expect(
+      mentorLevelLabel({
+        kind: 'old_extreme',
+        key: 'old_extreme:flat_support:29171.25',
+        price: 29171.25,
+      })
+    ).toBe('support 29171.25')
+    expect(
+      mentorLevelLabel({
+        kind: 'old_extreme',
+        key: 'old_extreme:flat_resistance:29216.25',
+        price: 29216.25,
+      })
+    ).toBe('resistance 29216.25')
+    expect(mentorKindLabel('old_extreme', 'old_extreme:29278.75')).toBe(
+      'old high/low'
+    )
   })
 })

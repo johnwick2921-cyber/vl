@@ -359,9 +359,10 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 	}
 	// Bucket each timeframe ONCE per tick — the held-state loop below runs per
 	// line and must not re-bucket the whole window for each one.
-	tfBars := map[int][]market.Kline{60: barsTF(bars, 60), 240: barsTF(bars, 240)}
+	tfBars := map[int][]market.Kline{60: e.barsTFMemo(bars, 60), 240: e.barsTFMemo(bars, 240)}
+	b5 := e.barsTFMemo(bars, 5) // m428 R1: an HTF line breaks on a closed 5m candle wholly beyond it
 	for _, tf := range []int{60, 240} {
-		for _, tl := range trendlinesBuildTF(bars, tf, now) {
+		for _, tl := range trendlinesBuildTFFrames(bars, tfBars[tf], b5, tf, now) {
 			k := tl.key()
 			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
 				continue // keep the latched-valid line; never regress it
@@ -372,9 +373,9 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 	for k, tl := range e.tlHTF {
 		btf := tfBars[tl.TFMin]
 		if btf == nil {
-			btf = barsTF(bars, tl.TFMin)
+			btf = e.barsTFMemo(bars, tl.TFMin)
 		}
-		if tl.Dead || trendlineHTFBroken(tl, btf, now) {
+		if tl.Dead || trendlineHTFBroken(tl, b5, now) {
 			tl.Dead = true
 			delete(e.tlHTF, k)
 			broken = append(broken, tl)
@@ -534,7 +535,7 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevelsAt(bars, cfg, now)...)
 	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return out
+	return withFlatSR(out, bars, cfg, now) // m428 R2: flat swing pairs are support/resistance levels
 }
 
 // swingOldExtremeLevels is the old-high/low set — the ONE source the trading
@@ -1808,7 +1809,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// and redrew both boxes on a higher high / lower low.
 	if boxDay := boxLatchDayKey(now, e.Cfg); e.State.LatchedBoxesDay != boxDay {
 		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
-			e.note("box latch cleared at the 17:00 CT session roll (or the 08:30 CT fresh RTH pair, mentor_box_fresh_rth_pair): trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
+			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
 		}
 		e.State.LatchedBoxes = nil
 		e.State.PostEscapeBoxes = nil // B52: the new-zone boxes die with the day too
@@ -1822,7 +1823,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
-	trendlines, crossed := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	trendlines, crossed := trendlinesBuildExecB5(bars, e.barsTFMemo(bars, 5), time.UnixMilli(now), exec2m)
 	frame := 1
 	if exec2m {
 		frame = 2
@@ -1833,6 +1834,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	liveFlagWalls = buildFlagWalls(trendlines) // CE-11 FLAG-TARGET (#416)
 	curBarOpenTime = bars[len(bars)-1].OpenTime
 	e.trackTrendlines(trendlines, htfBroken, crossed, now)
+	trendlines = dropDeadTrendlines(trendlines) // m428 R3: a broken line is deleted — not drawn, not a level, not carried (trackTrendlines already noted it)
 	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
 	for _, k := range tlRefused {
 		e.refuse("tl_first_test_level_preferred:" + k)
@@ -3467,7 +3469,7 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: ema34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
 	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return out
+	return withFlatSR(out, bars, e.Cfg, now) // m428 R2
 }
 
 // resetEMAVisitsOnFrameSwitch starts a FRESH visit for the EMA 9 / EMA 34 /

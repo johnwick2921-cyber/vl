@@ -71,11 +71,18 @@ func loadLinesRestartFixture(t *testing.T) map[string][]market.Kline {
 // DefaultConfig + Enabled + RealFillOnly, with the 10-13/10-14 historical pin
 // (news_bars_excluded OFF — the live bot on those days ran the item-18
 // print-window drop, not the release #29 freeze; release #25 CE-4 did not exist).
+// lrFreshRTHOff pins the pre-m429 "evening box stands through RTH" world for
+// the tests whose oracle is that latch (the m429 default replaces it per role).
+var lrFreshRTHOff bool
+
 func lrProdCfg() Config {
 	c := DefaultConfig()
 	c.Enabled = true
 	c.RealFillOnly = true
 	c.NewsBarsExcluded = false // historical 10-13/10-14 pin (pre-#25 CE-4)
+	if lrFreshRTHOff {
+		c.CourseExits.BoxFreshRTHPair = false // m429: the latch-mechanics pins predate the fresh-RTH default
+	}
 	return c
 }
 
@@ -216,6 +223,8 @@ func containsStr(s, sub string) bool {
 // clears only at the 17:00 CT session roll. Production call site: Tick on the
 // real 10-12/10-13 bars. Mutant: key the latch on e.State.Day.Key again → RED.
 func TestBoxLatchHoldsThroughRTHOpenUntil1700(t *testing.T) {
+	lrFreshRTHOff = true
+	defer func() { lrFreshRTHOff = false }()
 	bars := loadLinesRestartFixture(t)["B"]
 	open := time.Date(2026, time.October, 12, 17, 0, 0, 0, ctime()).UnixMilli()
 	rth := time.Date(2026, time.October, 13, 8, 30, 0, 0, ctime()).UnixMilli()
@@ -297,7 +306,8 @@ func TestTriggerMoveIsLogged1014(t *testing.T) {
 	t.Fatalf("no change line for the 10-14 01:00 4h move; notes=%q", notes)
 }
 
-// TestTrendlinesKeptAllSession1013 — owner ruling R4 + course D4.1 ("Extend
+// TestTrendlinesKeptAllSession1013 (m428: an UNBROKEN line is kept all session; the
+// single non-adjacent line per side may be replaced, R5) — owner ruling R4 + course D4.1 ("Extend
 // right; never erase during the session; DELETE at end of day" [D4.1 p2
 // @01:17]); the 3rd-touch rule (#504) is unchanged. MATH-LEVELS-LINES #6
 // measured on 10-13: ONE line per side, the newest pair replacing the older —
@@ -339,8 +349,30 @@ func TestTrendlinesKeptAllSession1013(t *testing.T) {
 				validSeen[k] = true
 			}
 		}
+		anchors := map[int64]bool{}
+		for _, p := range prevDrawn {
+			anchors[p.P0T], anchors[p.P1T] = true, true
+		}
+		for _, c := range cur {
+			anchors[c.P0T], anchors[c.P1T] = true, true
+		}
+		skips := func(l Trendline) bool { // a non-adjacent line: an anchor lies strictly between its two
+			for a := range anchors {
+				if a > l.P0T && a < l.P1T {
+					return true
+				}
+			}
+			return false
+		}
 		for k, p := range prevDrawn {
 			if _, ok := cur[k]; ok {
+				continue
+			}
+			// m428 R5 (owner 2026-10-25): the ONE non-adjacent line per side may be replaced by
+			// a better / continuing one while it is still FORMING — the only drawn line that
+			// may leave without a break. A VALID line is never replaced (counted below).
+			replaced := skips(p) && !(p.ValidAt > 0 && !p.Dead)
+			if replaced {
 				continue
 			}
 			vanished++

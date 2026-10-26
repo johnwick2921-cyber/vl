@@ -28,6 +28,7 @@ func m407TickAll(t *testing.T, at *AutoTrader, bars []market.Kline, from, to int
 // 1m bars) at 10:00 CT: the truth payload must carry the VALID 2m support line
 // with its 2m-bucket anchors.
 func TestMentorTruthSnapshotCarries2mTrendlineAfter0900(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
@@ -72,6 +73,7 @@ func TestMentorTruthSnapshotCarries2mTrendlineAfter0900(t *testing.T) {
 // a valid 1m line at 08:59 stays in the payload at 09:00 and 09:10 (the 2m
 // frame), and leaves once a closed 5m candle closes through it.
 func TestMentorTruthSnapshotKeepsValid1mLineAcrossTheSwitch(t *testing.T) {
+	defer mentor.FlatNearScaleForTest(0)() // m428 R2: this synthetic tape's candles are a few points tall — its swing pair is a trendline premise, not a flat-level one
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true

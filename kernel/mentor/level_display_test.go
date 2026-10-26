@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -82,7 +83,7 @@ func oldExtremesOf(t *testing.T, bars []market.Kline) map[string]float64 {
 	now := bars[len(bars)-1].CloseTime + 1
 	got := map[string]float64{}
 	for _, l := range Levels(bars, DefaultConfig(), now) {
-		if l.Kind != KindOldExtreme {
+		if l.Kind != KindOldExtreme || strings.Contains(l.Key, "flat_") { // m428 R2: flat S/R levels are extra, not the nearest pair
 			continue
 		}
 		if _, dup := got[l.Role]; dup || l.Role != OldHigh && l.Role != OldLow {
