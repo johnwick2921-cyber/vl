@@ -38,14 +38,21 @@ func mentorSwingRunnerOn(rc *store.RiskControlConfig) bool {
 	return rc == nil || mentorBoolKnob(rc.MentorSwingRunner, true)
 }
 
-// mentorResonanceRunnerTPOn — CX-3, nil → OFF (W-MENTOR-EXACT m186). The
-// "runner TP out to the level beyond the old high" was the bot's own inference:
-// D2.4 @01:58–02:09 only says "70-80% nó sẽ phá luôn cái đỉnh bên tay trái" +
-// "để stop loss ở break even, cho nó chạy" — the mentor never places a TP for
-// the runner. Default OFF now lets the runner run (BE stop, no trail, no TP
-// cap), which is exactly "cho nó chạy".
+// mentorResonanceRunnerTPOn — CX-3, nil → OFF (W-MENTOR-EXACT m186; c52 W2 A3:
+// rc == nil and a loaded strategy with the key unset now AGREE, both OFF —
+// before, a nil risk control read ON and a loaded one OFF). ON = the bot's own
+// inference, "the runner TP moves out to the level beyond the old high". OFF
+// (default) = the course: D2.4 @01:58–02:09 only says "70-80% nó sẽ phá luôn
+// cái đỉnh bên tay trái" + "để stop loss ở break even, cho nó chạy" — the
+// mentor never places a TP for the runner, so OFF means NO CAP: the runner's
+// resting PHL/PLH take-profit is pushed out of reach at the arm
+// (mentorResonanceRunnerUncap) and the runner exits only by its BE stop, X8 or
+// the EOD flat.
 func mentorResonanceRunnerTPOn(rc *store.RiskControlConfig) bool {
-	return rc == nil || mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, false)
+	if rc == nil {
+		return false
+	}
+	return mentorBoolKnob(rc.MentorResonanceRunnerTPOldHigh, false)
 }
 
 // mentorBEBeforePartialOn — CX-4, nil → ON (course-defaults-30, owner "fix all"
@@ -245,17 +252,22 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 
 // ── CX-3: the resonance runner's TP, really sent ───────────────────────────
 
-// mentorResonanceRunnerTP sends the mode-A runner TP move the evaluator's
-// RunnerTarget asks for (the level beyond the old high) through the SAME
-// leg-scoped modify_bracket path the ISB candle-3 partial uses
+// mentorResonanceRunnerTP is the mode-A runner TP action (CX-3). Default (knob
+// mentor_resonance_runner_tp_old_high OFF — the course names no runner target):
+// UNCAP the runner (mentorResonanceRunnerUncap). Knob ON: send the move the
+// evaluator's RunnerTarget asks for (the level beyond the old high) through the
+// SAME leg-scoped modify_bracket path the ISB candle-3 partial uses
 // (modifyBracketWire), addressed to the RUNNER (wire leg 2). Leg 1's +1R TP
 // stays (R-RES). Every branch that sends nothing is logged AND counted.
 func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorLivePos, runnerTarget float64) {
 	if !mentorResonanceRunnerTPOn(at.mentorRiskControl()) {
+		// c52 W2 A3: OFF is the course — NO cap. The old-high level is only
+		// logged; the runner's own take-profit is removed (pushed out of reach).
 		if runnerTarget > 0 {
-			at.logInfof("🧑‍🏫 mentor resonance runner TP %.2f NOT sent — mentor_resonance_runner_tp_old_high OFF (logged only, the pre-#25 behaviour)", runnerTarget)
+			at.logInfof("🧑‍🏫 mentor resonance runner TP %.2f NOT used — mentor_resonance_runner_tp_old_high OFF: the course names no runner target, the runner is UNCAPPED [D2.4 p1 @01:58–02:09]", runnerTarget)
 		}
 		at.mentorCount("modify_bracket_resonance_logged")
+		at.mentorResonanceRunnerUncap(nt, p)
 		return
 	}
 	runner := mentorRunnerLeg(p)
@@ -297,6 +309,147 @@ func (at *AutoTrader) mentorResonanceRunnerTP(nt *ntTrader.TCPTrader, p *mentorL
 	at.mentorCount("resonance_runner_tp_sent")
 	at.logInfof("🧑‍🏫 mentor resonance runner modify_bracket SENT: %s leg %d TP %.2f → %.2f (the level beyond the old high) [D2.4 p1 @01:58–02:09; mentor_resonance_runner_tp_old_high]", runner.SignalID, runner.Wire, runner.TP, want)
 	runner.TP = want
+}
+
+// mentorResonanceNoCapPts is how far beyond the entry the uncapped runner's
+// take-profit is parked (c52 W2 A3). The NT8 AddOn's modify_bracket cannot
+// DROP a TP leg (new_take_profit <= 0 means "leave untouched", and a frame with
+// neither a stop nor a TP changes nothing: VLTraderTCPClient.cs HandleModifyBracket),
+// and an AddOn change is out of scope, so "no cap" is a sentinel far level. 600
+// MNQ points is ~2% of the index: beyond any intraday run the mentor trades
+// (the EOD flat ends the day first) yet well inside the exchange's price bands.
+// OURS, not the course — the course says only "cho nó chạy".
+const mentorResonanceNoCapPts = 600.0
+
+// mentorResonanceUncapMaxTries bounds the uncap modify (the arm + the retries on
+// later closed candles when a send failed). Guarded by the drive goroutine.
+const mentorResonanceUncapMaxTries = 3
+
+// mentorResonanceUncapPrice is the parked take-profit for an uncapped runner.
+func mentorResonanceUncapPrice(side string, entry, tick float64) float64 {
+	want := entry + mentorResonanceNoCapPts
+	if strings.EqualFold(side, "short") {
+		want = entry - mentorResonanceNoCapPts
+	}
+	if tick > 0 {
+		want = math.Round(want/tick) * tick
+	}
+	return want
+}
+
+// mentorResonanceRunnerUncap makes "no cap" real (c52 W2 A3): in mode A the
+// RUNNER's resting take-profit (the PHL/PLH level shy of the old high — the very
+// leg the mentor says continues) is moved far out of reach with the leg-scoped
+// modify_bracket, so the runner exits only by its BE stop, X8 or the EOD flat.
+// Leg 1's +1R TP stays (R-RES). A one-bracket position (no separate runner leg)
+// is NOT touched: a TP modify there would move the WHOLE position past the 1:1
+// partial. Every branch that sends nothing is logged AND counted. Called at the
+// arm and retried on later closed candles (bounded) when a send failed.
+func (at *AutoTrader) mentorResonanceRunnerUncap(nt *ntTrader.TCPTrader, p *mentorLivePos) {
+	runner := mentorRunnerLeg(p)
+	if runner == nil {
+		return
+	}
+	if runner.Wire != 2 && runner.Wire != 3 {
+		at.mentorCount("resonance_runner_uncap_not_split")
+		at.logWarnf("🧑‍🏫 mentor resonance runner uncap NOT sent — one bracket on the wire (no separate runner leg); a TP modify would move the WHOLE position past the 1:1 partial; the position keeps its TP %.2f", runner.TP)
+		p.UncapTries = mentorResonanceUncapMaxTries
+		return
+	}
+	side := p.Pos.Side
+	want := mentorResonanceUncapPrice(side, p.Pos.Entry, at.mentorInstrumentTick())
+	if runner.TP > 0 && !mentorStopTighter(side, want, runner.TP) {
+		p.UncapTries = mentorResonanceUncapMaxTries // already parked at/beyond the sentinel
+		return
+	}
+	if p.UncapTries >= mentorResonanceUncapMaxTries {
+		return
+	}
+	p.UncapTries++
+	if modifyBracketWire == nil {
+		at.mentorCount("modify_bracket_unwired")
+		at.logWarnf("🧑‍🏫 mentor resonance runner uncap modify_bracket unwired (TP %.2f) — logged, NOT sent", want)
+		return
+	}
+	if err := modifyBracketWire(nt, runner.SignalID, side, runner.Wire, want); err != nil {
+		at.mentorCount("modify_bracket_failed")
+		at.logErrorf("🧑‍🏫 mentor resonance runner uncap modify_bracket FAILED for %s (TP %.2f): %v — the runner keeps %.2f (try %d of %d)", runner.SignalID, want, err, runner.TP, p.UncapTries, mentorResonanceUncapMaxTries)
+		return
+	}
+	at.mentorCount("resonance_runner_uncapped")
+	at.logInfof("🧑‍🏫 mentor resonance runner UNCAPPED: %s leg %d TP %.2f → %.2f (no cap — BE stop, X8 or EOD flat ends it) [D2.4 p1 @01:58–02:09, @02:24–02:47 \"để break even cho nó chạy\"]", runner.SignalID, runner.Wire, runner.TP, want)
+	runner.TP = want
+	p.UncapTries = mentorResonanceUncapMaxTries
+}
+
+// ── B1 (c52 W2): the live 1:1 stop on leg 1 in candle mode ──────────────────
+
+// mentorLeg1RR11Step keeps LEG 1's stop at the live 1:1 rule, on a SPLIT
+// position in candle-trail mode (mentorExitDriveCandle stage 0, leg 1's partial
+// not yet confirmed, BE already armed on a PRIOR candle). The course: "Risk
+// reward của mình lúc nào cũng phải maintain ở mức 1-1 … đừng cố gắng di chuyển
+// risk reward lên 2-1" and "cầm con chuột kéo dí cái stop theo sát đi" [D1.2
+// p1 @14:09–14:28, @15:56–16:07]: stop = 2·close − T (mentorRR11Stop), T = leg
+// 1's own target. Before this, the candle path moved RUNNER legs only
+// (BE, then the candle trail after the partial) and leg 1 sat at its original
+// stop (BE at +0.5R at best): 10/0/20 with a close at 18 → the course stop is
+// 16, the bot's was 10, so an 18 → 11 pullback exited leg 1 at 0R instead of
+// banking +0.6R. Mode C and A never move the stop (D3.4 p3 @07:38, D2.4) —
+// they never reach this function.
+//
+// Runs only with mentor_be_before_partial ON (the course default): OFF is the
+// owner's R3 "no move before the confirmed partial". Never widens (the
+// never-widen guard in mentorMoveLegStop + the broker judge); a candidate on or
+// through the market (close ≤ the stop side by less than a tick, i.e. the close
+// is at/past the target) is skipped, never sent. Returns whether a move applied.
+func (at *AutoTrader) mentorLeg1RR11Step(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64) bool {
+	pos := &p.Pos
+	leg := &p.Legs[0]
+	if leg.Wire != 1 || leg.SignalID == "" || leg.Qty <= 0 || pos.R <= 0 || c <= 0 {
+		return false
+	}
+	if !pos.ArmedBE || !mentorBEBeforePartialOn(at.mentorRiskControl()) {
+		return false
+	}
+	side := pos.Side
+	long := side == "long"
+	target := leg.TP
+	if target <= 0 {
+		target = pos.Entry + pos.R
+		if !long {
+			target = pos.Entry - pos.R
+		}
+	}
+	tick := at.mentorInstrumentTick()
+	next := mentorRR11Stop(side, leg.Stop, c, target)
+	if next == leg.Stop {
+		return false // not tighter than the resting stop: nothing to send
+	}
+	if tick > 0 {
+		next = math.Round(next/tick) * tick
+	}
+	// protective side of the market by at least a tick: a close at/past the
+	// target (leg 1's TP is about to fill, or its marketable ISB modify rests
+	// at the close) would put 2c−T on/through the market — NT8 refuses it, and
+	// the through-market path flattens the whole symbol.
+	if (long && next > c-tick) || (!long && next < c+tick) {
+		at.mentorCount("leg1_rr11_skipped_at_market")
+		return false
+	}
+	err := at.mentorMoveLegStop(nt, side, leg, next)
+	if errors.Is(err, errMentorStopBrokerTighter) || errors.Is(err, errMentorLegClosed) || errors.Is(err, errMentorStopThroughMarket) {
+		return false
+	}
+	if !mentorMoveApplied(err) {
+		if err != nil && !mentorMoveErrAlreadyLogged(err) {
+			at.logWarnf("🧑‍🏫 mentor leg-1 live 1:1 stop %s → %.2f FAILED: %v", leg.SignalID, next, err)
+		}
+		return false
+	}
+	leg.Stop = next
+	at.mentorCount("leg1_rr11_moved")
+	at.logInfof("🧑‍🏫 mentor leg-1 live 1:1 stop: %s → %.2f (2×close %.2f − target %.2f) — risk:reward kept at 1:1 until the partial fills [D1.2 p1 @14:09–16:07]", leg.SignalID, next, c, target)
+	return true
 }
 
 // ── CX-4: break-even half-way to +1R, BEFORE the partial ───────────────────

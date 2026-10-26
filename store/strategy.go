@@ -2241,8 +2241,9 @@ type RiskControlConfig struct {
 	//   CX-2 MentorSwingRunner — nil → ON (course-defaults-30, owner "fix all"):
 	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
 	//        leg 1 at the first target + a runner held by the 4h.
-	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
-	//        the mode-A runner's TP really moves past the old high.
+	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → OFF (c52 W2 A3, W-MENTOR-EXACT
+	//        m186): the mode-A runner has NO cap (its TP is parked far out of
+	//        reach); true = the TP moves to the level beyond the old high.
 	//   CX-4 MentorBEBeforePartial — nil → ON (course-defaults-30): BE at
 	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
 	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB

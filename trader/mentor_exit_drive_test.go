@@ -633,7 +633,7 @@ func TestMentorArmResonanceOnISB(t *testing.T) {
 	at.config.StrategyConfig.RiskControl.MentorResonanceRunnerTPOldHigh = cxBool(true)
 	p := bPos("B", "long", 10, 9, 16, 5)
 	p.Pos.Origin = "PHL"
-	p.BarsSinceFill = 1
+	p.BarsSinceFill = 2 // one candle AFTER the fill candle (c52 W2 B18)
 	p.RunnerTarget = 20
 	at.mentorRegisterLivePos("sig-1", p)
 	at.mentorArmResonanceOnISB("long")

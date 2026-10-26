@@ -1157,32 +1157,49 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 	return res
 }
 
-// mentorResonanceMaxCandles is the A window: the resonance ISB must appear
-// within 3 candles of the PHL/PLH fill [D2.4 p1 @01:36–02:59].
-const mentorResonanceMaxCandles = 3
+// mentorResonanceMinCandles / mentorResonanceMaxCandles are the A window: the
+// resonance ISB must appear within 3 candles AFTER the PHL/PLH fill — "sau khi
+// nó fill ... trong vòng 3 cây nến sau đó. Đếm 1, 2, 3" [D2.4 p1 @01:36–02:59,
+// @04:44–04:53]. c52 W2 B18: the candles are those of the frame the ENTRY was
+// read on ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–
+// 18:14] — the mentor trades the 2m), not always closed 1m bars, and the count
+// starts at the first candle AFTER the fill candle (mentorLivePos.candlesAfterFill).
+// Whether the fill candle itself counts is NOT stated by the course (mentor
+// question B18) — excluding it is OURS; before W2 the fill candle was bar 1.
+const (
+	mentorResonanceMinCandles = 1
+	mentorResonanceMaxCandles = 3
+)
 
 // mentorMaybeArmResonance flips an open PHL/PLH position into mode A the
-// moment an ISB in the SAME direction appears within 3 candles of the fill:
-// the REST's stop goes to BREAK-EVEN immediately, NO candle trail. R-RES
+// moment an ISB in the SAME direction appears within 3 entry-frame candles
+// after the fill: the REST's stop goes to BREAK-EVEN immediately, NO candle
+// trail. R-RES
 // (CTO 1791040643329, D2.4 p1 @02:17-02:29 "@03:36-03:45"): the resonance
 // STILL takes the 1:1 partial — "RISK REWARD 1-1 toi van se ban bot" — so
 // leg 1's +1R TP STAYS (no modify).
 //
 // D2-49 (D2.4 p1 @01:56 "resonance breaks the old high 70–80%"): in mode A
-// the RUNNER's target goes BEYOND the old high. runnerTarget is the next
-// level beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget).
-// > 0 → the runner's native TP moves there; 0 → the runner's native TP is
-// REMOVED (the exit is the BE stop or EOD flat, never a near-old-high cap).
+// the RUNNER is not capped at the old high. runnerTarget is the next level
+// beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget);
+// pos.Target keeps it as a belief. Default (knob
+// mentor_resonance_runner_tp_old_high OFF, c52 W2 A3): the caller
+// (mentorResonanceRunnerTP → mentorResonanceRunnerUncap) pushes the runner's
+// native TP far out of reach — the exit is the BE stop, X8 or the EOD flat,
+// never a near-old-high cap; knob ON: the TP moves to runnerTarget instead.
 // Returns (armed, modifyLeg1TP, modifyLeg2TP): leg 1's TP modify is always 0;
-// the runner's TP modify is the third value (0 = remove).
-func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
+// the runner's TP target is the third value (belief only — the wire move is
+// the caller's).
+// candlesAfterFill is mentorLivePos.candlesAfterFill (entry-frame candles after
+// the fill candle).
+func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, candlesAfterFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
 	if pos == nil || pos.Mode == "A-resonance" {
 		return false, 0, 0
 	}
 	if pos.Origin != "PHL" && pos.Origin != "PLH" {
 		return false, 0, 0 // only a PHL/PLH fill can resonate
 	}
-	if barsSinceFill < 1 || barsSinceFill > mentorResonanceMaxCandles {
+	if candlesAfterFill < mentorResonanceMinCandles || candlesAfterFill > mentorResonanceMaxCandles {
 		return false, 0, 0
 	}
 	if !strings.EqualFold(pos.Side, isbSide) {
@@ -1195,9 +1212,8 @@ func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string
 	// confirmed, or once price is on the profit side — and the belief is written
 	// only after the broker applied the move. [D2.4 p1 @03:36–03:45 "mình bán bớt
 	// rồi… thì cứ để break even cho nó chạy".]
-	// D2-49: the runner aims past the old high — move its TP beyond, or remove
-	// it when no level sits beyond (fail-closed: the runner then exits only via
-	// the BE stop or EOD flat, never capped at the near-old-high).
+	// D2-49: the runner aims past the old high (the caller uncaps its TP, or —
+	// knob ON — moves it to the level beyond the old high).
 	pos.Target = runnerTarget
 	at.mentorCount("resonance_armed")
 	// R-RES: leg 1's +1R take-profit STAYS resting — no leg-1 TP modify.
