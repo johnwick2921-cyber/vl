@@ -19,6 +19,7 @@ import (
 	"vl/config"
 	"vl/crypto"
 	"vl/expectancy"
+	"vl/internal/ownerpush"
 	"vl/internal/retention"
 	"vl/kernel"
 	"vl/logger"
@@ -860,6 +861,13 @@ func main() {
 	// never started, so a leaked owner token in a friend .env cannot post.
 	if !cfg.IsFriendInstance() {
 		safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+		// m432 (release #52): ops P0 alerts that matter while the bot cannot
+		// trade (feed down, trader down, unprotected position, an unfillable
+		// bar hole) also reach the owner's bound chat — OUTBOUND text only,
+		// deduped + rate-limited + async (internal/ownerpush). A friend
+		// instance never gets here (and ownerpush refuses it independently).
+		ownerpush.Start(func(text string) { telegram.NotifyOwner(st, text) })
+		logger.Info("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole) -> the owner's bound Telegram chat · outbound only · ≤8/hour · deduped per episode · no-op when no chat is bound")
 	}
 
 	// Wait for interrupt signal

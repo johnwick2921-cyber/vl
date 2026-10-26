@@ -773,6 +773,12 @@ type AutoTrader struct {
 	// NT8 bar age sitting in the soft band just under FEED DOWN (feedDownAfter()
 	// ∓ 100 s) for > 3 min is LOUD — a WARN plus a dashboard line — the early
 	// warning before the hard FEED DOWN fires.
+	// feedEpisodeMu guards feedDownEpisode: the event id of the FEED DOWN episode
+	// whose alert this trader raised (m432). Set when it fires, cleared (with ONE
+	// "feed back" owner message) when a fresh bar returns, cleared silently when
+	// CME closes — so the owner is told down once and back once per episode.
+	feedEpisodeMu    sync.Mutex
+	feedDownEpisode  string
 	feedLagMu        sync.Mutex
 	feedLagEnteredAt time.Time // zero = outside the band
 	feedLagSaid      bool      // the WARN already fired for this episode
