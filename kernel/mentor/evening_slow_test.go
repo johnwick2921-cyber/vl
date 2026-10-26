@@ -41,22 +41,22 @@ func TestEveningWindowAndSlowNight(t *testing.T) {
 		{OpenTime: close15, High: 120, Low: 119, Close: 119.5},
 		{OpenTime: close15 + 60_000, High: 121, Low: 118, Close: 120},
 	}
-	if !eveningSlow(evening, slow) {
+	if !eveningSlow(evening, slow, DefaultConfig()) {
 		t.Fatalf("a 2-pt night must be slow (5m), got fast")
 	}
 	strong := []market.Kline{
 		{OpenTime: close15, High: 120, Low: 119, Close: 119.5},
 		{OpenTime: close15 + 60_000, High: 230, Low: 119, Close: 225}, // 111-pt range
 	}
-	if eveningSlow(evening, strong) {
+	if eveningSlow(evening, strong, DefaultConfig()) {
 		t.Fatalf("a 111-pt night must be strong (2m), got slow")
 	}
 	// No evening bars yet → not slow (stay 2m).
-	if eveningSlow(evening, nil) {
+	if eveningSlow(evening, nil, DefaultConfig()) {
 		t.Fatalf("no evening bars must not read slow")
 	}
 	// Outside the evening window → never slow.
-	if eveningSlow(ct(2026, 9, 15, 9, 0), slow) {
+	if eveningSlow(ct(2026, 9, 15, 9, 0), slow, DefaultConfig()) {
 		t.Fatalf("the 09:00 RTH minute must never read the evening 5m")
 	}
 }

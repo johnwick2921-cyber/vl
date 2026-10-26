@@ -374,6 +374,61 @@ type Config struct {
 	// own risk is refused ("sát box"); 0 disables. Default 2 — the same 2R
 	// room the target rule demands. Between two boxes (row 25) is exempt.
 	NearBoxRoomMultiple float64
+	// NearBoxRoomPHL — release #52 W11 B11 (knob near_box_room_phl, default ON
+	// = unchanged): the near-box refusal also applies to PHL/PLH entries (risk
+	// = the reference bar's range). The course lesson shows the "sát box" skip
+	// on an ISB only [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]; the PHL/PLH
+	// leg is OUR extension, so this switch lets the owner scope it back to the
+	// ISB. The distance itself (NearBoxRoomMultiple, 2 × risk) is ours too —
+	// the mentor gave no number.
+	NearBoxRoomPHL bool
+
+	// ISB size-cut definitions — release #52 W11 B27. The course says reduce
+	// size for an ISB "ngay đỉnh/đáy cũ" and "in range" and gives NO distance or
+	// definition [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19]. Both
+	// numbers are OURS; the knobs make that visible and tunable, defaults
+	// unchanged.
+	//   ISBOldExtremePts — "at the old high/low" = the ISB candle's range reaches
+	//   an old extreme within ± this many points (default 2).
+	//   ISBInRangeGapPts — "in range" = price sits between two KEY levels closer
+	//   than this (default 0 = inherit PingPongMinGapPts, i.e. 50, borrowed
+	//   from X4/D4.2 — so an owner who already tuned ping_pong_min_gap_pts keeps
+	//   the same in-range reading).
+	ISBOldExtremePts float64
+	ISBInRangeGapPts float64
+
+	// ISB stacking counts on the 2m — release #52 W11 B8. The course states the
+	// stacking arithmetic in 1m candles (2x1m = one 2m, 3x1m = one 3m, a 4th
+	// 1m would be a 4m that does not exist so it jumps to the 5m) [Ngày 4.2
+	// Multitime frame 15_ part2 @00:08:53–00:09:03, @00:15:24–00:16:08]; it never
+	// states how many 2m candles an arm survives. m406 reuses the 1m count on
+	// the arm's own frame, so a 2m arm is held through 3 stacked 2m candles and
+	// cancelled on the 4th. ISBStackCancelCandle2m is that candle number on the
+	// 2m (default 4 = the 1m course count, OURS); the 1m (and 5m) count stays
+	// the course 4.
+	ISBStackCancelCandle2m int
+	// ISBStackTinyStopPts — the tiny-stop exception [Ngày 5.1 Go over lại tất
+	// cả part2 @02:50–03:40, @04:10–04:58: "stop loss của mình ở thời điểm đó
+	// rất nhỏ. Có 12 điểm… Trade nó là take risk"]: an arm whose ISB stop
+	// (range + 2 × ISBBufferPts) is at or below this many points is NOT
+	// cancelled at the 4th candle (it still cancels the moment a body leaves
+	// I1). The mentor frames it as personal discretion and gives no threshold
+	// (he said 11–12), so it is OFF by default (0); the number is the owner's.
+	ISBStackTinyStopPts float64
+
+	// Evening "slow" read — release #52 W11 B10. X11 says trade the 5m only in
+	// a night the US market barely moved and a 100–200-pt night is fine on the
+	// 2m [extra "Go over lớp học" part1 @17:40–18:26]; owner answer Q6
+	// (2026-10-25): slow = candles not running much, NO number fixed. All three
+	// numbers are therefore OURS and unchanged by default:
+	//   EveningSlowPts       — the night is slow when its high-low is under this (100).
+	//   EveningSlowFromHour  — the CT hour the range starts at: 15 = the RTH close
+	//                          (default), 17 = the Globex reopen ("buổi tối").
+	//   EveningSlowWindowMin — 0 = cumulative since the start hour (default);
+	//                          N > 0 = only the last N minutes of bars count.
+	EveningSlowPts       float64
+	EveningSlowFromHour  int
+	EveningSlowWindowMin int
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
@@ -593,7 +648,15 @@ func DefaultConfig() Config {
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
 		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS + OPEN windows (the mentor's rule; #45 reverts owner decision A 2026-10-21 m134 all-day)
-		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true, // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		ISBOldExtremePts:       2,    // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    0,    // B8: tiny-stop exception OFF (the mentor gave no number)
+		EveningSlowPts:         100,  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,   // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,    // B10 [ours]: cumulative since the start hour
 		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement

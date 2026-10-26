@@ -24,7 +24,6 @@ const CODE_CONSTANTS = [
   'Config.TouchBandPts',
   'Config.ISBBufferPts',
   'Config.PHLMinCandlesFromExtreme',
-  'Config.PHLTargetShyPts',
   'Config.StopCeilingPts',
   'Config.RoomMultiple',
   'Config.RangeGapPts',
@@ -41,8 +40,8 @@ const CODE_CONSTANTS = [
 ]
 
 describe('mentor guide knob honesty', () => {
-  it('lists the 24 code-constant evaluator defaults as live:false, "default, code constant"', () => {
-    expect(CODE_CONSTANTS).toHaveLength(24)
+  it('lists the 23 code-constant evaluator defaults as live:false, "default, code constant"', () => {
+    expect(CODE_CONSTANTS).toHaveLength(23)
     for (const id of CODE_CONSTANTS) {
       const card = mentorKnobs.find((k) => k.settingId === id)
       expect(card, `${id} has a card`).toBeDefined()

@@ -152,6 +152,21 @@ const rdrAddonBuild = "2026-10-18-a"
 //     attribution gap, unchanged by this wave (2 / 1 / 1 trades).
 //
 
+// REAL_DAY_REPLAY note, release #52 W11 (fix/c52-w11, invented-constant knobs
+// B8 / B10 / B11 / B27 / C16 + the C15 box-return-walk hygiene),
+// REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23,
+// TZ=America/Chicago, before = adc0ee140 (a detached worktree), after = this
+// branch: the diff tables (live trades, replay arms, ADDED arms) and every
+// refusal/funnel line are IDENTICAL on all three days (only wall-clock
+// latencies and random ids differ; compared with log timestamps masked). That
+// is the intended result: every new knob defaults to the value the kernel
+// hard-coded before (cancel candle 4, tiny stop off, evening slow 100 pts from
+// 15:00 cumulative, near-box 2x incl. PHL/PLH, PHL shy 5, old-extreme +/-2,
+// in-range gap = the ping-pong 50) and Config.Box equals DefaultBoxCfg(), so no
+// arm may change; a default flip is a later mentor/owner call. The existing
+// "attribution is broken" assertion fails on both sides and is not part of this
+// change.
+
 // REAL_DAY_REPLAY note, release #52 W10 (fix/c52-w10, B20 direction-aware 5m
 // pullback warning; A10 NOT built: the plan records two conflicting course
 // statements), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|

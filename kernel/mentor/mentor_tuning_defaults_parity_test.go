@@ -116,6 +116,16 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"flag_wall_target", cfg.FlagWallTarget},
 		{"box_new_zone_after_escape", cfg.BoxNewZoneAfterEscape},
 		{"orb_escape_completely", cfg.OrbEscapeCompletely},
+		{"isb_stack_cancel_candle_2m", cfg.ISBStackCancelCandle2m},
+		{"isb_stack_tiny_stop_pts", cfg.ISBStackTinyStopPts},
+		{"evening_slow_pts", cfg.EveningSlowPts},
+		{"evening_slow_from_hour", cfg.EveningSlowFromHour},
+		{"evening_slow_window_min", cfg.EveningSlowWindowMin},
+		{"near_box_room_multiple", cfg.NearBoxRoomMultiple},
+		{"near_box_room_phl", cfg.NearBoxRoomPHL},
+		{"phl_target_shy_pts", cfg.PHLTargetShyPts},
+		{"isb_old_extreme_pts", cfg.ISBOldExtremePts},
+		{"isb_in_range_gap_pts", cfg.ISBInRangeGapPts},
 	}
 
 	for _, r := range rows {

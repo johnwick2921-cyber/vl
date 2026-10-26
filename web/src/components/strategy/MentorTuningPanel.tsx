@@ -21,6 +21,15 @@ type NumKey =
   | 'swing_max_stop_pts'
   | 'orb_edge_veto_pts'
   | 'orb_isb_fraction_outside'
+  | 'isb_stack_cancel_candle_2m'
+  | 'isb_stack_tiny_stop_pts'
+  | 'evening_slow_pts'
+  | 'evening_slow_from_hour'
+  | 'evening_slow_window_min'
+  | 'near_box_room_multiple'
+  | 'phl_target_shy_pts'
+  | 'isb_old_extreme_pts'
+  | 'isb_in_range_gap_pts'
 
 type BoolKey =
   | 'orb_gate_enabled'
@@ -36,6 +45,7 @@ type BoolKey =
   | 'flag_wall_target'
   | 'box_new_zone_after_escape'
   | 'orb_escape_completely'
+  | 'near_box_room_phl'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -259,6 +269,56 @@ const COPY = {
     en: 'Inside a flag: the opposite flag wall is a closer target',
     es: 'Dentro de una bandera: la pared opuesta es un objetivo más cercano',
   },
+  isbStack2m: {
+    zh: '2分钟ISB：第几根K线仍未成交则取消（我们的数字，非课程）',
+    en: '2m ISB: cancel on candle N if unfilled (ours, not the course)',
+    es: 'ISB 2m: cancelar en la vela N si no se llena (nuestro número, no del curso)',
+  },
+  isbStackTiny: {
+    zh: 'ISB：止损不超过此点数则不在取消K线取消（0 = 关）',
+    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (0 = off)',
+    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (0 = off)',
+  },
+  eveSlowPts: {
+    zh: '夜盘“慢”：高低点幅度低于此点数则用5分钟（我们的数字）',
+    en: 'Evening "slow": night range under this many pts reads the 5m (ours, not the course)',
+    es: 'Noche "lenta": rango bajo estos pts lee el 5m (nuestro número, no del curso)',
+  },
+  eveSlowFrom: {
+    zh: '夜盘“慢”：起算小时（芝加哥时间，15 = 收盘，17 = 重开）',
+    en: 'Evening "slow": range starts at this CT hour (15 = RTH close, 17 = reopen)',
+    es: 'Noche "lenta": el rango empieza a esta hora CT (15 = cierre RTH, 17 = reapertura)',
+  },
+  eveSlowWindow: {
+    zh: '夜盘“慢”：只看最近N分钟（0 = 从起算小时累计）',
+    en: 'Evening "slow": only the last N minutes count (0 = cumulative since the start hour)',
+    es: 'Noche "lenta": solo cuentan los últimos N minutos (0 = acumulado desde la hora de inicio)',
+  },
+  nearBoxRoom: {
+    zh: '靠近箱体：最近箱体边距离须至少为 N × 风险（0 = 关；我们的数字）',
+    en: 'Near a box: the nearest box edge must be at least N x risk away (0 = off; ours)',
+    es: 'Cerca de una caja: el borde más cercano debe estar a al menos N x riesgo (0 = off; nuestro)',
+  },
+  nearBoxPhl: {
+    zh: '靠近箱体的跳过规则同样适用于 PHL/PLH',
+    en: 'The near-box skip also applies to PHL/PLH entries',
+    es: 'La omisión por cercanía a la caja también aplica a entradas PHL/PLH',
+  },
+  phlShy: {
+    zh: 'PHL/PLH 目标距旧高/低的点数（0 = 就在旧高/低；我们的数字）',
+    en: 'PHL/PLH target sits this many pts short of the old high/low (0 = at it; ours)',
+    es: 'El objetivo PHL/PLH queda a estos pts del máximo/mínimo previo (0 = en él; nuestro)',
+  },
+  isbOldExt: {
+    zh: 'ISB 缩减仓位：K线触及旧高/低 ± 点数（我们的数字）',
+    en: 'ISB size cut: candle reaches an old high/low within +/- pts (ours)',
+    es: 'Recorte de tamaño ISB: la vela toca un máx/mín previo dentro de +/- pts (nuestro)',
+  },
+  isbInRange: {
+    zh: 'ISB 缩减仓位：位于两个关键位之间且间距小于此点数（空 = 沿用乒乓最小间距）',
+    en: 'ISB size cut: between two key levels closer than this many pts (blank = the ping-pong gap)',
+    es: 'Recorte de tamaño ISB: entre dos niveles clave a menos de estos pts (vacío = la brecha ping-pong)',
+  },
   orbCompletely: {
     zh: '开盘区间：蜡烛（含影线）须完全在区间外才算突破',
     en: 'Opening range: the candle must be completely outside, wicks included',
@@ -333,6 +393,17 @@ export const MENTOR_TUNING_DEFAULTS = {
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
   orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
+  // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
+  isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
+  isb_stack_tiny_stop_pts: 0, // B8: 0 = tiny-stop exception off
+  evening_slow_pts: 100, // B10
+  evening_slow_from_hour: 15, // B10: the RTH close
+  evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
+  near_box_room_multiple: 2, // B11
+  near_box_room_phl: true, // B11: the skip also gates PHL/PLH
+  phl_target_shy_pts: 5, // C16
+  isb_old_extreme_pts: 2, // B27
+  isb_in_range_gap_pts: 0, // B27: 0 = inherit ping_pong_min_gap_pts
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -558,6 +629,16 @@ export function MentorTuningPanel({
         {boolField('flag_wall_target', COPY.flagWall)}
         {boolField('box_new_zone_after_escape', COPY.boxNewZone)}
         {boolField('orb_escape_completely', COPY.orbCompletely)}
+        {numField('isb_stack_cancel_candle_2m', COPY.isbStack2m, true)}
+        {numField('isb_stack_tiny_stop_pts', COPY.isbStackTiny)}
+        {numField('evening_slow_pts', COPY.eveSlowPts)}
+        {numField('evening_slow_from_hour', COPY.eveSlowFrom, true)}
+        {numField('evening_slow_window_min', COPY.eveSlowWindow, true)}
+        {numField('near_box_room_multiple', COPY.nearBoxRoom)}
+        {boolField('near_box_room_phl', COPY.nearBoxPhl)}
+        {numField('phl_target_shy_pts', COPY.phlShy)}
+        {numField('isb_old_extreme_pts', COPY.isbOldExt)}
+        {numField('isb_in_range_gap_pts', COPY.isbInRange)}
       </div>
     </div>
   )
