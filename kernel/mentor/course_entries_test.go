@@ -613,13 +613,12 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 // the intent. MUTANT: make wallFor always return ok=false → RED.
 func TestCE11FlagWallTarget(t *testing.T) {
 	const bt = int64(600_000)
-	fw := flagWalls{
-		support:        Trendline{Side: SideLong, P0Px: 95, P0T: 0, P1Px: 95, P1T: bt},
-		resistance:     Trendline{Side: SideShort, P0Px: 106, P0T: 0, P1Px: 106, P1T: bt},
-		haveSupport:    true,
-		haveResistance: true,
-	}
-	in := Intent{Action: PlaceStopLimitEntry, Side: SideLong, Price: 100, Stop: 97, Target: 120}
+	// c52 W9 B21: built through buildFlagWalls (the production call), not by hand.
+	fw := buildFlagWalls([]Trendline{
+		{Side: SideLong, P0Px: 95, P0T: 0, P1Px: 95, P1T: bt},
+		{Side: SideShort, P0Px: 106, P0T: 0, P1Px: 106, P1T: bt},
+	})
+	in := Intent{Action: PlaceStopLimitEntry, Side: SideLong, Setup: "PHL", Price: 100, Stop: 97, Target: 120}
 	var refused []string
 	ref := func(r string) { refused = append(refused, r) }
 

@@ -10,11 +10,13 @@ import (
 // Frame-switch carry (m407 review-back): a VALID 1m line is a live location and
 // must not leave the Level set at the 09:00 switch to the 2m build.
 
-// carryTape: trendlineReturnTape on the 1m chart from 08:46 (valid at 08:59),
-// then flat bars well above the line (no touch, no swing), then — withBreak —
+// carryTape: trendlineReturnTape on the 1m chart from 08:45 (valid at 08:58 —
+// its 3rd touch; c52 W9 B7-R7 moved the start one minute earlier because the
+// FTGL box edge 0.9 pt under the fresh line now beats it ON ITS FIRST TEST, so
+// the 08:59 reading is the line PAST its first test), then flat bars well above the line (no touch, no swing), then — withBreak —
 // closed bars through the line from 09:15.
 func carryTape(withBreak bool) ([]market.Kline, int64) {
-	t0 := ctAt(8, 46)
+	t0 := ctAt(8, 45)
 	base, _ := trendlineReturnTape()
 	var out []market.Kline
 	for i, k := range base {
