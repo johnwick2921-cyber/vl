@@ -1712,13 +1712,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	prevHTF := e.State.HTF
 	if !newsHTFFrozen(e.Cfg, now) {
-		e.State.HTF = HTFAdvance(e.State.HTF, e.barsTFMemo(htfFeed, 240), e.barsTFMemo(htfFeed, 60), e.Cfg)
+		// B3: the 1m bar being ticked is the break minute of a forming-bucket
+		// move — MovedAt records it, not the bucket open.
+		var breakAt int64
+		if len(bars) > 0 {
+			breakAt = bars[len(bars)-1].OpenTime
+		}
+		e.State.HTF = HTFAdvanceAt(e.State.HTF, e.barsTFMemo(htfFeed, 240), e.barsTFMemo(htfFeed, 60), e.Cfg, breakAt)
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
 	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
-	// 4h/1h direction gate applies inside the 07:20–07:35 CT news window and
-	// the 08:30–09:30 CT open window; OFF (owner decision A 2026-10-21 m134
+	// 4h/1h direction gate applies on a print day from the print window's
+	// start (07:20 CT) through the 08:30 CT open (A9 — the post-print news
+	// trade follows the 4h) and in the 08:30–09:30 CT open window (60 min is
+	// ours, B28); no 07:20–07:35 gate on a day without a print (R7); OFF (owner decision A 2026-10-21 m134
 	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
 	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
 	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF

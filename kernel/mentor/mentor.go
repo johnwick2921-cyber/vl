@@ -354,10 +354,12 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies inside
-	// the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the
-	// open is like news" [D4.4 p2 @00:35–00:46]; the open length is
-	// [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
+	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies on a
+	// print day from the print window's start (07:20 CT) to the 08:30 CT open
+	// (W7 A9: the post-print news trade follows the 4h; no 07:20–07:35 gate
+	// on a no-print day, R7) AND in the 08:30–09:30 CT open window ("the
+	// open is like news" [D4.4 p2 @00:35–00:46]; the 60-minute length is OURS,
+	// B28, borrowed from [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
 	// windows are not HTF-gated. false (owner decision A 2026-10-21 m134 "fix
 	// all", REVERTED by #45): the 4h/1h direction gate applies ALL DAY. Stored
 	// strategies carry no htf_gate_news_only key, so the new default applies at
