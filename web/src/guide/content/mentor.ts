@@ -668,7 +668,7 @@ export const mentor: GuideSection = {
       rows: [
         [
           'A — resonance',
-          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles, where that ISB passes every placement gate EXCEPT the never-add gate: the position flips to mode A (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER’s take-profit is moved out to the level beyond the old high with a real NinjaTrader modify on the runner’s own leg (release #25, mentor_resonance_runner_tp_old_high, default ON — until then it was only logged “WOULD set TP … UNWIRED”); with no level beyond, or a one-bracket position, the runner keeps its take-profit (counted). The stop does NOT move at the arm: on the CLOSED 1m candle, every open leg moves to break-even only AFTER leg 1’s 1:1 partial is confirmed filled at NinjaTrader, or — with no partial yet — once the close is at least 0.25R beyond entry (a CTO default the owner may change)',
+          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles AFTER the fill candle — counted in candles of the frame the entry was read on (1m, 2m or 5m; the fill candle itself is not counted — ours, the course does not say [D2.4 p1 @01:44–01:56, @04:44–04:53; X8 @18:02–18:14]) — where that ISB passes every placement gate EXCEPT the never-add gate: the position flips to mode A (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER is NOT capped: its resting PHL/PLH take-profit is moved far out of reach (600 points beyond the entry — ours, the course only says “let it run”; the AddOn cannot delete a take-profit leg) so it exits only by its break-even stop, the X8 trap-dodge or the EOD flat [D2.4 p1 @01:58–02:09, @02:24–02:47]. With mentor_resonance_runner_tp_old_high ON the runner’s take-profit is instead moved to the level beyond the old high (the bot’s older inference); a one-bracket position is never touched. The stop does NOT move at the arm: on the CLOSED 1m candle, a split position’s RUNNER moves to break-even only AFTER leg 1’s 1:1 partial is confirmed filled at NinjaTrader (leg 1 keeps its original stop until its take-profit — “mình bán bớt rồi… thì cứ để break even cho nó chạy” [D2.4 p1 @03:36–03:45]); a one-bracket position has no partial, so it goes to break-even once the close is at least 0.25R beyond entry (a CTO default the owner may change)',
         ],
         [
           'B — normal',
@@ -881,7 +881,7 @@ export const mentor: GuideSection = {
         {
           label: 'Runner exit (trail mode)',
           where: 'Strategy → Risk Control → 🧑‍🏫 Mentor mode → Runner exit',
-          what: 'What moves the runner’s stop after a split mentor entry (course-defaults-30, owner "fix all"). candle: FIRST, on the first closed candle whose close is ≥ +0.5R, BOTH legs’ stops move to break-even BEFORE leg 1’s 1:1 partial fills (mentor_be_before_partial ON by default — this reverses owner ruling R3); THEN, once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner trails one tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
+          what: 'What moves the runner’s stop after a split mentor entry (course-defaults-30, owner "fix all"). candle: FIRST, on the first closed candle whose close is ≥ +0.5R, BOTH legs’ stops move to break-even BEFORE leg 1’s 1:1 partial fills (mentor_be_before_partial ON by default — this reverses owner ruling R3); WHILE leg 1’s take-profit is still unfilled, leg 1 keeps the live 1:1 stop on every closed candle after the one that armed break-even (stop = 2 × close − leg 1’s target, never wider, never on or through the market [D1.2 p1 @14:09–16:07 “Risk reward … lúc nào cũng phải maintain ở mức 1-1”]); THEN, once leg 1’s 1:1 take-profit is CONFIRMED filled at NinjaTrader, the runner trails one tick beyond each closed candle’s low (long) / high (short), only ever tighter. off: the older rule — break-even at half the distance to the trade target, live 1:1, trail after the 1:1 point.',
           trader:
             'candle — BE at +0.5R first, then after the 1:1 partial fills the rest is at break-even within one closed candle, then follows each closed candle [D2.4 p1 @16:17 “CỨ BÁN BỚT, xong rồi mình GỒNG lệnh”; @07:01 “move stop THEO TỪNG CÂY NẾN ĐÃ ĐÓNG XONG”; X8 @15:40 the candle’s low].',
           consumer:
@@ -1844,16 +1844,17 @@ export const mentor: GuideSection = {
           label: 'Resonance runner TP past the old high',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Mode A (a same-direction ISB within 3 candles of a PHL/PLH fill, passing every placement gate except the never-add gate): the position flips to mode A and, with this ON, the RUNNER’s take-profit is moved out to the level beyond the old high with a real modify on the runner’s own wire leg (leg 2). Leg 1’s 1:1 stays; the break-even moves later on the closed 1m candle (after the 1:1 partial confirms, or once the close is 0.25R beyond entry — a CTO default the owner may change). From 10-05 to 10-14 this move was only logged (“WOULD set TP … UNWIRED”).',
+          what: 'Mode A (a same-direction ISB within 3 candles after a PHL/PLH fill, in candles of the entry frame, passing every placement gate except the never-add gate): the position flips to mode A. OFF (the default): the RUNNER has NO cap — its resting take-profit is moved far out of reach (600 points beyond the entry, ours) on the runner’s own wire leg (the AddOn cannot delete a take-profit leg), so it exits only by its break-even stop, X8 or the EOD flat; leg 1’s 1:1 stays; the runner’s break-even goes out on the closed 1m candle after leg 1’s 1:1 partial is confirmed. ON: the RUNNER’s take-profit is instead moved to the level beyond the old high (the bot’s older inference). A one-bracket position is never touched.',
           trader:
-            'Course: “70-80% là nó sẽ phá luôn cái đỉnh bên tay trái” (70–80% it breaks the left high) [D2.4 p1 @02:02–02:09]; “Để stop loss ở break even / Cho nó chạy” (stop at break-even, let it run) [D2.4 p1 @02:24–02:47]. The course names no runner target — “let it run”; moving the cap past the old high is the closest the bracket can get. Case (a): a bug fix — the code computed and logged it but never sent it.',
+            'Course: “70-80% là nó sẽ phá luôn cái đỉnh bên tay trái” (70–80% it breaks the left high) [D2.4 p1 @02:02–02:09]; “Để stop loss ở break even / Cho nó chạy” (stop at break-even, let it run) [D2.4 p1 @02:24–02:47]. The course names NO runner target — “let it run” — so the default is no cap (c52 W2 A3, owner order 2026-10-26 “align everything to the course”). Before this the unset default was OFF in the live resolver but ON on the other surfaces, and OFF only logged: the runner kept its PHL/PLH take-profit, shy of the old high.',
           consumer:
             'trader/mentor_course_exits.go mentorResonanceRunnerTP ← trader/mentor_exit_drive.go mentorArmResonanceOnISB',
           range: 'ON / OFF',
-          systemDefault: 'ON (unset = ON)',
+          systemDefault: 'OFF (unset = OFF = no cap)',
           recommended:
-            'ON — D2.4 p1 @02:02 (case a, a bug fix: computed, logged, never sent). Counters resonance_runner_tp_sent / _none / _not_split / _not_beyond.',
-          whenToTouch: 'Only to go back to the logged-only behaviour.',
+            'OFF — D2.4 p1 @02:02, @02:24–02:47 (no runner target, “cho nó chạy”). Counters resonance_runner_uncapped / resonance_runner_uncap_not_split; ON: resonance_runner_tp_sent / _none / _not_split / _not_beyond.',
+          whenToTouch:
+            'ON only to cap the runner at the level beyond the old high again (the bot’s older inference, not the course).',
           perSession: 'No — per strategy.',
         },
         {

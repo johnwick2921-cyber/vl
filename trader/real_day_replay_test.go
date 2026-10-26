@@ -62,6 +62,30 @@ const rdrAddonBuild = "2026-10-18-a"
 // the old extreme" on 4, "no old extreme" on 1. So no arm changes in this
 // replay set: the flip is dormant here, not proven by it.
 //
+// REAL_DAY_REPLAY note, release #52 W2 (exit drive: resonance A3/B18 + candle
+// trail B1/B2), run 2026-10-26 at base d3dfe91fc vs fix/c52-w2,
+// REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23,
+// TZ=America/Chicago, -count=1: the "REAL-DAY REPLAY DIFF" tables (live trades,
+// replay arms, ADDED arms) are IDENTICAL on all three days (10-21: 13 live
+// trades / 20 replay arms; 10-22 and 10-23 likewise unchanged). No arm changes
+// because W2 touches EXITS only, and NO replay arm FILLS on those days (every
+// replay arm is cancelled / expired / still working: "taken" rows 10-21 5, 10-22
+// 3, 10-23 0, all "taken->cancelled"), so the exit drive never runs: zero
+// "resonance ARMED", "resonance runner UNCAPPED", "leg-1 live 1:1 stop" or
+// "resonance BE" lines on either side. What WOULD change once a fill exists (all
+// in the live path, none visible here, so the change is dormant in this replay
+// set, not proven by it):
+//   - A3: every mode-A runner gets its TP parked 600 pts out at the arm
+//     (was: kept the PHL/PLH TP shy of the old high);
+//   - B18: a 2m/5m-entry PHL/PLH resonance ISB at the 1st-3rd entry-frame candle
+//     after the fill arms mode A (was: refused after 1m bar 3, i.e. most 2m
+//     ISBs), and a 1m entry's window moves from 1m bars 1..3 to 1m bars 2..4
+//     (the fill candle is no longer counted);
+//   - B2: a split resonance position's BE waits for the confirmed 1:1 partial
+//     and moves the runner legs only (was: +0.25R, every leg incl. leg 1);
+//   - B1: leg 1 of a split position in candle-trail mode follows 2c-T after the
+//     BE-arming candle (was: sat at BE until its TP filled).
+//
 // REAL_DAY_REPLAY NOTE c52 W9 (trendline + flag wall, B7-R7 / B21 / B22), run
 // on 75707f1ed (base) vs fix/c52-w9, REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
 // REAL_DAY=2026-10-21|22|23, TZ=America/Chicago. The "attribution is broken"

@@ -16,12 +16,13 @@ import (
 // mentorExitDrivePos). The rule: a same-side ISB that passes every placement
 // gate EXCEPT the never-add gate arms resonance (mode A, nothing placed).
 
-// m151ShortPos registers an open PLH short position one candle after the fill.
+// m151ShortPos registers an open PLH short position one candle AFTER the fill
+// candle (BarsSinceFill 2: the fill candle is bar 1 — c52 W2 B18).
 func m151ShortPos(at *AutoTrader, signalID string) {
 	at.mentorRegisterLivePos(signalID, &mentorLivePos{
 		Pos:           mentorPosition{Symbol: "MNQ", Side: "short", Origin: "PLH", Entry: 29600, Stop: 29605, Target: 29590, R: 5, Mode: "B"},
 		Legs:          [3]mentorLeg{{SignalID: signalID, Qty: 1, Stop: 29605, Final: true}},
-		BarsSinceFill: 1,
+		BarsSinceFill: 2,
 	})
 }
 
@@ -178,24 +179,48 @@ func TestM151ResonanceMultiLegRetriesUnapplied(t *testing.T) {
 	}
 }
 
-// ── (e) leg 1 (wire 1) moves to BE too.
+// ── (e) c52 W2 B2: a SPLIT position's resonance BE waits for the confirmed 1:1
+// partial and then moves the RUNNER legs only. Before W2 BE fired at +0.25R on
+// ALL open legs incl. leg 1 ("mình bán bớt rồi… thì cứ để break even cho nó
+// chạy" [D2.4 p1 @03:36–03:45] — the BE is justified by the sale already made).
 func TestM151ResonanceMovesLeg1(t *testing.T) {
-	at, moves := newDriveAT(t)
-	p := &mentorLivePos{
-		Pos: mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 10, Stop: 9, Target: 16, R: 2, Mode: "A-resonance"},
-		Legs: [3]mentorLeg{
-			{SignalID: "s-1", Qty: 1, Stop: 9, Wire: 1},
-			{SignalID: "s-2", Qty: 1, Stop: 9, Wire: 2, Final: true},
-		},
+	split := func() *mentorLivePos {
+		return &mentorLivePos{
+			Pos: mentorPosition{Symbol: "MNQ", Side: "long", Origin: "PHL", Entry: 10, Stop: 9, Target: 16, R: 2, Mode: "A-resonance"},
+			Legs: [3]mentorLeg{
+				{SignalID: "s-1", Qty: 1, Stop: 9, Wire: 1},
+				{SignalID: "s-2", Qty: 1, Stop: 9, Wire: 2, Final: true},
+			},
+		}
 	}
+	// (e1) no confirmed partial, close 0.25R+ beyond entry: NOTHING moves (leg 1
+	// and the runner keep their original stops).
+	at, moves := newDriveAT(t)
+	p := split()
 	at.mentorRegisterLivePos("s-1", p)
 	at.mentorExitDrivePos(nil, p, 10.5, 11, 9.5, 0) // no partial; 10.5 >= entry + 0.25*2
-	got := moves()
-	if len(got) != 2 {
-		t.Fatalf("both open legs must move to BE: %+v", got)
+	if got := moves(); len(got) != 0 {
+		t.Fatalf("B2: no BE before the 1:1 partial is confirmed (leg 1 + runner keep their stops): %+v", got)
 	}
-	if got[0].newStop != 10 || got[1].newStop != 10 {
-		t.Fatalf("both legs must move to entry 10: %+v", got)
+	if p.Pos.ArmedBE || p.Legs[0].Stop != 9 || p.Legs[1].Stop != 9 {
+		t.Fatalf("B2: stops/belief must be untouched: armed=%v leg1=%.2f runner=%.2f", p.Pos.ArmedBE, p.Legs[0].Stop, p.Legs[1].Stop)
+	}
+	if n := at.mentorCountSnapshot()["resonance_be_waiting_partial"]; n != 1 {
+		t.Fatalf("resonance_be_waiting_partial = %d, want 1", n)
+	}
+	// (e2) the partial is confirmed (Scaled): the RUNNER goes to BE; leg 1 (gone
+	// on its TP) is never sent a move.
+	at2, moves2 := newDriveAT(t)
+	p2 := split()
+	p2.Pos.Scaled = true
+	at2.mentorRegisterLivePos("s-1", p2)
+	at2.mentorExitDrivePos(nil, p2, 11, 12, 10, 0)
+	got := moves2()
+	if len(got) != 1 || got[0].newStop != 10 {
+		t.Fatalf("B2: after the partial ONLY the runner moves to BE 10: %+v", got)
+	}
+	if p2.Legs[0].Stop != 9 || p2.Legs[1].Stop != 10 || !p2.Pos.ArmedBE {
+		t.Fatalf("B2: leg 1 keeps 9, runner 10, BE armed: leg1=%.2f runner=%.2f armed=%v", p2.Legs[0].Stop, p2.Legs[1].Stop, p2.Pos.ArmedBE)
 	}
 }
 
