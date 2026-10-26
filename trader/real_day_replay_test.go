@@ -58,13 +58,28 @@ const rdrAddonBuild = "2026-10-18-a"
 //   - 10-21 (REAL_DAY=2026-10-21): TWO simulated SWING4H arms are gone, both
 //     LONG 2-contract ISB-style entries after 14:30 CT: row 22 (ArmID
 //     swing-1792613100000, 15:05 CT bar, stop AT the line, 49.3 pts, cancelled
-//     by a later close through the line) and row 23 (the next swing long, stop
-//     37.8 pts). The old code fired the swing ISB off the close-back bar itself
-//     and ignored candle 1's colour; the course needs a colour-matching candle
-//     1 that closed back, then one more 5m beat for the inside bar. The other
-//     21 arms (ISB/PLH/PHL and the 10:30 CT SWING4H short, row 16) are
-//     identical. Attribution of each of the two removed arms to A6 vs A7 is
-//     [B] (not separated by a one-fix-at-a-time run).
+//     by a later close through the line) and row 23 (swing-1792615500000,
+//     15:45 CT bar, stop 37.8 pts). CAUSE (corrected after review, verified
+//     with a temporary print in the Through branch [A]): NEITHER arm is
+//     removed by A7. Both fully satisfy A7 (line 30000.50, approach long; the
+//     14:55 bar closed through at 29999; at 15:05 candle 1 = the 15:00 bar is
+//     green 29998.25 -> 30047.5, closed back above the line, and the 15:05
+//     body is inside it; row 23 likewise: 15:40 green close-back, 15:45 inside
+//     bar). They are removed by the A6 once-per-4h-bucket latch: the earlier
+//     ISB (swing-1792611000000, 14:30 CT, 13:00-17:00 CT bucket, level already
+//     invalid) set ISBFired, and ISBFired blocks every later ISB in the same
+//     4h candle, EVEN after a fresh through-close (14:55) followed by a green
+//     close-back and an inside bar. The old code re-armed the ISB on every
+//     later qualifying pair. TRADE-SET REDUCTION to put in front of the owner
+//     (design point, NOT a code bug): the plan says "make the ISB not re-arm
+//     each bar" and a separate marker is plan-sanctioned, but the course
+//     states "chi kiem Insaba" with no once-only limit, so a second ISB after
+//     the first one's order was cancelled by a later through-close looks
+//     course-valid. If the owner wants it, the minimal alternative is to clear
+//     ISBFired when the first ISB's order is cancelled or filled and a new
+//     through-close is recorded (not built: the owner has not ruled). The
+//     other 21 arms (ISB/PLH/PHL and the 10:30 CT SWING4H short, row 16) are
+//     identical.
 //   - 10-22 and 10-23: arm and cancel streams identical (14 arms each).
 //   - TestRealDayReplay itself exits FAIL on all three days at
 //     real_day_replay_test.go:451 ("live mentor trade(s) neither matched nor
