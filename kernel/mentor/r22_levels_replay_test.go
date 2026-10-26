@@ -146,7 +146,7 @@ func TestR22OldExtremeZoneShareIsTheSinglePair1013(t *testing.T) {
 			return
 		}
 		n++
-		if touchesOldExtreme(cur, e.State.Levels) {
+		if touchesOldExtreme(cur, e.State.Levels, 2) {
 			zone++
 		}
 	})

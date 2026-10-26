@@ -1071,9 +1071,9 @@ func entryArmIDs(out []Intent) map[string]bool {
 
 // isbFlags returns the ISB size flags for the injector (rule 2: at an old
 // high/low; rule 3: in a range), joined with "|" when both apply.
-func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
+func isbFlags(cur market.Kline, levels []Level, boxes []Box, oldExtremeBandPts float64) string {
 	var flags []string
-	if touchesOldExtreme(cur, levels) {
+	if touchesOldExtreme(cur, levels, oldExtremeBandPts) {
 		flags = append(flags, FlagISBAtOldExtreme)
 	}
 	if midRangeBoxed(boxes, cur.Close) {
@@ -1127,15 +1127,25 @@ func pullbackWarning5m(b5 []market.Kline) Side {
 	return ""
 }
 
+// isbInRangeGapPts is the "in range" key-level gap for the ISB size cut: the
+// W11 B27 knob when set, else the ping-pong minimum it was borrowed from
+// (X4/D4.2), so a stored ping_pong_min_gap_pts keeps reading the same.
+func (c Config) isbInRangeGapPts() float64 {
+	if c.ISBInRangeGapPts > 0 {
+		return c.ISBInRangeGapPts
+	}
+	return c.PingPongMinGapPts
+}
+
 func (e *Evaluator) isbFlagsFor(cur market.Kline, side Side, levels []Level, boxes []Box) string {
-	flags := isbFlags(cur, levels, boxes)
+	flags := isbFlags(cur, levels, boxes, e.Cfg.ISBOldExtremePts)
 	if e.pullbackWarn5m != "" && side == e.pullbackWarn5m {
 		flags = joinFlag(flags, FlagPullbackWarn)
 	}
 	if HasFlag(flags, FlagISBInRange) {
 		return flags
 	}
-	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.PingPongMinGapPts) {
+	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.isbInRangeGapPts()) {
 		if flags != "" {
 			flags += "|"
 		}
@@ -1145,13 +1155,16 @@ func (e *Evaluator) isbFlagsFor(cur market.Kline, side Side, levels []Level, box
 }
 
 // touchesOldExtreme reports whether the candle's range reaches an old high/low
-// within ±2 pts (the "isb_at_old_extreme" size flag, written rule 2 D4.1 p1).
-func touchesOldExtreme(cur market.Kline, levels []Level) bool {
+// within ±bandPts (the "isb_at_old_extreme" size flag, written rule 2 D4.1 p1).
+// The course gives no distance for "ngay đỉnh/đáy cũ" [Ngày 4.1 Go over ngày 3
+// part1 @00:04:31–00:05:19]; the band is ours (Config.ISBOldExtremePts,
+// default 2 — release #52 W11 B27).
+func touchesOldExtreme(cur market.Kline, levels []Level, bandPts float64) bool {
 	for _, l := range levels {
 		if l.Kind != KindOldExtreme {
 			continue
 		}
-		if cur.High >= l.Price-2 && cur.Low <= l.Price+2 {
+		if cur.High >= l.Price-bandPts && cur.Low <= l.Price+bandPts {
 			return true
 		}
 	}
@@ -1221,26 +1234,43 @@ func (e *Evaluator) closedBucketsMemo(bars []market.Kline, now int64) []market.K
 	return b5
 }
 
-// closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
 // eveningSlow reports whether the evening/overnight read should drop to the 5m:
-// the night is "slow" when the 1m high-low range since the last RTH close
-// (15:00 CT) is under 100 points. X11 names 100–200 pts as a STRONG night (2m
-// stays fine); the 100-pt cutoff is ours [derived: X11 @17:40–18:26].
-func eveningSlow(now int64, bars []market.Kline) bool {
+// the night is "slow" when the 1m high-low range since the start hour (default
+// 15:00 CT, the RTH close) is under EveningSlowPts (default 100). X11 names
+// 100–200 pts as a STRONG night (2m stays fine); the 100-pt cutoff, the 15:00
+// start and the cumulative window are ours [derived: X11 @17:40–18:26; owner
+// Q6 2026-10-25 fixed no number] — release #52 W11 B10 exposes all three as
+// knobs (evening_slow_pts / evening_slow_from_hour / evening_slow_window_min),
+// defaults unchanged.
+func eveningSlow(now int64, bars []market.Kline, cfg Config) bool {
 	if !inEveningWindow(now) {
 		return false
 	}
+	pts := cfg.EveningSlowPts
+	if pts <= 0 {
+		pts = 100
+	}
+	hour := cfg.EveningSlowFromHour
+	if hour < 15 || hour > 17 {
+		hour = 15
+	}
 	t := time.UnixMilli(now).In(ctime())
-	rthClose := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
-	if now < rthClose {
-		// Overnight 00:00–02:59 CT: the evening belongs to yesterday's RTH close.
+	since := time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, ctime()).UnixMilli()
+	if now < since {
+		// Overnight 00:00–02:59 CT (or before the start hour): the evening
+		// belongs to yesterday's start hour.
 		prev := t.AddDate(0, 0, -1)
-		rthClose = time.Date(prev.Year(), prev.Month(), prev.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+		since = time.Date(prev.Year(), prev.Month(), prev.Day(), hour, 0, 0, 0, ctime()).UnixMilli()
+	}
+	if w := cfg.EveningSlowWindowMin; w > 0 {
+		if from := now - int64(w)*60_000; from > since {
+			since = from
+		}
 	}
 	var hi, lo float64
 	have := false
 	for _, b := range bars {
-		if b.OpenTime < rthClose {
+		if b.OpenTime < since {
 			continue
 		}
 		if !have {
@@ -1257,9 +1287,10 @@ func eveningSlow(now int64, bars []market.Kline) bool {
 	if !have {
 		return false // no evening bars yet — stay on the 2m
 	}
-	return hi-lo < 100
+	return hi-lo < pts
 }
 
+// closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
 func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int64) []market.Kline {
 	agg := e.barsTFMemo(bars, tfMin)
 	if len(agg) > 0 && agg[len(agg)-1].CloseTime >= now {
@@ -1970,7 +2001,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		switch {
 		case !exec2mReads2m(now):
 			want = 1
-		case inEveningWindow(now) && eveningSlow(now, bars):
+		case inEveningWindow(now) && eveningSlow(now, bars, e.Cfg):
 			want = 5
 		}
 		// closedBucketsTF drops the still-forming last bucket: on a 1m close
@@ -2768,7 +2799,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// the room rule — the room rule's target reads the box edge as the
 			// first obstacle, so the same proximity would otherwise surface as
 			// phl_room_rule instead of the near_box counter.
-			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); refuse {
+			// W11 B11: the PHL/PLH leg of this refusal is our extension of the
+			// course's ISB-only example (NearBoxRoomPHL, default ON).
+			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); e.Cfg.NearBoxRoomPHL && refuse {
 				e.refuse("near_box")
 				continue
 			}
@@ -2879,7 +2912,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}
-	boxCfg := DefaultBoxCfg()
+	boxCfg := e.baseBoxCfg() // C15 hygiene: the configured box frame, same as latchBoxes (was DefaultBoxCfg)
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
 	// returns included (the old one-shot veto covered only the ISB path).
 	if !conflict {

@@ -139,13 +139,13 @@ func TestMidRangeBoxed(t *testing.T) {
 // "isb_at_old_extreme" for the injector's size tier (written rule 2, D4.1 p1).
 func TestTouchesOldExtremeFlag(t *testing.T) {
 	cur := market.Kline{High: 101, Low: 99}
-	if !touchesOldExtreme(cur, []Level{{Kind: KindOldExtreme, Price: 100.5}}) {
+	if !touchesOldExtreme(cur, []Level{{Kind: KindOldExtreme, Price: 100.5}}, 2) {
 		t.Fatal("a candle whose range reaches an old extreme ±2 must flag")
 	}
-	if touchesOldExtreme(cur, []Level{{Kind: KindOldExtreme, Price: 104}}) {
+	if touchesOldExtreme(cur, []Level{{Kind: KindOldExtreme, Price: 104}}, 2) {
 		t.Fatal("an old extreme 3 pts away must not flag")
 	}
-	if touchesOldExtreme(cur, []Level{{Kind: KindKeyLevel, Price: 100}}) {
+	if touchesOldExtreme(cur, []Level{{Kind: KindKeyLevel, Price: 100}}, 2) {
 		t.Fatal("only OLD EXTREMES flag, not key levels")
 	}
 }
@@ -157,16 +157,16 @@ func TestISBFlags(t *testing.T) {
 	cur := market.Kline{High: 101, Low: 99, Close: 100}
 	extreme := []Level{{Kind: KindOldExtreme, Price: 100.5}}
 	rangeBoxes := []Box{{Kind: FTGL, Top: 90, Bottom: 80}, {Kind: FTGH, Top: 120, Bottom: 110}}
-	if f := isbFlags(cur, nil, nil); f != "" {
+	if f := isbFlags(cur, nil, nil, 2); f != "" {
 		t.Fatalf("no flags expected, got %q", f)
 	}
-	if f := isbFlags(cur, extreme, nil); f != "isb_at_old_extreme" {
+	if f := isbFlags(cur, extreme, nil, 2); f != "isb_at_old_extreme" {
 		t.Fatalf("flags = %q, want isb_at_old_extreme", f)
 	}
-	if f := isbFlags(cur, nil, rangeBoxes); f != "isb_in_range" {
+	if f := isbFlags(cur, nil, rangeBoxes, 2); f != "isb_in_range" {
 		t.Fatalf("flags = %q, want isb_in_range", f)
 	}
-	if f := isbFlags(cur, extreme, rangeBoxes); f != "isb_at_old_extreme|isb_in_range" {
+	if f := isbFlags(cur, extreme, rangeBoxes, 2); f != "isb_at_old_extreme|isb_in_range" {
 		t.Fatalf("flags = %q, want both joined", f)
 	}
 }

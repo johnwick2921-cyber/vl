@@ -841,6 +841,16 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("flag_wall_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FlagWallTarget })
 	mentorTuningRow("box_new_zone_after_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.BoxNewZoneAfterEscape })
 	mentorTuningRow("orb_escape_completely", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEscapeCompletely })
+	mentorTuningRow("isb_stack_cancel_candle_2m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackCancelCandle2m })
+	mentorTuningRow("isb_stack_tiny_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackTinyStopPts })
+	mentorTuningRow("evening_slow_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowPts })
+	mentorTuningRow("evening_slow_from_hour", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowFromHour })
+	mentorTuningRow("evening_slow_window_min", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowWindowMin })
+	mentorTuningRow("near_box_room_multiple", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomMultiple })
+	mentorTuningRow("near_box_room_phl", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomPHL })
+	mentorTuningRow("phl_target_shy_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLTargetShyPts })
+	mentorTuningRow("isb_old_extreme_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBOldExtremePts })
+	mentorTuningRow("isb_in_range_gap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBInRangeGapPts })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).

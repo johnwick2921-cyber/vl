@@ -118,12 +118,50 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'Config.PHLMinCandlesFromExtreme',
     live: false,
   },
-  'PHL target shy': { settingId: 'Config.PHLTargetShyPts', live: false },
+  'PHL target shy': {
+    settingId: 'risk_control.mentor_tuning.phl_target_shy_pts',
+    live: true,
+  },
   'PHL entry buffer': { settingId: 'Config.PHLEntryBufferPts', live: false },
   'Wick microscalp': { settingId: 'Config.WickMicroscalpEnabled', live: false },
   'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
-  'Near-box room': { settingId: 'Config.NearBoxRoomMultiple', live: false },
+  'Near-box room': {
+    settingId: 'risk_control.mentor_tuning.near_box_room_multiple',
+    live: true,
+  },
+  'Near-box skip also gates PHL/PLH': {
+    settingId: 'risk_control.mentor_tuning.near_box_room_phl',
+    live: true,
+  },
+  '2m ISB stacking: cancel candle': {
+    settingId: 'risk_control.mentor_tuning.isb_stack_cancel_candle_2m',
+    live: true,
+  },
+  'ISB tiny-stop exception': {
+    settingId: 'risk_control.mentor_tuning.isb_stack_tiny_stop_pts',
+    live: true,
+  },
+  'Evening slow: cutoff': {
+    settingId: 'risk_control.mentor_tuning.evening_slow_pts',
+    live: true,
+  },
+  'Evening slow: start hour': {
+    settingId: 'risk_control.mentor_tuning.evening_slow_from_hour',
+    live: true,
+  },
+  'Evening slow: trailing window': {
+    settingId: 'risk_control.mentor_tuning.evening_slow_window_min',
+    live: true,
+  },
+  'ISB size cut: old high/low band': {
+    settingId: 'risk_control.mentor_tuning.isb_old_extreme_pts',
+    live: true,
+  },
+  'ISB size cut: in-range gap': {
+    settingId: 'risk_control.mentor_tuning.isb_in_range_gap_pts',
+    live: true,
+  },
   'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
     settingId: 'risk_control.mentor_tuning.day_gate_spent_pts',
@@ -370,12 +408,12 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: 'Candle 2’s BODY inside candle 1’s FULL range (wicks included). Direction = candle 1’s colour. Entry at the ISB candle’s own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest).',
+          body: 'Candle 2’s BODY inside candle 1’s FULL range (wicks included). Direction = candle 1’s colour. Entry at the ISB candle’s own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest). The course counts 1m candles; on the 2m the same 4 is OURS (knob isb_stack_cancel_candle_2m), and an optional tiny-stop exception (isb_stack_tiny_stop_pts, OFF) keeps a very small-stop arm past the cancel candle.',
           tag: 'D1.4 p1',
         },
         {
           title: 'PHL / PLH — the pullback',
-          body: 'Uptrend pullback → buy stop at the previous candle’s high, stop at that candle’s low, target NEAR the old high. Downtrend bounce → the exact mirror. The pullback stop can ROLL: with NO drawn level touched, the buy/sell stop is re-armed to EACH closed pullback candle’s extreme until it fills — "Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong" [D2.2 p1 @02:44–03:34, 11:05–11:36]. This rolling entry is ON by default (release #52): it starts only when the pullback SHOWS — a RED candle in an uptrend, a GREEN candle in a downtrend [D2.2 p1 @01:52–01:57, @10:47–10:51] — and, like every entry, it must agree with the 5m trigger line (against it, or past the wrong side of it, the roll is refused and a resting stop is cancelled) [X8 @06:25, @08:37–08:48]. A with-trend candle mid-pullback does not roll or start a stop and leaves a still-valid resting stop alone, but if the leg died (the 4h side flipped, the trigger now disagrees, the higher low broke) the resting stop is cancelled on that candle too. It still needs the 4h/1h direction, a nearest old high/low, the 1–2 candle wait and a higher low. A candle TOUCHING A DRAWN LEVEL is a different entry: the FIRST touching candle is the reference and never rolls [D2.3 p1 @17:55–19:12; D5.3 p1 @22:10]. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL). The old high is the nearest UNBROKEN old high, and its role is fixed when it is drawn: a PHL (long) only ever targets an old HIGH and a PLH (short) an old LOW — an old low is never a long’s target. Inside a standing 5m (or 15m/30m) ISB box, or between an FTGL and an FTGH, there is no PHL/PLH at all (only the ISB) [D3.4 p2 @07:27–10:35; D3.2 p2 @08:51].',
+          body: 'Uptrend pullback → buy stop at the previous candle’s high, stop at that candle’s low, target NEAR the old high (5 pts short of it — the 5 is ours, knob phl_target_shy_pts). Downtrend bounce → the exact mirror. The pullback stop can ROLL: with NO drawn level touched, the buy/sell stop is re-armed to EACH closed pullback candle’s extreme until it fills — "Mình ra một lệnh buy stop trên đỉnh của từng cây nến đã đóng xong" [D2.2 p1 @02:44–03:34, 11:05–11:36]. This rolling entry is ON by default (release #52): it starts only when the pullback SHOWS — a RED candle in an uptrend, a GREEN candle in a downtrend [D2.2 p1 @01:52–01:57, @10:47–10:51] — and, like every entry, it must agree with the 5m trigger line (against it, or past the wrong side of it, the roll is refused and a resting stop is cancelled) [X8 @06:25, @08:37–08:48]. A with-trend candle mid-pullback does not roll or start a stop and leaves a still-valid resting stop alone, but if the leg died (the 4h side flipped, the trigger now disagrees, the higher low broke) the resting stop is cancelled on that candle too. It still needs the 4h/1h direction, a nearest old high/low, the 1–2 candle wait and a higher low. A candle TOUCHING A DRAWN LEVEL is a different entry: the FIRST touching candle is the reference and never rolls [D2.3 p1 @17:55–19:12; D5.3 p1 @22:10]. Wait 1–2 more pullback candles; a higher low is required (a flat low is an FTGL, not a PHL). The old high is the nearest UNBROKEN old high, and its role is fixed when it is drawn: a PHL (long) only ever targets an old HIGH and a PLH (short) an old LOW — an old low is never a long’s target. Inside a standing 5m (or 15m/30m) ISB box, or between an FTGL and an FTGH, there is no PHL/PLH at all (only the ISB) [D3.4 p2 @07:27–10:35; D3.2 p2 @08:51].',
           tag: 'D2.2 p1',
         },
         {
@@ -418,7 +456,7 @@ export const mentor: GuideSection = {
         [
           'Trendline',
           'Two CONFIRMED two-sided structural swings (left fractal + the next bar confirms it), at least 5 bars apart (a floor that is OURS, not the course — the mentor only says a trendline must slope [D2.3 p1 @06:26–07:00]; an open question to him; a 1H/4H line needs 2 HTF bars; bars of the frame the line is drawn on: the 1m in the first 30 minutes after the 08:30 CT open, the closed 2m candles after that — the mentor draws his trendlines on the 2m, "Thường em sẽ vẽ trendline khung 2 phút" [X9 @03:35–03:49], and trades the 1m only until 09:00 [Routine trước khi trade @00:00:34–00:01:14]; exec_2m_after_30m OFF = the 1m all day; the break below still reads closed 5m candles), joined — a low and a HIGHER low (support) or a high and a LOWER high (resistance); never horizontal: two same-role swing wicks at (nearly) the SAME price are a flat SUPPORT (two lows) or RESISTANCE (two highs) level — drawn and traded as an old low / old high, labelled "support" / "resistance" — never a trendline, and "near" is the day\u2019s own measure, HALF the average high-low range of the last 20 closed candles of the traded frame (a quiet day ~4–5 pts, a run day 10–20 pts; owner ruling 2026-10-25, Q2). EVERY consecutive pair of today\u2019s qualifying swings draws a line, plus at most ONE non-adjacent line per side at a time (the most significant extreme joined to the later swing, angled and uncrossed; a better or continuing one replaces it), so a side never fans. An UNBROKEN drawn line stays all session — it is DELETED (not drawn, not a level) the moment a closed 5m candle is WHOLLY beyond it, and a 1H/4H trendline breaks the same way, on a 5m candle wholly beyond it, not on the 1H close (owner rulings R1/R3, 2026-10-25) — what counts as wholly beyond: (a support line: the whole candle, wicks included, below the line; a resistance line: the whole candle above it; a close beyond the line with a wick still back at it is NOT a break; the line is read at BOTH the candle\u2019s open and its close time and the candle must be beyond both, so on a sloped line a candle that traded on the line\u2019s own side earlier in its five minutes is not a break) — "n\u1ebfn n\u00f3 \u0111\u1ee5ng level m\u00e0 n\u00f3 \u0110\u00d3NG D\u01af\u1edaI level… n\u00f3 G\u00c3Y level" [D2.3 p1 @14:36–15:17] on the 5m [X9 @06:25] — or the session ends (owner ruling R4; "never erase during the session, delete at end of day" [D4.1 p2 @01:17]). A VALID line carries across the 08:30/09:00 frame switch until a 5m candle wholly beyond it breaks it; FORMING lines are redrawn on the new frame (m407). A pair that price crossed between its own two points (a 1m wick beyond the line by more than the 0.5-pt touch band) is not a trendline and is not drawn ("TRENDLINE chứ không phải CẦU TUỘT" [X9 @01:22]) — counted once per day as trendline_crossed_between_anchors. The log says when a line turns VALID, when one is BROKEN and when the day\u2019s lines are deleted',
-          'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it — a REJECTION: the candle\u2019s low (high) comes within the 0.5-pt band of the line and it closes on the line\u2019s own side; a wick that goes beyond the band, or a close through the line, is not a touch. The bars that confirm the 2nd swing and still sit on the line never count. A closed 5m candle WHOLLY beyond it discards it ("đóng dưới NGUYÊN CÂY" [X9 @06:28–06:45]; a close beyond the line alone is not a break; a break is never a reversal and NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location. A respected level (a key level, an old high/low or an FTGH/FTGL box edge — the mentor\u2019s own example is the failure-to-go-higher/lower box, c52 W9) within 2 pts of the line (the 2 pts is OURS, not the course: he gives no number) beats a FRESH trendline — but only on its FIRST test, the 3rd touch that just closed; a valid line past its 3rd-touch return has itself been respected and is no longer suppressed by a nearby level ("chọn cái mà nó đã respect nhiều lần thay vì … cái mà nó mới quay về, nó test lần đầu tiên … Đừng chọn cái nó mới tạo" [D2.3 p1 @02:19–03:45])',
+          'Becomes a location only on the 3rd touch, and that touch must be a RETURN ("ph\u1ea3i V\u1ec0 TEST L\u1ea6N TH\u1ee8 3 th\u00ec m\u1edbi VALID" [D3.2 p2 @03:45]): price first LEAVES the line \u2014 a confirmed swing high above a support line, or a confirmed swing low below a resistance line, beyond the touch band \u2014 and then comes BACK to touch it — a REJECTION: the candle\u2019s low (high) comes within the 0.5-pt band of the line (0.5 is ours, not the course — the mentor says a near-touch is fine on the 1m and a real touch is needed on the 5m, with no number [Ngày 5.2 part2 @00:18:30–00:18:45]) and it closes on the line\u2019s own side; a wick that goes beyond the band, or a close through the line, is not a touch. The bars that confirm the 2nd swing and still sit on the line never count. A closed 5m candle WHOLLY beyond it discards it ("đóng dưới NGUYÊN CÂY" [X9 @06:28–06:45]; a close beyond the line alone is not a break; a break is never a reversal and NOT an entry). Box beats trendline: a trendline whose price sits inside a live box\u2019s [Bottom, Top] is NOT a location. A respected level (a key level, an old high/low or an FTGH/FTGL box edge — the mentor\u2019s own example is the failure-to-go-higher/lower box, c52 W9) within 2 pts of the line (the 2 pts is OURS, not the course: he gives no number) beats a FRESH trendline — but only on its FIRST test, the 3rd touch that just closed; a valid line past its 3rd-touch return has itself been respected and is no longer suppressed by a nearby level ("chọn cái mà nó đã respect nhiều lần thay vì … cái mà nó mới quay về, nó test lần đầu tiên … Đừng chọn cái nó mới tạo" [D2.3 p1 @02:19–03:45])',
         ],
       ],
     },
@@ -448,12 +486,12 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Smaller size at an old high/low',
-          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. "At" = the ISB candle reaches within ±2 pts of THE nearest unbroken old high or THE nearest unbroken old low (one line each — see "Old highs/lows" above). On 10-13 that is 20 of the 390 RTH candles (5.1%; 18 while the pivots were capped at 3 per side, before release #23); before release #22 the 12-pivot list flagged 183 of them (47%). Written rule 2 [D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size… là cái thứ 2"] — wired: the evaluator flags the ISB and the size table cuts it.',
+          body: 'An ISB right at an old high/low trades the reduced size (3 contracts), not the base size. "At" = the ISB candle reaches within ±2 pts (ours, not the course — knob isb_old_extreme_pts) of THE nearest unbroken old high or THE nearest unbroken old low (one line each — see "Old highs/lows" above). On 10-13 that is 20 of the 390 RTH candles (5.1%; 18 while the pivots were capped at 3 per side, before release #23); before release #22 the 12-pivot list flagged 183 of them (47%). Written rule 2 [D4.1 p1 @04:37–05:04: "ở ngay đỉnh hoặc đáy cũ… giảm size… là cái thứ 2"] — wired: the evaluator flags the ISB and the size table cuts it.',
           cite: 'D4.1 p1 @04:37–05:04 — "ở ngay đỉnh hoặc đáy cũ… giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlags',
         },
         {
           title: 'Smaller size when the ISB is in a range',
-          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"]. The cut beats the confluence size. A spent day does NOT change the size (it cuts the target to 15 pts and the runner to 2 contracts instead).',
+          body: 'An ISB traded inside a range also trades the reduced size (3 contracts). "In range" means: between an FTGL below and an FTGH above; inside the standing 5m ISB rest box; between two key levels closer than the ping-pong minimum (50 pts — borrowed from the ping-pong gate, ours, not the course; knob isb_in_range_gap_pts); and — once built — a 15m ISB range. Written rule 3 [D4.1 p1 @04:37–05:04: "Khi trade isb in-range bắt buộc giảm size"]. The cut beats the confluence size. A spent day does NOT change the size (it cuts the target to 15 pts and the runner to 2 contracts instead).',
           cite: 'D4.1 p1 @04:37–05:04 — "Khi trade isb in-range bắt buộc giảm size" · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go isbFlagsFor',
         },
         {
@@ -570,7 +608,7 @@ export const mentor: GuideSection = {
         ],
         [
           'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
-          'ON by default — the named setups (ISB + PHL/PLH) are read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute they are the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff is ours — X11 names 100–200 pts as a STRONG night, where the 2m stays [derived: X11 @17:40–18:26]. The higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
+          'ON by default — the named setups (ISB + PHL/PLH) are read on the 1m chart ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"); at every other minute they are the 2m ("khung 2 phút ÍT BỊ QUÉT RÂU" — the 1m wicks sweep stops, so the 2m read is quieter), overnight and the Europe open (3am Texas) included. A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff, the 15:00 start and the cumulative window are ours — X11 names 100–200 pts as a STRONG night, where the 2m stays, and the owner fixed no number (Q6) [derived: X11 @17:40–18:26]; evening_slow_pts / evening_slow_from_hour / evening_slow_window_min make all three tunable. The higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles, its candle-3 partial reads the 2m fill candle, and its break-even reads the 2m close — "trade khung nào thì gồng theo khung đó" [X8 @18:02–18:14] (only the 1:1 live rule keeps the 1m close); after a restart that frame is not known and the runner trails the 1m (WARN trail_tf_unknown_after_restart).',
           'mentor_exec_2m_after_30m = true (default ON) · X5 @00:07–01:17 · X11 @17:06–19:35 · "Routine trước khi trade" @00:41–01:14',
         ],
         [
@@ -1046,7 +1084,7 @@ export const mentor: GuideSection = {
           label:
             'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff is ours — X11 names 100–200 pts as a STRONG night, where the 2m stays [derived: X11 @17:40–18:26]. The ISB pair and PHL/PLH swap; the higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
+          what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("buổi tối mà nó đi chậm thì đánh khung 5 phút thôi" [X11 @17:40–18:26]); the 100-pt cutoff, the 15:00 start and the cumulative window are ours — X11 names 100–200 pts as a STRONG night, where the 2m stays, and the owner fixed no number (Q6) [derived: X11 @17:40–18:26]; evening_slow_pts / evening_slow_from_hour / evening_slow_window_min make all three tunable. The ISB pair and PHL/PLH swap; the higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
             'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu"). The EMA 9/34 levels and the EMA 34 location line move to the 2m on the same schedule (M401), and the chart’s EMA curve carries the frame it was drawn on (tf_min).',
           consumer:
@@ -1189,6 +1227,119 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
+          label: 'Near-box skip also gates PHL/PLH',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B11. The course shows the "sát box" skip on an ISB only [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]; applying it to a PHL/PLH (risk = the reference candle’s range) is OUR extension. ON (default) keeps today’s behaviour; OFF scopes the near-box refusal back to the ISB and the reverse ISB. The distance itself is the "Near-box room" card.',
+          trader: 'ON — ours, an extension of the lesson.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (NearBoxRoomPHL) · kernel/mentor/eval.go (PHL/PLH near_box)',
+          range: 'true / false',
+          systemDefault: 'true (on)',
+          recommended:
+            'ON — ours, not from the course: the mentor says whether the skip applies to PHL/PLH, the lesson shows an ISB.',
+          whenToTouch: 'Only when the mentor rules on it.',
+          perSession: 'No.',
+        },
+        {
+          label: '2m ISB stacking: cancel candle',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B8. The stacking arithmetic is stated in 1M candles — 2 × 1m = a 2m, 3 × 1m = a 3m, a 4th would be a 4m that does not exist so it jumps to the 5m [Ngày 4.2 Multitime frame 15_ part2 @00:08:53–00:09:03, @00:15:24–00:16:08] — and the course never counts 2m candles. m406 reuses the 1m count on the arm’s own frame: a 2m ISB arm is kept through 3 stacked 2m candles and cancelled on the 4th. This is that candle number for the 2m (3–12). The 1m and 5m arms keep the course 4. Blank = 4.',
+          trader:
+            '4 — the 1m course count reused on the 2m; ours, not the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBStackCancelCandle2m) · kernel/mentor/isb.go ISBStackTick',
+          range: '3–12 candles',
+          systemDefault: '4',
+          recommended:
+            '4 — ours, not from the course: the mentor says how many 2m candles stack before the cancel.',
+          whenToTouch: 'Only when the mentor gives the number.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ISB tiny-stop exception',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B8. With a very small stop the mentor kept a resting ISB past the 4th candle: "stop loss của mình ở thời điểm đó rất nhỏ. Có 12 điểm… Trade nó là take risk" [Ngày 5.1 Go over lại tất cả part2 @02:50–03:40, @04:10–04:58]. He frames it as personal discretion and gives no threshold, so it is OFF. Set a number and an arm whose ISB stop (candle range + 2 × the 1.5-pt buffer) is at or under it is NOT cancelled at the cancel candle; it still cancels the moment a body leaves I1. Blank / 0 = off.',
+          trader: 'OFF — the number is the mentor’s to give (he said 11–12).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBStackTinyStopPts) · kernel/mentor/isb.go ISBStackTick',
+          range: '0.01–25 pts (blank = off)',
+          systemDefault: '0 (off)',
+          recommended:
+            'OFF — not from the course: Ngày 5.1 part2 @02:50–03:40 gives no threshold; a number here is a guess.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Evening slow: cutoff',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B10. A SLOW night reads the 5m: "buổi tối là trade khung 5 phút only… nếu mắc kẹt nó chạy 100–200 điểm thì em không nói… nhưng nếu nó chạy cần mấy chục điểm thì nên trade khung 5 phút" [extra Go over lớp học part1 @17:40–18:26]. The night is slow when its high–low range is under this many points. The 100 is OURS: the owner’s answer (Q6, 2026-10-25) is that "slow" means the candles are not running much and NO number is fixed. The start hour and the trailing window are the next two cards. Blank = 100.',
+          trader: '100 pts — ours, not the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (EveningSlowPts) · kernel/mentor/eval.go eveningSlow',
+          range: '1–1000 pts',
+          systemDefault: '100',
+          recommended:
+            '100 — ours, not from the course: X11 @17:40–18:26 says only "mấy chục điểm" vs "100–200 điểm".',
+          whenToTouch: 'Only when the mentor gives the number.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Evening slow: start hour',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B10. The CT hour the evening-slow range starts at: 15 = the RTH close (default — a volatile 15:00–16:00 US afternoon alone can then keep the whole night on the 2m), 17 = the Globex reopen ("buổi tối"). Overnight 00:00–02:59 CT reads yesterday’s start hour. Ours, not the course.',
+          trader: '15 — ours.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (EveningSlowFromHour) · kernel/mentor/eval.go eveningSlow',
+          range: '15–17',
+          systemDefault: '15',
+          recommended:
+            '15 (unchanged) — ours, not from the course: X11 @17:40–18:26 says "buổi tối" without an hour.',
+          whenToTouch: 'Only when the mentor gives the window.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Evening slow: trailing window',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B10. 0 / blank (default) = the evening range is cumulative since the start hour, so the night can leave "slow" once and never come back. A number N reads only the last N minutes of bars, so an early burst cannot disable the 5m schedule for the whole night. Ours, not the course.',
+          trader: '0 (cumulative) — ours.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (EveningSlowWindowMin) · kernel/mentor/eval.go eveningSlow',
+          range: '1–600 minutes (blank = cumulative)',
+          systemDefault: '0',
+          recommended:
+            '0 (unchanged) — ours, not from the course: X11 @17:40–18:26 names no window.',
+          whenToTouch: 'Only when the mentor gives the window.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ISB size cut: old high/low band',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B27. The size cut for an ISB "ngay đỉnh hoặc đáy cũ" [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19] gives no distance. "At" = the ISB candle’s range reaches within ± this many points of an old high/low. The ±2 is OURS, not the course. Blank = 2; an explicit 0 = an exact touch.',
+          trader: '2 pts — ours, not the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBOldExtremePts) · kernel/mentor/eval.go touchesOldExtreme',
+          range: '0–20 pts',
+          systemDefault: '2',
+          recommended:
+            '2 — ours, not from the course: Ngày 4.1 part1 @00:04:31–00:05:19 gives no distance.',
+          whenToTouch: 'Only when the mentor gives the number.',
+          perSession: 'No.',
+        },
+        {
+          label: 'ISB size cut: in-range gap',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B27. The size cut for an ISB "in range" [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19] has no definition in the course. One of the readings the bot uses is price between two KEY levels closer than this many points; the 50 was borrowed from the ping-pong gate (X4/D4.2) and is OURS. Blank = follow the ping-pong minimum (so an owner who tuned it keeps the same reading).',
+          trader: 'The ping-pong minimum (50 pts) — ours, borrowed.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBInRangeGapPts) · kernel/mentor/eval.go inNarrowRange',
+          range: '0.01–500 pts (blank = the ping-pong minimum)',
+          systemDefault: '0 (inherit the ping-pong minimum, 50)',
+          recommended:
+            'Blank — ours, not from the course: Ngày 4.1 part1 @00:04:31–00:05:19 defines no range in points.',
+          whenToTouch: 'Only when the mentor gives the definition.',
+          perSession: 'No.',
+        },
+        {
           label: 'Box-return 5m trend source',
           where: 'Strategy → Risk control → Mentor method numbers',
           what: 'D4.3 @12:43–12:54 "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp hơn, đỉnh thấp hơn — thì nó đang là xu hướng gì — Giảm" (read left to right: a high, a lower high, a lower high — what trend is it? Down). The D4.3 "no box return against the 5m trend" gate (refusal box_against_5m_trend) reads its trend from: structure (default, course-defaults-30) = 5m swing structure (higher highs + higher lows = up; lower highs + lower lows = down; mixed = no trend, no veto); trigger_line = the 5m trigger line.',
@@ -1299,14 +1450,17 @@ export const mentor: GuideSection = {
         },
         {
           label: 'PHL target shy',
-          where: 'Strategy → Mentor mode → PHL/PLH',
-          what: 'Target this far short of the old extreme — NEAR it, not at it.',
-          trader: '5 pts.',
-          consumer: 'kernel/mentor/mentor.go PHLTargetShyPts',
-          range: 'pts',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 C16. The PHL/PLH target sits this far short of the old high/low — NEAR it, not at it ("cái target của potential high low là gần đỉnh cũ… chứ không phải exactly ngay tại đáy cũ" [Ngày 4.1 Go over ngày 3 part1 @00:07:21–00:07:40; Ngày 2.2 part1 @00:06:11–00:06:22]). The course gives NO distance, so the 5 is OURS, not the mentor’s. It decides whether the 1:1 floor and the room rule pass, so it shapes which PHL/PLH exist. Blank = 5; an explicit 0 puts the target AT the old extreme.',
+          trader:
+            '5 pts — ours, not the course; the mentor has not named a number.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PHLTargetShyPts) · kernel/mentor/phl.go phlTarget',
+          range: '0–50 pts',
           systemDefault: '5',
-          recommended: '5 — D2.2 p1 @ 06:50.',
-          whenToTouch: 'Rarely.',
+          recommended:
+            '5 until the mentor names the distance — the worked example [D2.2 p1 @ 06:50] shows a target near the high, not a number.',
+          whenToTouch: 'Only when the mentor gives the number.',
           perSession: 'No.',
         },
         {
@@ -1363,16 +1517,18 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Near-box room',
-          where: 'Strategy → Mentor mode → risk',
-          what: 'Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box". Exempt only between two DIFFERENT boxes: one wholly above the entry and another wholly below. A price inside a single box is not exempt.',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #52 B11. Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box" ("Insaba Sword ngay chỗ đó mình không được đánh… sát box gần box gần supply quá mình không được đánh" [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]). The mentor gives NO distance, so the 2× is OURS (the same room the target rule demands), not the course. Exempt only between two DIFFERENT boxes: one wholly above the entry and another wholly below. A price inside a single box is not exempt. Blank = 2; an explicit 0 turns the refusal off for every setup.',
           trader:
-            '2× — the same room the target rule demands. A setup between two different boxes is allowed.',
-          consumer: 'kernel/mentor/mentor.go NearBoxRoomMultiple',
-          range: '× (0 = off)',
+            '2× — ours, not the course. A setup between two different boxes is allowed.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (NearBoxRoomMultiple) · kernel/mentor/box.go nearBoxRefusal',
+          range: '0–10 × (0 = off)',
           systemDefault: '2',
           recommended:
-            '2 — D3.2 p1 @ 21:53–23:08 (row 24); between-two-boxes exemption row 25 @ 23:14–24:03.',
-          whenToTouch: 'Rarely. Zero disables the near-box refusal entirely.',
+            '2 until the mentor names the distance — his own example (an ISB short 10–15 pts above an FTGL with a 5–6 pt risk) is 2–3R, so a strict 2× may refuse the 3R end. Between-two-boxes exemption row 25 @ 23:14–24:03.',
+          whenToTouch:
+            'Only when the mentor gives the number. Zero disables the near-box refusal entirely.',
           perSession: 'No.',
         },
         {

@@ -1,6 +1,8 @@
 package mentor
 
 import (
+	"fmt"
+
 	"vl/market"
 )
 
@@ -148,18 +150,38 @@ type ISBArm struct {
 // 2026-10-03 [A]: the reference is the FIRST inside-bar candle (I1, = stack
 // candle 1). Candles 2 and 3 whose bodies stay inside I1 → KEEP the order;
 // candle 4 not filling → CANCEL ("sau 3 cây nến… cây thứ 4 mà nó không fill →
-// mình cancel" [D5.1 p2 @ 04:00–04:08]). The §14 tiny-stop exception is NOT
-// built (personal discretion, not a class rule). inside counts the FOLLOWING
-// candles that stayed inside (1 = stack candle 2).
+// mình cancel" [D5.1 p2 @ 04:00–04:08]). The §14 tiny-stop exception is OFF by
+// default (personal discretion, not a class rule; release #52 W11 B8 adds the
+// optional knob ISBStackTinyStopPts, see ISBStackTick). inside counts the
+// FOLLOWING candles that stayed inside (1 = stack candle 2).
 func ISBStackAdvice(inside int) string {
-	switch inside {
-	case 1, 2:
-		return "hold"
-	case 3:
+	return ISBStackAdviceAt(inside, isbStackCancelCandle1m)
+}
+
+// isbStackCancelCandle1m is the course's cancel candle (the 4th) — the 1m
+// count [D5.1 p2 @04:00–04:08]; the 2m reuses it by default (B8, ours).
+const isbStackCancelCandle1m = 4
+
+// ISBStackAdviceAt is ISBStackAdvice with the cancel candle a parameter
+// (release #52 W11 B8): the arm is cancelled when `inside` reaches
+// cancelCandle-1 (the cancel candle did not fill). ISBStackAdvice(inside) ==
+// ISBStackAdviceAt(inside, 4) for every inside.
+func ISBStackAdviceAt(inside, cancelCandle int) string {
+	if inside >= 1 && inside == cancelCandle-1 {
 		return "cancel"
-	default:
-		return "hold" // 0: just placed; >3: already cancelled by the evaluator
 	}
+	return "hold" // 0: just placed; past the cancel candle: already cancelled by the evaluator
+}
+
+// isbStackCancelCandle is the cancel candle an arm read on tfMin is held to: the
+// 2m uses the W11 B8 knob (ISBStackCancelCandle2m, ours; a value under 3 is not
+// a stack and falls back to the 1m course count); every other frame keeps the
+// course's 4th candle.
+func (c Config) isbStackCancelCandle(tfMin int) int {
+	if tfMin == 2 && c.ISBStackCancelCandle2m >= 3 {
+		return c.ISBStackCancelCandle2m
+	}
+	return isbStackCancelCandle1m
 }
 
 // ISBStackTick advances the arm by one closed candle. The containment test is
@@ -180,10 +202,20 @@ func ISBStackTick(arm *ISBArm, bar market.Kline, cfg Config) []Intent {
 		}}
 	}
 	arm.Inside++
-	if ISBStackAdvice(arm.Inside) == "cancel" {
+	cancelCandle := cfg.isbStackCancelCandle(arm.TFMin)
+	if ISBStackAdviceAt(arm.Inside, cancelCandle) == "cancel" {
+		// W11 B8 tiny-stop exception (knob, default OFF): a stop at or under
+		// ISBStackTinyStopPts keeps the arm past the cancel candle [D5.1 p2
+		// @02:50–03:40; the 11–12-pt example]. The body-outside-I1 cancel above
+		// still applies.
+		if cfg.ISBStackTinyStopPts > 0 {
+			if stop, _, _ := ISBStopVerdict(arm.FirstBar, cfg); stop <= cfg.ISBStackTinyStopPts {
+				return nil
+			}
+		}
 		return []Intent{{
 			Action: CancelArm,
-			Reason: "ISB stacking: candle 4 did not fill — cancel, it becomes a 5m inside bar [D5.1 p2 @ 04:00–04:08; D4.2 p2 @ 16:02–16:06]",
+			Reason: fmt.Sprintf("ISB stacking: candle %d did not fill — cancel, it becomes a 5m inside bar [D5.1 p2 @ 04:00–04:08; D4.2 p2 @ 16:02–16:06]", cancelCandle),
 		}}
 	}
 	return nil
