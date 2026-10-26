@@ -3,6 +3,7 @@ package mentor
 import (
 	"fmt"
 	"math"
+	"sort"
 	"time"
 
 	"vl/kernel"
@@ -163,7 +164,18 @@ func flatNearPts(fb []market.Kline, idx int) float64 {
 // candles: the traded-frame (2m) candles that closed at or before tMs. 0 when
 // the 1m window no longer reaches back that far (only an exact tie is flat).
 func flatNearAtTime(bars []market.Kline, tMs int64) float64 {
-	fr := closedBucketsTF(bars, 2, tMs)
+	return flatNearFromB2(barsTF(bars, 2), tMs)
+}
+
+// flatNearFromB2 is flatNearAtTime over a prebuilt barsTF(bars, 2) (m434: the
+// HTF build asks for every pair, and re-bucketing the whole window per pair was
+// the cost). closedBucketsTF(bars, 2, tMs) is exactly b2 with its last bucket
+// dropped when that bucket closes at or after tMs — reproduced here verbatim.
+func flatNearFromB2(b2 []market.Kline, tMs int64) float64 {
+	fr := b2
+	if len(fr) > 0 && fr[len(fr)-1].CloseTime >= tMs {
+		fr = fr[:len(fr)-1]
+	}
 	if len(fr) == 0 {
 		return 0
 	}
@@ -224,8 +236,14 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 // in BARS of the build frame — the course gives no number (open mentor
 // question), none is invented. The 1H/4H builders are untouched.
 func trendlinesBuildExec(bars []market.Kline, now time.Time, exec2m bool) (out []Trendline, crossed []string) {
+	return trendlinesBuildExecB5(bars, barsTF(bars, 5), now, exec2m)
+}
+
+// trendlinesBuildExecB5 is trendlinesBuildExec over a prebuilt barsTF(bars, 5)
+// (m434: the evaluator buckets the 5m once per Tick and shares it).
+func trendlinesBuildExecB5(bars, b5 []market.Kline, now time.Time, exec2m bool) (out []Trendline, crossed []string) {
 	fb, coarse := execBuildFrame(bars, now, exec2m)
-	return trendlinesBuildFrame(bars, fb, coarse, now)
+	return trendlinesBuildFrameB5(bars, b5, fb, coarse, now)
 }
 
 // execBuildFrame is the traded build frame: the closed 2m buckets when exec2m
@@ -261,6 +279,11 @@ func dropDeadTrendlines(lines []Trendline) []Trendline {
 // ValidAt is re-expressed as the 1m index of the last minute of the touching
 // candle, so ValidAt == lastIdx still means "the 3rd touch JUST closed".
 func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (out []Trendline, crossed []string) {
+	return trendlinesBuildFrameB5(bars, barsTF(bars, 5), fb, coarse, now)
+}
+
+// trendlinesBuildFrameB5 is trendlinesBuildFrame over a prebuilt b5 = barsTF(bars, 5).
+func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.Time) (out []Trendline, crossed []string) {
 	all := swings3(fb)
 	today := tradingDayKey(now.In(ctime()))
 	var seq []swingPairAt
@@ -269,7 +292,6 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 			seq = append(seq, s)
 		}
 	}
-	b5 := barsTF(bars, 5)
 	dayStart := len(fb)
 	for i, b := range fb {
 		if tradingDayKey(time.UnixMilli(b.OpenTime).In(ctime())) == today {
@@ -291,6 +313,7 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 			side = SideShort
 		}
 		var liveNA *Trendline // the ONE non-adjacent line of this side that still stands (m428 R5)
+		picker := newPartnerPicker(fb, role, dayStart)
 		for j := 1; j < len(pts); j++ {
 			p1 := pts[j]
 			// The adjacent pair (release #22) plus — m428 R5, owner "missing best
@@ -305,7 +328,7 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 			if naFree {
 				liveNA = nil
 			}
-			if best, ok := bestNonAdjacentPartner(fb, pts[:j-1], p1, role, dayStart); ok {
+			if best, ok := picker.pick(pts, j); ok {
 				// A new non-adjacent line is offered when the side has none standing,
 				// or when it CONTINUES the standing one from its end anchor (the
 				// trend's next leg replaces the previous leg — still one at a time), or when
@@ -313,7 +336,7 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 				// better line replaces the lesser one) — but only while the standing line
 				// is still FORMING at that instant: a valid line (a location in use) is only
 				// ever broken.
-				if naFree || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || swingStanding(fb, best, dayStart) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
+				if naFree || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || picker.st.of(best) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
 					cands = append(cands, best)
 					naIdx = len(cands) - 1
 				}
@@ -323,7 +346,9 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 				if !ok {
 					continue
 				}
-				if trendlineCrossed(fb, tl) {
+				// m434: the offered non-adjacent partner (ci == naIdx) was already
+				// scanned uncrossed by the partner pick on this same frame.
+				if ci != naIdx && trendlineCrossed(fb, tl) {
 					crossed = append(crossed, tl.key())
 					continue
 				}
@@ -355,14 +380,16 @@ func newSlopedLine(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 s
 	if p1.idx-p0.idx < 5 {
 		return Trendline{}, false // at least 5 bars apart
 	}
-	if math.Abs(p1.price-p0.price) <= flatNearPts(fb, p1.idx) {
-		return Trendline{}, false // m428 R2: a flat pair is a support/resistance, never a trendline
-	}
+	// (m434: the cheap direction tests run before the 20-candle near-distance
+	// average; every test is a plain "not a line" refusal, so the order is free.)
 	if role == kernel.KindSWGL && p1.price <= p0.price {
 		return Trendline{}, false
 	}
 	if role == kernel.KindSWGH && p1.price >= p0.price {
 		return Trendline{}, false
+	}
+	if math.Abs(p1.price-p0.price) <= flatNearPts(fb, p1.idx) {
+		return Trendline{}, false // m428 R2: a flat pair is a support/resistance, never a trendline
 	}
 	tl := Trendline{
 		Side:     side,
@@ -401,15 +428,23 @@ func dropLineKey(lines []Trendline, key string) []Trendline {
 // naBrokenBy reports whether a closed 5m candle wholly beyond the line had
 // closed by instant atMs (the line stood until then).
 func naBrokenBy(tl Trendline, b5 []market.Kline, atMs int64) bool {
-	for _, b := range b5 {
+	from := tl.breakScanFrom()
+	for _, b := range b5[firstOpenAtOrAfter(b5, from):] { // m434: skip the buckets before the line was drawn
 		if b.CloseTime > atMs {
 			break
 		}
-		if b.OpenTime >= tl.breakScanFrom() && tl.brokenBy5m(b) {
+		if b.OpenTime >= from && tl.brokenBy5m(b) {
 			return true
 		}
 	}
 	return false
+}
+
+// firstOpenAtOrAfter is the index of the first bucket opening at or after ms in
+// a time-ordered bucket series (len(b) when none): the buckets before it are the
+// ones the break scans skip anyway.
+func firstOpenAtOrAfter(b []market.Kline, ms int64) int {
+	return sort.Search(len(b), func(i int) bool { return b[i].OpenTime >= ms })
 }
 
 // swingStanding is how many frame bars (back to the trading day's first bar)
@@ -431,30 +466,84 @@ func swingStanding(fb []market.Kline, s swingPairAt, dayStart int) int {
 	return n
 }
 
-// bestNonAdjacentPartner picks, for the later anchor p1, the ONE earlier
-// non-adjacent same-role swing (`earlier` excludes the immediately preceding
-// swing, which the adjacent pair already covers) whose line is a real
+// partnerPicker picks, for the later anchor p1 = pts[j], the ONE earlier
+// non-adjacent same-role swing (pts[:j-1] — the immediately preceding swing,
+// which the adjacent pair already covers, is excluded) whose line is a real
 // trendline — angled, 5+ bars, not crossed by any candle between its anchors —
 // and that is the most significant extreme (swingStanding; the earlier one on a
 // tie). Reads history up to p1 only, so a drawn line is rebuilt identically on
 // every later tick. Deterministic; no slope or length number is added.
-func bestNonAdjacentPartner(fb []market.Kline, earlier []swingPairAt, p1 swingPairAt, role kernel.LevelKind, dayStart int) (swingPairAt, bool) {
-	var best swingPairAt
-	bestScore, found := -1, false
+//
+// m434: the candidates are kept ORDERED best-standing first (earliest first on
+// a tie) as j advances, so the pick is the first candidate in that order that is
+// a real uncrossed line — the same answer as scoring every candidate (the
+// 75707f1ed loop), without the O(bars) crossed scan on the ones that lose.
+type partnerPicker struct {
+	fb    []market.Kline
+	role  kernel.LevelKind
+	side  Side
+	st    *standingMemo
+	order []swingPairAt // candidates inserted so far, standing desc, pts order on ties
+	n     int           // how many of pts[:] are in order
+}
+
+func newPartnerPicker(fb []market.Kline, role kernel.LevelKind, dayStart int) *partnerPicker {
 	side := SideLong
 	if role == kernel.KindSWGH {
 		side = SideShort
 	}
-	for _, p0 := range earlier {
-		tl, ok := newSlopedLine(fb, role, side, p0, p1)
-		if !ok || trendlineCrossed(fb, tl) {
+	return &partnerPicker{fb: fb, role: role, side: side, st: newStandingMemo(fb, dayStart)}
+}
+
+// pick returns the partner for p1 = pts[j]. j must not decrease between calls
+// on one picker (the build walks j upward).
+func (pp *partnerPicker) pick(pts []swingPairAt, j int) (swingPairAt, bool) {
+	for pp.n < j-1 {
+		c := pts[pp.n]
+		sc := pp.st.of(c)
+		at := len(pp.order)
+		for at > 0 && pp.st.of(pp.order[at-1]) < sc {
+			at--
+		}
+		pp.order = append(pp.order, swingPairAt{})
+		copy(pp.order[at+1:], pp.order[at:])
+		pp.order[at] = c
+		pp.n++
+	}
+	p1 := pts[j]
+	for _, p0 := range pp.order {
+		tl, ok := newSlopedLine(pp.fb, pp.role, pp.side, p0, p1)
+		if !ok || trendlineCrossed(pp.fb, tl) {
 			continue
 		}
-		if sc := swingStanding(fb, p0, dayStart); sc > bestScore {
-			best, bestScore, found = p0, sc, true
-		}
+		return p0, true
 	}
-	return best, found
+	return swingPairAt{}, false
+}
+
+// standingMemo caches swingStanding per swing of ONE role within ONE build: a
+// swing's standing reads only history before it (never changes), but the
+// partner pick asks for every earlier swing again at every later anchor.
+type standingMemo struct {
+	fb       []market.Kline
+	dayStart int
+	v        []int // by swing idx; 0 = not yet computed, else standing+1
+}
+
+func newStandingMemo(fb []market.Kline, dayStart int) *standingMemo {
+	return &standingMemo{fb: fb, dayStart: dayStart, v: make([]int, len(fb))}
+}
+
+func (m *standingMemo) of(s swingPairAt) int {
+	if s.idx < 0 || s.idx >= len(m.v) {
+		return swingStanding(m.fb, s, m.dayStart)
+	}
+	if n := m.v[s.idx]; n != 0 {
+		return n - 1
+	}
+	n := swingStanding(m.fb, s, m.dayStart)
+	m.v[s.idx] = n + 1
+	return n
 }
 
 // oneMinIdxAtClose returns the index of the last 1m bar closing at or before
@@ -475,12 +564,18 @@ func oneMinIdxAtClose(bars []market.Kline, closeMs int64) int {
 // (the lines survive the session end), and the break is read on the HTF close
 // (trendlineScanTF walks the HTF bars as both the bars and the break candles).
 func trendlinesBuildTF(bars []market.Kline, tfMin int, now time.Time) []Trendline {
-	btf := barsTF(bars, tfMin)
+	return trendlinesBuildTFFrames(bars, barsTF(bars, tfMin), barsTF(bars, 5), tfMin, now)
+}
+
+// trendlinesBuildTFFrames is trendlinesBuildTF over the prebuilt buckets
+// btf = barsTF(bars, tfMin) and b5 = barsTF(bars, 5) (m434: the evaluator
+// buckets each frame once per Tick; b5 is the m428 R1 5m break scan).
+func trendlinesBuildTFFrames(bars, btf, b5 []market.Kline, tfMin int, now time.Time) []Trendline {
 	if len(btf) < 5 {
 		return nil
 	}
 	all := swings3(btf)
-	b5 := barsTF(bars, 5) // m428 R1: the HTF line breaks on a closed 5m candle wholly beyond it
+	var b2 []market.Kline // barsTF(bars, 2), built at most once, only if a pair reaches the flat test
 	var out []Trendline
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
 		var pts []swingPairAt
@@ -507,7 +602,10 @@ func trendlinesBuildTF(bars []market.Kline, tfMin int, now time.Time) []Trendlin
 			}
 			// m428 R2: a (nearly) flat HTF pair is no trendline either; "near" is
 			// read on the traded frame at the later anchor's time.
-			if math.Abs(p1.price-p0.price) <= flatNearAtTime(bars, btf[p1.idx].OpenTime) {
+			if b2 == nil {
+				b2 = barsTF(bars, 2)
+			}
+			if math.Abs(p1.price-p0.price) <= flatNearFromB2(b2, btf[p1.idx].OpenTime) {
 				continue
 			}
 			tl := Trendline{
@@ -597,6 +695,11 @@ func trendlineHTFTouch(tl Trendline, btf []market.Kline, now time.Time) int {
 	return 0
 }
 
+// crossedProbe, when set by a test, is told how many candles each
+// trendlineCrossed scan examined (m434: the pin on the work a build pays). Nil
+// in production.
+var crossedProbe func(barsExamined int)
+
 // trendlineCrossed reports a line that price CROSSED between its own anchors:
 // a 1m candle strictly between P0 and P1 whose wick sits beyond the line by
 // more than the line's own touch band — a LOW below a support line, a HIGH
@@ -607,9 +710,41 @@ func trendlineHTFTouch(tl Trendline, btf []market.Kline, now time.Time) int {
 // doesn't look right, it isn't one … if it isn't clean, use the box"
 // [D4.1 p1 @24:02; p2 @00:17]. 40 of 151 lines on 10-13 had such a candle.
 func trendlineCrossed(bars []market.Kline, tl Trendline) bool {
-	for i := tl.P0Idx + 1; i < tl.P1Idx && i < len(bars); i++ {
-		if tl.wickBeyond(bars[i]) {
-			return true
+	// m434: the hot loop of the build (every candidate pair of every Tick runs
+	// it). Same arithmetic as tl.wickBeyond(bars[i]) — priceAt's slope is hoisted
+	// out of the loop (priceAt = P0Px + (P1Px-P0Px)/dT*dt is evaluated
+	// slope-first, so the hoisted value is the identical float) and the
+	// math.Min/Max of span becomes a compare. m434TickOutputIsByteIdentical and
+	// TestM434CrossedMatchesWickBeyond pin it to the unhoisted form.
+	slope := (tl.P1Px - tl.P0Px) / float64(tl.P1T-tl.P0T)
+	long := tl.Side == SideLong
+	i := tl.P0Idx + 1
+	if crossedProbe != nil {
+		defer func() { crossedProbe(i - tl.P0Idx - 1) }()
+	}
+	for ; i < tl.P1Idx && i < len(bars); i++ {
+		c := &bars[i]
+		a := tl.P0Px + slope*float64(c.OpenTime-tl.P0T)
+		b := a
+		if c.CloseTime > c.OpenTime {
+			b = tl.P0Px + slope*float64(c.CloseTime-tl.P0T)
+		}
+		if long {
+			lo := a
+			if b < lo {
+				lo = b
+			}
+			if c.Low < lo-trendlineTouchBandPts {
+				return true
+			}
+		} else {
+			hi := a
+			if b > hi {
+				hi = b
+			}
+			if c.High > hi+trendlineTouchBandPts {
+				return true
+			}
 		}
 	}
 	return false
@@ -635,11 +770,12 @@ func trendlineCrossed(bars []market.Kline, tl Trendline) bool {
 // the same 5m buckets).
 func trendlineScanTF(bars, b5 []market.Kline, swings []swingPairAt, tl Trendline, now time.Time) (validAt int, dead bool) {
 	nowMs := now.UnixMilli()
-	for _, b := range b5 {
+	from := tl.breakScanFrom()
+	for _, b := range b5[firstOpenAtOrAfter(b5, from):] { // m434: skip the buckets before the line was drawn
 		if b.CloseTime >= nowMs {
 			continue // still forming
 		}
-		if b.OpenTime < tl.breakScanFrom() {
+		if b.OpenTime < from {
 			continue // before the line was drawn
 		}
 		if tl.brokenBy5m(b) {
