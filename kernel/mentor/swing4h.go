@@ -204,6 +204,14 @@ type swingTouch struct {
 	RefBar   market.Kline // the first touching 5m candle
 	Approach Side         // price came from this side: SideLong = from above
 	Through  bool         // the touch closed THROUGH the line
+	// ISBFired latches that the inside-bar entry of this invalid level has
+	// been armed (release #52 W5, A6). Through stays set after it, so a later
+	// wick-touch-and-close-back in the same 4h candle can never re-arm a normal
+	// reject at a level the mentor declared invalid; the latch also stops the
+	// ISB itself from re-arming every bar. Cleared with FirstTouch at the 4h
+	// flip. [D5.2 p2 @20:41-21:04 "cái level đó nó trở thành Invalid rồi thì
+	// mình sẽ chỉ đi kiếm Insaba"]
+	ISBFired bool `json:"isb_fired,omitempty"`
 	// Touches counts the touching 5m candles this window has consumed [D5.2 p1
 	// @15:21–15:48]: the 4h level's touch window is the first LeewayCandles
 	// touching candles, and the entry may be armed off any of them.
@@ -433,9 +441,22 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		if s.FirstTouch != nil && s.FirstTouch.Through {
 			// closes back after the through-close → the 5m INSIDE BAR entry
 			// with the stop AT the level [D5.2 p1 @ 21:43–21:49].
-			if closedBack(s.FirstTouch.Approach, b.Close, line) && IsISB(prev, b) {
+			//
+			// Release #52 W5 (A7): the pair is "candle 1 closes back, THEN wait
+			// one more 5m beat for the inside bar" [D5.2 p1 @21:25-21:40 "đợi
+			// thêm 1 nhịp 5 phút ... cây nến INSA 305 phút cho lệnh short"], and
+			// candle 1's COLOUR sets the side [D1.4 p1 @09:20-09:36 "nếu màu
+			// xanh thì long, màu đỏ thì short"]. So prev (candle 1) must itself
+			// have closed back across the line, must carry the swing side's
+			// colour (red for a short, green for a long), and b is the inside
+			// bar; the close-back bar can no longer be its own inside bar.
+			if !s.FirstTouch.ISBFired &&
+				closedBack(s.FirstTouch.Approach, prev.Close, line) &&
+				ISBDirection(prev) == s.FirstTouch.Approach &&
+				closedBack(s.FirstTouch.Approach, b.Close, line) && IsISB(prev, b) {
 				if in, eok := swingISBIntent(s.FirstTouch, b, line, cfg); eok {
-					s.FirstTouch = nil
+					// A6: keep Through latched; only mark the ISB spent.
+					s.FirstTouch.ISBFired = true
 					// R43 (item 24): the swing's first target = max(1R, the
 					// warmed 5m EMA34) — "TARGET 1-1 TRƯỚC" [D5.2 p2 @11:17].
 					in.Target = swingFirstTarget(in.Side, in.Price, in.Stop, swingTargetEMA(bars5m, cfg))

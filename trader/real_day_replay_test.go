@@ -52,6 +52,24 @@ const rdrAddonBuild = "2026-10-18-a"
 //     slice;
 //   - BE moves and the exit drive are the PRODUCTION kernel, but their inputs
 //     are the simulated fills, so an exit time may shift a bar.
+//
+// REAL_DAY_REPLAY note, release #52 W5 (swing 4h ISB, A6 + A7), run 2026-10-26
+// at base 75707f1ed vs fix/c52-w5, TZ=America/Chicago, -count=1:
+//   - 10-21 (REAL_DAY=2026-10-21): TWO simulated SWING4H arms are gone, both
+//     LONG 2-contract ISB-style entries after 14:30 CT: row 22 (ArmID
+//     swing-1792613100000, 15:05 CT bar, stop AT the line, 49.3 pts, cancelled
+//     by a later close through the line) and row 23 (the next swing long, stop
+//     37.8 pts). The old code fired the swing ISB off the close-back bar itself
+//     and ignored candle 1's colour; the course needs a colour-matching candle
+//     1 that closed back, then one more 5m beat for the inside bar. The other
+//     21 arms (ISB/PLH/PHL and the 10:30 CT SWING4H short, row 16) are
+//     identical. Attribution of each of the two removed arms to A6 vs A7 is
+//     [B] (not separated by a one-fix-at-a-time run).
+//   - 10-22 and 10-23: arm and cancel streams identical (14 arms each).
+//   - TestRealDayReplay itself exits FAIL on all three days at
+//     real_day_replay_test.go:451 ("live mentor trade(s) neither matched nor
+//     given a named refusal reason") on the base as well: a pre-existing
+//     attribution gap, unchanged by this wave (2 / 1 / 1 trades).
 type rdrLiveTrade struct {
 	ID       int     `json:"id"`
 	Side     string  `json:"side"`
