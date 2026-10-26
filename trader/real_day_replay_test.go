@@ -128,6 +128,17 @@ const rdrAddonBuild = "2026-10-18-a"
 //     attribution gap, unchanged by this wave (2 / 1 / 1 trades).
 //
 
+// REAL_DAY_REPLAY note, release #52 W3 (fix/c52-w3, level-arm lifecycle A4 a+b;
+// B13 and B23 not built), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
+// REAL_DAY=2026-10-21|22|23, TZ=America/Chicago, before = d3dfe91fc eval.go,
+// after = this branch: the diff tables (live trades, replay arms, ADDED arms)
+// and every refusal/funnel line are IDENTICAL on all three days (only random
+// broker order ids and wall-clock latencies differ). No resting level ("lvl-")
+// order exists in the replayed arms and no "level order rest cancelled" fires on
+// any of the three days, so A4 is DORMANT in this replay set: it is proven by
+// the unit pins (TestC52W3*), not by the replay. The existing "attribution is
+// broken" assertion fails on both sides and is not part of this change.
+
 // REAL_DAY_REPLAY note, release #52 W8 (fix/c52-w8; replays REAL_DAY_REPLAY=
 // /tmp/realday-1021|1022|1023 with REAL_DAY=2026-10-21|22|23, before = the
 // 1h rung re-added, after = this branch; the "attribution is broken" assertion
