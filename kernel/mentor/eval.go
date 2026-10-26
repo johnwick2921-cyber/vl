@@ -695,6 +695,12 @@ type LevelArm struct {
 	Side       Side    `json:"side"`
 	LevelPrice float64 `json:"level_price"`
 	PlacedAt   int64   `json:"placed_at"` // the placement candle's CloseTime
+	// ExecTFMin (C52 W3, A4b) is the exec frame (1/2/5) the touch was read on.
+	// The close-through cancel reads the last CLOSED candle of THAT frame - the
+	// course rule is "áp dụng trên mọi khung thời gian" [Ngày 2.3 part1.srt
+	// @21:24]. 0/1 = the 1m bar (byte-identical to the pre-W3 read; also what a
+	// state restored from before this field carries).
+	ExecTFMin int `json:"exec_tf_min,omitempty"`
 }
 
 // ClearLevelArm (D2-44, item 11) drops the LevelArms entry for one level order
@@ -738,7 +744,7 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 	return out
 }
 
-func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
+func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
 	}
@@ -753,9 +759,23 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 			continue
 		}
 		through := false
-		if cur.CloseTime > arm.PlacedAt {
-			through = arm.Side == SideLong && cur.Close < arm.LevelPrice ||
-				arm.Side == SideShort && cur.Close > arm.LevelPrice
+		// C52 W3 (A4b): the close-through is read on the frame the order was
+		// placed on - "áp dụng trên mọi khung thời gian" [Ngày 2.3 part1.srt
+		// @21:24] - i.e. the last CLOSED candle of arm.ExecTFMin, never a 1m
+		// wick-close inside a forming 2m/5m candle that would still close back.
+		// A 1m arm (ExecTFMin 0/1, or the exec read fell back to 1m) keeps the
+		// last 1m bar, byte-identical to the pre-W3 read.
+		chk := cur
+		if arm.ExecTFMin > 1 {
+			if cb := e.closedBucketsTFMemo(bars, arm.ExecTFMin, now); len(cb) > 0 {
+				chk = cb[len(cb)-1]
+			} else {
+				chk = market.Kline{} // no closed candle of that frame yet: nothing can close through
+			}
+		}
+		if chk.CloseTime > arm.PlacedAt {
+			through = arm.Side == SideLong && chk.Close < arm.LevelPrice ||
+				arm.Side == SideShort && chk.Close > arm.LevelPrice
 		}
 		// FIX-LEVEL-WINDOW (owner order 2026-10-13 ~21:2x CT): a level order
 		// RESTS until ITS OWN 15:00 CT expiry — LevelArmExpiry(arm.PlacedAt),
@@ -770,6 +790,22 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
 				Reason: "level order rest cancelled — a later candle closed through the level [D2.3 p1 @23:16–24:03], or the order's own 15:00 CT expiry passed [derived: LevelArmExpiry — no course timestamp states a 15:00 expiry; level_lifetime.go flags it as an inference]"})
 			delete(e.State.LevelArms, key)
+			// C52 W3 (A4a): "cancel, và chẳng làm gì khác hết" [Ngày 2.3
+			// part1.recovered.txt @23:48-24:02] - a close-through is a cancel and
+			// NOTHING else. The through-candle still "touches" a support from above
+			// (the touch stays TouchReject with the same RefBar), so without this
+			// the PHL loop re-placed the same stop on the very next tick. Spend the
+			// touch reference exactly as DropArm does for a trader refusal: a NEW
+			// reference candle (new visit) may trade again. Only the close-through
+			// spends it - the 15:00 expiry is the owner's window, not a level death.
+			if through {
+				if tr, ok := e.State.Touches[key]; ok && tr.RefBar.CloseTime != 0 {
+					if e.State.RefusedLevelTouch == nil {
+						e.State.RefusedLevelTouch = map[string]int64{}
+					}
+					e.State.RefusedLevelTouch[key] = tr.RefBar.CloseTime
+				}
+			}
 		}
 	}
 	return out
@@ -2782,7 +2818,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.State.LevelArms == nil {
 				e.State.LevelArms = map[string]LevelArm{}
 			}
-			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
+			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime, ExecTFMin: execTFMin}
 			// B20: a school-1 entry taken without trigger agreement arms the
 			// flip upgrade — only once it SURVIVES every later filter (P2-N2,
 			// release #23: armed in the Tick defer, never from a refused intent).
@@ -2815,7 +2851,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// B6 cancel sweep: a resting level order dies when a later candle
 	// closes through its level, or at its own 15:00 CT expiry
 	// (LevelArmExpiry(PlacedAt)).
-	out = append(out, e.levelArmCancels(cur, now)...)
+	out = append(out, e.levelArmCancels(bars, cur, now)...)
 
 	// §4.1 box trades (BOX RULING R1 2026-10-03, ONE path = DS-106's
 	// boxEntryIntent — CTO 12:38:50Z): every return visit of every live box is
