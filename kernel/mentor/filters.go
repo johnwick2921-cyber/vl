@@ -13,8 +13,11 @@ import (
 // BUY trigger = a 5m candle breaks the previous candle's HIGH; SELL = breaks
 // the previous LOW [@ 04:02, 08:04]. A line is drawn at the BROKEN extreme,
 // WICK INCLUDED [@ 04:28]. Entries only on the trigger side [@ 10:21]. The
-// line moves ONLY on a reversal, once [@ 11:48–13:33]. Between two opposing
-// lines → no trade [@ 16:38].
+// line moves ONLY on a reversal, once [@ 11:48–13:33]. There is ONE line, so
+// there is no "between two opposing lines" zone (that was a misread of @ 16:38):
+// the no-trade zone is between an FTGL and the BUY line (mirror: FTGH and the
+// SELL line) and lives in triggerBoxZoneVerdict (eval.go), where the boxes are
+// known [D3.4 p1 @ 16:38–17:19].
 
 type TriggerLine struct {
 	Dir   Side    // allowed direction ("" before the first break)

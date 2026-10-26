@@ -8,7 +8,15 @@ import (
 )
 
 // LocationVerdict implements the LOCATION GATE (fold item 1, owner ruling:
-// setups happen ONLY at important levels — all three setups, ISB included).
+// setups happen ONLY at important levels).
+//
+// TEST-ONLY (c52 W12 S18): this function has NO production caller — only
+// location_test.go and isb_ruling_test.go call it. Production decides a PHL/PLH
+// location through levelIsLocation (eval.go, the touch loop) and the swing
+// through its own level-touch read. The gate covers PHL/PLH, NOT the ISB: the
+// 2026-10-03 owner ruling made the ISB un-location-gated ("inside bar lúc nào
+// cũng có thể take risk" [D4.1 p1 @05:19–05:34]; see eval.go, the ISB branch).
+// Kept as the executable spec of the location rules; do not delete it.
 // A setup's reference candle must touch one of:
 //
 //   - a key level (§4.3);

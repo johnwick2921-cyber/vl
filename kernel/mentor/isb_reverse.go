@@ -22,8 +22,11 @@ import (
 //     the entry is the extreme ± ISBBufferPts exactly, like the regular ISB.
 //     (Until rel22 this file pre-subtracted the executor's 0.5 — a second
 //     definition of the same number; trade #627/#628 ruling kept, one source.)
-//   - cancel if the next candle does not fill (the evaluator runs the same
-//     ISB stacking arithmetic on the emitted arm) [D5.4 p1 @06:11–06:31,
+//   - cancel if the next candle does not fill: the arm expires at the close of
+//     the NEXT candle of the execution frame (Intent.ExpiryMs, set by the
+//     evaluator's reverse branch). The reverse branch NEVER writes
+//     State.ISBArms, so the ISB stacking arithmetic (candles 2/3 inside = keep,
+//     candle 4 = cancel) does NOT run on a reverse arm [D5.4 p1 @06:11–06:31,
 //     07:05–07:12];
 //   - stop = the other side of the ISB candle plus the buffer (already ±
 //     ISBBufferPts; it is a stop-loss, not an entry, so the wire offset does
