@@ -86,7 +86,7 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 		bar(14, 21, 5, 1600, 1600, 1600, 1600),
 		bar(15, 1, 5, 1000, 1000, 1000, 1000),
 		bar(15, 5, 0, 900, 905, 895, 900),
-		bar(15, 5, 5, 900, 1100, 900, 1100),
+		bar(15, 5, 5, 1100, 1100, 900, 900), // candle 1: RED close-back (W5 A7 — its colour sets the ISB side)
 		bar(15, 5, 10, 970, 1020, 930, 940),
 		bar(15, 5, 15, 940, 945, 935, 940),
 	}
@@ -136,9 +136,10 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 		bar(15, 5, 0, 1190, 1200, 1180, 1190),
 		bar(15, 8, 55, 1190, 1200, 1180, 1200),
 		bar(15, 9, 0, 900, 905, 895, 900),
-		bar(15, 9, 5, 900, 1100, 900, 1100),
-		bar(15, 9, 10, 970, 1020, 930, 940),
-		bar(15, 9, 15, 940, 945, 935, 940),
+		bar(15, 9, 5, 900, 1100, 900, 1100),  // touches, closes THROUGH (above the line)
+		bar(15, 9, 10, 1050, 1060, 930, 940), // candle 1: RED, closes back below the line (W5 A7)
+		bar(15, 9, 15, 970, 975, 935, 940),   // the inside bar of candle 1 -> SHORT
+		bar(15, 9, 20, 940, 945, 935, 940),   // closes the 09:15 5m bucket
 	}
 	now := bars[len(bars)-1].CloseTime + 1
 	oldBucket := fourHBucketStart(bars[3].OpenTime, loc)

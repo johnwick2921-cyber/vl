@@ -128,11 +128,12 @@ func TestSwing4hThroughCancelsThenISB(t *testing.T) {
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below
 		mk5m(t, 15, 5, 5, 10155, 10220, 10150, 10220),  // touches, closes THROUGH (above)
-		mk5m(t, 15, 5, 10, 10175, 10180, 10150, 10160), // closes back below; ISB of the touch candle
+		mk5m(t, 15, 5, 10, 10175, 10180, 10150, 10160), // candle 1: RED, closes back below the line
+		mk5m(t, 15, 5, 15, 10165, 10167, 10150, 10160), // the inside bar of candle 1 -> SHORT (W5 A7)
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
-	out := SwingTick(s, bars, cfg, cur[2].OpenTime+60_000)
+	out := SwingTick(s, bars, cfg, cur[3].OpenTime+60_000)
 	if len(out) != 1 {
 		t.Fatalf("intents = %d, want just the ISB entry (no empty-ArmID cancel for a through-close with nothing resting); got %+v", len(out), out)
 	}
@@ -160,11 +161,12 @@ func TestSwing4hISBWatchOpenUntilFlip(t *testing.T) {
 		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // below, no ISB (candle 1)
 		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // below, no ISB (candle 2 — the old window ends)
 		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
-		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG entry
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // candle 1: GREEN, closes back above (W5 A7)
+		mk5m(t, 15, 5, 30, 10172, 10185, 10170, 10178), // the inside bar of candle 1 → LONG entry
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
-	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	out := SwingTick(s, bars, cfg, cur[6].OpenTime+60_000)
 	if len(out) != 1 {
 		t.Fatalf("intents = %d, want just the ISB entry (the watch is not 2-candle limited; no empty-ArmID cancel); got %+v", len(out), out)
 	}
@@ -295,11 +297,12 @@ func TestSwing4hLeewayDoesNotCapISBRecovery(t *testing.T) {
 		mk5m(t, 15, 5, 10, 10150, 10160, 10140, 10145), // no ISB (candle 1)
 		mk5m(t, 15, 5, 15, 10145, 10155, 10135, 10140), // no ISB (candle 2 — a 2-candle cap closes here)
 		mk5m(t, 15, 5, 20, 10180, 10190, 10120, 10130), // wide, below (candle 3)
-		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // closes back above, ISB of candle 3 → LONG
+		mk5m(t, 15, 5, 25, 10130, 10185, 10125, 10180), // candle 1: GREEN, closes back above (W5 A7)
+		mk5m(t, 15, 5, 30, 10172, 10185, 10170, 10178), // the inside bar of candle 1 → LONG
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
-	out := SwingTick(s, bars, cfg, cur[5].OpenTime+60_000)
+	out := SwingTick(s, bars, cfg, cur[6].OpenTime+60_000)
 	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideLong {
 		t.Fatalf("intents = %+v, want one LONG ISB entry (the leeway must not cap the ISB watch)", out)
 	}
