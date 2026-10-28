@@ -191,3 +191,58 @@ func TestUnfilledHoleSaysWhenTheSlowRetriesAreSpent(t *testing.T) {
 		t.Fatalf("after the cap the hole must read SlowSpent: %+v\n%s", last, f.sink.dump())
 	}
 }
+
+// offScaleESReplay drives a disagreeing gap-backfill replay on ANOTHER symbol (ES)
+// straight into the shared BarCache: live ES minutes at 6000, a gap re-request
+// armed for ES, then an ES replay on a different price scale over those minutes.
+func (f *ghFixture) offScaleESReplay(from, to time.Time) {
+	f.t.Helper()
+	cache := f.srv.BarCache()
+	var live, replay []ntwire.Bar
+	for m := from; !m.After(to); m = m.Add(time.Minute) {
+		live = append(live, wireBar(m, 6000))
+		replay = append(replay, wireBar(m, 5700))
+	}
+	cache.Upsert("ES", "1m", live)
+	// arms the ES overlap judge (before the send); the resend itself may be
+	// refused for lack of an ES subscription — irrelevant, the arm has happened.
+	_ = f.srv.RequestGapBackfillAt("ES", f.clk.Now())
+	cache.SeedHistorical("ES", "1m", replay)
+}
+
+// ReplayDisagreed is per HOLE and per SYMBOL: an MNQ hole that is open for hours
+// must not read an unrelated ES gap-replay disagreement as its own scale story.
+//
+// MUTANT (shown RED): read the cache-wide OverlapVerdictCounts disagreed total
+// (minus the all-symbol baseline) instead of OverlapDisagreedFor(h.Symbol) -> the
+// ES disagreement reads as 1 on the MNQ hole -> RED.
+func TestUnfilledHoleReplayDisagreedIgnoresAnotherSymbol(t *testing.T) {
+	f := newGHFixture(t)
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	det := f.openHole()
+	for i, at := range []time.Duration{61 * time.Second, 3*time.Minute + 5*time.Second, 10*time.Minute + 5*time.Second, 30*time.Minute + 5*time.Second} {
+		f.tr.tick(det.Add(at))
+		f.waitReRequests(i + 1)
+	}
+	unfilledAt := det.Add(32*time.Minute + 10*time.Second)
+	f.tr.tick(unfilledAt)
+	if got := f.tr.unfilledFeeding("MNQ", unfilledAt); len(got) != 1 || got[0].ReplayDisagreed != 0 {
+		t.Fatalf("setup: want one unfilled MNQ hole with 0 disagreements: %+v", got)
+	}
+
+	before := f.disagreed()
+	f.offScaleESReplay(ct(2026, 10, 14, 7, 30), ct(2026, 10, 14, 7, 44))
+	if after := f.disagreed(); after != before+1 {
+		t.Fatalf("setup: the ES replay must disagree (cache-wide %d -> %d)", before, after)
+	}
+	if n := f.srv.BarCache().OverlapDisagreedFor("ES"); n != 1 {
+		t.Fatalf("OverlapDisagreedFor(ES) = %d, want 1", n)
+	}
+	if n := f.srv.BarCache().OverlapDisagreedFor("MNQ"); n != before {
+		t.Fatalf("OverlapDisagreedFor(MNQ) = %d, want %d: an ES verdict was counted on MNQ", n, before)
+	}
+	got := f.tr.unfilledFeeding("MNQ", unfilledAt)
+	if len(got) != 1 || got[0].ReplayDisagreed != 0 {
+		t.Fatalf("an ES disagreement leaked into the MNQ hole: %+v", got)
+	}
+}

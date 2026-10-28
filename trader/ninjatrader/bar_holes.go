@@ -200,7 +200,7 @@ type barHole struct {
 	slowCount     int       // slow re-requests SENT, in total (cap barHoleSlowCapTotal)
 	saidSlowCap   bool      // the "slow retries spent" line was said
 
-	// disagreedAtDetect is the cache's disagreeing-replay count when this hole
+	// disagreedAtDetect is the cache's disagreeing-replay count FOR THIS SYMBOL when this hole
 	// was detected (m438): the owner push reports only the disagreements that
 	// happened SINCE, not the process-lifetime total.
 	disagreedAtDetect int64
@@ -374,7 +374,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 			MissingAtDetect: sp.OpenMissing, Missing: sp.OpenMissing,
 			DetectedAt: now, State: holeStateRefilling,
 			nextAttemptAt:     now.Add(barHoleSchedule[0]),
-			disagreedAtDetect: t.disagreedNowLocked(),
+			disagreedAtDetect: t.disagreedNowLocked(symbol),
 		}
 		t.holes = append(t.holes, h)
 		telemetry.IncBarsHoleDetected()
@@ -538,15 +538,15 @@ func (t *barHoleTracker) beyondReplayLocked(h *barHole, barsBack int, now time.T
 	return h.reachOpen > barsBack, h.reachOpen
 }
 
-// disagreedNowLocked is the cache's disagreeing-replay count right now (0 with
-// no wire / no cache) — the per-hole baseline.
-func (t *barHoleTracker) disagreedNowLocked() int64 {
+// disagreedNowLocked is the cache's disagreeing-replay count for ONE symbol right
+// now (0 with no wire / no cache) — the per-hole baseline. Per SYMBOL, not the
+// cache-wide total: another symbol's scale story is not this hole's (m438).
+func (t *barHoleTracker) disagreedNowLocked(symbol string) int64 {
 	w := t.wire()
 	if w == nil || w.BarCache() == nil {
 		return 0
 	}
-	_, d := w.BarCache().OverlapVerdictCounts()
-	return d
+	return w.BarCache().OverlapDisagreedFor(symbol)
 }
 
 // overlapNoteLocked READS the ring's same-minute replay verdicts for the
@@ -883,7 +883,6 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 	if !ok || rc().Sub(recv) > liveBarFreshness {
 		return nil // NT8 is not delivering live bars: that is FEED DOWN's story, not a missing-history one
 	}
-	_, disagreedNow := cache.OverlapVerdictCounts()
 	var out []UnfilledHole
 	for _, h := range t.holes {
 		if h.State != holeStateUnfilled || !strings.EqualFold(h.Symbol, symbol) {
@@ -893,7 +892,7 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
 			Missing: h.Missing, Attempts: h.Attempts,
 			Window:          holeWindowCT(h.FromMs, h.ToMs),
-			ReplayDisagreed: int(max(disagreedNow-h.disagreedAtDetect, 0)),
+			ReplayDisagreed: int(max(cache.OverlapDisagreedFor(h.Symbol)-h.disagreedAtDetect, 0)),
 			SlowSpent:       h.saidSlowCap,
 			ReaskEvery:      barHoleSlowEvery,
 			ReaskHorizon:    barHoleSlowEvery * barHoleSlowCapTotal,

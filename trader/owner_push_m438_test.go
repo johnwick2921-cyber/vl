@@ -215,3 +215,93 @@ func TestUnfilledHoleOwnerMessageStaysTrueAfterTheCap(t *testing.T) {
 		t.Fatalf("alert rows = %d, want the first alert and the spent follow-up", got)
 	}
 }
+
+// ── review round 2 (m438) ───────────────────────────────────────────────────
+
+// (1d) A FEED DOWN the budget is holding is withdrawn when the feed returns: the
+// owner must never be told the bot is blind AFTER the BACK message. Production
+// path: monitorTick -> checkFeedDown -> emitAlert -> push (held: the feed-down
+// kind budget is spent) ... monitorTick sees live bars -> noteFeedBack ->
+// ownerPushFeedBack -> Cancel; the budget reopens; the beat's Retry runs.
+//
+// MUTANT (shown RED): comment out ownerpush.Cancel("feed-down|"+episodeID) in
+// ownerPushFeedBack -> Retry delivers the stale "feed DOWN" after the BACK -> RED.
+func TestHeldFeedDownIsWithdrawnWhenTheFeedComesBack(t *testing.T) {
+	rec := &pushRec{}
+	p := ownerpush.New(rec.send)
+	clk := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	p.SetClockForTest(func() time.Time { return clk })
+	t.Cleanup(ownerpush.Use(p))
+	fixed := cmeOpenNow(t)
+	oldClk := ownerPushClock
+	ownerPushClock = func() time.Time { return fixed }
+	t.Cleanup(func() { ownerPushClock = oldClk })
+
+	// spend the feed-down kind's hourly budget with earlier episodes.
+	for i := 0; i < 3; i++ {
+		if !ownerpush.Push(fmt.Sprintf("feed-down|earlier-%d", i), fmt.Sprintf("earlier outage %d", i)) {
+			t.Fatalf("setup: earlier feed-down push %d refused", i)
+		}
+	}
+	p.Flush()
+
+	at, _ := feedTrader(t)
+	withProvider(t, []market.Kline{{OpenTime: fixed.UnixMilli() - 11*60_000 - 60_000}})
+	at.monitorTick(fixed) // FEED DOWN: refused by the budget, HELD
+	p.Flush()
+	if p.Held() != 1 || countContaining(rec.all(), "NT8 bar feed DOWN") != 0 {
+		t.Fatalf("setup: the FEED DOWN must be held, not delivered (held %d): %q", p.Held(), rec.all())
+	}
+
+	later := fixed.Add(3 * time.Minute)
+	withProvider(t, []market.Kline{{OpenTime: later.UnixMilli() - 30_000 - 60_000}})
+	at.monitorTick(later) // the feed is back -> BACK push, FEED DOWN withdrawn
+	p.Flush()
+	if countContaining(rec.all(), "BACK") != 1 {
+		t.Fatalf("setup: want exactly one BACK message: %q", rec.all())
+	}
+	if p.Held() != 0 {
+		t.Fatalf("the held FEED DOWN must be withdrawn by the BACK, still held: %d", p.Held())
+	}
+
+	clk = clk.Add(61 * time.Minute) // the hourly budget reopens
+	at.monitorTick(later)           // the production beat runs Retry
+	p.Flush()
+	if got := countContaining(rec.all(), "NT8 bar feed DOWN"); got != 0 {
+		t.Fatalf("a stale FEED DOWN was delivered after the BACK: %q", rec.all())
+	}
+}
+
+// (1e) The place-episode map is swept when the position goes away. Production
+// path: actOnProtection(place) stamps the episode; the next reconcile pass reads
+// NO positions (flat by hand / the stop filled) and sweeps; the next naked spell
+// on the same symbol+side is a NEW episode -> a SECOND P0 row and a SECOND push.
+//
+// MUTANT (shown RED): comment out sweep(&protectionPlaceEpisode) in
+// sweepStaleProtectionState -> the old episode id is reused, the store dedupes it,
+// the second naked spell writes no P0 row and sends no push -> RED.
+func TestPlaceEpisodeIsSweptWhenThePositionCloses(t *testing.T) {
+	rec, flush := installPush(t)
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = "m438-place-sweep"
+	at.exchange = "ninjatrader"
+	at.trader = &MockTrader{positions: []map[string]interface{}{}}
+	place := protectionVerdict{Action: protectionPlace, StopPx: 31163, NeedQty: 1, Source: "plan", Why: "no stop at the broker"}
+
+	t0 := time.Now()
+	at.actOnProtection(place, "MNQ", "LONG", 1, "sig", "t", 0, t0)
+	// the position is gone; the monitor beat reads the empty book and sweeps.
+	at.reconcileProtectionAt(t0.Add(time.Minute), "monitor")
+	if _, ok := protectionPlaceEpisode.Load(at.id + "|MNQ|LONG"); ok {
+		t.Fatal("the place episode survived a pass that read no position")
+	}
+	// a NEW naked position on the same symbol and side, a minute later.
+	at.actOnProtection(place, "MNQ", "LONG", 1, "sig2", "t", 0, t0.Add(2*time.Minute))
+	flush()
+	if n := unprotectedRows(t, st, at.id); n != 2 {
+		t.Fatalf("a new naked position after a closed one must raise a second P0 row, rows = %d", n)
+	}
+	if n := countContaining(rec.all(), "Open position had NO stop"); n != 2 {
+		t.Fatalf("a new naked position after a closed one must push the owner again, pushes = %d: %q", n, rec.all())
+	}
+}
