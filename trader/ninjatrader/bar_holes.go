@@ -200,6 +200,11 @@ type barHole struct {
 	slowCount     int       // slow re-requests SENT, in total (cap barHoleSlowCapTotal)
 	saidSlowCap   bool      // the "slow retries spent" line was said
 
+	// disagreedAtDetect is the cache's disagreeing-replay count when this hole
+	// was detected (m438): the owner push reports only the disagreements that
+	// happened SINCE, not the process-lifetime total.
+	disagreedAtDetect int64
+
 	reachCountedMs int64 // replay-reach walk: next minute to count (0 = from FromMs)
 	reachOpen      int   // open minutes counted in [FromMs, reachCountedMs)
 }
@@ -368,7 +373,8 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 			Symbol: symbol, Contract: contract, FromMs: sp.FromMs, ToMs: sp.ToMs,
 			MissingAtDetect: sp.OpenMissing, Missing: sp.OpenMissing,
 			DetectedAt: now, State: holeStateRefilling,
-			nextAttemptAt: now.Add(barHoleSchedule[0]),
+			nextAttemptAt:     now.Add(barHoleSchedule[0]),
+			disagreedAtDetect: t.disagreedNowLocked(),
 		}
 		t.holes = append(t.holes, h)
 		telemetry.IncBarsHoleDetected()
@@ -530,6 +536,17 @@ func (t *barHoleTracker) beyondReplayLocked(h *barHole, barsBack int, now time.T
 		h.reachCountedMs = m + minute
 	}
 	return h.reachOpen > barsBack, h.reachOpen
+}
+
+// disagreedNowLocked is the cache's disagreeing-replay count right now (0 with
+// no wire / no cache) — the per-hole baseline.
+func (t *barHoleTracker) disagreedNowLocked() int64 {
+	w := t.wire()
+	if w == nil || w.BarCache() == nil {
+		return 0
+	}
+	_, d := w.BarCache().OverlapVerdictCounts()
+	return d
 }
 
 // overlapNoteLocked READS the ring's same-minute replay verdicts for the
@@ -805,8 +822,12 @@ func SetBarHolesWiredForTest() (restore func()) {
 // owner's, in NinjaTrader (an MNQ 1-minute chart -> right-click -> Reload All
 // Historical Data), and nothing told him. UnfilledHolesFeeding is the pull
 // side: the trader's 60 s monitor beat reads it and raises ONE P1 alert (+ owner
-// push) per hole. The tracker keeps re-requesting on its own schedule, so a
-// reload heals the hole by itself.
+// push) per hole. The tracker keeps re-requesting on its own schedule — but only
+// barHoleSlowCapTotal slow re-requests IN TOTAL (about 2 hours after the hole is
+// declared unfilled), so a reload heals the hole by itself only inside that span;
+// after it, a reload needs a bot restart. SlowSpent tells the trader side which
+// side of that line it is on (m438: the owner message used to promise a pick-up
+// that no longer happened).
 
 // liveBarFreshness — how recent the newest accepted LIVE 1m frame must be for
 // the feed to count as "feeding live bars" (two bar intervals plus the usual
@@ -822,7 +843,15 @@ type UnfilledHole struct {
 	Missing          int    // open minutes still missing at the last measure
 	Attempts         int    // re-requests made
 	Window           string // "10-25 17:00–10-26 03:40 CT" (holeWindowCT)
-	ReplayDisagreed  int    // the ring's disagreeing-replay verdicts: >0 = a scale story, not a missing-history one
+	ReplayDisagreed  int    // disagreeing-replay verdicts SINCE THIS HOLE WAS DETECTED (m438: per hole, not the process lifetime): >0 = a scale story, not a missing-history one
+	// SlowSpent — the slow re-requests are used up (barHoleSlowCapTotal) and the
+	// hole is still open: the tracker asks NT8 for nothing more, so a history
+	// reload is only picked up after a bot restart. ReaskEvery / ReaskHorizon are
+	// the slow cadence and the span it covers after the hole is declared unfilled
+	// (READ off the constants, so the owner message cannot drift from them).
+	SlowSpent    bool
+	ReaskEvery   time.Duration
+	ReaskHorizon time.Duration
 }
 
 // UnfilledHolesFeeding returns the tracked holes on `symbol` that are
@@ -854,7 +883,7 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 	if !ok || rc().Sub(recv) > liveBarFreshness {
 		return nil // NT8 is not delivering live bars: that is FEED DOWN's story, not a missing-history one
 	}
-	_, disagreed := cache.OverlapVerdictCounts()
+	_, disagreedNow := cache.OverlapVerdictCounts()
 	var out []UnfilledHole
 	for _, h := range t.holes {
 		if h.State != holeStateUnfilled || !strings.EqualFold(h.Symbol, symbol) {
@@ -864,7 +893,10 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
 			Missing: h.Missing, Attempts: h.Attempts,
 			Window:          holeWindowCT(h.FromMs, h.ToMs),
-			ReplayDisagreed: int(disagreed),
+			ReplayDisagreed: int(max(disagreedNow-h.disagreedAtDetect, 0)),
+			SlowSpent:       h.saidSlowCap,
+			ReaskEvery:      barHoleSlowEvery,
+			ReaskHorizon:    barHoleSlowEvery * barHoleSlowCapTotal,
 		})
 	}
 	return out

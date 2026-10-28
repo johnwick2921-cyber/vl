@@ -76,13 +76,32 @@ func (at *AutoTrader) maybeOwnerPush(a *store.AlertDB, now time.Time) {
 		text += "\n" + b
 	}
 	if a.Kind != "feed-down" && a.Kind != alertKindBarHoleUnfilled && a.TraderID != "" {
-		text += "\n(trader " + a.TraderID + ")"
+		text += "\n(trader " + at.ownerPushTraderLabel() + ")"
+	}
+	// m438: the trader ids on this box are 65-74 characters, which Scrub (rightly)
+	// redacts as token-shaped; a body that quotes the id would read "[redacted]".
+	// Say WHICH trader by its display name instead — before Scrub runs.
+	if a.TraderID != "" {
+		text = strings.ReplaceAll(text, a.TraderID, at.ownerPushTraderLabel())
 	}
 	ownerpush.Push(ownerPushKey(a), text)
 }
 
+// ownerPushTraderLabel names this trader for a phone message: its display NAME
+// (never a secret), else the id's short form. The raw id is 65-74 characters and
+// is redacted by the push scrubber.
+func (at *AutoTrader) ownerPushTraderLabel() string {
+	if n := strings.TrimSpace(at.name); n != "" {
+		return n
+	}
+	return shortID(at.id)
+}
+
 // ownerPushFeedBack tells the owner the feed returned, once per episode.
 func ownerPushFeedBack(episodeID string, newestBarAge time.Duration) {
+	// m438: a FEED DOWN message still held by the budget is no longer news once
+	// the feed is back — withdraw it so it is never delivered after the BACK.
+	ownerpush.Cancel("feed-down|" + episodeID)
 	ownerpush.Push("feed-back|"+episodeID,
 		fmt.Sprintf("✅ vl — NT8 bar feed is BACK (newest bar %s old). Bars are flowing again; trading can resume.",
 			newestBarAge.Round(time.Second)))
@@ -94,7 +113,25 @@ func ownerPushFeedBack(episodeID string, newestBarAge time.Duration) {
 // trader/ninjatrader/bar_holes_unfilled_owner_test.go.
 var unfilledHolesFn = ntTrader.UnfilledHolesFeeding
 
-// unfilledHoleBody is the owner's instruction, in plain words.
+// reaskText renders the tracker's slow re-request horizon ("about 2 hours").
+func reaskText(d time.Duration) string {
+	if d <= 0 {
+		return "for a while"
+	}
+	if d%time.Hour == 0 {
+		h := int(d / time.Hour)
+		if h == 1 {
+			return "for about 1 hour"
+		}
+		return fmt.Sprintf("for about %d hours", h)
+	}
+	return fmt.Sprintf("for about %d minutes", int(d.Round(time.Minute)/time.Minute))
+}
+
+// unfilledHoleBody is the owner's instruction, in plain words. It must stay TRUE
+// for as long as the alert is the owner's latest word (m438): the tracker's slow
+// re-requests are capped IN TOTAL (UnfilledHole.ReaskHorizon after the alert), so
+// the reload instruction names that horizon and the restart that is needed after it.
 func unfilledHoleBody(h ntTrader.UnfilledHole) string {
 	if h.ReplayDisagreed > 0 {
 		// A replay that DISAGREED with live minutes was held out of the store as
@@ -102,7 +139,19 @@ func unfilledHoleBody(h ntTrader.UnfilledHole) string {
 		return fmt.Sprintf("The %s 1-minute bars for %s are still missing after %d re-requests, and %d NT8 replay(s) were rejected as another price scale. Read the bot log's scale lines before reloading NinjaTrader history.",
 			h.Symbol, h.Window, h.Attempts, h.ReplayDisagreed)
 	}
-	return fmt.Sprintf("NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data; the bot picks it up on its next re-request.",
+	return fmt.Sprintf("NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every %d minutes %s and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking.",
+		h.Symbol, h.Window, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon))
+}
+
+// unfilledHoleSpentBody is the follow-up when the tracker has spent its slow
+// re-requests: the first message promised a pick-up that no longer happens by
+// itself, so the owner is told the one step that still works.
+func unfilledHoleSpentBody(h ntTrader.UnfilledHole) string {
+	if h.ReplayDisagreed > 0 {
+		return fmt.Sprintf("The %s 1-minute bars for %s are still missing and the bot has stopped re-asking NT8. %d NT8 replay(s) were rejected as another price scale: read the bot log's scale lines first.",
+			h.Symbol, h.Window, h.ReplayDisagreed)
+	}
+	return fmt.Sprintf("The bot has STOPPED re-asking NT8 for the %s 1-minute bars of %s (re-requests spent). A history reload alone will not be picked up now: in NinjaTrader open an %s 1-minute chart, right-click, Reload All Historical Data, THEN restart the bot so it asks again.",
 		h.Symbol, h.Window, h.Symbol)
 }
 
@@ -124,5 +173,11 @@ func (at *AutoTrader) checkUnfilledHole(now time.Time) {
 			fmt.Sprintf("barhole-unfilled:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
 			fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol),
 			unfilledHoleBody(h))
+		if h.SlowSpent {
+			at.emitAlert("P1", alertKindBarHoleUnfilled,
+				fmt.Sprintf("barhole-spent:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
+				fmt.Sprintf("NT8 %s history still missing — reload it, then restart the bot", h.Symbol),
+				unfilledHoleSpentBody(h))
+		}
 	}
 }
