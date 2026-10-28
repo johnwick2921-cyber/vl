@@ -247,7 +247,7 @@ export const planCard: GuideSection = {
     },
     {
       kind: 'p',
-      text: "Dashboard → Picture HTF opportunities: an opportunity the Day Plan took over shows, under its stage, '→ Day Plan P1 · <plan id> v<n> · arm #<row> <state>' — the armed order that carries it, read from the armed-order ledger. No line means no armed order carries that opportunity yet. If the server could not read the armed orders at all, the panel says 'Day Plan links unread: <reason>' rather than showing every row without a link.",
+      text: "Dashboard → Picture HTF opportunities: an opportunity the Day Plan took over shows, under its stage, '→ Day Plan P1 · <plan id> v<n> · arm #<row> <state>' — the armed order that carries it, read from the armed-order ledger. No line means no armed order carries that opportunity yet. If the server could not read the armed orders at all, the panel says 'Day Plan links unread: <reason>' rather than showing every row without a link. The panel is a dropdown, closed by default: the title row shows how many opportunities are recorded; click it to open or close the table — the choice is remembered in this browser, so it stays the same after a page refresh.",
     },
     {
       kind: 'p',
