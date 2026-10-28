@@ -85,6 +85,14 @@ type mentorLivePos struct {
 	// exit drive goroutine only.
 	FramesAfterFill int
 	frameFillSeen   bool
+	// ResonanceSpent (release #53, m437b) — the position was REBUILT from the
+	// broker book after a restart, so its fill age is unknown: BarsSinceFill /
+	// FramesAfterFill restart at 0 and would re-open the 3-candle resonance
+	// window on the 2nd–4th candle after the boot, flipping a mature PHL/PLH
+	// runner to mode A (and uncapping its TP). Same shape as ISBPartialDone:
+	// a rebuild never re-runs a fill-relative window. candlesAfterFill reports
+	// "past the window" while set.
+	ResonanceSpent bool
 	// UncapTries (c52 W2 A3) counts the sends of the mode-A runner "no cap"
 	// take-profit move (mentorResonanceRunnerUncap): bounded, never once a
 	// candle forever. Drive goroutine only.
@@ -147,6 +155,9 @@ func (p *mentorLivePos) noteEntryFrameCandle() {
 func (p *mentorLivePos) candlesAfterFill() int {
 	if p == nil {
 		return 0
+	}
+	if p.ResonanceSpent {
+		return mentorResonanceMaxCandles + 1 // m437b: rebuilt — the window is long spent
 	}
 	if p.TrailTFMin > 1 {
 		return p.FramesAfterFill
@@ -1286,7 +1297,7 @@ func (at *AutoTrader) mentorBuildLivePosFromBook(r store.ArmedOrderDB, pos *stor
 	}
 	// Release #22: the fill candle is unknown after a restart — never resolve
 	// the ISB candle-3 partial off a later candle (it is now a REAL modify).
-	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true}
+	lp := &mentorLivePos{Pos: pos2, ISBPartialDone: true, ResonanceSpent: true}
 	if splitLive {
 		lp.Legs[0] = mentorLeg{SignalID: r.SignalID, Qty: leg1Qty, TP: leg1TP, Stop: leg1Stop, Final: false, Wire: 1}
 		if leg3Live {
