@@ -37,14 +37,29 @@ type RollingPHL struct {
 // stops re-arming a leg that already filled — no new trader hook.
 const rollingLevelKey = "__rolling__"
 
-// levelTouchRejectActive reports whether any level is currently rejecting on
-// the given side (and not ISB-only). A level touch OWNS the entry — the
+// levelTouchRejectActive reports whether any CURRENT level is rejecting on the
+// given side (and not ISB-only). A level touch OWNS the entry — the
 // first-touch-fixed rule [D2.3 p1 @17:55–19:12; D5.3 p1 @22:10] — so the
 // rolling path must never double it. This is the m216 "never conflict" guard:
 // a level-touch entry does NOT roll; a pullback entry DOES.
-func levelTouchRejectActive(st *State, side Side) bool {
+//
+// m436: only touches of levels STILL in the level set count. Touches is written
+// only for levels in the set and nothing prunes an entry when its level leaves
+// it (an old extreme wicked through by the touching candle, a replaced S/R, a
+// deleted key level or trendline), so an orphan TouchReject used to own the
+// entry for that side forever — across days too — and silently killed every
+// roll. A level that is gone owns nothing: its touch can never produce a
+// level entry (the PHL/PLH loop iterates `levels`).
+func levelTouchRejectActive(st *State, side Side, levels []Level) bool {
+	live := make(map[string]struct{}, len(levels))
+	for _, l := range levels {
+		live[l.Key] = struct{}{}
+	}
 	for key, tr := range st.Touches {
 		if tr.Outcome != TouchReject || tr.ApproachedFrom == "" || st.ISBOnly[key] {
+			continue
+		}
+		if _, ok := live[key]; !ok {
 			continue
 		}
 		if tr.ApproachedFrom == side {
@@ -52,6 +67,31 @@ func levelTouchRejectActive(st *State, side Side) bool {
 		}
 	}
 	return false
+}
+
+// rollingTrendSide is the side the rolling pullback leg follows: the gate-aware
+// HTF verdict inside the news / open windows, and the 4h trigger direction
+// alone outside them (m436).
+//
+// HTFVerdict returns an EMPTY side whenever the 4h/1h direction gate is OFF
+// (HTF.GateOff, the default outside 08:30–09:30 CT and the print window — "NÊN
+// SỬ DỤNG CHO NEWS TRƯỚC … đừng sử dụng cho thường" [D4.4 p1 @14:01–14:06]).
+// The level PHL/PLH tolerates that (its side comes from the touch), but the
+// rolling leg's whole job is to continue THE TREND, so an empty side cancelled
+// every resting roll at 09:30 and started none for the rest of the day. The
+// pullback continuation of D2.2 has no time window in the lesson — the trend is
+// the 4h read the mentor starts from ("Ngồi chờ khi nào 1h trigger buy theo
+// khung 4 giờ thì trade" is the GATE's sit-out, off outside the window) [D2.2
+// p1 @02:44, @11:05–11:19; D4.4 p1 @02:53]. With the gate off the 4h direction
+// IS the trend; no 4h trigger at all = no direction = no continuation.
+func rollingTrendSide(h HTF) Side {
+	if _, side, _ := HTFVerdict(h); side != "" {
+		return side
+	}
+	if h.GateOff {
+		return h.FourH.Dir
+	}
+	return ""
 }
 
 // rollingCancel emits the cancel for a resting rolling order and resets the
@@ -75,7 +115,7 @@ func (e *Evaluator) rollingCancel(st *RollingPHL, why string) []Intent {
 // newest closed exec candle. It reuses PHLPLHGatedR2Levels — the SAME gates
 // (HTF direction, day gate, spent cap, room, floor, higher-low) as the level
 // PHL/PLH — with the reference candle = execCur instead of a touch bar.
-func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, execTFMin int, oldExtremes []oldExtreme, levels []Level, dg DayGate) []Intent {
+func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Kline, execTFMin int, oldExtremes []oldExtreme, levels []Level, boxes []Box, dg DayGate) []Intent {
 	st := &e.State.RollingPHL
 
 	if !e.Cfg.RollingPHL || !e.Cfg.Enabled {
@@ -99,7 +139,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 	}
 
 	// 1. Trend direction (the 4h read, §5.4). No direction = no continuation.
-	_, side, _ := HTFVerdict(e.State.HTF)
+	side := rollingTrendSide(e.State.HTF)
 	if side == "" {
 		return e.rollingCancel(st, "no HTF trend direction — the rolling pullback leg has no side")
 	}
@@ -145,8 +185,33 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 
 	// 4. m216: a level touch-reject on this side OWNS the entry (first-touch
 	// fixed). The rolling is the no-level case — never both in one tick.
-	if levelTouchRejectActive(&e.State, side) {
+	if levelTouchRejectActive(&e.State, side, levels) {
 		return e.rollingCancel(st, "a level touch owns the entry (first-touch fixed) — the rolling pullback does not double it [D2.3 p1 @17:55–19:12]")
+	}
+
+	// 4b. m436: the PHL/PLH LOCATION bans. The course bans them for EVERY PHL/PLH
+	// ("No PHL, no PLH, no opposite ISB" inside a standing 5m ISB box [D3.4 p2
+	// @07:27–10:35; D3.2 p2 @08:51]; none between two boxes or mid-range [D3.2
+	// p2 @08:34–08:55; D2.2 p3 @14:03–16:03]; none next to a box [D3.2 p1
+	// @21:53–23:08]; sit out a candle as big as the key-level rank [X4 @06:31]),
+	// and the rolling path skipped all of them once it became default ON. They
+	// run here through the SAME functions the level touch loop calls
+	// (phlLocationBan / phlNearBoxRefuses), on the rolling entry price, the
+	// newest closed 1m candle and the old extreme the leg targets (the rolling
+	// setup's place, in.Anchor). Named "rolling_<level-path name>" and counted
+	// once per reference candle; a ban cancels a resting roll (the leg's
+	// location is dead).
+	tr := Touch{Outcome: TouchReject, RefBar: execCur, ApproachedFrom: side} // RejectEntry maps SideLong → long, SideShort → short
+	if _, price, okEntry := RejectEntry(tr, e.Cfg); okEntry {
+		banKey := fmt.Sprintf("%s@%d", rollingLevelKey, execCur.CloseTime)
+		if name, _ := e.phlLocationBan(ex.level, side, price, cur, levels, boxes); name != "" {
+			e.refuseOncePerVisit(banKey, "rolling_"+name)
+			return e.rollingCancel(st, "the rolling entry sits in a banned PHL/PLH location ("+name+") — cancel the resting roll")
+		}
+		if phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low) {
+			e.refuseOncePerVisit(banKey, "rolling_near_box")
+			return e.rollingCancel(st, "the rolling entry is too close to a box — cancel the resting roll [D3.2 p1 @21:53–23:08]")
+		}
 	}
 
 	// 5. The higher-low / lower-high check, fail closed (D2-28).
@@ -157,8 +222,6 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, execCur market.Kline, ex
 
 	// 6. Build through the SAME gated path as the level PHL/PLH, with the
 	// reference candle = the newest closed exec candle (the rolling ref).
-	approach := side // RejectEntry maps SideLong → long, SideShort → short
-	tr := Touch{Outcome: TouchReject, RefBar: execCur, ApproachedFrom: approach}
 	in, ok, _ := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, false)
 	if !ok {
 		// The leg no longer qualifies on this candle (higher-low broken, room,

@@ -139,6 +139,10 @@ func TestRollingPHLDoesNotFireOnLevelTouch(t *testing.T) {
 	// A support level touched and rejected from above (buy side) sits in
 	// TouchReject; the rolling pullback is suppressed by the guard.
 	e, bars, now := rollingFixture()
+	// m436: the touched level must still be IN the level set (an orphan touch of
+	// a vanished level owns nothing) — a real support at 112, far from the
+	// tape's last close so the injected reject is the only touch state.
+	e.State.SeedLevels = append(e.State.SeedLevels, Level{Key: "support", Kind: KindKeyLevel, Price: 112})
 	e.State.Touches["support"] = Touch{
 		LevelKey: "support", Outcome: TouchReject, ApproachedFrom: SideLong,
 		RefBar: bars[5], PriceAtTouch: 112,
