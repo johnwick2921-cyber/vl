@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"time"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
@@ -56,8 +57,9 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// cycle at all; the link check must not depend on either.
 	wd := at.driveDeadManWatchdog()
 	at.checkFeedDown(now)
+	ownerpush.Retry()         // m438: re-offer owner pushes a budget / full queue dropped (bounded, stale ones discarded)
 	at.checkUnfilledHole(now) // m432: a hole NT8 has no history for -> P1 + owner push (reload it)
-	at.feedLagAlarmTick(now) // m134 DS-108 (c): soft lag band under FEED DOWN held > 3 min → WARN
+	at.feedLagAlarmTick(now)  // m134 DS-108 (c): soft lag band under FEED DOWN held > 3 min → WARN
 	at.checkPositionDrawdown()
 	// Release #25 PK-2 — exit a planner position whose own thesis died
 	// (day_plan.planner_exit_on_thesis_death; OFF → returns at once).

@@ -82,3 +82,167 @@ func TestUnfilledHoleIsReportedOnlyWhileNT8IsFeedingLiveBars(t *testing.T) {
 		t.Fatalf("the log line still says UNFILLED:\n%s", f.sink.dump())
 	}
 }
+
+// ── m438 (release #53) ──────────────────────────────────────────────────────
+
+// offScaleReplay answers a re-request with a replay of [from, to] on ANOTHER
+// price scale: it overlaps live minutes at 30700 and disagrees with them.
+func (f *ghFixture) offScaleReplay(from, to time.Time) {
+	f.t.Helper()
+	var bars []ntwire.Bar
+	for m := from; !m.After(to); m = m.Add(time.Minute) {
+		bars = append(bars, wireBar(m, 30400))
+	}
+	f.addon.send(ntwire.FrameBarsHistorical, ntwire.BarsHistoricalPayload{Symbol: "MNQ", Timeframe: "1m", Contract: ghContract, Bars: bars})
+}
+
+func (f *ghFixture) disagreed() int64 {
+	_, d := f.srv.BarCache().OverlapVerdictCounts()
+	return d
+}
+
+// ReplayDisagreed is PER HOLE: a disagreeing replay that happened BEFORE the hole
+// was detected (any earlier gap-backfill anywhere in the process) must not turn
+// this hole's owner message into a "price scale" story; one that happens WHILE the
+// hole is open must.
+//
+// MUTANT (shown RED): ReplayDisagreed: int(disagreedNow) (the old process-lifetime
+// copy) -> the first leg reads 1 -> RED.
+func TestUnfilledHoleReplayDisagreedIsPerHole(t *testing.T) {
+	f := newGHFixture(t)
+	f.stream(ct(2026, 10, 14, 3, 30), ct(2026, 10, 14, 3, 43))
+
+	// an EARLIER disagreeing gap-backfill, before any hole exists (a different
+	// session day so the per-day re-request budget is untouched).
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) {
+		f.offScaleReplay(ct(2026, 10, 14, 3, 30), ct(2026, 10, 14, 3, 43))
+	})
+	if err := f.srv.RequestGapBackfillAt("MNQ", ct(2026, 10, 13, 10, 0)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the earlier disagreeing verdict", func() bool { return f.disagreed() == 1 })
+	f.addon.mu.Lock()
+	f.addon.baseline = len(f.addon.subs) // that request is not the tracker's
+	f.addon.mu.Unlock()
+
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49))
+	waitFor(t, "the tracker to open the hole", func() bool { return len(f.holes()) == 1 })
+	det := f.clk.Now()
+	for i, at := range []time.Duration{61 * time.Second, 3*time.Minute + 5*time.Second, 10*time.Minute + 5*time.Second, 30*time.Minute + 5*time.Second} {
+		f.tr.tick(det.Add(at))
+		f.waitReRequests(i + 1)
+	}
+	unfilledAt := det.Add(32*time.Minute + 10*time.Second)
+	f.tr.tick(unfilledAt)
+
+	got := f.tr.unfilledFeeding("MNQ", unfilledAt)
+	if len(got) != 1 {
+		t.Fatalf("want one unfilled hole: %+v\n%s", got, f.sink.dump())
+	}
+	if got[0].ReplayDisagreed != 0 {
+		t.Fatalf("a disagreement from BEFORE this hole was detected leaked into it: ReplayDisagreed = %d", got[0].ReplayDisagreed)
+	}
+
+	// a disagreeing replay WHILE the hole is open does count.
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) {
+		f.offScaleReplay(ct(2026, 10, 14, 3, 30), ct(2026, 10, 14, 3, 43))
+	})
+	if err := f.srv.RequestGapBackfillAt("MNQ", ct(2026, 10, 15, 10, 0)); err != nil {
+		t.Fatal(err)
+	}
+	waitFor(t, "the in-hole disagreeing verdict", func() bool { return f.disagreed() == 2 })
+	got = f.tr.unfilledFeeding("MNQ", unfilledAt)
+	if len(got) != 1 || got[0].ReplayDisagreed != 1 {
+		t.Fatalf("a disagreement while the hole is open must count once: %+v", got)
+	}
+}
+
+// SlowSpent is READ: false while slow re-requests remain, true once the cap is
+// spent and the hole is still open; the cadence and horizon come off the constants.
+// MUTANT (shown RED): SlowSpent: false -> the final leg -> RED.
+func TestUnfilledHoleSaysWhenTheSlowRetriesAreSpent(t *testing.T) {
+	f := newGHFixture(t)
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	det := f.openHole()
+	for i, at := range []time.Duration{61 * time.Second, 3*time.Minute + 5*time.Second, 10*time.Minute + 5*time.Second, 30*time.Minute + 5*time.Second} {
+		f.tr.tick(det.Add(at))
+		f.waitReRequests(i + 1)
+	}
+	unfilledAt := det.Add(32*time.Minute + 10*time.Second)
+	f.tr.tick(unfilledAt)
+	first := f.tr.unfilledFeeding("MNQ", unfilledAt)
+	if len(first) != 1 || first[0].SlowSpent {
+		t.Fatalf("fresh unfilled hole must not read as spent: %+v", first)
+	}
+	if first[0].ReaskEvery != 15*time.Minute || first[0].ReaskHorizon != 2*time.Hour {
+		t.Fatalf("cadence/horizon = %v / %v, want 15m / 2h", first[0].ReaskEvery, first[0].ReaskHorizon)
+	}
+	sent := 4
+	for k := 1; k <= 9; k++ {
+		f.tr.tick(unfilledAt.Add(time.Duration(k) * 15 * time.Minute))
+		if k <= 8 {
+			sent++
+			f.waitReRequests(sent)
+		}
+	}
+	last := f.tr.unfilledFeeding("MNQ", unfilledAt.Add(9*15*time.Minute))
+	if len(last) != 1 || !last[0].SlowSpent {
+		t.Fatalf("after the cap the hole must read SlowSpent: %+v\n%s", last, f.sink.dump())
+	}
+}
+
+// offScaleESReplay drives a disagreeing gap-backfill replay on ANOTHER symbol (ES)
+// straight into the shared BarCache: live ES minutes at 6000, a gap re-request
+// armed for ES, then an ES replay on a different price scale over those minutes.
+func (f *ghFixture) offScaleESReplay(from, to time.Time) {
+	f.t.Helper()
+	cache := f.srv.BarCache()
+	var live, replay []ntwire.Bar
+	for m := from; !m.After(to); m = m.Add(time.Minute) {
+		live = append(live, wireBar(m, 6000))
+		replay = append(replay, wireBar(m, 5700))
+	}
+	cache.Upsert("ES", "1m", live)
+	// arms the ES overlap judge (before the send); the resend itself may be
+	// refused for lack of an ES subscription — irrelevant, the arm has happened.
+	_ = f.srv.RequestGapBackfillAt("ES", f.clk.Now())
+	cache.SeedHistorical("ES", "1m", replay)
+}
+
+// ReplayDisagreed is per HOLE and per SYMBOL: an MNQ hole that is open for hours
+// must not read an unrelated ES gap-replay disagreement as its own scale story.
+//
+// MUTANT (shown RED): read the cache-wide OverlapVerdictCounts disagreed total
+// (minus the all-symbol baseline) instead of OverlapDisagreedFor(h.Symbol) -> the
+// ES disagreement reads as 1 on the MNQ hole -> RED.
+func TestUnfilledHoleReplayDisagreedIgnoresAnotherSymbol(t *testing.T) {
+	f := newGHFixture(t)
+	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
+	det := f.openHole()
+	for i, at := range []time.Duration{61 * time.Second, 3*time.Minute + 5*time.Second, 10*time.Minute + 5*time.Second, 30*time.Minute + 5*time.Second} {
+		f.tr.tick(det.Add(at))
+		f.waitReRequests(i + 1)
+	}
+	unfilledAt := det.Add(32*time.Minute + 10*time.Second)
+	f.tr.tick(unfilledAt)
+	if got := f.tr.unfilledFeeding("MNQ", unfilledAt); len(got) != 1 || got[0].ReplayDisagreed != 0 {
+		t.Fatalf("setup: want one unfilled MNQ hole with 0 disagreements: %+v", got)
+	}
+
+	before := f.disagreed()
+	f.offScaleESReplay(ct(2026, 10, 14, 7, 30), ct(2026, 10, 14, 7, 44))
+	if after := f.disagreed(); after != before+1 {
+		t.Fatalf("setup: the ES replay must disagree (cache-wide %d -> %d)", before, after)
+	}
+	if n := f.srv.BarCache().OverlapDisagreedFor("ES"); n != 1 {
+		t.Fatalf("OverlapDisagreedFor(ES) = %d, want 1", n)
+	}
+	if n := f.srv.BarCache().OverlapDisagreedFor("MNQ"); n != before {
+		t.Fatalf("OverlapDisagreedFor(MNQ) = %d, want %d: an ES verdict was counted on MNQ", n, before)
+	}
+	got := f.tr.unfilledFeeding("MNQ", unfilledAt)
+	if len(got) != 1 || got[0].ReplayDisagreed != 0 {
+		t.Fatalf("an ES disagreement leaked into the MNQ hole: %+v", got)
+	}
+}

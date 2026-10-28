@@ -2,6 +2,7 @@ package ninjatrader
 
 import (
 	"math"
+	"strings"
 	"time"
 
 	"vl/market"
@@ -121,6 +122,18 @@ func (c *BarCache) OverlapVerdictCounts() (agreed, disagreed int64) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.overlapAgreed, c.overlapDisagreed
+}
+
+// OverlapDisagreedFor is the disagreeing-replay count for ONE symbol (m438): the
+// per-hole owner message baselines on this, so a disagreement on another symbol
+// never reads as this symbol's scale story. Case-insensitive.
+func (c *BarCache) OverlapDisagreedFor(symbol string) int64 {
+	if c == nil {
+		return 0
+	}
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.overlapDisagreedBySym[strings.ToUpper(symbol)]
 }
 
 // OverlapScaleVerdict (m424, P1b) exports overlapScaleVerdict so the trader
