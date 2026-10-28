@@ -55,6 +55,24 @@ export function planLinkText(l: PictureHtfPlanLink): string {
 const num = (v: number | undefined, digits = 2) =>
   v === undefined || v === 0 || Number.isNaN(v) ? '—' : v.toFixed(digits)
 
+// m435 (owner 2026-10-28: "make a drop down") — the panel is a collapsible
+// dropdown, CLOSED by default; the open/closed choice is remembered per browser.
+const OPEN_KEY = 'vl.pictureHtf.open'
+function readOpen(): boolean {
+  try {
+    return localStorage.getItem(OPEN_KEY) === '1'
+  } catch {
+    return false
+  }
+}
+function writeOpen(v: boolean) {
+  try {
+    localStorage.setItem(OPEN_KEY, v ? '1' : '0')
+  } catch {
+    /* storage unavailable — the toggle still works for this page view */
+  }
+}
+
 const age = (ms: number | undefined) => {
   if (!ms) return '—'
   const s = Math.max(0, Math.round((Date.now() - ms) / 1000))
@@ -138,6 +156,12 @@ export function PictureHtfPanel({ traderId }: { traderId: string }) {
   // W5 — the server could not read the Day Plan links: say so, so an absent
   // link is never read as "never became a Day Plan scenario".
   const [linksUnread, setLinksUnread] = useState('')
+  const [open, setOpen] = useState<boolean>(readOpen)
+  const toggle = () =>
+    setOpen((o) => {
+      writeOpen(!o)
+      return !o
+    })
 
   useEffect(() => {
     if (!traderId) return
@@ -177,61 +201,70 @@ export function PictureHtfPanel({ traderId }: { traderId: string }) {
       <div className="absolute top-0 right-0 p-3 opacity-10 group-hover:opacity-20 transition-opacity">
         <div className="w-24 h-24 rounded-full bg-indigo-500 blur-3xl" />
       </div>
-      <div className="flex items-center justify-between mb-5 relative z-10">
+      <button
+        type="button"
+        data-testid="picture-htf-toggle"
+        aria-expanded={open}
+        onClick={toggle}
+        className={`w-full flex items-center justify-between relative z-10 text-left ${open ? 'mb-5' : ''}`}
+      >
         <h2 className="text-lg font-bold flex items-center gap-2 text-vl-neo-text-main uppercase tracking-wide">
           <span className="text-indigo-400">📷</span> Picture HTF opportunities
         </h2>
-        {rows !== null && (
-          <span className="text-xs text-vl-neo-text-muted font-mono">
-            {rows.length} recorded
-          </span>
-        )}
-      </div>
-      {linksUnread && (
-        <div
-          data-testid="picture-plan-links-unread"
-          className="text-[10px] text-rose-400 mb-2"
-        >
-          Day Plan links unread: {linksUnread}
-        </div>
-      )}
-      {rows === null ? (
-        <div className="text-xs text-vl-neo-text-muted">
-          reading the ledger…
-        </div>
-      ) : rows.length === 0 ? (
-        <div className="text-xs text-vl-neo-text-muted">
-          No two-picture opportunities recorded — the mode evaluates native
-          4H/1H/5m bar events (enabled in the strategy's Day Plan block).
-        </div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs">
-            <thead className="text-left border-b border-white/5">
-              <tr>
-                <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
-                  Setup
-                </th>
-                <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-right">
-                  Intended
-                </th>
-                <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
-                  Command
-                </th>
-                <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
-                  Broker answer
-                </th>
-                <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-right">
-                  Stage
-                </th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r) => (
-                <Row key={r.opp_key} r={r} />
-              ))}
-            </tbody>
-          </table>
+        <span className="flex items-center gap-2 text-xs text-vl-neo-text-muted font-mono">
+          {rows !== null && <span>{rows.length} recorded</span>}
+          <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+        </span>
+      </button>
+      {open && (
+        <div data-testid="picture-htf-body">
+          {linksUnread && (
+            <div
+              data-testid="picture-plan-links-unread"
+              className="text-[10px] text-rose-400 mb-2"
+            >
+              Day Plan links unread: {linksUnread}
+            </div>
+          )}
+          {rows === null ? (
+            <div className="text-xs text-vl-neo-text-muted">
+              reading the ledger…
+            </div>
+          ) : rows.length === 0 ? (
+            <div className="text-xs text-vl-neo-text-muted">
+              No two-picture opportunities recorded — the mode evaluates native
+              4H/1H/5m bar events (enabled in the strategy's Day Plan block).
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead className="text-left border-b border-white/5">
+                  <tr>
+                    <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
+                      Setup
+                    </th>
+                    <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-right">
+                      Intended
+                    </th>
+                    <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
+                      Command
+                    </th>
+                    <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-left">
+                      Broker answer
+                    </th>
+                    <th className="px-1 pb-3 font-semibold text-vl-neo-text-muted whitespace-nowrap text-right">
+                      Stage
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map((r) => (
+                    <Row key={r.opp_key} r={r} />
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
     </section>

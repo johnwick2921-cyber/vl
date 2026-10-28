@@ -2,7 +2,7 @@
 // the owner sees it. Every assertion renders the REAL component the card
 // mounts (ScenarioList, PictureGateChip, SessionPlanCard, PictureHtfPanel,
 // DayPlanEditor), fed the JSON shapes the server serves.
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { render, screen, waitFor } from '@testing-library/react'
 import { ScenarioList } from './ScenarioList'
 import { PictureGateChip } from './PictureGateChip'
@@ -393,6 +393,9 @@ describe('SessionPlanCard — machine plan banner and composed-of line', () => {
 })
 
 describe('PictureHtfPanel — a planned opportunity links to its Day Plan scenario', () => {
+  // m435: the panel is a dropdown, closed by default — open it for these pins.
+  beforeEach(() => localStorage.setItem('vl.pictureHtf.open', '1'))
+
   const ROW = {
     opp_key: EVIDENCE.opp_key,
     stage: 'planned',

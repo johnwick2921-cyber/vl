@@ -212,7 +212,8 @@ func TestUnfilledHoleRaisesOneP1AndOneOwnerMessage(t *testing.T) {
 	now := cmeOpenNow(t)
 	withProvider(t, []market.Kline{{OpenTime: now.UnixMilli() - 90_000}}) // live feed: no FEED DOWN
 	hole := ntTrader.UnfilledHole{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: now.UnixMilli() - 640*60_000, ToMs: now.UnixMilli(),
-		Missing: 640, Attempts: 4, Window: "10-25 17:00–10-26 03:40 CT"}
+		Missing: 640, Attempts: 4, Window: "10-25 17:00–10-26 03:40 CT",
+		ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour}
 	old := unfilledHolesFn
 	unfilledHolesFn = func(sym string, _ time.Time) []ntTrader.UnfilledHole {
 		if sym != at.futuresSymbol() {
@@ -236,7 +237,7 @@ func TestUnfilledHoleRaisesOneP1AndOneOwnerMessage(t *testing.T) {
 	if len(rows) != 1 || rows[0].Level != "P1" {
 		t.Fatalf("want exactly one P1 bar-hole-unfilled row, got %+v", rows)
 	}
-	want := "NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data; the bot picks it up on its next re-request."
+	want := "NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every 15 minutes for about 2 hours and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking."
 	if rows[0].Body != want {
 		t.Fatalf("body = %q\nwant   %q", rows[0].Body, want)
 	}

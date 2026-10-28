@@ -38,7 +38,7 @@ func m433Fixture(t *testing.T) *gateFixture {
 	}
 	f.srv = s
 	if err := f.st.NTAccountsLast().Upsert([]store.NTAccountLast{
-		{Name: "Sim101", IsSim: true, Connection: "SimulationConnection", ReceivedAtMs: time.Now().UnixMilli()},
+		{Name: "Sim101", IsSim: true, Connection: "SimulationConnection", ReceivedAtMs: m433Sunday.UnixMilli()},
 	}); err != nil {
 		t.Fatal(err)
 	}
@@ -52,7 +52,7 @@ func m433Fixture(t *testing.T) *gateFixture {
 // openPos non-flat positions and an order snapshot with working working orders.
 func m433Evidence(t *testing.T, f *gateFixture, openPos, working int) {
 	t.Helper()
-	ms := time.Now().Add(-40 * time.Hour).UnixMilli()
+	ms := m433Sunday.Add(-40 * time.Hour).UnixMilli()
 	if err := f.st.NTPositionsLast().Upsert("Sim101", openPos, ms); err != nil {
 		t.Fatal(err)
 	}
@@ -171,7 +171,7 @@ func TestInstallationGateM433PlacedLedgerRowRefuses(t *testing.T) {
 // (7) Positions evidence only: no order evidence -> the book is unknowable.
 func TestInstallationGateM433NoOrderEvidenceRefuses(t *testing.T) {
 	f := m433Fixture(t)
-	if err := f.st.NTPositionsLast().Upsert("Sim101", 0, time.Now().UnixMilli()); err != nil {
+	if err := f.st.NTPositionsLast().Upsert("Sim101", 0, m433Sunday.UnixMilli()); err != nil {
 		t.Fatal(err)
 	}
 	mustFail(t, f.run(), "trader_cutover:gate-t1", "no last order snapshot")
@@ -180,7 +180,7 @@ func TestInstallationGateM433NoOrderEvidenceRefuses(t *testing.T) {
 // (8) Order evidence only: no positions evidence -> unknowable.
 func TestInstallationGateM433NoPositionEvidenceRefuses(t *testing.T) {
 	f := m433Fixture(t)
-	if err := f.st.NT8OrderSnapshots().Insert(&store.NT8OrderSnapshot{Account: "Sim101", OrdersJSON: "[]", ReceivedMs: time.Now().UnixMilli()}); err != nil {
+	if err := f.st.NT8OrderSnapshots().Insert(&store.NT8OrderSnapshot{Account: "Sim101", OrdersJSON: "[]", ReceivedMs: m433Sunday.UnixMilli()}); err != nil {
 		t.Fatal(err)
 	}
 	mustFail(t, f.run(), "trader_cutover:gate-t1", "no last positions frame")
@@ -192,7 +192,7 @@ func TestInstallationGateM433FreshBookWithWorkingOrderStands(t *testing.T) {
 	m433Evidence(t, f, 0, 0)
 	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{
 		{OrderID: "o1", Symbol: "MNQ", Type: "stop", State: "Working", StopPrice: 29000},
-	}}, time.Now())
+	}}, m433Sunday)
 	g := f.run()
 	l := m433Cutover(t, g)
 	if l.Pass || !strings.Contains(l.Detail, "working_orders") {
@@ -208,8 +208,8 @@ func TestInstallationGateM433FreshBookWithWorkingOrderStands(t *testing.T) {
 // a working order, or a known open position, -> refused.
 func TestInstallationGateM433StaleInMemoryFlatPasses(t *testing.T) {
 	f := m433Fixture(t)
-	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, time.Now().Add(-40*time.Hour))
-	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, time.Now().Add(-40*time.Hour))
+	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, m433Sunday.Add(-40*time.Hour))
+	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, m433Sunday.Add(-40*time.Hour))
 	g := f.run()
 	if !g.Ready {
 		t.Fatalf("stale-but-flat in-memory evidence on a closed market must be ready: %+v", g.Legs)
@@ -221,10 +221,10 @@ func TestInstallationGateM433StaleInMemoryFlatPasses(t *testing.T) {
 
 func TestInstallationGateM433StaleInMemoryWorkingOrderRefuses(t *testing.T) {
 	f := m433Fixture(t)
-	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, time.Now().Add(-40*time.Hour))
+	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, m433Sunday.Add(-40*time.Hour))
 	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{
 		{OrderID: "o1", Symbol: "MNQ", Type: "stop", State: "Working", StopPrice: 29000},
-	}}, time.Now().Add(-40*time.Hour))
+	}}, m433Sunday.Add(-40*time.Hour))
 	g := f.run()
 	l := m433Cutover(t, g)
 	if l.Pass || strings.Contains(l.Detail, "m433 broker-quiet:") {
@@ -235,7 +235,7 @@ func TestInstallationGateM433StaleInMemoryWorkingOrderRefuses(t *testing.T) {
 func TestInstallationGateM433StaleInMemoryOpenPositionRefuses(t *testing.T) {
 	f := m433Fixture(t)
 	m433Evidence(t, f, 0, 0)
-	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: "long", Quantity: 2, AvgPrice: 29000}}, time.Now().Add(-40*time.Hour))
+	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{{Symbol: "MNQ", Side: "long", Quantity: 2, AvgPrice: 29000}}, m433Sunday.Add(-40*time.Hour))
 	g := f.run()
 	l := m433Cutover(t, g)
 	if l.Pass || !strings.Contains(l.Detail, "1 position(s)") || strings.Contains(l.Detail, "m433 broker-quiet:") {
@@ -248,8 +248,8 @@ func TestInstallationGateM433StaleInMemoryOpenPositionRefuses(t *testing.T) {
 func TestInstallationGateM433SourcesDisagreeRefuses(t *testing.T) {
 	f := m433Fixture(t)
 	m433Evidence(t, f, 0, 1)
-	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, time.Now().Add(-40*time.Hour))
-	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, time.Now().Add(-40*time.Hour))
+	f.srv.SeedPositionsForTestAt("Sim101", []ntwire.OpenPosition{}, m433Sunday.Add(-40*time.Hour))
+	f.srv.OrderSnapshots().PutAt(ntwire.OrderSnapshotPayload{Account: "Sim101", Orders: []ntwire.NT8Order{}}, m433Sunday.Add(-40*time.Hour))
 	mustFail(t, f.run(), "trader_cutover:gate-t1", "persisted snapshot has 1 working order(s)")
 }
 

@@ -6,6 +6,11 @@ package telegram
 // plan's exact plain words.
 
 import (
+	"net/http"
+	"regexp"
+	"strings"
+	"time"
+
 	"vl/logger"
 	"vl/store"
 
@@ -41,11 +46,42 @@ func UpdateResultMessage(state, newTag, oldTag, reason string) string {
 	}
 }
 
+// ownerSendTimeout bounds EVERY Telegram call the owner/update sender makes
+// (getMe at construction and the sendMessage): tgbotapi.NewBotAPI uses an
+// http.Client with no timeout, so a peer that accepts and then says nothing
+// would hold the single owner-push worker forever (m438). A var so the pin can
+// shorten it.
+var ownerSendTimeout = 12 * time.Second
+
+// ownerBotEndpoint is the Bot API URL template; a var so the pins can aim the
+// REAL sender at a local server.
+var ownerBotEndpoint = tgbotapi.APIEndpoint
+
+// botTokenInURL matches the "bot<id>:<secret>" path segment a *url.Error carries
+// in its text.
+var botTokenInURL = regexp.MustCompile(`bot\d+:[A-Za-z0-9_\-]+`)
+
+// redactTelegramErr renders err for the log with the bot token removed. The
+// library returns a *url.Error whose text is the full request URL —
+// `Post "https://api.telegram.org/bot<token>/getMe": dial tcp …` — so a plain
+// %v of a network failure wrote the live token into the journal (m438).
+func redactTelegramErr(err error, token string) string {
+	if err == nil {
+		return ""
+	}
+	msg := err.Error()
+	if token != "" {
+		msg = strings.ReplaceAll(msg, token, "[redacted]")
+	}
+	return botTokenInURL.ReplaceAllString(msg, "bot[redacted]")
+}
+
 // NotifyUpdateResult sends one owner-facing update result to the owner's bound
 // Telegram chat (the bot's existing sender). Unbound, no token, or no text is
 // a no-op — the message is advisory; the page banner is the authoritative
 // surface. It resolves the token and the bound chat from the store at call
-// time, never caches them.
+// time, never caches them. Every call is time-bounded (ownerSendTimeout) and
+// every logged error has the bot token removed.
 func NotifyUpdateResult(st *store.Store, text string) {
 	if text == "" {
 		return
@@ -60,12 +96,13 @@ func NotifyUpdateResult(st *store.Store, text string) {
 		logger.Debugf("telegram update result: no bound chat — not sent")
 		return
 	}
-	bot, err := tgbotapi.NewBotAPI(dbCfg.BotToken)
+	token := dbCfg.BotToken
+	bot, err := tgbotapi.NewBotAPIWithClient(token, ownerBotEndpoint, &http.Client{Timeout: ownerSendTimeout})
 	if err != nil {
-		logger.Errorf("telegram update result: bot api: %v", err)
+		logger.Errorf("telegram update result: bot api: %s", redactTelegramErr(err, token))
 		return
 	}
 	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
-		logger.Errorf("telegram update result: send: %v", err)
+		logger.Errorf("telegram update result: send: %s", redactTelegramErr(err, token))
 	}
 }

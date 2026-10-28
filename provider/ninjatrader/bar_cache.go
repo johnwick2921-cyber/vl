@@ -66,6 +66,10 @@ type BarCache struct {
 	// bars (bar_overlap_verdict.go) — agreed sets the verdict, disagreed leaves
 	// the key armed. Read via OverlapVerdictCounts.
 	overlapAgreed, overlapDisagreed int64
+	// overlapDisagreedBySym is the same disagreeing count kept PER SYMBOL (m438,
+	// #53): the owner push for one symbol's unfilled hole must not be steered by
+	// another symbol's scale story. Read via OverlapDisagreedFor.
+	overlapDisagreedBySym map[string]int64
 	// overlapJudgeUntil — per SYMBOL, until when a replay is judged by
 	// same-minute overlap: armed only by the gap-backfill re-request
 	// (armOverlapVerdict), so every other replay keeps the first-live-bar rule.
@@ -423,6 +427,10 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 			c.overlapAgreed++
 		} else {
 			c.overlapDisagreed++
+			if c.overlapDisagreedBySym == nil {
+				c.overlapDisagreedBySym = make(map[string]int64)
+			}
+			c.overlapDisagreedBySym[strings.ToUpper(symbol)]++
 		}
 	}
 }

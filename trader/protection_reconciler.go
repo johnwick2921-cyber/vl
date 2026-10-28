@@ -475,6 +475,15 @@ var protectionFlattenRetries sync.Map // trader id + symbol + side → int64
 // the verdict leaves flatten.
 var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
 
+// protectionPlaceEpisode is the same thing for the PLACE verdict (m438, #53):
+// the episode start (Unix ms) stamped on the transition INTO protectionPlace.
+// The P0 event id used to carry now.UnixMilli() — a NEW id every 1-minute pass —
+// so a stop that stayed refused / unconfirmed wrote a new in-app P0 row and a
+// new owner push every minute (8 Telegram messages in 8 minutes, then the hourly
+// budget was gone for FEED DOWN too). One id per episode now; the placement
+// attempt itself still runs every pass. Cleared when the verdict leaves place.
+var protectionPlaceEpisode sync.Map // trader id + symbol + side → int64
+
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
 func UnprotectedFound(traderID string) int64 {
 	if v, ok := protectionUnprotected.Load(traderID); ok {
@@ -627,7 +636,7 @@ func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (
 }
 
 // sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
-// state — protectionLastAction, protectionFlattenEpisode, protectionFlattenRetries —
+// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries —
 // for every key whose (symbol, side) is NOT in the positions just read. It runs
 // only on a successful positions read, so a read error never forgets state (A24).
 func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
@@ -656,6 +665,7 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 	}
 	sweep(&protectionLastAction)
 	sweep(&protectionFlattenEpisode)
+	sweep(&protectionPlaceEpisode)
 	sweep(&protectionFlattenRetries)
 }
 
@@ -783,6 +793,11 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		protectionFlattenEpisode.Delete(key)
 		protectionFlattenRetries.Delete(key)
 	}
+	// m438: the place episode ends when the verdict LEAVES place; the next
+	// naked spell is a new episode with a new id (and so a new alert + push).
+	if v.Action != protectionPlace {
+		protectionPlaceEpisode.Delete(key)
+	}
 
 	// m217: a pending -sl has been UNCHANGED (same name, stopPrice, qty) for 3
 	// consecutive passes — ALERT-ONLY, the order keeps counting as cover. Raise
@@ -850,8 +865,17 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 
 	case protectionPlace:
 		incUnprotected(at.id)
+		// m438: ONE event id per place EPISODE (see protectionPlaceEpisode). The
+		// first pass of an episode stamps its start; the repeats re-emit the SAME
+		// id, which the store dedupes silently (no new row, no new push).
+		placeEpisode := now.UnixMilli()
+		if prevStart, ok := protectionPlaceEpisode.Load(key); ok {
+			placeEpisode = prevStart.(int64)
+		} else {
+			protectionPlaceEpisode.Store(key, placeEpisode)
+		}
 		at.emitAlert("P0", "unprotected_position",
-			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, now.UnixMilli()),
+			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, placeEpisode),
 			"Open position had NO stop — one is being placed",
 			fmt.Sprintf("%s %s ×%d had no protective order at the broker. Placing a stop at %.2f from %s. %s",
 				side, symbol, qty, v.StopPx, v.Source, v.Why))
