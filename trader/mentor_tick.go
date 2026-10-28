@@ -985,6 +985,12 @@ func (at *AutoTrader) mentorConfluenceUpgrade(in mentor.Intent) {
 		lp.Pos.Mode = next
 		at.mentorCount("exit_upgrade_c")
 		at.logInfof("🧑‍🏫 mentor confluence upgrade: %s %s (size unchanged) — %s", side, why, in.Reason)
+		// C52 W1 A2 [D3.4 p3 @10:07–10:33, @11:01–11:05 "vô rồi mới đợi
+		// trigger… thấy trigger buy setup luôn thì hold, at least risk reward
+		// 1-2"]: the branch switch alone left leg 1's TP at +1R on the wire (it
+		// was set at entry). Move it out to 2R now, through the same leg-scoped
+		// modify_bracket the other leg-1 TP moves use.
+		at.mentorLeg1TPToC(at.armedTrader(), lp, "confluence upgrade")
 		at.mentorPersistUpgradedExitMode("open position "+lp.Legs[0].SignalID, func(l *store.ArmedOrderStore) (int64, error) {
 			return l.SetExitModeBySignal(lp.Legs[0].SignalID, next)
 		})
@@ -1239,7 +1245,14 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 
 // mentorNewsCancelFlattenAt (item 18 part 2, R12) cancels live INTRADAY mentor
 // arms by ArmID and flattens intraday mentor positions at print −10m on a
-// red-folder print day [D4.4 p1 @20:44–21:46]. It is the DESTRUCTIVE half of
+// red-folder print day. INFERENCE [B], not a course instruction (release #52
+// B6): D4.4 p1 @20:44–21:46 gives three reasons not to be IN the print (the
+// candle jerks and "banh 2 đầu", the machine can lag, you cannot size the
+// candle) and "lát không out lệnh được cũng banh"; no sentence says to close
+// an open trade before it. The flatten is the 10-04 CTO re-read (DAY-4 row
+// D4.4-08, "PARTIAL"), kept as the conservative reading until the owner
+// rules; whether an open runner is held through the print is a mentor
+// question. It is the DESTRUCTIVE half of
 // the news window: the hold above refuses NEW placements through the print;
 // this sweep clears what already REMAINS before the 07:30 print. SWING4H arms
 // and positions are exempt (the course holds the swing by the 4h [D5.2 p1 @06:03–06:20]).

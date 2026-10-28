@@ -43,7 +43,9 @@ export function StatusBanner({ language }: { language: Language }) {
     <div
       role="status"
       data-testid="status-banner"
-      className="relative z-50 w-full text-center text-[11px] font-semibold py-0.5 px-2 truncate"
+      className={`relative z-50 w-full text-center font-semibold px-2 ${
+        down ? 'text-[12px] py-1 break-words' : 'text-[11px] py-0.5 truncate'
+      }`}
       style={{
         background: down ? 'rgba(224,108,108,0.18)' : 'rgba(240,185,11,0.12)',
         color: down ? 'var(--vl-short)' : 'var(--vl-gold)',

@@ -62,14 +62,14 @@ type mentorTierInputs struct {
 	StopPts      float64 // |entry - stop|
 	TargetPts    float64 // |target - entry|
 	RoomMultiple float64 // reward/risk actually available
-	Confluence   bool    // box/zone + key level + 5m trigger agreeing (§6)
+	Confluence   bool    // box entry + 5m trigger agreeing at the real entry, or 15m/5m/1m ISBs aligned (§6; C52 W1)
 	HTFAgree     bool    // 4h AND 1h agree
 	SpentDay     bool    // §7 spent day
 	StrongDay    bool    // S9: 5m candles running 50–80 pts → size 1–2
 
 	ISBOldExtreme bool // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
 	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
-	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend → size down [X11 @13:21–15:02]
+	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend (mirror: the high in a downtrend) against an entry WITH that trend → size down [Go over lớp học @00:13:21–00:15:19]
 
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
@@ -155,7 +155,8 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	if in.ISBInRange {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "isb_in_range", Why: "ISB traded inside a range → the reduced tier 3 [D4.1 p1 @04:37–05:04 written rule 3]"}, nil
 	}
-	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend →
+	// X11 pullback warning: a 5m candle broke the prior 5m low in a 5m uptrend
+	// (mirror for a downtrend; the flag is already side-aware, C52-W10 B20) →
 	// size down ("giảm size lại cũng được") [X11 @13:21–15:02, quote @14:50–15:00].
 	if in.PullbackWarn {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil
@@ -883,8 +884,8 @@ func mentorLeg1TPForC(entry, r float64, side string) float64 {
 
 // mentorConfluenceForIntent is the R2 seam (CTO 1791029620038: "use a stub
 // flag until DS-106's lands"): reports whether the intent carries the
-// confluence flag (box edge + key level inside the box or within 2 pts of its
-// edge + 5m trigger agrees). Wired by mentorWiring to the evaluator's tagged
+// confluence flag (box entry + the 5m trigger agrees at the real entry price,
+// or the 15m/5m/1m ISBs aligned — C52 W1 A1/B9). Wired by mentorWiring to the evaluator's tagged
 // in.Confluence; nil → false — C (size 5) never fires with no wiring.
 var mentorConfluenceForIntent func(in mentor.Intent) bool
 
@@ -1157,32 +1158,49 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 	return res
 }
 
-// mentorResonanceMaxCandles is the A window: the resonance ISB must appear
-// within 3 candles of the PHL/PLH fill [D2.4 p1 @01:36–02:59].
-const mentorResonanceMaxCandles = 3
+// mentorResonanceMinCandles / mentorResonanceMaxCandles are the A window: the
+// resonance ISB must appear within 3 candles AFTER the PHL/PLH fill — "sau khi
+// nó fill ... trong vòng 3 cây nến sau đó. Đếm 1, 2, 3" [D2.4 p1 @01:36–02:59,
+// @04:44–04:53]. c52 W2 B18: the candles are those of the frame the ENTRY was
+// read on ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–
+// 18:14] — the mentor trades the 2m), not always closed 1m bars, and the count
+// starts at the first candle AFTER the fill candle (mentorLivePos.candlesAfterFill).
+// Whether the fill candle itself counts is NOT stated by the course (mentor
+// question B18) — excluding it is OURS; before W2 the fill candle was bar 1.
+const (
+	mentorResonanceMinCandles = 1
+	mentorResonanceMaxCandles = 3
+)
 
 // mentorMaybeArmResonance flips an open PHL/PLH position into mode A the
-// moment an ISB in the SAME direction appears within 3 candles of the fill:
-// the REST's stop goes to BREAK-EVEN immediately, NO candle trail. R-RES
+// moment an ISB in the SAME direction appears within 3 entry-frame candles
+// after the fill: the REST's stop goes to BREAK-EVEN immediately, NO candle
+// trail. R-RES
 // (CTO 1791040643329, D2.4 p1 @02:17-02:29 "@03:36-03:45"): the resonance
 // STILL takes the 1:1 partial — "RISK REWARD 1-1 toi van se ban bot" — so
 // leg 1's +1R TP STAYS (no modify).
 //
 // D2-49 (D2.4 p1 @01:56 "resonance breaks the old high 70–80%"): in mode A
-// the RUNNER's target goes BEYOND the old high. runnerTarget is the next
-// level beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget).
-// > 0 → the runner's native TP moves there; 0 → the runner's native TP is
-// REMOVED (the exit is the BE stop or EOD flat, never a near-old-high cap).
+// the RUNNER is not capped at the old high. runnerTarget is the next level
+// beyond the old extreme (stamped by the evaluator as Intent.RunnerTarget);
+// pos.Target keeps it as a belief. Default (knob
+// mentor_resonance_runner_tp_old_high OFF, c52 W2 A3): the caller
+// (mentorResonanceRunnerTP → mentorResonanceRunnerUncap) pushes the runner's
+// native TP far out of reach — the exit is the BE stop, X8 or the EOD flat,
+// never a near-old-high cap; knob ON: the TP moves to runnerTarget instead.
 // Returns (armed, modifyLeg1TP, modifyLeg2TP): leg 1's TP modify is always 0;
-// the runner's TP modify is the third value (0 = remove).
-func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, barsSinceFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
+// the runner's TP target is the third value (belief only — the wire move is
+// the caller's).
+// candlesAfterFill is mentorLivePos.candlesAfterFill (entry-frame candles after
+// the fill candle).
+func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string, candlesAfterFill int, runnerTarget float64) (armed bool, modifyLeg1TP, modifyLeg2TP float64) {
 	if pos == nil || pos.Mode == "A-resonance" {
 		return false, 0, 0
 	}
 	if pos.Origin != "PHL" && pos.Origin != "PLH" {
 		return false, 0, 0 // only a PHL/PLH fill can resonate
 	}
-	if barsSinceFill < 1 || barsSinceFill > mentorResonanceMaxCandles {
+	if candlesAfterFill < mentorResonanceMinCandles || candlesAfterFill > mentorResonanceMaxCandles {
 		return false, 0, 0
 	}
 	if !strings.EqualFold(pos.Side, isbSide) {
@@ -1195,9 +1213,8 @@ func mentorMaybeArmResonance(at *AutoTrader, pos *mentorPosition, isbSide string
 	// confirmed, or once price is on the profit side — and the belief is written
 	// only after the broker applied the move. [D2.4 p1 @03:36–03:45 "mình bán bớt
 	// rồi… thì cứ để break even cho nó chạy".]
-	// D2-49: the runner aims past the old high — move its TP beyond, or remove
-	// it when no level sits beyond (fail-closed: the runner then exits only via
-	// the BE stop or EOD flat, never capped at the near-old-high).
+	// D2-49: the runner aims past the old high (the caller uncaps its TP, or —
+	// knob ON — moves it to the level beyond the old high).
 	pos.Target = runnerTarget
 	at.mentorCount("resonance_armed")
 	// R-RES: leg 1's +1R take-profit STAYS resting — no leg-1 TP modify.
@@ -1221,9 +1238,11 @@ func mentorExitHold(pos mentorPosition, l, h float64, reason string) (exitPrice 
 	return 0, "", false
 }
 
-// mentorExitC applies the confluence hold (C): the stop NEVER moves and there
-// is NO scale-out — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
-// ENTRY (mentorLeg1TPForC); the driver never modifies it.
+// mentorExitC applies the confluence hold (C): the stop NEVER moves and leg 1
+// does not leave at 1R — hold to at least 1:2. Leg 1's TP at 2× risk is set AT
+// ENTRY for a confluence entry (mentorLeg1TPForC); a trade that became C AFTER
+// its entry (mentorConfluenceUpgrade) has that TP moved out to 2× by
+// mentorLeg1TPToC (C52 W1 A2), which the mode-C drive case also re-checks.
 func mentorExitC(pos mentorPosition, l, h float64) (exitPrice float64, exitReason string, exited bool) {
 	return mentorExitHold(pos, l, h, "stop")
 }

@@ -36,11 +36,12 @@ func dayStartCT(t int64) int64 {
 // LEAST… nếu như mà cái THÂN NẾN nó chỉ nằm ở cái thân nến nằm bên ngoài mà
 // cái râu nến nằm bên trong cái box ok bình thường không sao hết. Cái đó là at
 // least" [D4.1 p1 @20:36–21:03] — the course's minimum, the same test as the
-// bot's own box escape (box.go escaped: open AND close outside). X5 asks for
-// more ("COMPLETELY nằm ở ngoài mình mới trade" [X5 @07:04]); the course,
-// later, sets the minimum and calls the whole candle "hoàn toàn hợp lý" — a
-// close one tick outside with the open inside is NOT an escape (the pre-10-14
-// close-only test was looser than both).
+// bot's own box escape (box.go escaped: open AND close outside). The ORB
+// source asks for more ("COMPLETELY nằm ở ngoài mình mới trade" [extra
+// "Routine trước khi trade" part1 @06:47–07:16]); the knob
+// orb_escape_completely (release #52 B19, default OFF) selects that wick-
+// inclusive test. A close one tick outside with the open inside is NOT an
+// escape either way (the pre-10-14 close-only test was looser than both).
 //
 // The side is the side of the LATEST escape: above the high → longs only;
 // below the low → shorts only — "Nó thoát ra khỏi đầu nào, nó sẽ đi theo đầu
@@ -52,6 +53,15 @@ func dayStartCT(t int64) int64 {
 // an entry — it only picks the side [X5 @03:29–03:47]. A new session day
 // resets the ORB.
 func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
+	return ORBAdvanceMode(orb, bars, now, false)
+}
+
+// ORBAdvanceMode is ORBAdvance with the escape test chosen by `completely`
+// (knob orb_escape_completely, release #52 B19, default OFF): false = the
+// body test (open AND close beyond the edge), true = the candle COMPLETELY
+// outside, wicks included (low above the high / high below the low). The
+// production caller (Evaluator.Tick) passes Cfg.OrbEscapeCompletely.
+func ORBAdvanceMode(orb ORB, bars []market.Kline, now int64, completely bool) ORB {
 	day := dayStartCT(now)
 	if orb.Day != day {
 		orb = ORB{Day: day} // new session day
@@ -87,7 +97,7 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 			if b.OpenTime < start || b.CloseTime > now {
 				continue
 			}
-			if side := orbBodyEscape(orb, b); side != "" {
+			if side := orbEscapeSide(orb, b, completely); side != "" {
 				orb.Escaped = side
 			}
 		}
@@ -100,7 +110,7 @@ func ORBAdvance(orb ORB, bars []market.Kline, now int64) ORB {
 	if cur.CloseTime > now {
 		return orb // the last 1m candle has not closed — no escape test yet
 	}
-	if side := orbBodyEscape(orb, cur); side != "" {
+	if side := orbEscapeSide(orb, cur, completely); side != "" {
 		orb.Escaped = side // the latest escape picks the side [X5 @02:57; X7 @07:42]
 	}
 	return orb
@@ -115,6 +125,28 @@ func orbBodyEscape(orb ORB, c market.Kline) Side {
 	case c.Open > orb.High && c.Close > orb.High:
 		return SideLong
 	case c.Open < orb.Low && c.Close < orb.Low:
+		return SideShort
+	}
+	return ""
+}
+
+// orbEscapeSide picks the escape test: the body test by default, the
+// wick-inclusive "completely outside" test when the knob orb_escape_completely
+// is ON (release #52 B19). The ORB source says the candle must be COMPLETELY
+// outside the 2-minute ORB — "Completely nằm ở ngoài, completely nằm ở ngoài
+// mình mới trade. Còn không nếu mà nó vẫn còn vòng vòng trong ORB 2 phút mình
+// không trade" [extra "Routine trước khi trade" part1 @06:47–07:16]; X7 defines
+// the word for the ping-pong box (not touching at all, a touching wick does not
+// count) [X7 @09:21–11:07], so carrying it to the ORB is an analogy [B] and the
+// default stays the body test until the owner flips it.
+func orbEscapeSide(orb ORB, c market.Kline, completely bool) Side {
+	if !completely {
+		return orbBodyEscape(orb, c)
+	}
+	switch {
+	case c.Low > orb.High:
+		return SideLong
+	case c.High < orb.Low:
 		return SideShort
 	}
 	return ""

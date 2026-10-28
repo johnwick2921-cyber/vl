@@ -104,7 +104,9 @@ type Box struct {
 // BoxCfg holds the §4.1 knobs.
 type BoxCfg struct {
 	// TF is the box timeframe: "1m" (default, the course frame), "2m"
-	// (2025 extra), "5mha" (5m Heikin Ashi, 2025 extra). Default off for
+	// (2025 extra), "5mha" (the same FTGH/FTGL two-swing algorithm run on 5m
+	// Heikin Ashi candles — it is NEITHER the 2025 X10 one-colour-change
+	// supply/demand zone NOR the 2026 box; see the guide card). Default off for
 	// the non-course options.
 	TF string
 	// TouchBandPts: a wick within this of an edge counts as a touch;

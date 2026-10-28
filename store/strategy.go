@@ -1986,9 +1986,9 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
-	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only inside the
-	// 07:20–07:35 CT news window (nil → OFF = all-day gate; owner decision A
-	// 2026-10-21 m134).
+	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only in the news
+	// period (print day, 07:20–08:30 CT) and the 08:30–09:30 CT open window
+	// (nil → ON since #45; the m134 all-day default was reverted).
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
 	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
@@ -2053,6 +2053,44 @@ type MentorTuning struct {
 	// outside the old range (nil → ON) [D3.4 p3 recovered2 @00:00–00:21;
 	// "Đừng vẽ vùng thứ 3… Rối lắm" D3.2 p2 @09:47–09:54; D4.1 p2 @02:38].
 	BoxNewZoneAfterEscape *bool `json:"box_new_zone_after_escape,omitempty"`
+	// Release #52 B19: the ORB opens only on a candle COMPLETELY outside the
+	// 2-minute range, wicks included (nil/false → OFF = the body test)
+	// [extra "Routine trước khi trade" part1 @06:47–07:16].
+	OrbEscapeCompletely *bool `json:"orb_escape_completely,omitempty"`
+
+	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
+	// not the course's (the mentor gave none, or the owner fixed none); each
+	// default equals the value the kernel hard-coded before, so an unset key
+	// changes nothing. Blank in Studio = the default.
+	//
+	// B8: the 2m ISB stacking cancel candle (default 4 = the 1m course count
+	// [Ngày 4.2 Multitime frame 15_ part2 @00:08:53–00:09:03]; 3–12).
+	ISBStackCancelCandle2m int `json:"isb_stack_cancel_candle_2m,omitempty"`
+	// B8: tiny-stop exception — an ISB whose stop is at or under this many
+	// points is not cancelled at the cancel candle [Ngày 5.1 Go over lại tất cả
+	// part2 @02:50–03:40]; 0 / unset = OFF.
+	ISBStackTinyStopPts float64 `json:"isb_stack_tiny_stop_pts,omitempty"`
+	// B10: evening "slow" cutoff in points (default 100), the CT hour the range
+	// starts at (15 default, 15–17) and an optional trailing window in minutes
+	// (0 = cumulative since the start hour) [X11 @17:40–18:26; owner Q6].
+	EveningSlowPts       float64 `json:"evening_slow_pts,omitempty"`
+	EveningSlowFromHour  int     `json:"evening_slow_from_hour,omitempty"`
+	EveningSlowWindowMin int     `json:"evening_slow_window_min,omitempty"`
+	// B11: near-box room as a multiple of risk (nil → 2; explicit 0 → the
+	// refusal is OFF) and whether the refusal also gates PHL/PLH (nil → ON)
+	// [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10 — no distance given].
+	NearBoxRoomMultiple *float64 `json:"near_box_room_multiple,omitempty"`
+	NearBoxRoomPHL      *bool    `json:"near_box_room_phl,omitempty"`
+	// C16: how far short of the old high/low the PHL/PLH target sits (nil → 5;
+	// explicit 0 → AT the old extreme) [Ngày 4.1 Go over ngày 3 part1
+	// @00:07:21–00:07:40 "gần đỉnh cũ"].
+	PHLTargetShyPts *float64 `json:"phl_target_shy_pts,omitempty"`
+	// B27: the ISB size-cut definitions — "at the old high/low" band in points
+	// (nil → 2; explicit 0 → an exact touch) and the "in range" key-level gap
+	// (0 / unset → inherit ping_pong_min_gap_pts) [Ngày 4.1 Go over ngày 3
+	// part1 @00:04:31–00:05:19].
+	ISBOldExtremePts *float64 `json:"isb_old_extreme_pts,omitempty"`
+	ISBInRangeGapPts float64  `json:"isb_in_range_gap_pts,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
@@ -2237,8 +2275,9 @@ type RiskControlConfig struct {
 	//   CX-2 MentorSwingRunner — nil → ON (course-defaults-30, owner "fix all"):
 	//        a swing of ≥ 2 contracts (mentor_swing4h_contracts) splits into
 	//        leg 1 at the first target + a runner held by the 4h.
-	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → ON (case a, a bug fix):
-	//        the mode-A runner's TP really moves past the old high.
+	//   CX-3 MentorResonanceRunnerTPOldHigh — nil → OFF (c52 W2 A3, W-MENTOR-EXACT
+	//        m186): the mode-A runner has NO cap (its TP is parked far out of
+	//        reach); true = the TP moves to the level beyond the old high.
 	//   CX-4 MentorBEBeforePartial — nil → ON (course-defaults-30): BE at
 	//        half-way to +1R BEFORE leg 1's partial fills [D1.2 p1 @12:41].
 	//   CX-5 MentorISBC3PartialAnyProfit — nil → ON = today's rule (the ISB

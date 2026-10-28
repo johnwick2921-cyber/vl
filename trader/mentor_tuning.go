@@ -42,6 +42,7 @@ type mentorTuned struct {
 	ISBBoxEscapeMode            string
 	EmaLossRelock               string
 	OrbEdgeVetoPts              float64
+	OrbEscapeCompletely         bool
 	OrbISBFractionOutside       float64
 	D43TrendSource              string
 	LevelEntriesNeedTriggerSide bool
@@ -50,6 +51,19 @@ type mentorTuned struct {
 	LegResetOnWaveBreak         bool
 	FlagWallTarget              bool
 	BoxNewZoneAfterEscape       bool
+
+	// Release #52 W11 invented-constant knobs (all "ours, not the course";
+	// defaults = the kernel's DefaultConfig, i.e. unchanged).
+	ISBStackCancelCandle2m int
+	ISBStackTinyStopPts    float64
+	EveningSlowPts         float64
+	EveningSlowFromHour    int
+	EveningSlowWindowMin   int
+	NearBoxRoomMultiple    float64
+	NearBoxRoomPHL         bool
+	PHLTargetShyPts        float64
+	ISBOldExtremePts       float64
+	ISBInRangeGapPts       float64
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -76,6 +90,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBBoxEscapeMode:            d.ISBBoxEscapeMode,
 		EmaLossRelock:               d.EmaLossRelock,
 		OrbEdgeVetoPts:              d.OrbEdgeVetoPts,
+		OrbEscapeCompletely:         d.OrbEscapeCompletely,
 		OrbISBFractionOutside:       d.OrbISBFractionOutside,
 		D43TrendSource:              d.D43TrendSource,
 		LevelEntriesNeedTriggerSide: d.LevelEntriesNeedTriggerSide,
@@ -84,6 +99,17 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		LegResetOnWaveBreak:         d.LegResetOnWaveBreak,
 		FlagWallTarget:              d.FlagWallTarget,
 		BoxNewZoneAfterEscape:       d.BoxNewZoneAfterEscape,
+
+		ISBStackCancelCandle2m: d.ISBStackCancelCandle2m,
+		ISBStackTinyStopPts:    d.ISBStackTinyStopPts,
+		EveningSlowPts:         d.EveningSlowPts,
+		EveningSlowFromHour:    d.EveningSlowFromHour,
+		EveningSlowWindowMin:   d.EveningSlowWindowMin,
+		NearBoxRoomMultiple:    d.NearBoxRoomMultiple,
+		NearBoxRoomPHL:         d.NearBoxRoomPHL,
+		PHLTargetShyPts:        d.PHLTargetShyPts,
+		ISBOldExtremePts:       d.ISBOldExtremePts,
+		ISBInRangeGapPts:       d.ISBInRangeGapPts,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -191,6 +217,41 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.LegResetOnWaveBreak, &out.LegResetOnWaveBreak)
 	flag(t.FlagWallTarget, &out.FlagWallTarget)
 	flag(t.BoxNewZoneAfterEscape, &out.BoxNewZoneAfterEscape)
+	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
+
+	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
+	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
+	// value there: near-box OFF, PHL target AT the extreme, an exact touch).
+	pick(t.ISBStackTinyStopPts, 0.01, 25, &out.ISBStackTinyStopPts)
+	pick(t.EveningSlowPts, 1, 1000, &out.EveningSlowPts)
+	pick(t.ISBInRangeGapPts, 0.01, 500, &out.ISBInRangeGapPts)
+	pickInt := func(v, lo, hi int, dst *int) {
+		if v == 0 {
+			return
+		}
+		if v >= lo && v <= hi {
+			*dst = v
+			return
+		}
+		bad()
+	}
+	pickInt(t.ISBStackCancelCandle2m, 3, 12, &out.ISBStackCancelCandle2m)
+	pickInt(t.EveningSlowFromHour, 15, 17, &out.EveningSlowFromHour)
+	pickInt(t.EveningSlowWindowMin, 1, 600, &out.EveningSlowWindowMin)
+	pickPtr := func(v *float64, lo, hi float64, dst *float64) {
+		if v == nil {
+			return
+		}
+		if *v >= lo && *v <= hi {
+			*dst = *v
+			return
+		}
+		bad()
+	}
+	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
+	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
+	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
+	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
 	return out
 }
 
@@ -217,6 +278,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBBoxEscapeMode = t.ISBBoxEscapeMode
 	cfg.EmaLossRelock = t.EmaLossRelock
 	cfg.OrbEdgeVetoPts = t.OrbEdgeVetoPts
+	cfg.OrbEscapeCompletely = t.OrbEscapeCompletely
 	cfg.OrbISBFractionOutside = t.OrbISBFractionOutside
 	cfg.D43TrendSource = t.D43TrendSource
 	cfg.LevelEntriesNeedTriggerSide = t.LevelEntriesNeedTriggerSide
@@ -225,6 +287,16 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.LegResetOnWaveBreak = t.LegResetOnWaveBreak
 	cfg.FlagWallTarget = t.FlagWallTarget
 	cfg.BoxNewZoneAfterEscape = t.BoxNewZoneAfterEscape
+	cfg.ISBStackCancelCandle2m = t.ISBStackCancelCandle2m
+	cfg.ISBStackTinyStopPts = t.ISBStackTinyStopPts
+	cfg.EveningSlowPts = t.EveningSlowPts
+	cfg.EveningSlowFromHour = t.EveningSlowFromHour
+	cfg.EveningSlowWindowMin = t.EveningSlowWindowMin
+	cfg.NearBoxRoomMultiple = t.NearBoxRoomMultiple
+	cfg.NearBoxRoomPHL = t.NearBoxRoomPHL
+	cfg.PHLTargetShyPts = t.PHLTargetShyPts
+	cfg.ISBOldExtremePts = t.ISBOldExtremePts
+	cfg.ISBInRangeGapPts = t.ISBInRangeGapPts
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for
@@ -236,7 +308,7 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v",
 		id, t.FifteenMinIBRule, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
-		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape)
+		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely)
 }

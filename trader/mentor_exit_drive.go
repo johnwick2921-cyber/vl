@@ -170,6 +170,7 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 		if p.TrailTFMin > 1 {
 			p.trailBar, p.trailBarOK = mentor.ClosedCandleTF(bars, p.TrailTFMin)
 		}
+		p.noteEntryFrameCandle() // c52 W2 B18: the resonance window counts entry-frame candles
 		// X8 trap-dodge [X8 part1 @07:31–08:07]: a 2m close through the EMA34
 		// against the 5m trigger trend, with the 5m trigger swept against the
 		// position, is a FAKE breakout — exit, do not sit. Fires before the
@@ -451,7 +452,12 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		return
 	case "C":
 		// C (confluence): the stop NEVER moves [D3.4 p3 @07:38: "hold… at least
-		// risk reward 1-2"]. No action.
+		// risk reward 1-2"]. The only action is the C52 W1 A2 reconcile: a
+		// position that became C AFTER its entry frame carried the +1R leg-1 TP
+		// (an upgrade of a still-resting arm that has now filled, a retry of a
+		// refused send) gets that TP moved out to 2R. A C entry whose leg-1 TP is
+		// already ~2R is untouched.
+		at.mentorLeg1TPToC(nt, p, "mode C reconcile")
 		return
 	case "A-resonance":
 		// A (resonance): leg 1's +1R TP stays (the 1:1 partial still fires),
@@ -461,6 +467,12 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		// candle (after the 1:1 partial is confirmed, or once price is on the
 		// profit side).
 		scaledNow, _ := at.mentorScaledState(p)
+		// c52 W2 A3: the default (knob OFF) is NO cap — retry the runner uncap
+		// on every closed candle while a send is still owed (bounded; a no-op
+		// once sent, for a one-bracket position, or with the knob ON).
+		if p.UncapTries < mentorResonanceUncapMaxTries && !mentorResonanceRunnerTPOn(at.mentorRiskControl()) {
+			at.mentorResonanceRunnerUncap(nt, p)
+		}
 		at.mentorExitDriveResonance(nt, p, c, scaledNow, at.mentorExitedLegs(p))
 		return
 	}
@@ -1387,18 +1399,19 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		if p == nil {
 			continue
 		}
-		armed, _, _ := mentorMaybeArmResonance(at, &p.Pos, isbSide, p.BarsSinceFill, p.RunnerTarget)
+		armed, _, _ := mentorMaybeArmResonance(at, &p.Pos, isbSide, p.candlesAfterFill(), p.RunnerTarget)
 		if !armed {
 			continue
 		}
 		// m151 (4): persist mode A on the open position's armed row so a restart
 		// rebuilds A (plus the pending BE), not the row's original B.
 		at.mentorPersistResonanceMode(p)
-		// Mode A, CX-3 (release #25): the RUNNER's TP moves out to the level
-		// beyond the old high through the leg-scoped modify_bracket (wire leg
-		// 2) — leg 1's +1R TP stays (R-RES). It was logged as "WOULD set TP …
-		// UNWIRED" and never sent from 10-05 to 10-14. Knob
-		// mentor_resonance_runner_tp_old_high (nil → ON); OFF = logged only.
+		// Mode A, CX-3 (release #25, c52 W2 A3): through the leg-scoped
+		// modify_bracket (wire leg 2/3) the RUNNER's TP is either moved out to
+		// the level beyond the old high (knob mentor_resonance_runner_tp_old_high
+		// ON — the bot's own inference) or, by DEFAULT (OFF), removed: pushed far
+		// out of reach so the runner has NO cap, "cứ để break even cho nó chạy"
+		// [D2.4 p1 @02:24–02:47]. Leg 1's +1R TP stays (R-RES).
 		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
 		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1 @00:24–00:30, @02:24–02:47]", p.Pos.Symbol, p.Pos.Side)
 	}
@@ -1432,38 +1445,59 @@ func (at *AutoTrader) mentorPersistResonanceMode(p *mentorLivePos) {
 }
 
 // mentorResonanceBEMinRR is the minimum distance BEYOND entry (in R) the close
-// must reach before a mode-A position's break-even is placed while leg 1's 1:1
-// partial has NOT yet confirmed. A BE stop one tick from price gets scratched;
-// 0.25R gives it room [CTO default, m151 — the owner may change it; disclosed
-// in the guide].
+// must reach before a mode-A position's break-even is placed while there is NO
+// leg-1 partial to wait for — a ONE-BRACKET position only (c52 W2 B2: a split
+// position's BE now waits for the confirmed 1:1 partial instead). A BE stop one
+// tick from price gets scratched; 0.25R gives it room [CTO default, m151 — OURS,
+// not the course; the owner may change it; disclosed in the guide].
 const mentorResonanceBEMinRR = 0.25
 
 // mentorExitDriveResonance is the mode-A break-even on one CLOSED 1m candle
-// (plan §Exits B). m134 (b)/(d): the stop moves to break-even only AFTER the
-// 1:1 partial is confirmed (scaledNow) OR — with no partial yet — once the
-// close is at least 0.25R beyond entry (mirrored for short). Once armed, mode A
-// holds the native bracket (no trail, no 1:1 tightening).
+// (plan §Exits B). c52 W2 B2: the course puts the stop at break-even BECAUSE
+// leg 1 was already sold at 1:1 — "RISK REWARD 1-1 tôi vẫn sẽ bán bớt. Nhưng
+// ngay khúc này, nếu như nó xuất hiện setup gồng lời, tôi mạnh mẽ để stop loss
+// ở break even" and "mình đã ăn rồi… mình bán bớt rồi… thì cứ để break even cho
+// nó chạy" [D2.4 p1 @00:02:24–00:02:39, @00:03:36–00:03:45]. So on a SPLIT
+// position (leg 1 on the wire) the BE goes to the RUNNER legs only, and only
+// AFTER the 1:1 partial is confirmed (scaledNow); until then leg 1 AND the
+// runner keep their original stops (the invented +0.25R pre-partial BE that
+// scratched leg 1 is gone). A ONE-BRACKET position has no partial to wait for:
+// it keeps m134 (d) — BE once the close is at least 0.25R beyond entry
+// (mirrored for short) — a CTO default, ours. Once armed, mode A holds the
+// native bracket (no trail, no 1:1 tightening).
 // m134 (c) + m151 (1): the leg.Stop / ArmedBE belief is written ONLY after
 // EVERY leg that needs BE was applied by the broker; an unapplied leg is
 // retried on the next closed candle (tracked by leg.Stop).
-// m151 (2): ALL open legs move to BE — leg 1 (wire 1) included [D2.4 @02:29].
+// m151 (2): a one-bracket position moves ALL its open legs (the single leg).
 func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64, scaledNow bool, exited [3]bool) {
 	if p == nil || p.Pos.ArmedBE {
 		return
 	}
 	pos := &p.Pos
-	legs := mentorResonanceOpenLegs(p, exited)
+	split := p.Legs[0].Wire == 1
+	var legs []*mentorLeg
+	if split {
+		// B2: leg 1 sells at 1:1 first; only then the REST goes to BE.
+		if !scaledNow {
+			at.mentorCount("resonance_be_waiting_partial")
+			return
+		}
+		legs = mentorRunnerLegs(p, exited)
+	} else {
+		legs = mentorResonanceOpenLegs(p, exited)
+	}
 	if len(legs) == 0 {
 		return
 	}
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
 	be := mentorBEStopPrice(side, pos.Entry, tick)
-	// m151 (3): before the partial is confirmed, BE needs the close at least
-	// 0.25R beyond entry (long; mirrored for short). After the partial it moves
-	// on the next closed candle — the wrong-side guard in mentorMoveLegStop keeps
-	// it on the protective side (a through-the-market BE is closed, not sent).
-	if !scaledNow {
+	// One bracket, no partial: BE needs the close at least 0.25R beyond entry
+	// (long; mirrored for short). A split position past its confirmed partial
+	// moves on the next closed candle — the wrong-side guard in
+	// mentorMoveLegStop keeps it on the protective side (a through-the-market BE
+	// is closed, not sent).
+	if !split && !scaledNow {
 		dist := pos.R * mentorResonanceBEMinRR
 		reached := (side == "long" && c >= pos.Entry+dist) || (side != "long" && c <= pos.Entry-dist)
 		if !reached {

@@ -43,7 +43,7 @@ type mentorLivePos struct {
 	Legs          [3]mentorLeg   // single bracket: [0] = the whole position; 2-pair split: [0] = leg 1, [1] = the runner; 3-pair (release #31): [0] = leg 1, [1] = the runner partial, [2] = the runner
 	FillBarOpen   int64          // the fill candle's OpenTime
 	FillBarClose  float64        // the fill candle's close (ISB leg-1 TP)
-	BarsSinceFill int            // closed 1m candles since the fill
+	BarsSinceFill int            // closed 1m candles since the fill (the fill candle is bar 1)
 	FlatReads     int            // consecutive closed candles the account read flat on this side
 	RunnerTarget  float64        // #360 item 5: the level beyond the old high (resonance runner target); 0 = none
 	SpentDay      bool           // §7 spent day → mode D (runner ≤ 2)
@@ -71,6 +71,24 @@ type mentorLivePos struct {
 	// limit does not re-render CONFIRMED (and re-count it) every candle. A new
 	// modify (a new want) resets it to 0.
 	TPModConfirmedWant float64
+	// ConfTPTries (C52 W1 A2) counts the sends of the confluence leg-1 TP move
+	// (mentorLeg1TPToC) so a broker that keeps refusing it is tried a bounded
+	// number of times, not once a candle forever. Guarded by mentorExitMu.
+	ConfTPTries int
+	// FramesAfterFill / frameFillSeen (c52 W2 B18): the closed ENTRY-FRAME
+	// candles (TrailTFMin 2 or 5) that closed AFTER the candle the fill landed
+	// in — the resonance window counts in the frame the entry was read on
+	// ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–18:14];
+	// "trong vòng 3 cây nến sau đó. Đếm 1, 2, 3" [D2.4 p1 @01:44–01:56]). The
+	// first closed frame candle seen IS the fill's candle (not counted). A 1m
+	// entry counts BarsSinceFill-1 instead (candlesAfterFill). Written by the
+	// exit drive goroutine only.
+	FramesAfterFill int
+	frameFillSeen   bool
+	// UncapTries (c52 W2 A3) counts the sends of the mode-A runner "no cap"
+	// take-profit move (mentorResonanceRunnerUncap): bounded, never once a
+	// candle forever. Drive goroutine only.
+	UncapTries int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
@@ -84,7 +102,7 @@ type mentorLivePos struct {
 	// đó, theo cây nến của khung đó" [X8 @18:02–18:14]. 1 = a 1m entry, 2 = a
 	// 2m entry, 5 = a 5m entry (carried from the intent's ExecTFMin via
 	// mentorExecFrames; m417 stamps the frame at every kernel authoring site and
-	// on the box's drawn frame). 0 = unknown (an ORB/trendline entry, an old
+	// on the box's drawn frame). 0 = unknown (an ORB entry, an old
 	// position, a restart rebuild) → the X8 trap-dodge keeps the 2m. Every
 	// `TrailTFMin > 1` trail check treats 1 exactly like 0 (both trail the 1m).
 	TrailTFMin int
@@ -104,6 +122,39 @@ type mentorLivePos struct {
 	// 2m candle is still forming — the trail waits for it to close).
 	trailBar   market.Kline
 	trailBarOK bool
+}
+
+// noteEntryFrameCandle counts one closed entry-frame candle for a 2m/5m entry
+// (c52 W2 B18). Called once per drive pass AFTER trailBar was set: trailBarOK is
+// true only on the 1m bar that closes a frame candle. The first one is the
+// candle the fill landed in (not counted); every later one is "a candle after
+// the fill". A 1m entry (TrailTFMin 0 or 1) is counted from BarsSinceFill.
+func (p *mentorLivePos) noteEntryFrameCandle() {
+	if p == nil || p.TrailTFMin <= 1 || !p.trailBarOK {
+		return
+	}
+	if !p.frameFillSeen {
+		p.frameFillSeen = true
+		return
+	}
+	p.FramesAfterFill++
+}
+
+// candlesAfterFill is the resonance window's clock (c52 W2 B18): how many
+// candles of the ENTRY frame closed AFTER the candle the fill landed in —
+// "đếm 1, 2, 3" after the fill [D2.4 p1 @01:44–01:56, @04:44–04:53]. 1m entry:
+// BarsSinceFill counts the fill candle as bar 1, so it is BarsSinceFill-1.
+func (p *mentorLivePos) candlesAfterFill() int {
+	if p == nil {
+		return 0
+	}
+	if p.TrailTFMin > 1 {
+		return p.FramesAfterFill
+	}
+	if p.BarsSinceFill > 1 {
+		return p.BarsSinceFill - 1
+	}
+	return 0
 }
 
 // mentorRunnerLeg returns the RUNNER leg (Final=true) of a live position, or

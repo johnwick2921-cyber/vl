@@ -66,6 +66,7 @@ func flatSRLevels(bars []market.Kline, cfg Config, now int64) []Level {
 			}
 			for k := 0; k < j; k++ {
 				p0 := pts[k]
+				// the 5-bar floor is OURS, not the course (c52 W9 B7-R19; same constant as newSlopedLine)
 				if p1.idx-p0.idx < 5 || math.Abs(p1.price-p0.price) > near || flatPierced(fb, p0, p1, isHigh) {
 					continue
 				}

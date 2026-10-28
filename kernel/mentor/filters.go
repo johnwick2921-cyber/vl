@@ -13,8 +13,11 @@ import (
 // BUY trigger = a 5m candle breaks the previous candle's HIGH; SELL = breaks
 // the previous LOW [@ 04:02, 08:04]. A line is drawn at the BROKEN extreme,
 // WICK INCLUDED [@ 04:28]. Entries only on the trigger side [@ 10:21]. The
-// line moves ONLY on a reversal, once [@ 11:48–13:33]. Between two opposing
-// lines → no trade [@ 16:38].
+// line moves ONLY on a reversal, once [@ 11:48–13:33]. There is ONE line, so
+// there is no "between two opposing lines" zone (that was a misread of @ 16:38):
+// the no-trade zone is between an FTGL and the BUY line (mirror: FTGH and the
+// SELL line) and lives in triggerBoxZoneVerdict (eval.go), where the boxes are
+// known [D3.4 p1 @ 16:38–17:19].
 
 type TriggerLine struct {
 	Dir   Side    // allowed direction ("" before the first break)
@@ -26,8 +29,9 @@ type TriggerLine struct {
 	LastBucket int64
 	LastBar    market.Kline
 
-	// MovedAt is the bucket open of the bar that last MOVED the line (the
-	// first draw or a reversal). The 1h line counts only when it moved at or
+	// MovedAt is the instant the line last MOVED (the first draw or a
+	// reversal): the open of the 1m bar that fired the break when known, else
+	// the bucket open (B3). The 1h line counts only when it moved at or
 	// after the 4h line's last move — an earlier 1h trigger is ignored, the
 	// 1h is "silent" [D4.4 p1 @18:36; p2 @03:10] (D4.4-05, item 19).
 	MovedAt int64
@@ -43,6 +47,15 @@ type TriggerLine struct {
 // hole is compared with the candle before the gap, so a Sunday-open break is
 // not missed. tfMin is kept for the callers' signature.
 func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) TriggerLine {
+	return triggerTickAt(prev, bars, tfMin, cfg, 0)
+}
+
+// triggerTickAt is TriggerTick with the break instant (B3): breakAt is the open
+// time of the 1m bar being ticked. When the line moves on the FORMING (tail)
+// bucket and breakAt lies inside that bucket, MovedAt = breakAt — the minute
+// the break really happened. A completed bucket (or breakAt 0 / outside the
+// bucket) keeps the legacy stamp, the bucket open.
+func triggerTickAt(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config, breakAt int64) TriggerLine {
 	if !cfg.Enabled || len(bars) == 0 {
 		return prev
 	}
@@ -53,7 +66,11 @@ func TriggerTick(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config) T
 		}
 		last := next.LastBar
 		if last.OpenTime > 0 && b.OpenTime > last.OpenTime {
-			next = applyBreak(next, last, b)
+			at := b.OpenTime
+			if i == len(bars)-1 && breakAt > b.OpenTime && breakAt <= b.CloseTime {
+				at = breakAt
+			}
+			next = applyBreak(next, last, b, at)
 		}
 		// Only NON-tail buckets commit. The LAST bucket is the forming one: it
 		// is re-evaluated every tick with its growing extremes, so an intrabar
@@ -134,7 +151,14 @@ func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, c
 			window = append(window, done)
 		}
 		window = append(window, cur)
-		next = TriggerTick(next, window, tfMin, cfg)
+		// B3: the 4h/1h lines stamp the break minute (their live path passes
+		// it, HTFAdvanceAt); the 5m trigger keeps the bucket-open stamp its
+		// live path (TriggerTick) uses, so a restart reproduces both.
+		breakAt := int64(0)
+		if tfMin >= 60 {
+			breakAt = b.OpenTime
+		}
+		next = triggerTickAt(next, window, tfMin, cfg, breakAt)
 	}
 	return next
 }
@@ -142,7 +166,7 @@ func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, c
 // applyBreak runs the §5.1 break logic for one bucket against the previous
 // adjacent bucket (B3: every reversal moves the line ONCE — later breaks in
 // the SAME direction never move it; the NEXT reversal moves it again).
-func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
+func applyBreak(next TriggerLine, before, cur market.Kline, movedAt int64) TriggerLine {
 	brokeHigh := cur.High > before.High
 	brokeLow := cur.Low < before.Low
 	if brokeHigh && brokeLow {
@@ -179,9 +203,12 @@ func applyBreak(next TriggerLine, before, cur market.Kline) TriggerLine {
 		moved = true
 	}
 	if moved {
-		// MovedAt = the bucket that fired the move (item 19: the 1h line
-		// resets when the 4h moves again) [D4.4 p1 @18:36; p2 @03:10].
-		next.MovedAt = cur.OpenTime
+		// MovedAt = the instant of the move (item 19: the 1h line resets
+		// when the 4h moves again) [D4.4 p1 @18:36; p2 @03:10]. B3: the
+		// break MINUTE when the caller knows it (the forming bucket), else
+		// the bucket open — "it triggered the 1h EARLIER" is a question of
+		// real time, not of which bucket opened first.
+		next.MovedAt = movedAt
 	}
 	// same-direction breaks (including repeats) never move the line
 	return next

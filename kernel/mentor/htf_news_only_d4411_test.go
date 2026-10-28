@@ -24,14 +24,17 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 		t.Fatal("HTFGateNewsOnly must default ON (news + open windows; the mentor's rule — #45 reverts owner decision A 2026-10-21)")
 	}
 	cfg.HTFGateNewsOnly = true
+	// W7 (A9/R7): the 07:20–08:30 news period gates ONLY on a print day; with
+	// no print (this table) only the open window gates. The print-day table is
+	// TestHTFGateActivePrintDay.
 	cases := []struct {
 		hh, mm int
 		want   bool
 	}{
 		{7, 19, false},
-		{7, 20, true},
-		{7, 30, true},
-		{7, 35, true},
+		{7, 20, false},
+		{7, 30, false},
+		{7, 35, false},
 		{7, 36, false},
 		// The open window 08:30–09:30 CT — the open is like news [D4.4 p2 @ 00:35–00:40].
 		{8, 29, false},

@@ -99,6 +99,18 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['trendline_is_target', 'off', false],
   ['trendline_between_boxes', 'on', true],
   ['leg_reset_on_wave_break', 'off', false],
+  ['orb_escape_completely', 'on', true], // release #52 B19
+  // release #52 W11 invented-constant knobs
+  ['isb_stack_cancel_candle_2m', '6', 6],
+  ['isb_stack_tiny_stop_pts', '12', 12],
+  ['evening_slow_pts', '60', 60],
+  ['evening_slow_from_hour', '17', 17],
+  ['evening_slow_window_min', '60', 60],
+  ['near_box_room_multiple', '1.5', 1.5],
+  ['near_box_room_phl', 'off', false],
+  ['phl_target_shy_pts', '0', 0],
+  ['isb_old_extreme_pts', '3', 3],
+  ['isb_in_range_gap_pts', '40', 40],
 ]
 
 it.each(COURSE_ENTRY_WRITES)(
@@ -166,6 +178,17 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     trendline_between_boxes: true, // course-defaults-30
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
+    orb_escape_completely: false, // release #52 B19 — body test until the owner rules
+    isb_stack_cancel_candle_2m: 4, // release #52 W11 — unchanged defaults, all ours
+    isb_stack_tiny_stop_pts: 0,
+    evening_slow_pts: 100,
+    evening_slow_from_hour: 15,
+    evening_slow_window_min: 0,
+    near_box_room_multiple: 2,
+    near_box_room_phl: true,
+    phl_target_shy_pts: 5,
+    isb_old_extreme_pts: 2,
+    isb_in_range_gap_pts: 0,
     htf_gate_news_only: true, // D4.4-11 — news + open default ON (the mentor's rule)
   })
 })

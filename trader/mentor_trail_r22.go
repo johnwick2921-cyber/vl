@@ -319,7 +319,15 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		if p.TrailTFMin > 1 && !frameOK {
 			return
 		}
+		// c52 W2 B1: leg 1 keeps the LIVE 1:1 stop on every closed candle after
+		// the candle that armed BE — read BEFORE the BE step so the arming
+		// candle only arms BE (the same "BE, THEN live 1:1" order the
+		// non-candle drive uses).
+		wasArmed := pos.ArmedBE
 		at.mentorBEBeforePartialStep(nt, p, c)
+		if wasArmed {
+			at.mentorLeg1RR11Step(nt, p, c)
+		}
 		return
 	}
 	side := pos.Side

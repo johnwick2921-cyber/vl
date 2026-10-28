@@ -234,7 +234,11 @@ func trendlinesBuild(bars []market.Kline, now time.Time) (out []Trendline, cross
 // 08:30 <= t < 09:00 CT (and with the knob OFF) it is the 1m build,
 // byte-identical to trendlinesBuild. The "at least 5 bars apart" spacing stays
 // in BARS of the build frame — the course gives no number (open mentor
-// question), none is invented. The 1H/4H builders are untouched.
+// question). OURS, NOT THE COURSE (c52 W9 B7-R19; the old "none is invented"
+// line was wrong): the floor of 5 bars is a CTO constant (b190459c8) and the
+// 1H/4H builder's 2 HTF bars is likewise ours. The mentor only says a trendline
+// must slope ("Dẻ trendline mình phải dẻ, nó có độ nghiêng" [D2.3 p1
+// @06:26–07:00]). Kept until he answers. The 1H/4H builders are untouched.
 func trendlinesBuildExec(bars []market.Kline, now time.Time, exec2m bool) (out []Trendline, crossed []string) {
 	return trendlinesBuildExecB5(bars, barsTF(bars, 5), now, exec2m)
 }
@@ -378,7 +382,7 @@ func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.T
 // in time.
 func newSlopedLine(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 swingPairAt) (Trendline, bool) {
 	if p1.idx-p0.idx < 5 {
-		return Trendline{}, false // at least 5 bars apart
+		return Trendline{}, false // at least 5 bars apart — OURS, not the course (c52 W9 B7-R19)
 	}
 	// (m434: the cheap direction tests run before the 20-candle near-distance
 	// average; every test is a plain "not a line" refusal, so the order is free.)
@@ -591,7 +595,7 @@ func trendlinesBuildTFFrames(bars, btf, b5 []market.Kline, tfMin int, now time.T
 		for j := 1; j < len(pts); j++ {
 			p0, p1 := pts[j-1], pts[j]
 			if p1.idx-p0.idx < 2 {
-				continue // same-role swings are ≥2 HTF bars apart; refuse anything tighter
+				continue // same-role swings are ≥2 HTF bars apart; refuse anything tighter — OURS, not the course (c52 W9 B7-R19)
 			}
 			// must slope: support = a HIGHER low; resistance = a LOWER high.
 			if role == kernel.KindSWGL && p1.price <= p0.price {
@@ -837,8 +841,9 @@ func (t Trendline) key() string {
 
 // trendlineLevelPreferPts is the band within which a respected level beats a
 // fresh trendline (D2.3 p1 @02:19–03:45: "chọn cái mà nó đã respect nhiều lần …
-// đừng chọn cái nó mới tạo"). The mentor gives no number; 2 pts matches the old
-// "±2 pts of a box edge" note.
+// đừng chọn cái nó mới tạo"). OURS, NOT THE COURSE: the mentor gives no number;
+// 2 pts matches the old "±2 pts of a box edge" note (c52 W9 B7-R7: disclosed in
+// the guide's Trendline card; an open mentor question).
 const trendlineLevelPreferPts = 2.0
 
 // trendlineBeatenByLevel reports whether a respected LEVEL (a key level or an
@@ -852,7 +857,7 @@ const trendlineLevelPreferPts = 2.0
 func trendlineBeatenByLevel(respected []Level, price float64) bool {
 	for _, lv := range respected {
 		switch lv.Kind {
-		case KindKeyLevel, KindOldExtreme:
+		case KindKeyLevel, KindOldExtreme, KindFTGHEdge, KindFTGLEdge:
 			if math.Abs(lv.Price-price) <= trendlineLevelPreferPts {
 				return true
 			}

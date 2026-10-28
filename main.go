@@ -19,6 +19,7 @@ import (
 	"vl/config"
 	"vl/crypto"
 	"vl/expectancy"
+	"vl/internal/ownerpush"
 	"vl/internal/retention"
 	"vl/kernel"
 	"vl/logger"
@@ -411,6 +412,16 @@ func main() {
 		}
 		if err := st.NTAccountsLast().Upsert(rows); err != nil {
 			logger.Warnf("📇 accounts_list: persist failed (live list still served): %v", err)
+		}
+	})
+
+	// m433 (release #52) — persist the AddOn's last positions frame per account
+	// so the installation gate can quote "the last broker answer before the link
+	// went quiet" after a restart with the broker connection down. Evidence for
+	// one gate rule only; a failed write never costs the wire its cache.
+	ntTrader.SetPositionsSink(func(account string, openCount int) {
+		if err := st.NTPositionsLast().Upsert(account, openCount, time.Now().UnixMilli()); err != nil {
+			logger.Warnf("📇 positions: persist failed (live cache still served): %v", err)
 		}
 	})
 
@@ -860,6 +871,13 @@ func main() {
 	// never started, so a leaked owner token in a friend .env cannot post.
 	if !cfg.IsFriendInstance() {
 		safe.GoNet("telegram-bot", "", func() { telegram.Start(cfg, st, telegramReloadCh) })
+		// m432 (release #52): ops P0 alerts that matter while the bot cannot
+		// trade (feed down, trader down, unprotected position, an unfillable
+		// bar hole) also reach the owner's bound chat — OUTBOUND text only,
+		// deduped + rate-limited + async (internal/ownerpush). A friend
+		// instance never gets here (and ownerpush refuses it independently).
+		ownerpush.Start(func(text string) { telegram.NotifyOwner(st, text) })
+		logger.Info("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole) -> the owner's bound Telegram chat · outbound only · ≤8/hour · deduped per episode · no-op when no chat is bound")
 	}
 
 	// Wait for interrupt signal

@@ -12,8 +12,8 @@ import (
 // manageSwingPosition; every tick here goes through Evaluator.Tick.
 //
 // The fixture is TestEvaluatorTickWarmSwingEntryUsesSeededLine's: a warm 4h
-// line at 950 and a through-close first touch from below, so the 05:10 CT 5m
-// inside bar (930–1020) arms a SHORT stop entry at 930 with the stop AT the
+// line at 950 and a through-close first touch from below and a RED close-back
+// candle 1 at 05:05 (1100→900), so the 05:10 CT 5m inside bar (930–1020) arms a SHORT stop entry at 930 with the stop AT the
 // line, 950 — risk 20. Then:
 //
 //	05:20 bar  trades through 930 (the fill) and closes at 929.50 = +0.025R
@@ -36,7 +36,7 @@ func swingRiskTape() (entryTape []market.Kline, fill, oneR market.Kline) {
 		swingRiskBar(14, 21, 5, 1600, 1600, 1600, 1600),
 		swingRiskBar(15, 1, 5, 1000, 1000, 1000, 1000),
 		swingRiskBar(15, 5, 0, 900, 905, 895, 900),
-		swingRiskBar(15, 5, 5, 900, 1100, 900, 1100),
+		swingRiskBar(15, 5, 5, 1100, 1100, 900, 900), // candle 1: RED, closes back below the line (W5 A7: candle 1 colour sets the ISB side)
 		swingRiskBar(15, 5, 10, 970, 1020, 930, 940),
 		swingRiskBar(15, 5, 15, 940, 941, 935, 940), // high 941: never reaches the 945 placed line
 	}

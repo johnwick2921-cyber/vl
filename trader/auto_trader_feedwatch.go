@@ -153,7 +153,13 @@ func (at *AutoTrader) feedLagActiveForDesk() bool {
 // per gap: the event id carries the gap's start bucket, so one outage = one
 // alert, and a NEW outage alerts again.
 func (at *AutoTrader) checkFeedDown(now time.Time) {
-	if at.config.Exchange != "ninjatrader" || !kernel.IsCMEOpen(now) {
+	if at.config.Exchange != "ninjatrader" {
+		return
+	}
+	if !kernel.IsCMEOpen(now) {
+		// The market closed under the episode: not a recovery, so no "feed back"
+		// message — a reopen with a still-dead feed is a NEW episode (its own id).
+		at.setFeedDownEpisode("")
 		return
 	}
 	// IN-POSITION CONTRACT: liveness gets STRICTER while holding — the normal
@@ -169,6 +175,12 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		// m420b/B5: clamp to the start of the current CME open span.
 		gapStart, age = ClampFeedGap(now, now.Add(-age))
 		if age <= threshold {
+			// m432: a bar younger than the TIGHTEST threshold ends an episode
+			// (a position closing mid-outage raises the threshold to 10 min;
+			// that must not read as the feed coming back).
+			if age <= feedBackBelow() {
+				at.noteFeedBack(age)
+			}
 			return
 		}
 	}
@@ -197,7 +209,7 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 		return
 	}
 	title := "NT8 bar feed DOWN"
-	body := fmt.Sprintf("No bar frames since %s (%s) while CME is open. Nothing can trade and the planner will refuse to run until bars return. Start/check NinjaTrader on Windows.",
+	body := fmt.Sprintf("No bar frames since %s (%s) while CME is open. Nothing can trade and the planner will refuse to run until bars return. In NinjaTrader on Windows, connect NinjaTrader's data connection (Connections menu -> your Tradovate connection) and check it shows Connected.",
 		kernel.ClockCT(gapStart), now.Sub(gapStart).Round(time.Minute))
 	if holding {
 		title = "⚠ NO DATA WHILE POSITION OPEN — check NT8"
@@ -206,9 +218,40 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	}
 	at.logErrorf("🚨 FEED DOWN: no NT8 bar for %s while CME is OPEN (newest-bar stamp age; threshold %s; holding=%v). Charts, detectors and the planner are all blind. Check NT8 on the Windows side — the AddOn reconnects on its own.",
 		now.Sub(gapStart).Round(time.Second), threshold, holding)
-	at.emitAlert("P0", "feed-down",
-		fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart)),
-		title, body)
+	episode := fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart))
+	at.setFeedDownEpisode(episode)
+	at.emitAlert("P0", "feed-down", episode, title, body)
+}
+
+// feedBackBelow is the newest-bar age under which the feed counts as BACK:
+// the tightest of the two feed-down thresholds.
+func feedBackBelow() time.Duration {
+	a, b := feedDownAfter(), intradeFeedAlertAfter()
+	if b < a {
+		return b
+	}
+	return a
+}
+
+func (at *AutoTrader) setFeedDownEpisode(id string) {
+	at.feedEpisodeMu.Lock()
+	at.feedDownEpisode = id
+	at.feedEpisodeMu.Unlock()
+}
+
+// noteFeedBack ends the open FEED DOWN episode (if this trader raised one) with
+// ONE owner message. The push dedupes on the episode id, so N traders on one
+// box tell the owner once.
+func (at *AutoTrader) noteFeedBack(age time.Duration) {
+	at.feedEpisodeMu.Lock()
+	id := at.feedDownEpisode
+	at.feedDownEpisode = ""
+	at.feedEpisodeMu.Unlock()
+	if id == "" {
+		return
+	}
+	at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over", age.Round(time.Second), id)
+	ownerPushFeedBack(id, age)
 }
 
 // feedReconnectGraceWindow — how long after a link-up (or the trader's start)

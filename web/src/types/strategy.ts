@@ -339,6 +339,32 @@ export interface MentorTuning {
   // D3.4 p3 recovered2 @00:00 — after a box escapes, a new same-role box
   // outside the old range; D3.2 p2 @09:47 "Đừng vẽ vùng thứ 3… Rối lắm" [true]
   box_new_zone_after_escape?: boolean
+  // Release #52 B19 — the ORB opens only on a candle COMPLETELY outside the
+  // 2-minute range, wicks included; "Routine trước khi trade" part1
+  // @06:47–07:16 [false = the body test]
+  orb_escape_completely?: boolean
+  // Release #52 W11 — invented-constant knobs: every number is OURS, not the
+  // course's; each default is what the kernel hard-coded before.
+  // B8 [4] — the candle a resting 2m ISB arm is cancelled on (3–12);
+  // "Ngày 4.2 Multitime frame 15_" part2 @00:08:53 counts 1m candles only
+  isb_stack_cancel_candle_2m?: number
+  // B8 [0 = off] — a stop at or under this keeps the arm past the cancel
+  // candle; "Ngày 5.1 Go over lại tất cả" part2 @02:50
+  isb_stack_tiny_stop_pts?: number
+  // B10 [100 / 15 / 0] — evening "slow": cutoff pts, start hour CT (15–17),
+  // trailing window minutes (0 = cumulative); X11 @17:40–18:26, owner Q6
+  evening_slow_pts?: number
+  evening_slow_from_hour?: number
+  evening_slow_window_min?: number
+  // B11 [2 / true] — near-box room × risk (0 = off) and whether it gates PHL/PLH
+  near_box_room_multiple?: number
+  near_box_room_phl?: boolean
+  // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
+  phl_target_shy_pts?: number
+  // B27 [2 / 0] — ISB size cuts: "at the old extreme" ± pts; "in range"
+  // key-level gap (0 = inherit ping_pong_min_gap_pts)
+  isb_old_extreme_pts?: number
+  isb_in_range_gap_pts?: number
 }
 
 export interface RiskControlConfig {

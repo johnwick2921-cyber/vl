@@ -406,10 +406,12 @@ export const planStrings = {
     zh: 'CME 休市 — {when} 重新开盘',
     id: 'CME TUTUP — buka lagi {when}',
   },
+  // m432: names the fix, not just the fact (the 10-25 17:00 -> 10-26 03:40 CT
+  // blind spell was a NinjaTrader data connection that was off).
   feedDownBanner: {
-    en: 'FEED DOWN {age}',
-    zh: '行情中断 {age}',
-    id: 'FEED MATI {age}',
+    en: "FEED DOWN {age} — connect NinjaTrader's data connection",
+    zh: 'FEED DOWN {age} — 请连接 NinjaTrader 的数据连接',
+    id: 'FEED DOWN {age} — hubungkan koneksi data NinjaTrader',
   },
   olderUnacked: {
     en: '{n} older unacked',

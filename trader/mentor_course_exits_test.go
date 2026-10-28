@@ -42,8 +42,10 @@ func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 		mentorRunnerTargets.Store(mentorRunnerTargetKey(b.at.id, "isb-r22"), beyond)
 		t.Cleanup(func() { mentorRunnerTargets.Delete(mentorRunnerTargetKey(b.at.id, "isb-r22")) })
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
-		// the fill candle closes (BarsSinceFill 1), nothing reached
+		// the fill candle closes (BarsSinceFill 1), then ONE candle AFTER the fill
+		// (c52 W2 B18: the window counts candles after the fill candle), nothing reached
 		b.candle(r22Minute(0), 30742.25, 30744.00, 30738.00, 30739.00)
+		b.candle(r22Minute(1), 30739.00, 30741.00, 30737.00, 30738.00)
 		b.at.mentorArmResonanceOnISB("short")
 		if lp := b.at.mentorLivePos[r22Sig]; lp == nil || lp.Pos.Mode != "A-resonance" {
 			t.Fatalf("on=%v: the resonance must arm mode A: %+v", on, lp)
@@ -60,11 +62,21 @@ func TestCX3ResonanceRunnerTPIsSentOnTheRunnerLeg(t *testing.T) {
 				t.Fatalf("the runner's TP belief must follow the sent modify: %.2f", tp)
 			}
 		} else {
-			if len(mods) != 0 {
-				t.Fatalf("knob OFF: no modify frame (logged only); got %+v", mods)
+			// c52 W2 A3: OFF (the default) is the course — NO cap. The runner's
+			// own TP is pushed out of reach on wire leg 2; the old-high level is
+			// only logged.
+			wantTP := mentorResonanceUncapPrice("short", r22Entry, 0.25)
+			if len(mods) != 1 || mods[0].SignalID != r22Sig || mods[0].Leg != 2 || mods[0].NewTakeProfit != wantTP || mods[0].NewStopLoss != 0 {
+				t.Fatalf("knob OFF: want ONE uncap modify_bracket {leg 2, TP %.2f, no stop}; got %+v", wantTP, mods)
 			}
-			if n := b.at.mentorCountSnapshot()["modify_bracket_resonance_logged"]; n != 1 {
-				t.Fatalf("knob OFF: modify_bracket_resonance_logged = %d, want 1", n)
+			if n := b.at.mentorCountSnapshot()["resonance_runner_uncapped"]; n != 1 {
+				t.Fatalf("knob OFF: resonance_runner_uncapped = %d, want 1", n)
+			}
+			if n := b.at.mentorCountSnapshot()["resonance_runner_tp_sent"]; n != 0 {
+				t.Fatalf("knob OFF: the old-high TP must NOT be sent: resonance_runner_tp_sent = %d", n)
+			}
+			if tp := b.at.mentorLivePos[r22Sig].Legs[1].TP; tp != wantTP {
+				t.Fatalf("the runner's TP belief must follow the uncap modify: %.2f", tp)
 			}
 		}
 		for _, m := range mods {

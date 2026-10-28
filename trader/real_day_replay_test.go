@@ -41,6 +41,71 @@ const rdrAddonBuild = "2026-10-18-a"
 //   - strategy_a5b7662e.json  the live strategy config JSON
 //   - live_record.json     {trades:[…], arms:[…]}
 //
+// C52 W1 replay note (confluence A1/A2/B9, base 75707f1ed vs the W1 branch, the
+// three days REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23):
+// the diff tables (live trades, replay arms, ADDED arms) are IDENTICAL on all
+// three days. One arm changes arm: the 10-23 03:34 CT ISB long (entry 29277.75,
+// stop 29264.50, authored as replay row 10, cancelled) forks C with leg-1 TP
+// 29304.25 (2R) instead of B, because the 15m/5m/1m ISBs align and the old
+// MTF trigger conjunct no longer refuses it (B9). No box arm changes fork on
+// those days (A1). The confluence leg-1 TP move (A2) never fires: 10-22 has
+// four RESTING arms upgraded to C (isb-2, isb-3, mentor-1793007641765732667,
+// box-ftgl:29516.00:29505.75-1792653599999), none fills in the replay.
+//
+// c52 W6 NOTE (RollingPHL default ON + pullback-colour + 5m-trigger gates,
+// 2026-10-26): replayed 10-21 / 10-22 / 10-23 (REAL_DAY_REPLAY=/tmp/realday-
+// 1021|1022|1023) with the flag OFF (base 75707f1ed), ON with the new gates,
+// and ON with both gates bypassed: the ADDED-arm list and the live-trade
+// verdict rows were IDENTICAL in all three runs on all three days (zero rolling
+// arms). On 10-21 the roll was reached on 1091 ticks and stopped at "no HTF
+// trend direction" on 1065, "level touch owns the entry" on 8, "too close to
+// the old extreme" on 4, "no old extreme" on 1. So no arm changes in this
+// replay set: the flip is dormant here, not proven by it.
+//
+// REAL_DAY_REPLAY note, release #52 W2 (exit drive: resonance A3/B18 + candle
+// trail B1/B2), run 2026-10-26 at base d3dfe91fc vs fix/c52-w2,
+// REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23,
+// TZ=America/Chicago, -count=1: the "REAL-DAY REPLAY DIFF" tables (live trades,
+// replay arms, ADDED arms) are IDENTICAL on all three days (10-21: 13 live
+// trades / 20 replay arms; 10-22 and 10-23 likewise unchanged). No arm changes
+// because W2 touches EXITS only, and NO replay arm FILLS on those days (every
+// replay arm is cancelled / expired / still working: "taken" rows 10-21 5, 10-22
+// 3, 10-23 0, all "taken->cancelled"), so the exit drive never runs: zero
+// "resonance ARMED", "resonance runner UNCAPPED", "leg-1 live 1:1 stop" or
+// "resonance BE" lines on either side. What WOULD change once a fill exists (all
+// in the live path, none visible here, so the change is dormant in this replay
+// set, not proven by it):
+//   - A3: every mode-A runner gets its TP parked 600 pts out at the arm
+//     (was: kept the PHL/PLH TP shy of the old high);
+//   - B18: a 2m/5m-entry PHL/PLH resonance ISB at the 1st-3rd entry-frame candle
+//     after the fill arms mode A (was: refused after 1m bar 3, i.e. most 2m
+//     ISBs), and a 1m entry's window moves from 1m bars 1..3 to 1m bars 2..4
+//     (the fill candle is no longer counted);
+//   - B2: a split resonance position's BE waits for the confirmed 1:1 partial
+//     and moves the runner legs only (was: +0.25R, every leg incl. leg 1);
+//   - B1: leg 1 of a split position in candle-trail mode follows 2c-T after the
+//     BE-arming candle (was: sat at BE until its TP filled).
+//
+// REAL_DAY_REPLAY NOTE c52 W9 (trendline + flag wall, B7-R7 / B21 / B22), run
+// on 75707f1ed (base) vs fix/c52-w9, REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
+// REAL_DAY=2026-10-21|22|23, TZ=America/Chicago. The "attribution is broken"
+// failure below is identical on both sides: it is not a W9 effect.
+//
+//	10-21: entry intents 32 -> 37, flag_wall_room 5 -> 1, replay arms 23 -> 22.
+//	  Arm set: ADDED 10-20 18:34 short 29857.50 (new); 10-21 15:10 long 30049.75
+//	  and 15:50 long 30038.25 (gone), 10-21 13:55 long 30033.75 (new). Cause [B],
+//	  from the refusal counts, not traced arm by arm: fewer flag_wall_room
+//	  refusals (B21 nearest flag, B22 PHL/PLH only), and the arms after a
+//	  changed one shift with the day state. tl_first_test_level_preferred: +2
+//	  lines (a 1H long line, 3 ticks; a 1m short line, 1 tick) now lose to an
+//	  FTGH/FTGL box edge within 2 pts (B7-R7).
+//	10-22: no change (same arm set, same refusals).
+//	10-23: entry intents 19 -> 20, flag_wall_room 1 -> 0, flag_wall_target_used
+//	  3 -> 2 (non-PHL/PLH entries no longer cut), replay arms 14 -> 15 with the
+//	  same ADDED entry lines, +1 line (long, 1m) preferred over a box edge.
+//
+// Live trades 13 / 10 and their matched/unmatched split are unchanged.
+//
 // HONEST LIMITS (do not fake parity):
 //   - fills are SIMULATED: the replay's ledger row flips to `filled` on a
 //     candle touching the entry, not on a broker receipt; NT8 fill/ack latency
@@ -52,6 +117,109 @@ const rdrAddonBuild = "2026-10-18-a"
 //     slice;
 //   - BE moves and the exit drive are the PRODUCTION kernel, but their inputs
 //     are the simulated fills, so an exit time may shift a bar.
+//
+// REAL_DAY_REPLAY note, release #52 W5 (swing 4h ISB, A6 + A7), run 2026-10-26
+// at base 75707f1ed vs fix/c52-w5, TZ=America/Chicago, -count=1:
+//   - 10-21 (REAL_DAY=2026-10-21): TWO simulated SWING4H arms are gone, both
+//     LONG 2-contract ISB-style entries after 14:30 CT: row 22 (ArmID
+//     swing-1792613100000, 15:05 CT bar, stop AT the line, 49.3 pts, cancelled
+//     by a later close through the line) and row 23 (swing-1792615500000,
+//     15:45 CT bar, stop 37.8 pts). CAUSE (corrected after review, verified
+//     with a temporary print in the Through branch [A]): NEITHER arm is
+//     removed by A7. Both fully satisfy A7 (line 30000.50, approach long; the
+//     14:55 bar closed through at 29999; at 15:05 candle 1 = the 15:00 bar is
+//     green 29998.25 -> 30047.5, closed back above the line, and the 15:05
+//     body is inside it; row 23 likewise: 15:40 green close-back, 15:45 inside
+//     bar). They are removed by the A6 once-per-4h-bucket latch: the earlier
+//     ISB (swing-1792611000000, 14:30 CT, 13:00-17:00 CT bucket, level already
+//     invalid) set ISBFired, and ISBFired blocks every later ISB in the same
+//     4h candle, EVEN after a fresh through-close (14:55) followed by a green
+//     close-back and an inside bar. The old code re-armed the ISB on every
+//     later qualifying pair. TRADE-SET REDUCTION to put in front of the owner
+//     (design point, NOT a code bug): the plan says "make the ISB not re-arm
+//     each bar" and a separate marker is plan-sanctioned, but the course
+//     states "chi kiem Insaba" with no once-only limit, so a second ISB after
+//     the first one's order was cancelled by a later through-close looks
+//     course-valid. If the owner wants it, the minimal alternative is to clear
+//     ISBFired when the first ISB's order is cancelled or filled and a new
+//     through-close is recorded (not built: the owner has not ruled). The
+//     other 21 arms (ISB/PLH/PHL and the 10:30 CT SWING4H short, row 16) are
+//     identical.
+//   - 10-22 and 10-23: arm and cancel streams identical (14 arms each).
+//   - TestRealDayReplay itself exits FAIL on all three days at
+//     real_day_replay_test.go:451 ("live mentor trade(s) neither matched nor
+//     given a named refusal reason") on the base as well: a pre-existing
+//     attribution gap, unchanged by this wave (2 / 1 / 1 trades).
+//
+
+// REAL_DAY_REPLAY note, release #52 W11 (fix/c52-w11, invented-constant knobs
+// B8 / B10 / B11 / B27 / C16 + the C15 box-return-walk hygiene),
+// REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23,
+// TZ=America/Chicago, before = adc0ee140 (a detached worktree), after = this
+// branch: the diff tables (live trades, replay arms, ADDED arms) and every
+// refusal/funnel line are IDENTICAL on all three days (only wall-clock
+// latencies and random ids differ; compared with log timestamps masked). That
+// is the intended result: every new knob defaults to the value the kernel
+// hard-coded before (cancel candle 4, tiny stop off, evening slow 100 pts from
+// 15:00 cumulative, near-box 2x incl. PHL/PLH, PHL shy 5, old-extreme +/-2,
+// in-range gap = the ping-pong 50) and Config.Box equals DefaultBoxCfg(), so no
+// arm may change; a default flip is a later mentor/owner call. The existing
+// "attribution is broken" assertion fails on both sides and is not part of this
+// change.
+
+// REAL_DAY_REPLAY note, release #52 W10 (fix/c52-w10, B20 direction-aware 5m
+// pullback warning; A10 NOT built: the plan records two conflicting course
+// statements), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|
+// 22|23, TZ=America/Chicago, before = 1fd721a2f, after = this branch. The diff
+// tables, arm lists and every refusal/funnel line are IDENTICAL on all three
+// days (the flag only changes the SIZE tier, which the replay does not print).
+// The flag stamps themselves (ISB intents carrying pullback_warn, counted with a
+// temporary print at isbFlagsFor, removed) CHANGE: base 7 / 0 / 4 on 10-21 / 10-22
+// / 10-23 (11 stamps: 9 SHORT, 2 LONG), branch 3 / 2 / 2 (7 stamps: 5 SHORT,
+// 2 LONG). The base rule was "previous 5m candle green and this candle broke
+// its low", side-blind; the branch reads the 5m swing structure (HH+HL up, LH+LL
+// down), warns only the side that trades WITH that trend, and adds the mirror.
+// Sample stamps (CT, intent close time): base only, 10-20 17:45 short, 10-20
+// 17:55 short, 10-21 02:55 long, 10-21 11:19 short, 10-21 13:03 short, 10-21
+// 15:55 short, 10-22 17:19 short, 10-22 18:29 short, 10-23 13:53 short, 10-23
+// 15:29 short; branch only, 10-21 10:59 long, 10-21 13:35 short, 10-21 18:15
+// short, 10-21 21:09 short, 10-23 06:11 short, 10-23 13:57 short; both, 10-21 11:21 long. (Times are
+// evaluator ticks, not necessarily armed or filled trades.) The "attribution is
+// broken" assertion at the end already fails on both and is not part of this
+// change.
+
+// REAL_DAY_REPLAY note, release #52 W3 (fix/c52-w3, level-arm lifecycle A4 a+b;
+// B13 and B23 not built), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
+// REAL_DAY=2026-10-21|22|23, TZ=America/Chicago, before = d3dfe91fc eval.go,
+// after = this branch: the diff tables (live trades, replay arms, ADDED arms)
+// and every refusal/funnel line are IDENTICAL on all three days (only random
+// broker order ids and wall-clock latencies differ). No resting level ("lvl-")
+// order exists in the replayed arms and no "level order rest cancelled" fires on
+// any of the three days, so A4 is DORMANT in this replay set: it is proven by
+// the unit pins (TestC52W3*), not by the replay. The existing "attribution is
+// broken" assertion fails on both sides and is not part of this change.
+
+// REAL_DAY_REPLAY note, release #52 W8 (fix/c52-w8; replays REAL_DAY_REPLAY=
+// /tmp/realday-1021|1022|1023 with REAL_DAY=2026-10-21|22|23, before = the
+// 1h rung re-added, after = this branch; the "attribution is broken" assertion
+// at the end already fails on both and is not part of this change):
+//   - B5 (the 1h trigger line is no longer a target rung): ONE arm changes over
+//     the three days: 10-23 03:48 short entry 29229.00 stop 29241.50, target
+//     29188.50 -> 29168.56 (a 1h line at 29188.50 no longer stops it; the next
+//     level beyond is the target). 10-21 and 10-22: every arm identical.
+//     INTENT-LEVEL (funnel counter) changes from B5, same days, deterministic
+//     (base vs base and branch vs branch identical), authored/placed/filled
+//     counts identical on all three days. 10-21 branch vs base:
+//     phl_target_below_floor 8 -> 4, trigger_ftgh_sell_zone 5 -> 8, room
+//     36 -> 37, new flag_wall_target_used:1, ISB arm sequence isb-22 -> isb-25
+//     (same trigger and price). 10-22: phl_day_off 2 -> 14, room 9 -> 8. With
+//     the 1h rung re-added the 10-21/22 counters equal base exactly. VISIBLE
+//     LOSS: the 1h trigger line also leaves the chart/ChartLevels/Truth-card
+//     level set (the 4h line stays drawn); guide cards updated to say so.
+//   - B19 (orb_escape_completely, default OFF): no arm changes (the knob is
+//     off in the replay config); ON would move only WHEN the ORB opens.
+//   - B6 (label only) and B4 (not built, needs a mentor answer): no change.
+
 type rdrLiveTrade struct {
 	ID       int     `json:"id"`
 	Side     string  `json:"side"`
@@ -572,9 +740,90 @@ func parseRdrCreated(s string) (time.Time, error) {
 	return time.Time{}, fmt.Errorf("unparseable created_at %q", s)
 }
 
+// rdrAttributionWindow is how far (either side) of a live arm's authoring
+// instant the replay's refusal bars are searched. The live author instant is
+// the CLOSE of the execution-frame candle (1m, 2m after 09:00 CT's 30m rule, or
+// a 5m frame), and the replay evaluates every 1m bar, so the kernel's refusal
+// for the same setup can land on a neighbouring 1m bar: up to one 5m frame
+// either side (m431: trade 690's isbrev_target_below_floor was one bar off).
+const rdrAttributionWindow = 5 * time.Minute
+
+// rdrRefusalShaped reports whether a trader counter name is a refusal/hold
+// (not an extend_ok / intent_<setup> / tier_<size> tally).
+func rdrRefusalShaped(k string) bool {
+	for _, w := range []string{"refus", "blocked", "invalid", "floor", "hold", "freeze", "halt", "room", "eod"} {
+		if strings.Contains(k, w) {
+			return true
+		}
+	}
+	return false
+}
+
+// rdrNamedRefusals lists the entry-blocking refusals recorded on one replay
+// bar: EVERY kernel refusal counter (the kernel's State.Refusals / limits maps
+// hold nothing but refusals), plus the trader-side counters except the
+// arm-management races (cancel/close/extend of a row that is already gone),
+// which say nothing about why an entry was not authored. Sorted, "k=n".
+func rdrNamedRefusals(r rdrBarRef) []string {
+	var parts []string
+	for k, v := range r.kernel {
+		if v > 0 {
+			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+		}
+	}
+	for k, v := range r.trader {
+		if v <= 0 || strings.HasPrefix(k, "cancel_") || strings.HasPrefix(k, "close_") || k == "extend_refused" {
+			continue
+		}
+		// The trader counter map also holds non-refusal tallies (extend_ok,
+		// intent_<setup>, tier_<size>): keep only the refusal-shaped names.
+		if !rdrRefusalShaped(k) {
+			continue
+		}
+		parts = append(parts, fmt.Sprintf("%s=%d", k, v))
+	}
+	sort.Strings(parts)
+	return parts
+}
+
+// rdrAttribute names the replay's refusal for a live arm authored at `created`:
+// among the replay bars within rdrAttributionWindow that carry at least one
+// named refusal, the NEAREST one wins. A window with no refusal bar returns a
+// "no ..." string, which the caller counts as UNEXPLAINED (the harness must be
+// able to fail on a genuinely unattributed trade).
+func rdrAttribute(created time.Time, refs []rdrBarRef) string {
+	best := -1
+	bestD := time.Duration(1<<63 - 1)
+	var bestParts []string
+	for i, r := range refs {
+		ct, err := time.ParseInLocation("01-02 15:04", r.ct, kernel.CTLocation())
+		if err != nil {
+			continue
+		}
+		// The bar's close year is the replay year (2026); the live created is UTC.
+		ct = time.Date(2026, ct.Month(), ct.Day(), ct.Hour(), ct.Minute(), 0, 0, kernel.CTLocation())
+		d := created.Sub(ct)
+		if d < 0 {
+			d = -d
+		}
+		if d > rdrAttributionWindow || d >= bestD {
+			continue
+		}
+		parts := rdrNamedRefusals(r)
+		if len(parts) == 0 {
+			continue
+		}
+		bestD, best, bestParts = d, i, parts
+	}
+	if best < 0 {
+		return fmt.Sprintf("no named refusal within %s of the live arm", rdrAttributionWindow)
+	}
+	return fmt.Sprintf("@%s (%+ds) %s", refs[best].ct, int(bestD.Seconds()), strings.Join(bestParts, " "))
+}
+
 // refusalFor names the replay refusal for a live trade that was NOT authored:
-// the live arm's created instant (from the record) maps to the replay bar whose
-// close is nearest, and that bar's diffed trader/kernel refusals are reported.
+// the live arm's created instant (from the record) is matched to the replay
+// bars within rdrAttributionWindow whose diffed trader/kernel refusals name why.
 func refusalFor(t *testing.T, rec rdrLiveRecord, tr rdrLiveTrade, refs []rdrBarRef) string {
 	side := strings.ToLower(tr.Side)
 	// The live arm that produced this trade (same side, entry within 0.5).
@@ -598,39 +847,25 @@ func refusalFor(t *testing.T, rec rdrLiveRecord, tr rdrLiveTrade, refs []rdrBarR
 	if created.IsZero() {
 		return "no matching live arm"
 	}
-	// Find the replay bar closest to the live arm's authoring instant.
-	best := -1
-	bestD := time.Duration(1<<63 - 1)
-	for i, r := range refs {
-		ct, err := time.ParseInLocation("01-02 15:04", r.ct, kernel.CTLocation())
-		if err != nil {
-			continue
-		}
-		// The bar's close year is the replay year (2026); the live created is UTC.
-		ct = time.Date(2026, ct.Month(), ct.Day(), ct.Hour(), ct.Minute(), 0, 0, kernel.CTLocation())
-		d := created.Sub(ct)
-		if d < 0 {
-			d = -d
-		}
-		if d < bestD {
-			bestD, best = d, i
-		}
-	}
-	if best < 0 {
-		return "no refusal bars recorded"
-	}
-	r := refs[best]
-	var parts []string
-	for _, k := range []string{"htf_blocked", "isb_htf_blocked", "isb_htf_side_mismatch", "phl_htf_blocked", "isb_stop_over_max", "isb_target_below_floor", "phl_target_below_floor", "room", "loss_box_blocked", "leg_budget_second_phl", "news_hold_no_calendar", "refused_same_side_working"} {
-		if v := r.kernel[k]; v > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
-		}
-		if v := r.trader[k]; v > 0 {
-			parts = append(parts, fmt.Sprintf("%s=%d", k, v))
-		}
-	}
-	if len(parts) == 0 {
-		return fmt.Sprintf("no named refusal at %s (kernel %v trader %v)", r.ct, r.kernel, r.trader)
-	}
-	return fmt.Sprintf("@%s %s", r.ct, strings.Join(parts, " "))
+	return rdrAttribute(created, refs)
 }
+
+// C52-W4 REAL_DAY_REPLAY note (A5 part 1, reverse ISB at EMA 9 reads the 2m
+// EMA 9 on a 2m exec pair). Run vs base 75707f1ed, same box and load, REAL_DAY
+// 2026-10-21 / 22 / 23 (the replay's PASS/FAIL is the same on both trees: its
+// "neither matched nor named" attribution gate was already red on the base).
+// Arms that change (placed stop-entry set diffed):
+//   - 10-21 day (dir /tmp/realday-1021): 10-20 17:42 SHORT 29925.50 (reverse
+//     ISB, tagged PHL) is no longer placed - the 1m EMA 9 touched the 2m ISB
+//     candle, the 2m EMA 9 does not; 10-21 03:44 SHORT 29802.00 and 10-21 08:24
+//     LONG 29882.00 likewise (the base ones were refused at the wire by the B3
+//     dupe/rate guard anyway). 10-20 17:16 SHORT 29937.25 is now a NORMAL ISB
+//     (isb-2-...): the base reverse ISB on that pair used to suppress it (R85
+//     suppressSamePairCounterISB), and with no reverse the normal ISB arms.
+//     Live trade #666's refusal label moves from refused_same_side_working to
+//     isb_trigger_side_mismatch (still not authored).
+//   - 10-22 day: placed-arm set identical (replay-arm count 14 -> 13 is a
+//     non-placed arm, not an authored order).
+//   - 10-23 day: identical.
+// No other arm changed. Which frame the EMA is read on for the 5m slow-evening
+// pair is unchanged (owner Q9).

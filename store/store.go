@@ -38,6 +38,7 @@ type Store struct {
 	tradeExcursions   *TradeExcursionStore
 	nt8OrderSnapshots *NT8OrderSnapshotStore
 	ntAccountsLast    *NTAccountLastStore
+	ntPositionsLast   *NTPositionsLastStore
 	acceptedRisk      *AcceptedRiskStore
 	plannerRejected   *PlannerRejectedStore
 	plannerReadFacts  *PlannerReadFactsStore
@@ -247,6 +248,9 @@ func (s *Store) initTables() error {
 	}
 	if err := s.NTAccountsLast().Migrate(); err != nil {
 		return fmt.Errorf("failed to initialize nt_accounts_last table: %w", err)
+	}
+	if err := s.NTPositionsLast().Migrate(); err != nil {
+		return fmt.Errorf("failed to initialize nt_positions_last table: %w", err)
 	}
 	if err := s.TradeExcursions().Migrate(); err != nil {
 		return fmt.Errorf("failed to initialize trade_excursions table: %w", err)
@@ -524,6 +528,17 @@ func (s *Store) NTAccountsLast() *NTAccountLastStore {
 		s.ntAccountsLast = NewNTAccountLastStore(s.gdb)
 	}
 	return s.ntAccountsLast
+}
+
+// NTPositionsLast is the AddOn's last positions frame per account, persisted
+// (m433). Evidence for the installation gate's broker-quiet rule only.
+func (s *Store) NTPositionsLast() *NTPositionsLastStore {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.ntPositionsLast == nil {
+		s.ntPositionsLast = NewNTPositionsLastStore(s.gdb)
+	}
+	return s.ntPositionsLast
 }
 
 func (s *Store) TradeExcursions() *TradeExcursionStore {

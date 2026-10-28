@@ -120,6 +120,10 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
 			BoxNewZoneAfterEscape: true,
+			// Release #52 W11 invented-constant knobs: every default is the value
+			// the kernel hard-coded before (all "ours", none from the course).
+			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
+			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

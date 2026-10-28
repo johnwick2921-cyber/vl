@@ -38,7 +38,7 @@ describe('StatusBanner', () => {
     })
     mount()
     expect(await screen.findByTestId('status-banner')).toHaveTextContent(
-      'FEED DOWN 10m'
+      "FEED DOWN 10m — connect NinjaTrader's data connection"
     )
   })
   it('open + fresh feed renders nothing', async () => {
@@ -64,8 +64,10 @@ describe('StatusBanner', () => {
     })
     mount()
     expect(await screen.findByTestId('status-banner')).toHaveTextContent(want)
-    // exact text, not a prefix of a longer age
-    expect(screen.getByTestId('status-banner').textContent).toBe(want)
+    // exact text, not a prefix of a longer age — and it names the fix (m432)
+    expect(screen.getByTestId('status-banner').textContent).toBe(
+      `${want} — connect NinjaTrader's data connection`
+    )
   })
   it('feed_stale WITHOUT cme_open (older backend) renders nothing', async () => {
     const spy = vi

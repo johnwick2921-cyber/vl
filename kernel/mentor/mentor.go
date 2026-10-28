@@ -79,8 +79,9 @@ const (
 	// after the 3rd touch; discarded by a 5m close through. Location only,
 	// never a target.
 	KindTrendline LevelKind = "trendline"
-	// KindHTFTrigger is the 4h/1h trigger line as a TARGET-LADDER level only
-	// (D4.4-15): it joins the level set so nextLevelBeyond can pick it, but it
+	// KindHTFTrigger is the 4h trigger line as a TARGET-LADDER level only
+	// (D4.4-15; release #52 B5: the 1h line is no longer a target — the course
+	// names only the 4h line [D4.4 p2 @05:04–05:44]): it joins the level set so nextLevelBeyond can pick it, but it
 	// is never touched, never located and never a PHL/PLH place.
 	KindHTFTrigger LevelKind = "htf_trigger"
 	// KindWickMicroscalp is the D4.3 wick-microscalp target (D4.3-02/-07): the
@@ -177,8 +178,10 @@ type Intent struct {
 	EntryCandleLow  float64
 
 	// Confluence is the R2 flag [00-METHOD Risk-reward, D3.4 p3 @ 07:38]:
-	// box edge + a key level inside the box or within 2 pts of its edge +
-	// the 5m trigger agrees — DS-102's exit-C / size-10 branch reads it.
+	// a BOX entry whose 5m trigger agrees AT THE REAL ENTRY PRICE (not the box
+	// edge, C52 W1 A1; no key-level condition, B3), or an ISB/PHL/PLH entry with
+	// the 15m ISB, 5m ISB and entry side all aligned (MTFConfluence, D4.2 p1
+	// @12:16-12:47; no trigger conjunct, C52 W1 B9) — the exit-C branch reads it.
 	Confluence bool
 	// Anchor / AnchorKey name the G2 place the setup was taken at (CTO R-b
 	// 2026-10-03): the level price, the box edge, or the EMA — NOT the old
@@ -339,9 +342,9 @@ type Config struct {
 	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
 	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
 	// until it fills. Level touches stay first-touch-fixed (touch.go). Default
-	// OFF — it is a NEW #45 entry source; the multi-day replay re-baseline
-	// (DS-108) flips it ON before the #45 merge [D2.2 p1 @02:44–03:34,
-	// 11:05–11:36].
+	// ON since c52 W6 (owner order 2026-10-26 "align everything to the course"),
+	// behind the pullback-colour precondition and the 5m trigger-side gate in
+	// rolling_phl.go [D2.2 p1 @01:52–03:34, 10:47–11:36; X8 @06:25, 08:37].
 	RollingPHL bool
 
 	// Filters (PLAN v1 §4).
@@ -352,10 +355,12 @@ type Config struct {
 	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
 	// direction gate is for NEWS first, not ordinary trading yet
 	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies inside
-	// the 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the
-	// open is like news" [D4.4 p2 @00:35–00:46]; the open length is
-	// [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
+	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies on a
+	// print day from the print window's start (07:20 CT) to the 08:30 CT open
+	// (W7 A9: the post-print news trade follows the 4h; no 07:20–07:35 gate
+	// on a no-print day, R7) AND in the 08:30–09:30 CT open window ("the
+	// open is like news" [D4.4 p2 @00:35–00:46]; the 60-minute length is OURS,
+	// B28, borrowed from [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
 	// windows are not HTF-gated. false (owner decision A 2026-10-21 m134 "fix
 	// all", REVERTED by #45): the 4h/1h direction gate applies ALL DAY. Stored
 	// strategies carry no htf_gate_news_only key, so the new default applies at
@@ -369,6 +374,61 @@ type Config struct {
 	// own risk is refused ("sát box"); 0 disables. Default 2 — the same 2R
 	// room the target rule demands. Between two boxes (row 25) is exempt.
 	NearBoxRoomMultiple float64
+	// NearBoxRoomPHL — release #52 W11 B11 (knob near_box_room_phl, default ON
+	// = unchanged): the near-box refusal also applies to PHL/PLH entries (risk
+	// = the reference bar's range). The course lesson shows the "sát box" skip
+	// on an ISB only [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]; the PHL/PLH
+	// leg is OUR extension, so this switch lets the owner scope it back to the
+	// ISB. The distance itself (NearBoxRoomMultiple, 2 × risk) is ours too —
+	// the mentor gave no number.
+	NearBoxRoomPHL bool
+
+	// ISB size-cut definitions — release #52 W11 B27. The course says reduce
+	// size for an ISB "ngay đỉnh/đáy cũ" and "in range" and gives NO distance or
+	// definition [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19]. Both
+	// numbers are OURS; the knobs make that visible and tunable, defaults
+	// unchanged.
+	//   ISBOldExtremePts — "at the old high/low" = the ISB candle's range reaches
+	//   an old extreme within ± this many points (default 2).
+	//   ISBInRangeGapPts — "in range" = price sits between two KEY levels closer
+	//   than this (default 0 = inherit PingPongMinGapPts, i.e. 50, borrowed
+	//   from X4/D4.2 — so an owner who already tuned ping_pong_min_gap_pts keeps
+	//   the same in-range reading).
+	ISBOldExtremePts float64
+	ISBInRangeGapPts float64
+
+	// ISB stacking counts on the 2m — release #52 W11 B8. The course states the
+	// stacking arithmetic in 1m candles (2x1m = one 2m, 3x1m = one 3m, a 4th
+	// 1m would be a 4m that does not exist so it jumps to the 5m) [Ngày 4.2
+	// Multitime frame 15_ part2 @00:08:53–00:09:03, @00:15:24–00:16:08]; it never
+	// states how many 2m candles an arm survives. m406 reuses the 1m count on
+	// the arm's own frame, so a 2m arm is held through 3 stacked 2m candles and
+	// cancelled on the 4th. ISBStackCancelCandle2m is that candle number on the
+	// 2m (default 4 = the 1m course count, OURS); the 1m (and 5m) count stays
+	// the course 4.
+	ISBStackCancelCandle2m int
+	// ISBStackTinyStopPts — the tiny-stop exception [Ngày 5.1 Go over lại tất
+	// cả part2 @02:50–03:40, @04:10–04:58: "stop loss của mình ở thời điểm đó
+	// rất nhỏ. Có 12 điểm… Trade nó là take risk"]: an arm whose ISB stop
+	// (range + 2 × ISBBufferPts) is at or below this many points is NOT
+	// cancelled at the 4th candle (it still cancels the moment a body leaves
+	// I1). The mentor frames it as personal discretion and gives no threshold
+	// (he said 11–12), so it is OFF by default (0); the number is the owner's.
+	ISBStackTinyStopPts float64
+
+	// Evening "slow" read — release #52 W11 B10. X11 says trade the 5m only in
+	// a night the US market barely moved and a 100–200-pt night is fine on the
+	// 2m [extra "Go over lớp học" part1 @17:40–18:26]; owner answer Q6
+	// (2026-10-25): slow = candles not running much, NO number fixed. All three
+	// numbers are therefore OURS and unchanged by default:
+	//   EveningSlowPts       — the night is slow when its high-low is under this (100).
+	//   EveningSlowFromHour  — the CT hour the range starts at: 15 = the RTH close
+	//                          (default), 17 = the Globex reopen ("buổi tối").
+	//   EveningSlowWindowMin — 0 = cumulative since the start hour (default);
+	//                          N > 0 = only the last N minutes of bars count.
+	EveningSlowPts       float64
+	EveningSlowFromHour  int
+	EveningSlowWindowMin int
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
@@ -488,6 +548,16 @@ type Config struct {
 	// ORB edge is skipped — "điểm entry… nằm gần cái resistance quá thì thôi
 	// bỏ đi" [X5 @08:52–09:09]. No number in the source → 0 = off.
 	OrbEdgeVetoPts float64
+	// OrbEscapeCompletely — release #52 B19 (knob orb_escape_completely,
+	// default OFF): ON = the ORB opens only when a 1m candle lies COMPLETELY
+	// outside the 2-minute range, wicks included (low above the high / high
+	// below the low); OFF = today's body test (open AND close beyond the
+	// edge). The ORB source: "Completely nằm ở ngoài… Còn không nếu mà nó vẫn
+	// còn vòng vòng trong ORB 2 phút mình không trade" [extra "Routine trước
+	// khi trade" part1 @06:47–07:16]. The wick reading is the X7 ping-pong
+	// definition carried to the ORB [X7 @09:21–11:07] — an analogy [B], so the
+	// default flip is the owner's call.
+	OrbEscapeCompletely bool
 	// D43TrendSource — CE-8 (b, [B] reading): what "the 5m trend" means for
 	// the D4.3 no-box-return-against-the-trend gate. "trigger_line" = the 5m
 	// trigger line; "structure" (default, course-defaults-30) = 5m swing
@@ -573,12 +643,20 @@ func DefaultConfig() Config {
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
 		PHLEntryBufferPts:        1.0,
-		RollingPHL:               false, // D2.2 pullback-continuation rolling stop entry — OFF until the #45 replay re-baseline flips it ON [@02:44–03:34, 11:05–11:36]
+		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
 		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS + OPEN windows (the mentor's rule; #45 reverts owner decision A 2026-10-21 m134 all-day)
-		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk; between two boxes exempt (row 25)
+		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true, // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		ISBOldExtremePts:       2,    // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    0,    // B8: tiny-stop exception OFF (the mentor gave no number)
+		EveningSlowPts:         100,  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,   // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,    // B10 [ours]: cumulative since the start hour
 		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
@@ -742,8 +820,9 @@ const (
 	FlagISBAtOldExtreme = "isb_at_old_extreme"
 	FlagISBInRange      = "isb_in_range"
 	// FlagPullbackWarn is the X11 pullback-warning size cut: a 5m candle that
-	// breaks the prior 5m candle's low in a 5m uptrend warns of a pullback, so
-	// the entry sizes down [X11 @13:21–15:02, quote @14:50–15:00].
+	// breaks the prior 5m candle's low in a 5m uptrend (mirror: the high in a
+	// downtrend) warns an entry WITH that trend, so it sizes down [Go over lớp
+	// học @00:13:21–00:15:19]. Stamped per entry side (C52-W10 B20).
 	FlagPullbackWarn = "pullback_warn"
 )
 

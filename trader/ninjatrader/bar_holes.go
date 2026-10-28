@@ -213,6 +213,10 @@ type barHoleTracker struct {
 	say       func(level, msg string)
 	minGap    int
 	minGapSrc string
+	// receiptClock is the instant the live-bar receipt age is measured against.
+	// The receipts carry the monotonic clock, so this is time.Now in production
+	// and never the tracker's (possibly fixed) schedule clock.
+	receiptClock func() time.Time
 
 	holes    []*barHole
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
@@ -240,14 +244,15 @@ func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTr
 			}
 			return s
 		},
-		clock:     time.Now,
-		isOpen:    barHoleExpected,
-		say:       sayToLogger,
-		minGap:    n,
-		minGapSrc: src,
-		checked:   map[string]int64{},
-		lastFire:  map[string]time.Time{},
-		saidErr:   map[string]bool{},
+		clock:        time.Now,
+		receiptClock: time.Now,
+		isOpen:       barHoleExpected,
+		say:          sayToLogger,
+		minGap:       n,
+		minGapSrc:    src,
+		checked:      map[string]int64{},
+		lastFire:     map[string]time.Time{},
+		saidErr:      map[string]bool{},
 	}
 }
 
@@ -789,4 +794,78 @@ func BarHolesSnapshot() ([]BarHoleView, bool) {
 func SetBarHolesWiredForTest() (restore func()) {
 	prev := barHoles.Swap(newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil }))
 	return func() { barHoles.Store(prev) }
+}
+
+// ── UNFILLABLE HOLE -> the owner (release #52, m432) ────────────────────────
+//
+// 2026-10-26: NT8 was linked and its Tradovate data connection came back at
+// 03:40 CT, but the 640-minute hole (Sun 17:00 -> Mon 03:40) never refilled:
+// NT8 itself had no history for that span. The tracker declared it UNFILLED
+// after the fourth re-request and said so — in the LOG. The only fix is the
+// owner's, in NinjaTrader (an MNQ 1-minute chart -> right-click -> Reload All
+// Historical Data), and nothing told him. UnfilledHolesFeeding is the pull
+// side: the trader's 60 s monitor beat reads it and raises ONE P1 alert (+ owner
+// push) per hole. The tracker keeps re-requesting on its own schedule, so a
+// reload heals the hole by itself.
+
+// liveBarFreshness — how recent the newest accepted LIVE 1m frame must be for
+// the feed to count as "feeding live bars" (two bar intervals plus the usual
+// delivery grace: a feed that is alive delivers a forming-bar update every few
+// seconds; a minute-old one has stalled).
+const liveBarFreshness = 3 * time.Minute
+
+// UnfilledHole is one hole that stayed empty after the re-request budget while
+// the data provider is demonstrably up. Every field is READ.
+type UnfilledHole struct {
+	Symbol, Contract string
+	FromMs, ToMs     int64
+	Missing          int    // open minutes still missing at the last measure
+	Attempts         int    // re-requests made
+	Window           string // "10-25 17:00–10-26 03:40 CT" (holeWindowCT)
+	ReplayDisagreed  int    // the ring's disagreeing-replay verdicts: >0 = a scale story, not a missing-history one
+}
+
+// UnfilledHolesFeeding returns the tracked holes on `symbol` that are
+// UNFILLED (budget spent) while NT8 is linked AND feeding live bars. Nil when
+// the tracker is not wired.
+func UnfilledHolesFeeding(symbol string, now time.Time) []UnfilledHole {
+	return barHoles.Load().unfilledFeeding(symbol, now)
+}
+
+func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []UnfilledHole {
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	w := t.wire()
+	if w == nil || !w.IsConnected() || !w.IsFeedConnected() || !t.isOpen(now) {
+		return nil
+	}
+	cache := w.BarCache()
+	if cache == nil {
+		return nil
+	}
+	recv, ok := cache.LastLiveReceipt(symbol, barHoleTF)
+	rc := t.receiptClock
+	if rc == nil {
+		rc = time.Now
+	}
+	if !ok || rc().Sub(recv) > liveBarFreshness {
+		return nil // NT8 is not delivering live bars: that is FEED DOWN's story, not a missing-history one
+	}
+	_, disagreed := cache.OverlapVerdictCounts()
+	var out []UnfilledHole
+	for _, h := range t.holes {
+		if h.State != holeStateUnfilled || !strings.EqualFold(h.Symbol, symbol) {
+			continue
+		}
+		out = append(out, UnfilledHole{
+			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+			Missing: h.Missing, Attempts: h.Attempts,
+			Window:          holeWindowCT(h.FromMs, h.ToMs),
+			ReplayDisagreed: int(disagreed),
+		})
+	}
+	return out
 }

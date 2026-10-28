@@ -292,9 +292,11 @@ type Evaluator struct {
 	// "" = the configured base frame. Set at the top of the box section.
 	boxFrameTF string
 	// pullbackWarn5m is the X11 pullback warning for THIS tick (transient, not
-	// serialized): the latest closed 5m candle broke the prior one's low in a
-	// 5m uptrend → size down [X11 @13:21–15:02].
-	pullbackWarn5m bool
+	// serialized): the ENTRY SIDE the warning applies to ("" = none). A 5m
+	// uptrend whose latest closed candle broke the prior one's low warns LONG
+	// entries; the mirror (5m downtrend, prior high broken) warns SHORT entries
+	// → size down [X11 @13:21–15:02]. C52-W10 (B20).
+	pullbackWarn5m Side
 	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
 	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
 	// valid or dying, a swing-line gap fold). The trader drains them with
@@ -695,6 +697,12 @@ type LevelArm struct {
 	Side       Side    `json:"side"`
 	LevelPrice float64 `json:"level_price"`
 	PlacedAt   int64   `json:"placed_at"` // the placement candle's CloseTime
+	// ExecTFMin (C52 W3, A4b) is the exec frame (1/2/5) the touch was read on.
+	// The close-through cancel reads the last CLOSED candle of THAT frame - the
+	// course rule is "áp dụng trên mọi khung thời gian" [Ngày 2.3 part1.srt
+	// @21:24]. 0/1 = the 1m bar (byte-identical to the pre-W3 read; also what a
+	// state restored from before this field carries).
+	ExecTFMin int `json:"exec_tf_min,omitempty"`
 }
 
 // ClearLevelArm (D2-44, item 11) drops the LevelArms entry for one level order
@@ -738,7 +746,7 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 	return out
 }
 
-func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
+func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
 	}
@@ -753,9 +761,23 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 			continue
 		}
 		through := false
-		if cur.CloseTime > arm.PlacedAt {
-			through = arm.Side == SideLong && cur.Close < arm.LevelPrice ||
-				arm.Side == SideShort && cur.Close > arm.LevelPrice
+		// C52 W3 (A4b): the close-through is read on the frame the order was
+		// placed on - "áp dụng trên mọi khung thời gian" [Ngày 2.3 part1.srt
+		// @21:24] - i.e. the last CLOSED candle of arm.ExecTFMin, never a 1m
+		// wick-close inside a forming 2m/5m candle that would still close back.
+		// A 1m arm (ExecTFMin 0/1, or the exec read fell back to 1m) keeps the
+		// last 1m bar, byte-identical to the pre-W3 read.
+		chk := cur
+		if arm.ExecTFMin > 1 {
+			if cb := e.closedBucketsTFMemo(bars, arm.ExecTFMin, now); len(cb) > 0 {
+				chk = cb[len(cb)-1]
+			} else {
+				chk = market.Kline{} // no closed candle of that frame yet: nothing can close through
+			}
+		}
+		if chk.CloseTime > arm.PlacedAt {
+			through = arm.Side == SideLong && chk.Close < arm.LevelPrice ||
+				arm.Side == SideShort && chk.Close > arm.LevelPrice
 		}
 		// FIX-LEVEL-WINDOW (owner order 2026-10-13 ~21:2x CT): a level order
 		// RESTS until ITS OWN 15:00 CT expiry — LevelArmExpiry(arm.PlacedAt),
@@ -770,6 +792,22 @@ func (e *Evaluator) levelArmCancels(cur market.Kline, now int64) []Intent {
 			out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
 				Reason: "level order rest cancelled — a later candle closed through the level [D2.3 p1 @23:16–24:03], or the order's own 15:00 CT expiry passed [derived: LevelArmExpiry — no course timestamp states a 15:00 expiry; level_lifetime.go flags it as an inference]"})
 			delete(e.State.LevelArms, key)
+			// C52 W3 (A4a): "cancel, và chẳng làm gì khác hết" [Ngày 2.3
+			// part1.recovered.txt @23:48-24:02] - a close-through is a cancel and
+			// NOTHING else. The through-candle still "touches" a support from above
+			// (the touch stays TouchReject with the same RefBar), so without this
+			// the PHL loop re-placed the same stop on the very next tick. Spend the
+			// touch reference exactly as DropArm does for a trader refusal: a NEW
+			// reference candle (new visit) may trade again. Only the close-through
+			// spends it - the 15:00 expiry is the owner's window, not a level death.
+			if through {
+				if tr, ok := e.State.Touches[key]; ok && tr.RefBar.CloseTime != 0 {
+					if e.State.RefusedLevelTouch == nil {
+						e.State.RefusedLevelTouch = map[string]int64{}
+					}
+					e.State.RefusedLevelTouch[key] = tr.RefBar.CloseTime
+				}
+			}
 		}
 	}
 	return out
@@ -1019,6 +1057,47 @@ func (e *Evaluator) unregisterArm(armID string) {
 	}
 }
 
+// heldArmIDs lists every entry ArmID the evaluator currently has registered:
+// ISBArms, the swing Pending, the LevelArms (incl. the rolling PHL order) and
+// the EMA34 pending. It is the "before" snapshot of the m431 exit pass.
+func (e *Evaluator) heldArmIDs() map[string]bool {
+	ids := make(map[string]bool, len(e.State.ISBArms)+len(e.State.LevelArms)+3)
+	for id := range e.State.ISBArms {
+		ids[id] = true
+	}
+	if p := e.State.Swing.Pending; p != nil && p.ArmID != "" {
+		ids[p.ArmID] = true
+	}
+	for _, arm := range e.State.LevelArms {
+		if arm.ArmID != "" {
+			ids[arm.ArmID] = true
+		}
+	}
+	if e.State.RollingPHL.ArmID != "" {
+		ids[e.State.RollingPHL.ArmID] = true
+	}
+	if e.State.EmaPendingArmID != "" {
+		ids[e.State.EmaPendingArmID] = true
+	}
+	return ids
+}
+
+// unregisterDroppedArms is the single exit pass (m425a S1, widened by m431):
+// every arm registered since the `held` snapshot whose entry is not among the
+// intents leaving Tick was dropped by some filter after it registered, so it is
+// un-registered — it would otherwise block the next same-side setup and later
+// emit ExtendArm/CancelArm for an order that was never authored. An arm that
+// was already held when the Tick began is left alone (its lifecycle is the
+// cancel/extend path's).
+func (e *Evaluator) unregisterDroppedArms(held map[string]bool, out []Intent) {
+	survived := entryArmIDs(out)
+	for id := range e.heldArmIDs() {
+		if !held[id] && !survived[id] {
+			e.unregisterArm(id)
+		}
+	}
+}
+
 // entryArmIDs lists the ArmIDs of the entry intents (the placements that
 // registered an arm) in out.
 func entryArmIDs(out []Intent) map[string]bool {
@@ -1033,9 +1112,9 @@ func entryArmIDs(out []Intent) map[string]bool {
 
 // isbFlags returns the ISB size flags for the injector (rule 2: at an old
 // high/low; rule 3: in a range), joined with "|" when both apply.
-func isbFlags(cur market.Kline, levels []Level, boxes []Box) string {
+func isbFlags(cur market.Kline, levels []Level, boxes []Box, oldExtremeBandPts float64) string {
 	var flags []string
-	if touchesOldExtreme(cur, levels) {
+	if touchesOldExtreme(cur, levels, oldExtremeBandPts) {
 		flags = append(flags, FlagISBAtOldExtreme)
 	}
 	if midRangeBoxed(boxes, cur.Close) {
@@ -1060,30 +1139,54 @@ func joinFlag(flags, want string) string {
 	return flags + "|" + want
 }
 
-// pullbackWarning5m reports the X11 pullback warning: the latest closed 5m
-// candle broke the previous one's LOW while that previous candle was bullish
-// (a 5m uptrend) — "market chuẩn bị pullback … hạn chế vô lệnh, giảm size lại
-// cũng được" [X11 @13:21–15:02, quote @14:50–15:00].
-func pullbackWarning5m(b5 []market.Kline) bool {
+// pullbackWarning5m reports the X11 pullback warning as the ENTRY SIDE it
+// warns ("" = no warning): in a 5m UPTREND, a closed 5m candle that breaks the
+// previous candle's LOW means "market chuẩn bị pullback … hạn chế vô lệnh,
+// giảm size lại cũng được" — the warning is for a LONG, i.e. trading WITH the
+// 5m trend; the mirror ("cũng ngược lại": 5m downtrend, the next candle breaks
+// the previous candle's HIGH) warns a SHORT [Go over lớp học part1.srt
+// @00:13:21–00:15:19, quote @00:14:50–00:15:02]. A SHORT taken in the uptrend's
+// own pullback is not warned (C52-W10 B20: it was cut before, the warning was
+// side-blind). The 5m trend is the swing STRUCTURE read (structureTrend5m,
+// higher high + higher low / lower high + lower low), not "the previous candle
+// is green"; no clear structure means no warning.
+func pullbackWarning5m(b5 []market.Kline) Side {
 	if len(b5) < 2 {
-		return false
+		return ""
 	}
 	prev, cur := b5[len(b5)-2], b5[len(b5)-1]
-	if prev.Close <= prev.Open {
-		return false // not a 5m uptrend
+	switch structureTrend5m(b5) {
+	case SideLong:
+		if cur.Low < prev.Low {
+			return SideLong
+		}
+	case SideShort:
+		if cur.High > prev.High {
+			return SideShort
+		}
 	}
-	return cur.Low < prev.Low
+	return ""
 }
 
-func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) string {
-	flags := isbFlags(cur, levels, boxes)
-	if e.pullbackWarn5m {
+// isbInRangeGapPts is the "in range" key-level gap for the ISB size cut: the
+// W11 B27 knob when set, else the ping-pong minimum it was borrowed from
+// (X4/D4.2), so a stored ping_pong_min_gap_pts keeps reading the same.
+func (c Config) isbInRangeGapPts() float64 {
+	if c.ISBInRangeGapPts > 0 {
+		return c.ISBInRangeGapPts
+	}
+	return c.PingPongMinGapPts
+}
+
+func (e *Evaluator) isbFlagsFor(cur market.Kline, side Side, levels []Level, boxes []Box) string {
+	flags := isbFlags(cur, levels, boxes, e.Cfg.ISBOldExtremePts)
+	if e.pullbackWarn5m != "" && side == e.pullbackWarn5m {
 		flags = joinFlag(flags, FlagPullbackWarn)
 	}
 	if HasFlag(flags, FlagISBInRange) {
 		return flags
 	}
-	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.PingPongMinGapPts) {
+	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.isbInRangeGapPts()) {
 		if flags != "" {
 			flags += "|"
 		}
@@ -1093,13 +1196,16 @@ func (e *Evaluator) isbFlagsFor(cur market.Kline, levels []Level, boxes []Box) s
 }
 
 // touchesOldExtreme reports whether the candle's range reaches an old high/low
-// within ±2 pts (the "isb_at_old_extreme" size flag, written rule 2 D4.1 p1).
-func touchesOldExtreme(cur market.Kline, levels []Level) bool {
+// within ±bandPts (the "isb_at_old_extreme" size flag, written rule 2 D4.1 p1).
+// The course gives no distance for "ngay đỉnh/đáy cũ" [Ngày 4.1 Go over ngày 3
+// part1 @00:04:31–00:05:19]; the band is ours (Config.ISBOldExtremePts,
+// default 2 — release #52 W11 B27).
+func touchesOldExtreme(cur market.Kline, levels []Level, bandPts float64) bool {
 	for _, l := range levels {
 		if l.Kind != KindOldExtreme {
 			continue
 		}
-		if cur.High >= l.Price-2 && cur.Low <= l.Price+2 {
+		if cur.High >= l.Price-bandPts && cur.Low <= l.Price+bandPts {
 			return true
 		}
 	}
@@ -1169,26 +1275,43 @@ func (e *Evaluator) closedBucketsMemo(bars []market.Kline, now int64) []market.K
 	return b5
 }
 
-// closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
 // eveningSlow reports whether the evening/overnight read should drop to the 5m:
-// the night is "slow" when the 1m high-low range since the last RTH close
-// (15:00 CT) is under 100 points. X11 names 100–200 pts as a STRONG night (2m
-// stays fine); the 100-pt cutoff is ours [derived: X11 @17:40–18:26].
-func eveningSlow(now int64, bars []market.Kline) bool {
+// the night is "slow" when the 1m high-low range since the start hour (default
+// 15:00 CT, the RTH close) is under EveningSlowPts (default 100). X11 names
+// 100–200 pts as a STRONG night (2m stays fine); the 100-pt cutoff, the 15:00
+// start and the cumulative window are ours [derived: X11 @17:40–18:26; owner
+// Q6 2026-10-25 fixed no number] — release #52 W11 B10 exposes all three as
+// knobs (evening_slow_pts / evening_slow_from_hour / evening_slow_window_min),
+// defaults unchanged.
+func eveningSlow(now int64, bars []market.Kline, cfg Config) bool {
 	if !inEveningWindow(now) {
 		return false
 	}
+	pts := cfg.EveningSlowPts
+	if pts <= 0 {
+		pts = 100
+	}
+	hour := cfg.EveningSlowFromHour
+	if hour < 15 || hour > 17 {
+		hour = 15
+	}
 	t := time.UnixMilli(now).In(ctime())
-	rthClose := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
-	if now < rthClose {
-		// Overnight 00:00–02:59 CT: the evening belongs to yesterday's RTH close.
+	since := time.Date(t.Year(), t.Month(), t.Day(), hour, 0, 0, 0, ctime()).UnixMilli()
+	if now < since {
+		// Overnight 00:00–02:59 CT (or before the start hour): the evening
+		// belongs to yesterday's start hour.
 		prev := t.AddDate(0, 0, -1)
-		rthClose = time.Date(prev.Year(), prev.Month(), prev.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+		since = time.Date(prev.Year(), prev.Month(), prev.Day(), hour, 0, 0, 0, ctime()).UnixMilli()
+	}
+	if w := cfg.EveningSlowWindowMin; w > 0 {
+		if from := now - int64(w)*60_000; from > since {
+			since = from
+		}
 	}
 	var hi, lo float64
 	have := false
 	for _, b := range bars {
-		if b.OpenTime < rthClose {
+		if b.OpenTime < since {
 			continue
 		}
 		if !have {
@@ -1205,15 +1328,41 @@ func eveningSlow(now int64, bars []market.Kline) bool {
 	if !have {
 		return false // no evening bars yet — stay on the 2m
 	}
-	return hi-lo < 100
+	return hi-lo < pts
 }
 
+// closedBucketsTFMemo is closedBucketsTF reading the per-Tick memo.
 func (e *Evaluator) closedBucketsTFMemo(bars []market.Kline, tfMin int, now int64) []market.Kline {
 	agg := e.barsTFMemo(bars, tfMin)
 	if len(agg) > 0 && agg[len(agg)-1].CloseTime >= now {
 		agg = agg[:len(agg)-1]
 	}
 	return agg
+}
+
+// reverseISBEMA9 is the EMA 9 the reverse ISB (R7) tests the exec candle
+// against, on the frame the pair is read on (C52-W4, A5 part 1) [Ngày 5.4 ISB
+// đảo chiều part1.srt @00:08:15–00:08:40: "anh trade khung nào thì anh bật khung
+// đó, khung M1 cũng được, khung M2 cũng được"].
+//
+//   - 1m exec frame: the 1m EMA 9, unchanged.
+//   - 2m exec frame: the 2m EMA 9 - the SAME line the bot draws and the EMA 9
+//     level carries (State.EMA9x2) when that incremental line has folded
+//     exactly through execCur (Seed2mWatermark == execCur.CloseTime proves it is
+//     in step with the candle under test); otherwise the EMA over the closed 2m
+//     buckets (EMAOnTF's arithmetic).
+//   - 5m evening exec frame: UNCHANGED, the 1m EMA 9. There is no course basis
+//     for the evening frame (owner Q9 unanswered), so the 5m path is left alone.
+func (e *Evaluator) reverseISBEMA9(bars []market.Kline, execCur market.Kline, execTFMin int, now int64) float64 {
+	if execTFMin == 2 {
+		if e.State.EMA2mWarmed && e.State.EMA9x2 > 0 && e.State.Seed2mWatermark == execCur.CloseTime {
+			return e.State.EMA9x2
+		}
+		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) > 0 {
+			return emaValue(b2, e.Cfg.EMAPeriod9)
+		}
+	}
+	return emaValue(bars, e.Cfg.EMAPeriod9)
 }
 
 // nextLevelBeyond is the §6 target ladder [D3.3 p1 @ 05:07]: the NEAREST level
@@ -1621,7 +1770,18 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// FTGH return set it and the bot logged a spurious "confluence upgrade
 	// IGNORED").
 	var schoolOne []schoolOneKey
+	// m431 (release #52): ONE un-registration mechanism for a dropped entry.
+	// Snapshot the ArmIDs the evaluator already held when this Tick began; on
+	// the way out (every return path, AFTER the leave-stamp and the deferred
+	// flag-wall target pass) any arm that was registered DURING this Tick and
+	// whose entry is not among the intents that actually leave is un-registered.
+	// The old m425a S1 pass sat mid-Tick and so missed every drop made after it:
+	// the flag_wall_room refusal left ISBArms[isb-17] registered on the 10-23
+	// 12:22 tape, which then emitted ExtendArm/CancelArm for an order never
+	// authored.
+	armsAtStart := e.heldArmIDs()
 	defer func() {
+		defer func() { e.unregisterDroppedArms(armsAtStart, out) }()
 		if out == nil {
 			return
 		}
@@ -1687,13 +1847,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	prevHTF := e.State.HTF
 	if !newsHTFFrozen(e.Cfg, now) {
-		e.State.HTF = HTFAdvance(e.State.HTF, e.barsTFMemo(htfFeed, 240), e.barsTFMemo(htfFeed, 60), e.Cfg)
+		// B3: the 1m bar being ticked is the break minute of a forming-bucket
+		// move — MovedAt records it, not the bucket open.
+		var breakAt int64
+		if len(bars) > 0 {
+			breakAt = bars[len(bars)-1].OpenTime
+		}
+		e.State.HTF = HTFAdvanceAt(e.State.HTF, e.barsTFMemo(htfFeed, 240), e.barsTFMemo(htfFeed, 60), e.Cfg, breakAt)
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
 	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
-	// 4h/1h direction gate applies inside the 07:20–07:35 CT news window and
-	// the 08:30–09:30 CT open window; OFF (owner decision A 2026-10-21 m134
+	// 4h/1h direction gate applies on a print day from the print window's
+	// start (07:20 CT) through the 08:30 CT open (A9 — the post-print news
+	// trade follows the 4h) and in the 08:30–09:30 CT open window (60 min is
+	// ours, B28); no 07:20–07:35 gate on a day without a print (R7); OFF (owner decision A 2026-10-21 m134
 	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
 	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
 	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF
@@ -1761,8 +1929,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.Trigger.Dir != "" && e.State.Trigger.Price != 0 {
 		levels = append(levels, Level{Key: string(KindTriggerRetest), Kind: KindTriggerRetest, Price: e.State.Trigger.Price})
 	}
-	// D4.4-15: the 4h/1h trigger lines join the TARGET LADDER (never the
-	// location set) — a trade's target can be the higher-TF trigger line when
+	// D4.4-15: the 4h trigger line joins the TARGET LADDER (never the
+	// location set) — a trade's target can be the 4h trigger line when
 	// it sits between the entry and the next level [D4.4 p2 @05:04–06:02
 	// "TARGET MÌNH VỀ LẠI 4 GIỜ nè anh chị… CÁI LỆNH TRĂM ĐIỂM của mình LÀ VỀ
 	// ĐÂY"]. Target-only: the touch loop skips KindHTFTrigger and
@@ -1770,9 +1938,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.HTF.FourH.Dir != "" && e.State.HTF.FourH.Price != 0 {
 		levels = append(levels, Level{Key: "htf_4h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.FourH.Price})
 	}
-	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
-		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
-	}
+	// Release #52 B5: the 1H trigger line is NOT a target. The
+	// course names the 4h line as the target ("Về lại 4 giờ nè anh chị" [D4.4
+	// p2 @05:04–05:44], one worked example) and never the 1h; the 1h line only
+	// gates direction (htf_direction.go). It used to join the ladder at every
+	// hour (htf_1h_trigger) and stopped ISB/PHL targets short at a 1h line.
 	// D4.3 wick microscalp (advanced, knob OFF by default): 2+ consecutive 5m
 	// candles rejecting with same-way wicks put a bounded target at their far
 	// wick — target-only (the touch loop skips KindWickMicroscalp).
@@ -1791,7 +1961,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// open AND close [D4.1 p1 @20:36; X5 @02:57; X7 @07:42]). Every escape and
 	// every side switch is logged once, with the candle that made it.
 	prevORB := e.State.ORB
-	e.State.ORB = ORBAdvance(prevORB, bars, now)
+	e.State.ORB = ORBAdvanceMode(prevORB, bars, now, e.Cfg.OrbEscapeCompletely)
 	e.noteORBEscape(prevORB, e.State.ORB, bars[len(bars)-1])
 
 	// §4.1 FTGH/FTGL boxes (BOX RULING part 2): built per tick; the edges
@@ -1865,10 +2035,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	//     phút em sẽ chuyển qua khung 2 phút" [X5 @00:41–01:14; X11
 	//     @17:08–17:25]).
 	//   • a SLOW evening/overnight (15:00 CT → 03:00 CT, overnight range under
-	//     100 pts) → 5-MINUTE read ("buổi tối mà nó đi chậm thì đánh khung 5
-	//     phút thôi" [X11 @17:40–18:26]; the 100-pt cutoff is ours — X11 only
-	//     names 100–200 pts as a STRONG night where the 2m stays fine
-	//     [derived: X11 @17:40–18:26]).
+	//     100 pts) → 5-MINUTE read ("Trade khung 5 phút only / Cho buổi tối"
+	//     [X11 @17:40–18:32, the quote is @18:03–18:07; the transcript has no
+	//     "đi chậm thì đánh khung 5 phút thôi" sentence — that wording was ours];
+	//     the 100-pt cutoff is ours — X11 only names 100–200 pts as a STRONG
+	//     night where the 2m stays fine [derived: X11 @17:40–18:26]).
 	//   • every other minute → 2-MINUTE read ("khung 2 phút ÍT BỊ QUÉT RÂU" —
 	//     the 1m wicks sweep stops [X5 @00:16; X11 @17:27]), a strong evening,
 	//     overnight and the Europe open (3am Texas) included.
@@ -1883,7 +2054,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		switch {
 		case !exec2mReads2m(now):
 			want = 1
-		case inEveningWindow(now) && eveningSlow(now, bars):
+		case inEveningWindow(now) && eveningSlow(now, bars, e.Cfg):
 			want = 5
 		}
 		// closedBucketsTF drops the still-forming last bucket: on a 1m close
@@ -1903,7 +2074,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 	}
 	// X11 pullback warning (size cut, this tick): a 5m candle that broke the
-	// prior 5m candle's low in a 5m uptrend [X11 @13:21–15:02, quote @14:50–15:00].
+	// prior 5m candle's low in a 5m uptrend (mirror: the prior high in a 5m
+	// downtrend) [X11 @13:21–15:02, quote @14:50–15:00]. C52-W10 (B20).
 	e.pullbackWarn5m = pullbackWarning5m(e.closedBucketsTFMemo(bars, 5, now))
 
 	// §3: first-touch classification per level. BOX edges are OUT of this
@@ -2093,7 +2265,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the 20–<30 stop band, and a size
+				// (above), the R5 box (below), the stop ceiling (stop > ISBMaxStopPts, default 25, is skipped; 20–25 is the reduced tier), and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -2199,7 +2371,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							chosen.Target = target
 							// D4.2-06 part 1: confluence is computed BEFORE the room
 							// check — a confluence entry's leg 1 is 2R, so its room is 4R.
-							confluence := MTFConfluence(side, e.State.Trigger, chosen.Price, cb5, cb15)
+							confluence := MTFConfluence(side, cb5, cb15)
 							// B9 [D5.1 p1 @16:24, @19:11-20:07]: ISBs obey the spent-day
 							// cap too ("15 điểm bán, 10 điểm bán"). A cap that breaks the
 							// 1:1 floor refuses (same reason as an uncapped short target).
@@ -2231,7 +2403,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SIZE, "Khi trade isb in-range bắt buộc giảm size" [D4.1 p1
 								// @ 04:37–05:04]) — the range is the same mid-range test as
 								// the PHL/PLH ban.
-								chosen.Flag = e.isbFlagsFor(execCur, levels, boxes)
+								chosen.Flag = e.isbFlagsFor(execCur, chosen.Side, levels, boxes)
 								// N12: a single ISB fills by the close of the NEXT
 								// candle on the execution timeframe (1m default; 2m
 								// under X5-10) or it is cancelled ("cancel if the
@@ -2277,7 +2449,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// still does not run). Release #30: isbrev_tf_conflict / isbrev_day_off
 	// count only a REAL reverse-ISB candidate (an ISB at the EMA 9 pointing
 	// against the trend) — before they fired for every ISB.
-	revEma9 := emaValue(bars, e.Cfg.EMAPeriod9)
+	//
+	// C52-W4 (A5, frame fix): the EMA 9 is read on the frame the pair is read on —
+	// "anh trade khung nào thì anh bật khung đó, khung M1 cũng được, khung M2
+	// cũng được" [Ngày 5.4 ISB đảo chiều part1.srt @00:08:15–00:08:40]. It used
+	// to be the raw 1m EMA 9 against 2m candles. The 5m evening path is NOT
+	// changed (Q9 unanswered): it keeps the 1m EMA 9.
+	revEma9 := e.reverseISBEMA9(bars, execCur, execTFMin, now)
 	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, e.State.Trigger.Dir, e.Cfg)
 	if isbEval && conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
 		e.refuse("isbrev_tf_conflict")
@@ -2303,9 +2481,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// (1m, 2m or 5m — m417).
 			in.ExecTFMin = execTFMin
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
-			// runs through the SAME gates as the normal ISB — the 20–<30
-			// stop skip [D4.1 p1 @ 05:41], the 4h HTF verdict and side, and
-			// the near-box rule (row 24) — before any target is set.
+			// runs through the SAME gates as the normal ISB — the stop-ceiling
+			// skip [D4.1 p1 @ 05:41; ISBStopVerdict, default 25], the 4h HTF
+			// verdict and side, and the near-box rule (row 24) — before any
+			// target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
@@ -2365,7 +2544,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				in.Target = target
 				// Confluence is computed before the room check — a confluence
 				// reverse ISB's leg 1 is 2R, so its room is 4R.
-				confluence := MTFConfluence(in.Side, e.State.Trigger, in.Price, cb5, cb15)
+				confluence := MTFConfluence(in.Side, cb5, cb15)
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
@@ -2383,7 +2562,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// B6: the same size flags as the normal ISB — rule 2 (at an
 					// old high/low → reduce) and rule 3 (in range → reduce)
 					// [D4.1 p1 @04:31–05:04; extended to the reverse ISB by bot inference].
-					in.Flag = e.isbFlagsFor(execCur, levels, boxes)
+					in.Flag = e.isbFlagsFor(execCur, in.Side, levels, boxes)
 					// R85: with the reverse ON, the normal ISB must not arm the
 					// counter-trend side on the same candle pair (two opposite
 					// stop orders on one candle) — drop any same-pair normal ISB
@@ -2674,7 +2853,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// the room rule — the room rule's target reads the box edge as the
 			// first obstacle, so the same proximity would otherwise surface as
 			// phl_room_rule instead of the near_box counter.
-			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); refuse {
+			// W11 B11: the PHL/PLH leg of this refusal is our extension of the
+			// course's ISB-only example (NearBoxRoomPHL, default ON).
+			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); e.Cfg.NearBoxRoomPHL && refuse {
 				e.refuse("near_box")
 				continue
 			}
@@ -2691,13 +2872,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's
-			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). Use the PHL's
-			// own entry price (RefBar extreme + the PHL buffer).
-			phlEntry := tr.RefBar.High + e.Cfg.PHLEntryBufferPts
-			if side == SideShort {
-				phlEntry = tr.RefBar.Low - e.Cfg.PHLEntryBufferPts
-			}
-			confluence := MTFConfluence(side, e.State.Trigger, phlEntry, cb5, cb15)
+			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). C52 W1 B9: the
+			// MTF read no longer takes an entry price (no trigger conjunct).
+			confluence := MTFConfluence(side, cb5, cb15)
 			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
 			if !ok {
 				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
@@ -2745,7 +2922,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.State.LevelArms == nil {
 				e.State.LevelArms = map[string]LevelArm{}
 			}
-			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime}
+			e.State.LevelArms[lvl.Key] = LevelArm{ArmID: id, Side: in.Side, LevelPrice: lvl.Price, PlacedAt: cur.CloseTime, ExecTFMin: execTFMin}
 			// B20: a school-1 entry taken without trigger agreement arms the
 			// flip upgrade — only once it SURVIVES every later filter (P2-N2,
 			// release #23: armed in the Tick defer, never from a refused intent).
@@ -2778,7 +2955,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// B6 cancel sweep: a resting level order dies when a later candle
 	// closes through its level, or at its own 15:00 CT expiry
 	// (LevelArmExpiry(PlacedAt)).
-	out = append(out, e.levelArmCancels(cur, now)...)
+	out = append(out, e.levelArmCancels(bars, cur, now)...)
 
 	// §4.1 box trades (BOX RULING R1 2026-10-03, ONE path = DS-106's
 	// boxEntryIntent — CTO 12:38:50Z): every return visit of every live box is
@@ -2789,7 +2966,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}
-	boxCfg := DefaultBoxCfg()
+	boxCfg := e.baseBoxCfg() // C15 hygiene: the configured box frame, same as latchBoxes (was DefaultBoxCfg)
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
 	// returns included (the old one-shot veto covered only the ISB path).
 	if !conflict {
@@ -2962,9 +3139,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
 	// the candle nor the entry point [D3.2 p1 @ 06:59].
-	// m425a S1: snapshot the entry ArmIDs that REGISTERED an arm; every one the
-	// late filters below (or the limits hook) drop is un-registered after.
-	registeredArms := entryArmIDs(out)
+	// m425a S1 / m431: an entry the late filters below (or the limits hook, or
+	// the deferred leave passes) drop is un-registered by Tick's single exit
+	// pass (unregisterDroppedArms).
 	out, refused := boxBanFilter(out, boxes, bars[len(bars)-1])
 	for _, r := range refused {
 		e.refuse(r)
@@ -3053,15 +3230,6 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// isbArmActive).
 	keptIntraday := e.State.Limits.Apply(intraday, bars[len(bars)-2], bars[len(bars)-1], now, levels, e.Cfg)
 	out = append(keptIntraday, swings...)
-	// m425a S1: ANY entry dropped after its arm registered (late filters or the
-	// limits hook) un-registers that arm — ISB, level, rolling PHL, EMA pending.
-	survived := entryArmIDs(out)
-	for id := range registeredArms {
-		if !survived[id] {
-			e.unregisterArm(id)
-		}
-	}
-
 	// release #31 (leg-3 bracket): stamp the runner's FIRST partial line on
 	// every entry intent — the first target line strictly between the 1:1 leg-1
 	// exit and the trade target. The trader sends leg2_qty/leg2_tp only when the
@@ -3306,7 +3474,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	// 5m bar (00-METHOD.md §8: "Wait for a LITERAL touch" [D5.2 p2 @ 18:36–18:41]).
 	ints = dropStaleSwingIntents(ints, closed)
 	kept, dropped := swingZoneGate(ints, e.State.Trigger, e.Cfg.Swing.Respects5mZone)
-	// C5: the trigger-zone drop names its reason.
+	// C5: the trigger-side drop names its reason (isb_trigger_side).
 	for i := 0; i < dropped; i++ {
 		e.refuse("isb_trigger_side")
 	}
@@ -3361,8 +3529,13 @@ func dropStaleSwingIntents(ints []Intent, closed []market.Kline) []Intent {
 	return out
 }
 
-// swingZoneGate drops swing intents whose entry price sits between two
-// opposing trigger lines, but ONLY when the knob is on (respect = true).
+// swingZoneGate drops swing intents on the wrong side of the ONE 5m trigger
+// line (TriggerVerdict: a buy line allows longs above it only, a sell line
+// shorts below it only), but ONLY when the knob is on (respect = true). It
+// does NOT test the FTGL-to-buy-line / FTGH-to-sell-line no-trade zone — that
+// is triggerBoxZoneVerdict, which the swing path does not call. The old
+// "between two opposing trigger lines" wording was a misread: there is one
+// line, moved on a reversal [D3.4 p1 @16:38–17:19; B1 10-03 ruling].
 func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 	if !respect {
 		return ints, 0
@@ -3371,7 +3544,7 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 	dropped := 0
 	for _, in := range ints {
 		if ok, _, _ := TriggerVerdict(t, in.Price); !ok {
-			dropped++ // in the two-trigger zone — no trade at all there
+			dropped++ // wrong side of the one trigger line — no trade there
 			continue
 		}
 		out = append(out, in)

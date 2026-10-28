@@ -50,9 +50,8 @@ func (e *Evaluator) SeedChartDisplay(bars []market.Kline, now int64) {
 	if e.State.HTF.FourH.Dir != "" && e.State.HTF.FourH.Price != 0 {
 		levels = append(levels, Level{Key: "htf_4h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.FourH.Price})
 	}
-	if e.State.HTF.OneH.Dir != "" && e.State.HTF.OneH.Price != 0 {
-		levels = append(levels, Level{Key: "htf_1h_trigger", Kind: KindHTFTrigger, Price: e.State.HTF.OneH.Price})
-	}
+	// Release #52 B5: no 1H line here — the 1H trigger is not a target (eval.go
+	// Tick builds the same ladder).
 
 	// The seeded latched boxes' edges — only while the latch still belongs to
 	// the trading day `now` is in (Tick clears a stale latch; we just skip it).
