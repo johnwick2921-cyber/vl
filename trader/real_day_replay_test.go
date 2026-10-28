@@ -188,6 +188,24 @@ const rdrAddonBuild = "2026-10-18-a"
 // broken" assertion at the end already fails on both and is not part of this
 // change.
 
+// REAL_DAY_REPLAY note, release #53 m436 (fix/m436-rolling-phl-location-bans:
+// the rolling PHL/PLH now runs the level path's PHL/PLH location bans through the
+// shared phlLocationBan / phlNearBoxRefuses; orphan touches own nothing; the
+// roll follows the 4h direction outside the HTF-gate window),
+// REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023, REAL_DAY=2026-10-21|22|23,
+// TZ=America/Chicago, before = 1a12f7e09 (a detached worktree), after = this
+// branch: the live-trade verdict rows are IDENTICAL on all three days and the
+// ADDED-arm lists are IDENTICAL on 10-22 and 10-23. 10-21 gains two ADDED arms
+// (12 -> 14): rolling PLH shorts at 03:44 CT (entry 29802.50 stop 29819.50 target
+// 29761.75) and 04:02 CT (entry 29730.25 stop 29751.50 target 29668.50), both
+// "cancelled", neither filled. Both are outside the 08:30-09:30 CT HTF-gate
+// window, so they come from the trend-side change (the base roll stopped at "no
+// HTF trend direction" there); a bans-only build (trend side reverted) leaves the
+// intents stream of the four m434 tapes byte-identical and moves only the
+// refusal ledger (new rolling_* counters, e.g. 10-21 rolling_phl_5m_box_ban 38,
+// rolling_near_box 21, rolling_keypair_candle_too_big 7). The existing
+// "attribution is broken" assertion is not part of this change.
+
 // REAL_DAY_REPLAY note, release #52 W3 (fix/c52-w3, level-arm lifecycle A4 a+b;
 // B13 and B23 not built), REAL_DAY_REPLAY=/tmp/realday-1021|1022|1023,
 // REAL_DAY=2026-10-21|22|23, TZ=America/Chicago, before = d3dfe91fc eval.go,

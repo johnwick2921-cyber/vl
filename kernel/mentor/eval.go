@@ -1480,6 +1480,78 @@ func trendlineTargets(levels []Level) []Level {
 	return out
 }
 
+// phlLocationBan is the PHL/PLH LOCATION-ban ladder, extracted from the level
+// touch loop (m436) so the rolling PHL/PLH (rolling_phl.go) calls the SAME
+// functions instead of a copy. It returns the refusal name ("" = the location
+// is permitted) and whether the caller counts it once per visit (true) or per
+// evaluation (false) — exactly the counting the touch loop always used. The
+// order is the touch loop's: X4 keypair candle, mid-range, mid-range between
+// boxes, then the standing 5m / 15m / 30m ISB box.
+//
+//   - keypair_candle_too_big — a candle as big as the rank of the two levels:
+//     sit out ("một cái nến nó bằng cái range của 2 cái level rồi thì ngồi im"
+//     [X4 @06:31]); MENTOR-NY item 2: "the candle" is the current closed 1m
+//     candle; the pair is the anchor level and the next KEY level beyond it.
+//   - phl_mid_range — "Ở giữa rank không được đánh potential high low, chỉ
+//     được đánh insaba" [D2.2 p3 @14:03–16:03; D3.2 p2 @08:34].
+//   - phl_mid_range_boxed — between an FTGL below and an FTGH above no PHL/PLH
+//     [D3.2 p2 @08:34–08:55] (trendline exemption: CE-11/B13, knob).
+//   - phl_5m_box_ban / phl_15m_box_ban / phl_30m_box_ban — inside a standing
+//     ISB box "No PHL, no PLH, no opposite ISB" [D3.4 p2 @07:27–10:35; D3.2 p2
+//     @08:51; D3.4 p3 @01:44]; the 15m/30m boxes: D4.1-25 / D4.2-07.
+//
+// lvl is the level the setup is anchored on (the touched level on the level
+// path; the old extreme the leg targets on the rolling path).
+func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur market.Kline, levels []Level, boxes []Box) (name string, oncePerVisit bool) {
+	if e.Cfg.PingPongCandleMaxPts > 0 {
+		var next float64
+		for _, l2 := range levels {
+			// The pair is the anchor level and the next KEY level he drew — EMA
+			// lines, trigger retests, box edges and bare tape swings are not part
+			// of the rank between two levels (X4). The scan is strict (beyond the
+			// level, excluding the level itself).
+			if l2.Key == lvl.Key || l2.Kind != KindKeyLevel {
+				continue
+			}
+			if side == SideLong && l2.Price > lvl.Price && (next == 0 || l2.Price < next) {
+				next = l2.Price
+			} else if side == SideShort && l2.Price < lvl.Price && (next == 0 || l2.Price > next) {
+				next = l2.Price
+			}
+		}
+		if next != 0 && abs(next-lvl.Price) <= keypairCandleRatio(e.Cfg)*(cur.High-cur.Low) { // MENTOR-NY item 2 (current candle) x CX-10 ratio (default 1)
+			return "keypair_candle_too_big", true
+		}
+	}
+	if allowed, _ := SetupPermittedVerdict("PHL", levels, price, e.Cfg); !allowed {
+		return "phl_mid_range", false
+	}
+	if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
+		return "phl_mid_range_boxed", true
+	}
+	if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
+		return "phl_5m_box_ban", true
+	}
+	if e.State.ISBBox15m != nil && cur.Close > e.State.ISBBox15m.Low && cur.Close < e.State.ISBBox15m.High {
+		return "phl_15m_box_ban", false
+	}
+	if e.State.ISBBox30m != nil && cur.Close > e.State.ISBBox30m.Low && cur.Close < e.State.ISBBox30m.High {
+		return "phl_30m_box_ban", false
+	}
+	return "", false
+}
+
+// phlNearBoxRefuses is the Day-3 row 24 near-box refusal for a PHL/PLH (the
+// "near_box" counter), shared by the level touch loop and the rolling path
+// (m436): the nearest box edge in the trade direction must be at least
+// NearBoxRoomMultiple x the reference candle's range away [D3.2 p1
+// @21:53–23:08]; between two boxes is exempt (row 25). W11 B11: the PHL/PLH leg
+// is our extension of the course's ISB-only example (NearBoxRoomPHL).
+func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRange float64) bool {
+	refuse, _ := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange)
+	return cfg.NearBoxRoomPHL && refuse
+}
+
 // midRangeBoxedRefuses is the level-path mid-range ban (CTO 1791003862333 —
 // between an FTGL below and an FTGH above no PHL/PLH) with the CE-11/B13
 // exemption: knob trendline_between_boxes ON lets a TRENDLINE reject through
@@ -2744,72 +2816,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					continue
 				}
 			}
-			// B21 X4 (@06:31–08:52): a candle as big as the rank of the two
-			// levels — sit out ("một cái nến nó bằng cái range của 2 cái level
-			// rồi thì ngồi im" [X4 @06:31]). MENTOR-NY item 2: "the candle" is
-			// the candle AS IT PRINTS — the current closed 1m candle — not the
-			// largest of the last PingPongCandleLookback bars (that lookback is
-			// a bot reading, mentor.go "[C: ours]", and kept the pair blocked
-			// for 30 minutes after one spike). The lookback still gates the box
-			// ping-pong. Counted ONCE per visit of the level, not per tick. The
-			// scan is strict (beyond the touched level, excluding the level
-			// itself). PingPongCandleMaxPts > 0 keeps switching the rule on.
-			if e.Cfg.PingPongCandleMaxPts > 0 {
-				var next float64
-				for _, l2 := range levels {
-					// The pair is the touched level and the next KEY level he
-					// drew — EMA lines, trigger retests, box edges and bare tape
-					// swings are not part of the rank between two levels (X4).
-					if l2.Key == lvl.Key || l2.Kind != KindKeyLevel {
-						continue
-					}
-					if side == SideLong && l2.Price > lvl.Price && (next == 0 || l2.Price < next) {
-						next = l2.Price
-					} else if side == SideShort && l2.Price < lvl.Price && (next == 0 || l2.Price > next) {
-						next = l2.Price
-					}
+			// The PHL/PLH LOCATION bans (X4 keypair candle, mid-range, mid-range
+			// between boxes, the standing 5m/15m/30m ISB box) live in ONE helper
+			// shared with the m436 rolling PHL/PLH (phlLocationBan, below): the
+			// course bans them for EVERY PHL/PLH, whichever path arms it.
+			if name, once := e.phlLocationBan(lvl, side, price, cur, levels, boxes); name != "" {
+				if once {
+					e.refuseOncePerVisit(lvl.Key, name)
+				} else {
+					e.refuse(name)
 				}
-				if next != 0 && abs(next-lvl.Price) <= keypairCandleRatio(e.Cfg)*(cur.High-cur.Low) { // MENTOR-NY item 2 (current candle, once per visit) × CX-10 ratio (default 1)
-					e.refuseOncePerVisit(lvl.Key, "keypair_candle_too_big")
-					continue
-				}
-			}
-			if allowed, _ := SetupPermittedVerdict("PHL", levels, price, e.Cfg); !allowed {
-				// REL-5 audit #1: name the drop instead of a silent continue.
-				e.refuse("phl_mid_range")
-				continue
-			}
-			// MID-RANGE ban via boxes (CTO 1791003862333): between an FTGL
-			// below and an FTGH above there is NO PHL, NO PLH, regardless of
-			// width — only the ISB.
-			// CE-11/B13 (release #25, knob trendline_between_boxes, default ON —
-			// course-defaults-30): ON exempts a TRENDLINE reject — "Đụng
-			// trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box"
-			// [D3.2 p2 @10:56–11:20]; the same lesson bans every PHL/PLH
-			// between two boxes [@08:34–08:55].
-			if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
-				e.refuseOncePerVisit(lvl.Key, "phl_mid_range_boxed")
-				continue
-			}
-			// R5: nothing trades inside the standing 5m-ISB box except a
-			// same-direction 1m ISB — PHL/PLH never. r22: the course DOES ban
-			// it ("inside a 5-minute ISB box … bans PHL/PLH and permits only
-			// the inside bar" [D3.2 p2 @08:51; D3.4 p2 @07:27; D3.4 p3 @01:44];
-			// "No PHL, no PLH, no opposite ISB" [D3.4 p2 @07:27–10:35]) — the
-			// ban stays, and is now named + counted (was silent, P2-1).
-			if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
-				e.refuseOncePerVisit(lvl.Key, "phl_5m_box_ban")
-				continue
-			}
-			// D4.1-25: the 15m box refuses PHL/PLH inside it too ("đợi nó thoát
-			// khỏi range khung 15 phút rồi mới trade").
-			if e.State.ISBBox15m != nil && cur.Close > e.State.ISBBox15m.Low && cur.Close < e.State.ISBBox15m.High {
-				e.refuse("phl_15m_box_ban")
-				continue
-			}
-			// D4.2-07: the 30m box refuses PHL/PLH inside it too.
-			if e.State.ISBBox30m != nil && cur.Close > e.State.ISBBox30m.Low && cur.Close < e.State.ISBBox30m.High {
-				e.refuse("phl_30m_box_ban")
 				continue
 			}
 			// B16 (10-03 ruling, D5.3 p1 @20:40–22:12): ONE intent per reference —
@@ -2855,7 +2871,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// phl_room_rule instead of the near_box counter.
 			// W11 B11: the PHL/PLH leg of this refusal is our extension of the
 			// course's ISB-only example (NearBoxRoomPHL, default ON).
-			if refuse, _ := nearBoxRefusal(boxes, tref, side, e.Cfg.NearBoxRoomMultiple, tr.RefBar.High-tr.RefBar.Low); e.Cfg.NearBoxRoomPHL && refuse {
+			if phlNearBoxRefuses(e.Cfg, boxes, tref, side, tr.RefBar.High-tr.RefBar.Low) {
 				e.refuse("near_box")
 				continue
 			}
@@ -3134,7 +3150,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// in the touch loop above). It is gated by the same 15m/5m conflict the
 	// level and box paths are.
 	if !conflict {
-		out = append(out, e.rollingPHLTick(bars, execCur, execTFMin, oldExtremes, levels, dg)...)
+		out = append(out, e.rollingPHLTick(bars, cur, execCur, execTFMin, oldExtremes, levels, boxes, dg)...)
 	}
 
 	// BOX RULING part 2: InsideAnyBox — "NEVER trade inside the box" — neither
