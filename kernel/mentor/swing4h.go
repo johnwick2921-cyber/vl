@@ -343,9 +343,17 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	// a different mentor trade (00-METHOD.md §8: "Enter on the 5-minute,
 	// HOLD according to the 4-hour" [p1 @ 05:48] — the hold applies only to
 	// a FILLED entry).
-	if s.Pending != nil && s.Pending.ExpiryMs > 0 && now >= s.Pending.ExpiryMs {
-		s.Pending = nil
-	}
+	//
+	// m437 (release #53): the expiry is bucket end - 1ms, and the tick that
+	// finalises the bucket's LAST 5m bar runs at now = that bar's CloseTime+1 =
+	// the bucket end. Dropping Pending on `now` alone threw the order away
+	// BEFORE the bar walk reached that last bar, yet the NT8 order is live until
+	// its expiry — a trade-through on the last bar is a REAL fill that was then
+	// never tracked (no BE, no hold-close). So the expiry is judged against the
+	// BARS: the order is dropped only once its final bar has been walked (here,
+	// for a carried-over expiry) or when the walk reaches a bar that OPENS after
+	// the expiry (in the loop below, before that bar's fill check).
+	s.expireSwingPending(now)
 	warm := s.EmaCount >= FourHEMA34Min
 	line, bucketStart, ok := swingLine(bars5m, now, cfg, loc)
 	if !ok {
@@ -403,6 +411,12 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			continue
 		}
 		s.LastBarTime = b.OpenTime
+		// m437: a bar that OPENS after the order's expiry can never fill it
+		// (the order was cancelled at the expiry); every bar up to and
+		// including the bucket's last 5m bar still gets the fill check below.
+		if s.Pending != nil && s.Pending.ExpiryMs > 0 && b.OpenTime >= s.Pending.ExpiryMs {
+			s.Pending = nil
+		}
 		// S1: the swing position opens only on the FILL of its own resting
 		// order — the first bar that trades through the entry fills it.
 		if s.Pending != nil && fillsSwingEntry(s.Pending, b) {
@@ -567,12 +581,37 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		s.openPosition(in, now)
 		out = append(out, in)
 	}
+	// m437: the expiry drop runs AFTER the walk — the bucket's last bar has now
+	// had its fill check, so an order that did not fill is retired cleanly.
+	s.expireSwingPending(now)
 	// S1: BE/hold management runs AFTER the bar walk, so a fill that happened
 	// THIS tick is managed against the fill bar's close — not one bar late.
 	if s.Pos != nil {
 		out = append(out, manageSwingPosition(s, bars5m, cfg)...)
 	}
 	return out
+}
+
+// swingBarMs is the 5m bar length the swing machine walks.
+const swingBarMs = 5 * 60_000
+
+// expireSwingPending drops a resting swing order whose expiry has passed AND
+// whose final bar has been walked (m437). The order is live at NT8 until its
+// expiry (bucket end - 1ms), so the last 5m bar of the bucket — whose close is
+// that same instant — can still fill it; a drop on the wall clock alone, before
+// that bar's fill check, loses a real fill. LastBarTime is the open of the last
+// bar the walk consumed, so "its close >= the expiry" means the order's final
+// bar has had its fill check. An order whose final bar never arrives (a feed
+// gap) lingers until the walk reaches a bar that opens after the expiry, which
+// the loop turns into the drop — a late bar can never fill an expired order.
+func (s *SwingState) expireSwingPending(now int64) {
+	p := s.Pending
+	if p == nil || p.ExpiryMs <= 0 || now < p.ExpiryMs {
+		return
+	}
+	if s.LastBarTime+swingBarMs-1 >= p.ExpiryMs {
+		s.Pending = nil
+	}
 }
 
 // fillsSwingEntry reports whether a closed bar trades through the resting
