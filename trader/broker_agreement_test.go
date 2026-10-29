@@ -2,6 +2,7 @@ package trader
 
 import (
 	"encoding/json"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -341,5 +342,34 @@ func TestBrokerAgreementStoppedTraderIsNotConsulted(t *testing.T) {
 	b, rs := datatruth.Evaluate("MNQ", agreeT0.Add(agreementSettle+2*time.Second))
 	if !b || !strings.Contains(rs[0].Detail, "no started NT8 trader is registered") {
 		t.Fatalf("a stopped trader leaves nobody to read: %v %+v", b, rs)
+	}
+}
+
+// (12) The Stop side at the production teardown: teardownRunStarted (what Stop
+// and a refused Run call) removes the trader from the check.
+func TestBrokerAgreementTeardownRunStartedUnregisters(t *testing.T) {
+	f := newAgreeFx(t)
+	f.positions(ntwire.OpenPosition{Symbol: "MNQ", Side: "SHORT", Quantity: 1, AvgPrice: 29310})
+	mustClear(t, f, agreeT0, "first")
+	f.at.teardownRunStarted()
+	b, rs := datatruth.Evaluate("MNQ", agreeT0.Add(agreementSettle+time.Second))
+	if !b || !strings.Contains(rs[0].Detail, "no started NT8 trader is registered") {
+		t.Fatalf("teardownRunStarted must unregister the trader: %v %+v", b, rs)
+	}
+}
+
+// (13) The Run side: registerBrokerAgreement is called right after
+// StartPositionReconcile in Run. Run itself needs a live exchange, so this is a
+// SOURCE pin [B]: the call must follow the reconcile start in auto_trader.go.
+func TestBrokerAgreementIsRegisteredWhereRunStartsTheReconcile(t *testing.T) {
+	b, err := os.ReadFile("auto_trader.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	i := strings.Index(src, "ntTCP.StartPositionReconcile(")
+	j := strings.Index(src, "at.registerBrokerAgreement()")
+	if i < 0 || j < 0 || j < i || j-i > 600 {
+		t.Fatalf("Run must call at.registerBrokerAgreement() right after ntTCP.StartPositionReconcile (i=%d j=%d)", i, j)
 	}
 }

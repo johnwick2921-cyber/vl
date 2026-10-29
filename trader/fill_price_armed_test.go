@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"vl/internal/datatruth"
 	"vl/internal/datatruth/checks"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -73,5 +74,31 @@ func TestArmedEntryFillJudgedImmediatelyWhenItsMinuteIsClosed(t *testing.T) {
 	nt8.NoteFill("entry", "arm|x|sig|2", "MNQ", "LONG", 29003, m+10_000, 29000)
 	if s := g.Stats(); s.Far != 1 || s.Judged != 2 {
 		t.Fatalf("an in-band fill is quiet: %+v", s)
+	}
+}
+
+// RegisterBrokerTruthChecks registers BOTH m447 checks with the datatruth
+// contract, and a required-but-unwired fill_price/broker_agreement blocks.
+func TestRegisterBrokerTruthChecksRegistersBoth(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	saved := checks.DefaultFills
+	checks.DefaultFills = checks.NewFillGuard(checks.DefaultFillParams(), nil)
+	t.Cleanup(func() { checks.DefaultFills = saved })
+	datatruth.Require(CheckBrokerAgreement, checks.CheckFillPrice)
+	if b, rs := datatruth.Evaluate("MNQ", time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)); !b || len(rs) != 2 {
+		t.Fatalf("both required-but-unwired checks must block: %v %+v", b, rs)
+	}
+	RegisterBrokerTruthChecks()
+	snap := datatruth.Snapshot()
+	if _, ok := snap[CheckBrokerAgreement]; !ok {
+		t.Fatalf("broker_agreement not registered: %v", snap)
+	}
+	if _, ok := snap[checks.CheckFillPrice]; !ok {
+		t.Fatalf("fill_price not registered: %v", snap)
+	}
+	// fill_price has no trader dependency: with nothing recorded it is clear.
+	if b, rs := datatruth.Evaluate("MNQ", time.Date(2026, 10, 26, 10, 0, 0, 0, time.UTC)); len(rs) != 1 || rs[0].Check != CheckBrokerAgreement || !b {
+		t.Fatalf("only broker_agreement (no trader registered) should block now: %v %+v", b, rs)
 	}
 }
