@@ -326,6 +326,9 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 			t.Logf("    %s -> %s (%d min)", s.first.In(loc).Format("01-02 15:04"), s.last.In(loc).Format("01-02 15:04"), int(s.last.Sub(s.first).Minutes())+1)
 		}
 	}
+	for n, st := range datatruth.Snapshot() {
+		t.Logf("owner-push episodes %-26s episodes=%d reopens(merged flaps)=%d", n, st.Episodes, st.Reopens)
+	}
 	has := func(check, from, to string) bool {
 		f, _ := time.ParseInLocation("2006-01-02 15:04", from, loc)
 		e, _ := time.ParseInLocation("2006-01-02 15:04", to, loc)

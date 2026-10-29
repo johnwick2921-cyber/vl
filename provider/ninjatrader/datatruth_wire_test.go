@@ -418,3 +418,32 @@ func TestWiringWithoutStoreReaderBlocksTheSwingChecks(t *testing.T) {
 		t.Fatalf("/api/health must show the missing check blocked: %v", h)
 	}
 }
+
+// D3, the leg the window cannot see: the OLD-month seed's newest bar is already
+// outside the 30-minute decision window, so only "live != the contract of the
+// history" can catch it. With History read from the live frames (the first
+// draft) this was a tautology and read clean.
+func TestContractGuardSeesAnOldMonthSeedOlderThanTheWindow(t *testing.T) {
+	freshLedger(t)
+	liveContracts.reset("MNQ")
+	histContracts.reset("MNQ")
+	t.Cleanup(func() { liveContracts.reset("MNQ"); histContracts.reset("MNQ") })
+	s := NewTCPServer(nil)
+	s.barIngestCh = make(chan barIngestMsg, 16)
+	src := &DataTruthSources{Server: s, Cache: s.barCache, Now: func() time.Time { return time.UnixMilli(100 * 60_000) }}
+	WireDataTruth(src, nil)
+	s.wg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); s.wg.Wait() }()
+	go s.drainBarIngest(ctx)
+
+	s.observeContract("MNQ", "MNQ 03-27", time.UnixMilli(1))
+	s.enqueueBarHistoricalContract("MNQ", "1m", "MNQ 12-26", []Bar{{T: 10 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3, Final: true}}) // 90 min old
+	s.barIngestCh <- barIngestMsg{symbol: "MNQ", timeframe: "1m", contract: "MNQ 03-27", bars: []Bar{{T: 99 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}}}
+	waitFor(t, func() bool {
+		return len(liveContracts.window("MNQ", 0)) == 1 && len(histContracts.window("MNQ", 0)) == 1
+	})
+	if got := contractVerdict(t); !strings.Contains(got, "differs from the stored history contract") {
+		t.Fatalf("an old-month seed outside the window must still pause on live != history, got %q", got)
+	}
+}
