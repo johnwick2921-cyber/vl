@@ -403,7 +403,7 @@ func TestWiringWithoutStoreReaderBlocksTheSwingChecks(t *testing.T) {
 	s := NewTCPServer(nil)
 	wireForTest(t, s) // swing == nil
 	_, rs := datatruth.Evaluate("MNQ", time.Now())
-	want := map[string]bool{checks.CheckLookbackSwing4h: false, checks.CheckLookbackLevels: false}
+	want := map[string]bool{checks.CheckLookbackSwing4h: false, checks.CheckLookbackLevels: false, checks.CheckLookbackSession: false}
 	for _, r := range rs {
 		if _, ok := want[r.Check]; ok {
 			want[r.Check] = strings.Contains(r.Detail, "not wired")

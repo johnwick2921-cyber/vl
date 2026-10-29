@@ -17,6 +17,10 @@ const (
 	CheckLookback        = "indicator_lookback"
 	CheckLookbackSwing4h = "indicator_lookback_swing4h"
 	CheckLookbackLevels  = "indicator_lookback_levels"
+	// CheckLookbackSession judges the session-anchored VOLUME levels (session
+	// VWAP + bands, eVWAP, pdVWAP, prior-day profile / nPOC, MID-O) - a sum over
+	// the whole session, so a hole poisons it for hours (session_volume.go).
+	CheckLookbackSession = "indicator_lookback_session"
 	CheckIngestLoss      = "ingest_loss"
 	CheckContractRoll    = "contract_roll"
 )
@@ -57,6 +61,7 @@ type Config struct {
 	SwingPeriod int
 	SwingTolPts float64
 	LevelTolPts float64
+	SessionVol  SessionVolParams
 	Loc         *time.Location
 }
 
@@ -85,7 +90,10 @@ func RegisterAll(c Config) {
 	if c.LevelTolPts <= 0 {
 		c.LevelTolPts = 2.0
 	}
-	// The wiring declares ALL seven required. A registration skipped because its
+	if c.SessionVol.VWAPTolPts <= 0 {
+		c.SessionVol = DefaultSessionVol()
+	}
+	// The wiring declares ALL eight required. A registration skipped because its
 	// input was never supplied (no ledger, no swing reader) leaves a stub that
 	// BLOCKS, so a wiring omission fails closed instead of reading as clean.
 	skip := map[string]bool{}
@@ -93,7 +101,7 @@ func RegisterAll(c Config) {
 		skip[n] = true
 	}
 	for _, n := range []string{CheckBadPrint, CheckCrossFrame, CheckLookback, CheckLookbackSwing4h,
-		CheckLookbackLevels, CheckIngestLoss, CheckContractRoll} {
+		CheckLookbackLevels, CheckLookbackSession, CheckIngestLoss, CheckContractRoll} {
 		if !skip[n] {
 			datatruth.Require(n)
 		}
@@ -121,6 +129,7 @@ func RegisterAll(c Config) {
 		c.SwingInputs = cachedInputs(c.SwingInputs)
 		datatruth.Register(CheckLookbackSwing4h, swingCheck(c))
 		datatruth.Register(CheckLookbackLevels, levelsCheck(c))
+		datatruth.Register(CheckLookbackSession, sessionLevelsCheck(c))
 	}
 }
 
@@ -316,4 +325,59 @@ func hasBars(bars []Bar, from, to int64) bool {
 		}
 	}
 	return false
+}
+
+// SessionLevelsCheck exposes the indicator_lookback_session check on its own for
+// a replay whose corpus carries only 1m/5m bars (no 4h-store reader, so the
+// swing / levels checks cannot be wired): c needs Src, SwingInputs and Loc.
+func SessionLevelsCheck(c Config) datatruth.CheckFn {
+	if c.SessionVol.VWAPTolPts <= 0 {
+		c.SessionVol = DefaultSessionVol()
+	}
+	if c.LevelTolPts <= 0 {
+		c.LevelTolPts = 2.0
+	}
+	if c.Loc == nil {
+		c.Loc = time.UTC
+	}
+	return sessionLevelsCheck(c)
+}
+
+// sessionLevelsCheck is the indicator_lookback_session check: the session-
+// anchored volume levels recomputed with the missing volume restored from the
+// 5m (JudgeSessionLevels). The verdict is deterministic in (inputs, 5-minute
+// slot), so it is memoised per symbol-minute; the store read behind it is the
+// shared cachedInputs one.
+func sessionLevelsCheck(c Config) datatruth.CheckFn {
+	type key struct {
+		sym    string
+		minute int64
+	}
+	type val struct {
+		blocked bool
+		why     string
+	}
+	var mu sync.Mutex
+	cache := map[key]val{}
+	return func(symbol string, now time.Time) (bool, string, error) {
+		k := key{symbol, now.Unix() / 60}
+		mu.Lock()
+		v, ok := cache[k]
+		mu.Unlock()
+		if ok {
+			return v.blocked, v.why, nil
+		}
+		m1, m5, _, err := c.SwingInputs(symbol, now)
+		if err != nil {
+			return false, "", err
+		}
+		b, why := JudgeSessionLevels(m1, m5, now, c.Loc, c.Src.Open(), c.SessionVol, c.LevelTolPts)
+		mu.Lock()
+		if len(cache) > 8 {
+			cache = map[key]val{}
+		}
+		cache[k] = val{b, why}
+		mu.Unlock()
+		return b, why, nil
+	}
 }

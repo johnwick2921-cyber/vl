@@ -229,6 +229,7 @@ func TestDataTruthRealDayReplay1021_1023(t *testing.T) {
 	datatruth.Reset()
 	defer datatruth.Reset()
 	checks.RegisterAll(checks.Config{Src: c, Unrequired: corpusUnrequired})
+	registerCorpusSession(c, loc)
 	days := []string{"2026-10-21", "2026-10-22", "2026-10-23"}
 	for _, day := range days {
 		d0, _ := time.ParseInLocation("2006-01-02", day, loc)
@@ -277,7 +278,30 @@ func TestDataTruthRealDayReplay1021_1023(t *testing.T) {
 		if p := per[checks.CheckContractRoll]; p != nil {
 			t.Errorf("%s: contract_roll paused: %s", day, p.detail)
 		}
+		// indicator_lookback_session: the volume levels (VWAP, bands, eVWAP,
+		// pdVWAP, profile) never pause on these days. The ONE exception is a real
+		// store defect: 10-21 00:46-00:50 CT the overnight low (MID-O) differs
+		// between the 1m (29836.50) and the 5m (29845.25) because the 5m row
+		// 2027988 (05:35Z, volume 300 vs 5720 in the 1m) was written truncated.
+		if p := per[checks.CheckLookbackSession]; p != nil {
+			if day != "2026-10-21" || p.minutes > 5 || !strings.Contains(p.detail, "MID-O") {
+				t.Errorf("%s: indicator_lookback_session paused %d min on a real day: %s", day, p.minutes, p.detail)
+			}
+		}
 	}
+}
+
+// registerCorpusSession wires indicator_lookback_session over the corpus' 1m and
+// 5m (time-sliced to c.now): the only store-backed check the corpus can feed.
+func registerCorpusSession(c *corpusSrc, loc *time.Location) {
+	datatruth.Register(checks.CheckLookbackSession, checks.SessionLevelsCheck(checks.Config{
+		Src: c, Loc: loc,
+		SwingInputs: func(symbol string, now time.Time) ([]checks.Bar, []checks.Bar, float64, error) {
+			m1, _ := c.Bars(symbol, 1)
+			m5, _ := c.Bars(symbol, 5)
+			return m1, m5, 0, nil
+		},
+	}))
 }
 
 func trim(s string, n int) string {
@@ -299,6 +323,7 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	datatruth.Reset()
 	defer datatruth.Reset()
 	checks.RegisterAll(checks.Config{Src: c, Unrequired: corpusUnrequired})
+	registerCorpusSession(c, loc)
 	type span struct{ first, last time.Time }
 	spans := map[string][]span{}
 	open := map[string]bool{}
@@ -320,7 +345,7 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 		}
 		open = cur
 	}
-	for _, n := range []string{checks.CheckBadPrint, checks.CheckCrossFrame, checks.CheckLookback, checks.CheckContractRoll} {
+	for _, n := range []string{checks.CheckBadPrint, checks.CheckCrossFrame, checks.CheckLookback, checks.CheckLookbackSession, checks.CheckContractRoll} {
 		t.Logf("%s: %d episode(s)", n, len(spans[n]))
 		for _, s := range spans[n] {
 			t.Logf("    %s -> %s (%d min)", s.first.In(loc).Format("01-02 15:04"), s.last.In(loc).Format("01-02 15:04"), int(s.last.Sub(s.first).Minutes())+1)
@@ -350,6 +375,17 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	}
 	if !has(checks.CheckLookback, "2026-10-26 17:30", "2026-10-26 20:30") {
 		t.Error("the 10-26 17:00-21:00 CT 1m hole did not pause the indicator lookback")
+	}
+	// The session check fires on the 10-26 hole and on its after-effect: the
+	// 10-26 session is the PRIOR session of every session until the 10-28 17:00
+	// roll, and its pdVWAP / POC / VAH / VAL are wrong the whole time. (The
+	// corpus starts 10-19 04:00, so its first session is unpriceable: that
+	// episode is a corpus artifact and is not asserted.)
+	if !has(checks.CheckLookbackSession, "2026-10-26 17:30", "2026-10-26 20:30") {
+		t.Error("the 10-26 hole did not pause the session VWAP")
+	}
+	if !has(checks.CheckLookbackSession, "2026-10-27 18:00", "2026-10-28 08:00") {
+		t.Error("the 10-26 session's profile stayed wrong the next day and must keep pausing")
 	}
 	if len(spans[checks.CheckContractRoll]) != 0 {
 		t.Errorf("contract_roll paused on a single-contract corpus: %v", spans[checks.CheckContractRoll])

@@ -68,16 +68,16 @@ func TestRegisterAllWithoutInputsLeavesRequiredChecksBlocking(t *testing.T) {
 	for _, r := range rs {
 		got[r.Check] = true
 	}
-	for _, n := range []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels} {
+	for _, n := range []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels, CheckLookbackSession} {
 		if !got[n] {
 			t.Errorf("%s must block when its inputs were never wired: %+v", n, rs)
 		}
 	}
 	datatruth.Reset()
-	RegisterAll(Config{Src: fakeSrc{}, Unrequired: []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels}})
+	RegisterAll(Config{Src: fakeSrc{}, Unrequired: []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels, CheckLookbackSession}})
 	_, rs = datatruth.Evaluate("MNQ", time.Date(2026, 10, 27, 14, 3, 0, 0, time.UTC))
 	for _, r := range rs {
-		if r.Check == CheckIngestLoss || r.Check == CheckLookbackSwing4h || r.Check == CheckLookbackLevels {
+		if r.Check == CheckIngestLoss || r.Check == CheckLookbackSwing4h || r.Check == CheckLookbackLevels || r.Check == CheckLookbackSession {
 			t.Errorf("explicitly unrequired %s must not block a replay: %+v", r.Check, r)
 		}
 	}
