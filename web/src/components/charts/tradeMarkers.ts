@@ -39,6 +39,10 @@ export function intervalToSeconds(interval: string): number {
 //     'atPriceMiddle' + price (F3 — they used to be circles at the bar edge,
 //     and entry/exit looked the same). A same-candle entry+exit stays as two
 //     markers, never merged.
+//   - m439 (owner 2026-10-29: "label B and sell overlap on one candle"): a
+//     candle carrying 2+ markers draws buys BELOW the bar and sells ABOVE it,
+//     where lightweight-charts stacks them instead of drawing them on top of
+//     each other at near-equal fill prices. A lone marker keeps its fill price.
 export function buildTradeMarkers(
   trades: TradeMarkerInput[],
   klineTimes: number[],
@@ -62,23 +66,43 @@ export function buildTradeMarkers(
     return klineTimes[left]
   }
 
-  const out: SeriesMarker<Time>[] = []
+  const built: { marker: SeriesMarker<Time>; buy: boolean }[] = []
   for (const tr of trades) {
     if (!(tr.time > 0) || !(tr.price > 0)) continue
     const candleTime = snap(tr.time)
     if (candleTime === null) continue
     const buy = tr.rawSide === 'buy'
     const entry = tr.action === 'open'
-    out.push({
-      time: candleTime as Time,
-      position: 'atPriceMiddle',
-      price: tr.price,
-      shape: entry ? (buy ? 'arrowUp' : 'arrowDown') : 'square',
-      color: buy ? '#0ECB81' : '#F6465D',
-      text: entry ? (buy ? 'B' : 'S') : buy ? 'xB' : 'xS',
-      size: 1,
+    built.push({
+      buy,
+      marker: {
+        time: candleTime as Time,
+        position: 'atPriceMiddle',
+        price: tr.price,
+        shape: entry ? (buy ? 'arrowUp' : 'arrowDown') : 'square',
+        color: buy ? '#0ECB81' : '#F6465D',
+        text: entry ? (buy ? 'B' : 'S') : buy ? 'xB' : 'xS',
+        size: 1,
+      },
     })
   }
-  out.sort((a, b) => (a.time as number) - (b.time as number))
-  return out
+  built.sort((a, b) => (a.marker.time as number) - (b.marker.time as number))
+
+  const perCandle = new Map<number, number>()
+  for (const { marker } of built) {
+    const t = marker.time as number
+    perCandle.set(t, (perCandle.get(t) ?? 0) + 1)
+  }
+  return built.map(({ marker, buy }): SeriesMarker<Time> => {
+    if ((perCandle.get(marker.time as number) ?? 0) < 2) return marker
+    const { time, shape, color, text, size } = marker
+    return {
+      time,
+      shape,
+      color,
+      text,
+      size,
+      position: buy ? 'belowBar' : 'aboveBar',
+    }
+  })
 }
