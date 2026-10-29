@@ -132,6 +132,7 @@ func WireDataTruthChecks(bh *store.BarHistoryStore, server *ntwire.TCPServer) {
 	}
 	src := &ntwire.DataTruthSources{Server: server, Cache: server.BarCache()}
 	ntwire.WireDataTruth(src, storeSwingInputs(bh))
-	dataTruthReady.Store(true) // after the registration, never before
+	wireDataTruthRerequest(server) // #55 m449: a dropped final/historical bar is re-asked of NT8, not left to age out
+	dataTruthReady.Store(true)     // after the registration, never before
 	logger.Infof("🧪 data-truth checks wired: bad_print · cross_frame · indicator_lookback (+swing4h, levels, session) · ingest_loss · contract_roll over the live NT8 ring + the 1m/5m store — NEW entries pause when any cannot be trusted (fail closed); exits, stops and protection never consult them")
 }

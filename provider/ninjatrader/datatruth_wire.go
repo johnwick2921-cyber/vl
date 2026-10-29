@@ -50,7 +50,10 @@ func noteIngestLoss(m barIngestMsg) {
 	}
 	dataTruthLedger.RecordLoss(kind, m.symbol, m.timeframe, ts, now)
 	if len(ts) > 0 {
-		if fn := DataTruthRerequest; fn != nil {
+		dataTruthRerequestMu.RLock()
+		fn := DataTruthRerequest
+		dataTruthRerequestMu.RUnlock()
+		if fn != nil {
 			fn(m.symbol, m.timeframe, ts[0], ts[len(ts)-1])
 		}
 	}
@@ -64,6 +67,25 @@ func noteIngestLoss(m barIngestMsg) {
 // ring ages the minute out (about 41 hours of 1m) - the known limit this hook
 // exists to shorten. It runs on the ingest path: it must not block.
 var DataTruthRerequest func(symbol, tf string, fromMs, toMs int64)
+
+// dataTruthRerequestMu guards DataTruthRerequest against the boot wiring
+// (SetDataTruthRerequest, #55 m449) racing the ingest goroutine that reads it.
+var dataTruthRerequestMu sync.RWMutex
+
+// SetDataTruthRerequest installs the hook under the lock; production's one call
+// is trader/ninjatrader.wireDataTruthRerequest (the m444 tracker's wire sends).
+func SetDataTruthRerequest(fn func(symbol, tf string, fromMs, toMs int64)) {
+	dataTruthRerequestMu.Lock()
+	DataTruthRerequest = fn
+	dataTruthRerequestMu.Unlock()
+}
+
+// DataTruthRerequestWired reports whether a re-request hook is installed.
+func DataTruthRerequestWired() bool {
+	dataTruthRerequestMu.RLock()
+	defer dataTruthRerequestMu.RUnlock()
+	return DataTruthRerequest != nil
+}
 
 // cacheOpenTimes returns the open times the CACHE would have stored for these
 // wire bars (placeholders dropped, close-stamp -> open-stamp, stub re-anchor:
