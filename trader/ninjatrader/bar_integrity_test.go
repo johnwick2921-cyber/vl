@@ -455,3 +455,51 @@ func containsT(ts []time.Time, m time.Time) bool {
 	}
 	return false
 }
+
+// lagWire is a holeWire whose cache the test controls: the detector is judged
+// against what the CACHE (the series the decisions read) already holds.
+type lagWire struct{ cache *ntwire.BarCache }
+
+func (w *lagWire) IsConnected() bool                            { return true }
+func (w *lagWire) IsFeedConnected() bool                        { return true }
+func (w *lagWire) RequestGapBackfillAt(string, time.Time) error { return nil }
+func (w *lagWire) BarCache() *ntwire.BarCache                   { return w.cache }
+func (w *lagWire) CurrentContract(string) (ntwire.ContractFact, bool) {
+	return ntwire.ContractFact{}, false
+}
+func (w *lagWire) BarsBackAsked() int { return 0 }
+
+// The persister writes and judges closed bars asynchronously. A decision made
+// while the cache is already N bars past what the detector judged could rest on
+// a hole not yet seen: the detector is UNKNOWN until it catches up.
+func TestIntegrityDetectorLaggingBehindTheCacheIsUnknown(t *testing.T) {
+	h := newMemHarness(t)
+	cache := ntwire.NewBarCache(3000)
+	h.tr.wire = func() holeWire { return &lagWire{cache: cache} }
+	h.run(ct(2026, 10, 14, 8, 0), ct(2026, 10, 14, 8, 59)) // judged through the 08:59 bar
+
+	finals := func(from, to time.Time) {
+		var bars []ntwire.Bar
+		for m := from; !m.After(to); m = m.Add(time.Minute) {
+			b := wireBar(m, 30700)
+			b.Final = true
+			bars = append(bars, b)
+		}
+		cache.Upsert("MNQ", "1m", bars)
+	}
+	now := ct(2026, 10, 14, 9, 6)
+	finals(ct(2026, 10, 14, 8, 0), ct(2026, 10, 14, 9, 0)) // the cache is one bar ahead: the persister is mid-flight
+	if v := h.verdict(IntegrityIntradayOpenMin, now); v.Blocked {
+		t.Fatalf("one bar of persister lag is normal: %+v", v)
+	}
+	finals(ct(2026, 10, 14, 9, 1), ct(2026, 10, 14, 9, 5)) // five closed bars the detector never judged
+	v := h.verdict(IntegrityIntradayOpenMin, now)
+	if !v.Blocked || v.Class != IntegrityClassUnknown || !strings.Contains(v.Unknown, "behind the cache") {
+		t.Fatalf("a detector 5 closed bars behind the cache must be UNKNOWN (blocked): %+v", v)
+	}
+	// it catches up
+	h.run(ct(2026, 10, 14, 9, 0), ct(2026, 10, 14, 9, 5))
+	if v := h.verdict(IntegrityIntradayOpenMin, now); v.Blocked {
+		t.Fatalf("caught up: clear: %+v", v)
+	}
+}
