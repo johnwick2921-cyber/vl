@@ -406,6 +406,17 @@ export const planStrings = {
     zh: 'CME 休市 — {when} 重新开盘',
     id: 'CME TUTUP — buka lagi {when}',
   },
+  // m445: the data-integrity pause (missing 1m bars in a data window).
+  dataPausedBanner: {
+    en: 'TRADING PAUSED — missing bars {window}',
+    zh: '交易已暂停 — 缺少K线 {window}',
+    id: 'TRADING DIJEDA — bar hilang {window}',
+  },
+  dataPausedUnknownBanner: {
+    en: 'TRADING PAUSED — bar-data check not ready',
+    zh: '交易已暂停 — K线数据检查尚未就绪',
+    id: 'TRADING DIJEDA — pemeriksaan data bar belum siap',
+  },
   // m432: names the fix, not just the fact (the 10-25 17:00 -> 10-26 03:40 CT
   // blind spell was a NinjaTrader data connection that was off).
   feedDownBanner: {

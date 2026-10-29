@@ -88,6 +88,13 @@ export interface HealthStatus {
   // and the server's own next-reopen instant (RFC3339).
   feed_stale_secs?: number
   cme_reopens_at?: string
+  // m445: the data-integrity pause (bar_integrity.go). Absent = an older bot or
+  // no NT8 bridge; the banner then renders nothing.
+  trading_paused?: {
+    paused: boolean
+    reasons?: string[]
+    windows?: string[]
+  }
 }
 
 // INSTALL_AUTHZ_UNDER_REVIEW is the ONE constant gating the install control.
