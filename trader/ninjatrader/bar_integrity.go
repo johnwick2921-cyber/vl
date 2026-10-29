@@ -526,6 +526,17 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		clears := int64(0)
 		if missing > 0 {
 			clears = t.windowClearsAtLocked(h.ToMs, openMinutes)
+			// Round 5, DEF-A: for a MENTOR verdict a hole that takes RTH minutes
+			// does NOT stop pausing when it leaves the window — the key-level leg
+			// below picks it up (the seeded 1H RTH walk stands on it) until the
+			// minutes are measured filled or it leaves the 90-day reach. The
+			// "clears by itself" instant is therefore the LATER of the two; the
+			// window-only instant would promise a resume that never comes.
+			if keyLevels && h.ToMs > now.Add(-IntegritySeedReachDays*24*time.Hour).UnixMilli() && t.rthMissing(h.FromMs, h.ToMs) > 0 {
+				if kl := h.ToMs + IntegritySeedReachDays*24*60*60_000; kl > clears {
+					clears = kl
+				}
+			}
 		}
 		if missing == 0 && keyLevels && h.ToMs > now.Add(-IntegritySeedReachDays*24*time.Hour).UnixMilli() {
 			// the key-level leg: a hole older than the window still blocks a
@@ -674,11 +685,81 @@ type PausedReason struct {
 	ClearsAt []string `json:"clears_at,omitempty"`
 }
 
+// The pause scopes /api/health names.
+const (
+	PausedScopeAll    = "all_entries"            // every entry path
+	PausedScopeDeep   = "swing_and_deep_entries" // AI / planner / Picture / agent + SWING4H
+	PausedScopeMentor = "mentor_entries"         // every mentor setup (the key-level legs)
+	PausedScopeSwing  = "swing_entries"          // SWING4H only
+)
+
+// WidestPausedScope is the scope that says everything that is paused and no
+// less. The mentor legs and the AI / planner / Picture legs are different
+// readers: with BOTH paused no entry path is left, so the honest name is
+// all_entries — naming only the mentor (or only the deep) scope would tell the
+// owner the other half still trades (round 5, DEF-B). "" when none is paused.
+func WidestPausedScope(scopes []string) string {
+	has := map[string]bool{}
+	for _, s := range scopes {
+		has[s] = true
+	}
+	switch {
+	case has[PausedScopeAll], has[PausedScopeMentor] && has[PausedScopeDeep]:
+		return PausedScopeAll
+	case has[PausedScopeMentor]:
+		return PausedScopeMentor
+	case has[PausedScopeDeep]:
+		return PausedScopeDeep
+	case has[PausedScopeSwing]:
+		return PausedScopeSwing
+	}
+	return ""
+}
+
+// mergeIntegrityLegs joins the verdicts of several legs into one explanation:
+// hole-class legs contribute their holes (de-duplicated, the LATER clear time
+// when a hole is in both), otherwise the first unknown text.
+func mergeIntegrityLegs(legs []IntegrityVerdict) IntegrityVerdict {
+	var out IntegrityVerdict
+	type hk struct {
+		c    string
+		f, t int64
+	}
+	idx := map[hk]int{}
+	for _, v := range legs {
+		if !v.Blocked {
+			continue
+		}
+		out.Blocked = true
+		if v.Class == IntegrityClassHole {
+			out.Class = IntegrityClassHole
+			for _, h := range v.Holes {
+				k := hk{h.Contract, h.FromMs, h.ToMs}
+				if i, ok := idx[k]; ok {
+					if h.ClearsAtMs > out.Holes[i].ClearsAtMs {
+						out.Holes[i].ClearsAtMs = h.ClearsAtMs
+					}
+					continue
+				}
+				idx[k] = len(out.Holes)
+				out.Holes = append(out.Holes, h)
+			}
+		} else if out.Class == "" {
+			out.Class, out.Unknown = v.Class, v.Unknown
+		}
+	}
+	sort.Slice(out.Holes, func(i, j int) bool { return out.Holes[i].FromMs < out.Holes[j].FromMs })
+	return out
+}
+
 // PausedView is one symbol's pause state as /api/health serves it.
 type PausedView struct {
-	Symbol  string         `json:"symbol"`
-	Paused  bool           `json:"paused"`
-	Scope   string         `json:"scope,omitempty"` // all_entries | swing_and_deep_entries | mentor_entries | swing_entries
+	Symbol string `json:"symbol"`
+	Paused bool   `json:"paused"`
+	Scope  string `json:"scope,omitempty"` // the WIDEST paused scope (WidestPausedScope)
+	// Scopes — every leg that is blocked, so a narrower one is never lost behind
+	// a wider one (round 5, DEF-B).
+	Scopes  []string       `json:"scopes,omitempty"`
 	Reasons []PausedReason `json:"reasons"`
 	Action  string         `json:"action,omitempty"`
 }
@@ -730,18 +811,38 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 		// never read the seeded key levels
 		keyLv := t.integrity(s, IntegrityIntradayOpenMin, now, true)
 		pv := PausedView{Symbol: s, Reasons: []PausedReason{}}
-		worst := swing
+		// EVERY blocked leg is named (round 5, DEF-B): the scope used to be the
+		// first leg in a fixed order, so a mentor-leg pause hid behind a deep
+		// one and the banner claimed "intraday mentor setups trade normally"
+		// while the mentor gate refused them.
+		var legs []IntegrityVerdict // the verdicts that explain the pause
+		if intra.Blocked {
+			pv.Scopes = append(pv.Scopes, PausedScopeAll)
+		}
+		if deep.Blocked {
+			pv.Scopes = append(pv.Scopes, PausedScopeDeep)
+		}
+		if keyLv.Blocked {
+			pv.Scopes = append(pv.Scopes, PausedScopeMentor)
+		}
+		if swing.Blocked {
+			pv.Scopes = append(pv.Scopes, PausedScopeSwing)
+		}
+		pv.Scope = WidestPausedScope(pv.Scopes)
 		switch {
 		case intra.Blocked:
-			pv.Scope, worst = "all_entries", intra
+			legs = []IntegrityVerdict{intra}
+		case deep.Blocked && keyLv.Blocked:
+			legs = []IntegrityVerdict{deep, keyLv} // both stand: the holes of both, each with its own clear time
 		case deep.Blocked:
-			pv.Scope, worst = "swing_and_deep_entries", deep
+			legs = []IntegrityVerdict{deep}
 		case keyLv.Blocked:
-			pv.Scope, worst = "mentor_entries", keyLv
+			legs = []IntegrityVerdict{keyLv}
 		case swing.Blocked:
-			pv.Scope = "swing_entries"
+			legs = []IntegrityVerdict{swing}
 		}
-		if worst.Blocked {
+		if len(legs) > 0 {
+			worst := mergeIntegrityLegs(legs)
 			pv.Paused = true
 			pv.Action = IntegrityAction
 			r := PausedReason{Class: worst.Class, Window: worst.Windows()}

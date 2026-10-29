@@ -351,3 +351,103 @@ func TestHealthTradingPausedCarriesTheScopeAndIgnoresUntradedSymbols(t *testing.
 		t.Fatalf("a hole inside the intraday window is all_entries: %+v", tp)
 	}
 }
+
+// healthTP serves /api/health for `tm` at `now` and returns trading_paused.
+func healthTP(t *testing.T, tm *manager.TraderManager, now time.Time) map[string]any {
+	t.Helper()
+	gin.SetMode(gin.TestMode)
+	prev := healthNow
+	healthNow = func() time.Time { return now }
+	t.Cleanup(func() { healthNow = prev })
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	(&Server{traderManager: tm}).handleHealth(c)
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("health body not JSON: %v", err)
+	}
+	tp, ok := body["trading_paused"].(map[string]any)
+	if !ok {
+		t.Fatal("armed: trading_paused must be present")
+	}
+	return tp
+}
+
+// m445 round 5 (DEF-B) — the health scope the banner reads says what the gate
+// refuses. An RTH hole older than 1500 open minutes and inside 12000 pauses the
+// AI/planner path AND the mentor's key-level leg: the old precedence reported
+// swing_and_deep_entries, and the banner then claimed "intraday mentor setups
+// trade normally" while the mentor gate refused them until the 90-day reach.
+func TestHealthScopeCarriesEveryBlockedLegAndNeverHidesTheMentorPause(t *testing.T) {
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	ct := func(mo time.Month, d, h, m int) int64 {
+		return time.Date(2026, mo, d, h, m, 0, 0, kernel.CTLocation()).UnixMilli()
+	}
+	srv := ntwire.NewTCPServer(nil)
+	tcpT := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
+	for _, now := range []time.Time{
+		time.Date(2026, 10, 29, 12, 0, 0, 0, kernel.CTLocation()),
+		time.Date(2026, 10, 31, 12, 0, 0, 0, kernel.CTLocation()),
+	} {
+		mentorT := trader.NewAutoTraderOnBrokerForTest("tm", "ninjatrader", tcpT, true)
+		mentorT.NoteSeedSeriesForTest(true, nil, now)
+		tm := manager.NewTraderManager()
+		tm.SetTraderForTest("tm", mentorT)
+		restore := ntTrader.SetBarHolesWithHolesForTest(ct(time.October, 1, 17, 0), now.UnixMilli(), []ntTrader.TestHole{
+			{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ct(time.October, 27, 9, 0), ToMs: ct(time.October, 27, 9, 30)},
+		})
+		tp := healthTP(t, tm, now)
+		restore()
+		if tp["scope"] != "all_entries" {
+			t.Fatalf("%s: mentor + AI/planner legs are both paused, so no path trades: scope = %v (%+v)", now, tp["scope"], tp)
+		}
+		scopes, _ := tp["scopes"].([]any)
+		has := map[any]bool{}
+		for _, s := range scopes {
+			has[s] = true
+		}
+		if !has["mentor_entries"] || !has["swing_and_deep_entries"] {
+			t.Fatalf("%s: scopes must name every blocked leg: %v", now, scopes)
+		}
+	}
+}
+
+// m445 round 5 (M2) — the mentor_seed rows are for traders that are RUNNING: a
+// stopped mentor trader holding a seed hole pauses nothing (it enters nothing),
+// so it must neither list a row nor paint the banner.
+func TestHealthMentorSeedRowsSkipAStoppedTrader(t *testing.T) {
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	t.Cleanup(ntTrader.SetBarHolesWiredForTest())
+	now := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())
+	var ts []int64
+	for m := time.Date(2026, 10, 20, 17, 0, 0, 0, kernel.CTLocation()); m.Before(now); m = m.Add(time.Minute) {
+		if kernel.IsCMEOpen(m) {
+			if h := time.Date(2026, 10, 22, 10, 0, 0, 0, kernel.CTLocation()); !m.Before(h) && m.Before(h.Add(40*time.Minute)) {
+				continue
+			}
+			ts = append(ts, m.UnixMilli())
+		}
+	}
+	srv := ntwire.NewTCPServer(nil)
+	tcpT := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
+	stopped := trader.NewAutoTraderOnBrokerForTest("tm", "ninjatrader", tcpT, false)
+	stopped.NoteSeedSeriesForTest(true, ts, now)
+	if len(stopped.HealthSeedSeriesPause(now)) == 0 {
+		t.Fatal("setup: the stopped mentor trader must hold a seed hole (else this pins nothing)")
+	}
+	tm := manager.NewTraderManager()
+	tm.SetTraderForTest("tm", stopped)
+	tp := healthTP(t, tm, now)
+	if ms, _ := tp["mentor_seed"].([]any); len(ms) != 0 {
+		t.Fatalf("a stopped mentor trader must not list a mentor_seed row: %+v", ms)
+	}
+	for _, w := range tp["windows"].([]any) {
+		if w == "10-22 10:00–10:40 CT" {
+			t.Fatalf("a stopped trader's seed hole must not reach the banner windows: %+v", tp)
+		}
+	}
+	if tp["scope"] == "mentor_entries" {
+		t.Fatalf("a stopped trader's seed hole must not set the scope: %+v", tp)
+	}
+}

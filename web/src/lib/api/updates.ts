@@ -97,6 +97,8 @@ export interface HealthStatus {
     // the WIDEST paused scope (all_entries | mentor_entries |
     // swing_and_deep_entries | swing_entries); absent on an older bot
     scope?: string
+    // every blocked leg (a narrower one is never hidden behind a wider one)
+    scopes?: string[]
   }
 }
 

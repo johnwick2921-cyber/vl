@@ -34,6 +34,11 @@ func TestClearsAtIsTheExactMomentTheHoleLeavesTheWindow(t *testing.T) {
 		if a := IntegrityVerdictFor("MNQ", win, c); a.Blocked {
 			t.Fatalf("window %d: ClearsAt (%s) must be the first clear minute: %+v", win, kernel.TableTimeCT(c), a)
 		}
+		// the MENTOR verdict on an OVERNIGHT hole (no RTH minute) clears at the
+		// same instant: the key-level extension (round 5) applies to RTH holes only
+		if mv := IntegrityVerdictForMentor("MNQ", win, now); !mv.Blocked || len(mv.Holes) != 1 || mv.Holes[0].ClearsAtMs != clears {
+			t.Fatalf("window %d: an overnight hole clears at the window exit for the mentor verdict too: %+v", win, mv)
+		}
 	}
 }
 
@@ -65,7 +70,9 @@ func TestRetiredHoleCarriesTheRemedyThatWorksOnTheHealthSurface(t *testing.T) {
 // and the guide state).
 func TestKeyLevelLegStopsAtTheSameReachAsTheSeededSeriesLeg(t *testing.T) {
 	armIntegrity(t)
-	at := func(mo time.Month, d, h, m int) time.Time { return time.Date(2026, mo, d, h, m, 0, 0, kernel.CTLocation()) }
+	at := func(mo time.Month, d, h, m int) time.Time {
+		return time.Date(2026, mo, d, h, m, 0, 0, kernel.CTLocation())
+	}
 	holeTo := at(7, 22, 10, 40)
 	t.Cleanup(SetBarHolesWithHolesForTest(at(7, 1, 17, 0).UnixMilli(), at(10, 28, 10, 0).UnixMilli(), []TestHole{
 		{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: at(7, 22, 10, 0).UnixMilli(), ToMs: holeTo.UnixMilli()},

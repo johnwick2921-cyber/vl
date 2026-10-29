@@ -192,18 +192,17 @@ func (s *Server) handleHealth(c *gin.Context) {
 			}
 		}
 		paused, reasons, windows := false, []string{}, []string{}
-		scopeRank := map[string]int{"swing_entries": 0, "swing_and_deep_entries": 1, "mentor_entries": 2, "all_entries": 3}
-		scopes, widest := []string{}, ""
+		scopes := []string{}
 		noteScope := func(sc string) {
+			if sc == "" {
+				return
+			}
 			for _, x := range scopes {
 				if x == sc {
 					return
 				}
 			}
 			scopes = append(scopes, sc)
-			if widest == "" || scopeRank[sc] > scopeRank[widest] {
-				widest = sc
-			}
 		}
 		shown := make([]ntTrader.PausedView, 0, len(views))
 		seen := map[string]bool{}
@@ -222,7 +221,11 @@ func (s *Server) handleHealth(c *gin.Context) {
 					continue
 				}
 				paused = true
+				// every blocked leg, not only the widest one (round 5, DEF-B)
 				noteScope(v.Scope)
+				for _, sc := range v.Scopes {
+					noteScope(sc)
+				}
 				if !seen[r.Class] {
 					seen[r.Class] = true
 					reasons = append(reasons, r.Class)
@@ -268,7 +271,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 			"windows": windows,
 			// the WIDEST scope that is paused and every scope that is (round 4,
 			// D3): the banner must not say TRADING PAUSED when only SWING4H is
-			"scope":       widest,
+			"scope":       ntTrader.WidestPausedScope(scopes),
 			"scopes":      scopes,
 			"symbols":     views,
 			"mentor_seed": mentorSeed,
