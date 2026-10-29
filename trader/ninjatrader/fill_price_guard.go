@@ -45,11 +45,17 @@ func (t *TCPTrader) fillRing() checks.RingFn {
 // NoteFill hands one fill to the data-truth guard. id must be stable for a
 // replay of the same frame; orderPx 0 = the order's price is not known here.
 func (t *TCPTrader) NoteFill(kind, id, symbol, side string, price float64, atMs int64, orderPx float64) {
-	t.noteFill(kind, id, symbol, side, price, atMs, orderPx, nil)
+	t.noteFill(kind, id, symbol, side, price, atMs, orderPx, nil, "", "")
 }
 
-func (t *TCPTrader) noteFill(kind, id, symbol, side string, price float64, atMs int64, orderPx float64, slipTicks *float64) {
-	if t == nil || price <= 0 || id == "" {
+// noteFill hands one fill to the guard. account is the NT8 account it printed on
+// (the strike is PER ACCOUNT) and event names the real-world fill the frame
+// belongs to (the legs of one split bracket share it, so they are ONE strike);
+// "" for either keeps the guard's fail-closed defaults (everyone / one event per
+// id). A price <= 0 or an empty id is NOT dropped here: the guard counts a
+// fill it cannot judge as a far fill and logs it (m451).
+func (t *TCPTrader) noteFill(kind, id, symbol, side string, price float64, atMs int64, orderPx float64, slipTicks *float64, account, event string) {
+	if t == nil {
 		return
 	}
 	// noteFill runs on the exit-RECORDING path (recordClose, recordCloseOrdered): a
@@ -66,7 +72,7 @@ func (t *TCPTrader) noteFill(kind, id, symbol, side string, price float64, atMs 
 		sym = t.symbol
 	}
 	o := checks.FillObs{ID: id, Symbol: sym, Kind: kind, Side: side, Price: price, AtMs: atMs,
-		Tick: market.FuturesTickSize(sym), OrderPx: orderPx}
+		Tick: market.FuturesTickSize(sym), OrderPx: orderPx, Account: account, Event: event}
 	if slipTicks != nil {
 		o.SlipTicks, o.HasSlip = *slipTicks, true
 	}
@@ -96,4 +102,28 @@ func entryFillID(f ntwire.FillPayload) string {
 // stays empty) and its seq, never a time.Now() fallback.
 func exitFillID(account, symbol, side, signal string, seq uint64, exitTime string) string {
 	return fmt.Sprintf("exit|%s|%s|%s|%s|%d|%s", account, symbol, side, signal, seq, exitTime)
+}
+
+// entryFillEvent / exitFillEvent are the fill EVENT keys (m451): what makes two
+// frames the same print. They carry the account, so mirrored traders on two
+// accounts keep separate strikes (the strike is per account), and carry NEITHER
+// the leg, the exit time nor the cumulative quantity/average price, which all
+// differ between frames of one print: a split bracket sends one position_close
+// frame per leg (same signal and seq, exit_time stamped a few ms apart), and an
+// entry sends a fill frame per partial (cumulative average price and quantity).
+//
+// A frame with no signal id cannot be tied to an order, so it names no event ("")
+// and the guard treats each of its ids as its own: never collapse unrelated fills.
+func entryFillEvent(f ntwire.FillPayload) string {
+	if strings.TrimSpace(f.SignalID) == "" {
+		return ""
+	}
+	return fmt.Sprintf("entry|%s|%s|%s", f.Account, f.Symbol, f.SignalID)
+}
+
+func exitFillEvent(account, symbol, side, signal string, seq uint64) string {
+	if strings.TrimSpace(signal) == "" {
+		return ""
+	}
+	return fmt.Sprintf("exit|%s|%s|%s|%s|%d", account, symbol, side, signal, seq)
 }

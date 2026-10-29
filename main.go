@@ -107,6 +107,10 @@ func main() {
 	// auto-start inside LoadTradersFromStore) so every entry gate reads the
 	// hold file the CLI and the updater write.
 	trader.SetMaintenanceDataDir(resolveMaintenanceDataDir(cfg.DBPath))
+	// m451: the fill_price strikes (and the owner's acknowledgement) are kept in a
+	// small atomic file beside the DB so a kill -9 deploy does not lift a standing
+	// pause. Read at the data-truth boot wiring (trader.RegisterFillPrice).
+	trader.SetFillPriceStatePath(cfg.DBPath + ".fillprice.json")
 	// Ensure data directory exists (for SQLite)
 	if cfg.DBType == "sqlite" {
 		if dir := filepath.Dir(cfg.DBPath); dir != "." {

@@ -63,9 +63,43 @@ const (
 	ReaderMentor = "mentor"
 )
 
-// ScopedCheckFn is a CheckFn that also names the readers a block concerns
-// (nil or empty = every reader). readers is ignored when blocked is false.
-type ScopedCheckFn func(symbol string, now time.Time) (blocked bool, why string, readers []string, err error)
+// ScopedCheckFn is a CheckFn that also says WHO its block is for. Two kinds of
+// scope ride in the one returned []string, told apart by their shape (the
+// integration of release #55 m450 "readers" and m451 "scopes"; Evaluate splits
+// them onto Reason.Readers and Reason.Scopes):
+//
+//   - READERS (m450): the plain names ReaderAI / ReaderMentor name the entry
+//     paths a block concerns (see above); none = every path.
+//   - SCOPES (m451): ScopeTrader / ScopeAccount tokens name the traders or
+//     accounts the block is FOR. The base contract is per symbol: a block stops
+//     every trader on the symbol. That is right for a check about the symbol's
+//     DATA (a bad print, a missing bar), and wrong for a check about ONE account
+//     (the broker view, the fills recorded on one account): trader B's account
+//     view is fine when trader A's disagrees, and pausing B is pausing on data
+//     that is not lost. none = everyone on the symbol (the safe default, and what
+//     every error or panic means).
+//
+// blocked=false returns no scopes.
+type ScopedCheckFn func(symbol string, now time.Time) (blocked bool, why string, scopes []string, err error)
+
+// ScopeTrader / ScopeAccount build the scope tokens a ScopedCheckFn returns and
+// AppliesTo reads. Accounts are compared case-insensitively.
+func ScopeTrader(id string) string { return "trader:" + strings.TrimSpace(id) }
+
+func ScopeAccount(acct string) string { return "acct:" + strings.ToUpper(strings.TrimSpace(acct)) }
+
+// splitTokens separates the reader names (no ':') from the trader/account scope
+// tokens (contain ':') a check returned.
+func splitTokens(tokens []string) (readers, scopes []string) {
+	for _, t := range tokens {
+		if strings.Contains(t, ":") {
+			scopes = append(scopes, t)
+		} else if t != "" {
+			readers = append(readers, t)
+		}
+	}
+	return readers, scopes
+}
 
 // Reason is one blocking check's verdict for a symbol.
 type Reason struct {
@@ -76,6 +110,9 @@ type Reason struct {
 	// Readers names the entry paths this block concerns ("ai", "mentor"); empty =
 	// every path. See ScopedCheckFn.
 	Readers []string `json:"readers,omitempty"`
+	// Scopes: who this block is for (see ScopedCheckFn). Empty = every trader on
+	// the symbol.
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // Concerns reports whether the reason applies to reader (an empty Readers list
@@ -92,6 +129,26 @@ func (r Reason) Concerns(reader string) bool {
 	return false
 }
 
+// AppliesTo reports whether the block is for the asking trader: it is, when the
+// reason carries no scope (a whole-symbol block), or names this trader id or
+// this trader's bound account. A trader with no known account only matches by id.
+func (r Reason) AppliesTo(traderID, account string) bool {
+	if len(r.Scopes) == 0 {
+		return true
+	}
+	tok := ScopeTrader(traderID)
+	acc := ""
+	if strings.TrimSpace(account) != "" {
+		acc = ScopeAccount(account)
+	}
+	for _, s := range r.Scopes {
+		if s == tok || (acc != "" && s == acc) {
+			return true
+		}
+	}
+	return false
+}
+
 // CheckStat is the per-check counter block exported on /api/health.
 type CheckStat struct {
 	Blocked    bool   `json:"blocked"`     // any symbol currently blocked by this check
@@ -101,6 +158,9 @@ type CheckStat struct {
 	// Counted is the number of distinct records the check noted WITHOUT pausing
 	// (Count): real but immaterial disagreements, kept visible instead of lost.
 	Counted int64 `json:"counted"`
+	// Scopes: who the standing blocks are FOR (ScopeTrader / ScopeAccount tokens).
+	// Empty with Blocked=true = the whole symbol (m451).
+	Scopes []string `json:"scopes,omitempty"`
 }
 
 // ReopenMergeWindow: a check that blocks again within this long of its own
@@ -114,6 +174,7 @@ type episode struct {
 	sinceMs   int64
 	clearedMs int64 // when the episode last measured clear (0 = never)
 	detail    string
+	scopes    []string // who the latest block was for (empty = the whole symbol)
 }
 
 type check struct {
@@ -146,8 +207,9 @@ func Register(name string, fn CheckFn) {
 	})
 }
 
-// RegisterScoped is Register for a check that names the readers a block
-// concerns (see ScopedCheckFn).
+// RegisterScoped adds (or replaces) a check whose blocks name the readers they
+// concern (m450) or the traders/accounts they are for (m451) rather than the
+// whole symbol. Everything else is Register. See ScopedCheckFn.
 func RegisterScoped(name string, fn ScopedCheckFn) {
 	if name == "" || fn == nil {
 		return
@@ -218,11 +280,12 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		name, why string
 		blocked   bool
 		readers   []string
+		scopes    []string
 	}
 	vs := make([]verdict, len(names))
 	for i, n := range names {
-		b, why, readers := runCheck(fns[i], symbol, now)
-		vs[i] = verdict{name: n, why: why, blocked: b, readers: readers}
+		b, why, rd, sc := runCheck(fns[i], symbol, now)
+		vs[i] = verdict{name: n, why: why, blocked: b, readers: rd, scopes: sc}
 	}
 
 	type alert struct{ kind, text string }
@@ -254,7 +317,8 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 			}
 			c.last = v.why
 			ep.detail = v.why
-			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs, Readers: v.readers})
+			ep.scopes = v.scopes
+			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs, Readers: v.readers, Scopes: v.scopes})
 		} else if ep.open {
 			ep.open, ep.clearedMs = false, now.UnixMilli()
 			logger.Infof("datatruth: %s CLEAR for %s after %dms (was: %s) - new entries resume", v.name, symbol, now.UnixMilli()-ep.sinceMs, ep.detail)
@@ -290,22 +354,25 @@ func readersNote(readers []string) string {
 	return " (" + strings.Join(names, " + ") + ")"
 }
 
-// runCheck calls one check, converting an error or a panic into a block (for
-// EVERY reader: a check that cannot judge cannot say who it spares).
-func runCheck(fn ScopedCheckFn, symbol string, now time.Time) (blocked bool, why string, readers []string) {
+// runCheck calls one check, converting an error or a panic into a block FOR
+// EVERYONE on the symbol and EVERY reader (an error carries no scope: the check
+// could not even say who it was about, or which path the data reaches). The
+// returned tokens are split onto readers (m450) and scopes (m451).
+func runCheck(fn ScopedCheckFn, symbol string, now time.Time) (blocked bool, why string, readers, scopes []string) {
 	defer func() {
 		if r := recover(); r != nil {
-			blocked, why, readers = true, fmt.Sprintf("check panicked (fail closed): %v", r), nil
+			blocked, why, readers, scopes = true, fmt.Sprintf("check panicked (fail closed): %v", r), nil, nil
 		}
 	}()
-	b, w, rd, err := fn(symbol, now)
+	b, w, tok, err := fn(symbol, now)
 	if err != nil {
-		return true, fmt.Sprintf("cannot judge (fail closed): %v", err), nil
+		return true, fmt.Sprintf("cannot judge (fail closed): %v", err), nil, nil
 	}
 	if !b {
-		return false, w, nil
+		return false, w, nil, nil
 	}
-	return true, w, rd
+	rd, sc := splitTokens(tok)
+	return true, w, rd, sc
 }
 
 // countSeenCap bounds the per-check distinct-record memory of Count.
@@ -340,6 +407,15 @@ func Count(checkName, key, text string) {
 	logger.Warnf("datatruth: %s counted, entries NOT paused (immaterial to every indicator): %s", checkName, text)
 }
 
+// Wired reports whether a REAL check (not a Require stub) is registered under
+// name.
+func Wired(name string) bool {
+	mu.Lock()
+	defer mu.Unlock()
+	c, ok := checks[name]
+	return ok && !c.stub
+}
+
 // Snapshot returns the per-check counters (sorted map by name when encoded).
 func Snapshot() map[string]CheckStat {
 	mu.Lock()
@@ -347,10 +423,20 @@ func Snapshot() map[string]CheckStat {
 	out := make(map[string]CheckStat, len(checks))
 	for n, c := range checks {
 		st := CheckStat{Episodes: c.episodes, Reopens: c.reopens, LastReason: c.last, Counted: c.counted}
+		whole := false
 		for _, ep := range c.eps {
 			if ep.open {
 				st.Blocked = true
+				if len(ep.scopes) == 0 {
+					whole = true
+				}
+				st.Scopes = append(st.Scopes, ep.scopes...)
 			}
+		}
+		if whole {
+			st.Scopes = nil // one whole-symbol block: the union is everyone
+		} else {
+			sort.Strings(st.Scopes)
 		}
 		out[n] = st
 	}
@@ -362,7 +448,11 @@ func HealthSnapshot() map[string]any {
 	snap := Snapshot()
 	out := make(map[string]any, len(snap))
 	for n, s := range snap {
-		out[n] = map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "reopens": s.Reopens, "last_reason": s.LastReason, "counted": s.Counted}
+		m := map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "reopens": s.Reopens, "last_reason": s.LastReason, "counted": s.Counted}
+		if len(s.Scopes) > 0 {
+			m["scopes"] = s.Scopes
+		}
+		out[n] = m
 	}
 	return out
 }

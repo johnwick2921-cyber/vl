@@ -266,3 +266,36 @@ func TestCountIsIdempotentPerKeyAndVisible(t *testing.T) {
 		t.Fatalf("health: %v", h)
 	}
 }
+
+// TestScopedTokensSplitIntoReadersAndScopes pins the release #55 integration of
+// m450 (readers) and m451 (scopes): ONE returned []string carries both kinds and
+// Evaluate must put the plain names on Reason.Readers and the trader:/acct:
+// tokens on Reason.Scopes. A block carrying both applies only to the matching
+// reader AND the matching trader; an error or panic loses both (blocks everyone).
+// MUTANT: splitTokens returning every token as a reader -> Scopes empty -> RED.
+func TestScopedTokensSplitIntoReadersAndScopes(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	RegisterScoped("both", func(string, time.Time) (bool, string, []string, error) {
+		return true, "x", []string{ReaderMentor, ScopeTrader("t1"), ScopeAccount("sim101")}, nil
+	})
+	RegisterScoped("broken", func(string, time.Time) (bool, string, []string, error) {
+		return true, "x", []string{ReaderAI, ScopeTrader("t1")}, errors.New("store down")
+	})
+	_, rs := Evaluate("MNQ", time.Now())
+	by := map[string]Reason{}
+	for _, r := range rs {
+		by[r.Check] = r
+	}
+	b := by["both"]
+	if len(b.Readers) != 1 || b.Readers[0] != ReaderMentor || len(b.Scopes) != 2 {
+		t.Fatalf("tokens not split: readers=%v scopes=%v", b.Readers, b.Scopes)
+	}
+	if !b.Concerns(ReaderMentor) || b.Concerns(ReaderAI) || !b.AppliesTo("t1", "") || !b.AppliesTo("t2", "SIM101") || b.AppliesTo("t2", "Sim102") {
+		t.Fatalf("reader/scope predicates wrong: %+v", b)
+	}
+	e := by["broken"]
+	if len(e.Readers) != 0 || len(e.Scopes) != 0 || !e.Concerns(ReaderAI) || !e.Concerns(ReaderMentor) || !e.AppliesTo("t9", "") {
+		t.Fatalf("a check that cannot judge must block everyone on every path: %+v", e)
+	}
+}

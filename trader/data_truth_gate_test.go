@@ -460,3 +460,50 @@ func TestCrossFrameMentorConstantsMirrorTheEvaluator(t *testing.T) {
 		t.Fatalf("mentor_tick.go no longer reads %d native 5m bars for the strong-day test: update checks.MentorStrongDayBars", checks.MentorStrongDayBars)
 	}
 }
+
+// TestDataTruthReasonsHonoursReaderAndScopeTogether pins the release #55
+// integration of m450 (reader scope) and m451 (trader/account scope) in the ONE
+// consumer: a block that names a READER and a TRADER obeys both filters - the
+// asker must be that trader AND on that reader's path. A block naming only a
+// reader still stops every trader on that path; one naming only a trader still
+// stops that trader on every path.
+// MUTANT: drop either `continue` in dataTruthReasons -> a row below RED.
+func TestDataTruthReasonsHonoursReaderAndScopeTogether(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	now := time.Date(2026, 10, 29, 10, 0, 0, 0, time.UTC)
+	reg := func(name string, tok ...string) {
+		datatruth.RegisterScoped(name, func(string, time.Time) (bool, string, []string, error) {
+			return true, "boom", tok, nil
+		})
+	}
+	reg("reader_only", datatruth.ReaderMentor)
+	reg("scope_only", datatruth.ScopeTrader("t1"))
+	reg("both", datatruth.ReaderAI, datatruth.ScopeTrader("t1"))
+	deep, intra := ntTrader.IntegrityDeepOpenMin, ntTrader.IntegrityIntradayOpenMin
+	cases := []struct {
+		name    string
+		open    int
+		asker   truthAsker
+		want    []string
+		wantNot []string
+	}{
+		{"t1 on the AI path", deep, truthAsker{id: "t1"}, []string{"scope_only", "both"}, []string{"reader_only"}},
+		{"t2 on the AI path", deep, truthAsker{id: "t2"}, nil, []string{"reader_only", "scope_only", "both"}},
+		{"t1 on the mentor path", intra, truthAsker{id: "t1"}, []string{"reader_only", "scope_only"}, []string{"both"}},
+		{"t2 on the mentor path", intra, truthAsker{id: "t2"}, []string{"reader_only"}, []string{"scope_only", "both"}},
+	}
+	for _, c := range cases {
+		v := dataTruthReasons("MNQ", c.open, now, c.asker)
+		for _, w := range c.want {
+			if !strings.Contains(v.Reason, w+":") {
+				t.Errorf("%s: missing %s in %q", c.name, w, v.Reason)
+			}
+		}
+		for _, w := range c.wantNot {
+			if strings.Contains(v.Reason, w+":") {
+				t.Errorf("%s: %s must not apply: %q", c.name, w, v.Reason)
+			}
+		}
+	}
+}

@@ -493,7 +493,7 @@ func (t *TCPTrader) handleFillInbound(fill ntwire.FillPayload) {
 	if confirmed {
 		// m447 (7): the fill's price is judged against the market of its minute.
 		slip := fill.SlippageTicks
-		t.noteFill("entry", entryFillID(fill), fill.Symbol, fill.Side, fill.FillPrice, fillTimeMs(fill.FillTime), 0, &slip)
+		t.noteFill("entry", entryFillID(fill), fill.Symbol, fill.Side, fill.FillPrice, fillTimeMs(fill.FillTime), 0, &slip, fill.Account, entryFillEvent(fill))
 	}
 }
 

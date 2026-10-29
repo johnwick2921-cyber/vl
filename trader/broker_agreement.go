@@ -71,6 +71,22 @@ import (
 // to enter), so a disagreement is already old when the first entry arrives; it
 // is never "first seen at the entry".
 //
+// SCOPE (m451). The block is FOR the trader whose view disagrees, not for the
+// symbol: each trader is bound to its own NT8 account, so account A's stale book,
+// unknown order or quantity mismatch says nothing about account B's picture. The
+// check returns the disagreeing trader's scope token (datatruth.ScopeTrader) and
+// dataTruthReasons lets the block through only to the asking trader. A trader
+// that cannot judge is blocked on its own; only "no trader is registered at all"
+// (nobody to read) blocks every trader on the symbol.
+//
+// STANDING STATE (m451). First-seen survives a closed market: the CME-closed
+// ticks neither judge nor forget. A disagreement that was blocking when the market
+// closed is still blocking at the reopen - the first entry attempt after the bell
+// measures it fresh against its OLD clock instead of giving it a new 60 s
+// to hide in - and it ends only when a measurement finds the books agree. The same
+// holds for the position disagreements across the one call that cannot read the
+// positions frame because an entry just landed (PosSkip).
+//
 // CANNOT JUDGE = BLOCK (fail closed): no bound account, no positions frame for
 // the account, an unreadable store, or - while the CME is open - a broker book
 // too old to read an order out of. While the CME is CLOSED nothing can open or
@@ -102,49 +118,118 @@ type disagreement struct {
 	Detail string
 }
 
+// trackedD is one disagreement the tracker is clocking.
+type trackedD struct {
+	first  time.Time
+	detail string
+}
+
 // agreementTracker holds first-seen per disagreement key.
 type agreementTracker struct {
 	mu    sync.Mutex
-	first map[string]time.Time
+	first map[string]trackedD
 }
 
 func newAgreementTracker() *agreementTracker {
-	return &agreementTracker{first: map[string]time.Time{}}
+	return &agreementTracker{first: map[string]trackedD{}}
 }
 
 // apply records ds at now: a key new this call starts its settle clock, a key
-// absent this call is dropped (the condition measured clear). It returns the
-// disagreements that have persisted at least settle (blocking) and the count
-// still settling.
-func (tk *agreementTracker) apply(ds []disagreement, now time.Time, settle time.Duration) (blocking []disagreement, settling int) {
+// absent this call is dropped (the condition measured clear) UNLESS hold(key)
+// says this call could not measure it (m451: the positions frame was unreadable
+// for one call) - a held key keeps its clock, and keeps blocking if it already
+// was. It returns the disagreements that have persisted at least settle (blocking)
+// and the count still settling.
+func (tk *agreementTracker) apply(ds []disagreement, now time.Time, settle time.Duration, hold func(key string) bool) (blocking []disagreement, settling int) {
 	tk.mu.Lock()
 	defer tk.mu.Unlock()
 	live := make(map[string]bool, len(ds))
 	for _, d := range ds {
 		live[d.Key] = true
-		first, ok := tk.first[d.Key]
+		t, ok := tk.first[d.Key]
 		if !ok {
-			tk.first[d.Key], first = now, now
+			t = trackedD{first: now}
 		}
-		if now.Sub(first) >= settle {
-			d.Detail = fmt.Sprintf("%s [disagreeing for %ds]", d.Detail, int(now.Sub(first).Seconds()))
+		t.detail = d.Detail
+		tk.first[d.Key] = t
+		if now.Sub(t.first) >= settle {
+			d.Detail = fmt.Sprintf("%s [disagreeing for %ds]", d.Detail, int(now.Sub(t.first).Seconds()))
 			blocking = append(blocking, d)
 		} else {
 			settling++
 		}
 	}
+	keys := make([]string, 0, len(tk.first))
 	for k := range tk.first {
 		if !live[k] {
+			keys = append(keys, k)
+		}
+	}
+	sort.Strings(keys)
+	for _, k := range keys {
+		if hold == nil || !hold(k) {
 			delete(tk.first, k)
+			continue
+		}
+		t := tk.first[k]
+		if now.Sub(t.first) >= settle {
+			blocking = append(blocking, disagreement{Key: k, Detail: fmt.Sprintf("%s [disagreeing for %ds; not re-measured on this call]", t.detail, int(now.Sub(t.first).Seconds()))})
+		} else {
+			settling++
 		}
 	}
 	return blocking, settling
 }
 
+// standing returns every tracked disagreement that had already persisted settle,
+// WITHOUT measuring anything: what a closed market reports (m451).
+func (tk *agreementTracker) standing(now time.Time, settle time.Duration) []disagreement {
+	tk.mu.Lock()
+	defer tk.mu.Unlock()
+	keys := make([]string, 0, len(tk.first))
+	for k := range tk.first {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	var out []disagreement
+	for _, k := range keys {
+		t := tk.first[k]
+		if now.Sub(t.first) >= settle {
+			out = append(out, disagreement{Key: k, Detail: fmt.Sprintf("%s [disagreeing for %ds; the market is closed, so it is carried to the reopen and re-measured there]", t.detail, int(now.Sub(t.first).Seconds()))})
+		}
+	}
+	return out
+}
+
 func (tk *agreementTracker) reset() {
 	tk.mu.Lock()
-	tk.first = map[string]time.Time{}
+	tk.first = map[string]trackedD{}
 	tk.mu.Unlock()
+}
+
+// agreementRemedy is the owner-facing way out of a blocking disagreement, by the
+// kind of its key. Each names what the bot will do by itself and what only the
+// owner can do - the bot never edits a row quantity or cancels an NT8 order for
+// this check, and the freeze clear (/api/risk/clear-freeze) does NOT lift this
+// pause: it ends only when the two views agree again.
+func agreementRemedy(key string) string {
+	switch {
+	case strings.HasPrefix(key, "pos:qty:"):
+		return "REMEDY: the bot never edits a row's quantity. In NT8 close the position (or trade it to exactly the row's quantity) - the close frame closes the row and the pause lifts the moment the two quantities agree. /api/risk/clear-freeze unfreezes the trader but does NOT lift this pause."
+	case strings.HasPrefix(key, "pos:orphan:"):
+		return "REMEDY: none needed - the position reconcile closes the row by itself once NT8 has been flat for 60 s (an UNRESOLVED exit if no close frame came) and the pause lifts when it does. If it is still here after a few minutes, read the 'reconcile:' log lines for why it did not."
+	case strings.HasPrefix(key, "pos:untracked:"):
+		return "REMEDY: none needed - the position reconcile writes a row for it after 60 s and the pause lifts. If it is not yours, flatten it in NT8."
+	case strings.HasPrefix(key, "ord:unknown:"), strings.HasPrefix(key, "ord:zombie:"):
+		return "REMEDY: cancel that order in NT8 (Control Center > Orders tab) - the pause lifts when the next order snapshot (30 s) no longer lists it. If you want it, leave it: it blocks entries until it fills or is cancelled."
+	case strings.HasPrefix(key, "ord:gone:"):
+		return "REMEDY: none needed - the armed-order reaper marks the arm cancelled by itself once the arm has had no update for 15 minutes and the broker's fresh book still lacks it, and the pause lifts."
+	case strings.HasPrefix(key, "bind:not_offered:"):
+		return "REMEDY: open or reconnect that account in NT8 (it must appear in NT8's account list), or bind the trader to an account NT8 offers in Settings."
+	case strings.HasPrefix(key, "bind:row_acct:"):
+		return "REMEDY: the open row sits on another account than the trader is bound to; close that position in NT8 on the row's account, or rebind the trader to it."
+	}
+	return ""
 }
 
 // agreementCannotJudge is the fail-closed return: the check could not compare
@@ -185,6 +270,10 @@ type agreementInputs struct {
 	AccountsKnown  bool // NT8's account list is non-empty at all
 	Held, HeldQty  map[string]float64
 	PosJudgeable   bool // a positions frame newer than the last entry receipt
+	// PosSkip: the positions frame cannot be compared on THIS call because an entry
+	// just landed (the reconcile waits too). The position comparisons are skipped
+	// and the tracker holds the position disagreements it was clocking (m451).
+	PosSkip bool
 	Book           *nt.OrderSnapshotCache
 	Interval       time.Duration
 	BookAge        time.Duration
@@ -224,6 +313,9 @@ func judgeAgreement(in agreementInputs) ([]disagreement, error) {
 		return nil, cannotJudge("NT8 has not reported a positions frame for %q since the last entry receipt - the held book is unknown, not flat", in.Account)
 	}
 	for _, r := range in.Rows {
+		if in.PosSkip {
+			break
+		}
 		if instrumentRoot(r.Symbol) != root || (r.Account != "" && r.Account != in.Account) {
 			continue
 		}
@@ -248,6 +340,9 @@ func judgeAgreement(in agreementInputs) ([]disagreement, error) {
 	}
 	sort.Strings(keys)
 	for _, key := range keys {
+		if in.PosSkip {
+			break
+		}
 		sym, side := key, "LONG"
 		if i := strings.LastIndex(key, "|"); i >= 0 {
 			sym, side = key[:i], key[i+1:]
@@ -410,6 +505,7 @@ func (at *AutoTrader) brokerAgreementInputs(now time.Time) (agreementInputs, err
 		in.PosJudgeable = entryAfter.IsZero() || received.After(entryAfter)
 		if !in.PosJudgeable && now.Sub(entryAfter) < agreementSettle {
 			in.PosJudgeable = true // the entry just landed; reconcile waits too
+			in.PosSkip = true
 			snap = nil
 			// a stale pre-entry snapshot must not be compared against the new row:
 			// an empty held book plus a young row (< OrphanGraceMs) judges nothing.
@@ -478,8 +574,12 @@ func (at *AutoTrader) agreementTrackerFor() *agreementTracker {
 func (at *AutoTrader) brokerAgreementVerdict(now time.Time) (blocking []disagreement, settling int, err error) {
 	tk := at.agreementTrackerFor()
 	if !kernel.IsCMEOpen(now) {
-		tk.reset()
-		return nil, 0, nil // market closed: nothing can open or fill; a quiet broker is expected (m433)
+		// Market closed: nothing can open or fill and a quiet broker is expected
+		// (m433), so nothing is MEASURED - but nothing is forgotten either (m451).
+		// What was blocking when the bell rang is still blocking now and at the
+		// reopen; it ends on a measurement that finds the books agree, never on
+		// the clock.
+		return tk.standing(now, agreementSettle), 0, nil
 	}
 	in, err := at.brokerAgreementInputs(now)
 	if err != nil {
@@ -489,7 +589,16 @@ func (at *AutoTrader) brokerAgreementVerdict(now time.Time) (blocking []disagree
 	if err != nil {
 		return nil, 0, err
 	}
-	blocking, settling = tk.apply(ds, now, agreementSettle)
+	var hold func(string) bool
+	if in.PosSkip {
+		hold = func(k string) bool { return strings.HasPrefix(k, "pos:") }
+	}
+	blocking, settling = tk.apply(ds, now, agreementSettle, hold)
+	for i := range blocking {
+		if r := agreementRemedy(blocking[i].Key); r != "" {
+			blocking[i].Detail += " - " + r
+		}
+	}
 	return blocking, settling, nil
 }
 
@@ -511,8 +620,18 @@ func (at *AutoTrader) registerBrokerAgreement() {
 }
 
 // unregisterBrokerAgreement is the Stop side.
+//
+// Compare-and-delete (m451): it removes the entry only if the entry is still THIS
+// instance. A teardown that runs after a newer instance of the same trader id has
+// registered (a Run's deferred and error paths both reach here) must not remove
+// the newer instance's entry - the check would then find no trader while the
+// CME is open and block every entry on the symbol - nor clear the newer
+// instance's reconcile observer.
 func (at *AutoTrader) unregisterBrokerAgreement() {
-	agreementTraders.Delete(at.id)
+	if cur, ok := agreementTraders.Load(at.id); ok && cur != any(at) {
+		return // a newer instance owns this id now
+	}
+	agreementTraders.CompareAndDelete(at.id, any(at))
 	if nt8 := at.armedTrader(); nt8 != nil {
 		nt8.SetReconcileObserver(nil)
 	}
@@ -521,12 +640,13 @@ func (at *AutoTrader) unregisterBrokerAgreement() {
 // RegisterBrokerAgreement registers the check with internal/datatruth. The
 // integrator calls it once at boot (next to WireDataTruth) and may Require it.
 func RegisterBrokerAgreement() {
-	datatruth.Register(CheckBrokerAgreement, brokerAgreementCheck)
+	datatruth.RegisterScoped(CheckBrokerAgreement, brokerAgreementCheck)
 }
 
-// brokerAgreementCheck is the datatruth.CheckFn: it judges symbol across every
-// started NT8 trader that trades it.
-func brokerAgreementCheck(symbol string, now time.Time) (bool, string, error) {
+// brokerAgreementCheck is the datatruth.ScopedCheckFn: it judges symbol across
+// every started NT8 trader that trades it and says WHICH traders' views
+// disagree - the block is for them, not for the symbol (m451).
+func brokerAgreementCheck(symbol string, now time.Time) (bool, string, []string, error) {
 	root := instrumentRoot(market.Normalize(symbol))
 	var traders []*AutoTrader
 	agreementTraders.Range(func(_, v any) bool {
@@ -537,23 +657,39 @@ func brokerAgreementCheck(symbol string, now time.Time) (bool, string, error) {
 	})
 	if len(traders) == 0 {
 		if !kernel.IsCMEOpen(now) {
-			return false, "", nil
+			return false, "", nil, nil
 		}
-		return false, "", fmt.Errorf("no started NT8 trader is registered for %s - the bot's view of the account cannot be read", symbol)
+		return false, "", nil, fmt.Errorf("no started NT8 trader is registered for %s - the bot's view of the account cannot be read", symbol)
 	}
 	sort.Slice(traders, func(i, j int) bool { return traders[i].id < traders[j].id })
-	var parts []string
+	var parts, scopes []string
 	for _, at := range traders {
 		blocking, _, err := at.brokerAgreementVerdict(now)
 		if err != nil {
-			return false, "", fmt.Errorf("trader %s: %w", at.id, err)
+			// This trader cannot compare its two views: that is ITS finding, a block for
+			// it alone (fail closed for the one whose picture is unknown).
+			parts = append(parts, fmt.Sprintf("trader %s: cannot judge (fail closed): %v", at.id, err))
+			scopes = append(scopes, datatruth.ScopeTrader(at.id))
+			continue
 		}
 		for _, d := range blocking {
 			parts = append(parts, fmt.Sprintf("trader %s: %s", at.id, d.Detail))
 		}
+		if len(blocking) > 0 {
+			scopes = append(scopes, datatruth.ScopeTrader(at.id))
+		}
 	}
 	if len(parts) == 0 {
-		return false, "", nil
+		return false, "", nil, nil
 	}
-	return true, strings.Join(parts, "; "), nil
+	return true, strings.Join(parts, "; "), scopes, nil
+}
+
+// brokerAgreementRegistered: this trader is under the check. A trader that is
+// not (never registered, or already stopped) has a broker view nobody is
+// comparing, and the scoped verdicts of the OTHER traders say nothing about it,
+// so while the CME is open it cannot be admitted on the check's silence (m451).
+func (at *AutoTrader) brokerAgreementRegistered() bool {
+	cur, ok := agreementTraders.Load(at.id)
+	return ok && cur == any(at)
 }

@@ -1,7 +1,10 @@
 package checks
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -41,11 +44,26 @@ import (
 //     reported slippage) is the reference; with neither, it is counted UNJUDGED -
 //     a missing bar is the bar-gap checks' episode, not a second one here.
 //   - a far fill raises ONE alert and a counter.
-//   - the SECOND far fill of the same CME session for the symbol pauses NEW
-//     ENTRIES until the owner acknowledges (Ack) or the next session starts; a
-//     far fill AFTER an Ack pauses again. It
+//   - the SECOND far fill EVENT of the same CME session on the same ACCOUNT pauses
+//     NEW ENTRIES of the traders on that account until the owner acknowledges
+//     (Ack) or the next session starts; a far fill AFTER an Ack pauses again. It
 //     is a pause on entries only: the exit, stop, trail, close, protection and
 //     flatten paths never consult it.
+//   - ONE strike per fill EVENT, not per frame (m451): a split bracket sends one
+//     position_close frame per leg and an entry sends a fill frame per partial,
+//     each carrying the same bad print; the caller names the event (FillObs.Event:
+//     the account's signal, and for an exit its seq) and a second frame of an event
+//     already counted is logged, not struck, not alerted. The first far print never
+//     pauses on its own, whatever number of frames it arrives in.
+//   - the strikes are PER ACCOUNT (m451): a far fill recorded on Sim101 is no
+//     evidence about SimAccount1's fills, so it pauses the traders bound to
+//     Sim101 only. A fill that names no account strikes the symbol for everyone.
+//   - the strikes and the owner's acknowledgement survive a restart (m451,
+//     EnableState): a deploy is a kill -9 and a standing pause the owner has not
+//     acknowledged must not vanish with the process.
+//   - a fill the guard CANNOT JUDGE because its own record is malformed (a price
+//     <= 0, no fill time, no id) is itself a wrong recorded price: it is counted
+//     as a far fill and logged (m451), never silently dropped.
 //
 // It is NOT a slippage monitor. A stop-market that fills 20 points through its
 // stop in a fast market is a real market move: the print is inside the bar band,
@@ -109,11 +127,20 @@ type FillObs struct {
 	Price  float64
 	AtMs   int64   // when it printed (ms UTC)
 	Tick   float64 // the symbol's tick size
+	// Account is the NT8 account the fill printed on ("" = unknown: the strike then
+	// counts for every trader on the symbol, the fail-closed reading).
+	Account string
+	// Event names the real-world fill this frame belongs to (m451): every frame of
+	// one event carries the same value, so the legs of a split bracket and the
+	// partials of one entry are ONE strike. "" = each ID is its own event.
+	Event string
 	// OrderPx is the order's own price (0 = unknown). SlipTicks / HasSlip carry
 	// the AddOn's reported slippage against the order when it sent one.
 	OrderPx   float64
 	SlipTicks float64
 	HasSlip   bool
+
+	bad string // set by Record: why the fill's own record cannot be judged
 }
 
 // FillVerdict is one fill's judgment.
@@ -207,8 +234,10 @@ type RingFn func(symbol string) ([]Bar, error)
 
 type strikeState struct {
 	session string
-	lastMs  int64 // newest fill time (ms) the state holds: orders sessions without parsing their keys
+	account string // upper-cased; "" = the fill named no account (strikes everyone on the symbol)
+	lastMs  int64  // newest fill time (ms) the state holds: orders sessions without parsing their keys
 	ids     []string
+	events  []string // parallel to ids: the fill event each strike counted (m451)
 	details []string
 	acked   bool
 }
@@ -224,6 +253,12 @@ type FillStats struct {
 	Far      int64 `json:"far"`
 	Unjudged int64 `json:"unjudged"`
 	Pending  int   `json:"pending"`
+	// FarRepeat counts far FRAMES of a fill event that was already struck (the
+	// other legs / partials of one print): recorded, not a new strike (m451).
+	FarRepeat int64 `json:"far_repeat"`
+	// Malformed counts fills whose own record could not be judged (price <= 0, no
+	// time, no id); each was counted as a far fill (m451).
+	Malformed int64 `json:"malformed"`
 }
 
 // StrikeKey is the ONE canonical key of the per-symbol strike map, applied where
@@ -248,8 +283,20 @@ type FillGuard struct {
 	session func(time.Time) string
 	seen    map[string]bool
 	pending []pendingFill
-	strikes map[string]*strikeState // by symbol
+	strikes map[string]*strikeState // by symbol + account (strikeMapKey)
 	stats   FillStats
+
+	// persistence (m451): "" = memory only
+	statePath string
+	stateSeq  int64      // guarded by mu: bumped at every snapshot
+	fileMu    sync.Mutex // serialises the file writes
+	fileSeq   int64      // guarded by fileMu: newest snapshot written
+}
+
+// strikeMapKey is the key of the strike map: the canonical symbol and the
+// upper-cased account.
+func strikeMapKey(symbol, account string) string {
+	return StrikeKey(symbol) + "|" + strings.ToUpper(strings.TrimSpace(account))
 }
 
 // NewFillGuard builds a guard. session maps an instant to its CME session key
@@ -299,8 +346,28 @@ func (g *FillGuard) SetSession(fn func(time.Time) string) {
 // the ring read; never returns an error to the caller (a fill handler must not
 // fail because the check did).
 func (g *FillGuard) Record(o FillObs, ring RingFn, now time.Time) {
-	if o.ID == "" || o.Price <= 0 || o.AtMs <= 0 {
-		return
+	// A fill whose own record cannot be judged is a wrong recorded price: it is
+	// COUNTED as a far fill and logged, never silently dropped (m451). It is
+	// attributed to the session it arrived in (it has no usable time).
+	switch {
+	case o.Price <= 0:
+		o.bad = fmt.Sprintf("%s fill price %.4f is not a price (a mis-parsed frame or a zeroed field) and cannot be judged against the market", o.Kind, o.Price)
+	case o.AtMs <= 0:
+		o.bad = fmt.Sprintf("%s fill %.2f has no usable fill time (%d) and cannot be placed in a market minute to be judged", o.Kind, o.Price, o.AtMs)
+	case o.ID == "":
+		o.bad = fmt.Sprintf("%s fill %.2f arrived with no fill id and cannot be tracked or deduplicated", o.Kind, o.Price)
+	}
+	if o.bad != "" {
+		if o.AtMs <= 0 {
+			o.AtMs = now.UnixMilli()
+		}
+		if o.ID == "" {
+			o.ID = fmt.Sprintf("malformed|%s|%s|%s|%.4f|%d", o.Account, o.Symbol, o.Side, o.Price, o.AtMs)
+		}
+		g.mu.Lock()
+		g.stats.Malformed++
+		g.mu.Unlock()
+		logger.Warnf("datatruth: fill_price cannot judge a malformed fill record - counted as a FAR fill (fail closed): %s [fill id %s, account %q]", o.bad, o.ID, o.Account)
 	}
 	g.mu.Lock()
 	if g.seen[o.ID] {
@@ -318,6 +385,10 @@ func (g *FillGuard) Record(o FillObs, ring RingFn, now time.Time) {
 		g.seen[o.ID] = true
 	}
 	g.mu.Unlock()
+	if o.bad != "" {
+		g.apply(o, FillVerdict{Judged: true, Far: true, Detail: o.bad}, now)
+		return
+	}
 	if !g.tryJudge(o, ring, now) {
 		g.mu.Lock()
 		g.pending = append(g.pending, pendingFill{o, ring})
@@ -349,10 +420,28 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 		g.mu.Unlock()
 		return
 	}
-	g.stats.Far++
 	sess := g.session(time.UnixMilli(o.AtMs))
-	key := StrikeKey(o.Symbol)
+	key := strikeMapKey(o.Symbol, o.Account)
 	st := g.strikes[key]
+	event := o.Event
+	if event == "" {
+		event = o.ID
+	}
+	// ONE strike per fill EVENT (m451): another frame of an event already struck in
+	// this session (the next leg of a split bracket, the next partial of an entry)
+	// is the SAME print. It is counted as a repeat and logged; it neither strikes
+	// again nor alerts again.
+	if st != nil && st.session == sess {
+		for _, e := range st.events {
+			if e == event {
+				g.stats.FarRepeat++
+				g.mu.Unlock()
+				logger.Infof("datatruth: fill_price: another frame of fill event %s (%s %s %s %.2f, fill id %s) - already counted as a strike, not a new one", event, o.Symbol, o.Kind, o.Side, o.Price, o.ID)
+				return
+			}
+		}
+	}
+	g.stats.Far++
 	// A far fill that belongs to an OLDER session than the one the state holds (a
 	// late or retried exit receipt, a replay after a reconnect or restart) must
 	// not touch the current session's strikes: replacing the state would wipe the
@@ -364,7 +453,7 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 	n, strikes := 0, g.p.Strikes
 	if !late {
 		if st == nil || st.session != sess {
-			st = &strikeState{session: sess}
+			st = &strikeState{session: sess, account: strings.ToUpper(strings.TrimSpace(o.Account))}
 			g.strikes[key] = st
 		}
 		// An owner acknowledgement spends the strikes seen so far, not the future: a
@@ -376,24 +465,40 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 			st.lastMs = o.AtMs
 		}
 		st.ids = append(st.ids, o.ID)
+		st.events = append(st.events, event)
 		st.details = append(st.details, v.Detail)
 		n = len(st.ids)
 	}
 	alert := g.alert
 	g.mu.Unlock()
+	if !late {
+		g.persist()
+	}
 
+	who := ""
+	if strings.TrimSpace(o.Account) != "" {
+		who = " on account " + strings.TrimSpace(o.Account)
+	}
 	var text string
 	if late {
-		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s: %s. This fill belongs to an EARLIER session than the one now trading (a late or replayed receipt), so it does not count toward this session's pause; the recorded price is still wrong - check the bars or the fill record.",
-			o.Symbol, o.Kind, o.Side, v.Detail)
+		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s%s: %s. This fill belongs to an EARLIER session than the one now trading (a late or replayed receipt), so it does not count toward this session's pause; the recorded price is still wrong - check the bars or the fill record.",
+			o.Symbol, o.Kind, o.Side, who, v.Detail)
 	} else {
-		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s: %s. Either the bars lost this print or the recorded fill price is wrong. Far fills this session for %s: %d of %d (the %s pauses new entries until you acknowledge or the next session).",
-			o.Symbol, o.Kind, o.Side, v.Detail, o.Symbol, n, strikes, ordinal(strikes))
+		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s%s: %s. Either the bars lost this print or the recorded fill price is wrong. Far fill events this session for %s%s: %d of %d (the %s pauses new entries%s until you acknowledge or the next session).",
+			o.Symbol, o.Kind, o.Side, who, v.Detail, o.Symbol, who, n, strikes, ordinal(strikes), forWho(o.Account))
 	}
 	logger.Warnf("datatruth: %s [fill id %s]", text, o.ID)
 	if alert != nil {
 		alert(fmt.Sprintf("data_truth_fill_price_far|%s|%s", o.Symbol, o.ID), text)
 	}
+}
+
+// forWho words the scope of the pause.
+func forWho(account string) string {
+	if a := strings.TrimSpace(account); a != "" {
+		return " of the traders on account " + a
+	}
+	return ""
 }
 
 func ordinal(n int) string {
@@ -438,17 +543,34 @@ func (g *FillGuard) Sweep(now time.Time) {
 	}
 }
 
-// Ack is the owner acknowledging the symbol's far fills: entries resume until
-// the next far fill. Returns whether a pause was standing.
-func (g *FillGuard) Ack(symbol string) bool {
+// Ack is the owner acknowledging the symbol's far fills on EVERY account:
+// entries resume until the next far fill. Returns whether a pause was standing.
+func (g *FillGuard) Ack(symbol string) bool { return g.ack(symbol, "", false) }
+
+// AckAccount acknowledges one account's far fills only (m451): the pause is per
+// account, so its remedy is too.
+func (g *FillGuard) AckAccount(symbol, account string) bool { return g.ack(symbol, account, true) }
+
+func (g *FillGuard) ack(symbol, account string, only bool) bool {
 	g.mu.Lock()
-	defer g.mu.Unlock()
-	st := g.strikes[StrikeKey(symbol)]
-	if st == nil || st.acked || len(st.ids) < g.p.Strikes {
-		return false
+	prefix := StrikeKey(symbol) + "|"
+	want := strings.ToUpper(strings.TrimSpace(account))
+	any := false
+	for k, st := range g.strikes {
+		if !strings.HasPrefix(k, prefix) || (only && st.account != want) {
+			continue
+		}
+		if st.acked || len(st.ids) < g.p.Strikes {
+			continue
+		}
+		st.acked = true
+		any = true
 	}
-	st.acked = true
-	return true
+	g.mu.Unlock()
+	if any {
+		g.persist()
+	}
+	return any
 }
 
 // Stats returns the counters.
@@ -460,32 +582,214 @@ func (g *FillGuard) Stats() FillStats {
 	return s
 }
 
-// Check is the datatruth.CheckFn: blocked when the symbol has Strikes far fills
-// this session and the owner has not acknowledged. It sweeps the waiting fills
-// first, so a pause is never a minute behind the bars that prove it.
+// Check is the unscoped datatruth.CheckFn: blocked when any account of the symbol
+// has Strikes far fill events this session and the owner has not acknowledged. It
+// sweeps the waiting fills first, so a pause is never a minute behind the bars
+// that prove it. Production registers CheckScoped (who the pause is FOR).
 func (g *FillGuard) Check() datatruth.CheckFn {
+	sc := g.CheckScoped()
 	return func(symbol string, now time.Time) (bool, string, error) {
+		b, why, _, err := sc(symbol, now)
+		return b, why, err
+	}
+}
+
+// CheckScoped is the datatruth.ScopedCheckFn: the same verdict plus the accounts
+// it is for. A standing state that names no account is for everyone.
+func (g *FillGuard) CheckScoped() datatruth.ScopedCheckFn {
+	return func(symbol string, now time.Time) (bool, string, []string, error) {
 		g.Sweep(now)
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		st := g.strikes[StrikeKey(symbol)]
-		if st == nil {
-			return false, "", nil
+		prefix := StrikeKey(symbol) + "|"
+		keys := make([]string, 0, len(g.strikes))
+		for k := range g.strikes {
+			if strings.HasPrefix(k, prefix) {
+				keys = append(keys, k)
+			}
 		}
-		if st.session != g.session(now) {
-			return false, "", nil // the next session: the strikes are spent
+		sort.Strings(keys)
+		cur := g.session(now)
+		var parts, scopes []string
+		everyone := false
+		for _, k := range keys {
+			st := g.strikes[k]
+			if st.session != cur {
+				continue // the next session: the strikes are spent
+			}
+			if len(st.ids) < g.p.Strikes || st.acked {
+				continue
+			}
+			ids := append([]string(nil), st.ids...)
+			sort.Strings(ids)
+			sym := StrikeKey(symbol)
+			who, ackURL := "", "POST /api/risk/ack-fill-price?symbol="+sym
+			if st.account != "" {
+				who = "account " + st.account + ": "
+				ackURL += "&account=" + st.account
+				scopes = append(scopes, datatruth.ScopeAccount(st.account))
+			} else {
+				everyone = true
+			}
+			parts = append(parts, fmt.Sprintf("%s%d far fill(s) this session (ids %s): %s - acknowledge via %s or wait for the next session",
+				who, len(st.ids), strings.Join(ids, ","), strings.Join(st.details, " | "), ackURL))
 		}
-		if len(st.ids) < g.p.Strikes || st.acked {
-			return false, "", nil
+		if len(parts) == 0 {
+			return false, "", nil, nil
 		}
-		ids := append([]string(nil), st.ids...)
-		sort.Strings(ids)
-		return true, fmt.Sprintf("%d far fill(s) this session (ids %s): %s - acknowledge via POST /api/risk/ack-fill-price?symbol=%s or wait for the next session",
-			len(st.ids), strings.Join(ids, ","), strings.Join(st.details, " | "), symbol), nil
+		if everyone {
+			scopes = nil
+		}
+		return true, strings.Join(parts, "; "), scopes, nil
 	}
+}
+
+// ── persistence (m451) ───────────────────────────────────────────────────────
+
+const fillStateVersion = 1
+
+// fillStateMaxAge: a strike state whose newest fill is older than this is dropped
+// from the file (a CME session is a day; the weekend is the longest gap).
+const fillStateMaxAge = 96 * time.Hour
+
+type fillStateStrike struct {
+	Account string   `json:"account"`
+	Session string   `json:"session"`
+	LastMs  int64    `json:"last_ms"`
+	IDs     []string `json:"ids"`
+	Events  []string `json:"events"`
+	Details []string `json:"details"`
+	Acked   bool     `json:"acked"`
+}
+
+type fillStateDisk struct {
+	Version int                        `json:"version"`
+	SavedAt int64                      `json:"saved_at"`
+	Strikes map[string]fillStateStrike `json:"strikes"`
+}
+
+// EnableState loads path (when it exists) into the strike map and from then on
+// rewrites it, atomically, at every strike and every acknowledgement - the way
+// the owner-push held file survives a kill -9 deploy. Returns how many standing
+// strike states it restored. An unreadable file is reported (log + the alert
+// sender, once) and the guard starts empty: nothing can be restored from it, and
+// the owner is told that a standing pause may have been lost.
+func (g *FillGuard) EnableState(path string) (restored int, err error) {
+	if path == "" {
+		return 0, nil
+	}
+	b, rerr := os.ReadFile(path)
+	var d fillStateDisk
+	switch {
+	case os.IsNotExist(rerr):
+	case rerr != nil:
+		err = rerr
+	default:
+		if jerr := json.Unmarshal(b, &d); jerr != nil {
+			err = jerr
+		} else if d.Version != fillStateVersion {
+			err = fmt.Errorf("state version %d, want %d", d.Version, fillStateVersion)
+			d = fillStateDisk{}
+		}
+	}
+	g.mu.Lock()
+	g.statePath = path
+	cutoff := time.Now().Add(-fillStateMaxAge).UnixMilli()
+	for k, s := range d.Strikes {
+		if s.LastMs < cutoff || len(s.IDs) == 0 {
+			continue
+		}
+		st := &strikeState{session: s.Session, account: s.Account, lastMs: s.LastMs, ids: s.IDs, events: s.Events, details: s.Details, acked: s.Acked}
+		for len(st.events) < len(st.ids) { // a hand-edited file: every strike keeps an event
+			st.events = append(st.events, st.ids[len(st.events)])
+		}
+		g.strikes[k] = st
+		for _, id := range st.ids {
+			g.seen[id] = true // a replay of a counted fill after the restart is not a new one
+		}
+		restored++
+	}
+	alert := g.alert
+	g.mu.Unlock()
+	if err != nil {
+		text := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable (%v) - any standing far-fill strikes or acknowledgement from before this restart are LOST; the guard starts empty.", path, err)
+		logger.Errorf("datatruth: %s", text)
+		if alert != nil {
+			alert("data_truth_fill_price_state|"+path, text)
+		}
+	} else if restored > 0 {
+		logger.Warnf("datatruth: fill_price restored %d standing strike state(s) from %s", restored, path)
+	}
+	g.persist()
+	return restored, err
+}
+
+// persist snapshots the strike map under g.mu and writes it outside the lock.
+// Concurrent calls are ordered by snapshot sequence so an older snapshot can
+// never overwrite a newer one.
+func (g *FillGuard) persist() {
+	g.mu.Lock()
+	path := g.statePath
+	if path == "" {
+		g.mu.Unlock()
+		return
+	}
+	g.stateSeq++
+	seq := g.stateSeq
+	d := fillStateDisk{Version: fillStateVersion, SavedAt: time.Now().Unix(), Strikes: map[string]fillStateStrike{}}
+	cutoff := time.Now().Add(-fillStateMaxAge).UnixMilli()
+	for k, st := range g.strikes {
+		if st.lastMs < cutoff {
+			continue
+		}
+		d.Strikes[k] = fillStateStrike{Account: st.account, Session: st.session, LastMs: st.lastMs,
+			IDs: append([]string(nil), st.ids...), Events: append([]string(nil), st.events...),
+			Details: append([]string(nil), st.details...), Acked: st.acked}
+	}
+	g.mu.Unlock()
+	b, err := json.Marshal(d)
+	if err != nil {
+		logger.Errorf("datatruth: fill_price state encode: %v", err)
+		return
+	}
+	g.fileMu.Lock()
+	defer g.fileMu.Unlock()
+	if seq < g.fileSeq {
+		return
+	}
+	if err := writeFileAtomic(path, b); err != nil {
+		logger.Errorf("datatruth: fill_price state write %s: %v - a restart now would forget the standing strikes", path, err)
+		return
+	}
+	g.fileSeq = seq
+}
+
+// writeFileAtomic: temp file beside the target, fsync, rename (the owner-push
+// state file's way).
+func writeFileAtomic(path string, b []byte) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	tmp := path + ".tmp" // replaced by the next write, consumed by the rename
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // RegisterFillPrice registers the check for g.
 func RegisterFillPrice(g *FillGuard) {
-	datatruth.Register(CheckFillPrice, g.Check())
+	datatruth.RegisterScoped(CheckFillPrice, g.CheckScoped())
 }
