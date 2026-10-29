@@ -1947,8 +1947,10 @@ func (s *TCPServer) drainBarIngest(ctx context.Context) {
 		case msg := <-s.barIngestCh:
 			if msg.historical {
 				s.barCache.SeedHistorical(msg.symbol, msg.timeframe, msg.bars)
+				histContracts.note(msg.symbol, msg.contract, msg.bars) // m446: the seed's contract
 			} else {
 				s.barCache.Upsert(msg.symbol, msg.timeframe, msg.bars)
+				liveContracts.note(msg.symbol, msg.contract, msg.bars) // m446: contract-roll guard
 				// LIVE-only fan-out to deterministic evaluators (two-picture
 				// mode). Historical replays must NOT mint opportunities.
 				//
@@ -2094,6 +2096,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 				continue
 			}
 			ingestDropOld.Add(1)
+			noteIngestLoss(head) // m446: a historical batch or a plain forming frame
 			dropped = true
 		default:
 			n = 0
@@ -2111,13 +2114,16 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 		// Only finals were queued.
 		if barsCarryFinal(msg.bars) {
 			ingestFinalDropped.Add(1) // oldest final displaced by a newer final
+			noteIngestLoss(kept[0])   // m446: DATA LOSS - ledgered until verified
 			kept = kept[1:]
 			dropped = true
 		} else {
 			ingestDropCur.Add(1) // incoming forming frame is the one lost
+			noteIngestLoss(msg)
 			for _, k := range kept {
 				if !requeue(k) {
 					ingestFinalDropped.Add(1)
+					noteIngestLoss(k)
 				}
 			}
 			ingestFinalKept.Add(int64(len(kept)))
@@ -2128,6 +2134,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 	for _, k := range kept {
 		if !requeue(k) {
 			ingestFinalDropped.Add(1)
+			noteIngestLoss(k)
 		}
 	}
 	ingestFinalKept.Add(int64(len(kept)))
@@ -2136,6 +2143,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 			ingestFinalDropped.Add(1)
 		}
 		ingestDropCur.Add(1)
+		noteIngestLoss(msg)
 	}
 	ingestDropSummary()
 }
@@ -2148,13 +2156,23 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 // longer than 2s, log + drop (better to lose this batch than deadlock
 // the read loop forever).
 func (s *TCPServer) enqueueBarHistorical(symbol, timeframe string, bars []Bar) {
+	s.enqueueBarHistoricalContract(symbol, timeframe, "", bars)
+}
+
+// enqueueBarHistoricalContract is enqueueBarHistorical carrying the front month
+// the batch named (BarsHistoricalPayload.Contract, parsed since 2026-09-11 and
+// until m446 dropped here): the data-truth contract guard compares it with the
+// live contract, so a ring seeded on an old month under new-month live frames is
+// seen. "" = unknown, never a match.
+func (s *TCPServer) enqueueBarHistoricalContract(symbol, timeframe, contract string, bars []Bar) {
 	s.histAtSub.note(symbol, timeframe, len(bars)) // 101 E1: what arrived, per tf
-	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, bars: bars}
+	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, contract: contract, bars: bars}
 	select {
 	case s.barIngestCh <- msg:
 		return
 	case <-time.After(2 * time.Second):
 		ingestDropHist.Add(1)
+		noteIngestLoss(msg) // m446: a dropped historical batch is DATA LOSS
 		ingestDropSummary()
 	}
 }
@@ -2606,7 +2624,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 					"symbol", p.Symbol, "timeframe", p.Timeframe, "bars", len(p.Bars))
 				continue
 			}
-			s.enqueueBarHistorical(p.Symbol, p.Timeframe, p.Bars)
+			s.enqueueBarHistoricalContract(p.Symbol, p.Timeframe, p.Contract, p.Bars)
 
 		case FrameBarsHistoryData:
 			// HISTORY IMPORT (wave 101) — fan one chunk out to the importer
