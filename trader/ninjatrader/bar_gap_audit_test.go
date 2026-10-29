@@ -235,9 +235,10 @@ func TestAuditFindsAnOldHoleWithNoLiveArrival(t *testing.T) {
 // "found by the AUDIT" lines, two RETIRED lines -> RED.
 func TestAuditAnnouncesAnOldHoleOnceAndKeepsItListed(t *testing.T) {
 	f := newGHFixture(t)
-	f.putOpen("1m", ct(2026, 10, 6, 8, 0), ct(2026, 10, 6, 9, 0), store.BarSourceHistorical)
+	f.tr.auditDays = 14 // the hole is older than the deepest re-request (8640 1m bars): RETIRED, so the window must reach it
+	f.putOpen("1m", ct(2026, 9, 29, 8, 0), ct(2026, 9, 29, 9, 0), store.BarSourceHistorical)
 	f.putOpen("1m", ct(2026, 10, 13, 12, 0), ct(2026, 10, 14, 7, 46), store.BarSourceHistorical)
-	want := openMinutes(ct(2026, 10, 6, 9, 0), ct(2026, 10, 13, 12, 0))
+	want := openMinutes(ct(2026, 9, 29, 9, 0), ct(2026, 10, 13, 12, 0))
 	now := f.clk.Now()
 	f.tr.auditPass(now)
 	f.tr.tick(now.Add(20 * time.Second)) // the retire check runs before every gate
@@ -324,14 +325,15 @@ func TestAuditOnTheReal1026RowsOpensTheHoleThroughTheTracker(t *testing.T) {
 // retired hole is never reported to the owner -> RED.
 func TestAuditFoundRetiredHoleReachesTheOwnerRead(t *testing.T) {
 	f := newGHFixture(t)
-	f.putOpen("1m", ct(2026, 10, 6, 8, 0), ct(2026, 10, 6, 9, 0), store.BarSourceHistorical)
+	f.tr.auditDays = 14 // the hole is older than the deepest re-request (8640 1m bars): RETIRED, so the window must reach it
+	f.putOpen("1m", ct(2026, 9, 29, 8, 0), ct(2026, 9, 29, 9, 0), store.BarSourceHistorical)
 	f.putOpen("1m", ct(2026, 10, 13, 12, 0), ct(2026, 10, 14, 7, 46), store.BarSourceHistorical)
 	now := f.clk.Now()
 	f.tr.auditPass(now)
 	f.tr.tick(now.Add(20 * time.Second))
 	f.stream(ct(2026, 10, 14, 7, 46), ct(2026, 10, 14, 7, 48)) // live receipts
 	got := f.tr.unfilledFeeding("MNQ", now)
-	if len(got) != 1 || !got[0].OutsideReplay || got[0].Window == "" || got[0].Missing != openMinutes(ct(2026, 10, 6, 9, 0), ct(2026, 10, 13, 12, 0)) {
+	if len(got) != 1 || !got[0].OutsideReplay || got[0].Window == "" || got[0].Missing != openMinutes(ct(2026, 9, 29, 9, 0), ct(2026, 10, 13, 12, 0)) {
 		t.Fatalf("the owner read must carry the retired hole: %+v\n%s", got, f.sink.dump())
 	}
 	// not while the feed is not live: that is FEED DOWN's story

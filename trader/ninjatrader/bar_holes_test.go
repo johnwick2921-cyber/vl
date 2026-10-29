@@ -744,20 +744,23 @@ func TestSendWindowCatchesEveryTickerPhase(t *testing.T) {
 
 func TestHoleOutsideTheReplayWindowIsRetired(t *testing.T) {
 	f := newGHFixture(t)
-	f.stream(ct(2026, 10, 9, 10, 0), ct(2026, 10, 9, 10, 5))   // Fri 10-09
+	// m444 review round 2: a hole older than the STANDARD replay is asked for
+	// DEEPLY; only one older than the deepest ask (8640 1m bars, ~6 sessions) is
+	// retired — Fri 09-25 → Wed 10-14 is ~13 sessions.
+	f.stream(ct(2026, 9, 25, 10, 0), ct(2026, 9, 25, 10, 5))   // Fri 09-25
 	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49)) // Wed 10-14
 	waitFor(t, "the tracker to open the Fri→Wed hole", func() bool { return len(f.holes()) == 1 })
 	det := f.clk.Now()
 	f.tr.tick(det.Add(61 * time.Second))
-	f.noNewReRequest(0, "a hole beyond the 2000-bar replay reach is never asked for")
+	f.noNewReRequest(0, "a hole beyond even the deepest ask is never asked for")
 	// m444: a retired hole STAYS LISTED (state "retired") — dropping it let the
 	// persistent gap audit re-find and re-announce it on every pass.
 	if hs := f.holes(); len(hs) != 1 || hs[0].State != holeStateRetired {
 		t.Fatalf("the hole must be retired and stay listed: %+v\n%s", hs, f.sink.dump())
 	}
-	if f.sink.count("bars hole RETIRED: MNQ 1m 10-09 10:06–10-14 07:48 CT on MNQ 12-26 — outside NT8's replay window: a re-request replays the last 2000 1m bars") != 1 ||
+	if f.sink.count("bars hole RETIRED: MNQ 1m 09-25 10:06–10-14 07:48 CT on MNQ 12-26 — older than the bot can ask NT8 for: the standard re-request replays the last 2000 1m bars, a deep one at most 4800") != 1 ||
 		f.sink.count("so this hole stays") != 1 {
-		t.Fatalf("the retirement must be said once, naming the replay window:\n%s", f.sink.dump())
+		t.Fatalf("the retirement must be said once, naming both reaches:\n%s", f.sink.dump())
 	}
 	if d := f.delta(); d.Refused != 1 || d.Unfilled != 0 || d.Rerequests != 0 {
 		t.Fatalf("refused +%d unfilled +%d sent +%d — retired once, counted, never sent", d.Refused, d.Unfilled, d.Rerequests)

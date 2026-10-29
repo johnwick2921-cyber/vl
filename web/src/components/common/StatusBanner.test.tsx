@@ -118,9 +118,11 @@ describe('StatusBanner', () => {
       )
       expect(screen.queryByTestId('status-banner')).toBeNull()
     })
-    // review round 2: a RETIRED hole cannot be refilled by a reload or a
-    // restart, so the banner must NOT tell the owner to reload.
-    it('a retired hole says the bot cannot refill it, not "reload"', async () => {
+    // review round 2: a RETIRED hole is further back than the deepest replay
+    // the bot can take in (4800 1m bars). No reload or restart helps, so the
+    // banner must NOT carry the reload action sentence; it says why and when it
+    // clears. (A hole the deep re-request can still reach is `unfilled`.)
+    it('a retired hole says why the bot cannot re-read it, with no reload instruction', async () => {
       vi.spyOn(updatesApi, 'health').mockResolvedValue({
         cme_open: true,
         feed_stale: false,
@@ -129,9 +131,8 @@ describe('StatusBanner', () => {
       mount()
       const el = await screen.findByTestId('missing-bars-banner')
       expect(el).toHaveTextContent(
-        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min'
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — further back than the bot can re-read from NT8 (4800 1m bars)'
       )
-      expect(el).toHaveTextContent('the bot cannot refill it')
       expect(el.textContent).not.toContain('Reload All Historical Data')
     })
     it('a hole still being re-requested (refilling) shows nothing', async () => {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
 )
 
@@ -21,7 +22,9 @@ import (
 // boot scan saw MNQ 1m missing 16:00→08:34 (934 open min), 12 re-requests
 // later NT8 still had none, and the hole was declared UNFILLED (a log line) and
 // then RETIRED (dropped from the tracker and /api/health) once it left NT8's
-// 2000-bar replay window. Days later MNQ 1m was still missing 17:00→21:57 while
+// 2000-bar replay window. The 17:00-21:56 span itself may still exist in NT8
+// beyond that window [B]: the stored 1m rows resume at 21:57, exactly 2000 CME-open
+// minutes before the 10-28 08:17 replay [A] — hence the DEEP re-request below. Days later MNQ 1m was still missing 17:00→21:57 while
 // MNQ 3m/5m and ES 1m were whole — and NOTHING on the bot knew: the detector
 // only ever ran when a live 1m bar arrived (observeLive), the boot scan reached
 // back only to the CURRENT session open, and a retired hole left the list.
@@ -45,9 +48,13 @@ import (
 //     episode is announced ONCE; it stays listed until the store holds the bars
 //     (the audit closes it when a later pass no longer finds it) or it ages out
 //     of the window.
-//  4. A hole older than NT8's replay window is RETIRED at once (listed, never
-//     re-asked) — the bot cannot refill it, but it can SAY so: the dashboard
-//     banner reads "MISSING BARS ... NT8: Reload All Historical Data".
+//  4. A hole older than NT8's standard replay window (the last 2000 1m bars) is
+//     NOT given up on: the tracker asks NT8 for it with a DEEP 1m re-request
+//     (up to 4800 bars — the replay-hold keeps 5000 — 2 scheduled asks, then
+//     UNFILLED, then 2 slow ones). Only a hole beyond THAT is RETIRED (listed,
+//     never asked) — and then the dashboard and the phone say exactly that.
+//     m444 review round 2: the first cut retired every such hole at once and
+//     told the owner "the bot cannot refill it" — false, the deep path existed.
 //
 // Trailing edge with no higher-frame evidence is NOT judged here: a feed that
 // delivers nothing at all is FEED DOWN's story (its own banner and push).
@@ -68,6 +75,10 @@ const (
 	// word, by the dashboard banner (web StatusBanner, key missingBarsBanner)
 	// and by the owner push body (trader/owner_push.go).
 	BarsMissingAction = "NT8: Reload All Historical Data"
+
+	// DeepHoleMaxBarsBack is the deepest 1m ask the bot makes for a hole (the
+	// wire's cap); a hole further back is retired. READ by the owner push.
+	DeepHoleMaxBarsBack = ntwire.DeepGapBackfillMaxBarsBack
 )
 
 // barGapAuditDays resolves BARS_GAP_AUDIT_DAYS (CME session days; 0 = audit off).
@@ -382,7 +393,7 @@ func (t *barHoleTracker) applyAuditLocked(tg auditTarget, spans []barHoleSpan, w
 		if t.trackedLocked(tg.Symbol, tg.Contract, sp) {
 			continue
 		}
-		if len(t.holes) >= barHoleMaxOpen {
+		if t.atCapLocked() {
 			k := fmt.Sprintf("%s|%d", holeKey(tg.Symbol, tg.Contract), sp.FromMs)
 			if !t.audit.saidCap[k] {
 				t.audit.saidCap[k] = true
@@ -403,8 +414,8 @@ func (t *barHoleTracker) applyAuditLocked(tg auditTarget, spans []barHoleSpan, w
 		added++
 		t.audit.found++
 		telemetry.IncBarsHoleDetected()
-		t.say("WARN", fmt.Sprintf("🕳 bars HOLE found by the AUDIT: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); found from the store, not from a live arrival; NT8 history re-request scheduled at %s after now if inside NT8's replay window, never while the feed is down. If NT8 still has none after the re-requests: %s (a hole older than NT8's replay window is RETIRED and listed instead — no re-request or reload can refill it)",
-			tg.Symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), tg.Contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText(), BarsMissingAction))
+		t.say("WARN", fmt.Sprintf("🕳 bars HOLE found by the AUDIT: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); found from the store, not from a live arrival; NT8 history re-request scheduled at %s after now (a DEEP 1m one when the hole is older than NT8's standard replay of the last 2000 1m bars), never while the feed is down. If NT8 still has none after the re-requests: %s (a hole older than even the deepest re-request, %d 1m bars, is RETIRED instead and only listed)",
+			tg.Symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), tg.Contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText(), BarsMissingAction, ntwire.DeepGapBackfillMaxBarsBack))
 	}
 	// reconcile: a tracked hole the audit can fully judge and no longer finds is
 	// FILLED; one wholly before the window has aged out
@@ -458,8 +469,8 @@ func (t *barHoleTracker) auditBootLine() string {
 	if t.auditDays <= 0 {
 		return fmt.Sprintf("🕳 bar gap audit: OFF [%s, env BARS_GAP_AUDIT_DAYS=0] — holes are found only from live arrivals", t.auditDaysSrc)
 	}
-	return fmt.Sprintf("🕳 bar gap audit: armed — every %s [%s, env BARS_GAP_AUDIT_EVERY_MIN], first pass %s after boot, over the last %d CME session day(s) [%s, env BARS_GAP_AUDIT_DAYS] of the stored %s bars of every subscribed symbol, cross-checked against 3m/5m; a gap goes into the same hole tracker (re-requests, UNFILLED, owner push); a hole older than NT8's replay window is listed as retired and the dashboard says %q",
-		t.auditEvery, t.auditEverySrc, barGapAuditFirstDelay, t.auditDays, t.auditDaysSrc, barHoleTF, BarsMissingAction)
+	return fmt.Sprintf("🕳 bar gap audit: armed — every %s [%s, env BARS_GAP_AUDIT_EVERY_MIN], first pass %s after boot, over the last %d CME session day(s) [%s, env BARS_GAP_AUDIT_DAYS] of the stored %s bars of every subscribed symbol, cross-checked against 3m/5m; a gap goes into the same hole tracker (re-requests, UNFILLED, owner push); a hole older than NT8's standard replay window gets DEEP 1m re-requests (up to %d bars), one older than that is listed as retired; the dashboard says %q",
+		t.auditEvery, t.auditEverySrc, barGapAuditFirstDelay, t.auditDays, t.auditDaysSrc, barHoleTF, ntwire.DeepGapBackfillMaxBarsBack, BarsMissingAction)
 }
 
 // snapshotAudit is the audit block of /api/health.
