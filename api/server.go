@@ -622,6 +622,10 @@ Returns: {"frozen":{"<trader_id>":"<reason>"}}  (empty object = none frozen)`,
 				`Query: ?trader_id=<EXACT trader_id>
 Clears the freeze so NEW entries resume. Returns: {"trader_id":"<id>","was_frozen":<bool>,"cleared":<bool>}`,
 				s.handleClearFreeze)
+			s.routeWithSchema(protected, "POST", "/risk/ack-fill-price", "Acknowledge far fills — owner action (m447 data-truth fill_price)",
+				`Query: ?symbol=<EXACT symbol, e.g. MNQ>
+Two fills in one CME session far from the stored 1m bars pause NEW entries for the symbol; this lifts the pause until the next far fill. Returns: {"symbol":"<sym>","acknowledged":<bool>}  (false = no pause was standing)`,
+				s.handleAckFillPrice)
 			s.routeWithSchema(protected, "GET", "/audit/decisions", "Decision audit trail (Plan 4 T23)",
 				`Query: ?trader_id=<EXACT trader_id>&since=<YYYY-MM-DD, default 7d ago>&limit=<int, default 100, max 1000>
 Returns: []DecisionRecord JSON ordered by timestamp DESC, including PromptVersion, AIModel, AILatencyMs, RiskCheck*, ExecutionStatus, FillPrice, FillLatencyMs.`,

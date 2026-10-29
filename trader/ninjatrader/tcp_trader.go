@@ -448,11 +448,16 @@ func (t *TCPTrader) handleFillInbound(fill ntwire.FillPayload) {
 	t.hasFill = true
 	// Class 27 (2026-08-31): retain confirmed fills in the netting ring
 	// so reconcile can reconstruct a netting-close's real exit price.
-	if strings.EqualFold(fill.Status, "filled") || strings.EqualFold(fill.Status, "partial") {
+	confirmed := strings.EqualFold(fill.Status, "filled") || strings.EqualFold(fill.Status, "partial")
+	if confirmed {
 		t.recordRecentFill(fill)
 	}
 	t.mu.Unlock()
-
+	if confirmed {
+		// m447 (7): the fill's price is judged against the market of its minute.
+		slip := fill.SlippageTicks
+		t.noteFill("entry", entryFillID(fill), fill.Symbol, fill.Side, fill.FillPrice, fillTimeMs(fill.FillTime), 0, &slip)
+	}
 }
 
 // --- Trader interface methods (19 total) ---

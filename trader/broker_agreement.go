@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vl/internal/datatruth"
+	"vl/internal/datatruth/checks"
 	"vl/kernel"
 	"vl/logger"
 	"vl/market"
@@ -473,6 +474,7 @@ func (at *AutoTrader) registerBrokerAgreement() {
 	agreementTraders.Store(at.id, at)
 	nt8.SetReconcileObserver(func() {
 		now := agreementNow()
+		checks.DefaultFills.Sweep(now) // m447 (7): judge fills whose bar has closed since
 		if _, _, err := at.brokerAgreementVerdict(now); err != nil {
 			logger.Debugf("broker_agreement: %s cannot judge: %v", at.id, err)
 		}

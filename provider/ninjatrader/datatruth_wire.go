@@ -415,5 +415,6 @@ func DataTruthStats(now time.Time) map[string]any {
 	h := datatruth.HealthSnapshot()
 	h["_ingest_loss_pending"] = dataTruthLedger.Pending()
 	h["_intrabar_drops_per_min"] = dataTruthLedger.IntrabarPerMin(now)
+	h["_fill_price"] = checks.DefaultFills.Stats() // m447 (7): judged / far / unjudged / pending
 	return h
 }
