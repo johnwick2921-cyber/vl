@@ -251,3 +251,105 @@ func TestSwing4hStillPausesOnARealHoleAcrossARoll(t *testing.T) {
 	}
 	t.Fatal("a 4h bucket lost in both frames inside the warm-up must still pause SWING4H")
 }
+
+// TestSwing4hKeepsTheOlderFiveMinuteWhenTheNewFiveMinuteRingIsFull (release #55
+// review round 1, finding 1) is the production-path pin for the state
+// rollFixture never reaches: the NEW contract's 5m ring already holds the full
+// dataTruthStore5mN rows while its 1m is still short. The older contract lost a 4h
+// stretch of 1m inside the warm-up but its 5m holds it; the newer contract's 5m
+// holds it too, but the head5 cut (strictly after the older's last bar) drops it,
+// so the ONLY frame that can cover the bucket is the older contract's 5m. Reading
+// it with N-len(r5) = 0 rows left the bucket in no frame -> SWING4H paused on data
+// that exists. Real instance: MNQ 09-26 / 12-26 at 2026-10-07 14:10 CT.
+//
+// MUTANT R2: the older 5m is fetched with dataTruthStore5mN-len(r5) -> RED.
+func TestSwing4hKeepsTheOlderFiveMinuteWhenTheNewFiveMinuteRingIsFull(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	loc := kernel.CTLocation()
+	at := func(s string) time.Time {
+		v, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	var rows []store.BarHistoryDB
+	add := func(contract, tf string, tm time.Time, px float64) {
+		rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: tf, Contract: contract, Source: store.BarSourceHistorical,
+			OpenTimeMs: tm.UnixMilli(), O: px, H: px + 1, L: px - 1, C: px, V: 10})
+	}
+	cut := at("2026-09-10 08:00")
+	holeFrom := at("2026-09-02 17:00") // 1m of the OLD contract lost here (5m kept)
+	holeTo := holeFrom.Add(4 * time.Hour)
+	now := at("2026-09-14 12:30")
+	// a quiet, flat tape (a bounded wiggle, no trend): the 1m-built line and the
+	// all-frames line then differ only by the bucket the 5m restores, well inside the
+	// tolerance - the real 10-07 case was an overnight bucket on a flat tape.
+	px := 30000.0
+	k := 0
+	for tm := at("2026-08-12 17:00"); tm.Before(now); tm = tm.Add(time.Minute) {
+		if !kernel.IsCMEOpen(tm) {
+			continue
+		}
+		k++
+		px = 30000 + 0.25*float64(k%8)
+		if !tm.After(cut) {
+			if tm.Before(holeFrom) || !tm.Before(holeTo) {
+				add("MNQ 09-26", "1m", tm, px)
+			}
+			if tm.Minute()%5 == 0 {
+				add("MNQ 09-26", "5m", tm, px)
+			}
+		} else {
+			add("MNQ 12-26", "1m", tm, px+100)
+		}
+		// the NEW contract's 5m is dense for the whole span (a full ring), the 1m only after the cut
+		if tm.Minute()%5 == 0 {
+			add("MNQ 12-26", "5m", tm, px+100)
+		}
+	}
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	n5, err := bh.LastNBarsCurrentContract("MNQ", "5m", dataTruthStore5mN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n1, err := bh.LastNBarsCurrentContract("MNQ", "1m", dataTruthStore1mN)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(n5) < dataTruthStore5mN || len(n1) == 0 || len(n1) >= dataTruthStore1mN {
+		t.Fatalf("fixture is not in the target state (new 5m ring full, new 1m short): 5m=%d 1m=%d", len(n5), len(n1))
+	}
+	WireDataTruthChecks(bh, ntwire.NewTCPServer(nil))
+	_, reasons := datatruth.Evaluate("MNQ", now)
+	for _, r := range reasons {
+		if r.Check == checks.CheckLookbackSwing4h {
+			t.Fatalf("SWING4H paused although the older contract's 5m holds the bucket: %s", r.Detail)
+		}
+	}
+	_, m5, _, err := storeSwingInputs(bh)("MNQ", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var covered bool
+	for _, b := range m5 {
+		if b.T >= holeFrom.UnixMilli() && b.T < holeTo.UnixMilli() {
+			covered = true
+			break
+		}
+	}
+	if !covered {
+		t.Fatal("the stitched 5m lost the stretch only the older contract's 5m held")
+	}
+}

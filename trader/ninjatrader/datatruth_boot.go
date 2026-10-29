@@ -148,7 +148,14 @@ func stitchedBarRows(bh *store.BarHistoryStore, symbol string) (r1, r5 []store.B
 			}
 		}
 		delta := anchor - last.C
-		old5, err := bh.LastNBarsOn(symbol, "5m", oc, dataTruthStore5mN-len(r5))
+		// a FULL window, not "N minus what the current contract already holds": once
+		// the current contract's 5m ring is full while its 1m is still short (the
+		// 12-26 contract on 10-07 14:10 CT), N-len(r5) is 0, the older 5m comes back
+		// empty, and the head5 cut below then drops every newer 5m row at or before
+		// the older's last bar - the independent 5m frame loses data that exists in
+		// BOTH contracts and SWING4H pauses on a bucket only 5m could have covered
+		// (release #55 review round 1, finding 1).
+		old5, err := bh.LastNBarsOn(symbol, "5m", oc, dataTruthStore5mN)
 		if err != nil {
 			return nil, nil, fmt.Errorf("5m store read (%s): %w", oc, err)
 		}
