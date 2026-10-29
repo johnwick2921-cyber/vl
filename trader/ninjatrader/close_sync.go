@@ -51,6 +51,7 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 				// consumer still drains its channel and closes done after the skip.
 				if p.OrderedOwned {
 					t.MarkCloseConfirmed(p.Symbol, p.PositionSide)
+					t.ForgetSideStopOnClose(p.Symbol, p.PositionSide, p.SignalID, p.Leg) // m440 (N1)
 					continue
 				}
 				t.recordClose(traderID, exchangeID, exchangeType, st, pb, p)
@@ -58,6 +59,7 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 				// position_close arrived for this trader's bound account (frame path
 				// beats the 30s positions-snapshot heartbeat on a non-active account).
 				t.MarkCloseConfirmed(p.Symbol, p.PositionSide)
+				t.ForgetSideStopOnClose(p.Symbol, p.PositionSide, p.SignalID, p.Leg) // m440 (N1)
 			}
 		})
 		// Rejected exit/flatten watcher. The SIM/broker refused a close (e.g. "no
