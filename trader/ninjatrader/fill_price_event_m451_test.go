@@ -54,10 +54,13 @@ func TestM451SplitBracketLegsOfOneFarPrintAreOneStrike(t *testing.T) {
 func TestM451MirroredAccountsKeepSeparateStrikes(t *testing.T) {
 	f := newFillGuardFx(t)
 	f.closeLeg(t, "sig-m1", "Sim101", 7, 0, 29100)
-	f.closeLeg(t, "sig-m1", "SimAccount12", 7, 1, 29100)
+	f.closeLeg(t, "sig-m1", "SimAccount12", 7, 1, 29100) // the same print on the mirrored account
+	if b, why, _ := f.g.Check()("MNQ", time.Now()); b {
+		t.Fatalf("one far print on each of two accounts is a strike on each, a pause for neither: %q", why)
+	}
 	f.closeLeg(t, "sig-m2", "Sim101", 8, 0, 28900) // Sim101's second event
 	b, why, scopes, _ := f.g.CheckScoped()("MNQ", time.Now())
-	if !b || len(scopes) != 1 || scopes[0] != "acct:SIM101" || !strings.Contains(why, "account SIM101") {
+	if !b || len(scopes) != 1 || scopes[0] != "acct:SIM101" || !strings.Contains(why, "account SIM101: 2 far fill(s)") {
 		t.Fatalf("only Sim101 has two strikes: blocked=%v scopes=%v %q", b, scopes, why)
 	}
 }
