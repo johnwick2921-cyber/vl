@@ -406,6 +406,38 @@ export const planStrings = {
     zh: 'CME 休市 — {when} 重新开盘',
     id: 'CME TUTUP — buka lagi {when}',
   },
+  // m445: the data-integrity pause (missing 1m bars in a data window).
+  dataPausedBanner: {
+    en: 'TRADING PAUSED — missing bars {window}',
+    zh: '交易已暂停 — 缺少K线 {window}',
+    id: 'TRADING DIJEDA — bar hilang {window}',
+  },
+  // m445 round 4 (D3): a pause of less than all entries says which.
+  dataPausedScopedBanner: {
+    en: 'TRADING PAUSED ({scope}) — missing bars {window}',
+    zh: '交易已暂停（{scope}）— 缺少K线 {window}',
+    id: 'TRADING DIJEDA ({scope}) — bar hilang {window}',
+  },
+  dataPausedScopeSwing: {
+    en: 'SWING4H entries only; other setups trade normally',
+    zh: '仅 SWING4H 入场；其他形态照常交易',
+    id: 'hanya entri SWING4H; setup lain berjalan normal',
+  },
+  dataPausedScopeDeep: {
+    en: 'SWING4H and AI/planner entries only; intraday mentor setups trade normally',
+    zh: '仅 SWING4H 与 AI/计划入场；日内 mentor 形态照常交易',
+    id: 'hanya entri SWING4H dan AI/planner; setup mentor intraday berjalan normal',
+  },
+  dataPausedScopeMentor: {
+    en: 'mentor entries; the mentor key levels stand on a series with missing bars',
+    zh: 'mentor 入场；mentor 关键位所依据的序列缺少K线',
+    id: 'entri mentor; level kunci mentor bertumpu pada seri yang kehilangan bar',
+  },
+  dataPausedUnknownBanner: {
+    en: 'TRADING PAUSED — bar-data check not ready',
+    zh: '交易已暂停 — K线数据检查尚未就绪',
+    id: 'TRADING DIJEDA — pemeriksaan data bar belum siap',
+  },
   // m432: names the fix, not just the fact (the 10-25 17:00 -> 10-26 03:40 CT
   // blind spell was a NinjaTrader data connection that was off).
   feedDownBanner: {

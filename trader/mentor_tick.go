@@ -620,7 +620,11 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// 1m feed is stale (B4's formula). Counted + WARN'd once per episode inside
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
-	if stale, why := at.mentorStaleDataBlockedWhy(mentorClockNow()); stale {
+	// m445: the stale leg and the missing-bars legs are ONE verdict
+	// (dataIntegrityVerdictAt); the stale leg answers first, exactly as before.
+	dv := at.dataIntegrityVerdictAt(mentorIntegrityWindow(in), mentorClockNow(), true)
+	if dv.Blocked && !dv.isData() {
+		why := dv.Reason
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
 		// every sized Place refused here is named and counted (the "never
@@ -645,6 +649,21 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		at.mentorGateBlock("mentor_stale_data")
 		return
 	}
+	// m445 DATA INTEGRITY: a setup computed on a data window with a hole in it
+	// (or while the detector cannot say) is not a setup either. Counted, named,
+	// never silent; the deferred guard in mentorDispatchEntry drops the arm.
+	if dv.Blocked {
+		at.mentorCount("placement_refused_data_integrity")
+		// ONE WARN per episode and class (review round 2, reviewer A); the
+		// counters and the stall record below still see every refusal.
+		if at.admitLast.changed("data-integrity|mentor-place", dv.Class) {
+			at.logWarnf("🧑‍🏫 mentor placement REFUSED — data_integrity (%s): %s — %s %s %s @ %.2f never reaches the ledger (further refusals in this episode are counted, not logged)", dv.Class, dv.Reason, in.ArmID, in.Setup, in.Side, in.Price)
+		}
+		at.mentorRecordStallRefusal(in, "data_integrity")
+		at.mentorGateBlock(dv.Class)
+		return
+	}
+	at.admitLast.clear("data-integrity|mentor-place") // the episode ended: the next one logs again
 	// N10 (stale intent): an entry whose reference candle is not the newest
 	// closed bar came from a reload replay of stale box/ISB/PHL state — never
 	// a live order. The swing is exempt (RefBarMs 0 — gated by its own 5m
@@ -2011,7 +2030,14 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// The 1m EMA 34/9 tail is identical (the stitched tail IS the current
 	// contract's recent bars). A stitch that produces nothing degrades to the
 	// current-contract walk (cold store / read error already refused above).
-	stitched1m, full1HRTH, contracts, gaps, stoppedAt := at.mentorFullKeyLevelHistory(bh)
+	stitched1m, full1HRTH, contracts, gaps, stoppedAt, seamCovered := at.mentorFullKeyLevelHistory(bh)
+	// m445 round 2 (reviewer A, D1): measure the series the key levels are about
+	// to be walked over for RTH holes — the gate reads it for every mentor entry.
+	if len(full1HRTH) > 0 {
+		at.noteSeedSeries(stitched1m, seamCovered, mentorClockNow())
+	} else {
+		at.noteSeedSeries(bars1m, nil, mentorClockNow())
+	}
 	var missing []string
 	priorHTF := at.mentorEval.State.HTF // MENTOR-NY item 6: the state the seed replays from
 	if len(full1HRTH) > 0 {
@@ -2155,16 +2181,16 @@ func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
 // ("" = full). FIX 5: it STOPS READING at the first roll whose gap cannot be
 // measured instead of reading every contract. A cold store / read error
 // returns nil and the caller degrades to the current-contract walk.
-func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string) {
+func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamCovered []int64) {
 	if at == nil || bh == nil {
-		return nil, nil, nil, nil, ""
+		return nil, nil, nil, nil, "", nil
 	}
 	spans, err := bh.ContractSpans("MNQ", "1m")
 	if err != nil || len(spans) == 0 {
 		if err != nil {
 			at.logWarnf("🧑‍🏫 key-level history: contract span read failed (%v) — falling back to current contract", err)
 		}
-		return nil, nil, nil, nil, ""
+		return nil, nil, nil, nil, "", nil
 	}
 	read := func(contract string) (mentor.Contract1M, bool) {
 		rows, err := bh.AllBarsOn("MNQ", "1m", contract)
@@ -2187,7 +2213,7 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 	}
 	newest, ok := read(spans[len(spans)-1].Contract)
 	if !ok {
-		return nil, nil, nil, nil, ""
+		return nil, nil, nil, nil, "", nil
 	}
 	s := mentor.NewRollStitcher(newest)
 	contracts = append(contracts, newest)
@@ -2202,6 +2228,7 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 		contracts = append(contracts, c)
 	}
 	stitched1m, full1HRTH, gaps, stoppedAt = s.Result()
+	seamCovered = s.SeamCovered() // minutes a contract stores that the cut dropped: not lost (round 4, D1)
 	// Oldest-first, so the boot line reads left-to-right from the earliest date.
 	for i, j := 0, len(contracts)-1; i < j; i, j = i+1, j-1 {
 		contracts[i], contracts[j] = contracts[j], contracts[i]

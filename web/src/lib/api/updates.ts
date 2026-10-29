@@ -91,6 +91,18 @@ export interface HealthStatus {
   // m444: the 1m bar holes the bot tracks (api/handler_health.go bars_holes;
   // BarHoleView). Absent (older bot / no store) → no MISSING BARS line.
   bars_holes?: BarHole[]
+  // m445: the data-integrity pause (bar_integrity.go). Absent = an older bot or
+  // no NT8 bridge; the banner then renders nothing.
+  trading_paused?: {
+    paused: boolean
+    reasons?: string[]
+    windows?: string[]
+    // the WIDEST paused scope (all_entries | mentor_entries |
+    // swing_and_deep_entries | swing_entries); absent on an older bot
+    scope?: string
+    // every blocked leg (a narrower one is never hidden behind a wider one)
+    scopes?: string[]
+  }
 }
 
 // One tracked 1m bar hole. state: refilling (the bot is re-asking NT8) |

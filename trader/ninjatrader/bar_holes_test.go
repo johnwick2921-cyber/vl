@@ -791,8 +791,9 @@ func (c *countingHoleStore) reads() int { c.mu.Lock(); defer c.mu.Unlock(); retu
 // TestSlowRetriesAreCappedInTotal — after the four scheduled attempts, at most
 // barHoleSlowCapTotal (8) slow re-requests per hole, IN TOTAL (the old cap was
 // 24 per session-day, reset at every 17:00 roll — forever). The spent line is
-// said once, and a spent hole is never read from the store again (#23 review
-// P3-5: the cap is checked before any measure).
+// said once, and a spent hole is never RE-REQUESTED again (#23 review P3-5).
+// m445: it is re-MEASURED from the store at most once a minute so the gate can
+// resume when a history reload refills it (TestSpentHoleIsRemeasuredAndResumes).
 func TestSlowRetriesAreCappedInTotal(t *testing.T) {
 	f := newGHFixture(t)
 	f.addon.setAnswer(func(int, ntwire.BarsSubscribePayload) { f.answerEmpty() })
@@ -826,13 +827,19 @@ func TestSlowRetriesAreCappedInTotal(t *testing.T) {
 	if len(hs) != 1 || hs[0].State != holeStateUnfilled || hs[0].NextAttemptAt != nil {
 		t.Fatalf("a spent hole stays listed as unfilled with no next attempt: %+v", hs)
 	}
+	// m445: never RE-REQUESTED again (the noNewReRequest above) — but the
+	// data-integrity gate re-MEASURES it from the store, at most once a minute
+	// (remeasureRetired), so a history reload that refills it lifts the pause.
+	// The reads are rate-limited: four ticks inside ONE minute read once.
 	reads := cs.reads()
-	for k := 11; k <= 14; k++ {
-		f.tr.tick(unfilledAt.Add(time.Duration(k) * 15 * time.Minute))
+	base := unfilledAt.Add(11 * 15 * time.Minute)
+	for k := 0; k < 4; k++ {
+		f.tr.tick(base.Add(time.Duration(k) * 10 * time.Second))
 	}
-	if got := cs.reads(); got != reads {
-		t.Fatalf("a spent hole must not be re-read from the store: %d window reads → %d", reads, got)
+	if got := cs.reads(); got != reads+1 {
+		t.Fatalf("a spent hole is re-measured at most once a minute: %d window reads → %d (want +1)", reads, got)
 	}
+	f.noNewReRequest(4+8, "a spent hole is measured, never re-requested")
 }
 
 // ── CTO fold 2 (10-14) — a hole OLDER than the boot is found ──────────────
@@ -841,6 +848,7 @@ func TestSlowRetriesAreCappedInTotal(t *testing.T) {
 // key looked back only to the stored bar just before the first live minute,
 // so a hole further back in the session was never judged. The boot scan reads
 // back to the session open (17:00 CT) and tracks what it finds like any hole.
+// m445 (review D2): it now reaches the deep integrity window's start.
 
 func TestBootScanFindsAHoleOlderThanTheBoot(t *testing.T) {
 	f := newGHFixture(t)
@@ -864,7 +872,7 @@ func TestBootScanFindsAHoleOlderThanTheBoot(t *testing.T) {
 	if hs[0].From != ct(2026, 10, 14, 3, 44).Format(time.RFC3339) || hs[0].To != ct(2026, 10, 14, 7, 48).Format(time.RFC3339) || hs[0].MissingMin != 244 {
 		t.Fatalf("boot scan hole = %+v, want [03:44, 07:48) CT, 244 open min", hs[0])
 	}
-	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 10-13 17:00 → 10-14 09:01 · from the session open (inside the bars_back 2000 replay window) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
+	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 09-18 11:01 → 10-14 09:01 · from the deepest integrity window (24720 open min back) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
 		t.Fatalf("the boot scan must say once what it covered and found:\n%s", f.sink.dump())
 	}
 	if d := f.delta(); d.Detected != 1 {

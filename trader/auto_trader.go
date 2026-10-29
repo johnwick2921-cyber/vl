@@ -760,6 +760,12 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// integrity is the DATA-INTEGRITY pause episode (m445, data_integrity_gate.go).
+	integrity integrityEpisode
+	// seedSeries is what the mentor seed's 1m series was MEASURED to hold: the
+	// RTH holes in the stitched history the key levels were walked over
+	// (data_integrity_seed.go). Set at the seed and every re-seed.
+	seedSeries seedSeriesIntegrity
 	// mentorStaleSince is when the current episode began, on the gate's own
 	// clock (the seam's now — time.Now() in production, so the END line's
 	// length is a monotonic difference; OPS NEW-8, class 113).

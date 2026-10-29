@@ -135,6 +135,11 @@ export const faq: GuideSection = {
           link: '#status',
         },
         {
+          q: 'The dashboard says TRADING PAUSED — missing bars … what do I do?',
+          a: "Nothing is wrong with your settings: the bot found 1m bars missing from the data its decisions read (or cannot tell yet) and refuses every NEW entry until they are back — financial product, no trading on lost data. Exits, stops and protection keep working. Resting entry orders are cancelled. It resumes by itself when the bars are measured filled or the stretch ages out of the window. To speed it up: if the stretch is recent (inside NT8's last ~2000 1m bars, about 33 trading hours) open a chart of the symbol in NinjaTrader, right-click → Reload All Historical Data, or just wait for the bot's own re-requests. An OLDER stretch cannot be reloaded back: the pause text then says when it clears by itself (it leaves the data window) and that importing the missing minutes (POST /api/admin/bars/import, HISTORICAL_IMPORT_SEAM=on) clears it sooner. If the banner names a scope (e.g. 'SWING4H entries only') the other setups are trading normally. GET /api/health → trading_paused names the window, the scope and the reason.",
+          link: '#status',
+        },
+        {
           q: "A knob change didn't do anything — why?",
           a: 'Either it wasn\'t saved (toast + saved-chip), the value is above a code ceiling, the guardrail master is OFF, the knob has no reader (the guide card says so), or the reload that Save triggers failed — Save reloads every running trader bound to the strategy, and on a failed reload the log says "saved but trader reload failed … restart to apply".',
           link: '#settings',
