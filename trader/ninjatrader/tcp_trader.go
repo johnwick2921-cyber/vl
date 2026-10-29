@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -131,6 +132,9 @@ type TCPTrader struct {
 	// reconcileOnce guards StartPositionReconcile (mirrors closeSyncOnce) so a
 	// re-entrant AutoTrader.Run never spawns a second reconcile goroutine.
 	reconcileOnce sync.Once
+	// reconcileObs is the post-pass observer (m447 data-truth sampling); see
+	// SetReconcileObserver.
+	reconcileObs atomic.Pointer[func()]
 	// W117 F5 — observer lifetime ends only after same-account replacement
 	// drains closes. Ordinary trading Stop and socket disconnect do not retire
 	// these observers.
@@ -254,6 +258,19 @@ func (t *TCPTrader) HasPendingEntry(signalID string) bool {
 	defer t.pendingMu.Unlock()
 	_, ok := t.pending[signalID]
 	return ok
+}
+
+// PendingEntries returns a copy of the entries still awaiting a fill:
+// signal_id -> submit time (Unix ms). The data-truth broker-agreement check
+// reads it to tell an order the bot just sent from one it never sent.
+func (t *TCPTrader) PendingEntries() map[string]int64 {
+	t.pendingMu.Lock()
+	defer t.pendingMu.Unlock()
+	out := make(map[string]int64, len(t.pending))
+	for sid := range t.pending {
+		out[sid] = t.pendingAt[sid]
+	}
+	return out
 }
 
 func (t *TCPTrader) forgetUnsentEntry(signalID string) {

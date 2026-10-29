@@ -929,6 +929,11 @@ type AutoTrader struct {
 	// silent until the spec or the refusal reason changes. Run-loop goroutine
 	// only — no lock.
 	armRefusalLast map[string]string
+
+	// m447 - the data-truth broker_agreement check's per-trader first-seen
+	// tracker (trader/broker_agreement.go).
+	agreementOnce sync.Once
+	agreementTk   *agreementTracker
 	// 0B — per-arm stop-composition log dedup (plan:version:scenario:leg:stop).
 	armStopCompLast map[string]string
 	// oneSetupFactsForTest (dispatch 102) is a TEST SEAM ONLY: when non-nil it
@@ -1497,6 +1502,8 @@ func (at *AutoTrader) Run() error {
 			// Anchor entry_price to the NT8 position average + clear orphan rows
 			// (the 5m-mark entry the AI-decision write records goes stale/frozen).
 			ntTCP.StartPositionReconcile(at.id, at.exchangeID, at.exchange, at.store)
+			// m447 - the data-truth broker_agreement check samples on that loop.
+			at.registerBrokerAgreement()
 			at.logInfof("🔧 NinjaTrader position-reconcile enabled (entry→NT8 avg, orphan clear)")
 		}
 	}
@@ -1619,6 +1626,7 @@ func (at *AutoTrader) Stop() {
 // loop running = a second live mentor evaluator for the trader_id).
 func (at *AutoTrader) teardownRunStarted() {
 	unregisterPostExitDispatch(at)    // Phase 4: stop routing close events here
+	at.unregisterBrokerAgreement()    // m447 — a stopped trader is not a voice in the agreement check
 	at.unregisterPictureHtf()         // W4 D25 — no Picture frame after Stop
 	at.stopPictureHtfBrokerConsumer() // P2-15 — the order_update consumer goroutine exits, never leaks across restarts
 	at.stopArmedEventLoop()           // W3 D14 — no event pass after Stop
