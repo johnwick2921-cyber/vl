@@ -1257,6 +1257,19 @@ func (s *TCPServer) isTradingSymbolLocked(symbol string) bool {
 	return false
 }
 
+// SubscribedRoots is the dedup'd union of every root the server subscribes
+// bars for (primary first). The bar-gap audit (m444) walks exactly these, so a
+// symbol that is subscribed but has not yet delivered a live bar this process
+// is still audited. Nil-safe.
+func (s *TCPServer) SubscribedRoots() []string {
+	if s == nil {
+		return nil
+	}
+	s.barsSubMu.RLock()
+	defer s.barsSubMu.RUnlock()
+	return s.subscribedRootsLocked()
+}
+
 // subscribedRootsLocked returns the dedup'd union of every root to subscribe,
 // primary FIRST: trading registry, then per-owner config extras, then the
 // unowned (env/runtime) extras. Caller holds barsSubMu (read).

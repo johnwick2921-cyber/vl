@@ -36,9 +36,48 @@ export function StatusBanner({ language }: { language: Language }) {
       age: ageText(data.feed_stale_secs),
     }).trim()
   }
-  if (!text) return null
+  // m444: a 1m hole the bot could not refill (unfilled) or cannot reach
+  // (retired) — shown whatever the market state, in its own line below.
+  const holes = (data.bars_holes ?? []).filter(
+    (h) => h.state === 'unfilled' || h.state === 'retired'
+  )
+  let holeText = ''
+  if (holes.length > 0) {
+    const h = holes.reduce((a, b) =>
+      (b.missing_min ?? 0) > (a.missing_min ?? 0) ? b : a
+    )
+    holeText = tp('missingBarsBanner', language, {
+      symbol: h.symbol,
+      window: h.window ?? '',
+      min: String(h.missing_min ?? '?'),
+      more: holes.length > 1 ? ` (+${holes.length - 1} more)` : '',
+    }).trim()
+  }
+  if (!text && !holeText) return null
 
   const down = data.cme_open === true
+  return (
+    <>
+      {text && banner(text, down)}
+      {holeText && (
+        <div
+          role="status"
+          data-testid="missing-bars-banner"
+          className="relative z-50 w-full text-center font-semibold px-2 text-[12px] py-1 break-words"
+          style={{
+            background: 'rgba(224,108,108,0.18)',
+            color: 'var(--vl-short)',
+            borderBottom: '1px solid var(--vl-hair)',
+          }}
+        >
+          {holeText}
+        </div>
+      )}
+    </>
+  )
+}
+
+function banner(text: string, down: boolean) {
   return (
     <div
       role="status"

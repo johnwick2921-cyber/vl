@@ -93,4 +93,68 @@ describe('StatusBanner', () => {
     const closed = await screen.findByTestId('status-banner')
     expect(closed.style.color).toBe('var(--vl-gold)')
   })
+
+  // m444 — a 1m hole the bot could not refill (or cannot reach) is named on the
+  // dashboard, with the one action the owner push carries word for word.
+  describe('MISSING BARS (m444)', () => {
+    const hole = {
+      symbol: 'MNQ',
+      state: 'retired',
+      window: '10-26 17:00–21:57 CT',
+      missing_min: 297,
+      source: 'audit',
+    }
+    it('an unfilled/retired hole shows the window, minutes and the action', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [hole],
+      })
+      mount()
+      expect(
+        await screen.findByTestId('missing-bars-banner')
+      ).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — NT8: Reload All Historical Data'
+      )
+      expect(screen.queryByTestId('status-banner')).toBeNull()
+    })
+    it('a hole still being re-requested (refilling) shows nothing', async () => {
+      const spy = vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [{ ...hole, state: 'refilling' }],
+      })
+      mount()
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      expect(screen.queryByTestId('missing-bars-banner')).toBeNull()
+    })
+    it('shows beside FEED DOWN, names the biggest, counts the rest', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: true,
+        feed_stale_secs: 600,
+        bars_holes: [
+          { ...hole, symbol: 'ES', state: 'unfilled', missing_min: 12 },
+          hole,
+        ],
+      })
+      mount()
+      expect(await screen.findByTestId('status-banner')).toHaveTextContent(
+        'FEED DOWN 10m'
+      )
+      expect(
+        await screen.findByTestId('missing-bars-banner')
+      ).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — NT8: Reload All Historical Data (+1 more)'
+      )
+    })
+    it('an older bot (no bars_holes) renders no hole line', async () => {
+      const spy = vi
+        .spyOn(updatesApi, 'health')
+        .mockResolvedValue({ cme_open: true, feed_stale: false })
+      mount()
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      expect(screen.queryByTestId('missing-bars-banner')).toBeNull()
+    })
+  })
 })

@@ -750,8 +750,10 @@ func TestHoleOutsideTheReplayWindowIsRetired(t *testing.T) {
 	det := f.clk.Now()
 	f.tr.tick(det.Add(61 * time.Second))
 	f.noNewReRequest(0, "a hole beyond the 2000-bar replay reach is never asked for")
-	if hs := f.holes(); len(hs) != 0 {
-		t.Fatalf("the hole must be retired: %+v\n%s", hs, f.sink.dump())
+	// m444: a retired hole STAYS LISTED (state "retired") — dropping it let the
+	// persistent gap audit re-find and re-announce it on every pass.
+	if hs := f.holes(); len(hs) != 1 || hs[0].State != holeStateRetired {
+		t.Fatalf("the hole must be retired and stay listed: %+v\n%s", hs, f.sink.dump())
 	}
 	if f.sink.count("bars hole RETIRED: MNQ 1m 10-09 10:06–10-14 07:48 CT on MNQ 12-26 — outside NT8's replay window: a re-request replays the last 2000 1m bars") != 1 ||
 		f.sink.count("so this hole stays") != 1 {

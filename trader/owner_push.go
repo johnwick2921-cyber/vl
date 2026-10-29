@@ -133,14 +133,20 @@ func reaskText(d time.Duration) string {
 // re-requests are capped IN TOTAL (UnfilledHole.ReaskHorizon after the alert), so
 // the reload instruction names that horizon and the restart that is needed after it.
 func unfilledHoleBody(h ntTrader.UnfilledHole) string {
+	if h.OutsideReplay && h.ReplayDisagreed == 0 {
+		// m444: found by the gap audit (or aged out of the replay): the bot cannot
+		// re-ask for it, so promising a re-request would be a lie.
+		return fmt.Sprintf("MISSING BARS: %s %s, %d min — %s. The %s 1-minute bars for that window are not in the bot's store and are older than NT8's replay window, so the bot cannot re-ask for them: in NinjaTrader open an %s 1-minute chart, right-click, Reload All Historical Data, then restart the bot so it re-reads them.",
+			h.Symbol, h.Window, h.Missing, ntTrader.BarsMissingAction, h.Symbol, h.Symbol)
+	}
 	if h.ReplayDisagreed > 0 {
 		// A replay that DISAGREED with live minutes was held out of the store as
 		// another price scale: reloading history is the wrong first move.
 		return fmt.Sprintf("The %s 1-minute bars for %s are still missing after %d re-requests, and %d NT8 replay(s) were rejected as another price scale. Read the bot log's scale lines before reloading NinjaTrader history.",
 			h.Symbol, h.Window, h.Attempts, h.ReplayDisagreed)
 	}
-	return fmt.Sprintf("NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every %d minutes %s and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking.",
-		h.Symbol, h.Window, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon))
+	return fmt.Sprintf("MISSING BARS: %s %s, %d min — %s. NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every %d minutes %s and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking.",
+		h.Symbol, h.Window, h.Missing, ntTrader.BarsMissingAction, h.Symbol, h.Window, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon))
 }
 
 // unfilledHoleSpentBody is the follow-up when the tracker has spent its slow
@@ -173,7 +179,7 @@ func (at *AutoTrader) checkUnfilledHole(now time.Time) {
 			fmt.Sprintf("barhole-unfilled:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
 			fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol),
 			unfilledHoleBody(h))
-		if h.SlowSpent {
+		if h.SlowSpent && !h.OutsideReplay {
 			at.emitAlert("P1", alertKindBarHoleUnfilled,
 				fmt.Sprintf("barhole-spent:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
 				fmt.Sprintf("NT8 %s history still missing — reload it, then restart the bot", h.Symbol),

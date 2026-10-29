@@ -237,7 +237,7 @@ func TestUnfilledHoleRaisesOneP1AndOneOwnerMessage(t *testing.T) {
 	if len(rows) != 1 || rows[0].Level != "P1" {
 		t.Fatalf("want exactly one P1 bar-hole-unfilled row, got %+v", rows)
 	}
-	want := "NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every 15 minutes for about 2 hours and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking."
+	want := "MISSING BARS: MNQ 10-25 17:00–10-26 03:40 CT, 640 min — NT8: Reload All Historical Data. NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every 15 minutes for about 2 hours and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking."
 	if rows[0].Body != want {
 		t.Fatalf("body = %q\nwant   %q", rows[0].Body, want)
 	}
@@ -271,5 +271,25 @@ func TestUnfilledHoleScaleStoryDoesNotSendTheOwnerToReload(t *testing.T) {
 	body := unfilledHoleBody(ntTrader.UnfilledHole{Symbol: "MNQ", Window: "w CT", Attempts: 4, ReplayDisagreed: 2})
 	if strings.Contains(body, "Reload All Historical Data") || !strings.Contains(body, "price scale") {
 		t.Fatalf("scale-story body wrong: %q", body)
+	}
+}
+
+// m444 — a hole the gap audit found beyond NT8's replay window (RETIRED): the
+// bot cannot re-ask, so the owner's message must not promise a re-request, and
+// it carries the SAME action sentence as the dashboard banner (one constant).
+// MUTANT (shown RED): drop the OutsideReplay branch from unfilledHoleBody ->
+// the body promises "The bot re-asks NT8 ..." -> RED.
+func TestAuditFoundOutsideReplayHoleSaysTheActionAndDoesNotPromiseAReask(t *testing.T) {
+	h := ntTrader.UnfilledHole{Symbol: "MNQ", Window: "10-26 17:00–21:57 CT", Missing: 297, OutsideReplay: true,
+		ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour}
+	body := unfilledHoleBody(h)
+	if !strings.HasPrefix(body, "MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — "+ntTrader.BarsMissingAction+".") {
+		t.Fatalf("body must open with the banner sentence: %q", body)
+	}
+	if strings.Contains(body, "re-asks NT8") || !strings.Contains(body, "cannot re-ask") {
+		t.Fatalf("an outside-replay hole must not promise a re-request: %q", body)
+	}
+	if ntTrader.BarsMissingAction != "NT8: Reload All Historical Data" {
+		t.Fatalf("the action sentence drifted from the web banner's literal: %q", ntTrader.BarsMissingAction)
 	}
 }

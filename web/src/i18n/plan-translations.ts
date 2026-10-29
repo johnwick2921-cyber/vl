@@ -413,6 +413,14 @@ export const planStrings = {
     zh: 'FEED DOWN {age} — 请连接 NinjaTrader 的数据连接',
     id: 'FEED DOWN {age} — hubungkan koneksi data NinjaTrader',
   },
+  // m444: a 1m bar hole NT8 could not refill (or that is older than NT8's replay
+  // window). The action sentence is the SAME one the owner push carries
+  // (Go: BarsMissingAction) — keep it in English in every language.
+  missingBarsBanner: {
+    en: 'MISSING BARS: {symbol} {window}, {min} min — NT8: Reload All Historical Data{more}',
+    zh: '缺少K线: {symbol} {window}, {min} 分钟 — NT8: Reload All Historical Data{more}',
+    id: 'BAR HILANG: {symbol} {window}, {min} mnt — NT8: Reload All Historical Data{more}',
+  },
   olderUnacked: {
     en: '{n} older unacked',
     zh: '{n} 条较早未确认',

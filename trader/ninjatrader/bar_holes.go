@@ -89,6 +89,16 @@ const (
 
 	holeStateRefilling = "refilling"
 	holeStateUnfilled  = "unfilled"
+	// holeStateRetired (m444): the hole's first missing minute lies beyond NT8's
+	// replay window, so no re-request can reach it. It used to be DROPPED from
+	// the tracker (and so from /api/health) the moment it was retired; the
+	// persistent gap audit would then re-find it every pass. It now stays
+	// LISTED — unfillable by the bot, still missing, still owed to the owner —
+	// and is never scheduled again.
+	holeStateRetired = "retired"
+
+	holeSourceLive  = "live"  // found by observeLive (a live 1m arrival / the boot scan)
+	holeSourceAudit = "audit" // found by the persistent gap audit (bar_gap_audit.go)
 )
 
 // barHoleSchedule — the scheduled attempts, as offsets from the moment the hole
@@ -192,6 +202,7 @@ type barHole struct {
 	DetectedAt       time.Time
 	Attempts         int
 	State            string
+	Source           string // holeSourceLive | holeSourceAudit
 
 	nextAttemptAt time.Time // zero = nothing scheduled until the pending measure
 	measureAt     time.Time // zero = no measure pending
@@ -223,6 +234,13 @@ type barHoleTracker struct {
 	// and never the tracker's (possibly fixed) schedule clock.
 	receiptClock func() time.Time
 
+	// the persistent gap audit (bar_gap_audit.go) — same tracker, same holes
+	auditDays     int // CME session days read per pass; 0 = audit off
+	auditDaysSrc  string
+	auditEvery    time.Duration
+	auditEverySrc string
+	audit         barGapAuditState
+
 	holes    []*barHole
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
 	lastFire map[string]time.Time // symbol -> last gap re-request this tracker SENT
@@ -240,7 +258,10 @@ var barHolesServer atomic.Pointer[ntwire.TCPServer]
 
 func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTracker {
 	n, src := barHoleMinGap()
+	days, daysSrc := barGapAuditDays()
+	every, everySrc := barGapAuditEvery()
 	return &barHoleTracker{
+		auditDays: days, auditDaysSrc: daysSrc, auditEvery: every, auditEverySrc: everySrc,
 		st: st,
 		wire: func() holeWire {
 			s := server()
@@ -372,7 +393,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		h := &barHole{
 			Symbol: symbol, Contract: contract, FromMs: sp.FromMs, ToMs: sp.ToMs,
 			MissingAtDetect: sp.OpenMissing, Missing: sp.OpenMissing,
-			DetectedAt: now, State: holeStateRefilling,
+			DetectedAt: now, State: holeStateRefilling, Source: holeSourceLive,
 			nextAttemptAt:     now.Add(barHoleSchedule[0]),
 			disagreedAtDetect: t.disagreedNowLocked(symbol),
 		}
@@ -668,12 +689,16 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 			}
 			// 0b. a hole whose first minute is outside NT8's replay window
 			//     cannot be refilled by a re-request, ever (#23 review P2-3)
+			if h.State == holeStateRetired {
+				continue // already beyond the replay: listed, never scheduled again (m444)
+			}
 			if bb := w.BarsBackAsked(); bb > 0 {
 				if beyond, open := t.beyondReplayLocked(h, bb, now); beyond {
 					telemetry.IncBarsHoleRefused()
-					t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — outside NT8's replay window: a re-request replays the last %d 1m bars and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it.",
+					t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — outside NT8's replay window: a re-request replays the last %d 1m bars and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it; it stays LISTED in /api/health bars_holes and on the dashboard until the store holds the bars.",
 						h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), h.Missing, h.Attempts))
-					t.removeLocked(h)
+					h.State = holeStateRetired
+					h.nextAttemptAt, h.measureAt = time.Time{}, time.Time{}
 					continue
 				}
 			}
@@ -768,7 +793,9 @@ type BarHoleView struct {
 	To            string  `json:"to"`   // the bar that closed it (exclusive), RFC3339 CT
 	MissingMin    int     `json:"missing_min"`
 	Attempts      int     `json:"attempts"`
-	State         string  `json:"state"` // refilling | unfilled
+	State         string  `json:"state"`  // refilling | unfilled | retired (m444: beyond NT8's replay window — listed, never re-asked)
+	Source        string  `json:"source"` // live | audit (m444: found by the persistent gap audit)
+	Window        string  `json:"window"` // "10-26 17:00–21:57 CT" (holeWindowCT) — the dashboard banner's text
 	DetectedAt    string  `json:"detected_at"`
 	NextAttemptAt *string `json:"next_attempt_at,omitempty"` // absent = waiting on the measure of the last attempt, or the slow retries are spent
 }
@@ -784,6 +811,7 @@ func (t *barHoleTracker) snapshot() []BarHoleView {
 			From:       time.UnixMilli(h.FromMs).In(loc).Format(time.RFC3339),
 			To:         time.UnixMilli(h.ToMs).In(loc).Format(time.RFC3339),
 			MissingMin: h.Missing, Attempts: h.Attempts, State: h.State,
+			Source: h.Source, Window: holeWindowCT(h.FromMs, h.ToMs),
 			DetectedAt: h.DetectedAt.In(loc).Format(time.RFC3339),
 		}
 		if !h.nextAttemptAt.IsZero() {
@@ -849,9 +877,13 @@ type UnfilledHole struct {
 	// reload is only picked up after a bot restart. ReaskEvery / ReaskHorizon are
 	// the slow cadence and the span it covers after the hole is declared unfilled
 	// (READ off the constants, so the owner message cannot drift from them).
-	SlowSpent    bool
-	ReaskEvery   time.Duration
-	ReaskHorizon time.Duration
+	SlowSpent bool
+	// OutsideReplay (m444) — the hole is RETIRED: its first missing minute is
+	// beyond NT8's replay window, so the bot cannot re-ask for it at all and a
+	// bot restart does not help. Audit-found old holes arrive in this state.
+	OutsideReplay bool
+	ReaskEvery    time.Duration
+	ReaskHorizon  time.Duration
 }
 
 // UnfilledHolesFeeding returns the tracked holes on `symbol` that are
@@ -885,7 +917,7 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 	}
 	var out []UnfilledHole
 	for _, h := range t.holes {
-		if h.State != holeStateUnfilled || !strings.EqualFold(h.Symbol, symbol) {
+		if (h.State != holeStateUnfilled && h.State != holeStateRetired) || !strings.EqualFold(h.Symbol, symbol) {
 			continue
 		}
 		out = append(out, UnfilledHole{
@@ -894,6 +926,7 @@ func (t *barHoleTracker) unfilledFeeding(symbol string, now time.Time) []Unfille
 			Window:          holeWindowCT(h.FromMs, h.ToMs),
 			ReplayDisagreed: int(max(cache.OverlapDisagreedFor(h.Symbol)-h.disagreedAtDetect, 0)),
 			SlowSpent:       h.saidSlowCap,
+			OutsideReplay:   h.State == holeStateRetired,
 			ReaskEvery:      barHoleSlowEvery,
 			ReaskHorizon:    barHoleSlowEvery * barHoleSlowCapTotal,
 		})

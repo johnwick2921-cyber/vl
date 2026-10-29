@@ -88,6 +88,20 @@ export interface HealthStatus {
   // and the server's own next-reopen instant (RFC3339).
   feed_stale_secs?: number
   cme_reopens_at?: string
+  // m444: the 1m bar holes the bot tracks (api/handler_health.go bars_holes;
+  // BarHoleView). Absent (older bot / no store) → no MISSING BARS line.
+  bars_holes?: BarHole[]
+}
+
+// One tracked 1m bar hole. state: refilling (the bot is re-asking NT8) |
+// unfilled (NT8 has no history) | retired (older than NT8's replay window —
+// the bot cannot re-ask). window is the CT text ("10-26 17:00–21:57 CT").
+export interface BarHole {
+  symbol: string
+  state: 'refilling' | 'unfilled' | 'retired' | string
+  window?: string
+  missing_min?: number
+  source?: 'live' | 'audit' | string
 }
 
 // INSTALL_AUTHZ_UNDER_REVIEW is the ONE constant gating the install control.

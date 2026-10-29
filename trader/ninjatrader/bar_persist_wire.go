@@ -200,6 +200,7 @@ func WireBarPersistence(st *store.Store) {
 		holes := newBarHoleTracker(bh, barHolesServer.Load)
 		barHoles.Store(holes)
 		logger.Infof("%s", holes.bootLine())
+		logger.Infof("%s", holes.auditBootLine())
 		ntwire.SetBarPersister(newBarPersister(bh, serverFn))
 		// Boot backfill + prune loop: the singleton server starts lazily on the
 		// first trader load; poll for it briefly, then flush the cache. The
@@ -215,6 +216,7 @@ func WireBarPersistence(st *store.Store) {
 					// into a periodic data race (CI -race, api package).
 					barHolesServer.Store(server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
+					safe.GoNet("nt8-bar-gap-audit", "", holes.runAudit)
 					// m424 — session-final bar flush + closed-market replay-hold settle.
 					rep := &persistReport{}
 					bf := newBreakFlusher(server.BarCache, newBarPersister(bh, serverFn, rep), bh, rep) // the same closure type a frame reaches
