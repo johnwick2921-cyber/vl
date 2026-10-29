@@ -233,3 +233,35 @@ func TestLookbackNamesTheReadersOfTheHole(t *testing.T) {
 		t.Fatalf("a hole in the 1m ring concerns every reader (the AI path is held to the whole spec list): %v", rd)
 	}
 }
+
+// The P1 pinned at the production call site: RegisterAll -> datatruth.Evaluate,
+// perfect data, the real CME calendar, evaluated at the first minutes after each
+// DST change and weeks later (the phantom bucket stayed in the warm-up).
+//
+// MUTANT D1: Buckets4h does not clamp a bucket at the next 17:00 anchor -> RED.
+func TestSwing4hDoesNotPauseAPerfectFeedAcrossEitherDSTChange(t *testing.T) {
+	loc := kernel.CTLocation()
+	for _, c := range []struct{ name, from, evals string }{
+		{"fall-back", "2026-09-28 17:00", "2026-11-01 17:30,2026-11-02 08:00,2026-11-15 10:00,2026-11-27 12:00"},
+		{"spring-forward", "2027-02-08 17:00", "2027-03-14 17:30,2027-03-15 08:00,2027-03-29 10:00,2027-04-09 12:00"},
+	} {
+		for _, ev := range strings.Split(c.evals, ",") {
+			datatruth.Reset()
+			now, err := time.ParseInLocation("2006-01-02 15:04", ev, loc)
+			if err != nil {
+				t.Fatal(err)
+			}
+			from, _ := time.ParseInLocation("2006-01-02 15:04", c.from, loc)
+			m1, m5 := dstPerfectBars(from, now, 1), dstPerfectBars(from, now, 5)
+			RegisterAll(Config{Src: calSrc{}, Unrequired: []string{CheckIngestLoss},
+				SwingInputs: func(string, time.Time) ([]Bar, []Bar, float64, error) { return m1, m5, 0, nil }})
+			_, rs := datatruth.Evaluate("MNQ", now)
+			for _, r := range rs {
+				if r.Check == CheckLookbackSwing4h {
+					t.Errorf("%s @%s: SWING4H paused on a perfect feed: %s", c.name, ev, r.Detail)
+				}
+			}
+			datatruth.Reset()
+		}
+	}
+}
