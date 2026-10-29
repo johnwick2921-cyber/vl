@@ -308,6 +308,7 @@ func TestCloseRoutingSwingHoldCloseStampsTheBoundAccount(t *testing.T) {
 	if err := r.st.ArmedOrders().DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, r.b, row) // m441: the arm's own position must be provable
 	mentorRegisterLiveArmForTest("swing-acr", r.b.id, row.ID, "long", 30000)
 	resetMentorCounters(r.b)
 

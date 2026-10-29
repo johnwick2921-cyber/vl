@@ -3,7 +3,6 @@ package trader
 import (
 	"strconv"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -91,8 +90,8 @@ func TestMentorRebuildSwingRegistersArmAndEvalPos(t *testing.T) {
 }
 
 // TestMentorRebuildSwingResumesBE — the core pin: after the rebuild the swing's
-// BE intent reaches moveStopWire (the registry lookup succeeds). A mutant that
-// skips the swing rebuild leaves the registry empty → moveStopWire never fires
+// BE intent reaches the signal-scoped move wire (the registry lookup succeeds). A mutant that
+// skips the swing rebuild leaves the registry empty → the move wire never fires
 // and this turns RED.
 func TestMentorRebuildSwingResumesBE(t *testing.T) {
 	at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
@@ -111,23 +110,20 @@ func TestMentorRebuildSwingResumesBE(t *testing.T) {
 		t.Fatalf("rebuilt=%d refused=%d ran=%v want 1/0/true", rebuilt, refused, ran)
 	}
 
-	var mu sync.Mutex
-	var moved []float64
-	oldWire := moveStopWire
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
-		mu.Lock()
-		moved = append(moved, newStop)
-		mu.Unlock()
-		return nil
+	moves := &swingSignalMoves{}
+	moves.install(t)
+	// the rebuilt swing's bracket is in the broker book (the never-widen judge
+	// reads it; the position row was seeded above).
+	prevBook := mentorStopBook
+	mentorStopBook = func(*nttrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+		return ntwire.OrderSnapshotPayload{Orders: []ntwire.NT8Order{f2StopOrder(sig+"-sl", 31000, 3)}}, time.Now(), true
 	}
-	t.Cleanup(func() { moveStopWire = oldWire })
+	t.Cleanup(func() { mentorStopBook = prevBook })
 
 	resetMentorCounters(at)
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: armID, Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
-	mu.Lock()
-	defer mu.Unlock()
-	if len(moved) != 1 || moved[0] != 31020 {
-		t.Fatalf("moveStopWire must be called once with the entry price, got %v", moved)
+	if moves.n() != 1 || moves.calls[0].stop != 31020 || moves.calls[0].signalID != sig {
+		t.Fatalf("the signal-scoped move must be called once with the entry price, got %+v", moves.calls)
 	}
 	if c := at.mentorCountSnapshot()["move_be_sent"]; c != 1 {
 		t.Fatalf("move_be_sent = %d, want 1", c)

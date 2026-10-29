@@ -1,7 +1,6 @@
 package trader
 
 import (
-	"sync"
 	"testing"
 	"time"
 
@@ -11,7 +10,6 @@ import (
 	"vl/store"
 
 	ntwire "vl/provider/ninjatrader"
-	nttrader "vl/trader/ninjatrader"
 )
 
 // ── MENTOR STALE-DATA BLOCK (release #11) — call-site pins ──────────────────
@@ -119,16 +117,8 @@ func TestMentorStaleDataBlockHaltNoFalseRefusal(t *testing.T) {
 // stop move (mentorMoveStopBE → moveStopWire) still runs.
 func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
-	var mu sync.Mutex
-	var moved []float64
-	oldWire := moveStopWire
-	moveStopWire = func(nt *nttrader.TCPTrader, side string, newStop float64) error {
-		mu.Lock()
-		moved = append(moved, newStop)
-		mu.Unlock()
-		return nil
-	}
-	t.Cleanup(func() { moveStopWire = oldWire })
+	moves := &swingSignalMoves{}
+	moves.install(t)
 
 	row := store.ArmedOrderDB{TraderID: at.id, PlanID: "mentor", Version: 1, Session: "MENTOR", Scenario: "swing-stale",
 		Side: "long", EntryPx: 29600, StopPx: 29595, TargetPx: 29660, Kind: "stop_entry", Condition: "SWING4H",
@@ -136,6 +126,7 @@ func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	if err := ledger.DB().Create(&row).Error; err != nil {
 		t.Fatal(err)
 	}
+	swingOwnedFixture(t, at, row)
 	mentorRegisterLiveArmForTest("swing-stale", at.id, row.ID, "long", 29600)
 
 	now := mentorStaleBlockClock(10, 0) // CME open, stale feed
@@ -146,9 +137,7 @@ func TestMentorStaleDataBlockDoesNotBlockExitDrive(t *testing.T) {
 	at.resetMentorCountersForTest()
 	at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: "swing-stale", Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
 
-	mu.Lock()
-	defer mu.Unlock()
-	if len(moved) != 1 || moved[0] != 29600 {
-		t.Fatalf("the exit-drive stop move must still run while the feed is stale, got %v", moved)
+	if moves.n() != 1 || moves.calls[0].stop != 29600 {
+		t.Fatalf("the exit-drive stop move must still run while the feed is stale, got %+v", moves.calls)
 	}
 }

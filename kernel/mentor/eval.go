@@ -1028,6 +1028,30 @@ func (e *Evaluator) DropArm(armID string) {
 	e.unregisterArm(armID)
 }
 
+// SwingBEApplied is the executor's receipt that the swing's break-even stop is
+// on the broker (release #54, N3). Until it arrives the evaluator keeps
+// re-emitting the BE once per closed 5m bar. A receipt for an arm that is not
+// the open swing is ignored; the return says whether it was recorded.
+func (e *Evaluator) SwingBEApplied(armID string) bool {
+	if e == nil {
+		return false
+	}
+	return e.State.Swing.BEApplied(armID)
+}
+
+// SwingEnded is the receipt that the swing's position is gone — its stop, its
+// target or its hold-close filled, or the account holds no position carrying
+// the arm's own signal (release #54, N2). It clears Swing.Pos so a finished
+// swing can never send a BE or a market close against a later trade. A
+// receipt for an arm that is not the open swing is ignored; the return says
+// whether Pos was cleared.
+func (e *Evaluator) SwingEnded(armID string) bool {
+	if e == nil {
+		return false
+	}
+	return e.State.Swing.Ended(armID)
+}
+
 // unregisterArm removes EVERY evaluator registration of an entry ArmID that
 // will never be authored (m425a S1): ISBArms, the swing Pending, the LevelArms
 // entry (incl. the rolling PHL order and its RollingPHL state) and the EMA34

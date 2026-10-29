@@ -1017,15 +1017,21 @@ func (at *AutoTrader) mentorSwingFill(arm mentorLiveArm) (r store.ArmedOrderDB, 
 	return r, 0, false
 }
 
-// mentorMoveStopBE executes the swing's stop-to-break-even intent. S1: it acts
-// only on the swing leg's OWN FILLED position, and the never-widen guard reads
-// the swing leg's OWN recorded stop (the arm row's StopPx) — never the ledger's
-// open-orders list. Unknown stop → refuse + log (fail closed), never skip.
+// mentorMoveStopBE executes the swing's stop-to-break-even intent.
+//
+// Release #54 (N2/N3): the move happens only when the account holds a position
+// carrying THIS arm's own signal id (mentorSwingOwnership) — a swing whose stop
+// already filled can no longer move another trade's stop — and it rides the
+// SAME signal-scoped, never-widen, broker-verified path the intraday legs use
+// (mentorMoveLegStop). The evaluator is told the outcome: SwingBEApplied on
+// success, SwingEnded when the position is provably over; on any refusal it
+// keeps the BE owed and re-emits it on the next closed 5m bar. Unknown stop →
+// refuse + log (fail closed), never skip.
 func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("move_be_refused_unknown_arm")
-		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry; retried on the next 5m bar: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
@@ -1033,45 +1039,62 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 		at.mentorCount("move_be_refused_unavailable")
 		return
 	}
-	// S1: a phantom swing (never filled, or an unattributable fill) must not
-	// move another trade's stop.
-	r, _, ok := at.mentorSwingFill(arm)
-	if !ok {
+	r, qty, own, why := at.mentorSwingOwnership(nt, arm)
+	switch own {
+	case mentorSwingGone:
+		at.mentorCount("move_be_refused_position_gone")
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q: %s; the swing is over, its state is cleared and no other trade's stop is touched: %s", in.ArmID, why, in.Reason)
+		at.mentorSwingFinish(in.ArmID, why)
+		return
+	case mentorSwingUnproven:
 		at.mentorCount("move_be_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
+		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q owns no provable position yet (%s); the swing leg has no position of its own, retried on the next 5m bar: %s", in.ArmID, why, in.Reason)
 		return
 	}
-	// The widen guard reads the swing leg's OWN stop (SwingState.Pos.Stop's
-	// ledger mirror = the arm row's StopPx). Fail closed when it is unknown.
-	curStop := r.StopPx
-	if curStop <= 0 {
+	if r.StopPx <= 0 {
 		at.mentorCount("move_be_refused_no_stop")
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0); never skip the guard: %s", in.ArmID, in.Reason)
 		return
 	}
-	if refuse, why := mentorNeverWiden(arm.Side, curStop, arm.Entry); refuse {
+	if refuse, why := mentorNeverWiden(arm.Side, r.StopPx, arm.Entry); refuse {
 		at.mentorCount("widen_refused")
 		at.logWarnf("🧑‍🏫 %s", why)
 		return
 	}
-	if err := moveStopWire(nt, arm.Side, arm.Entry); err != nil {
-		at.mentorCount("move_be_refused")
-		at.logWarnf("🧑‍🏫 mentor stop→BE refused: %v", err)
+	applied, ended := at.mentorSwingApplyBE(nt, r, arm, qty)
+	if ended {
+		at.mentorCount("move_be_closed_through_market")
+		at.mentorSwingFinish(in.ArmID, "the break-even was through the market and the leg was closed at market")
 		return
 	}
+	if !applied {
+		at.mentorCount("move_be_refused")
+		at.logWarnf("🧑‍🏫 mentor stop→BE not applied for ArmID %q — kept owed, retried on the next 5m bar: %s", in.ArmID, in.Reason)
+		return
+	}
+	at.mentorSwingReportBE(in.ArmID)
 	at.mentorCount("move_be_sent")
 	at.logInfof("🧑‍🏫 mentor stop moved to break-even (entry %.2f) for ArmID %q: %s", arm.Entry, in.ArmID, in.Reason)
 }
 
 // mentorClosePosition executes the swing's hold-close intent: a mentor-owned
-// market close of the swing leg's OWN filled position — never a side-wide
-// close (S1: CloseLong/CloseShort(sym, 0) would flatten a different mentor
-// position open on the same side).
+// close of the swing leg's OWN filled position — never a side-wide close (S1:
+// CloseLong/CloseShort(sym, 0) would flatten a different mentor position open
+// on the same side).
+//
+// Release #54 (N2/N3/#15): (a) it acts only when the account holds a position
+// carrying THIS arm's own signal id — the AddOn runs close_position as a
+// whole-instrument flatten, so a stale swing used to be able to flatten a LATER
+// trade; (b) the evaluator keeps the hold-close owed until the position is
+// provably gone, and re-emits it on the next closed 5m bar after any refusal;
+// (c) the exit is the X8 marketable limit (cancels only this position's
+// bracket), with one market close if the position is still open on the next bar
+// — not a market Flatten that cancels every resting arm on the account.
 func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("close_refused_unknown_arm")
-		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry; retried on the next 5m bar: %s", in.ArmID, in.Reason)
 		return
 	}
 	nt := at.armedTrader()
@@ -1081,33 +1104,35 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	}
 	// S1: the close must be attributed to the swing leg's own fill, sized by
 	// its own contracts — never a side-wide 0, never guessed.
-	r, qty, ok := at.mentorSwingFill(arm)
-	if ok {
-		// CX-2: a split swing closes only what the broker still holds.
-		if qty, ok = at.mentorSwingCloseQty(r, arm.Side, qty); !ok {
-			return
-		}
-	} else {
+	r, qty, own, why := at.mentorSwingOwnership(nt, arm)
+	switch own {
+	case mentorSwingGone:
+		at.mentorCount("close_refused_position_gone")
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q: %s; the swing is over, its state is cleared and nothing is sent: %s", in.ArmID, why, in.Reason)
+		at.mentorSwingFinish(in.ArmID, why)
+		return
+	case mentorSwingUnproven:
 		at.mentorCount("close_refused_not_filled")
-		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
+		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q owns no provable position (%s); a phantom swing must not close another trade, retried on the next 5m bar: %s", in.ArmID, why, in.Reason)
 		return
 	}
-	var err error
+	// CX-2: a split swing closes only what the broker still holds.
+	qty, ok = at.mentorSwingCloseQty(r, arm.Side, qty)
+	if !ok {
+		return
+	}
 	switch arm.Side {
-	case "long":
-		_, err = nt.CloseLong(at.futuresSymbol(), qty)
-	case "short":
-		_, err = nt.CloseShort(at.futuresSymbol(), qty)
+	case "long", "short":
 	default:
 		at.mentorCount("close_refused_bad_side")
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — unknown side %q for ArmID %q", arm.Side, in.ArmID)
 		return
 	}
-	if err != nil {
+	if err := at.mentorSwingSendClose(nt, in.ArmID, arm.Side, qty); err != nil {
 		at.mentorCount("close_refused")
-		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v", in.ArmID, err)
+		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v — retried on the next 5m bar", in.ArmID, err)
 		return
 	}
 	at.mentorCount("close_sent")
-	at.logInfof("🧑‍🏫 mentor position closed (%s, %.0f contracts) for ArmID %q: %s", arm.Side, qty, in.ArmID, in.Reason)
+	at.logInfof("🧑‍🏫 mentor position close sent (%s, %.0f contracts) for ArmID %q — the swing stays owed until the position is confirmed closed: %s", arm.Side, qty, in.ArmID, in.Reason)
 }
