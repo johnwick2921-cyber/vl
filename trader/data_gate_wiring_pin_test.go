@@ -244,10 +244,12 @@ func TestMonitorTickRunsTheDataGateBeatsBoundedAndNeverStacks(t *testing.T) {
 	now := cmeOpenNow(t)
 	withProvider(t, []market.Kline{{OpenTime: now.UnixMilli() - 30_000, Final: true}})
 
-	start := time.Now()
-	at.monitorTick(now)
-	if d := time.Since(start); d > 2*time.Second {
-		t.Fatalf("monitorTick took %s with a hung data check: the beats are not bounded", d)
+	tickDone := make(chan struct{})
+	go func() { at.monitorTick(now); close(tickDone) }()
+	select {
+	case <-tickDone:
+	case <-time.After(2 * time.Second):
+		t.Fatal("monitorTick is stuck behind a hung data check: the beats are not bounded")
 	}
 	// the next minute's beat finds the stuck one still in flight and skips it
 	at.monitorTick(now.Add(time.Minute))
