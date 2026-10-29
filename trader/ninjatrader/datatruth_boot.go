@@ -2,6 +2,7 @@ package ninjatrader
 
 import (
 	"fmt"
+	"sort"
 	"sync/atomic"
 	"time"
 
@@ -47,14 +48,33 @@ func SetDataTruthReadyForTest(v bool) (restore func()) {
 const (
 	dataTruthStore1mN = 27000
 	dataTruthStore5mN = 5400
+	// dataTruthStitchReachMs bounds how far before the current contract's first
+	// row the stitch looks for the older contract it rolled from.
+	dataTruthStitchReachMs = int64(60 * 24 * 3600 * 1000)
 )
 
 // storeSwingInputs is checks.Config.SwingInputs over the bar history. botLine is
 // 0 (unknown): JudgeSwing4h then compares the line built from the 1m with the
 // line rebuilt from every frame, both from the SAME store - it measures the hole's
 // effect on the swing line without coupling this check to the evaluator's
-// in-memory state (a stitched, back-adjusted series that a current-contract
-// recompute could disagree with at a roll for reasons that are not data loss).
+// in-memory state.
+//
+// THE STITCHED SERIES (release #55 review, P2): the evaluator seeds its 4h EMA 34
+// from the contract-STITCHED, back-adjusted 1m (trader/mentor_tick.go
+// mentorFullKeyLevelHistory: "so every boot sees >=102 closed 4h candles instead of
+// the current contract's ~95"). Judging the CURRENT contract's rows alone made
+// SWING4H pause for days after every roll although the series the evaluator reads
+// was complete: right after a roll the new contract holds only its replay and a
+// few sparse one-row-a-day import snapshots, so the check saw "only 14 buckets"
+// (09-11), then "8 buckets inside the warm-up exist in no frame" until 10-06 on
+// the real 12-26 rows. stitchedBarRows therefore reads the series the way the
+// evaluator does: when the current contract does not hold the whole window, the
+// older contract supplies every bar up to ITS OWN LAST STORED BAR and the newer
+// one every bar strictly after it (the REL10-STITCH-CUT rule), the older bars
+// shifted onto the newer price scale by the one seam difference. The shift is a
+// level, not a hole: JudgeSwing4h compares two recurrences over the SAME stitched
+// closes, so a constant offset cancels, and the one 1m-measured offset is applied
+// to the 5m as well so the two frames can never disagree about the seam itself.
 func storeSwingInputs(bh *store.BarHistoryStore) func(symbol string, now time.Time) ([]checks.Bar, []checks.Bar, float64, error) {
 	conv := func(rows []store.BarHistoryDB) []checks.Bar {
 		out := make([]checks.Bar, len(rows))
@@ -67,16 +87,98 @@ func storeSwingInputs(bh *store.BarHistoryStore) func(symbol string, now time.Ti
 		if bh == nil {
 			return nil, nil, 0, fmt.Errorf("data truth: no bar history store")
 		}
-		r1, err := bh.LastNBarsCurrentContract(symbol, "1m", dataTruthStore1mN)
+		r1, r5, err := stitchedBarRows(bh, symbol)
 		if err != nil {
-			return nil, nil, 0, fmt.Errorf("1m store read: %w", err)
-		}
-		r5, err := bh.LastNBarsCurrentContract(symbol, "5m", dataTruthStore5mN)
-		if err != nil {
-			return nil, nil, 0, fmt.Errorf("5m store read: %w", err)
+			return nil, nil, 0, err
 		}
 		return conv(r1), conv(r5), 0, nil
 	}
+}
+
+// stitchedBarRows returns the 1m and 5m rows the swing / levels / session checks
+// judge: the current contract's newest rows, extended backwards over older
+// contracts while the window is not full (see storeSwingInputs). A store read
+// error is returned (the check fails closed).
+func stitchedBarRows(bh *store.BarHistoryStore, symbol string) (r1, r5 []store.BarHistoryDB, err error) {
+	r1, err = bh.LastNBarsCurrentContract(symbol, "1m", dataTruthStore1mN)
+	if err != nil {
+		return nil, nil, fmt.Errorf("1m store read: %w", err)
+	}
+	r5, err = bh.LastNBarsCurrentContract(symbol, "5m", dataTruthStore5mN)
+	if err != nil {
+		return nil, nil, fmt.Errorf("5m store read: %w", err)
+	}
+	if len(r1) == 0 || len(r1) >= dataTruthStore1mN {
+		return r1, r5, nil // cold store, or the current contract alone fills the window
+	}
+	// a time-bounded read (an index range over the last weeks), not the aggregate
+	// over the symbol's whole history: this runs once per symbol-minute while a
+	// fresh roll leaves the current contract short.
+	spans, err := bh.RecentContracts(symbol, "1m", r1[0].OpenTimeMs-dataTruthStitchReachMs)
+	if err != nil {
+		return nil, nil, fmt.Errorf("1m contract spans: %w", err)
+	}
+	idx := -1
+	for i, sp := range spans {
+		if sp.Contract == r1[0].Contract {
+			idx = i
+		}
+	}
+	for i := idx - 1; i >= 0 && len(r1) < dataTruthStore1mN; i-- {
+		oc := spans[i].Contract
+		old1, err := bh.LastNBarsOn(symbol, "1m", oc, dataTruthStore1mN-len(r1))
+		if err != nil {
+			return nil, nil, fmt.Errorf("1m store read (%s): %w", oc, err)
+		}
+		if len(old1) == 0 {
+			continue
+		}
+		last := old1[len(old1)-1]
+		head1 := rowsAfter(r1, last.OpenTimeMs)
+		if len(head1) == 0 {
+			break // the newer series has nothing after the older's last bar: no seam to measure
+		}
+		// the seam shift: the newer close at the older's last minute when it stores
+		// one, else the newer's first close after it
+		anchor := head1[0].C
+		for _, b := range r1 {
+			if b.OpenTimeMs == last.OpenTimeMs {
+				anchor = b.C
+				break
+			}
+		}
+		delta := anchor - last.C
+		old5, err := bh.LastNBarsOn(symbol, "5m", oc, dataTruthStore5mN-len(r5))
+		if err != nil {
+			return nil, nil, fmt.Errorf("5m store read (%s): %w", oc, err)
+		}
+		var old5cut []store.BarHistoryDB
+		for _, b := range old5 {
+			if b.OpenTimeMs <= last.OpenTimeMs {
+				old5cut = append(old5cut, b)
+			}
+		}
+		head5 := rowsAfter(r5, last.OpenTimeMs)
+		r1 = append(shiftRows(old1, delta), head1...)
+		r5 = append(shiftRows(old5cut, delta), head5...)
+	}
+	return r1, r5, nil
+}
+
+// rowsAfter is the suffix of the ascending rows strictly after ms.
+func rowsAfter(rows []store.BarHistoryDB, ms int64) []store.BarHistoryDB {
+	i := sort.Search(len(rows), func(i int) bool { return rows[i].OpenTimeMs > ms })
+	return rows[i:]
+}
+
+// shiftRows returns a copy of rows with every price moved by delta.
+func shiftRows(rows []store.BarHistoryDB, delta float64) []store.BarHistoryDB {
+	out := make([]store.BarHistoryDB, len(rows))
+	for i, r := range rows {
+		r.O, r.H, r.L, r.C = r.O+delta, r.H+delta, r.L+delta, r.C+delta
+		out[i] = r
+	}
+	return out
 }
 
 // WireDataTruthChecks registers the eight m446 checks over the live BarCache and

@@ -8,6 +8,7 @@ import (
 
 	"vl/internal/datatruth"
 	"vl/internal/datatruth/checks"
+	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
@@ -105,4 +106,148 @@ func TestStoreSwingInputsReadsTheCurrentContractOneAndFiveMinute(t *testing.T) {
 	if _, _, _, err := storeSwingInputs(nil)("MNQ", time.Now()); err == nil {
 		t.Fatal("no store must be an ERROR (a check that cannot judge fails closed), not an empty read")
 	}
+}
+
+// rollFixture inserts a contract roll the way the real 09-10 12-26 roll left the
+// store: the OLD contract holds dense, perfect 1m + 5m up to its last stored bar
+// (the roll day's morning), the NEW contract holds sparse one-row-a-day import
+// snapshots before the roll and dense replay after it, on a price scale 100 pt
+// higher. Only the first few sessions of the new contract are dense.
+func rollFixture(t *testing.T, bh *store.BarHistoryStore, loc *time.Location, hole func(tm time.Time) bool) (now time.Time) {
+	t.Helper()
+	at := func(s string) time.Time {
+		v, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	open := func(tm time.Time) bool { return kernel.IsCMEOpen(tm) }
+	var rows []store.BarHistoryDB
+	add := func(contract, tf string, tm time.Time, px float64) {
+		rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: tf, Contract: contract, Source: store.BarSourceHistorical,
+			OpenTimeMs: tm.UnixMilli(), O: px, H: px + 1, L: px - 1, C: px, V: 10})
+	}
+	cut := at("2026-09-10 08:00")
+	px := 30000.0
+	for tm := at("2026-08-12 17:00"); !tm.After(cut); tm = tm.Add(time.Minute) {
+		if !open(tm) {
+			continue
+		}
+		px += 0.25
+		if hole != nil && hole(tm) {
+			continue // lost in BOTH frames
+		}
+		add("MNQ 09-26", "1m", tm, px)
+		if tm.Minute()%5 == 0 {
+			add("MNQ 09-26", "5m", tm, px)
+		}
+	}
+	// the new contract: sparse snapshots (one 1m + one 5m row a day, 12:00 CT) before the roll ...
+	for d := at("2026-08-12 12:00"); d.Before(cut); d = d.AddDate(0, 0, 1) {
+		if open(d) {
+			add("MNQ 12-26", "1m", d, px+100)
+			add("MNQ 12-26", "5m", d, px+100)
+		}
+	}
+	// ... dense replay after the roll
+	now = at("2026-09-14 12:30")
+	for tm := cut.Add(time.Minute); tm.Before(now); tm = tm.Add(time.Minute) {
+		if !open(tm) {
+			continue
+		}
+		px += 0.25
+		add("MNQ 12-26", "1m", tm, px+100)
+		if tm.Minute()%5 == 0 {
+			add("MNQ 12-26", "5m", tm, px+100)
+		}
+	}
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	return now
+}
+
+// TestSwing4hJudgesTheStitchedSeriesAcrossARoll (release #55 review, P2 + P3) is
+// the production-path pin: WireDataTruthChecks + datatruth.Evaluate over a store
+// that just rolled. The series the evaluator reads (old contract up to its last
+// bar + new contract after it) is complete and perfect, so the SWING4H check must
+// NOT pause. Before the fix the check judged the new contract's rows alone ("only
+// N closed 4h buckets" / "buckets inside the warm-up exist in no frame") for days.
+//
+// MUTANT R1: stitchedBarRows returns the current contract only -> RED.
+func TestSwing4hJudgesTheStitchedSeriesAcrossARoll(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	loc := kernel.CTLocation()
+
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	now := rollFixture(t, bh, loc, nil)
+	WireDataTruthChecks(bh, ntwire.NewTCPServer(nil))
+	_, reasons := datatruth.Evaluate("MNQ", now)
+	for _, r := range reasons {
+		if r.Check == checks.CheckLookbackSwing4h {
+			t.Fatalf("SWING4H paused on a complete stitched series after a roll: %s", r.Detail)
+		}
+	}
+	// the stitch is the only thing standing between this fixture and a pause: the
+	// same store judged on the new contract alone must block (the pre-fix reading).
+	m1, m5, _, err := storeSwingInputs(bh)("MNQ", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(m1) < 20000 {
+		t.Fatalf("stitched 1m has %d rows - the older contract was not read", len(m1))
+	}
+	for i := 1; i < len(m1); i++ {
+		if m1[i].T <= m1[i-1].T {
+			t.Fatalf("stitched 1m not strictly ascending at %d", i)
+		}
+	}
+	// one price scale across the seam: no 100 pt step anywhere in the stitched closes
+	for i := 1; i < len(m1); i++ {
+		if d := m1[i].C - m1[i-1].C; d > 5 || d < -5 {
+			t.Fatalf("seam step %.2f pt at %s: the older contract was not shifted onto the newer scale", d, time.UnixMilli(m1[i].T).UTC())
+		}
+	}
+	_ = m5
+}
+
+// TestSwing4hStillPausesOnARealHoleAcrossARoll keeps the stitch honest: a 4h
+// stretch of the OLDER contract lost in BOTH frames, inside the warm-up, is a
+// real unknowable bucket and must still pause SWING4H (fail closed), stitched or
+// not.
+func TestSwing4hStillPausesOnARealHoleAcrossARoll(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	loc := kernel.CTLocation()
+
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	from := time.Date(2026, 8, 31, 17, 0, 0, 0, loc)
+	now := rollFixture(t, bh, loc, func(tm time.Time) bool { return !tm.Before(from) && tm.Before(from.Add(4*time.Hour)) })
+	WireDataTruthChecks(bh, ntwire.NewTCPServer(nil))
+	_, reasons := datatruth.Evaluate("MNQ", now)
+	for _, r := range reasons {
+		if r.Check == checks.CheckLookbackSwing4h {
+			if !strings.Contains(r.Detail, "exist in no frame") {
+				t.Fatalf("paused, but for the wrong reason: %s", r.Detail)
+			}
+			return
+		}
+	}
+	t.Fatal("a 4h bucket lost in both frames inside the warm-up must still pause SWING4H")
 }

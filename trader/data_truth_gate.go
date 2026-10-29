@@ -119,15 +119,37 @@ func (at *AutoTrader) dataTruthVerdictAt(openMin int, now time.Time) dataVerdict
 	return dataTruthReasons(at.futuresSymbol(), openMin, now)
 }
 
+// dataTruthReaderFor names the reader behind an admitted window (release #55
+// review: a bad bar matters to a trader only through the indicators and frames
+// THAT trader's decisions read). The mentor evaluator asks for the intraday or
+// swing window; every other entry path (AI decision, agent, Picture, planner
+// arm, the SIM seams, the debug door) asks for the deep one and is the AI
+// reader - the wide one, so an unknown window is held to the wider reader
+// (fail closed).
+func dataTruthReaderFor(openMin int) string {
+	switch openMin {
+	case ntTrader.IntegrityIntradayOpenMin, ntTrader.IntegritySwingOpenMin:
+		return datatruth.ReaderMentor
+	}
+	return datatruth.ReaderAI
+}
+
 // dataTruthReasons evaluates and scopes. Evaluate runs EVERY check (episodes and
 // alerts are per check, whatever the asking path); the scope filter only decides
-// which verdicts this path must obey.
+// which verdicts this path must obey: the swing4h check only for the swing
+// window, and a reason that names its readers only for those readers (a bad
+// bar that moves the AI path's 3m/5m indicators does not pause a mentor trader,
+// whose indicators read the 1m ring, and the other way round).
 func dataTruthReasons(sym string, openMin int, now time.Time) dataVerdict {
 	_, reasons := datatruth.Evaluate(sym, now)
+	reader := dataTruthReaderFor(openMin)
 	var parts []string
 	for _, r := range reasons {
 		if r.Check == checks.CheckLookbackSwing4h && openMin < ntTrader.IntegritySwingOpenMin {
 			continue // the swing line is read by SWING4H only
+		}
+		if !r.Concerns(reader) {
+			continue // the data is wrong, but not in anything THIS reader reads
 		}
 		parts = append(parts, fmt.Sprintf("%s: %s", r.Check, r.Detail))
 	}

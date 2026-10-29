@@ -3,6 +3,8 @@ package checks
 import (
 	"testing"
 	"time"
+
+	"vl/internal/datatruth"
 )
 
 // bad_1019 extended 5 hours past the bad prints (rows from data.db, read-only):
@@ -43,42 +45,80 @@ func suspectAt(mnq, es []Bar, rowOf map[int64]float64, p BadPrintParams, now tim
 	return nil
 }
 
-// D4: a bad print used to expire 30 minutes after it printed while it sat in
-// the lookbacks for hours. It must keep entries paused for as long as it moves
-// any indicator by more than that indicator's tolerance - and no longer.
+// D4 + F1 (release #55 review): a bad print used to expire 30 minutes after it
+// printed while it sat in the lookbacks for hours. It must keep entries paused
+// for as long as it moves an indicator THAT READER READS by more than that
+// indicator's tolerance, charged only the part of the error the indicator
+// reads - and no longer. The first calibration charged the whole high/low
+// excursion to EMA/RSI/MACD too: the 163 pt wick of row 2020732, which closes
+// 7.5 pt from where the next bar opens, held 4 hours as a "163 pt close error".
 func TestBadPrintHoldsWhileItStillInfluencesIndicators(t *testing.T) {
 	mnq, es, rowOf := loadBad1019Long(t)
 	specs := DefaultSpecs([]int{3, 5})
 	prod := DefaultBadPrint().WithHold(specs)
-	var badT int64
+	times := map[float64]int64{}
 	for ts, id := range rowOf {
-		if id == 2020732 {
-			badT = ts
+		times[id] = ts
+	}
+	// the two real bad prints: (row, range error X, close error)
+	for _, c := range []struct {
+		row            float64
+		x, closeErr    float64
+		aiHold, mentor int // minutes
+	}{
+		{2020662, 82.25, 69.25, 75, 37}, // 08:58: a real close error (the next bar opens 69 pt away)
+		{2020732, 167.25, 7.5, 75, 6},   // 09:19: a wick that closes back; only ATR sees the range
+	} {
+		badT := times[c.row]
+		be := BarError{T: badT, CloseErr: c.closeErr, RangeErr: c.x}
+		if h := HoldMinutesFor(specs, datatruth.ReaderAI, be); h != c.aiHold {
+			t.Errorf("row %v: AI hold %d min, want %d (ATR14 on the 3m/5m reads the range; EMA/RSI/MACD read the close)", c.row, h, c.aiHold)
 		}
-	}
-	x := 167.25 // |h-l| of row 2020732: 29855.0 - 29687.75
-	hold := HoldMinutes(specs, x)
-	if hold < 120 || hold > HoldCapMin {
-		t.Fatalf("a 167 pt wick must hold for hours, bounded by the cap; got %d min", hold)
-	}
-	for _, off := range []int{1, 31, 60, 120, hold - 2} {
-		now := time.UnixMilli(badT + int64(off)*minuteMs + 30_000)
-		if suspectAt(mnq, es, rowOf, prod, now, 2020732) == nil {
-			t.Errorf("row 2020732 (163 pt wick) must still pause %d min after it printed (hold %d min)", off, hold)
+		if h := HoldMinutesFor(specs, datatruth.ReaderMentor, be); h != c.mentor {
+			t.Errorf("row %v: mentor hold %d min, want %d (the 1m EMA34/9 read the close)", c.row, h, c.mentor)
 		}
-	}
-	// ... and not for ever: once its influence has decayed below every tolerance
-	if now := time.UnixMilli(badT + int64(hold+2)*minuteMs + 30_000); suspectAt(mnq, es, rowOf, prod, now, 2020732) != nil {
-		t.Errorf("row 2020732 must clear once its influence has decayed (%d min)", hold)
-	}
-	// the smaller 82 pt print (row 2020662) holds for less
-	if h2 := HoldMinutes(specs, 82); h2 >= hold || h2 < 60 {
-		t.Errorf("hold must scale with the error: 82 pt -> %d min, 167 pt -> %d min", h2, hold)
+		// the OLD charge (whole excursion to every spec) is the defect
+		if old := HoldMinutes(specs, c.x); c.row == 2020732 && old < 200 {
+			t.Fatalf("fixture: the pre-F1 charge of a %.0f pt wick is expected to be hours, got %d", c.x, old)
+		}
+		for _, off := range []int{1, 31, 60, c.aiHold - 2} {
+			now := time.UnixMilli(badT + int64(off)*minuteMs + 30_000)
+			s := suspectAt(mnq, es, rowOf, prod, now, c.row)
+			if s == nil {
+				t.Errorf("row %v must still pause the AI reader %d min after it printed (hold %d min)", c.row, off, c.aiHold)
+				continue
+			}
+			if s.CloseErr != c.closeErr {
+				t.Errorf("row %v CloseErr %v, want %v", c.row, s.CloseErr, c.closeErr)
+			}
+			// past the mentor's own hold (and its 30 min floor) the mentor is released, the AI path is not
+			wantMentor := off < 30 || off < c.mentor
+			gotMentor := len(s.Readers) == 0 || s.Readers[0] == datatruth.ReaderMentor
+			if gotMentor != wantMentor {
+				t.Errorf("row %v at +%d min: mentor held=%v, want %v (readers %v)", c.row, off, gotMentor, wantMentor, s.Readers)
+			}
+		}
+		// ... and not for ever: once its influence has decayed below every tolerance
+		if now := time.UnixMilli(badT + int64(c.aiHold+2)*minuteMs + 30_000); suspectAt(mnq, es, rowOf, prod, now, c.row) != nil {
+			t.Errorf("row %v must clear once its influence has decayed (%d min)", c.row, c.aiHold)
+		}
 	}
 	// the OLD age-based window (Hold == nil) clears at 30 min: that is the defect
 	old := DefaultBadPrint()
-	if now := time.UnixMilli(badT + 61*minuteMs); suspectAt(mnq, es, rowOf, old, now, 2020732) != nil {
+	if now := time.UnixMilli(times[2020732] + 61*minuteMs); suspectAt(mnq, es, rowOf, old, now, 2020732) != nil {
 		t.Fatal("fixture: the age-only rule is expected to have expired by 60 min")
+	}
+	// the hold still scales with the error: a bigger close error holds longer
+	if a, b := HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 30, RangeErr: 30}), HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 69, RangeErr: 69}); a >= b {
+		t.Errorf("hold must scale with the close error: 30 pt -> %d min, 69 pt -> %d min", a, b)
+	}
+	// a 1m close reaches a 5m close only on the LAST minute of the 5m bucket
+	last := BarError{T: ct(t, "2026-10-19 08:59").UnixMilli(), CloseErr: 60, RangeErr: 60}
+	mid := BarError{T: ct(t, "2026-10-19 08:58").UnixMilli(), CloseErr: 60, RangeErr: 60}
+	ai5 := []SeriesSpec{{Name: "ai_ema20_5m", TFMin: 5, Period: 20, EMA: true, PriceUnits: true, TolPts: 1.0, Reader: datatruth.ReaderAI}}
+	if HoldMinutesFor(ai5, datatruth.ReaderAI, last) == 0 || HoldMinutesFor(ai5, datatruth.ReaderAI, mid) != 0 {
+		t.Errorf("a 1m close error must reach a 5m EMA only through the bucket's last minute: last=%d mid=%d",
+			HoldMinutesFor(ai5, datatruth.ReaderAI, last), HoldMinutesFor(ai5, datatruth.ReaderAI, mid))
 	}
 }
 

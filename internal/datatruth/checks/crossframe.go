@@ -3,6 +3,8 @@ package checks
 import (
 	"fmt"
 	"time"
+
+	"vl/internal/datatruth"
 )
 
 // ── CHECK 2: CROSS-FRAME AGREEMENT ───────────────────────────────────────────
@@ -33,6 +35,40 @@ import (
 // contracts). Buckets with missing 1m are SKIPPED here (that is the hole
 // verdict's job) and counted. Only bars inside the decision window are judged.
 
+// ── CALIBRATION (release #55 review F1-F3; every number from the corpus) ────
+//
+// Over 10-14 .. 10-29 the first draft paused 1,401 minutes on cross_frame, and
+// two classes of its records were immaterial to every reader of the frame:
+//
+//	tick-skew     45 records whose worst field is <= 2 pt (10-21 17:40Z 5m low
+//	              +0.75, 10-22 00:00 3m/5m high +1.75, 10-29 15:33 3m close 2.0):
+//	              141 exclusive minutes, each a bare 12-15 min floor. "Never pause
+//	              on data that is not lost": a closed live frame that differs from
+//	              the 1m by a few ticks is the documented tick-boundary skew, and
+//	              no indicator moves by more than its own tolerance (HoldMinutesFor
+//	              = 0). PriceTol (0.5 pt) stays the RECORD threshold - every such
+//	              record is counted (datatruth.Count, /api/health counted) - while
+//	              PauseTol (= ImpactTolPts, 2 pt, strictly above) is the PAUSE threshold.
+//	              Most of the corpus records exceed 2 pt and are real.
+//	15m volume    15 records, all quiet overnight bars, price equal to the tick,
+//	              native volume 2-4x the 1m-built (27321 vs 6852 at 10-19 20:00):
+//	              175 exclusive minutes. No indicator spec reads 15m and nothing the
+//	              entry paths consume reads 15m volume, so a volume-only mismatch on
+//	              a frame outside VolPauseTFs is counted, not paused. 3m/5m volume
+//	              still pauses (it feeds the AI path's volume reads).
+//
+// READERS. A closed native frame is read only by the AI path (3m/5m/15m
+// indicators) - the mentor evaluator builds every frame it trades from the 1m
+// ring and reads ONE native frame, the 5m, for the strong-day test (any of the
+// last 12 closed bars with range >= StrongDayPts). So a mismatch concerns the
+// mentor only when it FLIPS that test on a 5m bar, and then for the 12 bars the
+// test reads (60 min); everything else on a frame the mentor never reads is not
+// the mentor's pause (datatruth.ReaderMentor).
+
+// MentorStrongDayBars is how many closed native 5m bars the mentor's strong-day
+// test reads (trader/mentor_tick.go FuturesBarsProvider("MNQ","5m",12)).
+const MentorStrongDayBars = 12
+
 // CrossParams are the tunables.
 type CrossParams struct {
 	// WindowMin: the floor of how long a bar stays judged after it CLOSED -
@@ -42,24 +78,48 @@ type CrossParams struct {
 	// resume for 3 minutes while it was still wrong and made back-to-back
 	// episodes).
 	WindowMin int
-	// Hold, when set, maps (frame minutes, the mismatch's worst price error in
-	// pt) to how many minutes the wrong bar must keep entries paused: its
-	// influence on the indicators reading that frame (HoldMinutes). A big
-	// mismatch is judged for that long, a tick-skew only for the floor. A
-	// mismatch clears early when the bar is repaired (it is re-judged on every
-	// call). nil = the floor only.
-	Hold      func(tfMin int, errPts float64) int
-	PriceTol  float64 // pt: |native - built| allowed per OHLC field
+	// HoldFor, when set, maps (reader, frame minutes, what the bar got wrong) to
+	// how many minutes the wrong bar must keep THAT READER's entries paused: its
+	// influence on the indicators that reader reads on that frame
+	// (HoldMinutesFor). A big mismatch is judged for that long, a tick-skew only
+	// for the floor. A mismatch clears early when the bar is repaired (it is
+	// re-judged on every call). nil = the floor only.
+	HoldFor  func(reader string, tfMin int, e BarError) int
+	PriceTol float64 // pt: |native - built| per OHLC field that is RECORDED as a mismatch
+	// PauseTol is the worst-field error that PAUSES (strictly above, like ImpactTolPts: "moves an indicator by MORE than 2 pt"); 0 = PriceTol (every
+	// recorded price mismatch pauses - the pre-#55 behaviour, kept for fixtures).
+	PauseTol  float64
 	VolRel    float64 // relative volume tolerance
 	VolAbsMin float64 // volume diffs below this many contracts are ignored
+	// VolPauseTFs lists the frames whose VOLUME mismatch pauses; a volume-only
+	// mismatch on any other frame is counted. nil = every frame.
+	VolPauseTFs []int
+	// StrongDayPts > 0 turns reader scoping on: the AI reader is held by every
+	// material mismatch, the mentor reader only by a 5m range flip across this
+	// threshold (mirrors trader mentorStrongDayPtsMin; pinned there).
+	StrongDayPts float64
 }
 
-// DefaultCross: 0.5 pt (two ticks) and 40% volume above 200 contracts. 99.4% of
-// closed 3m/5m/15m bars equal their 1m exactly; the rest are real defects of
-// the stored span (bars born after a reconnect or finished on a dropped frame;
-// 10-21 00:35 5m: native volume 300 vs 5720 built, 26.75 pt off).
+// DefaultCross: 0.5 pt (two ticks) to record, 2 pt to pause, and 40% volume above
+// 200 contracts. 99.4% of closed 3m/5m/15m bars equal their 1m exactly; the rest
+// are real defects of the stored span (bars born after a reconnect or finished on
+// a dropped frame; 10-21 00:35 5m: native volume 300 vs 5720 built, 26.75 pt off)
+// or tick-skew (counted, not paused: see CALIBRATION).
 func DefaultCross() CrossParams {
-	return CrossParams{WindowMin: 12, PriceTol: 0.5, VolRel: 0.40, VolAbsMin: 200}
+	return CrossParams{WindowMin: 12, PriceTol: 0.5, PauseTol: ImpactTolPts, VolRel: 0.40, VolAbsMin: 200,
+		VolPauseTFs: []int{3, 5}, StrongDayPts: 50}
+}
+
+func (p CrossParams) volPauses(tfMin int) bool {
+	if p.VolPauseTFs == nil {
+		return true
+	}
+	for _, tf := range p.VolPauseTFs {
+		if tf == tfMin {
+			return true
+		}
+	}
+	return false
 }
 
 // FrameMismatch is one disagreeing HTF bar.
@@ -67,6 +127,8 @@ type FrameMismatch struct {
 	TFMin  int
 	T      int64
 	Detail string
+	// Readers names the entry paths still held by this bar (empty = every path).
+	Readers []string
 }
 
 // CompareFrames judges htf (tfMin-minute bars) against m1. judged/skipped count
@@ -85,8 +147,13 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 		floor = tfMin
 	}
 	scan := floor
-	if p.Hold != nil {
+	if p.HoldFor != nil {
 		scan = HoldCapMin
+	}
+	scoped := p.StrongDayPts > 0
+	pauseTol := p.PauseTol
+	if pauseTol <= 0 {
+		pauseTol = p.PriceTol
 	}
 	from := nowMs - int64(scan)*minuteMs - span // open time of the oldest bar that could still be inside its hold
 	m := byT(tailFrom(m1, from))
@@ -138,22 +205,90 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 		chk("high", h.H, hi)
 		chk("low", h.L, lo)
 		chk("close", h.C, c)
+		volBad := false
 		if d := abs(h.V - v); d >= p.VolAbsMin && v > 0 && d/v > p.VolRel {
+			volBad = true
 			bad = append(bad, fmt.Sprintf("volume native %.0f vs 1m-built %.0f", h.V, v))
 		}
-		if len(bad) > 0 {
-			// still inside the decision? within the floor always; older only while
-			// the error still moves an indicator by more than its tolerance.
-			if age := (nowMs - (h.T + span)) / minuteMs; age >= int64(floor) {
-				if p.Hold == nil || age >= int64(p.Hold(tfMin, worst)) {
-					continue
+		if len(bad) == 0 {
+			continue
+		}
+		age := (nowMs - (h.T + span)) / minuteMs
+		// what the bar got wrong, split by what an indicator reads (F1)
+		be := BarError{Frame: true, CloseErr: abs(h.C - c)}
+		be.RangeErr = abs(h.H - hi)
+		if d := abs(h.L - lo); d > be.RangeErr {
+			be.RangeErr = d
+		}
+		holdOf := func(reader string) int {
+			if p.HoldFor == nil {
+				return 0
+			}
+			return p.HoldFor(reader, tfMin, be)
+		}
+		pricePause := worst > 0 && worst > pauseTol
+		var readers []string
+		allHeld := false
+		if scoped {
+			// AI reader: any material mismatch on a frame its indicators read
+			aiHold := holdOf(datatruth.ReaderAI)
+			if pricePause || aiHold > 0 || (volBad && p.volPauses(tfMin)) {
+				w := floor
+				if aiHold > w {
+					w = aiHold
+				}
+				if age < int64(w) {
+					readers = append(readers, datatruth.ReaderAI)
 				}
 			}
-			out = append(out, FrameMismatch{TFMin: tfMin, T: h.T,
-				Detail: fmt.Sprintf("%dm bar %s disagrees with the 1m it is made of: %s", tfMin, time.UnixMilli(h.T).UTC().Format("01-02 15:04Z"), joinS(bad))})
+			// mentor reader: the 5m strong-day test only
+			if tfMin == 5 && p.StrongDayPts > 0 && (h.H-h.L >= p.StrongDayPts) != (hi-lo >= p.StrongDayPts) {
+				if age < int64(MentorStrongDayBars*tfMin) {
+					readers = append(readers, datatruth.ReaderMentor)
+				}
+			}
+			if len(readers) == 2 {
+				readers, allHeld = nil, true
+			}
+			if len(readers) == 0 && !allHeld {
+				countImmaterial(tfMin, h.T, age, floor, worst, volBad, bad)
+				continue
+			}
+		} else {
+			// unscoped (fixtures / pre-#55 parameters): one verdict for everyone
+			hold := holdOf("")
+			if !(pricePause || hold > 0 || (volBad && p.volPauses(tfMin))) {
+				countImmaterial(tfMin, h.T, age, floor, worst, volBad, bad)
+				continue
+			}
+			w := floor
+			if hold > w {
+				w = hold
+			}
+			if age >= int64(w) {
+				continue
+			}
 		}
+		out = append(out, FrameMismatch{TFMin: tfMin, T: h.T, Readers: readers,
+			Detail: fmt.Sprintf("%dm bar %s disagrees with the 1m it is made of: %s", tfMin, time.UnixMilli(h.T).UTC().Format("01-02 15:04Z"), joinS(bad))})
 	}
 	return out, judged, skipped
+}
+
+// countImmaterial notes a recorded mismatch that pauses nobody (tick-skew under
+// PauseTol, volume on a frame no entry path reads): counted once per bar, only
+// while the bar is still inside the floor window (a boot must not re-announce
+// eight hours of old records).
+func countImmaterial(tfMin int, t, age int64, floor int, worst float64, volBad bool, bad []string) {
+	if age >= int64(floor) {
+		return
+	}
+	kind := "tick-skew"
+	if worst == 0 && volBad {
+		kind = "volume-only"
+	}
+	datatruth.Count(CheckCrossFrame, fmt.Sprintf("%dm|%d|%s", tfMin, t, kind),
+		fmt.Sprintf("%dm bar %s (%s, worst price error %.2f pt): %s", tfMin, time.UnixMilli(t).UTC().Format("01-02 15:04Z"), kind, worst, joinS(bad)))
 }
 
 func joinS(ss []string) string {

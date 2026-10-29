@@ -25,7 +25,8 @@ import (
 // 0a6f2a61e002d31769817c184e25b3353585f38c9f4a07d2bf47a673e7a74af5, rebuilt by the
 // read-only exporter scripts/datatruth_export_corpus.py); the test skips when it is absent
 // - the committed fixtures under internal/datatruth/checks/testdata carry the
-// pins that need no corpus. For each
+// pins that need no corpus (frames_calibration_1029.json carries the real rows of
+// the release #55 calibration). For each
 // minute of the 10-21 / 10-22 / 10-23 trading days (17:00 CT to 17:00 CT) the
 // REAL registered checks run through datatruth.Evaluate on exactly the bars the
 // bot held at that instant (time-sliced).
@@ -91,20 +92,30 @@ func (c *corpusSrc) Contract(string) (checks.ContractFacts, error) {
 }
 
 // indepHoldMin recomputes, by counting ages instead of the closed-form log, how
-// long (minutes) a bar wrong by e points keeps moving an indicator of its frame
-// by more than its tolerance: EMA20/EMA50 (1 pt) and MACD26 (2 pt) weight
-// k(1-k)^age, ATR14/RSI14/RSI7 (2 pt) weight 1/n for n bars. A frame no
-// indicator reads (15m) holds for its own length only.
-func indepHoldMin(tf int, e float64) int {
+// long (minutes) a bar wrong by closeErr (its close) and rangeErr (its high/low)
+// keeps moving an indicator of its frame by more than its tolerance: EMA20/EMA50
+// (1 pt), MACD26 (2 pt), RSI14/RSI7 (2 pt) read the CLOSE with weight k(1-k)^age
+// (EMA, MACD) or 1/n (RSI); ATR14 (2 pt, 1/14 per bar) reads the RANGE (and a
+// wrong close also moves the next true range). A frame no indicator reads (15m)
+// holds for its own length only. (The AI reader's view: it reads every frame.)
+func indepHoldMin(tf int, closeErr, rangeErr float64) int {
 	best := 0
 	if tf != 3 && tf != 5 {
 		return 0
 	}
 	for _, sp := range []struct {
-		n   int
-		ema bool
-		tol float64
-	}{{20, true, 1}, {50, true, 1}, {26, true, 2}, {14, false, 2}, {7, false, 2}} {
+		n     int
+		ema   bool
+		tol   float64
+		rangy bool
+	}{{20, true, 1, false}, {50, true, 1, false}, {26, true, 2, false}, {14, false, 2, true}, {14, false, 2, false}, {7, false, 2, false}} {
+		e := closeErr
+		if sp.rangy {
+			e = rangeErr
+			if closeErr > e {
+				e = closeErr
+			}
+		}
 		cnt := 0
 		for a := 0; a < 2000; a++ {
 			var w float64
@@ -132,9 +143,17 @@ func indepHoldMin(tf int, e float64) int {
 }
 
 // independentMismatch recomputes, WITHOUT the production helper, whether any
-// 3m/5m/15m bar still inside its window disagrees with the 1m it is made of
-// (> 0.5 pt on an OHLC field, or volume > 40% and > 200 contracts off). A bar's
-// window is max(12 min, its own frame length, the hold of its worst price error).
+// 3m/5m/15m bar still inside its window is a bar some reader must pause for
+// (release #55 calibration):
+//
+//   - RECORDED when an OHLC field is > 0.5 pt off the 1m-built span, or the volume
+//     is > 40% and > 200 contracts off;
+//   - AI reader pauses when the worst price error is > 2 pt, or the frame's hold
+//     (indepHoldMin, close error vs range error) is > 0, or the volume is off on
+//     the 3m/5m (a volume-only 15m mismatch is counted, never a pause), for
+//     max(12 min, the frame, the hold);
+//   - mentor reader pauses only for a 5m bar whose range FLIPS the strong-day
+//     test (>= 50 pt native vs built), for the 12 bars the test reads (60 min).
 func independentMismatch(c *corpusSrc, now time.Time) bool {
 	m1 := map[int64]checks.Bar{}
 	for _, b := range c.data["MNQ|1m"] {
@@ -190,17 +209,29 @@ func independentMismatch(c *corpusSrc, now time.Time) bool {
 					}
 				}
 			}
-			if !px && !(d(h.V, v) > 200 && d(h.V, v)/v > 0.40) {
+			volBad := d(h.V, v) > 200 && d(h.V, v)/v > 0.40
+			if !px && !volBad {
 				continue
 			}
-			win := 12
-			if tf > win {
-				win = tf
+			age := (nowMs - (h.T + span)) / 60_000
+			rng := d(h.H, hi)
+			if x := d(h.L, lo); x > rng {
+				rng = x
 			}
-			if hm := indepHoldMin(tf, worst); hm > win {
-				win = hm
+			hold := indepHoldMin(tf, d(h.C, cl), rng)
+			if (px && worst > 2.0) || hold > 0 || (volBad && (tf == 3 || tf == 5)) {
+				win := 12
+				if tf > win {
+					win = tf
+				}
+				if hold > win {
+					win = hold
+				}
+				if age < int64(win) {
+					return true
+				}
 			}
-			if age := (nowMs - (h.T + span)) / 60_000; age < int64(win) {
+			if tf == 5 && (h.H-h.L >= 50) != (hi-lo >= 50) && age < 60 {
 				return true
 			}
 		}
@@ -312,6 +343,35 @@ func trim(s string, n int) string {
 	return s
 }
 
+// punch1mHole removes the MNQ 1m rows in [from, to) CT from the loaded corpus.
+// The 10-26 17:00-21:00 CT hole the P2-6 investigation found has since been
+// REFILLED in data/data.db (a fresh export no longer carries it), so the tests
+// that pin what the checks do ON a 1m hole inject it into the fixture instead of
+// depending on the live store keeping it broken. The 5m, 15m and the ES rows are
+// untouched, exactly as the real hole was (1m only; the 5m and native 4h had it).
+func punch1mHole(c *corpusSrc, loc *time.Location, from, to string) int {
+	a, _ := time.ParseInLocation("2006-01-02 15:04", from, loc)
+	b, _ := time.ParseInLocation("2006-01-02 15:04", to, loc)
+	var kept []checks.Bar
+	removed := 0
+	for _, x := range c.data["MNQ|1m"] {
+		if x.T >= a.UnixMilli() && x.T < b.UnixMilli() {
+			removed++
+			continue
+		}
+		kept = append(kept, x)
+	}
+	c.data["MNQ|1m"] = kept
+	return removed
+}
+
+// corpusCovers reports whether the loaded corpus holds 1m bars up to ct.
+func corpusCovers(c *corpusSrc, loc *time.Location, ct string) bool {
+	e, _ := time.ParseInLocation("2006-01-02 15:04", ct, loc)
+	rows := c.data["MNQ|1m"]
+	return len(rows) > 0 && rows[len(rows)-1].T >= e.UnixMilli()
+}
+
 // TestDataTruthFullCorpusEpisodes replays the whole export (10-19 17:00 .. 10-29
 // 07:00 CT) and pins that the checks fire on the REAL defects inside it: the two
 // 10-19 bad prints (rows 2020662, 2020732), the 10-26 17:00-21:00 CT 1m hole
@@ -320,6 +380,9 @@ func trim(s string, n int) string {
 func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	c := loadCorpus(t)
 	loc, _ := time.LoadLocation("America/Chicago")
+	if n := punch1mHole(c, loc, "2026-10-26 17:00", "2026-10-26 21:00"); n == 0 && !corpusCovers(c, loc, "2026-10-26 21:00") {
+		t.Fatal("the corpus does not reach 10-26 21:00 CT: nothing to inject the hole into")
+	}
 	datatruth.Reset()
 	defer datatruth.Reset()
 	checks.RegisterAll(checks.Config{Src: c, Unrequired: corpusUnrequired})
@@ -329,6 +392,12 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	open := map[string]bool{}
 	start, _ := time.ParseInLocation("2006-01-02 15:04", "2026-10-19 07:00", loc)
 	end, _ := time.ParseInLocation("2006-01-02 15:04", "2026-10-29 06:30", loc)
+	// release #55 review F3: when the corpus reaches the 10-29 open, replay it too
+	// (the 08:15-08:30 CT truncated native 3m/5m/15m)
+	covers1029 := corpusCovers(c, loc, "2026-10-29 10:30")
+	if covers1029 {
+		end, _ = time.ParseInLocation("2006-01-02 15:04", "2026-10-29 10:30", loc)
+	}
 	for tm := start; tm.Before(end); tm = tm.Add(time.Minute) {
 		if !kernel.IsCMEOpen(tm) {
 			continue
@@ -337,15 +406,26 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 		_, reasons := datatruth.Evaluate("MNQ", c.now)
 		cur := map[string]bool{}
 		for _, r := range reasons {
-			cur[r.Check] = true
-			if !open[r.Check] {
-				spans[r.Check] = append(spans[r.Check], span{first: c.now, last: c.now})
+			names := []string{r.Check}
+			if r.Check == checks.CheckCrossFrame {
+				if r.Concerns(datatruth.ReaderAI) {
+					names = append(names, "cross_frame/ai")
+				}
+				if r.Concerns(datatruth.ReaderMentor) {
+					names = append(names, "cross_frame/mentor")
+				}
 			}
-			spans[r.Check][len(spans[r.Check])-1].last = c.now
+			for _, nm := range names {
+				cur[nm] = true
+				if !open[nm] {
+					spans[nm] = append(spans[nm], span{first: c.now, last: c.now})
+				}
+				spans[nm][len(spans[nm])-1].last = c.now
+			}
 		}
 		open = cur
 	}
-	for _, n := range []string{checks.CheckBadPrint, checks.CheckCrossFrame, checks.CheckLookback, checks.CheckLookbackSession, checks.CheckContractRoll} {
+	for _, n := range []string{checks.CheckBadPrint, checks.CheckCrossFrame, "cross_frame/ai", "cross_frame/mentor", checks.CheckLookback, checks.CheckLookbackSession, checks.CheckContractRoll} {
 		t.Logf("%s: %d episode(s)", n, len(spans[n]))
 		for _, s := range spans[n] {
 			t.Logf("    %s -> %s (%d min)", s.first.In(loc).Format("01-02 15:04"), s.last.In(loc).Format("01-02 15:04"), int(s.last.Sub(s.first).Minutes())+1)
@@ -372,6 +452,21 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	}
 	if !has(checks.CheckCrossFrame, "2026-10-27 08:35", "2026-10-27 08:46") {
 		t.Error("10-27 08:30 restart-truncated 5m (row 2045884) did not pause")
+	}
+	if covers1029 {
+		// F3: the 10-29 08:15-08:30 native HTF snapshots (rows 2058086-2058088) are
+		// incorrect data: the AI reader pauses from 08:30 to ~09:45 and the mentor
+		// reader (5m range 28.0 native vs 54.5 built flips its strong-day test)
+		// from 08:30 to 09:30; both are released afterwards.
+		if !has("cross_frame/ai", "2026-10-29 08:31", "2026-10-29 09:44") {
+			t.Error("10-29 08:25 truncated native 5m (row 2058088) did not pause the AI reader")
+		}
+		if !has("cross_frame/mentor", "2026-10-29 08:31", "2026-10-29 09:25") {
+			t.Error("10-29 08:25 truncated 5m flips the mentor strong-day test and must pause the mentor reader")
+		}
+		if has("cross_frame/ai", "2026-10-29 09:50", "2026-10-29 10:30") || has("cross_frame/mentor", "2026-10-29 09:35", "2026-10-29 10:30") {
+			t.Error("the 10-29 pause must be released once the truncated bars' influence is gone")
+		}
 	}
 	if !has(checks.CheckLookback, "2026-10-26 17:30", "2026-10-26 20:30") {
 		t.Error("the 10-26 17:00-21:00 CT 1m hole did not pause the indicator lookback")

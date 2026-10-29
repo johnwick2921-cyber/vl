@@ -3,6 +3,8 @@ package checks
 import (
 	"fmt"
 	"time"
+
+	"vl/internal/datatruth"
 )
 
 // ── CHECK 1: BAD-PRICE FILTER ────────────────────────────────────────────────
@@ -63,11 +65,12 @@ import (
 // BadPrintParams are the tunables; DefaultBadPrint is the measured set.
 type BadPrintParams struct {
 	WindowMin int // bars younger than this are always "inside the decision window"
-	// Hold, when set, maps a suspect bar's displacement X (pt) to how many
-	// minutes it must keep entries paused (HoldMinutes over the indicator specs);
-	// the check scans back HoldCapMin so a bad bar older than WindowMin still
-	// pauses while it is in the lookbacks. nil = WindowMin only.
-	Hold         func(x float64) int
+	// Hold, when set, maps (reader, what the bar got wrong) to how many minutes
+	// it must keep THAT READER's entries paused (HoldMinutesFor over the
+	// indicator specs that reader reads); the check scans back HoldCapMin so a
+	// bad bar older than WindowMin still pauses while it is in the lookbacks.
+	// nil = WindowMin only, for everyone.
+	Hold         func(reader string, e BarError) int
 	MinPts       float64 // floor of the EXTREME bound
 	ATRMult      float64 // x median 1m range of the prior ATRLookback minutes
 	ATRLookback  int
@@ -98,7 +101,37 @@ type Suspect struct {
 	VolRat  float64
 	// Discontinuous marks rule D: the next bar opens far from this close.
 	Discontinuous bool
-	Detail        string
+	// CloseErr is how far the bar's close is wrong (|close - next open|; the
+	// full excursion X when there is no next bar yet).
+	CloseErr float64
+	// Readers names the entry paths still held by this bar (empty = every path);
+	// see datatruth.ScopedCheckFn.
+	Readers []string
+	Detail  string
+}
+
+// heldReaders returns who must still pause for the bar: everyone while it is
+// inside the decision window, else each reader whose own hold has not run out.
+// nil = every reader (also what a hold-less run returns inside the window).
+func (p BadPrintParams) heldReaders(age int64, e BarError) (readers []string, held bool) {
+	if age < int64(p.WindowMin) {
+		return nil, true
+	}
+	if p.Hold == nil {
+		return nil, false
+	}
+	for _, rd := range []string{datatruth.ReaderAI, datatruth.ReaderMentor} {
+		if age < int64(p.Hold(rd, e)) {
+			readers = append(readers, rd)
+		}
+	}
+	if len(readers) == 0 {
+		return nil, false
+	}
+	if len(readers) == 2 {
+		return nil, true
+	}
+	return readers, true
 }
 
 // SuspectBars returns the unconfirmed extreme bars of `bars` (1m, ascending)
@@ -154,12 +187,22 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 		if x < thr {
 			continue
 		}
-		// still inside the decision? Younger than WindowMin always; older only
-		// while the bar still moves an indicator by more than its tolerance.
-		if age := (nowMs - b.T) / minuteMs; age >= int64(p.WindowMin) {
-			if p.Hold == nil || age >= int64(p.Hold(x)) {
-				continue
+		// how wrong is its CLOSE: a real tape opens where it closed, so the next
+		// bar's open is the evidence; the newest bar has none yet and is charged
+		// the whole excursion (fail closed). The wick of a bar that closes back at
+		// its open is a RANGE error, not a close error (release #55 review F1).
+		closeErr := x
+		if i+1 < len(bars) && bars[i+1].T-b.T == minuteMs {
+			if g := abs(bars[i+1].O - b.C); g < closeErr {
+				closeErr = g
 			}
+		}
+		// still inside the decision? Younger than WindowMin always; older only
+		// while the bar still moves an indicator THAT READER reads by more than
+		// its tolerance.
+		held, ok := p.heldReaders((nowMs-b.T)/minuteMs, BarError{T: b.T, CloseErr: closeErr, RangeErr: x})
+		if !ok {
+			continue
 		}
 		// C / D: the next bar either continues the displacement or undoes it.
 		if havePC && i+1 < len(bars) && bars[i+1].T-b.T == minuteMs {
@@ -174,7 +217,7 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 					continue
 				}
 				if gap > p.DiscontFrac*disp { // D: not even a partner can vouch for it
-					out = append(out, Suspect{T: b.T, X: x, ESRatio: -1, Discontinuous: true,
+					out = append(out, Suspect{T: b.T, X: x, ESRatio: -1, Discontinuous: true, CloseErr: closeErr, Readers: held,
 						Detail: fmt.Sprintf("1m bar %s: moved %.1f pt to a close the next bar opens %.1f pt away from (a real tape opens where it closed) - bad print, whatever the partner shows",
 							time.UnixMilli(b.T).UTC().Format("01-02 15:04Z"), disp, gap)})
 					continue
@@ -205,7 +248,7 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 		if esr >= p.ESRatioVol && vr >= p.VolMult { // V
 			continue
 		}
-		out = append(out, Suspect{T: b.T, X: x, ESRatio: esr, VolRat: vr,
+		out = append(out, Suspect{T: b.T, X: x, ESRatio: esr, VolRat: vr, CloseErr: closeErr, Readers: held,
 			Detail: fmt.Sprintf("1m bar %s: move %.1f pt (bound %.1f), partner confirms %.2f of it (need %.2f), volume %.1fx normal, next bar does not continue it",
 				time.UnixMilli(b.T).UTC().Format("01-02 15:04Z"), x, thr, esr, p.ESRatio, vr)})
 	}
