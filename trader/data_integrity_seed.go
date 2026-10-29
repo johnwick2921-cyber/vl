@@ -37,6 +37,14 @@ func (at *AutoTrader) noteSeedSeries(series []market.Kline, covered []int64, now
 	for _, b := range series {
 		times = append(times, b.OpenTime)
 	}
+	if len(times) == 0 {
+		// #55 m449: an EMPTY series (cold store, a failed read) was not measured
+		// as complete - there is nothing to measure. It stays UNJUDGED, so
+		// seedSeriesVerdict keeps blocking (fail-closed) and no "complete series"
+		// line is printed over a read that returned nothing.
+		at.logWarnf("🧑‍🏫 seeded series check: the 1m series the key levels are seeded from is EMPTY (cold store or a failed store read) - it was NOT measured, so NEW mentor entries stay paused until a seed measures a series")
+		return
+	}
 	holes := ntTrader.SeriesRTHHoles(mentorSeedSymbol, "seeded 1m series", times, covered, now)
 	at.seedSeries.mu.Lock()
 	changed := !sameSeedHoles(at.seedSeries.holes, holes) || !at.seedSeries.judged
@@ -72,10 +80,21 @@ func sameSeedHoles(a, b []ntTrader.IntegrityHole) bool {
 // seedSeriesVerdict is the key-level leg of a MENTOR verdict: blocked while the
 // last measurement of the seeded series found an RTH hole that is still inside
 // the reach. The reach moves with the clock (a hole leaves it at its 90th day).
+//
+// #55 m449: and blocked while NO seed has been measured. The leg used to read
+// at.seedSeries.holes alone, so a mentor trader whose series had never been
+// measured (the seed not yet run, or an empty read) had empty holes and read
+// CLEAR - an unknown that looked clean. Unknown is BLOCKED (class unknown, so
+// the pause episode keeps its quiet boot grace before any owner push).
 func (at *AutoTrader) seedSeriesVerdict(now time.Time) dataVerdict {
 	at.seedSeries.mu.Lock()
 	holes := append([]ntTrader.IntegrityHole(nil), at.seedSeries.holes...)
+	judged := at.seedSeries.judged
 	at.seedSeries.mu.Unlock()
+	if !judged {
+		return dataVerdict{Blocked: true, Class: ntTrader.IntegrityClassUnknown,
+			Reason: fmt.Sprintf("missing-data check UNKNOWN for %s: the series the mentor's key levels are seeded from has not been measured yet (the seed runs at start and after every history refill) - mentor entries wait for it (fail-closed)", mentorSeedSymbol)}
+	}
 	horizon := now.Add(-ntTrader.IntegritySeedReachDays * 24 * time.Hour).UnixMilli()
 	live := holes[:0:0]
 	for _, h := range holes {

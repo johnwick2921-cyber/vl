@@ -66,6 +66,17 @@ func holeVerdictFor(class string) ntTrader.IntegrityVerdict {
 
 // armIntegrityGate arms the gate (the NT8 bridge is "wired") and installs the
 // fake verdict. blockedFor nil = always blocked.
+// seedMeasured marks a mentor trader's seeded series as MEASURED (complete), the
+// state production reaches after mentorSeedAtStart. #55 m449: an unmeasured seed
+// is BLOCKED, so a test that fakes the tracker and wants only the tracker's leg
+// under test must say the seed leg is clear. The unmeasured case itself is
+// pinned in data_integrity_seed_unmeasured_test.go.
+func seedMeasured(at *AutoTrader) {
+	at.seedSeries.mu.Lock()
+	at.seedSeries.judged = true
+	at.seedSeries.mu.Unlock()
+}
+
 func armIntegrityGate(t *testing.T, f *intFake) {
 	t.Helper()
 	if f.class == "" {
@@ -356,6 +367,7 @@ func TestIntegrityGateKeepsAZoneRowOffTheWire(t *testing.T) {
 func TestIntegrityGateRefusesMentorAuthoring(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.exchange = "ninjatrader"
+	seedMeasured(at)
 	now := mentorStaleBlockClock(9, 0)
 	setMentorNowSource(func() time.Time { return now })
 	t.Cleanup(func() { setMentorNowSource(nil) })
