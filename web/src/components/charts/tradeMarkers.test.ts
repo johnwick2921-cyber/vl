@@ -94,13 +94,15 @@ describe('buildTradeMarkers — F1/F3 invariants', () => {
   })
 
   it('draws entries as arrows and exits as xB/xS squares at the fill price', () => {
-    const times = klines(t0, 300, 3)
+    // One trade per candle: a lone marker keeps its fill price (m439 moves
+    // only same-candle markers off it).
+    const times = klines(t0, 300, 4)
     const markers = buildTradeMarkers(
       [
         trade(t0 + 10, 101, 'long', 'open', 'buy'),
-        trade(t0 + 20, 102, 'long', 'close', 'sell'),
-        trade(t0 + 30, 103, 'short', 'open', 'sell'),
-        trade(t0 + 40, 104, 'short', 'close', 'buy'),
+        trade(t0 + 310, 102, 'long', 'close', 'sell'),
+        trade(t0 + 610, 103, 'short', 'open', 'sell'),
+        trade(t0 + 910, 104, 'short', 'close', 'buy'),
       ],
       times,
       300
@@ -130,5 +132,56 @@ describe('buildTradeMarkers — F1/F3 invariants', () => {
       position: 'atPriceMiddle',
       price: 104,
     })
+  })
+})
+
+// m439 (owner 2026-10-29: "label B and sell overlap on one candle"): 2+
+// markers on one candle leave the fill price — buys stack BELOW the bar,
+// sells ABOVE it — so a B and an xS at near-equal prices no longer draw on
+// top of each other. Mutant: drop the per-candle rule → both stay
+// atPriceMiddle (RED).
+describe('buildTradeMarkers — m439 same-candle labels do not overlap', () => {
+  it('splits a same-candle B + xS below/above the bar; a lone marker keeps its price', () => {
+    const times = klines(t0, 300, 3)
+    const markers = buildTradeMarkers(
+      [
+        trade(t0 + 10, 29706.5, 'long', 'open', 'buy'),
+        trade(t0 + 80, 29710, 'long', 'close', 'sell'),
+        trade(t0 + 310, 29720, 'short', 'open', 'sell'),
+      ],
+      times,
+      300
+    )
+    expect(markers).toHaveLength(3)
+    expect(markers[0]).toMatchObject({
+      text: 'B',
+      shape: 'arrowUp',
+      position: 'belowBar',
+    })
+    expect(markers[1]).toMatchObject({
+      text: 'xS',
+      shape: 'square',
+      position: 'aboveBar',
+    })
+    expect(markers[0]).not.toHaveProperty('price')
+    expect(markers[1]).not.toHaveProperty('price')
+    expect(markers[0].time).toBe(markers[1].time)
+    expect(markers[2]).toMatchObject({
+      text: 'S',
+      position: 'atPriceMiddle',
+      price: 29720,
+    })
+  })
+
+  it('keeps both sells above the bar when two sells share a candle', () => {
+    const markers = buildTradeMarkers(
+      [
+        trade(t0 + 10, 100, 'short', 'open', 'sell'),
+        trade(t0 + 20, 101, 'long', 'close', 'sell'),
+      ],
+      klines(t0, 300, 2),
+      300
+    )
+    expect(markers.map((m) => m.position)).toEqual(['aboveBar', 'aboveBar'])
   })
 })

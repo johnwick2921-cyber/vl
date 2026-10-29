@@ -27,6 +27,11 @@ export const status: GuideSection = {
       kind: 'p',
       text: "On the market chart, the open-order price-line strip is trader-bound: the dashboard's selected account is not applied to that endpoint, and the strip says so. A failed or malformed open-order refresh is UNKNOWN — the previous lines are retained and marked stale with the snapshot timestamp — never silently cleared as zero orders. Only a successful, validated snapshot may clear or repaint the lines, and a confirmed empty snapshot shows 0 orders. Changing symbol, interval, or account discards the pending snapshot and waits for a fresh one.",
     },
+    { kind: 'h', text: 'Trade labels on the chart' },
+    {
+      kind: 'p',
+      text: 'Each trade draws a label on the candle it filled in: B or S for an entry (an arrow), xB or xS for an exit (a square). A candle with only one label shows it at the fill price. When one candle carries two or more labels, for example an entry and its exit in the same 5 minutes, buys stack below the candle and sells stack above it, so the labels never cover each other (m439). Those labels mark the candle, not the exact price; the position table has the fill prices.',
+    },
     { kind: 'h', text: 'Research snapshot recorder' },
     {
       kind: 'p',
