@@ -65,7 +65,21 @@ func TestGapFreeDataAroundAHolidayEveDoesNotPauseTheLookbackChecks(t *testing.T)
 			bars = append(bars, Bar{T: m.UnixMilli(), O: 25000, H: 25001, L: 24999, C: 25000, V: 10, Final: true})
 		}
 	}
-	c.SeedHistorical("MNQ", "1m", bars)
+	// SeedHistorical takes NT8's CLOSE-stamped frames and open-stamps them once at
+	// ingress (openStampBars): seeding open-stamped rows would shift every frame
+	// one bucket early and leave the newest slot of each day missing - invisible to
+	// the price-tolerant EMA/RSI specs on this flat tape, but not to m450's strict
+	// presence read of the last 12 native 5m bars (mentor_strongday_5m). The store
+	// rows (SwingInputs below) stay open-stamped, as the store holds them.
+	closeStamped := func(in []Bar, tfMin int) []Bar {
+		out := make([]Bar, len(in))
+		for i, b := range in {
+			b.T += int64(tfMin) * 60_000
+			out[i] = b
+		}
+		return out
+	}
+	c.SeedHistorical("MNQ", "1m", closeStamped(bars, 1))
 	for _, tf := range []struct {
 		name string
 		min  int
@@ -76,7 +90,7 @@ func TestGapFreeDataAroundAHolidayEveDoesNotPauseTheLookbackChecks(t *testing.T)
 				hb = append(hb, b)
 			}
 		}
-		c.SeedHistorical("MNQ", tf.name, hb)
+		c.SeedHistorical("MNQ", tf.name, closeStamped(hb, tf.min))
 	}
 	ingestLastSum.Store(time.Now().Unix())
 	src := &DataTruthSources{Cache: c, SnapshotTTL: time.Nanosecond}
