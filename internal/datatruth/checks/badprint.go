@@ -51,10 +51,23 @@ import (
 //
 // A real market move never pauses: every one of the 27 above and every
 // FOMC/CPI/NFP bar in the store is CONFIRMED (E, V or C).
+//
+// HOW LONG IT HOLDS (review round 1, D4): a SUSPECT bar is judged on every
+// Evaluate for as long as it still influences an indicator (HoldMinutes - an
+// 82 pt wick holds ~2 h, a 163 pt wick ~4 h; capped at HoldCapMin), not for a
+// fixed 30 minutes. It clears the moment it is confirmed, replaced or repaired,
+// or its influence has decayed below every indicator's tolerance. Judging a bar
+// later only adds context (the next bars, the partner), so a real news bar that
+// was CONFIRMED at the newest-bar view stays confirmed.
 
 // BadPrintParams are the tunables; DefaultBadPrint is the measured set.
 type BadPrintParams struct {
-	WindowMin    int     // bars younger than this are "inside the decision window"
+	WindowMin int // bars younger than this are always "inside the decision window"
+	// Hold, when set, maps a suspect bar's displacement X (pt) to how many
+	// minutes it must keep entries paused (HoldMinutes over the indicator specs);
+	// the check scans back HoldCapMin so a bad bar older than WindowMin still
+	// pauses while it is in the lookbacks. nil = WindowMin only.
+	Hold         func(x float64) int
 	MinPts       float64 // floor of the EXTREME bound
 	ATRMult      float64 // x median 1m range of the prior ATRLookback minutes
 	ATRLookback  int
@@ -97,7 +110,11 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 		p = DefaultBadPrint()
 	}
 	nowMs := now.UnixMilli()
-	from := nowMs - int64(p.WindowMin)*minuteMs
+	scan := p.WindowMin
+	if p.Hold != nil {
+		scan = HoldCapMin
+	}
+	from := nowMs - int64(scan)*minuteMs
 	pm := byT(tailFrom(partner, from-2*minuteMs))
 	var out []Suspect
 	for i := range bars {
@@ -111,6 +128,18 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 		if i > 0 && b.T-bars[i-1].T <= 3*minuteMs {
 			pc, havePC = bars[i-1].C, true
 		}
+		x := b.H - b.L
+		if havePC {
+			if v := abs(b.H - pc); v > x {
+				x = v
+			}
+			if v := abs(b.L - pc); v > x {
+				x = v
+			}
+		}
+		if x < p.MinPts { // the bound is never below MinPts: skip before the median work
+			continue
+		}
 		var rngs, vols []float64
 		for j := i - 1; j >= 0 && len(rngs) < p.ATRLookback && b.T-bars[j].T <= 60*minuteMs; j-- {
 			rngs = append(rngs, bars[j].H-bars[j].L)
@@ -122,17 +151,15 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 				thr = m
 			}
 		}
-		x := b.H - b.L
-		if havePC {
-			if v := abs(b.H - pc); v > x {
-				x = v
-			}
-			if v := abs(b.L - pc); v > x {
-				x = v
-			}
-		}
 		if x < thr {
 			continue
+		}
+		// still inside the decision? Younger than WindowMin always; older only
+		// while the bar still moves an indicator by more than its tolerance.
+		if age := (nowMs - b.T) / minuteMs; age >= int64(p.WindowMin) {
+			if p.Hold == nil || age >= int64(p.Hold(x)) {
+				continue
+			}
 		}
 		// C / D: the next bar either continues the displacement or undoes it.
 		if havePC && i+1 < len(bars) && bars[i+1].T-b.T == minuteMs {

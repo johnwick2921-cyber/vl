@@ -21,10 +21,17 @@ import (
 //
 //	sqlite3 -readonly data/data.db  (see the f7a report for the exporter)
 //
-// It is NOT committed (1.1 MB gz); the test skips when it is absent. For each
+// It is NOT committed (1.1 MB gz; sha256
+// 0a6f2a61e002d31769817c184e25b3353585f38c9f4a07d2bf47a673e7a74af5, rebuilt by the
+// read-only exporter scripts/datatruth_export_corpus.py); the test skips when it is absent
+// - the committed fixtures under internal/datatruth/checks/testdata carry the
+// pins that need no corpus. For each
 // minute of the 10-21 / 10-22 / 10-23 trading days (17:00 CT to 17:00 CT) the
 // REAL registered checks run through datatruth.Evaluate on exactly the bars the
 // bot held at that instant (time-sliced).
+
+// the corpus carries bars only: no ingest queue, no store reader for the 4h/levels.
+var corpusUnrequired = []string{checks.CheckIngestLoss, checks.CheckLookbackSwing4h, checks.CheckLookbackLevels}
 
 const corpusPath = "/tmp/datatruth-f7a/corpus_1019_1029.json.gz"
 
@@ -83,9 +90,51 @@ func (c *corpusSrc) Contract(string) (checks.ContractFacts, error) {
 	return checks.ContractFacts{Live: "MNQ 12-26", History: "MNQ 12-26", Window: []string{"MNQ 12-26"}}, nil
 }
 
+// indepHoldMin recomputes, by counting ages instead of the closed-form log, how
+// long (minutes) a bar wrong by e points keeps moving an indicator of its frame
+// by more than its tolerance: EMA20/EMA50 (1 pt) and MACD26 (2 pt) weight
+// k(1-k)^age, ATR14/RSI14/RSI7 (2 pt) weight 1/n for n bars. A frame no
+// indicator reads (15m) holds for its own length only.
+func indepHoldMin(tf int, e float64) int {
+	best := 0
+	if tf != 3 && tf != 5 {
+		return 0
+	}
+	for _, sp := range []struct {
+		n   int
+		ema bool
+		tol float64
+	}{{20, true, 1}, {50, true, 1}, {26, true, 2}, {14, false, 2}, {7, false, 2}} {
+		cnt := 0
+		for a := 0; a < 2000; a++ {
+			var w float64
+			if sp.ema {
+				k := 2.0 / float64(sp.n+1)
+				w = k
+				for i := 0; i < a; i++ {
+					w *= 1 - k
+				}
+			} else if a < sp.n {
+				w = 1.0 / float64(sp.n)
+			}
+			if w*e > sp.tol {
+				cnt++
+			}
+		}
+		if cnt > 0 && (cnt+1)*tf > best {
+			best = (cnt + 1) * tf
+		}
+	}
+	if best > 480 {
+		best = 480
+	}
+	return best
+}
+
 // independentMismatch recomputes, WITHOUT the production helper, whether any
-// 3m/5m/15m bar that closed in the last 12 minutes disagrees with the 1m it is
-// made of (> 0.5 pt on an OHLC field, or volume > 40% and > 200 contracts off).
+// 3m/5m/15m bar still inside its window disagrees with the 1m it is made of
+// (> 0.5 pt on an OHLC field, or volume > 40% and > 200 contracts off). A bar's
+// window is max(12 min, its own frame length, the hold of its worst price error).
 func independentMismatch(c *corpusSrc, now time.Time) bool {
 	m1 := map[int64]checks.Bar{}
 	for _, b := range c.data["MNQ|1m"] {
@@ -95,7 +144,7 @@ func independentMismatch(c *corpusSrc, now time.Time) bool {
 	for _, tf := range []int{3, 5, 15} {
 		span := int64(tf) * 60_000
 		for _, h := range c.data[fmt.Sprintf("MNQ|%dm", tf)] {
-			if h.T+span > nowMs || h.T+span <= nowMs-12*60_000 {
+			if h.T+span > nowMs || h.T+span <= nowMs-480*60_000 {
 				continue
 			}
 			var o, hi, lo, cl, v float64
@@ -131,7 +180,27 @@ func independentMismatch(c *corpusSrc, now time.Time) bool {
 				}
 				return b - a
 			}
-			if d(h.O, o) > 0.5 || d(h.H, hi) > 0.5 || d(h.L, lo) > 0.5 || d(h.C, cl) > 0.5 || (d(h.V, v) > 200 && d(h.V, v)/v > 0.40) {
+			worst := 0.0
+			px := false
+			for _, e := range []float64{d(h.O, o), d(h.H, hi), d(h.L, lo), d(h.C, cl)} {
+				if e > 0.5 {
+					px = true
+					if e > worst {
+						worst = e
+					}
+				}
+			}
+			if !px && !(d(h.V, v) > 200 && d(h.V, v)/v > 0.40) {
+				continue
+			}
+			win := 12
+			if tf > win {
+				win = tf
+			}
+			if hm := indepHoldMin(tf, worst); hm > win {
+				win = hm
+			}
+			if age := (nowMs - (h.T + span)) / 60_000; age < int64(win) {
 				return true
 			}
 		}
@@ -159,7 +228,7 @@ func TestDataTruthRealDayReplay1021_1023(t *testing.T) {
 	loc, _ := time.LoadLocation("America/Chicago")
 	datatruth.Reset()
 	defer datatruth.Reset()
-	checks.RegisterAll(checks.Config{Src: c})
+	checks.RegisterAll(checks.Config{Src: c, Unrequired: corpusUnrequired})
 	days := []string{"2026-10-21", "2026-10-22", "2026-10-23"}
 	for _, day := range days {
 		d0, _ := time.ParseInLocation("2006-01-02", day, loc)
@@ -229,7 +298,7 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	loc, _ := time.LoadLocation("America/Chicago")
 	datatruth.Reset()
 	defer datatruth.Reset()
-	checks.RegisterAll(checks.Config{Src: c})
+	checks.RegisterAll(checks.Config{Src: c, Unrequired: corpusUnrequired})
 	type span struct{ first, last time.Time }
 	spans := map[string][]span{}
 	open := map[string]bool{}

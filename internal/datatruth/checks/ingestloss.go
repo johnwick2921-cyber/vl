@@ -3,6 +3,7 @@ package checks
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
@@ -25,6 +26,14 @@ import (
 // exists) - in the source the decision reads. A re-request that lands the bars
 // clears the entry; nothing else does. peak_depth at the cap is context for the
 // reason text only: a full queue that dropped nothing lost nothing.
+//
+// NOTHING LOST IS NOTHING OWED. A dropped message that carried no real bar (an
+// empty bars_historical frame, a placeholder-only batch) lost no minute, so it
+// opens no debt: the first draft ledgered it as an "unknown" loss that had no
+// clearing path and paused MNQ until the process restarted (review round 1, D1).
+// The only debt that is not tied to a minute is the ledger-cap OVERFLOW, and it
+// is recorded as a (symbol, frame, from, to) RANGE that the whole-range verifier
+// clears once every slot of it is present in the ring (or aged out of it).
 
 // Loss kinds.
 const (
@@ -45,20 +54,45 @@ type lossEntry struct {
 
 // Ledger is the bounded record of lost bars. Safe for concurrent use.
 type Ledger struct {
-	mu          sync.Mutex
-	pending     map[lossKey]lossEntry
-	intrabar    []int64 // ms of recent intrabar drops (for the rate)
-	cap         int
-	overflow    int64 // bars lost beyond the ledger cap: every symbol blocks until they are verified wholesale
-	overflowSym map[string]int64
+	mu       sync.Mutex
+	pending  map[lossKey]lossEntry
+	intrabar []int64 // ms of recent intrabar drops (for the rate)
+	cap      int
+	overflow map[ovKey]*ovRange // bars lost beyond the ledger cap, kept as ranges so they can be verified wholesale
+	whole    WholeFn
 }
+
+type ovKey struct{ symbol, tf string }
+
+// ovRange is the span of open times dropped beyond the cap for one frame.
+type ovRange struct {
+	kind     string
+	from, to int64
+	n        int64
+}
+
+// WholeFn reports whether every open-market slot of [from, to] of symbol/tf is
+// present (and, for kind final, closed) in the series the decision reads, or has
+// aged out of it. An error means "cannot tell" and leaves the debt standing.
+type WholeFn func(symbol, tf string, from, to int64, kind string) (whole bool, err error)
 
 // NewLedger builds a ledger holding at most capBars pending bars.
 func NewLedger(capBars int) *Ledger {
 	if capBars <= 0 {
 		capBars = 20000
 	}
-	return &Ledger{pending: map[lossKey]lossEntry{}, cap: capBars, overflowSym: map[string]int64{}}
+	return &Ledger{pending: map[lossKey]lossEntry{}, cap: capBars, overflow: map[ovKey]*ovRange{}}
+}
+
+// SetWhole installs the range verifier that clears cap-overflow debt. Without
+// one the overflow debt can only block (fail closed), never clear.
+func (l *Ledger) SetWhole(fn WholeFn) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	l.whole = fn
+	l.mu.Unlock()
 }
 
 // RecordLoss notes that bars (open times ts) of symbol/tf were dropped. kind is
@@ -82,16 +116,27 @@ func (l *Ledger) RecordLoss(kind, symbol, tf string, ts []int64, now time.Time) 
 			continue
 		}
 		if len(l.pending) >= l.cap {
-			l.overflowSym[symbol]++
-			l.overflow++
+			ok := ovKey{symbol, tf}
+			r := l.overflow[ok]
+			if r == nil {
+				r = &ovRange{kind: kind, from: t, to: t}
+				l.overflow[ok] = r
+			}
+			if t < r.from {
+				r.from = t
+			}
+			if t > r.to {
+				r.to = t
+			}
+			if kind == LossFinal {
+				r.kind = LossFinal // the stricter proof
+			}
+			r.n++
 			continue
 		}
 		l.pending[k] = lossEntry{kind: kind, atMs: now.UnixMilli()}
 	}
-	if len(ts) == 0 { // a drop whose bars are unknown is still a loss: block the symbol until the ledger is told otherwise
-		l.overflowSym[symbol]++
-		l.overflow++
-	}
+	// len(ts) == 0 records NOTHING: a message with no real bar lost no minute.
 }
 
 // IntrabarPerMin is the intrabar drop rate over the last 5 minutes.
@@ -109,19 +154,6 @@ func (l *Ledger) IntrabarPerMin(now time.Time) float64 {
 		}
 	}
 	return float64(n) / 5
-}
-
-// ClearUnknown releases the "drop with unknown bars" debt for a symbol once the
-// caller has independently verified the symbol's series whole (e.g. a clean
-// re-seed). Bars recorded by time are cleared only by Judge's verification.
-func (l *Ledger) ClearUnknown(symbol string) {
-	if l == nil {
-		return
-	}
-	l.mu.Lock()
-	l.overflow -= l.overflowSym[symbol]
-	delete(l.overflowSym, symbol)
-	l.mu.Unlock()
 }
 
 // VerifyFn reports whether the lost bar is now present and closed in the series
@@ -152,8 +184,27 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 		}
 		left = append(left, k)
 	}
-	unk := l.overflowSym[symbol]
-	if len(left) == 0 && unk == 0 {
+	// Overflow debt: verified wholesale by range, or it stays.
+	var ovMsg string
+	for k, r := range l.overflow {
+		if k.symbol != symbol {
+			continue
+		}
+		if l.whole == nil {
+			ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) and no range verifier is wired", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+			continue
+		}
+		ok, err := l.whole(symbol, k.tf, r.from, r.to, r.kind)
+		if err != nil && firstErr == nil {
+			firstErr = err
+		}
+		if ok && err == nil {
+			delete(l.overflow, k)
+			continue
+		}
+		ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) not yet verified whole", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+	}
+	if len(left) == 0 && ovMsg == "" {
 		return false, ""
 	}
 	sort.Slice(left, func(i, j int) bool {
@@ -162,14 +213,15 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 		}
 		return left[i].tf < left[j].tf
 	})
-	msg := fmt.Sprintf("%d lost bar(s) not yet verified present", len(left))
+	msg := ""
 	if len(left) > 0 {
 		k := left[0]
-		msg += fmt.Sprintf(" (first %s %s %s, %s)", symbol, k.tf, time.UnixMilli(k.t).UTC().Format("01-02 15:04Z"), l.pending[k].kind)
+		msg = fmt.Sprintf("%d lost bar(s) not yet verified present (first %s %s %s, %s)", len(left), symbol, k.tf, time.UnixMilli(k.t).UTC().Format("01-02 15:04Z"), l.pending[k].kind)
 	}
-	if unk > 0 {
-		msg += fmt.Sprintf("; %d dropped bar(s) beyond the ledger/unknown", unk)
+	if msg == "" {
+		ovMsg = strings.TrimPrefix(ovMsg, "; ")
 	}
+	msg += ovMsg
 	if firstErr != nil {
 		msg += "; verify error: " + firstErr.Error()
 	}

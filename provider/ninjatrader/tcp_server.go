@@ -1947,6 +1947,7 @@ func (s *TCPServer) drainBarIngest(ctx context.Context) {
 		case msg := <-s.barIngestCh:
 			if msg.historical {
 				s.barCache.SeedHistorical(msg.symbol, msg.timeframe, msg.bars)
+				histContracts.note(msg.symbol, msg.contract, msg.bars) // m446: the seed's contract
 			} else {
 				s.barCache.Upsert(msg.symbol, msg.timeframe, msg.bars)
 				liveContracts.note(msg.symbol, msg.contract, msg.bars) // m446: contract-roll guard
@@ -2155,8 +2156,17 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 // longer than 2s, log + drop (better to lose this batch than deadlock
 // the read loop forever).
 func (s *TCPServer) enqueueBarHistorical(symbol, timeframe string, bars []Bar) {
+	s.enqueueBarHistoricalContract(symbol, timeframe, "", bars)
+}
+
+// enqueueBarHistoricalContract is enqueueBarHistorical carrying the front month
+// the batch named (BarsHistoricalPayload.Contract, parsed since 2026-09-11 and
+// until m446 dropped here): the data-truth contract guard compares it with the
+// live contract, so a ring seeded on an old month under new-month live frames is
+// seen. "" = unknown, never a match.
+func (s *TCPServer) enqueueBarHistoricalContract(symbol, timeframe, contract string, bars []Bar) {
 	s.histAtSub.note(symbol, timeframe, len(bars)) // 101 E1: what arrived, per tf
-	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, bars: bars}
+	msg := barIngestMsg{historical: true, symbol: symbol, timeframe: timeframe, contract: contract, bars: bars}
 	select {
 	case s.barIngestCh <- msg:
 		return
@@ -2614,7 +2624,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 					"symbol", p.Symbol, "timeframe", p.Timeframe, "bars", len(p.Bars))
 				continue
 			}
-			s.enqueueBarHistorical(p.Symbol, p.Timeframe, p.Bars)
+			s.enqueueBarHistoricalContract(p.Symbol, p.Timeframe, p.Contract, p.Bars)
 
 		case FrameBarsHistoryData:
 			// HISTORY IMPORT (wave 101) — fan one chunk out to the importer

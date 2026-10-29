@@ -257,3 +257,164 @@ func TestIngestHistoricalTimeoutIsLedgered(t *testing.T) {
 		}
 	}
 }
+
+func ingestLossReason(t *testing.T, now time.Time) (bool, string) {
+	t.Helper()
+	_, rs := datatruth.Evaluate("MNQ", now)
+	for _, r := range rs {
+		if r.Check == checks.CheckIngestLoss {
+			return true, r.Detail
+		}
+	}
+	return false, ""
+}
+
+// Review round 1, D1: a dropped message that carried NO real bar (an empty
+// bars_historical frame, a placeholder-only batch, a final frame of
+// placeholders) lost no minute. It used to ledger an "unknown" loss that nothing
+// could clear, pausing MNQ entries until the process restarted.
+func TestIngestDropOfAMessageWithNoRealBarOwesNothing(t *testing.T) {
+	freshLedger(t)
+	s := NewTCPServer(nil)
+	wireForTest(t, s)
+	placeholder := Bar{T: 40 * 60_000, O: 5, H: 5, L: 5, C: 5, V: 0, Final: true}
+	for name, m := range map[string]barIngestMsg{
+		"empty historical":            {historical: true, symbol: "MNQ", timeframe: "1m"},
+		"placeholder-only historical": {historical: true, symbol: "MNQ", timeframe: "1m", bars: []Bar{placeholder}},
+		"placeholder-only final":      {symbol: "MNQ", timeframe: "1m", bars: []Bar{placeholder}},
+	} {
+		noteIngestLoss(m)
+		if blocked, why := ingestLossReason(t, time.Now()); blocked {
+			t.Fatalf("%s: nothing was lost, entries must not pause: %s", name, why)
+		}
+	}
+	if dataTruthLedger.Pending() != 0 {
+		t.Fatalf("pending=%d, want 0", dataTruthLedger.Pending())
+	}
+}
+
+// D1: the ledger-cap overflow is a RANGE; it clears through the production
+// whole-range verifier once every open-market slot of it is in the ring.
+func TestIngestLedgerOverflowClearsWhenTheRangeIsWholeInTheRing(t *testing.T) {
+	old := dataTruthLedger
+	dataTruthLedger = checks.NewLedger(1)
+	t.Cleanup(func() { dataTruthLedger = old })
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	s := NewTCPServer(nil)
+	wireForTest(t, s)
+	// 5m minutes inside an open CME session (Tue 2026-10-27 13:00Z = 08:00 CT)
+	base := time.Date(2026, 10, 27, 13, 0, 0, 0, time.UTC).UnixMilli()
+	mk := func(i int) Bar { return Bar{T: base + int64(i)*5*60_000, O: 1, H: 2, L: 1, C: 2, V: 3, Final: true} }
+	// the batch carries 4 bars; the ledger holds 1, so 3 overflow into the range
+	noteIngestLoss(barIngestMsg{historical: true, symbol: "MNQ", timeframe: "5m", bars: []Bar{mk(1), mk(2), mk(3), mk(4)}})
+	// the ring holds a successor of the range, so the bars before it can be judged against it
+	s.barCache.SeedHistorical("MNQ", "5m", []Bar{mk(0), mk(1), mk(2), mk(4)}) // slot 3 is missing
+	// wire-stamp: Seed converts close-stamp -> open-stamp; the ledger speaks the same stamp
+	if blocked, why := ingestLossReason(t, time.Now()); !blocked || !strings.Contains(why, "not yet verified") {
+		t.Fatalf("a range with a missing slot must keep pausing: %q", why)
+	}
+	s.barCache.SeedHistorical("MNQ", "5m", []Bar{mk(0), mk(1), mk(2), mk(3), mk(4)})
+	if blocked, why := ingestLossReason(t, time.Now()); blocked {
+		t.Fatalf("the whole range is in the ring: must clear: %s", why)
+	}
+}
+
+// D7: every FINAL / HISTORICAL loss hands its span to the integrator's
+// re-request hook; intrabar drops and empty messages do not.
+func TestIngestLossFiresTheRerequestHook(t *testing.T) {
+	freshLedger(t)
+	var got [][3]int64
+	old := DataTruthRerequest
+	DataTruthRerequest = func(sym, tf string, from, to int64) { got = append(got, [3]int64{from, to, int64(len(tf))}) }
+	t.Cleanup(func() { DataTruthRerequest = old })
+	noteIngestLoss(barIngestMsg{historical: true, symbol: "MNQ", timeframe: "5m", bars: []Bar{
+		{T: 30 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}, {T: 35 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}}})
+	noteIngestLoss(barIngestMsg{symbol: "MNQ", timeframe: "1m", bars: formingFrame(60_000)})
+	noteIngestLoss(barIngestMsg{historical: true, symbol: "MNQ", timeframe: "1m"})
+	if len(got) != 1 {
+		t.Fatalf("only the real historical loss re-requests: %v", got)
+	}
+}
+
+// D3: the contract of the SEED batches is what the history was built from. A
+// ring seeded on the OLD month with live frames on the NEW month is the
+// 2026-09-10 failure; with no HistoryContract reader wired the first draft read
+// the AddOn's ACK against its own live frames and called it clean.
+func TestContractGuardSeesAnOldMonthSeedUnderNewMonthLiveFrames(t *testing.T) {
+	freshLedger(t)
+	liveContracts.reset("MNQ")
+	histContracts.reset("MNQ")
+	t.Cleanup(func() { liveContracts.reset("MNQ"); histContracts.reset("MNQ") })
+	s := NewTCPServer(nil)
+	s.barIngestCh = make(chan barIngestMsg, 16)
+	src := &DataTruthSources{Server: s, Cache: s.barCache, Now: func() time.Time { return time.UnixMilli(100 * 60_000) }} // HistoryContract: nil
+	WireDataTruth(src, nil)
+	s.wg.Add(1)
+	ctx, cancel := context.WithCancel(context.Background())
+	defer func() { cancel(); s.wg.Wait() }()
+	go s.drainBarIngest(ctx)
+
+	s.observeContract("MNQ", "MNQ 03-27", time.UnixMilli(1)) // the ACK names the NEW month
+	// the seed batch still carries the OLD month's bars
+	s.enqueueBarHistoricalContract("MNQ", "1m", "MNQ 12-26", []Bar{{T: 98 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3, Final: true}})
+	s.barIngestCh <- barIngestMsg{symbol: "MNQ", timeframe: "1m", contract: "MNQ 03-27", bars: []Bar{{T: 99 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}}}
+	waitFor(t, func() bool {
+		return len(liveContracts.window("MNQ", 0)) == 1 && len(histContracts.window("MNQ", 0)) == 1
+	})
+	got := contractVerdict(t)
+	if !strings.Contains(got, "2 contracts") && !strings.Contains(got, "differs from the stored history") {
+		t.Fatalf("an old-month seed under new-month live frames must pause, got %q", got)
+	}
+	// the seed is replayed on the new month (the AddOn's post-roll replay): clear
+	s.observeContract("MNQ", "MNQ 03-27", time.UnixMilli(2))
+	histContracts.reset("MNQ")
+	liveContracts.reset("MNQ")
+	s.enqueueBarHistoricalContract("MNQ", "1m", "MNQ 03-27", []Bar{{T: 98 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3, Final: true}})
+	s.barIngestCh <- barIngestMsg{symbol: "MNQ", timeframe: "1m", contract: "MNQ 03-27", bars: []Bar{{T: 99 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}}}
+	waitFor(t, func() bool {
+		return len(liveContracts.window("MNQ", 0)) == 1 && len(histContracts.window("MNQ", 0)) == 1
+	})
+	if got := contractVerdict(t); got != "" {
+		t.Fatalf("a seed on the live month must clear, got %q", got)
+	}
+}
+
+// D3: a seed batch that names no contract (an AddOn that omits it) is UNKNOWN
+// history: the guard blocks, it never reads "" as a match.
+func TestContractGuardBlocksWhenTheSeedNamesNoContract(t *testing.T) {
+	freshLedger(t)
+	liveContracts.reset("MNQ")
+	histContracts.reset("MNQ")
+	t.Cleanup(func() { liveContracts.reset("MNQ"); histContracts.reset("MNQ") })
+	s := NewTCPServer(nil)
+	s.observeContract("MNQ", "MNQ 12-26", time.UnixMilli(1))
+	src := &DataTruthSources{Server: s, Cache: s.barCache, Now: func() time.Time { return time.UnixMilli(100 * 60_000) }}
+	WireDataTruth(src, nil)
+	if got := contractVerdict(t); !strings.Contains(got, "history contract unknown") {
+		t.Fatalf("no seed contract known: must block, got %q", got)
+	}
+}
+
+// D5: WireDataTruth with no store reader leaves the swing and levels checks
+// REQUIRED but unwired: they block (fail closed), they do not vanish.
+func TestWiringWithoutStoreReaderBlocksTheSwingChecks(t *testing.T) {
+	freshLedger(t)
+	s := NewTCPServer(nil)
+	wireForTest(t, s) // swing == nil
+	_, rs := datatruth.Evaluate("MNQ", time.Now())
+	want := map[string]bool{checks.CheckLookbackSwing4h: false, checks.CheckLookbackLevels: false}
+	for _, r := range rs {
+		if _, ok := want[r.Check]; ok {
+			want[r.Check] = strings.Contains(r.Detail, "not wired")
+		}
+	}
+	for n, ok := range want {
+		if !ok {
+			t.Errorf("%s must block as 'not wired' when SwingInputs is nil", n)
+		}
+	}
+	if h := DataTruthStats(time.Now())[checks.CheckLookbackSwing4h].(map[string]any); h["blocked"] != true {
+		t.Fatalf("/api/health must show the missing check blocked: %v", h)
+	}
+}

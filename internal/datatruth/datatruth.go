@@ -21,6 +21,12 @@
 //     notifier); repeats inside the episode are silent. The episode closes - and
 //     entries resume - ONLY when the check is measured clear (blocked=false,
 //     err=nil). Nothing times out; a clear is never inferred from silence.
+//     A check that blocks AGAIN within ReopenMergeWindow of its own clear is the
+//     SAME episode re-opening (a flapping check), not a new one: no second
+//     alert, the original since is kept, and the flap is counted in `reopens`.
+//   - Require(names...): the wiring declares which checks MUST exist. A required
+//     check nobody registered is a stub that blocks (fail closed), so a wiring
+//     omission pauses entries and says so - it can never read as "nothing wrong".
 //   - Counters per check (Snapshot / HealthSnapshot) feed /api/health:
 //     {check: {blocked, episodes, last_reason}}.
 //
@@ -53,13 +59,21 @@ type Reason struct {
 type CheckStat struct {
 	Blocked    bool   `json:"blocked"`     // any symbol currently blocked by this check
 	Episodes   int64  `json:"episodes"`    // episodes opened since boot (all symbols)
+	Reopens    int64  `json:"reopens"`     // re-blocks merged into an earlier episode (flaps)
 	LastReason string `json:"last_reason"` // detail of the most recent block
 }
 
+// ReopenMergeWindow: a check that blocks again within this long of its own
+// clear re-opens the previous episode instead of opening (and alerting) a new
+// one. Measured on the corpus: cross_frame opened 29 episodes in 10 days, in
+// bursts at the HTF cadence (10-20 05:45, 06:00, 06:15, 06:30, 06:45).
+var ReopenMergeWindow = 30 * time.Minute
+
 type episode struct {
-	open    bool
-	sinceMs int64
-	detail  string
+	open      bool
+	sinceMs   int64
+	clearedMs int64 // when the episode last measured clear (0 = never)
+	detail    string
 }
 
 type check struct {
@@ -67,7 +81,9 @@ type check struct {
 	fn       CheckFn
 	eps      map[string]*episode // per symbol
 	episodes int64
+	reopens  int64
 	last     string
+	stub     bool // registered by Require, never replaced by a real check
 }
 
 var (
@@ -85,17 +101,41 @@ func Register(name string, fn CheckFn) {
 	mu.Lock()
 	defer mu.Unlock()
 	if c, ok := checks[name]; ok {
-		c.fn = fn
+		c.fn, c.stub = fn, false
 		return
 	}
 	checks[name] = &check{name: name, fn: fn, eps: map[string]*episode{}}
 }
 
+// Require declares checks that MUST be registered. A required name with no real
+// check yet gets a stub that BLOCKS with "required check not wired" (fail
+// closed): a wiring omission - a nil input the registration skipped - pauses
+// entries and names what is missing instead of failing open. A later Register
+// of the same name replaces the stub.
+func Require(names ...string) {
+	mu.Lock()
+	defer mu.Unlock()
+	for _, n := range names {
+		if n == "" {
+			continue
+		}
+		if _, ok := checks[n]; ok {
+			continue
+		}
+		name := n
+		checks[n] = &check{name: n, eps: map[string]*episode{}, stub: true,
+			fn: func(string, time.Time) (bool, string, error) {
+				return true, "required data-truth check " + name + " is not wired (its inputs were never supplied) - fail closed", nil
+			}}
+	}
+}
+
 // SetNotifier installs the owner-alert sender. kind is a ready-made owner-push
-// key "data_truth|<check>|<symbol>|<sinceMs>": its prefix before "|" is the
-// rate-limit kind and the whole string is the per-episode dedupe key, so every
-// episode pushes once and a later episode is never swallowed by the 24h dedupe.
-// nil detaches (log only).
+// key "data_truth_<check>|<symbol>|<sinceMs>": its prefix before "|" is the
+// rate-limit kind - one bucket PER CHECK, so a flapping check can never starve
+// another check's alert (m438 TestOneKindCannotStarveAnother) - and the whole
+// string is the per-episode dedupe key, so every episode pushes once and a later
+// episode is never swallowed by the 24h dedupe. nil detaches (log only).
 func SetNotifier(fn func(kind, text string)) {
 	mu.Lock()
 	notifier = fn
@@ -104,8 +144,9 @@ func SetNotifier(fn func(kind, text string)) {
 
 // Evaluate runs every registered check for symbol. blocked is true when at
 // least one check blocks; reasons names each blocking check (sorted by check
-// name). With no check registered nothing is blocked - the wiring, not this
-// package, decides which checks exist.
+// name). With no check registered and none required nothing is blocked - the
+// wiring declares what must exist with Require, so a skipped registration of a
+// required check blocks instead of passing.
 func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	mu.Lock()
 	names := make([]string, 0, len(checks))
@@ -142,11 +183,17 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		}
 		if v.blocked {
 			blocked = true
-			if !ep.open {
+			if !ep.open && ep.clearedMs != 0 && now.UnixMilli()-ep.clearedMs < ReopenMergeWindow.Milliseconds() {
+				// a flap: the same episode re-opening, not a new one
+				ep.open = true
+				c.reopens++
+				logger.Warnf("datatruth: %s blocks %s AGAIN %dms after it cleared - merged into the open-since-%d episode, no new alert: %s",
+					v.name, symbol, now.UnixMilli()-ep.clearedMs, ep.sinceMs, v.why)
+			} else if !ep.open {
 				ep.open, ep.sinceMs, ep.detail = true, now.UnixMilli(), v.why
 				c.episodes++
 				alerts = append(alerts, alert{
-					kind: fmt.Sprintf("data_truth|%s|%s|%d", v.name, symbol, ep.sinceMs),
+					kind: fmt.Sprintf("data_truth_%s|%s|%d", v.name, symbol, ep.sinceMs),
 					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s - %s: %s (exits, stops and protection are unaffected; entries resume automatically when the data measures clear)", symbol, v.name, v.why),
 				})
 			}
@@ -154,7 +201,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 			ep.detail = v.why
 			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs})
 		} else if ep.open {
-			ep.open = false
+			ep.open, ep.clearedMs = false, now.UnixMilli()
 			logger.Infof("datatruth: %s CLEAR for %s after %dms (was: %s) - new entries resume", v.name, symbol, now.UnixMilli()-ep.sinceMs, ep.detail)
 		}
 	}
@@ -189,7 +236,7 @@ func Snapshot() map[string]CheckStat {
 	defer mu.Unlock()
 	out := make(map[string]CheckStat, len(checks))
 	for n, c := range checks {
-		st := CheckStat{Episodes: c.episodes, LastReason: c.last}
+		st := CheckStat{Episodes: c.episodes, Reopens: c.reopens, LastReason: c.last}
 		for _, ep := range c.eps {
 			if ep.open {
 				st.Blocked = true
@@ -205,7 +252,7 @@ func HealthSnapshot() map[string]any {
 	snap := Snapshot()
 	out := make(map[string]any, len(snap))
 	for n, s := range snap {
-		out[n] = map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "last_reason": s.LastReason}
+		out[n] = map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "reopens": s.Reopens, "last_reason": s.LastReason}
 	}
 	return out
 }

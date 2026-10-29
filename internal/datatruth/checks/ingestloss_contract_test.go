@@ -59,22 +59,49 @@ func TestLedgerIntrabarOnlyLogsRate(t *testing.T) {
 	}
 }
 
-func TestLedgerOverflowAndUnknownBlock(t *testing.T) {
+// The ledger cap overflow is the only debt not tied to a named minute. It is
+// kept as a RANGE and clears only when the whole-range verifier says the span is
+// whole; with no verifier wired it blocks (fail closed) and cannot clear.
+func TestLedgerOverflowIsARangeClearedByWholeVerifier(t *testing.T) {
 	l := NewLedger(2)
 	now := time.Now()
-	l.RecordLoss(LossHistorical, "MNQ", "1m", []int64{1, 2, 3, 4}, now) // 2 beyond the cap
+	l.RecordLoss(LossHistorical, "MNQ", "1m", []int64{1, 2, 3, 4}, now) // 3 and 4 are beyond the cap
 	ok := func(string, string, int64, string) (bool, error) { return true, nil }
 	b, why := l.Judge("MNQ", ok)
-	if !b || !strings.Contains(why, "beyond the ledger") {
-		t.Fatalf("overflow must keep blocking: %v %q", b, why)
+	if !b || !strings.Contains(why, "beyond the ledger cap") || !strings.Contains(why, "no range verifier") {
+		t.Fatalf("overflow with no verifier must block: %v %q", b, why)
 	}
-	l.ClearUnknown("MNQ")
-	if b, _ := l.Judge("MNQ", ok); b {
-		t.Fatal("cleared after the caller re-verified the series")
+	whole := false
+	var gotFrom, gotTo int64
+	l.SetWhole(func(sym, tf string, from, to int64, kind string) (bool, error) {
+		gotFrom, gotTo = from, to
+		return whole, nil
+	})
+	if b, why = l.Judge("MNQ", ok); !b || !strings.Contains(why, "not yet verified whole") {
+		t.Fatalf("range not whole must block: %v %q", b, why)
 	}
-	l.RecordLoss(LossFinal, "MNQ", "1m", nil, now) // a drop whose bars are unknown
-	if b, _ := l.Judge("MNQ", ok); !b {
-		t.Fatal("a drop with unknown bars is still a loss")
+	if gotFrom != 3 || gotTo != 4 {
+		t.Fatalf("range verified = [%d,%d], want the overflowed span [3,4]", gotFrom, gotTo)
+	}
+	whole = true
+	if b, why = l.Judge("MNQ", ok); b {
+		t.Fatalf("range verified whole must clear: %s", why)
+	}
+	if b, _ = l.Judge("MNQ", ok); b {
+		t.Fatal("a cleared range must not come back")
+	}
+}
+
+// A dropped message that carried no real bar lost no minute: it opens no debt
+// (review round 1, D1 - it used to block the symbol until restart).
+func TestLedgerRecordsNothingWhenNoBarWasLost(t *testing.T) {
+	l := NewLedger(10)
+	for _, kind := range []string{LossFinal, LossHistorical} {
+		l.RecordLoss(kind, "MNQ", "1m", nil, time.Now())
+		l.RecordLoss(kind, "MNQ", "1m", []int64{}, time.Now())
+	}
+	if b, why := l.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil }); b {
+		t.Fatalf("nothing was lost, nothing may block: %s", why)
 	}
 }
 

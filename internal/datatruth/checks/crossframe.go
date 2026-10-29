@@ -35,11 +35,20 @@ import (
 
 // CrossParams are the tunables.
 type CrossParams struct {
-	// WindowMin: only bars that CLOSED within the last WindowMin minutes are
-	// judged - the bars the trigger rules still read (12 = the newest two 5m
-	// bars, four 3m bars, the newest 15m bar). A mismatch older than that has
-	// left the decision.
+	// WindowMin: the floor of how long a bar stays judged after it CLOSED -
+	// the bars the trigger rules read (12 = the newest two 5m bars, four 3m
+	// bars). Per frame the window is never shorter than the frame itself (a 15m
+	// bar is the newest 15m bar for 15 minutes; judging it for 12 let entries
+	// resume for 3 minutes while it was still wrong and made back-to-back
+	// episodes).
 	WindowMin int
+	// Hold, when set, maps (frame minutes, the mismatch's worst price error in
+	// pt) to how many minutes the wrong bar must keep entries paused: its
+	// influence on the indicators reading that frame (HoldMinutes). A big
+	// mismatch is judged for that long, a tick-skew only for the floor. A
+	// mismatch clears early when the bar is repaired (it is re-judged on every
+	// call). nil = the floor only.
+	Hold      func(tfMin int, errPts float64) int
 	PriceTol  float64 // pt: |native - built| allowed per OHLC field
 	VolRel    float64 // relative volume tolerance
 	VolAbsMin float64 // volume diffs below this many contracts are ignored
@@ -71,10 +80,18 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 	}
 	span := int64(tfMin) * minuteMs
 	nowMs := now.UnixMilli()
-	from := nowMs - int64(p.WindowMin)*minuteMs - span // open time of the oldest bar that closed inside the window
+	floor := p.WindowMin
+	if floor < tfMin {
+		floor = tfMin
+	}
+	scan := floor
+	if p.Hold != nil {
+		scan = HoldCapMin
+	}
+	from := nowMs - int64(scan)*minuteMs - span // open time of the oldest bar that could still be inside its hold
 	m := byT(tailFrom(m1, from))
 	for _, h := range tailFrom(htf, from) {
-		if h.T+span > nowMs || h.T+span <= nowMs-int64(p.WindowMin)*minuteMs { // closed, and closed inside the window
+		if h.T+span > nowMs || h.T+span <= nowMs-int64(scan)*minuteMs { // closed, and closed inside the scan
 			continue
 		}
 		var o, hi, lo, c, v float64
@@ -108,9 +125,13 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 		}
 		judged++
 		var bad []string
+		worst := 0.0
 		chk := func(name string, native, built float64) {
-			if abs(native-built) > p.PriceTol {
+			if d := abs(native - built); d > p.PriceTol {
 				bad = append(bad, fmt.Sprintf("%s native %.2f vs 1m-built %.2f", name, native, built))
+				if d > worst {
+					worst = d
+				}
 			}
 		}
 		chk("open", h.O, o)
@@ -121,6 +142,13 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 			bad = append(bad, fmt.Sprintf("volume native %.0f vs 1m-built %.0f", h.V, v))
 		}
 		if len(bad) > 0 {
+			// still inside the decision? within the floor always; older only while
+			// the error still moves an indicator by more than its tolerance.
+			if age := (nowMs - (h.T + span)) / minuteMs; age >= int64(floor) {
+				if p.Hold == nil || age >= int64(p.Hold(tfMin, worst)) {
+					continue
+				}
+			}
 			out = append(out, FrameMismatch{TFMin: tfMin, T: h.T,
 				Detail: fmt.Sprintf("%dm bar %s disagrees with the 1m it is made of: %s", tfMin, time.UnixMilli(h.T).UTC().Format("01-02 15:04Z"), joinS(bad))})
 		}

@@ -46,7 +46,7 @@ func TestEpisodeAlertsOncePerEpisodeAndClearsOnlyWhenMeasuredClear(t *testing.T)
 	if len(rec.kinds) != 1 {
 		t.Fatalf("one owner push per episode, got %d", len(rec.kinds))
 	}
-	if !strings.HasPrefix(rec.kinds[0], "data_truth|c1|MNQ|") {
+	if !strings.HasPrefix(rec.kinds[0], "data_truth_c1|MNQ|") {
 		t.Fatalf("push key must be an ownerpush kind|episode key: %q", rec.kinds[0])
 	}
 	s := Snapshot()["c1"]
@@ -60,9 +60,9 @@ func TestEpisodeAlertsOncePerEpisodeAndClearsOnlyWhenMeasuredClear(t *testing.T)
 	if Snapshot()["c1"].Blocked {
 		t.Fatal("snapshot must show clear")
 	}
-	// second episode: a NEW alert with a NEW key
+	// second episode (well past the merge window): a NEW alert with a NEW key
 	bad.Store(true)
-	Evaluate("MNQ", t0.Add(2*time.Minute))
+	Evaluate("MNQ", t0.Add(2*time.Hour))
 	if len(rec.kinds) != 2 || rec.kinds[0] == rec.kinds[1] {
 		t.Fatalf("second episode must alert once with a distinct key: %v", rec.kinds)
 	}
@@ -124,5 +124,93 @@ func TestReregisterKeepsOpenEpisode(t *testing.T) {
 	Evaluate("MNQ", t0.Add(time.Second))
 	if len(rec.kinds) != 1 || Snapshot()["c"].Episodes != 1 {
 		t.Fatal("re-registering must not reopen an open episode")
+	}
+}
+
+// D2: a check that blocks again soon after it cleared is the SAME episode
+// re-opening: no second owner push, the original since is kept, the flap is
+// counted. Past the window it is a new episode with its own push.
+func TestFlappingCheckMergesIntoOneEpisode(t *testing.T) {
+	Reset()
+	defer Reset()
+	rec := capture()
+	var bad atomic.Bool
+	Register("flap", func(string, time.Time) (bool, string, error) { return bad.Load(), "r", nil })
+	bad.Store(true)
+	Evaluate("MNQ", t0)
+	for i := 1; i <= 5; i++ { // clear, re-block, clear, re-block ... inside the window
+		bad.Store(false)
+		if b, _ := Evaluate("MNQ", t0.Add(time.Duration(i*4)*time.Minute)); b {
+			t.Fatal("a measured clear still resumes entries even when it flaps")
+		}
+		bad.Store(true)
+		b, rs := Evaluate("MNQ", t0.Add(time.Duration(i*4+2)*time.Minute))
+		if !b || rs[0].SinceMs != t0.UnixMilli() {
+			t.Fatalf("flap %d: must stay blocked under the ORIGINAL since: %v %+v", i, b, rs)
+		}
+	}
+	if len(rec.kinds) != 1 {
+		t.Fatalf("a flapping check alerts ONCE, got %d pushes: %v", len(rec.kinds), rec.kinds)
+	}
+	if st := Snapshot()["flap"]; st.Episodes != 1 || st.Reopens != 5 {
+		t.Fatalf("episodes=1 reopens=5 expected: %+v", st)
+	}
+	bad.Store(false)
+	Evaluate("MNQ", t0.Add(time.Hour))
+	bad.Store(true)
+	Evaluate("MNQ", t0.Add(2*time.Hour))
+	if len(rec.kinds) != 2 || Snapshot()["flap"].Episodes != 2 {
+		t.Fatalf("past the merge window it is a new episode with its own push: %v", rec.kinds)
+	}
+}
+
+// D2: the owner-push rate-limit kind is the prefix before "|". Each check must
+// own its kind, or one flapping check burns the budget of the critical ones.
+func TestEachCheckHasItsOwnPushKind(t *testing.T) {
+	Reset()
+	defer Reset()
+	rec := capture()
+	for _, n := range []string{"cross_frame", "ingest_loss", "contract_roll"} {
+		Register(n, func(string, time.Time) (bool, string, error) { return true, "r", nil })
+	}
+	Evaluate("MNQ", t0)
+	seen := map[string]bool{}
+	for _, k := range rec.kinds {
+		kind := k[:strings.IndexByte(k, '|')]
+		if seen[kind] {
+			t.Fatalf("two checks share the push kind %q: %v", kind, rec.kinds)
+		}
+		seen[kind] = true
+	}
+	if len(seen) != 3 {
+		t.Fatalf("kinds: %v", rec.kinds)
+	}
+}
+
+// D5: a REQUIRED check nobody registered blocks (fail closed) and says so; the
+// real registration replaces the stub.
+func TestRequiredButUnregisteredCheckBlocks(t *testing.T) {
+	Reset()
+	defer Reset()
+	rec := capture()
+	Require("ingest_loss", "swing")
+	Register("swing", func(string, time.Time) (bool, string, error) { return false, "", nil })
+	b, rs := Evaluate("MNQ", t0)
+	if !b || len(rs) != 1 || rs[0].Check != "ingest_loss" || !strings.Contains(rs[0].Detail, "not wired") {
+		t.Fatalf("a required-but-missing check must block: %v %+v", b, rs)
+	}
+	if len(rec.kinds) != 1 {
+		t.Fatalf("the omission alerts once: %v", rec.kinds)
+	}
+	if h := HealthSnapshot()["ingest_loss"].(map[string]any); h["blocked"] != true {
+		t.Fatalf("health must show the missing check blocked: %v", h)
+	}
+	Register("ingest_loss", func(string, time.Time) (bool, string, error) { return false, "", nil })
+	if b, _ := Evaluate("MNQ", t0.Add(time.Minute)); b {
+		t.Fatal("registering the real check replaces the stub")
+	}
+	Require("ingest_loss") // idempotent: must not clobber a real check
+	if b, _ := Evaluate("MNQ", t0.Add(2*time.Minute)); b {
+		t.Fatal("Require must not replace a registered check")
 	}
 }
