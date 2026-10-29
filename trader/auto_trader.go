@@ -1194,6 +1194,7 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		// replay/calibration. Idempotent (once); nil-safe; never blocks the loop.
 		if st != nil {
 			ntTrader.WireBarPersistence(st)
+			wireDataTruthBoot() // release #55: m446/m447 data-truth checks -> the entry verdict (data_truth_gate.go)
 			// B4 (2026-08-26) — level_stats nightly forward validation.
 			ntTrader.WireLevelStatsNightly(st, config.ID)
 			// T1 (2026-08-26) — touch-telemetry sink: persist closed episodes

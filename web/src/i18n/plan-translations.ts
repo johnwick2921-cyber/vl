@@ -433,6 +433,18 @@ export const planStrings = {
     zh: 'mentor 入场；mentor 关键位所依据的序列缺少K线',
     id: 'entri mentor; level kunci mentor bertumpu pada seri yang kehilangan bar',
   },
+  // release #55: the data-truth pause (a check says the bars / account / fills
+  // cannot be trusted; names the checks).
+  dataPausedTruthBanner: {
+    en: 'TRADING PAUSED — data check failed: {checks}',
+    zh: '交易已暂停 — 数据检查未通过：{checks}',
+    id: 'TRADING DIJEDA — pemeriksaan data gagal: {checks}',
+  },
+  dataPausedTruthScopedBanner: {
+    en: 'TRADING PAUSED ({scope}) — data check failed: {checks}',
+    zh: '交易已暂停（{scope}）— 数据检查未通过：{checks}',
+    id: 'TRADING DIJEDA ({scope}) — pemeriksaan data gagal: {checks}',
+  },
   dataPausedUnknownBanner: {
     en: 'TRADING PAUSED — bar-data check not ready',
     zh: '交易已暂停 — K线数据检查尚未就绪',

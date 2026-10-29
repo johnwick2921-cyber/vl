@@ -114,7 +114,7 @@ type dataVerdict struct {
 }
 
 func (v dataVerdict) isData() bool {
-	return v.Class == ntTrader.IntegrityClassHole || v.Class == ntTrader.IntegrityClassUnknown
+	return v.Class == ntTrader.IntegrityClassHole || v.Class == ntTrader.IntegrityClassUnknown || v.Class == integrityClassDataTruth
 }
 
 // integrityWindowFor picks the window the admitted path reads.
@@ -144,10 +144,26 @@ func (at *AutoTrader) integrityApplies() bool {
 	return at != nil && at.exchange == "ninjatrader" && ntTrader.IntegrityArmed()
 }
 
-// dataIntegrityVerdictAt is THE verdict. Legs: (c) stale feed — when withStale,
+// dataIntegrityVerdictAt is THE entry verdict: the m445 legs (integrityVerdictAt
+// — stale feed, missing bars, unknown detector) and, only when those are clear,
+// the m446/m447 data-truth leg (dataTruthVerdictAt — bad print, frame mismatch,
+// indicator lookback, ingest loss, contract roll, broker agreement, fill price).
+// Release #55 (integrator): every path that asks "may I open risk?" crosses this
+// ONE function, so folding the data-truth leg here is what makes every entry path
+// consult it. The pause-episode beat and the withdraw decision ask the m445 legs
+// alone (integrityVerdictAt): data-truth carries its own episode and owner alert,
+// and does not withdraw resting entries (m446: it pauses NEW entries only).
+func (at *AutoTrader) dataIntegrityVerdictAt(openMin int, now time.Time, withStale bool) dataVerdict {
+	if v := at.integrityVerdictAt(openMin, now, withStale); v.Blocked {
+		return v
+	}
+	return at.dataTruthVerdictAt(openMin, now)
+}
+
+// integrityVerdictAt is the m445 verdict. Legs: (c) stale feed — when withStale,
 // through the mentor block (its episode lines kept) for a mentor trader, else
 // the arm path's armFeedStale; then (a)/(b) from the hole tracker.
-func (at *AutoTrader) dataIntegrityVerdictAt(openMin int, now time.Time, withStale bool) dataVerdict {
+func (at *AutoTrader) integrityVerdictAt(openMin int, now time.Time, withStale bool) dataVerdict {
 	if at == nil {
 		return dataVerdict{}
 	}
@@ -208,21 +224,27 @@ func integrityHoleReason(sym string, v ntTrader.IntegrityVerdict) string {
 // at its seams, armFeedStale as the last step) so every policy refusal keeps
 // naming itself first.
 func (at *AutoTrader) dataIntegrityAdmitRefusal(in admitIntent, now time.Time) (class, text string, refused bool) {
-	if !at.integrityApplies() {
-		return "", "", false
-	}
 	v := at.dataIntegrityVerdictAt(integrityWindowFor(in), now, false)
 	if !v.Blocked {
 		return "", "", false
 	}
-	return v.Class, "data_integrity: " + v.Reason, true
+	return v.Class, v.refusalPrefix() + v.Reason, true
+}
+
+// refusalPrefix names the refusal: data_integrity for the m445 legs, data_truth
+// for the m446/m447 checks.
+func (v dataVerdict) refusalPrefix() string {
+	if v.Class == integrityClassDataTruth {
+		return "data_truth: "
+	}
+	return "data_integrity: "
 }
 
 // dataIntegrityTestSeamRefusal gates the SIM test-arm seams (TestArmPlace /
 // TestArmPlaceStop): they put a real order on the SIM wire outside admitEntry.
 func (at *AutoTrader) dataIntegrityTestSeamRefusal(now time.Time) string {
 	if v := at.dataIntegrityVerdictAt(ntTrader.IntegrityDeepOpenMin, now, false); v.Blocked {
-		return "data_integrity: " + v.Reason
+		return v.refusalPrefix() + v.Reason
 	}
 	return ""
 }
@@ -342,7 +364,7 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	var worst, gov dataVerdict
 	var blockedAt []bool
 	for _, w := range at.integrityWindows() {
-		v := at.dataIntegrityVerdictAt(w, now, false)
+		v := at.integrityVerdictAt(w, now, false)
 		blockedAt = append(blockedAt, v.Blocked)
 		if v.Blocked && !gov.Blocked {
 			gov = v // the first blocked window governs the scope and its end
@@ -457,7 +479,7 @@ func (at *AutoTrader) integrityWithdrawReason(now time.Time) (reason string, swi
 	}
 	ws := at.integrityWindows()
 	for i, w := range ws {
-		v := at.dataIntegrityVerdictAt(w, now, false)
+		v := at.integrityVerdictAt(w, now, false)
 		if !v.Blocked {
 			continue
 		}

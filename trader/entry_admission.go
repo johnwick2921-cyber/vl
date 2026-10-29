@@ -273,7 +273,11 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 				!at.admitLast.changed("data-integrity|"+string(in.Path), class) {
 				return
 			}
-			at.logWarnf("⏸ data-integrity: %s %s REFUSED — %s. Exits and protection continue; entries resume when the bars are measured filled.", sym, act, text)
+			resume := "the bars are measured filled"
+			if class == integrityClassDataTruth {
+				resume = "the data measures clear"
+			}
+			at.logWarnf("⏸ data-integrity: %s %s REFUSED — %s. Exits and protection continue; entries resume when %s.", sym, act, text, resume)
 		})
 	} else if in.Path != admitArm && in.Path != admitPicture {
 		at.admitLast.clear("data-integrity|" + string(in.Path)) // the episode ended: the next one logs again

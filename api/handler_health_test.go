@@ -10,6 +10,8 @@ import (
 
 	"github.com/gin-gonic/gin"
 
+	"vl/internal/datatruth"
+	"vl/internal/datatruth/checks"
 	"vl/kernel"
 	"vl/manager"
 	ntwire "vl/provider/ninjatrader"
@@ -449,5 +451,84 @@ func TestHealthMentorSeedRowsSkipAStoppedTrader(t *testing.T) {
 	}
 	if tp["scope"] == "mentor_entries" {
 		t.Fatalf("a stopped trader's seed hole must not set the scope: %+v", tp)
+	}
+}
+
+// release #55 (integrator): /api/health exposes data_truth - the per-check
+// counters of the m446/m447 checks - and a blocking check pauses trading_paused
+// with the reason data_truth and the checks named (a swing4h-only failure is the
+// SWING4H scope). ABSENT while nothing is registered or required (A24).
+func TestHealthExposesDataTruth(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	at := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())
+	// a tracker that has judged MNQ and holds no hole: only the data-truth leg can pause
+	t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(at.Add(-48*time.Hour).UnixMilli(), at.UnixMilli(),
+		[]ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26"}}))
+	prev := healthNow
+	healthNow = func() time.Time { return at }
+	t.Cleanup(func() { healthNow = prev })
+	get := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		return body
+	}
+	if _, present := get()["data_truth"]; present {
+		t.Fatal("nothing registered: data_truth must be ABSENT, never a fabricated empty block")
+	}
+
+	block := false
+	why := "2 suspect 1m bar(s)"
+	datatruth.Register(checks.CheckBadPrint, func(string, time.Time) (bool, string, error) { return block, why, nil })
+	datatruth.Register(checks.CheckLookbackSwing4h, func(string, time.Time) (bool, string, error) { return false, "", nil })
+	datatruth.Evaluate("MNQ", at)
+	dt, ok := get()["data_truth"].(map[string]any)
+	if !ok {
+		t.Fatal("registered checks: data_truth must be present")
+	}
+	if bp, _ := dt[checks.CheckBadPrint].(map[string]any); bp == nil || bp["blocked"] != false {
+		t.Fatalf("bad_print must show blocked=false: %+v", dt)
+	}
+	if _, ok := dt["_fill_price"]; !ok {
+		t.Fatalf("the m447 fill-price figures ride the same block: %+v", dt)
+	}
+
+	block = true
+	datatruth.Evaluate("MNQ", at)
+	body := get()
+	dt = body["data_truth"].(map[string]any)
+	bp := dt[checks.CheckBadPrint].(map[string]any)
+	if bp["blocked"] != true || bp["episodes"] != float64(1) || bp["last_reason"] != why {
+		t.Fatalf("bad_print must show the open episode: %+v", bp)
+	}
+	tp := body["trading_paused"].(map[string]any)
+	reasons, _ := tp["reasons"].([]any)
+	has := false
+	for _, r := range reasons {
+		if r == "data_truth" {
+			has = true
+		}
+	}
+	checkNames, _ := tp["data_truth_checks"].([]any)
+	if tp["paused"] != true || !has || len(checkNames) != 1 || checkNames[0] != checks.CheckBadPrint || tp["scope"] != ntTrader.PausedScopeAll {
+		t.Fatalf("a blocking check pauses trading_paused (all entries) and names itself: %+v", tp)
+	}
+
+	// a swing4h-only failure is the SWING4H scope
+	block = false
+	datatruth.Register(checks.CheckLookbackSwing4h, func(string, time.Time) (bool, string, error) { return true, "swing line off", nil })
+	datatruth.Evaluate("MNQ", at)
+	tp = get()["trading_paused"].(map[string]any)
+	if tp["paused"] != true || tp["scope"] != ntTrader.PausedScopeSwing {
+		t.Fatalf("a swing4h-only failure pauses SWING4H entries only: %+v", tp)
 	}
 }

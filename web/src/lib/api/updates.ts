@@ -102,6 +102,10 @@ export interface HealthStatus {
     scope?: string
     // every blocked leg (a narrower one is never hidden behind a wider one)
     scopes?: string[]
+    // release #55: the data-truth checks (bad print, frame mismatch, indicator
+    // lookback, ingest loss, contract roll, broker agreement, fill price)
+    // currently blocking; reasons then carries 'data_truth'
+    data_truth_checks?: string[]
   }
 }
 

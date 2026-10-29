@@ -125,6 +125,42 @@ describe('DataPausedBanner', () => {
       'TRADING PAUSED — bar-data check not ready'
     )
   })
+  it('a data-truth pause names the failing checks (release #55)', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['bad_print', 'cross_frame'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    expect(await screen.findByTestId('data-paused-banner')).toHaveTextContent(
+      'TRADING PAUSED — data check failed: bad_print, cross_frame'
+    )
+  })
+  it('a swing4h-only data-truth pause says SWING4H entries only', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['indicator_lookback_swing4h'],
+        scope: 'swing_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('TRADING PAUSED (SWING4H entries only')
+    expect(el).toHaveTextContent('indicator_lookback_swing4h')
+  })
+  it('data_truth with no named check renders nothing (never invents one)', async () => {
+    const spy = vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: { paused: true, reasons: ['data_truth'] },
+    })
+    mount()
+    await waitFor(() => expect(spy).toHaveBeenCalled())
+    expect(screen.queryByTestId('data-paused-banner')).toBeNull()
+  })
   it('a stale-feed-only pause is the FEED DOWN line, not this one', async () => {
     const spy = vi.spyOn(updatesApi, 'health').mockResolvedValue({
       trading_paused: { paused: true, reasons: ['stale_data'] },

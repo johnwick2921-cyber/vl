@@ -215,6 +215,9 @@ func WireBarPersistence(st *store.Store) {
 					// singleton turned the accessor's unsynchronized test seam
 					// into a periodic data race (CI -race, api package).
 					barHolesServer.Store(server)
+					// release #55 (integrator): the data-truth checks (m446) read the
+					// ring and the store, both reachable from here on.
+					WireDataTruthChecks(bh, server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
 					safe.GoNet("nt8-bar-gap-audit", "", holes.runAudit)
 					// m424 — session-final bar flush + closed-market replay-hold settle.

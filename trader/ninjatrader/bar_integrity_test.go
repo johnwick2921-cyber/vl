@@ -130,7 +130,7 @@ func TestARetiredHoleStillBlocksUntilMeasuredFilled(t *testing.T) {
 	f.stream(ct(2026, 10, 14, 7, 48), ct(2026, 10, 14, 7, 49)) // Wed 10-14
 	waitFor(t, "the tracker to open the Fri→Wed hole", func() bool { return len(f.holes()) == 1 })
 	det := f.clk.Now()
-	f.tr.tick(det.Add(61 * time.Second)) // beyond NT8's standard AND deep replay: RETIRED
+	f.tr.tick(det.Add(61 * time.Second))                           // beyond NT8's standard AND deep replay: RETIRED
 	if hs := f.holes(); len(hs) != 1 || hs[0].State != "retired" { // m444: a retired hole stays LISTED in the tracker
 		t.Fatalf("setup: the tracker must have retired the hole: %+v", hs)
 	}

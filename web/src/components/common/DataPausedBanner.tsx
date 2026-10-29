@@ -15,6 +15,7 @@ import type { Language } from '../../i18n/translations'
 import { tp } from '../../i18n/plan-translations'
 
 const DATA_CLASSES = ['data_integrity_hole', 'data_integrity_unknown']
+// release #55: 'data_truth' (with data_truth_checks) is the m446/m447 pause
 
 // scope (bar_integrity.go PausedView.Scope) -> the i18n key naming it
 const SCOPE_KEYS: Record<
@@ -34,11 +35,24 @@ export function DataPausedBanner({ language }: { language: Language }) {
   const tpz = data?.trading_paused
   if (!tpz || tpz.paused !== true) return null
   const reasons = tpz.reasons ?? []
-  if (!reasons.some((r) => DATA_CLASSES.includes(r))) return null
+  const truthChecks = tpz.data_truth_checks ?? []
+  const hasTruth = reasons.includes('data_truth') && truthChecks.length > 0
+  if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth) return null
 
   const windows = tpz.windows ?? []
+  const hasMissing = reasons.some((r) => DATA_CLASSES.includes(r))
   let text: string
-  if (windows.length > 0) {
+  if (hasTruth && !hasMissing) {
+    // release #55: only the data-truth checks pause trading - name them
+    const scopeKey = SCOPE_KEYS[tpz.scope ?? '']
+    const checks = truthChecks.join(', ')
+    text = scopeKey
+      ? tp('dataPausedTruthScopedBanner', language, {
+          scope: tp(scopeKey, language),
+          checks,
+        })
+      : tp('dataPausedTruthBanner', language, { checks })
+  } else if (windows.length > 0) {
     const more = windows.length > 1 ? ` (+${windows.length - 1})` : ''
     const scopeKey = SCOPE_KEYS[tpz.scope ?? '']
     // all_entries (or a scope an older bot does not send) keeps the plain line;

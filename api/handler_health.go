@@ -9,6 +9,8 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vl/config"
+	"vl/internal/datatruth"
+	"vl/internal/datatruth/checks"
 	"vl/internal/ownerpush"
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
@@ -183,6 +185,20 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// plus the stale-feed leg already computed above. ABSENT = no NT8 bridge in
 	// this process (nothing to lose, nothing claimed); never a fabricated
 	// "not paused" (A24). reasons are the classes; windows the holes' CT spans.
+	// release #55: data_truth {check: {blocked, episodes, reopens, last_reason}} plus
+	// the ledger / fill-price figures (ntwire.DataTruthStats). READ from the live
+	// episodes; ABSENT until the checks are registered or required (a process
+	// with no NT8 bridge claims nothing - A24).
+	dtBlocked := []string{}
+	if snap := datatruth.Snapshot(); len(snap) > 0 {
+		for n, st := range snap {
+			if st.Blocked {
+				dtBlocked = append(dtBlocked, n)
+			}
+		}
+		sort.Strings(dtBlocked)
+		body["data_truth"] = ntwire.DataTruthStats(now)
+	}
 	if views, armed := ntTrader.TradingPausedSnapshot(now); armed {
 		// Round 4, D3: a pause on a symbol NO running trader trades is not a pause
 		// of anything (an unfilled hole on a subscribed-but-untraded ES painted the
@@ -268,14 +284,26 @@ func (s *Server) handleHealth(c *gin.Context) {
 				}
 			}
 		}
+		// release #55: the m446/m447 data-truth checks pause NEW entries too. A
+		// swing4h-only block pauses SWING4H entries alone; any other check, all.
+		if len(dtBlocked) > 0 {
+			paused = true
+			reasons = append(reasons, "data_truth")
+			if len(dtBlocked) == 1 && dtBlocked[0] == checks.CheckLookbackSwing4h {
+				noteScope(ntTrader.PausedScopeSwing)
+			} else {
+				noteScope(ntTrader.PausedScopeAll)
+			}
+		}
 		if feedStale {
 			paused = true
 			reasons = append(reasons, "stale_data")
 		}
 		body["trading_paused"] = gin.H{
-			"paused":  paused,
-			"reasons": reasons,
-			"windows": windows,
+			"data_truth_checks": dtBlocked,
+			"paused":            paused,
+			"reasons":           reasons,
+			"windows":           windows,
 			// the WIDEST scope that is paused and every scope that is (round 4,
 			// D3): the banner must not say TRADING PAUSED when only SWING4H is
 			"scope":       ntTrader.WidestPausedScope(scopes),
