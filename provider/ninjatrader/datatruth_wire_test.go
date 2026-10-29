@@ -228,3 +228,32 @@ func TestDataTruthSourcesBarsFromCache(t *testing.T) {
 		t.Fatal("no cache must be an error (fail closed)")
 	}
 }
+
+// enqueueBarHistorical gives up after 2s on a stalled drain and drops the batch:
+// that is the restart seed lost. It must land in the ledger, bar by bar.
+func TestIngestHistoricalTimeoutIsLedgered(t *testing.T) {
+	t.Setenv("INGEST_QUEUE_CAP", "1")
+	resetIngestCounters()
+	freshLedger(t)
+	s := NewTCPServer(nil)
+	wireForTest(t, s)
+	s.barIngestCh <- barIngestMsg{symbol: "MNQ", timeframe: "1m", bars: formingFrame(60_000)} // stalled drain: the queue stays full
+	s.enqueueBarHistorical("MNQ", "5m", []Bar{{T: 30 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}, {T: 35 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}})
+	if ingestDropHist.Load() == 0 && dataTruthLedger.Pending() == 0 {
+		t.Fatal("fixture: the historical batch was not dropped")
+	}
+	if got := dataTruthLedger.Pending(); got != 2 {
+		t.Fatalf("both bars of the dropped historical batch must be ledgered, pending=%d", got)
+	}
+	b, rs := datatruth.Evaluate("MNQ", time.Now())
+	if !b {
+		t.Fatalf("a dropped historical batch must pause entries: %+v", rs)
+	}
+	// the replay lands (re-request): both minutes present -> clear
+	s.barCache.SeedHistorical("MNQ", "5m", []Bar{{T: 30 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}, {T: 35 * 60_000, O: 1, H: 2, L: 1, C: 2, V: 3}})
+	for _, r := range func() []datatruth.Reason { _, r := datatruth.Evaluate("MNQ", time.Now()); return r }() {
+		if r.Check == checks.CheckIngestLoss {
+			t.Fatalf("landed replay must clear ingest_loss: %+v", r)
+		}
+	}
+}
