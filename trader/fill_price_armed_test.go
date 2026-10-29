@@ -97,7 +97,7 @@ func TestArmedEntryOneFillFromBothFramesIsCountedOnce(t *testing.T) {
 		time.Sleep(150 * time.Millisecond) // a (wrong) second judgment would have landed by now
 		s := g.Stats()
 		blocked, why, _ := g.Check()("MNQ", time.Now())
-		if s.Far != 1 || s.Judged != 1 || armedAlertCount(alerts) != 1 || blocked {
+		if s.Far != 1 || s.Judged != 1 || s.Pending != 0 || armedAlertCount(alerts) != 1 || blocked {
 			t.Fatalf("fillFrameFirst=%v: ONE far fill must count once, alert once, not pause: stats=%+v alerts=%d blocked=%v (%s)", fillFrameFirst, s, armedAlertCount(alerts), blocked, why)
 		}
 		// and the fill is recorded as before: the position materialized at the fill price.
