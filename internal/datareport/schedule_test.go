@@ -150,3 +150,43 @@ func TestSendNowIsOnDemandAndNotSwallowedByTheDailyDedupe(t *testing.T) {
 		t.Fatalf("expected 2+ messages, got %v", sk.all())
 	}
 }
+
+// N1: an EMPTY store on an open day is the day the data failed: the report goes
+// out (with n/a) instead of being skipped as "nothing to report".
+func TestAnEmptyStoreOnAnOpenCalendarDayStillSendsTheReport(t *testing.T) {
+	sk, p := installPusher(t, true)
+	now := ct(2026, 10, 28, 16, 12)
+	_, db := newDB(t) // no bars, no trades
+	s := NewScheduler(Config{Sources: Sources{DB: db, FeedDownAfter: feed10m}, MarkerDir: t.TempDir(), Now: func() time.Time { return now }})
+	if !s.Tick() {
+		t.Fatal("no 1m bars stored on an open CME day was skipped as a closed day")
+	}
+	p.Flush()
+	if !strings.Contains(strings.Join(sk.all(), "\n"), "1m bars: n/a (no 1m bars stored in the last 7 days)") {
+		t.Fatalf("report text: %v", sk.all())
+	}
+}
+
+// N2: a panic inside one tick must not end the loop for good.
+func TestStartKeepsTickingAfterATickPanics(t *testing.T) {
+	calls := make(chan struct{}, 8)
+	stop := Start(Config{
+		Sources: Sources{DB: nil},
+		Now: func() time.Time {
+			select {
+			case calls <- struct{}{}:
+			default:
+			}
+			panic("boom")
+		},
+		TickEvery: 5 * time.Millisecond,
+	})
+	defer stop()
+	for i := 0; i < 3; i++ {
+		select {
+		case <-calls:
+		case <-time.After(2 * time.Second):
+			t.Fatalf("the loop died after %d ticks", i)
+		}
+	}
+}

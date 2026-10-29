@@ -265,8 +265,8 @@ func TestNothingWiredPrintsNAEverywhereNeverAZero(t *testing.T) {
 	r := Collect(Sources{}, sess)
 	text := strings.Join(r.Lines(), "\n")
 	for _, must := range []string{
-		"1m bars: n/a", "FEED DOWN: alerts n/a", "minutes n/a", "Bar holes: n/a",
-		"Bad prints n/a · cross-frame mismatches n/a · paused minutes n/a",
+		"1m bars: n/a", "FEED DOWN: alerts n/a", "missing-bar minutes in runs >", "Bar holes: n/a",
+		"Bad prints n/a (since boot (boot time n/a)) · cross-frame mismatches n/a · paused minutes n/a",
 		"final n/a, historical n/a", "n/a back / n/a fwd", "Trades: n/a", "Refusals: n/a", "Backup restore test: n/a",
 	} {
 		if !strings.Contains(text, must) {
@@ -328,9 +328,9 @@ func TestReportReadsEveryFigureAndFitsTheOwnerPushLimit(t *testing.T) {
 	for _, must := range []string{
 		"MNQ 1m bars 1350/1380 stored — MISSING 30 in 1 run(s), longest 30m",
 		"ES 1m bars 1380/1380 stored",
-		"FEED DOWN: alerts 1 · minutes ES 0m, MNQ 30m",
+		"FEED DOWN: alerts 1 · missing-bar minutes in runs >10m ES 0m, MNQ 30m",
 		"Bar holes since boot 2026-10-27 16:00 CT: found 3, filled 2, unfilled 1",
-		"Bad prints 0 · cross-frame mismatches n/a · paused minutes n/a",
+		"Bad prints 0 (since boot 2026-10-27 16:00 CT) · cross-frame mismatches n/a · paused minutes n/a",
 		"final 0, historical 2 · clock steps 1 back / 0 fwd",
 		"hoang: 2 closed, +$120.00 (isb 1 -$30.00, swing 1 +$150.00), unresolved 0",
 		"Refusals repeated >3: mentor_done_after_win 12, session_gate 7",
@@ -421,5 +421,108 @@ func TestRestoreResultReadsNewestAndFlagsFailureAndOverdue(t *testing.T) {
 	}
 	if r := ReadRestoreResult(dir3, now); r.Have {
 		t.Fatalf("a result with no time must be n/a: %+v", r)
+	}
+}
+
+// D1 (review round 1): the FEED DOWN figure is DISTINCT episodes inside
+// [Start, End). Every trader on the box raises its own row for one episode.
+func TestFeedDownAlertsAreDistinctEpisodesInsideTheHalfOpenSession(t *testing.T) {
+	_, db := newDB(t)
+	sess := SessionFor(normalNow)
+	put := func(trader, event string, at time.Time) {
+		t.Helper()
+		if err := db.Exec(`INSERT INTO day_plan_alerts(trader_id, level, event_id, kind, title, body, created_at) VALUES (?,'P0',?,'feed-down','t','b',?)`,
+			trader, event, at.Unix()).Error; err != nil {
+			t.Fatal(err)
+		}
+	}
+	// One episode, three traders (the real-data shape): counts ONCE.
+	for _, tr := range []string{"t1", "t2", "t3"} {
+		put(tr, "feeddown:mid", sess.Start.Add(3*time.Hour))
+	}
+	put("t1", "feeddown:before", sess.Start.Add(-time.Second)) // previous session: out
+	put("t1", "feeddown:atstart", sess.Start)                  // Start is inside
+	put("t1", "feeddown:lastsec", sess.End.Add(-time.Second))  // last second: inside
+	put("t1", "feeddown:atend", sess.End)                      // End is the next session's: out
+	put("t1", "feeddown:after", sess.End.Add(time.Hour))       // next session: out
+	// A different kind is not a feed-down episode.
+	if err := db.Exec(`INSERT INTO day_plan_alerts(trader_id, level, event_id, kind, title, body, created_at) VALUES ('t1','P0','other:x','daily-loss','t','b',?)`, sess.Start.Add(time.Hour).Unix()).Error; err != nil {
+		t.Fatal(err)
+	}
+	rep := Collect(Sources{DB: db, Expected: DefaultExpected, FeedDownAfter: feed10m}, sess)
+	if !rep.FeedDownAlerts.OK || rep.FeedDownAlerts.V != 3 {
+		t.Fatalf("FEED DOWN alerts = %+v, want 3 distinct episodes (mid, at-start, last-second)", rep.FeedDownAlerts)
+	}
+}
+
+// D2 (review round 1): since-boot figures are labelled; the refusal table
+// restarts with the process, so a boot after the session start says so.
+func TestBadPrintsAndRefusalsCarryTheSinceBootLabel(t *testing.T) {
+	sess := SessionFor(normalNow)
+	gates := func() (int64, map[string]map[string]int, bool) {
+		return sess.Start.UnixMilli(), map[string]map[string]int{"a": {"session_gate": 9}}, true
+	}
+	mk := func(boot time.Time) string {
+		r := Collect(Sources{BootAt: boot, Gates: gates, Counter: func(n string) Num {
+			if n == CounterBadPrints {
+				return N(7)
+			}
+			return Num{}
+		}}, sess)
+		return strings.Join(r.Lines(), "\n")
+	}
+	// Booted before the session: the table covers it all; bad prints still say
+	// they are a since-boot count.
+	early := mk(sess.Start.Add(-48 * time.Hour))
+	if !strings.Contains(early, "Bad prints 7 (since boot 2026-10-25 17:00 CT)") {
+		t.Fatalf("bad prints unlabelled:\n%s", early)
+	}
+	if !strings.Contains(early, "Refusals repeated >3: session_gate 9") {
+		t.Fatalf("a full-session refusal table must not carry a partial label:\n%s", early)
+	}
+	// A mid-session restart (an Update-button install): the table is partial.
+	mid := mk(sess.Start.Add(5 * time.Hour))
+	if !strings.Contains(mid, "Refusals repeated >3 (since boot 2026-10-27 22:00 CT): session_gate 9") {
+		t.Fatalf("a partial refusal table must say since boot:\n%s", mid)
+	}
+	// Boot time unknown: cannot prove the table is whole, so it says so.
+	if unk := mk(time.Time{}); !strings.Contains(unk, "Refusals repeated >3 (since boot (boot time n/a)): session_gate 9") {
+		t.Fatalf("unknown boot must be labelled:\n%s", unk)
+	}
+}
+
+// N3: a FAILED or OVERDUE restore test is never the first line cut.
+func TestAFailedRestoreTestIsNeverTheLineThatGetsCut(t *testing.T) {
+	rep := fullReport(t)
+	rep.Restore = RestoreResult{Have: true, Status: "FAIL", At: normalNow.Add(-time.Hour), Src: "x.db.gz"}
+	lines := rep.Lines()
+	if !strings.Contains(lines[1], "Backup restore test: FAIL") {
+		t.Fatalf("FAIL must sit right under the header, got %q", lines[1])
+	}
+	rep.Restore = RestoreResult{Have: true, Status: "OK", At: normalNow.Add(-time.Hour)}
+	l := rep.Lines()
+	if !strings.Contains(l[len(l)-1], "Backup restore test: OK") {
+		t.Fatalf("a healthy result stays last, got %q", l[len(l)-1])
+	}
+	rep.Restore = RestoreResult{Have: true, Status: "OK", At: normalNow.Add(-30 * 24 * time.Hour), Overdue: true}
+	if !strings.Contains(rep.Lines()[1], "OVERDUE") {
+		t.Fatalf("OVERDUE must move up: %q", rep.Lines()[1])
+	}
+}
+
+// N4: bars the market printed on a day the calendar calls closed are reported.
+func TestBarsStoredOutsideTheCalendarAreReportedNotAZeroOverZero(t *testing.T) {
+	st, db := newDB(t)
+	sess := SessionFor(normalNow)
+	putBars(t, st, "MNQ", sess, func(int) bool { return false })
+	rep := Collect(Sources{DB: db, Expected: func(time.Time) bool { return false }, FeedDownAfter: feed10m}, sess)
+	if len(rep.Symbols) != 1 || rep.Symbols[0].Outside != 1380 || rep.Symbols[0].Expected != 0 {
+		t.Fatalf("outside-calendar bars not counted: %+v", rep.Symbols)
+	}
+	if !strings.Contains(strings.Join(rep.Lines(), "\n"), "MNQ 1m bars 0/0 stored — 1380 bars stored OUTSIDE the calendar") {
+		t.Fatalf("line lacks the outside count:\n%s", strings.Join(rep.Lines(), "\n"))
+	}
+	if !hasSession(rep) {
+		t.Fatal("a day the market traded must be reported even when the calendar calls it closed")
 	}
 }

@@ -183,6 +183,10 @@ type SymbolRow struct {
 	// (a run that long is, by the bot's own definition, a feed outage).
 	FeedDownMin int
 	Err         string
+	// Outside is the stored 1m bars in the session the calendar does NOT expect
+	// (the market traded on a day the calendar calls closed: reported, never
+	// silently folded into a 0/0).
+	Outside int
 }
 
 // Missing is the expected minutes with no stored bar.
@@ -228,6 +232,8 @@ type Report struct {
 	SymbolsErr string
 
 	FeedDownAlerts Num
+	FeedAfterMin   int         // the FEED DOWN threshold (minutes) the missing-run figure used
+	CalendarOpen   bool        // the calendar says the CME traded at least one minute of the session
 	Holes          *HoleCounts // nil = n/a
 
 	BadPrints, CrossFrame, PausedMin Num
@@ -248,6 +254,7 @@ type Report struct {
 // still goes out.
 func Collect(src Sources, sess Session) Report {
 	r := Report{Session: sess, BootAt: src.BootAt}
+	r.CalendarOpen = calendarOpen(sess, src.Expected)
 	expected := src.Expected
 	if expected == nil {
 		expected = DefaultExpected
@@ -259,6 +266,7 @@ func Collect(src Sources, sess Session) Report {
 		}
 	}
 
+	r.FeedAfterMin = int(feedAfter() / time.Minute)
 	if src.DB == nil {
 		r.SymbolsErr, r.TradesErr = "no database", "no database"
 	} else {
@@ -332,6 +340,9 @@ func accountBars(db *gorm.DB, sym string, sess Session, expected func(time.Time)
 	have := make(map[int64]bool, len(opens))
 	for _, o := range opens {
 		have[o] = true
+		if !expected(time.UnixMilli(o)) {
+			row.Outside++
+		}
 	}
 	thresholdMin := int(feedAfter / time.Minute)
 	run := 0
@@ -483,4 +494,21 @@ func topRefusals(table map[string]map[string]int) []Refusal {
 		out = out[:refusalTopN]
 	}
 	return out
+}
+
+// calendarOpen reports whether the calendar expects at least one 1m bar in the
+// session. "Did the CME have a day" is decided here, from the calendar, never
+// from what the store happens to hold: a store with no bars at all is the day
+// the owner most needs the report.
+func calendarOpen(sess Session, expected func(time.Time) bool) bool {
+	if expected == nil {
+		expected = DefaultExpected
+	}
+	const minute = int64(60_000)
+	for ms := sess.Start.UnixMilli(); ms+minute <= sess.End.UnixMilli(); ms += minute {
+		if expected(time.UnixMilli(ms)) {
+			return true
+		}
+	}
+	return false
 }

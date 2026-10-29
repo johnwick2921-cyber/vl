@@ -56,6 +56,9 @@ func (r Report) Lines() []string {
 				continue
 			}
 			l := fmt.Sprintf("%s 1m bars %d/%d stored", s.Symbol, s.Stored, s.Expected)
+			if s.Outside > 0 {
+				l += fmt.Sprintf(" — %d bars stored OUTSIDE the calendar", s.Outside)
+			}
 			if s.Missing() > 0 {
 				l += fmt.Sprintf(" — MISSING %d in %d run(s), longest %dm", s.Missing(), s.Runs, s.Longest)
 			}
@@ -65,9 +68,10 @@ func (r Report) Lines() []string {
 
 	// FEED DOWN.
 	fd := "FEED DOWN: alerts " + r.FeedDownAlerts.String()
+	minLabel := fmt.Sprintf(" · missing-bar minutes in runs >%dm ", r.FeedAfterMin)
 	switch {
 	case r.SymbolsErr != "" || len(r.Symbols) == 0:
-		fd += " · minutes n/a"
+		fd += minLabel + "n/a"
 	default:
 		var parts []string
 		for _, s := range r.Symbols {
@@ -77,7 +81,7 @@ func (r Report) Lines() []string {
 			}
 			parts = append(parts, fmt.Sprintf("%s %dm", s.Symbol, s.FeedDownMin))
 		}
-		fd += " · minutes " + strings.Join(parts, ", ")
+		fd += minLabel + strings.Join(parts, ", ")
 	}
 	out = append(out, fd)
 
@@ -89,8 +93,10 @@ func (r Report) Lines() []string {
 			bootLabel(r.BootAt), r.Holes.Detected, r.Holes.Filled, r.Holes.Unfilled))
 	}
 
-	out = append(out, fmt.Sprintf("Bad prints %s · cross-frame mismatches %s · paused minutes %s",
-		r.BadPrints, r.CrossFrame, r.PausedMin))
+	// The stale-print quarantine count is a lifetime count since boot, so it
+	// is labelled like the other since-boot counters.
+	out = append(out, fmt.Sprintf("Bad prints %s (%s) · cross-frame mismatches %s · paused minutes %s",
+		r.BadPrints, bootLabel(r.BootAt), r.CrossFrame, r.PausedMin))
 	out = append(out, fmt.Sprintf("Ingest drops %s: final %s, historical %s · clock steps %s back / %s fwd",
 		bootLabel(r.BootAt), r.IngestFinal, r.IngestHist, r.ClockBack, r.ClockFwd))
 
@@ -125,21 +131,33 @@ func (r Report) Lines() []string {
 		}
 	}
 
-	// Refusal classes repeated more than refusalMinRepeats times.
+	// Refusal classes repeated more than refusalMinRepeats times. The gate table
+	// lives in memory and restarts at zero with the process: when the process
+	// started after the session did, the figure is partial and says so.
+	refSince := ""
+	if r.BootAt.IsZero() || r.BootAt.After(r.Session.Start) {
+		refSince = " (" + bootLabel(r.BootAt) + ")"
+	}
 	switch {
 	case !r.RefusalsOK:
 		out = append(out, "Refusals: n/a (gate counters not readable for this session)")
 	case len(r.Refusals) == 0:
-		out = append(out, fmt.Sprintf("Refusals repeated >%d: none", refusalMinRepeats))
+		out = append(out, fmt.Sprintf("Refusals repeated >%d%s: none", refusalMinRepeats, refSince))
 	default:
 		var rs []string
 		for _, f := range r.Refusals {
 			rs = append(rs, fmt.Sprintf("%s %d", f.Gate, f.N))
 		}
-		out = append(out, fmt.Sprintf("Refusals repeated >%d: %s", refusalMinRepeats, strings.Join(rs, ", ")))
+		out = append(out, fmt.Sprintf("Refusals repeated >%d%s: %s", refusalMinRepeats, refSince, strings.Join(rs, ", ")))
 	}
 
-	out = append(out, r.Restore.Line())
+	// A FAILED or OVERDUE restore test is the most serious line: it goes right
+	// under the header, where Parts' cut-from-the-end can never reach it.
+	if r.Restore.Have && (r.Restore.Status != "OK" || r.Restore.Overdue) {
+		out = append(out[:1], append([]string{"⚠ " + r.Restore.Line()}, out[1:]...)...)
+	} else {
+		out = append(out, r.Restore.Line())
+	}
 	return out
 }
 

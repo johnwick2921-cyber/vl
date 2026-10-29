@@ -34,6 +34,8 @@ type Config struct {
 	Push func(key, text string) bool
 	// Now is the clock; nil = time.Now.
 	Now func() time.Time
+	// TickEvery is the loop period; 0 = one minute (tests shorten it).
+	TickEvery time.Duration
 }
 
 // Scheduler sends the nightly report.
@@ -61,14 +63,23 @@ func Start(cfg Config) (stop func()) {
 	quit := make(chan struct{})
 	var once sync.Once
 	safe.GoNamed("datareport-nightly", func() {
-		t := time.NewTicker(tickEvery)
+		every := cfg.TickEvery
+		if every <= 0 {
+			every = tickEvery
+		}
+		t := time.NewTicker(every)
 		defer t.Stop()
 		for {
 			select {
 			case <-quit:
 				return
 			case <-t.C:
-				s.Tick()
+				// safe.GoNamed only LOGS a panic and ends the goroutine: one panic
+				// would silence the nightly report for good. Convert it to an
+				// error and keep ticking.
+				if err := safe.Must(func() { s.Tick() }); err != nil {
+					logger.Errorf("🔥 datareport: tick panicked (the loop continues): %v", err)
+				}
 			}
 		}
 	})
@@ -108,15 +119,16 @@ func (s *Scheduler) Tick() bool {
 	return true
 }
 
-// hasSession reports whether the CME had any expected minutes in the session
-// for at least one symbol, or any trade closed. A report with nothing in it is
+// hasSession reports whether the CME had a session day: the CALENDAR expects a
+// minute (not "a symbol has bars": an empty store is the day the data failed),
+// a bar was stored on a day the calendar calls closed, or any trade closed. A report with nothing in it is
 // not sent; a report whose symbol list failed IS sent (the n/a is the news).
 func hasSession(r Report) bool {
-	if r.SymbolsErr != "" || len(r.Trades) > 0 {
+	if r.SymbolsErr != "" || len(r.Trades) > 0 || r.CalendarOpen {
 		return true
 	}
 	for _, s := range r.Symbols {
-		if s.Expected > 0 {
+		if s.Expected > 0 || s.Outside > 0 {
 			return true
 		}
 	}
