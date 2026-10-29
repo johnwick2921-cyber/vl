@@ -104,11 +104,11 @@ describe('StatusBanner', () => {
       missing_min: 297,
       source: 'audit',
     }
-    it('an unfilled/retired hole shows the window, minutes and the action', async () => {
+    it('an unfilled hole shows the window, minutes and the reload action', async () => {
       vi.spyOn(updatesApi, 'health').mockResolvedValue({
         cme_open: true,
         feed_stale: false,
-        bars_holes: [hole],
+        bars_holes: [{ ...hole, state: 'unfilled' }],
       })
       mount()
       expect(
@@ -117,6 +117,22 @@ describe('StatusBanner', () => {
         'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — NT8: Reload All Historical Data'
       )
       expect(screen.queryByTestId('status-banner')).toBeNull()
+    })
+    // review round 2: a RETIRED hole cannot be refilled by a reload or a
+    // restart, so the banner must NOT tell the owner to reload.
+    it('a retired hole says the bot cannot refill it, not "reload"', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [hole],
+      })
+      mount()
+      const el = await screen.findByTestId('missing-bars-banner')
+      expect(el).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min'
+      )
+      expect(el).toHaveTextContent('the bot cannot refill it')
+      expect(el.textContent).not.toContain('Reload All Historical Data')
     })
     it('a hole still being re-requested (refilling) shows nothing', async () => {
       const spy = vi.spyOn(updatesApi, 'health').mockResolvedValue({
@@ -134,6 +150,7 @@ describe('StatusBanner', () => {
         feed_stale: true,
         feed_stale_secs: 600,
         bars_holes: [
+          { ...hole, state: 'unfilled', missing_min: 40 },
           { ...hole, symbol: 'ES', state: 'unfilled', missing_min: 12 },
           hole,
         ],
@@ -142,10 +159,12 @@ describe('StatusBanner', () => {
       expect(await screen.findByTestId('status-banner')).toHaveTextContent(
         'FEED DOWN 10m'
       )
+      // the biggest ACTIONABLE (unfilled) hole leads, even though the retired
+      // one is bigger; the rest are counted
       expect(
         await screen.findByTestId('missing-bars-banner')
       ).toHaveTextContent(
-        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — NT8: Reload All Historical Data (+1 more)'
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 40 min — NT8: Reload All Historical Data (+2 more)'
       )
     })
     it('an older bot (no bars_holes) renders no hole line', async () => {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"vl/kernel"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
@@ -352,5 +353,86 @@ func TestAuditOffReadsNothing(t *testing.T) {
 	}
 	if !strings.Contains(f.tr.auditBootLine(), "OFF") {
 		t.Fatalf("boot line must say OFF: %s", f.tr.auditBootLine())
+	}
+}
+
+// ── m444 review round 1 ─────────────────────────────────────────────────────
+
+// DEFECT 1: bars_back=2000 on EVERY timeframe reaches ~33 h back for 1m but ~4
+// days for 3m and ~7 days for 5m, so a fresh install / new contract holds 3m/5m
+// FURTHER BACK than 1m. That leading stretch is not a hole. Through the
+// production path (store -> auditPass -> tracker) no hole may open and nothing
+// may be announced.
+// MUTANT (shown RED): put edge(winFromMs, oneMin[0]) back in auditSpans -> the
+// span before the first 1m bar becomes a ~4980-min hole -> RED.
+func TestAuditFreshContractWithHigherFramesFurtherBackOpensNoHole(t *testing.T) {
+	f := newGHFixture(t)
+	now := f.clk.Now() // 10-14 07:49 CT
+	f.putOpen("1m", now.Add(-33*time.Hour), now.Add(-4*time.Minute), store.BarSourceHistorical)
+	f.putOpen("3m", now.Add(-100*time.Hour), now.Add(-4*time.Minute), store.BarSourceHistorical)
+	f.putOpen("5m", now.Add(-168*time.Hour), now.Add(-4*time.Minute), store.BarSourceHistorical)
+	f.tr.auditPass(now)
+	f.tr.tick(now.Add(20 * time.Second))
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("a fresh contract (3m/5m reach back further than 1m) is not a hole: %+v\n%s", hs, f.sink.dump())
+	}
+	if f.sink.count("found by the AUDIT") != 0 {
+		t.Fatalf("nothing may be announced:\n%s", f.sink.dump())
+	}
+	if d := f.delta(); d.Detected != 0 || d.Refused != 0 {
+		t.Fatalf("counters moved on a non-hole: %+v", d)
+	}
+	// the pure detector agrees, on the same shape
+	one := []int64{ct(2026, 10, 13, 12, 0).UnixMilli(), ct(2026, 10, 13, 12, 1).UnixMilli()}
+	evid := map[int64]struct{}{}
+	for m := ct(2026, 10, 10, 12, 0); m.Before(ct(2026, 10, 13, 12, 2)); m = m.Add(time.Minute) {
+		evid[m.UnixMilli()] = struct{}{}
+	}
+	if got := auditSpans(one, evid, ct(2026, 10, 9, 17, 0).UnixMilli(), ct(2026, 10, 13, 12, 2).UnixMilli(), 3, barHoleExpected); len(got) != 0 {
+		t.Fatalf("leading edge must not be judged: %+v", got)
+	}
+}
+
+// DEFECT 2: after an in-process contract roll, t.checked still names the OLD
+// contract. The audit must read only the contract the subscription now names:
+// an old contract's hole is not re-found, re-retired and re-counted every pass.
+// MUTANT (shown RED): remove the CurrentContract guard in the t.checked loop of
+// auditTargetsLocked -> 4 "found by the AUDIT" lines and Detected+4 -> RED.
+func TestAuditDoesNotRescanAContractTheSubscriptionRolledAwayFrom(t *testing.T) {
+	f := newGHFixture(t)
+	f.putOpen("1m", ct(2026, 10, 13, 8, 0), ct(2026, 10, 13, 10, 0), store.BarSourceHistorical)
+	f.putOpen("1m", ct(2026, 10, 13, 12, 0), ct(2026, 10, 14, 7, 46), store.BarSourceHistorical)
+	f.tr.checked[holeKey("MNQ", ghContract)] = ct(2026, 10, 14, 7, 46).UnixMilli()
+	f.addon.send(ntwire.FrameSubscribed, ntwire.SubscribedPayload{Symbol: "MNQ", ResolvedContract: "MNQ 03-27"})
+	waitFor(t, "roll", func() bool { c, _ := f.srv.CurrentContract("MNQ"); return c.Contract == "MNQ 03-27" })
+	now := f.clk.Now()
+	for i := 0; i < 4; i++ {
+		f.tr.auditPass(now.Add(time.Duration(i) * 10 * time.Minute))
+		f.tr.tick(now.Add(time.Duration(i)*10*time.Minute + 20*time.Second))
+	}
+	if n := f.sink.count("found by the AUDIT"); n != 0 {
+		t.Fatalf("the rolled-away contract must not be audited again (%d found lines):\n%s", n, f.sink.dump())
+	}
+	if d := f.delta(); d.Detected != 0 || d.Refused != 0 {
+		t.Fatalf("counters moved for a contract nobody subscribes: %+v", d)
+	}
+	if a := f.tr.snapshotAudit(); a.Audited["MNQ"] == ghContract {
+		t.Fatalf("audit still reads the old contract: %+v", a.Audited)
+	}
+}
+
+// The grace: the audit window ends barGapAuditGrace behind now, so the newest
+// minutes (the persister batches, a bar closes at its minute's end) are never
+// judged. 1m ends 07:40; a 3m bar opened 07:45 proves 07:45-07:47 traded, but
+// only the 07:45 minute is inside the window at now=07:49 (winTo 07:46).
+// MUTANT (shown RED): barGapAuditGrace = 0 -> 07:45-07:47 count (3 min) -> a hole
+// is opened on minutes still arriving -> RED.
+func TestAuditGraceKeepsTheNewestMinutesOutOfTheWindow(t *testing.T) {
+	f := newGHFixture(t)
+	f.putOpen("1m", ct(2026, 10, 14, 6, 0), ct(2026, 10, 14, 7, 41), store.BarSourceHistorical)
+	f.putOpen("3m", ct(2026, 10, 14, 7, 45), ct(2026, 10, 14, 7, 46), store.BarSourceHistorical)
+	f.tr.auditPass(f.clk.Now())
+	if hs := f.holes(); len(hs) != 0 {
+		t.Fatalf("minutes inside the grace must not be judged: %+v\n%s", hs, f.sink.dump())
 	}
 }

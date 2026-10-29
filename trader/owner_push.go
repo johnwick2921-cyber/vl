@@ -134,10 +134,12 @@ func reaskText(d time.Duration) string {
 // the reload instruction names that horizon and the restart that is needed after it.
 func unfilledHoleBody(h ntTrader.UnfilledHole) string {
 	if h.OutsideReplay && h.ReplayDisagreed == 0 {
-		// m444: found by the gap audit (or aged out of the replay): the bot cannot
-		// re-ask for it, so promising a re-request would be a lie.
-		return fmt.Sprintf("MISSING BARS: %s %s, %d min — %s. The %s 1-minute bars for that window are not in the bot's store and are older than NT8's replay window, so the bot cannot re-ask for them: in NinjaTrader open an %s 1-minute chart, right-click, Reload All Historical Data, then restart the bot so it re-reads them.",
-			h.Symbol, h.Window, h.Missing, ntTrader.BarsMissingAction, h.Symbol, h.Symbol)
+		// m444 (review round 2): a RETIRED hole is older than NT8's replay window
+		// (the bot re-reads only the last bars_back=2000 1m bars when it starts),
+		// so neither a reload nor a restart can refill it. Telling the owner to do
+		// either would be a false instruction: say what is true.
+		return fmt.Sprintf("MISSING BARS: %s %s, %d min — the bot's %s 1-minute store has no bars for that window and it is older than NT8's replay window, so the bot cannot refill it: a reload or a restart will NOT bring it back (Reload All Historical Data only repairs the NinjaTrader chart). The 3m/5m bars are not affected by this. It stays listed on the dashboard until it leaves the gap-audit window (7 CME sessions by default).",
+			h.Symbol, h.Window, h.Missing, h.Symbol)
 	}
 	if h.ReplayDisagreed > 0 {
 		// A replay that DISAGREED with live minutes was held out of the store as
@@ -175,9 +177,13 @@ func (at *AutoTrader) checkUnfilledHole(now time.Time) {
 		return
 	}
 	for _, h := range unfilledHolesFn(sym, now) {
+		title := fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol)
+		if h.OutsideReplay && h.ReplayDisagreed == 0 {
+			title = fmt.Sprintf("%s 1m bars missing — cannot be refilled", h.Symbol)
+		}
 		at.emitAlert("P1", alertKindBarHoleUnfilled,
 			fmt.Sprintf("barhole-unfilled:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
-			fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol),
+			title,
 			unfilledHoleBody(h))
 		if h.SlowSpent && !h.OutsideReplay {
 			at.emitAlert("P1", alertKindBarHoleUnfilled,

@@ -35,8 +35,10 @@ import (
 //     It does not wait for a live bar.
 //  2. CROSS-FRAME: an open minute covered by a stored 3m/5m bar proves the
 //     market traded. A stretch with no 1m bar where 3m/5m exist is a hole even
-//     when there is no stored 1m bar on one side of it (a window edge, or no
-//     1m at all): the shape of 10-26.
+//     when there is no stored 1m bar after it (the window's trailing edge, or
+//     no 1m at all). The leading edge is not judged: a fresh install or a new
+//     contract stores 3m/5m further back than 1m (bars_back=2000 on every
+//     frame), which is not a hole.
 //  3. Every gap goes into the EXISTING barHoleTracker (re-request schedule, fill
 //     measurement, UNFILLED, owner push, /api/health). There is no second
 //     tracker. A hole already tracked (any state) is never re-added, so an
@@ -156,9 +158,9 @@ func evidenceMinutes(width time.Duration, opens []int64, into map[int64]struct{}
 // minutes a stored 3m/5m bar proves traded. It returns, ascending:
 //   - every stretch between two stored 1m bars holding ≥ minGap OPEN missing
 //     minutes (findBarHoles — the live detector's rule, unchanged), and
-//   - the CROSS-FRAME stretches: in the window's edges (before the first / after
-//     the last stored 1m bar, or the whole window when there is none) the
-//     open minutes a 3m/5m bar proves traded, when ≥ minGap of them have no 1m.
+//   - the CROSS-FRAME stretch: after the last stored 1m bar (or the whole window
+//     when there is none) the open minutes a 3m/5m bar proves traded, when
+//     ≥ minGap of them have no 1m. The leading edge is NOT judged (see below).
 func auditSpans(oneMin []int64, evid map[int64]struct{}, winFromMs, winToMs int64, minGap int, isOpen func(time.Time) bool) []barHoleSpan {
 	const minute = int64(60_000)
 	spans := findBarHoles(oneMin, minGap, isOpen)
@@ -196,10 +198,16 @@ func auditSpans(oneMin []int64, evid map[int64]struct{}, winFromMs, winToMs int6
 			spans = append(spans, barHoleSpan{FromMs: first, ToMs: last + minute, OpenMissing: missing})
 		}
 	}
+	// Only the TRAILING edge (or the whole window when there is no 1m bar at all)
+	// is judged against higher-frame evidence. The LEADING edge (before the first
+	// stored 1m bar) is deliberately NOT: the bot subscribes with bars_back=2000
+	// on every timeframe, which reaches ~33 h back for 1m but ~4 days for 3m and
+	// ~7 days for 5m, so on a fresh install or a new contract 3m/5m always start
+	// earlier than 1m and a leading-edge rule would call that a hole (m444 review
+	// round 1, defect 1). A hole with 1m on both sides is findBarHoles' job.
 	if len(oneMin) == 0 {
 		edge(winFromMs, winToMs)
 	} else {
-		edge(winFromMs, oneMin[0])
 		edge(oneMin[len(oneMin)-1]+minute, winToMs)
 	}
 	sort.Slice(spans, func(i, j int) bool { return spans[i].FromMs < spans[j].FromMs })
@@ -233,9 +241,21 @@ func (t *barHoleTracker) auditTargetsLocked(w holeWire) []auditTarget {
 		}
 	}
 	for k := range t.checked {
-		if i := strings.Index(k, "|"); i > 0 {
-			add(k[:i], k[i+1:])
+		i := strings.Index(k, "|")
+		if i <= 0 {
+			continue
 		}
+		sym, contract := k[:i], k[i+1:]
+		// a (symbol, contract) the subscription has ROLLED AWAY from is never
+		// audited again: t.checked is not pruned on a roll, and an old contract's
+		// holes would be re-found (and re-retired) on every pass, forever
+		// (m444 review round 1, defect 2).
+		if w != nil {
+			if f, ok := w.CurrentContract(strings.ToUpper(strings.TrimSpace(sym))); ok && f.Contract != "" && f.Contract != strings.TrimSpace(contract) {
+				continue
+			}
+		}
+		add(sym, contract)
 	}
 	sort.Slice(out, func(i, j int) bool {
 		return holeKey(out[i].Symbol, out[i].Contract) < holeKey(out[j].Symbol, out[j].Contract)
@@ -383,7 +403,7 @@ func (t *barHoleTracker) applyAuditLocked(tg auditTarget, spans []barHoleSpan, w
 		added++
 		t.audit.found++
 		telemetry.IncBarsHoleDetected()
-		t.say("WARN", fmt.Sprintf("🕳 bars HOLE found by the AUDIT: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); found from the store, not from a live arrival; NT8 history re-request scheduled at %s after now if inside NT8's replay window, never while the feed is down. %s",
+		t.say("WARN", fmt.Sprintf("🕳 bars HOLE found by the AUDIT: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); found from the store, not from a live arrival; NT8 history re-request scheduled at %s after now if inside NT8's replay window, never while the feed is down. If NT8 still has none after the re-requests: %s (a hole older than NT8's replay window is RETIRED and listed instead — no re-request or reload can refill it)",
 			tg.Symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), tg.Contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText(), BarsMissingAction))
 	}
 	// reconcile: a tracked hole the audit can fully judge and no longer finds is

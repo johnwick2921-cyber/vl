@@ -421,6 +421,14 @@ export const planStrings = {
     zh: '缺少K线: {symbol} {window}, {min} 分钟 — NT8: Reload All Historical Data{more}',
     id: 'BAR HILANG: {symbol} {window}, {min} mnt — NT8: Reload All Historical Data{more}',
   },
+  // m444 review round 2: a RETIRED hole is older than NT8's replay window, so
+  // the bot cannot refill it and a reload/restart will not bring it back. The
+  // banner says that instead of the (false) reload instruction.
+  missingBarsRetiredBanner: {
+    en: "MISSING BARS: {symbol} {window}, {min} min — older than NT8's replay window, the bot cannot refill it; it clears when it leaves the gap-audit window{more}",
+    zh: '缺少K线: {symbol} {window}, {min} 分钟 — 超出 NT8 回放范围，机器人无法补回；离开缺口审计窗口后自动清除{more}',
+    id: 'BAR HILANG: {symbol} {window}, {min} mnt — lebih lama dari jendela replay NT8, bot tidak dapat mengisinya; hilang saat keluar dari jendela audit{more}',
+  },
   olderUnacked: {
     en: '{n} older unacked',
     zh: '{n} 条较早未确认',

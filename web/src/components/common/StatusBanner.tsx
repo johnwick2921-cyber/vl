@@ -43,15 +43,24 @@ export function StatusBanner({ language }: { language: Language }) {
   )
   let holeText = ''
   if (holes.length > 0) {
-    const h = holes.reduce((a, b) =>
+    // an unfilled hole is the one the owner can act on (reload NT8 history), so
+    // it leads; a retired one (older than NT8's replay) cannot be refilled by
+    // anyone and gets its own, honest wording
+    const actionable = holes.filter((h) => h.state === 'unfilled')
+    const pool = actionable.length > 0 ? actionable : holes
+    const h = pool.reduce((a, b) =>
       (b.missing_min ?? 0) > (a.missing_min ?? 0) ? b : a
     )
-    holeText = tp('missingBarsBanner', language, {
-      symbol: h.symbol,
-      window: h.window ?? '',
-      min: String(h.missing_min ?? '?'),
-      more: holes.length > 1 ? ` (+${holes.length - 1} more)` : '',
-    }).trim()
+    holeText = tp(
+      h.state === 'retired' ? 'missingBarsRetiredBanner' : 'missingBarsBanner',
+      language,
+      {
+        symbol: h.symbol,
+        window: h.window ?? '',
+        min: String(h.missing_min ?? '?'),
+        more: holes.length > 1 ? ` (+${holes.length - 1} more)` : '',
+      }
+    ).trim()
   }
   if (!text && !holeText) return null
 

@@ -274,20 +274,34 @@ func TestUnfilledHoleScaleStoryDoesNotSendTheOwnerToReload(t *testing.T) {
 	}
 }
 
-// m444 — a hole the gap audit found beyond NT8's replay window (RETIRED): the
-// bot cannot re-ask, so the owner's message must not promise a re-request, and
-// it carries the SAME action sentence as the dashboard banner (one constant).
-// MUTANT (shown RED): drop the OutsideReplay branch from unfilledHoleBody ->
-// the body promises "The bot re-asks NT8 ..." -> RED.
-func TestAuditFoundOutsideReplayHoleSaysTheActionAndDoesNotPromiseAReask(t *testing.T) {
+// m444 (review round 2) — a RETIRED hole is older than NT8's replay window
+// (the bot re-reads only the last 2000 1m bars on start): neither a reload nor a
+// restart can refill it, so the owner's message must NOT instruct either, must
+// not promise a re-request, and must say when it clears.
+// MUTANT (shown RED): put the old text back ("... open an MNQ 1-minute chart,
+// right-click, Reload All Historical Data, then restart the bot ...") -> RED.
+func TestRetiredHoleBodyDoesNotTellTheOwnerToReloadOrRestart(t *testing.T) {
 	h := ntTrader.UnfilledHole{Symbol: "MNQ", Window: "10-26 17:00–21:57 CT", Missing: 297, OutsideReplay: true,
 		ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour}
 	body := unfilledHoleBody(h)
-	if !strings.HasPrefix(body, "MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — "+ntTrader.BarsMissingAction+".") {
-		t.Fatalf("body must open with the banner sentence: %q", body)
+	if !strings.HasPrefix(body, "MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — ") {
+		t.Fatalf("body must open with the banner's MISSING BARS line: %q", body)
 	}
-	if strings.Contains(body, "re-asks NT8") || !strings.Contains(body, "cannot re-ask") {
-		t.Fatalf("an outside-replay hole must not promise a re-request: %q", body)
+	for _, bad := range []string{"then restart the bot", "right-click", "re-asks NT8", "in NinjaTrader open"} {
+		if strings.Contains(body, bad) {
+			t.Fatalf("a retired hole must not carry %q: %q", bad, body)
+		}
+	}
+	for _, want := range []string{"cannot refill it", "will NOT bring it back", "leaves the gap-audit window"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body must say %q: %q", want, body)
+		}
+	}
+	// the actionable (unfilled, inside the replay) body keeps the exact action
+	// sentence the dashboard banner carries
+	act := unfilledHoleBody(ntTrader.UnfilledHole{Symbol: "MNQ", Window: "w CT", Missing: 9, ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour})
+	if !strings.Contains(act, "— "+ntTrader.BarsMissingAction+".") {
+		t.Fatalf("an actionable hole must name %q: %q", ntTrader.BarsMissingAction, act)
 	}
 	if ntTrader.BarsMissingAction != "NT8: Reload All Historical Data" {
 		t.Fatalf("the action sentence drifted from the web banner's literal: %q", ntTrader.BarsMissingAction)
