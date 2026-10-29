@@ -174,3 +174,19 @@ func TestFillGuardReplayedFillFrameIsOneFillWhateverTheClock(t *testing.T) {
 		t.Fatalf("a replayed fill frame is one fill: %+v", s)
 	}
 }
+
+// m447 round 3 note (mutant MQ): noteFill runs on the exit-RECORDING path with
+// the owner-alert callback inside it. A panic there (ownerpush, the log, the ring
+// read) must not cost the exit record. Driven through the real recordCloseOrdered.
+func TestFillGuardPanickingAlertNeverCostsTheExitRecord(t *testing.T) {
+	f := newFillGuardFx(t)
+	f.g.SetAlert(func(string, string) { panic("alert sender exploded") })
+	f.openRow(t, "sig-x2")
+	f.tr.recordCloseOrdered("t1", "ex", "ninjatrader", f.st, ntwire.PositionClosePayload{
+		SignalID: "sig-x2", Symbol: "MNQ", PositionSide: "long", Account: "Sim101", Quantity: 1,
+		ExitPrice: 29100, ExitReason: "sl", ExitTime: f.at(), Seq: 8,
+	})
+	if open, _ := f.st.Position().GetOpenPositions("t1"); len(open) != 0 {
+		t.Fatalf("a panic in the fill_price check must not stop the exit from recording, %d still open", len(open))
+	}
+}

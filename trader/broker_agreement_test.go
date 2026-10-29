@@ -411,7 +411,7 @@ func agreeInputs() agreementInputs {
 		Held: map[string]float64{}, HeldQty: map[string]float64{}, PosJudgeable: true,
 		Book: ntwire.NewOrderSnapshotCache(), Interval: 30 * time.Second, BookAge: 5 * time.Second, BookKnown: true,
 		OwnerOf:        func(string, string) (bool, error) { return true, nil },
-		LedgerExplains: func(string, string) bool { return false },
+		LedgerExplains: func(string, string) (bool, error) { return false, nil },
 		ArmFor:         func(string) (*store.ArmedOrderDB, error) { return nil, gorm.ErrRecordNotFound },
 		PositionKnows:  func(string) (bool, error) { return false, nil },
 	}
@@ -460,6 +460,13 @@ func TestBrokerAgreementFailedLookupsFailClosed(t *testing.T) {
 		in.BookOrders = agreeLiveEntryOrder(t)
 		in.PositionKnows = func(string) (bool, error) { return false, boom }
 		mustCannotJudge(t, in, "position lookup for broker order 2cba226c-ecad-470a-90ad-b2313529c6d2 failed: db down")
+	})
+	t.Run("ledger-explains read (D1, mutants MN+MO)", func(t *testing.T) {
+		in := agreeInputs()
+		in.Held, in.HeldQty = map[string]float64{"MNQ|SHORT": 1}, map[string]float64{"MNQ|SHORT": 1}
+		in.OwnerOf = func(string, string) (bool, error) { return false, nil }
+		in.LedgerExplains = func(string, string) (bool, error) { return true, boom }
+		mustCannotJudge(t, in, "ledger read for NT8 MNQ SHORT failed: db down")
 	})
 	// The control: a ledger row that is merely NOT FOUND is the normal "the bot
 	// never wrote this order down" and must reach the position lookup, not be
@@ -535,4 +542,62 @@ func TestBrokerAgreementPendingEntryExcusesOnlyItsOwnSide(t *testing.T) {
 		f.book(`[]`, later.Add(-5*time.Second))
 		mustBlock(t, f, later, "NT8 holds MNQ SHORT qty 1")
 	})
+}
+
+// m447 round 3 D1 (mutant MN, fail-OPEN): reconcile's ledgerExplainsPosition
+// answers (reason, TRUE) when a ledger read errors - "never flatten on a read
+// error". broker_agreement reused it as "the ledger explains this NT8 position",
+// so an unreadable Picture ledger turned a STANDING pos:untracked block into
+// CLEAR and new entries resumed against a position the bot had no row for.
+// Through the production call site: datatruth.Evaluate, a real AutoTrader, a
+// real store whose picture_htf_opportunities table is then renamed (renamed,
+// never dropped, in the throwaway test DB). Only the ledger-explains read
+// touches that table, so no earlier read can mask the branch.
+func TestBrokerAgreementUnreadableLedgerKeepsAStandingBlock(t *testing.T) {
+	f := newAgreeFx(t)
+	f.positions(ntwire.OpenPosition{Symbol: "MNQ", Side: "SHORT", Quantity: 1, AvgPrice: 29310})
+	mustClear(t, f, agreeT0, "first sighting is inside the settle window")
+	later := agreeT0.Add(agreementSettle + time.Second)
+	f.book(`[]`, later.Add(-5*time.Second))
+	mustBlock(t, f, later, "NT8 holds MNQ SHORT qty 1", "no open row")
+
+	if _, err := f.st.DB().Exec("ALTER TABLE picture_htf_opportunities RENAME TO picture_htf_opportunities_hidden"); err != nil {
+		t.Fatal(err)
+	}
+	// The block STANDS - and it now says why: the check cannot judge.
+	mustBlock(t, f, later.Add(time.Second), "cannot judge (fail closed)", "ledger read for NT8 MNQ SHORT failed", "picture recoverable")
+}
+
+// The same fail-closed answer for every read ledgerExplainsPositionChecked makes,
+// asked directly: reconcile's wrapper still says "explained" (its own rule), the
+// checked variant says the read FAILED. The armed_orders / trader_positions
+// renames cannot be driven through Evaluate (brokerAgreementInputs reads those
+// first), so each is pinned here.
+func TestLedgerExplainsPositionCheckedReportsUnreadable(t *testing.T) {
+	for _, tc := range []struct{ table, what string }{
+		{"armed_orders", "armed non-terminal"},
+		{"picture_htf_opportunities", "picture recoverable"},
+		{"trader_positions", "open positions"},
+	} {
+		t.Run(tc.table, func(t *testing.T) {
+			f := newAgreeFx(t)
+			if _, _, err := f.at.ledgerExplainsPositionChecked("MNQ", "short", agreeT0); err != nil {
+				t.Fatalf("healthy ledger must read cleanly: %v", err)
+			}
+			if _, err := f.st.DB().Exec("ALTER TABLE " + tc.table + " RENAME TO " + tc.table + "_hidden"); err != nil {
+				t.Fatal(err)
+			}
+			reason, explained, err := f.at.ledgerExplainsPositionChecked("MNQ", "short", agreeT0)
+			if err == nil || !strings.Contains(err.Error(), tc.what) {
+				t.Fatalf("an unreadable %s must surface as an error naming %q, got err=%v", tc.table, tc.what, err)
+			}
+			if !explained || !strings.Contains(reason, "ledger unreadable") {
+				t.Fatalf("reconcile's contract (an unreadable ledger EXPLAINS, never flatten) must be unchanged: %q %v", reason, explained)
+			}
+			// reconcile's own wrapper: unchanged.
+			if r, ok := f.at.ledgerExplainsPosition("MNQ", "short", agreeT0); !ok || !strings.Contains(r, "ledger unreadable") {
+				t.Fatalf("ledgerExplainsPosition changed behaviour: %q %v", r, ok)
+			}
+		})
+	}
 }

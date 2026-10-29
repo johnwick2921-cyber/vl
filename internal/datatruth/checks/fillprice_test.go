@@ -368,3 +368,68 @@ func TestFillGuardSymbolSpellingsShareOneStrikeCount(t *testing.T) {
 		t.Fatalf("acknowledged: %+v", rs)
 	}
 }
+
+// m447 round 3 D2 (mutant MP, fail-OPEN): a far fill that belongs to an OLDER
+// session - a late or retried exit receipt, a replay after a reconnect or a
+// restart - replaced the whole strikeState (it was keyed by the fill's session),
+// and Check then read the new, empty state as "next session: clear". Two far fills
+// had paused entries; one late third from yesterday lifted the pause. Through the
+// production call site: datatruth.Evaluate over the registered check.
+func TestFillGuardLateFillFromAnOlderSessionDoesNotLiftAStandingPause(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	sessionOf := func(ts time.Time) string { return ts.UTC().Format("2006-01-02") }
+	g, alerts := newTestGuard(sessionOf)
+	RegisterFillPrice(g)
+	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	m := day.UnixMilli() / minuteMs * minuteMs
+	ringToday := ringOf(bar(m, 29000, 29005, true), bar(m+minuteMs, 29000, 29005, true))
+	yesterday := day.Add(-24 * time.Hour)
+	my := yesterday.UnixMilli() / minuteMs * minuteMs
+	ringYesterday := ringOf(bar(my, 28000, 28005, true), bar(my+minuteMs, 28000, 28005, true))
+	far := func(id string, atMs int64, px float64) FillObs {
+		return FillObs{ID: id, Symbol: "MNQ", Kind: "exit", Side: "SELL", Price: px, AtMs: atMs, Tick: 0.25}
+	}
+
+	g.Record(far("t1", m+5_000, 29100), ringToday, day)
+	g.Record(far("t2", m+20_000, 29100), ringToday, day)
+	if b, _ := datatruth.Evaluate("MNQ", day); !b {
+		t.Fatal("two far fills this session must pause entries")
+	}
+
+	// The late receipt: a far fill that printed YESTERDAY, judged now.
+	g.Record(far("old1", my+5_000, 28100), ringYesterday, day.Add(time.Minute))
+	b, rs := datatruth.Evaluate("MNQ", day.Add(time.Minute))
+	if !b || len(rs) != 1 || !strings.Contains(rs[0].Detail, "t1,t2") || strings.Contains(rs[0].Detail, "old1") {
+		t.Fatalf("FAIL-OPEN: a late far fill from the previous session must not touch the standing pause (and must not join it): blocked=%v %+v", b, rs)
+	}
+	if st := g.Stats(); st.Far != 3 || len(*alerts) != 3 {
+		t.Fatalf("the late far print is still counted and alerted exactly once: %+v alerts=%v", st, *alerts)
+	}
+	if last := (*alerts)[2]; last != "data_truth_fill_price_far|MNQ|old1" {
+		t.Fatalf("the late fill alerts under its own id: %q", last)
+	}
+
+	// An acknowledged pause stays acknowledged: a late old fill is not a new strike.
+	if !g.Ack("MNQ") {
+		t.Fatal("Ack must lift the standing pause")
+	}
+	g.Record(far("old2", my+10_000, 28100), ringYesterday, day.Add(2*time.Minute))
+	if b, rs := datatruth.Evaluate("MNQ", day.Add(2*time.Minute)); b {
+		t.Fatalf("a late old-session fill must not re-pause an acknowledged session: %+v", rs)
+	}
+
+	// A fill of the NEXT session still starts fresh strikes (the order is by the
+	// fill's time, so the fix does not freeze the state on the first session).
+	tomorrow := day.Add(24 * time.Hour)
+	mt := tomorrow.UnixMilli() / minuteMs * minuteMs
+	ringTomorrow := ringOf(bar(mt, 30000, 30005, true), bar(mt+minuteMs, 30000, 30005, true))
+	g.Record(far("n1", mt+5_000, 30100), ringTomorrow, tomorrow)
+	if b, _ := datatruth.Evaluate("MNQ", tomorrow); b {
+		t.Fatal("one far fill in the new session is a single strike, not a pause")
+	}
+	g.Record(far("n2", mt+6_000, 30100), ringTomorrow, tomorrow)
+	if b, _ := datatruth.Evaluate("MNQ", tomorrow); !b {
+		t.Fatal("two far fills in the new session pause it")
+	}
+}

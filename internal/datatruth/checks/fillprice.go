@@ -207,6 +207,7 @@ type RingFn func(symbol string) ([]Bar, error)
 
 type strikeState struct {
 	session string
+	lastMs  int64 // newest fill time (ms) the state holds: orders sessions without parsing their keys
 	ids     []string
 	details []string
 	acked   bool
@@ -352,24 +353,43 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 	sess := g.session(time.UnixMilli(o.AtMs))
 	key := StrikeKey(o.Symbol)
 	st := g.strikes[key]
-	if st == nil || st.session != sess {
-		st = &strikeState{session: sess}
-		g.strikes[key] = st
+	// A far fill that belongs to an OLDER session than the one the state holds (a
+	// late or retried exit receipt, a replay after a reconnect or restart) must
+	// not touch the current session's strikes: replacing the state would wipe the
+	// standing pause and Check would read the new, empty state as clear (m447
+	// round 3 D2 - fail-OPEN). Older is decided by the fill's own time, not by
+	// comparing session keys. Such a fill is still counted and alerted - it is a
+	// real far print - but its session is not the one entries trade in.
+	late := st != nil && st.session != sess && o.AtMs < st.lastMs
+	n, strikes := 0, g.p.Strikes
+	if !late {
+		if st == nil || st.session != sess {
+			st = &strikeState{session: sess}
+			g.strikes[key] = st
+		}
+		// An owner acknowledgement spends the strikes seen so far, not the future: a
+		// far fill AFTER the ack is "the next far fill" the contract promises to pause
+		// on (m447 review defect 2 - acked was never cleared, so no later far fill
+		// ever paused again).
+		st.acked = false
+		if o.AtMs > st.lastMs {
+			st.lastMs = o.AtMs
+		}
+		st.ids = append(st.ids, o.ID)
+		st.details = append(st.details, v.Detail)
+		n = len(st.ids)
 	}
-	// An owner acknowledgement spends the strikes seen so far, not the future: a
-	// far fill AFTER the ack is "the next far fill" the contract promises to pause
-	// on (m447 review defect 2 - acked was never cleared, so no later far fill
-	// ever paused again).
-	st.acked = false
-	st.ids = append(st.ids, o.ID)
-	st.details = append(st.details, v.Detail)
-	n := len(st.ids)
 	alert := g.alert
-	strikes := g.p.Strikes
 	g.mu.Unlock()
 
-	text := fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s: %s. Either the bars lost this print or the recorded fill price is wrong. Far fills this session for %s: %d of %d (the %s pauses new entries until you acknowledge or the next session).",
-		o.Symbol, o.Kind, o.Side, v.Detail, o.Symbol, n, strikes, ordinal(strikes))
+	var text string
+	if late {
+		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s: %s. This fill belongs to an EARLIER session than the one now trading (a late or replayed receipt), so it does not count toward this session's pause; the recorded price is still wrong - check the bars or the fill record.",
+			o.Symbol, o.Kind, o.Side, v.Detail)
+	} else {
+		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s: %s. Either the bars lost this print or the recorded fill price is wrong. Far fills this session for %s: %d of %d (the %s pauses new entries until you acknowledge or the next session).",
+			o.Symbol, o.Kind, o.Side, v.Detail, o.Symbol, n, strikes, ordinal(strikes))
+	}
 	logger.Warnf("datatruth: %s [fill id %s]", text, o.ID)
 	if alert != nil {
 		alert(fmt.Sprintf("data_truth_fill_price_far|%s|%s", o.Symbol, o.ID), text)

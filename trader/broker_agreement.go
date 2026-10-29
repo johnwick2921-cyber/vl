@@ -176,7 +176,7 @@ type agreementInputs struct {
 	// ledgerExplainsPosition (W0 (c)). armFor / positionKnows resolve a book
 	// order name to the ledger / a position row.
 	OwnerOf        func(sym, side string) (bool, error)
-	LedgerExplains func(sym, side string) bool
+	LedgerExplains func(sym, side string) (bool, error)
 	ArmFor         func(signal string) (*store.ArmedOrderDB, error)
 	PositionKnows  func(signal string) (bool, error)
 
@@ -262,7 +262,14 @@ func judgeAgreement(in agreementInputs) ([]disagreement, error) {
 		if owned {
 			continue
 		}
-		if in.LedgerExplains(sym, side) {
+		explained, lerr := in.LedgerExplains(sym, side)
+		if lerr != nil {
+			// reconcile's "never flatten on a read error" answers (reason, true) for an
+			// unreadable ledger; reusing that as "explained" would CLEAR a standing
+			// block on a store error. Here an unreadable ledger is "cannot judge".
+			return nil, cannotJudge("ledger read for NT8 %s %s failed: %v", sym, side, lerr)
+		}
+		if explained {
 			continue // an armed / Picture fill in flight: the ledger explains it
 		}
 		if pendingEntryOnSide(in.PendingSides, side) {
@@ -439,9 +446,9 @@ func (at *AutoTrader) brokerAgreementInputs(now time.Time) (agreementInputs, err
 		}
 		return owner != nil, nil
 	}
-	in.LedgerExplains = func(sym, side string) bool {
-		_, explained := at.ledgerExplainsPosition(sym, positionSide(side), now)
-		return explained
+	in.LedgerExplains = func(sym, side string) (bool, error) {
+		_, explained, err := at.ledgerExplainsPositionChecked(sym, positionSide(side), now)
+		return explained, err
 	}
 	in.ArmFor = func(signal string) (*store.ArmedOrderDB, error) { return st.ArmedOrders().FindBySignal(at.id, signal) }
 	in.PositionKnows = func(signal string) (bool, error) { return st.Position().EntryOrderIDInUse(signal) }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"vl/internal/datatruth/checks"
+	"vl/logger"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 )
@@ -51,6 +52,15 @@ func (t *TCPTrader) noteFill(kind, id, symbol, side string, price float64, atMs 
 	if t == nil || price <= 0 || id == "" {
 		return
 	}
+	// noteFill runs on the exit-RECORDING path (recordClose, recordCloseOrdered): a
+	// panic in the check (the alert callback, the ring read, the log) must never
+	// cost the exit record (m447 round 3 note; the reconcile observer recovers the
+	// same way).
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("fill_price: noteFill panicked (%v) - the fill is recorded, the check skipped it [fill id %s]", r, id)
+		}
+	}()
 	sym := strings.TrimSpace(symbol)
 	if sym == "" {
 		sym = t.symbol
