@@ -249,7 +249,7 @@ func WireBarPersistence(st *store.Store) {
 					// best-known boot line describing a ring the bot no longer
 					// had — two lines about the same instant, and the older,
 					// more-read one wrong.
-					rehydrateRingFromStore(bh, server, time.Now())
+					rehydrateBootRing(bh, server, time.Now()) // #55 m449: also opens the data-truth seed edge
 					// ROLL WAVE (D5) — when the AddOn names a NEW contract, the
 					// server has already purged the ring; reseed it from the
 					// store for the new contract only, and say so ONCE where

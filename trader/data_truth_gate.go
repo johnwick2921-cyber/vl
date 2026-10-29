@@ -50,12 +50,17 @@ import (
 // clear. A friend instance runs the same gate (the push is a no-op without a
 // bound chat).
 
-// dataTruthBootGrace is how long the trader waits for ntTrader.WireDataTruthChecks
-// (it runs when the wire server is up) before asking Evaluate - and so before
-// the required-but-unwired stubs may alert. During the grace the verdict is
-// BLOCKED with a "starting" reason and nothing is evaluated, pushed or counted
-// as an episode.
-const dataTruthBootGrace = 5 * time.Minute
+// dataTruthBootGrace is how long the trader waits for the data-truth boot to
+// FINISH - ntTrader.WireDataTruthChecks (when the wire server is up) AND the boot
+// seed (the AddOn's replay waited for, the ring rehydrated: DataTruthSeeded) -
+// before asking Evaluate. During the grace the verdict is BLOCKED with a
+// "starting" reason and nothing is evaluated, pushed or counted as an episode.
+// 10 minutes covers the worst honest boot: up to 90 s for the wire server, then
+// up to 20 x 15 s of replay retries, then the rehydrate. A boot that has NOT
+// seeded by then is judged anyway - and loudly: the checks name what is missing
+// (a replay that never lands is a pause the owner is told about, never a silent
+// wait, and never an entry on an unjudged ring).
+const dataTruthBootGrace = 10 * time.Minute
 
 var (
 	dataTruthWired   atomic.Bool  // wireDataTruthBoot ran: the gate applies to NT8 traders
@@ -63,9 +68,20 @@ var (
 	dataTruthOnce    sync.Once
 )
 
-// dataTruthReadyFn is the registration edge (ntTrader.DataTruthReady); a var so
-// the pins can drive both sides of it.
-var dataTruthReadyFn = ntTrader.DataTruthReady
+// dataTruthReadyFn is the judge-ready edge (ntTrader.DataTruthJudgeable): the
+// checks are registered AND the boot seed has landed (#55 m449 - registration
+// alone is a few seconds before the replay, and an empty ring that has not
+// arrived yet is not lost data). A var so the pins can drive both sides of it.
+var dataTruthReadyFn = ntTrader.DataTruthJudgeable
+
+// dataTruthStarting is the quiet boot wait: not judge-ready yet, and still inside
+// the grace. Entries are BLOCKED while it holds; nothing is evaluated.
+func dataTruthStarting(now time.Time) bool {
+	if dataTruthReadyFn() {
+		return false
+	}
+	return now.Sub(time.UnixMilli(dataTruthWiredAt.Load())) < dataTruthBootGrace
+}
 
 // dataTruthRequired lists every check this process must have, by datatruth name.
 // A name nobody registers is a stub that BLOCKS.
@@ -109,13 +125,13 @@ func (at *AutoTrader) dataTruthVerdictAt(openMin int, now time.Time) dataVerdict
 	if !at.dataTruthApplies() {
 		return dataVerdict{}
 	}
-	if !dataTruthReadyFn() {
-		if wired := time.UnixMilli(dataTruthWiredAt.Load()); now.Sub(wired) < dataTruthBootGrace {
-			return dataVerdict{Blocked: true, Class: integrityClassDataTruth,
-				Reason: "the data-truth checks are still starting (waiting for the NT8 bar feed) - new entries wait for them (fail-closed)"}
-		}
-		// past the grace the stubs speak: Evaluate names every required check that never landed
+	if dataTruthStarting(now) {
+		return dataVerdict{Blocked: true, Class: integrityClassDataTruth,
+			Reason: "the data-truth checks are still starting (waiting for the NT8 history replay to land in the bar cache) - new entries wait for them (fail-closed)"}
 	}
+	// past the grace the checks speak: Evaluate names every required check that
+	// never landed and judges whatever the ring holds (a replay that never came
+	// shows as the lost data it is)
 	return dataTruthReasons(at.futuresSymbol(), openMin, now)
 }
 
@@ -146,7 +162,7 @@ const integrityClassDataTruth = "data_truth"
 // alerted when it happens rather than when the next entry asks. It evaluates the
 // widest window (the swing check included) and acts on nothing.
 func (at *AutoTrader) dataTruthBeat(now time.Time) {
-	if !at.dataTruthApplies() || !dataTruthReadyFn() {
+	if !at.dataTruthApplies() || dataTruthStarting(now) {
 		return
 	}
 	dataTruthReasons(at.futuresSymbol(), ntTrader.IntegritySwingOpenMin, now)

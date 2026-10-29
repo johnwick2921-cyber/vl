@@ -1,6 +1,7 @@
 package ninjatrader
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -104,5 +105,68 @@ func TestStoreSwingInputsReadsTheCurrentContractOneAndFiveMinute(t *testing.T) {
 	}
 	if _, _, _, err := storeSwingInputs(nil)("MNQ", time.Now()); err == nil {
 		t.Fatal("no store must be an ERROR (a check that cannot judge fails closed), not an empty read")
+	}
+}
+
+// ── #55 m449 — the seed edge (ready at WIRE time was before the replay landed) ──
+//
+// MUTANT S3: rehydrateBootRing without MarkDataTruthSeeded -> RED.
+// MUTANT S4: bar_persist_wire.go's boot goroutine calls rehydrateRingFromStore
+// directly (the pre-fix line) -> the source pin below RED.
+
+func TestWireDataTruthChecksIsRegisteredButNotYetJudgeable(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	srv := ntwire.NewTCPServer(nil)
+	WireDataTruthChecks(bh, srv)
+	if !DataTruthReady() {
+		t.Fatal("registered")
+	}
+	if DataTruthJudgeable() || DataTruthSeeded() {
+		t.Fatal("registration alone must NOT make the checks judgeable: the replay has not landed")
+	}
+}
+
+func TestRehydrateBootRingOpensTheSeedEdge(t *testing.T) {
+	t.Cleanup(SetDataTruthReadyForTest(true))
+	t.Cleanup(SetDataTruthSeededForTest(false))
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	srv := ntwire.NewTCPServer(nil)
+	if DataTruthJudgeable() {
+		t.Fatal("precondition: not judgeable before the seed")
+	}
+	rehydrateBootRing(bh, srv, time.Now())
+	if !DataTruthSeeded() || !DataTruthJudgeable() {
+		t.Fatal("the boot seed step must open the edge, however the rehydrate ended")
+	}
+}
+
+// The boot goroutine's closure cannot be driven from a test (it polls the
+// singleton server), so its one line is pinned at the source: the seed edge is
+// opened by rehydrateBootRing, and nothing in that file calls the bare
+// rehydrate at the boot position.
+func TestBootGoroutineSeedsThroughRehydrateBootRing(t *testing.T) {
+	b, err := os.ReadFile("bar_persist_wire.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	src := string(b)
+	if !strings.Contains(src, "rehydrateBootRing(bh, server, time.Now())") {
+		t.Fatal("the boot goroutine must seed through rehydrateBootRing (opens the data-truth seed edge)")
+	}
+	if strings.Contains(src, "\t\t\t\t\trehydrateRingFromStore(bh, server, time.Now())\n") {
+		t.Fatal("the boot goroutine calls the bare rehydrate again: the seed edge would never open")
 	}
 }

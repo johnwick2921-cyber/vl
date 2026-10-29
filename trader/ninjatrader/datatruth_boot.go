@@ -28,16 +28,57 @@ import (
 
 var (
 	dataTruthReady  atomic.Bool
+	dataTruthSeeded atomic.Bool // the boot replay + store rehydrate have landed in the ring
 	dataTruthWiring atomic.Bool // the once-guard
 )
 
 // DataTruthReady is true once WireDataTruthChecks has registered the checks.
 func DataTruthReady() bool { return dataTruthReady.Load() }
 
-// SetDataTruthReadyForTest forces the edge. TEST-ONLY.
+// DataTruthSeeded is true once the boot seed has LANDED: the AddOn's
+// bars_historical replay was waited for and the ring rehydrated from the store
+// (rehydrateBootRing). #55 m449: the checks are registered a few seconds after
+// the wire server exists - BEFORE any of that - so judging at the registration
+// edge read an empty, not-yet-arrived ring as lost data: contract_roll,
+// indicator_lookback (113 of 113 slots missing) and session eVWAP each opened an
+// episode and pushed the owner on EVERY restart (live 10-29 15:35:53: the AddOn
+// matched at :55, the ring was rehydrated at 15:36:08). The data was not lost, it
+// had not arrived.
+func DataTruthSeeded() bool { return dataTruthSeeded.Load() }
+
+// DataTruthJudgeable is the edge the trader-side gate asks: the checks are
+// registered AND the ring they read has been seeded. Until then entries wait
+// (blocked, fail-closed, quietly - no episode, no push); past the trader's
+// boot grace the checks speak anyway, so a replay that never lands is still a
+// loud, named pause rather than a silent one.
+func DataTruthJudgeable() bool { return dataTruthReady.Load() && dataTruthSeeded.Load() }
+
+// MarkDataTruthSeeded records that the boot seed step has finished, however it
+// ended (a replay that never came is judged - loudly - by the checks, not
+// waited on forever).
+func MarkDataTruthSeeded() { dataTruthSeeded.Store(true) }
+
+// SetDataTruthReadyForTest forces BOTH edges (registered and seeded), so a test
+// that drives the checks does not also have to drive the boot sequence; the
+// pins for the seed edge use SetDataTruthSeededForTest. TEST-ONLY.
 func SetDataTruthReadyForTest(v bool) (restore func()) {
 	prev := dataTruthReady.Swap(v)
-	return func() { dataTruthReady.Store(prev) }
+	prevSeed := dataTruthSeeded.Swap(v)
+	return func() { dataTruthReady.Store(prev); dataTruthSeeded.Store(prevSeed) }
+}
+
+// SetDataTruthSeededForTest forces only the seed edge. TEST-ONLY.
+func SetDataTruthSeededForTest(v bool) (restore func()) {
+	prev := dataTruthSeeded.Swap(v)
+	return func() { dataTruthSeeded.Store(prev) }
+}
+
+// rehydrateBootRing is the boot seed step the nt8-bar-backfill goroutine runs
+// once the AddOn replay has been waited for: rehydrate the ring from the store,
+// then - and only then - let the data-truth checks judge it.
+func rehydrateBootRing(bh *store.BarHistoryStore, server *ntwire.TCPServer, now time.Time) {
+	rehydrateRingFromStore(bh, server, now)
+	MarkDataTruthSeeded()
 }
 
 // The swing / levels / session checks read the STORE (the 2500-bar ring is
