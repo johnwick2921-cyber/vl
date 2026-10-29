@@ -60,7 +60,27 @@ var (
 	ingestDropCur                atomic.Int64 // ingest channel drop-current events
 	ingestDropHist               atomic.Int64 // historical batch drops
 	ingestLastSum                atomic.Int64
+
+	// m448 (nightly data report): the ingest counters above are SWAPPED to zero
+	// once a minute by ingestDropSummary, so none of them can answer "how many
+	// final frames were lost today". These are the cumulative twins: each
+	// summary folds what it swapped out into them, and IngestDropTotals adds
+	// the not-yet-swapped remainder, all under ingestTotMu so a reader never
+	// sees a value that is between the Swap and the fold. Counters record,
+	// never infer (class 35): nothing here is zeroed, ever.
+	ingestTotMu          sync.Mutex
+	ingestFinalDropTotal int64
+	ingestHistDropTotal  int64
 )
+
+// IngestDropTotals returns the since-boot totals of ingest frames lost that
+// carried a FINAL bar (the unavoidable loss, must stay 0) and of historical
+// batches dropped. Exact: summarised drops plus the live remainder.
+func IngestDropTotals() (finalDropped, historicalDropped int64) {
+	ingestTotMu.Lock()
+	defer ingestTotMu.Unlock()
+	return ingestFinalDropTotal + ingestFinalDropped.Load(), ingestHistDropTotal + ingestDropHist.Load()
+}
 
 type persistMsg struct {
 	historical bool
@@ -394,11 +414,15 @@ func ingestDropSummary() {
 		return
 	}
 	if ingestLastSum.CompareAndSwap(ingestLastSum.Load(), now) {
+		ingestTotMu.Lock()
 		old := ingestDropOld.Swap(0)
 		fKept := ingestFinalKept.Swap(0)
 		fLost := ingestFinalDropped.Swap(0)
 		cur := ingestDropCur.Swap(0)
 		hist := ingestDropHist.Swap(0)
+		ingestFinalDropTotal += fLost
+		ingestHistDropTotal += hist
+		ingestTotMu.Unlock()
 		if old == 0 && cur == 0 && hist == 0 && fLost == 0 {
 			// Zero-drop minute: silent (the peak keeps sampling for the next
 			// non-zero minute; no line).

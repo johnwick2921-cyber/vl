@@ -878,6 +878,10 @@ func main() {
 		// instance never gets here (and ownerpush refuses it independently).
 		ownerpush.Start(func(text string) { telegram.NotifyOwner(st, text) })
 		logger.Info("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole) -> the owner's bound Telegram chat · outbound only · ≤8/hour · deduped per episode · no-op when no chat is bound")
+		// m448 (release #54): the nightly data report rides the same owner-push
+		// channel, once per CME session day after the 16:00 CT close.
+		startNightlyDataReport(cfg.DBPath, st)
+		logger.Info("📊 nightly data report: once per CME session day at 16:10 CT -> the owner's bound Telegram chat · bars expected vs stored, holes, feed down, drops, trades+P&L, refusals, backup restore test · every figure read, n/a when unknown")
 	}
 
 	// Wait for interrupt signal
