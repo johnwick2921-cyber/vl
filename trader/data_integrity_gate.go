@@ -255,6 +255,71 @@ type integrityEpisode struct {
 	key          string
 	unknownSince time.Time
 	pushed       bool
+	scope        string // pauseScopeAll | pauseScopeSwing — what the standing pause really refuses
+}
+
+// What a standing pause refuses (review round 6, D-new1). A MENTOR trader's two
+// windows are different readers: blocked in the intraday window = every mentor
+// setup is refused; blocked ONLY in the swing window = SWING4H alone. The log,
+// the owner push and the resume text used to say "every path" whatever the
+// window — on the deploy scenario (10-26 hole, swing window only) they claimed
+// a pause of intraday setups that trade normally.
+const (
+	pauseScopeAll   = "all"
+	pauseScopeSwing = "swing"
+)
+
+// pauseWording is the owner-facing text of one pause, derived from its scope
+// and its governing verdict so the WARN log, the push and the scope-change
+// lines can never disagree.
+type pauseWording struct {
+	refuses  string // what is refused
+	withdraw string // what is cancelled
+	tail     string // when it ends
+}
+
+func integrityPauseWording(scope string, gov dataVerdict) pauseWording {
+	w := pauseWording{
+		refuses:  "NEW entries refused on every path",
+		withdraw: "resting entry orders are withdrawn",
+	}
+	if scope == pauseScopeSwing {
+		w.refuses = "NEW SWING4H entries refused (intraday mentor setups trade normally)"
+		w.withdraw = "only resting SWING4H entry orders are withdrawn"
+	}
+	// the end of the pause is the governing hole's own clear time, or an import /
+	// fill — never a promise the data does not keep
+	if gov.Class == ntTrader.IntegrityClassHole {
+		var latest *ntTrader.IntegrityHole
+		complete := len(gov.Holes) > 0
+		for i := range gov.Holes {
+			h := &gov.Holes[i]
+			if h.ClearsAtMs <= 0 {
+				complete = false
+				continue
+			}
+			if latest == nil || h.ClearsAtMs > latest.ClearsAtMs {
+				latest = h
+			}
+		}
+		if complete && latest != nil {
+			w.tail = "Clears by itself " + latest.ClearsAtLabel() + ", or sooner when the missing minutes are filled in (imported)."
+		} else {
+			w.tail = "Clears when the missing minutes are measured filled in (imported), or the hole leaves the data window."
+		}
+	} else {
+		w.tail = "Resumes once the missing-data check has judged the window."
+	}
+	return w
+}
+
+// integrityPauseScope — what the standing pause refuses for this trader, given
+// the verdict of each window in integrityWindows() order.
+func (at *AutoTrader) integrityPauseScope(blocked []bool) string {
+	if at.mentorEnabled() && len(blocked) > 1 && !blocked[0] {
+		return pauseScopeSwing
+	}
+	return pauseScopeAll
 }
 
 // integrityWindows is every window this trader's entries read.
@@ -274,9 +339,14 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	if !at.integrityApplies() {
 		return
 	}
-	var worst dataVerdict
+	var worst, gov dataVerdict
+	var blockedAt []bool
 	for _, w := range at.integrityWindows() {
 		v := at.dataIntegrityVerdictAt(w, now, false)
+		blockedAt = append(blockedAt, v.Blocked)
+		if v.Blocked && !gov.Blocked {
+			gov = v // the first blocked window governs the scope and its end
+		}
 		if v.Blocked && (!worst.Blocked || (v.Class == ntTrader.IntegrityClassHole && worst.Class != ntTrader.IntegrityClassHole)) {
 			worst = v
 		}
@@ -286,6 +356,8 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if worst.Blocked {
+		scope := at.integrityPauseScope(blockedAt)
+		wd := integrityPauseWording(scope, gov)
 		// The unknown-detector grace is measured in OPEN time only (review round
 		// 2, reviewer B probe): a restart over the weekend sits unknown through
 		// the whole closure — nothing arrives to judge — and counting that would
@@ -300,22 +372,42 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 			e.unknownSince = time.Time{}
 		}
 		if !e.active {
-			e.active, e.since, e.class = true, now, worst.Class
+			e.active, e.since, e.class, e.scope = true, now, worst.Class, scope
 			e.key = fmt.Sprintf("data-paused|%s|%d", at.id, now.Unix())
 			e.pushed = false
 			telemetry.IncDataIntegrityEpisode(worst.Class)
-			at.logWarnf("⏸ TRADING PAUSED (%s): %s — NEW entries refused on every path; resting entry orders are withdrawn; exits, stops, BE/trail moves, closes and protection are unaffected. Resumes by itself once the bars are measured filled.", worst.Class, worst.Reason)
+			at.logWarnf("⏸ TRADING PAUSED (%s): %s — %s; %s; exits, stops, BE/trail moves, closes and protection are unaffected. %s", worst.Class, worst.Reason, wd.refuses, wd.withdraw, wd.tail)
 		} else if worst.Class == ntTrader.IntegrityClassHole && e.class != worst.Class {
 			e.class = worst.Class // unknown -> a named hole: the owner message below now has a window to give
 			telemetry.IncDataIntegrityEpisode(worst.Class)
+		}
+		if e.active && e.scope != scope {
+			// the standing pause WIDENED or NARROWED (a window cleared or a new
+			// hole reached the intraday window): say what it refuses NOW — the
+			// owner was told the earlier scope, and a widening pause is news
+			prev := e.scope
+			e.scope = scope
+			if scope == pauseScopeAll {
+				at.logWarnf("⏸ TRADING PAUSE WIDENED (%s -> every entry path): %s — %s; %s. %s", prev, worst.Reason, wd.refuses, wd.withdraw, wd.tail)
+				if e.pushed && kernel.IsCMEOpen(now) {
+					ownerpush.Push(e.key+"|widen", fmt.Sprintf("⏸ vl TRADING PAUSE WIDENED — %s: %s. %s; %s; exits, stops and protection are unaffected. %s",
+						at.ownerPushTraderLabel(), worst.Reason, wd.refuses, wd.withdraw, wd.tail))
+				}
+			} else {
+				at.logInfof("▶ TRADING PAUSE NARROWED (every entry path -> SWING4H only): intraday mentor setups trade normally again. %s", wd.tail)
+				if e.pushed && kernel.IsCMEOpen(now) {
+					ownerpush.Push(e.key+"|narrow", fmt.Sprintf("▶ vl TRADING PAUSE NARROWED — %s: intraday mentor setups trade normally again; %s. %s",
+						at.ownerPushTraderLabel(), wd.refuses, wd.tail))
+				}
+			}
 		}
 		if !e.pushed && kernel.IsCMEOpen(now) {
 			ready := worst.Class == ntTrader.IntegrityClassHole ||
 				(worst.Class == ntTrader.IntegrityClassUnknown && now.Sub(e.unknownSince) >= integrityUnknownGrace)
 			if ready {
 				e.pushed = true
-				ownerpush.Push(e.key, fmt.Sprintf("⏸ vl TRADING PAUSED — %s: %s. New entries are blocked and resting entry orders are being cancelled; exits, stops and protection are unaffected.",
-					at.ownerPushTraderLabel(), worst.Reason))
+				ownerpush.Push(e.key, fmt.Sprintf("⏸ vl TRADING PAUSED — %s: %s. %s; %s; exits, stops and protection are unaffected. %s",
+					at.ownerPushTraderLabel(), worst.Reason, wd.refuses, wd.withdraw, wd.tail))
 			}
 		}
 		return

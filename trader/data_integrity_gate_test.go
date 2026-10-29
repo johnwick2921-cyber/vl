@@ -51,6 +51,7 @@ type intFake struct {
 	class          string
 	asked          []int
 	askedKeyLevels []bool
+	clearsAtMs     int64 // when set, the fake hole carries this clear-by-itself instant
 }
 
 func holeVerdictFor(class string) ntTrader.IntegrityVerdict {
@@ -78,7 +79,11 @@ func armIntegrityGate(t *testing.T, f *intFake) {
 		if f.blockedFor != nil && !f.blockedFor(openMin) {
 			return ntTrader.IntegrityVerdict{Armed: true}
 		}
-		return holeVerdictFor(f.class)
+		v := holeVerdictFor(f.class)
+		if f.clearsAtMs > 0 && len(v.Holes) > 0 {
+			v.Holes[0].ClearsAtMs = f.clearsAtMs
+		}
+		return v
 	}
 	t.Cleanup(func() { integrityVerdictFn = prev })
 }
