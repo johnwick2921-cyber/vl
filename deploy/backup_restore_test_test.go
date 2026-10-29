@@ -190,6 +190,18 @@ func TestRestoreTestPassesAGoodBackupAndWritesOneResultLine(t *testing.T) {
 	}
 }
 
+// The bar-age bound is measured against the BACKUP's own time. A month-old
+// backup whose newest bar is 3 h older than ITSELF is healthy; judged against
+// "now" it would read as a 700 h gap and fail every restore test of an old file.
+func TestRestoreTestMeasuresBarAgeAgainstTheBackupNotNow(t *testing.T) {
+	e := newRestoreEnv(t)
+	e.addBackup(t, "vl-2026-09-29_050015.db.gz", 3, 40, 3*time.Hour, time.Now().Add(-30*24*time.Hour))
+	out, rc := e.run(t)
+	if rc != 0 || !strings.Contains(out, "RESTORE-TEST OK") || !strings.Contains(out, "bars_newest_age_h=3.0") {
+		t.Fatalf("a 30-day-old backup with fresh-for-its-time bars must pass: rc=%d out=%q", rc, out)
+	}
+}
+
 func TestRestoreTestTestsTheNEWESTBackup(t *testing.T) {
 	e := newRestoreEnv(t)
 	now := time.Now()
@@ -239,6 +251,33 @@ func TestRestoreTestFailsCorruptTruncatedStaleAndEmptyBackups(t *testing.T) {
 			os.WriteFile(tmp, b, 0o644)
 			gzipTo(t, tmp, filepath.Join(e.backups, "vl-2026-10-29_050015.db.gz"))
 		}, ""},
+		{"integrity-check-only", func(t *testing.T, e restoreEnv) {
+			// Every table the script READS is fine (no malformed page, row counts and
+			// bar age are healthy): only PRAGMA integrity_check can see the index that
+			// no longer matches its table. A
+			// script that dropped the pragma and relied on its queries erroring would
+			// pass this backup.
+			tmp := filepath.Join(t.TempDir(), "x.db")
+			mkRestoreDB(t, tmp, 3, 40, now.Add(-time.Hour).UnixMilli())
+			out, err := exec.Command("python3", "-c", `import sqlite3,sys
+c=sqlite3.connect(sys.argv[1])
+c.execute('CREATE TABLE ix(a INTEGER, b INTEGER)')
+c.execute('CREATE INDEX ix_b ON ix(b)')
+c.executemany('INSERT INTO ix VALUES (?,?)',[(i,1000-i) for i in range(200)])
+c.commit()
+c.execute('PRAGMA writable_schema=ON')
+c.execute("UPDATE sqlite_master SET sql='CREATE INDEX ix_b ON ix(a)' WHERE name='ix_b'")
+c.commit(); c.close()
+c=sqlite3.connect(sys.argv[1])
+print(c.execute('PRAGMA integrity_check').fetchall())`, tmp).CombinedOutput()
+			if err != nil || strings.Contains(string(out), "[('ok',)]") {
+				t.Fatalf("fixture premise: the index must be inconsistent with its table: %v %s", err, out)
+			}
+			gzipTo(t, tmp, filepath.Join(e.backups, "vl-2026-10-29_050015.db.gz"))
+			if err := os.Chtimes(filepath.Join(e.backups, "vl-2026-10-29_050015.db.gz"), now, now); err != nil {
+				t.Fatal(err)
+			}
+		}, "integrity="},
 		{"no-positions", func(t *testing.T, e restoreEnv) {
 			e.addBackup(t, "vl-2026-10-29_050015.db.gz", 3, 0, time.Hour, now)
 		}, "no-positions"},
