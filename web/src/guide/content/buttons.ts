@@ -77,6 +77,10 @@ export const buttons: GuideSection = {
           body: 'Tap Emergency Flat → the modal names the trader it acts on → tap Confirm. There is no single-click flatten — that is the point. To stop new entries as well, Pause the trader.',
         },
         {
+          title: 'Read the result colour',
+          body: "Green means the bot sent the flatten to NinjaTrader (the server said triggered: true). RED 'NOT SENT: <reason>' means it did NOT go out — NinjaTrader disconnected, an expired login (HTTP 401), a server error, or a network error — so the position is still open: fix the reason (log in again, reconnect NT8) or flatten by hand in NinjaTrader. Green is a send, not a fill: NT8 confirms each close separately.",
+        },
+        {
           title: 'What it will NOT do',
           body: "It never deletes the plan, never touches the strategy, never changes the day's P&L or trade records, and never touches another trader's account, position or orders. It does clear this trader's daily-loss latch (a still-standing loss re-trips it), and it does not pause entries. It DOES cancel this trader's resting MNQ entry orders on its own account (NT8's Flatten cancels every working order for the contract) — to stop the bot placing new ones, Pause the trader.",
         },

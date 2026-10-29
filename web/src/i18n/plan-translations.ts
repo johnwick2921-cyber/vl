@@ -413,6 +413,12 @@ export const planStrings = {
     zh: 'FEED DOWN {age} — 请连接 NinjaTrader 的数据连接',
     id: 'FEED DOWN {age} — hubungkan koneksi data NinjaTrader',
   },
+  // m443/#39: the health poll itself failed — the page cannot see the bot.
+  botUnreachableBanner: {
+    en: 'BOT UNREACHABLE — this page cannot reach the bot; what you see may be stale',
+    zh: '机器人无法连接 — 此页面无法访问机器人，所示内容可能已过期',
+    id: 'BOT TIDAK DAPAT DIJANGKAU — halaman ini tidak bisa menghubungi bot; tampilan bisa usang',
+  },
   olderUnacked: {
     en: '{n} older unacked',
     zh: '{n} 条较早未确认',

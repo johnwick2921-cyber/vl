@@ -389,6 +389,10 @@ export const status: GuideSection = {
       kind: 'p',
       text: 'The red alert-center banner shows only an unacknowledged P0 raised in the current CME session-day (the day rolls at 17:00 CT). The one exception is a standing condition that clears itself (a dead-man reconcile block): it stays in the banner past the 17:00 CT roll until it is acknowledged or the condition ends. Older unacknowledged P0 rows of any other kind collapse to a small "N older unacked" link that opens the feed, and the informational kinds "close" and "fill" never light the banner even if an old row says P0. Opening the page no longer re-toasts the existing backlog: the toast baseline is taken only after the first real alert response, and again when you switch trader. A thin line under the header says "CME CLOSED — reopens <day HH:MM CT>" when the market is closed, or "FEED DOWN <age> — connect NinjaTrader\'s data connection" when the market is open and the NT8 feed is stale (the line wraps instead of cutting the instruction off); an older bot that does not report those two health fields shows no line at all — it never guesses.',
     },
+    {
+      kind: 'p',
+      text: 'The thin line at the very top of the page also says BOT UNREACHABLE (red) the moment a poll of the bot fails — the bot is stopped, restarting, or the connection is down — and clears by itself on the next good poll. Before this release a dead bot showed no line at all, so a page frozen on old numbers looked alive. While it is up, treat everything on the page as possibly stale.',
+    },
     { kind: 'h', text: 'PROCESS::RESPONDING (dashboard header)' },
     {
       kind: 'p',
