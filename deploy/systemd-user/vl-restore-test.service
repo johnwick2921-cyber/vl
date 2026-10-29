@@ -1,0 +1,14 @@
+[Unit]
+Description=vl weekly backup restore test (m448) — proves the newest DB backup restores
+Documentation=file://%h/vl/deploy/RESTORE.md
+
+[Service]
+Type=oneshot
+# Exit 0 = the newest backup decompressed, passed PRAGMA integrity_check and the
+# row-count / bar-age sanity. Exit 1 = it did NOT (the unit shows as failed, and
+# the one result line + a result file in ~/vl-backups/restore-test say why).
+ExecStart=%h/vl/deploy/backup-restore-test.sh
+# Never contend with the live bot: an integrity_check over a multi-GB copy is
+# minutes of disk. Lowest CPU and idle IO class.
+Nice=15
+IOSchedulingClass=idle
