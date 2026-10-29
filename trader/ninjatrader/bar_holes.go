@@ -174,16 +174,7 @@ func barHoleInSendWindow(now time.Time) bool {
 // closed Monday — reads open by the instant alone. Found by this wave's own
 // holiday pin: Good Friday 2026-04-03 came out as a 420-minute "hole"
 // (Thu 04-02 17:00–24:00). A minute is expected only when BOTH say it trades.
-func barHoleExpected(m time.Time) bool {
-	if !kernel.IsCMEOpen(m) {
-		return false
-	}
-	day, err := time.ParseInLocation("2006-01-02", kernel.CMETradingDateKey(m), kernel.CTLocation())
-	if err != nil {
-		return true // the instant said open; an unreadable key never invents a closure
-	}
-	return kernel.SessionStateAt(day.Add(12*time.Hour)).Class != kernel.SessionClosed
-}
+func barHoleExpected(m time.Time) bool { return kernel.IsCMETradingExpected(m) }
 
 // barHoleSpan is one stretch with no stored bar between two stored bars.
 type barHoleSpan struct {

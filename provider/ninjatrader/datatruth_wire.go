@@ -239,9 +239,13 @@ func (d *DataTruthSources) Partner(symbol string) string {
 	return ""
 }
 
-// Open is the CME calendar.
+// Open is the ONE expected-trading calendar the m445 hole tracker also uses
+// (kernel.IsCMETradingExpected: the weekly schedule AND a trading date the
+// calendar does not call closed). #55 m449: it was kernel.IsCMEOpen alone, which
+// reads the evening before Thanksgiving / Christmas / New Year's Day as open and
+// so demanded bars nobody expects.
 func (d *DataTruthSources) Open() checks.OpenFn {
-	return func(ms int64) bool { return kernel.IsCMEOpen(time.UnixMilli(ms)) }
+	return func(ms int64) bool { return kernel.IsCMETradingExpected(time.UnixMilli(ms)) }
 }
 
 // Contract gathers the roll facts for the symbol.
@@ -385,7 +389,7 @@ func (d *DataTruthSources) VerifyWhole() checks.WholeFn {
 			from = (e.first + step - 1) / step * step // the older slots left the ring
 		}
 		for t := from / step * step; t <= to; t += step {
-			if !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			if !kernel.IsCMETradingExpected(time.UnixMilli(t)) {
 				continue
 			}
 			if !verifyIn(e, t, kind) {
