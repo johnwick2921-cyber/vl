@@ -18,8 +18,7 @@ import (
 //
 // MUTANTS (RED in the report):
 //   B1  WireDataTruthChecks never calls ntwire.WireDataTruth       -> registration pin RED
-//   B2  dataTruthReady is set BEFORE the registration              -> (ordering) ready pin RED
-//   B3  storeSwingInputs reads the wrong timeframe                  -> store-reader pin RED
+//   B2  storeSwingInputs reads the wrong timeframe                  -> store-reader pin RED
 
 func dtStore(t *testing.T) *store.Store {
 	t.Helper()

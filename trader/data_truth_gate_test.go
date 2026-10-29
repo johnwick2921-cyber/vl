@@ -235,12 +235,16 @@ func TestDataTruthIsEntryOnly(t *testing.T) {
 	}
 	// the m445 beat and withdraw decision are NOT driven by a data-truth block
 	// (it pauses NEW entries only; resting orders are left alone)
-	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	armIntegrityGate(t, &intFake{blockedFor: func(int) bool { return false }}) // m445 clear: only data truth blocks
 	if reason, _ := at.integrityWithdrawReason(time.Now()); reason != "" {
 		t.Fatalf("a data-truth block must not withdraw resting entries: %q", reason)
 	}
+	at.dataIntegrityBeat(time.Now())
+	if at.integrity.active {
+		t.Fatal("a data-truth block must not start the m445 pause episode (it has its own episode and alert)")
+	}
 	if got := f.calls.Load(); got != 0 {
-		t.Fatalf("the m445 withdraw decision must not evaluate data-truth checks (evaluated %d)", got)
+		t.Fatalf("the m445 withdraw / beat decisions must not evaluate data-truth checks (evaluated %d)", got)
 	}
 }
 
