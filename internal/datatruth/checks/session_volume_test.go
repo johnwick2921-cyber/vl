@@ -1,6 +1,7 @@
 package checks
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -227,3 +228,187 @@ func TestSessionLevelsCheckThroughEvaluate(t *testing.T) {
 type calendarSrc struct{ fakeSrc }
 
 func (calendarSrc) Open() OpenFn { return cmeOpenForTest }
+
+// extendFlat appends flat synthetic bars (price = the last close, 100 per 1m, each
+// 5m carrying exactly the sum of its five 1m) for every open minute after the
+// last stored bar, up to the last minute that closed before `until`. The
+// fixtures end at the session boundary; this stands in for the live session
+// that follows, so a pin can read the PRIOR session at a later wall-clock time
+// without that time looking like a silent store. The extension is consistent
+// between the frames by construction: it can never be the cause of a pause.
+func extendFlat(m1, m5 []Bar, until time.Time) (a, b []Bar) {
+	a = append([]Bar(nil), m1...)
+	b = append([]Bar(nil), m5...)
+	px := m1[len(m1)-1].C
+	lim := until.UnixMilli() / minuteMs * minuteMs // minutes strictly before lim are closed
+	for t := m1[len(m1)-1].T + minuteMs; t < lim; t += minuteMs {
+		if cmeOpenForTest(t) {
+			a = append(a, Bar{T: t, O: px, H: px, L: px, C: px, V: 100})
+		}
+	}
+	for t := m5[len(m5)-1].T + 5*minuteMs; t+5*minuteMs <= lim; t += 5 * minuteMs {
+		open := true
+		for k := int64(0); k < 5; k++ {
+			open = open && cmeOpenForTest(t+k*minuteMs)
+		}
+		if open {
+			b = append(b, Bar{T: t, O: px, H: px, L: px, C: px, V: 500})
+		}
+	}
+	return a, b
+}
+
+// sessionReasons runs the registered session check the way production does
+// (datatruth.Evaluate over RegisterAll with a store reader) and returns its
+// reason, if any.
+func sessionReasons(t *testing.T, m1, m5 []Bar, now time.Time) (datatruth.Reason, bool) {
+	t.Helper()
+	datatruth.Reset()
+	defer datatruth.Reset()
+	RegisterAll(Config{Src: calendarSrc{}, Loc: chicago, Unrequired: []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels},
+		SwingInputs: func(string, time.Time) ([]Bar, []Bar, float64, error) { return m1, m5, 0, nil }})
+	_, rs := datatruth.Evaluate("MNQ", now)
+	for _, r := range rs {
+		if r.Check == CheckLookbackSession {
+			return r, true
+		}
+	}
+	return datatruth.Reason{}, false
+}
+
+// TestSessionLevelsPriorSessionThroughEvaluate (review f7a round 3, D-A): the
+// PRIOR-session path (JudgeSessionLevels step 3: pdVWAP, POC/VAH/VAL, nPOC)
+// through the production call site, on the committed 10-26 fixture. Next
+// session's first half hour and its 08:00 CT (the whole day the 10-26 profile
+// is read as the prior one): the pause NAMES "pdVWAP/profile of session 10-26"
+// and the profile. The counterpart reads the clean 10-21 session the same way
+// and must not pause at all. Mutant: replace the step-3 add(...) with `_ = from`
+// and the first half of this test goes red (no committed pin did before).
+func TestSessionLevelsPriorSessionThroughEvaluate(t *testing.T) {
+	sess := loadSessions(t)
+	h1, h5 := sess["2026-10-26"].bars()
+	c1, c5 := sess["2026-10-21"].bars()
+	for _, now := range []time.Time{ctTime(2026, 10, 27, 17, 30), ctTime(2026, 10, 28, 8, 0)} {
+		m1, m5 := extendFlat(h1, h5, now)
+		r, got := sessionReasons(t, m1, m5, now)
+		if !got {
+			t.Fatalf("%s: the 10-26 session read as the prior session (1m hole 17:02-22:37 CT) did not pause", now.Format("01-02 15:04"))
+		}
+		t.Logf("%s: %s", now.Format("01-02 15:04"), r.Detail)
+		for _, want := range []string{"pdVWAP/profile of session 10-26", "POC", "VAH", "VAL"} {
+			if !strings.Contains(r.Detail, want) {
+				t.Errorf("%s: the pause must name %q: %s", now.Format("01-02 15:04"), want, r.Detail)
+			}
+		}
+	}
+	for _, now := range []time.Time{ctTime(2026, 10, 22, 17, 30), ctTime(2026, 10, 23, 8, 0)} {
+		m1, m5 := extendFlat(c1, c5, now)
+		if r, got := sessionReasons(t, m1, m5, now); got {
+			t.Errorf("%s: the clean 10-21 session read as the prior session paused: %s", now.Format("01-02 15:04"), r.Detail)
+		}
+	}
+}
+
+// TestSessionLevelsVerdictFollowsTheStore (review f7a round 3, D-B): the
+// per-symbol-minute verdict cache must follow the store, in BOTH directions,
+// minute by minute. Real 10-22 session; the "hole" store is the same session
+// with the 1m of 17:02-22:37 CT removed (the 10-26 shape; the 5m keeps the
+// span). clean -> hole -> clean -> hole on consecutive minutes: the verdict is
+// F T F T, the store is read once per minute, not once ever. Mutant: key the
+// cache on minute 0 and the first verdict is frozen (a clean one never pauses
+// again = fail open; a blocked one never clears).
+func TestSessionLevelsVerdictFollowsTheStore(t *testing.T) {
+	s := loadSessions(t)["2026-10-22"]
+	clean1, clean5 := s.bars()
+	var hole1 []Bar
+	for _, b := range clean1 {
+		if b.T < s.Start+2*minuteMs || b.T >= s.Start+5*3600_000+37*minuteMs {
+			hole1 = append(hole1, b)
+		}
+	}
+	reads := 0
+	useHole := false
+	datatruth.Reset()
+	defer datatruth.Reset()
+	RegisterAll(Config{Src: calendarSrc{}, Loc: chicago, Unrequired: []string{CheckIngestLoss, CheckLookbackSwing4h, CheckLookbackLevels},
+		SwingInputs: func(string, time.Time) ([]Bar, []Bar, float64, error) {
+			reads++
+			if useHole {
+				return hole1, clean5, 0, nil
+			}
+			return clean1, clean5, 0, nil
+		}})
+	t0 := ctTime(2026, 10, 22, 23, 0)
+	want := []bool{false, true, false, true}
+	for i, w := range want {
+		useHole = w
+		got := false
+		for k := 0; k < 3; k++ { // three Evaluates inside the minute
+			_, rs := datatruth.Evaluate("MNQ", t0.Add(time.Duration(i)*time.Minute+time.Duration(k)*time.Second))
+			got = false
+			for _, r := range rs {
+				if r.Check == CheckLookbackSession {
+					got = true
+				}
+			}
+		}
+		if got != w {
+			t.Fatalf("minute %d: blocked=%v, want %v (the cached verdict did not follow the store)", i, got, w)
+		}
+		if reads != i+1 {
+			t.Fatalf("minute %d: %d store reads so far, want %d (one per minute)", i, reads, i+1)
+		}
+	}
+}
+
+// TestSessionLevelsFailClosedOnSilentStore (review f7a round 3, D-C): an OPEN
+// market with an empty or stale store read (err == nil) cannot be judged, so it
+// blocks - this check alone, with the swing and levels checks not registered
+// (the December roll: the store is keyed to a contract with no rows yet).
+// Calendar silence is not data loss: the CME break, the weekend and the first
+// ten minutes after a reopen never pause. Mutant: drop the storeSilent guard
+// and the empty/stale cases read clean.
+func TestSessionLevelsFailClosedOnSilentStore(t *testing.T) {
+	wed := ctTime(2026, 10, 28, 10, 0)
+	if b, why := JudgeSessionLevels(nil, nil, wed, chicago, cmeOpenForTest, DefaultSessionVol(), 2.0); !b || !strings.Contains(why, "cannot judge") {
+		t.Fatalf("empty store at an open Wednesday 10:00 CT: blocked=%v why=%q, want a cannot-judge block", b, why)
+	}
+	if r, got := sessionReasons(t, nil, nil, wed); !got || !strings.Contains(r.Detail, "cannot judge") {
+		t.Fatalf("through Evaluate: empty store must block the session check on its own: %+v", r)
+	}
+	// a stale store: the real 10-22 session, whose newest bar is 1 h old at the
+	// Friday 12:00 CT read (control: the full store at the same instant is clean)
+	s := loadSessions(t)["2026-10-22"]
+	m1, m5 := s.bars()
+	fri := ctTime(2026, 10, 23, 12, 0)
+	if r, got := sessionReasons(t, m1, m5, fri); got {
+		t.Fatalf("control: a fully stored Friday morning must not pause: %s", r.Detail)
+	}
+	cut := ctTime(2026, 10, 23, 11, 0).UnixMilli()
+	var stale1, stale5 []Bar
+	for _, b := range m1 {
+		if b.T < cut {
+			stale1 = append(stale1, b)
+		}
+	}
+	for _, b := range m5 {
+		if b.T < cut {
+			stale5 = append(stale5, b)
+		}
+	}
+	if r, got := sessionReasons(t, stale1, stale5, fri); !got || !strings.Contains(r.Detail, "cannot judge") {
+		t.Fatalf("a store whose newest bar is 1 h old in an open market must block: %+v", r)
+	}
+	// calendar silence is not loss: closed Saturday, the Friday break, and the
+	// first minutes after the Sunday reopen with an empty store
+	for _, c := range []time.Time{
+		time.Date(2026, 10, 24, 10, 0, 5, 0, chicago),  // Saturday
+		time.Date(2026, 10, 23, 16, 30, 5, 0, chicago), // Friday after the close
+		time.Date(2026, 10, 25, 17, 4, 5, 0, chicago),  // Sunday, 4 min after the reopen
+		time.Date(2026, 10, 28, 16, 30, 5, 0, chicago), // the daily break
+	} {
+		if b, why := JudgeSessionLevels(nil, nil, c, chicago, cmeOpenForTest, DefaultSessionVol(), 2.0); b {
+			t.Errorf("%s: a closed or just-reopened market with an empty store must not pause: %s", c.Format("Mon 01-02 15:04"), why)
+		}
+	}
+}
