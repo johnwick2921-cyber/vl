@@ -643,3 +643,127 @@ func TestRestartMidEpisodeRederivesTheHoleFromTheStore(t *testing.T) {
 		t.Fatalf("the boot scan must re-derive the 10-26 hole from the store (nothing persisted): %+v", v)
 	}
 }
+
+// ── review round 1: D2 (boot scan reach) + the spent hole + the coverage belt ─
+
+// bootFromStore boots a FRESH tracker at bootAt over a store that already holds
+// every real 10-26/27 bar before bootAt (what the previous process left), feeds
+// it the one live bar a boot sees, and returns the store and tracker.
+func bootFromStore(t *testing.T, bootAt time.Time) (*memHoleStore, *barHoleTracker) {
+	t.Helper()
+	armIntegrity(t)
+	st := &memHoleStore{}
+	for _, ms := range loadRuns(t) {
+		if ms < bootAt.UnixMilli() {
+			st.add(ms)
+		}
+	}
+	tr := newBarHoleTracker(st, func() *ntwire.TCPServer { return nil })
+	tr.say = (&lineSink{}).say
+	tr.clock = func() time.Time { return bootAt }
+	prev := barHoles.Swap(tr)
+	t.Cleanup(func() { barHoles.Store(prev) })
+	st.add(bootAt.UnixMilli())
+	tr.observeLive("MNQ", "1m", ghContract, []store.BarHistoryDB{{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: bootAt.UnixMilli()}})
+	return st, tr
+}
+
+// A restart AFTER the session roll must still see the 10-26 17:00–21:57 hole the
+// store holds: the boot scan reaches the deep window's start, not just the
+// current session day's open. Before the fix a boot at 10-28 06:00 read
+// blocked=false in the deep window (hole ~4 days inside it) and the AI /
+// planner / Picture / agent / SWING4H paths traded over it.
+func TestRestartAfterTheSessionRollStillSeesAnOlderHole(t *testing.T) {
+	cases := []struct {
+		boot       time.Time
+		win        int
+		wantBlock  bool
+		wantWindow string
+	}{
+		// 10-27 17:30: the hole is ~19.5 h back — inside the 1500-open-minute intraday window
+		{ct(2026, 10, 27, 17, 30), IntegrityIntradayOpenMin, true, "10-26 17:00–21:57 CT"},
+		{ct(2026, 10, 27, 17, 30), IntegrityDeepOpenMin, true, "10-26 17:00–21:57 CT"},
+		// 10-28 06:00: aged out of the intraday window (correct), still inside the deep one
+		{ct(2026, 10, 28, 6, 0), IntegrityIntradayOpenMin, false, ""},
+		{ct(2026, 10, 28, 6, 0), IntegrityDeepOpenMin, true, "10-26 17:00–21:57 CT"},
+	}
+	for _, c := range cases {
+		_, _ = bootFromStore(t, c.boot)
+		v := IntegrityVerdictFor("MNQ", c.win, c.boot.Add(time.Minute))
+		if v.Blocked != c.wantBlock {
+			t.Fatalf("boot %s window %d: blocked=%v want %v (%+v)", kernel.TableTimeCT(c.boot), c.win, v.Blocked, c.wantBlock, v)
+		}
+		if c.wantBlock {
+			if v.Class != IntegrityClassHole || len(v.Holes) != 1 || v.Holes[0].Window != c.wantWindow {
+				t.Fatalf("boot %s window %d: want the 10-26 hole named %q, got %+v", kernel.TableTimeCT(c.boot), c.win, c.wantWindow, v)
+			}
+		}
+		if v.CoveredFromMs == 0 || v.CoveredFromMs > v.WindowFromMs {
+			t.Fatalf("boot %s window %d: the scan must cover the whole window (covered %d, window from %d)", kernel.TableTimeCT(c.boot), c.win, v.CoveredFromMs, v.WindowFromMs)
+		}
+	}
+}
+
+// The belt under the boot scan: a window that reaches back further than the
+// detector has judged is UNKNOWN (blocked), never "no holes".
+func TestAWindowOlderThanTheDetectorsCoverageIsUnknown(t *testing.T) {
+	boot := ct(2026, 10, 28, 6, 0)
+	_, tr := bootFromStore(t, boot)
+	// as if the scan had only reached the session open (the pre-fix reach): it
+	// judged that stretch only, so it holds no hole for the older one
+	tr.mu.Lock()
+	tr.holes = nil
+	for k := range tr.coveredFrom {
+		tr.coveredFrom[k] = kernelSessionOpenMs(boot)
+	}
+	tr.mu.Unlock()
+	v := IntegrityVerdictFor("MNQ", IntegrityDeepOpenMin, boot.Add(time.Minute))
+	if !v.Blocked || v.Class != IntegrityClassUnknown || !strings.Contains(v.Unknown, "unjudged") {
+		t.Fatalf("a window older than the coverage must be UNKNOWN-blocked, got %+v", v)
+	}
+	// control: the intraday window lies inside that coverage and reads clear
+	if v := IntegrityVerdictFor("MNQ", 200, boot.Add(time.Minute)); v.Blocked {
+		t.Fatalf("control: a window inside the coverage must not block: %+v", v)
+	}
+}
+
+func kernelSessionOpenMs(at time.Time) int64 { return kernel.CMESessionDayStart(at).UnixMilli() }
+
+// A hole whose slow re-requests are spent used to be measured never again, so a
+// history reload that refilled it never lifted the pause. The tracker now
+// re-reads it from the store (no wire send), at most once a minute.
+func TestSpentHoleIsRemeasuredAndResumes(t *testing.T) {
+	h := newMemHarness(t)
+	h.run(ct(2026, 10, 27, 8, 30), ct(2026, 10, 27, 9, 0))
+	h.run(ct(2026, 10, 27, 9, 11), ct(2026, 10, 27, 9, 20)) // 10 minutes missing 09:01–09:10
+	now := ct(2026, 10, 27, 9, 21)
+	if v := h.verdict(IntegrityIntradayOpenMin, now); !v.Blocked || len(v.Holes) != 1 {
+		t.Fatalf("fixture: want the one hole blocking: %+v", v)
+	}
+	// the state after 4 scheduled + 8 slow re-requests
+	h.tr.mu.Lock()
+	hole := h.tr.holes[0]
+	hole.State, hole.Attempts, hole.slowCount = holeStateUnfilled, 12, barHoleSlowCapTotal
+	hole.saidSlowCap = true
+	hole.nextAttemptAt, hole.measureAt = time.Time{}, time.Time{}
+	h.tr.mu.Unlock()
+	// still missing: a tick leaves it blocking and says so
+	h.tr.tick(now.Add(2 * time.Minute))
+	if v := h.verdict(IntegrityIntradayOpenMin, now.Add(2*time.Minute)); !v.Blocked || len(v.Holes) != 1 || !v.Holes[0].Unfillable {
+		t.Fatalf("an unrefilled spent hole keeps blocking: %+v", v)
+	}
+	// the owner reloads NT8 history; the minutes reach the store
+	for m := ct(2026, 10, 27, 9, 1); m.Before(ct(2026, 10, 27, 9, 11)); m = m.Add(time.Minute) {
+		h.st.mu.Lock()
+		h.st.times = append(h.st.times, m.UnixMilli())
+		sort.Slice(h.st.times, func(i, j int) bool { return h.st.times[i] < h.st.times[j] })
+		h.st.mu.Unlock()
+	}
+	h.tr.tick(now.Add(4 * time.Minute)) // the tracker's own tick, the one production runs
+	if v := h.verdict(IntegrityIntradayOpenMin, now.Add(4*time.Minute)); v.Blocked {
+		t.Fatalf("the store holds every minute again — the gate must RESUME on that measurement: %+v", v)
+	}
+	if h.say.count("bars hole FILLED") != 1 {
+		t.Fatalf("the fill is said once:\n%s", h.say.dump())
+	}
+}

@@ -161,8 +161,7 @@ func (s *Server) handleNTTestTrade(c *gin.Context) {
 		SafeNotFound(c, "Trader")
 		return
 	}
-	nt, ok := trader.GetUnderlyingTrader().(*ntTrader.TCPTrader)
-	if !ok {
+	if _, ok := trader.GetUnderlyingTrader().(*ntTrader.TCPTrader); !ok {
 		SafeBadRequest(c, "trader is not an NT8 TCP trader (NT_TRANSPORT=tcp required)")
 		return
 	}
@@ -173,8 +172,14 @@ func (s *Server) handleNTTestTrade(c *gin.Context) {
 		return
 	}
 
-	result, err := nt.DebugPlaceTestTrade(side)
+	// m445: through the trader, never the broker adapter directly — the
+	// data-integrity verdict (missing bars) gates this MARKET entry too.
+	result, err := trader.DebugNTTestTrade(side)
 	if err != nil {
+		if strings.Contains(err.Error(), "data_integrity") {
+			c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
+			return
+		}
 		SafeInternalError(c, "NT test trade", err)
 		return
 	}

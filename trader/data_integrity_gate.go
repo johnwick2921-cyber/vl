@@ -34,6 +34,8 @@ import (
 //	mentor arm AUTHORING                   mentorPlaceIntent                  intraday | deep (swing)
 //	mentor armed-pass placement            mentorOnlyPlacementPass            intraday
 //	SIM test seams (TestArmPlace / Stop)   dataIntegrityTestSeamRefusal       deep
+//	debug test trade (POST /api/debug/     DebugNTTestTrade                   deep
+//	  nt-test-trade, a MARKET entry)         (the only door api/ has to the wire)
 //
 // WINDOWS (code-derived, in OPEN 1m minutes before now):
 //
@@ -189,6 +191,24 @@ func (at *AutoTrader) dataIntegrityTestSeamRefusal(now time.Time) string {
 	return ""
 }
 
+// DebugNTTestTrade is the ONLY door POST /api/debug/nt-test-trade has to the
+// wire: a deterministic 1-contract MARKET entry with a bracket on the NT8 SIM
+// account. It "bypasses the AI + risk gate" by design, so it must cross the
+// data-integrity verdict here — a SIM test order is still an entry, and a
+// market entry over missing bars is the worst kind (review round 1, D1). The
+// api package must never call TCPTrader.DebugPlaceTestTrade itself
+// (api/data_integrity_debug_door_test.go pins that).
+func (at *AutoTrader) DebugNTTestTrade(side string) (map[string]interface{}, error) {
+	if reason := at.dataIntegrityTestSeamRefusal(time.Now()); reason != "" {
+		return nil, fmt.Errorf("test-trade denied: %s", reason)
+	}
+	nt := at.armedTrader()
+	if nt == nil {
+		return nil, fmt.Errorf("trader is not an NT8 TCP trader (NT_TRANSPORT=tcp required)")
+	}
+	return nt.DebugPlaceTestTrade(side)
+}
+
 // ── the monitor beat: episodes, push, withdraw ──────────────────────────────
 
 type integrityEpisode struct {
@@ -297,7 +317,10 @@ func (at *AutoTrader) integrityWithdrawReason(now time.Time) (reason string, swi
 			}
 		}
 		// a mentor trader's FIRST window is the intraday one; blocked there =
-		// every resting row goes, blocked only in the deep window = swing rows
+		// every resting row goes, blocked only in the deep window = swing rows.
+		// (Only SWING4H rows read the deep window on a mentor trader because
+		// mentor mode refuses every non-mentor entry, so no planner / AI row
+		// rests on one; if that ever changes this must withdraw them too.)
 		return "data_integrity: " + v.Reason, at.mentorEnabled() && i > 0
 	}
 	return "", false

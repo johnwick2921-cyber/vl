@@ -8,6 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/kernel"
 	"vl/telemetry"
 )
 
@@ -80,6 +81,10 @@ const (
 	// newest the detector judged before the detector counts as lagging. One bar
 	// is the persister working on the bar that just closed.
 	integrityLagBars = 2
+
+	// integrityCoverTolMs — how much later than the window start the detector's
+	// coverage may begin before the window counts as partly unjudged.
+	integrityCoverTolMs = int64(2 * 60_000)
 
 	integrityRetiredCap     = 64
 	integrityRetiredMaxAge  = 30 * 24 * time.Hour
@@ -240,18 +245,44 @@ func (t *barHoleTracker) keepLocked(h *barHole) {
 	}
 }
 
-// remeasureRetired re-reads each retained hole's window from the store (at most
-// once a minute): a hole NT8 has since filled (the owner reloaded history and a
-// replay carried it) is dropped — the gate resumes on the measurement, never on
-// the passage of time. A hole older than integrityRetiredMaxAge is dropped
-// unmeasured: it is outside every window.
+// remeasureRetired re-reads, at most once a minute and from the STORE only (no
+// wire send), every hole the tracker has stopped asking NT8 about: the RETIRED /
+// untracked ones, and the SPENT ones (unfilled, slow re-requests used up). A
+// hole NT8 has since filled (the owner reloaded history and a replay carried
+// it) is dropped — the gate resumes on the measurement, never on the passage of
+// time. Without the spent leg a hole whose retries ran out stayed in the
+// tracker unmeasured for the life of the process, so a reload that DID refill
+// it never lifted the pause (review round 1, reviewer B). A retained hole older
+// than integrityRetiredMaxAge is dropped unmeasured: it is outside every
+// window.
 func (t *barHoleTracker) remeasureRetired(now time.Time) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if len(t.retired) == 0 || (!t.lastRemeasure.IsZero() && now.Sub(t.lastRemeasure) < integrityRemeasureEvery) {
+	var spent []*barHole
+	for _, h := range t.holes {
+		if h.saidSlowCap && h.measureAt.IsZero() {
+			spent = append(spent, h)
+		}
+	}
+	if len(t.retired) == 0 && len(spent) == 0 {
+		return
+	}
+	if !t.lastRemeasure.IsZero() && now.Sub(t.lastRemeasure) < integrityRemeasureEvery {
 		return
 	}
 	t.lastRemeasure = now
+	for _, h := range spent {
+		filled, missing, err := t.measureLocked(h)
+		if err != nil {
+			t.sayErrOnce("measure-spent", fmt.Sprintf("🕳 spent-hole re-measure failed for %s %s (%v) — the hole stays listed and the data-integrity gate stays blocked on it", h.Symbol, holeWindowCT(h.FromMs, h.ToMs), err))
+			continue
+		}
+		if filled {
+			t.fillLocked(h, now)
+			continue
+		}
+		h.Missing = missing
+	}
 	keep := t.retired[:0]
 	for _, h := range t.retired {
 		if time.UnixMilli(h.ToMs).Before(now.Add(-integrityRetiredMaxAge)) {
@@ -317,7 +348,16 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		v.Unknown = fmt.Sprintf("a bar-store read failed for %s (%s) — the minute it covered is unjudged", symbol, t.judgeErr[key])
 	default:
 		v.CoveredFromMs = t.coveredFrom[key]
-		if w != nil && w.BarCache() != nil {
+		// A window that reaches back further than the detector has judged is
+		// NOT clean — it is unjudged (review round 1, D2). The boot scan reaches
+		// the deep window's start, so this fires only if that ever stops being
+		// true; it then fails closed instead of reading "no holes" off a
+		// stretch nobody looked at.
+		if v.CoveredFromMs > from+integrityCoverTolMs {
+			v.Unknown = fmt.Sprintf("the hole detector has judged %s only from %s but this decision reads back to %s — the older minutes are unjudged",
+				symbol, kernel.TableTimeCT(time.UnixMilli(v.CoveredFromMs)), kernel.TableTimeCT(time.UnixMilli(from)))
+		}
+		if v.Unknown == "" && w != nil && w.BarCache() != nil {
 			if newest := newestFinal1m(w, symbol); newest > 0 {
 				if lag := (newest - t.checked[key]) / 60_000; lag >= integrityLagBars {
 					v.Unknown = fmt.Sprintf("the hole detector is %d closed 1m bar(s) behind the cache for %s — the newest bars are unjudged", lag, symbol)

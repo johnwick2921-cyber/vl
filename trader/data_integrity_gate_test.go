@@ -586,3 +586,47 @@ func TestIntegrityGateIsEntryOnly(t *testing.T) {
 func telemetryEpisodes(class string) int64 {
 	return telemetry.DataIntegrityCountsSnapshot().Episodes[class]
 }
+
+// ── review round 1, D1: the debug test-trade door ───────────────────────────
+
+// POST /api/debug/nt-test-trade places a MARKET entry on the SIM wire and
+// "bypasses the AI + risk gate" by design. It reached the broker through
+// TCPTrader.DebugPlaceTestTrade with no data check. Its only door is now
+// AutoTrader.DebugNTTestTrade (the api handler calls nothing else —
+// api/data_integrity_debug_door_test.go): through a hole nothing reaches the
+// wire; with the data complete (control) exactly one entry frame does.
+func TestIntegrityGateRefusesTheDebugTestTradeDoor(t *testing.T) {
+	now := time.Date(2026, 9, 14, 15, 0, 0, 0, time.UTC)
+	at, _, signals, _ := shadowWireHarnessAt(t, store.StrategyConfig{}, now)
+	nt := at.armedTrader()
+	if nt == nil {
+		t.Fatal("fixture: no TCPTrader bound")
+	}
+	nt.BarCache().SeedHistorical("MNQ", "5m", []ntwire.Bar{{T: now.Add(-5 * time.Minute).UnixMilli(), O: 29600, H: 29610, L: 29590, C: 29600, V: 10, Final: true}})
+	f := &intFake{}
+	armIntegrityGate(t, f)
+	if _, err := at.DebugNTTestTrade("long"); err == nil || !strings.Contains(err.Error(), "data_integrity") {
+		t.Fatalf("the debug test trade must be refused through a hole: %v", err)
+	}
+	if _, err := at.DebugNTTestTrade("short"); err == nil || !strings.Contains(err.Error(), "data_integrity") {
+		t.Fatalf("the debug test trade (short) must be refused through a hole: %v", err)
+	}
+	select {
+	case s := <-signals:
+		t.Fatalf("a debug test trade reached the wire through a hole: %+v", s)
+	case <-time.After(200 * time.Millisecond):
+	}
+	// CONTROL: the data complete -> the very same call reaches the wire.
+	f.blockedFor = func(int) bool { return false }
+	if _, err := at.DebugNTTestTrade("long"); err != nil && strings.Contains(err.Error(), "data_integrity") {
+		t.Fatalf("control: with the data complete the door must open: %v", err)
+	}
+	select {
+	case s := <-signals:
+		if s.Symbol == "" {
+			t.Fatalf("control: an empty frame reached the wire: %+v", s)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("control: with the data complete the debug test trade must send its entry frame (the pin would otherwise pass on a door that is always shut)")
+	}
+}
