@@ -357,6 +357,33 @@ func windowOf(bars []Bar, from, to int64) []Bar {
 	return bars[lo:hi]
 }
 
+// silentSlots is how many of the newest closed 5m slots must hold at least one
+// stored bar (either frame) while the exchange is open.
+const silentSlots = 2
+
+// storeSilent reports an OPEN market with no stored 1m or 5m bar in the last
+// silentSlots closed 5m slots (the same one-minute grace as JudgeSessionVolume).
+// It judges nothing unless every minute of that window was open, so the CME
+// break, the weekend and the first ten minutes after a reopen are never read as
+// silence: a check pauses entries only on a state it can positively call
+// missing, never on the calendar.
+func storeSilent(m1, m5 []Bar, now time.Time, open OpenFn) (bool, string) {
+	const slot = 5 * minuteMs
+	nowMs := now.UnixMilli()
+	lim := (nowMs - minuteMs) / slot * slot
+	w0 := lim - silentSlots*slot
+	for t := w0; t < lim; t += minuteMs {
+		if !open.open(t) {
+			return false, ""
+		}
+	}
+	if len(windowOf(m1, w0, nowMs+1)) > 0 || len(windowOf(m5, w0, nowMs+1)) > 0 {
+		return false, ""
+	}
+	return true, fmt.Sprintf("cannot judge the volume levels: no stored 1m or 5m bar between %s and %s UTC while the market is open (store empty or stale)",
+		time.UnixMilli(w0).UTC().Format("01-02 15:04"), now.UTC().Format("15:04"))
+}
+
 // JudgeSessionLevels judges every session-anchored volume level at `now`:
 // the current session (VWAP + bands), eVWAP (since the last 15:00 CT cash
 // close), the prior open session (pdVWAP + profile, hence nPOC) and the
@@ -367,6 +394,13 @@ func windowOf(bars []Bar, from, to int64) []Bar {
 // prior session; a shorter history that hides the prior session reads as "no
 // prior session" - the same thing the kernel then sees.
 func JudgeSessionLevels(m1, m5 []Bar, now time.Time, loc *time.Location, open OpenFn, p SessionVolParams, midoTol float64) (blocked bool, why string) {
+	// FAIL CLOSED when there is nothing to judge (review f7a round 3, D-C): every
+	// window below is skipped when it holds no bar, so an empty or stale store
+	// read with err == nil (the December roll, where the store is keyed to a
+	// contract with no rows yet) would otherwise read as CLEAN.
+	if silent, w := storeSilent(m1, m5, now, open); silent {
+		return true, w
+	}
 	t := now.In(loc)
 	cur := time.Date(t.Year(), t.Month(), t.Day(), 17, 0, 0, 0, loc)
 	if t.Before(cur) {
