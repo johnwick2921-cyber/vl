@@ -18,10 +18,12 @@ import "math"
 //     weight x e, and the pause holds until that is <= the tolerance.
 //
 // A 56 pt wrong 5m low (10-27 08:30, row 2045884) holds ~100 minutes; a 0.75 pt
-// tick-skew holds only until the bar stops being the newest of its frame. KNOWN
-// LIMIT (also in the guide): a bar older than that is still in the raw
-// high/low ranges of longer windows (PDH/PDL, 1h ranges); the swing and levels
-// checks judge those separately, the rest is not covered.
+// tick-skew holds only until the bar stops being the newest of its frame. A MENTOR
+// trader additionally reads raw 1m highs and lows (mentor_range_1m, Extreme):
+// a wrong high/low holds it for MentorRangeReadMin, not for the close-error's
+// decay. KNOWN LIMIT (also in the guide): the AI path's own raw high/low ranges
+// (PDH/PDL, 1h ranges) are judged separately by the swing and levels checks, the
+// rest is not covered.
 
 // HoldCapMin bounds any hold: no single bar pauses entries longer than 8 hours.
 const HoldCapMin = 480
@@ -41,6 +43,13 @@ func decayBars(s SeriesSpec, errPts float64) int {
 	tol := ImpactTolPts
 	if s.PriceUnits && s.TolPts > 0 {
 		tol = s.TolPts
+	}
+	if s.Extreme {
+		// a raw max / min: the error enters at full weight for the whole window
+		if errPts <= tol {
+			return 0
+		}
+		return s.Period
 	}
 	if s.EMA {
 		k := 2.0 / float64(s.Period+1)
@@ -64,6 +73,9 @@ func decayBars(s SeriesSpec, errPts float64) int {
 func HoldMinutes(specs []SeriesSpec, errPts float64, tfs ...int) int {
 	best := 0
 	for _, s := range specs {
+		if s.PresenceOnly {
+			continue
+		}
 		if len(tfs) > 0 {
 			in := false
 			for _, tf := range tfs {
@@ -107,6 +119,9 @@ type BarError struct {
 
 // errFor is what spec s sees of e.
 func (e BarError) errFor(s SeriesSpec) float64 {
+	if s.Extreme {
+		return e.RangeErr // only the bar's high/low enters a max / min
+	}
 	if s.Range {
 		if e.CloseErr > e.RangeErr {
 			return e.CloseErr // a wrong close also moves the next bar's true range
@@ -134,7 +149,7 @@ func (s SeriesSpec) readBy(reader string) bool {
 func HoldMinutesFor(specs []SeriesSpec, reader string, e BarError, tfs ...int) int {
 	best := 0
 	for _, s := range specs {
-		if !s.readBy(reader) {
+		if !s.readBy(reader) || s.PresenceOnly {
 			continue
 		}
 		if len(tfs) > 0 {

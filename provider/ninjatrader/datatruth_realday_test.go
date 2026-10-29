@@ -407,12 +407,12 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 		cur := map[string]bool{}
 		for _, r := range reasons {
 			names := []string{r.Check}
-			if r.Check == checks.CheckCrossFrame {
+			if r.Check == checks.CheckCrossFrame || r.Check == checks.CheckBadPrint {
 				if r.Concerns(datatruth.ReaderAI) {
-					names = append(names, "cross_frame/ai")
+					names = append(names, r.Check+"/ai")
 				}
 				if r.Concerns(datatruth.ReaderMentor) {
-					names = append(names, "cross_frame/mentor")
+					names = append(names, r.Check+"/mentor")
 				}
 			}
 			for _, nm := range names {
@@ -425,7 +425,7 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 		}
 		open = cur
 	}
-	for _, n := range []string{checks.CheckBadPrint, checks.CheckCrossFrame, "cross_frame/ai", "cross_frame/mentor", checks.CheckLookback, checks.CheckLookbackSession, checks.CheckContractRoll} {
+	for _, n := range []string{checks.CheckBadPrint, "bad_print/ai", "bad_print/mentor", checks.CheckCrossFrame, "cross_frame/ai", "cross_frame/mentor", checks.CheckLookback, checks.CheckLookbackSession, checks.CheckContractRoll} {
 		t.Logf("%s: %d episode(s)", n, len(spans[n]))
 		for _, s := range spans[n] {
 			t.Logf("    %s -> %s (%d min)", s.first.In(loc).Format("01-02 15:04"), s.last.In(loc).Format("01-02 15:04"), int(s.last.Sub(s.first).Minutes())+1)
@@ -449,6 +449,18 @@ func TestDataTruthFullCorpusEpisodes(t *testing.T) {
 	}
 	if !has(checks.CheckBadPrint, "2026-10-19 09:19", "2026-10-19 09:20") {
 		t.Error("10-19 09:19 bad print (row 2020732) did not pause")
+	}
+	// review round 1, finding 2: the mentor reads raw 1m highs/lows, so the two
+	// wrong highs/lows keep ITS entries paused far past the AI path's ~75 min
+	// (the 163 pt wick of 09:19 closed back, so only ATR on the 3m/5m sees it)
+	if has("bad_print/ai", "2026-10-19 10:45", "2026-10-19 17:30") {
+		t.Error("10-19 bad prints must release the AI reader once their influence on its indicators has decayed")
+	}
+	if !has("bad_print/mentor", "2026-10-19 09:55", "2026-10-19 16:00") {
+		t.Error("10-19 wrong 1m highs/lows must keep the mentor reader paused (it reads raw 1m highs and lows)")
+	}
+	if has("bad_print/mentor", "2026-10-19 17:30", "2026-10-19 23:00") {
+		t.Error("the mentor hold must end at the range-read window, not run for ever")
 	}
 	if !has(checks.CheckCrossFrame, "2026-10-27 08:35", "2026-10-27 08:46") {
 		t.Error("10-27 08:30 restart-truncated 5m (row 2045884) did not pause")

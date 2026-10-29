@@ -212,6 +212,9 @@ func lookbackCheck(c Config) datatruth.ScopedCheckFn {
 		var sets [][]string
 		cache := map[int][]Bar{}
 		for _, sp := range c.Specs {
+			if sp.Extreme {
+				continue // a raw high/low read prices a WRONG bar (hold.go), not a missing one
+			}
 			bars, ok := cache[sp.TFMin]
 			if !ok {
 				var err error
@@ -316,6 +319,11 @@ func barsSig(m1, m5 []Bar) uint64 {
 // "read back within a minute") did not lift a blocking verdict until the next 4h
 // bucket - up to four hours (release #55 review). The fingerprint makes a changed
 // store a changed key, so a refill is judged on the very next read.
+//
+// COST (measured, BenchmarkSwingVerdictFullWindow, 25861 1m + 5173 5m rows): the
+// fingerprint changes with every new 1m bar, so the verdict is re-judged about
+// once a minute per symbol, not once per 4h bucket; hash + Buckets4h + JudgeSwing4h
+// take about 1.7 ms of CPU per judgement. The store read is shared (cachedInputs).
 func swingCheck(c Config) datatruth.CheckFn {
 	type key struct {
 		sym    string

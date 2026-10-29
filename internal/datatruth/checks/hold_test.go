@@ -55,6 +55,14 @@ func suspectAt(mnq, es []Bar, rowOf map[int64]float64, p BadPrintParams, now tim
 func TestBadPrintHoldsWhileItStillInfluencesIndicators(t *testing.T) {
 	mnq, es, rowOf := loadBad1019Long(t)
 	specs := DefaultSpecs([]int{3, 5})
+	// the close-reading indicators only (the F1 pricing: EMA / RSI / MACD read the
+	// CLOSE, ATR the range); the mentor's raw high/low read (Extreme) is priced below
+	var closeSpecs []SeriesSpec
+	for _, sp := range specs {
+		if !sp.Extreme {
+			closeSpecs = append(closeSpecs, sp)
+		}
+	}
 	prod := DefaultBadPrint().WithHold(specs)
 	times := map[float64]int64{}
 	for ts, id := range rowOf {
@@ -74,8 +82,15 @@ func TestBadPrintHoldsWhileItStillInfluencesIndicators(t *testing.T) {
 		if h := HoldMinutesFor(specs, datatruth.ReaderAI, be); h != c.aiHold {
 			t.Errorf("row %v: AI hold %d min, want %d (ATR14 on the 3m/5m reads the range; EMA/RSI/MACD read the close)", c.row, h, c.aiHold)
 		}
-		if h := HoldMinutesFor(specs, datatruth.ReaderMentor, be); h != c.mentor {
-			t.Errorf("row %v: mentor hold %d min, want %d (the 1m EMA34/9 read the close)", c.row, h, c.mentor)
+		if h := HoldMinutesFor(closeSpecs, datatruth.ReaderMentor, be); h != c.mentor {
+			t.Errorf("row %v: mentor close-read hold %d min, want %d (the 1m EMA34/9 read the close)", c.row, h, c.mentor)
+		}
+		// review round 1, finding 2: the mentor ALSO reads raw 1m highs/lows (day gate,
+		// rolling PHL, box, trendline, the 1m-built HTF candles), so a wrong high/low
+		// (82 pt, 167 pt) holds it for the whole range-read window, whatever the close
+		// error: the wick that closes back is no longer a 6 minute event for it.
+		if h := HoldMinutesFor(specs, datatruth.ReaderMentor, be); h != MentorRangeReadMin {
+			t.Errorf("row %v: mentor hold %d min, want %d (a wrong 1m high/low stays in what the mentor reads)", c.row, h, MentorRangeReadMin)
 		}
 		// the OLD charge (whole excursion to every spec) is the defect
 		if old := HoldMinutes(specs, c.x); c.row == 2020732 && old < 200 {
@@ -91,16 +106,23 @@ func TestBadPrintHoldsWhileItStillInfluencesIndicators(t *testing.T) {
 			if s.CloseErr != c.closeErr {
 				t.Errorf("row %v CloseErr %v, want %v", c.row, s.CloseErr, c.closeErr)
 			}
-			// past the mentor's own hold (and its 30 min floor) the mentor is released, the AI path is not
-			wantMentor := off < 30 || off < c.mentor
+			// the mentor is held for the whole range-read window; past the AI path's own hold only it is
+			wantMentor := off < MentorRangeReadMin
 			gotMentor := len(s.Readers) == 0 || s.Readers[0] == datatruth.ReaderMentor
 			if gotMentor != wantMentor {
 				t.Errorf("row %v at +%d min: mentor held=%v, want %v (readers %v)", c.row, off, gotMentor, wantMentor, s.Readers)
 			}
 		}
-		// ... and not for ever: once its influence has decayed below every tolerance
-		if now := time.UnixMilli(badT + int64(c.aiHold+2)*minuteMs + 30_000); suspectAt(mnq, es, rowOf, prod, now, c.row) != nil {
-			t.Errorf("row %v must clear once its influence has decayed (%d min)", c.row, c.aiHold)
+		// ... the AI path is released once the bar's influence on its indicators has decayed ...
+		if now := time.UnixMilli(badT + int64(c.aiHold+2)*minuteMs + 30_000); true {
+			s := suspectAt(mnq, es, rowOf, prod, now, c.row)
+			if s == nil || len(s.Readers) != 1 || s.Readers[0] != datatruth.ReaderMentor {
+				t.Errorf("row %v at +%d min: only the mentor reader may still be held, got %+v", c.row, c.aiHold+2, s)
+			}
+		}
+		// ... and nobody for ever: the mentor's window is bounded by the cap
+		if now := time.UnixMilli(badT + int64(MentorRangeReadMin+2)*minuteMs + 30_000); suspectAt(mnq, es, rowOf, prod, now, c.row) != nil {
+			t.Errorf("row %v must clear once the range-read window (%d min) has passed", c.row, MentorRangeReadMin)
 		}
 	}
 	// the OLD age-based window (Hold == nil) clears at 30 min: that is the defect
@@ -108,8 +130,21 @@ func TestBadPrintHoldsWhileItStillInfluencesIndicators(t *testing.T) {
 	if now := time.UnixMilli(times[2020732] + 61*minuteMs); suspectAt(mnq, es, rowOf, old, now, 2020732) != nil {
 		t.Fatal("fixture: the age-only rule is expected to have expired by 60 min")
 	}
+	// the raw high/low read sees ONLY the range error: a wick that closes exactly
+	// back (close error 0) is held for the window, a wrong close on a right range
+	// (range error 0) is not held by it, and 2 pt (ImpactTolPts) is the floor
+	if h := HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 0, RangeErr: 60}); h != MentorRangeReadMin {
+		t.Errorf("a 60 pt wick that closes back: mentor hold %d, want %d", h, MentorRangeReadMin)
+	}
+	if h := HoldMinutesFor([]SeriesSpec{{Name: "mentor_range_1m", TFMin: 1, Period: MentorRangeReadMin, Extreme: true, Reader: datatruth.ReaderMentor}},
+		datatruth.ReaderMentor, BarError{CloseErr: 60, RangeErr: 0}); h != 0 {
+		t.Errorf("a wrong close on a right range is not a raw high/low error: hold %d, want 0", h)
+	}
+	if h := HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 0, RangeErr: ImpactTolPts}); h != 0 {
+		t.Errorf("a range error of exactly %.0f pt moves nothing by MORE than the tolerance: hold %d, want 0", ImpactTolPts, h)
+	}
 	// the hold still scales with the error: a bigger close error holds longer
-	if a, b := HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 30, RangeErr: 30}), HoldMinutesFor(specs, datatruth.ReaderMentor, BarError{CloseErr: 69, RangeErr: 69}); a >= b {
+	if a, b := HoldMinutesFor(closeSpecs, datatruth.ReaderMentor, BarError{CloseErr: 30, RangeErr: 30}), HoldMinutesFor(closeSpecs, datatruth.ReaderMentor, BarError{CloseErr: 69, RangeErr: 69}); a >= b {
 		t.Errorf("hold must scale with the close error: 30 pt -> %d min, 69 pt -> %d min", a, b)
 	}
 	// a 1m close reaches a 5m close only on the LAST minute of the 5m bucket

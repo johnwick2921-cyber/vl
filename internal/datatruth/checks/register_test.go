@@ -88,7 +88,9 @@ func TestRegisterAllWithoutInputsLeavesRequiredChecksBlocking(t *testing.T) {
 // calSrc is fakeSrc with the real CME calendar.
 type calSrc struct{ fakeSrc }
 
-func (calSrc) Open() OpenFn { return func(ms int64) bool { return kernel.IsCMEOpen(time.UnixMilli(ms)) } }
+func (calSrc) Open() OpenFn {
+	return func(ms int64) bool { return kernel.IsCMEOpen(time.UnixMilli(ms)) }
+}
 
 // Release #55 review (swing cache): the swing verdict was cached per 4h bucket,
 // so an owner's repair (POST /api/admin/bars/import: "read back within a
@@ -211,10 +213,29 @@ func TestLookbackNamesTheReadersOfTheHole(t *testing.T) {
 	if b, _ := run(full); b {
 		t.Fatal("fixture: perfect frames must not block the lookback")
 	}
-	// the 3m/5m rings empty (1m intact): only the AI path reads them
-	b, rd := run(map[int][]Bar{1: full[1]})
+	// the 3m ring empty (1m and 5m intact): only the AI path reads the native 3m
+	b, rd := run(map[int][]Bar{1: full[1], 5: full[5]})
 	if !b || len(rd) != 1 || rd[0] != datatruth.ReaderAI {
-		t.Fatalf("a hole in the 3m/5m rings concerns the AI reader only: blocked=%v readers=%v", b, rd)
+		t.Fatalf("a hole in the 3m ring concerns the AI reader only: blocked=%v readers=%v", b, rd)
+	}
+	// the native 5m ring empty: the AI path reads it AND the mentor's strong-day test
+	// reads the last 12 native 5m bars (review round 1, finding 3) - everyone is held
+	b, rd = run(map[int][]Bar{1: full[1], 3: full[3]})
+	if !b || len(rd) != 0 {
+		t.Fatalf("a hole in the native 5m ring concerns the mentor too (strong-day test): blocked=%v readers=%v", b, rd)
+	}
+	// ONE lost native 5m bar inside the last 12 pauses the mentor reader: it can be the strong one
+	var m5 []Bar
+	lost := (now.UnixMilli()-5*minuteMs)/(5*minuteMs)*(5*minuteMs) - 3*5*minuteMs
+	for _, x := range full[5] {
+		if x.T != lost {
+			m5 = append(m5, x)
+		}
+	}
+	b, rd = run(map[int][]Bar{1: full[1], 3: full[3], 5: m5})
+	mentorHeld := len(rd) == 0 || rd[0] == datatruth.ReaderMentor || (len(rd) > 1 && rd[1] == datatruth.ReaderMentor)
+	if !b || !mentorHeld {
+		t.Fatalf("one lost native 5m bar among the last 12 must pause the mentor: blocked=%v readers=%v", b, rd)
 	}
 	// a 20-minute hole in the 1m ring: both readers read the 1m EMAs
 	var m1 []Bar
@@ -263,5 +284,23 @@ func TestSwing4hDoesNotPauseAPerfectFeedAcrossEitherDSTChange(t *testing.T) {
 			}
 			datatruth.Reset()
 		}
+	}
+}
+
+// BenchmarkSwingVerdictFullWindow measures what swingCheck costs when the store
+// changed (a new 1m bar every minute makes the fingerprint a new key): the hash of
+// a FULL window (27000 1m + 5400 5m rows, the production N) plus Buckets4h and
+// JudgeSwing4h. The figure is quoted in swingCheck's comment (review round 1, minor).
+func BenchmarkSwingVerdictFullWindow(b *testing.B) {
+	loc := kernel.CTLocation()
+	now := time.Date(2026, 10, 14, 10, 0, 30, 0, loc)
+	from := time.Date(2026, 9, 17, 17, 0, 0, 0, loc)
+	m1, m5 := dstPerfectBars(from, now, 1), dstPerfectBars(from, now, 5)
+	b.Logf("rows: 1m=%d 5m=%d", len(m1), len(m5))
+	open := OpenFn(func(ms int64) bool { return kernel.IsCMEOpen(time.UnixMilli(ms)) })
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_ = barsSig(m1, m5)
+		_ = JudgeSwing4h(Buckets4h(m1, m5, open, now, loc), 34, 0, 1.0)
 	}
 }

@@ -53,7 +53,27 @@ type SeriesSpec struct {
 	// evaluator reads the 1m EMA 34/9 and nothing of the AI path's 3m/5m set; the
 	// AI path is held to the whole list (it may select any timeframe).
 	Reader string
+	// Extreme marks a raw high/low READ over the last Period slots: the bar's
+	// high or low enters the result at FULL weight (a max / min, not an average),
+	// so an error of more than ImpactTolPts moves it for as long as the bar stays
+	// inside the window - Period slots - not for a decayed share of it. Only the
+	// bar's RANGE error reaches it (BarError.RangeErr). Held for Period x TFMin.
+	Extreme bool
+	// PresenceOnly marks a read that needs the bar to EXIST (a hole is judged
+	// like any other) but whose value error is judged elsewhere: it contributes
+	// no hold to HoldMinutesFor (the strong-day range flip is CompareFrames').
+	PresenceOnly bool
 }
+
+// MentorRangeReadMin is how many 1m slots a wrong HIGH/LOW stays in what the
+// mentor reads (release #55 review round 1, finding 2). The mentor consumes raw
+// 1m highs and lows - the Globex session extreme the day gate measures
+// (day_gate.go GlobexMeasure), rolling_phl.go's buy stop on the candle extreme,
+// box.go / isb_box.go / trendline.go levels and the 3m/5m/15m candles filters.go
+// builds from the 1m - and a wrong extreme sits in those for the session, not for
+// the 30 minutes a close-error would. It is the cap (HoldCapMin): the longest any
+// single bar can pause entries.
+const MentorRangeReadMin = HoldCapMin
 
 // EMAWarmupBars mirrors market.EMAWarmupBars (seed residual 1%). A pin in
 // provider/ninjatrader compares the two so they cannot drift.
@@ -71,6 +91,14 @@ func DefaultSpecs(aiFramesMin []int) []SeriesSpec {
 	specs := []SeriesSpec{
 		{Name: "mentor_ema34_1m", TFMin: 1, Period: 34, EMA: true, PriceUnits: true, TolPts: 0.5},
 		{Name: "mentor_ema9_1m", TFMin: 1, Period: 9, EMA: true, PriceUnits: true, TolPts: 0.5},
+		// the mentor's raw 1m high/low reads (day gate, rolling PHL, box, trendline,
+		// the 1m-built HTF candles): a wrong extreme is held for the whole window
+		{Name: "mentor_range_1m", TFMin: 1, Period: MentorRangeReadMin, Extreme: true, Reader: datatruth.ReaderMentor},
+		// the mentor's strong-day test reads the last 12 NATIVE 5m bars
+		// (trader/mentor_tick.go): a lost one is a hole in what the mentor reads,
+		// and a single lost bar can be the strong one, so none may be missing
+		// (MaxWeight below 1/12). Its value error is CompareFrames' range flip.
+		{Name: "mentor_strongday_5m", TFMin: 5, Period: MentorStrongDayBars, MaxWeight: 0.05, PresenceOnly: true, Reader: datatruth.ReaderMentor},
 	}
 	for _, tf := range aiFramesMin {
 		f := fmt.Sprintf("%dm", tf)
