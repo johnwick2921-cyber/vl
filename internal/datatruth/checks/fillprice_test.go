@@ -343,3 +343,28 @@ func TestFillPriceRecordedExitPricesOfTheLast30DaysFireOnlyTheTwoWrongOnes(t *te
 		t.Fatalf("unjudged: %v", unjudged)
 	}
 }
+
+// m447 review N2: the strike map has ONE canonical key. Fill frames that spell
+// the symbol "mnq" or "MNQ 12-26" strike the same entry the gate reads as "MNQ",
+// and the owner's acknowledgement (any spelling) lifts it. Mutant: the raw symbol
+// as the map key -> the two far fills never meet, no pause (RED).
+func TestFillGuardSymbolSpellingsShareOneStrikeCount(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	g, _ := newTestGuard(func(ts time.Time) string { return ts.UTC().Format("2006-01-02") })
+	RegisterFillPrice(g)
+	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	m := day.UnixMilli() / minuteMs * minuteMs
+	ring := ringOf(bar(m, 29000, 29005, true), bar(m+minuteMs, 29000, 29005, true))
+	g.Record(FillObs{ID: "s1", Symbol: "mnq", Kind: "exit", Side: "SELL", Price: 29100, AtMs: m + 5_000, Tick: 0.25}, ring, day)
+	g.Record(FillObs{ID: "s2", Symbol: "MNQ 12-26", Kind: "entry", Side: "BUY", Price: 29100, AtMs: m + 6_000, Tick: 0.25}, ring, day)
+	if b, rs := datatruth.Evaluate("MNQ", day); !b || len(rs) != 1 || rs[0].Check != CheckFillPrice {
+		t.Fatalf("two far fills, spelled differently, are one symbol's two strikes: %v %+v", b, rs)
+	}
+	if !g.Ack(" mnq ") {
+		t.Fatal("the acknowledgement canonicalizes its symbol too")
+	}
+	if b, rs := datatruth.Evaluate("MNQ", day.Add(time.Second)); b {
+		t.Fatalf("acknowledged: %+v", rs)
+	}
+}

@@ -225,6 +225,20 @@ type FillStats struct {
 	Pending  int   `json:"pending"`
 }
 
+// StrikeKey is the ONE canonical key of the per-symbol strike map, applied where
+// a symbol ENTERS it (apply), where the pause is read (Check) and where the owner
+// lifts it (Ack): the instrument root, trimmed and upper-cased, so a fill frame
+// that says "mnq" or "MNQ 12-26" strikes the same entry the gate and the
+// acknowledgement read as "MNQ" (m447 review N2 - canon rule: one canonicalizer
+// per identifier, called where the value enters).
+func StrikeKey(symbol string) string {
+	f := strings.Fields(strings.ToUpper(strings.TrimSpace(symbol)))
+	if len(f) == 0 {
+		return ""
+	}
+	return f[0]
+}
+
 // FillGuard judges fills, counts far ones per session and exposes the check.
 type FillGuard struct {
 	mu      sync.Mutex
@@ -336,10 +350,11 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 	}
 	g.stats.Far++
 	sess := g.session(time.UnixMilli(o.AtMs))
-	st := g.strikes[o.Symbol]
+	key := StrikeKey(o.Symbol)
+	st := g.strikes[key]
 	if st == nil || st.session != sess {
 		st = &strikeState{session: sess}
-		g.strikes[o.Symbol] = st
+		g.strikes[key] = st
 	}
 	// An owner acknowledgement spends the strikes seen so far, not the future: a
 	// far fill AFTER the ack is "the next far fill" the contract promises to pause
@@ -408,7 +423,7 @@ func (g *FillGuard) Sweep(now time.Time) {
 func (g *FillGuard) Ack(symbol string) bool {
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	st := g.strikes[symbol]
+	st := g.strikes[StrikeKey(symbol)]
 	if st == nil || st.acked || len(st.ids) < g.p.Strikes {
 		return false
 	}
@@ -433,7 +448,7 @@ func (g *FillGuard) Check() datatruth.CheckFn {
 		g.Sweep(now)
 		g.mu.Lock()
 		defer g.mu.Unlock()
-		st := g.strikes[symbol]
+		st := g.strikes[StrikeKey(symbol)]
 		if st == nil {
 			return false, "", nil
 		}

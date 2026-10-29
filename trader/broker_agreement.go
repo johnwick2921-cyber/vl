@@ -168,6 +168,9 @@ type agreementInputs struct {
 	Rows    []*store.TraderPosition // this trader's OPEN rows
 	Arms    []store.ArmedOrderDB    // this trader's non-terminal arms
 	Pending map[string]int64        // entries sent, fill not yet seen (signal -> ms)
+	// PendingSides is Pending's side ("LONG"/"SHORT"), signal -> side. An NT8
+	// position with no row is excused only by a pending entry of ITS side.
+	PendingSides map[string]string
 	// ownerOf is reconcile's account-aware owner lookup for an NT8-held key
 	// (sym, side) -> an OPEN row explains it. ledgerExplains is
 	// ledgerExplainsPosition (W0 (c)). armFor / positionKnows resolve a book
@@ -262,8 +265,8 @@ func judgeAgreement(in agreementInputs) ([]disagreement, error) {
 		if in.LedgerExplains(sym, side) {
 			continue // an armed / Picture fill in flight: the ledger explains it
 		}
-		if len(in.Pending) > 0 {
-			continue // an entry was sent and its fill has not landed yet
+		if pendingEntryOnSide(in.PendingSides, side) {
+			continue // an entry OF THIS SIDE was sent and its fill has not landed yet
 		}
 		ds = append(ds, disagreement{"pos:untracked:" + key,
 			fmt.Sprintf("NT8 holds %s %s qty %.0f @ %.2f on %s but the bot has no open row and no ledger row explains it",
@@ -342,6 +345,24 @@ func judgeAgreement(in agreementInputs) ([]disagreement, error) {
 	return ds, nil
 }
 
+// pendingEntryOnSide: some entry of the held position's side is awaiting its
+// fill. A pending entry of the OTHER side (or one whose side is not a side) does
+// not explain this position: it would hide an NT8 position the bot has no row
+// for for as long as ANY entry rests at the broker, which for a resting limit is
+// hours (m447 review N1). Unrecognised side = does not excuse (fail closed).
+func pendingEntryOnSide(sides map[string]string, heldSide string) bool {
+	want := positionSide(heldSide)
+	if want == "" {
+		return false
+	}
+	for _, s := range sides {
+		if positionSide(s) == want {
+			return true
+		}
+	}
+	return false
+}
+
 func bookAgeWords(known bool, age, interval time.Duration) string {
 	if !known {
 		return "absent (no order_snapshot received for the account)"
@@ -400,6 +421,7 @@ func (at *AutoTrader) brokerAgreementInputs(now time.Time) (agreementInputs, err
 	}
 	in.Arms = arms
 	in.Pending = nt8.PendingEntries()
+	in.PendingSides = nt8.PendingEntrySides()
 
 	st := at.store
 	acct := in.Account

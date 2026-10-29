@@ -273,6 +273,33 @@ func (t *TCPTrader) PendingEntries() map[string]int64 {
 	return out
 }
 
+// PendingEntrySides is PendingEntries' twin carrying each entry's SIDE
+// ("LONG"/"SHORT" as the entry function stored it): signal_id -> side. The
+// broker-agreement check uses it to excuse an NT8 position the bot has no row
+// for ONLY while an entry of THAT side is awaiting its fill (m447 review N1).
+func (t *TCPTrader) PendingEntrySides() map[string]string {
+	t.pendingMu.Lock()
+	defer t.pendingMu.Unlock()
+	out := make(map[string]string, len(t.pending))
+	for sid, side := range t.pending {
+		out[sid] = side
+	}
+	return out
+}
+
+// SeedPendingEntryForTest registers an entry as sent-and-awaiting-its-fill.
+// Test-only: the production writers (PlaceEntry / PlaceStopEntry ...) need a
+// connected AddOn to get past their send chokepoint.
+func (t *TCPTrader) SeedPendingEntryForTest(signalID, side string, atMs int64) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.pendingMu.Lock()
+	t.pending[signalID] = upperSideStr(side)
+	t.pendingAt[signalID] = atMs
+	t.pendingMu.Unlock()
+}
+
 func (t *TCPTrader) forgetUnsentEntry(signalID string) {
 	t.pendingMu.Lock()
 	delete(t.pending, signalID)

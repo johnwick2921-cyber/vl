@@ -2,6 +2,7 @@ package trader
 
 import (
 	"encoding/json"
+	"errors"
 	"os"
 	"strings"
 	"testing"
@@ -12,6 +13,8 @@ import (
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
+
+	"gorm.io/gorm"
 )
 
 // m447 broker_agreement pins. Every test drives the PRODUCTION call site:
@@ -394,4 +397,142 @@ func TestBrokerAgreementRecurringDisagreementGetsAFreshSettle(t *testing.T) {
 	mustClear(t, f, at(70*time.Second), "a recurrence starts a fresh settle window, it does not inherit the first sighting's clock")
 	mustClear(t, f, at(70*time.Second+agreementSettle-time.Second), "still inside the fresh window")
 	mustBlock(t, f, at(70*time.Second+agreementSettle+time.Second), "NT8 holds MNQ SHORT qty 1")
+}
+
+// ── m447 review round 2 ──────────────────────────────────────────────────────
+
+// agreeInputs is the smallest fully-judgeable comparison: bound account offered,
+// a fresh positions frame, a fresh (empty) order book, nothing held, nothing
+// resting. A pin edits only the field it is about.
+func agreeInputs() agreementInputs {
+	return agreementInputs{
+		Symbol: "MNQ", Account: "Sim101", Now: agreeT0,
+		AccountOffered: true, AccountsKnown: true,
+		Held: map[string]float64{}, HeldQty: map[string]float64{}, PosJudgeable: true,
+		Book: ntwire.NewOrderSnapshotCache(), Interval: 30 * time.Second, BookAge: 5 * time.Second, BookKnown: true,
+		OwnerOf:        func(string, string) (bool, error) { return true, nil },
+		LedgerExplains: func(string, string) bool { return false },
+		ArmFor:         func(string) (*store.ArmedOrderDB, error) { return nil, gorm.ErrRecordNotFound },
+		PositionKnows:  func(string) (bool, error) { return false, nil },
+	}
+}
+
+func agreeLiveEntryOrder(t *testing.T) []ntwire.NT8Order {
+	t.Helper()
+	var orders []ntwire.NT8Order
+	if err := json.Unmarshal([]byte(realUnknownOrderJSON), &orders); err != nil {
+		t.Fatal(err)
+	}
+	return orders
+}
+
+func mustCannotJudge(t *testing.T, in agreementInputs, want string) {
+	t.Helper()
+	ds, err := judgeAgreement(in)
+	var cj *agreementCannotJudge
+	if !errors.As(err, &cj) || !strings.Contains(err.Error(), want) {
+		t.Fatalf("a lookup that FAILED must be 'cannot judge' (a block), never 'agrees': ds=%+v err=%v want %q", ds, err, want)
+	}
+}
+
+// D1 (mutants MD, ME, MF): a failed owner / ledger / position lookup is CANNOT
+// JUDGE, not "treat as agreeing". Driven through judgeAgreement, the one function
+// both the sampler and the datatruth check consult. The mapping from a
+// cannot-judge error to a datatruth block is pinned by
+// TestBrokerAgreementStaleBookFailsClosed / NoPositionsFrameFailsClosed.
+func TestBrokerAgreementFailedLookupsFailClosed(t *testing.T) {
+	boom := errors.New("db down")
+
+	t.Run("owner lookup (ME)", func(t *testing.T) {
+		in := agreeInputs()
+		in.Held, in.HeldQty = map[string]float64{"MNQ|LONG": 1}, map[string]float64{"MNQ|LONG": 1}
+		in.OwnerOf = func(string, string) (bool, error) { return false, boom }
+		mustCannotJudge(t, in, "owner lookup for MNQ LONG failed: db down")
+	})
+	t.Run("ledger lookup (MF)", func(t *testing.T) {
+		in := agreeInputs()
+		in.BookOrders = agreeLiveEntryOrder(t)
+		in.ArmFor = func(string) (*store.ArmedOrderDB, error) { return nil, boom }
+		mustCannotJudge(t, in, "ledger lookup for broker order 2cba226c-ecad-470a-90ad-b2313529c6d2 failed: db down")
+	})
+	t.Run("position lookup (MD)", func(t *testing.T) {
+		in := agreeInputs()
+		in.BookOrders = agreeLiveEntryOrder(t)
+		in.PositionKnows = func(string) (bool, error) { return false, boom }
+		mustCannotJudge(t, in, "position lookup for broker order 2cba226c-ecad-470a-90ad-b2313529c6d2 failed: db down")
+	})
+	// The control: a ledger row that is merely NOT FOUND is the normal "the bot
+	// never wrote this order down" and must reach the position lookup, not be
+	// read as an error (else every unknown order would be a cannot-judge instead
+	// of the named disagreement).
+	t.Run("ledger not-found is not an error", func(t *testing.T) {
+		in := agreeInputs()
+		in.BookOrders = agreeLiveEntryOrder(t)
+		ds, err := judgeAgreement(in)
+		if err != nil || len(ds) != 1 || !strings.HasPrefix(ds[0].Key, "ord:unknown:") {
+			t.Fatalf("not-found must fall through to the unknown-order disagreement: %+v %v", ds, err)
+		}
+	})
+}
+
+// D1 (mutants MG, MH): an unreadable open-positions table / armed ledger blocks
+// through the PRODUCTION call site - datatruth.Evaluate over the registered
+// check, a real AutoTrader, a real (then broken) store. The tables are renamed in
+// the throwaway test database, never dropped.
+func TestBrokerAgreementUnreadableStoresFailClosed(t *testing.T) {
+	for _, tc := range []struct{ table, want string }{
+		{"trader_positions", "open positions unreadable"}, // MG
+		{"armed_orders", "armed ledger unreadable"},       // MH
+	} {
+		t.Run(tc.table, func(t *testing.T) {
+			f := newAgreeFx(t)
+			mustClear(t, f, agreeT0, "healthy store, agreeing views")
+			if _, err := f.st.DB().Exec("ALTER TABLE " + tc.table + " RENAME TO " + tc.table + "_hidden"); err != nil {
+				t.Fatal(err)
+			}
+			mustBlock(t, f, agreeT0.Add(time.Second), "cannot judge (fail closed)", tc.want)
+		})
+	}
+}
+
+// N1: an NT8 position the bot has no row for is excused by a pending entry ONLY
+// of the SAME side. (Mutant MI: the exemption removed -> the same-side case goes
+// RED. Mutant "any pending excuses": the other-side case goes RED.)
+func TestBrokerAgreementPendingEntryExcusesOnlyItsOwnSide(t *testing.T) {
+	short := ntwire.OpenPosition{Symbol: "MNQ", Side: "SHORT", Quantity: 1, AvgPrice: 29310}
+	t.Run("same side: a fill in flight", func(t *testing.T) {
+		f := newAgreeFx(t)
+		f.tr.SeedPendingEntryForTest("p-1", "short", agreeT0.UnixMilli())
+		f.positions(short)
+		mustClear(t, f, agreeT0, "first sighting")
+		later := agreeT0.Add(3 * agreementSettle)
+		f.book(`[]`, later.Add(-5*time.Second))
+		mustClear(t, f, later, "a SHORT entry is awaiting its fill and NT8 holds a SHORT")
+	})
+	t.Run("other side: does not explain it", func(t *testing.T) {
+		f := newAgreeFx(t)
+		f.tr.SeedPendingEntryForTest("p-1", "long", agreeT0.UnixMilli())
+		f.positions(short)
+		mustClear(t, f, agreeT0, "first sighting")
+		later := agreeT0.Add(agreementSettle + time.Second)
+		f.book(`[]`, later.Add(-5*time.Second))
+		mustBlock(t, f, later, "NT8 holds MNQ SHORT qty 1", "no open row")
+	})
+	t.Run("no pending entry at all", func(t *testing.T) {
+		f := newAgreeFx(t)
+		f.positions(short)
+		mustClear(t, f, agreeT0, "first sighting")
+		later := agreeT0.Add(agreementSettle + time.Second)
+		f.book(`[]`, later.Add(-5*time.Second))
+		mustBlock(t, f, later, "NT8 holds MNQ SHORT qty 1")
+	})
+	t.Run("a pending entry whose side is not a side excuses nothing", func(t *testing.T) {
+		f := newAgreeFx(t)
+		f.tr.SeedPendingEntryForTest("p-1", "", agreeT0.UnixMilli())
+		f.positions(short)
+		mustClear(t, f, agreeT0, "first sighting")
+		later := agreeT0.Add(agreementSettle + time.Second)
+		f.book(`[]`, later.Add(-5*time.Second))
+		mustBlock(t, f, later, "NT8 holds MNQ SHORT qty 1")
+	})
 }
