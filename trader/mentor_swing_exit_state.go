@@ -82,7 +82,7 @@ func (at *AutoTrader) mentorSwingBracketAtBroker(nt *ntTrader.TCPTrader, signalI
 		return false, false
 	}
 	book, recvAt, ok := mentorStopBook(nt)
-	if !ok || recvAt.IsZero() || time.Since(recvAt) > snapshotMaxAge() {
+	if !ok || recvAt.IsZero() || mentorClockNow().Sub(recvAt) > snapshotMaxAge() {
 		return false, false
 	}
 	working := ntwire.OrderSnapshotPayload{Orders: book.WorkingOrders()}
