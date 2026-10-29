@@ -145,3 +145,51 @@ func TestHealthReportsDeadManBlock(t *testing.T) {
 		t.Fatalf("nt8.t2.dead_man must be ABSENT when not blocked, got %+v", t2)
 	}
 }
+
+// m445 — /api/health trading_paused: the data-integrity gate's READ surface.
+// ABSENT without the NT8 bridge (nothing claimed); with it and a detector that
+// has not judged any symbol yet, paused:true with the unknown reason while CME
+// is open (and not paused while CME is closed — nothing can open then).
+func TestHealthTradingPaused(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	get := func(at time.Time) map[string]any {
+		t.Helper()
+		prev := healthNow
+		healthNow = func() time.Time { return at }
+		t.Cleanup(func() { healthNow = prev })
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		return body
+	}
+	open := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())  // Wed, CME open
+	shut := time.Date(2026, 10, 28, 16, 30, 0, 0, kernel.CTLocation()) // the daily break
+
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(false))
+	if _, present := get(open)["trading_paused"]; present {
+		t.Fatal("no NT8 bridge: trading_paused must be ABSENT, never a fabricated 'not paused'")
+	}
+
+	ntTrader.SetIntegrityArmedForTest(true)
+	restore := ntTrader.SetBarHolesWiredForTest() // a tracker that has judged nothing
+	t.Cleanup(restore)
+	tp, ok := get(open)["trading_paused"].(map[string]any)
+	if !ok {
+		t.Fatal("armed: trading_paused must be present")
+	}
+	reasons, _ := tp["reasons"].([]any)
+	if tp["paused"] != true || len(reasons) != 1 || reasons[0] != ntTrader.IntegrityClassUnknown {
+		t.Fatalf("an unjudged detector with CME open is PAUSED with the unknown reason: %+v", tp)
+	}
+	if _, ok := tp["counts"].(map[string]any); !ok {
+		t.Fatalf("counts must be present: %+v", tp)
+	}
+	if tp2 := get(shut)["trading_paused"].(map[string]any); tp2["paused"] != false {
+		t.Fatalf("CME closed: an unknown detector is moot, not paused: %+v", tp2)
+	}
+}

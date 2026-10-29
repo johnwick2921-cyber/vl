@@ -181,8 +181,13 @@ func (s *Server) handleHealth(c *gin.Context) {
 			if !v.Paused {
 				continue
 			}
-			paused = true
 			for _, r := range v.Reasons {
+				// an UNKNOWN detector is moot while CME is closed (nothing can
+				// open then); a real hole is shown whenever it exists
+				if r.Class == ntTrader.IntegrityClassUnknown && !cmeOpen {
+					continue
+				}
+				paused = true
 				if !seen[r.Class] {
 					seen[r.Class] = true
 					reasons = append(reasons, r.Class)

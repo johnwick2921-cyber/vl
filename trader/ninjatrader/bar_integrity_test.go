@@ -588,3 +588,26 @@ func TestRealCleanDaysNeverPause(t *testing.T) {
 		}
 	}
 }
+
+// /api/health trading_paused: scope + windows + reasons, READ from the tracker.
+func TestTradingPausedSnapshotNamesScopeAndWindow(t *testing.T) {
+	armIntegrity(t)
+	f := newGHFixture(t)
+	f.openHole()
+	// two days later the hole is outside the intraday window, inside the deep one
+	later := ct(2026, 10, 16, 10, 0)
+	views, armed := TradingPausedSnapshot(later)
+	if !armed || len(views) != 1 || views[0].Symbol != "MNQ" {
+		t.Fatalf("one MNQ view: %+v armed=%v", views, armed)
+	}
+	v := views[0]
+	if !v.Paused || v.Scope != "swing_and_deep_entries" || len(v.Reasons) != 1 || v.Reasons[0].Class != IntegrityClassHole ||
+		len(v.Reasons[0].Window) != 1 || v.Reasons[0].Window[0] != "10-14 03:44–07:48 CT" || v.Action != IntegrityAction {
+		t.Fatalf("deep-only scope with the CT window and the action: %+v", v)
+	}
+	// right after the reconnect the intraday window holds it too: all entries
+	views, _ = TradingPausedSnapshot(f.clk.Now())
+	if len(views) != 1 || views[0].Scope != "all_entries" {
+		t.Fatalf("a hole inside the intraday window pauses ALL entries: %+v", views)
+	}
+}

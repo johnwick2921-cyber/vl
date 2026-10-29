@@ -449,6 +449,12 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 	}
 	t.mu.Unlock()
 	sort.Strings(syms)
+	if len(syms) == 0 {
+		// armed, a tracker, and NOT ONE symbol judged yet: the detector has
+		// not seen the market this process — unknown, never "nothing paused"
+		return []PausedView{{Symbol: "", Paused: true, Scope: "all_entries", Action: IntegrityAction,
+			Reasons: []PausedReason{{Class: IntegrityClassUnknown, Detail: "the boot hole scan has not judged any symbol yet this process"}}}}, true
+	}
 	for _, s := range syms {
 		intra := t.integrity(s, IntegrityIntradayOpenMin, now)
 		deep := t.integrity(s, IntegrityDeepOpenMin, now)
