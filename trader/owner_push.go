@@ -26,6 +26,23 @@ import (
 // (item 2). An ops kind: it must reach the owner whatever the day-plan state.
 const alertKindBarHoleUnfilled = "bar-hole-unfilled"
 
+// alertKindCloseRejected - m442 #19: NT8 REFUSED an exit/flatten (a
+// position_close_rejected frame). The position is still open; this used to be
+// one log line and a counter. An ops kind: it must reach the owner whatever the
+// day-plan state.
+const alertKindCloseRejected = "position_close_rejected"
+
+// closeRejectEpisodeGap: rejections of one (symbol, side) closer together than
+// this are ONE episode (one P0 row, one push). The next decision cycle re-issues
+// a rejected close, so a per-frame event id would mint a P0 per retry (the m438
+// lesson: an event id is an EPISODE id, never a per-pass clock).
+const closeRejectEpisodeGap = 15 * time.Minute
+
+// alertKindStopMoveNotApplied - m442 #6: the mentor exit drive sent a stop move,
+// NT8 did not apply it (the stop is wider than wanted). The P0 already existed
+// (mentor_exit_drive.go, one per episode) but reached the alert center only.
+const alertKindStopMoveNotApplied = "stop-move-not-applied"
+
 // ownerPushClock is the instant the feed-down CME-open leg is judged at; a var
 // so the pins are not hostage to the wall clock (the CME daily break / weekend
 // would otherwise make a green test red).
@@ -41,7 +58,9 @@ func ownerPushKind(level, kind string) bool {
 		"unprotected_position",
 		"protection_partial",
 		"protection_pending_stuck",
-		"protection_over_covered":
+		"protection_over_covered",
+		alertKindCloseRejected,
+		alertKindStopMoveNotApplied:
 		return level == "P0"
 	case alertKindBarHoleUnfilled:
 		return true

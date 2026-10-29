@@ -6,11 +6,13 @@ package telegram
 // plan's exact plain words.
 
 import (
+	"fmt"
 	"net/http"
 	"regexp"
 	"strings"
 	"time"
 
+	"vl/internal/ownerpush"
 	"vl/logger"
 	"vl/store"
 
@@ -83,26 +85,40 @@ func redactTelegramErr(err error, token string) string {
 // time, never caches them. Every call is time-bounded (ownerSendTimeout) and
 // every logged error has the bot token removed.
 func NotifyUpdateResult(st *store.Store, text string) {
+	_ = SendOwnerText(st, text) // advisory: the update page banner is authoritative
+}
+
+// SendOwnerText is the sender behind NotifyUpdateResult and NotifyOwner, and it
+// RETURNS the outcome (m442 N4: the old void sender made a failed getMe /
+// sendMessage / timeout indistinguishable from a delivery, so a lost owner push
+// was never retried). nil = delivered; ownerpush.ErrNotBound = no token, no
+// bound chat or no text (nothing to send, nothing to retry); any other error =
+// the send failed and is token-free (redactTelegramErr).
+func SendOwnerText(st *store.Store, text string) error {
 	if text == "" {
-		return
+		return ownerpush.ErrNotBound
 	}
 	dbCfg, err := st.TelegramConfig().Get()
 	if err != nil || dbCfg.BotToken == "" {
-		logger.Debugf("telegram update result: bot disabled (no token) — not sent")
-		return
+		logger.Debugf("telegram update result: bot disabled (no token) - not sent")
+		return ownerpush.ErrNotBound
 	}
 	chatID, err := st.TelegramConfig().GetBoundChatID()
 	if err != nil || chatID == 0 {
-		logger.Debugf("telegram update result: no bound chat — not sent")
-		return
+		logger.Debugf("telegram update result: no bound chat - not sent")
+		return ownerpush.ErrNotBound
 	}
 	token := dbCfg.BotToken
 	bot, err := tgbotapi.NewBotAPIWithClient(token, ownerBotEndpoint, &http.Client{Timeout: ownerSendTimeout})
 	if err != nil {
-		logger.Errorf("telegram update result: bot api: %s", redactTelegramErr(err, token))
-		return
+		msg := redactTelegramErr(err, token)
+		logger.Errorf("telegram update result: bot api: %s", msg)
+		return fmt.Errorf("telegram bot api: %s", msg)
 	}
 	if _, err := bot.Send(tgbotapi.NewMessage(chatID, text)); err != nil {
-		logger.Errorf("telegram update result: send: %s", redactTelegramErr(err, token))
+		msg := redactTelegramErr(err, token)
+		logger.Errorf("telegram update result: send: %s", msg)
+		return fmt.Errorf("telegram send: %s", msg)
 	}
+	return nil
 }

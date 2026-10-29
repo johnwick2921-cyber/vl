@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vl/config"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
@@ -176,5 +177,10 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// K1/K7 — the connect-key refusal counter, named as the protocol doc names
 	// it (nt_connect_key_refused). 0 when no key is required or no server runs.
 	body["nt_connect_key_refused"] = ntTrader.ConnectKeyRefusedCount()
+	// m442 N4: the owner-push delivery counters (sent / failed / held ...). READ
+	// values; ABSENT when no pusher runs (a friend instance) - never a fabricated 0.
+	if st, ok := ownerpush.StatsSnapshot(); ok {
+		body["owner_push"] = st
+	}
 	c.JSON(code, body)
 }

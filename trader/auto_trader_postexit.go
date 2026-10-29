@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"vl/internal/ownerpush"
 	ntwire "vl/provider/ninjatrader"
 	ntTrader "vl/trader/ninjatrader"
 )
@@ -51,6 +52,7 @@ var (
 	postExitRegistry    sync.Map // traderID -> *AutoTrader
 	postExitHookOnce    sync.Once
 	postExitLegHookOnce sync.Once
+	closeRejectHookOnce sync.Once
 )
 
 func registerPostExitDispatch(at *AutoTrader) {
@@ -61,6 +63,17 @@ func registerPostExitDispatch(at *AutoTrader) {
 	postExitHookOnce.Do(func() { ntTrader.OnPositionClosed = dispatchPositionClosed })
 	// B2 (BUILD-ALL): the leg-aware hook is likewise written exactly once.
 	postExitLegHookOnce.Do(func() { ntTrader.OnPositionLegClosed = dispatchPositionLegClosed })
+	// m442: a rejected exit raises an ops P0 (and feeds the refusal-storm count);
+	// the storm push names the trader by display name. Both written exactly once.
+	closeRejectHookOnce.Do(func() {
+		ntTrader.OnCloseRejected = dispatchCloseRejected
+		ownerpush.SetTraderLabeler(func(id string) string {
+			if at, ok := runningTrader(id); ok {
+				return at.ownerPushTraderLabel()
+			}
+			return ""
+		})
+	})
 }
 
 func unregisterPostExitDispatch(at *AutoTrader) {
