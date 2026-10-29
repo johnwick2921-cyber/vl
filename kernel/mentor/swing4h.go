@@ -66,7 +66,7 @@ type SwingCfg struct {
 	EMAPeriod         int     // 34
 	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 [D5.2 p2 @22:24–23:05: 5–10]
 	StopBeyondLinePts float64 // clean-rejection stop distance; default 30 (R8: 30–60 allowed)
-	MaxStopPts        float64 // ~100-pt ceiling, DECLARED BUT NEVER READ (no skip; waits on mentor Q43): the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
+	MaxStopPts        float64 // ~100-pt ceiling; NOT used as a skip in swingRejectIntent (no refusal; waits on mentor Q43), its default is the SIZING ceiling the trader reads in mentorSwingCeiling (wide-stop 2-MNQ cap, mentorSwingWideStopCap): the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
 	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
@@ -771,8 +771,9 @@ func closedBack(approach Side, close, line float64) bool {
 // reference candle's extreme (R8: no buffer), stop 30 pts beyond the line.
 // Refused only when the hard invariant (stop on the correct side of the entry)
 // breaks, or the stop is narrower than MinStopPts (OFF by default). MaxStopPts
-// is DECLARED but NEVER READ here (release #54, doc truth): a stop of ~100 pts
-// is NOT refused today — m186 softened the course's "dung vo" to "take 1-2 MNQ
+// is NOT used as a skip here (release #54, doc truth; the trader reads its
+// default as the sizing ceiling, mentorSwingCeiling -> the 2-MNQ wide-stop
+// cap): a stop of ~100 pts is NOT refused today — m186 softened the course's "dung vo" to "take 1-2 MNQ
 // and sit" [D5.2 p2 @21:25–21:43], and the 100-pt ceiling waits on mentor Q43
 // (trade 709/710, stop 102.25). The swing ISB (stop AT the line) is exempt by
 // the same ruling.

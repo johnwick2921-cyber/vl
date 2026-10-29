@@ -270,12 +270,14 @@ func TestSwingThroughCloseNotSwallowedByGuardShort(t *testing.T) {
 	}
 }
 
-// (e) doc truth — MaxStopPts is DECLARED and NEVER READ: a clean-reject swing
+// (e) doc truth — MaxStopPts is NOT a skip in swingRejectIntent (the trader
+// still reads its default as the sizing ceiling, mentorSwingCeiling -> the
+// 2-MNQ wide-stop cap, pinned in trader): a clean-reject swing
 // with a ~102-pt stop (trades 709/710, the 10-28 19:05 bar, a 72-pt touch
 // candle) is armed today, and the 100-pt behaviour waits for mentor Q43. The
 // comment on swingRejectIntent used to claim a refusal at MaxStopPts; this pin
 // states what the code really does so the comment cannot drift back into a lie.
-func TestSwingMaxStopPtsIsDeclaredButNotRead(t *testing.T) {
+func TestSwingMaxStopPtsIsNotASkipInSwingRejectIntent(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	if cfg.MaxStopPts != 100 {
 		t.Fatalf("fixture: MaxStopPts default = %v, want 100", cfg.MaxStopPts)
@@ -287,7 +289,7 @@ func TestSwingMaxStopPtsIsDeclaredButNotRead(t *testing.T) {
 	s := &SwingState{}
 	out := SwingTick(s, swingTape(t, cur), cfg, cur[1].OpenTime+60_000)
 	if len(out) != 1 || out[0].Action != PlaceStopEntry || out[0].Side != SideLong {
-		t.Fatalf("a ~100-pt-stop clean reject must still arm (MaxStopPts is not read): %+v", out)
+		t.Fatalf("a ~100-pt-stop clean reject must still arm (MaxStopPts is not a skip): %+v", out)
 	}
 	if d := out[0].Price - out[0].Stop; d < 100 {
 		t.Fatalf("fixture: the stop distance %.2f should reach MaxStopPts", d)

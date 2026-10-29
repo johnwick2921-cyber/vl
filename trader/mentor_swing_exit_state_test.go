@@ -298,6 +298,62 @@ func TestMentorSwingBERefusedThenAppliedReportsReceipt(t *testing.T) {
 	}
 }
 
+// (a) N2 — the bracket is proof of life. A working "<signal>-sl" in the fresh
+// broker book proves the position it protects is open EVEN WHEN the positions
+// table has not caught up: (1) no row at all yet (the fill is newer than the
+// reconcile), (2) a CLOSED row for the signal whose bracket is still working.
+// Neither may be read as "no position" (unproven / gone) — the BE is owed and
+// must go out. Production call site mentorDispatchIntent.
+// Mutant: drop the `bookKnown && bracket` arm of mentorSwingOwnership ->
+// (1) is refused as unproven, (2) as gone -> RED.
+func TestMentorSwingWorkingBracketIsProofOfLife(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		closedRow bool
+	}{{"no positions row yet", false}, {"closed row but bracket still working", true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			at, _, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+			moves := &swingSignalMoves{}
+			moves.install(t)
+			armID := "swing-" + strconv.FormatInt(swingRestartOpenTime, 10)
+			row := swingRow(at, armID, "long", 29600, 29570, 29660, 2, store.StateFilled)
+			if err := ledger.DB().Create(&row).Error; err != nil {
+				t.Fatal(err)
+			}
+			if tc.closedRow {
+				swingOwnedFixture(t, at, row) // open row + bracket ...
+				opens, err := at.store.Position().GetOpenPositions(at.id)
+				if err != nil || len(opens) != 1 {
+					t.Fatalf("fixture: open rows=%d err=%v", len(opens), err)
+				}
+				// ... then only the ROW closes; the bracket stays working.
+				if ok, err := at.store.Position().ClosePosition(opens[0].ID, row.StopPx, "stop", -200, 0, "stop"); err != nil || !ok {
+					t.Fatalf("fixture: close the row: ok=%v err=%v", ok, err)
+				}
+			} else {
+				prev := mentorStopBook
+				mentorStopBook = func(*nttrader.TCPTrader) (ntwire.OrderSnapshotPayload, time.Time, bool) {
+					return ntwire.OrderSnapshotPayload{Orders: []ntwire.NT8Order{
+						{Name: row.SignalID + "-sl", State: "working", StopPrice: row.StopPx, Quantity: 2, Symbol: "MNQ", Action: "sell"},
+					}}, time.Now(), true
+				}
+				t.Cleanup(func() { mentorStopBook = prev })
+			}
+			mentorRegisterLiveArmForTest(armID, at.id, row.ID, "long", 29600)
+			swingEvalWithPos(t, at, armID, row)
+			resetMentorCounters(at)
+
+			at.mentorDispatchIntent(mentor.Intent{Action: mentor.ActionMoveStopBE, ArmID: armID, Reason: "swing +1R"}, mentorTierInputs{}, 1000, 1100)
+			if moves.n() != 1 {
+				t.Fatalf("a working bracket is proof the position is open: the BE must go out once, got %d (counters=%v)", moves.n(), at.mentorCountSnapshot())
+			}
+			if at.mentorEval.State.Swing.Pos == nil || !at.mentorEval.State.Swing.Pos.MovedBE {
+				t.Fatalf("the applied BE must report its receipt: %+v", at.mentorEval.State.Swing.Pos)
+			}
+		})
+	}
+}
+
 // (c) #15 — the hold-close is the X8 marketable limit, NOT a market flatten:
 // one limit through the market (long: below the bid by the collar, on the tick
 // grid), zero market closes; a second dispatch while the limit is in flight
