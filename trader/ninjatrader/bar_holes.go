@@ -415,19 +415,19 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 
 // bootScanFromLocked is the boot scan's first minute for a key whose newest
 // live minute is newestMs. m445 (review round 1, D2): it reaches back as far as
-// the DEEPEST data window the data-integrity gate judges (IntegrityDeepOpenMin
+// the DEEPEST data window the data-integrity gate judges (IntegritySwingOpenMin
 // open minutes) — before, it stopped at the current CME session day's open, so a
 // restart after the session roll judged only that day and every older hole was
-// silently clear in the 8160-minute deep window (the 10-26 17:00–21:57 hole,
-// booted at 10-28 06:00: blocked=false). One BarsBetweenOn read of at most
-// ~8160 rows per key, once per process. The shorter bounds (session open,
+// silently clear in the deep window (the 10-26 17:00–21:57 hole, booted at
+// 10-28 06:00: blocked=false). One BarsBetweenOn read of at most ~25k rows
+// (IntegritySwingOpenMin open minutes) per key, once per process. The shorter bounds (session open,
 // bars_back replay window) are kept for the line and never reached less far.
 // Returns the bound and its name for the boot line.
 func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
-	deep := t.windowFromLocked(IntegrityDeepOpenMin, time.UnixMilli(newestMs))
+	deep := t.windowFromLocked(IntegritySwingOpenMin, time.UnixMilli(newestMs))
 	shallow, bound := t.bootScanShallowLocked(newestMs)
 	if deep < shallow {
-		return deep, fmt.Sprintf("the deep integrity window (%d open min back)", IntegrityDeepOpenMin)
+		return deep, fmt.Sprintf("the deepest integrity window (%d open min back)", IntegritySwingOpenMin)
 	}
 	return shallow, bound
 }

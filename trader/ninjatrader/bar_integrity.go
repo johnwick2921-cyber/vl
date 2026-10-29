@@ -60,13 +60,24 @@ import (
 // it corrupts all of them.
 const IntegrityIntradayOpenMin = 1500
 
-// IntegrityDeepOpenMin is the window of the entries that also read the 4h
-// structure: the SWING4H setup (4h EMA 34), and the AI / planner / Picture /
-// agent paths (kernel.HTFVetoNativeTF = "4h" structure; 1m SVP/FVG/tape of
-// AISVPBarCount = 2000, which this contains). 34 four-hour candles x 240 open
-// minutes = 8160: the EMA's own period. A candle older than that carries under
-// 0.75% of the EMA's weight, so a few missing minutes there cannot move it.
-const IntegrityDeepOpenMin = 34 * 240
+// IntegrityDeepOpenMin is the window of the AI / planner / Picture / agent
+// entries, which also read the 4h structure (kernel.HTFVetoNativeTF = "4h") and
+// 1m SVP/FVG/tape of AISVPBarCount = 2000 (contained). 34 four-hour candles x
+// 240 open minutes is the EMA 34's own period, plus ONE more candle: a window
+// of N x 240 open minutes starts part-way into its oldest 4h candle, and the
+// part of that candle before the window is still in the candle's OHLC (review
+// round 1: the window must be aligned out to the candle boundary, not cut
+// through it).
+const IntegrityDeepOpenMin = (34 + 1) * 240
+
+// IntegritySwingOpenMin is the window of the SWING4H setup: the mentor's 4h
+// EMA 34 is gated on its WARM-UP — kernel/mentor.FourHEMA34Warmup = 102 closed
+// 4h candles ("the floor the fail-closed gate actually reads", seed.go) — and
+// is computed over that whole seeded history. A candle 34 back still carries
+// ~0.8% of the EMA and everything older ~14% together, so the 34-candle window
+// the other paths use is too short for it. 102 candles + the boundary candle.
+// (Pinned equal to the mentor constant by the trader package.)
+const IntegritySwingOpenMin = (102 + 1) * 240
 
 // IntegrityAction is the one instruction the owner is given for a hole.
 const IntegrityAction = "NT8: Reload All Historical Data (or wait for the auto re-request)"
@@ -160,7 +171,7 @@ func IntegrityVerdictFor(symbol string, openMinutes int, now time.Time) Integrit
 }
 
 // integrityMemo remembers the window-start walk for one wall minute: walking
-// 8160 open minutes through the calendar on every admission would be wasteful,
+// 24720 open minutes through the calendar on every admission would be wasteful,
 // and the answer only changes when the minute does.
 type integrityMemo struct {
 	mu sync.Mutex
@@ -452,7 +463,7 @@ type PausedReason struct {
 type PausedView struct {
 	Symbol  string         `json:"symbol"`
 	Paused  bool           `json:"paused"`
-	Scope   string         `json:"scope,omitempty"` // all_entries | swing_and_deep_entries
+	Scope   string         `json:"scope,omitempty"` // all_entries | swing_and_deep_entries | swing_entries
 	Reasons []PausedReason `json:"reasons"`
 	Action  string         `json:"action,omitempty"`
 }
@@ -498,12 +509,16 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 	for _, s := range syms {
 		intra := t.integrity(s, IntegrityIntradayOpenMin, now)
 		deep := t.integrity(s, IntegrityDeepOpenMin, now)
+		swing := t.integrity(s, IntegritySwingOpenMin, now)
 		pv := PausedView{Symbol: s, Reasons: []PausedReason{}}
-		worst := deep
-		if intra.Blocked {
+		worst := swing
+		switch {
+		case intra.Blocked:
 			pv.Scope, worst = "all_entries", intra
-		} else if deep.Blocked {
-			pv.Scope = "swing_and_deep_entries"
+		case deep.Blocked:
+			pv.Scope, worst = "swing_and_deep_entries", deep
+		case swing.Blocked:
+			pv.Scope = "swing_entries"
 		}
 		if worst.Blocked {
 			pv.Paused = true

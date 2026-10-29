@@ -70,7 +70,7 @@ func TestAHoleOutsideTheWindowDoesNotBlock(t *testing.T) {
 	f := newGHFixture(t)
 	f.openHole()
 	// Fri 10-16 10:00 CT: the hole ended 10-14 07:48 — more than 1500 open
-	// minutes (≈ 25 trading hours) earlier, but well inside 8160.
+	// minutes (≈ 25 trading hours) earlier, but well inside the deep window.
 	later := ct(2026, 10, 16, 10, 0)
 	intra := IntegrityVerdictFor("MNQ", IntegrityIntradayOpenMin, later)
 	for _, h := range intra.Holes {
@@ -569,7 +569,7 @@ func TestRealCleanDaysNeverPause(t *testing.T) {
 			if !kernel.IsCMEOpen(closeAt) {
 				continue
 			}
-			for _, win := range []int{IntegrityIntradayOpenMin, IntegrityDeepOpenMin} {
+			for _, win := range []int{IntegrityIntradayOpenMin, IntegrityDeepOpenMin, IntegritySwingOpenMin} {
 				v := h.verdict(win, closeAt)
 				asked++
 				if v.Blocked {
@@ -765,5 +765,42 @@ func TestSpentHoleIsRemeasuredAndResumes(t *testing.T) {
 	}
 	if h.say.count("bars hole FILLED") != 1 {
 		t.Fatalf("the fill is said once:\n%s", h.say.dump())
+	}
+}
+
+// SWING4H reads the 102-candle warm-up history (kernel/mentor.FourHEMA34Warmup),
+// far past the 35-candle window of the AI / planner / Picture / agent paths.
+// A hole ~11 trading days old is outside the deep window (clear) and inside the
+// swing window (blocked), after a restart: the boot scan reaches it, the health
+// scope says swing-only.
+func TestSwingWindowSeesAHoleTheDeepWindowDoesNot(t *testing.T) {
+	armIntegrity(t)
+	boot := ct(2026, 10, 28, 6, 0)
+	st := &memHoleStore{}
+	gapFrom, gapTo := ct(2026, 10, 13, 9, 0), ct(2026, 10, 13, 9, 30)
+	for m := ct(2026, 10, 8, 17, 0); m.Before(boot); m = m.Add(time.Minute) {
+		if barHoleExpected(m) && (m.Before(gapFrom) || !m.Before(gapTo)) {
+			st.add(m.UnixMilli())
+		}
+	}
+	tr := newBarHoleTracker(st, func() *ntwire.TCPServer { return nil })
+	tr.say = (&lineSink{}).say
+	tr.clock = func() time.Time { return boot }
+	prev := barHoles.Swap(tr)
+	t.Cleanup(func() { barHoles.Store(prev) })
+	st.add(boot.UnixMilli())
+	tr.observeLive("MNQ", "1m", ghContract, []store.BarHistoryDB{{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: boot.UnixMilli()}})
+
+	now := boot.Add(time.Minute)
+	if v := IntegrityVerdictFor("MNQ", IntegrityDeepOpenMin, now); v.Blocked {
+		t.Fatalf("a hole ~11 trading days back is outside the deep window: %+v", v)
+	}
+	v := IntegrityVerdictFor("MNQ", IntegritySwingOpenMin, now)
+	if !v.Blocked || v.Class != IntegrityClassHole || len(v.Holes) != 1 || v.Holes[0].Window != "10-13 09:00–09:30 CT" {
+		t.Fatalf("the swing window must see the 10-13 hole after a restart: %+v", v)
+	}
+	views, armed := TradingPausedSnapshot(now)
+	if !armed || len(views) != 1 || !views[0].Paused || views[0].Scope != "swing_entries" {
+		t.Fatalf("health must say swing_entries only: %+v", views)
 	}
 }

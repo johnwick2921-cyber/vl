@@ -85,8 +85,16 @@ func TestIntegrityWindowsEqualTheCodeTheyDescribe(t *testing.T) {
 	if ntTrader.IntegrityIntradayOpenMin != mentorBars1mDepth {
 		t.Fatalf("the intraday window (%d) must equal the 1m depth the mentor reads (mentorBars1mDepth = %d)", ntTrader.IntegrityIntradayOpenMin, mentorBars1mDepth)
 	}
-	if ntTrader.IntegrityDeepOpenMin != 34*240 {
-		t.Fatalf("the deep window is the 4h EMA 34 span: 34 x 240 open minutes, got %d", ntTrader.IntegrityDeepOpenMin)
+	if ntTrader.IntegrityDeepOpenMin != (34+1)*240 {
+		t.Fatalf("the deep window is the 4h EMA 34 span (34 candles x 240 open minutes) plus the boundary candle, got %d", ntTrader.IntegrityDeepOpenMin)
+	}
+	// SWING4H's EMA is gated on, and computed over, the evaluator's warm-up
+	// history: the window must be the mentor's own constant, not a copy of it.
+	if want := (mentor.FourHEMA34Warmup + 1) * 240; ntTrader.IntegritySwingOpenMin != want {
+		t.Fatalf("the swing window must be (mentor.FourHEMA34Warmup=%d + 1) x 240 = %d open minutes, got %d", mentor.FourHEMA34Warmup, want, ntTrader.IntegritySwingOpenMin)
+	}
+	if ntTrader.IntegritySwingOpenMin < ntTrader.IntegrityDeepOpenMin {
+		t.Fatal("the swing window must contain the deep one")
 	}
 	if ntTrader.IntegrityDeepOpenMin < kernel.AISVPBarCount {
 		t.Fatalf("the deep window must contain the AI path's 1m depth (%d)", kernel.AISVPBarCount)
@@ -157,7 +165,7 @@ func TestIntegrityGateWindowPerPath(t *testing.T) {
 		want int
 	}{
 		{"mentor intraday arm", admitIntent{Path: admitArm, MentorArm: true}, ntTrader.IntegrityIntradayOpenMin},
-		{"mentor SWING4H arm", admitIntent{Path: admitArm, MentorArm: true, Swing: true}, ntTrader.IntegrityDeepOpenMin},
+		{"mentor SWING4H arm", admitIntent{Path: admitArm, MentorArm: true, Swing: true}, ntTrader.IntegritySwingOpenMin},
 		{"planner arm", admitIntent{Path: admitArm}, ntTrader.IntegrityDeepOpenMin},
 		{"AI decision", admitIntent{Path: admitDecision}, ntTrader.IntegrityDeepOpenMin},
 		{"agent chat", admitIntent{Path: admitAgent}, ntTrader.IntegrityDeepOpenMin},
@@ -170,8 +178,9 @@ func TestIntegrityGateWindowPerPath(t *testing.T) {
 	}
 
 	// And at the production chain: a hole inside the DEEP window only blocks
-	// the paths that read it; an intraday mentor arm still places.
-	f := &intFake{blockedFor: func(openMin int) bool { return openMin == ntTrader.IntegrityDeepOpenMin }}
+	// the paths that read it (the swing window contains the deep one); an
+	// intraday mentor arm still places.
+	f := &intFake{blockedFor: func(openMin int) bool { return openMin >= ntTrader.IntegrityDeepOpenMin }}
 	armIntegrityGate(t, f)
 	at, _ := pauseTrader(t)
 	at.id = "integrity-window-1"
@@ -351,14 +360,14 @@ func TestIntegrityGateRefusesMentorAuthoring(t *testing.T) {
 		t.Fatalf("an intraday setup asks the INTRADAY window, asked %v", f.asked)
 	}
 
-	// a SWING4H intent asks the deep window
+	// a SWING4H intent asks the swing window
 	f.asked = nil
-	f.blockedFor = func(openMin int) bool { return openMin == ntTrader.IntegrityDeepOpenMin }
+	f.blockedFor = func(openMin int) bool { return openMin == ntTrader.IntegritySwingOpenMin }
 	swing := mentorStaleBlockIntent()
 	swing.Setup, swing.ArmID = "SWING4H", "swing-1"
 	at.mentorPlaceIntent(swing, mentorSizeChoice{Contracts: 1, Tier: "base"}, 1000, 1100)
-	if len(placed) != 0 || len(f.asked) == 0 || f.asked[0] != ntTrader.IntegrityDeepOpenMin {
-		t.Fatalf("SWING4H must be refused by the deep window (placed %d, asked %v)", len(placed), f.asked)
+	if len(placed) != 0 || len(f.asked) == 0 || f.asked[0] != ntTrader.IntegritySwingOpenMin {
+		t.Fatalf("SWING4H must be refused by the swing window (placed %d, asked %v)", len(placed), f.asked)
 	}
 	// ...and an intraday intent on the same deep-only hole PROCEEDS
 	at.mentorPlaceIntent(mentorStaleBlockIntent(), mentorSizeChoice{Contracts: 1, Tier: "base"}, 1000, 1100)
@@ -469,7 +478,7 @@ func TestIntegrityWithdrawScopeAndGrace(t *testing.T) {
 	// intraday arm on a clean intraday window must not be cancelled every beat)
 	mt := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	mt.exchange = "ninjatrader"
-	fk.blockedFor = func(openMin int) bool { return openMin == ntTrader.IntegrityDeepOpenMin }
+	fk.blockedFor = func(openMin int) bool { return openMin == ntTrader.IntegritySwingOpenMin }
 	if r, swingOnly := mt.integrityWithdrawReason(now); r == "" || !swingOnly {
 		t.Fatalf("mentor, deep-only hole: swing rows only: %q swingOnly=%v", r, swingOnly)
 	}

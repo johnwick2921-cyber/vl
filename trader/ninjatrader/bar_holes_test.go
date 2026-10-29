@@ -867,7 +867,7 @@ func TestBootScanFindsAHoleOlderThanTheBoot(t *testing.T) {
 	if hs[0].From != ct(2026, 10, 14, 3, 44).Format(time.RFC3339) || hs[0].To != ct(2026, 10, 14, 7, 48).Format(time.RFC3339) || hs[0].MissingMin != 244 {
 		t.Fatalf("boot scan hole = %+v, want [03:44, 07:48) CT, 244 open min", hs[0])
 	}
-	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 10-06 11:01 → 10-14 09:01 · from the deep integrity window (8160 open min back) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
+	if f.sink.count("🕳 boot hole scan: MNQ 1m on MNQ 12-26 09-18 11:01 → 10-14 09:01 · from the deepest integrity window (24720 open min back) · 1 hole(s) (10-14 03:44–07:48 CT, 244 open min) — tracked like a live hole") != 1 {
 		t.Fatalf("the boot scan must say once what it covered and found:\n%s", f.sink.dump())
 	}
 	if d := f.delta(); d.Detected != 1 {

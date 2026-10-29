@@ -30,8 +30,8 @@ import (
 //	  (limit, stop-entry, market_in_zone)    armAdmitted at all 4 wire sites)
 //	Picture HTF entry                      admitChain  (admitPicture)         deep
 //	mentor arm, intraday setups            admitChain  (admitArm+MentorArm)   intraday
-//	mentor arm, SWING4H                    admitChain  (admitArm+Swing)       deep
-//	mentor arm AUTHORING                   mentorPlaceIntent                  intraday | deep (swing)
+//	mentor arm, SWING4H                    admitChain  (admitArm+Swing)       swing
+//	mentor arm AUTHORING                   mentorPlaceIntent                  intraday | swing
 //	mentor armed-pass placement            mentorOnlyPlacementPass            intraday
 //	SIM test seams (TestArmPlace / Stop)   dataIntegrityTestSeamRefusal       deep
 //	debug test trade (POST /api/debug/     DebugNTTestTrade                   deep
@@ -45,12 +45,16 @@ import (
 //	  frame from it (2m/5m/15m/1h/4h, the §7 Globex run window 17:00→08:30,
 //	  the RTH day, boxes, ORB, day latch). The 5m feed it also reads
 //	  (mentor_tick.go, "5m", 12 bars) lies inside the same minutes.
-//	deep = ntTrader.IntegrityDeepOpenMin = 34 x 240 = 8160.
-//	  SWING4H reads the 4h EMA 34 (seeded from the stored 1m, mentor_tick.go
-//	  mentorSeedBars1mN); the AI / planner / Picture / agent paths read the
-//	  native 4h structure (kernel.HTFVetoNativeTF, HTFVetoNativeBarsAsk) and
-//	  1m x kernel.AISVPBarCount (2000, inside this). 34 candles is the EMA's own
-//	  period; older candles carry < 0.75% weight each.
+//	deep = ntTrader.IntegrityDeepOpenMin = (34+1) x 240 = 8400.
+//	  The AI / planner / Picture / agent paths read the native 4h structure
+//	  (kernel.HTFVetoNativeTF, HTFVetoNativeBarsAsk) and 1m x
+//	  kernel.AISVPBarCount (2000, inside this). 34 candles is the 4h EMA's own
+//	  period, +1 so the window is cut at a candle boundary, not through one.
+//	swing = ntTrader.IntegritySwingOpenMin = (102+1) x 240 = 24720.
+//	  SWING4H's 4h EMA 34 is gated on, and computed over, the WARM-UP history
+//	  (kernel/mentor.FourHEMA34Warmup = 102 closed 4h candles, seeded from the
+//	  stored 1m, mentor_tick.go mentorSeedBars1mN) — a candle 34 back still
+//	  carries ~0.8% of the EMA and everything older ~14% together.
 //
 // NEVER blocked or delayed by this gate: exits, stops, BE/trail moves, closes,
 // protection, flatten, reconciliation. It sits in the ENTRY chain only; the
@@ -91,7 +95,10 @@ func (v dataVerdict) isData() bool {
 
 // integrityWindowFor picks the window the admitted path reads.
 func integrityWindowFor(in admitIntent) int {
-	if in.Path == admitArm && in.MentorArm && !in.Swing {
+	if in.Path == admitArm && in.MentorArm {
+		if in.Swing {
+			return ntTrader.IntegritySwingOpenMin
+		}
 		return ntTrader.IntegrityIntradayOpenMin
 	}
 	return ntTrader.IntegrityDeepOpenMin
@@ -102,7 +109,7 @@ func integrityWindowFor(in admitIntent) int {
 // aggregates.
 func mentorIntegrityWindow(in mentor.Intent) int {
 	if strings.EqualFold(strings.TrimSpace(in.Setup), "SWING4H") || strings.HasPrefix(strings.TrimSpace(in.ArmID), "swing-") {
-		return ntTrader.IntegrityDeepOpenMin
+		return ntTrader.IntegritySwingOpenMin
 	}
 	return ntTrader.IntegrityIntradayOpenMin
 }
@@ -224,7 +231,9 @@ type integrityEpisode struct {
 // integrityWindows is every window this trader's entries read.
 func (at *AutoTrader) integrityWindows() []int {
 	if at.mentorEnabled() {
-		return []int{ntTrader.IntegrityIntradayOpenMin, ntTrader.IntegrityDeepOpenMin}
+		// a mentor trader enters only through mentor arms: intraday setups and
+		// SWING4H (the swing window contains the deep one)
+		return []int{ntTrader.IntegrityIntradayOpenMin, ntTrader.IntegritySwingOpenMin}
 	}
 	return []int{ntTrader.IntegrityDeepOpenMin}
 }
