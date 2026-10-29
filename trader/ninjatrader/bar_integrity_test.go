@@ -1,9 +1,12 @@
 package ninjatrader
 
 import (
+	"compress/gzip"
 	"encoding/json"
 	"errors"
 	"os"
+	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"testing"
@@ -178,12 +181,11 @@ func (s *memHoleStore) PrevOpenTimeOn(_, _, _ string, beforeMs int64) (int64, bo
 	if s.prevErr != nil {
 		return 0, false, s.prevErr
 	}
-	for i := len(s.times) - 1; i >= 0; i-- {
-		if s.times[i] < beforeMs {
-			return s.times[i], true, nil
-		}
+	i := sort.Search(len(s.times), func(i int) bool { return s.times[i] >= beforeMs })
+	if i == 0 {
+		return 0, false, nil
 	}
-	return 0, false, nil
+	return s.times[i-1], true, nil
 }
 
 func (s *memHoleStore) BarsBetweenOn(_, _, _ string, fromMs, toMs int64) ([]store.BarHistoryDB, error) {
@@ -192,11 +194,11 @@ func (s *memHoleStore) BarsBetweenOn(_, _, _ string, fromMs, toMs int64) ([]stor
 	if s.rangeErr != nil {
 		return nil, s.rangeErr
 	}
-	var out []store.BarHistoryDB
-	for _, ms := range s.times {
-		if ms >= fromMs && ms < toMs {
-			out = append(out, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: ms})
-		}
+	lo := sort.Search(len(s.times), func(i int) bool { return s.times[i] >= fromMs })
+	hi := sort.Search(len(s.times), func(i int) bool { return s.times[i] >= toMs })
+	out := make([]store.BarHistoryDB, 0, hi-lo)
+	for _, ms := range s.times[lo:hi] {
+		out = append(out, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: ms})
 	}
 	return out, nil
 }
@@ -501,5 +503,88 @@ func TestIntegrityDetectorLaggingBehindTheCacheIsUnknown(t *testing.T) {
 	h.run(ct(2026, 10, 14, 9, 0), ct(2026, 10, 14, 9, 5))
 	if v := h.verdict(IntegrityIntradayOpenMin, now); v.Blocked {
 		t.Fatalf("caught up: clear: %+v", v)
+	}
+}
+
+// ── REAL CLEAN DAYS: no false pause ────────────────────────────────────────
+//
+// INTEGRITY_REAL_DAYS=/tmp/realday-1021:/tmp/realday-1022:/tmp/realday-1023
+// go test ./trader/ninjatrader/ -run TestRealCleanDaysNeverPause -v
+//
+// Each dir is a REAL_DAY_REPLAY export (mnq_realday.json.gz, 1m bars read
+// read-only from the live DB). Every bar from 08-26 to the day's end is fed
+// through observeLive at its close; then, for EVERY wall minute of the last
+// ~30 hours with CME open, the verdict is asked over BOTH windows. Clean days
+// (only the daily break, weekends and the Labor Day early close missing) must
+// never pause: zero blocked minutes.
+
+func loadRealDayBars(t *testing.T, dir string) []int64 {
+	t.Helper()
+	f, err := os.Open(filepath.Join(dir, "mnq_realday.json.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Bars map[string][][]json.RawMessage `json:"bars"`
+	}
+	if err := json.NewDecoder(zr).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	var ts []int64
+	for _, row := range doc.Bars["1m"] {
+		var ot int64
+		if err := json.Unmarshal(row[0], &ot); err != nil {
+			t.Fatal(err)
+		}
+		ts = append(ts, ot)
+	}
+	sort.Slice(ts, func(i, j int) bool { return ts[i] < ts[j] })
+	return ts
+}
+
+func TestRealCleanDaysNeverPause(t *testing.T) {
+	dirs := strings.Split(os.Getenv("INTEGRITY_REAL_DAYS"), ":")
+	if len(dirs) == 0 || dirs[0] == "" {
+		t.Skip("INTEGRITY_REAL_DAYS not set (REAL_DAY_REPLAY exports)")
+	}
+	for _, dir := range dirs {
+		ts := loadRealDayBars(t, dir)
+		h := newMemHarness(t)
+		last := time.UnixMilli(ts[len(ts)-1])
+		evalFrom := last.Add(-30 * time.Hour)
+		asked, blocked := 0, 0
+		next := 0
+		for next < len(ts) {
+			h.bar(time.UnixMilli(ts[next]))
+			closeAt := time.UnixMilli(ts[next]).Add(time.Minute)
+			next++
+			if closeAt.Before(evalFrom) {
+				continue
+			}
+			if !kernel.IsCMEOpen(closeAt) {
+				continue
+			}
+			for _, win := range []int{IntegrityIntradayOpenMin, IntegrityDeepOpenMin} {
+				v := h.verdict(win, closeAt)
+				asked++
+				if v.Blocked {
+					blocked++
+					t.Errorf("%s: FALSE PAUSE at %s (window %d): %+v", dir, kernel.TableTimeCT(closeAt), win, v)
+					if blocked > 5 {
+						t.FailNow()
+					}
+				}
+			}
+		}
+		t.Logf("%s: %d bars fed (%s .. %s), %d verdicts asked over both windows, %d blocked", dir, len(ts),
+			kernel.TableTimeCT(time.UnixMilli(ts[0])), kernel.TableTimeCT(last), asked, blocked)
+		if asked == 0 {
+			t.Fatalf("%s: nothing was asked", dir)
+		}
 	}
 }
