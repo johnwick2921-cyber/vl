@@ -120,9 +120,20 @@ func (t *TCPTrader) ReconcilePassForTest(traderID, exchangeID, exchangeType stri
 }
 
 func (t *TCPTrader) notifyReconcilePass() {
-	if p := t.reconcileObs.Load(); p != nil && *p != nil {
-		(*p)()
+	p := t.reconcileObs.Load()
+	if p == nil || *p == nil {
+		return
 	}
+	// The observer is data-truth SAMPLING, not protection. It runs on the
+	// safe.GoNet reconcile goroutine, whose recover freezes the trader and ends
+	// the loop: a bug in a check must never cost the protective reconcile
+	// (m447 review defect 3).
+	defer func() {
+		if r := recover(); r != nil {
+			logger.Errorf("🚨 reconcile observer PANICKED (data-truth sampling; the reconcile loop continues): %v", r)
+		}
+	}()
+	(*p)()
 }
 
 // StartPositionReconcile launches the periodic reconcile goroutine (idempotent

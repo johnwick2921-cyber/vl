@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/internal/datatruth"
@@ -29,8 +30,11 @@ import (
 //     BackMin before it (a fill's timestamp is the frame's, and an exit frame
 //     arrives a beat after the print), high/low +- TolTicks. Measured on the
 //     last 30 days of real fills (see the test) the real worst case outside the
-//     fill-minute bar alone was 1.0 point, and ZERO fills were outside the
-//     window band - the tolerance is a margin over measured reality, not a guess.
+//     fill-minute bar alone was 1.0 point, and ZERO broker fills (trader_fills
+//     exits, trader_positions entries) were outside the window band. The one
+//     source that does fire is the price the bot RECORDED on a closed position
+//     (trader_positions.exit_price): 2 of 95 in 30 days (positions 635, 639),
+//     both genuinely wrong. The tolerance is a margin over measured reality.
 //   - when no bar of that minute exists yet the fill WAITS (the forming bar is
 //     not in the ring until it closes) and is judged when it arrives; when a hole
 //     means the bar never will, the order's own price +- SlipTicks (or the AddOn's
@@ -38,7 +42,8 @@ import (
 //     a missing bar is the bar-gap checks' episode, not a second one here.
 //   - a far fill raises ONE alert and a counter.
 //   - the SECOND far fill of the same CME session for the symbol pauses NEW
-//     ENTRIES until the owner acknowledges (Ack) or the next session starts. It
+//     ENTRIES until the owner acknowledges (Ack) or the next session starts; a
+//     far fill AFTER an Ack pauses again. It
 //     is a pause on entries only: the exit, stop, trail, close, protection and
 //     flatten paths never consult it.
 //
@@ -241,9 +246,21 @@ func NewFillGuard(p FillParams, session func(time.Time) string) *FillGuard {
 	return &FillGuard{p: p.norm(), session: session, seen: map[string]bool{}, strikes: map[string]*strikeState{}}
 }
 
-// DefaultFills is the process-wide guard the fill handlers record into. It is
-// inert until the wiring gives it a session function and an alert sender.
-var DefaultFills = NewFillGuard(DefaultFillParams(), nil)
+// defaultFills is the process-wide guard the fill handlers record into. It is
+// inert until the wiring gives it a session function and an alert sender. It is
+// an atomic pointer, not a bare variable: a test swaps it while goroutines
+// leaked by earlier tests (a TCPTrader's fill consumer) may still read it, and a
+// bare package variable made that a DATA RACE (m447 review defect 4).
+var defaultFills atomic.Pointer[FillGuard]
+
+func init() { defaultFills.Store(NewFillGuard(DefaultFillParams(), nil)) }
+
+// DefaultFills returns the process-wide guard.
+func DefaultFills() *FillGuard { return defaultFills.Load() }
+
+// SetDefaultFills installs g as the process-wide guard and returns the previous
+// one (so a test restores it with SetDefaultFills(prev)).
+func SetDefaultFills(g *FillGuard) *FillGuard { return defaultFills.Swap(g) }
 
 // SetAlert installs the one-alert-per-far-fill sender (ownerpush in production).
 func (g *FillGuard) SetAlert(fn func(kind, text string)) {
@@ -324,6 +341,11 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 		st = &strikeState{session: sess}
 		g.strikes[o.Symbol] = st
 	}
+	// An owner acknowledgement spends the strikes seen so far, not the future: a
+	// far fill AFTER the ack is "the next far fill" the contract promises to pause
+	// on (m447 review defect 2 - acked was never cleared, so no later far fill
+	// ever paused again).
+	st.acked = false
 	st.ids = append(st.ids, o.ID)
 	st.details = append(st.details, v.Detail)
 	n := len(st.ids)

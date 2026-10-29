@@ -15,10 +15,9 @@ import (
 // m447 (7): POST /api/risk/ack-fill-price lifts a standing fill_price pause for
 // the symbol and reports whether one was standing.
 func TestHandleAckFillPrice(t *testing.T) {
-	saved := checks.DefaultFills
 	g := checks.NewFillGuard(checks.DefaultFillParams(), nil)
-	checks.DefaultFills = g
-	defer func() { checks.DefaultFills = saved }()
+	saved := checks.SetDefaultFills(g)
+	defer checks.SetDefaultFills(saved)
 
 	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
 	m := day.UnixMilli() / 60_000 * 60_000

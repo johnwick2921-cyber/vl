@@ -48,3 +48,22 @@ func TestHeldBookKeysAreTheReconcileKeys(t *testing.T) {
 		t.Fatalf("HeldBook: %v %v", avg, qty)
 	}
 }
+
+// m447 review defect 3. The observer is data-truth SAMPLING that rides the
+// protective reconcile goroutine (safe.GoNet freezes the trader on a panic and
+// the loop exits). A panic in a check must not escape the pass.
+func TestReconcileObserverPanicDoesNotEscapeTheReconcilePass(t *testing.T) {
+	tr, st := newLeg1HookFixture(t)
+	ran := 0
+	tr.SetReconcileObserver(func() { ran++; panic("observer bug") })
+	defer func() {
+		if r := recover(); r != nil {
+			t.Fatalf("a panic in the data-truth observer escaped reconcilePositions (in production: safe.GoNet freezes the trader and the reconcile loop exits): %v", r)
+		}
+	}()
+	tr.ReconcilePassForTest("t1", "ex", "ninjatrader", st)
+	tr.ReconcilePassForTest("t1", "ex", "ninjatrader", st) // the next pass still runs and still notifies
+	if ran != 2 {
+		t.Fatalf("the observer must run on every pass, ran %d", ran)
+	}
+}

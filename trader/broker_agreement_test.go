@@ -373,3 +373,25 @@ func TestBrokerAgreementIsRegisteredWhereRunStartsTheReconcile(t *testing.T) {
 		t.Fatalf("Run must call at.registerBrokerAgreement() right after ntTCP.StartPositionReconcile (i=%d j=%d)", i, j)
 	}
 }
+
+// m447 review defect 5 (mutant: agreementTracker.apply keeps a cleared key's
+// first-seen time). A disagreement that clears and then RECURS is a NEW episode
+// and gets a fresh settle window: the second sighting must not inherit the first
+// one's clock and block instantly.
+func TestBrokerAgreementRecurringDisagreementGetsAFreshSettle(t *testing.T) {
+	f := newAgreeFx(t)
+	short := ntwire.OpenPosition{Symbol: "MNQ", Side: "SHORT", Quantity: 1, AvgPrice: 29310}
+	at := func(d time.Duration) time.Time {
+		n := agreeT0.Add(d)
+		f.book(`[]`, n.Add(-5*time.Second))
+		return n
+	}
+	f.positions(short)
+	mustClear(t, f, at(0), "first sighting")
+	f.positions() // NT8 flat again: the disagreement is measured clear
+	mustClear(t, f, at(40*time.Second), "cleared")
+	f.positions(short) // it recurs 70 s after the FIRST sighting
+	mustClear(t, f, at(70*time.Second), "a recurrence starts a fresh settle window, it does not inherit the first sighting's clock")
+	mustClear(t, f, at(70*time.Second+agreementSettle-time.Second), "still inside the fresh window")
+	mustBlock(t, f, at(70*time.Second+agreementSettle+time.Second), "NT8 holds MNQ SHORT qty 1")
+}

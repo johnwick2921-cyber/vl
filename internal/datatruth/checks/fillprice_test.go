@@ -50,7 +50,8 @@ func loadFills(t *testing.T) (obs []FillObs, ring map[string][]Bar, fx fillFixtu
 }
 
 // THE REAL-DATA PROOF. Every fill and entry of the last 30 days (data.db,
-// trader_fills 151 exits + trader_positions 95 entries, ids in the fixture) is
+// trader_fills 151 exits + trader_positions 95 entries, ids in the fixture; the RECORDED
+// close prices are a third source, see the test below) is
 // judged against the stored 1m bars of its own minute: NONE is far. A real
 // market move cannot fire this check, because the fill printed inside the bars.
 func TestFillPriceRealThirtyDaysNeverFires(t *testing.T) {
@@ -257,5 +258,88 @@ func TestFillGuardPendingIsJudgedWhenTheBarClosesAndUnjudgedWhenItNever_Does(t *
 	g.Sweep(day.Add(11 * time.Minute))
 	if st := g.Stats(); st.Unjudged != 1 || st.Pending != 0 || st.Far != 1 {
 		t.Fatalf("a fill that never gets a bar is counted unjudged: %+v", st)
+	}
+}
+
+// m447 review defect 2 (mutant: apply() never clears acked). Ack spends the
+// strikes seen so far; the NEXT far fill pauses again.
+func TestFillGuardAckIsSpentByTheNextFarFill(t *testing.T) {
+	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	m := day.UnixMilli() / 60_000 * 60_000
+	ring := func(string) ([]Bar, error) {
+		return []Bar{{T: m, O: 29000, H: 29005, L: 29000, C: 29005, V: 1, Final: true}, {T: m + 60_000, O: 29000, H: 29005, L: 29000, C: 29005, V: 1, Final: true}}, nil
+	}
+	g := NewFillGuard(DefaultFillParams(), nil)
+	rec := func(id string) {
+		g.Record(FillObs{ID: id, Symbol: "MNQ", Kind: "exit", Price: 29100, AtMs: m + 5_000, Tick: 0.25}, ring, day)
+	}
+	rec("a")
+	rec("b")
+	if b, _, _ := g.Check()("MNQ", day); !b {
+		t.Fatal("2 far fills pause")
+	}
+	if !g.Ack("MNQ") {
+		t.Fatal("ack")
+	}
+	if b, _, _ := g.Check()("MNQ", day); b {
+		t.Fatal("acked: clear")
+	}
+	if g.Ack("MNQ") {
+		t.Fatal("nothing standing: a second ack is a no-op")
+	}
+	rec("c")
+	if b, _, _ := g.Check()("MNQ", day); !b {
+		t.Fatal("the next far fill after the ack must pause again")
+	}
+	if !g.Ack("MNQ") {
+		t.Fatal("and it can be acknowledged again")
+	}
+}
+
+// m447 review defect 6 - the accuracy of "0 far in 30 days". trader_fills exits
+// and trader_positions ENTRIES are never far (TestFillPriceRealThirtyDaysNeverFires),
+// but the price the bot RECORDED on a closed position (trader_positions.exit_price,
+// what P&L reads) is a third source, and exactly two of its 95 rows in the last 30
+// days are far from the market of their minute:
+//
+//	pos:635 (2026-10-07 11:03 CT) exit_price 31299.17 vs stored 1m bars 31258-31273;
+//	        the real prints are trader_fills 485/486/487 = 31269.4-31269.5
+//	pos:639 (2026-10-08 06:38 CT) exit_price 31297.75; trader_fills 492 = 31272.75
+//
+// Both recorded prices are wrong (their pnl_corrected was later set from the NT8
+// execution receipts) - true positives, not market moves. They are in different
+// sessions, so each would have raised ONE alert and NO pause. Every other recorded
+// exit is inside its band: a real market move never fires.
+func TestFillPriceRecordedExitPricesOfTheLast30DaysFireOnlyTheTwoWrongOnes(t *testing.T) {
+	var fx fillFixture
+	loadJSON(t, "exits_pos_30d.json", &fx)
+	ring := map[string][]Bar{}
+	for _, b := range fx.Bars {
+		ring[b.S] = append(ring[b.S], Bar{T: b.T, O: b.O, H: b.H, L: b.L, C: b.C, V: b.V, Final: true})
+	}
+	for s := range ring {
+		b := ring[s]
+		sort.Slice(b, func(i, j int) bool { return b[i].T < b[j].T })
+	}
+	if len(fx.Obs) != 95 {
+		t.Fatalf("fixture: %d rows", len(fx.Obs))
+	}
+	var far, unjudged []string
+	for _, o := range fx.Obs {
+		v := JudgeFill(FillObs{ID: o.ID, Symbol: o.Symbol, Kind: o.Kind, Side: o.Side, Price: o.Price, AtMs: o.AtMs, Tick: 0.25}, ring[o.Symbol], DefaultFillParams())
+		switch {
+		case !v.Judged:
+			unjudged = append(unjudged, o.ID)
+		case v.Far:
+			far = append(far, o.ID)
+		}
+	}
+	sort.Strings(far)
+	t.Logf("recorded exit prices, 95 closed positions: far=%v unjudged=%v", far, unjudged)
+	if len(far) != 2 || far[0] != "pos:635" || far[1] != "pos:639" {
+		t.Fatalf("exactly the two wrong recorded exits (pos:635, pos:639) are far, got %v", far)
+	}
+	if len(unjudged) != 0 {
+		t.Fatalf("unjudged: %v", unjudged)
 	}
 }

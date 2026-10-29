@@ -18,8 +18,13 @@ import (
 // reasoning). The hook is one call at each place a fill price enters the bot:
 //
 //	entry fill frame      handleFillInbound (market / AI-path entries)
-//	armed entry fill      TCPTrader.NoteFill, called by the armed executor's
-//	                      materializeArmedEntry (the order_update fill)
+//	armed entry fill      the SAME fill frame: the AddOn sends an order_update AND
+//	                      a fill frame for one entry fill (OnOrderUpdate), and the
+//	                      fill frame carries the fill time. The armed executor does
+//	                      NOT judge the order_update twin (it counted one fill twice
+//	                      under a different id and stamped time.Now() on a late or
+//	                      catch-up frame) - pinned by
+//	                      TestArmedEntryOneFillFromBothFramesIsCountedOnce.
 //	exit                  recordClose / recordCloseOrdered (the position_close frame)
 //
 // It reads, never writes: a fill is recorded exactly as before whatever the
@@ -55,7 +60,7 @@ func (t *TCPTrader) noteFill(kind, id, symbol, side string, price float64, atMs 
 	if slipTicks != nil {
 		o.SlipTicks, o.HasSlip = *slipTicks, true
 	}
-	checks.DefaultFills.Record(o, t.fillRing(), time.Now())
+	checks.DefaultFills().Record(o, t.fillRing(), time.Now())
 }
 
 // fillTimeMs parses a frame's RFC3339 fill/exit time, falling back to now.
@@ -68,10 +73,17 @@ func fillTimeMs(rfc string) int64 {
 	return time.Now().UTC().UnixMilli()
 }
 
+// entryFillID identifies one entry fill by what the broker reported (account,
+// symbol, signal, price, cumulative quantity) and NEVER by the clock: a replay of
+// the same frame, a late frame and a frame with no fill time all give the same
+// id (m447 review defect 1 - the id used to carry fillTimeMs, which falls back to
+// time.Now(), so it was not replay-stable).
 func entryFillID(f ntwire.FillPayload) string {
-	return fmt.Sprintf("entry|%s|%s|%s|%.4f|%d|%d", f.Account, f.Symbol, f.SignalID, f.FillPrice, f.Quantity, fillTimeMs(f.FillTime))
+	return fmt.Sprintf("entry|%s|%s|%s|%.4f|%d", f.Account, f.Symbol, f.SignalID, f.FillPrice, f.Quantity)
 }
 
-func exitFillID(account, symbol, side, signal string, seq uint64, exitMs int64) string {
-	return fmt.Sprintf("exit|%s|%s|%s|%s|%d|%d", account, symbol, side, signal, seq, exitMs)
+// exitFillID is likewise clock-free: the frame's own exit time STRING (empty
+// stays empty) and its seq, never a time.Now() fallback.
+func exitFillID(account, symbol, side, signal string, seq uint64, exitTime string) string {
+	return fmt.Sprintf("exit|%s|%s|%s|%s|%d|%s", account, symbol, side, signal, seq, exitTime)
 }

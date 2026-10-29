@@ -2864,13 +2864,9 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
-	// m447 (7): the armed entry's fill price is judged against the market of its
-	// minute (internal/datatruth/checks/fillprice.go); a read, never a gate on
-	// the materialization below.
-	if nt8 := at.armedTrader(); nt8 != nil {
-		nt8.NoteFill("entry", fmt.Sprintf("arm|%s|%s|%.4f|%d", at.id, r.SignalID, u.FillPrice, u.Quantity),
-			at.futuresSymbol(), side, u.FillPrice, time.Now().UTC().UnixMilli(), r.EntryPx)
-	}
+	// m447 (7): NOT judged here. The AddOn sends a fill frame for this same fill
+	// (handleFillInbound judges it, with the fill's own time); judging this
+	// order_update too counted one fill twice under a second id.
 	// N2/N3 (2026-10-04, CTO ruling): the AddOn's fill frame quantity is
 	// CUMULATIVE (e.Filled) and its price the running AVERAGE
 	// (e.AverageFillPrice). The DELTA is measured against the arm row's LAST

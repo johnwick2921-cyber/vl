@@ -11,9 +11,9 @@ import (
 // alert per far fill, and the datatruth check. The integrator calls it once at
 // boot (with RegisterBrokerAgreement, or through RegisterBrokerTruthChecks).
 func RegisterFillPrice() {
-	checks.DefaultFills.SetSession(kernel.CMESessionDayKey)
-	checks.DefaultFills.SetAlert(func(kind, text string) { ownerpush.Push(kind, text) })
-	checks.RegisterFillPrice(checks.DefaultFills)
+	checks.DefaultFills().SetSession(kernel.CMESessionDayKey)
+	checks.DefaultFills().SetAlert(func(kind, text string) { ownerpush.Push(kind, text) })
+	checks.RegisterFillPrice(checks.DefaultFills())
 }
 
 // RegisterBrokerTruthChecks registers both m447 checks (broker_agreement and

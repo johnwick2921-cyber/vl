@@ -25,7 +25,7 @@ func (s *Server) handleAckFillPrice(c *gin.Context) {
 		SafeBadRequest(c, "symbol is required")
 		return
 	}
-	acked := checks.DefaultFills.Ack(symbol)
+	acked := checks.DefaultFills().Ack(symbol)
 	if acked {
 		logger.Warnf("🔓 fill_price pause ACKNOWLEDGED by owner for %s - new entries may resume", symbol)
 	}

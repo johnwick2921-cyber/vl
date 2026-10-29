@@ -29,9 +29,8 @@ func newFillGuardFx(t *testing.T) *fillGuardFx {
 	var alerts []string
 	g := checks.NewFillGuard(checks.DefaultFillParams(), nil)
 	g.SetAlert(func(kind, text string) { alerts = append(alerts, kind+" :: "+text) })
-	saved := checks.DefaultFills
-	checks.DefaultFills = g
-	t.Cleanup(func() { checks.DefaultFills = saved })
+	saved := checks.SetDefaultFills(g) // atomic swap: no race with a fill consumer a prior test leaked (review defect 4)
+	t.Cleanup(func() { checks.SetDefaultFills(saved) })
 	m := (time.Now().UTC().UnixMilli() - 3*60_000) / 60_000 * 60_000
 	var bars []ntwire.Bar
 	for i := int64(-2); i <= 1; i++ {
@@ -125,5 +124,53 @@ func TestFillGuardSecondFarFillPausesThroughTheRegisteredCheck(t *testing.T) {
 	blocked, why, err := f.g.Check()("MNQ", time.Now())
 	if err != nil || !blocked || !strings.Contains(why, "2 far fill(s) this session") {
 		t.Fatalf("two far fills pause: blocked=%v why=%q err=%v", blocked, why, err)
+	}
+}
+
+// m447 review defect 2. After the owner acknowledges, the NEXT far fill pauses
+// again ("entries resume until the next far fill"). Driven at handleFillInbound.
+func TestFillGuardFarFillAfterAckPausesAgain(t *testing.T) {
+	f := newFillGuardFx(t)
+	far := func(sig string, px float64) {
+		f.tr.handleFillInbound(ntwire.FillPayload{SignalID: sig, Symbol: "MNQ", Account: "Sim101",
+			Status: "filled", FillPrice: px, FillTime: f.at(), Side: "buy", Quantity: 1})
+	}
+	far("sig-a", 29500)
+	if b, _, _ := f.g.Check()("MNQ", time.Now()); b {
+		t.Fatal("one far fill alerts but does not pause")
+	}
+	far("sig-b", 28000)
+	if b, _, _ := f.g.Check()("MNQ", time.Now()); !b {
+		t.Fatal("the second far fill pauses")
+	}
+	if !f.g.Ack("MNQ") {
+		t.Fatal("ack")
+	}
+	if b, _, _ := f.g.Check()("MNQ", time.Now()); b {
+		t.Fatal("an acknowledged pause resumes entries")
+	}
+	far("sig-c", 27000)
+	if b, why, _ := f.g.Check()("MNQ", time.Now()); !b {
+		t.Fatalf("a far fill AFTER the ack must pause again; far=%d", f.g.Stats().Far)
+	} else if !strings.Contains(why, "3 far fill(s)") {
+		t.Fatalf("the pause names all three fills: %s", why)
+	}
+}
+
+// m447 review defect 1 at the fill handler: the fill id is the broker's identity
+// of the fill and carries no clock, so a replay of the SAME frame (with or without
+// a fill time) and the order_update twin are one fill.
+func TestFillGuardReplayedFillFrameIsOneFillWhateverTheClock(t *testing.T) {
+	f := newFillGuardFx(t)
+	fill := ntwire.FillPayload{SignalID: "sig-r", Symbol: "MNQ", Account: "Sim101", Status: "filled",
+		FillPrice: 29500, Side: "buy", Quantity: 1} // no FillTime: the handler stamps "now"
+	f.tr.handleFillInbound(fill)
+	time.Sleep(5 * time.Millisecond)
+	f.tr.handleFillInbound(fill)
+	if id1, id2 := entryFillID(fill), entryFillID(fill); id1 != id2 {
+		t.Fatalf("entryFillID must not depend on the clock: %s vs %s", id1, id2)
+	}
+	if s := f.g.Stats(); s.Judged+int64(s.Pending) != 1 {
+		t.Fatalf("a replayed fill frame is one fill: %+v", s)
 	}
 }

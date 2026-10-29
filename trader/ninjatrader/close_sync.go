@@ -131,7 +131,7 @@ func (t *TCPTrader) recordClose(
 
 	// m447 (7): the exit's price is judged against the market of its minute -
 	// before any routing, so a close that finds no owner is judged too.
-	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, exitMs), symbol, side, p.ExitPrice, exitMs, 0, nil)
+	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, p.ExitTime), symbol, side, p.ExitPrice, exitMs, 0, nil)
 
 	// OWNER-ROUTING: a position_close routes by SYMBOL to ONE trader's close-sync,
 	// which may NOT own the open row when multiple traders share a symbol — recording
@@ -325,7 +325,7 @@ func (t *TCPTrader) recordCloseOrdered(
 		}
 	}
 	// m447 (7): same judgment on the ordered-worker path (the production one).
-	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, exitMs), symbol, side, p.ExitPrice, exitMs, 0, nil)
+	t.noteFill("exit", exitFillID(p.Account, symbol, side, p.SignalID, p.Seq, p.ExitTime), symbol, side, p.ExitPrice, exitMs, 0, nil)
 	reason := strings.ToLower(strings.TrimSpace(p.ExitReason))
 	leg := "exit"
 	if reason == "sl" || reason == "tp" {
