@@ -9,6 +9,7 @@ import (
 	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/telemetry"
 	ntTrader "vl/trader/ninjatrader"
@@ -235,6 +236,89 @@ func TestIntegrityGateKeepsAPlannerArmOffTheWire(t *testing.T) {
 	at.runArmedPlacementAt([]market.Kline{{Close: 29600}}, real.Add(-time.Hour).UnixMilli(), real.Add(5*time.Second), admitted)
 	if got := armStaleRowState(t, st, row); got.SignalID == "" {
 		t.Fatalf("with the data complete the arm must place; row = %s", got.State)
+	}
+}
+
+// The STOP-ENTRY send site (placeOneStopEntry — the route every mentor row
+// takes) is a separate wire call from the limit one; it asks armAdmitted too.
+// The fake AddOn proves its build first (a stop entry is refused at the wire
+// until the far side is proven), so the positive control is real.
+func TestIntegrityGateKeepsAStopEntryArmOffTheWire(t *testing.T) {
+	t.Setenv("STOP_ENTRY_SEAM", "on")
+	f := withdrawFixture(t, "int-stop-entry", nil)
+	build := addonBuildIDFromSource()
+	if build == "" {
+		t.Fatal("fixture: the AddOn build id could not be read from the C# source")
+	}
+	for _, w := range []struct {
+		ft ntwire.FrameType
+		p  any
+	}{
+		{ntwire.FrameHello, ntwire.HelloPayload{ProtocolVersion: ntwire.ProtocolVersion, Source: "vltrader-addon", BuildID: build}},
+		{ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: build}},
+	} {
+		if err := ntwire.WriteFrame(f.w.conn, w.ft, w.p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for deadline := time.Now().Add(2 * time.Second); !ntwire.FarSideProven(f.w.srv.FarSideBuildID(), build) && time.Now().Before(deadline); {
+		time.Sleep(time.Millisecond)
+	}
+	if !ntwire.FarSideProven(f.w.srv.FarSideBuildID(), build) {
+		t.Fatal("fixture: far-side build never proven")
+	}
+	row := store.ArmedOrderDB{TraderID: f.at.id, PlanID: "stop-arm", Version: 1, Scenario: "S1", State: store.StateArmed,
+		Side: "long", Kind: "stop_entry", Condition: "reclaim", EntryPx: 101, StopPx: 95, TargetPx: 110}
+	if err := f.st.ArmedOrders().UpsertArm(&row); err != nil {
+		t.Fatal(err)
+	}
+	admitted := armAdmission{armAdmitKey(row.PlanID, "S1", 0): true}
+	bars := []market.Kline{{Close: 100}}
+	fk := &intFake{}
+	armIntegrityGate(t, fk)
+
+	f.at.runArmedPlacementAt(bars, f.now.Add(-time.Hour).UnixMilli(), f.now, admitted)
+	f.w.flush(t)
+	if got := f.rowByID(t, row.ID); got.State != store.StateArmed || got.SignalID != "" {
+		t.Fatalf("a data hole must keep the STOP-ENTRY arm off the wire; row = %s signal %q", got.State, got.SignalID)
+	}
+	for _, fr := range f.w.all() {
+		if fr.Type == ntwire.FrameSignal {
+			t.Fatalf("a stop-entry reached the wire through a data hole: %+v", fr)
+		}
+	}
+	// control: the data is complete -> the SAME row reaches the wire
+	fk.blockedFor = func(int) bool { return false }
+	f.at.runArmedPlacementAt(bars, f.now.Add(-time.Hour).UnixMilli(), f.now.Add(5*time.Second), admitted)
+	f.w.waitFor(t, "the stop-entry signal once the data is complete", func(fr wdFrame) bool { return fr.Type == ntwire.FrameSignal })
+	if got := f.rowByID(t, row.ID); got.SignalID == "" {
+		t.Fatalf("with the data complete the stop-entry must place (control); row = %s", got.State)
+	}
+}
+
+// The market_in_zone send site (placeZoneRow — the third wire call) asks
+// armAdmitted too: a data hole keeps the zone row armed, one limit once the
+// data is complete.
+func TestIntegrityGateKeepsAZoneRowOffTheWire(t *testing.T) {
+	r := newZoneRig(t, "m445-zone", zoneDoc(zoneScenario("S1", kernel.EntryPolicyMarketInZone, zone, false)))
+	r.setTape(zoneTape(100.0, r.now, 0))
+	fk := &intFake{}
+	armIntegrityGate(t, fk)
+	before := gateBlocks(r.at.id, ntTrader.IntegrityClassHole)
+	r.at.maybeManageArmedOrdersAt(nil, r.now)
+	if sigs, _ := r.drain(); len(sigs) != 0 {
+		t.Fatalf("a data hole: nothing may reach the wire, got %d frame(s)", len(sigs))
+	}
+	if row := r.row("S1"); row.State != store.StateArmed || !strings.HasPrefix(row.LastVerdict, "refused: data_integrity") {
+		t.Fatalf("the hole must not advance the zone row and its last verdict must name the data: %+v", row)
+	}
+	if gateBlocks(r.at.id, ntTrader.IntegrityClassHole) <= before {
+		t.Fatal("the zone refusal must count the data class")
+	}
+	fk.blockedFor = func(int) bool { return false }
+	r.at.maybeManageArmedOrdersAt(nil, r.now.Add(time.Second))
+	if sigs, _ := r.drain(); len(sigs) != 1 {
+		t.Fatalf("with the data complete the zone row must place once (control), got %d", len(sigs))
 	}
 }
 
