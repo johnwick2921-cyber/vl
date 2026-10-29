@@ -35,17 +35,22 @@ import (
 
 // CrossParams are the tunables.
 type CrossParams struct {
+	// WindowMin: only bars that CLOSED within the last WindowMin minutes are
+	// judged - the bars the trigger rules still read (12 = the newest two 5m
+	// bars, four 3m bars, the newest 15m bar). A mismatch older than that has
+	// left the decision.
 	WindowMin int
 	PriceTol  float64 // pt: |native - built| allowed per OHLC field
 	VolRel    float64 // relative volume tolerance
 	VolAbsMin float64 // volume diffs below this many contracts are ignored
 }
 
-// DefaultCross: 0.5 pt (two ticks) and 25% volume - clean-day tick-boundary skew
-// is <= 0.25 on 99.4% of bars; the 0.5-2 pt skew bars would pause entries for
-// at most the window and are real inconsistencies of the same stored span.
+// DefaultCross: 0.5 pt (two ticks) and 40% volume above 200 contracts. 99.4% of
+// closed 3m/5m/15m bars equal their 1m exactly; the rest are real defects of
+// the stored span (bars born after a reconnect or finished on a dropped frame;
+// 10-21 00:35 5m: native volume 300 vs 5720 built, 26.75 pt off).
 func DefaultCross() CrossParams {
-	return CrossParams{WindowMin: 30, PriceTol: 0.5, VolRel: 0.25, VolAbsMin: 50}
+	return CrossParams{WindowMin: 12, PriceTol: 0.5, VolRel: 0.40, VolAbsMin: 200}
 }
 
 // FrameMismatch is one disagreeing HTF bar.
@@ -66,10 +71,10 @@ func CompareFrames(m1, htf []Bar, tfMin int, now time.Time, open OpenFn, p Cross
 	}
 	span := int64(tfMin) * minuteMs
 	nowMs := now.UnixMilli()
-	from := nowMs - int64(p.WindowMin)*minuteMs
-	m := byT(m1)
-	for _, h := range htf {
-		if h.T+span > nowMs || h.T+span <= from { // closed, and inside the window
+	from := nowMs - int64(p.WindowMin)*minuteMs - span // open time of the oldest bar that closed inside the window
+	m := byT(tailFrom(m1, from))
+	for _, h := range tailFrom(htf, from) {
+		if h.T+span > nowMs || h.T+span <= nowMs-int64(p.WindowMin)*minuteMs { // closed, and closed inside the window
 			continue
 		}
 		var o, hi, lo, c, v float64

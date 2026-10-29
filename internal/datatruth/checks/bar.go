@@ -38,6 +38,23 @@ func (f OpenFn) open(ms int64) bool {
 	return f(ms)
 }
 
+// tailFrom returns the suffix of the ascending slice with T >= from (a binary
+// search, no copy): the checks only ever need the decision window and a short
+// lookback, never the whole ring.
+func tailFrom(bars []Bar, from int64) []Bar {
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].T >= from })
+	return bars[i:]
+}
+
+// findT looks one open time up in an ascending slice.
+func findT(bars []Bar, t int64) (Bar, bool) {
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].T >= t })
+	if i < len(bars) && bars[i].T == t {
+		return bars[i], true
+	}
+	return Bar{}, false
+}
+
 func byT(bars []Bar) map[int64]Bar {
 	m := make(map[int64]Bar, len(bars))
 	for _, b := range bars {

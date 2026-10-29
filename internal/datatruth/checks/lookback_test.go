@@ -2,6 +2,7 @@ package checks
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 )
@@ -252,6 +253,10 @@ func TestJudgeSeriesWeightsAndUnits(t *testing.T) {
 	}
 	if b, _ := JudgeSeries(atr, without(b5, l5-300_000, l5-600_000), now, nil); !b {
 		t.Fatal("two of 14 missing (14%) must pause")
+	}
+	// a total blackout (10-26 17:00-21:57 CT: not one 1m bar) cannot be priced -> pause
+	if b, why := JudgeSeries(spec, nil, now, nil); !b || !strings.Contains(why, "no data") {
+		t.Fatalf("empty series must pause: %v %q", b, why)
 	}
 	// closed hours are not holes: the calendar is honoured
 	closed := func(ms int64) bool { return false }

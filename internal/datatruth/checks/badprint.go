@@ -98,7 +98,7 @@ func SuspectBars(bars, partner []Bar, now time.Time, p BadPrintParams) []Suspect
 	}
 	nowMs := now.UnixMilli()
 	from := nowMs - int64(p.WindowMin)*minuteMs
-	pm := byT(partner)
+	pm := byT(tailFrom(partner, from-2*minuteMs))
 	var out []Suspect
 	for i := range bars {
 		b := bars[i]

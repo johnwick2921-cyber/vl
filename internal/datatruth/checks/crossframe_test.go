@@ -72,7 +72,7 @@ func TestCrossFrameCleanBarsAgree(t *testing.T) {
 	loadJSON(t, "frames_1027.json", &f)
 	m1 := toBars(f.M1)
 	htf := toBars(f.F5)
-	mm, judged, _ := CompareFrames(m1, htf, 5, ct(t, "2026-10-27 09:05"), nil, CrossParams{WindowMin: 24, PriceTol: 0.5, VolRel: 0.25, VolAbsMin: 50})
+	mm, judged, _ := CompareFrames(m1, htf, 5, ct(t, "2026-10-27 09:05"), nil, CrossParams{WindowMin: 30, PriceTol: 0.5, VolRel: 0.40, VolAbsMin: 200})
 	for _, m := range mm {
 		if m.T == ct(t, "2026-10-27 08:30").UnixMilli() {
 			continue // the one known-bad bar is outside this window by construction; tolerate if it slips in

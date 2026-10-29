@@ -100,7 +100,6 @@ func (s SeriesSpec) weight(age int) float64 {
 func JudgeSeries(spec SeriesSpec, bars []Bar, now time.Time, open OpenFn) (blocked bool, why string) {
 	span := int64(spec.TFMin) * minuteMs
 	nowMs := now.UnixMilli()
-	have := byT(bars)
 	// newest closed slot
 	t := (nowMs - span) / span * span
 	n := spec.span()
@@ -113,7 +112,7 @@ func JudgeSeries(spec SeriesSpec, bars []Bar, now time.Time, open OpenFn) (block
 			t -= span
 			continue
 		}
-		if b, ok := have[t]; ok {
+		if b, ok := findT(bars, t); ok {
 			closes = append(closes, b.C)
 		} else {
 			missW += spec.weight(slots)
@@ -124,6 +123,11 @@ func JudgeSeries(spec SeriesSpec, bars []Bar, now time.Time, open OpenFn) (block
 	}
 	if len(missed) == 0 {
 		return false, ""
+	}
+	if len(closes) < 3 {
+		// every (or all but two) of the slots the indicator reads are missing:
+		// no step scale can be measured, so nothing can be priced - fail closed.
+		return true, fmt.Sprintf("%s: %d of the last %d %dm slots missing and only %d present - the indicator has no data to stand on", spec.Name, len(missed), n, spec.TFMin, len(closes))
 	}
 	if spec.PriceUnits {
 		var steps []float64

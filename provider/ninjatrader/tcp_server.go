@@ -1949,6 +1949,7 @@ func (s *TCPServer) drainBarIngest(ctx context.Context) {
 				s.barCache.SeedHistorical(msg.symbol, msg.timeframe, msg.bars)
 			} else {
 				s.barCache.Upsert(msg.symbol, msg.timeframe, msg.bars)
+				liveContracts.note(msg.symbol, msg.contract, msg.bars) // m446: contract-roll guard
 				// LIVE-only fan-out to deterministic evaluators (two-picture
 				// mode). Historical replays must NOT mint opportunities.
 				//
@@ -2094,6 +2095,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 				continue
 			}
 			ingestDropOld.Add(1)
+			noteIngestLoss(head) // m446: a historical batch or a plain forming frame
 			dropped = true
 		default:
 			n = 0
@@ -2111,13 +2113,16 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 		// Only finals were queued.
 		if barsCarryFinal(msg.bars) {
 			ingestFinalDropped.Add(1) // oldest final displaced by a newer final
+			noteIngestLoss(kept[0])   // m446: DATA LOSS - ledgered until verified
 			kept = kept[1:]
 			dropped = true
 		} else {
 			ingestDropCur.Add(1) // incoming forming frame is the one lost
+			noteIngestLoss(msg)
 			for _, k := range kept {
 				if !requeue(k) {
 					ingestFinalDropped.Add(1)
+					noteIngestLoss(k)
 				}
 			}
 			ingestFinalKept.Add(int64(len(kept)))
@@ -2128,6 +2133,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 	for _, k := range kept {
 		if !requeue(k) {
 			ingestFinalDropped.Add(1)
+			noteIngestLoss(k)
 		}
 	}
 	ingestFinalKept.Add(int64(len(kept)))
@@ -2136,6 +2142,7 @@ func (s *TCPServer) evictForIngest(msg barIngestMsg) {
 			ingestFinalDropped.Add(1)
 		}
 		ingestDropCur.Add(1)
+		noteIngestLoss(msg)
 	}
 	ingestDropSummary()
 }
@@ -2155,6 +2162,7 @@ func (s *TCPServer) enqueueBarHistorical(symbol, timeframe string, bars []Bar) {
 		return
 	case <-time.After(2 * time.Second):
 		ingestDropHist.Add(1)
+		noteIngestLoss(msg) // m446: a dropped historical batch is DATA LOSS
 		ingestDropSummary()
 	}
 }
