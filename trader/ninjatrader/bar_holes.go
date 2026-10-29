@@ -355,7 +355,23 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		}
 		bootScan, bootBound = true, bound
 	}
-	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
+	// m445: the BOOT SCAN's first read starts at the session open, with no bar
+	// before it to measure the first gap against — so a hole that STARTS at the
+	// open (the 17:00 reopen lag; 2026-10-26 17:00–21:57 CT) was invisible to a
+	// restart: the scan saw bars from 21:57 and no gap. Anchor it on the stored
+	// bar just before the scan's first minute (one bar back; `from` stays the
+	// scan's reach for the boot line and the coverage).
+	readFrom := from
+	if bootScan {
+		if p, ok, perr := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, from); perr != nil {
+			t.noteJudgeErrLocked(key, perr)
+			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, perr))
+			return
+		} else if ok {
+			readFrom = p
+		}
+	}
+	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, readFrom, newest+1)
 	if err != nil {
 		t.noteJudgeErrLocked(key, err)
 		t.sayErrOnce("scan", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))

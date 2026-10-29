@@ -611,3 +611,35 @@ func TestTradingPausedSnapshotNamesScopeAndWindow(t *testing.T) {
 		t.Fatalf("a hole inside the intraday window pauses ALL entries: %+v", views)
 	}
 }
+
+// RESTART MID-EPISODE: nothing "all clear" is persisted. A process that boots
+// while the hole is still in the store re-derives it from the BOOT SCAN of the
+// first live bar and is blocked at once; a boot AFTER the hole's window has
+// aged out of the intraday window is clear.
+func TestRestartMidEpisodeRederivesTheHoleFromTheStore(t *testing.T) {
+	ts := loadRuns(t)
+	armIntegrity(t)
+	st := &memHoleStore{}
+	bootAt := ct(2026, 10, 27, 9, 0) // the process starts Tuesday 09:00 CT; the hole is the 10-26 evening
+	for _, ms := range ts {
+		if ms < bootAt.UnixMilli() {
+			st.add(ms) // everything the store already holds
+		}
+	}
+	tr := newBarHoleTracker(st, func() *ntwire.TCPServer { return nil })
+	tr.say = (&lineSink{}).say
+	tr.clock = func() time.Time { return bootAt }
+	prev := barHoles.Swap(tr)
+	t.Cleanup(func() { barHoles.Store(prev) })
+
+	if v := IntegrityVerdictFor("MNQ", IntegrityIntradayOpenMin, bootAt); !v.Blocked || v.Class != IntegrityClassUnknown {
+		t.Fatalf("freshly booted, nothing judged: UNKNOWN is blocked: %+v", v)
+	}
+	// the first live bar after the boot: 09:00 open, closing at 09:01
+	st.add(bootAt.UnixMilli())
+	tr.observeLive("MNQ", "1m", ghContract, []store.BarHistoryDB{{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: bootAt.UnixMilli()}})
+	v := IntegrityVerdictFor("MNQ", IntegrityIntradayOpenMin, bootAt.Add(time.Minute))
+	if !v.Blocked || v.Class != IntegrityClassHole || len(v.Holes) != 1 || v.Holes[0].Window != "10-26 17:00–21:57 CT" || v.Holes[0].Missing != 297 {
+		t.Fatalf("the boot scan must re-derive the 10-26 hole from the store (nothing persisted): %+v", v)
+	}
+}
