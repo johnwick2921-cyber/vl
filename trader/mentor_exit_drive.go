@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"vl/internal/ownerpush"
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -1337,6 +1338,7 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		// counted per (signal, leg) and SURVIVE superseding moves, so a fresh
 		// want every candle still reaches "manage by hand" on the second miss.
 		misses, startMs := at.mentorBumpStopMoveEpisode(key)
+		at.noteRefusalStorm(ownerpush.ClassStopNotApplied, fmt.Sprintf("%s leg %d", mv.signalID, mv.wireLeg), fmt.Sprintf("wanted %.2f, broker at %.2f", mv.want, brokerPrice)) // m442 #6
 		if misses == 1 {
 			at.mentorCount("stop_move_not_applied")
 			at.logErrorf("🚨 STOP MOVE NOT APPLIED at NT8: %s leg %d want %.2f broker %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)

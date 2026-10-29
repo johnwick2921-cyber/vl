@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"vl/internal/ownerpush"
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -1025,6 +1026,7 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("move_be_refused_unknown_arm")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "arm not in this process's registry") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -1038,6 +1040,7 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	r, _, ok := at.mentorSwingFill(arm)
 	if !ok {
 		at.mentorCount("move_be_refused_not_filled")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "arm never filled") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q never filled; the swing leg has no position of its own: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -1046,16 +1049,19 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 	curStop := r.StopPx
 	if curStop <= 0 {
 		at.mentorCount("move_be_refused_no_stop")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "filled arm has no recorded stop") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0); never skip the guard: %s", in.ArmID, in.Reason)
 		return
 	}
 	if refuse, why := mentorNeverWiden(arm.Side, curStop, arm.Entry); refuse {
 		at.mentorCount("widen_refused")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "break-even would widen the stop") // m442 #6
 		at.logWarnf("🧑‍🏫 %s", why)
 		return
 	}
 	if err := moveStopWire(nt, arm.Side, arm.Entry); err != nil {
 		at.mentorCount("move_be_refused")
+		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, err.Error()) // m442 #6
 		at.logWarnf("🧑‍🏫 mentor stop→BE refused: %v", err)
 		return
 	}
@@ -1071,6 +1077,7 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	arm, ok := at.mentorLiveArmFor(in.ArmID)
 	if !ok {
 		at.mentorCount("close_refused_unknown_arm")
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, "arm not in this process's registry") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q not in this process's registry: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -1089,6 +1096,7 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 		}
 	} else {
 		at.mentorCount("close_refused_not_filled")
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, "arm never filled") // m442 #6
 		at.logWarnf("🧑‍🏫 mentor ClosePosition REFUSED — ArmID %q never filled (or its fill has no attributable contracts); a phantom swing must not close another trade: %s", in.ArmID, in.Reason)
 		return
 	}
@@ -1105,6 +1113,7 @@ func (at *AutoTrader) mentorClosePosition(in mentor.Intent) {
 	}
 	if err != nil {
 		at.mentorCount("close_refused")
+		at.noteRefusalStorm(ownerpush.ClassSwingClose, in.ArmID, err.Error()) // m442 #6
 		at.logWarnf("🧑‍🏫 mentor close failed for ArmID %q: %v", in.ArmID, err)
 		return
 	}

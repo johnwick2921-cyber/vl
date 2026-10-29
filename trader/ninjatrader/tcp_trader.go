@@ -22,6 +22,7 @@ import (
 
 	"vl/config"
 	"vl/discipline"
+	"vl/internal/ownerpush"
 	"vl/logger"
 	"vl/market"
 	"vl/provider/databento"
@@ -1436,6 +1437,7 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	if cur > 0 && stopWouldWiden(side, cur, newStop) {
 		logger.Warnf("⛔ stop-widen REFUSED: %s %s new stop %.2f would WIDEN from %.2f (risk-increasing) — NOT sent.",
 			t.symbol, side, newStop, cur)
+		ownerpush.NoteRefusal(ownerpush.Refusal{Class: ownerpush.ClassStopWiden, TraderID: tid, Subject: t.symbol + " " + side, Detail: fmt.Sprintf("new stop %.2f would widen from %.2f", newStop, cur)}) // m442 #6
 		return fmt.Errorf("ninjatrader/tcp: stop-widen ban — %s %s new stop %.2f widens from %.2f", t.symbol, side, newStop, cur)
 	}
 	if err := t.server.SendMoveStop(ntwire.MoveStopPayload{
@@ -1558,6 +1560,7 @@ func (t *TCPTrader) MoveStopForSignalLeg(signalID, side string, newStop float64,
 	if cur > 0 && stopWouldWiden(side, cur, newStop) {
 		logger.Warnf("⛔ stop-widen REFUSED: %s %s signal %s new stop %.2f would WIDEN from %.2f (risk-increasing) — NOT sent.",
 			t.symbol, side, signalID, newStop, cur)
+		ownerpush.NoteRefusal(ownerpush.Refusal{Class: ownerpush.ClassStopWiden, TraderID: tid, Subject: t.symbol + " " + side + " " + signalID, Detail: fmt.Sprintf("new stop %.2f would widen from %.2f", newStop, cur)}) // m442 #6
 		return fmt.Errorf("ninjatrader/tcp: stop-widen ban — %s %s signal %s new stop %.2f widens from %.2f", t.symbol, side, signalID, newStop, cur)
 	}
 	if err := t.server.SendMoveStop(ntwire.MoveStopPayload{

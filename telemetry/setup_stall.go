@@ -19,7 +19,13 @@ import (
 
 // SetupStallCount is one kind's seen-vs-placed tally for the current session day.
 type SetupStallCount struct {
-	Emitted     int    `json:"emitted"`
+	Emitted int `json:"emitted"`
+	// Policy counts the emitted intents the owner's OWN rules refused on purpose
+	// (trading window, EOD-flat, done/stop-after-loss, daily loss, news hold).
+	// They are not a stall: m442 #9 - the 60-minute-window trader got a false
+	// "stalled" P1 (10-28 18:17:59) for refusals that were the window working.
+	// Recorded at the refusal site; the stall test reads Emitted-Policy.
+	Policy      int    `json:"policy_refused,omitempty"`
 	Placed      int    `json:"placed"`
 	LastRefusal string `json:"last_refusal,omitempty"` // "" = none recorded (silent drop)
 }
@@ -30,6 +36,7 @@ type SetupStallCount struct {
 type SetupStallAlert struct {
 	Kind        string `json:"kind"`
 	Emitted     int    `json:"emitted"`
+	Policy      int    `json:"policy_refused,omitempty"`
 	Placed      int    `json:"placed"`
 	LastRefusal string `json:"last_refusal,omitempty"` // "" = none recorded (silent drop)
 }
@@ -88,6 +95,25 @@ func SetupStallRecordRefusal(traderID, kind, reason string) {
 	setupStallMu.Unlock()
 }
 
+// SetupStallRecordPolicyRefusal records that the most recently emitted intent of
+// (trader, kind) was refused by one of the owner's own rules (window, EOD-flat,
+// day-stop, news hold). It counts toward Policy (so the stall test ignores it)
+// AND is the last refusal. Call it where the refusal is logged, beside
+// SetupStallRecordRefusal.
+func SetupStallRecordPolicyRefusal(traderID, kind, reason string) {
+	if kind == "" || reason == "" {
+		return
+	}
+	setupStallMu.Lock()
+	k := setupStallKey{traderID, kind}
+	if setupStallCounts[k] == nil {
+		setupStallCounts[k] = &SetupStallCount{}
+	}
+	setupStallCounts[k].Policy++
+	setupStallCounts[k].LastRefusal = reason
+	setupStallMu.Unlock()
+}
+
 // bumpSetupStall increments one counter field, allocating the count on first use.
 func bumpSetupStall(c *SetupStallCount, emitted bool) *SetupStallCount {
 	if c == nil {
@@ -102,7 +128,7 @@ func bumpSetupStall(c *SetupStallCount, emitted bool) *SetupStallCount {
 }
 
 // SetupStallAlertDue returns the setup kinds due for a stalled-setup alert for
-// traderID on the current session day — emitted >= 3 and placed == 0 and not
+// traderID on the current session day — (emitted - policy-refused) >= 3 and placed == 0 and not
 // yet alerted — marking each returned kind alerted (once per kind per day). The
 // counts are those at claim time; a later increment never rewrites the alert.
 func SetupStallAlertDue(traderID string) []SetupStallAlert {
@@ -113,9 +139,9 @@ func SetupStallAlertDue(traderID string) []SetupStallAlert {
 		if k.trader != traderID || c == nil {
 			continue
 		}
-		if c.Emitted >= 3 && c.Placed == 0 && !setupStallAlerted[k] {
+		if c.Emitted-c.Policy >= 3 && c.Placed == 0 && !setupStallAlerted[k] {
 			setupStallAlerted[k] = true
-			due = append(due, SetupStallAlert{Kind: k.kind, Emitted: c.Emitted, Placed: c.Placed, LastRefusal: c.LastRefusal})
+			due = append(due, SetupStallAlert{Kind: k.kind, Emitted: c.Emitted, Policy: c.Policy, Placed: c.Placed, LastRefusal: c.LastRefusal})
 		}
 	}
 	sort.Slice(due, func(i, j int) bool { return due[i].Kind < due[j].Kind })

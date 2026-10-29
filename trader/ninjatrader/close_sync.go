@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"vl/discipline"
+	"vl/internal/ownerpush"
 	"vl/logger"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -70,6 +71,13 @@ func (t *TCPTrader) StartCloseSync(traderID, exchangeID, exchangeType string, st
 		safe.GoNet("nt8-reject-watch", "traderID", func() {
 			for r := range rejects { // P5.4 router-fed (per-symbol)
 				telemetry.IncNT8CloseRejected() // r24: counted, never only a log line
+				// m442 #19/#6: an ops P0 to the alert center + owner push (one per
+				// episode), and the refusal-storm count for this position.
+				if OnCloseRejected != nil {
+					OnCloseRejected(traderID, r)
+				}
+				ownerpush.NoteRefusal(ownerpush.Refusal{Class: ownerpush.ClassCloseRejected, TraderID: traderID,
+					Subject: r.Symbol + " " + r.PositionSide, Detail: r.Reason})
 				logger.Warnf("🚨 NT close REJECTED: %s %s — STILL OPEN in NT8, NOT recording closed (reason: %q, account: %s). Will retry on next decision cycle / reconnect.",
 					r.Symbol, r.PositionSide, r.Reason, r.Account)
 			}
@@ -473,6 +481,11 @@ func (t *TCPTrader) RetryPendingNT8Exits(st *store.Store) {
 // position close (close_sync priced close, reconcile priced/flat close)
 // triggers exactly one post-exit rescan for the OWNING trader. Nil = no-op.
 var OnPositionClosed func(traderID string, positionID int64)
+
+// OnCloseRejected (m442 #19) is the package-level hook fired for every
+// position_close_rejected frame so the trader layer can raise an ops P0 for the
+// OWNING trader. Nil = no-op (log + counter only, as before).
+var OnCloseRejected func(traderID string, r ntwire.PositionCloseRejectedPayload)
 
 // OnPositionLegClosed (B2, BUILD-ALL) is the package-level hook fired with the
 // FULL position_close payload (leg + exit reason) so the mentor exit drive can
