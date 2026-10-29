@@ -438,3 +438,19 @@ func TestAuditGraceKeepsTheNewestMinutesOutOfTheWindow(t *testing.T) {
 		t.Fatalf("minutes inside the grace must not be judged: %+v\n%s", hs, f.sink.dump())
 	}
 }
+
+// Reader-filter pin (#54 review round 3): a 'mixed' (quarantined) 1m row is NOT
+// a stored bar for the audit, exactly as it is not for the strategy's reader and
+// the tracker's measure (BarsBetweenOn). Mutant: drop the source filter in
+// store OpenTimesBetweenOn → the audit sees no hole (RED).
+func TestAuditIgnoresQuarantinedRows(t *testing.T) {
+	f := newGHFixture(t)
+	f.putOpen("1m", ct(2026, 10, 13, 8, 0), ct(2026, 10, 13, 10, 0), "historical")
+	f.putOpen("1m", ct(2026, 10, 13, 10, 0), ct(2026, 10, 13, 12, 0), "mixed")
+	f.putOpen("1m", ct(2026, 10, 13, 12, 0), ct(2026, 10, 14, 7, 46), "historical")
+	f.tr.auditPass(f.clk.Now())
+	hs := f.holes()
+	if len(hs) != 1 || hs[0].MissingMin != 120 {
+		t.Fatalf("quarantined rows must read as missing: %+v\n%s", hs, f.sink.dump())
+	}
+}

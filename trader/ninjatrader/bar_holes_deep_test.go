@@ -60,7 +60,10 @@ func TestHoleBeyondTheStandardReplayIsAskedForDeeplyAndFills(t *testing.T) {
 	f.addon.send(ntwire.FrameBarsHistorical, ntwire.BarsHistoricalPayload{Symbol: "MNQ", Timeframe: "1m", Contract: ghContract, Bars: bars})
 	time.Sleep(100 * time.Millisecond)
 	f.addon.live(ct(2026, 10, 14, 7, 50), 30700)
-	waitFor(t, "the deep replay to land in the store", func() bool { return f.storedOpen(ct(2026, 10, 9, 10, 6), ct(2026, 10, 9, 10, 7)) == 1 })
+	// wait for the replay TAIL: the persister writes in batches, so the first
+	// minute landing does not mean the span is complete (a mid-write measure
+	// leaves the hole open and sends a second deep ask — flaky ~20%).
+	waitFor(t, "the deep replay to land in the store", func() bool { return f.storedOpen(ct(2026, 10, 14, 7, 0), ct(2026, 10, 14, 7, 47)) == 47 })
 	f.tr.tick(det.Add(61*time.Second + 3*time.Minute))
 	if hs := f.holes(); len(hs) != 0 {
 		t.Fatalf("the deep replay filled the span: the hole must close, got %+v\n%s", hs, f.sink.dump())
