@@ -238,6 +238,11 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	}
 	// N1 (release #23): a history refill since the seed → re-seed the state.
 	at.mentorReseedOnRefill(mentor.BarCloseInstant(last))
+	// Release #54 (m441, N2): feed the evaluator the stop / target / close
+	// receipt BEFORE it ticks — a swing whose position no longer exists is
+	// cleared here, so it cannot emit a BE or a market close against a later
+	// trade. Cheap: a no-op unless the evaluator holds an open swing.
+	at.mentorSwingReconcile()
 	// item 18 part 1: plumb the day's red-folder 07:30 print windows from the
 	// calendar into the evaluator so the print candle never moves the 1h/4h
 	// trigger lines [D4.4 p1 @18:13, @22:15]. No calendar / no print today →

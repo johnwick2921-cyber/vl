@@ -191,3 +191,11 @@ func (h *replayHold) line(symbol string) string {
 
 // the process-wide hold; the persist wire owns it
 var barReplayHold = newReplayHold(2 * ntwire.DefaultBarCacheMaxBars)
+
+// m444 review round 2: a deep gap re-request (provider RequestDeepGapBackfillAt)
+// replays up to DeepGapBackfillMaxBarsBack 1m bars through this hold, which keeps
+// only the newest 2*DefaultBarCacheMaxBars per key. The deep ask must fit, with
+// room for the boot seed's rows merged into the same key — a compile error here
+// means the hold shrank (or the deep reach grew) and a deep replay would lose
+// its oldest rows silently.
+const _ = uint(2*ntwire.DefaultBarCacheMaxBars - ntwire.DeepGapBackfillMaxBarsBack - 100)

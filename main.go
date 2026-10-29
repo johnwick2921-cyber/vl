@@ -876,8 +876,17 @@ func main() {
 		// bar hole) also reach the owner's bound chat — OUTBOUND text only,
 		// deduped + rate-limited + async (internal/ownerpush). A friend
 		// instance never gets here (and ownerpush refuses it independently).
-		ownerpush.Start(func(text string) { telegram.NotifyOwner(st, text) })
-		logger.Info("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole) -> the owner's bound Telegram chat · outbound only · ≤8/hour · deduped per episode · no-op when no chat is bound")
+		// m442: the sender RETURNS its outcome (a failed send is retried, not lost),
+		// held + deduped state survives a restart (file beside the DB), and the
+		// owner is told when the bot starts (rev + how the last process ended).
+		bootInfo := ownerpush.Start(func(text string) error { return telegram.NotifyOwner(st, text) }, cfg.DBPath+".ownerpush.json")
+		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · no-op when no chat is bound", ownerpush.Limits())
+		bootKey, bootText := ownerpush.BootMessage(integrity.Revision, bootInfo, integrity.Refused, time.Now())
+		ownerpush.Push(bootKey, bootText)
+		// m448 (release #54): the nightly data report rides the same owner-push
+		// channel, once per CME session day after the 16:00 CT close.
+		startNightlyDataReport(cfg.DBPath, st)
+		logger.Info("📊 nightly data report: once per CME session day at 16:10 CT -> the owner's bound Telegram chat · bars expected vs stored, holes, feed down, drops, trades+P&L, refusals, backup restore test · every figure read, n/a when unknown")
 	}
 
 	// Wait for interrupt signal
@@ -888,6 +897,7 @@ func main() {
 	logger.Info("📌 Tip: Use Ctrl+C to stop the system")
 
 	<-quit
+	ownerpush.MarkCleanShutdown() // m442: the next boot push says "stopped cleanly", not "died"
 	logger.Info("📴 Shutdown signal received, closing system...")
 
 	if err := server.Shutdown(); err != nil {

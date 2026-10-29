@@ -96,3 +96,32 @@ func TestSetupStallCountersNeverMixAcrossTraders(t *testing.T) {
 		t.Fatalf("per-trader tallies must not mix, got %+v", table)
 	}
 }
+
+// m442 #9: the alarm arithmetic is (Emitted - Policy) >= 3, not Emitted >= 3.
+// 5 emitted of which 3 were the owner's own rules = 2 real -> NO alert; 5
+// emitted of which 2 were policy = 3 real -> alert. MUTANT (shown RED): test
+// `c.Emitted >= 3` (ignore Policy) -> the first case alerts -> RED.
+func TestSetupStallPolicyRefusalsAreNotCountedTowardTheThreshold(t *testing.T) {
+	ResetSetupStallsForTest()
+	for i := 0; i < 5; i++ {
+		IncSetupStallEmitted("t1", "isb")
+	}
+	for i := 0; i < 3; i++ {
+		SetupStallRecordPolicyRefusal("t1", "isb", "window: outside the trading window")
+	}
+	if due := SetupStallAlertDue("t1"); len(due) != 0 {
+		t.Fatalf("5 emitted, 3 refused by the owner's rules = 2 real: no alert, got %+v", due)
+	}
+
+	ResetSetupStallsForTest()
+	for i := 0; i < 5; i++ {
+		IncSetupStallEmitted("t1", "isb")
+	}
+	for i := 0; i < 2; i++ {
+		SetupStallRecordPolicyRefusal("t1", "isb", "window: outside the trading window")
+	}
+	due := SetupStallAlertDue("t1")
+	if len(due) != 1 || due[0].Emitted != 5 || due[0].Policy != 2 {
+		t.Fatalf("5 emitted, 2 policy = 3 real: want one alert {5 emitted, 2 policy}, got %+v", due)
+	}
+}

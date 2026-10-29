@@ -7,6 +7,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"vl/config"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
 	"vl/telemetry"
@@ -168,6 +169,12 @@ func (s *Server) handleHealth(c *gin.Context) {
 	if holes, ok := ntTrader.BarHolesSnapshot(); ok {
 		body["bars_holes"] = holes
 		body["bars_hole_counts"] = telemetry.BarsHoleCountsSnapshot()
+		// m444: the persistent gap audit. Its hole figures are re-derived from
+		// the STORE every pass, so unlike bars_hole_counts they survive a
+		// restart; unfilled_holes_7d is the number the dashboard banner keys on.
+		if audit, ok := ntTrader.BarGapAuditSnapshot(); ok {
+			body["bars_hole_audit"] = audit
+		}
 	}
 	// WAVE 26 — the stale-print guard's lifetime count, beside the hole counts:
 	// how many live bars were quarantined (labelled mixed) after a reconnect
@@ -176,5 +183,10 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// K1/K7 — the connect-key refusal counter, named as the protocol doc names
 	// it (nt_connect_key_refused). 0 when no key is required or no server runs.
 	body["nt_connect_key_refused"] = ntTrader.ConnectKeyRefusedCount()
+	// m442 N4: the owner-push delivery counters (sent / failed / held ...). READ
+	// values; ABSENT when no pusher runs (a friend instance) - never a fabricated 0.
+	if st, ok := ownerpush.StatsSnapshot(); ok {
+		body["owner_push"] = st
+	}
 	c.JSON(code, body)
 }

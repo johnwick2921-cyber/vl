@@ -60,14 +60,36 @@ type gapBackfillState struct {
 // the per-day budget is spent.
 func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 	symbol = strings.TrimSpace(symbol)
+	sentToday, err := s.admitGapBackfill(symbol, now)
+	if err != nil {
+		return err
+	}
+	payload, err := s.resendBarsSubscribe(symbol)
+	if err != nil {
+		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, err)
+	}
+	if s.logger != nil {
+		s.logger.Info("tcp_server: gap backfill re-requested history (bars_subscribe resent; the AddOn rebuilds its BarsRequests)",
+			"symbol", symbol, "timeframes", payload.Timeframes, "bars_back", payload.BarsBack,
+			"sent_this_session_day", sentToday, "day_cap", gapBackfillMaxPerDay)
+	}
+	return nil
+}
+
+// admitGapBackfill is the ONE admission rule for every gap re-request, standard
+// or deep (history_deep_gap_backfill.go): link + feed up, the per-symbol spacing,
+// the per-session-day budget, and — BEFORE the send (#23 review P3-2) — the
+// overlap-verdict arm. It returns this session-day's send count.
+func (s *TCPServer) admitGapBackfill(symbol string, now time.Time) (int, error) {
+	symbol = strings.TrimSpace(symbol)
 	if symbol == "" {
-		return fmt.Errorf("tcp_server: gap backfill: empty symbol")
+		return 0, fmt.Errorf("tcp_server: gap backfill: empty symbol")
 	}
 	if !s.IsConnected() {
-		return fmt.Errorf("tcp_server: gap backfill %s: no NT8 client connected", symbol)
+		return 0, fmt.Errorf("tcp_server: gap backfill %s: no NT8 client connected", symbol)
 	}
 	if !s.IsFeedConnected() {
-		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillFeedDown)
+		return 0, fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillFeedDown)
 	}
 	day := kernel.CMESessionDayKey(now)
 	s.histReplay.gap.mu.Lock()
@@ -79,7 +101,7 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 	}
 	if last, ok := s.histReplay.gap.last[symbol]; ok && now.Sub(last) < gapBackfillMinSpacing {
 		s.histReplay.gap.mu.Unlock()
-		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillTooSoon)
+		return 0, fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillTooSoon)
 	}
 	if s.histReplay.gap.day[symbol] != day {
 		s.histReplay.gap.day[symbol] = day
@@ -87,7 +109,7 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 	}
 	if s.histReplay.gap.count[symbol] >= gapBackfillMaxPerDay {
 		s.histReplay.gap.mu.Unlock()
-		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillSpent)
+		return 0, fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, ErrGapBackfillSpent)
 	}
 	s.histReplay.gap.last[symbol] = now
 	s.histReplay.gap.count[symbol]++
@@ -101,16 +123,7 @@ func (s *TCPServer) RequestGapBackfillAt(symbol string, now time.Time) error {
 	// the arm ran would miss its verdict and sit in the replay-hold. A send
 	// that then fails leaves only a harmless window with no replay to judge.
 	s.barCache.armOverlapVerdict(symbol, time.Now().Add(gapReplayJudgeWindow))
-	payload, err := s.resendBarsSubscribe(symbol)
-	if err != nil {
-		return fmt.Errorf("tcp_server: gap backfill %s: %w", symbol, err)
-	}
-	if s.logger != nil {
-		s.logger.Info("tcp_server: gap backfill re-requested history (bars_subscribe resent; the AddOn rebuilds its BarsRequests)",
-			"symbol", symbol, "timeframes", payload.Timeframes, "bars_back", payload.BarsBack,
-			"sent_this_session_day", sentToday, "day_cap", gapBackfillMaxPerDay)
-	}
-	return nil
+	return sentToday, nil
 }
 
 // GapBackfillsSent is READ by the health surface (A11): gap re-requests sent

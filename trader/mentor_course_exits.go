@@ -234,7 +234,7 @@ func (at *AutoTrader) mentorSwingCloseQty(r store.ArmedOrderDB, side string, qty
 	open, ok := mentorDriveOpenQty(at)
 	if !ok {
 		at.mentorCount("close_refused_open_qty_unknown")
-		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects, retried next 4h read")
+		at.logWarnf("🧑‍🏫 mentor swing hold-close REFUSED — split swing (runner) and the broker's open qty is unreadable; never an over-close; the resting stop protects; the evaluator keeps the hold-close owed and re-sends it on the next closed 5m bar")
 		return 0, false
 	}
 	have := open[strings.ToLower(side)]

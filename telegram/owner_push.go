@@ -12,4 +12,6 @@ import "vl/store"
 // The caller is internal/ownerpush, which owns dedupe, the hourly rate limit,
 // the bounded queue and the friend-instance refusal; main.go wires this in
 // only on the owner's box.
-func NotifyOwner(st *store.Store, text string) { NotifyUpdateResult(st, text) }
+//
+// It returns the delivery outcome (m442 N4) so ownerpush can retry a failure.
+func NotifyOwner(st *store.Store, text string) error { return SendOwnerText(st, text) }

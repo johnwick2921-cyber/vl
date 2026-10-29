@@ -184,7 +184,11 @@ var mentorBrokerLegStopRead = func(at *AutoTrader, nt *ntTrader.TCPTrader, side 
 		return 0, mentorBrokerStopUnknown
 	}
 	book, recvAt, ok := mentorStopBook(nt)
-	if !ok || recvAt.IsZero() || time.Since(recvAt) > snapshotMaxAge() {
+	// Freshness is judged on the MENTOR clock (mentorClockNow: wall-clock live, the
+	// replay clock in the full-day harness, which stamps receipts on it) — the same
+	// seam every mentor time gate reads. time.Since here read a replay-stamped book
+	// as years old, so a rebuilt swing's BE (m441) was refused forever.
+	if !ok || recvAt.IsZero() || mentorClockNow().Sub(recvAt) > snapshotMaxAge() {
 		return 0, mentorBrokerStopUnknown
 	}
 	price, found := 0.0, false

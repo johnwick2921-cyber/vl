@@ -118,6 +118,20 @@ func m434Digest(t *testing.T, c m434Case) []string {
 		}
 		win := bars[lo : i+1]
 		out := e.Tick(win, BarCloseInstant(bars[i]))
+		// Release #54 (m441): the swing's BE / hold-close are owed until the
+		// EXECUTOR reports back (SwingBEApplied / SwingEnded). This replay has no
+		// executor, so emulate a perfect one — every BE applied, every hold-close
+		// filled — which is exactly what the old single-shot code assumed at emit.
+		// With it the golden recorded at 75707f1ed stays byte-identical, proving
+		// the m441 changes alter no other output on these tapes.
+		for _, in := range out {
+			switch in.Action {
+			case ActionMoveStopBE:
+				e.SwingBEApplied(in.ArmID)
+			case ActionClosePosition:
+				e.SwingEnded(in.ArmID)
+			}
+		}
 		ij, _ := json.Marshal(out)
 		sj, err := json.Marshal(e.State)
 		if err != nil {

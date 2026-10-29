@@ -707,6 +707,9 @@ type AutoTrader struct {
 	// against the broker's order book. Keyed "<signalID>#<wireLeg>". Guarded by
 	// mentorExitMu.
 	mentorPendingStopMoves map[string]*mentorPendingStopMove
+	// mentorSwingExitSent (release #54, #15): per swing ArmID, when its hold-close
+	// marketable limit was sent — guarded by mentorExitMu.
+	mentorSwingExitSent map[string]mentorSwingExitRecord
 	// mentorStopMoveEpisodes is the F1 miss-count ledger that SURVIVES a
 	// superseding move: one entry per (signal, wire leg), keyed the same as the
 	// pending map, so a fresh drive move every candle does NOT reset the count.

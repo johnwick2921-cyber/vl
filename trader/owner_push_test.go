@@ -237,7 +237,7 @@ func TestUnfilledHoleRaisesOneP1AndOneOwnerMessage(t *testing.T) {
 	if len(rows) != 1 || rows[0].Level != "P1" {
 		t.Fatalf("want exactly one P1 bar-hole-unfilled row, got %+v", rows)
 	}
-	want := "NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every 15 minutes for about 2 hours and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking."
+	want := "MISSING BARS: MNQ 10-25 17:00–10-26 03:40 CT, 640 min — NT8: Reload All Historical Data. NT8 has no MNQ history for 10-25 17:00–10-26 03:40 CT. In NinjaTrader: open an MNQ 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every 15 minutes for about 2 hours and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking."
 	if rows[0].Body != want {
 		t.Fatalf("body = %q\nwant   %q", rows[0].Body, want)
 	}
@@ -271,5 +271,73 @@ func TestUnfilledHoleScaleStoryDoesNotSendTheOwnerToReload(t *testing.T) {
 	body := unfilledHoleBody(ntTrader.UnfilledHole{Symbol: "MNQ", Window: "w CT", Attempts: 4, ReplayDisagreed: 2})
 	if strings.Contains(body, "Reload All Historical Data") || !strings.Contains(body, "price scale") {
 		t.Fatalf("scale-story body wrong: %q", body)
+	}
+}
+
+// m444 (review round 2) — a RETIRED hole is further back than the deepest replay
+// the bot can take in (4800 1m bars; the replay-hold keeps 5000 rows): neither a
+// reload nor a restart can put it in the store, so the owner's message must NOT
+// instruct either, must not promise a re-request, and must say when it clears.
+// (A hole the DEEP re-request can reach is a different message, below.)
+// MUTANT (shown RED): put the old text back ("... open an MNQ 1-minute chart,
+// right-click, Reload All Historical Data, then restart the bot ...") -> RED.
+func TestRetiredHoleBodyDoesNotTellTheOwnerToReloadOrRestart(t *testing.T) {
+	h := ntTrader.UnfilledHole{Symbol: "MNQ", Window: "10-26 17:00–21:57 CT", Missing: 297, OutsideReplay: true,
+		ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour}
+	body := unfilledHoleBody(h)
+	if !strings.HasPrefix(body, "MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — ") {
+		t.Fatalf("body must open with the banner's MISSING BARS line: %q", body)
+	}
+	for _, bad := range []string{"then restart the bot", "right-click", "re-asks NT8", "in NinjaTrader open"} {
+		if strings.Contains(body, bad) {
+			t.Fatalf("a retired hole must not carry %q: %q", bad, body)
+		}
+	}
+	for _, want := range []string{"further back than the bot can re-read from NT8", "last 4800 1m bars", "a reload or a restart will not put it back", "leaves the gap-audit window"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("body must say %q: %q", want, body)
+		}
+	}
+	// the actionable (unfilled, inside the replay) body keeps the exact action
+	// sentence the dashboard banner carries
+	act := unfilledHoleBody(ntTrader.UnfilledHole{Symbol: "MNQ", Window: "w CT", Missing: 9, ReaskEvery: 15 * time.Minute, ReaskHorizon: 2 * time.Hour})
+	if !strings.Contains(act, "— "+ntTrader.BarsMissingAction+".") {
+		t.Fatalf("an actionable hole must name %q: %q", ntTrader.BarsMissingAction, act)
+	}
+	if ntTrader.BarsMissingAction != "NT8: Reload All Historical Data" {
+		t.Fatalf("the action sentence drifted from the web banner's literal: %q", ntTrader.BarsMissingAction)
+	}
+}
+
+// m444 (review round 2) — a hole older than the standard replay but inside the
+// deep reach got DEEP re-requests. A bot restart re-reads only the last 2000 1m
+// bars, so the old "reload, then restart the bot" instruction is false for it:
+// the lever after a reload is the arbiter's backfill, with the bars_back that
+// fits the replay-hold.
+// MUTANT (shown RED): drop the `if h.Deep` branches in unfilledHoleBody /
+// unfilledHoleSpentBody / spentTitle -> the restart instruction comes back -> RED.
+func TestDeepHoleOwnerMessagesDoNotPromiseARestartFixesIt(t *testing.T) {
+	h := ntTrader.UnfilledHole{Symbol: "MNQ", Window: "10-26 17:00–21:57 CT", Missing: 297, Deep: true, Attempts: 2,
+		ReaskEvery: 15 * time.Minute, ReaskHorizon: 30 * time.Minute}
+	first := unfilledHoleBody(h)
+	if !strings.HasPrefix(first, "MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — "+ntTrader.BarsMissingAction+".") {
+		t.Fatalf("a deep unfilled hole opens with the banner's line and the action: %q", first)
+	}
+	for _, want := range []string{"Reload All Historical Data", "deep 1-minute request", "for about 30 minutes", "a bot restart will NOT reach this hole", "POST /api/nt/bar-arbiter", "bars_back 4800"} {
+		if !strings.Contains(first, want) {
+			t.Fatalf("deep body must say %q: %q", want, first)
+		}
+	}
+	h.SlowSpent = true
+	spent := unfilledHoleSpentBody(h)
+	if strings.Contains(spent, "THEN restart the bot") || !strings.Contains(spent, "does not reach a hole this old") || !strings.Contains(spent, "bars_back 4800") {
+		t.Fatalf("spent deep body must not send the owner to a restart: %q", spent)
+	}
+	if got := spentTitle(h); strings.Contains(got, "restart") {
+		t.Fatalf("spent deep title must not say restart: %q", got)
+	}
+	h.Deep = false
+	if got := spentTitle(h); !strings.Contains(got, "restart the bot") {
+		t.Fatalf("a standard hole keeps its restart title: %q", got)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"vl/internal/ownerpush"
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
@@ -277,40 +278,51 @@ var mentorX8LimitWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, side string
 	return err
 }
 
+// mentorMarketableExitLimit is the collared, tick-aligned limit price a
+// marketable-limit exit of a `side` position is sent at (long: through the bid;
+// short: through the ask). 0 = no fresh price / no tick / an unknown side — the
+// caller then takes the market flatten (a close always wins over preserving an
+// arm). ONE definition for X8 and the swing hold-close (release #54, #15).
+func (at *AutoTrader) mentorMarketableExitLimit(side string) float64 {
+	price, fresh := mentorLatestPriceSeam(at)
+	if !fresh || price <= 0 {
+		return 0
+	}
+	tick := market.FuturesTickSize(at.futuresSymbol())
+	if tick <= 0 {
+		return 0
+	}
+	collar := float64(mentorX8LimitCollarTicks) * tick
+	limit := price - collar // long: sell through the bid
+	if strings.EqualFold(strings.TrimSpace(side), "short") {
+		limit = price + collar // short: buy through the ask
+	}
+	// m390: the limit must land ON a tick boundary, and it must round
+	// AWAY from the market so it stays marketable — a sell exit (long
+	// close) rounds DOWN, a buy exit (short close) rounds UP. Nearest
+	// rounding could move it half a tick toward the market. Same
+	// direction as WireStop (away from the entry); an unknown side
+	// fails closed to the market flatten (never guess).
+	wl, err := ntTrader.WireStop(side, limit, tick)
+	if err != nil {
+		return 0
+	}
+	return wl
+}
+
 // mentorX8SendExit sends X8's single exit order for the position.
 func (at *AutoTrader) mentorX8SendExit(nt *ntTrader.TCPTrader, p *mentorLivePos) error {
-	if price, fresh := mentorLatestPriceSeam(at); fresh && price > 0 {
-		tick := market.FuturesTickSize(at.futuresSymbol())
-		if tick > 0 {
-			collar := float64(mentorX8LimitCollarTicks) * tick
-			limit := price - collar // long: sell through the bid
-			if strings.EqualFold(strings.TrimSpace(p.Pos.Side), "short") {
-				limit = price + collar // short: buy through the ask
-			}
-			// m390: the limit must land ON a tick boundary, and it must round
-			// AWAY from the market so it stays marketable — a sell exit (long
-			// close) rounds DOWN, a buy exit (short close) rounds UP. Nearest
-			// rounding could move it half a tick toward the market. Same
-			// direction as WireStop (away from the entry); an unknown side
-			// fails closed to the market flatten (never guess).
-			if wl, err := ntTrader.WireStop(p.Pos.Side, limit, tick); err == nil {
-				limit = wl
-			} else {
-				limit = 0
-			}
-			if limit > 0 {
-				err := mentorX8LimitWire(at, nt, p.Pos.Side, limit)
-				if err == nil {
-					at.mentorExitMu.Lock()
-					p.X8LimitAt = time.Now()
-					at.mentorExitMu.Unlock()
-					at.mentorCount("x8_trap_dodge_limit_exit")
-					at.logInfof("🧑‍🏫 X8 trap-dodge: marketable limit exit %s %s @ %.2f (only this position's bracket is cancelled; other resting arms stay)", p.Pos.Symbol, p.Pos.Side, limit)
-					return nil
-				}
-				at.logWarnf("🧑‍🏫 X8 trap-dodge: limit exit failed (%v) — market flatten instead", err)
-			}
+	if limit := at.mentorMarketableExitLimit(p.Pos.Side); limit > 0 {
+		err := mentorX8LimitWire(at, nt, p.Pos.Side, limit)
+		if err == nil {
+			at.mentorExitMu.Lock()
+			p.X8LimitAt = time.Now()
+			at.mentorExitMu.Unlock()
+			at.mentorCount("x8_trap_dodge_limit_exit")
+			at.logInfof("🧑‍🏫 X8 trap-dodge: marketable limit exit %s %s @ %.2f (only this position's bracket is cancelled; other resting arms stay)", p.Pos.Symbol, p.Pos.Side, limit)
+			return nil
 		}
+		at.logWarnf("🧑‍🏫 X8 trap-dodge: limit exit failed (%v) — market flatten instead", err)
 	}
 	return mentorCloseLegAtMarketWire(at, nt, p.Pos.Side, 0)
 }
@@ -1337,12 +1349,13 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		// counted per (signal, leg) and SURVIVE superseding moves, so a fresh
 		// want every candle still reaches "manage by hand" on the second miss.
 		misses, startMs := at.mentorBumpStopMoveEpisode(key)
+		at.noteRefusalStorm(ownerpush.ClassStopNotApplied, "stop moves", fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)) // m442 #6
 		if misses == 1 {
 			at.mentorCount("stop_move_not_applied")
 			at.logErrorf("🚨 STOP MOVE NOT APPLIED at NT8: %s leg %d want %.2f broker %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)
 			// ONE P0 per episode (the event id keys on the episode start, never
 			// on the wanted price — a fresh want must not fire a fresh P0).
-			at.emitAlert("P0", "stop-move-not-applied",
+			at.emitAlert("P0", alertKindStopMoveNotApplied,
 				fmt.Sprintf("stop-move:%s#%d:%d", mv.signalID, mv.wireLeg, startMs),
 				"Stop move not applied at NT8",
 				fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice))
