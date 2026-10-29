@@ -54,10 +54,24 @@ import (
 
 // IntegrityIntradayOpenMin is the data window of every INTRADAY mentor setup,
 // in OPEN 1m minutes: the 1m series the mentor evaluator reads each pass
-// (trader.mentorBars1mDepth = 1500; pinned equal by the trader package). Every
-// frame the evaluator uses — 2m, 5m, 15m, 1h, 4h, the §7 run window, the day
-// latch, the boxes — is AGGREGATED from this slice, so a 1m hole anywhere in
+// (trader.mentorBars1mDepth = 1500; pinned equal by the trader package). The
+// frames the evaluator builds PER PASS — 2m, 5m, 15m, 1h, 4h, the §7 run
+// window, the boxes — are aggregated from this slice, so a 1m hole anywhere in
 // it corrupts all of them.
+//
+// This window is NOT everything a mentor decision stands on (review round 2,
+// reviewer A, D1): the evaluator's SEEDED state — the 1H RTH key levels
+// (kernel/mentor.KeyLevels, "No lookback cap"), the open-HTF lines, the day
+// latch, the trendlines — is built once from the contract-stitched 1m history
+// (trader.mentorFullKeyLevelHistory) and lives for the life of the process. Two
+// legs close that, both for mentor decisions only:
+//
+//   - IntegrityVerdictForMentor: any unfilled hole the TRACKER holds that takes
+//     RTH minutes (08:30–15:00 CT), whatever its age (a hole detected live, or by
+//     the boot scan inside its reach, stays in force until it is measured filled);
+//   - SeriesRTHHoles (bar_integrity_series.go): the RTH holes in the stitched
+//     series the seed actually walked, measured by the trader at every seed and
+//     re-seed — the tracker follows one contract and cannot see that series.
 const IntegrityIntradayOpenMin = 1500
 
 // IntegrityDeepOpenMin is the window of the AI / planner / Picture / agent
@@ -97,8 +111,10 @@ const (
 	// coverage may begin before the window counts as partly unjudged.
 	integrityCoverTolMs = int64(2 * 60_000)
 
-	integrityRetiredCap     = 64
-	integrityRetiredMaxAge  = 30 * 24 * time.Hour
+	integrityRetiredCap = 64
+	// a retained hole is outside every judgement once it is older than the 1m
+	// retention (90 d) — the key-level leg reaches that far back
+	integrityRetiredMaxAge  = 100 * 24 * time.Hour
 	integrityRemeasureEvery = 60 * time.Second
 )
 
@@ -167,7 +183,26 @@ func IntegrityVerdictFor(symbol string, openMinutes int, now time.Time) Integrit
 		return IntegrityVerdict{Armed: true, Blocked: true, Class: IntegrityClassUnknown,
 			Unknown: "the bar-hole detector is not running (no bar store wired) — missing bars cannot be seen"}
 	}
-	return t.integrity(symbol, openMinutes, now)
+	return t.integrity(symbol, openMinutes, now, false)
+}
+
+// IntegrityVerdictForMentor is the verdict a MENTOR decision stands under: the
+// same window judgement as IntegrityVerdictFor, plus the tracker's key-level
+// leg — an unfilled hole the tracker holds that takes RTH minutes blocks,
+// whatever its age, because the evaluator's key levels (built once, kept for the
+// life of the process) may have been walked over those candles (see
+// IntegrityIntradayOpenMin). The seeded-series leg is the trader's
+// (data_integrity_seed.go).
+func IntegrityVerdictForMentor(symbol string, openMinutes int, now time.Time) IntegrityVerdict {
+	if !integrityArmed.Load() {
+		return IntegrityVerdict{}
+	}
+	t := barHoles.Load()
+	if t == nil {
+		return IntegrityVerdict{Armed: true, Blocked: true, Class: IntegrityClassUnknown,
+			Unknown: "the bar-hole detector is not running (no bar store wired) — missing bars cannot be seen"}
+	}
+	return t.integrity(symbol, openMinutes, now, true)
 }
 
 // integrityMemo remembers the window-start walk for one wall minute: walking
@@ -250,9 +285,14 @@ func (t *barHoleTracker) keepLocked(h *barHole) {
 	}
 	t.retired = append(t.retired, h)
 	if len(t.retired) > integrityRetiredCap {
-		// the oldest goes: it is the first to age out of every window anyway
+		// The oldest goes — but a dropped hole is a hole nobody lists any more,
+		// and once the newer ones are filled it would read as clear (review round
+		// 2, reviewer A). So an eviction is remembered: the verdict turns UNKNOWN
+		// (blocked, fail-closed) for the rest of the process; a restart re-scans
+		// the store and re-lists whatever is really missing.
 		sort.Slice(t.retired, func(i, j int) bool { return t.retired[i].ToMs > t.retired[j].ToMs })
 		t.retired = t.retired[:integrityRetiredCap]
+		t.retiredEvicted = true
 	}
 }
 
@@ -335,7 +375,8 @@ func (t *barHoleTracker) symbolScannedLocked(symbol, cur string) (key string, ok
 }
 
 // integrity answers for one symbol and window (see IntegrityVerdictFor).
-func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time) IntegrityVerdict {
+// keyLevels adds the mentor's key-level leg (see IntegrityVerdictForMentor).
+func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time, keyLevels bool) IntegrityVerdict {
 	v := IntegrityVerdict{Armed: true}
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -377,6 +418,10 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		}
 	}
 
+	if v.Unknown == "" && t.retiredEvicted {
+		v.Unknown = "more holes were retained than the list holds and the oldest were dropped — which stretches are still missing cannot be said until the next restart re-scans the store"
+	}
+
 	// (a) every hole that is not filled and overlaps the window.
 	add := func(h *barHole, state string) {
 		if !strings.EqualFold(h.Symbol, symbol) {
@@ -396,26 +441,15 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 				missing++
 			}
 		}
+		if missing == 0 && keyLevels {
+			// the key-level leg: a hole older than the window still blocks a
+			// mentor decision when it takes RTH minutes (the seeded 1H RTH walk)
+			missing = t.rthMissing(h.FromMs, h.ToMs)
+		}
 		if missing == 0 {
 			return
 		}
-		// The window the OWNER reads: the first to the last missing OPEN minute.
-		// The tracker's span starts at the first minute after the last stored
-		// bar, which across the 16:00 break is a CLOSED minute ("16:00–17:10"
-		// for a ten-minute reopen lag).
-		first, last := int64(0), int64(0)
-		for m := h.FromMs; m < h.ToMs; m += minute {
-			if t.isOpen(time.UnixMilli(m)) {
-				if first == 0 {
-					first = m
-				}
-				last = m
-			}
-		}
-		win := holeWindowCT(h.FromMs, h.ToMs)
-		if first != 0 {
-			win = holeWindowCT(first, last+minute)
-		}
+		win := t.openWindowCT(h.FromMs, h.ToMs)
 		v.Holes = append(v.Holes, IntegrityHole{
 			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
 			Missing: h.Missing, State: state, Window: win,
@@ -437,6 +471,31 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		v.Blocked, v.Class = true, IntegrityClassUnknown
 	}
 	return v
+}
+
+// openWindowCT renders what the OWNER reads for a hole: the first to the last
+// missing OPEN minute, in CT. The tracker's span starts at the first minute after
+// the last stored bar, which across the 16:00 break is a CLOSED minute
+// ("16:00–17:10" for a ten-minute reopen lag).
+func (t *barHoleTracker) openWindowCT(fromMs, toMs int64) string {
+	return openWindowCTWith(t.isOpen, fromMs, toMs)
+}
+
+func openWindowCTWith(isOpen func(time.Time) bool, fromMs, toMs int64) string {
+	const minute = int64(60_000)
+	first, last := int64(0), int64(0)
+	for m := fromMs; m < toMs; m += minute {
+		if isOpen(time.UnixMilli(m)) {
+			if first == 0 {
+				first = m
+			}
+			last = m
+		}
+	}
+	if first == 0 {
+		return holeWindowCT(fromMs, toMs)
+	}
+	return holeWindowCT(first, last+minute)
 }
 
 // newestFinal1m is the open time of the cache's newest FINAL 1m bar (0 = none).
@@ -463,7 +522,7 @@ type PausedReason struct {
 type PausedView struct {
 	Symbol  string         `json:"symbol"`
 	Paused  bool           `json:"paused"`
-	Scope   string         `json:"scope,omitempty"` // all_entries | swing_and_deep_entries | swing_entries
+	Scope   string         `json:"scope,omitempty"` // all_entries | swing_and_deep_entries | mentor_entries | swing_entries
 	Reasons []PausedReason `json:"reasons"`
 	Action  string         `json:"action,omitempty"`
 }
@@ -507,9 +566,13 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 			Reasons: []PausedReason{{Class: IntegrityClassUnknown, Detail: "the boot hole scan has not judged any symbol yet this process"}}}}, true
 	}
 	for _, s := range syms {
-		intra := t.integrity(s, IntegrityIntradayOpenMin, now)
-		deep := t.integrity(s, IntegrityDeepOpenMin, now)
-		swing := t.integrity(s, IntegritySwingOpenMin, now)
+		intra := t.integrity(s, IntegrityIntradayOpenMin, now, false)
+		deep := t.integrity(s, IntegrityDeepOpenMin, now, false)
+		swing := t.integrity(s, IntegritySwingOpenMin, now, false)
+		// the mentor's key-level leg (an RTH hole anywhere in the stored
+		// history) pauses MENTOR entries only: the AI / planner / Picture paths
+		// never read the seeded key levels
+		keyLv := t.integrity(s, IntegrityIntradayOpenMin, now, true)
 		pv := PausedView{Symbol: s, Reasons: []PausedReason{}}
 		worst := swing
 		switch {
@@ -517,6 +580,8 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 			pv.Scope, worst = "all_entries", intra
 		case deep.Blocked:
 			pv.Scope, worst = "swing_and_deep_entries", deep
+		case keyLv.Blocked:
+			pv.Scope, worst = "mentor_entries", keyLv
 		case swing.Blocked:
 			pv.Scope = "swing_entries"
 		}

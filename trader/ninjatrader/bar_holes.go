@@ -235,6 +235,9 @@ type barHoleTracker struct {
 	coveredFrom   map[string]int64  // symbol|contract -> oldest minute any judgement read back to
 	integ         integrityMemo     // the window-start walk, memoised per wall minute
 	lastRemeasure time.Time         // the retired holes' last store re-read
+	// retiredEvicted — the retained list overflowed and its oldest entries were
+	// dropped: the verdict is UNKNOWN (blocked) from then on, until a restart.
+	retiredEvicted bool
 }
 
 // barHoles is the process tracker: the persister reports to it, the health
@@ -379,6 +382,9 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	}
 	t.checked[key] = newest
 	t.noteJudgedLocked(key, from)
+	if bootScan {
+		got = trimPreRecording(got)
+	}
 	times := make([]int64, 0, len(got))
 	for _, r := range got {
 		times = append(times, r.OpenTimeMs)
@@ -411,6 +417,27 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		t.say("WARN", fmt.Sprintf("🕳 bars HOLE detected: %s %s %s on %s — %d open minute(s) with no stored bar (threshold %d, %s); NT8 history re-request scheduled at %s after now, never while the feed is down (gap-backfill)",
 			symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, t.minGap, t.minGapSrc, scheduleText()))
 	}
+}
+
+// trimPreRecording drops the LEADING rows of a boot-scan read that the bot did
+// not record: the history-import snapshots (store.BarSourceHistoricalImport)
+// that stand in the store before the contract's first recorded (live / replayed)
+// bar. A contract that has just rolled in is stored sparsely before the bot
+// subscribes to it — on the live store 12-26 holds one import row a day for
+// 09-07..09-10 and then dense data from 09-14 — and those stretches are not
+// minutes the bot lost: it was not on that contract yet, and the stitched
+// history takes them from the older contract. Read as holes they pause the
+// gate for the whole window after every roll (verified by replaying the real
+// 12-26 rows). Only LEADING import rows go; an import row after the first
+// recorded bar is data like any other, and a store with no recorded bar at all
+// is judged whole. (Review round 2, window + false pauses.)
+func trimPreRecording(rows []store.BarHistoryDB) []store.BarHistoryDB {
+	for i, r := range rows {
+		if r.Source != store.BarSourceHistoricalImport {
+			return rows[i:]
+		}
+	}
+	return rows
 }
 
 // bootScanFromLocked is the boot scan's first minute for a key whose newest
@@ -452,6 +479,30 @@ func (t *barHoleTracker) bootScanShallowLocked(newestMs int64) (int64, string) {
 		}
 	}
 	return start, fmt.Sprintf("the session open (inside the bars_back %d replay window)", bb)
+}
+
+// rthMissing counts the OPEN minutes in [fromMs, toMs) that lie inside the
+// regular trading hours the key-level walk reads: 08:30 <= CT time of day < 15:00.
+func (t *barHoleTracker) rthMissing(fromMs, toMs int64) int {
+	const minute = int64(60_000)
+	n := 0
+	for m := fromMs; m < toMs; m += minute {
+		if isRTHMinute(time.UnixMilli(m)) && t.isOpen(time.UnixMilli(m)) {
+			n++
+		}
+	}
+	return n
+}
+
+// isRTHMinute — the 1m bar opening at m belongs to a 1H RTH key-level candle
+// (kernel/mentor keyLevel1HBars: anchored 08:30 CT, ends 15:00 CT).
+func isRTHMinute(m time.Time) bool {
+	in := m.In(kernel.CTLocation())
+	if wd := in.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	tod := in.Hour()*60 + in.Minute()
+	return tod >= 8*60+30 && tod < 15*60
 }
 
 func bootScanLevel(spans []barHoleSpan) string {

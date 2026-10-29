@@ -164,7 +164,8 @@ func TestARetiredHoleStillBlocksUntilMeasuredFilled(t *testing.T) {
 
 type memHoleStore struct {
 	mu       sync.Mutex
-	times    []int64 // ascending open times
+	times    []int64        // ascending open times
+	imports  map[int64]bool // open times stored as history-import snapshots (Source)
 	prevErr  error
 	rangeErr error
 }
@@ -198,7 +199,11 @@ func (s *memHoleStore) BarsBetweenOn(_, _, _ string, fromMs, toMs int64) ([]stor
 	hi := sort.Search(len(s.times), func(i int) bool { return s.times[i] >= toMs })
 	out := make([]store.BarHistoryDB, 0, hi-lo)
 	for _, ms := range s.times[lo:hi] {
-		out = append(out, store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: ms})
+		row := store.BarHistoryDB{Symbol: "MNQ", TF: "1m", Contract: ghContract, OpenTimeMs: ms}
+		if s.imports[ms] {
+			row.Source = store.BarSourceHistoricalImport
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }
@@ -777,7 +782,7 @@ func TestSwingWindowSeesAHoleTheDeepWindowDoesNot(t *testing.T) {
 	armIntegrity(t)
 	boot := ct(2026, 10, 28, 6, 0)
 	st := &memHoleStore{}
-	gapFrom, gapTo := ct(2026, 10, 13, 9, 0), ct(2026, 10, 13, 9, 30)
+	gapFrom, gapTo := ct(2026, 10, 13, 4, 0), ct(2026, 10, 13, 4, 30) // overnight: no RTH minute, so the mentor key-level leg stays out of this pin
 	for m := ct(2026, 10, 8, 17, 0); m.Before(boot); m = m.Add(time.Minute) {
 		if barHoleExpected(m) && (m.Before(gapFrom) || !m.Before(gapTo)) {
 			st.add(m.UnixMilli())
@@ -796,7 +801,7 @@ func TestSwingWindowSeesAHoleTheDeepWindowDoesNot(t *testing.T) {
 		t.Fatalf("a hole ~11 trading days back is outside the deep window: %+v", v)
 	}
 	v := IntegrityVerdictFor("MNQ", IntegritySwingOpenMin, now)
-	if !v.Blocked || v.Class != IntegrityClassHole || len(v.Holes) != 1 || v.Holes[0].Window != "10-13 09:00–09:30 CT" {
+	if !v.Blocked || v.Class != IntegrityClassHole || len(v.Holes) != 1 || v.Holes[0].Window != "10-13 04:00–04:30 CT" {
 		t.Fatalf("the swing window must see the 10-13 hole after a restart: %+v", v)
 	}
 	views, armed := TradingPausedSnapshot(now)

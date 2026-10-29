@@ -47,9 +47,10 @@ import (
 
 // intFake feeds the tracker's verdict and records which window each ask used.
 type intFake struct {
-	blockedFor func(openMin int) bool
-	class      string
-	asked      []int
+	blockedFor     func(openMin int) bool
+	class          string
+	asked          []int
+	askedKeyLevels []bool
 }
 
 func holeVerdictFor(class string) ntTrader.IntegrityVerdict {
@@ -71,8 +72,9 @@ func armIntegrityGate(t *testing.T, f *intFake) {
 	}
 	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
 	prev := integrityVerdictFn
-	integrityVerdictFn = func(symbol string, openMin int, now time.Time) ntTrader.IntegrityVerdict {
+	integrityVerdictFn = func(symbol string, openMin int, now time.Time, keyLevels bool) ntTrader.IntegrityVerdict {
 		f.asked = append(f.asked, openMin)
+		f.askedKeyLevels = append(f.askedKeyLevels, keyLevels)
 		if f.blockedFor != nil && !f.blockedFor(openMin) {
 			return ntTrader.IntegrityVerdict{Armed: true}
 		}
@@ -114,7 +116,17 @@ func TestIntegrityGateRefusesAIDecision(t *testing.T) {
 	for _, action := range []string{"open_long", "open_short"} {
 		before := gateBlocks(at.id, ntTrader.IntegrityClassHole)
 		rec, err := &store.DecisionAction{Action: action, Symbol: "MNQ"}, error(nil)
-		err = at.executeDecisionWithRecord(&kernel.Decision{Action: action, Symbol: "MNQ"}, rec)
+		func() {
+			// with the gate removed the decision runs on into a fixture that has
+			// no broker and panics: report that as the pin failing, not as a
+			// crashed package (review round 2, reviewer A)
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("%s was NOT refused at the gate: it ran on past admitChain (panic %v)", action, r)
+				}
+			}()
+			err = at.executeDecisionWithRecord(&kernel.Decision{Action: action, Symbol: "MNQ"}, rec)
+		}()
 		if err != nil || rec.Success || !strings.HasPrefix(rec.Error, "data_integrity: ") ||
 			!strings.Contains(rec.Error, "10-26 17:00–21:57 CT") || !strings.Contains(rec.Error, ntTrader.IntegrityAction) {
 			t.Fatalf("%s must be refused by name at executeDecisionWithRecord (err=%v rec=%q)", action, err, rec.Error)

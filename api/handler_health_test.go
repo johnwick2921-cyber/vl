@@ -193,3 +193,67 @@ func TestHealthTradingPaused(t *testing.T) {
 		t.Fatalf("CME closed: an unknown detector is moot, not paused: %+v", tp2)
 	}
 }
+
+// m445 round 2 (reviewer A, D1) — the mentor's SEEDED-series leg is on the
+// health surface, per mentor trader, named by id: a pause the owner cannot see
+// is a pause the owner discovers from a silent day. A non-mentor trader on the
+// same process is not listed (it never reads the seeded key levels).
+func TestHealthTradingPausedNamesTheMentorSeedLeg(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	t.Cleanup(ntTrader.SetBarHolesWiredForTest())
+
+	now := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation()) // Wed, CME open
+	var ts []int64
+	for m := time.Date(2026, 10, 20, 17, 0, 0, 0, kernel.CTLocation()); m.Before(now); m = m.Add(time.Minute) {
+		if kernel.IsCMEOpen(m) {
+			// a 40-minute RTH hole on 10-22 10:00–10:40 CT
+			if h := time.Date(2026, 10, 22, 10, 0, 0, 0, kernel.CTLocation()); !m.Before(h) && m.Before(h.Add(40*time.Minute)) {
+				continue
+			}
+			ts = append(ts, m.UnixMilli())
+		}
+	}
+	srv := ntwire.NewTCPServer(nil)
+	tcpT := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
+	mentorT := trader.NewAutoTraderOnBrokerForTest("tm", "ninjatrader", tcpT, true)
+	mentorT.NoteSeedSeriesForTest(true, ts, now)
+	plainT := trader.NewAutoTraderOnBrokerForTest("tp", "ninjatrader", tcpT, true)
+	plainT.NoteSeedSeriesForTest(false, ts, now)
+	tm := manager.NewTraderManager()
+	tm.SetTraderForTest("tm", mentorT)
+	tm.SetTraderForTest("tp", plainT)
+
+	prev := healthNow
+	healthNow = func() time.Time { return now }
+	t.Cleanup(func() { healthNow = prev })
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+	(&Server{traderManager: tm}).handleHealth(c)
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatalf("health body not JSON: %v", err)
+	}
+	tp, ok := body["trading_paused"].(map[string]any)
+	if !ok {
+		t.Fatal("armed: trading_paused must be present")
+	}
+	ms, _ := tp["mentor_seed"].([]any)
+	if tp["paused"] != true || len(ms) != 1 {
+		t.Fatalf("one mentor trader with a seeded RTH hole must be listed (and only it): %+v", tp)
+	}
+	row := ms[0].(map[string]any)
+	wins, _ := row["windows"].([]any)
+	if row["trader"] != "tm" || row["scope"] != "mentor_entries" || len(wins) != 1 || wins[0] != "10-22 10:00–10:40 CT" || row["action"] != ntTrader.IntegrityAction {
+		t.Fatalf("the row names the trader, the scope, the CT window and the action: %+v", row)
+	}
+	allWins, _ := tp["windows"].([]any)
+	found := false
+	for _, w := range allWins {
+		found = found || w == "10-22 10:00–10:40 CT"
+	}
+	if !found {
+		t.Fatalf("the top-level windows (the banner's source) must carry the seeded hole: %+v", tp["windows"])
+	}
+}

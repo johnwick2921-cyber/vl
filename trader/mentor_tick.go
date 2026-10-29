@@ -649,11 +649,16 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// never silent; the deferred guard in mentorDispatchEntry drops the arm.
 	if dv.Blocked {
 		at.mentorCount("placement_refused_data_integrity")
-		at.logWarnf("🧑‍🏫 mentor placement REFUSED — data_integrity (%s): %s — %s %s %s @ %.2f never reaches the ledger", dv.Class, dv.Reason, in.ArmID, in.Setup, in.Side, in.Price)
+		// ONE WARN per episode and class (review round 2, reviewer A); the
+		// counters and the stall record below still see every refusal.
+		if at.admitLast.changed("data-integrity|mentor-place", dv.Class) {
+			at.logWarnf("🧑‍🏫 mentor placement REFUSED — data_integrity (%s): %s — %s %s %s @ %.2f never reaches the ledger (further refusals in this episode are counted, not logged)", dv.Class, dv.Reason, in.ArmID, in.Setup, in.Side, in.Price)
+		}
 		at.mentorRecordStallRefusal(in, "data_integrity")
 		at.mentorGateBlock(dv.Class)
 		return
 	}
+	at.admitLast.clear("data-integrity|mentor-place") // the episode ended: the next one logs again
 	// N10 (stale intent): an entry whose reference candle is not the newest
 	// closed bar came from a reload replay of stale box/ISB/PHL state — never
 	// a live order. The swing is exempt (RefBarMs 0 — gated by its own 5m
@@ -2021,6 +2026,13 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// contract's recent bars). A stitch that produces nothing degrades to the
 	// current-contract walk (cold store / read error already refused above).
 	stitched1m, full1HRTH, contracts, gaps, stoppedAt := at.mentorFullKeyLevelHistory(bh)
+	// m445 round 2 (reviewer A, D1): measure the series the key levels are about
+	// to be walked over for RTH holes — the gate reads it for every mentor entry.
+	if len(full1HRTH) > 0 {
+		at.noteSeedSeries(stitched1m, mentorClockNow())
+	} else {
+		at.noteSeedSeries(bars1m, mentorClockNow())
+	}
 	var missing []string
 	priorHTF := at.mentorEval.State.HTF // MENTOR-NY item 6: the state the seed replays from
 	if len(full1HRTH) > 0 {

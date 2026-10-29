@@ -2,6 +2,7 @@ package api
 
 import (
 	"net/http"
+	"sort"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -195,16 +196,40 @@ func (s *Server) handleHealth(c *gin.Context) {
 				windows = append(windows, r.Window...)
 			}
 		}
+		// m445 round 2 (reviewer A, D1): the MENTOR's seeded-series leg is
+		// per trader (its evaluator was seeded from the stitched history) — read
+		// from each mentor trader, named by trader id.
+		mentorSeed := []gin.H{}
+		if s.traderManager != nil {
+			ids := []string{}
+			all := s.traderManager.GetAllTraders()
+			for id := range all {
+				ids = append(ids, id)
+			}
+			sort.Strings(ids)
+			for _, id := range ids {
+				if w := all[id].HealthSeedSeriesPause(now); len(w) > 0 {
+					paused = true
+					if !seen[ntTrader.IntegrityClassHole] {
+						seen[ntTrader.IntegrityClassHole] = true
+						reasons = append(reasons, ntTrader.IntegrityClassHole)
+					}
+					windows = append(windows, w...)
+					mentorSeed = append(mentorSeed, gin.H{"trader": id, "scope": "mentor_entries", "windows": w, "action": ntTrader.IntegrityAction})
+				}
+			}
+		}
 		if feedStale {
 			paused = true
 			reasons = append(reasons, "stale_data")
 		}
 		body["trading_paused"] = gin.H{
-			"paused":  paused,
-			"reasons": reasons,
-			"windows": windows,
-			"symbols": views,
-			"counts":  telemetry.DataIntegrityCountsSnapshot(),
+			"paused":      paused,
+			"reasons":     reasons,
+			"windows":     windows,
+			"symbols":     views,
+			"mentor_seed": mentorSeed,
+			"counts":      telemetry.DataIntegrityCountsSnapshot(),
 		}
 	}
 	// WAVE 26 — the stale-print guard's lifetime count, beside the hole counts:

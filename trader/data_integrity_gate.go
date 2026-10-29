@@ -41,15 +41,29 @@ import (
 //
 //	intraday = ntTrader.IntegrityIntradayOpenMin = 1500 = mentorBars1mDepth.
 //	  The mentor evaluator reads the live 1m ring (market.FuturesBarsProvider
-//	  ("MNQ","1m",mentorBars1mDepth), mentor_tick.go) and AGGREGATES every other
-//	  frame from it (2m/5m/15m/1h/4h, the §7 Globex run window 17:00→08:30,
-//	  the RTH day, boxes, ORB, day latch). The 5m feed it also reads
-//	  (mentor_tick.go, "5m", 12 bars) lies inside the same minutes.
+//	  ("MNQ","1m",mentorBars1mDepth), mentor_tick.go) and AGGREGATES the frames
+//	  it builds PER PASS from it (2m/5m/15m/1h/4h, the §7 Globex run window
+//	  17:00→08:30, the RTH day, boxes, ORB). The 5m feed it also reads
+//	  (mentor_tick.go, "5m", 12 bars) lies inside the same minutes. The SEEDED
+//	  state is not inside this slice: see the key-level leg below.
 //	deep = ntTrader.IntegrityDeepOpenMin = (34+1) x 240 = 8400.
 //	  The AI / planner / Picture / agent paths read the native 4h structure
 //	  (kernel.HTFVetoNativeTF, HTFVetoNativeBarsAsk) and 1m x
 //	  kernel.AISVPBarCount (2000, inside this). 34 candles is the 4h EMA's own
 //	  period, +1 so the window is cut at a candle boundary, not through one.
+//	key-level legs (every MENTOR verdict, any window) — the evaluator's seeded
+//	  state (1H RTH key levels with "No lookback cap", open-HTF lines, day
+//	  latch, trendlines) is built once from the contract-STITCHED 1m history
+//	  (mentor_tick.go mentorFullKeyLevelHistory) and persists for the life of
+//	  the process, so the 1500-minute intraday window does not cover it (review
+//	  round 2, reviewer A, D1). (1) the tracker's own RTH holes of any age
+//	  (ntTrader.IntegrityVerdictForMentor); (2) the RTH holes in the stitched
+//	  series the seed walked, measured at every seed and re-seed
+//	  (data_integrity_seed.go, ntTrader.SeriesRTHHoles) within the 90-day reach
+//	  (ntTrader.IntegritySeedReachDays = the 1m retention). A hole a history
+//	  reload fills bumps the refill generation, the evaluator re-seeds, the next
+//	  measurement is clear. Known limit: a hole older than the reach is not
+//	  judged (nothing the owner can do refills it).
 //	swing = ntTrader.IntegritySwingOpenMin = (102+1) x 240 = 24720.
 //	  SWING4H's 4h EMA 34 is gated on, and computed over, the WARM-UP history
 //	  (kernel/mentor.FourHEMA34Warmup = 102 closed 4h candles, seeded from the
@@ -68,11 +82,18 @@ import (
 // the store and found it filled) or when the hole ages out of the window — no
 // persisted "all clear": a restart re-derives everything from the tracker.
 
-// integrityVerdictFn is the tracker read (ntTrader.IntegrityVerdictFor); a var
-// so the trader-side pins can feed a verdict without a socket fixture. The
-// verdict's own pins (the real tracker, the real calendar, the 10-26 data) live
-// in trader/ninjatrader/bar_integrity_test.go.
-var integrityVerdictFn = ntTrader.IntegrityVerdictFor
+// integrityVerdictFn is the tracker read (ntTrader.IntegrityVerdictFor, or for
+// a MENTOR trader ntTrader.IntegrityVerdictForMentor — keyLevels true: the
+// tracker's RTH holes of any age block it; the seeded-series leg follows in
+// dataIntegrityVerdictAt); a var so the trader-side pins can feed a verdict
+// without a socket fixture. The verdict's own pins (the real tracker, the real
+// calendar, the 10-26 data) live in trader/ninjatrader/bar_integrity_test.go.
+var integrityVerdictFn = func(symbol string, openMin int, now time.Time, keyLevels bool) ntTrader.IntegrityVerdict {
+	if keyLevels {
+		return ntTrader.IntegrityVerdictForMentor(symbol, openMin, now)
+	}
+	return ntTrader.IntegrityVerdictFor(symbol, openMin, now)
+}
 
 // integrityUnknownGrace — how long an UNKNOWN detector may stand (CME open)
 // before it is told to the owner and resting entries are withdrawn. A normal
@@ -146,8 +167,13 @@ func (at *AutoTrader) dataIntegrityVerdictAt(openMin int, now time.Time, withSta
 		return dataVerdict{}
 	}
 	sym := at.futuresSymbol()
-	v := integrityVerdictFn(sym, openMin, now)
+	// a mentor trader decides on the evaluator's SEEDED state (key levels over the
+	// whole stored history) as well as the per-pass window: it asks the mentor verdict
+	v := integrityVerdictFn(sym, openMin, now, at.mentorEnabled())
 	if !v.Blocked {
+		if at.mentorEnabled() {
+			return at.seedSeriesVerdict(now) // the key-level leg: holes in the series the seed walked
+		}
 		return dataVerdict{}
 	}
 	out := dataVerdict{Blocked: true, Class: v.Class, Holes: v.Holes, Windows: v.Windows()}
@@ -257,7 +283,13 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if worst.Blocked {
-		if worst.Class == ntTrader.IntegrityClassUnknown {
+		// The unknown-detector grace is measured in OPEN time only (review round
+		// 2, reviewer B probe): a restart over the weekend sits unknown through
+		// the whole closure — nothing arrives to judge — and counting that would
+		// push "UNKNOWN" and withdraw resting entries 20 s after the Sunday
+		// reopen, before the first live bar had a chance to land the boot scan.
+		// The clock starts at the first beat that finds the market OPEN.
+		if worst.Class == ntTrader.IntegrityClassUnknown && kernel.IsCMEOpen(now) {
 			if e.unknownSince.IsZero() {
 				e.unknownSince = now
 			}

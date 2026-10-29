@@ -68,6 +68,7 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 		}
 		bars1m, full1HRTH = storeBarsToKlines(rows, 60_000), nil
 	}
+	at.noteSeedSeries(bars1m, time.UnixMilli(nowMs)) // m445 round 2: the refilled series is measured again — a filled hole resumes the gate
 	var rep mentor.ReseedReport
 	at.mentorWithHistoryPrintWindows(bars1m, func() {
 		rep = mentor.ReseedState(at.mentorEval, bars1m, full1HRTH, nowMs)
