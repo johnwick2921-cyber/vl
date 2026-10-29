@@ -249,7 +249,7 @@ func WireBarPersistence(st *store.Store) {
 					// best-known boot line describing a ring the bot no longer
 					// had — two lines about the same instant, and the older,
 					// more-read one wrong.
-					rehydrateRingFromStore(bh, server, time.Now())
+					rehydrateRingFromStore(bh, server, time.Now()) // #55 m449: the BOOT entry; it also opens the data-truth seed edge
 					// ROLL WAVE (D5) — when the AddOn names a NEW contract, the
 					// server has already purged the ring; reseed it from the
 					// store for the new contract only, and say so ONCE where
@@ -574,6 +574,12 @@ func resetAfterBackfillHookForTest() {
 // refuses, blocks or blanks.
 func rehydrateRingFromStore(bh *store.BarHistoryStore, server *ntwire.TCPServer, now time.Time) {
 	rehydrateRingFromStoreWith(bh, server, now, false)
+	// #55 m449: the boot seed step is done (the AddOn replay was waited for, the
+	// ring rehydrated), however it ended - only NOW may the data-truth checks
+	// judge the ring. A replay that never came is judged (loudly, after the
+	// trader's boot grace) rather than waited on forever. The roll / scale-break
+	// reseeds call rehydrateRingFromStoreWith directly and do not move this edge.
+	MarkDataTruthSeeded()
 }
 
 // rehydrateRingFromStoreWith is the body; reseeded=true marks a roll-driven

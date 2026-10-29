@@ -161,6 +161,7 @@ func TestIntegrityDecisionRefusalIsLoggedOncePerEpisode(t *testing.T) {
 func TestIntegrityMentorPlacementRefusalIsLoggedOncePerEpisode(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.exchange = "ninjatrader"
+	seedMeasured(at)
 	now := mentorStaleBlockClock(9, 0)
 	setMentorNowSource(func() time.Time { return now })
 	t.Cleanup(func() { setMentorNowSource(nil) })

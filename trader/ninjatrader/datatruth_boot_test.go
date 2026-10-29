@@ -106,3 +106,53 @@ func TestStoreSwingInputsReadsTheCurrentContractOneAndFiveMinute(t *testing.T) {
 		t.Fatal("no store must be an ERROR (a check that cannot judge fails closed), not an empty read")
 	}
 }
+
+// ── #55 m449 — the seed edge (ready at WIRE time was before the replay landed) ──
+//
+// MUTANT S3: rehydrateRingFromStore (the boot entry bar_persist_wire.go calls;
+// TestRingRehydrateIsWiredAtBoot census-pins that call site) without
+// MarkDataTruthSeeded -> RED. The roll / scale-break reseeds use
+// rehydrateRingFromStoreWith and must NOT open the edge.
+
+func TestWireDataTruthChecksIsRegisteredButNotYetJudgeable(t *testing.T) {
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	srv := ntwire.NewTCPServer(nil)
+	WireDataTruthChecks(bh, srv)
+	if !DataTruthReady() {
+		t.Fatal("registered")
+	}
+	if DataTruthJudgeable() || DataTruthSeeded() {
+		t.Fatal("registration alone must NOT make the checks judgeable: the replay has not landed")
+	}
+}
+
+func TestBootRehydrateOpensTheSeedEdge(t *testing.T) {
+	t.Cleanup(SetDataTruthReadyForTest(true))
+	t.Cleanup(SetDataTruthSeededForTest(false))
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	srv := ntwire.NewTCPServer(nil)
+	if DataTruthJudgeable() {
+		t.Fatal("precondition: not judgeable before the seed")
+	}
+	rehydrateRingFromStoreWith(bh, srv, time.Now(), true) // a roll reseed is not the boot seed
+	if DataTruthSeeded() {
+		t.Fatal("a roll-driven reseed must not open the boot seed edge")
+	}
+	rehydrateRingFromStore(bh, srv, time.Now())
+	if !DataTruthSeeded() || !DataTruthJudgeable() {
+		t.Fatal("the boot seed step must open the edge, however the rehydrate ended")
+	}
+}

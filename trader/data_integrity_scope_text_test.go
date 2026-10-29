@@ -47,6 +47,7 @@ func scopeTextTrader(t *testing.T, mentor bool) *AutoTrader {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
 	at.exchange = "ninjatrader"
 	at.name = "Mentor A"
+	seedMeasured(at)
 	return at
 }
 

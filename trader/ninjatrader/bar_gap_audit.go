@@ -425,8 +425,17 @@ func (t *barHoleTracker) applyAuditLocked(tg auditTarget, spans []barHoleSpan, w
 		}
 		switch {
 		case h.ToMs <= winFrom:
-			t.say("INFO", fmt.Sprintf("🕳 bars hole aged out of the audit window: %s %s %s on %s (%s, %d open minute(s) were missing)",
+			// #55 m449: leaving the AUDIT's window (a few CME sessions) is not
+			// leaving the windows a decision READS (deep ~8.7 sessions, swing4h
+			// ~18, the mentor RTH key-level leg 90 days). Dropping an unmeasured
+			// hole here read as "all clear" while the minutes were still gone, and
+			// the gate resumed days before the hole it had promised to wait for.
+			// The audit stops WATCHING it; the data-integrity gate keeps it (and
+			// re-measures it from the store, remeasureRetired) until it is measured
+			// filled or outside every window.
+			t.say("INFO", fmt.Sprintf("🕳 bars hole aged out of the audit window: %s %s %s on %s (%s, %d open minute(s) were missing) — the audit no longer watches it; the data-integrity gate keeps it listed until it is measured filled or leaves every window a decision reads",
 				h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, h.State, h.Missing))
+			t.retainRetiredLocked(h)
 			t.removeLocked(h)
 		case h.FromMs < winFrom || h.ToMs > winTo:
 			// partly outside what this pass read: cannot be judged here
