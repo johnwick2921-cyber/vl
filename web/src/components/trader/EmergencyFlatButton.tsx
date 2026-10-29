@@ -10,16 +10,60 @@
 //   data-testid="confirm-flat-button"
 //   data-testid="cancel-flat-button"
 
+// m443/N6 — the result is GREEN only when the server answered 2xx AND said
+// triggered === true. Everything else (HTTP 200 {triggered:false} because NT8
+// is down, 401 on an expired token, a non-JSON proxy page, a network error) is
+// RED "NOT SENT: <reason>" — in a panic a flatten that never left must never
+// look like one that did.
+
 import { useState } from 'react'
 
 interface Props {
   traderId: string
 }
 
+interface FlatResult {
+  sent: boolean
+  text: string
+}
+
+// notSent builds the red result line.
+function notSent(reason: string): FlatResult {
+  return { sent: false, text: `NOT SENT: ${reason}` }
+}
+
+// interpretForceFlat reads the /api/risk/force-flat answer. body is the parsed
+// JSON, or null when the body was not JSON.
+export function interpretForceFlat(
+  status: number,
+  ok: boolean,
+  body: unknown
+): FlatResult {
+  const b =
+    body && typeof body === 'object' ? (body as Record<string, unknown>) : null
+  if (ok && b && b.triggered === true) {
+    return { sent: true, text: JSON.stringify(b, null, 2) }
+  }
+  const field = (k: string) =>
+    b && typeof b[k] === 'string' && (b[k] as string).trim()
+      ? (b[k] as string).trim()
+      : ''
+  let reason = field('reason') || field('error') || field('message')
+  if (status === 401) {
+    reason = `HTTP 401 — session expired, log in again${reason ? ` (${reason})` : ''}`
+  } else if (!ok) {
+    reason = `HTTP ${status}${reason ? ` — ${reason}` : ''}`
+  } else if (!reason) {
+    // 2xx but no triggered:true and no stated reason: still not confirmed sent.
+    reason = 'the server did not confirm the flatten was sent'
+  }
+  return notSent(reason)
+}
+
 export function EmergencyFlatButton({ traderId }: Props) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<string | null>(null)
+  const [result, setResult] = useState<FlatResult | null>(null)
 
   async function confirmFlat() {
     setBusy(true)
@@ -36,11 +80,16 @@ export function EmergencyFlatButton({ traderId }: Props) {
           },
         }
       )
-      const data = await r.json()
-      setResult(JSON.stringify(data, null, 2))
+      let data: unknown = null
+      try {
+        data = await r.json()
+      } catch {
+        data = null // non-JSON body (proxy error page etc.)
+      }
+      setResult(interpretForceFlat(r.status, r.ok, data))
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e)
-      setResult(`Error: ${msg}`)
+      setResult(notSent(`network error — ${msg}`))
     } finally {
       setBusy(false)
     }
@@ -94,9 +143,15 @@ export function EmergencyFlatButton({ traderId }: Props) {
             {result && (
               <pre
                 data-testid="emergency-flat-result"
-                className="text-xs bg-black/50 p-3 rounded mb-4 overflow-auto max-h-40 text-green-300 font-mono whitespace-pre-wrap"
+                data-sent={result.sent ? 'true' : 'false'}
+                role={result.sent ? 'status' : 'alert'}
+                className={`text-xs bg-black/50 p-3 rounded mb-4 overflow-auto max-h-40 font-mono whitespace-pre-wrap ${
+                  result.sent
+                    ? 'text-green-300'
+                    : 'text-red-400 border border-red-600 font-bold'
+                }`}
               >
-                {result}
+                {result.text}
               </pre>
             )}
 
