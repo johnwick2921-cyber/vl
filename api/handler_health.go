@@ -169,6 +169,39 @@ func (s *Server) handleHealth(c *gin.Context) {
 		body["bars_holes"] = holes
 		body["bars_hole_counts"] = telemetry.BarsHoleCountsSnapshot()
 	}
+	// m445 DATA-INTEGRITY GATE: is NEW trading paused for missing data? READ from
+	// the hole tracker over BOTH data windows (trader/ninjatrader/bar_integrity.go)
+	// plus the stale-feed leg already computed above. ABSENT = no NT8 bridge in
+	// this process (nothing to lose, nothing claimed); never a fabricated
+	// "not paused" (A24). reasons are the classes; windows the holes' CT spans.
+	if views, armed := ntTrader.TradingPausedSnapshot(now); armed {
+		paused, reasons, windows := false, []string{}, []string{}
+		seen := map[string]bool{}
+		for _, v := range views {
+			if !v.Paused {
+				continue
+			}
+			paused = true
+			for _, r := range v.Reasons {
+				if !seen[r.Class] {
+					seen[r.Class] = true
+					reasons = append(reasons, r.Class)
+				}
+				windows = append(windows, r.Window...)
+			}
+		}
+		if feedStale {
+			paused = true
+			reasons = append(reasons, "stale_data")
+		}
+		body["trading_paused"] = gin.H{
+			"paused":  paused,
+			"reasons": reasons,
+			"windows": windows,
+			"symbols": views,
+			"counts":  telemetry.DataIntegrityCountsSnapshot(),
+		}
+	}
 	// WAVE 26 — the stale-print guard's lifetime count, beside the hole counts:
 	// how many live bars were quarantined (labelled mixed) after a reconnect
 	// because their close was impossible against the neighbouring minutes.

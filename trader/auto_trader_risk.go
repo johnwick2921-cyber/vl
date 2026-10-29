@@ -59,6 +59,7 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	at.checkFeedDown(now)
 	ownerpush.Retry()         // m438: re-offer owner pushes a budget / full queue dropped (bounded, stale ones discarded)
 	at.checkUnfilledHole(now) // m432: a hole NT8 has no history for -> P1 + owner push (reload it)
+	at.dataIntegrityBeat(now) // m445: the missing-data pause episode (one WARN + push, one INFO + push); entries only
 	at.feedLagAlarmTick(now)  // m134 DS-108 (c): soft lag band under FEED DOWN held > 3 min → WARN
 	at.checkPositionDrawdown()
 	// Release #25 PK-2 — exit a planner position whose own thesis died

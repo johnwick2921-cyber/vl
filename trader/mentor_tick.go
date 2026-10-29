@@ -615,7 +615,11 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 	// 1m feed is stale (B4's formula). Counted + WARN'd once per episode inside
 	// mentorStaleDataBlocked. Exits / protection are never gated; resting broker
 	// orders are never cancelled by this.
-	if stale, why := at.mentorStaleDataBlockedWhy(mentorClockNow()); stale {
+	// m445: the stale leg and the missing-bars legs are ONE verdict
+	// (dataIntegrityVerdictAt); the stale leg answers first, exactly as before.
+	dv := at.dataIntegrityVerdictAt(mentorIntegrityWindow(in), mentorClockNow(), true)
+	if dv.Blocked && !dv.isData() {
+		why := dv.Reason
 		// A setup computed on stale prices is not a setup. The deferred guard in
 		// mentorDispatchEntry drops the evaluator's arm on this refusal. LOUD:
 		// every sized Place refused here is named and counted (the "never
@@ -638,6 +642,16 @@ func (at *AutoTrader) mentorPlaceIntent(in mentor.Intent, choice mentorSizeChoic
 		// (the 10-11 Sunday NT8 lag refused level orders quietly here).
 		at.mentorRecordStallRefusal(in, "stale_data")
 		at.mentorGateBlock("mentor_stale_data")
+		return
+	}
+	// m445 DATA INTEGRITY: a setup computed on a data window with a hole in it
+	// (or while the detector cannot say) is not a setup either. Counted, named,
+	// never silent; the deferred guard in mentorDispatchEntry drops the arm.
+	if dv.Blocked {
+		at.mentorCount("placement_refused_data_integrity")
+		at.logWarnf("🧑‍🏫 mentor placement REFUSED — data_integrity (%s): %s — %s %s %s @ %.2f never reaches the ledger", dv.Class, dv.Reason, in.ArmID, in.Setup, in.Side, in.Price)
+		at.mentorRecordStallRefusal(in, "data_integrity")
+		at.mentorGateBlock(dv.Class)
 		return
 	}
 	// N10 (stale intent): an entry whose reference candle is not the newest

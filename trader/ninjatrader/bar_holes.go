@@ -227,6 +227,14 @@ type barHoleTracker struct {
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
 	lastFire map[string]time.Time // symbol -> last gap re-request this tracker SENT
 	saidErr  map[string]bool      // one WARN per store-read failure kind
+
+	// DATA-INTEGRITY GATE (m445, bar_integrity.go): the verdict every entry path
+	// asks. The tracker keeps what it needs to answer — all additive:
+	retired       []*barHole        // holes no re-request can reach (kept: a retirement is NOT a fill)
+	judgeErr      map[string]string // symbol|contract -> the store-read failure that left a minute unjudged (cleared by the next good judgement)
+	coveredFrom   map[string]int64  // symbol|contract -> oldest minute any judgement read back to
+	integ         integrityMemo     // the window-start walk, memoised per wall minute
+	lastRemeasure time.Time         // the retired holes' last store re-read
 }
 
 // barHoles is the process tracker: the persister reports to it, the health
@@ -258,6 +266,8 @@ func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTr
 		checked:      map[string]int64{},
 		lastFire:     map[string]time.Time{},
 		saidErr:      map[string]bool{},
+		judgeErr:     map[string]string{},
+		coveredFrom:  map[string]int64{},
 	}
 }
 
@@ -330,6 +340,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	} else {
 		prev, ok, err := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, oldest)
 		if err != nil {
+			t.noteJudgeErrLocked(key, err)
 			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 			return
 		}
@@ -346,10 +357,12 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	}
 	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
 	if err != nil {
+		t.noteJudgeErrLocked(key, err)
 		t.sayErrOnce("scan", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 		return
 	}
 	t.checked[key] = newest
+	t.noteJudgedLocked(key, from)
 	times := make([]int64, 0, len(got))
 	for _, r := range got {
 		times = append(times, r.OpenTimeMs)
@@ -365,6 +378,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		}
 		if len(t.holes) >= barHoleMaxOpen {
 			telemetry.IncBarsHoleOverflow()
+			t.retainLocked(symbol, contract, sp.FromMs, sp.ToMs, sp.OpenMissing, "untracked") // m445: not tracked is NOT filled — still a hole the gate must see
 			t.say("WARN", fmt.Sprintf("🕳 bars hole NOT tracked: %s %s %s on %s (%d open minute(s) missing) — %d holes already open, the cap; it will be seen again once one closes",
 				symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, barHoleMaxOpen))
 			continue
@@ -590,6 +604,7 @@ func (t *barHoleTracker) tick(now time.Time) {
 	if t == nil {
 		return
 	}
+	t.remeasureRetired(now) // m445: a retired / untracked hole that NT8 has since filled lets the gate resume
 	w, due := t.collectDue(now)
 	if len(due) == 0 {
 		return
@@ -671,6 +686,7 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 			if bb := w.BarsBackAsked(); bb > 0 {
 				if beyond, open := t.beyondReplayLocked(h, bb, now); beyond {
 					telemetry.IncBarsHoleRefused()
+					t.retainRetiredLocked(h) // m445: retired is NOT filled — the data-integrity gate keeps it until it ages out of the window or is measured filled
 					t.say("WARN", fmt.Sprintf("🕳 bars hole RETIRED: %s %s %s on %s — outside NT8's replay window: a re-request replays the last %d 1m bars and more than %d open minute(s) have passed since %s, so this hole stays (%d open minute(s) missing; %d re-request(s) made). Nothing more is asked for it.",
 						h.Symbol, barHoleTF, holeWindowCT(h.FromMs, h.ToMs), h.Contract, bb, open-1, kernel.TableTimeCT(time.UnixMilli(h.FromMs)), h.Missing, h.Attempts))
 					t.removeLocked(h)

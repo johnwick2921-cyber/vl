@@ -757,6 +757,8 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// integrity is the DATA-INTEGRITY pause episode (m445, data_integrity_gate.go).
+	integrity integrityEpisode
 	// mentorStaleSince is when the current episode began, on the gate's own
 	// clock (the seam's now — time.Now() in production, so the END line's
 	// length is a monotonic difference; OPS NEW-8, class 113).
