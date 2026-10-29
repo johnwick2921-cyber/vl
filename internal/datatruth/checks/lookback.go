@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"math"
 	"time"
+
+	"vl/internal/datatruth"
 )
 
 // ── CHECK 3: INDICATOR LOOKBACK COMPLETENESS ─────────────────────────────────
@@ -43,7 +45,35 @@ type SeriesSpec struct {
 	PriceUnits bool    // true: judged in points against TolPts
 	TolPts     float64 // price-unit tolerance
 	MaxWeight  float64 // unit-less tolerance (share of the indicator's weight mass)
+	// Range marks an indicator that reads the bar's HIGH/LOW (ATR); the others
+	// read closes only (BarError splits the damage of a wrong bar the same way).
+	Range bool
+	// Reader names the only entry path whose decisions read this indicator
+	// (datatruth.ReaderAI / ReaderMentor); "" = read by every path. The mentor
+	// evaluator reads the 1m EMA 34/9 and nothing of the AI path's 3m/5m set; the
+	// AI path is held to the whole list (it may select any timeframe).
+	Reader string
+	// Extreme marks a raw high/low READ over the last Period slots: the bar's
+	// high or low enters the result at FULL weight (a max / min, not an average),
+	// so an error of more than ImpactTolPts moves it for as long as the bar stays
+	// inside the window - Period slots - not for a decayed share of it. Only the
+	// bar's RANGE error reaches it (BarError.RangeErr). Held for Period x TFMin.
+	Extreme bool
+	// PresenceOnly marks a read that needs the bar to EXIST (a hole is judged
+	// like any other) but whose value error is judged elsewhere: it contributes
+	// no hold to HoldMinutesFor (the strong-day range flip is CompareFrames').
+	PresenceOnly bool
 }
+
+// MentorRangeReadMin is how many 1m slots a wrong HIGH/LOW stays in what the
+// mentor reads (release #55 review round 1, finding 2). The mentor consumes raw
+// 1m highs and lows - the Globex session extreme the day gate measures
+// (day_gate.go GlobexMeasure), rolling_phl.go's buy stop on the candle extreme,
+// box.go / isb_box.go / trendline.go levels and the 3m/5m/15m candles filters.go
+// builds from the 1m - and a wrong extreme sits in those for the session, not for
+// the 30 minutes a close-error would. It is the cap (HoldCapMin): the longest any
+// single bar can pause entries.
+const MentorRangeReadMin = HoldCapMin
 
 // EMAWarmupBars mirrors market.EMAWarmupBars (seed residual 1%). A pin in
 // provider/ninjatrader compares the two so they cannot drift.
@@ -61,16 +91,24 @@ func DefaultSpecs(aiFramesMin []int) []SeriesSpec {
 	specs := []SeriesSpec{
 		{Name: "mentor_ema34_1m", TFMin: 1, Period: 34, EMA: true, PriceUnits: true, TolPts: 0.5},
 		{Name: "mentor_ema9_1m", TFMin: 1, Period: 9, EMA: true, PriceUnits: true, TolPts: 0.5},
+		// the mentor's raw 1m high/low reads (day gate, rolling PHL, box, trendline,
+		// the 1m-built HTF candles): a wrong extreme is held for the whole window
+		{Name: "mentor_range_1m", TFMin: 1, Period: MentorRangeReadMin, Extreme: true, Reader: datatruth.ReaderMentor},
+		// the mentor's strong-day test reads the last 12 NATIVE 5m bars
+		// (trader/mentor_tick.go): a lost one is a hole in what the mentor reads,
+		// and a single lost bar can be the strong one, so none may be missing
+		// (MaxWeight below 1/12). Its value error is CompareFrames' range flip.
+		{Name: "mentor_strongday_5m", TFMin: 5, Period: MentorStrongDayBars, MaxWeight: 0.05, PresenceOnly: true, Reader: datatruth.ReaderMentor},
 	}
 	for _, tf := range aiFramesMin {
 		f := fmt.Sprintf("%dm", tf)
 		specs = append(specs,
-			SeriesSpec{Name: "ai_ema20_" + f, TFMin: tf, Period: 20, EMA: true, PriceUnits: true, TolPts: 1.0},
-			SeriesSpec{Name: "ai_ema50_" + f, TFMin: tf, Period: 50, EMA: true, PriceUnits: true, TolPts: 1.0},
-			SeriesSpec{Name: "ai_atr14_" + f, TFMin: tf, Period: 14, MaxWeight: 0.10},
-			SeriesSpec{Name: "ai_rsi14_" + f, TFMin: tf, Period: 14, MaxWeight: 0.10},
-			SeriesSpec{Name: "ai_rsi7_" + f, TFMin: tf, Period: 7, MaxWeight: 0.15},
-			SeriesSpec{Name: "ai_macd26_" + f, TFMin: tf, Period: 26, EMA: true, MaxWeight: 0.10},
+			SeriesSpec{Name: "ai_ema20_" + f, TFMin: tf, Period: 20, EMA: true, PriceUnits: true, TolPts: 1.0, Reader: datatruth.ReaderAI},
+			SeriesSpec{Name: "ai_ema50_" + f, TFMin: tf, Period: 50, EMA: true, PriceUnits: true, TolPts: 1.0, Reader: datatruth.ReaderAI},
+			SeriesSpec{Name: "ai_atr14_" + f, TFMin: tf, Period: 14, MaxWeight: 0.10, Range: true, Reader: datatruth.ReaderAI},
+			SeriesSpec{Name: "ai_rsi14_" + f, TFMin: tf, Period: 14, MaxWeight: 0.10, Reader: datatruth.ReaderAI},
+			SeriesSpec{Name: "ai_rsi7_" + f, TFMin: tf, Period: 7, MaxWeight: 0.15, Reader: datatruth.ReaderAI},
+			SeriesSpec{Name: "ai_macd26_" + f, TFMin: tf, Period: 26, EMA: true, MaxWeight: 0.10, Reader: datatruth.ReaderAI},
 		)
 	}
 	return specs
@@ -301,16 +339,33 @@ func Buckets4h(m1, m5 []Bar, open OpenFn, now time.Time, loc *time.Location) []B
 		hi = hi5
 	}
 	cur := start(now.UnixMilli())
+	// nextAnchor is the first 17:00-local instant after s: a bucket never runs
+	// past it, because the clock-derived grid restarts there. On a DST day the
+	// 17:00 anchors are 23 or 25 hours apart, so "s + 4h" can land on a point
+	// that is neither on the old grid nor on the new one - the P1 of the
+	// release #55 review: on Sun 2026-11-01 the 22:00Z "bucket" (16:00 CST) was
+	// returned as expected because the 23:00Z open falls inside s+4h, but every
+	// real bar maps to the 23:00Z bucket, so the phantom bucket held no data in
+	// ANY frame and JudgeSwing4h called it unrepairable for the whole warm-up
+	// (about 26 days of SWING4H pause on a perfect feed). The spring-forward
+	// twin (Sun 2027-03-14, 19:00Z) had the same shape.
+	nextAnchor := func(ms int64) int64 {
+		t := time.UnixMilli(ms).In(loc)
+		a := time.Date(t.Year(), t.Month(), t.Day(), 17, 0, 0, 0, loc)
+		if !a.After(t) {
+			a = a.AddDate(0, 0, 1)
+		}
+		return a.UnixMilli()
+	}
 	var out []Bucket
 	for s := start(lo); s <= hi && s < cur; {
-		// DST: the last bucket of a 25h day is 5h long, so the next start is
-		// derived from the clock, never by adding a fixed step blindly.
-		next := start(s + fourH)
-		if next <= s {
-			next = start(s + fourH + int64(time.Hour/time.Millisecond))
+		end := s + fourH
+		if a := nextAnchor(s); a < end {
+			end = a // the short (or, on a 25 h day, the 1 h stub) bucket before the anchor
 		}
+		next := end
 		expected := false
-		for t := s; t < s+fourH; t += 15 * minuteMs {
+		for t := s; t < end; t += 15 * minuteMs {
 			if open.open(t) {
 				expected = true
 				break

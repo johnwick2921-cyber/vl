@@ -37,6 +37,7 @@ package datatruth
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -47,12 +48,48 @@ import (
 // a non-nil err is treated as blocked (fail closed) and surfaces as the reason.
 type CheckFn func(symbol string, now time.Time) (blocked bool, why string, err error)
 
+// READERS (release #55 review, "hold durations come from the AI-path specs").
+// A bad bar matters to a trader only through the indicators and frames THAT
+// trader's decisions read. The AI / planner / Picture / agent paths read the
+// 3m/5m/15m frames and the AI indicator set; the mentor evaluator reads the 1m
+// ring (EMA 34/9, the levels) plus a native 5m for the strong-day test. A scoped
+// check says which readers a block concerns; Evaluate carries it on the Reason
+// and the consumer (trader/data_truth_gate.go) obeys only the reasons that name
+// its own reader. A reason with NO readers concerns every reader (the default,
+// and what Register gives every unscoped check): the scope can only NARROW a
+// block for a reader the data provably does not reach, never invent one.
+const (
+	ReaderAI     = "ai"
+	ReaderMentor = "mentor"
+)
+
+// ScopedCheckFn is a CheckFn that also names the readers a block concerns
+// (nil or empty = every reader). readers is ignored when blocked is false.
+type ScopedCheckFn func(symbol string, now time.Time) (blocked bool, why string, readers []string, err error)
+
 // Reason is one blocking check's verdict for a symbol.
 type Reason struct {
 	Check   string `json:"check"`
 	Symbol  string `json:"symbol"`
 	Detail  string `json:"detail"`
 	SinceMs int64  `json:"since_ms"` // when this episode opened (ms UTC)
+	// Readers names the entry paths this block concerns ("ai", "mentor"); empty =
+	// every path. See ScopedCheckFn.
+	Readers []string `json:"readers,omitempty"`
+}
+
+// Concerns reports whether the reason applies to reader (an empty Readers list
+// concerns everyone).
+func (r Reason) Concerns(reader string) bool {
+	if len(r.Readers) == 0 {
+		return true
+	}
+	for _, x := range r.Readers {
+		if x == reader {
+			return true
+		}
+	}
+	return false
 }
 
 // CheckStat is the per-check counter block exported on /api/health.
@@ -61,6 +98,9 @@ type CheckStat struct {
 	Episodes   int64  `json:"episodes"`    // episodes opened since boot (all symbols)
 	Reopens    int64  `json:"reopens"`     // re-blocks merged into an earlier episode (flaps)
 	LastReason string `json:"last_reason"` // detail of the most recent block
+	// Counted is the number of distinct records the check noted WITHOUT pausing
+	// (Count): real but immaterial disagreements, kept visible instead of lost.
+	Counted int64 `json:"counted"`
 }
 
 // ReopenMergeWindow: a check that blocks again within this long of its own
@@ -78,7 +118,9 @@ type episode struct {
 
 type check struct {
 	name     string
-	fn       CheckFn
+	fn       ScopedCheckFn
+	counted  int64
+	seen     map[string]struct{}
 	eps      map[string]*episode // per symbol
 	episodes int64
 	reopens  int64
@@ -95,6 +137,18 @@ var (
 // Register adds (or replaces) a check. Re-registering a name keeps its episode
 // state, so a re-wire cannot reopen an episode that is already open.
 func Register(name string, fn CheckFn) {
+	if name == "" || fn == nil {
+		return
+	}
+	RegisterScoped(name, func(symbol string, now time.Time) (bool, string, []string, error) {
+		b, why, err := fn(symbol, now)
+		return b, why, nil, err
+	})
+}
+
+// RegisterScoped is Register for a check that names the readers a block
+// concerns (see ScopedCheckFn).
+func RegisterScoped(name string, fn ScopedCheckFn) {
 	if name == "" || fn == nil {
 		return
 	}
@@ -124,8 +178,8 @@ func Require(names ...string) {
 		}
 		name := n
 		checks[n] = &check{name: n, eps: map[string]*episode{}, stub: true,
-			fn: func(string, time.Time) (bool, string, error) {
-				return true, "required data-truth check " + name + " is not wired (its inputs were never supplied) - fail closed", nil
+			fn: func(string, time.Time) (bool, string, []string, error) {
+				return true, "required data-truth check " + name + " is not wired (its inputs were never supplied) - fail closed", nil, nil
 			}}
 	}
 }
@@ -154,7 +208,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		names = append(names, n)
 	}
 	sort.Strings(names)
-	fns := make([]CheckFn, len(names))
+	fns := make([]ScopedCheckFn, len(names))
 	for i, n := range names {
 		fns[i] = checks[n].fn
 	}
@@ -163,11 +217,12 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	type verdict struct {
 		name, why string
 		blocked   bool
+		readers   []string
 	}
 	vs := make([]verdict, len(names))
 	for i, n := range names {
-		b, why := runCheck(fns[i], symbol, now)
-		vs[i] = verdict{name: n, why: why, blocked: b}
+		b, why, readers := runCheck(fns[i], symbol, now)
+		vs[i] = verdict{name: n, why: why, blocked: b, readers: readers}
 	}
 
 	type alert struct{ kind, text string }
@@ -194,12 +249,12 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 				c.episodes++
 				alerts = append(alerts, alert{
 					kind: fmt.Sprintf("data_truth_%s|%s|%d", v.name, symbol, ep.sinceMs),
-					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s - %s: %s (exits, stops and protection are unaffected; entries resume automatically when the data measures clear)", symbol, v.name, v.why),
+					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: %s (exits, stops and protection are unaffected; entries resume automatically when the data measures clear)", symbol, readersNote(v.readers), v.name, v.why),
 				})
 			}
 			c.last = v.why
 			ep.detail = v.why
-			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs})
+			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs, Readers: v.readers})
 		} else if ep.open {
 			ep.open, ep.clearedMs = false, now.UnixMilli()
 			logger.Infof("datatruth: %s CLEAR for %s after %dms (was: %s) - new entries resume", v.name, symbol, now.UnixMilli()-ep.sinceMs, ep.detail)
@@ -216,18 +271,73 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	return blocked, reasons
 }
 
-// runCheck calls one check, converting an error or a panic into a block.
-func runCheck(fn CheckFn, symbol string, now time.Time) (blocked bool, why string) {
+// readersNote renders which entry paths a scoped block concerns for the alert.
+func readersNote(readers []string) string {
+	if len(readers) == 0 {
+		return ""
+	}
+	names := make([]string, len(readers))
+	for i, r := range readers {
+		switch r {
+		case ReaderMentor:
+			names[i] = "mentor traders"
+		case ReaderAI:
+			names[i] = "AI/planner traders"
+		default:
+			names[i] = r
+		}
+	}
+	return " (" + strings.Join(names, " + ") + ")"
+}
+
+// runCheck calls one check, converting an error or a panic into a block (for
+// EVERY reader: a check that cannot judge cannot say who it spares).
+func runCheck(fn ScopedCheckFn, symbol string, now time.Time) (blocked bool, why string, readers []string) {
 	defer func() {
 		if r := recover(); r != nil {
-			blocked, why = true, fmt.Sprintf("check panicked (fail closed): %v", r)
+			blocked, why, readers = true, fmt.Sprintf("check panicked (fail closed): %v", r), nil
 		}
 	}()
-	b, w, err := fn(symbol, now)
+	b, w, rd, err := fn(symbol, now)
 	if err != nil {
-		return true, fmt.Sprintf("cannot judge (fail closed): %v", err)
+		return true, fmt.Sprintf("cannot judge (fail closed): %v", err), nil
 	}
-	return b, w
+	if !b {
+		return false, w, nil
+	}
+	return true, w, rd
+}
+
+// countSeenCap bounds the per-check distinct-record memory of Count.
+const countSeenCap = 4096
+
+// Count notes ONE distinct record (key) a check saw but deliberately did not
+// pause for: a real yet immaterial disagreement. It is surfaced on /api/health
+// (counted) and logged once per key, so an immaterial mismatch is visible and
+// never silently dropped. Repeated calls with the same key are idempotent (the
+// checks re-run every Evaluate over the same scan window). An unregistered check
+// name is ignored.
+func Count(checkName, key, text string) {
+	mu.Lock()
+	c, ok := checks[checkName]
+	if !ok {
+		mu.Unlock()
+		return
+	}
+	if c.seen == nil {
+		c.seen = map[string]struct{}{}
+	}
+	if _, dup := c.seen[key]; dup {
+		mu.Unlock()
+		return
+	}
+	if len(c.seen) >= countSeenCap {
+		c.seen = map[string]struct{}{}
+	}
+	c.seen[key] = struct{}{}
+	c.counted++
+	mu.Unlock()
+	logger.Warnf("datatruth: %s counted, entries NOT paused (immaterial to every indicator): %s", checkName, text)
 }
 
 // Snapshot returns the per-check counters (sorted map by name when encoded).
@@ -236,7 +346,7 @@ func Snapshot() map[string]CheckStat {
 	defer mu.Unlock()
 	out := make(map[string]CheckStat, len(checks))
 	for n, c := range checks {
-		st := CheckStat{Episodes: c.episodes, Reopens: c.reopens, LastReason: c.last}
+		st := CheckStat{Episodes: c.episodes, Reopens: c.reopens, LastReason: c.last, Counted: c.counted}
 		for _, ep := range c.eps {
 			if ep.open {
 				st.Blocked = true
@@ -252,7 +362,7 @@ func HealthSnapshot() map[string]any {
 	snap := Snapshot()
 	out := make(map[string]any, len(snap))
 	for n, s := range snap {
-		out[n] = map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "reopens": s.Reopens, "last_reason": s.LastReason}
+		out[n] = map[string]any{"blocked": s.Blocked, "episodes": s.Episodes, "reopens": s.Reopens, "last_reason": s.LastReason, "counted": s.Counted}
 	}
 	return out
 }

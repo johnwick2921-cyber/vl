@@ -2,6 +2,7 @@ package checks
 
 import (
 	"fmt"
+	"math"
 	"strings"
 	"sync"
 	"time"
@@ -106,9 +107,9 @@ func RegisterAll(c Config) {
 			datatruth.Require(n)
 		}
 	}
-	datatruth.Register(CheckBadPrint, badPrintCheck(c))
-	datatruth.Register(CheckCrossFrame, crossFrameCheck(c))
-	datatruth.Register(CheckLookback, lookbackCheck(c))
+	datatruth.RegisterScoped(CheckBadPrint, badPrintCheck(c))
+	datatruth.RegisterScoped(CheckCrossFrame, crossFrameCheck(c))
+	datatruth.RegisterScoped(CheckLookback, lookbackCheck(c))
 	datatruth.Register(CheckContractRoll, contractCheck(c))
 	if c.Ledger != nil && c.Verify != nil {
 		datatruth.Register(CheckIngestLoss, func(symbol string, now time.Time) (bool, string, error) {
@@ -133,11 +134,33 @@ func RegisterAll(c Config) {
 	}
 }
 
-func badPrintCheck(c Config) datatruth.CheckFn {
-	return func(symbol string, now time.Time) (bool, string, error) {
+// unionReaders merges the readers several findings concern: empty means EVERY
+// reader, so one finding that concerns everyone makes the union everyone.
+func unionReaders(sets [][]string) []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, rs := range sets {
+		if len(rs) == 0 {
+			return nil
+		}
+		for _, r := range rs {
+			if !seen[r] {
+				seen[r] = true
+				out = append(out, r)
+			}
+		}
+	}
+	if len(out) >= 2 {
+		return nil // both known readers = everyone
+	}
+	return out
+}
+
+func badPrintCheck(c Config) datatruth.ScopedCheckFn {
+	return func(symbol string, now time.Time) (bool, string, []string, error) {
 		bars, err := c.Src.Bars(symbol, 1)
 		if err != nil {
-			return false, "", err
+			return false, "", nil, err
 		}
 		var partner []Bar
 		if p := c.Src.Partner(symbol); p != "" {
@@ -147,58 +170,73 @@ func badPrintCheck(c Config) datatruth.CheckFn {
 		}
 		s := SuspectBars(bars, partner, now, c.BadPrint)
 		if len(s) == 0 {
-			return false, "", nil
+			return false, "", nil, nil
 		}
-		return true, fmt.Sprintf("%d suspect 1m bar(s): %s", len(s), s[0].Detail), nil
+		var sets [][]string
+		for _, x := range s {
+			sets = append(sets, x.Readers)
+		}
+		return true, fmt.Sprintf("%d suspect 1m bar(s): %s", len(s), s[0].Detail), unionReaders(sets), nil
 	}
 }
 
-func crossFrameCheck(c Config) datatruth.CheckFn {
-	return func(symbol string, now time.Time) (bool, string, error) {
+func crossFrameCheck(c Config) datatruth.ScopedCheckFn {
+	return func(symbol string, now time.Time) (bool, string, []string, error) {
 		m1, err := c.Src.Bars(symbol, 1)
 		if err != nil {
-			return false, "", err
+			return false, "", nil, err
 		}
 		var msgs []string
+		var sets [][]string
 		for _, tf := range c.CrossTFs {
 			htf, err := c.Src.Bars(symbol, tf)
 			if err != nil {
-				return false, "", err
+				return false, "", nil, err
 			}
 			mm, _, _ := CompareFrames(m1, htf, tf, now, c.Src.Open(), c.Cross)
 			for _, m := range mm {
 				msgs = append(msgs, m.Detail)
+				sets = append(sets, m.Readers)
 			}
 		}
 		if len(msgs) == 0 {
-			return false, "", nil
+			return false, "", nil, nil
 		}
-		return true, fmt.Sprintf("%d frame mismatch(es): %s", len(msgs), msgs[0]), nil
+		return true, fmt.Sprintf("%d frame mismatch(es): %s", len(msgs), msgs[0]), unionReaders(sets), nil
 	}
 }
 
-func lookbackCheck(c Config) datatruth.CheckFn {
-	return func(symbol string, now time.Time) (bool, string, error) {
+func lookbackCheck(c Config) datatruth.ScopedCheckFn {
+	return func(symbol string, now time.Time) (bool, string, []string, error) {
 		var why []string
+		var sets [][]string
 		cache := map[int][]Bar{}
 		for _, sp := range c.Specs {
+			if sp.Extreme {
+				continue // a raw high/low read prices a WRONG bar (hold.go), not a missing one
+			}
 			bars, ok := cache[sp.TFMin]
 			if !ok {
 				var err error
 				bars, err = c.Src.Bars(symbol, sp.TFMin)
 				if err != nil {
-					return false, "", err
+					return false, "", nil, err
 				}
 				cache[sp.TFMin] = bars
 			}
 			if b, w := JudgeSeries(sp, bars, now, c.Src.Open()); b {
 				why = append(why, w)
+				if sp.Reader == "" {
+					sets = append(sets, nil)
+				} else {
+					sets = append(sets, []string{sp.Reader})
+				}
 			}
 		}
 		if len(why) == 0 {
-			return false, "", nil
+			return false, "", nil, nil
 		}
-		return true, strings.Join(why, " | "), nil
+		return true, strings.Join(why, " | "), unionReaders(sets), nil
 	}
 }
 
@@ -251,14 +289,47 @@ func cachedInputs(fn func(symbol string, now time.Time) (m1, m5 []Bar, botLine f
 	}
 }
 
-// swingCheck caches by (symbol, current 4h bucket, evaluator line): the line
-// only moves at a bucket flip, and the judgement over the buckets is the
-// expensive part (the store read itself is shared by cachedInputs).
+// barsSig fingerprints the swing inputs (every open time and close of both
+// frames): the swing verdict is cached by it, so ANY change to the store - a
+// refill, a re-import, one repaired bar - is a different key and is judged afresh.
+func barsSig(m1, m5 []Bar) uint64 {
+	h := uint64(14695981039346656037)
+	mix := func(x uint64) {
+		h ^= x
+		h *= 1099511628211
+	}
+	mix(uint64(len(m1)))
+	mix(uint64(len(m5)))
+	for _, b := range m1 {
+		mix(uint64(b.T))
+		mix(math.Float64bits(b.C))
+	}
+	mix(0xfeedface)
+	for _, b := range m5 {
+		mix(uint64(b.T))
+		mix(math.Float64bits(b.C))
+	}
+	return h
+}
+
+// swingCheck caches by (symbol, current 4h bucket, evaluator line, INPUT
+// FINGERPRINT). The judgement over the buckets is the expensive part (the store
+// read itself is shared by cachedInputs, one per symbol-minute). The cache used
+// to be keyed by the bucket alone: an owner's repair (POST /api/admin/bars/import,
+// "read back within a minute") did not lift a blocking verdict until the next 4h
+// bucket - up to four hours (release #55 review). The fingerprint makes a changed
+// store a changed key, so a refill is judged on the very next read.
+//
+// COST (measured, BenchmarkSwingVerdictFullWindow, 25861 1m + 5173 5m rows): the
+// fingerprint changes with every new 1m bar, so the verdict is re-judged about
+// once a minute per symbol, not once per 4h bucket; hash + Buckets4h + JudgeSwing4h
+// take about 1.7 ms of CPU per judgement. The store read is shared (cachedInputs).
 func swingCheck(c Config) datatruth.CheckFn {
 	type key struct {
 		sym    string
 		bucket int64
 		line   float64
+		sig    uint64
 	}
 	var mu sync.Mutex
 	cache := map[key]Swing4hVerdict{}
@@ -275,7 +346,7 @@ func swingCheck(c Config) datatruth.CheckFn {
 		if err != nil {
 			return false, "", err
 		}
-		k := key{symbol, bucket, line}
+		k := key{symbol, bucket, line, barsSig(m1, m5)}
 		mu.Lock()
 		v, ok := cache[k]
 		mu.Unlock()
@@ -313,6 +384,13 @@ func levelsCheck(c Config) datatruth.CheckFn {
 				return b, why, nil
 			}
 			to = from
+		}
+		// five prior sessions without one stored bar in either frame: the levels
+		// cannot be verified. Unknown is never CLEAR (release #55 review) - but a
+		// closed market asks for no entry, so only an open one raises it (the same
+		// guard sessionLevelsCheck's storeSilent uses).
+		if c.Src.Open().open(now.UnixMilli()) {
+			return true, "prior-session levels cannot be verified: no stored 1m or 5m bar in the last 5 sessions", nil
 		}
 		return false, "", nil
 	}

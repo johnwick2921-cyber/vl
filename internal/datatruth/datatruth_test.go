@@ -214,3 +214,55 @@ func TestRequiredButUnregisteredCheckBlocks(t *testing.T) {
 		t.Fatal("Require must not replace a registered check")
 	}
 }
+
+// Release #55 review: a scoped check names the readers its block concerns; the
+// Reason carries them, the alert says whom it pauses, an unscoped check concerns
+// everyone, and a check that cannot judge (error / panic) concerns everyone no
+// matter what readers it tried to name (fail closed).
+func TestScopedChecksCarryTheirReaders(t *testing.T) {
+	Reset()
+	defer Reset()
+	rec := capture()
+	RegisterScoped("scoped", func(string, time.Time) (bool, string, []string, error) {
+		return true, "wick", []string{ReaderMentor}, nil
+	})
+	Register("plain", func(string, time.Time) (bool, string, error) { return true, "hole", nil })
+	RegisterScoped("broken", func(string, time.Time) (bool, string, []string, error) {
+		return true, "x", []string{ReaderAI}, errors.New("store down")
+	})
+	_, rs := Evaluate("MNQ", t0)
+	by := map[string]Reason{}
+	for _, r := range rs {
+		by[r.Check] = r
+	}
+	if r := by["scoped"]; len(r.Readers) != 1 || r.Readers[0] != ReaderMentor || !r.Concerns(ReaderMentor) || r.Concerns(ReaderAI) {
+		t.Fatalf("scoped reason: %+v", r)
+	}
+	if r := by["plain"]; len(r.Readers) != 0 || !r.Concerns(ReaderAI) || !r.Concerns(ReaderMentor) {
+		t.Fatalf("an unscoped check concerns everyone: %+v", r)
+	}
+	if r := by["broken"]; len(r.Readers) != 0 || !r.Concerns(ReaderAI) || !r.Concerns(ReaderMentor) {
+		t.Fatalf("a check that cannot judge concerns everyone: %+v", r)
+	}
+	joined := strings.Join(rec.texts, "\n")
+	if !strings.Contains(joined, "(mentor traders)") {
+		t.Fatalf("the alert of a scoped block must say whom it pauses: %v", rec.texts)
+	}
+}
+
+// Count records an immaterial disagreement once per key and surfaces it.
+func TestCountIsIdempotentPerKeyAndVisible(t *testing.T) {
+	Reset()
+	defer Reset()
+	Register("c", func(string, time.Time) (bool, string, error) { return false, "", nil })
+	Count("c", "k1", "a")
+	Count("c", "k1", "a")
+	Count("c", "k2", "b")
+	Count("nope", "k1", "ignored")
+	if st := Snapshot()["c"]; st.Counted != 2 {
+		t.Fatalf("counted %d, want 2 (one per distinct key)", st.Counted)
+	}
+	if h := HealthSnapshot()["c"].(map[string]any); h["counted"].(int64) != 2 {
+		t.Fatalf("health: %v", h)
+	}
+}

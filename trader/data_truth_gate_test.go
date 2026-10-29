@@ -1,6 +1,8 @@
 package trader
 
 import (
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -386,5 +388,75 @@ func TestWireDataTruthBootDeclaresTheRequiredSetAndRegistersTheAccountChecks(t *
 	}
 	if len(dataTruthRequired()) != 10 {
 		t.Fatalf("10 checks are required (8 m446 + broker_agreement + fill_price), got %d", len(dataTruthRequired()))
+	}
+}
+
+// Release #55 review: a data-truth block that names its READERS pauses only those
+// paths. A bad bar that moves the AI path's 3m/5m indicators (ATR14 on the range)
+// does not pause a mentor trader, whose indicators read the 1m ring; a mismatch
+// that flips the mentor's strong-day test does not pause the AI path.
+//
+// MUTANT G1: dataTruthReasons skips the r.Concerns(reader) filter -> RED.
+func TestDataTruthScopesToTheReadersOfTheBadData(t *testing.T) {
+	armDataTruthGate(t, checks.CheckBadPrint) // clean registry + gate on; replace the check with scoped ones
+	var readers atomic.Value
+	readers.Store([]string{datatruth.ReaderAI})
+	datatruth.RegisterScoped(checks.CheckBadPrint, func(string, time.Time) (bool, string, []string, error) {
+		return true, "1 suspect 1m bar(s): 10-19 13:58Z wick", readers.Load().([]string), nil
+	})
+	at, _ := pauseTrader(t)
+	at.id = "datatruth-readers-1"
+	now := time.Now()
+	refused := func(in admitIntent) bool {
+		in.Symbol, in.Action, in.Now, in.Key = "MNQ", "open_long", now, "k"
+		reason, r := at.admitEntry(in)
+		return r && strings.HasPrefix(reason, "data_truth: ")
+	}
+	mentorArm := admitIntent{Path: admitArm, MentorArm: true}
+	swingArm := admitIntent{Path: admitArm, MentorArm: true, Swing: true}
+	aiDecision := admitIntent{Path: admitDecision}
+	plannerArm := admitIntent{Path: admitArm}
+
+	// AI-only block: AI decision + planner refused; mentor arms (intraday and swing) not
+	if !refused(aiDecision) || !refused(plannerArm) {
+		t.Fatal("an AI-reader block must pause the AI decision and the planner arm")
+	}
+	if refused(mentorArm) || refused(swingArm) {
+		t.Fatal("an AI-reader block must NOT pause a mentor trader: the data is not in anything its decisions read")
+	}
+	// mentor-only block: the other way round
+	readers.Store([]string{datatruth.ReaderMentor})
+	if refused(plannerArm) {
+		t.Fatal("a mentor-reader block must NOT pause the AI path")
+	}
+	if !refused(mentorArm) || !refused(swingArm) {
+		t.Fatal("a mentor-reader block must pause both mentor windows")
+	}
+	// no readers named = everyone (the default of every unscoped check)
+	readers.Store([]string(nil))
+	if !refused(aiDecision) || !refused(mentorArm) {
+		t.Fatal("a block that names no readers concerns every path")
+	}
+	// the window -> reader map is the one the m445 gate documents
+	if dataTruthReaderFor(ntTrader.IntegrityIntradayOpenMin) != datatruth.ReaderMentor ||
+		dataTruthReaderFor(ntTrader.IntegritySwingOpenMin) != datatruth.ReaderMentor ||
+		dataTruthReaderFor(ntTrader.IntegrityDeepOpenMin) != datatruth.ReaderAI ||
+		dataTruthReaderFor(12345) != datatruth.ReaderAI {
+		t.Fatal("intraday + swing windows are the mentor reader; deep and any unknown window are the (wide) AI reader")
+	}
+}
+
+// The cross_frame calibration mirrors two mentor constants it cannot import: the
+// strong-day range threshold and the number of native 5m bars the test reads.
+func TestCrossFrameMentorConstantsMirrorTheEvaluator(t *testing.T) {
+	if checks.DefaultCross().StrongDayPts != mentorStrongDayPtsMin {
+		t.Fatalf("checks.DefaultCross().StrongDayPts = %v, mentorStrongDayPtsMin = %v", checks.DefaultCross().StrongDayPts, mentorStrongDayPtsMin)
+	}
+	src, err := os.ReadFile("mentor_tick.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(src), `market.FuturesBarsProvider("MNQ", "5m", `+strconv.Itoa(checks.MentorStrongDayBars)+`)`) {
+		t.Fatalf("mentor_tick.go no longer reads %d native 5m bars for the strong-day test: update checks.MentorStrongDayBars", checks.MentorStrongDayBars)
 	}
 }
