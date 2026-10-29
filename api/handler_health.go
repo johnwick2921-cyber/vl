@@ -169,6 +169,12 @@ func (s *Server) handleHealth(c *gin.Context) {
 	if holes, ok := ntTrader.BarHolesSnapshot(); ok {
 		body["bars_holes"] = holes
 		body["bars_hole_counts"] = telemetry.BarsHoleCountsSnapshot()
+		// m444: the persistent gap audit. Its hole figures are re-derived from
+		// the STORE every pass, so unlike bars_hole_counts they survive a
+		// restart; unfilled_holes_7d is the number the dashboard banner keys on.
+		if audit, ok := ntTrader.BarGapAuditSnapshot(); ok {
+			body["bars_hole_audit"] = audit
+		}
 	}
 	// WAVE 26 — the stale-print guard's lifetime count, beside the hole counts:
 	// how many live bars were quarantined (labelled mixed) after a reconnect

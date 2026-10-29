@@ -419,6 +419,24 @@ export const planStrings = {
     zh: '机器人无法连接 — 此页面无法访问机器人，所示内容可能已过期',
     id: 'BOT TIDAK DAPAT DIJANGKAU — halaman ini tidak bisa menghubungi bot; tampilan bisa usang',
   },
+  // m444: a 1m bar hole NT8 could not refill (or that is older than NT8's replay
+  // window). The action sentence is the SAME one the owner push carries
+  // (Go: BarsMissingAction) — keep it in English in every language.
+  missingBarsBanner: {
+    en: 'MISSING BARS: {symbol} {window}, {min} min — NT8: Reload All Historical Data{more}',
+    zh: '缺少K线: {symbol} {window}, {min} 分钟 — NT8: Reload All Historical Data{more}',
+    id: 'BAR HILANG: {symbol} {window}, {min} mnt — NT8: Reload All Historical Data{more}',
+  },
+  // m444 review round 2: a RETIRED hole is further back than the deepest replay
+  // the bot can take in (4800 1m bars: the replay-hold keeps 5000 rows), so no
+  // NT8 reload or bot restart puts it back. The banner says so and when it
+  // clears — it does NOT carry the reload action sentence (a false instruction
+  // there). A hole the deep re-request can reach shows the unfilled banner.
+  missingBarsRetiredBanner: {
+    en: 'MISSING BARS: {symbol} {window}, {min} min — further back than the bot can re-read from NT8 (4800 1m bars), so it stays missing until it leaves the gap-audit window{more}',
+    zh: '缺少K线: {symbol} {window}, {min} 分钟 — 超出机器人可从 NT8 重新读取的范围（4800 根1分钟K线），离开缺口审计窗口后自动清除{more}',
+    id: 'BAR HILANG: {symbol} {window}, {min} mnt — lebih jauh dari yang bisa dibaca ulang bot dari NT8 (4800 bar 1m), hilang saat keluar dari jendela audit{more}',
+  },
   olderUnacked: {
     en: '{n} older unacked',
     zh: '{n} 条较早未确认',

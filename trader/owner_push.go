@@ -152,14 +152,31 @@ func reaskText(d time.Duration) string {
 // re-requests are capped IN TOTAL (UnfilledHole.ReaskHorizon after the alert), so
 // the reload instruction names that horizon and the restart that is needed after it.
 func unfilledHoleBody(h ntTrader.UnfilledHole) string {
+	if h.OutsideReplay && h.ReplayDisagreed == 0 {
+		// m444 (review round 2): a RETIRED hole is further back than the deepest
+		// replay the bot can take in (DeepHoleMaxBarsBack 1m bars: the replay-hold
+		// keeps 5000 rows per fetch, so a longer replay loses its OLDEST rows —
+		// exactly this span). A reload in NT8 or a bot restart (last 2000 bars)
+		// cannot put it in the store, so the message instructs neither; it says
+		// so and says when it clears. Round 1 retired holes the deep path COULD
+		// reach (the 10-26 one); those now get deep asks and never get this text.
+		return fmt.Sprintf("MISSING BARS: %s %s, %d min — the bot's %s 1-minute store has no bars for that window and it is further back than the bot can re-read from NT8 (a replay is limited to the last %d 1m bars, about 3.5 CME sessions), so it will stay missing in the 1m store: a reload or a restart will not put it back. The 3m/5m bars are not affected. It stays listed on the dashboard until it leaves the gap-audit window (7 CME sessions by default).",
+			h.Symbol, h.Window, h.Missing, h.Symbol, ntTrader.DeepHoleMaxBarsBack)
+	}
 	if h.ReplayDisagreed > 0 {
 		// A replay that DISAGREED with live minutes was held out of the store as
 		// another price scale: reloading history is the wrong first move.
 		return fmt.Sprintf("The %s 1-minute bars for %s are still missing after %d re-requests, and %d NT8 replay(s) were rejected as another price scale. Read the bot log's scale lines before reloading NinjaTrader history.",
 			h.Symbol, h.Window, h.Attempts, h.ReplayDisagreed)
 	}
-	return fmt.Sprintf("NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every %d minutes %s and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking.",
-		h.Symbol, h.Window, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon))
+	if h.Deep {
+		// older than NT8's standard replay: the bot's asks were DEEP 1m ones, and
+		// a bot restart (last 2000 1m bars) does not reach the hole.
+		return fmt.Sprintf("MISSING BARS: %s %s, %d min — %s. NT8 has no %s history for %s, even for the deep 1-minute request the bot made (this hole is older than NT8's standard replay; up to %d bars asked). In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 (deep) about every %d minutes %s and picks the reload up on its next ask; if you reload later than that, a bot restart will NOT reach this hole — use the bar-arbiter backfill instead (POST /api/nt/bar-arbiter, action backfill, timeframe 1m, bars_back %d — more than that loses its oldest rows). You will get a second message when it stops re-asking.",
+			h.Symbol, h.Window, h.Missing, ntTrader.BarsMissingAction, h.Symbol, h.Window, ntTrader.DeepHoleMaxBarsBack, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon), ntTrader.DeepHoleMaxBarsBack)
+	}
+	return fmt.Sprintf("MISSING BARS: %s %s, %d min — %s. NT8 has no %s history for %s. In NinjaTrader: open an %s 1-minute chart, right-click, Reload All Historical Data. The bot re-asks NT8 about every %d minutes %s and picks the reload up on its next re-request; if you reload later than that, restart the bot afterwards (it re-subscribes on start) — you will get a second message when it stops re-asking.",
+		h.Symbol, h.Window, h.Missing, ntTrader.BarsMissingAction, h.Symbol, h.Window, h.Symbol, int(h.ReaskEvery/time.Minute), reaskText(h.ReaskHorizon))
 }
 
 // unfilledHoleSpentBody is the follow-up when the tracker has spent its slow
@@ -170,8 +187,19 @@ func unfilledHoleSpentBody(h ntTrader.UnfilledHole) string {
 		return fmt.Sprintf("The %s 1-minute bars for %s are still missing and the bot has stopped re-asking NT8. %d NT8 replay(s) were rejected as another price scale: read the bot log's scale lines first.",
 			h.Symbol, h.Window, h.ReplayDisagreed)
 	}
+	if h.Deep {
+		return fmt.Sprintf("The bot has STOPPED re-asking NT8 for the %s 1-minute bars of %s (deep re-requests spent). A history reload alone will not be picked up now, and a bot restart does not reach a hole this old: in NinjaTrader open an %s 1-minute chart, right-click, Reload All Historical Data, THEN fetch it with the bar-arbiter backfill (POST /api/nt/bar-arbiter, action backfill, timeframe 1m, bars_back %d).",
+			h.Symbol, h.Window, h.Symbol, ntTrader.DeepHoleMaxBarsBack)
+	}
 	return fmt.Sprintf("The bot has STOPPED re-asking NT8 for the %s 1-minute bars of %s (re-requests spent). A history reload alone will not be picked up now: in NinjaTrader open an %s 1-minute chart, right-click, Reload All Historical Data, THEN restart the bot so it asks again.",
 		h.Symbol, h.Window, h.Symbol)
+}
+
+func spentTitle(h ntTrader.UnfilledHole) string {
+	if h.Deep {
+		return fmt.Sprintf("NT8 %s history still missing — reload it, then backfill", h.Symbol)
+	}
+	return fmt.Sprintf("NT8 %s history still missing — reload it, then restart the bot", h.Symbol)
 }
 
 // checkUnfilledHole (m432 item 2) raises ONE P1 alert (+ owner push) per hole
@@ -188,14 +216,18 @@ func (at *AutoTrader) checkUnfilledHole(now time.Time) {
 		return
 	}
 	for _, h := range unfilledHolesFn(sym, now) {
+		title := fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol)
+		if h.OutsideReplay && h.ReplayDisagreed == 0 {
+			title = fmt.Sprintf("%s 1m bars missing — too old for the bot to refill", h.Symbol)
+		}
 		at.emitAlert("P1", alertKindBarHoleUnfilled,
 			fmt.Sprintf("barhole-unfilled:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
-			fmt.Sprintf("NT8 has no %s history — reload it", h.Symbol),
+			title,
 			unfilledHoleBody(h))
-		if h.SlowSpent {
+		if h.SlowSpent && !h.OutsideReplay {
 			at.emitAlert("P1", alertKindBarHoleUnfilled,
 				fmt.Sprintf("barhole-spent:%s:%d", strings.ToUpper(h.Symbol), h.FromMs),
-				fmt.Sprintf("NT8 %s history still missing — reload it, then restart the bot", h.Symbol),
+				spentTitle(h),
 				unfilledHoleSpentBody(h))
 		}
 	}

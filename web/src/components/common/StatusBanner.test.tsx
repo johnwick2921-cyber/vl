@@ -173,4 +173,100 @@ describe('StatusBanner', () => {
       r.unmount()
     }
   })
+
+  // m444 — a 1m hole the bot could not refill (or cannot reach) is named on the
+  // dashboard, with the one action the owner push carries word for word.
+  describe('MISSING BARS (m444)', () => {
+    const hole = {
+      symbol: 'MNQ',
+      state: 'retired',
+      window: '10-26 17:00–21:57 CT',
+      missing_min: 297,
+      source: 'audit',
+    }
+    it('an unfilled hole shows the window, minutes and the reload action', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [{ ...hole, state: 'unfilled' }],
+      })
+      mount()
+      expect(
+        await screen.findByTestId('missing-bars-banner')
+      ).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — NT8: Reload All Historical Data'
+      )
+      expect(screen.queryByTestId('status-banner')).toBeNull()
+    })
+    // review round 2: a RETIRED hole is further back than the deepest replay
+    // the bot can take in (4800 1m bars). No reload or restart helps, so the
+    // banner must NOT carry the reload action sentence; it says why and when it
+    // clears. (A hole the deep re-request can still reach is `unfilled`.)
+    it('a retired hole says why the bot cannot re-read it, with no reload instruction', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [hole],
+      })
+      mount()
+      const el = await screen.findByTestId('missing-bars-banner')
+      expect(el).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 297 min — further back than the bot can re-read from NT8 (4800 1m bars)'
+      )
+      expect(el.textContent).not.toContain('Reload All Historical Data')
+    })
+    it('a hole still being re-requested (refilling) shows nothing', async () => {
+      const spy = vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: false,
+        bars_holes: [{ ...hole, state: 'refilling' }],
+      })
+      mount()
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      expect(screen.queryByTestId('missing-bars-banner')).toBeNull()
+    })
+    it('shows beside FEED DOWN, names the biggest, counts the rest', async () => {
+      vi.spyOn(updatesApi, 'health').mockResolvedValue({
+        cme_open: true,
+        feed_stale: true,
+        feed_stale_secs: 600,
+        bars_holes: [
+          { ...hole, state: 'unfilled', missing_min: 40 },
+          { ...hole, symbol: 'ES', state: 'unfilled', missing_min: 12 },
+          hole,
+        ],
+      })
+      mount()
+      expect(await screen.findByTestId('status-banner')).toHaveTextContent(
+        'FEED DOWN 10m'
+      )
+      // the biggest ACTIONABLE (unfilled) hole leads, even though the retired
+      // one is bigger; the rest are counted
+      expect(
+        await screen.findByTestId('missing-bars-banner')
+      ).toHaveTextContent(
+        'MISSING BARS: MNQ 10-26 17:00–21:57 CT, 40 min — NT8: Reload All Historical Data (+2 more)'
+      )
+    })
+    // merge pin (m443 x m444): a failed poll shows BOT UNREACHABLE only; the
+    // hole line must neither crash on undefined data nor show a stale list.
+    it('a failed poll renders BOT UNREACHABLE and no hole line', async () => {
+      vi.spyOn(updatesApi, 'health').mockRejectedValue(
+        new Error('Network error')
+      )
+      mount()
+      expect(await screen.findByTestId('status-banner')).toHaveTextContent(
+        /^BOT UNREACHABLE/
+      )
+      expect(screen.queryByTestId('missing-bars-banner')).toBeNull()
+    })
+    it('an older bot (no bars_holes) renders no hole line', async () => {
+      const spy = vi
+        .spyOn(updatesApi, 'health')
+        .mockResolvedValue({ cme_open: true, feed_stale: false })
+      mount()
+      await waitFor(() => expect(spy).toHaveBeenCalled())
+      expect(screen.queryByTestId('missing-bars-banner')).toBeNull()
+    })
+  })
 })
