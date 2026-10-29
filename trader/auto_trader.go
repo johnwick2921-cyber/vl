@@ -1190,11 +1190,19 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize NinjaTrader: %w", err)
 		}
+		// release #55 (m452): the data-truth gate is switched on for EVERY NinjaTrader
+		// trader, OUTSIDE the `st != nil` guard below. A trader built without a store
+		// has no bar persistence and so never lands the eight m446 checks; with the
+		// gate ON those required checks stay stubs that BLOCK after the boot grace
+		// (fail closed), where leaving the call inside the guard left dataTruthWired
+		// false and the whole m446/m447 leg silently inert (fail OPEN).
+		// trader/data_truth_wiring_pin_test.go pins this call site (AST: a live call,
+		// in NewAutoTrader, under no `if`).
+		wireDataTruthBoot() // release #55: m446/m447 data-truth checks -> the entry verdict (data_truth_gate.go)
 		// Bar persistence (2026-08-26) — closed-bar history writer for
 		// replay/calibration. Idempotent (once); nil-safe; never blocks the loop.
 		if st != nil {
 			ntTrader.WireBarPersistence(st)
-			wireDataTruthBoot() // release #55: m446/m447 data-truth checks -> the entry verdict (data_truth_gate.go)
 			// B4 (2026-08-26) — level_stats nightly forward validation.
 			ntTrader.WireLevelStatsNightly(st, config.ID)
 			// T1 (2026-08-26) — touch-telemetry sink: persist closed episodes

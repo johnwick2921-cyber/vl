@@ -5,6 +5,7 @@ import (
 	"math"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/internal/datatruth"
@@ -127,7 +128,9 @@ func RegisterAll(c Config) {
 			}
 		}
 		c.Loc = loc
-		c.SwingInputs = cachedInputs(c.SwingInputs)
+		var warm func(time.Time)
+		c.SwingInputs, warm = cachedInputs(c.SwingInputs)
+		warmSwingInputs.Store(warm)
 		datatruth.Register(CheckLookbackSwing4h, swingCheck(c))
 		datatruth.Register(CheckLookbackLevels, levelsCheck(c))
 		datatruth.Register(CheckLookbackSession, sessionLevelsCheck(c))
@@ -256,7 +259,18 @@ func contractCheck(c Config) datatruth.CheckFn {
 // and each call is a full store read of ~200 four-hour buckets of 1m and 5m
 // (review round 1, D6); both checks now share one read per symbol-minute. A
 // failed read is never cached (the next Evaluate retries).
-func cachedInputs(fn func(symbol string, now time.Time) (m1, m5 []Bar, botLine float64, err error)) func(symbol string, now time.Time) (m1, m5 []Bar, botLine float64, err error) {
+//
+// m452 (release #55) - SINGLE-FLIGHT. The read is ~100 ms warm (27000 1m + 5400 5m
+// rows) and used to be repeated by every caller that found the minute cold:
+// three traders asking on the minute edge each paid it, and one of them could be
+// the armed placement pass holding armedPassMu through armAdmitted. Now the
+// FIRST caller of a (symbol, minute) reads and every concurrent caller of the
+// same key waits for THAT read and shares its result - error included, so a down
+// store is read once per burst, not once per caller. The returned warm func reads
+// (and caches) the current minute for every symbol this cache has seen; a minute-
+// edge warmer (trader/ninjatrader WireDataTruthChecks) calls it so the entry
+// paths and the armed pass find the minute already hot.
+func cachedInputs(fn func(symbol string, now time.Time) (m1, m5 []Bar, botLine float64, err error)) (get func(symbol string, now time.Time) (m1, m5 []Bar, botLine float64, err error), warm func(now time.Time)) {
 	type key struct {
 		sym    string
 		minute int64
@@ -264,28 +278,79 @@ func cachedInputs(fn func(symbol string, now time.Time) (m1, m5 []Bar, botLine f
 	type val struct {
 		m1, m5 []Bar
 		line   float64
+		err    error
+	}
+	type flight struct {
+		done chan struct{}
+		v    val
 	}
 	var mu sync.Mutex
 	cache := map[key]val{}
-	return func(symbol string, now time.Time) ([]Bar, []Bar, float64, error) {
+	inflight := map[key]*flight{}
+	seen := map[string]bool{}
+	get = func(symbol string, now time.Time) ([]Bar, []Bar, float64, error) {
 		k := key{symbol, now.Unix() / 60}
 		mu.Lock()
-		v, ok := cache[k]
-		mu.Unlock()
-		if ok {
+		seen[symbol] = true
+		if v, ok := cache[k]; ok {
+			mu.Unlock()
 			return v.m1, v.m5, v.line, nil
 		}
-		m1, m5, line, err := fn(symbol, now)
-		if err != nil {
-			return nil, nil, 0, err
+		if f, ok := inflight[k]; ok {
+			mu.Unlock()
+			<-f.done // someone is already reading this very minute: share it
+			return f.v.m1, f.v.m5, f.v.line, f.v.err
 		}
-		mu.Lock()
-		if len(cache) > 8 {
-			cache = map[key]val{}
-		}
-		cache[k] = val{m1, m5, line}
+		f := &flight{done: make(chan struct{})}
+		inflight[k] = f
 		mu.Unlock()
-		return m1, m5, line, nil
+		func() {
+			defer func() {
+				// a panic in the read must still release the waiters, and reads as a
+				// failed read (fail closed), never as a cached value
+				if r := recover(); r != nil {
+					f.v = val{err: fmt.Errorf("swing inputs read panicked: %v", r)}
+				}
+				mu.Lock()
+				delete(inflight, k)
+				if f.v.err == nil {
+					if len(cache) > 8 {
+						cache = map[key]val{}
+					}
+					cache[k] = f.v // a failed read is never cached
+				}
+				mu.Unlock()
+				close(f.done)
+			}()
+			m1, m5, line, err := fn(symbol, now)
+			f.v = val{m1, m5, line, err}
+		}()
+		return f.v.m1, f.v.m5, f.v.line, f.v.err
+	}
+	warm = func(now time.Time) {
+		mu.Lock()
+		syms := make([]string, 0, len(seen))
+		for s := range seen {
+			syms = append(syms, s)
+		}
+		mu.Unlock()
+		for _, s := range syms {
+			get(s, now) // a hit when the minute is already hot; otherwise the one shared read
+		}
+	}
+	return get, warm
+}
+
+// warmSwingInputs is the hook WarmSwingInputs calls; set by RegisterAll.
+var warmSwingInputs atomic.Value // func(time.Time)
+
+// WarmSwingInputs reads the current minute's swing/levels store inputs for every
+// symbol the data-truth cache has been asked about, so the entry paths find the
+// minute hot (m452). A no-op until RegisterAll has wired SwingInputs. Safe to
+// call from any goroutine; concurrent callers share one read.
+func WarmSwingInputs(now time.Time) {
+	if f, ok := warmSwingInputs.Load().(func(time.Time)); ok && f != nil {
+		f(now)
 	}
 }
 
