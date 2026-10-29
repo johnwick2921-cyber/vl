@@ -38,6 +38,11 @@ const alertKindCloseRejected = "position_close_rejected"
 // lesson: an event id is an EPISODE id, never a per-pass clock).
 const closeRejectEpisodeGap = 15 * time.Minute
 
+// alertKindStopMoveNotApplied - m442 #6: the mentor exit drive sent a stop move,
+// NT8 did not apply it (the stop is wider than wanted). The P0 already existed
+// (mentor_exit_drive.go, one per episode) but reached the alert center only.
+const alertKindStopMoveNotApplied = "stop-move-not-applied"
+
 // ownerPushClock is the instant the feed-down CME-open leg is judged at; a var
 // so the pins are not hostage to the wall clock (the CME daily break / weekend
 // would otherwise make a green test red).
@@ -54,7 +59,8 @@ func ownerPushKind(level, kind string) bool {
 		"protection_partial",
 		"protection_pending_stuck",
 		"protection_over_covered",
-		alertKindCloseRejected:
+		alertKindCloseRejected,
+		alertKindStopMoveNotApplied:
 		return level == "P0"
 	case alertKindBarHoleUnfilled:
 		return true

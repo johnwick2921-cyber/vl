@@ -65,6 +65,7 @@ func isOpsAlertKind(kind string) bool {
 		"protection_partial",
 		"protection_pending_stuck",
 		"protection_over_covered",
+		alertKindStopMoveNotApplied,
 		alertKindCloseRejected: // m442 #19: NT8 refused an exit - the position is still open
 		return true
 	}

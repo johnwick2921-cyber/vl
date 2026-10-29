@@ -13,6 +13,23 @@ import (
 
 // m442 - the owner alerts must be TRUE and must REACH the owner.
 
+// waitState polls the state file (written by the pusher's own writer goroutine -
+// the production path, no FlushState) until pred holds.
+func waitState(t *testing.T, path string, pred func(*stateDisk) bool) {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if d, err := readState(path); err == nil && d != nil && pred(d) {
+			return
+		}
+		if time.Now().After(deadline) {
+			d, err := readState(path)
+			t.Fatalf("state file never reached the expected shape: %+v err=%v", d, err)
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 type flaky struct {
 	mu   sync.Mutex
 	fail error // returned by every send while non-nil
@@ -203,7 +220,10 @@ func TestHeldAndSeenSurviveARestart(t *testing.T) {
 	f.set(nil)
 	p.Push("feed-down|e9", "FEED DOWN") // delivered -> seen
 	p.Flush()
-	p.FlushState()
+	waitState(t, path, func(d *stateDisk) bool {
+		_, seen := d.Seen["feed-down|e9"]
+		return seen && len(d.Held) == 1 && d.Held[0].Key == "unprotected_position|t1|e1"
+	})
 
 	// "restart": a new process, same file, Telegram healthy now
 	g := &flaky{}
@@ -238,11 +258,9 @@ func TestInFlightMessageIsPersistedAsHeld(t *testing.T) {
 	p, _ := newClocked(func(string) error { <-gate; return nil })
 	p.EnableState(path)
 	p.Push("protection_partial|t|e", "PARTIAL")
-	p.FlushState()
-	d, err := readState(path)
-	if err != nil || d == nil || len(d.Held) != 1 || d.Held[0].Key != "protection_partial|t|e" {
-		t.Fatalf("in-flight message not in the state file: %+v err=%v", d, err)
-	}
+	waitState(t, path, func(d *stateDisk) bool {
+		return len(d.Held) == 1 && d.Held[0].Key == "protection_partial|t|e"
+	})
 }
 
 func TestStaleHeldIsNotRestored(t *testing.T) {
@@ -252,7 +270,7 @@ func TestStaleHeldIsNotRestored(t *testing.T) {
 	p.EnableState(path)
 	p.Push("feed-down|e", "OLD NEWS")
 	p.Flush()
-	p.FlushState()
+	waitState(t, path, func(d *stateDisk) bool { return len(d.Held) == 1 })
 	q, c2 := newClocked((&flaky{}).send)
 	c2.add(holdTTL + time.Minute)
 	_ = c

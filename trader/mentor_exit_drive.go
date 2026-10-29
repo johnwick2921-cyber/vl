@@ -1338,13 +1338,13 @@ func (at *AutoTrader) mentorVerifyPendingStopMoves(nt *ntTrader.TCPTrader) {
 		// counted per (signal, leg) and SURVIVE superseding moves, so a fresh
 		// want every candle still reaches "manage by hand" on the second miss.
 		misses, startMs := at.mentorBumpStopMoveEpisode(key)
-		at.noteRefusalStorm(ownerpush.ClassStopNotApplied, fmt.Sprintf("%s leg %d", mv.signalID, mv.wireLeg), fmt.Sprintf("wanted %.2f, broker at %.2f", mv.want, brokerPrice)) // m442 #6
+		at.noteRefusalStorm(ownerpush.ClassStopNotApplied, "stop moves", fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)) // m442 #6
 		if misses == 1 {
 			at.mentorCount("stop_move_not_applied")
 			at.logErrorf("🚨 STOP MOVE NOT APPLIED at NT8: %s leg %d want %.2f broker %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice)
 			// ONE P0 per episode (the event id keys on the episode start, never
 			// on the wanted price — a fresh want must not fire a fresh P0).
-			at.emitAlert("P0", "stop-move-not-applied",
+			at.emitAlert("P0", alertKindStopMoveNotApplied,
 				fmt.Sprintf("stop-move:%s#%d:%d", mv.signalID, mv.wireLeg, startMs),
 				"Stop move not applied at NT8",
 				fmt.Sprintf("%s leg %d: wanted %.2f, broker at %.2f", mv.signalID, mv.wireLeg, mv.want, brokerPrice))
