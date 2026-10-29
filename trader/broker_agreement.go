@@ -273,12 +273,12 @@ type agreementInputs struct {
 	// PosSkip: the positions frame cannot be compared on THIS call because an entry
 	// just landed (the reconcile waits too). The position comparisons are skipped
 	// and the tracker holds the position disagreements it was clocking (m451).
-	PosSkip bool
-	Book           *nt.OrderSnapshotCache
-	Interval       time.Duration
-	BookAge        time.Duration
-	BookKnown      bool
-	BookOrders     []nt.NT8Order
+	PosSkip    bool
+	Book       *nt.OrderSnapshotCache
+	Interval   time.Duration
+	BookAge    time.Duration
+	BookKnown  bool
+	BookOrders []nt.NT8Order
 }
 
 var botEntryNameRe = regexp.MustCompile(`(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$`)
