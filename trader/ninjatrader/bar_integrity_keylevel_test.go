@@ -103,7 +103,7 @@ func TestSeriesRTHHolesJudgesTheSeededSeries(t *testing.T) {
 	within := func(from, to time.Time) func(time.Time) bool {
 		return func(m time.Time) bool { return !m.Before(from) && m.Before(to) }
 	}
-	hole := func(ts []int64) []IntegrityHole { return SeriesRTHHoles("MNQ", "seeded 1m series", ts, now) }
+	hole := func(ts []int64) []IntegrityHole { return SeriesRTHHoles("MNQ", "seeded 1m series", ts, nil, now) }
 
 	if hs := hole(build(nil)); len(hs) != 0 {
 		t.Fatalf("a complete series (the break, weekends and the holiday calendar are not holes): %+v", hs)

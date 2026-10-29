@@ -29,7 +29,7 @@ type seedSeriesIntegrity struct {
 }
 
 // noteSeedSeries measures the series the evaluator is being seeded from.
-func (at *AutoTrader) noteSeedSeries(series []market.Kline, now time.Time) {
+func (at *AutoTrader) noteSeedSeries(series []market.Kline, covered []int64, now time.Time) {
 	if at == nil {
 		return
 	}
@@ -37,7 +37,7 @@ func (at *AutoTrader) noteSeedSeries(series []market.Kline, now time.Time) {
 	for _, b := range series {
 		times = append(times, b.OpenTime)
 	}
-	holes := ntTrader.SeriesRTHHoles(mentorSeedSymbol, "seeded 1m series", times, now)
+	holes := ntTrader.SeriesRTHHoles(mentorSeedSymbol, "seeded 1m series", times, covered, now)
 	at.seedSeries.mu.Lock()
 	changed := !sameSeedHoles(at.seedSeries.holes, holes) || !at.seedSeries.judged
 	at.seedSeries.holes, at.seedSeries.judged, at.seedSeries.judgedAt, at.seedSeries.nBars = holes, true, now, len(times)
@@ -53,8 +53,8 @@ func (at *AutoTrader) noteSeedSeries(series []market.Kline, now time.Time) {
 	for _, h := range holes {
 		wins = append(wins, fmt.Sprintf("%s (%d open min)", h.Window, h.Missing))
 	}
-	at.logWarnf("🧑‍🏫 seeded series check: %d 1m bars, %d hole(s) take RTH minutes in the last %d days: %s — the mentor's key levels were walked over them, so NEW mentor entries are paused until a history reload fills them (the evaluator then re-seeds) or they leave the %d-day reach",
-		len(times), len(holes), ntTrader.IntegritySeedReachDays, strings.Join(wins, "; "), ntTrader.IntegritySeedReachDays)
+	at.logWarnf("🧑‍🏫 seeded series check: %d 1m bars, %d hole(s) take RTH minutes in the last %d days: %s — no contract in the stitch stores those minutes and the mentor's key levels were walked over them, so NEW mentor entries are paused. %s",
+		len(times), len(holes), ntTrader.IntegritySeedReachDays, strings.Join(wins, "; "), ntTrader.IntegrityActionSeeded)
 }
 
 func sameSeedHoles(a, b []ntTrader.IntegrityHole) bool {
@@ -88,15 +88,16 @@ func (at *AutoTrader) seedSeriesVerdict(now time.Time) dataVerdict {
 	}
 	parts := make([]string, 0, len(live))
 	wins := make([]string, 0, len(live))
-	for _, h := range live {
-		parts = append(parts, fmt.Sprintf("%s (%d open min)", h.Window, h.Missing))
-		wins = append(wins, h.Window)
+	for i := range live {
+		live[i].ClearsAtMs = live[i].ToMs + ntTrader.IntegritySeedReachDays*24*60*60_000
+		parts = append(parts, fmt.Sprintf("%s (%d open min, clears by itself %s)", live[i].Window, live[i].Missing, live[i].ClearsAtLabel()))
+		wins = append(wins, live[i].Window)
 	}
 	sym := mentorSeedSymbol
 	return dataVerdict{
 		Blocked: true, Class: ntTrader.IntegrityClassHole, Holes: live, Windows: wins,
-		Reason: fmt.Sprintf("missing %s 1m bars %s in the series the mentor's key levels were seeded from — %s; the key levels were walked over those candles, so mentor entries stay paused until the stretch is filled (the evaluator re-seeds on the refill) or leaves the %d-day reach",
-			sym, strings.Join(parts, "; "), ntTrader.IntegrityAction, ntTrader.IntegritySeedReachDays),
+		Reason: fmt.Sprintf("missing %s 1m bars %s in the series the mentor's key levels were seeded from (no contract in the stitch stores those minutes) — the key levels were walked over those candles, so mentor entries stay paused: %s",
+			sym, strings.Join(parts, "; "), ntTrader.IntegrityActionSeeded),
 	}
 }
 
@@ -109,4 +110,15 @@ func (at *AutoTrader) HealthSeedSeriesPause(now time.Time) []string {
 		return nil
 	}
 	return at.seedSeriesVerdict(now).Windows
+}
+
+// HealthIntegritySymbol is the symbol this trader's entries stand on, for the
+// /api/health pause surface: a pause on a symbol NO running trader trades is not
+// a pause of anything (round 4, D3). "" for a trader the gate does not apply to
+// (not NinjaTrader futures, or no NT8 bridge in this process).
+func (at *AutoTrader) HealthIntegritySymbol() string {
+	if at == nil || !at.integrityApplies() {
+		return ""
+	}
+	return at.futuresSymbol()
 }

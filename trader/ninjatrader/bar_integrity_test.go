@@ -64,7 +64,7 @@ func TestIntegrityBlocksAnOpenHoleInTheWindow(t *testing.T) {
 }
 
 // A hole outside the window does not block; the same hole inside the DEEP
-// window does (the swing / AI paths read 34 four-hour candles).
+// window does (the swing path reads its 4h EMA warm-up; the AI / planner paths their 1m tape).
 func TestAHoleOutsideTheWindowDoesNotBlock(t *testing.T) {
 	armIntegrity(t)
 	f := newGHFixture(t)

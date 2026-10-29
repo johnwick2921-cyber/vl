@@ -59,8 +59,8 @@ func holeVerdictFor(class string) ntTrader.IntegrityVerdict {
 			Unknown: "the boot hole scan has not judged MNQ yet this process"}
 	}
 	return ntTrader.IntegrityVerdict{Armed: true, Blocked: true, Class: ntTrader.IntegrityClassHole,
-		Holes: []ntTrader.IntegrityHole{{Symbol: "MNQ", Contract: "MNQ 12-26", State: "unfilled", Missing: 297,
-			Window: "10-26 17:00–21:57 CT", Unfillable: true}}}
+		Holes: []ntTrader.IntegrityHole{{Symbol: "MNQ", Contract: "MNQ 12-26", State: "refilling", Missing: 297,
+			Window: "10-26 17:00–21:57 CT"}}}
 }
 
 // armIntegrityGate arms the gate (the NT8 bridge is "wired") and installs the
@@ -87,8 +87,14 @@ func TestIntegrityWindowsEqualTheCodeTheyDescribe(t *testing.T) {
 	if ntTrader.IntegrityIntradayOpenMin != mentorBars1mDepth {
 		t.Fatalf("the intraday window (%d) must equal the 1m depth the mentor reads (mentorBars1mDepth = %d)", ntTrader.IntegrityIntradayOpenMin, mentorBars1mDepth)
 	}
-	if ntTrader.IntegrityDeepOpenMin != (34+1)*240 {
-		t.Fatalf("the deep window is the 4h EMA 34 span (34 candles x 240 open minutes) plus the boundary candle, got %d", ntTrader.IntegrityDeepOpenMin)
+	// round 4 (D2): the non-mentor window is the WIDEST 1m reader among those
+	// paths — the planner's candle tape — not a 4h-candle count (their 4h is a
+	// NATIVE frame; a 1m hole cannot corrupt it).
+	if ntTrader.IntegrityDeepOpenMin != plannerCandleTapeBars {
+		t.Fatalf("the deep window must equal the planner's candle tape (plannerCandleTapeBars = %d), the widest 1m reader of the non-mentor paths; got %d", plannerCandleTapeBars, ntTrader.IntegrityDeepOpenMin)
+	}
+	if ntTrader.IntegrityDeepOpenMin < structureMapBarsAsk {
+		t.Fatalf("the deep window must contain the structure map's 1m rebuild depth (structureMapBarsAsk = %d)", structureMapBarsAsk)
 	}
 	// SWING4H's EMA is gated on, and computed over, the evaluator's warm-up
 	// history: the window must be the mentor's own constant, not a copy of it.
@@ -130,9 +136,6 @@ func TestIntegrityGateRefusesAIDecision(t *testing.T) {
 		if err != nil || rec.Success || !strings.HasPrefix(rec.Error, "data_integrity: ") ||
 			!strings.Contains(rec.Error, "10-26 17:00–21:57 CT") || !strings.Contains(rec.Error, ntTrader.IntegrityAction) {
 			t.Fatalf("%s must be refused by name at executeDecisionWithRecord (err=%v rec=%q)", action, err, rec.Error)
-		}
-		if !strings.Contains(rec.Error, "trading stays paused until the stretch leaves the data window") {
-			t.Fatalf("an unfillable hole must say so in the refusal: %q", rec.Error)
 		}
 		if got := gateBlocks(at.id, ntTrader.IntegrityClassHole); got != before+1 {
 			t.Fatalf("%s: the refusal must be counted under %s once: %d -> %d", action, ntTrader.IntegrityClassHole, before, got)
@@ -649,5 +652,61 @@ func TestIntegrityGateRefusesTheDebugTestTradeDoor(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("control: with the data complete the debug test trade must send its entry frame (the pin would otherwise pass on a door that is always shut)")
+	}
+}
+
+// m445 round 4 (D4) — a resume that is only the stretch LEAVING the window must
+// not say the bars came back. The episode ends either on a measured fill (the
+// tracker holds nothing for the symbol) or by ageing out (the tracker still lists
+// the hole, unfilled): the owner push and the log say which.
+func TestIntegrityResumeTextSaysWhetherTheBarsCameBack(t *testing.T) {
+	judged := time.Date(2026, 10, 28, 9, 0, 0, 0, kernel.CTLocation())
+	ctMs := func(d, h, m int) int64 {
+		return time.Date(2026, 10, d, h, m, 0, 0, kernel.CTLocation()).UnixMilli()
+	}
+	for _, tc := range []struct {
+		name    string
+		holes   []ntTrader.TestHole
+		must    []string
+		mustNot []string
+	}{
+		{"measured filled", []ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26"}},
+			[]string{"complete again (measured filled)"}, []string{"NOT refilled", "aged out"}},
+		{"aged out, never refilled", []ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ctMs(14, 3, 0), ToMs: ctMs(14, 3, 30)}},
+			[]string{"no missing bars inside the data window any more", "NOT refilled", "aged out", "10-14 03:00–03:30 CT"}, []string{"complete again", "measured filled"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rec, flush := installPush(t)
+			at, _ := feedTrader(t)
+			at.name = "Mentor A"
+			now := cmeOpenNow(t)
+			withProvider(t, []market.Kline{{OpenTime: now.UnixMilli() - 30_000, Final: true}})
+			fk := &intFake{}
+			armIntegrityGate(t, fk)
+			t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(judged.UnixMilli()-1e9, judged.UnixMilli(), tc.holes))
+			at.monitorTick(now)
+			fk.blockedFor = func(int) bool { return false }
+			at.monitorTick(now.Add(time.Minute))
+			flush()
+			var resumed string
+			for _, m := range rec.all() {
+				if strings.Contains(m, "TRADING RESUMED") {
+					resumed = m
+				}
+			}
+			if resumed == "" {
+				t.Fatalf("no resume push: %q", rec.all())
+			}
+			for _, w := range tc.must {
+				if !strings.Contains(resumed, w) {
+					t.Fatalf("the resume push must say %q: %q", w, resumed)
+				}
+			}
+			for _, w := range tc.mustNot {
+				if strings.Contains(resumed, w) {
+					t.Fatalf("the resume push must NOT say %q: %q", w, resumed)
+				}
+			}
+		})
 	}
 }

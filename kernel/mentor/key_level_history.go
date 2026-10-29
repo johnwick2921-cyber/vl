@@ -220,6 +220,14 @@ type RollStitcher struct {
 	cumGap       float64 // cumulative gap from the head contract to the newest
 	gaps         []RollGap
 	stoppedAt    string
+	// seamCovered — open times of head-contract 1m bars the CUT dropped that
+	// the older contract does NOT store (m445 round 4, D1). The cut keeps the
+	// older's bars to its last stored bar and the head's only after it, so a
+	// minute the older never recorded but the head DID is absent from the
+	// stitched series although a stored bar exists for it. The series is
+	// unchanged (the mentor's numbers are not touched here); the data-integrity
+	// gate reads this list so a roll seam is not read as lost data.
+	seamCovered []int64
 }
 
 // NewRollStitcher starts the stitch from the NEWEST contract (own scale). The
@@ -278,6 +286,7 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 	cutTime := older.Bars[len(older.Bars)-1].OpenTime
 	pre := backAdjust(older.Bars, total)     // every bar ≤ cutTime (the whole older series)
 	head := trimAfter(s.stitched1m, cutTime) // strictly after the older's last bar
+	s.seamCovered = append(s.seamCovered, seamCoveredBy(s.stitched1m, older.Bars, cutTime)...)
 	s.stitched1m = append(pre, head...)
 	s.gaps = append(s.gaps, pair)
 	s.head1h = older.Bars1H
@@ -285,6 +294,57 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 	s.headContract = older.Contract
 	s.cumGap = total
 	return true
+}
+
+// seamCoveredBy returns the open times of the head's bars that the cut drops
+// (OpenTime <= cutTime), that lie inside the older contract's recorded span
+// and that the older contract does not store — minutes stored by ONE contract
+// only, so the stitch's "older up to its last bar" rule loses them from the
+// series. Sparse pre-roll import snapshots (a head session day with fewer than
+// minSnapshotSessionBars bars) are NOT counted: one bar a day is not a recording
+// of the minutes around it, and counting it would let it split a real hole.
+func seamCoveredBy(head, older []market.Kline, cutTime int64) []int64 {
+	if len(older) == 0 {
+		return nil
+	}
+	first := older[0].OpenTime
+	var cand []int64
+	for _, b := range head {
+		if b.OpenTime > cutTime {
+			break // ascending
+		}
+		if b.OpenTime < first {
+			continue
+		}
+		i := sort.Search(len(older), func(i int) bool { return older[i].OpenTime >= b.OpenTime })
+		if i < len(older) && older[i].OpenTime == b.OpenTime {
+			continue // the older stores it: it is in the series
+		}
+		cand = append(cand, b.OpenTime)
+	}
+	if len(cand) == 0 {
+		return nil
+	}
+	counts := make(map[string]int, 64)
+	for _, b := range head {
+		counts[sessionKeyCT(b.OpenTime)]++
+	}
+	out := cand[:0:0]
+	for _, ms := range cand {
+		if counts[sessionKeyCT(ms)] >= minSnapshotSessionBars {
+			out = append(out, ms)
+		}
+	}
+	return out
+}
+
+// SeamCovered returns, ascending, the minutes some stitched contract stores
+// that the stitched series itself lacks (see seamCovered). Judge a minute
+// missing only when it is absent from the series AND from this list.
+func (s *RollStitcher) SeamCovered() []int64 {
+	out := append([]int64(nil), s.seamCovered...)
+	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+	return out
 }
 
 // Result returns the stitched 1m series (newest scale), the 08:30-anchored 1H

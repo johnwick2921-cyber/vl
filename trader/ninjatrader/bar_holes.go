@@ -230,11 +230,12 @@ type barHoleTracker struct {
 
 	// DATA-INTEGRITY GATE (m445, bar_integrity.go): the verdict every entry path
 	// asks. The tracker keeps what it needs to answer — all additive:
-	retired       []*barHole        // holes no re-request can reach (kept: a retirement is NOT a fill)
-	judgeErr      map[string]string // symbol|contract -> the store-read failure that left a minute unjudged (cleared by the next good judgement)
-	coveredFrom   map[string]int64  // symbol|contract -> oldest minute any judgement read back to
-	integ         integrityMemo     // the window-start walk, memoised per wall minute
-	lastRemeasure time.Time         // the retired holes' last store re-read
+	retired       []*barHole         // holes no re-request can reach (kept: a retirement is NOT a fill)
+	judgeErr      map[string]string  // symbol|contract -> the store-read failure that left a minute unjudged (cleared by the next good judgement)
+	coveredFrom   map[string]int64   // symbol|contract -> oldest minute any judgement read back to
+	integ         integrityMemo      // the window-start walk, memoised per wall minute
+	clearsMemo    map[[2]int64]int64 // (last missing open minute, window) -> instant it leaves the window; under t.mu
+	lastRemeasure time.Time          // the retired holes' last store re-read
 	// retiredEvicted — the retained list overflowed and its oldest entries were
 	// dropped: the verdict is UNKNOWN (blocked) from then on, until a restart.
 	retiredEvicted bool
@@ -910,6 +911,33 @@ func BarHolesSnapshot() ([]BarHoleView, bool) {
 // mirrors SetTCPServerForTest.
 func SetBarHolesWiredForTest() (restore func()) {
 	prev := barHoles.Swap(newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil }))
+	return func() { barHoles.Store(prev) }
+}
+
+// TestHole is one unfilled hole for SetBarHolesWithHolesForTest ([FromMs, ToMs)).
+type TestHole struct {
+	Symbol, Contract string
+	FromMs, ToMs     int64
+}
+
+// SetBarHolesWithHolesForTest installs a tracker that has judged every symbol
+// named in `holes` over [judgedFromMs, judgedToMs] and holds those holes as
+// retired ones (nothing re-requests them), so a HANDLER test can see a scoped
+// pause without a live wire. TEST-ONLY.
+func SetBarHolesWithHolesForTest(judgedFromMs, judgedToMs int64, holes []TestHole) (restore func()) {
+	t := newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil })
+	for _, h := range holes {
+		k := holeKey(h.Symbol, h.Contract)
+		t.checked[k] = judgedToMs
+		t.coveredFrom[k] = judgedFromMs
+		if h.ToMs <= h.FromMs {
+			continue // judged only: the symbol is known to the detector, no hole
+		}
+		n := int((h.ToMs - h.FromMs) / 60_000)
+		t.retired = append(t.retired, &barHole{Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+			MissingAtDetect: n, Missing: n, State: "retired"})
+	}
+	prev := barHoles.Swap(t)
 	return func() { barHoles.Store(prev) }
 }
 

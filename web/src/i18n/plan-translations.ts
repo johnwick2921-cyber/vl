@@ -412,6 +412,27 @@ export const planStrings = {
     zh: '交易已暂停 — 缺少K线 {window}',
     id: 'TRADING DIJEDA — bar hilang {window}',
   },
+  // m445 round 4 (D3): a pause of less than all entries says which.
+  dataPausedScopedBanner: {
+    en: 'TRADING PAUSED ({scope}) — missing bars {window}',
+    zh: '交易已暂停（{scope}）— 缺少K线 {window}',
+    id: 'TRADING DIJEDA ({scope}) — bar hilang {window}',
+  },
+  dataPausedScopeSwing: {
+    en: 'SWING4H entries only; other setups trade normally',
+    zh: '仅 SWING4H 入场；其他形态照常交易',
+    id: 'hanya entri SWING4H; setup lain berjalan normal',
+  },
+  dataPausedScopeDeep: {
+    en: 'SWING4H and AI/planner entries only; intraday mentor setups trade normally',
+    zh: '仅 SWING4H 与 AI/计划入场；日内 mentor 形态照常交易',
+    id: 'hanya entri SWING4H dan AI/planner; setup mentor intraday berjalan normal',
+  },
+  dataPausedScopeMentor: {
+    en: 'mentor entries; the mentor key levels stand on a series with missing bars',
+    zh: 'mentor 入场；mentor 关键位所依据的序列缺少K线',
+    id: 'entri mentor; level kunci mentor bertumpu pada seri yang kehilangan bar',
+  },
   dataPausedUnknownBanner: {
     en: 'TRADING PAUSED — bar-data check not ready',
     zh: '交易已暂停 — K线数据检查尚未就绪',

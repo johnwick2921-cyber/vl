@@ -46,11 +46,14 @@ import (
 //	  17:00→08:30, the RTH day, boxes, ORB). The 5m feed it also reads
 //	  (mentor_tick.go, "5m", 12 bars) lies inside the same minutes. The SEEDED
 //	  state is not inside this slice: see the key-level leg below.
-//	deep = ntTrader.IntegrityDeepOpenMin = (34+1) x 240 = 8400.
-//	  The AI / planner / Picture / agent paths read the native 4h structure
-//	  (kernel.HTFVetoNativeTF, HTFVetoNativeBarsAsk) and 1m x
-//	  kernel.AISVPBarCount (2000, inside this). 34 candles is the 4h EMA's own
-//	  period, +1 so the window is cut at a candle boundary, not through one.
+//	deep = ntTrader.IntegrityDeepOpenMin = 12000 = plannerCandleTapeBars.
+//	  Per-reader table in trader/ninjatrader/bar_integrity.go (round 4, D2). The
+//	  AI / planner / Picture / agent paths read a NATIVE 4h frame (kernel
+//	  .HTFVetoNativeTF — a 1m hole cannot corrupt it), 1m x kernel.AISVPBarCount
+//	  (2000) and the structure map's 1h/15m/5m rebuilt from the 1m store
+//	  (structureMapBarsAsk 2500); the WIDEST 1m reader is the planner's candle
+//	  tape (plannerCandleTapeBars 12000: 8-session daily table, weekly line,
+//	  realized-vol baseline), so one window serves the non-mentor paths.
 //	key-level legs (every MENTOR verdict, any window) — the evaluator's seeded
 //	  state (1H RTH key levels with "No lookback cap", open-HTF lines, day
 //	  latch, trendlines) is built once from the contract-STITCHED 1m history
@@ -188,16 +191,16 @@ func (at *AutoTrader) dataIntegrityVerdictAt(openMin int, now time.Time, withSta
 // integrityHoleReason is the refusal / push text for a hole verdict.
 func integrityHoleReason(sym string, v ntTrader.IntegrityVerdict) string {
 	parts := make([]string, 0, len(v.Holes))
-	unfillable := false
 	for _, h := range v.Holes {
-		parts = append(parts, fmt.Sprintf("%s (%d open min, %s)", h.Window, h.Missing, h.State))
-		unfillable = unfillable || h.Unfillable
+		clears := ""
+		if lb := h.ClearsAtLabel(); lb != "" {
+			clears = ", clears by itself " + lb
+		}
+		parts = append(parts, fmt.Sprintf("%s (%d open min, %s%s)", h.Window, h.Missing, h.State, clears))
 	}
-	s := fmt.Sprintf("missing %s 1m bars %s — %s", sym, strings.Join(parts, "; "), ntTrader.IntegrityAction)
-	if unfillable {
-		s += "; NT8 has no history the bot can ask for, so trading stays paused until the stretch leaves the data window or the history is reloaded and re-measured"
-	}
-	return s
+	// the remedy is per hole (round 4): a reload only for a stretch NT8 can still
+	// replay — for an older one it is stated what DOES clear it, and when
+	return fmt.Sprintf("missing %s 1m bars %s — %s", sym, strings.Join(parts, "; "), ntTrader.IntegrityActionFor(v.Holes))
 }
 
 // dataIntegrityAdmitRefusal is admitChain's gate: ("", false) = may proceed.
@@ -324,10 +327,27 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		wasPushed := e.pushed
 		e.active, e.pushed = false, false
 		telemetry.IncDataIntegrityResume()
-		at.logInfof("▶ TRADING RESUMED: %s bar data is complete again in every data window (paused %s) — NEW entries are allowed again.", sym, held)
+		// Resume is on a MEASURED fill — or the stretch aged out of the data
+		// window, which is NOT the bars coming back, and the text says which
+		// (round 3, reviewer B, D4): a hole the tracker still lists unfilled is
+		// named as left behind.
+		left := ntTrader.IntegrityUnfilledHoles(sym)
+		var logTail, pushTail string
+		if len(left) == 0 {
+			logTail = fmt.Sprintf("%s bar data is complete again in every data window", sym)
+			pushTail = fmt.Sprintf("%s bar data is complete again (measured filled)", sym)
+		} else {
+			ws := make([]string, 0, len(left))
+			for _, h := range left {
+				ws = append(ws, h.Window)
+			}
+			logTail = fmt.Sprintf("%s has no missing bars inside the data windows any more — but %s was NOT refilled; it only left the window", sym, strings.Join(ws, "; "))
+			pushTail = fmt.Sprintf("%s: no missing bars inside the data window any more. NOT refilled (it only aged out of the window): %s", sym, strings.Join(ws, "; "))
+		}
+		at.logInfof("▶ TRADING RESUMED: %s (paused %s) — NEW entries are allowed again.", logTail, held)
 		if wasPushed {
 			ownerpush.Push("data-resumed|"+strings.TrimPrefix(key, "data-paused|"),
-				fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s bar data is complete again (paused %s).", at.ownerPushTraderLabel(), sym, held))
+				fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s (paused %s).", at.ownerPushTraderLabel(), pushTail, held))
 		} else {
 			ownerpush.Cancel(key) // never delivered the pause: do not deliver it after the resume
 		}

@@ -74,15 +74,36 @@ import (
 //     re-seed — the tracker follows one contract and cannot see that series.
 const IntegrityIntradayOpenMin = 1500
 
-// IntegrityDeepOpenMin is the window of the AI / planner / Picture / agent
-// entries, which also read the 4h structure (kernel.HTFVetoNativeTF = "4h") and
-// 1m SVP/FVG/tape of AISVPBarCount = 2000 (contained). 34 four-hour candles x
-// 240 open minutes is the EMA 34's own period, plus ONE more candle: a window
-// of N x 240 open minutes starts part-way into its oldest 4h candle, and the
-// part of that candle before the window is still in the candle's OHLC (review
-// round 1: the window must be aligned out to the candle boundary, not cut
-// through it).
-const IntegrityDeepOpenMin = (34 + 1) * 240
+// ── WHAT EACH READER READS (m445 round 4, D2) ──────────────────────────────
+//
+// A window is the 1m the reader STANDS ON, counted in OPEN minutes. The table is
+// derived from the code each row names — the trader package pins every constant
+// to that code (TestIntegrityWindowsEqualTheCodeTheyDescribe):
+//
+//	reader                                     frames / source                      1m lookback (open min)
+//	mentor per-pass evaluator (intraday setups) 2m..4h aggregated from the 1m tape   1500  mentorBars1mDepth
+//	AI decision / agent / Picture               4h/1h/15m/5m NATIVE per-frame subs;  2500  structureMapBarsAsk (structure map
+//	                                            1m only for SVP/FVG/tape (2000) and        rebuilds 1h/15m/5m from the 1m store),
+//	                                            the structure map                          AISVPBarCount 2000 inside it
+//	planner arm (the rows the planner rests)    8-session daily-candle table, weekly 12000 plannerCandleTapeBars (barsWithStoreDepth)
+//	                                            line, realized-vol baseline
+//	mentor SWING4H                              4h aggregated FROM 1m, EMA 34 warm-up 24720 (102+1) x 240
+//
+// The 4h the AI / planner / Picture / agent paths read is a NATIVE 4h frame, not
+// built from the bot's 1m store (kernel.HTFVetoNativeTF, WithNativeHTFStructure,
+// the per-frame subscriptions; bar_cache.go Aggregate1mToTF: "2h/4h are NOT built
+// here"): a hole in the 1m store cannot corrupt a native 4h candle, so the old
+// "34 four-hour candles" derivation of the deep window was wrong in kind (round 3,
+// reviewer B). Only the mentor evaluator aggregates 4h from 1m, so only SWING4H
+// carries a 4h-candle window.
+//
+// IntegrityDeepOpenMin is the window of every NON-mentor entry path (AI decision,
+// agent, Picture, planner arm). The widest 1m reader among them is the planner's
+// candle tape, so one window serves them all: fail-closed on the wider reader (a
+// hole 2500..12000 open minutes back pauses a decision/agent/Picture entry that
+// would not have read it — disclosed, and no live trader runs those paths while
+// mentor mode is on, since mentor mode refuses every non-mentor entry).
+const IntegrityDeepOpenMin = 12000
 
 // IntegritySwingOpenMin is the window of the SWING4H setup: the mentor's 4h
 // EMA 34 is gated on its WARM-UP — kernel/mentor.FourHEMA34Warmup = 102 closed
@@ -93,8 +114,26 @@ const IntegrityDeepOpenMin = (34 + 1) * 240
 // (Pinned equal to the mentor constant by the trader package.)
 const IntegritySwingOpenMin = (102 + 1) * 240
 
-// IntegrityAction is the one instruction the owner is given for a hole.
+// IntegrityAction is the instruction for a hole NT8 can still replay (its first
+// missing minute is inside the subscription's last bars_back 1m bars, about 33
+// trading hours, on the contract the subscription still names).
 const IntegrityAction = "NT8: Reload All Historical Data (or wait for the auto re-request)"
+
+// The instructions for a hole NO reload reaches (round 4, D1): the old text sent
+// the owner to a reload that replays only the last ~2000 1m bars and cannot
+// return days-old minutes, nor an expired contract's. What clears it is stated
+// with the moment it clears by itself (IntegrityHole.ClearsAtMs).
+const (
+	integrityImportHow = "POST /api/admin/bars/import for that contract (HISTORICAL_IMPORT_SEAM=on; NT8 must be able to serve the range)"
+	// IntegrityActionRetired — a tracker hole outside NT8's replay: the tracker
+	// re-reads its window from the store about once a minute.
+	IntegrityActionRetired = "no NT8 reload reaches this stretch (it is older than the ~2000 1m bars NT8 replays, or on a contract the subscription no longer serves); it resumes by itself when the minutes are imported — " + integrityImportHow + " — read back within a minute, or at the time shown"
+	// IntegrityActionSeeded — a hole in the series the mentor was seeded from:
+	// measured at the seed, so an import needs a restart to be seen.
+	IntegrityActionSeeded = "no NT8 reload reaches this stretch (it is days old, on a contract NT8 no longer replays); it clears when the minutes are imported — " + integrityImportHow + " — and the bot is restarted (the seed measures the series again at start), or at the time shown"
+	// IntegrityActionSpent — inside NT8's replay but the bot's own re-requests are used up.
+	IntegrityActionSpent = "NT8: Reload All Historical Data, then restart the bot (its automatic re-requests are used up)"
+)
 
 const (
 	// IntegrityClassHole / IntegrityClassUnknown are the verdict's reason
@@ -146,6 +185,49 @@ type IntegrityHole struct {
 	// unfilled with the slow retries spent): it pauses trading until it ages out
 	// of the window or NT8's history is reloaded and the hole re-measured.
 	Unfillable bool
+	// ClearsAtMs — the instant this hole stops pausing BY ITSELF, whatever the
+	// owner does (it leaves the decision's data window, or the 90-day key-level
+	// reach). 0 = unknown. A READ value, computed from the calendar.
+	ClearsAtMs int64
+}
+
+// Remedy is the instruction that actually works for THIS hole.
+func (h IntegrityHole) Remedy() string {
+	switch {
+	case h.State == "seeded":
+		return IntegrityActionSeeded
+	case h.State == "retired":
+		return IntegrityActionRetired
+	case h.State == holeStateUnfilled && h.Unfillable:
+		return IntegrityActionSpent
+	default:
+		return IntegrityAction
+	}
+}
+
+// IntegrityActionFor joins the DISTINCT remedies of the holes (in hole order);
+// the reload text when none is named.
+func IntegrityActionFor(holes []IntegrityHole) string {
+	var parts []string
+	seen := map[string]bool{}
+	for _, h := range holes {
+		if r := h.Remedy(); !seen[r] {
+			seen[r] = true
+			parts = append(parts, r)
+		}
+	}
+	if len(parts) == 0 {
+		return IntegrityAction
+	}
+	return strings.Join(parts, " | ")
+}
+
+// ClearsAtLabel renders ClearsAtMs for the owner ("11-01 14:23 CT"), "" when unknown.
+func (h IntegrityHole) ClearsAtLabel() string {
+	if h.ClearsAtMs <= 0 {
+		return ""
+	}
+	return kernel.TableTimeCT(time.UnixMilli(h.ClearsAtMs)) + " CT"
 }
 
 // IntegrityVerdict is the gate's answer for one symbol and window.
@@ -441,10 +523,17 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 				missing++
 			}
 		}
-		if missing == 0 && keyLevels {
+		clears := int64(0)
+		if missing > 0 {
+			clears = t.windowClearsAtLocked(h.ToMs, openMinutes)
+		}
+		if missing == 0 && keyLevels && h.ToMs > now.Add(-IntegritySeedReachDays*24*time.Hour).UnixMilli() {
 			// the key-level leg: a hole older than the window still blocks a
-			// mentor decision when it takes RTH minutes (the seeded 1H RTH walk)
+			// mentor decision when it takes RTH minutes (the seeded 1H RTH walk) —
+			// until it is measured filled or leaves the 90-day reach, the same
+			// reach the seeded-series leg uses (round 4: the two legs agree)
 			missing = t.rthMissing(h.FromMs, h.ToMs)
+			clears = h.ToMs + IntegritySeedReachDays*24*60*60_000
 		}
 		if missing == 0 {
 			return
@@ -452,7 +541,7 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		win := t.openWindowCT(h.FromMs, h.ToMs)
 		v.Holes = append(v.Holes, IntegrityHole{
 			Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
-			Missing: h.Missing, State: state, Window: win,
+			Missing: h.Missing, State: state, Window: win, ClearsAtMs: clears,
 			Unfillable: state == "retired" || state == "untracked" || (state == holeStateUnfilled && h.saidSlowCap),
 		})
 	}
@@ -471,6 +560,70 @@ func (t *barHoleTracker) integrity(symbol string, openMinutes int, now time.Time
 		v.Blocked, v.Class = true, IntegrityClassUnknown
 	}
 	return v
+}
+
+// windowClearsAtLocked is the instant a hole whose missing stretch ends at toMs
+// leaves a window of openMinutes OPEN minutes by itself: the window reads
+// [from, cur) with `from` the openMinutes-th open minute back from cur, so the
+// last missing minute L is out of it once openMinutes open minutes lie strictly
+// between L and cur — the minute after the openMinutes-th open minute that
+// follows L. Memoised: a 24720-minute walk must not repeat on every admission.
+func (t *barHoleTracker) windowClearsAtLocked(toMs int64, openMinutes int) int64 {
+	const minute = int64(60_000)
+	// L = the last OPEN minute of the missing stretch [.., toMs)
+	l := toMs - minute
+	for steps := 0; steps < 24*60 && !t.isOpen(time.UnixMilli(l)); steps++ {
+		l -= minute
+	}
+	k := [2]int64{l, int64(openMinutes)}
+	if v, ok := t.clearsMemo[k]; ok {
+		return v
+	}
+	open, m := 0, l
+	for steps := 0; steps < openMinutes*4+10_000 && open < openMinutes; steps++ {
+		m += minute
+		if t.isOpen(time.UnixMilli(m)) {
+			open++
+		}
+	}
+	if open < openMinutes {
+		return 0
+	}
+	at := m + minute
+	if t.clearsMemo == nil {
+		t.clearsMemo = map[[2]int64]int64{}
+	}
+	t.clearsMemo[k] = at
+	return at
+}
+
+// IntegrityUnfilledHoles lists, whatever their age, every hole the tracker still
+// holds for the symbol that is NOT measured filled. A resume reads it: a pause
+// that ended with an entry here ended because the stretch LEFT the data window,
+// not because the minutes came back — and the message must not say otherwise
+// (round 3, reviewer B, D4). Empty (not nil-meaningful): no tracker, none held.
+func IntegrityUnfilledHoles(symbol string) []IntegrityHole {
+	t := barHoles.Load()
+	if t == nil {
+		return nil
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var out []IntegrityHole
+	add := func(h *barHole) {
+		if strings.EqualFold(h.Symbol, symbol) {
+			out = append(out, IntegrityHole{Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+				Missing: h.Missing, State: h.State, Window: t.openWindowCT(h.FromMs, h.ToMs)})
+		}
+	}
+	for _, h := range t.holes {
+		add(h)
+	}
+	for _, h := range t.retired {
+		add(h)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].FromMs < out[j].FromMs })
+	return out
 }
 
 // openWindowCT renders what the OWNER reads for a hole: the first to the last
@@ -516,6 +669,9 @@ type PausedReason struct {
 	Class  string   `json:"class"`
 	Detail string   `json:"detail"`
 	Window []string `json:"windows,omitempty"` // the holes' windows, CT
+	// ClearsAt — per hole, when it stops pausing by itself ("10-26 17:00–21:57
+	// CT clears by itself 11-02 09:12 CT"); absent when unknown.
+	ClearsAt []string `json:"clears_at,omitempty"`
 }
 
 // PausedView is one symbol's pause state as /api/health serves it.
@@ -590,7 +746,13 @@ func TradingPausedSnapshot(now time.Time) (views []PausedView, armed bool) {
 			pv.Action = IntegrityAction
 			r := PausedReason{Class: worst.Class, Window: worst.Windows()}
 			if worst.Class == IntegrityClassHole {
+				pv.Action = IntegrityActionFor(worst.Holes) // the remedy that works for THESE holes (round 4)
 				r.Detail = fmt.Sprintf("%d hole(s) in the data window", len(worst.Holes))
+				for _, h := range worst.Holes {
+					if lb := h.ClearsAtLabel(); lb != "" {
+						r.ClearsAt = append(r.ClearsAt, h.Window+" clears by itself "+lb)
+					}
+				}
 			} else {
 				r.Detail = worst.Unknown
 			}

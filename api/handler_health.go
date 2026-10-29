@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -176,9 +177,41 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// this process (nothing to lose, nothing claimed); never a fabricated
 	// "not paused" (A24). reasons are the classes; windows the holes' CT spans.
 	if views, armed := ntTrader.TradingPausedSnapshot(now); armed {
+		// Round 4, D3: a pause on a symbol NO running trader trades is not a pause
+		// of anything (an unfilled hole on a subscribed-but-untraded ES painted the
+		// banner red for an MNQ trader). The "" symbol (the detector itself is not
+		// ready) always counts.
+		traded := map[string]bool{}
+		if s.traderManager != nil {
+			for _, at := range s.traderManager.GetAllTraders() {
+				if at.HealthIsRunning() {
+					if sym := at.HealthIntegritySymbol(); sym != "" {
+						traded[strings.ToUpper(sym)] = true
+					}
+				}
+			}
+		}
 		paused, reasons, windows := false, []string{}, []string{}
+		scopeRank := map[string]int{"swing_entries": 0, "swing_and_deep_entries": 1, "mentor_entries": 2, "all_entries": 3}
+		scopes, widest := []string{}, ""
+		noteScope := func(sc string) {
+			for _, x := range scopes {
+				if x == sc {
+					return
+				}
+			}
+			scopes = append(scopes, sc)
+			if widest == "" || scopeRank[sc] > scopeRank[widest] {
+				widest = sc
+			}
+		}
+		shown := make([]ntTrader.PausedView, 0, len(views))
 		seen := map[string]bool{}
 		for _, v := range views {
+			if v.Symbol != "" && !traded[strings.ToUpper(v.Symbol)] {
+				continue
+			}
+			shown = append(shown, v)
 			if !v.Paused {
 				continue
 			}
@@ -189,6 +222,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 					continue
 				}
 				paused = true
+				noteScope(v.Scope)
 				if !seen[r.Class] {
 					seen[r.Class] = true
 					reasons = append(reasons, r.Class)
@@ -196,6 +230,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 				windows = append(windows, r.Window...)
 			}
 		}
+		views = shown
 		// m445 round 2 (reviewer A, D1): the MENTOR's seeded-series leg is
 		// per trader (its evaluator was seeded from the stitched history) — read
 		// from each mentor trader, named by trader id.
@@ -208,14 +243,18 @@ func (s *Server) handleHealth(c *gin.Context) {
 			}
 			sort.Strings(ids)
 			for _, id := range ids {
+				if !all[id].HealthIsRunning() {
+					continue
+				}
 				if w := all[id].HealthSeedSeriesPause(now); len(w) > 0 {
 					paused = true
+					noteScope("mentor_entries")
 					if !seen[ntTrader.IntegrityClassHole] {
 						seen[ntTrader.IntegrityClassHole] = true
 						reasons = append(reasons, ntTrader.IntegrityClassHole)
 					}
 					windows = append(windows, w...)
-					mentorSeed = append(mentorSeed, gin.H{"trader": id, "scope": "mentor_entries", "windows": w, "action": ntTrader.IntegrityAction})
+					mentorSeed = append(mentorSeed, gin.H{"trader": id, "scope": "mentor_entries", "windows": w, "action": ntTrader.IntegrityActionSeeded})
 				}
 			}
 		}
@@ -224,9 +263,13 @@ func (s *Server) handleHealth(c *gin.Context) {
 			reasons = append(reasons, "stale_data")
 		}
 		body["trading_paused"] = gin.H{
-			"paused":      paused,
-			"reasons":     reasons,
-			"windows":     windows,
+			"paused":  paused,
+			"reasons": reasons,
+			"windows": windows,
+			// the WIDEST scope that is paused and every scope that is (round 4,
+			// D3): the banner must not say TRADING PAUSED when only SWING4H is
+			"scope":       widest,
+			"scopes":      scopes,
 			"symbols":     views,
 			"mentor_seed": mentorSeed,
 			"counts":      telemetry.DataIntegrityCountsSnapshot(),

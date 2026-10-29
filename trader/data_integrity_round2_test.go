@@ -227,7 +227,7 @@ func TestMentorSeededSeriesRTHHoleBlocksUntilTheRefillReseeds(t *testing.T) {
 	if !v.Blocked || v.Class != ntTrader.IntegrityClassHole || len(v.Windows) != 1 || v.Windows[0] != "10-13 10:00–10:40 CT" {
 		t.Fatalf("the seeded series holds an RTH hole: the mentor verdict must block on it and name it: %+v", v)
 	}
-	if !strings.Contains(v.Reason, "series the mentor's key levels were seeded from") || !strings.Contains(v.Reason, ntTrader.IntegrityAction) {
+	if !strings.Contains(v.Reason, "series the mentor's key levels were seeded from") || !strings.Contains(v.Reason, ntTrader.IntegrityActionSeeded) {
 		t.Fatalf("the refusal must say which input is holed and the action: %q", v.Reason)
 	}
 	// ...at the admission chain a mentor arm crosses (production call site)

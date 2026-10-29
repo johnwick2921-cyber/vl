@@ -245,7 +245,7 @@ func TestHealthTradingPausedNamesTheMentorSeedLeg(t *testing.T) {
 	}
 	row := ms[0].(map[string]any)
 	wins, _ := row["windows"].([]any)
-	if row["trader"] != "tm" || row["scope"] != "mentor_entries" || len(wins) != 1 || wins[0] != "10-22 10:00–10:40 CT" || row["action"] != ntTrader.IntegrityAction {
+	if row["trader"] != "tm" || row["scope"] != "mentor_entries" || len(wins) != 1 || wins[0] != "10-22 10:00–10:40 CT" || row["action"] != ntTrader.IntegrityActionSeeded {
 		t.Fatalf("the row names the trader, the scope, the CT window and the action: %+v", row)
 	}
 	allWins, _ := tp["windows"].([]any)
@@ -255,5 +255,99 @@ func TestHealthTradingPausedNamesTheMentorSeedLeg(t *testing.T) {
 	}
 	if !found {
 		t.Fatalf("the top-level windows (the banner's source) must carry the seeded hole: %+v", tp["windows"])
+	}
+}
+
+// m445 round 4 (D3) — the pause surface says WHICH scope is paused and only for
+// symbols a running trader trades. Round 3: the banner read "TRADING PAUSED" when
+// only SWING4H was (intraday kept trading), and an unfilled hole on a subscribed
+// but untraded symbol (ES) painted it for an MNQ trader.
+func TestHealthTradingPausedCarriesTheScopeAndIgnoresUntradedSymbols(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	now := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation()) // Wed, CME open
+	ct := func(mo time.Month, d, h, m int) int64 {
+		return time.Date(2026, mo, d, h, m, 0, 0, kernel.CTLocation()).UnixMilli()
+	}
+	srv := ntwire.NewTCPServer(nil)
+	tcpT := ntTrader.NewTCPTrader(srv, "MNQ", "Sim101")
+	mentorT := trader.NewAutoTraderOnBrokerForTest("tm", "ninjatrader", tcpT, true)
+	mentorT.NoteSeedSeriesForTest(true, nil, now)
+	tm := manager.NewTraderManager()
+	tm.SetTraderForTest("tm", mentorT)
+
+	get := func() map[string]any {
+		t.Helper()
+		prev := healthNow
+		healthNow = func() time.Time { return now }
+		t.Cleanup(func() { healthNow = prev })
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{traderManager: tm}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		tp, ok := body["trading_paused"].(map[string]any)
+		if !ok {
+			t.Fatal("armed: trading_paused must be present")
+		}
+		return tp
+	}
+	judgedFrom, judgedTo := ct(time.October, 1, 17, 0), now.UnixMilli()
+
+	// MNQ: a 10-14 overnight hole — outside the 12000-minute AI/planner window and
+	// the 1500-minute intraday one, inside SWING4H's 24720. ES (nobody trades it):
+	// a hole 08:00–08:30 today, inside the intraday window.
+	restore := ntTrader.SetBarHolesWithHolesForTest(judgedFrom, judgedTo, []ntTrader.TestHole{
+		{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ct(time.October, 14, 3, 0), ToMs: ct(time.October, 14, 3, 30)},
+		{Symbol: "ES", Contract: "ES 12-26", FromMs: ct(time.October, 28, 8, 0), ToMs: ct(time.October, 28, 8, 30)},
+	})
+	t.Cleanup(restore)
+	tp := get()
+	if tp["paused"] != true || tp["scope"] != "swing_entries" {
+		t.Fatalf("only SWING4H is paused: the surface must say so, got paused=%v scope=%v (%+v)", tp["paused"], tp["scope"], tp)
+	}
+	scopes, _ := tp["scopes"].([]any)
+	wins, _ := tp["windows"].([]any)
+	if len(scopes) != 1 || scopes[0] != "swing_entries" || len(wins) != 1 || wins[0] != "10-14 03:00–03:30 CT" {
+		t.Fatalf("the untraded ES hole must not appear in scopes/windows: scopes=%v windows=%v", scopes, wins)
+	}
+	for _, v := range tp["symbols"].([]any) {
+		if v.(map[string]any)["symbol"] == "ES" {
+			t.Fatalf("a symbol no running trader trades must not be listed: %+v", tp["symbols"])
+		}
+	}
+
+	// nothing but the untraded symbol is holed: NOT paused at all
+	restore()
+	restore2 := ntTrader.SetBarHolesWithHolesForTest(judgedFrom, judgedTo, []ntTrader.TestHole{
+		{Symbol: "MNQ", Contract: "MNQ 12-26"},
+		{Symbol: "ES", Contract: "ES 12-26", FromMs: ct(time.October, 28, 8, 0), ToMs: ct(time.October, 28, 8, 30)},
+	})
+	t.Cleanup(restore2)
+	// (paused may still be true for the stale-feed leg of this bare test trader —
+	// what must be absent is any DATA reason and any scope)
+	tp = get()
+	rs, _ := tp["reasons"].([]any)
+	for _, r := range rs {
+		if r == ntTrader.IntegrityClassHole || r == ntTrader.IntegrityClassUnknown {
+			t.Fatalf("a hole on a symbol no running trader trades pauses nothing: %+v", tp)
+		}
+	}
+	if tp["scope"] != "" {
+		t.Fatalf("no data pause, so no scope: %+v", tp)
+	}
+
+	// a fresh MNQ hole inside the intraday window is ALL entries, the widest scope
+	restore2()
+	restore3 := ntTrader.SetBarHolesWithHolesForTest(judgedFrom, judgedTo, []ntTrader.TestHole{
+		{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ct(time.October, 14, 3, 0), ToMs: ct(time.October, 14, 3, 30)},
+		{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ct(time.October, 28, 8, 0), ToMs: ct(time.October, 28, 8, 30)},
+	})
+	t.Cleanup(restore3)
+	if tp := get(); tp["scope"] != "all_entries" {
+		t.Fatalf("a hole inside the intraday window is all_entries: %+v", tp)
 	}
 }

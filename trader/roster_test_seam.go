@@ -47,5 +47,5 @@ func (at *AutoTrader) NoteSeedSeriesForTest(mentorMode bool, openTimesMs []int64
 	for _, ms := range openTimesMs {
 		series = append(series, market.Kline{OpenTime: ms})
 	}
-	at.noteSeedSeries(series, now)
+	at.noteSeedSeries(series, nil, now)
 }

@@ -16,6 +16,16 @@ import { tp } from '../../i18n/plan-translations'
 
 const DATA_CLASSES = ['data_integrity_hole', 'data_integrity_unknown']
 
+// scope (bar_integrity.go PausedView.Scope) -> the i18n key naming it
+const SCOPE_KEYS: Record<
+  string,
+  'dataPausedScopeSwing' | 'dataPausedScopeDeep' | 'dataPausedScopeMentor'
+> = {
+  swing_entries: 'dataPausedScopeSwing',
+  swing_and_deep_entries: 'dataPausedScopeDeep',
+  mentor_entries: 'dataPausedScopeMentor',
+}
+
 export function DataPausedBanner({ language }: { language: Language }) {
   const { data } = useSWR('data-paused-health', () => updatesApi.health(true), {
     revalidateOnFocus: false,
@@ -30,7 +40,16 @@ export function DataPausedBanner({ language }: { language: Language }) {
   let text: string
   if (windows.length > 0) {
     const more = windows.length > 1 ? ` (+${windows.length - 1})` : ''
-    text = tp('dataPausedBanner', language, { window: windows[0] + more })
+    const scopeKey = SCOPE_KEYS[tpz.scope ?? '']
+    // all_entries (or a scope an older bot does not send) keeps the plain line;
+    // a narrower pause says WHICH entries are paused, so a banner never claims
+    // more than the bot refuses (round 3, D3)
+    text = scopeKey
+      ? tp('dataPausedScopedBanner', language, {
+          scope: tp(scopeKey, language),
+          window: windows[0] + more,
+        })
+      : tp('dataPausedBanner', language, { window: windows[0] + more })
   } else {
     text = tp('dataPausedUnknownBanner', language)
   }
