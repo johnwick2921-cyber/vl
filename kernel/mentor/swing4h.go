@@ -66,7 +66,7 @@ type SwingCfg struct {
 	EMAPeriod         int     // 34
 	LineOffsetPts     float64 // placement offset TOWARD the approach; default 5 [D5.2 p2 @22:24–23:05: 5–10]
 	StopBeyondLinePts float64 // clean-rejection stop distance; default 30 (R8: 30–60 allowed)
-	MaxStopPts        float64 // ~100-pt ceiling, NO skip: the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
+	MaxStopPts        float64 // ~100-pt ceiling, DECLARED BUT NEVER READ (no skip; waits on mentor Q43): the mentor softened “Đừng vô” to “take 1-2 MNQ and sit” [D5.2 p2 @21:25–21:43]; the 2-MNQ tier sizes the risk down, the stop is never widened
 	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
 	// NARROWER than this is refused. 0 = OFF (the course states no minimum —
 	// only a 100-pt ceiling and "a stop near 100 → don't enter" [06-SIZING]).
@@ -226,8 +226,22 @@ type swingPosition struct {
 	Risk        float64
 	EntryBucket int64
 	ArmID       string
-	MovedBE     bool
-	ExpiryMs    int64 // S1: the resting order's expiry (close of the current 4h candle)
+	// MovedBE is TRUE only once the EXECUTOR reported the break-even APPLIED
+	// (Evaluator.SwingBEApplied) — release #54 (N3): it used to be set at emit,
+	// so a refused or failed move was never retried and the swing sat on its
+	// full stop for the whole hold. A rebuilt position carries the broker truth.
+	MovedBE bool
+	// beEarned latches the first 5m CLOSE at/through +1R: from then on the BE
+	// intent is re-emitted (once per closed 5m bar) until the executor reports it
+	// applied or the position ended. Earning is a fact about the tape; applying
+	// is a fact about the broker.
+	beEarned bool
+	// beTriedBar / closeTriedBar are the OPEN stamps of the last 5m bar a BE /
+	// hold-close intent was emitted on — the retry runs once per closed 5m bar,
+	// not on every 1m tick of the same bar.
+	beTriedBar    int64
+	closeTriedBar int64
+	ExpiryMs      int64 // S1: the resting order's expiry (close of the current 4h candle)
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
@@ -503,7 +517,16 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		// window is spent, the normal first-touch / spent rules apply.
 		inWindow := s.FirstTouch != nil && !s.FirstTouch.Through &&
 			s.FirstTouch.Touches < cfg.LeewayCandles
-		if !inWindow {
+		// Release #54 (P2-3, trade 707): the "not yet re-armed" guard is a
+		// guard on ARMING a new reject — it must never swallow a close THROUGH
+		// the line. It used to run first, so a touching 5m bar that closed
+		// through was skipped without latching Through; the next bar then read
+		// the other side of the line as a fresh approach and armed a normal
+		// reject at a level the mentor declares invalid for the whole 4h candle
+		// [D5.2 p2 @20:41–21:04, @20:48, @10:30; D5.2 p3 @21:30]. The through
+		// branch below therefore runs BEFORE the guard; the guard still applies
+		// to the reject path.
+		if closedBack(approach, b.Close, line) && !inWindow {
 			if approach == SideLong && s.ClearLongAt != 0 && b.Low > s.ClearLongAt {
 				continue // not yet re-armed
 			}
@@ -746,8 +769,13 @@ func closedBack(approach Side, close, line float64) bool {
 
 // swingRejectIntent builds the clean-rejection stop order: tight on the
 // reference candle's extreme (R8: no buffer), stop 30 pts beyond the line.
-// Refused when the stop distance reaches MaxStopPts or the hard invariant
-// (stop on the correct side of the entry) breaks.
+// Refused only when the hard invariant (stop on the correct side of the entry)
+// breaks, or the stop is narrower than MinStopPts (OFF by default). MaxStopPts
+// is DECLARED but NEVER READ here (release #54, doc truth): a stop of ~100 pts
+// is NOT refused today — m186 softened the course's "dung vo" to "take 1-2 MNQ
+// and sit" [D5.2 p2 @21:25–21:43], and the 100-pt ceiling waits on mentor Q43
+// (trade 709/710, stop 102.25). The swing ISB (stop AT the line) is exempt by
+// the same ruling.
 func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingCfg) (Intent, bool) {
 	var in Intent
 	if approach == SideShort { // resistance: came from below → sell stop
@@ -862,6 +890,14 @@ func nextTradingFourHBucket(b int64) int64 {
 }
 
 // manageSwingPosition emits the BE and hold-close intents for an open swing.
+//
+// Release #54 (N3): neither intent is single-shot any more. The position is
+// kept until the EXECUTOR reports the outcome back (SwingBEApplied /
+// SwingEnded): an unapplied BE or hold-close is re-emitted once per closed 5m
+// bar. Before, MovedBE=true / Pos=nil were set at emit, so a refusal (a
+// transient book, a row not yet filled, a rejected stop) was final — the swing
+// sat on its full stop, or was carried past the 4h rule, and the executor's
+// log line promised "retried next 4h read" while nothing ever retried.
 func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Intent {
 	p := s.Pos
 	if p == nil || len(bars) == 0 {
@@ -869,26 +905,54 @@ func manageSwingPosition(s *SwingState, bars []market.Kline, cfg SwingCfg) []Int
 	}
 	cur := bars[len(bars)-1]
 	var out []Intent
-	if !p.MovedBE {
-		// m233: the BE at +1R on a CLOSED 5m candle is the GENERAL 1:1 rule
-		// [D1.2 p1 @12:34–13:12, @15:56–15:59 "Bắt buộc … maintain risk reward
-		// 1-1"] — it applies to every trade, the swing included (D5.2 adds no
-		// exception). A 5m CLOSE at/through +1R moves the stop to break-even.
-		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
-			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
-				Reason: "swing: +1R reached on a 5m close — stop to break-even [D1.2 p1 @12:34–13:12, @15:56–15:59]"})
-			p.MovedBE = true
-		}
-	}
 	holdMs, capped := swingHold(p.EntryBucket, cfg.Hold4hBars)
 	// A capped deadline is a market close: the last bar BEFORE it (whose own
 	// close lands on the halt) is the one that flattens — there is no bar at it.
-	if cur.OpenTime >= holdMs || (capped && cur.OpenTime+5*60_000 >= holdMs) {
+	holdOver := cur.OpenTime >= holdMs || (capped && cur.OpenTime+5*60_000 >= holdMs)
+	if !p.MovedBE && !holdOver {
+		// m233: the BE at +1R on a CLOSED 5m candle is the GENERAL 1:1 rule
+		// [D1.2 p1 @12:34–13:12, @15:56–15:59 "Bắt buộc … maintain risk reward
+		// 1-1"] — it applies to every trade, the swing included (D5.2 adds no
+		// exception). A 5m CLOSE at/through +1R earns the break-even; once
+		// earned it stays owed until the executor reports it applied.
+		if p.Side == SideLong && cur.Close >= p.Entry+p.Risk || p.Side == SideShort && cur.Close <= p.Entry-p.Risk {
+			p.beEarned = true
+		}
+		if p.beEarned && p.beTriedBar != cur.OpenTime {
+			p.beTriedBar = cur.OpenTime
+			out = append(out, Intent{Action: ActionMoveStopBE, ArmID: p.ArmID,
+				Reason: "swing: +1R reached on a 5m close — stop to break-even [D1.2 p1 @12:34–13:12, @15:56–15:59]"})
+		}
+	}
+	if holdOver && p.closeTriedBar != cur.OpenTime {
+		p.closeTriedBar = cur.OpenTime
 		out = append(out, Intent{Action: ActionClosePosition, ArmID: p.ArmID,
 			Reason: "swing §8: hold ONE 4h candle [D5.2 p1 @06:03–06:20]"})
-		s.Pos = nil
 	}
 	return out
+}
+
+// BEApplied records the executor's receipt that the break-even stop is on the
+// swing's position (release #54, N3). A receipt for another arm is ignored.
+func (s *SwingState) BEApplied(armID string) bool {
+	if s == nil || s.Pos == nil || armID == "" || s.Pos.ArmID != armID {
+		return false
+	}
+	s.Pos.MovedBE = true
+	return true
+}
+
+// Ended records that the swing's position no longer exists — its stop, its
+// target or its hold-close filled, or the executor proved the account holds no
+// position carrying this arm's signal (release #54, N2). It clears Pos so a
+// finished swing can never emit a BE or a close against a LATER trade. A
+// receipt for another arm is ignored; the report says whether it cleared.
+func (s *SwingState) Ended(armID string) bool {
+	if s == nil || s.Pos == nil || armID == "" || s.Pos.ArmID != armID {
+		return false
+	}
+	s.Pos = nil
+	return true
 }
 
 // SwingRebuild is the durable record of a FILLED swing the restart path

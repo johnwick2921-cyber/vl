@@ -7,7 +7,6 @@ import (
 	"vl/kernel"
 	"vl/kernel/mentor"
 	"vl/store"
-	ntTrader "vl/trader/ninjatrader"
 )
 
 // ── REL9 arm-registry fold (P1 + 3×P3) — call-site pins ──────────────────────
@@ -26,9 +25,10 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	at, _, ledger, _ := mentorB3Rig(t)
 	mentorWireSeams(t, at, ledger)
 
-	oldMoveStopWire := moveStopWire
-	moveStopWire = func(nt *ntTrader.TCPTrader, side string, newStop float64) error { return nil }
-	t.Cleanup(func() { moveStopWire = oldMoveStopWire })
+	(&swingSignalMoves{}).install(t)
+	oldPrice := mentorLatestPriceSeam
+	mentorLatestPriceSeam = func(*AutoTrader) (float64, bool) { return 0, false } // no fresh 1m price: the move is sent as before
+	t.Cleanup(func() { mentorLatestPriceSeam = oldPrice })
 
 	now := b3Clock(10, 30)
 	setMentorNowSource(func() time.Time { return now })
@@ -56,6 +56,16 @@ func TestRel9FilledSwingSurvivesNeverAddSweep(t *testing.T) {
 	if err := ledger.SetFillQuantity(live.RowID, 1); err != nil {
 		t.Fatal(err)
 	}
+	// the placement pass stamps the signal id at the broker send; this fixture
+	// fills the row by hand, so stamp it here.
+	if err := ledger.DB().Model(&store.ArmedOrderDB{}).Where("id = ?", live.RowID).Update("signal_id", "swing-rel9-sig").Error; err != nil {
+		t.Fatal(err)
+	}
+	var filledRow store.ArmedOrderDB
+	if err := ledger.DB().First(&filledRow, live.RowID).Error; err != nil {
+		t.Fatal(err)
+	}
+	swingOwnedFixture(t, at, filledRow) // m441: the filled swing's own position must be provable
 
 	// The never-add sweep runs on this tick (position open). It must not touch
 	// the FILLED swing.
