@@ -2,6 +2,8 @@ package trader
 
 import (
 	"time"
+
+	"vl/safe"
 )
 
 // ── THE DATA-GATE BEATS, LAST AND BOUNDED (m452, release #55) ───────────────
@@ -44,14 +46,14 @@ func (at *AutoTrader) runDataGateBeats(now time.Time) {
 	}
 	at.integrity.beatStallSaid.Store(false)
 	done := make(chan struct{})
-	go func() {
+	safe.GoNet("data-gate-beats", "", func() { // the panic net; runBeatSafely below is the trader's own recovery (entries freeze)
 		defer close(done)
 		defer at.integrity.beatInFlight.Store(false)
 		at.runBeatSafely("data-gate beats", func() {
 			at.dataIntegrityBeat(now) // m445: the missing-data pause episode; entries only
 			at.dataTruthBeat(now)     // release #55: m446/m447 data-truth episodes; entries only
 		})
-	}()
+	})
 	t := time.NewTimer(dataBeatBudget)
 	defer t.Stop()
 	select {
