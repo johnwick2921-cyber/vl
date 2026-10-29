@@ -190,10 +190,14 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// episodes; ABSENT until the checks are registered or required (a process
 	// with no NT8 bridge claims nothing - A24).
 	dtBlocked := []string{}
+	dtScopes := map[string][]string{}
 	if snap := datatruth.Snapshot(); len(snap) > 0 {
 		for n, st := range snap {
 			if st.Blocked {
 				dtBlocked = append(dtBlocked, n)
+				if len(st.Scopes) > 0 {
+					dtScopes[n] = st.Scopes
+				}
 			}
 		}
 		sort.Strings(dtBlocked)
@@ -301,6 +305,7 @@ func (s *Server) handleHealth(c *gin.Context) {
 		}
 		body["trading_paused"] = gin.H{
 			"data_truth_checks": dtBlocked,
+			"data_truth_scopes": dtScopes, // m451: who a scoped check's block is FOR; absent entry = the whole symbol
 			"paused":            paused,
 			"reasons":           reasons,
 			"windows":           windows,

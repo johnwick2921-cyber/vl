@@ -1,10 +1,12 @@
 // m447 (7) - owner acknowledgement of far fills.
 //
-//	POST /api/risk/ack-fill-price  ?symbol=<MNQ>  -> {"symbol","acknowledged"}
+//	POST /api/risk/ack-fill-price  ?symbol=<MNQ>[&account=<Sim101>]  -> {"symbol","account","acknowledged"}
 //
-// Two far fills (a fill price outside the stored 1m bars of its minute) in one
-// CME session pause NEW entries for the symbol. The owner acknowledges here after
-// looking; entries resume until the next far fill. The next session resumes them
+// Two far fill events (a fill price outside the stored 1m bars of its minute) in
+// one CME session on one account pause NEW entries of the traders on that account
+// (m451: per account, not per symbol). The owner acknowledges here after looking -
+// the account named in the pause text, or every account of the symbol when none is
+// given; entries resume until the next far fill. The next session resumes them
 // without any call.
 
 package api
@@ -25,9 +27,15 @@ func (s *Server) handleAckFillPrice(c *gin.Context) {
 		SafeBadRequest(c, "symbol is required")
 		return
 	}
-	acked := checks.DefaultFills().Ack(symbol)
-	if acked {
-		logger.Warnf("🔓 fill_price pause ACKNOWLEDGED by owner for %s - new entries may resume", symbol)
+	account := strings.TrimSpace(c.Query("account"))
+	var acked bool
+	if account != "" {
+		acked = checks.DefaultFills().AckAccount(symbol, account)
+	} else {
+		acked = checks.DefaultFills().Ack(symbol)
 	}
-	c.JSON(http.StatusOK, gin.H{"symbol": symbol, "acknowledged": acked})
+	if acked {
+		logger.Warnf("🔓 fill_price pause ACKNOWLEDGED by owner for %s (account %q) - new entries may resume", symbol, account)
+	}
+	c.JSON(http.StatusOK, gin.H{"symbol": symbol, "account": account, "acknowledged": acked})
 }

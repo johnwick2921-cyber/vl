@@ -9,6 +9,7 @@ import (
 
 	"vl/internal/datatruth"
 	"vl/internal/datatruth/checks"
+	"vl/kernel"
 	"vl/logger"
 	ntTrader "vl/trader/ninjatrader"
 )
@@ -116,20 +117,52 @@ func (at *AutoTrader) dataTruthVerdictAt(openMin int, now time.Time) dataVerdict
 		}
 		// past the grace the stubs speak: Evaluate names every required check that never landed
 	}
-	return dataTruthReasons(at.futuresSymbol(), openMin, now)
+	return dataTruthReasons(at.futuresSymbol(), openMin, now, at.dataTruthAsker())
+}
+
+// dataTruthAsker is who is asking: the trader id and the NT8 account it is bound
+// to. The account-scoped checks (broker_agreement, fill_price) block only the
+// traders they are FOR (m451).
+func (at *AutoTrader) dataTruthAsker() truthAsker {
+	a := truthAsker{id: at.id, at: at}
+	if nt8 := at.armedTrader(); nt8 != nil {
+		a.account = strings.TrimSpace(nt8.BoundAccount())
+	}
+	return a
+}
+
+// truthAsker identifies the trader a data-truth verdict is for. The zero value
+// asks as nobody in particular: every scoped block applies to it (the widest
+// reading, used by the beat that acts on nothing).
+type truthAsker struct {
+	id, account string
+	at          *AutoTrader
 }
 
 // dataTruthReasons evaluates and scopes. Evaluate runs EVERY check (episodes and
 // alerts are per check, whatever the asking path); the scope filter only decides
 // which verdicts this path must obey.
-func dataTruthReasons(sym string, openMin int, now time.Time) dataVerdict {
+func dataTruthReasons(sym string, openMin int, now time.Time, asker truthAsker) dataVerdict {
 	_, reasons := datatruth.Evaluate(sym, now)
 	var parts []string
 	for _, r := range reasons {
 		if r.Check == checks.CheckLookbackSwing4h && openMin < ntTrader.IntegritySwingOpenMin {
 			continue // the swing line is read by SWING4H only
 		}
+		// A block that is FOR other traders/accounts (broker_agreement, fill_price)
+		// is no reason to stop THIS one (m451). The zero asker (the beat) sees all.
+		if asker.id != "" && !r.AppliesTo(asker.id, asker.account) {
+			continue
+		}
 		parts = append(parts, fmt.Sprintf("%s: %s", r.Check, r.Detail))
+	}
+	// The scoped broker check speaks for the traders registered with it. An asking
+	// trader that is NOT registered has a broker view nobody compares, and the
+	// other traders' silence is not evidence about it: while the CME is open it
+	// cannot be admitted (fail closed). Only a trader the asker identifies; the
+	// zero asker (the beat) acts on nothing.
+	if asker.at != nil && datatruth.Wired(CheckBrokerAgreement) && kernel.IsCMEOpen(now) && !asker.at.brokerAgreementRegistered() {
+		parts = append(parts, fmt.Sprintf("%s: this trader is not registered with the broker check (not started, or already stopped) - its account view is not being compared with NT8's", CheckBrokerAgreement))
 	}
 	if len(parts) == 0 {
 		return dataVerdict{}
@@ -149,5 +182,5 @@ func (at *AutoTrader) dataTruthBeat(now time.Time) {
 	if !at.dataTruthApplies() || !dataTruthReadyFn() {
 		return
 	}
-	dataTruthReasons(at.futuresSymbol(), ntTrader.IntegritySwingOpenMin, now)
+	dataTruthReasons(at.futuresSymbol(), ntTrader.IntegritySwingOpenMin, now, truthAsker{})
 }
