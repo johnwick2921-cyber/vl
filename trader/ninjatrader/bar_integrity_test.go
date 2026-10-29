@@ -575,13 +575,16 @@ func TestRealCleanDaysNeverPause(t *testing.T) {
 				continue
 			}
 			for _, win := range []int{IntegrityIntradayOpenMin, IntegrityDeepOpenMin, IntegritySwingOpenMin} {
-				v := h.verdict(win, closeAt)
-				asked++
-				if v.Blocked {
-					blocked++
-					t.Errorf("%s: FALSE PAUSE at %s (window %d): %+v", dir, kernel.TableTimeCT(closeAt), win, v)
-					if blocked > 5 {
-						t.FailNow()
+				// the plain verdict AND the mentor one (round 2: the key-level leg
+				// must not pause a clean day either)
+				for _, v := range []IntegrityVerdict{h.verdict(win, closeAt), IntegrityVerdictForMentor("MNQ", win, closeAt)} {
+					asked++
+					if v.Blocked {
+						blocked++
+						t.Errorf("%s: FALSE PAUSE at %s (window %d): %+v", dir, kernel.TableTimeCT(closeAt), win, v)
+						if blocked > 5 {
+							t.FailNow()
+						}
 					}
 				}
 			}
