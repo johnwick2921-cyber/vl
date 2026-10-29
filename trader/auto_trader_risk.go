@@ -59,8 +59,6 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	at.checkFeedDown(now)
 	ownerpush.Retry()         // m438: re-offer owner pushes a budget / full queue dropped (bounded, stale ones discarded)
 	at.checkUnfilledHole(now) // m432: a hole NT8 has no history for -> P1 + owner push (reload it)
-	at.dataIntegrityBeat(now) // m445: the missing-data pause episode (one WARN + push, one INFO + push); entries only
-	at.dataTruthBeat(now)     // release #55: m446/m447 data-truth episodes (alert once, resume on measured clear); entries only
 	at.feedLagAlarmTick(now)  // m134 DS-108 (c): soft lag band under FEED DOWN held > 3 min → WARN
 	at.checkPositionDrawdown()
 	// Release #25 PK-2 — exit a planner position whose own thesis died
@@ -109,6 +107,13 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// feed outage or an NT8 lag across the 07:30 print skipped the −10 m
 	// cancel/flatten (10-14: FEED DOWN 03:44–07:49 spanned the CPI print).
 	at.mentorSweepsOnBeat()
+	// m452: the two data-gate episode beats run LAST, after every guard above
+	// (protection, daily-loss flatten, EOD flat, mentor sweeps), and bounded: they
+	// read the bar store (storeSwingInputs ~100 ms warm, seconds on a contended
+	// DB) and must never delay an exit-side action. They advance an ENTRY-pause
+	// episode only (one WARN + push each) and act on nothing.
+	// trader/data_beats_bounded.go; pinned by TestMonitorTickRunsTheDataBeatsLastAndBounded.
+	at.runDataGateBeats(now)
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:

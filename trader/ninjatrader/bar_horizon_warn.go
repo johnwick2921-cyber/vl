@@ -73,6 +73,9 @@ func armBarHorizonGrace(now time.Time) {
 	barHorizonMu.Lock()
 	barHorizonGrace, barHorizonArmed, barHorizonLanded = now, true, false
 	barHorizonMu.Unlock()
+	barHorizonBeyondMu.Lock() // a boot: the once-per-boot INFO lines may speak again
+	barHorizonBeyondSaid = map[string]bool{}
+	barHorizonBeyondMu.Unlock()
 }
 
 // noteBarHorizonBackfillLanded lifts the EMPTY grace the moment the AddOn's
@@ -169,22 +172,50 @@ func barHorizonCallersTxt(who map[string]int) string {
 // barHorizonWarn counts every detection, then decides whether to speak.
 // COUNT FIRST, ALWAYS (class 35): the counter must not inherit the dedupe.
 func barHorizonWarn(now time.Time, h kernel.BarHorizon, symbol, tf, caller string, ringCap int) {
-	why := h.Why()
+	// m452 (release #55) - TWO changes to what this function counts and says.
+	//
+	// (1) A DEPTH REQUEST BEYOND THE RING IS NOT A DEFECT. The two 12000-bar
+	// callers (the planner candle tape, the weekly shadow) ask a 2500-bar ring for
+	// five times what it can ever hold; the caller splices the rest from the store
+	// (barsWithStoreDepth prints its own "bars depth" line with the post-splice
+	// horizon). That read is SHORT on every single call by construction, and the
+	// live #54 boot showed what a structural SHORT does to the signal: 21,953
+	// "short" counts in 2.6 minutes (about 500x the #53 rate), a WARN class nobody
+	// can act on, and real hole lines buried under it. So it is now its own arm,
+	// "beyond_ring": counted (record, never infer), told ONCE per boot per
+	// (symbol, tf) at INFO, never WARNed, never counted as "short". EMPTY and HOLED
+	// are untouched and stay loud - a request beyond the ring that ALSO comes back
+	// empty or with holes inside the served span is still a finding.
+	//
+	// (2) THE BOOT GRACE IS APPLIED BEFORE THE COUNTERS. Between the Go boot and the
+	// AddOn's replay every site is served 0 bars; that is expected for ~4.5 minutes
+	// and the grace exists so it is not reported - but the empty and short counters
+	// were bumped BEFORE the grace check, so the grace silenced the line and not the
+	// numbers. A graced read now counts as "graced" and nothing else.
+	if h.Empty() && barHorizonInBootGrace(now) {
+		if h.Why() != "" {
+			telemetry.IncBarHorizon("graced")
+		}
+		return
+	}
+	beyondRing := h.Short() && !h.Empty() && ringCap > 0 && h.Requested > ringCap
+	empty, short, holed := h.Empty(), h.Short() && !beyondRing, h.Holed()
+	if beyondRing {
+		telemetry.IncBarHorizon("beyond_ring")
+		barHorizonNoteBeyondRing(symbol, tf, h, ringCap, caller)
+	}
+	why := barHorizonWhy(empty, short, holed)
 	if why == "" {
 		return
 	}
-	if h.Empty() {
+	if empty {
 		telemetry.IncBarHorizon("empty")
 	}
-	if h.Short() {
+	if short {
 		telemetry.IncBarHorizon("short")
 	}
-	if h.Holed() {
+	if holed {
 		telemetry.IncBarHorizon("holed")
-	}
-	if h.Empty() && barHorizonInBootGrace(now) {
-		telemetry.IncBarHorizon("graced")
-		return
 	}
 	// THE KEY IS THE CONDITION, NOT THE OBSERVER. (symbol, tf, why) — never
 	// the caller, never the counts. A ring that is short is one fact; the
@@ -215,12 +246,53 @@ func barHorizonWarn(now time.Time, h kernel.BarHorizon, symbol, tf, caller strin
 		why, symbol, h.Line(), ringCap, barHorizonCallersTxt(who), extra, barHorizonCountsTxt())
 }
 
+// barHorizonWhy joins the arms the way kernel.BarHorizon.Why does, over the
+// EFFECTIVE arms (a beyond-the-ring SHORT is not one of them).
+func barHorizonWhy(empty, short, holed bool) string {
+	var parts []string
+	if empty {
+		parts = append(parts, "EMPTY")
+	}
+	if short {
+		parts = append(parts, "SHORT")
+	}
+	if holed {
+		parts = append(parts, "HOLED")
+	}
+	return strings.Join(parts, "+")
+}
+
+// barHorizonInfof is the INFO writer of the once-per-boot lines; a var so the pins
+// can read it (the repo's capture sink is WARN+ only).
+var barHorizonInfof = logger.Infof
+
+var (
+	barHorizonBeyondMu   sync.Mutex
+	barHorizonBeyondSaid = map[string]bool{}
+)
+
+// barHorizonNoteBeyondRing says, ONCE per boot per (symbol, tf), that a caller
+// asks for more than the ring can hold. INFO: it is a fact about the call sites,
+// not a fault; the per-read numbers live in the "beyond_ring" counter.
+func barHorizonNoteBeyondRing(symbol, tf string, h kernel.BarHorizon, ringCap int, caller string) {
+	k := symbol + "|" + tf
+	barHorizonBeyondMu.Lock()
+	said := barHorizonBeyondSaid[k]
+	barHorizonBeyondSaid[k] = true
+	barHorizonBeyondMu.Unlock()
+	if said {
+		return
+	}
+	barHorizonInfof("🕳 bar horizon: %s %s is asked for %d bars but the ring holds at most %d (served %d) - a depth request beyond the ring is spliced from the store by its caller, not a hole; counted under beyond_ring, said once per boot · first asker %s",
+		symbol, tf, h.Requested, ringCap, h.Served, caller)
+}
+
 // barHorizonCountsTxt renders telemetry.BarHorizonCounts in a stable arm order
 // so two log lines can be diffed. Every value is READ; none is inferred.
 func barHorizonCountsTxt() string {
 	c := telemetry.BarHorizonCounts()
 	parts := make([]string, 0, len(c))
-	for _, k := range []string{"short", "holed", "empty", "graced", "suppressed"} {
+	for _, k := range []string{"short", "holed", "empty", "graced", "beyond_ring", "suppressed"} {
 		parts = append(parts, fmt.Sprintf("%s=%d", k, c[k]))
 	}
 	return strings.Join(parts, " ")

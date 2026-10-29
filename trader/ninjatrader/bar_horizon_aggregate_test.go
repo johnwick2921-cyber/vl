@@ -67,7 +67,7 @@ func TestHorizonWindowIsFiveMinutesAndReArmsWithCallers(t *testing.T) {
 	get := bhWarnCapture(t)
 	start := bhCT(2026, time.September, 16, 9, 30)
 	h := func(served int) kernel.BarHorizon {
-		return kernel.BarHorizon{Requested: 5000, Served: served}
+		return kernel.BarHorizon{Requested: 2400, Served: served} // m452: inside the 2500 ring - a request BEYOND the ring is no longer a SHORT
 	}
 	barHorizonWarn(start, h(154), "MNQ", "5m", "api/handler_klines.go:377", 2500)
 	for i := 1; i < 12; i++ { // 4m40s of further reads from two callers

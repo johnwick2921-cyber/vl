@@ -758,6 +758,19 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	// between this entry's set and its send sent it on the other's bracket.
 	endSend := at.lockEntrySend()
 	defer endSend()
+	// m452 - THE VERDICT IS ASKED AGAIN AT THE WIRE. The AI-decision and agent-chat
+	// entries were admitted at the head of this path; everything since - the
+	// reconcile-before-open flatten await (up to reconcileFlattenTimeout, 35 s),
+	// positions, balance, the market read - is a multi-second section in which a hole
+	// or a bad print can open. Picture and the armed rows re-ask in armAdmitted; this
+	// is the same question for the two paths that did not. Nothing has been written
+	// to the broker's bracket maps yet, so a refusal here sends and leaves nothing.
+	// Entry-only by construction: closes never reach openEntryWithRecord.
+	if v := at.dataIntegrityVerdictAt(ntTrader.IntegrityDeepOpenMin, time.Now(), false); v.Blocked {
+		telemetry.IncGateBlock(at.id, v.Class)
+		at.logWarnf("⏸ %s %s REFUSED AT THE WIRE - the data verdict turned while this entry was being prepared: %s. Exits and protection continue.", decision.Symbol, action, v.Reason)
+		return fmt.Errorf("%s%s", v.refusalPrefix(), v.Reason)
+	}
 	if market.IsCMEFuturesSymbol(decision.Symbol) && !carries {
 		if manual != nil {
 			manual.brokerCalled = true

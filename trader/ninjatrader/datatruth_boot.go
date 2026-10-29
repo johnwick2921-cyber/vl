@@ -8,6 +8,7 @@ import (
 	"vl/internal/datatruth/checks"
 	"vl/logger"
 	ntwire "vl/provider/ninjatrader"
+	"vl/safe"
 	"vl/store"
 )
 
@@ -27,8 +28,9 @@ import (
 // "required check not wired" pushes).
 
 var (
-	dataTruthReady  atomic.Bool
-	dataTruthWiring atomic.Bool // the once-guard
+	dataTruthReady   atomic.Bool
+	dataTruthWiring  atomic.Bool // the once-guard
+	dataTruthWarming atomic.Bool // the warmer once-guard (m452)
 )
 
 // DataTruthReady is true once WireDataTruthChecks has registered the checks.
@@ -92,5 +94,27 @@ func WireDataTruthChecks(bh *store.BarHistoryStore, server *ntwire.TCPServer) {
 	src := &ntwire.DataTruthSources{Server: server, Cache: server.BarCache()}
 	ntwire.WireDataTruth(src, storeSwingInputs(bh))
 	dataTruthReady.Store(true) // after the registration, never before
+	startDataTruthWarmer()
 	logger.Infof("🧪 data-truth checks wired: bad_print · cross_frame · indicator_lookback (+swing4h, levels, session) · ingest_loss · contract_roll over the live NT8 ring + the 1m/5m store — NEW entries pause when any cannot be trusted (fail closed); exits, stops and protection never consult them")
+}
+
+// startDataTruthWarmer keeps the swing/levels store read HOT (m452). The read is
+// ~100 ms (27000 1m + 5400 5m rows) and is cached per (symbol, wall-clock minute);
+// without a warmer the first asker of every minute pays it - and that asker can be
+// an entry path, or the armed placement pass holding armedPassMu. The warmer reads
+// the minute just after it opens, off every trader lock, on its own goroutine, so
+// the entry paths and the 60 s beats find it cached (concurrent readers share one
+// read: cachedInputs is single-flight). It only warms symbols the cache has already
+// been asked about, acts on nothing and ends with the process.
+func startDataTruthWarmer() {
+	if !dataTruthWarming.CompareAndSwap(false, true) {
+		return
+	}
+	safe.GoNet("datatruth-warmer", "", func() {
+		for {
+			now := time.Now()
+			time.Sleep(now.Truncate(time.Minute).Add(time.Minute + 1500*time.Millisecond).Sub(now))
+			checks.WarmSwingInputs(time.Now())
+		}
+	})
 }

@@ -28,12 +28,12 @@ func TestShortReadWarnIsDedupedAndCounted(t *testing.T) {
 	resetBarHorizonWarnsForSessionDay(0)
 	get := bhWarnCapture(t)
 	cache := ntwire.NewBarCache(2500)
-	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 8, 9, 0), 2500)
+	bhSeed(cache, "MNQ", "1m", bhCT(2026, time.September, 8, 9, 0), 1000)
 
 	// ONE call site for every read below: resolveBarHorizonCaller names the
 	// frame, and the frame is part of the dedupe key — two different lines in
 	// this test would be two different keys and nothing would ever suppress.
-	read := func(at time.Time) { barsFromCache(cache, "MNQ", "1m", 12000, at) }
+	read := func(at time.Time) { barsFromCache(cache, "MNQ", "1m", 2500, at) } // m452: inside the ring, so a SHORT is a real one
 
 	base := telemetry.BarHorizonCounts()["short"]
 	// The live arm-133 instant, to the second, so the "since" below is a

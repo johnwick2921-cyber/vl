@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/internal/ownerpush"
@@ -278,6 +279,10 @@ type integrityEpisode struct {
 	unknownSince time.Time
 	pushed       bool
 	scope        string // pauseScopeAll | pauseScopeSwing — what the standing pause really refuses
+
+	// m452 (data_beats_bounded.go): one data-gate beat in flight at a time.
+	beatInFlight  atomic.Bool
+	beatStallSaid atomic.Bool
 }
 
 // What a standing pause refuses (review round 6, D-new1). A MENTOR trader's two
@@ -395,7 +400,12 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		}
 		if !e.active {
 			e.active, e.since, e.class, e.scope = true, now, worst.Class, scope
-			e.key = fmt.Sprintf("data-paused|%s|%d", at.id, now.Unix())
+			// m452: the trader id is part of the owner-push KIND (the text before the
+			// first "|" is ownerpush's 3-per-hour budget bucket). "data-paused|<id>|ts"
+			// put every trader on one MNQ hole in ONE bucket, so three traders spent the
+			// whole budget on their first pushes and the widen / narrow / resume pushes
+			// (or a second hole in the hour) were held for up to 90 minutes.
+			e.key = ownerPushPausedKey(at.id, now)
 			e.pushed = false
 			telemetry.IncDataIntegrityEpisode(worst.Class)
 			at.logWarnf("⏸ TRADING PAUSED (%s): %s — %s; %s; exits, stops, BE/trail moves, closes and protection are unaffected. %s", worst.Class, worst.Reason, wd.refuses, wd.withdraw, wd.tail)
@@ -460,12 +470,25 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		}
 		at.logInfof("▶ TRADING RESUMED: %s (paused %s) — NEW entries are allowed again.", logTail, held)
 		if wasPushed {
-			ownerpush.Push("data-resumed|"+strings.TrimPrefix(key, "data-paused|"),
+			ownerpush.Push(ownerPushResumedKey(key),
 				fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s (paused %s).", at.ownerPushTraderLabel(), pushTail, held))
 		} else {
 			ownerpush.Cancel(key) // never delivered the pause: do not deliver it after the resume
 		}
 	}
+}
+
+// ownerPushPausedKey is the dedupe key of a trader's pause episode. The text
+// before the first "|" is the owner-push budget kind, so it carries the trader id:
+// each trader has its own 3-per-hour bucket (m452).
+func ownerPushPausedKey(traderID string, now time.Time) string {
+	return fmt.Sprintf("data-paused-%s|%d", traderID, now.Unix())
+}
+
+// ownerPushResumedKey is the resume push's key for the pause key `paused`; the
+// same per-trader kind shape.
+func ownerPushResumedKey(paused string) string {
+	return "data-resumed-" + strings.TrimPrefix(paused, "data-paused-")
 }
 
 // integrityWithdrawReason says whether resting entries must be withdrawn now
