@@ -63,6 +63,8 @@ type stateFile struct {
 	bootUnix int64
 	exit     string
 	kick     chan struct{}
+	done     chan struct{} // closed when the writer goroutine has exited
+	closed   bool          // guarded by Pusher.mu; set by CloseState
 	fileMu   sync.Mutex
 }
 
@@ -109,10 +111,11 @@ func (p *Pusher) EnableState(path string) BootInfo {
 			delete(p.seen, h.key)
 		}
 	}
-	p.state = &stateFile{path: path, bootUnix: now.Unix(), exit: "running", kick: make(chan struct{}, 1)}
+	p.state = &stateFile{path: path, bootUnix: now.Unix(), exit: "running", kick: make(chan struct{}, 1), done: make(chan struct{})}
 	p.mu.Unlock()
 	st := p.state
 	safe.GoNamed("owner-push-state", func() {
+		defer close(st.done)
 		for range st.kick {
 			p.writeState()
 		}
@@ -145,7 +148,7 @@ func readState(path string) (*stateDisk, error) {
 // persistLocked asks the writer for a snapshot; it never blocks and never does
 // I/O under p.mu (the caller holds it).
 func (p *Pusher) persistLocked() {
-	if p.state == nil {
+	if p.state == nil || p.state.closed {
 		return
 	}
 	select {
@@ -189,6 +192,26 @@ func (p *Pusher) writeState() {
 	if err := writeAtomic(st.path, b); err != nil {
 		logger.Errorf("owner push: state write %s: %v", st.path, err)
 	}
+}
+
+// CloseState stops the state writer after one final write and waits for it, so
+// nothing touches the file afterwards. Production never calls it (the process
+// exits); tests do, before their temp dir is removed.
+func (p *Pusher) CloseState() {
+	if p == nil {
+		return
+	}
+	p.mu.Lock()
+	st := p.state
+	if st == nil || st.closed {
+		p.mu.Unlock()
+		return
+	}
+	st.closed = true
+	close(st.kick)
+	p.mu.Unlock()
+	<-st.done
+	p.writeState()
 }
 
 // FlushState writes the current snapshot now. Tests; production uses the writer.

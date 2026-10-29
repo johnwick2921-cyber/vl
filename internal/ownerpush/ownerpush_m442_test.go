@@ -13,6 +13,15 @@ import (
 
 // m442 - the owner alerts must be TRUE and must REACH the owner.
 
+// enableState enables persistence and guarantees the writer is stopped before
+// the test's temp dir is removed.
+func enableState(t *testing.T, p *Pusher, path string) BootInfo {
+	t.Helper()
+	info := p.EnableState(path)
+	t.Cleanup(p.CloseState)
+	return info
+}
+
 // waitState polls the state file (written by the pusher's own writer goroutine -
 // the production path, no FlushState) until pred holds.
 func waitState(t *testing.T, path string, pred func(*stateDisk) bool) {
@@ -211,7 +220,7 @@ func TestHeldAndSeenSurviveARestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "ownerpush.json")
 	f := &flaky{fail: errors.New("telegram down")}
 	p, _ := newClocked(f.send)
-	info := p.EnableState(path)
+	info := enableState(t, p, path)
 	if info.PrevExit != PrevExitNone {
 		t.Fatalf("first boot PrevExit = %q", info.PrevExit)
 	}
@@ -229,7 +238,7 @@ func TestHeldAndSeenSurviveARestart(t *testing.T) {
 	g := &flaky{}
 	q, c2 := newClocked(g.send)
 	q.SetClockForTest(c2.now)
-	info = q.EnableState(path)
+	info = enableState(t, q, path)
 	if info.PrevExit != PrevExitUnclean {
 		t.Fatalf("a file left in 'running' must read as not-clean, got %q", info.PrevExit)
 	}
@@ -256,7 +265,7 @@ func TestInFlightMessageIsPersistedAsHeld(t *testing.T) {
 	gate := make(chan struct{})
 	t.Cleanup(func() { close(gate) })
 	p, _ := newClocked(func(string) error { <-gate; return nil })
-	p.EnableState(path)
+	enableState(t, p, path)
 	p.Push("protection_partial|t|e", "PARTIAL")
 	waitState(t, path, func(d *stateDisk) bool {
 		return len(d.Held) == 1 && d.Held[0].Key == "protection_partial|t|e"
@@ -267,14 +276,14 @@ func TestStaleHeldIsNotRestored(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.json")
 	f := &flaky{fail: errors.New("down")}
 	p, c := newClocked(f.send)
-	p.EnableState(path)
+	enableState(t, p, path)
 	p.Push("feed-down|e", "OLD NEWS")
 	p.Flush()
 	waitState(t, path, func(d *stateDisk) bool { return len(d.Held) == 1 })
 	q, c2 := newClocked((&flaky{}).send)
 	c2.add(holdTTL + time.Minute)
 	_ = c
-	if info := q.EnableState(path); info.Restored != 0 || q.Held() != 0 {
+	if info := enableState(t, q, path); info.Restored != 0 || q.Held() != 0 {
 		t.Fatalf("a held message older than holdTTL must not be restored: %+v held=%d", info, q.Held())
 	}
 }
@@ -282,12 +291,12 @@ func TestStaleHeldIsNotRestored(t *testing.T) {
 func TestCleanShutdownIsRecordedAndReported(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.json")
 	p, _ := newClocked((&flaky{}).send)
-	p.EnableState(path)
+	enableState(t, p, path)
 	restore := Use(p)
 	MarkCleanShutdown()
 	restore()
 	q, _ := newClocked((&flaky{}).send)
-	info := q.EnableState(path)
+	info := enableState(t, q, path)
 	if info.PrevExit != PrevExitClean {
 		t.Fatalf("PrevExit = %q, want clean", info.PrevExit)
 	}
@@ -299,7 +308,7 @@ func TestUnreadableStateStartsEmptyAndSaysSo(t *testing.T) {
 		t.Fatal(err)
 	}
 	p, _ := newClocked((&flaky{}).send)
-	if info := p.EnableState(path); info.PrevExit != PrevExitUnknown {
+	if info := enableState(t, p, path); info.PrevExit != PrevExitUnknown {
 		t.Fatalf("PrevExit = %q, want %q", info.PrevExit, PrevExitUnknown)
 	}
 }
@@ -307,7 +316,7 @@ func TestUnreadableStateStartsEmptyAndSaysSo(t *testing.T) {
 func TestStateFileIsOwnerOnly(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "s.json")
 	p, _ := newClocked((&flaky{}).send)
-	p.EnableState(path)
+	enableState(t, p, path)
 	fi, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
