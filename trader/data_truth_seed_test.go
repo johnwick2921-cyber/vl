@@ -29,8 +29,8 @@ import (
 //                                  -> TestDataTruthWaitsForTheSeedQuietly RED
 //   S2  dataTruthStarting ignores the seed edge's grace (always false)
 //                                  -> TestDataTruthWaitsForTheSeedQuietly RED
-//   S3  rehydrateBootRing never marks seeded (ntTrader pin)
-//                                  -> TestRehydrateBootRingOpensTheSeedEdge RED
+//   S3  rehydrateRingFromStore never marks seeded (ntTrader pin)
+//                                  -> TestBootRehydrateOpensTheSeedEdge RED
 
 func armUnseededGate(t *testing.T) (*truthFake, *AutoTrader, *[]string) {
 	t.Helper()

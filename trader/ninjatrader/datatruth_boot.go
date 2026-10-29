@@ -37,7 +37,7 @@ func DataTruthReady() bool { return dataTruthReady.Load() }
 
 // DataTruthSeeded is true once the boot seed has LANDED: the AddOn's
 // bars_historical replay was waited for and the ring rehydrated from the store
-// (rehydrateBootRing). #55 m449: the checks are registered a few seconds after
+// (rehydrateRingFromStore, the boot entry). #55 m449: the checks are registered a few seconds after
 // the wire server exists - BEFORE any of that - so judging at the registration
 // edge read an empty, not-yet-arrived ring as lost data: contract_roll,
 // indicator_lookback (113 of 113 slots missing) and session eVWAP each opened an
@@ -71,14 +71,6 @@ func SetDataTruthReadyForTest(v bool) (restore func()) {
 func SetDataTruthSeededForTest(v bool) (restore func()) {
 	prev := dataTruthSeeded.Swap(v)
 	return func() { dataTruthSeeded.Store(prev) }
-}
-
-// rehydrateBootRing is the boot seed step the nt8-bar-backfill goroutine runs
-// once the AddOn replay has been waited for: rehydrate the ring from the store,
-// then - and only then - let the data-truth checks judge it.
-func rehydrateBootRing(bh *store.BarHistoryStore, server *ntwire.TCPServer, now time.Time) {
-	rehydrateRingFromStore(bh, server, now)
-	MarkDataTruthSeeded()
 }
 
 // The swing / levels / session checks read the STORE (the 2500-bar ring is
