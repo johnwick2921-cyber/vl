@@ -52,14 +52,19 @@ func m442Count(msgs []string, sub string) int {
 	return n
 }
 
+// m442WaitFor polls cond WITHOUT p.Flush(): Flush is WaitGroup.Wait, and the
+// production goroutine under test (close-sync -> NoteRefusal -> Push) does
+// pending.Add(1) from zero concurrently - a WaitGroup Add-from-zero racing a
+// Wait, which -race flags (review D1, 3 of 8 runs). The condition reads the
+// sink, which the worker fills; callers Flush ONCE, after it holds.
 func m442WaitFor(t *testing.T, what string, p *ownerpush.Pusher, cond func() bool) {
 	t.Helper()
+	_ = p
 	deadline := time.Now().Add(3 * time.Second)
 	for !cond() {
 		if time.Now().After(deadline) {
 			t.Fatalf("timed out waiting for %s", what)
 		}
-		p.Flush()
 		time.Sleep(2 * time.Millisecond)
 	}
 }
@@ -257,8 +262,11 @@ func TestM442WindowRefusalsAreNotAStall(t *testing.T) {
 	telemetry.ResetSetupStallsForTest()
 	t.Setenv("MENTOR_PLACE", "1")
 	at, st := stallAlarmTrader(t, "m442-win")
-	at.config.StrategyConfig = &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}} // unset window = 08:30 + 60 min
-	now := mentorStaleBlockClock(10, 0)                                                                      // 10:00 CT: outside 08:30-09:30
+	// DayPlan enabled: emitAlert silently drops the non-ops kind
+	// "mentor-setup-stalled" without it, so the final no-alert assertion could
+	// never fail (review D2).
+	at.config.StrategyConfig = &store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}, RiskControl: store.RiskControlConfig{MentorMode: true}} // unset window = 08:30 + 60 min
+	now := mentorStaleBlockClock(10, 0)                                                                                                                        // 10:00 CT: outside 08:30-09:30
 	setMentorNowSource(func() time.Time { return now })
 	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)

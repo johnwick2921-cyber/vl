@@ -393,7 +393,7 @@ export const status: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'Refusal storm: when the SAME refusal repeats for one trader and position — a stop-widen REFUSED, a STOP MOVE NOT APPLIED, a rejected exit, a refused swing break-even or hold-close — 3 times within 10 minutes, you get ONE message naming the trader, the position or arm, the kind of refusal, the count and the last reason. It is one message per episode: the episode lasts until 10 minutes pass with no further refusal of that kind, and the next storm after that is a new message. Each kind of refusal has its own 3-per-hour budget, so a storm can never use up the budget FEED DOWN needs. This exists because refusals used to be one log line each and sat unread for days (95 refused break-evens between 10-23 and 10-29).',
+      text: 'Refusal storm: when the SAME refusal repeats for one trader and position (the STOP MOVE NOT APPLIED kind is counted per trader, as "stop moves") — a stop-widen REFUSED, a STOP MOVE NOT APPLIED, a rejected exit, a refused swing break-even or hold-close — 3 times within 10 minutes, you get ONE message naming the trader, the position or arm, the kind of refusal, the count and the last reason. It is one message per episode: the episode lasts until 10 minutes pass with no further refusal of that kind, and the next storm after that is a new message. Each kind of refusal has its own 3-per-hour budget, so a storm can never use up the budget FEED DOWN needs. This exists because refusals used to be one log line each and sat unread for days (95 refused break-evens between 10-23 and 10-29).',
     },
     { kind: 'h', text: 'An unfillable hole — what you do' },
     {
