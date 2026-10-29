@@ -36,6 +36,64 @@ journalctl --user -u vl-backup.service -n 50     # last run's log
 systemctl --user disable --now vl-backup.timer   # stop auto-backups
 ```
 
+## Weekly proof that the backups restore (m448, release #54)
+
+A backup nobody has restored is a hope. `deploy/backup-restore-test.sh` takes the
+**newest** DB backup (by file time, across `~/vl-backups/auto/{daily,weekly}` and the
+retired-prefix `auto/{daily,weekly}` dirs if they still exist), decompresses it into its
+own `mktemp -d` dir, opens the copy **read-only**, and requires:
+
+- `PRAGMA integrity_check` to return exactly `ok`;
+- `traders` >= 1 and `trader_positions` >= 1 rows;
+- the newest 1m bar to be no older than 120 h measured against the **backup's own time**
+  (a holiday weekend is ~4 days of closed market; `VL_RESTORE_TEST_MAX_BARS_AGE_H` overrides).
+
+It prints ONE line and exits non-zero on any failure:
+
+```
+RESTORE-TEST OK ts=1793279004 src=vl-2026-10-29_050015.db.gz integrity=ok traders=3 positions=714 bars=2013877 bars_newest=2026-10-29T10:34:00Z bars_newest_age_h=0.4 secs=214
+RESTORE-TEST FAIL ts=... src=... integrity=ok traders=0 ... reason=no-traders secs=...
+```
+
+Every run also writes that line to a **new** file `~/vl-backups/restore-test/<UTC stamp>.result`
+(append-only, never overwritten, never removed). The nightly data report (16:10 CT, Telegram)
+reads the newest of those files and prints it as its last line: `Backup restore test: OK <time>
+(<backup>)`, or `FAIL`, or `OVERDUE, weekly run missed` when the newest result is older than
+8 days, or `n/a` when no result file exists (timer not installed / never ran).
+
+Run it by hand any time (no sudo, does not touch the live DB or stop the bot):
+
+```bash
+nice -n 15 ionice -c3 bash ~/vl/deploy/backup-restore-test.sh; echo "rc=$?"
+```
+
+Disk: it refuses (a FAIL with `reason=disk-space(...)`) when the work volume has less than
+8x the compressed backup or `VL_RESTORE_TEST_MIN_FREE_GB` (default 20) free. The decompressed
+copy of a 580 MB backup is ~3 GB and exists only for the minutes of the run; the script removes
+exactly its own `restore-test.*` dir and nothing else.
+
+### Install the weekly timer (OWNER step - not installed by the build)
+
+The unit files are in the repo; nothing installs them until you do (no sudo; same as the
+backup timer, linger is already on):
+
+```bash
+mkdir -p ~/.config/systemd/user
+install -m 0644 ~/vl/deploy/systemd-user/vl-restore-test.service ~/.config/systemd/user/
+install -m 0644 ~/vl/deploy/systemd-user/vl-restore-test.timer   ~/.config/systemd/user/
+chmod +x ~/vl/deploy/backup-restore-test.sh
+systemctl --user daemon-reload
+systemctl --user enable --now vl-restore-test.timer
+systemctl --user list-timers vl-restore-test.timer --all --no-pager    # next run: Sun 12:00 CT
+systemctl --user start vl-restore-test.service                         # run it right now (optional)
+journalctl --user -u vl-restore-test.service -n 20 --no-pager          # the result line
+systemctl --user disable --now vl-restore-test.timer                   # to stop it
+```
+
+A FAILED unit (`systemctl --user --failed`) or a `FAIL` / `OVERDUE` line in the nightly report
+means the newest backup cannot be trusted: take a fresh one (`systemctl --user start
+vl-backup.service`) and re-run the test before relying on any restore.
+
 ## Restore the database (rewritten release #22 — the old steps were unsafe)
 
 **Why the old steps were wrong** (OPS review 10-14 P1-3; each reproduced on
