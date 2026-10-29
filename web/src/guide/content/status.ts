@@ -379,6 +379,22 @@ export const status: GuideSection = {
       kind: 'p',
       text: "On 2026-10-25 17:00 CT to 2026-10-26 03:40 CT the bot was blind for about 10.5 hours: NinjaTrader was running and linked, but its Tradovate data connection was off, so no bars came in — and FEED DOWN showed only in the alert center and the log, which nobody was looking at. Since release #52 a few ops alerts are also sent as a Telegram message to the chat you bound to the bot: FEED DOWN (only while CME is open) and, once, FEED BACK when bars return; a trader that is DOWN with no evaluator; a stuck dead-man reconcile block; an unprotected or partly protected position (the protection alerts); and an unfillable bar hole (below). It is one message per episode — a long outage is one message, not one a minute, and two traders on one box tell you once. Each kind has its own budget of 3 messages an hour (30 in total as a backstop), so a position that keeps raising the same alert can never use up the budget FEED DOWN or a trader-down message needs; a message the budget refused is held and sent when the budget reopens (a held message older than 90 minutes is dropped as stale, and a held FEED DOWN is withdrawn once FEED BACK has gone out). A naked position whose stop keeps being refused is ONE episode — one alert and one message, not one a minute. Protection messages name the trader by its display name. Sends are sent in the background so they can never slow a trade decision, each Telegram call times out after 12 seconds, a failed send logs the error with the bot token removed, and the text carries no keys or passwords. Nothing is sent when no Telegram chat is bound, and a friend's bot never sends one. It is outbound only: it adds no command and no way to control the bot from Telegram. The in-app alert is still raised either way.",
     },
+    {
+      kind: 'h',
+      text: 'Owner push — a failed send is retried, and what else reaches your phone',
+    },
+    {
+      kind: 'p',
+      text: "A message that Telegram did not accept (a timeout, a 502, the bot API unreachable) is NOT counted as sent: it is held and tried again after 30 seconds, then 1, 2, 4, 8 and at most every 15 minutes, until it goes out or is 90 minutes old; a failed try does not use up the hourly budget. Every success and every failure is logged, and the counts (sent, failed, held, skipped because no chat is bound) are on the health page's owner_push block, which is absent on a friend's bot. Held messages and the already-told episodes are kept in a small file next to the database (data.db.ownerpush.json, readable by you only), so a restart or an Update does not drop a held alert or tell you the same episode twice. The budget is 3 messages per kind per hour and 30 in total, and the boot line prints exactly those numbers.",
+    },
+    {
+      kind: 'p',
+      text: 'When the bot starts you get one message: the running revision and how the last process ended — stopped cleanly, or NOT cleanly (a crash, the kill the deploy uses, a power loss) — plus how many held alerts were restored. If trading is refused at boot the message says so. A rejected exit (NinjaTrader refused to close a position, position_close_rejected) now raises a P0 alert and one message per episode: the position is still open. The stop-move-not-applied P0 (NT8 did not apply a stop move) also reaches your phone now.',
+    },
+    {
+      kind: 'p',
+      text: 'Refusal storm: when the SAME refusal repeats for one trader and position — a stop-widen REFUSED, a STOP MOVE NOT APPLIED, a rejected exit, a refused swing break-even or hold-close — 3 times within 10 minutes, you get ONE message naming the trader, the position or arm, the kind of refusal, the count and the last reason. It is one message per episode: the episode lasts until 10 minutes pass with no further refusal of that kind, and the next storm after that is a new message. Each kind of refusal has its own 3-per-hour budget, so a storm can never use up the budget FEED DOWN needs. This exists because refusals used to be one log line each and sat unread for days (95 refused break-evens between 10-23 and 10-29).',
+    },
     { kind: 'h', text: 'An unfillable hole — what you do' },
     {
       kind: 'p',

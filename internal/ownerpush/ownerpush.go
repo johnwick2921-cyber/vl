@@ -105,7 +105,7 @@ type Stats struct {
 	Dropped      int    `json:"dropped"`
 	Held         int    `json:"held"`
 	Stale        int    `json:"stale_discarded"`
-	LastError    string `json:"last_error,omitempty"`
+	LastError    string `json:"-"` // log + tests only: /api/health is unauthenticated, so the error text stays off it
 	LastSentUnix int64  `json:"last_sent_unix,omitempty"`
 	LastFailUnix int64  `json:"last_failed_unix,omitempty"`
 }
