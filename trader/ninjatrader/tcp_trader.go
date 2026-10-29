@@ -47,6 +47,14 @@ type TCPTrader struct {
 
 	mu       sync.Mutex
 	stopLoss map[string]float64 // key: "<symbol>:<side>"
+	// stopLossOwner (m440, N1) names the signal id whose position/order the
+	// side-keyed stopLoss value belongs to — same key. "" = unbound: a bare
+	// SetStopLoss value still waiting for the entry that will consume it. A
+	// side key has no memory of WHICH position wrote it, so a value left by an
+	// earlier same-side position (BE'd to 29700, closed) judged the NEXT long's
+	// break-even (29522) as a "widen" for 85 min (pos 712). MoveStopToBreakeven
+	// reads the side key only when this says the value is the moved signal's own.
+	stopLossOwner map[string]string
 	// stopBySignal is the per-signal live stop for the mentor exit-drive's
 	// signal-keyed moves (two legs of one mentor intent carry two signal ids on
 	// the SAME side, so the side-keyed stopLoss cannot guard both). Keyed by
@@ -303,14 +311,15 @@ var _ types.Trader = (*TCPTrader)(nil)
 // The server's lifecycle is owned by the caller (transport.go).
 func NewTCPTrader(server *ntwire.TCPServer, symbol string, account ...string) *TCPTrader {
 	t := &TCPTrader{
-		server:    server,
-		symbol:    symbol,
-		stopLoss:  map[string]float64{},
-		createdMs: time.Now().UnixMilli(),
-		takePrft:  map[string]float64{},
-		guard:     newOrderGuard(),
-		pending:   map[string]string{},
-		pendingAt: map[string]int64{},
+		server:        server,
+		symbol:        symbol,
+		stopLoss:      map[string]float64{},
+		stopLossOwner: map[string]string{},
+		createdMs:     time.Now().UnixMilli(),
+		takePrft:      map[string]float64{},
+		guard:         newOrderGuard(),
+		pending:       map[string]string{},
+		pendingAt:     map[string]int64{},
 	}
 	if len(account) > 0 {
 		t.boundAccount = strings.TrimSpace(account[0])
@@ -739,12 +748,17 @@ func (t *TCPTrader) placeEntryWith(symbol, side string, quantity float64, own *e
 	serr := t.server.SendSignal(payload)
 	latchSent = sendAttempted(serr)
 	b3Sent = latchSent
-	if own != nil && latchSent {
-		// W1b FOLD-3 — the maps learn the bracket only now: the entry may be on
-		// the wire carrying it (the AUTHORED values, as SetStopLoss stored them).
+	if latchSent {
 		t.mu.Lock()
-		t.stopLoss[keyFor(symbol, upperSide)] = own.stop
-		t.takePrft[keyFor(symbol, upperSide)] = own.target
+		if own != nil {
+			// W1b FOLD-3 — the maps learn the bracket only now: the entry may be on
+			// the wire carrying it (the AUTHORED values, as SetStopLoss stored them).
+			t.stopLoss[keyFor(symbol, upperSide)] = own.stop
+			t.takePrft[keyFor(symbol, upperSide)] = own.target
+		}
+		// m440 (N1): the side-keyed stop is now THIS entry's — bind it, so a
+		// break-even for a later entry never reads it as its own.
+		t.bindSideStopLocked(keyFor(symbol, upperSide), signalID)
 		t.mu.Unlock()
 	}
 	if err := serr; err != nil {
@@ -868,6 +882,7 @@ func (t *TCPTrader) placeLimitEntry(symbol, side string, quantity float64, limit
 	serr := t.server.SendSignal(payload)
 	latchSent = sendAttempted(serr)
 	b3Sent = latchSent
+	t.reseedSideStopOnEntry(symbol, side, signalID, sl, latchSent) // m440 (N1)
 	if err := serr; err != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: send armed signal: %w", err)
 	}
@@ -1058,6 +1073,7 @@ func (t *TCPTrader) placeStopEntry(symbol, side string, quantity float64, stopPx
 	serr := t.server.SendSignal(payload)
 	latchSent = sendAttempted(serr)
 	b3Sent = latchSent
+	t.reseedSideStopOnEntry(symbol, side, signalID, sl, latchSent) // m440 (N1)
 	if err := serr; err != nil {
 		return "", fmt.Errorf("ninjatrader/tcp: send stop-entry signal: %w", err)
 	}
@@ -1424,7 +1440,9 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	key := keyFor(t.symbol, upperSideStr(side))
 	sid := t.resolveEntrySignalID(t.symbol, side)
 	t.mu.Lock()
-	cur := t.stopLoss[key]
+	// m440 (N1): the live stop of the signal being MOVED — never a bare
+	// side-keyed value an earlier same-side position left behind.
+	cur := t.liveStopForMoveLocked(key, sid)
 	tid := t.traderID // A2 (G1)
 	t.mu.Unlock()
 	if sid == "" {
@@ -1467,6 +1485,7 @@ func (t *TCPTrader) MoveStopToBreakeven(side string, newStop float64) error {
 	// Track the new stop so a subsequent move is checked against it.
 	t.mu.Lock()
 	t.stopLoss[key] = newStop
+	t.bindSideStopLocked(key, sid) // m440 (N1): this stop is sid's
 	t.noteStopMoveLocked(side, newStop)
 	// P2-1 (release #22 rescan) — ALSO record it under the signal the frame
 	// addressed. The side-keyed stopLoss cannot say WHICH position it belongs
@@ -1722,6 +1741,8 @@ func (t *TCPTrader) SetStopLoss(symbol, positionSide string, quantity, stopPrice
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.stopLoss[keyFor(symbol, upperSideStr(positionSide))] = stopPrice
+	// m440 (N1): a bare set is unbound until the entry that consumes it is sent.
+	t.bindSideStopLocked(keyFor(symbol, upperSideStr(positionSide)), "")
 	return nil
 }
 
@@ -2202,6 +2223,70 @@ func flattenKey(symbol, side string) string {
 	return strings.ToUpper(strings.TrimSpace(symbol)) + "|" + strings.ToUpper(strings.TrimSpace(side))
 }
 
+// bindSideStopLocked records which signal owns the side-keyed stop at key
+// ("" = unbound). Caller holds t.mu.
+func (t *TCPTrader) bindSideStopLocked(key, signalID string) {
+	if t.stopLossOwner == nil {
+		t.stopLossOwner = map[string]string{}
+	}
+	t.stopLossOwner[key] = signalID
+}
+
+// liveStopForMoveLocked (m440, N1) is the stop the B1 widen ban judges a move
+// of signalID against: that signal's own per-signal record first, else the
+// side-keyed stop ONLY when it is that signal's (or an unbound SetStopLoss
+// value). A side-keyed value owned by ANOTHER signal is a different position's
+// stop and never a reference. 0 = unknown (no ban; the same as after a
+// restart). Caller holds t.mu.
+func (t *TCPTrader) liveStopForMoveLocked(key, signalID string) float64 {
+	if signalID != "" {
+		if v := t.stopBySignal[signalID]; v > 0 {
+			return v
+		}
+	}
+	if owner := t.stopLossOwner[key]; owner == "" || owner == signalID {
+		return t.stopLoss[key]
+	}
+	return 0
+}
+
+// reseedSideStopOnEntry (m440, N1) re-seeds the side-keyed stop for a NEW armed
+// (limit / stop) entry that reached the wire: the value becomes the entry's own
+// wire stop, owned by its signal id, so the previous same-side position's BE
+// stop is gone from the key the instant the new entry is sent. Does nothing
+// when the send was provably not attempted (the W1b FOLD-3 rule: a refused
+// entry leaves the maps untouched).
+func (t *TCPTrader) reseedSideStopOnEntry(symbol, side, signalID string, wireStop float64, sent bool) {
+	if !sent || signalID == "" {
+		return
+	}
+	key := keyFor(symbol, upperSideStr(side))
+	t.mu.Lock()
+	t.stopLoss[key] = wireStop
+	t.bindSideStopLocked(key, signalID)
+	t.mu.Unlock()
+}
+
+// ForgetSideStopOnClose (m440, N1) drops the side-keyed stop when the position
+// that owns it has WHOLLY closed: a position_close with leg 0 for the owning
+// signal. A split-leg close (leg 1/2) leaves a runner alive, so it never
+// clears. A value owned by a DIFFERENT signal, or an unbound SetStopLoss value
+// still waiting for its entry, is left alone.
+func (t *TCPTrader) ForgetSideStopOnClose(symbol, side, signalID string, leg int) {
+	if t == nil || leg != 0 {
+		return
+	}
+	key := keyFor(symbol, upperSideStr(side))
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	owner := t.stopLossOwner[key]
+	if owner == "" || (signalID != "" && owner != signalID) {
+		return
+	}
+	delete(t.stopLoss, key)
+	delete(t.stopLossOwner, key)
+}
+
 // MarkCloseConfirmed records that a FILL-CONFIRMED close (position_close frame)
 // arrived for (symbol, side) on this trader's bound account. Called from close-sync
 // on every position_close. This is the fast, account-correct flat signal the
@@ -2237,6 +2322,7 @@ func (t *TCPTrader) ResetAccountState() {
 	t.hasFill = false
 	t.lastFill = ntwire.FillPayload{}
 	t.stopLoss = map[string]float64{}
+	t.stopLossOwner = map[string]string{}
 	t.takePrft = map[string]float64{}
 	t.pending = map[string]string{}
 	t.pendingAt = map[string]int64{}

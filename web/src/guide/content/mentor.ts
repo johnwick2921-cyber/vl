@@ -640,7 +640,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Never widen a stop, never add, never flip',
-          body: 'A stop only ever moves toward break-even. Never add to a position, and never flip while one is open: ANY entry (same or opposite side) is refused while a mentor position is open — flat first (owner ruling 2026-09-03 "no adds, no flips"). Once flat, the next tick may place the other side (the box "Uno reverse" trades after the stop, never before). A fill also cancels every other working mentor entry on both sides (one working entry per side + OCO) before it can fill.',
+          body: 'A stop only ever moves toward break-even. Never add to a position, and never flip while one is open: ANY entry (same or opposite side) is refused while a mentor position is open — flat first (owner ruling 2026-09-03 "no adds, no flips"). Once flat, the next tick may place the other side (the box "Uno reverse" trades after the stop, never before). A fill also cancels every other working mentor entry on both sides (one working entry per side + OCO) before it can fill. The never-widen check judges a move against the stop of the position being moved (its own entry stop or its last move), never against a stop an earlier position on the same side left behind: before 2026-10-29 a long that had been moved to break-even at 29700 made the NEXT long\u2019s break-even at 29522 read as a widen and refuse for ~85 minutes (95 refusals since 10-23).',
 
           cite: 'D1.2 p2 @00:08–00:24 — "Không bao giờ được dời lệnh buy stop của mình xuống cây nến kế tiếp" (never widen); D1.1 p1 @17:00–17:44 (never add); owner ruling 2026-09-03 "no adds, no flips" — live',
         },
