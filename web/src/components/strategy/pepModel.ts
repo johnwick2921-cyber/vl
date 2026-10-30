@@ -45,8 +45,11 @@ export const PEP_DEFAULTS = {
   },
 } as const
 
-/** Ranges — the SAME bounds as the Go resolver (a typed number outside them is
- *  clamped on blur, matching what the server would run and log). */
+/** Ranges — the Go resolver's bounds, EXCEPT two UI-only floors: the server
+ *  accepts any fraction / tick above 0 (store/pep.go pepPosFloat), the Studio
+ *  box takes fractions of 0.05 or more and a tick of 0.01 or more so a typo like
+ *  0.0005 cannot be saved as a near-zero stop. A typed number outside the range
+ *  is clamped on blur. The guide's range text states both (pepGuide.test.ts). */
 export const PEP_RANGES = {
   contracts: { min: 1, max: 10 }, // PepContractsCeiling is the HARD maximum
   tickSize: { min: 0.01, max: 1000 },

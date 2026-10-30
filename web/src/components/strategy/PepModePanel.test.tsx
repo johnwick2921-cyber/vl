@@ -133,6 +133,15 @@ describe('PepModePanel controls', () => {
     expect(sent.style_a?.pep_a_box_minutes).toBe(5)
   })
 
+  // Mutant: drop `.toUpperCase()` from the pep_style getter in PEP_FIELDS -> the
+  // select has no matching option for a stored lowercase "e" -> RED (review round
+  // 1, M3: the server case-folds the style, so a stored "e" is legal and runs E).
+  it('a stored lowercase style "e" shows as E (the server case-folds it), with the E tab open', () => {
+    setup({ pep_style: 'e' })
+    expect(screen.getByTestId('pep-pep_style')).toHaveValue('E')
+    expect(screen.getByTestId('pep-pep_e_ema_period')).toBeInTheDocument()
+  })
+
   it('the E signal source is a setting (ema | close)', () => {
     const { onChange } = setup({ pep_style: 'E' })
     fireEvent.change(screen.getByTestId('pep-pep_e_signal_source'), {

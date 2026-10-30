@@ -190,6 +190,27 @@ describe('Strategy Studio: pep wiring', () => {
     expect(screen.queryByRole('button', { name: /pep mode/i })).toBeNull()
   })
 
+  // Mutant: drop pepOn={...} from the <DayPlanEditor> call -> RED (review round 1,
+  // defect 4: nothing in the Day Plan UI warned about the pep conflict).
+  it('with Pep ON the Day Plan block warns before Save and will not turn the plan ON', async () => {
+    stored = futuresConfig({ pep: { pep_enabled: true } })
+    await openStudio()
+    openSection(/day plan/i)
+    expect(await screen.findByTestId('dayplan-pep-warning')).toHaveTextContent(
+      'cannot be turned on together with Pep'
+    )
+  })
+
+  it('without Pep the Day Plan block carries no pep warning', async () => {
+    stored = futuresConfig()
+    await openStudio()
+    openSection(/day plan/i)
+    await waitFor(() =>
+      expect(screen.getAllByRole('switch').length).toBeGreaterThan(0)
+    )
+    expect(screen.queryByTestId('dayplan-pep-warning')).toBeNull()
+  })
+
   it('a server-refused save names the mode conflict', async () => {
     stored = futuresConfig({ pep: { pep_enabled: true } })
     await openStudio()

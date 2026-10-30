@@ -11,6 +11,7 @@ export type ModeChipValue =
   | { mode: 'ai' }
   | { mode: 'mentor' }
   | { mode: 'pep'; style: string }
+  | { mode: 'conflict' }
   | null
 
 export function dashboardMode(
@@ -18,6 +19,10 @@ export function dashboardMode(
   pep: PepTruth | null,
   pepStatus: 'loading' | 'ok' | 'error'
 ): ModeChipValue {
+  // Mentor and pep both saved ON: the server refuses to start the trader. It
+  // must read as a conflict, never as whichever mode happens to be checked first.
+  if (pep?.mode === 'conflict' || (pep?.enabled && mentor?.enabled))
+    return { mode: 'conflict' }
   if (pep?.enabled) return { mode: 'pep', style: pep.style ?? '?' }
   if (mentor?.enabled) return { mode: 'mentor' }
   if (mentor && pep && pepStatus === 'ok') return { mode: 'ai' }
@@ -34,17 +39,21 @@ export function ModeChip({
   if (!value) return null
   const lang = language as Language
   const text =
-    value.mode === 'pep'
-      ? pt('chipPep', lang, { style: value.style })
-      : value.mode === 'mentor'
-        ? pt('chipMentor', lang)
-        : pt('chipAI', lang)
+    value.mode === 'conflict'
+      ? pt('chipConflict', lang)
+      : value.mode === 'pep'
+        ? pt('chipPep', lang, { style: value.style })
+        : value.mode === 'mentor'
+          ? pt('chipMentor', lang)
+          : pt('chipAI', lang)
   const color =
-    value.mode === 'pep'
-      ? '#4FC3F7'
-      : value.mode === 'mentor'
-        ? '#E8A33D'
-        : '#848E9C'
+    value.mode === 'conflict'
+      ? '#F6465D'
+      : value.mode === 'pep'
+        ? '#4FC3F7'
+        : value.mode === 'mentor'
+          ? '#E8A33D'
+          : '#848E9C'
   return (
     <span
       data-testid="mode-chip"

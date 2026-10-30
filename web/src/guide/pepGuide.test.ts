@@ -180,6 +180,19 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(r('pep.style_e.pep_e_warmup_bars')).toContain(
       `0 to ${goConst('PepWarmupCeiling')}`
     )
+    // The two UI-only floors are STATED on the cards, not hidden (review round
+    // 1, defect 3): the server takes any value above 0, the Studio box does not.
+    for (const id of [
+      'pep.style_a.pep_a_sl_fraction',
+      'pep.style_a.pep_a_tp_fraction',
+      'pep.style_e.pep_e_sl_fraction',
+      'pep.style_e.pep_e_tp_fraction',
+    ])
+      expect(r(id)).toContain(`takes ${PEP_RANGES.fraction.min} or more`)
+    expect(r('pep.pep_tick_size')).toContain(
+      `takes ${PEP_RANGES.tickSize.min} or more`
+    )
+    expect(r('pep.pep_tick_size')).toContain('accepts any value above 0')
     // and the Studio clamps to the same bounds the guide states
     expect(PEP_RANGES.signalMaxAgeMin.max).toBe(
       Number(goConst('PepSignalMaxAgeCeiling'))
@@ -187,6 +200,18 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(PEP_RANGES.contracts.max).toBe(
       Number(goConst('PepContractsCeiling'))
     )
+  })
+
+  // Mutant: delete the Day Plan warning key (or the guide sentence) -> RED.
+  it('the guide claim about the Day Plan block is backed by the shipped warning', () => {
+    const text = JSON.stringify(section!.blocks)
+    expect(text).toContain('the Day Plan block shows a warning')
+    expect(pepStrings.dayPlanPepBlocks.en).toMatch(/cannot be turned on/)
+    expect(web('src/components/strategy/DayPlanEditor.tsx')).toContain(
+      'dayPlanPepBlocks'
+    )
+    expect(text).toContain('Mode conflict')
+    expect(pepStrings.chipConflict.en).toBe('Mode conflict')
   })
 
   it('the fee card says backtest/reporting only, and the Go comment says the same', () => {

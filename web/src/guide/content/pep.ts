@@ -104,7 +104,7 @@ export const PEP_KNOBS: KnobSpec[] = [
     trader: 'MNQ moves in 0.25 points ($0.50 per contract).',
     consumer: CONSUMER,
     range:
-      'greater than 0, at most 1000 (zero or negative runs the shipped value)',
+      'greater than 0, at most 1000 (the Studio box takes 0.01 or more; the server itself accepts any value above 0; zero or negative runs the shipped value)',
     systemDefault: '0.25',
     recommended: `0.25: the MNQ tick in ${PDF}, p.3.`,
     whenToTouch: 'Never for MNQ; change only for another instrument.',
@@ -205,7 +205,8 @@ export const PEP_KNOBS: KnobSpec[] = [
     trader:
       'At 1.0 the stop is the opposite edge of the box: the biggest loss pep can take.',
     consumer: CONSUMER,
-    range: 'greater than 0, at most 10',
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
     systemDefault: '1',
     recommended: `1.0: “SL cả box” — ${PDF}, p.1.`,
     whenToTouch:
@@ -220,7 +221,8 @@ export const PEP_KNOBS: KnobSpec[] = [
     trader:
       'The target and the stop are placed at NT8 with the entry; there is no trailing and no break-even.',
     consumer: CONSUMER,
-    range: 'greater than 0, at most 10',
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
     systemDefault: '1',
     recommended: `1.0: “TP cả box” — ${PDF}, p.1.`,
     whenToTouch: 'To test a nearer or farther target on SIM.',
@@ -263,7 +265,8 @@ export const PEP_KNOBS: KnobSpec[] = [
     what: 'Style E stop distance as a fraction of the box, rounded per “Stop rounding”.',
     trader: 'At 0.5 the stop is half the box, rounded OUTWARD to a valid tick.',
     consumer: CONSUMER,
-    range: 'greater than 0, at most 10',
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
     systemDefault: '0.5',
     recommended: `0.5: “SL nửa box (làm tròn ra tick hợp lệ)” — ${PDF}, p.1.`,
     whenToTouch: 'To test another stop size on SIM.',
@@ -277,7 +280,8 @@ export const PEP_KNOBS: KnobSpec[] = [
     trader:
       'No trailing and no break-even: the stop and target sit at NT8 from the entry.',
     consumer: CONSUMER,
-    range: 'greater than 0, at most 10',
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
     systemDefault: '1',
     recommended: `1.0: “TP cả box” — ${PDF}, p.1.`,
     whenToTouch: 'To test a nearer or farther target on SIM.',
@@ -443,7 +447,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'Where to set it' },
     {
       kind: 'p',
-      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared numbers, then a Style A tab and a Style E tab. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. On the dashboard a mode chip (AI / Mentor / Pep A|E) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart.',
+      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared numbers, then a Style A tab and a Style E tab. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads.',
     },
     { kind: 'h', text: 'Every number is a setting' },
     {

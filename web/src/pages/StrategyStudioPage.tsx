@@ -994,6 +994,7 @@ export function StrategyStudioPage() {
           disabled={selectedStrategy?.is_default}
           language={language}
           effective={studioEffective}
+          pepOn={editingConfig?.pep?.pep_enabled === true}
         />
       ),
     },

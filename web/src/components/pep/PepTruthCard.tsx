@@ -4,12 +4,12 @@
 // It renders what /pep-truth sent: an absent box is "not drawn yet", never a
 // box at 0; an absent countdown is not printed, never "0m".
 
-import { pt } from '../../i18n/pep-translations'
+import { pt, type PepKey } from '../../i18n/pep-translations'
 import type { Language } from '../../i18n/translations'
-import type { PepTruth } from '../../lib/api/traders'
+import type { PepSignalState, PepTruth } from '../../lib/api/traders'
 
-const fmtAsOf = (ms: number) =>
-  ms > 0
+const fmtAsOf = (ms: number | undefined) =>
+  ms !== undefined && ms > 0
     ? new Date(ms).toLocaleTimeString('en-US', {
         hour12: false,
         hour: '2-digit',
@@ -33,6 +33,25 @@ export function fmtCountdown(sec: number): string {
   return h > 0 ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m`
 }
 
+// Evaluator state word (trader/pep_truth.go pepSignalWord) -> i18n key.
+export const SIGNAL_KEYS: Record<PepSignalState, PepKey> = {
+  no_data: 'sigNoData',
+  waiting_box: 'sigWaitingBox',
+  waiting_signal: 'sigWaitingSignal',
+  signal: 'sigSignal',
+  blocked: 'sigBlocked',
+  traded: 'sigTraded',
+  position_open: 'sigPositionOpen',
+  after_flat: 'sigAfterFlat',
+  flat_pending: 'sigFlatPending',
+}
+const SIDE_STATES = new Set<PepSignalState>([
+  'signal',
+  'traded',
+  'position_open',
+  'flat_pending',
+])
+
 export function PepTruthCard({
   truth,
   stale = false,
@@ -42,30 +61,48 @@ export function PepTruthCard({
   stale?: boolean
   language: string
 }) {
-  if (!truth || !truth.enabled) return null
+  if (!truth) return null
   const lang = language as Language
+  if (!truth.enabled) {
+    // A mentor+pep conflict is the one OFF state that must be loud: the server
+    // refused to start the trader, so nothing trades and nothing else says why.
+    if (truth.mode === 'conflict' || truth.conflict)
+      return (
+        <div
+          data-testid="pep-truth-conflict"
+          role="alert"
+          className="rounded-lg border p-3 text-xs"
+          style={{ borderColor: 'var(--vl-short)', color: 'var(--vl-short)' }}
+        >
+          {pt('truthConflict', lang)}
+          {truth.conflict?.message ? ` — ${truth.conflict.message}` : ''}
+        </div>
+      )
+    return null
+  }
   const box = truth.box
   const sig = truth.signal
   const block = (truth.refusals ?? []).find((r) => r.severity === 'block')
   const wait = (truth.refusals ?? []).find((r) => r.severity === 'wait')
   const refusal = block ?? wait
 
-  const sigText =
-    sig?.state === 'entered'
-      ? `${pt('truthSignalEntered', lang)}${sig.side ? ` · ${sig.side.toUpperCase()}` : ''}`
-      : sig?.state === 'blocked'
-        ? pt('truthSignalBlocked', lang)
-        : sig?.state === 'waiting'
-          ? pt('truthSignalWaiting', lang)
-          : '—'
+  // The server's one-word evaluator state -> human text. An unknown word (a
+  // newer server) prints as itself, never as a guess.
+  const sigKey = sig ? SIGNAL_KEYS[sig as PepSignalState] : undefined
+  const sigWord = sig ? (sigKey ? pt(sigKey, lang) : sig) : '—'
+  const sideShown =
+    truth.side && SIDE_STATES.has(sig as PepSignalState)
+      ? ` · ${truth.side.toUpperCase()}`
+      : ''
+  const sigText = `${sigWord}${sideShown}`
 
   let flat = '—'
   if (truth.flat_time_ct) {
     flat = truth.flat_time_ct + ' CT'
-    if (truth.flat_in_sec !== undefined)
+    if (truth.flat_countdown_sec !== undefined)
       flat +=
-        truth.flat_in_sec > 0
-          ? ` · ${pt('truthFlatIn', lang, { t: fmtCountdown(truth.flat_in_sec) })}`
+        truth.flat_countdown_sec > 0
+          ? ` · ${pt('truthFlatIn', lang, { t: fmtCountdown(truth.flat_countdown_sec) })}`
           : ` · ${pt('truthFlatDone', lang)}`
   }
 
@@ -90,7 +127,9 @@ export function PepTruthCard({
           {pt('truthSim', lang)}
         </span>
         <span className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
-          {pt('truthAsOf', lang, { t: fmtAsOf(truth.as_of_ms) })}
+          {truth.last_evaluated_ms
+            ? pt('truthAsOf', lang, { t: fmtAsOf(truth.last_evaluated_ms) })
+            : pt('truthNotEvaluated', lang)}
         </span>
       </div>
       {stale && (

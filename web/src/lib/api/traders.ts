@@ -9,41 +9,37 @@ import { ApiError } from '../httpClient'
 
 /** Pep "what trades" card — GET /api/traders/:id/pep-truth.
  *
- *  PROVISIONAL SHAPE (2026-10-30): the trader lane (fix/m458-pep-trader) had not
- *  published the handler when the UI was cut, so this type is defined from the
- *  core schema it must be built from — kernel/pep types.go (Result, Box, State,
- *  Intent, Refusal, Diag) and store.ResolvePep. Every field except `enabled` is
- *  optional and the card renders only what arrived: an absent field is shown as
- *  absent, never as 0 (a missing box is "not drawn yet", not a box at 0).
- *  `enabled:false` (or a 404 from an older server) hides the card. The trader
- *  lane must match these names or change this type in the same merge. */
+ *  This is the trader lane's REAL shape (fix/m458-pep-trader:
+ *  trader/pep_truth.go `PepTruth`, served by api/handler_pep_truth.go). Every
+ *  name below is a json tag there; components/pep/pepTruthContract.test.ts
+ *  fails when trader/pep_truth.go is present and a tag the UI reads is missing
+ *  from it, so the two sides cannot drift apart silently again.
+ *
+ *  Fields the Go side marks omitempty are optional here, and the card renders
+ *  only what arrived: an absent field is shown as absent, never as 0.
+ *  `enabled:false` (or a 404 from an older server) hides the card. */
 export interface PepTruth {
   enabled: boolean
-  as_of_ms: number
+  /** The trader's mode as the SERVER resolved it: ai | mentor | pep | conflict.
+   *  "conflict" = mentor and pep both saved ON (the trader was refused at start). */
+  mode?: 'ai' | 'mentor' | 'pep' | 'conflict'
+  /** Present only for mode "conflict": the server's named refusal. */
+  conflict?: { code: string; message: string }
   /** The instrument pep reads (e.g. "MNQ"); the chart draws the box only on a
-   *  tab showing it. */
+   *  tab showing it. NOT sent by the server today (it is `at.futuresSymbol()` on
+   *  the trader side) — without it no line is drawn and the chart says so; the
+   *  contract test requires the trader lane to add a `symbol` tag. */
   symbol?: string
-  /** The style that runs. */
   style?: 'A' | 'E'
+  contracts?: number
   /** CT date the day-counters belong to ("2006-01-02"). */
   day?: string
-  contracts?: number
-  /** The opening range (kernel/pep Box); ABSENT until computed. */
-  box?: {
-    high: number
-    low: number
-    size: number
-    start_ms: number
-    end_ms: number
-    /** every minute present and the box window has closed */
-    drawn: boolean
-  }
-  /** Where the day's signal stands. */
-  signal?: {
-    state: 'waiting' | 'entered' | 'blocked'
-    side?: 'long' | 'short'
-  }
-  /** Named refusals of the latest evaluation (kernel/pep Refusal). */
+  /** The opening range as the evaluator measured it; `drawn` false until the box
+   *  window has closed with every minute present. ABSENT/zero until evaluated. */
+  box?: { high: number; low: number; size: number; drawn: boolean }
+  /** The evaluator state in one word. */
+  signal?: PepSignalState
+  /** Named refusals of the latest evaluation. */
   refusals?: {
     code: string
     severity: 'wait' | 'block'
@@ -52,14 +48,30 @@ export interface PepTruth {
   trades_today?: number
   max_trades_per_day?: number
   position_open?: boolean
-  /** The intent's / open position's prices (points). */
-  entry?: number
+  /** Today's newest entry's bracket (points) and side ("long" | "short"). */
   stop?: number
   target?: number
-  /** The time exit, "HH:MM" CT, and the seconds left until it (<= 0 = passed). */
+  side?: string
+  /** The time exit, "HH:MM" CT, and the seconds left until it (0 once reached —
+   *  always sent, so 0 means "reached", never "unknown"). */
   flat_time_ct?: string
-  flat_in_sec?: number
+  flat_countdown_sec?: number
+  /** When the evaluator last ran (ms). ABSENT until it has run once. */
+  last_evaluated_ms?: number
+  /** Saved leaves that did not take effect as saved: leaf name -> reason. */
+  clamps?: Record<string, string>
 }
+
+export type PepSignalState =
+  | 'no_data'
+  | 'waiting_box'
+  | 'waiting_signal'
+  | 'signal'
+  | 'blocked'
+  | 'traded'
+  | 'position_open'
+  | 'after_flat'
+  | 'flat_pending'
 
 /** Mentor "what trades" panel — the live evaluator state (release #10). */
 export interface MentorTruth {

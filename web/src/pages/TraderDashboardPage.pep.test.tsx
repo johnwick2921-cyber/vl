@@ -8,6 +8,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { cleanup, render, screen } from '@testing-library/react'
 import { TraderDashboardPage } from './TraderDashboardPage'
 import type { PepTruth } from '../lib/api/traders'
+import {
+  GOLDEN_CONFLICT,
+  GOLDEN_OFF,
+  GOLDEN_WAITING_SIGNAL,
+} from '../components/pep/pepTruthGolden'
 
 const hooks = vi.hoisted(() => ({
   mentor: { truth: null, stale: false } as {
@@ -112,25 +117,12 @@ function props(futures = true): ComponentProps<typeof TraderDashboardPage> {
   }
 }
 
-const pepOn: PepTruth = {
-  enabled: true,
-  as_of_ms: Date.UTC(2026, 9, 30, 14, 7, 5),
-  symbol: 'MNQ',
-  style: 'E',
-  box: {
-    high: 25100.5,
-    low: 25020.25,
-    size: 80.25,
-    start_ms: 0,
-    end_ms: 0,
-    drawn: true,
-  },
-  signal: { state: 'waiting' },
-  trades_today: 0,
-  max_trades_per_day: 1,
-  flat_time_ct: '15:00',
-  flat_in_sec: 3 * 3600 + 5 * 60,
-}
+// The trader lane's REAL JSON (pepTruthGolden.ts), parsed - not a UI-shaped
+// object. The server sends no `symbol` yet; the chart tests below add the one
+// field the contract test (pepTruthContract.test.ts) requires of the trader lane.
+const pepGolden = JSON.parse(GOLDEN_WAITING_SIGNAL) as PepTruth
+const pepOn: PepTruth = { ...pepGolden, symbol: 'MNQ' }
+const pepOff = JSON.parse(GOLDEN_OFF) as PepTruth
 
 beforeEach(() => {
   hooks.mentor = { truth: null, stale: false }
@@ -168,7 +160,7 @@ describe('dashboard: pep', () => {
 
   it('hides the card when pep is OFF or unknown', async () => {
     hooks.pep = {
-      truth: { enabled: false, as_of_ms: 1 },
+      truth: pepOff,
       stale: false,
       status: 'ok',
     }
@@ -223,6 +215,42 @@ describe('dashboard: pep', () => {
     )
   })
 
+  // Defect 1 of review round 1: the server's raw JSON carries no symbol, so the
+  // box cannot be placed on a chart. That must be SAID, never a silent no-draw.
+  it('the server JSON as sent today (no symbol): card live, lines held back, the chart says why', async () => {
+    hooks.pep = { truth: pepGolden, stale: false, status: 'ok' }
+    render(<TraderDashboardPage {...props()} />)
+    await screen.findByTestId('market-chart')
+    expect(screen.getByTestId('pep-truth-box')).toHaveTextContent(
+      'high 25100.50'
+    )
+    expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
+      'waiting for a break'
+    )
+    expect(hooks.chartLevels).toEqual([])
+    expect(screen.getByTestId('pep-overlay-note')).toHaveTextContent(
+      'pep box lines hidden — they belong to ?'
+    )
+  })
+
+  it('a mentor+pep conflict reads as a conflict chip and a loud card, not as pep', async () => {
+    hooks.pep = {
+      truth: JSON.parse(GOLDEN_CONFLICT) as PepTruth,
+      stale: false,
+      status: 'ok',
+    }
+    hooks.mentor = { truth: { enabled: false }, stale: false }
+    render(<TraderDashboardPage {...props()} />)
+    await screen.findByTestId('market-chart')
+    expect(screen.getByTestId('mode-chip')).toHaveAttribute(
+      'data-mode',
+      'conflict'
+    )
+    expect(screen.getByTestId('pep-truth-conflict')).toHaveTextContent(
+      'NOT started'
+    )
+  })
+
   it('mode chip: Pep E / Mentor / AI only when the truths have answered', async () => {
     hooks.pep = { truth: pepOn, stale: false, status: 'ok' }
     const a = render(<TraderDashboardPage {...props()} />)
@@ -231,7 +259,7 @@ describe('dashboard: pep', () => {
     a.unmount()
 
     hooks.pep = {
-      truth: { enabled: false, as_of_ms: 1 },
+      truth: pepOff,
       stale: false,
       status: 'ok',
     }

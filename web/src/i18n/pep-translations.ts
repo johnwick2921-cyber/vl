@@ -52,6 +52,16 @@ export const pepStrings = {
     zh: '日计划开启时不能选择 Pep（服务器会拒绝该组合）。请先关闭日计划。',
     id: 'Pep tidak bisa dipilih saat Rencana Harian AKTIF (server menolak kombinasi ini). Matikan Rencana Harian terlebih dahulu.',
   },
+  dayPlanPepBlocks: {
+    en: 'Pep mode is ON for this strategy. The Day Plan cannot be turned on together with Pep (the server refuses the save). Switch the Trading mode to AI planner first.',
+    zh: '该策略已开启 Pep 模式。日计划不能与 Pep 同时开启（服务器会拒绝保存）。请先把交易模式切换为 AI 规划。',
+    id: 'Mode Pep AKTIF untuk strategi ini. Rencana Harian tidak bisa diaktifkan bersama Pep (server menolak penyimpanan). Ubah Mode trading ke Perencana AI terlebih dahulu.',
+  },
+  dayPlanPepBoth: {
+    en: 'Pep AND the Day Plan are both ON. The server refuses to save that and will not start the trader. Turn the Day Plan off here, or switch the Trading mode.',
+    zh: 'Pep 和日计划同时开启。服务器会拒绝保存，且不会启动该交易员。请在此关闭日计划，或切换交易模式。',
+    id: 'Pep DAN Rencana Harian sama-sama AKTIF. Server menolak menyimpannya dan tidak akan menjalankan trader. Matikan Rencana Harian di sini, atau ubah Mode trading.',
+  },
   modeConflict: {
     en: 'This strategy has Mentor AND Pep both ON. The server refuses to save that. Pick one mode above.',
     zh: '该策略同时开启了导师和 Pep，服务器会拒绝保存。请在上方只选一种模式。',
@@ -362,13 +372,66 @@ export const pepStrings = {
     id: 'Kotak belum terbentuk (jendela kotak belum tutup, atau ada menit yang hilang)',
   },
   truthSignal: { en: 'Signal', zh: '信号', id: 'Sinyal' },
-  truthSignalWaiting: {
+  sigNoData: {
+    en: 'no evaluation yet',
+    zh: '尚未评估',
+    id: 'belum ada evaluasi',
+  },
+  sigWaitingBox: {
+    en: 'waiting for the box to close',
+    zh: '等待区间形成',
+    id: 'menunggu kotak selesai',
+  },
+  sigWaitingSignal: {
     en: 'waiting for a break',
     zh: '等待突破',
     id: 'menunggu breakout',
   },
-  truthSignalEntered: { en: 'entered', zh: '已入场', id: 'sudah masuk' },
-  truthSignalBlocked: { en: 'refused', zh: '被拒绝', id: 'ditolak' },
+  sigSignal: {
+    en: 'signal — entry being sent',
+    zh: '信号 — 正在下单',
+    id: 'sinyal — entri sedang dikirim',
+  },
+  sigBlocked: {
+    en: 'refused (see the reason)',
+    zh: '被拒绝（见原因）',
+    id: 'ditolak (lihat alasan)',
+  },
+  sigTraded: {
+    en: 'today’s trade is done',
+    zh: '今日交易已完成',
+    id: 'trade hari ini selesai',
+  },
+  sigPositionOpen: {
+    en: 'position open',
+    zh: '持仓中',
+    id: 'posisi terbuka',
+  },
+  sigAfterFlat: {
+    en: 'past the flat time — no new entry',
+    zh: '已过平仓时间 — 不再入场',
+    id: 'lewat waktu flat — tanpa entri baru',
+  },
+  sigFlatPending: {
+    en: 'flat time reached — closing',
+    zh: '已到平仓时间 — 正在平仓',
+    id: 'waktu flat tercapai — menutup',
+  },
+  truthNotEvaluated: {
+    en: 'not evaluated yet',
+    zh: '尚未评估',
+    id: 'belum dievaluasi',
+  },
+  truthConflict: {
+    en: 'Mode conflict: Mentor and Pep are both ON. The trader was NOT started and will not trade until the strategy is fixed.',
+    zh: '模式冲突：导师和 Pep 同时开启。该交易员未启动，策略修复前不会交易。',
+    id: 'Konflik mode: Mentor dan Pep sama-sama AKTIF. Trader TIDAK dijalankan dan tidak akan trading sampai strategi diperbaiki.',
+  },
+  chipConflict: {
+    en: 'Mode conflict',
+    zh: '模式冲突',
+    id: 'Konflik mode',
+  },
   truthTrades: { en: 'Trades today', zh: '今日交易', id: 'Trade hari ini' },
   truthStopTarget: {
     en: 'Stop / target',

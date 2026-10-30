@@ -198,7 +198,7 @@ export function TraderDashboardPage({
     stale: pepStale,
     status: pepStatus,
   } = usePepTruth(selectedTrader?.trader_id)
-  const pepStaleSinceMs = pepStale ? (pep?.as_of_ms ?? 0) : undefined
+  const pepStaleSinceMs = pepStale ? (pep?.last_evaluated_ms ?? 0) : undefined
   const pepLines = useMemo(
     () => pepChartLines(pep, pepStaleSinceMs),
     [pep, pepStaleSinceMs]
