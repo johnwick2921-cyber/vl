@@ -397,5 +397,5 @@ func sortedAscending(bars []market.Kline) bool {
 func clock(minOfDay int) string { return fmt.Sprintf("%02d:%02d", minOfDay/60, minOfDay%60) }
 
 func clockOfMs(ms int64, loc *time.Location) string {
-	return time.UnixMilli(ms).In(loc).Format("15:04")
+	return time.UnixMilli(ms).In(loc).Format("15:04 MST") // zone-suffixed: kernel/tz_guard_test.go
 }
