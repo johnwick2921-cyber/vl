@@ -78,14 +78,18 @@ func (at *AutoTrader) noteLiveBarsForPepPass(symbol, tf string, bars []ntwire.Ba
 // pepEventPassAt runs one pep event pass (the event loop calls it; <= 1/s by
 // the loop's own gap). Returns whether it evaluated.
 func (at *AutoTrader) pepEventPassAt(now time.Time) bool {
-	if at == nil || !at.pepEnabled() || market.FuturesBarsProvider == nil {
+	if at == nil || !at.pepEnabled() {
 		return false
 	}
-	// at.futuresSymbol(), never a literal: a pep trader on ES reads ES.
-	bars := pepClosedBars(market.FuturesBarsProvider(at.futuresSymbol(), "1m", pepBars1mDepth))
-	if len(bars) == 0 {
-		return false
+	// at.futuresSymbol(), never a literal: a pep trader on ES reads ES. A nil
+	// provider reads as an empty ring.
+	var bars []market.Kline
+	if prov := market.FuturesBarsProvider; prov != nil {
+		bars = pepClosedBars(prov(at.futuresSymbol(), "1m", pepBars1mDepth))
 	}
+	// An empty ring still goes to the evaluator: its named pep_no_bars block is
+	// counted (once per change) and shown by pep-truth, instead of the pass
+	// returning silently with the previous pass's stale state on the dashboard.
 	return at.pepEvalOnce(bars, now)
 }
 
@@ -314,6 +318,21 @@ func (at *AutoTrader) pepSendEntry(in pep.Intent, now time.Time) {
 	rec := &store.DecisionAction{Action: action, Symbol: sym, Leverage: 1, Price: w.Live,
 		StopLoss: w.Stop, TakeProfit: w.Target, Confidence: 80, Reasoning: d.Reasoning, Timestamp: now}
 	err := at.executeDecisionWithRecordAt(d, rec, now)
+
+	// executeDecisionWithRecordAt never sets Success=true on an open: every gate
+	// that refuses sets Error and returns nil, and the AI loop's caller flips
+	// Success on a clean return (auto_trader_loop.go). This driver is that caller
+	// for pep, so it does the same: no error, no recorded refusal, and the claim
+	// reached the wire = the entry was sent. (A clean return that never reached
+	// the wire is a contradiction and is recorded as a refusal, not a success.)
+	if err == nil && rec.Error == "" {
+		if p := at.pep.pending; p != nil && p.sending {
+			rec.Success = true
+		} else {
+			rec.Success = false
+			rec.Error = "pep_not_sent: the entry returned cleanly but nothing reached the wire"
+		}
+	}
 
 	// A claim that never advanced to the wire is withdrawn so the day's trade is
 	// not burned by a refusal that sent nothing. A claim that reached "sending"

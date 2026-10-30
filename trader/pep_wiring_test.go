@@ -32,6 +32,11 @@ func newPepWire(t *testing.T, p store.PepConfig) *chatDoorWire {
 	cfg := store.StrategyConfig{Pep: &p}
 	w.at.config.StrategyConfig = &cfg
 	w.at.config.NinjaTraderSymbol = "MNQ"
+	// the production trader is running when its event loop passes (pep admission
+	// refuses a pass that outlives Stop)
+	w.at.isRunningMutex.Lock()
+	w.at.isRunning = true
+	w.at.isRunningMutex.Unlock()
 	// the executor reads the account balance for its position-value ratio check;
 	// the AddOn streams one in production
 	w.s.SeedAccountBalanceForTest("Sim101", ntwire.AccountBalancePayload{Account: "Sim101", CashValue: 50000, BuyingPower: 50000, NetLiquidation: 50000})

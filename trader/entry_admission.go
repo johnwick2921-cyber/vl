@@ -203,6 +203,14 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 			at.logWarnf("🎯 %s %s REFUSED — %s (trader %s)", sym, act, refusal, at.id)
 		})
 	}
+	if in.Path == admitPep && !at.runningNow() {
+		// PEP runs on the armed event loop, outside runCycle: a pass already in
+		// flight when Stop() lands (the loop's close waits a bounded 5 s) must not
+		// place an entry for a trader that is no longer running.
+		return at.admitRefuse(in, "trader_stopped", "trader_stopped: the trader is not running", func() {
+			at.logWarnf("⏹ pep: %s %s REFUSED — the trader is not running.", sym, act)
+		})
+	}
 	if in.Path == admitPicture || in.Source == store.ArmSourcePicture {
 		// Picture runs on the live-bar goroutine, outside runCycle, so it has
 		// no loop in front of it that stops when the trader stops or the Day

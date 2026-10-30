@@ -508,7 +508,7 @@ export const status: GuideSection = {
         'Wrong current password (password change)',
         'Re-entry cooldown after a stop',
         'Entry gate',
-        'Trader stopped (Picture)',
+        'Trader stopped (Picture, pep)',
         'Day Plan off (Picture)',
         'Arm not admitted this pass',
         'Held position belongs to a ledger order',

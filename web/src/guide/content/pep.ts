@@ -97,7 +97,7 @@ export const pep: GuideSection = {
         ],
         [
           'The 15:00 CT flat',
-          'pep’s own time exit (pep_flat_time_ct), checked every minute on the wall clock, not only on a bar: it cancels what rests, then flattens through the trader close path and checks flatness against the broker. The session flat at 14:45 CT never acts on a pep trader. No new entry is admitted at or after the flat time (pep_after_flat_time).',
+          'pep’s own time exit (pep_flat_time_ct), checked every minute on the wall clock, not only on a bar: it cancels any stray resting order of the trader, then closes the position at market through the trader close path (that close cancels the native stop and target bracket afterwards, as the existing end-of-day flat does), and checks flatness against the broker on the next beat for 15 minutes; a position still open after 3 attempts raises a P0 alert. The session flat at 14:45 CT never acts on a pep trader. No new entry is admitted at or after the flat time (pep_after_flat_time).',
         ],
       ],
     },

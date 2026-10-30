@@ -67,7 +67,7 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   },
   reentry_cooldown: { en: 'Re-entry cooldown after a stop', icon: '⏳' },
   entry_gate: { en: 'Entry gate', icon: '🚦' },
-  trader_stopped: { en: 'Trader stopped (Picture)', icon: '⏹' },
+  trader_stopped: { en: 'Trader stopped (Picture, pep)', icon: '⏹' },
   day_plan_off: { en: 'Day Plan off (Picture)', icon: '📴' },
   arm_not_admitted: {
     en: 'Arm not admitted this pass',
