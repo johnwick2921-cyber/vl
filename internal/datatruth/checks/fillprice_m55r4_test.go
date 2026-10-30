@@ -136,7 +136,7 @@ func TestFillGuardUnreadableStateInstallKeepsBothFilesAndTheBlock(t *testing.T) 
 	// the remedy text names only a remedy that works: the ack, not a file swap that
 	// the next write would overwrite
 	_, why, _ := g2.Check()("MNQ", now)
-	if strings.Contains(why, "restore a repaired copy") || !strings.Contains(why, "ack-fill-price?symbol=MNQ") {
+	if strings.Contains(why, "repaired copy") || !strings.Contains(why, "ack-fill-price?symbol=MNQ") {
 		t.Fatalf("remedy text: %q", why)
 	}
 }
