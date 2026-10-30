@@ -51,8 +51,8 @@ func TestPushDedupesAnEpisodeKey(t *testing.T) {
 func TestPushUnknownKeysShareOneBudget(t *testing.T) {
 	s := &sink{}
 	p := New(s.send)
-	clk := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	p.SetClockForTest(func() time.Time { return clk })
+	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
+	p.SetClockForTest(clk.Now)
 	sent := 0
 	for i := 0; i < 20; i++ {
 		if p.Push("k"+string(rune('a'+i)), "m") {
@@ -66,7 +66,7 @@ func TestPushUnknownKeysShareOneBudget(t *testing.T) {
 	if p.Dropped() != 20-maxPerKindPerHour {
 		t.Fatalf("dropped = %d", p.Dropped())
 	}
-	clk = clk.Add(61 * time.Minute) // the window rolls
+	clk.Advance(61 * time.Minute) // the window rolls
 	if !p.Push("later", "m") {
 		t.Fatal("after an hour the budget must reopen")
 	}
@@ -103,8 +103,8 @@ func TestOneKindCannotStarveAnother(t *testing.T) {
 func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 	s := &sink{}
 	p := New(s.send)
-	clk := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	p.SetClockForTest(func() time.Time { return clk })
+	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
+	p.SetClockForTest(clk.Now)
 	for i := 0; i < maxPerKindPerHour; i++ {
 		p.Push(fmt.Sprintf("unprotected_position|t1|e%d", i), "naked")
 	}
@@ -117,7 +117,7 @@ func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 	if n := p.Retry(); n != 0 {
 		t.Fatalf("no budget yet, retry accepted %d", n)
 	}
-	clk = clk.Add(61 * time.Minute)
+	clk.Advance(61 * time.Minute)
 	if n := p.Retry(); n != 1 {
 		t.Fatalf("the budget reopened: retry accepted %d, want 1", n)
 	}
@@ -135,13 +135,13 @@ func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 func TestHeldPushExpires(t *testing.T) {
 	s := &sink{}
 	p := New(s.send)
-	clk := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	p.SetClockForTest(func() time.Time { return clk })
+	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
+	p.SetClockForTest(clk.Now)
 	for i := 0; i < maxPerKindPerHour; i++ {
 		p.Push(fmt.Sprintf("feed-down|e%d", i), "d")
 	}
 	p.Push("feed-down|old", "OLD")
-	clk = clk.Add(holdTTL + time.Minute)
+	clk.Advance(holdTTL + time.Minute)
 	if n := p.Retry(); n != 0 || p.Held() != 0 {
 		t.Fatalf("stale hold must be discarded, accepted %d held %d", n, p.Held())
 	}
@@ -151,14 +151,14 @@ func TestHeldPushExpires(t *testing.T) {
 func TestCancelWithdrawsAHeldMessage(t *testing.T) {
 	s := &sink{}
 	p := New(s.send)
-	clk := time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC)
-	p.SetClockForTest(func() time.Time { return clk })
+	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
+	p.SetClockForTest(clk.Now)
 	for i := 0; i < maxPerKindPerHour; i++ {
 		p.Push(fmt.Sprintf("feed-down|e%d", i), "d")
 	}
 	p.Push("feed-down|ep", "DOWN")
 	p.Cancel("feed-down|ep")
-	clk = clk.Add(61 * time.Minute)
+	clk.Advance(61 * time.Minute)
 	if p.Retry() != 0 || p.Push("feed-down|ep", "DOWN") {
 		t.Fatal("a cancelled message must never be delivered late")
 	}
@@ -266,4 +266,27 @@ func TestDefaultPushNoOpWhenNotStarted(t *testing.T) {
 	if Push("k", "m") {
 		t.Fatal("no default pusher = no-op")
 	}
+}
+
+// testClock is the fake clock the budget/hold tests hand to SetClockForTest.
+// The pusher's worker goroutine reads it (onSent -> now) while the test moves
+// it forward, so it must be synchronised: a plain captured time.Time variable
+// was a data race the CI -race run caught on TestHeldPushExpires (PR #616).
+type testClock struct {
+	mu sync.Mutex
+	t  time.Time
+}
+
+func newTestClock(t time.Time) *testClock { return &testClock{t: t} }
+
+func (c *testClock) Now() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.t
+}
+
+func (c *testClock) Advance(d time.Duration) {
+	c.mu.Lock()
+	c.t = c.t.Add(d)
+	c.mu.Unlock()
 }

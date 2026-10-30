@@ -286,7 +286,8 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 	// history (P1). The seed and every incremental step continue the SAME
 	// recurrence, so seed+ticks == full rebuild exactly. 34 closed candles are
 	// the warm-up MINIMUM (SeedMissing), not a cap — never re-window.
-	if b4 := fourHClosedBuckets(barsTF(bars1m, 60), now); len(b4) > 0 {
+	bars1h := barsTF(withSeamBars(bars1m, e.seamBars, now), 60)
+	if b4 := fourHClosedBuckets(bars1h, now); len(b4) > 0 {
 		closes4 := make([]float64, 0, len(b4))
 		for _, b := range b4 {
 			closes4 = append(closes4, b.Close)
@@ -296,8 +297,16 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		e.State.Swing.EmaCount = len(closes4)
 		// The line is the canonical recurrence over the stored closes again —
 		// the F-3 stale mark ("until a restart reseeds the line from the
-		// store") is exactly what this read cures.
-		e.State.Swing.LineStale = false
+		// store") is exactly what this read cures. EXCEPT (m456): a 4h bucket
+		// that was OPEN CME time but has no bars (a 1m hole the replay window
+		// never reached: 10-26 17:00-21:57 CT, +0.42 pt on 10-28, +10.8 pt on
+		// 10-27) was skipped as if it were a weekend, so the recurrence is
+		// missing a fold. Mark it stale (SWING4H refused, counted) until a
+		// refill + re-seed closes the hole; holes older than the horizon have
+		// decayed to nothing and do not count.
+		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()))
+		e.State.Swing.HoledBuckets = recentHoledBuckets(holes, present, swingHoleHorizonBuckets(e.Cfg.Swing.EMAPeriod))
+		e.State.Swing.LineStale = len(e.State.Swing.HoledBuckets) > 0
 	}
 
 	// F2 (release #10) + LINES-RESTART (release #22): seed the 5m trigger line
@@ -681,6 +690,14 @@ func ReseedState(e *Evaluator, bars1m, full1HRTH []market.Kline, now int64) Rese
 func (e *Evaluator) SeedLine(contracts int) string {
 	parts := []string{"mentor seed:"}
 	parts = append(parts, fmt.Sprintf("4h EMA34 %d/%d", e.depth.fourH, FourHEMA34Warmup))
+	if e.State.Swing.LineStale && len(e.State.Swing.HoledBuckets) > 0 {
+		// m456: say it on the boot line, not only in the refusal counter.
+		starts := make([]string, 0, len(e.State.Swing.HoledBuckets))
+		for _, ms := range e.State.Swing.HoledBuckets {
+			starts = append(starts, kernel.FormatCT(time.UnixMilli(ms)))
+		}
+		parts = append(parts, fmt.Sprintf("swing line STALE: no bars in open 4h bucket %s", strings.Join(starts, ", ")))
+	}
 	parts = append(parts, fmt.Sprintf("1m EMA34 %d/%d", e.depth.oneM, OneMEMA34Warmup))
 	parts = append(parts, fmt.Sprintf("1H RTH levels %d candles", e.depth.oneH))
 	// r22 (P3, "92 levels"): the count is READ from the seeded set split by the

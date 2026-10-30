@@ -105,7 +105,9 @@ type TCPServer struct {
 	// acceptClock is a test-only seam for the accept instant (DEADMAN-ACCEPT-NS:
 	// a test states its own so a snapshot received in the SAME millisecond but
 	// BEFORE the accept is deterministic). nil = time.Now in production.
-	acceptClock func() time.Time
+	// atomic (m456-mainack): the test installs it while the accept goroutine is
+	// already running, so a plain field is a data race (-race).
+	acceptClock atomic.Pointer[func() time.Time]
 
 	// E7 capability handshake (2026-08-30): the far-side AddOn's build id,
 	// reported on every heartbeat. Empty until the first heartbeat carries it.
@@ -1731,6 +1733,10 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		}
 
 		// No key (owner box): publish at accept, byte-identical to today.
+		// m456-mainack: the accept instant is read BEFORE connMu (the test seam may
+		// block) and the connection record is begun INSIDE the same critical section
+		// that publishes s.conn, so "connected" and "its record" appear together.
+		acceptAt := s.acceptNow()
 		s.connMu.Lock()
 		if s.conn != nil {
 			s.logger.Warn("tcp_server: rejecting concurrent client", "addr", c.RemoteAddr())
@@ -1741,10 +1747,10 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 		s.conn = c
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
+		s.beginConnectionRecord(c, acceptAt)            // W-ONE-BUTTON M2 site 7 (lock order connMu → maint.mu)
 		s.connMu.Unlock()
-		s.beginConnectionRecord(c, s.acceptNow()) // W-ONE-BUTTON M2 site 7
-		s.attempted.noteReconnect(time.Now())     // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
-		s.barCache.NoteReconnect(time.Now())      // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
+		s.attempted.noteReconnect(time.Now()) // FIX-DOUBLE-ENTRY: reconnect instant for fresh-truth checks
+		s.barCache.NoteReconnect(time.Now())  // WAVE 26: arm the stale-print guard for the AddOn's reloaded-series re-emit
 
 		s.logger.Info("tcp_server: client connected", "addr", c.RemoteAddr())
 		s.wg.Add(2)
@@ -2222,6 +2228,9 @@ func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env En
 
 	// Publish only if this conn is still the pending one (a preempting dial must
 	// not be clobbered by a stale readLoop) and no authed incumbent appeared.
+	// m456-mainack: the accept instant is read before connMu, and the record is
+	// begun in the same critical section that publishes s.conn.
+	acceptAt := s.acceptNow()
 	s.connMu.Lock()
 	if s.pendingConn != c || s.conn != nil {
 		s.connMu.Unlock()
@@ -2231,10 +2240,10 @@ func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env En
 	s.pendingConn = nil
 	s.lastAckTime = time.Now()
 	s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // the alive clock starts at auth
+	s.beginConnectionRecord(c, acceptAt)            // lock order connMu → maint.mu
 	s.connMu.Unlock()
 
-	// The accept-time bookkeeping, now at the moment of auth (GATE 3).
-	s.beginConnectionRecord(c, s.acceptNow())
+	// The rest of the accept-time bookkeeping, now at the moment of auth (GATE 3).
 	s.attempted.noteReconnect(time.Now())
 	s.barCache.NoteReconnect(time.Now())
 

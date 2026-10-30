@@ -220,14 +220,16 @@ type RollStitcher struct {
 	cumGap       float64 // cumulative gap from the head contract to the newest
 	gaps         []RollGap
 	stoppedAt    string
-	// seamCovered — open times of head-contract 1m bars the CUT dropped that
+	// seamCovered — the head-contract 1m bars (newest scale) the CUT dropped that
 	// the older contract does NOT store (m445 round 4, D1). The cut keeps the
 	// older's bars to its last stored bar and the head's only after it, so a
 	// minute the older never recorded but the head DID is absent from the
 	// stitched series although a stored bar exists for it. The series is
-	// unchanged (the mentor's numbers are not touched here); the data-integrity
-	// gate reads this list so a roll seam is not read as lost data.
-	seamCovered []int64
+	// unchanged (the key levels and 1m lines are not touched here); the
+	// data-integrity gate reads the open times so a roll seam is not read as lost
+	// data, and the swing 4h EMA34 aggregates the bars themselves (m456 round 2)
+	// so the bucket the seam holds is FOLDED, not merely not flagged.
+	seamCovered []market.Kline
 }
 
 // NewRollStitcher starts the stitch from the NEWEST contract (own scale). The
@@ -296,19 +298,19 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 	return true
 }
 
-// seamCoveredBy returns the open times of the head's bars that the cut drops
+// seamCoveredBy returns the head's bars (newest scale) that the cut drops
 // (OpenTime <= cutTime), that lie inside the older contract's recorded span
 // and that the older contract does not store — minutes stored by ONE contract
 // only, so the stitch's "older up to its last bar" rule loses them from the
 // series. Sparse pre-roll import snapshots (a head session day with fewer than
 // minSnapshotSessionBars bars) are NOT counted: one bar a day is not a recording
 // of the minutes around it, and counting it would let it split a real hole.
-func seamCoveredBy(head, older []market.Kline, cutTime int64) []int64 {
+func seamCoveredBy(head, older []market.Kline, cutTime int64) []market.Kline {
 	if len(older) == 0 {
 		return nil
 	}
 	first := older[0].OpenTime
-	var cand []int64
+	var cand []market.Kline
 	for _, b := range head {
 		if b.OpenTime > cutTime {
 			break // ascending
@@ -320,7 +322,7 @@ func seamCoveredBy(head, older []market.Kline, cutTime int64) []int64 {
 		if i < len(older) && older[i].OpenTime == b.OpenTime {
 			continue // the older stores it: it is in the series
 		}
-		cand = append(cand, b.OpenTime)
+		cand = append(cand, b)
 	}
 	if len(cand) == 0 {
 		return nil
@@ -330,9 +332,9 @@ func seamCoveredBy(head, older []market.Kline, cutTime int64) []int64 {
 		counts[sessionKeyCT(b.OpenTime)]++
 	}
 	out := cand[:0:0]
-	for _, ms := range cand {
-		if counts[sessionKeyCT(ms)] >= minSnapshotSessionBars {
-			out = append(out, ms)
+	for _, b := range cand {
+		if counts[sessionKeyCT(b.OpenTime)] >= minSnapshotSessionBars {
+			out = append(out, b)
 		}
 	}
 	return out
@@ -341,9 +343,26 @@ func seamCoveredBy(head, older []market.Kline, cutTime int64) []int64 {
 // SeamCovered returns, ascending, the minutes some stitched contract stores
 // that the stitched series itself lacks (see seamCovered). Judge a minute
 // missing only when it is absent from the series AND from this list.
-func (s *RollStitcher) SeamCovered() []int64 {
-	out := append([]int64(nil), s.seamCovered...)
-	sort.Slice(out, func(i, j int) bool { return out[i] < out[j] })
+func (s *RollStitcher) SeamCovered() []int64 { return SeamMinutes(s.SeamBars()) }
+
+// SeamMinutes is the open times of seam bars, in the order given.
+func SeamMinutes(bars []market.Kline) []int64 {
+	out := make([]int64, len(bars))
+	for i, b := range bars {
+		out[i] = b.OpenTime
+	}
+	return out
+}
+
+// SeamBars returns, ascending by open time, the bars behind SeamCovered: what a
+// contract stored at those minutes, already on the newest contract's scale (a
+// copy). The stitched series plus these bars is every minute any contract of
+// the stitch stores, which is what the swing 4h EMA34 must be built from
+// (m456 defect 2): hand them to Evaluator.SetSeamBars before SeedFull /
+// ReseedState.
+func (s *RollStitcher) SeamBars() []market.Kline {
+	out := append([]market.Kline(nil), s.seamCovered...)
+	sort.Slice(out, func(i, j int) bool { return out[i].OpenTime < out[j].OpenTime })
 	return out
 }
 

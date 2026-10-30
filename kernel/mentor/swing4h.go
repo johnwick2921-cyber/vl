@@ -195,6 +195,9 @@ type SwingState struct {
 	// the canonical EMA. SWING4H entries are refused (counted) until a
 	// restart reseeds the line from the store — never the cold slice value.
 	LineStale bool `json:"line_stale,omitempty"`
+	// HoledBuckets (m456): starts (ms) of the open-session 4h buckets with no
+	// bars that made the SEED mark the line stale. Display only.
+	HoledBuckets []int64 `json:"-"`
 	// Folded is the number of 4h closes the last flip folded (1 on contiguous
 	// ticks; >1 after a feed gap) — read by runSwing for the change line.
 	Folded int `json:"-"`
@@ -302,14 +305,21 @@ func swingLine(bars5m []market.Kline, now int64, cfg SwingCfg, loc *time.Locatio
 // bucketClosesBetween returns, in time order, the close of every 4h bucket
 // with a start in [from, to) that has bars in the slice (the last 5m bar of
 // each) — the closes a warm line must fold on a flip. covered=false when the
-// slice starts AFTER the from bucket: buckets before the slice may have traded
-// and cannot be read, so the caller must fail closed (release #22, F-3: one
+// slice starts AFTER the from bucket, or a bucket in range was OPEN CME time
+// with no bars (m456): buckets before the slice may have traded and cannot be
+// read, so the caller must fail closed (release #22, F-3: one
 // close per flip lost every bucket that opened and closed between two ticks).
 func bucketClosesBetween(bars5m []market.Kline, from, to int64) (closes []float64, covered bool) {
 	if len(bars5m) == 0 {
 		return nil, false
 	}
 	if fourHBucketStart(bars5m[0].OpenTime, ctime()) > from {
+		return nil, false
+	}
+	// m456: a bucket in [from, to) with no bars (or a missing tail) during an
+	// OPEN session is a data hole, not a weekend: its fold is lost and the
+	// caller must fail closed exactly like an unreadable bucket.
+	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to); len(holes) > 0 {
 		return nil, false
 	}
 	last := int64(-1)
@@ -391,12 +401,15 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			// flip that has bars in the slice — not only the bucket the line
 			// was in. A feed gap of 4h+ while the process stays up used to
 			// drop the buckets that opened and closed unseen (+39.8 pts).
-			// Buckets with no bars (a weekend, the halt) were never candles
-			// and fold nothing, exactly like the seed's closed-bucket series.
+			// Buckets with no bars during a CLOSED session (a weekend, the
+			// halt, a holiday) were never candles and fold nothing, exactly
+			// like the seed's closed-bucket series. A bucket with no bars
+			// while the session was OPEN is a data hole (m456): covered=false.
 			closes, covered := bucketClosesBetween(bars5m, s.BucketStart, bucketStart)
 			if !covered {
-				// The slice no longer reaches the last folded bucket: the
-				// missing closes are unknowable here. Fail closed — keep the
+				// The slice no longer reaches the last folded bucket, or an
+				// open-session bucket has no bars (m456): the missing closes
+				// are unknowable here. Fail closed — keep the
 				// last canonical value, refuse swing entries until a reseed.
 				s.LineStale = true
 			} else {
@@ -999,4 +1012,138 @@ func (s *SwingState) RebuildSwingPos(r SwingRebuild) bool {
 		MovedBE:     r.MovedBE,
 	}
 	return true
+}
+
+// swingHoleHorizonBuckets is how far back (in FOLDED 4h closes) a missing
+// open-session bucket still matters to the line. A lost fold leaves an error of
+// k(1-k)^n * (close - ema) with k = 2/(period+1): at 2*period folds (~11
+// trading days) that is below 0.06 pt even for a 50-pt close-to-line distance,
+// so an older hole is not worth wedging every swing entry until a restart.
+func swingHoleHorizonBuckets(period int) int {
+	if period <= 0 {
+		period = DefaultSwingCfg().EMAPeriod
+	}
+	return 2 * period
+}
+
+// swingHoleMinOpenMinutes is the least OPEN CME time a 4h bucket may leave
+// uncovered at its tail before it counts as a data hole. One hour, because the
+// bars read here are 1h (seed) or 5m (flip): a quiet minute or two with no
+// print is not a hole, a missing hour of an open session is.
+const swingHoleMinOpenMinutes = 60
+
+const fourHMs = int64(4 * time.Hour / time.Millisecond)
+
+// holedBucket is a 4h bucket whose tail was open CME time with no bars.
+type holedBucket struct {
+	Start  int64 // ms, bucket start
+	Folded int   // present (folded) buckets BEFORE it: where the lost fold belonged
+}
+
+// holedFourHBuckets walks the 17:00-CT-anchored 4h buckets from bucket start
+// `from` up to (excluding) `to` and returns every bucket whose bars stop short
+// of the bucket end while the CME session was OPEN for at least
+// swingHoleMinOpenMinutes of the uncovered tail, a bucket with no bars at all
+// included. The close the EMA folds for a bucket is its LAST bar's close, so a
+// missing tail is a wrong close and a missing bucket is a missing fold. The
+// seed's fourHClosedBuckets and bucketClosesBetween both skip such a bucket as
+// if it were a weekend ("never candles"); only the CME calendar (the same
+// kernel.IsCMEOpen the trading gate reads) can tell a halt, a weekend or a
+// holiday from a data hole. barMs is the bar duration of `bars` (ascending).
+// present is the number of buckets that had at least one bar.
+//
+// Bucket edges come from fourHBucketStart, the SAME function the fold uses
+// (m456 defect 1): a bucket is [s, fourHBucketEnd(s)), which is shorter than
+// 4h where the 17:00 CT anchor cuts it (1h on the fall-back Saturday, 3h on the
+// spring-forward one). Walking a flat s+4h read such a bucket as 4h long and
+// counted the next session's open hours as its uncovered tail.
+//
+// A roll seam is not special-cased here (m456 defect 2): the seed hands this
+// scan, and the fold, a series that already holds every minute any contract of
+// the stitch stores (withSeamBars), so a presence test on `bars` is the whole
+// test.
+func holedFourHBuckets(bars []market.Kline, barMs, from, to int64) (holes []holedBucket, present int) {
+	i := 0
+	for i < len(bars) && bars[i].OpenTime < from {
+		i++
+	}
+	for s := from; s < to; {
+		e := fourHBucketEnd(s)
+		covered, any := s, false
+		for i < len(bars) && bars[i].OpenTime < e {
+			any = true
+			if end := bars[i].OpenTime + barMs; end > covered {
+				covered = end
+			}
+			i++
+		}
+		if covered > e {
+			covered = e
+		}
+		if covered < e {
+			open, ok := kernel.OpenIntervalsBetween(covered, e, 60_000, 1000)
+			if !ok || open >= swingHoleMinOpenMinutes {
+				holes = append(holes, holedBucket{Start: s, Folded: present})
+			}
+		}
+		if any {
+			present++
+		}
+		s = e
+	}
+	return holes, present
+}
+
+// fourHBucketEnd is the exclusive end of the 4h bucket starting at s: the start
+// of the bucket the instant s+4h falls in. Equal to s+4h except where the 17:00
+// CT anchor cuts the bucket short (DST change days), so it is the same edge the
+// fold (fourHBucketStart) puts between two buckets. Always > s.
+func fourHBucketEnd(s int64) int64 {
+	if e := fourHBucketStart(s+fourHMs, ctime()); e > s {
+		return e
+	}
+	return s + fourHMs
+}
+
+// recentHoledBuckets keeps the holes still worth failing closed for: those with
+// at most `horizon` folded closes after them.
+func recentHoledBuckets(holes []holedBucket, present, horizon int) []int64 {
+	var out []int64
+	for _, h := range holes {
+		if present-h.Folded <= horizon {
+			out = append(out, h.Start)
+		}
+	}
+	return out
+}
+
+// withSeamBars is bars1m plus the stitch's seam bars (Evaluator.SetSeamBars)
+// that closed by now, in open-time order, skipping a minute bars1m already has.
+// With no seam bars it returns bars1m itself, so a non-stitched seed is
+// untouched. This is the single place the swing line's 1m source is widened to
+// every minute any contract of a roll stitch stores.
+func withSeamBars(bars1m, seam []market.Kline, now int64) []market.Kline {
+	if len(seam) == 0 || len(bars1m) == 0 {
+		return bars1m
+	}
+	out := make([]market.Kline, 0, len(bars1m)+len(seam))
+	j := 0
+	for _, b := range bars1m {
+		for j < len(seam) && seam[j].OpenTime < b.OpenTime {
+			if seam[j].CloseTime <= now {
+				out = append(out, seam[j])
+			}
+			j++
+		}
+		if j < len(seam) && seam[j].OpenTime == b.OpenTime {
+			j++
+		}
+		out = append(out, b)
+	}
+	for ; j < len(seam); j++ {
+		if seam[j].CloseTime <= now {
+			out = append(out, seam[j])
+		}
+	}
+	return out
 }

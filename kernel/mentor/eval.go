@@ -266,6 +266,18 @@ func UnmarshalState(b []byte) (State, error) {
 	return s, err
 }
 
+// SetSeamBars hands the evaluator the roll-seam bars of the stitched series the
+// NEXT SeedFull / ReseedState reads (RollStitcher.SeamBars): bars a contract
+// stores that the cut dropped from the series, on the same (newest) price
+// scale. The swing 4h EMA34 is aggregated from the stitched series PLUS these
+// bars, so a bucket only the seam holds is folded and a quarterly roll is
+// neither a false hole nor a missing fold (m456 defect 2). Pass nil when the
+// seed series is not a stitch. The slice is copied and sorted.
+func (e *Evaluator) SetSeamBars(seam []market.Kline) {
+	e.seamBars = append([]market.Kline(nil), seam...)
+	sort.Slice(e.seamBars, func(i, j int) bool { return e.seamBars[i].OpenTime < e.seamBars[j].OpenTime })
+}
+
 // Evaluator runs the mentor rules once per closed 1m candle. It emits intents
 // only; nothing here places an order (P3's injector does). Ticks are pure
 // functions of (bars, now, state): the same history always rebuilds the same
@@ -283,6 +295,12 @@ type Evaluator struct {
 	depth4hBucket int64
 	depthMet      string
 	seedLine      string
+	// seamBars (m456 defect 2): bars a contract of the stitch STORES that the
+	// stitched series handed to the seed lacks (RollStitcher.SeamBars, ascending,
+	// newest scale). The swing line is aggregated from series + seamBars. Set by
+	// SetSeamBars before every SeedFull / ReseedState; not part of State (the
+	// series it describes is rebuilt on every seed).
+	seamBars []market.Kline
 	// tfMemo caches barsTF aggregations within ONE Tick (FU-2): one build per
 	// (tf, slice identity) per Tick, cleared at the start of each Tick.
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
@@ -3498,7 +3516,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
 	if e.State.Swing.LineStale && !wasStale {
-		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
+		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice, or an open-session 4h bucket with no bars, hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
 	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
