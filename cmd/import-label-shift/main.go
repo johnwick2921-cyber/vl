@@ -46,6 +46,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -72,10 +73,32 @@ const (
 
 var tfDurMs = map[string]int64{"1m": 60_000, "5m": 300_000, "15m": 900_000, "1h": 3_600_000}
 
-// serviceActive is a var so tests can stand in for systemctl.
+// serviceActive reports whether the service must be treated as RUNNING (true =
+// refuse to write). It is a var so tests can stand in for the whole guard.
+// FAIL CLOSED: only a positively "stopped" answer from systemctl clears the
+// guard. "activating", "reloading", "deactivating", an empty answer, a systemctl
+// error (no dbus / no systemd) and a missing binary all count as running.
 var serviceActive = func(unit string) bool {
-	out, _ := exec.Command("systemctl", "is-active", unit).Output()
-	return strings.TrimSpace(string(out)) == "active"
+	out, err := exec.Command("systemctl", "is-active", unit).Output()
+	return serviceMustBeTreatedAsRunning(string(out), err)
+}
+
+// serviceMustBeTreatedAsRunning classifies one `systemctl is-active` answer.
+// is-active exits non-zero (3, or 4 for an unknown unit) for the stopped states
+// while still printing the state, so the exit code alone cannot be the signal:
+// the printed state is, and it must be one of the three stopped words.
+func serviceMustBeTreatedAsRunning(stdout string, runErr error) bool {
+	switch strings.TrimSpace(stdout) {
+	case "inactive", "failed", "unknown":
+		var ee *exec.ExitError
+		// a stopped word with a clean exit never happens in practice, but is
+		// harmless; a stopped word with systemctl's own non-zero exit is the
+		// normal case. Anything else (exec failure, signal) is not an answer.
+		if runErr == nil || errors.As(runErr, &ee) {
+			return false
+		}
+	}
+	return true
 }
 
 var nowFn = time.Now
@@ -279,7 +302,7 @@ func run(c config, out io.Writer) error {
 		return fmt.Errorf("database: %w", err)
 	}
 	if c.apply && !c.allowRunning && serviceActive(c.unit) {
-		return fmt.Errorf("%s is ACTIVE: the shift holds the write lock for minutes and would starve the live bar writer. Stop it first, or pass -allow-service-running (UNSAFE)", c.unit)
+		return fmt.Errorf("%s is ACTIVE or its state could not be read (fail-closed): the shift holds the write lock for minutes and would starve the live bar writer. Stop it first, or pass -allow-service-running (UNSAFE)", c.unit)
 	}
 	db, err := openDB(c.db, !c.apply)
 	if err != nil {

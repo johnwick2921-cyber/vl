@@ -269,3 +269,114 @@ func TestContractFilterAndTimeframeValidation(t *testing.T) {
 		t.Fatalf("an open-stamped contract has nothing to do: %v\n%s", err, out.String())
 	}
 }
+
+// D2 (round-2 review): the identical flag decides whether the quarantine report
+// says "nothing lost". Pin both values through the production path: a
+// NON-identical live target, a NON-identical target tagged source=historical /
+// convention=epoch_floor (8 of the real 116 conflicts), plus the fixture's one
+// identical duplicate.
+func TestConflictIdenticalFlagNonIdenticalTargets(t *testing.T) {
+	f := newFixture(t)
+	stubService(t, false)
+	const c = "MNQ 12-25"
+	// import labels at +20 and +30 minutes, landing on opens +19 and +30-1
+	ins(t, f.db, "1m", c, open0+20*min1, 10, legacyConvention, store.BarSourceHistoricalImport)
+	ins(t, f.db, "1m", c, open0+30*min1, 10, legacyConvention, store.BarSourceHistoricalImport)
+	ins(t, f.db, "1m", c, open0+19*min1, 99, "epoch_floor", "live")       // different volume
+	ins(t, f.db, "1m", c, open0+29*min1, 55, "epoch_floor", "historical") // different volume, historical/epoch_floor
+	var out bytes.Buffer
+	if err := run(cfg(f, false), &out); err != nil {
+		t.Fatal(err)
+	}
+	rep := out.String()
+	for _, want := range []string{
+		"conflicts MNQ 12-25 1m: 3 (1 identical OHLCV duplicates",
+		fmt.Sprintf("@%d (%s) would land on", open0+20*min1, ct(open0+20*min1)),
+		"[live/epoch_floor] identical=false",
+		"[historical/epoch_floor] identical=false",
+		"identical=true",
+	} {
+		if !strings.Contains(rep, want) {
+			t.Fatalf("dry-run missing %q:\n%s", want, rep)
+		}
+	}
+	if err := run(cfg(f, true), &bytes.Buffer{}); err != nil {
+		t.Fatal(err)
+	}
+	for _, w := range []struct {
+		ms        int64
+		src       string
+		identical int64
+	}{{open0 + 10*min1, "live", 1}, {open0 + 20*min1, "live", 0}, {open0 + 30*min1, "historical", 0}} {
+		if got := count(t, f.db, `SELECT COUNT(*) FROM bars_import_shift_conflicts WHERE contract=? AND open_time_ms=? AND existing_source=? AND identical=?`, c, w.ms, w.src, w.identical); got != 1 {
+			t.Fatalf("quarantine row @%d (%s) identical=%d missing", w.ms, w.src, w.identical)
+		}
+	}
+	if got := count(t, f.db, `SELECT COUNT(*) FROM bars_import_shift_conflicts WHERE identical=1`); got != 1 {
+		t.Fatalf("exactly one identical duplicate expected, got %d", got)
+	}
+	// the targets are untouched
+	if count(t, f.db, `SELECT COUNT(*) FROM bars WHERE open_time_ms IN (?,?) AND v IN (99,55)`, open0+19*min1, open0+29*min1) != 2 {
+		t.Fatalf("a conflict target was disturbed")
+	}
+}
+
+// D1 (round-2 review): the service guard fails CLOSED. Drive the REAL
+// serviceActive against a fake systemctl first on PATH.
+func fakeSystemctl(t *testing.T, script string) {
+	t.Helper()
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "systemctl"), []byte("#!/bin/sh\n"+script+"\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
+func TestServiceGuardFailsClosed(t *testing.T) {
+	cases := []struct {
+		name, script string
+		refuse       bool
+	}{
+		{"active", `echo active`, true},
+		{"activating", `echo activating`, true},
+		{"reloading", `echo reloading`, true},
+		{"deactivating", `echo deactivating`, true},
+		{"empty output, exit 1 (no dbus)", `exit 1`, true},
+		{"error text, exit 1", `echo "Failed to connect to bus" >&2; exit 1`, true},
+		{"garbage output", `echo whatever`, true},
+		{"inactive (exit 3 as real systemctl)", `echo inactive; exit 3`, false},
+		{"failed (exit 3)", `echo failed; exit 3`, false},
+		{"unknown (exit 4)", `echo unknown; exit 4`, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			fakeSystemctl(t, tc.script)
+			f := newFixture(t) // builds the DB without exec
+			before := f.dump(t)
+			err := run(cfg(f, true), &bytes.Buffer{})
+			if tc.refuse {
+				if err == nil || !strings.Contains(err.Error(), "ACTIVE") {
+					t.Fatalf("want a refusal, got %v", err)
+				}
+				if f.dump(t) != before {
+					t.Fatalf("a refused run wrote")
+				}
+				// the explicit flag is the only way past
+				c := cfg(f, true)
+				c.allowRunning = true
+				if err := run(c, &bytes.Buffer{}); err != nil {
+					t.Fatalf("-allow-service-running must override: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("a stopped service must pass the guard: %v", err)
+			}
+		})
+	}
+	t.Run("systemctl missing", func(t *testing.T) {
+		t.Setenv("PATH", t.TempDir())
+		f := newFixture(t)
+		if err := run(cfg(f, true), &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "ACTIVE") {
+			t.Fatalf("a missing systemctl must refuse, got %v", err)
+		}
+	})
+}
