@@ -161,7 +161,17 @@ func stitchedBarRows(bh *store.BarHistoryStore, symbol string) (r1, r5 []store.B
 	}
 	for i := idx - 1; i >= 0 && len(r1) < dataTruthStore1mN; i-- {
 		oc := spans[i].Contract
-		old1, err := bh.LastNBarsOn(symbol, "1m", oc, dataTruthStore1mN-len(r1))
+		// a FULL 1m window, like the 5m below - never "N minus what the newer contract
+		// already holds" (release #55 round 3, review 3 P2): len(r1) counts the new
+		// contract's replay rows that overlap the older's tail, and rowsAfter(r1, last)
+		// drops them again, so the stitched 1m came out about len(r1) rows SHORT of the
+		// window while the full 5m window below kept its whole reach. The 5m then began
+		// earlier than the 1m, JudgeSwing4h saw those early buckets as "N missing from
+		// the 1m" (they sit outside the 1m's read window, not lost), repaired the line
+		// from the 5m, and the two lines seeded from different buckets: the EMA seed
+		// residual read as a disagreement -> SWING4H paused ~2 trading days after every
+		// roll with no data lost (simulated 12-26 -> 03-27 roll, 1.42 pt > 1.00 pt).
+		old1, err := bh.LastNBarsOn(symbol, "1m", oc, dataTruthStore1mN)
 		if err != nil {
 			return nil, nil, fmt.Errorf("1m store read (%s): %w", oc, err)
 		}
@@ -204,7 +214,21 @@ func stitchedBarRows(bh *store.BarHistoryStore, symbol string) (r1, r5 []store.B
 		r1 = append(shiftRows(old1, delta), head1...)
 		r5 = append(shiftRows(old5cut, delta), head5...)
 	}
+	// THE REACH INVARIANT (structural, price-path independent): the stitched 5m never
+	// begins before the stitched 1m. The 1m is the series the evaluator reads and the
+	// series the swing line is built from; a 5m bucket from before its first bar is
+	// outside the window the check judges, not data the 1m lost. Holds across any
+	// number of stitched contracts (a third, thin one would otherwise reopen it).
+	if len(r1) > 0 {
+		r5 = rowsFrom(r5, r1[0].OpenTimeMs)
+	}
 	return r1, r5, nil
+}
+
+// rowsFrom is the suffix of the ascending rows at or after ms.
+func rowsFrom(rows []store.BarHistoryDB, ms int64) []store.BarHistoryDB {
+	i := sort.Search(len(rows), func(i int) bool { return rows[i].OpenTimeMs >= ms })
+	return rows[i:]
 }
 
 // rowsAfter is the suffix of the ascending rows strictly after ms.
