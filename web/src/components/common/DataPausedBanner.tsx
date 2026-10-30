@@ -27,6 +27,31 @@ const SCOPE_KEYS: Record<
   mentor_entries: 'dataPausedScopeMentor',
 }
 
+// release #55 round 3 (review 4 D1): the scope of a DATA-TRUTH pause (the bot
+// pauses by reader or by trader/account; a banner never claims more than the bot
+// refuses). The hole-class scopes keep SCOPE_KEYS above.
+const TRUTH_SCOPE_KEYS: Record<
+  string,
+  | 'dataPausedScopeSwing'
+  | 'dataPausedScopeDeep'
+  | 'dataPausedTruthScopeMentor'
+  | 'dataPausedTruthScopeAI'
+  | 'dataPausedTruthScopeTraders'
+> = {
+  swing_entries: 'dataPausedScopeSwing',
+  swing_and_deep_entries: 'dataPausedScopeDeep',
+  mentor_entries: 'dataPausedTruthScopeMentor',
+  ai_entries: 'dataPausedTruthScopeAI',
+  trader_entries: 'dataPausedTruthScopeTraders',
+}
+
+// "acct:SIM101" -> "account SIM101", "trader:abc" -> "trader abc"
+function scopeLabel(token: string): string {
+  if (token.startsWith('acct:')) return `account ${token.slice(5)}`
+  if (token.startsWith('trader:')) return `trader ${token.slice(7)}`
+  return token
+}
+
 export function DataPausedBanner({ language }: { language: Language }) {
   const { data } = useSWR('data-paused-health', () => updatesApi.health(true), {
     revalidateOnFocus: false,
@@ -44,8 +69,15 @@ export function DataPausedBanner({ language }: { language: Language }) {
   let text: string
   if (hasTruth && !hasMissing) {
     // release #55: only the data-truth checks pause trading - name them
-    const scopeKey = SCOPE_KEYS[tpz.scope ?? '']
-    const checks = truthChecks.join(', ')
+    const scopeKey = TRUTH_SCOPE_KEYS[tpz.scope ?? '']
+    // a check scoped to traders/accounts names them next to it
+    const who = tpz.data_truth_scopes ?? {}
+    const checks = truthChecks
+      .map((c) => {
+        const w = who[c]
+        return w && w.length > 0 ? `${c} (${w.map(scopeLabel).join(', ')})` : c
+      })
+      .join(', ')
     text = scopeKey
       ? tp('dataPausedTruthScopedBanner', language, {
           scope: tp(scopeKey, language),

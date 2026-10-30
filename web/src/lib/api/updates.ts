@@ -97,8 +97,8 @@ export interface HealthStatus {
     paused: boolean
     reasons?: string[]
     windows?: string[]
-    // the WIDEST paused scope (all_entries | mentor_entries |
-    // swing_and_deep_entries | swing_entries); absent on an older bot
+    // the WIDEST paused scope (all_entries | mentor_entries | ai_entries |
+    // trader_entries | swing_and_deep_entries | swing_entries); absent on an older bot
     scope?: string
     // every blocked leg (a narrower one is never hidden behind a wider one)
     scopes?: string[]
@@ -106,6 +106,11 @@ export interface HealthStatus {
     // lookback, ingest loss, contract roll, broker agreement, fill price)
     // currently blocking; reasons then carries 'data_truth'
     data_truth_checks?: string[]
+    // release #55 round 3: who a scoped check's block is FOR (acct:<ACCOUNT> /
+    // trader:<id>) and which entry paths it concerns (ai | mentor). An absent
+    // entry = the whole symbol / every path.
+    data_truth_scopes?: Record<string, string[]>
+    data_truth_readers?: Record<string, string[]>
   }
 }
 
