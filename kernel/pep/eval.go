@@ -55,10 +55,26 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 	}
 	res.Diag.Bars = len(closed)
 
+	// The flat intent and the three refusals below end the pass before the box is
+	// judged, but the box is still a FACT of the day the card and the chart draw:
+	// it is measured here as a diagnostic (never a reason to refuse, never an
+	// order). Without this the box vanished from the card the moment the day's
+	// trade was taken, or while the flat was closing the position.
+	diagBox := func() {
+		if now < boxEnd {
+			return
+		}
+		if b, miss := measureBox(closed, boxStart, boxEnd, boxMin, loc); len(miss) == 0 {
+			b.Size = snap(b.High-b.Low, cfg.TickSize)
+			b.Drawn = true
+			res.Box = b
+		}
+	}
 	// The time exit comes first and does not depend on fresh data: a position
 	// still open at/after the flat time, or carried over from an earlier CT day,
 	// is flattened at the last price whatever else is wrong.
 	if st.PositionOpen && (st.Day != day || now >= flatAt) {
+		diagBox()
 		reason := fmt.Sprintf("flat time %s CT reached", clock(cfg.FlatMin))
 		if st.Day != day {
 			reason = fmt.Sprintf("position carried over from CT day %q", st.Day)
@@ -80,20 +96,6 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 	res.Diag.TradesTaken = trades
 	res.Diag.EntriesAllowed = cfg.MaxTradesPerDay
 
-	// The three refusals below end the pass before the box is judged, but the box
-	// is still a FACT of the day the card and the chart draw: it is measured here
-	// as a diagnostic (never a reason to refuse, never an order). Without this the
-	// box vanished from the card the moment the day's trade was taken.
-	diagBox := func() {
-		if now < boxEnd {
-			return
-		}
-		if b, miss := measureBox(closed, boxStart, boxEnd, boxMin, loc); len(miss) == 0 {
-			b.Size = snap(b.High-b.Low, cfg.TickSize)
-			b.Drawn = true
-			res.Box = b
-		}
-	}
 	if now >= flatAt {
 		diagBox()
 		return refuse(CodeAfterFlat, SevWait, "after the %s CT flat time: no new entries", clock(cfg.FlatMin))

@@ -43,3 +43,30 @@ func TestBoxStaysMeasuredOnTheEarlyRefusals(t *testing.T) {
 		t.Fatalf("the diagnostic produced an intent: %+v", r.Intents)
 	}
 }
+
+// The flat intent is the fourth path that ends the pass before the box is judged.
+// The guide says the box stays on the card and the chart "while the position is
+// open and after the flat time"; the flat in progress (up to 15 minutes of verify,
+// 3 attempts) is exactly that state, and the card printed "Box not drawn yet"
+// beside "flat time reached - closing" (re-review 6, P2).
+//
+// MUTANT: remove the diagBox() call in the flat-intent branch of Evaluate
+// -> both rows are RED (intent still produced, Box zero).
+func TestBoxStaysMeasuredWhileTheFlatIsInProgress(t *testing.T) {
+	bars := aDay(t, dayCST, map[string]ohlc{"08:37": {25030, 25041, 25029, 25040}})
+	for name, tc := range map[string]struct {
+		now int64
+		st  State
+	}{
+		"flat time reached":      {ctms(t, dayCST, "15:01"), State{Day: dayCST, Trades: 1, PositionOpen: true}},
+		"carried from yesterday": {nowAfter(t, dayCST, "08:37"), State{Day: "2026-01-01", Trades: 1, PositionOpen: true}},
+	} {
+		r := Evaluate(bars, tc.now, cfgA(), tc.st)
+		if len(r.Intents) != 1 || r.Intents[0].Kind != KindFlat {
+			t.Fatalf("%s: want exactly one flat intent, got %+v", name, r.Intents)
+		}
+		if !r.Box.Drawn || r.Box.High != 25040 || r.Box.Low != 25000 || r.Box.Size != 40 {
+			t.Errorf("%s: box %+v, want drawn 25000..25040 size 40", name, r.Box)
+		}
+	}
+}
