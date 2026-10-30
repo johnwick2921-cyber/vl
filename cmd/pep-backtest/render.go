@@ -78,6 +78,15 @@ func (r *report) pdfNoData(st pep.Style) int {
 }
 
 func f2(x float64) string { return fmt.Sprintf("%.2f", x) }
+
+// feesUSD is the round-trip fee for tradedDays trades at the contract count; the
+// per-contract fee is the pep_fee_per_contract_usd setting (Config.FeePerContractRT).
+func feesUSD(tradedDays, contracts int, feePerContractRT float64) float64 {
+	return float64(tradedDays) * float64(contracts) * feePerContractRT
+}
+
+func fee2(x float64) string { return fmt.Sprintf("%.2f", x) }
+
 func f0(x float64) string { return fmt.Sprintf("%.0f", x) }
 func hm(ms int64) string  { return clockMs(ms) }
 func orDash(s string) string {
@@ -96,7 +105,7 @@ func (r *report) render(perDay bool) string {
 	w("- Source: stored MNQ 1m bars from a READ-ONLY copy of data.db. Contract rows present: %s.\n", r.sources)
 	w("- `historical_import` rows shifted by %d ms (they are close-stamped; verified against rows that exist twice).\n", r.shift)
 	w("- Per day the contract with the most bars in 08:30-15:00 CT is used; the evaluator is handed the last %s closed 1m bars at every closed 1m bar from the box end to 15:00 CT.\n", r.window)
-	w("- 2m candles: built inside kernel/pep from 1m on CT-even minutes; America/Chicago zoneinfo; $1 round trip per contract; same-bar stop before target; flat at the last price before 15:00 CT; a tape that ends early closes at its last price (the PDF's CUTOFF_PROXY).\n")
+	w("- 2m candles: built inside kernel/pep from 1m on CT-even minutes; America/Chicago zoneinfo; $%s round trip per contract (the fee setting); same-bar stop before target; flat at the last price before 15:00 CT; a tape that ends early closes at its last price (the PDF's CUTOFF_PROXY).\n", fee2(r.cfgs[pep.StyleA].FeePerContractRT))
 	a, e := r.cfgs[pep.StyleA], r.cfgs[pep.StyleE]
 	w("- Fill convention: a stop fills on a %s; a target fills on a %s.\n", map[bool]string{false: "touch", true: "trade-through (strictly beyond)"}[r.opts.StopThrough], map[bool]string{false: "touch", true: "trade-through (strictly beyond)"}[r.opts.TargetThrough])
 	w("- Style A: box %d min from %02d:%02d CT, SL %.2f x box, TP %.2f x box, one bar through both edges = `%s`.\n", a.A.BoxMinutes, a.BoxStartMin/60, a.BoxStartMin%60, a.A.SLFraction, a.A.TPFraction, a.A.BothEdges)
@@ -117,9 +126,9 @@ func (r *report) render(perDay bool) string {
 		w("| exits TP / SL / FLAT / DATA_END | %d / %d / %d / %d | |\n", t.byExit[pep.ExitTP], t.byExit[pep.ExitSL], t.byExit[pep.ExitFlat], t.byExit[pep.ExitDataEnd])
 		w("| gross USD, 6 MNQ | %s | %s |\n", f0(usd(t.gross, 6)), f0(pdfG))
 		w("| gross USD, 3 MNQ | %s | |\n", f0(usd(t.gross, 3)))
-		w("| fees at $1 RT/contract, 6 / 3 MNQ | %d / %d | |\n", t.traded*6, t.traded*3)
-		w("| net USD, 6 MNQ | %s | |\n", f0(usd(t.gross, 6)-float64(t.traded*6)))
-		w("| net USD, 3 MNQ | %s | |\n\n", f0(usd(t.gross, 3)-float64(t.traded*3)))
+		w("| fees at $%s RT/contract, 6 / 3 MNQ | %s / %s | |\n", fee2(r.cfgs[st].FeePerContractRT), f0(feesUSD(t.traded, 6, r.cfgs[st].FeePerContractRT)), f0(feesUSD(t.traded, 3, r.cfgs[st].FeePerContractRT)))
+		w("| net USD, 6 MNQ | %s | |\n", f0(usd(t.gross, 6)-feesUSD(t.traded, 6, r.cfgs[st].FeePerContractRT)))
+		w("| net USD, 3 MNQ | %s | |\n\n", f0(usd(t.gross, 3)-feesUSD(t.traded, 3, r.cfgs[st].FeePerContractRT)))
 		w("The PDF totals are for an ACCOUNT-MODELLED run (cooldown days skipped, breach days truncated); this run is the raw rule on every day with data, so totals differ by construction. Compare day by day below.\n\n")
 
 		v := r.verdicts(st)

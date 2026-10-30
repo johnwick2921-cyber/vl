@@ -51,6 +51,7 @@ func main() {
 		csvOut   = flag.String("csv", "", "optional per-day CSV path (must NOT exist)")
 		stopThru = flag.Bool("stop-through", true, "a stop fills only when a bar trades strictly THROUGH it (a touch does not). Default ON: it is what the PDF engine does (2026-03-25 E)")
 		tgtThru  = flag.Bool("target-through", false, "a target fills only when a bar trades strictly THROUGH it")
+		feeRT    = flag.Float64("fee", pep.DefaultConfig().FeePerContractRT, "round-trip fee per contract in USD (the pep_fee_per_contract_usd setting; reporting only)")
 		quiet    = flag.Bool("quiet", false, "omit the per-day tables, print the summary only")
 	)
 	flag.Parse()
@@ -70,10 +71,12 @@ func main() {
 
 	cfgA := pep.DefaultConfig()
 	cfgA.Style = pep.StyleA
+	cfgA.FeePerContractRT = *feeRT
 	cfgA.A.BoxMinutes = *aBox
 	cfgA.A.BothEdges = pep.BothEdges(*bothEdge)
 	cfgE := pep.DefaultConfig()
 	cfgE.Style = pep.StyleE
+	cfgE.FeePerContractRT = *feeRT
 	cfgE.E.BoxMinutes = *eBox
 	cfgE.E.Source = pep.SignalSource(*eSrc)
 	cfgE.E.EMATFMin = *eTF

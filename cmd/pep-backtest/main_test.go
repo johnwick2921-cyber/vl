@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -237,5 +238,46 @@ func TestWriteNewRefusesToOverwrite(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(p); string(b) != "one" {
 		t.Fatalf("content %q", b)
+	}
+}
+
+// The fee is the pep_fee_per_contract_usd setting, not a constant: the rendered
+// summary must move with Config.FeePerContractRT (reviewer repro: DefaultConfig
+// fee 1 -> 2 left the report byte-identical).
+func TestRenderFeesFollowTheFeeSetting(t *testing.T) {
+	build := func(fee float64) *report {
+		cfgA := pep.DefaultConfig()
+		cfgA.Style = pep.StyleA
+		cfgA.FeePerContractRT = fee
+		cfgE := pep.DefaultConfig()
+		cfgE.Style = pep.StyleE
+		cfgE.FeePerContractRT = fee
+		ls := []dayLine{
+			{Date: "2025-10-20", Mine: day(true, pep.SideLong, 100, 110, pep.ExitTP, 10)},
+			{Date: "2025-10-21", Mine: day(true, pep.SideShort, 100, 110, pep.ExitSL, 10)},
+		}
+		return &report{
+			cfgs:  map[pep.Style]pep.Config{pep.StyleA: cfgA, pep.StyleE: cfgE},
+			lines: map[pep.Style][]dayLine{pep.StyleA: ls, pep.StyleE: ls},
+			pdf:   map[pep.Style][]pdfRow{},
+		}
+	}
+	// 2 traded days: fee $1 -> 12 / 6; fee $2.50 -> 30 / 15; fee 0 -> 0 / 0.
+	for _, c := range []struct {
+		fee  float64
+		want string
+	}{
+		{1, "| fees at $1.00 RT/contract, 6 / 3 MNQ | 12 / 6 |"},
+		{2.5, "| fees at $2.50 RT/contract, 6 / 3 MNQ | 30 / 15 |"},
+		{0, "| fees at $0.00 RT/contract, 6 / 3 MNQ | 0 / 0 |"},
+	} {
+		got := build(c.fee).render(false)
+		if !strings.Contains(got, c.want) {
+			t.Fatalf("fee %v: report lacks %q", c.fee, c.want)
+		}
+	}
+	// net moves with the fee: gross 6 MNQ = (10-10)*... flat, so net = -fees.
+	if got := build(2.5).render(false); !strings.Contains(got, "| net USD, 6 MNQ | -30 |") {
+		t.Fatalf("net does not subtract the setting's fee:\n%s", got)
 	}
 }

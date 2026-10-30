@@ -244,3 +244,70 @@ func TestStylesKeepSeparateNumbers(t *testing.T) {
 		t.Fatal("E box minutes")
 	}
 }
+
+// --- boundary pins (review round 2: three evaluator mutants had survived) ---
+
+// STALE-FEED BOUNDARY: the newest closed 1m bar may be exactly SignalMaxAgeMin
+// old (lag == limit is fresh); one millisecond more is stale. Kills lag >= maxAge.
+func TestEvaluate_StaleFeedBoundaryIsExact(t *testing.T) {
+	bars := eDay(t, dayCST, nil)
+	var upto []market.Kline // newest bar opens 08:36 -> closes at 08:37:00.000
+	for _, b := range bars {
+		if b.OpenTime < ctms(t, dayCST, "08:37") {
+			upto = append(upto, b)
+		}
+	}
+	c := cfgE()
+	edge := ctms(t, dayCST, "08:37") + int64(c.SignalMaxAgeMin)*minuteMs
+	for _, ms := range []int64{0, 1} {
+		r := Evaluate(upto, edge+ms, c, State{})
+		stale := false
+		for _, f := range r.Refusals {
+			if f.Code == CodeBarsStale {
+				stale = true
+			}
+		}
+		if (ms == 0) == stale {
+			t.Fatalf("lag = limit + %dms: stale=%v (refusals %+v)", ms, stale, r.Refusals)
+		}
+	}
+}
+
+// WARM-UP BOUNDARY: with WarmupBars=N the first candle allowed to signal is the
+// one at 0-based index N (N complete candles precede it). The cross candle here
+// (the 08:34-08:36 candle) is index 17 of a tape that starts at 08:00, so N=17
+// signals and N=18 is EMA-not-warm. Kills i < warm-1.
+func TestE_WarmupBoundaryIsExact(t *testing.T) {
+	bars := session(t, dayCST, "08:00", "15:10", 25000, map[string]ohlc{
+		"08:30": {25000, 25020, 24990, 25000}, "08:31": {25000, 25015, 24992, 25000},
+	})
+	for i := range bars {
+		if bars[i].OpenTime >= ctms(t, dayCST, "08:32") {
+			bars[i] = kl(bars[i].OpenTime, flat(25100))
+		}
+	}
+	now := nowAfter(t, dayCST, "08:35")
+	c := cfgE()
+	c.E.WarmupBars = 17
+	mustOne(t, Evaluate(bars, now, c, State{}))
+	c.E.WarmupBars = 18
+	wantRefusal(t, Evaluate(bars, now, c, State{}), CodeEMANotWarm, SevBlock)
+}
+
+// SHORT-SIDE EQUALITY (spec: "from >= box low to < box low"): a reference value
+// EXACTLY on the box low followed by a close below it is a sell. Source `close`
+// is used so the previous reference is exactly the low, with no EMA arithmetic.
+// Kills pr > box.Low (the long-side mirror is pinned by TestE_EMACrossUp).
+func TestE_ShortCrossFromExactlyTheBoxLow(t *testing.T) {
+	bars := eDay(t, dayCST, map[string]ohlc{
+		"08:32": flat(24990), "08:33": flat(24990), // candle closing 08:34: close == box low 24990
+		"08:34": flat(24980), "08:35": flat(24980), // next candle closes 24980 < low
+	})
+	c := cfgE()
+	c.E.Source = SourceClose
+	in := mustOne(t, Evaluate(bars, nowAfter(t, dayCST, "08:35"), c, State{}))
+	if in.Side != SideShort {
+		t.Fatalf("side %s, want short", in.Side)
+	}
+	near(t, "entry = the signal candle close", in.Entry, 24980)
+}
