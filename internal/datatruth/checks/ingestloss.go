@@ -222,11 +222,22 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 		ovMsg = strings.TrimPrefix(ovMsg, "; ")
 	}
 	msg += ovMsg
+	msg += IngestLossClearsText
 	if firstErr != nil {
 		msg += "; verify error: " + firstErr.Error()
 	}
 	return true, msg
 }
+
+// IngestLossClearsText is the tail of every ingest_loss pause: what lifts it. It
+// names the spent-budget case, because the re-request the bot sends on its own
+// shares a per-session-day budget with the missing-bars tracker (40/day per
+// symbol); once that is spent NOTHING more is asked of NT8 and the pause waits
+// for one of the other three exits. Every owner-facing remedy text must work: a
+// restart does (the ledger is in memory, so it starts empty; NT8's history replay
+// refills the ring and the bar gap audit's first pass re-reads the store for any
+// minute that never reached it).
+const IngestLossClearsText = "; it clears when the bars are back in the ring (the bot asks NinjaTrader for them again on its own, within a per-session-day request budget - once that is spent nothing more is asked), when the minute ages out of the ring (about 41 hours of 1m), or when the bot is restarted"
 
 // Pending returns the number of unverified lost bars (all symbols).
 func (l *Ledger) Pending() int {
