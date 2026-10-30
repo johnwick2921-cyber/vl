@@ -322,6 +322,7 @@ func TestM451FillPriceStrikesAndAckSurviveARestart(t *testing.T) {
 	if b, _ := datatruth.Evaluate("MNQ", now); !b {
 		t.Fatal("two far events pause")
 	}
+	g1.Flush(5 * time.Second) // m55r3: the state write is off the exit path
 
 	g2 := boot() // kill -9 + restart: nothing in memory
 	if b, rs := datatruth.Evaluate("MNQ", now); !b {

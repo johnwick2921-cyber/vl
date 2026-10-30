@@ -106,6 +106,10 @@ func TestM451StrikesAndAckSurviveAKill9Restart(t *testing.T) {
 	if b, _, _ := g1.Check()("MNQ", day); !b {
 		t.Fatal("paused")
 	}
+	// m55r3: the state write is off the exit path; the kill -9 lands after it.
+	if !g1.Flush(5 * time.Second) {
+		t.Fatal("the writer did not go idle")
+	}
 
 	g2, _ := newTestGuard(sessionOf) // the restarted process
 	n, err := g2.EnableState(path)
@@ -121,7 +125,7 @@ func TestM451StrikesAndAckSurviveAKill9Restart(t *testing.T) {
 	if s := g2.Stats(); s.Far != 0 || s.Judged != 0 {
 		t.Fatalf("a replayed counted fill is ignored: %+v", s)
 	}
-	if !g2.Ack("MNQ") {
+	if !g2.Ack("MNQ") { // Ack waits (bounded) for its own write
 		t.Fatal("ack")
 	}
 	g3, _ := newTestGuard(sessionOf)
@@ -140,9 +144,10 @@ func TestM451StrikesAndAckSurviveAKill9Restart(t *testing.T) {
 	if b, _, _ := g4.Check()("MNQ", day.Add(24*time.Hour)); b {
 		t.Fatal("the next session starts clean")
 	}
+	g4.Flush(5 * time.Second)
 }
 
-func TestM451UnreadableStateFileIsToldToTheOwnerAndStartsEmpty(t *testing.T) {
+func TestM451UnreadableStateFileIsToldToTheOwner(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "fill.json")
 	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
 		t.Fatal(err)

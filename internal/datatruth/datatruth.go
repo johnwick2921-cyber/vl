@@ -116,14 +116,33 @@ type Reason struct {
 }
 
 // Concerns reports whether the reason applies to reader (an empty Readers list
-// concerns everyone).
+// concerns everyone). A reader token this build does not recognise (a typo, a
+// future name, a wrong case) concerns EVERYONE: Evaluate has already announced
+// the block, so a token the consumer cannot match must never turn it into a
+// block for nobody (m55r3 defect: an unrecognised token silently dropped an
+// announced block - the owner was told entries were paused while every path
+// admitted). A scope can only narrow to a RECOGNISED reader.
 func (r Reason) Concerns(reader string) bool {
 	if len(r.Readers) == 0 {
 		return true
 	}
 	for _, x := range r.Readers {
-		if x == reader {
+		if x == reader || !knownReader(x) {
 			return true
+		}
+	}
+	return false
+}
+
+// knownReader: the reader names Concerns can match.
+func knownReader(x string) bool { return x == ReaderAI || x == ReaderMentor }
+
+// knownScope: a scope token AppliesTo can match - exactly "trader:<id>" or
+// "acct:<ACCOUNT>" with a non-empty tail.
+func knownScope(s string) bool {
+	for _, pre := range []string{"trader:", "acct:"} {
+		if strings.HasPrefix(s, pre) {
+			return strings.TrimSpace(s[len(pre):]) != ""
 		}
 	}
 	return false
@@ -132,6 +151,10 @@ func (r Reason) Concerns(reader string) bool {
 // AppliesTo reports whether the block is for the asking trader: it is, when the
 // reason carries no scope (a whole-symbol block), or names this trader id or
 // this trader's bound account. A trader with no known account only matches by id.
+// A scope token this build does not recognise ("trader:" with no id, "acct:" with
+// no account, any other prefix) applies to EVERYONE - fail closed, the same rule
+// as Concerns: it can only narrow to a recognised trader or account, never to
+// nobody.
 func (r Reason) AppliesTo(traderID, account string) bool {
 	if len(r.Scopes) == 0 {
 		return true
@@ -142,7 +165,7 @@ func (r Reason) AppliesTo(traderID, account string) bool {
 		acc = ScopeAccount(account)
 	}
 	for _, s := range r.Scopes {
-		if s == tok || (acc != "" && s == acc) {
+		if !knownScope(s) || s == tok || (acc != "" && s == acc) {
 			return true
 		}
 	}
