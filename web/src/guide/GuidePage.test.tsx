@@ -101,10 +101,10 @@ describe('GuidePage', () => {
     vi.unstubAllGlobals()
   })
 
-  it('renders all 19 sections with deep-link ids', () => {
+  it('renders all 20 sections with deep-link ids', () => {
     render(<GuidePage />)
     expect(screen.getByTestId('guide-page')).toBeTruthy()
-    expect(GUIDE_SECTIONS).toHaveLength(19)
+    expect(GUIDE_SECTIONS).toHaveLength(20) // +1 pep mode (section 20, 2026-10-30)
     for (const s of GUIDE_SECTIONS) {
       const el = document.getElementById(s.id)
       expect(el, `section id #${s.id}`).toBeTruthy()

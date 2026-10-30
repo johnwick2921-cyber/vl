@@ -497,6 +497,9 @@ func (s *StrategyStore) ExplicitZerosConfirmed(strategyID string) map[string]boo
 // CreateWithExplicitZeros is the Studio's create (POST /api/strategies): the
 // strategy row AND its confirmation record in ONE transaction.
 func (s *StrategyStore) CreateWithExplicitZeros(strategy *Strategy, cfg *StrategyConfig) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	savedAt := time.Now().UTC()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(strategy).Error; err != nil {
@@ -511,6 +514,9 @@ func (s *StrategyStore) CreateWithExplicitZeros(strategy *Strategy, cfg *Strateg
 // updated_at and the record's saved_at are the same instant. An update that
 // matches no row writes no record.
 func (s *StrategyStore) UpdateWithExplicitZeros(strategy *Strategy, cfg *StrategyConfig) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	savedAt := time.Now().UTC()
 	return s.db.Transaction(func(tx *gorm.DB) error {
 		res := updateStrategyRow(tx, strategy, savedAt)
