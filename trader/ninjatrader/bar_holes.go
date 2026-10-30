@@ -789,8 +789,19 @@ func (t *barHoleTracker) overlapNoteLocked() string {
 	return note
 }
 
-// gateLocked names why a re-request may not go out NOW ("" = it may).
-func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+// reRequestGateWire is the slice of the wire the re-request admission reads.
+type reRequestGateWire interface {
+	IsConnected() bool
+	IsFeedConnected() bool
+}
+
+// reRequestGateReason names why a gap re-request may not go out NOW ("" = it
+// may): no wire, link down, feed down, or CME closed. It is THE gate every
+// automatic re-request shares - the m444 tracker (gateLocked) and the m449
+// ingest_loss hook (datatruth_rerequest.go) - so the two cannot drift. The
+// other half of the shared admission is barHoleInSendWindow (send timing); the
+// per-symbol spacing and the per-day budget live in the wire itself.
+func reRequestGateReason(w reRequestGateWire, isOpen func(time.Time) bool, now time.Time) string {
 	switch {
 	case w == nil:
 		return "no NT8 wire"
@@ -798,10 +809,18 @@ func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
 		return "NT8 link down"
 	case !w.IsFeedConnected():
 		return "NT8 feed down (a BarsRequest now returns bars=0)"
-	case !t.isOpen(now):
+	case isOpen == nil || !isOpen(now):
 		return "CME closed"
 	}
 	return ""
+}
+
+// gateLocked names why a re-request may not go out NOW ("" = it may).
+func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+	if w == nil {
+		return reRequestGateReason(nil, t.isOpen, now)
+	}
+	return reRequestGateReason(w, t.isOpen, now)
 }
 
 // tick runs the schedule at `now` (A28: the caller's clock). Production calls
