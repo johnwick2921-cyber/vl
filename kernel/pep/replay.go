@@ -65,6 +65,22 @@ var terminal = map[string]bool{
 // date is "YYYY-MM-DD" in CT; series is ascending OPEN-stamped 1m bars of ONE
 // contract.
 func ReplayDay(series []market.Kline, date string, cfg Config, window int) DayResult {
+	return ReplayDayOpts(series, date, cfg, window, ReplayOpts{})
+}
+
+// ReplayOpts are the replay-only fill conventions (nothing here reaches Evaluate).
+type ReplayOpts struct {
+	// StopThrough: a stop counts only when the bar trades THROUGH the level
+	// (strictly beyond it); a bar that merely touches the stop price does not
+	// fill it. Default false: a touch fills (a resting stop order triggers at
+	// its price).
+	StopThrough bool
+	// TargetThrough: the same for the target.
+	TargetThrough bool
+}
+
+// ReplayDayOpts is ReplayDay with explicit fill conventions.
+func ReplayDayOpts(series []market.Kline, date string, cfg Config, window int, opts ReplayOpts) DayResult {
 	out := DayResult{Date: date, Style: cfg.Style}
 	loc, err := chicago()
 	if err != nil {
@@ -112,7 +128,7 @@ func ReplayDay(series []market.Kline, date string, cfg Config, window int) DayRe
 			} else {
 				out.EntryAt = in.SignalClose + 1
 			}
-			playOut(&out, series, start, flatAt)
+			playOut(&out, series, start, flatAt, opts)
 			return out
 		}
 		if len(r.Refusals) > 0 {
@@ -133,7 +149,7 @@ func ReplayDay(series []market.Kline, date string, cfg Config, window int) DayRe
 	return out
 }
 
-func playOut(out *DayResult, series []market.Kline, start int, flatAt int64) {
+func playOut(out *DayResult, series []market.Kline, start int, flatAt int64, opts ReplayOpts) {
 	long := out.Side == SideLong
 	last := -1 // index of the last bar seen that opened before the flat time
 	for j := start; j < len(series); j++ {
@@ -142,24 +158,23 @@ func playOut(out *DayResult, series []market.Kline, start int, flatAt int64) {
 			break
 		}
 		last = j
+		// reach reports whether a bar extreme has reached a level in the given direction
+		// (<= / >= for a touch, < / > for a trade-through).
+		var stopHit, tgtHit bool
 		if long {
-			if b.Low <= out.Stop {
-				finish(out, out.Stop, ExitSL, b.CloseTime)
-				return
-			}
-			if b.High >= out.Target {
-				finish(out, out.Target, ExitTP, b.CloseTime)
-				return
-			}
+			stopHit = b.Low < out.Stop || (!opts.StopThrough && b.Low == out.Stop)
+			tgtHit = b.High > out.Target || (!opts.TargetThrough && b.High == out.Target)
 		} else {
-			if b.High >= out.Stop {
-				finish(out, out.Stop, ExitSL, b.CloseTime)
-				return
-			}
-			if b.Low <= out.Target {
-				finish(out, out.Target, ExitTP, b.CloseTime)
-				return
-			}
+			stopHit = b.High > out.Stop || (!opts.StopThrough && b.High == out.Stop)
+			tgtHit = b.Low < out.Target || (!opts.TargetThrough && b.Low == out.Target)
+		}
+		if stopHit {
+			finish(out, out.Stop, ExitSL, b.CloseTime)
+			return
+		}
+		if tgtHit {
+			finish(out, out.Target, ExitTP, b.CloseTime)
+			return
 		}
 	}
 	if last < 0 {

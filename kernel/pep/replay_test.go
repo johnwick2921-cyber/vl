@@ -123,3 +123,28 @@ func TestReplay_WindowIsHonoured(t *testing.T) {
 		t.Fatalf("a 40-bar window cannot warm the EMA9 or hold the 08:30 box all day: %+v", r)
 	}
 }
+
+// The PDF engine's convention (2026-03-25 E: the stop level was TOUCHED to the
+// tick and the PDF still books the target): with StopThrough a touch does not
+// fill the stop; the default fills on a touch (a resting stop triggers there).
+func TestReplay_StopThroughConvention(t *testing.T) {
+	over := map[string]ohlc{
+		"08:37": {25030, 25041, 25029, 25040},
+		"09:00": {25020, 25025, 25000, 25010}, // low == the 25000 stop exactly
+		"09:30": {25060, 25080, 25059, 25070}, // then the 25080 target
+	}
+	r := ReplayDay(aDay(t, dayCST, over), dayCST, cfgA(), 1500)
+	if r.ExitKind != ExitSL || r.GrossPts != -40 {
+		t.Fatalf("default (touch fills): %+v", r)
+	}
+	r = ReplayDayOpts(aDay(t, dayCST, over), dayCST, cfgA(), 1500, ReplayOpts{StopThrough: true})
+	if r.ExitKind != ExitTP || r.GrossPts != 40 {
+		t.Fatalf("stop-through (touch ignored): %+v", r)
+	}
+	// ... but a bar that trades beyond the stop by a tick does stop out
+	over["09:00"] = ohlc{25020, 25025, 24999.75, 25010}
+	r = ReplayDayOpts(aDay(t, dayCST, over), dayCST, cfgA(), 1500, ReplayOpts{StopThrough: true})
+	if r.ExitKind != ExitSL {
+		t.Fatalf("a print through the stop must stop out: %+v", r)
+	}
+}
