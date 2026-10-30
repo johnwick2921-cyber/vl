@@ -28,14 +28,18 @@ func (s *Server) handleAckFillPrice(c *gin.Context) {
 		return
 	}
 	account := strings.TrimSpace(c.Query("account"))
-	var acked bool
+	var acked, durable bool
 	if account != "" {
-		acked = checks.DefaultFills().AckAccount(symbol, account)
+		acked, durable = checks.DefaultFills().AckAccountDurable(symbol, account)
 	} else {
-		acked = checks.DefaultFills().Ack(symbol)
+		acked, durable = checks.DefaultFills().AckDurable(symbol)
 	}
 	if acked {
 		logger.Warnf("🔓 fill_price pause ACKNOWLEDGED by owner for %s (account %q) - new entries may resume", symbol, account)
+		if !durable {
+			logger.Errorf("fill_price ack for %s (account %q) is in memory only - the state file did not take it inside 2s; a restart before the disk catches up re-pauses (acknowledge again then)", symbol, account)
+		}
 	}
-	c.JSON(http.StatusOK, gin.H{"symbol": symbol, "account": account, "acknowledged": acked})
+	// persisted=false: the acknowledgement is live but NOT on disk yet (additive field).
+	c.JSON(http.StatusOK, gin.H{"symbol": symbol, "account": account, "acknowledged": acked, "persisted": durable})
 }

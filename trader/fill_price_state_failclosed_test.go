@@ -140,3 +140,41 @@ func TestFillPriceUnreadableStateThatCannotBeMovedIsNeverWrittenOver(t *testing.
 		t.Fatal("ack lifts the memory-only block")
 	}
 }
+
+// m55r4-h2: through the production boot call and verdict, a failed install of the
+// replacement state (here: a directory sits in the temp file's place, so the write
+// cannot start) must not lift the block at the NEXT boot. The old order (move the
+// file aside, then write) left no file at the path after that failure.
+//
+// MUTANT: EnableState moves the file aside before the replacement is written -> the
+// second boot sees no file, RED.
+func TestFillPriceUnreadableStateInstallFailureStillBlocksTheNextBoot(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "vl.db.fillprice.json")
+	if err := os.WriteFile(path, []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	prevPath, _ := fillPriceStatePath.Load().(string)
+	SetFillPriceStatePath(path)
+	t.Cleanup(func() { SetFillPriceStatePath(prevPath) })
+	savedDefault := checks.DefaultFills()
+	t.Cleanup(func() { checks.SetDefaultFills(savedDefault) })
+	t.Cleanup(datatruth.Reset)
+	boot := func() {
+		datatruth.Reset()
+		g := checks.NewFillGuard(checks.DefaultFillParams(), nil)
+		checks.SetDefaultFills(g)
+		RegisterFillPrice()
+		g.Flush(2 * time.Second)
+	}
+	for i := 1; i <= 2; i++ {
+		boot()
+		v := dataTruthReasons("MNQ", ntTrader.IntegrityDeepOpenMin, agreeT0, truthAsker{id: "t1", account: "SIM101"})
+		if !v.Blocked || !strings.Contains(v.Reason, checks.CheckFillPrice+":") {
+			t.Fatalf("boot %d: a failed install must keep new entries blocked: %q", i, v.Reason)
+		}
+	}
+}
