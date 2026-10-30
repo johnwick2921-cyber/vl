@@ -121,7 +121,7 @@ export const faq: GuideSection = {
         },
         {
           q: 'Why did the bot flatten at 14:45?',
-          a: 'EOD flat, and only for a Day-Plan or mentor trader: the one EOD-flat rule (enforceEODFlatAt) does nothing for a trader with neither on. For those, the session ends flat by design — resting entries are cancelled first, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is exempt from this 14:45 flat and held on its 4h candle (its arms are not cancelled either) — but a swing is never carried through a market close: the swing hold is cut at the 16:00 CT halt or a weekend, and the position is flattened on the last bar before it.',
+          a: 'EOD flat, and only for a Day-Plan or mentor trader: the one EOD-flat rule (enforceEODFlatAt) does nothing for a trader with neither on. A pep trader does not use this 14:45 flat: it has its own time exit (pep_flat_time_ct, 15:00 CT by default; Section 20). For those, the session ends flat by design — resting entries are cancelled first, then positions close at market (the limit-ticks-then-market ladder runs only when the server env sets EOD_FLAT_LIMIT_TICKS above 0; default 0). The session registry enforces it for all three sessions. Exception: a SWING4H mentor position is exempt from this 14:45 flat and held on its 4h candle (its arms are not cancelled either) — but a swing is never carried through a market close: the swing hold is cut at the 16:00 CT halt or a weekend, and the position is flattened on the last bar before it.',
           link: '#trading-day',
         },
         {

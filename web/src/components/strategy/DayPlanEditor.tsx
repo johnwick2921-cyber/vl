@@ -7,6 +7,7 @@
 import { useEffect, useState } from 'react'
 import type { Language } from '../../i18n/translations'
 import { tp } from '../../i18n/plan-translations'
+import { pt } from '../../i18n/pep-translations'
 import type {
   DayPlanConfig,
   DayPlanSessionOverride,
@@ -31,6 +32,11 @@ interface Props {
   // rows from the session-less read, `day_plan.sessions.<leaf>` rows from the
   // read that named that session. Optional: absent → no chips.
   effective?: StudioEffective
+  // PEP — the strategy's pep.enabled. The server refuses pep together with the
+  // day plan (pep_mode_conflict_day_plan); the selector blocks Pep while the plan
+  // is ON, and this is the other direction: with Pep ON the plan cannot be turned
+  // ON here (it can always be turned OFF), and a warning says why before Save.
+  pepOn?: boolean
 }
 
 const DP_PATH = 'day_plan.'
@@ -357,6 +363,7 @@ export function DayPlanEditor({
   disabled,
   language,
   effective,
+  pepOn = false,
 }: Props) {
   const cfg = migrateEqualOverrides(config ?? DEFAULT_DAY_PLAN)
   // W1 (g) — strategy-level rows come from the session-less read; per-session
@@ -490,10 +497,28 @@ export function DayPlanEditor({
       >
         <Toggle
           on={enabled}
-          onChange={(v) => update('plan_enabled', v)}
+          onChange={(v) => {
+            // Never turn the plan ON under Pep (the server refuses the save);
+            // turning it OFF is always allowed, so a loaded both-ON state can
+            // be repaired from here.
+            if (v && pepOn) return
+            update('plan_enabled', v)
+          }}
           disabled={disabled}
         />
       </FieldRow>
+      {pepOn && (
+        <div
+          role="alert"
+          data-testid="dayplan-pep-warning"
+          className="text-[11px] px-2"
+          style={{ color: 'var(--vl-warn)' }}
+        >
+          {enabled
+            ? pt('dayPlanPepBoth', language)
+            : pt('dayPlanPepBlocks', language)}
+        </div>
+      )}
 
       <div
         style={{ opacity: bodyDisabled ? 0.55 : 1 }}
@@ -861,12 +886,8 @@ export function DayPlanEditor({
                 max={50}
                 step={0.5}
                 placeholder="0"
-                onChange={(v) =>
-                  update('planner_stale_zones_max_atr', v)
-                }
-                onClear={() =>
-                  update('planner_stale_zones_max_atr', undefined)
-                }
+                onChange={(v) => update('planner_stale_zones_max_atr', v)}
+                onClear={() => update('planner_stale_zones_max_atr', undefined)}
                 disabled={bodyDisabled}
               />
             </FieldRow>

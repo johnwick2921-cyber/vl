@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import {
   mentorStaleMark,
   pairedBoxEdgeKeys,
@@ -10,6 +10,7 @@ import { EquityChart } from './EquityChart'
 import { AdvancedChart } from './AdvancedChart'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
+import { pt } from '../../i18n/pep-translations'
 import { chartTabs, ts } from '../../i18n/strategy-translations'
 import { BarChart3, CandlestickChart, ChevronDown, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -39,6 +40,15 @@ interface ChartTabsProps {
   /** m325 — the EMA34 location line's CURRENT value (kind ema34_htf), drawn as
    * a short right-edge segment, never a full-width flat line through history. */
   mentorEMALocationPrice?: number
+  /** PEP — the opening-range box (and the open position's stop/target) as price
+   * lines, from components/pep/pepOverlays.ts. Mentor and pep are never both ON,
+   * so the two sets never overlap on one chart. */
+  pepLines?: ChartLineSpec[]
+  /** The instrument pep reads (/pep-truth `symbol`). The lines are drawn ONLY on
+   * a tab showing it, and the note below says so on any other tab. */
+  pepSymbol?: string
+  /** The last good pep read's time while the read is stale. */
+  pepStaleSinceMs?: number
 }
 
 type ChartTab = 'equity' | 'kline'
@@ -158,6 +168,9 @@ export function ChartTabs({
   mentorSymbol,
   mentorStaleSinceMs,
   mentorEMALocationPrice,
+  pepLines,
+  pepSymbol,
+  pepStaleSinceMs,
 }: ChartTabsProps) {
   const { language } = useLanguage()
   const [activeTab, setActiveTab] = useState<ChartTab>('equity')
@@ -255,6 +268,17 @@ export function ChartTabs({
     pairedBoxEdgeKeys(mentorTruth).size > 0
   const mentorOnThisTab =
     hasMentorOverlays && sameChartSymbol(chartSymbol, mentorSymbol)
+
+  // PEP — the same rule for the opening-range box: one instrument, drawn only
+  // on a tab showing it, and SAID when hidden. The mentor lines and the pep lines
+  // go to the chart through the one price-line channel (mentorLevels).
+  const hasPepOverlays = (pepLines?.length ?? 0) > 0
+  const pepOnThisTab = hasPepOverlays && sameChartSymbol(chartSymbol, pepSymbol)
+  const drawnLines = useMemo(() => {
+    const m = mentorOnThisTab ? (mentorLevels ?? []) : []
+    const p = pepOnThisTab ? (pepLines ?? []) : []
+    return m.length + p.length === 0 ? undefined : [...m, ...p]
+  }, [mentorOnThisTab, mentorLevels, pepOnThisTab, pepLines])
 
   // Filtered symbol list
   const filteredSymbols = availableSymbols.filter((s) =>
@@ -516,6 +540,23 @@ export function ChartTabs({
         </div>
       )}
 
+      {visibleTab === 'kline' && hasPepOverlays && (
+        <div
+          data-testid="pep-overlay-note"
+          className="shrink-0 px-3 py-1 text-[10px] text-vl-neo-text-muted border-b border-white/5"
+        >
+          {pepOnThisTab
+            ? pt('truthOverlayNote', language, {
+                symbol: pepSymbol ?? '',
+                stale: mentorStaleMark(pepStaleSinceMs),
+              })
+            : pt('truthOverlayHidden', language, {
+                symbol: pepSymbol || '?',
+                chart: chartSymbol,
+              })}
+        </div>
+      )}
+
       {/* Tab Content - Chart autosizes to this container */}
       <div className="relative flex-1 bg-[#0B0E11]/50 rounded-b-lg overflow-hidden h-full min-h-0">
         <AnimatePresence mode="wait">
@@ -547,7 +588,7 @@ export function ChartTabs({
                 // Dynamic auto-sizing via ResizeObserver
                 exchange={currentExchange}
                 onSymbolChange={setChartSymbol}
-                mentorLevels={mentorOnThisTab ? mentorLevels : undefined}
+                mentorLevels={drawnLines}
                 mentorTrendlines={
                   mentorOnThisTab ? mentorTrendlines : undefined
                 }

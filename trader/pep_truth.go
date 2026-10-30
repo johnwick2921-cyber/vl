@@ -49,6 +49,9 @@ type PepTruth struct {
 	// Conflict names an illegal mode combination (the trader was refused at start).
 	Conflict *PepTruthConflict `json:"conflict,omitempty"`
 
+	// Symbol is the instrument this trader's pep reads (at.futuresSymbol()):
+	// the chart draws the box only on a tab showing this symbol.
+	Symbol    string `json:"symbol,omitempty"`
 	Style     string `json:"style,omitempty"`
 	Contracts int    `json:"contracts,omitempty"`
 	Day       string `json:"day,omitempty"` // CT date
@@ -99,6 +102,7 @@ func (at *AutoTrader) PepTruthSnapshot(now time.Time) PepTruth {
 	r := at.pepResolved()
 	out.Enabled = true
 	out.Style, out.Contracts = r.Style, r.Contracts
+	out.Symbol = at.futuresSymbol()
 	out.MaxTradesPerDay = r.MaxTradesPerDay
 	out.FlatTimeCT = r.FlatTimeCT
 	if len(r.Clamps) > 0 {

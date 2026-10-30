@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 	"time"
@@ -578,6 +579,15 @@ func TestPepTruthSnapshot(t *testing.T) {
 	}
 	if tr.Box.High != 25040 || tr.Box.Low != 25000 || tr.Box.Size != 40 || !tr.Box.Drawn {
 		t.Fatalf("box %+v", tr.Box)
+	}
+	// integration pin (D2): the box is drawn on the chart only for a tab showing
+	// this symbol, so the real server must send it. MUTANT: drop the
+	// out.Symbol assignment in PepTruthSnapshot -> RED.
+	if tr.Symbol != "MNQ" {
+		t.Fatalf("truth symbol %q, want MNQ (the chart overlay keys on it)", tr.Symbol)
+	}
+	if b, err := json.Marshal(tr); err != nil || !strings.Contains(string(b), `"symbol":"MNQ"`) {
+		t.Fatalf("the wire JSON has no symbol: %s %v", b, err)
 	}
 	if tr.TradesToday != 1 || tr.Stop != 25001 || tr.Target != 25081 || tr.Side != "long" {
 		t.Fatalf("trade facts %+v", tr)
