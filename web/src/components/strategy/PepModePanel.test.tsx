@@ -95,6 +95,16 @@ describe('PepModePanel controls', () => {
     expect(sent).toEqual({ ...fullPepBlock(undefined), pep_contracts: 6 })
   })
 
+  // Mutant: `const block = config ?? {}` (the stored partial block) -> RED.
+  it('a stored PARTIAL block is completed with the shipped defaults in what is sent', () => {
+    const { onChange } = setup({ pep_contracts: 3, style_a: {} })
+    commitNumber('pep-pep_tick_size', '0.5')
+    const sent = onChange.mock.calls[0][0] as PepConfig
+    expect(sent.pep_flat_time_ct).toBe('15:00')
+    expect(sent.style_e?.pep_e_ema_period).toBe(9)
+    expect(sent.style_a?.pep_a_box_minutes).toBe(5)
+  })
+
   it('clamps to the hard ceiling of 10 contracts on commit', () => {
     const { onChange } = setup()
     commitNumber('pep-pep_contracts', '25')
