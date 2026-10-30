@@ -316,6 +316,32 @@ type FillGuard struct {
 	wrunning bool
 	widle    []chan struct{} // closed when the writer next goes idle (Flush)
 	fileSeq  int64           // guarded by wmu: newest snapshot written
+
+	// clock is the guard's own idea of "now" for the persistence paths that have
+	// no caller-supplied instant (the 96 h state age cutoff, SavedAt, the
+	// unreadable-file stamp). nil = the wall clock (production, unchanged); a test
+	// installs a fixed one with SetClock so a fixture dated on a fixed calendar day
+	// does not age out of fillStateMaxAge as real time passes (the m451 time bomb).
+	clock atomic.Pointer[func() time.Time]
+}
+
+// SetClock installs the clock the guard's state age cutoff and stamps read. nil
+// restores the wall clock. Record/Sweep keep taking the caller's instant; this is
+// only for the paths that used to call time.Now() directly.
+func (g *FillGuard) SetClock(fn func() time.Time) {
+	if fn == nil {
+		g.clock.Store(nil)
+		return
+	}
+	g.clock.Store(&fn)
+}
+
+// nowTime is the guard's clock: SetClock's, else the wall clock.
+func (g *FillGuard) nowTime() time.Time {
+	if f := g.clock.Load(); f != nil {
+		return (*f)()
+	}
+	return time.Now()
 }
 
 // unreadableState is the standing block raised by an unreadable state file.
@@ -913,13 +939,13 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	movedTo := ""
 	bad := ""
 	if err != nil {
-		u = &unreadableState{Since: time.Now().UnixMilli(), Why: errCause(err), Acked: map[string]bool{}}
+		u = &unreadableState{Since: g.nowTime().UnixMilli(), Why: errCause(err), Acked: map[string]bool{}}
 		// The unreadable file is NOT renamed here: a rename leaves a moment with no
 		// file at the path, and a crash or a failed write in that moment lifts the
 		// block at the next boot (m55r4). The name is only picked now; the file is
 		// hard-linked to it and the replacement renamed over the path further down.
 		var nerr error
-		if bad, nerr = freeBadName(path, time.Now()); nerr != nil {
+		if bad, nerr = freeBadName(path, g.nowTime()); nerr != nil {
 			movedTo = fmt.Sprintf("it could NOT be moved aside (%v) and nothing will be written over it", nerr)
 			bad = ""
 		}
@@ -936,7 +962,7 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	g.mu.Lock()
 	g.statePath = path
 	g.unreadable = u
-	cutoff := time.Now().Add(-fillStateMaxAge).UnixMilli()
+	cutoff := g.nowTime().Add(-fillStateMaxAge).UnixMilli()
 	for k, s := range d.Strikes {
 		if s.LastMs < cutoff || len(s.IDs) == 0 {
 			continue
@@ -1114,8 +1140,8 @@ func (g *FillGuard) snapshotLocked() (fillSnap, bool) {
 	}
 	g.stateSeq++
 	seq := g.stateSeq
-	d := fillStateDisk{Version: fillStateVersion, SavedAt: time.Now().Unix(), Strikes: map[string]fillStateStrike{}}
-	cutoff := time.Now().Add(-fillStateMaxAge).UnixMilli()
+	d := fillStateDisk{Version: fillStateVersion, SavedAt: g.nowTime().Unix(), Strikes: map[string]fillStateStrike{}}
+	cutoff := g.nowTime().Add(-fillStateMaxAge).UnixMilli()
 	for k, st := range g.strikes {
 		if st.lastMs < cutoff {
 			continue

@@ -161,3 +161,63 @@ func TestM451UnreadableStateFileIsToldToTheOwner(t *testing.T) {
 		t.Fatalf("the owner is told the standing strikes may be lost: %v", *alerts)
 	}
 }
+
+// ── the 96 h state age cutoff reads the GUARD's clock (time-bomb pin, #57) ───
+//
+// The cutoff used to be time.Now().Add(-fillStateMaxAge): a fixture stamped on a
+// fixed calendar day silently aged out of the state file as real time passed
+// (trader.TestM451FillPriceStrikesAndAckSurviveARestart went red on 2026-10-30).
+// Now the guard's clock (SetClock; production = the wall clock) decides, so the
+// boundary is exact and independent of when the suite runs.
+
+func TestFillStateAgeCutoffUsesTheGuardClock(t *testing.T) {
+	sessionOf := func(ts time.Time) string { return ts.UTC().Format("2006-01-02") }
+	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	m := day.UnixMilli() / minuteMs * minuteMs
+	last := m + 6_000 // the strike state's newest fill (LastMs)
+	lastT := time.UnixMilli(last)
+
+	path := filepath.Join(t.TempDir(), "data", "fill.json")
+	g1, _ := newTestGuard(sessionOf)
+	g1.SetClock(func() time.Time { return day })
+	if _, err := g1.EnableState(path); err != nil {
+		t.Fatal(err)
+	}
+	g1.Record(farObs("p1", "p1", "Sim101", m+5_000), ringAround(m), day)
+	g1.Record(farObs("p2", "p2", "Sim101", last), ringAround(m), day)
+	if !g1.Flush(5 * time.Second) {
+		t.Fatal("the writer did not go idle")
+	}
+
+	restore := func(now time.Time) int {
+		g, _ := newTestGuard(sessionOf)
+		g.SetClock(func() time.Time { return now })
+		n, err := g.EnableState(path)
+		if err != nil {
+			t.Fatalf("EnableState(%v): %v", now, err)
+		}
+		return n
+	}
+	if n := restore(lastT.Add(fillStateMaxAge - time.Second)); n != 1 {
+		t.Fatalf("a state 96h-1s old must survive on the guard's clock, restored %d", n)
+	}
+	if n := restore(lastT.Add(fillStateMaxAge)); n != 1 {
+		t.Fatalf("a state exactly 96h old is still inside the window, restored %d", n)
+	}
+	if n := restore(lastT.Add(fillStateMaxAge + time.Second)); n != 0 {
+		t.Fatalf("a state 96h+1s old must be dropped on the guard's clock, restored %d", n)
+	}
+
+	// The write side uses the same clock: once the guard's clock is past the
+	// window, the next snapshot no longer carries the stale strike.
+	g1.SetClock(func() time.Time { return lastT.Add(fillStateMaxAge + time.Second) })
+	g1.AckAccount("MNQ", "Sim101") // any state change persists a snapshot
+	if !g1.Flush(5 * time.Second) {
+		t.Fatal("the writer did not go idle")
+	}
+	g2, _ := newTestGuard(sessionOf)
+	g2.SetClock(func() time.Time { return lastT }) // a clock that would keep it, were it in the file
+	if n, err := g2.EnableState(path); err != nil || n != 0 {
+		t.Fatalf("the snapshot written at 96h+1s must not carry the stale strike: n=%d err=%v", n, err)
+	}
+}
