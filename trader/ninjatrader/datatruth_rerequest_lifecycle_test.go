@@ -22,6 +22,9 @@ import (
 //   L4  no finish() on the default refused branch         -> ...FreedAfterRefusal RED
 //   L5  sp.retries never incremented                      -> ...TooSoonRetryCap RED
 //   L6  success closes the chain over a span widened mid-flight (gen ignored) -> ...WidenedWhileSending RED
+//   L7  no sp.gen++ on the newer-toMs arm of the widening branch -> ...WidenedToMsOnly RED
+//   L8  no sp.gen++ on the older-fromMs arm of the widening branch -> ...WidenedFromMsOnly RED
+//   L9  no sp.retries = 0 on the widened branch after a send -> ...WidenedChainGetsFreshRetries RED
 
 // secondDropSends drops a second, recent loss and reports whether a NEW send went out.
 func secondDropSends(h *rqHarness, w *fakeRerequestWire, hook func(string, string, int64, int64)) bool {
@@ -158,5 +161,91 @@ func TestIngestLossSpanWidenedWhileSendingIsAskedForAgain(t *testing.T) {
 	}
 	if len(h.queued) != 0 {
 		t.Fatalf("and then the chain is closed: queued=%d", len(h.queued))
+	}
+}
+
+// widenedOnlyAsksAgain: the first drop is (-10m, -9m); WHILE its send is in
+// flight a second drop widens ONE edge only. The widened span must be asked for
+// again - a success that closes the chain over it strands those bars (m55r4-h1
+// review: the both-edges test above cannot tell the two arms apart).
+func widenedOnlyAsksAgain(t *testing.T, widenFromMin, widenToMin int) {
+	t.Helper()
+	h := &rqHarness{now: ctAt(10, 0, 5)}
+	fw := &fakeRerequestWire{bb: 2000}
+	w := &widenWire{fakeRerequestWire: fw}
+	hook := dataTruthRerequester(w, rqOpen, h.clock, syncSpawn, h.after)
+	w.onSend = func() {
+		hook("MNQ", "1m", h.now.Add(-time.Duration(widenFromMin)*time.Minute).UnixMilli(),
+			h.now.Add(-time.Duration(widenToMin)*time.Minute).UnixMilli())
+	}
+	hook("MNQ", "1m", h.now.Add(-10*time.Minute).UnixMilli(), h.now.Add(-9*time.Minute).UnixMilli())
+	if len(fw.std) != 1 {
+		t.Fatalf("precondition: the first send went out: %d", len(fw.std))
+	}
+	if len(h.queued) != 1 {
+		t.Fatalf("a span widened mid-flight (one edge) must not be closed over by the success: queued=%d", len(h.queued))
+	}
+	for i := 0; i < 5 && len(fw.std) < 2 && len(h.queued) > 0; i++ {
+		h.fire(t)
+	}
+	if len(fw.std) != 2 {
+		t.Fatalf("the widened span is asked for again: sent=%d", len(fw.std))
+	}
+}
+
+func TestIngestLossSpanWidenedFromMsOnlyIsAskedForAgain(t *testing.T) {
+	widenedOnlyAsksAgain(t, 20, 9) // older fromMs, same toMs
+}
+
+func TestIngestLossSpanWidenedToMsOnlyIsAskedForAgain(t *testing.T) {
+	widenedOnlyAsksAgain(t, 10, 1) // same fromMs, newer toMs
+}
+
+// scriptWire answers each standard send from a script and can widen the span
+// while a chosen send is in flight.
+type scriptWire struct {
+	*fakeRerequestWire
+	n      int
+	script func(n int) error
+	onSend func(n int)
+}
+
+func (w *scriptWire) RequestGapBackfillAt(sym string, now time.Time) error {
+	w.n++
+	if w.onSend != nil {
+		w.onSend(w.n)
+	}
+	w.fakeRerequestWire.std = append(w.fakeRerequestWire.std, sym)
+	return w.script(w.n)
+}
+
+// A chain that already used up retries, then succeeds while a wider drop lands,
+// starts the widened chain with the FULL retry count - not what was left.
+func TestIngestLossWidenedChainGetsFreshRetries(t *testing.T) {
+	h := &rqHarness{now: ctAt(10, 0, 5)}
+	w := &scriptWire{fakeRerequestWire: &fakeRerequestWire{bb: 2000}}
+	var hook func(string, string, int64, int64)
+	w.script = func(n int) error {
+		if n == 3 {
+			return nil // success; the widening below landed during this send
+		}
+		return ntwire.ErrGapBackfillTooSoon
+	}
+	w.onSend = func(n int) {
+		if n == 3 { // sends 1 and 2 were TOO SOON: retries == 2 when send 3 goes out
+			hook("MNQ", "1m", h.now.Add(-20*time.Minute).UnixMilli(), h.now.Add(-9*time.Minute).UnixMilli())
+		}
+	}
+	hook = dataTruthRerequester(w, rqOpen, h.clock, syncSpawn, h.after)
+	hook("MNQ", "1m", h.now.Add(-10*time.Minute).UnixMilli(), h.now.Add(-9*time.Minute).UnixMilli())
+	for i := 0; i < 60 && len(h.queued) > 0; i++ {
+		h.fire(t)
+	}
+	if len(h.queued) != 0 {
+		t.Fatal("the chain must end (the retry cap holds)")
+	}
+	// sends 1-3 above; the widened chain then sends once and retries exactly MaxRetries times
+	if want := 3 + 1 + dataTruthRerequestMaxRetries; w.n != want {
+		t.Fatalf("a widened chain gets a fresh retry count: sends=%d, want %d", w.n, want)
 	}
 }
