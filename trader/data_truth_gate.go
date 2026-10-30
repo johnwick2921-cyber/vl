@@ -84,6 +84,16 @@ func dataTruthStarting(now time.Time) bool {
 	return now.Sub(time.UnixMilli(dataTruthWiredAt.Load())) < dataTruthBootGrace
 }
 
+// DataTruthStarting is dataTruthStarting for the health endpoint: true while the
+// gate is wired and still in its quiet boot wait, i.e. while EVERY NT8 trader's new
+// entries are refused with "the data-truth checks are still starting". The banner
+// reads it so it never says "not paused" for the up-to-10 minutes after a deploy
+// in which nothing can enter (round 3 re-review P3: that under-claim was disclosed
+// but not fixed).
+func DataTruthStarting(now time.Time) bool {
+	return dataTruthWired.Load() && dataTruthStarting(now)
+}
+
 // dataTruthRequired lists every check this process must have, by datatruth name.
 // A name nobody registers is a stub that BLOCKS.
 func dataTruthRequired() []string {

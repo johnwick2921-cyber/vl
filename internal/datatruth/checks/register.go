@@ -113,6 +113,7 @@ func RegisterAll(c Config) {
 	datatruth.RegisterScoped(CheckLookback, lookbackCheck(c))
 	datatruth.Register(CheckContractRoll, contractCheck(c))
 	if c.Ledger != nil && c.Verify != nil {
+		datatruth.SetResumeNote(CheckIngestLoss, IngestLossResume)
 		datatruth.Register(CheckIngestLoss, func(symbol string, now time.Time) (bool, string, error) {
 			b, why := c.Ledger.Judge(symbol, c.Verify)
 			return b, why, nil

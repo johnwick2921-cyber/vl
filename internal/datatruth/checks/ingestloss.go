@@ -191,7 +191,7 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 			continue
 		}
 		if l.whole == nil {
-			ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) and no range verifier is wired", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+			ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s CT) and no range verifier is wired", r.n, k.tf, time.UnixMilli(r.from).In(ctLoc()).Format("01-02 15:04"), time.UnixMilli(r.to).In(ctLoc()).Format("15:04"))
 			continue
 		}
 		ok, err := l.whole(symbol, k.tf, r.from, r.to, r.kind)
@@ -202,7 +202,7 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 			delete(l.overflow, k)
 			continue
 		}
-		ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) not yet verified whole", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+		ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s CT) not yet verified whole", r.n, k.tf, time.UnixMilli(r.from).In(ctLoc()).Format("01-02 15:04"), time.UnixMilli(r.to).In(ctLoc()).Format("15:04"))
 	}
 	if len(left) == 0 && ovMsg == "" {
 		return false, ""
@@ -216,28 +216,24 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 	msg := ""
 	if len(left) > 0 {
 		k := left[0]
-		msg = fmt.Sprintf("%d lost bar(s) not yet verified present (first %s %s %s, %s)", len(left), symbol, k.tf, time.UnixMilli(k.t).UTC().Format("01-02 15:04Z"), l.pending[k].kind)
+		msg = fmt.Sprintf("%d lost bar(s) not yet verified present (first %s %s %s CT, %s)", len(left), symbol, k.tf, time.UnixMilli(k.t).In(ctLoc()).Format("01-02 15:04"), l.pending[k].kind)
 	}
 	if msg == "" {
 		ovMsg = strings.TrimPrefix(ovMsg, "; ")
 	}
 	msg += ovMsg
-	msg += IngestLossClearsText
+	// ONE remedy for the whole verdict, sized by the first pending frame (the
+	// overflow arm alone has no single frame: "" words the ring age for all of them)
+	if len(left) > 0 {
+		msg += ingestLossRemedy(left[0].tf)
+	} else {
+		msg += ingestLossRemedy("")
+	}
 	if firstErr != nil {
 		msg += "; verify error: " + firstErr.Error()
 	}
 	return true, msg
 }
-
-// IngestLossClearsText is the tail of every ingest_loss pause: what lifts it. It
-// names the spent-budget case, because the re-request the bot sends on its own
-// shares a per-session-day budget with the missing-bars tracker (40/day per
-// symbol); once that is spent NOTHING more is asked of NT8 and the pause waits
-// for one of the other three exits. Every owner-facing remedy text must work: a
-// restart does (the ledger is in memory, so it starts empty; NT8's history replay
-// refills the ring and the bar gap audit's first pass re-reads the store for any
-// minute that never reached it).
-const IngestLossClearsText = "; it clears when the bars are back in the ring (the bot asks NinjaTrader for them again on its own, within a per-session-day request budget - once that is spent nothing more is asked), when the minute ages out of the ring (about 41 hours of 1m), or when the bot is restarted"
 
 // Pending returns the number of unverified lost bars (all symbols).
 func (l *Ledger) Pending() int {
@@ -248,3 +244,70 @@ func (l *Ledger) Pending() int {
 	defer l.mu.Unlock()
 	return len(l.pending)
 }
+
+// LedgerRingBars is the per-frame bar ring a lost bar ages out of (the NT8 bar
+// cache, provider/ninjatrader.DefaultBarCacheMaxBars - a parity test in that
+// package keeps the two equal). Used only to word the pause's duration.
+const LedgerRingBars = 2500
+
+// ctLoc is the owner's clock (America/Chicago); UTC only if the zone data is
+// missing, never silently a different zone name.
+func ctLoc() *time.Location {
+	if l, err := time.LoadLocation("America/Chicago"); err == nil {
+		return l
+	}
+	return time.UTC
+}
+
+// ingestLossRemedy is the owner text of an ingest_loss pause, ONE text for what
+// lifts it (round 4 unified the m55r3-h1 spent-budget text and the m55r3-h3
+// duration text, which had both been appended and said the same thing twice):
+//
+//   - what the bot does by itself: it re-requests the bars from NT8 (in the first
+//     15 seconds of a minute, within the shared budget of gapBackfillMaxPerDay=40
+//     per symbol per CME session day) and the pause lifts when they are back;
+//   - what happens when that is refused (budget spent, or the link, feed or market
+//     is down): nothing more is asked and the pause STANDS until the minute ages
+//     out of the LedgerRingBars-bar ring - a count of OPEN-market frames, so a
+//     Friday loss can last into Tuesday - or the owner restarts the bot;
+//   - for a slow frame the ring age is months (1h: 2500 open hours, 4h: 10000), so a
+//     restart is the only realistic exit, and the text says so instead of
+//     quoting a duration nobody will wait for;
+//   - the restart works: the loss list is in memory, so it starts empty, and NT8's
+//     history replay refills the ring (the bar gap audit's first pass re-reads the
+//     store for any minute that never reached it).
+//
+// tf == "" is the overflow arm (a range of several frames).
+func ingestLossRemedy(tf string) string {
+	mins := 0
+	var n int
+	var u byte
+	if _, err := fmt.Sscanf(tf, "%d%c", &n, &u); err == nil && n > 0 {
+		switch u {
+		case 'm':
+			mins = n
+		case 'h':
+			mins = n * 60
+		}
+	}
+	age := "(" + fmt.Sprint(LedgerRingBars) + " frames of open market: about 41 hours for the 1m frame, about 208 for the 5m, months for 1h and 4h)"
+	if mins > 0 {
+		h := LedgerRingBars * mins / 60
+		switch {
+		case h >= 240:
+			age = fmt.Sprintf("(the %d-bar %s ring: about %d hours of open market, i.e. months - in practice only a restart ends it)", LedgerRingBars, tf, h)
+		case h >= 48:
+			age = fmt.Sprintf("(the %d-bar %s ring: about %d hours of open market, roughly %d trading days - open-market hours, not wall-clock)", LedgerRingBars, tf, h, (h+22)/23)
+		default:
+			age = fmt.Sprintf("(the %d-bar %s ring: about %d hours of open market, not wall-clock hours - a Friday loss can last into Tuesday)", LedgerRingBars, tf, h)
+		}
+	}
+	return "; the bot re-requests them from NT8 itself (in the first 15 seconds of a minute, within a budget of 40 requests per symbol per CME session day) and the pause lifts when they are back in the ring; if that is refused (budget spent, or the link, feed or market is down) nothing more is asked and the pause STANDS until the minute ages out of the ring " + age + ", or until you restart the bot in a flat/safe window (the loss list is in memory, so a restart starts clean and NT8's replay re-seeds the ring)"
+}
+
+// IngestLossResume is the resume tail of the ingest_loss OWNER PUSH. The generic
+// "entries resume automatically when the data measures clear" is false for the
+// spent-budget case, where only the ring's age or a restart ends the pause
+// (round 3 re-review 4 P3). The push clips the detail before the tail, so the way
+// out lives here.
+const IngestLossResume = "entries resume when the lost bars are back in the ring (the bot re-asks NinjaTrader itself, within a daily budget), when the minute ages out of the ring (open-market hours: 1m about 41, 5m about 208; for 1h and 4h that is months), or when you restart the bot in a flat/safe window"

@@ -10,7 +10,6 @@ import (
 
 	"vl/config"
 	"vl/internal/datatruth"
-	"vl/internal/datatruth/checks"
 	"vl/internal/ownerpush"
 	"vl/kernel"
 	ntwire "vl/provider/ninjatrader"
@@ -27,6 +26,10 @@ import (
 // must keep working while the AddOn is restarting.
 // healthNow is the clock seam for handleHealth (tests pin an open / closed CME instant).
 var healthNow = time.Now
+
+// healthDataTruthStarting is the quiet-boot-wait read (a var so the pin can drive
+// both sides of it through the real handler).
+var healthDataTruthStarting = trader.DataTruthStarting
 
 func (s *Server) handleHealth(c *gin.Context) {
 	now := healthNow()
@@ -191,12 +194,16 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// with no NT8 bridge claims nothing - A24).
 	dtBlocked := []string{}
 	dtScopes := map[string][]string{}
+	dtReaders := map[string][]string{}
 	if snap := datatruth.Snapshot(); len(snap) > 0 {
 		for n, st := range snap {
 			if st.Blocked {
 				dtBlocked = append(dtBlocked, n)
 				if len(st.Scopes) > 0 {
 					dtScopes[n] = st.Scopes
+				}
+				if len(st.Readers) > 0 {
+					dtReaders[n] = st.Readers
 				}
 			}
 		}
@@ -290,13 +297,37 @@ func (s *Server) handleHealth(c *gin.Context) {
 		}
 		// release #55: the m446/m447 data-truth checks pause NEW entries too. A
 		// swing4h-only block pauses SWING4H entries alone; any other check, all.
+		// the quiet boot wait refuses EVERY NT8 trader's new entries (trader.
+		// DataTruthStarting): the banner says so instead of "not paused"
+		if healthDataTruthStarting(now) {
+			paused = true
+			reasons = append(reasons, "data_truth_starting")
+			noteScope(ntTrader.PausedScopeAll)
+		}
 		if len(dtBlocked) > 0 {
 			paused = true
 			reasons = append(reasons, "data_truth")
-			if len(dtBlocked) == 1 && dtBlocked[0] == checks.CheckLookbackSwing4h {
-				noteScope(ntTrader.PausedScopeSwing)
-			} else {
-				noteScope(ntTrader.PausedScopeAll)
+			// each blocking check names what it really pauses (review 4 D1): a block
+			// scoped to the mentor or the AI readers, or to one trader/account, is not
+			// "all entries" - a banner never claims more than the bot refuses.
+			dtMentor := false
+			for _, n := range dtBlocked {
+				sc := ntTrader.DataTruthPausedScope(n, dtReaders[n], dtScopes[n])
+				noteScope(sc)
+				dtMentor = dtMentor || sc == ntTrader.PausedScopeMentor
+			}
+			// A data-truth block for the MENTOR readers does not cover SWING4H (the
+			// hole-class mentor leg does, a reader-scoped check does not): with a
+			// swing block next to it, "mentor traders only; AI/planner entries trade
+			// normally" would understate the pause (round 3 re-review 2 P3). Say that
+			// SOME entries are paused and send the owner to the per-check list.
+			if dtMentor {
+				for _, x := range scopes {
+					if x == ntTrader.PausedScopeSwing {
+						noteScope(ntTrader.PausedScopeMixed)
+						break
+					}
+				}
 			}
 		}
 		if feedStale {
@@ -304,11 +335,12 @@ func (s *Server) handleHealth(c *gin.Context) {
 			reasons = append(reasons, "stale_data")
 		}
 		body["trading_paused"] = gin.H{
-			"data_truth_checks": dtBlocked,
-			"data_truth_scopes": dtScopes, // m451: who a scoped check's block is FOR; absent entry = the whole symbol
-			"paused":            paused,
-			"reasons":           reasons,
-			"windows":           windows,
+			"data_truth_checks":  dtBlocked,
+			"data_truth_scopes":  dtScopes,  // m451: who a scoped check's block is FOR; absent entry = the whole symbol
+			"data_truth_readers": dtReaders, // m450: which entry paths a check's block concerns; absent entry = every path
+			"paused":             paused,
+			"reasons":            reasons,
+			"windows":            windows,
 			// the WIDEST scope that is paused and every scope that is (round 4,
 			// D3): the banner must not say TRADING PAUSED when only SWING4H is
 			"scope":       ntTrader.WidestPausedScope(scopes),

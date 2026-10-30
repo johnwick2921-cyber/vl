@@ -169,4 +169,120 @@ describe('DataPausedBanner', () => {
     await waitFor(() => expect(spy).toHaveBeenCalled())
     expect(screen.queryByTestId('data-paused-banner')).toBeNull()
   })
+  // release #55 round 3 (review 4 D1): a reader- or account-scoped data-truth pause
+  // never reads as the plain "TRADING PAUSED" (the bot still trades the others).
+  it('a mentor-reader-only data-truth pause says the AI path trades normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['cross_frame'],
+        data_truth_readers: { cross_frame: ['mentor'] },
+        scope: 'mentor_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('TRADING PAUSED (mentor traders only')
+    expect(el).toHaveTextContent('AI/planner entries trade normally')
+    expect(el).toHaveTextContent('cross_frame')
+  })
+  it('an AI-reader-only data-truth pause says the mentor traders trade normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['cross_frame'],
+        scope: 'ai_entries',
+      },
+    })
+    mount()
+    expect(await screen.findByTestId('data-paused-banner')).toHaveTextContent(
+      'TRADING PAUSED (AI/planner entries only; mentor traders trade normally)'
+    )
+  })
+  it('an account-scoped data-truth pause names the account', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['fill_price'],
+        data_truth_scopes: { fill_price: ['acct:SIM101'] },
+        scope: 'trader_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('other traders trade normally')
+    expect(el).toHaveTextContent('fill_price (account SIM101)')
+  })
+  it('a mixed pause (mentor-only check + an account check) never claims AI trades normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['broker_agreement', 'cross_frame'],
+        data_truth_scopes: { broker_agreement: ['acct:SIM101'] },
+        data_truth_readers: { cross_frame: ['mentor'] },
+        scope: 'mixed_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('some entries only')
+    expect(el).not.toHaveTextContent('AI/planner entries trade normally')
+    expect(el).not.toHaveTextContent('mentor traders trade normally')
+    expect(el).toHaveTextContent('broker_agreement (account SIM101)')
+  })
+  it('the quiet boot wait is stated, not silent', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth_starting'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('data checks are starting after a restart')
+    expect(el).toHaveTextContent('exits and stops are unaffected')
+  })
+
+  // round 4 (re-review 4 P3): the banner names the way out for the two checks that
+  // do not clear when the data merely looks fine again.
+  it('fill_price and ingest_loss pauses show their remedy on screen', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        windows: [],
+        data_truth_checks: ['fill_price', 'ingest_loss'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    const remedies = await screen.findAllByTestId('data-paused-remedy')
+    expect(remedies).toHaveLength(2)
+    expect(remedies[0]).toHaveTextContent(
+      'POST /api/risk/ack-fill-price?symbol=MNQ'
+    )
+    expect(remedies[0]).toHaveTextContent('not by a new CME session')
+    expect(remedies[1]).toHaveTextContent(
+      'after a restart in a flat/safe window'
+    )
+  })
+  it('a check that clears by itself shows no remedy line', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        windows: [],
+        data_truth_checks: ['cross_frame'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    await screen.findByTestId('data-paused-banner')
+    expect(screen.queryByTestId('data-paused-remedy')).toBeNull()
+  })
 })

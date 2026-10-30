@@ -130,3 +130,50 @@ func TestMentorLegAloneIsMentorEntries(t *testing.T) {
 		t.Fatalf("an RTH hole beyond the AI/planner window pauses the mentor (and SWING4H) only: %+v", views)
 	}
 }
+
+// Release #55 round 3 (review 4, D1): the data-truth scopes rank like the others,
+// and the per-check mapping follows what the gate really obeys.
+func TestWidestPausedScopeRanksTheDataTruthScopes(t *testing.T) {
+	cases := []struct {
+		in   []string
+		want string
+	}{
+		{[]string{PausedScopeAI}, PausedScopeAI},
+		{[]string{PausedScopeAI, PausedScopeSwing}, PausedScopeDeep},
+		{[]string{PausedScopeMentor, PausedScopeAI}, PausedScopeAll},
+		{[]string{PausedScopeTraders}, PausedScopeTraders},
+		// a trader/account block next to ANY narrower block is "mixed": neither single
+		// scope sentence is true of both (re-review P2)
+		{[]string{PausedScopeTraders, PausedScopeSwing}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeMentor}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeAI}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeDeep}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeAll}, PausedScopeAll},
+	}
+	for _, c := range cases {
+		if got := WidestPausedScope(c.in); got != c.want {
+			t.Errorf("WidestPausedScope(%v) = %q, want %q", c.in, got, c.want)
+		}
+	}
+}
+
+func TestDataTruthPausedScopeMapping(t *testing.T) {
+	cases := []struct {
+		check           string
+		readers, scopes []string
+		want            string
+	}{
+		{"bad_print", nil, nil, PausedScopeAll},
+		{"cross_frame", []string{"mentor"}, nil, PausedScopeMentor},
+		{"cross_frame", []string{"ai"}, nil, PausedScopeAI},
+		{"cross_frame", []string{"ai", "mentor"}, nil, PausedScopeAll},
+		{"cross_frame", []string{"somebody_new"}, nil, PausedScopeAll},
+		{"indicator_lookback_swing4h", nil, nil, PausedScopeSwing},
+		{"broker_agreement", nil, []string{"acct:SIM101"}, PausedScopeTraders},
+	}
+	for _, c := range cases {
+		if got := DataTruthPausedScope(c.check, c.readers, c.scopes); got != c.want {
+			t.Errorf("DataTruthPausedScope(%s,%v,%v) = %q, want %q", c.check, c.readers, c.scopes, got, c.want)
+		}
+	}
+}

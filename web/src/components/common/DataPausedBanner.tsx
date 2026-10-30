@@ -27,6 +27,33 @@ const SCOPE_KEYS: Record<
   mentor_entries: 'dataPausedScopeMentor',
 }
 
+// release #55 round 3 (review 4 D1): the scope of a DATA-TRUTH pause (the bot
+// pauses by reader or by trader/account; a banner never claims more than the bot
+// refuses). The hole-class scopes keep SCOPE_KEYS above.
+const TRUTH_SCOPE_KEYS: Record<
+  string,
+  | 'dataPausedScopeSwing'
+  | 'dataPausedScopeDeep'
+  | 'dataPausedTruthScopeMentor'
+  | 'dataPausedTruthScopeAI'
+  | 'dataPausedTruthScopeTraders'
+  | 'dataPausedTruthScopeMixed'
+> = {
+  swing_entries: 'dataPausedScopeSwing',
+  swing_and_deep_entries: 'dataPausedScopeDeep',
+  mentor_entries: 'dataPausedTruthScopeMentor',
+  ai_entries: 'dataPausedTruthScopeAI',
+  trader_entries: 'dataPausedTruthScopeTraders',
+  mixed_entries: 'dataPausedTruthScopeMixed',
+}
+
+// "acct:SIM101" -> "account SIM101", "trader:abc" -> "trader abc"
+function scopeLabel(token: string): string {
+  if (token.startsWith('acct:')) return `account ${token.slice(5)}`
+  if (token.startsWith('trader:')) return `trader ${token.slice(7)}`
+  return token
+}
+
 export function DataPausedBanner({ language }: { language: Language }) {
   const { data } = useSWR('data-paused-health', () => updatesApi.health(true), {
     revalidateOnFocus: false,
@@ -37,15 +64,38 @@ export function DataPausedBanner({ language }: { language: Language }) {
   const reasons = tpz.reasons ?? []
   const truthChecks = tpz.data_truth_checks ?? []
   const hasTruth = reasons.includes('data_truth') && truthChecks.length > 0
-  if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth) return null
+  // the quiet boot wait after a restart: every NT8 trader's new entries are
+  // refused until the checks have judged the replayed bars (up to 10 minutes)
+  const starting = reasons.includes('data_truth_starting')
+  if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth && !starting)
+    return null
+
+  // the way out, for the checks that do NOT clear when the data merely looks
+  // fine again (the owner push has it too; the banner is what is on screen)
+  const remedies: Array<
+    'dataPausedRemedyFillPrice' | 'dataPausedRemedyIngestLoss'
+  > = []
+  if (hasTruth && truthChecks.includes('fill_price'))
+    remedies.push('dataPausedRemedyFillPrice')
+  if (hasTruth && truthChecks.includes('ingest_loss'))
+    remedies.push('dataPausedRemedyIngestLoss')
 
   const windows = tpz.windows ?? []
   const hasMissing = reasons.some((r) => DATA_CLASSES.includes(r))
   let text: string
-  if (hasTruth && !hasMissing) {
+  if (starting && !hasTruth && !hasMissing) {
+    text = tp('dataPausedStartingBanner', language)
+  } else if (hasTruth && !hasMissing) {
     // release #55: only the data-truth checks pause trading - name them
-    const scopeKey = SCOPE_KEYS[tpz.scope ?? '']
-    const checks = truthChecks.join(', ')
+    const scopeKey = TRUTH_SCOPE_KEYS[tpz.scope ?? '']
+    // a check scoped to traders/accounts names them next to it
+    const who = tpz.data_truth_scopes ?? {}
+    const checks = truthChecks
+      .map((c) => {
+        const w = who[c]
+        return w && w.length > 0 ? `${c} (${w.map(scopeLabel).join(', ')})` : c
+      })
+      .join(', ')
     text = scopeKey
       ? tp('dataPausedTruthScopedBanner', language, {
           scope: tp(scopeKey, language),
@@ -80,6 +130,15 @@ export function DataPausedBanner({ language }: { language: Language }) {
       }}
     >
       {text}
+      {remedies.map((k) => (
+        <div
+          key={k}
+          data-testid="data-paused-remedy"
+          className="font-normal text-[11px] opacity-90"
+        >
+          {tp(k, language)}
+        </div>
+      ))}
     </div>
   )
 }

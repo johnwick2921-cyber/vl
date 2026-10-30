@@ -8,6 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/internal/datatruth"
+	"vl/internal/datatruth/checks"
 	"vl/kernel"
 	"vl/telemetry"
 )
@@ -693,6 +695,16 @@ const (
 	PausedScopeDeep   = "swing_and_deep_entries" // AI / planner / Picture / agent + SWING4H
 	PausedScopeMentor = "mentor_entries"         // every mentor setup (the key-level legs)
 	PausedScopeSwing  = "swing_entries"          // SWING4H only
+	// release #55 round 3 (review 4 D1): the data-truth checks pause by READER or by
+	// TRADER/ACCOUNT, and /api/health used to call every one of them all_entries.
+	PausedScopeAI      = "ai_entries"     // AI / planner / Picture / agent paths only (mentor traders trade)
+	PausedScopeTraders = "trader_entries" // only the traders / accounts the check names (data_truth_scopes)
+	// PausedScopeMixed: a trader/account-scoped block stands NEXT TO a narrower reader
+	// or SWING4H block (round 3 re-review P2). Either single scope sentence would
+	// claim something false ("AI/planner entries trade normally" while an AI trader on
+	// the blocked account is paused), so the banner says only that SOME entries are
+	// paused and sends the owner to the per-check list.
+	PausedScopeMixed = "mixed_entries"
 )
 
 // WidestPausedScope is the scope that says everything that is paused and no
@@ -706,16 +718,62 @@ func WidestPausedScope(scopes []string) string {
 		has[s] = true
 	}
 	switch {
-	case has[PausedScopeAll], has[PausedScopeMentor] && has[PausedScopeDeep]:
+	case has[PausedScopeAll], has[PausedScopeMentor] && (has[PausedScopeDeep] || has[PausedScopeAI]):
 		return PausedScopeAll
+	case has[PausedScopeMixed]:
+		return PausedScopeMixed
+	case has[PausedScopeTraders] && (has[PausedScopeMentor] || has[PausedScopeDeep] || has[PausedScopeAI] || has[PausedScopeSwing]):
+		return PausedScopeMixed
 	case has[PausedScopeMentor]:
 		return PausedScopeMentor
-	case has[PausedScopeDeep]:
+	case has[PausedScopeDeep], has[PausedScopeAI] && has[PausedScopeSwing]:
 		return PausedScopeDeep
+	case has[PausedScopeAI]:
+		return PausedScopeAI
 	case has[PausedScopeSwing]:
 		return PausedScopeSwing
+	case has[PausedScopeTraders]:
+		return PausedScopeTraders
 	}
 	return ""
+}
+
+// DataTruthPausedScope is the pause scope /api/health reports for ONE blocking
+// data-truth check, from what the bot really does with it (the gate obeys a
+// reason only for the readers it names and only for the traders/accounts it is
+// for - trader/data_truth_gate.go dataTruthReasons): a trader/account-scoped block
+// is PausedScopeTraders; a block naming the mentor reader only is PausedScopeMentor,
+// the AI reader only PausedScopeAI; the swing line check (no readers) is the
+// SWING4H scope; everything else - and any reader this function does not know
+// (fail wide) - is PausedScopeAll. A banner never claims more than the bot refuses.
+func DataTruthPausedScope(check string, readers, scopes []string) string {
+	if len(scopes) > 0 {
+		return PausedScopeTraders
+	}
+	if len(readers) == 0 {
+		if check == checks.CheckLookbackSwing4h {
+			return PausedScopeSwing
+		}
+		return PausedScopeAll
+	}
+	mentor, ai := false, false
+	for _, r := range readers {
+		switch r {
+		case datatruth.ReaderMentor:
+			mentor = true
+		case datatruth.ReaderAI:
+			ai = true
+		default:
+			return PausedScopeAll
+		}
+	}
+	switch {
+	case mentor && ai:
+		return PausedScopeAll
+	case mentor:
+		return PausedScopeMentor
+	}
+	return PausedScopeAI
 }
 
 // mergeIntegrityLegs joins the verdicts of several legs into one explanation:
