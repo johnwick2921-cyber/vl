@@ -169,4 +169,51 @@ describe('DataPausedBanner', () => {
     await waitFor(() => expect(spy).toHaveBeenCalled())
     expect(screen.queryByTestId('data-paused-banner')).toBeNull()
   })
+  // release #55 round 3 (review 4 D1): a reader- or account-scoped data-truth pause
+  // never reads as the plain "TRADING PAUSED" (the bot still trades the others).
+  it('a mentor-reader-only data-truth pause says the AI path trades normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['cross_frame'],
+        data_truth_readers: { cross_frame: ['mentor'] },
+        scope: 'mentor_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('TRADING PAUSED (mentor traders only')
+    expect(el).toHaveTextContent('AI/planner entries trade normally')
+    expect(el).toHaveTextContent('cross_frame')
+  })
+  it('an AI-reader-only data-truth pause says the mentor traders trade normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['cross_frame'],
+        scope: 'ai_entries',
+      },
+    })
+    mount()
+    expect(await screen.findByTestId('data-paused-banner')).toHaveTextContent(
+      'TRADING PAUSED (AI/planner entries only; mentor traders trade normally)'
+    )
+  })
+  it('an account-scoped data-truth pause names the account', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['fill_price'],
+        data_truth_scopes: { fill_price: ['acct:SIM101'] },
+        scope: 'trader_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('other traders trade normally')
+    expect(el).toHaveTextContent('fill_price (account SIM101)')
+  })
 })

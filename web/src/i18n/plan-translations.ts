@@ -445,6 +445,23 @@ export const planStrings = {
     zh: '交易已暂停（{scope}）— 数据检查未通过：{checks}',
     id: 'TRADING DIJEDA ({scope}) — pemeriksaan data gagal: {checks}',
   },
+  // release #55 round 3 (review 4 D1): a data-truth pause by READER or by
+  // TRADER/ACCOUNT says so, instead of the plain TRADING PAUSED line.
+  dataPausedTruthScopeMentor: {
+    en: 'mentor traders only; AI/planner entries trade normally',
+    zh: '仅 mentor 交易员；AI/计划入场照常交易',
+    id: 'hanya trader mentor; entri AI/planner berjalan normal',
+  },
+  dataPausedTruthScopeAI: {
+    en: 'AI/planner entries only; mentor traders trade normally',
+    zh: '仅 AI/计划入场；mentor 交易员照常交易',
+    id: 'hanya entri AI/planner; trader mentor berjalan normal',
+  },
+  dataPausedTruthScopeTraders: {
+    en: 'only the traders/accounts named; other traders trade normally',
+    zh: '仅所列交易员/账户；其他交易员照常交易',
+    id: 'hanya trader/akun yang disebut; trader lain berjalan normal',
+  },
   dataPausedUnknownBanner: {
     en: 'TRADING PAUSED — bar-data check not ready',
     zh: '交易已暂停 — K线数据检查尚未就绪',
