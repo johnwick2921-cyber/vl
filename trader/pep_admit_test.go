@@ -257,6 +257,10 @@ func TestPepDataGateUsesItsOwnWindow(t *testing.T) {
 		t.Fatalf("style E at 08:38: window %d, want 90", got)
 	}
 	w.at.config.StrategyConfig = &store.StrategyConfig{Pep: &store.PepConfig{Enabled: boolPtr(true), Style: "A"}}
+	// the pause-episode beat and the withdraw read the SAME window
+	if ws := w.at.integrityWindows(now); len(ws) != 1 || ws[0] != pepWin {
+		t.Fatalf("a pep trader's integrity windows = %v, want [%d]", ws, pepWin)
+	}
 
 	// 1) a hole the pep window reads: refused, class data_integrity_hole, counted
 	fake := &intFake{blockedFor: func(openMin int) bool { return openMin <= pepWin }}
@@ -293,7 +297,6 @@ func TestPepDataGateUsesItsOwnWindow(t *testing.T) {
 		t.Fatalf("control: the AI path must still be paused by the deep-window hole: %v %q", refused, r)
 	}
 }
-
 
 // The data-truth reader: pep is held to everything the mentor reader is held
 // to (it reads the same raw 1m ring) and to nothing that only the AI reader

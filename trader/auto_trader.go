@@ -623,6 +623,7 @@ type AutoTrader struct {
 	store             *store.Store           // Data storage (decision records, etc.)
 	strategyEngine    *kernel.StrategyEngine // Strategy engine (uses strategy configuration)
 	cycleNumber       int                    // Current cycle number
+	cycleMu           sync.Mutex             // guards cycleNumber's increment in saveDecision (PEP: two goroutines save decision rows)
 	initialBalance    float64
 	dailyPnL          float64
 	// F3 fast-market wake reads (waterfall-class wave, 2026-08-28): the price

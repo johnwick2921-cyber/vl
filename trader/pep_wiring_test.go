@@ -640,3 +640,57 @@ func TestPepWireRefusesAnUnclaimedEntry(t *testing.T) {
 	}
 	w.noSignal(t, "an unclaimed entry")
 }
+
+// ── the symbol is the trader's own; the loop is kicked by a FINAL 1m bar of it ─
+//
+// MUTANT: a literal "MNQ" in pepEventPassAt -> the ES trader reads the MNQ ring
+// -> RED.
+func TestPepReadsItsOwnSymbol(t *testing.T) {
+	at := &AutoTrader{id: "pep-es", exchange: "ninjatrader"}
+	c := pepCfgOf("A", 3)
+	at.config.StrategyConfig = &store.StrategyConfig{Pep: &c}
+	at.config.NinjaTraderSymbol = "ES"
+	var asked []string
+	prev := market.FuturesBarsProvider
+	market.FuturesBarsProvider = func(sym, tf string, n int) []market.Kline { asked = append(asked, sym+"/"+tf); return nil }
+	t.Cleanup(func() { market.FuturesBarsProvider = prev })
+	at.pepEventPassAt(pepNow(t))
+	if len(asked) != 1 || asked[0] != "ES/1m" {
+		t.Fatalf("the ES pep trader asked for %v, want exactly ES/1m (never a hard-coded MNQ)", asked)
+	}
+}
+
+func TestPepIsKickedByAFinalOneMinuteBarOfItsOwnInstrument(t *testing.T) {
+	at := &AutoTrader{id: "pep-kick", exchange: "ninjatrader"}
+	c := pepCfgOf("A", 3)
+	at.config.StrategyConfig = &store.StrategyConfig{Pep: &c}
+	at.config.NinjaTraderSymbol = "MNQ"
+	l := &armedEventLoop{kick: make(chan struct{}, 1), stop: make(chan struct{}), done: make(chan struct{})}
+	at.armedEvent.Store(l)
+	pending := func() bool {
+		select {
+		case <-l.kick:
+			return true
+		default:
+			return false
+		}
+	}
+	final, forming := []ntwire.Bar{{Final: true}}, []ntwire.Bar{{Final: false}}
+	at.noteLiveBarsForPepPass("MNQ 12-26", "1m", forming)
+	at.noteLiveBarsForPepPass("MNQ 12-26", "5m", final)
+	at.noteLiveBarsForPepPass("ES 12-26", "1m", final)
+	if pending() {
+		t.Fatal("a forming bar, a 5m frame or another instrument must not kick the pep pass")
+	}
+	at.noteLiveBarsForPepPass("MNQ 12-26", "1m", final)
+	if !pending() {
+		t.Fatal("a FINAL 1m bar of the trader's own instrument must kick the pass")
+	}
+	off := &AutoTrader{id: "ai-kick", exchange: "ninjatrader"}
+	off.config.StrategyConfig = &store.StrategyConfig{}
+	off.armedEvent.Store(l)
+	off.noteLiveBarsForPepPass("MNQ 12-26", "1m", final)
+	if pending() {
+		t.Fatal("a non-pep trader must not be kicked")
+	}
+}

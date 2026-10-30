@@ -326,7 +326,10 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 	// W5.2 (weekly-bias wave) — SHADOW counter-trend annotation for entries.
 	// Log/counters ONLY: this call can never block, resize or re-grade the trade
 	// (the real gates below are untouched — W5.4 THE LAW).
-	if decision.Action == "open_long" || decision.Action == "open_short" {
+	// PEP MODE: skipped for a pep decision - it is a log/counter annotation of the
+	// AI's counter-trend risk (a 12000-bar tape read), meaningless for pep's fixed
+	// opening-range rules and a delay on the entry path.
+	if (decision.Action == "open_long" || decision.Action == "open_short") && !decision.PepSourced {
 		at.applyWeeklyDecisionShadow(decision)
 	}
 
@@ -882,7 +885,12 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	logger.Infof("  ✓ Position opened successfully, order ID: %v, quantity: %.4f", order["orderId"], quantity)
 
 	// Record order to database and poll for confirmation
-	if manual == nil {
+	// PEP MODE: a pep entry runs on the EVENT-LOOP goroutine, and entryTheses /
+	// positionFirstSeenTime are unlocked maps owned by the AI cycle goroutine (the
+	// chat door skips them for the same reason). The cycle's own context build
+	// stamps positionFirstSeenTime when it first sees the position; the AI watcher
+	// has no thesis to quote for a pep position.
+	if manual == nil && !decision.PepSourced {
 		at.captureEntryThesis(decision, upper, marketData.CurrentPrice) // Phase 3: the watcher's anchor
 	}
 	var chat *chatOpenBracket // W1b FOLD-2 repair: the chat's own bracket → its excursion row
@@ -892,7 +900,7 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	at.recordAndConfirmOrderAs(order, decision.Symbol, action, quantity, marketData.CurrentPrice, decision.Leverage, 0, decision.Confidence, chat)
 
 	// Record position opening time
-	if manual == nil {
+	if manual == nil && !decision.PepSourced {
 		posKey := decision.Symbol + "_" + side
 		at.positionFirstSeenTime[posKey] = time.Now().UnixMilli()
 		// MENTOR P3 — a mentor-sourced open marks the position as

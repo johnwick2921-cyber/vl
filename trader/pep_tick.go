@@ -424,7 +424,7 @@ func (at *AutoTrader) pepFlatBeat(now time.Time) {
 		}
 	}
 	if now.Before(flatAt) && !carried {
-		at.pep.flatAttempts = 0
+		at.pep.flatAttempts.Store(0)
 		return
 	}
 	// Past the flat time with nothing open the beat only VERIFIES flatness for a
@@ -474,22 +474,22 @@ func (at *AutoTrader) pepFlatLocked(now time.Time, reason string) {
 			at.logErrorf("🚨 PEP-FLAT (%s): NOT FLAT - our table shows no open position and the BROKER REPORTS %d. %s. Nothing is auto-closed from the broker's answer alone; this needs an owner.",
 				reason, v.BrokerOpen, v.Why())
 		case v.ProvenFlat():
-			at.pep.flatAttempts = 0
+			at.pep.flatAttempts.Store(0)
 		default:
 			at.logWarnf("⚠️ PEP-FLAT (%s): local table shows no open position but flatness is UNVERIFIED - %s", reason, v.Why())
 		}
 		return
 	}
-	at.pep.flatAttempts++
-	at.logWarnf("🕒 PEP-FLAT (%s): flattening %d open position(s) via the trader close path (attempt %d).", reason, len(positions), at.pep.flatAttempts)
+	attempts := int(at.pep.flatAttempts.Add(1))
+	at.logWarnf("🕒 PEP-FLAT (%s): flattening %d open position(s) via the trader close path (attempt %d).", reason, len(positions), attempts)
 	for _, p := range positions {
 		at.flattenPosition(p, "🕒 PEP-FLAT")
 	}
-	if at.pep.flatAttempts >= pepFlatAlertAttempts {
+	if attempts >= pepFlatAlertAttempts {
 		at.emitAlert("P0", "pep_flat_failed", fmt.Sprintf("pep-flat-failed:%s:%s", at.id, pepDayNow(now)),
 			"Pep flat did not complete",
 			fmt.Sprintf("Trader %q (%s): a pep position is still open after %d flat attempts past %s CT. Check NT8 and flatten by hand if needed.",
-				at.name, at.id, at.pep.flatAttempts, pepClock(at.pepConfig().FlatMin)))
+				at.name, at.id, attempts, pepClock(at.pepConfig().FlatMin)))
 	}
 	logger.Infof("pep flat sent for trader %s", at.id)
 }

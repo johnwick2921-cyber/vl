@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel"
@@ -57,9 +58,10 @@ type pepRuntime struct {
 	// lastBlock is the (code|detail-class) of the last COUNTED block, so a
 	// refusal that repeats every bar is counted once per change, not per bar.
 	lastBlock string
-	// lastFlatAttempts counts flat attempts while a position stays open past
-	// the flat time (an alert after pepFlatAlertAttempts).
-	flatAttempts int
+	// flatAttempts counts flat attempts while a position stays open past the flat
+	// time (an alert after pepFlatAlertAttempts). Atomic: the monitor beat resets
+	// it outside pep.mu.
+	flatAttempts atomic.Int32
 
 	// truth is the newest evaluation, for /api/traders/:id/pep-truth.
 	truthMu sync.Mutex
