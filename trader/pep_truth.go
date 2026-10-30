@@ -105,6 +105,7 @@ func (at *AutoTrader) PepTruthSnapshot(now time.Time) PepTruth {
 	out.Symbol = at.futuresSymbol()
 	out.MaxTradesPerDay = r.MaxTradesPerDay
 	out.FlatTimeCT = r.FlatTimeCT
+	flatMin := r.FlatMin
 	if len(r.Clamps) > 0 {
 		out.Clamps = r.Clamps
 	}
@@ -112,7 +113,12 @@ func (at *AutoTrader) PepTruthSnapshot(now time.Time) PepTruth {
 	out.Day = day
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
-	flatAt := time.Date(ct.Year(), ct.Month(), ct.Day(), r.FlatMin/60, r.FlatMin%60, 0, 0, loc)
+	// a shortened day pulls the flat in (pepEffectiveFlatMin): the card says so
+	if eff, pulled := pepEffectiveFlatMin(day, flatMin, r.BoxStartMin); pulled {
+		flatMin = eff
+		out.FlatTimeCT = pepClock(eff)
+	}
+	flatAt := time.Date(ct.Year(), ct.Month(), ct.Day(), flatMin/60, flatMin%60, 0, 0, loc)
 	if now.Before(flatAt) {
 		out.FlatCountdownSec = int64(flatAt.Sub(now) / time.Second)
 	}

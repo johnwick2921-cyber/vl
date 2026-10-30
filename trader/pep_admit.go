@@ -70,7 +70,7 @@ func (at *AutoTrader) pepAdmitRefusal(in admitIntent) (class, text string) {
 // flat time (the day plan's session last-entry offset and the mentor's 15:45
 // halt cutoff are not pep's).
 func (at *AutoTrader) pepPastEntryCutoff(now time.Time) (string, bool) {
-	cfg := at.pepConfig()
+	cfg := at.pepConfigAt(now)
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
 	flatAt := time.Date(ct.Year(), ct.Month(), ct.Day(), cfg.FlatMin/60, cfg.FlatMin%60, 0, 0, loc)

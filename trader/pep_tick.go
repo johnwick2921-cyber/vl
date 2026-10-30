@@ -139,7 +139,7 @@ func (at *AutoTrader) pepEvalOnce(bars []market.Kline, now time.Time) bool {
 		at.pepBlock("pep_positions_unreadable", fmt.Sprintf("the open-position read failed (%v)", perr))
 		return false
 	}
-	cfg := at.pepConfig()
+	cfg := at.pepConfigAt(now)
 	st := pep.State{Day: day, Trades: dayState.Counted, PositionOpen: len(positions) > 0}
 	if len(positions) > 0 {
 		// a position from an earlier CT day reads as carried over: the evaluator
@@ -427,7 +427,7 @@ func (at *AutoTrader) pepFlatBeat(now time.Time) {
 	if at == nil || !at.pepEnabled() || at.store == nil || at.trader == nil {
 		return
 	}
-	cfg := at.pepConfig()
+	cfg := at.pepConfigAt(now)
 	loc := kernel.CTLocation()
 	ct := now.In(loc)
 	flatAt := time.Date(ct.Year(), ct.Month(), ct.Day(), cfg.FlatMin/60, cfg.FlatMin%60, 0, 0, loc)
@@ -508,7 +508,7 @@ func (at *AutoTrader) pepFlatLocked(now time.Time, reason string) {
 		at.emitAlert("P0", "pep_flat_failed", fmt.Sprintf("pep-flat-failed:%s:%s", at.id, pepDayNow(now)),
 			"Pep flat did not complete",
 			fmt.Sprintf("Trader %q (%s): a pep position is still open after %d flat attempts past %s CT. Check NT8 and flatten by hand if needed.",
-				at.name, at.id, attempts, pepClock(at.pepConfig().FlatMin)))
+				at.name, at.id, attempts, pepClock(at.pepConfigAt(now).FlatMin)))
 	}
 	logger.Infof("pep flat sent for trader %s", at.id)
 }

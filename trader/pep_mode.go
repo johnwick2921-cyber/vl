@@ -139,6 +139,45 @@ func (at *AutoTrader) pepConfig() pep.Config {
 	return pep.FromSettings(at.pepResolved())
 }
 
+// pepEarlyCloseMarginMin is how long before a shortened day's stated close
+// (kernel/session_calendar.json: the day after Thanksgiving, Christmas Eve ...)
+// pep stops opening and flattens. A safety rail, not a strategy number; named in
+// the guide. The market halts at the close minute itself (CMEClosedReason), and a
+// flat sent into a halted book is the failure this margin exists to avoid.
+const pepEarlyCloseMarginMin = 5
+
+// pepEffectiveFlatMin is the flat time pep ACTUALLY runs on a CT day: the saved
+// flat time, pulled in to (early close - pepEarlyCloseMarginMin) on a shortened
+// day from the session calendar - the same ONE OWNER the EOD flat and the CME
+// gate read. PULL-IN ONLY, and never at or before the box start (the config
+// validator's own floor). pulled reports that the calendar moved it.
+func pepEffectiveFlatMin(day string, flatMin, boxStartMin int) (eff int, pulled bool) {
+	hhmm, ok := kernel.SessionEarlyCloseCTForKey(day)
+	if !ok {
+		return flatMin, false
+	}
+	var h, m int
+	if _, err := fmt.Sscanf(hhmm, "%d:%d", &h, &m); err != nil {
+		return flatMin, false
+	}
+	e := h*60 + m - pepEarlyCloseMarginMin
+	if e < flatMin && e > boxStartMin {
+		return e, true
+	}
+	return flatMin, false
+}
+
+// pepConfigAt is pepConfig for the CT day of now: FlatMin is the day's EFFECTIVE
+// flat time (pepEffectiveFlatMin). Every time-of-day decision (evaluator, entry
+// cutoff, flat beat, card) reads this, never pepConfig().FlatMin directly.
+func (at *AutoTrader) pepConfigAt(now time.Time) pep.Config {
+	cfg := at.pepConfig()
+	if day := pepDayNow(now); day != "" {
+		cfg.FlatMin, _ = pepEffectiveFlatMin(day, cfg.FlatMin, cfg.BoxStartMin)
+	}
+	return cfg
+}
+
 // pepMaxContracts is the pep ceiling for resolveMaxContracts: the 0B size clamp
 // (maxFuturesContracts = 2) does NOT apply to a pep trader - it would silently
 // turn the owner's 6 into 2. The ceiling is the resolved pep contract count

@@ -80,13 +80,30 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 	res.Diag.TradesTaken = trades
 	res.Diag.EntriesAllowed = cfg.MaxTradesPerDay
 
+	// The three refusals below end the pass before the box is judged, but the box
+	// is still a FACT of the day the card and the chart draw: it is measured here
+	// as a diagnostic (never a reason to refuse, never an order). Without this the
+	// box vanished from the card the moment the day's trade was taken.
+	diagBox := func() {
+		if now < boxEnd {
+			return
+		}
+		if b, miss := measureBox(closed, boxStart, boxEnd, boxMin, loc); len(miss) == 0 {
+			b.Size = snap(b.High-b.Low, cfg.TickSize)
+			b.Drawn = true
+			res.Box = b
+		}
+	}
 	if now >= flatAt {
+		diagBox()
 		return refuse(CodeAfterFlat, SevWait, "after the %s CT flat time: no new entries", clock(cfg.FlatMin))
 	}
 	if st.PositionOpen {
+		diagBox()
 		return refuse(CodePositionOpen, SevWait, "a pep position is already open")
 	}
 	if trades >= cfg.MaxTradesPerDay {
+		diagBox()
 		return refuse(CodeMaxTrades, SevWait, "%d of %d trades already taken on %s", trades, cfg.MaxTradesPerDay, day)
 	}
 	if now < boxEnd {
@@ -101,6 +118,32 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 	}
 
 	// The box: every minute of [boxStart, boxEnd) must be present.
+	box, missing := measureBox(closed, boxStart, boxEnd, boxMin, loc)
+	if len(missing) > 0 {
+		return refuse(CodeBoxMissingMin, SevBlock, "box minute(s) missing: %s", strings.Join(missing, ","))
+	}
+	box.Size = snap(box.High-box.Low, cfg.TickSize)
+	box.Drawn = true
+	res.Box = box
+	if box.Size <= 0 {
+		return refuse(CodeBoxFlat, SevBlock, "box high %.2f == low %.2f", box.High, box.Low)
+	}
+	if cfg.MaxBoxPoints > 0 && box.Size > cfg.MaxBoxPoints {
+		return refuse(CodeBoxTooWide, SevBlock, "box %.2f pts exceeds the %.2f pt limit", box.Size, cfg.MaxBoxPoints)
+	}
+
+	switch cfg.Style {
+	case StyleA:
+		return evalA(res, closed, now, cfg, trades, day)
+	default:
+		return evalE(res, closed, now, cfg, trades, day)
+	}
+}
+
+// measureBox reads the opening box off the closed bars: the high and low of
+// every minute of [boxStart, boxEnd). missing lists (CT clock) each minute that
+// has no bar; a box with a missing minute is NOT a box. It reads nothing else.
+func measureBox(closed []market.Kline, boxStart, boxEnd int64, boxMin int, loc *time.Location) (Box, []string) {
 	i0 := sort.Search(len(closed), func(i int) bool { return closed[i].OpenTime >= boxStart })
 	box := Box{Start: boxStart, End: boxEnd}
 	var missing []string
@@ -124,25 +167,7 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 		}
 		missing = append(missing, clockOfMs(want, loc))
 	}
-	if len(missing) > 0 {
-		return refuse(CodeBoxMissingMin, SevBlock, "box minute(s) missing: %s", strings.Join(missing, ","))
-	}
-	box.Size = snap(box.High-box.Low, cfg.TickSize)
-	box.Drawn = true
-	res.Box = box
-	if box.Size <= 0 {
-		return refuse(CodeBoxFlat, SevBlock, "box high %.2f == low %.2f", box.High, box.Low)
-	}
-	if cfg.MaxBoxPoints > 0 && box.Size > cfg.MaxBoxPoints {
-		return refuse(CodeBoxTooWide, SevBlock, "box %.2f pts exceeds the %.2f pt limit", box.Size, cfg.MaxBoxPoints)
-	}
-
-	switch cfg.Style {
-	case StyleA:
-		return evalA(res, closed, now, cfg, trades, day)
-	default:
-		return evalE(res, closed, now, cfg, trades, day)
-	}
+	return box, missing
 }
 
 // distances turns the box into the stop and target distances: the stop is
