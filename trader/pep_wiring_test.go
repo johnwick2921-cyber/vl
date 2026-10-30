@@ -233,8 +233,17 @@ func TestPepOneTradePerDayAcrossARestart(t *testing.T) {
 	re.config.StrategyConfig = &cfg
 	re.config.NinjaTraderSymbol = "MNQ"
 	re.positionFirstSeenTime = map[string]int64{}
-	re.pepEventPassAt(pepNow(t).Add(30 * time.Second))
-	re.pepEventPassAt(pepNow(t).Add(90 * time.Second))
+	re.pepEventPassAt(pepNow(t).Add(30 * time.Second)) // inside the 2-minute sending window
+	// three minutes on, the sending window is over: the restarted trader READS the
+	// day's trade from the database and the evaluator answers the named cap
+	// refusal (not merely a downstream layer's refusal)
+	re.pepEventPassAt(pepNow(t).Add(3 * time.Minute))
+	re.pep.truthMu.Lock()
+	rs := re.pep.truth.res
+	re.pep.truthMu.Unlock()
+	if !rs.HasCode(pep.CodeMaxTrades) || rs.Diag.TradesTaken != 1 {
+		t.Fatalf("the restarted trader must read 1 trade taken from the database: trades=%d refusals=%+v", rs.Diag.TradesTaken, rs.Refusals)
+	}
 	w.noSignal(t, "the restarted trader, same signal still on the tape")
 
 	// the cap is the setting: 2 allowed -> the restarted trader may take a 2nd
@@ -413,15 +422,33 @@ func TestPepNoAutoBreakevenOnAPepFill(t *testing.T) {
 }
 
 func TestPepNoTrailingOnAPepFill(t *testing.T) {
-	t.Setenv("EXIT_MECHS_SUSPENDED", "0")
-	at := pepExitRig()
-	moved := false
+	t.Setenv("EXIT_MECHS_SUSPENDED", "0") // seam open: removing the gate must make this MOVE (the RED)
+	restore := a3WireBars()
+	defer restore()
+	var movedTo []float64
 	old := moveStopWire
-	moveStopWire = func(*ntTrader.TCPTrader, string, float64) error { moved = true; return nil }
+	moveStopWire = func(_ *ntTrader.TCPTrader, _ string, newStop float64) error {
+		movedTo = append(movedTo, newStop)
+		return nil
+	}
 	t.Cleanup(func() { moveStopWire = old })
+
+	at := pepExitRig()
 	at.maybeTrailStop("MNQ", "LONG", 29600, 29700)
-	if moved {
-		t.Fatal("pep mode: the AI-era trail must NOT move the stop")
+	if len(movedTo) != 0 {
+		t.Fatalf("pep mode: the AI-era trail must NOT move the stop, moved to %v", movedTo)
+	}
+	if len(at.trailStates) != 0 {
+		t.Fatalf("pep mode: the trail must create no state, got %d", len(at.trailStates))
+	}
+	// control: the SAME armed trail config with pep OFF moves the stop once, so
+	// the pin above cannot pass on an empty trail path
+	ctl := pepExitRig()
+	f := false
+	ctl.config.StrategyConfig.Pep.Enabled = &f
+	ctl.maybeTrailStop("MNQ", "LONG", 29600, 29700)
+	if len(movedTo) != 1 {
+		t.Fatalf("control (pep OFF): the armed trail must move the stop once, got %v", movedTo)
 	}
 }
 

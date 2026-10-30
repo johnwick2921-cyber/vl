@@ -26,7 +26,7 @@ export const pep: GuideSection = {
         },
         {
           title: 'Build status of this page',
-          body: 'This build carries the settings (stored, validated, clamped and logged, shown in the effective-settings rows), the pure evaluator and the stored-history backtest. The order path that places a pep trade, the 15:00 flat on a live position and the Studio panel ship in the pep trader wave. Until that wave is merged, turning pep ON places no order. The integrator updates this callout when it lands.',
+          body: 'This build carries the settings (stored, validated, clamped and logged, shown in the effective-settings rows), the pure evaluator, the stored-history backtest AND the trader wiring: the entry order, the durable one-trade-per-day record, the 15:00 CT flat, the pep data window and the pep-truth endpoint (GET /api/traders/:id/pep-truth, plus a trading_mode field on /api/my-traders). The Studio panel and the dashboard card ship in the pep web wave; until then pep is switched on by saving the pep block, and it places SIM orders only. The integrator updates this callout when the web wave lands.',
         },
       ],
     },
@@ -64,6 +64,50 @@ export const pep: GuideSection = {
     {
       kind: 'p',
       text: 'The style-E box is two minutes, not five. The PDF’s own style-E ledger rows equal the first two minutes’ range: on 2025-10-20 the E target is 73.0 points, which is the high-low of the 08:30 and 08:31 bars, while the style-A box that day is 86.75. The box length is a setting per style, so both are editable.',
+    },
+    { kind: 'h', text: 'How a pep trade is placed' },
+    {
+      kind: 'table',
+      title: 'From a closed 1m bar to the wire',
+      head: ['Step', 'What happens'],
+      rows: [
+        [
+          'Evaluate',
+          'Every FINAL 1m bar (and the 2-minute cycle as a fallback) runs the pure kernel/pep evaluator on this trader’s own instrument (never a hard-coded MNQ). It reads the trade count from the DATABASE every pass, so a restart or a Studio save never resets it.',
+        ],
+        [
+          'Wire check',
+          'The bracket is built from the evaluator’s distances around the live price and judged on the WIRE-ROUNDED prices (stop rounded away from the entry, target to the nearest tick). Refused when the live price is more than half the stop distance from the signal’s reference entry (pep_slippage), when rounding distorts the reward:risk by more than 10% (pep_rr_distorted), or when a side collapses (pep_bracket_wrong_side). These two tolerances are fixed safety rails, not settings.',
+        ],
+        [
+          'Admission',
+          'The one entry chain, on its own pep path: feed down, dead-man, frozen, boot integrity, data integrity and data truth (on pep’s own window and reader), owner pause, maintenance hold, install pending, contract roll, the daily guardrails, the CME calendar and the stale-feed check all still apply. Every other entry (AI, chat, planner arm, Picture) is refused while pep is ON (pep_ai_entries_off), and a pep entry on a trader that is not in pep mode is refused (pep_not_enabled).',
+        ],
+        [
+          'Durable claim',
+          'After admission and BEFORE anything is sent, the day’s trade is written to the database. A refusal before the wire releases it; once the order is about to reach the wire the slot stays consumed whatever happens next. A record that cannot be read or written refuses the entry (pep_day_unreadable / pep_day_unwritable).',
+        ],
+        [
+          'The order',
+          'ONE market order that carries its own stop and target to NT8 (never two resting stops, so it can never fill both ways). The size must be exactly pep_contracts: the 2-contract AI clamp does not apply, and a sizing that is not that number is refused, never shrunk or grown.',
+        ],
+        [
+          'After the fill',
+          'Nothing moves the stop or target: no break-even, no trailing, no thesis-death exit, no drawdown emergency close, no AI close. A broker position that pep did not open is never flattened by pep and blocks its entry (pep_broker_not_flat).',
+        ],
+        [
+          'The 15:00 CT flat',
+          'pep’s own time exit (pep_flat_time_ct), checked every minute on the wall clock, not only on a bar: it cancels what rests, then flattens through the trader close path and checks flatness against the broker. The session flat at 14:45 CT never acts on a pep trader. No new entry is admitted at or after the flat time (pep_after_flat_time).',
+        ],
+      ],
+    },
+    {
+      kind: 'p',
+      text: 'Data window: pep reads the opening box and, for style E, the EMA warm-up, so its entry data check covers from the box start minus the warm-up and a 6-minute margin up to now (30 open minutes at least), not the 12,000-minute window the AI path reads. A hole in the box or the warm-up pauses pep; an old hole pep never reads does not. Data-truth blocks scoped to the pep or mentor reader apply to pep (it reads the same raw 1m bars as the mentor); a block that only the AI indicators read does not.',
+    },
+    {
+      kind: 'p',
+      text: 'A strategy with pep ON together with mentor mode or the day plan is refused when the trader starts: one P0 alert (pep_mode_conflict), one counted refusal, the trader marked not running. It is never silently resolved in favour of either mode.',
     },
     { kind: 'h', text: 'It fails closed' },
     {

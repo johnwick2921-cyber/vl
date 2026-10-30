@@ -308,7 +308,7 @@ func (at *AutoTrader) pepSendEntry(in pep.Intent, now time.Time) {
 	if day == "" {
 		day = pepDayNow(now)
 	}
-	at.pep.pending = &pepPending{intent: in, signalID: pepSignalID(in), day: day}
+	at.pep.pending = &pepPending{intent: in, signalID: pepSignalID(in), day: day, now: now}
 	defer func() { at.pep.pending = nil }()
 
 	rec := &store.DecisionAction{Action: action, Symbol: sym, Leverage: 1, Price: w.Live,
@@ -325,7 +325,7 @@ func (at *AutoTrader) pepSendEntry(in pep.Intent, now time.Time) {
 		} else if rec.Error != "" {
 			note += ": " + rec.Error
 		}
-		if rerr := at.store.PepDay().Release(p.row.RowKey, note, time.Now().UnixMilli()); rerr != nil {
+		if rerr := at.store.PepDay().Release(p.row.RowKey, note, now.UnixMilli()); rerr != nil {
 			at.logErrorf("🚨 pep: could not release the claim %s (%v) - the day's slot stays consumed (fail closed)", p.row.RowKey, rerr)
 		} else {
 			at.logWarnf("↩ pep: claim %s released - %s", p.row.RowKey, note)
@@ -393,7 +393,7 @@ func (at *AutoTrader) pepMarkSending(d *kernel.Decision) error {
 	if p == nil || p.row == nil || at.store == nil {
 		return errors.New("pep_no_claim: the entry has no durable claim - refused at the wire (fail closed)")
 	}
-	if err := at.store.PepDay().MarkSending(p.row.RowKey, d.StopLoss, d.TakeProfit, time.Now().UnixMilli()); err != nil {
+	if err := at.store.PepDay().MarkSending(p.row.RowKey, d.StopLoss, d.TakeProfit, p.now.UnixMilli()); err != nil {
 		return fmt.Errorf("pep_claim_not_advanced: %w", err)
 	}
 	p.sending = true

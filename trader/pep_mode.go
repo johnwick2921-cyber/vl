@@ -74,7 +74,10 @@ type pepPending struct {
 	intent   pep.Intent
 	signalID string
 	day      string
-	row      *store.PepDayDB
+	// now is the instant the entry was judged at (the clock the durable rows are
+	// stamped with, so a window measured from them is on one clock).
+	now time.Time
+	row *store.PepDayDB
 	// sending is true once the claim was advanced to "sending" (the wire is
 	// about to be reached): from then on the day's slot is consumed whatever
 	// happens next.
