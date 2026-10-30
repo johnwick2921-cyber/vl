@@ -8,6 +8,7 @@ import (
 
 	"vl/kernel/pep"
 	"vl/market"
+	"vl/store"
 )
 
 // ImportShiftMs is applied to rows whose source is historical_import: the
@@ -21,7 +22,7 @@ const ImportShiftMs = -60_000
 // per contract. Rows from source historical_import are shifted by `shift`; a
 // non-import row at the same contract+minute wins over an import row.
 func loadSeries(db *sql.DB, symbol string, fromMs, toMs int64, shift int64) (map[string][]market.Kline, error) {
-	rows, err := db.Query(`SELECT contract, open_time_ms, o, h, l, c, v, COALESCE(source,'') FROM bars
+	rows, err := db.Query(`SELECT contract, open_time_ms, o, h, l, c, v, COALESCE(source,''), COALESCE(convention,'') FROM bars
 		WHERE symbol = ? AND tf = '1m' AND open_time_ms >= ? AND open_time_ms <= ?
 		ORDER BY contract, open_time_ms`, symbol, fromMs-2*60_000, toMs+2*60_000)
 	if err != nil {
@@ -38,17 +39,22 @@ func loadSeries(db *sql.DB, symbol string, fromMs, toMs int64, shift int64) (map
 	}
 	got := map[key]val{}
 	for rows.Next() {
-		var contract, source string
+		var contract, source, convention string
 		var t int64
 		var o, h, l, c, v sql.NullFloat64
-		if err := rows.Scan(&contract, &t, &o, &h, &l, &c, &v, &source); err != nil {
+		if err := rows.Scan(&contract, &t, &o, &h, &l, &c, &v, &source, &convention); err != nil {
 			return nil, err
 		}
 		if !o.Valid || !h.Valid || !l.Valid || !c.Valid {
 			continue
 		}
 		imp := source == "historical_import"
-		if imp {
+		// m460: rows the importer wrote since it OPEN-stamps (or that the owner-run
+		// cmd/import-label-shift tool has already re-stamped) carry
+		// store.ConventionEpochFloorOpen and are right as stored; shifting them
+		// again would put every bar one minute EARLY. Only the old close-stamped
+		// rows (plain epoch_floor) are shifted.
+		if imp && convention != store.ConventionEpochFloorOpen {
 			t += shift
 		}
 		if t < fromMs || t > toMs {

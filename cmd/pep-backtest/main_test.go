@@ -207,6 +207,48 @@ func TestLoadSeriesShiftsImportsAndIsReadOnly(t *testing.T) {
 	}
 }
 
+// m460 interaction: an import row already stamped at the bar OPEN (convention
+// epoch_floor_open: the importer since m460, or a row the owner-run shift tool
+// re-stamped) must NOT be shifted again. MUTANT: drop the convention test in
+// loadSeries (shift every import row) -> the open-stamped row lands a minute
+// early -> RED.
+func TestLoadSeriesDoesNotShiftOpenStampedImports(t *testing.T) {
+	loc, _ := pep.CTLocation()
+	t0 := time.Date(2026, 1, 12, 8, 30, 0, 0, loc).UnixMilli()
+	path := filepath.Join(t.TempDir(), "d.db")
+	w, err := sql.Open("sqlite", "file:"+path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, q := range []string{
+		`CREATE TABLE bars (symbol text, tf text, contract text, open_time_ms integer, o real, h real, l real, c real, v real, convention text, source text)`,
+		`INSERT INTO bars VALUES ('MNQ','1m','MNQ 03-26',` + itoa(t0) + `,1,2,0.5,1.5,10,'epoch_floor_open','historical_import')`,
+		`INSERT INTO bars VALUES ('MNQ','1m','MNQ 03-26',` + itoa(t0+120000) + `,3,4,2,3.5,10,'epoch_floor','historical_import')`,
+	} {
+		if _, err := w.Exec(q); err != nil {
+			t.Fatal(err)
+		}
+	}
+	w.Close()
+	ro, err := sql.Open("sqlite", "file:"+path+"?mode=ro&_pragma=query_only(1)")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ro.Close()
+	got, err := loadSeries(ro, "MNQ", t0-3600_000, t0+3600_000, ImportShiftMs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := got["MNQ 03-26"]
+	if len(s) != 2 || s[0].OpenTime != t0 || s[0].Open != 1 {
+		t.Fatalf("open-stamped import must stay at its label: %+v", s)
+	}
+	// the old close-stamped row (epoch_floor) still shifts one minute
+	if s[1].OpenTime != t0+120000-60000 || s[1].Open != 3 {
+		t.Fatalf("close-stamped import must shift -60s: %+v", s[1])
+	}
+}
+
 func itoa(n int64) string { return fmtInt(n) }
 
 func fmtInt(n int64) string {
