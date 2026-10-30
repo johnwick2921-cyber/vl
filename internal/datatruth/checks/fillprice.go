@@ -13,6 +13,7 @@ import (
 
 	"vl/internal/datatruth"
 	"vl/logger"
+	"vl/safe"
 )
 
 // ── m447 (release #54) — DATA-TRUTH CHECK "fill_price" ───────────────────────
@@ -906,13 +907,29 @@ func (g *FillGuard) persist() {
 	g.wrunning = true
 	g.wmu.Unlock()
 	if start {
-		go g.drain()
+		safe.GoNamed("fill_price state writer", g.drain)
 	}
 }
 
 // drain is the single writer: it writes the newest queued snapshot until none is
 // left, then goes idle and releases the Flush waiters.
 func (g *FillGuard) drain() {
+	// A panic must not leave the writer marked running forever (every later
+	// persist would queue and never write): reset, release the waiters, and let
+	// the panic net log it.
+	defer func() {
+		if r := recover(); r != nil {
+			g.wmu.Lock()
+			g.wrunning = false
+			w := g.widle
+			g.widle = nil
+			g.wmu.Unlock()
+			for _, c := range w {
+				close(c)
+			}
+			panic(r)
+		}
+	}()
 	for {
 		g.wmu.Lock()
 		s := g.wpend
