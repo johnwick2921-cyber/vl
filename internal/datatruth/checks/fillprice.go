@@ -61,6 +61,15 @@ import (
 //   - the strikes and the owner's acknowledgement survive a restart (m451,
 //     EnableState): a deploy is a kill -9 and a standing pause the owner has not
 //     acknowledged must not vanish with the process.
+//   - an UNREADABLE state file is itself a block (m55r3): when the guard cannot
+//     read what a standing pause was, it cannot tell that none was standing, so
+//     the symbol's NEW entries (every account) stay paused until the owner
+//     acknowledges. The unreadable file is MOVED ASIDE (state-path + ".bad-<utc>",
+//     never deleted, never overwritten) and the block is itself persisted, so a
+//     second restart cannot lift it.
+//   - persistence is OFF the exit path (m55r3): a strike snapshot is queued to a
+//     single ordered, coalescing writer; the fill handlers (exits included) never
+//     wait on disk.
 //   - a fill the guard CANNOT JUDGE because its own record is malformed (a price
 //     <= 0, no fill time, no id) is itself a wrong recorded price: it is counted
 //     as a far fill and logged (m451), never silently dropped.
@@ -288,9 +297,36 @@ type FillGuard struct {
 
 	// persistence (m451): "" = memory only
 	statePath string
-	stateSeq  int64      // guarded by mu: bumped at every snapshot
-	fileMu    sync.Mutex // serialises the file writes
-	fileSeq   int64      // guarded by fileMu: newest snapshot written
+	stateSeq  int64 // guarded by mu: bumped at every snapshot
+	// unreadable (m55r3): non-nil when the state file existed but could not be
+	// read at EnableState - a block for every symbol until the owner acks it.
+	unreadable *unreadableState
+	// noPersist: the unreadable file could not be moved aside, so nothing may be
+	// written over it (the block then lives in memory only).
+	noPersist bool
+
+	// The asynchronous writer (m55r3). persist() only queues; one drain goroutine
+	// at a time writes the newest snapshot, so an older snapshot never lands after
+	// a newer one and a burst of strikes costs one write.
+	wmu      sync.Mutex
+	wpend    *fillSnap
+	wrunning bool
+	widle    []chan struct{} // closed when the writer next goes idle (Flush)
+	fileSeq  int64           // drain only: newest snapshot written
+}
+
+// unreadableState is the standing block raised by an unreadable state file.
+type unreadableState struct {
+	Since   int64           // ms UTC
+	Why     string          // the read/parse error
+	BadFile string          // where the unreadable file was moved ("" = it could not be moved)
+	Acked   map[string]bool // StrikeKey(symbol) -> the owner acknowledged it for that symbol
+}
+
+type fillSnap struct {
+	path string
+	b    []byte
+	seq  int64
 }
 
 // strikeMapKey is the key of the strike map: the canonical symbol and the
@@ -556,6 +592,13 @@ func (g *FillGuard) ack(symbol, account string, only bool) bool {
 	prefix := StrikeKey(symbol) + "|"
 	want := strings.ToUpper(strings.TrimSpace(account))
 	any := false
+	// The unreadable-state block is symbol-wide: only the account-less ack lifts it.
+	if u := g.unreadable; u != nil && !only {
+		if k := StrikeKey(symbol); !u.Acked[k] {
+			u.Acked[k] = true
+			any = true
+		}
+	}
 	for k, st := range g.strikes {
 		if !strings.HasPrefix(k, prefix) || (only && st.account != want) {
 			continue
@@ -569,6 +612,9 @@ func (g *FillGuard) ack(symbol, account string, only bool) bool {
 	g.mu.Unlock()
 	if any {
 		g.persist()
+		// An acknowledgement is an owner action, not an exit: wait (bounded) for it
+		// to reach the disk so a restart right after cannot lose it.
+		g.Flush(2 * time.Second)
 	}
 	return any
 }
@@ -634,6 +680,10 @@ func (g *FillGuard) CheckScoped() datatruth.ScopedCheckFn {
 			parts = append(parts, fmt.Sprintf("%s%d far fill(s) this session (ids %s): %s - acknowledge via %s or wait for the next session",
 				who, len(st.ids), strings.Join(ids, ","), strings.Join(st.details, " | "), ackURL))
 		}
+		if u := g.unreadable; u != nil && !u.Acked[StrikeKey(symbol)] {
+			everyone = true
+			parts = append(parts, u.describe(g.statePath, StrikeKey(symbol)))
+		}
 		if len(parts) == 0 {
 			return false, "", nil, nil
 		}
@@ -662,18 +712,45 @@ type fillStateStrike struct {
 	Acked   bool     `json:"acked"`
 }
 
+type fillStateUnreadable struct {
+	Since   int64    `json:"since"`
+	Why     string   `json:"why"`
+	BadFile string   `json:"bad_file"`
+	Acked   []string `json:"acked,omitempty"`
+}
+
 type fillStateDisk struct {
 	Version int                        `json:"version"`
 	SavedAt int64                      `json:"saved_at"`
 	Strikes map[string]fillStateStrike `json:"strikes"`
+	// Unreadable (m55r3) carries the unreadable-state block across a restart: the
+	// next boot reads a perfectly good (fresh) file, and must still know that the
+	// owner has not acknowledged the loss of the one before it.
+	Unreadable *fillStateUnreadable `json:"unreadable,omitempty"`
+}
+
+// describe words the unreadable-state block for the pause text (symbol is the
+// canonical StrikeKey the ack URL names).
+func (u *unreadableState) describe(path, symbol string) string {
+	moved := "it could NOT be moved aside, so nothing is written over it and the block lives in memory only"
+	if u.BadFile != "" {
+		moved = "the unreadable file was moved aside, not deleted, to " + u.BadFile
+	}
+	return fmt.Sprintf("the fill_price state file %s was UNREADABLE (%s) at the last restart, so the bot cannot tell whether a far-fill pause was standing - %s; new entries stay paused for every account until you check the far fills and acknowledge via POST /api/risk/ack-fill-price?symbol=%s (or restore a repaired copy of the state file at that path before the next restart)",
+		path, u.Why, moved, symbol)
 }
 
 // EnableState loads path (when it exists) into the strike map and from then on
-// rewrites it, atomically, at every strike and every acknowledgement - the way
-// the owner-push held file survives a kill -9 deploy. Returns how many standing
-// strike states it restored. An unreadable file is reported (log + the alert
-// sender, once) and the guard starts empty: nothing can be restored from it, and
-// the owner is told that a standing pause may have been lost.
+// rewrites it, atomically and off the caller's path, at every strike and every
+// acknowledgement - the way the owner-push held file survives a kill -9 deploy.
+// Returns how many standing strike states it restored.
+//
+// An UNREADABLE file (a read error, bad JSON, an unknown version) fails CLOSED
+// (m55r3): the guard cannot tell whether a pause was standing, so it installs a
+// block for every symbol (until the owner acknowledges), tells the owner, and
+// MOVES the file aside to path + ".bad-<utc>" before anything is written - the
+// evidence is never overwritten and never deleted. If it cannot be moved,
+// nothing is ever written over it (the block then lives in memory only).
 func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	if path == "" {
 		return 0, nil
@@ -687,13 +764,34 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	default:
 		if jerr := json.Unmarshal(b, &d); jerr != nil {
 			err = jerr
+			d = fillStateDisk{}
 		} else if d.Version != fillStateVersion {
 			err = fmt.Errorf("state version %d, want %d", d.Version, fillStateVersion)
 			d = fillStateDisk{}
 		}
 	}
+	var u *unreadableState
+	movedTo := ""
+	if err != nil {
+		u = &unreadableState{Since: time.Now().UnixMilli(), Why: err.Error(), Acked: map[string]bool{}}
+		bad, merr := moveAside(path, time.Now())
+		if merr != nil {
+			movedTo = fmt.Sprintf("it could NOT be moved aside (%v) and nothing will be written over it", merr)
+		} else {
+			u.BadFile = bad
+		}
+		g.mu.Lock()
+		g.noPersist = merr != nil
+		g.mu.Unlock()
+	} else if d.Unreadable != nil {
+		u = &unreadableState{Since: d.Unreadable.Since, Why: d.Unreadable.Why, BadFile: d.Unreadable.BadFile, Acked: map[string]bool{}}
+		for _, k := range d.Unreadable.Acked {
+			u.Acked[k] = true
+		}
+	}
 	g.mu.Lock()
 	g.statePath = path
+	g.unreadable = u
 	cutoff := time.Now().Add(-fillStateMaxAge).UnixMilli()
 	for k, s := range d.Strikes {
 		if s.LastMs < cutoff || len(s.IDs) == 0 {
@@ -712,7 +810,11 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	alert := g.alert
 	g.mu.Unlock()
 	if err != nil {
-		text := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable (%v) - any standing far-fill strikes or acknowledgement from before this restart are LOST; the guard starts empty.", path, err)
+		if u.BadFile != "" {
+			movedTo = "the unreadable file was moved aside, not deleted, to " + u.BadFile
+		}
+		text := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable (%v) - any standing far-fill strikes or acknowledgement from before this restart are UNKNOWN. NEW entries are PAUSED for every symbol and account until you acknowledge via POST /api/risk/ack-fill-price?symbol=MNQ (once per symbol you trade). Exits, stops and protection are unaffected; %s.",
+			path, err, movedTo)
 		logger.Errorf("datatruth: %s", text)
 		if alert != nil {
 			alert("data_truth_fill_price_state|"+path, text)
@@ -721,16 +823,50 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 		logger.Warnf("datatruth: fill_price restored %d standing strike state(s) from %s", restored, path)
 	}
 	g.persist()
+	g.Flush(2 * time.Second) // boot, not an exit: the unreadable record is on disk before we go on
 	return restored, err
 }
 
-// persist snapshots the strike map under g.mu and writes it outside the lock.
-// Concurrent calls are ordered by snapshot sequence so an older snapshot can
-// never overwrite a newer one.
+// moveAside renames path to path + ".bad-<utc stamp>" (a suffix is added while
+// that name is taken: nothing is ever overwritten). A file that does not exist
+// needs no move. Never deletes.
+func moveAside(path string, now time.Time) (string, error) {
+	if _, err := os.Lstat(path); err != nil {
+		if os.IsNotExist(err) {
+			return "", nil
+		}
+		return "", err
+	}
+	base := path + ".bad-" + now.UTC().Format("20060102T150405Z")
+	dst := base
+	for i := 1; ; i++ {
+		if _, err := os.Lstat(dst); os.IsNotExist(err) {
+			break
+		} else if err != nil {
+			return "", err
+		}
+		if i > 1000 {
+			return "", fmt.Errorf("no free name for %s", base)
+		}
+		dst = fmt.Sprintf("%s-%d", base, i)
+	}
+	if err := os.Rename(path, dst); err != nil {
+		return "", err
+	}
+	return dst, nil
+}
+
+// persist snapshots the strike map under g.mu and QUEUES it for the writer. It
+// never touches the disk itself: it is called from apply, which runs inline in
+// the exit-recording path (recordClose), and an exit must never wait on an fsync
+// (m55r3). Concurrent snapshots are ordered by sequence and coalesced - only the
+// newest is written - and the write is the same temp-file + fsync + rename, so a
+// crash leaves the previous or the new complete file, as before. Flush waits for
+// the writer to go idle (the owner-action and boot callers, tests).
 func (g *FillGuard) persist() {
 	g.mu.Lock()
 	path := g.statePath
-	if path == "" {
+	if path == "" || g.noPersist {
 		g.mu.Unlock()
 		return
 	}
@@ -746,22 +882,81 @@ func (g *FillGuard) persist() {
 			IDs: append([]string(nil), st.ids...), Events: append([]string(nil), st.events...),
 			Details: append([]string(nil), st.details...), Acked: st.acked}
 	}
+	if u := g.unreadable; u != nil {
+		du := &fillStateUnreadable{Since: u.Since, Why: u.Why, BadFile: u.BadFile}
+		for k, ok := range u.Acked {
+			if ok {
+				du.Acked = append(du.Acked, k)
+			}
+		}
+		sort.Strings(du.Acked)
+		d.Unreadable = du
+	}
 	g.mu.Unlock()
 	b, err := json.Marshal(d)
 	if err != nil {
 		logger.Errorf("datatruth: fill_price state encode: %v", err)
 		return
 	}
-	g.fileMu.Lock()
-	defer g.fileMu.Unlock()
-	if seq < g.fileSeq {
-		return
+	g.wmu.Lock()
+	if g.wpend == nil || seq > g.wpend.seq {
+		g.wpend = &fillSnap{path: path, b: b, seq: seq}
 	}
-	if err := writeFileAtomic(path, b); err != nil {
-		logger.Errorf("datatruth: fill_price state write %s: %v - a restart now would forget the standing strikes", path, err)
-		return
+	start := !g.wrunning
+	g.wrunning = true
+	g.wmu.Unlock()
+	if start {
+		go g.drain()
 	}
-	g.fileSeq = seq
+}
+
+// drain is the single writer: it writes the newest queued snapshot until none is
+// left, then goes idle and releases the Flush waiters.
+func (g *FillGuard) drain() {
+	for {
+		g.wmu.Lock()
+		s := g.wpend
+		g.wpend = nil
+		if s == nil {
+			g.wrunning = false
+			w := g.widle
+			g.widle = nil
+			g.wmu.Unlock()
+			for _, c := range w {
+				close(c)
+			}
+			return
+		}
+		g.wmu.Unlock()
+		if s.seq < g.fileSeq {
+			continue
+		}
+		if err := writeFileAtomic(s.path, s.b); err != nil {
+			logger.Errorf("datatruth: fill_price state write %s: %v - a restart now would forget the standing strikes", s.path, err)
+			continue
+		}
+		g.fileSeq = s.seq
+	}
+}
+
+// Flush waits up to timeout for every queued state write to finish; true = the
+// writer is idle (everything queued before the call is on disk or has failed
+// loudly). Never called from the exit path.
+func (g *FillGuard) Flush(timeout time.Duration) bool {
+	g.wmu.Lock()
+	if !g.wrunning && g.wpend == nil {
+		g.wmu.Unlock()
+		return true
+	}
+	c := make(chan struct{})
+	g.widle = append(g.widle, c)
+	g.wmu.Unlock()
+	select {
+	case <-c:
+		return true
+	case <-time.After(timeout):
+		return false
+	}
 }
 
 // writeFileAtomic: temp file beside the target, fsync, rename (the owner-push
