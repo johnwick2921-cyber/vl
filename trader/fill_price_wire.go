@@ -1,8 +1,11 @@
 package trader
 
 import (
+	"fmt"
+	"strings"
 	"sync/atomic"
 
+	"vl/config"
 	"vl/internal/datatruth/checks"
 	"vl/internal/ownerpush"
 	"vl/kernel"
@@ -16,6 +19,9 @@ func RegisterFillPrice() {
 	g := checks.DefaultFills()
 	g.SetSession(kernel.CMESessionDayKey)
 	g.SetAlert(func(kind, text string) { ownerpush.Push(kind, text) })
+	// the pause text prints a runnable acknowledgement URL (review 4 D6): the API's
+	// own host and port, read from the config, never a literal
+	checks.SetAckBaseURL(ackBaseURLFromConfig())
 	// m451: the strikes and the owner's acknowledgement survive a restart (a deploy
 	// is a kill -9). The path is set by main beside the DB; unset (tests) = memory
 	// only. After SetAlert, so an unreadable file reaches the owner.
@@ -23,6 +29,23 @@ func RegisterFillPrice() {
 		g.EnableState(p)
 	}
 	checks.RegisterFillPrice(g)
+}
+
+// ackBaseURLFromConfig is where the owner reaches the API from the box the bot
+// runs on: the configured port, and the configured host unless it is a wildcard
+// bind (0.0.0.0 / :: / empty), which is reached through loopback.
+func ackBaseURLFromConfig() string {
+	cfg := config.Get()
+	host := strings.TrimSpace(cfg.APIServerHost)
+	switch host {
+	case "", "0.0.0.0", "::", "[::]":
+		host = "127.0.0.1"
+	}
+	port := cfg.APIServerPort
+	if port <= 0 {
+		port = 8080
+	}
+	return fmt.Sprintf("http://%s:%d", host, port)
 }
 
 // fillPriceStatePath is the file the fill_price strikes are kept in across a

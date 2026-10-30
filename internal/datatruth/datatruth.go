@@ -184,6 +184,11 @@ type CheckStat struct {
 	// Scopes: who the standing blocks are FOR (ScopeTrader / ScopeAccount tokens).
 	// Empty with Blocked=true = the whole symbol (m451).
 	Scopes []string `json:"scopes,omitempty"`
+	// Readers: which entry paths the standing blocks concern ("ai", "mentor"),
+	// the union over the open episodes. Empty with Blocked=true = every path
+	// (round 3, review 4 D1: /api/health and the banner could not tell a
+	// mentor-only or AI-only pause from a whole-symbol one).
+	Readers []string `json:"readers,omitempty"`
 }
 
 // ReopenMergeWindow: a check that blocks again within this long of its own
@@ -198,6 +203,9 @@ type episode struct {
 	clearedMs int64 // when the episode last measured clear (0 = never)
 	detail    string
 	scopes    []string // who the latest block was for (empty = the whole symbol)
+	readers   []string // which entry paths the latest block concerned (empty = every path)
+	widenN    int      // how many times this episode's scope grew (each pushed once)
+	clearPush bool     // the "resolved" owner push for the last clear has gone out
 }
 
 type check struct {
@@ -216,7 +224,19 @@ var (
 	mu       sync.Mutex
 	checks   = map[string]*check{}
 	notifier func(kind, text string)
+	// resumeNotes: per check, how entries come back when it is NOT "the data
+	// measures clear by itself" (fill_price waits for the owner's acknowledgement).
+	resumeNotes = map[string]string{}
 )
+
+// SetResumeNote overrides, for one check, the "entries resume automatically when
+// the data measures clear" tail of the owner alert. A check whose pause only ends
+// by an owner action must not promise an automatic resume (review 4 D5).
+func SetResumeNote(checkName, note string) {
+	mu.Lock()
+	resumeNotes[checkName] = note
+	mu.Unlock()
+}
 
 // Register adds (or replaces) a check. Re-registering a name keeps its episode
 // state, so a re-wire cannot reopen an episode that is already open.
@@ -324,27 +344,59 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		}
 		if v.blocked {
 			blocked = true
+			resume := resumeTailLocked(v.name) // mu is held here
+			continued := false                 // an episode that was already standing (open, or a merged flap)
 			if !ep.open && ep.clearedMs != 0 && now.UnixMilli()-ep.clearedMs < ReopenMergeWindow.Milliseconds() {
 				// a flap: the same episode re-opening, not a new one
 				ep.open = true
+				continued = true
 				c.reopens++
 				logger.Warnf("datatruth: %s blocks %s AGAIN %dms after it cleared - merged into the open-since-%d episode, no new alert: %s",
 					v.name, symbol, now.UnixMilli()-ep.clearedMs, ep.sinceMs, v.why)
 			} else if !ep.open {
 				ep.open, ep.sinceMs, ep.detail = true, now.UnixMilli(), v.why
+				ep.widenN = 0
 				c.episodes++
 				alerts = append(alerts, alert{
 					kind: fmt.Sprintf("data_truth_%s|%s|%d", v.name, symbol, ep.sinceMs),
-					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: %s (exits, stops and protection are unaffected; entries resume automatically when the data measures clear)", symbol, readersNote(v.readers), v.name, v.why),
+					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: %s (exits, stops and protection are unaffected; %s)", symbol, scopeNote(v.readers, v.scopes), v.name, v.why, resume),
+				})
+			} else {
+				continued = true
+			}
+			// A scope that GROWS inside a standing episode is news (review 4 D2: a
+			// block that opened for the mentor readers only and then widened to every
+			// reader pushed once, labelled "(mentor traders)", while the AI path was
+			// paused silently). One push per widening, deduped on the new scope.
+			if continued && widens(ep.readers, ep.scopes, v.readers, v.scopes) {
+				ep.widenN++
+				alerts = append(alerts, alert{
+					kind: fmt.Sprintf("data_truth_%s|%s|%d|widen%d", v.name, symbol, ep.sinceMs, ep.widenN),
+					text: fmt.Sprintf("DATA TRUTH: the pause for %s WIDENED - %s: new entries are now paused for %s (was %s): %s (exits, stops and protection are unaffected; %s)",
+						symbol, v.name, scopeWords(v.readers, v.scopes), scopeWords(ep.readers, ep.scopes), v.why, resume),
 				})
 			}
+			ep.clearPush = false
 			c.last = v.why
 			ep.detail = v.why
 			ep.scopes = v.scopes
+			ep.readers = v.readers
 			reasons = append(reasons, Reason{Check: v.name, Symbol: symbol, Detail: v.why, SinceMs: ep.sinceMs, Readers: v.readers, Scopes: v.scopes})
 		} else if ep.open {
 			ep.open, ep.clearedMs = false, now.UnixMilli()
+			ep.clearPush = false
 			logger.Infof("datatruth: %s CLEAR for %s after %dms (was: %s) - new entries resume", v.name, symbol, now.UnixMilli()-ep.sinceMs, ep.detail)
+		} else if ep.clearedMs != 0 && !ep.clearPush && now.UnixMilli()-ep.clearedMs >= ReopenMergeWindow.Milliseconds() {
+			// The owner was told the pause began; a pause of 99 to 240 minutes used to
+			// end in silence (review 4 D5). The clear is pushed ONCE, after the merge
+			// window has passed without a re-block - a flap that comes back inside it
+			// is the same episode and must never read "resolved" first.
+			ep.clearPush = true
+			alerts = append(alerts, alert{
+				kind: fmt.Sprintf("data_truth_%s|%s|%d|clear", v.name, symbol, ep.sinceMs),
+				text: fmt.Sprintf("DATA TRUTH: %s is clear for %s - the pause that opened %s ended %s and new entries resumed then (no new block in the %d minutes since)",
+					v.name, symbol, ctClock(ep.sinceMs), ctClock(ep.clearedMs), int(ReopenMergeWindow/time.Minute)),
+			})
 		}
 	}
 	mu.Unlock()
@@ -358,11 +410,8 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	return blocked, reasons
 }
 
-// readersNote renders which entry paths a scoped block concerns for the alert.
-func readersNote(readers []string) string {
-	if len(readers) == 0 {
-		return ""
-	}
+// readerNames renders reader tokens for the owner.
+func readerNames(readers []string) []string {
 	names := make([]string, len(readers))
 	for i, r := range readers {
 		switch r {
@@ -374,7 +423,108 @@ func readersNote(readers []string) string {
 			names[i] = r
 		}
 	}
-	return " (" + strings.Join(names, " + ") + ")"
+	return names
+}
+
+// scopeNames renders trader/account scope tokens for the owner
+// ("acct:SIM101" -> "account SIM101", "trader:abc" -> "trader abc").
+func scopeNames(scopes []string) []string {
+	out := make([]string, 0, len(scopes))
+	for _, s := range scopes {
+		switch {
+		case strings.HasPrefix(s, "acct:"):
+			out = append(out, "account "+strings.TrimPrefix(s, "acct:"))
+		case strings.HasPrefix(s, "trader:"):
+			out = append(out, "trader "+strings.TrimPrefix(s, "trader:"))
+		default:
+			out = append(out, s)
+		}
+	}
+	return out
+}
+
+// scopeNote renders who a block is for as the alert header suffix: the readers
+// (m450) and the traders/accounts (m451) it names. "" = everyone on the symbol.
+func scopeNote(readers, scopes []string) string {
+	parts := readerNames(readers)
+	if len(scopes) > 0 {
+		parts = append(parts, "for "+strings.Join(scopeNames(scopes), ", "))
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return " (" + strings.Join(parts, " + ") + ")"
+}
+
+// scopeWords is scopeNote as a phrase ("every entry path" when unscoped).
+func scopeWords(readers, scopes []string) string {
+	if n := scopeNote(readers, scopes); n != "" {
+		return strings.TrimSuffix(strings.TrimPrefix(n, " ("), ")")
+	}
+	return "every entry path"
+}
+
+// readersNote is kept for the callers that name readers alone.
+func readersNote(readers []string) string { return scopeNote(readers, nil) }
+
+// widens reports whether the new (readers, scopes) pause strictly more than the
+// old ones: nil readers/scopes mean EVERYONE, so going from a named set to nil, or
+// adding a name, is wider; going narrower or staying equal is not.
+func widens(oldR, oldS, newR, newS []string) bool {
+	return setWidens(oldR, newR) || setWidens(oldS, newS)
+}
+
+func setWidens(old, nw []string) bool {
+	if len(old) == 0 {
+		return false // already everyone
+	}
+	if len(nw) == 0 {
+		return true // a named set became everyone
+	}
+	have := make(map[string]bool, len(old))
+	for _, x := range old {
+		have[x] = true
+	}
+	for _, x := range nw {
+		if !have[x] {
+			return true
+		}
+	}
+	return false
+}
+
+func uniqSorted(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	seen := map[string]bool{}
+	var out []string
+	for _, x := range in {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// resumeTailLocked is the "how entries come back" clause of the owner alert. The
+// caller holds mu.
+func resumeTailLocked(checkName string) string {
+	if note := resumeNotes[checkName]; note != "" {
+		return note
+	}
+	return "entries resume automatically when the data measures clear"
+}
+
+// ctClock renders a unix-ms instant on the owner's clock (America/Chicago).
+func ctClock(ms int64) string {
+	loc, label := time.UTC, "UTC"
+	if l, err := time.LoadLocation("America/Chicago"); err == nil {
+		loc, label = l, "CT"
+	}
+	return time.UnixMilli(ms).In(loc).Format("01-02 15:04") + " " + label
 }
 
 // runCheck calls one check, converting an error or a panic into a block FOR
@@ -446,20 +596,29 @@ func Snapshot() map[string]CheckStat {
 	out := make(map[string]CheckStat, len(checks))
 	for n, c := range checks {
 		st := CheckStat{Episodes: c.episodes, Reopens: c.reopens, LastReason: c.last, Counted: c.counted}
-		whole := false
+		whole, allReaders := false, false
 		for _, ep := range c.eps {
 			if ep.open {
 				st.Blocked = true
 				if len(ep.scopes) == 0 {
 					whole = true
 				}
+				if len(ep.readers) == 0 {
+					allReaders = true
+				}
 				st.Scopes = append(st.Scopes, ep.scopes...)
+				st.Readers = append(st.Readers, ep.readers...)
 			}
 		}
 		if whole {
 			st.Scopes = nil // one whole-symbol block: the union is everyone
 		} else {
 			sort.Strings(st.Scopes)
+		}
+		if allReaders {
+			st.Readers = nil // one every-path block: the union is every path
+		} else {
+			st.Readers = uniqSorted(st.Readers)
 		}
 		out[n] = st
 	}
@@ -475,6 +634,9 @@ func HealthSnapshot() map[string]any {
 		if len(s.Scopes) > 0 {
 			m["scopes"] = s.Scopes
 		}
+		if len(s.Readers) > 0 {
+			m["readers"] = s.Readers
+		}
 		out[n] = m
 	}
 	return out
@@ -486,5 +648,6 @@ func Reset() {
 	mu.Lock()
 	checks = map[string]*check{}
 	notifier = nil
+	resumeNotes = map[string]string{}
 	mu.Unlock()
 }
