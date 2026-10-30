@@ -27,6 +27,10 @@ import (
 // healthNow is the clock seam for handleHealth (tests pin an open / closed CME instant).
 var healthNow = time.Now
 
+// healthDataTruthStarting is the quiet-boot-wait read (a var so the pin can drive
+// both sides of it through the real handler).
+var healthDataTruthStarting = trader.DataTruthStarting
+
 func (s *Server) handleHealth(c *gin.Context) {
 	now := healthNow()
 
@@ -293,6 +297,13 @@ func (s *Server) handleHealth(c *gin.Context) {
 		}
 		// release #55: the m446/m447 data-truth checks pause NEW entries too. A
 		// swing4h-only block pauses SWING4H entries alone; any other check, all.
+		// the quiet boot wait refuses EVERY NT8 trader's new entries (trader.
+		// DataTruthStarting): the banner says so instead of "not paused"
+		if healthDataTruthStarting(now) {
+			paused = true
+			reasons = append(reasons, "data_truth_starting")
+			noteScope(ntTrader.PausedScopeAll)
+		}
 		if len(dtBlocked) > 0 {
 			paused = true
 			reasons = append(reasons, "data_truth")

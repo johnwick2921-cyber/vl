@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"vl/internal/datatruth"
+	"vl/internal/ownerpush"
 )
 
 // Release #55 round 3 (review 4, OWNER TEXT + REMEDIES lens).
@@ -65,7 +66,7 @@ func TestR3FillPricePauseTextCarriesARunnableAcknowledgement(t *testing.T) {
 	for _, want := range []string{
 		"POST http://127.0.0.1:8081/api/risk/ack-fill-price?symbol=MNQ&account=SIM101",
 		"POST http://127.0.0.1:8081/api/login",
-		"Authorization: Bearer <token>",
+		"HTTP header Authorization set to Bearer, a space, then the token",
 		"no button",
 	} {
 		if !strings.Contains(why, want) {
@@ -105,7 +106,7 @@ func TestR3IngestLossReasonIsCTAndNamesTheWayOut(t *testing.T) {
 	if !b {
 		t.Fatal("must block")
 	}
-	for _, want := range []string{"1 lost bar(s)", "10-29 13:03 CT", "asks NT8 for them again by itself", "refused", "2500-bar 1m ring", "about 41 hours of open market", "restart the bot"} {
+	for _, want := range []string{"1 lost bar(s)", "10-29 13:03 CT", "re-requests them from NT8 itself", "is refused", "2500-bar 1m ring", "about 41 hours of open market", "restart the bot in a flat/safe window"} {
 		if !strings.Contains(why, want) {
 			t.Fatalf("reason must contain %q: %s", want, why)
 		}
@@ -118,5 +119,85 @@ func TestR3IngestLossReasonIsCTAndNamesTheWayOut(t *testing.T) {
 	_, why5 := l2.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil })
 	if !strings.Contains(why5, "about 208 hours of open market (roughly 10 trading days)") {
 		t.Fatalf("the 5m duration is 2500 x 5 min: %s", why5)
+	}
+}
+
+// P1 (re-review 1): the owner reads the TELEGRAM PUSH, and ownerpush.Scrub cuts it at
+// 600 runes and rewrites "Authorization: x" as a credential. Every earlier pin read
+// the raw string; these run the real alert through Evaluate (the one call every
+// production path makes) and then through Scrub, and assert the remedy and the
+// resume note SURVIVE it, for every kind of alert the check sends.
+//
+// MUTANT: Evaluate pushes the unclipped text (notify(a.kind, a.text)) -> RED (the
+// fill_price push is cut mid-sentence, the how-to and resume note are lost).
+// MUTANT: fillResume words the header "Authorization: Bearer <token>" -> RED
+// (Scrub redacts it).
+func TestR3FillPricePushSurvivesOwnerpushScrub(t *testing.T) {
+	prev := AckBaseURL()
+	t.Cleanup(func() { SetAckBaseURL(prev) })
+	SetAckBaseURL("http://127.0.0.1:8123")
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	var pushes []string
+	datatruth.SetNotifier(func(kind, text string) { pushes = append(pushes, text) })
+	g, _ := newTestGuard(nil)
+	RegisterFillPrice(g)
+	now := time.Now()
+	m := now.UnixMilli() / minuteMs * minuteMs
+	// two accounts, several fills each: the longest realistic detail
+	for _, acct := range []string{"Sim101", "Sim102"} {
+		g.Record(farObs(acct+"a1", acct+"a1", acct, m-5_000), ringAround(m-minuteMs), now)
+		g.Record(farObs(acct+"a2", acct+"a2", acct, m-4_000), ringAround(m-minuteMs), now)
+		g.Record(farObs(acct+"a3", acct+"a3", acct, m-3_000), ringAround(m-minuteMs), now)
+	}
+	datatruth.Evaluate("MNQ", now)
+	if len(pushes) != 1 {
+		t.Fatalf("one push for the opening: %v", pushes)
+	}
+	got := ownerpush.Scrub(pushes[0])
+	if got != pushes[0] {
+		t.Fatalf("Scrub changed the push (cut or redacted):\n raw=%q\n got=%q", pushes[0], got)
+	}
+	for _, want := range []string{
+		"POST http://127.0.0.1:8123/api/login",
+		"/api/risk/ack-fill-price?symbol=MNQ&account=",
+		"header Authorization set to Bearer",
+		"web app has no button",
+		"not by themselves",
+		"exits, stops and protection are unaffected",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the delivered push must contain %q:\n%s", want, got)
+		}
+	}
+}
+
+func TestR3IngestLossPushSurvivesOwnerpushScrub(t *testing.T) {
+	for _, tf := range []string{"1m", "5m", "4h"} {
+		datatruth.Reset()
+		var pushes []string
+		datatruth.SetNotifier(func(kind, text string) { pushes = append(pushes, text) })
+		l := NewLedger(10)
+		ts := time.Date(2026, 10, 29, 18, 3, 0, 0, time.UTC).UnixMilli()
+		l.RecordLoss(LossHistorical, "MNQ", tf, []int64{ts}, time.Now())
+		verify := func(string, string, int64, string) (bool, error) { return false, nil }
+		datatruth.Register(CheckIngestLoss, func(symbol string, now time.Time) (bool, string, error) {
+			b, why := l.Judge(symbol, verify)
+			return b, why, nil
+		})
+		datatruth.Evaluate("MNQ", time.Now())
+		if len(pushes) != 1 {
+			t.Fatalf("%s: one push: %v", tf, pushes)
+		}
+		got := ownerpush.Scrub(pushes[0])
+		if got != pushes[0] {
+			t.Fatalf("%s: Scrub changed the push:\n raw=%q\n got=%q", tf, pushes[0], got)
+		}
+		for _, want := range []string{"restart the bot in a flat/safe window", "entries resume automatically when the data measures clear", "exits, stops and protection are unaffected"} {
+			if !strings.Contains(got, want) {
+				t.Fatalf("%s: the delivered push must contain %q:\n%s", tf, want, got)
+			}
+		}
+		datatruth.Reset()
 	}
 }

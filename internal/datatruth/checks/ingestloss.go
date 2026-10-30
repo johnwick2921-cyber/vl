@@ -289,5 +289,5 @@ func ingestLossRemedy(tf string) string {
 			span = fmt.Sprintf("about %d hours of open market (roughly %d trading days)", h, (h+22)/23)
 		}
 	}
-	return "the bot asks NT8 for them again by itself and the pause lifts the moment they are back; if that request is refused (its budget is spent, or the NT8 feed is down) they stay lost until they age out of the " + fmt.Sprint(LedgerRingBars) + "-bar " + tf + " ring (" + span + "), or until you restart the bot in a flat/safe window (a restart clears this in-memory loss list and re-seeds the bars from the store and NT8)"
+	return "the bot re-requests them from NT8 itself and the pause lifts when they are back; if that is refused (budget spent or feed down) it lasts until they age out of the " + fmt.Sprint(LedgerRingBars) + "-bar " + tf + " ring (" + span + "), or restart the bot in a flat/safe window (clears this in-memory list, re-seeds from the store and NT8)"
 }

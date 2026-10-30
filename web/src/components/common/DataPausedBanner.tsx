@@ -37,12 +37,14 @@ const TRUTH_SCOPE_KEYS: Record<
   | 'dataPausedTruthScopeMentor'
   | 'dataPausedTruthScopeAI'
   | 'dataPausedTruthScopeTraders'
+  | 'dataPausedTruthScopeMixed'
 > = {
   swing_entries: 'dataPausedScopeSwing',
   swing_and_deep_entries: 'dataPausedScopeDeep',
   mentor_entries: 'dataPausedTruthScopeMentor',
   ai_entries: 'dataPausedTruthScopeAI',
   trader_entries: 'dataPausedTruthScopeTraders',
+  mixed_entries: 'dataPausedTruthScopeMixed',
 }
 
 // "acct:SIM101" -> "account SIM101", "trader:abc" -> "trader abc"
@@ -62,12 +64,18 @@ export function DataPausedBanner({ language }: { language: Language }) {
   const reasons = tpz.reasons ?? []
   const truthChecks = tpz.data_truth_checks ?? []
   const hasTruth = reasons.includes('data_truth') && truthChecks.length > 0
-  if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth) return null
+  // the quiet boot wait after a restart: every NT8 trader's new entries are
+  // refused until the checks have judged the replayed bars (up to 10 minutes)
+  const starting = reasons.includes('data_truth_starting')
+  if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth && !starting)
+    return null
 
   const windows = tpz.windows ?? []
   const hasMissing = reasons.some((r) => DATA_CLASSES.includes(r))
   let text: string
-  if (hasTruth && !hasMissing) {
+  if (starting && !hasTruth && !hasMissing) {
+    text = tp('dataPausedStartingBanner', language)
+  } else if (hasTruth && !hasMissing) {
     // release #55: only the data-truth checks pause trading - name them
     const scopeKey = TRUTH_SCOPE_KEYS[tpz.scope ?? '']
     // a check scoped to traders/accounts names them next to it
