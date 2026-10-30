@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -92,5 +93,36 @@ func TestHandleAckFillPriceReportsWhetherTheAckReachedTheDisk(t *testing.T) {
 	}
 	if b := run(false); !strings.Contains(b, `"acknowledged":true`) || !strings.Contains(b, `"persisted":false`) {
 		t.Fatalf("an ack with no state file is live but NOT on disk and must say so: %s", b)
+	}
+}
+
+// m55r4-h2: a state write that FAILS (a directory squats on the temp name, the
+// stand-in for a full disk) must not read "persisted":true.
+//
+// MUTANT: ack() reports idleness (Flush) as durable -> RED.
+func TestHandleAckFillPriceReportsFalseWhenTheStateWriteFails(t *testing.T) {
+	day := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	m := day.UnixMilli() / 60_000 * 60_000
+	g := checks.NewFillGuard(checks.DefaultFillParams(), nil)
+	saved := checks.SetDefaultFills(g)
+	defer checks.SetDefaultFills(saved)
+	path := filepath.Join(t.TempDir(), "fill.json")
+	if _, err := g.EnableState(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".tmp", 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range []string{"a", "b"} {
+		g.Record(checks.FillObs{ID: id, Symbol: "MNQ", Kind: "exit", Price: 0, AtMs: m + 5_000}, nil, day)
+	}
+	s := &Server{}
+	router := gin.New()
+	router.POST("/api/risk/ack-fill-price", s.handleAckFillPrice)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/api/risk/ack-fill-price?symbol=MNQ", nil))
+	b := rec.Body.String()
+	if !strings.Contains(b, `"acknowledged":true`) || !strings.Contains(b, `"persisted":false`) {
+		t.Fatalf("a failed state write must say persisted:false: %s", b)
 	}
 }

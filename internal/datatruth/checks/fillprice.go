@@ -313,7 +313,7 @@ type FillGuard struct {
 	wpend    *fillSnap
 	wrunning bool
 	widle    []chan struct{} // closed when the writer next goes idle (Flush)
-	fileSeq  int64           // drain only: newest snapshot written
+	fileSeq  int64           // guarded by wmu: newest snapshot written
 }
 
 // unreadableState is the standing block raised by an unreadable state file.
@@ -624,16 +624,25 @@ func (g *FillGuard) ack(symbol, account string, only bool) (acked, durable bool)
 		st.acked = true
 		any = true
 	}
-	memOnly := g.statePath == "" || g.noPersist
 	g.mu.Unlock()
 	if !any {
 		return false, true
 	}
-	g.persist()
+	seq := g.persist()
 	// An acknowledgement is an owner action, not an exit: wait (bounded) for it
-	// to reach the disk so a restart right after cannot lose it.
+	// to reach the disk so a restart right after cannot lose it. "Durable" is the
+	// WRITER'S RESULT - the file now holds a snapshot at least as new as this
+	// ack's - never mere idleness: Flush also returns true for a write that failed
+	// loudly (disk full), and that must not read as persisted (m55r4).
 	ok := g.Flush(2 * time.Second)
-	return true, ok && !memOnly
+	return true, ok && seq > 0 && g.writtenSeq() >= seq
+}
+
+// writtenSeq is the newest snapshot sequence that reached the disk.
+func (g *FillGuard) writtenSeq() int64 {
+	g.wmu.Lock()
+	defer g.wmu.Unlock()
+	return g.fileSeq
 }
 
 // Stats returns the counters.
@@ -861,7 +870,9 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 			bad = ""
 			movedTo = fmt.Sprintf("it could NOT be moved aside (%v) and nothing will be written over it", ierr)
 		} else {
+			g.wmu.Lock()
 			g.fileSeq = snap.seq
+			g.wmu.Unlock()
 			movedTo = "the unreadable file was moved aside, not deleted, to " + bad
 		}
 	}
@@ -912,6 +923,9 @@ func freeBadName(path string, now time.Time) (string, error) {
 // replacement is renamed over the path. A crash or failure after (1) or (2) leaves
 // the path holding the old unreadable file, so the next boot is blocked again; a
 // failure at (1) or (2) changes nothing. Nothing is deleted.
+// linkFile is os.Link; a variable only so a test can make the link step fail.
+var linkFile = os.Link
+
 func installReplacing(path, bad string, b []byte) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
@@ -920,7 +934,7 @@ func installReplacing(path, bad string, b []byte) error {
 	if err := writeSynced(tmp, b); err != nil {
 		return err
 	}
-	if err := os.Link(path, bad); err != nil {
+	if err := linkFile(path, bad); err != nil {
 		return err
 	}
 	if err := os.Rename(tmp, path); err != nil {
@@ -940,12 +954,12 @@ func installReplacing(path, bad string, b []byte) error {
 // newest is written - and the write is the same temp-file + fsync + rename, so a
 // crash leaves the previous or the new complete file, as before. Flush waits for
 // the writer to go idle (the owner-action and boot callers, tests).
-func (g *FillGuard) persist() {
+func (g *FillGuard) persist() int64 {
 	g.mu.Lock()
 	snap, ok := g.snapshotLocked()
 	g.mu.Unlock()
 	if !ok {
-		return
+		return 0
 	}
 	g.wmu.Lock()
 	if g.wpend == nil || snap.seq > g.wpend.seq {
@@ -957,6 +971,7 @@ func (g *FillGuard) persist() {
 	if start {
 		safe.GoNamed("fill_price state writer", g.drain)
 	}
+	return snap.seq
 }
 
 // snapshotLocked encodes the current strike map and unreadable record (g.mu held)
@@ -1030,15 +1045,18 @@ func (g *FillGuard) drain() {
 			}
 			return
 		}
+		stale := s.seq < g.fileSeq
 		g.wmu.Unlock()
-		if s.seq < g.fileSeq {
+		if stale {
 			continue
 		}
 		if err := writeFileAtomic(s.path, s.b); err != nil {
 			logger.Errorf("datatruth: fill_price state write %s: %v - a restart now would forget the standing strikes", s.path, err)
 			continue
 		}
+		g.wmu.Lock()
 		g.fileSeq = s.seq
+		g.wmu.Unlock()
 	}
 }
 

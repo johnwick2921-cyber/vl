@@ -173,3 +173,85 @@ func TestAckDurableIsFalseWhenTheStateWriteStalls(t *testing.T) {
 		r.Close()
 	}
 }
+
+// farTwice records two far exits (price 0 is malformed = counted far) so MNQ/Sim101
+// stands paused.
+func farTwice(g *FillGuard, now time.Time) {
+	m := now.UnixMilli() / minuteMs * minuteMs
+	g.Record(FillObs{ID: "c1", Symbol: "MNQ", Kind: "exit", Account: "Sim101", Price: 0, AtMs: m + 5_000}, nil, now)
+	g.Record(FillObs{ID: "c2", Symbol: "MNQ", Kind: "exit", Account: "Sim101", Price: 0, AtMs: m + 6_000}, nil, now)
+}
+
+// AckDurable is the WRITER'S RESULT, not idleness: a write that FAILS (a full disk;
+// here a directory squatting on the temp name) leaves the writer idle, and Flush
+// returns true for it. The reply must still say the ack is not on disk.
+//
+// MUTANT: ack() returns durable = Flush(...) && !memOnly (idle == persisted) -> RED.
+func TestAckDurableIsFalseWhenTheStateWriteFails(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "fill.json")
+	g, _ := newTestGuard(nil)
+	if _, err := g.EnableState(path); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Mkdir(path+".tmp", 0o700); err != nil { // every write now errors
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	farTwice(g, now)
+	acked, durable := g.AckDurable("MNQ")
+	if !acked || durable {
+		t.Fatalf("acked=%v durable=%v: the write errored, the ack is NOT on disk", acked, durable)
+	}
+	if b, _, _ := g.Check()("MNQ", now); b {
+		t.Fatal("the in-memory ack still lifts the pause at once")
+	}
+	// the happy path stays true once the disk works again
+	if err := os.Remove(path + ".tmp"); err != nil { // our own t.TempDir() directory
+		t.Fatal(err)
+	}
+	farTwice2 := func() {
+		m := now.UnixMilli() / minuteMs * minuteMs
+		g.Record(FillObs{ID: "c3", Symbol: "MNQ", Kind: "exit", Account: "Sim101", Price: 0, AtMs: m + 7_000}, nil, now)
+		g.Record(FillObs{ID: "c4", Symbol: "MNQ", Kind: "exit", Account: "Sim101", Price: 0, AtMs: m + 8_000}, nil, now)
+	}
+	farTwice2()
+	if acked, durable := g.AckDurable("MNQ"); !acked || !durable {
+		t.Fatalf("acked=%v durable=%v: a working disk takes the ack", acked, durable)
+	}
+}
+
+// EnableState with an unreadable file whose LINK step fails (an unsupported
+// filesystem, EPERM) while the temp write works: the file must stay exactly as it
+// is and NOTHING may be written over it - not by a later strike, not by an ack.
+//
+// MUTANT: drop `g.noPersist = true` from the install-failed branch -> the next
+// strike/ack renames over the unreadable file, RED.
+func TestFillGuardUnreadableStateWhoseLinkFailsIsNeverWrittenOver(t *testing.T) {
+	saved := linkFile
+	linkFile = func(string, string) error { return syscall.EPERM }
+	defer func() { linkFile = saved }()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "fill.json")
+	garbage := []byte("{corrupt")
+	if err := os.WriteFile(path, garbage, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	g, _ := newTestGuard(nil)
+	if _, err := g.EnableState(path); err == nil {
+		t.Fatal("unreadable must be reported")
+	}
+	now := time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+	farTwice(g, now) // a strike persist
+	if acked, durable := g.AckDurable("MNQ"); !acked || durable {
+		t.Fatalf("acked=%v durable=%v: nothing may be written, so the ack is memory-only", acked, durable)
+	}
+	g.Flush(2 * time.Second)
+	if got, err := os.ReadFile(path); err != nil || string(got) != string(garbage) {
+		t.Fatalf("the unreadable file must still hold its bytes (err %v, got %q)", err, got)
+	}
+	g2, _ := newTestGuard(nil)
+	g2.EnableState(path)
+	if b, _, _ := g2.Check()("MNQ", now); !b {
+		t.Fatal("the next boot must still be blocked by the untouched unreadable file")
+	}
+}
