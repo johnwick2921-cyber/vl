@@ -304,7 +304,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		// missing a fold. Mark it stale (SWING4H refused, counted) until a
 		// refill + re-seed closes the hole; holes older than the horizon have
 		// decayed to nothing and do not count.
-		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()))
+		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()), e.seamCovered)
 		e.State.Swing.HoledBuckets = recentHoledBuckets(holes, present, swingHoleHorizonBuckets(e.Cfg.Swing.EMAPeriod))
 		e.State.Swing.LineStale = len(e.State.Swing.HoledBuckets) > 0
 	}

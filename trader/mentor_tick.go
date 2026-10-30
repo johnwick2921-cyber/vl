@@ -2035,8 +2035,12 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// to be walked over for RTH holes — the gate reads it for every mentor entry.
 	if len(full1HRTH) > 0 {
 		at.noteSeedSeries(stitched1m, seamCovered, mentorClockNow())
+		// m456 (defect 2): the swing line's hole scan reads the same seam — a
+		// minute some contract stores is present, not a hole.
+		at.mentorEval.SetSeamCovered(seamCovered)
 	} else {
 		at.noteSeedSeries(bars1m, nil, mentorClockNow())
+		at.mentorEval.SetSeamCovered(nil)
 	}
 	var missing []string
 	priorHTF := at.mentorEval.State.HTF // MENTOR-NY item 6: the state the seed replays from

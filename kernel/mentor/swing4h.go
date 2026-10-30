@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"log"
+	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -319,7 +320,7 @@ func bucketClosesBetween(bars5m []market.Kline, from, to int64) (closes []float6
 	// m456: a bucket in [from, to) with no bars (or a missing tail) during an
 	// OPEN session is a data hole, not a weekend: its fold is lost and the
 	// caller must fail closed exactly like an unreadable bucket.
-	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to); len(holes) > 0 {
+	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to, nil); len(holes) > 0 {
 		return nil, false
 	}
 	last := int64(-1)
@@ -1051,13 +1052,24 @@ type holedBucket struct {
 // kernel.IsCMEOpen the trading gate reads) can tell a halt, a weekend or a
 // holiday from a data hole. barMs is the bar duration of `bars` (ascending).
 // present is the number of buckets that had at least one bar.
-func holedFourHBuckets(bars []market.Kline, barMs, from, to int64) (holes []holedBucket, present int) {
+//
+// Bucket edges come from fourHBucketStart, the SAME function the fold uses
+// (m456 defect 1): a bucket is [s, fourHBucketEnd(s)), which is shorter than
+// 4h where the 17:00 CT anchor cuts it (1h on the fall-back Saturday, 3h on the
+// spring-forward one). Walking a flat s+4h read such a bucket as 4h long and
+// counted the next session's open hours as its uncovered tail.
+//
+// seam (ascending 1m open times, may be nil) lists minutes a contract STORES
+// that the series in `bars` lacks (RollStitcher.SeamCovered, m456 defect 2): a
+// minute is present when ANY contract of the stitch stores it, so a seam
+// minute is not part of an uncovered tail.
+func holedFourHBuckets(bars []market.Kline, barMs, from, to int64, seam []int64) (holes []holedBucket, present int) {
 	i := 0
 	for i < len(bars) && bars[i].OpenTime < from {
 		i++
 	}
 	for s := from; s < to; {
-		e := s + fourHMs
+		e := fourHBucketEnd(s)
 		covered, any := s, false
 		for i < len(bars) && bars[i].OpenTime < e {
 			any = true
@@ -1070,20 +1082,44 @@ func holedFourHBuckets(bars []market.Kline, barMs, from, to int64) (holes []hole
 			covered = e
 		}
 		if covered < e {
-			if open, ok := kernel.OpenIntervalsBetween(covered, e, 60_000, 1000); !ok || open >= swingHoleMinOpenMinutes {
+			open, ok := kernel.OpenIntervalsBetween(covered, e, 60_000, 1000)
+			if ok {
+				open -= seamOpenMinutes(seam, covered, e)
+			}
+			if !ok || open >= swingHoleMinOpenMinutes {
 				holes = append(holes, holedBucket{Start: s, Folded: present})
 			}
 		}
 		if any {
 			present++
 		}
-		nxt := fourHBucketStart(e, ctime())
-		if nxt <= s {
-			nxt = e
-		}
-		s = nxt
+		s = e
 	}
 	return holes, present
+}
+
+// fourHBucketEnd is the exclusive end of the 4h bucket starting at s: the start
+// of the bucket the instant s+4h falls in. Equal to s+4h except where the 17:00
+// CT anchor cuts the bucket short (DST change days), so it is the same edge the
+// fold (fourHBucketStart) puts between two buckets. Always > s.
+func fourHBucketEnd(s int64) int64 {
+	if e := fourHBucketStart(s+fourHMs, ctime()); e > s {
+		return e
+	}
+	return s + fourHMs
+}
+
+// seamOpenMinutes counts the seam minutes in [from, to) that were open CME
+// time (a stored minute is open by construction; the calendar check keeps a
+// stray stamp from cancelling a real hole's count below zero).
+func seamOpenMinutes(seam []int64, from, to int64) int {
+	n := 0
+	for k := sort.Search(len(seam), func(k int) bool { return seam[k] >= from }); k < len(seam) && seam[k] < to; k++ {
+		if kernel.IsCMEOpen(time.UnixMilli(seam[k])) {
+			n++
+		}
+	}
+	return n
 }
 
 // recentHoledBuckets keeps the holes still worth failing closed for: those with

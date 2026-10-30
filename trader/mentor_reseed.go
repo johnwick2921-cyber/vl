@@ -69,6 +69,7 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 		bars1m, full1HRTH, seamCovered = storeBarsToKlines(rows, 60_000), nil, nil
 	}
 	at.noteSeedSeries(bars1m, seamCovered, time.UnixMilli(nowMs)) // m445 round 2: the refilled series is measured again — a filled hole resumes the gate
+	at.mentorEval.SetSeamCovered(seamCovered)                     // m456 (defect 2): the swing line's hole scan counts the stitch's seam minutes as present
 	var rep mentor.ReseedReport
 	at.mentorWithHistoryPrintWindows(bars1m, func() {
 		rep = mentor.ReseedState(at.mentorEval, bars1m, full1HRTH, nowMs)

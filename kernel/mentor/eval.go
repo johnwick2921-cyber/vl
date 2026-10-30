@@ -266,6 +266,17 @@ func UnmarshalState(b []byte) (State, error) {
 	return s, err
 }
 
+// SetSeamCovered hands the evaluator the roll-seam minutes of the stitched
+// series the NEXT SeedFull / ReseedState reads (RollStitcher.SeamCovered):
+// minutes some contract stores that the cut dropped from the series. The 4h
+// EMA34 hole scan counts a minute present when ANY contract stores it, so a
+// quarterly roll seam is not read as a data hole (m456 defect 2). Pass nil when
+// the seed series is not a stitch. The slice is copied and sorted.
+func (e *Evaluator) SetSeamCovered(seam []int64) {
+	e.seamCovered = append([]int64(nil), seam...)
+	sort.Slice(e.seamCovered, func(i, j int) bool { return e.seamCovered[i] < e.seamCovered[j] })
+}
+
 // Evaluator runs the mentor rules once per closed 1m candle. It emits intents
 // only; nothing here places an order (P3's injector does). Ticks are pure
 // functions of (bars, now, state): the same history always rebuilds the same
@@ -283,6 +294,12 @@ type Evaluator struct {
 	depth4hBucket int64
 	depthMet      string
 	seedLine      string
+	// seamCovered (m456 defect 2): minutes a contract of the stitch STORES that
+	// the stitched series handed to the seed lacks (RollStitcher.SeamCovered,
+	// ascending 1m open times). The swing line's hole scan counts them as
+	// present. Set by SetSeamCovered before every SeedFull / ReseedState; not
+	// part of State (the series it describes is rebuilt on every seed).
+	seamCovered []int64
 	// tfMemo caches barsTF aggregations within ONE Tick (FU-2): one build per
 	// (tf, slice identity) per Tick, cleared at the start of each Tick.
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
