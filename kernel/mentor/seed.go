@@ -286,7 +286,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 	// history (P1). The seed and every incremental step continue the SAME
 	// recurrence, so seed+ticks == full rebuild exactly. 34 closed candles are
 	// the warm-up MINIMUM (SeedMissing), not a cap — never re-window.
-	bars1h := barsTF(bars1m, 60)
+	bars1h := barsTF(withSeamBars(bars1m, e.seamBars, now), 60)
 	if b4 := fourHClosedBuckets(bars1h, now); len(b4) > 0 {
 		closes4 := make([]float64, 0, len(b4))
 		for _, b := range b4 {
