@@ -55,7 +55,7 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// per-trader 60 s beat too. runCycle can block for minutes inside a
 	// planner call (402.5 s on 10-14) and a trader holding a position may not
 	// cycle at all; the link check must not depend on either.
-	wd := at.driveDeadManWatchdog()
+	wd := at.driveDeadManWatchdogAt(now) // m456: the beat's own clock, so a link-up edge seen HERE anchors the FEED DOWN grace at `now`, never after it
 	at.checkFeedDown(now)
 	ownerpush.Retry()         // m438: re-offer owner pushes a budget / full queue dropped (bounded, stale ones discarded)
 	at.checkUnfilledHole(now) // m432: a hole NT8 has no history for -> P1 + owner push (reload it)
