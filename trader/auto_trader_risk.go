@@ -101,6 +101,9 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// flatten could be up to 2 minutes late. enforceEODFlatAt is idempotent and
 	// gated on day_plan/mentor, so a no-position trader no-ops every beat.
 	at.enforceEODFlat()
+	// PEP MODE: pep's OWN time exit (default 15:00 CT) on the same wall-clock
+	// beat - the session flat above never acts on a pep trader.
+	at.pepFlatBeat(now)
 	// MENTOR-NY item 8 (rescan P2-N5): the mentor news cancel/flatten and the
 	// day-stop sweep also run on this wall-clock beat — before, their only
 	// callers were inside mentorEvalOnce, i.e. only on a NEW closed bar, so a
@@ -202,7 +205,7 @@ func (at *AutoTrader) checkPositionDrawdown() {
 			// with mentor mode ON, a mentor trade follows ONLY the mentor's
 			// exits — the AI-era drawdown emergency close must not close a
 			// mentor-owned position. Log ONCE per position + a visible counter.
-			if at.mentorEnabled() {
+			if at.modeOwnsExits() { // PEP MODE: mentor or pep
 				at.drawdownMentorBlockedOnce(symbol, side, currentPnLPct, peakPnLPct, drawdownPct)
 				continue
 			}

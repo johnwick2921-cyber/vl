@@ -84,6 +84,10 @@ export const glossary: GuideSection = {
           def: 'Prior CME session (17:00→16:00 CT) high/low/close — the dealing-range anchors (m239: the session day, never the calendar day). PDC is the native 1d close (the ~15:00 CT settle, the same source as SETT); with no daily row it is the session\u2019s last 1m close, labelled \u201cPDC·last print\u201d (m239a).',
         },
         {
+          term: 'Pep mode',
+          def: 'A trading mode of its own (a strategy is exactly one of AI planner, mentor or pep): two fixed opening-range rules from the owner’s PDF — style A (5-minute ORB breakout, enter immediately) and style E (EMA9 ORB, candle-close confirmation). Separate from mentor mode, SIM only, OFF by default. Section 20.',
+        },
+        {
           term: 'Plan mode',
           def: 'advisory / direction / strict — how the plan constrains entries.',
         },

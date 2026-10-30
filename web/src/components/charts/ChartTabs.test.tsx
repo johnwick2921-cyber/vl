@@ -170,3 +170,72 @@ describe('UG-2 mentor overlays follow the symbol', () => {
     expect(screen.getByTestId('mentor-overlay-note')).toBeInTheDocument()
   })
 })
+
+// PEP: the opening-range box lines follow the same symbol rule as the mentor
+// lines (one instrument, said when hidden) and share the one price-line channel.
+// Mutant: draw pepLines unconditionally (drop the sameChartSymbol gate) -> RED.
+describe('pep box lines follow the symbol', () => {
+  const lines = [
+    { price: 100, label: 'pep box high 100' },
+    { price: 80, label: 'pep box low 80' },
+  ]
+  it('draws them on the pep symbol tab', () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="MNQ"
+        pepLines={lines}
+        pepSymbol="MNQ"
+      />
+    )
+    expect(screen.getByTestId('market')).toHaveAttribute(
+      'data-mentor-levels',
+      '2'
+    )
+    expect(screen.getByTestId('pep-overlay-note')).toHaveTextContent(
+      'pep box lines: MNQ'
+    )
+  })
+  it('hides them on another symbol and says why', async () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="ES"
+        pepLines={lines}
+        pepSymbol="MNQ"
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId('market')).toHaveTextContent('ES')
+    )
+    expect(screen.getByTestId('market')).toHaveAttribute(
+      'data-mentor-levels',
+      '0'
+    )
+    expect(screen.getByTestId('pep-overlay-note')).toHaveTextContent(
+      'pep box lines hidden — they belong to MNQ, this chart shows ES'
+    )
+  })
+  it('mentor and pep lines share the one channel without displacing each other', () => {
+    render(
+      <ChartTabs
+        traderId="t"
+        exchangeId="ninjatrader"
+        marketOnly
+        selectedSymbol="MNQ"
+        mentorLevels={[{ price: 1, label: 'mentor x' }]}
+        mentorSymbol="MNQ"
+        pepLines={lines}
+        pepSymbol="MNQ"
+      />
+    )
+    expect(screen.getByTestId('market')).toHaveAttribute(
+      'data-mentor-levels',
+      '3'
+    )
+  })
+})
