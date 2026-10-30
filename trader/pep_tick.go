@@ -161,8 +161,7 @@ func (at *AutoTrader) pepEvalOnce(bars []market.Kline, now time.Time) bool {
 		}
 	}
 	if len(res.Intents) > 0 {
-		at.pep.lastBlock = ""
-		return true
+		return true // an intent's own refusals are counted (once per change) by pepSendEntry
 	}
 	blocked := false
 	for _, r := range res.Refusals {
@@ -340,6 +339,7 @@ func (at *AutoTrader) pepSendEntry(in pep.Intent, now time.Time) {
 	case !rec.Success:
 		at.logWarnf("⛔ pep %s %s REFUSED: %s", action, sym, rec.Error)
 	default:
+		at.pep.lastBlock = ""
 		at.logInfof("📈 pep %s: %s %s x%d SL %.2f TP %.2f (signal %s)", in.Style, action, sym, cfg.Contracts, w.Stop, w.Target, pepSignalID(in))
 	}
 	dr := &store.DecisionRecord{

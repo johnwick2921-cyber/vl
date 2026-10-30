@@ -382,8 +382,14 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 	// too. Closes are never admitted — only NEW entries.
 	switch decision.Action {
 	case "open_long", "open_short":
+		// PEP MODE: a pep decision asks the chain on its OWN path (pep_admit.go lists
+		// its place in every branch); every other decision is the AI's, unchanged.
+		path := admitDecision
+		if decision.PepSourced {
+			path = admitPep
+		}
 		if refusal, refused := at.admitEntry(admitIntent{
-			Path: admitDecision, Symbol: decision.Symbol, Action: decision.Action,
+			Path: path, Symbol: decision.Symbol, Action: decision.Action,
 			Now: now, Decision: decision, Record: actionRecord,
 		}); refused {
 			actionRecord.Success = false
@@ -797,7 +803,16 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	// is the same question for the two paths that did not. Nothing has been written
 	// to the broker's bracket maps yet, so a refusal here sends and leaves nothing.
 	// Entry-only by construction: closes never reach openEntryWithRecord.
-	if v := at.entryWireDataVerdict(decision.PepSourced, time.Now()); v.Blocked {
+	// PEP MODE: a pep decision is judged on pep's OWN window and reader (the same
+	// verdict the admission chain asked); every other entry on the deep AI window,
+	// byte-identical.
+	var wireVerdict dataVerdict
+	if decision.PepSourced {
+		wireVerdict = at.pepDataVerdictAt(time.Now(), false)
+	} else {
+		wireVerdict = at.dataIntegrityVerdictAt(ntTrader.IntegrityDeepOpenMin, time.Now(), false)
+	}
+	if v := wireVerdict; v.Blocked {
 		telemetry.IncGateBlock(at.id, v.Class)
 		at.logWarnf("⏸ %s %s REFUSED AT THE WIRE - the data verdict turned while this entry was being prepared: %s. Exits and protection continue.", decision.Symbol, action, v.Reason)
 		return fmt.Errorf("%s%s", v.refusalPrefix(), v.Reason)

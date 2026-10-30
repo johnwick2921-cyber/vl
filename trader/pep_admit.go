@@ -120,13 +120,3 @@ func (at *AutoTrader) pepDataVerdictAt(now time.Time, withStale bool) dataVerdic
 	}
 	return at.dataTruthVerdictForReader(datatruth.ReaderPep, w, now)
 }
-
-// entryWireDataVerdict is the verdict asked AGAIN at the wire (m452): pep's own
-// window and reader for a pep decision, the deep AI window for everything else
-// (byte-identical).
-func (at *AutoTrader) entryWireDataVerdict(pepDecision bool, now time.Time) dataVerdict {
-	if pepDecision {
-		return at.pepDataVerdictAt(now, false)
-	}
-	return at.dataIntegrityVerdictAt(ntTrader.IntegrityDeepOpenMin, now, false)
-}

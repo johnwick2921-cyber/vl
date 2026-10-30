@@ -100,6 +100,140 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
     en: 'Mentor mode — AI closes off (mentor-owned position)',
     icon: '🙅',
   },
+  // Pep mode (owner order 2026-10-29): with pep ON every entry comes from the
+  // pep evaluator; these are its refusals, each counted under its own name.
+  pep_ai_entries_off: {
+    en: 'Pep mode — AI entries off',
+    icon: '🚫',
+  },
+  pep_ai_closes_off: {
+    en: 'Pep mode — AI closes off (pep owns the exit)',
+    icon: '🙅',
+  },
+  pep_not_enabled: {
+    en: 'Pep entry refused — trader is not in pep mode',
+    icon: '🚫',
+  },
+  pep_after_flat_time: {
+    en: 'Pep — no new entry at/after the flat time',
+    icon: '🕒',
+  },
+  pep_max_trades_reached: {
+    en: 'Pep — trade cap for the day is used',
+    icon: '1️⃣',
+  },
+  pep_no_pending_claim: {
+    en: 'Pep — entry had no recorded signal (refused)',
+    icon: '📝',
+  },
+  pep_day_unwritable: {
+    en: 'Pep — one-trade-per-day record could not be written',
+    icon: '💾',
+  },
+  pep_day_unreadable: {
+    en: 'Pep — one-trade-per-day record could not be read',
+    icon: '💾',
+  },
+  pep_positions_unreadable: {
+    en: 'Pep — open-position read failed',
+    icon: '📖',
+  },
+  pep_book_unreadable: {
+    en: 'Pep — broker book unreadable',
+    icon: '📖',
+  },
+  pep_broker_not_flat: {
+    en: 'Pep — broker already holds a position',
+    icon: '⛔',
+  },
+  pep_no_live_price: {
+    en: 'Pep — no live price to anchor the bracket',
+    icon: '📉',
+  },
+  pep_slippage: {
+    en: 'Pep — price ran away from the signal',
+    icon: '💨',
+  },
+  pep_wire_rounding: {
+    en: 'Pep — wire rounding refused the side',
+    icon: '📐',
+  },
+  pep_bracket_wrong_side: {
+    en: 'Pep — bracket not on the right side after rounding',
+    icon: '📐',
+  },
+  pep_rr_distorted: {
+    en: 'Pep — reward:risk distorted by tick rounding',
+    icon: '⚖️',
+  },
+  pep_no_point_value: {
+    en: 'Pep — no point value for the symbol',
+    icon: '📐',
+  },
+  pep_entry_failed: {
+    en: 'Pep — entry refused or failed in the executor',
+    icon: '❌',
+  },
+  pep_mode_conflict_mentor: {
+    en: 'Pep + mentor both ON — trader not started',
+    icon: '⚠️',
+  },
+  pep_mode_conflict_day_plan: {
+    en: 'Pep + day plan both ON — trader not started',
+    icon: '⚠️',
+  },
+  pep_config_invalid: {
+    en: 'Pep — settings out of range (fail closed)',
+    icon: '⚙️',
+  },
+  pep_tz_unavailable: {
+    en: 'Pep — America/Chicago time zone unavailable',
+    icon: '🕒',
+  },
+  pep_bars_not_ascending: {
+    en: 'Pep — 1m bars out of order (fail closed)',
+    icon: '📊',
+  },
+  pep_no_bars: {
+    en: 'Pep — no closed 1m bars',
+    icon: '📊',
+  },
+  pep_bars_stale: {
+    en: 'Pep — newest closed bar is stale',
+    icon: '📊',
+  },
+  pep_box_missing_minute: {
+    en: 'Pep — opening-box minute missing (no trade today)',
+    icon: '📦',
+  },
+  pep_box_zero_range: {
+    en: 'Pep — opening box has no range',
+    icon: '📦',
+  },
+  pep_box_too_wide: {
+    en: 'Pep — opening box wider than the limit',
+    icon: '📦',
+  },
+  pep_gap_after_box: {
+    en: 'Pep — 1m bar missing after the box',
+    icon: '📊',
+  },
+  pep_bar_through_both_edges: {
+    en: 'Pep — one bar broke both box edges (no trade)',
+    icon: '↕️',
+  },
+  pep_stale_signal: {
+    en: 'Pep — signal is too old to enter',
+    icon: '⌛',
+  },
+  pep_ema_not_warm: {
+    en: 'Pep — EMA not warmed up yet',
+    icon: '📈',
+  },
+  pep_stop_below_one_tick: {
+    en: 'Pep — stop or target below one tick',
+    icon: '📐',
+  },
   // r22 RISK-GATES — the daily guardrails on every entry path (pinned by
   // trader/w0b_guide_test.go), and the trip itself.
   daily_loss: { en: 'Daily loss limit hit (latched to 17:00 CT)', icon: '🔴' },
