@@ -117,7 +117,7 @@ func TestR3IngestLossReasonIsCTAndNamesTheWayOut(t *testing.T) {
 	l2 := NewLedger(10)
 	l2.RecordLoss(LossFinal, "MNQ", "5m", []int64{ts}, time.Now())
 	_, why5 := l2.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil })
-	if !strings.Contains(why5, "about 208 hours of open market (roughly 10 trading days)") {
+	if !strings.Contains(why5, "about 208 hours of open market, roughly 10 trading days") {
 		t.Fatalf("the 5m duration is 2500 x 5 min: %s", why5)
 	}
 }
@@ -163,7 +163,7 @@ func TestR3FillPricePushSurvivesOwnerpushScrub(t *testing.T) {
 		"/api/risk/ack-fill-price?symbol=MNQ&account=",
 		"header Authorization set to Bearer",
 		"web app has no button",
-		"not by themselves",
+		"do not resume by themselves",
 		"exits, stops and protection are unaffected",
 	} {
 		if !strings.Contains(got, want) {
@@ -172,32 +172,6 @@ func TestR3FillPricePushSurvivesOwnerpushScrub(t *testing.T) {
 	}
 }
 
-func TestR3IngestLossPushSurvivesOwnerpushScrub(t *testing.T) {
-	for _, tf := range []string{"1m", "5m", "4h"} {
-		datatruth.Reset()
-		var pushes []string
-		datatruth.SetNotifier(func(kind, text string) { pushes = append(pushes, text) })
-		l := NewLedger(10)
-		ts := time.Date(2026, 10, 29, 18, 3, 0, 0, time.UTC).UnixMilli()
-		l.RecordLoss(LossHistorical, "MNQ", tf, []int64{ts}, time.Now())
-		verify := func(string, string, int64, string) (bool, error) { return false, nil }
-		datatruth.Register(CheckIngestLoss, func(symbol string, now time.Time) (bool, string, error) {
-			b, why := l.Judge(symbol, verify)
-			return b, why, nil
-		})
-		datatruth.Evaluate("MNQ", time.Now())
-		if len(pushes) != 1 {
-			t.Fatalf("%s: one push: %v", tf, pushes)
-		}
-		got := ownerpush.Scrub(pushes[0])
-		if got != pushes[0] {
-			t.Fatalf("%s: Scrub changed the push:\n raw=%q\n got=%q", tf, pushes[0], got)
-		}
-		for _, want := range []string{"restart the bot in a flat/safe window", "entries resume automatically when the data measures clear", "exits, stops and protection are unaffected"} {
-			if !strings.Contains(got, want) {
-				t.Fatalf("%s: the delivered push must contain %q:\n%s", tf, want, got)
-			}
-		}
-		datatruth.Reset()
-	}
-}
+// (TestR3IngestLossPushSurvivesOwnerpushScrub moved to owner_texts_r4_test.go as
+// TestR4IngestLossTextsAreHonestAboutTheWayOut, which drives the production
+// RegisterAll wiring instead of a hand-registered check.)

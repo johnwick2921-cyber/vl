@@ -2,7 +2,9 @@ package checks
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sort"
@@ -734,10 +736,13 @@ func ackHowTo() string {
 }
 
 // fillResume is the resume tail of the fill_price OWNER PUSH. The push is capped
-// (datatruth.PushRunes) and the detail is clipped to fit, so the remedy lives here,
-// in the part that is never clipped: the exact login and acknowledgement calls for
-// the block that stands, worded so ownerpush.Scrub leaves it intact (no
-// "Authorization:" pair, which it redacts as a credential).
+// (datatruth.PushRunes) and composePush clips the detail and the header before it
+// ever touches this tail, so the remedy lives here: the exact login and
+// acknowledgement calls for the block that stands, worded so ownerpush.Scrub
+// leaves it intact (no "Authorization:" pair, which it redacts as a credential).
+// Its length does NOT grow with the number of accounts (round 4: a list of
+// accounts in the URL made it a function of the data): several accounts are
+// "one POST per account", named in the header and in the pause text.
 func fillResume(symbol string, scopes []string) string {
 	base := AckBaseURL()
 	url := base + "/api/risk/ack-fill-price?symbol=" + StrikeKey(symbol)
@@ -752,9 +757,34 @@ func fillResume(symbol string, scopes []string) string {
 	case 1:
 		url += "&account=" + accts[0]
 	default:
-		url += "&account=<one of " + strings.Join(accts, "/") + ">, once per account"
+		url += "&account=<ACCOUNT>, once for each paused account"
 	}
-	return "entries resume when you acknowledge it (on the bot's machine: POST " + base + "/api/login with your email and password returns a token, then POST " + url + " with the HTTP header Authorization set to Bearer, a space, the token; the web app has no button) or when the next CME session starts - not by themselves"
+	return "entries do not resume by themselves - only when you acknowledge it or the next CME session starts. To acknowledge, on the bot's machine: POST " + base + "/api/login with your email and password returns a token; then POST " + url + " with the HTTP header Authorization set to Bearer, a space, the token (the web app has no button)"
+}
+
+// unreadableResume is the tail while the block standing for symbol is the
+// UNREADABLE-STATE one: a new CME session does NOT lift it (there is no session in
+// it - the bot does not know what it lost), only the owner's account-less
+// acknowledgement or a repaired file does. Saying "or the next CME session starts"
+// here would promise a resume that never comes (round 3 re-review 4 P3).
+func unreadableResume(symbol string) string {
+	base := AckBaseURL()
+	return "entries do not resume by themselves, and a new CME session does NOT lift this one - only when you acknowledge it. To acknowledge, on the bot's machine: POST " + base + "/api/login with your email and password returns a token; then POST " + base + "/api/risk/ack-fill-price?symbol=" + StrikeKey(symbol) + " (no account=) with the HTTP header Authorization set to Bearer, a space, the token (the web app has no button)"
+}
+
+// resume is the fill_price resume tail for the block that stands: the
+// unreadable-state tail when that is the block that holds the symbol, else the
+// strike tail. Lock order: datatruth's mutex is held by the caller (resumeTailLocked)
+// and g.mu is taken here; nothing holding g.mu calls into datatruth.
+func (g *FillGuard) resume(symbol string, scopes []string) string {
+	g.mu.Lock()
+	u := g.unreadable
+	standing := u != nil && !u.Acked[StrikeKey(symbol)]
+	g.mu.Unlock()
+	if standing {
+		return unreadableResume(symbol)
+	}
+	return fillResume(symbol, scopes)
 }
 
 // ── persistence (m451) ───────────────────────────────────────────────────────
@@ -793,14 +823,27 @@ type fillStateDisk struct {
 }
 
 // describe words the unreadable-state block for the pause text (symbol is the
-// canonical StrikeKey the ack URL names).
+// canonical StrikeKey the ack URL names). Round 4 (re-review 4 P3s): the time is
+// the one the file was found unreadable (this block is kept in the new file, so on
+// the second restart "the last restart" named the wrong one); an acknowledgement
+// that cannot be kept (the file could not be moved aside, so it is read again at
+// the next start) says so; and "restore a repaired copy" names the real condition -
+// the bot rewrites the file at every far fill and acknowledgement.
 func (u *unreadableState) describe(path, symbol string) string {
-	moved := "it could NOT be moved aside, so nothing is written over it and the block lives in memory only"
+	moved := "the unreadable file could NOT be moved aside, so nothing is written over it and the block lives in memory only: your acknowledgement lasts until the next restart, when the file is read again and the pause returns until it is repaired or you move it out of the way yourself"
+	where := "the file is " + path
 	if u.BadFile != "" {
-		moved = "the unreadable file was moved aside, not deleted, to " + u.BadFile
+		moved = "the unreadable file was moved aside, not deleted, and this block is kept in the new file, so a restart does not lift it"
+		where = "the file is " + path + ", the moved-aside copy is " + u.BadFile
 	}
-	return fmt.Sprintf("the fill_price state file %s was UNREADABLE (%s) at the last restart, so the bot cannot tell whether a far-fill pause was standing - %s; new entries stay paused for every account until you check the far fills and acknowledge via POST /api/risk/ack-fill-price?symbol=%s (or restore a repaired copy of the state file at that path before the next restart)",
-		path, u.Why, moved, symbol)
+	when := "when the bot started"
+	if u.Since > 0 {
+		when = "when the bot started at " + time.UnixMilli(u.Since).In(ctLoc()).Format("01-02 15:04") + " CT"
+	}
+	// The paths come LAST: an owner push clips this text and ownerpush.Scrub redacts
+	// a path, so a path in the first 200 runes would turn the detail into "[redacted]".
+	return fmt.Sprintf("the fill_price state file was UNREADABLE (%s) %s, so the bot cannot tell whether a far-fill pause was standing - %s; new entries stay paused for every account until you check the far fills and acknowledge via POST /api/risk/ack-fill-price?symbol=%s (a new CME session does not lift it), or put a repaired copy of the file at that path and restart the bot before any far fill or acknowledgement is recorded (the bot rewrites the file at each); %s",
+		u.Why, when, moved, symbol, where)
 }
 
 // EnableState loads path (when it exists) into the strike map and from then on
@@ -836,7 +879,7 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	var u *unreadableState
 	movedTo := ""
 	if err != nil {
-		u = &unreadableState{Since: time.Now().UnixMilli(), Why: err.Error(), Acked: map[string]bool{}}
+		u = &unreadableState{Since: time.Now().UnixMilli(), Why: errCause(err), Acked: map[string]bool{}}
 		bad, merr := moveAside(path, time.Now())
 		if merr != nil {
 			movedTo = fmt.Sprintf("it could NOT be moved aside (%v) and nothing will be written over it", merr)
@@ -876,11 +919,21 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 		if u.BadFile != "" {
 			movedTo = "the unreadable file was moved aside, not deleted, to " + u.BadFile
 		}
-		text := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable (%v) - any standing far-fill strikes or acknowledgement from before this restart are UNKNOWN. NEW entries are PAUSED for every symbol and account until you acknowledge via POST /api/risk/ack-fill-price?symbol=MNQ (once per symbol you trade). Exits, stops and protection are unaffected; %s.",
+		text := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable (%v) - any standing far-fill strikes or acknowledgement from before this restart are UNKNOWN. NEW entries are PAUSED for every symbol and account until you acknowledge via POST /api/risk/ack-fill-price?symbol=MNQ (once per symbol you trade; a new CME session does not lift it). Exits, stops and protection are unaffected; %s.",
 			path, err, movedTo)
 		logger.Errorf("datatruth: %s", text)
 		if alert != nil {
-			alert("data_truth_fill_price_state|"+path, text)
+			// The OWNER PUSH is capped (ownerpush.Scrub cuts at 600 runes) and the
+			// remedy has to survive it: a short header (the file's name, not its
+			// path), the detail only if it fits, then the runnable how-to.
+			bad := ""
+			if u.BadFile != "" {
+				bad = "; moved aside, not deleted, to " + filepath.Base(u.BadFile)
+			}
+			head := fmt.Sprintf("DATA TRUTH: the fill_price state file %s is unreadable - far-fill strikes and acknowledgements from before this restart are UNKNOWN, so NEW entries are PAUSED for every symbol and account: ", filepath.Base(path))
+			why := errCause(err) + bad
+			tail := " (exits, stops and protection are unaffected; " + unreadableResume("MNQ") + "; once per symbol you trade)"
+			alert("data_truth_fill_price_state|"+path, datatruth.ComposePush(head, why, tail))
 		}
 	} else if restored > 0 {
 		logger.Warnf("datatruth: fill_price restored %d standing strike state(s) from %s", restored, path)
@@ -888,6 +941,17 @@ func (g *FillGuard) EnableState(path string) (restored int, err error) {
 	g.persist()
 	g.Flush(2 * time.Second) // boot, not an exit: the unreadable record is on disk before we go on
 	return restored, err
+}
+
+// errCause is the error without the file path an *fs.PathError carries ("open
+// /x/fill.json: permission denied" -> "permission denied"): the path is named once,
+// last, and ownerpush.Scrub redacts a path wherever it stands.
+func errCause(err error) string {
+	var pe *fs.PathError
+	if errors.As(err, &pe) {
+		return pe.Err.Error()
+	}
+	return err.Error()
 }
 
 // moveAside renames path to path + ".bad-<utc stamp>" (a suffix is added while
@@ -1067,8 +1131,8 @@ func writeFileAtomic(path string, b []byte) error {
 func RegisterFillPrice(g *FillGuard) {
 	// this pause does NOT end by itself when the data measures clear: it ends on
 	// the owner's acknowledgement or the next CME session (review 4 D5)
-	datatruth.SetResumeNote(CheckFillPrice, "entries resume when you acknowledge it (the how-to is in the pause text above) or when the next CME session starts - not by themselves")
-	datatruth.SetResumeFunc(CheckFillPrice, fillResume)
+	datatruth.SetResumeNote(CheckFillPrice, "entries do not resume by themselves - only when you acknowledge it (the how-to is in the pause text above) or the next CME session starts")
+	datatruth.SetResumeFunc(CheckFillPrice, g.resume)
 	datatruth.RegisterScoped(CheckFillPrice, g.CheckScoped())
 }
 

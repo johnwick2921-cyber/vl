@@ -130,10 +130,10 @@ func TestJudgeContract(t *testing.T) {
 // m55r3-h1: the ingest_loss pause text says what lifts it, including the
 // spent-budget case (the bot's own NT8 re-request shares a per-session-day
 // budget; once spent nothing more is asked). Every owner-facing remedy must work.
-// MUTANT (shown RED): drop `msg += IngestLossClearsText` in Judge -> RED, for the
+// MUTANT (shown RED): drop the `msg += ingestLossRemedy(...)` calls in Judge -> RED, for the
 // pending-bar arm AND the overflow arm.
 func TestJudgePauseTextNamesWhatClearsIt(t *testing.T) {
-	want := []string{"budget", "nothing more is asked", "ages out of the ring", "restarted"}
+	want := []string{"budget", "nothing more is asked", "ages out of the ring", "restart the bot"}
 	l := NewLedger(100)
 	l.RecordLoss(LossFinal, "MNQ", "1m", []int64{1000}, time.Unix(1_800_000_000, 0))
 	b, why := l.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil })
@@ -149,7 +149,7 @@ func TestJudgePauseTextNamesWhatClearsIt(t *testing.T) {
 	l2 := NewLedger(1)
 	l2.RecordLoss(LossFinal, "MNQ", "1m", []int64{1000, 2000, 3000}, time.Unix(1_800_000_000, 0))
 	l2.SetWhole(func(string, string, int64, int64, string) (bool, error) { return false, nil })
-	if b, why := l2.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil }); !b || !strings.Contains(why, "restarted") {
+	if b, why := l2.Judge("MNQ", func(string, string, int64, string) (bool, error) { return false, nil }); !b || !strings.Contains(why, "restart the bot") {
 		t.Fatalf("overflow arm: %v %q", b, why)
 	}
 	// a clear verdict says nothing

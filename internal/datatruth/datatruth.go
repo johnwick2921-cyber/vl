@@ -256,19 +256,67 @@ func SetResumeFunc(checkName string, fn func(symbol string, scopes []string) str
 	mu.Unlock()
 }
 
-// composePush fits head + why + tail into PushRunes by clipping WHY (the detail, in
-// full in the log line and on /api/health) and never the tail (the remedy).
+// composePush fits head + why + tail into PushRunes, and ALWAYS lands at or under
+// it (round 4: the round-3 version clipped only WHY, so a long head - the scope
+// list of a pause for several accounts, or a WIDENED header carrying both the new
+// and the old scope - pushed the total over 600 and ownerpush.Scrub cut the TAIL,
+// the remedy). The order of sacrifice, last to first:
+//
+//  1. why is clipped (the detail is in full in the log line and on /api/health);
+//  2. why is dropped (the head already names the check);
+//  3. the head is clipped;
+//  4. only a tail longer than the whole cap is clipped (a bug in the check's own
+//     remedy text, never a function of the data).
+//
+// The remedy (tail) is the last thing to go.
 func composePush(head, why, tail string) string {
-	room := PushRunes - len([]rune(head)) - len([]rune(tail))
+	h, w, t := []rune(head), []rune(why), []rune(tail)
+	if len(t) > PushRunes {
+		t = append([]rune(strings.TrimSpace(string(t[:PushRunes-1]))), '…')
+		return string(t)
+	}
+	room := PushRunes - len(h) - len(t)
 	const minWhy = 40
-	if room < minWhy {
-		room = minWhy
+	switch {
+	case len(w) <= room:
+		return head + why + tail
+	case room >= minWhy:
+		return head + clipAtWord(w, room-1) + "…" + tail
 	}
-	if r := []rune(why); len(r) > room {
-		why = strings.TrimSpace(string(r[:room-1])) + "…"
+	// no room for a readable detail: drop it, and clip the head if it alone is too long
+	if len(h)+len(t) > PushRunes {
+		keep := PushRunes - len(t)
+		if keep < 2 {
+			return string(t) // the tail fills the cap on its own: the header goes
+		}
+		h = append([]rune(strings.TrimSpace(string(h[:keep-1]))), '…')
+		return string(h) + string(t)
 	}
-	return head + why + tail
+	return strings.TrimRight(head, ": ") + tail
 }
+
+// clipAtWord cuts w to at most n runes, backing up to the last space when the cut
+// lands inside a word (a half path or half URL is worse than none: ownerpush.Scrub
+// redacts it, and a redacted stub reads as lost data).
+func clipAtWord(w []rune, n int) string {
+	if n >= len(w) {
+		return strings.TrimSpace(string(w))
+	}
+	cut := n
+	if w[n] != ' ' {
+		for i := n; i > n-40 && i > 0; i-- {
+			if w[i] == ' ' {
+				cut = i
+				break
+			}
+		}
+	}
+	return strings.TrimSpace(string(w[:cut]))
+}
+
+// ComposePush is composePush for a check that sends its own owner push (the
+// fill_price boot alert): the same bound, the same order of sacrifice.
+func ComposePush(head, why, tail string) string { return composePush(head, why, tail) }
 
 // SetResumeNote overrides, for one check, the "entries resume automatically when
 // the data measures clear" tail of the owner alert. A check whose pause only ends
@@ -405,7 +453,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 				alerts = append(alerts, alert{
 					kind: fmt.Sprintf("data_truth_%s|%s|%d", v.name, symbol, ep.sinceMs),
 					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: %s (exits, stops and protection are unaffected; %s)", symbol, scopeNote(v.readers, v.scopes), v.name, v.why, resume),
-					push: composePush(fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: ", symbol, scopeNote(v.readers, v.scopes), v.name), v.why,
+					push: composePush(fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: ", symbol, scopeNoteMax(v.readers, v.scopes, pushNames), v.name), v.why,
 						fmt.Sprintf(" (exits, stops and protection are unaffected; %s)", resume)),
 				})
 			} else {
@@ -506,12 +554,31 @@ func scopeNames(scopes []string) []string {
 	return out
 }
 
+// pushNames is how many names of a scope list an owner PUSH spells out; the rest
+// are counted ("account SIM101, account SIM102 and 3 more"). The full list is in the
+// log line and on /api/health. A push has 585 runes: a header that named six
+// accounts twice would crowd out the remedy.
+const pushNames = 2
+
+// capNames keeps the first max names and counts the rest.
+func capNames(names []string, max int) []string {
+	if max <= 0 || len(names) <= max {
+		return names
+	}
+	out := append([]string(nil), names[:max]...)
+	out[max-1] += fmt.Sprintf(" and %d more", len(names)-max)
+	return out
+}
+
 // scopeNote renders who a block is for as the alert header suffix: the readers
 // (m450) and the traders/accounts (m451) it names. "" = everyone on the symbol.
-func scopeNote(readers, scopes []string) string {
+func scopeNote(readers, scopes []string) string { return scopeNoteMax(readers, scopes, 0) }
+
+// scopeNoteMax is scopeNote with at most max names of the scope list (0 = all).
+func scopeNoteMax(readers, scopes []string, max int) string {
 	parts := readerNames(readers)
 	if len(scopes) > 0 {
-		parts = append(parts, "for "+strings.Join(scopeNames(scopes), ", "))
+		parts = append(parts, "for "+strings.Join(capNames(scopeNames(scopes), max), ", "))
 	}
 	if len(parts) == 0 {
 		return ""
@@ -520,8 +587,10 @@ func scopeNote(readers, scopes []string) string {
 }
 
 // scopeWords is scopeNote as a phrase ("every entry path" when unscoped).
-func scopeWords(readers, scopes []string) string {
-	if n := scopeNote(readers, scopes); n != "" {
+func scopeWords(readers, scopes []string) string { return scopeWordsMax(readers, scopes, 0) }
+
+func scopeWordsMax(readers, scopes []string, max int) string {
+	if n := scopeNoteMax(readers, scopes, max); n != "" {
 		return strings.TrimSuffix(strings.TrimPrefix(n, " ("), ")")
 	}
 	return "every entry path"
