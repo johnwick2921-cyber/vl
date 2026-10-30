@@ -45,6 +45,15 @@ import { IndicatorEditor } from '../components/strategy/IndicatorEditor'
 import { RiskControlEditor } from '../components/strategy/RiskControlEditor'
 import { DayPlanEditor } from '../components/strategy/DayPlanEditor'
 import { useStudioEffective } from '../components/strategy/useStudioEffective'
+import { PepModePanel } from '../components/strategy/PepModePanel'
+import { TradingModeSelector } from '../components/strategy/TradingModeSelector'
+import {
+  applyTradingMode,
+  fullPepBlock,
+  tradingModeOf,
+  type TradingMode,
+} from '../components/strategy/pepModel'
+import { pt } from '../i18n/pep-translations'
 import { tp } from '../i18n/plan-translations'
 import { PromptSectionsEditor } from '../components/strategy/PromptSectionsEditor'
 import { PublishSettingsEditor } from '../components/strategy/PublishSettingsEditor'
@@ -89,6 +98,11 @@ const normalizeStrategyConfig = (config: StrategyConfig): StrategyConfig => {
     // drops it on BOTH load (editor sees undefined → master OFF, body disabled)
     // AND save (edits never persist). Additive; undefined for non-day-plan rows.
     day_plan: config.day_plan,
+    // Root-level Pep block — same rule as day_plan: MUST be listed or normalize
+    // silently drops it on load AND save (the Save toast fires on HTTP 200 whether
+    // or not the block persisted). Undefined for every non-pep strategy, so a
+    // strategy that never saw pep stays byte-identical.
+    pep: config.pep,
   }
 }
 
@@ -144,6 +158,7 @@ export function StrategyStudioPage() {
     indicators: false,
     riskControl: false,
     dayPlan: false,
+    pep: false,
     promptSections: false,
     customPrompt: false,
     publishSettings: false,
@@ -608,6 +623,11 @@ export function StrategyStudioPage() {
         ...normalizeStrategyConfig(editingConfig),
         language: language as 'zh' | 'en',
       }
+      // PEP — ALWAYS send the full block (a concrete value for every leaf): the
+      // server-side merge keeps absent keys, so a partial block would let a stale
+      // stored number survive an edit. No pep block at all stays absent.
+      if (configWithLanguage.pep)
+        configWithLanguage.pep = fullPepBlock(configWithLanguage.pep)
       // E1 (fail-register wave): the shared never-latch pattern (#58). Success
       // toast fires ONLY on HTTP 200; ANY failure toasts loudly with the edits
       // preserved (editingConfig is untouched on failure) — the silent
@@ -630,8 +650,19 @@ export function StrategyStudioPage() {
             }),
           }
         )
-        if (!response.ok)
-          throw new Error(`save failed (HTTP ${response.status})`)
+        if (!response.ok) {
+          // A trading-mode conflict (pep + mentor / pep + day plan) is refused by
+          // NAME with a readable sentence — show it, not a bare status code.
+          let named = ''
+          try {
+            const body = await response.json()
+            if (String(body?.error_key ?? '').startsWith('pep_mode_conflict'))
+              named = `: ${body.error}`
+          } catch {
+            // not JSON — the bare status below
+          }
+          throw new Error(`save failed (HTTP ${response.status})${named}`)
+        }
         return true
       })
       if (!g.ok) {
@@ -665,6 +696,15 @@ export function StrategyStudioPage() {
         [section]: value,
       }
     })
+    setHasChanges(true)
+  }
+
+  // PEP — the three-way Trading mode (AI / Mentor / Pep). ONE write sets
+  // risk_control.mentor_mode and pep.pep_enabled together (applyTradingMode), so
+  // both-ON is unreachable from the Studio. The mentor switch inside the Risk
+  // Control editor routes through here too.
+  const setTradingMode = (mode: TradingMode) => {
+    setEditingConfig((prev) => (prev ? applyTradingMode(prev, mode) : prev))
     setHasChanges(true)
   }
 
@@ -850,6 +890,11 @@ export function StrategyStudioPage() {
     currentAIConfig?.coin_source?.static_coins?.[0]
   )
 
+  const tradingModeNow = tradingModeOf({
+    mentorMode: currentAIConfig?.risk_control?.mentor_mode === true,
+    pepEnabled: editingConfig?.pep?.pep_enabled === true,
+  })
+
   const configSections = [
     // Grid Config - only for grid_trading
     {
@@ -906,17 +951,33 @@ export function StrategyStudioPage() {
       title: tr('riskControl'),
       forStrategyType: 'ai_trading' as const,
       content: currentAIConfig && (
-        <RiskControlEditor
-          config={currentAIConfig.risk_control}
-          onChange={(riskControl) =>
-            updateAIConfig('risk_control', riskControl)
-          }
-          disabled={selectedStrategy?.is_default}
-          language={language}
-          isFutures={isFuturesStrategy}
-          effective={studioEffective}
-          strategyName={selectedStrategy?.name}
-        />
+        <div className="space-y-6">
+          <TradingModeSelector
+            mode={tradingModeNow.mode}
+            conflict={tradingModeNow.conflict}
+            dayPlanEnabled={editingConfig?.day_plan?.plan_enabled === true}
+            showPep={isFuturesStrategy}
+            disabled={selectedStrategy?.is_default}
+            language={language}
+            strategyName={selectedStrategy?.name}
+            pepStyle={fullPepBlock(editingConfig?.pep).pep_style}
+            pepContracts={fullPepBlock(editingConfig?.pep).pep_contracts}
+            onSelect={setTradingMode}
+            eff={(path) => studioEffective.byPath[path]}
+          />
+          <RiskControlEditor
+            config={currentAIConfig.risk_control}
+            onChange={(riskControl) =>
+              updateAIConfig('risk_control', riskControl)
+            }
+            disabled={selectedStrategy?.is_default}
+            language={language}
+            isFutures={isFuturesStrategy}
+            effective={studioEffective}
+            strategyName={selectedStrategy?.name}
+            onMentorModeChange={(on) => setTradingMode(on ? 'mentor' : 'ai')}
+          />
+        </div>
       ),
     },
     {
@@ -930,6 +991,25 @@ export function StrategyStudioPage() {
         <DayPlanEditor
           config={editingConfig?.day_plan}
           onChange={(dayPlan) => updateConfig('day_plan', dayPlan)}
+          disabled={selectedStrategy?.is_default}
+          language={language}
+          effective={studioEffective}
+        />
+      ),
+    },
+    {
+      // PEP — opening-range rules A / E (futures-only; dropped for non-futures
+      // below). Always editable so the owner can set the numbers before turning
+      // pep ON; the panel's banner says whether it is ON.
+      key: 'pep' as const,
+      icon: Target,
+      color: '#F0B90B',
+      title: pt('panelTitle', language),
+      forStrategyType: 'ai_trading' as const,
+      content: (
+        <PepModePanel
+          config={editingConfig?.pep}
+          onChange={(pep) => updateConfig('pep', pep)}
           disabled={selectedStrategy?.is_default}
           language={language}
           effective={studioEffective}
@@ -1010,6 +1090,8 @@ export function StrategyStudioPage() {
         section.forStrategyType === currentStrategyType) &&
       // Day Plan is futures-only (drop it for non-futures strategies).
       (section.key !== 'dayPlan' || isFuturesStrategy) &&
+      // Pep is a futures mode (MNQ opening range) — same rule as the Day Plan.
+      (section.key !== 'pep' || isFuturesStrategy) &&
       // release #32 (B2 item c): the coin source is crypto-only — a CME futures
       // strategy trades the NT8-bound symbol, never the static coin list.
       (section.key !== 'coinSource' || !isFuturesStrategy)

@@ -24,7 +24,7 @@ import { MentorCourseExitsPanel } from './MentorCourseExitsPanel'
 // commit it keeps the existing saved value (NOT a hardcoded default), so the field
 // no longer snaps back to the default the moment it's cleared. Mirrors the shipped
 // IndicatorEditor PeriodInput fix. The saved shape (a number) is unchanged.
-function ClampedNumberInput({
+export function ClampedNumberInput({
   value,
   fallback,
   min,
@@ -95,6 +95,11 @@ interface RiskControlEditorProps {
   effective?: StudioEffective
   // Shown in the Mentor mode confirmation.
   strategyName?: string
+  // PEP — when given, the mentor switch writes THROUGH the Studio's trading-mode
+  // handler (one write sets mentor_mode and pep_enabled together), so turning
+  // mentor ON while pep is ON turns pep OFF instead of producing the illegal
+  // both-ON combination. Absent → the plain risk_control write (legacy/tests).
+  onMentorModeChange?: (on: boolean) => void
 }
 
 const RC_PATH = 'ai_config.risk_control.'
@@ -263,6 +268,7 @@ export function RiskControlEditor({
   isFutures = false,
   effective,
   strategyName,
+  onMentorModeChange,
 }: RiskControlEditorProps) {
   // W1 (g) — one server row per schema path; undefined → no chip.
   const eff = (leaf: string) => effective?.byPath[RC_PATH + leaf]
@@ -289,7 +295,11 @@ export function RiskControlEditor({
       {effective && <EffectiveSavedNote language={language} />}
       <MentorModeToggle
         on={config.mentor_mode === true}
-        onChange={(v) => updateField('mentor_mode', v)}
+        onChange={(v) =>
+          onMentorModeChange && !disabled
+            ? onMentorModeChange(v)
+            : updateField('mentor_mode', v)
+        }
         disabled={disabled}
         language={language}
         strategyName={strategyName}
