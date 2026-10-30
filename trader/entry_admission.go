@@ -255,6 +255,34 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 		})
 	}
 
+	// m445 (release #54) — DATA INTEGRITY: no NEW entry on a data window with a
+	// hole in it, or while the hole detector cannot say (fail-closed). Owner,
+	// 2026-10-29: "this is a financial product, not a game — nothing related to
+	// data loss can continue to trade." A system-integrity gate like the one
+	// above (it means we cannot trust WHAT the bars are): ranks over every
+	// policy gate, so a refusal always names the data. Entries only — exits,
+	// stops, closes and protection never cross this chain. Windows and the full
+	// path list: data_integrity_gate.go.
+	if class, text, refused := at.dataIntegrityAdmitRefusal(in, now); refused {
+		return at.admitRefuse(in, class, text, func() {
+			// ONE WARN per episode per path and class (review round 2, reviewer A):
+			// a pause lasts hours to days, and the decision / agent paths are
+			// "log every time" by default. The gate-block COUNTER still records
+			// every refusal (admitRefuse); arm / picture are already deduped there.
+			if in.Path != admitArm && in.Path != admitPicture &&
+				!at.admitLast.changed("data-integrity|"+string(in.Path), class) {
+				return
+			}
+			resume := "the bars are measured filled"
+			if class == integrityClassDataTruth {
+				resume = "the data measures clear"
+			}
+			at.logWarnf("⏸ data-integrity: %s %s REFUSED — %s. Exits and protection continue; entries resume when %s.", sym, act, text, resume)
+		})
+	} else if in.Path != admitArm && in.Path != admitPicture {
+		at.admitLast.clear("data-integrity|" + string(in.Path)) // the episode ended: the next one logs again
+	}
+
 	// P2 (ledger-close 2026-08-19) — stop_until OWNER PAUSE: the FIRST owner/
 	// policy gate (system-integrity gates above rank it; every policy gate below
 	// defers to it, so a paused refusal always NAMES the pause — gate-order

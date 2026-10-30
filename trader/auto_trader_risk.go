@@ -107,6 +107,13 @@ func (at *AutoTrader) monitorTick(now time.Time) {
 	// feed outage or an NT8 lag across the 07:30 print skipped the −10 m
 	// cancel/flatten (10-14: FEED DOWN 03:44–07:49 spanned the CPI print).
 	at.mentorSweepsOnBeat()
+	// m452: the two data-gate episode beats run LAST, after every guard above
+	// (protection, daily-loss flatten, EOD flat, mentor sweeps), and bounded: they
+	// read the bar store (storeSwingInputs ~100 ms warm, seconds on a contended
+	// DB) and must never delay an exit-side action. They advance an ENTRY-pause
+	// episode only (one WARN + push each) and act on nothing.
+	// trader/data_beats_bounded.go; pinned by TestMonitorTickRunsTheDataBeatsLastAndBounded.
+	at.runDataGateBeats(now)
 }
 
 // positionPnLPct computes a position's leveraged P&L percent. Side is normalized:

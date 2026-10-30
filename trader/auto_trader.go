@@ -760,6 +760,12 @@ type AutoTrader struct {
 	// so the episode flag gets its own mutex (never a data race).
 	mentorStaleMu      sync.Mutex
 	mentorStaleEpisode bool
+	// integrity is the DATA-INTEGRITY pause episode (m445, data_integrity_gate.go).
+	integrity integrityEpisode
+	// seedSeries is what the mentor seed's 1m series was MEASURED to hold: the
+	// RTH holes in the stitched history the key levels were walked over
+	// (data_integrity_seed.go). Set at the seed and every re-seed.
+	seedSeries seedSeriesIntegrity
 	// mentorStaleSince is when the current episode began, on the gate's own
 	// clock (the seam's now — time.Now() in production, so the END line's
 	// length is a monotonic difference; OPS NEW-8, class 113).
@@ -932,6 +938,11 @@ type AutoTrader struct {
 	// silent until the spec or the refusal reason changes. Run-loop goroutine
 	// only — no lock.
 	armRefusalLast map[string]string
+
+	// m447 - the data-truth broker_agreement check's per-trader first-seen
+	// tracker (trader/broker_agreement.go).
+	agreementOnce sync.Once
+	agreementTk   *agreementTracker
 	// 0B — per-arm stop-composition log dedup (plan:version:scenario:leg:stop).
 	armStopCompLast map[string]string
 	// oneSetupFactsForTest (dispatch 102) is a TEST SEAM ONLY: when non-nil it
@@ -1179,6 +1190,15 @@ func NewAutoTrader(config AutoTraderConfig, st *store.Store, userID string) (*Au
 		if err != nil {
 			return nil, fmt.Errorf("failed to initialize NinjaTrader: %w", err)
 		}
+		// release #55 (m452): the data-truth gate is switched on for EVERY NinjaTrader
+		// trader, OUTSIDE the `st != nil` guard below. A trader built without a store
+		// has no bar persistence and so never lands the eight m446 checks; with the
+		// gate ON those required checks stay stubs that BLOCK after the boot grace
+		// (fail closed), where leaving the call inside the guard left dataTruthWired
+		// false and the whole m446/m447 leg silently inert (fail OPEN).
+		// trader/data_truth_wiring_pin_test.go pins this call site (AST: a live call,
+		// in NewAutoTrader, under no `if`).
+		wireDataTruthBoot() // release #55: m446/m447 data-truth checks -> the entry verdict (data_truth_gate.go)
 		// Bar persistence (2026-08-26) — closed-bar history writer for
 		// replay/calibration. Idempotent (once); nil-safe; never blocks the loop.
 		if st != nil {
@@ -1500,6 +1520,8 @@ func (at *AutoTrader) Run() error {
 			// Anchor entry_price to the NT8 position average + clear orphan rows
 			// (the 5m-mark entry the AI-decision write records goes stale/frozen).
 			ntTCP.StartPositionReconcile(at.id, at.exchangeID, at.exchange, at.store)
+			// m447 - the data-truth broker_agreement check samples on that loop.
+			at.registerBrokerAgreement()
 			at.logInfof("🔧 NinjaTrader position-reconcile enabled (entry→NT8 avg, orphan clear)")
 		}
 	}
@@ -1622,6 +1644,7 @@ func (at *AutoTrader) Stop() {
 // loop running = a second live mentor evaluator for the trader_id).
 func (at *AutoTrader) teardownRunStarted() {
 	unregisterPostExitDispatch(at)    // Phase 4: stop routing close events here
+	at.unregisterBrokerAgreement()    // m447 — a stopped trader is not a voice in the agreement check
 	at.unregisterPictureHtf()         // W4 D25 — no Picture frame after Stop
 	at.stopPictureHtfBrokerConsumer() // P2-15 — the order_update consumer goroutine exits, never leaks across restarts
 	at.stopArmedEventLoop()           // W3 D14 — no event pass after Stop

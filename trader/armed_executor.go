@@ -2864,6 +2864,9 @@ func (at *AutoTrader) materializeArmedEntry(r store.ArmedOrderDB, u ntwire.Order
 	if side == "" {
 		return
 	}
+	// m447 (7): NOT judged here. The AddOn sends a fill frame for this same fill
+	// (handleFillInbound judges it, with the fill's own time); judging this
+	// order_update too counted one fill twice under a second id.
 	// N2/N3 (2026-10-04, CTO ruling): the AddOn's fill frame quantity is
 	// CUMULATIVE (e.Filled) and its price the running AVERAGE
 	// (e.AverageFillPrice). The DELTA is measured against the arm row's LAST
@@ -3243,12 +3246,23 @@ func (at *AutoTrader) mentorOnlyPlacementPass(now time.Time, scope *armedPassSco
 	// while the live 1m feed is stale (B4's formula). Rows stay armed and retry
 	// when the feed is fresh — nothing is cancelled by this (resting broker
 	// orders are untouched; that is a separate decision).
-	if at.mentorStaleDataBlocked(now) {
-		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_stale_data", "stale_data") {
-			at.logWarnf("🛑 mentor placement REFUSED (stale_data): the live 1m feed is stale — mentor arms stay armed and retry when fresh")
+	// m445: ONE verdict — stale feed (as before) OR missing bars in the intraday
+	// window / detector unknown. The per-row admission (armAdmitted) ALSO asks,
+	// with the SWING4H row's deeper window.
+	if dv := at.dataIntegrityVerdictAt(ntTrader.IntegrityIntradayOpenMin, now, true); dv.Blocked {
+		if !dv.isData() {
+			if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_stale_data", "stale_data") {
+				at.logWarnf("🛑 mentor placement REFUSED (stale_data): the live 1m feed is stale — mentor arms stay armed and retry when fresh")
+			}
+			telemetry.IncGateBlock(at.id, "stale_data")
+			scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+			return
 		}
-		telemetry.IncGateBlock(at.id, "stale_data")
-		scope.note(scope.scenarioOrEmpty(), "refused: stale_data")
+		if armRefusalChanged(&at.armRefusalLast, at.id+":mentor_data_integrity", dv.Class) {
+			at.logWarnf("🛑 mentor placement REFUSED (%s): %s — mentor arms stay armed and retry when the bars are measured filled", dv.Class, dv.Reason)
+		}
+		telemetry.IncGateBlock(at.id, dv.Class)
+		scope.note(scope.scenarioOrEmpty(), "refused: "+dv.Class)
 		return
 	}
 	var bars []market.Kline
@@ -3674,6 +3688,9 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 	if reason := at.armedSeamDenied(); reason != "" {
 		return out, fmt.Errorf("test-arm denied: %s", reason)
 	}
+	if reason := at.dataIntegrityTestSeamRefusal(time.Now()); reason != "" { // m445: a SIM test order is still an entry
+		return out, fmt.Errorf("test-arm denied: %s", reason)
+	}
 	nt := at.armedTrader()
 	if nt == nil {
 		return out, fmt.Errorf("no TCPTrader bound")
@@ -3730,6 +3747,9 @@ func (at *AutoTrader) TestArmPlace(side string, entry, stop, target float64) (st
 func (at *AutoTrader) TestArmPlaceStop(side string, trigger, stop, target float64) (store.ArmedOrderDB, error) {
 	var out store.ArmedOrderDB
 	if reason := at.armedSeamDenied(); reason != "" {
+		return out, fmt.Errorf("test-arm denied: %s", reason)
+	}
+	if reason := at.dataIntegrityTestSeamRefusal(time.Now()); reason != "" { // m445: a SIM test order is still an entry
 		return out, fmt.Errorf("test-arm denied: %s", reason)
 	}
 	nt := at.armedTrader()

@@ -16,6 +16,7 @@ import (
 	"reflect"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -140,6 +141,9 @@ type TCPTrader struct {
 	// reconcileOnce guards StartPositionReconcile (mirrors closeSyncOnce) so a
 	// re-entrant AutoTrader.Run never spawns a second reconcile goroutine.
 	reconcileOnce sync.Once
+	// reconcileObs is the post-pass observer (m447 data-truth sampling); see
+	// SetReconcileObserver.
+	reconcileObs atomic.Pointer[func()]
 	// W117 F5 — observer lifetime ends only after same-account replacement
 	// drains closes. Ordinary trading Stop and socket disconnect do not retire
 	// these observers.
@@ -263,6 +267,46 @@ func (t *TCPTrader) HasPendingEntry(signalID string) bool {
 	defer t.pendingMu.Unlock()
 	_, ok := t.pending[signalID]
 	return ok
+}
+
+// PendingEntries returns a copy of the entries still awaiting a fill:
+// signal_id -> submit time (Unix ms). The data-truth broker-agreement check
+// reads it to tell an order the bot just sent from one it never sent.
+func (t *TCPTrader) PendingEntries() map[string]int64 {
+	t.pendingMu.Lock()
+	defer t.pendingMu.Unlock()
+	out := make(map[string]int64, len(t.pending))
+	for sid := range t.pending {
+		out[sid] = t.pendingAt[sid]
+	}
+	return out
+}
+
+// PendingEntrySides is PendingEntries' twin carrying each entry's SIDE
+// ("LONG"/"SHORT" as the entry function stored it): signal_id -> side. The
+// broker-agreement check uses it to excuse an NT8 position the bot has no row
+// for ONLY while an entry of THAT side is awaiting its fill (m447 review N1).
+func (t *TCPTrader) PendingEntrySides() map[string]string {
+	t.pendingMu.Lock()
+	defer t.pendingMu.Unlock()
+	out := make(map[string]string, len(t.pending))
+	for sid, side := range t.pending {
+		out[sid] = side
+	}
+	return out
+}
+
+// SeedPendingEntryForTest registers an entry as sent-and-awaiting-its-fill.
+// Test-only: the production writers (PlaceEntry / PlaceStopEntry ...) need a
+// connected AddOn to get past their send chokepoint.
+func (t *TCPTrader) SeedPendingEntryForTest(signalID, side string, atMs int64) {
+	if t == nil || signalID == "" {
+		return
+	}
+	t.pendingMu.Lock()
+	t.pending[signalID] = upperSideStr(side)
+	t.pendingAt[signalID] = atMs
+	t.pendingMu.Unlock()
 }
 
 func (t *TCPTrader) forgetUnsentEntry(signalID string) {
@@ -441,11 +485,16 @@ func (t *TCPTrader) handleFillInbound(fill ntwire.FillPayload) {
 	t.hasFill = true
 	// Class 27 (2026-08-31): retain confirmed fills in the netting ring
 	// so reconcile can reconstruct a netting-close's real exit price.
-	if strings.EqualFold(fill.Status, "filled") || strings.EqualFold(fill.Status, "partial") {
+	confirmed := strings.EqualFold(fill.Status, "filled") || strings.EqualFold(fill.Status, "partial")
+	if confirmed {
 		t.recordRecentFill(fill)
 	}
 	t.mu.Unlock()
-
+	if confirmed {
+		// m447 (7): the fill's price is judged against the market of its minute.
+		slip := fill.SlippageTicks
+		t.noteFill("entry", entryFillID(fill), fill.Symbol, fill.Side, fill.FillPrice, fillTimeMs(fill.FillTime), 0, &slip, fill.Account, entryFillEvent(fill))
+	}
 }
 
 // --- Trader interface methods (19 total) ---

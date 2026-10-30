@@ -406,6 +406,90 @@ export const planStrings = {
     zh: 'CME 休市 — {when} 重新开盘',
     id: 'CME TUTUP — buka lagi {when}',
   },
+  // m445: the data-integrity pause (missing 1m bars in a data window).
+  dataPausedBanner: {
+    en: 'TRADING PAUSED — missing bars {window}',
+    zh: '交易已暂停 — 缺少K线 {window}',
+    id: 'TRADING DIJEDA — bar hilang {window}',
+  },
+  // m445 round 4 (D3): a pause of less than all entries says which.
+  dataPausedScopedBanner: {
+    en: 'TRADING PAUSED ({scope}) — missing bars {window}',
+    zh: '交易已暂停（{scope}）— 缺少K线 {window}',
+    id: 'TRADING DIJEDA ({scope}) — bar hilang {window}',
+  },
+  dataPausedScopeSwing: {
+    en: 'SWING4H entries only; other setups trade normally',
+    zh: '仅 SWING4H 入场；其他形态照常交易',
+    id: 'hanya entri SWING4H; setup lain berjalan normal',
+  },
+  dataPausedScopeDeep: {
+    en: 'SWING4H and AI/planner entries only; intraday mentor setups trade normally',
+    zh: '仅 SWING4H 与 AI/计划入场；日内 mentor 形态照常交易',
+    id: 'hanya entri SWING4H dan AI/planner; setup mentor intraday berjalan normal',
+  },
+  dataPausedScopeMentor: {
+    en: 'mentor entries; the mentor key levels stand on a series with missing bars',
+    zh: 'mentor 入场；mentor 关键位所依据的序列缺少K线',
+    id: 'entri mentor; level kunci mentor bertumpu pada seri yang kehilangan bar',
+  },
+  // release #55: the data-truth pause (a check says the bars / account / fills
+  // cannot be trusted; names the checks).
+  dataPausedTruthBanner: {
+    en: 'TRADING PAUSED — data check failed: {checks}',
+    zh: '交易已暂停 — 数据检查未通过：{checks}',
+    id: 'TRADING DIJEDA — pemeriksaan data gagal: {checks}',
+  },
+  dataPausedTruthScopedBanner: {
+    en: 'TRADING PAUSED ({scope}) — data check failed: {checks}',
+    zh: '交易已暂停（{scope}）— 数据检查未通过：{checks}',
+    id: 'TRADING DIJEDA ({scope}) — pemeriksaan data gagal: {checks}',
+  },
+  // release #55 round 3 (review 4 D1): a data-truth pause by READER or by
+  // TRADER/ACCOUNT says so, instead of the plain TRADING PAUSED line.
+  dataPausedTruthScopeMentor: {
+    en: 'mentor traders only; AI/planner entries trade normally',
+    zh: '仅 mentor 交易员；AI/计划入场照常交易',
+    id: 'hanya trader mentor; entri AI/planner berjalan normal',
+  },
+  dataPausedTruthScopeAI: {
+    en: 'AI/planner entries only; mentor traders trade normally',
+    zh: '仅 AI/计划入场；mentor 交易员照常交易',
+    id: 'hanya entri AI/planner; trader mentor berjalan normal',
+  },
+  dataPausedTruthScopeTraders: {
+    en: 'only the traders/accounts named; other traders trade normally',
+    zh: '仅所列交易员/账户；其他交易员照常交易',
+    id: 'hanya trader/akun yang disebut; trader lain berjalan normal',
+  },
+  dataPausedStartingBanner: {
+    en: 'TRADING PAUSED — the data checks are starting after a restart (waiting for the NT8 history replay; new entries wait, at most 10 minutes; exits and stops are unaffected)',
+    zh: '交易已暂停 — 重启后数据检查正在启动（等待 NT8 历史回放；新入场最多等待 10 分钟；平仓和止损不受影响）',
+    id: 'TRADING DIJEDA — pemeriksaan data sedang dimulai setelah restart (menunggu replay riwayat NT8; entri baru menunggu paling lama 10 menit; exit dan stop tidak terpengaruh)',
+  },
+  dataPausedTruthScopeMixed: {
+    en: 'some entries only - which ones is listed with each check; every other trader trades normally',
+    zh: '仅部分入场 - 各项检查后列出具体范围；其他交易员照常交易',
+    id: 'hanya sebagian entri - lihat daftar di tiap pemeriksaan; trader lain berjalan normal',
+  },
+  // release #55 round 4 (re-review 4 P3): the banner named the failed checks and
+  // nothing else, so the way out lived only in the owner push. These two checks do
+  // not clear when the data merely looks fine again.
+  dataPausedRemedyFillPrice: {
+    en: 'fill_price does not clear by itself: acknowledge it (log in, then POST /api/risk/ack-fill-price?symbol=MNQ; the owner push has the steps — the web app has no button). A lost state file is lifted only by that acknowledgement, not by a new CME session.',
+    zh: 'fill_price 不会自行解除：请确认（先登录，再 POST /api/risk/ack-fill-price?symbol=MNQ；步骤见老板推送 — 网页上没有按钮）。状态文件丢失的暂停只能由该确认解除，新的 CME 交易日不会解除。',
+    id: 'fill_price tidak hilang sendiri: akui (login dulu, lalu POST /api/risk/ack-fill-price?symbol=MNQ; langkahnya ada di push pemilik — aplikasi web tidak punya tombol). Jeda karena file status hilang hanya dicabut oleh pengakuan itu, bukan sesi CME baru.',
+  },
+  dataPausedRemedyIngestLoss: {
+    en: 'ingest_loss clears when the lost bars are back in the ring, when the minute ages out of it (open-market hours: about 41 for 1m, 208 for 5m; months for 1h and 4h), or after a restart in a flat/safe window.',
+    zh: 'ingest_loss 在丢失的K线重新进入缓存、该分钟移出缓存（按开市小时计：1m 约 41 小时，5m 约 208 小时；1h/4h 需数月），或在空仓/安全时段重启后解除。',
+    id: 'ingest_loss hilang saat bar yang hilang kembali ke ring, saat menit itu keluar dari ring (jam pasar buka: sekitar 41 untuk 1m, 208 untuk 5m; berbulan-bulan untuk 1h dan 4h), atau setelah restart saat posisi flat/aman.',
+  },
+  dataPausedUnknownBanner: {
+    en: 'TRADING PAUSED — bar-data check not ready',
+    zh: '交易已暂停 — K线数据检查尚未就绪',
+    id: 'TRADING DIJEDA — pemeriksaan data bar belum siap',
+  },
   // m432: names the fix, not just the fact (the 10-25 17:00 -> 10-26 03:40 CT
   // blind spell was a NinjaTrader data connection that was off).
   feedDownBanner: {

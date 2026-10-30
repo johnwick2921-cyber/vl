@@ -174,16 +174,7 @@ func barHoleInSendWindow(now time.Time) bool {
 // closed Monday — reads open by the instant alone. Found by this wave's own
 // holiday pin: Good Friday 2026-04-03 came out as a 420-minute "hole"
 // (Thu 04-02 17:00–24:00). A minute is expected only when BOTH say it trades.
-func barHoleExpected(m time.Time) bool {
-	if !kernel.IsCMEOpen(m) {
-		return false
-	}
-	day, err := time.ParseInLocation("2006-01-02", kernel.CMETradingDateKey(m), kernel.CTLocation())
-	if err != nil {
-		return true // the instant said open; an unreadable key never invents a closure
-	}
-	return kernel.SessionStateAt(day.Add(12*time.Hour)).Class != kernel.SessionClosed
-}
+func barHoleExpected(m time.Time) bool { return kernel.IsCMETradingExpected(m) }
 
 // barHoleSpan is one stretch with no stored bar between two stored bars.
 type barHoleSpan struct {
@@ -298,6 +289,18 @@ type barHoleTracker struct {
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
 	lastFire map[string]time.Time // symbol -> last gap re-request this tracker SENT
 	saidErr  map[string]bool      // one WARN per store-read failure kind
+
+	// DATA-INTEGRITY GATE (m445, bar_integrity.go): the verdict every entry path
+	// asks. The tracker keeps what it needs to answer — all additive:
+	retired       []*barHole         // holes no re-request can reach (kept: a retirement is NOT a fill)
+	judgeErr      map[string]string  // symbol|contract -> the store-read failure that left a minute unjudged (cleared by the next good judgement)
+	coveredFrom   map[string]int64   // symbol|contract -> oldest minute any judgement read back to
+	integ         integrityMemo      // the window-start walk, memoised per wall minute
+	clearsMemo    map[[2]int64]int64 // (last missing open minute, window) -> instant it leaves the window; under t.mu
+	lastRemeasure time.Time          // the retired holes' last store re-read
+	// retiredEvicted — the retained list overflowed and its oldest entries were
+	// dropped: the verdict is UNKNOWN (blocked) from then on, until a restart.
+	retiredEvicted bool
 }
 
 // barHoles is the process tracker: the persister reports to it, the health
@@ -332,6 +335,8 @@ func newBarHoleTracker(st holeStore, server func() *ntwire.TCPServer) *barHoleTr
 		checked:      map[string]int64{},
 		lastFire:     map[string]time.Time{},
 		saidErr:      map[string]bool{},
+		judgeErr:     map[string]string{},
+		coveredFrom:  map[string]int64{},
 	}
 }
 
@@ -404,6 +409,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	} else {
 		prev, ok, err := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, oldest)
 		if err != nil {
+			t.noteJudgeErrLocked(key, err)
 			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 			return
 		}
@@ -418,12 +424,33 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		}
 		bootScan, bootBound = true, bound
 	}
-	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, from, newest+1)
+	// m445: the BOOT SCAN's first read starts at the session open, with no bar
+	// before it to measure the first gap against — so a hole that STARTS at the
+	// open (the 17:00 reopen lag; 2026-10-26 17:00–21:57 CT) was invisible to a
+	// restart: the scan saw bars from 21:57 and no gap. Anchor it on the stored
+	// bar just before the scan's first minute (one bar back; `from` stays the
+	// scan's reach for the boot line and the coverage).
+	readFrom := from
+	if bootScan {
+		if p, ok, perr := t.st.PrevOpenTimeOn(symbol, barHoleTF, contract, from); perr != nil {
+			t.noteJudgeErrLocked(key, perr)
+			t.sayErrOnce("prev", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, perr))
+			return
+		} else if ok {
+			readFrom = p
+		}
+	}
+	got, err := t.st.BarsBetweenOn(symbol, barHoleTF, contract, readFrom, newest+1)
 	if err != nil {
+		t.noteJudgeErrLocked(key, err)
 		t.sayErrOnce("scan", fmt.Sprintf("🕳 bar-hole detector: store read failed for %s %s on %s (%v) — this minute is not judged; the next one is", symbol, barHoleTF, contract, err))
 		return
 	}
 	t.checked[key] = newest
+	t.noteJudgedLocked(key, from)
+	if bootScan {
+		got = trimPreRecording(got)
+	}
 	times := make([]int64, 0, len(got))
 	for _, r := range got {
 		times = append(times, r.OpenTimeMs)
@@ -439,6 +466,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 		}
 		if t.atCapLocked() {
 			telemetry.IncBarsHoleOverflow()
+			t.retainLocked(symbol, contract, sp.FromMs, sp.ToMs, sp.OpenMissing, "untracked") // m445: not tracked is NOT filled — still a hole the gate must see
 			t.say("WARN", fmt.Sprintf("🕳 bars hole NOT tracked: %s %s %s on %s (%d open minute(s) missing) — %d holes already open, the cap; it will be seen again once one closes",
 				symbol, barHoleTF, holeWindowCT(sp.FromMs, sp.ToMs), contract, sp.OpenMissing, barHoleMaxOpen))
 			continue
@@ -457,12 +485,47 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	}
 }
 
+// trimPreRecording drops the LEADING rows of a boot-scan read that the bot did
+// not record: the history-import snapshots (store.BarSourceHistoricalImport)
+// that stand in the store before the contract's first recorded (live / replayed)
+// bar. A contract that has just rolled in is stored sparsely before the bot
+// subscribes to it — on the live store 12-26 holds one import row a day for
+// 09-07..09-10 and then dense data from 09-14 — and those stretches are not
+// minutes the bot lost: it was not on that contract yet, and the stitched
+// history takes them from the older contract. Read as holes they pause the
+// gate for the whole window after every roll (verified by replaying the real
+// 12-26 rows). Only LEADING import rows go; an import row after the first
+// recorded bar is data like any other, and a store with no recorded bar at all
+// is judged whole. (Review round 2, window + false pauses.)
+func trimPreRecording(rows []store.BarHistoryDB) []store.BarHistoryDB {
+	for i, r := range rows {
+		if r.Source != store.BarSourceHistoricalImport {
+			return rows[i:]
+		}
+	}
+	return rows
+}
+
 // bootScanFromLocked is the boot scan's first minute for a key whose newest
-// live minute is newestMs: the current CME session day's open (17:00 CT,
-// kernel.CMESessionDayStart), or — when it is shorter — the oldest minute a
-// bars_back replay reaches (bars_back READ off the wire; absent → the session
-// bound alone). Returns the bound and its name for the boot line.
+// live minute is newestMs. m445 (review round 1, D2): it reaches back as far as
+// the DEEPEST data window the data-integrity gate judges (IntegritySwingOpenMin
+// open minutes) — before, it stopped at the current CME session day's open, so a
+// restart after the session roll judged only that day and every older hole was
+// silently clear in the deep window (the 10-26 17:00–21:57 hole, booted at
+// 10-28 06:00: blocked=false). One BarsBetweenOn read of at most ~25k rows
+// (IntegritySwingOpenMin open minutes) per key, once per process. The shorter bounds (session open,
+// bars_back replay window) are kept for the line and never reached less far.
+// Returns the bound and its name for the boot line.
 func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
+	deep := t.windowFromLocked(IntegritySwingOpenMin, time.UnixMilli(newestMs))
+	shallow, bound := t.bootScanShallowLocked(newestMs)
+	if deep < shallow {
+		return deep, fmt.Sprintf("the deepest integrity window (%d open min back)", IntegritySwingOpenMin)
+	}
+	return shallow, bound
+}
+
+func (t *barHoleTracker) bootScanShallowLocked(newestMs int64) (int64, string) {
 	const minute = int64(60_000)
 	start := kernel.CMESessionDayStart(time.UnixMilli(newestMs)).UnixMilli()
 	bb := 0
@@ -482,6 +545,30 @@ func (t *barHoleTracker) bootScanFromLocked(newestMs int64) (int64, string) {
 		}
 	}
 	return start, fmt.Sprintf("the session open (inside the bars_back %d replay window)", bb)
+}
+
+// rthMissing counts the OPEN minutes in [fromMs, toMs) that lie inside the
+// regular trading hours the key-level walk reads: 08:30 <= CT time of day < 15:00.
+func (t *barHoleTracker) rthMissing(fromMs, toMs int64) int {
+	const minute = int64(60_000)
+	n := 0
+	for m := fromMs; m < toMs; m += minute {
+		if isRTHMinute(time.UnixMilli(m)) && t.isOpen(time.UnixMilli(m)) {
+			n++
+		}
+	}
+	return n
+}
+
+// isRTHMinute — the 1m bar opening at m belongs to a 1H RTH key-level candle
+// (kernel/mentor keyLevel1HBars: anchored 08:30 CT, ends 15:00 CT).
+func isRTHMinute(m time.Time) bool {
+	in := m.In(kernel.CTLocation())
+	if wd := in.Weekday(); wd == time.Saturday || wd == time.Sunday {
+		return false
+	}
+	tod := in.Hour()*60 + in.Minute()
+	return tod >= 8*60+30 && tod < 15*60
 }
 
 func bootScanLevel(spans []barHoleSpan) string {
@@ -542,6 +629,7 @@ func (t *barHoleTracker) atCapLocked() bool {
 func (t *barHoleTracker) retireLocked(h *barHole) {
 	h.nextAttemptAt, h.measureAt = time.Time{}, time.Time{}
 	if t.auditDays <= 0 {
+		t.retainRetiredLocked(h) // m445: dropped from the tracker is NOT filled — the data-integrity gate keeps it until it ages out of the window or is measured filled
 		t.removeLocked(h)
 		return
 	}
@@ -701,8 +789,19 @@ func (t *barHoleTracker) overlapNoteLocked() string {
 	return note
 }
 
-// gateLocked names why a re-request may not go out NOW ("" = it may).
-func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+// reRequestGateWire is the slice of the wire the re-request admission reads.
+type reRequestGateWire interface {
+	IsConnected() bool
+	IsFeedConnected() bool
+}
+
+// reRequestGateReason names why a gap re-request may not go out NOW ("" = it
+// may): no wire, link down, feed down, or CME closed. It is THE gate every
+// automatic re-request shares - the m444 tracker (gateLocked) and the m449
+// ingest_loss hook (datatruth_rerequest.go) - so the two cannot drift. The
+// other half of the shared admission is barHoleInSendWindow (send timing); the
+// per-symbol spacing and the per-day budget live in the wire itself.
+func reRequestGateReason(w reRequestGateWire, isOpen func(time.Time) bool, now time.Time) string {
 	switch {
 	case w == nil:
 		return "no NT8 wire"
@@ -710,10 +809,18 @@ func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
 		return "NT8 link down"
 	case !w.IsFeedConnected():
 		return "NT8 feed down (a BarsRequest now returns bars=0)"
-	case !t.isOpen(now):
+	case isOpen == nil || !isOpen(now):
 		return "CME closed"
 	}
 	return ""
+}
+
+// gateLocked names why a re-request may not go out NOW ("" = it may).
+func (t *barHoleTracker) gateLocked(w holeWire, now time.Time) string {
+	if w == nil {
+		return reRequestGateReason(nil, t.isOpen, now)
+	}
+	return reRequestGateReason(w, t.isOpen, now)
 }
 
 // tick runs the schedule at `now` (A28: the caller's clock). Production calls
@@ -724,6 +831,7 @@ func (t *barHoleTracker) tick(now time.Time) {
 	if t == nil {
 		return
 	}
+	t.remeasureRetired(now) // m445: a retired / untracked hole that NT8 has since filled lets the gate resume
 	w, due := t.collectDue(now)
 	if len(due) == 0 {
 		return
@@ -845,9 +953,12 @@ func (t *barHoleTracker) collectDue(now time.Time) (holeWire, map[string][]*barH
 				t.declareUnfilledLocked(h, now)
 			}
 			// the slow cap is IN TOTAL (#23 review P2-3) — checked here, before
-			// any later store read: a spent hole is never measured again (its
-			// nextAttemptAt is zero) and stays listed until it leaves the
-			// replay window (step 0b) or the process ends.
+			// any later store read: a spent hole is never RE-REQUESTED again
+			// (its nextAttemptAt is zero) and stays listed until it leaves the
+			// replay window (step 0b) or the process ends. m445: the data-
+			// integrity gate still RE-MEASURES it from the store, at most once a
+			// minute and with no wire send (remeasureRetired), so a history
+			// reload that refills it lifts the pause.
 			if h.State == holeStateUnfilled && h.slowCount >= h.slowCap() && !h.saidSlowCap {
 				h.saidSlowCap = true
 				h.nextAttemptAt = time.Time{}
@@ -977,6 +1088,33 @@ func BarHolesSnapshot() ([]BarHoleView, bool) {
 // mirrors SetTCPServerForTest.
 func SetBarHolesWiredForTest() (restore func()) {
 	prev := barHoles.Swap(newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil }))
+	return func() { barHoles.Store(prev) }
+}
+
+// TestHole is one unfilled hole for SetBarHolesWithHolesForTest ([FromMs, ToMs)).
+type TestHole struct {
+	Symbol, Contract string
+	FromMs, ToMs     int64
+}
+
+// SetBarHolesWithHolesForTest installs a tracker that has judged every symbol
+// named in `holes` over [judgedFromMs, judgedToMs] and holds those holes as
+// retired ones (nothing re-requests them), so a HANDLER test can see a scoped
+// pause without a live wire. TEST-ONLY.
+func SetBarHolesWithHolesForTest(judgedFromMs, judgedToMs int64, holes []TestHole) (restore func()) {
+	t := newBarHoleTracker(nil, func() *ntwire.TCPServer { return nil })
+	for _, h := range holes {
+		k := holeKey(h.Symbol, h.Contract)
+		t.checked[k] = judgedToMs
+		t.coveredFrom[k] = judgedFromMs
+		if h.ToMs <= h.FromMs {
+			continue // judged only: the symbol is known to the detector, no hole
+		}
+		n := int((h.ToMs - h.FromMs) / 60_000)
+		t.retired = append(t.retired, &barHole{Symbol: h.Symbol, Contract: h.Contract, FromMs: h.FromMs, ToMs: h.ToMs,
+			MissingAtDetect: n, Missing: n, State: "retired"})
+	}
+	prev := barHoles.Swap(t)
 	return func() { barHoles.Store(prev) }
 }
 

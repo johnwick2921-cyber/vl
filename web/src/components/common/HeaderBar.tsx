@@ -6,6 +6,7 @@ import { Menu, X, ChevronDown, Settings } from 'lucide-react'
 import { UpdateBadge } from '../updates/UpdateBadge'
 import { t, type Language } from '../../i18n/translations'
 import { StatusBanner } from './StatusBanner'
+import { DataPausedBanner } from './DataPausedBanner'
 import { getCurrentPageForPath, ROUTES, type Page } from '../../router/paths'
 import { useFriendsPageEnabled } from '../../hooks/useFriendsPageEnabled'
 
@@ -326,6 +327,8 @@ export default function HeaderBar({
           so the one mount shows under the header on desktop AND mobile (the
           mobile overlay below starts at top:64px, under this nav's z-50). */}
       <StatusBanner language={language} />
+      {/* m445 — TRADING PAUSED for missing bars (data-integrity gate) */}
+      <DataPausedBanner language={language} />
 
       {/* Mobile Menu Overlay */}
       <AnimatePresence>
