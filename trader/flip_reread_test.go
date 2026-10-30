@@ -146,6 +146,141 @@ func dormantFlipKiller(t *testing.T, st *store.Store, row *store.PlanDB) string 
 	return ""
 }
 
+// flipParkedDormantViolation reports why the "a fired flip parks dormant BEFORE
+// the async read supersedes it" contract does not hold ("" = it holds).
+//
+// m456: the contract is an ORDERING fact, so it is read from the append-only
+// lifecycle log (ordered by autoincrement id), never from the row's current
+// lifecycle. The re-read is launched on a goroutine as the last statement of
+// the sync path, and its tail (fresh v2 -> UpdatePlanLifecycleIf dormant ->
+// superseded:flip) is a handful of fast SQLite writes; a test thread that is
+// descheduled for that long (GC, loaded CI runner, -race) reads the row AFTER
+// the supersede, and a "row == dormant" assertion fails (PR #612 run
+// 40718176422). The row is allowed to be dormant OR already superseded:flip,
+// and nothing else.
+func flipParkedDormantViolation(t *testing.T, st *store.Store, row *store.PlanDB, td, session, id string) string {
+	return parkedDormantViolation(t, st, row, td, session, id, "flip")
+}
+
+// parkedDormantViolation is the shared body for kind "flip" and "death": the
+// death re-read has the identical dormant-then-async-supersede shape (its
+// superseded:death tail raced the same assertion, 5/300 at GOMAXPROCS=24).
+func parkedDormantViolation(t *testing.T, st *store.Store, row *store.PlanDB, td, session, id, kind string) string {
+	t.Helper()
+	events, err := st.Plan().LifecycleLog(row.PlanID, row.Version)
+	if err != nil {
+		t.Fatalf("lifecycle log: %v", err)
+	}
+	dormantAt, supersededAt := -1, -1
+	for i, e := range events {
+		switch {
+		case dormantAt < 0 && e.Event == "dormant" && strings.HasPrefix(e.Reason, "dormant:"+kind+":"):
+			dormantAt = i
+		case supersededAt < 0 && strings.HasPrefix(e.Event, "superseded"):
+			supersededAt = i
+		}
+	}
+	if dormantAt < 0 {
+		return kind + " must park dormant first: no dormant:" + kind + " event in the log"
+	}
+	if supersededAt >= 0 && supersededAt < dormantAt {
+		return kind + " must park dormant first: superseded was logged before dormant:" + kind
+	}
+	if got := versionLifecycle(t, st, td, session, id, row.Version); got != "dormant" && got != "superseded:"+kind {
+		return kind + " must park dormant first, row is " + got
+	}
+	return ""
+}
+
+// TestFlipRereadDormantFirstHoldsWhenAsyncTailWinsTheRace (m456) forces the
+// schedule CI hit once (PR #612 run 40718176422): the async re-read tail
+// (fresh v2 -> supersede) finishes BEFORE the test thread's next statement.
+// The contract under test is ordering, not a transient row state.
+func TestFlipRereadDormantFirstHoldsWhenAsyncTailWinsTheRace(t *testing.T) {
+	t.Setenv("FLIP_ATR_BUFFER", "0")
+	t.Setenv("DORMANT_MIN_HOLD_MIN", "0")
+	cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true, ReplanCap: store.IntPtr(4), SessionsEnabled: []string{"NY"}, FlipReread: true}}
+	at, st := resetTrader(t, cfg)
+	now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
+	testNow = func() time.Time { return now }
+	defer func() { testNow = nil }()
+	defer func() { market.FuturesBarsProvider = nil; traderTestBarsInstalled = false }()
+
+	td := "2026-08-18"
+	doc := kernel.PlanDoc{Bias: kernel.PlanBias{Direction: "long", FlipCondition: "flips short on 2x5m below 100"}, FlipStructured: &kernel.PlanCondition{Price: 100, Side: "below", Rule: "2x5m", FlipTo: "short"}}
+	row := seedActivePlan(t, at, td, "NY", now.Add(-40*time.Minute), doc)
+	seedFlipBars(100, 96, 6*time.Minute, now)
+	v2 := kernel.PlanDoc{Bias: kernel.PlanBias{Direction: "short"}}
+	blob2, _ := json.Marshal(v2)
+	rec := &flipRereadRecorder{appendV2: &store.PlanDB{PlanID: row.PlanID, TradeDate: td, Session: "NY", StrategyID: at.id, Lifecycle: "active", Doc: string(blob2), CreatedAt: now.Add(5 * time.Minute)}}
+	installFlipRecorder(t, rec)
+
+	at.maybeRunSessionReadsAt(now)
+	drainReReads(t) // worst-case schedule: the whole async tail ran first
+	if got := versionLifecycle(t, st, td, "NY", at.id, 1); got != "superseded:flip" {
+		t.Fatalf("fixture must have the tail win (v1 superseded), got %q", got)
+	}
+	if msg := flipParkedDormantViolation(t, st, row, td, "NY", at.id); msg != "" {
+		t.Fatal(msg)
+	}
+}
+
+// The relaxed assertion must still BITE: a supersede logged before the dormant
+// marker, no dormant:flip marker at all, and a foreign row state are all
+// violations (a helper that accepts everything would pin nothing).
+func TestFlipParkedDormantViolationStillBites(t *testing.T) {
+	setup := func(t *testing.T) (*AutoTrader, *store.Store, *store.PlanDB) {
+		cfg := store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true, ReplanCap: store.IntPtr(4), SessionsEnabled: []string{"NY"}}}
+		at, st := resetTrader(t, cfg)
+		now := time.Date(2026, 8, 18, 14, 0, 0, 0, time.UTC)
+		row := seedActivePlan(t, at, "2026-08-18", "NY", now.Add(-40*time.Minute), kernel.PlanDoc{Bias: kernel.PlanBias{Direction: "long"}})
+		return at, st, row
+	}
+	pl := func(st *store.Store) *store.PlanStore { return st.Plan() }
+	t.Run("no dormant marker", func(t *testing.T) {
+		at, st, row := setup(t)
+		if msg := flipParkedDormantViolation(t, st, row, "2026-08-18", "NY", at.id); msg == "" {
+			t.Fatal("an active row with no dormant:flip event must violate")
+		}
+	})
+	t.Run("superseded before dormant", func(t *testing.T) {
+		at, st, row := setup(t)
+		if err := pl(st).UpdatePlanLifecycle(row.PlanID, row.Version, "superseded:flip", "superseded:flip"); err != nil {
+			t.Fatal(err)
+		}
+		if err := pl(st).UpdatePlanLifecycle(row.PlanID, row.Version, "dormant", "dormant:flip:x"); err != nil {
+			t.Fatal(err)
+		}
+		if msg := flipParkedDormantViolation(t, st, row, "2026-08-18", "NY", at.id); msg == "" {
+			t.Fatal("superseded logged before dormant:flip must violate")
+		}
+	})
+	t.Run("dormant then superseded holds", func(t *testing.T) {
+		at, st, row := setup(t)
+		if err := pl(st).UpdatePlanLifecycle(row.PlanID, row.Version, "dormant", "dormant:flip:x"); err != nil {
+			t.Fatal(err)
+		}
+		if ok, err := pl(st).UpdatePlanLifecycleIf(row.PlanID, row.Version, "dormant", "superseded:flip", "superseded:flip"); err != nil || !ok {
+			t.Fatalf("supersede: %v %v", ok, err)
+		}
+		if msg := flipParkedDormantViolation(t, st, row, "2026-08-18", "NY", at.id); msg != "" {
+			t.Fatal(msg)
+		}
+	})
+	t.Run("foreign row state", func(t *testing.T) {
+		at, st, row := setup(t)
+		if err := pl(st).UpdatePlanLifecycle(row.PlanID, row.Version, "dormant", "dormant:flip:x"); err != nil {
+			t.Fatal(err)
+		}
+		if err := pl(st).UpdatePlanLifecycle(row.PlanID, row.Version, "active", "re-armed"); err != nil {
+			t.Fatal(err)
+		}
+		if msg := flipParkedDormantViolation(t, st, row, "2026-08-18", "NY", at.id); msg == "" {
+			t.Fatal("a row that is neither dormant nor superseded:flip must violate")
+		}
+	})
+}
+
 func TestFlipRereadKnobOffStaysDormantNoRead(t *testing.T) {
 	t.Setenv("FLIP_ATR_BUFFER", "0")
 	t.Setenv("DORMANT_MIN_HOLD_MIN", "0")
@@ -210,8 +345,10 @@ func TestFlipRereadOnRequestsStructureFlipOnce(t *testing.T) {
 	defer drainReReads(t) // CTO M4: join the async re-read before the seam resets
 
 	// Sync half first: the dormant marker is written before the read launches.
-	if got := versionLifecycle(t, st, td, "NY", at.id, 1); got != "dormant" {
-		t.Fatalf("flip must park dormant first, got %q", got)
+	// Asserted as LOG ORDER (m456): the async tail may already have superseded
+	// the row by the time this thread runs, so the row state is not stable.
+	if msg := flipParkedDormantViolation(t, st, row, td, "NY", at.id); msg != "" {
+		t.Fatal(msg)
 	}
 	// Capture the killer now — the supersede appends a LATER lifecycle event.
 	killer := dormantFlipKiller(t, st, row)

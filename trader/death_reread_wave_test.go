@@ -187,8 +187,10 @@ func TestDeathRereadRealPathLandsFreshPlanAndSupersedes(t *testing.T) {
 	at.maybeRunSessionReadsAt(now)
 	defer drainReReads(t) // CTO M4: join the async re-read before the seam resets
 
-	if got := versionLifecycle(t, st, td, "NY", at.id, 1); got != "dormant" {
-		t.Fatalf("death must park dormant first, got %q", got)
+	// m456: LOG ORDER, not the row's momentary state: the async supersede tail
+	// may already have run by the time this thread does (the flip twin flaked).
+	if msg := parkedDormantViolation(t, st, row, td, "NY", at.id, "death"); msg != "" {
+		t.Fatal(msg)
 	}
 	// B2: the dormant write records the RAW prior death line (the wick's space).
 	if v := sysCfgVal(t, st, deathRereadPriorLineKey(row)); v != "15480.000000" {
@@ -573,8 +575,9 @@ func TestDeathRereadWickThroughProductionCallSite(t *testing.T) {
 		}
 		seedFlipBars(15500, 15470, 6*time.Minute, now)
 		at.maybeRunSessionReadsAt(now)
-		if got := versionLifecycle(t, st, td, "NY", at.id, 1); got != "dormant" {
-			t.Fatalf("v1 must park dormant first, got %q", got)
+		// m456: LOG ORDER, not the row's momentary state (async supersede tail).
+		if msg := parkedDormantViolation(t, st, row, td, "NY", at.id, "death"); msg != "" {
+			t.Fatal(msg)
 		}
 		// The dormant write records the RAW prior line (B2 production path).
 		if v := sysCfgVal(t, st, deathRereadPriorLineKey(row)); v != "15480.000000" {
