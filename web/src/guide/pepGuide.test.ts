@@ -266,6 +266,69 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(e?.body).toContain('$10,070.10')
   })
 
+  // D2/D3 (verify 3:6): the risk figures on the Contracts and Max box cards are
+  // RECOMPUTED from the committed export of the 2026-10-30 integrated backtest
+  // (docs/superpowers/data/pep-backtest-integrated-1030-risk.csv: the traded rows
+  // of pep-backtest-integrated-1030.csv), for BOTH styles. Mutant: change any
+  // figure on a card, or quote the style-A numbers only -> RED.
+  it('risk figures on the Contracts and Max box cards equal a recompute from the backtest export, for A and E', () => {
+    const rows = repo(
+      'docs/superpowers/data/pep-backtest-integrated-1030-risk.csv'
+    )
+      .trim()
+      .split('\n')
+      .slice(1)
+      .map((l) => l.split(','))
+      .map(([style, date, kind, gross, box]) => ({
+        style,
+        date,
+        kind,
+        gross: Number(gross),
+        box: Number(box),
+      }))
+    const median = (a: number[]) => {
+      const v = [...a].sort((x, y) => x - y)
+      const m = v.length >> 1
+      return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2
+    }
+    // nearest-rank percentile: the ceil(p * n)-th smallest value
+    const nearestRank = (a: number[], p: number) => {
+      const v = [...a].sort((x, y) => x - y)
+      return v[Math.ceil(p * v.length) - 1]
+    }
+    const money = (n: number) =>
+      '$' +
+      (Number.isInteger(n)
+        ? n.toLocaleString('en-US')
+        : n.toLocaleString('en-US', { minimumFractionDigits: 2 }))
+    const contracts = card('pep.pep_contracts').recommended
+    const maxBox = card('pep.pep_max_box_points').recommended
+    const want: Record<string, { days: number; stops: number }> = {
+      A: { days: 110, stops: 46 },
+      E: { days: 107, stops: 63 },
+    }
+    for (const style of ['A', 'E']) {
+      const t = rows.filter((r) => r.style === style)
+      const stopped = t.filter((r) => r.kind === 'SL')
+      expect(t.length).toBe(want[style].days)
+      expect(stopped.length).toBe(want[style].stops)
+      const losses = stopped.map((r) => -r.gross * 12)
+      const boxes = t.map((r) => r.box)
+      expect(contracts).toContain(money(median(losses)))
+      expect(contracts).toContain(money(Math.max(...losses)))
+      expect(maxBox).toContain(
+        `${median(boxes).toFixed(2).replace(/0$/, '')} pts median`
+      )
+      expect(maxBox).toContain(`${nearestRank(boxes, 0.9)} pts 90th percentile`)
+      expect(maxBox).toContain(`${Math.max(...boxes)} pts widest`)
+    }
+    // the E figures are named on the cards, and the old non-percentile is gone
+    expect(contracts).toContain('107 traded days, 63 of them stopped out')
+    expect(maxBox).toContain('style E')
+    expect(maxBox).not.toContain('128.5')
+    expect(maxBox).toContain('nearest-rank')
+  })
+
   it('names the mode-conflict codes the server returns', () => {
     const text = JSON.stringify(section!.blocks)
     expect(text).toContain(goConst('PepConflictMentor'))

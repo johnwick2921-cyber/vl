@@ -357,6 +357,13 @@ export const pepStrings = {
   },
   truthSim: { en: 'SIM only', zh: '仅 SIM', id: 'Hanya SIM' },
   truthAsOf: { en: 'as of {t} CT', zh: '截至 {t} CT', id: 'per {t} CT' },
+  // The last evaluation is on an EARLIER CT day than the card's day: name that
+  // day, never a bare time that reads as today.
+  truthLastRan: {
+    en: 'last ran {d} {t} CT',
+    zh: '上次运行 {d} {t} CT',
+    id: 'terakhir berjalan {d} {t} CT',
+  },
   truthStale: {
     en: 'refresh failed — showing the last good read',
     zh: '刷新失败 — 显示最后一次有效数据',

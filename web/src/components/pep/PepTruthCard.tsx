@@ -19,6 +19,32 @@ const fmtAsOf = (ms: number | undefined) =>
       })
     : '—'
 
+// The CT calendar date ("2006-01-02", the shape /pep-truth's `day` uses) of an
+// instant, and its short weekday for the "last ran" text.
+const ctDay = (ms: number) =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+  }).format(new Date(ms))
+const ctWeekday = (ms: number) =>
+  new Date(ms).toLocaleDateString('en-US', {
+    weekday: 'short',
+    timeZone: 'America/Chicago',
+  })
+
+// D1 (verify 3:6): a time-only "as of 15:59:00 CT" reads as today. When the
+// last evaluation is on an EARLIER CT day than the day the server is reporting
+// (truth.day), the header names that day instead - the body of such a card says
+// "no evaluation yet", and the header must not contradict it.
+export function lastEvaluatedIsEarlierDay(
+  ms: number | undefined,
+  day: string | undefined
+): boolean {
+  return ms !== undefined && ms > 0 && !!day && ctDay(ms) < day
+}
+
 const px = (n: number | undefined) =>
   n === undefined || !(n > 0)
     ? '—'
@@ -142,7 +168,12 @@ export function PepTruthCard({
         </span>
         <span className="text-[10px]" style={{ color: 'var(--vl-faint)' }}>
           {truth.last_evaluated_ms
-            ? pt('truthAsOf', lang, { t: fmtAsOf(truth.last_evaluated_ms) })
+            ? lastEvaluatedIsEarlierDay(truth.last_evaluated_ms, truth.day)
+              ? pt('truthLastRan', lang, {
+                  d: `${ctWeekday(truth.last_evaluated_ms)} ${ctDay(truth.last_evaluated_ms)}`,
+                  t: fmtAsOf(truth.last_evaluated_ms),
+                })
+              : pt('truthAsOf', lang, { t: fmtAsOf(truth.last_evaluated_ms) })
             : pt('truthNotEvaluated', lang)}
         </span>
       </div>

@@ -145,6 +145,40 @@ describe('PepTruthCard', () => {
     expect(b.container).toHaveTextContent('not evaluated yet')
     expect(screen.getByTestId('pep-truth-box-undrawn')).toBeInTheDocument()
   })
+  // D1 (verify 3:6). Mutant: print the bare time whatever the day (drop the
+  // earlier-day branch) -> "as of 15:59:00 CT" returns -> RED.
+  it('an earlier-day last evaluation names the day, never a bare time that reads as today', () => {
+    // The Saturday card pinned by TestPepTruthDoesNotCarryYesterdaysEvaluationOver:
+    // day 2026-10-31, no_data, an undrawn box, last ran Thursday 15:59 CT.
+    const stale: PepTruth = {
+      ...g(GOLDEN_NO_DATA),
+      day: '2026-10-31',
+      last_evaluated_ms: 1793307540000,
+    }
+    const a = render(<PepTruthCard truth={stale} language="en" />)
+    expect(a.container).toHaveTextContent('last ran Thu 2026-10-29 15:59:00 CT')
+    expect(a.container).not.toHaveTextContent('as of 15:59:00')
+    a.unmount()
+    // zh / id carry the day too (no English leak).
+    const z = render(<PepTruthCard truth={stale} language="zh" />)
+    expect(z.container).toHaveTextContent('上次运行 Thu 2026-10-29 15:59:00 CT')
+    z.unmount()
+    // Control: the same instant on its OWN day is the plain "as of".
+    const same = render(
+      <PepTruthCard
+        truth={{ ...stale, day: '2026-10-29', signal: 'waiting_signal' }}
+        language="en"
+      />
+    )
+    expect(same.container).toHaveTextContent('as of 15:59:00 CT')
+    expect(same.container).not.toHaveTextContent('last ran')
+    same.unmount()
+    // Control: a card with no `day` falls back to the plain "as of".
+    const noDay = render(
+      <PepTruthCard truth={{ ...stale, day: undefined }} language="en" />
+    )
+    expect(noDay.container).toHaveTextContent('as of 15:59:00 CT')
+  })
   it('a block refusal outranks a wait one; the stale note shows', () => {
     render(
       <PepTruthCard
