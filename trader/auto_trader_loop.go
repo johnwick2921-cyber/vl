@@ -404,6 +404,9 @@ func (at *AutoTrader) runCycle() error {
 	// per-strategy mentor_mode is ON; placements stay behind the MENTOR_PLACE
 	// env gate until P1 (#309) lands (L4: default OFF, byte-identical bot).
 	at.mentorTick(ctx)
+	// PEP MODE - the cycle fallback for the pep evaluator (the event loop is the
+	// primary path). Inert unless pep mode is ON.
+	at.pepTick()
 
 	// G2 (regime wave 2026-08-21) — per-cycle STRUCTURE snapshot: computed from
 	// the same 1m cache every other futures consumer reads, threaded into the
@@ -544,6 +547,24 @@ func (at *AutoTrader) runCycle() error {
 		record.Success = true
 		record.ExecutionLog = append(record.ExecutionLog,
 			"mentor_mode: AI decision skipped — entries come from the mentor evaluator (no LLM call)")
+		record.AccountState = store.AccountSnapshot{
+			TotalBalance:          ctx.Account.TotalEquity,
+			AvailableBalance:      ctx.Account.AvailableBalance,
+			TotalUnrealizedProfit: ctx.Account.UnrealizedPnL,
+			PositionCount:         ctx.Account.PositionCount,
+			InitialBalance:        at.initialBalance,
+		}
+		at.saveDecision(record)
+		return nil
+	}
+
+	// PEP MODE: like mentor, a pep trader's entries come ONLY from its own
+	// evaluator; the AI call is skipped (admission would refuse its entry anyway).
+	if at.pepSkipsAIDecision() {
+		at.logInfof("🎯 pep_mode: AI decision skipped for cycle #%d - entries come from the pep evaluator (no LLM call, no tokens)", at.callCount)
+		record.Success = true
+		record.ExecutionLog = append(record.ExecutionLog,
+			"pep_mode: AI decision skipped - entries come from the pep evaluator (no LLM call)")
 		record.AccountState = store.AccountSnapshot{
 			TotalBalance:          ctx.Account.TotalEquity,
 			AvailableBalance:      ctx.Account.AvailableBalance,

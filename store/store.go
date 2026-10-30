@@ -31,6 +31,7 @@ type Store struct {
 	aiCharge          *AIChargeStore
 	plan              *PlanStore
 	levelState        *LevelStateStore
+	pepDay            *PepDayStore
 	sessionProfile    *SessionProfileStore
 	barHistory        *BarHistoryStore
 	armedOrders       *ArmedOrderStore
@@ -203,6 +204,9 @@ func (s *Store) initTables() error {
 	}
 	if err := s.LevelState().initTables(); err != nil {
 		return fmt.Errorf("failed to initialize level_state tables: %w", err)
+	}
+	if err := s.PepDay().initTables(); err != nil {
+		return fmt.Errorf("failed to initialize pep_days tables: %w", err)
 	}
 	if err := s.SessionProfile().initTables(); err != nil {
 		return fmt.Errorf("failed to initialize session_profiles tables: %w", err)

@@ -298,7 +298,9 @@ func (at *AutoTrader) maybeMoveStopToBreakeven(symbol, side string, entryPrice, 
 	// not move a mentor-owned stop. Log ONCE per position + a visible counter.
 	// Checked before the 0B suspension: mentor trades bypass the 0B seam, so the
 	// mentor gate must be the first thing that decides this is a mentor trade.
-	if at.mentorEnabled() {
+	// PEP MODE: the same rule for pep (modeOwnsExits = mentor or pep) - pep's
+	// stop and target are fixed at the wire; nothing moves them.
+	if at.modeOwnsExits() {
 		at.autoBEMentorBlockedOnce(symbol, side, pts)
 		return
 	}
@@ -391,8 +393,9 @@ func (at *AutoTrader) autoBEMentorBlockedOnce(symbol, side string, pts float64) 
 	autoBEMentorBlockedCount.Add(1)
 	// WARN (same visibility rule as the success line): an owner-visible event
 	// must reach the log_events DB sink + dashboard even when INFO is flooded.
-	logger.Warnf("🎯 auto-breakeven: not applied — mentor mode ON (the mentor's exits own the stop) [%s %s +%.1f pts]",
-		symbol, side, pts)
+	mode, owner := at.exitOwnerWords()
+	logger.Warnf("🎯 auto-breakeven: not applied — %s ON (%s the stop) [%s %s +%.1f pts]",
+		mode, owner, symbol, side, pts)
 }
 
 // drawdownMentorBlockedCount is the session counter for "drawdown emergency close
@@ -424,8 +427,9 @@ func (at *AutoTrader) drawdownMentorBlockedOnce(symbol, side string, profitPct, 
 	at.drawdownMentorBlocked[key] = true
 	at.breakevenMu.Unlock()
 	drawdownMentorBlockedCount.Add(1)
-	logger.Warnf("🎯 drawdown emergency close: not applied — mentor mode ON (the mentor's exits own the trade) [%s %s profit %.2f%% peak %.2f%% drawdown %.2f%%]",
-		symbol, side, profitPct, peakPct, drawdownPct)
+	mode, owner := at.exitOwnerWords()
+	logger.Warnf("🎯 drawdown emergency close: not applied — %s ON (%s the trade) [%s %s profit %.2f%% peak %.2f%% drawdown %.2f%%]",
+		mode, owner, symbol, side, profitPct, peakPct, drawdownPct)
 }
 
 // defaultBreakevenTriggerPoints is the shipped auto-breakeven trigger (points in
@@ -619,6 +623,7 @@ type AutoTrader struct {
 	store             *store.Store           // Data storage (decision records, etc.)
 	strategyEngine    *kernel.StrategyEngine // Strategy engine (uses strategy configuration)
 	cycleNumber       int                    // Current cycle number
+	cycleMu           sync.Mutex             // guards cycleNumber's increment in saveDecision (PEP: two goroutines save decision rows)
 	initialBalance    float64
 	dailyPnL          float64
 	// F3 fast-market wake reads (waterfall-class wave, 2026-08-28): the price
@@ -894,6 +899,7 @@ type AutoTrader struct {
 	startTime             time.Time        // System start time
 	callCount             int              // AI call count
 	positionFirstSeenTime map[string]int64 // Position first seen time (symbol_side -> timestamp in milliseconds)
+	pep                   pepRuntime       // PEP MODE: this trader's pep working memory (pep_mode.go); the one-trade-per-day record is the database's
 	positionMentorOwned   map[string]bool  // MENTOR P3: symbol_side -> the open position was opened by a mentor-sourced decision (the mentor driver owns its exits)
 	stopMonitorMu         sync.Mutex       // guards stopMonitorCtx/stopMonitorCancel (per-Run)
 	stopMonitorCtx        context.Context
@@ -1402,6 +1408,16 @@ func (at *AutoTrader) Run() error {
 	at.isRunning = true
 	runStopGen := at.stopGen
 	at.isRunningMutex.Unlock()
+
+	// PEP MODE — mutual exclusion at load: a strategy with pep ON together with
+	// mentor mode or the day plan is REFUSED here, before anything starts (one P0
+	// alert, one count, one ERROR, the trader marked not running). Never silent.
+	if perr := at.pepStartRefusal(); perr != nil {
+		at.isRunningMutex.Lock()
+		at.isRunning = false
+		at.isRunningMutex.Unlock()
+		return perr
+	}
 
 	// MENTOR-NY item 3 — ONE live run per trader_id (run_owner.go): claim the
 	// trader_id BEFORE anything starts. A retired instance (removed from the

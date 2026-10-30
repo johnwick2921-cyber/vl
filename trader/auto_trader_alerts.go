@@ -65,6 +65,8 @@ func isOpsAlertKind(kind string) bool {
 		"protection_partial",
 		"protection_pending_stuck",
 		"protection_over_covered",
+		"pep_mode_conflict", // PEP MODE: a trader refused at start for an illegal mode combination
+		"pep_flat_failed",   // PEP MODE: a pep position is still open after repeated flat attempts
 		alertKindStopMoveNotApplied,
 		alertKindCloseRejected: // m442 #19: NT8 refused an exit - the position is still open
 		return true
