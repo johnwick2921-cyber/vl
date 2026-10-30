@@ -43,6 +43,7 @@ func TestImporterOpenStampsEveryRowItWrites(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
+	waitAddonRegistered(t, srv) // the server publishes the client on its accept loop (CTO M7)
 
 	const contract = "MNQ 12-26"
 	open1m := time.Date(2026, 10, 29, 13, 30, 0, 0, time.UTC).UnixMilli() // 08:30 CT
