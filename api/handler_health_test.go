@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"reflect"
 	"testing"
 	"time"
 
@@ -698,5 +699,17 @@ func TestHealthMentorOnlyDataTruthBlockNextToSwing4hIsMixedNotMentor(t *testing.
 	datatruth.Evaluate("MNQ", at)
 	if tp := get(); tp["scope"] != ntTrader.PausedScopeMixed {
 		t.Fatalf("a mentor-reader block next to SWING4H must not read 'AI/planner entries trade normally': %+v", tp)
+	}
+}
+
+// Round 4 re-review 5 P2: the health pin above swaps healthDataTruthStarting for
+// a closure, so the production default was never exercised. This pins that the
+// handler reads the real trader-side function (whose behaviour is pinned in
+// trader/data_truth_starting_pin_test.go).
+//
+// MUTANT: healthDataTruthStarting = func(time.Time) bool { return false } -> RED.
+func TestHealthDataTruthStartingDefaultIsTheTraderRead(t *testing.T) {
+	if reflect.ValueOf(healthDataTruthStarting).Pointer() != reflect.ValueOf(trader.DataTruthStarting).Pointer() {
+		t.Fatal("handleHealth must read trader.DataTruthStarting by default, or the banner says 'not paused' during the boot wait")
 	}
 }
