@@ -66,8 +66,13 @@ func TestM424BreakFlushTailSkipsReplayBars(t *testing.T) {
 // `if runPersister(...) { persistFlushed.Add }` line in startPersistWorker was
 // unpinned: replacing it with an unconditional Add survived.)
 // Mutant: `runPersister(fn, m); if true { persistFlushed.Add(...) }` -> RED.
+//
+// m456 (flake): persistFlushed is process-wide and the worker is a singleton with
+// a private batch, so a neighbour's leftover bar (or an in-flight credit) used to
+// land inside this test's window ("moved by 2" in the partner repo CI). The
+// baseline is now read only after syncPersistWorker has drained the worker.
 func TestM427WorkerDoesNotCreditAPanickedPersisterAsFlushed(t *testing.T) {
-	startPersistWorker()
+	syncPersistWorker(t)
 	prevPanics := persistFlushPanics.Load()
 	flushed0 := persistFlushed.Load()
 	SetBarPersister(func(_ bool, sym, _ string, _ []Bar) {
