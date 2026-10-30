@@ -63,6 +63,14 @@ const (
 	BothEdgesNearestOpen BothEdges = "nearest_open"
 )
 
+// SLRounding is the stop-distance tick rounding.
+type SLRounding string
+
+const (
+	RoundOutward SLRounding = "outward"
+	RoundNearest SLRounding = "nearest"
+)
+
 // Hard limits. Contracts above the ceiling are refused, never clamped here (the
 // store resolver clamps and LOGS; this package is the last line).
 const (
@@ -104,6 +112,9 @@ type Config struct {
 	FlatMin int
 	// TickSize is the instrument tick (MNQ 0.25).
 	TickSize float64
+	// SLRounding says how the stop distance is rounded to a tick: outward (the
+	// PDF's rule: away from entry, the default) or nearest.
+	SLRounding SLRounding
 	// MaxTradesPerDay caps entries a CT day (default 1).
 	MaxTradesPerDay int
 	// MaxBoxPoints refuses a box wider than this many points; 0 = OFF (default,
@@ -130,6 +141,7 @@ func DefaultConfig() Config {
 		BoxStartMin:      8*60 + 30,
 		FlatMin:          15 * 60,
 		TickSize:         0.25,
+		SLRounding:       RoundOutward,
 		MaxTradesPerDay:  1,
 		MaxBoxPoints:     0,
 		SignalMaxAgeMin:  2,
@@ -170,6 +182,9 @@ func (c Config) Validate() error {
 	}
 	if !(c.TickSize > 0) || math.IsNaN(c.TickSize) || math.IsInf(c.TickSize, 0) {
 		bad = append(bad, fmt.Sprintf("tick size %v (want > 0)", c.TickSize))
+	}
+	if c.SLRounding != RoundOutward && c.SLRounding != RoundNearest {
+		bad = append(bad, fmt.Sprintf("sl rounding %q (want outward or nearest)", c.SLRounding))
 	}
 	if c.MaxTradesPerDay < 1 {
 		bad = append(bad, fmt.Sprintf("max trades per day %d (want >= 1)", c.MaxTradesPerDay))

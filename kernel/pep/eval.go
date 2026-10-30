@@ -147,12 +147,15 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 
 // distances turns the box into the stop and target distances: the stop is
 // rounded OUTWARD (up) to a tick, the target to the nearest tick.
-func distances(box float64, slFrac, tpFrac, tick float64) (sl, tp float64) {
+func distances(box float64, slFrac, tpFrac, tick float64, rounding SLRounding) (sl, tp float64) {
+	if rounding == RoundNearest {
+		return RoundTick(slFrac*box, tick), RoundTick(tpFrac*box, tick)
+	}
 	return CeilTick(slFrac*box, tick), RoundTick(tpFrac*box, tick)
 }
 
 func buildEntry(cfg Config, res Result, side Side, entry float64, sigOpen, sigClose int64, reason string) (Intent, *Refusal) {
-	sl, tp := distances(res.Box.Size, cfg.SLFraction(), cfg.TPFraction(), cfg.TickSize)
+	sl, tp := distances(res.Box.Size, cfg.SLFraction(), cfg.TPFraction(), cfg.TickSize, cfg.SLRounding)
 	if sl < cfg.TickSize || tp < cfg.TickSize {
 		return Intent{}, &Refusal{Code: CodeStopTooTight, Severity: SevBlock,
 			Detail: fmt.Sprintf("stop %.2f / target %.2f below one tick %.2f (box %.2f)", sl, tp, cfg.TickSize, res.Box.Size)}

@@ -701,6 +701,12 @@ type StrategyConfig struct {
 	// every existing strategy byte-identical. Pointer fields resolve shipped
 	// defaults in the accessors (HTFVetoEnabled: nil → ON — dispatch 1.3).
 	Regime *RegimeConfig `json:"regime,omitempty"`
+
+	// Pep is the optional pep trading-mode block (owner order 2026-10-29). ROOT
+	// placement (sibling of day_plan / regime) so a grid switch never drops it;
+	// additive + OFF: a nil pointer emits no pep key, keeping every existing
+	// strategy byte-identical. See store/pep.go.
+	Pep *PepConfig `json:"pep,omitempty"`
 }
 
 // RegimeConfig holds the regime-wave Studio toggles (G1 HTF veto now; G4
@@ -762,6 +768,7 @@ func (c StrategyConfig) MarshalJSON() ([]byte, error) {
 		PublishConfig *PublishStrategyConfig `json:"publish_config,omitempty"`
 		DayPlan       *DayPlanConfig         `json:"day_plan,omitempty"`
 		Regime        *RegimeConfig          `json:"regime,omitempty"`
+		Pep           *PepConfig             `json:"pep,omitempty"`
 	}{
 		StrategyType:  strategyType,
 		Language:      c.Language,
@@ -769,6 +776,7 @@ func (c StrategyConfig) MarshalJSON() ([]byte, error) {
 		PublishConfig: c.PublishConfig,
 		DayPlan:       c.DayPlan,
 		Regime:        c.Regime,
+		Pep:           c.Pep,
 	}
 
 	if strategyType == "grid_trading" {
@@ -798,6 +806,7 @@ func (c *StrategyConfig) UnmarshalJSON(data []byte) error {
 		PublishConfig *PublishStrategyConfig `json:"publish_config"`
 		DayPlan       *DayPlanConfig         `json:"day_plan"`
 		Regime        *RegimeConfig          `json:"regime"`
+		Pep           *PepConfig             `json:"pep"`
 
 		CoinSource     *CoinSourceConfig     `json:"coin_source"`
 		Indicators     *IndicatorConfig      `json:"indicators"`
@@ -818,6 +827,7 @@ func (c *StrategyConfig) UnmarshalJSON(data []byte) error {
 	c.PublishConfig = raw.PublishConfig
 	c.DayPlan = raw.DayPlan
 	c.Regime = raw.Regime
+	c.Pep = raw.Pep
 
 	if raw.AIConfig != nil {
 		c.CoinSource = raw.AIConfig.CoinSource
@@ -2501,11 +2511,17 @@ func applyFuturesIndicatorDefaults(ind *IndicatorConfig) {
 
 // Create create a strategy
 func (s *StrategyStore) Create(strategy *Strategy) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	return s.db.Create(strategy).Error
 }
 
 // Update update a strategy
 func (s *StrategyStore) Update(strategy *Strategy) error {
+	if err := guardStrategyModes(strategy.Config); err != nil {
+		return err
+	}
 	return updateStrategyRow(s.db, strategy, time.Now().UTC()).Error
 }
 
