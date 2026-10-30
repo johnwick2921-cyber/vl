@@ -1,6 +1,7 @@
 package ninjatrader
 
 import (
+	"math"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -401,5 +402,126 @@ func TestBootRehydrateOpensTheSeedEdge(t *testing.T) {
 	rehydrateRingFromStore(bh, srv, time.Now())
 	if !DataTruthSeeded() || !DataTruthJudgeable() {
 		t.Fatal("the boot seed step must open the edge, however the rehydrate ended")
+	}
+}
+
+// ── release #55 round 3 (review 3, P2): the reach invariant after a roll ─────
+
+// replayRollFixture is the roll the way a LIVE roll leaves the store: the OLD
+// contract is dense and perfect up to its last stored bar (cut), and the NEW
+// contract holds its AddOn replay (bars_back, ~2000 1m bars - about 33 open hours
+// that OVERLAP the older contract's tail) plus every live bar since, on a price
+// scale basis points higher. The tape is a slow swing (a reversal every ~3
+// sessions), because the seed residual of the 4h EMA recurrence is what a
+// window mismatch turns into a "disagreement" - a quiet tape hides it.
+func replayRollFixture(t *testing.T, bh *store.BarHistoryStore, loc *time.Location, sinceRollSessions int, periodDays, amp float64) (now time.Time) {
+	t.Helper()
+	at := func(s string) time.Time {
+		v, err := time.ParseInLocation("2006-01-02 15:04", s, loc)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return v
+	}
+	const basis = 250.0
+	cut := at("2026-12-15 08:00")
+	now = cut.Add(time.Duration(sinceRollSessions) * 24 * time.Hour).Add(4 * time.Hour)
+	// the price of minute tm on the OLD scale: a ~3-session swing
+	path := func(tm time.Time) float64 {
+		return 30000 + amp*math.Sin(float64(tm.Unix())/(periodDays*24*3600)*2*math.Pi)
+	}
+	var rows []store.BarHistoryDB
+	add := func(contract, tf string, tm time.Time, px float64) {
+		rows = append(rows, store.BarHistoryDB{Symbol: "MNQ", TF: tf, Contract: contract, Source: store.BarSourceHistorical,
+			OpenTimeMs: tm.UnixMilli(), O: px, H: px + 1, L: px - 1, C: px, V: 10})
+	}
+	replayFrom := cut.Add(-33 * time.Hour)
+	for tm := at("2026-11-10 17:00"); tm.Before(now); tm = tm.Add(time.Minute) {
+		if !kernel.IsCMEOpen(tm) {
+			continue
+		}
+		px := path(tm)
+		if !tm.After(cut) {
+			add("MNQ 12-26", "1m", tm, px)
+			if tm.Minute()%5 == 0 {
+				add("MNQ 12-26", "5m", tm, px)
+			}
+		}
+		if !tm.Before(replayFrom) {
+			add("MNQ 03-27", "1m", tm, px+basis)
+			if tm.Minute()%5 == 0 {
+				add("MNQ 03-27", "5m", tm, px+basis)
+			}
+		}
+	}
+	if err := bh.InsertBars(rows); err != nil {
+		t.Fatal(err)
+	}
+	return now
+}
+
+// rollStore builds the replay-roll store and returns it with the judge instant.
+func rollStore(t *testing.T, sessions int, periodDays, amp float64) (*store.BarHistoryStore, time.Time) {
+	t.Helper()
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(SetDataTruthReadyForTest(false))
+	dataTruthWiring.Store(false)
+	t.Cleanup(func() { dataTruthWiring.Store(false) })
+	st := dtStore(t)
+	bh := st.BarHistory()
+	if err := bh.Migrate(); err != nil {
+		t.Fatal(err)
+	}
+	return bh, replayRollFixture(t, bh, kernel.CTLocation(), sessions, periodDays, amp)
+}
+
+// TestStitchedFiveMinuteNeverReachesBeforeTheOneMinute pins the STRUCTURAL
+// invariant the round-3 reviewer named (it does not depend on the price path):
+// across a roll whose new contract carries an overlapping replay, the stitched 5m
+// does not begin before the stitched 1m.
+//
+// MUTANT R3: the older 1m is read with dataTruthStore1mN-len(r1) and the rowsFrom
+// trim is removed -> RED (the 5m begins ~3 sessions before the 1m).
+func TestStitchedFiveMinuteNeverReachesBeforeTheOneMinute(t *testing.T) {
+	loc := kernel.CTLocation()
+	for _, sessions := range []int{1, 2, 3, 5, 8} {
+		bh, now := rollStore(t, sessions, 5, 3000)
+		m1, m5, _, err := storeSwingInputs(bh)("MNQ", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m1) == 0 || len(m5) == 0 {
+			t.Fatalf("sessions=%d: empty stitched series 1m=%d 5m=%d", sessions, len(m1), len(m5))
+		}
+		if m5[0].T < m1[0].T {
+			t.Fatalf("sessions=%d: the stitched 5m begins %s, before the stitched 1m %s - the 5m reaches back further than the series the check judges",
+				sessions, time.UnixMilli(m5[0].T).In(loc).Format("01-02 15:04"), time.UnixMilli(m1[0].T).In(loc).Format("01-02 15:04"))
+		}
+	}
+}
+
+// TestSwing4hDoesNotPauseAfterARollOnAReversalTape is the PRODUCTION-path pin of
+// the same defect: WireDataTruthChecks + datatruth.Evaluate over a store that
+// rolled with an overlapping replay, on a strong swing (the 4h EMA seed residual
+// of a window mismatch is what turns into a 1 pt "disagreement"; a quiet tape
+// hides it, which is why the roll pins above never tripped). No data is lost, so
+// SWING4H must never pause 1 / 2 / 3 / 5 / 8 sessions after the roll, at 8:00 or
+// 12:00 CT. A REAL hole must still pause (TestSwing4hStillPausesOnARealHoleAcrossARoll).
+//
+// MUTANT R3 (same as above) -> RED at sessions=1 ("15 bucket(s) missing from the 1m").
+func TestSwing4hDoesNotPauseAfterARollOnAReversalTape(t *testing.T) {
+	for _, sessions := range []int{1, 2, 3, 5, 8} {
+		for _, extraH := range []int{0, 8} {
+			bh, now := rollStore(t, sessions, 5, 3000)
+			now = now.Add(time.Duration(extraH) * time.Hour)
+			WireDataTruthChecks(bh, ntwire.NewTCPServer(nil))
+			_, reasons := datatruth.Evaluate("MNQ", now)
+			for _, r := range reasons {
+				if r.Check == checks.CheckLookbackSwing4h {
+					t.Fatalf("sessions=%d +%dh: SWING4H paused after a roll with no data lost: %s", sessions, extraH, r.Detail)
+				}
+			}
+		}
 	}
 }
