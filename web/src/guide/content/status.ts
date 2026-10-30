@@ -627,6 +627,11 @@ export const status: GuideSection = {
         'Reset: at the 17:00 session roll, and on bot restart.',
       ],
     },
+    { kind: 'h', text: 'Imported history is stamped at the bar OPEN' },
+    {
+      kind: 'p',
+      text: "NT8 stamps every bar it serves at its CLOSE (Bars.GetTime); the bars table is keyed by the bar's OPEN. The history importer used to store the NT8 stamp raw, so every imported row of 2022-2026 sat one full timeframe late (1m volume peaked at label 08:31 CT, live at 08:30; the 5m label 08:30 equalled the sum of the 1m labels 08:26..08:30). From m460 the importer converts at the door exactly as the live ingest does and writes Convention 'epoch_floor_open'; rows imported before it still carry 'epoch_floor' and are one timeframe late until the owner-run shift tool (go run ./cmd/import-label-shift, dry-run by default, backup first, never deletes, refuses while vl.service runs) re-stamps them. Anything that reads imported rows for a backtest must branch on that tag: 'epoch_floor' means subtract the timeframe, 'epoch_floor_open' means as stored. Live trading never reads imported rows (every live and planner door excludes them), so no live decision changes either way.",
+    },
     { kind: 'h', text: 'Stream cuts vs connection idleness' },
     {
       kind: 'p',
