@@ -311,3 +311,55 @@ func TestE_ShortCrossFromExactlyTheBoxLow(t *testing.T) {
 	}
 	near(t, "entry = the signal candle close", in.Entry, 24980)
 }
+
+// --- boundary pins (review round 3: three more evaluator mutants had survived) ---
+
+// E SIGNAL-AGE BOUNDARY: a cross whose candle closed exactly SignalMaxAgeMin ago
+// is still fresh; one millisecond more is stale. The cross candle closes 08:36,
+// the limit is 2 min, so now = 08:38:00.000 enters and 08:38:00.001 does not.
+// Kills `age > limit` -> `age >= limit` in evalE (style A has its own pin).
+func TestE_SignalAgeBoundaryIsExact(t *testing.T) {
+	bars := eDay(t, dayCST, nil)
+	c := cfgE()
+	edge := ctms(t, dayCST, "08:36") + int64(c.SignalMaxAgeMin)*minuteMs
+	in := mustOne(t, Evaluate(bars, edge, c, State{}))
+	if in.Side != SideLong || in.SignalClose != ctms(t, dayCST, "08:36")-1 {
+		t.Fatalf("intent at age == limit: %+v", in)
+	}
+	wantRefusal(t, Evaluate(bars, edge+1, c, State{}), CodeStaleSignal, SevBlock)
+}
+
+// BOX-COMPLETING CANDLE: with the shipped 2-minute box on 2-minute candles, the
+// 08:30-08:32 candle ends exactly when the box is final, so it MAY fire the
+// cross. Source `close`: the previous candle (08:28-08:30) closes 25000 <= box
+// high 25020 and this one closes 25030 > 25020; every later candle sits above
+// the edge already, so this is the ONLY cross of the day. Kills `c.End < box.End`
+// -> `<=` in evalE (the real-data backtest cannot tell the two apart).
+func TestE_BoxCompletingCandleMayFire(t *testing.T) {
+	bars := eDay(t, dayCST, map[string]ohlc{"08:31": {25000, 25015, 24992, 25030}})
+	c := cfgE()
+	c.E.Source = SourceClose
+	in := mustOne(t, Evaluate(bars, nowAfter(t, dayCST, "08:31"), c, State{}))
+	if in.Side != SideLong || in.SignalClose != ctms(t, dayCST, "08:32")-1 {
+		t.Fatalf("intent %+v, want the long on the candle closing 08:32", in)
+	}
+	near(t, "entry = the box-completing candle close", in.Entry, 25030)
+}
+
+// TP TICK ROUNDING: the target distance is rounded to the NEAREST tick (only the
+// stop goes outward). Box 36.25 x tp fraction 0.4987 = 18.078 -> nearest 18.0
+// (outward would be 18.25), in both stop-rounding modes. Kills RoundTick ->
+// CeilTick on the target in `distances`, in either branch.
+func TestTPRoundsToNearestTick(t *testing.T) {
+	bars := eDay(t, dayCST, map[string]ohlc{"08:30": {25000, 25020, 24983.75, 25000}, "08:31": {25000, 25010, 24990, 25000}})
+	now := nowAfter(t, dayCST, "08:35")
+	for _, rounding := range []SLRounding{RoundOutward, RoundNearest} {
+		c := cfgE()
+		c.E.TPFraction = 0.4987
+		c.SLRounding = rounding
+		in := mustOne(t, Evaluate(bars, now, c, State{}))
+		near(t, "box", in.BoxSize, 36.25)
+		near(t, "tp distance 18.078 -> nearest tick 18.0", in.TargetDist, 18.0)
+		near(t, "target price", in.Target, in.Entry+18.0)
+	}
+}
