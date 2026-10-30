@@ -97,7 +97,12 @@ export function PepTruthCard({
 
   // The server's one-word evaluator state -> human text. An unknown word (a
   // newer server) prints as itself, never as a guess.
-  const sigKey = sig ? SIGNAL_KEYS[sig as PepSignalState] : undefined
+  // Style E waits for an EMA cross, not a "break": the word names the real wait.
+  const sigKey = sig
+    ? sig === 'waiting_signal' && truth.style === 'E'
+      ? 'sigWaitingSignalE'
+      : SIGNAL_KEYS[sig as PepSignalState]
+    : undefined
   const sigWord = sig ? (sigKey ? pt(sigKey, lang) : sig) : '—'
   const sideShown =
     truth.side && SIDE_STATES.has(sig as PepSignalState)

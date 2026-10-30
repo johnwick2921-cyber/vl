@@ -44,7 +44,7 @@ export const pepStrings = {
   },
   modePepHelp: {
     en: 'Two fixed opening-range rules from the owner’s PDF (style A or E). No mentor rule applies. The AI makes no entries. Pep has no break-even and no trailing, and the entry R:R / minimum-stop checks of Risk Control do not apply (stop and target are the box); daily limits, owner pause and the SIM-only block still do. OFF by default.',
-    zh: '来自 owner PDF 的两套固定开盘区间规则（A 或 E 风格）。不适用任何导师规则。AI 不下入场单。Pep 没有保本和移动止损，风险控制中的入场盈亏比/最小止损检查不适用（止损和止盈就是箱体）；每日限额、所有者暂停和仅 SIM 限制仍然生效。默认关闭。',
+    zh: '来自所有者 PDF 的两套固定开盘区间规则（A 或 E 风格）。不适用任何导师规则。AI 不下入场单。Pep 没有保本和移动止损，风险控制中的入场盈亏比/最小止损检查不适用（止损和止盈就是箱体）；每日限额、所有者暂停和仅 SIM 限制仍然生效。默认关闭。',
     id: 'Dua aturan rentang pembukaan tetap dari PDF pemilik (gaya A atau E). Tidak ada aturan mentor yang berlaku. AI tidak menempatkan entri. Pep tidak punya break-even dan trailing, dan pemeriksaan R:R entri / stop minimum di Risk Control tidak berlaku (stop dan target adalah box); batas harian, jeda pemilik, dan blokir hanya-SIM tetap berlaku. Bawaan MATI.',
   },
   modeDayPlanBlocks: {
@@ -146,7 +146,7 @@ export const pepStrings = {
   },
   pdfSource: {
     en: 'Source: the owner’s PDF “A + E — Full calculation”.',
-    zh: '来源：owner 的 PDF《A + E — 完整计算》。',
+    zh: '来源：所有者的 PDF《A + E — 完整计算》。',
     id: 'Sumber: PDF pemilik “A + E — Perhitungan lengkap”.',
   },
 
@@ -173,9 +173,9 @@ export const pepStrings = {
     id: 'Waktu flat (CT)',
   },
   fFlatTimeHelp: {
-    en: 'The time exit at the last price. Shipped 15:00 CT (the session flat of 14:45 is not used).',
-    zh: '按最新价平仓的时间出场。默认 15:00 CT（不使用 14:45 的交易时段平仓）。',
-    id: 'Keluar waktu di harga terakhir. Bawaan 15:00 CT (flat sesi 14:45 tidak dipakai).',
+    en: 'The time exit at the last price. Shipped 15:00 CT (the session flat of 14:45 is not used). On a shortened CME day the flat is pulled in to 5 minutes before the close (12:10 CT for a 12:15 close) and no entry is taken from then on; a time you saved earlier is kept.',
+    zh: '按最新价平仓的时间出场。默认 15:00 CT（不使用 14:45 的交易时段平仓）。CME 缩短交易日会提前到收盘前 5 分钟平仓（12:15 收盘则为 12:10 CT），此后不再入场；你保存的更早时间会保留。',
+    id: 'Keluar waktu di harga terakhir. Bawaan 15:00 CT (flat sesi 14:45 tidak dipakai). Pada hari CME yang dipersingkat, flat dimajukan ke 5 menit sebelum penutupan (12:10 CT untuk penutupan 12:15) dan tidak ada entri setelahnya; waktu yang lebih awal yang Anda simpan tetap dipakai.',
   },
   fTick: { en: 'Tick size', zh: '最小跳动点', id: 'Ukuran tick' },
   fTickHelp: {
@@ -303,7 +303,7 @@ export const pepStrings = {
   fSignalSource: { en: 'Signal source', zh: '信号来源', id: 'Sumber sinyal' },
   fSignalSourceHelp: {
     en: 'ema (owner ruling, shipped): the EMA crosses the box edge. close: the candle CLOSE crosses the edge.',
-    zh: 'ema（owner 裁定，默认）：EMA 穿过区间边缘。close：K 线收盘价穿过边缘。',
+    zh: 'ema（所有者裁定，默认）：EMA 穿过区间边缘。close：K 线收盘价穿过边缘。',
     id: 'ema (keputusan pemilik, bawaan): EMA melewati tepi kotak. close: HARGA PENUTUPAN candle melewati tepi.',
   },
   fWarmup: {
@@ -386,6 +386,11 @@ export const pepStrings = {
     en: 'waiting for a break',
     zh: '等待突破',
     id: 'menunggu breakout',
+  },
+  sigWaitingSignalE: {
+    en: 'waiting for an EMA cross',
+    zh: '等待 EMA 穿越',
+    id: 'menunggu persilangan EMA',
   },
   sigSignal: {
     en: 'signal — entry being sent',
@@ -482,6 +487,12 @@ export const pepStrings = {
     zh: 'pep 止盈 {price}',
     id: 'pep sasaran {price}',
   },
+  staleSince: {
+    en: ' · stale since {t} CT',
+    zh: ' · 自 {t} CT 起数据过期',
+    id: ' · basi sejak {t} CT',
+  },
+  staleUnknown: { en: ' · STALE', zh: ' · 数据过期', id: ' · BASI' },
   truthOverlayNote: {
     en: 'pep box lines: {symbol}{stale}',
     zh: 'pep 区间线：{symbol}{stale}',

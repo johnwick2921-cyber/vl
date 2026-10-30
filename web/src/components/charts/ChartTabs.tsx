@@ -11,6 +11,7 @@ import { AdvancedChart } from './AdvancedChart'
 import { useLanguage } from '../../contexts/LanguageContext'
 import { t } from '../../i18n/translations'
 import { pt } from '../../i18n/pep-translations'
+import { pepStaleMark } from '../pep/pepOverlays'
 import { chartTabs, ts } from '../../i18n/strategy-translations'
 import { BarChart3, CandlestickChart, ChevronDown, Search } from 'lucide-react'
 import { motion, AnimatePresence } from 'framer-motion'
@@ -548,7 +549,7 @@ export function ChartTabs({
           {pepOnThisTab
             ? pt('truthOverlayNote', language, {
                 symbol: pepSymbol ?? '',
-                stale: mentorStaleMark(pepStaleSinceMs),
+                stale: pepStaleMark(pepStaleSinceMs, language),
               })
             : pt('truthOverlayHidden', language, {
                 symbol: pepSymbol || '?',

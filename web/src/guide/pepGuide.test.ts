@@ -315,6 +315,25 @@ describe('mentor-only notes say "mentor or pep" where it is true', () => {
     const flatCard = card('pep.pep_flat_time_ct').trader
     expect(flatCard).toContain(`${margin} minutes before the close, ${hhmm} CT`)
     expect(flatCard).toContain(`${close} CT close`)
+    // every distinct close in the calendar is worded with ITS flat (re-review 6:
+    // the guide named 12:15 only and Labor Day closed at 12:00).
+    const closes = new Set<string>(
+      (
+        JSON.parse(repo('kernel/session_calendar.json')).dates as {
+          close_ct?: string
+        }[]
+      )
+        .map((d) => d.close_ct)
+        .filter((c): c is string => !!c)
+    )
+    expect(closes.size).toBeGreaterThan(1)
+    for (const c of closes) {
+      const [ch, cm] = c.split(':').map(Number)
+      const f = ch * 60 + cm - margin
+      const t = `${String(Math.floor(f / 60)).padStart(2, '0')}:${String(f % 60).padStart(2, '0')}`
+      expect(flatCard, `${c} close`).toContain(`${c} CT close`)
+      expect(flatCard, `${c} flat`).toContain(`${t} CT`)
+    }
   })
   it('the EMA candle clamp sentence matches the resolver (1..60, non-divisors run the shipped default)', () => {
     expect(goSrc).toMatch(/"pep_e_ema_tf_min",[^\n]*PepEEMATFDefault, 1, 60\)/)

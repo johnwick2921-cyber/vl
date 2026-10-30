@@ -65,7 +65,7 @@ export const PEP_KNOBS: KnobSpec[] = [
     range:
       '1 to 10 (hard ceiling 10: a bigger saved number is clamped and logged, never honoured)',
     systemDefault: '6',
-    recommended: `6: the owner’s shipped default (2026-10-30, “keep default E 6”), the PDF’s headline size. SIM only. The plan measured style A’s full-box stop at about $867 median and $2,439 worst per losing trade at 6 MNQ (PEP-PLAN-1029): size it against your daily limit.`,
+    recommended: `6: the owner’s shipped default (2026-10-30, “keep default E 6”), the PDF’s headline size. SIM only. From the 2026-10-30 integrated backtest (style A, 110 traded days, 46 of them stopped out; pep-backtest-integrated-1030) a full-box stop cost $832 median and $1,959 worst per losing trade at 6 MNQ ($12 a point); the widest box in that data, 244.5 points on 2026-03-02, would have cost $2,934 had it been stopped. Size it against your daily limit.`,
     whenToTouch: 'When you decide the size after watching SIM days.',
     perSession: ONE_SAVE,
   }),
@@ -88,7 +88,7 @@ export const PEP_KNOBS: KnobSpec[] = [
     where: SHARED,
     what: 'The time exit: any pep position still open is flattened at the last price.',
     trader:
-      'This is pep’s own flat, not the session flat of 14:45 (which pep does not use). It must be after the box start or the shipped pair runs. On a shortened CME day (the session calendar: the day after Thanksgiving, Christmas Eve, 12:15 CT close) the flat is pulled in to 5 minutes before the close, 12:10 CT, and no entry is taken from then on; the card shows that time. A flat time you saved earlier than that is kept.',
+      'This is pep’s own flat, not the session flat of 14:45 (which pep does not use). It must be after the box start or the shipped pair runs. On a shortened CME day (the session calendar: the day after Thanksgiving and Christmas Eve, 12:15 CT close; Labor Day 2026, 12:00 CT close) the flat is pulled in to 5 minutes before the close, 12:10 CT (11:55 CT for a 12:00 CT close), and no entry is taken from then on; the card shows that time. A flat time you saved earlier than that is kept.',
     consumer: CONSUMER,
     range: 'HH:MM after the box start, America/Chicago',
     systemDefault: '15:00',
@@ -162,7 +162,7 @@ export const PEP_KNOBS: KnobSpec[] = [
     consumer: CONSUMER,
     range: '0 to 100000; 0 = OFF',
     systemDefault: 'off (0)',
-    recommended: `OFF to match the PDF; the plan measured the stored A boxes at about 80 pts median and 203 pts worst, so a limit is the risk dial — PEP-PLAN-1029.`,
+    recommended: `OFF to match the PDF; the 2026-10-30 integrated backtest (style A, 110 traded days) measured the stored boxes at 80.0 pts median, 128.5 pts 90th percentile and 244.5 pts widest (2026-03-02), so a limit is the risk dial — pep-backtest-integrated-1030.`,
     whenToTouch:
       'When a single full-box stop is larger than the loss you can accept.',
     perSession: ONE_SAVE,
@@ -440,7 +440,7 @@ export const pep: GuideSection = {
         ],
         [
           'The 15:00 CT flat',
-          'pep’s own time exit (pep_flat_time_ct), checked every minute on the wall clock, not only on a bar: it cancels any stray resting order of the trader, then closes the position at market through the trader close path (that close cancels the native stop and target bracket afterwards, as the existing end-of-day flat does), and checks flatness against the broker on the next beat for 15 minutes; a position still open after 3 attempts raises a P0 alert. The session flat at 14:45 CT never acts on a pep trader. No new entry is admitted at or after the flat time (pep_after_flat_time). On a shortened day (12:15 CT close in the session calendar) the flat time is 12:10 CT, 5 minutes before the halt: a fixed safety margin, not a setting, so the flat is never sent into a closed market.',
+          'pep’s own time exit (pep_flat_time_ct), checked every minute on the wall clock, not only on a bar: it cancels any stray resting order of the trader, then closes the position at market through the trader close path (that close cancels the native stop and target bracket afterwards, as the existing end-of-day flat does), and checks flatness against the broker on the next beat for 15 minutes; a position still open after 3 attempts raises a P0 alert. The session flat at 14:45 CT never acts on a pep trader. No new entry is admitted at or after the flat time (pep_after_flat_time). On a shortened day (a 12:15 CT close in the session calendar gives 12:10 CT; a 12:00 CT close gives 11:55 CT) the flat time is 5 minutes before the halt: a fixed safety margin, not a setting, so the flat is never sent into a closed market.',
         ],
       ],
     },
@@ -495,7 +495,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'Where to set it' },
     {
       kind: 'p',
-      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared numbers, then a Style A tab and a Style E tab. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open and after the flat time.',
+      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared numbers, then a Style A tab and a Style E tab. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open, while the flat is closing it, and after the flat time. A day with no evaluation yet (a weekend, a holiday, before the first bar) shows no box, no refusal and “no evaluation yet”, never an earlier day’s; on a style E trader the waiting state reads “waiting for an EMA cross”, on style A “waiting for a break”. A chart line from a stale read carries the stale mark in your language.',
     },
     { kind: 'h', text: 'Every number is a setting' },
     {

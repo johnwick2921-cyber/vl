@@ -11,9 +11,10 @@ import {
   conflictKey,
   fmtCountdown,
 } from './PepTruthCard'
-import { pt } from '../../i18n/pep-translations'
+import { pt, pepStrings } from '../../i18n/pep-translations'
 import { ModeChip, dashboardMode } from './ModeChip'
-import { pepChartLines, PEP_COLOR } from './pepOverlays'
+import { pepChartLines, pepStaleMark, PEP_COLOR } from './pepOverlays'
+import { mentorStaleMark } from '../charts/chartOverlays'
 import { usePepTruth } from './usePepTruth'
 import {
   GOLDEN_AFTER_FLAT,
@@ -78,7 +79,7 @@ describe('PepTruthCard', () => {
       <PepTruthCard truth={g(GOLDEN_WAITING_SIGNAL)} language="en" />
     )
     expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
-      'waiting for a break'
+      'waiting for an EMA cross'
     )
     a.unmount()
     render(<PepTruthCard truth={g(GOLDEN_POSITION_OPEN)} language="en" />)
@@ -311,6 +312,68 @@ describe('pepChartLines', () => {
   it('marks every line when the read is stale', () => {
     const lines = pepChartLines(base, Date.UTC(2026, 9, 30, 15, 7))
     expect(lines[0].label).toContain('stale since 10:07 CT')
+  })
+})
+
+// Re-review 6, P3: the stale suffix was the mentor's English text glued onto a
+// translated label, in the chart lines and in the overlay note.
+// Mutant: build the stale mark with mentorStaleMark in pepChartLines -> the zh/id
+// rows below are RED.
+describe('pep stale mark is localised', () => {
+  const since = Date.UTC(2026, 9, 30, 15, 7)
+  it('is byte-identical to the mentor mark in English', () => {
+    expect(pepStaleMark(since, 'en')).toBe(mentorStaleMark(since))
+    expect(pepStaleMark(0, 'en')).toBe(mentorStaleMark(0))
+    expect(pepStaleMark(undefined, 'en')).toBe('')
+  })
+  it('carries no English on a zh or id chart line', () => {
+    for (const lang of ['zh', 'id'] as const) {
+      const mark = pepStaleMark(since, lang)
+      expect(mark).toContain('10:07')
+      expect(mark).not.toMatch(/stale/i)
+      for (const l of pepChartLines(base, since, lang))
+        expect(l.label).not.toMatch(/stale/i)
+      expect(pepStaleMark(0, lang)).not.toMatch(/stale/i)
+    }
+  })
+})
+
+// Style E waits for an EMA cross, never a "break" (re-review 6, P3).
+// Mutant: always use sigWaitingSignal -> the style E row is RED.
+describe('the waiting word names the real wait', () => {
+  it('style A waits for a break, style E for an EMA cross', () => {
+    const e = render(
+      <PepTruthCard
+        truth={{ ...g(GOLDEN_WAITING_SIGNAL), style: 'E' }}
+        language="en"
+      />
+    )
+    expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
+      'waiting for an EMA cross'
+    )
+    e.unmount()
+    render(
+      <PepTruthCard
+        truth={{ ...g(GOLDEN_WAITING_SIGNAL), style: 'A' }}
+        language="en"
+      />
+    )
+    expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
+      'waiting for a break'
+    )
+  })
+  it('the flat-time help mentions the early-close pull-in in all languages', () => {
+    for (const lang of ['en', 'zh', 'id'] as const)
+      expect(pt('fFlatTimeHelp', lang)).toContain('12:10')
+  })
+  // Mutant: restore "owner" in modePepHelp.zh -> RED.
+  it('zh and id text carry no English word "owner"', () => {
+    for (const [key, entry] of Object.entries(pepStrings))
+      for (const lang of ['zh', 'id'] as const)
+        expect(
+          { key, lang, bad: /owner/i.test(entry[lang]) },
+          `${key}.${lang}`
+        ).toMatchObject({ bad: false })
   })
 })
 

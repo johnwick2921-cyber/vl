@@ -7,9 +7,27 @@
 import type { Language } from '../../i18n/translations'
 import { pt } from '../../i18n/pep-translations'
 import type { PepTruth } from '../../lib/api/traders'
-import { mentorStaleMark, type ChartLineSpec } from '../charts/chartOverlays'
+import type { ChartLineSpec } from '../charts/chartOverlays'
 
 export const PEP_COLOR = '#4FC3F7' // pep sky blue — distinct from mentor amber and order lines
+
+/** The stale mark a pep line carries, in the UI language. The English text is
+ * byte-identical to the mentor's mentorStaleMark (pinned); zh and id used to get
+ * that English suffix glued to a translated label. */
+export function pepStaleMark(
+  staleSinceMs: number | undefined,
+  lang: Language = 'en'
+): string {
+  if (staleSinceMs === undefined) return ''
+  if (!(staleSinceMs > 0)) return pt('staleUnknown', lang)
+  const t = new Date(staleSinceMs).toLocaleTimeString('en-US', {
+    hour12: false,
+    hour: '2-digit',
+    minute: '2-digit',
+    timeZone: 'America/Chicago',
+  })
+  return pt('staleSince', lang, { t })
+}
 
 const fmt = (n: number) => (Number.isInteger(n) ? String(n) : n.toFixed(2))
 
@@ -19,7 +37,7 @@ export function pepChartLines(
   lang: Language = 'en'
 ): ChartLineSpec[] {
   if (!truth || !truth.enabled) return []
-  const stale = mentorStaleMark(staleSinceMs)
+  const stale = pepStaleMark(staleSinceMs, lang)
   const out: ChartLineSpec[] = []
   const b = truth.box
   if (b && b.drawn && b.high > 0 && b.low > 0) {

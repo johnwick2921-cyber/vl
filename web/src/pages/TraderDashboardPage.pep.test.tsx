@@ -150,7 +150,7 @@ describe('dashboard: pep', () => {
       'high 25100.50 · low 25020.25 · size 80.25'
     )
     expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
-      'waiting for a break'
+      'waiting for an EMA cross'
     )
     expect(screen.getByTestId('pep-truth-trades')).toHaveTextContent('0 / 1')
     expect(screen.getByTestId('pep-truth-flat')).toHaveTextContent(
@@ -225,7 +225,7 @@ describe('dashboard: pep', () => {
       'high 25100.50'
     )
     expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
-      'waiting for a break'
+      'waiting for an EMA cross'
     )
     expect(hooks.chartLevels).toEqual([])
     expect(screen.getByTestId('pep-overlay-note')).toHaveTextContent(
