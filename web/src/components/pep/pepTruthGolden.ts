@@ -24,3 +24,6 @@ export const GOLDEN_OFF = `{"enabled":false,"mode":"ai","box":{"high":0,"low":0,
 
 /** Mentor AND pep saved ON: the trader was refused at start. */
 export const GOLDEN_CONFLICT = `{"enabled":false,"mode":"conflict","conflict":{"code":"pep_mode_conflict_mentor","message":"Pep and mentor mode are both ON."},"box":{"high":0,"low":0,"size":0,"drawn":false},"trades_today":0,"position_open":false,"flat_countdown_sec":0}`
+
+/** Pep AND the Day Plan saved ON: the trader was refused at start. */
+export const GOLDEN_CONFLICT_DAY_PLAN = `{"enabled":false,"mode":"conflict","conflict":{"code":"pep_mode_conflict_day_plan","message":"pep mode and the day plan are both ON in this strategy"},"box":{"high":0,"low":0,"size":0,"drawn":false},"trades_today":0,"position_open":false,"flat_countdown_sec":0}`

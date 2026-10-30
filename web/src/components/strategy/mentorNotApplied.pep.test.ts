@@ -14,7 +14,7 @@ const knob = (origin: string, effective: unknown): EffectiveKnob => ({
   resolved: true,
 })
 
-describe('not-applied caveat reads the mode marker from the server origin', () => {
+describe('not-applied caveat reads only the mentor marker from the server origin', () => {
   it('still reads the mentor marker', () => {
     expect(
       mentorNotAppliedCaveat(
@@ -25,16 +25,18 @@ describe('not-applied caveat reads the mode marker from the server origin', () =
       )
     ).toBe('not applied while mentor mode is ON')
   })
-  // Mutant: drop the pep_enabled marker -> RED.
-  it('reads the pep marker too, verbatim from the resolver', () => {
+  // No producer emits a pep marker (store/trader grep: only "mentor_mode on"),
+  // so the editor reads none: a hand-built pep origin must NOT light a caveat
+  // the server never wrote. Mutant: re-add the pep_enabled branch -> RED.
+  it('does not read a pep marker that no resolver row emits', () => {
     expect(
       mentorNotAppliedCaveat(
         knob(
           'pep_enabled on — saved true, not used',
-          'not applied while pep mode is ON (no break-even, no trailing)'
+          'not applied while pep mode is ON'
         )
       )
-    ).toBe('not applied while pep mode is ON (no break-even, no trailing)')
+    ).toBeNull()
   })
   it('renders nothing for a plain AI strategy or a missing row', () => {
     expect(mentorNotAppliedCaveat(knob('saved value', true))).toBeNull()

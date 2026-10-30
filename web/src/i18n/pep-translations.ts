@@ -43,9 +43,9 @@ export const pepStrings = {
     id: 'Evaluator mentor yang menempatkan entri; AI tidak menempatkan entri.',
   },
   modePepHelp: {
-    en: 'Two fixed opening-range rules from the owner’s PDF (style A or E). No mentor rule applies. OFF by default.',
-    zh: '来自 owner PDF 的两套固定开盘区间规则（A 或 E 风格）。不适用任何导师规则。默认关闭。',
-    id: 'Dua aturan rentang pembukaan tetap dari PDF pemilik (gaya A atau E). Tidak ada aturan mentor yang berlaku. Bawaan MATI.',
+    en: 'Two fixed opening-range rules from the owner’s PDF (style A or E). No mentor rule applies. The AI makes no entries. Pep has no break-even and no trailing, and the entry R:R / minimum-stop checks of Risk Control do not apply (stop and target are the box); daily limits, owner pause and the SIM-only block still do. OFF by default.',
+    zh: '来自 owner PDF 的两套固定开盘区间规则（A 或 E 风格）。不适用任何导师规则。AI 不下入场单。Pep 没有保本和移动止损，风险控制中的入场盈亏比/最小止损检查不适用（止损和止盈就是箱体）；每日限额、所有者暂停和仅 SIM 限制仍然生效。默认关闭。',
+    id: 'Dua aturan rentang pembukaan tetap dari PDF pemilik (gaya A atau E). Tidak ada aturan mentor yang berlaku. AI tidak menempatkan entri. Pep tidak punya break-even dan trailing, dan pemeriksaan R:R entri / stop minimum di Risk Control tidak berlaku (stop dan target adalah box); batas harian, jeda pemilik, dan blokir hanya-SIM tetap berlaku. Bawaan MATI.',
   },
   modeDayPlanBlocks: {
     en: 'Pep cannot be chosen while the Day Plan is ON (the server refuses the combination). Turn the Day Plan off first.',
@@ -422,10 +422,20 @@ export const pepStrings = {
     zh: '尚未评估',
     id: 'belum dievaluasi',
   },
-  truthConflict: {
+  truthConflictMentor: {
     en: 'Mode conflict: Mentor and Pep are both ON. The trader was NOT started and will not trade until the strategy is fixed.',
     zh: '模式冲突：导师和 Pep 同时开启。该交易员未启动，策略修复前不会交易。',
     id: 'Konflik mode: Mentor dan Pep sama-sama AKTIF. Trader TIDAK dijalankan dan tidak akan trading sampai strategi diperbaiki.',
+  },
+  truthConflictDayPlan: {
+    en: 'Mode conflict: Pep and the Day Plan are both ON. The trader was NOT started and will not trade until the strategy is fixed.',
+    zh: '模式冲突：Pep 和日计划同时开启。该交易员未启动，策略修复前不会交易。',
+    id: 'Konflik mode: Pep dan Rencana Harian sama-sama AKTIF. Trader TIDAK dijalankan dan tidak akan trading sampai strategi diperbaiki.',
+  },
+  truthConflictOther: {
+    en: 'Mode conflict: two trading modes are both ON. The trader was NOT started and will not trade until the strategy is fixed.',
+    zh: '模式冲突：两种交易模式同时开启。该交易员未启动，策略修复前不会交易。',
+    id: 'Konflik mode: dua mode trading sama-sama AKTIF. Trader TIDAK dijalankan dan tidak akan trading sampai strategi diperbaiki.',
   },
   chipConflict: {
     en: 'Mode conflict',

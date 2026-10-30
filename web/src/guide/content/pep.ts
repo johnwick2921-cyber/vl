@@ -364,6 +364,10 @@ export const pep: GuideSection = {
           body: 'Pep is a trading mode of its own: its own code (kernel/pep), its own settings (the root "pep" block of the strategy) and no mentor rule applies to it. A strategy is exactly one of AI/planner, mentor or pep. Saving a strategy with pep ON together with mentor mode, or together with the day plan, is refused with a named error (pep_mode_conflict_mentor / pep_mode_conflict_day_plan); the strategy store refuses it for every writer, not only the Studio. Pep is OFF on every trader until the owner turns it on, and every trade path stays NinjaTrader SIM.',
         },
         {
+          title: 'Which Risk Control settings pep ignores',
+          body: 'With pep ON the AI places no entry (no LLM call). The AI-only Risk Control knobs do not apply: break-even and trailing (pep has neither; the stop and target sit at NT8 from the entry) and the entry R:R / minimum-stop-vs-ATR checks (pep’s stop and target ARE the box). The Risk Control page does not grey them out for pep, so read them as inactive. Still enforced for pep: daily guardrails, the session breaker, the owner pause, maintenance hold, feed-down, data-integrity, contract roll and the SIM-only block.',
+        },
+        {
           title: 'Build status of this page',
           body: 'This build carries the settings (stored, validated, clamped and logged, shown in the effective-settings rows), the pure evaluator, the stored-history backtest, the Studio controls (Trading mode selector and Pep mode panel) and the dashboard (mode chip, Pep card, box on the chart). The order path that places a pep trade and the 15:00 flat on a live position ship in the pep trader wave. Until that wave is merged, turning pep ON places no order. The integrator updates this callout when it lands.',
         },

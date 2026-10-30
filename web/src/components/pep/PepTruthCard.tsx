@@ -52,6 +52,15 @@ const SIDE_STATES = new Set<PepSignalState>([
   'flat_pending',
 ])
 
+// The server has two conflict codes (store/pep.go PepConflictMentor /
+// PepConflictDayPlan). The headline names the modes that are really both ON; an
+// unknown (newer) code gets the generic text, never the mentor wording.
+export function conflictKey(code: string | undefined): PepKey {
+  if (code === 'pep_mode_conflict_mentor') return 'truthConflictMentor'
+  if (code === 'pep_mode_conflict_day_plan') return 'truthConflictDayPlan'
+  return 'truthConflictOther'
+}
+
 export function PepTruthCard({
   truth,
   stale = false,
@@ -74,7 +83,7 @@ export function PepTruthCard({
           className="rounded-lg border p-3 text-xs"
           style={{ borderColor: 'var(--vl-short)', color: 'var(--vl-short)' }}
         >
-          {pt('truthConflict', lang)}
+          {pt(conflictKey(truth.conflict?.code), lang)}
           {truth.conflict?.message ? ` — ${truth.conflict.message}` : ''}
         </div>
       )

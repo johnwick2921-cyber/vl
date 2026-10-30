@@ -5,7 +5,12 @@ import type {
   PepSignalState,
   PepTruth,
 } from '../../lib/api/traders'
-import { PepTruthCard, SIGNAL_KEYS, fmtCountdown } from './PepTruthCard'
+import {
+  PepTruthCard,
+  SIGNAL_KEYS,
+  conflictKey,
+  fmtCountdown,
+} from './PepTruthCard'
 import { pt } from '../../i18n/pep-translations'
 import { ModeChip, dashboardMode } from './ModeChip'
 import { pepChartLines, PEP_COLOR } from './pepOverlays'
@@ -13,6 +18,7 @@ import { usePepTruth } from './usePepTruth'
 import {
   GOLDEN_AFTER_FLAT,
   GOLDEN_CONFLICT,
+  GOLDEN_CONFLICT_DAY_PLAN,
   GOLDEN_NO_DATA,
   GOLDEN_OFF,
   GOLDEN_POSITION_OPEN,
@@ -161,6 +167,48 @@ describe('PepTruthCard', () => {
     render(<PepTruthCard truth={g(GOLDEN_CONFLICT)} language="en" />)
     expect(screen.getByRole('alert')).toHaveTextContent('NOT started')
     expect(screen.getByRole('alert')).toHaveTextContent('both ON')
+  })
+  // Mutant: always print the mentor headline -> the day-plan card says
+  // "Mentor ... both ON" and RED here.
+  it('the conflict headline names the modes that are really both ON', () => {
+    const a = render(
+      <PepTruthCard truth={g(GOLDEN_CONFLICT_DAY_PLAN)} language="en" />
+    )
+    const t = screen.getByRole('alert').textContent ?? ''
+    expect(t).toContain('Pep and the Day Plan are both ON')
+    expect(t).not.toContain('Mentor')
+    a.unmount()
+    const b = render(
+      <PepTruthCard
+        truth={{
+          ...g(GOLDEN_CONFLICT),
+          conflict: { code: 'pep_mode_conflict_future', message: '' },
+        }}
+        language="en"
+      />
+    )
+    const u = screen.getByRole('alert').textContent ?? ''
+    expect(u).toContain('two trading modes are both ON')
+    expect(u).not.toContain('Mentor')
+    b.unmount()
+    for (const k of [
+      'truthConflictMentor',
+      'truthConflictDayPlan',
+      'truthConflictOther',
+    ] as const)
+      for (const l of ['en', 'zh', 'id'] as const)
+        expect(pt(k, l).trim(), `${k}.${l}`).not.toBe('')
+    expect(conflictKey('pep_mode_conflict_mentor')).toBe('truthConflictMentor')
+  })
+  // Mutant: drop the Risk Control sentence from modePepHelp -> RED. The UI no
+  // longer reads a "pep_enabled on" marker (no producer emits one), so the
+  // selector help is where the owner learns which AI knobs pep ignores.
+  it('the Pep mode help says which Risk Control settings pep ignores', () => {
+    const en = pt('modePepHelp', 'en')
+    expect(en).toContain('no break-even and no trailing')
+    expect(en).toContain('Risk Control')
+    expect(pt('modePepHelp', 'zh')).toContain('移动止损')
+    expect(pt('modePepHelp', 'id')).toContain('break-even')
   })
   it('renders in id and zh', () => {
     const a = render(<PepTruthCard truth={base} language="id" />)
