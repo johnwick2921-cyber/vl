@@ -1,6 +1,8 @@
 package trader
 
 import (
+	"encoding/json"
+	"strings"
 	"testing"
 	"time"
 
@@ -176,4 +178,101 @@ func TestPepTruthKeepsTheBoxAfterTheTradeIsTaken(t *testing.T) {
 	if got == "" {
 		t.Fatalf("no refusal on the second pass: %+v", tr)
 	}
+}
+
+// ── THE GOLDENS ARE THE SERVER'S SHAPE ──────────────────────────────────────
+//
+// web/src/components/pep/pepTruthGolden.ts was written by hand from the struct
+// tags and had box.drawn:true in states the real server sent drawn:false (lens 6).
+// This pins the two states that matter against the REAL snapshot, taken through
+// the production passes: same key set, same box.drawn, same signal word, same
+// refusal code AND severity, same stop/target/side presence.
+//
+// MUTANT: remove diagBox() from kernel/pep Evaluate's early refusals -> the real
+// box is {drawn:false} while the golden says true -> RED.
+
+func goldenOf(t *testing.T, name string) map[string]any {
+	t.Helper()
+	src := fileText(t, "../web/src/components/pep/pepTruthGolden.ts")
+	i := strings.Index(src, "export const "+name+" = `")
+	if i < 0 {
+		t.Fatalf("golden %s not found", name)
+	}
+	rest := src[i+len("export const "+name+" = `"):]
+	j := strings.Index(rest, "`")
+	var m map[string]any
+	if err := json.Unmarshal([]byte(rest[:j]), &m); err != nil {
+		t.Fatalf("golden %s: %v", name, err)
+	}
+	return m
+}
+
+func sameShape(t *testing.T, name string, real PepTruth, gold map[string]any) {
+	t.Helper()
+	b, _ := json.Marshal(real)
+	var r map[string]any
+	_ = json.Unmarshal(b, &r)
+	for k := range r {
+		if _, ok := gold[k]; !ok {
+			t.Errorf("%s: the real server sends %q, the golden has no such key", name, k)
+		}
+	}
+	for k := range gold {
+		if _, ok := r[k]; !ok {
+			t.Errorf("%s: the golden has %q, the real server does not send it", name, k)
+		}
+	}
+	rb, gb := r["box"].(map[string]any), gold["box"].(map[string]any)
+	if rb["drawn"] != gb["drawn"] {
+		t.Errorf("%s: real box.drawn=%v, golden %v (real box %v)", name, rb["drawn"], gb["drawn"], rb)
+	}
+	if r["signal"] != gold["signal"] {
+		t.Errorf("%s: real signal %v, golden %v", name, r["signal"], gold["signal"])
+	}
+	rr, _ := r["refusals"].([]any)
+	gr, _ := gold["refusals"].([]any)
+	if len(rr) != len(gr) {
+		t.Fatalf("%s: real refusals %v, golden %v", name, rr, gr)
+	}
+	for i := range rr {
+		a, c := rr[i].(map[string]any), gr[i].(map[string]any)
+		if a["code"] != c["code"] || a["severity"] != c["severity"] {
+			t.Errorf("%s: refusal %d real %v/%v, golden %v/%v", name, i, a["code"], a["severity"], c["code"], c["severity"])
+		}
+	}
+}
+
+func TestPepTruthGoldensMatchTheRealSnapshot(t *testing.T) {
+	// position open: the trade is taken and a position row exists; the NEXT pass
+	// is the one the card shows
+	w := newPepWire(t, pepCfgOf("A", 3))
+	pepFeed(t, pepBarsA(t, pepDay, "08:39", pepBreakUp))
+	pepLive(t, 25041)
+	now := pepNow(t)
+	w.at.pepEventPassAt(now)
+	waitSignal(t, w)
+	entry := now.UnixMilli()
+	if err := w.st.Position().Create(&store.TraderPosition{
+		TraderID: w.at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+		Quantity: 3, EntryPrice: 25041, Status: "OPEN", EntryTime: entry, CreatedAt: entry, UpdatedAt: entry,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	w.at.pepEventPassAt(now.Add(time.Minute))
+	tr := w.at.PepTruthSnapshot(now.Add(2 * time.Minute))
+	if tr.Signal != "position_open" {
+		t.Fatalf("setup: signal %q", tr.Signal)
+	}
+	sameShape(t, "GOLDEN_POSITION_OPEN", tr, goldenOf(t, "GOLDEN_POSITION_OPEN"))
+
+	// after the flat time, nothing open, no trade taken
+	w2 := newPepWire(t, pepCfgOf("A", 3))
+	pepFeed(t, pepBarsA(t, pepDay, "15:01", nil))
+	t1501 := ctTimeAt(t, pepDay, "15:01").Add(2 * time.Second)
+	w2.at.pepEventPassAt(t1501)
+	tr2 := w2.at.PepTruthSnapshot(t1501)
+	if tr2.Signal != "after_flat" {
+		t.Fatalf("setup: signal %q (%+v)", tr2.Signal, tr2.Refusals)
+	}
+	sameShape(t, "GOLDEN_AFTER_FLAT", tr2, goldenOf(t, "GOLDEN_AFTER_FLAT"))
 }

@@ -297,4 +297,29 @@ describe('mentor-only notes say "mentor or pep" where it is true', () => {
       `default ${goConst('PepContractsDefault')}, hard ceiling ${goConst('PepContractsCeiling')}`
     )
   })
+  // The shortened-day margin is READ from the Go constant; the guide's "12:10"
+  // follows from the calendar's 12:15 close. MUTANT: change the Go margin ->
+  // RED here until the guide is re-worded (re-review lens 3, P2).
+  it('the early-close flat in the guide is the Go margin before the calendar close', () => {
+    const go = repo('trader/pep_mode.go')
+    const margin = Number(
+      go.match(/pepEarlyCloseMarginMin\s*=\s*(\d+)/)?.[1] ?? NaN
+    )
+    expect(margin).toBeGreaterThan(0)
+    const close = JSON.parse(repo('kernel/session_calendar.json')).dates.find(
+      (d: { date: string }) => d.date === '2026-11-27'
+    ).close_ct as string
+    const [h, m] = close.split(':').map(Number)
+    const flat = h * 60 + m - margin
+    const hhmm = `${String(Math.floor(flat / 60)).padStart(2, '0')}:${String(flat % 60).padStart(2, '0')}`
+    const flatCard = card('pep.pep_flat_time_ct').trader
+    expect(flatCard).toContain(`${margin} minutes before the close, ${hhmm} CT`)
+    expect(flatCard).toContain(`${close} CT close`)
+  })
+  it('the EMA candle clamp sentence matches the resolver (1..60, non-divisors run the shipped default)', () => {
+    expect(goSrc).toMatch(/"pep_e_ema_tf_min",[^\n]*PepEEMATFDefault, 1, 60\)/)
+    const t = card('pep.style_e.pep_e_ema_tf_min').trader
+    expect(t).toContain('does not (7, 8 ...) runs the shipped 2')
+    expect(t).toContain('below 1 runs 1 and above 60 runs 60')
+  })
 })

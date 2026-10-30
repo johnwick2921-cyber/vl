@@ -200,8 +200,8 @@ export function TraderDashboardPage({
   } = usePepTruth(selectedTrader?.trader_id)
   const pepStaleSinceMs = pepStale ? (pep?.last_evaluated_ms ?? 0) : undefined
   const pepLines = useMemo(
-    () => pepChartLines(pep, pepStaleSinceMs),
-    [pep, pepStaleSinceMs]
+    () => pepChartLines(pep, pepStaleSinceMs, language),
+    [pep, pepStaleSinceMs, language]
   )
   // T7 (release #22): every place the evaluator trades — levels, trigger
   // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the

@@ -289,6 +289,25 @@ describe('pepChartLines', () => {
       expect.stringContaining('pep target 25180.75'),
     ])
   })
+  // Mutant: build the label as a hardcoded English template -> RED (zh/id users
+  // saw "pep stop ..." on the chart; re-review lens 6, P3).
+  it('labels the chart lines in the chosen language', () => {
+    const en = pepChartLines(g(GOLDEN_POSITION_OPEN), undefined, 'en')
+    for (const lang of ['zh', 'id'] as const) {
+      const ls = pepChartLines(g(GOLDEN_POSITION_OPEN), undefined, lang)
+      expect(ls).toHaveLength(4)
+      ls.forEach((l, i) => {
+        expect(l.label).not.toBe(en[i].label)
+        expect(l.label).toContain(String(l.price))
+      })
+    }
+    expect(pepChartLines(g(GOLDEN_POSITION_OPEN))[2].label).toBe(
+      'pep stop 25020.25'
+    )
+    expect(
+      pepChartLines(g(GOLDEN_POSITION_OPEN), undefined, 'zh')[2].label
+    ).toBe('pep 止损 25020.25')
+  })
   it('marks every line when the read is stale', () => {
     const lines = pepChartLines(base, Date.UTC(2026, 9, 30, 15, 7))
     expect(lines[0].label).toContain('stale since 10:07 CT')

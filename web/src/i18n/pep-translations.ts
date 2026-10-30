@@ -462,6 +462,26 @@ export const pepStrings = {
     zh: 'pep 区间线已隐藏 — 它们属于 {symbol}，当前图表显示 {chart}',
     id: 'garis kotak pep disembunyikan — milik {symbol}, grafik ini menampilkan {chart}',
   },
+  lineBoxHigh: {
+    en: 'pep box high {price}',
+    zh: 'pep 区间高点 {price}',
+    id: 'pep kotak tinggi {price}',
+  },
+  lineBoxLow: {
+    en: 'pep box low {price}',
+    zh: 'pep 区间低点 {price}',
+    id: 'pep kotak rendah {price}',
+  },
+  lineStop: {
+    en: 'pep stop {price}',
+    zh: 'pep 止损 {price}',
+    id: 'pep batas rugi {price}',
+  },
+  lineTarget: {
+    en: 'pep target {price}',
+    zh: 'pep 止盈 {price}',
+    id: 'pep sasaran {price}',
+  },
   truthOverlayNote: {
     en: 'pep box lines: {symbol}{stale}',
     zh: 'pep 区间线：{symbol}{stale}',
