@@ -302,8 +302,6 @@ func TestPepClaimIsWrittenBeforeTheSend(t *testing.T) {
 // consumes nothing, and the SAME signal is entered on the next pass once the
 // hold clears. (A refusal AFTER the claim and before the wire releases the slot:
 // TestPepSizingDriftIsRefusedNotShrunk. A refusal after the wire stays consumed.)
-// MUTANT: move the claim ahead of the admission chain -> the held pass burns the
-// day (counted 1) -> RED.
 func TestPepAdmissionRefusalConsumesNothing(t *testing.T) {
 	w := newPepWire(t, pepCfgOf("A", 3))
 	dir := withMaintenanceDir(t) // after the harness (it installs its own): this one is the live hold dir
