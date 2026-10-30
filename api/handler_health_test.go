@@ -593,9 +593,11 @@ func TestHealthDataTruthScopeFollowsTheReadersAndAccounts(t *testing.T) {
 	if ds, _ := tp["data_truth_scopes"].(map[string]any); ds["broker_agreement"] == nil {
 		t.Fatalf("the account scope must ride data_truth_scopes for the banner: %+v", tp)
 	}
-	// an account block next to a mentor-only block: the widest honest name wins
+	// an account block next to a mentor-only block: neither single-scope sentence is
+	// true of both (an AI trader on the blocked account is paused too), so the scope
+	// is "mixed" (re-review P2)
 	on, readers = true, []string{datatruth.ReaderMentor}
-	tp = expect("mentor + account", ntTrader.PausedScopeMentor)
+	tp = expect("mentor + account", ntTrader.PausedScopeMixed)
 	if dr, _ := tp["data_truth_readers"].(map[string]any); dr["cross_frame"] == nil {
 		t.Fatalf("the readers must ride data_truth_readers: %+v", tp)
 	}
@@ -605,4 +607,51 @@ func TestHealthDataTruthScopeFollowsTheReadersAndAccounts(t *testing.T) {
 		return true, "wick", []string{datatruth.ReaderMentor}, nil
 	})
 	expect("mentor from one check + ai from another", ntTrader.PausedScopeAll)
+}
+
+// Round 3 re-review P3: the quiet boot wait refuses EVERY NT8 trader's new entries
+// for up to 10 minutes after a deploy, and /api/health used to say paused:false
+// for all of it. Driven through the real handleHealth.
+//
+// MUTANT: drop the healthDataTruthStarting branch in handleHealth -> RED.
+func TestHealthSaysPausedDuringTheDataTruthBootWait(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	at := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())
+	t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(at.Add(-48*time.Hour).UnixMilli(), at.UnixMilli(),
+		[]ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26"}}))
+	prev, prevStart := healthNow, healthDataTruthStarting
+	healthNow = func() time.Time { return at }
+	t.Cleanup(func() { healthNow, healthDataTruthStarting = prev, prevStart })
+	starting := true
+	healthDataTruthStarting = func(time.Time) bool { return starting }
+	get := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		return body["trading_paused"].(map[string]any)
+	}
+	tp := get()
+	rs, _ := tp["reasons"].([]any)
+	found := false
+	for _, r := range rs {
+		if r == "data_truth_starting" {
+			found = true
+		}
+	}
+	if tp["paused"] != true || !found || tp["scope"] != ntTrader.PausedScopeAll {
+		t.Fatalf("the boot wait refuses every entry, health must say so: %+v", tp)
+	}
+	starting = false
+	if tp = get(); tp["paused"] == true {
+		t.Fatalf("after the wait nothing is paused here: %+v", tp)
+	}
 }

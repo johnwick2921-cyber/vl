@@ -182,7 +182,14 @@ type episode struct {
 	scopes    []string // who the latest block was for (empty = the whole symbol)
 	readers   []string // which entry paths the latest block concerned (empty = every path)
 	widenN    int      // how many times this episode's scope grew (each pushed once)
-	clearPush bool     // the "resolved" owner push for the last clear has gone out
+	// hw* is the episode's HIGH-WATER scope: the union of every scope the block has
+	// had since it opened (all=true: it has been for everyone). A widening is judged
+	// against it, not against the latest call, so a scope that flaps (account B in,
+	// out, in) pushes once for B and not once per re-entry (re-review P3: that
+	// burned the 3-per-hour owner-push budget the clear push shares).
+	hwReaders, hwScopes       []string
+	hwReadersAll, hwScopesAll bool
+	clearPush                 bool // the "resolved" owner push for the last clear has gone out
 }
 
 type check struct {
@@ -204,7 +211,41 @@ var (
 	// resumeNotes: per check, how entries come back when it is NOT "the data
 	// measures clear by itself" (fill_price waits for the owner's acknowledgement).
 	resumeNotes = map[string]string{}
+	// resumeFuncs: like resumeNotes but built for the standing block (its symbol and
+	// scopes), for a how-to that must name the exact thing to run (fill_price's
+	// acknowledgement URL). Wins over resumeNotes. Called with mu held: a func must
+	// not call back into this package.
+	resumeFuncs = map[string]func(symbol string, scopes []string) string{}
 )
+
+// PushRunes is the most an owner-push alert may carry. ownerpush.Scrub cuts at 600
+// runes and ends the text with an ellipsis, so an alert longer than that loses its
+// TAIL - the remedy and the resume note, the part the owner acts on. Evaluate
+// composes every push to fit (the log line keeps the full text) and a pin runs the
+// real alerts through ownerpush.Scrub.
+const PushRunes = 585
+
+// SetResumeFunc is SetResumeNote for a tail that depends on the block (see
+// resumeFuncs).
+func SetResumeFunc(checkName string, fn func(symbol string, scopes []string) string) {
+	mu.Lock()
+	resumeFuncs[checkName] = fn
+	mu.Unlock()
+}
+
+// composePush fits head + why + tail into PushRunes by clipping WHY (the detail, in
+// full in the log line and on /api/health) and never the tail (the remedy).
+func composePush(head, why, tail string) string {
+	room := PushRunes - len([]rune(head)) - len([]rune(tail))
+	const minWhy = 40
+	if room < minWhy {
+		room = minWhy
+	}
+	if r := []rune(why); len(r) > room {
+		why = strings.TrimSpace(string(r[:room-1])) + "…"
+	}
+	return head + why + tail
+}
 
 // SetResumeNote overrides, for one check, the "entries resume automatically when
 // the data measures clear" tail of the owner alert. A check whose pause only ends
@@ -308,7 +349,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		vs[i] = verdict{name: n, why: why, blocked: b, readers: rd, scopes: sc}
 	}
 
-	type alert struct{ kind, text string }
+	type alert struct{ kind, text, push string }
 	var alerts []alert
 	mu.Lock()
 	notify := notifier
@@ -321,8 +362,8 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		}
 		if v.blocked {
 			blocked = true
-			resume := resumeTailLocked(v.name) // mu is held here
-			continued := false                 // an episode that was already standing (open, or a merged flap)
+			resume := resumeTailLocked(v.name, symbol, v.scopes) // mu is held here
+			continued := false                                   // an episode that was already standing (open, or a merged flap)
 			if !ep.open && ep.clearedMs != 0 && now.UnixMilli()-ep.clearedMs < ReopenMergeWindow.Milliseconds() {
 				// a flap: the same episode re-opening, not a new one
 				ep.open = true
@@ -333,10 +374,16 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 			} else if !ep.open {
 				ep.open, ep.sinceMs, ep.detail = true, now.UnixMilli(), v.why
 				ep.widenN = 0
+				ep.hwReaders, ep.hwReadersAll = nil, len(v.readers) == 0
+				ep.hwScopes, ep.hwScopesAll = nil, len(v.scopes) == 0
+				ep.hwReaders = append(ep.hwReaders, v.readers...)
+				ep.hwScopes = append(ep.hwScopes, v.scopes...)
 				c.episodes++
 				alerts = append(alerts, alert{
 					kind: fmt.Sprintf("data_truth_%s|%s|%d", v.name, symbol, ep.sinceMs),
 					text: fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: %s (exits, stops and protection are unaffected; %s)", symbol, scopeNote(v.readers, v.scopes), v.name, v.why, resume),
+					push: composePush(fmt.Sprintf("DATA TRUTH: new entries PAUSED for %s%s - %s: ", symbol, scopeNote(v.readers, v.scopes), v.name), v.why,
+						fmt.Sprintf(" (exits, stops and protection are unaffected; %s)", resume)),
 				})
 			} else {
 				continued = true
@@ -345,14 +392,26 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 			// block that opened for the mentor readers only and then widened to every
 			// reader pushed once, labelled "(mentor traders)", while the AI path was
 			// paused silently). One push per widening, deduped on the new scope.
-			if continued && widens(ep.readers, ep.scopes, v.readers, v.scopes) {
+			if continued && hwWidens(ep, v.readers, v.scopes) {
+				wasR, wasS := ep.hwReaders, ep.hwScopes
+				if ep.hwReadersAll {
+					wasR = nil
+				}
+				if ep.hwScopesAll {
+					wasS = nil
+				}
 				ep.widenN++
 				alerts = append(alerts, alert{
 					kind: fmt.Sprintf("data_truth_%s|%s|%d|widen%d", v.name, symbol, ep.sinceMs, ep.widenN),
-					text: fmt.Sprintf("DATA TRUTH: the pause for %s WIDENED - %s: new entries are now paused for %s (was %s): %s (exits, stops and protection are unaffected; %s)",
-						symbol, v.name, scopeWords(v.readers, v.scopes), scopeWords(ep.readers, ep.scopes), v.why, resume),
+					text: fmt.Sprintf("DATA TRUTH: the pause for %s WIDENED - %s: new entries are now paused, scope: %s (it had been: %s): %s (exits, stops and protection are unaffected; %s)",
+						symbol, v.name, scopeWords(v.readers, v.scopes), scopeWords(wasR, wasS), v.why, resume),
+					push: composePush(fmt.Sprintf("DATA TRUTH: the pause for %s WIDENED - %s: new entries are now paused, scope: %s (it had been: %s): ",
+						symbol, v.name, scopeWords(v.readers, v.scopes), scopeWords(wasR, wasS)), v.why,
+						fmt.Sprintf(" (exits, stops and protection are unaffected; %s)", resume)),
 				})
 			}
+			ep.hwReaders, ep.hwReadersAll = unionHW(ep.hwReaders, ep.hwReadersAll, v.readers)
+			ep.hwScopes, ep.hwScopesAll = unionHW(ep.hwScopes, ep.hwScopesAll, v.scopes)
 			ep.clearPush = false
 			c.last = v.why
 			ep.detail = v.why
@@ -371,7 +430,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 			ep.clearPush = true
 			alerts = append(alerts, alert{
 				kind: fmt.Sprintf("data_truth_%s|%s|%d|clear", v.name, symbol, ep.sinceMs),
-				text: fmt.Sprintf("DATA TRUTH: %s is clear for %s - the pause that opened %s ended %s and new entries resumed then (no new block in the %d minutes since)",
+				text: fmt.Sprintf("DATA TRUTH: %s is clear for %s - the pause that opened %s ended %s and new entries resumed then (still clear when last checked, %d+ minutes after it cleared)",
 					v.name, symbol, ctClock(ep.sinceMs), ctClock(ep.clearedMs), int(ReopenMergeWindow/time.Minute)),
 			})
 		}
@@ -381,7 +440,11 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	for _, a := range alerts {
 		logger.Warnf("datatruth: %s", a.text)
 		if notify != nil {
-			notify(a.kind, a.text)
+			push := a.push
+			if push == "" {
+				push = a.text
+			}
+			notify(a.kind, push)
 		}
 	}
 	return blocked, reasons
@@ -444,11 +507,28 @@ func scopeWords(readers, scopes []string) string {
 // readersNote is kept for the callers that name readers alone.
 func readersNote(readers []string) string { return scopeNote(readers, nil) }
 
-// widens reports whether the new (readers, scopes) pause strictly more than the
-// old ones: nil readers/scopes mean EVERYONE, so going from a named set to nil, or
-// adding a name, is wider; going narrower or staying equal is not.
-func widens(oldR, oldS, newR, newS []string) bool {
-	return setWidens(oldR, newR) || setWidens(oldS, newS)
+// hwWidens reports whether (readers, scopes) is wider than everything this
+// episode has already been (its high-water scope).
+func hwWidens(ep *episode, readers, scopes []string) bool {
+	return hwSetWidens(ep.hwReaders, ep.hwReadersAll, readers) || hwSetWidens(ep.hwScopes, ep.hwScopesAll, scopes)
+}
+
+func hwSetWidens(hw []string, hwAll bool, nw []string) bool {
+	if hwAll {
+		return false
+	}
+	return setWidens(hw, nw)
+}
+
+// unionHW folds a new set into the high-water set (an empty new set = everyone).
+func unionHW(hw []string, hwAll bool, nw []string) ([]string, bool) {
+	if hwAll {
+		return nil, true
+	}
+	if len(nw) == 0 {
+		return nil, true
+	}
+	return uniqSorted(append(append([]string(nil), hw...), nw...)), false
 }
 
 func setWidens(old, nw []string) bool {
@@ -488,7 +568,12 @@ func uniqSorted(in []string) []string {
 
 // resumeTailLocked is the "how entries come back" clause of the owner alert. The
 // caller holds mu.
-func resumeTailLocked(checkName string) string {
+func resumeTailLocked(checkName, symbol string, scopes []string) string {
+	if fn := resumeFuncs[checkName]; fn != nil {
+		if note := fn(symbol, scopes); note != "" {
+			return note
+		}
+	}
 	if note := resumeNotes[checkName]; note != "" {
 		return note
 	}
@@ -626,5 +711,6 @@ func Reset() {
 	checks = map[string]*check{}
 	notifier = nil
 	resumeNotes = map[string]string{}
+	resumeFuncs = map[string]func(string, []string) string{}
 	mu.Unlock()
 }

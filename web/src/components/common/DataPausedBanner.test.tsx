@@ -216,4 +216,35 @@ describe('DataPausedBanner', () => {
     expect(el).toHaveTextContent('other traders trade normally')
     expect(el).toHaveTextContent('fill_price (account SIM101)')
   })
+  it('a mixed pause (mentor-only check + an account check) never claims AI trades normally', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        data_truth_checks: ['broker_agreement', 'cross_frame'],
+        data_truth_scopes: { broker_agreement: ['acct:SIM101'] },
+        data_truth_readers: { cross_frame: ['mentor'] },
+        scope: 'mixed_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('some entries only')
+    expect(el).not.toHaveTextContent('AI/planner entries trade normally')
+    expect(el).not.toHaveTextContent('mentor traders trade normally')
+    expect(el).toHaveTextContent('broker_agreement (account SIM101)')
+  })
+  it('the quiet boot wait is stated, not silent', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth_starting'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    const el = await screen.findByTestId('data-paused-banner')
+    expect(el).toHaveTextContent('data checks are starting after a restart')
+    expect(el).toHaveTextContent('exits and stops are unaffected')
+  })
 })

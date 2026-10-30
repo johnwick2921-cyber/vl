@@ -142,7 +142,12 @@ func TestWidestPausedScopeRanksTheDataTruthScopes(t *testing.T) {
 		{[]string{PausedScopeAI, PausedScopeSwing}, PausedScopeDeep},
 		{[]string{PausedScopeMentor, PausedScopeAI}, PausedScopeAll},
 		{[]string{PausedScopeTraders}, PausedScopeTraders},
-		{[]string{PausedScopeTraders, PausedScopeSwing}, PausedScopeSwing},
+		// a trader/account block next to ANY narrower block is "mixed": neither single
+		// scope sentence is true of both (re-review P2)
+		{[]string{PausedScopeTraders, PausedScopeSwing}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeMentor}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeAI}, PausedScopeMixed},
+		{[]string{PausedScopeTraders, PausedScopeDeep}, PausedScopeMixed},
 		{[]string{PausedScopeTraders, PausedScopeAll}, PausedScopeAll},
 	}
 	for _, c := range cases {

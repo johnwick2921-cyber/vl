@@ -699,6 +699,12 @@ const (
 	// TRADER/ACCOUNT, and /api/health used to call every one of them all_entries.
 	PausedScopeAI      = "ai_entries"     // AI / planner / Picture / agent paths only (mentor traders trade)
 	PausedScopeTraders = "trader_entries" // only the traders / accounts the check names (data_truth_scopes)
+	// PausedScopeMixed: a trader/account-scoped block stands NEXT TO a narrower reader
+	// or SWING4H block (round 3 re-review P2). Either single scope sentence would
+	// claim something false ("AI/planner entries trade normally" while an AI trader on
+	// the blocked account is paused), so the banner says only that SOME entries are
+	// paused and sends the owner to the per-check list.
+	PausedScopeMixed = "mixed_entries"
 )
 
 // WidestPausedScope is the scope that says everything that is paused and no
@@ -714,6 +720,8 @@ func WidestPausedScope(scopes []string) string {
 	switch {
 	case has[PausedScopeAll], has[PausedScopeMentor] && (has[PausedScopeDeep] || has[PausedScopeAI]):
 		return PausedScopeAll
+	case has[PausedScopeTraders] && (has[PausedScopeMentor] || has[PausedScopeDeep] || has[PausedScopeAI] || has[PausedScopeSwing]):
+		return PausedScopeMixed
 	case has[PausedScopeMentor]:
 		return PausedScopeMentor
 	case has[PausedScopeDeep], has[PausedScopeAI] && has[PausedScopeSwing]:

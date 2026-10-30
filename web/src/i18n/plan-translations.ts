@@ -462,6 +462,16 @@ export const planStrings = {
     zh: '仅所列交易员/账户；其他交易员照常交易',
     id: 'hanya trader/akun yang disebut; trader lain berjalan normal',
   },
+  dataPausedStartingBanner: {
+    en: 'TRADING PAUSED — the data checks are starting after a restart (waiting for the NT8 history replay; new entries wait, at most 10 minutes; exits and stops are unaffected)',
+    zh: '交易已暂停 — 重启后数据检查正在启动（等待 NT8 历史回放；新入场最多等待 10 分钟；平仓和止损不受影响）',
+    id: 'TRADING DIJEDA — pemeriksaan data sedang dimulai setelah restart (menunggu replay riwayat NT8; entri baru menunggu paling lama 10 menit; exit dan stop tidak terpengaruh)',
+  },
+  dataPausedTruthScopeMixed: {
+    en: 'some entries only - which ones is listed with each check; every other trader trades normally',
+    zh: '仅部分入场 - 各项检查后列出具体范围；其他交易员照常交易',
+    id: 'hanya sebagian entri - lihat daftar di tiap pemeriksaan; trader lain berjalan normal',
+  },
   dataPausedUnknownBanner: {
     en: 'TRADING PAUSED — bar-data check not ready',
     zh: '交易已暂停 — K线数据检查尚未就绪',

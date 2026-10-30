@@ -645,7 +645,7 @@ func (g *FillGuard) CheckScoped() datatruth.ScopedCheckFn {
 				everyone = true
 			}
 			parts = append(parts, fmt.Sprintf("%s%d far fill(s) this session (ids %s): %s - acknowledge via %s or wait for the next session",
-				who, len(st.ids), strings.Join(ids, ","), strings.Join(st.details, " | "), ackURL))
+				who, len(st.ids), strings.Join(ids, ","), strings.Join(dedupeStrings(st.details), " | "), ackURL))
 		}
 		if len(parts) == 0 {
 			return false, "", nil, nil
@@ -679,7 +679,31 @@ func AckBaseURL() string {
 // ackHowTo is the line that makes the acknowledgement URL runnable: the route is
 // behind the login and there is no button for it in the web app.
 func ackHowTo() string {
-	return "to run the acknowledgement: first log in (POST " + AckBaseURL() + "/api/login with your email and password returns a token), then send the POST above with the header Authorization: Bearer <token> - from the machine the bot runs on; the web app has no button for it"
+	return "to run the acknowledgement: first log in (POST " + AckBaseURL() + "/api/login with your email and password returns a token), then send the POST above with the HTTP header Authorization set to Bearer, a space, then the token - from the machine the bot runs on; the web app has no button for it"
+}
+
+// fillResume is the resume tail of the fill_price OWNER PUSH. The push is capped
+// (datatruth.PushRunes) and the detail is clipped to fit, so the remedy lives here,
+// in the part that is never clipped: the exact login and acknowledgement calls for
+// the block that stands, worded so ownerpush.Scrub leaves it intact (no
+// "Authorization:" pair, which it redacts as a credential).
+func fillResume(symbol string, scopes []string) string {
+	base := AckBaseURL()
+	url := base + "/api/risk/ack-fill-price?symbol=" + StrikeKey(symbol)
+	var accts []string
+	for _, sc := range scopes {
+		if a := strings.TrimPrefix(sc, "acct:"); a != sc && a != "" {
+			accts = append(accts, a)
+		}
+	}
+	switch len(accts) {
+	case 0:
+	case 1:
+		url += "&account=" + accts[0]
+	default:
+		url += "&account=<one of " + strings.Join(accts, "/") + ">, once per account"
+	}
+	return "entries resume when you acknowledge it (on the bot's machine: POST " + base + "/api/login with your email and password returns a token, then POST " + url + " with the HTTP header Authorization set to Bearer, a space, the token; the web app has no button) or when the next CME session starts - not by themselves"
 }
 
 // ── persistence (m451) ───────────────────────────────────────────────────────
@@ -832,5 +856,20 @@ func RegisterFillPrice(g *FillGuard) {
 	// this pause does NOT end by itself when the data measures clear: it ends on
 	// the owner's acknowledgement or the next CME session (review 4 D5)
 	datatruth.SetResumeNote(CheckFillPrice, "entries resume when you acknowledge it (the how-to is in the pause text above) or when the next CME session starts - not by themselves")
+	datatruth.SetResumeFunc(CheckFillPrice, fillResume)
 	datatruth.RegisterScoped(CheckFillPrice, g.CheckScoped())
+}
+
+// dedupeStrings keeps the first of each identical string, in order (a far fill
+// reported by several frames repeats the same detail; the push has 600 runes).
+func dedupeStrings(in []string) []string {
+	seen := make(map[string]bool, len(in))
+	out := make([]string, 0, len(in))
+	for _, x := range in {
+		if !seen[x] {
+			seen[x] = true
+			out = append(out, x)
+		}
+	}
+	return out
 }

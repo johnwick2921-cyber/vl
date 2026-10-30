@@ -51,7 +51,7 @@ func TestR3WideningScopeIsPushedOnceAndTheHeaderNamesTheScope(t *testing.T) {
 	Evaluate("MNQ", now.Add(2*time.Minute))
 	Evaluate("MNQ", now.Add(3*time.Minute)) // widened already: silent
 	got := pc.all()
-	if len(got) != 2 || !strings.Contains(got[1], "WIDENED") || !strings.Contains(got[1], "every entry path") || !strings.Contains(got[1], "was mentor traders") {
+	if len(got) != 2 || !strings.Contains(got[1], "WIDENED") || !strings.Contains(got[1], "every entry path") || !strings.Contains(got[1], "it had been: mentor traders") {
 		t.Fatalf("the widening must be pushed once: %v", got)
 	}
 	// narrowing again is not news
@@ -140,7 +140,7 @@ func TestR3ClearIsPushedOnceAfterTheMergeWindowAndNeverForAFlap(t *testing.T) {
 		t.Fatalf("a flap must not push: %v", pc.all())
 	}
 	Evaluate("MNQ", t0.Add(26*time.Minute+ReopenMergeWindow)) // window passed with no re-block
-	Evaluate("MNQ", t0.Add(90*time.Minute))                    // and only once
+	Evaluate("MNQ", t0.Add(90*time.Minute))                   // and only once
 	got := pc.all()
 	if len(got) != 2 || !strings.Contains(got[1], "bad_print is clear for MNQ") || !strings.Contains(got[1], "CT") {
 		t.Fatalf("want exactly one resolved push in CT: %v", got)
@@ -171,5 +171,48 @@ func TestR3ResumeNoteReplacesTheAutomaticPromise(t *testing.T) {
 	}
 	if !strings.Contains(other, "resume automatically") {
 		t.Fatalf("other checks keep the automatic promise: %q", other)
+	}
+}
+
+// P3 (re-review 1): a scope that flaps inside ONE open episode (account A held,
+// account B in and out) must not push a WIDENED alert per re-entry: the owner-push
+// budget is 3 per hour per kind and the clear push shares it. A widening is judged
+// against the episode's high-water scope, so B joining pushes once.
+//
+// MUTANT: compare against the previous call's scope instead of the high-water
+// (ep.readers/ep.scopes) -> RED (3 WIDENED pushes).
+func TestR3FlappingScopeInsideOneEpisodePushesOnce(t *testing.T) {
+	Reset()
+	t.Cleanup(Reset)
+	var pc pushCollector
+	SetNotifier(pc.add)
+	scopes := []string{ScopeAccount("A")}
+	RegisterScoped("broker_agreement", func(string, time.Time) (bool, string, []string, error) {
+		return true, "views disagree", scopes, nil
+	})
+	now := time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC)
+	Evaluate("MNQ", now)
+	for i := 1; i <= 8; i++ {
+		if i%2 == 1 {
+			scopes = []string{ScopeAccount("A"), ScopeAccount("B")}
+		} else {
+			scopes = []string{ScopeAccount("A")}
+		}
+		Evaluate("MNQ", now.Add(time.Duration(i)*time.Minute))
+	}
+	got := pc.all()
+	if len(got) != 2 {
+		t.Fatalf("1 opening + 1 widening (B first joined) expected, not one per re-entry: %d: %v", len(got), got)
+	}
+	// a REAL new widening later in the same episode still pushes
+	scopes = []string{ScopeAccount("A"), ScopeAccount("C")}
+	Evaluate("MNQ", now.Add(10*time.Minute))
+	if len(pc.all()) != 3 {
+		t.Fatalf("account C joining is news: %v", pc.all())
+	}
+	// and the snapshot still reports the CURRENT scope, not the high-water
+	snap := Snapshot()["broker_agreement"]
+	if len(snap.Scopes) != 2 || snap.Scopes[1] != ScopeAccount("C") {
+		t.Fatalf("the snapshot must carry the current scope: %+v", snap)
 	}
 }
