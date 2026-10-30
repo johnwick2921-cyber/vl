@@ -7,6 +7,60 @@ import type {
 import { API_BASE, httpClient } from './helpers'
 import { ApiError } from '../httpClient'
 
+/** Pep "what trades" card — GET /api/traders/:id/pep-truth.
+ *
+ *  PROVISIONAL SHAPE (2026-10-30): the trader lane (fix/m458-pep-trader) had not
+ *  published the handler when the UI was cut, so this type is defined from the
+ *  core schema it must be built from — kernel/pep types.go (Result, Box, State,
+ *  Intent, Refusal, Diag) and store.ResolvePep. Every field except `enabled` is
+ *  optional and the card renders only what arrived: an absent field is shown as
+ *  absent, never as 0 (a missing box is "not drawn yet", not a box at 0).
+ *  `enabled:false` (or a 404 from an older server) hides the card. The trader
+ *  lane must match these names or change this type in the same merge. */
+export interface PepTruth {
+  enabled: boolean
+  as_of_ms: number
+  /** The instrument pep reads (e.g. "MNQ"); the chart draws the box only on a
+   *  tab showing it. */
+  symbol?: string
+  /** The style that runs. */
+  style?: 'A' | 'E'
+  /** CT date the day-counters belong to ("2006-01-02"). */
+  day?: string
+  contracts?: number
+  /** The opening range (kernel/pep Box); ABSENT until computed. */
+  box?: {
+    high: number
+    low: number
+    size: number
+    start_ms: number
+    end_ms: number
+    /** every minute present and the box window has closed */
+    drawn: boolean
+  }
+  /** Where the day's signal stands. */
+  signal?: {
+    state: 'waiting' | 'entered' | 'blocked'
+    side?: 'long' | 'short'
+  }
+  /** Named refusals of the latest evaluation (kernel/pep Refusal). */
+  refusals?: {
+    code: string
+    severity: 'wait' | 'block'
+    detail?: string
+  }[]
+  trades_today?: number
+  max_trades_per_day?: number
+  position_open?: boolean
+  /** The intent's / open position's prices (points). */
+  entry?: number
+  stop?: number
+  target?: number
+  /** The time exit, "HH:MM" CT, and the seconds left until it (<= 0 = passed). */
+  flat_time_ct?: string
+  flat_in_sec?: number
+}
+
 /** Mentor "what trades" panel — the live evaluator state (release #10). */
 export interface MentorTruth {
   enabled: boolean
@@ -239,6 +293,17 @@ export const traderApi = {
     )
     if (!result.success || !result.data) {
       throw new Error('Failed to fetch mentor truth panel')
+    }
+    return result.data
+  },
+
+  async getPepTruth(traderId: string, silent = true): Promise<PepTruth> {
+    const result = await httpClient.request<PepTruth>(
+      `${API_BASE}/traders/${traderId}/pep-truth`,
+      { method: 'GET', silent }
+    )
+    if (!result.success || !result.data) {
+      throw new Error('Failed to fetch pep truth card')
     }
     return result.data
   },

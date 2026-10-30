@@ -384,6 +384,11 @@ export const pepStrings = {
   },
   truthPosition: { en: 'Position open', zh: '持仓中', id: 'Posisi terbuka' },
   truthRefusal: { en: 'Refusal', zh: '拒绝原因', id: 'Penolakan' },
+  truthOverlayHidden: {
+    en: 'pep box lines hidden — they belong to {symbol}, this chart shows {chart}',
+    zh: 'pep 区间线已隐藏 — 它们属于 {symbol}，当前图表显示 {chart}',
+    id: 'garis kotak pep disembunyikan — milik {symbol}, grafik ini menampilkan {chart}',
+  },
   truthOverlayNote: {
     en: 'pep box lines: {symbol}{stale}',
     zh: 'pep 区间线：{symbol}{stale}',

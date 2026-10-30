@@ -34,6 +34,10 @@ import { PlanCard } from '../components/plan/PlanCard'
 import { PictureHtfPanel } from '../components/trader/PictureHtfPanel'
 import { MentorTruthCard } from '../components/mentor/MentorTruthCard'
 import { useMentorTruth } from '../components/mentor/useMentorTruth'
+import { PepTruthCard } from '../components/pep/PepTruthCard'
+import { usePepTruth } from '../components/pep/usePepTruth'
+import { ModeChip, dashboardMode } from '../components/pep/ModeChip'
+import { pepChartLines } from '../components/pep/pepOverlays'
 import { AddonOutdatedBanner } from '../components/friend/AddonOutdatedBanner'
 import type {
   SystemStatus,
@@ -186,6 +190,18 @@ export function TraderDashboardPage({
   // every 30s + on focus. The levels are also drawn on the dashboard chart.
   const { truth: mentor, stale: mentorStale } = useMentorTruth(
     selectedTrader?.trader_id
+  )
+  // PEP — the live pep state ("what trades"), refreshed like the mentor truth.
+  // The mode chip needs BOTH truths to have answered before it names a mode.
+  const {
+    truth: pep,
+    stale: pepStale,
+    status: pepStatus,
+  } = usePepTruth(selectedTrader?.trader_id)
+  const pepStaleSinceMs = pepStale ? (pep?.as_of_ms ?? 0) : undefined
+  const pepLines = useMemo(
+    () => pepChartLines(pep, pepStaleSinceMs),
+    [pep, pepStaleSinceMs]
   )
   // T7 (release #22): every place the evaluator trades — levels, trigger
   // lines, EMA34 location, box edges, ISB boxes, ORB, swing — plus the
@@ -546,6 +562,12 @@ export function TraderDashboardPage({
               <span className="text-vl-neo-gold font-semibold tracking-wide">
                 {selectedTrader.strategy_name || 'No Strategy'}
               </span>
+              {isFutures && (
+                <ModeChip
+                  value={dashboardMode(mentor, pep, pepStatus)}
+                  language={language}
+                />
+              )}
             </span>
             {status && (
               <div className="hidden md:contents">
@@ -808,6 +830,9 @@ export function TraderDashboardPage({
               mentorSymbol={mentor?.symbol}
               mentorStaleSinceMs={mentorStaleSinceMs}
               mentorEMALocationPrice={mentorEMALocationPrice}
+              pepLines={pepLines}
+              pepSymbol={pep?.symbol}
+              pepStaleSinceMs={pepStaleSinceMs}
             />
           </div>
 
@@ -822,6 +847,14 @@ export function TraderDashboardPage({
           {isFutures && selectedTrader.trader_id && (
             <div className="min-w-0 lg:col-span-2">
               <MentorTruthCard truth={mentor} stale={mentorStale} />
+            </div>
+          )}
+          {/* PEP-TRUTH CARD — the live pep state (box, signal, trades today,
+                stop/target, countdown to the 15:00 CT flat). Hides itself when
+                pep is OFF. */}
+          {isFutures && selectedTrader.trader_id && (
+            <div className="min-w-0 lg:col-span-2">
+              <PepTruthCard truth={pep} stale={pepStale} language={language} />
             </div>
           )}
           {/* Day Plan card — futures only (day_plan is a futures feature);
