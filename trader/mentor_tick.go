@@ -2030,17 +2030,17 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// The 1m EMA 34/9 tail is identical (the stitched tail IS the current
 	// contract's recent bars). A stitch that produces nothing degrades to the
 	// current-contract walk (cold store / read error already refused above).
-	stitched1m, full1HRTH, contracts, gaps, stoppedAt, seamCovered := at.mentorFullKeyLevelHistory(bh)
+	stitched1m, full1HRTH, contracts, gaps, stoppedAt, seamBars := at.mentorFullKeyLevelHistory(bh)
 	// m445 round 2 (reviewer A, D1): measure the series the key levels are about
 	// to be walked over for RTH holes — the gate reads it for every mentor entry.
 	if len(full1HRTH) > 0 {
-		at.noteSeedSeries(stitched1m, seamCovered, mentorClockNow())
-		// m456 (defect 2): the swing line's hole scan reads the same seam — a
-		// minute some contract stores is present, not a hole.
-		at.mentorEval.SetSeamCovered(seamCovered)
+		at.noteSeedSeries(stitched1m, mentor.SeamMinutes(seamBars), mentorClockNow())
+		// m456 (defect 2): the swing line is built from the series PLUS the seam
+		// bars — a minute some contract stores is folded, not skipped.
+		at.mentorEval.SetSeamBars(seamBars)
 	} else {
 		at.noteSeedSeries(bars1m, nil, mentorClockNow())
-		at.mentorEval.SetSeamCovered(nil)
+		at.mentorEval.SetSeamBars(nil)
 	}
 	var missing []string
 	priorHTF := at.mentorEval.State.HTF // MENTOR-NY item 6: the state the seed replays from
@@ -2185,7 +2185,7 @@ func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
 // ("" = full). FIX 5: it STOPS READING at the first roll whose gap cannot be
 // measured instead of reading every contract. A cold store / read error
 // returns nil and the caller degrades to the current-contract walk.
-func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamCovered []int64) {
+func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamBars []market.Kline) {
 	if at == nil || bh == nil {
 		return nil, nil, nil, nil, "", nil
 	}
@@ -2232,7 +2232,7 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 		contracts = append(contracts, c)
 	}
 	stitched1m, full1HRTH, gaps, stoppedAt = s.Result()
-	seamCovered = s.SeamCovered() // minutes a contract stores that the cut dropped: not lost (round 4, D1)
+	seamBars = s.SeamBars() // bars a contract stores that the cut dropped: not lost (round 4, D1), and folded into the swing line (m456)
 	// Oldest-first, so the boot line reads left-to-right from the earliest date.
 	for i, j := 0, len(contracts)-1; i < j; i, j = i+1, j-1 {
 		contracts[i], contracts[j] = contracts[j], contracts[i]

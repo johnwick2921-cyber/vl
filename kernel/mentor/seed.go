@@ -286,7 +286,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 	// history (P1). The seed and every incremental step continue the SAME
 	// recurrence, so seed+ticks == full rebuild exactly. 34 closed candles are
 	// the warm-up MINIMUM (SeedMissing), not a cap — never re-window.
-	bars1h := barsTF(bars1m, 60)
+	bars1h := barsTF(withSeamBars(bars1m, e.seamBars, now), 60)
 	if b4 := fourHClosedBuckets(bars1h, now); len(b4) > 0 {
 		closes4 := make([]float64, 0, len(b4))
 		for _, b := range b4 {
@@ -304,7 +304,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		// missing a fold. Mark it stale (SWING4H refused, counted) until a
 		// refill + re-seed closes the hole; holes older than the horizon have
 		// decayed to nothing and do not count.
-		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()), e.seamCovered)
+		holes, present := holedFourHBuckets(bars1h, 3_600_000, fourHBucketStart(b4[0].OpenTime, ctime()), fourHBucketStart(now, ctime()))
 		e.State.Swing.HoledBuckets = recentHoledBuckets(holes, present, swingHoleHorizonBuckets(e.Cfg.Swing.EMAPeriod))
 		e.State.Swing.LineStale = len(e.State.Swing.HoledBuckets) > 0
 	}

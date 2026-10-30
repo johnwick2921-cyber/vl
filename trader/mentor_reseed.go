@@ -57,7 +57,7 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 	at.mentorSeedHistGen = gen
 	start := time.Now()
 	bh := store.NewBarHistoryStore(at.store.GormDB())
-	stitched1m, full1HRTH, _, _, _, seamCovered := at.mentorFullKeyLevelHistory(bh)
+	stitched1m, full1HRTH, _, _, _, seamBars := at.mentorFullKeyLevelHistory(bh)
 	bars1m := stitched1m
 	if len(full1HRTH) == 0 {
 		rows, err := bh.LastNBarsCurrentContract(mentorSeedSymbol, "1m", mentorSeedBars1mN)
@@ -66,10 +66,10 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 			at.logWarnf("🧑‍🏫 mentor re-seed after a history refill (%s) REFUSED — 1m store read failed (%v); state kept as it was", why, err)
 			return
 		}
-		bars1m, full1HRTH, seamCovered = storeBarsToKlines(rows, 60_000), nil, nil
+		bars1m, full1HRTH, seamBars = storeBarsToKlines(rows, 60_000), nil, nil
 	}
-	at.noteSeedSeries(bars1m, seamCovered, time.UnixMilli(nowMs)) // m445 round 2: the refilled series is measured again — a filled hole resumes the gate
-	at.mentorEval.SetSeamCovered(seamCovered)                     // m456 (defect 2): the swing line's hole scan counts the stitch's seam minutes as present
+	at.noteSeedSeries(bars1m, mentor.SeamMinutes(seamBars), time.UnixMilli(nowMs)) // m445 round 2: the refilled series is measured again — a filled hole resumes the gate
+	at.mentorEval.SetSeamBars(seamBars)                                            // m456 (defect 2): the swing line folds the stitch's seam bars
 	var rep mentor.ReseedReport
 	at.mentorWithHistoryPrintWindows(bars1m, func() {
 		rep = mentor.ReseedState(at.mentorEval, bars1m, full1HRTH, nowMs)

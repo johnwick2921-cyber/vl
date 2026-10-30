@@ -56,7 +56,7 @@ func TestM456RealRollSeamSeedNotStale(t *testing.T) {
 		t.Fatalf("stitch refused")
 	}
 	stitched, _, _, _ := s.Result()
-	seam := s.SeamCovered()
+	seam := s.SeamBars()
 	t.Logf("stitched %d 1m bars, seamCovered %d minutes", len(stitched), len(seam))
 	loc := ctime()
 	stale, n := 0, 0
@@ -72,7 +72,7 @@ func TestM456RealRollSeamSeedNotStale(t *testing.T) {
 			}
 		}
 		e := New(lrProdCfg())
-		e.SetSeamCovered(seam)
+		e.SetSeamBars(seam)
 		SeedFull(e, hist, keyLevel1HBars(hist), nm)
 		n++
 		if e.State.Swing.LineStale {

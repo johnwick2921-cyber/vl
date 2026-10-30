@@ -2,7 +2,6 @@ package mentor
 
 import (
 	"log"
-	"sort"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -320,7 +319,7 @@ func bucketClosesBetween(bars5m []market.Kline, from, to int64) (closes []float6
 	// m456: a bucket in [from, to) with no bars (or a missing tail) during an
 	// OPEN session is a data hole, not a weekend: its fold is lost and the
 	// caller must fail closed exactly like an unreadable bucket.
-	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to, nil); len(holes) > 0 {
+	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to); len(holes) > 0 {
 		return nil, false
 	}
 	last := int64(-1)
@@ -1059,11 +1058,11 @@ type holedBucket struct {
 // spring-forward one). Walking a flat s+4h read such a bucket as 4h long and
 // counted the next session's open hours as its uncovered tail.
 //
-// seam (ascending 1m open times, may be nil) lists minutes a contract STORES
-// that the series in `bars` lacks (RollStitcher.SeamCovered, m456 defect 2): a
-// minute is present when ANY contract of the stitch stores it, so a seam
-// minute is not part of an uncovered tail.
-func holedFourHBuckets(bars []market.Kline, barMs, from, to int64, seam []int64) (holes []holedBucket, present int) {
+// A roll seam is not special-cased here (m456 defect 2): the seed hands this
+// scan, and the fold, a series that already holds every minute any contract of
+// the stitch stores (withSeamBars), so a presence test on `bars` is the whole
+// test.
+func holedFourHBuckets(bars []market.Kline, barMs, from, to int64) (holes []holedBucket, present int) {
 	i := 0
 	for i < len(bars) && bars[i].OpenTime < from {
 		i++
@@ -1083,9 +1082,6 @@ func holedFourHBuckets(bars []market.Kline, barMs, from, to int64, seam []int64)
 		}
 		if covered < e {
 			open, ok := kernel.OpenIntervalsBetween(covered, e, 60_000, 1000)
-			if ok {
-				open -= seamOpenMinutes(seam, covered, e)
-			}
 			if !ok || open >= swingHoleMinOpenMinutes {
 				holes = append(holes, holedBucket{Start: s, Folded: present})
 			}
@@ -1109,19 +1105,6 @@ func fourHBucketEnd(s int64) int64 {
 	return s + fourHMs
 }
 
-// seamOpenMinutes counts the seam minutes in [from, to) that were open CME
-// time (a stored minute is open by construction; the calendar check keeps a
-// stray stamp from cancelling a real hole's count below zero).
-func seamOpenMinutes(seam []int64, from, to int64) int {
-	n := 0
-	for k := sort.Search(len(seam), func(k int) bool { return seam[k] >= from }); k < len(seam) && seam[k] < to; k++ {
-		if kernel.IsCMEOpen(time.UnixMilli(seam[k])) {
-			n++
-		}
-	}
-	return n
-}
-
 // recentHoledBuckets keeps the holes still worth failing closed for: those with
 // at most `horizon` folded closes after them.
 func recentHoledBuckets(holes []holedBucket, present, horizon int) []int64 {
@@ -1129,6 +1112,37 @@ func recentHoledBuckets(holes []holedBucket, present, horizon int) []int64 {
 	for _, h := range holes {
 		if present-h.Folded <= horizon {
 			out = append(out, h.Start)
+		}
+	}
+	return out
+}
+
+// withSeamBars is bars1m plus the stitch's seam bars (Evaluator.SetSeamBars)
+// that closed by now, in open-time order, skipping a minute bars1m already has.
+// With no seam bars it returns bars1m itself, so a non-stitched seed is
+// untouched. This is the single place the swing line's 1m source is widened to
+// every minute any contract of a roll stitch stores.
+func withSeamBars(bars1m, seam []market.Kline, now int64) []market.Kline {
+	if len(seam) == 0 || len(bars1m) == 0 {
+		return bars1m
+	}
+	out := make([]market.Kline, 0, len(bars1m)+len(seam))
+	j := 0
+	for _, b := range bars1m {
+		for j < len(seam) && seam[j].OpenTime < b.OpenTime {
+			if seam[j].CloseTime <= now {
+				out = append(out, seam[j])
+			}
+			j++
+		}
+		if j < len(seam) && seam[j].OpenTime == b.OpenTime {
+			j++
+		}
+		out = append(out, b)
+	}
+	for ; j < len(seam); j++ {
+		if seam[j].CloseTime <= now {
+			out = append(out, seam[j])
 		}
 	}
 	return out

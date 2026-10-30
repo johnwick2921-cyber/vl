@@ -266,15 +266,16 @@ func UnmarshalState(b []byte) (State, error) {
 	return s, err
 }
 
-// SetSeamCovered hands the evaluator the roll-seam minutes of the stitched
-// series the NEXT SeedFull / ReseedState reads (RollStitcher.SeamCovered):
-// minutes some contract stores that the cut dropped from the series. The 4h
-// EMA34 hole scan counts a minute present when ANY contract stores it, so a
-// quarterly roll seam is not read as a data hole (m456 defect 2). Pass nil when
-// the seed series is not a stitch. The slice is copied and sorted.
-func (e *Evaluator) SetSeamCovered(seam []int64) {
-	e.seamCovered = append([]int64(nil), seam...)
-	sort.Slice(e.seamCovered, func(i, j int) bool { return e.seamCovered[i] < e.seamCovered[j] })
+// SetSeamBars hands the evaluator the roll-seam bars of the stitched series the
+// NEXT SeedFull / ReseedState reads (RollStitcher.SeamBars): bars a contract
+// stores that the cut dropped from the series, on the same (newest) price
+// scale. The swing 4h EMA34 is aggregated from the stitched series PLUS these
+// bars, so a bucket only the seam holds is folded and a quarterly roll is
+// neither a false hole nor a missing fold (m456 defect 2). Pass nil when the
+// seed series is not a stitch. The slice is copied and sorted.
+func (e *Evaluator) SetSeamBars(seam []market.Kline) {
+	e.seamBars = append([]market.Kline(nil), seam...)
+	sort.Slice(e.seamBars, func(i, j int) bool { return e.seamBars[i].OpenTime < e.seamBars[j].OpenTime })
 }
 
 // Evaluator runs the mentor rules once per closed 1m candle. It emits intents
@@ -294,12 +295,12 @@ type Evaluator struct {
 	depth4hBucket int64
 	depthMet      string
 	seedLine      string
-	// seamCovered (m456 defect 2): minutes a contract of the stitch STORES that
-	// the stitched series handed to the seed lacks (RollStitcher.SeamCovered,
-	// ascending 1m open times). The swing line's hole scan counts them as
-	// present. Set by SetSeamCovered before every SeedFull / ReseedState; not
-	// part of State (the series it describes is rebuilt on every seed).
-	seamCovered []int64
+	// seamBars (m456 defect 2): bars a contract of the stitch STORES that the
+	// stitched series handed to the seed lacks (RollStitcher.SeamBars, ascending,
+	// newest scale). The swing line is aggregated from series + seamBars. Set by
+	// SetSeamBars before every SeedFull / ReseedState; not part of State (the
+	// series it describes is rebuilt on every seed).
+	seamBars []market.Kline
 	// tfMemo caches barsTF aggregations within ONE Tick (FU-2): one build per
 	// (tf, slice identity) per Tick, cleared at the start of each Tick.
 	// Evaluator-owned on purpose — two traders run two evaluators, each with
