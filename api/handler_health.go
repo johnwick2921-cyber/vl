@@ -310,8 +310,24 @@ func (s *Server) handleHealth(c *gin.Context) {
 			// each blocking check names what it really pauses (review 4 D1): a block
 			// scoped to the mentor or the AI readers, or to one trader/account, is not
 			// "all entries" - a banner never claims more than the bot refuses.
+			dtMentor := false
 			for _, n := range dtBlocked {
-				noteScope(ntTrader.DataTruthPausedScope(n, dtReaders[n], dtScopes[n]))
+				sc := ntTrader.DataTruthPausedScope(n, dtReaders[n], dtScopes[n])
+				noteScope(sc)
+				dtMentor = dtMentor || sc == ntTrader.PausedScopeMentor
+			}
+			// A data-truth block for the MENTOR readers does not cover SWING4H (the
+			// hole-class mentor leg does, a reader-scoped check does not): with a
+			// swing block next to it, "mentor traders only; AI/planner entries trade
+			// normally" would understate the pause (round 3 re-review 2 P3). Say that
+			// SOME entries are paused and send the owner to the per-check list.
+			if dtMentor {
+				for _, x := range scopes {
+					if x == ntTrader.PausedScopeSwing {
+						noteScope(ntTrader.PausedScopeMixed)
+						break
+					}
+				}
 			}
 		}
 		if feedStale {

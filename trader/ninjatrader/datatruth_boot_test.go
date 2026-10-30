@@ -525,3 +525,27 @@ func TestSwing4hDoesNotPauseAfterARollOnAReversalTape(t *testing.T) {
 		}
 	}
 }
+
+// Round 4 (re-review 1 note): the trim (rowsFrom) alone makes the 5m never reach
+// before the 1m, so the "full older 1m window" half of the roll fix was pinned only
+// together with it. This pins the window on its own, through the production
+// stitch: with an older contract that can supply them, the stitched 1m holds at
+// least a FULL window (dataTruthStore1mN rows) however many rows of the NEW
+// contract's replay overlap the older's tail. Read as "N minus what the newer
+// contract already holds" it came out about len(replay) rows short, which shrinks
+// the 1m the swing line is built from while the 5m keeps its whole reach.
+//
+// MUTANT W (shown RED): the older 1m is read with dataTruthStore1mN-len(r1).
+func TestStitchedOneMinuteIsAFullWindowAfterARoll(t *testing.T) {
+	for _, sessions := range []int{1, 3, 8} {
+		bh, now := rollStore(t, sessions, 5, 3000)
+		m1, _, _, err := storeSwingInputs(bh)("MNQ", now)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(m1) < dataTruthStore1mN {
+			t.Fatalf("sessions=%d: the stitched 1m holds %d rows, short of the %d-row window the older contract can fill - it was read as N minus the replay overlap",
+				sessions, len(m1), dataTruthStore1mN)
+		}
+	}
+}

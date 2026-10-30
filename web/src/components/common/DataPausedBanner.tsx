@@ -70,6 +70,16 @@ export function DataPausedBanner({ language }: { language: Language }) {
   if (!reasons.some((r) => DATA_CLASSES.includes(r)) && !hasTruth && !starting)
     return null
 
+  // the way out, for the checks that do NOT clear when the data merely looks
+  // fine again (the owner push has it too; the banner is what is on screen)
+  const remedies: Array<
+    'dataPausedRemedyFillPrice' | 'dataPausedRemedyIngestLoss'
+  > = []
+  if (hasTruth && truthChecks.includes('fill_price'))
+    remedies.push('dataPausedRemedyFillPrice')
+  if (hasTruth && truthChecks.includes('ingest_loss'))
+    remedies.push('dataPausedRemedyIngestLoss')
+
   const windows = tpz.windows ?? []
   const hasMissing = reasons.some((r) => DATA_CLASSES.includes(r))
   let text: string
@@ -120,6 +130,15 @@ export function DataPausedBanner({ language }: { language: Language }) {
       }}
     >
       {text}
+      {remedies.map((k) => (
+        <div
+          key={k}
+          data-testid="data-paused-remedy"
+          className="font-normal text-[11px] opacity-90"
+        >
+          {tp(k, language)}
+        </div>
+      ))}
     </div>
   )
 }

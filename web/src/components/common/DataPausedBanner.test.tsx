@@ -247,4 +247,42 @@ describe('DataPausedBanner', () => {
     expect(el).toHaveTextContent('data checks are starting after a restart')
     expect(el).toHaveTextContent('exits and stops are unaffected')
   })
+
+  // round 4 (re-review 4 P3): the banner names the way out for the two checks that
+  // do not clear when the data merely looks fine again.
+  it('fill_price and ingest_loss pauses show their remedy on screen', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        windows: [],
+        data_truth_checks: ['fill_price', 'ingest_loss'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    const remedies = await screen.findAllByTestId('data-paused-remedy')
+    expect(remedies).toHaveLength(2)
+    expect(remedies[0]).toHaveTextContent(
+      'POST /api/risk/ack-fill-price?symbol=MNQ'
+    )
+    expect(remedies[0]).toHaveTextContent('not by a new CME session')
+    expect(remedies[1]).toHaveTextContent(
+      'after a restart in a flat/safe window'
+    )
+  })
+  it('a check that clears by itself shows no remedy line', async () => {
+    vi.spyOn(updatesApi, 'health').mockResolvedValue({
+      trading_paused: {
+        paused: true,
+        reasons: ['data_truth'],
+        windows: [],
+        data_truth_checks: ['cross_frame'],
+        scope: 'all_entries',
+      },
+    })
+    mount()
+    await screen.findByTestId('data-paused-banner')
+    expect(screen.queryByTestId('data-paused-remedy')).toBeNull()
+  })
 })

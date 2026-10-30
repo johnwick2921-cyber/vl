@@ -87,7 +87,7 @@ func untilBarHoleSendWindow(now time.Time) time.Duration {
 // ingestLossSpentMessage is what the log says when the per-session-day NT8
 // re-request budget is spent: exactly what happens, and what clears the pause.
 func ingestLossSpentMessage(symbol, tf string, fromMs int64) string {
-	return fmt.Sprintf("🧪 data-truth ingest_loss: the NT8 history re-request budget for %s is SPENT for this CME session day - the lost %s span from %s is NOT asked for again (the tracker's own re-requests draw on the same budget). New entries for %s stay paused until the bars are back in the ring by another replay, the minute ages out of the ring (about 41 hours of 1m, 8.7 days of 5m), or the bot is restarted (the loss ledger lives in memory; the restart's NT8 replay and the bar gap audit's first pass re-read the store). The budget itself resets at the 17:00 CT roll",
+	return fmt.Sprintf("🧪 data-truth ingest_loss: the NT8 history re-request budget for %s is SPENT for this CME session day - the lost %s span from %s is NOT asked for again (the tracker's own re-requests draw on the same budget). New entries for %s stay paused until the bars are back in the ring by another replay, the minute ages out of the ring (open-market hours, not wall-clock: about 41 hours of 1m, about 208 of 5m, months for 1h and 4h), or the bot is restarted (the loss ledger lives in memory; the restart's NT8 replay and the bar gap audit's first pass re-read the store). The budget itself resets at the 17:00 CT roll, but this span is NOT re-asked for after the roll: a request is made once per drop, so only a NEW drop starts another, and a restart is the way out",
 		symbol, tf, kernel.TableTimeCT(time.UnixMilli(fromMs)), symbol)
 }
 

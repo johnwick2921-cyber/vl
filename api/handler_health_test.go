@@ -655,3 +655,48 @@ func TestHealthSaysPausedDuringTheDataTruthBootWait(t *testing.T) {
 		t.Fatalf("after the wait nothing is paused here: %+v", tp)
 	}
 }
+
+// Round 3 re-review 2 P3 (round 4 fix): a data-truth block for the MENTOR readers
+// next to the independent SWING4H line block. WidestPausedScope ranks mentor above
+// swing (right for the hole-class legs, where the mentor leg already covers
+// SWING4H), so the banner read "mentor traders only; AI/planner entries trade
+// normally" while SWING4H - an AI-side entry - was paused. Driven through the real
+// handleHealth.
+//
+// MUTANT (shown RED): drop the dtMentor -> PausedScopeMixed branch in handleHealth.
+func TestHealthMentorOnlyDataTruthBlockNextToSwing4hIsMixedNotMentor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	at := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())
+	t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(at.Add(-48*time.Hour).UnixMilli(), at.UnixMilli(),
+		[]ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26"}}))
+	prev := healthNow
+	healthNow = func() time.Time { return at }
+	t.Cleanup(func() { healthNow = prev })
+	get := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		return body["trading_paused"].(map[string]any)
+	}
+	datatruth.RegisterScoped("cross_frame", func(string, time.Time) (bool, string, []string, error) {
+		return true, "5m disagrees", []string{datatruth.ReaderMentor}, nil
+	})
+	datatruth.Evaluate("MNQ", at)
+	if tp := get(); tp["scope"] != ntTrader.PausedScopeMentor {
+		t.Fatalf("a mentor-reader block alone is the mentor scope: %+v", tp)
+	}
+	datatruth.Register(checks.CheckLookbackSwing4h, func(string, time.Time) (bool, string, error) { return true, "swing line off", nil })
+	datatruth.Evaluate("MNQ", at)
+	if tp := get(); tp["scope"] != ntTrader.PausedScopeMixed {
+		t.Fatalf("a mentor-reader block next to SWING4H must not read 'AI/planner entries trade normally': %+v", tp)
+	}
+}

@@ -255,7 +255,7 @@ func TestRerequestGateReasons(t *testing.T) {
 // the spent-budget log line says what happens and what clears the pause.
 func TestIngestLossSpentMessageSaysWhatClearsIt(t *testing.T) {
 	m := ingestLossSpentMessage("MNQ", "1m", ctAt(9, 50, 0).UnixMilli())
-	for _, want := range []string{"SPENT", "NOT asked for again", "stay paused", "ages out of the ring", "restarted", "17:00 CT"} {
+	for _, want := range []string{"SPENT", "NOT asked for again", "stay paused", "ages out of the ring", "restarted", "17:00 CT", "NOT re-asked for after the roll", "open-market hours, not wall-clock"} {
 		if !strings.Contains(m, want) {
 			t.Fatalf("the spent-budget line must say %q: %s", want, m)
 		}

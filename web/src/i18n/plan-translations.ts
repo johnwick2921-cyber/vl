@@ -472,6 +472,19 @@ export const planStrings = {
     zh: '仅部分入场 - 各项检查后列出具体范围；其他交易员照常交易',
     id: 'hanya sebagian entri - lihat daftar di tiap pemeriksaan; trader lain berjalan normal',
   },
+  // release #55 round 4 (re-review 4 P3): the banner named the failed checks and
+  // nothing else, so the way out lived only in the owner push. These two checks do
+  // not clear when the data merely looks fine again.
+  dataPausedRemedyFillPrice: {
+    en: 'fill_price does not clear by itself: acknowledge it (log in, then POST /api/risk/ack-fill-price?symbol=MNQ; the owner push has the steps — the web app has no button). A lost state file is lifted only by that acknowledgement, not by a new CME session.',
+    zh: 'fill_price 不会自行解除：请确认（先登录，再 POST /api/risk/ack-fill-price?symbol=MNQ；步骤见老板推送 — 网页上没有按钮）。状态文件丢失的暂停只能由该确认解除，新的 CME 交易日不会解除。',
+    id: 'fill_price tidak hilang sendiri: akui (login dulu, lalu POST /api/risk/ack-fill-price?symbol=MNQ; langkahnya ada di push pemilik — aplikasi web tidak punya tombol). Jeda karena file status hilang hanya dicabut oleh pengakuan itu, bukan sesi CME baru.',
+  },
+  dataPausedRemedyIngestLoss: {
+    en: 'ingest_loss clears when the lost bars are back in the ring, when the minute ages out of it (open-market hours: about 41 for 1m, 208 for 5m; months for 1h and 4h), or after a restart in a flat/safe window.',
+    zh: 'ingest_loss 在丢失的K线重新进入缓存、该分钟移出缓存（按开市小时计：1m 约 41 小时，5m 约 208 小时；1h/4h 需数月），或在空仓/安全时段重启后解除。',
+    id: 'ingest_loss hilang saat bar yang hilang kembali ke ring, saat menit itu keluar dari ring (jam pasar buka: sekitar 41 untuk 1m, 208 untuk 5m; berbulan-bulan untuk 1h dan 4h), atau setelah restart saat posisi flat/aman.',
+  },
   dataPausedUnknownBanner: {
     en: 'TRADING PAUSED — bar-data check not ready',
     zh: '交易已暂停 — K线数据检查尚未就绪',

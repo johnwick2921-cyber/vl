@@ -720,6 +720,8 @@ func WidestPausedScope(scopes []string) string {
 	switch {
 	case has[PausedScopeAll], has[PausedScopeMentor] && (has[PausedScopeDeep] || has[PausedScopeAI]):
 		return PausedScopeAll
+	case has[PausedScopeMixed]:
+		return PausedScopeMixed
 	case has[PausedScopeTraders] && (has[PausedScopeMentor] || has[PausedScopeDeep] || has[PausedScopeAI] || has[PausedScopeSwing]):
 		return PausedScopeMixed
 	case has[PausedScopeMentor]:
