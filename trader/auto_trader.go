@@ -113,6 +113,19 @@ func (at *AutoTrader) deadManEntriesBlockedNow() bool {
 // blocked until a clean positions/orders reconciliation, then auto-resumes. Called
 // from runCycle; non-NT traders are a no-op.
 func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
+	return at.driveDeadManWatchdogAt(time.Now())
+}
+
+// driveDeadManWatchdogAt is driveDeadManWatchdog with the caller's clock for the
+// FEED DOWN reconnect-grace anchor (m456, 10-29 15:06:51 CT). The monitor beat
+// samples `now` once (ticker -> monitorTick(time.Now())) and judges the feed
+// with it AFTER this watchdog ran; stamping the link-up with a fresh
+// time.Now() here put the anchor a few ms AFTER the beat's `now`, which
+// feedReconnectGraceAt reads as a clock that moved back (never grace) — so the
+// one beat that observed "link back UP" raised the FEED DOWN ERROR the grace
+// exists to suppress ("no NT8 bar for 6h38m51s" = NT8's stale replay tail).
+// One beat, one clock: the monitor passes its own now; runCycle passes wall time.
+func (at *AutoTrader) driveDeadManWatchdogAt(now time.Time) watchdogEvent {
 	connected, ok := at.ninjaLinkConnected()
 	if !ok {
 		return wdNone
@@ -130,7 +143,7 @@ func (at *AutoTrader) driveDeadManWatchdog() watchdogEvent {
 		} else {
 			at.logWarnf("🔌 dead-man watchdog: NT8 TCP link back UP — sweeping unfilled entries; entries stay BLOCKED until a clean positions/orders reconciliation.")
 		}
-		at.noteFeedLinkUp(time.Now()) // FOLD 3: the FEED DOWN reconnect grace starts here
+		at.noteFeedLinkUp(now) // FOLD 3: the FEED DOWN reconnect grace starts here (the CALLER's clock, m456)
 		at.cancelUnfilledEntriesAfterReconnect()
 		// D5 (2026-09-07) — C6: nothing rebuilds the bracket after a reconnect.
 		// The AddOn's placedBrackets is in-memory and repopulated from nowhere,
