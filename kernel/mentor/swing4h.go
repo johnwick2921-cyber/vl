@@ -195,6 +195,9 @@ type SwingState struct {
 	// the canonical EMA. SWING4H entries are refused (counted) until a
 	// restart reseeds the line from the store — never the cold slice value.
 	LineStale bool `json:"line_stale,omitempty"`
+	// HoledBuckets (m456): starts (ms) of the open-session 4h buckets with no
+	// bars that made the SEED mark the line stale. Display only.
+	HoledBuckets []int64 `json:"-"`
 	// Folded is the number of 4h closes the last flip folded (1 on contiguous
 	// ticks; >1 after a feed gap) — read by runSwing for the change line.
 	Folded int `json:"-"`
@@ -302,14 +305,21 @@ func swingLine(bars5m []market.Kline, now int64, cfg SwingCfg, loc *time.Locatio
 // bucketClosesBetween returns, in time order, the close of every 4h bucket
 // with a start in [from, to) that has bars in the slice (the last 5m bar of
 // each) — the closes a warm line must fold on a flip. covered=false when the
-// slice starts AFTER the from bucket: buckets before the slice may have traded
-// and cannot be read, so the caller must fail closed (release #22, F-3: one
+// slice starts AFTER the from bucket, or a bucket in range was OPEN CME time
+// with no bars (m456): buckets before the slice may have traded and cannot be
+// read, so the caller must fail closed (release #22, F-3: one
 // close per flip lost every bucket that opened and closed between two ticks).
 func bucketClosesBetween(bars5m []market.Kline, from, to int64) (closes []float64, covered bool) {
 	if len(bars5m) == 0 {
 		return nil, false
 	}
 	if fourHBucketStart(bars5m[0].OpenTime, ctime()) > from {
+		return nil, false
+	}
+	// m456: a bucket in [from, to) with no bars (or a missing tail) during an
+	// OPEN session is a data hole, not a weekend: its fold is lost and the
+	// caller must fail closed exactly like an unreadable bucket.
+	if holes, _ := holedFourHBuckets(bars5m, 5*60_000, from, to); len(holes) > 0 {
 		return nil, false
 	}
 	last := int64(-1)
@@ -391,12 +401,15 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 			// flip that has bars in the slice — not only the bucket the line
 			// was in. A feed gap of 4h+ while the process stays up used to
 			// drop the buckets that opened and closed unseen (+39.8 pts).
-			// Buckets with no bars (a weekend, the halt) were never candles
-			// and fold nothing, exactly like the seed's closed-bucket series.
+			// Buckets with no bars during a CLOSED session (a weekend, the
+			// halt, a holiday) were never candles and fold nothing, exactly
+			// like the seed's closed-bucket series. A bucket with no bars
+			// while the session was OPEN is a data hole (m456): covered=false.
 			closes, covered := bucketClosesBetween(bars5m, s.BucketStart, bucketStart)
 			if !covered {
-				// The slice no longer reaches the last folded bucket: the
-				// missing closes are unknowable here. Fail closed — keep the
+				// The slice no longer reaches the last folded bucket, or an
+				// open-session bucket has no bars (m456): the missing closes
+				// are unknowable here. Fail closed — keep the
 				// last canonical value, refuse swing entries until a reseed.
 				s.LineStale = true
 			} else {
@@ -999,4 +1012,88 @@ func (s *SwingState) RebuildSwingPos(r SwingRebuild) bool {
 		MovedBE:     r.MovedBE,
 	}
 	return true
+}
+
+// swingHoleHorizonBuckets is how far back (in FOLDED 4h closes) a missing
+// open-session bucket still matters to the line. A lost fold leaves an error of
+// k(1-k)^n * (close - ema) with k = 2/(period+1): at 2*period folds (~11
+// trading days) that is below 0.06 pt even for a 50-pt close-to-line distance,
+// so an older hole is not worth wedging every swing entry until a restart.
+func swingHoleHorizonBuckets(period int) int {
+	if period <= 0 {
+		period = DefaultSwingCfg().EMAPeriod
+	}
+	return 2 * period
+}
+
+// swingHoleMinOpenMinutes is the least OPEN CME time a 4h bucket may leave
+// uncovered at its tail before it counts as a data hole. One hour, because the
+// bars read here are 1h (seed) or 5m (flip): a quiet minute or two with no
+// print is not a hole, a missing hour of an open session is.
+const swingHoleMinOpenMinutes = 60
+
+const fourHMs = int64(4 * time.Hour / time.Millisecond)
+
+// holedBucket is a 4h bucket whose tail was open CME time with no bars.
+type holedBucket struct {
+	Start  int64 // ms, bucket start
+	Folded int   // present (folded) buckets BEFORE it: where the lost fold belonged
+}
+
+// holedFourHBuckets walks the 17:00-CT-anchored 4h buckets from bucket start
+// `from` up to (excluding) `to` and returns every bucket whose bars stop short
+// of the bucket end while the CME session was OPEN for at least
+// swingHoleMinOpenMinutes of the uncovered tail, a bucket with no bars at all
+// included. The close the EMA folds for a bucket is its LAST bar's close, so a
+// missing tail is a wrong close and a missing bucket is a missing fold. The
+// seed's fourHClosedBuckets and bucketClosesBetween both skip such a bucket as
+// if it were a weekend ("never candles"); only the CME calendar (the same
+// kernel.IsCMEOpen the trading gate reads) can tell a halt, a weekend or a
+// holiday from a data hole. barMs is the bar duration of `bars` (ascending).
+// present is the number of buckets that had at least one bar.
+func holedFourHBuckets(bars []market.Kline, barMs, from, to int64) (holes []holedBucket, present int) {
+	i := 0
+	for i < len(bars) && bars[i].OpenTime < from {
+		i++
+	}
+	for s := from; s < to; {
+		e := s + fourHMs
+		covered, any := s, false
+		for i < len(bars) && bars[i].OpenTime < e {
+			any = true
+			if end := bars[i].OpenTime + barMs; end > covered {
+				covered = end
+			}
+			i++
+		}
+		if covered > e {
+			covered = e
+		}
+		if covered < e {
+			if open, ok := kernel.OpenIntervalsBetween(covered, e, 60_000, 1000); !ok || open >= swingHoleMinOpenMinutes {
+				holes = append(holes, holedBucket{Start: s, Folded: present})
+			}
+		}
+		if any {
+			present++
+		}
+		nxt := fourHBucketStart(e, ctime())
+		if nxt <= s {
+			nxt = e
+		}
+		s = nxt
+	}
+	return holes, present
+}
+
+// recentHoledBuckets keeps the holes still worth failing closed for: those with
+// at most `horizon` folded closes after them.
+func recentHoledBuckets(holes []holedBucket, present, horizon int) []int64 {
+	var out []int64
+	for _, h := range holes {
+		if present-h.Folded <= horizon {
+			out = append(out, h.Start)
+		}
+	}
+	return out
 }

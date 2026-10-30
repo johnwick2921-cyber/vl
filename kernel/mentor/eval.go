@@ -3498,7 +3498,7 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
 	if e.State.Swing.LineStale && !wasStale {
-		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
+		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice, or an open-session 4h bucket with no bars, hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
 	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
