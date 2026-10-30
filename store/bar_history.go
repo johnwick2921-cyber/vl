@@ -169,6 +169,13 @@ const (
 	// never pruned (PruneByTF skips them) and never overwrite anything (the
 	// importer has no upsert at all).
 	BarSourceHistoricalImport = "historical_import"
+	// ConventionEpochFloorOpen (m460, 2026-10-30) is the Convention the IMPORTER
+	// writes since it started OPEN-stamping. Every historical_import row written
+	// before that carries plain "epoch_floor" and is stamped at the bar's CLOSE
+	// (one timeframe late): the tag is the per-row discriminator the
+	// cmd/import-label-shift migration keys on, so it can shift exactly the old
+	// rows, once, and never a row that is already right. Nothing else reads it.
+	ConventionEpochFloorOpen = "epoch_floor_open"
 	// BarSourceContinuous marks an ADJUSTED continuous series built deliberately
 	// by BuildContinuous with an explicit per-seam basis — never raw tape. The
 	// store REFUSES to persist it (ImportBars and InsertBars both reject it), so
