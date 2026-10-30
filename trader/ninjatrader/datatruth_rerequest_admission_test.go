@@ -24,7 +24,8 @@ import (
 //   A1  drop the send-window check in the hook        -> TestIngestLossHookWaitsForTheSendWindow RED
 //   A2  drop the reRequestGateReason call in the hook -> TestIngestLossHookDefersWhileLinkFeedOrMarketIsDown RED
 //   A3  no coalescing (every drop its own chain)      -> TestIngestLossHookCoalescesDropsIntoOneChain RED
-//   A4  gateLocked / the hook stop sharing the gate   -> TestRerequestAdmissionIsOneFunction RED
+//   A4  gateLocked stops using the shared gate        -> TestTrackerGateAndHookGateAgree RED
+//   A5  the spent branch stops using ingestLossSpentMessage -> TestRerequestAdmissionIsOneFunction RED
 
 // a clock the test moves; `after` records the wait and runs it when told to.
 type rqHarness struct {
@@ -203,6 +204,9 @@ func TestRerequestAdmissionIsOneFunction(t *testing.T) {
 	if !hook["reRequestGateReason"] || !hook["untilBarHoleSendWindow"] {
 		t.Fatalf("the ingest_loss hook must use the tracker's gate and send window: %v", hook)
 	}
+	if !hook["ingestLossSpentMessage"] {
+		t.Fatal("the spent-budget branch must say it through ingestLossSpentMessage")
+	}
 	if !calls("datatruth_rerequest.go", "untilBarHoleSendWindow")["barHoleInSendWindow"] {
 		t.Fatal("untilBarHoleSendWindow must be built on barHoleInSendWindow")
 	}
@@ -245,5 +249,46 @@ func TestRerequestGateReasons(t *testing.T) {
 	}
 	if r := reRequestGateReason(w, nil, open); r == "" {
 		t.Fatal("a missing calendar cannot judge: it must refuse (fail closed)")
+	}
+}
+
+// the spent-budget log line says what happens and what clears the pause.
+func TestIngestLossSpentMessageSaysWhatClearsIt(t *testing.T) {
+	m := ingestLossSpentMessage("MNQ", "1m", ctAt(9, 50, 0).UnixMilli())
+	for _, want := range []string{"SPENT", "NOT asked for again", "stay paused", "ages out of the ring", "restarted", "17:00 CT"} {
+		if !strings.Contains(m, want) {
+			t.Fatalf("the spent-budget line must say %q: %s", want, m)
+		}
+	}
+}
+
+// a gate-only wire: the tracker's real gateLocked over a table of states must
+// agree with the shared function (A4's behavioural half - the AST pin alone
+// misses a gateLocked that still mentions the function on a dead branch).
+type gateOnlyWire struct {
+	holeWire
+	link, feed bool
+}
+
+func (g gateOnlyWire) IsConnected() bool     { return g.link }
+func (g gateOnlyWire) IsFeedConnected() bool { return g.feed }
+
+func TestTrackerGateAndHookGateAgree(t *testing.T) {
+	tr := &barHoleTracker{isOpen: rqOpen}
+	for _, c := range []struct {
+		link, feed bool
+		now        time.Time
+		blocked    bool
+	}{
+		{true, true, ctAt(10, 0, 0), false},
+		{false, true, ctAt(10, 0, 0), true},
+		{true, false, ctAt(10, 0, 0), true},
+		{true, true, ctAt(16, 30, 0), true},
+	} {
+		got := tr.gateLocked(gateOnlyWire{link: c.link, feed: c.feed}, c.now)
+		want := reRequestGateReason(&fakeRerequestWire{linkDown: !c.link, feedDown: !c.feed}, rqOpen, c.now)
+		if got != want || (got != "") != c.blocked {
+			t.Fatalf("link=%v feed=%v at %s: tracker %q, shared %q, want blocked=%v", c.link, c.feed, c.now, got, want, c.blocked)
+		}
 	}
 }

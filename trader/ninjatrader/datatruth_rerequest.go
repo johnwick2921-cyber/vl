@@ -2,6 +2,7 @@ package ninjatrader
 
 import (
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -81,6 +82,13 @@ func untilBarHoleSendWindow(now time.Time) time.Duration {
 	in := now.In(kernel.CTLocation())
 	into := time.Duration(in.Second())*time.Second + time.Duration(in.Nanosecond())
 	return time.Minute - into + time.Second
+}
+
+// ingestLossSpentMessage is what the log says when the per-session-day NT8
+// re-request budget is spent: exactly what happens, and what clears the pause.
+func ingestLossSpentMessage(symbol, tf string, fromMs int64) string {
+	return fmt.Sprintf("🧪 data-truth ingest_loss: the NT8 history re-request budget for %s is SPENT for this CME session day - the lost %s span from %s is NOT asked for again (the tracker's own re-requests draw on the same budget). New entries for %s stay paused until the bars are back in the ring by another replay, the minute ages out of the ring (about 41 hours of 1m, 8.7 days of 5m), or the bot is restarted (the loss ledger lives in memory; the restart's NT8 replay and the bar gap audit's first pass re-read the store). The budget itself resets at the 17:00 CT roll",
+		symbol, tf, kernel.TableTimeCT(time.UnixMilli(fromMs)), symbol)
 }
 
 type dtRerequestSpan struct {
@@ -191,8 +199,7 @@ func dataTruthRerequester(w dtRerequestWire, isOpen func(time.Time) bool, clock 
 				after(dataTruthRerequestRetryEvery, try)
 			case errors.Is(err, ntwire.ErrGapBackfillSpent):
 				sayOnce(symbol+"|spent", func() {
-					logger.Warnf("🧪 data-truth ingest_loss: the NT8 history re-request budget for %s is SPENT for this CME session day - the lost %s span from %s is NOT asked for again (the tracker's own re-requests draw on the same budget). New entries for %s stay paused until the bars are back in the ring by another replay, the minute ages out of the ring (about 41 hours of 1m, 8.7 days of 5m), or the bot is restarted (the loss ledger lives in memory; the restart's NT8 replay and the bar gap audit's first pass re-read the store). The budget itself resets at the 17:00 CT roll",
-						symbol, tf, kernel.TableTimeCT(time.UnixMilli(fromMs)), symbol)
+					logger.Warnf("%s", ingestLossSpentMessage(symbol, tf, fromMs))
 				})
 				finish()
 			default:
