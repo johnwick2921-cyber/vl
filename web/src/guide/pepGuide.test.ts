@@ -227,3 +227,29 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(text).toContain(goConst('PepConflictDayPlan'))
   })
 })
+
+describe('mentor-only notes say "mentor or pep" where it is true', () => {
+  const text = (id: string) =>
+    JSON.stringify(GUIDE_SECTIONS.find((s) => s.id === id)?.blocks)
+  // Mutant: revert any one of these sentences -> RED.
+  it('the settings cards name pep beside mentor (confidence, break-even, trailing, max contracts)', () => {
+    const s = text('settings')
+    expect(s).toContain(
+      'to pep mode (pep entries come from the two fixed PDF rules and carry no confidence)'
+    )
+    expect(s).toContain('not for mentor or pep entries or armed plan scenarios')
+    expect(s).toContain('A pep trade is never moved by it either')
+    expect(s).toContain('nor to a pep trade (pep has no trailing')
+    expect(s).toContain('PEP MODE IS NOT CLAMPED BY THIS EITHER')
+  })
+  it('welcome, the EOD-flat FAQ and the glossary mention pep', () => {
+    expect(text('welcome')).toContain('PEP MODE (another per-strategy switch')
+    expect(text('faq')).toContain('A pep trader does not use this 14:45 flat')
+    expect(text('glossary')).toContain('Pep mode')
+  })
+  it('the pep contracts claim matches the Go ceiling the settings card quotes', () => {
+    expect(text('settings')).toContain(
+      `default ${goConst('PepContractsDefault')}, hard ceiling ${goConst('PepContractsCeiling')}`
+    )
+  })
+})
