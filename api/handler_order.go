@@ -39,9 +39,14 @@ func (s *Server) handleTraderList(c *gin.Context) {
 
 		// Get strategy name if strategy_id is set
 		var strategyName string
+		tradingMode, pepStyle := storepkg.TradingModeAI, ""
 		if trader.StrategyID != "" {
 			if strategy, err := s.store.Strategy().Get(userID, trader.StrategyID); err == nil {
 				strategyName = strategy.Name
+				// PEP MODE: the dashboard's mode chip (additive fields).
+				if cfg, perr := strategy.ParseConfig(); perr == nil {
+					tradingMode, pepStyle = tradingModeFields(cfg)
+				}
 			}
 		}
 
@@ -57,6 +62,8 @@ func (s *Server) handleTraderList(c *gin.Context) {
 			"initial_balance":     trader.InitialBalance,
 			"strategy_id":         trader.StrategyID,
 			"strategy_name":       strategyName,
+			"trading_mode":        tradingMode, // ai | mentor | pep | conflict
+			"pep_style":           pepStyle,    // "A" | "E" when trading_mode is pep, else ""
 		})
 	}
 
@@ -106,6 +113,13 @@ func (s *Server) handleGetTraderConfig(c *gin.Context) {
 		"custom_prompt":         traderConfig.CustomPrompt,
 		"override_base_prompt":  traderConfig.OverrideBasePrompt,
 		"is_cross_margin":       traderConfig.IsCrossMargin, "is_running": isRunning,
+	}
+	// PEP MODE: the trader's trading mode (additive fields).
+	result["trading_mode"], result["pep_style"] = storepkg.TradingModeAI, ""
+	if fullCfg.Strategy != nil {
+		if cfg, perr := fullCfg.Strategy.ParseConfig(); perr == nil {
+			result["trading_mode"], result["pep_style"] = tradingModeFields(cfg)
+		}
 	}
 
 	c.JSON(http.StatusOK, result)

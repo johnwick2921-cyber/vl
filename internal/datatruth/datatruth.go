@@ -61,6 +61,14 @@ type CheckFn func(symbol string, now time.Time) (blocked bool, why string, err e
 const (
 	ReaderAI     = "ai"
 	ReaderMentor = "mentor"
+	// ReaderPep (pep mode, owner order 2026-10-29): the pep evaluator reads ONLY
+	// the raw 1m ring - the opening box's highs/lows and a 2m EMA built from the
+	// 1m closes. It reads none of the AI path's 3m/5m indicator set, so an
+	// AI-only block never concerns it. It reads the same raw 1m bars the mentor
+	// does, so a MENTOR-scoped block (a wrong 1m extreme, a wrong 1m close) DOES
+	// concern it: pep is held to everything the mentor reader is held to, and to
+	// nothing that only the AI reader reads.
+	ReaderPep = "pep"
 )
 
 // ScopedCheckFn is a CheckFn that also says WHO its block is for. Two kinds of
@@ -130,12 +138,15 @@ func (r Reason) Concerns(reader string) bool {
 		if x == reader || !knownReader(x) {
 			return true
 		}
+		if reader == ReaderPep && x == ReaderMentor {
+			return true // the pep reader reads the same raw 1m ring as the mentor
+		}
 	}
 	return false
 }
 
 // knownReader: the reader names Concerns can match.
-func knownReader(x string) bool { return x == ReaderAI || x == ReaderMentor }
+func knownReader(x string) bool { return x == ReaderAI || x == ReaderMentor || x == ReaderPep }
 
 // knownScope: a scope token AppliesTo can match - exactly "trader:<id>" or
 // "acct:<ACCOUNT>" with a non-empty tail.
@@ -530,6 +541,8 @@ func readerNames(readers []string) []string {
 			names[i] = "mentor traders"
 		case ReaderAI:
 			names[i] = "AI/planner traders"
+		case ReaderPep:
+			names[i] = "pep traders"
 		default:
 			names[i] = r
 		}

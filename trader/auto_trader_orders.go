@@ -55,6 +55,11 @@ func (at *AutoTrader) resolveMaxContracts() int {
 	if mx, ok := at.mentorMaxContracts(); ok {
 		return mx
 	}
+	// PEP MODE - same exception, pep's own number (never above the hard ceiling
+	// of 10; the resolver clamps and logs). 6 stays 6.
+	if mx, ok := at.pepMaxContracts(); ok {
+		return mx
+	}
 	if at.config.StrategyConfig == nil {
 		return int(maxFuturesContracts)
 	}
@@ -341,6 +346,14 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 			actionRecord.Error = refusal
 			return nil
 		}
+		// PEP MODE - the close half: pep's fixed stop/target and its own flat time
+		// own every pep position; no AI close decision acts on one.
+		if refusal := at.pepSuppressAIClose(decision); refusal != "" {
+			at.logWarnf("🎯 %s (trader %s)", refusal, at.id)
+			actionRecord.Success = false
+			actionRecord.Error = refusal
+			return nil
+		}
 	}
 
 	// Feed-down gate (NinjaTrader, TRACK A), CLOSE half: the SIM cannot fill
@@ -383,6 +396,18 @@ func (at *AutoTrader) executeDecisionWithRecordAt(decision *kernel.Decision, act
 			if v, ok := at.strictNudgeAt(decision, refusal, now); ok {
 				actionRecord.Error = refusal + " · 🚦 " + v
 			}
+			return nil
+		}
+	}
+
+	// PEP MODE - THE DURABLE CLAIM, after the whole admission chain and BEFORE
+	// anything is sent: the one-trade-per-day record is written first, so a
+	// restart, a reload or a crash between here and the fill can never fire a
+	// second entry. Any failure to write it is a refusal (fail closed).
+	if decision.PepSourced && (decision.Action == "open_long" || decision.Action == "open_short") {
+		if refusal := at.pepClaimBeforeSend(decision, now); refusal != "" {
+			actionRecord.Success = false
+			actionRecord.Error = refusal
 			return nil
 		}
 	}
@@ -593,7 +618,7 @@ func (at *AutoTrader) executeOpenLong(decision *kernel.Decision, actionRecord *s
 	logger.Infof("  📈 Open long: %s", decision.Symbol)
 
 	// TRACK B — reconcile NT8 net before opening; flatten an orphan first or refuse.
-	flattened, err := at.reconcileBeforeOpenNTReport(decision.Symbol, "long")
+	flattened, err := at.reconcileBeforeOpenNTOrPep(decision, "long")
 	if manual != nil {
 		manual.flattenSent = flattened // FOLD-2 repair: the door tells a flatten that went out
 	}
@@ -614,7 +639,7 @@ func (at *AutoTrader) executeOpenShort(decision *kernel.Decision, actionRecord *
 	logger.Infof("  📉 Open short: %s", decision.Symbol)
 
 	// TRACK B — reconcile NT8 net before opening; flatten an orphan first or refuse.
-	flattened, err := at.reconcileBeforeOpenNTReport(decision.Symbol, "short")
+	flattened, err := at.reconcileBeforeOpenNTOrPep(decision, "short")
 	if manual != nil {
 		manual.flattenSent = flattened // FOLD-2 repair: the door tells a flatten that went out
 	}
@@ -702,6 +727,12 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 			// clamped. Skip the crypto notional/leverage margin model — futures
 			// margin is per-contract, not notional/leverage.
 			quantity = futuresOrderQuantity(decision.Symbol, decision.PositionSizeUSD, marketData.CurrentPrice, at.resolveMaxContracts())
+			// PEP MODE - the size is EXACTLY the owner's contract count or nothing:
+			// no silent shrink (a stale clamp) and no silent growth (a rounding
+			// drift of the notional). Refused before anything is written.
+			if decision.PepSourced && int(quantity) != decision.PepContracts {
+				return fmt.Errorf("pep_sizing_drift: sizing produced %.0f contract(s), pep asked for %d - refused (no silent shrink or growth)", quantity, decision.PepContracts)
+			}
 		} else {
 			// ⚠️ Auto-adjust position size if insufficient margin (crypto)
 			// Formula: totalRequired = positionSize/leverage + positionSize*0.001 + positionSize/leverage*0.01
@@ -766,7 +797,7 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 	// is the same question for the two paths that did not. Nothing has been written
 	// to the broker's bracket maps yet, so a refusal here sends and leaves nothing.
 	// Entry-only by construction: closes never reach openEntryWithRecord.
-	if v := at.dataIntegrityVerdictAt(ntTrader.IntegrityDeepOpenMin, time.Now(), false); v.Blocked {
+	if v := at.entryWireDataVerdict(decision.PepSourced, time.Now()); v.Blocked {
 		telemetry.IncGateBlock(at.id, v.Class)
 		at.logWarnf("⏸ %s %s REFUSED AT THE WIRE - the data verdict turned while this entry was being prepared: %s. Exits and protection continue.", decision.Symbol, action, v.Reason)
 		return fmt.Errorf("%s%s", v.refusalPrefix(), v.Reason)
@@ -788,6 +819,19 @@ func (at *AutoTrader) openEntryWithRecord(decision *kernel.Decision, actionRecor
 			}
 			at.logErrorf("🚨 pre-entry bracket TARGET set FAILED for %s — %v (entry proceeds without the protective target)", upper, err)
 			telemetry.RecordError(at.id, "bracket_set_failed", "pre-entry SetTakeProfit: "+err.Error(), telemetry.CostTradeLost)
+		}
+	}
+
+	// PEP MODE - pep sends ONE market order that carries its own bracket; a broker
+	// that cannot carry it is a refusal (never the two-step set-then-open), and the
+	// claim is advanced to "sending" immediately before the wire: from that
+	// moment the day's slot is consumed whatever happens.
+	if decision.PepSourced {
+		if !carries {
+			return fmt.Errorf("pep_no_bracket_carrier: this broker cannot carry the entry's own bracket - refused (pep never sends a two-step bracket)")
+		}
+		if err := at.pepMarkSending(decision); err != nil {
+			return err
 		}
 	}
 
@@ -1006,4 +1050,26 @@ func (at *AutoTrader) executeCloseShortWithRecord(decision *kernel.Decision, act
 // down to flat.
 func isBootIntegrityGatedAction(action string) bool {
 	return action == "open_long" || action == "open_short"
+}
+
+// reconcileBeforeOpenNTOrPep is the reconcile-before-open step. For every
+// non-pep entry it IS reconcileBeforeOpenNTReport (byte-identical). A pep entry
+// never flattens an orphan: the broker's book is read and anything it holds
+// refuses the entry (pep sends nothing on top of a position it cannot explain,
+// and flattens nothing it did not open).
+func (at *AutoTrader) reconcileBeforeOpenNTOrPep(decision *kernel.Decision, side string) (bool, error) {
+	if !decision.PepSourced {
+		return at.reconcileBeforeOpenNTReport(decision.Symbol, side)
+	}
+	if at.exchange != "ninjatrader" {
+		return false, nil
+	}
+	held, err := at.ntHeldPosition(decision.Symbol)
+	if err != nil {
+		return false, fmt.Errorf("pep_book_unreadable: %w - refusing the entry (an unreadable book is not an empty book)", err)
+	}
+	if held != "" {
+		return false, fmt.Errorf("pep_broker_not_flat: the broker holds a %s %s - pep sends no entry on top of it and flattens nothing it did not open", held, decision.Symbol)
+	}
+	return false, nil
 }

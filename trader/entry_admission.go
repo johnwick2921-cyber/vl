@@ -57,6 +57,10 @@ const (
 	admitAgent    admitPath = "agent"
 	admitArm      admitPath = "arm"
 	admitPicture  admitPath = "picture"
+	// admitPep is the pep evaluator's entry (PEP MODE, owner order 2026-10-29): a
+	// PepSourced decision on a pep-mode trader. Its place in every branch of the
+	// chain is written out in pep_admit.go.
+	admitPep admitPath = "pep"
 )
 
 // admitIntent is one request to open a position.
@@ -189,6 +193,14 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	if refusal := at.mentorAdmitRefusal(in); refusal != "" {
 		return at.admitRefuse(in, "mentor_ai_entries_off", refusal, func() {
 			at.logWarnf("🧑‍🏫 %s %s REFUSED — %s (trader %s)", sym, act, refusal, at.id)
+		})
+	}
+	// PEP MODE — the same switch, pep's half: with pep_enabled ON only a pep
+	// decision enters; with it OFF a pep decision is refused. Inert (class "")
+	// for every non-pep trader and every non-pep entry — byte-identical.
+	if class, refusal := at.pepAdmitRefusal(in); class != "" {
+		return at.admitRefuse(in, class, refusal, func() {
+			at.logWarnf("🎯 %s %s REFUSED — %s (trader %s)", sym, act, refusal, at.id)
 		})
 	}
 	if in.Path == admitPicture || in.Source == store.ArmSourcePicture {
@@ -363,9 +375,12 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 			})
 		}
 	} else {
-		// Arm / picture: the ONE session-risk verdict (breaker + no-trade band +
+		// Arm / picture / PEP: the ONE session-risk verdict (breaker + no-trade band +
 		// T1 + per-session trade cap), refusal only — the arm pass's own caller
-		// keeps its band-time cancel of resting arms.
+		// keeps its band-time cancel of resting arms. For pep the day-plan session
+		// LIST, T1 and force-flat windows are inert (pep and the day plan are
+		// exclusive: sessionEntryBlockedT1At and forceFlatWindowAt return at once
+		// without a day plan), so only the consecutive-loss breaker can refuse here.
 		if risk := at.sessionRiskGateAt(now); risk.Refuse {
 			// B3 (release #3b) Q1 + N5, expanded m235: a MENTOR arm waives the
 			// day-plan session LIST (lunch / first-N / outside-session /
@@ -398,7 +413,15 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// B3 N6: a MENTOR arm is exempt from the per-session last-entry cutoff (its
 	// window is any hour); the only hard cutoff left is the CME daily halt — no
 	// new mentor entries after 15:45 CT (15 min before the 16:00 break).
-	if in.Path == admitArm && in.MentorArm {
+	if in.Path == admitPep {
+		// PEP — its own last-entry rule: nothing at/after the flat time (the day
+		// plan's session last-entry offset is inert for pep; the two are exclusive).
+		if reason, blocked := at.pepPastEntryCutoff(now); blocked {
+			return at.admitRefuse(in, "pep_after_flat_time", "pep_after_flat_time: "+reason, func() {
+				at.logWarnf("🕒 pep last-entry cutoff: %s %s REFUSED — %s.", sym, act, reason)
+			})
+		}
+	} else if in.Path == admitArm && in.MentorArm {
 		if reason, blocked := at.mentorPastDailyHaltCutoff(now); blocked {
 			return at.admitRefuse(in, "last_entry", "last_entry_cutoff: "+reason, func() {
 				at.logWarnf("🕒 mentor last-entry cutoff: %s %s REFUSED — %s.", sym, act, reason)
@@ -429,9 +452,9 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 			})
 		}
 	} else {
-		// CME closed (weekend / holiday / daily halt): the arm and picture paths
-		// have no runCycle skip in front of them (Picture runs on the live-bar
-		// goroutine), so they ask the calendar directly (CTO Q3).
+		// CME closed (weekend / holiday / daily halt): the arm, picture and pep
+		// paths have no runCycle skip in front of them (Picture runs on the
+		// live-bar goroutine), so they ask the calendar directly (CTO Q3).
 		if closed, reason := kernel.CMEClosedReason(now); closed {
 			return at.admitRefuse(in, "cme_closed", "cme_closed: "+reason, func() {
 				at.logWarnf("🌙 cme closed: %s %s REFUSED — %s.", sym, act, reason)
@@ -536,7 +559,7 @@ func (at *AutoTrader) admitChain(in admitIntent, sym, act string, now time.Time)
 	// It is the LAST step of the chain: every policy gate above names its own
 	// refusal first (a breached daily loss, a no-trade band), and the one
 	// question left before the send is whether the price it uses is current.
-	if in.Path == admitArm && !in.MentorArm {
+	if (in.Path == admitArm && !in.MentorArm) || in.Path == admitPep {
 		if stale, why := at.armFeedStale(now); stale {
 			// Counted under the leg that fired: clock_step (the hold after a
 			// wall-clock step) or stale_data (bar age / receipt age). The log

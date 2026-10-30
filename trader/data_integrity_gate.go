@@ -225,7 +225,14 @@ func integrityHoleReason(sym string, v ntTrader.IntegrityVerdict) string {
 // at its seams, armFeedStale as the last step) so every policy refusal keeps
 // naming itself first.
 func (at *AutoTrader) dataIntegrityAdmitRefusal(in admitIntent, now time.Time) (class, text string, refused bool) {
-	v := at.dataIntegrityVerdictAt(integrityWindowFor(in), now, false)
+	var v dataVerdict
+	if in.Path == admitPep {
+		// PEP reads the box and a short EMA warm-up: its OWN window and reader
+		// (pep_admit.go), never the 12000-minute AI window.
+		v = at.pepDataVerdictAt(now, false)
+	} else {
+		v = at.dataIntegrityVerdictAt(integrityWindowFor(in), now, false)
+	}
 	if !v.Blocked {
 		return "", "", false
 	}
@@ -341,7 +348,7 @@ func integrityPauseWording(scope string, gov dataVerdict) pauseWording {
 }
 
 // integrityPauseScope — what the standing pause refuses for this trader, given
-// the verdict of each window in integrityWindows() order.
+// the verdict of each window in integrityWindows(now) order.
 func (at *AutoTrader) integrityPauseScope(blocked []bool) string {
 	if at.mentorEnabled() && len(blocked) > 1 && !blocked[0] {
 		return pauseScopeSwing
@@ -350,7 +357,11 @@ func (at *AutoTrader) integrityPauseScope(blocked []bool) string {
 }
 
 // integrityWindows is every window this trader's entries read.
-func (at *AutoTrader) integrityWindows() []int {
+func (at *AutoTrader) integrityWindows(now time.Time) []int {
+	if at.pepEnabled() {
+		// a pep trader enters only through the pep path, on pep's own window
+		return []int{at.pepIntegrityOpenMinAt(now)}
+	}
 	if at.mentorEnabled() {
 		// a mentor trader enters only through mentor arms: intraday setups and
 		// SWING4H (the swing window contains the deep one)
@@ -368,7 +379,7 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	}
 	var worst, gov dataVerdict
 	var blockedAt []bool
-	for _, w := range at.integrityWindows() {
+	for _, w := range at.integrityWindows(now) {
 		v := at.integrityVerdictAt(w, now, false)
 		blockedAt = append(blockedAt, v.Blocked)
 		if v.Blocked && !gov.Blocked {
@@ -500,7 +511,7 @@ func (at *AutoTrader) integrityWithdrawReason(now time.Time) (reason string, swi
 	if !at.integrityApplies() {
 		return "", false
 	}
-	ws := at.integrityWindows()
+	ws := at.integrityWindows(now)
 	for i, w := range ws {
 		v := at.integrityVerdictAt(w, now, false)
 		if !v.Blocked {

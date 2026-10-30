@@ -139,8 +139,8 @@ func (at *AutoTrader) maybeExitOnThesisDeath(now time.Time) {
 	if mode == store.ThesisDeathOff || at.store == nil || at.trader == nil {
 		return
 	}
-	if at.mentorEnabled() {
-		return // the mentor's exits own every mentor-mode position (R3)
+	if at.modeOwnsExits() {
+		return // the mentor's exits own every mentor-mode position (R3); pep's fixed stop/target and flat own every pep position
 	}
 	positions, err := at.store.Position().GetOpenPositions(at.id)
 	if err != nil {

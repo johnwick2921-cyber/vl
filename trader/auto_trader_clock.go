@@ -464,6 +464,12 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	if (!at.dayPlanEnabled() && !at.mentorEnabled()) || at.store == nil || at.trader == nil {
 		return false
 	}
+	// PEP MODE: the session registry flats at 14:45 CT; pep's flat is its own
+	// setting (15:00 CT) and runs in pepFlatBeat. A pep trader is never flattened
+	// early here, whatever else its strategy carries.
+	if at.pepEnabled() {
+		return false
+	}
 	reg := at.sessionRegistry(now)
 	flat := "" // resolved wall-clock, for the log only
 	if sess, ok := reg.ActiveSession(now); ok {
@@ -776,6 +782,9 @@ func (at *AutoTrader) enforceT1ForceFlat() bool {
 func (at *AutoTrader) enforceT1ForceFlatAt(now time.Time) bool {
 	if (!at.dayPlanEnabled() && !at.mentorEnabled()) || at.store == nil || at.trader == nil {
 		return false
+	}
+	if at.pepEnabled() {
+		return false // PEP MODE: pep's exits are its own (pepFlatBeat); no news flat
 	}
 	if _, ok := at.sessionRegistry(now).ActiveSession(now); !ok {
 		return false // no active session — never flatten from an invented clock
