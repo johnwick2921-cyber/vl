@@ -178,6 +178,11 @@ func (at *AutoTrader) runArmedEventLoop(l *armedEventLoop) {
 		if at.mentorEventPassAt(time.Now()) {
 			l.passes.Add(1)
 		}
+		// PEP MODE - the pep evaluator rides the same event loop on every FINAL
+		// 1m bar. Inert (returns false at once) unless pep mode is ON.
+		if at.pepEventPassAt(time.Now()) {
+			l.passes.Add(1)
+		}
 		ran := false
 		if at.armedEventNowForTest != nil {
 			ran = at.armedEventPassAt(at.armedEventNowForTest())

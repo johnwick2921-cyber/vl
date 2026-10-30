@@ -62,6 +62,45 @@ export interface StrategyConfig {
   // Day Plan settings block (root-level, additive; mirrors Go DayPlanConfig).
   // Absent/undefined = feature off (byte-identical to a pre-day-plan strategy).
   day_plan?: DayPlanConfig
+  // Pep trading-mode block (root-level, additive; mirrors Go store.PepConfig).
+  // Absent = pep OFF (byte-identical to a pre-pep strategy). The block is a
+  // MODE of its own, never combined with mentor_mode or the day plan.
+  pep?: PepConfig
+}
+
+// PepConfig — mirrors Go store.PepConfig (store/pep.go). Every leaf name is
+// unique (pep_*, pep_a_*, pep_e_*). Optional = the server resolves the shipped
+// default; the Studio panel always SENDS a concrete value (fullPepBlock) so the
+// server-side merge (which keeps absent keys) can never leave a stale number.
+export interface PepStyleAConfig {
+  pep_a_box_minutes?: number
+  pep_a_sl_fraction?: number
+  pep_a_tp_fraction?: number
+  pep_a_both_edges?: string // no_trade | nearest_open
+}
+export interface PepStyleEConfig {
+  pep_e_box_minutes?: number
+  pep_e_sl_fraction?: number
+  pep_e_tp_fraction?: number
+  pep_e_ema_period?: number
+  pep_e_ema_tf_min?: number
+  pep_e_signal_source?: string // ema | close
+  pep_e_warmup_bars?: number // 0 = auto (3 x period)
+}
+export interface PepConfig {
+  pep_enabled?: boolean
+  pep_style?: string // 'A' | 'E'
+  pep_contracts?: number
+  pep_box_start_ct?: string // HH:MM America/Chicago
+  pep_flat_time_ct?: string // HH:MM America/Chicago
+  pep_tick_size?: number
+  pep_sl_rounding?: string // outward | nearest
+  pep_max_trades_per_day?: number
+  pep_fee_per_contract_usd?: number
+  pep_max_box_points?: number // 0 = OFF
+  pep_signal_max_age_min?: number
+  style_a?: PepStyleAConfig
+  style_e?: PepStyleEConfig
 }
 
 // DayPlanSessionOverride — per-session overrides; an ABSENT field inherits the

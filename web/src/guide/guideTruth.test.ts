@@ -347,6 +347,29 @@ describe("C9 — the gate-label list is the panel's own map", () => {
       `every human label the gate panel has (${Object.keys(GATE_LABELS).length})`
     )
   })
+
+  // rereview m461 P2-3: the list may hold NO text the panel never shows. The
+  // label part of the block (everything before its first blank line, which
+  // starts the free-text notes) must equal the panel's labels EXACTLY, as a
+  // multiset: no invented wording, no duplicate. (The old test only checked that
+  // each panel label was present, so 22 pep sentences of another wording and 10
+  // duplicates sat in the list under a title that said 108.)
+  // Mutant: re-add one 'Pep — ...' sentence that is not a GATE_LABELS label, or
+  // repeat one label -> RED.
+  it('the label part of the list equals the panel labels exactly', () => {
+    const block = GUIDE_SECTIONS.find((s) => s.id === 'status')?.blocks.find(
+      (b) =>
+        b.kind === 'code' &&
+        /every human label the gate panel has/.test(b.title ?? '')
+    )
+    if (!block || block.kind !== 'code')
+      throw new Error('gate-label block not found')
+    const lines = block.lines.map((l) => l.trim())
+    const labelPart = lines.slice(0, lines.indexOf(''))
+    const labels = Object.values(GATE_LABELS).map((g) => g.en)
+    expect(labelPart.length).toBe(labels.length)
+    expect([...labelPart].sort()).toEqual([...labels].sort())
+  })
 })
 
 // m426: every mentor gate class the Go side can tick has a panel label (a gate

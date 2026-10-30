@@ -49,3 +49,15 @@ func (at *AutoTrader) NoteSeedSeriesForTest(mentorMode bool, openTimesMs []int64
 	}
 	at.noteSeedSeries(series, nil, now)
 }
+
+// SetStrategyConfigForTest binds a strategy config to a minimal trader for
+// ANOTHER package's call-site test (PEP: /api/traders/:id/pep-truth reads the
+// trader's resolved pep block). Test-only; never called in production.
+func (at *AutoTrader) SetStrategyConfigForTest(cfg *store.StrategyConfig) {
+	at.config.StrategyConfig = cfg
+}
+
+// SetStoreForTest binds the store a minimal trader reads durable records from
+// (PEP: the one-trade-per-day count on /api/traders/:id/pep-truth). Test-only;
+// never called in production.
+func (at *AutoTrader) SetStoreForTest(st *store.Store) { at.store = st }

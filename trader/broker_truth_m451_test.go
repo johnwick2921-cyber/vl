@@ -305,15 +305,19 @@ func TestM451FillPriceStrikesAndAckSurviveARestart(t *testing.T) {
 	savedDefault := checks.DefaultFills()
 	t.Cleanup(func() { checks.SetDefaultFills(savedDefault) })
 
+	now := agreeT0
 	boot := func() *checks.FillGuard { // a process start: a fresh guard, the boot wiring
 		datatruth.Reset()
 		g := checks.NewFillGuard(checks.DefaultFillParams(), nil)
+		// The fixture lives on the fixed agreeT0 day; the guard's 96 h state age
+		// cutoff must read the SAME clock, or the fixture ages out of the file as
+		// real time passes (it did, 2026-10-30 00:00).
+		g.SetClock(func() time.Time { return now })
 		checks.SetDefaultFills(g)
 		RegisterFillPrice() // the production boot call (RegisterBrokerTruthChecks -> here)
 		return g
 	}
 	t.Cleanup(datatruth.Reset)
-	now := agreeT0
 	m := now.UnixMilli() / 60_000 * 60_000
 	g1 := boot()
 	for _, id := range []string{"e1", "e2"} {

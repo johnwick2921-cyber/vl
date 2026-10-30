@@ -162,9 +162,16 @@ func TestJudgeFillHoleFallsBackToTheOrderPrice(t *testing.T) {
 	}
 }
 
+// testGuardNow is the instant the fixtures live at (2026-10-27 15:00 UTC) and the
+// clock newTestGuard installs: the guard's 96 h state age cutoff reads it instead of
+// the wall clock, so a state file written by a fixture does not age out as real time
+// passes (the #57 time bomb; see TestFillStateAgeCutoffUsesTheGuardClock).
+var testGuardNow = time.Date(2026, 10, 27, 15, 0, 0, 0, time.UTC)
+
 func newTestGuard(session func(time.Time) string) (*FillGuard, *[]string) {
 	var alerts []string
 	g := NewFillGuard(DefaultFillParams(), session)
+	g.SetClock(func() time.Time { return testGuardNow })
 	g.SetAlert(func(kind, text string) { alerts = append(alerts, kind) })
 	return g, &alerts
 }

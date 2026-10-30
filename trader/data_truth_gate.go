@@ -133,6 +133,13 @@ func (at *AutoTrader) dataTruthApplies() bool {
 // the blocking checks into one verdict. openMin is the window the admitted path
 // reads (the swing4h scope above).
 func (at *AutoTrader) dataTruthVerdictAt(openMin int, now time.Time) dataVerdict {
+	return at.dataTruthVerdictForReader(dataTruthReaderFor(openMin), openMin, now)
+}
+
+// dataTruthVerdictForReader is dataTruthVerdictAt for an explicit READER: pep
+// reads a window of its own (a derived number of minutes, not one of the fixed
+// mentor/AI windows), so the reader cannot be inferred from the window.
+func (at *AutoTrader) dataTruthVerdictForReader(reader string, openMin int, now time.Time) dataVerdict {
 	if !at.dataTruthApplies() {
 		return dataVerdict{}
 	}
@@ -143,7 +150,7 @@ func (at *AutoTrader) dataTruthVerdictAt(openMin int, now time.Time) dataVerdict
 	// past the grace the checks speak: Evaluate names every required check that
 	// never landed and judges whatever the ring holds (a replay that never came
 	// shows as the lost data it is)
-	return dataTruthReasons(at.futuresSymbol(), openMin, now, at.dataTruthAsker())
+	return dataTruthReasonsFor(reader, at.futuresSymbol(), openMin, now, at.dataTruthAsker())
 }
 
 // dataTruthAsker is who is asking: the trader id and the NT8 account it is bound
@@ -188,8 +195,12 @@ func dataTruthReaderFor(openMin int) string {
 // indicators read the 1m ring, and the other way round), and a reason scoped to
 // other traders/accounts (m451) only for the traders it is FOR.
 func dataTruthReasons(sym string, openMin int, now time.Time, asker truthAsker) dataVerdict {
+	return dataTruthReasonsFor(dataTruthReaderFor(openMin), sym, openMin, now, asker)
+}
+
+// dataTruthReasonsFor is dataTruthReasons for an explicit reader.
+func dataTruthReasonsFor(reader, sym string, openMin int, now time.Time, asker truthAsker) dataVerdict {
 	_, reasons := datatruth.Evaluate(sym, now)
-	reader := dataTruthReaderFor(openMin)
 	var parts []string
 	for _, r := range reasons {
 		if r.Check == checks.CheckLookbackSwing4h && openMin < ntTrader.IntegritySwingOpenMin {

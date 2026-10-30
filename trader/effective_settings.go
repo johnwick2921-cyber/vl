@@ -597,6 +597,24 @@ func mentorNotUsedSizingRow(x *effCtx) effResult {
 	}
 }
 
+// pepNotUsedSizingRow is mentorNotUsedSizingRow's pep twin: a pep trader sizes
+// every entry from pep_contracts (resolveMaxContracts returns pepMaxContracts),
+// never from the AI Risk Control cap, so the inert saved value is not the
+// running number. The count is the production reader's (never a literal).
+func pepNotUsedSizingRow(x *effCtx) effResult {
+	n, _ := x.at.pepMaxContracts()
+	return effResult{
+		value:  fmt.Sprintf("not used in pep mode — pep sizing governs (pep_contracts = %d)", n),
+		origin: pepModeOnOrigin,
+		scope:  ScopeStrategy,
+	}
+}
+
+// pepModeOnOrigin is the origin marker the Studio reads (RiskControlEditor
+// mentorNotAppliedCaveat) to render a "not applied" caveat for pep, the twin of
+// the mentor marker "mentor_mode on".
+const pepModeOnOrigin = "pep_enabled on"
+
 // ── RESOLVER TABLE ───────────────────────────────────────────────────────────
 
 const (
@@ -630,6 +648,15 @@ func buildEffectiveResolvers() map[string]effResolver {
 			return effResult{
 				value:  "not used in mentor mode — mentor entries come from the course rules and carry no AI confidence",
 				origin: "mentor_mode on",
+				scope:  ScopeStrategy,
+			}
+		}
+		// PEP (rereview m461 P2-1): pep entries are the PDF rules and carry no AI
+		// confidence either; the AI makes no entries at all.
+		if x.at != nil && x.at.pepEnabled() {
+			return effResult{
+				value:  "not used in pep mode — pep entries come from the PDF rules and carry no AI confidence",
+				origin: pepModeOnOrigin,
 				scope:  ScopeStrategy,
 			}
 		}
@@ -705,6 +732,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 		if x.at != nil && x.at.mentorEnabled() {
 			return mentorNotUsedSizingRow(x)
 		}
+		// PEP (rereview m461 P2-1): resolveMaxContracts returns pep_contracts for
+		// a pep trader; the 0B 2-contract clamp and this knob do not apply.
+		if x.at != nil && x.at.pepEnabled() {
+			return pepNotUsedSizingRow(x)
+		}
 		n, src := kernel.ResolveMaxContractsWithSource(x.rc().MaxContractsPerOrder, int(maxFuturesContracts))
 		scope := ScopeFutures
 		if strings.HasPrefix(src, "env ") || strings.HasPrefix(src, "clamp") {
@@ -713,6 +745,9 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return effResult{value: n, origin: src, scope: scope}
 	})
 	add(rcPath+"mentor_max_contracts", "trader.(*AutoTrader).mentorMaxContracts (the mentor-mode ceiling resolveMaxContracts actually returns)", func(x *effCtx) effResult {
+		if x.at != nil && x.at.pepEnabled() {
+			return effResult{value: "— (pep mode; not applied)", origin: "mentor_mode off", scope: ScopeStrategy}
+		}
 		if x.at == nil || !x.at.mentorEnabled() {
 			return effResult{value: "— (AI mode; not applied)", origin: "mentor_mode off", scope: ScopeStrategy}
 		}
@@ -867,6 +902,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 			origin = "clamp (trader.plannerContractsCeiling = 10)"
 		}
 		scope := ScopeStrategy
+		if x.at != nil && x.at.pepEnabled() {
+			// PEP: the AI planner makes no entries, so this stamp size is never used.
+			return effResult{value: "not used in pep mode — the AI planner makes no entries", origin: pepModeOnOrigin, scope: ScopeStrategy}
+		}
 		if x.at != nil && !x.at.mentorEnabled() {
 			max, maxSrc := kernel.ResolveMaxContractsWithSource(rc.MaxContractsPerOrder, int(maxFuturesContracts))
 			if v > max {
@@ -920,6 +959,11 @@ func buildEffectiveResolvers() map[string]effResolver {
 			// the mentor's exits own the stop.
 			if x.at != nil && x.at.mentorEnabled() {
 				return effResult{value: "not applied while mentor mode is ON (owner ruling 2026-10-09)", origin: "mentor_mode on", scope: ScopeStrategy}
+			}
+			// PEP (rereview m461 P2-1): modeOwnsExits() keeps the AI-era stop movers
+			// off a pep position; pep has no break-even and no trailing (PDF rule).
+			if x.at != nil && x.at.pepEnabled() {
+				return effResult{value: "not applied while pep mode is ON (pep's fixed stop and target own the exit)", origin: pepModeOnOrigin, scope: ScopeStrategy}
 			}
 			v := on(x.rc())
 			return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeFutures}
@@ -988,6 +1032,46 @@ func buildEffectiveResolvers() map[string]effResolver {
 		v := x.cfg.TransitionStanddownEnabled()
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault)}
 	})
+
+	// ── Pep (owner order 2026-10-29): every leaf of the root pep block resolves
+	// through store.ResolvePep — the ONE resolver kernel/pep.FromSettings and the
+	// boot line read. A clamped number names itself in its origin; a legal saved
+	// value (including a legal 0) reads "saved value".
+	pepRow := func(path, leaf string, get func(r store.PepResolved) any) {
+		add(path, "store.ResolvePep (kernel/pep.FromSettings reads the same)", func(x *effCtx) effResult {
+			r := store.ResolvePep(x.cfg)
+			v := get(r)
+			if note, clamped := r.Clamps[leaf]; clamped {
+				return effResult{value: v, origin: "clamp (store.ResolvePep): " + note}
+			}
+			if x.st.present {
+				return effResult{value: v, origin: store.SourceSaved}
+			}
+			return effResult{value: v, origin: store.SourceShippedDefault}
+		})
+	}
+	pepRow("pep.pep_enabled", "pep_enabled", func(r store.PepResolved) any { return r.Enabled })
+	pepRow("pep.pep_style", "pep_style", func(r store.PepResolved) any { return r.Style })
+	pepRow("pep.pep_contracts", "pep_contracts", func(r store.PepResolved) any { return r.Contracts })
+	pepRow("pep.pep_box_start_ct", "pep_box_start_ct", func(r store.PepResolved) any { return r.BoxStartCT })
+	pepRow("pep.pep_flat_time_ct", "pep_flat_time_ct", func(r store.PepResolved) any { return r.FlatTimeCT })
+	pepRow("pep.pep_tick_size", "pep_tick_size", func(r store.PepResolved) any { return r.TickSize })
+	pepRow("pep.pep_sl_rounding", "pep_sl_rounding", func(r store.PepResolved) any { return r.SLRounding })
+	pepRow("pep.pep_max_trades_per_day", "pep_max_trades_per_day", func(r store.PepResolved) any { return r.MaxTradesPerDay })
+	pepRow("pep.pep_fee_per_contract_usd", "pep_fee_per_contract_usd", func(r store.PepResolved) any { return r.FeePerContractRT })
+	pepRow("pep.pep_max_box_points", "pep_max_box_points", func(r store.PepResolved) any { return r.MaxBoxPoints })
+	pepRow("pep.pep_signal_max_age_min", "pep_signal_max_age_min", func(r store.PepResolved) any { return r.SignalMaxAgeMin })
+	pepRow("pep.style_a.pep_a_box_minutes", "pep_a_box_minutes", func(r store.PepResolved) any { return r.A.BoxMinutes })
+	pepRow("pep.style_a.pep_a_sl_fraction", "pep_a_sl_fraction", func(r store.PepResolved) any { return r.A.SLFraction })
+	pepRow("pep.style_a.pep_a_tp_fraction", "pep_a_tp_fraction", func(r store.PepResolved) any { return r.A.TPFraction })
+	pepRow("pep.style_a.pep_a_both_edges", "pep_a_both_edges", func(r store.PepResolved) any { return r.A.BothEdges })
+	pepRow("pep.style_e.pep_e_box_minutes", "pep_e_box_minutes", func(r store.PepResolved) any { return r.E.BoxMinutes })
+	pepRow("pep.style_e.pep_e_sl_fraction", "pep_e_sl_fraction", func(r store.PepResolved) any { return r.E.SLFraction })
+	pepRow("pep.style_e.pep_e_tp_fraction", "pep_e_tp_fraction", func(r store.PepResolved) any { return r.E.TPFraction })
+	pepRow("pep.style_e.pep_e_ema_period", "pep_e_ema_period", func(r store.PepResolved) any { return r.E.EMAPeriod })
+	pepRow("pep.style_e.pep_e_ema_tf_min", "pep_e_ema_tf_min", func(r store.PepResolved) any { return r.E.EMATFMin })
+	pepRow("pep.style_e.pep_e_signal_source", "pep_e_signal_source", func(r store.PepResolved) any { return r.E.SignalSource })
+	pepRow("pep.style_e.pep_e_warmup_bars", "pep_e_warmup_bars", func(r store.PepResolved) any { return r.E.WarmupBars })
 
 	// ── Day plan: strategy-level rows ────────────────────────────────────────
 	add(dpPath+"plan_enabled", "trader.(*AutoTrader).dayPlanEnabled", func(x *effCtx) effResult {

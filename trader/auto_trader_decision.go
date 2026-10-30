@@ -40,8 +40,13 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 		return nil
 	}
 
+	// PEP MODE: the pep entry saves its decision row from the event-loop goroutine
+	// while the cycle saves its own; the counter is bumped under cycleMu.
+	at.cycleMu.Lock()
 	at.cycleNumber++
-	record.CycleNumber = at.cycleNumber
+	cycleNo := at.cycleNumber
+	at.cycleMu.Unlock()
+	record.CycleNumber = cycleNo
 	record.TraderID = at.id
 	record.Account = at.currentAccountName() // ITEM 2 per-account attribution
 
@@ -65,7 +70,7 @@ func (at *AutoTrader) saveDecision(record *store.DecisionRecord) error {
 		return err
 	}
 
-	logger.Infof("📝 Decision record saved: trader=%s, cycle=%d", at.id, at.cycleNumber)
+	logger.Infof("📝 Decision record saved: trader=%s, cycle=%d", at.id, cycleNo)
 	return nil
 }
 

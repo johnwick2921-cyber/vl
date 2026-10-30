@@ -271,6 +271,8 @@ func TestDataVerdictIsConsultedOnlyByTheEntryChain(t *testing.T) {
 		"dataIntegrityVerdictAt": true, "integrityVerdictAt": true, "dataTruthVerdictAt": true,
 		"dataTruthReasons": true, "dataIntegrityAdmitRefusal": true, "dataIntegrityTestSeamRefusal": true,
 		"integrityWithdrawReason": true, "seedSeriesVerdict": true,
+		// PEP MODE: the reader-explicit folds and pep's own entry verdict
+		"dataTruthVerdictForReader": true, "dataTruthReasonsFor": true, "pepDataVerdictAt": true,
 	}
 	// file:function -> why it may ask
 	allowed := map[string]string{
@@ -287,6 +289,9 @@ func TestDataVerdictIsConsultedOnlyByTheEntryChain(t *testing.T) {
 		"data_integrity_gate.go:dataIntegrityBeat":            "the entry-pause episode (acts on nothing but entries)",
 		"data_integrity_seed.go:HealthSeedSeriesPause":        "health display of the seed leg",
 		"data_truth_gate.go:dataTruthVerdictAt":               "the m446/m447 fold",
+		"data_truth_gate.go:dataTruthVerdictForReader":        "the m446/m447 fold for an explicit reader (pep's own window)",
+		"data_truth_gate.go:dataTruthReasons":                 "the reasons scoped to the window's reader (thin wrapper of dataTruthReasonsFor)",
+		"pep_admit.go:pepDataVerdictAt":                       "PEP MODE: pep's entry data verdict (own window, own reader) - asked by the admission chain and the wire re-check only",
 		"data_truth_gate.go:dataTruthBeat":                    "the data-truth episode (acts on nothing)",
 		"entry_admission.go:admitChain":                       "THE entry chain",
 		"mentor_tick.go:mentorPlaceIntent":                    "mentor arm authoring (entry)",
