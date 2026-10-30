@@ -6,6 +6,7 @@ import (
 	"net"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -249,6 +250,95 @@ func TestMaintenanceAckIsRecordedOnTheCurrentConnectionOnly(t *testing.T) {
 	}
 	if rec2.Ack != nil {
 		t.Fatal("an ack from a previous connection must never be reported for the current one")
+	}
+}
+
+// m456-mainack — "connected" and "its record" must appear together. The accept
+// path used to publish s.conn (IsConnected()==true) and only AFTERWARDS replace
+// the connection record, so a reader that saw the connection could still get the
+// PREVIOUS connection's record (old accept_seq, old ack, connected=false). That
+// was the rare flake in TestMaintenanceAckIsRecordedOnTheCurrentConnectionOnly.
+// The accept clock is the production seam that is evaluated inside that window;
+// parking it holds the accept goroutine there deterministically.
+func TestConnectedImpliesItsConnectionRecordExists(t *testing.T) {
+	t.Run("no_key_publish_at_accept", func(t *testing.T) { connectedImpliesRecord(t, "") })
+	// GATE 3: with a connect key the conn is published at the authenticated hello
+	// (authenticateKeyHello) — the second site with the same publish-then-record order.
+	t.Run("connect_key_publish_at_hello", func(t *testing.T) {
+		t.Setenv("NT_CONNECT_KEY", "m456-test-key")
+		connectedImpliesRecord(t, "m456-test-key")
+	})
+}
+
+func connectedImpliesRecord(t *testing.T, key string) {
+	t.Helper()
+	fastMaintenanceTimers(t)
+	s := startedServer(t, nil)
+	w := dialWire(t, s, HelloPayload{ConnectKey: key})
+	if err := WriteFrame(w.conn, FrameMaintenanceAck, MaintenanceAckPayload{Held: true, JobID: "old-link"}); err != nil {
+		t.Fatal(err)
+	}
+	var rec ConnectionRecord
+	for i := 0; i < 200; i++ {
+		rec, _ = s.ConnectionRecord()
+		if rec.Ack != nil {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	if rec.Ack == nil {
+		t.Fatal("fixture: the first connection's ack was not recorded")
+	}
+	firstSeq := rec.AcceptSeq
+	_ = w.conn.Close()
+	for i := 0; i < 400 && s.IsConnected(); i++ {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if s.IsConnected() {
+		t.Fatal("fixture: the first connection never retired")
+	}
+
+	var calls atomic.Int32
+	inWindow, release := make(chan struct{}), make(chan struct{})
+	var releaseOnce sync.Once
+	unpark := func() { releaseOnce.Do(func() { close(release) }) }
+	t.Cleanup(unpark) // a failing assertion must not leave the accept goroutine parked (Stop would hang)
+	s.SetAcceptClockForTest(func() time.Time {
+		if calls.Add(1) == 1 {
+			close(inWindow)
+			<-release // park the accept goroutine at the accept instant
+		}
+		return time.Now()
+	})
+	_ = dialWireNoWait(t, s, HelloPayload{ConnectKey: key})
+	select {
+	case <-inWindow:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the accept clock was never consulted")
+	}
+	// Whenever the connection is visible as connected, its own record must be
+	// the one ConnectionRecord returns — never the previous link's.
+	check := func(stage string) {
+		t.Helper()
+		if !s.IsConnected() {
+			return
+		}
+		r, ok := s.ConnectionRecord()
+		if !ok || r.AcceptSeq <= firstSeq || r.Ack != nil {
+			t.Fatalf("%s: IsConnected() is true but ConnectionRecord() is the previous connection's: ok=%v accept_seq=%d (first %d) ack=%v",
+				stage, ok, r.AcceptSeq, firstSeq, r.Ack != nil)
+		}
+	}
+	for end := time.Now().Add(300 * time.Millisecond); time.Now().Before(end); time.Sleep(time.Millisecond) {
+		check("accept parked")
+	}
+	unpark()
+	if !waitConnected(s, 2*time.Second) {
+		t.Fatal("the new connection never became the connected client")
+	}
+	check("accept released")
+	if r, ok := s.ConnectionRecord(); !ok || r.AcceptSeq <= firstSeq {
+		t.Fatalf("after the accept completed the new record must be current: ok=%v accept_seq=%d (first %d)", ok, r.AcceptSeq, firstSeq)
 	}
 }
 
