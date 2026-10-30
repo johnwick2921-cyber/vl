@@ -140,6 +140,17 @@ func (at *AutoTrader) PepTruthSnapshot(now time.Time) PepTruth {
 	at.pep.truthMu.Unlock()
 	if t.evaluated {
 		out.LastEvaluatedMs = t.at.UnixMilli()
+	}
+	// The evaluator's box, refusals and signal belong to the CT day it ran on. On
+	// a day with no pass (weekend, holiday, before the first bar of the day) the
+	// stored result is YESTERDAY's: merging it under today's date drew Friday's
+	// box and "Refusal: pep_position_open" on a Saturday card (re-review 6, P3).
+	// A stale evaluation is treated as no evaluation: no box, no refusals,
+	// signal no_data - while LastEvaluatedMs still says when it last ran.
+	if t.evaluated && pepDayNow(t.at) != day {
+		t = pepTruthState{}
+	}
+	if t.evaluated {
 		out.Box = PepTruthBox{High: t.res.Box.High, Low: t.res.Box.Low, Size: t.res.Box.Size, Drawn: t.res.Box.Drawn}
 		for _, f := range t.res.Refusals {
 			out.Refusals = append(out.Refusals, PepTruthRefusal{Code: f.Code, Severity: string(f.Severity), Detail: f.Detail})
