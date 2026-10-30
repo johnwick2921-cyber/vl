@@ -532,3 +532,77 @@ func TestHealthExposesDataTruth(t *testing.T) {
 		t.Fatalf("a swing4h-only failure pauses SWING4H entries only: %+v", tp)
 	}
 }
+
+// Release #55 round 3 (review 4, D1): /api/health says WHICH entries a data-truth
+// pause covers. The bot pauses a reader-scoped block (mentor-only / AI-only) for
+// that reader and an account-scoped block for the traders on that account; the
+// health body used to call every one of them all_entries, so the banner told the
+// owner that trading was stopped while the mentor traders traded normally (the
+// real 10-29 08:30 truncation). Driven through the real handleHealth.
+//
+// MUTANT: handleHealth notes PausedScopeAll for every data_truth block -> RED.
+func TestHealthDataTruthScopeFollowsTheReadersAndAccounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	datatruth.Reset()
+	t.Cleanup(datatruth.Reset)
+	t.Cleanup(ntTrader.SetIntegrityArmedForTest(true))
+	at := time.Date(2026, 10, 28, 10, 0, 0, 0, kernel.CTLocation())
+	t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(at.Add(-48*time.Hour).UnixMilli(), at.UnixMilli(),
+		[]ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26"}}))
+	prev := healthNow
+	healthNow = func() time.Time { return at }
+	t.Cleanup(func() { healthNow = prev })
+	get := func() map[string]any {
+		t.Helper()
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		c.Request = httptest.NewRequest(http.MethodGet, "/api/health", nil)
+		(&Server{}).handleHealth(c)
+		var body map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatalf("health body not JSON: %v", err)
+		}
+		return body["trading_paused"].(map[string]any)
+	}
+	var readers, scopes []string
+	on := false
+	datatruth.RegisterScoped("cross_frame", func(string, time.Time) (bool, string, []string, error) {
+		return on, "5m disagrees", readers, nil
+	})
+	datatruth.RegisterScoped("broker_agreement", func(string, time.Time) (bool, string, []string, error) {
+		return len(scopes) > 0, "views disagree", scopes, nil
+	})
+	expect := func(label, want string) map[string]any {
+		t.Helper()
+		datatruth.Evaluate("MNQ", at)
+		tp := get()
+		if tp["paused"] != true || tp["scope"] != want {
+			t.Fatalf("%s: scope = %v, want %s: %+v", label, tp["scope"], want, tp)
+		}
+		return tp
+	}
+	on, readers = true, []string{datatruth.ReaderMentor}
+	expect("mentor-reader-only", ntTrader.PausedScopeMentor)
+	readers = []string{datatruth.ReaderAI}
+	expect("ai-reader-only", ntTrader.PausedScopeAI)
+	readers = nil
+	expect("every reader", ntTrader.PausedScopeAll)
+	on = false
+	scopes = []string{datatruth.ScopeAccount("Sim101")}
+	tp := expect("account-only", ntTrader.PausedScopeTraders)
+	if ds, _ := tp["data_truth_scopes"].(map[string]any); ds["broker_agreement"] == nil {
+		t.Fatalf("the account scope must ride data_truth_scopes for the banner: %+v", tp)
+	}
+	// an account block next to a mentor-only block: the widest honest name wins
+	on, readers = true, []string{datatruth.ReaderMentor}
+	tp = expect("mentor + account", ntTrader.PausedScopeMentor)
+	if dr, _ := tp["data_truth_readers"].(map[string]any); dr["cross_frame"] == nil {
+		t.Fatalf("the readers must ride data_truth_readers: %+v", tp)
+	}
+	readers = []string{datatruth.ReaderAI}
+	scopes = nil
+	datatruth.RegisterScoped("bad_print", func(string, time.Time) (bool, string, []string, error) {
+		return true, "wick", []string{datatruth.ReaderMentor}, nil
+	})
+	expect("mentor from one check + ai from another", ntTrader.PausedScopeAll)
+}
