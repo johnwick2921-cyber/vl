@@ -23,8 +23,8 @@ export type PepStyle = (typeof PEP_STYLES)[number]
 
 /** Shipped values — the SAME numbers as store/pep.go Pep*Default. */
 export const PEP_DEFAULTS = {
-  style: 'A',
-  contracts: 3,
+  style: 'E', // owner 2026-10-30 "keep default E 6"
+  contracts: 6,
   boxStartCT: '08:30',
   flatTimeCT: '15:00',
   tickSize: 0.25,
@@ -121,6 +121,22 @@ export function fullPepBlock(p?: PepConfig): PepConfig {
       pep_e_warmup_bars: e.pep_e_warmup_bars ?? d.e.warmupBars,
     },
   }
+}
+
+/** The style and contract count the SERVER would run for a stored block (the
+ *  resolver case-folds the style and runs the shipped default E for junk, and
+ *  clamps contracts into 1..10), so the confirm dialog never states a number the
+ *  bot will not run (rereview m461 P3). Pure; the eff lines stay the authority. */
+export function pepRunsStyle(p?: PepConfig): PepStyle {
+  return (p?.pep_style ?? '').trim().toUpperCase() === 'A' ? 'A' : 'E'
+}
+export function pepRunsContracts(p?: PepConfig): number {
+  const n = p?.pep_contracts ?? PEP_DEFAULTS.contracts
+  if (!Number.isFinite(n)) return PEP_DEFAULTS.contracts
+  return Math.min(
+    PEP_RANGES.contracts.max,
+    Math.max(PEP_RANGES.contracts.min, Math.trunc(n))
+  )
 }
 
 /** Switches the strategy to one trading mode. mentor_mode (risk_control) and

@@ -40,8 +40,9 @@ type PepConfig struct {
 	// Enabled is the master switch. nil / false = OFF (shipped default).
 	Enabled *bool `json:"pep_enabled,omitempty"`
 	// Style is "A" (ORB breakout, enter immediately) or "E" (EMA9 ORB, candle-close).
+	// Shipped E (owner 2026-10-30 "keep default E 6").
 	Style string `json:"pep_style,omitempty"`
-	// Contracts is the contract count (shipped 3; hard ceiling PepContractsCeiling).
+	// Contracts is the contract count (shipped 6, owner 2026-10-30 "keep default E 6"; hard ceiling PepContractsCeiling).
 	Contracts *int `json:"pep_contracts,omitempty"`
 	// BoxStartCT is the box start, "HH:MM" America/Chicago (shipped 08:30).
 	BoxStartCT string `json:"pep_box_start_ct,omitempty"`
@@ -102,7 +103,11 @@ const (
 	PepSLRoundOutward = "outward"
 	PepSLRoundNearest = "nearest"
 
-	PepContractsDefault = 3
+	// PepStyleDefault / PepContractsDefault are the owner's shipped defaults
+	// (2026-10-30: "keep default E 6"). Written as literals so the Studio and the
+	// guide tests can read them back from this file.
+	PepStyleDefault     = "E"
+	PepContractsDefault = 6
 	// PepContractsCeiling is the HARD maximum (SIM only; a bigger saved number is
 	// clamped and logged, never honoured).
 	PepContractsCeiling = 10
@@ -201,7 +206,7 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 	r := PepResolved{Clamps: map[string]string{}}
 	r.Enabled = p.Enabled != nil && *p.Enabled
 
-	r.Style = pepVocab(r.Clamps, "pep_style", p.Style, strings.ToUpper, []string{PepStyleA, PepStyleE}, PepStyleA)
+	r.Style = pepVocab(r.Clamps, "pep_style", p.Style, strings.ToUpper, []string{PepStyleA, PepStyleE}, PepStyleDefault)
 	r.Contracts = pepInt(r.Clamps, "pep_contracts", p.Contracts, PepContractsDefault, 1, PepContractsCeiling)
 	r.SLRounding = pepVocab(r.Clamps, "pep_sl_rounding", p.SLRounding, strings.ToLower, []string{PepSLRoundOutward, PepSLRoundNearest}, PepSLRoundOutward)
 	r.TickSize = pepPosFloat(r.Clamps, "pep_tick_size", p.TickSize, PepTickDefault, 1000)
@@ -213,8 +218,14 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 	r.BoxStartCT, r.BoxStartMin = pepClock(r.Clamps, "pep_box_start_ct", p.BoxStartCT, PepBoxStartDefault)
 	r.FlatTimeCT, r.FlatMin = pepClock(r.Clamps, "pep_flat_time_ct", p.FlatTimeCT, PepFlatTimeDefault)
 	if r.FlatMin <= r.BoxStartMin {
-		r.Clamps["pep_flat_time_ct"] = fmt.Sprintf("flat time %s is not after the box start %s: the shipped %s / %s run instead",
+		// The pair is rejected AS A PAIR and BOTH reset to the shipped values, so
+		// the note is recorded under BOTH leaves (rereview m461 P2-2): a rejected
+		// 16:00 box start must not read "saved value 16:00" on its own row while
+		// the bot trades the 08:30 box. The sentence is the same on both rows.
+		note := fmt.Sprintf("flat time %s is not after the box start %s: the shipped %s / %s run instead",
 			r.FlatTimeCT, r.BoxStartCT, PepBoxStartDefault, PepFlatTimeDefault)
+		r.Clamps["pep_flat_time_ct"] = note
+		r.Clamps["pep_box_start_ct"] = note
 		r.BoxStartCT, r.BoxStartMin = PepBoxStartDefault, 8*60+30
 		r.FlatTimeCT, r.FlatMin = PepFlatTimeDefault, 15*60
 	}
@@ -358,9 +369,21 @@ func (r PepResolved) PepClampNotes() []string {
 		keys = append(keys, k)
 	}
 	sort.Strings(keys)
+	// Leaves that share ONE sentence (a rejected box-start / flat-time pair)
+	// print once, naming every leaf, so a save does not warn twice for one cause.
 	out := make([]string, 0, len(keys))
+	at := map[string]int{} // sentence -> index in out
+	leaves := map[string][]string{}
 	for _, k := range keys {
-		out = append(out, "pep."+k+": "+r.Clamps[k])
+		txt := r.Clamps[k]
+		if i, dup := at[txt]; dup {
+			leaves[txt] = append(leaves[txt], "pep."+k)
+			out[i] = strings.Join(leaves[txt], " + ") + ": " + txt
+			continue
+		}
+		at[txt] = len(out)
+		leaves[txt] = []string{"pep." + k}
+		out = append(out, "pep."+k+": "+txt)
 	}
 	return out
 }
@@ -428,7 +451,9 @@ func (c *StrategyConfig) TradingModeConflict() *ModeConflictError {
 // named *ModeConflictError. An unparseable config is not this guard's business
 // (nil): the other save-time validation reports that.
 func guardStrategyModes(configJSON string) error {
-	if !strings.Contains(configJSON, "pep_enabled") {
+	// Go's JSON decoder matches keys case-insensitively, so the fast path must
+	// too: a hand-written "PEP_ENABLED" still reaches the parse below.
+	if !strings.Contains(strings.ToLower(configJSON), "pep_enabled") {
 		return nil // no pep block saved: nothing to conflict, and no parse cost
 	}
 	var c StrategyConfig

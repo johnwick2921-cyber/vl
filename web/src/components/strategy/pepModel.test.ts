@@ -10,6 +10,8 @@ import {
   PEP_RANGES,
   applyTradingMode,
   fullPepBlock,
+  pepRunsContracts,
+  pepRunsStyle,
   tradingModeOf,
   type TradingMode,
 } from './pepModel'
@@ -46,7 +48,7 @@ describe('pepModel defaults equal store/pep.go', () => {
     expect(d.e.tpFraction).toBe(Number(goConst('PepETPFractionDefault')))
     expect(String(d.e.emaPeriod)).toBe(goConst('PepEEMAPeriodDefault'))
     expect(String(d.e.emaTFMin)).toBe(goConst('PepEEMATFDefault'))
-    expect(d.style).toBe(goConst('PepStyleA'))
+    expect(d.style).toBe(goConst('PepStyleDefault'))
     expect(d.slRounding).toBe(goConst('PepSLRoundOutward'))
     expect(d.a.bothEdges).toBe(goConst('PepBothEdgesNoTrade'))
     expect(d.e.signalSource).toBe(goConst('PepSourceEMA'))
@@ -98,6 +100,17 @@ describe('fullPepBlock', () => {
       }
     }
     expect(have.sort()).toEqual([...registered].sort())
+  })
+
+  // OWNER RULING 2026-10-30 "keep default E 6" (literals on purpose).
+  // Mutant: PEP_DEFAULTS style 'A' or contracts 3 -> RED.
+  it('an unsaved block fills style E, 6 contracts, an E box of 2 and an A box of 5', () => {
+    const b = fullPepBlock(undefined)
+    expect(b.pep_style).toBe('E')
+    expect(b.pep_contracts).toBe(6)
+    expect(b.style_e?.pep_e_box_minutes).toBe(2)
+    expect(b.style_a?.pep_a_box_minutes).toBe(5)
+    expect(b.pep_enabled).toBe(false)
   })
 
   it('keeps a stored value, including a legal 0, and fills only the absent ones', () => {
@@ -175,5 +188,20 @@ describe('applyTradingMode: both-ON is unreachable', () => {
       mode: 'pep',
       conflict: true,
     })
+  })
+})
+
+// rereview m461 P3: the confirm dialog states what the SERVER runs, not the
+// stored number. Mutant: return p?.pep_contracts unclamped / the raw style -> RED.
+describe('pepRunsContracts / pepRunsStyle', () => {
+  it('clamp and case-fold like store.ResolvePep', () => {
+    expect(pepRunsContracts(undefined)).toBe(6)
+    expect(pepRunsContracts({ pep_contracts: 15 })).toBe(10)
+    expect(pepRunsContracts({ pep_contracts: 0 })).toBe(1)
+    expect(pepRunsContracts({ pep_contracts: 4 })).toBe(4)
+    expect(pepRunsStyle(undefined)).toBe('E')
+    expect(pepRunsStyle({ pep_style: 'a' })).toBe('A')
+    expect(pepRunsStyle({ pep_style: ' e ' })).toBe('E')
+    expect(pepRunsStyle({ pep_style: 'Z' })).toBe('E')
   })
 })

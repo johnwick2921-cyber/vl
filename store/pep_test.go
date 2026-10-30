@@ -108,7 +108,7 @@ func TestNoPepBlockEmitsNoKey(t *testing.T) {
 
 func TestResolvePepShippedDefaults(t *testing.T) {
 	r := ResolvePep(nil)
-	if r.Enabled || r.Style != "A" || r.Contracts != 3 || r.BoxStartCT != "08:30" || r.FlatTimeCT != "15:00" || r.BoxStartMin != 510 || r.FlatMin != 900 ||
+	if r.Enabled || r.Style != "E" || r.Contracts != 6 || r.BoxStartCT != "08:30" || r.FlatTimeCT != "15:00" || r.BoxStartMin != 510 || r.FlatMin != 900 ||
 		r.TickSize != 0.25 || r.SLRounding != "outward" || r.MaxTradesPerDay != 1 || r.FeePerContractRT != 1 || r.MaxBoxPoints != 0 || r.SignalMaxAgeMin != 2 {
 		t.Fatalf("shared defaults: %+v", r)
 	}
@@ -156,7 +156,7 @@ func TestResolvePepClampsAreNamed(t *testing.T) {
 		StyleE: &PepStyleEConfig{EMAPeriod: IntPtr(1), EMATFMin: IntPtr(7), SignalSource: "x", WarmupBars: IntPtr(-1), TPFraction: f64p(99)},
 	}}
 	r := ResolvePep(c)
-	if r.Style != "A" || r.Contracts != 10 || r.TickSize != 0.25 || r.MaxTradesPerDay != 1 || r.SignalMaxAgeMin != 30 || r.BoxStartCT != "08:30" ||
+	if r.Style != "E" || r.Contracts != 10 || r.TickSize != 0.25 || r.MaxTradesPerDay != 1 || r.SignalMaxAgeMin != 30 || r.BoxStartCT != "08:30" ||
 		r.SLRounding != "outward" || r.FeePerContractRT != 0 || r.MaxBoxPoints != 0 {
 		t.Fatalf("shared: %+v", r)
 	}
@@ -279,5 +279,31 @@ func TestStrategyStoreWritersRefuseModeConflict(t *testing.T) {
 	okJSON, _ := json.Marshal(ok)
 	if err := s.UpdateWithExplicitZeros(&Strategy{ID: id, UserID: "u1", Name: "x", Config: string(okJSON)}, &ok); err != nil {
 		t.Fatalf("a legal pep save was refused: %v", err)
+	}
+}
+
+// rereview m461 P2-2: the pair is rejected as a pair, so BOTH leaves carry the
+// clamp, and the save warning prints it once, naming both leaves.
+// Mutant: drop r.Clamps["pep_box_start_ct"] in ResolvePep -> RED.
+func TestResolvePepRejectedPairClampsBothLeavesAndWarnsOnce(t *testing.T) {
+	c := &StrategyConfig{Pep: &PepConfig{BoxStartCT: "16:00", FlatTimeCT: "15:00"}}
+	r := ResolvePep(c)
+	if r.BoxStartCT != "08:30" || r.FlatTimeCT != "15:00" || r.Clamps["pep_box_start_ct"] == "" || r.Clamps["pep_flat_time_ct"] == "" {
+		t.Fatalf("%+v", r)
+	}
+	notes := r.PepClampNotes()
+	if len(notes) != 1 || !strings.Contains(notes[0], "pep.pep_box_start_ct") || !strings.Contains(notes[0], "pep.pep_flat_time_ct") {
+		t.Fatalf("one warning naming both leaves, got %q", notes)
+	}
+}
+
+// rereview m461 P3: the store guard's fast path is case-insensitive like Go's
+// JSON decoder, so a hand-written upper-case key cannot skip it.
+// Mutant: strings.Contains(configJSON, "pep_enabled") (case-sensitive) -> RED.
+func TestGuardStrategyModesIsCaseInsensitiveOnTheKey(t *testing.T) {
+	raw := `{"strategy_type":"ai_trading","ai_config":{"risk_control":{"mentor_mode":true}},"PEP":{"PEP_ENABLED":true}}`
+	var me *ModeConflictError
+	if err := guardStrategyModes(raw); !errors.As(err, &me) || me.Code != PepConflictMentor {
+		t.Fatalf("an upper-case PEP_ENABLED key with mentor mode must be refused by name, got %v", err)
 	}
 }

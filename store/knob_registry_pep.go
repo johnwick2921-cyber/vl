@@ -25,8 +25,8 @@ func init() {
 	}
 	live("pep.pep_enabled", "Master switch; nil/false = OFF (shipped). Read by StrategyConfig.PepEnabled (mode exclusivity guard store/pep.go:guardStrategyModes; api/strategy.go).",
 		"store/pep.go:StrategyConfig.PepEnabled", "store/pep.go:TradingModeConflict")
-	live("pep.pep_style", "A (ORB breakout, enter immediately) or E (EMA9 ORB, candle-close); case-folded where it enters.")
-	live("pep.pep_contracts", "Shipped 3; HARD ceiling 10 (clamped and logged, never honoured above).")
+	live("pep.pep_style", "A (ORB breakout, enter immediately) or E (EMA9 ORB, candle-close); shipped E (owner 2026-10-30); case-folded where it enters.")
+	live("pep.pep_contracts", "Shipped 6 (owner 2026-10-30); HARD ceiling 10 (clamped and logged, never honoured above).")
 	live("pep.pep_box_start_ct", "HH:MM America/Chicago; shipped 08:30.")
 	live("pep.pep_flat_time_ct", "HH:MM America/Chicago; shipped 15:00 (the session flat is 14:45 and must not be used).")
 	live("pep.pep_tick_size", "Shipped 0.25 (MNQ).")

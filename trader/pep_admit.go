@@ -37,8 +37,12 @@ import (
 //	re-entry cooldown                      n/a (arm, picture)
 //	EntryGate (R:R, min-SL x ATR5m)        NOT called: pep's SL and TP are the box, not
 //	                                       an authored bracket. Its job is done by
-//	                                       pepWireCheck on the wire-rounded prices and by
-//	                                       the one-contract guard at the wire
+//	                                       pepWireCheck on the wire-rounded prices; the
+//	                                       held-position check is pepSendEntry's own
+//	                                       ntHeldPosition read (oneContractGuard is the
+//	                                       ARMED path's and is not called for pep; it
+//	                                       looks at open positions only, not at working
+//	                                       entry orders, and neither does pep's read)
 //	stale feed (armFeedStale)              KEPT as the last step
 //	SIM-only                               at the wire (isAccountTradeable), untouched
 

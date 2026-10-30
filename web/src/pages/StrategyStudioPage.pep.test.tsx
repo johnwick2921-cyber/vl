@@ -117,6 +117,20 @@ describe('Strategy Studio: pep wiring', () => {
     expect(sent.pep!.pep_contracts).toBe(4)
   })
 
+  // rereview m461 P3: the confirm dialog states the style and size the SERVER
+  // would run (a stored 15 contracts runs as 10; an unsaved block runs E / 6),
+  // read through the real page. Mutant: pass the raw stored number / fullPepBlock
+  // to the selector -> RED.
+  it('the Pep confirm dialog states the clamped contract count and the style that runs', async () => {
+    stored = futuresConfig({ pep: { pep_enabled: false, pep_contracts: 15 } })
+    await openStudio()
+    openSection(/risk control/i)
+    fireEvent.click(await screen.findByTestId('trading-mode-pep'))
+    expect(screen.getByTestId('trading-mode-confirm')).toHaveTextContent(
+      '10 contract(s), style E'
+    )
+  })
+
   // Mutant: setTradingMode writes pep_enabled but not mentor_mode -> RED.
   it('Mentor ON then Pep ON through the real page leaves exactly one mode in the saved config', async () => {
     stored = futuresConfig()

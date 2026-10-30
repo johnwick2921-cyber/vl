@@ -50,6 +50,8 @@ import { TradingModeSelector } from '../components/strategy/TradingModeSelector'
 import {
   applyTradingMode,
   fullPepBlock,
+  pepRunsContracts,
+  pepRunsStyle,
   tradingModeOf,
   type TradingMode,
 } from '../components/strategy/pepModel'
@@ -960,8 +962,8 @@ export function StrategyStudioPage() {
             disabled={selectedStrategy?.is_default}
             language={language}
             strategyName={selectedStrategy?.name}
-            pepStyle={fullPepBlock(editingConfig?.pep).pep_style}
-            pepContracts={fullPepBlock(editingConfig?.pep).pep_contracts}
+            pepStyle={pepRunsStyle(editingConfig?.pep)}
+            pepContracts={pepRunsContracts(editingConfig?.pep)}
             onSelect={setTradingMode}
             eff={(path) => studioEffective.byPath[path]}
           />

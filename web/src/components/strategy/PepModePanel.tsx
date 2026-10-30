@@ -327,7 +327,7 @@ function FieldRow({
         {!known && <option value={shown}>{shown}</option>}
         {opts.map((o) => (
           <option key={o.value} value={o.value}>
-            {f.leaf === 'pep_style' ? pt(o.label, lang) : o.value}
+            {pt(o.label, lang)}
           </option>
         ))}
       </select>
@@ -363,7 +363,7 @@ export function PepModePanel({
   const lang = language as Language
   const block = fullPepBlock(config)
   const running: PepStyle =
-    (block.pep_style ?? '').toUpperCase() === 'E' ? 'E' : 'A'
+    (block.pep_style ?? '').toUpperCase() === 'A' ? 'A' : 'E' // junk runs the shipped default E
   const [tab, setTab] = useState<PepStyle | null>(null)
   const shownTab: PepStyle = tab ?? running
   const on = block.pep_enabled === true

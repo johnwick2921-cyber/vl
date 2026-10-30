@@ -48,6 +48,16 @@ it('Pep asks first with SIM-only wording; nothing is written until OK', () => {
   expect(onSelect).toHaveBeenCalledWith('pep' as TradingMode)
 })
 
+// OWNER DEFAULTS 2026-10-30: with no stored pep block the confirm dialog names
+// the shipped style E and 6 contracts. Mutant: pepStyle 'A' / pepContracts 3 -> RED.
+it('the confirm dialog defaults to the shipped style E and 6 contracts', () => {
+  setup()
+  fireEvent.click(screen.getByTestId('trading-mode-pep'))
+  expect(screen.getByTestId('trading-mode-confirm')).toHaveTextContent(
+    '6 contract(s), style E'
+  )
+})
+
 it('cancel changes nothing', () => {
   const { onSelect } = setup()
   fireEvent.click(screen.getByTestId('trading-mode-pep'))

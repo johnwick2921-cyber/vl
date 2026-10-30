@@ -1416,6 +1416,9 @@ func (at *AutoTrader) Run() error {
 		at.isRunningMutex.Lock()
 		at.isRunning = false
 		at.isRunningMutex.Unlock()
+		// the start handler waits on this verdict: without it a refused start
+		// answers 200 "Trader started" after its timeout
+		at.signalRunReady(perr)
 		return perr
 	}
 

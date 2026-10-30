@@ -240,3 +240,44 @@ func TestPepFlatVerifyWindowIsBounded(t *testing.T) {
 		t.Fatalf("past the verify window the beat must not verify (%s %d -> %d)", code, inside, got)
 	}
 }
+
+// rereview m461 P3 (SEPARATION lens): the not-running bit is written on EVERY
+// refusal, and Run reports the refusal on the start handler's ready channel. The
+// handler sets is_running=true before it spawns Run, so a second Start that is
+// refused again used to leave the bit true and answer 200 "Trader started".
+// Production path: Run itself, twice, with the handler's own write between.
+// MUTANT: put the UpdateStatus back inside conflictOnce / drop signalRunReady in
+// Run -> the second assertion / the channel read goes RED.
+func TestPepRepeatedRefusedStartKeepsNotRunningAndReportsTheError(t *testing.T) {
+	st, err := store.New(t.TempDir() + "/conflict2.db")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = st.Close() })
+	at := modeTrader(true, true, false)
+	at.id, at.store = "conflict-twice", st
+	if err := st.Trader().Create(&store.Trader{ID: at.id, UserID: at.userID, Name: "M", IsRunning: true, InitialBalance: 1}); err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 2; i++ {
+		ready := at.RunReadyChan()
+		if err := st.Trader().UpdateStatus(at.userID, at.id, true); err != nil { // what handleStartTrader does first
+			t.Fatal(err)
+		}
+		if err := at.Run(); err == nil {
+			t.Fatalf("start #%d: pep + mentor must be refused", i+1)
+		}
+		select {
+		case rerr := <-ready:
+			if rerr == nil {
+				t.Fatalf("start #%d: the ready channel must carry the refusal", i+1)
+			}
+		case <-time.After(time.Second):
+			t.Fatalf("start #%d: Run never reported the refusal on the ready channel", i+1)
+		}
+		got, err := st.Trader().Get(at.id)
+		if err != nil || got == nil || got.IsRunning {
+			t.Fatalf("start #%d: the refused trader still reads running in the database: %+v %v", i+1, got, err)
+		}
+	}
+}

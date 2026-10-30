@@ -45,7 +45,7 @@ describe('PepModePanel controls', () => {
 
   it('shows a CONCRETE value in every shared field with no stored block (the shipped default)', () => {
     setup(undefined)
-    expect(screen.getByTestId('pep-pep_contracts')).toHaveValue(3)
+    expect(screen.getByTestId('pep-pep_contracts')).toHaveValue(6)
     expect(screen.getByTestId('pep-pep_box_start_ct')).toHaveValue('08:30')
     expect(screen.getByTestId('pep-pep_flat_time_ct')).toHaveValue('15:00')
     expect(screen.getByTestId('pep-pep_tick_size')).toHaveValue(0.25)
@@ -54,10 +54,10 @@ describe('PepModePanel controls', () => {
     expect(screen.getByTestId('pep-pep_fee_per_contract_usd')).toHaveValue(1)
     expect(screen.getByTestId('pep-pep_max_box_points')).toHaveValue(0)
     expect(screen.getByTestId('pep-pep_signal_max_age_min')).toHaveValue(2)
-    // style A is the running style, so its tab is open
-    expect(screen.getByTestId('pep-pep_a_box_minutes')).toHaveValue(5)
-    expect(screen.getByTestId('pep-pep_a_sl_fraction')).toHaveValue(1)
-    expect(screen.getByTestId('pep-pep_a_both_edges')).toHaveValue('no_trade')
+    // style E is the running (shipped) style, so its tab is open: a 2 minute box
+    expect(screen.getByTestId('pep-pep_e_box_minutes')).toHaveValue(2)
+    expect(screen.getByTestId('pep-pep_e_sl_fraction')).toHaveValue(0.5)
+    expect(screen.getByTestId('pep-pep_e_signal_source')).toHaveValue('ema')
   })
 
   it('the E tab shows the E numbers (2m box, half-box stop, EMA 9 on 2m, ema source)', () => {
@@ -84,15 +84,36 @@ describe('PepModePanel controls', () => {
     expect(screen.getByTestId('pep-pep_e_ema_period')).toBeInTheDocument()
   })
 
+  // The tab that opens is the style the SERVER runs: a junk stored style runs
+  // the shipped default E (store.ResolvePep). Mutant: `=== 'E' ? 'E' : 'A'` -> RED.
+  it('a junk stored style opens the E tab (the style the server runs)', () => {
+    setup({ pep_style: 'Z' })
+    expect(screen.getByTestId('pep-pep_e_box_minutes')).toBeInTheDocument()
+    expect(screen.queryByTestId('pep-pep_a_box_minutes')).toBeNull()
+  })
+
+  it('a stored style A opens the A tab with its own 5 minute box', () => {
+    setup({ pep_style: 'a' })
+    expect(screen.getByTestId('pep-pep_a_box_minutes')).toHaveValue(5)
+  })
+
+  // rereview m461 P3: the translated option hints are shown, not the raw token.
+  // Mutant: render o.value -> the zh text below is missing -> RED.
+  it('enum options show the translated hint', () => {
+    setup(undefined, undefined, 'zh')
+    const sel = screen.getByTestId('pep-pep_sl_rounding')
+    expect(within(sel).getByText('outward（向外）')).toBeInTheDocument()
+  })
+
   // Mutant: onChange(f.set(block, n)) without fullPepBlock -> RED (a partial
   // block would let a stale stored number survive the server-side merge).
   it('an edit sends the WHOLE pep block with every leaf concrete', () => {
     const { onChange } = setup({ pep_contracts: 3 })
-    commitNumber('pep-pep_contracts', '6')
+    commitNumber('pep-pep_contracts', '4')
     expect(onChange).toHaveBeenCalledTimes(1)
     const sent = onChange.mock.calls[0][0] as PepConfig
-    expect(sent.pep_contracts).toBe(6)
-    expect(sent).toEqual({ ...fullPepBlock(undefined), pep_contracts: 6 })
+    expect(sent.pep_contracts).toBe(4)
+    expect(sent).toEqual({ ...fullPepBlock(undefined), pep_contracts: 4 })
   })
 
   // Mutant: `const block = config ?? {}` (the stored partial block) -> RED.

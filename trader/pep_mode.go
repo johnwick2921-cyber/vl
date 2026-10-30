@@ -185,12 +185,15 @@ func (at *AutoTrader) pepStartRefusal() error {
 		at.emitAlert("P0", "pep_mode_conflict", "pep-mode-conflict:"+at.id,
 			"Pep mode conflict - trader not started",
 			fmt.Sprintf("Trader %q (%s): %s It was NOT started and will not trade until the strategy is fixed.", at.name, at.id, c.Message))
-		if at.store != nil {
-			if err := at.store.Trader().UpdateStatus(at.userID, at.id, false); err != nil {
-				at.logErrorf("❌ pep conflict refused the start but the not-running DB write FAILED (%v) - trader %q may still read running", err, at.id)
-			}
-		}
 	})
+	// EVERY refusal writes the not-running bit, not only the first: the start
+	// handler writes is_running=true BEFORE it spawns Run, so a second Start that
+	// is refused again must put the bit back (rereview m461 P3, SEPARATION lens).
+	if at.store != nil {
+		if err := at.store.Trader().UpdateStatus(at.userID, at.id, false); err != nil {
+			at.logErrorf("❌ pep conflict refused the start but the not-running DB write FAILED (%v) - trader %q may still read running", err, at.id)
+		}
+	}
 	return fmt.Errorf("%s: %s", c.Code, c.Message)
 }
 

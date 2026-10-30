@@ -36,8 +36,8 @@ export function TradingModeSelector({
   disabled,
   language,
   strategyName,
-  pepStyle = 'A',
-  pepContracts = 3,
+  pepStyle = 'E',
+  pepContracts = 6,
   onSelect,
   eff,
 }: {

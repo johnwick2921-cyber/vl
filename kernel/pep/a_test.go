@@ -15,7 +15,7 @@ func TestDefaultConfigIsValidAndOwnerNumbers(t *testing.T) {
 	if err := c.Validate(); err != nil {
 		t.Fatal(err)
 	}
-	if c.Contracts != 3 || c.BoxStartMin != 510 || c.FlatMin != 900 || c.TickSize != 0.25 || c.MaxTradesPerDay != 1 || c.FeePerContractRT != 1 || c.MaxBoxPoints != 0 {
+	if c.Style != StyleE || c.Contracts != 6 || c.BoxStartMin != 510 || c.FlatMin != 900 || c.TickSize != 0.25 || c.MaxTradesPerDay != 1 || c.FeePerContractRT != 1 || c.MaxBoxPoints != 0 {
 		t.Fatalf("shipped numbers drifted: %+v", c)
 	}
 	if c.A.BoxMinutes != 5 || c.A.SLFraction != 1 || c.A.TPFraction != 1 {
@@ -65,7 +65,7 @@ func TestA_BreakUp(t *testing.T) {
 	bars := aDay(t, dayCST, map[string]ohlc{"08:37": {25030, 25041.25, 25029, 25040}})
 	r := Evaluate(bars, nowAfter(t, dayCST, "08:37"), cfgA(), State{})
 	in := mustOne(t, r)
-	if in.Kind != KindEnter || in.Side != SideLong || in.Style != StyleA || in.Contracts != 3 {
+	if in.Kind != KindEnter || in.Side != SideLong || in.Style != StyleA || in.Contracts != 6 {
 		t.Fatalf("intent %+v", in)
 	}
 	near(t, "entry", in.Entry, 25040)
@@ -222,7 +222,7 @@ func TestFlatTimeIntent(t *testing.T) {
 	}
 	r := Evaluate(bars, ctms(t, dayCST, "15:00"), cfgA(), open)
 	in := mustOne(t, r)
-	if in.Kind != KindFlat || in.Contracts != 3 {
+	if in.Kind != KindFlat || in.Contracts != 6 {
 		t.Fatalf("intent %+v", in)
 	}
 	// carried-over position flattens at any time of day

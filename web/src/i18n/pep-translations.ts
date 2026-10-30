@@ -153,9 +153,9 @@ export const pepStrings = {
   // field labels + help
   fContracts: { en: 'Contracts', zh: '口数', id: 'Kontrak' },
   fContractsHelp: {
-    en: 'Shipped 3, hard ceiling 10. The 2-contract AI clamp does not apply to pep.',
-    zh: '默认 3，硬上限 10。AI 的 2 口限制不适用于 pep。',
-    id: 'Bawaan 3, batas keras 10. Batas 2 kontrak AI tidak berlaku untuk pep.',
+    en: 'Shipped 6, hard ceiling 10. The 2-contract AI clamp does not apply to pep.',
+    zh: '默认 6，硬上限 10。AI 的 2 口限制不适用于 pep。',
+    id: 'Bawaan 6, batas keras 10. Batas 2 kontrak AI tidak berlaku untuk pep.',
   },
   fBoxStart: {
     en: 'Box start (CT)',

@@ -75,8 +75,8 @@ const (
 // store resolver clamps and LOGS; this package is the last line).
 const (
 	MaxContractsCeiling = 10
-	// DefaultContracts is the shipped contract count (owner changes it).
-	DefaultContracts = 3
+	// DefaultContracts is the shipped contract count (owner 2026-10-30: 6).
+	DefaultContracts = 6
 )
 
 // ParamsA holds style A's own numbers (kept apart from E's so switching style
@@ -136,7 +136,7 @@ type Config struct {
 // switch (PepConfig.Enabled); the evaluator has no on/off.
 func DefaultConfig() Config {
 	return Config{
-		Style:            StyleA,
+		Style:            StyleE, // owner 2026-10-30: shipped default style E
 		Contracts:        DefaultContracts,
 		BoxStartMin:      8*60 + 30,
 		FlatMin:          15 * 60,

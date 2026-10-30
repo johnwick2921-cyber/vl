@@ -149,8 +149,28 @@ describe('Pep guide page: numbers equal the code', () => {
     )
     expect(row('pep.style_e.pep_e_signal_source')).toBe(goConst('PepSourceEMA'))
     expect(row('pep.pep_sl_rounding')).toBe(goConst('PepSLRoundOutward'))
-    expect(row('pep.pep_style')).toBe(goConst('PepStyleA'))
+    expect(row('pep.pep_style')).toBe(goConst('PepStyleDefault'))
     expect(row('pep.pep_enabled')).toBe('off')
+  })
+
+  // OWNER RULING 2026-10-30 ("keep default E 6"): the shipped defaults are
+  // style E and 6 contracts, with a 2 minute E box and a 5 minute A box, in
+  // EVERY layer. Typed as literals on purpose: a drift in the Go constant, the
+  // Studio pre-fill or the guide card is RED here.
+  // Mutant: set any of the four back (A / 3 / box 5 for E) -> RED.
+  it('owner defaults: style E, 6 contracts, E box 2 min, A box 5 min (guide card, Studio pre-fill, Go)', () => {
+    expect(row('pep.pep_style')).toBe('E')
+    expect(row('pep.pep_contracts')).toBe('6')
+    expect(row('pep.style_e.pep_e_box_minutes')).toBe('2')
+    expect(row('pep.style_a.pep_a_box_minutes')).toBe('5')
+    expect(goConst('PepStyleDefault')).toBe('E')
+    expect(goConst('PepContractsDefault')).toBe('6')
+    expect(goConst('PepEBoxMinutesDefault')).toBe('2')
+    expect(goConst('PepABoxMinutesDefault')).toBe('5')
+    expect(PEP_DEFAULTS.style).toBe('E')
+    expect(PEP_DEFAULTS.contracts).toBe(6)
+    expect(PEP_DEFAULTS.e.boxMinutes).toBe(2)
+    expect(PEP_DEFAULTS.a.boxMinutes).toBe(5)
   })
 
   // Mutant: change a card's range ceiling (e.g. signal age "1 to 30" -> "1 to 60") -> RED.

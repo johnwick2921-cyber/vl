@@ -426,3 +426,64 @@ func TestPepDayNowIsTheChicagoCalendarDay(t *testing.T) {
 		t.Fatal("fixture")
 	}
 }
+
+// rereview m461 (GATES lens) P2: pep's data window starts at a FIXED instant
+// (box start minus warm-up minus margin) and grows with now, so a hole inside it
+// never "clears by itself" the way the tracker's sliding-window ClearsAtMs
+// promises. The log WARN and the owner push used to say "Clears by itself
+// 10-29 14:10 CT"; pep was still blocked at 14:10, 14:40 and 17:10. The pause
+// text must not promise a time; it must say the pause lasts the CT day unless
+// the minutes are filled in. Production path: the REAL hole tracker
+// (SetBarHolesWithHolesForTest) -> pepDataVerdictAt -> integrityPauseWording,
+// the same text the beat logs and pushes. The control is an AI trader, whose
+// promise (a sliding window) is true and stays.
+//
+// MUTANT: drop the ClearsAtMs strip / the Anchored wording in
+// data_integrity_gate.go -> the pep verdict says "clears by itself" -> RED.
+func TestPepPauseTextNeverPromisesAClearTime(t *testing.T) {
+	restoreArm := ntTrader.SetIntegrityArmedForTest(true)
+	t.Cleanup(restoreArm)
+	ms := func(hhmm string) int64 { return ctTimeAt(t, pepDay, hhmm).UnixMilli() }
+	t.Cleanup(ntTrader.SetBarHolesWithHolesForTest(ms("00:00")-3*24*60*60_000, ms("11:20"),
+		[]ntTrader.TestHole{{Symbol: "MNQ", Contract: "MNQ 12-26", FromMs: ms("11:00"), ToMs: ms("11:10")}}))
+
+	w := newPepWire(t, pepCfgOf("E", 6))
+	w.at.exchange = "ninjatrader"
+	v := w.at.pepDataVerdictAt(ctTimeAt(t, pepDay, "11:20"), false)
+	if !v.Blocked || v.Class != ntTrader.IntegrityClassHole || !v.Anchored {
+		t.Fatalf("the 11:00-11:10 hole must pause pep: %+v", v)
+	}
+	if strings.Contains(strings.ToLower(v.Reason), "clears by itself") {
+		t.Fatalf("a pep refusal must not promise a clear time: %q", v.Reason)
+	}
+	for _, h := range v.Holes {
+		if h.ClearsAtMs != 0 {
+			t.Fatalf("pep verdict hole still carries ClearsAtMs: %+v", h)
+		}
+	}
+	wd := integrityPauseWording(pauseScopeAll, v)
+	if strings.Contains(strings.ToLower(wd.tail), "clears by itself") || !strings.Contains(wd.tail, "rest of the CT day") {
+		t.Fatalf("pause tail: %q", wd.tail)
+	}
+	if strings.Contains(wd.withdraw, "resting entry orders are withdrawn") {
+		t.Fatalf("pep rests no entry order: %q", wd.withdraw)
+	}
+	// the truth the text now tells: still paused at the time the old text promised
+	for _, hhmm := range []string{"14:10", "14:40", "17:10"} {
+		if got := w.at.pepDataVerdictAt(ctTimeAt(t, pepDay, hhmm), false); !got.Blocked {
+			t.Fatalf("the pause is expected to last the CT day (the text says so); free at %s", hhmm)
+		}
+	}
+
+	// CONTROL: the AI trader keeps its sliding-window promise.
+	ai := &AutoTrader{id: "ai-clears", exchange: "ninjatrader"}
+	ai.config.StrategyConfig = &store.StrategyConfig{}
+	ai.config.NinjaTraderSymbol = "MNQ"
+	av := ai.integrityVerdictAt(ntTrader.IntegrityDeepOpenMin, ctTimeAt(t, pepDay, "11:20"), false)
+	if !av.Blocked || av.Anchored || !strings.Contains(strings.ToLower(av.Reason), "clears by itself") {
+		t.Fatalf("control: the AI verdict must keep its clear-time promise: %+v", av)
+	}
+	if awd := integrityPauseWording(pauseScopeAll, av); !strings.Contains(awd.tail, "Clears by itself") {
+		t.Fatalf("control: AI pause tail changed: %q", awd.tail)
+	}
+}

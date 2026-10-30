@@ -48,10 +48,10 @@ export const PEP_KNOBS: KnobSpec[] = [
       'Switching style never loses the other style’s numbers: each style keeps its own block (the A and E tabs).',
     consumer: CONSUMER,
     range: 'A | E (case-folded where it enters)',
-    systemDefault: 'A',
-    recommended: `A is the PDF’s stronger result at 6 MNQ ($17,595.90 against $10,070.10 received) — ${PDF}, p.1.`,
+    systemDefault: 'E',
+    recommended: `E: the owner’s shipped default (2026-10-30, “keep default E 6”). The PDF’s result at 6 MNQ is larger for style A ($17,595.90 against $10,070.10 received, ${PDF}, p.1) but A’s full-box stop is the bigger loss per trade; E’s stop is half the box.`,
     whenToTouch:
-      'When you want the EMA-confirmed entry (E) instead of the immediate breakout (A).',
+      'When you want the immediate breakout (A) instead of the EMA-confirmed entry (E).',
     perSession: ONE_SAVE,
   }),
   knob({
@@ -64,8 +64,8 @@ export const PEP_KNOBS: KnobSpec[] = [
     consumer: CONSUMER,
     range:
       '1 to 10 (hard ceiling 10: a bigger saved number is clamped and logged, never honoured)',
-    systemDefault: '3',
-    recommended: `3 on SIM first: the plan measured style A’s full-box stop at about $867 median and $2,439 worst per losing trade at 6 MNQ (PEP-PLAN-1029); the PDF shows both 3 and 6.`,
+    systemDefault: '6',
+    recommended: `6: the owner’s shipped default (2026-10-30, “keep default E 6”), the PDF’s headline size. SIM only. The plan measured style A’s full-box stop at about $867 median and $2,439 worst per losing trade at 6 MNQ (PEP-PLAN-1029): size it against your daily limit.`,
     whenToTouch: 'When you decide the size after watching SIM days.',
     perSession: ONE_SAVE,
   }),
@@ -365,7 +365,7 @@ export const pep: GuideSection = {
         },
         {
           title: 'Which Risk Control settings pep ignores',
-          body: 'With pep ON the AI places no entry (no LLM call). The AI-only Risk Control knobs do not apply: break-even and trailing (pep has neither; the stop and target sit at NT8 from the entry) and the entry R:R / minimum-stop-vs-ATR checks (pep’s stop and target ARE the box). The Risk Control page does not grey them out for pep, so read them as inactive. Still enforced for pep: daily guardrails, the session breaker, the owner pause, maintenance hold, feed-down, data-integrity, contract roll and the SIM-only block.',
+          body: 'With pep ON the AI places no entry (no LLM call). The AI-only Risk Control knobs do not apply: break-even and trailing (pep has neither; the stop and target sit at NT8 from the entry) and the entry R:R / minimum-stop-vs-ATR checks (pep’s stop and target ARE the box). The Risk Control page does not grey the controls out for pep, but their grey “eff” lines do say it: break-even and trailing read “not applied while pep mode is ON”, the minimum-confidence and the contracts-per-order lines read “not used in pep mode” (the contracts line names pep_contracts, the size pep actually sends), and the planner stamp size reads “not used”. Still enforced for pep: daily guardrails, the session breaker, the owner pause, maintenance hold, feed-down, data-integrity, contract roll and the SIM-only block.',
         },
         {
           title: 'Build status of this page',
@@ -446,7 +446,7 @@ export const pep: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'Data window: pep reads the opening box and, for style E, the EMA warm-up, so its entry data check covers from the box start minus the warm-up and a 6-minute margin up to now (30 open minutes at least), not the 12,000-minute window the AI path reads. A hole in the box or the warm-up pauses pep; an old hole pep never reads does not. Data-truth blocks scoped to the pep or mentor reader apply to pep (it reads the same raw 1m bars as the mentor); a block that only the AI indicators read does not.',
+      text: 'Data window: pep reads the opening box and, for style E, the EMA warm-up, so its entry data check covers from the box start minus the warm-up and a 6-minute margin up to now (30 open minutes at least), not the 12,000-minute window the AI path reads. A hole in the box or the warm-up pauses pep; an old hole pep never reads does not. The window starts at a FIXED time (the box start minus the warm-up) and grows with the clock, so a hole inside it does not slide out of it by itself: the pause lasts the rest of that Chicago day unless the missing minutes are filled in (imported), and the log and the owner push say so instead of promising a clear time. The next day’s window starts after it. Pep rests no entry order, so a pause withdraws nothing. Data-truth blocks scoped to the pep or mentor reader apply to pep (it reads the same raw 1m bars as the mentor); a block that only the AI indicators read does not.',
     },
     {
       kind: 'p',
@@ -455,7 +455,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'It fails closed' },
     {
       kind: 'table',
-      title: 'Named refusals (each is counted, none is silent)',
+      title: 'Named refusals (faults are counted; waiting states are not)',
       head: ['Code', 'Meaning'],
       rows: [
         [
@@ -488,7 +488,7 @@ export const pep: GuideSection = {
         ],
         [
           'pep_max_trades_reached / pep_position_open / pep_after_flat_time',
-          'Normal waiting states, not faults.',
+          'Normal waiting states, not faults, and not counted as gate blocks.',
         ],
       ],
     },
@@ -529,7 +529,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'How it was checked against the PDF' },
     {
       kind: 'p',
-      text: 'cmd/pep-backtest replays the same kernel/pep code over the stored MNQ 1m history (2025-10-20 to 2026-04-17) and compares it day by day with the PDF’s 6-contract ledgers. The imported 1m bars are close-stamped (one minute late) and are shifted back 60 seconds first; 2m candles are built from 1m on even Chicago minutes; a stop is filled only when a bar trades through it; the same bar reaching both stop and target counts the stop; the position is closed at the last price before 15:00. The database holds 110 usable days of the PDF’s 122 (17 days around the December and March contract rolls are missing), so the comparison is per day, never by total. The comparison and its mismatches are written to pep-backtest-vs-pdf.md.',
+      text: 'cmd/pep-backtest replays the same kernel/pep code over the stored MNQ 1m history (2025-10-20 to 2026-04-17) and compares it day by day with the PDF’s 6-contract ledgers. Imported 1m bars carry the close-stamp convention (one minute late) unless they are tagged open-stamped (epoch_floor_open, written by the fixed importer and the owner-run shift tool): only the old close-stamped rows are shifted back 60 seconds, an open-stamped row is read as it is; 2m candles are built from 1m on even Chicago minutes; a stop is filled only when a bar trades through it (a live resting stop at NT8 triggers on a touch, so a day whose bar only touches the stop can be a stop-out live where the replay shows a win, for example 2026-03-25 style E); the same bar reaching both stop and target counts the stop; the position is closed at the last price before 15:00. The database holds 110 usable days of the PDF’s 122 (17 days around the December and March contract rolls are missing), so the comparison is per day, never by total. The comparison and its mismatches are written to pep-backtest-vs-pdf.md.',
     },
   ],
 }

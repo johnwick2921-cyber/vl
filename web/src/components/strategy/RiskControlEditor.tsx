@@ -111,15 +111,20 @@ const RC_PATH = 'ai_config.risk_control.'
 // produced ("not applied while mentor mode is ON (owner ruling …)") — render
 // that verbatim.
 //
-// PEP: no resolver row emits a "pep_enabled on" marker, so nothing is read for
-// pep here (a branch for it would be dead). The Trading-mode selector help and
-// the pep guide say which of these knobs pep ignores.
+// PEP (rereview m461 P2-1): the break-even and trailing rows now emit the twin
+// marker "pep_enabled on" with the sentence "not applied while pep mode is ON …"
+// (trader/effective_settings.go pepModeOnOrigin), read here the same way. Only
+// the server's own marker lights the caveat; a hand-built origin without
+// "not used" does not.
 export function mentorNotAppliedCaveat(
   knob?: EffectiveKnob | null
 ): string | null {
   if (!knob) return null
   if (
-    !knob.origin.includes('mentor_mode on') ||
+    !(
+      knob.origin.includes('mentor_mode on') ||
+      knob.origin.includes('pep_enabled on')
+    ) ||
     !knob.origin.includes('not used')
   )
     return null
