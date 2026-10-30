@@ -18,6 +18,9 @@ describe('m55r3 — ingest_loss spent-budget text', () => {
   it('says the re-request waits for the send window and the link/feed/market', () => {
     expect(guideText).toContain('only in the first 15 seconds of a minute')
   })
+  it('says a span widened while a request is in flight is asked for again (m55r4-h1)', () => {
+    expect(guideText).toContain('asks again for the wider span')
+  })
   it('the Go pause text carries the same exits', () => {
     const src = readFileSync(
       resolve(process.cwd(), '..', 'internal/datatruth/checks/ingestloss.go'),

@@ -95,6 +95,11 @@ type dtRerequestSpan struct {
 	fromMs, toMs int64
 	started      time.Time
 	retries      int
+	// gen counts the times a later drop WIDENED the span (an older fromMs or a
+	// newer toMs). A send covers the span the attempt read; a drop that widened
+	// it after that read is a loss the send did not ask for, so a success does
+	// not close the chain over it (m55r4-h1).
+	gen int
 }
 
 // dataTruthRerequester builds the DataTruthRerequest hook over a wire. `isOpen`
@@ -131,7 +136,7 @@ func dataTruthRerequester(w dtRerequestWire, isOpen func(time.Time) bool, clock 
 				mu.Unlock()
 				return
 			}
-			fromMs, started, retries := sp.fromMs, sp.started, sp.retries
+			fromMs, started, retries, gen := sp.fromMs, sp.started, sp.retries, sp.gen
 			mu.Unlock()
 			now := clock()
 			if now.Sub(started) > dataTruthRerequestGiveUpAfter {
@@ -189,6 +194,20 @@ func dataTruthRerequester(w dtRerequestWire, isOpen func(time.Time) bool, clock 
 			case err == nil:
 				logger.Infof("🧪 data-truth ingest_loss: re-requested NT8 history for %s (%s lost span from %s) - %s; the pause lifts when the bars are present in the ring",
 					symbol, tf, kernel.TableTimeCT(time.UnixMilli(fromMs)), how)
+				mu.Lock()
+				sp := pending[key]
+				widened := sp != nil && sp.gen != gen
+				if widened {
+					// more bars were dropped while this attempt was in flight:
+					// ask again for the wider span (the wire's own spacing
+					// applies, hence the retry delay), with a fresh retry count
+					sp.retries = 0
+				}
+				mu.Unlock()
+				if widened {
+					after(dataTruthRerequestRetryEvery, try)
+					return
+				}
 				finish()
 			case errors.Is(err, ntwire.ErrGapBackfillTooSoon) && retries < dataTruthRerequestMaxRetries:
 				mu.Lock()
@@ -223,9 +242,11 @@ func dataTruthRerequester(w dtRerequestWire, isOpen func(time.Time) bool, clock 
 			// deep request is sized from the oldest minute lost)
 			if fromMs < sp.fromMs {
 				sp.fromMs = fromMs
+				sp.gen++
 			}
 			if toMs > sp.toMs {
 				sp.toMs = toMs
+				sp.gen++
 			}
 			mu.Unlock()
 			return
