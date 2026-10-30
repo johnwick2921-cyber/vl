@@ -14,6 +14,7 @@ import (
 
 	"vl/internal/datatruth"
 	"vl/internal/datatruth/checks"
+	"vl/internal/ownerpush"
 	"vl/market"
 	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
@@ -425,5 +426,36 @@ func TestPausePushesAreBudgetedPerTraderNotPerKind(t *testing.T) {
 	}
 	if r := ownerPushResumedKey(ownerPushPausedKey("mentor-a", now)); !strings.HasPrefix(r, "data-resumed-mentor-a|") {
 		t.Fatalf("the resume key must keep the trader in its kind: %q", r)
+	}
+}
+
+// Release #55 round 3 (review 5, defect 1): the boot pin looped over the eight
+// m446 names only, and the m447/m451 tests call RegisterBrokerTruthChecks() /
+// RegisterFillPrice() themselves - so deleting RegisterBrokerTruthChecks() from
+// doWireDataTruthBoot left the full ./trader suite green while broker_agreement
+// and fill_price stayed "not wired" stubs forever: a silent total halt of every
+// NT8 trader's NEW entries once the boot grace ends, found only in production.
+//
+// Driven through the PRODUCTION boot body (doWireDataTruthBoot, not the Register
+// helpers): after it, both account-side checks must be REAL checks, and neither
+// may answer Evaluate with a "not wired" stub reason.
+//
+// MUTANT: delete RegisterBrokerTruthChecks() from doWireDataTruthBoot -> RED.
+func TestDoWireDataTruthBootRegistersTheTwoAccountChecksForReal(t *testing.T) {
+	datatruth.Reset()
+	prevWired := dataTruthWired.Load()
+	t.Cleanup(func() { datatruth.Reset(); dataTruthWired.Store(prevWired) })
+	t.Cleanup(ownerpush.Use(ownerpush.NewE(func(string) error { return nil })))
+	doWireDataTruthBoot()
+	for _, n := range []string{CheckBrokerAgreement, checks.CheckFillPrice} {
+		if !datatruth.Wired(n) {
+			t.Fatalf("%s is still a Require stub after doWireDataTruthBoot: RegisterBrokerTruthChecks is not called from the boot wiring, so every NT8 trader's entries block forever once the grace ends", n)
+		}
+	}
+	_, reasons := datatruth.Evaluate("MNQ", time.Now())
+	for _, r := range reasons {
+		if (r.Check == CheckBrokerAgreement || r.Check == checks.CheckFillPrice) && strings.Contains(r.Detail, "not wired") {
+			t.Fatalf("%s reports a stub after the boot wiring: %+v", r.Check, r)
+		}
 	}
 }
