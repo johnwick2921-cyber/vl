@@ -459,3 +459,21 @@ func TestDoWireDataTruthBootRegistersTheTwoAccountChecksForReal(t *testing.T) {
 		}
 	}
 }
+
+// Release #55 round 3 (review 4, D6): the fill_price pause text carries the API's
+// own address, read at the PRODUCTION registration (RegisterFillPrice, reached
+// from doWireDataTruthBoot) - not a bare relative path.
+//
+// MUTANT: delete checks.SetAckBaseURL(...) from RegisterFillPrice -> RED.
+func TestRegisterFillPriceSetsTheAcknowledgementAddressFromTheConfig(t *testing.T) {
+	prev := checks.AckBaseURL()
+	t.Cleanup(func() { checks.SetAckBaseURL(prev) })
+	checks.SetAckBaseURL("http://placeholder.invalid:1")
+	prevGuard := checks.SetDefaultFills(checks.NewFillGuard(checks.DefaultFillParams(), nil))
+	t.Cleanup(func() { checks.SetDefaultFills(prevGuard); datatruth.Reset() })
+	RegisterFillPrice()
+	want := ackBaseURLFromConfig()
+	if got := checks.AckBaseURL(); got != want || !strings.HasPrefix(got, "http://") || strings.Contains(got, "invalid") {
+		t.Fatalf("RegisterFillPrice must set the ack address from the config: got %q want %q", got, want)
+	}
+}

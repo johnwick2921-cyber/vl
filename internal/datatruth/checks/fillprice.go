@@ -484,13 +484,26 @@ func (g *FillGuard) apply(o FillObs, v FillVerdict, now time.Time) {
 		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s%s: %s. This fill belongs to an EARLIER session than the one now trading (a late or replayed receipt), so it does not count toward this session's pause; the recorded price is still wrong - check the bars or the fill record.",
 			o.Symbol, o.Kind, o.Side, who, v.Detail)
 	} else {
-		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s%s: %s. Either the bars lost this print or the recorded fill price is wrong. Far fill events this session for %s%s: %d of %d (the %s pauses new entries%s until you acknowledge or the next session).",
-			o.Symbol, o.Kind, o.Side, who, v.Detail, o.Symbol, who, n, strikes, ordinal(strikes), forWho(o.Account))
+		text = fmt.Sprintf("DATA TRUTH: FILL PRICE FAR from the market - %s %s %s%s: %s. Either the bars lost this print or the recorded fill price is wrong. %s",
+			o.Symbol, o.Kind, o.Side, who, v.Detail, farCountNote(o.Symbol, who, o.Account, n, strikes))
 	}
 	logger.Warnf("datatruth: %s [fill id %s]", text, o.ID)
 	if alert != nil {
 		alert(fmt.Sprintf("data_truth_fill_price_far|%s|%s", o.Symbol, o.ID), text)
 	}
+}
+
+// farCountNote words where the far-fill count stands. Up to the limit it is "n of
+// N (the Nth pauses ...)"; PAST it (n > N: a far fill after an acknowledgement
+// clears the ack, so the pause stands again at once) it must not read "3 of 2 (the
+// 2nd pauses ...)" - the pause is already on (release #55 round 3, review 4 D3).
+func farCountNote(symbol, who, account string, n, strikes int) string {
+	if n > strikes {
+		return fmt.Sprintf("Far fill events this session for %s%s: %d, past the limit of %d - new entries%s are PAUSED (again, if you had acknowledged) until you acknowledge or the next session; any further far fill pauses again.",
+			symbol, who, n, strikes, forWho(account))
+	}
+	return fmt.Sprintf("Far fill events this session for %s%s: %d of %d (the %s pauses new entries%s until you acknowledge or the next session).",
+		symbol, who, n, strikes, ordinal(strikes), forWho(account))
 }
 
 // forWho words the scope of the pause.
@@ -623,7 +636,7 @@ func (g *FillGuard) CheckScoped() datatruth.ScopedCheckFn {
 			ids := append([]string(nil), st.ids...)
 			sort.Strings(ids)
 			sym := StrikeKey(symbol)
-			who, ackURL := "", "POST /api/risk/ack-fill-price?symbol="+sym
+			who, ackURL := "", "POST "+AckBaseURL()+"/api/risk/ack-fill-price?symbol="+sym
 			if st.account != "" {
 				who = "account " + st.account + ": "
 				ackURL += "&account=" + st.account
@@ -640,8 +653,33 @@ func (g *FillGuard) CheckScoped() datatruth.ScopedCheckFn {
 		if everyone {
 			scopes = nil
 		}
+		// The remedy has to be runnable by the owner as written (round 3, review 4
+		// D6: a bare relative path names no host and no login). The route is behind
+		// the login: there is no button for it.
+		parts = append(parts, ackHowTo())
 		return true, strings.Join(parts, "; "), scopes, nil
 	}
+}
+
+// ackBase is the address the bot's API answers on, set at boot from the config
+// port (trader.RegisterFillPrice). Unset = the default port on this machine.
+var ackBase atomic.Value
+
+// SetAckBaseURL records the scheme://host:port the acknowledgement route is on.
+func SetAckBaseURL(base string) { ackBase.Store(strings.TrimRight(strings.TrimSpace(base), "/")) }
+
+// AckBaseURL is what the pause text prints before /api/risk/ack-fill-price.
+func AckBaseURL() string {
+	if b, _ := ackBase.Load().(string); b != "" {
+		return b
+	}
+	return "http://127.0.0.1:8080"
+}
+
+// ackHowTo is the line that makes the acknowledgement URL runnable: the route is
+// behind the login and there is no button for it in the web app.
+func ackHowTo() string {
+	return "to run the acknowledgement: first log in (POST " + AckBaseURL() + "/api/login with your email and password returns a token), then send the POST above with the header Authorization: Bearer <token> - from the machine the bot runs on; the web app has no button for it"
 }
 
 // ── persistence (m451) ───────────────────────────────────────────────────────
@@ -791,5 +829,8 @@ func writeFileAtomic(path string, b []byte) error {
 
 // RegisterFillPrice registers the check for g.
 func RegisterFillPrice(g *FillGuard) {
+	// this pause does NOT end by itself when the data measures clear: it ends on
+	// the owner's acknowledgement or the next CME session (review 4 D5)
+	datatruth.SetResumeNote(CheckFillPrice, "entries resume when you acknowledge it (the how-to is in the pause text above) or when the next CME session starts - not by themselves")
 	datatruth.RegisterScoped(CheckFillPrice, g.CheckScoped())
 }

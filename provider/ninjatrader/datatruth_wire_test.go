@@ -447,3 +447,11 @@ func TestContractGuardSeesAnOldMonthSeedOlderThanTheWindow(t *testing.T) {
 		t.Fatalf("an old-month seed outside the window must still pause on live != history, got %q", got)
 	}
 }
+
+// Release #55 round 3 (review 4, D4): the ingest_loss pause text words its
+// duration from checks.LedgerRingBars; it must be the ring the cache really has.
+func TestLedgerRingBarsMatchesTheBarCacheRing(t *testing.T) {
+	if checks.LedgerRingBars != DefaultBarCacheMaxBars {
+		t.Fatalf("checks.LedgerRingBars=%d but the bar cache ring is %d: the ingest_loss duration text would lie", checks.LedgerRingBars, DefaultBarCacheMaxBars)
+	}
+}

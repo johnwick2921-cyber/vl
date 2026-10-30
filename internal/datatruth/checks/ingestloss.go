@@ -191,7 +191,7 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 			continue
 		}
 		if l.whole == nil {
-			ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) and no range verifier is wired", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+			ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s CT) and no range verifier is wired", r.n, k.tf, time.UnixMilli(r.from).In(ctLoc()).Format("01-02 15:04"), time.UnixMilli(r.to).In(ctLoc()).Format("15:04"))
 			continue
 		}
 		ok, err := l.whole(symbol, k.tf, r.from, r.to, r.kind)
@@ -202,7 +202,7 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 			delete(l.overflow, k)
 			continue
 		}
-		ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s) not yet verified whole", r.n, k.tf, time.UnixMilli(r.from).UTC().Format("01-02 15:04Z"), time.UnixMilli(r.to).UTC().Format("15:04Z"))
+		ovMsg += fmt.Sprintf("; %d bar(s) dropped beyond the ledger cap (%s %s..%s CT) not yet verified whole", r.n, k.tf, time.UnixMilli(r.from).In(ctLoc()).Format("01-02 15:04"), time.UnixMilli(r.to).In(ctLoc()).Format("15:04"))
 	}
 	if len(left) == 0 && ovMsg == "" {
 		return false, ""
@@ -216,7 +216,7 @@ func (l *Ledger) Judge(symbol string, verify VerifyFn) (blocked bool, why string
 	msg := ""
 	if len(left) > 0 {
 		k := left[0]
-		msg = fmt.Sprintf("%d lost bar(s) not yet verified present (first %s %s %s, %s)", len(left), symbol, k.tf, time.UnixMilli(k.t).UTC().Format("01-02 15:04Z"), l.pending[k].kind)
+		msg = fmt.Sprintf("%d lost bar(s) not yet verified present (first %s %s %s CT, %s) - %s", len(left), symbol, k.tf, time.UnixMilli(k.t).In(ctLoc()).Format("01-02 15:04"), l.pending[k].kind, ingestLossRemedy(k.tf))
 	}
 	if msg == "" {
 		ovMsg = strings.TrimPrefix(ovMsg, "; ")
@@ -236,4 +236,47 @@ func (l *Ledger) Pending() int {
 	l.mu.Lock()
 	defer l.mu.Unlock()
 	return len(l.pending)
+}
+
+// LedgerRingBars is the per-frame bar ring a lost bar ages out of (the NT8 bar
+// cache, provider/ninjatrader.DefaultBarCacheMaxBars - a parity test in that
+// package keeps the two equal). Used only to word the pause's duration.
+const LedgerRingBars = 2500
+
+// ctLoc is the owner's clock (America/Chicago); UTC only if the zone data is
+// missing, never silently a different zone name.
+func ctLoc() *time.Location {
+	if l, err := time.LoadLocation("America/Chicago"); err == nil {
+		return l
+	}
+	return time.UTC
+}
+
+// ingestLossRemedy is the owner text of an ingest_loss pause (release #55 round 3,
+// review 4 D4): what the bot does by itself, what happens when that is refused
+// (budget spent, feed down) - the pause then lasts until the bar ages out of the
+// ring, about LedgerRingBars frames of open market - and the one thing the owner
+// can do (a restart clears this in-memory loss list and re-seeds the ring from
+// the store and NT8's replay).
+func ingestLossRemedy(tf string) string {
+	mins := 0
+	var n int
+	var u byte
+	if _, err := fmt.Sscanf(tf, "%d%c", &n, &u); err == nil && n > 0 {
+		switch u {
+		case 'm':
+			mins = n
+		case 'h':
+			mins = n * 60
+		}
+	}
+	span := "an unknown time"
+	if mins > 0 {
+		h := LedgerRingBars * mins / 60
+		span = fmt.Sprintf("about %d hours of open market", h)
+		if h >= 48 {
+			span = fmt.Sprintf("about %d hours of open market (roughly %d trading days)", h, (h+22)/23)
+		}
+	}
+	return "the bot asks NT8 for them again by itself and the pause lifts the moment they are back; if that request is refused (its budget is spent, or the NT8 feed is down) they stay lost until they age out of the " + fmt.Sprint(LedgerRingBars) + "-bar " + tf + " ring (" + span + "), or until you restart the bot in a flat/safe window (a restart clears this in-memory loss list and re-seeds the bars from the store and NT8)"
 }
