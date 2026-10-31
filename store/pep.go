@@ -303,6 +303,15 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 	r.Custom.SignalSource = pepVocab(r.Clamps, "pep_c_signal_source", sc.SignalSource, strings.ToLower, []string{PepSourceEMA, PepSourceClose}, PepSourceEMA)
 	r.Custom.WarmupBars = pepInt(r.Clamps, "pep_c_warmup_bars", sc.WarmupBars, 0, 0, PepWarmupCeiling)
 
+	// Custom breakout takes the FIRST break of the day only (kernel/pep evalA, the
+	// same rule as style A): a saved trades/day above 1 would read as a second
+	// entry that can never happen, so 1 runs and the row says why (owner recheck
+	// 2026-10-31, D1).
+	if r.Style == PepStyleCustom && r.Custom.EntryType == PepEntryBreakout && r.MaxTradesPerDay > 1 {
+		r.Clamps["pep_max_trades_per_day"] = fmt.Sprintf("saved %d: the breakout entry takes the first break of the day only, so 1 runs (ema_cross reads the saved number)", r.MaxTradesPerDay)
+		r.MaxTradesPerDay = 1
+	}
+
 	// A and E are the PDF, always: the stored style_a / style_e numbers are NEVER
 	// read (owner ruling 2026-10-30). This is the ONE place that lock lives; the
 	// evaluator's Config (kernel/pep.FromSettings) and the effective rows read it.

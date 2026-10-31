@@ -43,9 +43,9 @@ export const pepStrings = {
     id: 'Evaluator mentor yang menempatkan entri; AI tidak menempatkan entri.',
   },
   modePepHelp: {
-    en: 'Two fixed opening-range rules from the owner’s PDF (style A or E). No mentor rule applies. The AI makes no entries. Pep has no break-even and no trailing, and the entry R:R / minimum-stop checks of Risk Control do not apply (stop and target are the box); daily limits, owner pause and the SIM-only block still do. OFF by default.',
-    zh: '来自所有者 PDF 的两套固定开盘区间规则（A 或 E 风格）。不适用任何导师规则。AI 不下入场单。Pep 没有保本和移动止损，风险控制中的入场盈亏比/最小止损检查不适用（止损和止盈就是箱体）；每日限额、所有者暂停和仅 SIM 限制仍然生效。默认关闭。',
-    id: 'Dua aturan rentang pembukaan tetap dari PDF pemilik (gaya A atau E). Tidak ada aturan mentor yang berlaku. AI tidak menempatkan entri. Pep tidak punya break-even dan trailing, dan pemeriksaan R:R entri / stop minimum di Risk Control tidak berlaku (stop dan target adalah box); batas harian, jeda pemilik, dan blokir hanya-SIM tetap berlaku. Bawaan MATI.',
+    en: 'Two fixed opening-range rules from the owner’s PDF (style A or E, locked), or your own Custom rules. No mentor rule applies. The AI makes no entries. Pep has no break-even and no trailing, and the entry R:R / minimum-stop checks of Risk Control do not apply (stop and target are the box); daily limits, owner pause and the SIM-only block still do. OFF by default.',
+    zh: '来自所有者 PDF 的两套固定开盘区间规则（A 或 E 风格，已锁定），或你自己的 Custom 规则。不适用任何导师规则。AI 不下入场单。Pep 没有保本和移动止损，风险控制中的入场盈亏比/最小止损检查不适用（止损和止盈就是箱体）；每日限额、所有者暂停和仅 SIM 限制仍然生效。默认关闭。',
+    id: 'Dua aturan rentang pembukaan tetap dari PDF pemilik (gaya A atau E, terkunci), atau aturan Custom Anda sendiri. Tidak ada aturan mentor yang berlaku. AI tidak menempatkan entri. Pep tidak punya break-even dan trailing, dan pemeriksaan R:R entri / stop minimum di Risk Control tidak berlaku (stop dan target adalah box); batas harian, jeda pemilik, dan blokir hanya-SIM tetap berlaku. Bawaan MATI.',
   },
   modeDayPlanBlocks: {
     en: 'Pep cannot be chosen while the Day Plan is ON (the server refuses the combination). Turn the Day Plan off first.',
@@ -133,9 +133,9 @@ export const pepStrings = {
     id: 'Custom — semua angka bisa diubah',
   },
   styleCustomHelp: {
-    en: 'Your own rules. Starts as a copy of style E’s PDF numbers, so a fresh Custom trades like E until you change it. Pick breakout (A-like) or ema_cross (E-like); the box, stop, target, flat time, trades per day and the optional box cap are yours.',
-    zh: '你自己的规则。初始为 E 风格 PDF 数字的副本，所以未修改前 Custom 与 E 的交易一致。选择 breakout（类似 A）或 ema_cross（类似 E）；区间、止损、止盈、平仓时间、每日交易次数和可选的区间上限都由你决定。',
-    id: 'Aturan Anda sendiri. Dimulai sebagai salinan angka PDF gaya E, jadi Custom baru bertrading seperti E sampai Anda mengubahnya. Pilih breakout (mirip A) atau ema_cross (mirip E); kotak, stop, target, waktu flat, trade per hari, dan batas kotak opsional ditentukan Anda.',
+    en: 'Your own rules. Starts as a copy of style E’s PDF numbers, so a fresh Custom trades like E until you change it. Pick breakout (A-like) or ema_cross (E-like); the box, stop, target, box start, flat time, trades per day, stop rounding, tick, signal age and the optional box cap are yours. Breakout takes the first break of the day only, so it always runs 1 trade per day.',
+    zh: '你自己的规则。初始为 E 风格 PDF 数字的副本，所以未修改前 Custom 与 E 的交易一致。选择 breakout（类似 A）或 ema_cross（类似 E）；区间、止损、止盈、区间开始时间、平仓时间、每日交易次数、止损取整、最小跳动、信号时效和可选的区间上限都由你决定。breakout 只做当天第一次突破，因此每天始终 1 笔。',
+    id: 'Aturan Anda sendiri. Dimulai sebagai salinan angka PDF gaya E, jadi Custom baru bertrading seperti E sampai Anda mengubahnya. Pilih breakout (mirip A) atau ema_cross (mirip E); kotak, stop, target, mulai kotak, waktu flat, trade per hari, pembulatan stop, tick, usia sinyal, dan batas kotak opsional ditentukan Anda. Breakout hanya mengambil tembusan pertama hari itu, jadi selalu 1 trade per hari.',
   },
   fEntryType: { en: 'Entry type', zh: '入场类型', id: 'Tipe entri' },
   fEntryTypeHelp: {

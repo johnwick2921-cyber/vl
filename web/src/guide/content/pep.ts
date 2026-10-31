@@ -144,7 +144,7 @@ const PEP_KNOBS_RAW: KnobSpec[] = [
     where: RULES,
     what: 'How many pep entries are allowed per Chicago day.',
     trader:
-      'Style A and E: locked at 1. Only the Custom style reads the saved value. Style A takes the first break only, whatever this says. The count is kept on disk before the order is sent, so a restart cannot fire a second entry.',
+      'Style A and E: locked at 1. Only the Custom style reads the saved value, and only with the ema_cross entry: a breakout entry (style A, or Custom breakout) takes the first break of the day only, so 1 runs and the effective row says so. The count is kept on disk before the order is sent, so a restart cannot fire a second entry.',
     consumer: CONSUMER,
     range: '1 to 10',
     systemDefault: '1',
@@ -670,7 +670,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'Every number is a setting' },
     {
       kind: 'p',
-      text: 'The stored path is pep.<name>; the numbers live in pep.style_a, pep.style_e and pep.style_custom so switching style never deletes a saved number. Styles A and E are LOCKED: store.ResolvePep ignores every number saved for them (the style_a and style_e blocks and the rule leaves box start, flat time, stop rounding, trades per day and max box), the effective-settings rows read “locked to the PDF (style A|E)”, and the saved values stay in the database untouched, unused. Only Custom reads them. For Custom, a value outside its range is clamped, the clamp is logged and returned as a save warning, and the effective-settings row names it. The saved value is never rewritten. A legal 0 (fee $0, max box 0 = off, warm-up 0 = auto) is kept.',
+      text: 'The stored path is pep.<name>; the numbers live in pep.style_a, pep.style_e and pep.style_custom so switching style never deletes a saved number. Styles A and E are LOCKED: store.ResolvePep ignores every number saved for them (the style_a and style_e blocks and the rule leaves box start, flat time, stop rounding, trades per day, max box, tick size and signal max age), the effective-settings rows read “locked to the PDF (style A|E)”, and the saved values stay in the database untouched, unused. Only Custom reads them. For Custom, a value outside its range is clamped, the clamp is logged and returned as a save warning, and the effective-settings row names it. The saved value is never rewritten. A legal 0 (fee $0, max box 0 = off, warm-up 0 = auto) is kept.',
     },
     {
       kind: 'cards',

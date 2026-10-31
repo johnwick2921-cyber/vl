@@ -75,7 +75,7 @@ func TestAAndEIgnoreEditedStoredNumbersCustomUsesThem(t *testing.T) {
 		}
 	}
 	c := cfgFor("Custom")
-	if c.Style != StyleCustom || !c.IsBreakout() || c.BoxStartMin != 9*60 || c.FlatMin != 14*60+30 || c.MaxTradesPerDay != 3 || c.MaxBoxPoints != 50 ||
+	if c.Style != StyleCustom || !c.IsBreakout() || c.BoxStartMin != 9*60 || c.FlatMin != 14*60+30 || c.MaxTradesPerDay != 1 /* breakout runs 1 (recheck 10-31 D1) */ || c.MaxBoxPoints != 50 ||
 		c.SLRounding != RoundNearest || c.BoxMinutes() != 9 || c.SLFraction() != 0.4 || c.TPFraction() != 3 || c.BothEdgesPolicy() != BothEdgesNearestOpen || c.Contracts != 3 {
 		t.Fatalf("Custom must use the stored numbers: %+v", c)
 	}

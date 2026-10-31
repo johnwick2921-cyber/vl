@@ -19,7 +19,7 @@ import { ClampedNumberInput } from './RiskControlEditor'
 // PEP MODE settings panel (owner order 2026-10-29; m461 owner ruling 2026-10-30:
 // "A or E all follow their rule, cannot change any way, they add custom").
 // Layout: a state banner, the SHARED block (style picker A / E / Custom,
-// contracts, tick, fee, signal age - editable in EVERY style), then the RULES of
+// contracts and the reporting-only fee - editable in EVERY style), then the RULES of
 // the chosen style. Styles A and E show their PDF rule values READ-ONLY with a
 // "locked to the PDF" note (the server ignores any stored number for them);
 // only Custom shows editable inputs.
@@ -567,9 +567,11 @@ export function PepModePanel({
             {pt('lockedNote', lang)}
           </p>
         )}
-        <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
-          {pt('pdfSource', lang)}
-        </p>
+        {running !== 'Custom' && (
+          <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
+            {pt('pdfSource', lang)}
+          </p>
+        )}
         <div data-testid={`pep-style-${running}-block`}>{ruleRows}</div>
       </div>
     </div>
