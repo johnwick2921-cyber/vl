@@ -401,7 +401,11 @@ describe('the waiting word names the real wait', () => {
   it('style A waits for a break, style E for an EMA cross', () => {
     const e = render(
       <PepTruthCard
-        truth={{ ...g(GOLDEN_WAITING_SIGNAL), style: 'E' }}
+        truth={{
+          ...g(GOLDEN_WAITING_SIGNAL),
+          style: 'E',
+          entry: 'ema_cross',
+        }}
         language="en"
       />
     )
@@ -411,7 +415,11 @@ describe('the waiting word names the real wait', () => {
     e.unmount()
     render(
       <PepTruthCard
-        truth={{ ...g(GOLDEN_WAITING_SIGNAL), style: 'A' }}
+        truth={{
+          ...g(GOLDEN_WAITING_SIGNAL),
+          style: 'A',
+          entry: 'breakout',
+        }}
         language="en"
       />
     )
