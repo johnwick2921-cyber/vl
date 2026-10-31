@@ -1,0 +1,38 @@
+[
+  {
+    "stop": 15,
+    "target": 15,
+    "included_sessions": 109,
+    "entries": 109,
+    "TP": 56,
+    "SL": 53,
+    "open": 0,
+    "win_percent_closed": 51.37614678899082,
+    "won_points": 840,
+    "lost_points": -795.5,
+    "net_points": 44.5,
+    "max_loss_points": -15.25,
+    "outcomes": {
+      "SL": 53,
+      "TP": 56
+    }
+  },
+  {
+    "stop": 16,
+    "target": 15,
+    "included_sessions": 109,
+    "entries": 109,
+    "TP": 57,
+    "SL": 52,
+    "open": 0,
+    "win_percent_closed": 52.293577981651374,
+    "won_points": 855,
+    "lost_points": -834.25,
+    "net_points": 20.75,
+    "max_loss_points": -17.0,
+    "outcomes": {
+      "SL": 52,
+      "TP": 57
+    }
+  }
+]

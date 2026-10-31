@@ -1,0 +1,42 @@
+{
+  "rule": "first filled trade per night; re-arm on new cross until filled",
+  "code_sha256": {
+    "first_fill.py": "a7927a61c9365d8ec7ba2931a27825df5c6ffb57b44d23ef6f907818fbcf8dc4",
+    "run_first_fill.py": "3319a8129eae0b75833e674ca840400235b4951c51f681d3869bf849e4bbe480",
+    "verify_first_fill.py": "97a050e7413a407984f4f15397f37b58fc615e5f858a83ab522a1baf2896e063"
+  },
+  "tests_passed": 23,
+  "independent_results": 218,
+  "raw_entry_exit_checks": 218,
+  "mismatches": 0,
+  "accepted_sessions": 109,
+  "entries_per_variant": 109,
+  "planned_sessions": 130,
+  "partial_coverage": true,
+  "replaces_withdrawn_29_trade_report": true,
+  "artifacts": {
+    "pages": 10,
+    "artifacts": {
+      "REPORT.md": {
+        "bytes": 15472,
+        "sha256": "9c8edd0372fa68b4081bb2f5f6c8783fed62172ac9fc63bec4bce7a44806bca9"
+      },
+      "Day32-FIRST-FILLED-TRADE.docx": {
+        "bytes": 42385,
+        "sha256": "cb2563c54b371e8030bcee9371541b3a7b84bb811bc0219eafee022388105145"
+      },
+      "verification.json": {
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "Day32-FIRST-FILLED-evidence.zip": {
+        "bytes": 66799,
+        "sha256": "eaf52a7c923356585f4acda047d71bc406d25c218e1a172be9040d9cfd4cc9bd"
+      },
+      "Day32-FIRST-FILLED-TRADE.pdf": {
+        "bytes": 46735,
+        "sha256": "5b5c5b44b3c9844973e2c36c841f4556d3d5279d76aa3fc3802433d1da63c34a"
+      }
+    }
+  }
+}
