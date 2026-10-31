@@ -1,0 +1,13 @@
+{
+  "prior_unchanged_engine_tests_passed": 25,
+  "full_ledger_equal_previous_corrected_run": true,
+  "artifacts": {
+    "REPORT.md": "a1c62e2301c483d8ca6b729e17e39697245e069f73bb442ab75b95189b7f9850",
+    "provenance.json": "81744583384fde6f01da8af412b175e7912f86595274c80e7826687e48e2bf37",
+    "receipt.json": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "sessions.csv": "1797e284937c2c09000c125df28099fbe1865c9af8cb3ad5c96726feae393d9c",
+    "summary.json": "e5f3e037bd1799d5c89a598dd4b016c1ebe19a8e7bb2ab3292947b279c629839",
+    "independent-audit.json": "b00bbad9e00c7a4d9171ae5c76495273a22b97dbe45f231153f45f21d6896198",
+    "trades.csv": "324d5d3f8d5fe1ffe4fe170e451fb8b02424aaf5f5a0294221e235718f3ad6e0"
+  }
+}
