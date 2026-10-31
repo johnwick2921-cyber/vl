@@ -1,0 +1,919 @@
+[
+  {
+    "day": "2026-05-01",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 4981562,
+    "sha256": "7a99846d15e591ba79cc8ae4b2bb5e2251ac8bceb84f708cda85ab00f93b9422"
+  },
+  {
+    "day": "2026-05-04",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7887506,
+    "sha256": "9119c2207242d31b44e40048c994509c28c8011b06347954041d3be44f768fb1"
+  },
+  {
+    "day": "2026-05-05",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 4841218,
+    "sha256": "a3844d9d8d2a8966fbdcf261e822b200fd80ed2ce14f0ea5a1e5ce60967c77cb"
+  },
+  {
+    "day": "2026-05-06",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9442443,
+    "sha256": "c4aa8ac9809045702664d3398c910202cb8d2e98a23b21da09791bcfee925162"
+  },
+  {
+    "day": "2026-05-07",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 5787522,
+    "sha256": "472ce805f26a16c85e0bcfc6c0c045f6e97892bed6764b33587b690f05cf7277"
+  },
+  {
+    "day": "2026-05-08",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 5866613,
+    "sha256": "f5644db015d0a4664dcdb541723110f1e0f3b25ed4a8e52a7a70e7170404abb7"
+  },
+  {
+    "day": "2026-05-11",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7363347,
+    "sha256": "dc0083cf3ce9a54598b8e2954f02ad518a93de0e1f8cc398c1799368b4aeea80"
+  },
+  {
+    "day": "2026-05-12",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7416177,
+    "sha256": "6fc2afab95d4cfb41b7f87846559f7a845bdf6732e438f2f9c41fd2f344b2fbb"
+  },
+  {
+    "day": "2026-05-13",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7679600,
+    "sha256": "bcfb8c7ca842cce614f21215a7074696e26974358bda4199b688afbfa9f602a1"
+  },
+  {
+    "day": "2026-05-14",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7831784,
+    "sha256": "42f939e0e67d02604545d4cc0f0fa2ff474408b320c9ba986053fe5b89397243"
+  },
+  {
+    "day": "2026-05-15",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14237911,
+    "sha256": "ea991b92277a3e15ba28eeee49833d421d610e57135c30db834cab4143ee8402"
+  },
+  {
+    "day": "2026-05-18",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12843271,
+    "sha256": "6fc568f1651cc11854123c6e1718ee58e23bb564cb2f5395aafdb3ab98e27da6"
+  },
+  {
+    "day": "2026-05-19",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10426498,
+    "sha256": "68c869d8bfe0e4d58545e62a78cf935fe5497dac83cd1914b037d0ac6659cd2d"
+  },
+  {
+    "day": "2026-05-20",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10615233,
+    "sha256": "f495f18da6c0c5d54a7e626cda10bef200a22d37131097339bbd7851d7fd09b9"
+  },
+  {
+    "day": "2026-05-21",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10835121,
+    "sha256": "e5d44c9858d16c9f636df6bdec4bfca4f8c2fda1fc0eec281f666a3263b4d09c"
+  },
+  {
+    "day": "2026-05-22",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8413973,
+    "sha256": "2af70e51c9f637c0230534cf75393080279810e4befb9767311f1da62831ce8c"
+  },
+  {
+    "day": "2026-05-25",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 4727647,
+    "sha256": "676664d4b644d3bc886999eae06554989acae72fd9d0f6761027ec106e2e40f0"
+  },
+  {
+    "day": "2026-05-26",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7455104,
+    "sha256": "07978ba28bd3bee04dff5f37cfe45c99b5029c7092c7855020e29ea4486c1ce5"
+  },
+  {
+    "day": "2026-05-27",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7771185,
+    "sha256": "01cfb181cf39f61ca8e425491ff98bbdf5e484b9bbd6b8fee68ad2cd2a209944"
+  },
+  {
+    "day": "2026-05-28",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9535477,
+    "sha256": "6bf1ef71477927f92da5fad245a6ccdb63e037353d8585b64e0b89cf83692aea"
+  },
+  {
+    "day": "2026-05-29",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6825039,
+    "sha256": "4eefebad21ecf20f857836ffec3cef461c1603bb658672e99f059546a43c9b32"
+  },
+  {
+    "day": "2026-06-01",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8310604,
+    "sha256": "165f03efe5ee5583e83016f5c4575a3c1cfb2ca1f6de0f7202f3d1b39f550662"
+  },
+  {
+    "day": "2026-06-02",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7818875,
+    "sha256": "175b3eda90c5029afbc8216c9684e868561b3bcddd3169458502655f4a240919"
+  },
+  {
+    "day": "2026-06-03",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8182653,
+    "sha256": "123e4faa6cca40dac16138166c3e4b4c4841e74ea37dd208aebaa6cf67452f82"
+  },
+  {
+    "day": "2026-06-04",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12911814,
+    "sha256": "95ed23584c8a76d51ced76ebbe3723ed4ed4ea86b440d76c5c6ddc384795051a"
+  },
+  {
+    "day": "2026-06-05",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11779833,
+    "sha256": "cff92bad18f35ae8438e2a454cafd2d3b8ccf811371d863844e43dab2bde0a2a"
+  },
+  {
+    "day": "2026-06-08",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 15778536,
+    "sha256": "13ad94abb99c917412dff71f30b2c0635e331f83db05adb964ef804aa47832d7"
+  },
+  {
+    "day": "2026-06-09",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12015721,
+    "sha256": "84d43d3b281c98f89395309ee25a5e236d5ae9f491447671e215f4fe0beebfc1"
+  },
+  {
+    "day": "2026-06-10",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16523286,
+    "sha256": "d0b7e4307ff73a9b8441fdfb31ba115b58e68717025aeeebf7ed85e85625ddfd"
+  },
+  {
+    "day": "2026-06-11",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16384596,
+    "sha256": "9374461eafc65a38aa0379a8c991cf66d587faea5f18775f7de66e2b38f63aa8"
+  },
+  {
+    "day": "2026-06-12",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14138636,
+    "sha256": "73329beb8e6c42bf9b2aa2e769b5e2873db8a8225748decc5f595fe9caabbcde"
+  },
+  {
+    "day": "2026-06-15",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12254710,
+    "sha256": "c6b856ef7128fd06eb655b195b6edaf2e4849758ac75be78df1b8b08ba4db2f0"
+  },
+  {
+    "day": "2026-06-16",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10073719,
+    "sha256": "76a46afd80fd6aae4ddb0eb3fd534ceb8cc1a1aac63763aed9e8366fc136e25d"
+  },
+  {
+    "day": "2026-06-17",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9205119,
+    "sha256": "711640945139f9f1c5e32764f977c71e9eb371d8fe0472d2fe35dca258f18caa"
+  },
+  {
+    "day": "2026-06-18",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10832906,
+    "sha256": "8e9d03f43a53ad443ce2f95e0f036598b5efc1406fd3833f6da0e1cf23cea29b"
+  },
+  {
+    "day": "2026-06-19",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7872601,
+    "sha256": "5c5848e298b232003ce8b3ef67551b4ac3b9dbcde4457f4eb33b35fb95b863ab"
+  },
+  {
+    "day": "2026-06-22",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10934150,
+    "sha256": "480f876832b9a56672fe42eeeb69378f0bfbfef83c7caf0ea5dfc636700fb125"
+  },
+  {
+    "day": "2026-06-23",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16939229,
+    "sha256": "ab11485bdb1047c5b65ad5a15d6f89827dd32916f555ba46d41a76ad96989fbc"
+  },
+  {
+    "day": "2026-06-24",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 13187735,
+    "sha256": "8919a7f32d599e01944c95156d31accf5bd0b24b43bf4b93fdd2db26d981132d"
+  },
+  {
+    "day": "2026-06-25",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11246645,
+    "sha256": "7bc7e0c1c029cf818a77923e7ee3ff9eaf5ffbedde9ea5b93aa5f9c6e2dda95e"
+  },
+  {
+    "day": "2026-06-26",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16707609,
+    "sha256": "058ec826392158d763cb2114875b5b56f399fadf049f57cd7cd4d7621fd376f8"
+  },
+  {
+    "day": "2026-06-29",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14891627,
+    "sha256": "532a2cb88f9d0e23f52ae19c0cafb70991b3612a3951c2a090606a896a60d1ef"
+  },
+  {
+    "day": "2026-06-30",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10732336,
+    "sha256": "928fb7752995d40790b8d960a804eabc8fe77c5423b7036e1c036d60bbf369a2"
+  },
+  {
+    "day": "2026-07-01",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10889183,
+    "sha256": "a1bb5a987959720be141bb67bc72ab2e5aa115194242012163dd359d3ac9049f"
+  },
+  {
+    "day": "2026-07-02",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 13545060,
+    "sha256": "d44f30c861d99e4c181fe0aab4c7f0236d91a54563bc39c48d88baa87f04ec32"
+  },
+  {
+    "day": "2026-07-03",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6804516,
+    "sha256": "9639d92de43a1f4be7428f05a484518a674087af8ea650762b426432d4242187"
+  },
+  {
+    "day": "2026-07-06",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11905670,
+    "sha256": "15bcee83ab6435709398f8faedced6f99b454da5054d21e8a1cff4590ee8b543"
+  },
+  {
+    "day": "2026-07-07",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11822648,
+    "sha256": "23bfbbbb5021bc80f11beec0aefb39d86a25c284f1f2d76d199261a67de73c02"
+  },
+  {
+    "day": "2026-07-08",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16498761,
+    "sha256": "0bab1a93f0c8428832332561eea2622891bfc2c645cc503cd5bfc0c6e61b7fd7"
+  },
+  {
+    "day": "2026-07-09",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12570401,
+    "sha256": "cb018ea0bc646d3e67870e5d49e8a49c36ca45df8270c8af4a1cf5f4b99eb187"
+  },
+  {
+    "day": "2026-07-10",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9410105,
+    "sha256": "580d889c8b4984ce10cb9e54538e4fd495575955593b70d2cfa1d2caf803df25"
+  },
+  {
+    "day": "2026-07-13",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12815348,
+    "sha256": "73664ee1a74519d5663d7084bcac14031ede5098fda3bf59b903da38760d0588"
+  },
+  {
+    "day": "2026-07-14",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 13949756,
+    "sha256": "6ea47b5c439ad7846311b6f8b1eeff3521744b0951f19a267508f65f5c10cdab"
+  },
+  {
+    "day": "2026-07-15",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9744189,
+    "sha256": "f81d16efdcbccaf7ee8810177f67e43ff19c59660f213196bb05b445c5cda3b6"
+  },
+  {
+    "day": "2026-07-16",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11056596,
+    "sha256": "6fc6638bbd1053db73bf15dba3d7d535a7b9de0437fe40e162926ff5446581da"
+  },
+  {
+    "day": "2026-07-17",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14038166,
+    "sha256": "87b710c6d1f9b8ff106e5fe42ed519bb2a2cdefca061dd19bd4cf40f2a26e381"
+  },
+  {
+    "day": "2026-07-20",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12858508,
+    "sha256": "fa6e6f9cf23c1402d011130bcd6a7f7b6b2e02dac9d318e89a09240083e79b43"
+  },
+  {
+    "day": "2026-07-21",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10336945,
+    "sha256": "757af018f549b8aeb3ff3987373a9b6d950006659b942c9f885592f3a88bd760"
+  },
+  {
+    "day": "2026-07-22",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10157190,
+    "sha256": "7fd6ea57d179f0d39c8b38eea23333113fa8a2092c3bfb6075683bc953cd6c99"
+  },
+  {
+    "day": "2026-07-23",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12738806,
+    "sha256": "8d8a78055816390f2929283515b9f34442fe0cf72b07e85b5abd863d9e9aadb3"
+  },
+  {
+    "day": "2026-07-24",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11597077,
+    "sha256": "28afa5790f45f62cd3eaf4fe7c9cefc0281b56f9324e95b04403f69ee87ea3e6"
+  },
+  {
+    "day": "2026-07-27",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10430581,
+    "sha256": "f0c8e1e7cd90ded4ac58ddd04da4a955d9dffd36ea03ad5ee84c5cd4fd11c1ab"
+  },
+  {
+    "day": "2026-07-28",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12178038,
+    "sha256": "ce71e605a9f271c5c24841d70360b9fbf60a62ca17ba16aef458815be980ebd1"
+  },
+  {
+    "day": "2026-07-29",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 15171293,
+    "sha256": "c4727de6fff0ab65e02e52ee9b02c9bea0c969e194f3c124d603e59109152868"
+  },
+  {
+    "day": "2026-07-30",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16049508,
+    "sha256": "89bbfd382723c7a12a4abb5283dba204cdcf2f54db72c466bc8fbb92d20591a2"
+  },
+  {
+    "day": "2026-07-31",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11497947,
+    "sha256": "5dfac477d80276aa2cfa5581f177aaf458f6027547e8743e12549fba370010de"
+  },
+  {
+    "day": "2026-08-03",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10482023,
+    "sha256": "24e0566cdde579860c7e3009711295e167df3376f2c37299898b7de07ee50b1f"
+  },
+  {
+    "day": "2026-08-04",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10461764,
+    "sha256": "3d297cfd90d4d66bdff98afba2f43971e37bd97c41be2fe8cafd38b7a0b8739d"
+  },
+  {
+    "day": "2026-08-05",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9261736,
+    "sha256": "9f89bb3a862c1e758751395552acba35209fde0236f21f0a2d44d172a740caea"
+  },
+  {
+    "day": "2026-08-06",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10331772,
+    "sha256": "e1ffc4b5f870367ec0b86a36acac9e157c0cfd79a189280abf427deec7e7496c"
+  },
+  {
+    "day": "2026-08-07",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9444411,
+    "sha256": "af89fc21afc68db214dbb197735241b0bb5d5657e9b277dfbde5ec396040bd84"
+  },
+  {
+    "day": "2026-08-10",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8738230,
+    "sha256": "476f05ff5c38bdf67e0bd24117c15abf98f4a8cff45a45726f0d4db7f6a5fd9f"
+  },
+  {
+    "day": "2026-08-11",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7670121,
+    "sha256": "d1e4aa35555ddd6e70e6410b651b0c7a0f96d2d029c7620001b8c3bec5d8e2d5"
+  },
+  {
+    "day": "2026-08-12",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6685356,
+    "sha256": "8c57927f6d07a222fb8d79d45c90e79978e2978f6a3af3f744e93fb856b7a58f"
+  },
+  {
+    "day": "2026-08-13",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6093109,
+    "sha256": "59fda06614b14ea57220932ffcccb9cc8e4a1950621782f92b2d7321ad5f249c"
+  },
+  {
+    "day": "2026-08-14",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 5665814,
+    "sha256": "186e5ecbee9ac566e4045c29a49dc9073ea434cb58559e78497dfe692b31b56f"
+  },
+  {
+    "day": "2026-08-17",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6390178,
+    "sha256": "2144ecaee0c29e2e6763aac1b3bd503a35848c0387e99f22889e128085d84178"
+  },
+  {
+    "day": "2026-08-18",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9703642,
+    "sha256": "bfd2c8dd31c5705d5d383965fe154eaa763849b24443c80d4f13348407c98792"
+  },
+  {
+    "day": "2026-08-19",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10958112,
+    "sha256": "c705303fcf7c7e8c379b4a61bc22f25a070f7635c3524b96d6273d1c1492262d"
+  },
+  {
+    "day": "2026-08-20",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11040846,
+    "sha256": "cbeddcb7b126be2e2d953ff813181061ac4f4b0ea5093508e080d82959061670"
+  },
+  {
+    "day": "2026-08-21",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7746335,
+    "sha256": "5d76a902d0dfc5acef9202a7714476ee202b57067304921367863f3dcee88e9e"
+  },
+  {
+    "day": "2026-08-24",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11330112,
+    "sha256": "2e9c3bef6ea3a613f7d00a1bb404b5bb72365183aef1a641b06f5934a08d3c78"
+  },
+  {
+    "day": "2026-08-25",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8690924,
+    "sha256": "6a124a669c9b852f304ff66f3378346dec9b481fa36c01d3e9bd837ec9db7aeb"
+  },
+  {
+    "day": "2026-08-26",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10071227,
+    "sha256": "0b5a56cbf9364c0aff21e027e982c96897db589e9f8ce366b75664b6c000bffa"
+  },
+  {
+    "day": "2026-08-27",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10992643,
+    "sha256": "9812589801d8e4e8ec02ce7128a57e851df63bfc4f5dea01a5c27913f6904a14"
+  },
+  {
+    "day": "2026-08-28",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6641148,
+    "sha256": "b436462ce249f3a9420d143ae276675587bf8f061a640fdd031f58b0bd99f005"
+  },
+  {
+    "day": "2026-08-31",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10472985,
+    "sha256": "2d8d606ba0d7326e4f0d2ace2896a47659798bd9c7748069aa35e906c17a57f4"
+  },
+  {
+    "day": "2026-09-01",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10071018,
+    "sha256": "7fda61560d06fc2d1197d5f03d0f553111a6fb0e37f70e7d136373682e0a853d"
+  },
+  {
+    "day": "2026-09-02",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9412200,
+    "sha256": "d9ddf4fb6d718b9d79fd8daced123c3f8725436803a09d003e825e6651e48dff"
+  },
+  {
+    "day": "2026-09-03",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10254788,
+    "sha256": "7bf99d3683b4a2df6fd5e40c20df05ad4d433d8a6b5f4c829cca38cd4c6288c3"
+  },
+  {
+    "day": "2026-09-04",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7557535,
+    "sha256": "196992d3fb72d6f4f265f5c295b389b1e551801f9c82d60dc32641aefbdaeda0"
+  },
+  {
+    "day": "2026-09-07",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 5031946,
+    "sha256": "d817b942ca400b7bcb322d7aae2993cdd9d77e2c1b555381e934ebb8a6da2890"
+  },
+  {
+    "day": "2026-09-08",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9830497,
+    "sha256": "abc10b3281a2f4cecd212a04528dc81660f45282b827ac4a40146312c98e3f4f"
+  },
+  {
+    "day": "2026-09-09",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9380183,
+    "sha256": "50e1c46b058c152c2839d483ab84f9be05f851cfaef2392c08071c41827e9cb3"
+  },
+  {
+    "day": "2026-09-10",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10797459,
+    "sha256": "dd08d34b9fcd2aa35b04a3703c557f2383a37daccddbb8ea4859030383e2af3a"
+  },
+  {
+    "day": "2026-09-11",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10981228,
+    "sha256": "d54d3ecafde08a0a66b218ad82973dd403dc2abaed7c8d03b2d407cad9db41c7"
+  },
+  {
+    "day": "2026-09-14",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 13010371,
+    "sha256": "2240350a34ed9bb8884266420187693a781ed1e12158b2ec4a27aa14cfe4c5a2"
+  },
+  {
+    "day": "2026-09-15",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10649015,
+    "sha256": "b20052a26ef75f2fc0842feece04b779d4234dfe75c89dddc0b80bc40e29b65a"
+  },
+  {
+    "day": "2026-09-16",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8602877,
+    "sha256": "14266775850bf1fa938a8f558a3fdb67957d2debf3776e850f90d46b48922209"
+  },
+  {
+    "day": "2026-09-17",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10718436,
+    "sha256": "74db32c51c8f0d4849f7f7e08a11132d3cb227949ac48318cc4774e99584d11b"
+  },
+  {
+    "day": "2026-09-18",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8678201,
+    "sha256": "8517ee7afd1d17743ae9a7197609ac1b5f7d84f91d27b3f5d941e9922ffdea9e"
+  },
+  {
+    "day": "2026-09-21",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 7892192,
+    "sha256": "f8a5bf7ffe0a9fe1079be73fdd7dc2661135fcd0ffb58ae60ead1139f38df4d6"
+  },
+  {
+    "day": "2026-09-22",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8879744,
+    "sha256": "5ce7b8bcb385108ff9fec0a7a78c21efe597641151c1edeeed73521afd34de0d"
+  },
+  {
+    "day": "2026-09-23",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 6661174,
+    "sha256": "a1684172d70d6e117ae8c5385e0dfc17d0ea2ce2d448453587fb99fd71fc29bc"
+  },
+  {
+    "day": "2026-09-24",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10141077,
+    "sha256": "75d7e2db380db4d842f9f017045ec02f71eb4f65a60833cda1960de6ce49a687"
+  },
+  {
+    "day": "2026-09-25",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8214544,
+    "sha256": "193aacb9500de43c8f63b3ff01c04805c575c267889ea9ac58cfedb0819028dd"
+  },
+  {
+    "day": "2026-09-28",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11714338,
+    "sha256": "11a51f2bcd0a0218913a2ecc5aca798a20d7168a9672e0efbd2d64c8e8abe402"
+  },
+  {
+    "day": "2026-09-29",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10223628,
+    "sha256": "75d4c6e2c8f4642dca19e9e1f9f02cb1b1d957da799d35832873b448c593f9ac"
+  },
+  {
+    "day": "2026-09-30",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10808556,
+    "sha256": "9d9b9a9b2facc0a8955872f3b8035360c3a122dd346aa68c68d555a81c55ba8f"
+  },
+  {
+    "day": "2026-10-01",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 13633867,
+    "sha256": "ad17364c59d66ce1b4b1dce76e53387c9ba861724215e062e0620ad1b16c9c4a"
+  },
+  {
+    "day": "2026-10-02",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12986380,
+    "sha256": "ffc2decd87351ed8e272ce168a16fbeb048bea4490e3963a957cfaca7d8cfba1"
+  },
+  {
+    "day": "2026-10-05",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10873434,
+    "sha256": "173d46e8b3962780758ac9dc70f5bc452cf5699df43f02e370ee34acd907be02"
+  },
+  {
+    "day": "2026-10-06",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8350404,
+    "sha256": "84b34534b4fc9168e2d364c5f574638129f9cb266f6e44145d3065cc0d67e150"
+  },
+  {
+    "day": "2026-10-07",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 8730659,
+    "sha256": "fa22ae364030e0f47a1407188d411c4dbe04303aae0e7bce070aef2b7699a152"
+  },
+  {
+    "day": "2026-10-08",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10899316,
+    "sha256": "600887a85f934873b197c512620e95f4e57f0d23ff66275229338a517caf4724"
+  },
+  {
+    "day": "2026-10-09",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9536783,
+    "sha256": "55ae1d8b2ee51fadcfef0644fc1caa998e8b7d6146d5332b9442a4145b631739"
+  },
+  {
+    "day": "2026-10-12",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 9378440,
+    "sha256": "d8fd5601494a4ec69f4c2421a9db4d1c2bab8ea4f8ce579e6e89e47cdd3b2654"
+  },
+  {
+    "day": "2026-10-13",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11784379,
+    "sha256": "35b5fe343c424571778b836a1182cac4b9cc61f78f9509cede2a0486bbbdfa6e"
+  },
+  {
+    "day": "2026-10-14",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12119412,
+    "sha256": "bdf7c03466a0e4fccaaf42deed6e628c94a732c9b8edee255790f902102690c0"
+  },
+  {
+    "day": "2026-10-15",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 15496475,
+    "sha256": "c4a797be949656164f72647a4452ff04a2cec72ba5b79bd413f5f9169dd58b91"
+  },
+  {
+    "day": "2026-10-16",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10433682,
+    "sha256": "cae58a7110b07379b0cace29d41933fab92e69048b936c72976476db17f3ecb8"
+  },
+  {
+    "day": "2026-10-19",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 11999621,
+    "sha256": "c4d6a04ad4fb09485a627594b63838c5e58f6def3917f2462f9c4df412535311"
+  },
+  {
+    "day": "2026-10-20",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14207181,
+    "sha256": "b1472c41ab17a5a1878939bd66486780e717f5d755390964b49fdde9832ab087"
+  },
+  {
+    "day": "2026-10-21",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12566956,
+    "sha256": "6d208d973c6a9d6cee6893a95cb383059ca9873f5858645ee7e60a8d175b9019"
+  },
+  {
+    "day": "2026-10-22",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 14806244,
+    "sha256": "d375d0181d866de23eab33b4baebdcca44b15a8ace19d14cd6b8078dbdb61a25"
+  },
+  {
+    "day": "2026-10-23",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16395974,
+    "sha256": "b72b1aacfcde383620c94e42836683e2ffe4ebd3a7e06868007f78d17e65143f"
+  },
+  {
+    "day": "2026-10-26",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16140952,
+    "sha256": "1099c1b6c182fc49343af1577b0f57d04d64db65a81fb08f3b2eda9a25267e78"
+  },
+  {
+    "day": "2026-10-27",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 12690686,
+    "sha256": "3978158dfdc94544fe717e1f7b55e078a5008a9f5f5bed6eae8460abfbfd7774"
+  },
+  {
+    "day": "2026-10-28",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 10155707,
+    "sha256": "a42f0f8cb6329e353bd5677d8c84cc2e918afbe1ce35bab510c307396e37f363"
+  },
+  {
+    "day": "2026-10-29",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 16722201,
+    "sha256": "fe936202875867839d1a0768b0276375a0cf1ffcf208c85627d21e8ac061f0fa"
+  },
+  {
+    "day": "2026-10-30",
+    "fresh_quote_usd": "0.0",
+    "status": "DOWNLOADED_NOT_YET_AUDITED",
+    "bytes": 15293538,
+    "sha256": "251a9b5716cc78984ff2ff3df2843090099b12e1044509aacb449a3e764a91ae"
+  }
+]
