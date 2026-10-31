@@ -1,0 +1,17 @@
+{
+  "engine_sha256": "7420c59cc7fe9ee5809a96768e6263a9758a948cc5da7530998bb5ab37ec53f0",
+  "adapter_sha256": "5ba6e14fc17c0e2f9b3ae35b5a2ea992501a341d7fb54c7fbfb04275c70a1ce5",
+  "oracle_sha256": "73a4ac6d9703127665631ddeabb5106c341f6cfaadeeab5e01ca68cf7412d858",
+  "report_md_bytes": 10250,
+  "tests": 22,
+  "independent_rows": 218,
+  "raw_entry_exit_checks": 58,
+  "mismatches": 0,
+  "historical_complete": false,
+  "included_sessions": 109,
+  "data_downloaded_sessions": 122,
+  "planned_sessions": 130,
+  "no_paid_downloads": true,
+  "partial_report_reason": "8 nonzero quoted sessions not authorized; 13 more sessions fail conservative data gates",
+  "display_check": "PDF page 1 visually inspected; extracted summary text checked"
+}

@@ -1,0 +1,40 @@
+[
+  {
+    "stop": 15,
+    "target": 15,
+    "included_sessions": 109,
+    "entries": 29,
+    "TP": 17,
+    "SL": 12,
+    "open": 0,
+    "win_percent_closed": 58.62068965517241,
+    "won_points": 255,
+    "lost_points": -180.0,
+    "net_points": 75.0,
+    "max_loss_points": -15.0,
+    "outcomes": {
+      "FIRST_CROSS_CANCELLED": 80,
+      "TP": 17,
+      "SL": 12
+    }
+  },
+  {
+    "stop": 16,
+    "target": 15,
+    "included_sessions": 109,
+    "entries": 29,
+    "TP": 17,
+    "SL": 12,
+    "open": 0,
+    "win_percent_closed": 58.62068965517241,
+    "won_points": 255,
+    "lost_points": -192.0,
+    "net_points": 63.0,
+    "max_loss_points": -16.0,
+    "outcomes": {
+      "FIRST_CROSS_CANCELLED": 80,
+      "TP": 17,
+      "SL": 12
+    }
+  }
+]

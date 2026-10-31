@@ -1,0 +1,27 @@
+test_cross_tick_cannot_fill (test_engine.EngineTests.test_cross_tick_cannot_fill) ... ok
+test_cutoff_keeps_open_separate (test_engine.EngineTests.test_cutoff_keeps_open_separate) ... ok
+test_event_regression_rejected (test_engine.EngineTests.test_event_regression_rejected) ... ok
+test_first_trade_only (test_engine.EngineTests.test_first_trade_only) ... ok
+test_forming_ema_not_tick_compounded (test_engine.EngineTests.test_forming_ema_not_tick_compounded) ... ok
+test_gap_loss_not_falsely_capped (test_engine.EngineTests.test_gap_loss_not_falsely_capped) ... ok
+test_insufficient_seed_rejected (test_engine.EngineTests.test_insufficient_seed_rejected) ... ok
+test_long_touch_then_target (test_engine.EngineTests.test_long_touch_then_target) ... ok
+test_no_cross_constant (test_engine.EngineTests.test_no_cross_constant) ... ok
+test_no_same_print_exit_even_gap_at_entry (test_engine.EngineTests.test_no_same_print_exit_even_gap_at_entry) ... ok
+test_receipt_after_cutoff_not_used (test_engine.EngineTests.test_receipt_after_cutoff_not_used) ... ok
+test_seed_independent_weighted_sum (test_engine.EngineTests.test_seed_independent_weighted_sum) ... ok
+test_short_symmetry (test_engine.EngineTests.test_short_symmetry) ... ok
+test_stop15_vs16_same_entry (test_engine.EngineTests.test_stop15_vs16_same_entry) ... ok
+test_target_is_limit_not_favorable_gap (test_engine.EngineTests.test_target_is_limit_not_favorable_gap) ... ok
+test_two_minute_boundary_commits_once (test_engine.EngineTests.test_two_minute_boundary_commits_once) ... ok
+test_cross_waits_event_end (test_events.AtomicTests.test_cross_waits_event_end) ... ok
+test_exit_next_event (test_events.AtomicTests.test_exit_next_event) ... ok
+test_no_same_event_entry_after_cross (test_events.AtomicTests.test_no_same_event_entry_after_cross) ... ok
+test_resting_fill_before_event_end (test_events.AtomicTests.test_resting_fill_before_event_end) ... ok
+test_reversal_before_touch_consumes_first_cross (test_first_cross.FirstCrossTests.test_reversal_before_touch_consumes_first_cross) ... ok
+test_short_limit_retest_wins_without_reversal (test_first_cross.FirstCrossTests.test_short_limit_retest_wins_without_reversal) ... ok
+
+----------------------------------------------------------------------
+Ran 22 tests in 0.010s
+
+OK

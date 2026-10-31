@@ -98,7 +98,7 @@ def writecsv(path,rows):
         w=csv.DictWriter(f,fieldnames=keys);w.writeheader();w.writerows(rows)
 
 def main():
-    out=ROOT/'run-v2';out.mkdir(exist_ok=False)
+    out=ROOT/'run-v3';out.mkdir(exist_ok=False)
     expected=json.loads((WPATH.parent/'warmup-receipt.json').read_text())['sha256']
     assert digest(WPATH)==expected
     plan=json.loads((ROOT/'plan.json').read_text());census=[];ledger=[]

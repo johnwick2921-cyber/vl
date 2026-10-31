@@ -106,6 +106,8 @@ def _simulate(ticks, opened, cutoff, warm, stop_points):
             side = 0
             order = None
             result["outcome"] = "FIRST_CROSS_CANCELLED"
+            result["cancel_row"] = tick.row
+            result["cancel_event_ns"] = tick.event_ns
         if side:
             rounding = ROUND_FLOOR if side == 1 else ROUND_CEILING
             candidate = int(cur9.to_integral_value(rounding=rounding))
