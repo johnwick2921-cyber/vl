@@ -7,6 +7,7 @@ import type { PepConfig } from '../../types'
 import { EffectiveLine } from './EffectiveChip'
 import {
   PEP_DEFAULTS,
+  PEP_LOCKED,
   PEP_RANGES,
   PEP_TF_CHOICES,
   fullPepBlock,
@@ -15,9 +16,13 @@ import {
 } from './pepModel'
 import { ClampedNumberInput } from './RiskControlEditor'
 
-// PEP MODE settings panel (owner order 2026-10-29). Layout: a state banner, the
-// SHARED block (style that runs, contracts, box start, flat time, tick, ...),
-// then a Style A / Style E tab that swaps which style's own numbers are shown.
+// PEP MODE settings panel (owner order 2026-10-29; m461 owner ruling 2026-10-30:
+// "A or E all follow their rule, cannot change any way, they add custom").
+// Layout: a state banner, the SHARED block (style picker A / E / Custom,
+// contracts, tick, fee, signal age - editable in EVERY style), then the RULES of
+// the chosen style. Styles A and E show their PDF rule values READ-ONLY with a
+// "locked to the PDF" note (the server ignores any stored number for them);
+// only Custom shows editable inputs.
 //
 // Rules this panel keeps (the explorer's UI recs):
 //  - EVERY field shows a CONCRETE value (the stored one, else the shipped
@@ -30,7 +35,7 @@ import { ClampedNumberInput } from './RiskControlEditor'
 //    a guide card that names a control the Studio lacks (or vice versa) is RED.
 
 type Kind = 'int' | 'float' | 'time' | 'enum' | 'tf'
-type Group = 'shared' | 'a' | 'e'
+type Group = 'shared' | 'rule' | 'a' | 'e' | 'c'
 
 export interface PepField {
   /** The stored path in the strategy config (= the knob-registry path). */
@@ -45,6 +50,8 @@ export interface PepField {
   step?: number
   fallback?: number | string
   options?: { value: string; label: PepKey }[]
+  /** Custom rows only: shown when this says so (entry type picks which). */
+  visible?: (b: PepConfig) => boolean
   get: (b: PepConfig) => number | string | undefined
   set: (b: PepConfig, v: number | string) => PepConfig
 }
@@ -106,13 +113,49 @@ const styleE = (
   ...extra,
 })
 
+/** Rule leaves at the ROOT of the block: the A / E rules own them (locked to the
+ *  PDF); only the Custom style reads what is stored. */
+const rule = (
+  leaf: keyof PepConfig,
+  kind: Kind,
+  label: PepKey,
+  help: PepKey,
+  extra: Partial<PepField> = {}
+): PepField => ({ ...shared(leaf, kind, label, help, extra), group: 'rule' })
+
+const styleC = (
+  leaf: keyof NonNullable<PepConfig['style_custom']>,
+  kind: Kind,
+  label: PepKey,
+  help: PepKey,
+  extra: Partial<PepField> = {}
+): PepField => ({
+  path: `pep.style_custom.${leaf}`,
+  leaf,
+  group: 'c',
+  kind,
+  label,
+  help,
+  get: (b) => b.style_custom?.[leaf] as number | string | undefined,
+  set: (b, v) => ({ ...b, style_custom: { ...b.style_custom, [leaf]: v } }),
+  ...extra,
+})
+
+const isBreakout = (b: PepConfig) =>
+  (b.style_custom?.pep_c_entry_type ?? '').trim().toLowerCase() === 'breakout'
+const isCross = (b: PepConfig) => !isBreakout(b)
+
 export const PEP_FIELDS: PepField[] = [
   shared('pep_style', 'enum', 'runsStyle', 'runsStyleHelp', {
-    // the server case-folds the style; show the canonical letter
-    get: (b) => (b.pep_style ?? '').toUpperCase() || undefined,
+    // the server case-folds the style; show the canonical name
+    get: (b) => {
+      const v = (b.pep_style ?? '').trim().toUpperCase()
+      return v === 'CUSTOM' ? 'Custom' : v || undefined
+    },
     options: [
       { value: 'A', label: 'styleAName' },
       { value: 'E', label: 'styleEName' },
+      { value: 'Custom', label: 'styleCustomName' },
     ],
     fallback: D.style,
   }),
@@ -120,25 +163,25 @@ export const PEP_FIELDS: PepField[] = [
     ...R.contracts,
     fallback: D.contracts,
   }),
-  shared('pep_box_start_ct', 'time', 'fBoxStart', 'fBoxStartHelp', {
+  rule('pep_box_start_ct', 'time', 'fBoxStart', 'fBoxStartHelp', {
     fallback: D.boxStartCT,
   }),
-  shared('pep_flat_time_ct', 'time', 'fFlatTime', 'fFlatTimeHelp', {
+  rule('pep_flat_time_ct', 'time', 'fFlatTime', 'fFlatTimeHelp', {
     fallback: D.flatTimeCT,
   }),
-  shared('pep_tick_size', 'float', 'fTick', 'fTickHelp', {
+  rule('pep_tick_size', 'float', 'fTick', 'fTickHelp', {
     ...R.tickSize,
     step: 0.25,
     fallback: D.tickSize,
   }),
-  shared('pep_sl_rounding', 'enum', 'fSlRounding', 'fSlRoundingHelp', {
+  rule('pep_sl_rounding', 'enum', 'fSlRounding', 'fSlRoundingHelp', {
     options: [
       { value: 'outward', label: 'optOutward' },
       { value: 'nearest', label: 'optNearest' },
     ],
     fallback: D.slRounding,
   }),
-  shared('pep_max_trades_per_day', 'int', 'fMaxTrades', 'fMaxTradesHelp', {
+  rule('pep_max_trades_per_day', 'int', 'fMaxTrades', 'fMaxTradesHelp', {
     ...R.maxTradesPerDay,
     fallback: D.maxTradesPerDay,
   }),
@@ -147,12 +190,12 @@ export const PEP_FIELDS: PepField[] = [
     step: 0.5,
     fallback: D.feePerContractUSD,
   }),
-  shared('pep_max_box_points', 'float', 'fMaxBox', 'fMaxBoxHelp', {
+  rule('pep_max_box_points', 'float', 'fMaxBox', 'fMaxBoxHelp', {
     ...R.maxBoxPoints,
     step: 1,
     fallback: D.maxBoxPoints,
   }),
-  shared('pep_signal_max_age_min', 'int', 'fSignalAge', 'fSignalAgeHelp', {
+  rule('pep_signal_max_age_min', 'int', 'fSignalAge', 'fSignalAgeHelp', {
     ...R.signalMaxAgeMin,
     fallback: D.signalMaxAgeMin,
   }),
@@ -211,6 +254,61 @@ export const PEP_FIELDS: PepField[] = [
     ...R.warmupBars,
     fallback: D.e.warmupBars,
   }),
+
+  styleC('pep_c_entry_type', 'enum', 'fEntryType', 'fEntryTypeHelp', {
+    get: (b) =>
+      (b.style_custom?.pep_c_entry_type ?? '').trim().toLowerCase() ||
+      undefined,
+    options: [
+      { value: 'ema_cross', label: 'optEmaCross' },
+      { value: 'breakout', label: 'optBreakout' },
+    ],
+    fallback: D.custom.entryType,
+  }),
+  styleC('pep_c_box_minutes', 'int', 'fBoxMinutes', 'fCBoxMinutesHelp', {
+    ...R.boxMinutes,
+    fallback: D.custom.boxMinutes,
+  }),
+  styleC('pep_c_sl_fraction', 'float', 'fSlFraction', 'fCSlHelp', {
+    ...R.fraction,
+    step: 0.05,
+    fallback: D.custom.slFraction,
+  }),
+  styleC('pep_c_tp_fraction', 'float', 'fTpFraction', 'fCTpHelp', {
+    ...R.fraction,
+    step: 0.05,
+    fallback: D.custom.tpFraction,
+  }),
+  styleC('pep_c_both_edges', 'enum', 'fBothEdges', 'fBothEdgesHelp', {
+    options: [
+      { value: 'no_trade', label: 'optNoTrade' },
+      { value: 'nearest_open', label: 'optNearestOpen' },
+    ],
+    fallback: D.custom.bothEdges,
+    visible: isBreakout,
+  }),
+  styleC('pep_c_ema_period', 'int', 'fEmaPeriod', 'fEmaPeriodHelp', {
+    ...R.emaPeriod,
+    fallback: D.custom.emaPeriod,
+    visible: isCross,
+  }),
+  styleC('pep_c_ema_tf_min', 'tf', 'fEmaTf', 'fEmaTfHelp', {
+    fallback: D.custom.emaTFMin,
+    visible: isCross,
+  }),
+  styleC('pep_c_signal_source', 'enum', 'fSignalSource', 'fSignalSourceHelp', {
+    options: [
+      { value: 'ema', label: 'optEma' },
+      { value: 'close', label: 'optClose' },
+    ],
+    fallback: D.custom.signalSource,
+    visible: isCross,
+  }),
+  styleC('pep_c_warmup_bars', 'int', 'fWarmup', 'fWarmupHelp', {
+    ...R.warmupBars,
+    fallback: D.custom.warmupBars,
+    visible: isCross,
+  }),
 ]
 
 const inputStyle = {
@@ -222,7 +320,8 @@ const inputStyle = {
 function FieldRow({
   f,
   block,
-  disabled,
+  disabled: disabledProp,
+  lockedValue,
   lang,
   effective,
   onChange,
@@ -230,12 +329,16 @@ function FieldRow({
   f: PepField
   block: PepConfig
   disabled?: boolean
+  /** Set for styles A / E: the PDF's value, shown read-only. */
+  lockedValue?: number | string
   lang: Language
   effective?: StudioEffective
   onChange: (b: PepConfig) => void
 }) {
   const [timeDraft, setTimeDraft] = useState<string | null>(null)
-  const cur = f.get(block) ?? f.fallback
+  const locked = lockedValue !== undefined
+  const disabled = disabledProp || locked
+  const cur = locked ? lockedValue : (f.get(block) ?? f.fallback)
   const testId = `pep-${f.leaf}`
   // The a/e tabs share label keys (fBoxMinutes ...): the help text names the style.
   let control: React.ReactNode
@@ -338,6 +441,15 @@ function FieldRow({
       <label className="text-xs" style={{ color: '#EAECEF' }}>
         {pt(f.label, lang)}
         {control}
+        {locked && (
+          <span
+            className="text-[10px] ml-2 px-1.5 py-0.5 rounded"
+            style={{ background: '#2B3139', color: '#F0B90B' }}
+            data-testid={`${testId}-locked`}
+          >
+            {pt('lockedBadge', lang)}
+          </span>
+        )}
       </label>
       <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
         {pt(f.help, lang)}
@@ -362,27 +474,43 @@ export function PepModePanel({
 }) {
   const lang = language as Language
   const block = fullPepBlock(config)
-  const running: PepStyle =
-    (block.pep_style ?? '').toUpperCase() === 'A' ? 'A' : 'E' // junk runs the shipped default E
-  const [tab, setTab] = useState<PepStyle | null>(null)
-  const shownTab: PepStyle = tab ?? running
+  const v = (block.pep_style ?? '').trim().toUpperCase()
+  // junk runs the shipped default E (the server's resolver does the same)
+  const running: PepStyle = v === 'A' ? 'A' : v === 'CUSTOM' ? 'Custom' : 'E'
   const on = block.pep_enabled === true
 
   const emit = (b: PepConfig) => {
     if (!disabled) onChange(fullPepBlock(b))
   }
-  const rows = (g: Group) =>
-    PEP_FIELDS.filter((f) => f.group === g).map((f) => (
-      <FieldRow
-        key={f.path}
-        f={f}
-        block={block}
-        disabled={disabled}
-        lang={lang}
-        effective={effective}
-        onChange={emit}
-      />
-    ))
+  const row = (f: PepField, lockedValue?: number | string) => (
+    <FieldRow
+      key={f.path}
+      f={f}
+      block={block}
+      disabled={disabled}
+      lockedValue={lockedValue}
+      lang={lang}
+      effective={effective}
+      onChange={emit}
+    />
+  )
+  const sharedRows = PEP_FIELDS.filter((f) => f.group === 'shared').map((f) =>
+    row(f)
+  )
+  // A / E: the rule rows with the PDF value, read-only. Custom: editable rows.
+  const styleGroup = running === 'A' ? 'a' : running === 'E' ? 'e' : 'c'
+  const ruleRows = PEP_FIELDS.filter(
+    (f) => f.group === 'rule' || f.group === styleGroup
+  )
+    .filter((f) => running !== 'Custom' || !f.visible || f.visible(block))
+    .map((f) => {
+      if (running === 'Custom') return row(f)
+      // never editable under A / E: a missing table entry falls back to the PDF default
+      return row(
+        f,
+        PEP_LOCKED[running][f.path] ?? (f.fallback as number | string)
+      )
+    })
 
   return (
     <div className="space-y-4" data-testid="pep-panel">
@@ -401,45 +529,48 @@ export function PepModePanel({
         <div className="text-sm font-medium" style={{ color: '#EAECEF' }}>
           {pt('sharedBlock', lang)}
         </div>
-        {rows('shared')}
+        {sharedRows}
       </div>
       <div
         className="p-4 rounded-lg"
         style={{ background: '#0B0E11', border: '1px solid #2B3139' }}
       >
-        <div role="tablist" className="flex gap-2">
-          {(['A', 'E'] as PepStyle[]).map((s) => (
-            <button
-              key={s}
-              type="button"
-              role="tab"
-              aria-selected={shownTab === s}
-              data-testid={`pep-tab-${s}`}
-              onClick={() => setTab(s)}
-              className="px-3 py-1.5 rounded text-xs font-semibold"
-              style={{
-                background: shownTab === s ? '#F0B90B' : '#1E2329',
-                color: shownTab === s ? '#0B0E11' : '#EAECEF',
-                border: `1px solid ${shownTab === s ? '#F0B90B' : '#2B3139'}`,
-              }}
-            >
-              {pt(s === 'A' ? 'tabA' : 'tabE', lang)}
-              {running === s ? ' ●' : ''}
-            </button>
-          ))}
+        <div className="text-sm font-medium" style={{ color: '#EAECEF' }}>
+          {pt('rulesBlock', lang)}
         </div>
         <p className="text-xs mt-3 font-medium" style={{ color: '#EAECEF' }}>
-          {pt(shownTab === 'A' ? 'styleAName' : 'styleEName', lang)}
+          {pt(
+            running === 'A'
+              ? 'styleAName'
+              : running === 'E'
+                ? 'styleEName'
+                : 'styleCustomName',
+            lang
+          )}
         </p>
         <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
-          {pt(shownTab === 'A' ? 'styleAHelp' : 'styleEHelp', lang)}
+          {pt(
+            running === 'A'
+              ? 'styleAHelp'
+              : running === 'E'
+                ? 'styleEHelp'
+                : 'styleCustomHelp',
+            lang
+          )}
         </p>
+        {running !== 'Custom' && (
+          <p
+            className="text-xs mt-1 font-medium"
+            style={{ color: '#F0B90B' }}
+            data-testid="pep-locked-note"
+          >
+            {pt('lockedNote', lang)}
+          </p>
+        )}
         <p className="text-xs mt-1" style={{ color: '#848E9C' }}>
           {pt('pdfSource', lang)}
         </p>
-        <div data-testid={`pep-style-${shownTab}-block`}>
-          {rows(shownTab === 'A' ? 'a' : 'e')}
-        </div>
+        <div data-testid={`pep-style-${running}-block`}>{ruleRows}</div>
       </div>
     </div>
   )

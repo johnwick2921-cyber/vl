@@ -192,8 +192,15 @@ func TestPepNoEntryAtOrAfterTheFlatTime(t *testing.T) {
 	if r, refused := w.at.admitEntry(pepIntent(w.at, at1500.Add(-time.Second))); refused {
 		t.Fatalf("14:59:59 CT must admit: %q", r)
 	}
-	// the flat time is a SETTING: 14:00 moves the cutoff
-	c := pepCfgOf("A", 3)
+	// m461: style A is the PDF - a stored 14:00 flat is ignored (still 15:00).
+	a := pepCfgOf("A", 3)
+	a.FlatTimeCT = "14:00"
+	w.at.config.StrategyConfig = &store.StrategyConfig{Pep: &a}
+	if r, refused := w.at.admitEntry(pepIntent(w.at, ctTimeAt(t, pepDay, "14:00"))); refused {
+		t.Fatalf("style A must ignore a stored 14:00 flat time: %q", r)
+	}
+	// the flat time is a SETTING of the CUSTOM style: 14:00 moves the cutoff
+	c := pepCfgOf("Custom", 3)
 	c.FlatTimeCT = "14:00"
 	w.at.config.StrategyConfig = &store.StrategyConfig{Pep: &c}
 	if _, refused := w.at.admitEntry(pepIntent(w.at, ctTimeAt(t, pepDay, "14:00"))); !refused {

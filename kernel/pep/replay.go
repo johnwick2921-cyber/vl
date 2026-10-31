@@ -120,10 +120,10 @@ func ReplayDayOpts(series []market.Kline, date string, cfg Config, window int, o
 			out.Traded = true
 			out.Side, out.Entry, out.Stop, out.Target = in.Side, in.Entry, in.Stop, in.Target
 			start := i + 1 // E: enter at the candle close, scan the NEXT bars
-			if in.Style == StyleA {
+			if cfg.IsBreakout() {
 				start = i // A: entered inside the break bar itself
 			}
-			if in.Style == StyleA {
+			if cfg.IsBreakout() {
 				out.EntryAt = in.SignalOpen
 			} else {
 				out.EntryAt = in.SignalClose + 1

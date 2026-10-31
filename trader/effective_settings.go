@@ -1041,8 +1041,30 @@ func buildEffectiveResolvers() map[string]effResolver {
 		add(path, "store.ResolvePep (kernel/pep.FromSettings reads the same)", func(x *effCtx) effResult {
 			r := store.ResolvePep(x.cfg)
 			v := get(r)
+			// m461: A / E are the PDF. A rule leaf under A or E runs the PDF's value
+			// whatever is saved, and says so (the stored number stays in the DB).
+			if r.Locked && store.PepLockedLeaves[leaf] {
+				return effResult{value: v, origin: "locked to the PDF (style " + r.Style + "): the saved value is ignored; switch to Custom to edit"}
+			}
 			if note, clamped := r.Clamps[leaf]; clamped {
 				return effResult{value: v, origin: "clamp (store.ResolvePep): " + note}
+			}
+			if strings.HasPrefix(leaf, "pep_c_") && r.Style != store.PepStyleCustom {
+				return effResult{value: v, origin: "not used: style is " + r.Style + " (Custom only)"}
+			}
+			// m461 P3: a style's own leaves are read only while that style runs.
+			if r.Style == store.PepStyleCustom && (strings.HasPrefix(leaf, "pep_a_") || strings.HasPrefix(leaf, "pep_e_")) {
+				return effResult{value: v, origin: "not used: style is Custom"}
+			}
+			// ... and inside Custom, the leaves the entry type does not use.
+			if r.Style == store.PepStyleCustom && strings.HasPrefix(leaf, "pep_c_") {
+				breakout := r.Custom.EntryType == store.PepEntryBreakout
+				switch {
+				case breakout && (leaf == "pep_c_ema_period" || leaf == "pep_c_ema_tf_min" || leaf == "pep_c_signal_source" || leaf == "pep_c_warmup_bars"):
+					return effResult{value: v, origin: "not used: entry type is breakout"}
+				case !breakout && leaf == "pep_c_both_edges":
+					return effResult{value: v, origin: "not used: entry type is ema_cross"}
+				}
 			}
 			if x.st.present {
 				return effResult{value: v, origin: store.SourceSaved}
@@ -1072,6 +1094,15 @@ func buildEffectiveResolvers() map[string]effResolver {
 	pepRow("pep.style_e.pep_e_ema_tf_min", "pep_e_ema_tf_min", func(r store.PepResolved) any { return r.E.EMATFMin })
 	pepRow("pep.style_e.pep_e_signal_source", "pep_e_signal_source", func(r store.PepResolved) any { return r.E.SignalSource })
 	pepRow("pep.style_e.pep_e_warmup_bars", "pep_e_warmup_bars", func(r store.PepResolved) any { return r.E.WarmupBars })
+	pepRow("pep.style_custom.pep_c_entry_type", "pep_c_entry_type", func(r store.PepResolved) any { return r.Custom.EntryType })
+	pepRow("pep.style_custom.pep_c_box_minutes", "pep_c_box_minutes", func(r store.PepResolved) any { return r.Custom.BoxMinutes })
+	pepRow("pep.style_custom.pep_c_sl_fraction", "pep_c_sl_fraction", func(r store.PepResolved) any { return r.Custom.SLFraction })
+	pepRow("pep.style_custom.pep_c_tp_fraction", "pep_c_tp_fraction", func(r store.PepResolved) any { return r.Custom.TPFraction })
+	pepRow("pep.style_custom.pep_c_both_edges", "pep_c_both_edges", func(r store.PepResolved) any { return r.Custom.BothEdges })
+	pepRow("pep.style_custom.pep_c_ema_period", "pep_c_ema_period", func(r store.PepResolved) any { return r.Custom.EMAPeriod })
+	pepRow("pep.style_custom.pep_c_ema_tf_min", "pep_c_ema_tf_min", func(r store.PepResolved) any { return r.Custom.EMATFMin })
+	pepRow("pep.style_custom.pep_c_signal_source", "pep_c_signal_source", func(r store.PepResolved) any { return r.Custom.SignalSource })
+	pepRow("pep.style_custom.pep_c_warmup_bars", "pep_c_warmup_bars", func(r store.PepResolved) any { return r.Custom.WarmupBars })
 
 	// ── Day plan: strategy-level rows ────────────────────────────────────────
 	add(dpPath+"plan_enabled", "trader.(*AutoTrader).dayPlanEnabled", func(x *effCtx) effResult {

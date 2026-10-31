@@ -40,9 +40,9 @@ const registered = [...registry.matchAll(/live\("(pep\.[a-z_.]+)"/g)].map(
 )
 
 describe('Pep guide page: cards', () => {
-  it('is a registered section with one card per registered stored path (22)', () => {
+  it('is a registered section with one card per registered stored path (31)', () => {
     expect(section).toBeTruthy()
-    expect(registered).toHaveLength(22)
+    expect(registered).toHaveLength(31)
     expect(cards.map((c) => c.settingId).sort()).toEqual([...registered].sort())
     expect(new Set(cards.map((c) => c.settingId)).size).toBe(cards.length)
   })
@@ -75,10 +75,14 @@ describe('Pep guide page: cards name the Studio control that exists (T16)', () =
       expect(c.where).toContain('Pep mode accordion')
       expect(c.where).toContain(
         f!.group === 'a'
-          ? 'Style A tab'
+          ? 'Style A (locked, read-only)'
           : f!.group === 'e'
-            ? 'Style E tab'
-            : 'Shared by both styles'
+            ? 'Style E (locked, read-only)'
+            : f!.group === 'c'
+              ? 'Style Custom (editable)'
+              : f!.group === 'rule'
+                ? '“Style rules” (editable in Custom; read-only, locked to the PDF, in A and E)'
+                : 'Shared by all styles'
       )
       // the on-screen text is the panel's own English label
       const onScreen = pepStrings[f!.label].en
@@ -86,7 +90,7 @@ describe('Pep guide page: cards name the Studio control that exists (T16)', () =
         true
       )
     }
-    expect(PEP_FIELDS).toHaveLength(21)
+    expect(PEP_FIELDS).toHaveLength(30)
   })
 
   it('the master-switch card names the real Trading mode selector control', () => {
@@ -153,6 +157,61 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(row('pep.pep_enabled')).toBe('off')
   })
 
+  // m461: Custom's shipped defaults are style E's, on the cards, the Studio
+  // pre-fill and the Go constants. Mutant: change one Custom card default -> RED.
+  it('Custom defaults equal style E on the cards and in the Studio pre-fill', () => {
+    const pairs: [string, string][] = [
+      ['pep.style_custom.pep_c_box_minutes', 'pep.style_e.pep_e_box_minutes'],
+      ['pep.style_custom.pep_c_sl_fraction', 'pep.style_e.pep_e_sl_fraction'],
+      ['pep.style_custom.pep_c_tp_fraction', 'pep.style_e.pep_e_tp_fraction'],
+      ['pep.style_custom.pep_c_ema_period', 'pep.style_e.pep_e_ema_period'],
+      ['pep.style_custom.pep_c_ema_tf_min', 'pep.style_e.pep_e_ema_tf_min'],
+      [
+        'pep.style_custom.pep_c_signal_source',
+        'pep.style_e.pep_e_signal_source',
+      ],
+      ['pep.style_custom.pep_c_warmup_bars', 'pep.style_e.pep_e_warmup_bars'],
+    ]
+    for (const [c, e] of pairs) expect(row(c), c).toBe(row(e))
+    expect(row('pep.style_custom.pep_c_entry_type')).toBe('ema_cross')
+    expect(row('pep.style_custom.pep_c_both_edges')).toBe(
+      goConst('PepBothEdgesNoTrade')
+    )
+    expect(PEP_DEFAULTS.custom.boxMinutes).toBe(PEP_DEFAULTS.e.boxMinutes)
+    expect(PEP_DEFAULTS.custom.emaPeriod).toBe(PEP_DEFAULTS.e.emaPeriod)
+  })
+
+  // m461 (owner ruling 2026-10-30): A and E are fixed PDF rules, Custom is the
+  // editable style - the guide says so, and every A / E / rule card says locked.
+  // Mutant: delete LOCKED_AE from a card, or the Custom paragraph -> RED.
+  it('A and E are described as fixed PDF rules, Custom as the editable style', () => {
+    const text = JSON.stringify(section!.blocks)
+    expect(text).toContain('Styles A and E are LOCKED to these PDF rules')
+    expect(text).toContain('The Custom style (the editable one)')
+    expect(text).toContain('The maximum box size applies to Custom only')
+    expect(text).toContain('the A and E rules have no cap')
+    for (const c of cards.filter(
+      (x) =>
+        x.settingId?.startsWith('pep.style_a.') ||
+        x.settingId?.startsWith('pep.style_e.')
+    ))
+      expect(c.trader, c.settingId).toContain('LOCKED to the PDF')
+    for (const id of [
+      'pep.pep_box_start_ct',
+      'pep.pep_flat_time_ct',
+      'pep.pep_sl_rounding',
+      'pep.pep_max_trades_per_day',
+      'pep.pep_max_box_points',
+    ])
+      expect(card(id).trader, id).toContain('Style A and E: ')
+    expect(card('pep.pep_contracts').trader).toContain(
+      'Editable in EVERY style'
+    )
+    expect(card('pep.pep_style').range).toBe(
+      'A | E | Custom (case-folded where it enters)'
+    )
+  })
+
   // OWNER RULING 2026-10-30 ("keep default E 6"): the shipped defaults are
   // style E and 6 contracts, with a 2 minute E box and a 5 minute A box, in
   // EVERY layer. Typed as literals on purpose: a drift in the Go constant, the
@@ -182,31 +241,32 @@ describe('Pep guide page: numbers equal the code', () => {
     expect(r('pep.pep_signal_max_age_min')).toContain(
       `1 to ${goConst('PepSignalMaxAgeCeiling')}`
     )
-    expect(r('pep.style_a.pep_a_box_minutes')).toContain(
+    // A and E are locked (m461): their cards say so instead of an editable range.
+    for (const id of registered.filter(
+      (p) => p.startsWith('pep.style_a.') || p.startsWith('pep.style_e.')
+    ))
+      expect(r(id), id).toMatch(/^locked to the PDF value /)
+    // the editable ranges are Custom's
+    expect(r('pep.style_custom.pep_c_box_minutes')).toContain(
       `1 to ${goConst('PepBoxMinutesCeiling')}`
     )
-    expect(r('pep.style_e.pep_e_box_minutes')).toContain(
-      `1 to ${goConst('PepBoxMinutesCeiling')}`
-    )
-    expect(r('pep.style_a.pep_a_sl_fraction')).toContain(
+    expect(r('pep.style_custom.pep_c_sl_fraction')).toContain(
       `at most ${Number(goConst('PepFractionCeiling'))}`
     )
-    expect(r('pep.style_e.pep_e_tp_fraction')).toContain(
+    expect(r('pep.style_custom.pep_c_tp_fraction')).toContain(
       `at most ${Number(goConst('PepFractionCeiling'))}`
     )
-    expect(r('pep.style_e.pep_e_ema_period')).toBe(
+    expect(r('pep.style_custom.pep_c_ema_period')).toBe(
       `${goConst('PepEMAPeriodFloor')} to ${goConst('PepEMAPeriodCeiling')}`
     )
-    expect(r('pep.style_e.pep_e_warmup_bars')).toContain(
+    expect(r('pep.style_custom.pep_c_warmup_bars')).toContain(
       `0 to ${goConst('PepWarmupCeiling')}`
     )
     // The two UI-only floors are STATED on the cards, not hidden (review round
     // 1, defect 3): the server takes any value above 0, the Studio box does not.
     for (const id of [
-      'pep.style_a.pep_a_sl_fraction',
-      'pep.style_a.pep_a_tp_fraction',
-      'pep.style_e.pep_e_sl_fraction',
-      'pep.style_e.pep_e_tp_fraction',
+      'pep.style_custom.pep_c_sl_fraction',
+      'pep.style_custom.pep_c_tp_fraction',
     ])
       expect(r(id)).toContain(`takes ${PEP_RANGES.fraction.min} or more`)
     expect(r('pep.pep_tick_size')).toContain(
@@ -399,8 +459,8 @@ describe('mentor-only notes say "mentor or pep" where it is true', () => {
     }
   })
   it('the EMA candle clamp sentence matches the resolver (1..60, non-divisors run the shipped default)', () => {
-    expect(goSrc).toMatch(/"pep_e_ema_tf_min",[^\n]*PepEEMATFDefault, 1, 60\)/)
-    const t = card('pep.style_e.pep_e_ema_tf_min').trader
+    expect(goSrc).toMatch(/"pep_c_ema_tf_min",[^\n]*PepEEMATFDefault, 1, 60\)/)
+    const t = card('pep.style_custom.pep_c_ema_tf_min').trader
     expect(t).toContain('does not (7, 8 ...) runs the shipped 2')
     expect(t).toContain('below 1 runs 1 and above 60 runs 60')
   })

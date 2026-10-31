@@ -125,7 +125,8 @@ export function PepTruthCard({
   // newer server) prints as itself, never as a guess.
   // Style E waits for an EMA cross, not a "break": the word names the real wait.
   const sigKey = sig
-    ? sig === 'waiting_signal' && truth.style === 'E'
+    ? sig === 'waiting_signal' &&
+      (truth.entry ? truth.entry === 'ema_cross' : truth.style === 'E')
       ? 'sigWaitingSignalE'
       : SIGNAL_KEYS[sig as PepSignalState]
     : undefined

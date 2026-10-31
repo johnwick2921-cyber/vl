@@ -134,12 +134,10 @@ func Evaluate(bars []market.Kline, now int64, cfg Config, st State) Result {
 		return refuse(CodeBoxTooWide, SevBlock, "box %.2f pts exceeds the %.2f pt limit", box.Size, cfg.MaxBoxPoints)
 	}
 
-	switch cfg.Style {
-	case StyleA:
+	if cfg.IsBreakout() {
 		return evalA(res, closed, now, cfg, trades, day)
-	default:
-		return evalE(res, closed, now, cfg, trades, day)
 	}
+	return evalE(res, closed, now, cfg, trades, day)
 }
 
 // measureBox reads the opening box off the closed bars: the high and low of
@@ -240,7 +238,7 @@ func evalA(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 				side = SideLong
 			case b.Open < box.Low:
 				side = SideShort
-			case cfg.A.BothEdges == BothEdgesNearestOpen:
+			case cfg.BothEdgesPolicy() == BothEdgesNearestOpen:
 				dUp, dDn := box.High-b.Open, b.Open-box.Low
 				switch {
 				case dUp < dDn:
@@ -252,7 +250,7 @@ func evalA(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 				}
 			default:
 				return refuse(CodeBothEdges, SevBlock, "1m bar %s CT traded through BOTH box edges; the first one cannot be told from a 1m bar (policy %s)",
-					clockOfMs(b.OpenTime, loc), cfg.A.BothEdges)
+					clockOfMs(b.OpenTime, loc), cfg.BothEdgesPolicy())
 			}
 		case up:
 			side = SideLong
@@ -292,14 +290,15 @@ func evalA(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 
 // evalE: on a CLOSED candle the EMA (or the close) crossing a box edge.
 func evalE(res Result, closed []market.Kline, now int64, cfg Config, trades int, day string) Result {
+	ema := cfg.EMA()
 	refuse := func(code string, sev Severity, format string, a ...any) Result {
 		res.Refusals = append(res.Refusals, Refusal{Code: code, Severity: sev, Detail: fmt.Sprintf(format, a...)})
 		return res
 	}
 	loc, _ := chicago()
 	box := res.Box
-	cs, partial := buildCandles(closed, cfg.E.EMATFMin, now)
-	fillEMA(cs, cfg.E.EMAPeriod)
+	cs, partial := buildCandles(closed, ema.EMATFMin, now)
+	fillEMA(cs, ema.EMAPeriod)
 	res.Diag.Candles = len(cs)
 	res.Diag.PartialCandles = partial
 	if len(cs) > 0 {
@@ -307,7 +306,7 @@ func evalE(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 	}
 	warm := cfg.WarmupCandles()
 	ref := func(c candle) float64 {
-		if cfg.E.Source == SourceClose {
+		if ema.Source == SourceClose {
 			return c.Close
 		}
 		return c.EMA
@@ -318,7 +317,7 @@ func evalE(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 	}
 	var sigs []sig
 	notWarm := false
-	tfMs := int64(cfg.E.EMATFMin) * minuteMs
+	tfMs := int64(ema.EMATFMin) * minuteMs
 	for i := 1; i < len(cs); i++ {
 		c := cs[i]
 		if c.End < box.End { // the box is not final until its last minute has closed
@@ -344,13 +343,13 @@ func evalE(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 	if trades >= len(sigs) {
 		if notWarm && len(sigs) == 0 {
 			return refuse(CodeEMANotWarm, SevBlock, "only %d complete %dm candles; %d needed before the EMA%d may signal",
-				len(cs), cfg.E.EMATFMin, warm, cfg.E.EMAPeriod)
+				len(cs), ema.EMATFMin, warm, ema.EMAPeriod)
 		}
 		if len(cs) == 0 {
-			return refuse(CodeEMANotWarm, SevBlock, "no complete %dm candle", cfg.E.EMATFMin)
+			return refuse(CodeEMANotWarm, SevBlock, "no complete %dm candle", ema.EMATFMin)
 		}
 		return refuse(CodeNoCrossYet, SevWait, "no closed %dm candle has crossed the %.2f-%.2f box yet (source %s)",
-			cfg.E.EMATFMin, box.Low, box.High, cfg.E.Source)
+			ema.EMATFMin, box.Low, box.High, ema.Source)
 	}
 	s := sigs[trades]
 	c := cs[s.i]
@@ -361,7 +360,7 @@ func evalE(res Result, closed []market.Kline, now int64, cfg Config, trades int,
 			clockOfMs(c.End, loc), age/1000, int64(cfg.SignalMaxAgeMin)*60)
 	}
 	in, rf := buildEntry(cfg, res, s.side, c.Close, c.Start, c.End-1,
-		fmt.Sprintf("E: %dm candle closing %s CT, %s crossed the %.2f-%.2f box (%s)", cfg.E.EMATFMin, clockOfMs(c.End, loc), cfg.E.Source,
+		fmt.Sprintf("E: %dm candle closing %s CT, %s crossed the %.2f-%.2f box (%s)", ema.EMATFMin, clockOfMs(c.End, loc), ema.Source,
 			box.Low, box.High, map[Side]string{SideLong: "up", SideShort: "down"}[s.side]))
 	if rf != nil {
 		res.Refusals = append(res.Refusals, *rf)

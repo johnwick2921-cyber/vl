@@ -6,7 +6,8 @@ import "vl/store"
 // the ONE resolver: shipped defaults filled, vocabulary canonicalised, clamps
 // applied and logged) into the evaluator's Config. It is the only bridge between
 // the saved settings and Evaluate; nothing else in the repo builds a pep Config
-// from stored values.
+// from stored values. The A / E lock (PDF rules, stored numbers ignored) is
+// applied by store.ResolvePep, so this bridge is faithful to it by construction.
 func FromSettings(r store.PepResolved) Config {
 	return Config{
 		Style:            Style(r.Style),
@@ -33,6 +34,17 @@ func FromSettings(r store.PepResolved) Config {
 			EMATFMin:   r.E.EMATFMin,
 			Source:     SignalSource(r.E.SignalSource),
 			WarmupBars: r.E.WarmupBars,
+		},
+		Custom: ParamsCustom{
+			Entry:      EntryType(r.Custom.EntryType),
+			BoxMinutes: r.Custom.BoxMinutes,
+			SLFraction: r.Custom.SLFraction,
+			TPFraction: r.Custom.TPFraction,
+			BothEdges:  BothEdges(r.Custom.BothEdges),
+			EMAPeriod:  r.Custom.EMAPeriod,
+			EMATFMin:   r.Custom.EMATFMin,
+			Source:     SignalSource(r.Custom.SignalSource),
+			WarmupBars: r.Custom.WarmupBars,
 		},
 	}
 }

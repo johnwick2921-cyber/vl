@@ -63,7 +63,7 @@ func (s *Server) handleTraderList(c *gin.Context) {
 			"strategy_id":         trader.StrategyID,
 			"strategy_name":       strategyName,
 			"trading_mode":        tradingMode, // ai | mentor | pep | conflict
-			"pep_style":           pepStyle,    // "A" | "E" when trading_mode is pep, else ""
+			"pep_style":           pepStyle,    // "A" | "E" | "Custom" when trading_mode is pep, else ""
 		})
 	}
 

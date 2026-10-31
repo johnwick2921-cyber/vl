@@ -51,8 +51,11 @@ type PepTruth struct {
 
 	// Symbol is the instrument this trader's pep reads (at.futuresSymbol()):
 	// the chart draws the box only on a tab showing this symbol.
-	Symbol    string `json:"symbol,omitempty"`
-	Style     string `json:"style,omitempty"`
+	Symbol string `json:"symbol,omitempty"`
+	Style  string `json:"style,omitempty"` // A | E | Custom
+	// Entry is the entry rule that runs: breakout (style A, or Custom breakout) or
+	// ema_cross (style E, or Custom ema_cross). The card words its wait by it.
+	Entry     string `json:"entry,omitempty"`
 	Contracts int    `json:"contracts,omitempty"`
 	Day       string `json:"day,omitempty"` // CT date
 
@@ -102,6 +105,12 @@ func (at *AutoTrader) PepTruthSnapshot(now time.Time) PepTruth {
 	r := at.pepResolved()
 	out.Enabled = true
 	out.Style, out.Contracts = r.Style, r.Contracts
+	switch {
+	case r.Style == store.PepStyleA, r.Style == store.PepStyleCustom && r.Custom.EntryType == store.PepEntryBreakout:
+		out.Entry = store.PepEntryBreakout
+	default:
+		out.Entry = store.PepEntryEMACross
+	}
 	out.Symbol = at.futuresSymbol()
 	out.MaxTradesPerDay = r.MaxTradesPerDay
 	out.FlatTimeCT = r.FlatTimeCT
