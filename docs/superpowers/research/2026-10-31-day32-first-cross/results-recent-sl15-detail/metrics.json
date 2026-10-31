@@ -1,0 +1,35 @@
+{
+  "trades": 129,
+  "TP": 66,
+  "SL": 63,
+  "win_percent": 51.16279069767442,
+  "won_points": 990,
+  "lost_points": -946.5,
+  "gross_points": 43.5,
+  "profit_factor": 1.045958795562599,
+  "mean_points": 0.3372093023255814,
+  "worst_trade": -16.5,
+  "closed_trade_max_drawdown": 151.5,
+  "drawdown_span": [
+    "2026-06-24",
+    "2026-08-21"
+  ],
+  "streaks": {
+    "TP": [
+      {
+        "trades": 5,
+        "start": "2026-10-26",
+        "end": "2026-10-30",
+        "points": 75
+      }
+    ],
+    "SL": [
+      {
+        "trades": 7,
+        "start": "2026-06-25",
+        "end": "2026-07-03",
+        "points": -105.0
+      }
+    ]
+  }
+}
