@@ -144,3 +144,32 @@ func TestPepStoredTickAndSignalAgeIgnoredUnderAEReadUnderCustom(t *testing.T) {
 		t.Fatalf("Custom must read them: tick %v age %d", got.TickSize, got.SignalMaxAgeMin)
 	}
 }
+
+// m461: under style A every stored number except contracts is ignored. A
+// strategy that stored a different box start, box length, SL/TP fraction,
+// rounding, flat time, max box and trades/day still sends the PDF bracket
+// (full box both ways, 6 contracts) and resolves flat 15:00 / 1 trade / no
+// max box. Folded from the m461 money reviewer's probe.
+func TestPepLockedAIgnoresEveryStoredNumberButContracts(t *testing.T) {
+	c := pepCfgOf("A", 6)
+	c.FlatTimeCT = "10:00"
+	c.MaxBoxPoints = fp(5)
+	c.MaxTradesPerDay = ip(5)
+	c.BoxStartCT = "08:00"
+	c.SLRounding = "nearest"
+	c.StyleA = &store.PepStyleAConfig{BoxMinutes: ip(1), SLFraction: fp(0.1), TPFraction: fp(3)}
+	c.StyleCustom = &store.PepStyleCustomConfig{SLFraction: fp(0.3)}
+	w := newPepWire(t, c)
+	pepFeed(t, pepBarsA(t, pepDay, "08:38", pepBreakUp))
+	pepLive(t, 25041)
+	if !w.at.pepEventPassAt(pepNow(t)) {
+		t.Fatal("no eval")
+	}
+	p := waitSignal(t, w)
+	if p.Quantity != 6 || p.StopLoss != 25001 || p.TakeProfit != 25081 {
+		t.Fatalf("A must send the PDF bracket qty 6 SL 25001 TP 25081, got %+v", p)
+	}
+	if got := w.at.pepConfigAt(pepNow(t)); got.FlatMin != 900 || got.MaxTradesPerDay != 1 || got.MaxBoxPoints != 0 {
+		t.Fatalf("A must resolve flat 15:00 / 1 trade / no max box, got %+v", got)
+	}
+}
