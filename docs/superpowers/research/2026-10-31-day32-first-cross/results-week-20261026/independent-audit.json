@@ -1,0 +1,7 @@
+{
+  "independent_replay_rows": 10,
+  "raw_entry_exit_checks": 10,
+  "mismatches": [],
+  "summary_arithmetic": "PASS",
+  "precision": "engine Decimal40 versus independent float weighted seed"
+}

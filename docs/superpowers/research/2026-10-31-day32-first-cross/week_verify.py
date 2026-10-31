@@ -49,7 +49,7 @@ def main():
     for r in s:warm[r.instrument_id].append((r.ts_event,r.close//UNIT))
     s.reader.close()
     plan={r['day']:r for r in json.loads((ROOT/'plan.json').read_text())}
-    ledger=json.loads((ROOT/'run-first-fill-recv-v1/ledger.json').read_text())
+    ledger=json.loads((ROOT/'run-week-v2/ledger.json').read_text())
     byday=defaultdict(list)
     for r in ledger:byday[r['day']].append(r)
     mismatches=[];checked=0;rawchecks=0
@@ -82,7 +82,7 @@ def main():
                     assert r['pnl_points']==(15 if r['outcome']=='TP' else gain)
                 rawchecks+=1
         print(day,'checked',flush=True)
-    summaries=json.loads((ROOT/'run-first-fill-recv-v1/summary.json').read_text())
+    summaries=json.loads((ROOT/'run-week-v2/summary.json').read_text())
     for summary in summaries:
         rr=[r for r in ledger if r['stop_points']==summary['stop']]
         assert summary['net_points']==sum(r['pnl_points'] or 0 for r in rr)
@@ -90,7 +90,7 @@ def main():
         assert summary['won_points']==summary['TP']*15
         assert summary['included_sessions']==len(rr)
     result=dict(independent_replay_rows=checked,raw_entry_exit_checks=rawchecks,mismatches=mismatches,summary_arithmetic='PASS',precision='engine Decimal40 versus independent float weighted seed')
-    with (ROOT/'run-first-fill-recv-v1/independent-audit.json').open('x') as f:json.dump(result,f,indent=2)
+    with (ROOT/'run-week-v2/independent-audit.json').open('x') as f:json.dump(result,f,indent=2)
     print(json.dumps(result),flush=True)
     if mismatches:raise SystemExit(1)
 if __name__=='__main__':main()

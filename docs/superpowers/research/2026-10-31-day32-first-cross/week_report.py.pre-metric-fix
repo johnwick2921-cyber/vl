@@ -1,0 +1,38 @@
+from pathlib import Path
+from datetime import datetime
+from zoneinfo import ZoneInfo
+import json,csv
+ROOT=Path('/home/hoang/fleet-1017/out/day32-week-20261026')
+OUT=ROOT/'run-first-fill-recv-v1'
+CT=ZoneInfo('America/Chicago')
+def stamp(ns):return datetime.fromtimestamp(ns/1e9,CT).strftime('%d/%m %H:%M:%S') if ns else ''
+def main():
+    audit=json.loads((OUT/'independent-audit.json').read_text())
+    assert not audit['mismatches']
+    ledger=json.loads((OUT/'ledger.json').read_text());census=json.loads((OUT/'census.json').read_text())
+    summary=json.loads((OUT/'summary.json').read_text())
+    lines=['# EMA9/EMA34 2m — week of 26–30 October 2026','',
+      'Same first-filled overnight method as prior replay: each session begins 17:00 Houston on the preceding date and ends before 08:30 on the listed date. EMA seeded from 1,000 completed 2m bars of the same contract before open; intrabar crossover evaluated at exchange-event boundaries; moving EMA9 limit, touch-fill assumption; one filled trade per night; TP15, independent SL15/SL16. No trailing.','',
+      '| Session ending | Contract | Signal Houston | Entry Houston | Side | Entry | SL15 result | SL16 result |',
+      '|---|---|---|---|---|---:|---|---|']
+    for c in census:
+        rr=[r for r in ledger if r['day']==c['day']]
+        if not rr:
+            lines.append(f"| {c['day']} | {c['contract']} | Excluded: {c['reason']} | | | | | |")
+            continue
+        a=next(r for r in rr if r['stop_points']==15);b=next(r for r in rr if r['stop_points']==16)
+        sig=next((x['event_ns'] for x in a['crosses'] if x['row']==a['signal_row']),None)
+        lines.append(f"| {c['day']} | {c['contract']} | {stamp(sig)} | {stamp(a.get('entry_event_ns'))} | {'LONG' if a.get('side')==1 else 'SHORT'} | {a.get('entry_ticks',0)/4:.2f} | {a['outcome']} {a['pnl_points']} | {b['outcome']} {b['pnl_points']} |")
+    lines+=['','| Stop | Trades | TP | SL | Open | Win % | Won points | Lost points | Gross points |','|---:|---:|---:|---:|---:|---:|---:|---:|---:|']
+    for s in summary:
+        win=s['win_percent_closed']
+        lines.append(f"| {s['stop']} | {s['entries']} | {s['TP']} | {s['SL']} | {s['open']} | {win} | {s['won_points']} | {s['lost_points']} | {s['net_points']} |")
+    lines+=['',f"Independent execution replay: {audit['independent_replay_rows']} rows, {len(audit['mismatches'])} mismatches; raw entry/exit checks {audit['raw_entry_exit_checks']}; summary arithmetic {audit['summary_arithmetic']}.",'',
+      'Data: newly retrieved GLBX.MDP3 TBBO for five nights, OHLCV-1m history from 19 October; provider condition and SHA256 receipts preserved. Download quotes were zero. Expired candidate MNQU6 did not resolve; selected contract is recorded above, no substitution or invented ticks.', '',
+      'Gross results before commissions and queue/latency costs. Touch-fill is a modeling assumption. This does not establish parity with the closed-source video indicator or with owner-observed chart trades; compare exact timestamps and directions above. No outcome was selected to match a desired weekly win streak.']
+    with (OUT/'REPORT.md').open('x') as f:f.write('\n'.join(lines)+'\n')
+    dest=Path(__file__).parent/'results-week-20261026';dest.mkdir(exist_ok=False)
+    for name in ['REPORT.md','summary.json','trades.csv','sessions.csv','independent-audit.json','provenance.json']:
+        with (dest/name).open('xb') as f:f.write((OUT/name).read_bytes())
+    print((OUT/'REPORT.md').read_text())
+if __name__=='__main__':main()

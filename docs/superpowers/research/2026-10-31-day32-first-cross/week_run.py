@@ -98,7 +98,7 @@ def writecsv(path,rows):
         w=csv.DictWriter(f,fieldnames=keys);w.writeheader();w.writerows(rows)
 
 def main():
-    out=ROOT/'run-first-fill-recv-v1';out.mkdir(exist_ok=False)
+    out=ROOT/'run-week-v2';out.mkdir(exist_ok=False)
     expected=json.loads((WPATH.parent/'warmup-receipt.json').read_text())['sha256']
     assert digest(WPATH)==expected
     plan=json.loads((ROOT/'plan.json').read_text());census=[];ledger=[]
@@ -115,7 +115,7 @@ def main():
         closed=[r for r in rows if r['pnl_points'] is not None]
         tp=ct['TP'];sl=ct['SL'];n=tp+sl+ct['OPEN_AT_CUTOFF']
         won=sum(max(0,r['pnl_points']) for r in closed);lost=sum(min(0,r['pnl_points']) for r in closed)
-        summaries.append(dict(stop=stop,target=15,included_sessions=len(rows),entries=n,TP=tp,SL=sl,open=ct['OPEN_AT_CUTOFF'],win_percent_closed=100*tp/(tp+sl) if tp+sl else None,won_points=won,lost_points=lost,net_points=won+lost,max_loss_points=min((r['pnl_points'] for r in closed),default=None),outcomes=dict(ct)))
+        summaries.append(dict(stop=stop,target=15,included_sessions=len(rows),entries=n,TP=tp,SL=sl,open=ct['OPEN_AT_CUTOFF'],win_percent_closed=100*tp/(tp+sl) if tp+sl else None,won_points=won,lost_points=lost,net_points=won+lost,max_loss_points=min((r['pnl_points'] for r in closed if r['pnl_points']<0),default=0),outcomes=dict(ct)))
     with (out/'summary.json').open('x') as f:json.dump(summaries,f,indent=2)
     with (out/'provenance.json').open('x') as f:json.dump({'warmup_sha256':expected,'code':{str(p.name):digest(p) for p in Path(__file__).parent.glob('*.py')},'artifacts':{p.name:digest(p) for p in out.iterdir() if p.is_file()}},f,indent=2)
     print(json.dumps(summaries),flush=True)

@@ -1,0 +1,36 @@
+[
+  {
+    "stop": 15,
+    "target": 15,
+    "included_sessions": 5,
+    "entries": 5,
+    "TP": 5,
+    "SL": 0,
+    "open": 0,
+    "win_percent_closed": 100.0,
+    "won_points": 75,
+    "lost_points": 0,
+    "net_points": 75,
+    "max_loss_points": 0,
+    "outcomes": {
+      "TP": 5
+    }
+  },
+  {
+    "stop": 16,
+    "target": 15,
+    "included_sessions": 5,
+    "entries": 5,
+    "TP": 5,
+    "SL": 0,
+    "open": 0,
+    "win_percent_closed": 100.0,
+    "won_points": 75,
+    "lost_points": 0,
+    "net_points": 75,
+    "max_loss_points": 0,
+    "outcomes": {
+      "TP": 5
+    }
+  }
+]
