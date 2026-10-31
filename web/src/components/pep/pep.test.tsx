@@ -93,6 +93,29 @@ describe('PepTruthCard', () => {
       'Position open'
     )
   })
+  // m461: the dashboard card names the Custom style, and words the wait by the
+  // ENTRY rule that runs (a Custom breakout waits for a break, not an EMA cross).
+  // Mutant: read truth.style === 'E' only (drop truth.entry) -> the Custom
+  // ema_cross leg is RED.
+  it('names the Custom style and words its wait by the entry rule', () => {
+    const cross = {
+      ...g(GOLDEN_WAITING_SIGNAL),
+      style: 'Custom',
+      entry: 'ema_cross',
+    } as PepTruth
+    const a = render(<PepTruthCard truth={cross} language="en" />)
+    expect(screen.getByTestId('pep-truth-card')).toHaveTextContent('Custom')
+    expect(screen.getByTestId('pep-truth-signal')).toHaveTextContent(
+      'waiting for an EMA cross'
+    )
+    a.unmount()
+    const brk = { ...cross, entry: 'breakout' } as PepTruth
+    render(<PepTruthCard truth={brk} language="en" />)
+    expect(screen.getByTestId('pep-truth-card')).toHaveTextContent('Custom')
+    expect(screen.getByTestId('pep-truth-signal')).not.toHaveTextContent(
+      'EMA cross'
+    )
+  })
   it('every signal word the server can send has text in all three languages', () => {
     for (const w of Object.keys(SIGNAL_KEYS) as PepSignalState[])
       for (const l of ['en', 'zh', 'id'] as const)

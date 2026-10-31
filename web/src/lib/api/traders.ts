@@ -30,7 +30,10 @@ export interface PepTruth {
    *  the trader side) — without it no line is drawn and the chart says so; the
    *  contract test requires the trader lane to add a `symbol` tag. */
   symbol?: string
-  style?: 'A' | 'E'
+  style?: 'A' | 'E' | 'Custom'
+  /** The entry rule that runs: breakout (A, or Custom breakout) or ema_cross
+   *  (E, or Custom ema_cross). Absent from an older server: read the style. */
+  entry?: 'breakout' | 'ema_cross'
   contracts?: number
   /** CT date the day-counters belong to ("2006-01-02"). */
   day?: string

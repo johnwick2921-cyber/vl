@@ -69,7 +69,7 @@ export interface StrategyConfig {
 }
 
 // PepConfig — mirrors Go store.PepConfig (store/pep.go). Every leaf name is
-// unique (pep_*, pep_a_*, pep_e_*). Optional = the server resolves the shipped
+// unique (pep_*, pep_a_*, pep_e_*, pep_c_*). Optional = the server resolves the shipped
 // default; the Studio panel always SENDS a concrete value (fullPepBlock) so the
 // server-side merge (which keeps absent keys) can never leave a stale number.
 export interface PepStyleAConfig {
@@ -87,9 +87,23 @@ export interface PepStyleEConfig {
   pep_e_signal_source?: string // ema | close
   pep_e_warmup_bars?: number // 0 = auto (3 x period)
 }
+// Custom style (m461): the ONLY editable style. A and E are locked to the PDF
+// (the server ignores their stored numbers); Custom reads these plus the root
+// rule leaves (box start, flat time, stop rounding, max trades, max box).
+export interface PepStyleCustomConfig {
+  pep_c_entry_type?: string // ema_cross | breakout
+  pep_c_box_minutes?: number
+  pep_c_sl_fraction?: number
+  pep_c_tp_fraction?: number
+  pep_c_both_edges?: string // breakout only: no_trade | nearest_open
+  pep_c_ema_period?: number // ema_cross only
+  pep_c_ema_tf_min?: number // ema_cross only
+  pep_c_signal_source?: string // ema_cross only: ema | close
+  pep_c_warmup_bars?: number // ema_cross only; 0 = auto (3 x period)
+}
 export interface PepConfig {
   pep_enabled?: boolean
-  pep_style?: string // 'A' | 'E'
+  pep_style?: string // 'A' | 'E' | 'Custom'
   pep_contracts?: number
   pep_box_start_ct?: string // HH:MM America/Chicago
   pep_flat_time_ct?: string // HH:MM America/Chicago
@@ -101,6 +115,7 @@ export interface PepConfig {
   pep_signal_max_age_min?: number
   style_a?: PepStyleAConfig
   style_e?: PepStyleEConfig
+  style_custom?: PepStyleCustomConfig
 }
 
 // DayPlanSessionOverride — per-session overrides; an ABSENT field inherits the

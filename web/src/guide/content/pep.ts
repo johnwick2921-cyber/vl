@@ -13,15 +13,27 @@ import { GUIDE_BUILT_REV, type GuideSection, type KnobSpec } from '../types'
 const PDF = 'owner PDF “A + E — Full calculation” (29/10/2026)'
 const CONSUMER =
   'store/pep.go:ResolvePep → kernel/pep/config_store.go:FromSettings → kernel/pep/eval.go:Evaluate'
-const SHARED = 'Strategy Studio → Pep mode accordion → “Shared by both styles”'
-const TAB_A = 'Strategy Studio → Pep mode accordion → Style A tab'
-const TAB_E = 'Strategy Studio → Pep mode accordion → Style E tab'
+const SHARED = 'Strategy Studio → Pep mode accordion → “Shared by all styles”'
+const RULES =
+  'Strategy Studio → Pep mode accordion → “Style rules” (editable in Custom; read-only, locked to the PDF, in A and E)'
+const TAB_A =
+  'Strategy Studio → Pep mode accordion → “Style rules” → Style A (locked, read-only)'
+const TAB_E =
+  'Strategy Studio → Pep mode accordion → “Style rules” → Style E (locked, read-only)'
+const TAB_C =
+  'Strategy Studio → Pep mode accordion → “Style rules” → Style Custom (editable)'
+// m461 (owner ruling 2026-10-30, "A or E all follow their rule, cannot change any
+// way, they add custom"): A and E are the PDF and nothing stored changes them;
+// the resolver store.ResolvePep ignores a saved A / E / rule number for them. A
+// saved number stays in the database untouched, and is simply not used.
+const LOCKED_AE =
+  'LOCKED to the PDF since 2026-10-30: this value cannot be changed for style A or E, a saved number (if any) is ignored and stays in the database untouched, and the Studio shows it read-only. For different numbers choose the Custom style.'
 const ONE_SAVE =
   'No. One value per strategy; saved with the strategy, applied when the running trader reloads on save.'
 
 const knob = (k: KnobSpec): KnobSpec => ({ live: true, ...k })
 
-export const PEP_KNOBS: KnobSpec[] = [
+const PEP_KNOBS_RAW: KnobSpec[] = [
   knob({
     label: 'Trading mode → Pep',
     settingId: 'pep.pep_enabled',
@@ -43,11 +55,11 @@ export const PEP_KNOBS: KnobSpec[] = [
     label: 'Style that runs',
     settingId: 'pep.pep_style',
     where: SHARED,
-    what: 'Which of the two PDF styles trades: A (5-minute ORB breakout, enter immediately) or E (EMA9 ORB, candle-close confirmation).',
+    what: 'Which style trades: A (5-minute ORB breakout, enter immediately) or E (EMA9 ORB, candle-close confirmation), both fixed to the owner’s PDF, or Custom, the one style whose every number you can edit.',
     trader:
-      'Switching style never loses the other style’s numbers: each style keeps its own block (the A and E tabs).',
+      'A and E are locked to the PDF: the Studio shows their rules read-only and the bot ignores any number saved for them. Custom starts as a copy of style E’s PDF numbers, so a fresh Custom trades like E until you change it. Switching style never deletes a saved number.',
     consumer: CONSUMER,
-    range: 'A | E (case-folded where it enters)',
+    range: 'A | E | Custom (case-folded where it enters)',
     systemDefault: 'E',
     recommended: `E: the owner’s shipped default (2026-10-30, “keep default E 6”). The PDF’s result at 6 MNQ is larger for style A ($17,595.90 against $10,070.10 received, ${PDF}, p.1) but A’s full-box stop is the bigger loss per trade; E’s stop is half the box.`,
     whenToTouch:
@@ -60,7 +72,7 @@ export const PEP_KNOBS: KnobSpec[] = [
     where: SHARED,
     what: 'How many MNQ contracts each pep entry trades.',
     trader:
-      'The 2-contract AI clamp does not apply to pep. The full-box stop of style A makes a loss large: size it against your daily limit.',
+      'Editable in EVERY style (A, E and Custom). The 2-contract AI clamp does not apply to pep. The full-box stop of style A makes a loss large: size it against your daily limit.',
     consumer: CONSUMER,
     range:
       '1 to 10 (hard ceiling 10: a bigger saved number is clamped and logged, never honoured)',
@@ -72,9 +84,10 @@ export const PEP_KNOBS: KnobSpec[] = [
   knob({
     label: 'Box start (CT)',
     settingId: 'pep.pep_box_start_ct',
-    where: SHARED,
+    where: RULES,
     what: 'The time of day the opening box starts, Chicago time (DST-safe).',
-    trader: 'The box is the high/low of the first N minutes from this time.',
+    trader:
+      'Style A and E: locked at 08:30. Only the Custom style reads the saved value. The box is the high/low of the first N minutes from this time.',
     consumer: CONSUMER,
     range: 'HH:MM, 00:00–23:59, America/Chicago',
     systemDefault: '08:30',
@@ -85,10 +98,10 @@ export const PEP_KNOBS: KnobSpec[] = [
   knob({
     label: 'Flat time (CT)',
     settingId: 'pep.pep_flat_time_ct',
-    where: SHARED,
+    where: RULES,
     what: 'The time exit: any pep position still open is flattened at the last price.',
     trader:
-      'This is pep’s own flat, not the session flat of 14:45 (which pep does not use). It must be after the box start or the shipped pair runs. On a shortened CME day (the session calendar: the day after Thanksgiving and Christmas Eve, 12:15 CT close; Labor Day 2026, 12:00 CT close) the flat is pulled in to 5 minutes before the close, 12:10 CT (11:55 CT for a 12:00 CT close), and no entry is taken from then on; the card shows that time. A flat time you saved earlier than that is kept.',
+      'Style A and E: locked at 15:00. Only the Custom style reads the saved value. This is pep’s own flat, not the session flat of 14:45 (which pep does not use). It must be after the box start or the shipped pair runs. On a shortened CME day (the session calendar: the day after Thanksgiving and Christmas Eve, 12:15 CT close; Labor Day 2026, 12:00 CT close) the flat is pulled in to 5 minutes before the close, 12:10 CT (11:55 CT for a 12:00 CT close), and no entry is taken from then on; the card shows that time. A flat time you saved earlier than that is kept.',
     consumer: CONSUMER,
     range: 'HH:MM after the box start, America/Chicago',
     systemDefault: '15:00',
@@ -113,9 +126,10 @@ export const PEP_KNOBS: KnobSpec[] = [
   knob({
     label: 'Stop rounding',
     settingId: 'pep.pep_sl_rounding',
-    where: SHARED,
+    where: RULES,
     what: 'How a stop distance that is not on a tick is rounded: away from the entry (outward) or to the nearest tick.',
-    trader: 'Outward can only widen the stop, never tighten it.',
+    trader:
+      'Style A and E: locked at outward. Only the Custom style reads the saved value. Outward can only widen the stop, never tighten it.',
     consumer: CONSUMER,
     range: 'outward | nearest',
     systemDefault: 'outward',
@@ -126,10 +140,10 @@ export const PEP_KNOBS: KnobSpec[] = [
   knob({
     label: 'Max trades per day',
     settingId: 'pep.pep_max_trades_per_day',
-    where: SHARED,
+    where: RULES,
     what: 'How many pep entries are allowed per Chicago day.',
     trader:
-      'Style A takes the first break only, whatever this says. The count is kept on disk before the order is sent, so a restart cannot fire a second entry.',
+      'Style A and E: locked at 1. Only the Custom style reads the saved value. Style A takes the first break only, whatever this says. The count is kept on disk before the order is sent, so a restart cannot fire a second entry.',
     consumer: CONSUMER,
     range: '1 to 10',
     systemDefault: '1',
@@ -155,10 +169,10 @@ export const PEP_KNOBS: KnobSpec[] = [
   knob({
     label: 'Max box size (points, 0 = OFF)',
     settingId: 'pep.pep_max_box_points',
-    where: SHARED,
-    what: 'Refuse to trade a box wider than this many points.',
+    where: RULES,
+    what: 'Custom only: refuse to trade a box wider than this many points. The A and E rules have no cap.',
     trader:
-      'A wide box means a wide full-box stop. 0 is OFF (the PDF trades every box); when set, the refusal is named pep_box_too_wide.',
+      'Style A and E: no cap (the PDF trades every box). Only the Custom style reads the saved value. A wide box means a wide full-box stop. 0 is OFF (the PDF trades every box); when set, the refusal is named pep_box_too_wide.',
     consumer: CONSUMER,
     range: '0 to 100000; 0 = OFF',
     systemDefault: 'off (0)',
@@ -345,14 +359,163 @@ export const PEP_KNOBS: KnobSpec[] = [
     whenToTouch: 'Only if the EMA is cold after a long feed gap.',
     perSession: ONE_SAVE,
   }),
+  // ── Custom (m461): the editable style, seeded from style E's PDF values ──
+  knob({
+    label: 'Entry type — Custom',
+    settingId: 'pep.style_custom.pep_c_entry_type',
+    where: TAB_C,
+    what: 'Which entry rule the Custom style trades: ema_cross (E-like) or breakout (A-like).',
+    trader:
+      'ema_cross waits for the EMA (or the candle close) to cross a box edge on a CLOSED candle and enters at that candle’s close; breakout enters immediately on the first trade through a box edge. Only the rows of the chosen type show in the Studio.',
+    consumer: CONSUMER,
+    range: 'ema_cross | breakout',
+    systemDefault: 'ema_cross',
+    recommended:
+      'ema_cross: Custom is seeded from style E’s PDF values, so a fresh Custom trades like E until you change it.',
+    whenToTouch:
+      'When you want an A-like immediate breakout with your own numbers.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'Box length (min) — Custom',
+    settingId: 'pep.style_custom.pep_c_box_minutes',
+    where: TAB_C,
+    what: 'Length of the Custom opening box, from the Custom box start.',
+    trader:
+      'A box with a missing 1m bar is not drawn and no trade is taken that day.',
+    consumer: CONSUMER,
+    range: '1 to 120 minutes',
+    systemDefault: '2',
+    recommended: `2: a copy of style E’s box (“ORB 2 PHÚT”, ${PDF}, p.1).`,
+    whenToTouch: 'To test another opening range on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'Stop (× box) — Custom',
+    settingId: 'pep.style_custom.pep_c_sl_fraction',
+    where: TAB_C,
+    what: 'Custom stop distance as a fraction of the box, rounded per “Stop rounding”.',
+    trader:
+      'At 1.0 the stop is the opposite edge of the box. With “Stop rounding” = outward the distance is rounded away from the entry to a valid tick, so rounding can only widen the stop.',
+    consumer: CONSUMER,
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
+    systemDefault: '0.5',
+    recommended: `0.5: a copy of style E’s half-box stop (${PDF}, p.1).`,
+    whenToTouch: 'To test another stop size on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'Target (× box) — Custom',
+    settingId: 'pep.style_custom.pep_c_tp_fraction',
+    where: TAB_C,
+    what: 'Custom target distance as a fraction of the box.',
+    trader:
+      'The stop and target sit at NT8 from the entry; there is no trailing and no break-even.',
+    consumer: CONSUMER,
+    range:
+      'greater than 0, at most 10 (the Studio box takes 0.05 or more; the server itself accepts any value above 0)',
+    systemDefault: '1',
+    recommended: `1.0: a copy of the PDF’s full-box target (${PDF}, p.1).`,
+    whenToTouch: 'To test a nearer or farther target on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'One bar through both edges — Custom',
+    settingId: 'pep.style_custom.pep_c_both_edges',
+    where: TAB_C,
+    what: 'Custom, entry type breakout only: what to do when ONE 1m bar trades through both box edges.',
+    trader:
+      'no_trade fails closed (pep_bar_through_both_edges); nearest_open guesses that the edge nearer the bar’s open broke first. Not shown (and not read) for ema_cross.',
+    consumer: CONSUMER,
+    range: 'no_trade | nearest_open',
+    systemDefault: 'no_trade',
+    recommended:
+      'no_trade: a 1m bar cannot order the two touches, so guessing would be invented data.',
+    whenToTouch: 'Only to bracket a backtest; not for live SIM days.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'EMA period — Custom',
+    settingId: 'pep.style_custom.pep_c_ema_period',
+    where: TAB_C,
+    what: 'Custom, entry type ema_cross only: the EMA length on the EMA candles.',
+    trader:
+      'Computed across sessions and never reset daily; until the warm-up candles exist the signal is refused (pep_ema_not_warm).',
+    consumer: CONSUMER,
+    range: '2 to 200',
+    systemDefault: '9',
+    recommended: `9: a copy of style E’s “EMA9” (${PDF}, p.1).`,
+    whenToTouch: 'To test another EMA on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'EMA candle (min) — Custom',
+    settingId: 'pep.style_custom.pep_c_ema_tf_min',
+    where: TAB_C,
+    what: 'Custom, entry type ema_cross only: the candle size the EMA is computed on, built from 1m bars on even Chicago minutes.',
+    trader:
+      'It must divide an hour: a value that does not (7, 8 ...) runs the shipped 2; a value below 1 runs 1 and above 60 runs 60 (the eff line says so in each case).',
+    consumer: CONSUMER,
+    range: 'one of 1, 2, 3, 4, 5, 6, 10, 12, 15, 20, 30, 60',
+    systemDefault: '2',
+    recommended: `2: a copy of style E’s “khung 2 phút” (${PDF}, p.1).`,
+    whenToTouch: 'To test another candle size on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'Signal source — Custom',
+    settingId: 'pep.style_custom.pep_c_signal_source',
+    where: TAB_C,
+    what: 'Custom, entry type ema_cross only: what crosses the box edge, the EMA itself or the candle close.',
+    trader:
+      'ema: the EMA crossing from <= the box high to > it is a buy, from >= the box low to < it a sell. close: the candle close crosses the edge instead.',
+    consumer: CONSUMER,
+    range: 'ema | close',
+    systemDefault: 'ema',
+    recommended:
+      'ema: a copy of style E’s rule (the owner’s ruling of 2026-10-29).',
+    whenToTouch: 'To compare the two readings on SIM.',
+    perSession: ONE_SAVE,
+  }),
+  knob({
+    label: 'Warm-up candles (0 = auto) — Custom',
+    settingId: 'pep.style_custom.pep_c_warmup_bars',
+    where: TAB_C,
+    what: 'Custom, entry type ema_cross only: how many complete EMA candles must exist before the EMA may signal.',
+    trader:
+      '0 means 3 times the EMA period; a legal 0 is kept, it is not a missing value.',
+    consumer: CONSUMER,
+    range: '0 to 5000; 0 = auto (3 × period)',
+    systemDefault: '0 (= 3 × period)',
+    recommended:
+      '0: three periods leave about 0.2% of the EMA’s seed value, a core-wave choice, not a PDF number.',
+    whenToTouch: 'Only if the EMA is cold after a long feed gap.',
+    perSession: ONE_SAVE,
+  }),
 ]
+
+/** A and E knobs are LOCKED (m461): the card says so in its own words and its
+ *  range reads "locked", not an editable range. */
+const PEP_KNOBS_AE_LOCKED = (k: KnobSpec): KnobSpec =>
+  k.settingId?.startsWith('pep.style_a.') ||
+  k.settingId?.startsWith('pep.style_e.')
+    ? {
+        ...k,
+        trader: `${LOCKED_AE} ${k.trader}`,
+        range: `locked to the PDF value ${k.systemDefault} (not editable; Custom has the editable range)`,
+        whenToTouch: 'Never: locked. Use the Custom style for other numbers.',
+      }
+    : k
+
+export const PEP_KNOBS: KnobSpec[] = PEP_KNOBS_RAW.map(PEP_KNOBS_AE_LOCKED)
 
 export const pep: GuideSection = {
   id: 'pep',
   num: 20,
   title: 'Pep Mode',
   tagline:
-    'Two fixed opening-range rules from the owner’s PDF: A (5-minute breakout) and E (EMA9 cross). Separate from mentor mode.',
+    'Two FIXED opening-range rules from the owner’s PDF, A (5-minute breakout) and E (EMA9 cross), plus Custom, the one editable style. Separate from mentor mode.',
   asBuiltRev: GUIDE_BUILT_REV,
   blocks: [
     {
@@ -376,7 +539,8 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'The two styles' },
     {
       kind: 'table',
-      title: 'Style A and style E (PDF "A + E — Full calculation")',
+      title:
+        'Style A and style E (PDF "A + E — Full calculation"): fixed, not editable',
       head: ['', 'Style A: ORB 5m breakout', 'Style E: EMA9 ORB, candle-close'],
       rows: [
         [
@@ -406,7 +570,12 @@ export const pep: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'The style-E box is two minutes, not five. The PDF’s own style-E ledger rows equal the first two minutes’ range: on 2025-10-20 the E target is 73.0 points, which is the high-low of the 08:30 and 08:31 bars, while the style-A box that day is 86.75. The box length is a setting per style, so both are editable.',
+      text: 'The style-E box is two minutes, not five. The PDF’s own style-E ledger rows equal the first two minutes’ range: on 2025-10-20 the E target is 73.0 points, which is the high-low of the 08:30 and 08:31 bars, while the style-A box that day is 86.75. Styles A and E are LOCKED to these PDF rules (owner ruling 2026-10-30: they follow their rule and cannot be changed): the bot ignores any number saved for them, and the Studio shows them read-only. The A and E rules have no box cap, one trade a day and a 15:00 CT flat. Only Contracts (and the tick, the fee and the stale-signal age, which are not rules) stay editable in every style. For any different number, use the Custom style.',
+    },
+    { kind: 'h', text: 'The Custom style (the editable one)' },
+    {
+      kind: 'p',
+      text: 'Custom is the style you can change. It starts as a copy of style E’s PDF values (2-minute box from 08:30 CT, EMA9 on 2m candles, signal source ema, stop half the box rounded outward, target the full box, 1 trade a day, flat 15:00 CT), so a fresh Custom trades like E until you edit it. You choose the entry type, ema_cross (E-like: a cross of the EMA or the candle close over a box edge on a closed candle) or breakout (A-like: the first trade through a box edge, enter immediately), and then every number: box start and length, EMA period, EMA candle size and signal source (ema_cross only), the stop and target fractions of the box (the stop is rounded away from the entry to a tick when Stop rounding is outward), what to do when one bar trades through both edges (breakout only), the flat time, the trades per day and the optional maximum box size. The maximum box size applies to Custom only: the A and E rules have no cap. Contracts are shared and editable in every style (ceiling 10, default 6).',
     },
     { kind: 'h', text: 'How a pep trade is placed' },
     {
@@ -468,7 +637,7 @@ export const pep: GuideSection = {
         ],
         [
           'pep_bar_through_both_edges',
-          'One 1m bar traded through both edges (style A): a 1m bar cannot say which came first. Setting pep_a_both_edges chooses no_trade (default) or nearest_open.',
+          'One 1m bar traded through both edges (style A): a 1m bar cannot say which came first. The style-A rule is no_trade (locked); Custom, entry type breakout, can choose nearest_open.',
         ],
         [
           'pep_ema_not_warm',
@@ -495,12 +664,12 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'Where to set it' },
     {
       kind: 'p',
-      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared numbers, then a Style A tab and a Style E tab. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open, while the flat is closing it, and after the flat time. A day with no evaluation yet (a weekend, a holiday, before the first bar) shows no box, no refusal and “no evaluation yet”, never an earlier day’s; the card’s header then reads “last ran Thu 2026-10-29 15:59:00 CT” (the day it really ran), never a bare “as of” time that would look like today; on a style E trader the waiting state reads “waiting for an EMA cross”, on style A “waiting for a break”. A chart line from a stale read carries the stale mark in your language.',
+      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared block (the style picker A / E / Custom, Contracts, tick, fee, stale-signal age), then the “Style rules” of the chosen style. Style A and E show their PDF rules READ-ONLY with a “locked to the PDF” badge and note; only Custom shows editable inputs. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E|Custom, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open, while the flat is closing it, and after the flat time. A day with no evaluation yet (a weekend, a holiday, before the first bar) shows no box, no refusal and “no evaluation yet”, never an earlier day’s; the card’s header then reads “last ran Thu 2026-10-29 15:59:00 CT” (the day it really ran), never a bare “as of” time that would look like today; on a style E trader the waiting state reads “waiting for an EMA cross”, on style A “waiting for a break”. A chart line from a stale read carries the stale mark in your language.',
     },
     { kind: 'h', text: 'Every number is a setting' },
     {
       kind: 'p',
-      text: 'The stored path is pep.<name>; style numbers live in pep.style_a and pep.style_e so switching style never loses the other style’s numbers. A value outside its range is clamped, the clamp is logged and returned as a save warning, and the effective-settings row names it. The saved value is never rewritten. A legal 0 (fee $0, max box 0 = off, warm-up 0 = auto) is kept.',
+      text: 'The stored path is pep.<name>; the numbers live in pep.style_a, pep.style_e and pep.style_custom so switching style never deletes a saved number. Styles A and E are LOCKED: store.ResolvePep ignores every number saved for them (the style_a and style_e blocks and the rule leaves box start, flat time, stop rounding, trades per day and max box), the effective-settings rows read “locked to the PDF (style A|E)”, and the saved values stay in the database untouched, unused. Only Custom reads them. For Custom, a value outside its range is clamped, the clamp is logged and returned as a save warning, and the effective-settings row names it. The saved value is never rewritten. A legal 0 (fee $0, max box 0 = off, warm-up 0 = auto) is kept.',
     },
     {
       kind: 'cards',
@@ -508,12 +677,12 @@ export const pep: GuideSection = {
         {
           title: 'Style A — ORB 5m breakout, enter immediately',
           tag: 'PDF p.1, p.4–10',
-          body: 'Box: high/low of the first 5 minutes from 08:30 CT. The first side to trade THROUGH a box edge is entered. Stop = the full box, target = the full box, no trailing, one trade a day, flat at 15:00 CT. PDF result at 6 MNQ: $17,595.90 received (113 trades, 5 funded accounts used); at 3 MNQ $6,959.25 (121 trades). The shipped numbers on this page are the PDF’s.',
+          body: 'Box: high/low of the first 5 minutes from 08:30 CT. The first side to trade THROUGH a box edge is entered. Stop = the full box, target = the full box, no trailing, one trade a day, flat at 15:00 CT. PDF result at 6 MNQ: $17,595.90 received (113 trades, 5 funded accounts used); at 3 MNQ $6,959.25 (121 trades). The shipped numbers on this page are the PDF’s and are locked.',
         },
         {
           title: 'Style E — EMA9 ORB 2m, candle-close confirmation',
           tag: 'PDF p.1, p.12–18',
-          body: 'Box: high/low of the first 2 minutes from 08:30 CT. On a CLOSED 2m candle the EMA9 (2m candles, carried across sessions) crossing the box high is a buy, crossing the box low a sell. Stop = half the box rounded OUTWARD to a tick, target = the full box, no trailing, one trade a day, flat at 15:00 CT. PDF result at 6 MNQ: $10,070.10 received (106 trades, 3 funded accounts used); at 3 MNQ $3,773.25 (115 trades).',
+          body: 'Box: high/low of the first 2 minutes from 08:30 CT. On a CLOSED 2m candle the EMA9 (2m candles, carried across sessions) crossing the box high is a buy, crossing the box low a sell. Stop = half the box rounded OUTWARD to a tick, target = the full box, no trailing, one trade a day, flat at 15:00 CT. Locked: it cannot be edited. PDF result at 6 MNQ: $10,070.10 received (106 trades, 3 funded accounts used); at 3 MNQ $3,773.25 (115 trades).',
         },
         {
           title: 'What the PDF numbers are, and are not',

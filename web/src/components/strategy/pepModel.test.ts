@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest'
 import type { StrategyConfig } from '../../types'
 import {
   PEP_DEFAULTS,
+  PEP_LOCKED,
   PEP_RANGES,
   applyTradingMode,
   fullPepBlock,
@@ -85,11 +86,11 @@ describe('fullPepBlock', () => {
     const registered = [...registry.matchAll(/live\("pep\.([a-z_.]+)"/g)].map(
       (m) => m[1]
     )
-    expect(registered).toHaveLength(22)
+    expect(registered).toHaveLength(31)
     const b = fullPepBlock(undefined) as unknown as Record<string, unknown>
     const have: string[] = []
     for (const [k, v] of Object.entries(b)) {
-      if (k === 'style_a' || k === 'style_e') {
+      if (k === 'style_a' || k === 'style_e' || k === 'style_custom') {
         for (const [kk, vv] of Object.entries(v as Record<string, unknown>)) {
           expect(vv, k + '.' + kk).not.toBeUndefined()
           have.push(`${k}.${kk}`)
@@ -125,6 +126,38 @@ describe('fullPepBlock', () => {
     expect(b.style_e?.pep_e_warmup_bars).toBe(0)
     expect(b.pep_flat_time_ct).toBe('15:00')
     expect(b.style_a?.pep_a_box_minutes).toBe(5)
+  })
+
+  // m461: Custom is seeded from style E's PDF numbers, and the A / E lock table
+  // equals the Go defaults. Mutant: change one PEP_DEFAULTS.custom value or one
+  // PEP_LOCKED entry -> RED.
+  it('Custom defaults equal style E, and the locked A / E rule table is the PDF', () => {
+    const b = fullPepBlock({ pep_style: 'Custom' })
+    const c = b.style_custom!
+    expect(c).toEqual({
+      pep_c_entry_type: 'ema_cross',
+      pep_c_box_minutes: 2,
+      pep_c_sl_fraction: 0.5,
+      pep_c_tp_fraction: 1,
+      pep_c_both_edges: 'no_trade',
+      pep_c_ema_period: 9,
+      pep_c_ema_tf_min: 2,
+      pep_c_signal_source: 'ema',
+      pep_c_warmup_bars: 0,
+    })
+    const e = b.style_e!
+    expect(c.pep_c_box_minutes).toBe(e.pep_e_box_minutes)
+    expect(c.pep_c_sl_fraction).toBe(e.pep_e_sl_fraction)
+    expect(c.pep_c_tp_fraction).toBe(e.pep_e_tp_fraction)
+    expect(c.pep_c_ema_period).toBe(e.pep_e_ema_period)
+    expect(c.pep_c_ema_tf_min).toBe(e.pep_e_ema_tf_min)
+    expect(c.pep_c_signal_source).toBe(e.pep_e_signal_source)
+    expect(PEP_LOCKED.A['pep.pep_flat_time_ct']).toBe('15:00')
+    expect(PEP_LOCKED.A['pep.style_a.pep_a_box_minutes']).toBe(5)
+    expect(PEP_LOCKED.E['pep.style_e.pep_e_box_minutes']).toBe(2)
+    expect(PEP_LOCKED.E['pep.pep_max_box_points']).toBe(0)
+    expect(pepRunsStyle({ pep_style: ' custom ' })).toBe('Custom')
+    expect(pepRunsStyle({ pep_style: 'Z' })).toBe('E')
   })
 
   it('switching style never loses the other style numbers', () => {

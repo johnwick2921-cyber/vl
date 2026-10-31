@@ -85,7 +85,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'Pep mode',
-          def: 'A trading mode of its own (a strategy is exactly one of AI planner, mentor or pep): two fixed opening-range rules from the owner’s PDF — style A (5-minute ORB breakout, enter immediately) and style E (EMA9 ORB, candle-close confirmation). Separate from mentor mode, SIM only, OFF by default. Section 20.',
+          def: 'A trading mode of its own (a strategy is exactly one of AI planner, mentor or pep): two FIXED opening-range rules from the owner’s PDF — style A (5-minute ORB breakout, enter immediately) and style E (EMA9 ORB, candle-close confirmation), both locked and read-only — plus Custom, the one editable style. Separate from mentor mode, SIM only, OFF by default. Section 20.',
         },
         {
           term: 'Plan mode',

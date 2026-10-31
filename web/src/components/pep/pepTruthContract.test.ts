@@ -31,6 +31,7 @@ const UI_KEYS = [
   'conflict',
   'symbol',
   'style',
+  'entry',
   'contracts',
   'day',
   'box',

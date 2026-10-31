@@ -12,13 +12,14 @@
 import type {
   PepConfig,
   PepStyleAConfig,
+  PepStyleCustomConfig,
   PepStyleEConfig,
   StrategyConfig,
 } from '../../types'
 
 export type TradingMode = 'ai' | 'mentor' | 'pep'
 
-export const PEP_STYLES = ['A', 'E'] as const
+export const PEP_STYLES = ['A', 'E', 'Custom'] as const
 export type PepStyle = (typeof PEP_STYLES)[number]
 
 /** Shipped values — the SAME numbers as store/pep.go Pep*Default. */
@@ -43,7 +44,52 @@ export const PEP_DEFAULTS = {
     signalSource: 'ema',
     warmupBars: 0, // 0 = auto (3 x period)
   },
+  /** Custom is SEEDED from style E's PDF values, so a fresh Custom trades like E. */
+  custom: {
+    entryType: 'ema_cross',
+    boxMinutes: 2,
+    slFraction: 0.5,
+    tpFraction: 1,
+    bothEdges: 'no_trade',
+    emaPeriod: 9,
+    emaTFMin: 2,
+    signalSource: 'ema',
+    warmupBars: 0,
+  },
 } as const
+
+/** The PDF rules styles A and E are LOCKED to, by stored path (owner ruling
+ *  2026-10-30: "A or E all follow their rule, cannot change any way"). The
+ *  server's resolver (store.ResolvePep) enforces them whatever is stored; the
+ *  Studio shows them READ-ONLY. Only a path listed here is a locked rule.
+ *  Contracts, tick, fee and signal age are NOT rules and stay editable. */
+const D0 = PEP_DEFAULTS
+const PDF_RULE: Record<string, number | string> = {
+  'pep.pep_box_start_ct': D0.boxStartCT,
+  'pep.pep_flat_time_ct': D0.flatTimeCT,
+  'pep.pep_sl_rounding': D0.slRounding,
+  'pep.pep_max_trades_per_day': D0.maxTradesPerDay,
+  'pep.pep_max_box_points': 0, // the A / E rules have no box cap
+}
+export const PEP_LOCKED: Record<'A' | 'E', Record<string, number | string>> = {
+  A: {
+    ...PDF_RULE,
+    'pep.style_a.pep_a_box_minutes': D0.a.boxMinutes,
+    'pep.style_a.pep_a_sl_fraction': D0.a.slFraction,
+    'pep.style_a.pep_a_tp_fraction': D0.a.tpFraction,
+    'pep.style_a.pep_a_both_edges': D0.a.bothEdges,
+  },
+  E: {
+    ...PDF_RULE,
+    'pep.style_e.pep_e_box_minutes': D0.e.boxMinutes,
+    'pep.style_e.pep_e_sl_fraction': D0.e.slFraction,
+    'pep.style_e.pep_e_tp_fraction': D0.e.tpFraction,
+    'pep.style_e.pep_e_ema_period': D0.e.emaPeriod,
+    'pep.style_e.pep_e_ema_tf_min': D0.e.emaTFMin,
+    'pep.style_e.pep_e_signal_source': D0.e.signalSource,
+    'pep.style_e.pep_e_warmup_bars': D0.e.warmupBars,
+  },
+}
 
 /** Ranges — the Go resolver's bounds, EXCEPT two UI-only floors: the server
  *  accepts any fraction / tick above 0 (store/pep.go pepPosFloat), the Studio
@@ -91,6 +137,7 @@ export function tradingModeOf(cfg: {
 export function fullPepBlock(p?: PepConfig): PepConfig {
   const a: PepStyleAConfig = p?.style_a ?? {}
   const e: PepStyleEConfig = p?.style_e ?? {}
+  const c: PepStyleCustomConfig = p?.style_custom ?? {}
   const d = PEP_DEFAULTS
   return {
     pep_enabled: p?.pep_enabled === true,
@@ -120,6 +167,17 @@ export function fullPepBlock(p?: PepConfig): PepConfig {
       pep_e_signal_source: e.pep_e_signal_source ?? d.e.signalSource,
       pep_e_warmup_bars: e.pep_e_warmup_bars ?? d.e.warmupBars,
     },
+    style_custom: {
+      pep_c_entry_type: c.pep_c_entry_type ?? d.custom.entryType,
+      pep_c_box_minutes: c.pep_c_box_minutes ?? d.custom.boxMinutes,
+      pep_c_sl_fraction: c.pep_c_sl_fraction ?? d.custom.slFraction,
+      pep_c_tp_fraction: c.pep_c_tp_fraction ?? d.custom.tpFraction,
+      pep_c_both_edges: c.pep_c_both_edges ?? d.custom.bothEdges,
+      pep_c_ema_period: c.pep_c_ema_period ?? d.custom.emaPeriod,
+      pep_c_ema_tf_min: c.pep_c_ema_tf_min ?? d.custom.emaTFMin,
+      pep_c_signal_source: c.pep_c_signal_source ?? d.custom.signalSource,
+      pep_c_warmup_bars: c.pep_c_warmup_bars ?? d.custom.warmupBars,
+    },
   }
 }
 
@@ -128,7 +186,8 @@ export function fullPepBlock(p?: PepConfig): PepConfig {
  *  clamps contracts into 1..10), so the confirm dialog never states a number the
  *  bot will not run (rereview m461 P3). Pure; the eff lines stay the authority. */
 export function pepRunsStyle(p?: PepConfig): PepStyle {
-  return (p?.pep_style ?? '').trim().toUpperCase() === 'A' ? 'A' : 'E'
+  const v = (p?.pep_style ?? '').trim().toUpperCase()
+  return v === 'A' ? 'A' : v === 'CUSTOM' ? 'Custom' : 'E'
 }
 export function pepRunsContracts(p?: PepConfig): number {
   const n = p?.pep_contracts ?? PEP_DEFAULTS.contracts

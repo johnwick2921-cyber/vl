@@ -108,9 +108,57 @@ export const pepStrings = {
     id: 'Pep AKTIF: gaya {style}, hanya SIM. Perubahan sampai ke trader yang berjalan saat disimpan (dimuat ulang). Baris “eff” di bawah tiap angka adalah nilai yang DIJALANKAN bot.',
   },
   sharedBlock: {
-    en: 'Shared by both styles',
-    zh: '两种风格共用',
-    id: 'Dipakai bersama kedua gaya',
+    en: 'Shared by all styles',
+    zh: '所有风格共用',
+    id: 'Dipakai bersama semua gaya',
+  },
+  rulesBlock: {
+    en: 'Style rules',
+    zh: '风格规则',
+    id: 'Aturan gaya',
+  },
+  lockedBadge: {
+    en: 'locked to the PDF',
+    zh: '锁定为 PDF 规则',
+    id: 'dikunci sesuai PDF',
+  },
+  lockedNote: {
+    en: 'Locked to the PDF: these rules cannot be changed for this style. For different numbers choose the Custom style. Contracts above stay editable.',
+    zh: '已锁定为 PDF 规则：此风格的规则不可更改。需要不同数字请选择【自定义】风格。上方口数仍可修改。',
+    id: 'Dikunci sesuai PDF: aturan gaya ini tidak dapat diubah. Untuk angka lain pilih gaya Custom. Kontrak di atas tetap bisa diubah.',
+  },
+  styleCustomName: {
+    en: 'Custom — every number editable',
+    zh: 'Custom（自定义）— 所有数字可编辑',
+    id: 'Custom — semua angka bisa diubah',
+  },
+  styleCustomHelp: {
+    en: 'Your own rules. Starts as a copy of style E’s PDF numbers, so a fresh Custom trades like E until you change it. Pick breakout (A-like) or ema_cross (E-like); the box, stop, target, flat time, trades per day and the optional box cap are yours.',
+    zh: '你自己的规则。初始为 E 风格 PDF 数字的副本，所以未修改前 Custom 与 E 的交易一致。选择 breakout（类似 A）或 ema_cross（类似 E）；区间、止损、止盈、平仓时间、每日交易次数和可选的区间上限都由你决定。',
+    id: 'Aturan Anda sendiri. Dimulai sebagai salinan angka PDF gaya E, jadi Custom baru bertrading seperti E sampai Anda mengubahnya. Pilih breakout (mirip A) atau ema_cross (mirip E); kotak, stop, target, waktu flat, trade per hari, dan batas kotak opsional ditentukan Anda.',
+  },
+  fEntryType: { en: 'Entry type', zh: '入场类型', id: 'Tipe entri' },
+  fEntryTypeHelp: {
+    en: 'ema_cross (shipped, E-like): the EMA or candle close crossing a box edge on a closed candle. breakout (A-like): the first trade through a box edge.',
+    zh: 'ema_cross（默认，类似 E）：在已收盘 K 线上 EMA 或收盘价穿过区间边缘。breakout（类似 A）：第一次穿过区间边缘即入场。',
+    id: 'ema_cross (bawaan, mirip E): EMA atau penutupan candle melewati tepi kotak pada candle yang sudah tutup. breakout (mirip A): tembusan pertama pada tepi kotak.',
+  },
+  optEmaCross: { en: 'ema_cross', zh: 'ema_cross', id: 'ema_cross' },
+  optBreakout: { en: 'breakout', zh: 'breakout', id: 'breakout' },
+  fCBoxMinutesHelp: {
+    en: 'Custom: shipped 2 (a copy of style E’s). Range 1–120.',
+    zh: 'Custom：默认 2（E 风格的副本）。范围 1–120。',
+    id: 'Custom: bawaan 2 (salinan gaya E). Rentang 1–120.',
+  },
+  fCSlHelp: {
+    en: 'Custom stop as a fraction of the box. Shipped 0.5 (half box), rounded per Stop rounding.',
+    zh: 'Custom 止损占区间的比例。默认 0.5（半个区间），按“止损取整”取整。',
+    id: 'Stop Custom sebagai pecahan kotak. Bawaan 0,5 (setengah kotak), dibulatkan sesuai Pembulatan stop.',
+  },
+  fCTpHelp: {
+    en: 'Custom target as a fraction of the box. Shipped 1.0 (full box).',
+    zh: 'Custom 止盈占区间的比例。默认 1.0（整个区间）。',
+    id: 'Target Custom sebagai pecahan kotak. Bawaan 1,0 (kotak penuh).',
   },
   runsStyle: {
     en: 'Style that runs',
@@ -118,9 +166,9 @@ export const pepStrings = {
     id: 'Gaya yang dijalankan',
   },
   runsStyleHelp: {
-    en: 'Switching style never loses the other style’s numbers: each style keeps its own block.',
-    zh: '切换风格不会丢失另一种风格的数字：每种风格有各自的数据块。',
-    id: 'Berganti gaya tidak menghilangkan angka gaya lain: setiap gaya punya blok sendiri.',
+    en: 'A and E are fixed PDF rules (read-only below). Custom is the editable style. Switching style never deletes a saved number.',
+    zh: 'A 和 E 是固定的 PDF 规则（下方只读）。Custom 是可编辑风格。切换风格不会删除已保存的数字。',
+    id: 'A dan E adalah aturan PDF tetap (hanya baca di bawah). Custom adalah gaya yang bisa diubah. Berganti gaya tidak menghapus angka yang tersimpan.',
   },
   tabA: { en: 'Style A', zh: 'A 风格', id: 'Gaya A' },
   tabE: { en: 'Style E', zh: 'E 风格', id: 'Gaya E' },
@@ -195,9 +243,9 @@ export const pepStrings = {
     id: 'Maks trade per hari',
   },
   fMaxTradesHelp: {
-    en: 'Shipped 1. Style A takes the first break only, whatever this says.',
-    zh: '默认 1。A 风格只取第一次突破，无论此值为多少。',
-    id: 'Bawaan 1. Gaya A hanya mengambil breakout pertama, berapa pun nilai ini.',
+    en: 'Shipped 1. Styles A and E are locked at 1 (the PDF: one trade a day); only Custom reads this.',
+    zh: '默认 1。A 和 E 风格锁定为 1（PDF：每天一笔）；只有 Custom 读取此值。',
+    id: 'Bawaan 1. Gaya A dan E dikunci di 1 (PDF: satu trade per hari); hanya Custom yang membaca ini.',
   },
   fFee: {
     en: 'Fee per contract round trip (USD)',
@@ -215,9 +263,9 @@ export const pepStrings = {
     id: 'Ukuran kotak maks (poin, 0 = MATI)',
   },
   fMaxBoxHelp: {
-    en: 'OFF by default (the PDF trades every box). When set, a wider box is refused with a named reason.',
-    zh: '默认关闭（PDF 每个区间都交易）。设置后，更宽的区间会以明确理由被拒绝。',
-    id: 'MATI secara bawaan (PDF memperdagangkan setiap kotak). Jika diisi, kotak yang lebih lebar ditolak dengan alasan bernama.',
+    en: 'Custom only. OFF by default. The A and E rules have no box cap (the PDF trades every box). When set on Custom, a wider box is refused with a named reason.',
+    zh: '仅 Custom。默认关闭。A 和 E 规则没有区间上限（PDF 每个区间都交易）。在 Custom 中设置后，更宽的区间会以明确理由被拒绝。',
+    id: 'Hanya Custom. MATI secara bawaan. Aturan A dan E tidak punya batas kotak (PDF memperdagangkan setiap kotak). Jika diisi pada Custom, kotak yang lebih lebar ditolak dengan alasan bernama.',
   },
   fSignalAge: {
     en: 'Signal max age (min)',
