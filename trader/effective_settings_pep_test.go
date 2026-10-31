@@ -177,7 +177,7 @@ func TestEffectiveRiskControlRowsSayPepIgnoresThem(t *testing.T) {
 //
 // Mutant: drop the pep_box_start_ct clamp in store.ResolvePep -> RED.
 func TestEffectiveRejectedBoxFlatPairIsBlamedOnBothRows(t *testing.T) {
-	rows := effRowsFor(t, `{"pep":{"pep_enabled":true,"pep_box_start_ct":"16:00","pep_flat_time_ct":"15:00"}}`, "ninjatrader", "")
+	rows := effRowsFor(t, `{"pep":{"pep_enabled":true,"pep_style":"Custom","pep_box_start_ct":"16:00","pep_flat_time_ct":"15:00"}}`, "ninjatrader", "")
 	bs, ft := rows["pep.pep_box_start_ct"], rows["pep.pep_flat_time_ct"]
 	if bs.Effective != "08:30" || !strings.HasPrefix(bs.Origin, "clamp (store.ResolvePep)") {
 		t.Errorf("box start row must read the clamp and the 08:30 that runs: %+v", bs)
