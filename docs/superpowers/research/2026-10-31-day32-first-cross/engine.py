@@ -13,6 +13,8 @@ class Tick:
     event_ns: int
     recv_ns: int
     price: int
+    event_key: tuple | None = None
+    last_in_event: bool = True
 
 
 def seed(closes, period):
@@ -44,6 +46,7 @@ def _simulate(ticks, opened, cutoff, warm, stop_points):
     side = 0
     order = None
     entry = None
+    entry_event = None
     result = dict(outcome="NO_CROSS", stop_points=stop_points,
                   signal_row=None, entry_row=None, exit_row=None,
                   pnl_points=None, nominal_pnl_points=None)
@@ -65,6 +68,8 @@ def _simulate(ticks, opened, cutoff, warm, stop_points):
             break
         last = tick
         if entry is not None:
+            if tick.event_key is not None and tick.event_key == entry_event:
+                continue
             gain = side*(tick.price-entry)
             if gain <= -stop_points*4 or gain >= 60:
                 stopped = gain <= -stop_points*4
@@ -77,8 +82,11 @@ def _simulate(ticks, opened, cutoff, warm, stop_points):
         # Execute the already resting limit before seeing this tick's amendment.
         if order is not None and side*(tick.price-order) <= 0:
             entry = order
+            entry_event = tick.event_key
             result.update(outcome="OPEN_AT_CUTOFF", entry_row=tick.row,
                           entry_event_ns=tick.event_ns, entry_ticks=entry)
+            continue
+        if not tick.last_in_event:
             continue
         newbucket = (tick.event_ns-opened)//SPAN
         if bucket is not None and newbucket != bucket:
