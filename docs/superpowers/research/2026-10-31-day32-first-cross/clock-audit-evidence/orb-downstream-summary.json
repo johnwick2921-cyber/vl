@@ -1,0 +1,1214 @@
+[
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 1,
+    "clock": "event",
+    "TP": 34,
+    "SL": 84,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 498.5,
+    "observed_points": 494.75
+  },
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 34,
+    "SL": 86,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 462.75,
+    "observed_points": 459.0
+  },
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 2,
+    "clock": "event",
+    "TP": 35,
+    "SL": 76,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 4,
+    "nominal_points": 1500.875,
+    "observed_points": 1495.75
+  },
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 36,
+    "SL": 77,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 4,
+    "nominal_points": 1574.875,
+    "observed_points": 1569.75
+  },
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 5,
+    "clock": "event",
+    "TP": 27,
+    "SL": 77,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 7,
+    "nominal_points": 440.5,
+    "observed_points": 437.0
+  },
+  {
+    "engine": "ema_rr3",
+    "args": [],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 27,
+    "SL": 78,
+    "BE": 0,
+    "LOCK": 0,
+    "open": 7,
+    "nominal_points": 408.5,
+    "observed_points": 405.0
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 33,
+    "SL": 57,
+    "BE": 28,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 141.75,
+    "observed_points": 136.75
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 33,
+    "SL": 58,
+    "BE": 29,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 129.5,
+    "observed_points": 124.5
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 32,
+    "SL": 51,
+    "BE": 31,
+    "LOCK": 0,
+    "open": 1,
+    "nominal_points": 687.375,
+    "observed_points": 681.0
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 33,
+    "SL": 52,
+    "BE": 31,
+    "LOCK": 0,
+    "open": 1,
+    "nominal_points": 728.125,
+    "observed_points": 721.75
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 27,
+    "SL": 55,
+    "BE": 26,
+    "LOCK": 0,
+    "open": 3,
+    "nominal_points": 311.125,
+    "observed_points": 307.5
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      2
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 27,
+    "SL": 56,
+    "BE": 26,
+    "LOCK": 0,
+    "open": 3,
+    "nominal_points": 279.125,
+    "observed_points": 275.5
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 23,
+    "SL": 57,
+    "BE": 38,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 320.75,
+    "observed_points": 317.5
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 23,
+    "SL": 58,
+    "BE": 39,
+    "LOCK": 0,
+    "open": 0,
+    "nominal_points": 308.5,
+    "observed_points": 305.25
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 22,
+    "SL": 51,
+    "BE": 40,
+    "LOCK": 0,
+    "open": 2,
+    "nominal_points": 676.875,
+    "observed_points": 671.75
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 22,
+    "SL": 52,
+    "BE": 41,
+    "LOCK": 0,
+    "open": 2,
+    "nominal_points": 651.125,
+    "observed_points": 646.0
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 18,
+    "SL": 55,
+    "BE": 32,
+    "LOCK": 0,
+    "open": 6,
+    "nominal_points": 147.875,
+    "observed_points": 145.0
+  },
+  {
+    "engine": "ema_box_be",
+    "args": [
+      3
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 18,
+    "SL": 56,
+    "BE": 32,
+    "LOCK": 0,
+    "open": 6,
+    "nominal_points": 115.875,
+    "observed_points": 113.0
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 4,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 57,
+    "open": 0,
+    "nominal_points": 99.75,
+    "observed_points": 77.5
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 4,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 58,
+    "open": 0,
+    "nominal_points": 111.0,
+    "observed_points": 88.75
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 0,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 64,
+    "open": 0,
+    "nominal_points": 635.125,
+    "observed_points": 612.75
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 0,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 65,
+    "open": 0,
+    "nominal_points": 642.625,
+    "observed_points": 619.75
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 0,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 56,
+    "open": 0,
+    "nominal_points": 380.375,
+    "observed_points": 359.75
+  },
+  {
+    "engine": "ema_halfbox_lock",
+    "args": [
+      2
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 0,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 56,
+    "open": 0,
+    "nominal_points": 348.375,
+    "observed_points": 327.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 27,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 34,
+    "open": 0,
+    "nominal_points": 18.5,
+    "observed_points": 13.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 27,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 35,
+    "open": 0,
+    "nominal_points": 11.25,
+    "observed_points": 6.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 29,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 34,
+    "open": 1,
+    "nominal_points": 687.625,
+    "observed_points": 681.0
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 30,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 34,
+    "open": 1,
+    "nominal_points": 728.375,
+    "observed_points": 721.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 26,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 27,
+    "open": 3,
+    "nominal_points": 401.125,
+    "observed_points": 397.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      5
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 26,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 27,
+    "open": 3,
+    "nominal_points": 369.125,
+    "observed_points": 365.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 21,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 40,
+    "open": 0,
+    "nominal_points": -28.5,
+    "observed_points": -33.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 21,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 41,
+    "open": 0,
+    "nominal_points": -30.75,
+    "observed_points": -36.0
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 24,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 39,
+    "open": 1,
+    "nominal_points": 581.125,
+    "observed_points": 574.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 24,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 40,
+    "open": 1,
+    "nominal_points": 565.375,
+    "observed_points": 558.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 25,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 28,
+    "open": 3,
+    "nominal_points": 474.375,
+    "observed_points": 470.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      10
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 25,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 28,
+    "open": 3,
+    "nominal_points": 442.375,
+    "observed_points": 438.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 16,
+    "SL": 59,
+    "BE": 0,
+    "LOCK": 43,
+    "open": 0,
+    "nominal_points": -23.5,
+    "observed_points": -30.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 16,
+    "SL": 60,
+    "BE": 0,
+    "LOCK": 44,
+    "open": 0,
+    "nominal_points": -20.75,
+    "observed_points": -27.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 18,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 44,
+    "open": 1,
+    "nominal_points": 432.375,
+    "observed_points": 426.0
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 18,
+    "SL": 53,
+    "BE": 0,
+    "LOCK": 45,
+    "open": 1,
+    "nominal_points": 421.625,
+    "observed_points": 415.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 23,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 30,
+    "open": 3,
+    "nominal_points": 499.875,
+    "observed_points": 496.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      2,
+      15
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 23,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 30,
+    "open": 3,
+    "nominal_points": 467.875,
+    "observed_points": 464.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 18,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 43,
+    "open": 0,
+    "nominal_points": 128.875,
+    "observed_points": 125.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 18,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 44,
+    "open": 0,
+    "nominal_points": 121.625,
+    "observed_points": 118.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 18,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 44,
+    "open": 2,
+    "nominal_points": 538.75,
+    "observed_points": 533.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 18,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 45,
+    "open": 2,
+    "nominal_points": 518.0,
+    "observed_points": 512.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 17,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 33,
+    "open": 6,
+    "nominal_points": 245.375,
+    "observed_points": 242.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      5
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 17,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 33,
+    "open": 6,
+    "nominal_points": 213.375,
+    "observed_points": 210.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 14,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 47,
+    "open": 0,
+    "nominal_points": 88.375,
+    "observed_points": 84.0
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 14,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 48,
+    "open": 0,
+    "nominal_points": 86.125,
+    "observed_points": 81.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 12,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 51,
+    "open": 1,
+    "nominal_points": 280.125,
+    "observed_points": 274.0
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 12,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 52,
+    "open": 1,
+    "nominal_points": 264.375,
+    "observed_points": 258.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 16,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 34,
+    "open": 6,
+    "nominal_points": 312.75,
+    "observed_points": 309.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      10
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 16,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 34,
+    "open": 6,
+    "nominal_points": 280.75,
+    "observed_points": 277.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 10,
+    "SL": 59,
+    "BE": 0,
+    "LOCK": 49,
+    "open": 0,
+    "nominal_points": 25.625,
+    "observed_points": 19.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 10,
+    "SL": 60,
+    "BE": 0,
+    "LOCK": 50,
+    "open": 0,
+    "nominal_points": 28.375,
+    "observed_points": 22.25
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 9,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 53,
+    "open": 1,
+    "nominal_points": 200.5,
+    "observed_points": 194.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 9,
+    "SL": 53,
+    "BE": 0,
+    "LOCK": 54,
+    "open": 1,
+    "nominal_points": 189.75,
+    "observed_points": 183.75
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 15,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 36,
+    "open": 5,
+    "nominal_points": 414.5,
+    "observed_points": 411.5
+  },
+  {
+    "engine": "ema_box_lock",
+    "args": [
+      3,
+      15
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 15,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 36,
+    "open": 5,
+    "nominal_points": 382.5,
+    "observed_points": 379.5
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 11,
+    "SL": 62,
+    "BE": 0,
+    "LOCK": 45,
+    "open": 0,
+    "nominal_points": -132.75,
+    "observed_points": -143.5
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 11,
+    "SL": 63,
+    "BE": 0,
+    "LOCK": 46,
+    "open": 0,
+    "nominal_points": -125.0,
+    "observed_points": -135.75
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 12,
+    "SL": 53,
+    "BE": 0,
+    "LOCK": 49,
+    "open": 1,
+    "nominal_points": 334.0,
+    "observed_points": 327.5
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 12,
+    "SL": 54,
+    "BE": 0,
+    "LOCK": 50,
+    "open": 1,
+    "nominal_points": 328.25,
+    "observed_points": 321.75
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 18,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 36,
+    "open": 2,
+    "nominal_points": 370.875,
+    "observed_points": 366.75
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      20
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 18,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 36,
+    "open": 2,
+    "nominal_points": 338.875,
+    "observed_points": 334.75
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 8,
+    "SL": 63,
+    "BE": 0,
+    "LOCK": 47,
+    "open": 0,
+    "nominal_points": -57.125,
+    "observed_points": -67.25
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 8,
+    "SL": 64,
+    "BE": 0,
+    "LOCK": 48,
+    "open": 0,
+    "nominal_points": -44.375,
+    "observed_points": -54.5
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 9,
+    "SL": 53,
+    "BE": 0,
+    "LOCK": 52,
+    "open": 1,
+    "nominal_points": 364.25,
+    "observed_points": 356.0
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 9,
+    "SL": 54,
+    "BE": 0,
+    "LOCK": 53,
+    "open": 1,
+    "nominal_points": 363.5,
+    "observed_points": 355.0
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 17,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 37,
+    "open": 2,
+    "nominal_points": 516.875,
+    "observed_points": 511.25
+  },
+  {
+    "engine": "ema_box_lock2025",
+    "args": [
+      2,
+      25
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 17,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 37,
+    "open": 2,
+    "nominal_points": 484.875,
+    "observed_points": 479.25
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 1,
+    "clock": "event",
+    "TP": 13,
+    "SL": 57,
+    "BE": 0,
+    "LOCK": 46,
+    "open": 2,
+    "nominal_points": 230.875,
+    "observed_points": 227.25
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 1,
+    "clock": "receipt",
+    "TP": 13,
+    "SL": 58,
+    "BE": 0,
+    "LOCK": 47,
+    "open": 2,
+    "nominal_points": 223.625,
+    "observed_points": 220.0
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 2,
+    "clock": "event",
+    "TP": 9,
+    "SL": 51,
+    "BE": 0,
+    "LOCK": 52,
+    "open": 3,
+    "nominal_points": 170.375,
+    "observed_points": 164.25
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 2,
+    "clock": "receipt",
+    "TP": 9,
+    "SL": 52,
+    "BE": 0,
+    "LOCK": 53,
+    "open": 3,
+    "nominal_points": 149.625,
+    "observed_points": 143.5
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 5,
+    "clock": "event",
+    "TP": 8,
+    "SL": 55,
+    "BE": 0,
+    "LOCK": 37,
+    "open": 11,
+    "nominal_points": -291.125,
+    "observed_points": -294.25
+  },
+  {
+    "engine": "ema_box_lock_rr5",
+    "args": [
+      5,
+      5
+    ],
+    "orb": 5,
+    "clock": "receipt",
+    "TP": 8,
+    "SL": 56,
+    "BE": 0,
+    "LOCK": 37,
+    "open": 11,
+    "nominal_points": -323.125,
+    "observed_points": -326.25
+  }
+]

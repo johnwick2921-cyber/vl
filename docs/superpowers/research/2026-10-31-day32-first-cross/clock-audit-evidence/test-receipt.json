@@ -1,0 +1,7 @@
+{
+  "existing_orb_tests": 139,
+  "new_orb_clock_tests": 3,
+  "night_tests": 25,
+  "all_pass": true,
+  "scope": "Offline research. Existing test_orb family does not include test_tick_orb file in this run; exact selected modules recorded in report."
+}

@@ -1,0 +1,990 @@
+{
+  "days": 122,
+  "source_rows_reproduced": 714,
+  "changed_rows": 32,
+  "changes": [
+    {
+      "day": "2025-10-31",
+      "orb": 1,
+      "tp": 20,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "TP"
+        ],
+        "orb_high": [
+          null,
+          26199.5
+        ],
+        "orb_low": [
+          null,
+          26175.0
+        ],
+        "signal_row": [
+          "",
+          44494
+        ],
+        "signal_end_ns": [
+          null,
+          1761917760000000000
+        ],
+        "entry_row": [
+          "",
+          44495
+        ],
+        "entry_points": [
+          null,
+          26158.75
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          55845
+        ],
+        "pnl_points": [
+          "",
+          20
+        ],
+        "observed_pnl_points": [
+          "",
+          20
+        ]
+      }
+    },
+    {
+      "day": "2025-10-31",
+      "orb": 1,
+      "tp": 30,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "TP"
+        ],
+        "orb_high": [
+          null,
+          26199.5
+        ],
+        "orb_low": [
+          null,
+          26175.0
+        ],
+        "signal_row": [
+          "",
+          44494
+        ],
+        "signal_end_ns": [
+          null,
+          1761917760000000000
+        ],
+        "entry_row": [
+          "",
+          44495
+        ],
+        "entry_points": [
+          null,
+          26158.75
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          60226
+        ],
+        "pnl_points": [
+          "",
+          30
+        ],
+        "observed_pnl_points": [
+          "",
+          30
+        ]
+      }
+    },
+    {
+      "day": "2025-11-04",
+      "orb": 2,
+      "tp": 20,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25757.0
+        ],
+        "orb_low": [
+          null,
+          25705.5
+        ],
+        "signal_row": [
+          "",
+          74544
+        ],
+        "signal_end_ns": [
+          null,
+          1762267200000000000
+        ],
+        "entry_row": [
+          "",
+          74545
+        ],
+        "entry_points": [
+          null,
+          25688.75
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          76229
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2025-11-04",
+      "orb": 2,
+      "tp": 30,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25757.0
+        ],
+        "orb_low": [
+          null,
+          25705.5
+        ],
+        "signal_row": [
+          "",
+          74544
+        ],
+        "signal_end_ns": [
+          null,
+          1762267200000000000
+        ],
+        "entry_row": [
+          "",
+          74545
+        ],
+        "entry_points": [
+          null,
+          25688.75
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          76229
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2025-11-25",
+      "orb": 1,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          97620,
+          97619
+        ]
+      }
+    },
+    {
+      "day": "2025-11-25",
+      "orb": 1,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          97620,
+          97619
+        ]
+      }
+    },
+    {
+      "day": "2025-11-25",
+      "orb": 2,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          97620,
+          97619
+        ]
+      }
+    },
+    {
+      "day": "2025-11-25",
+      "orb": 2,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          97620,
+          97619
+        ]
+      }
+    },
+    {
+      "day": "2025-12-03",
+      "orb": 1,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          208830,
+          208828
+        ]
+      }
+    },
+    {
+      "day": "2025-12-03",
+      "orb": 1,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          208830,
+          208828
+        ]
+      }
+    },
+    {
+      "day": "2025-12-04",
+      "orb": 2,
+      "tp": 20,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25713.25
+        ],
+        "orb_low": [
+          null,
+          25646.75
+        ],
+        "signal_row": [
+          "",
+          93754
+        ],
+        "signal_end_ns": [
+          null,
+          1764859200000000000
+        ],
+        "entry_row": [
+          "",
+          93755
+        ],
+        "entry_points": [
+          null,
+          25617.25
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          95102
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2025-12-04",
+      "orb": 2,
+      "tp": 30,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25713.25
+        ],
+        "orb_low": [
+          null,
+          25646.75
+        ],
+        "signal_row": [
+          "",
+          93754
+        ],
+        "signal_end_ns": [
+          null,
+          1764859200000000000
+        ],
+        "entry_row": [
+          "",
+          93755
+        ],
+        "entry_points": [
+          null,
+          25617.25
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          95102
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2025-12-16",
+      "orb": 2,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          199863,
+          199861
+        ],
+        "entry_row": [
+          199866,
+          199864
+        ],
+        "entry_points": [
+          25377.5,
+          25377.0
+        ],
+        "exit_row": [
+          204271,
+          204164
+        ]
+      }
+    },
+    {
+      "day": "2025-12-16",
+      "orb": 2,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          199863,
+          199861
+        ],
+        "entry_row": [
+          199866,
+          199864
+        ],
+        "entry_points": [
+          25377.5,
+          25377.0
+        ],
+        "exit_row": [
+          209656,
+          209644
+        ]
+      }
+    },
+    {
+      "day": "2026-01-14",
+      "orb": 2,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          158833,
+          158832
+        ]
+      }
+    },
+    {
+      "day": "2026-01-14",
+      "orb": 2,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          158833,
+          158832
+        ]
+      }
+    },
+    {
+      "day": "2026-02-10",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25410.25
+        ],
+        "orb_low": [
+          null,
+          25346.25
+        ],
+        "signal_row": [
+          "",
+          127831
+        ],
+        "signal_end_ns": [
+          null,
+          1770735000000000000
+        ],
+        "entry_row": [
+          "",
+          127832
+        ],
+        "entry_points": [
+          null,
+          25278.25
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          130499
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2026-02-10",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "SL"
+        ],
+        "orb_high": [
+          null,
+          25410.25
+        ],
+        "orb_low": [
+          null,
+          25346.25
+        ],
+        "signal_row": [
+          "",
+          127831
+        ],
+        "signal_end_ns": [
+          null,
+          1770735000000000000
+        ],
+        "entry_row": [
+          "",
+          127832
+        ],
+        "entry_points": [
+          null,
+          25278.25
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          130499
+        ],
+        "pnl_points": [
+          "",
+          -20
+        ],
+        "observed_pnl_points": [
+          "",
+          -20.0
+        ]
+      }
+    },
+    {
+      "day": "2026-02-12",
+      "orb": 1,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          112383,
+          112382
+        ]
+      }
+    },
+    {
+      "day": "2026-02-12",
+      "orb": 1,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          112383,
+          112382
+        ]
+      }
+    },
+    {
+      "day": "2026-02-17",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          253141,
+          253140
+        ]
+      }
+    },
+    {
+      "day": "2026-02-17",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          253141,
+          253140
+        ]
+      }
+    },
+    {
+      "day": "2026-02-27",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          251695,
+          251691
+        ],
+        "entry_row": [
+          251697,
+          251696
+        ],
+        "entry_points": [
+          24954.0,
+          24954.25
+        ],
+        "exit_row": [
+          262231,
+          261214
+        ]
+      }
+    },
+    {
+      "day": "2026-02-27",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          251695,
+          251691
+        ],
+        "entry_row": [
+          251697,
+          251696
+        ],
+        "entry_points": [
+          24954.0,
+          24954.25
+        ],
+        "exit_row": [
+          262231,
+          261214
+        ]
+      }
+    },
+    {
+      "day": "2026-03-03",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          251658,
+          251657
+        ]
+      }
+    },
+    {
+      "day": "2026-03-03",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          251658,
+          251657
+        ]
+      }
+    },
+    {
+      "day": "2026-03-05",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          195576,
+          195575
+        ]
+      }
+    },
+    {
+      "day": "2026-03-05",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          195576,
+          195575
+        ]
+      }
+    },
+    {
+      "day": "2026-03-12",
+      "orb": 1,
+      "tp": 20,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "TP"
+        ],
+        "orb_high": [
+          null,
+          24813.0
+        ],
+        "orb_low": [
+          null,
+          24766.0
+        ],
+        "signal_row": [
+          "",
+          111264
+        ],
+        "signal_end_ns": [
+          null,
+          1773323220000000000
+        ],
+        "entry_row": [
+          "",
+          111265
+        ],
+        "entry_points": [
+          null,
+          24707.5
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          113629
+        ],
+        "pnl_points": [
+          "",
+          20
+        ],
+        "observed_pnl_points": [
+          "",
+          20
+        ]
+      }
+    },
+    {
+      "day": "2026-03-12",
+      "orb": 1,
+      "tp": 30,
+      "differences": {
+        "outcome": [
+          "EXCLUDED",
+          "TP"
+        ],
+        "orb_high": [
+          null,
+          24813.0
+        ],
+        "orb_low": [
+          null,
+          24766.0
+        ],
+        "signal_row": [
+          "",
+          111264
+        ],
+        "signal_end_ns": [
+          null,
+          1773323220000000000
+        ],
+        "entry_row": [
+          "",
+          111265
+        ],
+        "entry_points": [
+          null,
+          24707.5
+        ],
+        "side": [
+          null,
+          "SHORT"
+        ],
+        "exit_row": [
+          "",
+          115735
+        ],
+        "pnl_points": [
+          "",
+          30
+        ],
+        "observed_pnl_points": [
+          "",
+          30
+        ]
+      }
+    },
+    {
+      "day": "2026-03-31",
+      "orb": 5,
+      "tp": 20,
+      "differences": {
+        "signal_row": [
+          122544,
+          122543
+        ]
+      }
+    },
+    {
+      "day": "2026-03-31",
+      "orb": 5,
+      "tp": 30,
+      "differences": {
+        "signal_row": [
+          122544,
+          122543
+        ]
+      }
+    }
+  ],
+  "summary": [
+    {
+      "clock": "event",
+      "variant": "SL20_TP20",
+      "orb": 1,
+      "TP": 53,
+      "SL": 65,
+      "open": 0,
+      "nominal_points": -240.0,
+      "observed_points": -240.5
+    },
+    {
+      "clock": "event",
+      "variant": "SL20_TP20",
+      "orb": 2,
+      "TP": 64,
+      "SL": 51,
+      "open": 0,
+      "nominal_points": 260.0,
+      "observed_points": 259.25
+    },
+    {
+      "clock": "event",
+      "variant": "SL20_TP20",
+      "orb": 5,
+      "TP": 58,
+      "SL": 53,
+      "open": 0,
+      "nominal_points": 100.0,
+      "observed_points": 99.5
+    },
+    {
+      "clock": "event",
+      "variant": "SL20_TP30",
+      "orb": 1,
+      "TP": 46,
+      "SL": 72,
+      "open": 0,
+      "nominal_points": -60.0,
+      "observed_points": -60.5
+    },
+    {
+      "clock": "event",
+      "variant": "SL20_TP30",
+      "orb": 2,
+      "TP": 49,
+      "SL": 66,
+      "open": 0,
+      "nominal_points": 150.0,
+      "observed_points": 149.25
+    },
+    {
+      "clock": "event",
+      "variant": "SL20_TP30",
+      "orb": 5,
+      "TP": 44,
+      "SL": 67,
+      "open": 0,
+      "nominal_points": -20.0,
+      "observed_points": -20.5
+    },
+    {
+      "clock": "event",
+      "variant": "halfbox_fullbox",
+      "orb": 1,
+      "TP": 44,
+      "SL": 74,
+      "open": 0,
+      "nominal_points": 330.375,
+      "observed_points": 324.75
+    },
+    {
+      "clock": "event",
+      "variant": "halfbox_fullbox",
+      "orb": 2,
+      "TP": 47,
+      "SL": 67,
+      "open": 1,
+      "nominal_points": 1283.625,
+      "observed_points": 1276.75
+    },
+    {
+      "clock": "event",
+      "variant": "halfbox_fullbox",
+      "orb": 5,
+      "TP": 35,
+      "SL": 72,
+      "open": 4,
+      "nominal_points": 251.625,
+      "observed_points": 246.75
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP20",
+      "orb": 1,
+      "TP": 55,
+      "SL": 65,
+      "open": 0,
+      "nominal_points": -200.0,
+      "observed_points": -200.5
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP20",
+      "orb": 2,
+      "TP": 64,
+      "SL": 53,
+      "open": 0,
+      "nominal_points": 220.0,
+      "observed_points": 219.25
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP20",
+      "orb": 5,
+      "TP": 58,
+      "SL": 54,
+      "open": 0,
+      "nominal_points": 80.0,
+      "observed_points": 79.5
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP30",
+      "orb": 1,
+      "TP": 48,
+      "SL": 72,
+      "open": 0,
+      "nominal_points": 0.0,
+      "observed_points": -0.5
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP30",
+      "orb": 2,
+      "TP": 49,
+      "SL": 68,
+      "open": 0,
+      "nominal_points": 110.0,
+      "observed_points": 109.25
+    },
+    {
+      "clock": "receipt",
+      "variant": "SL20_TP30",
+      "orb": 5,
+      "TP": 44,
+      "SL": 68,
+      "open": 0,
+      "nominal_points": -40.0,
+      "observed_points": -40.5
+    },
+    {
+      "clock": "receipt",
+      "variant": "halfbox_fullbox",
+      "orb": 1,
+      "TP": 44,
+      "SL": 76,
+      "open": 0,
+      "nominal_points": 294.625,
+      "observed_points": 289.0
+    },
+    {
+      "clock": "receipt",
+      "variant": "halfbox_fullbox",
+      "orb": 2,
+      "TP": 48,
+      "SL": 68,
+      "open": 1,
+      "nominal_points": 1324.375,
+      "observed_points": 1317.5
+    },
+    {
+      "clock": "receipt",
+      "variant": "halfbox_fullbox",
+      "orb": 5,
+      "TP": 35,
+      "SL": 73,
+      "open": 4,
+      "nominal_points": 219.625,
+      "observed_points": 214.75
+    }
+  ],
+  "source_sha": "fc317bb1c92be679f0728124d6f37311f6b5605a87bd45f7b416b3db986938af"
+}
