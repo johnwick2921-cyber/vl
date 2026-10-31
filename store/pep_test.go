@@ -31,8 +31,8 @@ func pepLeafPaths(t *testing.T) []string {
 // live with a named consumer, and the leaf name is unique across the schema.
 func TestPepLeavesRegisteredExactlyAndUnique(t *testing.T) {
 	paths := pepLeafPaths(t)
-	if len(paths) != 22 {
-		t.Fatalf("pep leaves = %d, want 22 (11 shared + 4 style A + 7 style E): %v", len(paths), paths)
+	if len(paths) != 31 {
+		t.Fatalf("pep leaves = %d, want 31 (11 shared + 4 style A + 7 style E + 9 style Custom): %v", len(paths), paths)
 	}
 	leaf := func(p string) string { return p[strings.LastIndex(p, ".")+1:] }
 	count := map[string]int{}
@@ -121,54 +121,107 @@ func TestResolvePepShippedDefaults(t *testing.T) {
 	if len(r.Clamps) != 0 {
 		t.Fatalf("defaults clamped something: %v", r.Clamps)
 	}
+	if !r.Locked {
+		t.Fatal("the shipped style E must be locked to the PDF")
+	}
+	// m461 pin: Custom's shipped defaults ARE style E's PDF values.
+	if r.Custom != (PepResolvedCustom{"ema_cross", r.E.BoxMinutes, r.E.SLFraction, r.E.TPFraction, "no_trade", r.E.EMAPeriod, r.E.EMATFMin, r.E.SignalSource, r.E.WarmupBars}) {
+		t.Fatalf("Custom defaults must equal style E: %+v vs %+v", r.Custom, r.E)
+	}
 }
 
-// A saved value that is legal takes effect AS SAVED, including a legal 0.
+// A saved value that is legal takes effect AS SAVED, including a legal 0 - for
+// the CUSTOM style, the only editable one (m461).
 func TestResolvePepSavedValuesTakeEffect(t *testing.T) {
 	c := &StrategyConfig{Pep: &PepConfig{
-		Enabled: boolp(true), Style: " e ", Contracts: IntPtr(6), BoxStartCT: "9:05", FlatTimeCT: "14:30",
-		FeePerContractRT: f64p(0), MaxBoxPoints: f64p(150), SLRounding: "Nearest",
-		StyleE: &PepStyleEConfig{SignalSource: "CLOSE", EMAPeriod: IntPtr(12), EMATFMin: IntPtr(3), SLFraction: f64p(0.6), WarmupBars: IntPtr(20)},
-		StyleA: &PepStyleAConfig{BothEdges: "Nearest_Open", SLFraction: f64p(0.8)},
+		Enabled: boolp(true), Style: " custom ", Contracts: IntPtr(6), BoxStartCT: "9:05", FlatTimeCT: "14:30",
+		FeePerContractRT: f64p(0), MaxBoxPoints: f64p(150), SLRounding: "Nearest", MaxTradesPerDay: IntPtr(3),
+		StyleCustom: &PepStyleCustomConfig{EntryType: "Breakout", BoxMinutes: IntPtr(7), SLFraction: f64p(0.6), TPFraction: f64p(1.4), BothEdges: "Nearest_Open",
+			SignalSource: "CLOSE", EMAPeriod: IntPtr(12), EMATFMin: IntPtr(3), WarmupBars: IntPtr(20)},
 	}}
 	r := ResolvePep(c)
-	if !r.Enabled || r.Style != "E" || r.Contracts != 6 || r.BoxStartCT != "09:05" || r.BoxStartMin != 545 || r.FlatMin != 870 ||
-		r.FeePerContractRT != 0 || r.MaxBoxPoints != 150 || r.SLRounding != "nearest" {
+	if !r.Enabled || r.Style != "Custom" || r.Locked || r.Contracts != 6 || r.BoxStartCT != "09:05" || r.BoxStartMin != 545 || r.FlatMin != 870 ||
+		r.FeePerContractRT != 0 || r.MaxBoxPoints != 150 || r.SLRounding != "nearest" || r.MaxTradesPerDay != 3 {
 		t.Fatalf("%+v", r)
 	}
-	if r.E.SignalSource != "close" || r.E.EMAPeriod != 12 || r.E.EMATFMin != 3 || r.E.SLFraction != 0.6 || r.E.WarmupBars != 20 {
-		t.Fatalf("E %+v", r.E)
-	}
-	if r.A.BothEdges != "nearest_open" || r.A.SLFraction != 0.8 {
-		t.Fatalf("A %+v", r.A)
+	want := PepResolvedCustom{"breakout", 7, 0.6, 1.4, "nearest_open", 12, 3, "close", 20}
+	if r.Custom != want {
+		t.Fatalf("Custom %+v want %+v", r.Custom, want)
 	}
 	if len(r.Clamps) != 0 {
 		t.Fatalf("legal values were clamped: %v", r.Clamps)
 	}
 }
 
+// m461 PIN: A and E run the PDF whatever is stored - edited stored root rule
+// numbers, style_a and style_e blocks are ignored, and no clamp note is raised
+// for a number that never ran. Mutant: skip the `if r.Style != PepStyleCustom`
+// override block in ResolvePep, or read sa/se again -> RED.
+func TestResolvePepAAndEIgnoreStoredNumbers(t *testing.T) {
+	for _, style := range []string{"A", "E", "a", ""} {
+		c := &StrategyConfig{Pep: &PepConfig{
+			Enabled: boolp(true), Style: style, Contracts: IntPtr(4), BoxStartCT: "09:05", FlatTimeCT: "14:30",
+			MaxBoxPoints: f64p(150), SLRounding: "nearest", MaxTradesPerDay: IntPtr(3), TickSize: f64p(0.5), SignalMaxAgeMin: IntPtr(5),
+			StyleE: &PepStyleEConfig{SignalSource: "close", EMAPeriod: IntPtr(12), EMATFMin: IntPtr(3), SLFraction: f64p(0.6), WarmupBars: IntPtr(20), BoxMinutes: IntPtr(9)},
+			StyleA: &PepStyleAConfig{BothEdges: "nearest_open", SLFraction: f64p(0.8), TPFraction: f64p(2), BoxMinutes: IntPtr(15)},
+		}}
+		r := ResolvePep(c)
+		if !r.Locked || r.BoxStartCT != "08:30" || r.BoxStartMin != 510 || r.FlatTimeCT != "15:00" || r.FlatMin != 900 ||
+			r.MaxBoxPoints != 0 || r.SLRounding != "outward" || r.MaxTradesPerDay != 1 {
+			t.Fatalf("style %q: rule leaves must be the PDF's: %+v", style, r)
+		}
+		if r.A != (PepResolvedA{5, 1, 1, "no_trade"}) || r.E != (PepResolvedE{2, 0.5, 1, 9, 2, "ema", 0}) {
+			t.Fatalf("style %q: A %+v E %+v", style, r.A, r.E)
+		}
+		// contracts, tick and the stale-signal guard are NOT rules: still editable.
+		if r.Contracts != 4 || r.TickSize != 0.5 || r.SignalMaxAgeMin != 5 {
+			t.Fatalf("style %q: contracts/tick/age must stay editable: %+v", style, r)
+		}
+		if len(r.Clamps) != 0 {
+			t.Fatalf("style %q: a clamp note for a number that never ran: %v", style, r.Clamps)
+		}
+		// the stored numbers are untouched (sacred).
+		if *c.Pep.StyleE.EMAPeriod != 12 || c.Pep.BoxStartCT != "09:05" {
+			t.Fatal("ResolvePep mutated the stored block")
+		}
+	}
+}
+
+// Contracts are editable in EVERY style (shared; ceiling 10).
+func TestResolvePepContractsEditableInEveryStyle(t *testing.T) {
+	for _, style := range []string{"A", "E", "Custom"} {
+		for n, want := range map[int]int{1: 1, 8: 8, 10: 10, 99: 10} {
+			r := ResolvePep(&StrategyConfig{Pep: &PepConfig{Style: style, Contracts: IntPtr(n)}})
+			if r.Contracts != want {
+				t.Errorf("style %s contracts %d -> %d, want %d", style, n, r.Contracts, want)
+			}
+		}
+	}
+}
+
 // OUT OF RANGE is clamped AND named: never silent.
 func TestResolvePepClampsAreNamed(t *testing.T) {
 	c := &StrategyConfig{Pep: &PepConfig{
-		Style: "Z", Contracts: IntPtr(15), TickSize: f64p(-1), MaxTradesPerDay: IntPtr(0), SignalMaxAgeMin: IntPtr(99),
+		Style: "Custom", Contracts: IntPtr(15), TickSize: f64p(-1), MaxTradesPerDay: IntPtr(0), SignalMaxAgeMin: IntPtr(99),
 		BoxStartCT: "25:00", SLRounding: "inward", FeePerContractRT: f64p(-3), MaxBoxPoints: f64p(-5),
-		StyleA: &PepStyleAConfig{BoxMinutes: IntPtr(500), SLFraction: f64p(0), BothEdges: "both"},
-		StyleE: &PepStyleEConfig{EMAPeriod: IntPtr(1), EMATFMin: IntPtr(7), SignalSource: "x", WarmupBars: IntPtr(-1), TPFraction: f64p(99)},
+		StyleCustom: &PepStyleCustomConfig{EntryType: "zig", BoxMinutes: IntPtr(500), SLFraction: f64p(0), BothEdges: "both",
+			EMAPeriod: IntPtr(1), EMATFMin: IntPtr(7), SignalSource: "x", WarmupBars: IntPtr(-1), TPFraction: f64p(99)},
 	}}
 	r := ResolvePep(c)
-	if r.Style != "E" || r.Contracts != 10 || r.TickSize != 0.25 || r.MaxTradesPerDay != 1 || r.SignalMaxAgeMin != 30 || r.BoxStartCT != "08:30" ||
+	if r.Style != "Custom" || r.Contracts != 10 || r.TickSize != 0.25 || r.MaxTradesPerDay != 1 || r.SignalMaxAgeMin != 30 || r.BoxStartCT != "08:30" ||
 		r.SLRounding != "outward" || r.FeePerContractRT != 0 || r.MaxBoxPoints != 0 {
 		t.Fatalf("shared: %+v", r)
 	}
-	if r.A.BoxMinutes != 120 || r.A.SLFraction != 1 || r.A.BothEdges != "no_trade" {
-		t.Fatalf("A: %+v", r.A)
+	if cu := r.Custom; cu.EntryType != "ema_cross" || cu.BoxMinutes != 120 || cu.SLFraction != 0.5 || cu.BothEdges != "no_trade" ||
+		cu.EMAPeriod != 2 || cu.EMATFMin != 2 || cu.SignalSource != "ema" || cu.WarmupBars != 0 || cu.TPFraction != 10 {
+		t.Fatalf("Custom: %+v", cu)
 	}
-	if r.E.EMAPeriod != 2 || r.E.EMATFMin != 2 || r.E.SignalSource != "ema" || r.E.WarmupBars != 0 || r.E.TPFraction != 10 {
-		t.Fatalf("E: %+v", r.E)
+	if z := ResolvePep(&StrategyConfig{Pep: &PepConfig{Style: "Z"}}); z.Style != "E" || z.Clamps["pep_style"] == "" {
+		t.Fatalf("an unknown style must run E and say so: %+v", z)
 	}
-	want := []string{"pep_style", "pep_contracts", "pep_tick_size", "pep_max_trades_per_day", "pep_signal_max_age_min", "pep_box_start_ct",
-		"pep_sl_rounding", "pep_fee_per_contract_usd", "pep_max_box_points", "pep_a_box_minutes", "pep_a_sl_fraction", "pep_a_both_edges",
-		"pep_e_ema_period", "pep_e_ema_tf_min", "pep_e_signal_source", "pep_e_warmup_bars", "pep_e_tp_fraction"}
+	want := []string{"pep_contracts", "pep_tick_size", "pep_max_trades_per_day", "pep_signal_max_age_min", "pep_box_start_ct",
+		"pep_sl_rounding", "pep_fee_per_contract_usd", "pep_max_box_points", "pep_c_entry_type", "pep_c_box_minutes", "pep_c_sl_fraction", "pep_c_both_edges",
+		"pep_c_ema_period", "pep_c_ema_tf_min", "pep_c_signal_source", "pep_c_warmup_bars", "pep_c_tp_fraction"}
 	var missing []string
 	for _, k := range want {
 		if r.Clamps[k] == "" {
@@ -188,7 +241,7 @@ func TestResolvePepClampsAreNamed(t *testing.T) {
 }
 
 func TestResolvePepFlatBeforeBoxFallsBack(t *testing.T) {
-	r := ResolvePep(&StrategyConfig{Pep: &PepConfig{BoxStartCT: "10:00", FlatTimeCT: "09:00"}})
+	r := ResolvePep(&StrategyConfig{Pep: &PepConfig{Style: "Custom", BoxStartCT: "10:00", FlatTimeCT: "09:00"}})
 	if r.BoxStartCT != "08:30" || r.FlatTimeCT != "15:00" || r.Clamps["pep_flat_time_ct"] == "" {
 		t.Fatalf("%+v", r)
 	}
@@ -286,7 +339,7 @@ func TestStrategyStoreWritersRefuseModeConflict(t *testing.T) {
 // clamp, and the save warning prints it once, naming both leaves.
 // Mutant: drop r.Clamps["pep_box_start_ct"] in ResolvePep -> RED.
 func TestResolvePepRejectedPairClampsBothLeavesAndWarnsOnce(t *testing.T) {
-	c := &StrategyConfig{Pep: &PepConfig{BoxStartCT: "16:00", FlatTimeCT: "15:00"}}
+	c := &StrategyConfig{Pep: &PepConfig{Style: "Custom", BoxStartCT: "16:00", FlatTimeCT: "15:00"}}
 	r := ResolvePep(c)
 	if r.BoxStartCT != "08:30" || r.FlatTimeCT != "15:00" || r.Clamps["pep_box_start_ct"] == "" || r.Clamps["pep_flat_time_ct"] == "" {
 		t.Fatalf("%+v", r)

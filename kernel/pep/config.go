@@ -40,6 +40,17 @@ type Style string
 const (
 	StyleA Style = "A" // ORB breakout, enter on the first trade through a box edge
 	StyleE Style = "E" // EMA9 ORB, candle-close confirmation
+	// StyleCustom is the editable style: Config.Custom picks the entry type and
+	// every number. A and E are the PDF's; the store resolver locks them.
+	StyleCustom Style = "Custom"
+)
+
+// EntryType is Custom's entry rule: an A-like breakout or an E-like EMA cross.
+type EntryType string
+
+const (
+	EntryBreakout EntryType = "breakout"
+	EntryEMACross EntryType = "ema_cross"
 )
 
 // SignalSource is style E's cross reference: the EMA crossing the box edge
@@ -101,6 +112,19 @@ type ParamsE struct {
 	WarmupBars int
 }
 
+// ParamsCustom holds the Custom style's numbers (seeded from style E's).
+type ParamsCustom struct {
+	Entry      EntryType
+	BoxMinutes int
+	SLFraction float64
+	TPFraction float64
+	BothEdges  BothEdges    // breakout only
+	EMAPeriod  int          // ema_cross only
+	EMATFMin   int          // ema_cross only
+	Source     SignalSource // ema_cross only
+	WarmupBars int          // ema_cross only; 0 = 3 x EMAPeriod
+}
+
 // Config is every number pep reads. Nothing is hardcoded in Evaluate.
 type Config struct {
 	Style     Style
@@ -128,8 +152,9 @@ type Config struct {
 	// REPORTING ONLY: Evaluate never reads it.
 	FeePerContractRT float64
 
-	A ParamsA
-	E ParamsE
+	A      ParamsA
+	E      ParamsE
+	Custom ParamsCustom
 }
 
 // DefaultConfig returns the shipped numbers (the PDF's). OFF is a store-level
@@ -161,6 +186,10 @@ func DefaultConfig() Config {
 			Source:     SourceEMA,
 			WarmupBars: 0,
 		},
+		Custom: ParamsCustom{
+			Entry: EntryEMACross, BoxMinutes: 2, SLFraction: 0.5, TPFraction: 1.0,
+			BothEdges: BothEdgesNoTrade, EMAPeriod: 9, EMATFMin: 2, Source: SourceEMA,
+		},
 	}
 }
 
@@ -168,8 +197,8 @@ func DefaultConfig() Config {
 // evaluator refuses (CodeConfigInvalid) on any error rather than guessing.
 func (c Config) Validate() error {
 	var bad []string
-	if c.Style != StyleA && c.Style != StyleE {
-		bad = append(bad, fmt.Sprintf("style %q (want A or E)", c.Style))
+	if c.Style != StyleA && c.Style != StyleE && c.Style != StyleCustom {
+		bad = append(bad, fmt.Sprintf("style %q (want A, E or Custom)", c.Style))
 	}
 	if c.Contracts < 1 || c.Contracts > MaxContractsCeiling {
 		bad = append(bad, fmt.Sprintf("contracts %d (want 1..%d)", c.Contracts, MaxContractsCeiling))
@@ -203,6 +232,11 @@ func (c Config) Validate() error {
 	}
 	if err := c.E.validate(); err != nil {
 		bad = append(bad, "style E: "+err.Error())
+	}
+	if c.Style == StyleCustom {
+		if err := c.Custom.validate(); err != nil {
+			bad = append(bad, "style Custom: "+err.Error())
+		}
 	}
 	if len(bad) == 0 {
 		return nil
@@ -261,6 +295,39 @@ func (e ParamsE) validate() error {
 	return fmt.Errorf("%s", strings.Join(bad, ", "))
 }
 
+func (p ParamsCustom) validate() error {
+	var bad []string
+	if p.Entry != EntryBreakout && p.Entry != EntryEMACross {
+		bad = append(bad, fmt.Sprintf("entry type %q", p.Entry))
+	}
+	if p.BoxMinutes < 1 || p.BoxMinutes > 120 {
+		bad = append(bad, fmt.Sprintf("box minutes %d (want 1..120)", p.BoxMinutes))
+	}
+	if !fractionOK(p.SLFraction) {
+		bad = append(bad, fmt.Sprintf("sl fraction %v (want (0,10])", p.SLFraction))
+	}
+	if !fractionOK(p.TPFraction) {
+		bad = append(bad, fmt.Sprintf("tp fraction %v (want (0,10])", p.TPFraction))
+	}
+	if p.Entry == EntryBreakout && p.BothEdges != BothEdgesNoTrade && p.BothEdges != BothEdgesNearestOpen {
+		bad = append(bad, fmt.Sprintf("both-edges policy %q", p.BothEdges))
+	}
+	if p.Entry == EntryEMACross {
+		if err := p.emaParams().validate(); err != nil {
+			bad = append(bad, err.Error())
+		}
+	}
+	if len(bad) == 0 {
+		return nil
+	}
+	return fmt.Errorf("%s", strings.Join(bad, ", "))
+}
+
+func (p ParamsCustom) emaParams() ParamsE {
+	return ParamsE{BoxMinutes: p.BoxMinutes, SLFraction: p.SLFraction, TPFraction: p.TPFraction,
+		EMAPeriod: p.EMAPeriod, EMATFMin: p.EMATFMin, Source: p.Source, WarmupBars: p.WarmupBars}
+}
+
 // validTFMin: a candle timeframe must divide an hour so every candle boundary
 // falls on a CT wall-clock multiple and UTC-epoch flooring is DST-safe (CT is a
 // whole-hour UTC offset).
@@ -272,34 +339,72 @@ func validTFMin(tf int) bool {
 	return false
 }
 
+// IsBreakout reports whether the active rule is the A-like breakout (style A,
+// or Custom with entry type breakout); false = the E-like EMA cross.
+func (c Config) IsBreakout() bool {
+	switch c.Style {
+	case StyleA:
+		return true
+	case StyleCustom:
+		return c.Custom.Entry == EntryBreakout
+	}
+	return false
+}
+
+// EMA is the active EMA-cross parameter set (style E's, or Custom's).
+func (c Config) EMA() ParamsE {
+	if c.Style == StyleCustom {
+		return c.Custom.emaParams()
+	}
+	return c.E
+}
+
+// BothEdgesPolicy is the active one-bar-through-both-edges policy.
+func (c Config) BothEdgesPolicy() BothEdges {
+	if c.Style == StyleCustom {
+		return c.Custom.BothEdges
+	}
+	return c.A.BothEdges
+}
+
 // BoxMinutes is the active style's box length.
 func (c Config) BoxMinutes() int {
-	if c.Style == StyleE {
+	switch c.Style {
+	case StyleE:
 		return c.E.BoxMinutes
+	case StyleCustom:
+		return c.Custom.BoxMinutes
 	}
 	return c.A.BoxMinutes
 }
 
 // SLFraction is the active style's stop fraction of the box.
 func (c Config) SLFraction() float64 {
-	if c.Style == StyleE {
+	switch c.Style {
+	case StyleE:
 		return c.E.SLFraction
+	case StyleCustom:
+		return c.Custom.SLFraction
 	}
 	return c.A.SLFraction
 }
 
 // TPFraction is the active style's target fraction of the box.
 func (c Config) TPFraction() float64 {
-	if c.Style == StyleE {
+	switch c.Style {
+	case StyleE:
 		return c.E.TPFraction
+	case StyleCustom:
+		return c.Custom.TPFraction
 	}
 	return c.A.TPFraction
 }
 
-// WarmupCandles is style E's resolved warm-up (0 = 3 x period).
+// WarmupCandles is the active EMA rule's resolved warm-up (0 = 3 x period).
 func (c Config) WarmupCandles() int {
-	if c.E.WarmupBars > 0 {
-		return c.E.WarmupBars
+	e := c.EMA()
+	if e.WarmupBars > 0 {
+		return e.WarmupBars
 	}
-	return 3 * c.E.EMAPeriod
+	return 3 * e.EMAPeriod
 }

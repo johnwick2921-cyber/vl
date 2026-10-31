@@ -20,12 +20,22 @@ func TestEffectivePepLeavesAllResolve(t *testing.T) {
 		if !r.Resolved || r.Effective == EffectiveNoResolver {
 			t.Errorf("%s: unresolved %+v", path, r)
 		}
-		if r.Origin != store.SourceShippedDefault {
+		leaf := path[strings.LastIndex(path, ".")+1:]
+		switch {
+		case store.PepLockedLeaves[leaf]: // shipped style E: the rule leaves are the PDF's
+			if !strings.HasPrefix(r.Origin, "locked to the PDF") {
+				t.Errorf("%s: want a locked-to-the-PDF origin, got %q", path, r.Origin)
+			}
+		case strings.HasPrefix(leaf, "pep_c_"):
+			if !strings.HasPrefix(r.Origin, "not used: style is E") {
+				t.Errorf("%s: want a Custom-only origin, got %q", path, r.Origin)
+			}
+		case r.Origin != store.SourceShippedDefault:
 			t.Errorf("%s: unset leaf origin %q, want shipped default", path, r.Origin)
 		}
 	}
-	if n != 22 {
-		t.Fatalf("pep rows = %d, want 22", n)
+	if n != 31 {
+		t.Fatalf("pep rows = %d, want 31", n)
 	}
 	if rows["pep.pep_enabled"].Effective != false || rows["pep.pep_contracts"].Effective != 6 {
 		t.Fatalf("shipped: enabled %v contracts %v", rows["pep.pep_enabled"].Effective, rows["pep.pep_contracts"].Effective)
@@ -62,21 +72,59 @@ func TestEffectivePepRowsAreStoreResolvePep(t *testing.T) {
 	if got := rows["pep.pep_fee_per_contract_usd"]; got.Effective != 0.0 || got.Origin != store.SourceSaved {
 		t.Fatalf("an explicit legal 0 must read saved value: %+v", got)
 	}
-	if got := rows["pep.style_e.pep_e_ema_tf_min"]; got.Effective != 2 || !strings.Contains(got.Origin, "clamp") {
-		t.Fatalf("tf 7 must read the clamp: %+v", got)
+	// m461: style E is the PDF - the saved E / A numbers are ignored and the rows say so.
+	if got := rows["pep.style_e.pep_e_ema_tf_min"]; got.Effective != 2 || !strings.Contains(got.Origin, "locked to the PDF") {
+		t.Fatalf("tf row must read locked: %+v", got)
 	}
-	if got := rows["pep.style_e.pep_e_ema_period"]; got.Effective != 12 || got.Origin != store.SourceSaved {
-		t.Fatalf("ema period: %+v", got)
+	if got := rows["pep.style_e.pep_e_ema_period"]; got.Effective != 9 || !strings.Contains(got.Origin, "locked to the PDF") {
+		t.Fatalf("ema period must be the PDF 9, locked: %+v", got)
 	}
-	if got := rows["pep.style_a.pep_a_box_minutes"]; got.Effective != 6 || got.Origin != store.SourceSaved {
-		t.Fatalf("style A box: %+v", got)
+	if got := rows["pep.style_a.pep_a_box_minutes"]; got.Effective != 5 || !strings.Contains(got.Origin, "locked to the PDF") {
+		t.Fatalf("style A box must be the PDF 5, locked: %+v", got)
 	}
 	if got := rows["pep.pep_enabled"]; got.Effective != true || got.Origin != store.SourceSaved {
 		t.Fatalf("enabled: %+v", got)
 	}
 	// style E's numbers never move style A's rows
-	if got := rows["pep.style_a.pep_a_sl_fraction"]; got.Effective != 1.0 || got.Origin != store.SourceShippedDefault {
+	if got := rows["pep.style_a.pep_a_sl_fraction"]; got.Effective != 1.0 || !strings.Contains(got.Origin, "locked to the PDF") {
 		t.Fatalf("A sl fraction leaked: %+v", got)
+	}
+}
+
+// m461 PIN (effective lines): A and E rule rows read "locked to the PDF" and the
+// PDF value whatever is saved; Custom's rows read the saved value; contracts stay
+// a saved, editable row in every style. Mutant: drop the r.Locked branch in
+// pepRow (trader/effective_settings.go) -> the A/E legs go RED.
+func TestEffectivePepLinesLockedForAEAndEditableForCustom(t *testing.T) {
+	const edits = `"pep_contracts":4,"pep_flat_time_ct":"14:30","pep_max_box_points":80,
+	  "style_a":{"pep_a_box_minutes":9},"style_e":{"pep_e_ema_period":20},
+	  "style_custom":{"pep_c_entry_type":"breakout","pep_c_box_minutes":9,"pep_c_ema_period":20}`
+	for _, style := range []string{"A", "E"} {
+		rows := effRowsFor(t, `{"strategy_type":"ai_trading","pep":{"pep_style":"`+style+`",`+edits+`}}`, "ninjatrader", "")
+		for path, want := range map[string]any{
+			"pep.pep_flat_time_ct": "15:00", "pep.pep_max_box_points": 0.0, "pep.style_a.pep_a_box_minutes": 5, "pep.style_e.pep_e_ema_period": 9,
+		} {
+			got := rows[path]
+			if got.Effective != want || !strings.Contains(got.Origin, "locked to the PDF (style "+style+")") {
+				t.Errorf("style %s %s: %+v want %v locked", style, path, got, want)
+			}
+		}
+		if got := rows["pep.pep_contracts"]; got.Effective != 4 || got.Origin != store.SourceSaved {
+			t.Errorf("style %s: contracts must stay editable: %+v", style, got)
+		}
+		if got := rows["pep.style_custom.pep_c_box_minutes"]; !strings.Contains(got.Origin, "not used: style is "+style) {
+			t.Errorf("style %s: custom rows must say not used: %+v", style, got)
+		}
+	}
+	rows := effRowsFor(t, `{"strategy_type":"ai_trading","pep":{"pep_style":"Custom",`+edits+`}}`, "ninjatrader", "")
+	for path, want := range map[string]any{
+		"pep.pep_flat_time_ct": "14:30", "pep.pep_max_box_points": 80.0, "pep.style_custom.pep_c_box_minutes": 9,
+		"pep.style_custom.pep_c_ema_period": 20, "pep.style_custom.pep_c_entry_type": "breakout", "pep.pep_contracts": 4,
+	} {
+		got := rows[path]
+		if got.Effective != want || got.Origin != store.SourceSaved {
+			t.Errorf("Custom %s: %+v want saved %v", path, got, want)
+		}
 	}
 }
 

@@ -39,7 +39,8 @@ import (
 type PepConfig struct {
 	// Enabled is the master switch. nil / false = OFF (shipped default).
 	Enabled *bool `json:"pep_enabled,omitempty"`
-	// Style is "A" (ORB breakout, enter immediately) or "E" (EMA9 ORB, candle-close).
+	// Style is "A" (ORB breakout, enter immediately; LOCKED to the PDF), "E" (EMA9
+	// ORB, candle-close; LOCKED to the PDF) or "Custom" (every number editable).
 	// Shipped E (owner 2026-10-30 "keep default E 6").
 	Style string `json:"pep_style,omitempty"`
 	// Contracts is the contract count (shipped 6, owner 2026-10-30 "keep default E 6"; hard ceiling PepContractsCeiling).
@@ -65,8 +66,29 @@ type PepConfig struct {
 	// before it is refused as stale (shipped 2).
 	SignalMaxAgeMin *int `json:"pep_signal_max_age_min,omitempty"`
 
+	// StyleA / StyleE are the A / E per-style blocks. Since the m461 ruling
+	// (owner 2026-10-30: "A or E all follow their rule, cannot change any way")
+	// A and E are LOCKED to the PDF: ResolvePep never reads these numbers. They
+	// stay in the DB untouched (stored values are sacred) and are simply unused.
 	StyleA *PepStyleAConfig `json:"style_a,omitempty"`
 	StyleE *PepStyleEConfig `json:"style_e,omitempty"`
+	// StyleCustom is the EDITABLE style. Its box start, flat time, max trades,
+	// stop rounding and max-box cap are the root pep_* leaves above (which A / E
+	// ignore); everything else is here. Seeded from style E's PDF values.
+	StyleCustom *PepStyleCustomConfig `json:"style_custom,omitempty"`
+}
+
+// PepStyleCustomConfig is the Custom style's own numbers.
+type PepStyleCustomConfig struct {
+	EntryType    string   `json:"pep_c_entry_type,omitempty"`    // "ema_cross" (shipped, E-like) | "breakout" (A-like)
+	BoxMinutes   *int     `json:"pep_c_box_minutes,omitempty"`   // shipped 2
+	SLFraction   *float64 `json:"pep_c_sl_fraction,omitempty"`   // of the box, shipped 0.5
+	TPFraction   *float64 `json:"pep_c_tp_fraction,omitempty"`   // of the box, shipped 1.0
+	BothEdges    string   `json:"pep_c_both_edges,omitempty"`    // breakout only: no_trade (shipped) | nearest_open
+	EMAPeriod    *int     `json:"pep_c_ema_period,omitempty"`    // ema_cross only, shipped 9
+	EMATFMin     *int     `json:"pep_c_ema_tf_min,omitempty"`    // ema_cross only, shipped 2
+	SignalSource string   `json:"pep_c_signal_source,omitempty"` // ema_cross only: "ema" (shipped) | "close"
+	WarmupBars   *int     `json:"pep_c_warmup_bars,omitempty"`   // ema_cross only; 0 / absent = 3 x period
 }
 
 // PepStyleAConfig is style A's own numbers.
@@ -91,8 +113,12 @@ type PepStyleEConfig struct {
 // Shipped values and vocabulary (the ONE spelling the resolver, kernel/pep, the
 // effective rows, the boot line and the guide share).
 const (
-	PepStyleA = "A"
-	PepStyleE = "E"
+	PepStyleA      = "A"
+	PepStyleE      = "E"
+	PepStyleCustom = "Custom"
+
+	PepEntryBreakout = "breakout"
+	PepEntryEMACross = "ema_cross"
 
 	PepSourceEMA   = "ema"
 	PepSourceClose = "close"
@@ -153,8 +179,16 @@ type PepResolved struct {
 	MaxBoxPoints     float64
 	SignalMaxAgeMin  int
 
+	// Locked is true when the style is A or E: the rule leaves (box start, flat
+	// time, max trades, stop rounding, max-box cap and every A / E number) are
+	// the PDF's constants and NOTHING stored changes them. Only Custom is false.
+	Locked bool
+
 	A PepResolvedA
 	E PepResolvedE
+	// Custom is the Custom style resolved (always filled; used only when Style
+	// is Custom).
+	Custom PepResolvedCustom
 
 	// Clamps maps a leaf name to the sentence saying what was saved, what runs
 	// and why. Empty when every saved value took effect as saved.
@@ -180,6 +214,31 @@ type PepResolvedE struct {
 	WarmupBars   int
 }
 
+// PepResolvedCustom is the Custom style resolved.
+type PepResolvedCustom struct {
+	EntryType    string
+	BoxMinutes   int
+	SLFraction   float64
+	TPFraction   float64
+	BothEdges    string
+	EMAPeriod    int
+	EMATFMin     int
+	SignalSource string
+	WarmupBars   int
+}
+
+// PepLockedLeaves are the leaves the A / E rules own: while the style is A or E
+// they run the PDF's value whatever is stored, and their effective rows read
+// "locked to the PDF". Contracts, tick, fee, signal age and the master switch
+// are NOT rules and stay editable in every style.
+var PepLockedLeaves = map[string]bool{
+	"pep_box_start_ct": true, "pep_flat_time_ct": true, "pep_sl_rounding": true,
+	"pep_max_trades_per_day": true, "pep_max_box_points": true,
+	"pep_a_box_minutes": true, "pep_a_sl_fraction": true, "pep_a_tp_fraction": true, "pep_a_both_edges": true,
+	"pep_e_box_minutes": true, "pep_e_sl_fraction": true, "pep_e_tp_fraction": true,
+	"pep_e_ema_period": true, "pep_e_ema_tf_min": true, "pep_e_signal_source": true, "pep_e_warmup_bars": true,
+}
+
 // PepEnabled is the master switch. nil config, nil block or nil flag = OFF.
 func (c *StrategyConfig) PepEnabled() bool {
 	return c != nil && c.Pep != nil && c.Pep.Enabled != nil && *c.Pep.Enabled
@@ -196,17 +255,14 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 	if p == nil {
 		p = &PepConfig{}
 	}
-	sa, se := p.StyleA, p.StyleE
-	if sa == nil {
-		sa = &PepStyleAConfig{}
-	}
-	if se == nil {
-		se = &PepStyleEConfig{}
+	sc := p.StyleCustom
+	if sc == nil {
+		sc = &PepStyleCustomConfig{}
 	}
 	r := PepResolved{Clamps: map[string]string{}}
 	r.Enabled = p.Enabled != nil && *p.Enabled
 
-	r.Style = pepVocab(r.Clamps, "pep_style", p.Style, strings.ToUpper, []string{PepStyleA, PepStyleE}, PepStyleDefault)
+	r.Style = pepVocab(r.Clamps, "pep_style", p.Style, pepStyleFold, []string{PepStyleA, PepStyleE, PepStyleCustom}, PepStyleDefault)
 	r.Contracts = pepInt(r.Clamps, "pep_contracts", p.Contracts, PepContractsDefault, 1, PepContractsCeiling)
 	r.SLRounding = pepVocab(r.Clamps, "pep_sl_rounding", p.SLRounding, strings.ToLower, []string{PepSLRoundOutward, PepSLRoundNearest}, PepSLRoundOutward)
 	r.TickSize = pepPosFloat(r.Clamps, "pep_tick_size", p.TickSize, PepTickDefault, 1000)
@@ -230,23 +286,49 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 		r.FlatTimeCT, r.FlatMin = PepFlatTimeDefault, 15*60
 	}
 
-	r.A.BoxMinutes = pepInt(r.Clamps, "pep_a_box_minutes", sa.BoxMinutes, PepABoxMinutesDefault, 1, PepBoxMinutesCeiling)
-	r.A.SLFraction = pepPosFloat(r.Clamps, "pep_a_sl_fraction", sa.SLFraction, PepASLFractionDefault, PepFractionCeiling)
-	r.A.TPFraction = pepPosFloat(r.Clamps, "pep_a_tp_fraction", sa.TPFraction, PepATPFractionDefault, PepFractionCeiling)
-	r.A.BothEdges = pepVocab(r.Clamps, "pep_a_both_edges", sa.BothEdges, strings.ToLower, []string{PepBothEdgesNoTrade, PepBothEdgesNearestOpen}, PepBothEdgesNoTrade)
-
-	r.E.BoxMinutes = pepInt(r.Clamps, "pep_e_box_minutes", se.BoxMinutes, PepEBoxMinutesDefault, 1, PepBoxMinutesCeiling)
-	r.E.SLFraction = pepPosFloat(r.Clamps, "pep_e_sl_fraction", se.SLFraction, PepESLFractionDefault, PepFractionCeiling)
-	r.E.TPFraction = pepPosFloat(r.Clamps, "pep_e_tp_fraction", se.TPFraction, PepETPFractionDefault, PepFractionCeiling)
-	r.E.EMAPeriod = pepInt(r.Clamps, "pep_e_ema_period", se.EMAPeriod, PepEEMAPeriodDefault, PepEMAPeriodFloor, PepEMAPeriodCeiling)
-	r.E.EMATFMin = pepInt(r.Clamps, "pep_e_ema_tf_min", se.EMATFMin, PepEEMATFDefault, 1, 60)
-	if !pepValidTF(r.E.EMATFMin) {
-		r.Clamps["pep_e_ema_tf_min"] = fmt.Sprintf("%d min does not divide an hour (1,2,3,4,5,6,10,12,15,20,30,60): the shipped %d runs instead", r.E.EMATFMin, PepEEMATFDefault)
-		r.E.EMATFMin = PepEEMATFDefault
+	// Custom: every number editable, seeded from style E's PDF values.
+	r.Custom.EntryType = pepVocab(r.Clamps, "pep_c_entry_type", sc.EntryType, strings.ToLower, []string{PepEntryEMACross, PepEntryBreakout}, PepEntryEMACross)
+	r.Custom.BoxMinutes = pepInt(r.Clamps, "pep_c_box_minutes", sc.BoxMinutes, PepEBoxMinutesDefault, 1, PepBoxMinutesCeiling)
+	r.Custom.SLFraction = pepPosFloat(r.Clamps, "pep_c_sl_fraction", sc.SLFraction, PepESLFractionDefault, PepFractionCeiling)
+	r.Custom.TPFraction = pepPosFloat(r.Clamps, "pep_c_tp_fraction", sc.TPFraction, PepETPFractionDefault, PepFractionCeiling)
+	r.Custom.BothEdges = pepVocab(r.Clamps, "pep_c_both_edges", sc.BothEdges, strings.ToLower, []string{PepBothEdgesNoTrade, PepBothEdgesNearestOpen}, PepBothEdgesNoTrade)
+	r.Custom.EMAPeriod = pepInt(r.Clamps, "pep_c_ema_period", sc.EMAPeriod, PepEEMAPeriodDefault, PepEMAPeriodFloor, PepEMAPeriodCeiling)
+	r.Custom.EMATFMin = pepInt(r.Clamps, "pep_c_ema_tf_min", sc.EMATFMin, PepEEMATFDefault, 1, 60)
+	if !pepValidTF(r.Custom.EMATFMin) {
+		r.Clamps["pep_c_ema_tf_min"] = fmt.Sprintf("%d min does not divide an hour (1,2,3,4,5,6,10,12,15,20,30,60): the shipped %d runs instead", r.Custom.EMATFMin, PepEEMATFDefault)
+		r.Custom.EMATFMin = PepEEMATFDefault
 	}
-	r.E.SignalSource = pepVocab(r.Clamps, "pep_e_signal_source", se.SignalSource, strings.ToLower, []string{PepSourceEMA, PepSourceClose}, PepSourceEMA)
-	r.E.WarmupBars = pepInt(r.Clamps, "pep_e_warmup_bars", se.WarmupBars, 0, 0, PepWarmupCeiling)
+	r.Custom.SignalSource = pepVocab(r.Clamps, "pep_c_signal_source", sc.SignalSource, strings.ToLower, []string{PepSourceEMA, PepSourceClose}, PepSourceEMA)
+	r.Custom.WarmupBars = pepInt(r.Clamps, "pep_c_warmup_bars", sc.WarmupBars, 0, 0, PepWarmupCeiling)
+
+	// A and E are the PDF, always: the stored style_a / style_e numbers are NEVER
+	// read (owner ruling 2026-10-30). This is the ONE place that lock lives; the
+	// evaluator's Config (kernel/pep.FromSettings) and the effective rows read it.
+	r.A = PepResolvedA{BoxMinutes: PepABoxMinutesDefault, SLFraction: PepASLFractionDefault, TPFraction: PepATPFractionDefault, BothEdges: PepBothEdgesNoTrade}
+	r.E = PepResolvedE{BoxMinutes: PepEBoxMinutesDefault, SLFraction: PepESLFractionDefault, TPFraction: PepETPFractionDefault,
+		EMAPeriod: PepEEMAPeriodDefault, EMATFMin: PepEEMATFDefault, SignalSource: PepSourceEMA, WarmupBars: 0}
+	if r.Style != PepStyleCustom {
+		r.Locked = true
+		// The rule leaves run the PDF's value, so a stored one's clamp note would
+		// describe a number that never ran: drop it.
+		for leaf := range PepLockedLeaves {
+			delete(r.Clamps, leaf)
+		}
+		r.BoxStartCT, r.BoxStartMin = PepBoxStartDefault, 8*60+30
+		r.FlatTimeCT, r.FlatMin = PepFlatTimeDefault, 15*60
+		r.SLRounding = PepSLRoundOutward
+		r.MaxTradesPerDay = PepMaxTradesDefault
+		r.MaxBoxPoints = 0
+	}
 	return r
+}
+
+// pepStyleFold canonicalises the style: "A"/"E" upper-case, "custom" -> "Custom".
+func pepStyleFold(v string) string {
+	if strings.EqualFold(v, PepStyleCustom) {
+		return PepStyleCustom
+	}
+	return strings.ToUpper(v)
 }
 
 func pepValidTF(tf int) bool {

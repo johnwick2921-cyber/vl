@@ -101,8 +101,8 @@ func (at *AutoTrader) pepIntegrityOpenMinAt(now time.Time) int {
 	ct := now.In(loc)
 	boxStart := time.Date(ct.Year(), ct.Month(), ct.Day(), cfg.BoxStartMin/60, cfg.BoxStartMin%60, 0, 0, loc)
 	warm := 0
-	if cfg.Style == "E" {
-		warm = cfg.WarmupCandles() * cfg.E.EMATFMin
+	if !cfg.IsBreakout() {
+		warm = cfg.WarmupCandles() * cfg.EMA().EMATFMin
 	}
 	from := boxStart.Add(-time.Duration(warm+pepIntegritySlackMin) * time.Minute)
 	n := int(now.Sub(from) / time.Minute)
