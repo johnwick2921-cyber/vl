@@ -1,0 +1,17 @@
+{
+  "time": "2026-10-31T21:32:01.405181+00:00",
+  "test_exit": 0,
+  "scope": "16 synthetic offline tests; NOT historical results or full execution parity",
+  "files": {
+    "engine.py": "e7cf8e3707b25e29b22a83ea6cd9ad9723a4b0aa0c950ea85e681d9ac4bcf9ed",
+    "test_engine.py": "107f6bb28f1735d87ec6cf3bf6ba34025f1c5366908972ff6691e62dedfc7eba",
+    "SPEC.md": "1caf93a629192c23954da2278c06974d6535c6d87fd0622565cf95cdcd010e3f"
+  },
+  "remaining": [
+    "owner approval for nonzero data quote",
+    "paid overnight retrieval and completeness audit",
+    "raw data adapter and ex-ante contract selection",
+    "full historical run and independent ledger verification",
+    "report generation"
+  ]
+}
