@@ -135,13 +135,13 @@ func TestResolvePepShippedDefaults(t *testing.T) {
 func TestResolvePepSavedValuesTakeEffect(t *testing.T) {
 	c := &StrategyConfig{Pep: &PepConfig{
 		Enabled: boolp(true), Style: " custom ", Contracts: IntPtr(6), BoxStartCT: "9:05", FlatTimeCT: "14:30",
-		FeePerContractRT: f64p(0), MaxBoxPoints: f64p(150), SLRounding: "Nearest", MaxTradesPerDay: IntPtr(3),
+		FeePerContractRT: f64p(0), MaxBoxPoints: f64p(150), SLRounding: "Nearest", MaxTradesPerDay: IntPtr(1), // breakout runs 1; ema_cross reading 3 is TestResolvePepCustomBreakoutRunsOneTradeAndSaysWhy
 		StyleCustom: &PepStyleCustomConfig{EntryType: "Breakout", BoxMinutes: IntPtr(7), SLFraction: f64p(0.6), TPFraction: f64p(1.4), BothEdges: "Nearest_Open",
 			SignalSource: "CLOSE", EMAPeriod: IntPtr(12), EMATFMin: IntPtr(3), WarmupBars: IntPtr(20)},
 	}}
 	r := ResolvePep(c)
 	if !r.Enabled || r.Style != "Custom" || r.Locked || r.Contracts != 6 || r.BoxStartCT != "09:05" || r.BoxStartMin != 545 || r.FlatMin != 870 ||
-		r.FeePerContractRT != 0 || r.MaxBoxPoints != 150 || r.SLRounding != "nearest" || r.MaxTradesPerDay != 3 {
+		r.FeePerContractRT != 0 || r.MaxBoxPoints != 150 || r.SLRounding != "nearest" || r.MaxTradesPerDay != 1 {
 		t.Fatalf("%+v", r)
 	}
 	want := PepResolvedCustom{"breakout", 7, 0.6, 1.4, "nearest_open", 12, 3, "close", 20}
@@ -359,5 +359,21 @@ func TestGuardStrategyModesIsCaseInsensitiveOnTheKey(t *testing.T) {
 	var me *ModeConflictError
 	if err := guardStrategyModes(raw); !errors.As(err, &me) || me.Code != PepConflictMentor {
 		t.Fatalf("an upper-case PEP_ENABLED key with mentor mode must be refused by name, got %v", err)
+	}
+}
+
+// Recheck 2026-10-31 D1: Custom breakout takes the first break of the day only
+// (kernel/pep evalA), so a saved trades/day above 1 runs 1 and says so; the
+// ema_cross entry keeps reading the saved number.
+func TestResolvePepCustomBreakoutRunsOneTradeAndSaysWhy(t *testing.T) {
+	c := &StrategyConfig{Pep: &PepConfig{Enabled: boolp(true), Style: "Custom", MaxTradesPerDay: IntPtr(3),
+		StyleCustom: &PepStyleCustomConfig{EntryType: "breakout"}}}
+	r := ResolvePep(c)
+	if r.MaxTradesPerDay != 1 || !strings.Contains(r.Clamps["pep_max_trades_per_day"], "first break") {
+		t.Fatalf("Custom breakout with 3 saved must run 1 with a note, got %d %q", r.MaxTradesPerDay, r.Clamps["pep_max_trades_per_day"])
+	}
+	c.Pep.StyleCustom.EntryType = "ema_cross"
+	if r := ResolvePep(c); r.MaxTradesPerDay != 3 || r.Clamps["pep_max_trades_per_day"] != "" {
+		t.Fatalf("Custom ema_cross must read the saved 3 with no note, got %d %q", r.MaxTradesPerDay, r.Clamps["pep_max_trades_per_day"])
 	}
 }
