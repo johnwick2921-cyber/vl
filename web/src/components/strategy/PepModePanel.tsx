@@ -142,7 +142,7 @@ const styleC = (
 })
 
 const isBreakout = (b: PepConfig) =>
-  b.style_custom?.pep_c_entry_type === 'breakout'
+  (b.style_custom?.pep_c_entry_type ?? '').trim().toLowerCase() === 'breakout'
 const isCross = (b: PepConfig) => !isBreakout(b)
 
 export const PEP_FIELDS: PepField[] = [
@@ -169,7 +169,7 @@ export const PEP_FIELDS: PepField[] = [
   rule('pep_flat_time_ct', 'time', 'fFlatTime', 'fFlatTimeHelp', {
     fallback: D.flatTimeCT,
   }),
-  shared('pep_tick_size', 'float', 'fTick', 'fTickHelp', {
+  rule('pep_tick_size', 'float', 'fTick', 'fTickHelp', {
     ...R.tickSize,
     step: 0.25,
     fallback: D.tickSize,
@@ -195,7 +195,7 @@ export const PEP_FIELDS: PepField[] = [
     step: 1,
     fallback: D.maxBoxPoints,
   }),
-  shared('pep_signal_max_age_min', 'int', 'fSignalAge', 'fSignalAgeHelp', {
+  rule('pep_signal_max_age_min', 'int', 'fSignalAge', 'fSignalAgeHelp', {
     ...R.signalMaxAgeMin,
     fallback: D.signalMaxAgeMin,
   }),
@@ -256,6 +256,9 @@ export const PEP_FIELDS: PepField[] = [
   }),
 
   styleC('pep_c_entry_type', 'enum', 'fEntryType', 'fEntryTypeHelp', {
+    get: (b) =>
+      (b.style_custom?.pep_c_entry_type ?? '').trim().toLowerCase() ||
+      undefined,
     options: [
       { value: 'ema_cross', label: 'optEmaCross' },
       { value: 'breakout', label: 'optBreakout' },

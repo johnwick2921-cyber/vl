@@ -229,11 +229,13 @@ type PepResolvedCustom struct {
 
 // PepLockedLeaves are the leaves the A / E rules own: while the style is A or E
 // they run the PDF's value whatever is stored, and their effective rows read
-// "locked to the PDF". Contracts, tick, fee, signal age and the master switch
-// are NOT rules and stay editable in every style.
+// "locked to the PDF". Contracts and the reporting-only fee are the only
+// settings that stay editable under A / E (the tick snaps every price and the
+// signal age gates every entry, so both are rules).
 var PepLockedLeaves = map[string]bool{
 	"pep_box_start_ct": true, "pep_flat_time_ct": true, "pep_sl_rounding": true,
 	"pep_max_trades_per_day": true, "pep_max_box_points": true,
+	"pep_tick_size": true, "pep_signal_max_age_min": true,
 	"pep_a_box_minutes": true, "pep_a_sl_fraction": true, "pep_a_tp_fraction": true, "pep_a_both_edges": true,
 	"pep_e_box_minutes": true, "pep_e_sl_fraction": true, "pep_e_tp_fraction": true,
 	"pep_e_ema_period": true, "pep_e_ema_tf_min": true, "pep_e_signal_source": true, "pep_e_warmup_bars": true,
@@ -319,6 +321,8 @@ func ResolvePep(c *StrategyConfig) PepResolved {
 		r.SLRounding = PepSLRoundOutward
 		r.MaxTradesPerDay = PepMaxTradesDefault
 		r.MaxBoxPoints = 0
+		r.TickSize = PepTickDefault
+		r.SignalMaxAgeMin = PepSignalMaxAgeDefault
 	}
 	return r
 }

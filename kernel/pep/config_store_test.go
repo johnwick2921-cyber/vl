@@ -137,3 +137,30 @@ func TestSLRoundingSetting(t *testing.T) {
 	near(t, "outward -> 18.25", out.StopDist, 18.25)
 	near(t, "nearest -> 18.0", nr.StopDist, 18.0)
 }
+
+// Reviewer P2 (m461): a stored tick of 1.0 under style E must not move the PDF
+// stop: a 40.25 box gives SL 20.25 (0.5 x box, outward on the 0.25 tick), not 21;
+// the stored signal age is ignored too. Custom reads both. Production path:
+// JSON -> StrategyConfig -> ConfigOf -> distances (the function buildEntry uses).
+// Mutant: drop pep_tick_size from store.PepLockedLeaves / the TickSize reset -> RED.
+func TestStoredTickAndSignalAgeIgnoredUnderAE(t *testing.T) {
+	for _, style := range []string{"A", "E"} {
+		var sc store.StrategyConfig
+		if err := json.Unmarshal([]byte(`{"pep":{"pep_style":"`+style+`","pep_tick_size":1.0,"pep_signal_max_age_min":9}}`), &sc); err != nil {
+			t.Fatal(err)
+		}
+		c := ConfigOf(&sc)
+		if c.TickSize != 0.25 || c.SignalMaxAgeMin != 2 {
+			t.Fatalf("style %s: tick %v age %d", style, c.TickSize, c.SignalMaxAgeMin)
+		}
+		if style == "E" {
+			sl, _ := distances(40.25, c.SLFraction(), c.TPFraction(), c.TickSize, c.SLRounding)
+			near(t, "E stop on a 40.25 box", sl, 20.25)
+		}
+	}
+	var sc store.StrategyConfig
+	_ = json.Unmarshal([]byte(`{"pep":{"pep_style":"Custom","pep_tick_size":1.0,"pep_signal_max_age_min":9}}`), &sc)
+	if c := ConfigOf(&sc); c.TickSize != 1.0 || c.SignalMaxAgeMin != 9 {
+		t.Fatalf("Custom must read them: %+v", c)
+	}
+}

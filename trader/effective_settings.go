@@ -1052,6 +1052,20 @@ func buildEffectiveResolvers() map[string]effResolver {
 			if strings.HasPrefix(leaf, "pep_c_") && r.Style != store.PepStyleCustom {
 				return effResult{value: v, origin: "not used: style is " + r.Style + " (Custom only)"}
 			}
+			// m461 P3: a style's own leaves are read only while that style runs.
+			if r.Style == store.PepStyleCustom && (strings.HasPrefix(leaf, "pep_a_") || strings.HasPrefix(leaf, "pep_e_")) {
+				return effResult{value: v, origin: "not used: style is Custom"}
+			}
+			// ... and inside Custom, the leaves the entry type does not use.
+			if r.Style == store.PepStyleCustom && strings.HasPrefix(leaf, "pep_c_") {
+				breakout := r.Custom.EntryType == store.PepEntryBreakout
+				switch {
+				case breakout && (leaf == "pep_c_ema_period" || leaf == "pep_c_ema_tf_min" || leaf == "pep_c_signal_source" || leaf == "pep_c_warmup_bars"):
+					return effResult{value: v, origin: "not used: entry type is breakout"}
+				case !breakout && leaf == "pep_c_both_edges":
+					return effResult{value: v, origin: "not used: entry type is ema_cross"}
+				}
+			}
 			if x.st.present {
 				return effResult{value: v, origin: store.SourceSaved}
 			}

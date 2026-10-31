@@ -119,7 +119,7 @@ func TestEffectivePepLinesLockedForAEAndEditableForCustom(t *testing.T) {
 	rows := effRowsFor(t, `{"strategy_type":"ai_trading","pep":{"pep_style":"Custom",`+edits+`}}`, "ninjatrader", "")
 	for path, want := range map[string]any{
 		"pep.pep_flat_time_ct": "14:30", "pep.pep_max_box_points": 80.0, "pep.style_custom.pep_c_box_minutes": 9,
-		"pep.style_custom.pep_c_ema_period": 20, "pep.style_custom.pep_c_entry_type": "breakout", "pep.pep_contracts": 4,
+		"pep.style_custom.pep_c_entry_type": "breakout", "pep.pep_contracts": 4,
 	} {
 		got := rows[path]
 		if got.Effective != want || got.Origin != store.SourceSaved {
@@ -187,5 +187,43 @@ func TestEffectiveRejectedBoxFlatPairIsBlamedOnBothRows(t *testing.T) {
 	}
 	if !strings.Contains(bs.Origin, "16:00") {
 		t.Errorf("the box-start row must name the rejected 16:00: %+v", bs)
+	}
+}
+
+// Reviewer P3 (a)/(b) + P2: under Custom the style_a / style_e rows say "not used",
+// and inside Custom the leaves the entry type does not read say so; tick and
+// signal age read "locked to the PDF" under A / E.
+// Mutant: drop the Custom branches in pepRow -> RED.
+func TestEffectivePepNotUsedLinesAndLockedTickAge(t *testing.T) {
+	rows := effRowsFor(t, `{"pep":{"pep_style":"Custom","pep_tick_size":0.5,"style_a":{"pep_a_box_minutes":9},"style_custom":{"pep_c_entry_type":"breakout"}}}`, "ninjatrader", "")
+	if got := rows["pep.style_a.pep_a_box_minutes"]; !strings.HasPrefix(got.Origin, "not used: style is Custom") {
+		t.Errorf("A row under Custom: %+v", got)
+	}
+	if got := rows["pep.style_e.pep_e_ema_period"]; !strings.HasPrefix(got.Origin, "not used: style is Custom") {
+		t.Errorf("E row under Custom: %+v", got)
+	}
+	if got := rows["pep.style_custom.pep_c_ema_period"]; !strings.HasPrefix(got.Origin, "not used: entry type is breakout") {
+		t.Errorf("EMA leaf under breakout: %+v", got)
+	}
+	if got := rows["pep.style_custom.pep_c_both_edges"]; strings.HasPrefix(got.Origin, "not used") {
+		t.Errorf("both-edges is used under breakout: %+v", got)
+	}
+	if got := rows["pep.pep_tick_size"]; got.Effective != 0.5 || got.Origin != store.SourceSaved {
+		t.Errorf("Custom tick: %+v", got)
+	}
+	cross := effRowsFor(t, `{"pep":{"pep_style":"Custom"}}`, "ninjatrader", "")
+	if got := cross["pep.style_custom.pep_c_both_edges"]; !strings.HasPrefix(got.Origin, "not used: entry type is ema_cross") {
+		t.Errorf("both-edges under ema_cross: %+v", got)
+	}
+	for _, st := range []string{"A", "E"} {
+		r := effRowsFor(t, `{"pep":{"pep_style":"`+st+`","pep_tick_size":1,"pep_signal_max_age_min":9}}`, "ninjatrader", "")
+		for _, id := range []string{"pep.pep_tick_size", "pep.pep_signal_max_age_min"} {
+			if !strings.Contains(r[id].Origin, "locked to the PDF") {
+				t.Errorf("%s %s: %+v", st, id, r[id])
+			}
+		}
+		if r["pep.pep_tick_size"].Effective != 0.25 || r["pep.pep_signal_max_age_min"].Effective != 2 {
+			t.Errorf("%s: %+v %+v", st, r["pep.pep_tick_size"], r["pep.pep_signal_max_age_min"])
+		}
 	}
 }

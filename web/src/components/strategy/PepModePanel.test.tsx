@@ -112,12 +112,10 @@ describe('PepModePanel controls', () => {
         expect(screen.getByTestId('pep-pep_e_ema_period')).toHaveValue(9)
         expect(screen.getByTestId('pep-pep_e_box_minutes')).toHaveValue(2)
       }
-      // contracts / tick / fee / signal age (the shared block) stay editable
+      // contracts / fee (the shared block) stay editable under A / E
       for (const id of [
         'pep-pep_contracts',
-        'pep-pep_tick_size',
         'pep-pep_fee_per_contract_usd',
-        'pep-pep_signal_max_age_min',
         'pep-pep_style',
       ])
         expect(screen.getByTestId(id)).toBeEnabled()
@@ -191,6 +189,45 @@ describe('PepModePanel controls', () => {
     ).toBe('breakout')
   })
 
+  // P3 (c): the resolver case-folds the entry type, so must the UI.
+  // Mutant: drop .toLowerCase() from isBreakout -> RED.
+  it('a stored entry type "Breakout" (any case) shows the breakout rows', () => {
+    setup({
+      pep_style: 'Custom',
+      style_custom: { pep_c_entry_type: ' Breakout ' },
+    })
+    expect(screen.getByTestId('pep-pep_c_both_edges')).toBeEnabled()
+    expect(screen.getByTestId('pep-pep_c_entry_type')).toHaveValue('breakout')
+    expect(screen.queryByTestId('pep-pep_c_ema_period')).toBeNull()
+  })
+
+  // Reviewer P2 (m461): the tick and the signal age are RULES under A / E.
+  it.each(['A', 'E'] as const)(
+    'style %s: tick and signal age are read-only PDF values',
+    (style) => {
+      setup({ pep_style: style, pep_tick_size: 1, pep_signal_max_age_min: 9 })
+      for (const [id, v] of [
+        ['pep-pep_tick_size', 0.25],
+        ['pep-pep_signal_max_age_min', 2],
+      ] as const) {
+        expect(screen.getByTestId(id)).toBeDisabled()
+        expect(screen.getByTestId(id)).toHaveValue(v)
+      }
+      expect(screen.getByTestId('pep-pep_contracts')).toBeEnabled()
+      expect(screen.getByTestId('pep-pep_fee_per_contract_usd')).toBeEnabled()
+    }
+  )
+  it('Custom: tick and signal age are editable and show the saved values', () => {
+    setup({
+      pep_style: 'Custom',
+      pep_tick_size: 0.5,
+      pep_signal_max_age_min: 5,
+    })
+    expect(screen.getByTestId('pep-pep_tick_size')).toBeEnabled()
+    expect(screen.getByTestId('pep-pep_tick_size')).toHaveValue(0.5)
+    expect(screen.getByTestId('pep-pep_signal_max_age_min')).toHaveValue(5)
+  })
+
   it('Custom breakout shows both-edges and hides the EMA rows', () => {
     setup({
       pep_style: 'Custom',
@@ -242,7 +279,7 @@ describe('PepModePanel controls', () => {
   // Mutant: `const block = config ?? {}` (the stored partial block) -> RED.
   it('a stored PARTIAL block is completed with the shipped defaults in what is sent', () => {
     const { onChange } = setup({ pep_contracts: 3, style_a: {} })
-    commitNumber('pep-pep_tick_size', '0.5')
+    commitNumber('pep-pep_contracts', '5')
     const sent = onChange.mock.calls[0][0] as PepConfig
     expect(sent.pep_flat_time_ct).toBe('15:00')
     expect(sent.style_custom?.pep_c_ema_period).toBe(9)

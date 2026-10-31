@@ -112,9 +112,10 @@ const PEP_KNOBS_RAW: KnobSpec[] = [
   knob({
     label: 'Tick size',
     settingId: 'pep.pep_tick_size',
-    where: SHARED,
+    where: RULES,
     what: 'The instrument tick that every pep price is rounded to.',
-    trader: 'MNQ moves in 0.25 points ($0.50 per contract).',
+    trader:
+      'Style A and E: locked at 0.25 (it snaps the box, the stop and the target, so it is a rule). Only the Custom style reads the saved value. MNQ moves in 0.25 points ($0.50 per contract).',
     consumer: CONSUMER,
     range:
       'greater than 0, at most 1000 (the Studio box takes 0.01 or more; the server itself accepts any value above 0; zero or negative runs the shipped value)',
@@ -184,10 +185,10 @@ const PEP_KNOBS_RAW: KnobSpec[] = [
   knob({
     label: 'Signal max age (min)',
     settingId: 'pep.pep_signal_max_age_min',
-    where: SHARED,
+    where: RULES,
     what: 'How old a break or cross, and the newest closed 1m bar, may be before it is refused as stale.',
     trader:
-      'A break the bot did not see in time is never entered late, and the day is not shifted onto a later signal (pep_stale_signal / pep_bars_stale).',
+      'Style A and E: locked at 2. Only the Custom style reads the saved value. A break the bot did not see in time is never entered late, and the day is not shifted onto a later signal (pep_stale_signal / pep_bars_stale).',
     consumer: CONSUMER,
     range: '1 to 30 minutes',
     systemDefault: '2',
@@ -570,7 +571,7 @@ export const pep: GuideSection = {
     },
     {
       kind: 'p',
-      text: 'The style-E box is two minutes, not five. The PDF’s own style-E ledger rows equal the first two minutes’ range: on 2025-10-20 the E target is 73.0 points, which is the high-low of the 08:30 and 08:31 bars, while the style-A box that day is 86.75. Styles A and E are LOCKED to these PDF rules (owner ruling 2026-10-30: they follow their rule and cannot be changed): the bot ignores any number saved for them, and the Studio shows them read-only. The A and E rules have no box cap, one trade a day and a 15:00 CT flat. Only Contracts (and the tick, the fee and the stale-signal age, which are not rules) stay editable in every style. For any different number, use the Custom style.',
+      text: 'The style-E box is two minutes, not five. The PDF’s own style-E ledger rows equal the first two minutes’ range: on 2025-10-20 the E target is 73.0 points, which is the high-low of the 08:30 and 08:31 bars, while the style-A box that day is 86.75. Styles A and E are LOCKED to these PDF rules (owner ruling 2026-10-30: they follow their rule and cannot be changed): the bot ignores any number saved for them, and the Studio shows them read-only. The A and E rules have no box cap, one trade a day and a 15:00 CT flat. Only Contracts (and the reporting-only fee) stay editable under A and E; the tick and the stale-signal age are rules too and are locked at 0.25 and 2. For any different number, use the Custom style.',
     },
     { kind: 'h', text: 'The Custom style (the editable one)' },
     {
@@ -664,7 +665,7 @@ export const pep: GuideSection = {
     { kind: 'h', text: 'Where to set it' },
     {
       kind: 'p',
-      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared block (the style picker A / E / Custom, Contracts, tick, fee, stale-signal age), then the “Style rules” of the chosen style. Style A and E show their PDF rules READ-ONLY with a “locked to the PDF” badge and note; only Custom shows editable inputs. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E|Custom, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open, while the flat is closing it, and after the flat time. A day with no evaluation yet (a weekend, a holiday, before the first bar) shows no box, no refusal and “no evaluation yet”, never an earlier day’s; the card’s header then reads “last ran Thu 2026-10-29 15:59:00 CT” (the day it really ran), never a bare “as of” time that would look like today; on a style E trader the waiting state reads “waiting for an EMA cross”, on style A “waiting for a break”. A chart line from a stale read carries the stale mark in your language.',
+      text: 'Strategy Studio, futures strategies only. (1) Risk Control accordion → “Trading mode”: AI planner, Mentor or Pep. Choosing one turns the others off in the same write, and Pep and Mentor ask first. (2) Pep mode accordion: the shared block (the style picker A / E / Custom, Contracts and the reporting-only fee), then the “Style rules” of the chosen style. Style A and E show their PDF rules READ-ONLY with a “locked to the PDF” badge and note; only Custom shows editable inputs. Every field shows a concrete value (never “blank = default”) and a grey “eff” line under it: the value the bot RUNS, from the SAVED strategy. Every save sends the whole pep block, so a stale stored number can never survive an edit. Pep is a futures mode and is hidden for a crypto strategy. With Pep ON, the Day Plan block shows a warning and will not turn the plan on (it can always be turned off); the server refuses the combination either way. On the dashboard a mode chip (AI / Mentor / Pep A|E|Custom, or “Mode conflict” if mentor and pep were both saved ON) sits beside the strategy name, the “Pep — what trades” card shows the box, the signal state, trades today, stop/target and the countdown to the flat time, and the box is drawn on the chart once the server names the instrument it reads. The box stays on the card and the chart for the rest of the day, after the trade is taken, while the position is open, while the flat is closing it, and after the flat time. A day with no evaluation yet (a weekend, a holiday, before the first bar) shows no box, no refusal and “no evaluation yet”, never an earlier day’s; the card’s header then reads “last ran Thu 2026-10-29 15:59:00 CT” (the day it really ran), never a bare “as of” time that would look like today; on a style E trader the waiting state reads “waiting for an EMA cross”, on style A “waiting for a break”, and a Custom trader follows its entry type (ema_cross waits for an EMA cross, breakout for a break). A chart line from a stale read carries the stale mark in your language.',
     },
     { kind: 'h', text: 'Every number is a setting' },
     {

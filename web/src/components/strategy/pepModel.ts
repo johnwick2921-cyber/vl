@@ -62,7 +62,7 @@ export const PEP_DEFAULTS = {
  *  2026-10-30: "A or E all follow their rule, cannot change any way"). The
  *  server's resolver (store.ResolvePep) enforces them whatever is stored; the
  *  Studio shows them READ-ONLY. Only a path listed here is a locked rule.
- *  Contracts, tick, fee and signal age are NOT rules and stay editable. */
+ *  Only Contracts (and the reporting-only fee) stay editable under A / E. */
 const D0 = PEP_DEFAULTS
 const PDF_RULE: Record<string, number | string> = {
   'pep.pep_box_start_ct': D0.boxStartCT,
@@ -70,6 +70,8 @@ const PDF_RULE: Record<string, number | string> = {
   'pep.pep_sl_rounding': D0.slRounding,
   'pep.pep_max_trades_per_day': D0.maxTradesPerDay,
   'pep.pep_max_box_points': 0, // the A / E rules have no box cap
+  'pep.pep_tick_size': D0.tickSize,
+  'pep.pep_signal_max_age_min': D0.signalMaxAgeMin,
 }
 export const PEP_LOCKED: Record<'A' | 'E', Record<string, number | string>> = {
   A: {

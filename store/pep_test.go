@@ -173,9 +173,10 @@ func TestResolvePepAAndEIgnoreStoredNumbers(t *testing.T) {
 		if r.A != (PepResolvedA{5, 1, 1, "no_trade"}) || r.E != (PepResolvedE{2, 0.5, 1, 9, 2, "ema", 0}) {
 			t.Fatalf("style %q: A %+v E %+v", style, r.A, r.E)
 		}
-		// contracts, tick and the stale-signal guard are NOT rules: still editable.
-		if r.Contracts != 4 || r.TickSize != 0.5 || r.SignalMaxAgeMin != 5 {
-			t.Fatalf("style %q: contracts/tick/age must stay editable: %+v", style, r)
+		// contracts are the one editable number; the tick and the stale-signal age
+		// are rules (reviewer P2): the PDF's 0.25 / 2 run whatever is stored.
+		if r.Contracts != 4 || r.TickSize != 0.25 || r.SignalMaxAgeMin != 2 {
+			t.Fatalf("style %q: contracts editable, tick/age locked: %+v", style, r)
 		}
 		if len(r.Clamps) != 0 {
 			t.Fatalf("style %q: a clamp note for a number that never ran: %v", style, r.Clamps)
