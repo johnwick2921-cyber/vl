@@ -35,12 +35,13 @@ import (
 // mentor's own signal bar — could not restart it (with-trend colour), so the
 // worked buy at 29,396.25 never armed.
 //
-// The bot's numbers (default knobs, STATED): entry = the signal high +
-// PHLEntryBufferPts (default 1.00 → 29,396.75; the course draws +0.50 →
-// 29,396.25, pinned below with the buffer at 0.50); stop = the signal LOW with
-// no buffer (29,386.50; the course ray sits 0.50 under it at 29,386.00 — phl.go
-// has no stop buffer); target = the old high 29,433.25 − PHLTargetShyPts 5 =
-// 29,428.25 (the mentor drew 29,425.75, "gần đỉnh cũ").
+// The bot's numbers (default knobs, STATED; release #59 fix round —
+// mentor-exact): entry = the signal high + PHLEntryBufferPts 0.50 = 29,396.25
+// (the course ray); stop = the signal low − PHLStopBufferPts 0.50 = 29,386.00
+// (the course ray) [D2.2-R10 p1 @04:14–05:43]; target = the old high 29,433.25
+// − PHLTargetShyPts 5 = 29,428.25 (the mentor drew 29,425.75, "gần đỉnh cũ" —
+// one data point; his sell example sits 2.5–3.5 off, so 5 stays [D2.2-R11
+// p1 @06:02–06:22]).
 
 // m464Base is Fri 11 Sep 2026 09:40 CT — the D2.2 replay day.
 func m464Base() int64 {
@@ -212,10 +213,9 @@ func m464Approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 // 10:07 red candle; the 10:13 rung is refused at the 25-pt ceiling (named,
 // counted) and the resting 10:12 rung is cancelled because the ladder moved
 // past it — but the ladder CONTINUES, and the 10:14 small GREEN candle (the
-// mentor's signal bar) becomes the last rung: buy stop 29,396.75 (= 29,395.75
-// + the 1.00 default buffer; the course draws 29,396.25 = +0.50), stop
-// 29,386.50 (the signal low; course ray 29,386.00). The 10:15 candle fills it
-// and the ladder ends.
+// mentor's signal bar) becomes the last rung: buy stop 29,396.25 (= 29,395.75
+// + 0.50, the course ray), stop 29,386.00 (= 29,386.50 − 0.50, the course ray)
+// [D2.2-R10 p1 @04:14–05:43]. The 10:15 candle fills it and the ladder ends.
 // Mutant A: restore `withTrend && st.ArmID == "" → return nil` (colour gates
 // every rung) → no 10:14 rung → RED.
 // Mutant B: make a refused rung end the ladder (rollingCancel) → no 10:14 rung → RED.
@@ -229,8 +229,8 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 		t.Fatalf("the 10:14 green signal candle must be the last rung (exactly one buy stop), steps=%+v", steps)
 	}
 	in := last.places[0]
-	if in.Side != SideLong || in.Setup != "PHL" || !m464Approx(in.Price, 29396.75) || !m464Approx(in.Stop, 29386.50) {
-		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.75 / 29,386.50 [D2.2-R7/R9 p1 @02:26–05:43: 29,395.75 + 1.00 default buffer, stop = the signal low]", in.Side, in.Setup, in.Price, in.Stop)
+	if in.Side != SideLong || in.Setup != "PHL" || !m464Approx(in.Price, 29396.25) || !m464Approx(in.Stop, 29386.00) {
+		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.25 / 29,386.00 — the mentor's rays [D2.2-R7/R9/R10 p1 @02:26–05:43]", in.Side, in.Setup, in.Price, in.Stop)
 	}
 	if !m464Approx(in.Target, 29428.25) {
 		t.Fatalf("target %.2f, want 29,428.25 (old high 29,433.25 − shy 5; the course drew 29,425.75 'gần đỉnh cũ')", in.Target)
@@ -252,13 +252,13 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 	if len(s1013.places) != 0 {
 		t.Fatalf("the 10:13 rung is over the ceiling and must not arm: %+v", s1013.places)
 	}
-	// The 10:12 rung (entry 29,405.50, risk 9.5) armed; at 10:13 the mentor's
-	// ladder moved to 29,403.50, so the stale 29,405.50 order is cancelled.
+	// The 10:12 rung (entry 29,405.00, risk 9.5) armed; at 10:13 the mentor's
+	// ladder moved to 29,403.50, so the stale 29,405.00 order is cancelled.
 	if len(s1013.cancels) != 1 || !strings.Contains(s1013.cancels[0].Reason, "ladder continues") {
 		t.Fatalf("the resting 10:12 rung must be cancelled (ladder continues) at the refused 10:13 rung, got %+v", s1013.cancels)
 	}
 
-	// 10:15 breaks 29,396.75 → filled, the ladder is over: no new rung, no cancel.
+	// 10:15 breaks 29,396.25 → filled, the ladder is over: no new rung, no cancel.
 	ins := e.Tick(bars, BarCloseInstant(bars[len(bars)-1]))
 	if p := m464Rolling(ins); len(p) != 0 {
 		t.Fatalf("the 10:15 breakout fills the last rung; no new rung may arm: %+v", p)
@@ -277,18 +277,15 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 	}
 }
 
-// TestM464CourseWorkedBuyLadderDrawnBuffer — the same tape with the entry
-// buffer at the course's drawn +0.50 [D2.2-R10 p1 @04:14–05:43]: the last rung is EXACTLY the
-// mentor's 29,396.25. The stop stays the signal low 29,386.50 (phl.go has no
-// stop buffer; the course ray 29,386.00 is 0.50 under it).
-func TestM464CourseWorkedBuyLadderDrawnBuffer(t *testing.T) {
-	bars := m464CourseTape()
-	e := m464Evaluator(SideLong, Level{Key: "old-high:29433.25", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.25}, bars[m464Idx(10, 7)].OpenTime)
-	e.Cfg.PHLEntryBufferPts = 0.5
-	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
-	last := steps[len(steps)-1]
-	if len(last.places) != 1 || !m464Approx(last.places[0].Price, 29396.25) || !m464Approx(last.places[0].Stop, 29386.50) {
-		t.Fatalf("with the drawn 0.50 buffer the last rung must be the mentor's 29,396.25 / stop 29,386.50, got %+v", last.places)
+// TestM464CourseDefaultsAreTheDrawnOffsets — review finding (course-ladder P2,
+// release #59 fix round): the PRODUCTION defaults are the mentor's drawn rays,
+// entry +0.50 / stop −0.50 [D2.2-R10 p1 @04:14–05:43]. The old pair (1.00 / 0)
+// put the worked buy at 29,396.75 / 29,386.50.
+// Mutant: restore PHLEntryBufferPts 1.0 or PHLStopBufferPts 0 → RED.
+func TestM464CourseDefaultsAreTheDrawnOffsets(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.PHLEntryBufferPts != 0.5 || cfg.PHLStopBufferPts != 0.5 {
+		t.Fatalf("PHL offsets = entry %.2f / stop %.2f, want the drawn 0.50 / 0.50 [D2.2-R10 p1 @04:14–05:43]", cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts)
 	}
 }
 
@@ -298,7 +295,8 @@ func TestM464CourseWorkedBuyLadderDrawnBuffer(t *testing.T) {
 // 58,800. The 29-pt GREEN rung (mirror of 10:13) is refused at the ceiling,
 // the ladder continues, and the small RED candle (mirror of the 10:14 signal
 // bar — with-trend for a short) becomes the last rung: sell stop
-// 58,800 − 29,395.75 − 1.00 = 29,403.25, stop its high 29,413.50.
+// 58,800 − 29,395.75 − 0.50 = 29,403.75, stop its high 29,413.50 + 0.50 =
+// 29,414.00 [D2.2-R10 p1 @04:14–05:43, mirrored].
 // Mutant: as TestM464CourseWorkedBuyLadder (both are the same code path).
 func TestM464CourseWorkedSellMirror(t *testing.T) {
 	const a = 58800.0
@@ -310,8 +308,8 @@ func TestM464CourseWorkedSellMirror(t *testing.T) {
 		t.Fatalf("the mirrored 10:14 red candle must be the last sell rung, steps=%+v", steps)
 	}
 	in := last.places[0]
-	if in.Side != SideShort || in.Setup != "PLH" || !m464Approx(in.Price, 29403.25) || !m464Approx(in.Stop, 29413.50) {
-		t.Fatalf("mirror rung = %s %s %.2f / %.2f, want short PLH 29,403.25 / 29,413.50", in.Side, in.Setup, in.Price, in.Stop)
+	if in.Side != SideShort || in.Setup != "PLH" || !m464Approx(in.Price, 29403.75) || !m464Approx(in.Stop, 29414.00) {
+		t.Fatalf("mirror rung = %s %s %.2f / %.2f, want short PLH 29,403.75 / 29,414.00", in.Side, in.Setup, in.Price, in.Stop)
 	}
 	if got := e.State.Refusals["rolling_phl_stop_ceiling"]; got != 1 {
 		t.Fatalf("the mirrored 29-pt rung must be counted once as rolling_phl_stop_ceiling, ledger=%v", e.State.Refusals)
@@ -399,7 +397,7 @@ func TestM464CourseLadderTapeTriggerIsNamed(t *testing.T) {
 		return rollingLevelKey + "@" + itoa64(bars[m464Idx(10, 14)].CloseTime) + "|" + name
 	}
 	if !e.State.PHLRefusedVisit[k("rolling_room")] {
-		t.Fatalf("the 10:14 rung must be refused and NAMED rolling_room (target = the 29,410 trigger line, reward 13.25 < 2 × 10.25), marks=%v", e.State.PHLRefusedVisit)
+		t.Fatalf("the 10:14 rung must be refused and NAMED rolling_room (target = the 29,410 trigger line, reward 13.75 < 2 × 10.25), marks=%v", e.State.PHLRefusedVisit)
 	}
 	if !e.State.RollingPHL.Ladder {
 		t.Fatalf("a refused rung never ends the ladder, state=%+v", e.State.RollingPHL)
@@ -442,5 +440,143 @@ func TestM464BreakingCandleNeverRestartsTheLadder(t *testing.T) {
 	_ = e.Tick(next, next[7].OpenTime+59_999)
 	if st := e.State.RollingPHL; !st.Ladder || st.RungAt != next[7].CloseTime {
 		t.Fatalf("a later red pullback candle starts a new ladder, state=%+v", st)
+	}
+}
+
+// TestM464ConflictCancelDropsTheRung — review finding (course-ladder P3,
+// release #59 fix round): the D4.2-03 15m/5m conflict cancels every live arm BY
+// ArmID [D4.2 p1 @13:59–14:53], the rolling rung included — but RollingPHL kept
+// its ArmID/LastArmed, so after the conflict the next rung emitted a CancelArm
+// for an id that was already cancelled, and a break of the frozen rung ended
+// the ladder WITHOUT counting rolling_ladder_reacted_no_order (ArmID != "").
+// The conflict now drops the rung (the ladder and its rung price stay, as for
+// every other cancelled rung — dropRung).
+// Mutant: drop the dropRung call in conflictArmCancels → ArmID survives → RED.
+func TestM464ConflictCancelDropsTheRung(t *testing.T) {
+	e, bars, now := rollingFixture()
+	if len(rollingPlaceEntries(e.Tick(bars, now))) != 1 {
+		t.Fatal("setup: the first roll must arm")
+	}
+	id := e.State.RollingPHL.ArmID
+	out := e.conflictArmCancels()
+	cancelled := false
+	for _, in := range out {
+		if in.Action == CancelArm && in.ArmID == id {
+			cancelled = true
+		}
+	}
+	if !cancelled {
+		t.Fatalf("the conflict must cancel the resting rung %s: %+v", id, out)
+	}
+	st := e.State.RollingPHL
+	if st.ArmID != "" || st.LastArmed != 0 || st.LastPrice != 0 {
+		t.Fatalf("a conflict-cancelled rung must be dropped from the ladder state, got %+v", st)
+	}
+	if !st.Ladder || st.RungPx == 0 {
+		t.Fatalf("the ladder and its newest rung price stay (only the order is gone), got %+v", st)
+	}
+	if _, ok := e.State.LevelArms[rollingLevelKey]; ok {
+		t.Fatal("the rolling LevelArms entry must be gone")
+	}
+}
+
+// m464RealTape is the REAL NT8 tape of the D2.2 replay day — MNQ 09-26, Fri 11
+// Sep 2026, 1m, 08:00 → 10:29 CT (bars table, source live, read-only export:
+// testdata/m464_mnq_1m_20260911.csv). The mentor's chart [D2.2 p1/p2] IS this
+// tape: 10:13 O 29,401.25 H 29,403.25 L 29,375.25 C 29,390.50 [R43 p2
+// @10:13–11:22] and 10:14 O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00 [R9
+// p1 @04:19–05:43] match to the tick.
+func m464RealTape(t *testing.T) []market.Kline {
+	t.Helper()
+	return m413Load(t, "testdata/m464_mnq_1m_20260911.csv")
+}
+
+func m464RealIdx(t *testing.T, bars []market.Kline, hh, mm int) int {
+	t.Helper()
+	at := time.Date(2026, time.September, 11, hh, mm, 0, 0, ctime()).UnixMilli()
+	for i, b := range bars {
+		if b.OpenTime == at {
+			return i
+		}
+	}
+	t.Fatalf("no real bar at %02d:%02d CT", hh, mm)
+	return -1
+}
+
+// TestM464RealTapeWorkedBuy — review findings (course-ladder P2 "the bot does
+// not take the D2.2 worked buy" + P3 "the ladder tape is interpolated"),
+// release #59 fix round, on the REAL candles from the 09:40 leg the course tape
+// covers, at the production defaults (trigger + 4h side held long as in
+// m464Evaluator):
+//
+//  1. The bot's own rung prices ARE the mentor's screen rungs — 10:12 H
+//     29,412.50 → 29,413.00 and 10:14 H 29,395.75 → 29,396.25 [D2.2-R7 p1
+//     @02:26–03:27: "29,434.50 → 29,413.00 → 29,403.50 → 29,396.25"].
+//  2. PRODUCTION: the 10:14 rung is REFUSED, NAMED rolling_phl_15m_box_ban, and
+//     the ladder keeps running. The 10:00 15m candle (O 29,370.25 H 29,433.00
+//     L 29,360.00 C 29,394.00) has its BODY inside the red 09:45 15m candle (H
+//     29,401.50 L 29,334.00) — a 15m ISB box by the course's own definition
+//     [D1.4 p1 @06:13–08:47], standing at 10:14 — and D4.1/D4.2 refuse every
+//     PHL/PLH inside a standing 15m ISB box [D4.1 p2 @07:35–08:11; D4.2 p1
+//     @16:28–16:46]. D2.2 (day 2) is taught before that rule exists. This is a
+//     LESSON-ORDER conflict, not a ladder bug: reported for a mentor ruling,
+//     not changed here.
+//  3. With ONLY that box rule set aside (the 10:00 box marked already seen),
+//     every other gate agrees with the mentor: the last rung is buy stop
+//     29,396.25, stop 29,386.00 [R9/R10 p1 @04:14–05:43], target the old high
+//     29,433.00 − 5 = 29,428.00; the real 10:15 candle (H 29,428.25) fills it
+//     and reaches the target [R8 p1 @03:27–04:16].
+func TestM464RealTapeWorkedBuy(t *testing.T) {
+	all := m464RealTape(t)
+	from := m464RealIdx(t, all, 9, 40)
+	bars := all[from:]
+	b13, b14 := bars[m464Idx(10, 13)], bars[m464Idx(10, 14)]
+	if b13.Open != 29401.25 || b13.High != 29403.25 || b13.Low != 29375.25 || b13.Close != 29390.50 ||
+		b14.Open != 29390.50 || b14.High != 29395.75 || b14.Low != 29386.50 || b14.Close != 29394.00 {
+		t.Fatalf("the fixture is not the lesson's tape: 10:13 %+v 10:14 %+v", b13, b14)
+	}
+	cfg := DefaultConfig()
+	for _, c := range []struct {
+		hh, mm int
+		want   float64
+	}{{10, 12, 29413.00}, {10, 14, 29396.25}} {
+		if p := rollingRungPrice(bars[m464Idx(c.hh, c.mm)], SideLong, cfg); p != c.want {
+			t.Fatalf("%d:%02d rung %.2f, want the mentor's screen rung %.2f", c.hh, c.mm, p, c.want)
+		}
+	}
+	oldHigh := Level{Key: "old-high:29433", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.0}
+
+	// 2. production: refused, named, the ladder runs on.
+	e := m464Evaluator(SideLong, oldHigh, bars[m464Idx(10, 7)].OpenTime)
+	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
+	if last := steps[len(steps)-1]; last.at != "10:14" || len(last.places) != 0 {
+		t.Fatalf("production: the 10:14 rung sits in the standing 15m ISB box and must not arm, got %+v", last)
+	}
+	if bx := e.State.ISBBox15m; bx == nil || bx.High != 29433 || bx.Low != 29360 || bx.Dir != SideShort {
+		t.Fatalf("the real 10:00 15m ISB box (29,433.00 / 29,360.00, red mother) must stand at 10:14, got %+v", bx)
+	}
+	k := rollingLevelKey + "@" + itoa64(b14.CloseTime) + "|rolling_phl_15m_box_ban"
+	if !e.State.PHLRefusedVisit[k] {
+		t.Fatalf("the 10:14 rung refusal must be NAMED rolling_phl_15m_box_ban, marks=%v", e.State.PHLRefusedVisit)
+	}
+	if st := e.State.RollingPHL; !st.Ladder || st.RungPx != 29396.25 {
+		t.Fatalf("the refused rung keeps the ladder at the mentor's 29,396.25, state=%+v", st)
+	}
+
+	// 3. the box rule set aside: the mentor's trade, to the tick.
+	e = m464Evaluator(SideLong, oldHigh, bars[m464Idx(10, 7)].OpenTime)
+	_ = m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 13))
+	e.State.LastISBBox15mAt = bars[m464Idx(10, 0)].OpenTime // the 10:00 box counts as already seen
+	steps = m464Run(e, bars, m464Idx(10, 14), m464Idx(10, 14))
+	last := steps[len(steps)-1]
+	if len(last.places) != 1 {
+		t.Fatalf("without the 15m box rule the 10:14 rung must arm, steps=%+v refusals=%v box=%+v visit=%v", steps, e.State.Refusals, e.State.ISBBox15m, e.State.PHLRefusedVisit)
+	}
+	in := last.places[0]
+	if in.Side != SideLong || !m464Approx(in.Price, 29396.25) || !m464Approx(in.Stop, 29386.00) || !m464Approx(in.Target, 29428.00) {
+		t.Fatalf("real last rung = %s %.2f / %.2f → %.2f, want long 29,396.25 / 29,386.00 → 29,428.00", in.Side, in.Price, in.Stop, in.Target)
+	}
+	if b15 := bars[m464Idx(10, 15)]; b15.High < in.Price || b15.High < in.Target {
+		t.Fatalf("real 10:15 (H %.2f) must fill %.2f and reach %.2f", b15.High, in.Price, in.Target)
 	}
 }

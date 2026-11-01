@@ -25,6 +25,12 @@ func rollingFixture() (*Evaluator, []market.Kline, int64) {
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
+	// The rolling mechanics fixtures below were worked on the pre-#59 PHL
+	// offsets (entry +1.00, stop at the candle extreme); pinned so the rung
+	// arithmetic of every ladder pin stays exact. The production offsets
+	// (0.50 / 0.50, D2.2-R10 [p1 @04:14–05:43]) are pinned by the m464 course tests.
+	cfg.PHLEntryBufferPts = 1.0
+	cfg.PHLStopBufferPts = 0
 	cfg.Exec2mAfter30m = false // 1m read
 	cfg.LocTriggerFilter = false
 	cfg.RollingPHL = true
@@ -203,9 +209,10 @@ func TestRollingPLHShortMirror(t *testing.T) {
 	if len(places) != 1 {
 		t.Fatalf("rolling bounce emitted %d PLH entries, want 1: %+v", len(places), places)
 	}
-	// entry = bar 5 low 128 − buffer 1.0 = 127; stop = bar 5 high 133
-	if places[0].Side != SideShort || places[0].Price != 127 || places[0].Stop != 133 {
-		t.Fatalf("rolling short entry = %+v, want short 127 / stop 133", places[0])
+	// entry = bar 5 low 128 − 0.50 = 127.5; stop = bar 5 high 133 + 0.50 = 133.5
+	// (the production D2.2-R10 offsets [p1 @04:14–05:43], mirrored)
+	if places[0].Side != SideShort || places[0].Price != 127.5 || places[0].Stop != 133.5 {
+		t.Fatalf("rolling short entry = %+v, want short 127.5 / stop 133.5", places[0])
 	}
 	if places[0].Target != 120 {
 		t.Fatalf("target = %.2f, want the old low 120", places[0].Target)

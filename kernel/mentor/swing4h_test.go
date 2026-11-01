@@ -503,10 +503,11 @@ func TestSwing4hHardInvariantCounter(t *testing.T) {
 // without touching it — the level is INVALID for the rest of the 4h candle
 // (the old code only latched a TOUCHING through-close, read against the bar's
 // own previous close, so the window stayed open here). From then on only the
-// 5m inside bar back on the trade side — SHORT, the 4H line's side — may
-// enter: 05:20 closes back below (candle 1), 05:25 is its inside bar → the
-// short ISB, stop AT the line. The later below-line reject-shaped touch at
-// 05:40 is refused (swing_level_invalid).
+// 5m inside bar back on the trade side may enter — but the reject's SHORT is
+// still open, so the 05:25 inside bar is refused and NAMED swing_position_open:
+// one setup per level [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56]
+// (release #59 fix round; a second arm's fill replaced s.Pos). The later
+// below-line reject-shaped touch at 05:40 is refused (swing_level_invalid).
 func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -515,7 +516,7 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 		mk5m(t, 15, 5, 10, 10160, 10175, 10155, 10160), // candle 2 of the window: fills the short
 		mk5m(t, 15, 5, 15, 10190, 10210, 10190, 10205), // closes ABOVE the line (no touch) → level INVALID
 		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // closes back below (candle 1)
-		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // its inside bar → SHORT ISB @10150
+		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // its inside bar → REFUSED, the short is open
 		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // (the ISB is spent)
 		mk5m(t, 15, 5, 35, 10060, 10100, 10050, 10060), // back below without touching
 		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → REFUSED (invalid level)
@@ -533,8 +534,11 @@ func TestSwing4hOneSetupPerApproach(t *testing.T) {
 			cancels++
 		}
 	}
-	if len(entries) != 2 || entries[1].Side != SideShort || entries[1].Price != 10150 || abs(entries[1].Stop-swingLineGolden) > 0.01 {
-		t.Fatalf("want the reject + the SHORT inside bar (stop AT the line) only; got %+v", entries)
+	if len(entries) != 1 || entries[0].Side != SideShort || s.Pos == nil || s.Pos.ArmID != entries[0].ArmID {
+		t.Fatalf("want the reject only, still the managed position; got %+v (Pos %+v)", entries, s.Pos)
+	}
+	if m463Refused(s, SwingRefusedPositionOpen) != 1 {
+		t.Fatalf("the 05:25 inside bar must be NAMED %s once: %+v", SwingRefusedPositionOpen, s.refused)
 	}
 	if cancels != 0 {
 		t.Fatalf("cancels = %d, want 0 (nothing rests when the level goes invalid — the reject filled); got %+v", cancels, out)

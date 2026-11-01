@@ -492,3 +492,41 @@ func TestM463CourseWorkedExamples(t *testing.T) {
 		}
 	})
 }
+
+// TestM463InsideBarNeverDoublesAnOpenSwing — review finding (course-swing P2,
+// release #59 fix round): ONE setup per level per 4h candle [D5.2-R19/R23 p1
+// @13:23–13:40; p3 @19:15–21:56 "không chạm vô nữa, không đụng vô nữa"]. Since
+// m463 ANY 5m close beyond the line latches the level invalid — also AFTER the
+// reject order FILLED. The inside-bar branch then armed a SECOND swing stop
+// entry on the same level, and its fill replaced s.Pos, losing the first leg's
+// BE/hold tracking. With a swing position open, the inside bar is refused and
+// NAMED swing_position_open, never armed.
+// Mutant: drop the `s.Pos != nil` guard in the ISB branch → a second
+// place_stop_entry short (swing-…) → RED.
+func TestM463InsideBarNeverDoublesAnOpenSwing(t *testing.T) {
+	cfg := DefaultSwingCfg()
+	cur := []market.Kline{
+		mk5m(t, 15, 5, 0, 10100, 10110, 10095, 10105),  // prev: below the line
+		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),  // touch, closes back below → sell stop 10155
+		mk5m(t, 15, 5, 10, 10158, 10160, 10150, 10152), // trades through 10155 → FILLED
+		mk5m(t, 15, 5, 15, 10152, 10180, 10150, 10175), // closes ABOVE the line (short of the stop) → invalid
+		mk5m(t, 15, 5, 20, 10175, 10178, 10150, 10160), // closes back below
+		mk5m(t, 15, 5, 25, 10165, 10170, 10152, 10160), // 5m inside bar, closes below
+	}
+	bars := swingTape(t, cur)
+	s := &SwingState{}
+	out := m463Walk(t, s, bars, 4, cfg)
+	es := m463Entries(out)
+	if len(es) != 1 {
+		t.Fatalf("one setup per level: only the reject may arm while its position is open, got %d entries: %+v", len(es), es)
+	}
+	if s.Pos == nil || s.Pos.ArmID != es[0].ArmID {
+		t.Fatalf("the first leg must stay the managed position, Pos=%+v first=%s", s.Pos, es[0].ArmID)
+	}
+	if s.Pending != nil {
+		t.Fatalf("no second swing order may rest beside the open position: %+v", s.Pending)
+	}
+	if n := m463Refused(s, SwingRefusedPositionOpen); n != 1 {
+		t.Fatalf("the inside bar must be refused and NAMED %s once, got %d (%+v)", SwingRefusedPositionOpen, n, s.refused)
+	}
+}

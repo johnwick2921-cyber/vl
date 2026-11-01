@@ -337,7 +337,22 @@ type Config struct {
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
 	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
-	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
+	// PHLEntryBufferPts — entry buffer beyond the reference candle's extreme
+	// (outward). Default 0.50 (release #59 fix round, mentor-exact): the
+	// committed entry RAY is 29,396.25 over the signal high 29,395.75 (+2
+	// ticks) [D2.2-R10 p1 @04:14–05:43, screen]. The old 1.00 read the HIGH as
+	// 29,396.25 and the long-tool's refitted 29,397.25 as the entry [D2.2 p1
+	// @06:45]; the real NT8 tape of the replay day (MNQ 09-26, Fri 11 Sep 2026
+	// 10:14 CT: O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00) confirms the
+	// high (testdata/m464_mnq_1m_20260911.csv).
+	PHLEntryBufferPts float64
+	// PHLStopBufferPts — the stop sits this far BEYOND the broken candle's other
+	// extreme (outward). Default 0.50: the stop RAY is 29,386.00 under the signal
+	// low 29,386.50 (−2 ticks) [D2.2-R10 p1 @04:14–05:43, screen]. Not applied
+	// when the D3.3 EMA 34 nuance puts the stop AT the EMA ("no extra room").
+	// Entry and stop move together, so the RISK is unchanged from the old
+	// 1.00 / 0 pair (range + 1.00).
+	PHLStopBufferPts float64
 	// RollingPHL (m216/m225, DS-102) turns on the D2.2 pullback-continuation
 	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
 	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
@@ -646,7 +661,8 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
-		PHLEntryBufferPts:        1.0,
+		PHLEntryBufferPts:        0.5,  // D2.2-R10 entry ray +0.50 [p1 @04:14–05:43]
+		PHLStopBufferPts:         0.5,  // D2.2-R10 stop ray −0.50 [p1 @04:14–05:43]
 		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,

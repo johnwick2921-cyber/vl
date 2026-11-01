@@ -47,13 +47,13 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 	ints := e.Tick(bars, now)
 	armed := false
 	for _, in := range ints {
-		if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong && in.Price == 29393 {
+		if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong && in.Price == 29392.5 {
 			armed = true
 			break
 		}
 	}
 	if !armed {
-		t.Fatalf("B6 precondition: expected a LONG PHL stop-entry at 29393 (high 29392 + 1.0 buffer) before testing rest/cancel behavior; intents=%+v refusals=%v", ints, e.State.Refusals)
+		t.Fatalf("B6 precondition: expected a LONG PHL stop-entry at 29392.5 (high 29392 + 0.50 buffer, D2.2-R10) before testing rest/cancel behavior; intents=%+v refusals=%v", ints, e.State.Refusals)
 	}
 	phl := 0
 	for _, in := range ints {

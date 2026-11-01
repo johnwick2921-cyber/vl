@@ -61,8 +61,13 @@ import (
 //     the window resets, and an unfilled order expires at the candle's close —
 //     the MARKET close when the CME shuts inside the candle (13:00 CT bucket →
 //     16:00), never inside the break (trade 678, swingExpiry).
-//  9. Direction follows the 4H EMA 34, not the 5m trend (R7/R35): no 5m-trend
-//     filter on the swing.
+//  9. Direction is the APPROACH SIDE to the 4H EMA 34 line, not the 5m trend
+//     (R7/R35, [D5.2 p3 @15:04–18:25, @22:21–24:24]): price below the line =
+//     resistance → short, above = support → long; no 5m-trend filter. The
+//     EMA's SLOPE is NOT read: R7's worked cases are the aligned ones ("price
+//     below a FALLING EMA 34"), and the course shows no case of price below
+//     a RISING EMA, so a counter-slope approach trades by its side like any
+//     other (swingApproach) — an open question for the mentor, not a rule.
 //
 // Hard invariant: the stop must sit on the correct side of the entry, else
 // no intent is emitted — logged and counted (swingInvalidStops).
@@ -249,6 +254,10 @@ const (
 	SwingRefusedNotFirstTouch = "swing_not_first_touch"
 	SwingRefusedLevelInvalid  = "swing_level_invalid"
 	SwingRefusedMaxStop       = "swing_max_stop"
+	// SwingRefusedPositionOpen — an inside bar at an invalid level while this
+	// level's swing position is still open: one setup per level [D5.2-R19/R23
+	// p1 @13:23–13:40, p3 @19:15–21:56].
+	SwingRefusedPositionOpen = "swing_position_open"
 )
 
 type swingTouch struct {
@@ -560,6 +569,22 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 		// swing's direction is the 4H line's, not candle 1's colour.
 		if !ft.ISBFired && closedBack(ft.Approach, prev.Close, line) &&
 			closedBack(ft.Approach, b.Close, line) && swingInsideBar(prev, b) {
+			// One setup per level [D5.2-R19/R23 p1 @13:23–13:40; p3
+			// @19:15–21:56]: a close beyond the line ALSO latches Through after
+			// this level's reject order FILLED. A second arm here would rest
+			// beside the open leg and its fill would replace s.Pos (the first
+			// leg's BE/hold tracking lost). Refused, NAMED, and the inside bar
+			// is spent — the level already gave its trade.
+			if s.Pos != nil || s.Pending != nil {
+				open := s.Pending
+				if s.Pos != nil {
+					open = s.Pos
+				}
+				ft.ISBFired = true
+				s.refuse(SwingRefusedPositionOpen, "%s CT inside bar at the invalid 4h line %.2f: the swing %s (%s %.2f) of this level is still open — one setup per level [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56]",
+					swingCT(b.OpenTime), line, open.ArmID, open.Side, open.Entry)
+				return out
+			}
 			in, ok, why := swingISBIntent(ft, b, line, cfg)
 			if !ok {
 				// Not spent: R25 (no time limit) lets a later inside bar with a

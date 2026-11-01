@@ -175,6 +175,16 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).toContain('REVERSES the earlier owner ruling m186')
     expect(all).not.toContain('whose colour matches the side')
   })
+
+  // release #59 fix round: one setup per level (an open swing refuses the
+  // inside bar) and the PHL rays are the drawn 0.50 / 0.50 [D2.2-R10].
+  it('names the open-swing inside-bar refusal and the drawn PHL rays', () => {
+    expect(all).toContain('swing_position_open')
+    expect(all).toContain('stop 0.50 under that candle’s low')
+    expect(all).toContain('0.50 / 0.50')
+    expect(all).toContain('rolling_phl_15m_box_ban')
+    expect(all).not.toContain('the PHL entry buffer, default 1.00')
+  })
 })
 
 // m462 (release #59): the 4h/1h trigger gate applies ALL SESSION by default

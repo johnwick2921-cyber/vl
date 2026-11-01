@@ -56,16 +56,19 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	}
 	// R2: the buy stop sits at the PREVIOUS candle's high; stop = the low
 	// of that broken candle. The previous candle = the touch reference.
-	// D2-15 [D2.2 p1 @06:50 drawn]: the entry sits ~1 pt BEYOND the candle
-	// extreme (high 29,396.25 → entry 29,397.25) — the course buffer. The
-	// stop stays at the broken candle's extreme (the frame draws it AT the
-	// low; the +0.25 offset is a quarter-tick artefact, not a stated rule).
+	// D2.2-R10 [p1 @04:14–05:43, screen — release #59 fix round, mentor-exact]:
+	// the entry RAY is the signal high + 0.50 (29,395.75 → 29,396.25) and the
+	// stop RAY the signal low − 0.50 (29,386.50 → 29,386.00) —
+	// PHLEntryBufferPts / PHLStopBufferPts. The structural checks below (the
+	// EMA 34 nuance, the higher low / lower high) read the candle's own
+	// extreme; the stop buffer is added last.
 	price := t.RefBar.High + cfg.PHLEntryBufferPts
 	stop := t.RefBar.Low
 	if side == SideShort {
 		price = t.RefBar.Low - cfg.PHLEntryBufferPts
 		stop = t.RefBar.High
 	}
+	emaStop := false
 	// D3.3 p1 @00:40–01:05 — the EMA34 stop nuance: when the location is the EMA
 	// 34 and the reference candle only TOUCHED it (its wick did not pass through),
 	// the stop goes right AT the EMA 34 (covering it), no extra room. A wick that
@@ -73,9 +76,11 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if (t.LevelKey == string(KindEMA34) || t.LevelKey == string(KindEMA34HTF)) && t.PriceAtTouch > 0 {
 		if side == SideLong && t.PriceAtTouch < stop {
 			stop = t.PriceAtTouch
+			emaStop = true
 		}
 		if side == SideShort && t.PriceAtTouch > stop {
 			stop = t.PriceAtTouch
+			emaStop = true
 		}
 	}
 	if priorSwing != 0 {
@@ -85,6 +90,15 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 		}
 		if side == SideShort && stop >= priorSwing {
 			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @ 14:03–14:22]"
+		}
+	}
+	// D2.2-R10: the stop ray sits PHLStopBufferPts beyond the candle extreme —
+	// not when the D3.3 EMA 34 nuance put it AT the EMA ("no extra room").
+	if !emaStop {
+		if side == SideShort {
+			stop += cfg.PHLStopBufferPts
+		} else {
+			stop -= cfg.PHLStopBufferPts
 		}
 	}
 	// The old extreme must be on the TARGET side: long → old high above;

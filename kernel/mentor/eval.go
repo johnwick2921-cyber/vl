@@ -764,6 +764,12 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 		out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
 			Reason: "15m/5m ISB conflict — cancel all arms [D4.2 p1 @ 13:59–14:53]"})
 		delete(e.State.LevelArms, key)
+		// The rolling rung's order is gone: drop it from the ladder state too
+		// (release #59 fix round) — else the next rung re-cancels a dead id and
+		// a break of the frozen rung is not counted as an unarmed reaction.
+		if key == rollingLevelKey && e.State.RollingPHL.ArmID == arm.ArmID {
+			e.State.RollingPHL.dropRung()
+		}
 	}
 	return out
 }
