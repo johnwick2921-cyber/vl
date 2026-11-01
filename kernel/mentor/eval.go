@@ -1094,7 +1094,9 @@ func (e *Evaluator) unregisterArm(armID string) {
 		}
 	}
 	if e.State.RollingPHL.ArmID == armID {
-		e.State.RollingPHL = RollingPHL{}
+		// m464: only the RUNG is gone (dropped by a later filter or refused by
+		// the trader); the ladder re-arms on the next closed candle [D2.2-R7 p1 @02:26–03:27].
+		e.State.RollingPHL.dropRung()
 	}
 	if e.State.EmaPendingArmID == armID {
 		e.State.EmaPendingSide = ""

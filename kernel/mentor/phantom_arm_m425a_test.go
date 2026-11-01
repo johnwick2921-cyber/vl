@@ -256,8 +256,10 @@ func TestM426NewTouchAfterRefusalStillEmits(t *testing.T) {
 }
 
 // m427/9 — the ROLLING PHL order through DropArm. The trader refuses the rolling
-// pullback order: (a) RollingPHL is zeroed (no phantom roll left to block the
-// next same-side setup or to emit a CancelArm for an order never authored),
+// pullback order: (a) the rung is zeroed (no phantom order left to block the
+// next same-side setup or to emit a CancelArm for an order never authored) —
+// m464 (release #59): only the RUNG; the LADDER stays running so the next
+// closed candle re-arms [D2.2-R7 p1 @02:26–03:27],
 // (b) NO RefusedLevelTouch is recorded for the rolling key — the rolling order
 // re-arms on a NEW reference candle by design — even when a Touches row for the
 // key exists with a reference bar, and (c) the next reference candle re-arms.
@@ -282,8 +284,11 @@ func TestM427DropArmOnTheRollingPHLZeroesItAndNeverMarksARefusedTouch(t *testing
 
 	e.DropArm(armID)
 
-	if e.State.RollingPHL != (RollingPHL{}) {
-		t.Fatalf("(a) a refused rolling order left a phantom RollingPHL: %+v", e.State.RollingPHL)
+	if st := e.State.RollingPHL; st.ArmID != "" || st.LastPrice != 0 || st.LastArmed != 0 {
+		t.Fatalf("(a) a refused rolling order left a phantom rung: %+v", st)
+	}
+	if st := e.State.RollingPHL; !st.Ladder || st.Side != SideLong || st.RungPx != placed[0].Price {
+		t.Fatalf("(a) m464: a refused rung must keep the ladder (side long, rung %.2f), got %+v", placed[0].Price, st)
 	}
 	if _, ok := e.State.LevelArms[rollingLevelKey]; ok {
 		t.Fatal("the rolling LevelArms entry must be gone")
