@@ -1,0 +1,21 @@
+{
+  "status": "PASS",
+  "funded_random_oracle_cases": 2000,
+  "live_random_oracle_cases": 2000,
+  "boundary_assertions": 8,
+  "initial_balance_assertions": 4,
+  "source_paths_sha256": "51c4d33d410f9455de29ee15bf555c77750aa354dcef74aa92b8997b65cffe4d",
+  "sources": {
+    "cashout_50k_max.py": "535d585d20610d7b0f3dcc206377e3ba3bd1f312ca527a73bb11d5c8198c8672",
+    "cashout_54k_one_day_max.py": "4e94ed524efe8661df07d6730fd5951ce1fb5beb76cf5b98f8ceef1d2dbf0d48",
+    "lucid_live_5mnq.py": "4aab6fc9daf9962e0d7a3576948bb711b511c93a39b0ac9d83fda7e3a7265a7a"
+  },
+  "script_sha256": "21ff95756bdb3a1fa8183911dcfc35d4e90e8608c1590d0313ad1917b7d09801",
+  "artifacts": {
+    "summary.csv": "97cf7f6b6efded8be6fe510a3362fe837292619dba731edb5e1b450979f988ee",
+    "payouts.csv": "dfab4a006a19e99933f543c60fedb6dc830ea0cec85089002714ff86a08d2cf1",
+    "ledger.csv": "eae735c8d77e503376b9d73806c560f8891de834419588c3e50b0fd256d58b0a",
+    "stages.csv": "83c58930cc448a4590fe46547e747e537a3b08ae76b956952a00cbb711f4d0c3",
+    "skipped.csv": "9b50cae425054b12951effe59a73682e899823e59042852f035c3fdaa3e4e1ef"
+  }
+}
