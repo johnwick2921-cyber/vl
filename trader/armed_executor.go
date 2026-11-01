@@ -3236,7 +3236,16 @@ func (at *AutoTrader) sweepDueExpiries(now time.Time, where string) {
 			// (filled / entry gone with children) stays final.
 			if v := at.cancelSafetyFor(r, now); !v.Allow {
 				if v.Why != armCancelNoBookWhy {
-					at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					// m463: the closed-market sweep runs every closed cycle, so a
+					// FINAL refusal is logged once per row, not every 3 minutes
+					// all weekend.
+					if at.expirySweepFinalLogged == nil {
+						at.expirySweepFinalLogged = map[int64]bool{}
+					}
+					if where == "reopen" || !at.expirySweepFinalLogged[r.ID] {
+						at.expirySweepFinalLogged[r.ID] = true
+						at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					}
 					continue
 				}
 				at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (transient, queued for retry) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
