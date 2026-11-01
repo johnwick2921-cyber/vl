@@ -1,0 +1,15 @@
+execution,scenario,qty,day,after_breach,eligible_on
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-06,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-07,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-09,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-13,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-14,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-15,2026-10-05,2026-10-19
+trade_print_proxy,live_after_five_cooldown14,6,2026-10-16,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-06,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-07,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-09,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-13,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-14,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-15,2026-10-05,2026-10-19
+stress1tick,live_after_five_cooldown14,6,2026-10-16,2026-10-05,2026-10-19

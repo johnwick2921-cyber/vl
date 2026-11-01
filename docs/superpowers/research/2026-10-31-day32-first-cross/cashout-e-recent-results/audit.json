@@ -1,0 +1,36 @@
+{
+  "artifacts": {
+    "ledger.csv": "69604c6a0613338abd23188c10ae8acea0e1cbceb65f4e4a5c02b684d7bdf633",
+    "paths.json": "51c4d33d410f9455de29ee15bf555c77750aa354dcef74aa92b8997b65cffe4d",
+    "payouts.csv": "3da320769b7d58c0dac7f82ce5f7761e503842c8bc6ea5b133279650a4d0f1c5",
+    "single-account.csv": "1b4b80041ef8ac9984edbf45016fca4d96050bff36b52ec6cfcb05ac21f767ad",
+    "skipped.csv": "4de1f15cd860a5a0bd2538c1b52afaead257ce9f48e50cba49cbfa2abf99e7c6",
+    "stages.csv": "906102e26cddcafde028fb1e6300ca0e6db140832d95f7ebec7eba4ac1d86ada",
+    "summary.csv": "e1c7ee110eced901b381bd9d2240e0c36868f0263f1895396e4d03343f37c1f4"
+  },
+  "assumptions": {
+    "evaluation_time_omitted": true,
+    "fee_roundtrip_usd_per_MNQ": 1,
+    "live_bonus_not_credited": true,
+    "live_transition_next_signal_hypothetical": true,
+    "owner_reserve_above_locked_MLL": 2000,
+    "purchase_fees_unknown": true
+  },
+  "baseline_points": 392.25,
+  "filtered_trades": 101,
+  "independent_account_oracles": true,
+  "path_replays": 202,
+  "period": [
+    "2026-05-01",
+    "2026-10-30"
+  ],
+  "source_sha256": "c24472194363d978dac2cf12c0e1199c069958ec686638460d72119dfc456f49",
+  "sources": {
+    "lucid_eda_funded": "c5bcfb29f57b8d5355f9209e20f369b562ea2bbd1aa13c07d1b14cb2e4229de8",
+    "lucid_lifecycle14": "7e00fe726e8ae778cca45bcb39c7cc9fdb88631786c331333b10e2ad5a6f3b66",
+    "lucid_payout": "8062640bfac203e2b9ddf3b5cde41106493377f32375364ed2fa8e4db7eb20fa",
+    "lucid_rebuy": "b2ace948effda3967d08a3f2339a7ec0821e01a2187ebf0e27e3967335268c92",
+    "tick_orb": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903"
+  },
+  "status": "PASS"
+}

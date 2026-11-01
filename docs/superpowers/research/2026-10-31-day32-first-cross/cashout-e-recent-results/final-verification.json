@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "unit_tests": 28,
+  "cashout_rows_checked": 8,
+  "payout_sum_split_reserve_and_unique_days": "PASS",
+  "report_sha256": "e1aa1db50f9296be2087eb96b71127d55f736a1aeafcafc320cc29c166bc5d92"
+}

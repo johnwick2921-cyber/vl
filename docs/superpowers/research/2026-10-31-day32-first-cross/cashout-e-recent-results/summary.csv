@@ -1,0 +1,9 @@
+execution,scenario,qty,accounts_used,replacements,breached_accounts,five_payout_accounts,trades,payout_count,gross_withdrawn_cents,received_cents,last_balance_cents,last_status,purchase_cost_cents,net_after_purchase_cents,sim_accounts,live_accounts,sim_breaches,live_breaches,skipped_signals,sim_received_cents,live_received_cents,total_received_cents,last_phase
+trade_print_proxy,repeat_funded_hypothetical,3,2,1,1,0,101,3,359100,323190,4848950,END_OF_VALID_SAMPLE,,,,,,,,,,,
+trade_print_proxy,live_after_five_cooldown14,3,,,,,101,3,,,4848950,END_OF_VALID_SAMPLE,,,2,0,1,0,0,323190,0,323190,SIM
+trade_print_proxy,repeat_funded_hypothetical,6,5,4,3,1,101,5,895200,805680,4949300,END_OF_VALID_SAMPLE,,,,,,,,,,,
+trade_print_proxy,live_after_five_cooldown14,6,,,,,94,5,,,4909700,END_OF_VALID_SAMPLE,,,3,1,1,1,7,805680,0,805680,SIM
+stress1tick,repeat_funded_hypothetical,3,2,1,1,0,101,3,354600,319140,4847900,END_OF_VALID_SAMPLE,,,,,,,,,,,
+stress1tick,live_after_five_cooldown14,3,,,,,101,3,,,4847900,END_OF_VALID_SAMPLE,,,2,0,1,0,0,319140,0,319140,SIM
+stress1tick,repeat_funded_hypothetical,6,5,4,3,1,101,5,881100,792990,4949000,END_OF_VALID_SAMPLE,,,,,,,,,,,
+stress1tick,live_after_five_cooldown14,6,,,,,94,5,,,4909100,END_OF_VALID_SAMPLE,,,3,1,1,1,7,792990,0,792990,SIM

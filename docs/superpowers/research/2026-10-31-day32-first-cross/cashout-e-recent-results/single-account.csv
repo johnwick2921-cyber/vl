@@ -1,0 +1,5 @@
+execution,qty,status,last_day,trades,payout_count,gross_withdrawn_cents,received_cents,ending_balance_cents,final_floor_cents,trading_net_cents
+trade_print_proxy,3,MLL_BREACH,2026-10-16,94,3,359100,323190,5009900,5010000,369000
+trade_print_proxy,6,LIVE_TRANSITION_AFTER_5_PAYOUTS,2026-09-23,82,5,895200,805680,5210000,5010000,1105200
+stress1tick,3,MLL_BREACH,2026-10-16,94,3,354600,319140,5009900,5010000,364500
+stress1tick,6,LIVE_TRANSITION_AFTER_5_PAYOUTS,2026-09-23,82,5,881100,792990,5210000,5010000,1091100
