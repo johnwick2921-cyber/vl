@@ -3,8 +3,9 @@ package mentor
 // D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h direction gate is for NEWS
 // first, not ordinary trading yet ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI.
 // ĐỪNG SỬ DỤNG CHO [trade] THƯỜNG" / "đánh ĐẦU GIỜ hay là đánh THƯỜNG — CHƯA
-// TỚI LÚC ĐÂU"). #45 reverts owner decision A 2026-10-21 m134: HTFGateNewsOnly
-// now defaults ON (the mentor's rule). With the knob ON it applies inside the
+// TỚI LÚC ĐÂU"). #45 reverted owner decision A 2026-10-21 m134 to news-only;
+// m462 (release #59) makes ALL-DAY the default again from the final review
+// D5.1-R9/R11 [D5.1 p1 @08:29–11:50]. With the knob ON (stored) it applies inside the
 // 07:20–07:35 CT news window AND the 08:30–09:30 CT open window ("the open is
 // like news" [D4.4 p2 @00:35–00:46]; open length [example: D1.2 p1
 // @23:52–24:59]). With the knob OFF the gate applies all day (explicit).
@@ -20,10 +21,10 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if !cfg.HTFGateNewsOnly {
-		t.Fatal("HTFGateNewsOnly must default ON (news + open windows; the mentor's rule — #45 reverts owner decision A 2026-10-21)")
+	if cfg.HTFGateNewsOnly {
+		t.Fatal("m462: HTFGateNewsOnly must default OFF (the all-day gate, D5.1-R9/R11); news-only is a stored value only")
 	}
-	cfg.HTFGateNewsOnly = true
+	cfg.HTFGateNewsOnly = true // the explicitly stored old value
 	// W7 (A9/R7): the 07:20–08:30 news period gates ONLY on a print day; with
 	// no print (this table) only the open window gates. The print-day table is
 	// TestHTFGateActivePrintDay.

@@ -194,7 +194,7 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 		e.State.HTF = HTF{} // no 4h trigger → the read never starts
 		bars := isbFixture()
 		e.Tick(bars, bars[2].CloseTime+1)
-		if e.State.Refusals["isb_htf_blocked"] == 0 {
+		if e.State.Refusals["isb_htf_no_4h"] == 0 { // m462: was isb_htf_blocked
 			t.Fatalf("HTF block must be refused by name; ledger = %v", e.State.Refusals)
 		}
 	})

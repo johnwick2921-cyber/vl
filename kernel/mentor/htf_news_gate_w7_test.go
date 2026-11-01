@@ -65,7 +65,7 @@ func TestHTFGateActivePrintDay(t *testing.T) {
 
 // w7HTFBlocks runs the production Tick at 07:41 CT (09-15) with the given 4h/1h
 // lines frozen as the pre-print read, and reports whether the 4h/1h gate
-// (phl_htf_blocked) refused the long PHL. Price is ABOVE every line, so
+// (phl_htf_no_4h / _conflict / _side_mismatch since m462) refused the long PHL. Price is ABOVE every line, so
 // newsWaitFilter passes it: the only thing that can stop the long is the
 // 4h/1h side lock. (Later filters, e.g. the pre-open day gate, are not under
 // test and may still refuse a long that the HTF gate passed.)
@@ -107,7 +107,8 @@ func w7HTFBlocks(t *testing.T, printDay bool, htf HTF) bool {
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 29300, Low: 29200, Drawn: true, Escaped: SideLong}
 	e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
 	e.Tick(bars, now)
-	return e.State.Refusals["phl_htf_blocked"] > 0
+	// m462 split the old phl_htf_blocked into its named kinds.
+	return e.State.Refusals["phl_htf_no_4h"]+e.State.Refusals["phl_htf_conflict"]+e.State.Refusals["phl_htf_side_mismatch"] > 0
 }
 
 // TestPostPrintNewsTradeFollowsThe4h pins A9/R7 through the production Tick.
