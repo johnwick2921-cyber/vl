@@ -8,8 +8,10 @@ import (
 )
 
 // c52 W6 (plan A8): the rolling PHL/PLH gets (1) the pullback precondition —
-// the ladder starts only on a counter-trend coloured candle (red in an
-// uptrend, green in a downtrend) [D2.2 p1 @01:52–01:57, @10:47–10:51] — and
+// the ladder STARTS only on a counter-trend coloured candle (red in an
+// uptrend, green in a downtrend) [D2.2 p1 @01:52–01:57, @10:47–10:51]; m464:
+// the colour gates the start only, a running ladder rolls on every closed
+// candle [D2.2-R7 p1 @02:26–03:27] — and
 // (2) the 5m trigger-side gate [X8 part1 @06:25, @08:37–08:48]. Both are
 // pinned through e.Tick, the production call site.
 
@@ -40,28 +42,44 @@ func TestC52W6RollingNeedsCounterTrendCandle(t *testing.T) {
 	}
 }
 
-// TestC52W6RollingKeepsRestingOrderThroughWithTrendCandle — a resting roll is
-// NOT cancelled, replaced or duplicated by a with-trend candle that does not
-// fill it; the next RED candle rolls it again.
-// Mutant: make the colour gate cancel (rollingCancel) instead of returning nil
-// → the resting arm is cancelled → RED.
-func TestC52W6RollingKeepsRestingOrderThroughWithTrendCandle(t *testing.T) {
+// TestC52W6RollingRollsOnWithTrendCandleOnceTheLadderRuns — m464 (release
+// #59) REPLACES the c52 W6 pin "a with-trend candle leaves the resting roll
+// alone": that pin was the bug. The mentor re-places the buy stop on EVERY
+// closed candle once the ladder runs ("mình ra một lệnh buy stop trên đỉnh của
+// từng cây nến đã đóng xong… Cây nến này đóng xong nên mình ra tiếp" [D2.2-R7
+// p1 @02:26–03:27]) and his last rung sits on the small GREEN candle of the
+// uptrend pullback (O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00, buy stop
+// 29,396.25, stop 29,386.00 [D2.2-R9 p1 @04:19–05:43]). The colour gates only
+// the START (TestC52W6RollingNeedsCounterTrendCandle). So a with-trend candle
+// that does not fill the resting rung REPLACES it: cancel + a new buy stop on
+// its high + buffer, stop on its low.
+// Mutant: restore `if withTrend { return nil }` before the arm → no re-arm → RED.
+func TestC52W6RollingRollsOnWithTrendCandleOnceTheLadderRuns(t *testing.T) {
 	e, bars, now := rollingFixture()
 	if len(rollingPlaceEntries(e.Tick(bars, now))) != 1 {
 		t.Fatal("setup: the first roll must arm")
 	}
 	firstArm := e.State.RollingPHL.ArmID
 	t0 := bars[0].OpenTime
-	// bar 6: GREEN, high 118.5 < the resting entry 119 → does not fill it.
-	next := append(append([]market.Kline{}, bars...), rollingKline(t0, 6, 113, 118.5, 112.5, 118))
+	// bar 6: GREEN, high 116.5 < the resting entry 119 → does not fill it.
+	next := append(append([]market.Kline{}, bars...), rollingKline(t0, 6, 112.5, 116.5, 112, 116))
 	ins := e.Tick(next, next[6].OpenTime+59_999)
+	var cancelled bool
 	for _, in := range ins {
-		if in.Action == CancelArm || in.Action == PlaceStopEntry {
-			t.Fatalf("a with-trend candle must leave the resting roll alone, got %+v", in)
+		if in.Action == CancelArm && in.ArmID == firstArm {
+			cancelled = true
 		}
 	}
-	if e.State.RollingPHL.ArmID != firstArm {
-		t.Fatalf("resting arm changed %q -> %q", firstArm, e.State.RollingPHL.ArmID)
+	places := rollingPlaceEntries(ins)
+	if !cancelled || len(places) != 1 {
+		t.Fatalf("the green candle must replace the resting rung (cancel %s + one new rung), got %+v", firstArm, ins)
+	}
+	// entry = bar 6 high 116.5 + buffer 1.0 = 117.5; stop = bar 6 low 112.
+	if places[0].Price != 117.5 || places[0].Stop != 112 || places[0].Side != SideLong {
+		t.Fatalf("the with-trend rung = %+v, want long 117.5 / stop 112", places[0])
+	}
+	if e.State.RollingPHL.ArmID != places[0].ArmID || !e.State.RollingPHL.Ladder {
+		t.Fatalf("the new rung must rest as the ladder's order, state=%+v", e.State.RollingPHL)
 	}
 }
 
