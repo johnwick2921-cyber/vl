@@ -230,7 +230,7 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 	}
 	in := last.places[0]
 	if in.Side != SideLong || in.Setup != "PHL" || !m464Approx(in.Price, 29396.75) || !m464Approx(in.Stop, 29386.50) {
-		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.75 / 29,386.50 [D2.2 R7/R9: 29,395.75 + 1.00 default buffer, stop = the signal low]", in.Side, in.Setup, in.Price, in.Stop)
+		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.75 / 29,386.50 [D2.2-R7/R9 p1 @02:26–05:43: 29,395.75 + 1.00 default buffer, stop = the signal low]", in.Side, in.Setup, in.Price, in.Stop)
 	}
 	if !m464Approx(in.Target, 29428.25) {
 		t.Fatalf("target %.2f, want 29,428.25 (old high 29,433.25 − shy 5; the course drew 29,425.75 'gần đỉnh cũ')", in.Target)
@@ -278,7 +278,7 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 }
 
 // TestM464CourseWorkedBuyLadderDrawnBuffer — the same tape with the entry
-// buffer at the course's drawn +0.50 [D2.2-R10]: the last rung is EXACTLY the
+// buffer at the course's drawn +0.50 [D2.2-R10 p1 @04:14–05:43]: the last rung is EXACTLY the
 // mentor's 29,396.25. The stop stays the signal low 29,386.50 (phl.go has no
 // stop buffer; the course ray 29,386.00 is 0.50 under it).
 func TestM464CourseWorkedBuyLadderDrawnBuffer(t *testing.T) {
@@ -324,7 +324,7 @@ func TestM464CourseWorkedSellMirror(t *testing.T) {
 
 // TestM464RefusedRungThenReactionEndsLadder — no chase: when a rung was
 // REFUSED (nothing resting) and the next candle breaks it — the reaction the
-// rung was for [D2.2-R8] — the ladder is over; the following with-trend candle
+// rung was for [D2.2-R8 p1 @03:27–04:16] — the ladder is over; the following with-trend candle
 // does NOT arm (that would chase the impulse), and the reaction is counted.
 // Mutant: drop the unarmed-reaction end → the green impulse candle arms → RED.
 func TestM464RefusedRungThenReactionEndsLadder(t *testing.T) {
@@ -407,3 +407,40 @@ func TestM464CourseLadderTapeTriggerIsNamed(t *testing.T) {
 }
 
 func itoa64(v int64) string { return strconv.FormatInt(v, 10) }
+
+// TestM464BreakingCandleNeverRestartsTheLadder — the candle that breaks the
+// newest rung (the fill, or the reaction through a refused rung) is the ENTRY
+// candle [D2.2-R8 p1 @03:27–04:16], never the start of a new ladder. On a 2m/5m
+// exec frame the next 1m tick re-reads that same closed candle; found by the
+// m434 tape diff (r22 10-12 22:31 exec2m: the reaction ended the ladder on the
+// close tick and the re-read restarted it a minute later). Pinned by ticking the
+// same closed candle twice.
+// Mutant: drop the `execCur.CloseTime <= st.ReactedAt` start guard → the red
+// breaking candle (a pullback colour) starts a new ladder on the re-read → RED.
+func TestM464BreakingCandleNeverRestartsTheLadder(t *testing.T) {
+	e, bars, now := rollingFixture()
+	if len(rollingPlaceEntries(e.Tick(bars, now))) != 1 {
+		t.Fatal("setup: the first roll must arm (entry 119)")
+	}
+	t0 := bars[0].OpenTime
+	// bar 6: RED, high 120 ≥ 119 → fills the rung; red = a long's pullback colour.
+	next := append(append([]market.Kline{}, bars...), rollingKline(t0, 6, 119.5, 120, 113, 114))
+	at := next[6].OpenTime + 59_999
+	if p := rollingPlaceEntries(e.Tick(next, at)); len(p) != 0 {
+		t.Fatalf("the filling candle must not arm: %+v", p)
+	}
+	// the re-read of the same closed candle (the odd-minute 1m tick of a 2m frame).
+	if p := rollingPlaceEntries(e.Tick(next, at+1)); len(p) != 0 {
+		t.Fatalf("the breaking candle restarted the ladder on a re-read: %+v", p)
+	}
+	if e.State.RollingPHL.Ladder || e.State.RollingPHL.ArmID != "" {
+		t.Fatalf("no ladder may run after the break, state=%+v", e.State.RollingPHL)
+	}
+	// the NEXT pullback candle starts a new ladder (its rung is then read by
+	// every gate; on this tape the box ban drops it — the ladder still runs).
+	next = append(next, rollingKline(t0, 7, 114, 116, 111, 112))
+	_ = e.Tick(next, next[7].OpenTime+59_999)
+	if st := e.State.RollingPHL; !st.Ladder || st.RungAt != next[7].CloseTime {
+		t.Fatalf("a later red pullback candle starts a new ladder, state=%+v", st)
+	}
+}

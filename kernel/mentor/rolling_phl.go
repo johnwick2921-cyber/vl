@@ -37,6 +37,11 @@ type RollingPHL struct {
 	Ladder bool    `json:"ladder,omitempty"`  // the ladder has started (a pullback candle showed)
 	RungPx float64 `json:"rung_px,omitempty"` // the newest rung's entry price, armed OR refused (the reaction test reads it)
 	RungAt int64   `json:"rung_at,omitempty"` // CloseTime of the newest rung candle, armed OR refused
+	// ReactedAt is the CloseTime of the candle that broke the newest rung (the
+	// fill, or the reaction through a refused rung). That candle is the entry
+	// candle, never the start of a new ladder — on a 2m/5m exec frame the 1m
+	// tick re-reads the same closed candle, and a restart there would chase it.
+	ReactedAt int64 `json:"reacted_at,omitempty"`
 }
 
 // rollingLevelKey is the LevelArms key the rolling order rests under. Reusing
@@ -162,7 +167,7 @@ func (e *Evaluator) rollingSkipRung(st *RollingPHL, side Side, execCur market.Kl
 
 // rollingRungPrice is the rung's entry price on the reference candle: its
 // extreme + the course buffer (RejectEntry, the same price the gated build
-// emits) [D2.2-R10].
+// emits) [D2.2-R10 p1 @04:14–05:43].
 func rollingRungPrice(c market.Kline, side Side, cfg Config) float64 {
 	if side == SideShort {
 		return c.Low - cfg.PHLEntryBufferPts
@@ -178,15 +183,15 @@ func rollingRungPrice(c market.Kline, side Side, cfg Config) float64 {
 //
 // m464 (release #59), the ladder model:
 //   - the colour of the candle gates only the START of the ladder (the first
-//     counter-trend candle — the pullback shows [D2.2-R6/R16]);
+//     counter-trend candle — the pullback shows [D2.2-R6/R16 p1 @01:46–02:26, @10:32–11:04]);
 //   - once started, EVERY closed candle is a rung, whatever its colour — the
 //     mentor's last rung is the small GREEN candle of an uptrend pullback
-//     [D2.2-R7, R9: O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00];
+//     [D2.2-R7/R9 p1 @02:26–05:43: O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00];
 //   - a refused rung is skipped with its named reason and the ladder goes on
 //     (rollingSkipRung); only the setup's own death ends it (rollingCancel);
 //   - the ladder ends when a candle breaks the newest rung — the fill when it
 //     was armed, the reaction the rung was for when it was refused (no chase:
-//     the next candle is not a pullback rung any more) [D2.2-R8].
+//     the next candle is not a pullback rung any more) [D2.2-R8 p1 @03:27–04:16].
 func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Kline, execTFMin int, oldExtremes []oldExtreme, levels []Level, boxes []Box, dg DayGate) []Intent {
 	st := &e.State.RollingPHL
 
@@ -209,7 +214,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 			if st.ArmID == "" {
 				e.count("rolling_ladder_reacted_no_order")
 			}
-			*st = RollingPHL{}
+			*st = RollingPHL{ReactedAt: execCur.CloseTime}
 			if _, ok := e.State.LevelArms[rollingLevelKey]; ok {
 				delete(e.State.LevelArms, rollingLevelKey)
 			}
@@ -236,8 +241,8 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// downtrend it is GREEN ("bật nến xanh" [D2.2 p1 @10:47–10:51; @10:58]). A
 	// with-trend candle with no ladder running is the impulse, not the
 	// pullback — arming on it would chase the move. Once the ladder runs, the
-	// colour no longer matters: every closed candle is a rung [D2.2-R7].
-	if !st.Ladder && !rollingPullbackCandle(execCur, side) {
+	// colour no longer matters: every closed candle is a rung [D2.2-R7 p1 @02:26–03:27].
+	if !st.Ladder && (!rollingPullbackCandle(execCur, side) || execCur.CloseTime <= st.ReactedAt) {
 		return out
 	}
 
