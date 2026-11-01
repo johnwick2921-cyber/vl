@@ -16,6 +16,13 @@ package mentor
 // rolling ladder): every tick whose intents moved against dev 7e2231f01 moved
 // in at least one branch's own golden; the 14 ticks whose bytes match no single
 // branch differ only by arm-id numbering and the m464 rung-refusal reason text.
+// Release #59 fix round: 22 ticks moved intents — PHL/PLH prices by the D2.2-R10
+// rays (entry 0.50 nearer, stop 0.50 further: 10-23 04:12, 10-12 18:03/22:46,
+// 10-13 02:42, 10-13 09:00 exec2m), the 10-23 05:05 rolling PLH rung (its 0.50
+// lower stop… now refused there, ISB arm ids shift by one), and the 10-23 05:49 /
+// 15:19 SWING4H inside bars refused swing_position_open (this harness emulates
+// BE/hold receipts, never a stop-out, so the 05:00 / 14:30 legs stay "open";
+// on the tape they stopped at 05:16 / 14:52, and live — SwingEnded — still arms).
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

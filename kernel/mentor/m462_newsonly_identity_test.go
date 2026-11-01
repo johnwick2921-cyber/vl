@@ -20,7 +20,9 @@ import (
 // at the release merge the reference was re-recorded on a tree of dev 7e2231f01
 // + m463 83461cd84 + m464 3c9be6955 WITHOUT m462 (M434_WRITE_GOLDEN there,
 // gzip -n -9): stored news-only at the release head must equal "release #59
-// minus m462" tick for tick. Intents, notes,
+// minus m462" tick for tick. Re-recorded the same way for the release #59 fix
+// round (HEAD minus the m462 merge diff 898df8205^1..898df8205, code only — the
+// procedure first reproduced the previous reference byte for byte at 3afe97289). Intents, notes,
 // chart levels and trendlines must be byte-identical; the State may differ
 // ONLY by the m462 refusal-name split (isb/isbrev/box/phl _htf_blocked →
 // _htf_no_4h | _htf_conflict, phl's side mismatch → phl_htf_side_mismatch)
