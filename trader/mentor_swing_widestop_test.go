@@ -7,7 +7,11 @@ import (
 )
 
 // B5 (#45 review): a swing stop >= swing_max_stop_pts is SIZED DOWN to <= 2
-// MNQ, never refused and never sent at the owner's larger swing size.
+// MNQ, never sent at the owner's larger swing size. m463 (D5.2-R31): the SIZE
+// table is unchanged, but the rule gate now REFUSES a swing stop above
+// mentor_swing_max_stop_pts (default 90) — so this table runs the gate with the
+// skip raised to 500 to pin the sizing on its own; the default-90 refusal is
+// pinned in m463_swing_max_stop_test.go.
 func TestSwingWideStopSizesDownNeverRefuses(t *testing.T) {
 	cases := []struct {
 		name  string
@@ -31,9 +35,11 @@ func TestSwingWideStopSizesDownNeverRefuses(t *testing.T) {
 		if err != nil || got.Contracts != c.wantN || got.Tier != c.tier {
 			t.Errorf("%s: got (%d,%s,%v), want (%d,%s)", c.name, got.Contracts, got.Tier, err, c.wantN, c.tier)
 		}
-		// never refused by the rule gate at any stop width
+		// with the R31 skip raised out of the way, the gate never refuses on width
 		intent := mentor.Intent{Setup: "SWING4H", Side: mentor.SideLong, Price: 30000, Stop: 30000 - c.stop}
-		if why := mentorRuleGate(intent, in); why != "" {
+		gin := in
+		gin.SwingSkipStopPts = 500
+		if why := mentorRuleGate(intent, gin); why != "" {
 			t.Errorf("%s: rule gate refused a swing: %s", c.name, why)
 		}
 	}

@@ -871,17 +871,12 @@ func mentorLevelExpiry(nowMs int64) int64 {
 // mentorSwingExpiry (RULING [C], knob swing_order_expiry): a swing stop order
 // lives until the CLOSE of the current 4h candle (17:00 CT anchor). At that
 // close the line re-bases, and any unfilled swing order is cancelled
-// [D5.2 p3 @12:30]. The 4h candles chain from the 17:00 CT anchor.
+// [D5.2 p3 @12:30]. m463 (D5.2-R27 [p3 @12:16–13:18]): ONE definition — the
+// kernel's (mentor.SwingOrderExpiry): the candle's end minus 1 ms, or the
+// MARKET close when the CME shuts inside the candle (the 13:00 CT candle ends
+// at the 16:00 close, never at 16:59:59.999 inside the break — trade 678).
 func mentorSwingExpiry(nowMs int64) int64 {
-	loc := kernel.CTLocation()
-	now := time.UnixMilli(nowMs).In(loc)
-	anchor := time.Date(now.Year(), now.Month(), now.Day(), 17, 0, 0, 0, loc)
-	if now.Before(anchor) {
-		anchor = anchor.AddDate(0, 0, -1) // before 17:00 CT → the chain started yesterday
-	}
-	const fourH = 4 * time.Hour
-	k := now.Sub(anchor) / fourH
-	return anchor.Add(fourH * (k + 1)).UnixMilli()
+	return mentor.SwingOrderExpiry(nowMs)
 }
 
 // mentorLatestPrice is the latest live price for the no-chase check. The

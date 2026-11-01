@@ -117,8 +117,8 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 	if swings[0].Stop != e.State.Swing.Line {
 		t.Fatalf("entry stop %.6f, want authoritative warm line %.6f", swings[0].Stop, e.State.Swing.Line)
 	}
-	if local, _, ok := swingLine(closedBuckets(bars, now, e.Cfg), now, e.Cfg.Swing, loc); !ok || abs(local-e.State.Swing.Line) <= e.Cfg.Swing.LineOffsetPts {
-		t.Fatalf("fixture local line %.6f must differ from warm line %.6f beyond touch tolerance %.2f", local, e.State.Swing.Line, e.Cfg.Swing.LineOffsetPts)
+	if local, _, ok := swingLine(closedBuckets(bars, now, e.Cfg), now, e.Cfg.Swing, loc); !ok || abs(local-e.State.Swing.Line) <= swingNearTouchBandPts {
+		t.Fatalf("fixture local line %.6f must differ from warm line %.6f beyond the near-touch band %.2f", local, e.State.Swing.Line, swingNearTouchBandPts)
 	}
 }
 

@@ -758,8 +758,9 @@ func TestMentorExitMechSuspensionAppliesToAIOnly(t *testing.T) {
 }
 
 // TestMentorRuleGateR8R9: the injector-side R8/R9 gate (RULES-FIX v3).
-// SWING4H: 30–60 allowed, ~100 TAKEN at 1-2 MNQ (no skip, m186 D5.2 @21:25-21:43),
-// EXEMPT from the ISB stop ceiling.
+// SWING4H: 30–60 allowed; m463 D5.2-R31 (REVERSES m186, owner order 2026-11-01):
+// ~100 is REFUSED ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]);
+// still EXEMPT from the ISB stop ceiling.
 // R9: target never smaller than stop; spent-day cap 15 skips a stop over 15.
 // course-defaults-30: the non-swing ceiling reads the mentor_isb_max_pts knob
 // (kernel CourseExits.ISBMaxStopPts, default 30) — one number, not two. Mutant:
@@ -771,8 +772,8 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "long", Price: 100, Stop: 40, StopPts: 60, TargetPts: 120}, mentorTierInputs{}); why != "" {
 		t.Fatalf("SWING4H 60-pt stop must pass: %q", why)
 	}
-	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); why != "" {
-		t.Fatalf("SWING4H ~100-pt stop must PASS (take 1-2 MNQ and sit, no skip) [D5.2 p2 @21:25-21:43]: %q", why)
+	if why := mentorRuleGate(mentor.Intent{Setup: "SWING4H", Side: "short", Price: 100, Stop: 200, StopPts: 100, TargetPts: 200}, mentorTierInputs{}); !strings.HasPrefix(why, "R31") {
+		t.Fatalf("SWING4H ~100-pt stop must be REFUSED R31 (m463, đừng vô) [D5.2 p2 @19:34–21:43]: %q", why)
 	}
 	// W-MENTOR-EXACT: a 28.25-pt ISB stop is REFUSED (> 25 — "trên nữa thì thôi").
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R8") {
