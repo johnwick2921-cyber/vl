@@ -1,0 +1,23 @@
+{
+  "days": 131,
+  "rows": 6681,
+  "configurations": 51,
+  "checked_days": 127,
+  "engine_hashes": {
+    "tick_orb": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+    "stop_variants": "dec4b8be971acf77d5bd7822321bc89993f0ba96c2743d3eedc72d328c91231f",
+    "retest_variants": "ba98dac1cb36a91803d623ffb03eaccf19e38752cfadecfc8a9c9bc6bead6aae",
+    "body_retest": "11b8e24701404208b05d86264d7de1a49547ed47cf28f7525140c1da01bcce3b",
+    "ema_orb": "3ad686016253f6fd093e2cd4e7b030d570c2199242bb971764211387565aa5d4",
+    "orb_ema_receipt": "69ca07947e39c2c92da5a8a9b133d4476b119e7013513794387a395752cd81a6",
+    "ema_halfbox": "8304684f2e487e44bfb3e17859dc91d65d90b954583dcd5fb100f486ca9b5887",
+    "ema_box_lock": "f1fcb3844b019593b47d9c1a1d362dad10d96bb4e109323eb1ddbbbc380e19c2"
+  },
+  "warmup_sha": "35a7802dba28a91c01b124db705241ac4650bbc0bf341b0e77ab577b49397c67",
+  "artifacts": {
+    "summary.csv": "37085e37c9d28b14e18ea22c7c9a6aefaa756042c799d3e543afef4255f7fe1d",
+    "trades.csv": "4d7c1cdd067c814740f0e79f0b26df6600701c71f68ef648502e8a52bc706713",
+    "sessions.csv": "a4e19a1a2deabc9747a281bc4b189bcb863c85ed8411f2b2bc7be97744c22979",
+    "ledger.json": "1863355fab075a00f952d077f8a2c0440db838e308601efa1f4ce600aee835af"
+  }
+}

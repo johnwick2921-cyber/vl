@@ -1,0 +1,38 @@
+{
+  "REPORT.md": {
+    "bytes": 11929,
+    "sha256": "4b0a3d255f3fa1b7ddcf4e4af27545cd0ef5cf5b7a89852f9936447ad31ca806"
+  },
+  "comparison.csv": {
+    "bytes": 6506,
+    "sha256": "f192f6dd1d898214a222670689f94d8beda088993e1a6ccb738d805c6886e5c0"
+  },
+  "audit.json": {
+    "bytes": 1258,
+    "sha256": "b158575c28c0a1e8382c70e899c084615a0a9bc5fca95807e1a1632f1e325a73"
+  },
+  "verification.json": {
+    "bytes": 257,
+    "sha256": "69e42564bd82cc495785e358c8d5c378946a726d7dfdf4f9dbf15e86e4829047"
+  },
+  "sessions.csv": {
+    "bytes": 26225,
+    "sha256": "a4e19a1a2deabc9747a281bc4b189bcb863c85ed8411f2b2bc7be97744c22979"
+  },
+  "common-days.csv": {
+    "bytes": 2127,
+    "sha256": "8c9d5aab9294140fe60092d8ec0b6e9269d464bb9045e331a80a7dca23232da7"
+  },
+  "streaks.csv": {
+    "bytes": 169358,
+    "sha256": "aef3e8e2e8cd44a52bb823e6a672f2d381111950819b52ba07638a3ab4f01f2d"
+  },
+  "monthly.csv": {
+    "bytes": 20394,
+    "sha256": "19eeb86c7d7882c9552da14f44053817b51e73c63a363de414824e52d2d0108e"
+  },
+  "outcome-rates.csv": {
+    "bytes": 4533,
+    "sha256": "d8717d209ce19d81b41d3b6cdada3e2a9f178f8d6526c8312f29843222bd1fdc"
+  }
+}
