@@ -62,13 +62,19 @@ func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 		}
 		t.Logf("%s: %d intents over %d bars", day, total, len(bars))
 		if day == "mnq_1m_2026-09-15_rth" && swingIntents == 0 {
-			// 09-15's RTH tape authors §8 swing entries only in the LAST 4h
-			// bucket (13:00–16:00), where the m186 late-day cut refuses them
-			// (stop 30 > the 25-pt cap → sub-1:1). The swing path is still
-			// wired: the refusal is counted. The wiring mutant (dropping
-			// runSwing from Tick) leaves the counter untouched and turns RED.
-			if SwingLateDayRRRefused() == lateRefusedBefore {
-				t.Fatalf("%s: no swing intents emitted AND no late-day swing refusal — runSwing not wired into Tick", day)
+			// 09-15's RTH tape (08:30 → 15:00) has its FIRST readable 4h line
+			// only at 13:00 (two closed buckets). Before rv59 that first tick
+			// walked the whole 08:30–12:55 backlog against the 13:00 line: a
+			// reject dropped as stale (S2) still left its Pending registered,
+			// it "filled", and the bot emitted 17 break-even intents for a swing
+			// it never placed. Since rv59 the backlog of closed 4h candles is
+			// not walked (named once, swing_candle_closed), so the tape emits
+			// no swing intent. The swing path is still wired: the line is read
+			// and the skip is NAMED. The wiring mutant (dropping runSwing from
+			// Tick) leaves the line at 0 and the ledger empty → RED.
+			if SwingLateDayRRRefused() == lateRefusedBefore &&
+				(e.State.Swing.Line == 0 || e.State.Refusals[SwingRefusedCandleClosed] == 0) {
+				t.Fatalf("%s: no swing intents, no late-day swing refusal, line %.2f, refusals %v — runSwing not wired into Tick", day, e.State.Swing.Line, e.State.Refusals)
 			}
 		}
 	}

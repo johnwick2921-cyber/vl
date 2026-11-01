@@ -258,6 +258,13 @@ const (
 	// level's swing position is still open: one setup per level [D5.2-R19/R23
 	// p1 @13:23–13:40, p3 @19:15–21:56].
 	SwingRefusedPositionOpen = "swing_position_open"
+	// SwingRefusedCandleClosed — a setup on a 5m bar whose 4h candle had
+	// already closed when the tick read it (the candle's last bar is first seen
+	// at the 4h close): the instance is over [D5.2-R27 p3 @12:16–13:18].
+	SwingRefusedCandleClosed = "swing_candle_closed"
+	// SwingRefusedISBSpent — an inside bar at an invalid level whose inside-bar
+	// order already FILLED in this 4h candle: the level gave its trade [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56].
+	SwingRefusedISBSpent = "swing_isb_spent"
 )
 
 type swingTouch struct {
@@ -437,6 +444,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	s.expireSwingPending(now)
 	warm := s.EmaCount >= FourHEMA34Min
 	line, bucketStart, ok := swingLine(bars5m, now, cfg, loc)
+	var prevBucket int64 // the 4h candle in force before this tick's flip (0 = no flip / no prior candle)
 	if !ok {
 		// Seeded warm line: the local slice is too short to recompute the 4h
 		// EMA — KEEP the seeded line, never wipe a warm line to 0 (P0 seed).
@@ -447,6 +455,34 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		return out
 	}
 	if bucketStart != s.BucketStart {
+		// rv59 (release #59 review, course-swing P2): the tick that first sees a
+		// 4h candle's LAST 5m bar runs at now = that candle's end (m437), so the
+		// bucket has already rolled. Those bars belong to the candle that just
+		// closed: they are walked FIRST, against THAT candle's line and touch
+		// window (the fill check, the R31 cancel of its resting order, the R22
+		// through-close latch, every named refusal), and only then does the line
+		// flip. A setup on them arms nothing — the order could only be placed at
+		// the 4h close, when the instance is over (R27, swing_candle_closed). The
+		// old order flipped first and read the closing bar against the NEXT
+		// candle's line with a fresh window, arming a bar that never touched its
+		// own line into the next candle.
+		// Bars of 4h candles that opened AND closed unseen (a feed gap of 4h+)
+		// are not walked for entries at all — the line in force was never
+		// theirs, and their setups are as over as the closing candle's; they
+		// still get the fill / cancel checks, and the skip is NAMED once.
+		prevBucket = s.BucketStart
+		if prevBucket != 0 && s.Line != 0 {
+			for i := 1; i < len(bars5m); i++ {
+				b := bars5m[i]
+				if b.OpenTime <= s.LastBarTime || b.CloseTime == 0 {
+					continue
+				}
+				if fourHBucketStart(b.OpenTime, loc) != prevBucket {
+					break
+				}
+				out = append(out, s.stepSwingBar(bars5m, i, s.Line, cfg, now, swingBarClosedCandle)...)
+			}
+		}
 		// A 4h candle finished: FLIP to the new line, do not wait for a
 		// retest [D5.2 p3 @ 12:30]; the "used" approach resets (R8).
 		// P0: a warm line continues the SAME EMA recurrence incrementally
@@ -488,41 +524,21 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		line = s.Line
 	}
 
+	unseen := 0
 	for i := 1; i < len(bars5m); i++ {
 		b := bars5m[i]
 		if b.OpenTime <= s.LastBarTime || b.CloseTime == 0 {
 			continue
 		}
-		s.LastBarTime = b.OpenTime
-		// m437: a bar that OPENS after the order's expiry can never fill it
-		// (the order was cancelled at the expiry); every bar up to and
-		// including the bucket's last 5m bar still gets the fill check below.
-		if s.Pending != nil && s.Pending.ExpiryMs > 0 && b.OpenTime >= s.Pending.ExpiryMs {
-			s.Pending = nil
+		mode := swingBarLive
+		if prevBucket != 0 && fourHBucketStart(b.OpenTime, loc) < s.BucketStart {
+			mode = swingBarUnseenCandle
+			unseen++
 		}
-		// S1: the swing position opens only on the FILL of its own resting
-		// order — the first bar that trades through the entry fills it.
-		if s.Pending != nil && fillsSwingEntry(s.Pending, b) {
-			s.Pos = s.Pending
-			s.Pos.MovedBE = false
-			s.Pending = nil
-		}
-		// R31 [D5.2 p1 @15:48–16:24 "1 cây nến sau đó đóng ở trên level…
-		// không đặt lệnh"]: while a reject order rests, any later 5m close
-		// THROUGH the line kills it — the level went invalid, so the stop
-		// order must not keep holding the account slot against a line price
-		// has already cut through. The fill check above wins: a filled order
-		// is a position, not a resting order to cancel.
-		if s.Pending != nil && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
-			out = append(out, Intent{
-				Action: CancelArm,
-				ArmID:  s.Pending.ArmID,
-				Reason: "swing: a later 5m close cut through the line — cancel the resting order [D5.2 p1 @15:48–16:24]",
-			})
-			s.Pending = nil
-		}
-		prev := bars5m[i-1]
-		out = append(out, s.walkSwingBar(prev, b, line, bars5m, cfg, now)...)
+		out = append(out, s.stepSwingBar(bars5m, i, line, cfg, now, mode)...)
+	}
+	if unseen > 0 {
+		s.refuse(SwingRefusedCandleClosed, "%d 5m bars of 4h candles that opened and closed unseen (a feed gap) were not walked for swing entries — their instances are over [D5.2-R27 p3 @12:16–13:18]", unseen)
 	}
 	// m437: the expiry drop runs AFTER the walk — the bucket's last bar has now
 	// had its fill check, so an order that did not fill is retired cleanly.
@@ -535,12 +551,76 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 	return out
 }
 
+// swingBarMode says how stepSwingBar reads a bar (rv59).
+type swingBarMode int
+
+const (
+	swingBarLive         swingBarMode = iota // the bar's 4h candle is the one in force
+	swingBarClosedCandle                     // the closing candle's own bar, read at its close: walked, arms nothing
+	swingBarUnseenCandle                     // a 4h candle that opened and closed unseen: fill/cancel checks only
+)
+
+// stepSwingBar consumes ONE closed 5m bar (bars5m[i]) against the line of the
+// 4h candle it belongs to: the resting order's expiry / fill / R31 cancel, then
+// the entry rules (walkSwingBar) per mode.
+func (s *SwingState) stepSwingBar(bars5m []market.Kline, i int, line float64, cfg SwingCfg, now int64, mode swingBarMode) []Intent {
+	var out []Intent
+	b := bars5m[i]
+	s.LastBarTime = b.OpenTime
+	// m437: a bar that OPENS after the order's expiry can never fill it
+	// (the order was cancelled at the expiry); every bar up to and
+	// including the bucket's last 5m bar still gets the fill check below.
+	if s.Pending != nil && s.Pending.ExpiryMs > 0 && b.OpenTime >= s.Pending.ExpiryMs {
+		s.Pending = nil
+	}
+	// S1: the swing position opens only on the FILL of its own resting
+	// order — the first bar that trades through the entry fills it.
+	if s.Pending != nil && fillsSwingEntry(s.Pending, b) {
+		s.Pos = s.Pending
+		s.Pos.MovedBE = false
+		s.Pending = nil
+	}
+	// R31 [D5.2 p1 @15:48–16:24 "1 cây nến sau đó đóng ở trên level…
+	// không đặt lệnh"]: while a reject order rests, any later 5m close
+	// THROUGH the line kills it — the level went invalid, so the stop
+	// order must not keep holding the account slot against a line price
+	// has already cut through. The fill check above wins: a filled order
+	// is a position, not a resting order to cancel.
+	if s.Pending != nil && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
+		out = append(out, Intent{
+			Action: CancelArm,
+			ArmID:  s.Pending.ArmID,
+			Reason: "swing: a later 5m close cut through the line — cancel the resting order [D5.2 p1 @15:48–16:24]",
+		})
+		s.Pending = nil
+		// rv59 (course-swing P2): an INSIDE-BAR order that dies unfilled does not
+		// spend the level — the way back has no time limit [D5.2-R25 p1
+		// @20:31–21:57 "xuất hiện inside bar, tôi vô lệnh"], so the next inside
+		// bar of this 4h candle may enter. Only a FILL spends it (one setup per
+		// level, D5.2-R19/R23). Under a Through latch the only order that can
+		// rest is the inside bar's (the latch cancelled the reject order).
+		if ft := s.FirstTouch; ft != nil && ft.Through && ft.ISBFired {
+			ft.ISBFired = false
+		}
+	}
+	if mode == swingBarUnseenCandle {
+		return out
+	}
+	prev := bars5m[i-1]
+	return append(out, s.walkSwingBar(prev, b, line, bars5m, cfg, now, mode == swingBarClosedCandle)...)
+}
+
 // walkSwingBar runs the D5.2 entry rules on one closed 5m bar b (prev = the
 // bar before it) against the 4h line in force, after the fill / resting-order
 // checks. It returns the bar's intents; every refusal it makes is NAMED in
-// s.refused (m463 — never silent).
-func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []market.Kline, cfg SwingCfg, now int64) []Intent {
+// s.refused (m463 — never silent). candleClosed: b's 4h candle closed before
+// this tick read it — a setup on b is refused (swing_candle_closed, R27).
+func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []market.Kline, cfg SwingCfg, now int64, candleClosed bool) []Intent {
 	var out []Intent
+	closedRefuse := func(what string, in Intent) {
+		s.refuse(SwingRefusedCandleClosed, "%s CT %s %s %.2f off the 4h line %.2f: this 5m bar is the last of its 4h candle, read at the 4h close — the instance is over, nothing arms into the next candle [D5.2-R27 p3 @12:16–13:18]",
+			swingCT(b.OpenTime), what, in.Side, in.Price, line)
+	}
 	cancelPending := func(reason string) {
 		if s.Pending != nil {
 			out = append(out, Intent{Action: CancelArm, ArmID: s.Pending.ArmID, Reason: reason})
@@ -567,8 +647,23 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 		// invalid marker; the close-back bar is never its own inside bar); the
 		// D1.4 colour clause (ISBDirection(prev) == Approach) is REMOVED — the
 		// swing's direction is the 4H line's, not candle 1's colour.
-		if !ft.ISBFired && closedBack(ft.Approach, prev.Close, line) &&
-			closedBack(ft.Approach, b.Close, line) && swingInsideBar(prev, b) {
+		isInside := closedBack(ft.Approach, prev.Close, line) &&
+			closedBack(ft.Approach, b.Close, line) && swingInsideBar(prev, b)
+		if isInside && ft.ISBFired {
+			// rv59: an inside bar is never read as a reject shape (the
+			// "only a 5m inside bar may enter" text on a bar that IS one).
+			// The level's inside-bar order FILLED and that leg has ended →
+			// the level gave its trade, NAMED swing_isb_spent. While this
+			// level's order rests or its position is open, the level's setup
+			// is live — that was named once when it latched (or it is the
+			// inside bar's own trade); nothing more to refuse.
+			if s.Pos == nil && s.Pending == nil {
+				s.refuse(SwingRefusedISBSpent, "%s CT inside bar at the invalid 4h line %.2f: this level's inside-bar entry already filled in this 4h candle — one setup per level [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56]",
+					swingCT(b.OpenTime), line)
+			}
+			return out
+		}
+		if isInside {
 			// One setup per level [D5.2-R19/R23 p1 @13:23–13:40; p3
 			// @19:15–21:56]: a close beyond the line ALSO latches Through after
 			// this level's reject order FILLED. A second arm here would rest
@@ -600,6 +695,10 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 					return out
 				}
 				in.Target = cut
+			}
+			if candleClosed {
+				closedRefuse("inside bar", in)
+				return out
 			}
 			ft.ISBFired = true // A6: Through stays latched; the ISB is spent
 			in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
@@ -670,6 +769,11 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 			return out
 		}
 		in.Target = cut
+	}
+	if candleClosed {
+		closedRefuse(string(approach)+" reject", in)
+		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Touches: touches}
+		return out
 	}
 	in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
 	// A later touching candle inside the window supersedes the earlier arm: the

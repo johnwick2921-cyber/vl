@@ -41,6 +41,7 @@ type m463Event struct {
 type m463ReplayResult struct {
 	Entries  []m463Event
 	Cancels  []m463Event
+	Ends     []string // rv59: the emulated broker's end receipts ("<CT> <arm> stop|target|hold @price")
 	Lines    map[int64]float64 // bucket start → line in force
 	Eval     *Evaluator
 	NoteDump []string
@@ -64,17 +65,50 @@ func m463Replay(t *testing.T, cfgMut func(*Config)) m463ReplayResult {
 		LastBarTime: m463Bucket1700 - 65*60_000, // 15:55 CT
 	}
 	res := m463ReplayResult{Lines: map[int64]float64{m463Bucket1700: m463Line1700}, Eval: e}
+	// rv59: the replay emulates the trader's receipts for a FILLED swing — the
+	// BE move applied, and the position ENDED at its stop (the BE stop once
+	// moved), its target, or the hold-close — exactly the SwingBEApplied /
+	// SwingEnded calls the live trader makes. Before rv59 nothing ever ended a
+	// position here, so one filled swing blocked every later setup of the day
+	// (swing_position_open) — a harness artefact the live bot never has.
+	beArm := ""
 	for i := range bars {
 		if bars[i].OpenTime < m463Bucket1700 {
 			continue
 		}
 		now := bars[i].CloseTime + 1
+		if p := e.State.Swing.Pos; p != nil {
+			b := bars[i]
+			stop := p.Stop
+			if beArm == p.ArmID {
+				stop = p.Entry
+			}
+			why, px := "", 0.0
+			switch {
+			case p.Side == SideLong && b.Low <= stop, p.Side == SideShort && b.High >= stop:
+				why, px = "stop", stop
+			case p.Target > 0 && (p.Side == SideLong && b.High >= p.Target || p.Side == SideShort && b.Low <= p.Target):
+				why, px = "target", p.Target
+			}
+			if why != "" {
+				res.Ends = append(res.Ends, fmt.Sprintf("%s %s %s @%.2f", m463CT(b.OpenTime), p.ArmID, why, px))
+				e.SwingEnded(p.ArmID)
+			}
+		}
 		for _, in := range runSwing(e, bars[:i+1], now) {
 			switch in.Action {
 			case PlaceStopEntry:
 				res.Entries = append(res.Entries, m463Event{At: now, Intent: in})
 			case CancelArm:
 				res.Cancels = append(res.Cancels, m463Event{At: now, Intent: in})
+			case ActionMoveStopBE:
+				if e.SwingBEApplied(in.ArmID) {
+					beArm = in.ArmID
+				}
+			case ActionClosePosition:
+				if e.SwingEnded(in.ArmID) {
+					res.Ends = append(res.Ends, fmt.Sprintf("%s %s hold @%.2f", m463CT(bars[i].OpenTime), in.ArmID, bars[i].Close))
+				}
 			}
 		}
 		res.Lines[e.State.Swing.BucketStart] = e.State.Swing.Line
@@ -96,6 +130,9 @@ func (r m463ReplayResult) dump() string {
 	}
 	for _, ev := range r.Cancels {
 		fmt.Fprintf(&sb, "  CANCEL %s %s [%s]\n", m463CT(ev.At), ev.Intent.ArmID, ev.Intent.Reason)
+	}
+	for _, end := range r.Ends {
+		fmt.Fprintf(&sb, "  END %s\n", end)
 	}
 	fmt.Fprintf(&sb, "  refusals %v\n", r.Eval.State.Refusals)
 	for _, n := range r.NoteDump {
@@ -163,8 +200,9 @@ func TestM463ReplayLineParity(t *testing.T) {
 //   - 709/710 (arms 477/478, 19:05 CT long 29717.75, stop 102.25): the same
 //     invalid level, 90 minutes later — only an inside bar may trade it
 //     (D5.2-R22/R24); the 19:05 low 29646 is 0.47 above the line (R12); the
-//     stop would be 102.22 > 90 (R31; 102.25 on the tick-rounded wire). Named
-//     swing_level_invalid.
+//     stop would be 102.22 > 90 (R31; 102.25 on the tick-rounded wire). Never
+//     armed: since rv59 the 19:00 inside bar is the level's trade and 19:05 is
+//     its fill bar (below).
 func TestM463ReplayTrades707_709_710Refused(t *testing.T) {
 	r := m463Replay(t, nil)
 	if in, ok := r.entryAt(1793227200000); ok {
@@ -179,10 +217,20 @@ func TestM463ReplayTrades707_709_710Refused(t *testing.T) {
 	if !r.noteHas("17:40", SwingRefusedLevelInvalid, "D5.2-R22", "1.28") {
 		t.Fatalf("707: no named note for the 17:40 candle (level invalid + 1.28-pt near touch)\n%s", r.dump())
 	}
-	// 102.22 = 29717.75 − (line − 30) on the unrounded line; the live wire
-	// rounded the stop to 29615.50, hence the 102.25 in rows 477/478.
-	if !r.noteHas("19:05", SwingRefusedLevelInvalid, "D5.2-R22", "0.47", "102.22", "D5.2-R31") {
-		t.Fatalf("709/710: no named note for the 19:05 candle (level invalid + 0.47 near touch + 102.25 stop)\n%s", r.dump())
+	// rv59 (release #59 review, course-swing P2): the 18:25 inside-bar order
+	// (stop 85.22) was CANCELLED unfilled at 18:40 by a close back through the
+	// line — that does not spend the level (D5.2-R25, no time limit). The 19:00
+	// bar (body 29,668.75–29,674.25) is an inside bar of the 18:55 close-back
+	// candle (29,658.75–29,694.50) and closes above the line: the course's way
+	// back in arms — LONG 29,699.25, stop AT the line 29,645.53 (53.72 pts,
+	// D5.2-R24/R29). The 19:05 candle (709/710's reject shape, 0.47 short of the
+	// line, would-be stop 102.22) is the FILL bar of that inside bar, not a new
+	// setup — 709/710's own 19:05 arm stays impossible. Before rv59 the 19:05
+	// candle was refused swing_level_invalid with the 0.47 / 102.22 note, and the
+	// 19:00 inside bar got NO note at all (ISBFired still latched).
+	isb, ok := r.entryAt(1793232000000)
+	if !ok || isb.Side != SideLong || isb.Price != 29699.25 || abs(isb.Stop-m463Line1700) > 0.01 {
+		t.Fatalf("the 19:00 inside bar after the cancelled 18:25 inside bar must arm LONG 29,699.25 stop AT the line %.2f, got %+v ok=%v\n%s", m463Line1700, isb, ok, r.dump())
 	}
 	// 713/714 (arms 481/482, 23:55 short off the close-back bar) stay refused.
 	if in, ok := r.entryAt(1793249700000); ok {
@@ -238,7 +286,11 @@ func TestM463DumpM434Swing(t *testing.T) {
 	if os.Getenv("M463_DUMP") == "" {
 		t.Skip("diagnostic: set M463_DUMP=1")
 	}
-	for _, c := range m434Cases()[:1] {
+	cases := m434Cases()[:1]
+	if os.Getenv("M463_DUMP") == "all" {
+		cases = m434Cases()
+	}
+	for _, c := range cases {
 		old := flatNearScale
 		flatNearScale = c.scale
 		bars := c.tape(t)
