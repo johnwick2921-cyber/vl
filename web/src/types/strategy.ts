@@ -356,7 +356,7 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
-  htf_gate_news_only?: boolean // D4.4-11 — unset = ON (news 07:20–07:35 + open 08:30–09:30 CT; the mentor's rule); OFF = all-day gate
+  htf_gate_news_only?: boolean // m462 — unset = OFF = the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); ON (stored) = the old D4.4-11 news + open windows
   exec_2m_after_30m?: boolean // X5-10 — unset = ON (execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
@@ -483,6 +483,8 @@ export interface RiskControlConfig {
   mentor_keypair_candle_ratio?: number
   mentor_box_fresh_rth_pair?: boolean
   mentor_box_max_height_pts?: number
+  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
+  mentor_swing_max_stop_pts?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

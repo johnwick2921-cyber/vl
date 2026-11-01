@@ -1996,9 +1996,10 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
-	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only in the news
-	// period (print day, 07:20–08:30 CT) and the 08:30–09:30 CT open window
-	// (nil → ON since #45; the m134 all-day default was reverted).
+	// HTFGateNewsOnly: nil → OFF since m462 (release #59) = the 4h/1h
+	// direction gate applies ALL SESSION (D5.1-R9/R11). A STORED true keeps the
+	// old D4.4-11 windows: the news period (print day, 07:20–08:30 CT) and the
+	// 08:30–09:30 CT open window.
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
 	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
@@ -2297,6 +2298,9 @@ type RiskControlConfig struct {
 	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
+	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
+	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
+	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
 	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
 	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
@@ -2308,6 +2312,7 @@ type RiskControlConfig struct {
 	MentorKeypairCandleRatio       float64 `json:"mentor_keypair_candle_ratio,omitempty"`
 	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
+	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

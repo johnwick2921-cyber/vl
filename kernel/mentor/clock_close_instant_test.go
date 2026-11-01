@@ -141,8 +141,11 @@ func TestClockSwingExpiryOnTheBoundaryBar(t *testing.T) {
 	if exp <= now {
 		t.Fatalf("swing expiry %s is not after the placement instant %s", clockHM(exp), clockHM(now))
 	}
-	if want := day + int64(17*60)*60_000 - 1; exp != want {
-		t.Fatalf("swing expiry = %s, want %s (the close of the 13:00–17:00 4h candle)", clockHM(exp), clockHM(want))
+	// m463 D5.2-R27 [p3 @12:16–13:18]: the 13:00 CT candle's last bar is 15:55 —
+	// the CME halts at 16:00 — so the candle (and the order) ends at the CLOSE,
+	// never at 16:59:59.999 inside the break (trade 678, row 410 filled 17:00:40).
+	if want := day + int64(16*60)*60_000 - 1; exp != want {
+		t.Fatalf("swing expiry = %s, want %s (the 16:00 close that ends the 13:00 4h candle)", clockHM(exp), clockHM(want))
 	}
 }
 

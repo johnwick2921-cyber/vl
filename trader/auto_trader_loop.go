@@ -1008,6 +1008,10 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
 	// 12-24 carried resting arms and open positions over the holiday.
 	at.retireBookAfterEarlyCloseAt(now)
+	// m463 (D5.2-R27): a due expiry is swept on the CLOSED path too — an order
+	// whose 4h candle ended at the close (kernel swingExpiry) is cancelled
+	// during the break, never left to fill on the reopen (trade 678).
+	at.sweepDueExpiriesWhileClosed(now)
 	// m427/2 — a replay hold released on a closed market bumps the history
 	// refill generation, but the only re-seed reader is the mentor Tick, which
 	// never runs while CME is shut. Rebuild the DISPLAY-ONLY chart seed here.

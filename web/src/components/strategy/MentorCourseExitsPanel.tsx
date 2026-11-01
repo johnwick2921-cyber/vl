@@ -23,6 +23,7 @@ export type CourseExitsNumKey =
   | 'mentor_isb_max_pts'
   | 'mentor_keypair_candle_ratio'
   | 'mentor_box_max_height_pts'
+  | 'mentor_swing_max_stop_pts'
 
 export type CourseExitsKey =
   | CourseExitsBoolKey
@@ -45,6 +46,9 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_isb_max_pts: 30,
   mentor_keypair_candle_ratio: 1,
   mentor_box_max_height_pts: 0,
+  // m463 (D5.2-R31, owner order 2026-11-01 "full of it" — reverses m186): a
+  // swing stop ABOVE this is refused, "100 điểm quá nhiều rủi ro… đừng vô".
+  mentor_swing_max_stop_pts: 90,
 } as const
 
 const COPY = {
@@ -136,6 +140,11 @@ const COPY = {
     en: 'Max box height (pts, 0 = off)',
     es: 'Altura máxima de caja (pts, 0 = off)',
   },
+  mentor_swing_max_stop_pts: {
+    zh: 'SWING 最大止损（点，超过即不进场；0 → 90）',
+    en: 'SWING max stop (pts, above it = do not enter; 0 → 90)',
+    es: 'Stop máximo SWING (pts, por encima = no entrar; 0 → 90)',
+  },
 } satisfies Record<string, Copy>
 
 function tr(entry: Copy, language: string): string {
@@ -157,6 +166,7 @@ const NUM_KEYS: CourseExitsNumKey[] = [
   'mentor_isb_max_pts',
   'mentor_keypair_candle_ratio',
   'mentor_box_max_height_pts',
+  'mentor_swing_max_stop_pts',
 ]
 
 export type CourseExitsValues = Partial<

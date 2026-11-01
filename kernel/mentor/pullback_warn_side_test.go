@@ -132,6 +132,7 @@ func pwTick(t *testing.T, hl [][2]float64, bull bool, side Side) (Intent, *Evalu
 	cfg.RoomMultiple = 0
 	cfg.Exec2mAfter30m = false // read the 1m ISB pair; the 5m warning read is frame-independent
 	cfg.FifteenMinIBRule = ""  // the synthetic history draws its own 15m box; this fixture pins the size flag, not the CE-1 gate
+	cfg.HTFGateNewsOnly = true // pins the size flag, not the 4h/1h gate (m462 default is all-day; stored news-only = off at 10:00 CT)
 	var head, prev, cur market.Kline
 	// No standing 5m ISB box: the Tick builds the 5m trigger line from the
 	// history, and that line governs the ISB side (a candle that broke the prior

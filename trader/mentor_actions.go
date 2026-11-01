@@ -301,7 +301,11 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
 	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 25) —
 	// one number, not two (P2-1).
-	extra.ISBMaxStopPts = mentorCourseExitsResolve(at, at.mentorRiskControl()).ISBMaxPts
+	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
+	extra.ISBMaxStopPts = cx.ISBMaxPts
+	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
+	// (mentor_swing_max_stop_pts, unset/0 → 90).
+	extra.SwingSkipStopPts = cx.SwingMaxStopPts
 	if why := mentorRuleGate(in, extra); why != "" {
 		rule := "other"
 		if i := strings.Index(why, ":"); i > 0 {
@@ -343,6 +347,8 @@ func mentorRuleGateClass(rule string) string {
 		return "mentor_rule_r8"
 	case "r9":
 		return "mentor_rule_r9"
+	case "r31":
+		return "mentor_rule_r31"
 	case "bad geometry":
 		return "mentor_bad_geometry"
 	case "untagged setup":

@@ -623,13 +623,13 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 		return out
 	}
 
-	// (a) no 4h direction → box_htf_blocked, zero box entries.
+	// (a) no 4h direction → box_htf_no_4h (m462 name), zero box entries.
 	e, bars, now := fixture(HTF{}, DayLatch{Verdict: DayTrade})
 	if got := boxEntries(e.Tick(bars, now)); len(got) != 0 {
 		t.Fatalf("no-4h tick emitted %d box entries, want 0", len(got))
 	}
-	if e.State.Refusals["box_htf_blocked"] == 0 {
-		t.Fatalf("ledger = %v, want box_htf_blocked counted", e.State.Refusals)
+	if e.State.Refusals["box_htf_no_4h"] == 0 {
+		t.Fatalf("ledger = %v, want box_htf_no_4h counted", e.State.Refusals)
 	}
 
 	// (b) 4h SHORT vs a LONG box entry → box_htf_side_mismatch.

@@ -234,6 +234,7 @@ func TestW11B10EveningSlowKnobReachesTheFrameChoice(t *testing.T) {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = true
+		cfg.HTFGateNewsOnly = true // pins the frame choice, not the 4h/1h gate (m462 all-day default would refuse first)
 		if pts > 0 {
 			cfg.EveningSlowPts = pts
 		}

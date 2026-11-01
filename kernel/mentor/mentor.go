@@ -337,7 +337,22 @@ type Config struct {
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
 	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
-	PHLEntryBufferPts        float64 // entry buffer beyond the candle extreme (outward); default 1.0 [D2.2 p1 @ 06:50 drawn: high 29,396.25 → entry 29,397.25]
+	// PHLEntryBufferPts — entry buffer beyond the reference candle's extreme
+	// (outward). Default 0.50 (release #59 fix round, mentor-exact): the
+	// committed entry RAY is 29,396.25 over the signal high 29,395.75 (+2
+	// ticks) [D2.2-R10 p1 @04:14–05:43, screen]. The old 1.00 read the HIGH as
+	// 29,396.25 and the long-tool's refitted 29,397.25 as the entry [D2.2 p1
+	// @06:45]; the real NT8 tape of the replay day (MNQ 09-26, Fri 11 Sep 2026
+	// 10:14 CT: O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00) confirms the
+	// high (testdata/m464_mnq_1m_20260911.csv).
+	PHLEntryBufferPts float64
+	// PHLStopBufferPts — the stop sits this far BEYOND the broken candle's other
+	// extreme (outward). Default 0.50: the stop RAY is 29,386.00 under the signal
+	// low 29,386.50 (−2 ticks) [D2.2-R10 p1 @04:14–05:43, screen]. Not applied
+	// when the D3.3 EMA 34 nuance puts the stop AT the EMA ("no extra room").
+	// Entry and stop move together, so the RISK is unchanged from the old
+	// 1.00 / 0 pair (range + 1.00).
+	PHLStopBufferPts float64
 	// RollingPHL (m216/m225, DS-102) turns on the D2.2 pullback-continuation
 	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
 	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
@@ -352,20 +367,24 @@ type Config struct {
 	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
 	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
-	// HTFGateNewsOnly — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the 4h/1h
-	// direction gate is for NEWS first, not ordinary trading yet
-	// ("đánh news NÊN SỬ DỤNG CHO NEWS TRƯỚC ĐI. ĐỪNG SỬ DỤNG CHO [trade]
-	// THƯỜNG"). true (default, the mentor's rule): the HTF gate applies on a
-	// print day from the print window's start (07:20 CT) to the 08:30 CT open
-	// (W7 A9: the post-print news trade follows the 4h; no 07:20–07:35 gate
-	// on a no-print day, R7) AND in the 08:30–09:30 CT open window ("the
-	// open is like news" [D4.4 p2 @00:35–00:46]; the 60-minute length is OURS,
-	// B28, borrowed from [example: D1.2 p1 @23:52–24:59]); ordinary intraday entries outside those
-	// windows are not HTF-gated. false (owner decision A 2026-10-21 m134 "fix
-	// all", REVERTED by #45): the 4h/1h direction gate applies ALL DAY. Stored
-	// strategies carry no htf_gate_news_only key, so the new default applies at
-	// the next trader load; an explicit stored false stays all-day, and none
-	// exists today.
+	// HTFGateNewsOnly — m462 (release #59): false (DEFAULT) = the 4h/1h
+	// direction gate applies ALL SESSION to every intraday setup. The final
+	// review D5.1 overrides the D4.4 "news first" caveat: D5.1-R9 [D5.1 p1
+	// @08:46–09:13, @11:27] "Lúc nào khi anh chị open ra, không cần phải là
+	// news… nếu là news thì 1h trước news và 4h trước news; còn nếu là open
+	// cũng vậy"; D5.1-R11 [D5.1 p1 @08:29–09:52, @11:27–11:50] "Trigger 4h,
+	// trigger 1h nằm ngược nhau… cứng ngắt nằm giữa cái range luôn, mình không
+	// làm được gì hết trơn" (15 Sep: the conflict held until 11–12 h); the
+	// matrix D5.1-R20 [@19:11–20:10]. The bot traded through conflicts under
+	// the old default (trades 669, 677, 698, 705, 716).
+	// true = the OLD D4.4-11 news-only windows [D4.4 p1 @13:44–14:06, @24:48]:
+	// a print day from the print window's start (07:20 CT) to the 08:30 CT
+	// open, plus the 08:30–09:30 CT open window (the 60 minutes are OURS, B28).
+	// Kept reachable for anyone who STORED true explicitly — stored values are
+	// sacred; on 2026-11-01 no strategy stores the key (all read nil → the new
+	// all-day default at the next trader load).
+	// SWING4H is never gated by the 4h/1h triggers (D5.2-R7: its direction is
+	// the 4h EMA34).
 	// Studio switch: risk_control.mentor_tuning.htf_gate_news_only.
 	HTFGateNewsOnly bool
 
@@ -642,22 +661,23 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
-		PHLEntryBufferPts:        1.0,
+		PHLEntryBufferPts:        0.5,  // D2.2-R10 entry ray +0.50 [p1 @04:14–05:43]
+		PHLStopBufferPts:         0.5,  // D2.2-R10 stop ray −0.50 [p1 @04:14–05:43]
 		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        true, // D4.4-11: gate NEWS + OPEN windows (the mentor's rule; #45 reverts owner decision A 2026-10-21 m134 all-day)
-		NearBoxRoomMultiple:    2,    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:         true, // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
-		ISBOldExtremePts:       2,    // B27 [ours]: "at the old extreme" = ± 2 pts
-		ISBInRangeGapPts:       0,    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
-		ISBStackCancelCandle2m: 4,    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    0,    // B8: tiny-stop exception OFF (the mentor gave no number)
-		EveningSlowPts:         100,  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
-		EveningSlowFromHour:    15,   // B10 [ours]: the RTH close
-		EveningSlowWindowMin:   0,    // B10 [ours]: cumulative since the start hour
-		LossDeparturePts:       0,    // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false, // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
+		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true,  // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		ISBOldExtremePts:       2,     // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,     // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,     // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    0,     // B8: tiny-stop exception OFF (the mentor gave no number)
+		EveningSlowPts:         100,   // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,    // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,     // B10 [ours]: cumulative since the start hour
+		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30

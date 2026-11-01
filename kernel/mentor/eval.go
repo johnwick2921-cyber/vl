@@ -236,6 +236,10 @@ type State struct {
 	// RollingPHL is the D2.2 pullback-continuation rolling stop-entry state
 	// (m216: the pullback leg only — level touches stay first-touch-fixed).
 	RollingPHL RollingPHL `json:"rolling_phl,omitempty"`
+	// RollingHTFRefusedAt — m462: the exec-candle close the rolling leg's
+	// 4h/1h refusal (rolling_htf_*) was last counted on, so the named refusal
+	// counts once per candle without a growing per-candle key set.
+	RollingHTFRefusedAt int64 `json:"rolling_htf_refused_at,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
@@ -760,6 +764,12 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 		out = append(out, Intent{Action: CancelArm, ArmID: arm.ArmID,
 			Reason: "15m/5m ISB conflict — cancel all arms [D4.2 p1 @ 13:59–14:53]"})
 		delete(e.State.LevelArms, key)
+		// The rolling rung's order is gone: drop it from the ladder state too
+		// (release #59 fix round) — else the next rung re-cancels a dead id and
+		// a break of the frozen rung is not counted as an unarmed reaction.
+		if key == rollingLevelKey && e.State.RollingPHL.ArmID == arm.ArmID {
+			e.State.RollingPHL.dropRung()
+		}
 	}
 	return out
 }
@@ -1090,7 +1100,9 @@ func (e *Evaluator) unregisterArm(armID string) {
 		}
 	}
 	if e.State.RollingPHL.ArmID == armID {
-		e.State.RollingPHL = RollingPHL{}
+		// m464: only the RUNG is gone (dropped by a later filter or refused by
+		// the trader); the ladder re-arms on the next closed candle [D2.2-R7 p1 @02:26–03:27].
+		e.State.RollingPHL.dropRung()
 	}
 	if e.State.EmaPendingArmID == armID {
 		e.State.EmaPendingSide = ""
@@ -1971,15 +1983,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 	e.noteTriggerMove("4h", prevHTF.FourH, e.State.HTF.FourH, bars)
 	e.noteTriggerMove("1h", prevHTF.OneH, e.State.HTF.OneH, bars)
-	// D4.4-11: with HTFGateNewsOnly ON (the default, the mentor's rule) the
-	// 4h/1h direction gate applies on a print day from the print window's
-	// start (07:20 CT) through the 08:30 CT open (A9 — the post-print news
-	// trade follows the 4h) and in the 08:30–09:30 CT open window (60 min is
-	// ours, B28); no 07:20–07:35 gate on a day without a print (R7); OFF (owner decision A 2026-10-21 m134
-	// all-day, REVERTED by #45) applies it all day. The gate covers ISB,
-	// reverse-ISB, PHL/PLH and box authoring — SWING4H is exempt (runSwing
-	// never consults HTFVerdict) and planner/AI entries carry their own G1 HTF
-	// veto.
+	// m462 (release #59): the 4h/1h direction gate applies ALL SESSION by
+	// default — D5.1-R9 [D5.1 p1 @08:46–11:27] "Lúc nào khi anh chị open ra,
+	// không cần phải là news" and D5.1-R11 [D5.1 p1 @08:29–09:52, @11:27–11:50]
+	// "Trigger 4h, trigger 1h nằm ngược nhau… mình không làm được gì hết trơn"
+	// (the final review overrides the D4.4 "news first" caveat). Only an
+	// EXPLICITLY stored htf_gate_news_only=true keeps the old D4.4-11 windows
+	// (print day 07:20→08:30 CT + the 08:30–09:30 open). The gate covers every
+	// intraday setup through HTFEntryCheck (ISB, reverse ISB, PHL/PLH level +
+	// rolling, box returns; htfEntryFilter is the backstop) — SWING4H is
+	// exempt: its direction is the 4h EMA34 [D5.2-R7, D5.2 p3 @15:04–18:25];
+	// planner/AI entries carry their own G1 HTF veto.
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
@@ -2385,8 +2399,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// fold item 3: entries only with the 4h trigger direction
 				// (1h agreeing or silent); fold item 4: a DayOff shuts the
 				// machine off for the day.
-				if htfOK, htfSide, _ := HTFVerdict(e.State.HTF); !htfOK {
-					e.refuse("isb_htf_blocked")
+				// m462: the ONE shared check (HTFEntryCheck) — all session by
+				// default (D5.1-R9/R11); named isb_htf_no_4h / isb_htf_conflict.
+				if r, _ := HTFEntryCheck(e.State.HTF, ""); r != "" {
+					e.refuse(htfRefusalName("isb", r))
 				} else {
 					// R1 (RULES-FIX-v3): the order is a STOP-LIMIT in the
 					// CANDLE-1 colour direction [D1.4 p1 @ 09:20–10:20, 24:41–24:55].
@@ -2458,9 +2474,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// @00:14–13:00] already refused an opposite-direction ISB
 						// above (boxBlocked), so this check is skipped entirely.
 						e.refuse("isb_trigger_side_mismatch")
-					} else if side != "" && htfSide != "" && side != htfSide {
-						// ISB direction against the 4h — no entry
-						e.refuse("isb_htf_side_mismatch")
+					} else if r, _ := HTFEntryCheck(e.State.HTF, side); r != "" {
+						// ISB direction against the 4h — no entry (m462 shared
+						// check: isb_htf_side_mismatch)
+						e.refuse(htfRefusalName("isb", r))
 					} else if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
 						// A10: day off OR not-measured — no intraday mentor
 						// entries today (named per setup).
@@ -2624,7 +2641,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
 				fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.State.ISBBox15m, e.State.ISBBox, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 			}
-			htfOK, htfSide, _ := HTFVerdict(e.State.HTF)
+			// m462: the ONE shared 4h/1h check (all session by default).
+			htfRefusal, _ := HTFEntryCheck(e.State.HTF, in.Side)
 			target := 0.0
 			if _, stopOK, why := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse(isbStopRefusal("isbrev_", why))
@@ -2636,10 +2654,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("isbrev_box_blocked_30m")
 			} else if fifteenRefusal != "" {
 				e.refuse("isbrev_" + fifteenRefusal) // CE-1
-			} else if !htfOK {
-				e.refuse("isbrev_htf_blocked")
-			} else if htfSide != "" && in.Side != htfSide {
-				e.refuse("isbrev_htf_side_mismatch")
+			} else if htfRefusal != "" {
+				e.refuse("isbrev_" + string(htfRefusal)) // isbrev_htf_no_4h / _conflict / _side_mismatch
 			} else if in.Side != e.State.Trigger.Dir {
 				// B6: the 5m trigger side governs [D3.4 p1 @ 09:30–10:38] —
 				// defensive (R7 already builds in.Side == Trigger.Dir once the
@@ -3128,10 +3144,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
 					// the same day/HTF gates as every other setup —
 					// the 4h/1h direction, the day-off and the spent cap.
-					if htfOK, htfSide, _ := HTFVerdict(e.State.HTF); !htfOK {
-						e.refuse("box_htf_blocked")
-					} else if in.Side != "" && htfSide != "" && in.Side != htfSide {
-						e.refuse("box_htf_side_mismatch")
+					// m462: the ONE shared check, all session by default.
+					if r, _ := HTFEntryCheck(e.State.HTF, in.Side); r != "" {
+						e.refuse(htfRefusalName("box", r)) // box_htf_no_4h / _conflict / _side_mismatch
 					} else {
 						capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 						if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
@@ -3219,6 +3234,16 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// FTGH + sell line) NO entry, ISB included; price must escape both. The
 	// swing runs its own machine and is exempt (orbGateFilter pattern).
 	out, refused = triggerBoxZoneFilter(out, e.State.Trigger, boxes)
+	for _, r := range refused {
+		e.refuse(r)
+	}
+
+	// m462 backstop: the ONE shared 4h/1h check (HTFEntryCheck) over every
+	// intraday entry still standing — every setup path already refused by
+	// name before it emitted, so this drops nothing on a correct build; it
+	// guarantees no intraday path can trade through a 4h/1h conflict unnamed
+	// (D5.1-R11 [D5.1 p1 @08:29–09:52]). SWING4H is exempt (D5.2-R7).
+	out, refused = htfEntryFilter(out, e.State.HTF)
 	for _, r := range refused {
 		e.refuse(r)
 	}
@@ -3440,8 +3465,12 @@ func phlRefusalKey(reason string) string {
 		return "phl_stop_ceiling"
 	case strings.HasPrefix(reason, "degenerate stop/target"):
 		return "phl_degenerate_geometry"
-	case strings.HasPrefix(reason, "HTF direction gate"):
-		return "phl_htf_blocked"
+	case strings.HasPrefix(reason, "HTF direction gate: "+string(HTFRefuseNo4h)):
+		return htfRefusalName("phl", HTFRefuseNo4h)
+	case strings.HasPrefix(reason, "HTF direction gate: "+string(HTFRefuseConflict)):
+		return htfRefusalName("phl", HTFRefuseConflict)
+	case strings.HasPrefix(reason, "HTF direction gate: "+string(HTFRefuseSide)):
+		return htfRefusalName("phl", HTFRefuseSide)
 	case strings.HasPrefix(reason, "day gate: day_off"):
 		return "phl_day_off"
 	case strings.HasPrefix(reason, "day gate: day_not_measured"):
@@ -3518,6 +3547,12 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	if e.State.Swing.LineStale && !wasStale {
 		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice, or an open-session 4h bucket with no bars, hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
+	// m463: every swing refusal is NAMED — counted in the B-rules ledger and
+	// written as a note (logged by the trader), never silent.
+	for _, r := range e.State.Swing.TakeRefusals() {
+		e.refuse(r.Name)
+		e.note("swing refused %s", r.Why)
+	}
 	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
 	// close of the CURRENT 4h candle (ruling 1791008277195) — NOT the 2nd
@@ -3560,9 +3595,30 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 }
 
 // swingExpiry is the close of the CURRENT 4h candle (session-anchored at
-// 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562).
+// 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562;
+// D5.2-R27 [p3 @12:16–13:18] "9h đó là xong rồi… mình không có lệnh nào hết").
+//
+// m463: when the CME closes INSIDE the candle — the 13:00 CT bucket at the
+// 16:00 halt, a Friday at the weekend close, an early-close holiday — the
+// candle's last bar is the one before the close, so the candle closes THERE:
+// the expiry is the close minus 1 ms, never the bucket end inside the break.
+// An expiry left at 16:59:59.999 is due only once the market has reopened, and
+// the first open cycle can run up to the closed backoff after 17:00 — trade
+// 678 (row 410) filled at 17:00:40 off exactly that expiry. The trader sweeps a
+// due expiry on the CLOSED path too (sweepDueExpiriesWhileClosed), so an order
+// whose candle ended at the close is cancelled during the break.
+// SwingOrderExpiry is swingExpiry for the trader's fallback (one definition).
+func SwingOrderExpiry(now int64) int64 { return swingExpiry(now) }
+
 func swingExpiry(now int64) int64 {
-	return bucketOpen(now, 240) + 240*60_000 - 1
+	start := bucketOpen(now, 240)
+	end := fourHBucketEnd(start)
+	for t := now - now%60_000; t < end; t += 60_000 {
+		if t >= now && !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			return t - 1
+		}
+	}
+	return end - 1
 }
 
 // dropStaleSwingIntents (S2) drops swing entry intents whose reference candle

@@ -76,6 +76,7 @@ type mentorTierInputs struct {
 	// bare table test) falls back to the kernel defaults, never to a second
 	// constant.
 	SwingMaxStopPts    float64
+	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 90) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
 	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 25)
 }
@@ -178,17 +179,20 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 			return mentorSizeChoice{Contracts: clamp(strong), Tier: "strong_day", Why: fmt.Sprintf(
 				"strong day — the SWING sizes min(2, base %d) = %d, never above the base [D5.2 p2 @05:21–05:57]", swing4h, strong)}, nil
 		}
-		// B5 (#45 review): the ~100-pt ceiling is a SIZE rule, not a skip. A
-		// swing whose stop reaches SwingMaxStopPts goes out at min(base, 2)
-		// MNQ — "take 1-2 MNQ and sit" [D5.2 p2 @21:25-21:43] — whatever the
-		// owner's swing knob says. One number: mentorSwingWideStopCap.
+		// B5 (#45 review): the ~100-pt SIZING ceiling. A swing whose stop
+		// reaches SwingMaxStopPts goes out at min(base, 2) MNQ — "anh chị có
+		// thể lấy 1 hay 2 contract" [D5.2 p2 @21:25-21:43] — whatever the
+		// owner's swing knob says. One number: mentorSwingWideStopCap. m463: a
+		// stop ABOVE mentor_swing_max_stop_pts (default 90) never gets here —
+		// the rule gate refuses it (D5.2-R31); this tier only bites when the
+		// owner raises that ceiling to >= this one.
 		if wide := mentorSwingWideStopCap(in); wide > 0 {
 			n := swing4h
 			if n > wide {
 				n = wide
 			}
 			return mentorSizeChoice{Contracts: clamp(n), Tier: "swing4h_wide_stop", Why: fmt.Sprintf(
-				"SWING4H stop %.1f pts >= the %.0f-pt ceiling -> min(base %d, %d) = %d MNQ, sized down, never refused [D5.2 p2 @21:25-21:43]",
+				"SWING4H stop %.1f pts >= the %.0f-pt sizing ceiling -> min(base %d, %d) = %d MNQ, sized down [D5.2 p2 @21:25-21:43]",
 				in.StopPts, mentorSwingCeiling(in), swing4h, wide, n)}, nil
 		}
 		return mentorSizeChoice{Contracts: clamp(swing4h), Tier: "swing4h", Why: fmt.Sprintf(
@@ -675,13 +679,21 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 	stop := mentorIntentRisk(in)
 	target := mentorIntentTargetPts(in)
 	if swing {
-
-		// m186 D5.2: NO ~100-pt skip — the mentor softened "Đừng vô" to "take
-		// 1-2 MNQ and sit" [D5.2 p2 @21:25–21:43]. The swing's 2-MNQ tier
-		// already sizes the risk down; the stop is never widened (invariant).
-		// B5: the ceiling (extra.SwingMaxStopPts) is consumed by the SIZE
-		// table (mentorSwingWideStopCap) — a stop >= it sizes <= 2 MNQ.
-
+		// m463 D5.2-R31 — REVERSES m186 (owner order 2026-11-01 "full of it",
+		// after being shown the quote): "mà stop loss ở level gần cả trăm điểm
+		// thì không ngon nữa… 100 điểm quá nhiều rủi ro" [D5.2 p2 @19:34–21:43]
+		// (his example 91.75). A swing stop ABOVE mentor_swing_max_stop_pts
+		// (default 90) is refused. The kernel refuses first (swing_max_stop);
+		// this is the trader's backstop on the SAME resolved number. The B5
+		// sizing ceiling (extra.SwingMaxStopPts, 100) only matters when the
+		// owner raises this one above it.
+		skip := extra.SwingSkipStopPts
+		if skip <= 0 {
+			skip = mentor.DefaultSwingCfg().SkipStopPts
+		}
+		if stop > skip+1e-6 { // float noise only, never a tick
+			return fmt.Sprintf("R31: swing stop %.2f pts above the %.0f-pt ceiling (mentor_swing_max_stop_pts) — \"100 điểm quá nhiều rủi ro\", đừng vô [D5.2 p2 @19:34–21:43]", stop, skip)
+		}
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
 		// (CourseExits.ISBMaxStopPts, default 25). One number, not two (P2-1):

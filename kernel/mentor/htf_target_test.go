@@ -128,6 +128,10 @@ func TestISBTargetIgnoresThe1hTriggerLine(t *testing.T) {
 	// 4h silent; the 1h trigger sits at 110, between the entry (104.5) and the
 	// next key level (120).
 	e.State.HTF = HTF{OneH: TriggerLine{Dir: SideLong, Price: 110}}
+	// This pins TARGET selection, not the 4h/1h gate: with no 4h line the m462
+	// all-day default refuses (isb_htf_no_4h), so read it as a stored
+	// news-only strategy (gate off at 09:41 CT).
+	e.Cfg.HTFGateNewsOnly = true
 	ins := e.Tick(bars, now)
 	var isb *Intent
 	for i := range ins {

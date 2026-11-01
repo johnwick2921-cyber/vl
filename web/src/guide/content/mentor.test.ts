@@ -158,9 +158,72 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     }
   })
 
-  it('labels the ours-not-course inferences (doji, two losses, swing re-arm)', () => {
+  it('labels the ours-not-course inferences (doji, two losses)', () => {
     expect(all).toContain('DOJI candle 1 has no colour')
     expect(all).toContain('the “off for the day” part is OURS')
-    expect(all).toContain('re-arms the line is OURS')
+  })
+
+  // m463 (release #59): the swing re-arm inference is GONE — only the first
+  // touching candle counts [D5.2 p1 @13:23–13:40]; the colour rule and the
+  // ~100-pt "take 1–2 MNQ" ruling (m186) are reversed by the course.
+  it('describes the swing exactly as D5.2 (m463)', () => {
+    expect(all).not.toContain('re-arms the line is OURS')
+    expect(all).toContain('swing_not_first_touch')
+    expect(all).toContain('swing_level_invalid')
+    expect(all).toContain('không quan trọng màu')
+    expect(all).toContain('mentor_swing_max_stop_pts')
+    expect(all).toContain('REVERSES the earlier owner ruling m186')
+    expect(all).not.toContain('whose colour matches the side')
+  })
+
+  // release #59 fix round: one setup per level (an open swing refuses the
+  // inside bar) and the PHL rays are the drawn 0.50 / 0.50 [D2.2-R10].
+  it('names the open-swing inside-bar refusal and the drawn PHL rays', () => {
+    expect(all).toContain('swing_position_open')
+    expect(all).toContain('stop 0.50 under that candle’s low')
+    expect(all).toContain('0.50 / 0.50')
+    expect(all).toContain('rolling_phl_15m_box_ban')
+    expect(all).not.toContain('the PHL entry buffer, default 1.00')
+  })
+
+  // release #59 review round 2: the closing 4h candle's last bar is read
+  // against its own line and arms nothing (D5.2-R27); a cancelled inside bar
+  // does not spend the level (D5.2-R25); the 09-11 worked buy is skipped by
+  // the Day-4 15m short ISB box + the 5m trigger, named, a mentor question.
+  it('names the closed-candle and spent inside-bar refusals and the 15m box conflict', () => {
+    expect(all).toContain('swing_candle_closed')
+    expect(all).toContain('swing_isb_spent')
+    expect(all).toContain('CANCELLED unfilled')
+    expect(all).not.toContain('ONE inside-bar entry per 4h candle')
+    expect(all).toContain('a SHORT 15m ISB box')
+    expect(all).toContain('also refused rolling_room')
+  })
+})
+
+// m462 (release #59): the 4h/1h trigger gate applies ALL SESSION by default
+// (D5.1-R9/R11). The guide must say so, name the per-setup refusals, keep the
+// SWING4H exemption explicit (D5.2-R7), and never again call news + open the
+// default. Kernel twin: kernel/mentor/m462_htf_allday_test.go.
+describe('mentor guide — m462 all-session 4h/1h gate', () => {
+  const all = JSON.stringify(mentor)
+  it('states the all-session default with the D5.1 sources', () => {
+    expect(all).toContain('ALL SESSION')
+    expect(all).toContain('D5.1-R9')
+    expect(all).toContain('D5.1-R11')
+    expect(all).toContain('systemDefault":"false')
+  })
+  it('names the per-setup refusals and the SWING4H exemption', () => {
+    for (const needle of [
+      'htf_conflict',
+      'htf_side_mismatch',
+      'htf_no_4h',
+      'D5.2-R7',
+    ]) {
+      expect(all, `missing ${needle}`).toContain(needle)
+    }
+  })
+  it('no longer calls news + open the default', () => {
+    expect(all).not.toContain('ON — news + open is the default')
+    expect(all).not.toContain('NEWS + OPEN (the mentor’s rule')
   })
 })

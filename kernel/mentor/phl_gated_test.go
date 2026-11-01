@@ -25,6 +25,13 @@ func workedCfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6 // target 29,425.75
+	// The spent-day / room boundaries below (room exactly 30, 29 < 30, the
+	// 15-pt cap) were worked on the pre-#59 offsets (entry +1.00, stop at the
+	// low). Pinned here so each gate keeps its exact boundary; the production
+	// offsets (0.50 / 0.50, D2.2-R10 [p1 @04:14–05:43]) are pinned by
+	// TestM464CourseDefaultsAreTheDrawnOffsets and TestPHLPLHWorkedExampleGeometry.
+	cfg.PHLEntryBufferPts = 1.0
+	cfg.PHLStopBufferPts = 0
 	return cfg
 }
 

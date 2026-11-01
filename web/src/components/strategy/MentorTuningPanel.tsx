@@ -99,9 +99,9 @@ const COPY = {
     es: 'ISB inverso en EMA 9',
   },
   htfNews: {
-    zh: '4h/1h 方向闸门仅限新闻窗口（07:20–07:35 CT）',
-    en: '4h/1h direction gate only in the news window (07:20–07:35 CT)',
-    es: 'Compuerta 4h/1h solo en la ventana de noticias (07:20–07:35 CT)',
+    zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（关 = 全天，默认）',
+    en: '4h/1h direction gate only in the news + open windows (OFF = all session, the default)',
+    es: 'Compuerta 4h/1h solo en las ventanas de noticias + apertura (OFF = toda la sesión, por defecto)',
   },
   exec2m: {
     zh: '执行周期：09:00 CT 后为 2 分钟（08:30–09:00 为 1 分钟）— ISB + PHL/PLH、EMA 9/34、箱体、趋势线与 X8 离场',
@@ -372,7 +372,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
-  htf_gate_news_only: true,
+  htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
   exec_2m_after_30m: true,
   day_gate_spent_pts: 300,
   day_gate_target_cap_pts: 15,
