@@ -104,9 +104,9 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly:       true, // D4.4-11: news-only default ON (the mentor's news-first rule; #45 reverts owner decision A 2026-10-21 m134)
-			Exec2mAfter30m:        true, // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
-			OrbISBFractionOutside: 0.80, // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
+			HTFGateNewsOnly:       false, // m462 (release #59): the 4h/1h gate applies ALL SESSION by default (D5.1-R9/R11)
+			Exec2mAfter30m:        true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
+			OrbISBFractionOutside: 0.80,  // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
 			DayGateSpentPts:       300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
 			// Release #25 course-entry knobs (course-defaults-30 changes).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,

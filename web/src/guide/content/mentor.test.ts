@@ -164,3 +164,31 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).toContain('re-arms the line is OURS')
   })
 })
+
+// m462 (release #59): the 4h/1h trigger gate applies ALL SESSION by default
+// (D5.1-R9/R11). The guide must say so, name the per-setup refusals, keep the
+// SWING4H exemption explicit (D5.2-R7), and never again call news + open the
+// default. Kernel twin: kernel/mentor/m462_htf_allday_test.go.
+describe('mentor guide — m462 all-session 4h/1h gate', () => {
+  const all = JSON.stringify(mentor)
+  it('states the all-session default with the D5.1 sources', () => {
+    expect(all).toContain('ALL SESSION')
+    expect(all).toContain('D5.1-R9')
+    expect(all).toContain('D5.1-R11')
+    expect(all).toContain('systemDefault":"false')
+  })
+  it('names the per-setup refusals and the SWING4H exemption', () => {
+    for (const needle of [
+      'htf_conflict',
+      'htf_side_mismatch',
+      'htf_no_4h',
+      'D5.2-R7',
+    ]) {
+      expect(all, `missing ${needle}`).toContain(needle)
+    }
+  })
+  it('no longer calls news + open the default', () => {
+    expect(all).not.toContain('ON — news + open is the default')
+    expect(all).not.toContain('NEWS + OPEN (the mentor’s rule')
+  })
+})

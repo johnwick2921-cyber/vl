@@ -1996,9 +1996,10 @@ type MentorTuning struct {
 	OrbGateEnabled *bool `json:"orb_gate_enabled,omitempty"`
 	// ISBReverseEMA9Enabled: the reverse ISB at EMA 9 (D5.4; nil → ON, R-C).
 	ISBReverseEMA9Enabled *bool `json:"isb_reverse_ema9_enabled,omitempty"`
-	// HTFGateNewsOnly (D4.4-11): the 4h/1h direction gate only in the news
-	// period (print day, 07:20–08:30 CT) and the 08:30–09:30 CT open window
-	// (nil → ON since #45; the m134 all-day default was reverted).
+	// HTFGateNewsOnly: nil → OFF since m462 (release #59) = the 4h/1h
+	// direction gate applies ALL SESSION (D5.1-R9/R11). A STORED true keeps the
+	// old D4.4-11 windows: the news period (print day, 07:20–08:30 CT) and the
+	// 08:30–09:30 CT open window.
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
 	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
