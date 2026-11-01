@@ -3177,6 +3177,25 @@ func (at *AutoTrader) armedPassDormant() bool {
 // 16:59:59.999, filled 17:00:40). This runs at the closed→open EDGE only, so
 // the cancel reaches the broker on the earliest open cycle, before placement.
 func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
+	at.sweepDueExpiries(now, "reopen")
+}
+
+// sweepDueExpiriesWhileClosed (m463, D5.2-R27 [p3 @12:16–13:18]) runs the SAME
+// sweep on every CLOSED cycle: an order whose expiry is due while the market is
+// shut is cancelled during the break, never left resting into the reopen. The
+// swing order of a 4h candle the CME closes inside (the 13:00 CT candle at the
+// 16:00 halt, a Friday, an early close) expires AT the close (kernel
+// swingExpiry), so the first closed cycle cancels it — an hour before the
+// 17:00 reopen that filled trade 678 (row 410, 17:00:40) while the m244 reopen
+// sweep was still inside the 3-minute closed backoff. Idempotent: only
+// non-terminal, due, not-yet-cancel_pending rows qualify (armExpired).
+func (at *AutoTrader) sweepDueExpiriesWhileClosed(now time.Time) {
+	at.sweepDueExpiries(now, "closed-market")
+}
+
+// sweepDueExpiries is the one due-expiry sweep both edges run; where names the
+// caller in the log lines.
+func (at *AutoTrader) sweepDueExpiries(now time.Time, where string) {
 	nt := at.armedTrader()
 	if nt == nil || at.store == nil {
 		return
@@ -3199,7 +3218,7 @@ func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
 			// authorization in the ledger (the same shape the inline expiry
 			// sweep uses).
 			at.armLifecycleWrite("set_state(expired)", r,
-				ledger.SetState(r.ID, "expired", "stop-limit expiry elapsed — never placed (reopen sweep)"))
+				ledger.SetState(r.ID, "expired", "stop-limit expiry elapsed — never placed ("+where+" sweep)"))
 			n++
 			continue
 		}
@@ -3217,20 +3236,29 @@ func (at *AutoTrader) sweepDueExpiriesAtReopen(now time.Time) {
 			// (filled / entry gone with children) stays final.
 			if v := at.cancelSafetyFor(r, now); !v.Allow {
 				if v.Why != armCancelNoBookWhy {
-					at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					// m463: the closed-market sweep runs every closed cycle, so a
+					// FINAL refusal is logged once per row, not every 3 minutes
+					// all weekend.
+					if at.expirySweepFinalLogged == nil {
+						at.expirySweepFinalLogged = map[int64]bool{}
+					}
+					if where == "reopen" || !at.expirySweepFinalLogged[r.ID] {
+						at.expirySweepFinalLogged[r.ID] = true
+						at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (final, giving up) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+					}
 					continue
 				}
-				at.logWarnf("🛟 reopen expiry sweep: cancel REFUSED (transient, queued for retry) arm=%d %s %s signal=%s — %s", r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
+				at.logWarnf("🛟 %s expiry sweep: cancel REFUSED (transient, queued for retry) arm=%d %s %s signal=%s — %s", where, r.ID, r.Session, r.Scenario, shortID(r.SignalID), v.Why)
 			} else if cerr := nt.CancelOrder(r.SignalID); cerr != nil {
-				at.logWarnf("✕ reopen expiry sweep: cancel SEND failed (queued for retry) arm=%d %s %s: %v", r.ID, r.Session, r.Scenario, cerr)
+				at.logWarnf("✕ %s expiry sweep: cancel SEND failed (queued for retry) arm=%d %s %s: %v", where, r.ID, r.Session, r.Scenario, cerr)
 			}
 		}
 		at.armLifecycleWrite("request_cancel(expiry_elapsed)", r,
-			ledger.RequestCancel(r.ID, "stop-limit expiry elapsed (reopen sweep)", now.UnixMilli()))
+			ledger.RequestCancel(r.ID, "stop-limit expiry elapsed ("+where+" sweep)", now.UnixMilli()))
 		n++
 	}
 	if n > 0 {
-		at.logWarnf("🧹 reopen expiry sweep: %d due arm(s) cancelled/expired before any new work on the first open cycle", n)
+		at.logWarnf("🧹 %s expiry sweep: %d due arm(s) cancelled/expired (D5.2-R27: no order outlives its 4h candle)", where, n)
 	}
 }
 

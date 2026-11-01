@@ -158,10 +158,22 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     }
   })
 
-  it('labels the ours-not-course inferences (doji, two losses, swing re-arm)', () => {
+  it('labels the ours-not-course inferences (doji, two losses)', () => {
     expect(all).toContain('DOJI candle 1 has no colour')
     expect(all).toContain('the “off for the day” part is OURS')
-    expect(all).toContain('re-arms the line is OURS')
+  })
+
+  // m463 (release #59): the swing re-arm inference is GONE — only the first
+  // touching candle counts [D5.2 p1 @13:23–13:40]; the colour rule and the
+  // ~100-pt "take 1–2 MNQ" ruling (m186) are reversed by the course.
+  it('describes the swing exactly as D5.2 (m463)', () => {
+    expect(all).not.toContain('re-arms the line is OURS')
+    expect(all).toContain('swing_not_first_touch')
+    expect(all).toContain('swing_level_invalid')
+    expect(all).toContain('không quan trọng màu')
+    expect(all).toContain('mentor_swing_max_stop_pts')
+    expect(all).toContain('REVERSES the earlier owner ruling m186')
+    expect(all).not.toContain('whose colour matches the side')
   })
 })
 

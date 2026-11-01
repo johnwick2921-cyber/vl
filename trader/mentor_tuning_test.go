@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"strings"
 	"testing"
 
 	"vl/kernel/mentor"
@@ -261,18 +262,22 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 	}
 }
 
-// The bare table (no strategy) falls back to the kernel defaults. SWING4H
-// stops of 99 and 100 both PASS now — the ~100-pt skip is gone (m186 D5.2
-// @21:25-21:43: take 1-2 MNQ and sit).
+// The bare table (no strategy) falls back to the kernel defaults. m463
+// D5.2-R31 (REVERSES m186, owner order 2026-11-01 "full of it"): the swing
+// skip default is 90 — a 90-pt stop passes, 90.25 / 99 / 100 are refused
+// ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]). The 100 of
+// the old name is the B5 SIZING ceiling (swing_max_stop_pts), not a skip.
 func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	in := func(stop float64) mentor.Intent {
 		return mentor.Intent{Setup: "SWING4H", Side: "long", Price: 30000, Stop: 30000 - stop, StopPts: stop, TargetPts: 2 * stop}
 	}
-	if why := mentorRuleGate(in(99), mentorTierInputs{}); why != "" {
-		t.Errorf("SWING4H 99-pt stop must pass under the 100 default: %q", why)
+	if why := mentorRuleGate(in(90), mentorTierInputs{}); why != "" {
+		t.Errorf("SWING4H 90-pt stop must pass under the 90 skip default: %q", why)
 	}
-	if why := mentorRuleGate(in(100), mentorTierInputs{}); why != "" {
-		t.Errorf("SWING4H 100-pt stop must PASS now (no skip, m186 D5.2 @21:25-21:43): %q", why)
+	for _, stop := range []float64{90.25, 99, 100} {
+		if why := mentorRuleGate(in(stop), mentorTierInputs{}); !strings.HasPrefix(why, "R31") {
+			t.Errorf("SWING4H %.2f-pt stop must be REFUSED R31 (m463): %q", stop, why)
+		}
 	}
 }
 

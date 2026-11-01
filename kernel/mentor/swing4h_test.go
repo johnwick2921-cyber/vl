@@ -85,11 +85,12 @@ func TestSwing4hRejectLong(t *testing.T) {
 	}
 }
 
-// TestSwing4hOffsetTowardApproach — R8: the placement offset sits TOWARD
-// the approaching price. A candle that reaches only the far side of the old
-// symmetric band (line−offset < low) has NOT reached the placed line and
-// produces nothing; one that reaches line−offset does.
-func TestSwing4hOffsetTowardApproach(t *testing.T) {
+// TestSwing4hLiteralTouchOnly — m463 D5.2-R12 (replaces the old R8 "offset
+// toward the approach" pin): "Không, phải đụng nha, không được gần đụng. Bắt
+// buộc là phải đụng" [D5.2 p2 @09:12–09:27]. Two candles that stop 4 pts under
+// the line (inside the REMOVED 5-pt band, which used to arm the second of them)
+// produce nothing; the candle that reaches the line arms, tight on its low.
+func TestSwing4hLiteralTouchOnly(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	loc := time.FixedZone("CT", -5*3600)
 	closed := []market.Kline{
@@ -104,19 +105,21 @@ func TestSwing4hOffsetTowardApproach(t *testing.T) {
 	}
 	step := int64(5 * 60_000)
 	prev := mk5m(t, 15, 1, 6, line-40, line-39, line-41, line-40) // below the line, at 01:06 (the tick start)
-	short1 := market.Kline{OpenTime: now + step, Open: line - 5, High: line - 4, Low: line - 3, Close: line - 4, CloseTime: now + step + 4*60_000}
-	short2 := market.Kline{OpenTime: now + 2*step, Open: line - 6, High: line - 4, Low: line - 6, Close: line - 5, CloseTime: now + 2*step + 4*60_000}
-	bars := append(closed, prev, short1, short2)
+	near1 := market.Kline{OpenTime: now + step, Open: line - 5, High: line - 4, Low: line - 6, Close: line - 4.5, CloseTime: now + step + 4*60_000}
+	near2 := market.Kline{OpenTime: now + 2*step, Open: line - 6, High: line - 4, Low: line - 6, Close: line - 5, CloseTime: now + 2*step + 4*60_000}
+	touch := market.Kline{OpenTime: now + 3*step, Open: line - 6, High: line + 0.25, Low: line - 7, Close: line - 5, CloseTime: now + 3*step + 4*60_000}
+	bars := append(closed, prev, near1, near2)
 	s := &SwingState{}
-	out := SwingTick(s, bars, cfg, short2.OpenTime+60_000)
-	if len(out) != 1 {
-		t.Fatalf("intents = %d, want exactly the one reaching touch; got %+v", len(out), out)
+	if out := SwingTick(s, bars, cfg, near2.OpenTime+60_000); len(out) != 0 {
+		t.Fatalf("near touches (4 pts short) must arm nothing; got %+v", out)
 	}
-	if out[0].Side != SideShort {
-		t.Fatalf("intent = %+v, want a short entry from the reaching candle", out[0])
+	bars = append(bars, touch)
+	out := SwingTick(s, bars, cfg, touch.OpenTime+60_000)
+	if len(out) != 1 || out[0].Side != SideShort {
+		t.Fatalf("intents = %+v, want exactly the one literal touch, short", out)
 	}
-	if abs(out[0].Price-(line-6)) > 0.01 {
-		t.Fatalf("entry = %.2f, want %.2f — the reaching candle's low, tight (R8)", out[0].Price, line-6)
+	if abs(out[0].Price-(line-7)) > 0.01 {
+		t.Fatalf("entry = %.2f, want %.2f — the touching candle's low, tight", out[0].Price, line-7)
 	}
 }
 
@@ -199,8 +202,8 @@ func TestSwing4hLeewaySecondTouchArms(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below the line
-		mk5m(t, 15, 5, 5, 10158, 10166, 10155, 10160),  // candle 1: touches, closes back → arm @10155
-		mk5m(t, 15, 5, 10, 10161, 10167, 10162, 10165), // candle 2: touches, closes back, no fill → re-arm @10162
+		mk5m(t, 15, 5, 5, 10158, 10170, 10155, 10160),  // candle 1: touches (literal, m463 R12), closes back → arm @10155
+		mk5m(t, 15, 5, 10, 10162, 10169, 10162, 10165), // candle 2: touches, closes back, no fill → re-arm @10162
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
@@ -260,7 +263,7 @@ func TestSwing4hLeewaySecondTouchThroughCancels(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below
-		mk5m(t, 15, 5, 5, 10155, 10166, 10150, 10160),  // candle 1: touches, closes back → arm @10150
+		mk5m(t, 15, 5, 5, 10155, 10170, 10150, 10160),  // candle 1: touches (literal, m463 R12), closes back → arm @10150
 		mk5m(t, 15, 5, 10, 10160, 10220, 10155, 10220), // candle 2: touches, closes THROUGH (no fill: low 10155 > 10150)
 	}
 	bars := swingTape(t, cur)
@@ -322,7 +325,7 @@ func TestSwing4hRejectTargetIsOneRFloor(t *testing.T) {
 	// 50-pt fallback target was smaller than the stop and R9 refused the swing.
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 10145, 10150, 10140, 10145), // prev below the line
-		mk5m(t, 15, 5, 5, 10150, 10165, 10143, 10145), // touches, closes back below (reject)
+		mk5m(t, 15, 5, 5, 10150, 10170, 10143, 10145), // touches (literal, m463 R12), closes back below (reject)
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
@@ -403,9 +406,10 @@ func TestSwingTickWarmLineIsAuthoritativeWithinBucket(t *testing.T) {
 	}
 }
 
-// TestSwing4hStopCeiling100 — m186 D5.2: 30–60 is allowed; a ~100-pt stop is
-// TAKEN (the mentor softened "Đừng vô" to "take 1-2 MNQ and sit" [D5.2 p2
-// @21:25–21:43]); the old R8 skip is gone.
+// TestSwing4hStopCeiling100 — m463 D5.2-R31 REVERSES m186 (owner order
+// 2026-11-01 "full of it"): 30–60 is allowed; a stop ABOVE 90 is NOT taken —
+// "100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]. The ~148-pt
+// reject that m186 used to author is refused, named swing_max_stop.
 func TestSwing4hStopCeiling100(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
@@ -414,15 +418,15 @@ func TestSwing4hStopCeiling100(t *testing.T) {
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
+	before := SwingMaxStopRefused()
 	out := SwingTick(s, bars, cfg, cur[1].OpenTime+60_000)
-	found := false
 	for _, in := range out {
 		if in.Action == PlaceStopEntry {
-			found = true
+			t.Fatalf("a ~148-pt swing stop must be refused (đừng vô); got %+v", out)
 		}
 	}
-	if !found {
-		t.Fatalf("a ~148-pt swing stop must AUTHOR an entry now (take 1-2 MNQ, no skip); got %+v", out)
+	if SwingMaxStopRefused() != before+1 || len(s.refused) != 1 || s.refused[0].Name != SwingRefusedMaxStop {
+		t.Fatalf("the refusal must be counted and NAMED swing_max_stop: %+v", s.refused)
 	}
 }
 
@@ -486,7 +490,7 @@ func TestSwing4hHardInvariantCounter(t *testing.T) {
 	before := SwingInvalidStops()
 	// line 155, long approach: entry = 120 (tight), stop = 155 − 30 = 125 →
 	// the stop sits ABOVE the entry — the invariant breaks.
-	if _, ok := swingRejectIntent(SideLong, market.Kline{High: 120, Low: 119}, 155, cfg); ok {
+	if _, ok, _ := swingRejectIntent(SideLong, market.Kline{High: 120, Low: 119}, 155, cfg); ok {
 		t.Fatal("invariant violation must be refused")
 	}
 	if SwingInvalidStops() != before+1 {
@@ -494,42 +498,49 @@ func TestSwing4hHardInvariantCounter(t *testing.T) {
 	}
 }
 
-// TestSwing4hOneSetupPerApproach — one setup per approach: no new one until
-// price has left the line by at least the stop distance and comes back. The
-// return path crosses through (cancel) and marks the level INVALID (R32
-// [D5.2 p2 @20:48]): the later below-line touch is REFUSED — an invalid level
-// may only trade an inside bar, never a normal reject, for the rest of the 4h
-// candle.
+// TestSwing4hOneSetupPerApproach — m463 (D5.2-R19/R22/R24): the resistance's
+// first touch arms (and fills on candle 2); the 05:15 bar CLOSES ABOVE the line
+// without touching it — the level is INVALID for the rest of the 4h candle
+// (the old code only latched a TOUCHING through-close, read against the bar's
+// own previous close, so the window stayed open here). From then on only the
+// 5m inside bar back on the trade side — SHORT, the 4H line's side — may
+// enter: 05:20 closes back below (candle 1), 05:25 is its inside bar → the
+// short ISB, stop AT the line. The later below-line reject-shaped touch at
+// 05:40 is refused (swing_level_invalid).
 func TestSwing4hOneSetupPerApproach(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev below
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),  // first setup (short)
-		mk5m(t, 15, 5, 10, 10160, 10175, 10155, 10160), // same approach again — blocked
-		mk5m(t, 15, 5, 15, 10190, 10210, 10190, 10205), // leaves the line by ≥ 30 (entirely above)
-		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // crosses back through → cancel, level INVALID
-		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
-		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // below the line — no ISB close-back
+		mk5m(t, 15, 5, 10, 10160, 10175, 10155, 10160), // candle 2 of the window: fills the short
+		mk5m(t, 15, 5, 15, 10190, 10210, 10190, 10205), // closes ABOVE the line (no touch) → level INVALID
+		mk5m(t, 15, 5, 20, 10200, 10200, 10150, 10160), // closes back below (candle 1)
+		mk5m(t, 15, 5, 25, 10195, 10205, 10150, 10155), // its inside bar → SHORT ISB @10150
+		mk5m(t, 15, 5, 30, 10195, 10205, 10150, 10155), // (the ISB is spent)
 		mk5m(t, 15, 5, 35, 10060, 10100, 10050, 10060), // back below without touching
 		mk5m(t, 15, 5, 40, 10160, 10175, 10155, 10160), // below-line touch → REFUSED (invalid level)
 	}
 	bars := swingTape(t, cur)
 	s := &SwingState{}
 	out := SwingTick(s, bars, cfg, cur[8].OpenTime+60_000)
-	entries, cancels := 0, 0
+	var entries []Intent
+	cancels := 0
 	for _, in := range out {
 		switch in.Action {
 		case PlaceStopEntry:
-			entries++
+			entries = append(entries, in)
 		case CancelArm:
 			cancels++
 		}
 	}
-	if entries != 1 {
-		t.Fatalf("stop entries = %d, want 1 (the invalid level refuses the later below-line touch); got %+v", entries, out)
+	if len(entries) != 2 || entries[1].Side != SideShort || entries[1].Price != 10150 || abs(entries[1].Stop-swingLineGolden) > 0.01 {
+		t.Fatalf("want the reject + the SHORT inside bar (stop AT the line) only; got %+v", entries)
 	}
 	if cancels != 0 {
-		t.Fatalf("cancels = %d, want 0 (the through-cross back has nothing resting — no empty-ArmID cancel); got %+v", cancels, out)
+		t.Fatalf("cancels = %d, want 0 (nothing rests when the level goes invalid — the reject filled); got %+v", cancels, out)
+	}
+	if m463Refused(s, SwingRefusedLevelInvalid) == 0 {
+		t.Fatalf("the 05:40 reject-shaped touch must be NAMED swing_level_invalid: %+v", s.refused)
 	}
 }
 
@@ -850,7 +861,7 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 	line := swingLineGolden                              // ≈ 10168.16
 
 	// OFF (0): the stop ≈ line+30 − ref.Low ≈ 38 pts emits.
-	off, ok := swingRejectIntent(SideShort, ref, line, DefaultSwingCfg())
+	off, ok, _ := swingRejectIntent(SideShort, ref, line, DefaultSwingCfg())
 	if !ok {
 		t.Fatalf("MinStopPts=0 must not refuse (OFF = today), got %+v", off)
 	}
@@ -858,7 +869,7 @@ func TestSwingMinStopRefusesDegenerate(t *testing.T) {
 	// ON (50): a ~38-pt stop is below the floor → refused.
 	on := DefaultSwingCfg()
 	on.MinStopPts = 50
-	if _, ok := swingRejectIntent(SideShort, ref, line, on); ok {
+	if _, ok, _ := swingRejectIntent(SideShort, ref, line, on); ok {
 		t.Fatalf("MinStopPts=50 must refuse a stop narrower than 50 pts")
 	}
 	if SwingMinStopRefused() == 0 {
@@ -894,8 +905,8 @@ func TestSwing4hLateDayRejectEnteredAtOneToOne(t *testing.T) {
 	if line <= 0 {
 		t.Fatalf("line not seeded: %v", line)
 	}
-	// touch the placed line (line-offset), close back below -> clean reject
-	lo := line - cfg.LineOffsetPts - 1
+	// a literal touch of the line (m463 D5.2-R12), close back below -> clean reject
+	lo := line - 6
 	cur := []market.Kline{
 		mk5m(t, 15, 13, 0, line-50, line-40, line-55, line-45), // prev: below the line
 		mk5m(t, 15, 13, 5, lo+0.4, line+5, lo, lo+0.5),         // touches, closes back below

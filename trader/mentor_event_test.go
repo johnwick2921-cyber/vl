@@ -486,15 +486,17 @@ func TestMentorIntentExpiry(t *testing.T) {
 		t.Fatalf("a level touch expires at the next 1m candle close, got %d", got)
 	}
 	// 08:00 CT → the current 4h candle is [05:00, 09:00) → the swing expires
-	// at 09:00 CT.
-	want := time.Date(2026, 10, 2, 9, 0, 0, 0, ct).UnixMilli()
+	// at its close, 08:59:59.999 CT (m463: the kernel's one definition).
+	want := time.Date(2026, 10, 2, 9, 0, 0, 0, ct).UnixMilli() - 1
 	if got := mentorIntentExpiry(mentor.Intent{Setup: "SWING4H"}, base); got != want {
 		t.Fatalf("the swing expires at the 4h candle close 09:00 CT, got %d want %d", got, want)
 	}
 }
 
 // TestMentorSwingExpiry (RULING [C]): the 4h candles chain from the 17:00 CT
-// anchor — the swing order lives until the close of the CURRENT 4h candle.
+// anchor — the swing order lives until the close of the CURRENT 4h candle
+// (minus 1 ms — the kernel's one definition). m463 D5.2-R27: 2026-10-02 is a
+// FRIDAY, so the 13:00 candle ends at the 16:00 weekend close, not 17:00.
 func TestMentorSwingExpiry(t *testing.T) {
 	ct := kernel.CTLocation()
 	cases := []struct {
@@ -506,10 +508,7 @@ func TestMentorSwingExpiry(t *testing.T) {
 		{"01:15", "05:00", "2026-10-02"},
 		{"08:00", "09:00", "2026-10-02"},
 		{"11:30", "13:00", "2026-10-02"},
-		{"15:00", "17:00", "2026-10-02"},
-		{"17:00", "21:00", "2026-10-02"},
-		{"19:00", "21:00", "2026-10-02"},
-		{"22:30", "01:00", "2026-10-03"},
+		{"15:00", "16:00", "2026-10-02"}, // m463: the CME closes inside the 13:00 candle
 	}
 	for _, c := range cases {
 		t.Run(c.hhmm, func(t *testing.T) {
@@ -524,12 +523,29 @@ func TestMentorSwingExpiry(t *testing.T) {
 			if c.wantDay != now.Format("2006-01-02") {
 				wd, _ = time.ParseInLocation("2006-01-02", c.wantDay, ct)
 			}
-			want := time.Date(wd.Year(), wd.Month(), wd.Day(), wh, wm, 0, 0, ct).UnixMilli()
+			want := time.Date(wd.Year(), wd.Month(), wd.Day(), wh, wm, 0, 0, ct).UnixMilli() - 1
 			if got := mentorSwingExpiry(now.UnixMilli()); got != want {
 				t.Fatalf("mentorSwingExpiry(%s CT) = %s, want %s CT", c.hhmm,
 					time.UnixMilli(got).In(ct).Format("15:04"), c.want)
 			}
 		})
+	}
+}
+
+// TestMentorSwingExpiryEvening — the evening candles, on a WEEKDAY evening
+// (Thu 2026-10-01; the old table used Friday 2026-10-02 evening, which is the
+// weekend — the market is closed and, m463, no swing order can outlive it).
+func TestMentorSwingExpiryEvening(t *testing.T) {
+	ct := kernel.CTLocation()
+	for _, c := range []struct{ h, m, wd, wh int }{
+		{17, 0, 1, 21}, {19, 0, 1, 21}, {22, 30, 2, 1},
+	} {
+		now := time.Date(2026, 10, 1, c.h, c.m, 0, 0, ct)
+		want := time.Date(2026, 10, c.wd, c.wh, 0, 0, 0, ct).UnixMilli() - 1
+		if got := mentorSwingExpiry(now.UnixMilli()); got != want {
+			t.Fatalf("mentorSwingExpiry(Thu %02d:%02d CT) = %s, want %s", c.h, c.m,
+				time.UnixMilli(got).In(ct).Format("01-02 15:04:05.000"), time.UnixMilli(want).In(ct).Format("01-02 15:04:05.000"))
+		}
 	}
 }
 

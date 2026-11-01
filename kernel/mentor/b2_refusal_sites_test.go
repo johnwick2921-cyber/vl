@@ -97,7 +97,7 @@ func TestSwingTriggerSideDropIsCounted(t *testing.T) {
 		mk(t0, 100, 101, 99, 100),
 		mk(t0+4*60*60_000, 100, 101, 99, 100),
 		mk(now-15*60_000, 120, 125, 115, 120),
-		mk(now-10*60_000, 120, 122, 104, 106),
+		mk(now-10*60_000, 120, 122, 99.5, 106), // m463 D5.2-R12: a LITERAL touch of the line (100)
 	}
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideShort, Price: 104}

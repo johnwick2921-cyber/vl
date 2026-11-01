@@ -12,9 +12,10 @@ import (
 // closed through, the level is INVALID — "chỉ đi kiếm Insaba", never a normal
 // reject / PHL / PLH at it again. An ISB fire must not erase that marker.
 //
-// A7 [D1.4 p1 @09:20-09:36, D5.2 p1 @21:25-21:40, p2 @10:23-10:51]: candle 1's
-// colour sets the ISB side (red short, green long), and the swing pair is
-// "close back, THEN wait one more 5m beat for the inside bar".
+// A7 [D5.2 p1 @21:25-21:40, p2 @10:23-10:51]: the swing pair is "close back,
+// THEN wait one more 5m beat for the inside bar". (A7's candle-1 colour clause,
+// borrowed from D1.4 p1 @09:20-09:36, was REMOVED by m463: D5.2 p3 @06:24-06:52
+// "không quan trọng màu".)
 //
 // Every test drives SwingTick, the production entry the Evaluator calls
 // (eval.go runSwing); the tape is the shared swingTape (line 10168.16).
@@ -66,28 +67,31 @@ func TestSwing4hW5ISBNotOnTheCloseBackBar(t *testing.T) {
 	}
 }
 
-// A7: a GREEN candle 1 is a LONG ISB by the course; at a resistance-reject
-// (short) swing it is the wrong colour pair and must not enter.
-func TestSwing4hW5ISBWrongColourCandle1Refused(t *testing.T) {
+// m463 (D5.2-R24/R26, [p3 @06:24–06:52] "không quan trọng màu") REVERSES the
+// A7 colour clause: candle 1's colour does NOT set the swing ISB side — the 4H
+// line does. A GREEN candle 1 at a resistance (short) swing enters SHORT; a RED
+// candle 1 at a support (long) swing enters LONG. (Renamed from
+// ...WrongColourCandle1Refused; the rest of A6/A7 is unchanged.)
+func TestSwing4hW5ISBColourDoesNotMatter(t *testing.T) {
 	cfg := DefaultSwingCfg()
 	green := mk5m(t, 15, 5, 10, 10152, 10180, 10150, 10160) // green, closes back below the line
 	isb := mk5m(t, 15, 5, 15, 10155, 10158, 10152, 10157)   // inside the green candle
 	s := &SwingState{}
 	out := SwingTick(s, w5ShortTape(t, green, isb), cfg, isb.OpenTime+60_000)
-	if len(out) != 0 {
-		t.Fatalf("a GREEN candle 1 must not give a SHORT swing ISB: %+v", out)
+	if e, _ := w5Entries(out); e != 1 || out[0].Side != SideShort {
+		t.Fatalf("a GREEN candle 1 at a short swing must give the SHORT ISB: %+v", out)
 	}
-	// mirror: support (long) swing, RED candle 1 -> refused
+	// mirror: support (long) swing, RED candle 1 -> LONG
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 10200, 10220, 10190, 10210),  // prev above the line
 		mk5m(t, 15, 5, 5, 10200, 10200, 10140, 10150),  // touches, closes THROUGH (below)
-		mk5m(t, 15, 5, 10, 10190, 10195, 10140, 10180), // RED? open 10190 close 10180: red, closes back above the line
+		mk5m(t, 15, 5, 10, 10190, 10195, 10140, 10180), // RED, closes back above the line
 		mk5m(t, 15, 5, 15, 10185, 10190, 10170, 10182), // inside bar of the red candle
 	}
 	s2 := &SwingState{}
 	out = SwingTick(s2, swingTape(t, cur), cfg, cur[3].OpenTime+60_000)
-	if len(out) != 0 {
-		t.Fatalf("a RED candle 1 must not give a LONG swing ISB: %+v", out)
+	if e, _ := w5Entries(out); e != 1 || out[0].Side != SideLong {
+		t.Fatalf("a RED candle 1 at a long swing must give the LONG ISB: %+v", out)
 	}
 }
 

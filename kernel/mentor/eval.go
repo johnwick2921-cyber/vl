@@ -3539,6 +3539,12 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 	if e.State.Swing.LineStale && !wasStale {
 		e.note("swing 4h EMA34 line STALE: a feed gap longer than the live slice, or an open-session 4h bucket with no bars, hid 4h closes — SWING4H entries refused until a restart reseeds the line (held at %.2f, %d closes) [F-3]", e.State.Swing.Line, e.State.Swing.EmaCount)
 	}
+	// m463: every swing refusal is NAMED — counted in the B-rules ledger and
+	// written as a note (logged by the trader), never silent.
+	for _, r := range e.State.Swing.TakeRefusals() {
+		e.refuse(r.Name)
+		e.note("swing refused %s", r.Why)
+	}
 	ints = e.dropStaleSwingLineEntries(ints)
 	// SWING EXPIRY (CTO 1791008594562): an unfilled swing order lives until the
 	// close of the CURRENT 4h candle (ruling 1791008277195) — NOT the 2nd
@@ -3581,9 +3587,30 @@ func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
 }
 
 // swingExpiry is the close of the CURRENT 4h candle (session-anchored at
-// 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562).
+// 17:00 CT): an unfilled swing order lives until then (CTO 1791008594562;
+// D5.2-R27 [p3 @12:16–13:18] "9h đó là xong rồi… mình không có lệnh nào hết").
+//
+// m463: when the CME closes INSIDE the candle — the 13:00 CT bucket at the
+// 16:00 halt, a Friday at the weekend close, an early-close holiday — the
+// candle's last bar is the one before the close, so the candle closes THERE:
+// the expiry is the close minus 1 ms, never the bucket end inside the break.
+// An expiry left at 16:59:59.999 is due only once the market has reopened, and
+// the first open cycle can run up to the closed backoff after 17:00 — trade
+// 678 (row 410) filled at 17:00:40 off exactly that expiry. The trader sweeps a
+// due expiry on the CLOSED path too (sweepDueExpiriesWhileClosed), so an order
+// whose candle ended at the close is cancelled during the break.
+// SwingOrderExpiry is swingExpiry for the trader's fallback (one definition).
+func SwingOrderExpiry(now int64) int64 { return swingExpiry(now) }
+
 func swingExpiry(now int64) int64 {
-	return bucketOpen(now, 240) + 240*60_000 - 1
+	start := bucketOpen(now, 240)
+	end := fourHBucketEnd(start)
+	for t := now - now%60_000; t < end; t += 60_000 {
+		if t >= now && !kernel.IsCMEOpen(time.UnixMilli(t)) {
+			return t - 1
+		}
+	}
+	return end - 1
 }
 
 // dropStaleSwingIntents (S2) drops swing entry intents whose reference candle

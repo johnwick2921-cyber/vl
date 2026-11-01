@@ -113,6 +113,9 @@ type mentorCourseExitsResolved struct {
 	KeypairRatio          float64
 	BoxFreshRTHPair       bool
 	BoxMaxHeightPts       float64
+	// SwingMaxStopPts (m463, D5.2-R31): the swing skip ceiling — a SWING4H stop
+	// ABOVE it is refused. Knob mentor_swing_max_stop_pts, unset/0/bad → 90.
+	SwingMaxStopPts float64
 }
 
 func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorCourseExitsResolved {
@@ -127,11 +130,13 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		KeypairRatio:          1,
 		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
 		BoxFreshRTHPair:       rc == nil || mentorBoolKnob(rc.MentorBoxFreshRTHPair, true),
+		SwingMaxStopPts:       mentorSwingMaxStopDefault,
 	}
 	if rc != nil {
 		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
+		out.SwingMaxStopPts = mentorPositiveKnob(at, rc.MentorSwingMaxStopPts, mentorSwingMaxStopDefault, "swing_max_stop_pts")
 	}
 	return out
 }
@@ -147,7 +152,12 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.KeypairCandleRatio = r.KeypairRatio
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
+	cfg.Swing.SkipStopPts = r.SwingMaxStopPts // m463 D5.2-R31: ONE number, kernel + trader gate
 }
+
+// mentorSwingMaxStopDefault is the m463 swing skip ceiling default — the
+// kernel's own default (SwingCfg.SkipStopPts), read, never retyped.
+var mentorSwingMaxStopDefault = mentor.DefaultSwingCfg().SkipStopPts
 
 // mentorCourseExitsBootLine READS every course-exits knob for THIS trader
 // (never a literal); a value the trader cannot resolve prints n/a.
@@ -168,10 +178,10 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s",
+	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
-		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts))
+		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts))
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing
