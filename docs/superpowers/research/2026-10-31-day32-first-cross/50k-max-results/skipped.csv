@@ -1,0 +1,15 @@
+execution,qty,funded_reserve_usd,day,eligible_on
+trade_print_proxy,6,2000.0,2026-10-06,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-07,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-09,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-13,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-14,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-15,2026-10-19
+trade_print_proxy,6,2000.0,2026-10-16,2026-10-19
+stress1tick,6,2000.0,2026-10-06,2026-10-19
+stress1tick,6,2000.0,2026-10-07,2026-10-19
+stress1tick,6,2000.0,2026-10-09,2026-10-19
+stress1tick,6,2000.0,2026-10-13,2026-10-19
+stress1tick,6,2000.0,2026-10-14,2026-10-19
+stress1tick,6,2000.0,2026-10-15,2026-10-19
+stress1tick,6,2000.0,2026-10-16,2026-10-19
