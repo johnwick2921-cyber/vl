@@ -173,10 +173,12 @@ var fdrR23Dropped = map[int64]string{
 // live release #21 bot did not. OWNER RULING 2026-10-25: a trendline is broken
 // only by a 5m candle WHOLLY beyond it (X9 @06:28–06:45), not by a close beyond
 // the line alone, so a line the old close-only test discarded stays a live
-// location: the 02:43 CT PLH short 30682.50 / stop 30695.25 (level lvl-2) is the
-// one extra arm on this 10-13 night (every other row realigns unchanged).
+// location: the 02:43 CT PLH short 30683.00 / stop 30695.75 (level lvl-2) is the
+// one extra arm on this 10-13 night (every other row realigns unchanged). Its
+// prices are the release #59 fix-round D2.2-R10 rays (entry 0.50 and stop 0.50
+// beyond the candle; at m423 it was 30682.50 / 30695.25, the old 1.00 / 0 pair).
 var fdrM423Arms = []fdrLiveArm{
-	{0, "02:43", "m423: a trendline the close-only break discarded stays live (whole-candle 5m break)", "short", 30682.5, 30695.25, 0},
+	{0, "02:43", "m423: a trendline the close-only break discarded stays live (whole-candle 5m break)", "short", 30683.0, 30695.75, 0},
 }
 
 // fdrM428Dropped / fdrM428Arms — owner ruling R2 (2026-10-25, Q2): two same-role

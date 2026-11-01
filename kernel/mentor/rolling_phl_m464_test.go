@@ -482,7 +482,7 @@ func TestM464ConflictCancelDropsTheRung(t *testing.T) {
 
 // m464RealTape is the REAL NT8 tape of the D2.2 replay day — MNQ 09-26, Fri 11
 // Sep 2026, 1m, 08:00 → 10:29 CT (bars table, source live, read-only export:
-// testdata/m464_mnq_1m_20260911.csv). The mentor's chart [D2.2 p1/p2] IS this
+// testdata/m464_mnq_1m_20260911.csv). The mentor's chart [D2.2 p1 @04:19–05:43] IS this
 // tape: 10:13 O 29,401.25 H 29,403.25 L 29,375.25 C 29,390.50 [R43 p2
 // @10:13–11:22] and 10:14 O 29,390.50 H 29,395.75 L 29,386.50 C 29,394.00 [R9
 // p1 @04:19–05:43] match to the tick.
