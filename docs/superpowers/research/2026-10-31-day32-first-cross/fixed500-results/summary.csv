@@ -1,0 +1,9 @@
+execution,qty,funded_reserve_usd,sim_accounts,live_accounts,sim_breaches,live_breaches,trades,skipped,funded_payouts,live_payouts,funded_received_cents,live_received_cents,total_received_cents,last_phase,last_balance_cents
+trade_print_proxy,3,0.0,2,1,1,1,95,6,6,0,270000,0,270000,LIVE,-156900
+trade_print_proxy,3,2000.0,1,0,1,0,101,0,4,0,180000,0,180000,SIM,5010000
+trade_print_proxy,6,0.0,2,0,1,0,101,0,5,0,225000,0,225000,SIM,5150400
+trade_print_proxy,6,2000.0,3,1,1,1,94,7,5,0,225000,0,225000,SIM,4909700
+stress1tick,3,0.0,2,1,1,1,95,6,6,0,270000,0,270000,LIVE,-156900
+stress1tick,3,2000.0,1,0,1,0,101,0,4,0,180000,0,180000,SIM,5010000
+stress1tick,6,0.0,2,0,1,0,101,0,5,0,225000,0,225000,SIM,5134500
+stress1tick,6,2000.0,3,1,1,1,94,7,5,0,225000,0,225000,SIM,4909100
