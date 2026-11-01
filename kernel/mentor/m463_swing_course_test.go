@@ -391,3 +391,104 @@ func m463EarlyCloseMs(t *testing.T, now int64) int64 {
 	t.Fatal("no close found")
 	return 0
 }
+
+// ── the D5.2 worked examples (final note, WORKED EXAMPLES table) ───────────
+
+// m463Example runs the mentor's own tape through SwingTick bar by bar, with the
+// line seeded WARM at the value the note gives (the 4h EMA 34 he drew). Two
+// far-away bars in the two previous 4h buckets let swingLine read a bucket
+// series (the warm line is authoritative, eval.go seed path).
+func m463Example(t *testing.T, mo time.Month, d, bucketH int, line float64, cur []market.Kline) ([]Intent, *SwingState) {
+	t.Helper()
+	bs := m463Ms(t, mo, d, bucketH, 0)
+	pre := []market.Kline{
+		{OpenTime: bs - 8*3600_000, CloseTime: bs - 8*3600_000 + 299_999, Open: line - 500, High: line - 499, Low: line - 501, Close: line - 500},
+		{OpenTime: bs - 4*3600_000, CloseTime: bs - 4*3600_000 + 299_999, Open: line - 500, High: line - 499, Low: line - 501, Close: line - 500},
+	}
+	bars := append(pre, cur...)
+	s := &SwingState{Line: line, BucketStart: bs, EmaCount: FourHEMA34Min, LastBarTime: pre[1].OpenTime}
+	var out []Intent
+	for i := 3; i <= len(bars); i++ {
+		out = append(out, SwingTick(s, bars[:i], DefaultSwingCfg(), bars[i-1].CloseTime+1)...)
+	}
+	return m463Entries(out), s
+}
+
+func TestM463CourseWorkedExamples(t *testing.T) {
+	// E2 — Thu 3 Sep, MNQZ2026 [D5.2 p1 @13:12–14:05, @19:44–20:25]: line
+	// 29,575.50; price creeps up from below; the FIRST touching 5m candle (03:00,
+	// O29,556.50 H29,582.75 L29,543.50 C29,543.50) closes back below → "sell stop,
+	// nằm bên dưới cây nến chạm reject" at 29,543.50; stop ~30 above the line
+	// (he drew 29,609.00; the bot's line+30 = 29,605.50).
+	t.Run("E2 Sep 3 first-touch reject short", func(t *testing.T) {
+		es, _ := m463Example(t, 9, 3, 1, 29575.50, []market.Kline{
+			m463Bar(t, 9, 3, 2, 50, 29520, 29532, 29515, 29530),
+			m463Bar(t, 9, 3, 2, 55, 29530, 29560, 29528, 29556.50),
+			m463Bar(t, 9, 3, 3, 0, 29556.50, 29582.75, 29543.50, 29543.50),
+		})
+		if len(es) != 1 || es[0].Side != SideShort || es[0].Price != 29543.50 || es[0].Stop != 29605.50 {
+			t.Fatalf("E2: want SHORT sell stop 29,543.50, stop 29,605.50; got %+v", es)
+		}
+	})
+	// E12 — Thu 3 Sep, MNQU2026 [D5.2 p3 @17:32–18:01]: line 29,281.25 (falling
+	// 4h EMA = resistance); first 5m touch 03:05 O29,257.75 H29,293.00
+	// L29,240.50 C29,244.75 closed below → "đặt sell stop" under it.
+	t.Run("E12 Sep 3 MNQU reject short", func(t *testing.T) {
+		es, _ := m463Example(t, 9, 3, 1, 29281.25, []market.Kline{
+			m463Bar(t, 9, 3, 2, 55, 29240, 29262, 29236, 29257.75),
+			m463Bar(t, 9, 3, 3, 0, 29257.75, 29270, 29250, 29257.75),
+			m463Bar(t, 9, 3, 3, 5, 29257.75, 29293.00, 29240.50, 29244.75),
+		})
+		if len(es) != 1 || es[0].Side != SideShort || es[0].Price != 29240.50 || es[0].Stop != 29311.25 {
+			t.Fatalf("E12: want SHORT sell stop 29,240.50, stop 29,311.25; got %+v", es)
+		}
+	})
+	// E3 — Wed 26 Aug, MNQZ2026 [D5.2 p1 @22:34–24:06]: line 29,658.75; the
+	// first touch CLOSED ABOVE → INVALID, no order; price ran ~+280 (a short
+	// would lose). Every later reject-shaped touch in that 4h candle is refused.
+	t.Run("E3 Aug 26 first touch closes through: no order", func(t *testing.T) {
+		es, s := m463Example(t, 8, 26, 13, 29658.75, []market.Kline{
+			m463Bar(t, 8, 26, 14, 0, 29620, 29640, 29615, 29635),
+			m463Bar(t, 8, 26, 14, 5, 29635, 29690, 29630, 29685), // first touch closes ABOVE
+			m463Bar(t, 8, 26, 14, 10, 29685, 29720, 29680, 29715),
+			m463Bar(t, 8, 26, 14, 15, 29715, 29718, 29655, 29690), // pulls back onto the line from above, closes above
+			m463Bar(t, 8, 26, 14, 20, 29690, 29760, 29688, 29755),
+		})
+		if len(es) != 0 {
+			t.Fatalf("E3: the level is invalid — no order at all; got %+v", es)
+		}
+		if m463Refused(s, SwingRefusedLevelInvalid) == 0 {
+			t.Fatalf("E3: the 14:15 reject-shaped touch must be NAMED swing_level_invalid: %+v", s.refused)
+		}
+	})
+	// E7 — Tue 11 Aug, MNQU2026, long [D5.2 p2 @10:01–11:29]: level 29,553.50;
+	// the 5m closes below (low ~29,533), closes back above, then an inside bar
+	// → entry 29,577.75 at the inside bar's high, stop AT the level ("đây mới gọi
+	// là setup").
+	t.Run("E7 Aug 11 inside bar long, stop at the level", func(t *testing.T) {
+		es, _ := m463Example(t, 8, 11, 13, 29553.50, []market.Kline{
+			m463Bar(t, 8, 11, 13, 20, 29600, 29605, 29590, 29595),
+			m463Bar(t, 8, 11, 13, 25, 29595, 29598, 29533, 29540),    // touches, closes BELOW → invalid
+			m463Bar(t, 8, 11, 13, 30, 29540, 29585, 29535, 29575),    // closes back above (candle 1)
+			m463Bar(t, 8, 11, 13, 35, 29572, 29577.75, 29560, 29570), // inside bar
+		})
+		if len(es) != 1 || es[0].Side != SideLong || es[0].Price != 29577.75 || es[0].Stop != 29553.50 {
+			t.Fatalf("E7: want LONG 29,577.75 stop 29,553.50; got %+v", es)
+		}
+	})
+	// E8 — Fri 11 Sep, MNQU2026, long [D5.2 p2 @12:34–14:05; p3 @04:49–05:57]:
+	// line 29,405.25; the 5m dips under the line (11:15–11:50, lows 29,381–
+	// 29,395), closes back above, inside bar → entry 29,435.50, stop AT the line
+	// (18.5–22 pts; the 46.25 stop on the inside bar is rejected).
+	t.Run("E8 Sep 11 inside bar long, stop at the line", func(t *testing.T) {
+		es, _ := m463Example(t, 9, 11, 9, 29405.25, []market.Kline{
+			m463Bar(t, 9, 11, 11, 10, 29440, 29445, 29420, 29425),
+			m463Bar(t, 9, 11, 11, 15, 29425, 29428, 29381, 29395),    // closes BELOW → invalid
+			m463Bar(t, 9, 11, 11, 20, 29395, 29440, 29389.25, 29430), // closes back above (candle 1)
+			m463Bar(t, 9, 11, 11, 25, 29428, 29435.50, 29415, 29426), // inside bar → 29,435.50
+		})
+		if len(es) != 1 || es[0].Side != SideLong || es[0].Price != 29435.50 || es[0].Stop != 29405.25 {
+			t.Fatalf("E8: want LONG 29,435.50 stop 29,405.25; got %+v", es)
+		}
+	})
+}

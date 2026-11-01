@@ -483,6 +483,8 @@ export interface RiskControlConfig {
   mentor_keypair_candle_ratio?: number
   mentor_box_fresh_rth_pair?: boolean
   mentor_box_max_height_pts?: number
+  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
+  mentor_swing_max_stop_pts?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

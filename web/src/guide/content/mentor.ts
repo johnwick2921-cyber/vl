@@ -172,7 +172,6 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'Swing EMA period': { settingId: 'SwingCfg.EMAPeriod', live: false },
-  'Swing line offset': { settingId: 'SwingCfg.LineOffsetPts', live: false },
   'Swing stop distance': {
     settingId: 'SwingCfg.StopBeyondLinePts',
     live: false,
@@ -277,6 +276,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   },
   'Fresh RTH box pair': { settingId: 'mentor_box_fresh_rth_pair', live: true },
   'Max box height': { settingId: 'mentor_box_max_height_pts', live: true },
+  'Swing skip stop (đừng vô)': {
+    settingId: 'mentor_swing_max_stop_pts',
+    live: true,
+  },
 }
 
 // Evaluator settings that have no Studio control and no store field: the
@@ -418,7 +421,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'SWING4H — 4h EMA 34',
-          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. If a 4h bucket that the CME calendar says was OPEN has no bars in the stored 1m tape (a data hole, not a weekend or a halt), the line is missing one fold and is wrong by a few tenths of a point (about 0.4 pt during the 10-28 swing trades): the bot marks the line STALE and refuses new SWING4H entries (counted swing_line_gap_stale, named on the boot line) until the hole is refilled and the line re-seeded; a hole older than about 68 folded 4h closes has decayed to nothing and is ignored (release #56, m456). A contract roll is not a hole: a minute that any stitched contract stores counts as present, and the shortened 4h buckets on the two DST-change days are read as the line folds them (release #56, m456). Switch straight down to the 5m and wait for a LITERAL touch. Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. Through-close → cancel, and the level is INVALID for the rest of that 4h candle (only an inside bar may trade it; a later touch that closes back arms no ordinary reject) — release #54: a close THROUGH the line is latched even when the one-setup-per-approach guard is still set from an earlier arm (it used to be skipped, and the next bar then armed a normal reject at the invalid level — 10-28 17:35 CT, trade 707); then a candle closes back across the line and, ONE 5m beat later, an inside bar of that close-back candle whose colour matches the side (red candle 1 → short, green → long) → 5m inside bar with the stop AT the line, ONE inside-bar entry per 4h candle (once it has fired, a later close-back plus inside bar in the same candle is not traded) [D5.2 p2 @20:41–21:04 · D5.2 p1 @21:25–21:40 · D1.4 p1 @09:20–09:36]. Stop at or beyond swing_max_stop_pts (default 100) → take 1–2 MNQ and sit: the entry is never skipped and the stop is never widened, but the size is capped at min(your swing size, 2) MNQ at the trader\u2019s rule gate — a larger swing size knob cannot override it (tier swing4h_wide_stop) [D5.2 p2 @21:25–21:43]. Under the ceiling the swing sizes at your normal swing size. One setup per approach until price leaves the line by the stop distance — the course only says the FIRST touching candle counts (“Kệ nó, nó đụng lần đầu là được”; never the 2nd candle) [D5.2 p3 (recovered) @11:24; p1 @13:26–13:37] and gives no re-arm rule, so the departure distance that re-arms the line is OURS and a re-touch is an open mentor question. Late in the day — an entry inside the LAST 4h bucket (13:00–16:00 CT normal; the shortened close’s bucket on early-close days) — late in the day the swing target is cut to at most 30 pts, but never below 1:1 — with a wider stop the target stays at 1:1 [derived: D5.2 p2 @07:00–07:58 “market sắp đóng cửa” → the last 4h bucket; 30 = top of 20–30 @07:21; 1:1 floor 03-CHECKLIST.md:160]. The line folds EVERY closed 4h candle — after a feed gap of 4h or more the candles that opened and closed unseen are folded from the bars on the next tick ("swing 4h EMA34 line folded N 4h closes after a feed gap"). A gap longer than the live slice (~25 h) hides closes the bot cannot read: the line is marked STALE and SWING4H entries are refused (counted swing_line_gap_stale) until a restart — or a history refill (see the re-seed below) — reseeds it from the store; never a guessed line.',
+          body: 'The line is the 4h EMA 34 known at the start of the current 4h bar (17:00 CT anchor), drawn BEFORE price gets there. If a 4h bucket that the CME calendar says was OPEN has no bars in the stored 1m tape (a data hole, not a weekend or a halt), the line is missing one fold and is wrong by a few tenths of a point (about 0.4 pt during the 10-28 swing trades): the bot marks the line STALE and refuses new SWING4H entries (counted swing_line_gap_stale, named on the boot line) until the hole is refilled and the line re-seeded; a hole older than about 68 folded 4h closes has decayed to nothing and is ignored (release #56, m456). A contract roll is not a hole: a minute that any stitched contract stores counts as present, and the shortened 4h buckets on the two DST-change days are read as the line folds them (release #56, m456). Release #59 (m463, owner order 2026-11-01 “full of it”) makes the swing exactly D5.2: (1) Switch straight down to the 5m; the touch must be LITERAL — the 5m candle’s range must reach the line itself, a wick into it counts (“bắt buộc phải đụng, không được gần đụng”; “đụng ít đụng nhiều gì vẫn phải đụng” [D5.2 p2 @09:12–09:27, @13:56–14:05]). The old 5-pt “line offset toward the approach” is gone — it armed trade 707 off a candle 1.28 pts short of the line; a near miss is now only counted (swing_near_touch). (2) Only the FIRST touching candle counts, with 2 candles of leeway (“lúc nào cũng phải lấy cây nến đầu tiên. Đừng bao giờ lấy cây nến thứ 2”; “em sẽ du di là 2 cây nến” [D5.2 p1 @13:23–13:40, @15:37–15:51]). Reject (closes back on the approach side) → stop order tight on the candle, stop 30 beyond the line. After those two candles there is NO further plain reject in that 4h candle however far price travels in between (swing_not_first_touch) — the old “re-arm once price left the line by the stop distance” rule is removed (it re-armed trades 709/710). (3) Any 5m CLOSE beyond the line — the touching candle, a later candle, or a gap over the line — makes the level INVALID for the rest of that 4h candle (“level đó invalid, không chạm vô nữa, không đụng vô nữa” [D5.2 p3 @19:15–21:56]): any resting order is cancelled and every later reject-shaped touch is refused (swing_level_invalid). The ONLY way back in: a candle closes back across the line and, ONE 5m beat later, an inside bar of that close-back candle (its body inside candle 1’s full range) also closes back → 5m inside bar on the 4H line’s side with the stop AT the line, no time limit, ONE inside-bar entry per 4h candle [D5.2 p1 @20:31–21:57 · p2 @10:23–10:51]. Candle 1’s colour does NOT matter (“không quan trọng màu” [D5.2 p3 @06:24–06:52]) — the colour rule borrowed from the 1m ISB is removed, and a doji candle 1 is fine for the swing. (4) A stop of ~100 pts → DO NOT ENTER (“100 điểm quá nhiều rủi ro” — his own example is 91.75 pts; 30–40 or 50–60 are fine with 2 contracts [D5.2 p2 @19:34–21:43]): a swing whose stop is ABOVE mentor_swing_max_stop_pts (default 90) is refused, on the reject and the inside-bar entry alike (swing_max_stop at the evaluator, R31 at the trader’s rule gate — one number). This REVERSES the earlier owner ruling m186 (“take 1–2 MNQ and sit”), on the owner’s order of 2026-11-01 after being shown the quote. A tall reject candle is what makes a reject stop wide: the entry is the candle’s extreme, the stop 30 beyond the line (trades 709/710: 102.25 pts). The B5 sizing cap (swing_max_stop_pts, default 100 → at most 2 MNQ) only bites if you raise the skip above it. (5) When the 4h candle closes the instance is over (“9h đó là xong rồi… mình không có lệnh nào hết” [D5.2 p3 @12:16–13:18]): the line re-bases, the first-touch window resets, and an unfilled order expires at the candle’s close — at the MARKET close when the CME shuts inside the candle (the 13:00 CT candle ends at the 16:00 halt, a Friday at the weekend close, an early-close holiday at its close), and the trader cancels a due order on the closed path, so nothing rests into the 17:00 reopen (trade 678 filled 41 s after the reopen off an expiry left inside the break). (6) The swing follows the 4H EMA 34, not the 5m trend: price below the 4h EMA = resistance → short at the touch, above it = support → long (“4 giờ đụng resistance thì mình đánh xuống chứ không lẽ đánh lên?” [D5.2 p3 @18:07–18:25]); no 5m-trend filter. Late in the day — an entry inside the LAST 4h bucket (13:00–16:00 CT normal; the shortened close’s bucket on early-close days) — the swing target is cut to at most 30 pts, but never below 1:1 — with a wider stop the target stays at 1:1 [derived: D5.2 p2 @07:00–07:58 “market sắp đóng cửa” → the last 4h bucket; 30 = top of 20–30 @07:21; 1:1 floor 03-CHECKLIST.md:160]. The line folds EVERY closed 4h candle — after a feed gap of 4h or more the candles that opened and closed unseen are folded from the bars on the next tick ("swing 4h EMA34 line folded N 4h closes after a feed gap"). A gap longer than the live slice (~25 h) hides closes the bot cannot read: the line is marked STALE and SWING4H entries are refused (counted swing_line_gap_stale) until a restart — or a history refill (see the re-seed below) — reseeds it from the store; never a guessed line. Every swing refusal is logged as a note and counted in the mentor funnel.',
           tag: 'D5.2',
         },
       ],
@@ -594,7 +597,7 @@ export const mentor: GuideSection = {
         [
           'Room rule',
           'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 25 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 25 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100 (the swing SIZING cap, ≤ 2 MNQ) · mentor_swing_max_stop_pts 90 (the swing SKIP — above it the swing is not entered, m463 D5.2 p2 @19:34–21:43)',
         ],
         [
           'ORB gate (opening range)',
@@ -774,7 +777,7 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'A setup that is seen but never trades raises a P1',
-          body: 'Each mentor setup kind (lvl, isb, isb-reverse, phl/plh, box, swing) is counted per session day: how many entries the evaluator emitted, and how many reached the ledger. If a kind crosses 3 emitted with 0 reached the ledger while the market is open, a P1 alert fires once that day naming the kind, the window and the last refusal reason (e.g. "lvl: 7 emitted, 0 reached the ledger since 10-12 17:00 CT — last refusal: none recorded (silent drop)"). Refusals that are YOUR OWN RULES working do not count toward the 3: the trading window, the end-of-day flat window, done-for-the-day after a win, stop after a loss, the daily loss limit and the news hold. A trader with a 60-minute window refuses every out-of-window setup by design, and used to get a false "stalled" P1 for it (15 of the 27 stalled alerts in the log before release #54 were exactly that); when some of the emitted setups were refused by those rules the alert says how many. Alert-only — no trading behaviour changes. The per-kind counts are read from the gate-blocks endpoint (setup_stalls; policy_refused is the count of your-own-rules refusals). Mentor refusals also appear on the gate-blocks table by name: mentor_rule_r8, mentor_rule_r9, mentor_bad_geometry, mentor_untagged_setup, mentor_size_refused, mentor_resonance_hold and mentor_place_off (dry run). Box returns dropped inside the box rules are counted box_trigger_side, box_ping_pong, box_inside_box, box_stop_ceiling, box_no_target and box_room. The tally is in-memory: a restart (every release install) and the 17:00 CT session-day rollover both reset it.',
+          body: 'Each mentor setup kind (lvl, isb, isb-reverse, phl/plh, box, swing) is counted per session day: how many entries the evaluator emitted, and how many reached the ledger. If a kind crosses 3 emitted with 0 reached the ledger while the market is open, a P1 alert fires once that day naming the kind, the window and the last refusal reason (e.g. "lvl: 7 emitted, 0 reached the ledger since 10-12 17:00 CT — last refusal: none recorded (silent drop)"). Refusals that are YOUR OWN RULES working do not count toward the 3: the trading window, the end-of-day flat window, done-for-the-day after a win, stop after a loss, the daily loss limit and the news hold. A trader with a 60-minute window refuses every out-of-window setup by design, and used to get a false "stalled" P1 for it (15 of the 27 stalled alerts in the log before release #54 were exactly that); when some of the emitted setups were refused by those rules the alert says how many. Alert-only — no trading behaviour changes. The per-kind counts are read from the gate-blocks endpoint (setup_stalls; policy_refused is the count of your-own-rules refusals). Mentor refusals also appear on the gate-blocks table by name: mentor_rule_r8, mentor_rule_r9, mentor_rule_r31 (a swing stop above mentor_swing_max_stop_pts, release #59), mentor_bad_geometry, mentor_untagged_setup, mentor_size_refused, mentor_resonance_hold and mentor_place_off (dry run). Box returns dropped inside the box rules are counted box_trigger_side, box_ping_pong, box_inside_box, box_stop_ceiling, box_no_target and box_room. The tally is in-memory: a restart (every release install) and the 17:00 CT session-day rollover both reset it.',
           cite: 'Engineering rule (release #22, owner order 2026-10-13) — not from the course · trader/mentor_stall_alarm.go · telemetry/setup_stall.go · api/handler_gate_blocks.go',
         },
       ],
@@ -1709,19 +1712,6 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: 'Swing line offset',
-          where: 'Strategy → Mentor mode → SWING4H',
-          what: 'The line placement offset — toward the approaching price (the 4h is too coarse to place exactly).',
-          trader: '5 pts.',
-          consumer: 'kernel/mentor/swing4h.go SwingCfg.LineOffsetPts',
-          range: 'pts (5–10)',
-          systemDefault: '5',
-          recommended:
-            '5 — R8 (RULES-FIX v3): the line sits 5–10 pts toward the approaching price; 5 is the low end of that range (kernel/mentor/swing4h.go DefaultSwingCfg) — not the size table.',
-          whenToTouch: 'Rarely.',
-          perSession: 'No.',
-        },
-        {
           label: 'Swing stop distance',
           where: 'Strategy → Mentor mode → SWING4H',
           what: 'The clean-rejection stop distance beyond the line.',
@@ -1736,15 +1726,32 @@ export const mentor: GuideSection = {
         {
           label: 'Swing max stop',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'A swing stop at/above this → do not enter. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 25).',
-          trader: '100 pts.',
+          what: 'The swing SIZING cap (B5): a swing whose stop is at/above this goes out at no more than min(your swing size, 2) MNQ — it is NOT a skip. The SKIP is “Swing skip stop (đừng vô)” (mentor_swing_max_stop_pts, default 90, m463): with that default a stop of 100+ is refused before sizing, so this cap only bites if you raise the skip above it. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 25).',
+          trader: '100 pts — size ≤ 2 MNQ at/above it.',
           consumer:
-            'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts)',
+            'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts) → trader/mentor_mode.go mentorSwingWideStopCap',
           range: 'pts',
           systemDefault: '100',
-          recommended: '100 — D5.2 table.',
+          recommended:
+            '100 — “anh chị có thể lấy 1 hay 2 contract” [D5.2 p2 @21:25–21:43] (the size half of the rule; the skip half is mentor_swing_max_stop_pts).',
           whenToTouch: 'Never below 25+30.',
           perSession: 'No.',
+        },
+        {
+          label: 'Swing skip stop (đừng vô)',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → SWING max stop',
+          what: 'A SWING4H whose stop is ABOVE this many points is NOT entered — the clean reject (entry at the touching candle’s extreme, stop 30 beyond the line) and the inside-bar way back in (stop AT the line) alike. Refused at the evaluator (counted swing_max_stop, with a note naming the stop) and again at the trader’s rule gate (R31) — one number. Release #59 (m463) REVERSES the earlier owner ruling m186 (“take 1–2 MNQ and sit”), on the owner’s order of 2026-11-01 (“full of it”) after being shown the quote.',
+          trader:
+            'Course: “mà stop loss ở level gần cả trăm điểm thì không ngon nữa… Phải chi 30-40, 50-60 ok, vô 2 contracts được… nhưng 100 điểm quá nhiều rủi ro” [D5.2 p2 @19:34–21:43] — his own example, 91.75 pts, is the one he skips.',
+          consumer:
+            'trader/mentor_course_exits.go mentorCourseExitsResolve → kernel/mentor/swing4h.go SwingCfg.SkipStopPts (swingStopRefusal) · trader/mentor_mode.go mentorRuleGate (R31)',
+          range: 'pts, 0 → 90 (no OFF — unset/0 resolves to 90)',
+          systemDefault: '90',
+          recommended:
+            '90 — D5.2 p2 @19:34–21:43: refuse the ~100-pt stop (his 91.75 example); 30–60 stays in.',
+          whenToTouch: 'Only with a new owner ruling.',
+          perSession: 'No — per strategy.',
         },
         {
           label: 'Swing min stop',
@@ -1789,12 +1796,13 @@ export const mentor: GuideSection = {
         {
           label: 'Swing leeway candles',
           where: 'Strategy → Mentor mode → SWING4H',
-          what: 'The 4h level touch window is the first 2 touching 5m candles. The entry may be armed off either of them; if either of those two candles closes beyond the level there is NO order (cancel any resting arm, spend the level). SWING4H only — every other setup keeps first-touch = 1 candle.',
+          what: 'The 4h level touch window is the first 2 touching 5m candles of the 4h candle. The entry may be armed off either of them; if either closes beyond the level there is NO order (cancel any resting arm; the level is invalid). After the window NO further plain reject in that 4h candle (m463: the old re-arm-after-the-stop-distance rule is gone; counted swing_not_first_touch). SWING4H only — every other setup keeps first-touch = 1 candle.',
           trader: '2 candles.',
           consumer: 'kernel/mentor/swing4h.go SwingCfg.LeewayCandles',
           range: 'candles',
           systemDefault: '2',
-          recommended: '2 — D5.2 p1 @ 15:21–15:48.',
+          recommended:
+            '2 — D5.2 p1 @ 15:21–15:48 (“du di là 2 cây nến”); only the first touch counts [D5.2 p1 @13:23–13:40].',
           whenToTouch: 'Rarely.',
           perSession: 'No.',
         },

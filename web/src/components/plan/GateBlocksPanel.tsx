@@ -144,6 +144,11 @@ export const GATE_LABELS: Record<string, { en: string; icon: string }> = {
   // now counts by name (trader/mentor_actions.go), so the panel shows words.
   mentor_rule_r8: { en: 'Mentor — rule R8 refused', icon: '🧑‍🏫' },
   mentor_rule_r9: { en: 'Mentor — rule R9 refused', icon: '🧑‍🏫' },
+  // m463 (D5.2-R31): a SWING4H stop above mentor_swing_max_stop_pts (90).
+  mentor_rule_r31: {
+    en: 'Mentor — swing stop above the ceiling (R31, đừng vô)',
+    icon: '🧑‍🏫',
+  },
   mentor_rule_other: { en: 'Mentor — other rule refused', icon: '🧑‍🏫' },
   mentor_bad_geometry: { en: 'Mentor — bad stop/target geometry', icon: '🧑‍🏫' },
   mentor_untagged_setup: { en: 'Mentor — untagged setup', icon: '🧑‍🏫' },

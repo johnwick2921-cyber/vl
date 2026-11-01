@@ -472,7 +472,7 @@ export const status: GuideSection = {
     { kind: 'h', text: 'Gate-block labels — the full list' },
     {
       kind: 'code',
-      title: 'every human label the gate panel has (108)',
+      title: 'every human label the gate panel has (109)',
       lines: [
         'NT8 feed down',
         'Dead-man watchdog',
@@ -575,6 +575,7 @@ export const status: GuideSection = {
         'Mentor — flat window (EOD / forced flat)',
         'Mentor — rule R8 refused',
         'Mentor — rule R9 refused',
+        'Mentor — swing stop above the ceiling (R31, đừng vô)',
         'Mentor — other rule refused',
         'Mentor — bad stop/target geometry',
         'Mentor — untagged setup',
