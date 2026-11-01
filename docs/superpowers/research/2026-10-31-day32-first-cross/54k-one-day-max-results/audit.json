@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "random_oracle_cases": 2000,
+  "boundary_assertions": 18,
+  "source_paths_sha256": "51c4d33d410f9455de29ee15bf555c77750aa354dcef74aa92b8997b65cffe4d",
+  "script_sha256": "4e94ed524efe8661df07d6730fd5951ce1fb5beb76cf5b98f8ceef1d2dbf0d48",
+  "artifacts": {
+    "summary.csv": "0983a3a1094a3a507f8f75d89e7cb3dd377f17f76b5ed17f35226e0fbc5fd884",
+    "payouts.csv": "70ac58cdfd0119b6ab366b34eef1a349a31199c6c1ed1ed4901965e117092eee",
+    "ledger.csv": "1ce724569f6228077b6e8121182aae5982c0a8eeee6efb4d1e6211339c380ad3",
+    "stages.csv": "11726f74a28d2672099fb29930d35e6454d73dec5cbb91b6120bfdb5695b5963",
+    "skipped.csv": "bc1353c3a531cf2d339b67a3bd426b690703d0727158a1265e90404b8140a5ea"
+  },
+  "initial_balance_usd": 54000,
+  "initial_qualified_days": 1,
+  "initial_cycle_profit_usd": 4000,
+  "note": "Maximum eligible funded payout: min(50% remaining profit, $2000, balance above owner reserve), minimum $500. Live retains old daily excess over2100 policy. Immediate funded replacements and live approvals remain hypothetical; no evaluation costs/time."
+}
