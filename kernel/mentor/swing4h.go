@@ -728,8 +728,10 @@ func swingInsideBar(prev, b market.Kline) bool {
 	return curHigh(b) <= prev.High && curLow(b) >= prev.Low
 }
 
+// swingCT renders a refusal note's bar time ("01-02 15:04"; every caller adds
+// the " CT" label) through the kernel's single time source (TZ guard).
 func swingCT(ms int64) string {
-	return time.UnixMilli(ms).In(ctime()).Format("01-02 15:04")
+	return kernel.TableTimeCT(time.UnixMilli(ms))
 }
 
 // swingBarMs is the 5m bar length the swing machine walks.
