@@ -1,0 +1,28 @@
+{
+  "status": "PASS",
+  "period": [
+    "2025-10-31",
+    "2026-10-30"
+  ],
+  "candidate_days": 261,
+  "rows": 522,
+  "recent_overlap_rows_identical": 262,
+  "warmup_hashes": {
+    "/home/hoang/fleet-1017/out/orb-ema9-20261022/eth-1m.dbn.zst": "bb96bd2ab59433a6bbc6c53a262910927249b9c06e643d047542938a947d9816",
+    "/home/hoang/fleet-1017/out/day32-recent-six-months-20261031/warmup/eth-1m.dbn.zst": "35a7802dba28a91c01b124db705241ac4650bbc0bf341b0e77ab577b49397c67"
+  },
+  "source_hashes": {
+    "tick_orb": "3b7687a4e5f483f107eeb28fb8e9de62c5b912433d2dfd1af8891584aaef0903",
+    "stop_variants": "dec4b8be971acf77d5bd7822321bc89993f0ba96c2743d3eedc72d328c91231f",
+    "ema_orb": "3ad686016253f6fd093e2cd4e7b030d570c2199242bb971764211387565aa5d4",
+    "orb_ema_receipt": "69ca07947e39c2c92da5a8a9b133d4476b119e7013513794387a395752cd81a6",
+    "ema_halfbox": "8304684f2e487e44bfb3e17859dc91d65d90b954583dcd5fb100f486ca9b5887"
+  },
+  "harness_hash": "6ed0e6024cf8f8b4ada0c867bb931ebb7dc40cb4d801dee5799517a1d3b47ea0",
+  "artifacts": {
+    "summary.csv": "19bf4b057c45732a5d0cb68882f4cb77dbbf0fdb3acf730dc66f907955aa5ff4",
+    "trades.csv": "c24472194363d978dac2cf12c0e1199c069958ec686638460d72119dfc456f49",
+    "sessions.csv": "4196233c307d023223d5f4fd2cedd164f39a18bf46b72668e35df580a0056e76",
+    "monthly.csv": "457f6f23eba153fab2e3794a15105ac074e691e7e4eb23c772afdacf5123f178"
+  }
+}

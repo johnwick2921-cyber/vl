@@ -1,0 +1,75 @@
+{
+  "note": "Exploratory only. Recent sample already inspected; not pristine holdout. Cost2 is sensitivity, not measured commission. One filter at a time, no threshold optimization. Minimum50 early closed trades. No live changes.",
+  "selected": [
+    {
+      "strategy": "A",
+      "selected_on_early_cost2": "baseline",
+      "early": {
+        "strategy": "A",
+        "rule": "baseline",
+        "period": "early",
+        "entries": 121,
+        "closed": 119,
+        "open": 2,
+        "wins": 63,
+        "losses": 56,
+        "win_pct": 52.94117647058823,
+        "gross": 1411.75,
+        "cost2": 1173.75,
+        "closed_DD": 600.5,
+        "loss_streak": 7
+      },
+      "recent": {
+        "strategy": "A",
+        "rule": "baseline",
+        "period": "recent",
+        "entries": 124,
+        "closed": 120,
+        "open": 4,
+        "wins": 53,
+        "losses": 67,
+        "win_pct": 44.166666666666664,
+        "gross": -1954.25,
+        "cost2": -2194.25,
+        "closed_DD": 2252.75,
+        "loss_streak": 9
+      }
+    },
+    {
+      "strategy": "E",
+      "selected_on_early_cost2": "entry<09:00",
+      "early": {
+        "strategy": "E",
+        "rule": "entry<09:00",
+        "period": "early",
+        "entries": 91,
+        "closed": 91,
+        "open": 0,
+        "wins": 41,
+        "losses": 50,
+        "win_pct": 45.05494505494506,
+        "gross": 1289.5,
+        "cost2": 1107.5,
+        "closed_DD": 269.25,
+        "loss_streak": 6
+      },
+      "recent": {
+        "strategy": "E",
+        "rule": "entry<09:00",
+        "period": "recent",
+        "entries": 101,
+        "closed": 101,
+        "open": 0,
+        "wins": 37,
+        "losses": 64,
+        "win_pct": 36.633663366336634,
+        "gross": 392.25,
+        "cost2": 190.25,
+        "closed_DD": 583.75,
+        "loss_streak": 10
+      }
+    }
+  ],
+  "joint_closed_days": 233,
+  "both_loss": 96
+}

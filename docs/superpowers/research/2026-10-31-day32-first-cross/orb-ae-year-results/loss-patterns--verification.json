@@ -1,0 +1,7 @@
+{
+  "status": "PASS",
+  "rule_count": 17,
+  "bucket_partition_checks": "PASS",
+  "chronological_total_checks": "PASS",
+  "report_sha256": "fa9cabeb0dc5444356872426163cf7332de3aaf9a21ea9735196a6f80d7e2c3b"
+}

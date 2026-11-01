@@ -1,0 +1,14 @@
+{
+  "REPORT.md": "fa9cabeb0dc5444356872426163cf7332de3aaf9a21ea9735196a6f80d7e2c3b",
+  "loss-patterns--selection.json": "39e54538abed8cc8501b0554fe565a1e0a7c23461bc1e2fe7042d8ab2a9ad5d4",
+  "summary.csv": "19bf4b057c45732a5d0cb68882f4cb77dbbf0fdb3acf730dc66f907955aa5ff4",
+  "sessions.csv": "4196233c307d023223d5f4fd2cedd164f39a18bf46b72668e35df580a0056e76",
+  "loss-patterns--verification.json": "4e01706de3bc64825d37ba6d8c047c16802165769ceceec562059e90b009602b",
+  "loss-patterns--joint-days.csv": "6b240bf64c29775e96c656013c2f4aa7ead9ce635974594e45fe2edf51231c5a",
+  "audit.json": "0cfa53093cfd43d0557fe902e8713075f811333073bc2133ce5dbdfcf51efcd2",
+  "loss-patterns--feature-buckets.csv": "4a9c127e87d8121640a72d27b142039865ed418abb24ce9968cfc0ed1afb7bf6",
+  "loss-patterns--entry-features.csv": "458007957e924e1995fe8427aee969714960fe18802a073b50fc5e0b91a7e45f",
+  "loss-patterns--filter-sensitivity.csv": "cad383c51bc0d8b5bb53879cb311eaa274444e569282008fd527ba0e2227e807",
+  "monthly.csv": "457f6f23eba153fab2e3794a15105ac074e691e7e4eb23c772afdacf5123f178",
+  "loss-patterns--win-loss-profiles.csv": "b49daa3b6551579b6c250306918d6882fefa95818812dde33f07d8961e969823"
+}

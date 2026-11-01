@@ -1,0 +1,3 @@
+group,variant,orb,entries,TP,SL,BE,LOCK,open,excluded,no_entry,positive,negative,zero,win_percent,won_points,lost_points,gross_points,win_streak,loss_streak,closed_drawdown,max_day_win,max_day_loss
+A,box,5,245,116,123,0,0,6,16,0,116,123,0,48.53556485355649,11350.75,-11893.25,-542.5,6,9,2252.75,244.5,-204.25
+E,halfbox_fullbox,2,244,89,154,0,0,1,14,3,89,154,0,36.62551440329218,6496.75,-5591.5,905.25,5,13,866.0,150.75,-67.5
