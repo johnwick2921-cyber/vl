@@ -1,0 +1,18 @@
+{
+  "status": "PASS",
+  "random_oracle_cases": 2000,
+  "boundary_assertions": 18,
+  "source_paths_sha256": "51c4d33d410f9455de29ee15bf555c77750aa354dcef74aa92b8997b65cffe4d",
+  "script_sha256": "58d127022ee06195769b5e3685dc928ecdd1780d8dffdda89ed5ee5c6ea7a406",
+  "artifacts": {
+    "summary.csv": "b4e31efb0fd6f723eb8c95739f293fc917946e317e29b173d2a7aeb45290995e",
+    "payouts.csv": "c3ca77f5c93a1aa6fc3b892248c705c6b40ef2152bac0fcd80beb03f9396dc0a",
+    "ledger.csv": "a1fbd6c13988f4de3f0513be9c47aaff0211de11b4d3c7bb4064aa379413cfc6",
+    "stages.csv": "19d0fb766a06067f90dc4aa5646b0c6e6d3c7720756ebd617fde2111af381501",
+    "skipped.csv": "bc1353c3a531cf2d339b67a3bd426b690703d0727158a1265e90404b8140a5ea"
+  },
+  "initial_balance_usd": 54000,
+  "initial_qualified_days": 1,
+  "initial_cycle_profit_usd": 4000,
+  "note": "Fixed500 applies SIM only. Live retains old daily excess over2100 policy. Immediate funded replacements and live approvals remain hypothetical; no evaluation costs/time."
+}
