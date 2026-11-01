@@ -12,6 +12,10 @@ package mentor
 // the pre-m462 golden is kept as testdata/m462_prem462_tick_identity.golden.gz
 // and TestM462StoredNewsOnlyIsThePreM462Behaviour proves the stored news-only
 // path still reproduces it tick for tick (modulo the refusal-name split).
+// Regenerated again at the release #59 merge (m462 + m463 swing D5.2 + m464
+// rolling ladder): every tick whose intents moved against dev 7e2231f01 moved
+// in at least one branch's own golden; the 14 ticks whose bytes match no single
+// branch differ only by arm-id numbering and the m464 rung-refusal reason text.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

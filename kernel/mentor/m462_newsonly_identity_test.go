@@ -13,8 +13,14 @@ import (
 // htf_gate_news_only=true must keep the pre-m462 behaviour exactly. This pin
 // replays the four m434 tapes (5,216 ticks, real 10-13 and 10-23 sessions)
 // with the knob explicitly ON and compares every tick against the m434 golden
-// as it stood BEFORE m462 (testdata/m462_prem462_tick_identity.golden.gz = a
-// gzip of testdata/m434_tick_identity.golden at b6389c023): intents, notes,
+// as it stands WITHOUT m462 (testdata/m462_prem462_tick_identity.golden.gz).
+// On the m462 branch that was a gzip of testdata/m434_tick_identity.golden at
+// b6389c023 (= dev 7e2231f01). Release #59 merges m463 (swing D5.2) and m464
+// (rolling ladder) beside m462, both of which change these tapes on purpose, so
+// at the release merge the reference was re-recorded on a tree of dev 7e2231f01
+// + m463 83461cd84 + m464 3c9be6955 WITHOUT m462 (M434_WRITE_GOLDEN there,
+// gzip -n -9): stored news-only at the release head must equal "release #59
+// minus m462" tick for tick. Intents, notes,
 // chart levels and trendlines must be byte-identical; the State may differ
 // ONLY by the m462 refusal-name split (isb/isbrev/box/phl _htf_blocked →
 // _htf_no_4h | _htf_conflict, phl's side mismatch → phl_htf_side_mismatch)
