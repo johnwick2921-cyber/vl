@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"strings"
 	"time"
 
 	"vl/market"
@@ -64,6 +65,90 @@ func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 		return true, h.FourH.Dir, ""
 	}
 	return false, "", "case 3: 1h trigger opposite the 4h — sit out until the 1h flips to the 4h [D4.4 p1 @ 15:09–15:33] (§12)"
+}
+
+// HTFRefusal names WHY the shared 4h/1h check refused an intraday entry
+// (m462). Every setup prefixes it: isb_htf_conflict, phl_htf_side_mismatch,
+// box_htf_no_4h, rolling_htf_conflict, … — one name per setup, one counter.
+type HTFRefusal string
+
+const (
+	// HTFRefuseNo4h — no 4h trigger at all: "the 4-hour is read first"
+	// [D4.4 p1 @02:53; D5.1-R8 D5.1 p1 @08:29–09:13] — nothing to follow.
+	HTFRefuseNo4h HTFRefusal = "htf_no_4h"
+	// HTFRefuseConflict — case 3: the 1h trigger (fired at/after the 4h)
+	// points opposite the 4h → sit out until the 1h flips to the 4h
+	// [D4.4 p1 @15:09–15:33; D5.1-R11 D5.1 p1 @08:29–09:52, @11:27–11:50
+	// "Trigger 4h, trigger 1h nằm ngược nhau… mình không làm được gì hết trơn"].
+	HTFRefuseConflict HTFRefusal = "htf_conflict"
+	// HTFRefuseSide — case 1/2: the entry's side is against the 4h direction
+	// (1h agreeing or silent) — "entries only with the 4h" [D4.4 p1
+	// @16:10–16:20; case 2 @17:11–18:52; D5.1-R20(a) D5.1 p1 @19:11–20:10].
+	HTFRefuseSide HTFRefusal = "htf_side_mismatch"
+)
+
+// HTFEntryCheck is the ONE shared 4h/1h check every INTRADAY mentor entry
+// path calls (m462): ISB, reverse ISB (incl. its CX-6 PHL/PLH retag), level
+// PHL/PLH, rolling PHL/PLH, FTGH/FTGL box returns — and htfEntryFilter, the
+// backstop at Tick's exit, re-runs it on every entry intent so a path that
+// forgets its own call is still gated. Trendline / wick-microscalp / flag-wall
+// are TARGET paths on those same entries, so they are covered through them.
+// side "" checks only the setup-wide verdict (no 4h / case 3).
+//
+// It returns "" (allowed) when the gate is off — HTF.GateOff, which Tick sets
+// from HTFGateActive: since m462 the DEFAULT gate is ALL SESSION (D5.1-R9 [D5.1
+// p1 @08:46–11:27] "Lúc nào khi anh chị open ra, không cần phải là news");
+// only an explicitly stored htf_gate_news_only=true keeps the old windows.
+//
+// SWING4H never calls it: the swing's direction is the 4h EMA34 — "4 giờ đụng
+// resistance thì mình đánh xuống chứ không lẽ đánh lên?" [D5.2-R7, D5.2 p3
+// @15:04–18:25] — not the 4h/1h trigger lines.
+func HTFEntryCheck(h HTF, side Side) (HTFRefusal, string) {
+	ok, dir, why := HTFVerdict(h)
+	if !ok {
+		if h.FourH.Dir == "" {
+			return HTFRefuseNo4h, why
+		}
+		return HTFRefuseConflict, why
+	}
+	if side != "" && dir != "" && side != dir {
+		return HTFRefuseSide, "entry side " + string(side) + " against the " + string(dir) + " 4h trigger — entries only with the 4h direction [D4.4 p1 @16:10–16:20; case 2 @17:11–18:52]"
+	}
+	return "", ""
+}
+
+// htfEntryFilter is the m462 backstop: the shared HTFEntryCheck over every
+// intraday entry intent that is about to leave Tick. The per-setup paths
+// already refuse by name before they emit, so on a correct build this drops
+// nothing; it exists so that NO intraday entry path (present or future) can
+// trade through a 4h/1h conflict unnamed. SWING4H is exempt (D5.2-R7).
+func htfEntryFilter(out []Intent, h HTF) (kept []Intent, refusals []string) {
+	kept = out[:0:0]
+	for _, in := range out {
+		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && !htfExempt(in) {
+			if r, _ := HTFEntryCheck(h, in.Side); r != "" {
+				refusals = append(refusals, htfRefusalName(in.Setup, r))
+				continue
+			}
+		}
+		kept = append(kept, in)
+	}
+	return kept, refusals
+}
+
+// htfExempt — the SWING4H runs its own §8 machine on the 4h EMA34 [D5.2-R7].
+func htfExempt(in Intent) bool {
+	return in.Setup == "SWING4H" || strings.HasPrefix(in.Reason, "swing")
+}
+
+// htfRefusalName is the per-setup refusal name: the setup prefix + the kind.
+// PLH shares the "phl" prefix (one setup family, as the level path counts it).
+func htfRefusalName(setup string, r HTFRefusal) string {
+	p := strings.ToLower(setup)
+	if p == "plh" {
+		p = "phl"
+	}
+	return p + "_" + string(r)
 }
 
 // HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
