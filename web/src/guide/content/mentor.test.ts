@@ -185,6 +185,19 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).toContain('rolling_phl_15m_box_ban')
     expect(all).not.toContain('the PHL entry buffer, default 1.00')
   })
+
+  // release #59 review round 2: the closing 4h candle's last bar is read
+  // against its own line and arms nothing (D5.2-R27); a cancelled inside bar
+  // does not spend the level (D5.2-R25); the 09-11 worked buy is skipped by
+  // the Day-4 15m short ISB box + the 5m trigger, named, a mentor question.
+  it('names the closed-candle and spent inside-bar refusals and the 15m box conflict', () => {
+    expect(all).toContain('swing_candle_closed')
+    expect(all).toContain('swing_isb_spent')
+    expect(all).toContain('CANCELLED unfilled')
+    expect(all).not.toContain('ONE inside-bar entry per 4h candle')
+    expect(all).toContain('a SHORT 15m ISB box')
+    expect(all).toContain('also refused rolling_room')
+  })
 })
 
 // m462 (release #59): the 4h/1h trigger gate applies ALL SESSION by default

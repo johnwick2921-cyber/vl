@@ -114,16 +114,26 @@ func rollingTrendSide(h HTF) Side {
 // itself end the ladder — the flag off, no trend side / the side flipped, no
 // old extreme to target, a level touch owning the entry (m216). A refused RUNG
 // never ends it (m464: rollingSkipRung).
+//
+// rv59 (release #59 review, course-ladder P3): the reset KEEPS ReactedAt — the
+// chase guard is a fact about the tape (that candle broke the rung), not about
+// the ladder. Wiping it let a cancel on the tick that re-reads the breaking
+// candle hand that candle back to the start gate, and the impulse restarted
+// the ladder [D2.2-R8 p1 @03:27–04:16].
 func (e *Evaluator) rollingCancel(st *RollingPHL, why string) []Intent {
-	if st == nil || st.ArmID == "" {
-		*st = RollingPHL{}
+	if st == nil {
+		return nil
+	}
+	reacted := st.ReactedAt
+	if st.ArmID == "" {
+		*st = RollingPHL{ReactedAt: reacted}
 		return nil
 	}
 	out := []Intent{{Action: CancelArm, ArmID: st.ArmID, Reason: why}}
 	if _, ok := e.State.LevelArms[rollingLevelKey]; ok {
 		delete(e.State.LevelArms, rollingLevelKey)
 	}
-	*st = RollingPHL{}
+	*st = RollingPHL{ReactedAt: reacted}
 	return out
 }
 
