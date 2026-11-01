@@ -244,7 +244,8 @@ func m436At(hour, min int) (*Evaluator, []market.Kline, int64) {
 }
 
 // TestM436RollingTradesOutsideTheHTFGateWindow — the P2 (lens l6): with
-// HTFGateNewsOnly ON (the default) the 4h/1h gate is OFF outside 08:30–09:30 CT
+// HTFGateNewsOnly ON (the default until m462; since m462 only an explicitly
+// STORED true — this test pins that stored path) the 4h/1h gate is OFF outside 08:30–09:30 CT
 // (and the print window) and HTFVerdict returns an EMPTY side, which cancelled
 // every roll at 09:30 and started none after. The rolling leg follows the 4h
 // direction alone when the gate is off. At 10:00 CT a 4h-long pullback arms; a
@@ -253,6 +254,11 @@ func m436At(hour, min int) (*Evaluator, []market.Kline, int64) {
 // Mutant: restore `_, side, _ := HTFVerdict(e.State.HTF)` in rollingPHLTick →
 // 10:00 arms 0 → RED.
 func TestM436RollingTradesOutsideTheHTFGateWindow(t *testing.T) {
+	m436At := func(hour, min int) (*Evaluator, []market.Kline, int64) {
+		e, bars, now := m436At(hour, min)
+		e.Cfg.HTFGateNewsOnly = true // the stored news-only value (m462 default is all-day)
+		return e, bars, now
+	}
 	// inside the window (control, = the existing fixture)
 	e0, bars0, now0 := m436At(9, 0)
 	if m436Armed(e0.Tick(bars0, now0)) != 1 {

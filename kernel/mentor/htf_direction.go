@@ -15,9 +15,11 @@ import (
 type HTF struct {
 	FourH TriggerLine
 	OneH  TriggerLine
-	// GateOff — D4.4-11: the 4h/1h DIRECTION gate is off outside the news
-	// window (the course uses the HTF read for news first, not ordinary
-	// trading yet). Transient, recomputed every tick; never persisted.
+	// GateOff — the 4h/1h DIRECTION gate does not apply at this tick. Since
+	// m462 it is false all session by default (D5.1-R9/R11); only an
+	// explicitly stored htf_gate_news_only=true sets it outside the old
+	// D4.4-11 news/open windows. Transient, recomputed every tick; never
+	// persisted.
 	GateOff bool `json:"-"`
 }
 
@@ -56,7 +58,7 @@ func HTFAdvanceAt(h HTF, bars4h, bars1h []market.Kline, cfg Config, breakAt int6
 // (fail-closed: the read always starts from the 4-hour).
 func HTFVerdict(h HTF) (ok bool, side Side, reason string) {
 	if h.GateOff {
-		return true, "", "" // D4.4-11: the HTF direction gate is off outside the news window
+		return true, "", "" // stored news-only (D4.4-11) outside its windows; never under the m462 all-day default
 	}
 	if h.FourH.Dir == "" {
 		return false, "", "no 4h trigger yet — the 4-hour is read first, before the 1-hour [D4.4 p1 @ 02:53]"
@@ -136,7 +138,8 @@ func htfEntryFilter(out []Intent, h HTF) (kept []Intent, refusals []string) {
 	return kept, refusals
 }
 
-// htfExempt — the SWING4H runs its own §8 machine on the 4h EMA34 [D5.2-R7].
+// htfExempt — the SWING4H runs its own §8 machine on the 4h EMA34 (D5.2-R7)
+// [D5.2 p3 @15:04–18:25 "4 giờ đụng resistance thì mình đánh xuống"].
 func htfExempt(in Intent) bool {
 	return in.Setup == "SWING4H" || strings.HasPrefix(in.Reason, "swing")
 }
@@ -151,9 +154,17 @@ func htfRefusalName(setup string, r HTFRefusal) string {
 	return p + "_" + string(r)
 }
 
-// HTFGateActive — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: reports whether the
-// 4h/1h direction gate APPLIES at `now`. With HTFGateNewsOnly on (the default,
-// the mentor's rule) the gate applies
+// HTFGateActive reports whether the 4h/1h direction gate APPLIES at `now`.
+//
+// m462 (release #59) DEFAULT — HTFGateNewsOnly false: ALL SESSION. The final
+// review D5.1 overrides the D4.4 "news first" caveat: "Lúc nào khi anh chị open
+// ra, không cần phải là news" [D5.1-R9, D5.1 p1 @08:46–09:13, @11:27] and a
+// 4h/1h conflict is "mình không làm được gì hết trơn" whatever the hour
+// [D5.1-R11, D5.1 p1 @08:29–09:52, @11:27–11:50; 15 Sep it held to 11–12 h].
+//
+// The OLD rule, kept only for a strategy that STORED htf_gate_news_only=true
+// (stored values are sacred) — D4.4-11 [D4.4 p1 @13:44–14:06, @24:48]: the
+// gate applies
 //
 //   - on a PRINT DAY (cfg.PrintWindows lists today's red-folder 07:30 print),
 //     from the print window's start (07:20 CT) through the 08:30 CT open — the
@@ -172,8 +183,8 @@ func htfRefusalName(setup string, r HTFRefusal) string {
 //     mentor's 60-minute entry window [example: D1.2 p1 @23:52–24:59]; B28 —
 //     a mentor question: how long after the open does the 4h/1h read govern?).
 //
-// With the knob off (owner decision A 2026-10-21 m134 all-day, REVERTED by
-// #45) it applies all day.
+// History: #43 shipped all-day (owner decision A m134), #45 reverted it to
+// news + open, m462 restores all-day as the DEFAULT from the D5.1 review.
 func HTFGateActive(now int64, cfg Config) bool {
 	if !cfg.HTFGateNewsOnly {
 		return true

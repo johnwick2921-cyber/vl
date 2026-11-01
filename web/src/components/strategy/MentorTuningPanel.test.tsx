@@ -189,6 +189,6 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     phl_target_shy_pts: 5,
     isb_old_extreme_pts: 2,
     isb_in_range_gap_pts: 0,
-    htf_gate_news_only: true, // D4.4-11 — news + open default ON (the mentor's rule)
+    htf_gate_news_only: false, // m462 — the 4h/1h gate applies all session by default (D5.1-R9/R11)
   })
 })

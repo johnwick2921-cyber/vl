@@ -217,10 +217,11 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 	if !ok {
 		return in, false, reason
 	}
-	if htfOK, side, htfReason := HTFVerdict(htf); !htfOK {
-		return in, false, "HTF direction gate: no trade — " + htfReason
-	} else if side != "" && side != in.Side {
-		return in, false, "HTF direction gate: entry side " + string(in.Side) + " against the " + string(side) + " trigger — entries only with the 4h direction [D4.4 p1 @16:13–16:20; case 2 at 17:11–18:52]"
+	// m462: the ONE shared 4h/1h check — all session by default (D5.1-R9/R11).
+	// The reason carries the kind so phlRefusalName names it per kind:
+	// phl_htf_no_4h / phl_htf_conflict / phl_htf_side_mismatch.
+	if r, why := HTFEntryCheck(htf, in.Side); r != "" {
+		return in, false, "HTF direction gate: " + string(r) + " — no trade — " + why
 	}
 	// A10 (CTO 20:15:49Z): ONE day gate — DayOff AND DayNotMeasured refuse
 	// every intraday setup through the same helper (dayGateRefusal).

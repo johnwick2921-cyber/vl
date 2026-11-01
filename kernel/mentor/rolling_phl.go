@@ -70,11 +70,13 @@ func levelTouchRejectActive(st *State, side Side, levels []Level) bool {
 }
 
 // rollingTrendSide is the side the rolling pullback leg follows: the gate-aware
-// HTF verdict inside the news / open windows, and the 4h trigger direction
-// alone outside them (m436).
+// HTF verdict whenever the gate applies (since m462: all session by default —
+// D5.1-R9/R11), and the 4h trigger direction alone when it does not (a stored
+// news-only strategy outside its windows, m436).
 //
 // HTFVerdict returns an EMPTY side whenever the 4h/1h direction gate is OFF
-// (HTF.GateOff, the default outside 08:30–09:30 CT and the print window — "NÊN
+// (HTF.GateOff — only a stored htf_gate_news_only=true outside 08:30–09:30 CT
+// and the print window since m462 — "NÊN
 // SỬ DỤNG CHO NEWS TRƯỚC … đừng sử dụng cho thường" [D4.4 p1 @14:01–14:06]).
 // The level PHL/PLH tolerates that (its side comes from the touch), but the
 // rolling leg's whole job is to continue THE TREND, so an empty side cancelled
@@ -141,6 +143,18 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// 1. Trend direction (the 4h read, §5.4). No direction = no continuation.
 	side := rollingTrendSide(e.State.HTF)
 	if side == "" {
+		// m462: the gate applies and refuses (no 4h trigger / case 3). Name it
+		// — once per exec candle, and only where a leg would have lived: a roll
+		// is resting, or this candle is the pullback of the 4h side (the
+		// pre-m462 leg) — so a refusal records a leg the gate stopped, never a
+		// candle with nothing to trade [D5.1-R11; D4.4 p1 @15:09–15:33].
+		if r, _ := HTFEntryCheck(e.State.HTF, ""); r != "" {
+			four := e.State.HTF.FourH.Dir
+			if (st.ArmID != "" || four != "" && rollingPullbackCandle(execCur, four)) && e.State.RollingHTFRefusedAt != execCur.CloseTime {
+				e.State.RollingHTFRefusedAt = execCur.CloseTime
+				e.refuse(htfRefusalName("rolling", r))
+			}
+		}
 		return e.rollingCancel(st, "no HTF trend direction — the rolling pullback leg has no side")
 	}
 

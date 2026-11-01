@@ -60,6 +60,11 @@ func m431Day10_23(t *testing.T) (*Evaluator, []market.Kline, int) {
 	withFlatNear(t)
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	// m462: this pins the phantom-arm mechanics on the 10-23 tape as it ran
+	// live (news-only gate). Under the m462 all-day default the 12:22 CT ISB
+	// (isb-17, 4h long vs 1h short that afternoon — trade 698's conflict) is
+	// refused by the 4h/1h gate before the flag wall can see it.
+	cfg.HTFGateNewsOnly = true
 	e := New(cfg)
 	f, err := os.Open("testdata/m431_state_20261023_0830.json.gz")
 	if err != nil {
