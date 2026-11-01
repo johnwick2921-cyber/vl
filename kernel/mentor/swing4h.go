@@ -538,7 +538,7 @@ func SwingTick(s *SwingState, bars5m []market.Kline, cfg SwingCfg, now int64) []
 		out = append(out, s.stepSwingBar(bars5m, i, line, cfg, now, mode)...)
 	}
 	if unseen > 0 {
-		s.refuse(SwingRefusedCandleClosed, "%d 5m bars of 4h candles that opened and closed unseen (a feed gap) were not walked for swing entries — their instances are over [D5.2-R27 p3 @12:16–13:18]", unseen)
+		s.refuse(SwingRefusedCandleClosed, "%d 5m bars of 4h candles that closed before this tick could read them (a feed gap, or the backlog before the first readable line) were not walked for swing entries — their instances are over [D5.2-R27 p3 @12:16–13:18]", unseen)
 	}
 	// m437: the expiry drop runs AFTER the walk — the bucket's last bar has now
 	// had its fill check, so an order that did not fill is retired cleanly.
