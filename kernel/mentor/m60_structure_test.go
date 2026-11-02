@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"math"
 	"strings"
 	"testing"
 	"time"
@@ -296,4 +297,62 @@ func m465PreValues(cfg *Config) {
 	cfg.ISBReverseTouch = ISBReverseTouchISBCandle
 	cfg.ISBStackTinyStopPts = 0
 	cfg.DayGateSpentPts = 300
+}
+
+// TestM60PHLFlatLowRefusedAtTheTickCallSite — the production call site
+// (Evaluator.Tick) of D2.2-R64: the D2-28 worked-PHL tape with the structural
+// left low lifted to 29,384 — the broken candle's low 29,386 is only 2 pts
+// higher, inside the day's "same price" distance (flatNearPts on this tape ≈
+// 7), so the touch is a FLAT low = an FTGL, not a PHL: refused
+// phl_flat_low_is_ftgl. The knob's strict side (pre-#60) emits the PHL.
+// MUTANT: drop the phlFlatExtremeRefusal call in eval.go → RED.
+func TestM60PHLFlatLowRefusedAtTheTickCallSite(t *testing.T) {
+	withFlatNear(t)
+	run := func(flat string) (*Evaluator, []Intent) {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.PHLTargetShyPts = 6
+		cfg.EMALocationTFMinutes = 0
+		cfg.Exec2mAfter30m = false
+		cfg.PHLFlatLow = flat
+		e := New(cfg)
+		e.seeded = true
+		e.State.Seed1mWatermark = math.MaxInt64
+		e.State.Seed1HWatermark = math.MaxInt64
+		e.State.SeedLevels = []Level{
+			{Key: "L", Kind: KindKeyLevel, Price: 29386},
+			{Key: "old-low:29335", Kind: KindOldExtreme, Role: OldLow, Price: 29335},
+			{Key: "old-high:29431.75", Kind: KindOldExtreme, Role: OldHigh, Price: 29431.75},
+		}
+		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 29300}
+		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 29300}}
+		bars := []market.Kline{
+			rthBars(0, 29400, 29410, 29384, 29405), // the structural left low, 29,384
+			rthBars(1, 29420, 29430, 29415, 29425),
+			rthBars(2, 29425, 29431.75, 29420, 29428), // old high
+			rthBars(3, 29410, 29415, 29400, 29408),
+			rthBars(4, 29400, 29405, 29395, 29398),
+			rthBars(5, 29395, 29397, 29386, 29392), // touches L=29386 — 2 pts over the left low
+		}
+		now := bars[5].CloseTime + 1
+		e.State.ORB = ORB{Day: dayStartCT(now), High: 29300, Low: 29200, Drawn: true, Escaped: SideLong}
+		e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(now).In(ctime())), Verdict: DayTrade}
+		return e, e.Tick(bars, now)
+	}
+	isPHL := func(ints []Intent) bool {
+		for _, in := range ints {
+			if in.Action == PlaceStopEntry && in.Setup == "PHL" && in.Side == SideLong {
+				return true
+			}
+		}
+		return false
+	}
+	e, ints := run(PHLFlatLowNear)
+	if isPHL(ints) || e.State.Refusals["phl_flat_low_is_ftgl"] == 0 {
+		t.Fatalf("a low 2 pts over the left low is flat (an FTGL): want phl_flat_low_is_ftgl, no PHL; refusals=%v intents=%+v", e.State.Refusals, ints)
+	}
+	e, ints = run(PHLFlatLowStrict)
+	if !isPHL(ints) {
+		t.Fatalf("knob strict (pre-#60): 29,386 > 29,384 is a higher low — the PHL emits; refusals=%v", e.State.Refusals)
+	}
 }
