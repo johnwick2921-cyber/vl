@@ -41,7 +41,16 @@ package mentor
 // location/target sets) moved only. The D4.3-R17 1R wick room (knob OFF) and
 // the D4.2-R27 inside-the-range block (no fills in this harness) move nothing.
 // Then the forming-15m conflict latch origin (tf_conflict_latch_forming +
-// tf_conflict_forming_released): STATE stream only, 2,122 rows; zero intents.
+// tf_conflict_forming_released): STATE stream only, 2,122 rows; zero intents
+// ON THESE GOLDEN TAPES. The real tape is not a golden: on the 10-21→11-02
+// kernel replay (stored strategy a5b7662e) it moved ONE entry — APPEARS 10-22
+// 18:29 ISB short 29,073 (stop 29,084.25): the 18:14 provisional 15m box was
+// dropped (the 18:00 15m closed as no inside bar) and the old latch refused
+// isb_tf_conflict_both_boxes for 15 minutes on a 15m ISB that never existed.
+// Review round 3 (the latch is settled when its forming BUCKET closes, escaped
+// box or not; a confirmed box makes it real-origin): STATE stream only, 98
+// rows (the forming flag cleared at the confirm); zero intent / note / level /
+// trendline rows. Real-tape replay vs b68db6879: zero entries moved.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor
