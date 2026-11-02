@@ -34,11 +34,13 @@ func TestM60TrendlineThirdTouchDoesNotArm(t *testing.T) {
 		t.Fatalf("the 3rd touch (bar 13) is the test, not the entry: levels=%+v refused=%v — want 0 levels, 1 trendline_third_touch_is_test refusal", got, refused)
 	}
 
-	// Two quiet bars (lows 100 > line 99.4 / 99.6), then the 4th touch on bar
-	// 16 (low 99.7 vs the line's 99.8, closes back above).
+	// Two bars that LEAVE the line (lows 100.5, clear of the line 99.4–99.8
+	// plus its 0.5 touch band — a low of 100 would still be inside the band,
+	// i.e. a touch), then the 4th touch on bar 16 (low 99.7 vs the line's
+	// 99.8, closes back above).
 	bars = append(bars,
-		mk(14, 101, 101.5, 100, 101),
-		mk(15, 101, 101.5, 100, 101),
+		mk(14, 101, 101.5, 100.5, 101),
+		mk(15, 101, 101.5, 100.5, 101),
 		mk(16, 101, 101.5, 99.7, 101.2),
 	)
 	now16 := time.UnixMilli(bars[16].OpenTime + 59_999).In(ctime())
@@ -61,6 +63,63 @@ func TestM60TrendlineThirdTouchDoesNotArm(t *testing.T) {
 	got, refused = TrendlineLevels(tls, boxes, nil, bars)
 	if len(got) != 1 || len(refused) != 0 {
 		t.Fatalf("the 4th touch: the line must be a location — levels=%+v refused=%v", got, refused)
+	}
+}
+
+// TestM60TrendlineAdjacentTouchIsStillTheTest — D2.3-R7 "là lần thứ ba đó, thì
+// lần thứ tư mới dám tự tin mình vô" [D2.3 p1 @02:34–02:47, 03:03–03:16]: the
+// 4th touch is a NEW touch — price must leave the line and come back. A candle
+// right after the 3rd touch that still sits on the line (bar 14, low 99.7 vs
+// the line's ~99.4–99.6, closes above) is the same 3rd-touch cluster, not the
+// 4th touch: refused trendline_third_touch_is_test. Once a candle clears the
+// line (+ its 0.5 band) and a later one comes back, the line is a location.
+// Short mirror too.
+// MUTANT: refuse only on ValidAt == lastIdx (the pre-review one-candle delay)
+// → bar 14 is a location → RED.
+func TestM60TrendlineAdjacentTouchIsStillTheTest(t *testing.T) {
+	for _, mirror := range []bool{false, true} {
+		bars, mk := trendlineReturnTape()
+		bars = append(bars, mk(14, 101, 101.5, 99.7, 101.2)) // still on the line
+		if mirror {
+			bars = trendlineMirror(bars)
+		}
+		now14 := time.UnixMilli(bars[14].OpenTime + 59_999).In(ctime())
+		tls := TrendlinesBuild(bars, now14)
+		got, refused := TrendlineLevels(tls, BoxesBuild(bars, DefaultBoxCfg(), now14), nil, bars)
+		if len(got) != 0 || len(refused) != 1 || !strings.HasPrefix(refused[0], "trendline_third_touch_is_test:") {
+			t.Fatalf("mirror=%v: a candle right after the 3rd touch still on the line is the test, not the 4th touch: levels=%+v refused=%v", mirror, got, refused)
+		}
+		// Held, not dropped: the valid line stays on the TARGET ladder
+		// (CE-11/B12) while it is refused as an entry location.
+		if _, _, held := trendlineLevelsTouchHeld(tls, BoxesBuild(bars, DefaultBoxCfg(), now14), nil, bars, TrendlineEntryFourth); len(held) != 1 || len(trendlineTargets(held)) != 1 {
+			t.Fatalf("mirror=%v: the held line must still mirror into a trendline target, held=%+v", mirror, held)
+		}
+
+		// Leave (bar 15 clear of the line + band), then return (bar 16): the 4th touch.
+		bars, mk = trendlineReturnTape()
+		bars = append(bars,
+			mk(14, 101, 101.5, 99.7, 101.2),
+			mk(15, 101, 101.8, 100.6, 101.5),
+			mk(16, 101.5, 101.6, 99.9, 101.2),
+		)
+		if mirror {
+			bars = trendlineMirror(bars)
+		}
+		now16 := time.UnixMilli(bars[16].OpenTime + 59_999).In(ctime())
+		tls = TrendlinesBuild(bars, now16)
+		var line *Trendline
+		for i := range tls {
+			if tls[i].ValidAt == 13 && !tls[i].Dead {
+				line = &tls[i]
+			}
+		}
+		if line == nil {
+			t.Fatalf("mirror=%v fixture: want the line valid at 13 on bar 16, got %+v", mirror, tls)
+		}
+		got, refused = TrendlineLevels([]Trendline{*line}, BoxesBuild(bars, DefaultBoxCfg(), now16), nil, bars)
+		if len(got) != 1 || len(refused) != 0 {
+			t.Fatalf("mirror=%v: leave then return is the 4th touch — a location: levels=%+v refused=%v", mirror, got, refused)
+		}
 	}
 }
 

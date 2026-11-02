@@ -90,6 +90,27 @@ func (t Trendline) touch(c market.Kline) bool {
 	return c.High <= hi+trendlineTouchBandPts && c.High >= lo-trendlineTouchBandPts && c.Close <= closeLine
 }
 
+// leftSince reports whether price LEFT the line after bar from, up to and
+// including bar to (m465 review, D2.3-R7): some candle whose extreme stayed
+// clear of the line by more than the touch band on the line's own side — the
+// low above a support line, the high under a resistance line. A candle that
+// reaches the band (a touch) or goes through it has not left. The current bar
+// counts: a line the current candle is clear of is a location for the NEXT
+// touch (it cannot be touched on this candle anyway).
+func (t Trendline) leftSince(bars []market.Kline, from, to int) bool {
+	for k := from + 1; k <= to && k < len(bars); k++ {
+		c := bars[k]
+		lo, hi := t.span(c)
+		if t.Side == SideLong && c.Low > hi+trendlineTouchBandPts {
+			return true
+		}
+		if t.Side == SideShort && c.High < lo-trendlineTouchBandPts {
+			return true
+		}
+	}
+	return false
+}
+
 // brokenBy5m reports a CLOSED 5m candle WHOLLY beyond the line — body AND
 // wicks: the whole candle below a support line, the whole candle above a
 // resistance line, judged over the candle's WHOLE LIFE (m427): the line is read at
@@ -904,8 +925,19 @@ const trendlineFirstTestLevelPreferred = "tl_first_test_level_preferred"
 //     reachable with entryTouch "third"; under "fourth" that candle is already
 //     refused above), for an HTF line always.
 func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string) {
+	levels, refused, _ = trendlineLevelsTouchHeld(trendlines, boxes, respected, bars, entryTouch)
+	return levels, refused
+}
+
+// trendlineLevelsTouchHeld is TrendlineLevelsTouch plus `held`: the VALID
+// lines refused as a location only because the 3rd touch is still the test
+// (trendline_third_touch_is_test). A held line is not a place to enter yet,
+// but it is still a valid trendline, so it stays on the TARGET ladder
+// (CE-11/B12 "Target là về những level kế tiếp… về trendline" [D3.3 p1
+// @05:18–05:35]) — the evaluator mirrors it into KindTrendlineTarget.
+func trendlineLevelsTouchHeld(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string, held []Level) {
 	if len(trendlines) == 0 || len(bars) == 0 {
-		return nil, nil
+		return nil, nil, nil
 	}
 	cur := bars[len(bars)-1]
 	lastIdx := len(bars) - 1
@@ -923,9 +955,15 @@ func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level
 			continue
 		}
 		firstTest := tl.TFMin == 0 && !tl.carried && tl.ValidAt == lastIdx
-		// m465 (D2.3-R7): the 3rd touch is the TEST, not the entry.
-		if firstTest && !thirdArms {
+		// m465 (D2.3-R7): the 3rd touch is the TEST, not the entry. Review
+		// fix: the 4th touch is a NEW touch — price must LEAVE the line
+		// (a candle clear of it by more than the touch band) and come back.
+		// A candle still sitting on the line right after the 3rd touch is
+		// the same 3rd-touch cluster, not the 4th ("thì lần thứ tư mới dám
+		// tự tin mình vô" [D2.3 p1 @02:34–02:47, 03:03–03:16]).
+		if !thirdArms && tl.TFMin == 0 && !tl.carried && tl.ValidAt > 0 && tl.ValidAt <= lastIdx && !tl.leftSince(bars, tl.ValidAt, lastIdx) {
 			refused = append(refused, trendlineThirdTouchIsTest+":"+tl.key())
+			held = append(held, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 			continue
 		}
 		// m311 (#46b): the level beats an intraday (1m) trendline only on its
@@ -939,5 +977,5 @@ func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level
 		}
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
-	return out, refused
+	return out, refused, held
 }

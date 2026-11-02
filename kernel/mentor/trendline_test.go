@@ -374,11 +374,17 @@ func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
 	bars, mk := trendlineReturnTape()
 	// c52 W9 B7-R7: the FTGL box top (98.3) sits 0.9 pt under the fresh line, so
 	// ON ITS FIRST TEST the box edge beats the line (the mentor's FTGH/FTGL
-	// example). A 4th touch (bar 14: low 99.3 vs the line's 99.4, a rejection;
-	// still inside the forming 09:10 5m bucket) puts the line past its first
-	// test, where it is a location (m311) — the gate this test pins.
-	bars = append(bars, mk(14, 101, 101.5, 99.3, 101))
-	now := bars[14].OpenTime + 59_999
+	// example). A 4th touch puts the line past its first test, where it is a
+	// location (m311) — the gate this test pins. m465 review (D2.3-R7): the
+	// 4th touch is a NEW touch, so price first LEAVES the line (bar 14, low
+	// 100.6 clear of the line 99.4–99.6 + band) and comes back (bar 15: low
+	// 99.5 vs the line's 99.6, a rejection; still inside the forming 09:10 5m
+	// bucket).
+	bars = append(bars,
+		mk(14, 101, 101.5, 100.6, 101),
+		mk(15, 101, 101.5, 99.5, 101),
+	)
+	now := bars[15].OpenTime + 59_999
 
 	tls := TrendlinesBuild(bars, time.UnixMilli(now).In(ctime()))
 	var tl Trendline
@@ -391,9 +397,12 @@ func TestEvaluatorTrendlineLocationPHL(t *testing.T) {
 		t.Fatalf("no valid support trendline in %+v", tls)
 	}
 
-	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[14].OpenTime))
+	e := trendlineEval(bars, now, tl.key(), tl.priceAt(bars[15].OpenTime))
 	e.Tick(bars, now)
-	if e.State.Refusals["phl_no_old_extreme_on_side"] == 0 {
+	// Either downstream PHL refusal proves the location gate passed: bar 15
+	// closes the 09:10 5m bucket, so the 09:05/09:10 5m inside-bar box may
+	// refuse first (phl_5m_box_ban, read per level inside the PHL path).
+	if e.State.Refusals["phl_no_old_extreme_on_side"]+e.State.Refusals["phl_5m_box_ban"] == 0 || e.State.Refusals[trendlineThirdTouchIsTest+":"+tl.key()] != 0 {
 		t.Fatalf("valid trendline did not pass the location gate — refusals=%v", e.State.Refusals)
 	}
 }
@@ -735,11 +744,13 @@ func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 // location. Mutant (drop the first-test gate) refuses the line → RED.
 func TestTrendlineLevelPrefersLevelOnlyOnFirstTest(t *testing.T) {
 	bars, mk := trendlineReturnTape()
-	// Two quiet bars past the 3rd touch: lows (100) stay above the line
-	// (99.4 at bar 14, 99.6 at bar 15) — no touch, no 5m close through.
+	// Two quiet bars past the 3rd touch: lows (100.5) stay clear of the line
+	// (99.4 at bar 14, 99.6 at bar 15) plus its 0.5 touch band — price LEFT
+	// the line (m465 review: a low of 100 is still inside the band, the same
+	// 3rd-touch cluster), no 5m close through.
 	bars = append(bars,
-		mk(14, 101, 101.5, 100, 101),
-		mk(15, 101, 101.5, 100, 101),
+		mk(14, 101, 101.5, 100.5, 101),
+		mk(15, 101, 101.5, 100.5, 101),
 	)
 	now := time.UnixMilli(bars[15].OpenTime + 59_999).In(ctime())
 	tls := TrendlinesBuild(bars, now)

@@ -2202,7 +2202,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	trendlines = dropDeadTrendlines(trendlines) // m428 R3: a broken line is deleted — not drawn, not a level, not carried (trackTrendlines already noted it)
 	// m465 (D2.3-R7): refusals arrive named — trendline_third_touch_is_test
 	// or tl_first_test_level_preferred, each ":<line key>".
-	tlLevels, tlRefused := TrendlineLevelsTouch(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch)
+	tlLevels, tlRefused, tlHeld := trendlineLevelsTouchHeld(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch)
 	for _, name := range tlRefused {
 		e.refuse(name)
 	}
@@ -2216,7 +2216,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// @07:57–08:04]. Target-only (the touch loop and the location gate skip
 	// KindTrendlineTarget); the display set above is unchanged.
 	if e.Cfg.TrendlineIsTarget {
-		levels = append(levels, trendlineTargets(levels)...)
+		// m465 review (D2.3-R7): a valid line still in its 3rd-touch cluster
+		// (tlHeld) is not an entry location yet, but it IS a valid trendline,
+		// so it stays a target.
+		levels = append(levels, trendlineTargets(append(append([]Level(nil), levels...), tlHeld...))...)
 	}
 
 	// §2.1 / §2.2 exec-frame schedule (F2, W-MENTOR-TRANSCRIPT-TRUTH): the

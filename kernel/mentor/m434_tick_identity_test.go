@@ -35,6 +35,11 @@ package mentor
 // rows (r22_1013 near1 2230-2713, exec2m 1945-2251) match no single package's
 // bytes; each of them moved in BOTH P1's and P3's golden (the two changes
 // compose). P4 (trader-side) and P5 (wick microscalp, knob OFF) move nothing.
+// Release #60 review round (D2.3-R7 leave-and-return 4th touch): regenerated —
+// ZERO intent and ZERO note rows moved on any tape; levels (416 rows) and state
+// (4,587 rows: the trendline_third_touch_is_test counts and the trendline
+// location/target sets) moved only. The D4.3-R17 1R wick room (knob OFF) and
+// the D4.2-R27 inside-the-range block (no fills in this harness) move nothing.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor
