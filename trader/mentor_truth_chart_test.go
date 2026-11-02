@@ -61,10 +61,14 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 	// c52 W9 B7-R7: at the line's FIRST test (bar 13) the FTGL box top (98.3,
 	// 0.9 pt under the line) is a respected level and beats the fresh line, so it
 	// is not yet a Level (the mentor's FTGH/FTGL example, D2.3 p1 @01:44–02:19).
-	// Bar 14 is a 4th touch (a rejection of the line at 99.4): past its first
-	// test the line is a location, which is what this pin reads.
+	// m465 review (D2.3-R7): the 4th touch is a NEW touch — bar 14 LEAVES the
+	// line (low 100.6, clear of the line ~99.4 + its 0.5 band) and bar 15
+	// comes back (a rejection at ~99.6): past its first test the line is a
+	// location, which is what this pin reads.
 	last := bars[len(bars)-1]
-	bars = append(bars, market.Kline{OpenTime: last.OpenTime + 60_000, CloseTime: last.CloseTime + 60_000, Open: 101, High: 101.5, Low: 99.3, Close: 101})
+	bars = append(bars,
+		market.Kline{OpenTime: last.OpenTime + 60_000, CloseTime: last.CloseTime + 60_000, Open: 101, High: 101.5, Low: 100.6, Close: 101},
+		market.Kline{OpenTime: last.OpenTime + 120_000, CloseTime: last.CloseTime + 120_000, Open: 101, High: 101.5, Low: 99.5, Close: 101})
 	now := mentor.BarCloseInstant(bars[len(bars)-1])
 	ev.Tick(bars, now)
 	ev.State.ORB = mentor.ORB{Day: 1, High: 101, Low: 100, Drawn: true, Escaped: mentor.SideLong}
@@ -90,8 +94,8 @@ func TestMentorTruthSnapshotCarriesChartObjectsAfterTick(t *testing.T) {
 		t.Fatalf("panel has no trendline anchors after a real Tick: %+v", p.Trendlines)
 	}
 	tl := (*p.Trendlines)[0]
-	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 || !tl.InLevel || tl.NowMs != bars[14].OpenTime {
-		t.Errorf("trendline view = %+v, want the support line 97→98.2 trading at bar 14", tl)
+	if tl.Side != "long" || tl.P0Px != 97 || tl.P1Px != 98.2 || !tl.InLevel || tl.NowMs != bars[15].OpenTime {
+		t.Errorf("trendline view = %+v, want the support line 97→98.2 trading at bar 15", tl)
 	}
 	if !tl.Valid {
 		t.Errorf("the 3rd-touch support line must be valid=true (m134): %+v", tl)
