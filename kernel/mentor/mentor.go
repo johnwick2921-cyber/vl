@@ -621,6 +621,15 @@ type Config struct {
 	// inside the standing range. Default ON (the course); false = today's
 	// one-pair-per-session behaviour exactly.
 	BoxNewZoneAfterEscape bool
+	// ISBLossBox — release #60 P2 (D4.2-R27/R28/R30, knob
+	// mentor_isb_loss_box): what an ISB stop-out boxes. "range" (default, the
+	// course): the whole 5m range that held the trade — every closed 5m bucket
+	// from the fill candle's through the stop-out candle's — unioned with the
+	// entry-to-stop band; overlapping ISB losses union into one place and two
+	// turn it off for the day [D4.2 p2 @02:41–03:17, @03:43–04:07, @04:13–05:03].
+	// "band": the pre-#60 entry-to-stop band only. "" reads as range
+	// (limits.go isbLossRange).
+	ISBLossBox string
 
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
@@ -720,6 +729,7 @@ func DefaultConfig() Config {
 		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
+		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 	}
 }
 

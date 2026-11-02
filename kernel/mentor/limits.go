@@ -3,6 +3,7 @@ package mentor
 import (
 	"fmt"
 	"math"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -75,6 +76,50 @@ type Limits struct {
 	// filled is the FU-1 receipt dedupe: the entry signal ids whose REAL fill
 	// has already registered (a partial-then-full, or a replay, registers once).
 	filled map[string]bool
+
+	// bkt is the running 5m bucket aggregate of the 1m candles Apply has seen
+	// (release #60 P2, D4.2-R27): an ISB fill's range starts with the WHOLE
+	// bucket it filled in, the candles before the fill included.
+	bkt rangeBkt
+	// isbBand mirrors Config.ISBLossBox == "band" from the last Apply, for the
+	// loss paths that carry no Config (RealExit, RecordFill). Zero = range,
+	// the shipped default.
+	isbBand bool
+}
+
+// rangeBkt is one 5m bucket's running high/low. start 0 = the candle had no
+// timestamp: the aggregate is that candle alone and nothing grows by bucket.
+type rangeBkt struct {
+	start  int64
+	lo, hi float64
+	ok     bool
+}
+
+// bucket5mMs is the D4.2-R27 range bucket: the 5m candle.
+const bucket5mMs = 5 * 60_000
+
+// bucket5mOf is the clock-aligned 5m bucket start of a 1m candle (CT offsets
+// are whole hours, so UTC alignment is CT alignment). ok=false: no timestamp.
+func bucket5mOf(k market.Kline) (int64, bool) {
+	t := k.OpenTime
+	if t <= 0 && k.CloseTime > 0 {
+		t = k.CloseTime - 60_000
+	}
+	if t <= 0 {
+		return 0, false
+	}
+	return t - t%bucket5mMs, true
+}
+
+// trackBucket folds the just-closed 1m candle into the running 5m bucket.
+func (l *Limits) trackBucket(cur market.Kline) {
+	s, ok := bucket5mOf(cur)
+	if ok && l.bkt.ok && l.bkt.start == s {
+		l.bkt.lo = math.Min(l.bkt.lo, cur.Low)
+		l.bkt.hi = math.Max(l.bkt.hi, cur.High)
+		return
+	}
+	l.bkt = rangeBkt{start: s, lo: cur.Low, hi: cur.High, ok: true}
 }
 
 // Leg is one G1 leg per side.
@@ -109,7 +154,25 @@ type Place struct {
 	Side  Side    // trade side of the loss
 	Swing float64 // prior swing high (long) / low (short); 0 = none
 	Wave  float64 // wave low (long) / high (short) from entry through the stop
+
+	// Range — release #60 P2 (D4.2-R27): an ISB loss box spanning the whole 5m
+	// range that held the trade (Lo/Hi). Overlapping ISB range losses union
+	// into one Range place; an entry inside is refused loss_range_blocked.
+	Range bool `json:",omitempty"`
+	// growBkt: the stop-out candle's 5m bucket — its remaining 1m candles
+	// still widen Lo/Hi (the bucket is a CLOSED 5m candle) and are never the
+	// departure. growNext: the loss came from a broker receipt before the
+	// stop-out candle reached Apply; the next candle's bucket is the one.
+	growBkt  int64
+	growNext bool
 }
+
+// ISB loss box knob values (release #60 P2, Config.ISBLossBox — the ONE
+// spelling the kernel, the trader resolver and the guide share).
+const (
+	ISBLossBoxRange = "range" // D4.2-R27: the whole 5m range that held the trade (default)
+	ISBLossBoxBand  = "band"  // pre-#60: the entry-to-stop band only
+)
 
 type pendOrder struct {
 	side   Side
@@ -144,7 +207,25 @@ type openTrade struct {
 	hi      float64
 	wave    float64 // wave low (long) / high (short), tracked from the fill candle
 	receipt string  // the entry signal id — matches a broker position_close (#47)
+
+	// #60 P2 (D4.2-R27): an ISB trade's 5m range — the fill candle's bucket
+	// through the stop-out candle's. rlo/rhi valid when rangeOK. realSeed: a
+	// REAL fill registered from the drain before the fill candle reached
+	// Apply — the next candle's bucket aggregate replaces the seed.
+	isb      bool
+	rlo, rhi float64
+	rangeOK  bool
+	realSeed bool
 }
+
+// fillSeed is where an ISB trade's 5m range starts (#60 P2).
+type fillSeed int
+
+const (
+	seedSimBucket  fillSeed = iota // simulate: the bucket aggregate already holds the fill candle
+	seedRealBucket                 // RecordFill (pend): the bucket so far, re-read on the next candle
+	seedCandleOnly                 // fillRow: a restart lost the bucket — the fill candle only (counted)
+)
 
 // Apply is the single Tick hook (DS-103 merges the call): it advances the
 // closed-candle simulation with cur (the just-closed 1m candle), applies the
@@ -183,6 +264,10 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 		l.dayKey = day
 	}
 
+	// #60 P2: the running 5m bucket (the ISB loss range) and the box mode.
+	l.trackBucket(cur)
+	l.isbBand = cfg.ISBLossBox == ISBLossBoxBand
+
 	// G1: the reset is known at the close of the PREVIOUS candle and gates
 	// this candle's entries (the replay's pc_of(m)).
 	l.resetBreaks(prev, cur, cfg)
@@ -201,6 +286,10 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 	// Off-for-day places never clear. Loss counts survive the day — two
 	// losses at one place turn it off for the day.
 	for _, p := range l.Places {
+		if p.Range && l.growRange(p, cur) {
+			p.just = false
+			continue // the stop-out's 5m bucket is still closing: it widens the box, never departs it
+		}
 		if p.just {
 			p.just = false
 			continue
@@ -244,11 +333,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				continue
 			}
 			if p := l.blockedPlace(ref, in.Price); p != nil {
-				if p.OffDay {
-					l.refuse("loss_box_off_day")
-				} else {
-					l.refuse("loss_box_blocked")
-				}
+				l.refuse(p.refusal())
 				continue // G2: the place is boxed after a loss
 			}
 			kept = append(kept, in)
@@ -279,11 +364,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			// refuses the entry, and the ISB's own stop-out boxes its
 			// entry-to-stop band.
 			if p := l.blockedPlace(placeRef{}, in.Price); p != nil {
-				if p.OffDay {
-					l.refuse("loss_box_off_day")
-				} else {
-					l.refuse("loss_box_blocked")
-				}
+				l.refuse(p.refusal())
 				continue
 			}
 			kept = append(kept, in)
@@ -378,7 +459,7 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 			// Entry touched = filled. A stop-out on the SAME candle is a
 			// loss (the trade existed for the span of the candle) — the
 			// open-trade loop below catches it.
-			l.fill(p, cur.Low, cur.High, levels, "")
+			l.fill(p, cur.Low, cur.High, levels, "", seedSimBucket)
 			continue
 		}
 		if p.expiry != 0 && now >= p.expiry {
@@ -405,10 +486,13 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 		if t.side == SideShort && cur.High > t.wave {
 			t.wave = cur.High
 		}
+		if t.isb {
+			l.growTrade(t, cur) // #60 P2: the 5m range grows with every candle the trade is open
+		}
 		stopped := t.side == SideLong && cur.Low <= t.stop ||
 			t.side == SideShort && cur.High >= t.stop
 		if stopped {
-			l.loss(t) // filled, then the stop hit — case (a)
+			l.loss(t, true) // filled, then the stop hit — case (a)
 			continue
 		}
 		targetHit := t.side == SideLong && cur.High >= t.target ||
@@ -425,7 +509,7 @@ func (l *Limits) simulate(cur market.Kline, now int64, levels []Level) {
 // opens the G2 loss trade. lo/hi seed the B22 wave (the fill candle's
 // low/high); levels feeds registerLeg's old-extreme fallback when the pend
 // carries no leg extreme (nil for a real fill — the pend's legExt wins).
-func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level, receipt string) {
+func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level, receipt string, seed fillSeed) {
 	l.registerLeg(p.side, p.legExt, levels, p.entry, p.isISB)
 	wave := lo
 	if p.side == SideShort {
@@ -443,11 +527,22 @@ func (l *Limits) fill(p *pendOrder, lo, hi float64, levels []Level, receipt stri
 		hi:      p.hi,
 		wave:    wave, // the fill candle is the entry candle
 		receipt: receipt,
+		isb:     p.isISB,
+	}
+	if p.isISB {
+		// #60 P2 (D4.2-R27): the range starts with the fill candle's whole 5m
+		// bucket — the candles before the fill included — except after a
+		// restart (fillRow), where only the fill candle is known.
+		t.rlo, t.rhi, t.rangeOK = lo, hi, true
+		if seed != seedCandleOnly && l.bkt.ok {
+			t.rlo, t.rhi = math.Min(lo, l.bkt.lo), math.Max(hi, l.bkt.hi)
+		}
+		t.realSeed = seed == seedRealBucket
 	}
 	if stopOutOn(t, lo, hi) {
 		// P2-3: the fill candle already crossed the stop (a late drain misses
 		// the same-candle stop-out) — register the G2 loss immediately.
-		l.loss(t)
+		l.loss(t, seed == seedSimBucket)
 		return
 	}
 	l.open = append(l.open, t)
@@ -494,7 +589,12 @@ func (l *Limits) fillRow(row *FillRow, lo, hi float64, levels []Level) {
 		// swing is left 0: without the intent's AnchorKey the B22 swing
 		// departure is unavailable; the wave break still frees the place.
 	}
-	l.fill(p, lo, hi, levels, row.SignalID)
+	if isISB && !l.isbBand {
+		// #60 P2: the restart lost the fill candle's 5m bucket — the range
+		// starts at the fill candle only. Counted, never silent.
+		l.count("loss_range_seed_only")
+	}
+	l.fill(p, lo, hi, levels, row.SignalID, seedCandleOnly)
 }
 
 // stopOutOn reports whether the fill candle (lo/hi) already crossed the trade's
@@ -562,7 +662,7 @@ func (l *Limits) RecordFill(receiptID, armID string, lo, hi float64, row *FillRo
 		// old-extreme fallback from the evaluator's levels. Passing nil made a
 		// REAL ISB fill never register a leg: a stop-out never set Stopped and
 		// the next same-side entry was never refused by the G1 leg budget.
-		l.fill(p, lo, hi, levels, receiptID)
+		l.fill(p, lo, hi, levels, receiptID, seedRealBucket)
 		l.markFilled(receiptID)
 		return FillConsumed
 	}
@@ -619,7 +719,15 @@ func (l *Limits) registerLeg(side Side, ext float64, levels []Level, entry float
 // closed (G1). The B22 structural bounds (swing, wave, box edges) are
 // captured from the trade — a later loss at the same place re-measures
 // them.
-func (l *Limits) loss(t *openTrade) {
+func (l *Limits) loss(t *openTrade, fromCandle bool) {
+	if t.isb && t.rangeOK && !l.isbBand {
+		l.rangeLoss(t, fromCandle)
+		if leg := l.leg(t.side); leg != nil {
+			leg.Stopped = true
+			leg.Wave = t.wave
+		}
+		return
+	}
 	pid := placeID(t.place, t.anchor)
 	if pid != "" {
 		if l.Places == nil {
@@ -648,6 +756,126 @@ func (l *Limits) loss(t *openTrade) {
 		leg.Stopped = true // a stop-out inside the leg closes it
 		leg.Wave = t.wave  // CE-12: the wave the loss happened in
 	}
+}
+
+// growTrade widens an open ISB trade's 5m range with the just-closed candle
+// (#60 P2). A real fill seeded from the drain adopts the bucket aggregate on
+// its first candle: the fill happened inside this candle, so this candle's
+// bucket — not the previous one — is the fill bucket.
+func (l *Limits) growTrade(t *openTrade, cur market.Kline) {
+	if t.realSeed {
+		t.realSeed = false
+		if l.bkt.ok {
+			t.rlo, t.rhi, t.rangeOK = l.bkt.lo, l.bkt.hi, true
+			return
+		}
+	}
+	t.rlo = math.Min(t.rlo, cur.Low)
+	t.rhi = math.Max(t.rhi, cur.High)
+}
+
+// rangeLoss is the #60 P2 ISB stop-out (D4.2-R27/R28/R30, knob
+// mentor_isb_loss_box=range): the place is the whole 5m range that held the
+// trade unioned with the entry-to-stop band — "tôi bọc cái khu vực này lại.
+// Tôi sẽ không trade bên trong" [D4.2 p2 @03:43–04:07]. A loss whose range
+// overlaps an earlier ISB range place of the day (blocked or already freed)
+// unions into it and counts toward its 2-loss off-day — "cứ đè đây đánh, đè
+// đây đánh" [@04:13–05:03]; a range that overlaps none is its own place — "tạo
+// thêm cái range nữa... Đợi thoát ra đánh tiếp" [@03:06–03:31]. Departure is
+// unchanged: a 1m candle completely outside Lo/Hi. fromCandle: the stop-out
+// candle is the one Apply is on (its bucket keeps widening the box until it
+// closes); false = a broker receipt drained before that candle reached Apply.
+func (l *Limits) rangeLoss(t *openTrade, fromCandle bool) {
+	lo, hi := math.Min(t.lo, t.rlo), math.Max(t.hi, t.rhi)
+	if l.Places == nil {
+		l.Places = map[string]*Place{}
+	}
+	var over []string
+	for k, q := range l.Places {
+		if q.Range && q.Lo <= hi && lo <= q.Hi {
+			over = append(over, k)
+		}
+	}
+	sort.Strings(over)
+	var p *Place
+	if len(over) > 0 {
+		p = l.Places[over[0]]
+		for _, k := range over[1:] {
+			q := l.Places[k]
+			p.Lo, p.Hi = math.Min(p.Lo, q.Lo), math.Max(p.Hi, q.Hi)
+			p.Losses += q.Losses
+			delete(l.Places, k) // two ranges bridged by this loss are one place now
+		}
+		p.Lo, p.Hi = math.Min(p.Lo, lo), math.Max(p.Hi, hi)
+		l.count("loss_range_union")
+	} else {
+		pid := placeID(t.place, t.anchor)
+		if pid == "" {
+			pid = isbBandKey(t.lo, t.hi)
+		}
+		p = &Place{DayKey: l.dayKey, Lo: lo, Hi: hi}
+		if old := l.Places[pid]; old != nil {
+			p.Losses = old.Losses // a band place from a mid-day knob flip keeps its count
+		}
+		l.Places[pid] = p
+	}
+	p.Range, p.Box = true, true
+	p.Anchor = t.anchor
+	p.Side = t.side
+	p.Swing = t.swing
+	p.Wave = t.wave
+	p.Losses++
+	p.Blocked = true
+	p.just = true
+	if p.Losses >= 2 {
+		p.OffDay = true // two overlapping losses — the range is off for the day
+	}
+	p.growBkt, p.growNext = 0, !fromCandle
+	if fromCandle && l.bkt.ok && l.bkt.start != 0 {
+		p.growBkt = l.bkt.start
+	}
+}
+
+// growRange widens a Range place with the rest of the stop-out candle's 5m
+// bucket (#60 P2: the box is CLOSED 5m candles). true = this candle widened
+// the box, so it is not a departure candidate.
+func (l *Limits) growRange(p *Place, cur market.Kline) bool {
+	if p.growNext {
+		p.growNext = false
+		if l.bkt.ok && l.bkt.start != 0 {
+			p.growBkt = l.bkt.start
+		}
+		p.widen(cur)
+		return true
+	}
+	if p.growBkt == 0 {
+		return false
+	}
+	if l.bkt.ok && l.bkt.start == p.growBkt {
+		p.widen(cur)
+		return true
+	}
+	p.growBkt = 0
+	return false
+}
+
+// widen folds one 1m candle into the box. Only candles from the fill onward
+// ever reach it (the trade's own range already holds the earlier ones), so a
+// row-seeded range stays seeded from the fill candle.
+func (p *Place) widen(cur market.Kline) {
+	p.Lo, p.Hi = math.Min(p.Lo, cur.Low), math.Max(p.Hi, cur.High)
+}
+
+// refusal is the named G2 refusal for an entry this place blocks: off for
+// the day, an ISB loss range (#60 P2), or a plain loss box.
+func (p *Place) refusal() string {
+	switch {
+	case p.OffDay:
+		return "loss_box_off_day"
+	case p.Range:
+		return "loss_range_blocked"
+	}
+	return "loss_box_blocked"
 }
 
 // legVerdict is the G1 budget check at PLACEMENT time ("" = allowed). The
@@ -719,7 +947,7 @@ func (l *Limits) RealExit(signalID string, wasStop bool) {
 		}
 		l.open = append(l.open[:i], l.open[i+1:]...)
 		if wasStop {
-			l.loss(t) // the ORIGINAL stop filled — a real stop-out loss
+			l.loss(t, false) // the ORIGINAL stop filled — a real stop-out loss
 		}
 		return
 	}
