@@ -292,7 +292,8 @@ func TestM61BreakLocksCounterSetups(t *testing.T) {
 
 	// An opposite break replaces the lock; the day roll clears it.
 	e.advanceBreakLock(b2, BarCloseInstant(b2), ev)
-	e.advanceBreakLock(b3, BarCloseInstant(b3), []breakEvent{{Side: SideShort, Lo: 29_400, Hi: 29_420, Src: "isb_5m"}})
+	b4 := m60p1K(m60p1At(10, 4), 29_490, 29_495, 29_488, 29_492) // closes outside: the lock stands into the flip
+	e.advanceBreakLock(b4, BarCloseInstant(b4), []breakEvent{{Side: SideShort, Lo: 29_400, Hi: 29_420, Src: "isb_5m"}})
 	if l := e.State.BreakLock; l == nil || l.Side != SideShort || e.State.Counters["break_lock_flipped"] != 1 {
 		t.Fatalf("an opposite break flips the lock, got %+v counters %v", l, e.State.Counters)
 	}
@@ -367,9 +368,9 @@ func m61p1SmallRange(top, big float64) []market.Kline {
 		o, h, l, c := 28_990.0, 28_996.0, 28_986.0, 28_992.0
 		switch i {
 		case 0:
-			l = 28_960
+			o, h, l, c = 28_965, 28_970, 28_960, 28_968
 		case 1:
-			h = top
+			o, h, l, c = 29_015, top, top-9.5, 29_018
 		case 7:
 			o, h, l, c = 28_990, 29_010, 29_010-big, 29_005
 		}
@@ -486,10 +487,12 @@ func TestM61MidRangeTradesWithRejection(t *testing.T) {
 		if out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_490)}, boxes); !m61p1Has(out, SideLong) {
 			t.Fatal("an entry outside the two boxes is not refused by the mid-range rejection")
 		}
+		// The touch candle closes back above the FTGL top: it ends the short
+		// rejection AND is itself an FTGL reject (the mirror) → long.
 		touch := m60p1K(m60p1At(10, 5), 29_400, 29_402, 29_379, 29_385)
 		e.advanceMidRangeReject(touch, boxes)
-		if e.State.MidRangeReject != nil {
-			t.Fatalf("a candle touching the FTGL top clears the rejection, got %+v", e.State.MidRangeReject)
+		if r := e.State.MidRangeReject; r == nil || r.Side != SideLong || e.State.Counters["mid_range_reject_done"] != 1 {
+			t.Fatalf("a candle touching the FTGL top ends the short rejection (and rejects the floor → long), got %+v counters %v", r, e.State.Counters)
 		}
 		if out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_420)}, boxes); !m61p1Has(out, SideLong) {
 			t.Fatal("after the FTGL touch the long passes")
