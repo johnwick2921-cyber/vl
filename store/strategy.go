@@ -2301,6 +2301,10 @@ type RiskControlConfig struct {
 	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
 	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
 	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
+	//   m465 P2 MentorISBLossBox — "" → range (release #60, D4.2-R27/R28/R30): an
+	//        ISB stop-out boxes the whole 5m range that held the trade ("tôi bọc
+	//        cái khu vực này lại" [D4.2 p2 @03:43–04:07]); band = the pre-#60
+	//        entry-to-stop band only. Unknown → range, counted.
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
 	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
 	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
@@ -2313,6 +2317,7 @@ type RiskControlConfig struct {
 	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
+	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

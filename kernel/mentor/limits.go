@@ -174,6 +174,19 @@ const (
 	ISBLossBoxBand  = "band"  // pre-#60: the entry-to-stop band only
 )
 
+// NormalizeISBLossBox canonicalizes the mentor_isb_loss_box knob where it
+// enters (canon 28): "" → range (the default); ok=false = an unknown value,
+// which fails closed to range — the course rule.
+func NormalizeISBLossBox(v string) (mode string, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", ISBLossBoxRange:
+		return ISBLossBoxRange, true
+	case ISBLossBoxBand:
+		return ISBLossBoxBand, true
+	}
+	return ISBLossBoxRange, false
+}
+
 type pendOrder struct {
 	side   Side
 	entry  float64
