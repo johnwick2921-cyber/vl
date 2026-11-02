@@ -1047,9 +1047,16 @@ func (l *Limits) blockedPlace(ref placeRef, price float64) *Place {
 		}
 	}
 	for _, p := range l.Places {
-		if !p.Blocked && !p.OffDay {
+		if !p.Blocked && !p.OffDay && !p.Range {
 			continue
 		}
+		// m465 review (D4.2-R27/R29): a Range place's departure frees entries
+		// OUTSIDE the range only — "em đợi cho cái điểm entry nằm ở vòng vòng
+		// bên ngoài" [D4.2 p2 @02:41–03:17]; "Tôi sẽ không trade bên trong khu
+		// vực này. Tôi đợi nó đi ra một cái khu vực khác" [@03:43–04:07]. A
+		// wick out and straight back is not a different zone, so an entry
+		// priced INSIDE the old loss range stays refused loss_range_blocked
+		// for the trading day (Places die at the day roll).
 		if p.insideBand(price) {
 			return p
 		}

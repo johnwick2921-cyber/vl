@@ -190,12 +190,19 @@ func TestM60RepeatedLossesInChopOffDay(t *testing.T) {
 	// back into the chop.
 	r.step(m60K(9, 30, 28_970, 28_972, 28_960, 28_965))
 	r.step(m60K(9, 31, 28_965, 28_985, 28_963.50, 28_982))
+	// "cứ đè đây đánh" [@04:13–05:03]: back in the chop, a short priced INSIDE
+	// loss 1's range (28,978) is refused even though the range was departed —
+	// the departure frees entries OUTSIDE it only (R27/R29, m465 review).
+	if out := r.step(m60K(9, 32, 28_982, 28_984, 28_976, 28_980), m60ISB(SideShort, 28_978, 28_995, 28_940, far)); len(out) != 0 || r.l.Refusals["loss_range_blocked"] != 1 {
+		t.Fatalf("R29: a short at 28,978 inside the departed range must be refused loss_range_blocked, got %d (refusals=%v)", len(out), r.l.Refusals)
+	}
 
-	// Loss 2: a SHORT ISB 28,978 / 28,995 in the 09:35 bucket (H 29,000
-	// L 28,963.50), overlapping loss 1's range → union, 2 losses → off day.
+	// Loss 2: a SHORT ISB 28,972 / 28,995 (entry just under loss 1's range,
+	// so it is allowed) in the 09:35 bucket (H 29,000 L 28,963.50); its 5m
+	// range overlaps loss 1's → union, 2 losses → off day.
 	r.prev = m60K(9, 34, 28_982, 28_990, 28_978, 28_985)
-	r.step(m60K(9, 35, 28_985, 29_000, 28_980, 28_984), m60ISB(SideShort, 28_978, 28_995, 28_940, far))
-	r.step(m60K(9, 36, 28_984, 28_986, 28_977, 28_983)) // fill (L <= 28,978)
+	r.step(m60K(9, 35, 28_985, 29_000, 28_980, 28_984), m60ISB(SideShort, 28_972, 28_995, 28_940, far))
+	r.step(m60K(9, 36, 28_984, 28_986, 28_970, 28_976)) // fill (L <= 28,972)
 	r.step(m60K(9, 37, 28_983, 28_996, 28_981, 28_994)) // stop (H >= 28,995) — loss 2
 	r.step(m60K(9, 38, 28_994, 28_996, 28_963.50, 28_970))
 	r.step(m60K(9, 39, 28_970, 28_990, 28_968, 28_988))
@@ -420,4 +427,45 @@ func m60ReplayRun(bars []market.Kline, from, to int64, mode string) (map[string]
 		}
 	}
 	return out, Limits{Refusals: refusals, Counters: counters}
+}
+
+// TestM60LossRangeWickOutAndBackStaysBlocked — D4.2-R27 "em đợi cho cái điểm
+// entry nằm ở vòng vòng bên ngoài" [D4.2 p2 @02:41–03:17] and R29 "tôi bọc cái
+// khu vực này lại. Tôi sẽ không trade bên trong khu vực này. Tôi đợi nó đi ra
+// một cái khu vực khác" [@03:43–04:07]. A 1m candle wholly outside the range
+// frees entries OUTSIDE it only: an entry priced INSIDE the old loss range is
+// still refused loss_range_blocked after a wick out and straight back (a wick
+// out and back is not a different zone). The range stays a no-trade area for
+// the trading day; outside entries still pass.
+// MUTANT: blockedPlace skips a freed Range place again → the 28,920 entry
+// passes → RED.
+func TestM60LossRangeWickOutAndBackStaysBlocked(t *testing.T) {
+	far := m60Now(15, 0)
+	r := &m60Run{l: &Limits{}, cfg: m60Cfg()}
+	m60Box1(t, r)
+	p1 := m60RangePlace(r.l, 28_880.50, 28_933.75)
+	if p1 == nil || !p1.Blocked {
+		t.Fatalf("fixture: the WE-3 range must be boxed, places=%+v", m60Places(r.l))
+	}
+	// 08:36: one 1m candle wholly above the range — departure.
+	r.step(m60K(8, 36, 28_935, 28_942, 28_934.25, 28_940))
+	if p1.Blocked {
+		t.Fatalf("a 1m candle wholly above the range frees it for entries outside")
+	}
+	// 08:37: straight back in; a long ISB entry at 28,920 is INSIDE the range.
+	before := r.l.Refusals["loss_range_blocked"]
+	if out := r.step(m60K(8, 37, 28_940, 28_941, 28_915, 28_918), m60ISB(SideLong, 28_920, 28_910, 28_990, far)); len(out) != 0 {
+		t.Fatalf("R27/R29: an entry at 28,920 inside the old loss range must stay refused after a wick out and back, got %d", len(out))
+	}
+	if got := r.l.Refusals["loss_range_blocked"]; got != before+1 {
+		t.Fatalf("R27/R29: want loss_range_blocked counted once more, refusals=%v", r.l.Refusals)
+	}
+	// A short entry priced inside from above is the same area — refused too.
+	if out := r.step(m60K(8, 38, 28_918, 28_930, 28_912, 28_925), m60ISB(SideShort, 28_910, 28_932, 28_850, far)); len(out) != 0 {
+		t.Fatalf("R29: a short at 28,910 inside the range must stay refused, got %d", len(out))
+	}
+	// Outside the range (above 28,933.75) still passes.
+	if out := r.step(m60K(8, 39, 28_925, 28_936, 28_924, 28_935), m60ISB(SideLong, 28_938, 28_928, 28_990, m60Now(8, 40))); len(out) != 1 {
+		t.Fatalf("R27: an entry outside the range passes after the departure, got %d (refusals=%v)", len(out), r.l.Refusals)
+	}
 }
