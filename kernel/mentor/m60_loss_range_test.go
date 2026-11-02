@@ -19,6 +19,13 @@ package mentor
 // two of them turn it off for the day, both sides.
 
 import (
+	"compress/gzip"
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -284,4 +291,133 @@ func TestM60RealFillRangeAdoptsFillBucket(t *testing.T) {
 	if out := r.step(m60K(8, 36, 28_912, 28_922, 28_905, 28_920), m60ISB(SideLong, 28_925, 28_915, 28_960, far)); len(out) != 0 {
 		t.Fatalf("live path: 28,925 inside the range must be refused, got %d", len(out))
 	}
+}
+
+// ── opt-in REAL-DAY replay (range vs band) ─────────────────────────────────
+//
+// M465_REPLAY="<dir>:<YYYY-MM-DD>[,<dir>:<day>…]" replays each CME session
+// (<day-1> 17:00 CT → <day> 16:00 CT) from a deploy/realday_export_day.py
+// export (bars read-only from data/data.db — never a DB copy) through the
+// PRODUCTION call site e.Tick, one closed 1m bar per tick (1500-bar window,
+// the m434 drive, simulated candle fills), once with mentor_isb_loss_box=range
+// and once with band, and prints every entry intent that appears or
+// disappears plus the loss-range refusals. Skipped when unset.
+func TestM60ReplayRealDays(t *testing.T) {
+	spec := os.Getenv("M465_REPLAY")
+	if spec == "" {
+		t.Skip("M465_REPLAY unset")
+	}
+	for _, one := range strings.Split(spec, ",") {
+		dir, day, ok := strings.Cut(one, ":")
+		if !ok {
+			t.Fatalf("bad M465_REPLAY entry %q", one)
+		}
+		bars := m60LoadRealday(t, dir)
+		d, err := time.ParseInLocation("2006-01-02", day, ctime())
+		if err != nil {
+			t.Fatal(err)
+		}
+		from := d.AddDate(0, 0, -1).Add(17 * time.Hour).UnixMilli()
+		to := d.Add(16 * time.Hour).UnixMilli()
+		rng, rngL := m60ReplayRun(bars, from, to, ISBLossBoxRange)
+		bnd, bndL := m60ReplayRun(bars, from, to, ISBLossBoxBand)
+		var b strings.Builder
+		fmt.Fprintf(&b, "=== M465 REPLAY session %s (range %d entries, band %d entries)\n", day, len(rng), len(bnd))
+		for k, v := range bnd {
+			if _, ok := rng[k]; !ok {
+				fmt.Fprintf(&b, "  GONE  (band only)  %s %s\n", k, v)
+			}
+		}
+		for k, v := range rng {
+			if _, ok := bnd[k]; !ok {
+				fmt.Fprintf(&b, "  NEW   (range only) %s %s\n", k, v)
+			}
+		}
+		fmt.Fprintf(&b, "  range refusals: loss_range_blocked=%d loss_box_off_day=%d loss_box_blocked=%d · counters loss_range_union=%d\n",
+			rngL.Refusals["loss_range_blocked"], rngL.Refusals["loss_box_off_day"], rngL.Refusals["loss_box_blocked"], rngL.Counters["loss_range_union"])
+		fmt.Fprintf(&b, "  band  refusals: loss_box_off_day=%d loss_box_blocked=%d\n", bndL.Refusals["loss_box_off_day"], bndL.Refusals["loss_box_blocked"])
+		t.Log(b.String())
+	}
+}
+
+func m60LoadRealday(t *testing.T, dir string) []market.Kline {
+	t.Helper()
+	f, err := os.Open(filepath.Join(dir, "mnq_realday.json.gz"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	gz, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var doc struct {
+		Bars map[string][][]any `json:"bars"`
+	}
+	if err := json.NewDecoder(gz).Decode(&doc); err != nil {
+		t.Fatal(err)
+	}
+	var out []market.Kline
+	for _, r := range doc.Bars["1m"] {
+		ot := int64(r[0].(float64))
+		out = append(out, market.Kline{OpenTime: ot, CloseTime: ot + 60_000,
+			Open: r[1].(float64), High: r[2].(float64), Low: r[3].(float64), Close: r[4].(float64)})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].OpenTime < out[j].OpenTime })
+	return out
+}
+
+// m60ReplayRun drives e.Tick over [from,to) and returns the entry intents
+// keyed "<CT time> <action> <side> <price>" → "stop/target arm", plus the
+// final Limits ledgers (the day's refusals survive to the session end).
+func m60ReplayRun(bars []market.Kline, from, to int64, mode string) (map[string]string, Limits) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	cfg.ISBLossBox = mode
+	e := New(cfg)
+	out := map[string]string{}
+	refusals := map[string]int{}
+	counters := map[string]int{}
+	day := ""
+	for i := range bars {
+		if bars[i].OpenTime < from || bars[i].OpenTime >= to {
+			continue
+		}
+		lo := i + 1 - 1500
+		if lo < 0 {
+			lo = 0
+		}
+		ins := e.Tick(bars[lo:i+1], BarCloseInstant(bars[i]))
+		for _, in := range ins {
+			switch in.Action {
+			case ActionMoveStopBE:
+				e.SwingBEApplied(in.ArmID)
+			case ActionClosePosition:
+				e.SwingEnded(in.ArmID)
+			case PlaceStopEntry, PlaceStopLimitEntry:
+				at := time.UnixMilli(BarCloseInstant(bars[i])).In(ctime()).Format("01-02 15:04")
+				k := fmt.Sprintf("%s %s %s %.2f", at, in.Action, in.Side, in.Price)
+				out[k] = fmt.Sprintf("stop %.2f target %.2f arm %s", in.Stop, in.Target, in.ArmID)
+			}
+		}
+		// The trading-day rollover clears the Limits ledgers: fold them per day.
+		if dk := e.State.Limits.dayKey; dk != day {
+			day = dk
+		}
+		for k, v := range e.State.Limits.Refusals {
+			if strings.HasPrefix(k, "loss_") && v > refusals[k] {
+				at := time.UnixMilli(BarCloseInstant(bars[i])).In(ctime()).Format("01-02 15:04")
+				for pk, p := range e.State.Limits.Places {
+					if p.Blocked || p.OffDay {
+						out[fmt.Sprintf("%s REFUSED %s", at, k)] += fmt.Sprintf("[place %s %.2f–%.2f losses %d range %v] ", pk, p.Lo, p.Hi, p.Losses, p.Range)
+					}
+				}
+			}
+			refusals[k] = max(refusals[k], v)
+		}
+		for k, v := range e.State.Limits.Counters {
+			counters[k] = max(counters[k], v)
+		}
+	}
+	return out, Limits{Refusals: refusals, Counters: counters}
 }
