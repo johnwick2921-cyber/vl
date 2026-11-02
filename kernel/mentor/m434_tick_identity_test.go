@@ -28,6 +28,13 @@ package mentor
 // carries the 5m range bounds + Range); zero intents, notes, levels or
 // trendlines moved on any tape. The pre-#60 State is pinned by
 // TestM462StoredNewsOnlyIsThePreM462Behaviour under mentor_isb_loss_box=band.
+// Regenerated again at the release #60 merge (m465 P1-P5 on dev c6777e230):
+// against the dev golden 303 intent / 382 note / 93 level / 5,216 state rows
+// moved, and EVERY moved stream row moved in at least one package's own golden
+// (intents: P1 44, P3 292; notes: P1; levels: P3; state: P1/P2/P3). 14 intent
+// rows (r22_1013 near1 2230-2713, exec2m 1945-2251) match no single package's
+// bytes; each of them moved in BOTH P1's and P3's golden (the two changes
+// compose). P4 (trader-side) and P5 (wick microscalp, knob OFF) move nothing.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor
