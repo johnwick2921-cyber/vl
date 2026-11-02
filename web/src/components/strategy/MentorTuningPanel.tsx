@@ -46,6 +46,7 @@ type BoolKey =
   | 'box_new_zone_after_escape'
   | 'orb_escape_completely'
   | 'near_box_room_phl'
+  | 'near_box_between_exempt'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -53,6 +54,9 @@ type EnumKey =
   | 'isb_box_escape'
   | 'ema34_loss_relock'
   | 'd43_trend_source'
+  | 'trendline_entry_touch'
+  | 'phl_flat_low'
+  | 'isb_reverse_touch'
 
 type EnumOption<K extends EnumKey> = {
   value: NonNullable<MentorTuning[K]>
@@ -275,9 +279,59 @@ const COPY = {
     es: 'ISB 2m: cancelar en la vela N si no se llena (nuestro número, no del curso)',
   },
   isbStackTiny: {
-    zh: 'ISB：止损不超过此点数则不在取消K线取消（0 = 关）',
-    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (0 = off)',
-    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (0 = off)',
+    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认 12.5 = 课程示例；0.01 = 实际关闭）',
+    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default 12.5 = the course example; 0.01 = effectively off)',
+    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto 12.5 = el ejemplo del curso; 0.01 = prácticamente off)',
+  },
+  tlEntryTouch: {
+    zh: '趋势线入场触碰（第 3 次触碰 = 测试）',
+    en: 'Trendline entry touch (the 3rd touch = the test)',
+    es: 'Toque de entrada en la línea de tendencia (el 3.er toque = la prueba)',
+  },
+  tlEntryFourth: {
+    zh: '第 4 次触碰起入场（课程）',
+    en: 'enter from the 4th touch (the course)',
+    es: 'entrar desde el 4.º toque (el curso)',
+  },
+  tlEntryThird: {
+    zh: '第 3 次触碰即入场（#60 之前）',
+    en: 'enter on the 3rd touch (pre-#60)',
+    es: 'entrar en el 3.er toque (antes de #60)',
+  },
+  nearBoxBetween: {
+    zh: '两个箱体之间免除"靠近箱体"（#60 之前；默认 关 = 按自身空间判断）',
+    en: 'Exempt "between two boxes" from near-box (pre-#60; default OFF = judged on its own room)',
+    es: 'Eximir "entre dos cajas" de la regla de caja cercana (antes de #60; por defecto OFF = según su propio espacio)',
+  },
+  phlFlat: {
+    zh: 'PHL 平底读法',
+    en: 'PHL flat-low read',
+    es: 'Lectura de mínimo plano en PHL',
+  },
+  phlFlatNear: {
+    zh: '平底 = FTGL，不做 PHL（课程）',
+    en: 'a flat low is an FTGL, not a PHL (the course)',
+    es: 'un mínimo plano es un FTGL, no un PHL (el curso)',
+  },
+  phlFlatStrict: {
+    zh: '仅严格比较（#60 之前）',
+    en: 'strict comparison only (pre-#60)',
+    es: 'solo comparación estricta (antes de #60)',
+  },
+  isbRevTouch: {
+    zh: '反向 ISB 的 EMA 9 触碰',
+    en: 'Reverse ISB: the EMA 9 touch',
+    es: 'ISB inverso: el toque de la EMA 9',
+  },
+  isbRevTouchPair: {
+    zh: '母K线 + ISB 一组触及（课程）',
+    en: 'the mother + ISB candle group reaches it (the course)',
+    es: 'el grupo vela madre + ISB la alcanza (el curso)',
+  },
+  isbRevTouchIsb: {
+    zh: '仅 ISB K线触及（#60 之前）',
+    en: 'the ISB candle alone reaches it (pre-#60)',
+    es: 'solo la vela ISB la alcanza (antes de #60)',
   },
   eveSlowPts: {
     zh: '夜盘“慢”：高低点幅度低于此点数则用5分钟（我们的数字）',
@@ -354,6 +408,18 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'trigger_line', label: COPY.d43Trigger },
     { value: 'structure', label: COPY.d43Structure },
   ],
+  trendline_entry_touch: [
+    { value: 'fourth', label: COPY.tlEntryFourth },
+    { value: 'third', label: COPY.tlEntryThird },
+  ],
+  phl_flat_low: [
+    { value: 'flat_near', label: COPY.phlFlatNear },
+    { value: 'strict', label: COPY.phlFlatStrict },
+  ],
+  isb_reverse_touch: [
+    { value: 'pair', label: COPY.isbRevTouchPair },
+    { value: 'isb_candle', label: COPY.isbRevTouchIsb },
+  ],
 }
 
 function tr(entry: Copy, language: string): string {
@@ -374,7 +440,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   isb_reverse_ema9_enabled: true,
   htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
   exec_2m_after_30m: true,
-  day_gate_spent_pts: 300,
+  day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
@@ -395,7 +461,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
   // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
   isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
-  isb_stack_tiny_stop_pts: 0, // B8: 0 = tiny-stop exception off
+  isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26: the worked example's measured stop [D5.1 p2 @02:24–04:41]
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
@@ -404,6 +470,11 @@ export const MENTOR_TUNING_DEFAULTS = {
   phl_target_shy_pts: 5, // C16
   isb_old_extreme_pts: 2, // B27
   isb_in_range_gap_pts: 0, // B27: 0 = inherit ping_pong_min_gap_pts
+  // m465 P3 (release #60) — structure fidelity, the course from the full video read.
+  trendline_entry_touch: 'fourth', // D2.3-R7 [D2.3 p1 @02:34–03:16]
+  near_box_between_exempt: false, // D3.2-R29/R30 [D3.2 p1 @22:12–24:41]
+  phl_flat_low: 'flat_near', // D2.2-R64 [D2.2 p3 @07:44–10:15]
+  isb_reverse_touch: 'pair', // D5.4-R7 [D5.4 p1 @03:35–03:46]
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -639,6 +710,18 @@ export function MentorTuningPanel({
         {numField('phl_target_shy_pts', COPY.phlShy)}
         {numField('isb_old_extreme_pts', COPY.isbOldExt)}
         {numField('isb_in_range_gap_pts', COPY.isbInRange)}
+        {enumField(
+          'trendline_entry_touch',
+          COPY.tlEntryTouch,
+          ENUM_OPTIONS.trendline_entry_touch
+        )}
+        {boolField('near_box_between_exempt', COPY.nearBoxBetween)}
+        {enumField('phl_flat_low', COPY.phlFlat, ENUM_OPTIONS.phl_flat_low)}
+        {enumField(
+          'isb_reverse_touch',
+          COPY.isbRevTouch,
+          ENUM_OPTIONS.isb_reverse_touch
+        )}
       </div>
     </div>
   )

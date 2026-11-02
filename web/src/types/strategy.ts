@@ -402,8 +402,9 @@ export interface MentorTuning {
   // B8 [4] — the candle a resting 2m ISB arm is cancelled on (3–12);
   // "Ngày 4.2 Multitime frame 15_" part2 @00:08:53 counts 1m candles only
   isb_stack_cancel_candle_2m?: number
-  // B8 [0 = off] — a stop at or under this keeps the arm past the cancel
-  // candle; "Ngày 5.1 Go over lại tất cả" part2 @02:50
+  // B8 [12.5 — m465 D5.1-R26, the worked example's measured stop] — a stop at
+  // or under this keeps the arm past the cancel candle; "Ngày 5.1 Go over lại
+  // tất cả" part2 @02:24–04:41 (0.01 = effectively off)
   isb_stack_tiny_stop_pts?: number
   // B10 [100 / 15 / 0] — evening "slow": cutoff pts, start hour CT (15–17),
   // trailing window minutes (0 = cumulative); X11 @17:40–18:26, owner Q6
@@ -419,6 +420,19 @@ export interface MentorTuning {
   // key-level gap (0 = inherit ping_pong_min_gap_pts)
   isb_old_extreme_pts?: number
   isb_in_range_gap_pts?: number
+  // m465 P3 (release #60) — structure-fidelity knobs; unset = the course (the
+  // full video read), the other value = the pre-#60 behaviour.
+  // D2.3-R7 ['fourth'] — a 1m/2m trendline is not a location on its 3rd-touch
+  // candle (the test); the entry comes on a later touch [D2.3 p1 @02:34–03:16]
+  trendline_entry_touch?: 'fourth' | 'third'
+  // D3.2-R29/R30 [false] — no blanket "between two boxes" near-box exemption
+  // (E6 refused); true = the pre-#60 exemption [D3.2 p1 @22:12–24:41]
+  near_box_between_exempt?: boolean
+  // D2.2-R64 ['flat_near'] — a flat low is an FTGL, not a PHL [D2.2 p3 @07:44–10:15]
+  phl_flat_low?: 'flat_near' | 'strict'
+  // D5.4-R7 ['pair'] — reverse-ISB EMA 9 touch reads the mother + ISB group
+  // [D5.4 p1 @03:35–03:46]
+  isb_reverse_touch?: 'pair' | 'isb_candle'
 }
 
 export interface RiskControlConfig {

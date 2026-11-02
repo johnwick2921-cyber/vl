@@ -64,6 +64,12 @@ type mentorTuned struct {
 	PHLTargetShyPts        float64
 	ISBOldExtremePts       float64
 	ISBInRangeGapPts       float64
+
+	// m465 P3 (release #60) structure-fidelity knobs (defaults = the course).
+	TrendlineEntryTouch  string
+	NearBoxBetweenExempt bool
+	PHLFlatLow           string
+	ISBReverseTouch      string
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -110,6 +116,11 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		PHLTargetShyPts:        d.PHLTargetShyPts,
 		ISBOldExtremePts:       d.ISBOldExtremePts,
 		ISBInRangeGapPts:       d.ISBInRangeGapPts,
+
+		TrendlineEntryTouch:  d.TrendlineEntryTouch,
+		NearBoxBetweenExempt: d.NearBoxBetweenExempt,
+		PHLFlatLow:           d.PHLFlatLow,
+		ISBReverseTouch:      d.ISBReverseTouch,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -252,6 +263,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
 	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
 	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
+
+	// m465 P3 (release #60): unset = the course default; a stored value outside
+	// the enum fails closed to the default, counted (tuning_bad_value).
+	enum(t.TrendlineEntryTouch, &out.TrendlineEntryTouch, mentor.TrendlineEntryFourth, mentor.TrendlineEntryThird)
+	flag(t.NearBoxBetweenExempt, &out.NearBoxBetweenExempt)
+	enum(t.PHLFlatLow, &out.PHLFlatLow, mentor.PHLFlatLowNear, mentor.PHLFlatLowStrict)
+	enum(t.ISBReverseTouch, &out.ISBReverseTouch, mentor.ISBReverseTouchPair, mentor.ISBReverseTouchISBCandle)
 	return out
 }
 
@@ -297,6 +315,10 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.PHLTargetShyPts = t.PHLTargetShyPts
 	cfg.ISBOldExtremePts = t.ISBOldExtremePts
 	cfg.ISBInRangeGapPts = t.ISBInRangeGapPts
+	cfg.TrendlineEntryTouch = t.TrendlineEntryTouch
+	cfg.NearBoxBetweenExempt = t.NearBoxBetweenExempt
+	cfg.PHLFlatLow = t.PHLFlatLow
+	cfg.ISBReverseTouch = t.ISBReverseTouch
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for
