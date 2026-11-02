@@ -145,3 +145,36 @@ it('the ISB loss box defaults to range and stores band / removes on default', ()
   fireEvent.change(sel, { target: { value: '' } })
   expect(onChange).toHaveBeenLastCalledWith({ ...full })
 })
+
+// m466 P4 (release #61, swing D5.2): the inside bar without close-back (R26,
+// "đợi đóng ngược lại cũng được nhưng hơi lâu" [D5.2 p3 @04:49–05:09]), the
+// inside-bar order kept on a close through (R25 [p2 @10:23–10:51]) and the
+// runner with no TP (R6 [p1 @05:40–06:14]); "default" removes the key.
+it('the swing ISB / runner TP knobs default to the course and store / remove', () => {
+  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_swing_isb_close_back).toBe(
+    'not_required'
+  )
+  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_swing_isb_keep).toBe(true)
+  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_swing_runner_tp).toBe('none')
+  const { onChange, full } = renderEditor({ mentor_mode: true })
+  const cb = screen.getByTestId('mentor-course-mentor_swing_isb_close_back')
+  fireEvent.change(cb, { target: { value: 'required' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_swing_isb_close_back: 'required',
+  })
+  fireEvent.change(cb, { target: { value: '' } })
+  expect(onChange).toHaveBeenLastCalledWith({ ...full })
+  const tp = screen.getByTestId('mentor-course-mentor_swing_runner_tp')
+  fireEvent.change(tp, { target: { value: 'capped' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_swing_runner_tp: 'capped',
+  })
+  const keep = screen.getByTestId('mentor-course-mentor_swing_isb_keep')
+  fireEvent.change(keep, { target: { value: 'off' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_swing_isb_keep: false,
+  })
+})

@@ -201,6 +201,18 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).toContain('28,880.50–28,934.00')
   })
 
+  // m466 P4 (release #61): the swing inside bar without close-back (D5.2-R26),
+  // the inside-bar order kept on a close through (D5.2-R25), no runner TP (R6).
+  it('describes the release #61 swing ISB and runner knobs (m466 P4)', () => {
+    expect(all).toContain('mentor_swing_isb_close_back')
+    expect(all).toContain('swing_isb_entry_beyond_line')
+    expect(all).toContain('mentor_swing_isb_keep')
+    expect(all).toContain('Để cái cây inside bar này cho em')
+    expect(all).toContain('mentor_swing_runner_tp')
+    expect(all).toContain('swing_runner_no_tp')
+    expect(all).toContain('nhưng chị đợi hơi lâu')
+  })
+
   // release #59 fix round: one setup per level (an open swing refuses the
   // inside bar) and the PHL rays are the drawn 0.50 / 0.50 [D2.2-R10].
   it('names the open-swing inside-bar refusal and the drawn PHL rays', () => {

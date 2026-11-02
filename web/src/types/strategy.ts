@@ -517,6 +517,14 @@ export interface RiskControlConfig {
   // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
   // entry-to-stop band. Unset → range.
   mentor_isb_loss_box?: 'range' | 'band'
+  // m466 P4 (release #61, swing D5.2). G63 R26: 'not_required' (default) =
+  // after an invalid cross the 5m inside bar alone is the setup; 'required' =
+  // the pre-#61 close back. G66 R25: unset → ON = a resting inside-bar order
+  // survives a later 5m close through the line. G65 R6: 'none' (default) = the
+  // swing runner has no TP (held by the 4h); 'capped' = the pre-#61 cap.
+  mentor_swing_isb_close_back?: 'not_required' | 'required'
+  mentor_swing_isb_keep?: boolean
+  mentor_swing_runner_tp?: 'none' | 'capped'
   // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
   // candles of a PHL/PLH fill arms resonance; unset → ON.
   mentor_resonance_raw_isb?: boolean

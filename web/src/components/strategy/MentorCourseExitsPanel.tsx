@@ -19,6 +19,7 @@ export type CourseExitsBoolKey =
   | 'mentor_box_fresh_rth_pair'
   | 'mentor_resonance_raw_isb'
   | 'mentor_2m_reduce_size'
+  | 'mentor_swing_isb_keep'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -32,6 +33,8 @@ export type CourseExitsKey =
   | CourseExitsNumKey
   | 'mentor_ema9_visit_cap'
   | 'mentor_isb_loss_box'
+  | 'mentor_swing_isb_close_back'
+  | 'mentor_swing_runner_tp'
 
 // The knob-rule defaults the server resolves for an ABSENT key
 // (course-defaults-30: swing_runner, be_before_partial and reverse_isb_as_phl
@@ -59,6 +62,15 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   // m465 P2 (D4.2-R27 "tôi bọc cái khu vực này lại. Tôi sẽ không trade bên
   // trong" [D4.2 p2 @03:43–04:07]): an ISB loss boxes the whole 5m range.
   mentor_isb_loss_box: 'range',
+  // m466 P4 (release #61, swing D5.2): G63 R26 — the inside bar alone after an
+  // invalid cross ("đợi đóng ngược lại cũng được nhưng hơi lâu" [D5.2 p3
+  // @04:49–05:09]); G66 R25 — the inside-bar order survives a close through
+  // ("Để cái cây inside bar này cho em" [D5.2 p2 @10:23–10:51]); G65 R6 — the
+  // runner has no TP, held by the 4h ("gồng theo khung 4 giờ" [D5.2 p1
+  // @05:40–06:14]).
+  mentor_swing_isb_close_back: 'not_required',
+  mentor_swing_isb_keep: true,
+  mentor_swing_runner_tp: 'none',
 } as const
 
 const COPY = {
@@ -155,6 +167,41 @@ const COPY = {
     en: 'band — the entry-to-stop band only (pre-#60)',
     es: 'band — solo la banda entrada-stop (antes de #60)',
   },
+  mentor_swing_isb_keep: {
+    zh: 'SWING：inside bar 挂单在 5 分钟收盘穿线后仍保留（课程默认）',
+    en: 'SWING: the inside-bar order survives a later 5m close through the line (the course default)',
+    es: 'SWING: la orden del inside bar sobrevive a un cierre de 5m a través de la línea (el curso por defecto)',
+  },
+  mentor_swing_isb_close_back: {
+    zh: 'SWING：失效后的 inside bar 是否需要收回线内',
+    en: 'SWING: does the inside bar after an invalid cross need a close back?',
+    es: 'SWING: ¿el inside bar tras un cruce inválido necesita cerrar de vuelta?',
+  },
+  not_required: {
+    zh: 'not_required — 只要 inside bar 即可（默认，课程）',
+    en: 'not_required — the inside bar alone (default, the course)',
+    es: 'not_required — basta el inside bar (por defecto, el curso)',
+  },
+  required: {
+    zh: 'required — K1 与 inside bar 都需收回（#61 之前）',
+    en: 'required — candle 1 and the inside bar both close back (pre-#61)',
+    es: 'required — la vela 1 y el inside bar cierran de vuelta (antes de #61)',
+  },
+  mentor_swing_runner_tp: {
+    zh: 'SWING：runner 止盈',
+    en: 'SWING: runner take-profit',
+    es: 'SWING: take-profit del runner',
+  },
+  none: {
+    zh: 'none — 无止盈，按 4 小时持有（默认，课程）',
+    en: 'none — no TP, held by the 4h (default, the course)',
+    es: 'none — sin TP, se mantiene por la 4h (por defecto, el curso)',
+  },
+  capped: {
+    zh: 'capped — max(100, 2 × 第一目标距离)（#61 之前）',
+    en: 'capped — max(100, 2 × the first-target distance) (pre-#61)',
+    es: 'capped — max(100, 2 × la distancia al primer objetivo) (antes de #61)',
+  },
   mentor_swing4h_contracts: {
     zh: 'SWING 口数（默认 2；runner 需 ≥ 2）',
     en: 'SWING contracts (default 2; a runner needs ≥ 2)',
@@ -196,7 +243,21 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_box_fresh_rth_pair',
   'mentor_resonance_raw_isb',
   'mentor_2m_reduce_size',
+  'mentor_swing_isb_keep',
 ]
+
+// m466 P4 (release #61): the string-valued swing knobs ('' = default).
+type SelectKey = 'mentor_swing_isb_close_back' | 'mentor_swing_runner_tp'
+
+const SELECT_KEYS: SelectKey[] = [
+  'mentor_swing_isb_close_back',
+  'mentor_swing_runner_tp',
+]
+
+const SELECT_OPTIONS: Record<SelectKey, (keyof typeof COPY)[]> = {
+  mentor_swing_isb_close_back: ['not_required', 'required'],
+  mentor_swing_runner_tp: ['none', 'capped'],
+}
 
 const NUM_KEYS: CourseExitsNumKey[] = [
   'mentor_swing4h_contracts',
@@ -211,6 +272,8 @@ export type CourseExitsValues = Partial<
     Record<CourseExitsNumKey, number> & {
       mentor_ema9_visit_cap: string
       mentor_isb_loss_box: string
+      mentor_swing_isb_close_back: string
+      mentor_swing_runner_tp: string
     }
 >
 
@@ -335,6 +398,39 @@ export function MentorCourseExitsPanel({
           </select>
           <EffectiveLine knob={eff?.('mentor_isb_loss_box')} />
         </label>
+        {SELECT_KEYS.map((key) => (
+          <label
+            key={key}
+            className="text-xs flex flex-col gap-1"
+            style={{ color: '#EAECEF' }}
+          >
+            {tr(COPY[key], language)}
+            <select
+              disabled={disabled}
+              data-testid={`mentor-course-${key}`}
+              value={values[key] ?? ''}
+              onChange={(e) =>
+                onChange(
+                  key,
+                  e.target.value === '' ? undefined : e.target.value
+                )
+              }
+              className="px-2 py-1 rounded"
+              style={box}
+            >
+              <option value="">{`${tr(COPY.deflt, language)}: ${tr(
+                COPY[MENTOR_COURSE_EXITS_DEFAULTS[key]],
+                language
+              )}`}</option>
+              {SELECT_OPTIONS[key].map((o) => (
+                <option key={o} value={o}>
+                  {tr(COPY[o], language)}
+                </option>
+              ))}
+            </select>
+            <EffectiveLine knob={eff?.(key)} />
+          </label>
+        ))}
         {NUM_KEYS.map((key) => (
           <label
             key={key}
