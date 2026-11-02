@@ -95,19 +95,13 @@ func formingSuffix(box *ISBBox) string {
 // With the knob OFF no provisional box ever exists, so steps 1 and 3 are inert
 // and the tick is the pre-#60 one.
 func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
+	e.resolveFormingLatch(cb15)
 	if bx := e.State.ISBBox15m; bx != nil && bx.Provisional && len(cb15) > 0 && cb15[len(cb15)-1].OpenTime >= bx.AtTime {
 		e.State.ISBBox15m = nil
-		n := len(cb15)
-		if n >= 2 && cb15[n-1].OpenTime == bx.AtTime && IsISB(cb15[n-2], cb15[n-1]) {
+		if forming15mClosedAsISB(cb15, bx.AtTime) {
 			e.count("isb_15m_forming_confirmed")
 		} else {
 			e.count("isb_15m_forming_dropped")
-			// m465 review (D4.2-R10 holds a REAL 15m ISB conflict): a latch set
-			// only by this provisional box had no 15m inside bar behind it.
-			if e.State.TFConflictLatched && e.State.TFConflictLatchForming {
-				e.State.TFConflictLatched, e.State.TFConflictLatchForming = false, false
-				e.count("tf_conflict_forming_released")
-			}
 			e.note("15m early read dropped: the 15m candle at %s CT closed as no inside bar — the provisional %s box %.2f–%.2f is gone [D4.2-R11 p1 @07:20–08:15]",
 				swingCT(bx.AtTime), bx.Dir, bx.Low, bx.High)
 		}
@@ -116,6 +110,9 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
 		if escaped, _ := ISBBoxEscapeWith(*e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode); escaped { // CE-5
 			if e.State.ISBBox15m.Provisional {
 				e.count("isb_15m_forming_escaped")
+				// The bucket a forming-origin latch waits on (already this
+				// AtTime in production: set when the box was built).
+				e.State.LastForming15mAt = e.State.ISBBox15m.AtTime
 			}
 			e.State.ISBBox15m = nil
 		}
@@ -134,4 +131,47 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
 				swingCT(cb15[len(cb15)-1].OpenTime), swingCT(bx.AtTime), bx.Dir, bx.Low, bx.High)
 		}
 	}
+}
+
+// forming15mClosedAsISB reports whether the forming 15m bucket opened at `at`
+// has CLOSED as a real inside bar: it is the last closed 15m candle and an ISB
+// of the one before it (the step-1 confirm rule, shared with the latch).
+func forming15mClosedAsISB(cb15 []market.Kline, at int64) bool {
+	n := len(cb15)
+	return n >= 2 && cb15[n-1].OpenTime == at && IsISB(cb15[n-2], cb15[n-1])
+}
+
+// resolveFormingLatch settles a both_boxes TF-conflict latch that rests only on
+// a PROVISIONAL 15m box once that box's forming bucket has CLOSED (m465 review
+// rounds 2+3). D4.2-R10 "Đừng trade. Đợi nó thoát CẢ luôn" [D4.2 p1
+// @07:54–08:02] holds a conflict with a REAL 15m inside bar; D4.2-R11 [D4.2 p1
+// @07:20–08:15] the 5m and the 15m close together. So at the close:
+//
+//   - the 15m closed AS an inside bar → the latch now rests on a real 15m ISB:
+//     kept, and marked real-origin (a later provisional drop cannot release it);
+//   - it closed as NO inside bar → there never was a 15m ISB: the latch is
+//     released and counted (tf_conflict_forming_released).
+//
+// It runs whether or not the provisional box still stands — the box usually
+// ESCAPES (CE-5) before its 15m closes, and the breakout that escapes it tends
+// to take the 15m outside the mother. The bucket is the provisional box's
+// AtTime while it stands, else LastForming15mAt (the forming flag is only ever
+// set by the latest provisional box, so that is the bucket it rests on).
+func (e *Evaluator) resolveFormingLatch(cb15 []market.Kline) {
+	if !e.State.TFConflictLatched || !e.State.TFConflictLatchForming || len(cb15) == 0 {
+		return
+	}
+	at := e.State.LastForming15mAt
+	if bx := e.State.ISBBox15m; bx != nil && bx.Provisional {
+		at = bx.AtTime
+	}
+	if at == 0 || cb15[len(cb15)-1].OpenTime < at {
+		return
+	}
+	if forming15mClosedAsISB(cb15, at) {
+		e.State.TFConflictLatchForming = false
+		return
+	}
+	e.State.TFConflictLatched, e.State.TFConflictLatchForming = false, false
+	e.count("tf_conflict_forming_released")
 }

@@ -446,3 +446,93 @@ func TestM60FormingConflictLatchReleasedOnDrop(t *testing.T) {
 		t.Fatal("a latch from a real 15m conflict must survive the provisional drop")
 	}
 }
+
+// TestM60FormingConflictLatchReleasedAfterEscape — review round 3 (mtf-loss
+// P2). The provisional box usually ESCAPES first (a 1m body leaves the 2-candle
+// box, CE-5) and only then does its 15m candle close — often as NO inside bar,
+// because the breakout takes the 15m outside the mother. The forming-origin
+// latch must be resolved when the forming BUCKET closes, whether or not the
+// provisional box still stands: no 15m inside bar → released and counted
+// (D4.2-R10 "Đợi nó thoát CẢ luôn" [D4.2 p1 @07:54–08:02] holds a REAL 15m ISB
+// conflict only; D4.2-R11 [D4.2 p1 @07:20–08:15] the 5m and the 15m close
+// together).
+func TestM60FormingConflictLatchReleasedAfterEscape(t *testing.T) {
+	box5 := &ISBBox{High: 110, Low: 100, Dir: SideShort, AtTime: m60p1At(9, 50)}
+	prov := &ISBBox{High: 112, Low: 98, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
+	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
+	e := New(DefaultConfig())
+	e.State.ISBBox, e.State.ISBBox15m = box5, prov
+	e.State.LastForming15mAt = prov.AtTime
+	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true
+	// A 1m body above the provisional box BEFORE the 15m closes → escaped.
+	e.advance15mBox(nil, []market.Kline{mother}, m60p1K(m60p1At(9, 55), 113, 116, 113, 115))
+	if e.State.ISBBox15m != nil || e.State.Counters["isb_15m_forming_escaped"] != 1 {
+		t.Fatalf("the provisional box escapes: box15=%+v counters=%v", e.State.ISBBox15m, e.State.Counters)
+	}
+	if !e.State.TFConflictLatched || !e.State.TFConflictLatchForming {
+		t.Fatalf("escape alone does not end a both_boxes hold while the 5m box stands: latch=%v forming=%v", e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	}
+	// The 15m closes as NO inside bar (high 120 > mother high 105).
+	closedNoISB := market.Kline{OpenTime: m60p1At(9, 45), CloseTime: m60p1At(10, 0) - 1, Open: 104, High: 120, Low: 95, Close: 118}
+	e.advance15mBox(nil, []market.Kline{mother, closedNoISB}, m60p1K(m60p1At(10, 0), 118, 119, 117, 118))
+	if e.State.TFConflictLatched || e.State.TFConflictLatchForming {
+		t.Fatalf("a forming-origin latch whose bucket closed as no inside bar must be released even after the escape: latch=%v forming=%v", e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	}
+	if e.State.Counters["tf_conflict_forming_released"] != 1 {
+		t.Fatalf("the release is counted: %v", e.State.Counters)
+	}
+
+	// Same escape, but the 15m closes AS an inside bar → the latch now rests on
+	// a real 15m ISB: kept, and marked real.
+	e2 := New(DefaultConfig())
+	e2.State.ISBBox, e2.State.ISBBox15m = box5, prov
+	e2.State.LastForming15mAt = prov.AtTime
+	e2.State.TFConflictLatched, e2.State.TFConflictLatchForming = true, true
+	e2.advance15mBox(nil, []market.Kline{mother}, m60p1K(m60p1At(9, 55), 113, 116, 113, 115))
+	closedISB := market.Kline{OpenTime: m60p1At(9, 45), CloseTime: m60p1At(10, 0) - 1, Open: 101, High: 104, Low: 100, Close: 103}
+	if !IsISB(mother, closedISB) {
+		t.Fatal("fixture: the closed 15m must be an inside bar of the mother")
+	}
+	e2.advance15mBox(nil, []market.Kline{mother, closedISB}, m60p1K(m60p1At(10, 0), 103, 103.5, 102.5, 103))
+	if !e2.State.TFConflictLatched || e2.State.TFConflictLatchForming {
+		t.Fatalf("a real 15m inside bar keeps the latch and marks it real: latch=%v forming=%v", e2.State.TFConflictLatched, e2.State.TFConflictLatchForming)
+	}
+	if e2.State.Counters["tf_conflict_forming_released"] != 0 {
+		t.Fatalf("no release when the 15m closed as an inside bar: %v", e2.State.Counters)
+	}
+}
+
+// TestM60FormingConflictLatchConfirmedIsReal — review round 3 (mtf-loss P3).
+// A provisional box CONFIRMED at its 15m close is a real 15m inside bar, so a
+// forming-origin latch resting on it becomes a REAL-origin latch at once — even
+// when the 5m box escaped earlier and no conflict tick re-marked it. A later,
+// unrelated provisional drop must not release it.
+func TestM60FormingConflictLatchConfirmedIsReal(t *testing.T) {
+	prov := &ISBBox{High: 104, Low: 100, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
+	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
+	closedISB := market.Kline{OpenTime: m60p1At(9, 45), CloseTime: m60p1At(10, 0) - 1, Open: 101, High: 104, Low: 100, Close: 103}
+	e := New(DefaultConfig())
+	e.State.ISBBox, e.State.ISBBox15m = nil, prov // the 5m box escaped already
+	e.State.LastForming15mAt = prov.AtTime
+	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true
+	e.advance15mBox(nil, []market.Kline{mother, closedISB}, m60p1K(m60p1At(10, 0), 103, 103.5, 102.5, 103))
+	if e.State.Counters["isb_15m_forming_confirmed"] != 1 {
+		t.Fatalf("fixture: the provisional box is confirmed: %v", e.State.Counters)
+	}
+	if !e.State.TFConflictLatched || e.State.TFConflictLatchForming {
+		t.Fatalf("a confirmed box makes the latch real-origin: latch=%v forming=%v", e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	}
+	// A later provisional box in the next bucket is dropped: the real-origin
+	// latch survives it.
+	e.State.ISBBox = &ISBBox{High: 110, Low: 100, Dir: SideShort, AtTime: m60p1At(10, 5)}
+	e.State.ISBBox15m = &ISBBox{High: 104, Low: 101, Dir: SideLong, AtTime: m60p1At(10, 0), Provisional: true}
+	e.State.LastForming15mAt = m60p1At(10, 0)
+	closedNoISB := market.Kline{OpenTime: m60p1At(10, 0), CloseTime: m60p1At(10, 15) - 1, Open: 103, High: 120, Low: 95, Close: 118}
+	e.advance15mBox(nil, []market.Kline{mother, closedISB, closedNoISB}, m60p1K(m60p1At(10, 15), 118, 119, 117, 118))
+	if !e.State.TFConflictLatched {
+		t.Fatal("a latch made real by a confirmed 15m inside bar must survive a later provisional drop")
+	}
+	if e.State.Counters["tf_conflict_forming_released"] != 0 {
+		t.Fatalf("no forming release on a real-origin latch: %v", e.State.Counters)
+	}
+}
