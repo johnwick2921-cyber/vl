@@ -94,8 +94,8 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			// m465 (#60): E6's inside-the-opposing-box rule has no knob (the
 			// course is explicit); switch it off here so the pre-#60 golden
 			// still proves every other m465 change is undone by its knob.
-			nearBoxInsideOpposing = false
-			defer func() { nearBoxInsideOpposing = true }()
+			nearBoxInsideOpposingOff.Store(true)
+			defer nearBoxInsideOpposingOff.Store(false)
 			bars := c.tape(t)
 			from := c.from
 			if from < 0 {

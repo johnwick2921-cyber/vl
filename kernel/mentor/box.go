@@ -3,6 +3,7 @@ package mentor
 import (
 	"sort"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel"
@@ -891,10 +892,12 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 //
 // No edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
 // disables the check. why is the refusal NAME ("" when allowed).
-// nearBoxInsideOpposing switches rule (1) below. Always true in production; the
-// pre-#60 identity tests (m462_newsonly_identity_test.go) switch it off to prove
-// every OTHER m465 change is undone by its knob, tick for tick.
-var nearBoxInsideOpposing = true
+// nearBoxInsideOpposingOff switches rule (1) below OFF. Always false in
+// production; the pre-#60 identity tests (m462_newsonly_identity_test.go)
+// switch it on to prove every OTHER m465 change is undone by its knob, tick for
+// tick. An atomic.Bool (review fix): a test-only hook read by every evaluator
+// must not be a data race if a parallel test ever toggles it.
+var nearBoxInsideOpposingOff atomic.Bool
 
 func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64, betweenExempt bool) (refuse bool, why string) {
 	if roomMultiple <= 0 || risk <= 0 {
@@ -934,9 +937,9 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 		}
 	}
 	// (1) inside the opposing box — distance 0 (E6). Always on in production;
-	// nearBoxInsideOpposing is a test hook only (the pre-#60 identity tests).
+	// nearBoxInsideOpposingOff is a test hook only (the pre-#60 identity tests).
 	for _, b := range boxes {
-		if !nearBoxInsideOpposing {
+		if nearBoxInsideOpposingOff.Load() {
 			break
 		}
 		opposes := side == SideShort && b.Kind == FTGL || side == SideLong && b.Kind == FTGH
