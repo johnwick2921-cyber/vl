@@ -52,7 +52,7 @@ const (
 	// C, ≥ 1:2), never a size-up. The invented "big" trigger (target ≥ 30 + room
 	// ≥ 2x + 4h&1h agree) is removed by W-MENTOR-EXACT; both tiers default to
 	// base so a confluence/big entry sizes exactly like a base entry.
-	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the ISB ceiling (25) → reduced [D3.3 p1 @ 01:09]; > 25 skip [@02:04]
+	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the setup ceiling (mentorStopCeilingFor: PHL/PLH/BOX 25; ISB 20 since m466 → empty band) → reduced [D3.3 p1 @ 01:09]
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -225,7 +225,7 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// tier (3, the course's tier) and wins over confluence — "reduce size or
 	// don't trade" [D3.3 p1 @ 01:09] is a rule about the STOP, so it outranks
 	// the confluence tier. The band top is the mentor_isb_max_pts knob (kernel
-	// CourseExits.ISBMaxStopPts, default 25) — one number, not two (P2-1).
+	// CourseExits.ISBMaxStopPts, default 20 since m466) — one number, not two (P2-1).
 	// W-MENTOR-EXACT: the skip is "trên nữa thì thôi" (> 25), so the reduce
 	// band is (20, 25] and the evaluator refuses > 25 before sizing.
 	// m466 G23 (D4.1-R12 "inside bar mà nó hai mươi mấy điểm… đừng vô" [D4.1
