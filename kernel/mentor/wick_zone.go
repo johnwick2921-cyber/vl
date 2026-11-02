@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"vl/kernel"
 	"vl/market"
 )
 
@@ -367,7 +368,7 @@ func (e *Evaluator) wickZoneLevels(bars []market.Kline, now int64) []Level {
 		if cur.CloseTime > z.FormedAt && z.closedBeyondFar(cur) {
 			e.refuse(wickRefuseZoneBroken)
 			far, _ := z.farEdge()
-			e.note("D4.3 wick zone %s %.2f–%.2f broken: the 1m candle closing %s closed %.2f beyond its far edge %.2f", z.Side, z.Bottom, z.Top, time.UnixMilli(cur.CloseTime).In(ctime()).Format("15:04"), cur.Close, far)
+			e.note("D4.3 wick zone %s %.2f–%.2f broken: the 1m candle closing %s closed %.2f beyond its far edge %.2f", z.Side, z.Bottom, z.Top, kernel.ClockCT(time.UnixMilli(cur.CloseTime)), cur.Close, far)
 			*slot = nil
 		}
 	}
@@ -389,7 +390,7 @@ func (e *Evaluator) wickZoneLevels(bars []market.Kline, now int64) []Level {
 			if z.Day == day && (*slot == nil || !(*slot).overlaps(z)) {
 				zz := z
 				*slot = &zz
-				e.note("D4.3 wick zone %s %.2f–%.2f drawn from the 5m wick run closing %s — extended right until a 1m close beyond %s [D4.3 @03:35–03:46, @06:03–06:07]", z.Side, z.Bottom, z.Top, time.UnixMilli(z.FormedAt).In(ctime()).Format("15:04"), func() string { _, n := z.farEdge(); return n }())
+				e.note("D4.3 wick zone %s %.2f–%.2f drawn from the 5m wick run closing %s — extended right until a 1m close beyond %s [D4.3 @03:35–03:46, @06:03–06:07]", z.Side, z.Bottom, z.Top, kernel.ClockCT(time.UnixMilli(z.FormedAt)), func() string { _, n := z.farEdge(); return n }())
 			}
 		}
 	}
