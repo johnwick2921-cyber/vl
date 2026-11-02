@@ -214,12 +214,21 @@ func TestM60ResonanceRawCountsTheEntryFrame(t *testing.T) {
 	bars = append(bars, m60Two(2, 29600, 29605, 29608, 29596)...) // the fill's 2m candle
 	bars = append(bars, m60Two(4, 29590, 29618, 29619, 29575)...) // green 2m candle 1
 	bars = append(bars, m60Two(6, 29612, 29600, 29615, 29580)...) // 2m inside bar at candle 2
-	m60Drive(at, bars, pre)
+	armedAt, armedBar := -1, -1
+	for i := pre; i < len(bars); i++ {
+		at.mentorExitDrive(bars[:i+1])
+		if armedAt < 0 && p.Pos.Mode == "A-resonance" {
+			armedAt, armedBar = p.FramesAfterFill, i
+		}
+	}
 	if p.Pos.Mode != "A-resonance" {
 		t.Fatalf("a same-way 2m inside bar at 2m candle 2 must arm; mode=%q (frames after fill %d)", p.Pos.Mode, p.FramesAfterFill)
 	}
-	if p.FramesAfterFill != 2 {
-		t.Fatalf("the arm must land on 2m candle 2 after the fill: frames after fill %d", p.FramesAfterFill)
+	// The arm lands on the 1m bar that CLOSES 2m candle 2 (bar 7) — not earlier
+	// on a 1m pair inside 2m candle 1 (bars 4/5 form a 1m long inside bar: a
+	// mutant reading the 1m pair for a 2m entry arms at frame 1).
+	if armedAt != 2 || armedBar != len(bars)-1 {
+		t.Fatalf("the arm must land on 2m candle 2 after the fill (the last 1m bar): armed at frame %d, 1m bar %d", armedAt, armedBar)
 	}
 	if prev, cur, ok := mentorResonanceRawPair(bars, 2); !ok || prev.Open != 29590 || cur.Open != 29612 {
 		t.Fatalf("2m pair = %+v / %+v ok=%v", prev, cur, ok)
