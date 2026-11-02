@@ -17,6 +17,8 @@ export type CourseExitsBoolKey =
   | 'mentor_isb_c3_partial_any_profit'
   | 'mentor_reverse_isb_as_phl'
   | 'mentor_box_fresh_rth_pair'
+  | 'mentor_resonance_raw_isb'
+  | 'mentor_2m_reduce_size'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -41,6 +43,10 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_isb_c3_partial_any_profit: true,
   mentor_reverse_isb_as_phl: true,
   mentor_box_fresh_rth_pair: true,
+  // m465 P4 (release #60): D2.4-R2 raw inside-bar resonance + D3.1-R30 2m size
+  // cut — both ON by default (the course is explicit).
+  mentor_resonance_raw_isb: true,
+  mentor_2m_reduce_size: true,
   mentor_ema9_visit_cap: 'shared',
   mentor_swing4h_contracts: 2,
   mentor_isb_max_pts: 30,
@@ -99,6 +105,16 @@ const COPY = {
     zh: 'RTH 新箱体取代夜盘箱体(同方向)',
     en: 'A fresh RTH FTGH/FTGL replaces the evening box of its role',
     es: 'Un FTGH/FTGL nuevo de RTH reemplaza la caja nocturna de su rol',
+  },
+  mentor_resonance_raw_isb: {
+    zh: '共振：PHL/PLH 成交后 3 根内出现同向 inside bar 即启动（无需该 ISB 入场）',
+    en: 'Resonance: any same-way inside bar within 3 candles of a PHL/PLH fill arms it (no ISB entry needed)',
+    es: 'Resonancia: cualquier inside bar en la misma dirección dentro de 3 velas tras el fill PHL/PLH la activa (sin entrada ISB)',
+  },
+  mentor_2m_reduce_size: {
+    zh: '2 分钟（或 5 分钟）入场的 ISB/PHL/PLH 减仓（减仓档）',
+    en: 'A 2m (or 5m) ISB/PHL/PLH entry takes the reduced size',
+    es: 'Una entrada ISB/PHL/PLH en 2m (o 5m) usa el tamaño reducido',
   },
   mentor_ema9_visit_cap: {
     zh: 'EMA 9 触碰次数上限',
@@ -159,6 +175,8 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_isb_c3_partial_any_profit',
   'mentor_reverse_isb_as_phl',
   'mentor_box_fresh_rth_pair',
+  'mentor_resonance_raw_isb',
+  'mentor_2m_reduce_size',
 ]
 
 const NUM_KEYS: CourseExitsNumKey[] = [

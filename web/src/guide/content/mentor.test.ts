@@ -150,12 +150,28 @@ describe('mentor guide — c52 W12 doc sweep', () => {
       'wick zone',
       'nine-line',
       'VWAP',
-      '2m',
+      // '2m' (B26) left this list in release #60: the 2m size cut is BUILT
+      // (D3.1-R30, switch mentor_2m_reduce_size) — pinned below.
     ]) {
       expect(titles.toLowerCase(), `no not-built note for ${needle}`).toContain(
         needle.toLowerCase()
       )
     }
+  })
+
+  it('release #60: the 2m size cut and the raw-ISB resonance are built, not parked', () => {
+    const callout = mentor.blocks.find(
+      (b) => b.kind === 'callout' && b.title.startsWith('Not built')
+    )
+    if (callout && callout.kind === 'callout') {
+      const titles = callout.items.map((i) => i.title).join(' | ')
+      expect(titles).not.toMatch(/2m/)
+    }
+    expect(all).toContain('Smaller size on a 2m entry')
+    expect(all).toContain('exec_2m_reduce')
+    expect(all).toContain('Resonance on any same-way inside bar')
+    expect(all).toContain('resonance_armed_raw_isb')
+    expect(all).not.toContain('there is NO frame-based size cut')
   })
 
   it('labels the ours-not-course inferences (doji, two losses)', () => {

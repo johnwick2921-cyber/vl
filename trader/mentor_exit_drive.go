@@ -172,6 +172,11 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 			p.trailBar, p.trailBarOK = mentor.ClosedCandleTF(bars, p.TrailTFMin)
 		}
 		p.noteEntryFrameCandle() // c52 W2 B18: the resonance window counts entry-frame candles
+		// m465 P4 (D2.4-R2): a RAW same-way inside bar on candle 1..3 of the
+		// entry frame after a PHL/PLH fill arms resonance — no entry intent
+		// needed ("trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar
+		// cùng chiều" [D2.4 p1 @01:37, @04:54]). Knob mentor_resonance_raw_isb.
+		at.mentorResonanceRawDrive(nt, p, bars)
 		// X8 trap-dodge [X8 part1 @07:31–08:07]: a 2m close through the EMA34
 		// against the 5m trigger trend, with the 5m trigger swept against the
 		// position, is a FAKE breakout — exit, do not sit. Fires before the
@@ -1412,22 +1417,35 @@ func (at *AutoTrader) mentorArmResonanceOnISB(isbSide string) {
 		if p == nil {
 			continue
 		}
-		armed, _, _ := mentorMaybeArmResonance(at, &p.Pos, isbSide, p.candlesAfterFill(), p.RunnerTarget)
-		if !armed {
-			continue
-		}
-		// m151 (4): persist mode A on the open position's armed row so a restart
-		// rebuilds A (plus the pending BE), not the row's original B.
-		at.mentorPersistResonanceMode(p)
-		// Mode A, CX-3 (release #25, c52 W2 A3): through the leg-scoped
-		// modify_bracket (wire leg 2/3) the RUNNER's TP is either moved out to
-		// the level beyond the old high (knob mentor_resonance_runner_tp_old_high
-		// ON — the bot's own inference) or, by DEFAULT (OFF), removed: pushed far
-		// out of reach so the runner has NO cap, "cứ để break even cho nó chạy"
-		// [D2.4 p1 @02:24–02:47]. Leg 1's +1R TP stays (R-RES).
-		at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
-		at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1 @00:24–00:30, @02:24–02:47]", p.Pos.Symbol, p.Pos.Side)
+		at.mentorArmResonanceFor(nt, p, isbSide)
 	}
+}
+
+// mentorArmResonanceFor arms ONE open position (the shared body of the m151
+// gated arm above and the m465 raw inside-bar arm, mentorResonanceRawTick):
+// mentorMaybeArmResonance decides (PHL/PLH, side, the 3-candle window, not
+// already A), then the mode-A flip is persisted and the runner's TP handled.
+// Returns true when it armed.
+func (at *AutoTrader) mentorArmResonanceFor(nt *ntTrader.TCPTrader, p *mentorLivePos, isbSide string) bool {
+	if at == nil || p == nil {
+		return false
+	}
+	armed, _, _ := mentorMaybeArmResonance(at, &p.Pos, isbSide, p.candlesAfterFill(), p.RunnerTarget)
+	if !armed {
+		return false
+	}
+	// m151 (4): persist mode A on the open position's armed row so a restart
+	// rebuilds A (plus the pending BE), not the row's original B.
+	at.mentorPersistResonanceMode(p)
+	// Mode A, CX-3 (release #25, c52 W2 A3): through the leg-scoped
+	// modify_bracket (wire leg 2/3) the RUNNER's TP is either moved out to
+	// the level beyond the old high (knob mentor_resonance_runner_tp_old_high
+	// ON — the bot's own inference) or, by DEFAULT (OFF), removed: pushed far
+	// out of reach so the runner has NO cap, "cứ để break even cho nó chạy"
+	// [D2.4 p1 @02:24–02:47]. Leg 1's +1R TP stays (R-RES).
+	at.mentorResonanceRunnerTP(nt, p, p.RunnerTarget)
+	at.logInfof("🧑‍🏫 mentor resonance ARMED: %s %s → mode A (runner BE deferred to the exit drive; no trail; the 1:1 partial still fires) [D2.4 p1 @00:24–00:30, @02:24–02:47]", p.Pos.Symbol, p.Pos.Side)
+	return true
 }
 
 // mentorPersistResonanceMode writes mode A onto the open position's armed row

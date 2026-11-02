@@ -23,7 +23,7 @@ const m60Min = int64(60_000)
 
 // m60Bar is one CLOSED 1m bar at minute i (a real-looking epoch base).
 func m60Bar(i int, o, c, h, l float64) market.Kline {
-	open := int64(1_793_000_000_000) + int64(i)*m60Min
+	open := int64(1_792_999_920_000) + int64(i)*m60Min // 2m-bucket aligned
 	return market.Kline{OpenTime: open, CloseTime: open + m60Min - 1, Open: o, Close: c, High: h, Low: l, Final: true}
 }
 
@@ -138,7 +138,7 @@ func TestM60ResonanceArmsOnRawInsideBar(t *testing.T) {
 		bars := append(append([]market.Kline{}, pre...), fill,
 			m60Bar(2, 29606, 29610, 29611, 29605),
 			m60Bar(3, 29610, 29614, 29615, 29609),
-			m60Bar(4, 29614, 29618, 29619, 29613),     // green, breaks out — no ISB
+			m60Bar(4, 29614, 29618, 29619, 29613),   // green, breaks out — no ISB
 			m60Bar(5, 29617, 29615, 29618.5, 29614), // body inside candle 3 → ISB long at candle 4
 		)
 		for i := 2; i < len(bars); i++ {
@@ -217,6 +217,9 @@ func TestM60ResonanceRawCountsTheEntryFrame(t *testing.T) {
 	m60Drive(at, bars, pre)
 	if p.Pos.Mode != "A-resonance" {
 		t.Fatalf("a same-way 2m inside bar at 2m candle 2 must arm; mode=%q (frames after fill %d)", p.Pos.Mode, p.FramesAfterFill)
+	}
+	if p.FramesAfterFill != 2 {
+		t.Fatalf("the arm must land on 2m candle 2 after the fill: frames after fill %d", p.FramesAfterFill)
 	}
 	if prev, cur, ok := mentorResonanceRawPair(bars, 2); !ok || prev.Open != 29590 || cur.Open != 29612 {
 		t.Fatalf("2m pair = %+v / %+v ok=%v", prev, cur, ok)

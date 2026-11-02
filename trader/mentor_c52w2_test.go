@@ -185,7 +185,14 @@ func TestC52W2A3UncapTargetsOnlyTheFinalRunner(t *testing.T) {
 func TestC52W2B18ResonanceWindowCountsEntryFrameCandles(t *testing.T) {
 	armAfter := func(t *testing.T, tf, closed1m int) string {
 		t.Helper()
-		b := r22Fixture(t, store.RiskControlConfig{})
+		// m465 P4: every fixture bar is the SAME red candle — each is a raw
+		// short inside bar of the one before, which the D2.4-R2 raw hook
+		// (mentor_resonance_raw_isb, default ON) would arm on its own inside
+		// the drive. This pin is about the m151 gated path's clock, so the raw
+		// hook is OFF here; the raw hook's own window is pinned by
+		// TestM60ResonanceArmsOnRawInsideBar / TestM60ResonanceRawCountsTheEntryFrame.
+		rawOff := false
+		b := r22Fixture(t, store.RiskControlConfig{MentorResonanceRawISB: &rawOff})
 		b.positions("short", 3)
 		b.book(r22FullBook(r22Stop)...)
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)

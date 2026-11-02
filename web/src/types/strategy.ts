@@ -485,6 +485,12 @@ export interface RiskControlConfig {
   mentor_box_max_height_pts?: number
   // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
   mentor_swing_max_stop_pts?: number
+  // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
+  // candles of a PHL/PLH fill arms resonance; unset → ON.
+  mentor_resonance_raw_isb?: boolean
+  // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
+  // reduced size; unset → ON.
+  mentor_2m_reduce_size?: boolean
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

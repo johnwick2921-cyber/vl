@@ -172,6 +172,19 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	if in.PullbackWarn {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil
 	}
+	// m465 P4 (D3.1-R30): an ISB/PHL/PLH entry READ on the 2m (or the slow-
+	// evening 5m) has a bigger stop than the 1m, so it sizes DOWN — "khi anh
+	// chị vô lệnh khung 2 phút, stop loss lớn hơn khung 1 phút… Mình phải giảm
+	// size" [D3.1 p1 @14:09–14:35] (his 2m entry candle: 15.50 pts / 62 ticks).
+	// The course names no count; the cut is the bot's reduced tier (3, the
+	// course's "giảm size" tier [D4.1 p1 @04:37–05:04]) — the exact number is
+	// an open mentor question. SWING4H (the 4h line, its own tier) and BOX are
+	// untouched. Knob mentor_2m_reduce_size (nil → ON; OFF → the 1m tiers).
+	if in.ExecTFMin >= 2 && !in.Exec2mReduceOff && mentorIs2mReduceSetup(in.Setup) {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "exec_2m_reduce", Why: fmt.Sprintf(
+			"%s entry read on the %dm (stop %.1f pts) → a bigger stop than the 1m, the reduced tier [D3.1 p1 @14:09–14:35 \"Mình phải giảm size\"; mentor_2m_reduce_size]",
+			in.Setup, in.ExecTFMin, in.StopPts)}, nil
+	}
 	// SWING4H ranks BEFORE the reduced stop band (P1-5): a swing stop sits AT
 	// the 4h line (swing4h.go:606-608) and can be any size under 100, so a
 	// swing stop in [20,30) must size by the swing tier (2), not the reduced 3.
@@ -231,6 +244,17 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
+}
+
+// mentorIs2mReduceSetup — the setups the D3.1-R30 2m size cut applies to:
+// the ISB pair and PHL/PLH, the two setups the X5-10 exec-2m schedule reads on
+// the 2m ("Mình trade khung 2 phút … potential high low" [X8 @15:52–15:57]).
+func mentorIs2mReduceSetup(setup string) bool {
+	switch strings.ToUpper(setup) {
+	case "ISB", "PHL", "PLH":
+		return true
+	}
+	return false
 }
 
 // mentorSizeKnobOverrideNote reports whether a tier count came from an owner
@@ -754,6 +778,10 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
 	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
 	extra.PullbackWarn = extra.PullbackWarn || mentor.HasFlag(in.Flag, mentor.FlagPullbackWarn)
+	// m465 P4 (D3.1-R30): the frame the entry was read on reaches the table —
+	// set HERE, the one sizing call site, so no caller can forget it.
+	extra.ExecTFMin = in.ExecTFMin
+	extra.Exec2mReduceOff = !mentor2mReduceSizeOn(at.mentorRiskControl())
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this
