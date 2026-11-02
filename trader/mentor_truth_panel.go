@@ -332,7 +332,7 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 		if b.box != nil && b.box.High > 0 && b.box.Low > 0 {
 			label := b.label
 			if b.box.Provisional {
-				label += " (forming)" // m465 P1: the early 15m read [D4.2-R2]
+				label += " (forming)" // m465 P1: the early 15m read [D4.2-R2 p1 @00:08–00:39]
 			}
 			boxes = append(boxes, MentorRangeView{Label: label, High: b.box.High, Low: b.box.Low, Dir: string(b.box.Dir), AtMs: b.box.AtTime})
 		}
