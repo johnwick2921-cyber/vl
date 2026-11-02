@@ -90,6 +90,10 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			}
 			cfg := c.cfg()
 			cfg.HTFGateNewsOnly = true // the explicitly STORED old value
+			// m465 P2 (release #60): the reference predates the ISB loss range
+			// box; mentor_isb_loss_box=band is the pre-#60 rule, so this pin
+			// also proves band mode reproduces the old State byte for byte.
+			cfg.ISBLossBox = ISBLossBoxBand
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {
