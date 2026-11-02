@@ -493,6 +493,10 @@ export interface RiskControlConfig {
   mentor_box_max_height_pts?: number
   // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
   mentor_swing_max_stop_pts?: number
+  // m465 P2 (release #60, D4.2-R27): what an ISB stop-out boxes — 'range'
+  // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
+  // entry-to-stop band. Unset → range.
+  mentor_isb_loss_box?: 'range' | 'band'
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

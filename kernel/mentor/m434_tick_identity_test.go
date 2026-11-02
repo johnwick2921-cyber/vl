@@ -23,6 +23,11 @@ package mentor
 // 15:19 SWING4H inside bars refused swing_position_open (this harness emulates
 // BE/hold receipts, never a stop-out, so the 05:00 / 14:30 legs stay "open";
 // on the tape they stopped at 05:16 / 14:52, and live — SwingEnded — still arms).
+// m465 P2 (release #60, ISB loss range box D4.2-R27): regenerated — 615 rows
+// of m423_1023_1m_read_near0 moved in the STATE stream only (Limits.Places now
+// carries the 5m range bounds + Range); zero intents, notes, levels or
+// trendlines moved on any tape. The pre-#60 State is pinned by
+// TestM462StoredNewsOnlyIsThePreM462Behaviour under mentor_isb_loss_box=band.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

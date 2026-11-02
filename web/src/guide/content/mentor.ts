@@ -287,6 +287,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_swing_max_stop_pts',
     live: true,
   },
+  'ISB loss box': { settingId: 'mentor_isb_loss_box', live: true },
 }
 
 // Evaluator settings that have no Studio control and no store field: the
@@ -563,8 +564,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'A loss at a place blocks it',
-          body: 'After a LOSS at a level, a box edge or the EMA line (entry filled, then the stop hit), that place is blocked until a departure candle. Two losses at one place → that place is off for the day (the “off for the day” part is OURS, stricter than the course: “thua 2 lần ở cùng 1 chỗ thì là mọi người đang sai” — and “đừng trade ở 1 khu vực, trade hoài ngay chỗ đó không có được cái gì đâu”; no day-long rule is stated, and the departure wait is OURS [D4.2 p2 @06:58–07:37]).',
-          cite: 'E2 · G2 · D4.2 p2 @01:56',
+          body: 'After a LOSS at a level, a box edge or the EMA line (entry filled, then the stop hit), that place is blocked until a departure candle. Two losses at one place → that place is off for the day (the “off for the day” part is OURS, stricter than the course: “thua 2 lần ở cùng 1 chỗ thì là mọi người đang sai” — and “đừng trade ở 1 khu vực, trade hoài ngay chỗ đó không có được cái gì đâu”; no day-long rule is stated, and the departure wait is OURS [D4.2 p2 @06:58–07:37]). An ISB loss (release #60, knob mentor_isb_loss_box, default range) boxes the WHOLE 5m range that held the trade — every closed 5m candle from the one the entry filled in through the one the stop hit in — not only the entry-to-stop band: “Market này có tổng cộng 3 phần: Trend, Range và Trend… em đợi cho cái điểm entry nằm ở vòng vòng bên ngoài” [D4.2 p2 @02:41–03:17]; his Box 1 28,880.50–28,934.00 is exactly the 08:30 5m candle. An entry inside that range — either side — is refused loss_range_blocked until a 1m candle lies completely outside it. Each new range gets its own box (“tạo thêm cái range nữa… Đợi thoát ra đánh tiếp” [@03:06–03:31]); a loss whose range overlaps an earlier ISB loss range of the day joins it, and two losses there turn it off for the day (loss_box_off_day) — Winnie’s re-entries in the 57-pt chop 29,020.50 / 28,963.50, “cứ đè đây đánh, đè đây đánh” [@04:13–05:03].',
+          cite: 'E2 · G2 · D4.2 p2 @01:56 · D4.2-R27/R28/R30 p2 @02:41–05:03',
         },
         {
           title: 'Leg budget — two entries per leg',
@@ -2148,6 +2149,23 @@ export const mentor: GuideSection = {
             'shared — not from the course: no EMA 9 visit rule is stated (case b).',
           whenToTouch:
             'If EMA 9 rejects are being capped on days it moves a lot.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'ISB loss box',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → ISB loss box',
+          what: 'What an ISB stop-out blocks. range (default): the whole 5m range that held the trade — every closed 5m candle from the fill candle’s through the stop-out candle’s — joined with the entry-to-stop band; an entry inside it, long or short, is refused loss_range_blocked until a 1m candle lies completely outside the range. A later ISB loss whose range overlaps it joins the same box; two losses there → off for the day (loss_box_off_day). band: the pre-#60 rule — only the entry-to-stop band is blocked. A fill registered after a restart has lost the candles before the fill, so its range starts at the fill candle (counted loss_range_seed_only).',
+          trader:
+            'Course: “tôi bọc cái khu vực này lại. Tôi sẽ không trade bên trong khu vực này. Tôi đợi nó đi ra một cái khu vực khác” [D4.2 p2 @03:43–04:07]; Box 1 28,880.50–28,934.00 = the 08:30 5m candle (D4.3 Ex.1 H 28,933.75 L 28,880.50).',
+          consumer:
+            'trader/mentor_course_exits.go mentorCourseExitsResolve → kernel/mentor/limits.go rangeLoss (Config.ISBLossBox)',
+          range:
+            'range | band · unset → range (an unknown value → range, counted isb_loss_box_bad_value)',
+          systemDefault: 'range',
+          recommended:
+            'range — D4.2-R27/R28/R30 [D4.2 p2 @02:41–05:03]: enter only outside the range you lost in.',
+          whenToTouch: 'Only with a new owner ruling.',
           perSession: 'No — per strategy.',
         },
         {

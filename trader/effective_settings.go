@@ -837,6 +837,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
 	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
 	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31, nil → 90)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
+	mentorCXRow("mentor_isb_loss_box", "trader.mentorCourseExitsResolve (m465 P2 D4.2-R27, \"\" → range)", func(c mentorCourseExitsResolved) any { return c.ISBLossBox })
 	mentorCXRow("mentor_keypair_candle_ratio", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.KeypairRatio })
 	mentorCXRow("mentor_box_fresh_rth_pair", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxFreshRTHPair })
 	mentorCXRow("mentor_box_max_height_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxMaxHeightPts })

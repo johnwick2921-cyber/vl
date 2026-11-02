@@ -17,9 +17,14 @@ import "testing"
 // frees it.
 // MUTANT: drop the ISB's `box/lo/hi` on the pend → the ISB loss boxes nothing
 // and the in-band re-entry is emitted → RED.
+//
+// Release #60 P2: the band is now the knob mentor_isb_loss_box=band; the
+// default (range) boxes the whole 5m range — TestLimitsISBLossRangeCoversBand
+// below and m60_loss_range_test.go.
 func TestLimitsISBLossBoxesTheBand(t *testing.T) {
 	var l Limits
 	cfg := limitsCfgNoLeg() // G2 only — the G1 leg must not shadow it
+	cfg.ISBLossBox = ISBLossBoxBand
 	prev := limitsK(94, 96, 94, 95, 0)
 	exp := limitsNow(60) + 86400_000
 
@@ -70,5 +75,34 @@ func TestLimitsBandBlocksDifferentLevel(t *testing.T) {
 	// A level at 105 (outside the band) is allowed.
 	if out := applyLevels(&l, []Intent{limitsPHLAt(105, 103, 110, exp, "key_level:105", 105)}, limitsK(70, 72, 69, 70, 4), limitsK(70, 72, 69, 70, 5), 5, cfg, levels); len(out) != 1 {
 		t.Fatalf("level outside the band: want 1, got %d (refusals=%v)", len(out), l.Refusals)
+	}
+}
+
+// TestLimitsISBLossRangeCoversBand — release #60 P2 (D4.2-R27 "em đợi cho cái
+// điểm entry nằm ở vòng vòng bên ngoài" [D4.2 p2 @02:41–03:17]): the same
+// D2-17 sequence under the default range box. The 09:00 5m bucket that held
+// the trade ran 88–94 (candles 1..2), so the 94 re-entry that the band let through is now
+// INSIDE the range and refused loss_range_blocked; the in-band 91 too.
+// MUTANT: fall back to the band in loss() → the 94 re-entry is emitted → RED.
+func TestLimitsISBLossRangeCoversBand(t *testing.T) {
+	var l Limits
+	cfg := limitsCfgNoLeg()
+	prev := limitsK(94, 96, 94, 95, 0)
+	exp := limitsNow(60) + 86400_000
+
+	applyAtG2(&l, []Intent{limitsISB(92, 89, 98, exp)}, prev, limitsK(93, 94, 92, 93, 1), 1, cfg)
+	applyAtG2(&l, nil, limitsK(93, 94, 92, 93, 1), limitsK(92, 93, 88, 89, 2), 2, cfg) // fill + stop
+	p := l.Places[isbBandKey(92, 89)]
+	if p == nil || !p.Range || p.Lo != 88 || p.Hi != 94 {
+		t.Fatalf("range box: want the 09:00 5m range 88–94 (candles 1..2), got %+v", l.Places)
+	}
+	if out := applyAtG2(&l, []Intent{limitsISB(91, 88, 97, exp)}, limitsK(92, 93, 88, 89, 2), limitsK(90, 91.5, 89.5, 91, 3), 3, cfg); len(out) != 0 {
+		t.Fatalf("in-band re-entry: want 0, got %d", len(out))
+	}
+	if out := applyAtG2(&l, []Intent{limitsISB(94, 91, 99, exp)}, limitsK(90, 91.5, 89.5, 91, 3), limitsK(93, 95, 92.5, 94, 4), 4, cfg); len(out) != 0 {
+		t.Fatalf("94 re-entry inside the 5m range: want 0, got %d", len(out))
+	}
+	if l.Refusals["loss_range_blocked"] != 2 {
+		t.Fatalf("want loss_range_blocked=2, refusals=%v", l.Refusals)
 	}
 }
