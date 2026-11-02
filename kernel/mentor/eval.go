@@ -2144,10 +2144,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse("tl_first_test_level_preferred:" + k)
 	}
 	levels = append(levels, tlLevels...)
-	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
-	e.State.ChartLevels = append(e.State.ChartLevels, e.wickZoneDisplayLevels()...)            // m465 P5: the wick zone's far edge, display only (knob OFF → nil)
-	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                        // m134: display EMA curve
-	e.State.ChartSeededAt = 0                                                                  // m422: a real Tick replaces the boot display seed
+	e.State.ChartLevels, e.State.ChartTrendlines = append(append([]Level(nil), levels...), e.wickZoneDisplayLevels()...), trendlines // T7: display set read AFTER every append (+ m465 P5: the wick zone far edge, display only; knob OFF → nil)
+	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                                                              // m134: display EMA curve
+	e.State.ChartSeededAt = 0                                                                                                        // m422: a real Tick replaces the boot display seed
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;

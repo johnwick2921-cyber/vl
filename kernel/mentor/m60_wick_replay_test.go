@@ -52,6 +52,9 @@ func TestM60WickReplay(t *testing.T) {
 		Pts                 float64
 		atMs                int64
 	}
+	// refAt is the refusal delta each tick counted, keyed by the tick's CT
+	// minute — a moved entry names what the other run refused on its candle.
+	refAt := map[bool]map[string]string{false: {}, true: {}}
 	run := func(on bool) ([]entry, map[string]int, map[string]int) {
 		cfg := DefaultConfig()
 		cfg.Enabled = true
@@ -66,10 +69,22 @@ func TestM60WickReplay(t *testing.T) {
 			if lo < 0 {
 				lo = 0
 			}
+			before := map[string]int{}
+			for k, v := range e.State.Refusals {
+				before[k] = v
+			}
 			ins := e.Tick(bars[lo:i+1], BarCloseInstant(bars[i]))
 			if bars[i].OpenTime < fromMs {
 				continue
 			}
+			var d []string
+			for k, v := range e.State.Refusals {
+				if v > before[k] {
+					d = append(d, fmt.Sprintf("%s+%d", k, v-before[k]))
+				}
+			}
+			sort.Strings(d)
+			refAt[on][time.UnixMilli(bars[i].CloseTime+1).In(ctime()).Format("01-02 15:04")] = strings.Join(d, " ")
 			for _, in := range ins {
 				if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry {
 					continue
@@ -97,7 +112,7 @@ func TestM60WickReplay(t *testing.T) {
 	sum := 0.0
 	for k, x := range onBy {
 		if o, ok := offBy[k]; !ok {
-			lines = append(lines, fmt.Sprintf("APPEARS   %s stop %.2f target %.2f at %q → %s %+.2f pts", k, x.Stop, x.Target, x.Anchor, x.Outcome, x.Pts))
+			lines = append(lines, fmt.Sprintf("APPEARS   %s stop %.2f target %.2f at %q → %s %+.2f pts (OFF refused: %s)", k, x.Stop, x.Target, x.Anchor, x.Outcome, x.Pts, refAt[false][x.At]))
 			sum += x.Pts
 		} else if o.Target != x.Target || o.Stop != x.Stop {
 			lines = append(lines, fmt.Sprintf("CHANGED   %s target %.2f→%.2f stop %.2f→%.2f → OFF %s %+.2f / ON %s %+.2f pts", k, o.Target, x.Target, o.Stop, x.Stop, o.Outcome, o.Pts, x.Outcome, x.Pts))
@@ -106,7 +121,7 @@ func TestM60WickReplay(t *testing.T) {
 	}
 	for k, o := range offBy {
 		if _, ok := onBy[k]; !ok {
-			lines = append(lines, fmt.Sprintf("DISAPPEARS %s stop %.2f target %.2f → was %s %+.2f pts", k, o.Stop, o.Target, o.Outcome, o.Pts))
+			lines = append(lines, fmt.Sprintf("DISAPPEARS %s stop %.2f target %.2f → was %s %+.2f pts (ON refused: %s)", k, o.Stop, o.Target, o.Outcome, o.Pts, refAt[true][o.At]))
 			sum -= o.Pts
 		}
 	}
