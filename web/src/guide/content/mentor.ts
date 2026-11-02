@@ -54,6 +54,19 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.15m_ib_requires_5m_isb',
     live: true,
   },
+  // m465 P1 (release #60): early 15m read, standing-box mode C, trigger escalation.
+  'Early 15m read (two 5m candles)': {
+    settingId: 'risk_control.mentor_tuning.15m_early_read',
+    live: true,
+  },
+  'Mode C reads the standing 15m + 5m boxes': {
+    settingId: 'risk_control.mentor_tuning.mtf_confluence_source',
+    live: true,
+  },
+  'Trigger escalation 5m → 15m → 30m': {
+    settingId: 'risk_control.mentor_tuning.trigger_escalation',
+    live: true,
+  },
   '5m/15m box conflict end': {
     settingId: 'risk_control.mentor_tuning.tf_conflict_end',
     live: true,
@@ -535,8 +548,8 @@ export const mentor: GuideSection = {
         },
         {
           title: '15m and 30m ISB rest boxes + the escalation ladder',
-          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m candle with its OPEN and CLOSE both beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test). While a 15m box stands, a 1m ISB in its direction also needs a 5m ISB in that direction (15m_ib_requires_5m_isb, default require_5m_isb).',
-          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:52–21:02 (body escape) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box)',
+          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m candle with its OPEN and CLOSE both beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test). While a 15m box stands, a 1m ISB in its direction also needs a 5m ISB in that direction (15m_ib_requires_5m_isb, default require_5m_isb). Release #60: the 15m box is read EARLY — two 5m candles of the forming 15m inside the last 15m box it at once, provisionally, and refuse under _forming names until the 15m closes (15m_early_read, D4.2-R2); mode C holds while the standing 15m and 5m boxes agree (mtf_confluence_source, D4.2-R17); and when the 5m inside bars cross, the 15m (then 30m) TRIGGER line governs the side (trigger_escalation, D3.4-R43).',
+          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:52–21:02 (body escape) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box) · D4.2-R2 p1 @00:08–00:39 · D4.3-R21 @12:20–12:32 (early 15m read) · D4.2-R17 p1 @14:57–15:37 (mode C, standing boxes) · D3.4-R43 p2 @17:07–17:49 (trigger escalation)',
         },
         {
           title: 'The 4h trigger line is a target, never a location',
@@ -1154,6 +1167,50 @@ export const mentor: GuideSection = {
             'require_5m_isb — D4.2 p1 @17:09–17:13, @14:24–14:34; knob rule (a): course, no ruling against.',
           whenToTouch:
             'Only on an owner ruling (no_trade_until_escape = his option 1, @01:06–01:14).',
+          perSession: 'No.',
+        },
+        {
+          label: 'Early 15m read (two 5m candles)',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.2-R2 [D4.2 p1 @00:08–00:39] "3 cây 5 phút mà nó cứ xào quần xào quần ngay chỗ đó mà nó không đi đâu hết... ngay lập tức mình biết khung 15 phút đang tạo inside bar" (three 5m candles churning in one place, going nowhere — you know at once the 15m is making an inside bar) · @07:40 "2, 3 cây 5 phút anh chị đã có được 1 cây 15 phút" · D4.3-R21 [D4.3 @12:20–12:32] "2 cái nến 5 phút, 3 cái nến 5 phút, nó đang làm cái nến 15 phút rồi đó" · D4.2-R11 [@11:40–11:42] the benefit is defensive: "anh chị sẽ né được rất nhiều đoạn ranging và bị bớt thua". ON (default, release #60): when no 15m box stands and the FORMING 15m candle already holds exactly TWO closed 5m candles whose body (open of the 1st, close of the 2nd) sits inside the last closed 15m candle (wicks included), that forming candle is boxed at once — a PROVISIONAL 15m inside-bar box (the high/low of the two 5m candles, direction = the colour of the last closed 15m). Every 15m-box rule applies to it and refuses under its own name: isb_15m_box_dir_forming (a 1m ISB against it), isb_15m_needs_5m_isb_forming, isb_tf_conflict_forming (a 5m box the other way), phl_15m_box_ban_forming, box_isb_ban_15m_forming (isbrev_… for the reverse ISB). At the 15m close (the 3rd 5m — the 5m and the 15m close together) the real 15m box replaces it (counted isb_15m_forming_confirmed) or, if the 15m closed as no inside bar, it is dropped (isb_15m_forming_dropped). It only ever REFUSES — it never counts for mode C. WE-1 (Mon 14 Sep): the 15m mother 29,026.00 / 28,970.75, the next 5m candles churn inside it.',
+          trader:
+            'ON — the course reads the 15m from the 5m at once; OFF restores the closed-15m read only (pre-#60).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/mtf_forming15.go forming15mISB / advance15mBox · kernel/mentor/eval.go Tick (the 15m box gates)',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended:
+            'ON — D4.2-R2 / D4.2-R11 / D4.3-R21 (release #60, owner order 2026-11-02 "fix everything the video check found").',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Mode C reads the standing 15m + 5m boxes',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D4.2-R17 [D4.2 p1 @14:57–15:37] "tại sao hồi sáng em lại không move stop loss mà em đặt stop loss ở dưới để cho nó chạy, tại vì đây nó cộng hưởng quá nhiều thứ... Khung 15 phút nó cũng kêu mình làm vậy, khung 5 phút cũng kêu mình làm vậy" (I did not move the stop — I left it below and let it run, because so much resonates: the 15m says so, the 5m says so). WE-2: the 15m box 29,079.25 / 28,985.00, the 5m inside bar (the red 10:10 candle) 29,048.50 / 29,017.25, the 1m entry ~29,040, ran ~+100. standing_boxes (default, release #60) = mode C while a CLOSED 15m inside-bar box stands in the entry direction AND the 5m agrees — a standing 5m box the same way, or the last 5m box (drawn after the 15m candle) pointed and escaped the same way (the same 5m test as "15m inside-bar box needs a 5m ISB"). A provisional (early-read) 15m box never counts. last_pair = the pre-#60 read: the LATEST closed 5m and 15m candle pairs must both be inside bars — one 5m candle after the 5m inside bar that read was gone, though both boxes still stood.',
+          trader:
+            'standing_boxes — the course holds while both boxes say so; last_pair restores the pre-#60 read.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/mtf.go MTFConfluenceStanding / mtfConfluence · kernel/mentor/eval.go (ISB, reverse ISB, PHL/PLH emit)',
+          range: 'standing_boxes / last_pair',
+          systemDefault: 'standing_boxes',
+          recommended: 'standing_boxes — D4.2-R17 (release #60).',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Trigger escalation 5m → 15m → 30m',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'D3.4-R43 [D3.4 p2 @17:07–17:49]: when inside bars cross back and forth so the 5m buy/sell trigger is not valid, go to the 15m; if that fails, the 30m; then the 1h and the 4h. ON (default, release #60): the bot keeps a 15m and a 30m trigger line beside the 5m one (same break rule, seeded from history at boot). When the last 3 closed 5m candles hold 2 inside bars pointing opposite ways (the same "crossing" read the ISB-box ladder already uses — no new number), the 15m trigger line governs every trigger read of the intraday setups: the ISB side, the reverse ISB trend, the PHL/PLH level side, the trigger-retest direction, box returns and the trigger-box zone. When the 15m inside bars cross too, the 30m governs. The 1h/4h steps are the existing 4h/1h direction gate. Refusals carry the TF: isb_trigger_side_15m / isb_trigger_side_mismatch_15m (… _30m, isbrev_…, phl_level_trigger_side_15m, trigger_retest_wrong_way_15m, box_trigger_side_15m); every switch is logged and counted once (trigger_escalated_15m / trigger_escalated_30m / trigger_escalation_ended). Before #60, a standing 5m inside-bar box hid the trigger while the crossing skipped that box’s gate — in exactly that chop nothing governed the side. The trigger-retest LEVEL stays the 5m line; the rolling PHL/PLH (X8 "nhìn khung 5 phút") and the swing zone stay on the 5m.',
+          trader:
+            'ON — the course escalates; OFF restores the 5m line always (pre-#60).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/trigger_escalate.go governingTrigger · kernel/mentor/eval.go Tick (every gating trigger read) · kernel/mentor/seed.go (15m/30m lines seeded)',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended:
+            'ON — D3.4-R43 (release #60). The crossing count (2 opposite ISBs in 3 buckets) is the open mentor question Q10.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {

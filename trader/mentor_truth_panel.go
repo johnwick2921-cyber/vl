@@ -330,7 +330,11 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 		box   *mentor.ISBBox
 	}{{"ISB 5m", st.ISBBox}, {"ISB 15m", st.ISBBox15m}, {"ISB 30m", st.ISBBox30m}} {
 		if b.box != nil && b.box.High > 0 && b.box.Low > 0 {
-			boxes = append(boxes, MentorRangeView{Label: b.label, High: b.box.High, Low: b.box.Low, Dir: string(b.box.Dir), AtMs: b.box.AtTime})
+			label := b.label
+			if b.box.Provisional {
+				label += " (forming)" // m465 P1: the early 15m read [D4.2-R2]
+			}
+			boxes = append(boxes, MentorRangeView{Label: label, High: b.box.High, Low: b.box.Low, Dir: string(b.box.Dir), AtMs: b.box.AtTime})
 		}
 	}
 	var orb *MentorRangeView
