@@ -397,6 +397,14 @@ export interface MentorTuning {
   // 2-minute range, wicks included; "Routine trước khi trade" part1
   // @06:47–07:16 [false = the body test]
   orb_escape_completely?: boolean
+  // m465 P5 (release #60) — the D4.3 wick microscalp, the whole setup: a run
+  // of ≥2 same-way 5m wicks WITH the 5m trend draws a zone box (extended
+  // right); a 1m ISB/PHL at the zone arms; the target is the nearby 5m wicks.
+  // Advanced — "đừng có tập khúc này đầu liền" D4.3 @04:55 [false]
+  wick_microscalp?: boolean
+  // m465 P5 — D4.3-R20 safe play: a setup at a wick zone waits for its
+  // reference candle to close beyond the zone's near edge, D4.3 @14:07 [false]
+  wick_safe_play?: boolean
   // Release #52 W11 — invented-constant knobs: every number is OURS, not the
   // course's; each default is what the kernel hard-coded before.
   // B8 [4] — the candle a resting 2m ISB arm is cancelled on (3–12);

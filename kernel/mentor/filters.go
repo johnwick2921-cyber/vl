@@ -298,7 +298,10 @@ func MidRange(levels []Level, price float64, cfg Config) bool {
 		// REL-5 audit #1: target-only levels (4h trigger, wick microscalp) and
 		// trendlines are never range boundaries — they are locations or target
 		// ladders, not the key levels a mid-range sits between.
-		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline || l.Kind == KindTrendlineTarget {
+		// m465 P5 (D4.3-R13): neither is the D4.3 wick zone edge — the mentor
+		// trades the zone "cho dù là khung 5 phút nó đang ranging" [D4.3
+		// @04:44–04:55], so its edge never makes a mid-range around itself.
+		if l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp || l.Kind == KindTrendline || l.Kind == KindTrendlineTarget || l.Kind == KindWickZone {
 			continue
 		}
 		d := l.Price - price

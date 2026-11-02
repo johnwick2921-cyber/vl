@@ -116,6 +116,8 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"flag_wall_target", cfg.FlagWallTarget},
 		{"box_new_zone_after_escape", cfg.BoxNewZoneAfterEscape},
 		{"orb_escape_completely", cfg.OrbEscapeCompletely},
+		{"wick_microscalp", cfg.WickMicroscalpEnabled},
+		{"wick_safe_play", cfg.WickSafePlay},
 		{"isb_stack_cancel_candle_2m", cfg.ISBStackCancelCandle2m},
 		{"isb_stack_tiny_stop_pts", cfg.ISBStackTinyStopPts},
 		{"evening_slow_pts", cfg.EveningSlowPts},

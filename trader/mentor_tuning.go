@@ -43,6 +43,8 @@ type mentorTuned struct {
 	EmaLossRelock               string
 	OrbEdgeVetoPts              float64
 	OrbEscapeCompletely         bool
+	WickMicroscalp              bool // m465 P5: D4.3 wick microscalp (default OFF)
+	WickSafePlay                bool // m465 P5: D4.3-R20 safe play (default OFF)
 	OrbISBFractionOutside       float64
 	D43TrendSource              string
 	LevelEntriesNeedTriggerSide bool
@@ -91,6 +93,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		EmaLossRelock:               d.EmaLossRelock,
 		OrbEdgeVetoPts:              d.OrbEdgeVetoPts,
 		OrbEscapeCompletely:         d.OrbEscapeCompletely,
+		WickMicroscalp:              d.WickMicroscalpEnabled,
+		WickSafePlay:                d.WickSafePlay,
 		OrbISBFractionOutside:       d.OrbISBFractionOutside,
 		D43TrendSource:              d.D43TrendSource,
 		LevelEntriesNeedTriggerSide: d.LevelEntriesNeedTriggerSide,
@@ -218,6 +222,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.FlagWallTarget, &out.FlagWallTarget)
 	flag(t.BoxNewZoneAfterEscape, &out.BoxNewZoneAfterEscape)
 	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
+	flag(t.WickMicroscalp, &out.WickMicroscalp)
+	flag(t.WickSafePlay, &out.WickSafePlay)
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -279,6 +285,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.EmaLossRelock = t.EmaLossRelock
 	cfg.OrbEdgeVetoPts = t.OrbEdgeVetoPts
 	cfg.OrbEscapeCompletely = t.OrbEscapeCompletely
+	cfg.WickMicroscalpEnabled = t.WickMicroscalp
+	cfg.WickSafePlay = t.WickSafePlay
 	cfg.OrbISBFractionOutside = t.OrbISBFractionOutside
 	cfg.D43TrendSource = t.D43TrendSource
 	cfg.LevelEntriesNeedTriggerSide = t.LevelEntriesNeedTriggerSide
@@ -308,7 +316,7 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v",
 		id, t.FifteenMinIBRule, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
-		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely)
+		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay)
 }

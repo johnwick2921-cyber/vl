@@ -240,6 +240,10 @@ type State struct {
 	// 4h/1h refusal (rolling_htf_*) was last counted on, so the named refusal
 	// counts once per candle without a growing per-candle key set.
 	RollingHTFRefusedAt int64 `json:"rolling_htf_refused_at,omitempty"`
+	// Wick is the D4.3 wick-microscalp state (m465 P5, wick_zone.go): the
+	// standing long/short wick zones and the 5m read watermark. nil while the
+	// knob wick_microscalp is OFF (the JSON stays byte-identical).
+	Wick *WickState `json:"wick,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
@@ -1776,7 +1780,11 @@ func isEMAPartialKind(k LevelKind) bool {
 // closed 1H body deletes them.
 func isMovingLineKey(key string) bool {
 	return key == string(KindEMA34) || key == string(KindEMA34HTF) || key == string(KindTriggerRetest) ||
-		strings.HasPrefix(key, string(KindTrendline)+":")
+		strings.HasPrefix(key, string(KindTrendline)+":") ||
+		// m465 P5: a D4.3 wick zone edge — a 1m close INSIDE the box is not the
+		// box's death (only a close beyond its far edge is, wick_zone.go), so
+		// the wrong-way mark is scoped to the visit like a moving line's.
+		strings.HasPrefix(key, string(KindWickZone)+":")
 }
 
 // visitKey is a level's knock-knock identity for the B23 visit cap (r22
@@ -1911,6 +1919,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if out == nil {
 			return
 		}
+		out = e.wickZoneLeave(out, bars, now) // m465 P5: D4.3 wick-zone exit pass (knob OFF → unchanged)
 		kept, refusals := stampLeave(out, e.State.Day.Verdict)
 		for _, r := range refusals {
 			e.refuse(r)
@@ -2071,14 +2080,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// p2 @05:04–05:44], one worked example) and never the 1h; the 1h line only
 	// gates direction (htf_direction.go). It used to join the ladder at every
 	// hour (htf_1h_trigger) and stopped ISB/PHL targets short at a 1h line.
-	// D4.3 wick microscalp (advanced, knob OFF by default): 2+ consecutive 5m
-	// candles rejecting with same-way wicks put a bounded target at their far
-	// wick — target-only (the touch loop skips KindWickMicroscalp).
-	if e.Cfg.WickMicroscalpEnabled {
-		if wl, ok := wickMicroscalpLevel(e.closedBucketsMemo(bars, now), e.State.Trigger.Dir); ok {
-			levels = append(levels, wl)
-		}
-	}
+	// D4.3 wick microscalp (m465 P5, knob wick_microscalp, default OFF —
+	// wick_zone.go): the 5m wick-run zone's near edge joins the set as a
+	// LOCATION (KindWickZone) and, while price is at the zone, the nearby 5m
+	// wicks as TARGET-ONLY levels (KindWickMicroscalp; the touch loop skips them).
+	levels = append(levels, e.wickZoneLevels(bars, now)...)
 	if el, ok := e.emaLocationLevel(bars, e.Cfg, now); ok {
 		levels = append(levels, el)
 	}
@@ -2138,9 +2144,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse("tl_first_test_level_preferred:" + k)
 	}
 	levels = append(levels, tlLevels...)
-	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
-	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                        // m134: display EMA curve
-	e.State.ChartSeededAt = 0                                                                  // m422: a real Tick replaces the boot display seed
+	e.State.ChartLevels, e.State.ChartTrendlines = append(append([]Level(nil), levels...), e.wickZoneDisplayLevels()...), trendlines // T7: display set read AFTER every append (+ m465 P5: the wick zone far edge, display only; knob OFF → nil)
+	e.State.ChartEMA = emaSeriesChartSched(bars, e.Cfg)                                                                              // m134: display EMA curve
+	e.State.ChartSeededAt = 0                                                                                                        // m422: a real Tick replaces the boot display seed
 	// CE-11/B12 (release #25, knob trendline_is_target, default ON): each
 	// valid trendline ALSO joins the target ladder at its current price —
 	// "Target là về những level kế tiếp… về trendline" [D3.3 p1 @05:18–05:35;

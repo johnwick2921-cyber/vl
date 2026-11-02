@@ -100,6 +100,8 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['trendline_between_boxes', 'on', true],
   ['leg_reset_on_wave_break', 'off', false],
   ['orb_escape_completely', 'on', true], // release #52 B19
+  ['wick_microscalp', 'on', true], // m465 P5 (D4.3)
+  ['wick_safe_play', 'on', true], // m465 P5 (D4.3-R20)
   // release #52 W11 invented-constant knobs
   ['isb_stack_cancel_candle_2m', '6', 6],
   ['isb_stack_tiny_stop_pts', '12', 12],
@@ -179,6 +181,8 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
     orb_escape_completely: false, // release #52 B19 — body test until the owner rules
+    wick_microscalp: false, // m465 P5 — D4.3 advanced, OFF
+    wick_safe_play: false, // m465 P5 — D4.3-R20, OFF
     isb_stack_cancel_candle_2m: 4, // release #52 W11 — unchanged defaults, all ours
     isb_stack_tiny_stop_pts: 0,
     evening_slow_pts: 100,

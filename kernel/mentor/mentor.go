@@ -89,6 +89,14 @@ const (
 	// nextLevelBeyond can pick it, but it is never touched and never a
 	// PHL/PLH location.
 	KindWickMicroscalp LevelKind = "wick_microscalp"
+	// KindWickZone is the D4.3 wick zone's NEAR edge as an entry LOCATION
+	// (m465 P5, knob wick_microscalp): the 5m wick-run box drawn under the
+	// lower wicks (long) or over the upper wicks (short), extended right until
+	// a 1m close beyond its far edge. A 1m PHL/PLH whose reference candle
+	// touches it arms through the ordinary touch loop — "Vẫn được: potential
+	// high low khung giờ nhỏ hơn, hay là insert bar cho lệnh long khung giờ nhỏ
+	// hơn" [D4.3 @06:13–06:29]. Keys "wick_zone:<side>:<5m open ms>:<top|bottom>".
+	KindWickZone LevelKind = "wick_zone"
 	// KindTrendlineTarget is a valid trendline's price as a TARGET-LADDER
 	// level (CE-11/B12, release #25, knob trendline_is_target, default ON):
 	// "Target là về những level kế tiếp… về trendline, anything… những cái mà
@@ -327,12 +335,20 @@ type Config struct {
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
 	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4 p1 @01:26–01:30].
 	ISBReverseEMA9Enabled bool
-	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
-	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m
-	// candles rejecting with wicks the SAME way (lower wicks in an uptrend,
-	// upper wicks in a downtrend) put a bounded target at the rejecting
-	// candles' far wick. Default OFF (advanced, behind a knob per D4.3-02).
+	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (knob
+	// wick_microscalp; advanced — "đừng có tập khúc này đầu liền" [D4.3
+	// @04:55–05:17]). m465 P5: the WHOLE setup — a run of ≥2 same-way 5m wicks
+	// WITH the 5m trend (wick_zone.go) draws a zone box, extended right; a 1m
+	// ISB/PHL at the zone arms through the ordinary paths; the target is the
+	// nearby 5m wicks (wick_microscalp.go). Default OFF.
 	WickMicroscalpEnabled bool
+	// WickSafePlay (m465 P5, sub-knob wick_safe_play, default OFF) is the
+	// D4.3-R20 safe-play confirmation: a setup at a wick zone counts only once
+	// its reference candle CLOSED beyond the zone's near edge (under the box
+	// for a short, over it for a long) — "mọi người đợi nó nằm ở dưới cái
+	// box. Mọi người vẫn có thể trade bình thường, là thêm một sự confirm"
+	// [D4.3 @14:07–14:27]. Read only while WickMicroscalpEnabled is ON.
+	WickSafePlay bool
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
@@ -658,6 +674,7 @@ func DefaultConfig() Config {
 		ISBReverseEMA9Enabled: true,
 
 		WickMicroscalpEnabled: false, // D4.3 advanced wick read — OFF by default
+		WickSafePlay:          false, // D4.3-R20 safe play — an optional extra confirm, OFF by default
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,

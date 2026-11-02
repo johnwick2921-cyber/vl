@@ -69,6 +69,11 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
 				return true, "trendline"
 			}
+		case KindWickZone:
+			// m465 P5 (D4.3-R15): the wick zone's near edge is a location.
+			if touchesPrice(ref, l.Price, cfg.TouchBandPts) {
+				return true, "wick_zone"
+			}
 		}
 		// KindEMA9 is deliberately NOT a location (reverse-ISB only, §10).
 	}
@@ -80,15 +85,16 @@ func LocationVerdict(ref market.Kline, levels []Level, trigger TriggerLine, bars
 
 // LocationOf names the place a setup was taken at, read from its G2 AnchorKey
 // (the touched level's key, or the box key): "trendline long", "key_level",
-// "ftgl", "ema34_htf", … — the trader's size log prints it so a trade's
-// location is on the record. A trendline also names its side (support =
-// long, resistance = short). "" = the setup carries no anchor (a plain ISB).
+// "ftgl", "ema34_htf", "wick_zone short", … — the trader's size log prints it
+// so a trade's location is on the record. A trendline and a D4.3 wick zone
+// also name their side (support/demand = long, resistance/supply = short).
+// "" = the setup carries no anchor (a plain ISB).
 func LocationOf(anchorKey string) string {
 	if anchorKey == "" {
 		return ""
 	}
 	kind, rest, _ := strings.Cut(anchorKey, ":")
-	if kind == string(KindTrendline) {
+	if kind == string(KindTrendline) || kind == string(KindWickZone) {
 		side, _, _ := strings.Cut(rest, ":")
 		return kind + " " + side
 	}
@@ -118,9 +124,14 @@ func touchesPrice(ref market.Kline, price, band float64) bool {
 // location (PHL/PLH at it): key levels, the EMA34-HTF line, the trigger retest
 // — or an old extreme coinciding ±2 pts with a key level. A bare old high/low
 // is NOT a location (fold item 1).
+//
+// m465 P5 (D4.3-R11/R15): the D4.3 wick zone's near edge (KindWickZone) is a
+// location — "potential high low khung giờ nhỏ hơn, hay là insert bar cho
+// lệnh long khung giờ nhỏ hơn" [D4.3 @06:13–06:29]; its 5m-wick TARGETS
+// (KindWickMicroscalp) stay target-only.
 func levelIsLocation(lvl Level, levels []Level) bool {
 	switch lvl.Kind {
-	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline:
+	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline, KindWickZone:
 		return true
 	case KindOldExtreme:
 		return coincidesWithKeyLevel(lvl, levels)

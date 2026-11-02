@@ -937,3 +937,46 @@ describe('m428 R2 flat support / resistance labels', () => {
     )
   })
 })
+
+describe('m465 P5: the D4.3 wick zone draws as ONE rectangle', () => {
+  const lvl = (key: string, price: number) => ({
+    key,
+    kind: 'wick_zone',
+    price,
+    drawn_at: 1060_000,
+    visits_today: 0,
+    formed_ms: 1060_000,
+    tf: '5m',
+  })
+  const bars = [1000, 1060, 1120, 1180, 1240]
+
+  it('pairs the near and far edge into a box extended to the last bar, no lines', () => {
+    const t = truth({
+      levels: [
+        lvl('wick_zone:short:1060000:bottom', 29628),
+        lvl('wick_zone:short:1060000:top', 29642),
+      ],
+    })
+    const rects = mentorBoxRects(t, bars)
+    expect(rects).toHaveLength(1)
+    expect(rects[0]).toMatchObject({
+      top: 29642,
+      bottom: 29628,
+      startTime: 1060,
+      endTime: 1240,
+    })
+    expect(rects[0].label).toContain('D4.3 wick supply box 5m 29642-29628')
+    expect(mentorChartLines(t).some((l) => l.label.includes('wick'))).toBe(
+      false
+    )
+  })
+
+  it('names the side', () => {
+    expect(mentorKindLabel('wick_zone', 'wick_zone:long:1:top')).toBe(
+      'wick demand zone'
+    )
+    expect(mentorKindLabel('wick_zone', 'wick_zone:short:1:bottom')).toBe(
+      'wick supply zone'
+    )
+  })
+})

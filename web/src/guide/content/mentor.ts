@@ -123,7 +123,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'PHL entry buffer': { settingId: 'Config.PHLEntryBufferPts', live: false },
-  'Wick microscalp': { settingId: 'Config.WickMicroscalpEnabled', live: false },
+  'Wick microscalp': {
+    settingId: 'risk_control.mentor_tuning.wick_microscalp',
+    live: true,
+  },
+  'Wick safe play': {
+    settingId: 'risk_control.mentor_tuning.wick_safe_play',
+    live: true,
+  },
   'Stop ceiling': { settingId: 'Config.StopCeilingPts', live: false },
   'Room multiple': { settingId: 'Config.RoomMultiple', live: false },
   'Near-box room': {
@@ -371,7 +378,7 @@ export const mentor: GuideSection = {
       items: [
         {
           title: 'Read-only live evaluator state',
-          body: 'The planner page and the trader dashboard show a card titled "Mentor — what trades". It is read-only and reports what the mentor evaluator holds RIGHT NOW: the 4h trigger direction and since-when, the 1h trigger, the 5m trigger (price + since), the HTF verdict (follow / sit-out / no-trigger) and whether the HTF gate is active (htf_gate_news_only), the mentor levels in effect (price, a readable kind name, drawn-at, visits today — the 4h trigger line and the wick-microscalp extreme are tagged "target only": they join the level set for the target ladder but the touch loop never trades them; the 1h trigger line is not a target and is not listed (release #52 B5)), the history depth line, and the next-window / day-stop state (done-after-win, stop-after-loss, window — a -1 window reads "no time window" and still names the 15:45 CT entry cutoff and the 14:45 CT EOD flat; it never means any hour). It never mutates the evaluator — it reads under the existing locks and never blocks the tick.',
+          body: 'The planner page and the trader dashboard show a card titled "Mentor — what trades". It is read-only and reports what the mentor evaluator holds RIGHT NOW: the 4h trigger direction and since-when, the 1h trigger, the 5m trigger (price + since), the HTF verdict (follow / sit-out / no-trigger) and whether the HTF gate is active (htf_gate_news_only), the mentor levels in effect (price, a readable kind name, drawn-at, visits today — the 4h trigger line and the D4.3 5m-wick targets (wick_microscalp) are tagged "target only": they join the level set for the target ladder but the touch loop never trades them; a D4.3 wick zone (wick_zone, knob wick_microscalp) is listed by its two edges and drawn on the chart as one rectangle; the 1h trigger line is not a target and is not listed (release #52 B5)), the history depth line, and the next-window / day-stop state (done-after-win, stop-after-loss, window — a -1 window reads "no time window" and still names the 15:45 CT entry cutoff and the 14:45 CT EOD flat; it never means any hour). It never mutates the evaluator — it reads under the existing locks and never blocks the tick.',
           cite: 'Engineering rule — read-only truth panel (release #10), not from the course · trader/mentor_truth_panel.go MentorTruthSnapshot · api/handler_mentor_truth.go · target-only kinds: kernel/mentor/eval.go (the touch loop skips KindHTFTrigger / KindWickMicroscalp) · web/src/components/mentor/MentorTruthCard.tsx MENTOR_TARGET_ONLY_KINDS · web/src/components/mentor/mentorWindowLabel.ts',
         },
         {
@@ -544,9 +551,10 @@ export const mentor: GuideSection = {
           cite: 'D4.4 p2 @05:04–05:44 · kernel/mentor/mentor.go KindHTFTrigger · kernel/mentor/eval.go (htf_4h_trigger level only; the touch loop skips KindHTFTrigger) · kernel/mentor/chart_seed.go · kernel/mentor/location.go levelIsLocation',
         },
         {
-          title: 'Wick microscalp (advanced, OFF by default)',
-          body: '2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
-          cite: 'D4.3 @00:00–03:20, @09:27–09:46 · WickMicroscalpEnabled',
+          title:
+            'Wick microscalp — "follow trend 5, kiếm lệnh 1" (advanced, OFF by default)',
+          body: 'm465 (release #60), knob wick_microscalp, default OFF — the mentor calls it advanced and asks people who still get muddled trading ranges not to practise it first ("làm ơn đừng… đừng có tập khúc này đầu liền"). (1) TREND: the 5m trend read left to right — the d43_trend_source knob (default structure: the confirmed 5m swing highs/lows); a ranging read lets the run\u2019s own side decide ("cho dù là khung 5 phút nó đang ranging"). (2) RUN: on every CLOSED 5m candle the last 3 closed 5m candles are read; at least 2 must pull the wick WITH the trend (lower wicks for a long, upper for a short) and the summed with-trend wick must beat the summed against wick — one odd candle is tolerated ("technically nhìn ra nó vẫn có sự rút râu từ dưới rút lên"). Refusals, each named and counted: wick_run_too_short (only 1), wick_mixed_direction (the wicks pull both ways), wick_against_trend (upper wicks in an uptrend / lower wicks in a downtrend — "đang xu hướng giảm mà rút dưới là tôi không biết đường tôi đánh"). (3) ZONE: a box from the lowest to the highest wick extreme of the run, at least 5.00 and at most 14.25 pts tall measured from the extreme wick (his boxes: 5.00 / ~10 / 14.00 / 14.25 pts), drawn on the chart as a rectangle and extended right; one per side; a new run at a NEW place replaces it; it dies on a 1m close beyond its far edge (wick_zone_broken) or at the 17:00 CT trading-day roll. (4) ENTRY: never at market ("Vô market là nó đâm cho lủng bụng"); the zone\u2019s near edge is a LOCATION, so a 1m PHL/PLH whose reference candle dips into the box and closes back out arms through the ordinary touch loop, and a 1m ISB touching the box is the ordinary ISB (all its gates unchanged). A visit to the zone that produced no setup is named wick_zone_no_setup; a PHL/PLH read off the box on the WRONG side is dropped (wick_zone_wrong_side). (5) TARGET: the nearby 5m wicks — the highs of the last 12 closed 5m candles that carry an upper wick, above the box, at most 100 pts away (lows for a short) — "Target thì là những cái râu của khung 5 phút", never "100-200 điểm". The nearest one beyond the entry is the target when it holds the room rule; a wick closer than 1R is named wick_target_no_room and the target falls through to the next level. (6) SAFE PLAY (knob wick_safe_play, OFF): the setup waits until its reference candle CLOSED outside the box (under it for a short, over it for a long), else wick_safe_play_wait. Not built: the 30-second / 45-second views (NT8 sends 1m bars only).',
+          cite: 'D4.3-R1/R2/R3/R5/R8/R10/R11/R12/R13/R15/R17/R19/R20/R27 · D4.3 p1 @01:27–02:02, @03:22–03:44, @04:44–05:46, @06:03–06:42, @09:17–09:46, @12:43–13:44, @14:07–15:47 · kernel/mentor/wick_zone.go · kernel/mentor/wick_microscalp.go · risk_control.mentor_tuning.wick_microscalp / wick_safe_play',
         },
         {
           title: 'Intraday confluence (exit C, size 5)',
@@ -803,8 +811,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Same-direction wick zone entry on the 5m',
-          body: 'Two or three 5m candles with wicks all the same way make a small zone the mentor fades (“advanced, đừng có tập khúc này đầu tiên”). The bot has only a TARGET-only wick level (wick_microscalp, OFF, no setter) — no entry. Not built; recorded as the mentor’s advanced trade, not part of the standard setups.',
-          cite: 'D4.3 p1 @00:00–00:25, @01:23–01:50, @06:30–06:44 · owner decision B15',
+          body: 'Two or three 5m candles with wicks all the same way make a small zone the mentor fades (“advanced, đừng có tập khúc này đầu liền”). BUILT in m465 (release #60) behind the Studio switch wick_microscalp, default OFF — see "Wick microscalp" in the setups above. Still open: the 30-second / 45-second views he mentions (NT8 sends 1m bars only) and the mentor questions on the exact box height and the tolerance for one odd candle.',
+          cite: 'D4.3 p1 @00:00–00:25, @01:23–01:50, @06:30–06:44 · owner decision B15 · m465 P5',
         },
         {
           title: 'Trend-day nine-line test',
@@ -1523,15 +1531,31 @@ export const mentor: GuideSection = {
         },
         {
           label: 'Wick microscalp',
-          where: 'Strategy → Mentor mode → setups',
-          what: 'D4.3 advanced wick read: 2+ consecutive CLOSED 5m candles rejecting with wicks the SAME way (lower wicks in an uptrend, upper wicks in a downtrend) put a bounded target at their far wick — target-only, never a location. OFF by default ("đừng có tập khúc này đầu tiên").',
+          where: 'Strategy → Mentor mode → Mentor method numbers',
+          what: 'm465 (release #60) — the whole D4.3 setup: ≥2 of the last 3 closed 5m candles pulling the wick WITH the 5m trend (lower wicks long, upper wicks short; one odd candle tolerated) draw a 5.00–14.25-pt zone box, extended right until a 1m close beyond its far edge; a 1m ISB/PHL at the box arms through the ordinary paths; the target is the nearby 5m wicks (≤100 pts). Every refusal named: wick_run_too_short, wick_mixed_direction, wick_against_trend, wick_zone_broken, wick_zone_no_setup, wick_zone_wrong_side, wick_target_no_room, wick_safe_play_wait.',
           trader: 'OFF.',
-          consumer: 'kernel/mentor/mentor.go WickMicroscalpEnabled',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve → kernel/mentor/wick_zone.go wickZoneLevels / wickZoneLeave · kernel/mentor/wick_microscalp.go wickTargetLadder',
           range: 'true / false',
           systemDefault: 'OFF',
           recommended:
-            'OFF — D4.3 @00:00–03:20 advanced; the course says practise it later.',
+            'OFF — "làm ơn đừng… đừng có tập khúc này đầu liền, từ từ rập vô sau" [D4.3 @04:55–05:17]: advanced; practise it after the core setups.',
           whenToTouch: 'Only after the core setups are proven on SIM.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Wick safe play',
+          where: 'Strategy → Mentor mode → Mentor method numbers',
+          what: 'm465 (release #60) — D4.3-R20: while the wick microscalp is ON, a setup at a wick zone counts only once its reference candle CLOSED outside the box on the trade side (under a supply box for a short, over a demand box for a long); otherwise it waits (wick_safe_play_wait). Read only while wick_microscalp is ON.',
+          trader: 'OFF.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve → kernel/mentor/wick_zone.go wickZoneLeave',
+          range: 'true / false',
+          systemDefault: 'OFF',
+          recommended:
+            'OFF — "Mọi người vẫn có thể trade bình thường, là thêm một sự confirm" [D4.3 @14:07–14:27]: optional.',
+          whenToTouch:
+            'When the zone entries take too many touches that close inside the box.',
           perSession: 'No.',
         },
         {
