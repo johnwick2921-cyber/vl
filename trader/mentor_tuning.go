@@ -75,6 +75,12 @@ type mentorTuned struct {
 	NearBoxBetweenExempt bool
 	PHLFlatLow           string
 	ISBReverseTouch      string
+
+	// m466 P2 (release #61) levels-and-touches knobs (defaults = the course).
+	UnoKeyLevels       string
+	SessionOpenLevels  string
+	LevelArmLineCancel string
+	PHLPullbackLow     string
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -131,6 +137,11 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		NearBoxBetweenExempt: d.NearBoxBetweenExempt,
 		PHLFlatLow:           d.PHLFlatLow,
 		ISBReverseTouch:      d.ISBReverseTouch,
+
+		UnoKeyLevels:       d.UnoKeyLevels,
+		SessionOpenLevels:  d.SessionOpenLevels,
+		LevelArmLineCancel: d.LevelArmLineCancel,
+		PHLPullbackLow:     d.PHLPullbackLow,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -285,6 +296,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.NearBoxBetweenExempt, &out.NearBoxBetweenExempt)
 	enum(t.PHLFlatLow, &out.PHLFlatLow, mentor.PHLFlatLowNear, mentor.PHLFlatLowStrict)
 	enum(t.ISBReverseTouch, &out.ISBReverseTouch, mentor.ISBReverseTouchPair, mentor.ISBReverseTouchISBCandle)
+
+	// m466 P2 (release #61): same contract — unset = the course default, a
+	// value outside the enum fails closed to the default (tuning_bad_value).
+	enum(t.UnoKeyLevels, &out.UnoKeyLevels, mentor.UnoKeyLevelsOn, mentor.UnoKeyLevelsOff)
+	enum(t.SessionOpenLevels, &out.SessionOpenLevels, mentor.SessionOpenLevelsOn, mentor.SessionOpenLevelsOff)
+	enum(t.LevelArmLineCancel, &out.LevelArmLineCancel, mentor.LevelArmLineCancelCurrent, mentor.LevelArmLineCancelPlacement)
+	enum(t.PHLPullbackLow, &out.PHLPullbackLow, mentor.PHLPullbackLowPullback, mentor.PHLPullbackLowSignal)
 	return out
 }
 
@@ -339,6 +357,10 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.NearBoxBetweenExempt = t.NearBoxBetweenExempt
 	cfg.PHLFlatLow = t.PHLFlatLow
 	cfg.ISBReverseTouch = t.ISBReverseTouch
+	cfg.UnoKeyLevels = t.UnoKeyLevels             // m466 P2 G2
+	cfg.SessionOpenLevels = t.SessionOpenLevels   // m466 P2 G10/G11
+	cfg.LevelArmLineCancel = t.LevelArmLineCancel // m466 P2 G17
+	cfg.PHLPullbackLow = t.PHLPullbackLow         // m466 P2 G41
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

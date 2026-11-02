@@ -900,6 +900,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("near_box_between_exempt", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxBetweenExempt })
 	mentorTuningRow("phl_flat_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLFlatLow })
 	mentorTuningRow("isb_reverse_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseTouch })
+	mentorTuningRow("uno_key_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.UnoKeyLevels })
+	mentorTuningRow("session_open_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SessionOpenLevels })
+	mentorTuningRow("level_arm_line_cancel", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelArmLineCancel })
+	mentorTuningRow("phl_pullback_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLPullbackLow })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).

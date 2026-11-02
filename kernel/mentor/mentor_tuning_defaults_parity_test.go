@@ -133,6 +133,11 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"near_box_between_exempt", cfg.NearBoxBetweenExempt},
 		{"phl_flat_low", cfg.PHLFlatLow},
 		{"isb_reverse_touch", cfg.ISBReverseTouch},
+		// m466 P2 (release #61) levels-and-touches knobs.
+		{"uno_key_levels", cfg.UnoKeyLevels},
+		{"session_open_levels", cfg.SessionOpenLevels},
+		{"level_arm_line_cancel", cfg.LevelArmLineCancel},
+		{"phl_pullback_low", cfg.PHLPullbackLow},
 	}
 
 	for _, r := range rows {

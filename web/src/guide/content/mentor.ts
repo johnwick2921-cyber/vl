@@ -199,6 +199,22 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_touch',
     live: true,
   },
+  'Key level: Uno Reverse after a hold': {
+    settingId: 'risk_control.mentor_tuning.uno_key_levels',
+    live: true,
+  },
+  'Session-open wick + gap edge levels': {
+    settingId: 'risk_control.mentor_tuning.session_open_levels',
+    live: true,
+  },
+  'Line order cancel: current line price': {
+    settingId: 'risk_control.mentor_tuning.level_arm_line_cancel',
+    live: true,
+  },
+  'PHL higher low: whole pullback': {
+    settingId: 'risk_control.mentor_tuning.phl_pullback_low',
+    live: true,
+  },
   'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
     settingId: 'risk_control.mentor_tuning.day_gate_spent_pts',
@@ -435,6 +451,12 @@ export const mentor: GuideSection = {
             'Old highs/lows: ONE old high and ONE old low — the chart draws what trades',
           body: 'The bot keeps exactly one old high and one old low: the NEAREST UNBROKEN old high above price and the nearest unbroken old low below it. They are picked from ALL the 5m/15m swing pivots of the lookback (12 h of 5m, 24 h of 15m; every pivot price is a 1m wick) — release #23: the bot used to keep only the newest 3 per side BEFORE testing them, so an older unbroken high behind 3 broken ones was invisible (10-13 08:30: old low 30613.25 missing); a pivot drops out the moment a later closed 1m candle trades beyond it (a wick above an old high breaks it — the candle need not close). The candle being judged is measured against the extremes that stood BEFORE it. Either side can be empty — at a fresh high of the window there is no old high above. The panel and the chart draw exactly these two lines, never folded into a key level and never pruned: the lines you see are the lines the bot sizes, targets and builds legs from. (Before release #22 the bot used 12 raw pivots, most already broken, while the chart drew a cleaned 3–5.)',
           cite: '§6 ladder "nearest old high → EMA 34 → next level" [D3.3 p1 @04:11, 07:12] · §2.1 rule 2 [D4.1 p1 @08:05 written] · law 2 / D3.4 p1 @08:19 (a break needs no close) · kernel/mentor/eval.go swingOldExtremeLevels · kernel/mentor/level_display.go DisplayLevels',
+        },
+        {
+          title:
+            'Levels and touches (release #61): the open wick, the gap edge, the Uno flip, the line cancel, the whole pullback',
+          body: 'Five course rules from the full video read, each ON by default with a knob back to the pre-#61 behaviour (Mentor method numbers). (1) The session OPEN candle’s wick is an old high/low: the first 5m candle of the CME session (17:00–17:05 CT) — "cái râu này nó sẽ là cái đỉnh" (29,136.00, Sun 13 Sep) — joins the old-high/low candidates with no left-neighbour test; the usual unbroken test and nearest pick decide (knob session_open_levels). (2) The GAP edge is a level: when the open candle left empty space of 20 pts or more to the prior session’s last close, that last close (Friday 29,391.25 in the lesson) is drawn as a "gap edge" — a location, a target and an obstacle — until a 1m candle trades through it; the bot never trades the gap fill itself ("em không đánh theo gap") (same knob). (3) Uno Reverse: a key level that HELD today and then breaks flips its role once — the backtest from the other side is a fresh first touch and its reject arms a PHL/PLH (counter level_broken_uno); a first touch that closes through, or a second break after the flip, still makes it ISB-only for the day (knob uno_key_levels). (4) A resting order on a trendline or the EMA 34 is cancelled by a close through the line where it is NOW, not where it was when the order was placed, and a trendline that died cancels its order (level_arm_cancel_current_line / level_arm_line_gone; knob level_arm_line_cancel). (5) A PHL needs a higher low for the WHOLE pullback: a pullback candle that already went at or under the prior low refuses it (phl_pullback_lower_low, mirror plh_pullback_higher_high; knob phl_pullback_low).',
+          cite: 'G10 D3.1-R26 [D3.1 p1 @11:32–12:22] · G11 D3.1-R20/R16/R23 [D3.1 p1 @07:48–09:51] · G2 D1.3-R21 [D1.3 p1 @12:31–12:58] vs D5.2-R22 [D5.2 p1 @19:44–20:25] · G17 D2.3-R34 [D2.3 p1 @23:35–24:03] · G41 D2.2-R59 [D2.2 p3 @08:25–09:25] · kernel/mentor/session_open_levels.go · kernel/mentor/uno_key_level.go · kernel/mentor/level_arm_line.go · kernel/mentor/phl.go phlPullbackRefusal',
         },
         {
           title: 'Fold it away',
@@ -1520,6 +1542,60 @@ export const mentor: GuideSection = {
           systemDefault: 'pair',
           recommended: 'pair — D5.4 p1 @03:35–03:46.',
           whenToTouch: 'Rarely — isb_candle only to restore the pre-#60 read.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Key level: Uno Reverse after a hold',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (G2, D1.3-R21). "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest / Hỗ trợ bị phá → sẽ thành kháng cự khi backtest" (broken resistance becomes support on the backtest, and the mirror) [D1.3 p1 @12:31–12:58]; his drawing: the level 29,104.25 bounces, breaks, then is backtested from below and rejects. on (default) = a KEY level that HELD today (at least one reject visit) and then breaks — a later visit whose first candle closes through it, or a later candle of the held visit closing through it — is NOT made ISB-only: its role flips once (counter level_broken_uno, the resting order is still cancelled), and the next touch from the other side is a fresh first touch, so the backtest reject arms a PHL/PLH through every normal gate. A wrong-way FIRST visit (the level never held — "cây nến chạm đầu tiên đóng ở trên level… invalid" [D5.2 p1 @19:44–20:25]) and a second wrong-way close after the flip stay ISB-only for the day. One flip per level per session day. Moving lines, box edges and old highs/lows keep their own rules. off = the pre-#61 ISB-only on any break.',
+          trader: 'on — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (UnoKeyLevels) · kernel/mentor/uno_key_level.go unoKeyLevelBreak / unoSameVisitBreak',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — D1.3 p1 @12:31–12:58.',
+          whenToTouch:
+            'Rarely — off only to restore the pre-#61 ISB-only rule.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Session-open wick + gap edge levels',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (G10 D3.1-R26, G11 D3.1-R20). "đây là mới lúc open… cái râu này nó sẽ là cái đỉnh" (at the open, this wick will be the high — 29,136.00, Sun 13 Sep 17:00) [D3.1 p1 @11:58–12:22]; "Cái cạnh dưới của cái gap, lúc nào nó cũng sẽ là resistance… Level là resistance" (the gap’s edge is always resistance — it is a level) [@09:41–09:51], the gap marked from Friday’s last close 29,391.25 down to the Sunday first candle. on (default) = (1) the first 5m candle of the current CME session (17:00–17:05 CT, after the daily halt or a weekend) is an old high AND an old low candidate with no left-neighbour test (the fractal pivots could not see it because the Friday candle to its left is higher); the ordinary unbroken test and nearest pick decide; (2) when that candle left empty space to the prior session’s last close (gap down: its high under the last close; gap up: its low over it) of at least 20 pts (the key-level prune distance — two lines closer keep the newer one, the open wick), the far edge (the prior last close) is a level (gap_edge: a location, a target and an obstacle) until a 1m candle trades through it — a fill may take days. There is no gap-fill entry ("em không đánh theo gap", R23). off = neither.',
+          trader: 'on — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (SessionOpenLevels) · kernel/mentor/session_open_levels.go sessionOpenPivots / gapEdgeLevels',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — D3.1 p1 @09:41–12:22.',
+          whenToTouch: 'Rarely — off only to restore the pre-#61 level set.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Line order cancel: current line price',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (G17, D2.3-R34). "Mình làm gì? Mình cancel. Cancel. Chẳng làm gì khác hết" (what do we do? cancel — nothing else) [D2.3 p1 @23:35–24:03], when a later candle closes through the level. A trendline moves (~0.45 pt a minute on a typical slope), so the level of a resting order on a trendline or the EMA 34 is where the line is NOW. current_line (default) = the close-through cancel reads the trendline’s price at the checked candle’s close (the EMA 34: this minute’s line), counted level_arm_cancel_current_line when the frozen price would have kept the order; a trendline that died (5m close through) or left the set cancels its order (level_arm_line_gone). Key levels, old highs/lows, box and gap edges, the 5m trigger retest and the wick zone keep the price they were placed at. placement_price = the pre-#61 frozen placement price for every order.',
+          trader: 'current_line — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (LevelArmLineCancel) · kernel/mentor/level_arm_line.go levelArmLinePrice · eval.go levelArmCancels',
+          range: 'current_line / placement_price',
+          systemDefault: 'current_line',
+          recommended: 'current_line — D2.3 p1 @23:35–24:03.',
+          whenToTouch:
+            'Rarely — placement_price only to restore the pre-#61 read.',
+          perSession: 'No.',
+        },
+        {
+          label: 'PHL higher low: whole pullback',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (G41, D2.2-R59). "nghĩa là anh đang đi kiếm một cái lệnh có đáy cao hơn đáy trước đó" (we are looking for a trade whose low is higher than the previous low) [D2.2 p3 @08:25–09:25], compared with the lows on the left [@02:51–03:41]. pullback (default) = a PHL is refused phl_pullback_lower_low when ANY candle of the pullback — from the candle after the old high up to the signal candle — printed a low at or under the prior low (the low the leg to the old high started from); mirror for a PLH: plh_pullback_higher_high. Before #61 only the signal candle’s low was compared, so a pullback that had already broken the prior low passed once its newest candle’s low sat higher. The rolling PHL ladder keeps its own rules. signal = the pre-#61 signal-candle-only check.',
+          trader: 'pullback — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PHLPullbackLow) · kernel/mentor/phl.go phlPullbackRefusal',
+          range: 'pullback / signal',
+          systemDefault: 'pullback',
+          recommended: 'pullback — D2.2 p3 @08:25–09:25.',
+          whenToTouch: 'Rarely — signal only to restore the pre-#61 check.',
           perSession: 'No.',
         },
         {

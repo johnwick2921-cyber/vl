@@ -2143,6 +2143,27 @@ type MentorTuning struct {
 	// + ISB candle group [D5.4 p1 @03:35–03:46]; "isb_candle" — the ISB candle
 	// alone (pre-#60).
 	ISBReverseTouch string `json:"isb_reverse_touch,omitempty"`
+
+	// m466 P2 (release #61) levels-and-touches knobs. Unset = the course; the
+	// other value = the pre-#61 behaviour.
+	//
+	// G2 D1.3-R21: "on" (unset) — a key level that held today and then breaks
+	// flips its role once (Uno Reverse, level_broken_uno) and the backtest
+	// reject trades [D1.3 p1 @12:31–12:58]; "off" — ISB-only on any break.
+	UnoKeyLevels string `json:"uno_key_levels,omitempty"`
+	// G10/G11 D3.1-R26/R20: "on" (unset) — the session's first 5m candle wick is
+	// an old high/low, and an unfilled ≥20-pt gap's far edge is a level [D3.1 p1
+	// @11:58–12:22, @09:41–09:51]; "off" — neither.
+	SessionOpenLevels string `json:"session_open_levels,omitempty"`
+	// G17 D2.3-R34: "current_line" (unset) — a resting order on a trendline /
+	// EMA 34 is cancelled by a close through the line's CURRENT price, and a
+	// trendline gone from the set cancels it [D2.3 p1 @23:35–24:03];
+	// "placement_price" — the frozen placement price (pre-#61).
+	LevelArmLineCancel string `json:"level_arm_line_cancel,omitempty"`
+	// G41 D2.2-R59: "pullback" (unset) — the whole pullback's low must stay
+	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
+	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
+	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
