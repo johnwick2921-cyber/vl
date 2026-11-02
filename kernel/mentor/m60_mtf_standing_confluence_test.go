@@ -24,15 +24,16 @@ import (
 // no 1m body leaves the box), then the 1m ISB 10:20 green / 10:21 inside.
 func m60p1WE2() []market.Kline {
 	bars := m60p1Tape([][6]float64{
-		{9, 0, 28_900, 28_915, 28_895, 28_912},
-		{9, 5, 28_912, 28_928, 28_908, 28_925},
-		{9, 10, 28_925, 28_945, 28_920, 28_940},
-		{9, 15, 28_950, 29_000, 28_945, 28_995},
-		{9, 20, 28_995, 29_050, 28_990, 29_045},
-		{9, 25, 29_045, 29_085, 29_040, 29_082},
-		{9, 30, 29_086, 29_088, 29_030, 29_035},
-		{9, 35, 29_035, 29_040, 28_980, 28_985},
-		{9, 40, 28_985, 28_990, 28_945, 28_950},
+		// a steady rise into the 09:45 15m (no earlier top above the entry)
+		{9, 0, 28_800, 28_818, 28_796, 28_815},
+		{9, 5, 28_815, 28_834, 28_812, 28_830},
+		{9, 10, 28_830, 28_850, 28_826, 28_846},
+		{9, 15, 28_846, 28_866, 28_842, 28_862},
+		{9, 20, 28_862, 28_882, 28_858, 28_878},
+		{9, 25, 28_878, 28_900, 28_874, 28_896},
+		{9, 30, 28_896, 28_915, 28_892, 28_912},
+		{9, 35, 28_912, 28_930, 28_908, 28_926},
+		{9, 40, 28_926, 28_945, 28_922, 28_940},
 		// the 09:45 15m mother: O28,941 H29,060 L28,938 C29,050 (green)
 		{9, 45, 28_941, 29_000, 28_938, 28_995},
 		{9, 50, 28_995, 29_030, 28_990, 29_025},
@@ -49,6 +50,7 @@ func m60p1WE2() []market.Kline {
 	)
 }
 
+// m60p1WE2Levels: key levels far from the coil.
 func m60p1WE2Levels() []Level {
 	return []Level{
 		{Key: "K-below", Kind: KindKeyLevel, Price: 28_850},
@@ -56,41 +58,64 @@ func m60p1WE2Levels() []Level {
 	}
 }
 
-// TestM60ConfluenceSurvivesNextFiveMinCandle — D4.2-R17 / WE-2: at 10:21 the
-// standing 15m box (long, 28,985–29,079.25) and the standing 5m box (long,
-// 29,017.25–29,048.50) both agree with a 1m LONG ISB → mode C
-// (intent.Confluence). The latest closed 5m pair (10:10, 10:15) is not an
-// inside bar, so the pre-#60 read (mtf_confluence_source = last_pair) says
-// false — the mutant.
+// TestM60ConfluenceSurvivesNextFiveMinCandle — D4.2-R17 / WE-2. Part 1, the
+// real tick path on the WE-2 tape: at 10:21 the evaluator has built the 15m
+// box (long 28,985–29,079.25, the 10:00 15m inside the 09:45, CLOSED) and the
+// 5m box (long 29,017.25–29,048.50, the red 10:10 inside the green 10:05),
+// both still standing, while the latest closed 5m pair (10:10, 10:15) is no
+// inside bar. Mode C's read for a LONG entry is TRUE with the standing boxes
+// and FALSE with the pre-#60 last_pair read (the mutant). Part 2, the emit
+// path: a 1m long ISB with both boxes standing goes out with
+// intent.Confluence; last_pair → no confluence on the same ISB.
+//
+// (The WE-2 coil itself sits inside the FTGH the tape draws — the bot never
+// trades inside a box [D3.2 p1 @06:59] — so the emit half runs on the flat
+// mtfFixture, where nothing but the MTF read decides the flag.)
 func TestM60ConfluenceSurvivesNextFiveMinCandle(t *testing.T) {
-	run := func(source string) (*Evaluator, *Intent) {
-		e := m60p1Eval(t, SideLong, 28_950, SideLong, SideLong, m60p1WE2Levels())
-		e.Cfg.MTFConfluenceSource = source
-		ins := m60p1Run(e, m60p1WE2())
-		return e, m60p1ISB(ins, SideLong)
-	}
-
-	e, in := run(MTFConfluenceStandingBoxes)
+	e := m60p1Eval(t, SideLong, 28_950, SideLong, SideLong, m60p1WE2Levels())
+	bars := m60p1WE2()
+	m60p1Run(e, bars)
 	b15, b5 := e.State.ISBBox15m, e.State.ISBBox
 	if b15 == nil || b15.Provisional || b15.Dir != SideLong || b15.High != 29_079.25 || b15.Low != 28_985 || b15.AtTime != m60p1At(10, 0) {
-		t.Fatalf("precondition: the WE-2 15m box (long 28,985–29,079.25 @10:00, closed) must stand, got %+v", b15)
+		t.Fatalf("the WE-2 15m box (long 28,985–29,079.25 @10:00, closed) must stand at 10:21, got %+v", b15)
 	}
 	if b5 == nil || b5.Dir != SideLong || b5.High != 29_048.50 || b5.Low != 29_017.25 || b5.AtTime != m60p1At(10, 10) {
-		t.Fatalf("precondition: the WE-2 5m box (long 29,017.25–29,048.50 @10:10) must stand, got %+v", b5)
+		t.Fatalf("the WE-2 5m box (long 29,017.25–29,048.50 @10:10) must stand at 10:21, got %+v", b5)
 	}
-	if in == nil {
-		t.Fatalf("the WE-2 1m long ISB must emit; refusals %v", e.State.Refusals)
+	now := BarCloseInstant(bars[len(bars)-1])
+	cb5, cb15 := closedBuckets(bars, now, e.Cfg), closedBucketsTF(bars, 15, now)
+	if p, c := cb5[len(cb5)-2], cb5[len(cb5)-1]; IsISB(p, c) || c.OpenTime != m60p1At(10, 15) {
+		t.Fatalf("precondition: the latest closed 5m pair must be (10:10, 10:15) and NOT an inside bar, got %+v / %+v", p, c)
 	}
-	if !in.Confluence {
-		t.Fatalf("D4.2-R17: both standing boxes say long → mode C (Confluence) must hold, got %+v", *in)
+	if !e.mtfConfluence(SideLong, cb5, cb15) {
+		t.Fatal("D4.2-R17: both standing boxes say long → mode C must hold one 5m candle after the 5m ISB")
+	}
+	if e.mtfConfluence(SideShort, cb5, cb15) {
+		t.Fatal("a short entry against both boxes is no confluence")
+	}
+	e.Cfg.MTFConfluenceSource = MTFConfluenceLastPair
+	if e.mtfConfluence(SideLong, cb5, cb15) {
+		t.Fatal("last_pair mutant: the latest 5m pair is no inside bar → the pre-#60 read says no confluence")
 	}
 
-	e, in = run(MTFConfluenceLastPair)
-	if in == nil {
-		t.Fatalf("last_pair: the ISB itself must still emit; refusals %v", e.State.Refusals)
+	// Part 2 — the emit path stamps the flag.
+	emit := func(source string) *Intent {
+		f, fb, now := mtfFixture(t, false) // a long 1m ISB, flat 5m/15m candles
+		f.Cfg.MTFConfluenceSource = source
+		f.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: fb[0].OpenTime}
+		f.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: fb[0].OpenTime}
+		f.State.LastISBBoxAt, f.State.LastISBBoxDir = fb[0].OpenTime, SideLong
+		in := m60p1ISB(f.Tick(fb, now), SideLong)
+		if in == nil {
+			t.Fatalf("%s: the long ISB must emit; refusals %v", source, f.State.Refusals)
+		}
+		return in
 	}
-	if in.Confluence {
-		t.Fatal("last_pair mutant: the latest 5m pair (10:10, 10:15) is no inside bar → no confluence (the pre-#60 read)")
+	if in := emit(MTFConfluenceStandingBoxes); !in.Confluence {
+		t.Fatalf("standing_boxes: the emitted ISB must carry Confluence (mode C), got %+v", *in)
+	}
+	if in := emit(MTFConfluenceLastPair); in.Confluence {
+		t.Fatalf("last_pair: no closed 5m/15m ISB pair → no Confluence, got %+v", *in)
 	}
 }
 

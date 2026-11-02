@@ -101,7 +101,11 @@ func m60p1Eval(t *testing.T, trig5 Side, trigPx float64, htf, orb Side, levels [
 	e.State.Seed1HWatermark = math.MaxInt64
 	e.State.SeedLevels = levels
 	day := m60p1At(9, 0)
-	e.State.ORB = ORB{Day: dayStartCT(day), High: 28_880, Low: 28_870, Drawn: true, Escaped: orb}
+	orbHi, orbLo := 28_780.0, 28_770.0 // below the tape: an ORB escaped long
+	if orb == SideShort {
+		orbHi, orbLo = 29_210, 29_200 // above the tape: an ORB escaped short
+	}
+	e.State.ORB = ORB{Day: dayStartCT(day), High: orbHi, Low: orbLo, Drawn: true, Escaped: orb}
 	frozen := func(d Side, px float64) TriggerLine { return TriggerLine{Dir: d, Price: px, LastBucket: math.MaxInt64} }
 	htfPx := 28_800.0
 	if htf == SideShort {
@@ -122,8 +126,23 @@ func m60p1Run(e *Evaluator, bars []market.Kline) []Intent {
 		e.Tick(bars[:i+1], BarCloseInstant(bars[i]))
 	}
 	e.State.ISBArms = map[string]ISBArm{}
-	return e.Tick(bars, BarCloseInstant(bars[len(bars)-1]))
+	before := map[string]int{}
+	for k, v := range e.State.Refusals {
+		before[k] = v
+	}
+	out := e.Tick(bars, BarCloseInstant(bars[len(bars)-1]))
+	m60p1LastDelta = map[string]int{}
+	for k, v := range e.State.Refusals {
+		if v != before[k] {
+			m60p1LastDelta[k] = v - before[k]
+		}
+	}
+	return out
 }
+
+// m60p1LastDelta is the refusal delta of m60p1Run's LAST tick (diagnostics in
+// failure messages; the m60 P1 tests do not run in parallel).
+var m60p1LastDelta map[string]int
 
 func m60p1ISB(ins []Intent, side Side) *Intent {
 	for i := range ins {
@@ -201,11 +220,41 @@ func TestM60Forming15mBoxRefusesCounterISB(t *testing.T) {
 		t.Fatalf("a provisional box must refuse under its _forming name only; refusals %v", e.State.Refusals)
 	}
 
-	// Long: allowed at the same tick.
+	// Long: allowed at the same tick — it passes every ISB gate, the 15m ones
+	// included. (On this tape the WE-1 range has drawn an FTGH 29,005–29,026
+	// around the coil, so the intent is then dropped by the box ban "never trade
+	// inside the box" [D3.2 p1 @06:59] — a different rule, downstream; the emit
+	// itself is pinned on the flat fixture below.)
 	e = m60p1Eval(t, SideLong, 28_980, SideLong, SideLong, m60p1Levels())
 	ins = m60p1Run(e, m60p1Pair(m60p1WE1(28_998), SideLong))
 	if in := m60p1ISB(ins, SideLong); in == nil {
-		t.Fatalf("a long 1m ISB with the forming long 15m box must be allowed; intents %+v refusals %v", ins, e.State.Refusals)
+		for k := range m60p1LastDelta {
+			if k != "inside_any_box" {
+				t.Fatalf("a long 1m ISB with the forming long 15m box must pass the ISB gates; last-tick refusals %v", m60p1LastDelta)
+			}
+		}
+	}
+	if e.State.ISBBox15m == nil || !e.State.ISBBox15m.Provisional {
+		t.Fatalf("the provisional box must still stand for the long case, got %+v", e.State.ISBBox15m)
+	}
+	// The emit path on the flat fixture: a provisional LONG 15m box + a long 5m
+	// box → the long ISB goes out; a SHORT ISB → isb_15m_box_dir_forming.
+	f, fb, now := mtfFixture(t, false)
+	// the forming 15m bucket of the fixture's last bar (09:41) opened at 09:30
+	f.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: fb[30].OpenTime, Provisional: true}
+	f.State.LastForming15mAt = fb[30].OpenTime
+	f.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: fb[0].OpenTime}
+	if in := m60p1ISB(f.Tick(fb, now), SideLong); in == nil {
+		t.Fatalf("flat fixture: the long ISB must emit with the forming long box; refusals %v", f.State.Refusals)
+	} else if in.Confluence {
+		t.Fatalf("a PROVISIONAL 15m box never counts for mode C, got %+v", *in)
+	}
+	f, fb, now = mtfFixture(t, true)
+	// the forming 15m bucket of the fixture's last bar (09:41) opened at 09:30
+	f.State.ISBBox15m = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: fb[30].OpenTime, Provisional: true}
+	f.State.LastForming15mAt = fb[30].OpenTime
+	if in := m60p1ISB(f.Tick(fb, now), SideShort); in != nil || f.State.Refusals["isb_15m_box_dir_forming"] == 0 {
+		t.Fatalf("flat fixture: a short ISB against the forming long box → isb_15m_box_dir_forming; got %+v refusals %v", in, f.State.Refusals)
 	}
 
 	// The 2nd 5m closes ABOVE the mother high: the forming body is outside → no box.

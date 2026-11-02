@@ -31,7 +31,7 @@ func m60p1Crossing() []market.Kline {
 	})
 	return append(bars,
 		m60p1K(m60p1At(9, 45), 29_004, 29_008, 28_996, 28_998), // red mother
-		m60p1K(m60p1At(9, 46), 28_999, 29_003, 28_997, 29_001), // inside → 1m ISB short
+		m60p1K(m60p1At(9, 46), 28_999, 29_000, 28_998, 28_999.5), // inside → 1m ISB short
 	)
 }
 
@@ -83,7 +83,7 @@ func TestM60TriggerEscalatesOnCrossingISBs(t *testing.T) {
 	e.Cfg.TriggerEscalation = false
 	ins = m60p1Run(e, bars)
 	if in := m60p1ISB(ins, SideShort); in == nil {
-		t.Fatalf("trigger_escalation OFF: today's verdict lets the short ISB trade; refusals %v", e.State.Refusals)
+		t.Fatalf("trigger_escalation OFF: today's verdict lets the short ISB trade; last-tick refusals %v", m60p1LastDelta)
 	}
 	for _, k := range []string{"isb_trigger_side_15m", "isb_trigger_side_mismatch_15m", "isb_trigger_side_30m", "isb_trigger_side_mismatch_30m"} {
 		if e.State.Refusals[k] != 0 {
