@@ -224,12 +224,16 @@ func TestM60Forming15mBoxRefusesCounterISB(t *testing.T) {
 	// included. (On this tape the WE-1 range has drawn an FTGH 29,005–29,026
 	// around the coil, so the intent is then dropped by the box ban "never trade
 	// inside the box" [D3.2 p1 @06:59] — a different rule, downstream; the emit
-	// itself is pinned on the flat fixture below.)
+	// itself is pinned on the flat fixture below.) Release #60 merge: with
+	// m465 P3's E6 rule (D3.2-R29, box.go nearBoxRefusal rule 1) the long
+	// entry at ~29,018 sits INSIDE that FTGH (resistance for a long) and is
+	// dropped first as near_box_inside_opposing — the same downstream "inside
+	// the box" family, not a 15m gate, so it is tolerated here too.
 	e = m60p1Eval(t, SideLong, 28_980, SideLong, SideLong, m60p1Levels())
 	ins = m60p1Run(e, m60p1Pair(m60p1WE1(28_998), SideLong))
 	if in := m60p1ISB(ins, SideLong); in == nil {
 		for k := range m60p1LastDelta {
-			if k != "inside_any_box" {
+			if k != "inside_any_box" && k != "near_box_inside_opposing" {
 				t.Fatalf("a long 1m ISB with the forming long 15m box must pass the ISB gates; last-tick refusals %v", m60p1LastDelta)
 			}
 		}
