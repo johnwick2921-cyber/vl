@@ -72,6 +72,26 @@ describe('mentor guide knob honesty', () => {
     expect(card?.systemDefault).toBe(m![1])
   })
 
+  // m465 P2 (release #60, D4.2-R27): the ISB loss box card's default is the
+  // kernel DefaultConfig value, read — never retyped.
+  it('the ISB loss box card defaults to the kernel ISBLossBox (m465, range)', () => {
+    const goCfg = readFileSync(
+      resolve(process.cwd(), '..', 'kernel/mentor/mentor.go'),
+      'utf8'
+    )
+    const goLim = readFileSync(
+      resolve(process.cwd(), '..', 'kernel/mentor/limits.go'),
+      'utf8'
+    )
+    const c = /ISBLossBox:\s+(\w+),/.exec(goCfg)
+    expect(c).not.toBeNull()
+    const v = new RegExp(c![1] + '\\s+=\\s+"(\\w+)"').exec(goLim)
+    expect(v).not.toBeNull()
+    const card = mentorKnobs.find((k) => k.settingId === 'mentor_isb_loss_box')
+    expect(card?.live).toBe(true)
+    expect(card?.systemDefault).toBe(v![1])
+  })
+
   it('has no card for the retired ISBStopMinPts field (no runtime reader)', () => {
     expect(
       mentorKnobs.find((k) => k.settingId === 'Config.ISBStopMinPts')

@@ -176,6 +176,15 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).not.toContain('whose colour matches the side')
   })
 
+  // m465 P2 (release #60): an ISB loss boxes the whole 5m range [D4.2-R27].
+  it('describes the ISB loss range box (m465 P2, D4.2-R27/R28/R30)', () => {
+    expect(all).toContain('mentor_isb_loss_box')
+    expect(all).toContain('loss_range_blocked')
+    expect(all).toContain('loss_range_seed_only')
+    expect(all).toContain('em đợi cho cái điểm entry nằm ở vòng vòng bên ngoài')
+    expect(all).toContain('28,880.50–28,934.00')
+  })
+
   // release #59 fix round: one setup per level (an open swing refuses the
   // inside bar) and the PHL rays are the drawn 0.50 / 0.50 [D2.2-R10].
   it('names the open-swing inside-bar refusal and the drawn PHL rays', () => {
