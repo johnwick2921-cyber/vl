@@ -1602,7 +1602,7 @@ func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur mark
 // @21:53–23:08]; between two boxes is exempt (row 25). W11 B11: the PHL/PLH leg
 // is our extension of the course's ISB-only example (NearBoxRoomPHL).
 func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRange float64) bool {
-	refuse, _ := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange)
+	refuse, _ := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange, cfg.NearBoxBetweenExempt)
 	return cfg.NearBoxRoomPHL && refuse
 }
 
@@ -2482,7 +2482,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// A10: day off OR not-measured — no intraday mentor
 						// entries today (named per setup).
 						e.refuse("isb_" + r)
-					} else if refuse, _ := nearBoxRefusal(boxes, chosen.Price, side, e.Cfg.NearBoxRoomMultiple, abs(chosen.Price-chosen.Stop)); refuse {
+					} else if refuse, _ := nearBoxRefusal(boxes, chosen.Price, side, e.Cfg.NearBoxRoomMultiple, abs(chosen.Price-chosen.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
 						// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: the entry is
 						// too close to the nearest box edge in the trade
 						// direction — "sát box" — skip it.
@@ -2661,7 +2661,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// defensive (R7 already builds in.Side == Trigger.Dir once the
 				// direction is set), kept for parity with the normal ISB.
 				e.refuse("isbrev_trigger_side_mismatch")
-			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop)); refuse {
+			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
 				e.refuse("near_box")
 			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
 				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —

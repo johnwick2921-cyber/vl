@@ -877,7 +877,7 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 // wholly below (Top < price). A price inside a single box is NOT exempt. No
 // edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
 // disables the check.
-func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64) (refuse bool, why string) {
+func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64, betweenExempt bool) (refuse bool, why string) {
 	if roomMultiple <= 0 || risk <= 0 {
 		return false, ""
 	}
@@ -914,7 +914,7 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 			}
 		}
 	}
-	if wholeAbove && wholeBelow {
+	if betweenExempt && wholeAbove && wholeBelow {
 		return false, "" // row 25: between two DIFFERENT boxes — exempt
 	}
 	if !found {

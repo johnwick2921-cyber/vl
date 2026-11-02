@@ -909,3 +909,8 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bar
 	}
 	return out, refused
 }
+
+// TrendlineLevelsTouch — RED scaffold (m465 P3).
+func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string) {
+	return TrendlineLevels(trendlines, boxes, respected, bars)
+}

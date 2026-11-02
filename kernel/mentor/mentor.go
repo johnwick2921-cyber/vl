@@ -402,6 +402,38 @@ type Config struct {
 	// the mentor gave no number.
 	NearBoxRoomPHL bool
 
+	// m465 P3 (release #60) structure-fidelity knobs. Each default is the
+	// course; the other value is the pre-#60 behaviour, kept for the owner.
+	//
+	// TrendlineEntryTouch — D2.3-R7: "thà nó về một lần, rồi nó test, rồi nó
+	// hold rồi, là lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô" [D2.3
+	// p1 @02:34–02:47, 03:03–03:16]; D3.2-R34 "test lần thứ 3 thì mới valid".
+	// "fourth" (default): an intraday line is NOT a location on the candle of
+	// its 3rd touch (the test) — refused trendline_third_touch_is_test — and
+	// becomes one from the next candle, so the entry comes on a later touch.
+	// "third": the pre-#60 behaviour (the line arms on its 3rd-touch candle).
+	TrendlineEntryTouch string
+	// NearBoxBetweenExempt — D3.2-R29/R30: the mentor refused the short ISB
+	// sitting on the FTGL box (E6) although an FTGH box stood above it, and
+	// allowed the ISB "giữa 2 box… nó đâu có làm gì đâu" because nothing was
+	// near it [D3.2 p1 @22:12–24:41]. false (default): no blanket exemption —
+	// the middle case passes on its own room; true: the pre-#60 exemption
+	// (one box wholly above AND one wholly below → never near).
+	NearBoxBetweenExempt bool
+	// PHLFlatLow — D2.2-R64/R65: a PHL needs a low HIGHER than the previous
+	// low; a flat low ("ngang phè") is a FAILURE TO GO LOWER, not a PHL [D2.2
+	// p3 @07:44–10:15] (mirror: a flat high is an FTGH, not a PLH [@14:03–14:22]).
+	// "flat_near" (default): a low within the m428 R2 "same price" distance
+	// (flatNearPts) of the prior low is refused phl_flat_low_is_ftgl
+	// (plh_flat_high_is_ftgh); "strict": the pre-#60 strict comparison only.
+	PHLFlatLow string
+	// ISBReverseTouch — D5.4-R7: "nó không cần đụng, nó cứ đụng vòng vòng ngay
+	// EMA 9 là được … không quan trọng là nó đụng ngay tại EMA 9 hay là nó lố
+	// EMA 9" [D5.4 p1 @03:35–03:46]. "pair" (default): the EMA 9 is touched
+	// when it sits inside the mother + ISB candle group's range; "isb_candle":
+	// the pre-#60 read (inside the ISB candle's own range only).
+	ISBReverseTouch string
+
 	// ISB size-cut definitions — release #52 W11 B27. The course says reduce
 	// size for an ISB "ngay đỉnh/đáy cũ" and "in range" and gives NO distance or
 	// definition [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19]. Both
@@ -667,17 +699,21 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
-		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:         true,  // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
-		ISBOldExtremePts:       2,     // B27 [ours]: "at the old extreme" = ± 2 pts
-		ISBInRangeGapPts:       0,     // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
-		ISBStackCancelCandle2m: 4,     // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    0,     // B8: tiny-stop exception OFF (the mentor gave no number)
-		EveningSlowPts:         100,   // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
-		EveningSlowFromHour:    15,    // B10 [ours]: the RTH close
-		EveningSlowWindowMin:   0,     // B10 [ours]: cumulative since the start hour
-		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false,                // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
+		NearBoxRoomMultiple:    2,                    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true,                 // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxBetweenExempt:   false,                // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
+		TrendlineEntryTouch:    TrendlineEntryFourth, // m465 D2.3-R7: 3rd touch = the test, enter on a later touch
+		PHLFlatLow:             PHLFlatLowNear,       // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
+		ISBReverseTouch:        ISBReverseTouchPair,  // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
+		ISBOldExtremePts:       2,                    // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,                    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,                    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    0,                    // B8: tiny-stop exception OFF (the mentor gave no number)
+		EveningSlowPts:         100,                  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,                   // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,                    // B10 [ours]: cumulative since the start hour
+		LossDeparturePts:       0,                    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
@@ -737,6 +773,14 @@ const (
 	EmaRelockUntilZoneExit = "until_zone_exit"
 	D43TrendTriggerLine    = "trigger_line"
 	D43TrendStructure      = "structure"
+
+	// m465 P3 (release #60) knob values.
+	TrendlineEntryFourth     = "fourth"
+	TrendlineEntryThird      = "third"
+	PHLFlatLowNear           = "flat_near"
+	PHLFlatLowStrict         = "strict"
+	ISBReverseTouchPair      = "pair"
+	ISBReverseTouchISBCandle = "isb_candle"
 )
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is

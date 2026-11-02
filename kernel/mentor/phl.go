@@ -1,5 +1,7 @@
 package mentor
 
+import "vl/market"
+
 // PHL / PLH [§2.2] — R2 mechanics, verbatim [D2.2 p1 @ 19:34–19:58, 23:22]:
 //
 //   - PHL = LONG: in an uptrend price pulls back; a buy stop sits at the
@@ -268,4 +270,9 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 		return in, false, why
 	}
 	return capped, true, ""
+}
+
+// phlFlatExtremeRefusal — RED scaffold (m465 P3).
+func phlFlatExtremeRefusal(cfg Config, side Side, ref market.Kline, priorSwing, near float64) string {
+	return ""
 }
