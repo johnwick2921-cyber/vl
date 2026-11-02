@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel"
@@ -988,24 +989,46 @@ func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Inte
 // [D3.2 p2 @08:34–08:55; D2.2 p3 @14:03–16:03 "chỉ được đánh insaba"].
 //
 // m466 G37 (D3.2-R40 [D3.2 p2 @07:50–09:14] + the Uno flip D1.3-R21 [D1.3 p1
-// @12:31–12:58] "Kháng cự bị phá → hỗ trợ khi backtest"): the role is the
-// box's EFFECTIVE one (boxEffectiveKind) — an FTGH that escaped up is a FLOOR,
-// an FTGL that escaped down is a CEILING — the same role the return/reject
-// paths read. Before #61 it read b.Kind, so a flipped box kept its old role
-// here. Bug fix, no knob.
+// @12:31–12:58] "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest"): a box's
+// role is the side of price it sits on — a box wholly BELOW price is the floor
+// (an FTGH that escaped up is support on the backtest), a box wholly ABOVE is
+// the ceiling (an FTGL that escaped down is resistance). Before #61 it read
+// b.Kind, so a flipped box kept its old role here. The sticky Box.Flipped flag
+// (boxEffectiveKind) is NOT used: it never un-flips, so a flipped FTGH that
+// price fell back under would lose its ceiling role — the real 10-13 08:44
+// tape (FTGL 30,591.25–30,754.50 below, flipped FTGH 30,894.25–30,901.75
+// above, close 30,774.25) is mid-range by both reads of the course and only
+// the side-of-price read keeps it [A, m61 replay]. Bug fix, no knob
+// (midRangeLegacyRole is the test-only pre-#61 hook for the identity pins).
 func midRangeBoxed(boxes []Box, price float64) bool {
+	legacy := midRangeLegacyRole.Load()
 	var floor, ceil bool
 	for _, b := range boxes {
-		k := boxEffectiveKind(b)
-		if k == FTGL && b.Top < price {
+		if legacy {
+			if b.Kind == FTGL && b.Top < price {
+				floor = true
+			}
+			if b.Kind == FTGH && b.Bottom > price {
+				ceil = true
+			}
+			continue
+		}
+		if b.Top < price {
 			floor = true
 		}
-		if k == FTGH && b.Bottom > price {
+		if b.Bottom > price {
 			ceil = true
 		}
 	}
 	return floor && ceil
 }
+
+// midRangeLegacyRole switches midRangeBoxed back to the pre-#61 b.Kind read.
+// Always false in production; the pre-#61 identity pins (m61_p1_boxes_test.go,
+// m462_newsonly_identity_test.go) switch it on to prove every OTHER m466 P1
+// change is undone by its knob, tick for tick. An atomic.Bool like
+// nearBoxInsideOpposingOff (a test hook read by every evaluator must not race).
+var midRangeLegacyRole atomic.Bool
 
 // inNarrowRange (item 21, D4.1-06) reports whether price sits between two KEY
 // levels closer than minPts (the ping-pong minimum, 50) — a too-small range

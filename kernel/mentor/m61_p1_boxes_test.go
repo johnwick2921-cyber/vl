@@ -1,6 +1,10 @@
 package mentor
 
 import (
+	"bufio"
+	"compress/gzip"
+	"os"
+	"strings"
 	"testing"
 
 	"vl/market"
@@ -289,6 +293,14 @@ func TestM61BreakLocksCounterSetups(t *testing.T) {
 	if out := e.courseRangeFilter([]Intent{m61p1Entry(SideShort, 29_465)}, nil); !m61p1Has(out, SideShort) {
 		t.Fatal("after the failed break the short passes again")
 	}
+	// A one-candle reversal straight THROUGH the box (close below 29,463) is
+	// the same failed break.
+	e.advanceBreakLock(b2, BarCloseInstant(b2), ev)
+	thru := m60p1K(m60p1At(10, 3), 29_484, 29_486, 29_440, 29_450)
+	e.advanceBreakLock(thru, BarCloseInstant(thru), nil)
+	if e.State.BreakLock != nil {
+		t.Fatalf("a close through the box to the far side also fails the up-break, got %+v", e.State.BreakLock)
+	}
 
 	// An opposite break replaces the lock; the day roll clears it.
 	e.advanceBreakLock(b2, BarCloseInstant(b2), ev)
@@ -449,6 +461,24 @@ func TestM61MidRangeUsesFlippedRole(t *testing.T) {
 	if name, _ := e.phlLocationBan(Level{Key: "k", Kind: KindKeyLevel, Price: 29_420}, SideLong, 29_420, cur, nil, boxes); name != "phl_mid_range_boxed" {
 		t.Fatalf("the PHL between the flipped floor and the ceiling must be phl_mid_range_boxed, got %q", name)
 	}
+	// The sticky flip: the real 10-13 08:44 tape — FTGL 30,591.25–30,754.50
+	// below, an FTGH 30,894.25–30,901.75 that once escaped UP (Flipped) and
+	// that price has since fallen back under (close 30,774.25). The box above
+	// is the ceiling by the side of price, so this is still mid-range (the
+	// pre-#61 b.Kind read said so too; a boxEffectiveKind read would not).
+	real1013 := []Box{
+		{Kind: FTGL, Top: 30_754.50, Bottom: 30_591.25, Key: "ftgl:30754.50:30591.25"},
+		{Kind: FTGH, Top: 30_901.75, Bottom: 30_894.25, Flipped: true, Key: "ftgh:30901.75:30894.25"},
+	}
+	if !midRangeBoxed(real1013, 30_774.25) {
+		t.Fatal("10-13 08:44: price between the FTGL below and the (flipped) FTGH above is mid-range")
+	}
+	// The pre-#61 hook reproduces the old read (the identity pins use it).
+	midRangeLegacyRole.Store(true)
+	defer midRangeLegacyRole.Store(false)
+	if midRangeBoxed(boxes, 29_420) {
+		t.Fatal("legacy hook: the pre-#61 b.Kind read must say no mid-range here")
+	}
 }
 
 // TestM61MidRangeTradesWithRejection — G43 D2.2-R71 [D2.2 p3 @14:28–15:58]:
@@ -497,5 +527,93 @@ func TestM61MidRangeTradesWithRejection(t *testing.T) {
 		if out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_420)}, boxes); !m61p1Has(out, SideLong) {
 			t.Fatal("after the FTGL touch the long passes")
 		}
+	}
+}
+
+// TestM61BreakLockRefusesRollingRungAfterFiveMinBreakDown — G21 D4.1-R31/R33
+// meets the D2.2 rolling ladder. The m464 worked-buy tape as first written
+// interpolated a 10:05 5m candle that is an inside bar of the 10:00 one (5m box
+// 29,410.00–29,433.25, long); the 10:11 pullback CLOSES 29,400 below it — a
+// break DOWN ("break DOWN → inside bar short / PLH" [D4.1 p1 @18:29–20:33]) —
+// so the 10:14 buy rung is refused break_counter_setup until a close back at
+// or above 29,410. The m464 pins now open the interpolated 10:05 candle above
+// the 10:00 high (no 5m inside bar, as on the lesson's 1m chart); this pin
+// keeps the original interpolation. Knob off → the rung places (today).
+func TestM61BreakLockRefusesRollingRungAfterFiveMinBreakDown(t *testing.T) {
+	for _, on := range []bool{true, false} {
+		bars := m464CourseTape()
+		bars[m464Idx(10, 5)].Open, bars[m464Idx(10, 5)].Low = 29_424, 29_420 // the original interpolation
+		e := m464Evaluator(SideLong, Level{Key: "old-high:29433.25", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.25}, bars[m464Idx(10, 7)].OpenTime)
+		e.Cfg.BreakDirectionLock = on
+		steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
+		last := steps[len(steps)-1]
+		if on {
+			if len(last.places) != 0 || e.State.Refusals["break_counter_setup"] == 0 {
+				t.Fatalf("knob on: the 10:14 buy rung after the 5m box broke DOWN must be refused break_counter_setup; places %+v refusals %v", last.places, e.State.Refusals)
+			}
+			if l := e.State.BreakLock; l == nil || l.Side != SideShort || l.Src != "isb_5m" || l.Lo != 29_410 {
+				t.Fatalf("knob on: want the short isb_5m lock from 29,410, got %+v", l)
+			}
+		} else if len(last.places) != 1 {
+			t.Fatalf("knob off: the 10:14 rung places as before, steps %+v", steps)
+		}
+	}
+}
+
+// ── the knob-honesty proof ──────────────────────────────────────────────────
+
+// m466P1PreValues sets every m466 P1 knob to its pre-#61 value (the identity
+// pins chain it after m465PreValues; G37 has no knob — its test-only hook
+// midRangeLegacyRole is set by the caller).
+func m466P1PreValues(cfg *Config) {
+	cfg.ISBBoxEscapeMode = ISBBoxEscapeBody
+	cfg.FiveMinBoxSource = FiveMinBoxFirst
+	cfg.BreakDirectionLock = false
+	cfg.SmallRangeGuard = false
+	cfg.MidRangeRejectSide = false
+}
+
+const m466Pre61GoldenPath = "testdata/m466_pre61_tick_identity.golden.gz"
+
+// TestM61PreValuesReproduceThePre61Golden — every m466 P1 knob at its pre-#61
+// value (+ the G37 legacy hook) reproduces the #60 m434 golden (45053f78a,
+// saved gzipped before the regeneration) byte for byte — intents, state,
+// notes, levels and trendlines on every tick of the four real-tape cases. So
+// each behaviour change of this package is exactly its knob (G37: its hook).
+func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
+	raw, err := os.Open(m466Pre61GoldenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	gz, err := gzip.NewReader(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := map[string][]string{}
+	sc := bufio.NewScanner(gz)
+	for sc.Scan() {
+		ln := sc.Text()
+		name := strings.SplitN(ln, " ", 2)[0]
+		want[name] = append(want[name], ln)
+	}
+	midRangeLegacyRole.Store(true)
+	defer midRangeLegacyRole.Store(false)
+	for _, c := range m434Cases() {
+		c := c
+		base := c.cfg
+		c.cfg = func() Config { cfg := base(); m466P1PreValues(&cfg); return cfg }
+		t.Run(c.name, func(t *testing.T) {
+			got := m434Digest(t, c)
+			w := want[c.name]
+			if len(got) != len(w) || len(w) == 0 {
+				t.Fatalf("%s: %d ticks, the pre-#61 golden has %d", c.name, len(got), len(w))
+			}
+			for i := range got {
+				if got[i] != w[i] {
+					t.Fatalf("%s: pre-#61 knob values diverge from the #60 golden at row %d\n got  %s\n want %s", c.name, i, got[i], w[i])
+				}
+			}
+		})
 	}
 }

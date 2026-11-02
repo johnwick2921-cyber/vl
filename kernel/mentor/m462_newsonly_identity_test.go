@@ -96,6 +96,8 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			// still proves every other m465 change is undone by its knob.
 			nearBoxInsideOpposingOff.Store(true)
 			defer nearBoxInsideOpposingOff.Store(false)
+			midRangeLegacyRole.Store(true) // m466 G37 (#61, no knob): the pre-#61 b.Kind mid-range read
+			defer midRangeLegacyRole.Store(false)
 			bars := c.tape(t)
 			from := c.from
 			if from < 0 {
@@ -114,6 +116,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			cfg.ISBLossBox = ISBLossBoxBand
 			m465PreValues(&cfg) // m465 (#60): the pre-#60 knob values — this golden predates them
 			m462PreM465Knobs(&cfg)
+			m466P1PreValues(&cfg) // m466 P1 (#61): the pre-#61 knob values — this golden predates them
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {

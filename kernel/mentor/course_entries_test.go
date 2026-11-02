@@ -118,14 +118,16 @@ func TestCE2ConflictHoldsUntilBothBoxesEscape(t *testing.T) {
 
 // CE-5 (a) — "cái thân nến… nằm bên ngoài mà cái râu nến nằm bên trong cái box
 // ok… Cái đó là at least" [D4.1 p1 @20:52–21:02]. The fixture's last 1m candle
-// OPENS inside the 5m box (102 < 103.5) and CLOSES out (104): body (default)
-// keeps the box; close deletes it.
+// OPENS inside the 5m box (102 < 103.5) and CLOSES out (104): body keeps the
+// box; close deletes it. m466 G20/G49 (release #61): the DEFAULT is now close
+// — "nó đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03] is the
+// minimum, and the PHL/PLH 5m-box ban already reads the close.
 // MUTANT: route ISBBoxEscapeWith to ISBBoxEscape for "body" → RED.
 func TestCE5ISBBoxEscapeIsBody(t *testing.T) {
 	for _, tc := range []struct {
 		mode      string
 		wantStand bool
-	}{{"", true}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
+	}{{"", false}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
 		e, bars, now := mtfFixture(t, false)
 		if tc.mode != "" {
 			e.Cfg.ISBBoxEscapeMode = tc.mode

@@ -27,8 +27,10 @@ import (
 //     break_counter_setup (named, counted). The swing (§8) runs its own
 //     machine and is exempt. The break candle itself is never an entry (a
 //     break is not a setup — boxBanFilter, unchanged).
-//   - CLEARED by a later closed 1m candle that CLOSES back inside [Lo, Hi]
-//     (the failed break, counted break_lock_failed), by an opposite break
+//   - CLEARED by a later closed 1m candle that CLOSES back inside [Lo, Hi] —
+//     or through it to the far side (breakFailed) — the failed break of
+//     D4.1-R30 [D4.1 p1 @17:43–18:29] "bull flag đi lên xong bắn ngược xuống, cũng
+//     như không" (counted break_lock_failed), by an opposite break
 //     (the lock flips, counted break_lock_flipped), or at the 17:00 CT roll.
 //
 // Knob risk_control.mentor_tuning.mentor_break_direction_lock (default ON);
@@ -108,10 +110,10 @@ func (e *Evaluator) advanceBreakLock(cur market.Kline, now int64, events []break
 		e.State.BreakLock = nil
 		e.count("break_lock_day_roll")
 	}
-	if l := e.State.BreakLock; l != nil && cur.OpenTime > l.At && cur.Close >= l.Lo && cur.Close <= l.Hi {
+	if l := e.State.BreakLock; l != nil && cur.OpenTime > l.At && breakFailed(l, cur.Close) {
 		e.State.BreakLock = nil
 		e.count("break_lock_failed")
-		e.note("break lock %s (%s %.2f–%.2f) cleared: the 1m close %.2f at %s CT is back inside — the break failed [D4.1-R30]",
+		e.note("break lock %s (%s %.2f–%.2f) cleared: the 1m close %.2f at %s CT is back through the broken edge — the break failed [D4.1-R30 p1 @17:43–18:29]",
 			l.Side, l.Src, l.Lo, l.Hi, cur.Close, swingCT(cur.OpenTime))
 	}
 	for _, ev := range events {
@@ -129,6 +131,16 @@ func (e *Evaluator) advanceBreakLock(cur market.Kline, now int64, events []break
 				ev.Side, ev.Src, ev.Lo, ev.Hi, cur.Close, swingCT(cur.OpenTime), ev.Side)
 		}
 	}
+}
+
+// breakFailed reports whether a 1m close undid the break: back inside the
+// broken box — or straight through it to the far side (a one-candle reversal
+// leaves the break just as failed) — i.e. on the inner side of the broken edge.
+func breakFailed(l *BreakLock, close float64) bool {
+	if l.Side == SideLong {
+		return close <= l.Hi
+	}
+	return close >= l.Lo
 }
 
 // courseRangeFilter applies the three m466 P1 range rules to every intraday

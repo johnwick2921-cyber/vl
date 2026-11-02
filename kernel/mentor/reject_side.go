@@ -12,26 +12,30 @@ import "vl/market"
 //
 // Pinned definition (triage-61): the MOST RECENT box-edge event decides.
 //
-//   - FTGH reject: a closed 1m candle with High >= the ceiling's bottom and
-//     Close < it (the box's EFFECTIVE role, boxEffectiveKind — a flipped FTGL
-//     is a ceiling) → the rejection points SHORT: while price sits between
-//     the floor and the ceiling (midRangeBoxed, G37-fixed) a LONG entry is
+//   - Ceiling reject: a closed 1m candle with High >= a ceiling box's bottom
+//     and Close < it → the rejection points SHORT: while the entry sits
+//     between the floor and the ceiling (midRangeBoxed, G37) a LONG entry is
 //     refused mid_range_against_rejection (break_lock.go courseRangeFilter).
-//   - It ends when a LATER candle touches the floor's top (Low <= top): the
-//     move the rejection called has arrived. Mirror for an FTGL reject (Low
-//     <= the floor's top, Close above) → SHORT entries refused until a candle
-//     reaches the ceiling's bottom.
-//   - A new reject of the other edge replaces it; a reject whose box is no
-//     longer live (the 17:00 CT roll, a box retired) is dropped.
+//     The box is a ceiling by its EFFECTIVE role (boxEffectiveKind — an FTGL
+//     that escaped down is resistance) or because the candle came at it from
+//     below (Open under the bottom — the side-of-price role of G37).
+//   - It ends when a LATER candle reaches a box below the rejected one (Low <=
+//     that box's top): the move the rejection called has arrived. Mirror for a
+//     floor reject (Low <= the floor's top, Close above) → SHORT entries
+//     refused until a candle reaches a box above it (High >= its bottom).
+//   - A new reject replaces it; a reject whose box is no longer live (the
+//     17:00 CT roll, a box retired) is dropped.
 //
 // Knob risk_control.mentor_tuning.mentor_mid_range_reject_side (default ON);
 // OFF never builds the state.
 
 // MidRangeReject is the standing box-edge rejection.
 type MidRangeReject struct {
-	Side   Side   `json:"side"`    // the side the rejection points: short after a ceiling reject
-	At     int64  `json:"at"`      // the rejecting 1m candle's OpenTime
-	BoxKey string `json:"box_key"` // the rejected box
+	Side   Side    `json:"side"`    // the side the rejection points: short after a ceiling reject
+	At     int64   `json:"at"`      // the rejecting 1m candle's OpenTime
+	BoxKey string  `json:"box_key"` // the rejected box
+	Lo     float64 `json:"lo"`      // the rejected box's bottom
+	Hi     float64 `json:"hi"`      // the rejected box's top
 }
 
 // advanceMidRangeReject steps the rejection on the closed 1m candle cur.
@@ -51,22 +55,19 @@ func (e *Evaluator) advanceMidRangeReject(cur market.Kline, boxes []Box) {
 		switch {
 		case !live:
 			e.State.MidRangeReject = nil
-		case cur.OpenTime > r.At && rejectReachedOtherEdge(r.Side, cur, boxes):
+		case cur.OpenTime > r.At && rejectReachedOtherEdge(r, cur, boxes):
 			e.State.MidRangeReject = nil
 			e.count("mid_range_reject_done")
 		}
 	}
 	for _, b := range boxes {
 		var side Side
-		switch boxEffectiveKind(b) {
-		case FTGH:
-			if cur.High >= b.Bottom && cur.Close < b.Bottom {
-				side = SideShort
-			}
-		case FTGL:
-			if cur.Low <= b.Top && cur.Close > b.Top {
-				side = SideLong
-			}
+		k := boxEffectiveKind(b)
+		switch {
+		case cur.High >= b.Bottom && cur.Close < b.Bottom && (k == FTGH || cur.Open < b.Bottom):
+			side = SideShort
+		case cur.Low <= b.Top && cur.Close > b.Top && (k == FTGL || cur.Open > b.Top):
+			side = SideLong
 		}
 		if side == "" {
 			continue
@@ -74,20 +75,22 @@ func (e *Evaluator) advanceMidRangeReject(cur market.Kline, boxes []Box) {
 		if r := e.State.MidRangeReject; r == nil || r.Side != side || r.BoxKey != b.Key {
 			e.count("mid_range_reject_" + string(side))
 		}
-		e.State.MidRangeReject = &MidRangeReject{Side: side, At: cur.OpenTime, BoxKey: b.Key}
+		e.State.MidRangeReject = &MidRangeReject{Side: side, At: cur.OpenTime, BoxKey: b.Key, Lo: b.Bottom, Hi: b.Top}
 	}
 }
 
-// rejectReachedOtherEdge reports whether cur reached the edge the rejection
-// pointed at: a short rejection ends at a floor's top, a long one at a
-// ceiling's bottom.
-func rejectReachedOtherEdge(side Side, cur market.Kline, boxes []Box) bool {
+// rejectReachedOtherEdge reports whether cur reached the box the rejection
+// pointed at: a short (ceiling) rejection ends at the top of a box below the
+// rejected one, a long (floor) rejection at the bottom of a box above it.
+func rejectReachedOtherEdge(r *MidRangeReject, cur market.Kline, boxes []Box) bool {
 	for _, b := range boxes {
-		k := boxEffectiveKind(b)
-		if side == SideShort && k == FTGL && cur.Low <= b.Top {
+		if b.Key == r.BoxKey {
+			continue
+		}
+		if r.Side == SideShort && b.Top < r.Lo && cur.Low <= b.Top {
 			return true
 		}
-		if side == SideLong && k == FTGH && cur.High >= b.Bottom {
+		if r.Side == SideLong && b.Bottom > r.Hi && cur.High >= b.Bottom {
 			return true
 		}
 	}
@@ -95,7 +98,8 @@ func rejectReachedOtherEdge(side Side, cur market.Kline, boxes []Box) bool {
 }
 
 // midRangeRejectRefuses reports whether an entry sits mid-range (between the
-// floor and the ceiling, effective roles) AGAINST the standing rejection.
+// floor and the ceiling, side-of-price roles — G37) AGAINST the standing
+// rejection.
 func midRangeRejectRefuses(r *MidRangeReject, boxes []Box, in Intent) bool {
 	if r == nil || in.Side == "" || in.Side == r.Side {
 		return false
