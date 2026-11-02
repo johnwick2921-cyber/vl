@@ -65,7 +65,51 @@ type CourseExitsCfg struct {
 	// this is not a box (never latched, never a location/ban). The course
 	// states no height.
 	BoxMaxHeightPts float64
+
+	// ── m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found"). Top-level mentor_* knobs, resolved in
+	// trader/mentor_course_exits.go like the CX-* block above. ──────────────
+
+	// Open5mBreak (G55 D4.4-R40, knob mentor_open5m_break): what counts as the
+	// break of the opening 5m range in the open window (open5mRangeFilter).
+	// "1m_close" (default, "" reads the same) = a CLOSED 1m candle at or after
+	// 08:35 CT closing outside the range — the course's break minimum, "một
+	// cây nến một phút… đóng bên ngoài cái box là at least" [D4.1 p1
+	// @20:36–21:03]; the mentor acted at the 08:43 1m escape [D4.4 p2
+	// @05:15–05:36 "nó break được cái range khung 5 phút, nó đi lên rồi, tôi
+	// biết tôi đánh"]. "5m_close" = the pre-#61 rule (a closed 5m bucket only,
+	// up to 4 minutes later).
+	Open5mBreak string
+	// NewsWaitMode (G56 D4.4-R22, knob mentor_news_wait_mode): what the CE-3
+	// news wait (news_wait_both_lines ON) requires. "both" (default, "" reads
+	// the same) = the last close beyond the 4h line AND the pre-print 1h line
+	// on the trade side — the course's first method, "Đợi canh nó nằm trên hai
+	// cái đường line này, kiếm inside bar đu vô" [D4.4 p1 @21:48–22:12]; with
+	// no (or a stale, D4.4-R12) 1h line the 4h alone ("1h ko có gì hết").
+	// "4h_only" = the pre-#61 rule (the course's "Hoặc… chỉ cần đợi nó nằm ở
+	// trên cái đường line 4 giờ").
+	NewsWaitMode string
+	// NewsReadLeadMin (G58 D4.4-R6, knob mentor_news_read_lead_min, default 30):
+	// on a print day with news_bars_excluded ON, the 1h/4h trigger read
+	// freezes this many minutes BEFORE the print (07:00 for a 07:30 print) —
+	// "Một giờ thì đợi gần trước news, tầm 30 phút" / board "(trước news 30')"
+	// [D4.4 p1 @05:28–05:36; board 14:33–15:36]. The order hold stays
+	// −10m/+5m (the trader's F11 window). 0 = freeze from the print window's
+	// own start (07:20, the pre-#61 behaviour). A lead SHORTER than the
+	// window's −10m never starts the freeze later than the window.
+	NewsReadLeadMin int
 }
+
+// m466 P3 knob values (the ONE spelling the kernel, the trader resolver, the
+// boot line and the guide share).
+const (
+	Open5mBreak1mClose = "1m_close"
+	Open5mBreak5mClose = "5m_close"
+	NewsWaitBoth       = "both"
+	NewsWait4hOnly     = "4h_only"
+	// NewsReadLeadMinDefault — D4.4-R6 "tầm 30 phút" [D4.4 p1 @05:28–05:36].
+	NewsReadLeadMinDefault = 30
+)
 
 // DefaultCourseExitsCfg returns the knob-rule defaults.
 func DefaultCourseExitsCfg() CourseExitsCfg {
@@ -75,7 +119,10 @@ func DefaultCourseExitsCfg() CourseExitsCfg {
 		ReverseISBAsPHL:         true, // course-defaults-30 [D5.4 @03:52–03:56, @07:33]
 		EMA9VisitCap:            EMA9VisitShared,
 		KeypairCandleRatio:      1,
-		ISBMaxStopPts:           25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
+		ISBMaxStopPts:           25,                     // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
+		Open5mBreak:             Open5mBreak1mClose,     // m466 G55 D4.4-R40
+		NewsWaitMode:            NewsWaitBoth,           // m466 G56 D4.4-R22
+		NewsReadLeadMin:         NewsReadLeadMinDefault, // m466 G58 D4.4-R6
 	}
 }
 

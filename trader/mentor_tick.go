@@ -1452,10 +1452,11 @@ func (at *AutoTrader) mentorDayStopSweep(now time.Time) {
 	}
 }
 
-// mentorDoneAfterWinEnabled resolves the done-after-win switch. Owner order
-// 2026-10-16 ("it's been off … follow it"): nil → OFF — only an EXPLICIT true
-// turns the rule on. The day-boundary knob mentor_done_after_win_day_start is
-// read only when this switch is ON.
+// mentorDoneAfterWinEnabled resolves the done-after-win switch: nil → ON
+// (course default; m186 reverts the 2026-10-16 OFF) [D1.2 p1 @20:53–21:16;
+// p2 @05:28–06:27]; only an EXPLICIT false turns the rule off. The
+// day-boundary knob mentor_done_after_win_day_start is read only when this
+// switch is ON. (m466 G8 D1.2-R34: this comment used to say nil → OFF.)
 func (at *AutoTrader) mentorDoneAfterWinEnabled() bool {
 	if at.config.StrategyConfig == nil {
 		return false
@@ -1618,8 +1619,9 @@ func (at *AutoTrader) mentorWindowGate(in mentor.Intent) (bool, string) {
 // once a trade closes in profit and the day's net P&L is above 0 → no new
 // mentor entries until the next NY open (08:30 CT; day boundary = owner ruling
 // 2026-10-09 — the mentor's "day" is the NY day, not the CME 17:00 session day).
-// The switch is default OFF (nil → OFF, owner order 2026-10-16 "it's been off…
-// follow it"; only an explicit true turns it on).
+// The switch is default ON: nil → ON (course default; m186 reverts the
+// 2026-10-16 OFF) [D1.2 p1 @20:53–21:16; p2 @05:28–06:27]; only an explicit
+// false turns it off (mentorDoneAfterWinEnabled).
 func mentorDoneAfterWin(dayNetPnl float64, closedInProfit bool) bool {
 	return closedInProfit && dayNetPnl > 0
 }

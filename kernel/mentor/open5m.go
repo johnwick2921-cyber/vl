@@ -94,7 +94,7 @@ func open5mBroken(bars []market.Kline, now int64, high, low float64) (brokeLong,
 // diffable against the replay funnel.
 const open5mMissingNote = "open5m_range_missing"
 
-func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (out []Intent, refusals []string, notes []string) {
+func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64, cfg Config) (out []Intent, refusals []string, notes []string) {
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
 	if mins < 8*60+30 || mins > 9*60+30 {

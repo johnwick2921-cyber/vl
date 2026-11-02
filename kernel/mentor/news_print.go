@@ -19,6 +19,12 @@ import (
 type PrintWindow struct {
 	FromMs int64 `json:"from_ms,omitempty"`
 	ToMs   int64 `json:"to_ms,omitempty"`
+	// PrintAtMs (m466 G58 D4.4-R6) is the print minute itself (07:30 CT),
+	// filled by the trader's mentorNewsPrintWindowsFromEvents. It anchors the
+	// 1h/4h read lead (CourseExits.NewsReadLeadMin): the CE-4 freeze starts
+	// PrintAt − lead. 0 (a window built before #61, or a test fixture) → the
+	// freeze starts at FromMs, byte-identical to the pre-#61 behaviour.
+	PrintAtMs int64 `json:"print_at_ms,omitempty"`
 }
 
 // inPrintWindows reports whether openMs falls inside any listed window.
