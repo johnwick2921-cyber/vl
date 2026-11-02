@@ -369,3 +369,32 @@ func TestM60Forming15mISBUnit(t *testing.T) {
 		t.Fatal("one closed 5m candle is not a forming 15m read")
 	}
 }
+
+// TestM60Forming15mNeedsTheAdjacentMother — the early read is "the forming 15m
+// is an inside bar OF THE 15m candle before it" [D4.2-R2 p1 @00:08–00:39;
+// D4.3-R21 @12:20–12:32]: the mother must be the 15m candle immediately before
+// the forming bucket. Across the 16:00–17:00 CT halt (mother 15:45, forming
+// 17:00), a weekend, or a missing bucket, the last closed 15m is not that
+// candle — no provisional box (review fix; the pre-fix head built one).
+func TestM60Forming15mNeedsTheAdjacentMother(t *testing.T) {
+	five := func(h, m int, o, hi, lo, c float64) market.Kline {
+		ot := m60p1At(h, m)
+		return market.Kline{OpenTime: ot, CloseTime: ot + 299_999, Open: o, High: hi, Low: lo, Close: c}
+	}
+	fifteen := func(ot int64) market.Kline {
+		return market.Kline{OpenTime: ot, CloseTime: ot + 899_999, Open: 100, High: 120, Low: 90, Close: 115}
+	}
+	c5 := []market.Kline{five(17, 0, 105, 110, 100, 108), five(17, 5, 108, 112, 104, 106)}
+	// Adjacent mother (16:45 → forming 17:00): the read stands.
+	if _, ok := forming15mISB(c5, []market.Kline{fifteen(m60p1At(16, 45))}); !ok {
+		t.Fatal("fixture: the adjacent 16:45 mother must give a provisional box")
+	}
+	// The halt: the last closed 15m is 15:45.
+	if bx, ok := forming15mISB(c5, []market.Kline{fifteen(m60p1At(15, 45))}); ok {
+		t.Fatalf("a 15:45 mother is not the candle before the 17:00 bucket: got %+v", bx)
+	}
+	// Three days earlier.
+	if bx, ok := forming15mISB(c5, []market.Kline{fifteen(m60p1At(16, 45) - 3*86_400_000)}); ok {
+		t.Fatalf("a mother 3 days old must not box the forming 15m: got %+v", bx)
+	}
+}

@@ -43,6 +43,13 @@ func forming15mISB(cb5, cb15 []market.Kline) (ISBBox, bool) {
 	if bucketOpen(b.OpenTime, 15) != form || form <= mother.OpenTime {
 		return ISBBox{}, false
 	}
+	// Review fix: the mother is the 15m candle IMMEDIATELY before the forming
+	// bucket. Across the 16:00–17:00 CT halt, a weekend or a missing bucket
+	// the last closed 15m is an older candle, and two 5m candles are no
+	// forming inside bar of it.
+	if form != mother.OpenTime+15*60_000 {
+		return ISBBox{}, false
+	}
 	// Exactly two: the 5m before them must belong to an earlier 15m bucket.
 	if len(cb5) >= 3 && bucketOpen(cb5[len(cb5)-3].OpenTime, 15) == form {
 		return ISBBox{}, false
