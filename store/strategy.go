@@ -2336,7 +2336,9 @@ type RiskControlConfig struct {
 	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
 	//   CX-6 MentorReverseISBAsPHL — nil → ON (course-defaults-30, D5.4).
 	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
-	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
+	//   CX-9 MentorISBMaxPts — 0 → 20 (m466 G23 D4.1-R12: "hai mươi mấy điểm…
+	//        đừng vô" [D4.1 p1 @05:41–06:08]; pre-#61 25). ISB setups only at
+	//        the trader R8 — PHL/PLH/BOX keep the D3.3-R1 25.
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
 	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
@@ -2374,6 +2376,25 @@ type RiskControlConfig struct {
 	//        @14:09–14:35]); false = the 1m tiers.
 	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
 	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
+
+	// m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_course_exits.go onto the
+	// kernel's CourseExits block; unset = the course default; a bad value
+	// fails closed to the default, counted (<name>_bad_value).
+	//   MentorOpen5mBreak — "" → 1m_close (G55 D4.4-R40): the opening 5m range
+	//        is broken by a CLOSED 1m candle outside it ("một cây nến một
+	//        phút… đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]);
+	//        5m_close = a closed 5m candle only (pre-#61).
+	//   MentorNewsWaitMode — "" → both (G56 D4.4-R22): the news wait needs the
+	//        close beyond the 4h AND the pre-print 1h line ("nằm trên hai cái
+	//        đường line này" [D4.4 p1 @21:48–22:12]); 4h_only = pre-#61.
+	//   MentorNewsReadLeadMin — nil → 30 (G58 D4.4-R6): on a print day the
+	//        1h/4h read freezes this many minutes before the print ("Một giờ
+	//        thì đợi gần trước news, tầm 30 phút" [D4.4 p1 @05:28–05:36]);
+	//        an explicit 0 = the pre-#61 07:20 start; range 0–120.
+	MentorOpen5mBreak     string `json:"mentor_open5m_break,omitempty"`
+	MentorNewsWaitMode    string `json:"mentor_news_wait_mode,omitempty"`
+	MentorNewsReadLeadMin *int   `json:"mentor_news_read_lead_min,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
