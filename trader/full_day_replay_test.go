@@ -1084,6 +1084,14 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	cfg := loadReplayStrategy(t)
 	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
 	fdrPinPre30Defaults(cfg)      // course-defaults-30: the live day predates #30 — pin the live defaults
+	// m465 (release #60, D5.1-R18): the live 10-13 night ran the 300 spent line.
+	// Its overnight run sits between 265 and 300, so at the new 265 default the
+	// night is SPENT and the m423 02:43 PLH short (30683.00 / 30695.75) is no
+	// longer authored. Pin the live 300 so this test keeps pinning the live day.
+	if cfg.RiskControl.MentorTuning == nil {
+		cfg.RiskControl.MentorTuning = &store.MentorTuning{}
+	}
+	cfg.RiskControl.MentorTuning.DayGateSpentPts = 300
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}

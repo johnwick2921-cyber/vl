@@ -128,6 +128,11 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"phl_target_shy_pts", cfg.PHLTargetShyPts},
 		{"isb_old_extreme_pts", cfg.ISBOldExtremePts},
 		{"isb_in_range_gap_pts", cfg.ISBInRangeGapPts},
+		// m465 P3 (release #60) structure-fidelity knobs.
+		{"trendline_entry_touch", cfg.TrendlineEntryTouch},
+		{"near_box_between_exempt", cfg.NearBoxBetweenExempt},
+		{"phl_flat_low", cfg.PHLFlatLow},
+		{"isb_reverse_touch", cfg.ISBReverseTouch},
 	}
 
 	for _, r := range rows {

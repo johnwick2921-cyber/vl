@@ -2088,7 +2088,9 @@ type MentorTuning struct {
 	ISBStackCancelCandle2m int `json:"isb_stack_cancel_candle_2m,omitempty"`
 	// B8: tiny-stop exception — an ISB whose stop is at or under this many
 	// points is not cancelled at the cancel candle [Ngày 5.1 Go over lại tất cả
-	// part2 @02:50–03:40]; 0 / unset = OFF.
+	// part2 @02:50–03:40]. m465 (release #60, D5.1-R26): unset → 12.5, the
+	// worked example's measured stop [D5.1 p2 @02:24–04:41]; (0, 25]. No ISB
+	// stop is under 3 pts (range + 2 × 1.5), so 0.01 is effectively OFF.
 	ISBStackTinyStopPts float64 `json:"isb_stack_tiny_stop_pts,omitempty"`
 	// B10: evening "slow" cutoff in points (default 100), the CT hour the range
 	// starts at (15 default, 15–17) and an optional trailing window in minutes
@@ -2111,6 +2113,26 @@ type MentorTuning struct {
 	// part1 @00:04:31–00:05:19].
 	ISBOldExtremePts *float64 `json:"isb_old_extreme_pts,omitempty"`
 	ISBInRangeGapPts float64  `json:"isb_in_range_gap_pts,omitempty"`
+
+	// m465 P3 (release #60) structure-fidelity knobs. Unset = the course
+	// (the full video read); the other value = the pre-#60 behaviour.
+	//
+	// D2.3-R7: "fourth" (unset) — a 1m/2m trendline is not a location on the
+	// candle of its 3rd touch (the TEST), the entry comes on a later touch
+	// [D2.3 p1 @02:34–02:47, 03:03–03:16]; "third" — it arms on the 3rd touch.
+	TrendlineEntryTouch string `json:"trendline_entry_touch,omitempty"`
+	// D3.2-R29/R30: nil/false — between two boxes is NOT a blanket near-box
+	// exemption (E6 refused), the middle case passes on its own room [D3.2 p1
+	// @22:12–24:41]; true — the pre-#60 exemption.
+	NearBoxBetweenExempt *bool `json:"near_box_between_exempt,omitempty"`
+	// D2.2-R64: "flat_near" (unset) — a PHL low within the m428 R2 "same price"
+	// distance of the prior low is an FTGL, not a PHL (mirror PLH) [D2.2 p3
+	// @07:44–10:15]; "strict" — the pre-#60 strict comparison only.
+	PHLFlatLow string `json:"phl_flat_low,omitempty"`
+	// D5.4-R7: "pair" (unset) — the reverse ISB's EMA 9 touch reads the mother
+	// + ISB candle group [D5.4 p1 @03:35–03:46]; "isb_candle" — the ISB candle
+	// alone (pre-#60).
+	ISBReverseTouch string `json:"isb_reverse_touch,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

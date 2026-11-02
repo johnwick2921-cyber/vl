@@ -245,8 +245,8 @@ func TestDayGateReportRecordedOnceAtFreeze(t *testing.T) {
 	if rep.FourHDir != SideShort || rep.OneHDir != SideLong || !rep.Conflict {
 		t.Fatalf("dirs = %s/%s conflict=%v, want short/long true", rep.FourHDir, rep.OneHDir, rep.Conflict)
 	}
-	if rep.SpentPts != 300 {
-		t.Fatalf("spent line = %.0f, want 300", rep.SpentPts)
+	if rep.SpentPts != 265 { // m465 (#60) D5.1-R18: the default spent line is 265
+		t.Fatalf("spent line = %.0f, want 265", rep.SpentPts)
 	}
 
 	// once: a second tick (same day) must not overwrite the report.

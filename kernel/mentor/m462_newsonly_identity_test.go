@@ -78,6 +78,11 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			old := flatNearScale
 			flatNearScale = c.scale
 			defer func() { flatNearScale = old }()
+			// m465 (#60): E6's inside-the-opposing-box rule has no knob (the
+			// course is explicit); switch it off here so the pre-#60 golden
+			// still proves every other m465 change is undone by its knob.
+			nearBoxInsideOpposing = false
+			defer func() { nearBoxInsideOpposing = true }()
 			bars := c.tape(t)
 			from := c.from
 			if from < 0 {
@@ -94,6 +99,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			// box; mentor_isb_loss_box=band is the pre-#60 rule, so this pin
 			// also proves band mode reproduces the old State byte for byte.
 			cfg.ISBLossBox = ISBLossBoxBand
+			m465PreValues(&cfg) // m465 (#60): the pre-#60 knob values — this golden predates them
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {

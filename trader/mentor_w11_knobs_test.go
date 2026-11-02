@@ -19,7 +19,8 @@ import (
 func TestW11KnobsDefaultsAreUnchanged(t *testing.T) {
 	cfg := tuningTick(t, nil)
 	d := mentor.DefaultConfig()
-	if cfg.ISBStackCancelCandle2m != 4 || cfg.ISBStackTinyStopPts != 0 ||
+	// m465 (#60, D5.1-R26): the tiny-stop default is the course's measured 12.5.
+	if cfg.ISBStackCancelCandle2m != 4 || cfg.ISBStackTinyStopPts != 12.5 ||
 		cfg.EveningSlowPts != 100 || cfg.EveningSlowFromHour != 15 || cfg.EveningSlowWindowMin != 0 ||
 		cfg.NearBoxRoomMultiple != 2 || !cfg.NearBoxRoomPHL || cfg.PHLTargetShyPts != 5 ||
 		cfg.ISBOldExtremePts != 2 || cfg.ISBInRangeGapPts != 0 {

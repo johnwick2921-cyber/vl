@@ -105,10 +105,10 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly:       false, // m462 (release #59): the 4h/1h gate applies ALL SESSION by default (D5.1-R9/R11)
-			Exec2mAfter30m:        true,  // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
-			OrbISBFractionOutside: 0.80,  // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
-			DayGateSpentPts:       300, DayGateTargetCapPts: 15, SwingMaxStopPts: 100,
+			HTFGateNewsOnly:       false,                                              // m462 (release #59): the 4h/1h gate applies ALL SESSION by default (D5.1-R9/R11)
+			Exec2mAfter30m:        true,                                               // X5-10 rule 4 (release #31): 1m for the first 30 min, then the 2m
+			OrbISBFractionOutside: 0.80,                                               // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
+			DayGateSpentPts:       265, DayGateTargetCapPts: 15, SwingMaxStopPts: 100, // m465 (#60) D5.1-R18: spent line 265
 			// Release #25 course-entry knobs (course-defaults-30 changes).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
 			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
@@ -125,6 +125,12 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// the kernel hard-coded before (all "ours", none from the course).
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
 			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
+			// m465 P3 (release #60): the course defaults from the full video read.
+			ISBStackTinyStopPts:  12.5,                        // D5.1-R26 [D5.1 p2 @02:24–04:41]
+			TrendlineEntryTouch:  mentor.TrendlineEntryFourth, // D2.3-R7
+			NearBoxBetweenExempt: false,                       // D3.2-R29/R30
+			PHLFlatLow:           mentor.PHLFlatLowNear,       // D2.2-R64
+			ISBReverseTouch:      mentor.ISBReverseTouchPair,  // D5.4-R7
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

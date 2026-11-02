@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"math"
+	"strings"
 	"testing"
 	"time"
 
@@ -419,9 +420,12 @@ func TestEvaluatorTrendlineSittingIsNotALocation(t *testing.T) {
 
 // TestTrendlineLevelsOnlyAfterThirdTouch — the "only after the 3rd test"
 // half: before the return the line is NOT in the level set (two points, and
-// the touches by P1's own confirmation bars, are not a location); after the
-// leave and the return it is. Mutant (3rd-touch gate off) makes the first
-// half FAIL.
+// the touches by P1's own confirmation bars, are not a location). m465 (#60,
+// D2.3-R7): on the return candle itself (the 3rd touch = the TEST) the line is
+// still not a location by default — refused trendline_third_touch_is_test — and
+// is one under the knob's "third" side (the pre-#60 behaviour); the later-touch
+// half is TestM60TrendlineThirdTouchDoesNotArm. Mutant (3rd-touch gate off)
+// makes the first half FAIL.
 func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	sit, _ := trendlineSittingTape()
 	before := time.UnixMilli(sit[10].OpenTime + 59_999).In(ctime())
@@ -441,8 +445,11 @@ func TestTrendlineLevelsOnlyAfterThirdTouch(t *testing.T) {
 	if len(tls2) != 1 || tls2[0].ValidAt != 13 {
 		t.Fatalf("want a validated line, got %+v", tls2)
 	}
-	if got, _ := TrendlineLevels(tls2, boxes2, nil, after); len(got) != 1 {
-		t.Fatalf("after the 3rd touch the line must be a location — levels=%+v", got)
+	if got, refused := TrendlineLevels(tls2, boxes2, nil, after); len(got) != 0 || len(refused) != 1 {
+		t.Fatalf("on the 3rd-touch candle (the test) the line is not yet a location by default — levels=%+v refused=%v", got, refused)
+	}
+	if got, _ := TrendlineLevelsTouch(tls2, boxes2, nil, after, TrendlineEntryThird); len(got) != 1 {
+		t.Fatalf("knob third: after the 3rd touch the line must be a location — levels=%+v", got)
 	}
 }
 
@@ -532,7 +539,9 @@ func TestLocationOfNamesTheTouchedPlace(t *testing.T) {
 		{trendlineMirror(bars), "trendline short"},
 	} {
 		tls := TrendlinesBuild(tc.bars, now)
-		lv, _ := TrendlineLevels(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), nil, tc.bars)
+		// m465 (#60, D2.3-R7): on its 3rd-touch candle the line is a location
+		// only under the knob's "third" side; this pins the key's naming.
+		lv, _ := TrendlineLevelsTouch(tls, BoxesBuild(tc.bars, DefaultBoxCfg(), now), nil, tc.bars, TrendlineEntryThird)
 		if len(lv) != 1 {
 			t.Fatalf("want one trendline location, got %+v", lv)
 		}
@@ -672,13 +681,16 @@ func TestTrendlineSameRoleSwingIsNotALeave(t *testing.T) {
 }
 
 // TestTrendlineLevelBeatsFreshTrendline (m186, D2.3 p1 @02:19–03:45) — a
-// trendline on its FIRST test (ValidAt == the current bar, the 3rd touch that
-// just closed) whose current price sits at/near a RESPECTED level (key level /
+// trendline on its 3rd-touch candle (ValidAt == the current bar — the TEST,
+// D2.3-R7) whose current price sits at/near a RESPECTED level (key level /
 // old extreme) is refused: the level wins ("chọn cái mà nó đã respect nhiều
-// lần, đừng chọn cái nó mới tạo"). With no respected level in the way the
-// trendline stays a location. FORMING lines stay non-locations (unchanged).
-// The past-first-test case (m311) is pinned in
-// TestTrendlineLevelPrefersLevelOnlyOnFirstTest.
+// lần, đừng chọn cái nó mới tạo"). m465 (#60): by default that candle is never
+// a location anyway — "lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô"
+// [D2.3 p1 @02:34–02:47, 03:03–03:16] — so with NO level in the way it is now
+// refused trendline_third_touch_is_test (the flipped leg); the level-preference
+// legs run under the knob's "third" side, where the 3rd-touch candle arms.
+// FORMING lines stay non-locations (unchanged). The past-the-test case (m311)
+// is pinned in TestTrendlineLevelPrefersLevelOnlyOnFirstTest.
 func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 	bars, _ := trendlineReturnTape()
 	now := time.UnixMilli(bars[13].OpenTime + 59_999).In(ctime())
@@ -691,30 +703,36 @@ func TestTrendlineLevelBeatsFreshTrendline(t *testing.T) {
 
 	// A respected key level AT the line → the trendline is refused (level wins).
 	respected := []Level{{Kind: KindKeyLevel, Price: price, Key: "kl:at-line"}}
-	got, refused := TrendlineLevels(tls, nil, respected, bars)
-	if len(refused) != 1 || len(got) != 0 {
+	got, refused := TrendlineLevelsTouch(tls, nil, respected, bars, TrendlineEntryThird)
+	if len(refused) != 1 || len(got) != 0 || !strings.HasPrefix(refused[0], "tl_first_test_level_preferred:") {
 		t.Fatalf("a respected level at the line must refuse it: got %+v refused %v", got, refused)
 	}
 
 	// A respected level 10 pts away → no refusal (it is not in the way).
 	far := []Level{{Kind: KindKeyLevel, Price: price + 10, Key: "kl:far"}}
-	got2, refused2 := TrendlineLevels(tls, nil, far, bars)
+	got2, refused2 := TrendlineLevelsTouch(tls, nil, far, bars, TrendlineEntryThird)
 	if len(got2) != 1 || len(refused2) != 0 {
 		t.Fatalf("a far level must not refuse the line: got %+v refused %v", got2, refused2)
 	}
 
-	// No level in the way → the trendline stays.
+	// m465 FLIP (D2.3-R7): no level in the way → by default the 3rd-touch
+	// candle is still the TEST, not a location.
 	got3, refused3 := TrendlineLevels(tls, nil, nil, bars)
-	if len(got3) != 1 || len(refused3) != 0 {
-		t.Fatalf("no respected level: the trendline must stay; got %+v refused %v", got3, refused3)
+	if len(got3) != 0 || len(refused3) != 1 || !strings.HasPrefix(refused3[0], "trendline_third_touch_is_test:") {
+		t.Fatalf("no respected level: the 3rd-touch candle is the test — want 0 levels + trendline_third_touch_is_test; got %+v refused %v", got3, refused3)
+	}
+	// knob third: the pre-#60 behaviour — the trendline stays.
+	if got4, refused4 := TrendlineLevelsTouch(tls, nil, nil, bars, TrendlineEntryThird); len(got4) != 1 || len(refused4) != 0 {
+		t.Fatalf("knob third, no respected level: the trendline must stay; got %+v refused %v", got4, refused4)
 	}
 }
 
 // TestTrendlineLevelPrefersLevelOnlyOnFirstTest (m311 #46b) — the level beats
-// the trendline ONLY on its first test. Extend the return tape two quiet bars
-// past the 3rd touch (bar 13): the line is now VALID and past its 3rd-touch
-// return, so a respected level AT the line must NOT suppress it. Mutant (drop
-// the first-test gate) refuses the line → RED.
+// the trendline ONLY on its 3rd-touch candle (the TEST, D2.3-R7). Extend the
+// return tape two quiet bars past the 3rd touch (bar 13): the line is now VALID
+// and past its test, so a respected level AT the line must NOT suppress it —
+// under the default (m465 "fourth") this is also where the line first becomes a
+// location. Mutant (drop the first-test gate) refuses the line → RED.
 func TestTrendlineLevelPrefersLevelOnlyOnFirstTest(t *testing.T) {
 	bars, mk := trendlineReturnTape()
 	// Two quiet bars past the 3rd touch: lows (100) stay above the line
@@ -854,14 +872,16 @@ func TestC52W9B7R7FTGBoxEdgeBeatsFreshTrendline(t *testing.T) {
 		t.Fatalf("fixture: want one VALID trendline, got %+v", tls)
 	}
 	price := tls[0].priceAt(bars[len(bars)-1].OpenTime)
+	// m465 (#60, D2.3-R7): by default the 3rd-touch candle is never a location;
+	// the level preference on it is pinned under the knob's "third" side.
 	for _, kind := range []LevelKind{KindFTGLEdge, KindFTGHEdge} {
 		at := []Level{{Kind: kind, Price: price + 1.5, Key: "box:edge"}}
-		got, refused := TrendlineLevels(tls, nil, at, bars)
+		got, refused := TrendlineLevelsTouch(tls, nil, at, bars, TrendlineEntryThird)
 		if len(refused) != 1 || len(got) != 0 {
 			t.Fatalf("%s edge 1.5 pt from the fresh line must refuse it: got %+v refused %v", kind, got, refused)
 		}
 		far := []Level{{Kind: kind, Price: price + 10, Key: "box:far"}}
-		got, refused = TrendlineLevels(tls, nil, far, bars)
+		got, refused = TrendlineLevelsTouch(tls, nil, far, bars, TrendlineEntryThird)
 		if len(got) != 1 || len(refused) != 0 {
 			t.Fatalf("%s edge 10 pts away must not refuse: got %+v refused %v", kind, got, refused)
 		}

@@ -15,7 +15,8 @@ import (
 func TestISBOneArmFiveCandleSequence(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	cfg.RoomMultiple = 0 // item 25: this fixture pins arm stacking, not the room rule
+	cfg.RoomMultiple = 0        // item 25: this fixture pins arm stacking, not the room rule
+	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off
 	// real-UTC epochs (EPOCH RULING): RTH bars on 2026-09-15 CT.
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		ot := auditMs(2026, 9, 15, 9, 0, 0) + int64(i)*60_000
