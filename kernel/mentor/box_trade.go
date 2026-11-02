@@ -260,7 +260,7 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
 	fl := ConfluenceVerdict(b, side, trig, price)
-	if abs(target-price) < cfg.RoomMultiple*risk*Leg1RiskMultiple(fl.On) {
+	if abs(target-price) < targetRoomMultiple(levels, target, cfg.RoomMultiple)*risk*Leg1RiskMultiple(fl.On) { // m465 D4.3-R17: 1R for a 5m-wick target
 		return nil, "box_room"
 	}
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the

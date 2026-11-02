@@ -568,8 +568,15 @@ func TestM60WickShortMirrorEx3(t *testing.T) {
 	if isb == nil {
 		t.Fatalf("Ex.3: the 1m short ISB at the supply box must arm SHORT; intents %+v refusals %v", ins, e.State.Refusals)
 	}
-	if isb.Target != 29600 {
-		t.Fatalf("short target = %.2f, want 29,600 — the nearest 5m wick low ≥ 2R under the entry %.2f (risk %.2f)", isb.Target, isb.Price, isb.Stop-isb.Price)
+	// D4.3-R17 + D1.4 "at least 1:1": a wick target needs 1R of room, not the
+	// 2R the other targets keep. Entry 29,621.50, risk 10: the 29,606 wick low
+	// is 15.50 pts (1.55R) away — the target; the pre-fix head skipped it for
+	// 29,600 (2.15R) [D4.3 @09:39–09:46, @13:45–14:00 "last 29,606.00"].
+	if isb.Target != 29606 {
+		t.Fatalf("short target = %.2f, want 29,606 — the nearest 5m wick low ≥ 1R under the entry %.2f (risk %.2f)", isb.Target, isb.Price, isb.Stop-isb.Price)
+	}
+	if e.State.Refusals["room"] != 0 {
+		t.Fatalf("a 1.55R wick target must pass the room rule (1R for a wick target): refusals %v", e.State.Refusals)
 	}
 	if !strings.Contains(isb.Reason, "wick zone short") {
 		t.Fatalf("the entry must name the supply zone: %q", isb.Reason)
@@ -641,5 +648,45 @@ func TestM60WickKnobOffIsInert(t *testing.T) {
 		if strings.HasPrefix(k, "wick_") {
 			t.Fatalf("knob OFF counted %s", k)
 		}
+	}
+}
+
+// TestM60WickTargetRoomIsOneR — D4.3-R17 "Target thì là những cái râu của khung
+// 5 phút" [@09:39–09:46] + D1.4 "at least 1:1": the room for a 5m-wick target
+// (KindWickMicroscalp) is 1R, not RoomMultiple (2R). The HTF trigger keeps 2R;
+// a wick under 1R still falls through. The room rule at every call site reads
+// the chosen target's kind (targetRoomMultiple), so the 1R target is not then
+// refused "room" at 2R.
+func TestM60WickTargetRoomIsOneR(t *testing.T) {
+	entry, stop := 100.0, 90.0                                    // long, risk 10
+	wick := Level{Key: "w", Kind: KindWickMicroscalp, Price: 115} // 1.5R
+	far := Level{Key: "k", Kind: KindKeyLevel, Price: 140}        // 4R
+	if got := nextLevelBeyondRoom([]Level{wick, far}, entry, stop, SideLong, 2); got != 115 {
+		t.Fatalf("a 1.5R wick target must be chosen at RoomMultiple 2, got %.2f", got)
+	}
+	if m := targetRoomMultiple([]Level{wick, far}, 115, 2); m != 1 {
+		t.Fatalf("room multiple for a wick target = %.2f, want 1", m)
+	}
+	if refuse, why := roomRefusal(entry, stop, 115, false, targetRoomMultiple([]Level{wick, far}, 115, 2)); refuse {
+		t.Fatalf("a 1.5R wick target must pass the room rule: %s", why)
+	}
+	if m := targetRoomMultiple([]Level{wick, far}, 140, 2); m != 2 {
+		t.Fatalf("a key-level target keeps RoomMultiple 2, got %.2f", m)
+	}
+	if m := targetRoomMultiple([]Level{wick}, 115, 0); m != 0 {
+		t.Fatalf("RoomMultiple 0 (room rule off) stays off for a wick target, got %.2f", m)
+	}
+	htf := Level{Key: "h", Kind: KindHTFTrigger, Price: 115}
+	if got := nextLevelBeyondRoom([]Level{htf, far}, entry, stop, SideLong, 2); got != 140 {
+		t.Fatalf("the HTF trigger keeps the 2R skip, got %.2f", got)
+	}
+	near := Level{Key: "w2", Kind: KindWickMicroscalp, Price: 108} // 0.8R
+	if got := nextLevelBeyondRoom([]Level{near, far}, entry, stop, SideLong, 2); got != 140 {
+		t.Fatalf("a wick under 1R falls through, got %.2f", got)
+	}
+	// Short mirror.
+	ws := Level{Key: "ws", Kind: KindWickMicroscalp, Price: 85}
+	if got := nextLevelBeyondRoom([]Level{ws, {Key: "k2", Kind: KindKeyLevel, Price: 60}}, 100, 110, SideShort, 2); got != 85 {
+		t.Fatalf("short: a 1.5R wick target must be chosen, got %.2f", got)
 	}
 }

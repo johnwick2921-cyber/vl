@@ -1770,8 +1770,10 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 			continue
 		}
 		if (l.Kind == KindHTFTrigger || l.Kind == KindWickMicroscalp) && roomMultiple > 0 && risk > 0 {
-			if abs(l.Price-entry) < roomMultiple*risk {
-				continue // target-only level too close to hold 2R room — fall through
+			// m465 D4.3-R17: a 5m-wick target needs only 1R of room (D1.4
+			// "at least 1:1"); the HTF trigger keeps roomMultiple (2R).
+			if abs(l.Price-entry) < levelRoomMultiple(l.Kind, roomMultiple)*risk {
+				continue // target-only level too close to hold its room — fall through
 			}
 		}
 		if best == 0 || (side == SideLong && l.Price < best) || (side == SideShort && l.Price > best) {
@@ -1782,6 +1784,41 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 		return best
 	}
 	return bestEMA
+}
+
+// WickTargetRoomMultiple is the room a D4.3 5m-wick target (KindWickMicroscalp)
+// needs, in R: the microscalp targets "những cái râu của khung 5 phút" [D4.3-R17
+// @09:39–09:46], a small scalp, and D1.4 asks only "at least 1:1" — so 1R, not
+// the 2R RoomMultiple every other target keeps (m465, triage-60 P5 hunk b).
+const WickTargetRoomMultiple = 1.0
+
+// levelRoomMultiple is the room multiple a target of this kind needs: the
+// smaller of roomMultiple and WickTargetRoomMultiple for a 5m-wick target,
+// roomMultiple for every other kind. roomMultiple <= 0 (rule off) stays off.
+func levelRoomMultiple(k LevelKind, roomMultiple float64) float64 {
+	if k == KindWickMicroscalp && roomMultiple > WickTargetRoomMultiple {
+		return WickTargetRoomMultiple
+	}
+	return roomMultiple
+}
+
+// targetRoomMultiple is levelRoomMultiple for a chosen target PRICE: the room
+// rule at a call site that holds only the target price (ISB, reverse ISB,
+// box, PHL/PLH) reads it so a 1R wick target picked by nextLevelBeyondRoom /
+// phlTarget is not then refused "room" at 2R (m465 D4.3-R17). A target price
+// served by a 5m wick level takes the wick room; any other target keeps
+// roomMultiple. The wick levels exist only with wick_microscalp ON, so knob
+// OFF this is roomMultiple, byte-identical.
+func targetRoomMultiple(levels []Level, target, roomMultiple float64) float64 {
+	if target == 0 {
+		return roomMultiple
+	}
+	for _, l := range levels {
+		if l.Kind == KindWickMicroscalp && l.Price == target {
+			return levelRoomMultiple(l.Kind, roomMultiple)
+		}
+	}
+	return roomMultiple
 }
 
 // isEMAPartialKind reports whether a level kind is one of the EMA lines the
@@ -2557,7 +2594,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
-							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
+							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.RoomMultiple)); refuse {
 								// The room to the first level must be >= RoomMultiple ×
 								// the leg-1 take-profit (1R; 2R for confluence).
 								// MENTOR-NY item 1: the room is measured to the LEVEL
@@ -2733,7 +2770,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
-				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, e.Cfg.RoomMultiple); refuse {
+				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.RoomMultiple)); refuse {
 					// Item 25: the reverse ISB runs the same room rule as the
 					// normal ISB. One counter "room". MENTOR-NY item 1: measured
 					// to the LEVEL, not the spent-day capped take-profit
@@ -3214,7 +3251,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							// the CAP pulled the target inside the stop distance —
 							// refuse rather than emit a sub-floor intent.
 							e.refuse("box_target_below_floor")
-						} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, e.Cfg.RoomMultiple); refuse {
+						} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, targetRoomMultiple(levels, in.Target, e.Cfg.RoomMultiple)); refuse {
 							// MENTOR-NY item 1 (supersedes B7/L13): the room rule
 							// reads the LEVEL the box trade targets (in.Target,
 							// before the spent-day cap), not the capped 15-pt

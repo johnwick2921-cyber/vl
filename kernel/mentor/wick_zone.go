@@ -456,8 +456,9 @@ func (e *Evaluator) wickZoneDisplayLevels() []Level {
 //   - safe play ON: the reference candle must have CLOSED beyond the near edge,
 //     else wick_safe_play_wait (R20);
 //   - the 5m-wick target must leave ≥1R room, else wick_target_no_room is
-//     named (the target falls through to the next level — the room rule
-//     itself lives in nextLevelBeyondRoom);
+//     named (the target falls through to the next level — the 1R room rule
+//     itself lives in nextLevelBeyondRoom / targetRoomMultiple,
+//     WickTargetRoomMultiple);
 //   - the visit is marked as having produced a setup; the reason names the zone.
 //
 // Knob OFF → out unchanged.
