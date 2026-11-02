@@ -45,6 +45,8 @@ type BoolKey =
   | 'flag_wall_target'
   | 'box_new_zone_after_escape'
   | 'orb_escape_completely'
+  | 'wick_microscalp'
+  | 'wick_safe_play'
   | 'near_box_room_phl'
 
 type EnumKey =
@@ -319,6 +321,16 @@ const COPY = {
     en: 'ISB size cut: between two key levels closer than this many pts (blank = the ping-pong gap)',
     es: 'Recorte de tamaño ISB: entre dos niveles clave a menos de estos pts (vacío = la brecha ping-pong)',
   },
+  wickMicroscalp: {
+    zh: 'D4.3 影线微剥头皮（进阶）：5分钟同向影线区 + 1分钟 ISB/PHL，目标 = 附近5分钟影线',
+    en: 'D4.3 wick microscalp (advanced): 5m same-way wick zone + 1m ISB/PHL, target = the nearby 5m wicks',
+    es: 'D4.3 micro-scalp de mechas (avanzado): zona de mechas 5m + ISB/PHL 1m, objetivo = las mechas 5m cercanas',
+  },
+  wickSafePlay: {
+    zh: 'D4.3 安全玩法：参考K线须收在区外（空单在箱下、多单在箱上）',
+    en: 'D4.3 safe play: the reference candle must close outside the box (under it for a short, over it for a long)',
+    es: 'D4.3 juego seguro: la vela de referencia debe cerrar fuera de la caja (debajo para corto, encima para largo)',
+  },
   orbCompletely: {
     zh: '开盘区间：蜡烛（含影线）须完全在区间外才算突破',
     en: 'Opening range: the candle must be completely outside, wicks included',
@@ -393,6 +405,8 @@ export const MENTOR_TUNING_DEFAULTS = {
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
   orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
+  wick_microscalp: false, // m465 P5: D4.3 advanced — "đừng có tập khúc này đầu liền" [D4.3 @04:55–05:17]
+  wick_safe_play: false, // m465 P5: D4.3-R20 an optional extra confirm [D4.3 @14:07–14:27]
   // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
   isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
   isb_stack_tiny_stop_pts: 0, // B8: 0 = tiny-stop exception off
@@ -629,6 +643,8 @@ export function MentorTuningPanel({
         {boolField('flag_wall_target', COPY.flagWall)}
         {boolField('box_new_zone_after_escape', COPY.boxNewZone)}
         {boolField('orb_escape_completely', COPY.orbCompletely)}
+        {boolField('wick_microscalp', COPY.wickMicroscalp)}
+        {boolField('wick_safe_play', COPY.wickSafePlay)}
         {numField('isb_stack_cancel_candle_2m', COPY.isbStack2m, true)}
         {numField('isb_stack_tiny_stop_pts', COPY.isbStackTiny)}
         {numField('evening_slow_pts', COPY.eveSlowPts)}

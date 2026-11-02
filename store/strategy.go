@@ -2068,6 +2068,15 @@ type MentorTuning struct {
 	// 2-minute range, wicks included (nil/false → OFF = the body test)
 	// [extra "Routine trước khi trade" part1 @06:47–07:16].
 	OrbEscapeCompletely *bool `json:"orb_escape_completely,omitempty"`
+	// m465 P5 (release #60): the D4.3 wick microscalp, the whole setup — the
+	// 5m wick-run zone, a 1m ISB/PHL at the zone, the nearby 5m wicks as the
+	// target (nil/false → OFF: the mentor calls it advanced, "đừng có tập khúc
+	// này đầu liền" [D4.3 @04:55–05:17]).
+	WickMicroscalp *bool `json:"wick_microscalp,omitempty"`
+	// m465 P5: the D4.3-R20 safe play — a setup at a wick zone waits for its
+	// reference candle to CLOSE beyond the zone's near edge (nil/false → OFF)
+	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
+	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
 
 	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
 	// not the course's (the mentor gave none, or the owner fixed none); each

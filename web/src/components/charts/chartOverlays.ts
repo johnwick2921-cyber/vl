@@ -384,6 +384,9 @@ export function mentorKindLabel(kind: string, key = ''): string {
       return 'trendline'
     case 'wick_microscalp':
       return 'wick target'
+    case 'wick_zone':
+      // m465 P5: the D4.3 wick zone (key "wick_zone:<side>:<ms>:<edge>").
+      return key.includes(':short:') ? 'wick supply zone' : 'wick demand zone'
     default:
       return kind
   }
@@ -577,6 +580,13 @@ function boxEdgePairs(
       tops.set(l.key.slice(0, -4), l)
     else if (l.kind === 'ftgl_edge' && l.key.endsWith(':bottom'))
       bottoms.set(l.key.slice(0, -7), l)
+    // m465 P5: a D4.3 wick zone carries BOTH its edges under one base key
+    // ("wick_zone:<side>:<ms>:top" / ":bottom") — one rectangle, extended
+    // right while it lives [D4.3 @06:03–06:07].
+    else if (l.kind === 'wick_zone' && l.key.endsWith(':top'))
+      tops.set(l.key.slice(0, -4), l)
+    else if (l.kind === 'wick_zone' && l.key.endsWith(':bottom'))
+      bottoms.set(l.key.slice(0, -7), l)
   }
   const out: { base: string; top: BoxLevel; bottom: BoxLevel }[] = []
   for (const [base, top] of tops) {
@@ -629,7 +639,13 @@ export function mentorBoxRects(
     const start = startMs > 0 ? snap(Math.floor(startMs / 1000)) : first
     const end = top.ended_ms ? snap(Math.floor(top.ended_ms / 1000)) : last
     if (end < start) continue
-    const kind = base.startsWith('ftgl') ? 'FTGL' : 'FTGH'
+    const kind = base.startsWith('wick_zone')
+      ? base.includes(':short:')
+        ? 'D4.3 wick supply'
+        : 'D4.3 wick demand'
+      : base.startsWith('ftgl')
+        ? 'FTGL'
+        : 'FTGH'
     const tf = top.tf ? ` ${top.tf}` : ''
     out.push({
       key: base,
