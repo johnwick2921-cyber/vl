@@ -40,6 +40,8 @@ package mentor
 // (4,587 rows: the trendline_third_touch_is_test counts and the trendline
 // location/target sets) moved only. The D4.3-R17 1R wick room (knob OFF) and
 // the D4.2-R27 inside-the-range block (no fills in this harness) move nothing.
+// Then the forming-15m conflict latch origin (tf_conflict_latch_forming +
+// tf_conflict_forming_released): STATE stream only, 2,122 rows; zero intents.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

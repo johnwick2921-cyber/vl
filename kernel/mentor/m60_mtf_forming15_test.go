@@ -398,3 +398,51 @@ func TestM60Forming15mNeedsTheAdjacentMother(t *testing.T) {
 		t.Fatalf("a mother 3 days old must not box the forming 15m: got %+v", bx)
 	}
 }
+
+// TestM60FormingConflictLatchReleasedOnDrop — D4.2-R10 "Đừng trade. Đợi nó
+// thoát CẢ luôn" [D4.2 p1 @07:54–08:02] holds a conflict with a REAL 15m inside
+// bar. A conflict latched only by a PROVISIONAL (forming) 15m box whose 15m
+// candle then closes as NO inside bar had no 15m ISB at all: dropping the box
+// releases the latch (tf_conflict_forming_released), so the standing 5m box
+// alone no longer holds isb_tf_conflict_both_boxes_forming. A latch from a
+// real 15m box is untouched.
+func TestM60FormingConflictLatchReleasedOnDrop(t *testing.T) {
+	box5 := &ISBBox{High: 110, Low: 100, Dir: SideShort, AtTime: m60p1At(9, 50)}
+	prov := &ISBBox{High: 112, Low: 98, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
+	_, _, latch, forming := tfConflictLatchStep(TFConflictBothBoxes, box5, prov, false, false)
+	if !latch || !forming {
+		t.Fatalf("a provisional-box conflict latches and is marked forming: latch=%v forming=%v", latch, forming)
+	}
+	// A real 15m conflict marks the latch real.
+	real15 := &ISBBox{High: 112, Low: 98, Dir: SideLong, AtTime: m60p1At(9, 30)}
+	if _, _, l, f := tfConflictLatchStep(TFConflictBothBoxes, box5, real15, true, true); !l || f {
+		t.Fatalf("a real 15m conflict keeps the latch and marks it real: latch=%v forming=%v", l, f)
+	}
+	// A forming-origin latch already held is not re-marked real by a hold tick.
+	if _, held, l, f := tfConflictLatchStep(TFConflictBothBoxes, box5, nil, true, true); !held || !l || !f {
+		t.Fatalf("a held tick keeps the origin: held=%v latch=%v forming=%v", held, l, f)
+	}
+
+	// The provisional box's 15m candle closes as NO inside bar → dropped, and
+	// the forming-origin latch is released.
+	e := New(DefaultConfig())
+	e.State.ISBBox, e.State.ISBBox15m = box5, prov
+	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true
+	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
+	closedNoISB := market.Kline{OpenTime: m60p1At(9, 45), CloseTime: m60p1At(10, 0) - 1, Open: 104, High: 120, Low: 95, Close: 118}
+	e.advance15mBox(nil, []market.Kline{mother, closedNoISB}, m60p1K(m60p1At(10, 0), 118, 119, 117, 118))
+	if e.State.ISBBox15m != nil || e.State.TFConflictLatched || e.State.TFConflictLatchForming {
+		t.Fatalf("drop must release the forming-origin latch: box15=%+v latch=%v forming=%v", e.State.ISBBox15m, e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	}
+	if e.State.Counters["tf_conflict_forming_released"] != 1 {
+		t.Fatalf("the release is counted: %v", e.State.Counters)
+	}
+	// A REAL-origin latch survives the same drop.
+	e2 := New(DefaultConfig())
+	e2.State.ISBBox, e2.State.ISBBox15m = box5, prov
+	e2.State.TFConflictLatched = true
+	e2.advance15mBox(nil, []market.Kline{mother, closedNoISB}, m60p1K(m60p1At(10, 0), 118, 119, 117, 118))
+	if !e2.State.TFConflictLatched {
+		t.Fatal("a latch from a real 15m conflict must survive the provisional drop")
+	}
+}

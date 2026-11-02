@@ -102,6 +102,12 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
 			e.count("isb_15m_forming_confirmed")
 		} else {
 			e.count("isb_15m_forming_dropped")
+			// m465 review (D4.2-R10 holds a REAL 15m ISB conflict): a latch set
+			// only by this provisional box had no 15m inside bar behind it.
+			if e.State.TFConflictLatched && e.State.TFConflictLatchForming {
+				e.State.TFConflictLatched, e.State.TFConflictLatchForming = false, false
+				e.count("tf_conflict_forming_released")
+			}
 			e.note("15m early read dropped: the 15m candle at %s CT closed as no inside bar — the provisional %s box %.2f–%.2f is gone [D4.2-R11 p1 @07:20–08:15]",
 				swingCT(bx.AtTime), bx.Dir, bx.Low, bx.High)
 		}

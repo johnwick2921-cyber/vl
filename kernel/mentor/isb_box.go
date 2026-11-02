@@ -158,6 +158,24 @@ func tfConflictHeld(mode string, box5, box15 *ISBBox, latched bool) (conflict, h
 	return false, false, false
 }
 
+// tfConflictLatchStep is tfConflictHeld plus the latch's ORIGIN (m465 review):
+// latchForming is true while the latch was set only by a conflict with a
+// PROVISIONAL (forming) 15m box. A conflict with a real 15m box marks it real;
+// a held tick keeps the origin; no latch → false.
+func tfConflictLatchStep(mode string, box5, box15 *ISBBox, latched, forming bool) (conflict, held, newLatch, newForming bool) {
+	conflict, held, newLatch = tfConflictHeld(mode, box5, box15, latched)
+	switch {
+	case !newLatch:
+		newForming = false
+	case mtfConflict(box5, box15):
+		provisional := box15.Provisional
+		newForming = provisional && (!latched || forming)
+	default:
+		newForming = forming
+	}
+	return conflict, held, newLatch, newForming
+}
+
 // crossingISBs reports whether the last `lookback` CLOSED buckets hold 2 ISBs
 // with OPPOSITE directions — the choppy read that makes that TF invalid and
 // escalates the read one TF up [D3.4 p2 @17:07–17:49]. Conservative reading

@@ -238,6 +238,11 @@ type State struct {
 	// TFConflictLatched — CE-2 (release #25, tf_conflict_end both_boxes): a
 	// 15m/5m conflict was seen and not every box has escaped yet.
 	TFConflictLatched bool `json:"tf_conflict_latched,omitempty"`
+	// TFConflictLatchForming — m465 review: the latch was set by a conflict
+	// with a PROVISIONAL (forming, D4.2-R2) 15m box only. If that 15m candle
+	// closes as no inside bar, no 15m ISB ever existed, so the drop releases
+	// the latch (advance15mBox).
+	TFConflictLatchForming bool `json:"tf_conflict_latch_forming,omitempty"`
 	// ArmSeq names the next arm.
 	ArmSeq int `json:"arm_seq"`
 	// LevelArms are the RESTING level orders (B6, 10-03 ruling): a level
@@ -2430,8 +2435,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// CE-2 (release #25, knob tf_conflict_end): "both_boxes" holds the
 	// conflict until BOTH boxes have escaped [D4.2 p1 @07:54–08:02 "Đợi nó
 	// thoát cả luôn"]; "first_box" (default) is the pre-#25 read.
-	conflict, conflictHeld, latch := tfConflictHeld(e.Cfg.TFConflictEnd, e.State.ISBBox, e.State.ISBBox15m, e.State.TFConflictLatched)
-	e.State.TFConflictLatched = latch
+	conflict, conflictHeld, latch, latchForming := tfConflictLatchStep(e.Cfg.TFConflictEnd, e.State.ISBBox, e.State.ISBBox15m, e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	e.State.TFConflictLatched, e.State.TFConflictLatchForming = latch, latchForming
 	if conflict {
 		out = append(out, e.conflictArmCancels()...)
 		if IsISB(execPrev, execCur) {
