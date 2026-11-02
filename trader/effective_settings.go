@@ -841,6 +841,9 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorCXRow("mentor_keypair_candle_ratio", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.KeypairRatio })
 	mentorCXRow("mentor_box_fresh_rth_pair", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxFreshRTHPair })
 	mentorCXRow("mentor_box_max_height_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxMaxHeightPts })
+	// m465 P4 (release #60): resolved in trader/mentor_resonance_raw.go.
+	mentorRCRow("mentor_resonance_raw_isb", "trader.mentorResonanceRawISBOn (D2.4-R2, nil → ON)", func(rc store.RiskControlConfig) any { return mentorResonanceRawISBOn(&rc) })
+	mentorRCRow("mentor_2m_reduce_size", "trader.mentor2mReduceSizeOn (D3.1-R30, nil → ON)", func(rc store.RiskControlConfig) any { return mentor2mReduceSizeOn(&rc) })
 
 	// mentor_tuning.* (K3): each through mentorTuningResolve (the ONE resolver).
 	mentorTuningRow := func(path, name string, get func(mentorTuned) any) {

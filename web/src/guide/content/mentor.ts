@@ -280,6 +280,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_resonance_runner_tp_old_high',
     live: true,
   },
+  'Resonance on any same-way inside bar': {
+    settingId: 'mentor_resonance_raw_isb',
+    live: true,
+  },
+  'Smaller size on a 2m entry': {
+    settingId: 'mentor_2m_reduce_size',
+    live: true,
+  },
   'Break-even before the 1:1 partial': {
     settingId: 'mentor_be_before_partial',
     live: true,
@@ -735,7 +743,7 @@ export const mentor: GuideSection = {
       rows: [
         [
           'A — resonance',
-          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles AFTER the fill candle — counted in candles of the frame the entry was read on (1m, 2m or 5m; the fill candle itself is not counted — ours, the course does not say [D2.4 p1 @01:44–01:56, @04:44–04:53; X8 @18:02–18:14]) — where that ISB passes every placement gate EXCEPT the never-add gate: the position flips to mode A (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER is NOT capped: its resting PHL/PLH take-profit is moved far out of reach (600 points beyond the entry — ours, the course only says “let it run”; the AddOn cannot delete a take-profit leg) so it exits only by its break-even stop, the X8 trap-dodge or the EOD flat [D2.4 p1 @01:58–02:09, @02:24–02:47]. With mentor_resonance_runner_tp_old_high ON the runner’s take-profit is instead moved to the level beyond the old high (the bot’s older inference); a one-bracket position is never touched. A position REBUILT from the broker after a restart has an unknown fill age, so its 3-candle window is treated as already spent and a later same-side ISB cannot flip it to A (release #53 m437). The stop does NOT move at the arm: on the CLOSED 1m candle, a split position’s RUNNER moves to break-even only AFTER leg 1’s 1:1 partial is confirmed filled at NinjaTrader (leg 1 keeps its original stop until its take-profit — “mình bán bớt rồi… thì cứ để break even cho nó chạy” [D2.4 p1 @03:36–03:45]); a one-bracket position has no partial, so it goes to break-even once the close is at least 0.25R beyond entry (a CTO default the owner may change)',
+          'A PHL/PLH filled and then an ISB in the SAME direction within 3 candles AFTER the fill candle — counted in candles of the frame the entry was read on (1m, 2m or 5m; the fill candle itself is not counted — ours, the course does not say [D2.4 p1 @01:44–01:56, @04:44–04:53; X8 @18:02–18:14]). Release #60 (D2.4-R2): ANY inside bar of that frame whose candle 1 has the trade’s colour counts — read straight off the closed candles, even when that ISB’s own entry was refused (its stop above the ISB max, room, location…): “trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar cùng chiều” [D2.4 p1 @01:37, @04:54] (switch mentor_resonance_raw_isb, ON; OFF = only an ISB that passes every placement gate except the never-add gate, as before; counter resonance_armed_raw_isb). The position flips to mode A (do not trail it); leg 1’s 1:1 take-profit stays, and the RUNNER is NOT capped: its resting PHL/PLH take-profit is moved far out of reach (600 points beyond the entry — ours, the course only says “let it run”; the AddOn cannot delete a take-profit leg) so it exits only by its break-even stop, the X8 trap-dodge or the EOD flat [D2.4 p1 @01:58–02:09, @02:24–02:47]. With mentor_resonance_runner_tp_old_high ON the runner’s take-profit is instead moved to the level beyond the old high (the bot’s older inference); a one-bracket position is never touched. A position REBUILT from the broker after a restart has an unknown fill age, so its 3-candle window is treated as already spent and a later same-side ISB cannot flip it to A (release #53 m437). The stop does NOT move at the arm: on the CLOSED 1m candle, a split position’s RUNNER moves to break-even only AFTER leg 1’s 1:1 partial is confirmed filled at NinjaTrader (leg 1 keeps its original stop until its take-profit — “mình bán bớt rồi… thì cứ để break even cho nó chạy” [D2.4 p1 @03:36–03:45]); a one-bracket position has no partial, so it goes to break-even once the close is at least 0.25R beyond entry (a CTO default the owner may change)',
         ],
         [
           'B — normal',
@@ -842,11 +850,6 @@ export const mentor: GuideSection = {
           body: 'The 2025 VWAP + ±1 sd bands (three support/resistance lines, a target ladder, a size tier, a ranging detector, an ORB re-entry) are NOT built in mentor mode. It is unknown whether the mentor still teaches it (zero hits in the 2026 course), so nothing is built until he answers. VWAP exists only in the non-mentor planner.',
           cite: 'VWAP Stddiv part1 @00:01:44–00:20:32 · open mentor question B24 (Q6)',
         },
-        {
-          title: 'Smaller size when trading the 2m',
-          body: 'The mentor says a 2m stop is larger than a 1m stop, so reduce size ("khung 2 phút … stop loss lớn hơn khung 1 phút … mình phải giảm size lại"). He gives no number, so there is NO frame-based size cut: the size table reads the stop (20–25 pts = reduced tier) and the setup flags only, never the frame. A 2m ISB with a small stop trades the normal size.',
-          cite: 'D3.1 p1 @00:14:07–00:14:47 · open mentor question B26',
-        },
       ],
     },
     {
@@ -931,7 +934,7 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–25 pts, where the ceiling is the mentor_isb_max_pts knob (default 25 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”).',
+          what: 'Size when the stop is 20–25 pts, where the ceiling is the mentor_isb_max_pts knob (default 25 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”). Release #60: an ISB/PHL/PLH entry read on the 2m (or 5m) also sizes this tier (tier exec_2m_reduce, switch “Smaller size on a 2m entry”, D3.1 p1 @14:09–14:35).',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
@@ -2155,6 +2158,40 @@ export const mentor: GuideSection = {
             'OFF — D2.4 p1 @02:02, @02:24–02:47 (no runner target, “cho nó chạy”). Counters resonance_runner_uncapped / resonance_runner_uncap_not_split; ON: resonance_runner_tp_sent / _none / _not_split / _not_beyond.',
           whenToTouch:
             'ON only to cap the runner at the level beyond the old high again (the bot’s older inference, not the course).',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Resonance on any same-way inside bar',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
+          what: 'ON (default, release #60): after a PHL/PLH fill, on every CLOSED candle of the frame the entry was read on (1m, 2m or 5m), if that candle is an inside bar of the one before it (body inside its full range) and the one before has the trade’s colour (green for a long, red for a short), and it is candle 1, 2 or 3 after the fill candle, the position flips to mode A (resonance) — once. Nothing is placed and no stop moves at that moment: the runner’s break-even waits for leg 1’s 1:1 partial exactly as before. The inside bar does NOT have to be a tradeable ISB entry: an ISB whose own entry the bot refused (stop above the ISB max, room, location, a gate) still counts. OFF: only a same-way ISB entry that passes every placement gate except the never-add gate arms it (m151).',
+          trader:
+            'Course: “sau khi nó khớp lệnh của mình, trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar cùng chiều, thì đó là một setup cộng hưởng” (after it fills, within the next 3 candles a same-way inside bar appears — that is the resonance) [D2.4 p1 @01:37, @04:54]; “inside bar cho lệnh long, cùng chiều nha anh chị, chứ không phải inside bar lệnh short” [D2.4 p1 @03:56, @04:42–04:44]. He names no gate on that inside bar — it is a hold signal, not a new entry.',
+          consumer:
+            'trader/mentor_resonance_raw.go mentorResonanceRawTick ← trader/mentor_exit_drive.go mentorExitDrive (mentorResonanceRawDrive)',
+          range: 'ON / OFF',
+          systemDefault: 'ON (unset = ON)',
+          recommended:
+            'ON — D2.4-R2 is explicit. Counter resonance_armed_raw_isb (and the shared resonance_armed); the log line says “resonance ARMED on a RAW inside bar”.',
+          whenToTouch:
+            'OFF only to go back to the older rule (the resonance needs a placeable ISB entry).',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Smaller size on a 2m entry',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
+          what: 'ON (default, release #60): an ISB, PHL or PLH entry READ on the 2m (or the slow-evening 5m) sizes the reduced tier (mentor_reduced_contracts, 3) — tier exec_2m_reduce. It ranks after the ISB old-extreme / in-range cuts and the 5m pullback warning, before the 20–25-pt stop band. SWING4H (its own tier) and box entries are not touched. OFF: a 2m entry sizes like a 1m entry.',
+          trader:
+            'Course: “khi anh chị vô lệnh khung 2 phút, stop loss lớn hơn khung 1 phút. Thì bây giờ stop loss lớn, mình phải làm gì? Mình phải giảm size” (a 2m entry has a bigger stop than a 1m one — so reduce size) [D3.1 p1 @14:09–14:35]; his 2m entry candle measures 15.50 pts / 62 ticks. He gives NO count: the cut is the bot’s reduced tier (3) — the exact number is an open mentor question.',
+          consumer:
+            'trader/mentor_mode.go mentorContractsFor (tier exec_2m_reduce) ← mentorSizeFor (Intent.ExecTFMin)',
+          range: 'ON / OFF',
+          systemDefault: 'ON (unset = ON)',
+          recommended:
+            'ON — D3.1-R30. Counter tier_exec_2m_reduce; the size line names the frame and the stop.',
+          whenToTouch:
+            'OFF only if the mentor says a 2m entry keeps the 1m size.',
           perSession: 'No — per strategy.',
         },
         {

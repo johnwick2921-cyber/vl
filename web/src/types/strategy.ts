@@ -511,6 +511,12 @@ export interface RiskControlConfig {
   // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
   // entry-to-stop band. Unset → range.
   mentor_isb_loss_box?: 'range' | 'band'
+  // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
+  // candles of a PHL/PLH fill arms resonance; unset → ON.
+  mentor_resonance_raw_isb?: boolean
+  // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
+  // reduced size; unset → ON.
+  mentor_2m_reduce_size?: boolean
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

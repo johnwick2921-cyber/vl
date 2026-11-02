@@ -2349,6 +2349,21 @@ type RiskControlConfig struct {
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
 	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
+
+	// m465 P4 (release #60, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_resonance_raw.go.
+	//   MentorResonanceRawISB — nil → ON (D2.4-R2, course explicit): a RAW
+	//        same-way inside bar within 3 entry-frame candles of a PHL/PLH fill
+	//        arms resonance, even when that ISB's own entry was refused
+	//        ("trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar cùng
+	//        chiều" [D2.4 p1 @01:37, @04:54]); false = only an ISB entry that
+	//        passed every placement gate but never-add arms it (m151).
+	//   Mentor2mReduceSize — nil → ON (D3.1-R30): an ISB/PHL/PLH entry read on
+	//        the 2m (or 5m) frame sizes the reduced tier ("vô lệnh khung 2
+	//        phút, stop loss lớn hơn… Mình phải giảm size" [D3.1 p1
+	//        @14:09–14:35]); false = the 1m tiers.
+	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
+	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs
