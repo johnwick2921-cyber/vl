@@ -1,8 +1,13 @@
 package mentor
 
 import (
+	"fmt"
 	"math"
+	"os"
+	"sort"
+	"strings"
 	"testing"
+	"time"
 
 	"vl/market"
 )
@@ -126,4 +131,139 @@ func TestM60GoverningTriggerLadder(t *testing.T) {
 			t.Errorf("%s: got %dm @%v want %dm @%v", c.name, tf, got.Price, c.wantTF, c.wantPrice)
 		}
 	}
+}
+
+// TestM60P1TapeReplayDiff — the m465 P1 before/after harness (opt-in,
+// READ-ONLY): ticks the evaluator over an exported MNQ 1m tape like the live
+// loop (one Tick per closed 1m bar, the last 2000 bars as the window) TWICE —
+// the #60 defaults and the three P1 knobs at their pre-#60 values (proven
+// byte-identical to the pre-#60 kernel by the m434 golden) — and logs every
+// ENTRY intent that appears or disappears, with a tape outcome (fill when a
+// later 1m bar trades through the entry before the next exec candle closes for
+// an ISB / by 15:00 CT for a level order; then stop-first, else target, else
+// flat at the tape end — no partials, no BE: an approximation, [B]).
+//
+//	M60P1_REPLAY_CSV=/path/mnq_1m.csv   ot,o,h,l,c,v (the m413 loader)
+//	M60P1_REPLAY_FROM=2026-10-28        first CT date whose entries are reported
+func TestM60P1TapeReplayDiff(t *testing.T) {
+	path := os.Getenv("M60P1_REPLAY_CSV")
+	if path == "" {
+		t.Skip("set M60P1_REPLAY_CSV (+ M60P1_REPLAY_FROM) to run the m465 P1 before/after tape replay")
+	}
+	from, err := time.ParseInLocation("2006-01-02", os.Getenv("M60P1_REPLAY_FROM"), ctime())
+	if err != nil {
+		t.Fatalf("M60P1_REPLAY_FROM: %v", err)
+	}
+	bars := m413Load(t, path)
+	type entry struct {
+		at, setup string
+		side      Side
+		px, stop  float64
+		target    float64
+		conf      bool
+		i         int
+		expiry    int64
+	}
+	run := func(pre bool) (map[string]entry, map[string]int) {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		cfg.RealFillOnly = true
+		cfg.LossDeparturePts = 0
+		cfg.LegBudgetEnabled = true
+		cfg.LegResetOn = "close"
+		cfg.LocTriggerFilter = true
+		cfg.DayOffRecheck = false
+		cfg.EmaMaxCross30m = 0
+		if pre {
+			m462PreM465Knobs(&cfg)
+		}
+		e := New(cfg)
+		got := map[string]entry{}
+		for i := 1; i < len(bars); i++ {
+			lo := i + 1 - 2000
+			if lo < 0 {
+				lo = 0
+			}
+			out := e.Tick(bars[lo:i+1], BarCloseInstant(bars[i]))
+			for _, in := range out {
+				if in.Action == ActionMoveStopBE {
+					e.SwingBEApplied(in.ArmID)
+				}
+				if in.Action == ActionClosePosition {
+					e.SwingEnded(in.ArmID)
+				}
+				if (in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry) || bars[i].OpenTime < from.UnixMilli() {
+					continue
+				}
+				at := time.UnixMilli(bars[i].OpenTime).In(ctime()).Format("01-02 15:04")
+				k := fmt.Sprintf("%s %s %s %.2f", at, in.Setup, in.Side, in.Price)
+				got[k] = entry{at: at, setup: in.Setup, side: in.Side, px: in.Price, stop: in.Stop, target: in.Target, conf: in.Confluence, i: i, expiry: in.ExpiryMs}
+			}
+		}
+		return got, e.State.Refusals
+	}
+	outcome := func(en entry) (string, float64) {
+		long := en.side == SideLong
+		exp := en.expiry
+		if exp == 0 {
+			d := time.UnixMilli(bars[en.i].OpenTime).In(ctime())
+			exp = time.Date(d.Year(), d.Month(), d.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+		}
+		filled := -1
+		for j := en.i + 1; j < len(bars); j++ {
+			b := bars[j]
+			if filled < 0 {
+				if b.OpenTime > exp {
+					return "no fill before expiry", 0
+				}
+				if long && b.High >= en.px || !long && b.Low <= en.px {
+					filled = j
+				} else {
+					continue
+				}
+			}
+			if long && b.Low <= en.stop || !long && b.High >= en.stop {
+				return "stop " + time.UnixMilli(b.OpenTime).In(ctime()).Format("15:04"), -abs(en.px - en.stop)
+			}
+			if en.target > 0 && (long && b.High >= en.target || !long && b.Low <= en.target) {
+				return "target " + time.UnixMilli(b.OpenTime).In(ctime()).Format("15:04"), abs(en.target - en.px)
+			}
+		}
+		if filled < 0 {
+			return "no fill", 0
+		}
+		last := bars[len(bars)-1].Close
+		if long {
+			return "open at tape end", last - en.px
+		}
+		return "open at tape end", en.px - last
+	}
+	after, refA := run(false)
+	pre, _ := run(true)
+	net := 0.0
+	for k, en := range pre {
+		if _, ok := after[k]; !ok {
+			o, pts := outcome(en)
+			net -= pts
+			t.Logf("DISAPPEARS %s %s %s entry %.2f stop %.2f target %.2f — tape: %s %+.2f pts", en.at, en.setup, en.side, en.px, en.stop, en.target, o, pts)
+		}
+	}
+	for k, en := range after {
+		p, ok := pre[k]
+		if !ok {
+			o, pts := outcome(en)
+			net += pts
+			t.Logf("APPEARS    %s %s %s entry %.2f stop %.2f target %.2f conf=%v — tape: %s %+.2f pts", en.at, en.setup, en.side, en.px, en.stop, en.target, en.conf, o, pts)
+		} else if p.conf != en.conf || p.target != en.target {
+			t.Logf("CHANGED    %s %s %s entry %.2f: confluence %v→%v target %.2f→%.2f", en.at, en.setup, en.side, en.px, p.conf, en.conf, p.target, en.target)
+		}
+	}
+	var m60 []string
+	for k, v := range refA {
+		if strings.HasSuffix(k, "_forming") || strings.HasSuffix(k, "_15m") && strings.Contains(k, "trigger") || strings.HasSuffix(k, "_30m") && strings.Contains(k, "trigger") {
+			m60 = append(m60, fmt.Sprintf("%s=%d", k, v))
+		}
+	}
+	sort.Strings(m60)
+	t.Logf("entries pre-#60 %d, #60 %d; net tape change %+.2f pts (1 MNQ, stop/target only); P1 refusals (final-day ledger): %v", len(pre), len(after), net, m60)
 }
