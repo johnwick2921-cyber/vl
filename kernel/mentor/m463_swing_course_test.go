@@ -192,6 +192,7 @@ func TestM463R22PlainRejectImpossibleAfterThrough(t *testing.T) {
 // opposite direction. A later reject-shaped touch must be refused.
 func TestM463R22GapThroughInvalidatesTheWindow(t *testing.T) {
 	cfg := DefaultSwingCfg()
+	m61PreP4Swing(&cfg) // m466 P4 (release #61): pins mentor_swing_isb_close_back=required + keep OFF — the strict R24 read this test was written against; the #61 defaults (D5.2-R26 p3 @04:49–05:09, D5.2-R25 p2 @10:23–10:51) are pinned in m61_p4_swing_test.go. The default half is asserted at the end.
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 10100, 10110, 10095, 10105),
 		mk5m(t, 15, 5, 5, 10150, 10175, 10140, 10150),  // touch 1, reject (armed 10140)
@@ -207,6 +208,16 @@ func TestM463R22GapThroughInvalidatesTheWindow(t *testing.T) {
 	}
 	if s.FirstTouch == nil || !s.FirstTouch.Through {
 		t.Fatalf("a close beyond the line must latch the level invalid: %+v", s.FirstTouch)
+	}
+	// m466 P4 default (not_required, D5.2-R26 p3 @04:49–05:09): the 05:20 bar is
+	// an INSIDE BAR of the 05:15 gap candle whose low (10,165) is back under the
+	// resistance, so it is the way back in on the 4H line's side — a SHORT
+	// inside-bar order with the stop AT the line, never the "fresh approach"
+	// long reject the old window armed (and never a reject, stop 30 beyond).
+	s2 := &SwingState{}
+	es := m463Entries(m463Walk(t, s2, bars, 4, DefaultSwingCfg()))
+	if len(es) != 2 || es[1].Side != SideShort || es[1].Price != 10165 || abs(es[1].Stop-swingLineGolden) > 0.01 {
+		t.Fatalf("default: the reject, then the 05:20 inside-bar short AT the line; got %+v", es)
 	}
 }
 
@@ -321,7 +332,10 @@ func TestM463R31InsideBarStopAtTheLineAlsoSkips(t *testing.T) {
 	if es := m463Entries(out); len(es) != 0 {
 		t.Fatalf("E11: a 91.75-pt inside-bar stop must be refused: %+v", es)
 	}
-	if m463Refused(s, SwingRefusedMaxStop) != 1 || s.FirstTouch == nil || s.FirstTouch.ISBFired {
+	// m466 P4 default (not_required, D5.2-R26 p3 @04:49–05:09): the 09:10
+	// close-back bar is itself an inside bar of the 09:05 through candle (entry
+	// 30,340, 94.75 pts) — refused too; two named refusals, none spends the level.
+	if m463Refused(s, SwingRefusedMaxStop) != 2 || s.FirstTouch == nil || s.FirstTouch.ISBFired {
 		t.Fatalf("E11: named swing_max_stop and the ISB NOT spent: refused=%+v touch=%+v", s.refused, s.FirstTouch)
 	}
 	// a later, tighter inside bar still enters (R25).
@@ -400,6 +414,12 @@ func m463EarlyCloseMs(t *testing.T, now int64) int64 {
 // series (the warm line is authoritative, eval.go seed path).
 func m463Example(t *testing.T, mo time.Month, d, bucketH int, line float64, cur []market.Kline) ([]Intent, *SwingState) {
 	t.Helper()
+	return m463ExampleCfg(t, DefaultSwingCfg(), mo, d, bucketH, line, cur)
+}
+
+// m463ExampleCfg is m463Example under an explicit swing config (m466 P4).
+func m463ExampleCfg(t *testing.T, cfg SwingCfg, mo time.Month, d, bucketH int, line float64, cur []market.Kline) ([]Intent, *SwingState) {
+	t.Helper()
 	bs := m463Ms(t, mo, d, bucketH, 0)
 	pre := []market.Kline{
 		{OpenTime: bs - 8*3600_000, CloseTime: bs - 8*3600_000 + 299_999, Open: line - 500, High: line - 499, Low: line - 501, Close: line - 500},
@@ -409,7 +429,7 @@ func m463Example(t *testing.T, mo time.Month, d, bucketH int, line float64, cur 
 	s := &SwingState{Line: line, BucketStart: bs, EmaCount: FourHEMA34Min, LastBarTime: pre[1].OpenTime}
 	var out []Intent
 	for i := 3; i <= len(bars); i++ {
-		out = append(out, SwingTick(s, bars[:i], DefaultSwingCfg(), bars[i-1].CloseTime+1)...)
+		out = append(out, SwingTick(s, bars[:i], cfg, bars[i-1].CloseTime+1)...)
 	}
 	return m463Entries(out), s
 }
@@ -447,13 +467,24 @@ func TestM463CourseWorkedExamples(t *testing.T) {
 	// first touch CLOSED ABOVE → INVALID, no order; price ran ~+280 (a short
 	// would lose). Every later reject-shaped touch in that 4h candle is refused.
 	t.Run("E3 Aug 26 first touch closes through: no order", func(t *testing.T) {
-		es, s := m463Example(t, 8, 26, 13, 29658.75, []market.Kline{
+		e3 := []market.Kline{
 			m463Bar(t, 8, 26, 14, 0, 29620, 29640, 29615, 29635),
 			m463Bar(t, 8, 26, 14, 5, 29635, 29690, 29630, 29685), // first touch closes ABOVE
 			m463Bar(t, 8, 26, 14, 10, 29685, 29720, 29680, 29715),
 			m463Bar(t, 8, 26, 14, 15, 29715, 29718, 29655, 29690), // pulls back onto the line from above, closes above
 			m463Bar(t, 8, 26, 14, 20, 29690, 29760, 29688, 29755),
-		})
+		}
+		// m466 P4 default (not_required, D5.2-R26 p3 @04:49–05:09): the 14:15
+		// bar is an inside bar of 14:10 whose low dips under the line — the ONLY
+		// order is that inside-bar SHORT with the stop AT the line (no reject
+		// order), and price runs away from it: it never fills.
+		des, ds := m463Example(t, 8, 26, 13, 29658.75, e3)
+		if len(des) != 1 || des[0].Side != SideShort || des[0].Stop != 29658.75 || ds.Pos != nil {
+			t.Fatalf("E3 default: only the inside-bar short AT the line, never filled; got %+v pos %+v", des, ds.Pos)
+		}
+		strict := DefaultSwingCfg()
+		m61PreP4Swing(&strict)
+		es, s := m463ExampleCfg(t, strict, 8, 26, 13, 29658.75, e3)
 		if len(es) != 0 {
 			t.Fatalf("E3: the level is invalid — no order at all; got %+v", es)
 		}
@@ -466,14 +497,26 @@ func TestM463CourseWorkedExamples(t *testing.T) {
 	// → entry 29,577.75 at the inside bar's high, stop AT the level ("đây mới gọi
 	// là setup").
 	t.Run("E7 Aug 11 inside bar long, stop at the level", func(t *testing.T) {
-		es, _ := m463Example(t, 8, 11, 13, 29553.50, []market.Kline{
+		e7 := []market.Kline{
 			m463Bar(t, 8, 11, 13, 20, 29600, 29605, 29590, 29595),
 			m463Bar(t, 8, 11, 13, 25, 29595, 29598, 29533, 29540),    // touches, closes BELOW → invalid
 			m463Bar(t, 8, 11, 13, 30, 29540, 29585, 29535, 29575),    // closes back above (candle 1)
 			m463Bar(t, 8, 11, 13, 35, 29572, 29577.75, 29560, 29570), // inside bar
-		})
+		}
+		// strict read (required): the mentor's own entry, "đây mới gọi là setup".
+		strict := DefaultSwingCfg()
+		m61PreP4Swing(&strict)
+		es, _ := m463ExampleCfg(t, strict, 8, 11, 13, 29553.50, e7)
 		if len(es) != 1 || es[0].Side != SideLong || es[0].Price != 29577.75 || es[0].Stop != 29553.50 {
 			t.Fatalf("E7: want LONG 29,577.75 stop 29,553.50; got %+v", es)
+		}
+		// m466 P4 default (not_required, D5.2-R26 p3 @04:49–05:09): in this
+		// fixture the 13:30 close-back candle sits inside the 13:25 through
+		// candle, so the inside-bar long arms one beat earlier at its high
+		// 29,585, stop AT the level — "tùy góc nhìn" [p3 @07:42–08:36].
+		des, _ := m463Example(t, 8, 11, 13, 29553.50, e7)
+		if len(des) != 1 || des[0].Side != SideLong || des[0].Price != 29585 || des[0].Stop != 29553.50 {
+			t.Fatalf("E7 default: want LONG 29,585 stop 29,553.50; got %+v", des)
 		}
 	})
 	// E8 — Fri 11 Sep, MNQU2026, long [D5.2 p2 @12:34–14:05; p3 @04:49–05:57]:

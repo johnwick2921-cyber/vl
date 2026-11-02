@@ -151,6 +151,11 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 	oldBucket := fourHBucketStart(bars[3].OpenTime, loc)
 	e := New(DefaultConfig())
 	e.Cfg.Enabled = true
+	// m466 P4: under the #61 default (not_required) the 09:10 close-back bar is
+	// itself an inside bar of the 09:05 through candle and arms one beat earlier
+	// — dropped by S2 in this single multi-bar tick. This test pins the LINE
+	// after the flip, so it runs the strict read.
+	m61PreP4Swing(&e.Cfg.Swing)
 	e.State.Swing = SwingState{
 		Line:        950,
 		BucketStart: oldBucket,
