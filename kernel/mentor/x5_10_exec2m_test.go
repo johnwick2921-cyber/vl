@@ -209,6 +209,7 @@ func TestExec2mOnISBStackingCounts2mCandles(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = true
+	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off
 	e := New(cfg)
 	// bars 0-1 = 2m candle 1; bars 2-3 = 2m candle 2 (the ISB candle, I1:
 	// high 106 / low 98.5). Bars 4-9 are doji 1m bars whose 2m candles stay

@@ -1599,11 +1599,19 @@ func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur mark
 // "near_box" counter), shared by the level touch loop and the rolling path
 // (m436): the nearest box edge in the trade direction must be at least
 // NearBoxRoomMultiple x the reference candle's range away [D3.2 p1
-// @21:53–23:08]; between two boxes is exempt (row 25). W11 B11: the PHL/PLH leg
-// is our extension of the course's ISB-only example (NearBoxRoomPHL).
-func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRange float64) bool {
-	refuse, _ := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange, cfg.NearBoxBetweenExempt)
-	return cfg.NearBoxRoomPHL && refuse
+// @21:53–23:08]; m465: an entry inside the opposing box is
+// near_box_inside_opposing and between two boxes is no longer exempt unless
+// NearBoxBetweenExempt (D3.2-R29/R30). W11 B11: the PHL/PLH leg is our
+// extension of the course's ISB-only example (NearBoxRoomPHL). Returns the
+// refusal name ("" = allowed).
+func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRange float64) string {
+	if !cfg.NearBoxRoomPHL {
+		return ""
+	}
+	if refuse, name := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange, cfg.NearBoxBetweenExempt); refuse {
+		return name
+	}
+	return ""
 }
 
 // midRangeBoxedRefuses is the level-path mid-range ban (CTO 1791003862333 —
@@ -2133,9 +2141,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	curBarOpenTime = bars[len(bars)-1].OpenTime
 	e.trackTrendlines(trendlines, htfBroken, crossed, now)
 	trendlines = dropDeadTrendlines(trendlines) // m428 R3: a broken line is deleted — not drawn, not a level, not carried (trackTrendlines already noted it)
-	tlLevels, tlRefused := TrendlineLevels(trendlines, boxes, levels, bars)
-	for _, k := range tlRefused {
-		e.refuse("tl_first_test_level_preferred:" + k)
+	// m465 (D2.3-R7): refusals arrive named — trendline_third_touch_is_test
+	// or tl_first_test_level_preferred, each ":<line key>".
+	tlLevels, tlRefused := TrendlineLevelsTouch(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch)
+	for _, name := range tlRefused {
+		e.refuse(name)
 	}
 	levels = append(levels, tlLevels...)
 	e.State.ChartLevels, e.State.ChartTrendlines = append([]Level(nil), levels...), trendlines // T7: display set read AFTER every append
@@ -2482,11 +2492,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// A10: day off OR not-measured — no intraday mentor
 						// entries today (named per setup).
 						e.refuse("isb_" + r)
-					} else if refuse, _ := nearBoxRefusal(boxes, chosen.Price, side, e.Cfg.NearBoxRoomMultiple, abs(chosen.Price-chosen.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
+					} else if refuse, name := nearBoxRefusal(boxes, chosen.Price, side, e.Cfg.NearBoxRoomMultiple, abs(chosen.Price-chosen.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
 						// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: the entry is
 						// too close to the nearest box edge in the trade
-						// direction — "sát box" — skip it.
-						e.refuse("near_box")
+						// direction — "sát box" — skip it. m465: near_box, or
+						// near_box_inside_opposing (E6, D3.2-R29).
+						e.refuse(name)
 					} else {
 						// §6 [D3.3 p1 @ 05:07]: "TARGET LÀ VỀ NHỮNG LEVEL KẾ
 						// TIẾP" — a setup gives entry, stop AND target
@@ -2661,8 +2672,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// defensive (R7 already builds in.Side == Trigger.Dir once the
 				// direction is set), kept for parity with the normal ISB.
 				e.refuse("isbrev_trigger_side_mismatch")
-			} else if refuse, _ := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
-				e.refuse("near_box")
+			} else if refuse, name := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
+				e.refuse(name) // near_box | near_box_inside_opposing (m465)
 			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.RoomMultiple); target == 0 {
 				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —
 				// Q7 open → the normal ISB target rule: the next level beyond
@@ -2929,8 +2940,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// phl_room_rule instead of the near_box counter.
 			// W11 B11: the PHL/PLH leg of this refusal is our extension of the
 			// course's ISB-only example (NearBoxRoomPHL, default ON).
-			if phlNearBoxRefuses(e.Cfg, boxes, tref, side, tr.RefBar.High-tr.RefBar.Low) {
-				e.refuse("near_box")
+			if name := phlNearBoxRefuses(e.Cfg, boxes, tref, side, tr.RefBar.High-tr.RefBar.Low); name != "" {
+				e.refuse(name) // near_box | near_box_inside_opposing (m465)
 				continue
 			}
 			// D2-28 (CTO fold, release #4): the higher-low / lower-high check
@@ -2943,6 +2954,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			prior, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes)
 			if !okLeft {
 				e.refuse("phl_no_left_low")
+				continue
+			}
+			// m465 (D2.2-R64): a flat low (within the m428 R2 "same price"
+			// distance of the prior low) is an FTGL, not a PHL — mirror PLH.
+			if name := phlFlatExtremeRefusal(e.Cfg, side, tr.RefBar, prior, phlFlatNear(bars, execTFMin, execCur)); name != "" {
+				e.refuse(name)
 				continue
 			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's

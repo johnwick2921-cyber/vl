@@ -317,8 +317,8 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 		if name, _ := e.phlLocationBan(ex.level, side, rp, cur, levels, boxes); name != "" {
 			return skip("rolling_"+name, "the rolling entry sits in a banned PHL/PLH location")
 		}
-		if phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low) {
-			return skip("rolling_near_box", "the rolling entry is too close to a box [D3.2 p1 @21:53–23:08]")
+		if name := phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low); name != "" {
+			return skip("rolling_"+name, "the rolling entry is too close to a box [D3.2 p1 @21:53–23:08]") // rolling_near_box | rolling_near_box_inside_opposing (m465)
 		}
 	}
 
@@ -326,6 +326,11 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	prior, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes)
 	if !okLeft {
 		return skip("rolling_phl_no_left_low", "no left structural extreme — the rolling PHL/PLH is refused rather than emitted unchecked")
+	}
+	// m465 (D2.2-R64): a flat low is an FTGL, not a PHL (mirror PLH) — the same
+	// check the level path runs, on the rolling reference candle.
+	if name := phlFlatExtremeRefusal(e.Cfg, side, execCur, prior, phlFlatNear(bars, execTFMin, execCur)); name != "" {
+		return skip("rolling_"+name, "a flat low/high is an FTGL/FTGH, not a PHL/PLH [D2.2 p3 @07:44–10:15]")
 	}
 
 	// 6. Build through the SAME gated path as the level PHL/PLH, with the

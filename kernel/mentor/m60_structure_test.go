@@ -41,9 +41,20 @@ func TestM60TrendlineThirdTouchDoesNotArm(t *testing.T) {
 		mk(16, 101, 101.5, 99.7, 101.2),
 	)
 	now16 := time.UnixMilli(bars[16].OpenTime + 59_999).In(ctime())
+	// Bar 13's low becomes a confirmed swing too, so newer 2-point lines exist
+	// (not valid, never locations); the 3rd-touch line is still the one valid.
 	tls = TrendlinesBuild(bars, now16)
-	if len(tls) != 1 || tls[0].ValidAt != 13 || tls[0].Dead {
-		t.Fatalf("fixture: want the line still valid at 13 on bar 16, got %+v", tls)
+	valid := 0
+	for _, x := range tls {
+		if x.ValidAt != 0 && !x.Dead {
+			valid++
+			if x.ValidAt != 13 {
+				t.Fatalf("fixture: want the one valid line at 13, got %+v", tls)
+			}
+		}
+	}
+	if valid != 1 {
+		t.Fatalf("fixture: want exactly one valid line on bar 16, got %+v", tls)
 	}
 	boxes = BoxesBuild(bars, DefaultBoxCfg(), now16)
 	got, refused = TrendlineLevels(tls, boxes, nil, bars)
@@ -199,7 +210,9 @@ func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
 // measure is the owner-ruled m428 R2 flatNearPts.
 func TestM60PHLFlatLowRefused(t *testing.T) {
 	cfg := DefaultConfig()
-	ref := func(low float64) market.Kline { return market.Kline{Open: low + 3, Close: low + 6, High: low + 8, Low: low} }
+	ref := func(low float64) market.Kline {
+		return market.Kline{Open: low + 3, Close: low + 6, High: low + 8, Low: low}
+	}
 	if got := phlFlatExtremeRefusal(cfg, SideLong, ref(29371.00), 29369.00, 4.5); got != "phl_flat_low_is_ftgl" {
 		t.Fatalf("low 29,371.00 vs prior 29,369.00, near 4.5 → %q, want phl_flat_low_is_ftgl", got)
 	}
@@ -271,4 +284,16 @@ func TestM60ReverseISBHoverTouch(t *testing.T) {
 	if cfg.ISBReverseTouch != ISBReverseTouchPair {
 		t.Fatalf("default isb_reverse_touch = %q, want %q", cfg.ISBReverseTouch, ISBReverseTouchPair)
 	}
+}
+
+// m465PreValues sets every m465 P3 knob to its pre-#60 value (the knob's
+// non-default side) and the two changed defaults back to their pre-#60
+// numbers — for the identity tests that pin a tape as it ran before #60.
+func m465PreValues(cfg *Config) {
+	cfg.TrendlineEntryTouch = TrendlineEntryThird
+	cfg.NearBoxBetweenExempt = true
+	cfg.PHLFlatLow = PHLFlatLowStrict
+	cfg.ISBReverseTouch = ISBReverseTouchISBCandle
+	cfg.ISBStackTinyStopPts = 0
+	cfg.DayGateSpentPts = 300
 }

@@ -1,7 +1,6 @@
 package mentor
 
 import (
-	"fmt"
 	"sort"
 	"strings"
 	"time"
@@ -872,11 +871,31 @@ func InsideAnyBox(boxes []Box, price float64) bool {
 // too close to a box is refused. The nearest box edge STRICTLY in the trade
 // direction (long → the closest edge ABOVE; short → the closest edge BELOW)
 // must be at least roomMultiple × risk points away, else the setup is "sát
-// box" and skipped. Row 25 [@ 23:14–24:03]: "nằm ở GIỮA 2 box" — exempt ONLY
-// between two DIFFERENT boxes: one wholly above (Bottom > price) AND another
-// wholly below (Top < price). A price inside a single box is NOT exempt. No
-// edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
-// disables the check.
+// box" and skipped (name near_box).
+//
+// m465 (release #60, D3.2-R29/R30 — the full video read): the mentor refused
+// E6, a short ISB candle (~29,015–29,025) sitting ON the top of the FTGL box
+// 28,980.75–29,014.00 — "sát box, gần box, gần supply quá, mình không được
+// đánh" [D3.2 p1 @22:12–23:08] — although the FTGH box was drawn above it. So:
+//
+//  1. an entry INSIDE (edges included) a box whose role OPPOSES the side — an
+//     FTGL (support) for a short, an FTGH (resistance) for a long — is at
+//     distance 0 from the floor it would run into: refused
+//     near_box_inside_opposing;
+//  2. "nằm ở GIỮA 2 box" (one box wholly above AND one wholly below) is no
+//     longer a blanket exemption: the middle ISB was fine because "nó đâu có
+//     làm gì đâu" — nothing was near it [D3.2 p1 @23:14–24:41] — so it passes
+//     on its OWN room like any other setup. betweenExempt (knob
+//     mentor_near_box_between_exempt, default false) restores the pre-#60
+//     exemption.
+//
+// No edge in the trade direction → allowed. roomMultiple <= 0 or risk <= 0
+// disables the check. why is the refusal NAME ("" when allowed).
+// nearBoxInsideOpposing switches rule (1) below. Always true in production; the
+// pre-#60 identity tests (m462_newsonly_identity_test.go) switch it off to prove
+// every OTHER m465 change is undone by its knob, tick for tick.
+var nearBoxInsideOpposing = true
+
 func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk float64, betweenExempt bool) (refuse bool, why string) {
 	if roomMultiple <= 0 || risk <= 0 {
 		return false, ""
@@ -914,14 +933,25 @@ func nearBoxRefusal(boxes []Box, price float64, side Side, roomMultiple, risk fl
 			}
 		}
 	}
+	// (1) inside the opposing box — distance 0 (E6). Always on in production;
+	// nearBoxInsideOpposing is a test hook only (the pre-#60 identity tests).
+	for _, b := range boxes {
+		if !nearBoxInsideOpposing {
+			break
+		}
+		opposes := side == SideShort && b.Kind == FTGL || side == SideLong && b.Kind == FTGH
+		if opposes && price >= b.Bottom && price <= b.Top {
+			return true, "near_box_inside_opposing"
+		}
+	}
 	if betweenExempt && wholeAbove && wholeBelow {
-		return false, "" // row 25: between two DIFFERENT boxes — exempt
+		return false, "" // pre-#60 row 25: between two DIFFERENT boxes — exempt (knob)
 	}
 	if !found {
 		return false, ""
 	}
 	if nearest < roomMultiple*risk {
-		return true, fmt.Sprintf("near box: nearest box edge %.2f pts < %.2f pts room (%gx risk)", nearest, roomMultiple*risk, roomMultiple)
+		return true, "near_box"
 	}
 	return false, ""
 }

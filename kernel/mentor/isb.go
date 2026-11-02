@@ -150,9 +150,9 @@ type ISBArm struct {
 // 2026-10-03 [A]: the reference is the FIRST inside-bar candle (I1, = stack
 // candle 1). Candles 2 and 3 whose bodies stay inside I1 → KEEP the order;
 // candle 4 not filling → CANCEL ("sau 3 cây nến… cây thứ 4 mà nó không fill →
-// mình cancel" [D5.1 p2 @ 04:00–04:08]). The §14 tiny-stop exception is OFF by
-// default (personal discretion, not a class rule; release #52 W11 B8 adds the
-// optional knob ISBStackTinyStopPts, see ISBStackTick). inside counts the
+// mình cancel" [D5.1 p2 @ 04:00–04:08]). The §14 tiny-stop exception
+// (ISBStackTinyStopPts, see ISBStackTick) is ON at 12.5 pts since m465
+// (D5.1-R26, the worked example's measured stop). inside counts the
 // FOLLOWING candles that stayed inside (1 = stack candle 2).
 func ISBStackAdvice(inside int) string {
 	return ISBStackAdviceAt(inside, isbStackCancelCandle1m)
@@ -204,10 +204,11 @@ func ISBStackTick(arm *ISBArm, bar market.Kline, cfg Config) []Intent {
 	arm.Inside++
 	cancelCandle := cfg.isbStackCancelCandle(arm.TFMin)
 	if ISBStackAdviceAt(arm.Inside, cancelCandle) == "cancel" {
-		// W11 B8 tiny-stop exception (knob, default OFF): a stop at or under
-		// ISBStackTinyStopPts keeps the arm past the cancel candle [D5.1 p2
-		// @02:50–03:40; the 11–12-pt example]. The body-outside-I1 cancel above
-		// still applies.
+		// W11 B8 tiny-stop exception — m465 (D5.1-R26) default 12.5, the
+		// worked example's measured stop: a stop at or under
+		// ISBStackTinyStopPts keeps the arm past the cancel candle ("thấy stop
+		// loss nhỏ… cứ việc đặt lệnh, mặc dù sau 3 cây" [D5.1 p2 @02:24–04:41]).
+		// The body-outside-I1 cancel above still applies.
 		if cfg.ISBStackTinyStopPts > 0 {
 			if stop, _, _ := ISBStopVerdict(arm.FirstBar, cfg); stop <= cfg.ISBStackTinyStopPts {
 				return nil

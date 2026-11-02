@@ -65,6 +65,11 @@ func m431Day10_23(t *testing.T) (*Evaluator, []market.Kline, int) {
 	// (isb-17, 4h long vs 1h short that afternoon — trade 698's conflict) is
 	// refused by the 4h/1h gate before the flag wall can see it.
 	cfg.HTFGateNewsOnly = true
+	// m465 (#60, D5.1-R18): 10-23's pre-open run sits between 265 and 300, so
+	// the new 265 line makes it a SPENT day and the 12:22 ISB is refused
+	// isb_target_below_floor (the 15-pt cap). This pins the phantom-arm
+	// mechanics as the day ran live: the pre-#60 300 line.
+	cfg.DayGateSpentPts = 300
 	e := New(cfg)
 	f, err := os.Open("testdata/m431_state_20261023_0830.json.gz")
 	if err != nil {

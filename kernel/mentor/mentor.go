@@ -463,8 +463,12 @@ type Config struct {
 	// rất nhỏ. Có 12 điểm… Trade nó là take risk"]: an arm whose ISB stop
 	// (range + 2 × ISBBufferPts) is at or below this many points is NOT
 	// cancelled at the 4th candle (it still cancels the moment a body leaves
-	// I1). The mentor frames it as personal discretion and gives no threshold
-	// (he said 11–12), so it is OFF by default (0); the number is the owner's.
+	// I1). m465 (release #60, D5.1-R26 — the full video read): the worked
+	// example pins the number — "stop loss của mình lúc đó rất nhỏ, có 12
+	// điểm… cancel làm chi trời… Anh chị có một cái quyền: thấy stop loss
+	// nhỏ… cứ việc đặt lệnh, mặc dù sau 3 cây" [D5.1 p2 @02:24–04:41], the
+	// on-screen stop 29,285.75 → 29,273.25 = 12.50 pts (50 ticks). Default
+	// 12.5 (was 0 = OFF); the owner may still store any (0, 25].
 	ISBStackTinyStopPts float64
 
 	// Evening "slow" read — release #52 W11 B10. X11 says trade the 5m only in
@@ -483,7 +487,7 @@ type Config struct {
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
-	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @16:05-16:11]
+	DayGateSpentPts     float64 // run >= this before the open = spent; default 265 (m465 D5.1-R18: the measured −265.00 day "nó chạy gần hết cây daily luôn rồi" [D5.1 p1 @17:56–18:14]; the 300–400 rule [@16:05-16:11])
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
 	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the
@@ -709,7 +713,7 @@ func DefaultConfig() Config {
 		ISBOldExtremePts:       2,                    // B27 [ours]: "at the old extreme" = ± 2 pts
 		ISBInRangeGapPts:       0,                    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
 		ISBStackCancelCandle2m: 4,                    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    0,                    // B8: tiny-stop exception OFF (the mentor gave no number)
+		ISBStackTinyStopPts:    12.5,                 // m465 D5.1-R26: the worked example stop, measured 12.50 pts (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
 		EveningSlowPts:         100,                  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
 		EveningSlowFromHour:    15,                   // B10 [ours]: the RTH close
 		EveningSlowWindowMin:   0,                    // B10 [ours]: cumulative since the start hour
@@ -723,7 +727,7 @@ func DefaultConfig() Config {
 		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
 		RangeGapPts:            0,
 
-		DayGateSpentPts:     300,
+		DayGateSpentPts:     265, // m465 D5.1-R18: the worked example's -265.00 run was called spent [D5.1 p1 @17:56–18:14]
 		DayGateTargetCapPts: 15,
 		DayOffRecheck:       false, // course-defaults-30: the course shuts the whole day [D5.1 p1 @19:22–19:40]
 

@@ -873,17 +873,43 @@ func trendlineBeatenByLevel(respected []Level, price float64) bool {
 // LOCATION only (never a target): after the 3rd touch it enters the set; a
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
 // @04:38]: a trendline whose current price sits within a live box is
-// suppressed — the box wins. A RESPECTED LEVEL (key level / old extreme) at the
-// same price also beats the trendline [D2.3 p1 @02:19–03:45] — but (m311, #46b)
-// ONLY on the trendline's FIRST test: a valid line past its 3rd-touch return
-// has itself been respected and is no longer suppressed. Its key is returned
-// in refused so the caller counts tl_first_test_level_preferred.
+// suppressed — the box wins. It is TrendlineLevelsTouch with the course
+// default (TrendlineEntryFourth). refused carries "<name>:<line key>" entries
+// the caller counts as named refusals.
 func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline) (levels []Level, refused []string) {
+	return TrendlineLevelsTouch(trendlines, boxes, respected, bars, TrendlineEntryFourth)
+}
+
+// trendlineThirdTouchIsTest is the m465 refusal name (D2.3-R7).
+const trendlineThirdTouchIsTest = "trendline_third_touch_is_test"
+
+// trendlineFirstTestLevelPreferred is the m311 refusal name (D2.3 p1
+// @02:19–03:45).
+const trendlineFirstTestLevelPreferred = "tl_first_test_level_preferred"
+
+// TrendlineLevelsTouch is TrendlineLevels with the entry-touch knob
+// (mentor_trendline_entry_touch). The refusals, each "<name>:<line key>":
+//
+//   - trendline_third_touch_is_test (m465, D2.3-R7, entryTouch "fourth" — the
+//     default): an INTRADAY line (TFMin 0, not carried) on the candle of its
+//     3rd touch (ValidAt == the current bar) is not a location. The course:
+//     "thà nó về một lần, rồi nó test, rồi nó hold rồi, là lần thứ ba đó, thì
+//     lần thứ tư mới dám tự tin mình vô" [D2.3 p1 @02:34–02:47, 03:03–03:16];
+//     "test lần thứ 3 thì mới valid" (D3.2-R34) [D3.2 p2 @02:43–04:11]. From
+//     the next candle on the line is a location, so the entry comes on a
+//     LATER touch (the 4th). Persistent HTF lines are unchanged.
+//   - tl_first_test_level_preferred (m311): a RESPECTED LEVEL (key level / old
+//     extreme / FTGH-FTGL edge) at the same price beats the trendline [D2.3 p1
+//     @02:19–03:45] — for an intraday line ONLY on its first test (only
+//     reachable with entryTouch "third"; under "fourth" that candle is already
+//     refused above), for an HTF line always.
+func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string) {
 	if len(trendlines) == 0 || len(bars) == 0 {
 		return nil, nil
 	}
 	cur := bars[len(bars)-1]
 	lastIdx := len(bars) - 1
+	thirdArms := entryTouch == TrendlineEntryThird
 	var out []Level
 	for _, tl := range trendlines {
 		if tl.ValidAt == 0 || tl.Dead {
@@ -896,21 +922,22 @@ func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bar
 		if InsideAnyBox(boxes, price) {
 			continue
 		}
+		firstTest := tl.TFMin == 0 && !tl.carried && tl.ValidAt == lastIdx
+		// m465 (D2.3-R7): the 3rd touch is the TEST, not the entry.
+		if firstTest && !thirdArms {
+			refused = append(refused, trendlineThirdTouchIsTest+":"+tl.key())
+			continue
+		}
 		// m311 (#46b): the level beats an intraday (1m) trendline only on its
 		// FIRST test — the 3rd touch that just closed (ValidAt == the current
 		// bar). A valid line past its 3rd-touch return is no longer suppressed
 		// [D2.3 p1 @02:19–03:45]. Persistent HTF lines keep the preference
 		// unchanged (their ValidAt is an HTF-bar index, not comparable here).
-		if (tl.TFMin != 0 || (!tl.carried && tl.ValidAt == lastIdx)) && trendlineBeatenByLevel(respected, price) {
-			refused = append(refused, tl.key())
+		if (tl.TFMin != 0 || firstTest) && trendlineBeatenByLevel(respected, price) {
+			refused = append(refused, trendlineFirstTestLevelPreferred+":"+tl.key())
 			continue
 		}
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
 	return out, refused
-}
-
-// TrendlineLevelsTouch — RED scaffold (m465 P3).
-func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string) {
-	return TrendlineLevels(trendlines, boxes, respected, bars)
 }
