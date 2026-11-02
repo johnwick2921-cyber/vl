@@ -1170,6 +1170,11 @@ func mentorNewsPrintWindowsFromEvents(events []calendar.Event) []mentor.PrintWin
 		out = append(out, mentor.PrintWindow{
 			FromMs: e.Time.Add(-mentorNewsPreWindow).UnixMilli(),
 			ToMs:   e.Time.Add(mentorNewsPostWindow).UnixMilli(),
+			// m466 G58 D4.4-R6: the print minute anchors the 1h/4h read lead
+			// ("Một giờ thì đợi gần trước news, tầm 30 phút" [D4.4 p1
+			// @05:28–05:36]) — the kernel freezes the read from PrintAt − lead;
+			// the hold window above stays −10m/+5m.
+			PrintAtMs: e.Time.UnixMilli(),
 		})
 	}
 	return out

@@ -5,9 +5,9 @@ import (
 	"testing"
 	"time"
 
+	"vl/calendar"
 	"vl/kernel"
 	"vl/kernel/mentor"
-	"vl/calendar"
 	"vl/store"
 )
 

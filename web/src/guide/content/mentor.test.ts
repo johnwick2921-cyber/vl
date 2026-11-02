@@ -192,6 +192,22 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).not.toContain('whose colour matches the side')
   })
 
+  // m466 P3 (release #61): ISB ceiling 20 (D4.1-R12), the 1m open-range
+  // break (D4.4-R40), the news wait on both lines (D4.4-R22) and the read 30
+  // minutes before the print (D4.4-R6).
+  it('describes the m466 P3 rules (ISB 20, 1m open-range break, both news lines, read lead 30)', () => {
+    expect(all).toContain('Skip an ISB stop above 20')
+    expect(all).toContain('mentor_open5m_break')
+    expect(all).toContain('mentor_news_wait_mode')
+    expect(all).toContain('news_wait_1h_line')
+    expect(all).toContain('mentor_news_read_lead_min')
+    expect(all).toContain('tầm 30 phút')
+    expect(all).toContain('hai mươi mấy điểm, làm ơn giúp em đừng vô')
+    expect(all).not.toContain(
+      'reduce the size for a 20–25 pt stop and skip above 25'
+    )
+  })
+
   // m465 P2 (release #60): an ISB loss boxes the whole 5m range [D4.2-R27].
   it('describes the ISB loss range box (m465 P2, D4.2-R27/R28/R30)', () => {
     expect(all).toContain('mentor_isb_loss_box')

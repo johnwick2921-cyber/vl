@@ -132,6 +132,43 @@ type mentorCourseExitsResolved struct {
 	// ISBLossBox (m465 P2, D4.2-R27): what an ISB stop-out boxes — range
 	// (the 5m range that held the trade, default) | band.
 	ISBLossBox string
+	// m466 P3 (release #61): G55 mentor_open5m_break (1m_close | 5m_close),
+	// G56 mentor_news_wait_mode (both | 4h_only), G58 mentor_news_read_lead_min
+	// (minutes before the print, 0–120; 0 = the pre-#61 window start).
+	Open5mBreak     string
+	NewsWaitMode    string
+	NewsReadLeadMin int
+}
+
+// mentorEnumKnob resolves a string enum knob: "" → def; a value outside
+// `allowed` fails closed to def and is counted under name+"_bad_value".
+func mentorEnumKnob(at *AutoTrader, v, def, name string, allowed ...string) string {
+	v = strings.ToLower(strings.TrimSpace(v))
+	if v == "" {
+		return def
+	}
+	for _, a := range allowed {
+		if v == a {
+			return v
+		}
+	}
+	at.mentorCount(name + "_bad_value")
+	return def
+}
+
+// mentorNewsReadLeadMin — m466 G58 D4.4-R6: nil → 30 (the kernel default, read
+// not retyped); an explicit 0 → 0 (the pre-#61 07:20 start); outside 0–120 →
+// the default, counted.
+func mentorNewsReadLeadMin(at *AutoTrader, rc *store.RiskControlConfig) int {
+	def := mentor.DefaultCourseExitsCfg().NewsReadLeadMin
+	if rc == nil || rc.MentorNewsReadLeadMin == nil {
+		return def
+	}
+	if v := *rc.MentorNewsReadLeadMin; v >= 0 && v <= 120 {
+		return v
+	}
+	at.mentorCount("news_read_lead_min_bad_value")
+	return def
 }
 
 func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorCourseExitsResolved {
@@ -144,13 +181,18 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ReverseISBAsPHL:       mentorReverseISBAsPHL(rc),
 		EMA9VisitCap:          mentorEMA9VisitCap(at, rc),
 		KeypairRatio:          1,
-		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
+		ISBMaxPts:             mentorISBMaxDefault, // m466 G23: 20 — "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]
 		BoxFreshRTHPair:       rc == nil || mentorBoolKnob(rc.MentorBoxFreshRTHPair, true),
 		SwingMaxStopPts:       mentorSwingMaxStopDefault,
 		ISBLossBox:            mentorISBLossBox(at, rc),
+		Open5mBreak:           mentor.Open5mBreak1mClose,
+		NewsWaitMode:          mentor.NewsWaitBoth,
+		NewsReadLeadMin:       mentorNewsReadLeadMin(at, rc),
 	}
 	if rc != nil {
-		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")
+		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, mentorISBMaxDefault, "isb_max_pts")
+		out.Open5mBreak = mentorEnumKnob(at, rc.MentorOpen5mBreak, mentor.Open5mBreak1mClose, "open5m_break", mentor.Open5mBreak1mClose, mentor.Open5mBreak5mClose)
+		out.NewsWaitMode = mentorEnumKnob(at, rc.MentorNewsWaitMode, mentor.NewsWaitBoth, "news_wait_mode", mentor.NewsWaitBoth, mentor.NewsWait4hOnly)
 		out.KeypairRatio = mentorPositiveKnob(at, rc.MentorKeypairCandleRatio, 1, "keypair_candle_ratio")
 		out.BoxMaxHeightPts = mentorPositiveKnob(at, rc.MentorBoxMaxHeightPts, 0, "box_max_height_pts")
 		out.SwingMaxStopPts = mentorPositiveKnob(at, rc.MentorSwingMaxStopPts, mentorSwingMaxStopDefault, "swing_max_stop_pts")
@@ -169,9 +211,16 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.KeypairCandleRatio = r.KeypairRatio
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
-	cfg.Swing.SkipStopPts = r.SwingMaxStopPts // m463 D5.2-R31: ONE number, kernel + trader gate
-	cfg.ISBLossBox = r.ISBLossBox             // m465 P2 D4.2-R27: kernel limits.go rangeLoss
+	cfg.Swing.SkipStopPts = r.SwingMaxStopPts           // m463 D5.2-R31: ONE number, kernel + trader gate
+	cfg.ISBLossBox = r.ISBLossBox                       // m465 P2 D4.2-R27: kernel limits.go rangeLoss
+	cfg.CourseExits.Open5mBreak = r.Open5mBreak         // m466 G55 D4.4-R40: kernel open5m.go
+	cfg.CourseExits.NewsWaitMode = r.NewsWaitMode       // m466 G56 D4.4-R22: kernel news_print.go newsWaitFilter
+	cfg.CourseExits.NewsReadLeadMin = r.NewsReadLeadMin // m466 G58 D4.4-R6: kernel news_print.go newsHTFWindows
 }
+
+// mentorISBMaxDefault is the CX-9 ISB ceiling default — the kernel's own
+// (CourseExits.ISBMaxStopPts, 20 since m466 G23), read, never retyped.
+var mentorISBMaxDefault = mentor.DefaultCourseExitsCfg().ISBMaxStopPts
 
 // mentorSwingMaxStopDefault is the m463 swing skip ceiling default — the
 // kernel's own default (SwingCfg.SkipStopPts), read, never retyped.
@@ -196,10 +245,10 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s",
+	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s · open5m_break=%s · news_wait_mode=%s · news_read_lead_min=%d",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
-		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox)
+		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox, r.Open5mBreak, r.NewsWaitMode, r.NewsReadLeadMin)
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing

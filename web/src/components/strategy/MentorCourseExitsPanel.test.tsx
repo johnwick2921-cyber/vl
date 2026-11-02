@@ -57,11 +57,14 @@ it('the course-exits defaults are the code defaults (course-defaults-30)', () =>
     mentor_reverse_isb_as_phl: true,
     mentor_box_fresh_rth_pair: true,
     mentor_swing4h_contracts: 2,
-    mentor_isb_max_pts: 30,
+    mentor_isb_max_pts: 20, // m466 G23 D4.1-R12 (Go: kernel CourseExits.ISBMaxStopPts)
+    mentor_open5m_break: '1m_close',
+    mentor_news_wait_mode: 'both',
+    mentor_news_read_lead_min: 30,
   })
 })
 
-it('the ISB max stop label names it ISB-only (30-pt ceiling; PHL/box use the 25-pt stop ceiling)', () => {
+it('the ISB max stop label names it ISB-only (20-pt ceiling; PHL/box use the 25-pt stop ceiling)', () => {
   renderEditor({ mentor_mode: true })
   expect(screen.getByText(/ISB only/)).toBeTruthy()
 })
@@ -144,4 +147,37 @@ it('the ISB loss box defaults to range and stores band / removes on default', ()
   })
   fireEvent.change(sel, { target: { value: '' } })
   expect(onChange).toHaveBeenLastCalledWith({ ...full })
+})
+
+// m466 P3 (release #61): G55 D4.4-R40 open-range break ("một cây nến một
+// phút… đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]), G56
+// D4.4-R22 news wait on both lines ("nằm trên hai cái đường line này" [D4.4 p1
+// @21:48–22:12]), G58 D4.4-R6 the 1h/4h read 30 min before the print.
+it('the m466 open-range / news knobs default to the course and store as typed', () => {
+  const { onChange, full } = renderEditor({ mentor_mode: true })
+  const brk = screen.getByTestId(
+    'mentor-course-mentor_open5m_break'
+  ) as HTMLSelectElement
+  expect(brk.value).toBe('')
+  expect(brk).toHaveTextContent('default: 1m_close')
+  fireEvent.change(brk, { target: { value: '5m_close' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_open5m_break: '5m_close',
+  })
+  const wait = screen.getByTestId(
+    'mentor-course-mentor_news_wait_mode'
+  ) as HTMLSelectElement
+  expect(wait).toHaveTextContent('default: both')
+  fireEvent.change(wait, { target: { value: '4h_only' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_news_wait_mode: '4h_only',
+  })
+  const lead = screen.getByTestId('mentor-course-mentor_news_read_lead_min')
+  fireEvent.change(lead, { target: { value: '0' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_news_read_lead_min: 0,
+  })
 })

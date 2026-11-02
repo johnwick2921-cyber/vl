@@ -320,3 +320,14 @@ func TestM61NewsFreezeStartsThirtyBefore(t *testing.T) {
 		t.Fatalf("lead 30: the 06:55 break (before the read) must move the 1h line, got %+v", one)
 	}
 }
+
+// m466PreValues puts the four m466 P3 knobs at their pre-#61 values (ISB
+// ceiling 25, the 5m-close open-range break, the 4h-only news wait, the freeze
+// from the print window's start). A golden that predates #61 compares like
+// with like under it — and proves the knobs reproduce the old rule.
+func m466PreValues(cfg *Config) {
+	cfg.CourseExits.ISBMaxStopPts = 25
+	cfg.CourseExits.Open5mBreak = Open5mBreak5mClose
+	cfg.CourseExits.NewsWaitMode = NewsWait4hOnly
+	cfg.CourseExits.NewsReadLeadMin = 0
+}

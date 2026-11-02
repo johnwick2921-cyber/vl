@@ -299,7 +299,8 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	tuned := mentorTuningResolve(at, at.mentorRiskControl())
 	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
 	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 25) —
+	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 20
+	// since m466 G23 D4.1-R12; PHL/PLH/BOX keep 25 via mentorStopCeilingFor) —
 	// one number, not two (P2-1).
 	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
 	extra.ISBMaxStopPts = cx.ISBMaxPts
