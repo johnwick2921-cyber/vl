@@ -69,6 +69,14 @@ type State struct {
 	Counters map[string]int `json:"counters,omitempty"`
 	// Trigger is the 5m trigger-line state (§5.1).
 	Trigger TriggerLine `json:"trigger"`
+	// Trigger15 / Trigger30 — m465 P1 (D3.4-R43 [D3.4 p2 @17:07–17:49]): the
+	// 15m and 30m trigger lines, advanced like the 5m line. They govern only
+	// while the lower TF's inside bars cross (governingTrigger).
+	Trigger15 TriggerLine `json:"trigger_15m"`
+	Trigger30 TriggerLine `json:"trigger_30m"`
+	// TriggerGovTF is the TF whose trigger governed the last tick (0/5 = the
+	// 5m, 15, 30): the escalation is noted and counted on a CHANGE only.
+	TriggerGovTF int `json:"trigger_gov_tf,omitempty"`
 	// HTF is the §5.4 4h/1h direction state (DS-106, fold item 3).
 	HTF HTF `json:"htf,omitempty"`
 	// Day is the §7 pre-session verdict latch (DS-106, fold item 4).
@@ -119,6 +127,10 @@ type State struct {
 	// LastISBBox15mAt is the 15m ISB candle open of the last box built (the
 	// same flap guard as LastISBBoxAt).
 	LastISBBox15mAt int64 `json:"last_isb_box_15m_at,omitempty"`
+	// LastForming15mAt — m465 P1 (D4.2-R2/R11): the open of the forming 15m
+	// bucket the provisional box was last read from — the flap guard: an
+	// escaped provisional box is not re-read from the same forming bucket.
+	LastForming15mAt int64 `json:"last_forming_15m_at,omitempty"`
 	// ISBBox30m is the 30m ISB rest box (D4.2-07): the latest CLOSED 30m
 	// inside-bar candle, boxed like R5. Nil = none standing.
 	ISBBox30m *ISBBox `json:"isb_box_30m,omitempty"`

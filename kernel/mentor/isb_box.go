@@ -19,6 +19,12 @@ type ISBBox struct {
 	Low    float64 // the 5m ISB candle's wick low (the box bottom)
 	Dir    Side    // the 5m ISB's R1 direction (candle-1 colour) [D1.4 p1 @ 09:20–10:20]
 	AtTime int64   // the 5m ISB candle's open time
+	// Provisional (m465 P1, D4.2-R2/R11) marks a 15m box read from the FORMING
+	// 15m candle (forming15mISB): two closed 5m candles whose combined body sits
+	// inside the last closed 15m candle. It gates exactly like the closed box —
+	// under "_forming" refusal names — but never counts for mode C
+	// (MTFConfluenceStanding), and the real box replaces it at the 15m close.
+	Provisional bool `json:",omitempty"`
 }
 
 // ISBBoxFrom5m reports whether (prev5m, cur5m) form a 5m ISB and, if so, boxes

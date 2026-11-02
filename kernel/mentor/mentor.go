@@ -534,6 +534,33 @@ type Config struct {
 	// @17:09–17:13; @14:24–14:34]. "require_5m_isb" (default) | "no_trade_until_escape"
 	// (option 1, @01:06–01:14) | "off" (the pre-#25 read: the 15m box gate only).
 	FifteenMinIBRule string
+	// Early15mRead — m465 P1 (release #60, D4.2-R2 / D4.2-R11 / D4.3-R21):
+	// read the FORMING 15m candle from its first two closed 5m candles — "3
+	// cây 5 phút mà nó cứ xào quần xào quần ngay chỗ đó mà nó không đi đâu
+	// hết... ngay lập tức mình biết khung 15 phút đang tạo inside bar" [D4.2
+	// p1 @00:08–00:39]; "2, 3 cây 5 phút anh chị đã có được 1 cây 15 phút"
+	// [@07:40]; "2 cái nến 5 phút, 3 cái nến 5 phút, nó đang làm cái nến 15
+	// phút rồi đó" [D4.3 @12:20–12:32]. ON (default; defensive — it only ever
+	// refuses, "né được rất nhiều đoạn ranging" [D4.2 p1 @11:40–11:42]) boxes
+	// that forming 15m as a PROVISIONAL ISBBox15m (forming15mISB) when no 15m
+	// box stands; every 15m-box gate then refuses under a "_forming" name.
+	// Studio: risk_control.mentor_tuning.15m_early_read.
+	Early15mRead bool
+	// MTFConfluenceSource — m465 P1 (D4.2-R17): where mode C reads "the 15m
+	// and the 5m both say so" [D4.2 p1 @14:57–15:37]. "standing_boxes"
+	// (default) = the STANDING 15m box + the standing (or same-way escaped) 5m
+	// box (MTFConfluenceStanding); "last_pair" = the pre-#60 read of the latest
+	// closed 5m and 15m candle pairs (MTFAligned), which lost the confluence
+	// one 5m candle after the 5m ISB. Studio:
+	// risk_control.mentor_tuning.mtf_confluence_source.
+	MTFConfluenceSource string
+	// TriggerEscalation — m465 P1 (D3.4-R43 [D3.4 p2 @17:07–17:49]): when the
+	// 5m inside bars cross back and forth the 5m trigger is not valid — read
+	// the 15m trigger; if the 15m crosses too, the 30m (the 1h/4h already gate
+	// through the HTF check). ON (default) = every gating read of the trigger
+	// uses governingTrigger; OFF = the 5m line always (pre-#60). Studio:
+	// risk_control.mentor_tuning.trigger_escalation.
+	TriggerEscalation bool
 	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
 	// [D4.2 p1 @07:54–08:02]. "first_box" = the 15m/5m conflict ends
 	// when either box escapes; "both_boxes" (default, course-defaults-30) =
@@ -707,6 +734,11 @@ func DefaultConfig() Config {
 		LegResetOn:       "close",
 
 		CourseExits: DefaultCourseExitsCfg(),
+		// m465 P1 (release #60): the early 15m read, mode C from the standing
+		// boxes, the trigger escalation 5m → 15m → 30m.
+		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
+		TriggerEscalation:   true,                       // D3.4-R43
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
@@ -729,6 +761,11 @@ const (
 	FifteenMinOff          = "off"
 	FifteenMinRequire5mISB = "require_5m_isb"
 	FifteenMinUntilEscape  = "no_trade_until_escape"
+
+	// m465 P1 (D4.2-R17): mode C's confluence source.
+	MTFConfluenceStandingBoxes = "standing_boxes"
+	MTFConfluenceLastPair      = "last_pair"
+
 	TFConflictFirstBox     = "first_box"
 	TFConflictBothBoxes    = "both_boxes"
 	ISBBoxEscapeClose      = "close"

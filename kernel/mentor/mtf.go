@@ -50,3 +50,8 @@ func MTFAligned(bars5m, bars15m []market.Kline, side Side) bool {
 func MTFConfluence(side Side, bars5m, bars15m []market.Kline) bool {
 	return MTFAligned(bars5m, bars15m, side)
 }
+
+// MTFConfluenceStanding — STUB (RED step).
+func MTFConfluenceStanding(side Side, box5, box15 *ISBBox, last5mAt int64, last5mDir, last5mEscape Side) bool {
+	return false
+}
