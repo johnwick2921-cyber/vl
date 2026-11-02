@@ -631,10 +631,15 @@ type Config struct {
 	// nothing is ever deleted. OFF keeps the item-18 print-window drop
 	// (07:20–07:35). Default ON.
 	NewsBarsExcluded bool
-	// ISBBoxEscapeMode — CE-5 (a): the 5m/15m/30m ISB rest-box escape. "body"
-	// (default) = a 1m candle's OPEN AND CLOSE beyond the edge [D4.1 p1
-	// @20:52–21:02 "cái thân nến… nằm bên ngoài… Cái đó là at least"];
-	// "close" = the pre-#25 close-only test.
+	// ISBBoxEscapeMode — CE-5: the 5m/15m/30m ISB rest-box escape (and the
+	// #60 provisional forming-15m box). "close" (default since m466 G20/G49,
+	// release #61) = a 1m candle CLOSES beyond the edge — the course's stated
+	// minimum, "Break là sao? Là một cây nến một phút anh chị trade, nó đóng
+	// bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]; "nó đóng một cái
+	// nến một phút ở ngoài" [D3.4 p2 @05:37–06:01] — the same close the PHL/PLH
+	// 5m-box ban reads. "body" = the #25–#60 default: OPEN AND CLOSE beyond
+	// the edge (a stored isb_box_escape=body still wins). FTGH/FTGL boxes keep
+	// their own body escape (D3.2-R16, box.go) whatever this says.
 	ISBBoxEscapeMode string
 	// EmaLossRelock — CE-6 (a): after one loss at the EMA 34 —
 	// "until_zone_exit" (default) = back ON once a CLOSED 1m candle lies
@@ -709,6 +714,38 @@ type Config struct {
 	// "band": the pre-#60 entry-to-stop band only. "" reads as range
 	// (limits.go isbLossRange).
 	ISBLossBox string
+
+	// ── m466 P1 (release #61): boxes, breaks, ranges ──────────────────────
+	// FiveMinBoxSource — G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside
+	// bar nào gần với thời điểm đó nhất, bọc lại cho em"] + G32 D4.2-R10:
+	// "newest" (default) = while a 5m ISB rest box stands, a NEWER closed 5m
+	// inside bar replaces it (isb_5m_box_replaced, _opposite when the
+	// direction flips — the 15m/5m conflict then reads the new box); "first" =
+	// the pre-#61 read (the first box stands until it escapes). Studio:
+	// risk_control.mentor_tuning.mentor_5m_box_source.
+	FiveMinBoxSource string
+	// BreakDirectionLock — G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33] + G29
+	// D4.1-R55 [D4.1 p1 @07:47–08:07]: after a box BREAK (an FTGH/FTGL body
+	// escape, a 5m/15m/30m ISB rest-box 1m-close escape) only setups in the
+	// break direction trade (break_counter_setup) until a 1m CLOSE back inside
+	// the broken box (the failed break, D4.1-R30), an opposite break, or the
+	// 17:00 CT roll (break_lock.go). Default ON. Studio:
+	// risk_control.mentor_tuning.mentor_break_direction_lock.
+	BreakDirectionLock bool
+	// SmallRangeGuard — G33 D4.2-R33 [D4.2 p2 @06:16–06:30 "bên trong một cái
+	// range nó quá nhỏ đi, đừng bao giờ đụng tới"]: the last 15 closed 1m
+	// candles span <= 61.50 pts with one candle >= 30.00 pts → no entry priced
+	// inside that range (range_too_small_big_candles) until a 1m close
+	// outside it (range_small.go; the numbers are the video's measurement).
+	// Default ON. Studio: risk_control.mentor_tuning.mentor_small_range_guard.
+	SmallRangeGuard bool
+	// MidRangeRejectSide — G43 D2.2-R71 [D2.2 p3 @14:28–15:58 "Nó mới reject
+	// thì đánh theo hướng nó reject"]: between an FTGL floor and an FTGH
+	// ceiling, after a 1m candle rejects the ceiling (High >= its bottom, Close
+	// below) a LONG entry is refused mid_range_against_rejection until a
+	// candle touches the floor top; mirror for a floor reject (reject_side.go).
+	// Default ON. Studio: risk_control.mentor_tuning.mentor_mid_range_reject_side.
+	MidRangeRejectSide bool
 
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
@@ -810,7 +847,7 @@ func DefaultConfig() Config {
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
 		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-		ISBBoxEscapeMode:      ISBBoxEscapeBody,       // CE-5 (a)
+		ISBBoxEscapeMode:      ISBBoxEscapeClose,      // CE-5 → m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
 		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
@@ -819,6 +856,11 @@ func DefaultConfig() Config {
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
+		// m466 P1 (release #61): boxes, breaks, ranges.
+		FiveMinBoxSource:   FiveMinBoxNewest, // G28 D4.1-R37 / G32 D4.2-R10
+		BreakDirectionLock: true,             // G21 D4.1-R31/R33, G29 D4.1-R55
+		SmallRangeGuard:    true,             // G33 D4.2-R33
+		MidRangeRejectSide: true,             // G43 D2.2-R71
 	}
 }
 
@@ -849,6 +891,10 @@ const (
 	PHLFlatLowStrict         = "strict"
 	ISBReverseTouchPair      = "pair"
 	ISBReverseTouchISBCandle = "isb_candle"
+
+	// m466 P1 (release #61, G28/G32): the 5m ISB rest box source.
+	FiveMinBoxNewest = "newest"
+	FiveMinBoxFirst  = "first"
 )
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is

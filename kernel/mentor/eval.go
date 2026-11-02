@@ -262,6 +262,18 @@ type State struct {
 	// standing long/short wick zones and the 5m read watermark. nil while the
 	// knob wick_microscalp is OFF (the JSON stays byte-identical).
 	Wick *WickState `json:"wick,omitempty"`
+	// BreakLock — m466 P1 G21/G29 (break_lock.go): the standing break
+	// direction after a box break; nil while none stands or the knob
+	// mentor_break_direction_lock is OFF (the JSON is then the pre-#61 one).
+	BreakLock *BreakLock `json:"break_lock,omitempty"`
+	// SmallRange — m466 P1 G33 (range_small.go): the standing too-small range
+	// (15 closed 1m candles inside <= 61.50 pts with one >= 30.00-pt candle);
+	// nil while none stands or the knob mentor_small_range_guard is OFF.
+	SmallRange *SmallRange `json:"small_range,omitempty"`
+	// MidRangeReject — m466 P1 G43 (reject_side.go): the last box-edge
+	// rejection between the FTGL floor and the FTGH ceiling; nil while none
+	// stands or the knob mentor_mid_range_reject_side is OFF.
+	MidRangeReject *MidRangeReject `json:"mid_range_reject,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
