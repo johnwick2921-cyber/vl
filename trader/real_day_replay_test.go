@@ -294,6 +294,12 @@ type rdrReplayArm struct {
 	Target float64
 	State  string
 	BornCT string
+	// m465 P1 (REAL_DAY_ARMS_OUT): the row's own scenario / origin / end
+	// reason / expiry, so a before/after diff can tell a setup and its fate.
+	Scenario string `json:",omitempty"`
+	Origin   string `json:",omitempty"`
+	Reason   string `json:",omitempty"`
+	ExpiryMs int64  `json:",omitempty"`
 }
 
 func rdrDir(t *testing.T) string {
@@ -566,11 +572,22 @@ func TestRealDayReplay(t *testing.T) {
 		}
 		replayArms = append(replayArms, rdrReplayArm{
 			Side: strings.ToLower(r.Side), Entry: r.EntryPx, Stop: r.StopPx, Target: r.TargetPx,
-			State:  r.State,
-			BornCT: time.UnixMilli(life.bornMs).In(kernel.CTLocation()).Format("01-02 15:04"),
+			State:    r.State,
+			BornCT:   time.UnixMilli(life.bornMs).In(kernel.CTLocation()).Format("01-02 15:04"),
+			Scenario: r.Scenario, Origin: r.Origin, Reason: r.StateReason, ExpiryMs: r.ExpiryMs,
 		})
 	}
 	sort.Slice(replayArms, func(i, j int) bool { return replayArms[i].BornCT < replayArms[j].BornCT })
+	// m465 P1: REAL_DAY_ARMS_OUT=<file> writes every authored mentor arm (the
+	// before/after diff of a release reads two of these). Opt-in; the replay
+	// itself is unchanged.
+	if outPath := os.Getenv("REAL_DAY_ARMS_OUT"); outPath != "" {
+		if b, err := json.MarshalIndent(replayArms, "", " "); err == nil {
+			if err := os.WriteFile(outPath, b, 0o644); err != nil {
+				t.Fatalf("REAL_DAY_ARMS_OUT: %v", err)
+			}
+		}
+	}
 
 	fmt.Printf("\n=== REAL-DAY REPLAY DIFF (live trades %d, replay arms %d) ===\n", len(rec.Trades), len(replayArms))
 	fmt.Printf("%-4s %-5s %-9s %-9s %-9s %-7s %s\n", "id", "side", "liveEntry", "replayEntry", "replayStop", "state", "verdict")

@@ -364,6 +364,12 @@ export interface MentorTuning {
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
   '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // m465 P1 (release #60). D4.2-R2 — box the FORMING 15m from 2 churning 5m candles [true]
+  '15m_early_read'?: boolean
+  // D4.2-R17 — mode C from the standing 15m + 5m boxes [standing_boxes]
+  mtf_confluence_source?: 'standing_boxes' | 'last_pair'
+  // D3.4-R43 — crossing 5m ISBs hand the trigger to the 15m, then the 30m [true]
+  trigger_escalation?: boolean
   // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [both_boxes] (OQ-2)
   tf_conflict_end?: 'first_box' | 'both_boxes'
   // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [true]

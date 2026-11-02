@@ -36,6 +36,8 @@ type BoolKey =
   | 'isb_reverse_ema9_enabled'
   | 'htf_gate_news_only'
   | 'exec_2m_after_30m'
+  | '15m_early_read'
+  | 'trigger_escalation'
   | 'news_wait_both_lines'
   | 'news_bars_excluded'
   | 'level_entries_need_trigger_side'
@@ -52,6 +54,7 @@ type BoolKey =
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
+  | 'mtf_confluence_source'
   | 'tf_conflict_end'
   | 'isb_box_escape'
   | 'ema34_loss_relock'
@@ -103,6 +106,31 @@ const COPY = {
     zh: 'EMA 9 反向 ISB',
     en: 'Reverse ISB at EMA 9',
     es: 'ISB inverso en EMA 9',
+  },
+  early15m: {
+    zh: '15 分钟提前读取：形成中的 15 分钟内的 2 根 5 分钟 K 线在上一根 15 分钟内 → 临时 15 分钟 ISB 箱体（只拒绝）',
+    en: 'Early 15m read: 2 five-minute candles of the forming 15m inside the last 15m → a provisional 15m ISB box (refusals only)',
+    es: 'Lectura temprana de 15m: 2 velas de 5m del 15m en formación dentro del último 15m → caja ISB 15m provisional (solo rechazos)',
+  },
+  mtfSource: {
+    zh: '模式 C（15m + 5m 共振）的读取来源',
+    en: 'Mode C (15m + 5m confluence) reads',
+    es: 'El modo C (confluencia 15m + 5m) lee',
+  },
+  mtfStanding: {
+    zh: '仍然有效的 15m + 5m ISB 箱体',
+    en: 'the standing 15m + 5m ISB boxes',
+    es: 'las cajas ISB 15m + 5m vigentes',
+  },
+  mtfLastPair: {
+    zh: '最近收盘的 5m 与 15m K 线对（#60 之前）',
+    en: 'the latest closed 5m and 15m candle pairs (before #60)',
+    es: 'los últimos pares de velas 5m y 15m cerradas (antes de #60)',
+  },
+  trigEscalation: {
+    zh: '触发线升级：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
+    en: 'Trigger escalation: crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
+    es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
     zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（关 = 全天，默认）',
@@ -404,6 +432,10 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'require_5m_isb', label: COPY.ib15mRequire },
     { value: 'no_trade_until_escape', label: COPY.ib15mWait },
   ],
+  mtf_confluence_source: [
+    { value: 'standing_boxes', label: COPY.mtfStanding },
+    { value: 'last_pair', label: COPY.mtfLastPair },
+  ],
   tf_conflict_end: [
     { value: 'first_box', label: COPY.tfConflictFirst },
     { value: 'both_boxes', label: COPY.tfConflictBoth },
@@ -456,6 +488,9 @@ export const MENTOR_TUNING_DEFAULTS = {
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
+  '15m_early_read': true, // m465 P1 — D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+  mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
+  trigger_escalation: true, // m465 P1 — D3.4-R43
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
@@ -687,6 +722,13 @@ export function MentorTuningPanel({
           COPY.ib15m,
           ENUM_OPTIONS['15m_ib_requires_5m_isb']
         )}
+        {boolField('15m_early_read', COPY.early15m)}
+        {enumField(
+          'mtf_confluence_source',
+          COPY.mtfSource,
+          ENUM_OPTIONS.mtf_confluence_source
+        )}
+        {boolField('trigger_escalation', COPY.trigEscalation)}
         {enumField(
           'tf_conflict_end',
           COPY.tfConflict,

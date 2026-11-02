@@ -50,3 +50,43 @@ func MTFAligned(bars5m, bars15m []market.Kline, side Side) bool {
 func MTFConfluence(side Side, bars5m, bars15m []market.Kline) bool {
 	return MTFAligned(bars5m, bars15m, side)
 }
+
+// MTFConfluenceStanding is D4.2-R17 (m465 P1, release #60): mode C holds while
+// the 15m AND the 5m both say `side` — "tại sao hồi sáng em lại không move stop
+// loss mà em đặt stop loss ở dưới để cho nó chạy, tại vì đây nó cộng hưởng quá
+// nhiều thứ... Khung 15 phút nó cũng kêu mình làm vậy, khung 5 phút cũng kêu
+// mình làm vậy" [D4.2 p1 @14:57–15:37]; WE-2: the 15m box 29,079.25/28,985.00,
+// the 5m ISB box 29,048.50/29,017.25, the 1m entry ~29,040, ran ~+100.
+//
+// It reads the STANDING boxes, not the latest candle pairs (MTFAligned lost the
+// confluence one 5m candle after the 5m ISB while both boxes still stood):
+//
+//   - box15: a CLOSED (non-provisional) 15m ISB box with Dir == side. A
+//     provisional box (forming15mISB) never counts — it only ever refuses; the
+//     hold is a stronger claim than a refusal.
+//   - the 5m agrees, read exactly as fifteenMinISBGate's require_5m_isb does:
+//     a STANDING 5m box with Dir == side, OR the last 5m box — drawn at or after
+//     the 15m inside candle opened — pointed `side` and escaped `side`.
+func MTFConfluenceStanding(side Side, box5, box15 *ISBBox, last5mAt int64, last5mDir, last5mEscape Side) bool {
+	if side != SideLong && side != SideShort {
+		return false
+	}
+	if box15 == nil || box15.Provisional || box15.Dir != side {
+		return false
+	}
+	if box5 != nil {
+		return box5.Dir == side
+	}
+	return last5mAt >= box15.AtTime && last5mAt > 0 && last5mDir == side && last5mEscape == side
+}
+
+// mtfConfluence is mode C's MTF read for the evaluator, by the knob
+// mentor_mtf_confluence_source (risk_control.mentor_tuning.mtf_confluence_source):
+// "standing_boxes" (default) = MTFConfluenceStanding; "last_pair" = the
+// pre-#60 MTFConfluence over the latest closed 5m/15m pairs.
+func (e *Evaluator) mtfConfluence(side Side, bars5m, bars15m []market.Kline) bool {
+	if e.Cfg.MTFConfluenceSource == MTFConfluenceLastPair {
+		return MTFConfluence(side, bars5m, bars15m)
+	}
+	return MTFConfluenceStanding(side, e.State.ISBBox, e.State.ISBBox15m, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
+}

@@ -53,6 +53,10 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 	// between the entry and the old extreme and steal the target (this test
 	// pins the OLD-EXTREME read, not the EMA-location ladder).
 	cfg.EMALocationTFMinutes = 0
+	// m465 P1: the synthetic churn would read as a forming 15m inside bar (the
+	// early read, D4.2-R2) and the CE-1 rule would then want a 5m ISB — these
+	// pins test the old-extreme read, not the 15m box.
+	cfg.Early15mRead = false
 	e := New(cfg)
 	e.seeded = true
 	e.State.SeedLevels = []Level{{Key: fmt.Sprintf("key:%.2f", keyPrice), Kind: KindKeyLevel, Price: keyPrice, AtTime: 1}}

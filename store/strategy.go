@@ -2026,6 +2026,16 @@ type MentorTuning struct {
 	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
 	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
 	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
+	// m465 P1 (release #60). Early15mRead: nil → ON — two churning 5m candles
+	// inside the last closed 15m box the FORMING 15m as a provisional ISB box
+	// (refusals only, named _forming) [D4.2-R2 p1 @00:08–00:39; D4.3-R21
+	// @12:20–12:32]. MTFConfluenceSource: "standing_boxes" (default) | "last_pair"
+	// — where mode C reads "15m and 5m both say so" [D4.2-R17 p1 @14:57–15:37].
+	// TriggerEscalation: nil → ON — crossing 5m ISBs hand the trigger to the
+	// 15m, then the 30m [D3.4-R43 p2 @17:07–17:49].
+	Early15mRead        *bool  `json:"15m_early_read,omitempty"`
+	MTFConfluenceSource string `json:"mtf_confluence_source,omitempty"`
+	TriggerEscalation   *bool  `json:"trigger_escalation,omitempty"`
 	// CE-2: "first_box" | "both_boxes" (default, course-defaults-30) [D4.2 p1 @07:54–08:02; OQ-2].
 	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
 	// CE-3: after a print, wait for the close beyond the 4h line (nil → ON,
