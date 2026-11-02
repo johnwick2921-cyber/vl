@@ -1,6 +1,9 @@
 package mentor
 
 import (
+	"compress/gzip"
+	"io"
+	"os"
 	"strings"
 	"testing"
 
@@ -322,5 +325,47 @@ func TestM61SwingReplay1028Default(t *testing.T) {
 	// would rest under the 29,645.53 support — NAMED, never armed (arm 475's bar).
 	if !r.noteHas("17:40", SwingRefusedISBEntryBeyondLine) {
 		t.Fatalf("default: the 17:40 inside bar must be NAMED %s\n%s", SwingRefusedISBEntryBeyondLine, r.dump())
+	}
+}
+
+// m61PreP4GoldenPath is the m434 golden as it stood at the m466 P4 base
+// (origin/fix/m465-video-gaps-all 45053f78a), gzip -n -9.
+const m61PreP4GoldenPath = "testdata/m61_prep4_tick_identity.golden.gz"
+
+// TestM61StrictReadIsThePreP4Golden — owner values are sacred: a strategy that
+// STORES mentor_swing_isb_close_back=required and mentor_swing_isb_keep=false
+// must get the pre-#61 swing exactly. Replays the four m434 tapes (5,216 ticks)
+// under m61PreP4 and compares every tick — intents, State, notes, levels,
+// trendlines — against the pre-P4 golden. Zero rows may differ.
+// MUTANT: drop the ISBCloseBackRequired clause in walkSwingBar (or the
+// required-mode reason text) → intents/notes diverge → RED.
+func TestM61StrictReadIsThePreP4Golden(t *testing.T) {
+	raw, err := os.Open(m61PreP4GoldenPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer raw.Close()
+	zr, err := gzip.NewReader(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	body, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := strings.Split(strings.TrimSpace(string(body)), "\n")
+	var got []string
+	for _, c := range m434Cases() {
+		inner := c.cfg
+		c.cfg = func() Config { x := inner(); m61PreP4(&x); return x }
+		got = append(got, m434Digest(t, c)...)
+	}
+	if len(got) != len(want) {
+		t.Fatalf("ticks %d, pre-P4 golden %d", len(got), len(want))
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			t.Fatalf("strict read diverges from the pre-#61 swing at row %d:\n got  %s\n want %s", i, got[i], want[i])
+		}
 	}
 }
