@@ -188,7 +188,7 @@ func TestM61UnoFirstVisitBreakIsISBOnly(t *testing.T) {
 }
 
 // TestM61UnoSecondBreakAfterFlipIsISBOnly — after the flip, a wrong-way close
-// of the flipped role ("missed" [D5.2-R24]) is ISB-only: one flip per day.
+// of the flipped role ("missed" (D5.2-R24) [D5.2 p1 @20:31–21:43]) is ISB-only: one flip per day.
 func TestM61UnoSecondBreakAfterFlipIsISBOnly(t *testing.T) {
 	e, base := m61UnoEvaluator(t, UnoKeyLevelsOn)
 	bars := m61UnoHistory(base)
@@ -431,10 +431,9 @@ func TestM61TrendlineArmCancelsOnCurrentLine(t *testing.T) {
 		cfg.LevelArmLineCancel = mode
 		e := New(cfg)
 		e.State.LevelArms = map[string]LevelArm{key: {ArmID: "lvl-7", Side: SideLong, LevelPrice: 29375, PlacedAt: p0 + 59_999}}
-		e.State.ChartTrendlines = lines
 		cur := market.Kline{OpenTime: p1, CloseTime: p1 + 59_999, Open: 29386, High: 29387, Low: 29379, Close: 29380}
 		levels := []Level{{Key: key, Kind: KindTrendline, Price: tl.priceAt(cur.OpenTime)}}
-		return e.levelArmCancels([]market.Kline{cur}, cur, cur.CloseTime+1, levels), e
+		return e.levelArmCancels([]market.Kline{cur}, cur, cur.CloseTime+1, levels, lines), e
 	}
 	ints, e := run(LevelArmLineCancelCurrent, []Trendline{tl})
 	if !hasCancel(ints, "lvl-7") || e.State.Counters["level_arm_cancel_current_line"] != 1 {
@@ -464,7 +463,7 @@ func TestM61KeyLevelArmUnchanged(t *testing.T) {
 	p0 := auditMs(2026, 9, 15, 10, 0, 0)
 	e.State.LevelArms = map[string]LevelArm{"L": {ArmID: "lvl-1", Side: SideLong, LevelPrice: 29375, PlacedAt: p0 + 59_999}}
 	cur := market.Kline{OpenTime: p0 + 60_000, CloseTime: p0 + 119_999, Open: 29386, High: 29387, Low: 29379, Close: 29380}
-	if ints := e.levelArmCancels([]market.Kline{cur}, cur, cur.CloseTime+1, []Level{{Key: "L", Kind: KindKeyLevel, Price: 29390}}); len(ints) != 0 {
+	if ints := e.levelArmCancels([]market.Kline{cur}, cur, cur.CloseTime+1, []Level{{Key: "L", Kind: KindKeyLevel, Price: 29390}}, nil); len(ints) != 0 {
 		t.Fatalf("a key level's arm reads its placement price: %+v", ints)
 	}
 }
@@ -486,14 +485,21 @@ func TestM61PHLPullbackLowerLowRefused(t *testing.T) {
 		}
 	}
 	cfg := DefaultConfig()
-	if got := phlPullbackRefusal(cfg, SideLong, mk(29335), 0, 3, 29338); got != "phl_pullback_lower_low" {
+	if got := phlPullbackRefusal(cfg, SideLong, mk(29335), 0, 3, mk(29335)[3], 29338); got != "phl_pullback_lower_low" {
 		t.Fatalf("a pullback low 29,335 under the prior low 29,338 must refuse, got %q", got)
 	}
-	if got := phlPullbackRefusal(cfg, SideLong, mk(29345), 0, 3, 29338); got != "" {
+	if got := phlPullbackRefusal(cfg, SideLong, mk(29345), 0, 3, mk(29345)[3], 29338); got != "" {
 		t.Fatalf("a pullback low 29,345 passes to the next gate, got %q", got)
 	}
+	// the signal candle ITSELF under the prior low is phl_not_higher_low's
+	// (downstream) — the pullback read leaves that name alone.
+	sig := mk(29345)
+	sig[3].Low = 29330
+	if got := phlPullbackRefusal(cfg, SideLong, sig, 0, 3, sig[3], 29338); got != "" {
+		t.Fatalf("a signal candle under the prior low is phl_not_higher_low's, got %q", got)
+	}
 	cfg.PHLPullbackLow = PHLPullbackLowSignal
-	if got := phlPullbackRefusal(cfg, SideLong, mk(29335), 0, 3, 29338); got != "" {
+	if got := phlPullbackRefusal(cfg, SideLong, mk(29335), 0, 3, mk(29335)[3], 29338); got != "" {
 		t.Fatalf("signal (the pre-#61 read): passes, got %q", got)
 	}
 	// short mirror
@@ -501,9 +507,9 @@ func TestM61PHLPullbackLowerLowRefused(t *testing.T) {
 	sh := []market.Kline{
 		m61Bar(base, 0, 29300, 29305, 29268.25, 29275),
 		m61Bar(base, 1, 29275, 29320, 29272, 29315),
-		m61Bar(base, 2, 29315, 29318, 29300, 29305),
+		m61Bar(base, 2, 29308, 29310, 29300, 29305), // signal candle: its own high 29,310 is under the prior high
 	}
-	if got := phlPullbackRefusal(cfg, SideShort, sh, 0, 2, 29318); got != "plh_pullback_higher_high" {
+	if got := phlPullbackRefusal(cfg, SideShort, sh, 0, 2, sh[2], 29318); got != "plh_pullback_higher_high" {
 		t.Fatalf("mirror: a bounce high 29,320 over the prior high 29,318 refuses, got %q", got)
 	}
 	if got := phlRefIdx(sh, sh[1]); got != 1 {
@@ -551,4 +557,14 @@ func TestM61PHLPullbackLowerLowThroughTick(t *testing.T) {
 			}
 		}
 	}
+}
+
+// m466P2PreValues puts the four m466 P2 knobs at their pre-#61 values — the
+// identity tests whose goldens predate #61 call it, proving every P2 change is
+// undone by its knob.
+func m466P2PreValues(cfg *Config) {
+	cfg.UnoKeyLevels = UnoKeyLevelsOff
+	cfg.SessionOpenLevels = SessionOpenLevelsOff
+	cfg.LevelArmLineCancel = LevelArmLineCancelPlacement
+	cfg.PHLPullbackLow = PHLPullbackLowSignal
 }

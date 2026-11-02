@@ -338,11 +338,18 @@ func phlFlatNear(bars []market.Kline, execTFMin int, execCur market.Kline) float
 // the signal candle) is at or under prior (the leg-start low,
 // priorLeftExtremeOnTape). Short mirror: the highest High at or over prior →
 // plh_pullback_higher_high. exIdx is the old extreme's 1m index, refIdx the
-// signal candle's (phlRefIdx). prior 0, an empty pullback (refIdx <= exIdx) or
-// knob PHLPullbackLow "signal" → "" (the pre-#61 signal-only check stands).
+// signal candle's (phlRefIdx), ref the signal candle itself. prior 0, an empty
+// pullback (refIdx <= exIdx), a signal candle that itself fails the test (left
+// to phl_not_higher_low / phl_not_lower_high downstream) or knob
+// PHLPullbackLow "signal" → "" (the pre-#61 signal-only check stands).
 // The m464 rolling ladder keeps its own rules and does not call this.
-func phlPullbackRefusal(cfg Config, side Side, bars []market.Kline, exIdx, refIdx int, prior float64) string {
+func phlPullbackRefusal(cfg Config, side Side, bars []market.Kline, exIdx, refIdx int, ref market.Kline, prior float64) string {
 	if cfg.PHLPullbackLow == PHLPullbackLowSignal || prior == 0 || exIdx < 0 || refIdx <= exIdx {
+		return ""
+	}
+	// The signal candle's OWN extreme at or beyond prior is phlPLHR2's
+	// phl_not_higher_low / phl_not_lower_high — that name stands.
+	if side == SideLong && ref.Low <= prior || side == SideShort && ref.High >= prior {
 		return ""
 	}
 	if refIdx >= len(bars) {

@@ -816,7 +816,7 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 	return out
 }
 
-func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64, levels []Level) []Intent {
+func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64, levels []Level, lines []Trendline) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
 	}
@@ -848,7 +848,7 @@ func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now i
 		// m466 P2 (G17 D2.3-R34): a MOVING line's order reads the line's
 		// CURRENT price (trendline: priceAt the checked close; EMA 34: this
 		// tick's line); a trendline gone from the live set cancels its order.
-		linePx, gone := levelArmLinePrice(e.Cfg, arm, key, levels, e.State.ChartTrendlines, chk.CloseTime)
+		linePx, gone := levelArmLinePrice(e.Cfg, arm, key, levels, lines, chk.CloseTime)
 		if chk.CloseTime > arm.PlacedAt {
 			through = arm.Side == SideLong && chk.Close < linePx ||
 				arm.Side == SideShort && chk.Close > linePx
@@ -3094,7 +3094,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			// m466 P2 (G41 D2.2-R59): the WHOLE pullback's low (old high →
 			// signal candle) must stay above the prior low — mirror PLH.
-			if name := phlPullbackRefusal(e.Cfg, side, bars, ex.idx, phlRefIdx(bars, tr.RefBar), prior); name != "" {
+			if name := phlPullbackRefusal(e.Cfg, side, bars, ex.idx, phlRefIdx(bars, tr.RefBar), tr.RefBar, prior); name != "" {
 				e.refuse(name)
 				continue
 			}
@@ -3182,7 +3182,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// B6 cancel sweep: a resting level order dies when a later candle
 	// closes through its level, or at its own 15:00 CT expiry
 	// (LevelArmExpiry(PlacedAt)).
-	out = append(out, e.levelArmCancels(bars, cur, now, levels)...)
+	out = append(out, e.levelArmCancels(bars, cur, now, levels, trendlines)...) // m466 P2 G17: this tick's live lines
 
 	// §4.1 box trades (BOX RULING R1 2026-10-03, ONE path = DS-106's
 	// boxEntryIntent — CTO 12:38:50Z): every return visit of every live box is

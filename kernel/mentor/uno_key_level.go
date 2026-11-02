@@ -24,7 +24,7 @@ import "vl/market"
 //     (approachSide on its previous close): the level's role comes from the
 //     side price now stands on, and the backtest reject arms a PHL/PLH through
 //     every normal gate;
-//   - a second wrong-way close after the flip — "missed" [D5.2-R24] — or a
+//   - a second wrong-way close after the flip — "missed" (D5.2-R24) [D5.2 p1 @20:31–21:43] — or a
 //     wrong-way FIRST visit (the level never held) → ISBOnly exactly as before.
 //
 // Two shapes of "held, then broke" reach this file:
@@ -58,7 +58,7 @@ func (e *Evaluator) unoKeyLevelBreak(lvl Level) bool {
 		return false
 	}
 	if e.State.UnoFlipped[lvl.Key] {
-		return false // a 2nd wrong-way close after the flip: missed → ISB-only [D5.2-R24]
+		return false // a 2nd wrong-way close after the flip: missed → ISB-only (D5.2-R24) [D5.2 p1 @20:31–21:43]
 	}
 	if e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)] < 1 {
 		return false // it never held today: the first touch closed wrong → invalid [D5.2 p1 @19:44–20:25]

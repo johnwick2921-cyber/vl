@@ -114,6 +114,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			cfg.ISBLossBox = ISBLossBoxBand
 			m465PreValues(&cfg) // m465 (#60): the pre-#60 knob values — this golden predates them
 			m462PreM465Knobs(&cfg)
+			m466P2PreValues(&cfg) // m466 P2 (#61): the pre-#61 knob values — this golden predates them
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {
