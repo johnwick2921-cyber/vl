@@ -30,7 +30,7 @@ func m60p1Crossing() []market.Kline {
 		{9, 40, 28_995, 29_010, 28_985, 29_005}, // green, inside 09:35 → 5m ISB SHORT
 	})
 	return append(bars,
-		m60p1K(m60p1At(9, 45), 29_004, 29_008, 28_996, 28_998), // red mother
+		m60p1K(m60p1At(9, 45), 29_004, 29_008, 28_996, 28_998),   // red mother
 		m60p1K(m60p1At(9, 46), 28_999, 29_000, 28_998, 28_999.5), // inside → 1m ISB short
 	)
 }
@@ -40,8 +40,8 @@ func m60p1Crossing() []market.Kline {
 func m60p1CrossingEval(t *testing.T, px15 float64) *Evaluator {
 	t.Helper()
 	e := m60p1Eval(t, SideShort, 29_040, SideShort, SideShort, m60p1Levels())
-	e.State.Trigger15 = TriggerLine{Dir: SideLong, Price: px15, LastBucket: math.MaxInt64}
-	e.State.Trigger30 = TriggerLine{Dir: SideShort, Price: 29_100, LastBucket: math.MaxInt64}
+	e.State.Trigger15 = &TriggerLine{Dir: SideLong, Price: px15, LastBucket: math.MaxInt64}
+	e.State.Trigger30 = &TriggerLine{Dir: SideShort, Price: 29_100, LastBucket: math.MaxInt64}
 	return e
 }
 

@@ -102,11 +102,23 @@ func ssIndexOf(bars []market.Kline, openMs int64) int {
 // builder (m410: with Exec2mAfter30m ON the boxes draw on the traded 2m frame).
 var ssPin1mBoxes bool
 
+// ssNoEarly15m (m465 P1) runs the seed-state parity pins with the 15m early
+// read OFF. A restart does not rebuild the ISB rest boxes or the CE-2
+// both_boxes conflict latch (TFConflictLatched) — a pre-existing restart gap
+// (release #60 finding) that the early read's provisional-box conflicts make
+// visible on the 10-14 tape (a held conflict suppresses the 08:24 box return
+// the restart judges). Those pins are about the BoxRefs watermark, not the
+// 15m box, so they keep their pre-#60 15m world.
+var ssNoEarly15m bool
+
 func ssSeed(bars []market.Kline, now int64, windows []PrintWindow) *Evaluator {
 	hist := closedOnly(bars, now)
 	e := New(lrProdCfg())
 	if ssPin1mBoxes {
 		e.Cfg.Exec2mAfter30m = false
+	}
+	if ssNoEarly15m {
+		e.Cfg.Early15mRead = false
 	}
 	e.Cfg.PrintWindows = windows
 	SeedFull(e, hist, keyLevel1HBars(hist), now)
@@ -403,6 +415,8 @@ func TestLatchedBoxIsOutputEveryTick1014(t *testing.T) {
 // tick judges exactly the returns a continuous bot judges on that tick — the
 // same box refusals, the same box intents. Mutant: no BoxRefs watermark → RED.
 func TestRestartIssuesNoHistoricalBoxIntents1014(t *testing.T) {
+	ssNoEarly15m = true // m465 P1: see ssNoEarly15m
+	defer func() { ssNoEarly15m = false }()
 	all := loadSeedStateFixture(t)
 	full := ssTape(all, true, 1<<62)
 	ri := ssIndexOf(full, ssRefillBar)

@@ -71,9 +71,10 @@ type State struct {
 	Trigger TriggerLine `json:"trigger"`
 	// Trigger15 / Trigger30 — m465 P1 (D3.4-R43 [D3.4 p2 @17:07–17:49]): the
 	// 15m and 30m trigger lines, advanced like the 5m line. They govern only
-	// while the lower TF's inside bars cross (governingTrigger).
-	Trigger15 TriggerLine `json:"trigger_15m"`
-	Trigger30 TriggerLine `json:"trigger_30m"`
+	// while the lower TF's inside bars cross (governingTrigger). nil while the
+	// knob trigger_escalation is OFF, so the OFF state is the pre-#60 state.
+	Trigger15 *TriggerLine `json:"trigger_15m,omitempty"`
+	Trigger30 *TriggerLine `json:"trigger_30m,omitempty"`
 	// TriggerGovTF is the TF whose trigger governed the last tick (0/5 = the
 	// 5m, 15, 30): the escalation is noted and counted on a CHANGE only.
 	TriggerGovTF int `json:"trigger_gov_tf,omitempty"`

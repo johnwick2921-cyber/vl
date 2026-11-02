@@ -47,10 +47,15 @@ func triggerTFSuffix(tf int) string {
 
 // advanceEscalationTriggers moves the 15m and 30m trigger lines on the same 1m
 // close the 5m line moves on (TriggerTick over the aggregated buckets — the
-// forming bucket may fire a break once, never re-applied).
+// forming bucket may fire a break once, never re-applied). Knob OFF → the
+// lines are not kept (nil), so the OFF state is byte-identical to pre-#60.
 func (e *Evaluator) advanceEscalationTriggers(bars []market.Kline) {
-	e.State.Trigger15 = TriggerTick(e.State.Trigger15, e.barsTFMemo(bars, 15), 15, e.Cfg)
-	e.State.Trigger30 = TriggerTick(e.State.Trigger30, e.barsTFMemo(bars, 30), 30, e.Cfg)
+	if !e.Cfg.TriggerEscalation {
+		return
+	}
+	t15 := TriggerTick(lineOrEmpty(e.State.Trigger15), e.barsTFMemo(bars, 15), 15, e.Cfg)
+	t30 := TriggerTick(lineOrEmpty(e.State.Trigger30), e.barsTFMemo(bars, 30), 30, e.Cfg)
+	e.State.Trigger15, e.State.Trigger30 = &t15, &t30
 }
 
 // seedEscalationTriggers seeds the 15m/30m lines from the closed 1m history by
@@ -58,12 +63,23 @@ func (e *Evaluator) advanceEscalationTriggers(bars []market.Kline) {
 // LINES-RESTART), so a restart lands on the line a bot that never stopped
 // holds. reset = a re-seed after a history refill: replay from an empty line.
 func (e *Evaluator) seedEscalationTriggers(closed1m []market.Kline, reset bool) {
-	t15, t30 := e.State.Trigger15, e.State.Trigger30
+	if !e.Cfg.TriggerEscalation {
+		return
+	}
+	t15, t30 := lineOrEmpty(e.State.Trigger15), lineOrEmpty(e.State.Trigger30)
 	if reset {
 		t15, t30 = TriggerLine{}, TriggerLine{}
 	}
-	e.State.Trigger15 = TriggerReplay1m(t15, closed1m, 15, e.Cfg)
-	e.State.Trigger30 = TriggerReplay1m(t30, closed1m, 30, e.Cfg)
+	t15 = TriggerReplay1m(t15, closed1m, 15, e.Cfg)
+	t30 = TriggerReplay1m(t30, closed1m, 30, e.Cfg)
+	e.State.Trigger15, e.State.Trigger30 = &t15, &t30
+}
+
+func lineOrEmpty(t *TriggerLine) TriggerLine {
+	if t == nil {
+		return TriggerLine{}
+	}
+	return *t
 }
 
 // governingTriggerTick picks this tick's governing trigger and, on a CHANGE of
@@ -71,7 +87,7 @@ func (e *Evaluator) seedEscalationTriggers(closed1m []market.Kline, reset bool) 
 // escalation) or trigger_escalation_ended (back to the 5m) — once per change,
 // never per tick.
 func (e *Evaluator) governingTriggerTick(cb5, cb15 []market.Kline) (TriggerLine, int) {
-	t, tf := governingTrigger(e.Cfg, e.State.Trigger, e.State.Trigger15, e.State.Trigger30, cb5, cb15)
+	t, tf := governingTrigger(e.Cfg, e.State.Trigger, lineOrEmpty(e.State.Trigger15), lineOrEmpty(e.State.Trigger30), cb5, cb15)
 	prev := e.State.TriggerGovTF
 	if prev == 0 {
 		prev = 5

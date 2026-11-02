@@ -52,7 +52,20 @@ func m462LegacyState(st State) State {
 	}
 	st.Refusals = out
 	st.RollingHTFRefusedAt = 0
+	// m465 P1 (release #60): the escalation lines and the early-read watermark
+	// are new state the pre-m462 golden never carried; the identity runs with
+	// the m465 knobs at their pre-#60 values (m462PreM465Knobs).
+	st.Trigger15, st.Trigger30, st.TriggerGovTF, st.LastForming15mAt = nil, nil, 0, 0
 	return st
+}
+
+// m462PreM465Knobs puts the release #60 P1 knobs at their pre-#60 values (no
+// early 15m read, mode C from the last closed pairs, no trigger escalation), so
+// the stored-news-only identity still compares like with like.
+func m462PreM465Knobs(cfg *Config) {
+	cfg.Early15mRead = false
+	cfg.MTFConfluenceSource = MTFConfluenceLastPair
+	cfg.TriggerEscalation = false
 }
 
 func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
@@ -90,6 +103,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			}
 			cfg := c.cfg()
 			cfg.HTFGateNewsOnly = true // the explicitly STORED old value
+			m462PreM465Knobs(&cfg)
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {
