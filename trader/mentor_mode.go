@@ -71,6 +71,16 @@ type mentorTierInputs struct {
 	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
 	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend (mirror: the high in a downtrend) against an entry WITH that trend → size down [Go over lớp học @00:13:21–00:15:19]
 
+	// ExecTFMin (m465 P4, D3.1-R30) is the frame the entry was READ on — the
+	// intent's ExecTFMin (kernel/mentor/mentor.go Intent.ExecTFMin): 2 = a 2m
+	// entry, 5 = a 5m entry, 0/1 = the 1m. A 2m+ ISB/PHL/PLH entry is the
+	// reduced tier: "khi anh chị vô lệnh khung 2 phút, stop loss lớn hơn khung
+	// 1 phút… Mình phải giảm size" [D3.1 p1 @14:09–14:35].
+	ExecTFMin int
+	// Exec2mReduceOff is the knob mentor_2m_reduce_size turned OFF (false = the
+	// zero value = ON, the course default; a bare table test runs the course).
+	Exec2mReduceOff bool
+
 	// Rule-gate limits resolved from the strategy (mentorTuningResolve / the
 	// course-exits resolver): the SAME numbers the evaluator reads. Zero (a
 	// bare table test) falls back to the kernel defaults, never to a second
