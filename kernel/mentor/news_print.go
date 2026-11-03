@@ -19,6 +19,12 @@ import (
 type PrintWindow struct {
 	FromMs int64 `json:"from_ms,omitempty"`
 	ToMs   int64 `json:"to_ms,omitempty"`
+	// PrintAtMs (m466 G58 D4.4-R6) is the print minute itself (07:30 CT),
+	// filled by the trader's mentorNewsPrintWindowsFromEvents. It anchors the
+	// 1h/4h read lead (CourseExits.NewsReadLeadMin): the CE-4 freeze starts
+	// PrintAt − lead. 0 (a window built before #61, or a test fixture) → the
+	// freeze starts at FromMs, byte-identical to the pre-#61 behaviour.
+	PrintAtMs int64 `json:"print_at_ms,omitempty"`
 }
 
 // inPrintWindows reports whether openMs falls inside any listed window.
@@ -96,15 +102,38 @@ func newsPeriodEnd(w PrintWindow) int64 {
 // OFF → the print windows unchanged (07:20–07:35); ON → each window runs to
 // the 08:30 CT open, so post-print follow-through cannot move the 1h/4h lines.
 // It is the window basis for newsHTFFrozen / newsBarFrozen (release #29).
+//
+// m466 G58 D4.4-R6: ON also starts the freeze at the READ — "Một giờ thì đợi
+// gần trước news, tầm 30 phút" / board "(trước news 30')" [D4.4 p1
+// @05:28–05:36; board 14:33–15:36] — PrintAt − mentor_news_read_lead_min
+// (default 30 → 07:00 for a 07:30 print), never later than the window's own
+// start. The order hold (the window itself, −10m/+5m) is unchanged; the news
+// PERIOD the CE-3 wait and the stored htf_gate_news_only read still starts at
+// the window (newsPeriodEnd / PrintWindows), only the trigger READ moves.
 func newsHTFWindows(windows []PrintWindow, cfg Config) []PrintWindow {
 	if !cfg.NewsBarsExcluded || len(windows) == 0 {
 		return windows
 	}
 	out := make([]PrintWindow, len(windows))
 	for i, w := range windows {
-		out[i] = PrintWindow{FromMs: w.FromMs, ToMs: newsPeriodEnd(w)}
+		out[i] = PrintWindow{FromMs: newsReadStart(w, cfg), ToMs: newsPeriodEnd(w), PrintAtMs: w.PrintAtMs}
 	}
 	return out
+}
+
+// newsReadStart is the instant the pre-print 1h/4h read is taken (the freeze
+// start): PrintAt − lead minutes (D4.4-R6), or the window start when the window
+// carries no PrintAtMs (pre-#61) or the lead is 0 / shorter than the window's
+// pre-skirt.
+func newsReadStart(w PrintWindow, cfg Config) int64 {
+	lead := cfg.CourseExits.NewsReadLeadMin
+	if w.PrintAtMs <= 0 || lead <= 0 {
+		return w.FromMs
+	}
+	if start := w.PrintAtMs - int64(lead)*60_000; start < w.FromMs {
+		return start
+	}
+	return w.FromMs
 }
 
 // newsHTFFrozen (CE-4 reworked, release #29) reports whether the 1h/4h trigger
@@ -140,9 +169,19 @@ func newsBarFrozen(openMs int64, cfg Config) bool {
 // newsWaitFilter is the CE-3 gate (knob news_wait_both_lines): inside a news
 // period (from a print window's start to the 08:30 CT open) an intraday entry
 // needs the last close beyond the 4h trigger line on its side — above it for a
-// long, below it for a short ("or at least the 4h line" — the minimum the
-// lesson states; above both lines implies it). No 4h line → refused
-// (fail-closed). The §8 swing is exempt; cancels and other actions pass.
+// long, below it for a short. No 4h line → refused (fail-closed), counted
+// news_wait_4h_line.
+//
+// m466 G56 D4.4-R22 (knob mentor_news_wait_mode, default "both"): the course's
+// FIRST method is BOTH lines — "Đợi canh nó nằm trên hai cái đường line này,
+// kiếm inside bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line
+// 4 giờ" [D4.4 p1 @21:48–22:12] — so "both" also needs the close beyond the
+// pre-print 1h line (the line the CE-4 freeze holds) on the trade side,
+// counted news_wait_1h_line. With no 1h line, or a 1h line older than the 4h
+// one (oneHSilent — "mình sẽ coi 4 giờ thôi, không cần coi 1 giờ", D4.4-R12
+// [D4.4 p1 @04:42–05:04, @18:48–18:52]), the 4h alone. "4h_only" = the
+// pre-#61 rule (the course's "Hoặc…" minimum). The §8 swing is exempt;
+// cancels and other actions pass.
 func newsWaitFilter(ints []Intent, h HTF, lastClose float64, now int64, cfg Config) (out []Intent, refusals []string) {
 	if !cfg.NewsWaitBothLines || len(cfg.PrintWindows) == 0 {
 		return ints, nil
@@ -157,19 +196,32 @@ func newsWaitFilter(ints []Intent, h HTF, lastClose float64, now int64, cfg Conf
 	if !inNews {
 		return ints, nil
 	}
+	// m466 G56: "both" (default; "" reads the same) also reads the 1h line,
+	// unless the 1h has nothing to say (no line, or older than the 4h —
+	// D4.4-R12 case 2).
+	needOneH := cfg.CourseExits.NewsWaitMode != NewsWait4hOnly && h.OneH.Price > 0 && !oneHSilent(h)
 	out = make([]Intent, 0, len(ints))
 	for _, in := range ints {
 		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry || strings.HasPrefix(in.Reason, "swing") {
 			out = append(out, in)
 			continue
 		}
-		line := h.FourH.Price
-		ok := line > 0 && (in.Side == SideLong && lastClose > line || in.Side == SideShort && lastClose < line)
-		if ok {
-			out = append(out, in)
+		if !beyondLine(in.Side, lastClose, h.FourH.Price) {
+			refusals = append(refusals, "news_wait_4h_line")
 			continue
 		}
-		refusals = append(refusals, "news_wait_4h_line")
+		if needOneH && !beyondLine(in.Side, lastClose, h.OneH.Price) {
+			refusals = append(refusals, "news_wait_1h_line") // m466 G56 D4.4-R22
+			continue
+		}
+		out = append(out, in)
 	}
 	return out, refusals
+}
+
+// beyondLine reports a close strictly beyond a drawn line on the trade side
+// (above it for a long, below it for a short); an undrawn line (≤ 0) is never
+// passed.
+func beyondLine(side Side, close, line float64) bool {
+	return line > 0 && (side == SideLong && close > line || side == SideShort && close < line)
 }

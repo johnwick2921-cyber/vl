@@ -117,6 +117,11 @@ func m431Tick(e *Evaluator, all []market.Kline, i int) []Intent {
 // W9 removed the 12:22 flag-wall drop).
 func TestM431NoArmWithoutAnEmittedEntryOnTheRealTape(t *testing.T) {
 	e, all, n0 := m431Day10_23(t)
+	// m466 G23 (D4.1-R12): the 12:22 control ISB (long 29,202.25, stop
+	// 29,180.00) is 22.25 pts — refused isb_stop_over_max at the #61 ISB
+	// ceiling 20. The control is about arm registration, not the ceiling, so it
+	// runs at the pre-#61 25 (a stored mentor_isb_max_pts) to keep its entry.
+	e.Cfg.CourseExits.ISBMaxStopPts = 25
 	known := e.heldArmIDs() // armed before the day began: lifecycle is theirs
 	flagWallAt := ""
 	isb1222Left := false

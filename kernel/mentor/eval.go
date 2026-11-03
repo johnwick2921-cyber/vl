@@ -2477,7 +2477,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				// NOT location-gated — "inside bar lúc nào cũng có thể take
 				// risk… trong range, trên range, ngoài range, dưới range"
 				// [D4.1 p1 @05:19–05:34; the range words are D3.4 p3 @03:23–03:37]. His conditions stay: the trigger zone
-				// (above), the R5 box (below), the stop ceiling (stop > ISBMaxStopPts, default 25, is skipped; 20–25 is the reduced tier), and a size
+				// (above), the R5 box (below), the stop ceiling (stop > ISBMaxStopPts, default 20 since m466 D4.1-R12, is skipped), and a size
 				// flag at an old high/low.
 				//
 				// fold item 3: entries only with the 4h trigger direction
@@ -2708,7 +2708,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			in.ExecTFMin = execTFMin
 			// R85 (CTO, release #4): now that the reverse ISB can place, it
 			// runs through the SAME gates as the normal ISB — the stop-ceiling
-			// skip [D4.1 p1 @ 05:41; ISBStopVerdict, default 25], the 4h HTF
+			// skip [D4.1 p1 @ 05:41; ISBStopVerdict, default 20], the 4h HTF
 			// verdict and side, and the near-box rule (row 24) — before any
 			// target is set.
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
@@ -3376,7 +3376,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// allowed only after a 5m candle has closed outside the opening 5m range
 	// in the 4h's direction — "chuyển về khung 5 phút … nó break được cái rank
 	// khung 5 phút". The swing is exempt; off-4h entries stay the HTF gate's.
-	out, refused, open5mNotes := open5mRangeFilter(out, e.State.HTF, bars, now)
+	out, refused, open5mNotes := open5mRangeFilter(out, e.State.HTF, bars, now, e.Cfg)
 	for _, r := range refused {
 		e.refuse(r)
 	}

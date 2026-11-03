@@ -53,7 +53,7 @@ import (
 //     stop is ABOVE SkipStopPts (knob mentor_swing_max_stop_pts, default 90 —
 //     his own example is 91.75 [p2 @19:34–21:43]) is refused (swing_max_stop),
 //     on the reject and the inside-bar path alike. 30–40 / 50–60 are fine. The
-//     swing stays EXEMPT from the ISB ceiling (mentor_isb_max_pts, 25).
+//     swing stays EXEMPT from the ISB ceiling (mentor_isb_max_pts, 20 since m466).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
 //     fallback); BE at +1R [D1.2 p1 @12:34–13:12, @15:56–15:59 — the general
 //     1:1 maintenance]; hold ONE 4h candle [D5.2 p1 @06:03–06:20].

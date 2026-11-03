@@ -326,6 +326,12 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   'ISB loss box': { settingId: 'mentor_isb_loss_box', live: true },
+  'Opening 5m range break': { settingId: 'mentor_open5m_break', live: true },
+  'News wait: which lines': { settingId: 'mentor_news_wait_mode', live: true },
+  'News: read the 1h/4h lines before the print': {
+    settingId: 'mentor_news_read_lead_min',
+    live: true,
+  },
 }
 
 // Evaluator settings that have no Studio control and no store field: the
@@ -457,7 +463,7 @@ export const mentor: GuideSection = {
       cards: [
         {
           title: 'Inside bar (ISB)',
-          body: 'Candle 2’s BODY inside candle 1’s FULL range (wicks included). Direction = candle 1’s colour (“nó chỉ có 2 màu thôi, nó không có màu thứ 3” [D1.4 p1 @09:20–09:38]); a DOJI candle 1 has no colour, so the bot REFUSES it — the course is silent on a doji, this fail-closed refusal is OURS (CTO ruling 2026-10-03; the old doji-long was audited wrong) and awaits an owner ruling. Entry at the ISB candle’s own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — reduce the size for a 20–25 pt stop and skip above 25. The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest). The course counts 1m candles; on the 2m the same 4 is OURS (knob isb_stack_cancel_candle_2m), and the tiny-stop exception (isb_stack_tiny_stop_pts, 12.5 pts since release #60 — the worked example’s measured stop, D5.1-R26 [D5.1 p2 @02:24–04:41]) keeps an arm whose stop is at or under 12.5 pts past the cancel candle.',
+          body: 'Candle 2’s BODY inside candle 1’s FULL range (wicks included). Direction = candle 1’s colour (“nó chỉ có 2 màu thôi, nó không có màu thứ 3” [D1.4 p1 @09:20–09:38]); a DOJI candle 1 has no colour, so the bot REFUSES it — the course is silent on a doji, this fail-closed refusal is OURS (CTO ruling 2026-10-03; the old doji-long was audited wrong) and awaits an owner ruling. Entry at the ISB candle’s own extreme + 1.5 pt (6 ticks) — exactly that on the wire, nothing is added at placement — stop 1.5 beyond its opposite extreme, no fixed stop size — skip a stop above 20 pts (release #61, D4.1-R12 “inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô” [D4.1 p1 @05:41–06:08]; the D3.3 “20–25 reduce size” option no longer applies to an ISB). The FIRST inside-bar candle is I1 — the order sits at its extremes and the containment test is against I1. A following candle that does not fill and whose BODY is NOT inside I1 → cancel at once. Body inside I1 → keep. I1 counts as candle 1 of the stack; candles 2 and 3 inside → keep; the 4th not filling → cancel (it becomes a 5m inside bar = rest). The course counts 1m candles; on the 2m the same 4 is OURS (knob isb_stack_cancel_candle_2m), and the tiny-stop exception (isb_stack_tiny_stop_pts, 12.5 pts since release #60 — the worked example’s measured stop, D5.1-R26 [D5.1 p2 @02:24–04:41]) keeps an arm whose stop is at or under 12.5 pts past the cancel candle.',
           tag: 'D1.4 p1',
         },
         {
@@ -549,9 +555,9 @@ export const mentor: GuideSection = {
           cite: 'Go over lớp học part1 @00:13:21–00:15:19 · trader/mentor_mode.go mentorSizeFor · kernel/mentor/eval.go pullbackWarning5m / isbFlagsFor (side-aware) · kernel/mentor/box.go structureTrend5m',
         },
         {
-          title: 'Skip a stop of 30 or more',
-          body: 'An ISB stop above 25 pts must not be taken ("trên nữa thì thôi" [D3.3 p1 @02:04–02:08] — those orders are not worth trading). A stop of 20–25 pts cuts to the reduced tier ("giảm size" [D3.3 p1 @01:09–01:20]); a stop of 20 or less keeps the base size. This reverts course-defaults-30 (owner order "move to 30") — the course skips the twenties [D4.1 p1 @05:41].',
-          cite: 'W-MENTOR-EXACT (owner order 10-21 "i want all exactly like mentor") — CourseExits.ISBMaxStopPts 25 · D3.3 p1 @01:09–02:09 (20–25 reduce, > 25 skip) · D4.1 p1 @05:41 (twenties skip)',
+          title: 'Skip an ISB stop above 20',
+          body: 'Release #61 (m466 G23): an ISB stop (entry to stop, the ISB range + 2 × 1.5) above 20 pts must not be taken — "nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop loss nhỏ" [D4.1 p1 @05:41–06:08]; his own stop that morning was 20 points [D4.1 p1 @02:39–03:20], so exactly 20 is taken. D4.1 is a LATER lesson than D3.3 (20–25 = reduce size, above 25 skip [D3.3 p1 @01:09–02:09]), so for an ISB the 20–25 reduce option is gone; PHL/PLH and box stops keep the D3.3 rule (reduced at 20–25, skipped above 25). Example: the D3.4 short ISB at 29,034.25 with its stop at 29,056.75 (22.50 pts) is refused (isb_stop_over_max). A stored mentor_isb_max_pts (e.g. 25) still wins.',
+          cite: 'm466 G23 — CourseExits.ISBMaxStopPts 20 · D4.1 p1 @05:41–06:08 (twenty-something: do not enter) · D4.1 p1 @02:39–03:20 (his 20-pt stop) · D3.3 p1 @01:09–02:09 (PHL/PLH keep 20–25 reduce, > 25 skip)',
         },
       ],
     },
@@ -638,13 +644,13 @@ export const mentor: GuideSection = {
         ],
         [
           '4h/1h direction',
-          'ALL SESSION (release #59, m462 — the course\u2019s final review: "Lúc nào khi anh chị open ra, không cần phải là news" [D5.1-R9, D5.1 p1 @08:46–09:13] and "Trigger 4h, trigger 1h nằm ngược nhau… mình không làm được gì hết trơn" [D5.1-R11, D5.1 p1 @08:29–09:52, @11:27–11:50]): the 4h/1h direction gate applies at every minute of the session, not only around news and the open. One shared check (HTFEntryCheck) covers every intraday setup — ISB, reverse ISB, PHL/PLH at a level and the rolling PHL/PLH, box returns — and a backstop filter re-checks every entry before it leaves the evaluator; each refusal is named per setup (…_htf_conflict / …_htf_side_mismatch / …_htf_no_4h) and counted. A strategy that STORED htf_gate_news_only = ON keeps the old windows (print day 07:20–08:30 CT and the 08:30–09:30 CT open; outside them not gated). SWING4H is EXEMPT: its direction is the 4h EMA 34, not the trigger lines [D5.2-R7, D5.2 p3 @15:04–18:25]; planner/AI entries have their own G1 HTF veto. The live trader inherits this with no config edit (the default flipped from news + open to all session). Entries only WITH the 4h trigger. At the OPEN (08:30–09:30 CT) a with-4h entry additionally waits for the 5m range to break in the 4h’s direction — "không phải là cứ cắm đầu mà cứ vô lệnh buy market … chuyển về khung 5 phút … nó break được cái rank khung 5 phút" [D4.4 p2 @04:41–06:00]; the opening 5m range is the first 5m candle (08:30–08:35) [example: the ORB’s 08:30 anchor]. The 1h counts only when it fired at or after the 4h — compared by the MINUTE each line really fired, not by which candle opened first (an earlier 1h trigger is ignored — it is silent; W7 B3): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <CT>" (the minute the line fired; the 4h/1h lines carry the break minute since release #52, the 5m line its bucket open), and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed freezes each replayed day\u2019s print-window trigger read exactly as the running bot did (release #29: the read is frozen from the print to the 08:30 CT open — the candles are never rewritten; release #23 dropped the 07:20–07:35 print candles). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the EMA 34/9 on the execution frame (1m 08:30–09:00 CT, otherwise 2m) and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
+          'ALL SESSION (release #59, m462 — the course\u2019s final review: "Lúc nào khi anh chị open ra, không cần phải là news" [D5.1-R9, D5.1 p1 @08:46–09:13] and "Trigger 4h, trigger 1h nằm ngược nhau… mình không làm được gì hết trơn" [D5.1-R11, D5.1 p1 @08:29–09:52, @11:27–11:50]): the 4h/1h direction gate applies at every minute of the session, not only around news and the open. One shared check (HTFEntryCheck) covers every intraday setup — ISB, reverse ISB, PHL/PLH at a level and the rolling PHL/PLH, box returns — and a backstop filter re-checks every entry before it leaves the evaluator; each refusal is named per setup (…_htf_conflict / …_htf_side_mismatch / …_htf_no_4h) and counted. A strategy that STORED htf_gate_news_only = ON keeps the old windows (print day 07:20–08:30 CT and the 08:30–09:30 CT open; outside them not gated). SWING4H is EXEMPT: its direction is the 4h EMA 34, not the trigger lines [D5.2-R7, D5.2 p3 @15:04–18:25]; planner/AI entries have their own G1 HTF veto. The live trader inherits this with no config edit (the default flipped from news + open to all session). Entries only WITH the 4h trigger. At the OPEN (08:30–09:30 CT) a with-4h entry additionally waits for the 5m range to break in the 4h’s direction — "không phải là cứ cắm đầu mà cứ vô lệnh buy market … chuyển về khung 5 phút … nó break được cái rank khung 5 phút" [D4.4 p2 @04:41–06:00]; the opening 5m range is the first 5m candle (08:30–08:35) [example: the ORB’s 08:30 anchor]. Release #61: the break is a CLOSED 1m candle outside the range — "một cây nến một phút… đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03], "nó break được cái range khung 5 phút, nó đi lên rồi, tôi biết tôi đánh" [D4.4 p2 @05:15–05:36] (on 14 Sep the mentor acted at the 08:43 1m escape of the 28,880.50–28,933.75 range) — switch mentor_open5m_break (1m_close default; 5m_close = the pre-#61 rule, a closed 5m candle, up to 4 minutes later). The 1h counts only when it fired at or after the 4h — compared by the MINUTE each line really fired, not by which candle opened first (an earlier 1h trigger is ignored — it is silent; W7 B3): 1h agreeing or silent → follow the 4h; 1h opposite → sit out until it flips. No 4h trigger → nothing to follow. The 4h/1h lines (and the 5m trigger line) are seeded from history at boot by replaying every stored 1m bar through the same intrabar break rule the running bot uses, so a restart lands on exactly the line a bot that never stopped would hold — including a candle that broke both sides (which side broke first decides). The boot line prints each line as "<tf> trigger <dir> @<price> since <CT>" (the minute the line fired; the 4h/1h lines carry the break minute since release #52, the 5m line its bucket open), and every 4h/1h move is logged as it happens ("4h trigger moved long @… → short @…"). On a red-folder print day the seed freezes each replayed day\u2019s print-window trigger read exactly as the running bot did (release #29: the read is frozen from the print to the 08:30 CT open — the candles are never rewritten; release #61: the freeze starts 30 minutes BEFORE the print, mentor_news_read_lead_min; release #23 dropped the 07:20–07:35 print candles). History that reaches the store AFTER the boot — NinjaTrader\u2019s replay is held until the first live bar, and a refilled bar hole — re-seeds the trigger lines, the swing line, the EMA 34/9 on the execution frame (1m 08:30–09:00 CT, otherwise 2m) and the key-level deletion on the next tick, keeping every latch, arm, leg and visit count; the log line "🧑‍🏫 mentor re-seed after a history refill (…): CHANGED|UNCHANGED … before → after" names what moved (counted reseed_after_refill / reseed_changed). 10-14: the 08:22 boot seeded before the 03:44–07:47 hole reached the store and traded on 1h short @30790.75 instead of 30716.00.',
           '—',
         ],
         [
           'Room rule',
           'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 25 (the ISB and reverse ISB only — the SAME knob the trader’s R8 gate reads; P2-1 one number) · swing_max_stop_pts 100 (the swing SIZING cap, ≤ 2 MNQ) · mentor_swing_max_stop_pts 90 (the swing SKIP — above it the swing is not entered, m463 D5.2 p2 @19:34–21:43)',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 20 (release #61, D4.1-R12 — the ISB and reverse ISB only; the trader’s R8 gate reads the SAME knob for an ISB, PHL/PLH/BOX keep 25) · swing_max_stop_pts 100 (the swing SIZING cap, ≤ 2 MNQ) · mentor_swing_max_stop_pts 90 (the swing SKIP — above it the swing is not entered, m463 D5.2 p2 @19:34–21:43)',
         ],
         [
           'ORB gate (opening range)',
@@ -720,7 +726,7 @@ export const mentor: GuideSection = {
         ['Big (the hard tier)', '5', 'mentor_big_contracts'],
         ['Hard cap', '20', 'mentor_max_contracts'],
         [
-          'Reduced (stop 20–25 pts; also an ISB at an old high/low or inside a range; the 5m pullback warning)',
+          'Reduced (a PHL/PLH/box stop of 20–25 pts — an ISB stop above 20 is skipped since release #61; also an ISB at an old high/low or inside a range; the 5m pullback warning)',
           '3',
 
           'mentor_reduced_contracts',
@@ -947,13 +953,13 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–25 pts, where the ceiling is the mentor_isb_max_pts knob (default 25 — trader/mentor_mode.go mentorContractsFor). A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”). Release #60: an ISB/PHL/PLH entry read on the 2m (or 5m) also sizes this tier (tier exec_2m_reduce, switch “Smaller size on a 2m entry”, D3.1 p1 @14:09–14:35).',
+          what: 'Size when the stop is 20–25 pts, where the band top is the setup’s own ceiling (trader/mentor_mode.go mentorStopCeilingFor → mentorContractsFor): 25 for PHL/PLH/box stops; for an ISB the mentor_isb_max_pts knob — 20 since release #61 (D4.1-R12), so the ISB 20–25 band is UNREACHABLE at default (an ISB stop above 20 is skipped first); it is reached only with a stored mentor_isb_max_pts above 20. A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”). Release #60: an ISB/PHL/PLH entry read on the 2m (or 5m) also sizes this tier (tier exec_2m_reduce, switch “Smaller size on a 2m entry”, D3.1 p1 @14:09–14:35).',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
           systemDefault: '3',
           recommended:
-            '3 — the course’s reduced tier (D4.1 p1 @04:37–05:04 rules 2+3 “giảm size”; m186 reverts the 2026-10-16 “no longer cuts below 4”). The band is a 20–25 pt stop (top = mentor_isb_max_pts, default 25 — W-MENTOR-EXACT). An ISB at an old high/low or in a range also sizes 3.',
+            '3 — the course’s reduced tier (D4.1 p1 @04:37–05:04 rules 2+3 “giảm size”; m186 reverts the 2026-10-16 “no longer cuts below 4”). The band is a 20–25 pt PHL/PLH/box stop (an ISB above 20 is skipped since release #61 — D4.1 p1 @05:41–06:08). An ISB at an old high/low or in a range also sizes 3.',
           whenToTouch: 'With the 20–25 reduced band.',
           perSession: 'No.',
         },
@@ -1259,7 +1265,7 @@ export const mentor: GuideSection = {
         {
           label: 'News day: wait beyond the 4h line',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4 p1 @21:55–22:12 "Đợi canh nó nằm trên hai cái đường line này, kiếm insert bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ" (wait for price to sit above both lines and take an inside bar — or at least above the 4h line). ON (default, course-defaults-30) = on a red-folder print day, from the print window until the 08:30 CT RTH open, an intraday entry needs the last close beyond the 4h trigger line on its own side (above it for a long, below it for a short); refusals counted news_wait_4h_line. OFF = no such wait (the print window itself still refuses). The 30-second ISB of the same lesson (@23:08–23:13 "Đánh inside bar lệnh long 30 giây cho em") is NOT built: NinjaTrader streams 1m bars and up, there are no sub-minute bars, and the bot does not fake them.',
+          what: 'D4.4 p1 @21:55–22:12 "Đợi canh nó nằm trên hai cái đường line này, kiếm insert bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ" (wait for price to sit above both lines and take an inside bar — or at least above the 4h line). ON (default, course-defaults-30) = on a red-folder print day, from the print window until the 08:30 CT RTH open, an intraday entry needs the last close beyond the 4h trigger line on its own side (above it for a long, below it for a short); refusals counted news_wait_4h_line. Release #61 (switch “News wait: which lines”, mentor_news_wait_mode, default both): the close must ALSO be beyond the pre-print 1h line on its side (refusal news_wait_1h_line) — the course’s first method, both lines; with no 1h line, or a 1h line older than the 4h one (“mình sẽ coi 4 giờ thôi” D4.4-R12), the 4h alone. Example: 4h 29,342.25, 1h 29,360 — a long with the close at 29,350 waits; at 29,365 it may go. OFF = no such wait (the print window itself still refuses). The 30-second ISB of the same lesson (@23:08–23:13 "Đánh inside bar lệnh long 30 giây cho em") is NOT built: NinjaTrader streams 1m bars and up, there are no sub-minute bars, and the bot does not fake them.',
           trader: 'ON — course-defaults-30.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/news_print.go newsWaitFilter',
@@ -1272,7 +1278,7 @@ export const mentor: GuideSection = {
         {
           label: 'News day: freeze the pre-print 1h/4h read',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.4 p1 @18:13–18:25 "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha… Còn cái khúc mà news ra rồi thì không tính" (read the trigger from before the news, not from when it prints; what prints after the news does not count). ON (default) = the 1h/4h trigger read FREEZES at its pre-print values from the print window start until the 08:30 CT day-gate read — the 1h/4h candles are never rewritten (no bar is deleted), so after 08:30 the lines resume on whole candles. OFF = the item-18 print-window drop (07:20–07:35 only), byte-identical. Knob rule case (a): the course line, no ruling against.',
+          what: 'D4.4 p1 @18:13–18:25 "Chứ tính cái lúc trước news, chứ không phải tính cái lúc news ra rồi nha… Còn cái khúc mà news ra rồi thì không tính" (read the trigger from before the news, not from when it prints; what prints after the news does not count). ON (default) = the 1h/4h trigger read FREEZES at its pre-print values from 30 minutes before the print (07:00 for a 07:30 print — release #61, D4.4-R6, switch “News: read the 1h/4h lines before the print”, mentor_news_read_lead_min; before #61 it started at the 07:20 print window) until the 08:30 CT day-gate read — the 1h/4h candles are never rewritten (no bar is deleted), so after 08:30 the lines resume on whole candles. OFF = the item-18 print-window drop (07:20–07:35 only), byte-identical. Knob rule case (a): the course line, no ruling against.',
           trader:
             'ON — case (a): the course reads the trigger from before the print and never rewrites candles after the open.',
           consumer:
@@ -1692,7 +1698,7 @@ export const mentor: GuideSection = {
         {
           label: 'Stop ceiling',
           where: 'Strategy → Mentor mode → risk',
-          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 25, the SAME knob the trader R8 gate reads), which this value does not move.',
+          what: 'The evaluator’s hard stop ceiling for PHL/PLH stops and box-return stops — its only two readers. The ISB is not checked against it: the ISB (and the reverse ISB) meet the mentor_isb_max_pts ceiling (default 20 since release #61 — D4.1-R12; the SAME knob the trader R8 gate reads for an ISB), which this value does not move. The trader’s R8 gate keeps 25 for PHL/PLH/box stops.',
           trader: '25 pts — the SWING4H is exempt (its ceiling is 100).',
           consumer:
             'kernel/mentor/mentor.go StopCeilingPts — read only by kernel/mentor/phl.go phlPLHR2 and kernel/mentor/box_trade.go boxEntryIntent',
@@ -1881,7 +1887,7 @@ export const mentor: GuideSection = {
         {
           label: 'Swing max stop',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'The swing SIZING cap (B5): a swing whose stop is at/above this goes out at no more than min(your swing size, 2) MNQ — it is NOT a skip. The SKIP is “Swing skip stop (đừng vô)” (mentor_swing_max_stop_pts, default 90, m463): with that default a stop of 100+ is refused before sizing, so this cap only bites if you raise the skip above it. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 25).',
+          what: 'The swing SIZING cap (B5): a swing whose stop is at/above this goes out at no more than min(your swing size, 2) MNQ — it is NOT a skip. The SKIP is “Swing skip stop (đừng vô)” (mentor_swing_max_stop_pts, default 90, m463): with that default a stop of 100+ is refused before sizing, so this cap only bites if you raise the skip above it. The swing is EXEMPT from the ISB stop ceiling (mentor_isb_max_pts, default 20 since release #61).',
           trader: '100 pts — size ≤ 2 MNQ at/above it.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (SwingMaxStopPts) → trader/mentor_mode.go mentorSwingWideStopCap',
@@ -2333,19 +2339,67 @@ export const mentor: GuideSection = {
           perSession: 'No — per strategy.',
         },
         {
+          label: 'Opening 5m range break',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → Opening 5m range break',
+          what: 'In the open window (08:30–09:30 CT), with price still on the wrong side of the 4h trigger line, a with-4h entry waits for the opening 5m range (the 08:30–08:35 candle) to break in the 4h’s direction (refusal open_5m_range_not_broken). 1m_close (default, release #61): a CLOSED 1m candle at or after 08:35 that closes outside the range is the break. 5m_close: a closed 5m candle outside the range (the pre-#61 rule — up to 4 minutes later). Example 14 Sep: range 28,880.50–28,933.75; the 08:43 1m candle closes 28,940 → longs allowed at 08:44 (5m_close: not until 08:45).',
+          trader:
+            'Course: “nó break được cái range khung 5 phút, nó đi lên rồi, tôi biết tôi đánh” [D4.4 p2 @05:15–05:36]; the break minimum is “một cây nến một phút… đóng bên ngoài cái box là at least” [D4.1 p1 @20:36–21:03]. The mentor acted at the 08:43 1m escape.',
+          consumer:
+            'trader/mentor_course_exits.go mentorCourseExitsResolve → kernel/mentor/open5m.go open5mBrokenWith (CourseExits.Open5mBreak)',
+          range:
+            '1m_close | 5m_close · unset → 1m_close (an unknown value → 1m_close, counted open5m_break_bad_value)',
+          systemDefault: '1m_close',
+          recommended: '1m_close — D4.4-R40 + D4.1 p1 @20:36–21:03.',
+          whenToTouch: 'Only with a new owner ruling.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'News wait: which lines',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → News wait',
+          what: 'What the news wait (“News day: wait beyond the 4h line”, ON) needs between a red-folder print and the 08:30 CT open. both (default, release #61): the last close beyond the 4h trigger line AND the pre-print 1h line on the trade side (refusals news_wait_4h_line / news_wait_1h_line); with no 1h line, or a 1h line older than the 4h one, the 4h alone. 4h_only: the 4h line only (pre-#61). Example: 4h 29,342.25, 1h 29,360 — a long with the close at 29,350 is refused news_wait_1h_line; at 29,365 it passes.',
+          trader:
+            'Course: “Đợi canh nó nằm trên hai cái đường line này, kiếm inside bar đu vô… Hoặc anh chị chỉ cần đợi nó nằm ở trên cái đường line 4 giờ” [D4.4 p1 @21:48–22:12]; case 2 — the 1h has nothing: “mình sẽ coi 4 giờ thôi, không cần coi 1 giờ” [D4.4 p1 @18:48–18:52].',
+          consumer:
+            'trader/mentor_course_exits.go mentorCourseExitsResolve → kernel/mentor/news_print.go newsWaitFilter (CourseExits.NewsWaitMode)',
+          range:
+            'both | 4h_only · unset → both (an unknown value → both, counted news_wait_mode_bad_value)',
+          systemDefault: 'both',
+          recommended: 'both — D4.4-R22, the course’s first method.',
+          whenToTouch: 'Only with a new owner ruling.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'News: read the 1h/4h lines before the print',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25) → Read the 1h/4h lines before the news',
+          what: 'On a red-folder print day (with “News day: freeze the pre-print 1h/4h read” ON), the 1h/4h trigger read freezes this many minutes BEFORE the 07:30 print and holds until the 08:30 CT read. Default 30 (release #61): from 07:00 — a 07:05 1m bar that breaks the 1h line does not move it; a 06:55 bar does. The order hold around the print stays 07:20–07:35, and the news period for the wait and the stored news-only gate still starts at 07:20 — only the trigger READ moves. 0 = the pre-#61 start (07:20, the print window).',
+          trader:
+            'Course: “Một giờ thì đợi gần trước news, tầm 30 phút. Còn 4 giờ thì mình cứ kẻ ở dưới trước đi”; the board: “(trước news 30’)” [D4.4 p1 @05:28–05:36; board 14:33–15:36].',
+          consumer:
+            'trader/mentor_course_exits.go mentorNewsReadLeadMin · trader/mentor_tick.go mentorNewsPrintWindowsFromEvents (PrintAtMs) → kernel/mentor/news_print.go newsHTFWindows / newsReadStart',
+          range:
+            'minutes 0–120 · unset → 30 · 0 = from the print window (07:20) · outside 0–120 → 30, counted news_read_lead_min_bad_value',
+          systemDefault: '30',
+          recommended: '30 — D4.4-R6 “tầm 30 phút”.',
+          whenToTouch: 'Only with a new owner ruling.',
+          perSession: 'No — per strategy.',
+        },
+        {
           label: 'ISB max stop',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Refuse an ISB (and the reverse ISB) whose stop is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — "trên nữa thì thôi" [D3.3 p1 @02:04–02:08]): a stop of 20–25 pts is the REDUCED tier, a stop above 25 is REFUSED. This SAME knob is also the trader’s R8 ceiling for every non-swing setup (a PHL/PLH/BOX stop above it is refused R8, even below the kernel’s own StopCeilingPts 25) and the top of the 20–25 reduced band.',
+          what: 'Refuse an ISB (and the reverse ISB) whose stop — entry to stop, the ISB range + 2 × 1.5 — is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 20 since release #61 (m466 G23, D4.1-R12): exactly 20 is taken, 20.25 is refused; the D3.3 20–25 reduced tier is unreachable for an ISB at default. The trader’s R8 gate reads the SAME knob for an ISB and is the top of the ISB reduced band; PHL/PLH/BOX stops keep the D3.3 25 (R8 and the 20–25 band), or this knob when you store it above 25.',
           trader:
-            'Course: “nếu như một cái setup insidebar mà nó hai mươi mấy điểm … làm ơn giúp em đừng vô” (an ISB in the twenties — don’t enter) [D4.1 p1 @05:34–05:48]. The line is the course-exact 25 (W-MENTOR-EXACT, owner order 2026-10-21 "i want all exactly like mentor" — “trên nữa thì thôi” [D3.3 p1 @02:04–02:08]).',
+            'Course: “nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop loss nhỏ” [D4.1 p1 @05:41–06:08]; his own stop was 20 points [D4.1 p1 @02:39–03:20]. D4.1 is later than D3.3 (“hơn 20, 25 đổ lại ok, chứ mà trên nữa thì thôi” [D3.3 p1 @01:59–02:09]), which stays the PHL/PLH rule.',
           consumer:
-            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
+            'kernel/mentor/course_exits.go isbOverMaxStop ← kernel/mentor/isb.go ISBStopVerdict · trader/mentor_mode.go mentorStopCeilingFor → mentorRuleGate (R8) + mentorContractsFor (band top) ← trader/mentor_actions.go mentorDispatchEntry',
           range:
-            'pts, 0 → 30 (the knob has no OFF — unset/0 resolves to the 30 default)',
-          systemDefault: '30',
+            'pts, 0 → 20 (the knob has no OFF — unset/0 resolves to the 20 default)',
+          systemDefault: '20',
           recommended:
-            '30 — course-defaults-30 owner order; D4.1 p1 @05:41 (the course\u2019s twenties skip, moved to 30 by the owner).',
+            '20 — D4.1 p1 @05:41–06:08 (the twenty-something ISB: do not enter). 25 = the pre-#61 rule.',
           whenToTouch: 'Only to change the stop ceiling.',
           perSession: 'No — per strategy.',
         },

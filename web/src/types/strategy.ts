@@ -498,7 +498,7 @@ export interface RiskControlConfig {
   // the knob-rule default (course-defaults-30, owner "fix all"): first-target
   // ON, runner ON, resonance runner TP ON, BE-before-partial ON (reverses R3),
   // candle-3 any-profit ON (today's rule), reverse-ISB-as-PHL ON, EMA 9 visits
-  // shared, ISB max stop 30, keypair ratio 1, box height 0 (off), box fresh
+  // shared, ISB max stop 20 (m466), keypair ratio 1, box height 0 (off), box fresh
   // RTH pair OFF.
   mentor_swing_ema34_is_first_target?: boolean
   mentor_swing_runner?: boolean
@@ -523,6 +523,13 @@ export interface RiskControlConfig {
   // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
   // reduced size; unset → ON.
   mentor_2m_reduce_size?: boolean
+  // m466 P3 (release #61): G55 D4.4-R40 — what breaks the opening 5m range
+  // (unset → '1m_close'); G56 D4.4-R22 — the news wait reads both lines
+  // (unset → 'both'); G58 D4.4-R6 — minutes before the print the 1h/4h read
+  // is taken (unset → 30; 0 = the pre-#61 07:20 start).
+  mentor_open5m_break?: '1m_close' | '5m_close'
+  mentor_news_wait_mode?: 'both' | '4h_only'
+  mentor_news_read_lead_min?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

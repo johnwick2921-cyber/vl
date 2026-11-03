@@ -328,8 +328,9 @@ type Config struct {
 	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
 	// (owner order "move to 30"); W-MENTOR-EXACT (owner order 2026-10-21) reverts
 	// that: an ISB stop > 25 pts is skipped ("trên nữa thì thôi"), a stop of
-	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts
-	// (default 25).
+	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts.
+	// m466 G23 (D4.1-R12 "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]):
+	// default 20 — the ISB 20–25 reduced band is unreachable at default.
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING

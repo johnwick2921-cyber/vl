@@ -79,9 +79,41 @@ func open5mBroken(bars []market.Kline, now int64, high, low float64) (brokeLong,
 	return brokeLong, brokeShort
 }
 
+// open5mBrokenWith is open5mBroken under the mentor_open5m_break knob
+// (m466 G55 D4.4-R40). "1m_close" (the default; "" reads the same) ALSO counts
+// any CLOSED 1m candle opening at or after 08:35 CT whose close is outside the
+// range — the course's break minimum: "một cây nến một phút… đóng bên ngoài
+// cái box là at least" [D4.1 p1 @20:36–21:03]; "nó break được cái range khung
+// 5 phút, nó đi lên rồi, tôi biết tôi đánh" [D4.4 p2 @05:15–05:36] (the mentor
+// acted at the 08:43 1m escape, 14 Sep). "5m_close" = open5mBroken alone (the
+// pre-#61 rule: up to 4 minutes later). A closed 5m bucket's close IS its last
+// 1m close, so 1m_close is a strict superset of 5m_close.
+func open5mBrokenWith(bars []market.Kline, now int64, high, low float64, mode string) (brokeLong, brokeShort bool) {
+	brokeLong, brokeShort = open5mBroken(bars, now, high, low)
+	if mode == Open5mBreak5mClose {
+		return brokeLong, brokeShort
+	}
+	base := dayStartCT(now) + int64(8*60+35)*60_000
+	for i := range bars {
+		b := &bars[i]
+		if b.CloseTime > now || b.OpenTime < base {
+			continue
+		}
+		if b.Close > high {
+			brokeLong = true
+		}
+		if b.Close < low {
+			brokeShort = true
+		}
+	}
+	return brokeLong, brokeShort
+}
+
 // open5mRangeFilter — D4.4 p2 @04:41–06:00: in the open window (08:30–09:30 CT)
-// a with-4h entry is allowed only after a 5m candle has CLOSED outside the
-// opening 5m range in the 4h's direction. The swing is exempt (it never consults
+// a with-4h entry is allowed only after the opening 5m range is BROKEN in the
+// 4h's direction — since m466 (knob mentor_open5m_break, default 1m_close) a
+// closed 1m candle outside the range is the break; 5m_close = a closed 5m
+// candle outside (pre-#61). The swing is exempt (it never consults
 // the 4h). Off-4h entries are the HTF gate's job, not this filter's.
 //
 // D4.4 p2 @05:45–05:50 narrows WHEN the 5m-drop rule applies: only while price
@@ -94,7 +126,7 @@ func open5mBroken(bars []market.Kline, now int64, high, low float64) (brokeLong,
 // diffable against the replay funnel.
 const open5mMissingNote = "open5m_range_missing"
 
-func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (out []Intent, refusals []string, notes []string) {
+func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64, cfg Config) (out []Intent, refusals []string, notes []string) {
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
 	if mins < 8*60+30 || mins > 9*60+30 {
@@ -115,7 +147,7 @@ func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64) (ou
 	var brokeLong, brokeShort bool
 	switch {
 	case drawn:
-		brokeLong, brokeShort = open5mBroken(bars, now, high, low)
+		brokeLong, brokeShort = open5mBrokenWith(bars, now, high, low, cfg.CourseExits.Open5mBreak) // m466 G55
 	case now < dayStartCT(now)+int64(8*60+35)*60_000:
 		// Before 08:35 the opening 5m is still forming — no 5m close outside the
 		// range can have happened yet, so broke* stay false and a with-4h entry

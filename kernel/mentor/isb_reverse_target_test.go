@@ -154,8 +154,8 @@ func TestReverseISBObeysThe4hAgainstANormalISB(t *testing.T) {
 // that silently drops the intent (or un-retags it) fails here too.
 func TestReverseISBSkipsOverTheCeiling(t *testing.T) {
 	e, bars, now := isbReverseFixture(t)
-	if e.Cfg.CourseExits.ISBMaxStopPts != 25 {
-		t.Fatalf("CX-9 default must be 25 (W-MENTOR-EXACT); got %g", e.Cfg.CourseExits.ISBMaxStopPts)
+	if e.Cfg.CourseExits.ISBMaxStopPts != 20 {
+		t.Fatalf("CX-9 default must be 20 (m466 G23 D4.1-R12); got %g", e.Cfg.CourseExits.ISBMaxStopPts)
 	}
 	ins := e.Tick(bars, now)
 	// the default fires — retagged PHL (CX-6), a 5-pt stop below the 25-pt

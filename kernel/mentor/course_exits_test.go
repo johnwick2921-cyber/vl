@@ -233,12 +233,12 @@ func TestCX8EMA9VisitCapModes(t *testing.T) {
 // never folded into "isb_stop_twenties". Mutant: drop the isbOverMaxStop check
 // in ISBStopVerdict → RED.
 func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
-	if DefaultConfig().CourseExits.ISBMaxStopPts != 25 {
-		t.Fatal("CX-9 default must be 25 (W-MENTOR-EXACT: 20–25 reduced, > 25 skipped)")
+	if DefaultConfig().CourseExits.ISBMaxStopPts != 20 {
+		t.Fatal("CX-9 default must be 20 (m466 G23 D4.1-R12: \"hai mươi mấy điểm… đừng vô\")")
 	}
 	ins, e := scopeISBTick(fullDepth)
 	if entriesOf(ins, "ISB") != 1 {
-		t.Fatalf("control: the ISB must emit with the default 25 (its stop 5 < 25); %+v %v", ins, e.State.Refusals)
+		t.Fatalf("control: the ISB must emit with the default 20 (its stop 5 < 20); %+v %v", ins, e.State.Refusals)
 	}
 	cfg := DefaultConfig()
 	cfg.Enabled = true

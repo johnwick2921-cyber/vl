@@ -43,12 +43,16 @@ type CourseExitsCfg struct {
 	// EMA9VisitCap (CX-8, case b, default "shared" — the course states no EMA 9
 	// visit rule): shared | per_level | exempt.
 	EMA9VisitCap string
-	// ISBMaxStopPts (CX-9, default 25 — W-MENTOR-EXACT, owner order 2026-10-21
-	// "i want all exactly like mentor"): refuse an ISB (and the reverse ISB)
-	// whose stop is ABOVE this many points ("trên nữa thì thôi" [D3.3 p1
-	// @02:04–02:08]). A stop of 20–25 pts is the REDUCED tier ("giảm size"
-	// [D3.3 p1 @01:09–01:20]). The old course-defaults-30 (take 20–29 at full
-	// size, refuse ≥ 30) is reverted.
+	// ISBMaxStopPts (CX-9, default 20 since m466 G23 D4.1-R12): refuse an ISB
+	// (and the reverse ISB) whose entry-to-stop is ABOVE this many points —
+	// "nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp
+	// em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop
+	// loss nhỏ" [D4.1 p1 @05:41–06:08]; his own stop "20 points (really under
+	// 20)" [D4.1 p1 @02:39–03:20]. D4.1 is LATER than D3.3-R1/R4 (≤ 25 ok,
+	// 20–25 "giảm size" [D3.3 p1 @01:09–02:09]), so for an ISB the 20–25
+	// reduce option is gone (unreachable at default). PHL/PLH keep the D3.3-R1
+	// 25 (Config.StopCeilingPts). Pre-#61 default 25 (W-MENTOR-EXACT); a
+	// stored mentor_isb_max_pts still wins.
 	ISBMaxStopPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
 	// out when the gap to the next key level is ≤ ratio × the current closed
@@ -65,7 +69,51 @@ type CourseExitsCfg struct {
 	// this is not a box (never latched, never a location/ban). The course
 	// states no height.
 	BoxMaxHeightPts float64
+
+	// ── m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found"). Top-level mentor_* knobs, resolved in
+	// trader/mentor_course_exits.go like the CX-* block above. ──────────────
+
+	// Open5mBreak (G55 D4.4-R40, knob mentor_open5m_break): what counts as the
+	// break of the opening 5m range in the open window (open5mRangeFilter).
+	// "1m_close" (default, "" reads the same) = a CLOSED 1m candle at or after
+	// 08:35 CT closing outside the range — the course's break minimum, "một
+	// cây nến một phút… đóng bên ngoài cái box là at least" [D4.1 p1
+	// @20:36–21:03]; the mentor acted at the 08:43 1m escape [D4.4 p2
+	// @05:15–05:36 "nó break được cái range khung 5 phút, nó đi lên rồi, tôi
+	// biết tôi đánh"]. "5m_close" = the pre-#61 rule (a closed 5m bucket only,
+	// up to 4 minutes later).
+	Open5mBreak string
+	// NewsWaitMode (G56 D4.4-R22, knob mentor_news_wait_mode): what the CE-3
+	// news wait (news_wait_both_lines ON) requires. "both" (default, "" reads
+	// the same) = the last close beyond the 4h line AND the pre-print 1h line
+	// on the trade side — the course's first method, "Đợi canh nó nằm trên hai
+	// cái đường line này, kiếm inside bar đu vô" [D4.4 p1 @21:48–22:12]; with
+	// no (or a stale, D4.4-R12) 1h line the 4h alone ("1h ko có gì hết").
+	// "4h_only" = the pre-#61 rule (the course's "Hoặc… chỉ cần đợi nó nằm ở
+	// trên cái đường line 4 giờ").
+	NewsWaitMode string
+	// NewsReadLeadMin (G58 D4.4-R6, knob mentor_news_read_lead_min, default 30):
+	// on a print day with news_bars_excluded ON, the 1h/4h trigger read
+	// freezes this many minutes BEFORE the print (07:00 for a 07:30 print) —
+	// "Một giờ thì đợi gần trước news, tầm 30 phút" / board "(trước news 30')"
+	// [D4.4 p1 @05:28–05:36; board 14:33–15:36]. The order hold stays
+	// −10m/+5m (the trader's F11 window). 0 = freeze from the print window's
+	// own start (07:20, the pre-#61 behaviour). A lead SHORTER than the
+	// window's −10m never starts the freeze later than the window.
+	NewsReadLeadMin int
 }
+
+// m466 P3 knob values (the ONE spelling the kernel, the trader resolver, the
+// boot line and the guide share).
+const (
+	Open5mBreak1mClose = "1m_close"
+	Open5mBreak5mClose = "5m_close"
+	NewsWaitBoth       = "both"
+	NewsWait4hOnly     = "4h_only"
+	// NewsReadLeadMinDefault — D4.4-R6 "tầm 30 phút" [D4.4 p1 @05:28–05:36].
+	NewsReadLeadMinDefault = 30
+)
 
 // DefaultCourseExitsCfg returns the knob-rule defaults.
 func DefaultCourseExitsCfg() CourseExitsCfg {
@@ -75,7 +123,10 @@ func DefaultCourseExitsCfg() CourseExitsCfg {
 		ReverseISBAsPHL:         true, // course-defaults-30 [D5.4 @03:52–03:56, @07:33]
 		EMA9VisitCap:            EMA9VisitShared,
 		KeypairCandleRatio:      1,
-		ISBMaxStopPts:           25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
+		ISBMaxStopPts:           20,                     // m466 G23: "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08] (later than D3.3's 25)
+		Open5mBreak:             Open5mBreak1mClose,     // m466 G55 D4.4-R40
+		NewsWaitMode:            NewsWaitBoth,           // m466 G56 D4.4-R22
+		NewsReadLeadMin:         NewsReadLeadMinDefault, // m466 G58 D4.4-R6
 	}
 }
 
@@ -122,9 +173,10 @@ func swingRoomFilterRefuses(cfg Config, in Intent, obstacle float64) bool {
 	return swingRoomRefused(in, obstacle, cfg.RoomMultiple)
 }
 
-// isbOverMaxStop (CX-9): an ISB stop ABOVE the knob is refused ("trên nữa thì
-// thôi" [D3.3 p1 @02:04–02:08]). 0 → 25 (the knob has no OFF — unset/0 resolves
-// to the 25 default).
+// isbOverMaxStop (CX-9): an ISB stop ABOVE the knob is refused — "hai mươi
+// mấy điểm, làm ơn giúp em đừng vô" [D4.1 p1 @05:41–06:08] (m466 G23, default
+// 20; 20.0 itself is taken — his own "20 points" [D4.1 p1 @02:39–03:20]). The
+// knob has no OFF — the trader resolves unset/0 to the default.
 func isbOverMaxStop(stopPts float64, cfg Config) bool {
 	return cfg.CourseExits.ISBMaxStopPts > 0 && stopPts > cfg.CourseExits.ISBMaxStopPts
 }
@@ -315,7 +367,7 @@ func (e *Evaluator) boxBuildCfg(cfg BoxCfg) BoxCfg {
 }
 
 // ISBMaxStopReason is the CX-9 refusal reason ISBStopVerdict returns.
-const ISBMaxStopReason = "ISB stop above mentor_isb_max_pts — refused [CX-9 knob, default 25 — W-MENTOR-EXACT: 20–25 reduced, > 25 skipped]"
+const ISBMaxStopReason = "ISB stop above mentor_isb_max_pts — refused [CX-9 knob, default 20 — \"hai mươi mấy điểm… đừng vô\" D4.1 p1 @05:41–06:08]"
 
 // isbStopRefusal names the ISB stop refusal counter: <prefix>stop_over_max for
 // the CX-9 knob. (The pre-30 <prefix>stop_twenties name is retired with the
