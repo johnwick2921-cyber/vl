@@ -76,7 +76,7 @@ it('an explicit 0 visits is kept (cap off) while a blank removes the key', () =>
 
 it('the placeholders carry the owner-ruled defaults', () => {
   expect(MENTOR_TUNING_DEFAULTS).toMatchObject({
-    day_gate_spent_pts: 300,
+    day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18
     day_gate_target_cap_pts: 15,
     swing_max_stop_pts: 100,
     isb_reverse_ema9_enabled: true,
@@ -100,6 +100,8 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['trendline_between_boxes', 'on', true],
   ['leg_reset_on_wave_break', 'off', false],
   ['orb_escape_completely', 'on', true], // release #52 B19
+  ['wick_microscalp', 'on', true], // m465 P5 (D4.3)
+  ['wick_safe_play', 'on', true], // m465 P5 (D4.3-R20)
   // release #52 W11 invented-constant knobs
   ['isb_stack_cancel_candle_2m', '6', 6],
   ['isb_stack_tiny_stop_pts', '12', 12],
@@ -111,6 +113,11 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['phl_target_shy_pts', '0', 0],
   ['isb_old_extreme_pts', '3', 3],
   ['isb_in_range_gap_pts', '40', 40],
+  // m465 P3 (release #60) structure-fidelity knobs
+  ['trendline_entry_touch', 'third', 'third'],
+  ['near_box_between_exempt', 'on', true],
+  ['phl_flat_low', 'strict', 'strict'],
+  ['isb_reverse_touch', 'isb_candle', 'isb_candle'],
 ]
 
 it.each(COURSE_ENTRY_WRITES)(
@@ -179,8 +186,10 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
     orb_escape_completely: false, // release #52 B19 — body test until the owner rules
+    wick_microscalp: false, // m465 P5 — D4.3 advanced, OFF
+    wick_safe_play: false, // m465 P5 — D4.3-R20, OFF
     isb_stack_cancel_candle_2m: 4, // release #52 W11 — unchanged defaults, all ours
-    isb_stack_tiny_stop_pts: 0,
+    isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26
     evening_slow_pts: 100,
     evening_slow_from_hour: 15,
     evening_slow_window_min: 0,
@@ -190,5 +199,9 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     isb_old_extreme_pts: 2,
     isb_in_range_gap_pts: 0,
     htf_gate_news_only: false, // m462 — the 4h/1h gate applies all session by default (D5.1-R9/R11)
+    trendline_entry_touch: 'fourth', // m465 D2.3-R7
+    near_box_between_exempt: false, // m465 D3.2-R29/R30
+    phl_flat_low: 'flat_near', // m465 D2.2-R64
+    isb_reverse_touch: 'pair', // m465 D5.4-R7
   })
 })

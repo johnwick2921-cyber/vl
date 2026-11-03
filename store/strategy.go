@@ -2026,6 +2026,16 @@ type MentorTuning struct {
 	// CE-1: inside a 15m ISB box — "off" | "require_5m_isb" (default) |
 	// "no_trade_until_escape" [D4.2 p1 @17:09–17:13].
 	FifteenMinIBRequires5mISB string `json:"15m_ib_requires_5m_isb,omitempty"`
+	// m465 P1 (release #60). Early15mRead: nil → ON — two churning 5m candles
+	// inside the last closed 15m box the FORMING 15m as a provisional ISB box
+	// (refusals only, named _forming) [D4.2-R2 p1 @00:08–00:39; D4.3-R21
+	// @12:20–12:32]. MTFConfluenceSource: "standing_boxes" (default) | "last_pair"
+	// — where mode C reads "15m and 5m both say so" [D4.2-R17 p1 @14:57–15:37].
+	// TriggerEscalation: nil → ON — crossing 5m ISBs hand the trigger to the
+	// 15m, then the 30m [D3.4-R43 p2 @17:07–17:49].
+	Early15mRead        *bool  `json:"15m_early_read,omitempty"`
+	MTFConfluenceSource string `json:"mtf_confluence_source,omitempty"`
+	TriggerEscalation   *bool  `json:"trigger_escalation,omitempty"`
 	// CE-2: "first_box" | "both_boxes" (default, course-defaults-30) [D4.2 p1 @07:54–08:02; OQ-2].
 	TFConflictEnd string `json:"tf_conflict_end,omitempty"`
 	// CE-3: after a print, wait for the close beyond the 4h line (nil → ON,
@@ -2068,6 +2078,15 @@ type MentorTuning struct {
 	// 2-minute range, wicks included (nil/false → OFF = the body test)
 	// [extra "Routine trước khi trade" part1 @06:47–07:16].
 	OrbEscapeCompletely *bool `json:"orb_escape_completely,omitempty"`
+	// m465 P5 (release #60): the D4.3 wick microscalp, the whole setup — the
+	// 5m wick-run zone, a 1m ISB/PHL at the zone, the nearby 5m wicks as the
+	// target (nil/false → OFF: the mentor calls it advanced, "đừng có tập khúc
+	// này đầu liền" [D4.3 @04:55–05:17]).
+	WickMicroscalp *bool `json:"wick_microscalp,omitempty"`
+	// m465 P5: the D4.3-R20 safe play — a setup at a wick zone waits for its
+	// reference candle to CLOSE beyond the zone's near edge (nil/false → OFF)
+	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
+	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
 
 	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
 	// not the course's (the mentor gave none, or the owner fixed none); each
@@ -2079,7 +2098,9 @@ type MentorTuning struct {
 	ISBStackCancelCandle2m int `json:"isb_stack_cancel_candle_2m,omitempty"`
 	// B8: tiny-stop exception — an ISB whose stop is at or under this many
 	// points is not cancelled at the cancel candle [Ngày 5.1 Go over lại tất cả
-	// part2 @02:50–03:40]; 0 / unset = OFF.
+	// part2 @02:50–03:40]. m465 (release #60, D5.1-R26): unset → 12.5, the
+	// worked example's measured stop [D5.1 p2 @02:24–04:41]; (0, 25]. No ISB
+	// stop is under 3 pts (range + 2 × 1.5), so 0.01 is effectively OFF.
 	ISBStackTinyStopPts float64 `json:"isb_stack_tiny_stop_pts,omitempty"`
 	// B10: evening "slow" cutoff in points (default 100), the CT hour the range
 	// starts at (15 default, 15–17) and an optional trailing window in minutes
@@ -2102,6 +2123,26 @@ type MentorTuning struct {
 	// part1 @00:04:31–00:05:19].
 	ISBOldExtremePts *float64 `json:"isb_old_extreme_pts,omitempty"`
 	ISBInRangeGapPts float64  `json:"isb_in_range_gap_pts,omitempty"`
+
+	// m465 P3 (release #60) structure-fidelity knobs. Unset = the course
+	// (the full video read); the other value = the pre-#60 behaviour.
+	//
+	// D2.3-R7: "fourth" (unset) — a 1m/2m trendline is not a location on the
+	// candle of its 3rd touch (the TEST), the entry comes on a later touch
+	// [D2.3 p1 @02:34–02:47, 03:03–03:16]; "third" — it arms on the 3rd touch.
+	TrendlineEntryTouch string `json:"trendline_entry_touch,omitempty"`
+	// D3.2-R29/R30: nil/false — between two boxes is NOT a blanket near-box
+	// exemption (E6 refused), the middle case passes on its own room [D3.2 p1
+	// @22:12–24:41]; true — the pre-#60 exemption.
+	NearBoxBetweenExempt *bool `json:"near_box_between_exempt,omitempty"`
+	// D2.2-R64: "flat_near" (unset) — a PHL low within the m428 R2 "same price"
+	// distance of the prior low is an FTGL, not a PHL (mirror PLH) [D2.2 p3
+	// @07:44–10:15]; "strict" — the pre-#60 strict comparison only.
+	PHLFlatLow string `json:"phl_flat_low,omitempty"`
+	// D5.4-R7: "pair" (unset) — the reverse ISB's EMA 9 touch reads the mother
+	// + ISB candle group [D5.4 p1 @03:35–03:46]; "isb_candle" — the ISB candle
+	// alone (pre-#60).
+	ISBReverseTouch string `json:"isb_reverse_touch,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
@@ -2301,6 +2342,10 @@ type RiskControlConfig struct {
 	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
 	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
 	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
+	//   m465 P2 MentorISBLossBox — "" → range (release #60, D4.2-R27/R28/R30): an
+	//        ISB stop-out boxes the whole 5m range that held the trade ("tôi bọc
+	//        cái khu vực này lại" [D4.2 p2 @03:43–04:07]); band = the pre-#60
+	//        entry-to-stop band only. Unknown → range, counted.
 	MentorSwingEMA34IsFirstTarget  *bool   `json:"mentor_swing_ema34_is_first_target,omitempty"`
 	MentorSwingRunner              *bool   `json:"mentor_swing_runner,omitempty"`
 	MentorResonanceRunnerTPOldHigh *bool   `json:"mentor_resonance_runner_tp_old_high,omitempty"`
@@ -2313,6 +2358,22 @@ type RiskControlConfig struct {
 	MentorBoxFreshRTHPair          *bool   `json:"mentor_box_fresh_rth_pair,omitempty"`
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
+	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
+
+	// m465 P4 (release #60, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_resonance_raw.go.
+	//   MentorResonanceRawISB — nil → ON (D2.4-R2, course explicit): a RAW
+	//        same-way inside bar within 3 entry-frame candles of a PHL/PLH fill
+	//        arms resonance, even when that ISB's own entry was refused
+	//        ("trong vòng 3 cây nến sau đó xuất hiện một setup Inside bar cùng
+	//        chiều" [D2.4 p1 @01:37, @04:54]); false = only an ISB entry that
+	//        passed every placement gate but never-add arms it (m151).
+	//   Mentor2mReduceSize — nil → ON (D3.1-R30): an ISB/PHL/PLH entry read on
+	//        the 2m (or 5m) frame sizes the reduced tier ("vô lệnh khung 2
+	//        phút, stop loss lớn hơn… Mình phải giảm size" [D3.1 p1
+	//        @14:09–14:35]); false = the 1m tiers.
+	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
+	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

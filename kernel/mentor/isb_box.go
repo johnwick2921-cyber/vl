@@ -19,6 +19,12 @@ type ISBBox struct {
 	Low    float64 // the 5m ISB candle's wick low (the box bottom)
 	Dir    Side    // the 5m ISB's R1 direction (candle-1 colour) [D1.4 p1 @ 09:20–10:20]
 	AtTime int64   // the 5m ISB candle's open time
+	// Provisional (m465 P1, D4.2-R2/R11) marks a 15m box read from the FORMING
+	// 15m candle (forming15mISB): two closed 5m candles whose combined body sits
+	// inside the last closed 15m candle. It gates exactly like the closed box —
+	// under "_forming" refusal names — but never counts for mode C
+	// (MTFConfluenceStanding), and the real box replaces it at the 15m close.
+	Provisional bool `json:",omitempty"`
 }
 
 // ISBBoxFrom5m reports whether (prev5m, cur5m) form a 5m ISB and, if so, boxes
@@ -150,6 +156,24 @@ func tfConflictHeld(mode string, box5, box15 *ISBBox, latched bool) (conflict, h
 		return true, true, true
 	}
 	return false, false, false
+}
+
+// tfConflictLatchStep is tfConflictHeld plus the latch's ORIGIN (m465 review):
+// latchForming is true while the latch was set only by a conflict with a
+// PROVISIONAL (forming) 15m box. A conflict with a real 15m box marks it real;
+// a held tick keeps the origin; no latch → false.
+func tfConflictLatchStep(mode string, box5, box15 *ISBBox, latched, forming bool) (conflict, held, newLatch, newForming bool) {
+	conflict, held, newLatch = tfConflictHeld(mode, box5, box15, latched)
+	switch {
+	case !newLatch:
+		newForming = false
+	case mtfConflict(box5, box15):
+		provisional := box15.Provisional
+		newForming = provisional && (!latched || forming)
+	default:
+		newForming = forming
+	}
+	return conflict, held, newLatch, newForming
 }
 
 // crossingISBs reports whether the last `lookback` CLOSED buckets hold 2 ISBs

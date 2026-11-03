@@ -89,6 +89,14 @@ const (
 	// nextLevelBeyond can pick it, but it is never touched and never a
 	// PHL/PLH location.
 	KindWickMicroscalp LevelKind = "wick_microscalp"
+	// KindWickZone is the D4.3 wick zone's NEAR edge as an entry LOCATION
+	// (m465 P5, knob wick_microscalp): the 5m wick-run box drawn under the
+	// lower wicks (long) or over the upper wicks (short), extended right until
+	// a 1m close beyond its far edge. A 1m PHL/PLH whose reference candle
+	// touches it arms through the ordinary touch loop — "Vẫn được: potential
+	// high low khung giờ nhỏ hơn, hay là insert bar cho lệnh long khung giờ nhỏ
+	// hơn" [D4.3 @06:13–06:29]. Keys "wick_zone:<side>:<5m open ms>:<top|bottom>".
+	KindWickZone LevelKind = "wick_zone"
 	// KindTrendlineTarget is a valid trendline's price as a TARGET-LADDER
 	// level (CE-11/B12, release #25, knob trendline_is_target, default ON):
 	// "Target là về những level kế tiếp… về trendline, anything… những cái mà
@@ -327,12 +335,20 @@ type Config struct {
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
 	// 2026-10-04 R-C "do all as mentor": it is the mentor's own reading [D5.4 p1 @01:26–01:30].
 	ISBReverseEMA9Enabled bool
-	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (advanced —
-	// "đừng có tập khúc này đầu tiên" [D4.3 @04:55]): 2+ consecutive CLOSED 5m
-	// candles rejecting with wicks the SAME way (lower wicks in an uptrend,
-	// upper wicks in a downtrend) put a bounded target at the rejecting
-	// candles' far wick. Default OFF (advanced, behind a knob per D4.3-02).
+	// WickMicroscalpEnabled turns on the D4.3 wick microscalp (knob
+	// wick_microscalp; advanced — "đừng có tập khúc này đầu liền" [D4.3
+	// @04:55–05:17]). m465 P5: the WHOLE setup — a run of ≥2 same-way 5m wicks
+	// WITH the 5m trend (wick_zone.go) draws a zone box, extended right; a 1m
+	// ISB/PHL at the zone arms through the ordinary paths; the target is the
+	// nearby 5m wicks (wick_microscalp.go). Default OFF.
 	WickMicroscalpEnabled bool
+	// WickSafePlay (m465 P5, sub-knob wick_safe_play, default OFF) is the
+	// D4.3-R20 safe-play confirmation: a setup at a wick zone counts only once
+	// its reference candle CLOSED beyond the zone's near edge (under the box
+	// for a short, over it for a long) — "mọi người đợi nó nằm ở dưới cái
+	// box. Mọi người vẫn có thể trade bình thường, là thêm một sự confirm"
+	// [D4.3 @14:07–14:27]. Read only while WickMicroscalpEnabled is ON.
+	WickSafePlay bool
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
@@ -402,6 +418,38 @@ type Config struct {
 	// the mentor gave no number.
 	NearBoxRoomPHL bool
 
+	// m465 P3 (release #60) structure-fidelity knobs. Each default is the
+	// course; the other value is the pre-#60 behaviour, kept for the owner.
+	//
+	// TrendlineEntryTouch — D2.3-R7: "thà nó về một lần, rồi nó test, rồi nó
+	// hold rồi, là lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô" [D2.3
+	// p1 @02:34–02:47, 03:03–03:16]; D3.2-R34 "test lần thứ 3 thì mới valid".
+	// "fourth" (default): an intraday line is NOT a location on the candle of
+	// its 3rd touch (the test) — refused trendline_third_touch_is_test — and
+	// becomes one from the next candle, so the entry comes on a later touch.
+	// "third": the pre-#60 behaviour (the line arms on its 3rd-touch candle).
+	TrendlineEntryTouch string
+	// NearBoxBetweenExempt — D3.2-R29/R30: the mentor refused the short ISB
+	// sitting on the FTGL box (E6) although an FTGH box stood above it, and
+	// allowed the ISB "giữa 2 box… nó đâu có làm gì đâu" because nothing was
+	// near it [D3.2 p1 @22:12–24:41]. false (default): no blanket exemption —
+	// the middle case passes on its own room; true: the pre-#60 exemption
+	// (one box wholly above AND one wholly below → never near).
+	NearBoxBetweenExempt bool
+	// PHLFlatLow — D2.2-R64/R65: a PHL needs a low HIGHER than the previous
+	// low; a flat low ("ngang phè") is a FAILURE TO GO LOWER, not a PHL [D2.2
+	// p3 @07:44–10:15] (mirror: a flat high is an FTGH, not a PLH [@14:03–14:22]).
+	// "flat_near" (default): a low within the m428 R2 "same price" distance
+	// (flatNearPts) of the prior low is refused phl_flat_low_is_ftgl
+	// (plh_flat_high_is_ftgh); "strict": the pre-#60 strict comparison only.
+	PHLFlatLow string
+	// ISBReverseTouch — D5.4-R7: "nó không cần đụng, nó cứ đụng vòng vòng ngay
+	// EMA 9 là được … không quan trọng là nó đụng ngay tại EMA 9 hay là nó lố
+	// EMA 9" [D5.4 p1 @03:35–03:46]. "pair" (default): the EMA 9 is touched
+	// when it sits inside the mother + ISB candle group's range; "isb_candle":
+	// the pre-#60 read (inside the ISB candle's own range only).
+	ISBReverseTouch string
+
 	// ISB size-cut definitions — release #52 W11 B27. The course says reduce
 	// size for an ISB "ngay đỉnh/đáy cũ" and "in range" and gives NO distance or
 	// definition [Ngày 4.1 Go over ngày 3 part1 @00:04:31–00:05:19]. Both
@@ -431,8 +479,12 @@ type Config struct {
 	// rất nhỏ. Có 12 điểm… Trade nó là take risk"]: an arm whose ISB stop
 	// (range + 2 × ISBBufferPts) is at or below this many points is NOT
 	// cancelled at the 4th candle (it still cancels the moment a body leaves
-	// I1). The mentor frames it as personal discretion and gives no threshold
-	// (he said 11–12), so it is OFF by default (0); the number is the owner's.
+	// I1). m465 (release #60, D5.1-R26 — the full video read): the worked
+	// example pins the number — "stop loss của mình lúc đó rất nhỏ, có 12
+	// điểm… cancel làm chi trời… Anh chị có một cái quyền: thấy stop loss
+	// nhỏ… cứ việc đặt lệnh, mặc dù sau 3 cây" [D5.1 p2 @02:24–04:41], the
+	// on-screen stop 29,285.75 → 29,273.25 = 12.50 pts (50 ticks). Default
+	// 12.5 (was 0 = OFF); the owner may still store any (0, 25].
 	ISBStackTinyStopPts float64
 
 	// Evening "slow" read — release #52 W11 B10. X11 says trade the 5m only in
@@ -451,7 +503,7 @@ type Config struct {
 
 	// §7 day gate knobs (fold item 4, DS-106): the method defaults until the
 	// routed Config integration lands.
-	DayGateSpentPts     float64 // run >= this before the open = spent; default 300 [D5.1 p1 @16:05-16:11]
+	DayGateSpentPts     float64 // run >= this before the open = spent; default 265 (m465 D5.1-R18: the measured −265.00 day "nó chạy gần hết cây daily luôn rồi" [D5.1 p1 @17:56–18:14]; the 300–400 rule [@16:05-16:11])
 	DayGateTargetCapPts float64 // spent-day target cap; default 15 ("15 điểm bán, 10 điểm bán")
 
 	// DayOffRecheck (course-defaults-30, owner "fix all", supersedes the
@@ -534,6 +586,33 @@ type Config struct {
 	// @17:09–17:13; @14:24–14:34]. "require_5m_isb" (default) | "no_trade_until_escape"
 	// (option 1, @01:06–01:14) | "off" (the pre-#25 read: the 15m box gate only).
 	FifteenMinIBRule string
+	// Early15mRead — m465 P1 (release #60, D4.2-R2 / D4.2-R11 / D4.3-R21):
+	// read the FORMING 15m candle from its first two closed 5m candles — "3
+	// cây 5 phút mà nó cứ xào quần xào quần ngay chỗ đó mà nó không đi đâu
+	// hết... ngay lập tức mình biết khung 15 phút đang tạo inside bar" [D4.2
+	// p1 @00:08–00:39]; "2, 3 cây 5 phút anh chị đã có được 1 cây 15 phút"
+	// [@07:40]; "2 cái nến 5 phút, 3 cái nến 5 phút, nó đang làm cái nến 15
+	// phút rồi đó" [D4.3 @12:20–12:32]. ON (default; defensive — it only ever
+	// refuses, "né được rất nhiều đoạn ranging" [D4.2 p1 @11:40–11:42]) boxes
+	// that forming 15m as a PROVISIONAL ISBBox15m (forming15mISB) when no 15m
+	// box stands; every 15m-box gate then refuses under a "_forming" name.
+	// Studio: risk_control.mentor_tuning.15m_early_read.
+	Early15mRead bool
+	// MTFConfluenceSource — m465 P1 (D4.2-R17): where mode C reads "the 15m
+	// and the 5m both say so" [D4.2 p1 @14:57–15:37]. "standing_boxes"
+	// (default) = the STANDING 15m box + the standing (or same-way escaped) 5m
+	// box (MTFConfluenceStanding); "last_pair" = the pre-#60 read of the latest
+	// closed 5m and 15m candle pairs (MTFAligned), which lost the confluence
+	// one 5m candle after the 5m ISB. Studio:
+	// risk_control.mentor_tuning.mtf_confluence_source.
+	MTFConfluenceSource string
+	// TriggerEscalation — m465 P1 (D3.4-R43 [D3.4 p2 @17:07–17:49]): when the
+	// 5m inside bars cross back and forth the 5m trigger is not valid — read
+	// the 15m trigger; if the 15m crosses too, the 30m (the 1h/4h already gate
+	// through the HTF check). ON (default) = every gating read of the trigger
+	// uses governingTrigger; OFF = the 5m line always (pre-#60). Studio:
+	// risk_control.mentor_tuning.trigger_escalation.
+	TriggerEscalation bool
 	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
 	// [D4.2 p1 @07:54–08:02]. "first_box" = the 15m/5m conflict ends
 	// when either box escapes; "both_boxes" (default, course-defaults-30) =
@@ -621,6 +700,15 @@ type Config struct {
 	// inside the standing range. Default ON (the course); false = today's
 	// one-pair-per-session behaviour exactly.
 	BoxNewZoneAfterEscape bool
+	// ISBLossBox — release #60 P2 (D4.2-R27/R28/R30, knob
+	// mentor_isb_loss_box): what an ISB stop-out boxes. "range" (default, the
+	// course): the whole 5m range that held the trade — every closed 5m bucket
+	// from the fill candle's through the stop-out candle's — unioned with the
+	// entry-to-stop band; overlapping ISB losses union into one place and two
+	// turn it off for the day [D4.2 p2 @02:41–03:17, @03:43–04:07, @04:13–05:03].
+	// "band": the pre-#60 entry-to-stop band only. "" reads as range
+	// (limits.go isbLossRange).
+	ISBLossBox string
 
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
@@ -658,6 +746,7 @@ func DefaultConfig() Config {
 		ISBReverseEMA9Enabled: true,
 
 		WickMicroscalpEnabled: false, // D4.3 advanced wick read — OFF by default
+		WickSafePlay:          false, // D4.3-R20 safe play — an optional extra confirm, OFF by default
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
@@ -667,17 +756,21 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false, // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
-		NearBoxRoomMultiple:    2,     // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:         true,  // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
-		ISBOldExtremePts:       2,     // B27 [ours]: "at the old extreme" = ± 2 pts
-		ISBInRangeGapPts:       0,     // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
-		ISBStackCancelCandle2m: 4,     // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    0,     // B8: tiny-stop exception OFF (the mentor gave no number)
-		EveningSlowPts:         100,   // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
-		EveningSlowFromHour:    15,    // B10 [ours]: the RTH close
-		EveningSlowWindowMin:   0,     // B10 [ours]: cumulative since the start hour
-		LossDeparturePts:       0,     // B22: structural departure; the numeric fallback is OFF
+		HTFGateNewsOnly:        false,                // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
+		NearBoxRoomMultiple:    2,                    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true,                 // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxBetweenExempt:   false,                // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
+		TrendlineEntryTouch:    TrendlineEntryFourth, // m465 D2.3-R7: 3rd touch = the test, enter on a later touch
+		PHLFlatLow:             PHLFlatLowNear,       // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
+		ISBReverseTouch:        ISBReverseTouchPair,  // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
+		ISBOldExtremePts:       2,                    // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,                    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,                    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    12.5,                 // m465 D5.1-R26: the worked example stop, measured 12.50 pts (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
+		EveningSlowPts:         100,                  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,                   // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,                    // B10 [ours]: cumulative since the start hour
+		LossDeparturePts:       0,                    // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
@@ -687,7 +780,7 @@ func DefaultConfig() Config {
 		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
 		RangeGapPts:            0,
 
-		DayGateSpentPts:     300,
+		DayGateSpentPts:     265, // m465 D5.1-R18: the worked example's -265.00 run was called spent [D5.1 p1 @17:56–18:14]
 		DayGateTargetCapPts: 15,
 		DayOffRecheck:       false, // course-defaults-30: the course shuts the whole day [D5.1 p1 @19:22–19:40]
 
@@ -707,6 +800,11 @@ func DefaultConfig() Config {
 		LegResetOn:       "close",
 
 		CourseExits: DefaultCourseExitsCfg(),
+		// m465 P1 (release #60): the early 15m read, mode C from the standing
+		// boxes, the trigger escalation 5m → 15m → 30m.
+		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
+		TriggerEscalation:   true,                       // D3.4-R43
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
@@ -720,6 +818,7 @@ func DefaultConfig() Config {
 		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
+		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 	}
 }
 
@@ -729,6 +828,11 @@ const (
 	FifteenMinOff          = "off"
 	FifteenMinRequire5mISB = "require_5m_isb"
 	FifteenMinUntilEscape  = "no_trade_until_escape"
+
+	// m465 P1 (D4.2-R17): mode C's confluence source.
+	MTFConfluenceStandingBoxes = "standing_boxes"
+	MTFConfluenceLastPair      = "last_pair"
+
 	TFConflictFirstBox     = "first_box"
 	TFConflictBothBoxes    = "both_boxes"
 	ISBBoxEscapeClose      = "close"
@@ -737,6 +841,14 @@ const (
 	EmaRelockUntilZoneExit = "until_zone_exit"
 	D43TrendTriggerLine    = "trigger_line"
 	D43TrendStructure      = "structure"
+
+	// m465 P3 (release #60) knob values.
+	TrendlineEntryFourth     = "fourth"
+	TrendlineEntryThird      = "third"
+	PHLFlatLowNear           = "flat_near"
+	PHLFlatLowStrict         = "strict"
+	ISBReverseTouchPair      = "pair"
+	ISBReverseTouchISBCandle = "isb_candle"
 )
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is

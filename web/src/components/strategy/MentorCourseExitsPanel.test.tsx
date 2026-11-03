@@ -128,3 +128,20 @@ it('the SWING max stop defaults to 90 and is stored as typed', () => {
     mentor_swing_max_stop_pts: 110,
   })
 })
+
+// m465 P2 (release #60, D4.2-R27 "tôi bọc cái khu vực này lại. Tôi sẽ không
+// trade bên trong" [D4.2 p2 @03:43–04:07]): the ISB loss box is a course-exits
+// switch, default range; "default" removes the key.
+it('the ISB loss box defaults to range and stores band / removes on default', () => {
+  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_isb_loss_box).toBe('range')
+  const { onChange, full } = renderEditor({ mentor_mode: true })
+  const sel = screen.getByTestId('mentor-course-mentor_isb_loss_box')
+  expect(screen.getByText(/ISB loss box/)).toBeTruthy()
+  fireEvent.change(sel, { target: { value: 'band' } })
+  expect(onChange).toHaveBeenLastCalledWith({
+    ...full,
+    mentor_isb_loss_box: 'band',
+  })
+  fireEvent.change(sel, { target: { value: '' } })
+  expect(onChange).toHaveBeenLastCalledWith({ ...full })
+})

@@ -837,9 +837,13 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
 	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
 	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31, nil → 90)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
+	mentorCXRow("mentor_isb_loss_box", "trader.mentorCourseExitsResolve (m465 P2 D4.2-R27, \"\" → range)", func(c mentorCourseExitsResolved) any { return c.ISBLossBox })
 	mentorCXRow("mentor_keypair_candle_ratio", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.KeypairRatio })
 	mentorCXRow("mentor_box_fresh_rth_pair", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxFreshRTHPair })
 	mentorCXRow("mentor_box_max_height_pts", "trader.mentorCourseExitsResolve", func(c mentorCourseExitsResolved) any { return c.BoxMaxHeightPts })
+	// m465 P4 (release #60): resolved in trader/mentor_resonance_raw.go.
+	mentorRCRow("mentor_resonance_raw_isb", "trader.mentorResonanceRawISBOn (D2.4-R2, nil → ON)", func(rc store.RiskControlConfig) any { return mentorResonanceRawISBOn(&rc) })
+	mentorRCRow("mentor_2m_reduce_size", "trader.mentor2mReduceSizeOn (D3.1-R30, nil → ON)", func(rc store.RiskControlConfig) any { return mentor2mReduceSizeOn(&rc) })
 
 	// mentor_tuning.* (K3): each through mentorTuningResolve (the ONE resolver).
 	mentorTuningRow := func(path, name string, get func(mentorTuned) any) {
@@ -862,6 +866,9 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("swing_max_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMaxStopPts })
 	mentorTuningRow("swing_min_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMinStopPts })
 	mentorTuningRow("15m_ib_requires_5m_isb", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FifteenMinIBRule })
+	mentorTuningRow("15m_early_read", "trader.mentorTuningResolve (m465 D4.2-R2)", func(t mentorTuned) any { return t.Early15mRead })
+	mentorTuningRow("mtf_confluence_source", "trader.mentorTuningResolve (m465 D4.2-R17)", func(t mentorTuned) any { return t.MTFConfluenceSource })
+	mentorTuningRow("trigger_escalation", "trader.mentorTuningResolve (m465 D3.4-R43)", func(t mentorTuned) any { return t.TriggerEscalation })
 	mentorTuningRow("tf_conflict_end", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TFConflictEnd })
 	mentorTuningRow("news_wait_both_lines", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsWaitBothLines })
 	mentorTuningRow("news_bars_excluded", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NewsBarsExcluded })
@@ -877,6 +884,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("flag_wall_target", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FlagWallTarget })
 	mentorTuningRow("box_new_zone_after_escape", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.BoxNewZoneAfterEscape })
 	mentorTuningRow("orb_escape_completely", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbEscapeCompletely })
+	mentorTuningRow("wick_microscalp", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.WickMicroscalp })
+	mentorTuningRow("wick_safe_play", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.WickSafePlay })
 	mentorTuningRow("isb_stack_cancel_candle_2m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackCancelCandle2m })
 	mentorTuningRow("isb_stack_tiny_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBStackTinyStopPts })
 	mentorTuningRow("evening_slow_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.EveningSlowPts })
@@ -887,6 +896,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("phl_target_shy_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLTargetShyPts })
 	mentorTuningRow("isb_old_extreme_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBOldExtremePts })
 	mentorTuningRow("isb_in_range_gap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBInRangeGapPts })
+	mentorTuningRow("trendline_entry_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineEntryTouch })
+	mentorTuningRow("near_box_between_exempt", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxBetweenExempt })
+	mentorTuningRow("phl_flat_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLFlatLow })
+	mentorTuningRow("isb_reverse_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseTouch })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).

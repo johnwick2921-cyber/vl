@@ -87,6 +87,19 @@ func mentorEMA9VisitCap(at *AutoTrader, rc *store.RiskControlConfig) string {
 	return mode
 }
 
+// mentorISBLossBox — m465 P2 (release #60, D4.2-R27): range (default) | band;
+// a bad value fails closed to range (the course) and is counted.
+func mentorISBLossBox(at *AutoTrader, rc *store.RiskControlConfig) string {
+	if rc == nil {
+		return mentor.ISBLossBoxRange
+	}
+	mode, ok := mentor.NormalizeISBLossBox(rc.MentorISBLossBox)
+	if !ok {
+		at.mentorCount("isb_loss_box_bad_value")
+	}
+	return mode
+}
+
 // mentorPositiveKnob resolves a float knob: 0 → def; negative/NaN → def,
 // counted under name+"_bad_value".
 func mentorPositiveKnob(at *AutoTrader, v, def float64, name string) float64 {
@@ -116,6 +129,9 @@ type mentorCourseExitsResolved struct {
 	// SwingMaxStopPts (m463, D5.2-R31): the swing skip ceiling — a SWING4H stop
 	// ABOVE it is refused. Knob mentor_swing_max_stop_pts, unset/0/bad → 90.
 	SwingMaxStopPts float64
+	// ISBLossBox (m465 P2, D4.2-R27): what an ISB stop-out boxes — range
+	// (the 5m range that held the trade, default) | band.
+	ISBLossBox string
 }
 
 func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorCourseExitsResolved {
@@ -131,6 +147,7 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		ISBMaxPts:             25, // W-MENTOR-EXACT: 20–25 reduced, > 25 skipped [D3.3 p1 @01:09–02:09]
 		BoxFreshRTHPair:       rc == nil || mentorBoolKnob(rc.MentorBoxFreshRTHPair, true),
 		SwingMaxStopPts:       mentorSwingMaxStopDefault,
+		ISBLossBox:            mentorISBLossBox(at, rc),
 	}
 	if rc != nil {
 		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, 25, "isb_max_pts")
@@ -153,6 +170,7 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
 	cfg.Swing.SkipStopPts = r.SwingMaxStopPts // m463 D5.2-R31: ONE number, kernel + trader gate
+	cfg.ISBLossBox = r.ISBLossBox             // m465 P2 D4.2-R27: kernel limits.go rangeLoss
 }
 
 // mentorSwingMaxStopDefault is the m463 swing skip ceiling default — the
@@ -178,10 +196,10 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s",
+	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
-		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts))
+		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox)
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing

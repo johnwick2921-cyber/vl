@@ -135,6 +135,7 @@ func TestISBStackingArithmetic(t *testing.T) {
 func TestISBStackTickHoldsTwoCancelsAtFour(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this pins the count (a 10-pt stop)
 	first := market.Kline{Open: 100, Close: 105, High: 106, Low: 99}
 	inside := market.Kline{Open: 101, Close: 104, High: 105.5, Low: 99.5}
 	arm := &ISBArm{FirstBar: first}

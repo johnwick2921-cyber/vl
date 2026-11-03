@@ -132,3 +132,20 @@ func TestP1BResetBurns(t *testing.T) {
 		t.Fatalf("full reset must touch the remaining burned row, got n=%d err=%v", n2, err)
 	}
 }
+
+// TestP1DAgedFreshnessDSTWeekUTC pins the DST-week case at a FIXED instant: a
+// UTC-located now on Mon 2026-11-02 16:30 CST (22:30 UTC), the day after the
+// CDT->CST change. A level burned at 16:59 CDT Sat 10-31 (session-day 10-30)
+// is 2 session-days old -> C. Stepping back in UTC days read it as 3 -> B.
+func TestP1DAgedFreshnessDSTWeekUTC(t *testing.T) {
+	chicago, err := time.LoadLocation("America/Chicago")
+	if err != nil {
+		t.Skip("no zoneinfo")
+	}
+	now := time.Date(2026, 11, 2, 16, 30, 0, 0, chicago).UTC()
+	last := time.Date(2026, 10, 31, 16, 59, 0, 0, chicago)
+	cur := &LevelStateDB{Consumed: true, Freshness: "done", CreatedAt: last, UpdatedAt: last}
+	if got := AgedFreshness(cur, now); got != "C" {
+		t.Fatalf("2 session-days across the DST change: got %q want C", got)
+	}
+}

@@ -17,6 +17,8 @@ export type CourseExitsBoolKey =
   | 'mentor_isb_c3_partial_any_profit'
   | 'mentor_reverse_isb_as_phl'
   | 'mentor_box_fresh_rth_pair'
+  | 'mentor_resonance_raw_isb'
+  | 'mentor_2m_reduce_size'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -29,6 +31,7 @@ export type CourseExitsKey =
   | CourseExitsBoolKey
   | CourseExitsNumKey
   | 'mentor_ema9_visit_cap'
+  | 'mentor_isb_loss_box'
 
 // The knob-rule defaults the server resolves for an ABSENT key
 // (course-defaults-30: swing_runner, be_before_partial and reverse_isb_as_phl
@@ -41,6 +44,10 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_isb_c3_partial_any_profit: true,
   mentor_reverse_isb_as_phl: true,
   mentor_box_fresh_rth_pair: true,
+  // m465 P4 (release #60): D2.4-R2 raw inside-bar resonance + D3.1-R30 2m size
+  // cut — both ON by default (the course is explicit).
+  mentor_resonance_raw_isb: true,
+  mentor_2m_reduce_size: true,
   mentor_ema9_visit_cap: 'shared',
   mentor_swing4h_contracts: 2,
   mentor_isb_max_pts: 30,
@@ -49,6 +56,9 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   // m463 (D5.2-R31, owner order 2026-11-01 "full of it" — reverses m186): a
   // swing stop ABOVE this is refused, "100 điểm quá nhiều rủi ro… đừng vô".
   mentor_swing_max_stop_pts: 90,
+  // m465 P2 (D4.2-R27 "tôi bọc cái khu vực này lại. Tôi sẽ không trade bên
+  // trong" [D4.2 p2 @03:43–04:07]): an ISB loss boxes the whole 5m range.
+  mentor_isb_loss_box: 'range',
 } as const
 
 const COPY = {
@@ -100,6 +110,16 @@ const COPY = {
     en: 'A fresh RTH FTGH/FTGL replaces the evening box of its role',
     es: 'Un FTGH/FTGL nuevo de RTH reemplaza la caja nocturna de su rol',
   },
+  mentor_resonance_raw_isb: {
+    zh: '共振：PHL/PLH 成交后 3 根内出现同向 inside bar 即启动（无需该 ISB 入场）',
+    en: 'Resonance: any same-way inside bar within 3 candles of a PHL/PLH fill arms it (no ISB entry needed)',
+    es: 'Resonancia: cualquier inside bar en la misma dirección dentro de 3 velas tras el fill PHL/PLH la activa (sin entrada ISB)',
+  },
+  mentor_2m_reduce_size: {
+    zh: '2 分钟（或 5 分钟）入场的 ISB/PHL/PLH 减仓（减仓档）',
+    en: 'A 2m (or 5m) ISB/PHL/PLH entry takes the reduced size',
+    es: 'Una entrada ISB/PHL/PLH en 2m (o 5m) usa el tamaño reducido',
+  },
   mentor_ema9_visit_cap: {
     zh: 'EMA 9 触碰次数上限',
     en: 'EMA 9 visit cap',
@@ -119,6 +139,21 @@ const COPY = {
     zh: 'exempt — 不限次数（同 EMA 34）',
     en: 'exempt — never capped (like EMA 34)',
     es: 'exempt — sin tope (como la EMA 34)',
+  },
+  mentor_isb_loss_box: {
+    zh: 'ISB 亏损后封锁的区域',
+    en: 'ISB loss box (what an ISB stop-out blocks)',
+    es: 'Caja de pérdida ISB (qué bloquea un stop de ISB)',
+  },
+  range: {
+    zh: 'range — 整个持仓的 5 分钟区间（默认，课程）',
+    en: 'range — the whole 5m range that held the trade (default, the course)',
+    es: 'range — todo el rango de 5m que contuvo la operación (por defecto, el curso)',
+  },
+  band: {
+    zh: 'band — 仅入场到止损的区间（#60 之前）',
+    en: 'band — the entry-to-stop band only (pre-#60)',
+    es: 'band — solo la banda entrada-stop (antes de #60)',
   },
   mentor_swing4h_contracts: {
     zh: 'SWING 口数（默认 2；runner 需 ≥ 2）',
@@ -159,6 +194,8 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_isb_c3_partial_any_profit',
   'mentor_reverse_isb_as_phl',
   'mentor_box_fresh_rth_pair',
+  'mentor_resonance_raw_isb',
+  'mentor_2m_reduce_size',
 ]
 
 const NUM_KEYS: CourseExitsNumKey[] = [
@@ -171,7 +208,10 @@ const NUM_KEYS: CourseExitsNumKey[] = [
 
 export type CourseExitsValues = Partial<
   Record<CourseExitsBoolKey, boolean> &
-    Record<CourseExitsNumKey, number> & { mentor_ema9_visit_cap: string }
+    Record<CourseExitsNumKey, number> & {
+      mentor_ema9_visit_cap: string
+      mentor_isb_loss_box: string
+    }
 >
 
 interface Props {
@@ -270,6 +310,30 @@ export function MentorCourseExitsPanel({
             <option value="exempt">{tr(COPY.exempt, language)}</option>
           </select>
           <EffectiveLine knob={eff?.('mentor_ema9_visit_cap')} />
+        </label>
+        <label
+          className="text-xs flex flex-col gap-1"
+          style={{ color: '#EAECEF' }}
+        >
+          {tr(COPY.mentor_isb_loss_box, language)}
+          <select
+            disabled={disabled}
+            data-testid="mentor-course-mentor_isb_loss_box"
+            value={values.mentor_isb_loss_box ?? ''}
+            onChange={(e) =>
+              onChange(
+                'mentor_isb_loss_box',
+                e.target.value === '' ? undefined : e.target.value
+              )
+            }
+            className="px-2 py-1 rounded"
+            style={box}
+          >
+            <option value="">{`${tr(COPY.deflt, language)}: ${tr(COPY.range, language)}`}</option>
+            <option value="range">{tr(COPY.range, language)}</option>
+            <option value="band">{tr(COPY.band, language)}</option>
+          </select>
+          <EffectiveLine knob={eff?.('mentor_isb_loss_box')} />
         </label>
         {NUM_KEYS.map((key) => (
           <label

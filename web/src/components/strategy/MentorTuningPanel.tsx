@@ -36,6 +36,8 @@ type BoolKey =
   | 'isb_reverse_ema9_enabled'
   | 'htf_gate_news_only'
   | 'exec_2m_after_30m'
+  | '15m_early_read'
+  | 'trigger_escalation'
   | 'news_wait_both_lines'
   | 'news_bars_excluded'
   | 'level_entries_need_trigger_side'
@@ -45,14 +47,21 @@ type BoolKey =
   | 'flag_wall_target'
   | 'box_new_zone_after_escape'
   | 'orb_escape_completely'
+  | 'wick_microscalp'
+  | 'wick_safe_play'
   | 'near_box_room_phl'
+  | 'near_box_between_exempt'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
+  | 'mtf_confluence_source'
   | 'tf_conflict_end'
   | 'isb_box_escape'
   | 'ema34_loss_relock'
   | 'd43_trend_source'
+  | 'trendline_entry_touch'
+  | 'phl_flat_low'
+  | 'isb_reverse_touch'
 
 type EnumOption<K extends EnumKey> = {
   value: NonNullable<MentorTuning[K]>
@@ -97,6 +106,31 @@ const COPY = {
     zh: 'EMA 9 反向 ISB',
     en: 'Reverse ISB at EMA 9',
     es: 'ISB inverso en EMA 9',
+  },
+  early15m: {
+    zh: '15 分钟提前读取：形成中的 15 分钟内的 2 根 5 分钟 K 线在上一根 15 分钟内 → 临时 15 分钟 ISB 箱体（只拒绝）',
+    en: 'Early 15m read: 2 five-minute candles of the forming 15m inside the last 15m → a provisional 15m ISB box (refusals only)',
+    es: 'Lectura temprana de 15m: 2 velas de 5m del 15m en formación dentro del último 15m → caja ISB 15m provisional (solo rechazos)',
+  },
+  mtfSource: {
+    zh: '模式 C（15m + 5m 共振）的读取来源',
+    en: 'Mode C (15m + 5m confluence) reads',
+    es: 'El modo C (confluencia 15m + 5m) lee',
+  },
+  mtfStanding: {
+    zh: '仍然有效的 15m + 5m ISB 箱体',
+    en: 'the standing 15m + 5m ISB boxes',
+    es: 'las cajas ISB 15m + 5m vigentes',
+  },
+  mtfLastPair: {
+    zh: '最近收盘的 5m 与 15m K 线对（#60 之前）',
+    en: 'the latest closed 5m and 15m candle pairs (before #60)',
+    es: 'los últimos pares de velas 5m y 15m cerradas (antes de #60)',
+  },
+  trigEscalation: {
+    zh: '触发线升级：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
+    en: 'Trigger escalation: crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
+    es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
     zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（关 = 全天，默认）',
@@ -275,9 +309,59 @@ const COPY = {
     es: 'ISB 2m: cancelar en la vela N si no se llena (nuestro número, no del curso)',
   },
   isbStackTiny: {
-    zh: 'ISB：止损不超过此点数则不在取消K线取消（0 = 关）',
-    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (0 = off)',
-    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (0 = off)',
+    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认 12.5 = 课程示例；0.01 = 实际关闭）',
+    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default 12.5 = the course example; 0.01 = effectively off)',
+    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto 12.5 = el ejemplo del curso; 0.01 = prácticamente off)',
+  },
+  tlEntryTouch: {
+    zh: '趋势线入场触碰（第 3 次触碰 = 测试）',
+    en: 'Trendline entry touch (the 3rd touch = the test)',
+    es: 'Toque de entrada en la línea de tendencia (el 3.er toque = la prueba)',
+  },
+  tlEntryFourth: {
+    zh: '第 4 次触碰起入场（课程）',
+    en: 'enter from the 4th touch (the course)',
+    es: 'entrar desde el 4.º toque (el curso)',
+  },
+  tlEntryThird: {
+    zh: '第 3 次触碰即入场（#60 之前）',
+    en: 'enter on the 3rd touch (pre-#60)',
+    es: 'entrar en el 3.er toque (antes de #60)',
+  },
+  nearBoxBetween: {
+    zh: '两个箱体之间免除"靠近箱体"（#60 之前；默认 关 = 按自身空间判断）',
+    en: 'Exempt "between two boxes" from near-box (pre-#60; default OFF = judged on its own room)',
+    es: 'Eximir "entre dos cajas" de la regla de caja cercana (antes de #60; por defecto OFF = según su propio espacio)',
+  },
+  phlFlat: {
+    zh: 'PHL 平底读法',
+    en: 'PHL flat-low read',
+    es: 'Lectura de mínimo plano en PHL',
+  },
+  phlFlatNear: {
+    zh: '平底 = FTGL，不做 PHL（课程）',
+    en: 'a flat low is an FTGL, not a PHL (the course)',
+    es: 'un mínimo plano es un FTGL, no un PHL (el curso)',
+  },
+  phlFlatStrict: {
+    zh: '仅严格比较（#60 之前）',
+    en: 'strict comparison only (pre-#60)',
+    es: 'solo comparación estricta (antes de #60)',
+  },
+  isbRevTouch: {
+    zh: '反向 ISB 的 EMA 9 触碰',
+    en: 'Reverse ISB: the EMA 9 touch',
+    es: 'ISB inverso: el toque de la EMA 9',
+  },
+  isbRevTouchPair: {
+    zh: '母K线 + ISB 一组触及（课程）',
+    en: 'the mother + ISB candle group reaches it (the course)',
+    es: 'el grupo vela madre + ISB la alcanza (el curso)',
+  },
+  isbRevTouchIsb: {
+    zh: '仅 ISB K线触及（#60 之前）',
+    en: 'the ISB candle alone reaches it (pre-#60)',
+    es: 'solo la vela ISB la alcanza (antes de #60)',
   },
   eveSlowPts: {
     zh: '夜盘“慢”：高低点幅度低于此点数则用5分钟（我们的数字）',
@@ -319,6 +403,16 @@ const COPY = {
     en: 'ISB size cut: between two key levels closer than this many pts (blank = the ping-pong gap)',
     es: 'Recorte de tamaño ISB: entre dos niveles clave a menos de estos pts (vacío = la brecha ping-pong)',
   },
+  wickMicroscalp: {
+    zh: 'D4.3 影线微剥头皮（进阶）：5分钟同向影线区 + 1分钟 ISB/PHL，目标 = 附近5分钟影线',
+    en: 'D4.3 wick microscalp (advanced): 5m same-way wick zone + 1m ISB/PHL, target = the nearby 5m wicks',
+    es: 'D4.3 micro-scalp de mechas (avanzado): zona de mechas 5m + ISB/PHL 1m, objetivo = las mechas 5m cercanas',
+  },
+  wickSafePlay: {
+    zh: 'D4.3 安全玩法：参考K线须收在区外（空单在箱下、多单在箱上）',
+    en: 'D4.3 safe play: the reference candle must close outside the box (under it for a short, over it for a long)',
+    es: 'D4.3 juego seguro: la vela de referencia debe cerrar fuera de la caja (debajo para corto, encima para largo)',
+  },
   orbCompletely: {
     zh: '开盘区间：蜡烛（含影线）须完全在区间外才算突破',
     en: 'Opening range: the candle must be completely outside, wicks included',
@@ -338,6 +432,10 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'require_5m_isb', label: COPY.ib15mRequire },
     { value: 'no_trade_until_escape', label: COPY.ib15mWait },
   ],
+  mtf_confluence_source: [
+    { value: 'standing_boxes', label: COPY.mtfStanding },
+    { value: 'last_pair', label: COPY.mtfLastPair },
+  ],
   tf_conflict_end: [
     { value: 'first_box', label: COPY.tfConflictFirst },
     { value: 'both_boxes', label: COPY.tfConflictBoth },
@@ -353,6 +451,18 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
   d43_trend_source: [
     { value: 'trigger_line', label: COPY.d43Trigger },
     { value: 'structure', label: COPY.d43Structure },
+  ],
+  trendline_entry_touch: [
+    { value: 'fourth', label: COPY.tlEntryFourth },
+    { value: 'third', label: COPY.tlEntryThird },
+  ],
+  phl_flat_low: [
+    { value: 'flat_near', label: COPY.phlFlatNear },
+    { value: 'strict', label: COPY.phlFlatStrict },
+  ],
+  isb_reverse_touch: [
+    { value: 'pair', label: COPY.isbRevTouchPair },
+    { value: 'isb_candle', label: COPY.isbRevTouchIsb },
   ],
 }
 
@@ -374,10 +484,13 @@ export const MENTOR_TUNING_DEFAULTS = {
   isb_reverse_ema9_enabled: true,
   htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
   exec_2m_after_30m: true,
-  day_gate_spent_pts: 300,
+  day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
+  '15m_early_read': true, // m465 P1 — D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+  mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
+  trigger_escalation: true, // m465 P1 — D3.4-R43
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
@@ -393,9 +506,11 @@ export const MENTOR_TUNING_DEFAULTS = {
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
   orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
+  wick_microscalp: false, // m465 P5: D4.3 advanced — "đừng có tập khúc này đầu liền" [D4.3 @04:55–05:17]
+  wick_safe_play: false, // m465 P5: D4.3-R20 an optional extra confirm [D4.3 @14:07–14:27]
   // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
   isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
-  isb_stack_tiny_stop_pts: 0, // B8: 0 = tiny-stop exception off
+  isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26: the worked example's measured stop [D5.1 p2 @02:24–04:41]
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
@@ -404,6 +519,11 @@ export const MENTOR_TUNING_DEFAULTS = {
   phl_target_shy_pts: 5, // C16
   isb_old_extreme_pts: 2, // B27
   isb_in_range_gap_pts: 0, // B27: 0 = inherit ping_pong_min_gap_pts
+  // m465 P3 (release #60) — structure fidelity, the course from the full video read.
+  trendline_entry_touch: 'fourth', // D2.3-R7 [D2.3 p1 @02:34–03:16]
+  near_box_between_exempt: false, // D3.2-R29/R30 [D3.2 p1 @22:12–24:41]
+  phl_flat_low: 'flat_near', // D2.2-R64 [D2.2 p3 @07:44–10:15]
+  isb_reverse_touch: 'pair', // D5.4-R7 [D5.4 p1 @03:35–03:46]
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -602,6 +722,13 @@ export function MentorTuningPanel({
           COPY.ib15m,
           ENUM_OPTIONS['15m_ib_requires_5m_isb']
         )}
+        {boolField('15m_early_read', COPY.early15m)}
+        {enumField(
+          'mtf_confluence_source',
+          COPY.mtfSource,
+          ENUM_OPTIONS.mtf_confluence_source
+        )}
+        {boolField('trigger_escalation', COPY.trigEscalation)}
         {enumField(
           'tf_conflict_end',
           COPY.tfConflict,
@@ -629,6 +756,8 @@ export function MentorTuningPanel({
         {boolField('flag_wall_target', COPY.flagWall)}
         {boolField('box_new_zone_after_escape', COPY.boxNewZone)}
         {boolField('orb_escape_completely', COPY.orbCompletely)}
+        {boolField('wick_microscalp', COPY.wickMicroscalp)}
+        {boolField('wick_safe_play', COPY.wickSafePlay)}
         {numField('isb_stack_cancel_candle_2m', COPY.isbStack2m, true)}
         {numField('isb_stack_tiny_stop_pts', COPY.isbStackTiny)}
         {numField('evening_slow_pts', COPY.eveSlowPts)}
@@ -639,6 +768,18 @@ export function MentorTuningPanel({
         {numField('phl_target_shy_pts', COPY.phlShy)}
         {numField('isb_old_extreme_pts', COPY.isbOldExt)}
         {numField('isb_in_range_gap_pts', COPY.isbInRange)}
+        {enumField(
+          'trendline_entry_touch',
+          COPY.tlEntryTouch,
+          ENUM_OPTIONS.trendline_entry_touch
+        )}
+        {boolField('near_box_between_exempt', COPY.nearBoxBetween)}
+        {enumField('phl_flat_low', COPY.phlFlat, ENUM_OPTIONS.phl_flat_low)}
+        {enumField(
+          'isb_reverse_touch',
+          COPY.isbRevTouch,
+          ENUM_OPTIONS.isb_reverse_touch
+        )}
       </div>
     </div>
   )

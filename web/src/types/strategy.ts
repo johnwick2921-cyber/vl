@@ -364,6 +364,12 @@ export interface MentorTuning {
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
   '15m_ib_requires_5m_isb'?: 'off' | 'require_5m_isb' | 'no_trade_until_escape'
+  // m465 P1 (release #60). D4.2-R2 — box the FORMING 15m from 2 churning 5m candles [true]
+  '15m_early_read'?: boolean
+  // D4.2-R17 — mode C from the standing 15m + 5m boxes [standing_boxes]
+  mtf_confluence_source?: 'standing_boxes' | 'last_pair'
+  // D3.4-R43 — crossing 5m ISBs hand the trigger to the 15m, then the 30m [true]
+  trigger_escalation?: boolean
   // D4.2 p1 @07:54 — when a 5m/15m box conflict ends [both_boxes] (OQ-2)
   tf_conflict_end?: 'first_box' | 'both_boxes'
   // D4.4 p1 @21:55 — news day: wait beyond the 4h trigger line until 08:30 [true]
@@ -397,13 +403,22 @@ export interface MentorTuning {
   // 2-minute range, wicks included; "Routine trước khi trade" part1
   // @06:47–07:16 [false = the body test]
   orb_escape_completely?: boolean
+  // m465 P5 (release #60) — the D4.3 wick microscalp, the whole setup: a run
+  // of ≥2 same-way 5m wicks WITH the 5m trend draws a zone box (extended
+  // right); a 1m ISB/PHL at the zone arms; the target is the nearby 5m wicks.
+  // Advanced — "đừng có tập khúc này đầu liền" D4.3 @04:55 [false]
+  wick_microscalp?: boolean
+  // m465 P5 — D4.3-R20 safe play: a setup at a wick zone waits for its
+  // reference candle to close beyond the zone's near edge, D4.3 @14:07 [false]
+  wick_safe_play?: boolean
   // Release #52 W11 — invented-constant knobs: every number is OURS, not the
   // course's; each default is what the kernel hard-coded before.
   // B8 [4] — the candle a resting 2m ISB arm is cancelled on (3–12);
   // "Ngày 4.2 Multitime frame 15_" part2 @00:08:53 counts 1m candles only
   isb_stack_cancel_candle_2m?: number
-  // B8 [0 = off] — a stop at or under this keeps the arm past the cancel
-  // candle; "Ngày 5.1 Go over lại tất cả" part2 @02:50
+  // B8 [12.5 — m465 D5.1-R26, the worked example's measured stop] — a stop at
+  // or under this keeps the arm past the cancel candle; "Ngày 5.1 Go over lại
+  // tất cả" part2 @02:24–04:41 (0.01 = effectively off)
   isb_stack_tiny_stop_pts?: number
   // B10 [100 / 15 / 0] — evening "slow": cutoff pts, start hour CT (15–17),
   // trailing window minutes (0 = cumulative); X11 @17:40–18:26, owner Q6
@@ -419,6 +434,19 @@ export interface MentorTuning {
   // key-level gap (0 = inherit ping_pong_min_gap_pts)
   isb_old_extreme_pts?: number
   isb_in_range_gap_pts?: number
+  // m465 P3 (release #60) — structure-fidelity knobs; unset = the course (the
+  // full video read), the other value = the pre-#60 behaviour.
+  // D2.3-R7 ['fourth'] — a 1m/2m trendline is not a location on its 3rd-touch
+  // candle (the test); the entry comes on a later touch [D2.3 p1 @02:34–03:16]
+  trendline_entry_touch?: 'fourth' | 'third'
+  // D3.2-R29/R30 [false] — no blanket "between two boxes" near-box exemption
+  // (E6 refused); true = the pre-#60 exemption [D3.2 p1 @22:12–24:41]
+  near_box_between_exempt?: boolean
+  // D2.2-R64 ['flat_near'] — a flat low is an FTGL, not a PHL [D2.2 p3 @07:44–10:15]
+  phl_flat_low?: 'flat_near' | 'strict'
+  // D5.4-R7 ['pair'] — reverse-ISB EMA 9 touch reads the mother + ISB group
+  // [D5.4 p1 @03:35–03:46]
+  isb_reverse_touch?: 'pair' | 'isb_candle'
 }
 
 export interface RiskControlConfig {
@@ -485,6 +513,16 @@ export interface RiskControlConfig {
   mentor_box_max_height_pts?: number
   // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
   mentor_swing_max_stop_pts?: number
+  // m465 P2 (release #60, D4.2-R27): what an ISB stop-out boxes — 'range'
+  // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
+  // entry-to-stop band. Unset → range.
+  mentor_isb_loss_box?: 'range' | 'band'
+  // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
+  // candles of a PHL/PLH fill arms resonance; unset → ON.
+  mentor_resonance_raw_isb?: boolean
+  // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
+  // reduced size; unset → ON.
+  mentor_2m_reduce_size?: boolean
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

@@ -174,7 +174,8 @@ func bars15mOf(t *testing.T, bars []market.Kline) []market.Kline {
 
 // TestMTFConfluenceWiredAtTheEmitSites pins the production call sites: the ISB
 // emit and the PHL/PLH emit must stamp the intent's Confluence from
-// MTFConfluence (D4.2-06 part 1). Removing either stamp breaks this pin.
+// MTFConfluence (D4.2-06 part 1) — since m465 through e.mtfConfluence (the
+// standing boxes, D4.2-R17). Removing either stamp breaks this pin.
 func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	b, err := os.ReadFile("eval.go")
 	if err != nil {
@@ -182,8 +183,10 @@ func TestMTFConfluenceWiredAtTheEmitSites(t *testing.T) {
 	}
 	src := string(b)
 	for _, want := range []string{
-		"confluence := MTFConfluence(side, cb5, cb15)",
-		"confluence := MTFConfluence(in.Side, cb5, cb15)",
+		// m465 P1 (D4.2-R17): the emit sites read e.mtfConfluence — the
+		// standing-box read by default, MTFConfluence under last_pair.
+		"confluence := e.mtfConfluence(side, cb5, cb15)",
+		"confluence := e.mtfConfluence(in.Side, cb5, cb15)",
 		"cb5 := e.closedBucketsMemo(bars, now)",
 		"cb15 := e.closedBucketsTFMemo(bars, 15, now)",
 	} {

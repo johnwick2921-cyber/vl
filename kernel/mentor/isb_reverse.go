@@ -7,7 +7,8 @@ import (
 // R7 — the reverse ISB at EMA 9 (RULES-FIX-v3, a setup behind its OWN knob
 // ISBReverseEMA9Enabled, default ON since the 2026-10-04 owner ruling) [D5.4 p1 @01:26–01:30]:
 //
-//   - price must actually reach EMA 9 (a loose touch is OK);
+//   - price must actually reach EMA 9 (a loose touch is OK — m465: the mother +
+//     ISB candle group straddling it counts, D5.4-R7 [D5.4 p1 @03:35–03:46]);
 //   - in an uptrend, an ISB that points SHORT at EMA 9 → go LONG with a buy
 //     stop that lands ON THE WIRE at the ISB high + the buffer; downtrend
 //     mirror: sell stop on the wire at low − the buffer;
@@ -60,9 +61,19 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 	if dir == trend {
 		return Intent{}, false, "reverse ISB at EMA 9: the ISB already points with the trend — no reverse [D5.4 p1 @01:26–01:30]"
 	}
-	// Loose touch: the EMA 9 value sits inside the ISB candle's wick range.
-	if ema9 < cur.Low || ema9 > cur.High {
-		return Intent{}, false, "reverse ISB at EMA 9: price did not reach the EMA 9 [D5.4 p1 @01:26–01:30]"
+	// Loose touch. m465 (release #60, D5.4-R7): "nó không cần đụng, nó cứ đụng
+	// vòng vòng ngay EMA 9 là được … không quan trọng là nó đụng ngay tại EMA 9
+	// hay là nó lố EMA 9" [D5.4 p1 @03:35–03:46] — on screen the 09:45–09:48
+	// candles straddle the EMA 9 as a GROUP. Default (ISBReverseTouch "pair"):
+	// the EMA 9 sits inside the mother + ISB candle pair's range; "isb_candle"
+	// = the pre-#60 read (the ISB candle's own wick range only). Price must
+	// still actually reach the line — a pair that never got to it is refused.
+	lo, hi := cur.Low, cur.High
+	if cfg.ISBReverseTouch != ISBReverseTouchISBCandle {
+		lo, hi = min(prev.Low, cur.Low), max(prev.High, cur.High)
+	}
+	if ema9 < lo || ema9 > hi {
+		return Intent{}, false, "reverse ISB at EMA 9: price did not reach the EMA 9 [D5.4 p1 @01:26–01:30, @03:35–03:46]"
 	}
 	entry := cfg.ISBBufferPts // the course's 1.5 [D2.1 p1 @ 06:12]; the wire adds nothing (rel22 P2-1)
 	if trend == SideLong {

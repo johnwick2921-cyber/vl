@@ -300,6 +300,13 @@ func AgedFreshness(cur *LevelStateDB, now time.Time) string {
 	if last.IsZero() {
 		return FreshnessDone
 	}
+	// Step back in CHICAGO calendar days: AddDate keeps the wall clock of the
+	// value's location, so a UTC `now` stepped one day back across a DST change
+	// can land in the SAME CT session twice and over-age the level by a day
+	// (TestP1DAgedFreshness failed under TZ=UTC in the week after 11-01).
+	if chicago, err := time.LoadLocation("America/Chicago"); err == nil {
+		now = now.In(chicago)
+	}
 	days := 0
 	for cmeDayKey(now.AddDate(0, 0, -days)) != cmeDayKey(last) {
 		days++

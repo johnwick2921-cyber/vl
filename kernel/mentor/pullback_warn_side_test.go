@@ -274,6 +274,9 @@ func pwReverseTick(t *testing.T, hl [][2]float64, bull bool, base float64) (Inte
 			}
 		}
 	}
+	// m465 P1: the synthetic history can also read as a FORMING 15m inside bar
+	// (the early read, D4.2-R2) — not what this fixture pins either.
+	e.Cfg.Early15mRead = false
 	ins := e.Tick(bars, now)
 	for _, in := range ins {
 		if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && (in.Setup == "ISB" || in.Setup == "PHL") && in.Side == SideLong {

@@ -327,6 +327,7 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		trig, fourH, oneH = TriggerLine{}, TriggerLine{}, TriggerLine{}
 	}
 	e.State.Trigger = TriggerReplay1m(trig, closed1m, 5, e.Cfg)
+	e.seedEscalationTriggers(closed1m, reset) // m465 P1 (D3.4-R43): the 15m/30m lines, same replay
 	// Print windows: the SAME freeze the tick path uses. N6 (release #23):
 	// the windows are absolute instants, and the caller hands the seed the
 	// print windows of EVERY day the replayed history covers (the trader reads

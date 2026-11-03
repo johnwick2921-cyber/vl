@@ -1,5 +1,7 @@
 package mentor
 
+import "vl/market"
+
 // PHL / PLH [§2.2] — R2 mechanics, verbatim [D2.2 p1 @ 19:34–19:58, 23:22]:
 //
 //   - PHL = LONG: in an uptrend price pulls back; a buy stop sits at the
@@ -133,7 +135,7 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if refuse, why := roomRefusal(price, stop, target, confluence, cfg.RoomMultiple); refuse {
+	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.RoomMultiple)); refuse { // m465 D4.3-R17: 1R for a 5m-wick target
 		return Intent{}, false, why
 	}
 	setup := "PHL"
@@ -268,4 +270,53 @@ func phlPLHGatedR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing
 		return in, false, why
 	}
 	return capped, true, ""
+}
+
+// phlFlatExtremeRefusal — m465 (release #60, D2.2-R64/R65): a PHL needs a low
+// HIGHER than the previous low, and a FLAT low is not one: "đang đi kiếm một
+// cái lệnh có đáy cao hơn đáy trước đó; mà ngay chỗ này nó ngang phè" [D2.2 p3
+// @07:44–09:46]; "Cái chỗ này anh đang gọi nó là failure to go lower"
+// [@09:46–10:15] (on screen the pink box 29,369.00–~29,380.25 over the repeated
+// lows). The strict check in phlPLHR2 (stop <= priorSwing →
+// phl_not_higher_low) let a low one tick higher through. "Flat" is the
+// owner-ruled m428 R2 "same price" measure (flatNearPts — half the average
+// candle range of the last 20 closed traded-frame candles), so no number is
+// invented here; near is passed in by the caller (phlFlatNear).
+//
+// Long: refused phl_flat_low_is_ftgl when 0 < ref.Low − priorSwing ≤ near.
+// Short (mirror, "a flat high is an FTGH, not a PLH" [D2.2 p3 @14:03–14:22]):
+// refused plh_flat_high_is_ftgh when 0 < priorSwing − ref.High ≤ near. A low at
+// or under the prior low is left to phl_not_higher_low. The flat pair itself is
+// already a flat support/resistance LEVEL (trendline_flat.go), so the FTGL
+// reading of the same place stays tradeable. Knob PHLFlatLow "strict" = the
+// pre-#60 strict comparison only (returns ""). priorSwing 0 = no check.
+func phlFlatExtremeRefusal(cfg Config, side Side, ref market.Kline, priorSwing, near float64) string {
+	if cfg.PHLFlatLow == PHLFlatLowStrict || priorSwing == 0 || near <= 0 {
+		return ""
+	}
+	switch side {
+	case SideLong:
+		if d := ref.Low - priorSwing; d > 0 && d <= near {
+			return "phl_flat_low_is_ftgl"
+		}
+	case SideShort:
+		if d := priorSwing - ref.High; d > 0 && d <= near {
+			return "plh_flat_high_is_ftgh"
+		}
+	}
+	return ""
+}
+
+// phlFlatNear is the m428 R2 "same price" distance for the flat-low check, read
+// on the PHL's execution frame (execTFMin: 1, 2 or 5 minutes) over the candles
+// closed at or before execCur — the candle the PHL reference is read on.
+func phlFlatNear(bars []market.Kline, execTFMin int, execCur market.Kline) float64 {
+	fb := bars
+	if execTFMin > 1 {
+		fb = closedBucketsTF(bars, execTFMin, execCur.CloseTime+1)
+	}
+	if len(fb) == 0 {
+		return 0
+	}
+	return flatNearPts(fb, len(fb)-1)
 }

@@ -59,8 +59,12 @@ const (
 // CTO; until it lands, DefaultDayGate supplies the method defaults).
 type DayGate struct {
 	// SpentPts: a run at/above this before the open means "already run"
-	// — 300 [D5.1 p1 @16:05-16:11 "Already run 300–400 before the open → 80–90%
-	// it ranges"].
+	// — the rule says 300–400 [D5.1 p1 @16:05-16:11 "Already run 300–400 before
+	// the open → 80–90% it ranges"]; m465 (release #60, D5.1-R18) the worked
+	// example pins the cutoff at 265: "Một cây nến daily chạy 300 điểm, mà tới
+	// đây nó chạy gần được 300 điểm… nó chạy gần hết cây daily luôn rồi" +
+	// "phải còn 100 điểm" [D5.1 p1 @17:56–18:14], measured −265.00 (1,060
+	// ticks) — that day had nothing left to trade.
 	SpentPts float64
 	// TargetCapPts: on a spent day, the target distance cap — 15
 	// ("15 điểm bán, 10 điểm bán" [D5.1 p1 @ 20:02–20:06]). The mentor is
@@ -70,9 +74,9 @@ type DayGate struct {
 	TargetCapPts float64
 }
 
-// DefaultDayGate returns the §7 defaults (300 / 15).
+// DefaultDayGate returns the §7 defaults (265 / 15) — m465 D5.1-R18.
 func DefaultDayGate() DayGate {
-	return DayGate{SpentPts: 300, TargetCapPts: 15}
+	return DayGate{SpentPts: 265, TargetCapPts: 15}
 }
 
 // DayLatch is the frozen §7 verdict for a TRADING DAY (CTO reviews E1, L2).

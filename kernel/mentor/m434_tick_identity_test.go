@@ -23,6 +23,34 @@ package mentor
 // 15:19 SWING4H inside bars refused swing_position_open (this harness emulates
 // BE/hold receipts, never a stop-out, so the 05:00 / 14:30 legs stay "open";
 // on the tape they stopped at 05:16 / 14:52, and live — SwingEnded — still arms).
+// m465 P2 (release #60, ISB loss range box D4.2-R27): regenerated — 615 rows
+// of m423_1023_1m_read_near0 moved in the STATE stream only (Limits.Places now
+// carries the 5m range bounds + Range); zero intents, notes, levels or
+// trendlines moved on any tape. The pre-#60 State is pinned by
+// TestM462StoredNewsOnlyIsThePreM462Behaviour under mentor_isb_loss_box=band.
+// Regenerated again at the release #60 merge (m465 P1-P5 on dev c6777e230):
+// against the dev golden 303 intent / 382 note / 93 level / 5,216 state rows
+// moved, and EVERY moved stream row moved in at least one package's own golden
+// (intents: P1 44, P3 292; notes: P1; levels: P3; state: P1/P2/P3). 14 intent
+// rows (r22_1013 near1 2230-2713, exec2m 1945-2251) match no single package's
+// bytes; each of them moved in BOTH P1's and P3's golden (the two changes
+// compose). P4 (trader-side) and P5 (wick microscalp, knob OFF) move nothing.
+// Release #60 review round (D2.3-R7 leave-and-return 4th touch): regenerated —
+// ZERO intent and ZERO note rows moved on any tape; levels (416 rows) and state
+// (4,587 rows: the trendline_third_touch_is_test counts and the trendline
+// location/target sets) moved only. The D4.3-R17 1R wick room (knob OFF) and
+// the D4.2-R27 inside-the-range block (no fills in this harness) move nothing.
+// Then the forming-15m conflict latch origin (tf_conflict_latch_forming +
+// tf_conflict_forming_released): STATE stream only, 2,122 rows; zero intents
+// ON THESE GOLDEN TAPES. The real tape is not a golden: on the 10-21→11-02
+// kernel replay (stored strategy a5b7662e) it moved ONE entry — APPEARS 10-22
+// 18:29 ISB short 29,073 (stop 29,084.25): the 18:14 provisional 15m box was
+// dropped (the 18:00 15m closed as no inside bar) and the old latch refused
+// isb_tf_conflict_both_boxes for 15 minutes on a 15m ISB that never existed.
+// Review round 3 (the latch is settled when its forming BUCKET closes, escaped
+// box or not; a confirmed box makes it real-origin): STATE stream only, 98
+// rows (the forming flag cleared at the confirm); zero intent / note / level /
+// trendline rows. Real-tape replay vs b68db6879: zero entries moved.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

@@ -56,10 +56,12 @@ func w11StackRun(t *testing.T, cfg Config, lastStep int) (cancelAt int, insideAf
 // cancels at step 9 for the knob row → RED.
 func TestW11B8Stack2mCancelCandleKnob(t *testing.T) {
 	def := DefaultConfig()
+	def.ISBStackTinyStopPts = 0 // m465 (#60): the default tiny stop is 12.5 (D5.1-R26); this pins the cancel candle
 	if at, _ := w11StackRun(t, def, 13); at != 9 {
 		t.Fatalf("default 2m cancel candle must cancel at 09:09 (step 9), got step %d", at)
 	}
 	knob := DefaultConfig()
+	knob.ISBStackTinyStopPts = 0 // m465: see above
 	knob.ISBStackCancelCandle2m = 6
 	if at, _ := w11StackRun(t, knob, 9); at != 0 {
 		t.Fatalf("cancel candle 6 must still hold at 09:09, cancelled at step %d", at)
@@ -74,6 +76,7 @@ func TestW11B8CancelCandleKnobIsTwoMinuteOnly(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.ISBStackCancelCandle2m = 8
+	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off
 	inside := market.Kline{Open: 101, High: 102, Low: 100, Close: 101.5}
 	for _, tf := range []int{0, 1, 5} {
 		arm := &ISBArm{FirstBar: market.Kline{High: 106, Low: 98.5}, Side: SideLong, TFMin: tf}
@@ -94,11 +97,14 @@ func TestW11B8CancelCandleKnobIsTwoMinuteOnly(t *testing.T) {
 
 // TestW11B8TinyStopKeepsTheArmPastTheCancelCandle — the tiny-stop exception
 // [Ngày 5.1 part2 @02:50–03:40] at the Tick call site. The arm's ISB candle is
-// 7.5 pts wide + 2 x 1.5 buffer = a 10.5-pt stop. Knob OFF (default): cancelled
-// at candle 4. Knob 12: kept (the stop is under 12). Knob 10: cancelled (10.5 > 10).
+// 7.5 pts wide + 2 x 1.5 buffer = a 10.5-pt stop. Knob OFF (an explicit 0 — the
+// default is 12.5 since m465, D5.1-R26): cancelled at candle 4. Knob 12: kept
+// (the stop is under 12). Knob 10: cancelled (10.5 > 10). The default 12.5 keeps
+// it too (TestM60ISBStackTinyStopHoldsPastCandle4 pins the 12.5 line).
 // MUTANT: drop the tiny-stop early return in ISBStackTick → the 12 row cancels → RED.
 func TestW11B8TinyStopKeepsTheArmPastTheCancelCandle(t *testing.T) {
 	off := DefaultConfig()
+	off.ISBStackTinyStopPts = 0
 	if at, _ := w11StackRun(t, off, 9); at != 9 {
 		t.Fatalf("tiny-stop OFF must cancel at step 9, got %d", at)
 	}

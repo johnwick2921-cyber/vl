@@ -150,12 +150,28 @@ describe('mentor guide — c52 W12 doc sweep', () => {
       'wick zone',
       'nine-line',
       'VWAP',
-      '2m',
+      // '2m' (B26) left this list in release #60: the 2m size cut is BUILT
+      // (D3.1-R30, switch mentor_2m_reduce_size) — pinned below.
     ]) {
       expect(titles.toLowerCase(), `no not-built note for ${needle}`).toContain(
         needle.toLowerCase()
       )
     }
+  })
+
+  it('release #60: the 2m size cut and the raw-ISB resonance are built, not parked', () => {
+    const callout = mentor.blocks.find(
+      (b) => b.kind === 'callout' && b.title.startsWith('Not built')
+    )
+    if (callout && callout.kind === 'callout') {
+      const titles = callout.items.map((i) => i.title).join(' | ')
+      expect(titles).not.toMatch(/2m/)
+    }
+    expect(all).toContain('Smaller size on a 2m entry')
+    expect(all).toContain('exec_2m_reduce')
+    expect(all).toContain('Resonance on any same-way inside bar')
+    expect(all).toContain('resonance_armed_raw_isb')
+    expect(all).not.toContain('there is NO frame-based size cut')
   })
 
   it('labels the ours-not-course inferences (doji, two losses)', () => {
@@ -174,6 +190,15 @@ describe('mentor guide — c52 W12 doc sweep', () => {
     expect(all).toContain('mentor_swing_max_stop_pts')
     expect(all).toContain('REVERSES the earlier owner ruling m186')
     expect(all).not.toContain('whose colour matches the side')
+  })
+
+  // m465 P2 (release #60): an ISB loss boxes the whole 5m range [D4.2-R27].
+  it('describes the ISB loss range box (m465 P2, D4.2-R27/R28/R30)', () => {
+    expect(all).toContain('mentor_isb_loss_box')
+    expect(all).toContain('loss_range_blocked')
+    expect(all).toContain('loss_range_seed_only')
+    expect(all).toContain('em đợi cho cái điểm entry nằm ở vòng vòng bên ngoài')
+    expect(all).toContain('28,880.50–28,934.00')
   })
 
   // release #59 fix round: one setup per level (an open swing refuses the
