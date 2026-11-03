@@ -45,6 +45,10 @@ import (
 // a later closed 1m candle trades THROUGH it (a High above a gap-down edge, a
 // Low below a gap-up edge) inside the evaluator's bar slice.
 //
+// A session boundary that is also a CONTRACT change (the quarterly roll — the
+// stored tape mixes "MNQ 09-26" and "MNQ 12-26" around it) makes no gap edge:
+// the jump is the roll spread, not empty space in one market.
+//
 // Both share the knob SessionOpenLevels "on" (default) | "off" (neither — the
 // pre-#61 level set, byte-identical).
 
@@ -152,6 +156,9 @@ func gapEdgeLevels(bars []market.Kline, cfg Config, now int64) []Level {
 		c, ok := firstSessionCandleAt(bars, i, now)
 		if !ok {
 			continue
+		}
+		if bars[i-1].Contract != "" && bars[i].Contract != "" && bars[i-1].Contract != bars[i].Contract {
+			continue // a contract roll between the sessions: the price jump is the roll spread, not a gap (fail closed)
 		}
 		lastClose := bars[i-1].Close
 		var size float64

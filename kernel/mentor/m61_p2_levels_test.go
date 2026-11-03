@@ -390,6 +390,18 @@ func TestM61GapEdgeLevel(t *testing.T) {
 		t.Fatalf("a touch AT the edge is the touch the level exists for, not a fill: %+v", got)
 	}
 
+	// a contract roll between the sessions is no gap (the roll spread).
+	rolled := append([]market.Kline{}, bars...)
+	for i := range rolled {
+		rolled[i].Contract = "MNQ 09-26"
+		if i < 10 {
+			rolled[i].Contract = "MNQ 12-26"
+		}
+	}
+	if got := gapEdgeLevels(rolled, cfg, now); len(got) != 0 {
+		t.Fatalf("a contract change at the session boundary makes no gap edge: %+v", got)
+	}
+
 	cfg.SessionOpenLevels = SessionOpenLevelsOff
 	if _, ok := m61Find(Levels(bars, cfg, now), KindGapEdge, 29391.25); ok {
 		t.Fatal("knob off: no gap edge")
