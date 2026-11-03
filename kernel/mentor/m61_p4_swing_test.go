@@ -354,10 +354,15 @@ func TestM61StrictReadIsThePreP4Golden(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := strings.Split(strings.TrimSpace(string(body)), "\n")
+	// Release #61 merged head: the P1/P2/P3 packages moved the same tapes, so
+	// the strict read chains every package's pre-#61 values (+ the P1 G37
+	// legacy hook) — m466Rel61PreValues; the golden is the #60 m434 golden.
+	midRangeLegacyRole.Store(true)
+	defer midRangeLegacyRole.Store(false)
 	var got []string
 	for _, c := range m434Cases() {
 		inner := c.cfg
-		c.cfg = func() Config { x := inner(); m61PreP4(&x); return x }
+		c.cfg = func() Config { x := inner(); m466Rel61PreValues(&x); return x }
 		got = append(got, m434Digest(t, c)...)
 	}
 	if len(got) != len(want) {

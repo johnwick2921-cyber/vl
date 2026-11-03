@@ -576,7 +576,8 @@ func m466P1PreValues(cfg *Config) {
 const m466Pre61GoldenPath = "testdata/m466_pre61_tick_identity.golden.gz"
 
 // TestM61PreValuesReproduceThePre61Golden — every m466 P1 knob at its pre-#61
-// value (+ the G37 legacy hook) reproduces the #60 m434 golden (45053f78a,
+// value (+ the G37 legacy hook) — at the release #61 merged head chained with
+// the P2/P3/P4 pre-values (m466Rel61PreValues) — reproduces the #60 m434 golden (45053f78a,
 // saved gzipped before the regeneration) byte for byte — intents, state,
 // notes, levels and trendlines on every tick of the four real-tape cases. So
 // each behaviour change of this package is exactly its knob (G37: its hook).
@@ -602,7 +603,7 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 	for _, c := range m434Cases() {
 		c := c
 		base := c.cfg
-		c.cfg = func() Config { cfg := base(); m466P1PreValues(&cfg); return cfg }
+		c.cfg = func() Config { cfg := base(); m466Rel61PreValues(&cfg); return cfg }
 		t.Run(c.name, func(t *testing.T) {
 			got := m434Digest(t, c)
 			w := want[c.name]
