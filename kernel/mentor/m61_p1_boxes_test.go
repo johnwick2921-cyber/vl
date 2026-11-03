@@ -400,15 +400,25 @@ func m61p1SmallRange(top, big, big2 float64) []market.Kline {
 // (the other 29.75) → allowed (review round: one outlier is not "the candles");
 // a closed 1m CLOSE outside (28,955) clears it (D4.1-R34).
 func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
-	if !DefaultConfig().SmallRangeGuard {
-		t.Fatal("G33: mentor_small_range_guard must default ON")
+	// Release #61 final: the default is OFF (the course gives no candle count
+	// or breakout margin; three review rounds of mis-latches) — the behaviour
+	// below is the knob set ON explicitly.
+	if DefaultConfig().SmallRangeGuard {
+		t.Fatal("G33: mentor_small_range_guard must default OFF (release #61 final)")
 	}
 	bars := m61p1SmallRange(29_021.50, 33.75, 34.50)
 	lo, hi, ok, _ := smallRangeWindow(bars)
 	if !ok || lo != 28_960 || hi != 29_021.5 {
 		t.Fatalf("want the too-small range 28,960.00–29,021.50, got %v %v %v", lo, hi, ok)
 	}
-	e := New(DefaultConfig())
+	off := New(DefaultConfig())
+	off.advanceSmallRange(bars)
+	if off.State.SmallRange != nil {
+		t.Fatalf("default (knob OFF) never builds the state, got %+v", off.State.SmallRange)
+	}
+	onCfg := DefaultConfig()
+	onCfg.SmallRangeGuard = true
+	e := New(onCfg)
 	e.advanceSmallRange(bars)
 	out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_000)}, nil)
 	if m61p1Has(out, SideLong) || e.State.Refusals["range_too_small_big_candles"] != 1 {
@@ -625,4 +635,14 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 			}
 		})
 	}
+}
+
+// smallRangeOnConfig is DefaultConfig with the G33 too-small-range guard
+// switched ON. Release #61 final made the guard default OFF (D4.2-R33
+// [D4.2 p2 @06:16–06:30] gives no candle count or breakout margin), so every
+// test of the guard's own behaviour sets the knob explicitly.
+func smallRangeOnConfig() Config {
+	cfg := DefaultConfig()
+	cfg.SmallRangeGuard = true
+	return cfg
 }

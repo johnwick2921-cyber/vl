@@ -90,6 +90,13 @@ package mentor
 // level / trendline rows. The pre-#61 pins are unchanged (the lock and the
 // range changes sit behind their #61 knobs; the box-return consume behind the
 // test hook boxConflictLegacySkip beside midRangeLegacyRole).
+// Release #61 FINAL (G33 mentor_small_range_guard default OFF — D4.2-R33 gives
+// no candle count or breakout margin, three review rounds of mis-latches):
+// regenerated — ZERO intent, level and trendline rows; 1,704 state rows (the
+// SmallRange / SmallRangeBreakAt / range_small_* counters no longer built) and
+// 26 note rows (the range_small set / ended / breakout notes gone), on all
+// four tapes (m423 near1 403, m423 near0 403, r22 near1 449, r22 exec2m 449).
+// The pre-#61 pins are unchanged (their pre-values already set it false).
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

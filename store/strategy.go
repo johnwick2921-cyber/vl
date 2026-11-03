@@ -2097,8 +2097,10 @@ type MentorTuning struct {
 	// break direction until a close back inside [D4.1-R31/R33 p1 @18:29–20:33;
 	// D4.1-R55 @07:47–08:07].
 	MentorBreakDirectionLock *bool `json:"mentor_break_direction_lock,omitempty"`
-	// MentorSmallRangeGuard: nil → ON — no entry inside a range too small for
-	// its candles (61.50 pts / a 30-pt candle) [D4.2-R33 p2 @06:16–06:30].
+	// MentorSmallRangeGuard: nil → OFF (release #61 final) — when true, no entry
+	// inside a range too small for its candles (61.50 pts / two 30-pt candles)
+	// [D4.2-R33 p2 @06:16–06:30]. OFF by default: the course states no candle
+	// count or breakout margin; on the mentor list. A stored true still wins.
 	MentorSmallRangeGuard *bool `json:"mentor_small_range_guard,omitempty"`
 	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
 	// rejection [D2.2-R71 p3 @14:28–15:58].

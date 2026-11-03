@@ -690,8 +690,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Too-small range',
-          'The last 15 closed 1m candles span ≤ 61.50 pts with two candles ≥ 30.00 pts → no entry inside that range until a 1m close outside it (range_too_small_big_candles) — release #61',
-          'mentor_small_range_guard = ON · D4.2-R33 p2 @06:16–06:30',
+          'Knob ON only (default OFF): the last 15 closed 1m candles span ≤ 61.50 pts with two candles ≥ 30.00 pts → no entry inside that range until a 1m close outside it (range_too_small_big_candles) — release #61',
+          'mentor_small_range_guard = OFF (default since #61 final — count / margin unstated, on the mentor list) · D4.2-R33 p2 @06:16–06:30',
         ],
         [
           'Mid-range rejection side',
@@ -1672,13 +1672,15 @@ export const mentor: GuideSection = {
         {
           label: 'Too-small range guard',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Release #61 (m466 G33 D4.2-R33). "từ đây trên đây có 50-60 điểm, mà cây nến vừa vậy 30-40 điểm… bên trong một cái range nó quá nhỏ đi, đừng bao giờ đụng tới" (50-60 points top to bottom with 30-40-point candles — a range that small, never touch it) [D4.2 p2 @06:16–06:30]. The numbers are the video’s measurement, not ours: the 1m chart 09:44–09:59 spans 61.50 pts with a 33.75 / 34.50-pt candle. ON (default): when the last 15 closed 1m candles span at most 61.50 pts and at least TWO of them are 30.00 pts or more (the video’s two candles; one outlier wick in a chop of teens-sized candles is the normal range of D4.2-R31 “nến tầm mười mấy điểm”), every intraday entry priced inside that range is refused range_too_small_big_candles until a 1m candle CLOSES outside it (counted range_small_set / range_small_cleared). The range stays the box it latched, and the close outside ENDS it: a new too-small range needs 15 candles that all came after that break, so the break-direction entry is never refused by a range re-drawn around the breakout candle (release #61 review round). A window whose NEWEST candle closes outside the 14 before it is a break, not a range: nothing latches and that candle counts as the break (range_small_breakout, D4.1-R34 [D4.1 p1 @20:36–21:03] — release #61 review round 2). The box ping-pong 50-pt rule is unchanged (it is the same idea for two boxes).',
-          trader: 'ON — the course.',
+          what: 'Release #61 (m466 G33 D4.2-R33). "từ đây trên đây có 50-60 điểm, mà cây nến vừa vậy 30-40 điểm… bên trong một cái range nó quá nhỏ đi, đừng bao giờ đụng tới" (50-60 points top to bottom with 30-40-point candles — a range that small, never touch it) [D4.2 p2 @06:16–06:30]. The numbers are the video’s measurement, not ours: the 1m chart 09:44–09:59 spans 61.50 pts with a 33.75 / 34.50-pt candle. DEFAULT OFF (release #61 final): the course gives only this one worked example — no count of 30–40-pt candles and no breakout margin — and three review rounds kept finding mis-latches (a latch on the breakout candle itself; a churn close just outside the prior 14 wicks read as a break with no margin), so the guard stays available behind this knob and the count + margin are on the mentor list. A stored true still wins. ON: when the last 15 closed 1m candles span at most 61.50 pts and at least TWO of them are 30.00 pts or more (the video’s two candles; one outlier wick in a chop of teens-sized candles is the normal range of D4.2-R31 “nến tầm mười mấy điểm”), every intraday entry priced inside that range is refused range_too_small_big_candles until a 1m candle CLOSES outside it (counted range_small_set / range_small_cleared). The range stays the box it latched, and the close outside ENDS it: a new too-small range needs 15 candles that all came after that break, so the break-direction entry is never refused by a range re-drawn around the breakout candle (release #61 review round). A window whose NEWEST candle closes outside the 14 before it is a break, not a range: nothing latches and that candle counts as the break (range_small_breakout, D4.1-R34 [D4.1 p1 @20:36–21:03] — release #61 review round 2). The box ping-pong 50-pt rule is unchanged (it is the same idea for two boxes).',
+          trader:
+            'OFF — the course states no candle count or breakout margin (mentor question).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (SmallRangeGuard) · kernel/mentor/range_small.go advanceSmallRange · kernel/mentor/break_lock.go courseRangeFilter',
           range: 'true / false',
-          systemDefault: 'true',
-          recommended: 'ON — D4.2 p2 @06:16–06:30.',
+          systemDefault: 'false',
+          recommended:
+            'OFF until the mentor states the candle count and breakout margin — D4.2 p2 @06:16–06:30 is one worked example.',
           whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },

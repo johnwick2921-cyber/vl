@@ -151,7 +151,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
 			FiveMinBoxSource:   mentor.FiveMinBoxNewest, // D4.1-R37
 			BreakDirectionLock: true,                    // D4.1-R31/R33, D4.1-R55
-			SmallRangeGuard:    true,                    // D4.2-R33
+			SmallRangeGuard:    false,                   // D4.2-R33 — OFF since #61 final (count / margin unstated)
 			MidRangeRejectSide: true,                    // D2.2-R71
 		}
 		if got != want {

@@ -912,7 +912,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("phl_pullback_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLPullbackLow })
 	mentorTuningRow("mentor_5m_box_source", "trader.mentorTuningResolve (m466 D4.1-R37)", func(t mentorTuned) any { return t.FiveMinBoxSource })
 	mentorTuningRow("mentor_break_direction_lock", "trader.mentorTuningResolve (m466 D4.1-R31)", func(t mentorTuned) any { return t.BreakDirectionLock })
-	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33)", func(t mentorTuned) any { return t.SmallRangeGuard })
+	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33; nil → OFF, release #61 final)", func(t mentorTuned) any { return t.SmallRangeGuard })
 	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {

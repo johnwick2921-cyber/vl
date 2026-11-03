@@ -262,9 +262,9 @@ const COPY = {
     es: 'Tras romper una caja, solo setups en la dirección de la ruptura hasta un cierre de vuelta dentro',
   },
   smallRange: {
-    zh: '区间太小（≤61.5 点且有 ≥30 点的 K 线）时区间内不入场',
-    en: 'No entry inside a range too small for its candles (≤ 61.50 pts with a ≥ 30-pt candle)',
-    es: 'Sin entrada dentro de un rango demasiado pequeño para sus velas (≤ 61,50 pts con una vela ≥ 30 pts)',
+    zh: '区间太小（≤61.5 点且有两根 ≥30 点的 K 线）时区间内不入场（默认关闭）',
+    en: 'No entry inside a range too small for its candles (≤ 61.50 pts with two ≥ 30-pt candles) — default OFF',
+    es: 'Sin entrada dentro de un rango demasiado pequeño para sus velas (≤ 61,50 pts con dos velas ≥ 30 pts) — desactivado por defecto',
   },
   midRangeReject: {
     zh: '两个箱体之间：跟随最近一次箱体拒绝的方向',
@@ -651,7 +651,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   // m466 P1 (release #61) — boxes, breaks, ranges.
   mentor_5m_box_source: 'newest', // G28 D4.1-R37 [D4.1 p1 @22:31–22:49]
   mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
-  mentor_small_range_guard: true, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30]
+  mentor_small_range_guard: false, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30] — OFF since #61 final (count / margin unstated)
   mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]
 } as const
 

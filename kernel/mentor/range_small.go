@@ -19,7 +19,17 @@ import "vl/market"
 // refused range_too_small_big_candles (break_lock.go courseRangeFilter) until
 // a closed 1m candle CLOSES outside it — the break test of D4.1-R34 [D4.1 p1
 // @20:36–21:03]. Knob risk_control.mentor_tuning.mentor_small_range_guard
-// (default ON); OFF never builds the state.
+// (default OFF); OFF never builds the state.
+//
+// DEFAULT OFF (release #61 final, owner order): D4.2-R33 [D4.2 p2
+// @06:16–06:30] is one worked example — it gives no count of 30–40-pt
+// candles and no breakout margin, so smallRangeBigCandles and the
+// close-outside test are our reading of a single chart, not a stated rule.
+// Three review rounds kept finding mis-latches (one big wick in a chop; a
+// re-latch on the breakout candle; a churn close just outside the prior 14
+// wicks with no margin read as a break). The guard stays available behind the
+// knob, a stored true still wins, and the count + margin are on the mentor
+// list.
 //
 // Release #61 review round (two lenses' P2 + one P3, fix/m466-checklist-gaps):
 //

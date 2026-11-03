@@ -155,7 +155,7 @@ func m61rv2Chop() []market.Kline {
 // 28,980–29,034 latched on the breakout and refused it.
 func TestM61rv2SmallRangeNeverLatchesOnTheBreakout(t *testing.T) {
 	bars := m61rv2Chop()
-	e := New(DefaultConfig())
+	e := New(smallRangeOnConfig())
 	e.advanceSmallRange(bars)
 	if e.State.SmallRange != nil {
 		t.Fatalf("fixture: 14 candles are not a window yet, got %+v", e.State.SmallRange)

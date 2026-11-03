@@ -773,10 +773,15 @@ type Config struct {
 	BreakDirectionLock bool
 	// SmallRangeGuard — G33 D4.2-R33 [D4.2 p2 @06:16–06:30 "bên trong một cái
 	// range nó quá nhỏ đi, đừng bao giờ đụng tới"]: the last 15 closed 1m
-	// candles span <= 61.50 pts with one candle >= 30.00 pts → no entry priced
+	// candles span <= 61.50 pts with two candles >= 30.00 pts → no entry priced
 	// inside that range (range_too_small_big_candles) until a 1m close
 	// outside it (range_small.go; the numbers are the video's measurement).
-	// Default ON. Studio: risk_control.mentor_tuning.mentor_small_range_guard.
+	// Default OFF (release #61 final): the course gives no count of 30–40-pt
+	// candles and no breakout margin — only the one worked example — and three
+	// review rounds kept finding mis-latches (the breakout candle, a churn
+	// close just outside the prior 14 wicks with no margin). It stays behind
+	// the knob and is on the mentor list; a stored true still wins.
+	// Studio: risk_control.mentor_tuning.mentor_small_range_guard.
 	SmallRangeGuard bool
 	// MidRangeRejectSide — G43 D2.2-R71 [D2.2 p3 @14:28–15:58 "Nó mới reject
 	// thì đánh theo hướng nó reject"]: between an FTGL floor and an FTGH
@@ -903,7 +908,7 @@ func DefaultConfig() Config {
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxNewest, // G28 D4.1-R37 / G32 D4.2-R10
 		BreakDirectionLock: true,             // G21 D4.1-R31/R33, G29 D4.1-R55
-		SmallRangeGuard:    true,             // G33 D4.2-R33
+		SmallRangeGuard:    false,            // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
 		MidRangeRejectSide: true,             // G43 D2.2-R71
 	}
 }

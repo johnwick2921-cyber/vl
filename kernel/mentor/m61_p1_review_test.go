@@ -41,7 +41,7 @@ func m61rvSmallRangeBreakout() (pre []market.Kline, exit market.Kline) {
 // SmallRange 28,953–29,010, the short refused).
 func TestM61rvSmallRangeBreakCloseEndsTheGuard(t *testing.T) {
 	pre, exit := m61rvSmallRangeBreakout()
-	e := New(DefaultConfig())
+	e := New(smallRangeOnConfig())
 	e.advanceSmallRange(pre)
 	if r := e.State.SmallRange; r == nil || r.Lo != 28_960 || r.Hi != 29_010 {
 		t.Fatalf("fixture: want the too-small range 28,960–29,010, got %+v", r)
@@ -91,7 +91,7 @@ func TestM61rvSmallRangeBreakCloseEndsTheGuard(t *testing.T) {
 // 28,965 is still inside it (the sliding read would have cleared on it).
 func TestM61rvSmallRangeStaysTheLatchedBox(t *testing.T) {
 	bars := m61p1SmallRange(29_021.50, 33.75, 34.50)
-	e := New(DefaultConfig())
+	e := New(smallRangeOnConfig())
 	e.advanceSmallRange(bars)
 	r0 := e.State.SmallRange
 	if r0 == nil {
@@ -151,7 +151,7 @@ func TestM61rvSmallRangeOneWickDoesNotArm(t *testing.T) {
 	if _, _, ok, _ := smallRangeWindow(bars); ok {
 		t.Fatal("10-21 18:01–18:15: one 45.25-pt wick among 5–18-pt candles is not a too-small range")
 	}
-	e := New(DefaultConfig())
+	e := New(smallRangeOnConfig())
 	e.advanceSmallRange(bars)
 	if e.State.SmallRange != nil {
 		t.Fatalf("no range latched, got %+v", e.State.SmallRange)

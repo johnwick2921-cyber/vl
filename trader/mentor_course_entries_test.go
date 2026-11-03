@@ -37,7 +37,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
 		{"mentor_5m_box_source=newest (D4.1-R37)", cfg.FiveMinBoxSource == mentor.FiveMinBoxNewest},
 		{"mentor_break_direction_lock=true (D4.1-R31/R55)", cfg.BreakDirectionLock},
-		{"mentor_small_range_guard=true (D4.2-R33)", cfg.SmallRangeGuard},
+		{"mentor_small_range_guard=false (D4.2-R33 — release #61 final: OFF, the course states no candle count / breakout margin)", !cfg.SmallRangeGuard},
 		{"mentor_mid_range_reject_side=true (D2.2-R71)", cfg.MidRangeRejectSide},
 	}
 	for _, c := range checks {
@@ -66,7 +66,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		OrbEscapeCompletely:         &on,
 		Mentor5mBoxSource:           "first",
 		MentorBreakDirectionLock:    &off,
-		MentorSmallRangeGuard:       &off,
+		MentorSmallRangeGuard:       &on, // default OFF since #61 final — a stored true must win
 		MentorMidRangeRejectSide:    &off,
 	})
 	checks := []struct {
@@ -89,7 +89,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		{"orb_escape_completely", cfg.OrbEscapeCompletely},
 		{"mentor_5m_box_source", cfg.FiveMinBoxSource == mentor.FiveMinBoxFirst},
 		{"mentor_break_direction_lock", !cfg.BreakDirectionLock},
-		{"mentor_small_range_guard", !cfg.SmallRangeGuard},
+		{"mentor_small_range_guard", cfg.SmallRangeGuard},
 		{"mentor_mid_range_reject_side", !cfg.MidRangeRejectSide},
 	}
 	for _, c := range checks {
@@ -120,7 +120,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close", "trendline_is_target=true", "orb_escape_completely=false", "mentor_5m_box_source=newest", "mentor_break_direction_lock=true", "mentor_small_range_guard=true", "mentor_mid_range_reject_side=true"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close", "trendline_is_target=true", "orb_escape_completely=false", "mentor_5m_box_source=newest", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

@@ -84,7 +84,7 @@ type mentorTuned struct {
 	// m466 P1 (release #61) boxes, breaks, ranges (defaults = the course).
 	FiveMinBoxSource   string
 	BreakDirectionLock bool
-	SmallRangeGuard    bool
+	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
 }
 
