@@ -51,6 +51,9 @@ type BoolKey =
   | 'wick_safe_play'
   | 'near_box_room_phl'
   | 'near_box_between_exempt'
+  | 'mentor_break_direction_lock'
+  | 'mentor_small_range_guard'
+  | 'mentor_mid_range_reject_side'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -66,6 +69,7 @@ type EnumKey =
   | 'session_open_levels'
   | 'level_arm_line_cancel'
   | 'phl_pullback_low'
+  | 'mentor_5m_box_source'
 
 type EnumOption<K extends EnumKey> = {
   value: NonNullable<MentorTuning[K]>
@@ -233,9 +237,39 @@ const COPY = {
     es: 'Prueba de escape de la caja de reposo ISB',
   },
   isbEscapeClose: {
-    zh: '收盘 — 仅收盘价越过边缘',
-    en: 'close — the close beyond the edge',
-    es: 'cierre — el cierre fuera del borde',
+    zh: '收盘 — 1 分钟收盘价越过边缘（默认，#61）',
+    en: 'close — the 1m close beyond the edge (default, #61)',
+    es: 'cierre — el cierre de 1m fuera del borde (por defecto, #61)',
+  },
+  box5mSource: {
+    zh: '5 分钟 ISB 箱体是',
+    en: 'The 5m ISB box is the',
+    es: 'La caja ISB de 5m es la',
+  },
+  box5mNewest: {
+    zh: '最新的 5 分钟内包线（替换旧箱体）',
+    en: 'newest 5m inside bar (replaces the standing box)',
+    es: 'vela interior de 5m más reciente (reemplaza la caja vigente)',
+  },
+  box5mFirst: {
+    zh: '第一个箱体，直到突破（#61 之前）',
+    en: 'first box, until it escapes (before #61)',
+    es: 'primera caja, hasta que escape (antes de #61)',
+  },
+  breakLock: {
+    zh: '突破后只做突破方向的形态，直到收盘回到箱体内',
+    en: 'After a box break, only setups in the break direction until a close back inside',
+    es: 'Tras romper una caja, solo setups en la dirección de la ruptura hasta un cierre de vuelta dentro',
+  },
+  smallRange: {
+    zh: '区间太小（≤61.5 点且有 ≥30 点的 K 线）时区间内不入场',
+    en: 'No entry inside a range too small for its candles (≤ 61.50 pts with a ≥ 30-pt candle)',
+    es: 'Sin entrada dentro de un rango demasiado pequeño para sus velas (≤ 61,50 pts con una vela ≥ 30 pts)',
+  },
+  midRangeReject: {
+    zh: '两个箱体之间：跟随最近一次箱体拒绝的方向',
+    en: 'Between two boxes: trade WITH the last box rejection',
+    es: 'Entre dos cajas: operar A FAVOR del último rechazo de caja',
   },
   isbEscapeBody: {
     zh: '实体 — 开盘价与收盘价都越过边缘',
@@ -545,6 +579,10 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'pullback', label: COPY.phlPullbackWhole },
     { value: 'signal', label: COPY.phlPullbackSignal },
   ],
+  mentor_5m_box_source: [
+    { value: 'newest', label: COPY.box5mNewest },
+    { value: 'first', label: COPY.box5mFirst },
+  ],
 }
 
 function tr(entry: Copy, language: string): string {
@@ -575,7 +613,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
-  isb_box_escape: 'body', // (a)
+  isb_box_escape: 'close', // m466 G20/G49 (release #61): a 1m close outside the box [D4.1 p1 @20:36–21:03]
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
   orb_isb_fraction_outside: 0.8, // rule 5 (release #31) — default ON at 0.80
@@ -610,6 +648,11 @@ export const MENTOR_TUNING_DEFAULTS = {
   session_open_levels: 'on', // G10/G11 D3.1-R26/R20 [D3.1 p1 @09:41–12:22]
   level_arm_line_cancel: 'current_line', // G17 D2.3-R34 [D2.3 p1 @23:35–24:03]
   phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
+  // m466 P1 (release #61) — boxes, breaks, ranges.
+  mentor_5m_box_source: 'newest', // G28 D4.1-R37 [D4.1 p1 @22:31–22:49]
+  mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
+  mentor_small_range_guard: true, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30]
+  mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -882,6 +925,14 @@ export function MentorTuningPanel({
           COPY.phlPullback,
           ENUM_OPTIONS.phl_pullback_low
         )}
+        {enumField(
+          'mentor_5m_box_source',
+          COPY.box5mSource,
+          ENUM_OPTIONS.mentor_5m_box_source
+        )}
+        {boolField('mentor_break_direction_lock', COPY.breakLock)}
+        {boolField('mentor_small_range_guard', COPY.smallRange)}
+        {boolField('mentor_mid_range_reject_side', COPY.midRangeReject)}
       </div>
     </div>
   )

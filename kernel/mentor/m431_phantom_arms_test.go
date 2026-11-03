@@ -115,44 +115,65 @@ func m431Tick(e *Evaluator, all []market.Kline, i int) []Intent {
 // Mutant (drop the exit pass `e.unregisterDroppedArms` from Tick's defer) →
 // the isb arm dropped at 11:28 CT stays registered → RED (shown in #52 after
 // W9 removed the 12:22 flag-wall drop).
+//
+// m466 (release #61): G43 D2.2-R71 [D2.2 p3 @14:28–15:58] now refuses that very
+// 12:22 long ISB mid_range_against_rejection — the FTGH 29,258.00–29,325.75 was
+// rejected at 11:50 CT and no candle has reached the floor since. The loop runs
+// twice: knob ON (production) — no phantom arm, and the 12:22 drop is named and
+// its arm un-registered by the same exit pass; knob OFF — the #52 control as
+// before.
 func TestM431NoArmWithoutAnEmittedEntryOnTheRealTape(t *testing.T) {
-	e, all, n0 := m431Day10_23(t)
-	// m466 G23 (D4.1-R12): the 12:22 control ISB (long 29,202.25, stop
-	// 29,180.00) is 22.25 pts — refused isb_stop_over_max at the #61 ISB
-	// ceiling 20. The control is about arm registration, not the ceiling, so it
-	// runs at the pre-#61 25 (a stored mentor_isb_max_pts) to keep its entry.
-	e.Cfg.CourseExits.ISBMaxStopPts = 25
-	known := e.heldArmIDs() // armed before the day began: lifecycle is theirs
-	flagWallAt := ""
-	isb1222Left := false
-	for i := n0 + 1; i <= len(all); i++ {
-		before := e.State.Refusals["flag_wall_room"]
-		out := m431Tick(e, all, i)
-		ct := time.UnixMilli(all[i-1].CloseTime + 1).In(ctime()).Format("15:04")
-		for id := range entryArmIDs(out) {
-			known[id] = true
-			if ct == "12:22" && id == "isb-17" {
-				isb1222Left = true
+	for _, on := range []bool{true, false} {
+		e, all, n0 := m431Day10_23(t)
+		e.Cfg.MidRangeRejectSide = on
+		// m466 G23 (D4.1-R12): the 12:22 control ISB (long 29,202.25, stop
+		// 29,180.00) is 22.25 pts — refused isb_stop_over_max at the #61 ISB
+		// ceiling 20. The control is about arm registration, not the ceiling, so it
+		// runs at the pre-#61 25 (a stored mentor_isb_max_pts) to keep its entry.
+		e.Cfg.CourseExits.ISBMaxStopPts = 25
+		known := e.heldArmIDs() // armed before the day began: lifecycle is theirs
+		flagWallAt := ""
+		isb1222Left := false
+		rejected1222 := false
+		for i := n0 + 1; i <= len(all); i++ {
+			before := e.State.Refusals["flag_wall_room"]
+			beforeRej := e.State.Refusals["mid_range_against_rejection"]
+			out := m431Tick(e, all, i)
+			ct := time.UnixMilli(all[i-1].CloseTime + 1).In(ctime()).Format("15:04")
+			for id := range entryArmIDs(out) {
+				known[id] = true
+				if ct == "12:22" && id == "isb-17" {
+					isb1222Left = true
+				}
+			}
+			if ct == "12:22" && e.State.Refusals["mid_range_against_rejection"] > beforeRej {
+				rejected1222 = true
+			}
+			if e.State.Refusals["flag_wall_room"] != before && flagWallAt == "" {
+				flagWallAt = ct
+			}
+			for id := range e.heldArmIDs() {
+				if !known[id] {
+					t.Fatalf("knob %v, tick %s CT: arm %q is registered but no entry carrying it ever left Tick (phantom arm; flag_wall_room first seen %q)", on, ct, id, flagWallAt)
+				}
 			}
 		}
-		if e.State.Refusals["flag_wall_room"] != before && flagWallAt == "" {
-			flagWallAt = ct
-		}
-		for id := range e.heldArmIDs() {
-			if !known[id] {
-				t.Fatalf("tick %s CT: arm %q is registered but no entry carrying it ever left Tick (phantom arm; flag_wall_room first seen %q)", ct, id, flagWallAt)
+		if on {
+			if !rejected1222 || flagWallAt != "" {
+				t.Fatalf("m466 G43: the 12:22 CT long ISB must be refused mid_range_against_rejection (and never by the flag wall): rejected=%v, first flag_wall_room at %q", rejected1222, flagWallAt)
 			}
+			continue
 		}
-	}
-	// #52 integration: c52 W9 (B22) exempts ISB from the flag-wall room refusal
-	// (PHL/PLH entries only), so the 12:22 ISB now LEAVES Tick with its arm and
-	// flag_wall_room no longer fires on this tape. The control follows the new
-	// semantics: the 12:22 entry is emitted (its arm is legitimately held) and
-	// the flag-wall pass does not refuse it. The un-register pass keeps its
-	// teeth on this tape through another drop (the exit-pass mutant is RED at
-	// 11:28 CT on arm isb-15) and in TestM431DroppedEntryUnregistersEveryArmKind.
-	if !isb1222Left || flagWallAt != "" {
-		t.Fatalf("control: the 12:22 CT ISB (isb-17) must leave Tick un-refused by the flag wall (W9 B22 exempts ISB): left=%v, first flag_wall_room at %q", isb1222Left, flagWallAt)
+		// #52 integration: c52 W9 (B22) exempts ISB from the flag-wall room refusal
+		// (PHL/PLH entries only), so the 12:22 ISB now LEAVES Tick with its arm and
+		// flag_wall_room no longer fires on this tape. The control follows the new
+		// semantics: the 12:22 entry is emitted (its arm is legitimately held) and
+		// the flag-wall pass does not refuse it. The un-register pass keeps its
+		// teeth on this tape through another drop (the exit-pass mutant is RED at
+		// 11:28 CT on arm isb-15) and in TestM431DroppedEntryUnregistersEveryArmKind.
+		if !isb1222Left || flagWallAt != "" {
+			t.Fatalf("control: the 12:22 CT ISB (isb-17) must leave Tick un-refused by the flag wall (W9 B22 exempts ISB): left=%v, first flag_wall_room at %q", isb1222Left, flagWallAt)
+		}
 	}
 }
 

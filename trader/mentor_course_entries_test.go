@@ -24,7 +24,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"tf_conflict_end=both_boxes (course-defaults-30)", cfg.TFConflictEnd == mentor.TFConflictBothBoxes},
 		{"news_wait_both_lines=true (course-defaults-30)", cfg.NewsWaitBothLines},
 		{"news_bars_excluded=true (a)", cfg.NewsBarsExcluded},
-		{"isb_box_escape=body (a)", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeBody},
+		{"isb_box_escape=close (m466 G20/G49, D4.1-R34)", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeClose},
 		{"ema34_loss_relock=until_zone_exit (a)", cfg.EmaLossRelock == mentor.EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts=0 (b)", cfg.OrbEdgeVetoPts == 0},
 		{"d43_trend_source=structure (course-defaults-30)", cfg.D43TrendSource == mentor.D43TrendStructure},
@@ -34,6 +34,11 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"leg_reset_on_wave_break=true (a)", cfg.LegResetOnWaveBreak},
 		{"flag_wall_target=true (course-defaults-30)", cfg.FlagWallTarget},
 		{"orb_escape_completely=false (release #52 B19: body test until the owner rules)", !cfg.OrbEscapeCompletely},
+		// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
+		{"mentor_5m_box_source=newest (D4.1-R37)", cfg.FiveMinBoxSource == mentor.FiveMinBoxNewest},
+		{"mentor_break_direction_lock=true (D4.1-R31/R55)", cfg.BreakDirectionLock},
+		{"mentor_small_range_guard=true (D4.2-R33)", cfg.SmallRangeGuard},
+		{"mentor_mid_range_reject_side=true (D2.2-R71)", cfg.MidRangeRejectSide},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -49,7 +54,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		TFConflictEnd:               "both_boxes",
 		NewsWaitBothLines:           &on,
 		NewsBarsExcluded:            &on,
-		ISBBoxEscape:                "close",
+		ISBBoxEscape:                "body", // m466: close is the default now — the stored body must win
 		EMA34LossRelock:             "session",
 		OrbEdgeVetoPts:              3,
 		D43TrendSource:              "structure",
@@ -59,6 +64,10 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		LegResetOnWaveBreak:         &off,
 		FlagWallTarget:              &on,
 		OrbEscapeCompletely:         &on,
+		Mentor5mBoxSource:           "first",
+		MentorBreakDirectionLock:    &off,
+		MentorSmallRangeGuard:       &off,
+		MentorMidRangeRejectSide:    &off,
 	})
 	checks := []struct {
 		name string
@@ -68,7 +77,7 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		{"tf_conflict_end", cfg.TFConflictEnd == mentor.TFConflictBothBoxes},
 		{"news_wait_both_lines", cfg.NewsWaitBothLines},
 		{"news_bars_excluded", cfg.NewsBarsExcluded},
-		{"isb_box_escape", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeClose},
+		{"isb_box_escape", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeBody},
 		{"ema34_loss_relock", cfg.EmaLossRelock == mentor.EmaRelockSession},
 		{"orb_edge_veto_pts", cfg.OrbEdgeVetoPts == 3},
 		{"d43_trend_source", cfg.D43TrendSource == mentor.D43TrendStructure},
@@ -78,6 +87,10 @@ func TestCourseEntryKnobsReachTheEvaluator(t *testing.T) {
 		{"leg_reset_on_wave_break", !cfg.LegResetOnWaveBreak},
 		{"flag_wall_target", cfg.FlagWallTarget},
 		{"orb_escape_completely", cfg.OrbEscapeCompletely},
+		{"mentor_5m_box_source", cfg.FiveMinBoxSource == mentor.FiveMinBoxFirst},
+		{"mentor_break_direction_lock", !cfg.BreakDirectionLock},
+		{"mentor_small_range_guard", !cfg.SmallRangeGuard},
+		{"mentor_mid_range_reject_side", !cfg.MidRangeRejectSide},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -92,8 +105,12 @@ func TestCourseEntryKnobsBadValueFailsClosed(t *testing.T) {
 		FifteenMinIBRequires5mISB: "sometimes",
 		ISBBoxEscape:              "wick",
 		OrbEdgeVetoPts:            999,
+		Mentor5mBoxSource:         "oldest",
 	})
-	if cfg.FifteenMinIBRule != mentor.FifteenMinRequire5mISB || cfg.ISBBoxEscapeMode != mentor.ISBBoxEscapeBody || cfg.OrbEdgeVetoPts != 0 {
+	if cfg.FiveMinBoxSource != mentor.FiveMinBoxNewest {
+		t.Fatalf("a bad mentor_5m_box_source must fall back to newest, got %q", cfg.FiveMinBoxSource)
+	}
+	if cfg.FifteenMinIBRule != mentor.FifteenMinRequire5mISB || cfg.ISBBoxEscapeMode != mentor.ISBBoxEscapeClose || cfg.OrbEdgeVetoPts != 0 {
 		t.Fatalf("bad values must fall back to the defaults: %q %q %g", cfg.FifteenMinIBRule, cfg.ISBBoxEscapeMode, cfg.OrbEdgeVetoPts)
 	}
 }
@@ -103,7 +120,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=body", "trendline_is_target=true", "orb_escape_completely=false"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close", "trendline_is_target=true", "orb_escape_completely=false", "mentor_5m_box_source=newest", "mentor_break_direction_lock=true", "mentor_small_range_guard=true", "mentor_mid_range_reject_side=true"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

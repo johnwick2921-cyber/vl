@@ -105,7 +105,7 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"tf_conflict_end", TFConflictBothBoxes},
 		{"news_wait_both_lines", cfg.NewsWaitBothLines},
 		{"news_bars_excluded", cfg.NewsBarsExcluded},
-		{"isb_box_escape", ISBBoxEscapeBody},
+		{"isb_box_escape", cfg.ISBBoxEscapeMode}, // m466 G20/G49: close
 		{"ema34_loss_relock", EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts", cfg.OrbEdgeVetoPts},
 		{"d43_trend_source", D43TrendStructure},
@@ -138,6 +138,11 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"session_open_levels", cfg.SessionOpenLevels},
 		{"level_arm_line_cancel", cfg.LevelArmLineCancel},
 		{"phl_pullback_low", cfg.PHLPullbackLow},
+		// m466 P1 (release #61) boxes, breaks, ranges.
+		{"mentor_5m_box_source", cfg.FiveMinBoxSource},
+		{"mentor_break_direction_lock", cfg.BreakDirectionLock},
+		{"mentor_small_range_guard", cfg.SmallRangeGuard},
+		{"mentor_mid_range_reject_side", cfg.MidRangeRejectSide},
 	}
 
 	for _, r := range rows {

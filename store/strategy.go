@@ -2044,7 +2044,9 @@ type MentorTuning struct {
 	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → ON,
 	// course-defaults-30; release #29 rework — freeze the pre-print read).
 	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
-	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
+	// CE-5: ISB rest-box escape "close" (default since m466 G20/G49, release
+	// #61 — "nó đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]) |
+	// "body" (the #25–#60 default; a stored body still wins).
 	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
 	// CE-6: after an EMA 34 loss — "session" | "until_zone_exit" (default).
 	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
@@ -2087,6 +2089,20 @@ type MentorTuning struct {
 	// reference candle to CLOSE beyond the zone's near edge (nil/false → OFF)
 	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
 	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
+	// m466 P1 (release #61): boxes, breaks, ranges. Absent = the course default.
+	// Mentor5mBoxSource: "newest" (default) | "first" — the 5m ISB rest box is
+	// the NEWEST 5m inside bar [D4.1-R37 p1 @22:31–22:49; D4.2-R10 p1 @05:34–08:33].
+	Mentor5mBoxSource string `json:"mentor_5m_box_source,omitempty"`
+	// MentorBreakDirectionLock: nil → ON — after a box break only setups in the
+	// break direction until a close back inside [D4.1-R31/R33 p1 @18:29–20:33;
+	// D4.1-R55 @07:47–08:07].
+	MentorBreakDirectionLock *bool `json:"mentor_break_direction_lock,omitempty"`
+	// MentorSmallRangeGuard: nil → ON — no entry inside a range too small for
+	// its candles (61.50 pts / a 30-pt candle) [D4.2-R33 p2 @06:16–06:30].
+	MentorSmallRangeGuard *bool `json:"mentor_small_range_guard,omitempty"`
+	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
+	// rejection [D2.2-R71 p3 @14:28–15:58].
+	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
 
 	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
 	// not the course's (the mentor gave none, or the owner fixed none); each

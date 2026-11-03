@@ -6,6 +6,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"vl/kernel"
@@ -266,6 +267,18 @@ type State struct {
 	// standing long/short wick zones and the 5m read watermark. nil while the
 	// knob wick_microscalp is OFF (the JSON stays byte-identical).
 	Wick *WickState `json:"wick,omitempty"`
+	// BreakLock — m466 P1 G21/G29 (break_lock.go): the standing break
+	// direction after a box break; nil while none stands or the knob
+	// mentor_break_direction_lock is OFF (the JSON is then the pre-#61 one).
+	BreakLock *BreakLock `json:"break_lock,omitempty"`
+	// SmallRange — m466 P1 G33 (range_small.go): the standing too-small range
+	// (15 closed 1m candles inside <= 61.50 pts with one >= 30.00-pt candle);
+	// nil while none stands or the knob mentor_small_range_guard is OFF.
+	SmallRange *SmallRange `json:"small_range,omitempty"`
+	// MidRangeReject — m466 P1 G43 (reject_side.go): the last box-edge
+	// rejection between the FTGL floor and the FTGH ceiling; nil while none
+	// stands or the knob mentor_mid_range_reject_side is OFF.
+	MidRangeReject *MidRangeReject `json:"mid_range_reject,omitempty"`
 }
 
 // MarshalState renders the state for the ledger (rebuild source).
@@ -1009,18 +1022,48 @@ func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Inte
 // and an FTGH ceiling box above — the mid-range ban with NO width threshold
 // (CTO 1791003862333): "between two boxes: NO PHL, NO PLH, only the ISB"
 // [D3.2 p2 @08:34–08:55; D2.2 p3 @14:03–16:03 "chỉ được đánh insaba"].
+//
+// m466 G37 (D3.2-R40 [D3.2 p2 @07:50–09:14] + the Uno flip D1.3-R21 [D1.3 p1
+// @12:31–12:58] "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest"): a box's
+// role is the side of price it sits on — a box wholly BELOW price is the floor
+// (an FTGH that escaped up is support on the backtest), a box wholly ABOVE is
+// the ceiling (an FTGL that escaped down is resistance). Before #61 it read
+// b.Kind, so a flipped box kept its old role here. The sticky Box.Flipped flag
+// (boxEffectiveKind) is NOT used: it never un-flips, so a flipped FTGH that
+// price fell back under would lose its ceiling role — the real 10-13 08:44
+// tape (FTGL 30,591.25–30,754.50 below, flipped FTGH 30,894.25–30,901.75
+// above, close 30,774.25) is mid-range by both reads of the course and only
+// the side-of-price read keeps it [A, m61 replay]. Bug fix, no knob
+// (midRangeLegacyRole is the test-only pre-#61 hook for the identity pins).
 func midRangeBoxed(boxes []Box, price float64) bool {
+	legacy := midRangeLegacyRole.Load()
 	var floor, ceil bool
 	for _, b := range boxes {
-		if b.Kind == FTGL && b.Top < price {
+		if legacy {
+			if b.Kind == FTGL && b.Top < price {
+				floor = true
+			}
+			if b.Kind == FTGH && b.Bottom > price {
+				ceil = true
+			}
+			continue
+		}
+		if b.Top < price {
 			floor = true
 		}
-		if b.Kind == FTGH && b.Bottom > price {
+		if b.Bottom > price {
 			ceil = true
 		}
 	}
 	return floor && ceil
 }
+
+// midRangeLegacyRole switches midRangeBoxed back to the pre-#61 b.Kind read.
+// Always false in production; the pre-#61 identity pins (m61_p1_boxes_test.go,
+// m462_newsonly_identity_test.go) switch it on to prove every OTHER m466 P1
+// change is undone by its knob, tick for tick. An atomic.Bool like
+// nearBoxInsideOpposingOff (a test hook read by every evaluator must not race).
+var midRangeLegacyRole atomic.Bool
 
 // inNarrowRange (item 21, D4.1-06) reports whether price sits between two KEY
 // levels closer than minPts (the ping-pong minimum, 50) — a too-small range
@@ -2407,16 +2450,46 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// arms placed on THIS tick are skipped by the stacking loop below.
 	justPlaced := map[string]bool{}
 
+	// m466 P1 (G21/G29): the box breaks seen on THIS closed 1m candle — the
+	// ISB rest-box escapes below and the FTGH/FTGL body escapes — feed the
+	// break direction lock (break_lock.go) before the late filters.
+	var breaks []breakEvent
+
 	// R5 (RULES-FIX-v3): the 5m ISB rest box. While it stands it replaces the
 	// trigger line for gating; nothing trades inside it except a same-direction
-	// 1m ISB, and it is deleted when a 1m BODY closes outside [D3.4 p2 @
+	// 1m ISB, and it is deleted when a 1m candle CLOSES outside [D3.4 p2 @
 	// 00:14–13:00; D4.1 p1 @ 21:38].
 	if e.State.ISBBox != nil {
 		// CE-5 (release #25): the escape test is the isb_box_escape knob —
-		// body (default) = open AND close beyond the edge [D4.1 p1 @20:52–21:02].
+		// m466 G20/G49: close (default since #61) = the 1m close beyond the
+		// edge [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]; body = open AND
+		// close beyond (the #25–#60 default).
 		if escaped, dir := ISBBoxEscapeWith(*e.State.ISBBox, cur, e.Cfg.ISBBoxEscapeMode); escaped {
+			breaks = append(breaks, isbBreakEvent(*e.State.ISBBox, dir, "isb_5m"))
 			e.State.ISBBox = nil
 			e.State.LastISBBoxEscape = dir // CE-1: which way the 5m box resolved
+		} else if e.Cfg.FiveMinBoxSource != FiveMinBoxFirst {
+			// m466 G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside bar nào
+			// gần với thời điểm đó nhất, bọc lại cho em"]: the box is the NEWEST
+			// 5m inside bar — a later closed 5m ISB replaces the standing box.
+			// G32 D4.2-R10 [D4.2 p1 @05:34–08:33]: an OPPOSITE newer one turns
+			// the box, so the 15m/5m conflict below reads it ("đừng trade. Đợi
+			// nó thoát cả luôn"). Knob mentor_5m_box_source: first = pre-#61.
+			if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
+				if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime > e.State.ISBBox.AtTime && bx.AtTime != e.State.LastISBBoxAt {
+					old := *e.State.ISBBox
+					e.State.ISBBox = &bx
+					e.State.LastISBBoxAt = bx.AtTime
+					e.State.LastISBBoxDir = bx.Dir
+					e.State.LastISBBoxEscape = ""
+					e.count("isb_5m_box_replaced")
+					if bx.Dir != old.Dir {
+						e.count("isb_5m_box_replaced_opposite")
+					}
+					e.note("5m ISB box replaced by the newest 5m inside bar at %s CT: %s %.2f–%.2f → %s %.2f–%.2f [D4.1-R37 p1 @22:31–22:49; D4.2-R10]",
+						swingCT(bx.AtTime), old.Dir, old.Low, old.High, bx.Dir, bx.Low, bx.High)
+				}
+			}
 		}
 	} else if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
 		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
@@ -2452,14 +2525,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// once (a PROVISIONAL box, knob 15m_early_read) — every gate below applies
 	// to it under a "_forming" refusal name; the real box replaces it at the
 	// 15m close (advance15mBox, mtf_forming15.go).
-	e.advance15mBox(cb5, cb15, cur)
+	if ev, ok := e.advance15mBox(cb5, cb15, cur); ok {
+		breaks = append(breaks, ev) // m466 G29 D4.1-R55: the 15m exit sets the side
+	}
 	f15 := formingSuffix(e.State.ISBBox15m)
 
 	// D4.2-07: the 30m ISB rest box — the same machinery as the 15m box on the
 	// 30m TF. "Never trade against a 15m/30m ISB inside its range" [D4.2 p1
 	// @16:28–16:46, 18:02–18:36].
 	if e.State.ISBBox30m != nil {
-		if escaped, _ := ISBBoxEscapeWith(*e.State.ISBBox30m, cur, e.Cfg.ISBBoxEscapeMode); escaped { // CE-5
+		if escaped, dir := ISBBoxEscapeWith(*e.State.ISBBox30m, cur, e.Cfg.ISBBoxEscapeMode); escaped { // CE-5
+			breaks = append(breaks, isbBreakEvent(*e.State.ISBBox30m, dir, "isb_30m")) // m466 G21/G29
 			e.State.ISBBox30m = nil
 		}
 	} else if len(cb30) >= 2 {
@@ -3400,6 +3476,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	for _, r := range refused {
 		e.refuse(r)
 	}
+
+	// m466 P1 (release #61): the break direction lock (G21/G29), the too-small
+	// range (G33) and the mid-range rejection side (G43) step on this closed
+	// 1m candle, then refuse — named and counted — every intraday entry they
+	// forbid (break_counter_setup, range_too_small_big_candles,
+	// mid_range_against_rejection). The swing is exempt.
+	if e.Cfg.BreakDirectionLock {
+		breaks = append(breaks, boxBreakEvents(bars, boxes, e.baseBoxCfg(), cur)...)
+	}
+	e.advanceBreakLock(cur, now, breaks)
+	e.advanceSmallRange(bars)
+	e.advanceMidRangeReject(cur, boxes)
+	out = e.courseRangeFilter(out, boxes)
 
 	// ORB gate ("ĐIỀU BẮT BUỘC" [X11 @16:43]): every intraday entry is gated
 	// on the opening range; the §8 swing is exempt (orbGateFilter). No ORB for

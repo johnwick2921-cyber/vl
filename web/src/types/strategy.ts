@@ -460,6 +460,15 @@ export interface MentorTuning {
   // G41 D2.2-R59 ['pullback'] — the whole pullback's low must hold above the
   // prior low [D2.2 p3 @08:25–09:25]
   phl_pullback_low?: 'pullback' | 'signal'
+  // m466 P1 (release #61) — boxes, breaks, ranges (absent = the course default).
+  // newest (default): the 5m ISB box is the NEWEST 5m inside bar [D4.1-R37]; first = pre-#61.
+  mentor_5m_box_source?: 'newest' | 'first'
+  // default ON: after a box break only setups in the break direction [D4.1-R31/R33, D4.1-R55].
+  mentor_break_direction_lock?: boolean
+  // default ON: no entry inside a range too small for its candles (61.50 pts / a 30-pt candle) [D4.2-R33].
+  mentor_small_range_guard?: boolean
+  // default ON: mid-range, trade WITH the last box rejection [D2.2-R71].
+  mentor_mid_range_reject_side?: boolean
 }
 
 export interface RiskControlConfig {

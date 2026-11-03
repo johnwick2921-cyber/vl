@@ -215,6 +215,23 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.phl_pullback_low',
     live: true,
   },
+  // m466 P1 (release #61) boxes, breaks, ranges.
+  '5m ISB box: newest inside bar': {
+    settingId: 'risk_control.mentor_tuning.mentor_5m_box_source',
+    live: true,
+  },
+  'Break direction lock': {
+    settingId: 'risk_control.mentor_tuning.mentor_break_direction_lock',
+    live: true,
+  },
+  'Too-small range guard': {
+    settingId: 'risk_control.mentor_tuning.mentor_small_range_guard',
+    live: true,
+  },
+  'Mid-range: trade with the rejection': {
+    settingId: 'risk_control.mentor_tuning.mentor_mid_range_reject_side',
+    live: true,
+  },
   'Mid-range gap': { settingId: 'Config.RangeGapPts', live: false },
   'Day gate spent threshold': {
     settingId: 'risk_control.mentor_tuning.day_gate_spent_pts',
@@ -570,8 +587,8 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Only same-direction inside a 5m ISB box',
-          body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it.',
-          cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · ISB rest box filter — merged',
+          body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Release #61: "latest" means the NEWEST — a newer 5m inside bar replaces the standing box (mentor_5m_box_source); a 1m CLOSE outside the box breaks it (isb_box_escape = close), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock).',
+          cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · D4.1-R37 p1 @22:31–22:49 · D4.1-R34 p1 @20:36–21:03 · D4.1-R31 p1 @18:27–20:33',
         },
         {
           title: 'Smaller size at an old high/low',
@@ -621,8 +638,8 @@ export const mentor: GuideSection = {
         },
         {
           title: '15m and 30m ISB rest boxes + the escalation ladder',
-          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m candle with its OPEN and CLOSE both beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test). While a 15m box stands, a 1m ISB in its direction also needs a 5m ISB in that direction (15m_ib_requires_5m_isb, default require_5m_isb). Release #60: the 15m box is read EARLY — two 5m candles of the forming 15m inside the last 15m box it at once, provisionally, and refuse under _forming names until the 15m closes (15m_early_read, D4.2-R2); mode C holds while the standing 15m and 5m boxes agree (mtf_confluence_source, D4.2-R17); and when the 5m inside bars cross, the 15m (then 30m) TRIGGER line governs the side (trigger_escalation, D3.4-R43).',
-          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:52–21:02 (body escape) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box) · D4.2-R2 p1 @00:08–00:39 · D4.3-R21 @12:20–12:32 (early 15m read) · D4.2-R17 p1 @14:57–15:37 (mode C, standing boxes) · D3.4-R43 p2 @17:07–17:49 (trigger escalation)',
+          body: 'Like the 5m ISB rest box, the latest CLOSED 15m and 30m inside-bar candles are boxed and extended right. Inside a standing box, nothing trades against that box\u2019s direction — a 1m ISB is gated on the box direction, PHL/PLH and box returns inside are banned. When a timeframe\u2019s ISBs are CROSSING (2 opposite ISBs within the last 3 closed buckets) that timeframe is unreadable and its box gate is skipped — the next timeframe up governs (5m → 15m → 30m). A 1m candle that CLOSES beyond the edge deletes the box (isb_box_escape, default close since release #61 — D4.1-R34 "nó đóng bên ngoài cái box là at least"; body = open AND close beyond, the #25–#60 default), and the side it exits is the side you trade (mentor_break_direction_lock, D4.1-R55 "thoát đầu nào thì mình trade đầu đó"). While a 15m box stands, a 1m ISB in its direction also needs a 5m ISB in that direction (15m_ib_requires_5m_isb, default require_5m_isb). Release #60: the 15m box is read EARLY — two 5m candles of the forming 15m inside the last 15m box it at once, provisionally, and refuse under _forming names until the 15m closes (15m_early_read, D4.2-R2); mode C holds while the standing 15m and 5m boxes agree (mtf_confluence_source, D4.2-R17); and when the 5m inside bars cross, the 15m (then 30m) TRIGGER line governs the side (trigger_escalation, D3.4-R43).',
+          cite: 'D4.1 p2 @07:35–08:11 · D4.2 p1 @16:28–16:46 · D3.4 p2 @17:07–17:49 · D4.1 p1 @20:36–21:03 (close escape, #61) · D4.1 p1 @07:47–08:07 (exit side) · D4.2 p1 @17:09–17:13 (5m ISB under a 15m box) · D4.2-R2 p1 @00:08–00:39 · D4.3-R21 @12:20–12:32 (early 15m read) · D4.2-R17 p1 @14:57–15:37 (mode C, standing boxes) · D3.4-R43 p2 @17:07–17:49 (trigger escalation)',
         },
         {
           title: 'The 4h trigger line is a target, never a location',
@@ -668,8 +685,18 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB rest box',
-          'The latest 5m ISB candle is boxed and extended right; only a same-direction 1m ISB trades inside; a 1m candle with its open AND close beyond the edge deletes the box (isb_box_escape, default body; close = the older close-only test)',
-          'isb_box_escape = body (default) · D4.1 p1 @20:52–21:02',
+          'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge deletes the box (isb_box_escape, default close since #61; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
+          'isb_box_escape = close (default) · mentor_5m_box_source = newest · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · D4.1-R37 @22:31–22:49 · D4.1-R31 @18:27–20:33',
+        ],
+        [
+          'Too-small range',
+          'The last 15 closed 1m candles span ≤ 61.50 pts with a candle ≥ 30.00 pts → no entry inside that range until a 1m close outside it (range_too_small_big_candles) — release #61',
+          'mentor_small_range_guard = ON · D4.2-R33 p2 @06:16–06:30',
+        ],
+        [
+          'Mid-range rejection side',
+          'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
+          'mentor_mid_range_reject_side = ON · D2.2-R71 p3 @14:28–15:58',
         ],
         [
           'Day gate (§7)',
@@ -1327,15 +1354,15 @@ export const mentor: GuideSection = {
         {
           label: 'ISB rest box escape test',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D4.1 p1 @20:52–21:02 "cái thân nến nó chỉ nằm ở cái thân nến nằm bên ngoài mà cái râu nến nằm bên trong cái box ok bình thường không sao hết. Cái đó là at least" (the body outside with the wick still inside the box is fine — that is the minimum). body (default) = the 5m/15m/30m inside-bar rest box is escaped (and deleted) only when a 1m candle’s OPEN and CLOSE are both beyond the edge — the same test as the FTGH/FTGL boxes and the ORB escape; close = the older close-only test (pre-#25). Knob rule case (a), ON: the course line, no ruling against.',
-          trader: 'body — case (a).',
+          what: 'D4.1-R34 [D4.1 p1 @20:36–21:03] "Break là sao? Là một cây nến một phút anh chị trade, nó đóng bên ngoài cái box là at least… cái thân nến nó chỉ nằm bên ngoài mà cái râu nến nằm bên trong cái box, OK bình thường không sao hết. Cái đó là at least" (what is a break? the 1-minute candle you trade CLOSES outside the box — that is the minimum; a whole candle outside is fine, a body outside with the wick inside is fine) and D3.4-R34 "nó đóng một cái nến một phút ở ngoài" [D3.4 p2 @05:37–06:01]. close (default since release #61, m466 G20/G49) = the 5m/15m/30m inside-bar rest box (and the #60 provisional forming-15m box) is escaped and deleted when a 1m candle CLOSES beyond the edge — the same candle read the PHL/PLH 5m-box ban already used, so the two gates now agree on one candle; body = the #25–#60 default (OPEN and CLOSE both beyond the edge). The FTGH/FTGL boxes keep their own body escape (D3.2-R16). A stored body still wins.',
+          trader: 'close — the course minimum (release #61).',
           consumer:
-            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/isb_box.go ISBBoxEscape',
+            'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/isb_box.go ISBBoxEscapeWith · kernel/mentor/mtf_forming15.go advance15mBox',
           range: 'close / body',
-          systemDefault: 'body',
+          systemDefault: 'close',
           recommended:
-            'body — D4.1 p1 @20:52–21:02; knob rule (a): course, no ruling against.',
-          whenToTouch: 'Rarely — close only to compare with the pre-#25 test.',
+            'close — D4.1-R34 p1 @20:36–21:03 (a close-only test satisfies every sentence of it; the body test rejects the first).',
+          whenToTouch: 'Rarely — body only to restore the #25–#60 test.',
           perSession: 'No.',
         },
         {
@@ -1614,6 +1641,58 @@ export const mentor: GuideSection = {
           systemDefault: 'pullback',
           recommended: 'pullback — D2.2 p3 @08:25–09:25.',
           whenToTouch: 'Rarely — signal only to restore the pre-#61 check.',
+          perSession: 'No.',
+        },
+        {
+          label: '5m ISB box: newest inside bar',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (m466 G28 D4.1-R37 + G32 D4.2-R10). "cái nến inside bar nào gần với thời điểm đó nhất, bọc lại cho em" (box the inside-bar candle NEAREST in time) [D4.1 p1 @22:31–22:49]. newest (default) = while a 5m ISB rest box stands, a NEWER closed 5m inside bar replaces it (counted isb_5m_box_replaced). When the newer one points the OTHER way it is counted isb_5m_box_replaced_opposite and, under a standing 15m box of the first direction, the 15m/5m conflict refuses every setup (isb_tf_conflict*) — "messed up… đừng trade. Đợi nó thoát cả luôn" [D4.2 p1 @05:34–08:33]. Before #61 the first box stood until it escaped and hid every newer 5m inside bar. first = the pre-#61 read.',
+          trader: 'newest — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (FiveMinBoxSource) · kernel/mentor/eval.go Tick (the R5 5m box)',
+          range: 'newest / first',
+          systemDefault: 'newest',
+          recommended: 'newest — D4.1 p1 @22:31–22:49.',
+          whenToTouch: 'Rarely — first only to restore the pre-#61 read.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Break direction lock',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (m466 G21 D4.1-R31/R33 + G29 D4.1-R55). "Break ra phải có setup… nếu nó break đầu trên thì xuất hiện inside bar cho lệnh long hoặc potential high low… còn nếu break đầu dưới thì… inside bar cho lệnh short hoặc potential low high" [D4.1 p1 @18:27–20:33], for "the 5m box, anything — một cái vùng range, failure to go higher/lower, inside-bar box"; "thoát [đầu] nào thì mình trade [đầu] đó" [D4.1 p1 @07:47–08:07]. ON (default): a BREAK — an FTGH/FTGL box’s first body escape, or a 5m/15m/30m ISB rest box’s 1m-close escape — sets a lock to the break side. While it stands every intraday entry on the OTHER side (ISB, reverse ISB, PHL/PLH level and rolling rungs, box returns) is refused break_counter_setup. It clears when a 1m candle closes back through the broken edge (the failed break, D4.1-R30 "bull flag đi lên xong bắn ngược xuống, cũng như không" [D4.1 p1 @17:43–18:29], counted break_lock_failed), on an opposite break (break_lock_flipped) or at the 17:00 CT roll. The break candle itself is never an entry (unchanged). The swing is exempt. Note: a pullback that breaks a 5m inside-bar box DOWN in an uptrend now refuses the rolling buy rungs until a close back above that box (pinned on the D2.2 tape, TestM61BreakLockRefusesRollingRungAfterFiveMinBreakDown).',
+          trader: 'ON — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BreakDirectionLock) · kernel/mentor/break_lock.go advanceBreakLock / courseRangeFilter · kernel/mentor/eval.go Tick',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended: 'ON — D4.1 p1 @18:27–20:33.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Too-small range guard',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (m466 G33 D4.2-R33). "từ đây trên đây có 50-60 điểm, mà cây nến vừa vậy 30-40 điểm… bên trong một cái range nó quá nhỏ đi, đừng bao giờ đụng tới" (50-60 points top to bottom with 30-40-point candles — a range that small, never touch it) [D4.2 p2 @06:16–06:30]. The numbers are the video’s measurement, not ours: the 1m chart 09:44–09:59 spans 61.50 pts with a 33.75 / 34.50-pt candle. ON (default): when the last 15 closed 1m candles span at most 61.50 pts and one of them is at least 30.00 pts, every intraday entry priced inside that range is refused range_too_small_big_candles until a 1m candle CLOSES outside it (counted range_small_set / range_small_cleared). The box ping-pong 50-pt rule is unchanged (it is the same idea for two boxes).',
+          trader: 'ON — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (SmallRangeGuard) · kernel/mentor/range_small.go advanceSmallRange · kernel/mentor/break_lock.go courseRangeFilter',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended: 'ON — D4.2 p2 @06:16–06:30.',
+          whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No.',
+        },
+        {
+          label: 'Mid-range: trade with the rejection',
+          where: 'Strategy → Risk control → Mentor method numbers',
+          what: 'Release #61 (m466 G43 D2.2-R71). "nếu thật sự nó vừa reject FTGH thì về tới đây tôi đánh short xuống tiếp chứ… mắc mớ gì tôi đánh ngược lên? Nó mới reject thì đánh theo hướng nó reject" [D2.2 p3 @14:28–15:58]. ON (default): between the floor box and the ceiling box (where only an inside bar may trade, D2.2-R72), after a 1m candle rejects the ceiling (High at or above its bottom, Close below it) a LONG entry is refused mid_range_against_rejection until a later candle reaches the box below; the mirror for a floor reject refuses SHORT entries until a candle reaches the box above. The newest rejection replaces an older one (counted mid_range_reject_long / _short / _done). Release #61 also fixed the between-two-boxes read itself (G37, no knob): a box’s role is the side of price it is on — an FTGH that escaped up and is now below price is the floor (Uno Reverse, "Kháng cự bị phá → hỗ trợ khi backtest" [D1.3 p1 @12:31–12:58]).',
+          trader: 'ON — the course.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (MidRangeRejectSide) · kernel/mentor/reject_side.go advanceMidRangeReject · kernel/mentor/break_lock.go courseRangeFilter · kernel/mentor/eval.go midRangeBoxed',
+          range: 'true / false',
+          systemDefault: 'true',
+          recommended: 'ON — D2.2 p3 @14:28–15:58.',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
         {

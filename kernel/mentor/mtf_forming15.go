@@ -94,7 +94,10 @@ func formingSuffix(box *ISBBox) string {
 //
 // With the knob OFF no provisional box ever exists, so steps 1 and 3 are inert
 // and the tick is the pre-#60 one.
-func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
+//
+// m466 P1 (G21/G29): it returns the break event of a box that ESCAPED on cur
+// (escaped=false otherwise) so the break lock reads the 15m exit side.
+func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) (ev breakEvent, escaped bool) {
 	e.resolveFormingLatch(cb15)
 	if bx := e.State.ISBBox15m; bx != nil && bx.Provisional && len(cb15) > 0 && cb15[len(cb15)-1].OpenTime >= bx.AtTime {
 		e.State.ISBBox15m = nil
@@ -107,7 +110,8 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
 		}
 	}
 	if e.State.ISBBox15m != nil {
-		if escaped, _ := ISBBoxEscapeWith(*e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode); escaped { // CE-5
+		if esc, dir := ISBBoxEscapeWith(*e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode); esc { // CE-5 (m466 G20: the 1m close by default)
+			ev, escaped = isbBreakEvent(*e.State.ISBBox15m, dir, "isb_15m"), true
 			if e.State.ISBBox15m.Provisional {
 				e.count("isb_15m_forming_escaped")
 				// The bucket a forming-origin latch waits on (already this
@@ -131,6 +135,7 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) {
 				swingCT(cb15[len(cb15)-1].OpenTime), swingCT(bx.AtTime), bx.Dir, bx.Low, bx.High)
 		}
 	}
+	return ev, escaped
 }
 
 // forming15mClosedAsISB reports whether the forming 15m bucket opened at `at`

@@ -273,6 +273,11 @@ func TestM410ISBBoxBanOnTwoMinuteBox(t *testing.T) {
 	fixture := func() *Evaluator {
 		cfg := m410Cfg(true)
 		cfg.RoomMultiple = 0.05
+		// m466 G28 (release #61): with the newest-5m-box source the tape's own
+		// 09:55 5m inside bar (95.50–97.10) replaces the 09:50 box and covers
+		// the return close 97 (box_isb_ban) in the CONTROL too; this pin is the
+		// 2m-drawn box under an ISB box, so it keeps the pre-#61 first-box source.
+		cfg.FiveMinBoxSource = FiveMinBoxFirst
 		e := New(cfg)
 		now := BarCloseInstant(bars[len(bars)-1])
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
@@ -303,7 +308,9 @@ func TestM410ISBBoxBanOnTwoMinuteBox(t *testing.T) {
 		t.Fatalf("control box %+v is not 2m-drawn", b)
 	}
 	banned := fixture()
-	banned.State.ISBBox = &ISBBox{High: 100, Low: 90}
+	// m466 G20 (release #61): the escape is a 1m CLOSE outside — the tape's
+	// 101 close escaped a 100-high box; the box spans every close of the tape.
+	banned.State.ISBBox = &ISBBox{High: 104, Low: 90}
 	if n := run(banned); n != 0 {
 		t.Fatalf("an ISB box over the 2m box's return still emitted %d box entries, want 0", n)
 	}

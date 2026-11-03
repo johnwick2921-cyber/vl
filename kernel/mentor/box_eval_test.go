@@ -718,9 +718,13 @@ func TestBoxEntryBannedInsideISBBox(t *testing.T) {
 		t.Fatalf("ledger = %v, want box_isb_ban counted", e.State.Refusals)
 	}
 
-	// ISB box elsewhere: the entry fires again.
+	// ISB box elsewhere: the entry fires again. m466 (release #61): the box
+	// sits BELOW the return — a box above it (103–105) is escaped DOWN by the
+	// 97 close, and the G21 break lock (D4.1-R31 [D4.1 p1 @18:29–20:33]) then
+	// refuses this LONG return as break_counter_setup. Below, the close escapes
+	// it UP: the lock is long and agrees with the FTGL return.
 	e, bars, now = fixture()
-	e.State.ISBBox = &ISBBox{High: 105, Low: 103}
+	e.State.ISBBox = &ISBBox{High: 92, Low: 90}
 	if got := boxEntries(e.Tick(bars, now)); len(got) != 1 {
 		t.Fatalf("elsewhere-ISB-box tick emitted %d box entries, want 1", len(got))
 	}

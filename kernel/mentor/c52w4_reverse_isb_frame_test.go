@@ -32,6 +32,10 @@ func c52w4Fixture(t *testing.T, curLow, curHigh float64) (*Evaluator, []market.K
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
 	cfg.RoomMultiple = 0.5
+	// m466 G33 (release #61): the synthetic ramp's wide 47-pt red mother inside
+	// a ~50-pt window IS a too-small range for its candles (D4.2-R33); this pin
+	// is the EMA frame, so the guard is off.
+	cfg.SmallRangeGuard = false
 	t0 := time.Date(2026, time.September, 15, 10, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_999, Open: o, High: h, Low: l, Close: c}
