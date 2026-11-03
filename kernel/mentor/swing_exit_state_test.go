@@ -195,6 +195,10 @@ func TestSwingThroughCloseNotSwallowedReal1028(t *testing.T) {
 		mkr(1793227800000, 29618.25, 29660.0, 29616.5, 29655.25),  // 17:50
 	}
 	cfg := DefaultSwingCfg()
+	// m466 P4 (release #61): pins mentor_swing_isb_close_back=required + keep OFF — the strict R24 read this test was written against; the #61 defaults (D5.2-R26 p3 @04:49–05:09, D5.2-R25 p2 @10:23–10:51) are pinned in m61_p4_swing_test.go.
+	// (Under the default the 17:50 inside bar of the 17:45 candle arms LONG
+	// 29,660 — an inside-bar order, stop AT the line; arm 475 still never exists.)
+	m61PreP4Swing(&cfg)
 	s := &SwingState{
 		Line:        29645.53,
 		BucketStart: 1793224800000, // 17:00 CT bucket
@@ -245,6 +249,7 @@ func TestSwingThroughCloseNotSwallowedReal1028(t *testing.T) {
 // invalid, a later opposite-side bar arms nothing.
 func TestSwingThroughCloseNotSwallowedByGuardShort(t *testing.T) {
 	cfg := DefaultSwingCfg()
+	m61PreP4Swing(&cfg) // m466 P4 (release #61): pins mentor_swing_isb_close_back=required + keep OFF — the strict R24 read this test was written against; the #61 defaults (D5.2-R26 p3 @04:49–05:09, D5.2-R25 p2 @10:23–10:51) are pinned in m61_p4_swing_test.go.
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),      // prev: below the line
 		mk5m(t, 15, 5, 5, 10160, 10175, 10155, 10160),  // touch 1, closes back below -> reject (guard set)

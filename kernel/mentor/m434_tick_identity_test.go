@@ -51,6 +51,15 @@ package mentor
 // box or not; a confirmed box makes it real-origin): STATE stream only, 98
 // rows (the forming flag cleared at the confirm); zero intent / note / level /
 // trendline rows. Real-tape replay vs b68db6879: zero entries moved.
+// m466 P4 (release #61, swing D5.2-R26 inside bar without close-back + D5.2-R25
+// inside-bar order kept on close-through, both knobs at the course default):
+// regenerated — 13 intent rows (ALL SWING4H: 10-23 near1 ticks 704/709/714/
+// 734/769/849/964/1204, 10-23 near0 984/999/1139, 10-13 near1 + exec2m 2084 —
+// an inside-bar arm one beat earlier and its BE / hold-close, the later arm it
+// pre-empts), 57 note and 4,078 state rows (the swing refusal ledger + touch
+// window); zero level / trendline rows. Under the pre-#61 knob values the
+// tapes reproduce the previous golden byte for byte —
+// TestM61StrictReadIsThePreP4Golden (testdata/m61_prep4_tick_identity.golden.gz).
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

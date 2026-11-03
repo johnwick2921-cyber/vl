@@ -49,6 +49,7 @@ func w5ShortTape(t *testing.T, candle1, isb market.Kline) []market.Kline {
 // candle's range); the course waits for candle 1 to close back first.
 func TestSwing4hW5ISBNotOnTheCloseBackBar(t *testing.T) {
 	cfg := DefaultSwingCfg()
+	m61PreP4Swing(&cfg) // m466 P4 (release #61): pins mentor_swing_isb_close_back=required + keep OFF — the strict R24 read this test was written against; the #61 defaults (D5.2-R26 p3 @04:49–05:09, D5.2-R25 p2 @10:23–10:51) are pinned in m61_p4_swing_test.go.
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 9950, 9960, 9945, 9955),
 		mk5m(t, 15, 5, 5, 10155, 10220, 10150, 10220),  // through
@@ -145,6 +146,7 @@ func TestSwing4hW5ISBDoesNotRearm(t *testing.T) {
 // -> RED.
 func TestSwing4hW5ISBCandle1MustCloseBack(t *testing.T) {
 	cfg := DefaultSwingCfg()
+	m61PreP4Swing(&cfg)                                   // m466 P4 (release #61): pins mentor_swing_isb_close_back=required + keep OFF — the strict R24 read this test was written against; the #61 defaults (D5.2-R26 p3 @04:49–05:09, D5.2-R25 p2 @10:23–10:51) are pinned in m61_p4_swing_test.go.
 	red := mk5m(t, 15, 5, 10, 10200, 10205, 10150, 10180) // RED but closes ABOVE the 10168.16 line
 	isb := mk5m(t, 15, 5, 15, 10175, 10176, 10160, 10162) // inside red; its own close is back below the line
 	s := &SwingState{}

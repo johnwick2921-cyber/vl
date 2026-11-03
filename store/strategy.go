@@ -2361,6 +2361,27 @@ type RiskControlConfig struct {
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
 	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
+	// m466 P4 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found") — the SWING4H fidelity knobs. Resolved ONLY in
+	// trader/mentor_course_exits.go; an unknown value fails closed to the
+	// course default and is counted.
+	//   MentorSwingISBCloseBack — "" → not_required (G63 D5.2-R26): after an
+	//        invalid cross the 5m inside bar alone is the setup, even while price
+	//        still closes beyond the line ("chị vô đúng mà… đợi đóng ngược lại
+	//        cũng được nhưng hơi lâu" [D5.2 p3 @04:49–05:09]); required = the
+	//        pre-#61 candle-1 + inside-bar close back.
+	//   MentorSwingISBKeep — nil → ON (G66 D5.2-R25): a resting INSIDE-BAR order
+	//        survives a later 5m close through the line ("Để cái cây inside bar
+	//        này cho em" [D5.2 p2 @10:23–10:51]); false = the pre-#61 cancel. The
+	//        REJECT order is always cancelled (R22).
+	//   MentorSwingRunnerTP — "" → none (G65 D5.2-R6): the swing runner carries
+	//        no take-profit — it is held by the 4h ("em gồng theo khung 4 giờ"
+	//        [D5.2 p1 @05:40–06:14]); the bracket's TP is parked 1,000 pts out
+	//        (the AddOn's OCO needs one); capped = the pre-#61 max(100, 2 × the
+	//        first-target distance).
+	MentorSwingISBCloseBack string `json:"mentor_swing_isb_close_back,omitempty"`
+	MentorSwingISBKeep      *bool  `json:"mentor_swing_isb_keep,omitempty"`
+	MentorSwingRunnerTP     string `json:"mentor_swing_runner_tp,omitempty"`
 
 	// m465 P4 (release #60, owner order 2026-11-02 "fix everything the video
 	// check found"). Resolved ONLY in trader/mentor_resonance_raw.go.

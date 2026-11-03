@@ -94,6 +94,10 @@ func TestRV59RejectOnTheClosingBarIsNamedCandleClosed(t *testing.T) {
 // swing_level_invalid → RED.
 func TestRV59InsideBarAfterACancelledInsideBarArms(t *testing.T) {
 	cfg := DefaultSwingCfg()
+	// m466 P4 (release #61): the R31 cancel of an inside-bar order is the
+	// mentor_swing_isb_keep OFF path now — keep ON (the default, D5.2-R25 p2
+	// @10:23–10:51) leaves the 05:15 order resting and the 05:25 bar fills it.
+	cfg.ISBCancelOnCloseThrough = true
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 10200, 10210, 10195, 10200),  // prev: above → support
 		mk5m(t, 15, 5, 5, 10190, 10192, 10160, 10150),  // touch, closes THROUGH → invalid

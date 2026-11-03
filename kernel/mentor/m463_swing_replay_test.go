@@ -32,6 +32,12 @@ const (
 	m463Bucket1700 = int64(1793224800000) // 2026-10-28 17:00 CT
 )
 
+// m466 P4 (release #61): every m463 replay pin below runs m61PreP4 — the
+// pre-#61 swing ISB knobs (mentor_swing_isb_close_back=required, keep OFF),
+// the strict R24 read these real-trade assertions were written against. The
+// #61 defaults on this same tape are pinned in m61_p4_swing_test.go
+// (TestM61SwingReplay1028Default).
+
 type m463Event struct {
 	At     int64 // ms, the tick's now
 	Intent Intent
@@ -172,7 +178,7 @@ func (r m463ReplayResult) noteHas(subs ...string) bool {
 // TestM463ReplayLineParity — the replay folds the same 4h EMA34 the live bot
 // used for every bucket of the window (rows 481/482, 487, 488).
 func TestM463ReplayLineParity(t *testing.T) {
-	r := m463Replay(t, nil)
+	r := m463Replay(t, m61PreP4)
 	for _, c := range []struct {
 		bucket int64
 		want   float64
@@ -204,7 +210,7 @@ func TestM463ReplayLineParity(t *testing.T) {
 //     armed: since rv59 the 19:00 inside bar is the level's trade and 19:05 is
 //     its fill bar (below).
 func TestM463ReplayTrades707_709_710Refused(t *testing.T) {
-	r := m463Replay(t, nil)
+	r := m463Replay(t, m61PreP4)
 	if in, ok := r.entryAt(1793227200000); ok {
 		t.Fatalf("trade 707 (arm 475, 17:40 short) armed: %+v\n%s", in, r.dump())
 	}
@@ -243,7 +249,7 @@ func TestM463ReplayTrades707_709_710Refused(t *testing.T) {
 // 90.22 pts away: above the 90-pt ceiling → "đừng vô" (D5.2-R31), named
 // swing_max_stop. HEAD before m463 armed it.
 func TestM463ReplayISBNinetyPlusRefused(t *testing.T) {
-	r := m463Replay(t, nil)
+	r := m463Replay(t, m61PreP4)
 	if in, ok := r.entryAt(1793229000000); ok {
 		t.Fatalf("the 18:10 inside bar with a 90.22-pt stop armed: %+v\n%s", in, r.dump())
 	}
@@ -260,7 +266,7 @@ func TestM463ReplayISBNinetyPlusRefused(t *testing.T) {
 // not the 5m trend (D5.2-R7/R35 — "4 giờ đụng resistance thì mình đánh xuống"
 // mirrored: price above the 4H EMA = support, long). m463 keeps it.
 func TestM463ReplayTrade715StillTrades(t *testing.T) {
-	r := m463Replay(t, nil)
+	r := m463Replay(t, m61PreP4)
 	in, ok := r.entryAt(1793256600000)
 	if !ok {
 		t.Fatalf("trade 715's inside bar (arm 487) must still arm\n%s", r.dump())
@@ -272,7 +278,7 @@ func TestM463ReplayTrade715StillTrades(t *testing.T) {
 
 // TestM463ReplayDump prints the whole replay (go test -run TestM463ReplayDump -v).
 func TestM463ReplayDump(t *testing.T) {
-	r := m463Replay(t, nil)
+	r := m463Replay(t, m61PreP4)
 	t.Logf("lines: 17:00 %.6f | 21:00 %.6f | 01:00 %.6f | 05:00 %.6f",
 		r.Lines[m463Bucket1700], r.Lines[m463Bucket1700+4*3600_000], r.Lines[m463Bucket1700+8*3600_000], r.Lines[m463Bucket1700+12*3600_000])
 	t.Logf("\n%s", r.dump())

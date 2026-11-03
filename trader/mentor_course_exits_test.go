@@ -185,7 +185,9 @@ func TestCX2SwingRunnerSplitsAtTheFirstTarget(t *testing.T) {
 		t.Fatalf("knob OFF: today's single bracket at the first target; got leg1=%v target %.2f", r.Leg1Qty, r.TargetPx)
 	}
 	// ON, 2 contracts: leg 1 = 1 at the first target, the runner beyond.
-	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true)}})
+	// m466 P4: the runner's TP cap is mentor_swing_runner_tp=capped now (the
+	// default none parks it 1,000 out — TestM61SwingRunnerNoTP).
+	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true), MentorSwingRunnerTP: "capped"}})
 	at2.mentorArmIntent(in, mentorSizeChoice{Contracts: 2, Tier: "swing4h", Why: "test"}, 1000, 1100, "swing", 0)
 	r := read(st2)
 	if r.Leg1Qty == nil || *r.Leg1Qty != 1 || r.Leg1TP != in.Target {

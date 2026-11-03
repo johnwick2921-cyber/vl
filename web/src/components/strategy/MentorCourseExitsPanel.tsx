@@ -19,6 +19,7 @@ export type CourseExitsBoolKey =
   | 'mentor_box_fresh_rth_pair'
   | 'mentor_resonance_raw_isb'
   | 'mentor_2m_reduce_size'
+  | 'mentor_swing_isb_keep'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -28,8 +29,12 @@ export type CourseExitsNumKey =
   | 'mentor_swing_max_stop_pts'
   | 'mentor_news_read_lead_min'
 
-// m466 P3 (release #61): the two string-enum knobs rendered from ENUMS below.
-export type CourseExitsEnumKey = 'mentor_open5m_break' | 'mentor_news_wait_mode'
+// m466 P3 + P4 (release #61): the string-enum knobs rendered from ENUMS below.
+export type CourseExitsEnumKey =
+  | 'mentor_open5m_break'
+  | 'mentor_news_wait_mode'
+  | 'mentor_swing_isb_close_back'
+  | 'mentor_swing_runner_tp'
 
 export type CourseExitsKey =
   | CourseExitsBoolKey
@@ -72,6 +77,15 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_open5m_break: '1m_close',
   mentor_news_wait_mode: 'both',
   mentor_news_read_lead_min: 30,
+  // m466 P4 (release #61, swing D5.2): G63 R26 — the inside bar alone after an
+  // invalid cross ("đợi đóng ngược lại cũng được nhưng hơi lâu" [D5.2 p3
+  // @04:49–05:09]); G66 R25 — the inside-bar order survives a close through
+  // ("Để cái cây inside bar này cho em" [D5.2 p2 @10:23–10:51]); G65 R6 — the
+  // runner has no TP, held by the 4h ("gồng theo khung 4 giờ" [D5.2 p1
+  // @05:40–06:14]).
+  mentor_swing_isb_close_back: 'not_required',
+  mentor_swing_isb_keep: true,
+  mentor_swing_runner_tp: 'none',
 } as const
 
 const COPY = {
@@ -168,6 +182,41 @@ const COPY = {
     en: 'band — the entry-to-stop band only (pre-#60)',
     es: 'band — solo la banda entrada-stop (antes de #60)',
   },
+  mentor_swing_isb_keep: {
+    zh: 'SWING：inside bar 挂单在 5 分钟收盘穿线后仍保留（课程默认）',
+    en: 'SWING: the inside-bar order survives a later 5m close through the line (the course default)',
+    es: 'SWING: la orden del inside bar sobrevive a un cierre de 5m a través de la línea (el curso por defecto)',
+  },
+  mentor_swing_isb_close_back: {
+    zh: 'SWING：失效后的 inside bar 是否需要收回线内',
+    en: 'SWING: does the inside bar after an invalid cross need a close back?',
+    es: 'SWING: ¿el inside bar tras un cruce inválido necesita cerrar de vuelta?',
+  },
+  not_required: {
+    zh: 'not_required — 只要 inside bar 即可（默认，课程）',
+    en: 'not_required — the inside bar alone (default, the course)',
+    es: 'not_required — basta el inside bar (por defecto, el curso)',
+  },
+  required: {
+    zh: 'required — K1 与 inside bar 都需收回（#61 之前）',
+    en: 'required — candle 1 and the inside bar both close back (pre-#61)',
+    es: 'required — la vela 1 y el inside bar cierran de vuelta (antes de #61)',
+  },
+  mentor_swing_runner_tp: {
+    zh: 'SWING：runner 止盈',
+    en: 'SWING: runner take-profit',
+    es: 'SWING: take-profit del runner',
+  },
+  none: {
+    zh: 'none — 无止盈，按 4 小时持有（默认，课程）',
+    en: 'none — no TP, held by the 4h (default, the course)',
+    es: 'none — sin TP, se mantiene por la 4h (por defecto, el curso)',
+  },
+  capped: {
+    zh: 'capped — max(100, 2 × 第一目标距离)（#61 之前）',
+    en: 'capped — max(100, 2 × the first-target distance) (pre-#61)',
+    es: 'capped — max(100, 2 × la distancia al primer objetivo) (antes de #61)',
+  },
   mentor_swing4h_contracts: {
     zh: 'SWING 口数（默认 2；runner 需 ≥ 2）',
     en: 'SWING contracts (default 2; a runner needs ≥ 2)',
@@ -244,6 +293,7 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_box_fresh_rth_pair',
   'mentor_resonance_raw_isb',
   'mentor_2m_reduce_size',
+  'mentor_swing_isb_keep',
 ]
 
 const NUM_KEYS: CourseExitsNumKey[] = [
@@ -259,6 +309,9 @@ const NUM_KEYS: CourseExitsNumKey[] = [
 const ENUMS: { key: CourseExitsEnumKey; options: (keyof typeof COPY)[] }[] = [
   { key: 'mentor_open5m_break', options: ['1m_close', '5m_close'] },
   { key: 'mentor_news_wait_mode', options: ['both', '4h_only'] },
+  // m466 P4 (release #61, swing D5.2-R26 / R6).
+  { key: 'mentor_swing_isb_close_back', options: ['not_required', 'required'] },
+  { key: 'mentor_swing_runner_tp', options: ['none', 'capped'] },
 ]
 
 export type CourseExitsValues = Partial<
@@ -268,6 +321,8 @@ export type CourseExitsValues = Partial<
       mentor_isb_loss_box: string
       mentor_open5m_break: string
       mentor_news_wait_mode: string
+      mentor_swing_isb_close_back: string
+      mentor_swing_runner_tp: string
     }
 >
 
