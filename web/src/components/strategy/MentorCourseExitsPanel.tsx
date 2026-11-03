@@ -29,7 +29,7 @@ export type CourseExitsNumKey =
   | 'mentor_swing_max_stop_pts'
   | 'mentor_news_read_lead_min'
 
-// m466 P3 + P4 (release #61): the string-enum knobs rendered from ENUMS below.
+// m466 P3 + P4 (release #61): the string-enum knobs rendered from ENUM_KEYS below.
 export type CourseExitsEnumKey =
   | 'mentor_open5m_break'
   | 'mentor_news_wait_mode'
@@ -305,14 +305,22 @@ const NUM_KEYS: CourseExitsNumKey[] = [
   'mentor_news_read_lead_min',
 ]
 
-// m466 P3 (release #61): the enum selects; the first option is the default.
-const ENUMS: { key: CourseExitsEnumKey; options: (keyof typeof COPY)[] }[] = [
-  { key: 'mentor_open5m_break', options: ['1m_close', '5m_close'] },
-  { key: 'mentor_news_wait_mode', options: ['both', '4h_only'] },
-  // m466 P4 (release #61, swing D5.2-R26 / R6).
-  { key: 'mentor_swing_isb_close_back', options: ['not_required', 'required'] },
-  { key: 'mentor_swing_runner_tp', options: ['none', 'capped'] },
+// m466 P3 + P4 (release #61): the enum selects; the first option is the
+// default. One key per line (guideTruth T16 reads the Studio controls from
+// these lines).
+const ENUM_KEYS: CourseExitsEnumKey[] = [
+  'mentor_open5m_break',
+  'mentor_news_wait_mode',
+  'mentor_swing_isb_close_back',
+  'mentor_swing_runner_tp',
 ]
+
+const ENUM_OPTIONS: Record<CourseExitsEnumKey, (keyof typeof COPY)[]> = {
+  mentor_open5m_break: ['1m_close', '5m_close'], // P3 G55 D4.4-R40
+  mentor_news_wait_mode: ['both', '4h_only'], // P3 G56 D4.4-R22
+  mentor_swing_isb_close_back: ['not_required', 'required'], // P4 G63 D5.2-R26
+  mentor_swing_runner_tp: ['none', 'capped'], // P4 G65 D5.2-R6
+}
 
 export type CourseExitsValues = Partial<
   Record<CourseExitsBoolKey, boolean> &
@@ -447,7 +455,7 @@ export function MentorCourseExitsPanel({
           </select>
           <EffectiveLine knob={eff?.('mentor_isb_loss_box')} />
         </label>
-        {ENUMS.map(({ key, options }) => (
+        {ENUM_KEYS.map((key) => (
           <label
             key={key}
             className="text-xs flex flex-col gap-1"
@@ -467,8 +475,8 @@ export function MentorCourseExitsPanel({
               className="px-2 py-1 rounded"
               style={box}
             >
-              <option value="">{`${tr(COPY.deflt, language)}: ${tr(COPY[options[0]], language)}`}</option>
-              {options.map((o) => (
+              <option value="">{`${tr(COPY.deflt, language)}: ${tr(COPY[ENUM_OPTIONS[key][0]], language)}`}</option>
+              {ENUM_OPTIONS[key].map((o) => (
                 <option key={o} value={o}>
                   {tr(COPY[o], language)}
                 </option>
