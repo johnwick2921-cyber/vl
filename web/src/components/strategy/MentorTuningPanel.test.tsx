@@ -118,6 +118,11 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['near_box_between_exempt', 'on', true],
   ['phl_flat_low', 'strict', 'strict'],
   ['isb_reverse_touch', 'isb_candle', 'isb_candle'],
+  // m466 P2 (release #61) levels-and-touches knobs
+  ['uno_key_levels', 'off', 'off'],
+  ['session_open_levels', 'off', 'off'],
+  ['level_arm_line_cancel', 'placement_price', 'placement_price'],
+  ['phl_pullback_low', 'signal', 'signal'],
 ]
 
 it.each(COURSE_ENTRY_WRITES)(
@@ -203,5 +208,9 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     near_box_between_exempt: false, // m465 D3.2-R29/R30
     phl_flat_low: 'flat_near', // m465 D2.2-R64
     isb_reverse_touch: 'pair', // m465 D5.4-R7
+    uno_key_levels: 'on', // m466 P2 G2 D1.3-R21
+    session_open_levels: 'on', // m466 P2 G10/G11 D3.1-R26/R20
+    level_arm_line_cancel: 'current_line', // m466 P2 G17 D2.3-R34
+    phl_pullback_low: 'pullback', // m466 P2 G41 D2.2-R59
   })
 })

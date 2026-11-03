@@ -146,6 +146,10 @@ type State struct {
 	// knock", D1.3 p1 @10:32–11:43). Rebuilt by replaying the touch loop.
 	Visits    map[string]int `json:"visits,omitempty"`
 	VisitsDay string         `json:"visits_day,omitempty"`
+	// UnoFlipped — m466 P2 (G2 D1.3-R21): the KEY levels that held today and
+	// then broke, so their role flipped once (Uno Reverse, uno_key_level.go).
+	// Reset with Visits at the day roll; a 2nd wrong-way close is ISB-only.
+	UnoFlipped map[string]bool `json:"uno_flipped,omitempty"`
 	// VisitCapRefused — B23 visit-cap refusal ONCE per visit (CTO 01:19Z,
 	// DS-105): the PHL/PLH reject path re-reads a capped rejected level every
 	// tick, so the per-tick e.refuse inflated level_visit_cap (12,375 for a
@@ -580,8 +584,9 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 	var out []Level
 	out = append(out, KeyLevels(bars, cfg)...)
 	out = append(out, EMALevelsAt(bars, cfg, now)...)
-	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return withFlatSR(out, bars, cfg, now) // m428 R2: flat swing pairs are support/resistance levels
+	out = append(out, swingOldExtremeLevelsWith(bars, now, sessionOpenPivots(bars, cfg, now))...) // m466 P2 G10: + the session-open wick pivots
+	out = append(out, gapEdgeLevels(bars, cfg, now)...)                                           // m466 P2 G11: the unfilled gap far edges
+	return withFlatSR(out, bars, cfg, now)                                                        // m428 R2: flat swing pairs are support/resistance levels
 }
 
 // swingOldExtremeLevels is the old-high/low set — the ONE source the trading
@@ -610,10 +615,19 @@ func Levels(bars []market.Kline, cfg Config, now int64) []Level {
 // 12 raw pivots (3 highs + 3 lows per TF), duplicated and mostly broken: on
 // 10-13 the ISB "at an old high/low" zone covered 183/390 RTH candles.
 func swingOldExtremeLevels(bars []market.Kline, now int64) []Level {
+	return swingOldExtremeLevelsWith(bars, now, nil)
+}
+
+// swingOldExtremeLevelsWith is swingOldExtremeLevels with extra pivot
+// candidates — m466 P2 (G10 D3.1-R26): the session-open candle's wick
+// (sessionOpenPivots) joins the fractal pivots; the same unbroken test and
+// nearest selection decide.
+func swingOldExtremeLevelsWith(bars []market.Kline, now int64, extra []kernel.DetectedLevel) []Level {
 	if len(bars) < 2 {
 		return nil
 	}
 	swings := kernel.SwingPointLevelsAll(bars, time.UnixMilli(swingPointNow(now))) // N7: unbroken test over the WHOLE lookback, then the nearest
+	swings = append(swings, extra...)
 	if len(swings) == 0 {
 		return nil
 	}
@@ -712,6 +726,12 @@ func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 			if isBoxEdge(lvl) {
 				continue
 			}
+			// m466 P2 (G2 D1.3-R21): a key level that HELD today and now breaks
+			// flips its role once (Uno Reverse) instead of turning ISB-only —
+			// level_broken_uno; the CancelArm above still cancels its order.
+			if e.unoKeyLevelBreak(lvl) {
+				continue
+			}
 			// MENTOR-NY item 5: the first touch closed on the wrong side → the
 			// level is invalid for PHL/PLH [D5.2 p1 @19:51–20:25]. Course-
 			// faithful but a large hidden suppressor (RTH 10-12 75, 10-13 65,
@@ -796,7 +816,7 @@ func (e *Evaluator) conflictArmCancels() []Intent {
 	return out
 }
 
-func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64) []Intent {
+func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now int64, levels []Level, lines []Trendline) []Intent {
 	if len(e.State.LevelArms) == 0 {
 		return nil
 	}
@@ -825,9 +845,24 @@ func (e *Evaluator) levelArmCancels(bars []market.Kline, cur market.Kline, now i
 				chk = market.Kline{} // no closed candle of that frame yet: nothing can close through
 			}
 		}
+		// m466 P2 (G17 D2.3-R34): a MOVING line's order reads the line's
+		// CURRENT price (trendline: priceAt the checked close; EMA 34: this
+		// tick's line); a trendline gone from the live set cancels its order.
+		linePx, gone := levelArmLinePrice(e.Cfg, arm, key, levels, lines, chk.CloseTime)
 		if chk.CloseTime > arm.PlacedAt {
-			through = arm.Side == SideLong && chk.Close < arm.LevelPrice ||
-				arm.Side == SideShort && chk.Close > arm.LevelPrice
+			through = arm.Side == SideLong && chk.Close < linePx ||
+				arm.Side == SideShort && chk.Close > linePx
+			if through && linePx != arm.LevelPrice {
+				frozen := arm.Side == SideLong && chk.Close < arm.LevelPrice ||
+					arm.Side == SideShort && chk.Close > arm.LevelPrice
+				if !frozen {
+					e.count("level_arm_cancel_current_line") // the frozen placement price would have kept it resting
+				}
+			}
+		}
+		if gone && !through {
+			e.count("level_arm_line_gone")
+			through = true
 		}
 		// FIX-LEVEL-WINDOW (owner order 2026-10-13 ~21:2x CT): a level order
 		// RESTS until ITS OWN 15:00 CT expiry — LevelArmExpiry(arm.PlacedAt),
@@ -2116,6 +2151,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.State.Visits = map[string]int{}
 		e.State.VisitsDay = e.State.Day.Key
 		e.State.PHLRefusedVisit = nil // r22: a new day re-arms the once-per-visit counters
+		e.State.UnoFlipped = nil      // m466 P2 (G2): one Uno flip per level per session day
 		// item 22: a KEY level's ISB-only invalidity is scoped to the session
 		// day (the course never makes a level dead for good [D5.2 p2 @20:48]).
 		// The moving lines reset on visit departure in the touch loop below,
@@ -2313,6 +2349,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		tp, tc := prev, cur
 		if execTFMin > 1 {
 			tp, tc = execPrev, execCur
+		}
+		// m466 P2 (G2 D1.3-R21): a held visit whose later candle closes THROUGH
+		// the key level flips it (Uno Reverse); that candle is no new touch.
+		if e.unoSameVisitBreak(&tr, lvl, tc) {
+			continue
 		}
 		intents := visitTick(&tr, lvl, tp, tc, e.Cfg)
 		if !wasNone && tr.Outcome == TouchNone {
@@ -3051,6 +3092,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse(name)
 				continue
 			}
+			// m466 P2 (G41 D2.2-R59): the WHOLE pullback's low (old high →
+			// signal candle) must stay above the prior low — mirror PLH.
+			if name := phlPullbackRefusal(e.Cfg, side, bars, ex.idx, phlRefIdx(bars, tr.RefBar), tr.RefBar, prior); name != "" {
+				e.refuse(name)
+				continue
+			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's
 			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). C52 W1 B9: the
 			// MTF read no longer takes an entry price (no trigger conjunct).
@@ -3135,7 +3182,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// B6 cancel sweep: a resting level order dies when a later candle
 	// closes through its level, or at its own 15:00 CT expiry
 	// (LevelArmExpiry(PlacedAt)).
-	out = append(out, e.levelArmCancels(bars, cur, now)...)
+	out = append(out, e.levelArmCancels(bars, cur, now, levels, trendlines)...) // m466 P2 G17: this tick's live lines
 
 	// §4.1 box trades (BOX RULING R1 2026-10-03, ONE path = DS-106's
 	// boxEntryIntent — CTO 12:38:50Z): every return visit of every live box is
@@ -3861,8 +3908,9 @@ func (e *Evaluator) seededLevels(bars []market.Kline, now int64) []Level {
 	out = append(out, e.State.SeedLevels...)
 	out = append(out, Level{Key: string(KindEMA34), Kind: KindEMA34, Price: ema34})
 	out = append(out, Level{Key: string(KindEMA9), Kind: KindEMA9, Price: ema9})
-	out = append(out, swingOldExtremeLevels(bars, now)...)
-	return withFlatSR(out, bars, e.Cfg, now) // m428 R2
+	out = append(out, swingOldExtremeLevelsWith(bars, now, sessionOpenPivots(bars, e.Cfg, now))...) // m466 P2 G10
+	out = append(out, gapEdgeLevels(bars, e.Cfg, now)...)                                           // m466 P2 G11
+	return withFlatSR(out, bars, e.Cfg, now)                                                        // m428 R2
 }
 
 // resetEMAVisitsOnFrameSwitch starts a FRESH visit for the EMA 9 / EMA 34 /

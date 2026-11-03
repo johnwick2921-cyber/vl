@@ -143,6 +143,11 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			NearBoxBetweenExempt: false,                       // D3.2-R29/R30
 			PHLFlatLow:           mentor.PHLFlatLowNear,       // D2.2-R64
 			ISBReverseTouch:      mentor.ISBReverseTouchPair,  // D5.4-R7
+			// m466 P2 (release #61): the course defaults.
+			UnoKeyLevels:       mentor.UnoKeyLevelsOn,            // G2 D1.3-R21
+			SessionOpenLevels:  mentor.SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20
+			LevelArmLineCancel: mentor.LevelArmLineCancelCurrent, // G17 D2.3-R34
+			PHLPullbackLow:     mentor.PHLPullbackLowPullback,    // G41 D2.2-R59
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

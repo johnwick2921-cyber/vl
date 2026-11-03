@@ -104,6 +104,14 @@ const (
 	// touched and never a location (the trendline LOCATION stays KindTrendline);
 	// like a key level it is a real obstacle for the room rule.
 	KindTrendlineTarget LevelKind = "trendline_target"
+	// KindGapEdge is the FAR edge of an unfilled session-open gap (m466 P2,
+	// G11 D3.1-R20): the prior session's last close. "Cái cạnh dưới của cái
+	// gap, lúc nào nó cũng sẽ là resistance… Level là resistance" [D3.1 p1
+	// @09:41–09:51]. A LOCATION, a target and an obstacle like a key level; it
+	// stands until a 1m candle trades through it (the gap filled — "có thể
+	// đợi vài ngày" R16). No gap-fill entry exists ("em không đánh theo gap",
+	// R23). Keys "gap_edge:<price>@<session open ms>".
+	KindGapEdge LevelKind = "gap_edge"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -711,6 +719,37 @@ type Config struct {
 	// (limits.go isbLossRange).
 	ISBLossBox string
 
+	// m466 P2 (release #61) — levels and touches. Every value below has a
+	// knob back to the pre-#61 behaviour (mentor_tuning.*).
+	//
+	// UnoKeyLevels — G2 D1.3-R21: "Hỗ trợ bị phá → sẽ thành kháng cự khi
+	// backtest" [D1.3 p1 @12:31–12:58]. "on" (default): a KEY level that HELD
+	// today (≥1 reject visit) and then breaks FLIPS its role once
+	// (level_broken_uno) instead of turning ISB-only; the backtest reject from
+	// the other side trades through the normal gates. A second wrong-way close
+	// after the flip, or a wrong-way FIRST visit, is ISB-only as before
+	// [D5.2 p1 @19:44–20:25]. "off": the pre-#61 ISB-only on any break.
+	UnoKeyLevels string
+	// SessionOpenLevels — G10 D3.1-R26 + G11 D3.1-R20: "cái râu này nó sẽ là
+	// cái đỉnh" [D3.1 p1 @11:58–12:22] (the session's first 5m candle wick is
+	// an old high/low with no left-neighbour test) and "Cái cạnh dưới của cái
+	// gap, lúc nào nó cũng sẽ là resistance… Level là resistance" [@09:41–09:51]
+	// (the gap's far edge = the prior session's last close is a level while
+	// unfilled). "on" (default) | "off" (neither).
+	SessionOpenLevels string
+	// LevelArmLineCancel — G17 D2.3-R34: "Mình làm gì? Mình cancel"
+	// [D2.3 p1 @23:35–24:03] — a resting order on a MOVING line (trendline,
+	// EMA 34) is cancelled by a close through the line's CURRENT price, and
+	// a trendline that left the set cancels its order. "current_line"
+	// (default) | "placement_price" (the pre-#61 frozen placement price).
+	LevelArmLineCancel string
+	// PHLPullbackLow — G41 D2.2-R59: "đang đi kiếm một cái lệnh có đáy cao hơn
+	// đáy trước đó" [D2.2 p3 @08:25–09:25]: "pullback" (default) = the lowest
+	// low of the WHOLE pullback (old high → signal candle) must stay above the
+	// prior low (phl_pullback_lower_low; mirror plh_pullback_higher_high);
+	// "signal" = the pre-#61 signal-candle-only comparison.
+	PHLPullbackLow string
+
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
 	// delivered by the trader's fill callback), never from the simulated
@@ -820,6 +859,11 @@ func DefaultConfig() Config {
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
+		// m466 P2 (release #61): levels and touches.
+		UnoKeyLevels:       UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
+		SessionOpenLevels:  SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
+		LevelArmLineCancel: LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
+		PHLPullbackLow:     PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
 	}
 }
 
@@ -850,6 +894,19 @@ const (
 	PHLFlatLowStrict         = "strict"
 	ISBReverseTouchPair      = "pair"
 	ISBReverseTouchISBCandle = "isb_candle"
+)
+
+// m466 P2 (release #61) knob values — the ONE spelling the kernel, the trader
+// resolver and the guide share.
+const (
+	UnoKeyLevelsOn              = "on"
+	UnoKeyLevelsOff             = "off"
+	SessionOpenLevelsOn         = "on"
+	SessionOpenLevelsOff        = "off"
+	LevelArmLineCancelCurrent   = "current_line"
+	LevelArmLineCancelPlacement = "placement_price"
+	PHLPullbackLowPullback      = "pullback"
+	PHLPullbackLowSignal        = "signal"
 )
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is

@@ -447,6 +447,19 @@ export interface MentorTuning {
   // D5.4-R7 ['pair'] — reverse-ISB EMA 9 touch reads the mother + ISB group
   // [D5.4 p1 @03:35–03:46]
   isb_reverse_touch?: 'pair' | 'isb_candle'
+  // m466 P2 (release #61) — levels and touches; unset = the course.
+  // G2 D1.3-R21 ['on'] — a key level that held today and then breaks flips its
+  // role once (Uno Reverse); the backtest reject trades [D1.3 p1 @12:31–12:58]
+  uno_key_levels?: 'on' | 'off'
+  // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
+  // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
+  session_open_levels?: 'on' | 'off'
+  // G17 D2.3-R34 ['current_line'] — a trendline / EMA 34 order cancels on a
+  // close through the line's CURRENT price [D2.3 p1 @23:35–24:03]
+  level_arm_line_cancel?: 'current_line' | 'placement_price'
+  // G41 D2.2-R59 ['pullback'] — the whole pullback's low must hold above the
+  // prior low [D2.2 p3 @08:25–09:25]
+  phl_pullback_low?: 'pullback' | 'signal'
 }
 
 export interface RiskControlConfig {
