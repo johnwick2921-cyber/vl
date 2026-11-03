@@ -60,6 +60,18 @@ package mentor
 // window); zero level / trendline rows. Under the pre-#61 knob values the
 // tapes reproduce the previous golden byte for byte —
 // TestM61StrictReadIsThePreP4Golden (testdata/m61_prep4_tick_identity.golden.gz).
+// Release #61 INTEGRATION (fix/m466-checklist-gaps; merge order P3 → P4 → P2 →
+// P1 on #60 cc264a9b4): regenerated ONCE at the merged head — vs the #60
+// golden 49 intent / 1,102 note / 90 level / 5,215 state rows moved, zero
+// trendline rows. Every moved intent, note and level row moved in at least
+// one package's own golden, and every moved intent and level row is byte-equal
+// to one package's own row (the 30 note rows that match none are the
+// concatenation of two packages' notes on one tick: P1+P4 on 10-23 swing
+// ticks, P1+P2 on 10-23 1111/1181 and 10-13 2606/2731). With EVERY #61 knob at
+// its pre-#61 value (m466Rel61PreValues + the P1 G37 hook) the four tapes
+// reproduce the #60 golden byte for byte — TestM61PreValuesReproduceThePre61Golden
+// and TestM61StrictReadIsThePreP4Golden (both .gz files = the #60 golden,
+// md5 d257798e5ef27c2f956643ed53d669e8) and TestM462StoredNewsOnlyIsThePreM462Behaviour.
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor
