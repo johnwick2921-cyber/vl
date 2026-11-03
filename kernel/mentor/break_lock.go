@@ -32,6 +32,15 @@ import (
 //     D4.1-R30 [D4.1 p1 @17:43–18:29] "bull flag đi lên xong bắn ngược xuống, cũng
 //     như không" (counted break_lock_failed), by an opposite break
 //     (the lock flips, counted break_lock_flipped), or at the 17:00 CT roll.
+//     A lock set by a PROVISIONAL 15m box (isb_15m_forming) also ends when
+//     that 15m closes as no inside bar (resolveFormingBreakLock, counted
+//     break_lock_forming_released — release #61 review round).
+//   - SCOPE (release #61 review round, setups lens P3): the lock refuses the
+//     entries EMITTED while it stands. An opposite-side stop order that was
+//     already resting before the break is not cancelled by the lock — the
+//     same as every other late filter (unregisterDroppedArms leaves arms held
+//     at the start of the Tick alone); the setup's own invalidation (level
+//     broken, box escaped, expiry) still cancels it.
 //
 // Knob risk_control.mentor_tuning.mentor_break_direction_lock (default ON);
 // OFF never builds the state, so the JSON is the pre-#61 one.
@@ -44,6 +53,10 @@ type BreakLock struct {
 	At   int64   `json:"at"`   // the break candle's OpenTime (1m)
 	Src  string  `json:"src"`  // ftgh | ftgl | isb_5m | isb_15m | isb_15m_forming | isb_30m
 	Day  string  `json:"day"`  // the 17:00 CT trading day the lock belongs to
+	// Bucket — an isb_15m_forming lock only: the OpenTime of the forming 15m
+	// bucket its provisional box rests on. At that 15m's close the lock is
+	// confirmed (Src isb_15m, Bucket 0) or released (resolveFormingBreakLock).
+	Bucket int64 `json:"bucket,omitempty"`
 }
 
 // breakEvent is one box break seen on the current closed 1m candle.
@@ -51,14 +64,44 @@ type breakEvent struct {
 	Side   Side
 	Lo, Hi float64
 	Src    string
+	Bucket int64 // a provisional (forming) 15m box: its forming bucket's OpenTime
 }
 
 // isbBreakEvent is the break event of an ISB rest box that escaped toward dir.
 func isbBreakEvent(box ISBBox, dir Side, src string) breakEvent {
+	var bucket int64
 	if box.Provisional {
 		src += "_forming"
+		bucket = box.AtTime
 	}
-	return breakEvent{Side: dir, Lo: box.Low, Hi: box.High, Src: src}
+	return breakEvent{Side: dir, Lo: box.Low, Hi: box.High, Src: src, Bucket: bucket}
+}
+
+// resolveFormingBreakLock settles a lock set by a PROVISIONAL 15m box's escape
+// once that box's forming 15m bucket has CLOSED (release #61 review round,
+// mtf-loss lens P3) — the break-lock twin of resolveFormingLatch. D4.2-R9
+// [D4.2 p1 @05:23–05:33] a 15m candle is confirmed only at its close; D4.2-R11 [D4.2 p1
+// @07:20–08:15] the 5m and the 15m close together. So at the close:
+//
+//   - the 15m closed AS an inside bar → the lock rests on a real 15m ISB: kept,
+//     now Src isb_15m (Bucket 0);
+//   - it closed as NO inside bar → there never was a 15m inside bar to break:
+//     the lock is released, counted break_lock_forming_released, noted.
+func (e *Evaluator) resolveFormingBreakLock(cb15 []market.Kline) {
+	l := e.State.BreakLock
+	if l == nil || l.Bucket == 0 || len(cb15) == 0 || cb15[len(cb15)-1].OpenTime < l.Bucket {
+		return
+	}
+	if forming15mClosedAsISB(cb15, l.Bucket) {
+		c := *l
+		c.Src, c.Bucket = "isb_15m", 0
+		e.State.BreakLock = &c
+		return
+	}
+	e.State.BreakLock = nil
+	e.count("break_lock_forming_released")
+	e.note("break lock %s (isb_15m_forming %.2f–%.2f) released: the 15m candle at %s CT closed as no inside bar — the provisional box it broke never existed [D4.2-R11 p1 @07:20–08:15]",
+		l.Side, l.Lo, l.Hi, swingCT(l.Bucket))
 }
 
 // boxBreakEvents reports the FTGH/FTGL boxes whose FIRST body escape
@@ -124,7 +167,7 @@ func (e *Evaluator) advanceBreakLock(cur market.Kline, now int64, events []break
 		if prev != nil && prev.Side != ev.Side {
 			e.count("break_lock_flipped")
 		}
-		e.State.BreakLock = &BreakLock{Side: ev.Side, Lo: ev.Lo, Hi: ev.Hi, At: cur.OpenTime, Src: ev.Src, Day: day}
+		e.State.BreakLock = &BreakLock{Side: ev.Side, Lo: ev.Lo, Hi: ev.Hi, At: cur.OpenTime, Src: ev.Src, Day: day, Bucket: ev.Bucket}
 		e.count("break_lock_set_" + ev.Src)
 		if prev == nil || prev.Side != ev.Side {
 			e.note("break lock %s set: the %s box %.2f–%.2f broke on the 1m close %.2f at %s CT — only %s setups until a close back inside [D4.1-R31/R33 p1 @18:29–20:33; D4.1-R55 @07:47–08:07]",

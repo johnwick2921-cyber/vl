@@ -373,8 +373,9 @@ func TestM61FifteenMinExitSetsSide(t *testing.T) {
 // ── G33 ─────────────────────────────────────────────────────────────────────
 
 // m61p1SmallRange: 15 closed 1m bars inside 28,960.00–29,021.50 (61.50 pts, the
-// D4.2-R33 measurement) with ONE candle of `big` points (33.75 on the video).
-func m61p1SmallRange(top, big float64) []market.Kline {
+// D4.2-R33 measurement) with TWO big candles of `big` and `big2` points (the
+// video measures 33.75 and 34.50 — "cây nến vừa vậy 30-40 điểm").
+func m61p1SmallRange(top, big, big2 float64) []market.Kline {
 	var bars []market.Kline
 	for i := 0; i < 15; i++ {
 		o, h, l, c := 28_990.0, 28_996.0, 28_986.0, 28_992.0
@@ -385,6 +386,8 @@ func m61p1SmallRange(top, big float64) []market.Kline {
 			o, h, l, c = 29_015, top, top-9.5, 29_018
 		case 7:
 			o, h, l, c = 28_990, 29_010, 29_010-big, 29_005
+		case 10:
+			o, h, l, c = 28_990, 29_008, 29_008-big2, 29_000
 		}
 		bars = append(bars, m60p1K(m60p1At(9, 44)+int64(i)*60_000, o, h, l, c))
 	}
@@ -392,14 +395,15 @@ func m61p1SmallRange(top, big float64) []market.Kline {
 }
 
 // TestM61SmallRangeBigCandlesRefused — G33 D4.2-R33 [D4.2 p2 @06:16–06:30]: span
-// 61.50 with a 33.75-pt candle → the long ISB at 29,000 is refused
-// range_too_small_big_candles; span 62.00 → allowed; the largest candle 29.75 →
-// allowed; a closed 1m CLOSE outside (28,955) clears it (D4.1-R34).
+// 61.50 with 33.75- and 34.50-pt candles → the long ISB at 29,000 is refused
+// range_too_small_big_candles; span 62.00 → allowed; only ONE candle >= 30
+// (the other 29.75) → allowed (review round: one outlier is not "the candles");
+// a closed 1m CLOSE outside (28,955) clears it (D4.1-R34).
 func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 	if !DefaultConfig().SmallRangeGuard {
 		t.Fatal("G33: mentor_small_range_guard must default ON")
 	}
-	bars := m61p1SmallRange(29_021.50, 33.75)
+	bars := m61p1SmallRange(29_021.50, 33.75, 34.50)
 	lo, hi, ok := smallRangeWindow(bars)
 	if !ok || lo != 28_960 || hi != 29_021.5 {
 		t.Fatalf("want the too-small range 28,960.00–29,021.50, got %v %v %v", lo, hi, ok)
@@ -413,11 +417,11 @@ func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 	if out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_030)}, nil); !m61p1Has(out, SideLong) {
 		t.Fatal("an entry priced outside the range is not touched")
 	}
-	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_022, 33.75)); ok {
+	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_022, 33.75, 34.50)); ok {
 		t.Fatal("span 62.00 is not the too-small range")
 	}
-	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_021.50, 29.75)); ok {
-		t.Fatal("largest candle 29.75 is under the 30-pt big candle")
+	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_021.50, 29.75, 34.50)); ok {
+		t.Fatal("one candle >= 30 pts (the other 29.75) is not the too-small range")
 	}
 	exit := m60p1K(m60p1At(9, 59), 28_962, 28_963, 28_950, 28_955)
 	e.advanceSmallRange(append(bars, exit))

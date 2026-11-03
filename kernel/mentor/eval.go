@@ -272,9 +272,13 @@ type State struct {
 	// mentor_break_direction_lock is OFF (the JSON is then the pre-#61 one).
 	BreakLock *BreakLock `json:"break_lock,omitempty"`
 	// SmallRange — m466 P1 G33 (range_small.go): the standing too-small range
-	// (15 closed 1m candles inside <= 61.50 pts with one >= 30.00-pt candle);
+	// (15 closed 1m candles inside <= 61.50 pts with two >= 30.00-pt candles);
 	// nil while none stands or the knob mentor_small_range_guard is OFF.
 	SmallRange *SmallRange `json:"small_range,omitempty"`
+	// SmallRangeBreakAt — the OpenTime of the 1m candle that last CLOSED
+	// outside a standing too-small range (release #61 review round): a new
+	// range latches only from a window built wholly after it (D4.1-R34).
+	SmallRangeBreakAt int64 `json:"small_range_break_at,omitempty"`
 	// MidRangeReject — m466 P1 G43 (reject_side.go): the last box-edge
 	// rejection between the FTGL floor and the FTGH ceiling; nil while none
 	// stands or the knob mentor_mid_range_reject_side is OFF.
@@ -1035,6 +1039,14 @@ func triggerBoxZoneFilter(out []Intent, t TriggerLine, boxes []Box) (kept []Inte
 // above, close 30,774.25) is mid-range by both reads of the course and only
 // the side-of-price read keeps it [A, m61 replay]. Bug fix, no knob
 // (midRangeLegacyRole is the test-only pre-#61 hook for the identity pins).
+//
+// Release #61 review round (course lens P3): the side of price is the role
+// only for a box that CAN play it — its native kind, or a box that flipped
+// (Uno: a broken box has served both roles, D1.3-R21). A floor is an FTGL or a
+// flipped box below price; a ceiling is an FTGH or a flipped box above. An
+// UN-flipped FTGH below price was only wicked through (no body escape), so it
+// is no support — two un-flipped FTGH boxes around price are not mid-range
+// (the pre-#61 answer). The flipped and 10-13 cases above are unchanged.
 func midRangeBoxed(boxes []Box, price float64) bool {
 	legacy := midRangeLegacyRole.Load()
 	var floor, ceil bool
@@ -1048,10 +1060,10 @@ func midRangeBoxed(boxes []Box, price float64) bool {
 			}
 			continue
 		}
-		if b.Top < price {
+		if b.Top < price && (b.Kind == FTGL || b.Flipped) {
 			floor = true
 		}
-		if b.Bottom > price {
+		if b.Bottom > price && (b.Kind == FTGH || b.Flipped) {
 			ceil = true
 		}
 	}

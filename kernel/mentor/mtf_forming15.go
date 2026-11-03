@@ -99,6 +99,7 @@ func formingSuffix(box *ISBBox) string {
 // (escaped=false otherwise) so the break lock reads the 15m exit side.
 func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) (ev breakEvent, escaped bool) {
 	e.resolveFormingLatch(cb15)
+	e.resolveFormingBreakLock(cb15) // release #61 review round: a forming lock ends with its bucket
 	if bx := e.State.ISBBox15m; bx != nil && bx.Provisional && len(cb15) > 0 && cb15[len(cb15)-1].OpenTime >= bx.AtTime {
 		e.State.ISBBox15m = nil
 		if forming15mClosedAsISB(cb15, bx.AtTime) {
