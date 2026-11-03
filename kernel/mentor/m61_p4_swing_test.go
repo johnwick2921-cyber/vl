@@ -359,6 +359,8 @@ func TestM61StrictReadIsThePreP4Golden(t *testing.T) {
 	// legacy hook) — m466Rel61PreValues; the golden is the #60 m434 golden.
 	midRangeLegacyRole.Store(true)
 	defer midRangeLegacyRole.Store(false)
+	boxConflictLegacySkip.Store(true) // release #61 review round 2 (no knob): the pre-#61 conflict skip of the box-return walk
+	defer boxConflictLegacySkip.Store(false)
 	var got []string
 	for _, c := range m434Cases() {
 		inner := c.cfg

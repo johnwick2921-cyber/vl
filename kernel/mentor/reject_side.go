@@ -18,7 +18,12 @@ import "vl/market"
 //     refused mid_range_against_rejection (break_lock.go courseRangeFilter).
 //     The box is a ceiling by its EFFECTIVE role (boxEffectiveKind — an FTGL
 //     that escaped down is resistance) or because the candle came at it from
-//     below (Open under the bottom — the side-of-price role of G37).
+//     below (Open under the bottom — the side-of-price role of G37) AND it is
+//     a box that has played the ceiling role: a native FTGH, or a flipped box
+//     (the same test as midRangeBoxed). Release #61 review round 2 (course
+//     lens P3): an un-flipped FTGL hit from below is not a "reject FTGH"
+//     (D2.2-R71) and no longer sets a short-pointing rejection (mirror: an
+//     un-flipped FTGH hit from above sets no long one).
 //   - It ends when a LATER candle reaches a box below the rejected one (Low <=
 //     that box's top): the move the rejection called has arrived. Mirror for a
 //     floor reject (Low <= the floor's top, Close above) → SHORT entries
@@ -64,9 +69,9 @@ func (e *Evaluator) advanceMidRangeReject(cur market.Kline, boxes []Box) {
 		var side Side
 		k := boxEffectiveKind(b)
 		switch {
-		case cur.High >= b.Bottom && cur.Close < b.Bottom && (k == FTGH || cur.Open < b.Bottom):
+		case cur.High >= b.Bottom && cur.Close < b.Bottom && (k == FTGH || cur.Open < b.Bottom && (b.Kind == FTGH || b.Flipped)):
 			side = SideShort
-		case cur.Low <= b.Top && cur.Close > b.Top && (k == FTGL || cur.Open > b.Top):
+		case cur.Low <= b.Top && cur.Close > b.Top && (k == FTGL || cur.Open > b.Top && (b.Kind == FTGL || b.Flipped)):
 			side = SideLong
 		}
 		if side == "" {

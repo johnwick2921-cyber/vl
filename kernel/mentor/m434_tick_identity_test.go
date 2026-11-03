@@ -82,6 +82,14 @@ package mentor
 // 127 note and 4,886 state rows; zero level / trendline rows. The pre-#61
 // pins above are unchanged (every changed rule is behind a #61 knob at its
 // pre value, or the G37 hook).
+// Release #61 REVIEW ROUND 2 (a provisional-15m break lock keeps the lock it
+// replaced underneath it; G33 never latches on the breakout candle — it is
+// recorded as the break; a box return met in a 15m/5m conflict is consumed
+// and refused box_tf_conflict; G43 rejects only at a box that played the
+// role): regenerated — ZERO intent rows, 58 note and 5,020 state rows; zero
+// level / trendline rows. The pre-#61 pins are unchanged (the lock and the
+// range changes sit behind their #61 knobs; the box-return consume behind the
+// test hook boxConflictLegacySkip beside midRangeLegacyRole).
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

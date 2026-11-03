@@ -1077,6 +1077,13 @@ func midRangeBoxed(boxes []Box, price float64) bool {
 // nearBoxInsideOpposingOff (a test hook read by every evaluator must not race).
 var midRangeLegacyRole atomic.Bool
 
+// boxConflictLegacySkip switches the box-return walk back to the pre-#61
+// conflict skip (no walk, nothing consumed, no box_tf_conflict). Always false
+// in production; the pre-#61 identity pins switch it on beside
+// midRangeLegacyRole (release #61 review round 2 — no knob: the skip was a
+// stale-entry bug, not a course choice).
+var boxConflictLegacySkip atomic.Bool
+
 // inNarrowRange (item 21, D4.1-06) reports whether price sits between two KEY
 // levels closer than minPts (the ping-pong minimum, 50) — a too-small range
 // ("range quá nhỏ" [D4.2 p2 @06:25–06:43]) is still a range for the ISB size
@@ -3284,139 +3291,155 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	boxCfg := e.baseBoxCfg() // C15 hygiene: the configured box frame, same as latchBoxes (was DefaultBoxCfg)
 	// D4.2-03: while the 15m/5m conflict stands, NO setup trades — box
 	// returns included (the old one-shot veto covered only the ISB path).
-	if !conflict {
-		for _, b := range boxes {
-			// UR-FIX REL9: BoxRefs stores the last evaluated reference's
-			// OpenTime (ms), not its bar index. Re-resolve the index against
-			// the CURRENT (sliding) window each tick; an anchor that slid out
-			// of the window is fail-closed — the last reference is older than
-			// every bar in this window, so nothing here was evaluated before
-			// and the walk restarts at the formation bar (lastIdx = -1).
-			lastMs := e.State.BoxRefs[b.Key]
-			lastIdx := -1
-			if lastMs != 0 {
-				if idx, ok := resolveBarIndexAtOrBefore(bars, lastMs); ok {
-					lastIdx = idx
+	// Release #61 review round 2 (mtf-loss lens P2/P3): the conflict used to
+	// skip this whole walk — no counter, and the skipped returns were NOT
+	// consumed, so once the conflict ended they were walked as fresh entries
+	// (a stale return). Now every return is consumed and a return met while
+	// the conflict stands is refused box_tf_conflict (named, counted — the
+	// twin of isb_tf_conflict / phl_tf_conflict). Real tape (a5b7662e): at
+	// release #60 the 10-21 00:39 return of ftgl:29904.50:29859.00 met a
+	// conflict (00:38–00:41), was skipped unconsumed, and was emitted at the
+	// 00:42 tick as a "fresh" BOX short 29852.75 — 3 minutes late, ABOVE the
+	// 29835.75 market. TestM61rv2BoxReturnInConflictIsConsumed pins it.
+	walkBoxes := boxes
+	if conflict && boxConflictLegacySkip.Load() {
+		walkBoxes = nil // test-only: the pre-#61 skip (identity pins)
+	}
+	for _, b := range walkBoxes {
+		// UR-FIX REL9: BoxRefs stores the last evaluated reference's
+		// OpenTime (ms), not its bar index. Re-resolve the index against
+		// the CURRENT (sliding) window each tick; an anchor that slid out
+		// of the window is fail-closed — the last reference is older than
+		// every bar in this window, so nothing here was evaluated before
+		// and the walk restarts at the formation bar (lastIdx = -1).
+		lastMs := e.State.BoxRefs[b.Key]
+		lastIdx := -1
+		if lastMs != 0 {
+			if idx, ok := resolveBarIndexAtOrBefore(bars, lastMs); ok {
+				lastIdx = idx
+			}
+		}
+		// Incremental walk from the last evaluated reference (O(new bars) per
+		// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
+		start := b.FormedAt + 1
+		if lastIdx+1 > start {
+			start = lastIdx + 1
+		}
+		for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
+			if r.RefBar <= lastIdx {
+				continue
+			}
+			// Release #30: consume the return FIRST — every return is
+			// evaluated exactly once, refused or not. Before this moved
+			// below the day gate, a day-off-refused return was re-walked
+			// every tick (10-15: 798 box_day_off from 24 returns), and once
+			// the ban lifted the stale returns were walked as fresh entries.
+			e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
+			if conflict {
+				e.refuse("box_tf_conflict" + f15)
+				continue
+			}
+			// A10: the day gate fires and names the blocked setup.
+			if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
+				e.refuse("box_" + r)
+				continue
+			}
+			// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
+			// a same-direction ISB trades ("em chỉ đánh inside bar cùng
+			// chiều") — box trades never.
+			if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
+				e.refuse("box_isb_ban")
+				continue
+			}
+			// D4.1-25: the 15m box refuses box returns inside it too.
+			if e.State.ISBBox15m != nil && bars[r.RefBar].Close > e.State.ISBBox15m.Low && bars[r.RefBar].Close < e.State.ISBBox15m.High {
+				e.refuse("box_isb_ban_15m" + formingSuffix(e.State.ISBBox15m)) // m465 P1
+				continue
+			}
+			// D4.2-07: the 30m box refuses box returns inside it too.
+			if e.State.ISBBox30m != nil && bars[r.RefBar].Close > e.State.ISBBox30m.Low && bars[r.RefBar].Close < e.State.ISBBox30m.High {
+				e.refuse("box_isb_ban_30m")
+				continue
+			}
+			if !BoxReturnReject(b, bars[r.RefBar]) {
+				continue
+			}
+			// D4.3-04: no box return against the 5m trend — "từ trái qua
+			// phải TREND ĐANG TĂNG. [Vẽ] FAILURE TO GO HIGHER SAO ĐÁNH?"
+			// [D4.3 @08:53–09:06]. The box's CURRENT role (D14 flip) sets
+			// the side: effective FTGH → short (refused in an uptrend),
+			// effective FTGL → long (refused in a downtrend).
+			// CE-8 (release #25, knob d43_trend_source, default
+			// trigger_line): "structure" reads the 5m swing structure
+			// instead — "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp
+			// hơn, đỉnh thấp hơn — … Giảm" [D4.3 @12:43–12:54].
+			trend := trig.Dir // m465 P1: the governing trigger (trigger_line source only)
+			if e.Cfg.D43TrendSource == D43TrendStructure {
+				trend = structureTrend5m(e.closedBucketsMemo(bars, now))
+			}
+			if trend == SideLong && boxEffectiveKind(b) == FTGH {
+				e.refuse("box_against_5m_trend")
+				continue
+			}
+			if trend == SideShort && boxEffectiveKind(b) == FTGL {
+				e.refuse("box_against_5m_trend")
+				continue
+			}
+			// C5: name the trigger-side drop that boxEntryIntent also gates.
+			// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
+			// a flipped FTGH checks the LONG side.
+			if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
+				var tSide Side
+				var tPrice float64
+				if boxEffectiveKind(b) == FTGL {
+					tSide, tPrice = SideLong, bars[r.RefBar].High
+				} else {
+					tSide, tPrice = SideShort, bars[r.RefBar].Low
+				}
+				if ok, ts, _ := TriggerVerdict(trig, tPrice); !ok || ts != "" && ts != tSide {
+					e.refuse("box_trigger_side" + trigSfx)
+					continue
 				}
 			}
-			// Incremental walk from the last evaluated reference (O(new bars) per
-			// tick, not O(tape)) — the full BoxReturnBars walk was the 437s replay.
-			start := b.FormedAt + 1
-			if lastIdx+1 > start {
-				start = lastIdx + 1
+			boxIntents, boxWhy := boxEntryIntentWhy(bars[r.RefBar], b, boxes, levels, trig, bars, e.Cfg)
+			if boxWhy != "" {
+				e.refuse(boxWhy) // m425b S4b: no silent drop inside boxEntryIntent
 			}
-			for _, r := range BoxReturnBarsFrom(bars, b, start, boxCfg) {
-				if r.RefBar <= lastIdx {
-					continue
-				}
-				// Release #30: consume the return FIRST — every return is
-				// evaluated exactly once, refused or not. Before this moved
-				// below the day gate, a day-off-refused return was re-walked
-				// every tick (10-15: 798 box_day_off from 24 returns), and once
-				// the ban lifted the stale returns were walked as fresh entries.
-				e.State.BoxRefs[b.Key] = bars[r.RefBar].OpenTime
-				// A10: the day gate fires and names the blocked setup.
-				if r := dayGateRefusal(e.State.Day.Verdict); r != "" {
-					e.refuse("box_" + r)
-					continue
-				}
-				// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
-				// a same-direction ISB trades ("em chỉ đánh inside bar cùng
-				// chiều") — box trades never.
-				if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
-					e.refuse("box_isb_ban")
-					continue
-				}
-				// D4.1-25: the 15m box refuses box returns inside it too.
-				if e.State.ISBBox15m != nil && bars[r.RefBar].Close > e.State.ISBBox15m.Low && bars[r.RefBar].Close < e.State.ISBBox15m.High {
-					e.refuse("box_isb_ban_15m" + formingSuffix(e.State.ISBBox15m)) // m465 P1
-					continue
-				}
-				// D4.2-07: the 30m box refuses box returns inside it too.
-				if e.State.ISBBox30m != nil && bars[r.RefBar].Close > e.State.ISBBox30m.Low && bars[r.RefBar].Close < e.State.ISBBox30m.High {
-					e.refuse("box_isb_ban_30m")
-					continue
-				}
-				if !BoxReturnReject(b, bars[r.RefBar]) {
-					continue
-				}
-				// D4.3-04: no box return against the 5m trend — "từ trái qua
-				// phải TREND ĐANG TĂNG. [Vẽ] FAILURE TO GO HIGHER SAO ĐÁNH?"
-				// [D4.3 @08:53–09:06]. The box's CURRENT role (D14 flip) sets
-				// the side: effective FTGH → short (refused in an uptrend),
-				// effective FTGL → long (refused in a downtrend).
-				// CE-8 (release #25, knob d43_trend_source, default
-				// trigger_line): "structure" reads the 5m swing structure
-				// instead — "Nhìn từ bên trái qua bên phải… Đỉnh cao, đỉnh thấp
-				// hơn, đỉnh thấp hơn — … Giảm" [D4.3 @12:43–12:54].
-				trend := trig.Dir // m465 P1: the governing trigger (trigger_line source only)
-				if e.Cfg.D43TrendSource == D43TrendStructure {
-					trend = structureTrend5m(e.closedBucketsMemo(bars, now))
-				}
-				if trend == SideLong && boxEffectiveKind(b) == FTGH {
-					e.refuse("box_against_5m_trend")
-					continue
-				}
-				if trend == SideShort && boxEffectiveKind(b) == FTGL {
-					e.refuse("box_against_5m_trend")
-					continue
-				}
-				// C5: name the trigger-side drop that boxEntryIntent also gates.
-				// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
-				// a flipped FTGH checks the LONG side.
-				if e.Cfg.LocTriggerFilter && e.Cfg.TriggerSchool != 1 {
-					var tSide Side
-					var tPrice float64
-					if boxEffectiveKind(b) == FTGL {
-						tSide, tPrice = SideLong, bars[r.RefBar].High
+			for _, in := range boxIntents {
+				// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
+				// the same day/HTF gates as every other setup —
+				// the 4h/1h direction, the day-off and the spent cap.
+				// m462: the ONE shared check, all session by default.
+				if r, _ := HTFEntryCheck(e.State.HTF, in.Side); r != "" {
+					e.refuse(htfRefusalName("box", r)) // box_htf_no_4h / _conflict / _side_mismatch
+				} else {
+					capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
+					if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
+						// the CAP pulled the target inside the stop distance —
+						// refuse rather than emit a sub-floor intent.
+						e.refuse("box_target_below_floor")
+					} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, targetRoomMultiple(levels, in.Target, e.Cfg.RoomMultiple)); refuse {
+						// MENTOR-NY item 1 (supersedes B7/L13): the room rule
+						// reads the LEVEL the box trade targets (in.Target,
+						// before the spent-day cap), not the capped 15-pt
+						// take-profit. B7/L13 measured the capped target, which
+						// on a SPENT day demanded stop ≤ 7.5; the course measures
+						// the room to the level even when the take-profit is 15
+						// — "Dù target của em là 15 điểm … từ điểm entry xuống
+						// target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
+						// The cap and the 1:1 floor on the capped target stand.
+						e.refuse("room")
+					} else if refuse, _ := spentDayRoomRefusal(in.Price, in.Target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+						// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
+						e.refuse("room")
 					} else {
-						tSide, tPrice = SideShort, bars[r.RefBar].Low
-					}
-					if ok, ts, _ := TriggerVerdict(trig, tPrice); !ok || ts != "" && ts != tSide {
-						e.refuse("box_trigger_side" + trigSfx)
-						continue
-					}
-				}
-				boxIntents, boxWhy := boxEntryIntentWhy(bars[r.RefBar], b, boxes, levels, trig, bars, e.Cfg)
-				if boxWhy != "" {
-					e.refuse(boxWhy) // m425b S4b: no silent drop inside boxEntryIntent
-				}
-				for _, in := range boxIntents {
-					// B9 [D5.1 p1 @16:24, @19:11–20:07]: box trades obey
-					// the same day/HTF gates as every other setup —
-					// the 4h/1h direction, the day-off and the spent cap.
-					// m462: the ONE shared check, all session by default.
-					if r, _ := HTFEntryCheck(e.State.HTF, in.Side); r != "" {
-						e.refuse(htfRefusalName("box", r)) // box_htf_no_4h / _conflict / _side_mismatch
-					} else {
-						capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
-						if capped.Target != in.Target && !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
-							// the CAP pulled the target inside the stop distance —
-							// refuse rather than emit a sub-floor intent.
-							e.refuse("box_target_below_floor")
-						} else if refuse, _ := roomRefusal(in.Price, in.Stop, in.Target, in.Confluence, targetRoomMultiple(levels, in.Target, e.Cfg.RoomMultiple)); refuse {
-							// MENTOR-NY item 1 (supersedes B7/L13): the room rule
-							// reads the LEVEL the box trade targets (in.Target,
-							// before the spent-day cap), not the capped 15-pt
-							// take-profit. B7/L13 measured the capped target, which
-							// on a SPENT day demanded stop ≤ 7.5; the course measures
-							// the room to the level even when the take-profit is 15
-							// — "Dù target của em là 15 điểm … từ điểm entry xuống
-							// target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50].
-							// The cap and the 1:1 floor on the capped target stand.
-							e.refuse("room")
-						} else if refuse, _ := spentDayRoomRefusal(in.Price, in.Target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
-							// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
-							e.refuse("room")
-						} else {
-							out = append(out, capped)
-							// B20: school-1 box entry without trigger agreement
-							// arms the flip upgrade — once it survives the
-							// later filters (P2-N2: armed in the Tick defer).
-							if e.Cfg.TriggerSchool == 1 {
-								if ok, ts, _ := TriggerVerdict(trig, capped.Price); !ok || ts != capped.Side {
-									schoolOne = append(schoolOne, schoolOneKeyOf(capped))
-								}
+						out = append(out, capped)
+						// B20: school-1 box entry without trigger agreement
+						// arms the flip upgrade — once it survives the
+						// later filters (P2-N2: armed in the Tick defer).
+						if e.Cfg.TriggerSchool == 1 {
+							if ok, ts, _ := TriggerVerdict(trig, capped.Price); !ok || ts != capped.Side {
+								schoolOne = append(schoolOne, schoolOneKeyOf(capped))
 							}
 						}
 					}

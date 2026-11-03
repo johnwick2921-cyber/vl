@@ -98,6 +98,8 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			defer nearBoxInsideOpposingOff.Store(false)
 			midRangeLegacyRole.Store(true) // m466 G37 (#61, no knob): the pre-#61 b.Kind mid-range read
 			defer midRangeLegacyRole.Store(false)
+			boxConflictLegacySkip.Store(true) // release #61 review round 2 (no knob): the pre-#61 conflict skip of the box-return walk
+			defer boxConflictLegacySkip.Store(false)
 			bars := c.tape(t)
 			from := c.from
 			if from < 0 {

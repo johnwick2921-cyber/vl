@@ -37,6 +37,9 @@ import "vl/market"
 //   - A standing range is the box it latched; it does not slide with the
 //     window (the old slide re-latched on every shift: range_small_set 426 =
 //     range_small_cleared 426 over the month's replay).
+//   - Review round 2: the window never latches on a candle that itself
+//     closes outside the 14 before it — that candle is the break, not part of
+//     a range, and is recorded as the break (smallRangeWindow breakout).
 const (
 	smallRangeBars         = 15    // 09:44–09:59 on the 1m chart [D4.2 p2 @06:16–06:30]
 	smallRangeMaxSpanPts   = 61.50 // the measured range [D4.2 p2 @06:16–06:30]
@@ -53,15 +56,26 @@ type SmallRange struct {
 
 // smallRangeWindow reads the last smallRangeBars closed 1m candles: ok when
 // they span <= smallRangeMaxSpanPts with at least smallRangeBigCandles
-// candles >= smallRangeBigCandlePts.
-func smallRangeWindow(bars []market.Kline) (lo, hi float64, ok bool) {
+// candles >= smallRangeBigCandlePts. breakout reports a window that WOULD
+// qualify but whose newest candle closes outside the range of the candles
+// before it (release #61 review round 2, mtf-loss lens P2): that candle is
+// the D4.1-R34 break [D4.1 p1 @20:36–21:03], not part of a range — the
+// guard treats it exactly like the close that ends a standing range. Without
+// this a tight chop plus one >= 30-pt breakout candle (the second big
+// candle) latched on the breakout and refused the pullback setups
+// D4.1-R31/R33 [D4.1 p1 @18:29–20:33] say to wait for after a break.
+func smallRangeWindow(bars []market.Kline) (lo, hi float64, ok, breakout bool) {
 	if len(bars) < smallRangeBars {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
 	w := bars[len(bars)-smallRangeBars:]
 	lo, hi = w[0].Low, w[0].High
+	plo, phi := lo, hi // the range of every candle but the newest
 	big := 0
-	for _, b := range w {
+	for i, b := range w {
+		if i == len(w)-1 {
+			plo, phi = lo, hi
+		}
 		if b.Low < lo {
 			lo = b.Low
 		}
@@ -73,9 +87,12 @@ func smallRangeWindow(bars []market.Kline) (lo, hi float64, ok bool) {
 		}
 	}
 	if hi-lo > smallRangeMaxSpanPts || big < smallRangeBigCandles {
-		return 0, 0, false
+		return 0, 0, false, false
 	}
-	return lo, hi, true
+	if c := w[len(w)-1].Close; c < plo || c > phi {
+		return 0, 0, false, true
+	}
+	return lo, hi, true, false
 }
 
 // advanceSmallRange steps the guard on the newest closed 1m candle. A standing
@@ -83,7 +100,9 @@ func smallRangeWindow(bars []market.Kline) (lo, hi float64, ok bool) {
 // (counted range_small_cleared) and records the break candle — nothing more
 // happens on that tick. With no range standing, a qualifying window latches
 // (counted range_small_set) only when every candle in it opened AFTER the last
-// break candle.
+// break candle; a window that would qualify but whose newest candle is itself
+// the break (smallRangeWindow breakout) latches nothing and records that
+// candle as the break (counted range_small_breakout).
 func (e *Evaluator) advanceSmallRange(bars []market.Kline) {
 	if !e.Cfg.SmallRangeGuard || len(bars) == 0 {
 		e.State.SmallRange, e.State.SmallRangeBreakAt = nil, 0
@@ -100,8 +119,15 @@ func (e *Evaluator) advanceSmallRange(bars []market.Kline) {
 		}
 		return
 	}
-	lo, hi, ok := smallRangeWindow(bars)
-	if !ok || bars[len(bars)-smallRangeBars].OpenTime <= e.State.SmallRangeBreakAt {
+	lo, hi, ok, breakout := smallRangeWindow(bars)
+	if !ok && !breakout || bars[len(bars)-smallRangeBars].OpenTime <= e.State.SmallRangeBreakAt {
+		return
+	}
+	if breakout {
+		e.State.SmallRangeBreakAt = cur.OpenTime
+		e.count("range_small_breakout")
+		e.note("no too-small range: the 1m close %.2f at %s CT breaks the window it would close — a break, not a range [D4.1-R34 p1 @20:36–21:03]",
+			cur.Close, swingCT(cur.OpenTime))
 		return
 	}
 	e.State.SmallRange = &SmallRange{Lo: lo, Hi: hi, At: cur.OpenTime}

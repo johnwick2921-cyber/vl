@@ -148,7 +148,7 @@ func m61rvTape1021() []market.Kline {
 // the guard; one does not.
 func TestM61rvSmallRangeOneWickDoesNotArm(t *testing.T) {
 	bars := m61rvTape1021()
-	if _, _, ok := smallRangeWindow(bars); ok {
+	if _, _, ok, _ := smallRangeWindow(bars); ok {
 		t.Fatal("10-21 18:01–18:15: one 45.25-pt wick among 5–18-pt candles is not a too-small range")
 	}
 	e := New(DefaultConfig())
@@ -161,7 +161,7 @@ func TestM61rvSmallRangeOneWickDoesNotArm(t *testing.T) {
 	}
 	// The same window with a SECOND 30-pt candle is the too-small range.
 	bars[3] = m60p1K(bars[3].OpenTime, 29_826, 29_840, 29_809, 29_823.5)
-	if _, _, ok := smallRangeWindow(bars); !ok {
+	if _, _, ok, _ := smallRangeWindow(bars); !ok {
 		t.Fatal("two candles >= 30 pts inside a <= 61.50-pt span is the too-small range")
 	}
 }

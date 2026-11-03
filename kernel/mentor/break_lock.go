@@ -34,7 +34,12 @@ import (
 //     (the lock flips, counted break_lock_flipped), or at the 17:00 CT roll.
 //     A lock set by a PROVISIONAL 15m box (isb_15m_forming) also ends when
 //     that 15m closes as no inside bar (resolveFormingBreakLock, counted
-//     break_lock_forming_released — release #61 review round).
+//     break_lock_forming_released — release #61 review round). The lock that
+//     provisional break replaced is kept underneath it (Under) and comes back
+//     at that release — or when the provisional break itself fails — unless
+//     its own break has failed meanwhile (counted break_lock_restored —
+//     release #61 review round 2, setups lens P2: the release used to wipe a
+//     standing FTGH/ISB lock whose break never failed).
 //   - SCOPE (release #61 review round, setups lens P3): the lock refuses the
 //     entries EMITTED while it stands. An opposite-side stop order that was
 //     already resting before the break is not cancelled by the lock — the
@@ -57,6 +62,13 @@ type BreakLock struct {
 	// bucket its provisional box rests on. At that 15m's close the lock is
 	// confirmed (Src isb_15m, Bucket 0) or released (resolveFormingBreakLock).
 	Bucket int64 `json:"bucket,omitempty"`
+	// Under — an isb_15m_forming lock only: the lock it replaced (release #61
+	// review round 2, setups lens P2). A provisional box's break is not yet a
+	// break — if its 15m closes as no inside bar the break never happened, so
+	// the lock it overwrote comes back (unless that lock's own break has
+	// failed meanwhile: a close back through ITS edge drops it). Never set on
+	// a confirmed lock (the newest confirmed break wins, as before).
+	Under *BreakLock `json:"under,omitempty"`
 }
 
 // breakEvent is one box break seen on the current closed 1m candle.
@@ -94,14 +106,19 @@ func (e *Evaluator) resolveFormingBreakLock(cb15 []market.Kline) {
 	}
 	if forming15mClosedAsISB(cb15, l.Bucket) {
 		c := *l
-		c.Src, c.Bucket = "isb_15m", 0
+		c.Src, c.Bucket, c.Under = "isb_15m", 0, nil
 		e.State.BreakLock = &c
 		return
 	}
-	e.State.BreakLock = nil
+	e.State.BreakLock = l.Under
 	e.count("break_lock_forming_released")
 	e.note("break lock %s (isb_15m_forming %.2f–%.2f) released: the 15m candle at %s CT closed as no inside bar — the provisional box it broke never existed [D4.2-R11 p1 @07:20–08:15]",
 		l.Side, l.Lo, l.Hi, swingCT(l.Bucket))
+	if u := l.Under; u != nil {
+		e.count("break_lock_restored")
+		e.note("break lock %s (%s %.2f–%.2f) restored: the provisional break that replaced it never happened, and its own break has not failed [D4.1-R30/R31 p1 @17:43–20:33]",
+			u.Side, u.Src, u.Lo, u.Hi)
+	}
 }
 
 // boxBreakEvents reports the FTGH/FTGL boxes whose FIRST body escape
@@ -153,11 +170,25 @@ func (e *Evaluator) advanceBreakLock(cur market.Kline, now int64, events []break
 		e.State.BreakLock = nil
 		e.count("break_lock_day_roll")
 	}
+	// A lock buried under a provisional (forming) lock is failed by the same
+	// test as a standing one; a failed one is not restored later.
+	if l := e.State.BreakLock; l != nil && l.Under != nil && cur.OpenTime > l.Under.At && breakFailed(l.Under, cur.Close) {
+		u := l.Under
+		c := *l
+		c.Under = nil
+		e.State.BreakLock = &c
+		e.count("break_lock_failed")
+		e.note("break lock %s (%s %.2f–%.2f, held under a provisional 15m lock) cleared: the 1m close %.2f at %s CT is back through the broken edge — the break failed [D4.1-R30 p1 @17:43–18:29]",
+			u.Side, u.Src, u.Lo, u.Hi, cur.Close, swingCT(cur.OpenTime))
+	}
 	if l := e.State.BreakLock; l != nil && cur.OpenTime > l.At && breakFailed(l, cur.Close) {
-		e.State.BreakLock = nil
+		e.State.BreakLock = l.Under // a failed provisional break hands back a still-standing earlier one
 		e.count("break_lock_failed")
 		e.note("break lock %s (%s %.2f–%.2f) cleared: the 1m close %.2f at %s CT is back through the broken edge — the break failed [D4.1-R30 p1 @17:43–18:29]",
 			l.Side, l.Src, l.Lo, l.Hi, cur.Close, swingCT(cur.OpenTime))
+		if u := l.Under; u != nil {
+			e.count("break_lock_restored")
+		}
 	}
 	for _, ev := range events {
 		if ev.Side == "" {
@@ -167,7 +198,19 @@ func (e *Evaluator) advanceBreakLock(cur market.Kline, now int64, events []break
 		if prev != nil && prev.Side != ev.Side {
 			e.count("break_lock_flipped")
 		}
-		e.State.BreakLock = &BreakLock{Side: ev.Side, Lo: ev.Lo, Hi: ev.Hi, At: cur.OpenTime, Src: ev.Src, Day: day, Bucket: ev.Bucket}
+		// A provisional break keeps the lock it replaces underneath it
+		// (restored if the 15m closes as no inside bar); a confirmed break
+		// replaces outright.
+		var under *BreakLock
+		if ev.Bucket != 0 && prev != nil {
+			if prev.Bucket != 0 {
+				under = prev.Under
+			} else {
+				c := *prev
+				under = &c
+			}
+		}
+		e.State.BreakLock = &BreakLock{Side: ev.Side, Lo: ev.Lo, Hi: ev.Hi, At: cur.OpenTime, Src: ev.Src, Day: day, Bucket: ev.Bucket, Under: under}
 		e.count("break_lock_set_" + ev.Src)
 		if prev == nil || prev.Side != ev.Side {
 			e.note("break lock %s set: the %s box %.2f–%.2f broke on the 1m close %.2f at %s CT — only %s setups until a close back inside [D4.1-R31/R33 p1 @18:29–20:33; D4.1-R55 @07:47–08:07]",

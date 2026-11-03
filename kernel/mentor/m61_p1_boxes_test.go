@@ -404,7 +404,7 @@ func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 		t.Fatal("G33: mentor_small_range_guard must default ON")
 	}
 	bars := m61p1SmallRange(29_021.50, 33.75, 34.50)
-	lo, hi, ok := smallRangeWindow(bars)
+	lo, hi, ok, _ := smallRangeWindow(bars)
 	if !ok || lo != 28_960 || hi != 29_021.5 {
 		t.Fatalf("want the too-small range 28,960.00–29,021.50, got %v %v %v", lo, hi, ok)
 	}
@@ -417,10 +417,10 @@ func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 	if out := e.courseRangeFilter([]Intent{m61p1Entry(SideLong, 29_030)}, nil); !m61p1Has(out, SideLong) {
 		t.Fatal("an entry priced outside the range is not touched")
 	}
-	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_022, 33.75, 34.50)); ok {
+	if _, _, ok, _ := smallRangeWindow(m61p1SmallRange(29_022, 33.75, 34.50)); ok {
 		t.Fatal("span 62.00 is not the too-small range")
 	}
-	if _, _, ok := smallRangeWindow(m61p1SmallRange(29_021.50, 29.75, 34.50)); ok {
+	if _, _, ok, _ := smallRangeWindow(m61p1SmallRange(29_021.50, 29.75, 34.50)); ok {
 		t.Fatal("one candle >= 30 pts (the other 29.75) is not the too-small range")
 	}
 	exit := m60p1K(m60p1At(9, 59), 28_962, 28_963, 28_950, 28_955)
@@ -480,6 +480,8 @@ func TestM61MidRangeUsesFlippedRole(t *testing.T) {
 	// The pre-#61 hook reproduces the old read (the identity pins use it).
 	midRangeLegacyRole.Store(true)
 	defer midRangeLegacyRole.Store(false)
+	boxConflictLegacySkip.Store(true) // release #61 review round 2 (no knob): the pre-#61 conflict skip of the box-return walk
+	defer boxConflictLegacySkip.Store(false)
 	if midRangeBoxed(boxes, 29_420) {
 		t.Fatal("legacy hook: the pre-#61 b.Kind read must say no mid-range here")
 	}
@@ -604,6 +606,8 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 	}
 	midRangeLegacyRole.Store(true)
 	defer midRangeLegacyRole.Store(false)
+	boxConflictLegacySkip.Store(true) // release #61 review round 2 (no knob): the pre-#61 conflict skip of the box-return walk
+	defer boxConflictLegacySkip.Store(false)
 	for _, c := range m434Cases() {
 		c := c
 		base := c.cfg
