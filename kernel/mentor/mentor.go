@@ -104,6 +104,14 @@ const (
 	// touched and never a location (the trendline LOCATION stays KindTrendline);
 	// like a key level it is a real obstacle for the room rule.
 	KindTrendlineTarget LevelKind = "trendline_target"
+	// KindGapEdge is the FAR edge of an unfilled session-open gap (m466 P2,
+	// G11 D3.1-R20): the prior session's last close. "Cái cạnh dưới của cái
+	// gap, lúc nào nó cũng sẽ là resistance… Level là resistance" [D3.1 p1
+	// @09:41–09:51]. A LOCATION, a target and an obstacle like a key level; it
+	// stands until a 1m candle trades through it (the gap filled — "có thể
+	// đợi vài ngày" R16). No gap-fill entry exists ("em không đánh theo gap",
+	// R23). Keys "gap_edge:<price>@<session open ms>".
+	KindGapEdge LevelKind = "gap_edge"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -328,8 +336,9 @@ type Config struct {
 	// The "twenties" skip (ISBTwentiesPts) was REMOVED in course-defaults-30
 	// (owner order "move to 30"); W-MENTOR-EXACT (owner order 2026-10-21) reverts
 	// that: an ISB stop > 25 pts is skipped ("trên nữa thì thôi"), a stop of
-	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts
-	// (default 25).
+	// 20–25 pts is the reduced tier — the ceiling lives in CourseExits.ISBMaxStopPts.
+	// m466 G23 (D4.1-R12 "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]):
+	// default 20 — the ISB 20–25 reduced band is unreachable at default.
 
 	// ISBReverseEMA9Enabled turns on R7, the reverse-ISB-at-EMA9 setup
 	// (RULES-FIX-v3, its own knob per the dispatch). Default ON — OWNER RULING
@@ -631,10 +640,15 @@ type Config struct {
 	// nothing is ever deleted. OFF keeps the item-18 print-window drop
 	// (07:20–07:35). Default ON.
 	NewsBarsExcluded bool
-	// ISBBoxEscapeMode — CE-5 (a): the 5m/15m/30m ISB rest-box escape. "body"
-	// (default) = a 1m candle's OPEN AND CLOSE beyond the edge [D4.1 p1
-	// @20:52–21:02 "cái thân nến… nằm bên ngoài… Cái đó là at least"];
-	// "close" = the pre-#25 close-only test.
+	// ISBBoxEscapeMode — CE-5: the 5m/15m/30m ISB rest-box escape (and the
+	// #60 provisional forming-15m box). "close" (default since m466 G20/G49,
+	// release #61) = a 1m candle CLOSES beyond the edge — the course's stated
+	// minimum, "Break là sao? Là một cây nến một phút anh chị trade, nó đóng
+	// bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]; "nó đóng một cái
+	// nến một phút ở ngoài" [D3.4 p2 @05:37–06:01] — the same close the PHL/PLH
+	// 5m-box ban reads. "body" = the #25–#60 default: OPEN AND CLOSE beyond
+	// the edge (a stored isb_box_escape=body still wins). FTGH/FTGL boxes keep
+	// their own body escape (D3.2-R16, box.go) whatever this says.
 	ISBBoxEscapeMode string
 	// EmaLossRelock — CE-6 (a): after one loss at the EMA 34 —
 	// "until_zone_exit" (default) = back ON once a CLOSED 1m candle lies
@@ -709,6 +723,73 @@ type Config struct {
 	// "band": the pre-#60 entry-to-stop band only. "" reads as range
 	// (limits.go isbLossRange).
 	ISBLossBox string
+
+	// m466 P2 (release #61) — levels and touches. Every value below has a
+	// knob back to the pre-#61 behaviour (mentor_tuning.*).
+	//
+	// UnoKeyLevels — G2 D1.3-R21: "Hỗ trợ bị phá → sẽ thành kháng cự khi
+	// backtest" [D1.3 p1 @12:31–12:58]. "on" (default): a KEY level that HELD
+	// today (≥1 reject visit) and then breaks FLIPS its role once
+	// (level_broken_uno) instead of turning ISB-only; the backtest reject from
+	// the other side trades through the normal gates. A second wrong-way close
+	// after the flip, or a wrong-way FIRST visit, is ISB-only as before
+	// [D5.2 p1 @19:44–20:25]. "off": the pre-#61 ISB-only on any break.
+	UnoKeyLevels string
+	// SessionOpenLevels — G10 D3.1-R26 + G11 D3.1-R20: "cái râu này nó sẽ là
+	// cái đỉnh" [D3.1 p1 @11:58–12:22] (the session's first 5m candle wick is
+	// an old high/low with no left-neighbour test) and "Cái cạnh dưới của cái
+	// gap, lúc nào nó cũng sẽ là resistance… Level là resistance" [@09:41–09:51]
+	// (the gap's far edge = the prior session's last close is a level while
+	// unfilled). "on" (default) | "off" (neither).
+	SessionOpenLevels string
+	// LevelArmLineCancel — G17 D2.3-R34: "Mình làm gì? Mình cancel"
+	// [D2.3 p1 @23:35–24:03] — a resting order on a MOVING line (trendline,
+	// EMA 34) is cancelled by a close through the line's CURRENT price, and
+	// a trendline that left the set cancels its order. "current_line"
+	// (default) | "placement_price" (the pre-#61 frozen placement price).
+	LevelArmLineCancel string
+	// PHLPullbackLow — G41 D2.2-R59: "đang đi kiếm một cái lệnh có đáy cao hơn
+	// đáy trước đó" [D2.2 p3 @08:25–09:25]: "pullback" (default) = the lowest
+	// low of the WHOLE pullback (old high → signal candle) must stay above the
+	// prior low (phl_pullback_lower_low; mirror plh_pullback_higher_high);
+	// "signal" = the pre-#61 signal-candle-only comparison.
+	PHLPullbackLow string
+	// ── m466 P1 (release #61): boxes, breaks, ranges ──────────────────────
+	// FiveMinBoxSource — G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside
+	// bar nào gần với thời điểm đó nhất, bọc lại cho em"] + G32 D4.2-R10:
+	// "newest" (default) = while a 5m ISB rest box stands, a NEWER closed 5m
+	// inside bar replaces it (isb_5m_box_replaced, _opposite when the
+	// direction flips — the 15m/5m conflict then reads the new box); "first" =
+	// the pre-#61 read (the first box stands until it escapes). Studio:
+	// risk_control.mentor_tuning.mentor_5m_box_source.
+	FiveMinBoxSource string
+	// BreakDirectionLock — G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33] + G29
+	// D4.1-R55 [D4.1 p1 @07:47–08:07]: after a box BREAK (an FTGH/FTGL body
+	// escape, a 5m/15m/30m ISB rest-box 1m-close escape) only setups in the
+	// break direction trade (break_counter_setup) until a 1m CLOSE back inside
+	// the broken box (the failed break, D4.1-R30), an opposite break, or the
+	// 17:00 CT roll (break_lock.go). Default ON. Studio:
+	// risk_control.mentor_tuning.mentor_break_direction_lock.
+	BreakDirectionLock bool
+	// SmallRangeGuard — G33 D4.2-R33 [D4.2 p2 @06:16–06:30 "bên trong một cái
+	// range nó quá nhỏ đi, đừng bao giờ đụng tới"]: the last 15 closed 1m
+	// candles span <= 61.50 pts with two candles >= 30.00 pts → no entry priced
+	// inside that range (range_too_small_big_candles) until a 1m close
+	// outside it (range_small.go; the numbers are the video's measurement).
+	// Default OFF (release #61 final): the course gives no count of 30–40-pt
+	// candles and no breakout margin — only the one worked example — and three
+	// review rounds kept finding mis-latches (the breakout candle, a churn
+	// close just outside the prior 14 wicks with no margin). It stays behind
+	// the knob and is on the mentor list; a stored true still wins.
+	// Studio: risk_control.mentor_tuning.mentor_small_range_guard.
+	SmallRangeGuard bool
+	// MidRangeRejectSide — G43 D2.2-R71 [D2.2 p3 @14:28–15:58 "Nó mới reject
+	// thì đánh theo hướng nó reject"]: between an FTGL floor and an FTGH
+	// ceiling, after a 1m candle rejects the ceiling (High >= its bottom, Close
+	// below) a LONG entry is refused mid_range_against_rejection until a
+	// candle touches the floor top; mirror for a floor reject (reject_side.go).
+	// Default ON. Studio: risk_control.mentor_tuning.mentor_mid_range_reject_side.
+	MidRangeRejectSide bool
 
 	// RealFillOnly — FU-1 (CTO 2026-10-05): when true, the G1 leg budget and
 	// the G2 loss box are fed ONLY from real broker fills (Limits.RecordFill,
@@ -810,7 +891,7 @@ func DefaultConfig() Config {
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
 		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-		ISBBoxEscapeMode:      ISBBoxEscapeBody,       // CE-5 (a)
+		ISBBoxEscapeMode:      ISBBoxEscapeClose,      // CE-5 → m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
 		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
@@ -819,6 +900,16 @@ func DefaultConfig() Config {
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
+		// m466 P2 (release #61): levels and touches.
+		UnoKeyLevels:       UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
+		SessionOpenLevels:  SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
+		LevelArmLineCancel: LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
+		PHLPullbackLow:     PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
+		// m466 P1 (release #61): boxes, breaks, ranges.
+		FiveMinBoxSource:   FiveMinBoxNewest, // G28 D4.1-R37 / G32 D4.2-R10
+		BreakDirectionLock: true,             // G21 D4.1-R31/R33, G29 D4.1-R55
+		SmallRangeGuard:    false,            // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
+		MidRangeRejectSide: true,             // G43 D2.2-R71
 	}
 }
 
@@ -849,6 +940,23 @@ const (
 	PHLFlatLowStrict         = "strict"
 	ISBReverseTouchPair      = "pair"
 	ISBReverseTouchISBCandle = "isb_candle"
+
+	// m466 P1 (release #61, G28/G32): the 5m ISB rest box source.
+	FiveMinBoxNewest = "newest"
+	FiveMinBoxFirst  = "first"
+)
+
+// m466 P2 (release #61) knob values — the ONE spelling the kernel, the trader
+// resolver and the guide share.
+const (
+	UnoKeyLevelsOn              = "on"
+	UnoKeyLevelsOff             = "off"
+	SessionOpenLevelsOn         = "on"
+	SessionOpenLevelsOff        = "off"
+	LevelArmLineCancelCurrent   = "current_line"
+	LevelArmLineCancelPlacement = "placement_price"
+	PHLPullbackLowPullback      = "pullback"
+	PHLPullbackLowSignal        = "signal"
 )
 
 // barsTF aggregates 1m bars into the given timeframe. Every TF except 240 is

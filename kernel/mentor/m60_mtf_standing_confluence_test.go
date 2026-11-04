@@ -19,9 +19,10 @@ import (
 // 15m pairs, so the confluence was gone one 5m candle after the 5m ISB even
 // though both boxes still stood.
 
-// m60p1WE2 is the WE-2 morning through the 10:15 5m candle (which closes 29,050
+// m60p1WE2 is the WE-2 morning through the 10:15 5m candle (which OPENS 29,050
 // — just above the 5m box top, so (10:10, 10:15) is NOT an inside bar, while
-// no 1m body leaves the box), then the 1m ISB 10:20 green / 10:21 inside.
+// every 1m CLOSE stays inside the box: m466 G20, release #61, the box escape is
+// a 1m close outside it), then the 1m ISB 10:20 green / 10:21 inside.
 func m60p1WE2() []market.Kline {
 	bars := m60p1Tape([][6]float64{
 		// a steady rise into the 09:45 15m (no earlier top above the entry)
@@ -42,7 +43,7 @@ func m60p1WE2() []market.Kline {
 		{10, 0, 29_000, 29_030, 28_985, 29_025},
 		{10, 5, 29_025, 29_079.25, 29_015, 29_045},
 		{10, 10, 29_040, 29_048.50, 29_017.25, 29_025}, // the 5m ISB (red, inside the green 10:05)
-		{10, 15, 29_030, 29_052, 29_028, 29_050},       // NOT an inside bar of 10:10
+		{10, 15, 29_050, 29_052, 29_038, 29_040},       // NOT an inside bar of 10:10 (opens above it); every 1m close inside the box
 	})
 	return append(bars,
 		m60p1K(m60p1At(10, 20), 29_036, 29_046, 29_030, 29_044), // green mother

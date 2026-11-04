@@ -2044,7 +2044,9 @@ type MentorTuning struct {
 	// CE-4: drop print→08:30 bars from the 1h/4h feed (nil → ON,
 	// course-defaults-30; release #29 rework — freeze the pre-print read).
 	NewsBarsExcluded *bool `json:"news_bars_excluded,omitempty"`
-	// CE-5: ISB rest-box escape "close" | "body" (default) [D4.1 p1 @20:52].
+	// CE-5: ISB rest-box escape "close" (default since m466 G20/G49, release
+	// #61 — "nó đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]) |
+	// "body" (the #25–#60 default; a stored body still wins).
 	ISBBoxEscape string `json:"isb_box_escape,omitempty"`
 	// CE-6: after an EMA 34 loss — "session" | "until_zone_exit" (default).
 	EMA34LossRelock string `json:"ema34_loss_relock,omitempty"`
@@ -2087,6 +2089,22 @@ type MentorTuning struct {
 	// reference candle to CLOSE beyond the zone's near edge (nil/false → OFF)
 	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
 	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
+	// m466 P1 (release #61): boxes, breaks, ranges. Absent = the course default.
+	// Mentor5mBoxSource: "newest" (default) | "first" — the 5m ISB rest box is
+	// the NEWEST 5m inside bar [D4.1-R37 p1 @22:31–22:49; D4.2-R10 p1 @05:34–08:33].
+	Mentor5mBoxSource string `json:"mentor_5m_box_source,omitempty"`
+	// MentorBreakDirectionLock: nil → ON — after a box break only setups in the
+	// break direction until a close back inside [D4.1-R31/R33 p1 @18:29–20:33;
+	// D4.1-R55 @07:47–08:07].
+	MentorBreakDirectionLock *bool `json:"mentor_break_direction_lock,omitempty"`
+	// MentorSmallRangeGuard: nil → OFF (release #61 final) — when true, no entry
+	// inside a range too small for its candles (61.50 pts / two 30-pt candles)
+	// [D4.2-R33 p2 @06:16–06:30]. OFF by default: the course states no candle
+	// count or breakout margin; on the mentor list. A stored true still wins.
+	MentorSmallRangeGuard *bool `json:"mentor_small_range_guard,omitempty"`
+	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
+	// rejection [D2.2-R71 p3 @14:28–15:58].
+	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
 
 	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
 	// not the course's (the mentor gave none, or the owner fixed none); each
@@ -2143,6 +2161,27 @@ type MentorTuning struct {
 	// + ISB candle group [D5.4 p1 @03:35–03:46]; "isb_candle" — the ISB candle
 	// alone (pre-#60).
 	ISBReverseTouch string `json:"isb_reverse_touch,omitempty"`
+
+	// m466 P2 (release #61) levels-and-touches knobs. Unset = the course; the
+	// other value = the pre-#61 behaviour.
+	//
+	// G2 D1.3-R21: "on" (unset) — a key level that held today and then breaks
+	// flips its role once (Uno Reverse, level_broken_uno) and the backtest
+	// reject trades [D1.3 p1 @12:31–12:58]; "off" — ISB-only on any break.
+	UnoKeyLevels string `json:"uno_key_levels,omitempty"`
+	// G10/G11 D3.1-R26/R20: "on" (unset) — the session's first 5m candle wick is
+	// an old high/low, and an unfilled ≥20-pt gap's far edge is a level [D3.1 p1
+	// @11:58–12:22, @09:41–09:51]; "off" — neither.
+	SessionOpenLevels string `json:"session_open_levels,omitempty"`
+	// G17 D2.3-R34: "current_line" (unset) — a resting order on a trendline /
+	// EMA 34 is cancelled by a close through the line's CURRENT price, and a
+	// trendline gone from the set cancels it [D2.3 p1 @23:35–24:03];
+	// "placement_price" — the frozen placement price (pre-#61).
+	LevelArmLineCancel string `json:"level_arm_line_cancel,omitempty"`
+	// G41 D2.2-R59: "pullback" (unset) — the whole pullback's low must stay
+	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
+	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
+	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
 }
 
 // RiskControlConfig risk control configuration
@@ -2336,7 +2375,9 @@ type RiskControlConfig struct {
 	//        candle-3 partial at any profit); false = hold leg 1 for its +1R.
 	//   CX-6 MentorReverseISBAsPHL — nil → ON (course-defaults-30, D5.4).
 	//   CX-8 MentorEMA9VisitCap — "" → shared (case b, course silent).
-	//   CX-9 MentorISBMaxPts — 0 → 30 (course-defaults-30, owner order).
+	//   CX-9 MentorISBMaxPts — 0 → 20 (m466 G23 D4.1-R12: "hai mươi mấy điểm…
+	//        đừng vô" [D4.1 p1 @05:41–06:08]; pre-#61 25). ISB setups only at
+	//        the trader R8 — PHL/PLH/BOX keep the D3.3-R1 25.
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
 	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
@@ -2359,6 +2400,27 @@ type RiskControlConfig struct {
 	MentorBoxMaxHeightPts          float64 `json:"mentor_box_max_height_pts,omitempty"`
 	MentorSwingMaxStopPts          float64 `json:"mentor_swing_max_stop_pts,omitempty"`
 	MentorISBLossBox               string  `json:"mentor_isb_loss_box,omitempty"`
+	// m466 P4 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found") — the SWING4H fidelity knobs. Resolved ONLY in
+	// trader/mentor_course_exits.go; an unknown value fails closed to the
+	// course default and is counted.
+	//   MentorSwingISBCloseBack — "" → not_required (G63 D5.2-R26): after an
+	//        invalid cross the 5m inside bar alone is the setup, even while price
+	//        still closes beyond the line ("chị vô đúng mà… đợi đóng ngược lại
+	//        cũng được nhưng hơi lâu" [D5.2 p3 @04:49–05:09]); required = the
+	//        pre-#61 candle-1 + inside-bar close back.
+	//   MentorSwingISBKeep — nil → ON (G66 D5.2-R25): a resting INSIDE-BAR order
+	//        survives a later 5m close through the line ("Để cái cây inside bar
+	//        này cho em" [D5.2 p2 @10:23–10:51]); false = the pre-#61 cancel. The
+	//        REJECT order is always cancelled (R22).
+	//   MentorSwingRunnerTP — "" → none (G65 D5.2-R6): the swing runner carries
+	//        no take-profit — it is held by the 4h ("em gồng theo khung 4 giờ"
+	//        [D5.2 p1 @05:40–06:14]); the bracket's TP is parked 1,000 pts out
+	//        (the AddOn's OCO needs one); capped = the pre-#61 max(100, 2 × the
+	//        first-target distance).
+	MentorSwingISBCloseBack string `json:"mentor_swing_isb_close_back,omitempty"`
+	MentorSwingISBKeep      *bool  `json:"mentor_swing_isb_keep,omitempty"`
+	MentorSwingRunnerTP     string `json:"mentor_swing_runner_tp,omitempty"`
 
 	// m465 P4 (release #60, owner order 2026-11-02 "fix everything the video
 	// check found"). Resolved ONLY in trader/mentor_resonance_raw.go.
@@ -2374,6 +2436,25 @@ type RiskControlConfig struct {
 	//        @14:09–14:35]); false = the 1m tiers.
 	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
 	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
+
+	// m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
+	// check found"). Resolved ONLY in trader/mentor_course_exits.go onto the
+	// kernel's CourseExits block; unset = the course default; a bad value
+	// fails closed to the default, counted (<name>_bad_value).
+	//   MentorOpen5mBreak — "" → 1m_close (G55 D4.4-R40): the opening 5m range
+	//        is broken by a CLOSED 1m candle outside it ("một cây nến một
+	//        phút… đóng bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]);
+	//        5m_close = a closed 5m candle only (pre-#61).
+	//   MentorNewsWaitMode — "" → both (G56 D4.4-R22): the news wait needs the
+	//        close beyond the 4h AND the pre-print 1h line ("nằm trên hai cái
+	//        đường line này" [D4.4 p1 @21:48–22:12]); 4h_only = pre-#61.
+	//   MentorNewsReadLeadMin — nil → 30 (G58 D4.4-R6): on a print day the
+	//        1h/4h read freezes this many minutes before the print ("Một giờ
+	//        thì đợi gần trước news, tầm 30 phút" [D4.4 p1 @05:28–05:36]);
+	//        an explicit 0 = the pre-#61 07:20 start; range 0–120.
+	MentorOpen5mBreak     string `json:"mentor_open5m_break,omitempty"`
+	MentorNewsWaitMode    string `json:"mentor_news_wait_mode,omitempty"`
+	MentorNewsReadLeadMin *int   `json:"mentor_news_read_lead_min,omitempty"`
 	// MentorTuning — the owner-tunable mentor method numbers (K3, OWNER RULING
 	// 2026-10-04 "do all as mentor"). EVERY field unset (nil/0) resolves to the
 	// ruled default in kernel/mentor DefaultConfig, so an absent block runs

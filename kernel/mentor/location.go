@@ -129,9 +129,13 @@ func touchesPrice(ref market.Kline, price, band float64) bool {
 // location — "potential high low khung giờ nhỏ hơn, hay là insert bar cho
 // lệnh long khung giờ nhỏ hơn" [D4.3 @06:13–06:29]; its 5m-wick TARGETS
 // (KindWickMicroscalp) stay target-only.
+//
+// m466 P2 (G11 D3.1-R20): the unfilled gap's far edge (KindGapEdge) is a
+// location — "Cái cạnh dưới của cái gap, lúc nào nó cũng sẽ là resistance…
+// Level là resistance" [D3.1 p1 @09:41–09:51].
 func levelIsLocation(lvl Level, levels []Level) bool {
 	switch lvl.Kind {
-	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline, KindWickZone:
+	case KindKeyLevel, KindEMA34HTF, KindTriggerRetest, KindFTGHEdge, KindFTGLEdge, KindTrendline, KindWickZone, KindGapEdge:
 		return true
 	case KindOldExtreme:
 		return coincidesWithKeyLevel(lvl, levels)

@@ -447,6 +447,28 @@ export interface MentorTuning {
   // D5.4-R7 ['pair'] — reverse-ISB EMA 9 touch reads the mother + ISB group
   // [D5.4 p1 @03:35–03:46]
   isb_reverse_touch?: 'pair' | 'isb_candle'
+  // m466 P2 (release #61) — levels and touches; unset = the course.
+  // G2 D1.3-R21 ['on'] — a key level that held today and then breaks flips its
+  // role once (Uno Reverse); the backtest reject trades [D1.3 p1 @12:31–12:58]
+  uno_key_levels?: 'on' | 'off'
+  // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
+  // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
+  session_open_levels?: 'on' | 'off'
+  // G17 D2.3-R34 ['current_line'] — a trendline / EMA 34 order cancels on a
+  // close through the line's CURRENT price [D2.3 p1 @23:35–24:03]
+  level_arm_line_cancel?: 'current_line' | 'placement_price'
+  // G41 D2.2-R59 ['pullback'] — the whole pullback's low must hold above the
+  // prior low [D2.2 p3 @08:25–09:25]
+  phl_pullback_low?: 'pullback' | 'signal'
+  // m466 P1 (release #61) — boxes, breaks, ranges (absent = the course default).
+  // newest (default): the 5m ISB box is the NEWEST 5m inside bar [D4.1-R37]; first = pre-#61.
+  mentor_5m_box_source?: 'newest' | 'first'
+  // default ON: after a box break only setups in the break direction [D4.1-R31/R33, D4.1-R55].
+  mentor_break_direction_lock?: boolean
+  // default OFF (release #61 final — the course states no candle count / breakout margin): when true, no entry inside a range too small for its candles (61.50 pts / two 30-pt candles) [D4.2-R33].
+  mentor_small_range_guard?: boolean
+  // default ON: mid-range, trade WITH the last box rejection [D2.2-R71].
+  mentor_mid_range_reject_side?: boolean
 }
 
 export interface RiskControlConfig {
@@ -498,7 +520,7 @@ export interface RiskControlConfig {
   // the knob-rule default (course-defaults-30, owner "fix all"): first-target
   // ON, runner ON, resonance runner TP ON, BE-before-partial ON (reverses R3),
   // candle-3 any-profit ON (today's rule), reverse-ISB-as-PHL ON, EMA 9 visits
-  // shared, ISB max stop 30, keypair ratio 1, box height 0 (off), box fresh
+  // shared, ISB max stop 20 (m466), keypair ratio 1, box height 0 (off), box fresh
   // RTH pair OFF.
   mentor_swing_ema34_is_first_target?: boolean
   mentor_swing_runner?: boolean
@@ -517,12 +539,27 @@ export interface RiskControlConfig {
   // (default) = the whole 5m range that held the trade; 'band' = the pre-#60
   // entry-to-stop band. Unset → range.
   mentor_isb_loss_box?: 'range' | 'band'
+  // m466 P4 (release #61, swing D5.2). G63 R26: 'not_required' (default) =
+  // after an invalid cross the 5m inside bar alone is the setup; 'required' =
+  // the pre-#61 close back. G66 R25: unset → ON = a resting inside-bar order
+  // survives a later 5m close through the line. G65 R6: 'none' (default) = the
+  // swing runner has no TP (held by the 4h); 'capped' = the pre-#61 cap.
+  mentor_swing_isb_close_back?: 'not_required' | 'required'
+  mentor_swing_isb_keep?: boolean
+  mentor_swing_runner_tp?: 'none' | 'capped'
   // m465 P4 (release #60): D2.4-R2 — a raw same-way inside bar within 3
   // candles of a PHL/PLH fill arms resonance; unset → ON.
   mentor_resonance_raw_isb?: boolean
   // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
   // reduced size; unset → ON.
   mentor_2m_reduce_size?: boolean
+  // m466 P3 (release #61): G55 D4.4-R40 — what breaks the opening 5m range
+  // (unset → '1m_close'); G56 D4.4-R22 — the news wait reads both lines
+  // (unset → 'both'); G58 D4.4-R6 — minutes before the print the 1h/4h read
+  // is taken (unset → 30; 0 = the pre-#61 07:20 start).
+  mentor_open5m_break?: '1m_close' | '5m_close'
+  mentor_news_wait_mode?: 'both' | '4h_only'
+  mentor_news_read_lead_min?: number
   // Mentor method numbers (K3). Every field unset = the ruled default; the
   // Go side (store.MentorTuning) fails closed to the default on a bad value.
   mentor_tuning?: MentorTuning

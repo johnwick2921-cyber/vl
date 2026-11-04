@@ -77,6 +77,11 @@ func TestC52W3CancelSpendsReference(t *testing.T) {
 // (the course cancels the order, not the level).
 func TestC52W3CancelRecordsReferenceBar(t *testing.T) {
 	e, bars, _ := m425aLevelFixture(t, KindKeyLevel, "L")
+	// m466 P2 (G2 D1.3-R21): with Uno on, this held key level FLIPS on the
+	// close-through and its touch is reset (a fresh visit — no reference left
+	// to spend; TestM61UnoSameVisitBreak). The spend mechanism is pinned on
+	// the pre-#61 read, where the level stays and its reference must be spent.
+	e.Cfg.UnoKeyLevels = UnoKeyLevelsOff
 	ref := e.State.Touches["L"].RefBar.CloseTime
 	if ref == 0 {
 		t.Fatal("precondition: no touch reference")

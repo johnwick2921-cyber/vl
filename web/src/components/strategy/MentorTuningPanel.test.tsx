@@ -118,6 +118,11 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['near_box_between_exempt', 'on', true],
   ['phl_flat_low', 'strict', 'strict'],
   ['isb_reverse_touch', 'isb_candle', 'isb_candle'],
+  // m466 P2 (release #61) levels-and-touches knobs
+  ['uno_key_levels', 'off', 'off'],
+  ['session_open_levels', 'off', 'off'],
+  ['level_arm_line_cancel', 'placement_price', 'placement_price'],
+  ['phl_pullback_low', 'signal', 'signal'],
 ]
 
 it.each(COURSE_ENTRY_WRITES)(
@@ -153,7 +158,7 @@ it('an enum knob shows its ruled default on the blank option', () => {
   const esc = screen.getByTestId('mentor-tuning-isb_box_escape')
   expect(esc).toHaveValue('')
   expect(within(esc).getAllByRole('option')[0]).toHaveTextContent(
-    'default: body — open AND close beyond the edge'
+    'default: close — the 1m close beyond the edge (default, #61)'
   )
   const ib = screen.getByTestId('mentor-tuning-15m_ib_requires_5m_isb')
   expect(within(ib).getAllByRole('option')[0]).toHaveTextContent(
@@ -174,7 +179,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     tf_conflict_end: 'both_boxes', // course-defaults-30
     news_wait_both_lines: true, // course-defaults-30
     news_bars_excluded: true, // course-defaults-30 (CE-4, release #29 rework)
-    isb_box_escape: 'body',
+    isb_box_escape: 'close', // m466 G20/G49 (release #61): D4.1-R34 the 1m close
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
     orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON
@@ -203,5 +208,9 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     near_box_between_exempt: false, // m465 D3.2-R29/R30
     phl_flat_low: 'flat_near', // m465 D2.2-R64
     isb_reverse_touch: 'pair', // m465 D5.4-R7
+    uno_key_levels: 'on', // m466 P2 G2 D1.3-R21
+    session_open_levels: 'on', // m466 P2 G10/G11 D3.1-R26/R20
+    level_arm_line_cancel: 'current_line', // m466 P2 G17 D2.3-R34
+    phl_pullback_low: 'pullback', // m466 P2 G41 D2.2-R59
   })
 })

@@ -387,6 +387,9 @@ export function mentorKindLabel(kind: string, key = ''): string {
     case 'wick_zone':
       // m465 P5: the D4.3 wick zone (key "wick_zone:<side>:<ms>:<edge>").
       return key.includes(':short:') ? 'wick supply zone' : 'wick demand zone'
+    case 'gap_edge':
+      // m466 P2 (G11 D3.1-R20): the unfilled session-open gap's far edge.
+      return 'gap edge'
     default:
       return kind
   }
@@ -505,6 +508,7 @@ export function mentorLevelLabel(l: {
   const base = mentorKindLabel(l.kind, l.key)
   switch (l.kind) {
     case 'key_level':
+    case 'gap_edge':
       return `${base} ${fmt(l.price)}`
     case 'old_extreme':
       return `${base} ${fmt(l.price)}`

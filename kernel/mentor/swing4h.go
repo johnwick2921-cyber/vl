@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -53,7 +54,7 @@ import (
 //     stop is ABOVE SkipStopPts (knob mentor_swing_max_stop_pts, default 90 —
 //     his own example is 91.75 [p2 @19:34–21:43]) is refused (swing_max_stop),
 //     on the reject and the inside-bar path alike. 30–40 / 50–60 are fine. The
-//     swing stays EXEMPT from the ISB ceiling (mentor_isb_max_pts, 25).
+//     swing stays EXEMPT from the ISB ceiling (mentor_isb_max_pts, 20 since m466).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
 //     fallback); BE at +1R [D1.2 p1 @12:34–13:12, @15:56–15:59 — the general
 //     1:1 maintenance]; hold ONE 4h candle [D5.2 p1 @06:03–06:20].
@@ -116,6 +117,47 @@ type SwingCfg struct {
 	// D5.2 ties it to the 5m trigger lines. [C] not stated in the method —
 	// DS-103 wires the gate at the call site.
 	Respects5mZone bool
+	// ISBCloseBackRequired (m466 P4, G63 D5.2-R26) — knob
+	// mentor_swing_isb_close_back [D5.2-R26 p3 @04:49–05:09]: false =
+	// not_required (the default) — after
+	// an invalid cross the 5m inside bar ALONE is the setup, even while candle 1
+	// and the inside bar still close beyond the line; the entry must sit on the
+	// trade side of the line and the stop stays AT the line (R29). "chị vô đúng
+	// mà… còn nếu chị đợi đóng ngược lại cũng được, không thành vấn đề, nhưng
+	// chị đợi hơi lâu" [D5.2 p3 @04:49–05:09]; "tùy góc nhìn" [p3 @07:42–08:36].
+	// true = required: candle 1 AND the inside bar must both close back (the
+	// pre-#61 rule, R24 read strictly).
+	ISBCloseBackRequired bool
+	// ISBCancelOnCloseThrough (m466 P4, G66 D5.2-R25) — knob
+	// mentor_swing_isb_keep, INVERTED so the zero value is the course: false =
+	// keep ON (the default) — a resting INSIDE-BAR order is NOT cancelled by a
+	// later 5m close through the line; it rests until it fills, the 4h candle
+	// carrying the line closes (R27, the order's expiry) or the day/EOD rules
+	// end it: "Dù nó có xuống 1 cây nữa, nó trồi được 5 cây nữa. Để cái cây
+	// inside bar này cho em" [D5.2 p2 @10:23–10:51]. The close-through cancel
+	// stays on the REJECT order (R22). true = keep OFF (the pre-#61 behaviour:
+	// any resting swing order dies on a close through the line).
+	ISBCancelOnCloseThrough bool
+}
+
+// Swing ISB close-back knob values (m466 P4), canonicalized where they enter
+// (canon 28) by NormalizeSwingISBCloseBack.
+const (
+	SwingISBCloseBackNotRequired = "not_required" // default: the inside bar alone [D5.2-R26 p3 @04:49–05:09]
+	SwingISBCloseBackRequired    = "required"     // pre-#61: candle 1 + the inside bar close back
+)
+
+// NormalizeSwingISBCloseBack canonicalizes mentor_swing_isb_close_back: "" →
+// not_required (the course default); ok=false = an unknown value, which fails
+// closed to not_required (the course) and is counted by the caller.
+func NormalizeSwingISBCloseBack(v string) (mode string, ok bool) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "", SwingISBCloseBackNotRequired:
+		return SwingISBCloseBackNotRequired, true
+	case SwingISBCloseBackRequired:
+		return SwingISBCloseBackRequired, true
+	}
+	return SwingISBCloseBackNotRequired, false
 }
 
 // DefaultSwingCfg returns the §8 defaults.
@@ -265,6 +307,14 @@ const (
 	// SwingRefusedISBSpent — an inside bar at an invalid level whose inside-bar
 	// order already FILLED in this 4h candle: the level gave its trade [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56].
 	SwingRefusedISBSpent = "swing_isb_spent"
+	// SwingRefusedISBEntryBeyondLine (m466 P4, G63 D5.2-R26) — under
+	// mentor_swing_isb_close_back not_required an inside bar may form while
+	// price is still beyond the line, but its entry must sit on the TRADE side
+	// of the line ("cái điểm entry ở inside bar, basically nó vẫn nằm trên line"
+	// [D5.2 p3 @07:42–08:36]) — the stop is AT the line (R29). An inside bar
+	// whose stop order would rest beyond the line is refused, NAMED; it does not
+	// spend the level (R25: a later inside bar may enter).
+	SwingRefusedISBEntryBeyondLine = "swing_isb_entry_beyond_line"
 )
 
 type swingTouch struct {
@@ -309,6 +359,13 @@ type swingPosition struct {
 	beTriedBar    int64
 	closeTriedBar int64
 	ExpiryMs      int64 // S1: the resting order's expiry (close of the current 4h candle)
+	// ISB (m466 P4, G66 D5.2-R25) marks the INSIDE-BAR order of an invalid
+	// level (vs the reject order): with mentor_swing_isb_keep ON (default) a
+	// later 5m close through the line does not cancel it. Not serialized: the
+	// state digests of the pinned tapes stay byte-identical under the pre-#61
+	// knob values, and a resting order never survives a restart (only a FILLED
+	// swing is rebuilt, from the broker — RebuildSwingPos).
+	ISB bool `json:"-"`
 }
 
 // fourHBucketStart returns the start (ms) of the 4h bucket a bar belongs to.
@@ -586,7 +643,15 @@ func (s *SwingState) stepSwingBar(bars5m []market.Kline, i int, line float64, cf
 	// order must not keep holding the account slot against a line price
 	// has already cut through. The fill check above wins: a filled order
 	// is a position, not a resting order to cancel.
-	if s.Pending != nil && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
+	//
+	// m466 P4 (G66 D5.2-R25, knob mentor_swing_isb_keep, default ON): the
+	// cancel is the REJECT order's rule (R22). An INSIDE-BAR order rests through
+	// a later close beyond the line — "Dù nó có xuống 1 cây nữa, nó trồi được 5
+	// cây nữa. Để cái cây inside bar này cho em" [D5.2 p2 @10:23–10:51] — until
+	// it fills, the 4h candle carrying the line closes (R27: the expiry check
+	// above) or the day/EOD rules end it. Keep OFF = the pre-#61 cancel.
+	keepISB := s.Pending != nil && s.Pending.ISB && !cfg.ISBCancelOnCloseThrough
+	if s.Pending != nil && !keepISB && closesThroughPendingLine(s.Pending.Side, b.Close, line) {
 		out = append(out, Intent{
 			Action: CancelArm,
 			ArmID:  s.Pending.ArmID,
@@ -647,8 +712,20 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 		// invalid marker; the close-back bar is never its own inside bar); the
 		// D1.4 colour clause (ISBDirection(prev) == Approach) is REMOVED — the
 		// swing's direction is the 4H line's, not candle 1's colour.
-		isInside := closedBack(ft.Approach, prev.Close, line) &&
-			closedBack(ft.Approach, b.Close, line) && swingInsideBar(prev, b)
+		//
+		// m466 P4 (G63 D5.2-R26, knob mentor_swing_isb_close_back): the two
+		// close-back clauses are the REQUIRED option only. not_required (the
+		// default) — the inside bar ALONE is the setup, even while price still
+		// closes beyond the line: "Chị vô đúng mà… còn nếu chị đợi đóng ngược lại
+		// cũng được, không thành vấn đề, nhưng chị đợi hơi lâu" [D5.2 p3
+		// @04:49–05:09]; "tùy góc nhìn" [p3 @07:42–08:36]. Its entry must still
+		// sit on the trade side of the line (checked below, named
+		// swing_isb_entry_beyond_line), and the stop stays AT the line (R29).
+		isInside := swingInsideBar(prev, b)
+		if cfg.ISBCloseBackRequired {
+			isInside = isInside && closedBack(ft.Approach, prev.Close, line) &&
+				closedBack(ft.Approach, b.Close, line)
+		}
 		if isInside && ft.ISBFired {
 			// rv59: an inside bar is never read as a reject shape (the
 			// "only a 5m inside bar may enter" text on a bar that IS one).
@@ -680,6 +757,13 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 					swingCT(b.OpenTime), line, open.ArmID, open.Side, open.Entry)
 				return out
 			}
+			if entry, onSide := swingISBEntryOnTradeSide(ft.Approach, b, line, cfg); !onSide {
+				// m466 P4 (G63): only reachable under not_required — a closed-back
+				// inside bar always reaches past the line. Not spent (R25).
+				s.refuse(SwingRefusedISBEntryBeyondLine, "%s CT inside bar at the invalid 4h line %.2f: its %s stop order %.2f would rest BEYOND the line, where the stop AT the line cannot sit — \"cái điểm entry ở inside bar, basically nó vẫn nằm trên line\" [D5.2-R26/R29 p3 @07:42–08:36]",
+					swingCT(b.OpenTime), line, ft.Approach, entry)
+				return out
+			}
 			in, ok, why := swingISBIntent(ft, b, line, cfg)
 			if !ok {
 				// Not spent: R25 (no time limit) lets a later inside bar with a
@@ -703,6 +787,7 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 			ft.ISBFired = true // A6: Through stays latched; the ISB is spent
 			in.ArmID = "swing-" + strconv.FormatInt(b.OpenTime, 10)
 			s.openPosition(in, now)
+			s.Pending.ISB = true // m466 P4 (G66): the inside-bar order (keep rule)
 			return append(out, in)
 		}
 		// A reject-shaped touch at the invalid level (either side): refused,
@@ -1051,8 +1136,26 @@ func swingISBIntent(t *swingTouch, ref market.Kline, line float64, cfg SwingCfg)
 	if why, bad := swingStopRefusal(in, cfg); bad {
 		return Intent{}, false, why
 	}
-	in.Reason = "swing §8: the level went invalid, then closes back → 5m inside bar with the stop AT the level [D5.2-R24/R29 p1 @20:31–21:57, p3 @05:14–05:57]"
+	if cfg.ISBCloseBackRequired {
+		// pre-#61 text, byte-identical (the pinned tapes replay under required).
+		in.Reason = "swing §8: the level went invalid, then closes back → 5m inside bar with the stop AT the level [D5.2-R24/R29 p1 @20:31–21:57, p3 @05:14–05:57]"
+	} else {
+		in.Reason = "swing §8: the level went invalid → 5m inside bar, no close back needed (mentor_swing_isb_close_back=not_required) — stop AT the level [D5.2-R24/R26/R29 p1 @20:31–21:57, p3 @04:49–05:57]"
+	}
 	return in, true, SwingRefusal{}
+}
+
+// swingISBEntryOnTradeSide (m466 P4, G63 D5.2-R26) reports the inside-bar
+// stop order's entry and whether it sits strictly on the TRADE side of the line
+// (above it for a long, below it for a short), where a stop AT the line (R29)
+// can protect it. Same entry price as swingISBIntent.
+func swingISBEntryOnTradeSide(approach Side, ref market.Kline, line float64, cfg SwingCfg) (float64, bool) {
+	if approach == SideShort {
+		e := ref.Low - cfg.EntryBufferPts
+		return e, e < line
+	}
+	e := ref.High + cfg.EntryBufferPts
+	return e, e > line
 }
 
 // swingStopRefusal is the ONE stop check both swing entries run, in order:

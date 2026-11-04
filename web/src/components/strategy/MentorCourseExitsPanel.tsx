@@ -19,6 +19,7 @@ export type CourseExitsBoolKey =
   | 'mentor_box_fresh_rth_pair'
   | 'mentor_resonance_raw_isb'
   | 'mentor_2m_reduce_size'
+  | 'mentor_swing_isb_keep'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -26,16 +27,25 @@ export type CourseExitsNumKey =
   | 'mentor_keypair_candle_ratio'
   | 'mentor_box_max_height_pts'
   | 'mentor_swing_max_stop_pts'
+  | 'mentor_news_read_lead_min'
+
+// m466 P3 + P4 (release #61): the string-enum knobs rendered from ENUM_KEYS below.
+export type CourseExitsEnumKey =
+  | 'mentor_open5m_break'
+  | 'mentor_news_wait_mode'
+  | 'mentor_swing_isb_close_back'
+  | 'mentor_swing_runner_tp'
 
 export type CourseExitsKey =
   | CourseExitsBoolKey
   | CourseExitsNumKey
+  | CourseExitsEnumKey
   | 'mentor_ema9_visit_cap'
   | 'mentor_isb_loss_box'
 
 // The knob-rule defaults the server resolves for an ABSENT key
 // (course-defaults-30: swing_runner, be_before_partial and reverse_isb_as_phl
-// are now ON; swing4h_contracts 2; isb_max_pts 30).
+// are now ON; swing4h_contracts 2; isb_max_pts 20 since m466 G23 D4.1-R12).
 export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_swing_ema34_is_first_target: true,
   mentor_swing_runner: true,
@@ -50,7 +60,9 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_2m_reduce_size: true,
   mentor_ema9_visit_cap: 'shared',
   mentor_swing4h_contracts: 2,
-  mentor_isb_max_pts: 30,
+  // m466 G23 (D4.1-R12 "inside bar mà nó hai mươi mấy điểm… đừng vô" [D4.1 p1
+  // @05:41–06:08]): the ISB ceiling is 20 (PHL/PLH keep 25).
+  mentor_isb_max_pts: 20,
   mentor_keypair_candle_ratio: 1,
   mentor_box_max_height_pts: 0,
   // m463 (D5.2-R31, owner order 2026-11-01 "full of it" — reverses m186): a
@@ -59,6 +71,21 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   // m465 P2 (D4.2-R27 "tôi bọc cái khu vực này lại. Tôi sẽ không trade bên
   // trong" [D4.2 p2 @03:43–04:07]): an ISB loss boxes the whole 5m range.
   mentor_isb_loss_box: 'range',
+  // m466 P3 (release #61): G55 D4.4-R40 the opening 5m range breaks on a 1m
+  // close; G56 D4.4-R22 the news wait reads BOTH lines; G58 D4.4-R6 the 1h/4h
+  // read is taken 30 min before the print.
+  mentor_open5m_break: '1m_close',
+  mentor_news_wait_mode: 'both',
+  mentor_news_read_lead_min: 30,
+  // m466 P4 (release #61, swing D5.2): G63 R26 — the inside bar alone after an
+  // invalid cross ("đợi đóng ngược lại cũng được nhưng hơi lâu" [D5.2 p3
+  // @04:49–05:09]); G66 R25 — the inside-bar order survives a close through
+  // ("Để cái cây inside bar này cho em" [D5.2 p2 @10:23–10:51]); G65 R6 — the
+  // runner has no TP, held by the 4h ("gồng theo khung 4 giờ" [D5.2 p1
+  // @05:40–06:14]).
+  mentor_swing_isb_close_back: 'not_required',
+  mentor_swing_isb_keep: true,
+  mentor_swing_runner_tp: 'none',
 } as const
 
 const COPY = {
@@ -155,15 +182,85 @@ const COPY = {
     en: 'band — the entry-to-stop band only (pre-#60)',
     es: 'band — solo la banda entrada-stop (antes de #60)',
   },
+  mentor_swing_isb_keep: {
+    zh: 'SWING：inside bar 挂单在 5 分钟收盘穿线后仍保留（课程默认）',
+    en: 'SWING: the inside-bar order survives a later 5m close through the line (the course default)',
+    es: 'SWING: la orden del inside bar sobrevive a un cierre de 5m a través de la línea (el curso por defecto)',
+  },
+  mentor_swing_isb_close_back: {
+    zh: 'SWING：失效后的 inside bar 是否需要收回线内',
+    en: 'SWING: does the inside bar after an invalid cross need a close back?',
+    es: 'SWING: ¿el inside bar tras un cruce inválido necesita cerrar de vuelta?',
+  },
+  not_required: {
+    zh: 'not_required — 只要 inside bar 即可（默认，课程）',
+    en: 'not_required — the inside bar alone (default, the course)',
+    es: 'not_required — basta el inside bar (por defecto, el curso)',
+  },
+  required: {
+    zh: 'required — K1 与 inside bar 都需收回（#61 之前）',
+    en: 'required — candle 1 and the inside bar both close back (pre-#61)',
+    es: 'required — la vela 1 y el inside bar cierran de vuelta (antes de #61)',
+  },
+  mentor_swing_runner_tp: {
+    zh: 'SWING：runner 止盈',
+    en: 'SWING: runner take-profit',
+    es: 'SWING: take-profit del runner',
+  },
+  none: {
+    zh: 'none — 无止盈，按 4 小时持有（默认，课程）',
+    en: 'none — no TP, held by the 4h (default, the course)',
+    es: 'none — sin TP, se mantiene por la 4h (por defecto, el curso)',
+  },
+  capped: {
+    zh: 'capped — max(100, 2 × 第一目标距离)（#61 之前）',
+    en: 'capped — max(100, 2 × the first-target distance) (pre-#61)',
+    es: 'capped — max(100, 2 × la distancia al primer objetivo) (antes de #61)',
+  },
   mentor_swing4h_contracts: {
     zh: 'SWING 口数（默认 2；runner 需 ≥ 2）',
     en: 'SWING contracts (default 2; a runner needs ≥ 2)',
     es: 'Contratos SWING (por defecto 2; un runner necesita ≥ 2)',
   },
   mentor_isb_max_pts: {
-    zh: '最大止损（仅 ISB；点，0 → 30）',
-    en: 'Max stop (ISB only; pts, 0 → 30)',
-    es: 'Stop máximo (solo ISB; pts, 0 → 30)',
+    zh: '最大止损（仅 ISB；点，0 → 20；PHL/PLH 仍为 25）',
+    en: 'Max stop (ISB only; pts, 0 → 20; PHL/PLH keep 25)',
+    es: 'Stop máximo (solo ISB; pts, 0 → 20; PHL/PLH mantienen 25)',
+  },
+  mentor_news_read_lead_min: {
+    zh: '新闻前读取 1h/4h 线（分钟，默认 30；0 = 07:20 开始）',
+    en: 'Read the 1h/4h lines before the news (min, default 30; 0 = from 07:20)',
+    es: 'Leer las líneas 1h/4h antes de la noticia (min, por defecto 30; 0 = desde 07:20)',
+  },
+  mentor_open5m_break: {
+    zh: '开盘 5 分钟区间突破',
+    en: 'Opening 5m range break',
+    es: 'Ruptura del rango de apertura de 5m',
+  },
+  '1m_close': {
+    zh: '1m_close — 1 分钟 K 线收在区间外（默认，课程）',
+    en: '1m_close — a 1m candle closes outside (default, the course)',
+    es: '1m_close — una vela de 1m cierra fuera (por defecto, el curso)',
+  },
+  '5m_close': {
+    zh: '5m_close — 5 分钟 K 线收在区间外（#61 之前）',
+    en: '5m_close — a 5m candle closes outside (pre-#61)',
+    es: '5m_close — una vela de 5m cierra fuera (antes de #61)',
+  },
+  mentor_news_wait_mode: {
+    zh: '新闻后等待：收盘需在哪些线之外',
+    en: 'News wait: the close must be beyond',
+    es: 'Espera de noticias: el cierre debe estar más allá de',
+  },
+  both: {
+    zh: 'both — 4h 线和新闻前 1h 线（默认，课程）',
+    en: 'both — the 4h AND the pre-print 1h line (default, the course)',
+    es: 'both — la línea 4h Y la 1h previa (por defecto, el curso)',
+  },
+  '4h_only': {
+    zh: '4h_only — 只看 4h 线（#61 之前）',
+    en: '4h_only — the 4h line only (pre-#61)',
+    es: '4h_only — solo la línea 4h (antes de #61)',
   },
   mentor_keypair_candle_ratio: {
     zh: '价位间距 / K 线比例（默认 1）',
@@ -196,6 +293,7 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_box_fresh_rth_pair',
   'mentor_resonance_raw_isb',
   'mentor_2m_reduce_size',
+  'mentor_swing_isb_keep',
 ]
 
 const NUM_KEYS: CourseExitsNumKey[] = [
@@ -204,13 +302,35 @@ const NUM_KEYS: CourseExitsNumKey[] = [
   'mentor_keypair_candle_ratio',
   'mentor_box_max_height_pts',
   'mentor_swing_max_stop_pts',
+  'mentor_news_read_lead_min',
 ]
+
+// m466 P3 + P4 (release #61): the enum selects; the first option is the
+// default. One key per line (guideTruth T16 reads the Studio controls from
+// these lines).
+const ENUM_KEYS: CourseExitsEnumKey[] = [
+  'mentor_open5m_break',
+  'mentor_news_wait_mode',
+  'mentor_swing_isb_close_back',
+  'mentor_swing_runner_tp',
+]
+
+const ENUM_OPTIONS: Record<CourseExitsEnumKey, (keyof typeof COPY)[]> = {
+  mentor_open5m_break: ['1m_close', '5m_close'], // P3 G55 D4.4-R40
+  mentor_news_wait_mode: ['both', '4h_only'], // P3 G56 D4.4-R22
+  mentor_swing_isb_close_back: ['not_required', 'required'], // P4 G63 D5.2-R26
+  mentor_swing_runner_tp: ['none', 'capped'], // P4 G65 D5.2-R6
+}
 
 export type CourseExitsValues = Partial<
   Record<CourseExitsBoolKey, boolean> &
     Record<CourseExitsNumKey, number> & {
       mentor_ema9_visit_cap: string
       mentor_isb_loss_box: string
+      mentor_open5m_break: string
+      mentor_news_wait_mode: string
+      mentor_swing_isb_close_back: string
+      mentor_swing_runner_tp: string
     }
 >
 
@@ -335,6 +455,36 @@ export function MentorCourseExitsPanel({
           </select>
           <EffectiveLine knob={eff?.('mentor_isb_loss_box')} />
         </label>
+        {ENUM_KEYS.map((key) => (
+          <label
+            key={key}
+            className="text-xs flex flex-col gap-1"
+            style={{ color: '#EAECEF' }}
+          >
+            {tr(COPY[key], language)}
+            <select
+              disabled={disabled}
+              data-testid={`mentor-course-${key}`}
+              value={values[key] ?? ''}
+              onChange={(e) =>
+                onChange(
+                  key,
+                  e.target.value === '' ? undefined : e.target.value
+                )
+              }
+              className="px-2 py-1 rounded"
+              style={box}
+            >
+              <option value="">{`${tr(COPY.deflt, language)}: ${tr(COPY[ENUM_OPTIONS[key][0]], language)}`}</option>
+              {ENUM_OPTIONS[key].map((o) => (
+                <option key={o} value={o}>
+                  {tr(COPY[o], language)}
+                </option>
+              ))}
+            </select>
+            <EffectiveLine knob={eff?.(key)} />
+          </label>
+        ))}
         {NUM_KEYS.map((key) => (
           <label
             key={key}

@@ -51,6 +51,52 @@ package mentor
 // box or not; a confirmed box makes it real-origin): STATE stream only, 98
 // rows (the forming flag cleared at the confirm); zero intent / note / level /
 // trendline rows. Real-tape replay vs b68db6879: zero entries moved.
+// m466 P4 (release #61, swing D5.2-R26 inside bar without close-back + D5.2-R25
+// inside-bar order kept on close-through, both knobs at the course default):
+// regenerated — 13 intent rows (ALL SWING4H: 10-23 near1 ticks 704/709/714/
+// 734/769/849/964/1204, 10-23 near0 984/999/1139, 10-13 near1 + exec2m 2084 —
+// an inside-bar arm one beat earlier and its BE / hold-close, the later arm it
+// pre-empts), 57 note and 4,078 state rows (the swing refusal ledger + touch
+// window); zero level / trendline rows. Under the pre-#61 knob values the
+// tapes reproduce the previous golden byte for byte —
+// TestM61StrictReadIsThePreP4Golden (testdata/m61_prep4_tick_identity.golden.gz).
+// Release #61 INTEGRATION (fix/m466-checklist-gaps; merge order P3 → P4 → P2 →
+// P1 on #60 cc264a9b4): regenerated ONCE at the merged head — vs the #60
+// golden 49 intent / 1,102 note / 90 level / 5,215 state rows moved, zero
+// trendline rows. Every moved intent, note and level row moved in at least
+// one package's own golden, and every moved intent and level row is byte-equal
+// to one package's own row (the 30 note rows that match none are the
+// concatenation of two packages' notes on one tick: P1+P4 on 10-23 swing
+// ticks, P1+P2 on 10-23 1111/1181 and 10-13 2606/2731). With EVERY #61 knob at
+// its pre-#61 value (m466Rel61PreValues + the P1 G37 hook) the four tapes
+// reproduce the #60 golden byte for byte — TestM61PreValuesReproduceThePre61Golden
+// and TestM61StrictReadIsThePreP4Golden (both .gz files = the #60 golden,
+// md5 d257798e5ef27c2f956643ed53d669e8) and TestM462StoredNewsOnlyIsThePreM462Behaviour.
+// Release #61 REVIEW ROUND (G33 two >= 30-pt candles, the break close ends the
+// guard with no same-tick re-latch and no slide; G37 floor/ceiling need the
+// native kind or a flip; a forming-15m break lock ends with its bucket):
+// regenerated — ONE intent row (m423_1023_default_cfg_near1 bar 743, 10-23
+// 05:23 CT: the PLH short 29,134.75 stop 29,151 now emits; before, a small
+// range 29,104–29,158 latched at 05:20 on ONE 41.25-pt impulse candle (05:06,
+// every other candle 4.75–24 pts) refused it range_too_small_big_candles),
+// 127 note and 4,886 state rows; zero level / trendline rows. The pre-#61
+// pins above are unchanged (every changed rule is behind a #61 knob at its
+// pre value, or the G37 hook).
+// Release #61 REVIEW ROUND 2 (a provisional-15m break lock keeps the lock it
+// replaced underneath it; G33 never latches on the breakout candle — it is
+// recorded as the break; a box return met in a 15m/5m conflict is consumed
+// and refused box_tf_conflict; G43 rejects only at a box that played the
+// role): regenerated — ZERO intent rows, 58 note and 5,020 state rows; zero
+// level / trendline rows. The pre-#61 pins are unchanged (the lock and the
+// range changes sit behind their #61 knobs; the box-return consume behind the
+// test hook boxConflictLegacySkip beside midRangeLegacyRole).
+// Release #61 FINAL (G33 mentor_small_range_guard default OFF — D4.2-R33 gives
+// no candle count or breakout margin, three review rounds of mis-latches):
+// regenerated — ZERO intent, level and trendline rows; 1,704 state rows (the
+// SmallRange / SmallRangeBreakAt / range_small_* counters no longer built) and
+// 26 note rows (the range_small set / ended / breakout notes gone), on all
+// four tapes (m423 near1 403, m423 near0 403, r22 near1 449, r22 exec2m 449).
+// The pre-#61 pins are unchanged (their pre-values already set it false).
 //
 // Regenerate (only when a deliberate behaviour change lands):
 //   M434_WRITE_GOLDEN=1 go test -count=1 -run TestM434TickOutputIsByteIdentical ./kernel/mentor

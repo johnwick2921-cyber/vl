@@ -51,6 +51,9 @@ type BoolKey =
   | 'wick_safe_play'
   | 'near_box_room_phl'
   | 'near_box_between_exempt'
+  | 'mentor_break_direction_lock'
+  | 'mentor_small_range_guard'
+  | 'mentor_mid_range_reject_side'
 
 type EnumKey =
   | '15m_ib_requires_5m_isb'
@@ -62,6 +65,11 @@ type EnumKey =
   | 'trendline_entry_touch'
   | 'phl_flat_low'
   | 'isb_reverse_touch'
+  | 'uno_key_levels'
+  | 'session_open_levels'
+  | 'level_arm_line_cancel'
+  | 'phl_pullback_low'
+  | 'mentor_5m_box_source'
 
 type EnumOption<K extends EnumKey> = {
   value: NonNullable<MentorTuning[K]>
@@ -229,9 +237,39 @@ const COPY = {
     es: 'Prueba de escape de la caja de reposo ISB',
   },
   isbEscapeClose: {
-    zh: '收盘 — 仅收盘价越过边缘',
-    en: 'close — the close beyond the edge',
-    es: 'cierre — el cierre fuera del borde',
+    zh: '收盘 — 1 分钟收盘价越过边缘（默认，#61）',
+    en: 'close — the 1m close beyond the edge (default, #61)',
+    es: 'cierre — el cierre de 1m fuera del borde (por defecto, #61)',
+  },
+  box5mSource: {
+    zh: '5 分钟 ISB 箱体是',
+    en: 'The 5m ISB box is the',
+    es: 'La caja ISB de 5m es la',
+  },
+  box5mNewest: {
+    zh: '最新的 5 分钟内包线（替换旧箱体）',
+    en: 'newest 5m inside bar (replaces the standing box)',
+    es: 'vela interior de 5m más reciente (reemplaza la caja vigente)',
+  },
+  box5mFirst: {
+    zh: '第一个箱体，直到突破（#61 之前）',
+    en: 'first box, until it escapes (before #61)',
+    es: 'primera caja, hasta que escape (antes de #61)',
+  },
+  breakLock: {
+    zh: '突破后只做突破方向的形态，直到收盘回到箱体内',
+    en: 'After a box break, only setups in the break direction until a close back inside',
+    es: 'Tras romper una caja, solo setups en la dirección de la ruptura hasta un cierre de vuelta dentro',
+  },
+  smallRange: {
+    zh: '区间太小（≤61.5 点且有两根 ≥30 点的 K 线）时区间内不入场（默认关闭）',
+    en: 'No entry inside a range too small for its candles (≤ 61.50 pts with two ≥ 30-pt candles) — default OFF',
+    es: 'Sin entrada dentro de un rango demasiado pequeño para sus velas (≤ 61,50 pts con dos velas ≥ 30 pts) — desactivado por defecto',
+  },
+  midRangeReject: {
+    zh: '两个箱体之间：跟随最近一次箱体拒绝的方向',
+    en: 'Between two boxes: trade WITH the last box rejection',
+    es: 'Entre dos cajas: operar A FAVOR del último rechazo de caja',
   },
   isbEscapeBody: {
     zh: '实体 — 开盘价与收盘价都越过边缘',
@@ -363,6 +401,67 @@ const COPY = {
     en: 'the ISB candle alone reaches it (pre-#60)',
     es: 'solo la vela ISB la alcanza (antes de #60)',
   },
+  // m466 P2 (release #61) — levels and touches.
+  unoKey: {
+    zh: '关键位被突破后（Uno Reverse）',
+    en: 'Key level that held, then broke (Uno Reverse)',
+    es: 'Nivel clave que aguantó y luego se rompió (Uno Reverse)',
+  },
+  unoKeyOn: {
+    zh: '角色翻转一次，回测拒绝可交易（课程）',
+    en: 'the role flips once; the backtest reject trades (the course)',
+    es: 'el rol cambia una vez; el rechazo del retest opera (el curso)',
+  },
+  unoKeyOff: {
+    zh: '任何突破 = 当日仅 ISB（#61 之前）',
+    en: 'any break = ISB-only for the day (pre-#61)',
+    es: 'cualquier ruptura = solo ISB el resto del día (antes de #61)',
+  },
+  sessionOpen: {
+    zh: '开盘K线影线 + 跳空边缘作为水平位',
+    en: 'Session-open wick + gap edge as levels',
+    es: 'Mecha de apertura + borde del gap como niveles',
+  },
+  sessionOpenOn: {
+    zh: '开启（课程）',
+    en: 'on (the course)',
+    es: 'activado (el curso)',
+  },
+  sessionOpenOff: {
+    zh: '关闭（#61 之前）',
+    en: 'off (pre-#61)',
+    es: 'desactivado (antes de #61)',
+  },
+  armLine: {
+    zh: '趋势线 / EMA 34 挂单的取消读法',
+    en: 'Trendline / EMA 34 resting order: cancel read',
+    es: 'Orden en tendencia / EMA 34: lectura de cancelación',
+  },
+  armLineCurrent: {
+    zh: '收盘穿过线的当前价格（课程）',
+    en: 'a close through the line’s CURRENT price (the course)',
+    es: 'un cierre a través del precio ACTUAL de la línea (el curso)',
+  },
+  armLinePlacement: {
+    zh: '挂单时的价格（#61 之前）',
+    en: 'the price at placement (pre-#61)',
+    es: 'el precio al colocar la orden (antes de #61)',
+  },
+  phlPullback: {
+    zh: 'PHL 更高低点的读法',
+    en: 'PHL higher-low read',
+    es: 'Lectura del mínimo más alto en PHL',
+  },
+  phlPullbackWhole: {
+    zh: '整个回调的低点（课程）',
+    en: 'the whole pullback’s low (the course)',
+    es: 'el mínimo de todo el retroceso (el curso)',
+  },
+  phlPullbackSignal: {
+    zh: '仅信号K线的低点（#61 之前）',
+    en: 'the signal candle’s low only (pre-#61)',
+    es: 'solo el mínimo de la vela de señal (antes de #61)',
+  },
   eveSlowPts: {
     zh: '夜盘“慢”：高低点幅度低于此点数则用5分钟（我们的数字）',
     en: 'Evening "slow": night range under this many pts reads the 5m (ours, not the course)',
@@ -464,6 +563,26 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'pair', label: COPY.isbRevTouchPair },
     { value: 'isb_candle', label: COPY.isbRevTouchIsb },
   ],
+  uno_key_levels: [
+    { value: 'on', label: COPY.unoKeyOn },
+    { value: 'off', label: COPY.unoKeyOff },
+  ],
+  session_open_levels: [
+    { value: 'on', label: COPY.sessionOpenOn },
+    { value: 'off', label: COPY.sessionOpenOff },
+  ],
+  level_arm_line_cancel: [
+    { value: 'current_line', label: COPY.armLineCurrent },
+    { value: 'placement_price', label: COPY.armLinePlacement },
+  ],
+  phl_pullback_low: [
+    { value: 'pullback', label: COPY.phlPullbackWhole },
+    { value: 'signal', label: COPY.phlPullbackSignal },
+  ],
+  mentor_5m_box_source: [
+    { value: 'newest', label: COPY.box5mNewest },
+    { value: 'first', label: COPY.box5mFirst },
+  ],
 }
 
 function tr(entry: Copy, language: string): string {
@@ -494,7 +613,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
-  isb_box_escape: 'body', // (a)
+  isb_box_escape: 'close', // m466 G20/G49 (release #61): a 1m close outside the box [D4.1 p1 @20:36–21:03]
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
   orb_isb_fraction_outside: 0.8, // rule 5 (release #31) — default ON at 0.80
@@ -524,6 +643,16 @@ export const MENTOR_TUNING_DEFAULTS = {
   near_box_between_exempt: false, // D3.2-R29/R30 [D3.2 p1 @22:12–24:41]
   phl_flat_low: 'flat_near', // D2.2-R64 [D2.2 p3 @07:44–10:15]
   isb_reverse_touch: 'pair', // D5.4-R7 [D5.4 p1 @03:35–03:46]
+  // m466 P2 (release #61) — levels and touches, the course.
+  uno_key_levels: 'on', // G2 D1.3-R21 [D1.3 p1 @12:31–12:58]
+  session_open_levels: 'on', // G10/G11 D3.1-R26/R20 [D3.1 p1 @09:41–12:22]
+  level_arm_line_cancel: 'current_line', // G17 D2.3-R34 [D2.3 p1 @23:35–24:03]
+  phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
+  // m466 P1 (release #61) — boxes, breaks, ranges.
+  mentor_5m_box_source: 'newest', // G28 D4.1-R37 [D4.1 p1 @22:31–22:49]
+  mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
+  mentor_small_range_guard: false, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30] — OFF since #61 final (count / margin unstated)
+  mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the
@@ -780,6 +909,30 @@ export function MentorTuningPanel({
           COPY.isbRevTouch,
           ENUM_OPTIONS.isb_reverse_touch
         )}
+        {enumField('uno_key_levels', COPY.unoKey, ENUM_OPTIONS.uno_key_levels)}
+        {enumField(
+          'session_open_levels',
+          COPY.sessionOpen,
+          ENUM_OPTIONS.session_open_levels
+        )}
+        {enumField(
+          'level_arm_line_cancel',
+          COPY.armLine,
+          ENUM_OPTIONS.level_arm_line_cancel
+        )}
+        {enumField(
+          'phl_pullback_low',
+          COPY.phlPullback,
+          ENUM_OPTIONS.phl_pullback_low
+        )}
+        {enumField(
+          'mentor_5m_box_source',
+          COPY.box5mSource,
+          ENUM_OPTIONS.mentor_5m_box_source
+        )}
+        {boolField('mentor_break_direction_lock', COPY.breakLock)}
+        {boolField('mentor_small_range_guard', COPY.smallRange)}
+        {boolField('mentor_mid_range_reject_side', COPY.midRangeReject)}
       </div>
     </div>
   )

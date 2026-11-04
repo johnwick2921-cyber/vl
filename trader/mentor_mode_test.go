@@ -779,9 +779,17 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R8") {
 		t.Fatalf("a 28.25-pt ISB stop must be refused R8 (> 25 ceiling): %q", why)
 	}
-	// a 24-pt ISB stop passes (under the 25-pt ceiling — the reduce band's top).
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); why != "" {
-		t.Fatalf("a 24-pt ISB stop must pass R8 (under 25): %q", why)
+	// m466 G23 (D4.1-R12 "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]):
+	// a 24-pt ISB stop is REFUSED at the default 20; a 24-pt PHL keeps the
+	// D3.3-R1 25 and passes; a stored 25 keeps the ISB.
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); !strings.HasPrefix(why, "R8") {
+		t.Fatalf("a 24-pt ISB stop must be refused R8 (above the 20 ceiling): %q", why)
+	}
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); why != "" {
+		t.Fatalf("a 24-pt PHL stop must pass R8 (under 25): %q", why)
+	}
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{ISBMaxStopPts: 25}); why != "" {
+		t.Fatalf("a 24-pt ISB stop must pass R8 with a stored 25: %q", why)
 	}
 	// the swing is the ONLY exemption from the ceiling — 30.00 is refused.
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {

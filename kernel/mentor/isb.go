@@ -96,8 +96,8 @@ func ISBOrders(candle market.Kline, cfg Config) (long, short Intent) {
 
 // ISBStopLimitOrder is the R1 order the evaluator emits: the single stop-limit
 // entry in the CANDLE-1 direction. ok is false (with a cited reason) when the
-// stop is ≥ the ISB ceiling — the ONLY stop-size skip R1 has (default 25 =
-// ISBMaxStopPts) [D4.1 p1 @ 05:41].
+// stop is ABOVE the ISB ceiling — the ONLY stop-size skip R1 has (default 20 =
+// ISBMaxStopPts) [D4.1 p1 @ 05:41–06:08].
 func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, string) {
 	dir := ISBDirection(prev)
 	if dir == "" {
@@ -116,16 +116,17 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 	return dir, short, true, ""
 }
 
-// ISBStopVerdict applies the only stop-size skip R1 has (W-MENTOR-EXACT, owner
-// order 2026-10-21): an ISB whose stop is ABOVE 25 pts must NOT be taken
-// ("trên nữa thì thôi" [D3.3 p1 @02:04]); a stop of 20–25 pts is the REDUCED
-// tier ("giảm size" [D3.3 p1 @01:09]), applied by the size table. There is NO
-// fixed 5–6-pt stop. The skip ceiling lives in CourseExits.ISBMaxStopPts
-// (default 25, CX-9) — the old course-defaults-30 (take 20–29 at full size) is
-// reverted.
+// ISBStopVerdict applies the only stop-size skip R1 has: an ISB whose
+// entry-to-stop ((High−Low) + 2×buffer) is ABOVE the ceiling must NOT be taken
+// — m466 G23 D4.1-R12: "nếu như một cái setup inside bar mà nó hai mươi mấy
+// điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một
+// lệnh có stop loss nhỏ" [D4.1 p1 @05:41–06:08]. The ceiling lives in
+// CourseExits.ISBMaxStopPts (CX-9, default 20; pre-#61 25 with a 20–25 reduced
+// tier from D3.3-R4 [D3.3 p1 @01:09], which the later D4.1 removes for the ISB).
+// There is NO fixed 5–6-pt stop.
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 25)
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 20, D4.1-R12)
 		return stopPts, false, ISBMaxStopReason
 	}
 	return stopPts, true, ""

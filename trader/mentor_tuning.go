@@ -75,6 +75,17 @@ type mentorTuned struct {
 	NearBoxBetweenExempt bool
 	PHLFlatLow           string
 	ISBReverseTouch      string
+
+	// m466 P2 (release #61) levels-and-touches knobs (defaults = the course).
+	UnoKeyLevels       string
+	SessionOpenLevels  string
+	LevelArmLineCancel string
+	PHLPullbackLow     string
+	// m466 P1 (release #61) boxes, breaks, ranges (defaults = the course).
+	FiveMinBoxSource   string
+	BreakDirectionLock bool
+	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
+	MidRangeRejectSide bool
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -131,6 +142,15 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		NearBoxBetweenExempt: d.NearBoxBetweenExempt,
 		PHLFlatLow:           d.PHLFlatLow,
 		ISBReverseTouch:      d.ISBReverseTouch,
+
+		UnoKeyLevels:       d.UnoKeyLevels,
+		SessionOpenLevels:  d.SessionOpenLevels,
+		LevelArmLineCancel: d.LevelArmLineCancel,
+		PHLPullbackLow:     d.PHLPullbackLow,
+		FiveMinBoxSource:   d.FiveMinBoxSource,
+		BreakDirectionLock: d.BreakDirectionLock,
+		SmallRangeGuard:    d.SmallRangeGuard,
+		MidRangeRejectSide: d.MidRangeRejectSide,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -285,6 +305,19 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.NearBoxBetweenExempt, &out.NearBoxBetweenExempt)
 	enum(t.PHLFlatLow, &out.PHLFlatLow, mentor.PHLFlatLowNear, mentor.PHLFlatLowStrict)
 	enum(t.ISBReverseTouch, &out.ISBReverseTouch, mentor.ISBReverseTouchPair, mentor.ISBReverseTouchISBCandle)
+
+	// m466 P2 (release #61): same contract — unset = the course default, a
+	// value outside the enum fails closed to the default (tuning_bad_value).
+	enum(t.UnoKeyLevels, &out.UnoKeyLevels, mentor.UnoKeyLevelsOn, mentor.UnoKeyLevelsOff)
+	enum(t.SessionOpenLevels, &out.SessionOpenLevels, mentor.SessionOpenLevelsOn, mentor.SessionOpenLevelsOff)
+	enum(t.LevelArmLineCancel, &out.LevelArmLineCancel, mentor.LevelArmLineCancelCurrent, mentor.LevelArmLineCancelPlacement)
+	enum(t.PHLPullbackLow, &out.PHLPullbackLow, mentor.PHLPullbackLowPullback, mentor.PHLPullbackLowSignal)
+	// m466 P1 (release #61): unset = the course default; a stored value outside
+	// the enum fails closed to the default, counted (tuning_bad_value).
+	enum(t.Mentor5mBoxSource, &out.FiveMinBoxSource, mentor.FiveMinBoxNewest, mentor.FiveMinBoxFirst)
+	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
+	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
+	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)
 	return out
 }
 
@@ -339,6 +372,14 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.NearBoxBetweenExempt = t.NearBoxBetweenExempt
 	cfg.PHLFlatLow = t.PHLFlatLow
 	cfg.ISBReverseTouch = t.ISBReverseTouch
+	cfg.UnoKeyLevels = t.UnoKeyLevels             // m466 P2 G2
+	cfg.SessionOpenLevels = t.SessionOpenLevels   // m466 P2 G10/G11
+	cfg.LevelArmLineCancel = t.LevelArmLineCancel // m466 P2 G17
+	cfg.PHLPullbackLow = t.PHLPullbackLow         // m466 P2 G41
+	cfg.FiveMinBoxSource = t.FiveMinBoxSource
+	cfg.BreakDirectionLock = t.BreakDirectionLock
+	cfg.SmallRangeGuard = t.SmallRangeGuard
+	cfg.MidRangeRejectSide = t.MidRangeRejectSide
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for
@@ -350,7 +391,8 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v",
 		id, t.FifteenMinIBRule, t.Early15mRead, t.MTFConfluenceSource, t.TriggerEscalation, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
-		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay)
+		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay,
+		t.FiveMinBoxSource, t.BreakDirectionLock, t.SmallRangeGuard, t.MidRangeRejectSide)
 }

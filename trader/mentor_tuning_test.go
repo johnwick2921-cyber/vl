@@ -123,9 +123,9 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
 			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
 			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: true,
-			NewsWaitBothLines: true, // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-			NewsBarsExcluded:  true, // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-			ISBBoxEscapeMode:  mentor.ISBBoxEscapeBody, EmaLossRelock: mentor.EmaRelockUntilZoneExit,
+			NewsWaitBothLines: true,                                                                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
+			NewsBarsExcluded:  true,                                                                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+			ISBBoxEscapeMode:  mentor.ISBBoxEscapeClose, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m466 G20/G49 (#61): D4.1-R34 the 1m close
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
 			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
 			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
@@ -143,6 +143,16 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			NearBoxBetweenExempt: false,                       // D3.2-R29/R30
 			PHLFlatLow:           mentor.PHLFlatLowNear,       // D2.2-R64
 			ISBReverseTouch:      mentor.ISBReverseTouchPair,  // D5.4-R7
+			// m466 P2 (release #61): the course defaults.
+			UnoKeyLevels:       mentor.UnoKeyLevelsOn,            // G2 D1.3-R21
+			SessionOpenLevels:  mentor.SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20
+			LevelArmLineCancel: mentor.LevelArmLineCancelCurrent, // G17 D2.3-R34
+			PHLPullbackLow:     mentor.PHLPullbackLowPullback,    // G41 D2.2-R59
+			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
+			FiveMinBoxSource:   mentor.FiveMinBoxNewest, // D4.1-R37
+			BreakDirectionLock: true,                    // D4.1-R31/R33, D4.1-R55
+			SmallRangeGuard:    false,                   // D4.2-R33 — OFF since #61 final (count / margin unstated)
+			MidRangeRejectSide: true,                    // D2.2-R71
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

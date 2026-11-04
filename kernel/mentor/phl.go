@@ -1,6 +1,10 @@
 package mentor
 
-import "vl/market"
+import (
+	"sort"
+
+	"vl/market"
+)
 
 // PHL / PLH [§2.2] — R2 mechanics, verbatim [D2.2 p1 @ 19:34–19:58, 23:22]:
 //
@@ -319,4 +323,71 @@ func phlFlatNear(bars []market.Kline, execTFMin int, execCur market.Kline) float
 		return 0
 	}
 	return flatNearPts(fb, len(fb)-1)
+}
+
+// phlPullbackRefusal — G41 D2.2-R59/R64 (m466 P2, release #61): the higher-low
+// test reads the WHOLE pullback, not only the signal candle. "nghĩa là anh
+// đang đi kiếm một cái lệnh có đáy cao hơn đáy trước đó" [D2.2 p3
+// @08:25–09:25]; the lows are compared with the lows on the left [@02:51–03:41].
+// phlPLHR2's check (stop <= priorSwing → phl_not_higher_low) reads only the
+// signal candle's low, so a pullback that had ALREADY printed a lower low — the
+// structure shifted — passed as soon as its newest candle's low sat higher.
+//
+// Long: refused phl_pullback_lower_low when the lowest Low of
+// bars[exIdx+1 .. refIdx] (the candles after the old high up to and including
+// the signal candle) is at or under prior (the leg-start low,
+// priorLeftExtremeOnTape). Short mirror: the highest High at or over prior →
+// plh_pullback_higher_high. exIdx is the old extreme's 1m index, refIdx the
+// signal candle's (phlRefIdx), ref the signal candle itself. prior 0, an empty
+// pullback (refIdx <= exIdx), a signal candle that itself fails the test (left
+// to phl_not_higher_low / phl_not_lower_high downstream) or knob
+// PHLPullbackLow "signal" → "" (the pre-#61 signal-only check stands).
+// The m464 rolling ladder keeps its own rules and does not call this.
+func phlPullbackRefusal(cfg Config, side Side, bars []market.Kline, exIdx, refIdx int, ref market.Kline, prior float64) string {
+	if cfg.PHLPullbackLow == PHLPullbackLowSignal || prior == 0 || exIdx < 0 || refIdx <= exIdx {
+		return ""
+	}
+	// The signal candle's OWN extreme at or beyond prior is phlPLHR2's
+	// phl_not_higher_low / phl_not_lower_high — that name stands.
+	if side == SideLong && ref.Low <= prior || side == SideShort && ref.High >= prior {
+		return ""
+	}
+	if refIdx >= len(bars) {
+		refIdx = len(bars) - 1
+	}
+	if refIdx <= exIdx {
+		return ""
+	}
+	switch side {
+	case SideLong:
+		lo := bars[exIdx+1].Low
+		for i := exIdx + 2; i <= refIdx; i++ {
+			if bars[i].Low < lo {
+				lo = bars[i].Low
+			}
+		}
+		if lo <= prior {
+			return "phl_pullback_lower_low"
+		}
+	case SideShort:
+		hi := bars[exIdx+1].High
+		for i := exIdx + 2; i <= refIdx; i++ {
+			if bars[i].High > hi {
+				hi = bars[i].High
+			}
+		}
+		if hi >= prior {
+			return "plh_pullback_higher_high"
+		}
+	}
+	return ""
+}
+
+// phlRefIdx is the 1m index of the signal (touch reference) candle: the last
+// 1m bar that closed at or before ref's close — on a 2m/5m exec frame that is
+// the bucket's last minute, so bars[exIdx+1 .. refIdx] covers every minute of
+// the signal candle. -1 when no bar qualifies.
+func phlRefIdx(bars []market.Kline, ref market.Kline) int {
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].CloseTime > ref.CloseTime })
+	return i - 1
 }

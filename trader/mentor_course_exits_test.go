@@ -185,7 +185,9 @@ func TestCX2SwingRunnerSplitsAtTheFirstTarget(t *testing.T) {
 		t.Fatalf("knob OFF: today's single bracket at the first target; got leg1=%v target %.2f", r.Leg1Qty, r.TargetPx)
 	}
 	// ON, 2 contracts: leg 1 = 1 at the first target, the runner beyond.
-	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true)}})
+	// m466 P4: the runner's TP cap is mentor_swing_runner_tp=capped now (the
+	// default none parks it 1,000 out — TestM61SwingRunnerNoTP).
+	at2, st2 := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorSwingRunner: cxBool(true), MentorSwingRunnerTP: "capped"}})
 	at2.mentorArmIntent(in, mentorSizeChoice{Contracts: 2, Tier: "swing4h", Why: "test"}, 1000, 1100, "swing", 0)
 	r := read(st2)
 	if r.Leg1Qty == nil || *r.Leg1Qty != 1 || r.Leg1TP != in.Target {
@@ -238,7 +240,7 @@ func TestCXKnobDefaultsAndBootLine(t *testing.T) {
 	line := at.mentorCourseExitsBootLine()
 		for _, want := range []string{"swing_ema34_is_first_target=ON", "swing_runner=ON (swing contracts 2)", "resonance_runner_tp_old_high=OFF",
 		"be_before_partial=ON", "isb_c3_partial_any_profit=ON", "reverse_isb_as_phl=ON", "ema9_visit_cap=shared",
-		"isb_max_pts=25", "keypair_candle_ratio=1", "box_fresh_rth_pair=ON", "box_max_height_pts=off"} {
+		"isb_max_pts=20" /* m466 G23 D4.1-R12 */, "keypair_candle_ratio=1", "box_fresh_rth_pair=ON", "box_max_height_pts=off"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q missing %q", line, want)
 		}

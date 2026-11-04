@@ -52,7 +52,7 @@ const (
 	// C, ≥ 1:2), never a size-up. The invented "big" trigger (target ≥ 30 + room
 	// ≥ 2x + 4h&1h agree) is removed by W-MENTOR-EXACT; both tiers default to
 	// base so a confluence/big entry sizes exactly like a base entry.
-	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the ISB ceiling (25) → reduced [D3.3 p1 @ 01:09]; > 25 skip [@02:04]
+	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the setup ceiling (mentorStopCeilingFor: PHL/PLH/BOX 25; ISB 20 since m466 → empty band) → reduced [D3.3 p1 @ 01:09]
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -88,7 +88,7 @@ type mentorTierInputs struct {
 	SwingMaxStopPts    float64
 	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 90) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
-	ISBMaxStopPts      float64 // the R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 25)
+	ISBMaxStopPts      float64 // the ISB R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 20 since m466; PHL/PLH/BOX: mentorStopCeilingFor → 25)
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -225,16 +225,23 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// tier (3, the course's tier) and wins over confluence — "reduce size or
 	// don't trade" [D3.3 p1 @ 01:09] is a rule about the STOP, so it outranks
 	// the confluence tier. The band top is the mentor_isb_max_pts knob (kernel
-	// CourseExits.ISBMaxStopPts, default 25) — one number, not two (P2-1).
+	// CourseExits.ISBMaxStopPts, default 20 since m466) — one number, not two (P2-1).
 	// W-MENTOR-EXACT: the skip is "trên nữa thì thôi" (> 25), so the reduce
 	// band is (20, 25] and the evaluator refuses > 25 before sizing.
-	bandTop := in.ISBMaxStopPts
-	if bandTop <= 0 {
-		bandTop = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
-	}
+	// m466 G23 (D4.1-R12 "inside bar mà nó hai mươi mấy điểm… đừng vô" [D4.1
+	// p1 @05:41–06:08]): the band top is the setup's own ceiling
+	// (mentorStopCeilingFor) — for an ISB the ceiling is 20 at default, so the
+	// ISB 20–25 band is UNREACHABLE at default (the kernel and R8 refuse > 20
+	// first); it is reached only with a stored mentor_isb_max_pts above 20.
+	// PHL/PLH/BOX keep the (20, 25] band (D3.3-R1/R4).
+	bandTop := mentorStopCeilingFor(in.Setup, in.ISBMaxStopPts)
 	if in.StopPts > mentorStopTwentiesMinPts && in.StopPts <= bandTop {
+		note := ""
+		if mentorIsISBSetup(in.Setup) {
+			note = " (ISB: reachable only with a stored mentor_isb_max_pts above 20 — D4.1 p1 @05:41–06:08)"
+		}
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "reduced", Why: fmt.Sprintf(
-			"stop %.1f pts in the 20–25 band → reduce size or don't trade [D3.3 p1 @ 01:09]", in.StopPts)}, nil
+			"stop %.1f pts in the 20–25 band → reduce size or don't trade [D3.3 p1 @ 01:09]%s", in.StopPts, note)}, nil
 	}
 	if in.Confluence {
 		n := clamp(conf)
@@ -244,6 +251,36 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	}
 	return mentorSizeChoice{Contracts: clamp(base), Tier: "base", Why: fmt.Sprintf(
 		"base setup at a location (setup %s, stop %.1f pts)", in.Setup, in.StopPts)}, nil
+}
+
+// mentorIsISBSetup reports the setups the ISB ceiling (mentor_isb_max_pts)
+// governs at the trader: the "ISB" tag (the 1m/2m inside bar and the reverse
+// ISB when it is not re-tagged PHL/PLH — the kernel refuses a reverse ISB over
+// the ISB ceiling before it is tagged, ISBStopVerdict).
+func mentorIsISBSetup(setup string) bool {
+	return strings.EqualFold(strings.TrimSpace(setup), "ISB")
+}
+
+// mentorStopCeilingFor is the trader's non-swing stop ceiling for one setup —
+// the R8 skip and the top of the B12 reduced band. ISB → the resolved
+// mentor_isb_max_pts (unset/0 → the kernel default 20, m466 G23 D4.1-R12).
+// Every other non-swing setup (PHL/PLH/BOX) → the D3.3-R1 25 (the kernel's
+// Config.StopCeilingPts, the ceiling phl.go/box_trade.go refuse at), or the
+// ISB knob when the owner stored one ABOVE it — before #61 the ISB knob was
+// the ceiling for every setup, so a raised knob still raises them all and
+// nothing a stored value allowed is narrowed.
+func mentorStopCeilingFor(setup string, isbMax float64) float64 {
+	if isbMax <= 0 {
+		isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
+	}
+	if mentorIsISBSetup(setup) {
+		return isbMax
+	}
+	general := mentor.DefaultConfig().StopCeilingPts
+	if isbMax > general {
+		return isbMax
+	}
+	return general
 }
 
 // mentorIs2mReduceSetup — the setups the D3.1-R30 2m size cut applies to:
@@ -730,16 +767,15 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 		}
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts
-		// (CourseExits.ISBMaxStopPts, default 25). One number, not two (P2-1):
-		// a raised knob must also raise the trader's own ceiling. W-MENTOR-EXACT:
-		// "trên nữa thì thôi" — only ABOVE the ceiling is skipped; a 25-pt stop
-		// is the reduced tier, not a skip.
-		isbMax := extra.ISBMaxStopPts
-		if isbMax <= 0 {
-			isbMax = mentor.DefaultConfig().CourseExits.ISBMaxStopPts
-		}
-		if stop > isbMax {
-			return fmt.Sprintf("R8: stop %.1f pts above the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, isbMax)
+		// (CourseExits.ISBMaxStopPts). One number, not two (P2-1): a raised
+		// knob must also raise the trader's own ceiling. Only ABOVE the
+		// ceiling is skipped. m466 G23: the ISB ceiling is 20 at default
+		// ("hai mươi mấy điểm, làm ơn giúp em đừng vô" [D4.1 p1 @05:41–06:08]);
+		// PHL/PLH/BOX keep the D3.3-R1 25 ("hơn 20, 25 đổ lại ok, chứ mà trên
+		// nữa thì thôi" [D3.3 p1 @01:59–02:09]) — mentorStopCeilingFor.
+		ceiling := mentorStopCeilingFor(in.Setup, extra.ISBMaxStopPts)
+		if stop > ceiling {
+			return fmt.Sprintf("R8: stop %.1f pts above the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, ceiling)
 		}
 	}
 	if target > 0 && target < stop {

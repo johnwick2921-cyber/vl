@@ -88,7 +88,7 @@ func m464CourseTape() []market.Kline {
 		{29409, 29416, 29405, 29414},             // 10:02
 		{29414, 29421, 29410, 29419},             // 10:03
 		{29419, 29426, 29415, 29424},             // 10:04
-		{29424, 29430, 29420, 29428},             // 10:05
+		{29427, 29430, 29420, 29428},             // 10:05 (m466: opens above the 10:00 5m high 29,426 — no 5m inside bar; see TestM61BreakLockRefusesRollingRungAfterFiveMinBreakDown)
 		{29428, 29433.25, 29424, 29431},          // 10:06 the old high 29,433.25
 		{29431, 29432, 29421, 29423},             // 10:07 red — ladder starts
 		{29423, 29425.5, 29414, 29416},           // 10:08 red
