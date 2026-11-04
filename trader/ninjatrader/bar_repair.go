@@ -81,6 +81,12 @@ type repairItem struct {
 	FromMs, ToMs               int64 // [from, to): the missing minutes, or the bar's period
 	Detail                     string
 	NotedAt                    time.Time
+	// quiet: a live_partial is NOTED (said, counted) only if it is still partial
+	// when its first re-request is due. The persister writes the cache's closed
+	// tail on every live frame, so a bar whose final=true lands a frame after the
+	// boundary is stored live_partial for an instant and then overwritten live:
+	// that is not a defect and must not become a log line a minute.
+	quiet bool
 }
 
 func (it repairItem) key() string {
@@ -119,12 +125,20 @@ type barRepairDriver struct {
 	daySent  map[string]int
 	saidCap  map[string]string // symbol -> day key whose cap was said
 	minGap   int
+	// gaveUp: items given up on, by key -> when. The cross_frame check reports
+	// a mismatch on every evaluation for as long as the bar stays in its window;
+	// a given-up item is not noted again for barRepairForgetAfter (no re-chain).
+	gaveUp map[string]time.Time
 }
+
+// barRepairForgetAfter: how long a given-up item stays given up.
+const barRepairForgetAfter = 12 * time.Hour
 
 func newBarRepairDriver(wire func() holeWire, resolved func(repairItem) (bool, error), minGap int) *barRepairDriver {
 	return &barRepairDriver{
 		wire: wire, clock: time.Now, isOpen: barHoleExpected, say: sayToLogger, resolved: resolved,
 		chains: map[string]*repairChain{}, dayKey: map[string]string{}, daySent: map[string]int{}, saidCap: map[string]string{},
+		gaveUp: map[string]time.Time{},
 		minGap: minGap,
 	}
 }
@@ -147,12 +161,19 @@ func (d *barRepairDriver) note(it repairItem) {
 	it.NotedAt = now
 	d.mu.Lock()
 	defer d.mu.Unlock()
+	k := it.Symbol + "|" + it.key()
+	if at, ok := d.gaveUp[k]; ok {
+		if now.Sub(at) < barRepairForgetAfter {
+			return
+		}
+		delete(d.gaveUp, k)
+	}
 	ch := d.chains[it.Symbol]
 	if ch == nil {
 		ch = &repairChain{items: map[string]*repairItem{}, started: now, nextAt: now.Add(barHoleSchedule[0])}
 		d.chains[it.Symbol] = ch
 	}
-	k := it.key()
+	k = it.key()
 	if _, dup := ch.items[k]; dup {
 		return
 	}
@@ -169,7 +190,15 @@ func (d *barRepairDriver) note(it repairItem) {
 		delete(ch.items, oldest)
 	}
 	cp := it
+	cp.quiet = it.Kind == repairKindPartial
 	ch.items[k] = &cp
+	if !cp.quiet {
+		d.sayNotedLocked(ch, &cp)
+	}
+}
+
+func (d *barRepairDriver) sayNotedLocked(ch *repairChain, it *repairItem) {
+	it.quiet = false
 	telemetry.IncBarRepairAsked()
 	d.say("WARN", fmt.Sprintf("🧰 bar repair NOTED: %s — NT8 history re-request scheduled (chain attempt %d at %s CT), never while the feed is down",
 		it.what(), ch.attempts+1, kernel.ClockCTSeconds(ch.nextAt)))
@@ -188,6 +217,10 @@ func (d *barRepairDriver) measureLocked(sym string, ch *repairChain, now time.Ti
 		if err != nil || !ok {
 			continue
 		}
+		if it.quiet { // a transient partial the final frame already replaced: never said
+			delete(ch.items, k)
+			continue
+		}
 		how := fmt.Sprintf("after repair re-request #%d", ch.attempts)
 		if ch.attempts == 0 {
 			how = "before any repair re-request (another replay carried it)"
@@ -200,7 +233,17 @@ func (d *barRepairDriver) measureLocked(sym string, ch *repairChain, now time.Ti
 }
 
 func (d *barRepairDriver) giveUpLocked(sym string, ch *repairChain, why string) {
-	for _, it := range ch.items {
+	now := d.clock()
+	for k, at := range d.gaveUp {
+		if now.Sub(at) >= barRepairForgetAfter {
+			delete(d.gaveUp, k)
+		}
+	}
+	for k, it := range ch.items {
+		d.gaveUp[sym+"|"+k] = now
+		if it.quiet {
+			continue // never said, never counted: nothing to give up out loud
+		}
 		telemetry.IncBarRepairGaveUp()
 		d.say("WARN", fmt.Sprintf("🧰 bar repair GAVE UP: %s — %s. Nothing more is asked; a check that paused on it still clears only on its own measure (or when the bar leaves its window)", it.what(), why))
 	}
@@ -271,6 +314,11 @@ func (d *barRepairDriver) tick(now time.Time) {
 			telemetry.IncBarRepairRefused()
 			d.giveUpLocked(sym, ch, fmt.Sprintf("the repair budget for %s is spent for this CME session-day (%d sends; it resets at the 17:00 CT roll, the rest of the wire's budget stays for real holes)", sym, barRepairDayCap))
 			continue
+		}
+		for _, it := range ch.items {
+			if it.quiet {
+				d.sayNotedLocked(ch, it) // still partial at the first ask: a real one
+			}
 		}
 		sends = append(sends, due{sym: sym, w: w})
 	}

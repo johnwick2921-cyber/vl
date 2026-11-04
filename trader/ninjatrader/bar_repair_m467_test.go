@@ -179,11 +179,14 @@ func TestLivePartialIsReplacedByTheReplayAndNeverOverwritesAFinal(t *testing.T) 
 	clk := &fakeClock{t: time.UnixMilli(1793750460000).Add(5 * time.Second)} // 18:01:05
 	d, sink := m467Driver(t, bh, w, clk)
 	noteLivePartials(d, five)
-	if n := sink.count("stored live_partial"); n != 2 {
-		t.Fatalf("both partials noted:\n%s", sink.dump())
+	if n := sink.count("stored live_partial"); n != 0 {
+		t.Fatalf("a partial is said only if it is still partial when its first ask is due:\n%s", sink.dump())
 	}
 	clk.Set(clk.Now().Add(time.Minute))
 	d.tick(clk.Now())
+	if n := sink.count("bar repair NOTED: MNQ 5m bar"); n != 2 {
+		t.Fatalf("both partials noted at the first ask:\n%s", sink.dump())
+	}
 	if w.sends() != 1 {
 		t.Fatalf("ONE re-request covers both (one chain per symbol), got %d", w.sends())
 	}
@@ -258,6 +261,15 @@ func TestRepairGivesUpAfterTheSchedule(t *testing.T) {
 	if !strings.Contains(sink.dump(), "still not repaired after 4 re-requests") {
 		t.Fatalf("give-up line must say why:\n%s", sink.dump())
 	}
+	// the check keeps reporting it: a given-up item is not chained again
+	d.note(repairItem{Kind: repairKindGap, Symbol: "MNQ", TF: "1m", Contract: ghContract, FromMs: 1793750160000, ToMs: 1793750220000})
+	for i := 0; i < 60; i++ {
+		clk.Set(clk.Now().Add(time.Minute))
+		d.tick(clk.Now())
+	}
+	if w.sends() != len(barHoleSchedule) {
+		t.Fatalf("a given-up item was asked again: %d sends", w.sends())
+	}
 }
 
 // A cross_frame item is measured on the RING with the check's own rule: it is
@@ -283,5 +295,30 @@ func TestCrossFrameItemIsRepairedWhenTheRingAgrees(t *testing.T) {
 	cache.SeedHistorical("MNQ", "5m", []ntwire.Bar{{T: 1793750400000, O: 28356.25, H: 28362.75, L: 28310.75, C: 28324.5, V: 9621}})
 	if !crossFrameRepaired(cache, it) {
 		t.Fatalf("after NT8's replay the bar agrees with its 1m: %+v", cache.Get("MNQ", "5m"))
+	}
+}
+
+// The persister writes the cache's closed tail on every live frame: a bar
+// whose final frame lands a moment after the boundary is stored live_partial
+// for an instant, then overwritten live. That is never said, never counted,
+// never asked of NT8.
+func TestTransientPartialIsNeverSaidNorAsked(t *testing.T) {
+	bh := m467Store(t)
+	w := &repairWire{feedUp: true}
+	clk := &fakeClock{t: time.UnixMilli(1793750460000).Add(5 * time.Second)}
+	d, sink := m467Driver(t, bh, w, clk)
+	row := store.BarHistoryDB{Symbol: "MNQ", TF: "3m", OpenTimeMs: 1793750220000, O: 28330.75, H: 28333.5, L: 28310.75, C: 28324.5, V: 4955, Convention: "epoch_floor", Contract: ghContract, Source: store.BarSourceLivePartial}
+	_ = bh.InsertBars([]store.BarHistoryDB{row})
+	before := telemetry.BarRepairSnapshot()
+	noteLivePartials(d, []store.BarHistoryDB{row})
+	row.Source = store.BarSourceLive // the final frame, a second later
+	_ = bh.InsertBars([]store.BarHistoryDB{row})
+	for i := 0; i < 10; i++ {
+		clk.Set(clk.Now().Add(30 * time.Second))
+		d.tick(clk.Now())
+	}
+	after := telemetry.BarRepairSnapshot()
+	if w.sends() != 0 || len(sink.lines) != 0 || after.Asked != before.Asked || after.Repaired != before.Repaired {
+		t.Fatalf("a transient partial must stay silent: sends=%d counts %+v -> %+v\n%s", w.sends(), before, after, sink.dump())
 	}
 }
