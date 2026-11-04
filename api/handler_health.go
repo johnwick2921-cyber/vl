@@ -361,6 +361,16 @@ func (s *Server) handleHealth(c *gin.Context) {
 	// values; ABSENT when no pusher runs (a friend instance) - never a fabricated 0.
 	if st, ok := ownerpush.StatsSnapshot(); ok {
 		body["owner_push"] = st
+		// m467: the hourly STILL DOWN / STILL PAUSED reminders, counted where sent.
+		body["owner_reminders"] = map[string]int64{
+			"feed_still_down":   telemetry.FeedStillDownReminders(),
+			"data_still_paused": telemetry.DataStillPausedReminders(),
+		}
+	}
+	// m467: the bar-repair driver (below the hole threshold). READ values;
+	// ABSENT when no driver is wired (no store) - never a fabricated empty list.
+	if pend, ok := ntTrader.BarRepairSnapshot(); ok {
+		body["bar_repair"] = map[string]any{"pending": pend, "counts": telemetry.BarRepairSnapshot()}
 	}
 	c.JSON(code, body)
 }

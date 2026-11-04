@@ -209,3 +209,14 @@ func TestP0HeldIsRestoredAfterHoldTTLAndOutageSurvivesRestart(t *testing.T) {
 		t.Fatalf("outage start lost across the restart: %q (sent %q)", summary, f.sent())
 	}
 }
+
+// The boot line's outage policy reads the constants (class 45: boot lines are
+// read, never literal).
+func TestOutagePolicyReadsTheConstants(t *testing.T) {
+	got := OutagePolicy()
+	for _, want := range []string{p0RetryBackoffMax.String(), outageSummaryMin.String(), holdTTL.String(), "NEVER dropped"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("OutagePolicy() %q lacks %q", got, want)
+		}
+	}
+}

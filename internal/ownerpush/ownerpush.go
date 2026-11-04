@@ -129,6 +129,13 @@ func IsP0Key(key string) bool {
 	return false
 }
 
+// OutagePolicy renders the m467 outage guarantees FROM THE CONSTANTS for the
+// boot line (boot lines are read, never literal).
+func OutagePolicy() string {
+	return fmt.Sprintf("a P0 (feed down/still down/back, data-truth + trading pauses, trader down, protection, boot) is NEVER dropped by an outage: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
+		p0RetryBackoffMax, outageSummaryMin, holdTTL)
+}
+
 type heldMsg struct {
 	key, text string
 	at        time.Time // first offered: the holdTTL base, kept across retries
