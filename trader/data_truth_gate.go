@@ -117,6 +117,7 @@ func wireDataTruthBoot() { dataTruthOnce.Do(doWireDataTruthBoot) }
 func doWireDataTruthBoot() {
 	datatruth.Require(dataTruthRequired()...)
 	datatruth.UseOwnerPush()
+	datatruth.SetReminderGate(kernel.IsCMEOpen) // rev62: no hourly STILL PAUSED while the CME is shut
 	RegisterBrokerTruthChecks()
 	dataTruthWiredAt.Store(time.Now().UnixMilli())
 	dataTruthWired.Store(true)

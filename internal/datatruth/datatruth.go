@@ -254,6 +254,9 @@ var (
 	checks    = map[string]*check{}
 	notifier  func(kind, text string)
 	canceller func(kind string) // m467: withdraws a held reminder (ownerpush.Cancel)
+	// reminderOpen gates the hourly STILL PAUSED reminder on the CME being open
+	// (injected by the trader: this package never imports kernel). nil = always.
+	reminderOpen func(now time.Time) bool
 	// resumeNotes: per check, how entries come back when it is NOT "the data
 	// measures clear by itself" (fill_price waits for the owner's acknowledgement).
 	resumeNotes = map[string]string{}
@@ -413,6 +416,17 @@ func SetNotifier(fn func(kind, text string)) {
 	mu.Unlock()
 }
 
+// SetReminderGate installs the market-open test for the hourly STILL PAUSED
+// reminder (rev62 alerts P2): a pause that stands across the nightly break or a
+// weekend must not push every hour while the CME is shut. The episode's reminder
+// counter only advances while the gate is open, so the first reminder after the
+// reopen reports the whole span once. nil = always open.
+func SetReminderGate(fn func(now time.Time) bool) {
+	mu.Lock()
+	reminderOpen = fn
+	mu.Unlock()
+}
+
 // SetCanceller installs the owner-push withdraw (ownerpush.Cancel), used to drop
 // a still-held STILL PAUSED reminder once a newer one or the clear supersedes
 // it. nil detaches.
@@ -429,6 +443,7 @@ func SetCanceller(fn func(kind string)) {
 // required check blocks instead of passing.
 func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	mu.Lock()
+	remindGate := reminderOpen
 	names := make([]string, 0, len(checks))
 	for n := range checks {
 		names = append(names, n)
@@ -516,7 +531,7 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 				})
 			}
 			// m467: a pause that LASTS is news again every StillPausedEvery.
-			if n := int(time.Duration(now.UnixMilli()-ep.sinceMs) * time.Millisecond / StillPausedEvery); n >= 1 && n > ep.remindN {
+			if n := int(time.Duration(now.UnixMilli()-ep.sinceMs) * time.Millisecond / StillPausedEvery); n >= 1 && n > ep.remindN && (remindGate == nil || remindGate(now)) {
 				if ep.remindKey != "" {
 					withdraw = append(withdraw, ep.remindKey)
 				}
@@ -872,6 +887,7 @@ func Reset() {
 	checks = map[string]*check{}
 	notifier = nil
 	canceller = nil
+	reminderOpen = nil
 	resumeNotes = map[string]string{}
 	resumeFuncs = map[string]func(string, []string) string{}
 	mu.Unlock()

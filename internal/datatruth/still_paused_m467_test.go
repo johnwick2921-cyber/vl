@@ -38,3 +38,36 @@ func TestStillPausedReminderHourly(t *testing.T) {
 		t.Fatalf("the second reminder must withdraw the first: %q", cancelled)
 	}
 }
+
+// rev62 alerts P2: the hourly STILL PAUSED reminder must not push while the CME
+// is shut (the nightly break, a weekend). With the gate closed for the first
+// 2h30m no reminder goes out; when it opens, ONE reminder reports the whole span.
+// MUTANT (gate ignored) -> 2 reminders while closed -> RED.
+func TestStillPausedReminderWaitsForTheOpen(t *testing.T) {
+	Reset()
+	defer Reset()
+	r := capture()
+	t0 := time.Date(2026, 11, 4, 0, 7, 23, 0, time.UTC) // 18:07:23 CT
+	openAt := t0.Add(150 * time.Minute)
+	SetReminderGate(func(now time.Time) bool { return !now.Before(openAt) })
+	Register("cross_frame", func(string, time.Time) (bool, string, error) { return true, "5m bar 23:55Z disagrees", nil })
+	count := func() (n int, last string) {
+		for i, k := range r.kinds {
+			if strings.HasPrefix(k, "data_truth_still_cross_frame|MNQ|") {
+				n, last = n+1, r.texts[i]
+			}
+		}
+		return
+	}
+	for m := 0; m < 150; m++ {
+		Evaluate("MNQ", t0.Add(time.Duration(m)*time.Minute))
+	}
+	if n, _ := count(); n != 0 {
+		t.Fatalf("closed market: want 0 STILL PAUSED reminders, got %d", n)
+	}
+	Evaluate("MNQ", openAt)
+	n, last := count()
+	if n != 1 || !strings.Contains(last, "2h30m") {
+		t.Fatalf("at the open: want ONE reminder covering 2h30m, got %d %q", n, last)
+	}
+}
