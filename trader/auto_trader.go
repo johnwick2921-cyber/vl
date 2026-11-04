@@ -804,8 +804,8 @@ type AutoTrader struct {
 	// whose alert this trader raised (m432). Set when it fires, cleared (with ONE
 	// "feed back" owner message) when a fresh bar returns, cleared silently when
 	// CME closes — so the owner is told down once and back once per episode.
-	feedEpisodeMu    sync.Mutex
-	feedDownEpisode  string
+	feedEpisodeMu   sync.Mutex
+	feedDownEpisode string
 	// m467: feedDownSince is when the current blind spell began - kept across a
 	// CME close, so the BACK after a reopen names the true start (11-03: 02:00,
 	// not the 17:00 episode); feedDownLastEpisode is the episode the close ended;
@@ -814,10 +814,10 @@ type AutoTrader struct {
 	feedDownLastEpisode string
 	feedDownReminded    int
 	feedDownReminderKey string
-	feedLagMu        sync.Mutex
-	feedLagEnteredAt time.Time // zero = outside the band
-	feedLagSaid      bool      // the WARN already fired for this episode
-	feedLagActive    bool      // the band is active right now (dashboard line)
+	feedLagMu           sync.Mutex
+	feedLagEnteredAt    time.Time // zero = outside the band
+	feedLagSaid         bool      // the WARN already fired for this episode
+	feedLagActive       bool      // the band is active right now (dashboard line)
 	// mentorInvalidLog is the item-18 noise gate (DS-105 replay): the last INFO
 	// emit instant + the suppressed count per LevelKey, so a busy level's
 	// level_invalid logs at most once per 15 minutes while the counter still
