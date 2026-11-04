@@ -218,16 +218,18 @@ func TestLimitsTextIsReadFromTheConstants(t *testing.T) {
 // finds no file and nothing is restored -> RED.
 func TestHeldAndSeenSurviveARestart(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "state", "ownerpush.json")
-	f := &flaky{fail: errors.New("telegram down")}
+	// m467: a success LIFTS every backoff and re-offers the held messages at
+	// once, so the delivered message goes first and the failing one after it.
+	f := &flaky{}
 	p, _ := newClocked(f.send)
 	info := enableState(t, p, path)
 	if info.PrevExit != PrevExitNone {
 		t.Fatalf("first boot PrevExit = %q", info.PrevExit)
 	}
-	p.Push("unprotected_position|t1|e1", "NAKED LONG, NO STOP") // fails -> held
-	p.Flush()
-	f.set(nil)
 	p.Push("feed-down|e9", "FEED DOWN") // delivered -> seen
+	p.Flush()
+	f.set(errors.New("telegram down"))
+	p.Push("unprotected_position|t1|e1", "NAKED LONG, NO STOP") // fails -> held
 	p.Flush()
 	waitState(t, path, func(d *stateDisk) bool {
 		_, seen := d.Seen["feed-down|e9"]
@@ -277,7 +279,9 @@ func TestStaleHeldIsNotRestored(t *testing.T) {
 	f := &flaky{fail: errors.New("down")}
 	p, c := newClocked(f.send)
 	enableState(t, p, path)
-	p.Push("feed-down|e", "OLD NEWS")
+	// m467: a P0 is restored whatever its age; a non-P0 (the daily report) still
+	// goes stale after holdTTL.
+	p.Push("data-report|2026-11-02|1", "OLD NEWS")
 	p.Flush()
 	waitState(t, path, func(d *stateDisk) bool { return len(d.Held) == 1 })
 	q, c2 := newClocked((&flaky{}).send)

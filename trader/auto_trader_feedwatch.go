@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"strings"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/market"
 	"vl/telemetry"
@@ -159,6 +160,13 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	if !kernel.IsCMEOpen(now) {
 		// The market closed under the episode: not a recovery, so no "feed back"
 		// message — a reopen with a still-dead feed is a NEW episode (its own id).
+		// m467: the spell's START is kept (feedDownSince) and the closed episode
+		// remembered, so the BACK after the reopen says how long the bot was blind.
+		at.feedEpisodeMu.Lock()
+		if at.feedDownEpisode != "" {
+			at.feedDownLastEpisode = at.feedDownEpisode
+		}
+		at.feedEpisodeMu.Unlock()
 		at.setFeedDownEpisode("")
 		return
 	}
@@ -179,7 +187,7 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 			// (a position closing mid-outage raises the threshold to 10 min;
 			// that must not read as the feed coming back).
 			if age <= feedBackBelow() {
-				at.noteFeedBack(age)
+				at.noteFeedBackAt(age, now)
 			}
 			return
 		}
@@ -221,6 +229,53 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	episode := fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart))
 	at.setFeedDownEpisode(episode)
 	at.emitAlert("P0", "feed-down", episode, title, body)
+	at.feedStillDownReminder(gapStart, now)
+}
+
+// feedStillDownEvery (m467) is the STILL DOWN reminder cadence while a FEED DOWN
+// lasts. One reminder an hour sits inside its own owner-push kind's 3/hour
+// budget ("feed-still-down"), so it can never crowd out FEED DOWN / BACK.
+const feedStillDownEvery = time.Hour
+
+// feedStillDownReminder (m467) pushes ONE "STILL DOWN" per full hour of a blind
+// spell, measured from its first missing minute (kept across a CME close). Each
+// reminder withdraws the previous one if that is still held (an outage that
+// also took the network: only the newest reminder is news). Keyed on the
+// spell's start, so N traders on the box tell the owner once.
+func (at *AutoTrader) feedStillDownReminder(gapStart, now time.Time) {
+	at.feedEpisodeMu.Lock()
+	if at.feedDownSince.IsZero() || gapStart.Before(at.feedDownSince) {
+		at.feedDownSince = gapStart
+	}
+	since := at.feedDownSince
+	n := int(now.Sub(since) / feedStillDownEvery)
+	if n < 1 || n <= at.feedDownReminded {
+		at.feedEpisodeMu.Unlock()
+		return
+	}
+	prev := at.feedDownReminderKey
+	at.feedDownReminded = n
+	key := fmt.Sprintf("feed-still-down|%d|%d", since.Unix(), n)
+	at.feedDownReminderKey = key
+	at.feedEpisodeMu.Unlock()
+	telemetry.IncFeedStillDownReminder()
+	at.logErrorf("🚨 FEED STILL DOWN: no NT8 bar since %s CT (%s) — reminder #%d to the owner; entries stay refused until bars return", kernel.TableTimeCT(since), spanHM(now.Sub(since)), n)
+	if prev != "" {
+		ownerpush.Cancel(prev)
+	}
+	ownerpush.Push(key, fmt.Sprintf("🚨 vl — NT8 bar feed STILL DOWN since %s CT (%s). The bot is blind: no new entry can be placed and the planner does not run. In NinjaTrader on Windows check the Tradovate data connection shows Connected.",
+		kernel.TableTimeCT(since), spanHM(now.Sub(since))))
+}
+
+// spanHM renders a duration as "15h02m" / "42m" for owner messages.
+func spanHM(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh%02dm", h, m)
 }
 
 // feedBackBelow is the newest-bar age under which the feed counts as BACK:
@@ -239,19 +294,31 @@ func (at *AutoTrader) setFeedDownEpisode(id string) {
 	at.feedEpisodeMu.Unlock()
 }
 
-// noteFeedBack ends the open FEED DOWN episode (if this trader raised one) with
+// noteFeedBackAt ends the open FEED DOWN episode (if this trader raised one) with
 // ONE owner message. The push dedupes on the episode id, so N traders on one
 // box tell the owner once.
-func (at *AutoTrader) noteFeedBack(age time.Duration) {
+func (at *AutoTrader) noteFeedBackAt(age time.Duration, now time.Time) {
 	at.feedEpisodeMu.Lock()
 	id := at.feedDownEpisode
-	at.feedDownEpisode = ""
+	if id == "" {
+		id = at.feedDownLastEpisode // m467: the spell a CME close ended, still blind at the reopen
+	}
+	since, remindKey := at.feedDownSince, at.feedDownReminderKey
+	at.feedDownEpisode, at.feedDownLastEpisode = "", ""
+	at.feedDownSince, at.feedDownReminded, at.feedDownReminderKey = time.Time{}, 0, ""
 	at.feedEpisodeMu.Unlock()
 	if id == "" {
 		return
 	}
-	at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over", age.Round(time.Second), id)
-	ownerPushFeedBack(id, age)
+	if remindKey != "" {
+		ownerpush.Cancel(remindKey) // a held reminder is no longer news
+	}
+	if since.IsZero() {
+		at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over", age.Round(time.Second), id)
+	} else {
+		at.logInfof("✅ feed: bars are flowing again (newest bar %s old) — FEED DOWN episode %s over; down since %s CT (%s)", age.Round(time.Second), id, kernel.TableTimeCT(since), spanHM(now.Sub(since)))
+	}
+	ownerPushFeedBack(id, age, since, now)
 }
 
 // feedReconnectGraceWindow — how long after a link-up (or the trader's start)

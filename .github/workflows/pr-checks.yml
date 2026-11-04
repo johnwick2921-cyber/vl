@@ -276,13 +276,26 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      # Install Trivy from its pinned release tarball with the published sha256
+      # checked, instead of aquasecurity/setup-trivy (which runs install.sh from
+      # trivy's moving master branch: on 2026-11-03 commit 75c4dc0 "add client
+      # option to install script" made it exit 6 on the runner, 3/3 attempts).
+      - name: Install Trivy (pinned release, checksum verified)
+        env:
+          TRIVY_VERSION: 0.76.1
+        run: |
+          set -euo pipefail
+          base="https://github.com/aquasecurity/trivy/releases/download/v${TRIVY_VERSION}"
+          tarball="trivy_${TRIVY_VERSION}_Linux-64bit.tar.gz"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/$tarball" "$base/$tarball"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/checksums.txt" "$base/trivy_${TRIVY_VERSION}_checksums.txt"
+          (cd "$RUNNER_TEMP" && grep " ${tarball}\$" checksums.txt | sha256sum -c -)
+          mkdir -p "$RUNNER_TEMP/trivy-bin"
+          tar -xzf "$RUNNER_TEMP/$tarball" -C "$RUNNER_TEMP/trivy-bin" trivy
+          echo "$RUNNER_TEMP/trivy-bin" >> "$GITHUB_PATH"
+
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@master
-        with:
-          scan-type: 'fs'
-          scan-ref: '.'
-          format: 'sarif'
-          output: 'trivy-results.sarif'
+        run: trivy fs --format sarif --output trivy-results.sarif .
 
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3

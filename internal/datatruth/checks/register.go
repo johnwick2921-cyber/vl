@@ -184,6 +184,22 @@ func badPrintCheck(c Config) datatruth.ScopedCheckFn {
 	}
 }
 
+// crossFrameRepair (m467) is told every cross_frame mismatch the check finds:
+// the bar-repair driver (trader/ninjatrader/bar_repair.go) re-asks NT8 for the
+// window. Before m467 a mismatch only paused - nothing repaired it, and the
+// pause stood until the bar aged out (11-03 18:07, 5m 17:55). nil = no repair.
+var crossFrameRepair atomic.Pointer[func(symbol string, tfMin int, barT int64, detail string)]
+
+// SetCrossFrameRepair installs the repair hook (nil detaches). It must not
+// block: the check runs on the entry paths.
+func SetCrossFrameRepair(fn func(symbol string, tfMin int, barT int64, detail string)) {
+	if fn == nil {
+		crossFrameRepair.Store(nil)
+		return
+	}
+	crossFrameRepair.Store(&fn)
+}
+
 func crossFrameCheck(c Config) datatruth.ScopedCheckFn {
 	return func(symbol string, now time.Time) (bool, string, []string, error) {
 		m1, err := c.Src.Bars(symbol, 1)
@@ -198,9 +214,13 @@ func crossFrameCheck(c Config) datatruth.ScopedCheckFn {
 				return false, "", nil, err
 			}
 			mm, _, _ := CompareFrames(m1, htf, tf, now, c.Src.Open(), c.Cross)
+			repair := crossFrameRepair.Load()
 			for _, m := range mm {
 				msgs = append(msgs, m.Detail)
 				sets = append(sets, m.Readers)
+				if repair != nil {
+					(*repair)(symbol, m.TFMin, m.T, m.Detail)
+				}
 			}
 		}
 		if len(msgs) == 0 {

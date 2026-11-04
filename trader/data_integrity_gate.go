@@ -304,6 +304,10 @@ type integrityEpisode struct {
 	unknownSince time.Time
 	pushed       bool
 	scope        string // pauseScopeAll | pauseScopeSwing — what the standing pause really refuses
+	// m467: the hourly STILL PAUSED reminders pushed in this episode and the
+	// newest one's key (withdrawn by the next and by the resume).
+	remindN   int
+	remindKey string
 
 	// m452 (data_beats_bounded.go): one data-gate beat in flight at a time.
 	beatInFlight  atomic.Bool
@@ -436,6 +440,7 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		}
 		if !e.active {
 			e.active, e.since, e.class, e.scope = true, now, worst.Class, scope
+			e.remindN, e.remindKey = 0, ""
 			// m452: the trader id is part of the owner-push KIND (the text before the
 			// first "|" is ownerpush's 3-per-hour budget bucket). "data-paused|<id>|ts"
 			// put every trader on one MNQ hole in ONE bucket, so three traders spent the
@@ -469,6 +474,21 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 				}
 			}
 		}
+		if e.pushed && kernel.IsCMEOpen(now) {
+			// m467: a pause that LASTS is news again every hour (feedStillDownEvery).
+			if n := int(now.Sub(e.since) / feedStillDownEvery); n >= 1 && n > e.remindN {
+				prev := e.remindKey
+				e.remindN = n
+				e.remindKey = fmt.Sprintf("data-still-paused-%s|%d|%d", at.id, e.since.Unix(), n)
+				telemetry.IncDataStillPausedReminder()
+				at.logWarnf("⏸ TRADING STILL PAUSED (%s) since %s CT (%s): %s — reminder #%d to the owner", worst.Class, kernel.TableTimeCT(e.since), spanHM(now.Sub(e.since)), worst.Reason, n)
+				if prev != "" {
+					ownerpush.Cancel(prev)
+				}
+				ownerpush.Push(e.remindKey, fmt.Sprintf("⏸ vl TRADING STILL PAUSED — %s, since %s CT (%s): %s. %s; exits, stops and protection are unaffected. %s",
+					at.ownerPushTraderLabel(), kernel.TableTimeCT(e.since), spanHM(now.Sub(e.since)), worst.Reason, wd.refuses, wd.tail))
+			}
+		}
 		if !e.pushed && kernel.IsCMEOpen(now) {
 			ready := worst.Class == ntTrader.IntegrityClassHole ||
 				(worst.Class == ntTrader.IntegrityClassUnknown && now.Sub(e.unknownSince) >= integrityUnknownGrace)
@@ -486,6 +506,10 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		key := e.key
 		wasPushed := e.pushed
 		e.active, e.pushed = false, false
+		if e.remindKey != "" {
+			ownerpush.Cancel(e.remindKey) // the resume supersedes a held reminder
+		}
+		e.remindN, e.remindKey = 0, ""
 		telemetry.IncDataIntegrityResume()
 		// Resume is on a MEASURED fill — or the stretch aged out of the data
 		// window, which is NOT the bars coming back, and the text says which

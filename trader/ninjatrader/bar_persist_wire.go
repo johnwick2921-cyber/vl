@@ -167,6 +167,9 @@ func newBarPersister(bh *store.BarHistoryStore, server func() *ntwire.TCPServer,
 		// missing open minutes opens a HOLE, and the tracker re-requests NT8's
 		// history for it on its own schedule (bar_holes.go).
 		barHoles.Load().observeLive(symbol, tf, contract, rows)
+		// m467: a live bar of a closed period the AddOn never finalised is
+		// re-asked of NT8, so its final bar can replace the snapshot.
+		noteLivePartials(barRepairs.Load(), rows)
 	}
 }
 
@@ -200,6 +203,16 @@ func WireBarPersistence(st *store.Store) {
 		holes := newBarHoleTracker(bh, barHolesServer.Load)
 		barHoles.Store(holes)
 		logger.Infof("%s", holes.bootLine())
+		// m467 — the bar-repair driver: what lives below the hole threshold.
+		repair := newBarRepairDriver(holes.wire, repairResolver(bh, func() *ntwire.BarCache {
+			if s := barHolesServer.Load(); s != nil {
+				return s.BarCache()
+			}
+			return nil
+		}), holes.minGap)
+		holes.repair = repair
+		barRepairs.Store(repair)
+		logger.Infof("%s", repair.bootLine())
 		logger.Infof("%s", holes.auditBootLine())
 		ntwire.SetBarPersister(newBarPersister(bh, serverFn))
 		// Boot backfill + prune loop: the singleton server starts lazily on the
@@ -219,6 +232,19 @@ func WireBarPersistence(st *store.Store) {
 					// ring and the store, both reachable from here on.
 					WireDataTruthChecks(bh, server)
 					safe.GoNet("nt8-bar-holes", "", holes.run)
+					// m467: repairs run on their own schedule, and every
+					// cross_frame mismatch / ring partial replacement reaches them.
+					wireCrossFrameRepair(repair, func(sym string) string {
+						if f, ok := server.CurrentContract(sym); ok {
+							return f.Contract
+						}
+						return ""
+					})
+					server.BarCache().OnPartialReplaced(func(sym, tf string, n int) {
+						telemetry.IncRingPartialReplaced(n)
+						logger.Infof("🧰 bar repair: a replay REPLACED %d never-finalised live %s %s ring bar(s) with NT8's closed bar (same price scale; final live bars are never replaced)", n, sym, tf)
+					})
+					safe.GoNet("nt8-bar-repair", "", repair.run)
 					safe.GoNet("nt8-bar-gap-audit", "", holes.runAudit)
 					// m424 — session-final bar flush + closed-market replay-hold settle.
 					rep := &persistReport{}

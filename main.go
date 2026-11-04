@@ -884,7 +884,7 @@ func main() {
 		// held + deduped state survives a restart (file beside the DB), and the
 		// owner is told when the bot starts (rev + how the last process ended).
 		bootInfo := ownerpush.Start(func(text string) error { return telegram.NotifyOwner(st, text) }, cfg.DBPath+".ownerpush.json")
-		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · no-op when no chat is bound", ownerpush.Limits())
+		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · %s · no-op when no chat is bound", ownerpush.Limits(), ownerpush.OutagePolicy())
 		bootKey, bootText := ownerpush.BootMessage(integrity.Revision, bootInfo, integrity.Refused, time.Now())
 		ownerpush.Push(bootKey, bootText)
 		// m448 (release #54): the nightly data report rides the same owner-push

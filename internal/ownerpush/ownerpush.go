@@ -35,6 +35,12 @@
 //     sender itself is a no-op when no Telegram chat is bound.
 //   - never on a friend instance (VL_FRIEND_INSTANCE): a friend bot has no
 //     Telegram (main.go never starts it), so nothing here ever posts for one.
+//   - a P0 is NEVER dropped by an outage (m467): a held P0 does not age out,
+//     backs off to at most 5 min, is restored across a restart whatever its
+//     age, and is the last thing the hold cap evicts. The first send that gets
+//     through lifts every backoff (the held ones go out at once) and, after a
+//     run of failures >= outageSummaryMin, pushes ONE summary: the window, how
+//     many alerts failed, how many were withdrawn as no longer current.
 //   - no secrets: text is scrubbed of long token-like runs and key=value
 //     credentials, and capped at maxTextRunes.
 package ownerpush
@@ -72,6 +78,14 @@ const (
 	retryBackoffBase = 30 * time.Second
 	retryBackoffMax  = 15 * time.Minute
 	retryLoopEvery   = 30 * time.Second
+	// p0RetryBackoffMax (m467): a P0's retries back off to at most 5 min, so a
+	// returning network is noticed within minutes; it is ~12 small HTTPS calls an
+	// hour per held P0 while the box is offline, nothing a rate limit notices.
+	p0RetryBackoffMax = 5 * time.Minute
+	// outageSummaryMin (m467): a run of failed sends at least this long is an
+	// OUTAGE, and the first delivery after it is followed by one summary push
+	// (how long, how many failed). A shorter blip is retried silently.
+	outageSummaryMin = 10 * time.Minute
 	// defaultSendTimeout bounds one send; the Telegram client has its own
 	// shorter HTTP timeout, this is the worker's own backstop.
 	defaultSendTimeout = 30 * time.Second
@@ -87,6 +101,39 @@ var ErrNotBound = errors.New("owner push: no Telegram chat bound")
 // was 3 per kind and 30 total).
 func Limits() string {
 	return fmt.Sprintf("<=%d/hour per kind, <=%d/hour in total", maxPerKindPerHour, maxPerHour)
+}
+
+// p0KindPrefixes (m467) are the owner-push kinds that report the bot cannot
+// trade, cannot see, or holds an unprotected position - and the messages that
+// end or summarise those episodes. A held P0 NEVER ages out (holdTTL is for
+// everything else): on 11-03 the box was offline 02:00-16:10 CT and the FEED
+// DOWN, held and failing, was discarded as stale at 03:41 - the alert path
+// dropped the very outage it was reporting. A P0 leaves the hold only by being
+// delivered or by Cancel (its episode ended and a later message says so).
+var p0KindPrefixes = []string{
+	"feed-down", "feed-still-down", "feed-back",
+	"data_truth_", "data-paused-", "data-still-paused-", "data-resumed-",
+	"trader_down", "dead_man", "unprotected_position", "protection_",
+	"position_close_rejected", "stop-move-not-applied",
+	"boot", "push-outage",
+}
+
+// IsP0Key reports whether an owner-push key is a P0 kind (see p0KindPrefixes).
+func IsP0Key(key string) bool {
+	kind := kindOf(key)
+	for _, p := range p0KindPrefixes {
+		if strings.HasPrefix(kind, p) {
+			return true
+		}
+	}
+	return false
+}
+
+// OutagePolicy renders the m467 outage guarantees FROM THE CONSTANTS for the
+// boot line (boot lines are read, never literal).
+func OutagePolicy() string {
+	return fmt.Sprintf("a P0 (feed down/still down/back, data-truth + trading pauses, trader down, protection, boot) is NEVER dropped by an outage: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
+		p0RetryBackoffMax, outageSummaryMin, holdTTL)
 }
 
 type heldMsg struct {
@@ -108,6 +155,13 @@ type Stats struct {
 	LastError    string `json:"-"` // log + tests only: /api/health is unauthenticated, so the error text stays off it
 	LastSentUnix int64  `json:"last_sent_unix,omitempty"`
 	LastFailUnix int64  `json:"last_failed_unix,omitempty"`
+	// m467: Evicted counts held messages pushed out by the hold cap (a P0 only
+	// when every held message is a P0); Outages counts summaries pushed after a
+	// run of failed sends of >= outageSummaryMin; OutageSinceUnix is the start of
+	// the run in progress (absent when sends are getting through).
+	Evicted         int   `json:"evicted"`
+	Outages         int   `json:"outages_summarised"`
+	OutageSinceUnix int64 `json:"outage_since_unix,omitempty"`
 }
 
 // Pusher is one push channel. Production uses the process default (Start /
@@ -126,6 +180,13 @@ type Pusher struct {
 	held     []heldMsg              // dropped by the budget / full queue, still eligible
 	dropped  int
 	pending  sync.WaitGroup
+
+	// m467 outage record: the first failed send of the current run (zero = sends
+	// are getting through), the distinct keys that failed in it, and how many of
+	// those were withdrawn (Cancel) before they could be delivered.
+	outageSince     time.Time
+	outageFailed    map[string]bool
+	outageWithdrawn int
 
 	sendTimeout time.Duration
 
@@ -148,14 +209,15 @@ func New(send func(text string)) *Pusher {
 // no-op pusher.
 func NewE(send func(text string) error) *Pusher {
 	p := &Pusher{
-		send:        send,
-		q:           make(chan heldMsg, queueCap),
-		inflight:    map[string]heldMsg{},
-		seen:        map[string]time.Time{},
-		kindAt:      map[string][]time.Time{},
-		now:         time.Now,
-		sendTimeout: defaultSendTimeout,
-		enabled:     func() bool { return !friendmode.Enabled() },
+		send:         send,
+		q:            make(chan heldMsg, queueCap),
+		inflight:     map[string]heldMsg{},
+		seen:         map[string]time.Time{},
+		kindAt:       map[string][]time.Time{},
+		outageFailed: map[string]bool{},
+		now:          time.Now,
+		sendTimeout:  defaultSendTimeout,
+		enabled:      func() bool { return !friendmode.Enabled() },
 	}
 	safe.GoNamed("owner-push", p.worker)
 	return p
@@ -237,10 +299,72 @@ func (p *Pusher) onSent(m heldMsg) {
 	p.mu.Lock()
 	delete(p.inflight, m.key)
 	p.stats.Sent++
-	p.stats.LastSentUnix = p.now().Unix()
+	now := p.now()
+	p.stats.LastSentUnix = now.Unix()
+	// m467: a send got through, so the network is back - every held message's
+	// backoff is lifted and the retry below offers them NOW, not when their
+	// (up to 5-15 min) backoff would have expired.
+	recovered := len(p.held) > 0 || !p.outageSince.IsZero()
+	for i := range p.held {
+		p.held[i].notBefore = time.Time{}
+	}
+	var sumKey, sumText string
+	if !p.outageSince.IsZero() {
+		if now.Sub(p.outageSince) >= outageSummaryMin {
+			sumKey, sumText = outageSummary(p.outageSince, now, len(p.outageFailed), p.outageWithdrawn)
+			p.stats.Outages++
+		}
+		p.outageSince, p.outageFailed, p.outageWithdrawn = time.Time{}, map[string]bool{}, 0
+	}
 	p.persistLocked()
 	p.mu.Unlock()
 	logger.Infof("owner push: SENT %q (attempt %d)", m.key, m.attempts+1)
+	if sumKey != "" {
+		logger.Warnf("owner push: %s", sumText)
+		p.Push(sumKey, sumText)
+	}
+	if recovered {
+		p.Retry()
+	}
+}
+
+// outageSummary renders the one message after an outage (m467). It names the
+// window and the counts, never the transport error: that text carried the bot
+// URL, and the summary is what the owner reads on his phone.
+func outageSummary(since, now time.Time, failed, withdrawn int) (key, text string) {
+	text = fmt.Sprintf("\U0001F4F6 vl owner alerts could not reach you from %s to %s (%s): the box could not reach Telegram. %d alert(s) failed to send during it",
+		clockCT(since), clockCT(now), spanText(now.Sub(since)), failed)
+	if withdrawn > 0 {
+		text += fmt.Sprintf("; %d withdrawn because their episode had already ended (a later message says so)", withdrawn)
+	}
+	text += ". The ones still current follow now. The app's alert center and the log hold the full record."
+	return fmt.Sprintf("push-outage|%d", since.Unix()), text
+}
+
+var ctLoc = func() *time.Location {
+	if l, err := time.LoadLocation("America/Chicago"); err == nil {
+		return l
+	}
+	return time.UTC
+}()
+
+func clockCT(t time.Time) string {
+	in := t.In(ctLoc)
+	if ctLoc == time.UTC {
+		return in.Format("01-02 15:04") + " UTC"
+	}
+	return in.Format("01-02 15:04") + " CT"
+}
+
+// spanText renders a duration as "15h02m" / "42m".
+func spanText(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh%02dm", h, m)
 }
 
 func (p *Pusher) onSkipped(m heldMsg) {
@@ -263,18 +387,31 @@ func (p *Pusher) onFailed(m heldMsg, err error) {
 	p.stats.Failed++
 	p.stats.LastError = msg
 	p.stats.LastFailUnix = p.now().Unix()
+	if p.outageSince.IsZero() {
+		p.outageSince = p.now()
+	}
+	p.outageFailed[m.key] = true
 	if live { // not withdrawn by Cancel
 		delete(p.seen, m.key)
 		kind := kindOf(m.key)
 		p.sentAt = removeOnce(p.sentAt, m.admitAt)
 		p.kindAt[kind] = removeOnce(p.kindAt[kind], m.admitAt)
 		m.attempts++
-		m.notBefore = p.now().Add(backoffFor(m.attempts))
+		m.notBefore = p.now().Add(backoffForKey(m.key, m.attempts))
 		p.holdMsgLocked(m)
 	}
 	p.persistLocked()
 	p.mu.Unlock()
 	logger.Errorf("owner push: SEND FAILED %q (attempt %d): %s - held for retry", m.key, m.attempts, msg)
+}
+
+// backoffForKey is backoffFor with the P0 cap (m467).
+func backoffForKey(key string, failures int) time.Duration {
+	d := backoffFor(failures)
+	if IsP0Key(key) && d > p0RetryBackoffMax {
+		d = p0RetryBackoffMax
+	}
+	return d
 }
 
 func backoffFor(failures int) time.Duration {
@@ -307,6 +444,9 @@ func (p *Pusher) Stats() Stats {
 	st := p.stats
 	st.Dropped = p.dropped
 	st.Held = len(p.held)
+	if !p.outageSince.IsZero() {
+		st.OutageSinceUnix = p.outageSince.Unix()
+	}
 	return st
 }
 
@@ -394,10 +534,31 @@ func (p *Pusher) holdMsgLocked(m heldMsg) {
 		}
 	}
 	if len(p.held) >= holdCap {
-		p.held = p.held[1:]
+		// m467: the oldest NON-P0 goes first; a P0 is evicted only when every
+		// held message is a P0 (counted and said - never silent).
+		victim := 0
+		for i, h := range p.held {
+			if !IsP0Key(h.key) {
+				victim = i
+				break
+			}
+		}
+		ev := p.held[victim]
+		p.held = append(p.held[:victim:victim], p.held[victim+1:]...)
+		p.stats.Evicted++
+		logger.Warnf("owner push: hold full (%d) - %q evicted to make room for %q", holdCap, ev.key, m.key)
 	}
 	p.held = append(p.held, m)
 	p.persistLocked()
+}
+
+func (p *Pusher) isHeldLocked(key string) bool {
+	for _, h := range p.held {
+		if h.key == key {
+			return true
+		}
+	}
+	return false
 }
 
 func (p *Pusher) unholdLocked(key string) {
@@ -458,7 +619,7 @@ func (p *Pusher) Retry() int {
 	var keep []heldMsg
 	accepted := 0
 	for _, h := range p.held {
-		if now.Sub(h.at) > holdTTL {
+		if now.Sub(h.at) > holdTTL && !IsP0Key(h.key) {
 			logger.Warnf("owner push: held %q is older than %s - discarded as stale", h.key, holdTTL)
 			p.stats.Stale++
 			continue
@@ -497,6 +658,9 @@ func (p *Pusher) Cancel(key string) {
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.outageFailed[key] && p.isHeldLocked(key) {
+		p.outageWithdrawn++
+	}
 	p.unholdLocked(key)
 	delete(p.inflight, key) // a queued copy that then fails is NOT re-held
 	if _, ok := p.seen[key]; !ok {

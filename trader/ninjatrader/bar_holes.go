@@ -285,6 +285,10 @@ type barHoleTracker struct {
 	auditEverySrc string
 	audit         barGapAuditState
 
+	// repair (m467) receives the 1..(minGap-1) open-minute gaps this detector
+	// sees but does not call holes (nil = no repair driver wired).
+	repair *barRepairDriver
+
 	holes    []*barHole
 	checked  map[string]int64     // symbol|contract -> newest live 1m open time judged
 	lastFire map[string]time.Time // symbol -> last gap re-request this tracker SENT
@@ -457,6 +461,7 @@ func (t *barHoleTracker) observeLive(symbol, tf, contract string, rows []store.B
 	}
 	now := t.clock()
 	spans := findBarHoles(times, t.minGap, t.isOpen)
+	noteSmallGaps(t.repair, symbol, contract, times, t.minGap, t.isOpen) // m467: below the threshold = a repair, never a hole
 	if bootScan {
 		t.say(bootScanLevel(spans), bootScanLine(symbol, contract, from, newest, bootBound, spans))
 	}
