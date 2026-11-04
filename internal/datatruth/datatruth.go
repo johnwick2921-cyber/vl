@@ -42,6 +42,7 @@ import (
 	"time"
 
 	"vl/logger"
+	"vl/telemetry"
 )
 
 // CheckFn is one data-truth check. blocked=true pauses new entries for symbol;
@@ -224,6 +225,10 @@ type episode struct {
 	hwReaders, hwScopes       []string
 	hwReadersAll, hwScopesAll bool
 	clearPush                 bool // the "resolved" owner push for the last clear has gone out
+	// remindN / remindKey (m467): the hourly STILL PAUSED reminders pushed in this
+	// episode, and the newest one's key (withdrawn by the next and by the clear).
+	remindN   int
+	remindKey string
 }
 
 type check struct {
@@ -238,10 +243,17 @@ type check struct {
 	stub     bool // registered by Require, never replaced by a real check
 }
 
+// StillPausedEvery (m467) is the STILL PAUSED reminder cadence while an episode
+// stands. One an hour, in its own owner-push kind per check
+// ("data_truth_still_<check>"), so it never spends the budget the check's own
+// pause / widen / clear pushes share.
+var StillPausedEvery = time.Hour
+
 var (
-	mu       sync.Mutex
-	checks   = map[string]*check{}
-	notifier func(kind, text string)
+	mu        sync.Mutex
+	checks    = map[string]*check{}
+	notifier  func(kind, text string)
+	canceller func(kind string) // m467: withdraws a held reminder (ownerpush.Cancel)
 	// resumeNotes: per check, how entries come back when it is NOT "the data
 	// measures clear by itself" (fill_price waits for the owner's acknowledgement).
 	resumeNotes = map[string]string{}
@@ -401,6 +413,15 @@ func SetNotifier(fn func(kind, text string)) {
 	mu.Unlock()
 }
 
+// SetCanceller installs the owner-push withdraw (ownerpush.Cancel), used to drop
+// a still-held STILL PAUSED reminder once a newer one or the clear supersedes
+// it. nil detaches.
+func SetCanceller(fn func(kind string)) {
+	mu.Lock()
+	canceller = fn
+	mu.Unlock()
+}
+
 // Evaluate runs every registered check for symbol. blocked is true when at
 // least one check blocks; reasons names each blocking check (sorted by check
 // name). With no check registered and none required nothing is blocked - the
@@ -433,8 +454,10 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 
 	type alert struct{ kind, text, push string }
 	var alerts []alert
+	var withdraw []string
 	mu.Lock()
 	notify := notifier
+	cancel := canceller
 	for _, v := range vs {
 		c := checks[v.name]
 		ep := c.eps[symbol]
@@ -492,6 +515,19 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 						fmt.Sprintf(" (exits, stops and protection are unaffected; %s)", resume)),
 				})
 			}
+			// m467: a pause that LASTS is news again every StillPausedEvery.
+			if n := int(time.Duration(now.UnixMilli()-ep.sinceMs) * time.Millisecond / StillPausedEvery); n >= 1 && n > ep.remindN {
+				if ep.remindKey != "" {
+					withdraw = append(withdraw, ep.remindKey)
+				}
+				ep.remindN = n
+				ep.remindKey = fmt.Sprintf("data_truth_still_%s|%s|%d|%d", v.name, symbol, ep.sinceMs, n)
+				span := time.Duration(now.UnixMilli()-ep.sinceMs) * time.Millisecond
+				head := fmt.Sprintf("DATA TRUTH: new entries STILL PAUSED for %s%s - %s since %s (%s): ", symbol, scopeNoteMax(v.readers, v.scopes, pushNames), v.name, ctClock(ep.sinceMs), spanHM(span))
+				tail := fmt.Sprintf(" (exits, stops and protection are unaffected; %s)", resume)
+				alerts = append(alerts, alert{kind: ep.remindKey, text: head + v.why + tail, push: composePush(head, v.why, tail)})
+				telemetry.IncDataStillPausedReminder()
+			}
 			ep.hwReaders, ep.hwReadersAll = unionHW(ep.hwReaders, ep.hwReadersAll, v.readers)
 			ep.hwScopes, ep.hwScopesAll = unionHW(ep.hwScopes, ep.hwScopesAll, v.scopes)
 			ep.clearPush = false
@@ -503,6 +539,10 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 		} else if ep.open {
 			ep.open, ep.clearedMs = false, now.UnixMilli()
 			ep.clearPush = false
+			if ep.remindKey != "" {
+				withdraw = append(withdraw, ep.remindKey) // the clear supersedes a held reminder
+			}
+			ep.remindN, ep.remindKey = 0, ""
 			logger.Infof("datatruth: %s CLEAR for %s after %dms (was: %s) - new entries resume", v.name, symbol, now.UnixMilli()-ep.sinceMs, ep.detail)
 		} else if ep.clearedMs != 0 && !ep.clearPush && now.UnixMilli()-ep.clearedMs >= ReopenMergeWindow.Milliseconds() {
 			// The owner was told the pause began; a pause of 99 to 240 minutes used to
@@ -519,6 +559,11 @@ func Evaluate(symbol string, now time.Time) (blocked bool, reasons []Reason) {
 	}
 	mu.Unlock()
 
+	if cancel != nil {
+		for _, k := range withdraw {
+			cancel(k)
+		}
+	}
 	for _, a := range alerts {
 		logger.Warnf("datatruth: %s", a.text)
 		if notify != nil {
@@ -686,6 +731,17 @@ func resumeTailLocked(checkName, symbol string, scopes []string) string {
 }
 
 // ctClock renders a unix-ms instant on the owner's clock (America/Chicago).
+// spanHM renders a duration as "15h02m" / "42m" (m467).
+func spanHM(d time.Duration) string {
+	d = d.Round(time.Minute)
+	h := int(d / time.Hour)
+	m := int((d % time.Hour) / time.Minute)
+	if h == 0 {
+		return fmt.Sprintf("%dm", m)
+	}
+	return fmt.Sprintf("%dh%02dm", h, m)
+}
+
 func ctClock(ms int64) string {
 	loc, label := time.UTC, "UTC"
 	if l, err := time.LoadLocation("America/Chicago"); err == nil {
@@ -815,6 +871,7 @@ func Reset() {
 	mu.Lock()
 	checks = map[string]*check{}
 	notifier = nil
+	canceller = nil
 	resumeNotes = map[string]string{}
 	resumeFuncs = map[string]func(string, []string) string{}
 	mu.Unlock()

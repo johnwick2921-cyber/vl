@@ -806,6 +806,14 @@ type AutoTrader struct {
 	// CME closes — so the owner is told down once and back once per episode.
 	feedEpisodeMu    sync.Mutex
 	feedDownEpisode  string
+	// m467: feedDownSince is when the current blind spell began - kept across a
+	// CME close, so the BACK after a reopen names the true start (11-03: 02:00,
+	// not the 17:00 episode); feedDownLastEpisode is the episode the close ended;
+	// feedDownReminded / feedDownReminderKey drive the hourly STILL DOWN push.
+	feedDownSince       time.Time
+	feedDownLastEpisode string
+	feedDownReminded    int
+	feedDownReminderKey string
 	feedLagMu        sync.Mutex
 	feedLagEnteredAt time.Time // zero = outside the band
 	feedLagSaid      bool      // the WARN already fired for this episode

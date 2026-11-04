@@ -116,14 +116,21 @@ func (at *AutoTrader) ownerPushTraderLabel() string {
 	return shortID(at.id)
 }
 
-// ownerPushFeedBack tells the owner the feed returned, once per episode.
-func ownerPushFeedBack(episodeID string, newestBarAge time.Duration) {
+// ownerPushFeedBack tells the owner the feed returned, once per episode. m467:
+// with the spell's start known it says HOW LONG the bot was blind (the BACK is
+// then the whole story, so a FEED DOWN still held - e.g. by a network outage -
+// can be withdrawn without the owner losing the fact of the outage).
+func ownerPushFeedBack(episodeID string, newestBarAge time.Duration, since, now time.Time) {
 	// m438: a FEED DOWN message still held by the budget is no longer news once
 	// the feed is back — withdraw it so it is never delivered after the BACK.
 	ownerpush.Cancel("feed-down|" + episodeID)
-	ownerpush.Push("feed-back|"+episodeID,
-		fmt.Sprintf("✅ vl — NT8 bar feed is BACK (newest bar %s old). Bars are flowing again; trading can resume.",
-			newestBarAge.Round(time.Second)))
+	text := fmt.Sprintf("✅ vl — NT8 bar feed is BACK (newest bar %s old). Bars are flowing again; trading can resume.",
+		newestBarAge.Round(time.Second))
+	if !since.IsZero() && now.After(since) {
+		text = fmt.Sprintf("✅ vl — NT8 bar feed is BACK after %s (down since %s CT, back %s CT, any CME-closed time included). While it was down no new entry could be placed and the planner did not run. Bars are flowing again (newest bar %s old); trading can resume.",
+			spanHM(now.Sub(since)), kernel.TableTimeCT(since), kernel.ClockCT(now), newestBarAge.Round(time.Second))
+	}
+	ownerpush.Push("feed-back|"+episodeID, text)
 }
 
 // unfilledHolesFn is the tracker read (ntTrader.UnfilledHolesFeeding); a var so
