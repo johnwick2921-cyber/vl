@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"time"
 
@@ -56,6 +57,11 @@ type stateDisk struct {
 	Exit     string           `json:"exit"` // "running" | "clean"
 	Held     []stateMsg       `json:"held"`
 	Seen     map[string]int64 `json:"seen"`
+	// m467 (additive): the outage run in progress when the file was written, so
+	// the summary after a restart still reads from its true start.
+	OutageSince     int64    `json:"outage_since,omitempty"`
+	OutageFailed    []string `json:"outage_failed,omitempty"`
+	OutageWithdrawn int      `json:"outage_withdrawn,omitempty"`
 }
 
 type stateFile struct {
@@ -93,8 +99,8 @@ func (p *Pusher) EnableState(path string) BootInfo {
 	if prev != nil {
 		for _, m := range prev.Held {
 			at := time.Unix(m.AtUnix, 0)
-			if now.Sub(at) > holdTTL {
-				continue // stale news
+			if now.Sub(at) > holdTTL && !IsP0Key(m.Key) {
+				continue // stale news (a P0 never is - m467)
 			}
 			p.held = append(p.held, heldMsg{key: m.Key, text: m.Text, at: at, attempts: m.Attempts})
 			info.Restored++
@@ -109,6 +115,13 @@ func (p *Pusher) EnableState(path string) BootInfo {
 		// seen keys). The file records in-flight keys as held, so un-see them.
 		for _, h := range p.held {
 			delete(p.seen, h.key)
+		}
+		if prev.OutageSince > 0 {
+			p.outageSince = time.Unix(prev.OutageSince, 0)
+			for _, k := range prev.OutageFailed {
+				p.outageFailed[k] = true
+			}
+			p.outageWithdrawn = prev.OutageWithdrawn
 		}
 	}
 	p.state = &stateFile{path: path, bootUnix: now.Unix(), exit: "running", kick: make(chan struct{}, 1), done: make(chan struct{})}
@@ -179,6 +192,14 @@ func (p *Pusher) writeState() {
 			continue
 		}
 		d.Seen[k] = at.Unix()
+	}
+	if !p.outageSince.IsZero() {
+		d.OutageSince = p.outageSince.Unix()
+		for k := range p.outageFailed {
+			d.OutageFailed = append(d.OutageFailed, k)
+		}
+		sort.Strings(d.OutageFailed)
+		d.OutageWithdrawn = p.outageWithdrawn
 	}
 	p.mu.Unlock()
 

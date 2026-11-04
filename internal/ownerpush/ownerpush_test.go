@@ -131,16 +131,17 @@ func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 	}
 }
 
-// A hold older than holdTTL is stale news and is discarded, never delivered.
+// A NON-P0 hold older than holdTTL is stale news and is discarded, never
+// delivered. (m467: a P0 never goes stale - ownerpush_m467_test.go.)
 func TestHeldPushExpires(t *testing.T) {
 	s := &sink{}
 	p := New(s.send)
 	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
 	p.SetClockForTest(clk.Now)
 	for i := 0; i < maxPerKindPerHour; i++ {
-		p.Push(fmt.Sprintf("feed-down|e%d", i), "d")
+		p.Push(fmt.Sprintf("data-report|e%d", i), "d")
 	}
-	p.Push("feed-down|old", "OLD")
+	p.Push("data-report|old", "OLD")
 	clk.Advance(holdTTL + time.Minute)
 	if n := p.Retry(); n != 0 || p.Held() != 0 {
 		t.Fatalf("stale hold must be discarded, accepted %d held %d", n, p.Held())
