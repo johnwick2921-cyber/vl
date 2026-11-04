@@ -41,8 +41,12 @@ type BarCache struct {
 	// the new forming one, so it arrives with a smaller timestamp. finalisations
 	// counts those accepted as a close of a bar the ring already holds;
 	// outOfOrderDrops counts every other backwards bar, still refused.
-	finalisations   int64
-	outOfOrderDrops int64
+	partialReplaced int64 // m467: never-finalised live bars a replay replaced
+	// onPartialReplaced (m467) is told (under the cache lock: it must not call back
+	// into the cache) each time a replay replaced never-finalised live bars.
+	onPartialReplaced func(symbol, timeframe string, n int)
+	finalisations     int64
+	outOfOrderDrops   int64
 	// BAR-SOURCE WAVE: per key, whether a live bar has been seen this process
 	// (the scale-mismatch check runs once, on the first), and every mismatch
 	// detected, for the boot line.
@@ -215,6 +219,23 @@ func (c *BarCache) Finalisations() int64 {
 
 // OutOfOrderDrops reports backwards bars refused because the ring has never
 // held their timestamp — a genuine misordering, not a close.
+// OnPartialReplaced installs the m467 replace observer (the log line + counter
+// the repair driver owns). Runs under the cache lock: it must not call back in.
+func (c *BarCache) OnPartialReplaced(fn func(symbol, timeframe string, n int)) {
+	c.mu.Lock()
+	c.onPartialReplaced = fn
+	c.mu.Unlock()
+}
+
+// PartialsReplacedByReplay (m467) is how many ring bars a replay REPLACED: a
+// live bar the AddOn never finalised, in a period that had closed, overwritten
+// by NT8's own bar for the same period on the same price scale.
+func (c *BarCache) PartialsReplacedByReplay() int64 {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.partialReplaced
+}
+
 func (c *BarCache) OutOfOrderDrops() int64 {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -404,7 +425,13 @@ func (c *BarCache) SeedHistorical(symbol, timeframe string, bars []Bar) {
 	// A REPLAY NEVER OVERWRITES A LIVE BAR (bar-source wave). mergeBarsByTime
 	// said "incoming is freshest"; for a replay landing on minutes that already
 	// traded live, that put a back-adjusted bar over a real one.
-	merged := mergeSeedKeepingLive(existing, bars)
+	merged, replaced := mergeSeedKeepingFinal(existing, bars)
+	if replaced > 0 {
+		c.partialReplaced += int64(replaced)
+		if c.onPartialReplaced != nil {
+			c.onPartialReplaced(symbol, timeframe, replaced)
+		}
+	}
 	if len(merged) > c.maxBars {
 		merged = merged[len(merged)-c.maxBars:]
 	}
