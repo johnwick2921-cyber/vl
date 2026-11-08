@@ -11,11 +11,16 @@
 #
 # Usage:
 #   deploy/post-install-check.sh [--log FILE] [--db FILE] [--release FILE]
+#                                [--expect SHA|TAG]
 #
 # Defaults (the install dir is the repo this script sits in, or $VL_REPO):
 #   --log      newest data/vl_*.log
 #   --db       data/data.db
 #   --release  deploy/RELEASE
+#   --expect   none. The release you MEANT to install (a sha, 7+ hex, or a tag
+#              resolved in the install dir's git). deploy/RELEASE is written by
+#              the same install and restored with the binary by a rollback, so
+#              only --expect can tell "the Update rolled back" from "it ran".
 #
 # The process judged is the one that wrote the LAST "BOOT INTEGRITY" line. Its
 # lines start at its own start banner ("🚀 VL Intelligent", main.go), not at the
@@ -35,7 +40,14 @@
 #     the boot, whichever is later (11-01: reopen 17:00, RESUMED 17:26). Until
 #     then it is a WARN and the verdict is TOO EARLY; after that it is a FAIL;
 #   - with the CME open past that settle time, no AI call since the process
-#     started is a FAIL.
+#     started is a FAIL, and so is no SUCCESSFUL one (every ai_call ok=false,
+#     whatever the class: 401, 429, timeout). While the CME is closed, every
+#     call failing is a WARN and the verdict is TOO EARLY until the reopen plus
+#     the settle time. The ai_call line names no trader and no key, so the same
+#     rule is applied per trader from decision_records: a trader with AI-failed
+#     rows since the process started, none answered, and at least one failure
+#     since the CME opened is a FAIL past the settle time (one trader's key
+#     dead while another's works); closed or before the settle time, TOO EARLY.
 # "Now" is the clock, or POST_INSTALL_NOW (unix seconds) for tests.
 #
 # Output: one line per check, starting PASS / WARN / FAIL (INFO lines are shown
@@ -60,9 +72,10 @@ VL_REPO="${VL_REPO:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 LOG=""
 DB="$VL_REPO/data/data.db"
 RELEASE="$VL_REPO/deploy/RELEASE"
+EXPECT=""
 
 usage() {
-  echo "usage: $0 [--log FILE] [--db FILE] [--release FILE]" >&2
+  echo "usage: $0 [--log FILE] [--db FILE] [--release FILE] [--expect SHA|TAG]" >&2
   exit 2
 }
 
@@ -71,6 +84,7 @@ while [ $# -gt 0 ]; do
     --log)     [ $# -ge 2 ] || usage; LOG="$2"; shift 2 ;;
     --db)      [ $# -ge 2 ] || usage; DB="$2"; shift 2 ;;
     --release) [ $# -ge 2 ] || usage; RELEASE="$2"; shift 2 ;;
+    --expect)  [ $# -ge 2 ] && [ -n "$2" ] || usage; EXPECT="$2"; shift 2 ;;
     -h|--help) usage ;;
     *) echo "unknown argument: $1" >&2; usage ;;
   esac
@@ -249,6 +263,23 @@ elif [ "${#boot_rev}" -ge 7 ] && [ "${want_rev:0:${#boot_rev}}" = "$boot_rev" ];
 else
   fail "boot rev: running $boot_rev but $(basename "$RELEASE") names ${want_rev:0:12} — a stale or wrong binary is running"
 fi
+if [ -n "$EXPECT" ]; then
+  if [[ "$EXPECT" =~ ^[0-9a-f]{7,40}$ ]]; then
+    expect_sha=$EXPECT
+  else
+    expect_sha=$(git -C "$VL_REPO" rev-parse --verify -q "refs/tags/$EXPECT^{commit}" 2>/dev/null)
+  fi
+  if [ -z "$expect_sha" ]; then
+    fail "expect: cannot resolve '$EXPECT' to a commit (not a sha, and no such tag in $VL_REPO) — cannot confirm the release you meant to install is running"
+  else
+    exp_n=${#boot_rev}; [ "${#expect_sha}" -lt "$exp_n" ] && exp_n=${#expect_sha}
+    if [ "$exp_n" -ge 7 ] && [ "${expect_sha:0:$exp_n}" = "${boot_rev:0:$exp_n}" ]; then
+      pass "expect: running $boot_rev is $EXPECT"
+    else
+      fail "expect: running $boot_rev but you expected $EXPECT (${expect_sha:0:12}) — the release you meant to install is not running (rolled back, or never activated)"
+    fi
+  fi
+fi
 if [ "$boot_goldens" = "PASS" ]; then
   pass "goldens: PASS"
 else
@@ -318,17 +349,20 @@ function ts(line) { return substr(line, 1, 14) }
 '
 
 # open_episodes OPEN CLOSE — per trader, an episode opened by a line containing
-# OPEN and closed by a later line containing CLOSE. Prints
+# OPEN and closed by a later line containing CLOSE. OPEN may list several
+# openers separated by "|"; a line containing any one of them opens. Prints
 # "trader<TAB>time<TAB>class" for every trader whose last OPEN has no CLOSE
 # after it, then "#n<TAB>opens". The class is the text in brackets right after
-# an OPEN that ends in "(" (the pause class), else "-".
+# an opener that ends in "(" (the pause class), else "-".
 open_episodes() {
   after_boot | awk -v opener="$1" -v closer="$2" "$AWK_TRADER"'
-    index($0, opener) {
+    BEGIN { nop = split(opener, ops, "|") }
+    { op = ""; for (i = 1; i <= nop; i++) if (index($0, ops[i])) { op = ops[i]; break } }
+    op != "" {
       t = trader($0); if (t == "") next
       since[t] = ts($0); n++; cls[t] = "-"
-      if (substr(opener, length(opener)) == "(") {
-        rest = substr($0, index($0, opener) + length(opener))
+      if (substr(op, length(op)) == "(") {
+        rest = substr($0, index($0, op) + length(op))
         e = index(rest, ")"); if (e > 1) cls[t] = substr(rest, 1, e - 1)
       }
       next
@@ -380,11 +414,14 @@ report_episodes() {
 # ---------------------------------------------------------------------------
 # 3. TRADING PAUSED without a later TRADING RESUMED for the same trader
 #    (trader/data_integrity_gate.go: "⏸ TRADING PAUSED (" / "▶ TRADING RESUMED:").
+#    A pause that comes back within the merge window of its own resume logs
+#    "⏸ TRADING PAUSED AGAIN (" instead, with no new owner push (m469) — it
+#    refuses entries exactly the same, so it opens a pause here too.
 #    data_integrity_unknown is logged whenever a window is Blocked, open or
 #    closed (data_integrity_gate.go: only the owner PUSH waits for the open),
 #    so on a closed-market install it is expected until bars arrive.
 # ---------------------------------------------------------------------------
-report_episodes "pause" "⏸ TRADING PAUSED (" "▶ TRADING RESUMED:" "TRADING PAUSED (new entries refused)" "data_integrity_unknown"
+report_episodes "pause" "⏸ TRADING PAUSED (|⏸ TRADING PAUSED AGAIN (" "▶ TRADING RESUMED:" "TRADING PAUSED (new entries refused)" "data_integrity_unknown"
 
 # ---------------------------------------------------------------------------
 # 4. FEED DOWN without a later "bars are flowing again" for the same trader
@@ -394,10 +431,16 @@ report_episodes "feed" "🚨 FEED DOWN:" "✅ feed: bars are flowing again" "FEE
 
 # ---------------------------------------------------------------------------
 # 5. AI calls.
-#  a) The newest `ai_call` line (mcp/client.go; it names no trader).
+#  a) The newest `ai_call` line (mcp/client.go; it names no trader), and
+#     whether ANY ai_call since the process started has ok=true.
 #  b) Per trader in the log: the newest "💸 DEEPSEEK PAYMENT FAILURE" with no
 #     later "⏱️ AI call" for that trader means its cycles are dying on 402.
-#  c) Per trader in the database: the newest decision_records row since boot.
+#  c) Per trader in the database: the newest decision_records row since boot,
+#     and whether this trader's AI has answered at all since the process
+#     started. The ai_call line names no trader and no key, and traders can use
+#     different ai_models rows (each with its own key), so one key rejected on
+#     every call is invisible to (a) while another key works: only the
+#     per-trader rows can see it.
 # ---------------------------------------------------------------------------
 last_ai=$(after_boot | grep ' ai_call model=' | tail -n 1)
 if [ -z "$last_ai" ]; then
@@ -417,12 +460,27 @@ else
   ai_class=$(echo "$last_ai" | sed -nE 's/.* class=([^ ]+).*/\1/p')
   ai_model=$(echo "$last_ai" | sed -nE 's/.* ai_call model=([^ ]+).*/\1/p')
   ai_ts=${last_ai:0:14}
+  # How many ai_call lines since the process started succeeded. None at all is
+  # the bot deciding nothing, whatever the failure class (401, 429, timeout).
+  ai_n=$(after_boot | grep -c ' ai_call model=')
+  ai_ok_n=$(after_boot | grep ' ai_call model=' | grep -cE ' ok=true( |$)')
+  ai_latest="latest ai_call ($ai_model, $ai_ts CT) ok=${ai_ok:-n/a} http_status=${ai_http:-n/a} class=${ai_class:-n/a}"
   if [ "$ai_http" = "402" ]; then
     fail "ai: AI credit exhausted — latest ai_call ($ai_model, $ai_ts CT) ok=$ai_ok http_status=402"
   elif [ "$ai_ok" = "true" ]; then
     pass "ai: latest ai_call ($ai_model, $ai_ts CT) ok=true http_status=${ai_http:-n/a}"
+  elif [ "$ai_ok_n" -gt 0 ]; then
+    warn "ai: $ai_latest — $ai_ok_n of $ai_n ai_call(s) since the process started succeeded"
+  elif [ "$CME_NOW" = "closed" ]; then
+    # Cannot be judged until the bot has had live bars past the settle time.
+    nxt=$(cme_next_open "$NOW")
+    warn "ai: no successful AI call since the process started ($ai_n ai_call(s), every one failed; $ai_latest) — the CME is closed"
+    defer_until $((nxt + SETTLE_SEC)) "no successful AI call yet"
+  elif [ "$NOW" -ge $((live_since + SETTLE_SEC)) ]; then
+    fail "ai: no successful AI call since the process started — $ai_n ai_call(s), every one failed; $ai_latest; the CME has been open $(((NOW - live_since) / 60)) min of it — the bot is not deciding anything"
   else
-    warn "ai: latest ai_call ($ai_model, $ai_ts CT) ok=${ai_ok:-n/a} http_status=${ai_http:-n/a} class=${ai_class:-n/a}"
+    warn "ai: no successful AI call since the process started yet ($ai_n ai_call(s), every one failed; $ai_latest)"
+    defer_until $((live_since + SETTLE_SEC)) "no successful AI call yet"
   fi
 fi
 
@@ -460,13 +518,43 @@ elif [ ! -r "$DB" ]; then
 elif [ -z "$boot_utc" ] || [ -z "$end_utc" ]; then
   warn "ai per trader (db): could not convert the log times ($BOOT_TS, $end_ts) to UTC — database leg skipped"
 else
+  # Per trader, since the process started (the newest row, then counts):
+  #   n402      rows on 402;
+  #   fail_n    rows whose AI call failed (error_class ai_call_failed or
+  #             ai_payment_402: trader/auto_trader_ai402.go classifyAIError);
+  #   fail_live the same, at or after live_since (the later of the boot and the
+  #             session open) — the trader tried while it had live bars;
+  #   ans_n     rows where the AI ANSWERED: no AI error class, and an AI
+  #             duration or a raw response (trader/auto_trader_loop.go stamps
+  #             both from the answer). A mentor-mode row ("AI decision
+  #             skipped"), a guardrail skip before the prompt and a context
+  #             failure carry neither, so they are not an answer — and not a
+  #             failure either.
+  # Closed: no row is "since the open". The sentinel must not look like a
+  # number: timestamp has NUMERIC affinity, so '9999' would become 9999, and
+  # every text stamp sorts above any number.
+  if [ "$CME_NOW" = "open" ]; then live_utc=$(utc_of "$live_since"); else live_utc="9999-12-31 23:59:59"; fi
   rows=$(sqlite3 -readonly -separator $'\t' "file:$DB?mode=ro" "
-    SELECT COALESCE(t.name, ''), d.trader_id, substr(d.timestamp, 1, 19), d.success,
-           COALESCE(d.error_class, ''),
+    SELECT COALESCE(NULLIF(t.name, ''), '?'), d.trader_id, substr(d.timestamp, 1, 19), d.success,
+           COALESCE(NULLIF(d.error_class, ''), '-'),
            (SELECT count(*) FROM decision_records x
              WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
                AND substr(x.timestamp, 1, 19) <= '$end_utc'
-               AND x.error_class = 'ai_payment_402')
+               AND x.error_class = 'ai_payment_402'),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND x.error_class IN ('ai_call_failed', 'ai_payment_402')),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$live_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND x.error_class IN ('ai_call_failed', 'ai_payment_402')),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND COALESCE(x.error_class, '') = ''
+               AND (COALESCE(x.ai_request_duration_ms, 0) > 0
+                    OR length(COALESCE(x.raw_response, '')) > 0))
       FROM decision_records d LEFT JOIN traders t ON t.id = d.trader_id
      WHERE d.id IN (SELECT max(id) FROM decision_records
                      WHERE timestamp >= '$boot_utc'
@@ -479,10 +567,31 @@ else
   elif [ -z "$rows" ]; then
     warn "ai per trader (db): no decision_records between boot and the log's last line ($boot_utc .. $end_utc UTC)"
   else
-    while IFS=$'\t' read -r name id at ok class n402; do
+    # No field may be empty: tab is whitespace to read, so an empty field would
+    # collapse and shift every field after it (a clean row's empty error_class
+    # used to slide the counts one column left). Empty name and class are sent
+    # as "?" and "-".
+    while IFS=$'\t' read -r name id at ok class n402 fail_n fail_live ans_n; do
+      [ "$class" = "-" ] && class=""
       label="$name [..${id: -6}]"
+      never="no successful AI call for this trader since the process started — $fail_n decision(s) failed on the AI call, none answered; latest decision at $at UTC (${class:-no error_class})"
       if [ "$class" = "ai_payment_402" ]; then
         fail "ai per trader (db): $label — AI credit exhausted (402) on the latest decision at $at UTC; $n402 such row(s) since boot"
+      elif [ "${fail_n:-0}" -gt 0 ] && [ "${ans_n:-0}" -eq 0 ]; then
+        # The trader-level twin of the process-wide "no successful AI call":
+        # this trader's key can be dead while another trader's key works.
+        if [ "$CME_NOW" = "closed" ]; then
+          nxt=$(cme_next_open "$NOW")
+          warn "ai per trader (db): $label — $never; the CME is closed"
+          defer_until $((nxt + SETTLE_SEC)) "a trader has no successful AI call yet"
+        elif [ "$NOW" -lt $((live_since + SETTLE_SEC)) ]; then
+          warn "ai per trader (db): $label — $never; too early to judge (the CME opened at $(ct_fmt "$live_since") CT)"
+          defer_until $((live_since + SETTLE_SEC)) "a trader has no successful AI call yet"
+        elif [ "${fail_live:-0}" -gt 0 ]; then
+          fail "ai per trader (db): $label — $never; $fail_live of them since the CME opened ($(ct_fmt "$live_since") CT), open $(((NOW - live_since) / 60)) min — this trader is deciding nothing"
+        else
+          warn "ai per trader (db): $label — $never; no AI call from it since the CME opened ($(ct_fmt "$live_since") CT)"
+        fi
       elif [ "$ok" = "1" ]; then
         pass "ai per trader (db): $label — latest decision at $at UTC succeeded"
       else
