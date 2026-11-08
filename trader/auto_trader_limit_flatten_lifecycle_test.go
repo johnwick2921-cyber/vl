@@ -2,6 +2,7 @@ package trader
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,11 +15,24 @@ type limitFlattenRecorder struct {
 	limits, closes, cancels int
 	closeStarted            chan struct{}
 	closeRelease            chan struct{}
+	// cancelOrders records every cancel_order by signal id (m471 L2-3); cancels
+	// above counts CancelStopOrders only.
+	cancelOrders []string
+	limitPx      []float64
 }
 
-func (r *limitFlattenRecorder) CloseWithLimit(string, string, float64, float64) (map[string]interface{}, error) {
+func (r *limitFlattenRecorder) CloseWithLimit(_ string, _ string, _ float64, px float64) (map[string]interface{}, error) {
 	r.limits++
-	return nil, r.limitErr
+	r.limitPx = append(r.limitPx, px)
+	if r.limitErr != nil {
+		return nil, r.limitErr
+	}
+	// Same shape as TCPTrader.sendCloseAt: the close's own signal id.
+	return map[string]interface{}{"status": "close_submitted", "signal_id": fmt.Sprintf("close-%d", r.limits)}, nil
+}
+func (r *limitFlattenRecorder) CancelOrder(signalID string) error {
+	r.cancelOrders = append(r.cancelOrders, signalID)
+	return nil
 }
 func (r *limitFlattenRecorder) CloseLong(string, float64) (map[string]interface{}, error) {
 	r.closes++

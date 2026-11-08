@@ -1724,6 +1724,10 @@ func (t *TCPTrader) sendCloseAt(side string, quantity float64, limitPrice float6
 		"status": "close_submitted",
 		"symbol": t.symbol,
 		"side":   side,
+		// m471 L2-3: the close's own signal id. A limit exit rests at the
+		// broker named "<signal_id>-lx"; flattenPosition keeps it so the
+		// resting exit can be cancelled when its position ends another way.
+		"signal_id": payload.SignalID,
 	}, nil
 }
 

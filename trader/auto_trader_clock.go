@@ -561,7 +561,7 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 			at.logInfof("🕒 EOD-FLAT (%s): SWING4H position %d (%s) EXEMPT — held by the 4h (N4)", flat, p.ID, p.CitedScenarioID)
 			continue
 		}
-		at.flattenPosition(p, "🕒 EOD-FLAT")
+		at.flattenPositionAt(p, "🕒 EOD-FLAT", now)
 	}
 	return true
 }
@@ -596,7 +596,25 @@ func limitClosePrice(close float64, ticks int, tick float64, long bool) float64 
 // no-ops. The broker close protocol has no position-ID fence: DB lag can still
 // hide a broker-side replacement. This check is not an atomic broker identity
 // guarantee (W117-F F6, ports #117 94e08cf0).
+//
+// m471 L2-1 — ONE EXIT IN FLIGHT. The AddOn sizes every "-lx" limit exit to the
+// account's WHOLE position, so two resting at once flatten and then REVERSE the
+// position (live 2026-10-30 14:45:21, trader 12345: EOD flat ran twice in one
+// second, rows 723/724, an unprotected LONG 1 marked manual). Every caller
+// re-runs while close-sync still reads the row OPEN, so an exit in flight is
+// recorded by position ID AND by (account, symbol, side) — the second covers a
+// caller with no durable ID and a duplicate row of the same position. A repeat
+// call never sends a second order: before the in-flight exit's market deadline
+// it returns; after it, it escalates THAT exit to the market close (NT8's
+// Flatten closes the position and cancels the resting -lx with it); once the
+// market close is sent, repeats inside exitInFlightHold send nothing.
 func (at *AutoTrader) flattenPosition(p *store.TraderPosition, tag string) {
+	at.flattenPositionAt(p, tag, time.Now())
+}
+
+// flattenPositionAt is flattenPosition on the caller's clock (class 113): the
+// in-flight record's send time, market deadline and hold are read from now.
+func (at *AutoTrader) flattenPositionAt(p *store.TraderPosition, tag string, now time.Time) {
 	// Copy caller-owned state before a timer captures it.
 	position := *p
 	p = &position
@@ -606,24 +624,13 @@ func (at *AutoTrader) flattenPosition(p *store.TraderPosition, tag string) {
 		if at.limitFlattenStopped {
 			return
 		}
-	}
-	side := "LONG"
-	if !strings.EqualFold(p.Side, "LONG") {
-		side = "SHORT"
-	}
-	closeMarket := func() bool {
-		var e error
-		if side == "LONG" {
-			_, e = at.trader.CloseLong(p.Symbol, 0) // 0 = close all
-		} else {
-			_, e = at.trader.CloseShort(p.Symbol, 0)
+		if pending := at.inFlightExitLocked(p, now); pending != nil {
+			at.repeatFlattenLocked(pending, tag, now)
+			return
 		}
-		if e != nil {
-			at.logErrorf("%s: close %s %s failed: %v", tag, p.Symbol, p.Side, e)
-			return false
-		}
-		return true
 	}
+	side := flattenSide(p)
+	closeMarket := func() bool { return at.sendMarketClose(p.Symbol, side, tag) }
 
 	ticks := at.config.LimitCloseTicks
 	if ticks <= 0 {
@@ -658,7 +665,8 @@ func (at *AutoTrader) flattenPosition(p *store.TraderPosition, tag string) {
 		}
 		return
 	}
-	if _, err := lc.CloseWithLimit(p.Symbol, side, 0, limit); err != nil {
+	res, err := lc.CloseWithLimit(p.Symbol, side, 0, limit)
+	if err != nil {
 		at.logWarnf("%s: limit close %s %s failed (%v) — market fallback now", tag, p.Symbol, p.Side, err)
 		if closeMarket() {
 			_ = at.trader.CancelStopOrders(p.Symbol)
@@ -671,37 +679,261 @@ func (at *AutoTrader) flattenPosition(p *store.TraderPosition, tag string) {
 	if after <= 0 {
 		after = 10 * time.Second
 	}
-	if p.ID <= 0 || p.TraderID != at.id {
-		at.logWarnf("%s: no durable position identity for %s; refusing delayed market fallback", tag, p.Symbol)
+	closeID, _ := res["signal_id"].(string)
+	pending := &pendingLimitFlatten{position: *p, key: flattenKeyOf(p), tag: tag, after: after,
+		closeSignalID: closeID, sentAt: now, deadline: now.Add(after)}
+	durable := p.ID > 0 && p.TraderID == at.id
+	// Recorded BEFORE the identity check: an ID-less exit is still in flight.
+	at.registerLimitFlattenLocked(pending, durable)
+	if !durable {
+		at.logWarnf("%s: no durable position identity for %s; refusing delayed market fallback (a repeat flatten after %ds escalates this exit to market; none sends a second limit)",
+			tag, p.Symbol, int(after.Seconds()))
+		return
+	}
+	pending.timer = time.AfterFunc(after, func() { at.finishLimitFlatten(pending) })
+}
+
+// exitInFlightHold is the floor on how long a SENT market close keeps its
+// in-flight record. Close-sync can lag the broker by up to ~80 s (m471 L2-1),
+// so for that long a caller may still read the row OPEN; any send inside the
+// hold could land on a position the first close already ended.
+const exitInFlightHold = 90 * time.Second
+
+// pendingLimitFlatten owns an immutable snapshot, never a symbol/side surrogate ID.
+type pendingLimitFlatten struct {
+	position store.TraderPosition
+	key      string // flattenKeyOf: ACCOUNT|SYMBOL|SIDE (m471 L2-1)
+	tag      string
+	after    time.Duration
+	timer    *time.Timer // nil: no durable identity, so no timed fallback
+	// closeSignalID is the close_position signal id; the AddOn names the
+	// resting exit "<closeSignalID>-lx" (m471 L2-3). Empty: the broker did not
+	// report one.
+	closeSignalID string
+	sentAt        time.Time
+	deadline      time.Time // sentAt+after: a repeat past it escalates to market
+	marketSentAt  time.Time // non-zero: the market close for THIS exit was sent
+}
+
+func flattenSide(p *store.TraderPosition) string {
+	if strings.EqualFold(p.Side, "LONG") {
+		return "LONG"
+	}
+	return "SHORT"
+}
+
+// flattenKeyOf is the (account, symbol, side) identity of an exit. An empty
+// account is a caller that cannot name one (the protection reconciler's
+// synthesized position); flattenKeysMatch treats it as THIS trader's account.
+func flattenKeyOf(p *store.TraderPosition) string {
+	return strings.ToUpper(strings.TrimSpace(p.Account)) + "|" + market.Normalize(p.Symbol) + "|" + flattenSide(p)
+}
+
+func flattenKeysMatch(a, b string) bool {
+	if a == b {
+		return true
+	}
+	ai, bi := strings.IndexByte(a, '|'), strings.IndexByte(b, '|')
+	if ai < 0 || bi < 0 || a[ai:] != b[bi:] {
+		return false
+	}
+	return ai == 0 || bi == 0 // one side named no account
+}
+
+func (at *AutoTrader) holdFor(pending *pendingLimitFlatten) time.Duration {
+	if pending.after > exitInFlightHold {
+		return pending.after
+	}
+	return exitInFlightHold
+}
+
+// registerLimitFlattenLocked records an exit in flight. Caller holds limitFlattenMu.
+func (at *AutoTrader) registerLimitFlattenLocked(pending *pendingLimitFlatten, byID bool) {
+	if at.limitFlattensByKey == nil {
+		at.limitFlattensByKey = make(map[string]*pendingLimitFlatten)
+	}
+	if old := at.limitFlattensByKey[pending.key]; old != nil {
+		at.dropLimitFlattenLocked(old)
+	}
+	at.limitFlattensByKey[pending.key] = pending
+	if !byID {
 		return
 	}
 	if at.limitFlattens == nil {
 		at.limitFlattens = make(map[int64]*pendingLimitFlatten)
 	}
-	if old := at.limitFlattens[p.ID]; old != nil {
-		old.timer.Stop()
+	if old := at.limitFlattens[pending.position.ID]; old != nil {
+		at.dropLimitFlattenLocked(old)
 	}
-	pending := &pendingLimitFlatten{position: *p, tag: tag, after: after}
-	at.limitFlattens[p.ID] = pending
-	pending.timer = time.AfterFunc(after, func() { at.finishLimitFlatten(pending) })
+	at.limitFlattens[pending.position.ID] = pending
 }
 
-// pendingLimitFlatten owns an immutable snapshot, never a symbol/side surrogate ID.
-type pendingLimitFlatten struct {
-	position store.TraderPosition
-	tag      string
-	after    time.Duration
-	timer    *time.Timer
+// dropLimitFlattenLocked forgets an exit. Caller holds limitFlattenMu.
+func (at *AutoTrader) dropLimitFlattenLocked(pending *pendingLimitFlatten) {
+	if pending.timer != nil {
+		pending.timer.Stop()
+	}
+	if at.limitFlattens[pending.position.ID] == pending {
+		delete(at.limitFlattens, pending.position.ID)
+	}
+	if at.limitFlattensByKey[pending.key] == pending {
+		delete(at.limitFlattensByKey, pending.key)
+	}
+}
+
+// inFlightExitLocked returns the exit in flight for p — by its ID, else by
+// (account, symbol, side) — after retiring market closes past their hold.
+// Caller holds limitFlattenMu.
+func (at *AutoTrader) inFlightExitLocked(p *store.TraderPosition, now time.Time) *pendingLimitFlatten {
+	for _, pending := range at.limitFlattensByKey {
+		if !pending.marketSentAt.IsZero() && now.Sub(pending.marketSentAt) >= at.holdFor(pending) {
+			at.dropLimitFlattenLocked(pending)
+		}
+	}
+	if p.ID > 0 {
+		if pending := at.limitFlattens[p.ID]; pending != nil {
+			return pending
+		}
+	}
+	key := flattenKeyOf(p)
+	if pending := at.limitFlattensByKey[key]; pending != nil {
+		return pending
+	}
+	for k, pending := range at.limitFlattensByKey {
+		if flattenKeysMatch(k, key) {
+			return pending
+		}
+	}
+	return nil
+}
+
+// repeatFlattenLocked answers a flatten for a position whose exit is already in
+// flight: it never places a second exit (m471 L2-1). Caller holds limitFlattenMu.
+func (at *AutoTrader) repeatFlattenLocked(pending *pendingLimitFlatten, tag string, now time.Time) {
+	p := pending.position
+	if !pending.marketSentAt.IsZero() {
+		at.logInfof("%s: market close for %s %s already sent %s ago (exit by %s) — not sending another",
+			tag, p.Symbol, flattenSide(&p), now.Sub(pending.marketSentAt).Round(time.Second), pending.tag)
+		return
+	}
+	if now.Before(pending.deadline) {
+		at.logInfof("%s: limit exit %s for %s %s already resting (sent %s ago by %s) — not sending a second whole-position exit; its market fallback follows",
+			tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(&p), now.Sub(pending.sentAt).Round(time.Second), pending.tag)
+		return
+	}
+	at.logWarnf("%s: limit exit %s for %s %s unresolved after %s — escalating THAT exit to the market close (no second limit)",
+		tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(&p), now.Sub(pending.sentAt).Round(time.Second))
+	at.escalateLimitFlattenLocked(pending, tag, now)
+}
+
+// escalateLimitFlattenLocked sends the market close for an exit in flight.
+// NT8's Flatten also cancels the resting -lx. On a send failure the record stays
+// so the next caller retries. Caller holds limitFlattenMu.
+func (at *AutoTrader) escalateLimitFlattenLocked(pending *pendingLimitFlatten, tag string, now time.Time) bool {
+	p := pending.position
+	if !at.sendMarketClose(p.Symbol, flattenSide(&p), tag) {
+		return false
+	}
+	_ = at.trader.CancelStopOrders(p.Symbol)
+	pending.marketSentAt = now
+	if pending.timer != nil {
+		pending.timer.Stop()
+	}
+	return true
+}
+
+// sendMarketClose is the one market close: CloseLong/CloseShort with 0 = all.
+func (at *AutoTrader) sendMarketClose(symbol, side, tag string) bool {
+	var e error
+	if side == "LONG" {
+		_, e = at.trader.CloseLong(symbol, 0) // 0 = close all
+	} else {
+		_, e = at.trader.CloseShort(symbol, 0)
+	}
+	if e != nil {
+		at.logErrorf("%s: close %s %s failed: %v", tag, symbol, side, e)
+		return false
+	}
+	return true
+}
+
+// flattenPositionAtMarket is the EMERGENCY close (m471 L2-2): always a market
+// close plus bracket cancel, whatever EOD_FLAT_LIMIT_TICKS says, through the
+// same in-flight record as flattenPosition. A resting limit exit for the same
+// (account, symbol, side) is escalated rather than stacked; a market close sent
+// inside exitInFlightHold is not re-sent.
+func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag string, now time.Time) {
+	position := *p
+	p = &position
+	at.limitFlattenMu.Lock()
+	defer at.limitFlattenMu.Unlock()
+	if pending := at.inFlightExitLocked(p, now); pending != nil {
+		if !pending.marketSentAt.IsZero() {
+			at.logWarnf("%s: market close for %s %s already in flight (sent %s ago by %s) — NOT re-sent this pass",
+				tag, p.Symbol, flattenSide(p), now.Sub(pending.marketSentAt).Round(time.Second), pending.tag)
+			return
+		}
+		at.logWarnf("%s: limit exit %s for %s %s is resting — escalating it to the market close now",
+			tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(p))
+		at.escalateLimitFlattenLocked(pending, tag, now)
+		return
+	}
+	if !at.sendMarketClose(p.Symbol, flattenSide(p), tag) {
+		return
+	}
+	if err := at.trader.CancelStopOrders(p.Symbol); err != nil {
+		at.logWarnf("%s: cancel bracket %s failed (non-fatal): %v", tag, p.Symbol, err)
+	}
+	durable := p.ID > 0 && p.TraderID == at.id
+	at.registerLimitFlattenLocked(&pendingLimitFlatten{position: *p, key: flattenKeyOf(p), tag: tag,
+		after: exitInFlightHold, sentAt: now, deadline: now, marketSentAt: now}, durable)
+}
+
+// cancelLimitExitLocked sends cancel_order for the exit's resting -lx (m471
+// L2-3), by the close signal id the AddOn names it from. SENT is not CONFIRMED:
+// until a fresh book stops listing the -lx, adjudicateAccountContract reads a
+// working -lx with no position as LIVE, so no entry places beside it.
+func (at *AutoTrader) cancelLimitExitLocked(pending *pendingLimitFlatten, why string) {
+	p := pending.position
+	if pending.closeSignalID == "" {
+		at.logWarnf("%s: %s — the resting limit exit for %s %s has no recorded signal id and cannot be cancelled by name; while the book shows it working with no position, no entry places",
+			pending.tag, why, p.Symbol, flattenSide(&p))
+		return
+	}
+	c, ok := at.trader.(interface{ CancelOrder(signalID string) error })
+	if !ok {
+		at.logWarnf("%s: %s — this broker cannot cancel limit exit %s-lx by signal; while the book shows it working with no position, no entry places",
+			pending.tag, why, shortID(pending.closeSignalID))
+		return
+	}
+	if err := c.CancelOrder(pending.closeSignalID); err != nil {
+		at.logErrorf("%s: %s — cancel_order for limit exit %s-lx failed: %v; while the book shows it working with no position, no entry places",
+			pending.tag, why, shortID(pending.closeSignalID), err)
+		return
+	}
+	at.logWarnf("%s: %s — cancel_order SENT for resting limit exit %s-lx (%s %s); SENT is not CONFIRMED — until the book stops listing it, no entry places",
+		pending.tag, why, shortID(pending.closeSignalID), p.Symbol, flattenSide(&p))
 }
 
 func (at *AutoTrader) stopLimitFlattens() {
 	at.limitFlattenMu.Lock()
 	defer at.limitFlattenMu.Unlock()
 	at.limitFlattenStopped = true
+	for _, pending := range at.limitFlattensByKey {
+		if pending.marketSentAt.IsZero() {
+			at.cancelLimitExitLocked(pending, "trader stopping")
+		}
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
+	}
 	for _, pending := range at.limitFlattens {
-		pending.timer.Stop()
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
 	}
 	at.limitFlattens = nil
+	at.limitFlattensByKey = nil
 }
 
 func (at *AutoTrader) finishLimitFlatten(pending *pendingLimitFlatten) {
@@ -713,7 +945,11 @@ func (at *AutoTrader) finishLimitFlatten(pending *pendingLimitFlatten) {
 	if at.limitFlattenStopped || at.limitFlattens[p.ID] != pending {
 		return
 	}
-	delete(at.limitFlattens, p.ID)
+	if !pending.marketSentAt.IsZero() {
+		return // a repeat caller already escalated THIS exit to market
+	}
+	// From here on an unresolved exit KEEPS its record (deadline passed): a
+	// repeat flatten escalates it to market instead of sending a second limit.
 	if at.store == nil {
 		return
 	}
@@ -745,8 +981,14 @@ func (at *AutoTrader) finishLimitFlatten(pending *pendingLimitFlatten) {
 			return
 		}
 		_ = at.trader.CancelStopOrders(p.Symbol)
+		pending.marketSentAt = time.Now()
 		return
 	}
+	// The original position is no longer open: the -lx filled, or the bracket,
+	// a manual close or another flatten ended it, or a replacement took its row.
+	// A -lx that did not fill would outlive it and open a position (m471 L2-3).
+	at.cancelLimitExitLocked(pending, fmt.Sprintf("position %d no longer open", p.ID))
+	at.dropLimitFlattenLocked(pending)
 }
 
 // t1ForceFlatDue reports whether nowMin (CT minute-of-day) falls inside
@@ -835,7 +1077,7 @@ func (at *AutoTrader) enforceT1ForceFlatAt(now time.Time) bool {
 	}
 	at.logWarnf("📰 T1-FORCE-FLAT (%s): flattening %d open position(s) — red-news forced close at T-%dmin (research v5 C.5).", due, len(positions), t1ForceFlatLead)
 	for _, p := range positions {
-		at.flattenPosition(p, "📰 T1-FORCE-FLAT")
+		at.flattenPositionAt(p, "📰 T1-FORCE-FLAT", now)
 	}
 	return true
 }

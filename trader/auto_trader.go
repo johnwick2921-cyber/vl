@@ -911,6 +911,9 @@ type AutoTrader struct {
 	limitFlattenMu      sync.Mutex // W117-F F6: serializes delayed exits with Stop
 	limitFlattenStopped bool
 	limitFlattens       map[int64]*pendingLimitFlatten
+	// limitFlattensByKey (m471 L2-1) is the same in-flight exits keyed by
+	// ACCOUNT|SYMBOL|SIDE, so a caller with no durable ID is covered too.
+	limitFlattensByKey map[string]*pendingLimitFlatten
 	// pictureGen (W4/D25) opens on every registerPictureHtf and closes on
 	// unregisterPictureHtf. An evaluation records the generation it began
 	// under and re-checks it immediately before the wire, so a frame in
