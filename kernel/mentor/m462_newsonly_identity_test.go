@@ -69,6 +69,8 @@ func m462PreM465Knobs(cfg *Config) {
 }
 
 func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
+	boxPeak1Level = false // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
+	t.Cleanup(func() { boxPeak1Level = true })
 	raw, err := os.Open(m462PreGoldenPath)
 	if err != nil {
 		t.Fatal(err)

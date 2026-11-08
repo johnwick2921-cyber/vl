@@ -598,6 +598,8 @@ const m466Pre61GoldenPath = "testdata/m466_pre61_tick_identity.golden.gz"
 // notes, levels and trendlines on every tick of the four real-tape cases. So
 // each behaviour change of this package is exactly its knob (G37: its hook).
 func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
+	boxPeak1Level = false // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
+	t.Cleanup(func() { boxPeak1Level = true })
 	raw, err := os.Open(m466Pre61GoldenPath)
 	if err != nil {
 		t.Fatal(err)
