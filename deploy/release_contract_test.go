@@ -897,3 +897,72 @@ func TestReleaseWorkflowQualityGatePermissionsAreReadOnly(t *testing.T) {
 		t.Fatalf("quality-gate permissions = %v, want exactly %v", got, want)
 	}
 }
+
+// m471 L4-3 — Q5 says the full suite runs on the merged code in Chicago AND UTC.
+// setup-go restores GOCACHE, and GOCACHE holds test RESULTS: a `go test` without
+// -count=1 reports "ok (cached)" for every package whose test binary did not
+// change, so that package is not re-run on today's date or in that job's zone
+// (PR #625's "Go Unit Tests & Coverage", the UTC leg, read 20 packages from
+// cache, vl/calendar among them). Every `go test` line in every job the release
+// gate requires (deploy/release/quality-gate.sh REQUIRED_CHECKS, matched to the
+// workflows by job name) must carry -count=1.
+func TestReleaseGateRequiredWorkflowsNeverReadTestResultsFromCache(t *testing.T) {
+	gate := repoFile(t, "deploy/release/quality-gate.sh")
+	block := regexp.MustCompile(`(?s)\nREQUIRED_CHECKS=\(\n(.*?)\n\)`).FindStringSubmatch(gate)
+	if block == nil {
+		t.Fatal("quality-gate.sh has no REQUIRED_CHECKS=( ... ) block")
+	}
+	var required []string
+	for _, l := range strings.Split(block[1], "\n") {
+		if m := regexp.MustCompile(`^\s*"([^"]+)"\s*$`).FindStringSubmatch(l); m != nil {
+			required = append(required, m[1])
+		}
+	}
+	if len(required) == 0 {
+		t.Fatal("quality-gate.sh REQUIRED_CHECKS names no check")
+	}
+
+	files, err := filepath.Glob(filepath.Join("..", ".github", "workflows", "*.yml"))
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no workflows found: %v", err)
+	}
+	jobKey := regexp.MustCompile(`^  ([A-Za-z0-9_-]+):\s*$`)
+	goTest := regexp.MustCompile(`(^|[^A-Za-z0-9_])go test( |$)`)
+	found := map[string]bool{}
+	goTests := 0
+	for _, f := range files {
+		rel, _ := filepath.Rel("..", f)
+		y := repoFile(t, rel)
+		for _, l := range strings.Split(y, "\n") {
+			k := jobKey.FindStringSubmatch(l)
+			if k == nil {
+				continue
+			}
+			job := workflowJob(y, k[1])
+			for _, name := range required {
+				if !strings.Contains(job+"\n", "\n    name: "+name+"\n") {
+					continue
+				}
+				found[name] = true
+				for i, jl := range strings.Split(job, "\n") {
+					if strings.HasPrefix(strings.TrimSpace(jl), "#") || !goTest.MatchString(jl) {
+						continue
+					}
+					goTests++
+					if !strings.Contains(jl, " -count=1") {
+						t.Errorf("%s job %q (required check %q), line %d of the job: `go test` without -count=1 — results can be read from the restored cache instead of run:\n%s",
+							rel, k[1], name, i+1, strings.TrimSpace(jl))
+					}
+				}
+			}
+		}
+	}
+	for _, name := range required {
+		if !found[name] {
+			t.Errorf("required check %q matches no job name: under .github/workflows — this pin cannot see it", name)
+		}
+	}
+	if goTests == 0 {
+		t.Fatal("no `go test` line found in any required job — the pin reads nothing")
+	}
+}

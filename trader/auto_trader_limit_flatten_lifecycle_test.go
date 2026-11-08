@@ -2,6 +2,7 @@ package trader
 
 import (
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -14,11 +15,24 @@ type limitFlattenRecorder struct {
 	limits, closes, cancels int
 	closeStarted            chan struct{}
 	closeRelease            chan struct{}
+	// cancelOrders records every cancel_order by signal id (m471 L2-3); cancels
+	// above counts CancelStopOrders only.
+	cancelOrders []string
+	limitPx      []float64
 }
 
-func (r *limitFlattenRecorder) CloseWithLimit(string, string, float64, float64) (map[string]interface{}, error) {
+func (r *limitFlattenRecorder) CloseWithLimit(_ string, _ string, _ float64, px float64) (map[string]interface{}, error) {
 	r.limits++
-	return nil, r.limitErr
+	r.limitPx = append(r.limitPx, px)
+	if r.limitErr != nil {
+		return nil, r.limitErr
+	}
+	// Same shape as TCPTrader.sendCloseAt: the close's own signal id.
+	return map[string]interface{}{"status": "close_submitted", "signal_id": fmt.Sprintf("close-%d", r.limits)}, nil
+}
+func (r *limitFlattenRecorder) CancelOrder(signalID string) error {
+	r.cancelOrders = append(r.cancelOrders, signalID)
+	return nil
 }
 func (r *limitFlattenRecorder) CloseLong(string, float64) (map[string]interface{}, error) {
 	r.closes++
@@ -139,16 +153,21 @@ func TestLimitFlattenStopInvalidatesPendingCallback(t *testing.T) {
 	at.Stop()
 	at.finishLimitFlatten(pending) // Simulate an already-queued timer callback.
 	at.flattenPosition(p, "after stop")
-	if r.limits != 1 || r.closes != 0 || r.cancels != 0 || len(at.limitFlattens) != 0 {
+	// m471 L2 review-1: the record is KEPT across Stop (the -lx may still rest —
+	// the AddOn ignores cancel_order for it), with its timer retired.
+	if r.limits != 1 || r.closes != 0 || r.cancels != 0 || at.limitFlattens[p.ID] != pending || !pending.fallbackRetired {
 		t.Fatalf("stop leaked work: %+v", r)
 	}
 	// Old callback remains invalid even if a subsequent Run reopens scheduling.
 	at.limitFlattenMu.Lock()
 	at.limitFlattenStopped = false
 	at.limitFlattenMu.Unlock()
-	at.flattenPosition(p, "new run")
+	at.flattenPosition(p, "new run") // escalates the kept exit to ONE market close, no second limit
+	if r.limits != 1 || r.closes != 1 {
+		t.Fatalf("new run: limits=%d closes=%d, want the kept exit escalated once", r.limits, r.closes)
+	}
 	at.finishLimitFlatten(pending)
-	if r.closes != 0 {
+	if r.closes != 1 {
 		t.Fatal("old generation closed new run position")
 	}
 }
@@ -187,7 +206,9 @@ func TestLimitFlattenRunningTimerJoinsStop(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		t.Fatal("Stop did not join callback")
 	}
-	if r.closes != 1 || r.cancels != 1 || len(at.limitFlattens) != 0 {
+	// m471 L2 review-1: the sent market close keeps its record (and its hold)
+	// across Stop.
+	if r.closes != 1 || r.cancels != 1 || at.limitFlattens[p.ID] == nil || at.limitFlattens[p.ID].marketSentAt.IsZero() {
 		t.Fatalf("incomplete callback lifecycle: %+v", r)
 	}
 }

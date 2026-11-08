@@ -19,6 +19,14 @@ import "time"
 // (with an owner push) for the whole evening, and kept pausing after the reopen
 // while the phantom open-but-barless slots filled its open-aware lookback
 // windows. A minute the calendar does not expect is never "missing".
+//
+// m471 L1-2: the SAME calendar for the trading gates too. IsCMEOpen now
+// resolves every instant by its trading date (SessionStateAt), so those
+// evenings read CLOSED there as well and IsCMEOpen(t) == IsCMETradingExpected(t)
+// for every minute (pinned over 2026-11..2027-12). The trading-date check below
+// is kept as belt-and-braces: it can no longer disagree, and if a later change
+// re-splits the two the parity pin goes red instead of the bot trading a
+// session its data gates ignore.
 func IsCMETradingExpected(t time.Time) bool {
 	if !IsCMEOpen(t) {
 		return false

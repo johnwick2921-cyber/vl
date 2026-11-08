@@ -40,7 +40,7 @@ export const glossary: GuideSection = {
         },
         {
           term: 'EOD flat',
-          def: 'The session-end flat: cancel resting entries, then close open positions — at market by default; when EOD_FLAT_LIMIT_TICKS > 0 (default 0) it first works a limit that many ticks away, then goes to market after EOD_FLAT_MARKET_AFTER_SEC. A SWING4H mentor position is exempt.',
+          def: 'The session-end flat: cancel resting entries, then close open positions — at market by default; when EOD_FLAT_LIMIT_TICKS > 0 (default 0) it first works a limit that many ticks away, then goes to market after EOD_FLAT_MARKET_AFTER_SEC. On an ordinary day a SWING4H mentor position is exempt; on a shortened day (12:15 CT close on 11-27 and 12-24) the flat is 12:10 CT and the SWING4H is NOT exempt.',
         },
         {
           term: 'Fail-closed',

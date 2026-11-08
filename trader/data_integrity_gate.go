@@ -313,6 +313,13 @@ type integrityEpisode struct {
 	// newest one's key (withdrawn by the next and by the resume).
 	remindN   int
 	remindKey string
+	// m471 L3-7: each scope change (widen / narrow) pushed in this episode gets
+	// its own key (scopeN counts them) and the newest one's key is kept, so the
+	// next scope change - and the resume - withdraw it if it is still held. A
+	// fixed "|widen" key was deduped on the second widening of one episode and
+	// the owner's last word stayed "NARROWED" while every path was paused.
+	scopeN   int
+	scopeKey string
 
 	// m469: a pause that comes back within integrityReopenMerge() of its own
 	// resume is the SAME episode coming back (a flapping feed), not a new one.
@@ -491,6 +498,7 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 			e.active, e.since, e.class, e.scope = true, now, worst.Class, scope
 			e.stretchSince, e.pauseN, e.longest, e.clearedAt = now, 1, 0, time.Time{}
 			e.remindN, e.remindKey = 0, ""
+			e.scopeN, e.scopeKey = 0, ""
 			// m452: the trader id is part of the owner-push KIND (the text before the
 			// first "|" is ownerpush's 3-per-hour budget bucket). "data-paused|<id>|ts"
 			// put every trader on one MNQ hole in ONE bucket, so three traders spent the
@@ -513,13 +521,13 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 			if scope == pauseScopeAll {
 				at.logWarnf("⏸ TRADING PAUSE WIDENED (%s -> every entry path): %s — %s; %s. %s", prev, worst.Reason, wd.refuses, wd.withdraw, wd.tail)
 				if e.pushed && kernel.IsCMEOpen(now) {
-					ownerpush.Push(e.key+"|widen", fmt.Sprintf("⏸ vl TRADING PAUSE WIDENED — %s: %s. %s; %s; exits, stops and protection are unaffected. %s",
+					ownerpush.Push(at.nextScopeKeyLocked(e, "widen"), fmt.Sprintf("⏸ vl TRADING PAUSE WIDENED — %s: %s. %s; %s; exits, stops and protection are unaffected. %s",
 						at.ownerPushTraderLabel(), worst.Reason, wd.refuses, wd.withdraw, wd.tail))
 				}
 			} else {
 				at.logInfof("▶ TRADING PAUSE NARROWED (every entry path -> SWING4H only): intraday mentor setups trade normally again. %s", wd.tail)
 				if e.pushed && kernel.IsCMEOpen(now) {
-					ownerpush.Push(e.key+"|narrow", fmt.Sprintf("▶ vl TRADING PAUSE NARROWED — %s: intraday mentor setups trade normally again; %s. %s",
+					ownerpush.Push(at.nextScopeKeyLocked(e, "narrow"), fmt.Sprintf("▶ vl TRADING PAUSE NARROWED — %s: intraday mentor setups trade normally again; %s. %s",
 						at.ownerPushTraderLabel(), wd.refuses, wd.tail))
 				}
 			}
@@ -567,6 +575,10 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 			ownerpush.Cancel(e.remindKey) // the resume supersedes a held reminder
 		}
 		e.remindN, e.remindKey = 0, ""
+		if e.scopeKey != "" {
+			ownerpush.Cancel(e.scopeKey) // ... and a held widen / narrow (m471 L3-7)
+		}
+		e.scopeKey = ""
 		telemetry.IncDataIntegrityResume()
 		// Resume is on a MEASURED fill — or the stretch aged out of the data
 		// window, which is NOT the bars coming back, and the text says which
@@ -631,6 +643,20 @@ func (at *AutoTrader) pushIntegrityResumeSummaryLocked(e *integrityEpisode) {
 			at.ownerPushTraderLabel(), e.resumeTail, e.pauseN, kernel.TableTimeCT(e.since), kernel.TableTimeCT(e.clearedAt), spanHM(e.longest), int(integrityReopenMerge()/time.Minute)))
 	}
 	e.clearedAt, e.resumeTail, e.pushed = time.Time{}, "", false
+}
+
+// nextScopeKeyLocked (m471 L3-7) is the owner-push key of the episode's next
+// scope change ("<pause key>|widen2"): one key per change, so a second widening
+// of one episode is not deduped as the first. The previous scope change is
+// withdrawn if it is still held - only the newest scope is news. The caller
+// holds e.mu.
+func (at *AutoTrader) nextScopeKeyLocked(e *integrityEpisode, dir string) string {
+	if e.scopeKey != "" {
+		ownerpush.Cancel(e.scopeKey)
+	}
+	e.scopeN++
+	e.scopeKey = fmt.Sprintf("%s|%s%d", e.key, dir, e.scopeN)
+	return e.scopeKey
 }
 
 // ownerPushPausedKey is the dedupe key of a trader's pause episode. The text

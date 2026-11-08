@@ -73,7 +73,12 @@ func TestEntryLatchBookIsScopedToTheSymbolAndFailsClosed(t *testing.T) {
 		{name: "working_entry_same_symbol", orders: []ntwire.NT8Order{working("sig-a", "MNQ 12-26")}, bookAt: now, verifiable: true, live: true},
 		{name: "working_entry_other_symbol", orders: []ntwire.NT8Order{working("sig-b", "ES 12-26")}, bookAt: now, verifiable: true, live: false},
 		{name: "working_entry_no_symbol_counts", orders: []ntwire.NT8Order{working("sig-c", "")}, bookAt: now, verifiable: true, live: true},
-		{name: "protective_and_exit_children_are_not_entries", orders: []ntwire.NT8Order{working("sig-d-sl", "MNQ"), working("sig-d-tp", "MNQ"), working("sig-d-lx", "MNQ")}, bookAt: now, verifiable: true, live: false},
+		{name: "protective_children_are_not_entries", orders: []ntwire.NT8Order{working("sig-d-sl", "MNQ"), working("sig-d-tp", "MNQ")}, bookAt: now, verifiable: true, live: false},
+		// m471 L2-3: a -lx limit exit with NO position on the symbol outlived
+		// its position and opens one when it fills — the account is not free
+		// (live 2026-10-30: nt8_order_snapshots 219333, row 724).
+		{name: "orphan_limit_exit_with_no_position_latches", orders: []ntwire.NT8Order{working("sig-d-sl", "MNQ"), working("sig-d-tp", "MNQ"), working("sig-d-lx", "MNQ")}, bookAt: now, verifiable: true, live: true},
+		{name: "orphan_limit_exit_other_symbol", orders: []ntwire.NT8Order{working("sig-e-lx", "ES 12-26")}, bookAt: now, verifiable: true, live: false},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			f := newLatchWiringFixture(t)

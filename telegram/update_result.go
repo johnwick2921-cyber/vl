@@ -6,6 +6,7 @@ package telegram
 // plan's exact plain words.
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"regexp"
@@ -17,6 +18,7 @@ import (
 	"vl/store"
 
 	tgbotapi "github.com/go-telegram-bot-api/telegram-bot-api/v5"
+	"gorm.io/gorm"
 )
 
 // UpdateResultMessage renders the owner-facing result of an update job in the
@@ -94,17 +96,32 @@ func NotifyUpdateResult(st *store.Store, text string) {
 // was never retried). nil = delivered; ownerpush.ErrNotBound = no token, no
 // bound chat or no text (nothing to send, nothing to retry); any other error =
 // the send failed and is token-free (redactTelegramErr).
+//
+// m471 L3-1: ErrNotBound is ONLY the real "not configured" state - no config
+// row, an empty token, chat id 0. A store READ ERROR (a closed handle, disk
+// I/O, a moved or corrupt DB) says nothing about the binding: it used to be
+// returned as ErrNotBound, which ownerpush counts as skipped_unbound and never
+// retries, so a P0 sent during it was lost for good. It is now a retryable
+// failure: the message is held and re-sent once the read works again.
 func SendOwnerText(st *store.Store, text string) error {
 	if text == "" {
 		return ownerpush.ErrNotBound
 	}
 	dbCfg, err := st.TelegramConfig().Get()
-	if err != nil || dbCfg.BotToken == "" {
+	switch {
+	case errors.Is(err, gorm.ErrRecordNotFound), err == nil && dbCfg.BotToken == "":
 		logger.Debugf("telegram update result: bot disabled (no token) - not sent")
 		return ownerpush.ErrNotBound
+	case err != nil:
+		logger.Warnf("telegram owner push: telegram config read failed (%v) - held for retry", err)
+		return fmt.Errorf("telegram config read: %w", err)
 	}
 	chatID, err := st.TelegramConfig().GetBoundChatID()
-	if err != nil || chatID == 0 {
+	if err != nil {
+		logger.Warnf("telegram owner push: bound chat read failed (%v) - held for retry", err)
+		return fmt.Errorf("telegram bound chat read: %w", err)
+	}
+	if chatID == 0 {
 		logger.Debugf("telegram update result: no bound chat - not sent")
 		return ownerpush.ErrNotBound
 	}

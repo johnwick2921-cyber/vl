@@ -48,7 +48,10 @@ type crWire struct {
 	conn   net.Conn
 	mu     sync.Mutex
 	closes []ntwire.ClosePositionPayload
-	notify chan struct{}
+	// cancels (m471 L2-3) is every cancel_order frame, in order. Frames ride
+	// the same ordered socket as closes, so settle() also completes this list.
+	cancels []ntwire.CancelOrderPayload
+	notify  chan struct{}
 }
 
 func (w *crWire) read() {
@@ -56,6 +59,15 @@ func (w *crWire) read() {
 		env, err := ntwire.ReadFrame(w.conn)
 		if err != nil {
 			return
+		}
+		if env.Type == ntwire.FrameCancelOrder {
+			var c ntwire.CancelOrderPayload
+			if json.Unmarshal(env.Payload, &c) == nil {
+				w.mu.Lock()
+				w.cancels = append(w.cancels, c)
+				w.mu.Unlock()
+			}
+			continue
 		}
 		if env.Type != ntwire.FrameClosePosition {
 			continue

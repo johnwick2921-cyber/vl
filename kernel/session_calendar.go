@@ -225,8 +225,20 @@ type SessionState struct {
 // The safe side is CLOSED in every ambiguous branch: an unreadable close time,
 // an unrecognised class, and an uncovered year all refuse to trade rather than
 // assume a normal day. Placing a trade is the destructive branch here.
+//
+// THE ROW IS THE TRADING DATE'S (m471 L1-2/L1-3). The calendar lists each row
+// under its TRADING date (CMETradingDateKey: the date the session closes on), so
+// the 17:00-23:59 CT evening resolves to the NEXT calendar date's row — the
+// session it belongs to. Before, the evening read its own calendar date: Wed
+// 11-25 evening traded although its trading date 11-26 is a FULL CLOSURE (while
+// IsCMETradingExpected, keyed by trading date, called it not expected — the
+// trading gates and the data gates disagreed for seven hours); Thu 12-24 and
+// 12-31 evenings read OPEN into a closed 12-25 / 01-01 (a false P0 FEED DOWN
+// owner push at ~17:10); and Thu 11-26 evening, the first hours of the
+// shortened 11-27 session, read CLOSED. Daytime (00:00-16:59 CT) is unchanged:
+// its trading date is its calendar date.
 func SessionStateAt(now time.Time) SessionState {
-	ct := now.In(CTLocation())
+	ct := sessionTradingDateAnchor(now)
 	st := SessionState{
 		Date:        ct.Format("2006-01-02"),
 		YearCovered: SessionCalendarCoversYear(ct.Year()),
@@ -279,6 +291,19 @@ func SessionStateAt(now time.Time) SessionState {
 		st.Class, st.CloseUnreadable = SessionClosed, true
 	}
 	return st
+}
+
+// sessionTradingDateAnchor maps an instant to noon CT of its TRADING date
+// (CMETradingDateKey) — the date whose calendar row governs it. Noon, so the
+// date fields (and the uncovered-year boolean, which reads only the date) are
+// the trading date's, and a shortened row's close is parsed onto that date.
+func sessionTradingDateAnchor(now time.Time) time.Time {
+	loc := CTLocation()
+	day, err := time.ParseInLocation("2006-01-02", CMETradingDateKey(now), loc)
+	if err != nil {
+		return now.In(loc) // unreachable: the key is produced by Format
+	}
+	return time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, loc) // wall-clock noon, DST-safe
 }
 
 // SessionEarlyCloseCT is THE ONE accessor for a day's early close, in "HH:MM" CT.

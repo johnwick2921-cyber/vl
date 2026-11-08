@@ -8,6 +8,7 @@ import (
 	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/market"
+	"vl/store"
 	"vl/telemetry"
 )
 
@@ -227,8 +228,22 @@ func (at *AutoTrader) checkFeedDown(now time.Time) {
 	at.logErrorf("🚨 FEED DOWN: no NT8 bar for %s while CME is OPEN (newest-bar stamp age; threshold %s; holding=%v). Charts, detectors and the planner are all blind. Check NT8 on the Windows side — the AddOn reconnects on its own.",
 		now.Sub(gapStart).Round(time.Second), threshold, holding)
 	episode := fmt.Sprintf("feeddown:%s:%s", kernel.CMESessionDayKey(gapStart), kernel.ClockCT(gapStart))
-	at.setFeedDownEpisode(episode)
+	at.feedEpisodeMu.Lock()
+	firstSight := at.feedDownEpisode != episode
+	at.feedDownEpisode = episode
+	at.feedEpisodeMu.Unlock()
 	at.emitAlert("P0", "feed-down", episode, title, body)
+	if firstSight {
+		// m471 L3-3: the episode id is the gap's start, so a restart in the
+		// middle of an outage computes the SAME id; its alert row already
+		// exists (the store dedupes it, so emitAlert pushes nothing), and the
+		// previous process's held FEED DOWN was withdrawn at boot as superseded
+		// (ownerpush.RestoreAtBoot). Offer the push once per episode per process:
+		// if the owner was already told (the key is in the restored seen set)
+		// the channel dedupes it; if he was not, the outage that is still on
+		// reaches him now.
+		at.maybeOwnerPush(&store.AlertDB{TraderID: at.id, Level: "P0", Kind: "feed-down", EventID: episode, Title: title, Body: body}, ownerPushClock())
+	}
 	at.feedStillDownReminder(gapStart, now)
 }
 

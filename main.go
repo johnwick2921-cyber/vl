@@ -429,6 +429,17 @@ func main() {
 		}
 	})
 
+	// m471 L3-4: the owner-push channel starts BEFORE the traders load. A P0
+	// raised while they load - a trader refused at boot because another one
+	// already owns its account (boot_duplicate_symbol_account), a panic at
+	// start - was pushed into a channel that did not exist yet and was lost.
+	// The boot message itself is still sent below, once the rev is read.
+	// A friend instance never starts it (and ownerpush refuses it independently).
+	var ownerPushBootInfo ownerpush.BootInfo
+	if !cfg.IsFriendInstance() {
+		ownerPushBootInfo = ownerpush.Start(func(text string) error { return telegram.NotifyOwner(st, text) }, cfg.DBPath+".ownerpush.json")
+		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, a trader refused at boot, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · %s · no-op when no chat is bound", ownerpush.Limits(), ownerpush.OutagePolicy())
+	}
 	if err := traderManager.LoadTradersFromStore(st); err != nil {
 		logger.Fatalf("❌ Failed to load traders: %v", err)
 	}
@@ -883,9 +894,9 @@ func main() {
 		// m442: the sender RETURNS its outcome (a failed send is retried, not lost),
 		// held + deduped state survives a restart (file beside the DB), and the
 		// owner is told when the bot starts (rev + how the last process ended).
-		bootInfo := ownerpush.Start(func(text string) error { return telegram.NotifyOwner(st, text) }, cfg.DBPath+".ownerpush.json")
-		logger.Infof("📣 owner push: ops alerts (feed down/back, trader down, protection, unfillable bar hole, refused exits/stops, boot) -> the owner's bound Telegram chat · outbound only · %s · deduped per episode · failed sends retried with backoff · %s · no-op when no chat is bound", ownerpush.Limits(), ownerpush.OutagePolicy())
-		bootKey, bootText := ownerpush.BootMessage(integrity.Revision, bootInfo, integrity.Refused, time.Now())
+		// m471: the channel itself is started BEFORE the traders load (see
+		// ownerPushBootInfo above); only the boot message waits for this point.
+		bootKey, bootText := ownerpush.BootMessage(integrity.Revision, ownerPushBootInfo, integrity.Refused, time.Now())
 		ownerpush.Push(bootKey, bootText)
 		// m448 (release #54): the nightly data report rides the same owner-push
 		// channel, once per CME session day after the 16:00 CT close.

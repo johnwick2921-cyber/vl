@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -40,7 +41,16 @@ const (
 type BootInfo struct {
 	PrevExit     string
 	PrevBootUnix int64
-	Restored     int // held / in-flight messages restored from the file
+	Restored     int // held / in-flight messages restored from the file (and, after RestoreAtBoot, still to be sent)
+	// Superseded (m471 L3-3) names the restored episode-bound P0s RestoreAtBoot
+	// withdrew instead of re-sending ("FEED DOWN 11-03 02:00 CT"); BootMessage
+	// folds them into the one boot message. It also carries the names an
+	// earlier boot withdrew but never got into a boot message (that process died
+	// between Start and the boot push - see stateDisk.BootNote).
+	Superseded []string
+	// SupersededMore counts names beyond maxBootNote (a crash loop that kept
+	// withdrawing): said as "and N more", never silently cut.
+	SupersededMore int
 }
 
 type stateMsg struct {
@@ -62,6 +72,14 @@ type stateDisk struct {
 	OutageSince     int64    `json:"outage_since,omitempty"`
 	OutageFailed    []string `json:"outage_failed,omitempty"`
 	OutageWithdrawn int      `json:"outage_withdrawn,omitempty"`
+	// m471 review (additive): the names RestoreAtBoot withdrew as superseded,
+	// kept until the boot message that names them is admitted (Push of a "boot|"
+	// key - enqueued or held, so the boot text itself is on file from then on).
+	// Before this, the withdrawn keys left the file at Start and lived only in
+	// memory until main.go pushed the boot message after the traders load; a boot
+	// that died in between (a Fatalf, a panic, a kill) lost them for good.
+	BootNote     []string `json:"boot_note,omitempty"`
+	BootNoteMore int      `json:"boot_note_more,omitempty"`
 }
 
 type stateFile struct {
@@ -123,6 +141,8 @@ func (p *Pusher) EnableState(path string) BootInfo {
 			}
 			p.outageWithdrawn = prev.OutageWithdrawn
 		}
+		p.bootNote = append([]string(nil), prev.BootNote...)
+		p.bootNoteMore = prev.BootNoteMore
 	}
 	p.state = &stateFile{path: path, bootUnix: now.Unix(), exit: "running", kick: make(chan struct{}, 1), done: make(chan struct{})}
 	p.mu.Unlock()
@@ -139,6 +159,183 @@ func (p *Pusher) EnableState(path string) BootInfo {
 	}
 	return info
 }
+
+// RestoreAtBoot is the process-start restore (Start calls it): EnableState,
+// then m471 L3-3 - the restored held P0s that describe an episode the PREVIOUS
+// process was tracking (a feed down, a data / trading pause, an AI outage, and
+// their scope changes and hourly reminders) are withdrawn, not re-sent. The new
+// process rebuilds those episodes empty, so it would never send their BACK /
+// RESUMED / clear: a restored FEED DOWN or TRADING PAUSED delivered after the
+// restart was the owner's last word while the bot traded. Their names go into
+// the boot message instead (BootInfo.Superseded). They are withdrawn WITHOUT
+// marking the key told, so a condition still true after the restart is raised
+// again by the new process (a fresh pause / AI episode has a fresh key; a feed
+// still down re-raises its own FEED DOWN once - checkFeedDown). Money and
+// position P0s (daily-loss, untracked-position, unprotected_position,
+// protection_*, panics, a refused exit) and every episode END (feed-back,
+// data-resumed, ai-back, a data-truth clear) are still delivered.
+func (p *Pusher) RestoreAtBoot(path string) BootInfo {
+	info := p.EnableState(path)
+	if p == nil {
+		return info
+	}
+	p.mu.Lock()
+	var keep []heldMsg
+	var keys []string
+	counts := map[string]int{}
+	var order []string
+	for _, h := range p.held {
+		label := supersededLabel(h.key)
+		if label == "" {
+			keep = append(keep, h)
+			continue
+		}
+		keys = append(keys, h.key)
+		if p.outageFailed[h.key] {
+			p.outageWithdrawn++
+		}
+		name := label + " " + clockCT(h.at)
+		if counts[name] == 0 {
+			order = append(order, name)
+		}
+		counts[name]++
+	}
+	p.held = keep
+	info.Restored -= len(keys)
+	if info.Restored < 0 {
+		info.Restored = 0
+	}
+	// Names an earlier boot withdrew and never told (it died before its boot
+	// message) come first, then this boot's. They stay in the file (bootNote)
+	// until the boot message is admitted (Push, kind "boot").
+	note := append([]string(nil), p.bootNote...)
+	more := p.bootNoteMore
+	carried, carriedMore := len(note), more
+	for _, name := range order {
+		if n := counts[name]; n > 1 {
+			name = fmt.Sprintf("%s (x%d)", name, n)
+		}
+		if len(note) >= maxBootNote {
+			more++
+			continue
+		}
+		note = append(note, name)
+	}
+	p.bootNote, p.bootNoteMore = note, more
+	p.persistLocked()
+	p.mu.Unlock()
+	info.Superseded = append([]string(nil), note...)
+	info.SupersededMore = more
+	if len(keys) > 0 {
+		logger.Warnf("owner push: %d restored alert(s) from the previous process withdrawn as superseded by the restart (named in the boot message, not re-sent): %v", len(keys), keys)
+	}
+	if carried > 0 || carriedMore > 0 {
+		logger.Warnf("owner push: %d superseded alert name(s) (+%d more) carried from an earlier boot that died before its boot message - named in this boot message", carried, carriedMore)
+	}
+	return info
+}
+
+// maxBootNote bounds the superseded names kept on file across boots; beyond
+// it they are counted (BootNoteMore), not listed.
+const maxBootNote = 64
+
+// clearBootNoteLocked forgets the pending superseded names once a boot message
+// (which names them) is admitted: from then on that message is itself on file,
+// held or in flight. The caller holds p.mu.
+func (p *Pusher) clearBootNoteLocked() {
+	if len(p.bootNote) == 0 && p.bootNoteMore == 0 {
+		return
+	}
+	p.bootNote, p.bootNoteMore = nil, 0
+	p.persistLocked()
+}
+
+// supersededLabel names a restored key that belongs to an episode the previous
+// process was tracking ("" = not one: it is delivered as before). Episode ENDS
+// (feed-back, data-resumed-, ai-back, a data-truth "|clear") are never
+// superseded: they are true news whatever the new process sees.
+func supersededLabel(key string) string {
+	kind := kindOf(key)
+	switch {
+	case strings.HasSuffix(key, "|clear"):
+		return ""
+	case kind == "feed-down":
+		return "FEED DOWN"
+	case kind == "feed-still-down":
+		return "FEED STILL DOWN"
+	case strings.HasPrefix(kind, "data-still-paused-"):
+		return "TRADING STILL PAUSED"
+	case strings.HasPrefix(kind, "data-paused-"):
+		return "TRADING PAUSED"
+	case strings.HasPrefix(kind, "data_truth_still_") && isDataTruthEpisodeKey(key, true):
+		return "DATA TRUTH STILL PAUSED"
+	case strings.HasPrefix(kind, "data_truth_") && isDataTruthEpisodeKey(key, false):
+		return "DATA TRUTH PAUSED"
+	case kind == "ai-payment":
+		return "AI CREDIT EXHAUSTED"
+	case kind == "ai-still-down":
+		return "AI STILL DOWN"
+	case kind == "ai-failing":
+		return "AI CALLS FAILING"
+	}
+	return ""
+}
+
+// dataTruthFactKinds are "data_truth_" kinds that report ONE FACT, not a pause
+// episode (internal/datatruth/checks/fillprice.go): a fill priced far from the
+// market ("data_truth_fill_price_far|<sym>|<fill id>", pushed once per fill and
+// never again - the restored guard puts the fill id back in its seen set) and an
+// unreadable fill-guard state file ("data_truth_fill_price_state|<path>"). The
+// new process does not raise them again, so they are delivered after a restart
+// like any other fact, never superseded (m471 review).
+var dataTruthFactKinds = map[string]bool{
+	"data_truth_fill_price_far":   true,
+	"data_truth_fill_price_state": true,
+}
+
+// isDataTruthEpisodeKey reports whether key has the shape of a datatruth PAUSE
+// episode key (internal/datatruth/datatruth.go SetNotifier and its callers):
+//
+//	data_truth_<check>|<sym>|<sinceMs>                 pause
+//	data_truth_<check>|<sym>|<sinceMs>|widen<N>        scope change
+//	data_truth_still_<check>|<sym>|<sinceMs>|<N>       hourly reminder
+//
+// Only those belong to an episode the new process rebuilds (and re-raises when
+// still true). Any other data_truth_ key - a per-fact push, an unknown shape - is
+// delivered as before: withdrawing something the bot will not say again is
+// losing it.
+func isDataTruthEpisodeKey(key string, still bool) bool {
+	parts := strings.Split(key, "|")
+	if dataTruthFactKinds[parts[0]] || len(parts) < 3 || parts[1] == "" || !allDigits(parts[2]) {
+		return false
+	}
+	if still {
+		return len(parts) == 4 && allDigits(parts[3])
+	}
+	switch len(parts) {
+	case 3:
+		return true
+	case 4:
+		return strings.HasPrefix(parts[3], "widen") && allDigits(strings.TrimPrefix(parts[3], "widen"))
+	}
+	return false
+}
+
+func allDigits(s string) bool {
+	if s == "" {
+		return false
+	}
+	for _, r := range s {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
+}
+
+// maxSupersededNamed bounds the names folded into the boot message (Scrub caps
+// a message at maxTextRunes).
+const maxSupersededNamed = 4
 
 func readState(path string) (*stateDisk, error) {
 	b, err := os.ReadFile(path)
@@ -201,6 +398,8 @@ func (p *Pusher) writeState() {
 		sort.Strings(d.OutageFailed)
 		d.OutageWithdrawn = p.outageWithdrawn
 	}
+	d.BootNote = append([]string(nil), p.bootNote...)
+	d.BootNoteMore = p.bootNoteMore
 	p.mu.Unlock()
 
 	b, err := json.Marshal(d)
@@ -307,6 +506,19 @@ func BootMessage(rev string, info BootInfo, refused bool, now time.Time) (key, t
 	}
 	if refused {
 		text = "\U0001F6A8 vl is UP but TRADING IS REFUSED - rev " + rev + ". " + why + ". Check the boot integrity line."
+	}
+	if n := len(info.Superseded); n > 0 {
+		names := info.Superseded
+		extra := info.SupersededMore
+		if n > maxSupersededNamed {
+			names, extra = names[:maxSupersededNamed], extra+n-maxSupersededNamed
+		}
+		more := ""
+		if extra > 0 {
+			more = fmt.Sprintf(" and %d more", extra)
+		}
+		text += fmt.Sprintf(" While the bot was down these alerts could not reach you: %s%s - not re-sent, superseded by this restart. The bot re-checks now and tells you again if one is still true.",
+			strings.Join(names, ", "), more)
 	}
 	return fmt.Sprintf("boot|%d", now.Unix()), text
 }

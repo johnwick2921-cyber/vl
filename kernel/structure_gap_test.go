@@ -83,10 +83,12 @@ func TestBarsHoleWarningLatestHoleOnly(t *testing.T) {
 // halted, so no OPEN minute is missing. BarsHoleWarning must respect early-close
 // days, not just the 16:00/17:00 daily break.
 func TestBarsHoleWarningNoEarlyClose(t *testing.T) {
-	// 2026-12-24 is Christmas Eve — a Thursday, shortened, close 12:15 CT, then
-	// the ordinary daily reopen at 17:00 CT.
+	// 2026-12-24 is Christmas Eve — a Thursday, shortened, close 12:15 CT. Its
+	// evening belongs to trading date 12-25 (closed), so there is NO 17:00
+	// reopen that day (m471 L1-3: the old premise here was "the ordinary daily
+	// reopen at 17:00 CT"); the next bar is the Sunday 12-27 17:00 reopen.
 	ct := time.Date(2026, 12, 24, 12, 14, 0, 0, CTLocation())  // last pre-close bar
-	next := time.Date(2026, 12, 24, 17, 0, 0, 0, CTLocation()) // daily reopen
+	next := time.Date(2026, 12, 27, 17, 0, 0, 0, CTLocation()) // the real reopen
 	a := market.Kline{OpenTime: ct.UnixMilli()}
 	b := market.Kline{OpenTime: next.UnixMilli()}
 	if w := BarsHoleWarning([]market.Kline{a, b}, 1); w != "" {

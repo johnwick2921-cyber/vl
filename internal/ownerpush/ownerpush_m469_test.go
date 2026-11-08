@@ -40,7 +40,9 @@ func TestP0IsNotHeldBackByTheAllKindsBackstop(t *testing.T) {
 }
 
 // The other half: P0 sends do not use the backstop up, so a burst of P0s does
-// not hold a daily data report back. Per-kind budgets still bind for a P0.
+// not hold a daily data report back. A P0 kind is still bounded per kind - by
+// the runaway backstop maxP0PerKindPerHour since m471 L3-5 (the 3/hour budget
+// was shared by every trader on the box and held a 4th P0 for up to an hour).
 // MUTANT (shown RED): append every admitted key to sentAt (drop the !p0 guard)
 // -> the data report after 30 P0 sends is refused.
 func TestP0SendsDoNotUseUpTheBackstopButKeepTheirKindBudget(t *testing.T) {
@@ -50,18 +52,18 @@ func TestP0SendsDoNotUseUpTheBackstopButKeepTheirKindBudget(t *testing.T) {
 	p0Kinds := []string{"feed-down", "feed-back", "ai-payment", "ai-still-down", "ai-back", "ai-failing",
 		"daily-loss", "untracked-position", "trader_panic", "goroutine_panic", "protection_unverified"}
 	for _, k := range p0Kinds {
-		for i := 0; i < maxPerKindPerHour; i++ {
+		for i := 0; i < maxP0PerKindPerHour; i++ {
 			if !p.Push(fmt.Sprintf("%s|t1|%d", k, i), "p0") {
 				t.Fatalf("P0 %s #%d refused inside its own budget", k, i)
 			}
 			p.Flush()
 		}
 		if p.Push(k+"|t1|over", "p0") {
-			t.Fatalf("P0 kind %s got past its own %d/hour budget", k, maxPerKindPerHour)
+			t.Fatalf("P0 kind %s got past its own %d/hour runaway backstop", k, maxP0PerKindPerHour)
 		}
 	}
 	if !p.Push("data-report|2026-11-05|1", "report") {
-		t.Fatalf("%d P0 sends used up the all-kinds backstop", len(p0Kinds)*maxPerKindPerHour)
+		t.Fatalf("%d P0 sends used up the all-kinds backstop", len(p0Kinds)*maxP0PerKindPerHour)
 	}
 	p.Flush()
 }
