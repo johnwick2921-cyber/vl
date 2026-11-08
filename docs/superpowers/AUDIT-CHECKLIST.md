@@ -10420,3 +10420,13 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - `--expect <sha|tag>` FAILs on a rolled-back boot.
   - `TestReleaseGateRequiredWorkflowsNeverReadTestResultsFromCache` reads REQUIRED_CHECKS from `quality-gate.sh` and requires `-count=1` on every `go test` line in those jobs.
 - **Reference:** `deploy/post-install-check.sh`, `deploy/post_install_check_test.go`, `.github/workflows/pr-go-test-coverage.yml`, `deploy/release_contract_test.go`.
+
+## CLASS NN (assigned at merge) — a box keyed to the wrong day boundary: the 17:00 CME roll instead of the 08:30 RTH open (m473 B1, feat/m473-oct-course-boxes)
+
+- **Symptom:**
+  - The FTGH/FTGL box was cleared at the 17:00 CT session roll, so a box drawn in RTH vanished the same evening, and a Friday box was gone by the Sunday reopen.
+  - The mentor's box lives from one RTH open to the next, 08:30 to 08:30 (about 23-24 hours) [Oct D3.3 @ 40:40-41:20].
+- **Root cause:** one "trading day" boundary was reused for every day-scoped object. The P&L and risk day starts at 17:00 CT, but a box belongs to the chart day that starts at the RTH open.
+- **Probe:** for every object that expires at "end of day", name the boundary it should expire at (17:00 roll, 08:30 open, calendar midnight) and read it from the video or the spec, not from the nearest existing helper. Test across the 17:00 roll, a weekend and a holiday.
+- **Pin:** `TestM473B1BoxSurvivesTheDayRoll`, `TestM473B1FridayBoxValidSundayEvening`.
+- **Reference:** `kernel/mentor/box_validity.go`, `kernel/mentor/eval.go`.

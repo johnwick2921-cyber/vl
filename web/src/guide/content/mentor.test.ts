@@ -280,3 +280,22 @@ describe('mentor guide — m462 all-session 4h/1h gate', () => {
     expect(all).not.toContain('NEWS + OPEN (the mentor’s rule')
   })
 })
+
+// m473 (PR B, October course): the guide must describe the shipped box rules.
+// Kernel twins: kernel/mentor/box_validity_m473_test.go, box_peak1_m473_test.go,
+// m473_b3_box_tf_close_test.go, isb_first_rth_m473_test.go.
+describe('mentor guide — m473 October boxes', () => {
+  const all = JSON.stringify(mentor)
+  it('names the 08:30-to-08:30 box validity, peak 1, close5m and the 08:30 candle', () => {
+    for (const needle of [
+      'Oct D3.3 @ 40:40',
+      'Oct D3.3 @ 19:31',
+      'PEAK 1',
+      'close5m',
+      'Oct D4.3 @ 65:00-66:13',
+      'Oct D4.3 @ 57:20-57:35',
+    ]) {
+      expect(all, `missing ${needle}`).toContain(needle)
+    }
+  })
+})
