@@ -572,7 +572,10 @@ func dailySessionBarLine(snapshotMs int64) string {
 //     Thanksgiving and Christmas Eve);
 //   - a CLOSED close day (a full-closure holiday) HALTS at 00:00 CT — the gate
 //     IsCMEOpen is false for the whole closed day, so the session stops at the
-//     start of the holiday, not at 16:00.
+//     start of the holiday, not at 16:00. Since m471 the gate also reads the
+//     EVE of a closed day as closed (the evening belongs to the closed trading
+//     date), so the FORMING label never reaches this branch; it stays as the
+//     safe answer for any direct caller.
 //
 // AddDate moves calendar days, so a DST transition cannot shift the wall clock.
 func dailySessionClose(now time.Time) time.Time {

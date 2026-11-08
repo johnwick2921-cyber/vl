@@ -1011,10 +1011,12 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 		return false
 	}
 	// R22 P1-B — retire the book on an EARLY-CLOSE afternoon BEFORE skipping.
-	// The early close is the flat (early_close − eod_flat_offset, 0 by
-	// default), the very instant IsCMEOpen turns false — and this skip returns
-	// long before runCycle reaches enforceEODFlat. Without this, 11-27 and
-	// 12-24 carried resting arms and open positions over the holiday.
+	// Since m471 L1-1 the flat itself lands on the OPEN path, at least
+	// earlyCloseFlatMarginMin before the close (enforceEODFlatAt on the 60 s
+	// beat); this closed-path pass is the backstop for anything still on the
+	// book once IsCMEOpen has turned false — this skip returns long before
+	// runCycle reaches enforceEODFlat. Without it, 11-27 and 12-24 carried
+	// resting arms and open positions over the holiday.
 	at.retireBookAfterEarlyCloseAt(now)
 	// m463 (D5.2-R27): a due expiry is swept on the CLOSED path too — an order
 	// whose 4h candle ended at the close (kernel swingExpiry) is cancelled
@@ -1035,8 +1037,9 @@ func (at *AutoTrader) cmeSessionClosedSkip() bool {
 
 // retireBookAfterEarlyCloseAt runs the ONE EOD-flat definition
 // (enforceEODFlatAt: cancel arms first, then flatten, broker-truth checked) on
-// the closed path, from a shortened day's early close to the end of that
-// calendar date. It re-runs each closed cycle while it still acts, and stops
+// the closed path, from a shortened day's early close to the 17:00 boundary
+// (from 17:00 the instant belongs to the next trading date, which
+// SessionStateAt resolves since m471). It re-runs each closed cycle while it still acts, and stops
 // for the date once a pass has nothing left to retire. Ordinary closes (the
 // 16:00 halt, the weekend) never reach it: their flat is inside the open
 // session and the open path already ran it.

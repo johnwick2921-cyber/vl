@@ -36,8 +36,11 @@ func IsCMEOpen(t time.Time) bool {
 		if !st.HasClose {
 			return false
 		}
-		// Halted from the stated close until the ordinary daily reopen — the
-		// EVENING session belongs to the next trading day and still runs.
+		// Halted from the stated close until the ordinary daily reopen. The
+		// EVENING (17:00+) is governed by the NEXT trading date's row, never by
+		// this one: SessionStateAt resolves every instant by CMETradingDateKey
+		// (m471), so a closed next day keeps the evening shut and an open one
+		// reopens it at 17:00.
 		return weeklyCMEOpen(ct) && !shortenedDayHalted(ct, st.Close)
 	}
 	return weeklyCMEOpen(ct)
@@ -60,6 +63,14 @@ func CMEClosedReason(t time.Time) (closed bool, reason string) {
 		}
 		if st.UncoveredFallback {
 			return true, "holiday — calendar year not covered"
+		}
+		if ct.Hour() >= globexDailyReopenHourCT && st.Name != "" {
+			// m471: the EVE of a closed trading date (Wed 17:00+ before
+			// Thanksgiving, a Sunday evening before a Monday holiday). The
+			// calendar date itself is ordinary, so a bare "holiday" would name
+			// nothing a reader can find; say which closed day this evening
+			// belongs to.
+			return true, "holiday — " + st.Name + " " + st.Date + " (no evening session)"
 		}
 		return true, "holiday"
 	case SessionShortened:

@@ -472,7 +472,13 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	}
 	reg := at.sessionRegistry(now)
 	flat := "" // resolved wall-clock, for the log only
-	if sess, ok := reg.ActiveSession(now); ok {
+	// m471 L1-1: on a SHORTENED day the flat is (early close − margin) on every
+	// session and every path, independent of the registry — the market halts at
+	// the close minute itself, and a flat sent then rides the holiday weekend.
+	ecFlat, ecDue := earlyCloseFlatDue(now)
+	if ecDue {
+		flat = fmt.Sprintf("%s CT (early close − %dm)", ecFlat, earlyCloseFlatMarginMin)
+	} else if sess, ok := reg.ActiveSession(now); ok {
 		hhmm, past, okC := at.eodSessionFlatAt(reg, sess, now)
 		if !okC {
 			return false // malformed registry times — never invent a flatten
@@ -502,7 +508,14 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	// after the flat (deep-verify hole 11). The same ordering guards the
 	// session-end branch, the T1 force-flat, and the dormancy path.
 	acted := false
-	n, unacked := at.cancelArmedOrdersSyncFiltered("session close — EOD flat", skipSwingArms)
+	// A SWING4H arm rests past an ordinary flat (its 4h owns it), but not past a
+	// shortened day's: the market closes inside its candle and does not reopen
+	// until after the holiday (m471 L1-1).
+	skipArms := armCancelSkip(skipSwingArms)
+	if ecDue {
+		skipArms = nil
+	}
+	n, unacked := at.cancelArmedOrdersSyncFiltered("session close — EOD flat", skipArms)
 	if n > 0 {
 		at.logWarnf("🔒 EOD-FLAT (%s): %d armed order(s) cancelled — the book is retired at the close, not just the position", flat, n)
 		acted = true
@@ -558,8 +571,15 @@ func (at *AutoTrader) enforceEODFlatAt(now time.Time) bool {
 	at.logWarnf("🕒 EOD-FLAT (%s): session close — flattening %d open position(s) via the trader close path.", flat, len(positions))
 	for _, p := range positions {
 		if isSwingPosition(p) {
-			at.logInfof("🕒 EOD-FLAT (%s): SWING4H position %d (%s) EXEMPT — held by the 4h (N4)", flat, p.ID, p.CitedScenarioID)
-			continue
+			if !ecDue {
+				at.logInfof("🕒 EOD-FLAT (%s): SWING4H position %d (%s) EXEMPT — held by the 4h (N4)", flat, p.ID, p.CitedScenarioID)
+				continue
+			}
+			// m471 L1-1: the 4h hold is capped at the market close (swingHold),
+			// and on a shortened day that close is followed by the holiday —
+			// the hold-close on the bar ending AT the close would go into a
+			// halted book. The swing is flat with the rest, before the close.
+			at.logWarnf("🕒 EOD-FLAT (%s): SWING4H position %d (%s) NOT exempt on a shortened day — the 4h hold ends at the early close; flattening before it", flat, p.ID, p.CitedScenarioID)
 		}
 		at.flattenPosition(p, "🕒 EOD-FLAT")
 	}
@@ -1102,10 +1122,63 @@ func (at *AutoTrader) eodSessionFlatAt(reg kernel.SessionRegistry, sess *kernel.
 	if !okC {
 		return "", false, false
 	}
-	if adj, adjHHMM, okH := halfDayCutoffMin(reg, kernel.CMETradingDateKey(now), offset); okH && halfDayPullsIn(sess, adj, flatMin) {
+	// m471 L1-1: a half-day flat is never AT the early close — the market halts
+	// that minute. It lands at least earlyCloseFlatMarginMin before it, whatever
+	// the (default 0) eod_flat_offset_min says.
+	hdOffset := offset
+	if hdOffset < earlyCloseFlatMarginMin {
+		hdOffset = earlyCloseFlatMarginMin
+	}
+	if adj, adjHHMM, okH := halfDayCutoffMin(reg, kernel.CMETradingDateKey(now), hdOffset); okH && halfDayPullsIn(sess, adj, flatMin) {
 		flatMin, hhmm = adj, adjHHMM
 	}
 	return hhmm, pastSessionCutoff(now, sess, flatMin), true
+}
+
+// earlyCloseFlatMarginMin is how long before a shortened day's stated close
+// (kernel/session_calendar.json: the day after Thanksgiving, Christmas Eve ...)
+// the Day-Plan / mentor book is flat (m471 L1-1). The same safety rail pep has
+// carried since its own early-close defect (pepEarlyCloseMarginMin), one number
+// for both: CME halts AT the close minute (CMEClosedReason), and a flat sent
+// then rests into a closed market until the post-holiday reopen.
+const earlyCloseFlatMarginMin = pepEarlyCloseMarginMin
+
+// mentorEarlyCloseLeadMin is the mentor's last-entry lead into a shortened
+// day's early close — the same 15 minutes its ordinary cutoff (15:45) keeps
+// before the 16:00 halt. It must exceed earlyCloseFlatMarginMin, so mentor
+// entries stop BEFORE the flat (pinned by a test).
+const mentorEarlyCloseLeadMin = 15
+
+// earlyCloseOfTradingDay returns the shortened close of now's trading date as
+// minutes since CT midnight, with its "HH:MM" form — only while now is ON that
+// date before the 17:00 reopen (the evening belongs to the next trading date).
+// ok=false on an ordinary day.
+func earlyCloseOfTradingDay(now time.Time) (closeMin int, hhmm string, ok bool) {
+	key := kernel.CMETradingDateKey(now)
+	if now.In(kernel.CTLocation()).Format("2006-01-02") != key {
+		return 0, "", false // 17:00+ — tomorrow's trading date, not today's close
+	}
+	early, okE := kernel.SessionEarlyCloseCTForKey(key)
+	if !okE {
+		return 0, "", false
+	}
+	m, okM := hhmmToMin(early)
+	if !okM {
+		return 0, "", false // garbage never invents a cutoff
+	}
+	return m, early, true
+}
+
+// earlyCloseFlatDue reports whether now is at/after a shortened day's flat
+// (early close − earlyCloseFlatMarginMin) on that same trading date. The flat
+// "HH:MM" is returned for the log.
+func earlyCloseFlatDue(now time.Time) (flatHHMM string, due bool) {
+	closeMin, _, ok := earlyCloseOfTradingDay(now)
+	if !ok {
+		return "", false
+	}
+	f := closeMin - earlyCloseFlatMarginMin
+	return fmt.Sprintf("%02d:%02d", f/60, f%60), ctMinutesNow(now) >= f
 }
 
 // forceFlatWindowAt (W1b E13) — the two FORCE-FLAT windows as an entry
