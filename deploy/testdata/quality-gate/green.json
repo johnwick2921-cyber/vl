@@ -1,0 +1,40 @@
+{
+  "total_count": 5,
+  "check_runs": [
+    {
+      "id": 126301797070,
+      "name": "Frontend Tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/example/repo/actions/runs/41746818352/job/126301797070"
+    },
+    {
+      "id": 126301796745,
+      "name": "Go Unit Tests & Coverage",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/example/repo/actions/runs/41746818453/job/126301796745"
+    },
+    {
+      "id": 126301796410,
+      "name": "Backend Tests",
+      "status": "completed",
+      "conclusion": "success",
+      "details_url": "https://github.com/example/repo/actions/runs/41746818352/job/126301796410"
+    },
+    {
+      "id": 126301796000,
+      "name": "Docker Build Summary",
+      "status": "completed",
+      "conclusion": "failure",
+      "details_url": "https://github.com/example/repo/actions/runs/41746818999/job/126301796000"
+    },
+    {
+      "id": 126301799000,
+      "name": "Frontend Tests (React/TypeScript)",
+      "status": "completed",
+      "conclusion": "failure",
+      "details_url": "https://github.com/example/repo/actions/runs/41746818998/job/126301799000"
+    }
+  ]
+}

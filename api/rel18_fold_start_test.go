@@ -5,6 +5,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -38,7 +39,7 @@ func TestStartTraderOrderedOwnerConflictReturns409AndNotRunning(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() { _ = st.Close() })
+	t.Cleanup(func() { closeStoreAndWaitForConns(t, st) })
 
 	if err := st.GormDB().Create(&store.AIModel{ID: "m", UserID: "u", Name: "deepseek", Provider: "deepseek", Enabled: true}).Error; err != nil {
 		t.Fatal(err)
@@ -75,5 +76,34 @@ func TestStartTraderOrderedOwnerConflictReturns409AndNotRunning(t *testing.T) {
 	row, err := st.Trader().GetByID("t2")
 	if err != nil || row == nil || row.IsRunning {
 		t.Fatalf("refused start must leave is_running=false, got row=%+v err=%v", row, err)
+	}
+}
+
+// closeStoreAndWaitForConns closes the store and then waits until every
+// SQLite connection to it has really closed, so the TempDir that holds the
+// database is removed only once nothing touches it any more.
+//
+// m468 (flake, CI run 41773933846, 11-03): loading the trader starts the
+// NT8 background workers (level stats, bar repair, data-truth warmer, picture
+// rows), and they keep querying this store after the test body returns.
+// Store.Close does not wait for a connection that is in use or still being
+// opened; that connection closes a moment later, and SQLite then deletes or
+// creates its -wal/-shm files. When that lands while TempDir's RemoveAll is
+// running, the cleanup fails with "unlinkat …/001: directory not empty".
+// After Close no new query can start, so OpenConnections only goes down;
+// at zero the files are settled and the directory can be removed safely.
+func closeStoreAndWaitForConns(t *testing.T, st *store.Store) {
+	t.Helper()
+	_ = st.Close()
+	db := st.DB()
+	if db == nil {
+		return
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	for db.Stats().OpenConnections > 0 && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if n := db.Stats().OpenConnections; n > 0 {
+		t.Errorf("%d SQLite connection(s) still open 10s after Store.Close — a background worker is holding the test store, and removing its TempDir would race it", n)
 	}
 }

@@ -187,6 +187,128 @@ That is the same shape as everything else in this file: a statement ABOUT the
 tool, written where nothing compares it to the tool. The remedy is the same —
 ask the tool.
 
+**Who owns the main tree (canon 2026-08-27).** The main checkout `~/vl` belongs to
+exactly ONE active dispatch at a time. Any other work — read-only audits,
+investigations, queued waves — runs in its own `git worktree add ../vl-<task>`
+directory, never the main tree. Commit early and often: no dispatch holds more
+than 30 min of uncommitted work.
+
+---
+
+## STANDING LAWS — mirrored from the untracked CLAUDE.md (m468, 2026-11-07)
+
+These lived only in `~/vl/CLAUDE.md`, which no wave can change and no test can
+read. Condensed here so a wave can correct them. The class numbers in brackets
+point into `AUDIT-CHECKLIST.md`. `deploy/canon_contract_test.go` pins the
+safety-critical ones (SIM-only, GUIDE CONTENT, AUDIT-PLAYBOOK, the deploy method
+and the H2 laws) so they cannot drop out of this file unnoticed.
+
+**SIM-only.** Every trade path is NinjaTrader SIM. Never enable, size for, or
+route to a live NT account. `isAccountTradeable`
+(`trader/ninjatrader/tcp_trader.go`) blocks every non-SIM account; never weaken
+it. The owner's traders, account bindings and API keys are SACRED: never mutate
+them.
+
+**GUIDE CONTENT LAW (canon 2026-08-28).** Any wave that changes a knob, play,
+chip, gate or default MUST update `web/src/guide/content/*` in the SAME PR,
+including the guide's built rev (`VITE_GUIDE_BUILT_REV`, stamped to the shipped
+rev). A guide that lies about the running binary is worse than no guide; the
+drift banner is a failsafe, not a maintenance strategy.
+
+**AUDIT-PLAYBOOK LAW (canon 2026-08-28).** Every audit or verification dispatch
+works from `docs/superpowers/AUDIT-CHECKLIST.md` (the bug classes, the pre-audit
+R1-R9 and the pre-cutover protocol) instead of re-deriving the probe list. Every
+NEW bug class found is appended to that file in the SAME PR that fixes it.
+
+**Deploy = rebuild + `kill -9 <PID>`** (a manual deploy, outside the Update
+button). `sudo systemctl restart` needs a password that is not available here.
+SIGKILL is a failure, so systemd's `Restart=on-failure` relaunches the new
+binary; SIGTERM exits 0 and does NOT relaunch. Only restart in a flat, safe
+window. Editing a repo `.cs` file alone does nothing: an NT8 AddOn change needs
+the copy, F5 and a full NT8 restart (`deploy/RESTORE.md`).
+
+**The H2 canon laws (2026-09-03).**
+- **Canonical casing.** One canonicalizer per identifier, called where the value
+  ENTERS. (28)
+- **No fabricated values.** An empty computed list is `[]`; an uncomputed one is
+  absent; the two must differ. (49, 53)
+- **Corrected-column law.** P&L reads `pnl_corrected` only. NULL is UNRESOLVED: it
+  is excluded, and the COUNT of excluded rows is shown. (40)
+- **Boot lines are READ, never literal.** A field the process cannot know yet
+  prints `n/a`. (45, 49)
+
+**Evidence tiers.** Label every claim that isn't obvious: **[A]** directly verified
+(ran it, read the exact line, saw the frame); **[B]** inferred from strong
+evidence; **[C]** speculation. Audit and review findings are written at full depth,
+and kept short in chat.
+
+**PROVENANCE.** Every commit carries the same author identity, so git CANNOT say
+which lane wrote it. Provenance comes from the branch, the worktree and the
+timestamp, never the author field. Don't attribute a commit to a lane without one
+of those three, and ask the lane before naming it.
+
+**SPEC-FRESHNESS LAW (owner ruling 2026-09-03).** A worktree is cut from dev's
+TIP at accept, and a spec on dev keeps moving. A worktree cut from an older base
+freezes the old text, and nothing warns you. Before building against any spec or
+plan, compare `git log -1 -- <spec>` with your worktree's base. **If the spec moved
+after your base, rebase and re-read BEFORE writing code.** Every report quotes that
+`git log -1` line. (Class 73. The tree-guard wave was built six minutes behind a
+lock rewrite and would have false-alarmed on every cutover. No test caught it.)
+
+**Main tree is deploy-only (A2b).** No edit in `~/vl` except `git merge --ff-only`
+under the lock. A VS Code "Save All" once silently reverted 596 lines of shipped
+safety code. (45)
+
+**NO UNATTENDED DEPLOYS (canon 2026-08-27).** A cutover needs either (a) the owner
+REACHABLE, and acking the boot line within minutes, or (b) a TESTED auto-rollback:
+if the boot line isn't seen within 90 s, or the goldens fail, restore the prior
+binary and RELEASE, restart, and alert. Timers are BANNED for deploys (0 for 2 so
+far). Deploys run only on the owner's explicit "go".
+
+**RELEASE ordering, four halves.** RELEASE goes in before the kill. The marker is
+committed after the boot, from the same tree, and PUSHED before the lock is
+released. (39, 40)
+
+**Guarded DB writes.** `data/data.db` is READ-ONLY unless a task explicitly
+authorizes a write. When it does:
+- back up first (the backup timer, or a manual `~/vl-backups/<name>/` copy);
+- make the change idempotent;
+- WHERE-scope every statement.
+
+Strategy config is cached when the trader loads, so a raw DB write does NOT take
+effect live. It needs a trader reload (handleUpdateStrategy) or a restart.
+
+**Waves are named until merge.** Preconditions cite a branch or commit and a
+boot-line string. Numbers are assigned AT MERGE. (A27: three collisions had to be
+renumbered during the 09-03 combined boot.)
+
+**A branch green alone is not green merged.** Run the full suite at the MERGED
+HEAD. The 09-03 boot found a bare time layout that failed only once two green
+lanes were on one HEAD.
+
+**Parity tests exercise production CALL SITES.** A test that builds both sides'
+inputs itself proves only that it agrees with itself. (53)
+
+**Counters record, never infer.** A counter counts the event where it happens. It
+is never worked out afterwards from other data. (35)
+
+**Sample-id law.** Every claim about rows names the ids it rests on. (A21)
+
+**FORBIDDEN: the 5 Google Drive tools** (`search_files`, `read_file_content`,
+`download_file_content`, `get_file_metadata`, `get_file_permissions`). Never call
+any of them, in the main loop or ANY subagent, however the request is framed.
+
+**Repo target.** `origin` = `johnwick2921-cyber/vl` (ours). Never propose a
+contribution to the historical upstream this was forked from unless the owner
+explicitly asks.
+
+**Partner repo (vlauto).** The sibling `vlautoagenttraderv1` mirrors the Go and
+AddOn logic. Shared changes travel by `format-patch → am`, with build and goldens
+green there and a secret scan. The OWNER runs the push if the classifier blocks
+it. Don't push to it directly. **After any `origin` history rewrite, the partner
+repo and every other clone MUST re-clone fresh.** `format-patch → am` against a
+rewritten remote is corrupt by construction.
+
 ---
 
 ## Updates page truth rules (W-ONE-BUTTON M5, 2026-09-24)
