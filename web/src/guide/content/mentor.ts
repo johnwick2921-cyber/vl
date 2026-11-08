@@ -587,7 +587,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Only same-direction inside a 5m ISB box',
-          body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Release #61: "latest" means the NEWEST — a newer 5m inside bar replaces the standing box (mentor_5m_box_source); a 1m CLOSE outside the box breaks it (isb_box_escape = close), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock).',
+          body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Release #61: "latest" means the NEWEST — a newer 5m inside bar replaces the standing box (mentor_5m_box_source); a 1m CLOSE outside the box breaks it and trading is allowed; since m473 the box itself is deleted only when a candle of its own timeframe (5m/15m/30m) closes outside (isb_box_escape = close5m; close = the old 1m delete), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock).',
           cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · D4.1-R37 p1 @22:31–22:49 · D4.1-R34 p1 @20:36–21:03 · D4.1-R31 p1 @18:27–20:33',
         },
         {
@@ -685,8 +685,8 @@ export const mentor: GuideSection = {
         ],
         [
           'ISB rest box',
-          'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge deletes the box (isb_box_escape, default close since #61; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
-          'isb_box_escape = close (default) · mentor_5m_box_source = newest · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · D4.1-R37 @22:31–22:49 · D4.1-R31 @18:27–20:33',
+          'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge lets you trade, but the box is deleted only when a candle of its own timeframe closes outside (isb_box_escape, default close5m since m473, Oct D4.3 @ 65:00-66:13; close = the 1m delete, default #61–m472; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
+          'isb_box_escape = close5m (default) · mentor_5m_box_source = newest · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · D4.1-R37 @22:31–22:49 · D4.1-R31 @18:27–20:33',
         ],
         [
           'Too-small range',

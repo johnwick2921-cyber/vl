@@ -32,6 +32,7 @@ func TestEscapedISBBoxIsNotRebuiltFromTheSamePair(t *testing.T) {
 		mk(8, 101, 104, 100.5, 102),
 		mk(9, 101, 104, 100.5, 102),
 	}
+	cfg.ISBBoxEscapeMode = ISBBoxEscapeBody // m473 B3: this pin is the explicit 1m-delete mode (default is now close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 	e := New(cfg)
 	tick := func(b market.Kline) {
 		bars = append(bars, b)

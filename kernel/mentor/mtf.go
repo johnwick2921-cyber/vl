@@ -88,5 +88,5 @@ func (e *Evaluator) mtfConfluence(side Side, bars5m, bars15m []market.Kline) boo
 	if e.Cfg.MTFConfluenceSource == MTFConfluenceLastPair {
 		return MTFConfluence(side, bars5m, bars15m)
 	}
-	return MTFConfluenceStanding(side, e.State.ISBBox, e.State.ISBBox15m, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
+	return MTFConfluenceStanding(side, e.box5(), e.box15(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 }

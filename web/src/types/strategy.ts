@@ -377,7 +377,7 @@ export interface MentorTuning {
   // D4.4 p1 @18:18 — drop print→08:30 bars from the 1h/4h feed [true]
   news_bars_excluded?: boolean
   // D4.1 p1 @20:52 — ISB rest box escape test [body]
-  isb_box_escape?: 'close' | 'body'
+  isb_box_escape?: 'close5m' | 'close' | 'body'
   // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
   ema34_loss_relock?: 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]

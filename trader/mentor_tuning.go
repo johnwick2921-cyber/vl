@@ -228,7 +228,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.FifteenMinIBRequires5mISB, &out.FifteenMinIBRule, mentor.FifteenMinOff, mentor.FifteenMinRequire5mISB, mentor.FifteenMinUntilEscape)
 	enum(t.MTFConfluenceSource, &out.MTFConfluenceSource, mentor.MTFConfluenceStandingBoxes, mentor.MTFConfluenceLastPair) // m465 P1
 	enum(t.TFConflictEnd, &out.TFConflictEnd, mentor.TFConflictFirstBox, mentor.TFConflictBothBoxes)
-	enum(t.ISBBoxEscape, &out.ISBBoxEscapeMode, mentor.ISBBoxEscapeClose, mentor.ISBBoxEscapeBody)
+	enum(t.ISBBoxEscape, &out.ISBBoxEscapeMode, mentor.ISBBoxEscapeCloseBoxTF, mentor.ISBBoxEscapeClose, mentor.ISBBoxEscapeBody) // m473 B3: close5m default [Oct D4.3 @ 65:00-66:13]
 	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)

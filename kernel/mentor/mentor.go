@@ -641,7 +641,10 @@ type Config struct {
 	// (07:20–07:35). Default ON.
 	NewsBarsExcluded bool
 	// ISBBoxEscapeMode — CE-5: the 5m/15m/30m ISB rest-box escape (and the
-	// #60 provisional forming-15m box). "close" (default since m466 G20/G49,
+	// #60 provisional forming-15m box). "close5m" (default since m473 B3) = a 1m
+	// close outside gives trade permission but the box is dropped only when a
+	// candle of the box's own timeframe closes outside [Oct D4.3 @ 65:00-66:13,
+	// OctD4.3-R67]. September "close" (default since m466 G20/G49,
 	// release #61) = a 1m candle CLOSES beyond the edge — the course's stated
 	// minimum, "Break là sao? Là một cây nến một phút anh chị trade, nó đóng
 	// bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]; "nó đóng một cái
@@ -891,7 +894,7 @@ func DefaultConfig() Config {
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
 		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
-		ISBBoxEscapeMode:      ISBBoxEscapeClose,      // CE-5 → m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
+		ISBBoxEscapeMode:      ISBBoxEscapeCloseBoxTF, // m473 B3 OctD4.3-R67: a 1m close = permission, the box is dropped on a close of its OWN TF [Oct D4.3 @ 65:00-66:13]; was CE-5 -> m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
 		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
@@ -924,9 +927,13 @@ const (
 	MTFConfluenceStandingBoxes = "standing_boxes"
 	MTFConfluenceLastPair      = "last_pair"
 
-	TFConflictFirstBox     = "first_box"
-	TFConflictBothBoxes    = "both_boxes"
-	ISBBoxEscapeClose      = "close"
+	TFConflictFirstBox  = "first_box"
+	TFConflictBothBoxes = "both_boxes"
+	ISBBoxEscapeClose   = "close"
+	// ISBBoxEscapeCloseBoxTF (m473 B3, the default): a 1m CLOSE outside gives
+	// trade permission, but the box is DELETED only when a candle of the box
+	// timeframe (5m/15m/30m) closes outside [Oct D4.3 @ 65:00-66:13].
+	ISBBoxEscapeCloseBoxTF = "close5m"
 	ISBBoxEscapeBody       = "body"
 	EmaRelockSession       = "session"
 	EmaRelockUntilZoneExit = "until_zone_exit"

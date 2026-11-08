@@ -25,6 +25,11 @@ type ISBBox struct {
 	// under "_forming" refusal names — but never counts for mode C
 	// (MTFConfluenceStanding), and the real box replaces it at the 15m close.
 	Provisional bool `json:",omitempty"`
+	// Escaped (m473 B3, mode close5m): the side a 1m candle has CLOSED beyond
+	// this box while it still stands. The box is deleted only when a candle of
+	// its OWN timeframe closes outside; until then it exists but no longer
+	// gates (trade permission starts at the 1m close) [Oct D4.3 @ 65:00-66:13].
+	Escaped Side `json:",omitempty"`
 }
 
 // ISBBoxFrom5m reports whether (prev5m, cur5m) form a 5m ISB and, if so, boxes
@@ -195,4 +200,54 @@ func crossingISBs(buckets []market.Kline, lookback int) bool {
 		return false
 	}
 	return dirs[0] != dirs[len(dirs)-1]
+}
+
+// liveBox is the box as the GATES see it: nil when absent or already broken by
+// a 1m close (mode close5m keeps a broken box alive until its own timeframe
+// closes outside, but it no longer gates) [Oct D4.3 @ 65:00-66:13].
+func liveBox(b *ISBBox) *ISBBox {
+	if b == nil || b.Escaped != "" {
+		return nil
+	}
+	return b
+}
+
+func (e *Evaluator) box5() *ISBBox  { return liveBox(e.State.ISBBox) }
+func (e *Evaluator) box15() *ISBBox { return liveBox(e.State.ISBBox15m) }
+func (e *Evaluator) box30() *ISBBox { return liveBox(e.State.ISBBox30m) }
+
+// isbBoxStep runs one closed 1m candle against a standing box. newBreak = a 1m
+// close beyond the edge that was not already recorded (trade permission and the
+// break lock); gone = the box goes away now. Modes close/body/"" delete on the
+// 1m escape (legacy). Mode close5m (the default, m473 B3) marks the box Escaped
+// and deletes it only when a closed candle of the box's OWN timeframe (cbTF,
+// opened after the box candle) closes outside it [Oct D4.3 @ 65:00-66:13,
+// OctD4.3-R67]. A provisional (forming) 15m box keeps the 1m delete: it is
+// dropped at its bucket close anyway.
+func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (newBreak bool, dir Side, gone bool) {
+	esc, d := ISBBoxEscapeWith(*b, cur, mode)
+	if mode != ISBBoxEscapeCloseBoxTF || b.Provisional {
+		return esc, d, esc
+	}
+	prev := b.Escaped
+	if esc {
+		b.Escaped = d
+	} else {
+		b.Escaped = ""
+	}
+	newBreak, dir = esc && prev != d, d
+	if n := len(cbTF); n > 0 && cbTF[n-1].OpenTime > b.AtTime {
+		if c := cbTF[n-1].Close; c > b.High || c < b.Low {
+			gone = true
+			if c > b.High {
+				dir = SideLong
+			} else {
+				dir = SideShort
+			}
+			if !esc && prev == "" {
+				newBreak = true // the TF close is the first sight of the break
+			}
+		}
+	}
+	return newBreak, dir, gone
 }

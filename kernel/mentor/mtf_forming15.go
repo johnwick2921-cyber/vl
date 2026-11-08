@@ -111,8 +111,11 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) (e
 		}
 	}
 	if e.State.ISBBox15m != nil {
-		if esc, dir := ISBBoxEscapeWith(*e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode); esc { // CE-5 (m466 G20: the 1m close by default)
+		newBrk, dir, gone := isbBoxStep(e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode, cb15) // CE-5; m473 B3: dropped on a 15m close outside [Oct D4.3 @ 65:00-66:13]
+		if newBrk {
 			ev, escaped = isbBreakEvent(*e.State.ISBBox15m, dir, "isb_15m"), true
+		}
+		if gone {
 			if e.State.ISBBox15m.Provisional {
 				e.count("isb_15m_forming_escaped")
 				// The bucket a forming-origin latch waits on (already this

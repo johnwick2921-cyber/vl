@@ -1363,7 +1363,7 @@ func (e *Evaluator) isbFlagsFor(cur market.Kline, side Side, levels []Level, box
 	if HasFlag(flags, FlagISBInRange) {
 		return flags
 	}
-	if isbInRange(cur.Close, levels, boxes, e.State.ISBBox, e.Cfg.isbInRangeGapPts()) {
+	if isbInRange(cur.Close, levels, boxes, e.box5(), e.Cfg.isbInRangeGapPts()) {
 		if flags != "" {
 			flags += "|"
 		}
@@ -1706,13 +1706,13 @@ func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur mark
 	if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
 		return "phl_mid_range_boxed", true
 	}
-	if e.State.ISBBox != nil && cur.Close > e.State.ISBBox.Low && cur.Close < e.State.ISBBox.High {
+	if e.box5() != nil && cur.Close > e.box5().Low && cur.Close < e.box5().High {
 		return "phl_5m_box_ban", true
 	}
-	if e.State.ISBBox15m != nil && cur.Close > e.State.ISBBox15m.Low && cur.Close < e.State.ISBBox15m.High {
-		return "phl_15m_box_ban" + formingSuffix(e.State.ISBBox15m), false // m465 P1: _forming for a provisional box
+	if e.box15() != nil && cur.Close > e.box15().Low && cur.Close < e.box15().High {
+		return "phl_15m_box_ban" + formingSuffix(e.box15()), false // m465 P1: _forming for a provisional box
 	}
-	if e.State.ISBBox30m != nil && cur.Close > e.State.ISBBox30m.Low && cur.Close < e.State.ISBBox30m.High {
+	if e.box30() != nil && cur.Close > e.box30().Low && cur.Close < e.box30().High {
 		return "phl_30m_box_ban", false
 	}
 	return "", false
@@ -2489,10 +2489,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// m466 G20/G49: close (default since #61) = the 1m close beyond the
 		// edge [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]; body = open AND
 		// close beyond (the #25–#60 default).
-		if escaped, dir := ISBBoxEscapeWith(*e.State.ISBBox, cur, e.Cfg.ISBBoxEscapeMode); escaped {
+		// m473 B3 (default close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13]): the 1m
+		// close gives permission (break event) but the box is dropped only when a
+		// closed 5m candle closes outside it.
+		newBrk, dir, gone := isbBoxStep(e.State.ISBBox, cur, e.Cfg.ISBBoxEscapeMode, e.closedBucketsMemo(bars, now))
+		if newBrk {
 			breaks = append(breaks, isbBreakEvent(*e.State.ISBBox, dir, "isb_5m"))
-			e.State.ISBBox = nil
 			e.State.LastISBBoxEscape = dir // CE-1: which way the 5m box resolved
+		}
+		if gone {
+			e.State.ISBBox = nil
+			e.State.LastISBBoxEscape = dir
+		} else if newBrk {
+			// broken by a 1m close, still standing until the 5m closes outside
 		} else if e.Cfg.FiveMinBoxSource != FiveMinBoxFirst {
 			// m466 G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside bar nào
 			// gần với thời điểm đó nhất, bọc lại cho em"]: the box is the NEWEST
@@ -2559,8 +2568,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// 30m TF. "Never trade against a 15m/30m ISB inside its range" [D4.2 p1
 	// @16:28–16:46, 18:02–18:36].
 	if e.State.ISBBox30m != nil {
-		if escaped, dir := ISBBoxEscapeWith(*e.State.ISBBox30m, cur, e.Cfg.ISBBoxEscapeMode); escaped { // CE-5
+		newBrk, dir, gone := isbBoxStep(e.State.ISBBox30m, cur, e.Cfg.ISBBoxEscapeMode, cb30) // CE-5; m473 B3: dropped on a 30m close outside [Oct D4.3 @ 65:00-66:13]
+		if newBrk {
 			breaks = append(breaks, isbBreakEvent(*e.State.ISBBox30m, dir, "isb_30m")) // m466 G21/G29
+		}
+		if gone {
 			e.State.ISBBox30m = nil
 		}
 	} else if len(cb30) >= 2 {
@@ -2577,7 +2589,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// CE-2 (release #25, knob tf_conflict_end): "both_boxes" holds the
 	// conflict until BOTH boxes have escaped [D4.2 p1 @07:54–08:02 "Đợi nó
 	// thoát cả luôn"]; "first_box" (default) is the pre-#25 read.
-	conflict, conflictHeld, latch, latchForming := tfConflictLatchStep(e.Cfg.TFConflictEnd, e.State.ISBBox, e.State.ISBBox15m, e.State.TFConflictLatched, e.State.TFConflictLatchForming)
+	conflict, conflictHeld, latch, latchForming := tfConflictLatchStep(e.Cfg.TFConflictEnd, e.box5(), e.box15(), e.State.TFConflictLatched, e.State.TFConflictLatchForming)
 	e.State.TFConflictLatched, e.State.TFConflictLatchForming = latch, latchForming
 	if conflict {
 		out = append(out, e.conflictArmCancels()...)
@@ -2606,7 +2618,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// the trigger: the ESCALATED trigger (15m/30m) governs the side.
 		var trigSide Side
 		dirOK := true
-		if e.State.ISBBox == nil || trigTF != 5 {
+		if e.box5() == nil || trigTF != 5 {
 			dirOK, trigSide, _ = TriggerVerdict(trig, cur.Close)
 		}
 		if dirOK {
@@ -2637,8 +2649,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
-					if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
+					if e.box5() != nil && !crossingISBs(cb5, 3) {
+						if allowed, r := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 							boxBlocked, _ = true, r
 						}
 					}
@@ -2648,8 +2660,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// (D3.4 p2 @17:07–17:49) skips this gate when the 15m ISBs
 					// are crossing.
 					box15Blocked := false
-					if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
+					if e.box15() != nil && !crossingISBs(cb15, 3) {
+						if allowed, r := ISBBoxAllows(*e.box15(), execPrev, execCur); !allowed {
 							box15Blocked, _ = true, r
 						}
 					}
@@ -2657,8 +2669,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// trade against a 30m ISB inside its range; skipped when the
 					// 30m ISBs are crossing.
 					box30Blocked := false
-					if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
-						if allowed, r := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
+					if e.box30() != nil && !crossingISBs(cb30, 3) {
+						if allowed, r := ISBBoxAllows(*e.box30(), execPrev, execCur); !allowed {
 							box30Blocked, _ = true, r
 						}
 					}
@@ -2666,8 +2678,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// standing 15m ISB box the 5m must show an ISB the same way
 					// before a 1m ISB trades [D4.2 p1 @14:24–14:34, @17:09–17:13].
 					fifteenRefusal := ""
-					if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
-						fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.State.ISBBox15m, e.State.ISBBox, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
+					if e.box15() != nil && !crossingISBs(cb15, 3) {
+						fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.box15(), e.box5(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 					}
 					side, chosen, ok, why := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
 					if !ok {
@@ -2696,7 +2708,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// CE-1: no same-way 5m ISB inside the 15m box (or option
 						// 1: no trade until the 15m box escapes).
 						e.refuse("isb_" + fifteenRefusal + f15)
-					} else if (e.State.ISBBox == nil || trigTF != 5) && trigSide != "" && side != "" && side != trigSide {
+					} else if (e.box5() == nil || trigTF != 5) && trigSide != "" && side != "" && side != trigSide {
 						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
 						// line governs the ISB side — a short ISB above a buy line
 						// (or a long below a sell line) is refused [D3.4 p1
@@ -2856,27 +2868,27 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
-			if e.State.ISBBox != nil && !crossingISBs(cb5, 3) {
-				if allowed, _ := ISBBoxAllows(*e.State.ISBBox, execPrev, execCur); !allowed {
+			if e.box5() != nil && !crossingISBs(cb5, 3) {
+				if allowed, _ := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 					boxBlocked = true
 				}
 			}
 			box15Blocked := false
-			if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
-				if allowed, _ := ISBBoxAllows(*e.State.ISBBox15m, execPrev, execCur); !allowed {
+			if e.box15() != nil && !crossingISBs(cb15, 3) {
+				if allowed, _ := ISBBoxAllows(*e.box15(), execPrev, execCur); !allowed {
 					box15Blocked = true
 				}
 			}
 			box30Blocked := false
-			if e.State.ISBBox30m != nil && !crossingISBs(cb30, 3) {
-				if allowed, _ := ISBBoxAllows(*e.State.ISBBox30m, execPrev, execCur); !allowed {
+			if e.box30() != nil && !crossingISBs(cb30, 3) {
+				if allowed, _ := ISBBoxAllows(*e.box30(), execPrev, execCur); !allowed {
 					box30Blocked = true
 				}
 			}
 			// CE-1: the same 15m rule as the normal ISB.
 			fifteenRefusal := ""
-			if e.State.ISBBox15m != nil && !crossingISBs(cb15, 3) {
-				fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.State.ISBBox15m, e.State.ISBBox, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
+			if e.box15() != nil && !crossingISBs(cb15, 3) {
+				fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.box15(), e.box5(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 			}
 			// m462: the ONE shared 4h/1h check (all session by default).
 			htfRefusal, _ := HTFEntryCheck(e.State.HTF, in.Side)
@@ -3353,17 +3365,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// B11 [D3.4 p2 @07:58–08:21]: inside the standing 5m-ISB box only
 			// a same-direction ISB trades ("em chỉ đánh inside bar cùng
 			// chiều") — box trades never.
-			if e.State.ISBBox != nil && bars[r.RefBar].Close > e.State.ISBBox.Low && bars[r.RefBar].Close < e.State.ISBBox.High {
+			if e.box5() != nil && bars[r.RefBar].Close > e.box5().Low && bars[r.RefBar].Close < e.box5().High {
 				e.refuse("box_isb_ban")
 				continue
 			}
 			// D4.1-25: the 15m box refuses box returns inside it too.
-			if e.State.ISBBox15m != nil && bars[r.RefBar].Close > e.State.ISBBox15m.Low && bars[r.RefBar].Close < e.State.ISBBox15m.High {
-				e.refuse("box_isb_ban_15m" + formingSuffix(e.State.ISBBox15m)) // m465 P1
+			if e.box15() != nil && bars[r.RefBar].Close > e.box15().Low && bars[r.RefBar].Close < e.box15().High {
+				e.refuse("box_isb_ban_15m" + formingSuffix(e.box15())) // m465 P1
 				continue
 			}
 			// D4.2-07: the 30m box refuses box returns inside it too.
-			if e.State.ISBBox30m != nil && bars[r.RefBar].Close > e.State.ISBBox30m.Low && bars[r.RefBar].Close < e.State.ISBBox30m.High {
+			if e.box30() != nil && bars[r.RefBar].Close > e.box30().Low && bars[r.RefBar].Close < e.box30().High {
 				e.refuse("box_isb_ban_30m")
 				continue
 			}

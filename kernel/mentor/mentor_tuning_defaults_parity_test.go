@@ -105,7 +105,7 @@ func TestMentorTuningDefaultsParityWithTS(t *testing.T) {
 		{"tf_conflict_end", TFConflictBothBoxes},
 		{"news_wait_both_lines", cfg.NewsWaitBothLines},
 		{"news_bars_excluded", cfg.NewsBarsExcluded},
-		{"isb_box_escape", cfg.ISBBoxEscapeMode}, // m466 G20/G49: close
+		{"isb_box_escape", cfg.ISBBoxEscapeMode}, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13]: close5m (was close, m466 G20/G49)
 		{"ema34_loss_relock", EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts", cfg.OrbEdgeVetoPts},
 		{"d43_trend_source", D43TrendStructure},
