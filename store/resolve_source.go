@@ -54,6 +54,14 @@ func OriginLetter(source string) string {
 // run 7, ids 585-591); trader/session_risk.go carries the measurement.
 const BreakerHaltDefault = 8
 
+// BreakerHaltMentorDefault is the consecutive-loss halt's shipped N for a
+// MENTOR-MODE strategy (risk_control.mentor_mode=true). [Oct D4.1 @ 14:40]
+// OctD4.1-R28 / R19: "thua 3 lenh lien tuc, lenh thu 4 thu 1 lenh nua, neu
+// khong duoc thi tat may nghi" — 3 losses, one more try on the 4th, then shut
+// the machine off: 4 consecutive losses halt the 5th entry. AI-mode strategies
+// keep BreakerHaltDefault (8).
+const BreakerHaltMentorDefault = 4
+
 // BreakerHaltEnv is the process-wide override consulted only when the strategy
 // saved no value.
 const BreakerHaltEnv = "BREAKER_HALT_N"
@@ -64,7 +72,8 @@ const ReplanCapDefault = 2
 
 // ResolveBreakerHalt resolves the consecutive-loss halt N and where it came
 // from (W1, settings truth). Precedence: the SAVED value — INCLUDING 0, which
-// is OFF — → env BREAKER_HALT_N (valid ≥0; 0 = OFF) → the shipped default 8.
+// is OFF — → env BREAKER_HALT_N (valid ≥0; 0 = OFF) → 4 for a mentor_mode strategy
+// [Oct D4.1 @ 14:40] → the shipped default 8.
 // An invalid env value falls to the default AND SAYS SO in the source, never a
 // silent 8. Absent in the strategy means INHERIT, never OFF: the breaker is a
 // safety default, so a missing key must not read as "off".
@@ -81,21 +90,25 @@ func ResolveBreakerHaltEnv(cfg *StrategyConfig, getenv func(string) string) (int
 		}
 		// A negative saved value is not a threshold. Fall through to what an
 		// absent key would resolve to, and name why.
-		n, src := breakerHaltFromEnv(getenv)
+		n, src := breakerHaltFromEnv(cfg, getenv)
 		return n, src + " (saved value is negative)"
 	}
-	return breakerHaltFromEnv(getenv)
+	return breakerHaltFromEnv(cfg, getenv)
 }
 
-func breakerHaltFromEnv(getenv func(string) string) (int, string) {
+func breakerHaltFromEnv(cfg *StrategyConfig, getenv func(string) string) (int, string) {
+	def := BreakerHaltDefault
+	if cfg != nil && cfg.RiskControl.MentorMode {
+		def = BreakerHaltMentorDefault // [Oct D4.1 @ 14:40]
+	}
 	n, state := BreakerHaltEnvState(getenv)
 	switch state {
 	case EnvValid:
 		return n, SourceEnv + " " + BreakerHaltEnv
 	case EnvInvalid:
-		return BreakerHaltDefault, SourceShippedDefault + " (env " + BreakerHaltEnv + " invalid)"
+		return def, SourceShippedDefault + " (env " + BreakerHaltEnv + " invalid)"
 	}
-	return BreakerHaltDefault, SourceShippedDefault
+	return def, SourceShippedDefault
 }
 
 // Env states for a numeric process override.
