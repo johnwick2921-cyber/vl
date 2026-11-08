@@ -2574,6 +2574,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		}
 		if gone {
 			e.State.ISBBox30m = nil
+		} else if bx := e.State.ISBBox30m; bx.Escaped != "" && len(cb30) >= 2 {
+			// m473 B3: broken by a 1m close, awaiting its 30m close — a newer
+			// 30m inside-bar pair replaces it (never blocks a fresh box).
+			if nb, ok := ISBBoxFrom5m(cb30[len(cb30)-2], cb30[len(cb30)-1]); ok && nb.AtTime > bx.AtTime && nb.AtTime != e.State.LastISBBox30mAt {
+				e.State.ISBBox30m = &nb
+				e.State.LastISBBox30mAt = nb.AtTime
+			}
 		}
 	} else if len(cb30) >= 2 {
 		if bx, ok := ISBBoxFrom5m(cb30[len(cb30)-2], cb30[len(cb30)-1]); ok && bx.AtTime != e.State.LastISBBox30mAt {

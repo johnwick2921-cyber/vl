@@ -197,7 +197,7 @@ func crossingISBs(buckets []market.Kline, lookback int) bool {
 	window := buckets[len(buckets)-lookback:]
 	var dirs []Side
 	for i := 1; i < len(window); i++ {
-		if IsISB(window[i-1], window[i]) {
+		if isISBFirstRTHAware(window[i-1], window[i]) {
 			dirs = append(dirs, ISBDirection(window[i-1]))
 		}
 	}
@@ -235,10 +235,12 @@ func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (
 		return esc, d, esc
 	}
 	prev := b.Escaped
+	// Sticky: a 1m close back inside does NOT re-arm the box ban — the video
+	// states only "thoát ra khỏi box rồi thì mình được trade" and the delete on
+	// a TF close [Oct D4.3 @ 65:00-66:13, OctD4.3-R67]; re-arming is a mentor
+	// question, so the default follows only what is stated.
 	if esc {
 		b.Escaped = d
-	} else {
-		b.Escaped = ""
 	}
 	newBreak, dir = esc && prev != d, d
 	if n := len(cbTF); n > 0 && cbTF[n-1].OpenTime > b.AtTime {
@@ -269,6 +271,18 @@ func isFirstRTH5m(openMs int64) bool {
 	}
 	t := time.UnixMilli(openMs).In(ctime())
 	return t.Hour() == 8 && t.Minute() == 30 && kernel.IsCMEOpen(t)
+}
+
+// isISBFirstRTHAware is IsISB for 5m reads with the m473 B4 opening rule: the
+// 08:30 CT 5m candle directly after the 08:25 Globex candle is never itself an
+// inside bar [Oct D4.3 @ 57:20-57:35, OctD4.3-R58], so alignment, the 5m/15m
+// conflict and the crossing-ISB read do not see a phantom pair either. Any
+// other bucket width (15m/30m) is judged by plain IsISB.
+func isISBFirstRTHAware(prev, cur market.Kline) bool {
+	if isFirstRTH5m(cur.OpenTime) && cur.OpenTime-prev.OpenTime == 5*60_000 {
+		return false
+	}
+	return IsISB(prev, cur)
 }
 
 // ISBBoxFromRTH5m is ISBBoxFrom5m for the 5m trigger TF with the October

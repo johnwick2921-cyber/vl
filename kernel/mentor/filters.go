@@ -278,7 +278,7 @@ func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
 	}
 	p5, c5 := bars5m[len(bars5m)-2], bars5m[len(bars5m)-1]
 	p15, c15 := bars15m[len(bars15m)-2], bars15m[len(bars15m)-1]
-	if !IsISB(p5, c5) || !IsISB(p15, c15) {
+	if !isISBFirstRTHAware(p5, c5) || !IsISB(p15, c15) { // m473 B4: no phantom 08:30 5m ISB
 		return false
 	}
 	return ISBDirection(p5) != ISBDirection(p15)

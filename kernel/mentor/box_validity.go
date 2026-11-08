@@ -18,11 +18,24 @@ import (
 // existing rule stands: the newest box per role wins (liveBoxes); a carried
 // box only fills a role that has no box of its own.
 
-// rthFormed reports whether ms is inside RTH (08:30 <= CT < 17:00).
-func rthFormed(ms int64) bool {
-	t := time.UnixMilli(ms).In(ctime())
-	m := t.Hour()*60 + t.Minute()
-	return m >= 8*60+30 && m < 17*60
+// boxExpiryMs is when a carried box stops being valid: the first RTH open
+// (08:30 CT) after the RTH open of the box's trading day. A box standing at
+// the open — including one drawn from the pre-open peaks (about 08:00) and
+// confirmed before 08:30 — is "valid from market open" to the next open
+// [Oct D3.3 @ 41:28-41:36] (OctD3.3-R51, R52, frame s_02464). A box formed
+// after that open expires at the first open after its own formation.
+func boxExpiryMs(b Box) int64 {
+	t := time.UnixMilli(b.FormedAtMs).In(ctime())
+	day := t
+	if t.Hour() >= 17 { // the 17:00 CT roll: the box belongs to the next trading day
+		day = t.AddDate(0, 0, 1)
+	}
+	open := time.Date(day.Year(), day.Month(), day.Day(), 8, 30, 0, 0, ctime()).UnixMilli()
+	from := b.FormedAtMs
+	if open > from {
+		from = open
+	}
+	return nextRTHOpenAfterMs(from)
 }
 
 // nextRTHOpenAfterMs is the first RTH open (08:30 CT on a day the CME is
@@ -39,11 +52,17 @@ func nextRTHOpenAfterMs(ms int64) int64 {
 	return time.Date(t.Year(), t.Month(), t.Day()+1, 8, 30, 0, 0, ctime()).UnixMilli()
 }
 
+// boxCarryRTH switches the m473 B1 carry (frozen pre-m473 goldens set it false).
+var boxCarryRTH = true
+
 // carryRTHBoxes runs at the day roll, BEFORE the latch clears: each role's
-// live RTH-formed box is carried to the next RTH open.
+// live box standing at the RTH open is carried to the next RTH open.
 func (e *Evaluator) carryRTHBoxes(now int64) {
+	if !boxCarryRTH {
+		return
+	}
 	for _, b := range liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes) {
-		if !rthFormed(b.FormedAtMs) || now >= nextRTHOpenAfterMs(b.FormedAtMs) {
+		if now >= boxExpiryMs(b) {
 			continue
 		}
 		if e.State.CarriedBoxes == nil {
@@ -54,18 +73,14 @@ func (e *Evaluator) carryRTHBoxes(now int64) {
 	}
 }
 
-// withCarriedBoxes expires carried boxes at their next RTH open and appends
-// the still-valid ones for any role the live set lacks (floor, then ceiling).
-func (e *Evaluator) withCarriedBoxes(boxes []Box, bars []market.Kline, now int64) []Box {
-	for role, b := range e.State.CarriedBoxes {
-		if now >= nextRTHOpenAfterMs(b.FormedAtMs) {
-			delete(e.State.CarriedBoxes, role)
-			e.note("carried box %s %.2f–%.2f expired at the next RTH open 08:30 CT [Oct D3.3 @ 41:20]", role, b.Bottom, b.Top)
-		}
-	}
+// carriedBoxesAt is the pure read of the carried set at `now` (no state
+// writes, no notes): the still-valid carried boxes for roles `boxes` lacks,
+// refreshed on a copy. SeedChartDisplay uses it directly (display-only
+// contract); withCarriedBoxes adds the expiry bookkeeping.
+func (e *Evaluator) carriedBoxesAt(boxes []Box, bars []market.Kline, now int64) []Box {
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		b, ok := e.State.CarriedBoxes[string(kind)]
-		if !ok {
+		if !ok || now >= boxExpiryMs(b) {
 			continue
 		}
 		have := false
@@ -79,8 +94,23 @@ func (e *Evaluator) withCarriedBoxes(boxes []Box, bars []market.Kline, now int64
 			continue
 		}
 		refreshBox(bars, &b, e.Cfg.Box)
-		e.State.CarriedBoxes[string(kind)] = b
 		boxes = append(boxes, b)
 	}
 	return boxes
+}
+
+// withCarriedBoxes expires carried boxes at their next RTH open and appends
+// the still-valid ones for any role the live set lacks (floor, then ceiling).
+func (e *Evaluator) withCarriedBoxes(boxes []Box, bars []market.Kline, now int64) []Box {
+	for role, b := range e.State.CarriedBoxes {
+		if now >= boxExpiryMs(b) {
+			delete(e.State.CarriedBoxes, role)
+			e.note("carried box %s %.2f–%.2f expired at the next RTH open 08:30 CT [Oct D3.3 @ 41:20]", role, b.Bottom, b.Top)
+		}
+	}
+	out := e.carriedBoxesAt(boxes, bars, now)
+	for _, b := range out[len(boxes):] {
+		e.State.CarriedBoxes[string(b.Kind)] = b
+	}
+	return out
 }

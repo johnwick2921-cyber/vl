@@ -364,9 +364,12 @@ func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind
 	return extreme, nearest
 }
 
-// BoxesBuild is the pure, deterministic box scan: role extremes pair with
-// the NEAREST same-role extreme (in time, on the non-broken side) with NO
-// tolerance; escaped boxes are dropped; only boxes of the current trading
+// BoxesBuild is the pure, deterministic box scan: two confirmed same-role
+// swings pair when LEVEL (|p1-p2| <= flatNearPts, either order) and the box
+// anchors on the EARLIER one — see pickBoxPair (m473 B2, [Oct D3.3 @ 19:31]).
+// The legacy extreme + nearest-non-exceeding construction (no tolerance) runs
+// only when flatNearScale is 0 or boxPeak1Level is off (frozen goldens);
+// escaped boxes are dropped; only boxes of the current trading
 // day survive. The same history always rebuilds the same set — a drawn box
 // is never redrawn. At most one floor and one ceiling ("two zones").
 func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {

@@ -110,6 +110,7 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) (e
 				swingCT(bx.AtTime), bx.Dir, bx.Low, bx.High)
 		}
 	}
+	had15 := e.State.ISBBox15m != nil // a box standing at the step: no same-tick rebuild after its delete
 	if e.State.ISBBox15m != nil {
 		newBrk, dir, gone := isbBoxStep(e.State.ISBBox15m, cur, e.Cfg.ISBBoxEscapeMode, cb15) // CE-5; m473 B3: dropped on a 15m close outside [Oct D4.3 @ 65:00-66:13]
 		if newBrk {
@@ -124,13 +125,24 @@ func (e *Evaluator) advance15mBox(cb5, cb15 []market.Kline, cur market.Kline) (e
 			}
 			e.State.ISBBox15m = nil
 		}
+	}
+	// m473 B3: a box broken by a 1m close (Escaped) waits for its own 15m close
+	// to be deleted — a NEWER 15m inside-bar pair may replace it meanwhile, as
+	// the 5m box does (the delay never blocks a fresh box).
+	if bx := e.State.ISBBox15m; bx != nil && bx.Escaped != "" && len(cb15) >= 2 {
+		if nb, ok := ISBBoxFrom5m(cb15[len(cb15)-2], cb15[len(cb15)-1]); ok && nb.AtTime > bx.AtTime && nb.AtTime != e.State.LastISBBox15mAt {
+			e.State.ISBBox15m = &nb
+			e.State.LastISBBox15mAt = nb.AtTime
+		}
+	} else if had15 {
+		// standing box (or just deleted): nothing to build this tick
 	} else if len(cb15) >= 2 {
 		if bx, ok := ISBBoxFrom5m(cb15[len(cb15)-2], cb15[len(cb15)-1]); ok && bx.AtTime != e.State.LastISBBox15mAt {
 			e.State.ISBBox15m = &bx
 			e.State.LastISBBox15mAt = bx.AtTime
 		}
 	}
-	if e.State.ISBBox15m == nil && e.Cfg.Early15mRead {
+	if (e.State.ISBBox15m == nil || e.State.ISBBox15m.Escaped != "") && e.Cfg.Early15mRead {
 		if bx, ok := forming15mISB(cb5, cb15); ok && bx.AtTime != e.State.LastForming15mAt {
 			e.State.ISBBox15m = &bx
 			e.State.LastForming15mAt = bx.AtTime

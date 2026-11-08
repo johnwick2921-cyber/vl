@@ -375,6 +375,49 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 	if !e.Cfg.Enabled || len(closed1m) == 0 {
 		return
 	}
+	latched, post := e.replayLatchDay(closed1m, day)
+	// m473 B1: a restart between the 17:00 roll and the next RTH open must
+	// still hold the previous day's box (a Friday box on the Sunday chart
+	// [Oct D3.3 @ 17:00]) — replay the previous trading day's latch the same
+	// way and carry what is still inside its validity window.
+	e.seedCarriedBoxes(closed1m, day, now)
+	if len(latched) == 0 {
+		return
+	}
+	e.State.LatchedBoxes = latched
+	e.State.PostEscapeBoxes = post
+	e.watermarkBoxes(closed1m, latched, post)
+}
+
+// seedCarriedBoxes (m473 B1) rebuilds State.CarriedBoxes from the trading day
+// before `day` that the bars cover, and watermarks them like latched boxes.
+func (e *Evaluator) seedCarriedBoxes(closed1m []market.Kline, day string, now int64) {
+	e.State.CarriedBoxes = nil
+	if !boxCarryRTH {
+		return
+	}
+	first := sort.Search(len(closed1m), func(i int) bool {
+		return tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[i])).In(ctime())) >= day
+	})
+	if first == 0 {
+		return
+	}
+	prev := tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[first-1])).In(ctime()))
+	latched, post := e.replayLatchDay(closed1m[:first], prev)
+	for _, b := range liveBoxes(latched, post) {
+		if now >= boxExpiryMs(b) {
+			continue
+		}
+		if e.State.CarriedBoxes == nil {
+			e.State.CarriedBoxes = map[string]Box{}
+		}
+		e.State.CarriedBoxes[string(b.Kind)] = b
+	}
+	e.watermarkBoxes(closed1m, e.State.CarriedBoxes, nil)
+}
+
+// replayLatchDay replays one trading day's FTGH/FTGL latch (see seedBoxLatch).
+func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[string]Box, []Box) {
 	cfg := e.Cfg.Box
 	if cfg.TF == "" {
 		cfg = DefaultBoxCfg()
@@ -467,11 +510,11 @@ func (e *Evaluator) seedBoxLatch(closed1m []market.Kline, now int64) {
 			break
 		}
 	}
-	if len(latched) == 0 {
-		return
-	}
-	e.State.LatchedBoxes = latched
-	e.State.PostEscapeBoxes = post
+	return latched, post
+}
+
+// watermarkBoxes sets BoxRefs of every box to the newest closed bar.
+func (e *Evaluator) watermarkBoxes(closed1m []market.Kline, latched map[string]Box, post []Box) {
 	if e.State.BoxRefs == nil {
 		e.State.BoxRefs = map[string]int64{}
 	}

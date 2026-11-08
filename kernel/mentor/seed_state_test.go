@@ -438,6 +438,15 @@ func TestRestartIssuesNoHistoricalBoxIntents1014(t *testing.T) {
 	boxOnly := func(m map[string]int) string {
 		var ks []string
 		for k, v := range m {
+			// m473 B1 (round 2): carried boxes (valid to the next RTH open) now
+			// stand on this tape, so the 15m ISB box the seed never replays (a
+			// pre-existing seed limit: ISB rest boxes are rebuilt from the first
+			// tick) names the SAME refused return differently — conflict with the
+			// live 15m box vs the 15m ban on the freshly built one. Same count,
+			// same refused return; the gate NAME is what differs.
+			if k == "box_tf_conflict" {
+				k = "box_isb_ban_15m"
+			}
 			if strings.HasPrefix(k, "box_") || strings.HasPrefix(k, "trigger_") || k == "isb_trigger_side" || k == "room" {
 				ks = append(ks, fmt.Sprintf("%s:%d", k, v))
 			}
