@@ -1264,8 +1264,11 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 // read on ("nếu mình trade khung nào thì mình gồng theo khung đó" [X8 @18:02–
 // 18:14] — the mentor trades the 2m), not always closed 1m bars, and the count
 // starts at the first candle AFTER the fill candle (mentorLivePos.candlesAfterFill).
-// Whether the fill candle itself counts is NOT stated by the course (mentor
-// question B18) — excluding it is OURS; before W2 the fill candle was bar 1.
+// October D4.2 supersedes the "course is silent" reading: the mentor counts
+// the green candles "1, 2, 3" [Oct D4.2 @ 10:00-10:09] and says "3 toi 4 ...
+// khong co cay thu 5 ... du di lam 4 cay" [Oct D4.2 @ 13:40-13:54], so 3 after
+// the fill candle is the outer bound; keep the value 3. Excluding the fill
+// candle from the count stays the conservative reading (mentor question B18).
 const (
 	mentorResonanceMinCandles = 1
 	mentorResonanceMaxCandles = 3
