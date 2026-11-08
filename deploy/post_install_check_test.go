@@ -51,6 +51,13 @@ func runPostInstall(t *testing.T, logPath, releaseSHA, dbPath string, env ...str
 // log's newest line: the moment a reader would run the check on that log.
 func runPostInstallRelease(t *testing.T, logPath, rel, dbPath string, env ...string) (string, int) {
 	t.Helper()
+	return runPostInstallArgs(t, logPath, rel, dbPath, nil, env...)
+}
+
+// runPostInstallArgs is runPostInstallRelease with extra script arguments
+// (--expect).
+func runPostInstallArgs(t *testing.T, logPath, rel, dbPath string, args []string, env ...string) (string, int) {
+	t.Helper()
 	if _, err := exec.LookPath("bash"); err != nil {
 		t.Skip("bash not installed")
 	}
@@ -66,7 +73,7 @@ func runPostInstallRelease(t *testing.T, logPath, rel, dbPath string, env ...str
 	if !hasNow {
 		env = append(env, fmt.Sprintf("POST_INSTALL_NOW=%d", logNewest(t, logPath).Unix()+60))
 	}
-	cmd := exec.Command("bash", postInstallScript, "--log", logPath, "--release", rel, "--db", dbPath)
+	cmd := exec.Command("bash", append([]string{postInstallScript, "--log", logPath, "--release", rel, "--db", dbPath}, args...)...)
 	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.CombinedOutput()
 	rc := 0
@@ -606,4 +613,152 @@ func dirSnapshot(t *testing.T, dir string) string {
 		lines = append(lines, fmt.Sprintf("%s=%x", n, sha256.Sum256(b)))
 	}
 	return strings.Join(lines, " ")
+}
+
+// m471 L4-1: a pause that comes back within the merge window of its own resume
+// logs "⏸ TRADING PAUSED AGAIN (" (trader/data_integrity_gate.go, m469) and
+// sends the owner nothing new. It refuses entries exactly like the first one,
+// so a re-pause that is never resumed must FAIL, not read as "every trader
+// resolved". hoang's real 15:56 PAUSED line, re-worded to the PAUSED AGAIN
+// shape and re-stamped 17:30, after its real 17:26 RESUMED.
+func TestPostInstallCheckPausedAgainAfterResumeAndNeverResumedFails(t *testing.T) {
+	lines := fixtureLines(t, "closed-boot")
+	paused := lineWith(t, lines, "trader_name=hoang] ⏸ TRADING PAUSED (data_integrity_unknown)")
+	again := strings.Replace(paused, "⏸ TRADING PAUSED (data_integrity_unknown)", "⏸ TRADING PAUSED AGAIN (data_integrity_hole)", 1)
+	lines = append(lines, redate(again, "11-01 17:30:00"))
+	// the process is still writing at 17:50 (a later real line, re-stamped)
+	lines = append(lines, redate(lineWith(t, lines, "clock step BACKWARD"), "11-01 17:50:00"))
+	out, rc := runPostInstall(t, writeLog(t, "vl_2026-11-01.log", lines), outageRev, "")
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL pause: hoang [..246265] — TRADING PAUSED (new entries refused) (data_integrity_hole) since 11-01 17:30:00 CT, never resolved")
+	forbidLine(t, out, "FAIL pause: 12345")
+	forbidLine(t, out, "PASS pause:")
+}
+
+// ...and a PAUSED AGAIN that a later RESUMED closes is resolved like any pause.
+func TestPostInstallCheckPausedAgainThenResumedPasses(t *testing.T) {
+	lines := fixtureLines(t, "closed-boot")
+	paused := lineWith(t, lines, "trader_name=hoang] ⏸ TRADING PAUSED (data_integrity_unknown)")
+	resumed := lineWith(t, lines, "trader_name=hoang] ▶ TRADING RESUMED:")
+	again := strings.Replace(paused, "⏸ TRADING PAUSED (data_integrity_unknown)", "⏸ TRADING PAUSED AGAIN (data_integrity_hole)", 1)
+	lines = append(lines, redate(again, "11-01 17:30:00"), redate(resumed, "11-01 17:34:00"))
+	lines = append(lines, redate(lineWith(t, lines, "clock step BACKWARD"), "11-01 17:50:00"))
+	out, rc := runPostInstall(t, writeLog(t, "vl_2026-11-01.log", lines), outageRev, "")
+	requireVerdict(t, out, rc, "PASS")
+	requireLine(t, out, "PASS pause: 4 start line(s) since the process started, every trader resolved")
+}
+
+// failingAICall turns the closed-boot fixture's real ok=true ai_call line into
+// the shape mcp/client.go logs for a failed call (WARN, ok=false, a class and a
+// status), at each given stamp.
+func failingAICall(t *testing.T, lines []string, status, class string, stamps ...string) []string {
+	t.Helper()
+	okLine := lineWith(t, lines, " ai_call model=")
+	failed := strings.Replace(okLine, "[INFO] mcp/client.go:379", "[WARN] mcp/client.go:407", 1)
+	failed = strings.Replace(failed, "finish_reason=stop ok=true", "finish_reason=n/a ok=false", 1)
+	failed = strings.Replace(failed, "http_status=200", "deadline_s=600 class="+class+" provider_side=true http_status="+status, 1)
+	if !strings.Contains(failed, " ok=false") || !strings.Contains(failed, " http_status="+status) {
+		t.Fatalf("closed-boot ai_call line changed shape: %q", okLine)
+	}
+	var out []string
+	for _, st := range stamps {
+		out = append(out, redate(failed, st))
+	}
+	return out
+}
+
+// m471 L4-4: with the CME open past the settle time and EVERY ai_call since the
+// process started failing for a non-402 reason (401 here; a 429 or a timeout
+// reads the same), the bot is deciding nothing: FAIL, not WARN.
+func TestPostInstallCheckEveryAICallFailingWhileTheCMEIsOpenFails(t *testing.T) {
+	lines := fixtureLines(t, "closed-boot")
+	failed := failingAICall(t, lines, "401", "auth", "11-01 17:15:00", "11-01 17:18:00", "11-01 17:21:00", "11-01 17:24:00")
+	lines = append(without(lines, " ai_call model="), failed...)
+	lines = append(lines, redate(lineWith(t, lines, "clock step BACKWARD"), "11-01 17:26:50"))
+	out, rc := runPostInstall(t, writeLog(t, "vl_2026-11-01.log", lines), outageRev, "")
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL ai: no successful AI call since the process started — 4 ai_call(s), every one failed; latest ai_call (deepseek-v4-pro, 11-01 17:24:00 CT) ok=false http_status=401 class=auth")
+}
+
+// A failing latest call after an EARLIER success in the same process is a WARN:
+// the AI has worked for this process, the newest call is just a failure.
+func TestPostInstallCheckAICallFailingAfterAnEarlierSuccessWarns(t *testing.T) {
+	lines := fixtureLines(t, "closed-boot")
+	lines = append(lines, failingAICall(t, lines, "429", "rate_limit", "11-01 17:24:00")...)
+	lines = append(lines, redate(lineWith(t, lines, "clock step BACKWARD"), "11-01 17:26:50"))
+	out, rc := runPostInstall(t, writeLog(t, "vl_2026-11-01.log", lines), outageRev, "")
+	requireVerdict(t, out, rc, "PASS")
+	requireLine(t, out, "WARN ai: latest ai_call (deepseek-v4-pro, 11-01 17:24:00 CT) ok=false http_status=429 class=rate_limit — 1 of 2 ai_call(s) since the process started succeeded")
+}
+
+// While the CME is closed, every call failing cannot be judged yet: WARN and
+// TOO EARLY until the reopen plus the settle time — never FAIL, and never PASS.
+// The closed-boot fixture cut before the 17:00 reopen, with its pauses left out
+// so the AI leg is the only thing still pending.
+func TestPostInstallCheckEveryAICallFailingWhileTheCMEIsClosedIsTooEarly(t *testing.T) {
+	var before []string
+	for _, ln := range fixtureLines(t, "closed-boot") {
+		if ln[:5] == "11-01" && ln[6:14] >= "17:00:00" {
+			break
+		}
+		before = append(before, ln)
+	}
+	failed := failingAICall(t, before, "401", "auth", "11-01 16:31:37")
+	before = append(without(before, " ai_call model=", "⏸ TRADING PAUSED"), failed...)
+	logPath := writeLog(t, "vl_2026-11-01.log", before)
+	out, rc := runPostInstall(t, logPath, outageRev, "", nowEnv(ct(t, 2026, "11-01 16:32:37")))
+	requireVerdict(t, out, rc, "TOO EARLY")
+	forbidLine(t, out, "FAIL ")
+	requireLine(t, out, "WARN ai: no successful AI call since the process started (1 ai_call(s), every one failed;")
+	if !strings.Contains(lastLine(out), "no successful AI call yet") || !strings.Contains(lastLine(out), "re-run after 11-01 17:12 CT") {
+		t.Errorf("the verdict must name the AI leg and the reopen + settle time, got %q", lastLine(out))
+	}
+}
+
+// m471 L4-2: deploy/RELEASE is written by the same install and restored with the
+// binary by a rollback, so it agrees with whatever runs. --expect names the
+// release the reader MEANT to install; a different running rev is a FAIL.
+func TestPostInstallCheckExpectFailsWhenTheMeantReleaseIsNotRunning(t *testing.T) {
+	rel := filepath.Join(t.TempDir(), "RELEASE")
+	if err := os.WriteFile(rel, []byte(healthyRev+"\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	notGit := t.TempDir()
+
+	// The Update to 0247b6c6f rolled back to 5e50da0ce: RELEASE still matches.
+	out, rc := runPostInstallArgs(t, fixture("healthy"), rel, "", []string{"--expect", "0247b6c6f"})
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "PASS boot rev: 5e50da0cea8a matches")
+	requireLine(t, out, "FAIL expect: running 5e50da0cea8a but you expected 0247b6c6f (0247b6c6f)")
+
+	out, rc = runPostInstallArgs(t, fixture("healthy"), rel, "", []string{"--expect", "5e50da0ce"})
+	requireVerdict(t, out, rc, "PASS")
+	requireLine(t, out, "PASS expect: running 5e50da0cea8a is 5e50da0ce")
+
+	// A name that is not a sha and not a tag cannot confirm anything.
+	out, rc = runPostInstallArgs(t, fixture("healthy"), rel, "", []string{"--expect", "v2026.11.07.1"}, "VL_REPO="+notGit)
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL expect: cannot resolve 'v2026.11.07.1' to a commit")
+
+	// A tag is resolved in the install dir's git: here it names a commit that is
+	// not the running one, and the resolved sha is printed.
+	if _, err := exec.LookPath("git"); err != nil {
+		t.Skip("git not installed")
+	}
+	repo := t.TempDir()
+	gitc := func(args ...string) string {
+		cmd := exec.Command("git", append([]string{"-C", repo, "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false", "-c", "tag.gpgsign=false"}, args...)...)
+		b, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, b)
+		}
+		return strings.TrimSpace(string(b))
+	}
+	gitc("init", "-q")
+	gitc("commit", "-q", "--allow-empty", "-m", "x")
+	gitc("tag", "-a", "v2026.11.07.1", "-m", "x")
+	sha := gitc("rev-parse", "HEAD")
+	out, rc = runPostInstallArgs(t, fixture("healthy"), rel, "", []string{"--expect", "v2026.11.07.1"}, "VL_REPO="+repo)
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL expect: running 5e50da0cea8a but you expected v2026.11.07.1 ("+sha[:12]+")")
 }
