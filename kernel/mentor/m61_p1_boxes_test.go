@@ -598,6 +598,9 @@ const m466Pre61GoldenPath = "testdata/m466_pre61_tick_identity.golden.gz"
 // notes, levels and trendlines on every tick of the four real-tape cases. So
 // each behaviour change of this package is exactly its knob (G37: its hook).
 func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
+	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
+	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
+	keyLevelLastCandleEndMin = 15 * 60
 	raw, err := os.Open(m466Pre61GoldenPath)
 	if err != nil {
 		t.Fatal(err)

@@ -112,9 +112,10 @@ func TestKeyLevels1HAnchoredRTHOnly(t *testing.T) {
 	}
 	// 10:30 candle RED again — no change, no level.
 	bars = append(bars, mk(10, 30, 106.6, 107, 106, 106.2))
-	// the 15:00 candle opens outside RTH: green vs the last red would be a
-	// change, but external candles never draw.
-	bars = append(bars, mk(15, 0, 106, 107, 105.5, 106.8)) // green, excluded
+	// bars at/after 15:15 CT are outside RTH (last candle ends 15:15
+	// [Oct D5.2 @ 02:14-02:40]; was 15:00 in September): green vs the last red
+	// would be a change, but external candles never draw.
+	bars = append(bars, mk(15, 15, 106, 107, 105.5, 106.8)) // green, excluded
 	got := KeyLevels(bars, cfg)
 	if len(got) != 1 || got[0].Price != 107 {
 		t.Fatalf("1H-anchored RTH walk: levels = %+v, want exactly one at 107 (09:30 candle open)", got)
