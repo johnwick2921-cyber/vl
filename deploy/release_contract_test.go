@@ -755,3 +755,145 @@ func TestPackagerStagesAnArchiveHoldingOnlyVlUpdaterBinaries(t *testing.T) {
 		}
 	}
 }
+
+// workflowJob returns the text of one job in a workflow: from its "  <name>:"
+// line (two-space indent, directly under jobs:) up to the next job. Empty when
+// the job is absent. Text, not a YAML parser: go.mod carries no direct YAML
+// dependency, and the jobs block is flat enough to cut by indent.
+func workflowJob(y, name string) string {
+	lines := strings.Split(y, "\n")
+	start := -1
+	for i, l := range lines {
+		if l == "  "+name+":" {
+			start = i
+			break
+		}
+	}
+	if start < 0 {
+		return ""
+	}
+	jobHeader := regexp.MustCompile(`^  [A-Za-z0-9_-]+:\s*$`)
+	end := len(lines)
+	for i := start + 1; i < len(lines); i++ {
+		if jobHeader.MatchString(lines[i]) || (lines[i] != "" && !strings.HasPrefix(lines[i], " ") && !strings.HasPrefix(lines[i], "#")) {
+			end = i
+			break
+		}
+	}
+	return strings.Join(lines[start:end], "\n")
+}
+
+// m468 Q5 — the release QUALITY GATE. On #623 the release was published at
+// 08:31 UTC and the test suite finished at 11:26 UTC; nothing stopped a tag
+// whose tests had not passed. The gate job must exist, run the script, and the
+// release must not be able to run without it.
+func TestReleaseWorkflowRequiresTheQualityGateBeforeTheRelease(t *testing.T) {
+	y := repoFile(t, ".github/workflows/release.yml")
+	gate := workflowJob(y, "quality-gate")
+	if gate == "" {
+		t.Fatal("release.yml has no quality-gate job — a tag could be released with its tests red or still running")
+	}
+	if !strings.Contains(gate, "bash deploy/release/quality-gate.sh") {
+		t.Fatal("the quality-gate job must run deploy/release/quality-gate.sh, or it gates nothing")
+	}
+	// The suite takes up to ~3 h and the script waits up to 300 min; a job
+	// timeout below that would kill the gate before its own verdict.
+	if !strings.Contains(gate, "timeout-minutes: 310") {
+		t.Fatal("the quality-gate job must allow 310 minutes (script waits up to 300)")
+	}
+	// No if: on the gate — it must run on every tag push and every dispatch.
+	if regexp.MustCompile(`(?m)^    if:`).MatchString(gate) {
+		t.Fatal("the quality-gate job must not carry an if: — a condition is a way to skip the gate")
+	}
+	// The tag reaches the script through env:, peeled to a commit.
+	if !strings.Contains(gate, `git rev-parse --verify "refs/tags/${TAG}^{commit}"`) {
+		t.Fatal("the gate must peel the TAG to its commit (refs/tags/<tag>^{commit}) before reading checks")
+	}
+
+	rel := workflowJob(y, "release")
+	if rel == "" {
+		t.Fatal("release.yml has no release job")
+	}
+	needs := regexp.MustCompile(`(?m)^    needs:\s*\[([^\]]*)\]`).FindStringSubmatch(rel)
+	if needs == nil {
+		t.Fatal("the release job must declare needs: [...]")
+	}
+	hasGate := false
+	for _, n := range strings.Split(needs[1], ",") {
+		if strings.TrimSpace(n) == "quality-gate" {
+			hasGate = true
+		}
+	}
+	if !hasGate {
+		t.Fatalf("the release job must need quality-gate, got needs: [%s]", needs[1])
+	}
+	// always()/!cancelled()/failure() in the release's if: would run it after a
+	// FAILED gate — the needs: above would then gate nothing.
+	for _, bypass := range []string{"always()", "cancelled()", "failure()"} {
+		if strings.Contains(rel, bypass) {
+			t.Fatalf("the release job's if: must not use %s — it would run after a failed quality gate", bypass)
+		}
+	}
+}
+
+// gate_only exists to PROVE the gate on an old tag without releasing anything.
+// It must reach the quality-gate job and nothing else: not dbcompat, and above
+// all not the release job that holds the signing key.
+func TestReleaseWorkflowGateOnlyCannotReachTheReleaseJob(t *testing.T) {
+	y := repoFile(t, ".github/workflows/release.yml")
+	in := regexp.MustCompile(`(?s)\n      gate_only:\n(.*?)\n\n`).FindStringSubmatch(y)
+	if in == nil {
+		t.Fatal("workflow_dispatch must declare a gate_only input")
+	}
+	if !strings.Contains(in[1], "type: boolean") || !strings.Contains(in[1], "default: false") {
+		t.Fatalf("gate_only must be a boolean that defaults to false (a release by default), got:\n%s", in[1])
+	}
+	// Both spellings: the boolean input and its string form in event.inputs.
+	// Either one saying true must skip the job.
+	const want = `if: ${{ inputs.gate_only != true && github.event.inputs.gate_only != 'true' }}`
+	for _, job := range []string{"release", "dbcompat"} {
+		body := workflowJob(y, job)
+		if body == "" {
+			t.Fatalf("release.yml has no %s job", job)
+		}
+		if !strings.Contains(body, "\n    "+want) {
+			t.Fatalf("the %s job must be skipped on gate_only with the job-level %q", job, want)
+		}
+	}
+}
+
+// The gate only READS checks. A write scope here would hand a job that runs on
+// every dispatch more than it needs, beside a workflow whose top level grants
+// contents: write.
+func TestReleaseWorkflowQualityGatePermissionsAreReadOnly(t *testing.T) {
+	gate := workflowJob(repoFile(t, ".github/workflows/release.yml"), "quality-gate")
+	if gate == "" {
+		t.Fatal("release.yml has no quality-gate job")
+	}
+	m := regexp.MustCompile(`(?m)^    permissions:\n((?:      .*\n)+)`).FindStringSubmatch(gate + "\n")
+	if m == nil {
+		t.Fatal("the quality-gate job must declare its own permissions: (else it inherits contents: write)")
+	}
+	got := map[string]string{}
+	for _, l := range strings.Split(strings.TrimSpace(m[1]), "\n") {
+		kv := strings.SplitN(strings.TrimSpace(l), ":", 2)
+		if len(kv) != 2 {
+			t.Fatalf("unreadable permissions line %q", l)
+		}
+		got[strings.TrimSpace(kv[0])] = strings.TrimSpace(kv[1])
+	}
+	want := map[string]string{"contents": "read", "checks": "read", "actions": "read", "pull-requests": "read"}
+	for k, v := range got {
+		if v != "read" {
+			t.Fatalf("quality-gate permission %s: %s — every scope must be read", k, v)
+		}
+	}
+	for k := range want {
+		if got[k] != "read" {
+			t.Fatalf("quality-gate must grant %s: read (got %q)", k, got[k])
+		}
+	}
+	if len(got) != len(want) {
+		t.Fatalf("quality-gate permissions = %v, want exactly %v", got, want)
+	}
+}
