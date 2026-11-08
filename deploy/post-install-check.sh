@@ -43,7 +43,11 @@
 #     started is a FAIL, and so is no SUCCESSFUL one (every ai_call ok=false,
 #     whatever the class: 401, 429, timeout). While the CME is closed, every
 #     call failing is a WARN and the verdict is TOO EARLY until the reopen plus
-#     the settle time.
+#     the settle time. The ai_call line names no trader and no key, so the same
+#     rule is applied per trader from decision_records: a trader with AI-failed
+#     rows since the process started, none answered, and at least one failure
+#     since the CME opened is a FAIL past the settle time (one trader's key
+#     dead while another's works); closed or before the settle time, TOO EARLY.
 # "Now" is the clock, or POST_INSTALL_NOW (unix seconds) for tests.
 #
 # Output: one line per check, starting PASS / WARN / FAIL (INFO lines are shown
@@ -431,7 +435,12 @@ report_episodes "feed" "🚨 FEED DOWN:" "✅ feed: bars are flowing again" "FEE
 #     whether ANY ai_call since the process started has ok=true.
 #  b) Per trader in the log: the newest "💸 DEEPSEEK PAYMENT FAILURE" with no
 #     later "⏱️ AI call" for that trader means its cycles are dying on 402.
-#  c) Per trader in the database: the newest decision_records row since boot.
+#  c) Per trader in the database: the newest decision_records row since boot,
+#     and whether this trader's AI has answered at all since the process
+#     started. The ai_call line names no trader and no key, and traders can use
+#     different ai_models rows (each with its own key), so one key rejected on
+#     every call is invisible to (a) while another key works: only the
+#     per-trader rows can see it.
 # ---------------------------------------------------------------------------
 last_ai=$(after_boot | grep ' ai_call model=' | tail -n 1)
 if [ -z "$last_ai" ]; then
@@ -509,13 +518,43 @@ elif [ ! -r "$DB" ]; then
 elif [ -z "$boot_utc" ] || [ -z "$end_utc" ]; then
   warn "ai per trader (db): could not convert the log times ($BOOT_TS, $end_ts) to UTC — database leg skipped"
 else
+  # Per trader, since the process started (the newest row, then counts):
+  #   n402      rows on 402;
+  #   fail_n    rows whose AI call failed (error_class ai_call_failed or
+  #             ai_payment_402: trader/auto_trader_ai402.go classifyAIError);
+  #   fail_live the same, at or after live_since (the later of the boot and the
+  #             session open) — the trader tried while it had live bars;
+  #   ans_n     rows where the AI ANSWERED: no AI error class, and an AI
+  #             duration or a raw response (trader/auto_trader_loop.go stamps
+  #             both from the answer). A mentor-mode row ("AI decision
+  #             skipped"), a guardrail skip before the prompt and a context
+  #             failure carry neither, so they are not an answer — and not a
+  #             failure either.
+  # Closed: no row is "since the open". The sentinel must not look like a
+  # number: timestamp has NUMERIC affinity, so '9999' would become 9999, and
+  # every text stamp sorts above any number.
+  if [ "$CME_NOW" = "open" ]; then live_utc=$(utc_of "$live_since"); else live_utc="9999-12-31 23:59:59"; fi
   rows=$(sqlite3 -readonly -separator $'\t' "file:$DB?mode=ro" "
-    SELECT COALESCE(t.name, ''), d.trader_id, substr(d.timestamp, 1, 19), d.success,
-           COALESCE(d.error_class, ''),
+    SELECT COALESCE(NULLIF(t.name, ''), '?'), d.trader_id, substr(d.timestamp, 1, 19), d.success,
+           COALESCE(NULLIF(d.error_class, ''), '-'),
            (SELECT count(*) FROM decision_records x
              WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
                AND substr(x.timestamp, 1, 19) <= '$end_utc'
-               AND x.error_class = 'ai_payment_402')
+               AND x.error_class = 'ai_payment_402'),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND x.error_class IN ('ai_call_failed', 'ai_payment_402')),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$live_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND x.error_class IN ('ai_call_failed', 'ai_payment_402')),
+           (SELECT count(*) FROM decision_records x
+             WHERE x.trader_id = d.trader_id AND x.timestamp >= '$boot_utc'
+               AND substr(x.timestamp, 1, 19) <= '$end_utc'
+               AND COALESCE(x.error_class, '') = ''
+               AND (COALESCE(x.ai_request_duration_ms, 0) > 0
+                    OR length(COALESCE(x.raw_response, '')) > 0))
       FROM decision_records d LEFT JOIN traders t ON t.id = d.trader_id
      WHERE d.id IN (SELECT max(id) FROM decision_records
                      WHERE timestamp >= '$boot_utc'
@@ -528,10 +567,31 @@ else
   elif [ -z "$rows" ]; then
     warn "ai per trader (db): no decision_records between boot and the log's last line ($boot_utc .. $end_utc UTC)"
   else
-    while IFS=$'\t' read -r name id at ok class n402; do
+    # No field may be empty: tab is whitespace to read, so an empty field would
+    # collapse and shift every field after it (a clean row's empty error_class
+    # used to slide the counts one column left). Empty name and class are sent
+    # as "?" and "-".
+    while IFS=$'\t' read -r name id at ok class n402 fail_n fail_live ans_n; do
+      [ "$class" = "-" ] && class=""
       label="$name [..${id: -6}]"
+      never="no successful AI call for this trader since the process started — $fail_n decision(s) failed on the AI call, none answered; latest decision at $at UTC (${class:-no error_class})"
       if [ "$class" = "ai_payment_402" ]; then
         fail "ai per trader (db): $label — AI credit exhausted (402) on the latest decision at $at UTC; $n402 such row(s) since boot"
+      elif [ "${fail_n:-0}" -gt 0 ] && [ "${ans_n:-0}" -eq 0 ]; then
+        # The trader-level twin of the process-wide "no successful AI call":
+        # this trader's key can be dead while another trader's key works.
+        if [ "$CME_NOW" = "closed" ]; then
+          nxt=$(cme_next_open "$NOW")
+          warn "ai per trader (db): $label — $never; the CME is closed"
+          defer_until $((nxt + SETTLE_SEC)) "a trader has no successful AI call yet"
+        elif [ "$NOW" -lt $((live_since + SETTLE_SEC)) ]; then
+          warn "ai per trader (db): $label — $never; too early to judge (the CME opened at $(ct_fmt "$live_since") CT)"
+          defer_until $((live_since + SETTLE_SEC)) "a trader has no successful AI call yet"
+        elif [ "${fail_live:-0}" -gt 0 ]; then
+          fail "ai per trader (db): $label — $never; $fail_live of them since the CME opened ($(ct_fmt "$live_since") CT), open $(((NOW - live_since) / 60)) min — this trader is deciding nothing"
+        else
+          warn "ai per trader (db): $label — $never; no AI call from it since the CME opened ($(ct_fmt "$live_since") CT)"
+        fi
       elif [ "$ok" = "1" ]; then
         pass "ai per trader (db): $label — latest decision at $at UTC succeeded"
       else

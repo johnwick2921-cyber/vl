@@ -374,7 +374,8 @@ func TestPostInstallCheckDatabaseLegIsReadOnly(t *testing.T) {
 	schema := `
 CREATE TABLE traders (id text PRIMARY KEY, name text);
 CREATE TABLE decision_records (id integer PRIMARY KEY AUTOINCREMENT, trader_id text NOT NULL,
-  timestamp datetime NOT NULL, success numeric DEFAULT false, error_class text DEFAULT "");
+  timestamp datetime NOT NULL, success numeric DEFAULT false, error_class text DEFAULT "",
+  ai_request_duration_ms integer DEFAULT 0, raw_response text DEFAULT "");
 INSERT INTO traders VALUES ('` + hoang + `', 'hoang'), ('` + t12345 + `', '12345');
 INSERT INTO decision_records (trader_id, timestamp, success, error_class) VALUES
   ('` + t12345 + `', '2026-11-06 19:42:51.492236357+00:00', 1, ''),
@@ -413,7 +414,8 @@ func TestPostInstallCheckDatabaseLegIgnoresRowsBeforeTheProcess(t *testing.T) {
 	schema := `
 CREATE TABLE traders (id text PRIMARY KEY, name text);
 CREATE TABLE decision_records (id integer PRIMARY KEY AUTOINCREMENT, trader_id text NOT NULL,
-  timestamp datetime NOT NULL, success numeric DEFAULT false, error_class text DEFAULT "");
+  timestamp datetime NOT NULL, success numeric DEFAULT false, error_class text DEFAULT "",
+  ai_request_duration_ms integer DEFAULT 0, raw_response text DEFAULT "");
 INSERT INTO traders VALUES ('` + hoang + `', 'hoang'), ('` + t4567 + `', '4567489 mess.');
 INSERT INTO decision_records (trader_id, timestamp, success, error_class) VALUES
   ('` + hoang + `', '2026-11-06 19:40:00.000000000+00:00', 0, 'ai_payment_402'),
@@ -761,4 +763,148 @@ func TestPostInstallCheckExpectFailsWhenTheMeantReleaseIsNotRunning(t *testing.T
 	out, rc = runPostInstallArgs(t, fixture("healthy"), rel, "", []string{"--expect", "v2026.11.07.1"}, "VL_REPO="+repo)
 	requireVerdict(t, out, rc, "FAIL")
 	requireLine(t, out, "FAIL expect: running 5e50da0cea8a but you expected v2026.11.07.1 ("+sha[:12]+")")
+}
+
+// decisionDB builds a decision_records database with the real trader ids and
+// only the columns the script reads, and the given INSERT values
+// (trader_id, timestamp, success, error_class, ai_request_duration_ms, raw_response).
+func decisionDB(t *testing.T, values string) string {
+	t.Helper()
+	if _, err := exec.LookPath("sqlite3"); err != nil {
+		t.Skip("sqlite3 not installed")
+	}
+	db := filepath.Join(t.TempDir(), "data.db")
+	schema := `
+CREATE TABLE traders (id text PRIMARY KEY, name text);
+CREATE TABLE decision_records (id integer PRIMARY KEY AUTOINCREMENT, trader_id text NOT NULL,
+  timestamp datetime NOT NULL, success numeric DEFAULT false, error_class text DEFAULT "",
+  ai_request_duration_ms integer DEFAULT 0, raw_response text DEFAULT "");
+INSERT INTO traders VALUES ('` + hoangID + `', 'hoang'), ('` + t12345ID + `', '12345');
+INSERT INTO decision_records (trader_id, timestamp, success, error_class, ai_request_duration_ms, raw_response) VALUES
+` + values + `;`
+	if out, err := exec.Command("sqlite3", db, schema).CombinedOutput(); err != nil {
+		t.Fatalf("build fixture db: %v\n%s", err, out)
+	}
+	return db
+}
+
+const (
+	hoangID  = "8d5c8af5_8ef641a7-815c-4bb5-9798-b070b67d7998_deepseek_1781246265"
+	t12345ID = "8d5c8af5_396db319-d3fe-4d63-9b97-516ff0008f53_deepseek_0751c0b6_1791870197"
+)
+
+// keyDeadLog is the closed-boot process after the reopen with hoang's key
+// rejected (401) at 17:15 and 17:21 CT while 12345's key (its own ai_models
+// row) answers at 17:18 and 17:24 CT. ai_call names no trader and no key, so
+// the log alone sees "the latest call succeeded".
+func keyDeadLog(t *testing.T) string {
+	t.Helper()
+	lines := fixtureLines(t, "closed-boot")
+	okLine := lineWith(t, lines, " ai_call model=")
+	failed := failingAICall(t, lines, "401", "auth", "11-01 17:15:00", "11-01 17:21:00")
+	lines = append(without(lines, " ai_call model="), failed...)
+	lines = append(lines, redate(okLine, "11-01 17:18:00"), redate(okLine, "11-01 17:24:00"))
+	lines = append(lines, redate(lineWith(t, lines, "clock step BACKWARD"), "11-01 17:26:50"))
+	return writeLog(t, "vl_2026-11-01.log", lines)
+}
+
+// m471 L4-4 review: traders use different ai_models rows, each with its own key.
+// hoang's key is rejected on every call after the reopen while 12345's works.
+// The process-wide ai_call count sees successes, so only the per-trader rows can
+// tell: hoang has AI-failed rows, none answered, and failures since the CME
+// opened, with the CME open past the settle time — FAIL, not a WARN on the
+// latest row. (11-01 17:15 CT = 23:15 UTC: CST after the DST end.)
+func TestPostInstallCheckOneTradersAIKeyDeadWhileAnotherWorksFails(t *testing.T) {
+	db := decisionDB(t, `
+  ('`+hoangID+`',  '2026-11-01 23:15:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+t12345ID+`', '2026-11-01 23:18:00.000000000+00:00', 1, '', 41000, '{"action":"wait"}'),
+  ('`+hoangID+`',  '2026-11-01 23:21:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+t12345ID+`', '2026-11-01 23:24:00.000000000+00:00', 1, '', 39000, '{"action":"wait"}')`)
+	out, rc := runPostInstall(t, keyDeadLog(t), outageRev, db)
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "PASS ai: latest ai_call (deepseek-v4-pro, 11-01 17:24:00 CT) ok=true") // the log leg cannot see it
+	requireLine(t, out, "FAIL ai per trader (db): hoang [..246265] — no successful AI call for this trader since the process started — 2 decision(s) failed on the AI call, none answered; latest decision at 2026-11-01 23:21:00 UTC (ai_call_failed); 2 of them since the CME opened (11-01 17:00 CT), open 27 min — this trader is deciding nothing")
+	requireLine(t, out, "PASS ai per trader (db): 12345 [..870197] — latest decision at 2026-11-01 23:24:00 UTC succeeded")
+}
+
+// A mentor-mode row ("AI decision skipped", success=1, no AI duration, no raw
+// response) is not an AI answer: a trader whose only AI calls all failed is
+// still FAILed when its newest row is such a success.
+func TestPostInstallCheckMentorSkipRowsAreNotAnAIAnswer(t *testing.T) {
+	db := decisionDB(t, `
+  ('`+hoangID+`', '2026-11-01 23:12:00.000000000+00:00', 1, '', 0, ''),
+  ('`+hoangID+`', '2026-11-01 23:15:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+hoangID+`', '2026-11-01 23:24:00.000000000+00:00', 1, '', 0, '')`)
+	out, rc := runPostInstall(t, keyDeadLog(t), outageRev, db)
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL ai per trader (db): hoang [..246265] — no successful AI call for this trader since the process started — 1 decision(s) failed on the AI call, none answered; latest decision at 2026-11-01 23:24:00 UTC (no error_class)")
+}
+
+// An AI answer earlier in the process (an AI duration, or only a raw response:
+// a schema_parse_failed guardrail skip still proves the key works) keeps a
+// later failure a WARN on the latest row.
+func TestPostInstallCheckTraderAIAnsweredEarlierWarnsNotFails(t *testing.T) {
+	for _, answered := range []string{
+		`'` + hoangID + `', '2026-11-01 23:10:00.000000000+00:00', 1, '', 52000, '{"action":"wait"}'`,
+		`'` + hoangID + `', '2026-11-01 23:10:00.000000000+00:00', 0, '', 0, 'not json'`,
+	} {
+		db := decisionDB(t, `
+  (`+answered+`),
+  ('`+hoangID+`', '2026-11-01 23:15:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+hoangID+`', '2026-11-01 23:21:00.000000000+00:00', 0, 'ai_call_failed', 0, '')`)
+		out, rc := runPostInstall(t, keyDeadLog(t), outageRev, db)
+		requireVerdict(t, out, rc, "PASS")
+		forbidLine(t, out, "FAIL ")
+		requireLine(t, out, "WARN ai per trader (db): hoang [..246265] — latest decision at 2026-11-01 23:21:00 UTC failed (ai_call_failed)")
+	}
+}
+
+// Failures only BEFORE the open (the CME closed, the 16:20 CT row) and no AI
+// call from the trader since: nothing says its key is dead with live bars, so
+// it is a WARN that names that, never a FAIL.
+func TestPostInstallCheckTraderAIFailedOnlyBeforeTheOpenWarns(t *testing.T) {
+	db := decisionDB(t, `
+  ('`+hoangID+`', '2026-11-01 22:20:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+hoangID+`', '2026-11-01 23:24:00.000000000+00:00', 1, '', 0, '')`)
+	out, rc := runPostInstall(t, fixture("closed-boot"), outageRev, db)
+	requireVerdict(t, out, rc, "PASS")
+	forbidLine(t, out, "FAIL ")
+	requireLine(t, out, "WARN ai per trader (db): hoang [..246265] — no successful AI call for this trader since the process started — 1 decision(s) failed on the AI call, none answered; latest decision at 2026-11-01 23:24:00 UTC (no error_class); no AI call from it since the CME opened (11-01 17:00 CT)")
+}
+
+// While the CME is closed a trader's AI failing on every call cannot be judged
+// yet: WARN and TOO EARLY until the reopen plus the settle time — never FAIL,
+// never PASS. The closed-boot fixture cut before the 17:00 reopen, pauses left
+// out, its real 16:31 CT ok=true ai_call kept (another key works).
+func TestPostInstallCheckTraderAIFailingWhileTheCMEIsClosedIsTooEarly(t *testing.T) {
+	var before []string
+	for _, ln := range fixtureLines(t, "closed-boot") {
+		if ln[:5] == "11-01" && ln[6:14] >= "17:00:00" {
+			break
+		}
+		before = append(before, ln)
+	}
+	before = without(before, "⏸ TRADING PAUSED")
+	db := decisionDB(t, `
+  ('`+hoangID+`', '2026-11-01 22:20:00.000000000+00:00', 0, 'ai_call_failed', 0, ''),
+  ('`+hoangID+`', '2026-11-01 22:25:00.000000000+00:00', 0, 'ai_call_failed', 0, '')`)
+	out, rc := runPostInstall(t, writeLog(t, "vl_2026-11-01.log", before), outageRev, db, nowEnv(ct(t, 2026, "11-01 16:32:37")))
+	requireVerdict(t, out, rc, "TOO EARLY")
+	forbidLine(t, out, "FAIL ")
+	requireLine(t, out, "WARN ai per trader (db): hoang [..246265] — no successful AI call for this trader since the process started — 2 decision(s) failed on the AI call, none answered; latest decision at 2026-11-01 22:25:00 UTC (ai_call_failed); the CME is closed")
+	if !strings.Contains(lastLine(out), "a trader has no successful AI call yet") || !strings.Contains(lastLine(out), "re-run after 11-01 17:12 CT") {
+		t.Errorf("the verdict must name the per-trader AI leg and the reopen + settle time, got %q", lastLine(out))
+	}
+}
+
+// A decision row whose trader has no traders row (name NULL) must still be read
+// field by field: tab is whitespace to bash's read, so an empty name used to
+// collapse and slide every field left, and this 402 was never seen.
+func TestPostInstallCheckDatabaseLegReadsARowWithNoTraderName(t *testing.T) {
+	const orphan = "8d5c8af5_00000000-0000-0000-0000-000000000000_deepseek_1799000001"
+	db := decisionDB(t, `
+  ('`+orphan+`', '2026-11-01 23:24:00.000000000+00:00', 0, 'ai_payment_402', 0, '')`)
+	out, rc := runPostInstall(t, keyDeadLog(t), outageRev, db)
+	requireVerdict(t, out, rc, "FAIL")
+	requireLine(t, out, "FAIL ai per trader (db): ? [..000001] — AI credit exhausted (402) on the latest decision at 2026-11-01 23:24:00 UTC; 1 such row(s) since boot")
 }
