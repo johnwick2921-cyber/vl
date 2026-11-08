@@ -33,6 +33,7 @@ func r22Cfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
+	cfg.TrendlineEntryTouch = TrendlineEntryFourth // m472 A2: these recorded-day pins predate the October "third" default [Oct D3.2 @ 31:17]
 	// B52 (release #29) ships ON in production and changes the box set on the
 	// recorded days (post-escape boxes cascade). These r22 tests pin the
 	// LEVEL fix against the pre-B52 box world — the knob OFF reproduces

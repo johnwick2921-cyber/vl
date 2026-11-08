@@ -639,7 +639,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   isb_old_extreme_pts: 2, // B27
   isb_in_range_gap_pts: 0, // B27: 0 = inherit ping_pong_min_gap_pts
   // m465 P3 (release #60) — structure fidelity, the course from the full video read.
-  trendline_entry_touch: 'fourth', // D2.3-R7 [D2.3 p1 @02:34–03:16]
+  trendline_entry_touch: 'third', // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch" (supersedes Sept D2.3-R7 'fourth')
   near_box_between_exempt: false, // D3.2-R29/R30 [D3.2 p1 @22:12–24:41]
   phl_flat_low: 'flat_near', // D2.2-R64 [D2.2 p3 @07:44–10:15]
   isb_reverse_touch: 'pair', // D5.4-R7 [D5.4 p1 @03:35–03:46]

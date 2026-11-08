@@ -433,10 +433,13 @@ type Config struct {
 	// TrendlineEntryTouch — D2.3-R7: "thà nó về một lần, rồi nó test, rồi nó
 	// hold rồi, là lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô" [D2.3
 	// p1 @02:34–02:47, 03:03–03:16]; D3.2-R34 "test lần thứ 3 thì mới valid".
-	// "fourth" (default): an intraday line is NOT a location on the candle of
+	// m472 A2: the DEFAULT is now "third" — October D3.2 [Oct D3.2 @ 31:00-31:17]
+	// "Em chỉ cần 2 touch là được mà" and [@ 41:20-41:27] (two bottoms, price
+	// returns to the line, you trade it) supersede the September 4th-touch read.
+	// "fourth" (opt-in, the Sept D2.3-R7 behaviour): an intraday line is NOT a location on the candle of
 	// its 3rd touch (the test) — refused trendline_third_touch_is_test — and
 	// becomes one from the next candle, so the entry comes on a later touch.
-	// "third": the pre-#60 behaviour (the line arms on its 3rd-touch candle).
+	// "third" (default since m472): the line arms on its 3rd-touch candle.
 	TrendlineEntryTouch string
 	// NearBoxBetweenExempt — D3.2-R29/R30: the mentor refused the short ISB
 	// sitting on the FTGL box (E6) although an FTGH box stood above it, and
@@ -843,7 +846,7 @@ func DefaultConfig() Config {
 		NearBoxRoomMultiple:    2,                    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
 		NearBoxRoomPHL:         true,                 // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
 		NearBoxBetweenExempt:   false,                // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
-		TrendlineEntryTouch:    TrendlineEntryFourth, // m465 D2.3-R7: 3rd touch = the test, enter on a later touch
+		TrendlineEntryTouch:    TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
 		PHLFlatLow:             PHLFlatLowNear,       // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
 		ISBReverseTouch:        ISBReverseTouchPair,  // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
 		ISBOldExtremePts:       2,                    // B27 [ours]: "at the old extreme" = ± 2 pts

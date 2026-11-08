@@ -139,7 +139,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
 			// m465 P3 (release #60): the course defaults from the full video read.
 			ISBStackTinyStopPts:  12.5,                        // D5.1-R26 [D5.1 p2 @02:24–04:41]
-			TrendlineEntryTouch:  mentor.TrendlineEntryFourth, // D2.3-R7
+			TrendlineEntryTouch:  mentor.TrendlineEntryThird,  // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
 			NearBoxBetweenExempt: false,                       // D3.2-R29/R30
 			PHLFlatLow:           mentor.PHLFlatLowNear,       // D2.2-R64
 			ISBReverseTouch:      mentor.ISBReverseTouchPair,  // D5.4-R7

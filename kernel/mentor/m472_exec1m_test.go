@@ -46,5 +46,8 @@ func TestM472Exec1mAllDayDefault(t *testing.T) {
 func legacy2mCfg() Config {
 	c := DefaultConfig()
 	c.Exec2mAfter30m = true
+	// m472 A2: these goldens were recorded on the pre-October build, whose
+	// trendline default was "fourth" (Sept D2.3-R7); October is "third" [Oct D3.2 @ 31:17].
+	c.TrendlineEntryTouch = TrendlineEntryFourth
 	return c
 }
