@@ -560,7 +560,9 @@ func TestSeedDropsScheduledFormingCandleWithClosedStoredBars(t *testing.T) {
 func TestSeed14h30CandleClosesAt1500(t *testing.T) {
 	bars := formingSeedTape(t, 14*60+59, 101, 101, 101)
 	e := New(DefaultConfig())
-	Seed(e, bars, ctMs(t, 0, 15, 0))
+	// the 14:30 candle's scheduled close is 15:15 [Oct D5.2 @ 02:14-02:40]
+	// (September: 15:00), so it is a closed candle only from 15:15 on.
+	Seed(e, bars, ctMs(t, 0, 15, 15))
 
 	var found int
 	for _, c := range e.State.Seed1HBars {

@@ -128,11 +128,20 @@ func isPreBucketed1H(bars []market.Kline) bool {
 // isPreBucketed1H) cannot reconstruct the 08:30 anchor: each bar is a
 // candle and the RTH filter keeps candles opening in [08:00, 15:00) — the
 // hour that contains the market open. The evaluator always feeds 1m bars.
+// keyLevelLastCandleEndMin is the minute-of-day (CT) the last RTH 1h key-level
+// candle ends: 15:15 [Oct D5.2 @ 02:14-02:40]. A var only so the frozen
+// pre-October identity goldens can pin the September 15:00 end (tests only).
+var keyLevelLastCandleEndMin = 15*60 + 15
+
 func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	const (
 		anchorMin = 8*60 + 30 // 08:30 CT
-		rthEnd    = 15 * 60   // 15:00 CT
+		rthEnd    = 15 * 60   // 15:00 CT — last candle may not OPEN at/after this
+		// The last RTH 1h candle ends 15:15 CT, not 15:00: 1m bars opening
+		// before 15:15 belong to the 14:30 candle.
+		// [Oct D5.2 @ 02:14-02:40] (supersedes the Sep 15:00 end; D1.2 s_00665.jpg)
 	)
+	barEnd := keyLevelLastCandleEndMin // 15:15 CT
 	// pre-bucketed 1H input: every bar is already a candle
 	if isPreBucketed1H(bars) {
 		// Fresh slice: filtering into bars[:0] MUTATES the caller's backing
@@ -157,7 +166,7 @@ func keyLevel1HBars(bars []market.Kline) []market.Kline {
 	}
 	key := int64(-1)
 	for _, b := range bars {
-		if rthMinuteOf(b.OpenTime) >= rthEnd {
+		if rthMinuteOf(b.OpenTime) >= barEnd {
 			continue // post-close external minutes never enter the last candle
 		}
 		k := openMin(b.OpenTime)
@@ -257,11 +266,12 @@ func rthHourAnchor(ms int64) int64 {
 }
 
 // keyLevel1HCandleCloseTime returns the scheduled close of an RTH hour candle.
-// The final 14:30 candle closes at the 15:00 RTH boundary.
+// The final 14:30 candle closes at 15:15 CT [Oct D5.2 @ 02:14-02:40]
+// (was the 15:00 boundary in September).
 func keyLevel1HCandleCloseTime(openMs int64) int64 {
 	t := time.UnixMilli(openMs).In(ctime())
 	closeMs := t.Add(time.Hour).UnixMilli()
-	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 15, 0, 0, 0, ctime()).UnixMilli()
+	rthEnd := time.Date(t.Year(), t.Month(), t.Day(), 0, keyLevelLastCandleEndMin, 0, 0, ctime()).UnixMilli()
 	if closeMs > rthEnd {
 		return rthEnd
 	}
