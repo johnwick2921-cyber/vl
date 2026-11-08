@@ -110,9 +110,19 @@ it('a read-only (default) strategy cannot be toggled', () => {
 
 // ── trading window controls (mentor_window_start / mentor_window_minutes) ──
 
-it('shows the default window (08:30, 60 min) when nothing is stored', () => {
+// m472 A6: unset = window off (whole RTH band) [Oct D5.2 @ 01:00-01:20];
+// supersedes 08:30 + 60 [D1.2 p1 @23:49-24:21].
+it('shows no window (whole RTH band) when nothing is stored', () => {
   renderEditor({})
   expect(screen.getByTestId('mentor-window-start')).toHaveValue('08:30')
+  expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('-1')
+  expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
+    'No time window'
+  )
+})
+
+it('a stored 60 still shows 60 min and the 08:30–09:30 preview', () => {
+  renderEditor({ mentor_window_minutes: 60 })
   expect(screen.getByTestId('mentor-window-minutes')).toHaveValue('60')
   expect(screen.getByTestId('mentor-window-preview')).toHaveTextContent(
     'Mentor trades 08:30–09:30 CT'

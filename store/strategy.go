@@ -2308,7 +2308,7 @@ type RiskControlConfig struct {
 	// (a) done for the day after a winning close with the day net positive
 	//     (nil → ON; an explicit false disables);
 	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
-	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
+	//     (30/60/90/120; -1 = off; unset → -1 = off, the whole RTH band [Oct D5.2 @ 01:00-01:20]). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
 	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
 	// MentorDoneAfterWinDayStart — the done-after-win "day" boundary, "HH:MM"
