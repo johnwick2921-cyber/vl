@@ -1522,7 +1522,7 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 	}
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
-	be := mentorBEStopPrice(side, pos.Entry, tick)
+	be := at.mentorBEStop(side, pos.Entry, tick)
 	// One bracket, no partial: BE needs the close at least 0.25R beyond entry
 	// (long; mirrored for short). A split position past its confirmed partial
 	// moves on the next closed candle — the wrong-side guard in

@@ -2006,6 +2006,13 @@ type MentorTuning struct {
 	// and the X8 exit (nil → OFF since m472 A1: the 1m all day [Oct D4.2 @ 22:56-23:46];
 	// ON = the September schedule, 1m for the first 30 min then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
+	// BEOffsetTicks (m472 A5): the break-even stop sits this many ticks PAST
+	// the entry on the profit side (long entry+N*tick, short entry-N*tick)
+	// instead of exactly at it. The course moves the stop "a little past" the
+	// entry — "gia 10 do ... de o gia 11 do" [Oct D4.2 @ 13:00-13:25] — but
+	// never says how many ticks, so nil / 0 = OFF = the entry exactly (today).
+	// Valid 0..20; out of range fails closed to 0 and is counted.
+	BEOffsetTicks *int `json:"be_offset_ticks,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).

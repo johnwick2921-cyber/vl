@@ -649,7 +649,7 @@ func (at *AutoTrader) mentorBEBeforePartialStep(nt *ntTrader.TCPTrader, p *mento
 		half = pos.Entry - pos.R/2
 	}
 	tick := at.mentorInstrumentTick()
-	be := mentorBEStopPrice(side, pos.Entry, tick)
+	be := at.mentorBEStop(side, pos.Entry, tick)
 	if (long && (c < half || c < be+tick)) || (!long && (c > half || c > be-tick)) {
 		return false
 	}
