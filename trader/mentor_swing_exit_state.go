@@ -217,8 +217,9 @@ func (at *AutoTrader) mentorSwingApplyBE(nt *ntTrader.TCPTrader, r store.ArmedOr
 		legs = []*mentorLeg{{SignalID: r.SignalID, Qty: int(qty), Stop: r.StopPx, Final: true}}
 	}
 	side := arm.Side
+	beStop := at.mentorSwingBEStop(arm) // m472 A5: arm.Entry + the be_offset_ticks knob (0 = arm.Entry)
 	for _, leg := range legs {
-		err := at.mentorMoveLegStop(nt, side, leg, arm.Entry)
+		err := at.mentorMoveLegStop(nt, side, leg, beStop)
 		switch {
 		case errors.Is(err, errMentorStopThroughMarket):
 			return false, true
@@ -231,13 +232,13 @@ func (at *AutoTrader) mentorSwingApplyBE(nt *ntTrader.TCPTrader, r store.ArmedOr
 			}
 			continue
 		}
-		leg.Stop = arm.Entry
+		leg.Stop = beStop
 		applied = true
 	}
 	if applied && lp != nil {
 		at.mentorExitMu.Lock()
 		lp.Pos.ArmedBE = true
-		lp.Pos.Stop = arm.Entry
+		lp.Pos.Stop = beStop
 		at.mentorExitMu.Unlock()
 	}
 	return applied, false
