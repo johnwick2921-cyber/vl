@@ -8,6 +8,7 @@ import (
 
 	"vl/kernel"
 	"vl/market"
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/telemetry"
 )
@@ -665,6 +666,17 @@ func (at *AutoTrader) flattenPositionAt(p *store.TraderPosition, tag string, now
 		}
 		return
 	}
+	// m471 L2 review-1: the in-memory record does not survive a process restart
+	// or a new trader instance, and the AddOn ignores cancel_order for a -lx.
+	// The fresh book is the record that survives: a -lx already working there
+	// (or a book we cannot read) means a second limit exit could reverse the
+	// position, so this flatten closes at MARKET (NT8's Flatten also cancels
+	// the resting -lx).
+	if why := at.limitExitBlockedByBook(p.Symbol, now); why != "" {
+		at.logWarnf("%s: %s — closing %s %s at MARKET, NOT a second whole-position limit exit", tag, why, p.Symbol, side)
+		at.marketExitLocked(p, tag, now)
+		return
+	}
 	res, err := lc.CloseWithLimit(p.Symbol, side, 0, limit)
 	if err != nil {
 		at.logWarnf("%s: limit close %s %s failed (%v) — market fallback now", tag, p.Symbol, p.Side, err)
@@ -713,6 +725,14 @@ type pendingLimitFlatten struct {
 	sentAt        time.Time
 	deadline      time.Time // sentAt+after: a repeat past it escalates to market
 	marketSentAt  time.Time // non-zero: the market close for THIS exit was sent
+	// escalateNow (m471 L2 review): the next repeat flatten escalates THIS exit
+	// to market at once, deadline or not — set when Stop killed the fallback
+	// timer (the -lx may still rest: the AddOn ignores cancel_order for it) and
+	// when NT8 rejected the market close (reopenRejectedExit).
+	escalateNow bool
+	// fallbackRetired: Stop killed this exit's timer. A callback already queued
+	// behind the lock must not dispatch, even after a later Start.
+	fallbackRetired bool
 }
 
 func flattenSide(p *store.TraderPosition) string {
@@ -816,7 +836,7 @@ func (at *AutoTrader) repeatFlattenLocked(pending *pendingLimitFlatten, tag stri
 			tag, p.Symbol, flattenSide(&p), now.Sub(pending.marketSentAt).Round(time.Second), pending.tag)
 		return
 	}
-	if now.Before(pending.deadline) {
+	if !pending.escalateNow && now.Before(pending.deadline) {
 		at.logInfof("%s: limit exit %s for %s %s already resting (sent %s ago by %s) — not sending a second whole-position exit; its market fallback follows",
 			tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(&p), now.Sub(pending.sentAt).Round(time.Second), pending.tag)
 		return
@@ -836,6 +856,7 @@ func (at *AutoTrader) escalateLimitFlattenLocked(pending *pendingLimitFlatten, t
 	}
 	_ = at.trader.CancelStopOrders(p.Symbol)
 	pending.marketSentAt = now
+	pending.escalateNow = false
 	if pending.timer != nil {
 		pending.timer.Stop()
 	}
@@ -878,6 +899,12 @@ func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag strin
 		at.escalateLimitFlattenLocked(pending, tag, now)
 		return
 	}
+	at.marketExitLocked(p, tag, now)
+}
+
+// marketExitLocked sends a fresh market close plus bracket cancel and records it
+// in flight (held for exitInFlightHold). Caller holds limitFlattenMu.
+func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now time.Time) {
 	if !at.sendMarketClose(p.Symbol, flattenSide(p), tag) {
 		return
 	}
@@ -887,6 +914,66 @@ func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag strin
 	durable := p.ID > 0 && p.TraderID == at.id
 	at.registerLimitFlattenLocked(&pendingLimitFlatten{position: *p, key: flattenKeyOf(p), tag: tag,
 		after: exitInFlightHold, sentAt: now, deadline: now, marketSentAt: now}, durable)
+}
+
+// limitExitBlockedByBook (m471 L2 review-1) reads this trader's FRESH broker
+// book before a limit exit is placed. It returns why a limit must NOT be sent:
+// a "-lx" already working on this instrument (left by a previous process, a
+// previous trader instance, or a Stop whose cancel_order the AddOn ignored), or
+// a book that cannot rule one out (none received, or older than
+// snapshotMaxAge — A24: an unverifiable book is not an empty book). "" = clear.
+// A trader with no broker book (not NT8) has only the in-memory record.
+func (at *AutoTrader) limitExitBlockedByBook(symbol string, now time.Time) string {
+	if at.armedTrader() == nil {
+		return ""
+	}
+	book, have, age := at.liveBook(now)
+	if !have {
+		return "no order snapshot has been received on this link, so a limit exit already working cannot be ruled out"
+	}
+	if maxAge := snapshotMaxAge(); maxAge > 0 && age > maxAge {
+		return fmt.Sprintf("the order book is %s old (bound %s), so a limit exit already working cannot be ruled out",
+			age.Round(time.Second), maxAge.Round(time.Second))
+	}
+	root := instrumentRoot(symbol)
+	for _, o := range book {
+		if !o.IsWorking() || !isLimitExit(o.Name) {
+			continue
+		}
+		// An order with no symbol (an older AddOn) cannot be proven to be on
+		// another instrument — it counts.
+		if s := strings.TrimSpace(o.Symbol); s != "" && instrumentRoot(s) != root {
+			continue
+		}
+		return fmt.Sprintf("limit exit %s (order %s) is already WORKING at the broker (book age %s)",
+			shortID(o.Name), shortID(o.OrderID), age.Round(time.Second))
+	}
+	return ""
+}
+
+// reopenRejectedExit (m471 L2 review-2) is called for every
+// position_close_rejected frame: NT8 refused the close, so the position is STILL
+// OPEN and the exit is NOT in flight. A market close recorded for that (account,
+// symbol, side) loses its exitInFlightHold, and a resting limit record is
+// marked for immediate escalation, so the very next pass re-sends at MARKET —
+// never a second limit. It returns how many records it reopened.
+func (at *AutoTrader) reopenRejectedExit(r ntwire.PositionCloseRejectedPayload) int {
+	probe := store.TraderPosition{Account: r.Account, Symbol: r.Symbol, Side: r.PositionSide}
+	key := flattenKeyOf(&probe)
+	at.limitFlattenMu.Lock()
+	defer at.limitFlattenMu.Unlock()
+	n := 0
+	for k, pending := range at.limitFlattensByKey {
+		if !flattenKeysMatch(k, key) {
+			continue
+		}
+		at.logWarnf("%s: NT8 REJECTED the close of %s %s (%s) — the exit is no longer in flight; the next pass re-sends it at MARKET",
+			pending.tag, pending.position.Symbol, flattenSide(&pending.position), strings.TrimSpace(r.Reason))
+		pending.marketSentAt = time.Time{}
+		pending.escalateNow = true
+		n++
+	}
+	return n
 }
 
 // cancelLimitExitLocked sends cancel_order for the exit's resting -lx (m471
@@ -919,21 +1006,29 @@ func (at *AutoTrader) stopLimitFlattens() {
 	at.limitFlattenMu.Lock()
 	defer at.limitFlattenMu.Unlock()
 	at.limitFlattenStopped = true
+	// m471 L2 review-1: the records are KEPT across Stop/Start. The AddOn ignores
+	// the cancel_order below for a -lx, so the exit may still rest after Start;
+	// dropping its record let the next flatten place a SECOND whole-position
+	// limit beside it (the 2026-10-30 reversal). Each kept exit loses its timer
+	// and escalates to market on the next flatten after Start; a sent market
+	// close keeps its hold. A new process or instance has no records — the
+	// fresh-book check in flattenPositionAt covers that path.
+	retire := func(pending *pendingLimitFlatten) {
+		if pending.timer != nil {
+			pending.timer.Stop()
+		}
+		pending.fallbackRetired = true
+		pending.escalateNow = true
+	}
 	for _, pending := range at.limitFlattensByKey {
-		if pending.marketSentAt.IsZero() {
+		if pending.marketSentAt.IsZero() && !pending.fallbackRetired {
 			at.cancelLimitExitLocked(pending, "trader stopping")
 		}
-		if pending.timer != nil {
-			pending.timer.Stop()
-		}
+		retire(pending)
 	}
 	for _, pending := range at.limitFlattens {
-		if pending.timer != nil {
-			pending.timer.Stop()
-		}
+		retire(pending)
 	}
-	at.limitFlattens = nil
-	at.limitFlattensByKey = nil
 }
 
 func (at *AutoTrader) finishLimitFlatten(pending *pendingLimitFlatten) {
@@ -942,7 +1037,7 @@ func (at *AutoTrader) finishLimitFlatten(pending *pendingLimitFlatten) {
 	at.limitFlattenMu.Lock()
 	defer at.limitFlattenMu.Unlock()
 	p := pending.position
-	if at.limitFlattenStopped || at.limitFlattens[p.ID] != pending {
+	if at.limitFlattenStopped || pending.fallbackRetired || at.limitFlattens[p.ID] != pending {
 		return
 	}
 	if !pending.marketSentAt.IsZero() {

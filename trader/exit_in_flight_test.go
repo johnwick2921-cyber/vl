@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"fmt"
 	"testing"
 	"time"
 
@@ -258,5 +259,119 @@ func TestOrphanLimitExitCommitsTheAccount(t *testing.T) {
 	withPos := adjudicateAccountContract([]nt.NT8Order{lx}, true, time.Second, time.Minute, 1, 1)
 	if withPos.Action != contractLive || withPos.OrphanExits != 0 || withPos.WorkingEntries != 0 {
 		t.Fatalf("-lx beside its position is protective, not an entry: %+v", withPos)
+	}
+}
+
+// ── m471 L2 review ──────────────────────────────────────────────────────────
+
+// Review-1: a trader Stop/Start while a -lx rests. Stop's cancel_order is a
+// no-op at the AddOn for a -lx (HandleCancelOrder only looks in
+// workingEntries), so the exit may still rest after Start. The next flatten of
+// the still-OPEN row must NOT put a second whole-position -lx beside it: it
+// escalates THAT exit to market, and a callback queued before Stop stays dead.
+func TestStopStartWhileLimitExitRestsNeverSendsASecondLimit(t *testing.T) {
+	at, r, p := limitFlattenFixture(t, "SHORT")
+	at.flattenPosition(p, "🕒 EOD-FLAT")
+	pending := at.limitFlattens[p.ID]
+	at.stopLimitFlattens() // Stop (trader reload / restart)
+	at.limitFlattenMu.Lock()
+	at.limitFlattenStopped = false // Start (auto_trader.go Run)
+	at.limitFlattenMu.Unlock()
+	at.flattenPosition(p, "🕒 EOD-FLAT") // next beat, row still OPEN
+	if r.limits != 1 {
+		t.Fatalf("after Stop/Start with the first -lx still resting, a repeat flatten sent %d whole-position limit exits (cancel_order=%v) — the second fill reverses the position", r.limits, r.cancelOrders)
+	}
+	if r.closes != 1 || r.cancels != 1 {
+		t.Fatalf("after Stop/Start the repeat flatten must escalate the resting exit to ONE market close: closes=%d bracket-cancels=%d", r.closes, r.cancels)
+	}
+	at.finishLimitFlatten(pending) // the pre-Stop timer callback, queued behind the lock
+	at.flattenPosition(p, "🕒 EOD-FLAT")
+	if r.limits != 1 || r.closes != 1 {
+		t.Fatalf("after escalation: limits=%d closes=%d — want nothing more", r.limits, r.closes)
+	}
+}
+
+// Review-1 over the REAL wire: a NEW process (no in-memory record) whose fresh
+// book still lists the previous process's working -lx closes at MARKET, never a
+// second limit; a book it cannot read does the same.
+func TestLimitFlattenWithAWorkingLimitExitOnTheBookGoesToMarket(t *testing.T) {
+	for _, mode := range []string{"working -lx on the book", "stale book"} {
+		t.Run(mode, func(t *testing.T) {
+			r := crRigFor(t, crEODNow(t), nil)
+			r.a.config.LimitCloseTicks = 2
+			r.a.config.LimitCloseMarketAfterS = 3600
+			t.Cleanup(r.a.stopLimitFlattens)
+			r.open(t, r.a, crAcctA, 1)
+			srv := r.a.armedTrader().GetServer()
+			if mode == "working -lx on the book" {
+				lx := nt.NT8Order{OrderID: "o-lx", Symbol: "MNQ 12-26", Name: "3a019958-3d45-4a23-a2c1-41211fd7f838-lx",
+					Action: "sell", Type: "limit", LimitPrice: 30001, Quantity: 1, State: "Working"}
+				srv.OrderSnapshots().PutAt(nt.OrderSnapshotPayload{Account: crAcctA, Orders: []nt.NT8Order{lx}}, r.now)
+			} else {
+				srv.OrderSnapshots().PutAt(nt.OrderSnapshotPayload{Account: crAcctA, Orders: []nt.NT8Order{}},
+					r.now.Add(-snapshotMaxAge()-time.Minute))
+			}
+			if !r.a.enforceEODFlatAt(r.now) {
+				t.Fatal("fixture: EOD flat did not act")
+			}
+			got := r.w.settle(t)
+			if len(got) != 1 || got[0].LimitPrice != 0 {
+				t.Fatalf("%s: the EOD flat put %+v on the wire — want ONE market close_position (LimitPrice 0), never a second whole-position limit exit", mode, got)
+			}
+		})
+	}
+}
+
+// Review-2: NT8 REJECTS the emergency market close (feed down,
+// position_close_rejected). The P0 says the bot retries on its next cycle, so
+// the next pass MUST re-send it — the in-flight hold covers a close in flight,
+// not one NT8 refused. A pass inside the hold of an un-rejected close still
+// sends nothing.
+func TestRejectedProtectionCloseIsRetriedOnTheNextPass(t *testing.T) {
+	m442InstallPush(t)
+	for _, ticks := range []int{0, 2} {
+		t.Run(fmt.Sprintf("ticks=%d", ticks), func(t *testing.T) {
+			at, r, _ := limitFlattenFixture(t, "LONG")
+			at.config.LimitCloseTicks = ticks
+			registerPostExitDispatch(at)
+			t.Cleanup(func() { unregisterPostExitDispatch(at) })
+			v := protectionVerdict{Action: protectionFlatten, StopPx: 29995, NeedQty: 1, Why: "test"}
+			now := time.Now()
+			at.actOnProtection(v, "MNQ", "LONG", 1, "sig-p", "monitor", 0, now)
+			dispatchCloseRejected(at.id, nt.PositionCloseRejectedPayload{SignalID: "Close", Symbol: "MNQ",
+				PositionSide: "long", Account: "Sim101", Reason: "There is no market data available to drive the simulation engine."})
+			at.actOnProtection(v, "MNQ", "LONG", 1, "sig-p", "monitor", 0, now.Add(60*time.Second))
+			if r.closes != 2 || r.limits != 0 {
+				t.Fatalf("naked through-stop LONG, first market close REJECTED — the next 60 s pass left closes=%d limits=%d (want a market retry: 2, 0)", r.closes, r.limits)
+			}
+			at.actOnProtection(v, "MNQ", "LONG", 1, "sig-p", "monitor", 0, now.Add(90*time.Second))
+			if r.closes != 2 {
+				t.Fatalf("a pass inside the hold of the un-rejected retry re-sent: closes=%d", r.closes)
+			}
+		})
+	}
+}
+
+// Review-2 in limit mode: the EOD -lx was escalated to market and NT8 rejected
+// that close. The next EOD flat re-sends at MARKET — never a second limit.
+func TestRejectedEscalatedCloseRetriesAtMarketNotLimit(t *testing.T) {
+	m442InstallPush(t)
+	at, r, p := limitFlattenFixture(t, "LONG")
+	registerPostExitDispatch(at)
+	t.Cleanup(func() { unregisterPostExitDispatch(at) })
+	now := time.Now()
+	at.flattenPositionAt(p, "🕒 EOD-FLAT", now)
+	at.limitFlattenMu.Lock()
+	at.limitFlattens[p.ID].deadline = now // the fallback window has elapsed
+	at.limitFlattenMu.Unlock()
+	at.flattenPositionAt(p, "🕒 EOD-FLAT", now.Add(time.Second)) // escalates to market
+	if r.limits != 1 || r.closes != 1 {
+		t.Fatalf("fixture: limits=%d closes=%d", r.limits, r.closes)
+	}
+	dispatchCloseRejected(at.id, nt.PositionCloseRejectedPayload{SignalID: "Close", Symbol: "MNQ",
+		PositionSide: "long", Account: "Sim101", Reason: "no market data"})
+	at.flattenPositionAt(p, "🕒 EOD-FLAT", now.Add(61*time.Second))
+	if r.limits != 1 || r.closes != 2 {
+		t.Fatalf("after the market close was REJECTED the next EOD flat sent limits=%d closes=%d — want one market retry, no second limit (1, 2)", r.limits, r.closes)
 	}
 }

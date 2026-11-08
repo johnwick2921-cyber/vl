@@ -41,6 +41,10 @@ func closeRejectEpisodeStart(traderID, symbol, side string, now time.Time) int64
 // owning running trader. A trader that is not running has no alert surface.
 func dispatchCloseRejected(traderID string, r ntwire.PositionCloseRejectedPayload) {
 	if at, ok := runningTrader(traderID); ok {
+		// m471 L2 review-2: a rejected close is NOT in flight. Without this the
+		// in-flight hold kept the next passes from re-sending it for 90 s while
+		// the P0 below tells the owner the bot retries on its next cycle.
+		at.reopenRejectedExit(r)
 		at.alertCloseRejected(r, time.Now())
 	}
 }
