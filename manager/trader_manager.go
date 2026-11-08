@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 	"vl/config"
+	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/logger"
 	"vl/safe"
@@ -71,22 +72,55 @@ func (tm *TraderManager) refuseBootDuplicate(traderCfg *store.Trader, exchangeCf
 	telemetry.IncGateBlock(traderCfg.ID, "boot_duplicate_symbol_account")
 	logger.Warnf("⛔ boot: trader %q (%s) NOT auto-started — %s / %s already claimed by trader %q at boot (one trader per symbol,account); marked not-running",
 		traderCfg.Name, traderCfg.ID, symbol, account, holderID)
+	eventID := "boot-dup:" + bootSymbolAccountKey(symbol, account)
+	const title = "Two traders bound to one account — the second was not started"
 	if st != nil {
-		if _, err := st.Alert().Emit(&store.AlertDB{
+		created, err := st.Alert().Emit(&store.AlertDB{
 			TraderID:  traderCfg.ID,
 			Level:     "P0",
 			Kind:      "boot_duplicate_symbol_account",
-			EventID:   "boot-dup:" + bootSymbolAccountKey(symbol, account),
-			Title:     "Two traders bound to one account — the second was not started",
+			EventID:   eventID,
+			Title:     title,
 			Body:      fmt.Sprintf("At boot, trader %q (%s) was not started because %s / %s is already owned by trader %q (one trader per symbol, account). It was marked not-running.", traderCfg.Name, traderCfg.ID, symbol, account, holderID),
 			CreatedAt: time.Now().Unix(),
-		}); err != nil {
+		})
+		if err != nil {
 			logger.Warnf("⛔ boot: P0 alert EMIT failed for refused duplicate %q (%s): %v", traderCfg.Name, traderCfg.ID, err)
+		}
+		// m471 L3-4: a trader that was running is now NOT trading after the
+		// restart, and nothing told the owner - the row bypassed emitAlert, so it
+		// was never pushed (and the P0 census never saw it). It is pushed here,
+		// also when the row write failed (the push key dedupes a repeat). The text
+		// names traders by display name: the raw ids are token-shaped and Scrub
+		// would print them as "[redacted]".
+		if created || err != nil {
+			ownerpush.Push("boot_duplicate_symbol_account|"+traderCfg.ID+"|"+strings.ReplaceAll(eventID, "\x00", "/"),
+				fmt.Sprintf("🚨 vl P0 — %s\nAt boot, trader %q was not started because %s / %s is already owned by trader %s (one trader per symbol, account). It was marked not-running: it does not trade until you give it its own account and start it in the app.",
+					title, traderCfg.Name, symbol, account, tm.bootHolderLabel(holderID, st)))
 		}
 		if err := st.Trader().UpdateStatus(traderCfg.UserID, traderCfg.ID, false); err != nil {
 			logger.Warnf("⛔ boot: failed to mark refused duplicate %q (%s) not-running: %v", traderCfg.Name, traderCfg.ID, err)
 		}
 	}
+}
+
+// bootHolderLabel names the trader that kept the account, for the owner's
+// phone: its display name, else the id's first 8 characters.
+func (tm *TraderManager) bootHolderLabel(holderID string, st *store.Store) string {
+	if at, ok := tm.traders[holderID]; ok && at != nil {
+		if n := strings.TrimSpace(at.GetName()); n != "" {
+			return fmt.Sprintf("%q", n)
+		}
+	}
+	if st != nil {
+		if row, err := st.Trader().GetByID(holderID); err == nil && row != nil && strings.TrimSpace(row.Name) != "" {
+			return fmt.Sprintf("%q", strings.TrimSpace(row.Name))
+		}
+	}
+	if len(holderID) > 8 {
+		return holderID[:8]
+	}
+	return holderID
 }
 
 // CompetitionCache competition data cache

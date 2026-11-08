@@ -19,7 +19,9 @@
 //     maxPerKindPerHour per kind per hour, so one flooding kind can never use
 //     up the budget feed-down / trader-down / protection pushes need (#53 m438;
 //     the shared 8/hour budget let a naked-position retry loop silence FEED
-//     DOWN). maxPerHour is only a backstop across all kinds.
+//     DOWN). maxPerHour is only a backstop across all kinds. A P0 kind is
+//     exempt from both (m469 total, m471 per-kind) and capped only by the
+//     runaway backstop maxP0PerKindPerHour.
 //   - a FAILED send is not a delivered send (m442 N4): the sender returns an
 //     error, the key is un-seen, the budget slot refunded, and the message is
 //     HELD with exponential backoff until it goes out or goes stale. Success
@@ -64,11 +66,22 @@ const (
 	// backstop. m469: a P0 key (IsP0Key) is neither refused by nor counted in the
 	// backstop - with 20+ pushed kinds, (kinds) x (per-kind budget) is far above
 	// 30, so a burst of new P0 kinds could otherwise use up the shared 30 and
-	// hold FEED DOWN back. Every kind, P0 included, keeps its own per-kind budget.
-	maxPerKindPerHour = 3
-	maxPerHour        = 30
-	dedupeTTL         = 24 * time.Hour
-	maxTextRunes      = 600
+	// hold FEED DOWN back.
+	//
+	// m471 L3-5: a P0 key is not held back by the 3/hour per-kind budget either.
+	// Most P0 kinds are per-trader facts whose trader id sits AFTER the first "|"
+	// ("unprotected_position|<trader>|<event>"), so every trader on the box
+	// shared one 3/hour bucket: three traders' "no stop - one is being placed"
+	// used the hour and the 4th - "naked, stop behind the market, FLATTENING" -
+	// waited up to 60 minutes. A P0 kind is bounded instead by
+	// maxP0PerKindPerHour, a runaway backstop (a loop minting a new episode id
+	// per pass) far above any real burst: the dedupe key is one per episode, and
+	// 9 stop-move misses in one candle (3 legs x 3 traders) is the largest seen.
+	maxPerKindPerHour   = 3
+	maxP0PerKindPerHour = 20
+	maxPerHour          = 30
+	dedupeTTL           = 24 * time.Hour
+	maxTextRunes        = 600
 	// holdTTL / holdCap bound the held (dropped-but-eligible) messages: older
 	// than holdTTL a message is stale news and is discarded (counted + logged).
 	holdTTL = 90 * time.Minute
@@ -101,7 +114,7 @@ var ErrNotBound = errors.New("owner push: no Telegram chat bound")
 // anything else that states them (m442 #27: the line said 8/hour while the code
 // was 3 per kind and 30 total).
 func Limits() string {
-	return fmt.Sprintf("<=%d/hour per kind, <=%d/hour in total (P0 kinds exempt from the total)", maxPerKindPerHour, maxPerHour)
+	return fmt.Sprintf("<=%d/hour per kind, <=%d/hour in total (P0 kinds exempt from both; a P0 kind is capped at %d/hour as a runaway backstop)", maxPerKindPerHour, maxPerHour, maxP0PerKindPerHour)
 }
 
 // p0KindPrefixes (m467) are the owner-push kinds that report the bot cannot
@@ -143,7 +156,7 @@ func IsP0Key(key string) bool {
 // m469: the P0 list is rendered from p0KindPrefixes itself, so a kind added
 // there is in the boot line without a second edit.
 func OutagePolicy() string {
-	return fmt.Sprintf("a P0 (kinds %s) is NEVER dropped by an outage and is exempt from the %d/hour total: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
+	return fmt.Sprintf("a P0 (kinds %s) is NEVER dropped by an outage and is exempt from the %d/hour total and the per-kind budget: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
 		strings.Join(p0KindPrefixes, ", "), maxPerHour, p0RetryBackoffMax, outageSummaryMin, holdTTL)
 }
 
@@ -504,12 +517,18 @@ func (p *Pusher) admitLocked(m heldMsg, now time.Time) string {
 		}
 	}
 	p.kindAt[kind] = kl
-	if len(kl) >= maxPerKindPerHour {
-		return fmt.Sprintf("%s budget (%d/hour)", kind, maxPerKindPerHour)
+	p0 := IsP0Key(key)
+	// m471 L3-5: a P0 kind is not held by the 3/hour per-kind budget (it is
+	// shared by every trader on the box); only the runaway backstop applies.
+	kindCap := maxPerKindPerHour
+	if p0 {
+		kindCap = maxP0PerKindPerHour
+	}
+	if len(kl) >= kindCap {
+		return fmt.Sprintf("%s budget (%d/hour)", kind, kindCap)
 	}
 	// m469: a P0 is not held back by the all-kinds backstop, and does not use
 	// it up either (it is not appended to sentAt below).
-	p0 := IsP0Key(key)
 	if !p0 && len(p.sentAt) >= maxPerHour {
 		return fmt.Sprintf("rate limit (%d/hour)", maxPerHour)
 	}
@@ -724,7 +743,7 @@ func Start(send func(text string) error, statePath string) BootInfo {
 	def = NewE(send)
 	info := BootInfo{PrevExit: PrevExitNone}
 	if statePath != "" {
-		info = def.EnableState(statePath)
+		info = def.RestoreAtBoot(statePath) // m471 L3-3: restored episode P0s are superseded, not re-sent
 	}
 	p := def
 	safe.GoNamed("owner-push-retry", func() {

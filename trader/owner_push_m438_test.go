@@ -72,6 +72,11 @@ func TestProtectionPlaceEpisodeRaisesOneAlertAndOnePush(t *testing.T) {
 	}
 }
 
+// p0KindCap is ownerpush's per-kind bound for a P0 kind (maxP0PerKindPerHour):
+// since m471 L3-5 a P0 kind is exempt from the 3/hour per-kind budget (it was
+// shared by every trader on the box) and capped only by this runaway backstop.
+const p0KindCap = 20
+
 // (1b) A flood of one kind (any shape of repeating alert) must leave FEED DOWN and
 // TRADER DOWN deliverable — through the real emitAlert path. MUTANT: see
 // internal/ownerpush TestOneKindCannotStarveAnother (single shared bucket).
@@ -93,8 +98,8 @@ func TestFloodOfProtectionAlertsCannotSilenceFeedDown(t *testing.T) {
 	if countContaining(msgs, "Trader x is DOWN") != 1 {
 		t.Fatalf("TRADER DOWN was starved by a protection flood: %q", msgs)
 	}
-	if n := countContaining(msgs, "naked"); n > 3 {
-		t.Fatalf("the flooding kind pushed %d times, want at most its budget", n)
+	if n := countContaining(msgs, "naked"); n > p0KindCap {
+		t.Fatalf("the flooding kind pushed %d times, want at most its budget (%d)", n, p0KindCap)
 	}
 }
 
@@ -114,17 +119,17 @@ func TestDroppedOwnerPushIsRetriedByTheMonitorBeat(t *testing.T) {
 
 	at, _ := feedTrader(t)
 	withProvider(t, []market.Kline{{OpenTime: fixed.UnixMilli() - 90_000}}) // live feed
-	for i := 0; i < 4; i++ {                                                // 3 fit the kind's budget, the 4th is refused
+	for i := 0; i <= p0KindCap; i++ {                                       // p0KindCap fit the kind's bound, the next is refused
 		at.emitAlert("P0", "unprotected_position", fmt.Sprintf("unprotected:MNQ:LONG:%d", i), fmt.Sprintf("naked-%d", i), "body")
+		p.Flush()
 	}
-	p.Flush()
-	if got := len(rec.all()); got != 3 || p.Held() != 1 {
-		t.Fatalf("setup: delivered %d held %d, want 3 / 1", got, p.Held())
+	if got := len(rec.all()); got != p0KindCap || p.Held() != 1 {
+		t.Fatalf("setup: delivered %d held %d, want %d / 1", got, p.Held(), p0KindCap)
 	}
 	clk = clk.Add(61 * time.Minute) // the hourly budget reopens
 	at.monitorTick(fixed)           // the production beat
 	p.Flush()
-	if countContaining(rec.all(), "naked-3") != 1 {
+	if countContaining(rec.all(), fmt.Sprintf("naked-%d", p0KindCap)) != 1 {
 		t.Fatalf("the refused P0 was never retried: %q", rec.all())
 	}
 }
@@ -237,11 +242,12 @@ func TestHeldFeedDownIsWithdrawnWhenTheFeedComesBack(t *testing.T) {
 	ownerPushClock = func() time.Time { return fixed }
 	t.Cleanup(func() { ownerPushClock = oldClk })
 
-	// spend the feed-down kind's hourly budget with earlier episodes.
-	for i := 0; i < 3; i++ {
+	// spend the feed-down kind's hourly bound with earlier episodes.
+	for i := 0; i < p0KindCap; i++ {
 		if !ownerpush.Push(fmt.Sprintf("feed-down|earlier-%d", i), fmt.Sprintf("earlier outage %d", i)) {
 			t.Fatalf("setup: earlier feed-down push %d refused", i)
 		}
+		p.Flush()
 	}
 	p.Flush()
 

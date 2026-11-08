@@ -33,9 +33,14 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		CreatedAt: time.Now().Unix(),
 	}
 	created, err := at.store.Alert().Emit(row)
-	if err == nil && created {
-		// m432: a NEW ops P0 also reaches the owner's phone (outbound, async,
-		// deduped, rate-limited; never blocks this caller).
+	// m432: a NEW ops P0 also reaches the owner's phone (outbound, async,
+	// deduped, rate-limited; never blocks this caller).
+	// m471 L3-2: a P0 whose row INSERT FAILED is pushed too. untracked-position
+	// is raised exactly when the same DB just refused a write, and daily-loss /
+	// dead_man / ai-failing / unprotected flatten / panics are one-shot latches
+	// that are not re-emitted: gating the push on the row lost them for good.
+	// The owner-push key (kind|trader|event) dedupes a repeat.
+	if (err == nil && created) || (err != nil && level == "P0") {
 		at.maybeOwnerPush(row, ownerPushClock())
 	}
 	if err != nil {
