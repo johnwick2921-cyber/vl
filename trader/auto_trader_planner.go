@@ -1508,6 +1508,9 @@ func (at *AutoTrader) runPlannerReadWithTriggerClaimedCtx(now time.Time, session
 			if ai402ClearAllOn() && classifyAIError(err) == "ai_payment_402" {
 				at.on402Failure(time.Now(), err)
 			}
+			// m469 — the planner is the one AI call mentor mode makes, so its
+			// non-402 failures must feed the "AI calls keep failing" P0 too.
+			at.noteAICallFailure(time.Now(), err)
 		} else if ai402ClearAllOn() {
 			// F5 (REL17) — a successful planner read clears any latched 402
 			// outage (the planner is the one DeepSeek call mentor mode still

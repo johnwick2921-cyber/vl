@@ -690,6 +690,9 @@ func (at *AutoTrader) runCycle() error {
 			at.logErrorf("💸 DEEPSEEK PAYMENT FAILURE (402 Insufficient Balance) — cycles are dying with NO decision. Top up the DeepSeek account (api.deepseek.com). trader=%s", at.id)
 			at.on402Failure(time.Now(), err)
 		}
+		// m469 — a non-402 failure counts toward the "AI calls keep failing"
+		// P0 (noteAICallFailure ignores a 402: that has its own outage above).
+		at.noteAICallFailure(time.Now(), err)
 
 		// Activate safe mode after 3 consecutive failures
 		if at.consecutiveAIFailures >= 3 && !at.safeMode {
@@ -733,7 +736,12 @@ func (at *AutoTrader) runCycle() error {
 		at.logInfof("✅ AI recovered after %d consecutive failures", at.consecutiveAIFailures)
 	}
 	// P5 — a success ends any latched 402 outage (banner auto-ack).
-	at.onAISuccess(time.Now())
+	// m469 — only when the AI really answered: a pre-call guardrail HOLD
+	// (holdCycle: market_data_unavailable, blackout_window, …) made no AI call
+	// and must not end an outage or push "AI is BACK".
+	if aiCallAnswered(aiDecision) {
+		at.onAISuccess(time.Now())
+	}
 	at.consecutiveAIFailures = 0
 	if at.safeMode {
 		at.logInfof("🛡️ SAFE MODE DEACTIVATED — AI is working again. Resuming normal trading.")

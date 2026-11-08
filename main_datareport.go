@@ -7,6 +7,7 @@ import (
 
 	"vl/internal/datareport"
 	"vl/kernel"
+	"vl/manager"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 	"vl/telemetry"
@@ -23,6 +24,8 @@ import (
 //	ingest drops final/historical    ntwire.IngestDropTotals (cumulative twins of the per-minute-swapped counters)
 //	clock steps                      kernel.ClockStepSnapshot
 //	refusal classes                  telemetry.GateBlockSnapshot (per session day)
+//	why no trade (m469)              each running trader's WhyNoTradeInput (mentor funnel copy;
+//	                                 AI-planner traders are read from decision_records)
 //
 // cross-frame mismatches and paused minutes are NOT registered here: the
 // data-truth lanes add those counters, and until the integrator calls
@@ -71,10 +74,29 @@ func dataReportSources(st *store.Store, bootAt time.Time) datareport.Sources {
 	}
 }
 
+// whyNoTradeSource reads every trader this process runs for the why-no-trade
+// lines (m469): a copy of each mentor funnel, and the ids of the AI-planner
+// traders whose cycles the report reads from decision_records. Friends run
+// their own process and get no report, so this is the owner's traders only.
+func whyNoTradeSource(tm *manager.TraderManager) func() []datareport.TraderFunnel {
+	if tm == nil {
+		return nil // not wired: the report prints n/a
+	}
+	return func() []datareport.TraderFunnel {
+		var out []datareport.TraderFunnel
+		for _, at := range tm.GetAllTraders() {
+			out = append(out, at.WhyNoTradeInput())
+		}
+		return out
+	}
+}
+
 // startNightlyDataReport starts the once-per-session-day report scheduler.
-func startNightlyDataReport(dbPath string, st *store.Store) {
+func startNightlyDataReport(dbPath string, st *store.Store, tm *manager.TraderManager) {
+	src := dataReportSources(st, time.Now())
+	src.Funnel = whyNoTradeSource(tm)
 	datareport.Start(datareport.Config{
-		Sources:   dataReportSources(st, time.Now()),
+		Sources:   src,
 		MarkerDir: filepath.Join(filepath.Dir(dbPath), "datareport"),
 	})
 }

@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"vl/internal/datatruth"
 	"vl/internal/ownerpush"
 	"vl/kernel"
 	"vl/kernel/mentor"
@@ -80,8 +81,12 @@ import (
 //
 // BLOCKED also means: resting (unfilled) entry orders for the symbol are
 // withdrawn with a named reason (withdraw.go, the existing entry-only cancel),
-// ONE WARN + ONE owner push per episode, ONE INFO + push on resume, a counter
-// per reason, /api/health trading_paused, and the dashboard banner. Resume is
+// ONE WARN + ONE owner push per episode, ONE INFO per resume, the first resume
+// pushed at once (m469: a pause back within integrityReopenMerge() of a resume
+// is the same episode — logged and counted, not pushed — and such a merged
+// episode gets ONE summary push once the pause has stayed away for the
+// window), a counter per pause and reason, /api/health trading_paused, and the
+// dashboard banner. Resume is
 // automatic and only on a MEASUREMENT (the hole tracker re-read the window from
 // the store and found it filled) or when the hole ages out of the window — no
 // persisted "all clear": a restart re-derives everything from the tracker.
@@ -309,6 +314,19 @@ type integrityEpisode struct {
 	remindN   int
 	remindKey string
 
+	// m469: a pause that comes back within integrityReopenMerge() of its own
+	// resume is the SAME episode coming back (a flapping feed), not a new one.
+	// stretchSince is when the current unbroken pause began (since stays at the
+	// episode's first pause); pauseN counts the pauses merged into the episode
+	// and longest is the longest unbroken one. clearedAt is set while the merge
+	// window after a resume is open (zero = closed); resumeTail is the latest
+	// resume's "are the bars back" text, for the summary of a merged episode.
+	stretchSince time.Time
+	pauseN       int
+	longest      time.Duration
+	clearedAt    time.Time
+	resumeTail   string
+
 	// m452 (data_beats_bounded.go): one data-gate beat in flight at a time.
 	beatInFlight  atomic.Bool
 	beatStallSaid atomic.Bool
@@ -400,8 +418,11 @@ func (at *AutoTrader) integrityWindows(now time.Time) []int {
 }
 
 // dataIntegrityBeat runs on the 60 s monitor beat (monitorTick): it advances
-// the pause episode — ONE WARN + ONE owner push at the start, ONE INFO + push
-// at the end — even when no entry is being attempted. Idempotent.
+// the pause episode — ONE WARN + ONE owner push at the start, ONE INFO at each
+// resume, the first resume pushed at once, and for an episode that paused
+// again inside the merge window ONE summary push once the pause has stayed
+// away for integrityReopenMerge() — even when no entry is being attempted.
+// Idempotent.
 func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	if !at.integrityApplies() {
 		return
@@ -438,8 +459,37 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		} else {
 			e.unknownSince = time.Time{}
 		}
+		if !e.active && !e.clearedAt.IsZero() {
+			if now.Sub(e.clearedAt) < integrityReopenMerge() {
+				// m469: the pause is back within the merge window of its own resume —
+				// the same episode coming back, not a new one. On 11-05 21:02 → 11-06
+				// 05:03 NT8 bars ran ~10 min late, a 3-minute hole paused every trader
+				// for 2 minutes in every 10, and each pause and each resume was its own
+				// owner push. The owner was told at the first pause; the gate still
+				// refuses entries exactly as before (it reads the verdict, not this
+				// episode). Only the push is folded into the one resume summary.
+				// The first resume, pushed at once, is NOT withdrawn even if it is
+				// still held: whatever happens next (a restart included), the owner's
+				// last word must never be a pause that is over.
+				gap := now.Sub(e.clearedAt)
+				e.active, e.stretchSince, e.clearedAt = true, now, time.Time{}
+				e.pauseN++
+				e.remindN, e.remindKey = 0, ""
+				// the counter stays one per PAUSE (telemetry/data_integrity.go: "how
+				// many times did missing data pause trading today is a read"); only
+				// the owner push is merged
+				telemetry.IncDataIntegrityEpisode(worst.Class)
+				at.logWarnf("⏸ TRADING PAUSED AGAIN (%s): %s — %s; %s; exits, stops, BE/trail moves, closes and protection are unaffected. %s Back %s after the resume, so it is part of the pause open since %s CT (pause #%d of it): no new owner push, one summary once it stays clear %s.",
+					worst.Class, worst.Reason, wd.refuses, wd.withdraw, wd.tail, spanHM(gap), kernel.TableTimeCT(e.since), e.pauseN, spanHM(integrityReopenMerge()))
+			} else {
+				// the merge window passed with no beat to see it (a skipped beat): the
+				// earlier episode is over — say so BEFORE the new pause
+				at.pushIntegrityResumeSummaryLocked(e)
+			}
+		}
 		if !e.active {
 			e.active, e.since, e.class, e.scope = true, now, worst.Class, scope
+			e.stretchSince, e.pauseN, e.longest, e.clearedAt = now, 1, 0, time.Time{}
 			e.remindN, e.remindKey = 0, ""
 			// m452: the trader id is part of the owner-push KIND (the text before the
 			// first "|" is ownerpush's 3-per-hour budget bucket). "data-paused|<id>|ts"
@@ -476,17 +526,21 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		}
 		if e.pushed && kernel.IsCMEOpen(now) {
 			// m467: a pause that LASTS is news again every hour (feedStillDownEvery).
-			if n := int(now.Sub(e.since) / feedStillDownEvery); n >= 1 && n > e.remindN {
+			// m469: "lasts" is the current UNBROKEN pause (stretchSince), not the
+			// merged episode: a flapping trader trades between its pauses, and a
+			// reminder must not claim hours of standing pause it did not have. For a
+			// pause that never clears the two are the same instant.
+			if n := int(now.Sub(e.stretchSince) / feedStillDownEvery); n >= 1 && n > e.remindN {
 				prev := e.remindKey
 				e.remindN = n
-				e.remindKey = fmt.Sprintf("data-still-paused-%s|%d|%d", at.id, e.since.Unix(), n)
+				e.remindKey = fmt.Sprintf("data-still-paused-%s|%d|%d", at.id, e.stretchSince.Unix(), n)
 				telemetry.IncDataStillPausedReminder()
-				at.logWarnf("⏸ TRADING STILL PAUSED (%s) since %s CT (%s): %s — reminder #%d to the owner", worst.Class, kernel.TableTimeCT(e.since), spanHM(now.Sub(e.since)), worst.Reason, n)
+				at.logWarnf("⏸ TRADING STILL PAUSED (%s) since %s CT (%s): %s — reminder #%d to the owner", worst.Class, kernel.TableTimeCT(e.stretchSince), spanHM(now.Sub(e.stretchSince)), worst.Reason, n)
 				if prev != "" {
 					ownerpush.Cancel(prev)
 				}
 				ownerpush.Push(e.remindKey, fmt.Sprintf("⏸ vl TRADING STILL PAUSED — %s, since %s CT (%s): %s. %s; exits, stops and protection are unaffected. %s",
-					at.ownerPushTraderLabel(), kernel.TableTimeCT(e.since), spanHM(now.Sub(e.since)), worst.Reason, wd.refuses, wd.tail))
+					at.ownerPushTraderLabel(), kernel.TableTimeCT(e.stretchSince), spanHM(now.Sub(e.stretchSince)), worst.Reason, wd.refuses, wd.tail))
 			}
 		}
 		if !e.pushed && kernel.IsCMEOpen(now) {
@@ -502,10 +556,13 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 	}
 	e.unknownSince = time.Time{}
 	if e.active {
-		held := now.Sub(e.since).Round(time.Second)
+		held := now.Sub(e.stretchSince).Round(time.Second)
+		if held > e.longest {
+			e.longest = held
+		}
 		key := e.key
 		wasPushed := e.pushed
-		e.active, e.pushed = false, false
+		e.active = false
 		if e.remindKey != "" {
 			ownerpush.Cancel(e.remindKey) // the resume supersedes a held reminder
 		}
@@ -530,12 +587,50 @@ func (at *AutoTrader) dataIntegrityBeat(now time.Time) {
 		}
 		at.logInfof("▶ TRADING RESUMED: %s (paused %s) — NEW entries are allowed again.", logTail, held)
 		if wasPushed {
-			ownerpush.Push(ownerPushResumedKey(key),
-				fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s (paused %s).", at.ownerPushTraderLabel(), pushTail, held))
+			// m469: the merge window opens at every resume. The episode's FIRST
+			// resume is pushed at once, as before m469: nothing about it waits in
+			// memory, so a restart, an Update or a stopped trader inside the window
+			// can never leave "TRADING PAUSED" as the owner's last word. Only an
+			// episode that has already paused again inside the window (a flapping
+			// feed) waits for the window to pass clear, then gets one summary.
+			e.clearedAt, e.resumeTail = now, pushTail
+			if e.pauseN <= 1 {
+				ownerpush.Push(ownerPushResumedKey(key),
+					fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s (paused %s).", at.ownerPushTraderLabel(), pushTail, held))
+			}
 		} else {
+			e.pushed = false
 			ownerpush.Cancel(key) // never delivered the pause: do not deliver it after the resume
 		}
 	}
+	if !e.clearedAt.IsZero() && now.Sub(e.clearedAt) >= integrityReopenMerge() {
+		at.pushIntegrityResumeSummaryLocked(e)
+	}
+}
+
+// integrityReopenMerge is how long after its resume a pause that comes back is
+// still the same episode (m469). It IS the data-truth merge rule
+// (datatruth.ReopenMergeWindow, 30 min), read at use so the two pauses can
+// never drift apart. Evidence: on 11-05/06 the feed flapped every 10 minutes
+// (resumed xx:04, paused again xx:12, an 8-minute gap); the data-truth corpus
+// flapped at the 15-minute HTF cadence. 30 minutes covers both with room. Only
+// a flapping episode's summary waits for it (and is lost if the process stops
+// inside the window — the owner then already has the first resume); the pause
+// and the first resume are never late, and the gate never waits on it.
+func integrityReopenMerge() time.Duration { return datatruth.ReopenMergeWindow }
+
+// pushIntegrityResumeSummaryLocked closes the episode once its merge window
+// has passed clear. A single pause already had its resume pushed at once, so
+// nothing more is sent; an episode that paused again inside the window gets ONE
+// summary — how many pauses, over what span, the longest. Its key is not the
+// first resume's (that one was already used), so the dedupe cannot drop it.
+// The caller holds e.mu.
+func (at *AutoTrader) pushIntegrityResumeSummaryLocked(e *integrityEpisode) {
+	if e.pauseN >= 2 {
+		ownerpush.Push(ownerPushResumedKey(e.key)+"|merged", fmt.Sprintf("✅ vl TRADING RESUMED — %s: %s. The pause came and went %d times from %s to %s CT (longest %s); no new pause in the %d minutes since.",
+			at.ownerPushTraderLabel(), e.resumeTail, e.pauseN, kernel.TableTimeCT(e.since), kernel.TableTimeCT(e.clearedAt), spanHM(e.longest), int(integrityReopenMerge()/time.Minute)))
+	}
+	e.clearedAt, e.resumeTail, e.pushed = time.Time{}, "", false
 }
 
 // ownerPushPausedKey is the dedupe key of a trader's pause episode. The text

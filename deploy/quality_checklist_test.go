@@ -38,8 +38,9 @@ const (
 	qualityChecklistMaxLines = 120
 	qualityChecklistRowCount = 13
 	// qualityChecklistSelfCap is today's number of "self" rows. When a row gets
-	// a machine check (Q6's P0 census is next), lower this by one in the same PR.
-	qualityChecklistSelfCap = 12
+	// a machine check, lower this by one in the same PR (Q6 moved to its P0
+	// census test, TestOwnerPushP0Census, in m469: 12 -> 11).
+	qualityChecklistSelfCap = 11
 )
 
 var (
@@ -205,7 +206,9 @@ func rowLine(t *testing.T, doc, id string) string {
 // guards were all switched off would still pass on today's healthy page.
 func TestQualityChecklistCensusCatchesEachBreak(t *testing.T) {
 	doc := repoFile(t, qualityChecklistPath)
-	funcs := map[string]bool{"TestQualityChecklistCensus": true}
+	// The real test names: the page may name any test in the repo (Q6 names
+	// TestOwnerPushP0Census), so a hand-made set would break the baseline.
+	funcs := collectGoTestFuncs(t, repoRoot(t))
 	if p := checkQualityChecklist(doc, funcs); len(p) > 0 {
 		t.Fatalf("baseline page should pass: %v", p)
 	}
@@ -223,8 +226,8 @@ func TestQualityChecklistCensusCatchesEachBreak(t *testing.T) {
 		{"named test missing", setEnforcedBy(t, doc, "Q5", "test: TestNoSuchTestAnywhere"), "no func TestNoSuchTestAnywhere("},
 		{"named test present", setEnforcedBy(t, doc, "Q5", "test: TestQualityChecklistCensus"), ""},
 		{"not a test name", setEnforcedBy(t, doc, "Q5", "test: run it by hand"), "not a Go test name"},
-		{"one more self row", setEnforcedBy(t, doc, "Q5", "self"), "the cap is 12"},
-		{"one fewer self row", setEnforcedBy(t, doc, "Q6", "ci: p0 census"), "Lower qualityChecklistSelfCap to 11"},
+		{"one more self row", setEnforcedBy(t, doc, "Q5", "self"), fmt.Sprintf("the cap is %d", qualityChecklistSelfCap)},
+		{"one fewer self row", setEnforcedBy(t, doc, "Q7", "ci: replay"), fmt.Sprintf("Lower qualityChecklistSelfCap to %d", qualityChecklistSelfCap-1)},
 		{"unknown enforced-by", setEnforcedBy(t, doc, "Q5", "reviewer"), "must be \"self\""},
 		{"empty ci", setEnforcedBy(t, doc, "Q5", "ci:"), "must name the CI check"},
 		{"rows out of order", swapped, "in that order"},

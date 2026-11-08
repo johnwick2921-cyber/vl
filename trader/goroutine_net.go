@@ -7,7 +7,9 @@ package trader
 
 import (
 	"fmt"
+	"time"
 
+	"vl/kernel"
 	"vl/safe"
 )
 
@@ -16,7 +18,9 @@ import (
 // trader FROZEN, P0 alert, goroutine exits cleanly.
 func (at *AutoTrader) goNetted(name string, fn func()) {
 	safe.GoNet(name, at.id, fn, func(r interface{}) {
-		at.emitAlert("P0", "goroutine_panic", "panic:"+at.id+":"+name,
+		// m469: one alert (and one owner push) per goroutine per CME session
+		// day; the old id had no day in it, so the store deduped it forever.
+		at.emitAlert("P0", "goroutine_panic", "panic:"+at.id+":"+name+":"+kernel.CMESessionDayKey(time.Now()),
 			"💥 Trader goroutine panic — entries frozen (closes still work)",
 			fmt.Sprintf("%s: %v", name, r))
 	})

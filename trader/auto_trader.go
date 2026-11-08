@@ -1400,7 +1400,11 @@ func (at *AutoTrader) recoverPanic(where string) {
 		at.logErrorf("💥 PANIC in %s for trader %s: %v\n%s", where, at.id, r, stack)
 		telemetry.RecordError(at.id, "trader_panic", fmt.Sprintf("%s: %v", where, r), telemetry.CostNone)
 		discipline.FreezeTrader(at.id, fmt.Sprintf("panic in %s: %v", where, r), time.Now().UnixMilli())
-		at.emitAlert("P0", "trader_panic", "panic:"+at.id,
+		// m469: the event id carries the CME session day. It was "panic:"+id, and
+		// the store dedupes (trader, event id) forever, so a trader could tell
+		// the owner about a panic ONCE EVER. Not a timestamp: runBeatSafely can
+		// re-panic every beat, and that is one episode a day, not one a minute.
+		at.emitAlert("P0", "trader_panic", "panic:"+at.id+":"+kernel.CMESessionDayKey(time.Now()),
 			"💥 Trader panic — entries frozen (closes still work)", fmt.Sprintf("%s: %v", where, r))
 	}
 }

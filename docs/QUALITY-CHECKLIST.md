@@ -42,7 +42,7 @@ named test disappears, if the page grows past 120 lines, or if the number of
 | Q3 | Delete the guard and its switch-on line; the test must go red. Tests call production code, not a helper. | Tests proving nothing (~20; classes 53, 86, 108, 114) | Paste the red | self |
 | Q4 | Run time logic across DST, daily break, weekend, half day and contract roll. | Calendar (~20; classes 138, 143, 149; release #60 DST) | Tests | self |
 | Q5 | Full suite on the merged code, in Chicago and UTC. | Green here, red elsewhere (~18; class 110; 09-03 bare time layout) | Release gate | ci: release gate |
-| Q6 | Kill the dependency in a test and check the alert still arrives. Every P0 is pushed or listed as not pushed, with a reason. | Owner told wrong or nothing (~18; release #62 alert dropped on its own outage) | P0 census test | self |
+| Q6 | Kill the dependency in a test and check the alert still arrives. Every P0 is pushed or listed as not pushed, with a reason. | Owner told wrong or nothing (~18; release #62 alert dropped on its own outage) | P0 census test | test: TestOwnerPushP0Census |
 | Q7 | Write down what the decision reads and what the check reads. Replay clean days and expect no pause. | Wrong data judged (~15; classes 97, 129, 205) | Replay output | self |
 | Q8 | Make each read fail: unknown must never count as clear. Show a non-test caller of the gate. | Silent safety (~14; classes 188, 209, 227) | Test + grep | self |
 | Q9 | List every path to the wire or the rule. A second path can't skip the gates. | Side doors (~13; classes 165, 166, 197, 235) | Site list | self |
@@ -54,7 +54,7 @@ named test disappears, if the page grows past 120 lines, or if the number of
 ## What this page cannot do
 
 It cannot promise zero bugs. It makes the known bug types harder to ship, and
-it makes every new escape leave a test behind. Only Q5 is checked by a machine
-today; Q6 gets its P0 census test in the alerts PR, and then its row changes
-from `self` to `test: <name>` and the `self` cap in
-`deploy/quality_checklist_test.go` drops by one.
+it makes every new escape leave a test behind. Only Q5 (the release gate) and
+Q6 (the P0 census test) are checked by a machine today. When another row gets
+a machine check, its row changes from `self` to `test: <name>` and the `self`
+cap in `deploy/quality_checklist_test.go` drops by one.

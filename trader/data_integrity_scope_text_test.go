@@ -141,6 +141,8 @@ func TestPauseScopeChangeIsToldWhileTheEpisodeStands(t *testing.T) {
 	at.monitorTick(now.Add(2 * time.Minute)) // back to swing only: narrow
 	fk.blockedFor = func(int) bool { return false }
 	at.monitorTick(now.Add(3 * time.Minute)) // measured filled: resume
+	// m469: the resume is pushed once the window passed clear
+	at.monitorTick(now.Add(3*time.Minute + integrityReopenMerge()))
 	flush()
 	msgs := rec.all()
 	if countContaining(msgs, "TRADING PAUSED") != 1 || countContaining(msgs, "PAUSE WIDENED") != 1 ||

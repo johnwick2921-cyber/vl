@@ -564,10 +564,12 @@ func TestIntegrityEpisodePushesOnceAndAnnouncesTheResume(t *testing.T) {
 		t.Fatalf("one episode counted per reason: %d -> %d", epBefore, got)
 	}
 
-	// measured filled -> ONE resume
+	// measured filled -> ONE resume, pushed once the pause has stayed away for
+	// the merge window (m469: a pause back inside it is the same episode)
 	fk.blockedFor = func(int) bool { return false }
 	at.monitorTick(now.Add(3 * time.Minute))
 	at.monitorTick(now.Add(4 * time.Minute))
+	at.monitorTick(now.Add(3*time.Minute + integrityReopenMerge()))
 	flush()
 	msgs = rec.all()
 	if n := countContaining(msgs, "TRADING RESUMED"); n != 1 {
@@ -577,9 +579,9 @@ func TestIntegrityEpisodePushesOnceAndAnnouncesTheResume(t *testing.T) {
 		t.Fatalf("no second pause after the resume: %q", msgs)
 	}
 
-	// a NEW hole is a new episode: pushed again
+	// a NEW hole after the merge window is a new episode: pushed again
 	fk.blockedFor = nil
-	at.monitorTick(now.Add(10 * time.Minute))
+	at.monitorTick(now.Add(10*time.Minute + integrityReopenMerge()))
 	flush()
 	if n := countContaining(rec.all(), "TRADING PAUSED"); n != 2 {
 		t.Fatalf("a new episode pushes again, got %d", n)
@@ -704,6 +706,7 @@ func TestIntegrityResumeTextSaysWhetherTheBarsCameBack(t *testing.T) {
 			at.monitorTick(now)
 			fk.blockedFor = func(int) bool { return false }
 			at.monitorTick(now.Add(time.Minute))
+			at.monitorTick(now.Add(time.Minute + integrityReopenMerge())) // m469: the resume is pushed once the window passed clear
 			flush()
 			var resumed string
 			for _, m := range rec.all() {

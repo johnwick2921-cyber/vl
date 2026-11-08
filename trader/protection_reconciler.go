@@ -690,6 +690,9 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	if err != nil {
 		// A24: a read failure is not "flat". Say so and do nothing.
 		at.logWarnf("🧷 protection UNVERIFIED (%s): positions unreadable: %v — no action taken", trigger, err)
+		// m469: the broker cannot be read, so whether a position is open comes
+		// from the bot's own table; with one open, a long spell is a P0.
+		at.noteProtectionUnverified(now, at.holdingOpenPosition, "NinjaTrader's positions cannot be read")
 		return
 	}
 	// P1-c (REL17-F4): after a SUCCESSFUL positions read (including the empty
@@ -701,8 +704,10 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	// changes nothing (A24: an unreadable book is not a licence to forget state).
 	at.sweepStaleProtectionState(positions)
 	if len(positions) == 0 {
+		protectionUnverifiedSince.Delete(at.id) // flat: nothing left to verify
 		return
 	}
+	unverified := "" // m469: the first position this pass could not verify
 
 	book, have, age := at.liveBook(now)
 	if have && snapshotMaxAge() > 0 && age > snapshotMaxAge() {
@@ -769,8 +774,53 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, at.id, now)
 			}
 		}
+		if v.Action == protectionUnknown && unverified == "" {
+			unverified = fmt.Sprintf("%s %s ×%d — %s", side, symbol, qty, v.Why)
+		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
 	}
+	if unverified != "" {
+		// the broker reports this position open, so a position IS open.
+		at.noteProtectionUnverified(now, func() bool { return true }, unverified)
+	} else {
+		protectionUnverifiedSince.Delete(at.id) // every open position verified
+	}
+}
+
+// protectionUnverifiedAlertAfter (m469) is how long the reconciler may go
+// without being able to verify protection, while a position is open, before
+// the owner gets a P0. Evidence (bot logs 10-03..11-06, the 1-minute "protection
+// UNVERIFIED" lines, grouped into spells): the short spells - a reconnect, the
+// book's first snapshot after it - lasted 1, 2, 2, 4, 6, 6 and 7 minutes; the
+// rest were hours long (NinjaTrader closed). 10 minutes is above every short
+// spell, and a position whose stop nobody can see for 10 minutes is news.
+const protectionUnverifiedAlertAfter = 10 * time.Minute
+
+// protectionUnverifiedSince: trader id -> Unix ms of the first pass of the
+// current UNVERIFIED spell. A pass that verifies every open position, or reads
+// the book flat, ends the spell; the next one is a new episode (new event id).
+var protectionUnverifiedSince sync.Map
+
+// noteProtectionUnverified records one UNVERIFIED pass and raises ONE P0 per
+// spell once it has lasted protectionUnverifiedAlertAfter with a position open.
+// It never acts on the position: an unreadable book is still not a licence to
+// place or flatten (A24) - it only tells the owner to look. positionOpen is
+// asked only once the spell is long enough (it is a store read, and NT8 closed
+// overnight is an hours-long spell read every minute).
+func (at *AutoTrader) noteProtectionUnverified(now time.Time, positionOpen func() bool, what string) {
+	startMs := now.UnixMilli()
+	if v, loaded := protectionUnverifiedSince.LoadOrStore(at.id, startMs); loaded {
+		startMs = v.(int64)
+	}
+	since := time.UnixMilli(startMs)
+	if now.Sub(since) < protectionUnverifiedAlertAfter || !positionOpen() {
+		return
+	}
+	at.emitAlert("P0", alertKindProtectionUnverified,
+		fmt.Sprintf("unverified:%d", startMs),
+		"Open position — its stop cannot be verified",
+		fmt.Sprintf("Since %s CT (%s) the bot cannot tell whether the open position is protected: %s. Nothing is placed or closed while it cannot see. Check NinjaTrader on Windows (connection, the position and its stop) now.",
+			kernel.TableTimeCT(since), spanHM(now.Sub(since)), what))
 }
 
 func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, qty int,
