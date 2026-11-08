@@ -338,6 +338,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_be_before_partial',
     live: true,
   },
+  'Break-even offset (ticks)': {
+    settingId: 'risk_control.mentor_tuning.be_offset_ticks',
+    live: true,
+  },
   'ISB candle-3 partial at any profit': {
     settingId: 'mentor_isb_c3_partial_any_profit',
     live: true,
@@ -745,8 +749,9 @@ export const mentor: GuideSection = {
           cite: 'Owner setting — done-after-win (D1.2 p1 @20:53 "thắng rồi… quyền được nghỉ ngơi"; p2 @06:09 "làm ơn đóng máy lại") · mentor_done_after_win — nil → ON (the course default)',
         },
         {
-          title: 'Trading window — 08:30–09:30 CT by default',
-          body: 'With the default window (start 08:30, 60 minutes) the day is only 08:30–09:30 CT. A window length of -1 ("No window (EOD rules still apply)") removes the time window only — it never means any hour: no NEW mentor entry is placed from 15:45 CT until the 17:00 CT reopen, and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed. On a shortened day (12:15 CT close on 11-27 and 12-24) the last mentor entry is 15 minutes before the early close (12:00 CT) and the flat is 5 minutes before it (12:10 CT), the SWING4H included. Inside those limits mentor arms are authored around the clock — both bound strategies save -1 today (row 362 was written at 01:02 CT). A window, when set, only adds a further limit. The SWING4H is exempt from the window and from the ordinary EOD flat either way.',
+          title:
+            'Trading window — none by default (the whole RTH band), since m472 A6',
+          body: 'There is no time window by default since m472 A6 (the October course trades the whole RTH band, the black band on the chart [Oct D5.2 @ 01:00–01:20]; the September 60-minute window 08:30–09:30 [D1.2 p1 @24:04–24:15] is no longer the default). An unset window length means -1 = no window; a stored 60 (or 30 / 90 / 120) still limits the day. A window length of -1 ("No window (EOD rules still apply)") removes the time window only — it never means any hour: no NEW mentor entry is placed from 15:45 CT until the 17:00 CT reopen, and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed. On a shortened day (12:15 CT close on 11-27 and 12-24) the last mentor entry is 15 minutes before the early close (12:00 CT) and the flat is 5 minutes before it (12:10 CT), the SWING4H included. Inside those limits mentor arms are authored around the clock — both bound strategies save -1 today (row 362 was written at 01:02 CT). A window, when set, only adds a further limit. The SWING4H is exempt from the window and from the ordinary EOD flat either way.',
           cite: 'Owner setting — window 08:30 + 60 (D1.2 p1 @24:04–24:15 "đặt một cái timer… đúng một tiếng") · mentor_window_start / mentor_window_minutes — live · trader/mentor_tick.go mentorWindowActive (minutes ≤ 0 = no window) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · EOD flat: trader/auto_trader_clock.go enforceEODFlatAt',
         },
         {
@@ -1101,7 +1106,7 @@ export const mentor: GuideSection = {
         {
           label: 'Key levels RTH only',
           where: 'Strategy → Mentor mode → levels',
-          what: 'Only RTH candles count for key levels. INERT at the default key-level timeframe (60): the 1H series is already anchored at the 08:30 RTH open, so this switch only changes the walk for another key-level timeframe (experimentation).',
+          what: 'Only RTH candles count for key levels. The last 1H candle (14:30) runs to 15:15 CT, not 15:00: 1m bars that open before 15:15 fold into it (m472 A7, [Oct D5.2 @ 02:14–02:40]). INERT at the default key-level timeframe (60): the 1H series is already anchored at the 08:30 RTH open, so this switch only changes the walk for another key-level timeframe (experimentation).',
           trader:
             'ON — external hours are not counted ("Không tính external hours").',
           consumer: 'kernel/mentor/mentor.go KeyLevelRTHOnly',
@@ -1237,15 +1242,15 @@ export const mentor: GuideSection = {
           label:
             'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'X5-10: ON (default) = the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("Trade khung 5 phút only … cho buổi tối" [X11 @17:40–18:32, quote @18:03–18:07]); the 100-pt cutoff, the 15:00 start and the cumulative window are ours — X11 names 100–200 pts as a STRONG night, where the 2m stays, and the owner fixed no number (Q6) [derived: X11 @17:40–18:26]; evening_slow_pts / evening_slow_from_hour / evening_slow_window_min make all three tunable. The ISB pair and PHL/PLH swap; the higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
+          what: 'X5-10: OFF by default since m472 A1 (1m all day [Oct D4.2 @ 22:56–23:46]). The rest of this cell describes the schedule when you turn it ON: the named setups (ISB + PHL/PLH) are read on the 1m ONLY during the RTH open +30 minutes (08:30–09:00 CT — "a 2m stop cannot cover the setup at open volume"), and on the 2m at every other minute — overnight and the Europe open (3am Texas) included ("khung 2 phút ÍT BỊ QUÉT RÂU" [X5 @00:07–01:17; X11 @17:06–19:35]). A SLOW evening/overnight (15:00–03:00 CT, the 1m range since the RTH close under 100 pts) reads the 5m instead ("Trade khung 5 phút only … cho buổi tối" [X11 @17:40–18:32, quote @18:03–18:07]); the 100-pt cutoff, the 15:00 start and the cumulative window are ours — X11 names 100–200 pts as a STRONG night, where the 2m stays, and the owner fixed no number (Q6) [derived: X11 @17:40–18:26]; evening_slow_pts / evening_slow_from_hour / evening_slow_window_min make all three tunable. The ISB pair and PHL/PLH swap; the higher-TF lines and the box/ORB ESCAPE test stay a 1m body close; boxes are DRAWN on the traded frame (1m 08:30–09:00 CT, closed 2m otherwise, never 5m); trendlines and the EMA 9/34 follow the same 1m/2m clock. An ISB or PHL/PLH entered on the 2m trails its runner on CLOSED 2m candles and its candle-3 partial reads the 2m fill candle (the frame follows the entry frame [X8 @18:02–18:14]).',
           trader:
-            'ON — the course reads the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu"). The EMA 9/34 levels and the EMA 34 location line move to the 2m on the same schedule (M401), and the chart’s EMA curve carries the frame it was drawn on (tf_min).',
+            'OFF (since m472 A1, [Oct D4.2 @ 22:56–23:46]: "Trade khung 1 phút, chứ không là khung 2 phút"). With the switch ON the course read of September applies — the 1m for the first 30 min after the open, then the 2m ("sau 30 phút em sẽ chuyển qua khung 2 phút", "khung 2 phút ít bị quét râu"). The EMA 9/34 levels and the EMA 34 location line move to the 2m on the same schedule (M401), and the chart’s EMA curve carries the frame it was drawn on (tf_min).',
           consumer:
             'kernel/mentor/eval.go Tick (Exec2mAfter30m → closedBucketsTF(bars, 2, now)) · trader/mentor_tuning.go mentorTuningResolve',
           range: 'true / false',
-          systemDefault: 'true',
+          systemDefault: 'false (m472 A1, [Oct D4.2 @ 22:56–23:46])',
           recommended:
-            'ON — release #31 default ("Routine trước khi trade" part1 @00:41–01:14; Go over @17:27). OFF restores the 1m read all day.',
+            'OFF — the 1m all day [Oct D4.2 @ 22:56–23:46] (supersedes the release #31 default ON). Turn ON only to restore the September 2m schedule.',
           whenToTouch: 'Only on an owner ruling.',
           perSession: 'No.',
         },
@@ -2319,11 +2324,12 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Window length"',
           what: 'How long the entry window stays open after its start time; SWING4H is exempt. The 4h swing is NOT limited by this window: the mentor takes it whenever price touches the 4h EMA 34 (Ngày 5.2 @06:27).',
           trader:
-            '60 minutes by default; an unset/zero strategy value inherits 60. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (EOD rules still apply)", which saves -1 and removes the time window only — not any hour: no NEW mentor entry from 15:45 CT until the 17:00 CT reopen — on a shortened day from 15 minutes before the early close, 12:00 CT on a 12:15 day (trader/mentor_mode.go mentorPastDailyHaltCutoff), and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed (trader/auto_trader_clock.go enforceEODFlatAt; the SWING4H is exempt from an ordinary day\u2019s flat, NOT from a shortened day\u2019s 12:10 CT flat). A set window only adds a further limit. A stored 0 cannot mean "no window" because 0 means unset. Same Save, same reload as the switch.',
+            '-1 (no window — the whole RTH band) by default since m472 A6 [Oct D5.2 @ 01:00–01:20]; an unset/zero strategy value inherits -1, a stored 60 / 30 / 90 / 120 is kept as the September window. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (EOD rules still apply)", which saves -1 and removes the time window only — not any hour: no NEW mentor entry from 15:45 CT until the 17:00 CT reopen — on a shortened day from 15 minutes before the early close, 12:00 CT on a 12:15 day (trader/mentor_mode.go mentorPastDailyHaltCutoff), and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed (trader/auto_trader_clock.go enforceEODFlatAt; the SWING4H is exempt from an ordinary day\u2019s flat, NOT from a shortened day\u2019s 12:10 CT flat). A set window only adds a further limit. A stored 0 cannot mean "no window" because 0 means unset. Same Save, same reload as the switch.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
           range: '30 / 60 / 90 / 120 minutes, or -1 = no window',
-          systemDefault: '60',
-          recommended: '60 minutes — owner ruling.',
+          systemDefault: '-1 (no window, m472 A6)',
+          recommended:
+            '-1 — the whole RTH band [Oct D5.2 @ 01:00–01:20]; a window is an owner choice.',
           whenToTouch: 'Only when the approved trading window changes.',
           perSession: 'No — per strategy.',
         },
@@ -2439,6 +2445,22 @@ export const mentor: GuideSection = {
           systemDefault: 'ON (unset = ON — course-defaults-30)',
           recommended: 'ON — D1.2 p1 @12:41–13:12, @15:56 (mandatory 1:1).',
           whenToTouch: 'OFF only to restore the R3 behaviour.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Break-even offset (ticks)',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.be_offset_ticks)',
+          what: 'How many ticks PAST the entry price the break-even stop goes, on the profit side (long: above the entry; short: below). OFF by default: unset, 0 or out of range (0 to 20) is exactly today’s break-even at the entry price. The October course shows the stop one point beyond the entry (entry 10, stop 11) [Oct D4.2 @ 13:00–13:25], but the knob is in ticks and the video states no tick count, so it ships OFF (m472 A5).',
+          trader:
+            'Applies to the resonance break-even, break-even before the 1:1 partial, and break-even after the partial, and to the swing break-even. A bad value is counted and ignored.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve · trader/mentor_trail_r22.go mentorBEStop',
+          range: '0 (OFF) to 20 ticks',
+          systemDefault: 'OFF',
+          recommended:
+            'OFF — the video shows one point past the entry but no tick count [Oct D4.2 @ 13:00–13:25].',
+          whenToTouch: 'Only on an owner ruling.',
           perSession: 'No — per strategy.',
         },
         {
