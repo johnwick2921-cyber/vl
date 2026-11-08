@@ -1,0 +1,54 @@
+name: Quality checklist
+
+# Checks the PR body against docs/QUALITY-CHECKLIST.md: one line per row Q1-Q13,
+# each with "proof: ..." or "n/a: <reason>", and every Go test cited as proof
+# must appear in the PR's diff. The logic lives in
+# deploy/quality-checklist-pr.sh (tested by deploy/quality_checklist_test.go).
+#
+# Read-only. The repo is public, so the PR body is untrusted text: it reaches
+# the shell ONLY through env:, never through an expression inside run:.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+    branches:
+      - dev
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  quality-checklist:
+    name: Quality checklist
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.user.login != 'dependabot[bot]' && github.event.pull_request.user.login != 'github-actions[bot]'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Check the PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          set -euo pipefail
+          case "$BASE_REF" in
+            dev|main) ;;
+            *) echo "unexpected base branch: $BASE_REF"; exit 1 ;;
+          esac
+          work="$(mktemp -d)"
+          printf '%s\n' "${PR_BODY:-}" > "$work/body.md"
+          git diff "origin/${BASE_REF}...HEAD" > "$work/pr.diff"
+          # Run the base branch's copy of the checker when it has one, so a PR
+          # cannot loosen the check that judges that same PR.
+          if git cat-file -e "origin/${BASE_REF}:deploy/quality-checklist-pr.sh" 2>/dev/null; then
+            git show "origin/${BASE_REF}:deploy/quality-checklist-pr.sh" > "$work/check.sh"
+          else
+            cp deploy/quality-checklist-pr.sh "$work/check.sh"
+          fi
+          bash "$work/check.sh" "$work/body.md" "$work/pr.diff"

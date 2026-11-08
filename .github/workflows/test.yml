@@ -11,6 +11,11 @@ jobs:
     name: Backend Tests
     runs-on: ubuntu-latest
     continue-on-error: true  # Don't block PRs
+    # m468: this suite runs in Chicago time (the bot's own zone, and the box's),
+    # while "Go Unit Tests & Coverage" (pr-go-test-coverage.yml) stays in UTC, so
+    # CI covers both zones. -count=1 below so no result is ever read from cache.
+    env:
+      TZ: America/Chicago
 
     steps:
       - name: Checkout code
@@ -28,10 +33,10 @@ jobs:
         run: go mod download
 
       - name: Run tests
-        run: go test -v -timeout 30m ./...
+        run: go test -v -count=1 -timeout 30m ./...
 
       - name: Generate coverage
-        run: go test -timeout 30m -coverprofile=coverage.out ./...
+        run: go test -count=1 -timeout 30m -coverprofile=coverage.out ./...
         continue-on-error: true
 
   frontend-tests:
@@ -51,6 +56,20 @@ jobs:
           node-version: '20'
           cache: 'npm'
           cache-dependency-path: web/package-lock.json
+
+      # m468 (flake, runs 41186395163 + 41007888183): src/brand-visible.test.tsx
+      # runs `go test ./agent` with a 120s limit. With no Go set up, that one
+      # call had to download the go.mod toolchain and every module and then
+      # compile the package from cold, and it hit the limit (spawnSync go
+      # ETIMEDOUT). Set Go up here and build that test once before vitest
+      # starts, so the call inside the test only runs an already-built binary.
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Build the Go fixture used by brand-visible.test.tsx
+        run: go test -count=1 -run '^TestBrandStatusRenderFixture$' ./agent
 
       - name: Install dependencies
         run: cd web && npm ci

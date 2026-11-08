@@ -1,0 +1,9 @@
+11-01 15:55:18 [INFO] logger/log_prune.go:83 🧹 log retention: off (keep all) · knob LOG_RETENTION_DAYS
+11-01 15:55:18 [INFO] vl/main.go:52 ╔════════════════════════════════════════════════════════════╗
+11-01 15:55:18 [INFO] vl/main.go:53 ║           🚀 VL Intelligent - AI-Powered Trading System              ║
+11-01 15:55:23 [INFO] vl/main.go:496 🔐 BOOT INTEGRITY OK — rev ab356a3a46e7 · pid 3899220 · built 2026-11-01T21:26:07Z · expected ab356a3a46e7 · goldens PASS
+11-02 16:10:01 [INFO] ownerpush/ownerpush.go:243 owner push: SENT "data-report|2026-11-01|1" (attempt 1)
+11-03 02:02:09 [ERRO] ownerpush/ownerpush.go:277 owner push: SEND FAILED "data_truth_indicator_lookback|MNQ|1793692917970" (attempt 1): telegram bot api: Post "https://api.telegram.org/bot[redacted]/getMe": context deadline exceeded (Client.Timeout exceeded while awaiting headers) - held for retry
+11-03 02:03:09 [ERRO] ownerpush/ownerpush.go:277 owner push: SEND FAILED "data_truth_indicator_lookback|MNQ|1793692917970" (attempt 2): telegram bot api: Post "https://api.telegram.org/bot[redacted]/getMe": context deadline exceeded (Client.Timeout exceeded while awaiting headers) - held for retry
+11-03 02:04:33 [ERRO] ownerpush/ownerpush.go:277 owner push: SEND FAILED "data_truth_indicator_lookback|MNQ|1793692917970" (attempt 3): telegram bot api: Post "https://api.telegram.org/bot[redacted]/getMe": dial tcp: lookup api.telegram.org on 10.255.255.254:53: read udp 10.255.255.254:44647->10.255.255.254:53: i/o timeout - held for retry
+11-03 02:11:02 [ERRO] ownerpush/ownerpush.go:277 owner push: SEND FAILED "feed-down|feeddown:2026-11-02:02:00 CT" (attempt 1): telegram bot api: Post "https://api.telegram.org/bot[redacted]/getMe": dial tcp: lookup api.telegram.org on 10.255.255.254:53: read udp 10.255.255.254:45641->10.255.255.254:53: i/o timeout - held for retry
