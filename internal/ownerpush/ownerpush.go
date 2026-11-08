@@ -212,6 +212,11 @@ type Pusher struct {
 	outageFailed    map[string]bool
 	outageWithdrawn int
 
+	// m471 review: superseded names withdrawn at boot and not yet in an admitted
+	// boot message (state.go RestoreAtBoot / clearBootNoteLocked).
+	bootNote     []string
+	bootNoteMore int
+
 	sendTimeout time.Duration
 
 	now     func() time.Time
@@ -630,13 +635,22 @@ func (p *Pusher) Push(key, text string) bool {
 	if _, dup := p.seen[key]; dup {
 		return false
 	}
+	// m471 review: a boot message, enqueued or held, is on file from here on
+	// and names the superseded alerts, so the pending names can go.
+	isBoot := kindOf(key) == "boot"
 	if why := p.admitLocked(heldMsg{key: key, text: text, at: now}, now); why != "" {
 		p.dropped++
 		p.holdLocked(key, text, now)
+		if isBoot {
+			p.clearBootNoteLocked()
+		}
 		logger.Warnf("owner push: %s — held %q for retry", why, key)
 		return false
 	}
 	p.unholdLocked(key)
+	if isBoot {
+		p.clearBootNoteLocked()
+	}
 	return true
 }
 
