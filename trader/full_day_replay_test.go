@@ -1097,6 +1097,10 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
 	w.traders = []*fdrTrader{ft}
 	w.newFdrTrader(ft, cfg)
+	// m472 A3: the live 10-13 day ran the Sept PHL offsets (entry +0.50 / stop -0.50,
+	// D2.2-R10); the October default is 1.00 / 1.00 [Oct D2.3 @ 46:20-47:20]. Pin the
+	// live offsets so this test keeps reproducing the recorded arms.
+	ft.at.mentorEval.Cfg.PHLEntryBufferPts, ft.at.mentorEval.Cfg.PHLStopBufferPts = 0.5, 0.5
 	l := &fdrLedger{rows: map[int64]*fdrRowLife{}}
 	start := w.barIndexAtOrAfter(fdrLiveSeedMs) // the first bar to CLOSE after the seed
 	stop := w.barIndexAtOrAfter(fdrFidelityStopMs)

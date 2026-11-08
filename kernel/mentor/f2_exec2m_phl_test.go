@@ -103,8 +103,8 @@ func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 	if len(gotOff) == 0 {
 		t.Fatal("fixture: knob OFF, the 1m read must emit the PHL")
 	}
-	if gotOff[0].Price != 102.5 || gotOff[0].ExecTFMin != 1 {
-		t.Fatalf("knob OFF: the 1m PHL must be entry 102.5 (high 102 + 0.50) with ExecTFMin 1 (m417), got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
+	if gotOff[0].Price != 103 || gotOff[0].ExecTFMin != 1 {
+		t.Fatalf("knob OFF: the 1m PHL must be entry 103 (high 102 + 1.00 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]) with ExecTFMin 1 (m417), got Price=%.2f ExecTFMin=%d (%+v)", gotOff[0].Price, gotOff[0].ExecTFMin, gotOff[0])
 	}
 
 	// ON at 09:05: the 2m read — entry at the closed 2m candle's high 105.4 +
@@ -115,8 +115,8 @@ func TestF2Exec2mPHLCarriesItsFrame(t *testing.T) {
 	if len(gotOn) == 0 {
 		t.Fatal("fixture: knob ON past 09:00, the 2m read must emit the PHL")
 	}
-	if gotOn[0].Price != 105.9 || gotOn[0].ExecTFMin != 2 {
-		t.Fatalf("knob ON: the 2m PHL must be entry 105.9 (high 105.4 + 0.50) with ExecTFMin 2, got Price=%.2f ExecTFMin=%d (%+v)", gotOn[0].Price, gotOn[0].ExecTFMin, gotOn[0])
+	if gotOn[0].Price != 106.4 || gotOn[0].ExecTFMin != 2 {
+		t.Fatalf("knob ON: the 2m PHL must be entry 106.4 (high 105.4 + 1.00, [Oct D2.3 @ 46:20-47:20]) with ExecTFMin 2, got Price=%.2f ExecTFMin=%d (%+v)", gotOn[0].Price, gotOn[0].ExecTFMin, gotOn[0])
 	}
 }
 
@@ -133,7 +133,7 @@ func TestF2Exec2mPHLScheduleAtTick(t *testing.T) {
 	if len(got) == 0 {
 		t.Fatal("fixture: knob ON inside the RTH open +30 window, the 1m read must emit the PHL")
 	}
-	if got[0].Price != 102.5 || got[0].ExecTFMin != 1 {
-		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 102.5, ExecTFMin 1 — m417), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
+	if got[0].Price != 103 || got[0].ExecTFMin != 1 {
+		t.Fatalf("knob ON before 09:00 CT: the PHL must stay the 1m read (entry 103, ExecTFMin 1 — m417), got Price=%.2f ExecTFMin=%d (%+v)", got[0].Price, got[0].ExecTFMin, got[0])
 	}
 }

@@ -229,8 +229,8 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 		t.Fatalf("the 10:14 green signal candle must be the last rung (exactly one buy stop), steps=%+v", steps)
 	}
 	in := last.places[0]
-	if in.Side != SideLong || in.Setup != "PHL" || !m464Approx(in.Price, 29396.25) || !m464Approx(in.Stop, 29386.00) {
-		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.25 / 29,386.00 — the mentor's rays [D2.2-R7/R9/R10 p1 @02:26–05:43]", in.Side, in.Setup, in.Price, in.Stop)
+	if in.Side != SideLong || in.Setup != "PHL" || !m464Approx(in.Price, 29396.75) || !m464Approx(in.Stop, 29385.50) {
+		t.Fatalf("the last rung = %s %s entry %.2f stop %.2f, want long PHL 29,396.75 / 29,385.50 (1+1 buffers [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]; Sept rays were 29,396.25 / 29,386.00 [D2.2-R7/R9/R10 p1 @02:26–05:43])", in.Side, in.Setup, in.Price, in.Stop)
 	}
 	if !m464Approx(in.Target, 29428.25) {
 		t.Fatalf("target %.2f, want 29,428.25 (old high 29,433.25 − shy 5; the course drew 29,425.75 'gần đỉnh cũ')", in.Target)
@@ -284,8 +284,8 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 // Mutant: restore PHLEntryBufferPts 1.0 or PHLStopBufferPts 0 → RED.
 func TestM464CourseDefaultsAreTheDrawnOffsets(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.PHLEntryBufferPts != 0.5 || cfg.PHLStopBufferPts != 0.5 {
-		t.Fatalf("PHL offsets = entry %.2f / stop %.2f, want the drawn 0.50 / 0.50 [D2.2-R10 p1 @04:14–05:43]", cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts)
+	if cfg.PHLEntryBufferPts != 1.0 || cfg.PHLStopBufferPts != 1.0 {
+		t.Fatalf("PHL offsets = entry %.2f / stop %.2f, want the drawn 1.00 / 1.00 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46; supersedes D2.2-R10 p1 @04:14–05:43]", cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts)
 	}
 }
 
@@ -308,8 +308,8 @@ func TestM464CourseWorkedSellMirror(t *testing.T) {
 		t.Fatalf("the mirrored 10:14 red candle must be the last sell rung, steps=%+v", steps)
 	}
 	in := last.places[0]
-	if in.Side != SideShort || in.Setup != "PLH" || !m464Approx(in.Price, 29403.75) || !m464Approx(in.Stop, 29414.00) {
-		t.Fatalf("mirror rung = %s %s %.2f / %.2f, want short PLH 29,403.75 / 29,414.00", in.Side, in.Setup, in.Price, in.Stop)
+	if in.Side != SideShort || in.Setup != "PLH" || !m464Approx(in.Price, 29403.25) || !m464Approx(in.Stop, 29414.50) {
+		t.Fatalf("mirror rung = %s %s %.2f / %.2f, want short PLH 29,403.25 / 29,414.50 (1+1 buffers [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10])", in.Side, in.Setup, in.Price, in.Stop)
 	}
 	if got := e.State.Refusals["rolling_phl_stop_ceiling"]; got != 1 {
 		t.Fatalf("the mirrored 29-pt rung must be counted once as rolling_phl_stop_ceiling, ledger=%v", e.State.Refusals)
@@ -539,7 +539,7 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 	for _, c := range []struct {
 		hh, mm int
 		want   float64
-	}{{10, 12, 29413.00}, {10, 14, 29396.25}} {
+	}{{10, 12, 29413.50}, {10, 14, 29396.75}} {
 		if p := rollingRungPrice(bars[m464Idx(c.hh, c.mm)], SideLong, cfg); p != c.want {
 			t.Fatalf("%d:%02d rung %.2f, want the mentor's screen rung %.2f", c.hh, c.mm, p, c.want)
 		}
@@ -559,8 +559,8 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 	if !e.State.PHLRefusedVisit[k] {
 		t.Fatalf("the 10:14 rung refusal must be NAMED rolling_phl_15m_box_ban, marks=%v", e.State.PHLRefusedVisit)
 	}
-	if st := e.State.RollingPHL; !st.Ladder || st.RungPx != 29396.25 {
-		t.Fatalf("the refused rung keeps the ladder at the mentor's 29,396.25, state=%+v", st)
+	if st := e.State.RollingPHL; !st.Ladder || st.RungPx != 29396.75 {
+		t.Fatalf("the refused rung keeps the ladder at 29,396.75 (high 29,395.75 + 1.00 [Oct D2.3 @ 46:20-47:20]), state=%+v", st)
 	}
 
 	// 3. the box rule set aside: the mentor's trade, to the tick.
@@ -573,8 +573,8 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 		t.Fatalf("without the 15m box rule the 10:14 rung must arm, steps=%+v refusals=%v box=%+v visit=%v", steps, e.State.Refusals, e.State.ISBBox15m, e.State.PHLRefusedVisit)
 	}
 	in := last.places[0]
-	if in.Side != SideLong || !m464Approx(in.Price, 29396.25) || !m464Approx(in.Stop, 29386.00) || !m464Approx(in.Target, 29428.00) {
-		t.Fatalf("real last rung = %s %.2f / %.2f → %.2f, want long 29,396.25 / 29,386.00 → 29,428.00", in.Side, in.Price, in.Stop, in.Target)
+	if in.Side != SideLong || !m464Approx(in.Price, 29396.75) || !m464Approx(in.Stop, 29385.50) || !m464Approx(in.Target, 29428.00) {
+		t.Fatalf("real last rung = %s %.2f / %.2f → %.2f, want long 29,396.75 / 29,385.50 → 29,428.00 (1+1 buffers [Oct D2.3 @ 46:20-47:20])", in.Side, in.Price, in.Stop, in.Target)
 	}
 	if b15 := bars[m464Idx(10, 15)]; b15.High < in.Price || b15.High < in.Target {
 		t.Fatalf("real 10:15 (H %.2f) must fill %.2f and reach %.2f", b15.High, in.Price, in.Target)

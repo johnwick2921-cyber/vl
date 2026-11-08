@@ -30,8 +30,8 @@ func TestEMARoomRule(t *testing.T) {
 		t.Fatal("empty refusal reason")
 	}
 
-	// Old high 112: target 107 (shy 5) → reward 5 ≥ 2x risk 2 (4) → pass.
-	if _, ok, reason := PHLPLHR2(tr, Level{Price: 112}, 0, 10, 0, cfg); !ok {
+	// Old high 114: target 109 (shy 5) → reward 7 ≥ 2x risk 3 (6) → pass. m472 A3: risk is now range+2 (1+1 buffers, was 0.5+0.5) [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10].
+	if _, ok, reason := PHLPLHR2(tr, Level{Price: 114}, 0, 10, 0, cfg); !ok {
 		t.Fatalf("EMA with room refused: %s", reason)
 	}
 }

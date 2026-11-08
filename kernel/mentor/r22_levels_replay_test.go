@@ -33,6 +33,7 @@ func r22Cfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
+	cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts = 0.5, 0.5 // m472 A3: recorded-day pins predate the October 1/1 [Oct D2.3 @ 46:20-47:20]
 	cfg.TrendlineEntryTouch = TrendlineEntryFourth // m472 A2: these recorded-day pins predate the October "third" default [Oct D3.2 @ 31:17]
 	// B52 (release #29) ships ON in production and changes the box set on the
 	// recorded days (post-escape boxes cascade). These r22 tests pin the

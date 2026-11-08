@@ -209,10 +209,10 @@ func TestRollingPLHShortMirror(t *testing.T) {
 	if len(places) != 1 {
 		t.Fatalf("rolling bounce emitted %d PLH entries, want 1: %+v", len(places), places)
 	}
-	// entry = bar 5 low 128 − 0.50 = 127.5; stop = bar 5 high 133 + 0.50 = 133.5
-	// (the production D2.2-R10 offsets [p1 @04:14–05:43], mirrored)
-	if places[0].Side != SideShort || places[0].Price != 127.5 || places[0].Stop != 133.5 {
-		t.Fatalf("rolling short entry = %+v, want short 127.5 / stop 133.5", places[0])
+	// entry = bar 5 low 128 − 1.00 = 127; stop = bar 5 high 133 + 1.00 = 134
+	// (the production October offsets [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10], mirrored)
+	if places[0].Side != SideShort || places[0].Price != 127 || places[0].Stop != 134 {
+		t.Fatalf("rolling short entry = %+v, want short 127 / stop 134", places[0])
 	}
 	if places[0].Target != 120 {
 		t.Fatalf("target = %.2f, want the old low 120", places[0].Target)

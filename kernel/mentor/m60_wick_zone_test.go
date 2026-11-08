@@ -418,8 +418,8 @@ func TestM60WickZonePHLAtTheZone(t *testing.T) {
 	if phl == nil || phl.Side != SideLong || !strings.HasPrefix(phl.AnchorKey, "wick_zone:long:") {
 		t.Fatalf("the 1m reject at the wick zone must arm a LONG PHL anchored on the zone; got %+v (refusals %v)", phl, e.State.Refusals)
 	}
-	if phl.Price != 28892.5 {
-		t.Fatalf("PHL entry = %.2f, want 28,892.50 (the reference high + 0.50, D2.2-R10)", phl.Price)
+	if phl.Price != 28893 {
+		t.Fatalf("PHL entry = %.2f, want 28,893 (the reference high + 1.00 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10])", phl.Price)
 	}
 
 	// The same tape with no zone: 28,885 is no level → no PHL.

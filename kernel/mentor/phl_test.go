@@ -28,8 +28,8 @@ func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 	if !ok {
 		t.Fatalf("worked example refused: %s", reason)
 	}
-	if in.Side != SideLong || in.Price != 29_396.25 || in.Stop != 29_387.0 {
-		t.Fatalf("entry = %+v, want long price 29396.25 (high 29395.75 + 0.50) stop 29387.00 (low 29387.50 − 0.50)", in)
+	if in.Side != SideLong || in.Price != 29_396.75 || in.Stop != 29_386.5 {
+		t.Fatalf("entry = %+v, want long price 29396.75 (high 29395.75 + 1.00) stop 29386.50 (low 29387.50 − 1.00) [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]", in)
 	}
 	// target = old high − shy = 29,425.75
 	if in.Target != 29_425.75 {
@@ -62,8 +62,8 @@ func TestPHLEntryBufferKnob(t *testing.T) {
 	if in.Price != 102 {
 		t.Fatalf("entry = %.2f, want high 100 + 2.0 buffer = 102", in.Price)
 	}
-	if in.Stop != 94.5 {
-		t.Fatalf("stop = %.2f, want the candle low 95 − the 0.50 default stop buffer = 94.5", in.Stop)
+	if in.Stop != 94 {
+		t.Fatalf("stop = %.2f, want the candle low 95 − the 1.00 default stop buffer = 94 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]", in.Stop)
 	}
 }
 
@@ -121,8 +121,8 @@ func TestPHLEMA34StopNuance(t *testing.T) {
 	if !ok2 {
 		t.Fatalf("EMA34 PHL refused: %s", reason2)
 	}
-	if in2.Stop != 92.5 {
-		t.Fatalf("wick through: stop = %.2f, want the candle low 93 − 0.50 = 92.50", in2.Stop)
+	if in2.Stop != 92 {
+		t.Fatalf("wick through: stop = %.2f, want the candle low 93 − 1.00 = 92 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46 supersedes Sept D2.2-R10]", in2.Stop)
 	}
 }
 

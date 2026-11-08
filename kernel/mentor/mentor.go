@@ -836,8 +836,8 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
-		PHLEntryBufferPts:        0.5,  // D2.2-R10 entry ray +0.50 [p1 @04:14–05:43]
-		PHLStopBufferPts:         0.5,  // D2.2-R10 stop ray −0.50 [p1 @04:14–05:43]
+		PHLEntryBufferPts:        1.0,  // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 entry 1 pt beyond the candle extreme (supersedes Sept D2.2-R10 +0.50 [p1 @04:14–05:43])
+		PHLStopBufferPts:         1.0,  // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 stop 1 pt beyond the other extreme, 2 pts total (supersedes Sept D2.2-R10 −0.50 [p1 @04:14–05:43])
 		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,

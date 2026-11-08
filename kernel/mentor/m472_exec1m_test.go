@@ -49,5 +49,7 @@ func legacy2mCfg() Config {
 	// m472 A2: these goldens were recorded on the pre-October build, whose
 	// trendline default was "fourth" (Sept D2.3-R7); October is "third" [Oct D3.2 @ 31:17].
 	c.TrendlineEntryTouch = TrendlineEntryFourth
+	// m472 A3: likewise the PHL offsets were 0.50/0.50 (Sept D2.2-R10); October is 1/1 [Oct D2.3 @ 46:20-47:20].
+	c.PHLEntryBufferPts, c.PHLStopBufferPts = 0.5, 0.5
 	return c
 }
