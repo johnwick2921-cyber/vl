@@ -100,36 +100,48 @@ func TestEarlyCloseDay1127TickSequence(t *testing.T) {
 			blocked, why, kernel.CMESessionDayKey(at1205), at1205.Format("2006-01-02"))
 	}
 
-	// 12:10 — market still open; the flat (12:15 − 0) is not due yet, and the
-	// cycle must not skip.
+	// 12:09 — market open, the flat (12:15 − earlyCloseFlatMarginMin = 12:10)
+	// not due yet: nothing is retired.
+	at1209 := time.Date(2026, 11, 27, 12, 9, 0, 0, ct)
+	setTraderClock(t, at1209)
+	at.enforceEODFlatAt(at1209)
+	if hasEvent(rt, "cancel:sig-1127") || hasEvent(rt, "close_long:MNQ") {
+		t.Fatalf("nothing may be retired before the 12:10 flat: %v", rt.snapshot())
+	}
+
+	// 12:10 — market STILL OPEN, the cycle must not skip, and the flat is due:
+	// the book is retired while CME can still fill it (m471 L1-1 — this test
+	// used to pin "nothing retired at 12:10, flattened at 12:15", i.e. the
+	// flat sent at the very instant the market halts for the holiday).
 	at1210 := time.Date(2026, 11, 27, 12, 10, 0, 0, ct)
 	setTraderClock(t, at1210)
 	if at.cmeSessionClosedSkip() {
 		t.Fatal("12:10 is before the 12:15 early close — the cycle must not take the closed path")
 	}
-	if hasEvent(rt, "cancel:sig-1127") || hasEvent(rt, "close_long:MNQ") {
-		t.Fatalf("nothing may be retired before the early close: %v", rt.snapshot())
-	}
-
-	// 12:15 — the early close. IsCMEOpen is false, so runCycle stops at
-	// cmeSessionClosedSkip; the book must be retired THERE, before the skip.
-	at1215 := time.Date(2026, 11, 27, 12, 15, 0, 0, ct)
-	setTraderClock(t, at1215)
-	if kernel.IsCMEOpen(at1215) {
-		t.Fatal("fixture premise: 12:15 CT on 11-27 is the early close")
+	if !kernel.IsCMEOpen(at1210) {
+		t.Fatal("fixture premise: 12:10 CT on 11-27 is open")
 	}
 	go func() {
 		time.Sleep(20 * time.Millisecond)
 		acks <- ntwire.OrderUpdatePayload{SignalID: "sig-1127", State: "cancelled"}
 	}()
-	if !at.cmeSessionClosedSkip() {
-		t.Fatal("12:15 CT on the early-close day must take the closed path")
-	}
+	at.enforceEODFlatAt(at1210)
 	if !hasEvent(rt, "cancel:sig-1127") {
-		t.Errorf("the resting arm was NOT cancelled at the 12:15 early close — it rests over the holiday weekend. wire=%v", rt.snapshot())
+		t.Errorf("the resting arm was NOT cancelled at the 12:10 flat — it would rest into the 12:15 halt and over the holiday weekend. wire=%v", rt.snapshot())
 	}
 	if !hasEvent(rt, "close_long:MNQ") {
-		t.Errorf("the open long was NOT flattened at the 12:15 early close — it carries over the holiday weekend. wire=%v", rt.snapshot())
+		t.Errorf("the open long was NOT flattened at the 12:10 flat while CME is open — the flat would go into a halted book. wire=%v", rt.snapshot())
+	}
+
+	// 12:15 — the early close. IsCMEOpen is false, so runCycle stops at
+	// cmeSessionClosedSkip; the closed-path backstop still runs there.
+	at1215 := time.Date(2026, 11, 27, 12, 15, 0, 0, ct)
+	setTraderClock(t, at1215)
+	if kernel.IsCMEOpen(at1215) {
+		t.Fatal("fixture premise: 12:15 CT on 11-27 is the early close")
+	}
+	if !at.cmeSessionClosedSkip() {
+		t.Fatal("12:15 CT on the early-close day must take the closed path")
 	}
 	rows, err := at.store.ArmedOrders().ListNonTerminal(at.id)
 	if err != nil {
@@ -182,6 +194,9 @@ func TestEarlyCloseDay1224RetiresBook(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 		acks <- ntwire.OrderUpdatePayload{SignalID: "sig-1224", State: "cancelled"}
 	}()
+	// The closed path is the BACKSTOP (the open-path flat is at 12:10, pinned
+	// in early_close_margin_test.go): anything still on the book at the close
+	// is retired there, not carried over Christmas.
 	if !at.cmeSessionClosedSkip() {
 		t.Fatal("12:15 CT on 12-24 must take the closed path")
 	}

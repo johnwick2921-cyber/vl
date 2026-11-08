@@ -626,8 +626,21 @@ func (at *AutoTrader) mentorAdmitRefusal(in admitIntent) string {
 // mentorPastDailyHaltCutoff (B3 N6) is the mentor's one hard last-entry: no new
 // mentor entry after 15:45 CT — the 15-minute lead into the 16:00 CT daily
 // maintenance break (which CMEClosedReason then refuses 16:00–17:00).
+//
+// m471 L1-1: on a SHORTENED day the halt is the early close (12:15 on 11-27 and
+// 12-24), and the 15:45 rule never fired — a mentor arm was admitted up to
+// 12:14:59, inside the minutes before the halt. The same 15-minute lead now applies to
+// the early close (12:00 on a 12:15 day), which is before the shortened-day
+// flat (early close − earlyCloseFlatMarginMin), so nothing is opened only to
+// be flattened or carried over the holiday.
 func (at *AutoTrader) mentorPastDailyHaltCutoff(now time.Time) (string, bool) {
 	ct := now.In(kernel.CTLocation())
+	if closeMin, early, ok := earlyCloseOfTradingDay(now); ok {
+		cut := closeMin - mentorEarlyCloseLeadMin
+		if ctMinutesNow(now) >= cut {
+			return fmt.Sprintf("past %02d:%02d CT (shortened day: CME early close %s CT) — no new mentor entries until the next reopen", cut/60, cut%60, early), true
+		}
+	}
 	if ct.Hour() == 15 && ct.Minute() >= 45 {
 		return "past 15:45 CT (CME daily halt) — no new mentor entries until the 17:00 reopen", true
 	}

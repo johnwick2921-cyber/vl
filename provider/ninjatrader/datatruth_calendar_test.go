@@ -21,6 +21,12 @@ import (
 //
 // MUTANT (shown RED): DataTruthSources.Open back to kernel.IsCMEOpen alone ->
 // both pins RED.
+//
+// m471 L1-2/L1-3: the trading gate now reads those evenings CLOSED too
+// (kernel.SessionStateAt resolves the evening by its trading date), so
+// IsCMEOpen and IsCMETradingExpected agree minute for minute and the mutant
+// above is no longer distinguishable here. The fixture premise flipped: it used
+// to require "open by the instant alone" — the very disagreement m471 removed.
 
 var calendarEves = []time.Time{
 	time.Date(2026, 11, 25, 20, 0, 0, 0, kernel.CTLocation()), // Wed before Thanksgiving
@@ -31,8 +37,8 @@ var calendarEves = []time.Time{
 func TestDataTruthOpenIsTheExpectedTradingCalendar(t *testing.T) {
 	open := (&DataTruthSources{}).Open()
 	for _, eve := range calendarEves {
-		if kernel.IsCMEOpen(eve) == false {
-			t.Fatalf("fixture: %s should read open by the instant alone", eve)
+		if kernel.IsCMEOpen(eve) {
+			t.Fatalf("%s: since m471 the trading gate reads the eve of a closed trading date CLOSED as well", eve)
 		}
 		if open(eve.UnixMilli()) {
 			t.Fatalf("%s: a trading date the calendar calls closed is not 'open' for the m446 checks", eve.Format("01-02 15:04"))

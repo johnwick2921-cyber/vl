@@ -170,17 +170,21 @@ func TestDailySessionBarLine_ClosedNamesReasonAndReopen(t *testing.T) {
 	}
 }
 
-// TestDailySessionBarLine_ClosedDayHalt (m169-1a) — the evening before a FULL
-// CLOSURE holiday is FORMING, but the gate halts at 00:00 CT (the start of the
-// closed day), never 16:00. 2026-11-26 is Thanksgiving (a full-closure holiday).
+// TestDailySessionBarLine_ClosedDayHalt (m169-1a, corrected m471 L1-2) — the
+// evening before a FULL CLOSURE holiday belongs to that closed trading date, so
+// it is CLOSED from 17:00 (it used to read FORMING until a 00:00 halt, while the
+// data gates already called it not expected). 2026-11-26 is Thanksgiving (a
+// full-closure holiday per the owner's calendar row); CME reopens Thu 11-26
+// 17:00 CT for the shortened 11-27 session.
 func TestDailySessionBarLine_ClosedDayHalt(t *testing.T) {
 	tfData := oneDummy1D()
 
-	// Wednesday 11-25 18:00 CT: the session that opened 11-25 17:00 halts at
-	// 11-26 00:00 (Thanksgiving), not 16:00.
-	if got := formingBarLine("1d", tfData, ctMs(2026, 11, 25, 18, 0)); !strings.Contains(got, "FORMING (closes 00:00 CT)") {
-		t.Fatalf("11-25 18:00 must FORMING close 00:00 CT (the gate's halt); got %q", got)
+	got := formingBarLine("1d", tfData, ctMs(2026, 11, 25, 18, 0))
+	if !strings.Contains(got, "CLOSED (holiday — Thanksgiving Day 2026-11-26") || !strings.Contains(got, "reopens Thu 17:00 CT") {
+		t.Fatalf("11-25 18:00 must be CLOSED naming Thanksgiving and reopen Thu 17:00 CT; got %q", got)
 	}
+	// dailySessionClose itself is unchanged (it is reached only while open):
+	// a closed close-day still resolves to that day's 00:00.
 	if got := dailySessionClose(time.UnixMilli(ctMs(2026, 11, 25, 18, 0))); got.UnixMilli() != ctMs(2026, 11, 26, 0, 0) {
 		t.Fatalf("dailySessionClose(11-25 18:00) = %s, want 2026-11-26 00:00 CT", got.In(CTLocation()))
 	}
