@@ -2510,7 +2510,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// the box, so the 15m/5m conflict below reads it ("đừng trade. Đợi
 			// nó thoát cả luôn"). Knob mentor_5m_box_source: first = pre-#61.
 			if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
-				if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime > e.State.ISBBox.AtTime && bx.AtTime != e.State.LastISBBoxAt {
+				if bx, ok := ISBBoxFromRTH5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime > e.State.ISBBox.AtTime && bx.AtTime != e.State.LastISBBoxAt {
 					old := *e.State.ISBBox
 					e.State.ISBBox = &bx
 					e.State.LastISBBoxAt = bx.AtTime
@@ -2528,7 +2528,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	} else if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
 		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
 		// @ 12:02], so the same pair never builds it again.
-		if bx, ok := ISBBoxFrom5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
+		if bx, ok := ISBBoxFromRTH5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
 			e.State.ISBBox = &bx
 			e.State.LastISBBoxAt = bx.AtTime
 			e.State.LastISBBoxDir = bx.Dir // CE-1

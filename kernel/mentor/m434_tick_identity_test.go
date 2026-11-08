@@ -246,6 +246,8 @@ func m434Digest(t *testing.T, c m434Case) []string {
 }
 
 func TestM434TickOutputIsByteIdentical(t *testing.T) {
+	firstRTH5mNotISB = false // pre-m473 B4: the frozen golden predates the 08:30-candle-is-not-ISB rule [Oct D4.3 @ 57:20-57:35]
+	t.Cleanup(func() { firstRTH5mNotISB = true })
 	if os.Getenv("M434_WRITE_GOLDEN") != "" {
 		var all []string
 		for _, c := range m434Cases() {

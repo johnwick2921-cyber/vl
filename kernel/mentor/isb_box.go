@@ -1,6 +1,11 @@
 package mentor
 
-import "vl/market"
+import (
+	"time"
+
+	"vl/kernel"
+	"vl/market"
+)
 
 // R5 — the 5m ISB rest box (RULES-FIX-v3): box the latest 5m inside-bar candle
 // and extend it right. While it stands, use the box, not the trigger line
@@ -250,4 +255,30 @@ func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (
 		}
 	}
 	return newBreak, dir, gone
+}
+
+// isFirstRTH5m reports whether the 5m candle opening at openMs is the RTH-open
+// bucket: 08:30 CT on a day the CME is open at that minute (calendar-driven,
+// so half-days too).
+// firstRTH5mNotISB switches the m473 B4 opening rule (frozen pre-m473 goldens set it false).
+var firstRTH5mNotISB = true
+
+func isFirstRTH5m(openMs int64) bool {
+	if !firstRTH5mNotISB {
+		return false
+	}
+	t := time.UnixMilli(openMs).In(ctime())
+	return t.Hour() == 8 && t.Minute() == 30 && kernel.IsCMEOpen(t)
+}
+
+// ISBBoxFromRTH5m is ISBBoxFrom5m for the 5m trigger TF with the October
+// opening rule: the first RTH 5m candle (08:30 CT) is never itself the inside
+// bar — judged against the 08:25 Globex candle it would be a false ISB; the
+// next 5m candle that stays inside it is [Oct D4.3 @ 57:20-57:35, OctD4.3-R58;
+// frames scenes/Ngày 4.3 Multi Time Frame/s_03442.jpg, s_03450.jpg, s_03455.jpg].
+func ISBBoxFromRTH5m(prev5m, cur5m market.Kline) (ISBBox, bool) {
+	if isFirstRTH5m(cur5m.OpenTime) {
+		return ISBBox{}, false
+	}
+	return ISBBoxFrom5m(prev5m, cur5m)
 }

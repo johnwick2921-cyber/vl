@@ -340,8 +340,9 @@ const m61PreP4GoldenPath = "testdata/m61_prep4_tick_identity.golden.gz"
 // MUTANT: drop the ISBCloseBackRequired clause in walkSwingBar (or the
 // required-mode reason text) → intents/notes diverge → RED.
 func TestM61StrictReadIsThePreP4Golden(t *testing.T) {
-	boxPeak1Level = false // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
-	t.Cleanup(func() { boxPeak1Level = true })
+	boxPeak1Level = false    // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
+	firstRTH5mNotISB = false // pre-m473 B4: the frozen golden predates the 08:30-candle-is-not-ISB rule [Oct D4.3 @ 57:20-57:35]
+	t.Cleanup(func() { boxPeak1Level = true; firstRTH5mNotISB = true })
 	raw, err := os.Open(m61PreP4GoldenPath)
 	if err != nil {
 		t.Fatal(err)
