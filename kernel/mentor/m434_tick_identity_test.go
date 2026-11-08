@@ -136,7 +136,7 @@ func m434Cases() []m434Case {
 			name:  "m423_1023_default_cfg_near1",
 			scale: 1,
 			tape:  m423Bars,
-			cfg:   func() Config { c := DefaultConfig(); c.Enabled = true; return c },
+			cfg:   func() Config { c := legacy2mCfg(); c.Enabled = true; return c },
 			from:  150,
 		},
 		{
@@ -144,7 +144,7 @@ func m434Cases() []m434Case {
 			scale: 0,
 			tape:  m423Bars,
 			cfg: func() Config {
-				c := DefaultConfig()
+				c := legacy2mCfg()
 				c.Enabled = true
 				c.Exec2mAfter30m = false
 				return c
@@ -398,7 +398,7 @@ func BenchmarkM434Tick(b *testing.B) {
 	if len(win) < 600 {
 		b.Fatalf("window %d", len(win))
 	}
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	old := flatNearScale
 	flatNearScale = 1

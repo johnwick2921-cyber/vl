@@ -183,7 +183,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
     orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON
-    exec_2m_after_30m: true, // rule 4 (release #31) default ON
+    exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46] default OFF (was ON, release #31 rule 4)
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,

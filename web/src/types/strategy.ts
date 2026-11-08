@@ -357,7 +357,7 @@ export interface MentorTuning {
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
   htf_gate_news_only?: boolean // m462 — unset = OFF = the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); ON (stored) = the old D4.4-11 news + open windows
-  exec_2m_after_30m?: boolean // X5-10 — unset = ON (execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
+  exec_2m_after_30m?: boolean // X5-10 — unset = OFF since m472 A1 [Oct D4.2 @ 22:56-23:46] "Trade khung 1 phut, chu khong la khung 2 phut" (when ON, execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
   swing_max_stop_pts?: number

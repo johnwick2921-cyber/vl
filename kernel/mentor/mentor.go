@@ -542,7 +542,8 @@ type Config struct {
 	// edges into the location gate and InsideAnyBox into the bans.
 	Box BoxCfg
 
-	// Exec2mAfter30m — X5-10 knob (default ON since release #31): the exec-frame
+	// Exec2mAfter30m — X5-10 knob (default OFF since m472 A1 [Oct D4.2 @ 22:56-23:46]
+	// "Trade khung 1 phut, chu khong la khung 2 phut"; was ON since release #31): the exec-frame
 	// timeframe schedule (owner order 2026-10-13 ~23:00 CT "fix all"; sources
 	// X5 @00:07–01:17, X11 @17:06–19:35 — ~/mm-course/extra/notes/05-EXTRA.md
 	// :305-311; re-read 2026-10-16: extra "Routine trước khi trade" part1
@@ -556,7 +557,8 @@ type Config struct {
 	// slow → 5m" is implemented by eveningSlow (eval.go; the 100-pt cutoff is
 	// ours and the range is measured since the 15:00 CT RTH close — how "slow" is
 	// measured is an open mentor question). The MNQ strategy sets no mentor_tuning, so this default
-	// is the live behaviour; an explicit OFF restores the 1m read all day.
+	// is the live behaviour (now OFF = the 1m all day); an explicit ON restores the
+	// September 2m-after-09:00 schedule.
 	Exec2mAfter30m bool
 
 	// OrbISBFractionOutside — rule 5 (release #31, default 0.80): an ISB at the
@@ -871,9 +873,12 @@ func DefaultConfig() Config {
 
 		OrbGateEnabled: true,
 
-		// Release #31 rule 4 (X5-10): the ISB-exec schedule defaults ON — 1m
-		// for the first 30 min of RTH, then the 2m.
-		Exec2mAfter30m: true,
+		// m472 A1: the ISB-exec schedule defaults OFF — the 1m all day.
+		// "Trade khung 1 phut, chu khong la khung 2 phut. Khung 2 phut no quet
+		// banh xac" [Oct D4.2 @ 22:56-23:46], repeated [Oct D5.4 @ 03:09-03:24],
+		// [Oct D5.5 @ 09:16-09:20]; EMA 34 on the 1m only [Oct D5.3 @ 02:00]. This
+		// supersedes Release #31 rule 4 (X5-10; Sept "2m after the first 30 min").
+		Exec2mAfter30m: false,
 		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
 		OrbISBFractionOutside: 0.80,
 

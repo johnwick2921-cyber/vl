@@ -147,7 +147,7 @@ const COPY = {
   },
   exec2m: {
     zh: '执行周期：09:00 CT 后为 2 分钟（08:30–09:00 为 1 分钟）— ISB + PHL/PLH、EMA 9/34、箱体、趋势线与 X8 离场',
-    en: 'Execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit',
+    en: 'Execution frame: ON = 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit; OFF (default) = the 1m all day',
     es: 'Marco de ejecución: 2m después de las 09:00 CT (1m 08:30–09:00) para ISB + PHL/PLH, EMA 9/34, cajas, líneas de tendencia y la salida X8',
   },
   pingGap: {
@@ -602,7 +602,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
   htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
-  exec_2m_after_30m: true,
+  exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day
   day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,

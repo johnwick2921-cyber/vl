@@ -998,14 +998,14 @@ func isMentorExec2mSetup(cond string) bool {
 }
 
 // mentorExec2mKnobOn reads the X5-10 exec_2m_after_30m knob as stored (nil →
-// ON, the release #31 DefaultConfig value) without the tuning resolver's side
+// OFF, the m472 A1 DefaultConfig value; was ON from release #31) without the tuning resolver's side
 // effects. It must agree with the kernel DefaultConfig (ONE canonicalizer per
 // identifier): a restart rebuild on a strategy with no mentor_tuning (the live
-// MNQ trader) reads the knob ON, matching the frame the entry was actually read
+// MNQ trader) reads the knob OFF, matching the frame the entry was actually read
 // on.
 func mentorExec2mKnobOn(rc *store.RiskControlConfig) bool {
 	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.Exec2mAfter30m == nil {
-		return true // nil → ON (release #31 default)
+		return false // nil → OFF (m472 A1 default: the 1m all day [Oct D4.2 @ 22:56-23:46])
 	}
 	return *rc.MentorTuning.Exec2mAfter30m
 }

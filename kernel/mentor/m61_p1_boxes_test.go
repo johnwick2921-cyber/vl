@@ -642,7 +642,7 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 // [D4.2 p2 @06:16–06:30] gives no candle count or breakout margin), so every
 // test of the guard's own behaviour sets the knob explicitly.
 func smallRangeOnConfig() Config {
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.SmallRangeGuard = true
 	return cfg
 }

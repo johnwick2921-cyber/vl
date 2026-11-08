@@ -71,7 +71,7 @@ func TestM423Fixture1023OffersTheObviousLines(t *testing.T) {
 	}
 	for _, tc := range cases {
 		bars, now := m423Upto(t, all, tc.h, tc.m)
-		e := New(DefaultConfig())
+		e := New(legacy2mCfg())
 		e.Cfg.Enabled = true
 		e.Tick(bars, now)
 		tl, ok := m423Find(e.State.ChartTrendlines, tc.side, m423At(t, tc.p0h, tc.p0m), tc.p0px, m423At(t, tc.p1h, tc.p1m), tc.p1px)

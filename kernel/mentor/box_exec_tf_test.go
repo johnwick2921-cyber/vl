@@ -37,7 +37,7 @@ func m410Tape(startMin, n int) []market.Kline {
 }
 
 func m410Cfg(knob bool) Config {
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

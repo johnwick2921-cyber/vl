@@ -58,7 +58,7 @@ func m431LoadWindow(t *testing.T) []market.Kline {
 func m431Day10_23(t *testing.T) (*Evaluator, []market.Kline, int) {
 	t.Helper()
 	withFlatNear(t)
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	// m462: this pins the phantom-arm mechanics on the 10-23 tape as it ran
 	// live (news-only gate). Under the m462 all-day default the 12:22 CT ISB
@@ -182,7 +182,7 @@ func TestM431NoArmWithoutAnEmittedEntryOnTheRealTape(t *testing.T) {
 // not among the surviving intents is un-registered; an arm held before the Tick
 // began, or one whose entry survives, is untouched.
 func TestM431DroppedEntryUnregistersEveryArmKind(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(legacy2mCfg())
 	e.State.ISBArms = map[string]ISBArm{"isb-old": {}, "isb-new-dropped": {}, "isb-new-kept": {}}
 	e.State.LevelArms = map[string]LevelArm{"lvl-a": {ArmID: "lvl-new-dropped"}, "lvl-b": {ArmID: "lvl-old"}}
 	e.State.RollingPHL = RollingPHL{ArmID: "roll-new-dropped"}

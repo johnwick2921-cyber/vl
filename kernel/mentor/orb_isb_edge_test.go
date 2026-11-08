@@ -17,8 +17,10 @@ import (
 // TestRelease31Defaults — rule 4 and rule 5 ship ON in DefaultConfig.
 func TestRelease31Defaults(t *testing.T) {
 	d := DefaultConfig()
-	if !d.Exec2mAfter30m {
-		t.Fatal("rule 4: exec_2m_after_30m must default ON (1m for the first 30 min, then 2m)")
+	// m472 A1: rule 4 (release #31, 2m after the first 30 min) is superseded by
+	// the October course: the 1m all day [Oct D4.2 @ 22:56-23:46]; default OFF.
+	if d.Exec2mAfter30m {
+		t.Fatal("rule 4 (superseded by m472 A1): exec_2m_after_30m must default OFF (1m all day) [Oct D4.2 @ 22:56-23:46]")
 	}
 	if d.OrbISBFractionOutside != 0.80 {
 		t.Fatalf("rule 5: orb_isb_fraction_outside must default 0.80, got %v", d.OrbISBFractionOutside)

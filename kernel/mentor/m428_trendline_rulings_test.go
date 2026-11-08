@@ -236,7 +236,7 @@ func TestM428FridayFanCapAndFlatLevels(t *testing.T) {
 				continue
 			}
 			bars, now := m423Upto(t, all, h, m)
-			e := New(DefaultConfig())
+			e := New(legacy2mCfg())
 			e.Cfg.Enabled = true
 			e.Tick(bars, now)
 			n := map[Side]int{}
@@ -260,7 +260,7 @@ func TestM428FridayFanCapAndFlatLevels(t *testing.T) {
 	}
 	t.Logf("max concurrent intraday lines per side: %v", maxSide)
 	bars, now := m423Upto(t, all, 13, 20)
-	e := New(DefaultConfig())
+	e := New(legacy2mCfg())
 	e.Cfg.Enabled = true
 	e.Tick(bars, now)
 	want := map[string]bool{"flat_support:29171.25": false, "flat_resistance:29216.25": false}

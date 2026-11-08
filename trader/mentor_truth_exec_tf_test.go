@@ -32,9 +32,8 @@ func TestMentorTruthSnapshotCarries2mTrendlineAfter0900(t *testing.T) {
 	at := truthAT(t)
 	cfg := mentor.DefaultConfig()
 	cfg.Enabled = true
-	if !cfg.Exec2mAfter30m {
-		t.Fatal("fixture: Exec2mAfter30m must default ON")
-	}
+	cfg.Exec2mAfter30m = true // m472 A1: default is now OFF (1m all day, [Oct D4.2 @ 22:56-23:46]); this pin covers the opt-in 2m frame
+
 	at.mentorEval = mentor.New(cfg)
 	t0 := m407CT(10, 0)
 	var bars []market.Kline

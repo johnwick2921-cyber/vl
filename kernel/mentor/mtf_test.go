@@ -137,7 +137,7 @@ func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			cfg := DefaultConfig()
+			cfg := legacy2mCfg()
 			cfg.Enabled = true
 			cfg.RoomMultiple = 0 // this pin tests the confluence flag, not the room rule
 			e := New(cfg)
