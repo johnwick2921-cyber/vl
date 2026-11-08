@@ -85,9 +85,11 @@ func TestOneKindCannotStarveAnother(t *testing.T) {
 		if p.Push(fmt.Sprintf("unprotected_position|t1|unprotected:MNQ:Long:%d", i), "naked") {
 			accepted++
 		}
+		p.Flush()
 	}
-	if accepted != maxPerKindPerHour {
-		t.Fatalf("the flooding kind got %d pushes, want exactly its budget %d", accepted, maxPerKindPerHour)
+	// m471 L3-5: a P0 kind's bound is the runaway backstop, not the 3/hour budget
+	if accepted != maxP0PerKindPerHour {
+		t.Fatalf("the flooding kind got %d pushes, want exactly its budget %d", accepted, maxP0PerKindPerHour)
 	}
 	for _, k := range []string{"feed-down|feeddown:e1", "trader_down_no_evaluator|t1|e", "protection_partial|t1|e", "feed-back|e1"} {
 		if !p.Push(k, "important") {
@@ -105,8 +107,9 @@ func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 	p := New(s.send)
 	clk := newTestClock(time.Date(2026, 10, 26, 8, 0, 0, 0, time.UTC))
 	p.SetClockForTest(clk.Now)
-	for i := 0; i < maxPerKindPerHour; i++ {
+	for i := 0; i < maxP0PerKindPerHour; i++ { // m471 L3-5: a P0 kind's bound is the runaway backstop
 		p.Push(fmt.Sprintf("unprotected_position|t1|e%d", i), "naked")
+		p.Flush()
 	}
 	if p.Push("unprotected_position|t1|late", "LATE-P0") {
 		t.Fatal("over budget must be refused")
@@ -123,7 +126,7 @@ func TestDroppedPushIsRetriedWhenTheBudgetReopens(t *testing.T) {
 	}
 	p.Flush()
 	got := s.got()
-	if len(got) != maxPerKindPerHour+1 || got[len(got)-1] != "LATE-P0" {
+	if len(got) != maxP0PerKindPerHour+1 || got[len(got)-1] != "LATE-P0" {
 		t.Fatalf("the held P0 was not delivered: %q", got)
 	}
 	if p.Held() != 0 || p.Retry() != 0 {
