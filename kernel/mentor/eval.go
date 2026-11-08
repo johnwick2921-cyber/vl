@@ -120,6 +120,10 @@ type State struct {
 	// range. Order is formation order; the last of a role is that role's
 	// active box.
 	PostEscapeBoxes []Box `json:"post_escape_boxes,omitempty"`
+	// CarriedBoxes (m473 B1) holds, per role, the last RTH-formed box carried
+	// past the 17:00 CT day roll: valid from the RTH open to the NEXT RTH open
+	// 08:30 CT (~23-24 h) [Oct D3.3 @ 40:40-41:20]. See box_validity.go.
+	CarriedBoxes map[string]Box `json:"carried_boxes,omitempty"`
 	// TallBoxNoted (CX-11) dedups the "box too tall" note per box.
 	TallBoxNoted map[string]bool `json:"-"`
 	// ISBBox15m is the 15m ISB rest box (D4.1-25): the latest CLOSED 15m
@@ -2279,11 +2283,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if e.State.LatchedBoxesDay != "" && len(e.State.LatchedBoxes) > 0 {
 			e.note("box latch cleared at the 17:00 CT session roll: trading day %s → %s (FTGH/FTGL redraw from the new session only) [D4.1 p2 @02:58]", e.State.LatchedBoxesDay, boxDay)
 		}
+		e.carryRTHBoxes(now) // m473 B1: the RTH box outlives the 17:00 roll to the next 08:30
 		e.State.LatchedBoxes = nil
 		e.State.PostEscapeBoxes = nil // B52: the new-zone boxes die with the day too
 		e.State.LatchedBoxesDay = boxDay
 	}
 	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
+	boxes = e.withCarriedBoxes(boxes, bars, now)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
 
 	// X9 (slide 27) + DAY-3 row 27: trendlines as LOCATIONS — two same-role

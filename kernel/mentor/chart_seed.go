@@ -66,6 +66,7 @@ func (e *Evaluator) SeedChartDisplay(bars []market.Kline, now int64) {
 			boxes = append(boxes, e.State.LatchedBoxes[k])
 		}
 	}
+	boxes = e.withCarriedBoxes(boxes, bars, now) // m473 B1
 	levels = append(levels, BoxEdgeLocations(boxes)...)
 
 	// Trendlines: the pure builder only (no carry, no HTF tracking, no refuse).
