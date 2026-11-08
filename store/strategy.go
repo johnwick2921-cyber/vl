@@ -2152,7 +2152,7 @@ type MentorTuning struct {
 	// m465 P3 (release #60) structure-fidelity knobs. Unset = the course
 	// (the full video read); the other value = the pre-#60 behaviour.
 	//
-	// D2.3-R7: "fourth" (unset) — a 1m/2m trendline is not a location on the
+	// D2.3-R7: "third" (unset since m472 A2; "fourth" was the September reading) — a 1m/2m trendline is not a location on the
 	// candle of its 3rd touch (the TEST), the entry comes on a later touch
 	// [D2.3 p1 @02:34–02:47, 03:03–03:16]; "third" — it arms on the 3rd touch.
 	TrendlineEntryTouch string `json:"trendline_entry_touch,omitempty"`

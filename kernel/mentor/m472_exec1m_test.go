@@ -38,6 +38,21 @@ func TestM472Exec1mAllDayDefault(t *testing.T) {
 	}
 }
 
+// TestM472Exec1mScheduleTable pins the default-config EMA frame across the day
+// (review round 1): 1m at every hour, so a flip of the default is caught away
+// from 09:15 too. The evening-slow 5m schedule is unchanged and is not asserted
+// here (it is gated by its own knob, off in DefaultConfig).
+func TestM472Exec1mScheduleTable(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	for _, hm := range [][2]int{{8, 45}, {9, 15}, {14, 55}, {18, 0}, {3, 30}} {
+		now := auditMs(2026, 9, 15, hm[0], hm[1], 0)
+		if tf := emaScheduleTF(cfg, 1, now); tf != 1 {
+			t.Errorf("%02d:%02d CT default emaScheduleTF = %d, want 1", hm[0], hm[1], tf)
+		}
+	}
+}
+
 // legacy2mCfg is DefaultConfig with the SEPTEMBER 2m-after-09:00 schedule
 // switched back ON. m472 A1 flipped the default to the 1m all day [Oct D4.2 @
 // 22:56-23:46]; fixtures, goldens and pins that exercise the 2m execution-frame

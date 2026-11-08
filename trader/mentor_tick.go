@@ -1539,10 +1539,13 @@ func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 // is "unset", so it resolves to the default -1 = window off). The SWING setup
 // is exempt (D5.2: the swing may be at any hour).
 // m472 A6: October supersedes September's 08:30 + 60 default. The window is
-// the whole RTH band (black band 08:30 to about 15:15 CT) [Oct D5.2 @ 01:00-01:20];
+// the RTH band on the chart (black band 08:30 to about 15:15 CT) [Oct D5.2 @ 01:00-01:20];
 // 30 minutes is only a time-poor student's example [Oct D4.1 @ 12:52-13:00].
-// After RTH the EOD-flat session gate (mentorEODFlatAuthorRefusal) stops
-// entries, not this window. A stored 60 stays 60.
+// With the window off the only author-time stops are the EOD-flat gate
+// (mentorEODFlatAuthorRefusal: 14:45 to the 17:00 reopen, and the 15:45 halt) and
+// the session registry (Asia/London are Enabled=false by default) - entries are
+// otherwise open around the clock (pinned by the m472 A6 overnight test). A
+// stored 60 stays 60.
 const (
 	mentorWindowDefaultStart   = "08:30"
 	mentorWindowDefaultMinutes = -1

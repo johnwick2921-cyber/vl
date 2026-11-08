@@ -23,6 +23,10 @@ func TestM472A7KeyLevel1HLastCandleEnds1515(t *testing.T) {
 		switch ms {
 		case at(15, 10):
 			hi = 150 // inside the 14:30 candle
+		case at(15, 14):
+			hi = 160 // last minute inside (15:15 end is exclusive)
+		case at(15, 15):
+			hi = 700 // first minute OUTSIDE
 		case at(15, 20):
 			hi = 900 // outside RTH candle
 		}
@@ -36,8 +40,8 @@ func TestM472A7KeyLevel1HLastCandleEnds1515(t *testing.T) {
 	if last.OpenTime != at(14, 30) {
 		t.Fatalf("last candle opens %v, want 14:30", time.UnixMilli(last.OpenTime).In(loc))
 	}
-	if last.High != 150 {
-		t.Fatalf("14:30 candle High=%v: want 150 (15:10 print inside, 15:20 print at 900 outside)", last.High)
+	if last.High != 160 {
+		t.Fatalf("14:30 candle High=%v: want 160 (15:14 print inside, 15:15 print at 700 and 15:20 print at 900 outside)", last.High)
 	}
 	if c := keyLevel1HCandleCloseTime(last.OpenTime); c != at(15, 15) {
 		t.Fatalf("scheduled close %v, want 15:15", time.UnixMilli(c).In(loc))

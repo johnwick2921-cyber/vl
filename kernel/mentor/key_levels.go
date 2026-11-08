@@ -129,7 +129,8 @@ func isPreBucketed1H(bars []market.Kline) bool {
 // candle and the RTH filter keeps candles opening in [08:00, 15:00) — the
 // hour that contains the market open. The evaluator always feeds 1m bars.
 // keyLevelLastCandleEndMin is the minute-of-day (CT) the last RTH 1h key-level
-// candle ends: 15:15 [Oct D5.2 @ 02:14-02:40]. A var only so the frozen
+// candle ends: 15:15, SCREEN-READ not spoken [Oct D5.2 @ 00:04 black band ends ~15:15; RTH menu @ 02:14-02:40]
+// (the mentor says 15:00 and 16:00 in other breaths; owner/mentor to confirm 15:15). A var only so the frozen
 // pre-October identity goldens can pin the September 15:00 end (tests only).
 var keyLevelLastCandleEndMin = 15*60 + 15
 

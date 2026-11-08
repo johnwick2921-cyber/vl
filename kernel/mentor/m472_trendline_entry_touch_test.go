@@ -16,14 +16,17 @@ import (
 // trade tại levels/s_02485.jpg — two circled bottoms (~28,600 and ~28,620) and
 // the line extended right (28,595.75 -> ~28,645.50); price returns to the line.
 // The tape is trendlineReturnTape (two rising lows, a leave, then the RETURN
-// touch on bar 13) shifted onto the 28,5xx MNQ price level of the frame.
+// touch on bar 13) shifted onto the 28,5xx level: the SHAPE of the D3.2 example
+// with SYNTHETIC prices, not the frame's circled bottoms; only ValidAt==13 and
+// the arming are asserted (the 28,595.75 -> ~28,645.50 line is not). A literal
+// "2 touches define the line" is not implemented (ValidAt stays 3, as ordered).
 // Through the production path (cfg := DefaultConfig(); the knob value the live
 // eval hands TrendlineLevelsTouch) the return candle arms the line as a
 // location; before m472 the default "fourth" refused it (third_touch_is_test)
 // and waited for a fourth touch.
 func TestM472TrendlineTwoBottomsReturnArmsOnDefault(t *testing.T) {
 	bars, _ := trendlineReturnTape()
-	const shift = 28500.0 // frame prices: bottoms ~28,600 / ~28,620
+	const shift = 28500.0 // synthetic level near the frame's 28,6xx
 	shifted := make([]market.Kline, len(bars))
 	for i, b := range bars {
 		b.Open += shift

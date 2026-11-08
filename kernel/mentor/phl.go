@@ -60,6 +60,9 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if !ok {
 		return Intent{}, false, "no reject entry"
 	}
+	// m472 A3: the 0.50 rays below (Oct D2.3 @ screen, risk = range + 2.0) supersede
+	// the September 1.00 / 0 pair (range + 1.00); the 25-pt ceiling now bites at a
+	// 23-pt candle range.
 	// R2: the buy stop sits at the PREVIOUS candle's high; stop = the low
 	// of that broken candle. The previous candle = the touch reference.
 	// D2.2-R10 [p1 @04:14–05:43, screen — release #59 fix round, mentor-exact]:

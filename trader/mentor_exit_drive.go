@@ -646,6 +646,9 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 			armed = beL <= pos.Entry+half
 		}
 		if armed {
+			// m472 A5: BE-half carries the be_offset_ticks allowance too
+			// [Oct D4.2 @ 13:00-13:25]; 0 ticks (default) = exactly the entry.
+			be := at.mentorBEStop(side, pos.Entry, at.mentorInstrumentTick())
 			// Release #22: BE counts as armed only when a move was APPLIED (sent,
 			// already at the broker, or the broker already tighter) — a refused
 			// or failed move never writes the belief; BE is re-tried next candle.
@@ -664,7 +667,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 					at.mentorCount("stop_move_skipped_leg_closed")
 					continue
 				}
-				err := at.mentorMoveLegStop(nt, side, leg, pos.Entry)
+				err := at.mentorMoveLegStop(nt, side, leg, be)
 				if errors.Is(err, errMentorStopBrokerTighter) {
 					applied = true // the broker is already past BE (belief corrected)
 					continue
@@ -683,12 +686,12 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 					}
 					continue
 				}
-				leg.Stop = pos.Entry
+				leg.Stop = be
 				applied = true
 			}
 			if applied {
 				pos.ArmedBE = true
-				pos.Stop = pos.Entry
+				pos.Stop = be
 				for i := range p.Legs {
 					if p.Legs[i].Final && p.Legs[i].Qty > 0 && mentorStopTighter(side, p.Legs[i].Stop, pos.Stop) {
 						pos.Stop = p.Legs[i].Stop

@@ -3,6 +3,7 @@ package trader
 import (
 	"math"
 	"testing"
+	"time"
 
 	"vl/store"
 )
@@ -84,6 +85,54 @@ func TestM472A5BEMoveThroughProductionPath(t *testing.T) {
 			if m.NewStopLoss != want {
 				t.Fatalf("ticks=%v: BE stop %.2f, want %.2f (%+v)", ticks, m.NewStopLoss, want, got)
 			}
+		}
+	}
+}
+
+// TestM472A5BEHalfBlockCarriesOffset — review round 1: the mode-B "BE at half
+// the distance" block (trail mode off; also a single bracket) must carry the
+// allowance too. [Oct D4.2 @ 13:00-13:25] break-even itself sits past the entry.
+// Trail mode off + confirmed partial reaches the BE-half block (same fixture as
+// "off mode BE after the partial skips leg 1"); 2 ticks short = entry-0.50.
+func TestM472A5BEHalfBlockCarriesOffset(t *testing.T) {
+	for _, ticks := range []*int{nil, m472Int(2)} {
+		rc := store.RiskControlConfig{MentorTrailMode: "off", MentorTuning: &store.MentorTuning{BEOffsetTicks: ticks}}
+		b := r22Fixture(t, rc)
+		b.positions("short", 1)
+		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
+		b.book(r22FullBook(r22Stop)...)
+		b.receiptLeg1(r22Sig, "short", r22L1TP, r22Minute(0).Add(30*time.Second))
+		b.candle(r22Minute(0), 30730.00, 30731.00, 30722.00, 30725.00)
+		want := r22Entry
+		if ticks != nil {
+			want = r22Entry - 0.50
+		}
+		got := b.waitMoves(1)
+		if len(got) != 1 || got[0].NewStopLoss != want {
+			t.Fatalf("ticks=%v: BE-half stop want %.2f, got %+v", ticks, want, got)
+		}
+	}
+}
+
+// TestM472A5ProductionHelpersBothSides — the production helpers (not the pure
+// function) on BOTH sides, knob 0 and 2: mentorBEStop (candle trail, resonance,
+// BE-before-partial, BE-half) and mentorSwingBEStop (swing arms).
+func TestM472A5ProductionHelpersBothSides(t *testing.T) {
+	for _, c := range []struct {
+		ticks      *int
+		side       string
+		wantBE     float64
+		wantSwingB float64
+	}{
+		{nil, "long", 100.00, 100.00}, {m472Int(2), "long", 100.50, 100.50},
+		{nil, "short", 100.00, 100.00}, {m472Int(2), "short", 99.50, 99.50},
+	} {
+		at, _ := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{BEOffsetTicks: c.ticks}}})
+		if got := at.mentorBEStop(c.side, 100.00, 0.25); math.Abs(got-c.wantBE) > 1e-9 {
+			t.Errorf("%s ticks=%v mentorBEStop=%.2f want %.2f", c.side, c.ticks, got, c.wantBE)
+		}
+		if got := at.mentorSwingBEStop(mentorLiveArm{Side: c.side, Entry: 100.00}); math.Abs(got-c.wantSwingB) > 1e-9 {
+			t.Errorf("%s ticks=%v mentorSwingBEStop=%.2f want %.2f", c.side, c.ticks, got, c.wantSwingB)
 		}
 	}
 }

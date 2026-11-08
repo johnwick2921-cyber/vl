@@ -56,9 +56,12 @@ const BreakerHaltDefault = 8
 
 // BreakerHaltMentorDefault is the consecutive-loss halt's shipped N for a
 // MENTOR-MODE strategy (risk_control.mentor_mode=true). [Oct D4.1 @ 14:40]
-// OctD4.1-R28 / R19: "thua 3 lenh lien tuc, lenh thu 4 thu 1 lenh nua, neu
+// OctD4.1-R28: "thua 3 lenh lien tuc, lenh thu 4 thu 1 lenh nua, neu
 // khong duoc thi tat may nghi" — 3 losses, one more try on the 4th, then shut
-// the machine off: 4 consecutive losses halt the 5th entry. AI-mode strategies
+// the machine off: 4 consecutive losses halt the 5th entry. (R19, the 35-40
+// minute cool-off after 3 losses [Oct D4.1 @ 09:05], is colour only and is NOT
+// implemented.) The streak window is the CME session day (17:00 CT start), not
+// the New York calendar day. AI-mode strategies
 // keep BreakerHaltDefault (8).
 const BreakerHaltMentorDefault = 4
 

@@ -10,8 +10,8 @@ import (
 )
 
 // TestM472A6UnsetWindowIsWholeRTHBand — m472 A6. The mentor trading window is
-// OFF when unset: the black RTH band on his 5m chart (08:30 to about 15:15 CT)
-// is the window he trades [Oct D5.2 @ 01:00-01:20]
+// OFF when unset: the black RTH band on his 5m chart (08:30 to about 15:15 CT,
+// screen-read) is the band he trades [Oct D5.2 @ 01:00-01:20]
 // (frame "/home/hoang/mm-course/oct/scenes/Ngày 5.2 Cách vẽ và trade tại major levels/s_00004.jpg",
 // notes OctD5.2-R2). The 30-minute 08:30-09:00 window is only a time-poor
 // student's example [Oct D4.1 @ 12:52-13:00] (s_00761.jpg), so it is not a
@@ -52,4 +52,30 @@ func TestM472A6UnsetWindowIsWholeRTHBand(t *testing.T) {
 	if refuse, why := unset.mentorEODFlatAuthorRefusal(in, day(10, 30)); refuse {
 		t.Fatalf("10:30 CT must not be refused as EOD flat: %s", why)
 	}
+}
+
+// TestM472A6UnsetWindowOvernightBehaviourPinned documents (review round 1) what
+// an UNSET window does outside RTH on the default registry: the window itself
+// never refuses; the EOD-flat gate refuses 14:45 to the 17:00 reopen; every
+// other hour is OPEN (the Asia/London sessions are Enabled=false so the
+// `!active` clause never fires). That is a CTO question (should an unset
+// strategy also gate to the NY session?), pinned here so a change is deliberate.
+func TestM472A6UnsetWindowOvernightBehaviourPinned(t *testing.T) {
+	ct := kernel.CTLocation()
+	at := func(h, m int) time.Time { return time.Date(2026, 10, 26, h, m, 0, 0, ct) } // Monday
+	in := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB"}
+	unset := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	for _, c := range []struct {
+		h, m    int
+		refused bool
+	}{{3, 0, false}, {7, 0, false}, {8, 29, false}, {10, 30, false}, {14, 45, true}, {15, 10, true}, {16, 0, true}, {17, 5, false}, {19, 0, false}, {23, 30, false}} {
+		setMentorNowSource(func() time.Time { return at(c.h, c.m) })
+		if refuse, why := unset.mentorWindowGate(in); refuse {
+			t.Errorf("%02d:%02d: the unset window must never refuse: %s", c.h, c.m, why)
+		}
+		if refuse, _ := unset.mentorEODFlatAuthorRefusal(in, at(c.h, c.m)); refuse != c.refused {
+			t.Errorf("%02d:%02d CT EOD-flat refusal = %v, want %v", c.h, c.m, refuse, c.refused)
+		}
+	}
+	t.Cleanup(func() { setMentorNowSource(nil) })
 }

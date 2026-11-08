@@ -1267,8 +1267,10 @@ func mentorExitB(pos mentorPosition, c, h, l float64, trail bool) mentorExitResu
 // October D4.2 supersedes the "course is silent" reading: the mentor counts
 // the green candles "1, 2, 3" [Oct D4.2 @ 10:00-10:09] and says "3 toi 4 ...
 // khong co cay thu 5 ... du di lam 4 cay" [Oct D4.2 @ 13:40-13:54], so 3 after
-// the fill candle is the outer bound; keep the value 3. Excluding the fill
-// candle from the count stays the conservative reading (mentor question B18).
+// the fill candle is the outer bound; keep the value 3. Counting: 3 AFTER the
+// fill candle = 4 counting the fill candle = the R17 outer bound ("3 to 4,
+// never a 5th"); R10's main rule is 3 counting the fill candle from the green
+// candle itself [Oct D4.2 @ 10:00-10:09]. Mentor confirmation pending (B18).
 const (
 	mentorResonanceMinCandles = 1
 	mentorResonanceMaxCandles = 3

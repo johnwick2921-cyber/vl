@@ -5,12 +5,13 @@ import (
 	"testing"
 	"time"
 
+	ntwire "vl/provider/ninjatrader"
 	"vl/store"
 )
 
 // TestM472A4MentorLossHaltFour — the mentor's consecutive-loss day stop.
 //
-// [Oct D4.1 @ 14:40] OctD4.1-R28 / R19: "thua 3 lenh lien tuc, lenh thu 4 thu 1
+// [Oct D4.1 @ 14:40] OctD4.1-R28: "thua 3 lenh lien tuc, lenh thu 4 thu 1
 // lenh nua, neu khong duoc thi tat may nghi" — 3 losses in a row, the 4th trade
 // is one more try, and if that fails too, shut the machine off. So after FOUR
 // consecutive losses the 5th entry is refused; after three the 4th is allowed.
@@ -68,5 +69,42 @@ func TestM472A4MentorLossHaltFour(t *testing.T) {
 				t.Fatalf("boot field %q want %q", got, c.wantField)
 			}
 		})
+	}
+}
+
+// TestM472A4MentorArmPathHaltsAtFour — review round 1: through the mentor arm
+// placement path (m235 style), a mentor strategy with NO stored halt key places
+// the arm after 3 consecutive losses and REFUSES it after 4
+// ("mentor placement REFUSED (consecutive_loss)"). [Oct D4.1 @ 14:40] OctD4.1-R28.
+// Rows are per closed position (flat-to-flat), one row per loss here.
+func TestM472A4MentorArmPathHaltsAtFour(t *testing.T) {
+	for _, c := range []struct {
+		losses  int
+		refused bool
+	}{{3, false}, {4, true}} {
+		t.Setenv("MENTOR_STOP_LIMIT", "on")
+		at, st, ledger, _ := mentorLoopback(t, ntwire.MinAddonBuildStopLimit)
+		at.config.StrategyConfig.DayPlan = &store.DayPlanConfig{PlanEnabled: true, SessionsEnabled: []string{"NY"}}
+		mentorWireSeams(t, at, ledger)
+		at.config.StrategyConfig.RiskControl.ConsecutiveLossHalt = nil
+		at.config.StrategyConfig.RiskControl.MentorMode = true
+		now := b3Clock(10, 30)
+		neg := -52.0
+		for i := 0; i < c.losses; i++ {
+			exit := now.Add(-time.Duration(10+10*i) * time.Minute)
+			loss := &store.TraderPosition{TraderID: at.id, Account: "Sim101", Symbol: "MNQ", Side: "LONG",
+				Quantity: 1, EntryPrice: 100, ExitPrice: 99, RealizedPnL: neg, PnlCorrected: &neg,
+				Status: "CLOSED", CloseReason: "sync",
+				EntryTime: exit.Add(-5 * time.Minute).UnixMilli(), ExitTime: exit.UnixMilli()}
+			if err := st.GormDB().Create(loss).Error; err != nil {
+				t.Fatal(err)
+			}
+		}
+		seedM235MentorRow(t, at, ledger, "mentor-halt4", "ISB", now.UnixMilli()+60_000)
+		at.maybeManageArmedOrdersAtOpts(nil, now, armedPassOpts{})
+		row := readArmRow(t, ledger, "mentor-halt4")
+		if placed := row.SignalID != ""; placed == c.refused {
+			t.Fatalf("%d losses: placed=%v, want refused=%v (state=%q)", c.losses, placed, c.refused, row.State)
+		}
 	}
 }

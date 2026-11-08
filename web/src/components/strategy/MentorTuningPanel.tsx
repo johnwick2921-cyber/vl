@@ -357,14 +357,14 @@ const COPY = {
     es: 'Toque de entrada en la línea de tendencia (el 3.er toque = la prueba)',
   },
   tlEntryFourth: {
-    zh: '第 4 次触碰起入场（课程）',
-    en: 'enter from the 4th touch (the course)',
-    es: 'entrar desde el 4.º toque (el curso)',
+    zh: '第 4 次触碰起入场（9 月课程，更严）',
+    en: 'enter from the 4th touch (September course, stricter)',
+    es: 'entrar desde el 4.º toque (curso de septiembre, más estricto)',
   },
   tlEntryThird: {
-    zh: '第 3 次触碰即入场（#60 之前）',
-    en: 'enter on the 3rd touch (pre-#60)',
-    es: 'entrar en el 3.er toque (antes de #60)',
+    zh: '第 3 次触碰即入场（10 月课程，默认）',
+    en: 'enter on the 3rd touch (October course, default)',
+    es: 'entrar en el 3.er toque (curso de octubre, por defecto)',
   },
   nearBoxBetween: {
     zh: '两个箱体之间免除"靠近箱体"（#60 之前；默认 关 = 按自身空间判断）',
