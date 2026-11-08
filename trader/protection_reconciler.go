@@ -984,10 +984,17 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		retries++
 		protectionFlattenRetries.Store(key, retries)
 		if retries > 1 {
-			at.logWarnf("🧷 protection flatten retry #%d: %s %s ×%d — close re-sent (P0 alert deduped, not re-raised)",
+			at.logWarnf("🧷 protection flatten retry #%d: %s %s ×%d — market close retried through the in-flight guard (P0 alert deduped, not re-raised)",
 				retries, side, symbol, qty)
 		}
-		at.flattenPosition(&store.TraderPosition{Symbol: symbol, Side: side}, "protection-through-stop")
+		// m471 L2-2: an emergency close is a MARKET close (CloseLong/CloseShort +
+		// bracket cancel), never the limit ladder — a favorable-side limit above a
+		// falling market never fills, and this synthesized position has no
+		// durable identity for the ladder's market fallback. It goes through the
+		// L2-1 in-flight guard, so a pass inside the hold of an earlier market
+		// close sends nothing and a resting limit exit is escalated, not stacked.
+		at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: symbol, Side: side},
+			"protection-through-stop", now)
 	}
 }
 
