@@ -43,13 +43,22 @@ const closeRejectEpisodeGap = 15 * time.Minute
 // (mentor_exit_drive.go, one per episode) but reached the alert center only.
 const alertKindStopMoveNotApplied = "stop-move-not-applied"
 
+// alertKindProtectionUnverified - m469: the protection reconciler could not
+// verify a position's stop (positions unreadable, or no fresh broker book) for
+// longer than protectionUnverifiedAlertAfter while a position is open. It used
+// to be a WARN line only. An ops kind: it must reach the owner whatever the
+// day-plan state.
+const alertKindProtectionUnverified = "protection_unverified"
+
 // ownerPushClock is the instant the feed-down CME-open leg is judged at; a var
 // so the pins are not hostage to the wall clock (the CME daily break / weekend
 // would otherwise make a green test red).
 var ownerPushClock = time.Now
 
 // ownerPushKind reports the alert kinds pushed to the owner. Anything else keeps
-// the in-app surface only (no external-push for plan-content alerts).
+// the in-app surface only (no external-push for plan-content alerts). Every P0
+// kind the trader package emits is either here or in the census's notPushed
+// list with its reason (owner_push_census_test.go) - a new P0 in neither fails.
 func ownerPushKind(level, kind string) bool {
 	switch kind {
 	case "feed-down",
@@ -59,8 +68,18 @@ func ownerPushKind(level, kind string) bool {
 		"protection_partial",
 		"protection_pending_stuck",
 		"protection_over_covered",
+		alertKindProtectionUnverified, // m469: a position open and its protection unreadable for too long
 		alertKindCloseRejected,
-		alertKindStopMoveNotApplied:
+		alertKindStopMoveNotApplied,
+		// m469: the 11-03..11-06 402 outage never reached the owner. The AI
+		// outage, the daily-loss trip, an untracked live position and a panic
+		// (the trader is frozen for new entries) are all "the bot cannot trade".
+		"ai-payment",
+		"ai-failing",
+		"daily-loss",
+		"untracked-position",
+		"trader_panic",
+		"goroutine_panic":
 		return level == "P0"
 	case alertKindBarHoleUnfilled:
 		return true

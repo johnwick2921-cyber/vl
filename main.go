@@ -889,8 +889,8 @@ func main() {
 		ownerpush.Push(bootKey, bootText)
 		// m448 (release #54): the nightly data report rides the same owner-push
 		// channel, once per CME session day after the 16:00 CT close.
-		startNightlyDataReport(cfg.DBPath, st)
-		logger.Info("📊 nightly data report: once per CME session day at 16:10 CT -> the owner's bound Telegram chat · bars expected vs stored, holes, feed down, drops, trades+P&L, refusals, backup restore test · every figure read, n/a when unknown")
+		startNightlyDataReport(cfg.DBPath, st, traderManager)
+		logger.Info("📊 nightly data report: once per CME session day at 16:10 CT -> the owner's bound Telegram chat · why no trade per trader (mentor funnel / AI cycle failures) first, then bars expected vs stored, holes, feed down, drops, trades+P&L, refusals, backup restore test · every figure read, n/a when unknown")
 	}
 
 	// Wait for interrupt signal

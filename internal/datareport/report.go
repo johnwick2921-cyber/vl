@@ -131,6 +131,10 @@ type Sources struct {
 	// RestoreDir holds the weekly backup-restore-test result files. "" = not
 	// configured (n/a).
 	RestoreDir string
+
+	// Funnel lists the traders this process runs, with each mentor-mode
+	// trader's funnel (m469 why-no-trade line). Nil = not wired (n/a).
+	Funnel func() []TraderFunnel
 }
 
 // Session is one CME session day.
@@ -228,6 +232,11 @@ type Report struct {
 	Session Session
 	BootAt  time.Time
 
+	// Why is one entry per trader for the why-no-trade lines (m469); WhyWired
+	// is false when no trader source was wired.
+	Why      []TraderWhy
+	WhyWired bool
+
 	Symbols    []SymbolRow
 	SymbolsErr string
 
@@ -304,6 +313,9 @@ func Collect(src Sources, sess Session) Report {
 	}
 	if src.RestoreDir != "" {
 		r.Restore = ReadRestoreResult(src.RestoreDir, sess.End)
+	}
+	if src.Funnel != nil {
+		r.Why, r.WhyWired = collectWhy(src.DB, sess, src.Funnel()), true
 	}
 	return r
 }

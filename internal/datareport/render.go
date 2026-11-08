@@ -43,6 +43,10 @@ func (r Report) Lines() []string {
 	out = append(out, fmt.Sprintf("📊 vl data report — session %s, %s to %s",
 		r.Session.Key, kernel.ClockCT(r.Session.Start), kernel.ClockCT(r.Session.End)))
 
+	// Why no trade, one line per trader, straight under the header: a long
+	// report is cut from the end, so this answer is never what gets cut.
+	out = append(out, r.whyLines()...)
+
 	// 1m bars, expected vs stored, per symbol.
 	switch {
 	case r.SymbolsErr != "":

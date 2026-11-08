@@ -61,9 +61,10 @@ import (
 const (
 	queueCap = 16
 	// maxPerKindPerHour is the per-kind budget; maxPerHour the all-kinds
-	// backstop. The backstop is sized above (kinds the owner is pushed) x
-	// (per-kind budget) so it only ever binds for unknown kinds: for the known
-	// ones the per-kind budget binds first and no kind can starve another.
+	// backstop. m469: a P0 key (IsP0Key) is neither refused by nor counted in the
+	// backstop - with 20+ pushed kinds, (kinds) x (per-kind budget) is far above
+	// 30, so a burst of new P0 kinds could otherwise use up the shared 30 and
+	// hold FEED DOWN back. Every kind, P0 included, keeps its own per-kind budget.
 	maxPerKindPerHour = 3
 	maxPerHour        = 30
 	dedupeTTL         = 24 * time.Hour
@@ -100,7 +101,7 @@ var ErrNotBound = errors.New("owner push: no Telegram chat bound")
 // anything else that states them (m442 #27: the line said 8/hour while the code
 // was 3 per kind and 30 total).
 func Limits() string {
-	return fmt.Sprintf("<=%d/hour per kind, <=%d/hour in total", maxPerKindPerHour, maxPerHour)
+	return fmt.Sprintf("<=%d/hour per kind, <=%d/hour in total (P0 kinds exempt from the total)", maxPerKindPerHour, maxPerHour)
 }
 
 // p0KindPrefixes (m467) are the owner-push kinds that report the bot cannot
@@ -110,11 +111,19 @@ func Limits() string {
 // DOWN, held and failing, was discarded as stale at 03:41 - the alert path
 // dropped the very outage it was reporting. A P0 leaves the hold only by being
 // delivered or by Cancel (its episode ended and a later message says so).
+//
+// m469: the AI outage messages (ai-payment = DeepSeek 402, its hourly STILL
+// DOWN, the "AI back" that ends it, and ai-failing = calls failing for any
+// other reason), the daily-loss trip, an untracked live position and the two
+// panic kinds join the list. On 11-03..11-06 one trader's AI answered 402 for
+// 2.5 days (every cycle on 11-05 failed) and the owner was never told.
 var p0KindPrefixes = []string{
 	"feed-down", "feed-still-down", "feed-back",
 	"data_truth_", "data-paused-", "data-still-paused-", "data-resumed-",
 	"trader_down", "dead_man", "unprotected_position", "protection_",
 	"position_close_rejected", "stop-move-not-applied",
+	"ai-payment", "ai-still-down", "ai-back", "ai-failing",
+	"daily-loss", "untracked-position", "trader_panic", "goroutine_panic",
 	"boot", "push-outage",
 }
 
@@ -131,9 +140,11 @@ func IsP0Key(key string) bool {
 
 // OutagePolicy renders the m467 outage guarantees FROM THE CONSTANTS for the
 // boot line (boot lines are read, never literal).
+// m469: the P0 list is rendered from p0KindPrefixes itself, so a kind added
+// there is in the boot line without a second edit.
 func OutagePolicy() string {
-	return fmt.Sprintf("a P0 (feed down/still down/back, data-truth + trading pauses, trader down, protection, boot) is NEVER dropped by an outage: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
-		p0RetryBackoffMax, outageSummaryMin, holdTTL)
+	return fmt.Sprintf("a P0 (kinds %s) is NEVER dropped by an outage and is exempt from the %d/hour total: held until delivered or withdrawn, retried at <=%s, kept across a restart; the first send that gets through re-sends every held alert at once and, after >=%s of failures, one summary (window, failed, withdrawn); other kinds go stale after %s; hourly STILL DOWN / STILL PAUSED reminders",
+		strings.Join(p0KindPrefixes, ", "), maxPerHour, p0RetryBackoffMax, outageSummaryMin, holdTTL)
 }
 
 type heldMsg struct {
@@ -394,7 +405,9 @@ func (p *Pusher) onFailed(m heldMsg, err error) {
 	if live { // not withdrawn by Cancel
 		delete(p.seen, m.key)
 		kind := kindOf(m.key)
-		p.sentAt = removeOnce(p.sentAt, m.admitAt)
+		if !IsP0Key(m.key) { // a P0 never took a backstop slot (m469)
+			p.sentAt = removeOnce(p.sentAt, m.admitAt)
+		}
 		p.kindAt[kind] = removeOnce(p.kindAt[kind], m.admitAt)
 		m.attempts++
 		m.notBefore = p.now().Add(backoffForKey(m.key, m.attempts))
@@ -494,7 +507,10 @@ func (p *Pusher) admitLocked(m heldMsg, now time.Time) string {
 	if len(kl) >= maxPerKindPerHour {
 		return fmt.Sprintf("%s budget (%d/hour)", kind, maxPerKindPerHour)
 	}
-	if len(p.sentAt) >= maxPerHour {
+	// m469: a P0 is not held back by the all-kinds backstop, and does not use
+	// it up either (it is not appended to sentAt below).
+	p0 := IsP0Key(key)
+	if !p0 && len(p.sentAt) >= maxPerHour {
 		return fmt.Sprintf("rate limit (%d/hour)", maxPerHour)
 	}
 	m.text = Scrub(m.text)
@@ -508,7 +524,9 @@ func (p *Pusher) admitLocked(m heldMsg, now time.Time) string {
 	}
 	p.seen[key] = now
 	p.inflight[key] = m
-	p.sentAt = append(p.sentAt, now)
+	if !p0 {
+		p.sentAt = append(p.sentAt, now)
+	}
 	p.kindAt[kind] = append(p.kindAt[kind], now)
 	p.persistLocked()
 	return ""

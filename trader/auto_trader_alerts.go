@@ -68,7 +68,17 @@ func isOpsAlertKind(kind string) bool {
 		"pep_mode_conflict", // PEP MODE: a trader refused at start for an illegal mode combination
 		"pep_flat_failed",   // PEP MODE: a pep position is still open after repeated flat attempts
 		alertKindStopMoveNotApplied,
-		alertKindCloseRejected: // m442 #19: NT8 refused an exit - the position is still open
+		alertKindCloseRejected, // m442 #19: NT8 refused an exit - the position is still open
+		// m469: every kind pushed to the owner is an ops kind too, so a trader
+		// with no day plan (every mentor trader) still writes the row - and only
+		// a written row is ever pushed. The census test pins pushed => ops.
+		alertKindProtectionUnverified,
+		"ai-payment",         // the AI provider answers 402: no AI decision until topped up
+		"ai-failing",         // AI calls keep failing for another reason
+		"daily-loss",         // the daily loss limit tripped: entries refused, positions flattened
+		"untracked-position", // a fill the DB did not record: the trader is frozen
+		"trader_panic",       // a panic froze the trader for new entries
+		"goroutine_panic":    // a trader goroutine panicked: frozen for new entries
 		return true
 	}
 	return false
