@@ -123,8 +123,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
 			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
 			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: true,
-			NewsWaitBothLines: true,                                                                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-			NewsBarsExcluded:  true,                                                                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+			NewsWaitBothLines: true,                                                                        // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
+			NewsBarsExcluded:  true,                                                                        // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
 			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
