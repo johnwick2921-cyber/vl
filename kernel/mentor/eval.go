@@ -2482,8 +2482,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 
 	// R5 (RULES-FIX-v3): the 5m ISB rest box. While it stands it replaces the
 	// trigger line for gating; nothing trades inside it except a same-direction
-	// 1m ISB, and it is deleted when a 1m candle CLOSES outside [D3.4 p2 @
-	// 00:14–13:00; D4.1 p1 @ 21:38].
+	// 1m ISB. A 1m close outside gives trade permission; the box is deleted
+	// when a candle of its OWN timeframe closes outside (default close5m), or on
+	// the 1m close/body in the explicit modes close/body [D3.4 p2 @ 00:14–13:00;
+	// D4.1 p1 @ 21:38; Oct D4.3 @ 65:00-66:13, OctD4.3-R67].
 	if e.State.ISBBox != nil {
 		// CE-5 (release #25): the escape test is the isb_box_escape knob —
 		// m466 G20/G49: close (default since #61) = the 1m close beyond the

@@ -650,7 +650,8 @@ type Config struct {
 	// bên ngoài cái box là at least" [D4.1 p1 @20:36–21:03]; "nó đóng một cái
 	// nến một phút ở ngoài" [D3.4 p2 @05:37–06:01] — the same close the PHL/PLH
 	// 5m-box ban reads. "body" = the #25–#60 default: OPEN AND CLOSE beyond
-	// the edge (a stored isb_box_escape=body still wins). FTGH/FTGL boxes keep
+	// the edge (a stored isb_box_escape=body still wins; a stored close is an
+	// EXPLICIT opt-out of the October default close5m: it deletes the box on the 1m close). FTGH/FTGL boxes keep
 	// their own body escape (D3.2-R16, box.go) whatever this says.
 	ISBBoxEscapeMode string
 	// EmaLossRelock — CE-6 (a): after one loss at the EMA 34 —

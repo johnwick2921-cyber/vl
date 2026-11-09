@@ -13,9 +13,11 @@ import (
 //
 // Nothing trades inside it except a 1m ISB in the SAME direction as the 5m ISB
 // (the R1 direction: the colour of the 5m candle BEFORE the inside bar).
-// Escape = a 1m candle closes with its BODY outside the box; then trade the
-// escape direction (ISB or PHL/PLH — the evaluator's choice) and DELETE the
-// box [D3.4 p2 @ 12:02]. No per-touch weight change belongs here: a level only
+// Escape = a 1m candle closes outside the box: that gives trade permission in
+// the escape direction (ISB or PHL/PLH — the evaluator's choice). October
+// default (close5m): the box is DELETED only when a candle of its OWN timeframe
+// closes outside [Oct D4.3 @ 65:00-66:13, OctD4.3-R67]; the explicit modes
+// close/body still delete on the 1m candle [D3.4 p2 @ 12:02]. No per-touch weight change belongs here: a level only
 // ever gets WEAKER with each test (deck slide 17; CTO 2026-10-03).
 
 // ISBBox is one standing 5m ISB rest box.

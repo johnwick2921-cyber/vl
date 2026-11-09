@@ -299,3 +299,17 @@ describe('mentor guide — m473 October boxes', () => {
     }
   })
 })
+
+// m473 PR B round 2: evening-box validity and the extreme-anchored pair.
+describe('mentor guide — m473 round 2 boxes', () => {
+  const all = JSON.stringify(mentor)
+  it('describes the evening box expiry and the extreme-anchored level pair', () => {
+    for (const needle of [
+      'valid to the FIRST open after it formed',
+      'most extreme confirmed one',
+      'never beats the prominent peaks',
+    ]) {
+      expect(all, `missing ${needle}`).toContain(needle)
+    }
+  })
+})

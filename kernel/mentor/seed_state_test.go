@@ -435,7 +435,11 @@ func TestRestartIssuesNoHistoricalBoxIntents1014(t *testing.T) {
 	before := copyCounts(re.State.Refusals)
 	out := re.Tick(lrWindow(full, ri), BarCloseInstant(full[ri]))
 	got := diffCounts(before, re.State.Refusals)
-	boxOnly := func(m map[string]int) string {
+	// remap is applied to the CONTINUOUS side only, and only when the restart side
+	// holds exactly the expected counterpart (box_isb_ban_15m with no
+	// box_tf_conflict): any other divergence between these two gates still fails.
+	remapLive := got["box_isb_ban_15m"] > 0 && got["box_tf_conflict"] == 0
+	boxOnly := func(m map[string]int, live bool) string {
 		var ks []string
 		for k, v := range m {
 			// m473 B1 (round 2): carried boxes (valid to the next RTH open) now
@@ -444,7 +448,7 @@ func TestRestartIssuesNoHistoricalBoxIntents1014(t *testing.T) {
 			// tick) names the SAME refused return differently — conflict with the
 			// live 15m box vs the 15m ban on the freshly built one. Same count,
 			// same refused return; the gate NAME is what differs.
-			if k == "box_tf_conflict" {
+			if live && remapLive && k == "box_tf_conflict" {
 				k = "box_isb_ban_15m"
 			}
 			if strings.HasPrefix(k, "box_") || strings.HasPrefix(k, "trigger_") || k == "isb_trigger_side" || k == "room" {
@@ -454,8 +458,8 @@ func TestRestartIssuesNoHistoricalBoxIntents1014(t *testing.T) {
 		sort.Strings(ks)
 		return strings.Join(ks, ",")
 	}
-	if boxOnly(got) != boxOnly(liveRef) {
-		t.Fatalf("restart first tick box refusals [%s] ≠ continuous [%s] — historical returns were walked", boxOnly(got), boxOnly(liveRef))
+	if boxOnly(got, false) != boxOnly(liveRef, true) {
+		t.Fatalf("restart first tick box refusals [%s] ≠ continuous [%s] — historical returns were walked", boxOnly(got, false), boxOnly(liveRef, true))
 	}
 	nBox := func(ins []Intent) int {
 		n := 0

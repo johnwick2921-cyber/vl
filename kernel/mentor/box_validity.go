@@ -19,23 +19,38 @@ import (
 // box only fills a role that has no box of its own.
 
 // boxExpiryMs is when a carried box stops being valid: the first RTH open
-// (08:30 CT) after the RTH open of the box's trading day. A box standing at
-// the open — including one drawn from the pre-open peaks (about 08:00) and
-// confirmed before 08:30 — is "valid from market open" to the next open
-// [Oct D3.3 @ 41:28-41:36] (OctD3.3-R51, R52, frame s_02464). A box formed
-// after that open expires at the first open after its own formation.
+// (08:30 CT) after the box's start of validity. A box standing at the open —
+// including one drawn from the pre-open peaks (about 08:00) and confirmed
+// before 08:30 on its own calendar day — is "valid from market open" to the
+// next open [Oct D3.3 @ 41:28-41:36] (OctD3.3-R51, R52, frame s_02464): its
+// start is raised to that day's 08:30. Any other box (formed at or after 08:30,
+// INCLUDING a Globex-evening box formed at or after 17:00 CT) expires at the
+// first open after its own formation: Thu 18:00 -> Fri 08:30, Sun 18:00 ->
+// Mon 08:30, never one open later ("valid until the market opens tomorrow,
+// 23-24 h" [Oct D3.3 @ 40:40-41:20], OctD3.3-R51). round-2 fix: the old code
+// pushed an evening box to the NEXT day's open, then one open further (38-86 h).
 func boxExpiryMs(b Box) int64 {
 	t := time.UnixMilli(b.FormedAtMs).In(ctime())
-	day := t
-	if t.Hour() >= 17 { // the 17:00 CT roll: the box belongs to the next trading day
-		day = t.AddDate(0, 0, 1)
-	}
-	open := time.Date(day.Year(), day.Month(), day.Day(), 8, 30, 0, 0, ctime()).UnixMilli()
 	from := b.FormedAtMs
-	if open > from {
-		from = open
+	if t.Hour() < 17 {
+		open := time.Date(t.Year(), t.Month(), t.Day(), 8, 30, 0, 0, ctime()).UnixMilli()
+		if open > from {
+			from = open
+		}
 	}
 	return nextRTHOpenAfterMs(from)
+}
+
+// boxAnchorInWindow reports whether the box's formation bar is still inside
+// the bar window: refreshBox fails closed on an absent anchor and would keep a
+// stale window index (a carried box scrolled out of the 1500-bar window).
+func boxAnchorInWindow(bars []market.Kline, b Box, cfg BoxCfg) bool {
+	src := bars
+	if b.TF != "2m" {
+		src = barsForTF(bars, cfg.TF)
+	}
+	_, ok := resolveBarIndex(src, b.FormedAtMs)
+	return ok
 }
 
 // nextRTHOpenAfterMs is the first RTH open (08:30 CT on a day the CME is
@@ -92,6 +107,9 @@ func (e *Evaluator) carriedBoxesAt(boxes []Box, bars []market.Kline, now int64) 
 		}
 		if have {
 			continue
+		}
+		if !boxAnchorInWindow(bars, b, e.Cfg.Box) {
+			continue // anchor scrolled out of the window: never trust the stale index
 		}
 		refreshBox(bars, &b, e.Cfg.Box)
 		boxes = append(boxes, b)

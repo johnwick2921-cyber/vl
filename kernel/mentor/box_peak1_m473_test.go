@@ -54,7 +54,7 @@ func TestM473B2Peak2HigherWickBoxAnchorsOnPeak1(t *testing.T) {
 	}
 }
 
-// TestM473B2PeakOneHigherStillPeak1 — mirror order: peak 1 higher, peak 2 level
+// TestM473B2PeakOneHigherStillPeak1 (regression guard, passes on dev) — mirror order: peak 1 higher, peak 2 level
 // below: anchored on peak 1 as before.
 func TestM473B2PeakOneHigherStillPeak1(t *testing.T) {
 	withFlatNear(t)
@@ -65,8 +65,9 @@ func TestM473B2PeakOneHigherStillPeak1(t *testing.T) {
 	}
 }
 
-// TestM473B2UnlevelPeaksNoBox — peak 2 is 15 pts above peak 1: the horizontal
-// line from peak 1 does not touch it, so no box.
+// TestM473B2UnlevelPeaksNoBox — REGRESSION GUARD (passes on dev too; the
+// red-first proof is TestM473B2PeakTwoLowerButUnlevelNoBox): peak 2 is 15 pts
+// above peak 1: the horizontal line from peak 1 does not touch it, so no box.
 func TestM473B2UnlevelPeaksNoBox(t *testing.T) {
 	withFlatNear(t)
 	bars, now := m473PeakTape([]float64{28808, 28809, 28810, 28817.25, 28812, 28810, 28811, 28813, 28832.25, 28814, 28812})
@@ -157,5 +158,38 @@ func TestM473B2FTGLUnlevelNoBox(t *testing.T) {
 		if b.Kind == FTGL {
 			t.Fatalf("bottoms 15 pts apart are not level, got FTGL %+v", b)
 		}
+	}
+}
+
+// TestM473B2PeakTwoLowerButUnlevelNoBox — RED on the pre-m473 rule: the legacy
+// "extreme + first later swing that does not exceed it" would box peak 1 28,832
+// with peak 2 28,817 (15 below, not level). A horizontal line from peak 1 does
+// not touch peak 2 [Oct D3.3 @ 14:20] (R23), so the new rule makes no box.
+func TestM473B2PeakTwoLowerButUnlevelNoBox(t *testing.T) {
+	withFlatNear(t)
+	highs := []float64{28808, 28809, 28810, 28832, 28812, 28810, 28811, 28813, 28817, 28812, 28810}
+	bars, now := m473PeakTape(highs)
+	if b := m473FTGH(BoxesBuild(bars, DefaultBoxCfg(), now)); b != nil {
+		t.Fatalf("peaks 15 pts apart are not level, got box %+v", b)
+	}
+	old := boxPeak1Level
+	boxPeak1Level = false
+	defer func() { boxPeak1Level = old }()
+	if m473FTGH(BoxesBuild(bars, DefaultBoxCfg(), now)) == nil {
+		t.Fatalf("control: the legacy construction boxes this tape, so the test discriminates")
+	}
+}
+
+// TestM473B2EarlyTrivialPairDoesNotBeatTheRealPeaks — an early level pair of
+// small swings (28,808 twice) precedes the prominent level peaks 28,830 /
+// 28,831. The video never says "first swing in time" (round-2 video lens); the
+// day's extreme anchors, so the box is the prominent peaks (peak 1 = 28,830).
+func TestM473B2EarlyTrivialPairDoesNotBeatTheRealPeaks(t *testing.T) {
+	withFlatNear(t)
+	highs := []float64{28804, 28805, 28808, 28806, 28805, 28808, 28806, 28810, 28830, 28812, 28813, 28814, 28831, 28812, 28810}
+	bars, now := m473PeakTape(highs)
+	b := m473FTGH(BoxesBuild(bars, DefaultBoxCfg(), now))
+	if b == nil || b.Top != 28830 {
+		t.Fatalf("FTGH = %+v, want the prominent peaks (top 28830, peak 1), not the early 28808 pair", b)
 	}
 }

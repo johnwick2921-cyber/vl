@@ -296,8 +296,11 @@ func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
 // 2 có râu cao hơn ... mình sẽ bay theo đỉnh 1 ... chuyện bắt buộc" [Oct D3.3 @
 // 19:31] (OctD3.3-R30); "đặt được một cái đường ... biết là nó có ngang không"
 // [Oct D3.3 @ 14:20] (R23); FTGL is the mirror [Oct D3.3 @ 43:14] (R54). The
-// partner is the nearest-in-time later level swing (unchanged; the body-edge
-// partner rule waits for the mentor). Supersedes the September "highest swing
+// partner is the confirmed level swing nearest in time to the day's EXTREME
+// swing (either side; the body-edge partner rule waits for the mentor), and the
+// extreme is tried first so an early trivial level pair never beats the
+// prominent peaks (round-2: the video does not say "first swing in time").
+// Supersedes the September "highest swing
 // of the day + next swing that does not exceed it" [D3.2 p1 @ 01:21-04:25].
 // When flatNearPts is 0 (levelness disabled: the legacy synthetic-tape premise,
 // flatNearScale 0) the legacy extreme/nearest selection is kept.
@@ -317,18 +320,48 @@ func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind
 		return -1, -1
 	}
 	if boxPeak1Level && flatNearScale > 0 && len(tfBars) > 0 {
-		// earliest anchor that has a level later partner; partner = nearest later level one
-		for _, ai := range conf {
-			a := seq[ai]
-			for _, bi := range conf {
-				b := seq[bi]
-				if b.idx <= a.idx {
+		// round-2 (video lens): the video never says "the first-in-time swing
+		// with a level partner". The anchor is the day's EXTREME confirmed swing
+		// as before m473 (highest high / lowest low); it pairs with the nearest-
+		// in-time confirmed swing that is LEVEL with it, in EITHER order, and the
+		// box anchors on the EARLIER of the two (peak 1 is the standard [Oct D3.3
+		// @ 19:31], R30). If the extreme has no level partner, the next most
+		// extreme is tried, so an early trivial level pair can never beat the
+		// prominent peaks.
+		order := append([]int(nil), conf...)
+		sort.SliceStable(order, func(x, y int) bool {
+			if role == kernel.KindSWGL {
+				return seq[order[x]].price < seq[order[y]].price
+			}
+			return seq[order[x]].price > seq[order[y]].price
+		})
+		for _, ei := range order {
+			ex := seq[ei]
+			best := -1
+			for _, ci := range conf {
+				if ci == ei {
 					continue
 				}
-				if math.Abs(b.price-a.price) <= flatNearPts(tfBars, b.idx) {
-					return ai, bi // conf is time-ordered: first hit is the nearest
+				c := seq[ci]
+				later := c.idx
+				if ex.idx > later {
+					later = ex.idx
+				}
+				if math.Abs(c.price-ex.price) > flatNearPts(tfBars, later) {
+					continue
+				}
+				if best < 0 || absInt(c.idx-ex.idx) < absInt(seq[best].idx-ex.idx) ||
+					(absInt(c.idx-ex.idx) == absInt(seq[best].idx-ex.idx) && c.idx < seq[best].idx) {
+					best = ci
 				}
 			}
+			if best < 0 {
+				continue
+			}
+			if seq[best].idx < ex.idx {
+				return best, ei // peak 1 = the earlier swing
+			}
+			return ei, best
 		}
 		return -1, -1
 	}
@@ -1006,4 +1039,11 @@ func structureTrend5m(closed5m []market.Kline) Side {
 		return SideShort
 	}
 	return ""
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
