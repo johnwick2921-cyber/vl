@@ -218,11 +218,12 @@ export function mentorTrailModeShown(stored?: string): string {
 }
 
 // Stored defaults (trader/mentor_tick.go mentorWindowDefaultStart/Minutes). An
-// unset or 0 length resolves to -1 = no window (m472 A6: the whole RTH band
-// [Oct D5.2 @ 01:00-01:20]; was 60 [D1.2 p1 @23:49-24:21]).
+// unset or 0 length resolves to 405 = 08:30 to 15:15 CT, the RTH band (m472 A6,
+// screen-read [Oct D5.2 @ 01:00-01:20]; was 60 [D1.2 p1 @23:49-24:21]). A stored
+// -1 is the explicit "no window" opt-out.
 export const MENTOR_WINDOW_DEFAULT_START = '08:30'
 export const MENTOR_WINDOW_NONE = -1
-export const MENTOR_WINDOW_DEFAULT_MINUTES = MENTOR_WINDOW_NONE
+export const MENTOR_WINDOW_DEFAULT_MINUTES = 405
 const WINDOW_LENGTHS = [30, 60, 90, 120]
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/
 

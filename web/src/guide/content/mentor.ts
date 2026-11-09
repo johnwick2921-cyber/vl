@@ -750,9 +750,9 @@ export const mentor: GuideSection = {
         },
         {
           title:
-            'Trading window — none by default (the whole RTH band), since m472 A6',
-          body: 'There is no time window by default since m472 A6 (the October course trades the whole RTH band, the black band on the chart [Oct D5.2 @ 01:00–01:20]; the September 60-minute window 08:30–09:30 [D1.2 p1 @24:04–24:15] is no longer the default). An unset window length means -1 = no window; a stored 60 (or 30 / 90 / 120) still limits the day. A window length of -1 ("No window (EOD rules still apply)") removes the time window only — it never means any hour: no NEW mentor entry is placed from 15:45 CT until the 17:00 CT reopen, and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed. On a shortened day (12:15 CT close on 11-27 and 12-24) the last mentor entry is 15 minutes before the early close (12:00 CT) and the flat is 5 minutes before it (12:10 CT), the SWING4H included. Inside those limits mentor arms are authored around the clock — both bound strategies save -1 today (row 362 was written at 01:02 CT). A window, when set, only adds a further limit. The SWING4H is exempt from the window and from the ordinary EOD flat either way.',
-          cite: 'October D5.2 @ 01:00–01:20 (whole RTH band, no window) supersedes September D1.2 p1 @24:04–24:15 ("đặt một cái timer… đúng một tiếng", 08:30 + 60) · mentor_window_start / mentor_window_minutes — live · trader/mentor_tick.go mentorWindowActive (minutes ≤ 0 = no window) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · EOD flat: trader/auto_trader_clock.go enforceEODFlatAt',
+            'Trading window — the RTH band by default (08:30 to 15:15 CT), since m472 A6',
+          body: 'Since m472 A6 an unset window is the RTH band, 08:30 to about 15:15 CT = 405 minutes (the black band on the chart, screen-read, no spoken number [Oct D5.2 @ 01:00–01:20]; the Asia / Europe hours are the blue zone he does not trade [Oct D4.3]); the September 60-minute window 08:30–09:30 [D1.2 p1 @24:04–24:15] is no longer the default. A stored 60 (or 30 / 90 / 120) still limits the day, and a stored -1 is the owner\u2019s explicit opt-out (no window). A window length of -1 ("No window (EOD rules still apply)") removes the time window only — it never means any hour: no NEW mentor entry is placed from 15:45 CT until the 17:00 CT reopen, and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed. On a shortened day (12:15 CT close on 11-27 and 12-24) the last mentor entry is 15 minutes before the early close (12:00 CT) and the flat is 5 minutes before it (12:10 CT), the SWING4H included. With -1 stored, mentor arms are authored around the clock inside those limits — both bound strategies save -1 today (row 362 was written at 01:02 CT); an unset strategy gets the RTH band instead. The SWING4H is exempt from the window and from the ordinary EOD flat either way.',
+          cite: 'October D5.2 @ 01:00–01:20 (RTH band 08:30–15:15 CT) supersedes September D1.2 p1 @24:04–24:15 ("đặt một cái timer… đúng một tiếng", 08:30 + 60) · mentor_window_start / mentor_window_minutes — live · trader/mentor_tick.go mentorWindowActive (minutes ≤ 0 = no window) · 15:45 cutoff: trader/mentor_mode.go mentorPastDailyHaltCutoff · EOD flat: trader/auto_trader_clock.go enforceEODFlatAt',
         },
         {
           title:
@@ -1544,14 +1544,17 @@ export const mentor: GuideSection = {
         {
           label: 'Trendline entry touch',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Release #60 (D2.3-R7, the full video read). "thà nó về một lần, rồi nó test, rồi nó hold rồi, là lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô" (better that it comes back once, tests, holds — that is the third time — and only on the fourth do I dare go in) [D2.3 p1 @02:34–02:47, 03:03–03:16]; "test lần thứ 3 thì mới valid" (D3.2-R34) [D3.2 p2 @02:43–04:11]. fourth (default) = on the candle of its 3rd touch a 1m/2m trendline is NOT a location — refused and counted trendline_third_touch_is_test — and it stays refused while price keeps sitting on the line; only after a candle LEAVES the line (clear of it by more than its 0.5-pt touch band) does it become a location, so the entry comes on a NEW, 4th touch (“thì lần thứ tư mới dám tự tin mình vô” [D2.3 p1 @02:34–02:47]). While held it is still a valid line, so it stays a target. third = the pre-#60 behaviour (the line arms on its 3rd-touch candle). 1h/4h lines are unchanged.',
-          trader: 'fourth — the course.',
+          what: 'Release #60 (D2.3-R7, the full video read). "thà nó về một lần, rồi nó test, rồi nó hold rồi, là lần thứ ba đó, thì lần thứ tư mới dám tự tin mình vô" (better that it comes back once, tests, holds — that is the third time — and only on the fourth do I dare go in) [D2.3 p1 @02:34–02:47, 03:03–03:16]; "test lần thứ 3 thì mới valid" (D3.2-R34) [D3.2 p2 @02:43–04:11]. fourth (the stricter opt-in, the September D2.3-R7 behaviour) = on the candle of its 3rd touch a 1m/2m trendline is NOT a location — refused and counted trendline_third_touch_is_test — and it stays refused while price keeps sitting on the line; only after a candle LEAVES the line (clear of it by more than its 0.5-pt touch band) does it become a location, so the entry comes on a NEW, 4th touch (“thì lần thứ tư mới dám tự tin mình vô” [D2.3 p1 @02:34–02:47]). While held it is still a valid line, so it stays a target. third (default since m472 A2) = the line arms on its 3rd-touch candle, the return that touches it [Oct D3.2 @ 31:00-31:17, 41:20-41:27]; the October lesson says two points make a line and he enters on the contact after two bottoms. 1h/4h lines are unchanged.',
+          trader:
+            'third — the October course [Oct D3.2 @ 31:00-31:17, 41:20-41:27]; fourth is the stricter September opt-in.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (TrendlineEntryTouch) · kernel/mentor/trendline.go TrendlineLevelsTouch',
           range: 'fourth / third',
-          systemDefault: 'fourth',
-          recommended: 'fourth — D2.3 p1 @02:34–02:47, 03:03–03:16.',
-          whenToTouch: 'Rarely — third only to restore the pre-#60 entry.',
+          systemDefault: 'third (m472 A2)',
+          recommended:
+            'third — Oct D3.2 @ 31:00-31:17, 41:20-41:27 (supersedes Sept D2.3 p1 @02:34–02:47).',
+          whenToTouch:
+            'Rarely — fourth only to restore the stricter September entry.',
           perSession: 'No.',
         },
         {
@@ -2324,12 +2327,12 @@ export const mentor: GuideSection = {
             'Strategy Studio → Risk control → 🧑‍🏫 Mentor mode → "Window length"',
           what: 'How long the entry window stays open after its start time; SWING4H is exempt. The 4h swing is NOT limited by this window: the mentor takes it whenever price touches the 4h EMA 34 (Ngày 5.2 @06:27).',
           trader:
-            '-1 (no window — the whole RTH band) by default since m472 A6 [Oct D5.2 @ 01:00–01:20]; an unset/zero strategy value inherits -1, a stored 60 / 30 / 90 / 120 is kept as the September window. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (EOD rules still apply)", which saves -1 and removes the time window only — not any hour: no NEW mentor entry from 15:45 CT until the 17:00 CT reopen — on a shortened day from 15 minutes before the early close, 12:00 CT on a 12:15 day (trader/mentor_mode.go mentorPastDailyHaltCutoff), and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed (trader/auto_trader_clock.go enforceEODFlatAt; the SWING4H is exempt from an ordinary day\u2019s flat, NOT from a shortened day\u2019s 12:10 CT flat). A set window only adds a further limit. A stored 0 cannot mean "no window" because 0 means unset. Same Save, same reload as the switch.',
+            '08:30 + 405 minutes (the RTH band to 15:15 CT) by default since m472 A6 [Oct D5.2 @ 01:00–01:20]; an unset/zero strategy value inherits it, a stored -1 stays no window, a stored 60 / 30 / 90 / 120 is kept as the September window. The "Window length" box offers 30 / 60 / 90 / 120 minutes or "No window (EOD rules still apply)", which saves -1 and removes the time window only — not any hour: no NEW mentor entry from 15:45 CT until the 17:00 CT reopen — on a shortened day from 15 minutes before the early close, 12:00 CT on a 12:15 day (trader/mentor_mode.go mentorPastDailyHaltCutoff), and from the EOD flat (NY 14:45 CT; earlier on a registered half-day) until 17:00 every intraday mentor order is cancelled and an open intraday position is closed (trader/auto_trader_clock.go enforceEODFlatAt; the SWING4H is exempt from an ordinary day\u2019s flat, NOT from a shortened day\u2019s 12:10 CT flat). A set window only adds a further limit. A stored 0 cannot mean "no window" because 0 means unset. Same Save, same reload as the switch.',
           consumer: 'trader/mentor_tick.go mentorWindowGate',
           range: '30 / 60 / 90 / 120 minutes, or -1 = no window',
           systemDefault: '-1 (no window, m472 A6)',
           recommended:
-            '-1 — the whole RTH band [Oct D5.2 @ 01:00–01:20]; a window is an owner choice.',
+            '405 minutes from 08:30 — the RTH band to 15:15 CT [Oct D5.2 @ 01:00–01:20]; -1 (no window) is an owner choice.',
           whenToTouch: 'Only when the approved trading window changes.',
           perSession: 'No — per strategy.',
         },

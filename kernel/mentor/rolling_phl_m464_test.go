@@ -541,7 +541,7 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 		want   float64
 	}{{10, 12, 29413.50}, {10, 14, 29396.75}} {
 		if p := rollingRungPrice(bars[m464Idx(c.hh, c.mm)], SideLong, cfg); p != c.want {
-			t.Fatalf("%d:%02d rung %.2f, want the mentor's screen rung %.2f", c.hh, c.mm, p, c.want)
+			t.Fatalf("%d:%02d rung %.2f, want the computed rung %.2f (candle extreme + 1.00 [Oct D2.3 @ 46:20-47:20]; the Sept screen rung was +0.50)", c.hh, c.mm, p, c.want)
 		}
 	}
 	oldHigh := Level{Key: "old-high:29433", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.0}

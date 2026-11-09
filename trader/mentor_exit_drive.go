@@ -648,7 +648,11 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		if armed {
 			// m472 A5: BE-half carries the be_offset_ticks allowance too
 			// [Oct D4.2 @ 13:00-13:25]; 0 ticks (default) = exactly the entry.
-			be := at.mentorBEStop(side, pos.Entry, at.mentorInstrumentTick())
+			// With the knob at 0 the stop is the raw entry, byte-for-byte as before A5.
+			be := pos.Entry
+			if mentorBEOffsetTicks(at.mentorRiskControl()) != 0 {
+				be = at.mentorBEStop(side, pos.Entry, at.mentorInstrumentTick())
+			}
 			// Release #22: BE counts as armed only when a move was APPLIED (sent,
 			// already at the broker, or the broker already tighter) — a refused
 			// or failed move never writes the belief; BE is re-tried next candle.

@@ -1534,21 +1534,19 @@ func (at *AutoTrader) mentorWindowEnded(now time.Time) (bool, string) {
 // ── STOP RULES (owner ruling 00:1x CT, "exactly like he said") ─────────────
 
 // (b) TRADING WINDOW [D1.2 p1 @23:49–24:21, @24:36–24:59]: a fixed window —
-// when it ends, no new entries. Default 08:30–09:30 CT, 60 minutes; knobs for
-// the start and the length (30/60/90/120; -1 disables the window — a stored 0
-// is "unset", so it resolves to the default -1 = window off). The SWING setup
-// is exempt (D5.2: the swing may be at any hour).
-// m472 A6: October supersedes September's 08:30 + 60 default. The window is
-// the RTH band on the chart (black band 08:30 to about 15:15 CT) [Oct D5.2 @ 01:00-01:20];
-// 30 minutes is only a time-poor student's example [Oct D4.1 @ 12:52-13:00].
-// With the window off the only author-time stops are the EOD-flat gate
-// (mentorEODFlatAuthorRefusal: 14:45 to the 17:00 reopen, and the 15:45 halt) and
-// the session registry (Asia/London are Enabled=false by default) - entries are
-// otherwise open around the clock (pinned by the m472 A6 overnight test). A
-// stored 60 stays 60.
+// when it ends, no new entries. Knobs for the start and the length (30/60/90/120;
+// -1 explicitly disables the window — a stored 0 is "unset").
+// m472 A6: October supersedes September's 08:30 + 60 default. An UNSET window is
+// the RTH band on the chart: the black band 08:30 to about 15:15 CT = 405 minutes
+// (screen-read, no spoken number) [Oct D5.2 @ 01:00-01:20, OctD5.2-R2]; 30 minutes
+// is only a time-poor student's example [Oct D4.1 @ 12:52-13:00]. The Asia/Europe
+// hours are the blue zone he does not trade (Oct D4.3, blue overnight zone). The EOD-flat gate
+// (mentorEODFlatAuthorRefusal, from 14:45) still binds inside the band. A stored
+// 60 stays 60, and a stored -1 stays the owner's explicit "no window" opt-out
+// (an owner call, never a default). The SWING setup is exempt (D5.2).
 const (
 	mentorWindowDefaultStart   = "08:30"
-	mentorWindowDefaultMinutes = -1
+	mentorWindowDefaultMinutes = 405 // 08:30 + 405 = 15:15 CT [Oct D5.2 @ 01:00-01:20]
 )
 
 func (at *AutoTrader) mentorWindowKnobs() (start string, minutes int) {
@@ -1571,7 +1569,7 @@ func (at *AutoTrader) mentorWindowKnobs() (start string, minutes int) {
 // now (today's, or yesterday's when today's is still ahead) — so a window that
 // crosses midnight (23:00 + 120) is active at 00:30. minutes <= 0 disables the
 // window (entries at any hour); the knob stores -1 for that, because a stored 0
-// means "unset → default -1, window off" (mentorWindowKnobs). A bad start string refuses
+// means "unset → default 08:30 + 405 min" (mentorWindowKnobs). A bad start string refuses
 // fail-closed (why carries the refusal).
 func mentorWindowActive(start string, minutes int, now time.Time) (active bool, why string) {
 	if minutes <= 0 {

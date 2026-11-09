@@ -15,7 +15,12 @@ import (
 // lenh nua, neu khong duoc thi tat may nghi" — 3 losses in a row, the 4th trade
 // is one more try, and if that fails too, shut the machine off. So after FOUR
 // consecutive losses the 5th entry is refused; after three the 4th is allowed.
-// Frame: /home/hoang/mm-course/oct/scenes/Ngày 4.1 Go over ngày 3/s_00881.jpg
+// Frames: /home/hoang/mm-course/oct/scenes/Ngày 4.1 Go over ngày 3/s_00861.jpg (the
+// notes' frame for OctD4.1-R28) and s_00881.jpg
+// Counting is per CLOSED POSITION row (flat-to-flat, net corrected P&L < 0): a
+// two-leg trade that nets a loss is ONE loss, matching "lenh" (a trade) in the
+// video; the rule is voice-only, there is no on-screen number. A break-even
+// scratch that nets negative after fees counts as a loss (CTO ruling pending).
 // (the 2 Nov 09:39 chart the rule is spoken over; the rule itself is voice).
 //
 // Both PRODUCTION call sites are exercised on a real store with losing closes

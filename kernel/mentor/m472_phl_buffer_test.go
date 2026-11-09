@@ -15,6 +15,10 @@ import (
 // /home/hoang/mm-course/oct/scenes/Ngày 2.3 PHL PLH/s_02487.jpg, s_02827.jpg,
 // s_02872.jpg (stop ray 28,332 / entry ray 28,316.25 / old low 28,288 on screen; the test uses a lower old low so the 2x room gate has headroom; the real 28,288 is room-refused, see FrameOldLowRoomRefused).
 // Supersedes the Sept 0.50/0.50 offsets [D2.2-R10 p1 @04:14-05:43].
+// The on-screen stop ray reads 28,332.00 (high 28,330.75 + 1.25); the bot
+// computes 28,331.75 (high + 1.00): a 0.25 screen-read difference, the entry
+// matches exactly. The frame's own trade is refused by the 2x room gate
+// (reward 23.25 < 2 x risk 15.5): a standing code-vs-video gap raised to the CTO.
 func TestM472PHLBufferWorkedExample(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true

@@ -136,3 +136,21 @@ func TestM472A5ProductionHelpersBothSides(t *testing.T) {
 		}
 	}
 }
+
+// TestM472A5BEHalfKnobZeroOffGridEntry — review round 2: with the knob at 0 the
+// BE-half block hands the raw entry to the move helper (as before A5); an
+// averaged OFF-GRID entry (30,742.30) reaches the broker on the 0.25 grid, the
+// downstream snap. The wire value is the pin (the belief fields stay raw).
+func TestM472A5BEHalfKnobZeroOffGridEntry(t *testing.T) {
+	const offGrid = 30742.30
+	b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: "off"})
+	b.positionsPx("short", 1, offGrid)
+	b.registerSplit(r22Sig, "short", "PLH", 3, 2, offGrid, r22Stop, r22L1TP, r22Target)
+	b.book(r22FullBook(r22Stop)...)
+	b.receiptLeg1(r22Sig, "short", r22L1TP, r22Minute(0).Add(30*time.Second))
+	b.candle(r22Minute(0), 30730.00, 30731.00, 30722.00, 30725.00)
+	got := b.waitMoves(1)
+	if len(got) != 1 || got[0].NewStopLoss != 30742.25 {
+		t.Fatalf("knob 0: BE-half stop want the grid price 30742.25 for entry %.2f, got %+v", offGrid, got)
+	}
+}

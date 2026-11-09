@@ -133,6 +133,10 @@ type m434Case struct {
 func m434Cases() []m434Case {
 	return []m434Case{
 		{
+			// m472 note: this case runs on legacy2mCfg() (A1/A2/A3 reverted), NOT
+			// DefaultConfig(); the name is kept because the golden is keyed on it. Its
+			// hashes changed from tick 1326 on only because of A7 (the 1H key-level
+			// candle now ends 15:15, [Oct D5.2 @ 01:00-01:20]); legacy2mCfg does not revert A7.
 			name:  "m423_1023_default_cfg_near1",
 			scale: 1,
 			tape:  m423Bars,

@@ -60,12 +60,13 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if !ok {
 		return Intent{}, false, "no reject entry"
 	}
-	// m472 A3: the 0.50 rays below (Oct D2.3 @ screen, risk = range + 2.0) supersede
-	// the September 1.00 / 0 pair (range + 1.00); the 25-pt ceiling now bites at a
-	// 23-pt candle range.
+	// m472 A3: entry ray = candle extreme +/- 1.0, stop ray = the other extreme
+	// -/+ 1.0 (2 pts total, risk = range + 2.0) [Oct D2.3 @ 46:20-47:20]; supersedes
+	// Sept D2.2-R10 0.50/0.50 (the example below). The 25-pt stop ceiling now bites
+	// at a 23-pt candle range.
 	// R2: the buy stop sits at the PREVIOUS candle's high; stop = the low
 	// of that broken candle. The previous candle = the touch reference.
-	// D2.2-R10 [p1 @04:14–05:43, screen — release #59 fix round, mentor-exact]:
+	// SUPERSEDED by the Oct D2.3 rays above; D2.2-R10 [p1 @04:14–05:43, screen — release #59 fix round, mentor-exact]:
 	// the entry RAY is the signal high + 0.50 (29,395.75 → 29,396.25) and the
 	// stop RAY the signal low − 0.50 (29,386.50 → 29,386.00) —
 	// PHLEntryBufferPts / PHLStopBufferPts. The structural checks below (the
