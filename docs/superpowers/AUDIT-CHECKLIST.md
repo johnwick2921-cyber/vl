@@ -10430,3 +10430,19 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** for every object that expires at "end of day", name the boundary it should expire at (17:00 roll, 08:30 open, calendar midnight) and read it from the video or the spec, not from the nearest existing helper. Test across the 17:00 roll, a weekend and a holiday.
 - **Pin:** `TestM473B1BoxSurvivesTheDayRoll`, `TestM473B1FridayBoxValidSundayEvening`.
 - **Reference:** `kernel/mentor/box_validity.go`, `kernel/mentor/eval.go`.
+
+## CLASS NN (assigned at merge) — a migration guard's frozen "before" model reads a deliberate shipped-default change as a meaning flip and refuses the owner's traders at boot (m474, fix/m474-settings-truth-mentor-breaker)
+
+- **Symptom:**
+  - Release #65 (v2026.11.09.1) booted at 06:59:15 CT on 11-09 and REFUSED the mentor traders "hoang" (strategy a5b7662e) and "4567489 mess." (de7d04b2) at load.
+  - The refusal read: "consecutive_loss_halt stores absent: before W1 that meant 'inherit' (breaker 8), after W1 it means OFF (breaker 4[I])". Both statements were false: absent means inherit both before and after.
+- **Root cause:**
+  - m472 A4 moved the shipped breaker default for a `mentor_mode` strategy to 4 [Oct D4.1 @ 14:40].
+  - The W1 settings-truth report's frozen `legacyBreakerHaltN` still returned the constant 8, so every mentor strategy with no stored breaker read as changed and unconfirmed.
+  - The test fixture's copy of a5b7662e predates `mentor_mode=true`, so CI and all three review lenses stayed green.
+- **Probe:**
+  - When a wave changes a shipped default, grep for every frozen "before/legacy" model of that knob (`legacy*`, `*Before*`, migration reports) and make the model share the default.
+  - The guard must compare like with like, so it isolates the meaning change it was built for.
+  - Run every boot-time refusal over the CURRENT stored configs (`sqlite3 -readonly`, no copy) before the release, not only over a fixture snapshot.
+- **Pin:** `TestM474MentorAbsentBreakerIsNotAW1Flip`: absent or null on a mentor strategy is 4 → 4[I] and not refused. A stored 0 still refuses as "inherit (breaker 4)" → off. An AI strategy stays 8 → 8[I], and env still wins.
+- **Reference:** `store/settings_truth.go` (`legacyBreakerHaltN`), `store/resolve_source.go` (`BreakerHaltMentorDefault`), `manager/trader_manager.go:746`.
