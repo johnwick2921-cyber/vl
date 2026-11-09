@@ -548,6 +548,7 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 
 	// 2. production: refused, named, the ladder runs on.
 	e := m464Evaluator(SideLong, oldHigh, bars[m464Idx(10, 7)].OpenTime)
+	e.Cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // m473 B3: this Sept lesson pin reads the 1m-delete mode explicitly (default is close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
 	if last := steps[len(steps)-1]; last.at != "10:14" || len(last.places) != 0 {
 		t.Fatalf("production: the 10:14 rung sits in the standing 15m ISB box and must not arm, got %+v", last)
@@ -565,6 +566,7 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 
 	// 3. the box rule set aside: the mentor's trade, to the tick.
 	e = m464Evaluator(SideLong, oldHigh, bars[m464Idx(10, 7)].OpenTime)
+	e.Cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // m473 B3: this Sept lesson pin reads the 1m-delete mode explicitly (default is close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 	_ = m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 13))
 	e.State.LastISBBox15mAt = bars[m464Idx(10, 0)].OpenTime // the 10:00 box counts as already seen
 	steps = m464Run(e, bars, m464Idx(10, 14), m464Idx(10, 14))

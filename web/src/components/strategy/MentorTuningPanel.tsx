@@ -236,10 +236,15 @@ const COPY = {
     en: 'ISB rest box escape test',
     es: 'Prueba de escape de la caja de reposo ISB',
   },
+  isbEscapeClose5m: {
+    zh: '5分钟收盘 — 1 分钟收盘即可交易，箱体仅在其自身周期收盘于箱外时删除（默认，m473）',
+    en: 'close5m — a 1m close beyond the edge lets you trade; the box is deleted only when a candle of its own timeframe closes outside (default, m473)',
+    es: 'cierre5m — un cierre de 1m fuera permite operar; la caja se borra solo cuando una vela de su propio marco cierra fuera (por defecto, m473)',
+  },
   isbEscapeClose: {
-    zh: '收盘 — 1 分钟收盘价越过边缘（默认，#61）',
-    en: 'close — the 1m close beyond the edge (default, #61)',
-    es: 'cierre — el cierre de 1m fuera del borde (por defecto, #61)',
+    zh: '收盘 — 1 分钟收盘价越过边缘即删除箱体（#61–m472 默认）',
+    en: 'close — the 1m close beyond the edge deletes the box (#61–m472 default)',
+    es: 'cierre — el cierre de 1m fuera del borde borra la caja (por defecto #61–m472)',
   },
   box5mSource: {
     zh: '5 分钟 ISB 箱体是',
@@ -540,6 +545,7 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'both_boxes', label: COPY.tfConflictBoth },
   ],
   isb_box_escape: [
+    { value: 'close5m', label: COPY.isbEscapeClose5m },
     { value: 'close', label: COPY.isbEscapeClose },
     { value: 'body', label: COPY.isbEscapeBody },
   ],
@@ -613,7 +619,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
-  isb_box_escape: 'close', // m466 G20/G49 (release #61): a 1m close outside the box [D4.1 p1 @20:36–21:03]
+  isb_box_escape: 'close5m', // m473 B3: a 1m close = permission, the box is deleted on a close of its own TF [Oct D4.3 @ 65:00-66:13]; was close (m466 G20/G49 [D4.1 p1 @20:36–21:03])
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
   orb_isb_fraction_outside: 0.8, // rule 5 (release #31) — default ON at 0.80

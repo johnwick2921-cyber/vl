@@ -72,6 +72,9 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
 	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
 	keyLevelLastCandleEndMin = 15 * 60
+	boxPeak1Level = false    // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
+	firstRTH5mNotISB = false // pre-m473 B4: the frozen golden predates the 08:30-candle-is-not-ISB rule [Oct D4.3 @ 57:20-57:35]
+	t.Cleanup(func() { boxPeak1Level = true; firstRTH5mNotISB = true })
 	raw, err := os.Open(m462PreGoldenPath)
 	if err != nil {
 		t.Fatal(err)

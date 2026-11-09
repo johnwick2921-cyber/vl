@@ -1,6 +1,11 @@
 package mentor
 
-import "vl/market"
+import (
+	"time"
+
+	"vl/kernel"
+	"vl/market"
+)
 
 // R5 — the 5m ISB rest box (RULES-FIX-v3): box the latest 5m inside-bar candle
 // and extend it right. While it stands, use the box, not the trigger line
@@ -8,9 +13,11 @@ import "vl/market"
 //
 // Nothing trades inside it except a 1m ISB in the SAME direction as the 5m ISB
 // (the R1 direction: the colour of the 5m candle BEFORE the inside bar).
-// Escape = a 1m candle closes with its BODY outside the box; then trade the
-// escape direction (ISB or PHL/PLH — the evaluator's choice) and DELETE the
-// box [D3.4 p2 @ 12:02]. No per-touch weight change belongs here: a level only
+// Escape = a 1m candle closes outside the box: that gives trade permission in
+// the escape direction (ISB or PHL/PLH — the evaluator's choice). October
+// default (close5m): the box is DELETED only when a candle of its OWN timeframe
+// closes outside [Oct D4.3 @ 65:00-66:13, OctD4.3-R67]; the explicit modes
+// close/body still delete on the 1m candle [D3.4 p2 @ 12:02]. No per-touch weight change belongs here: a level only
 // ever gets WEAKER with each test (deck slide 17; CTO 2026-10-03).
 
 // ISBBox is one standing 5m ISB rest box.
@@ -25,6 +32,11 @@ type ISBBox struct {
 	// under "_forming" refusal names — but never counts for mode C
 	// (MTFConfluenceStanding), and the real box replaces it at the 15m close.
 	Provisional bool `json:",omitempty"`
+	// Escaped (m473 B3, mode close5m): the side a 1m candle has CLOSED beyond
+	// this box while it still stands. The box is deleted only when a candle of
+	// its OWN timeframe closes outside; until then it exists but no longer
+	// gates (trade permission starts at the 1m close) [Oct D4.3 @ 65:00-66:13].
+	Escaped Side `json:",omitempty"`
 }
 
 // ISBBoxFrom5m reports whether (prev5m, cur5m) form a 5m ISB and, if so, boxes
@@ -187,7 +199,7 @@ func crossingISBs(buckets []market.Kline, lookback int) bool {
 	window := buckets[len(buckets)-lookback:]
 	var dirs []Side
 	for i := 1; i < len(window); i++ {
-		if IsISB(window[i-1], window[i]) {
+		if isISBFirstRTHAware(window[i-1], window[i]) {
 			dirs = append(dirs, ISBDirection(window[i-1]))
 		}
 	}
@@ -195,4 +207,94 @@ func crossingISBs(buckets []market.Kline, lookback int) bool {
 		return false
 	}
 	return dirs[0] != dirs[len(dirs)-1]
+}
+
+// liveBox is the box as the GATES see it: nil when absent or already broken by
+// a 1m close (mode close5m keeps a broken box alive until its own timeframe
+// closes outside, but it no longer gates) [Oct D4.3 @ 65:00-66:13].
+func liveBox(b *ISBBox) *ISBBox {
+	if b == nil || b.Escaped != "" {
+		return nil
+	}
+	return b
+}
+
+func (e *Evaluator) box5() *ISBBox  { return liveBox(e.State.ISBBox) }
+func (e *Evaluator) box15() *ISBBox { return liveBox(e.State.ISBBox15m) }
+func (e *Evaluator) box30() *ISBBox { return liveBox(e.State.ISBBox30m) }
+
+// isbBoxStep runs one closed 1m candle against a standing box. newBreak = a 1m
+// close beyond the edge that was not already recorded (trade permission and the
+// break lock); gone = the box goes away now. Modes close/body/"" delete on the
+// 1m escape (legacy). Mode close5m (the default, m473 B3) marks the box Escaped
+// and deletes it only when a closed candle of the box's OWN timeframe (cbTF,
+// opened after the box candle) closes outside it [Oct D4.3 @ 65:00-66:13,
+// OctD4.3-R67]. A provisional (forming) 15m box keeps the 1m delete: it is
+// dropped at its bucket close anyway.
+func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (newBreak bool, dir Side, gone bool) {
+	esc, d := ISBBoxEscapeWith(*b, cur, mode)
+	if mode != ISBBoxEscapeCloseBoxTF || b.Provisional {
+		return esc, d, esc
+	}
+	prev := b.Escaped
+	// Sticky: a 1m close back inside does NOT re-arm the box ban — the video
+	// states only "thoát ra khỏi box rồi thì mình được trade" and the delete on
+	// a TF close [Oct D4.3 @ 65:00-66:13, OctD4.3-R67]; re-arming is a mentor
+	// question, so the default follows only what is stated.
+	if esc {
+		b.Escaped = d
+	}
+	newBreak, dir = esc && prev != d, d
+	if n := len(cbTF); n > 0 && cbTF[n-1].OpenTime > b.AtTime {
+		if c := cbTF[n-1].Close; c > b.High || c < b.Low {
+			gone = true
+			if c > b.High {
+				dir = SideLong
+			} else {
+				dir = SideShort
+			}
+			if !esc && prev == "" {
+				newBreak = true // the TF close is the first sight of the break
+			}
+		}
+	}
+	return newBreak, dir, gone
+}
+
+// isFirstRTH5m reports whether the 5m candle opening at openMs is the RTH-open
+// bucket: 08:30 CT on a day the CME is open at that minute (calendar-driven,
+// so half-days too).
+// firstRTH5mNotISB switches the m473 B4 opening rule (frozen pre-m473 goldens set it false).
+var firstRTH5mNotISB = true
+
+func isFirstRTH5m(openMs int64) bool {
+	if !firstRTH5mNotISB {
+		return false
+	}
+	t := time.UnixMilli(openMs).In(ctime())
+	return t.Hour() == 8 && t.Minute() == 30 && kernel.IsCMEOpen(t)
+}
+
+// isISBFirstRTHAware is IsISB for 5m reads with the m473 B4 opening rule: the
+// 08:30 CT 5m candle directly after the 08:25 Globex candle is never itself an
+// inside bar [Oct D4.3 @ 57:20-57:35, OctD4.3-R58], so alignment, the 5m/15m
+// conflict and the crossing-ISB read do not see a phantom pair either. Any
+// other bucket width (15m/30m) is judged by plain IsISB.
+func isISBFirstRTHAware(prev, cur market.Kline) bool {
+	if isFirstRTH5m(cur.OpenTime) && cur.OpenTime-prev.OpenTime == 5*60_000 {
+		return false
+	}
+	return IsISB(prev, cur)
+}
+
+// ISBBoxFromRTH5m is ISBBoxFrom5m for the 5m trigger TF with the October
+// opening rule: the first RTH 5m candle (08:30 CT) is never itself the inside
+// bar — judged against the 08:25 Globex candle it would be a false ISB; the
+// next 5m candle that stays inside it is [Oct D4.3 @ 57:20-57:35, OctD4.3-R58;
+// frames scenes/Ngày 4.3 Multi Time Frame/s_03442.jpg, s_03450.jpg, s_03455.jpg].
+func ISBBoxFromRTH5m(prev5m, cur5m market.Kline) (ISBBox, bool) {
+	if isFirstRTH5m(cur5m.OpenTime) {
+		return ISBBox{}, false
+	}
+	return ISBBoxFrom5m(prev5m, cur5m)
 }

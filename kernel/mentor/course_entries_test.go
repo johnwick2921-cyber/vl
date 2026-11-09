@@ -127,7 +127,7 @@ func TestCE5ISBBoxEscapeIsBody(t *testing.T) {
 	for _, tc := range []struct {
 		mode      string
 		wantStand bool
-	}{{"", false}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
+	}{{"", true /* m473 B3: close5m default keeps the box until its own TF closes outside [Oct D4.3 @ 65:00-66:13] */}, {ISBBoxEscapeBody, true}, {ISBBoxEscapeClose, false}} {
 		e, bars, now := mtfFixture(t, false)
 		if tc.mode != "" {
 			e.Cfg.ISBBoxEscapeMode = tc.mode

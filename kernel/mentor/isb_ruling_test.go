@@ -113,6 +113,7 @@ func TestISBBoxGatesTheEvaluator(t *testing.T) {
 		prev := rthBars(1, 98, 102.9, 97.5, 99)
 		cur := rthBars(2, 104.5, 105, 104, 105)
 		e := newE(SideLong)
+		e.Cfg.ISBBoxEscapeMode = ISBBoxEscapeBody // m473 B3: explicit 1m-delete mode (default close5m deletes on the box-TF close, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 		tick(e, []market.Kline{head, prev, cur})
 		if e.State.ISBBox != nil {
 			t.Fatalf("a 1m BODY close outside must delete the box; box=%+v", e.State.ISBBox)

@@ -334,7 +334,11 @@ func mentorChartObjects(st *mentor.State, drawn []mentor.Level) (*[]MentorTrendl
 			if b.box.Provisional {
 				label += " (forming)" // m465 P1: the early 15m read [D4.2-R2 p1 @00:08–00:39]
 			}
-			boxes = append(boxes, MentorRangeView{Label: label, High: b.box.High, Low: b.box.Low, Dir: string(b.box.Dir), AtMs: b.box.AtTime})
+			status := ""
+			if b.box.Escaped != "" {
+				status = "broken " + string(b.box.Escaped) + " (waits for its own close)" // m473 B3
+			}
+			boxes = append(boxes, MentorRangeView{Label: label, High: b.box.High, Low: b.box.Low, Dir: string(b.box.Dir), AtMs: b.box.AtTime, Status: status})
 		}
 	}
 	var orb *MentorRangeView

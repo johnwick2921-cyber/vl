@@ -28,7 +28,7 @@ func MTFAligned(bars5m, bars15m []market.Kline, side Side) bool {
 	}
 	p5, c5 := bars5m[len(bars5m)-2], bars5m[len(bars5m)-1]
 	p15, c15 := bars15m[len(bars15m)-2], bars15m[len(bars15m)-1]
-	if !IsISB(p5, c5) || !IsISB(p15, c15) {
+	if !isISBFirstRTHAware(p5, c5) || !IsISB(p15, c15) { // m473 B4: no phantom 08:30 5m ISB
 		return false
 	}
 	return ISBDirection(p5) == side && ISBDirection(p15) == side
@@ -88,5 +88,5 @@ func (e *Evaluator) mtfConfluence(side Side, bars5m, bars15m []market.Kline) boo
 	if e.Cfg.MTFConfluenceSource == MTFConfluenceLastPair {
 		return MTFConfluence(side, bars5m, bars15m)
 	}
-	return MTFConfluenceStanding(side, e.State.ISBBox, e.State.ISBBox15m, e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
+	return MTFConfluenceStanding(side, e.box5(), e.box15(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 }

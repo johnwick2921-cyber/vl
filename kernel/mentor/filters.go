@@ -232,7 +232,6 @@ func TriggerVerdict(t TriggerLine, price float64) (ok bool, side Side, reason st
 	return true, t.Dir, ""
 }
 
-
 // X8TrapDodge reports the X8 trap-dodge EXIT [X8 "Cách né trap & Setup gồng lời"
 // part1 @07:31–08:07]: the 2m candle closed THROUGH the EMA34 against the 5m
 // trigger trend while the 5m trigger swept against the position — the breakout
@@ -278,7 +277,7 @@ func ISBConflictVerdict(bars5m, bars15m []market.Kline) bool {
 	}
 	p5, c5 := bars5m[len(bars5m)-2], bars5m[len(bars5m)-1]
 	p15, c15 := bars15m[len(bars15m)-2], bars15m[len(bars15m)-1]
-	if !IsISB(p5, c5) || !IsISB(p15, c15) {
+	if !isISBFirstRTHAware(p5, c5) || !IsISB(p15, c15) { // m473 B4: no phantom 08:30 5m ISB
 		return false
 	}
 	return ISBDirection(p5) != ISBDirection(p15)

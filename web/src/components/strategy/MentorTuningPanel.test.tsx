@@ -90,7 +90,7 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['tf_conflict_end', 'both_boxes', 'both_boxes'],
   ['news_wait_both_lines', 'on', true],
   ['news_bars_excluded', 'on', true],
-  ['isb_box_escape', 'close', 'close'],
+  ['isb_box_escape', 'close5m', 'close5m'],
   ['ema34_loss_relock', 'session', 'session'],
   ['orb_edge_veto_pts', '2.5', 2.5],
   ['orb_isb_fraction_outside', '0.5', 0.5],
@@ -158,7 +158,7 @@ it('an enum knob shows its ruled default on the blank option', () => {
   const esc = screen.getByTestId('mentor-tuning-isb_box_escape')
   expect(esc).toHaveValue('')
   expect(within(esc).getAllByRole('option')[0]).toHaveTextContent(
-    'default: close — the 1m close beyond the edge (default, #61)'
+    'default: close5m — a 1m close beyond the edge lets you trade; the box is deleted only when a candle of its own timeframe closes outside (default, m473)'
   )
   const ib = screen.getByTestId('mentor-tuning-15m_ib_requires_5m_isb')
   expect(within(ib).getAllByRole('option')[0]).toHaveTextContent(
@@ -179,7 +179,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     tf_conflict_end: 'both_boxes', // course-defaults-30
     news_wait_both_lines: true, // course-defaults-30
     news_bars_excluded: true, // course-defaults-30 (CE-4, release #29 rework)
-    isb_box_escape: 'close', // m466 G20/G49 (release #61): D4.1-R34 the 1m close
+    isb_box_escape: 'close5m', // m473 B3 OctD4.3-R67
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
     orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON

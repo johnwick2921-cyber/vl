@@ -59,8 +59,10 @@ func m61p1Has(out []Intent, side Side) bool {
 // box escapes long. Mutant body (the #25–#60 default) keeps it standing. The
 // provisional (forming) 15m box is pinned the same way.
 func TestM61ISBBoxEscapesOnOneMinuteClose(t *testing.T) {
-	if d := DefaultConfig().ISBBoxEscapeMode; d != ISBBoxEscapeClose {
-		t.Fatalf("G20 D4.1-R34: the default ISB rest-box escape must be the 1m CLOSE, got %q", d)
+	// m473 B3 [Oct D4.3 @ 65:00-66:13] OctD4.3-R67 supersedes the September default: the 1m close
+	// still gives permission, but the DEFAULT now keeps the box until its own TF closes outside.
+	if d := DefaultConfig().ISBBoxEscapeMode; d != ISBBoxEscapeCloseBoxTF {
+		t.Fatalf("m473 B3 D4.3-R67: the default ISB rest-box escape must be close5m, got %q", d)
 	}
 	box := ISBBox{High: 29_046.25, Low: 29_031.25, Dir: SideShort, AtTime: m60p1At(9, 45)}
 	bar := m60p1K(m60p1At(9, 56), 29_040, 29_048, 29_039, 29_047)
@@ -75,18 +77,16 @@ func TestM61ISBBoxEscapesOnOneMinuteClose(t *testing.T) {
 		m60p1K(m60p1At(9, 55), 29_038, 29_040, 29_035, 29_039),
 		bar,
 	}
-	for _, mode := range []string{"", ISBBoxEscapeBody} {
+	for _, mode := range []string{ISBBoxEscapeClose, ISBBoxEscapeBody} {
 		e := m60p1Eval(t, SideLong, 28_980, SideLong, SideLong, m60p1Levels())
 		e.Cfg.Early15mRead = false
-		if mode != "" {
-			e.Cfg.ISBBoxEscapeMode = mode
-		}
+		e.Cfg.ISBBoxEscapeMode = mode // "close" = the explicit September 1m-delete mode (m466 G20)
 		b := box
 		e.State.ISBBox = &b
 		e.State.LastISBBoxAt = box.AtTime
 		e.State.LastISBBoxDir = box.Dir
 		m60p1Run(e, tape)
-		if mode == "" {
+		if mode == ISBBoxEscapeClose {
 			if e.State.ISBBox != nil || e.State.LastISBBoxEscape != SideLong {
 				t.Fatalf("default: the 5m box must escape long on the 1m close, box %+v escape %q", e.State.ISBBox, e.State.LastISBBoxEscape)
 			}
@@ -96,16 +96,14 @@ func TestM61ISBBoxEscapesOnOneMinuteClose(t *testing.T) {
 	}
 
 	// The #60 provisional forming-15m box escapes the same way.
-	for _, mode := range []string{"", ISBBoxEscapeBody} {
+	for _, mode := range []string{ISBBoxEscapeClose, ISBBoxEscapeBody} {
 		e := m60p1Eval(t, SideLong, 28_980, SideLong, SideLong, m60p1Levels())
-		if mode != "" {
-			e.Cfg.ISBBoxEscapeMode = mode
-		}
+		e.Cfg.ISBBoxEscapeMode = mode
 		pb := ISBBox{High: 29_046.25, Low: 29_031.25, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
 		e.State.ISBBox15m = &pb
 		e.State.LastForming15mAt = pb.AtTime
 		m60p1Run(e, tape)
-		if mode == "" {
+		if mode == ISBBoxEscapeClose {
 			if e.State.ISBBox15m != nil || e.State.Counters["isb_15m_forming_escaped"] != 1 {
 				t.Fatalf("default: the provisional 15m box must escape on the 1m close, box %+v counters %v", e.State.ISBBox15m, e.State.Counters)
 			}
@@ -345,6 +343,7 @@ func TestM61BreakLocksCounterSetups(t *testing.T) {
 func TestM61FifteenMinExitSetsSide(t *testing.T) {
 	e := m60p1Eval(t, SideShort, 29_100, SideShort, SideShort, m60p1Levels())
 	e.Cfg.Early15mRead = false
+	e.Cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // m473 B3: explicit 1m-delete mode; the default close5m keeps the 15m box until a 15m close outside [Oct D4.3 @ 65:00-66:13]
 	bx := ISBBox{High: 29_026, Low: 28_970.75, Dir: SideLong, AtTime: m60p1At(9, 30)}
 	e.State.ISBBox15m = &bx
 	e.State.LastISBBox15mAt = bx.AtTime
@@ -601,6 +600,9 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
 	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
 	keyLevelLastCandleEndMin = 15 * 60
+	boxPeak1Level = false    // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
+	firstRTH5mNotISB = false // pre-m473 B4: the frozen golden predates the 08:30-candle-is-not-ISB rule [Oct D4.3 @ 57:20-57:35]
+	t.Cleanup(func() { boxPeak1Level = true; firstRTH5mNotISB = true })
 	raw, err := os.Open(m466Pre61GoldenPath)
 	if err != nil {
 		t.Fatal(err)

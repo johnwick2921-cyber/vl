@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"math"
 	"sort"
 	"strings"
 	"sync/atomic"
@@ -288,9 +289,120 @@ func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
 	return bars[s.idx+1].High < s.price
 }
 
-// BoxesBuild is the pure, deterministic box scan: role extremes pair with
-// the NEAREST same-role extreme (in time, on the non-broken side) with NO
-// tolerance; escaped boxes are dropped; only boxes of the current trading
+// pickBoxPair chooses the box's two same-role swings (indices into seq), or
+// -1,-1. m473 B2: PEAK 1 IS THE STANDARD — two confirmed swings pair when LEVEL
+// (|p1-p2| <= flatNearPts, the horizontal-line test), in EITHER order, and the
+// box anchors on the EARLIER one even when the later wick is higher: "Nếu đỉnh
+// 2 có râu cao hơn ... mình sẽ bay theo đỉnh 1 ... chuyện bắt buộc" [Oct D3.3 @
+// 19:31] (OctD3.3-R30); "đặt được một cái đường ... biết là nó có ngang không"
+// [Oct D3.3 @ 14:20] (R23); FTGL is the mirror [Oct D3.3 @ 43:14] (R54). The
+// partner is the confirmed level swing nearest in time to the day's EXTREME
+// swing (either side; the body-edge partner rule waits for the mentor), and the
+// extreme is tried first so an early trivial level pair never beats the
+// prominent peaks (round-2: the video does not say "first swing in time").
+// Supersedes the September "highest swing
+// of the day + next swing that does not exceed it" [D3.2 p1 @ 01:21-04:25].
+// When flatNearPts is 0 (levelness disabled: the legacy synthetic-tape premise,
+// flatNearScale 0) the legacy extreme/nearest selection is kept.
+// boxPeak1Level switches the m473 B2 level-pair / peak-1 anchor construction.
+// Always true in production; the frozen pre-m462 / pre-#61 identity pins set it
+// false to reproduce the September construction they were recorded under.
+var boxPeak1Level = true
+
+func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind) (int, int) {
+	var conf []int
+	for i, s := range seq {
+		if s.kind == role && swingConfirmed(tfBars, s) {
+			conf = append(conf, i)
+		}
+	}
+	if len(conf) == 0 {
+		return -1, -1
+	}
+	if boxPeak1Level && flatNearScale > 0 && len(tfBars) > 0 {
+		// round-2 (video lens): the video never says "the first-in-time swing
+		// with a level partner". The anchor is the day's EXTREME confirmed swing
+		// as before m473 (highest high / lowest low); it pairs with the nearest-
+		// in-time confirmed swing that is LEVEL with it, in EITHER order, and the
+		// box anchors on the EARLIER of the two (peak 1 is the standard [Oct D3.3
+		// @ 19:31], R30). If the extreme has no level partner, the next most
+		// extreme is tried, so an early trivial level pair can never beat the
+		// prominent peaks.
+		order := append([]int(nil), conf...)
+		sort.SliceStable(order, func(x, y int) bool {
+			if role == kernel.KindSWGL {
+				return seq[order[x]].price < seq[order[y]].price
+			}
+			return seq[order[x]].price > seq[order[y]].price
+		})
+		for _, ei := range order {
+			ex := seq[ei]
+			best := -1
+			for _, ci := range conf {
+				if ci == ei {
+					continue
+				}
+				c := seq[ci]
+				later := c.idx
+				if ex.idx > later {
+					later = ex.idx
+				}
+				if math.Abs(c.price-ex.price) > flatNearPts(tfBars, later) {
+					continue
+				}
+				if best < 0 || absInt(c.idx-ex.idx) < absInt(seq[best].idx-ex.idx) ||
+					(absInt(c.idx-ex.idx) == absInt(seq[best].idx-ex.idx) && c.idx < seq[best].idx) {
+					best = ci
+				}
+			}
+			if best < 0 {
+				continue
+			}
+			if seq[best].idx < ex.idx {
+				return best, ei // peak 1 = the earlier swing
+			}
+			return ei, best
+		}
+		return -1, -1
+	}
+	extreme := conf[0]
+	for _, i := range conf[1:] {
+		if role == kernel.KindSWGL && seq[i].price < seq[extreme].price {
+			extreme = i
+		}
+		if role == kernel.KindSWGH && seq[i].price > seq[extreme].price {
+			extreme = i
+		}
+	}
+	nearest := -1
+	for _, i := range conf {
+		s := seq[i]
+		if i == extreme || s.idx <= seq[extreme].idx {
+			continue
+		}
+		if role == kernel.KindSWGL && s.price < seq[extreme].price {
+			continue
+		}
+		if role == kernel.KindSWGH && s.price > seq[extreme].price {
+			continue
+		}
+		if nearest < 0 {
+			nearest = i
+			continue
+		}
+		if s.idx-seq[extreme].idx < seq[nearest].idx-seq[extreme].idx {
+			nearest = i
+		}
+	}
+	return extreme, nearest
+}
+
+// BoxesBuild is the pure, deterministic box scan: two confirmed same-role
+// swings pair when LEVEL (|p1-p2| <= flatNearPts, either order) and the box
+// anchors on the EARLIER one — see pickBoxPair (m473 B2, [Oct D3.3 @ 19:31]).
+// The legacy extreme + nearest-non-exceeding construction (no tolerance) runs
+// only when flatNearScale is 0 or boxPeak1Level is off (frozen goldens);
+// escaped boxes are dropped; only boxes of the current trading
 // day survive. The same history always rebuilds the same set — a drawn box
 // is never redrawn. At most one floor and one ceiling ("two zones").
 func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
@@ -313,73 +425,8 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 	seq = seqToday
 	var out []Box
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
-		extreme := -1
-		for i, s := range seq {
-			if s.kind != role {
-				continue
-			}
-			// B10 T1 (CTO ruling 21:00Z): only a CONFIRMED swing can be the
-			// extreme — the next closed bar failed to break it. A one-way
-			// tape has no confirmed swing, so no extreme and no box.
-			if !swingConfirmed(tfBars, s) {
-				continue
-			}
-			if extreme < 0 {
-				extreme = i
-				continue
-			}
-			if role == kernel.KindSWGL && s.price < seq[extreme].price {
-				extreme = i
-			}
-			if role == kernel.KindSWGH && s.price > seq[extreme].price {
-				extreme = i
-			}
-		}
-		if extreme < 0 {
-			continue
-		}
-		nearest := -1
-		for i, s := range seq {
-			// item 12 (CTO ruling 23:06Z, DAY-3 row 12): "the FAILURE
-			// defines the box" — bottom/high 2 comes AFTER the extreme and
-			// FAILS to exceed it, and the trade is the 3rd touch ("lần thứ
-			// 3 mới vô lệnh"). The partner is the next CONFIRMED two-sided
-			// swing AFTER the extreme that does not break it — a higher low
-			// / lower high. An EARLIER adjacent decline bar is NEVER the
-			// partner.
-			if i == extreme || s.kind != role {
-				continue
-			}
-			if s.idx <= seq[extreme].idx {
-				continue // bottom/high 2 is LATER, never the previous bar
-			}
-			if !swingConfirmed(tfBars, s) {
-				continue
-			}
-			// the nearest did not break the extreme
-			if role == kernel.KindSWGL && s.price < seq[extreme].price {
-				continue
-			}
-			if role == kernel.KindSWGH && s.price > seq[extreme].price {
-				continue
-			}
-			if nearest < 0 {
-				nearest = i
-				continue
-			}
-			di := seq[i].idx - seq[extreme].idx
-			if di < 0 {
-				di = -di
-			}
-			dn := seq[nearest].idx - seq[extreme].idx
-			if dn < 0 {
-				dn = -dn
-			}
-			if di < dn {
-				nearest = i
-			}
-		}
-		if nearest < 0 {
+		extreme, nearest := pickBoxPair(tfBars, seq, role)
+		if extreme < 0 || nearest < 0 {
 			continue
 		}
 		b := boxFromPair(tfBars, seq[extreme], seq[nearest])
@@ -992,4 +1039,11 @@ func structureTrend5m(closed5m []market.Kline) Side {
 		return SideShort
 	}
 	return ""
+}
+
+func absInt(x int) int {
+	if x < 0 {
+		return -x
+	}
+	return x
 }
