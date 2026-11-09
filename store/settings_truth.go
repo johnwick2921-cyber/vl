@@ -67,13 +67,21 @@ var settingsTruthSessions = []string{"", "NY", "ASIA", "LONDON"}
 // a live path may call these: they are the defect W1 corrects.
 
 // legacyBreakerHaltN is breakerHaltN as it stood before W1: a knob > 0 wins,
-// anything else (absent, 0) fell to env BREAKER_HALT_N, else 8.
-func legacyBreakerHaltN(stored *int, getenv func(string) string) int {
-	if stored != nil && *stored > 0 {
-		return *stored
+// anything else (absent, 0) fell to env BREAKER_HALT_N, else the SHIPPED
+// default. The shipped default is the one this binary ships (8, or 4 for a
+// mentor_mode strategy since m472 A4 [Oct D4.1 @ 14:40]) — the report isolates
+// the W1 MEANING change (a stored 0: inherit → OFF), not a shipped-default move.
+// m474: comparing against a frozen 8 refused every mentor strategy with an
+// absent breaker at the #65 boot (11-09 06:59 CT, a5b7662e + de7d04b2).
+func legacyBreakerHaltN(cfg *StrategyConfig, getenv func(string) string) int {
+	if cfg != nil && cfg.RiskControl.ConsecutiveLossHalt != nil && *cfg.RiskControl.ConsecutiveLossHalt > 0 {
+		return *cfg.RiskControl.ConsecutiveLossHalt
 	}
 	if n, st := BreakerHaltEnvState(getenv); st == EnvValid {
 		return n
+	}
+	if cfg != nil && cfg.RiskControl.MentorMode {
+		return BreakerHaltMentorDefault
 	}
 	return BreakerHaltDefault
 }
@@ -193,7 +201,7 @@ func settingsTruthRow(in SettingsTruthInput, getenv func(string) string) Setting
 
 	// Breaker.
 	shape, path, note := breakerRawShape(raw)
-	before := legacyBreakerHaltN(cfg.RiskControl.ConsecutiveLossHalt, getenv)
+	before := legacyBreakerHaltN(&cfg, getenv)
 	after, src := ResolveBreakerHaltEnv(&cfg, getenv)
 	row.Breaker = SettingsTruthKnob{
 		Knob: KnobBreaker, Path: path, Note: note, Stored: shape, Zero: zeroVerdict(KnobBreaker),
