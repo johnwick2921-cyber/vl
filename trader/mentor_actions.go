@@ -1067,7 +1067,7 @@ func (at *AutoTrader) mentorMoveStopBE(in mentor.Intent) {
 		at.logWarnf("🧑‍🏫 mentor MoveStopBE REFUSED — ArmID %q filled but its own stop is unknown (StopPx=0); never skip the guard: %s", in.ArmID, in.Reason)
 		return
 	}
-	if refuse, why := mentorNeverWiden(arm.Side, r.StopPx, arm.Entry); refuse {
+	if refuse, why := mentorNeverWiden(arm.Side, r.StopPx, at.mentorSwingBEStop(arm)); refuse {
 		at.mentorCount("widen_refused")
 		at.noteRefusalStorm(ownerpush.ClassSwingBE, in.ArmID, "break-even would widen the stop") // m442 #6
 		at.logWarnf("🧑‍🏫 %s", why)

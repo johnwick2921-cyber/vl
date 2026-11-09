@@ -136,8 +136,9 @@ func TestM60TrendlineEntryTouchThirdKnob(t *testing.T) {
 	if got, refused := TrendlineLevelsTouch(tls, boxes, nil, bars, TrendlineEntryFourth); len(got) != 0 || len(refused) != 1 {
 		t.Fatalf("knob fourth: the 3rd-touch candle is refused — levels=%+v refused=%v", got, refused)
 	}
-	if DefaultConfig().TrendlineEntryTouch != TrendlineEntryFourth {
-		t.Fatalf("default trendline entry touch = %q, want %q (D2.3-R7)", DefaultConfig().TrendlineEntryTouch, TrendlineEntryFourth)
+	// m472 A2: October supersedes Sept D2.3-R7 — [Oct D3.2 @ 31:17] "Em chỉ cần 2 touch".
+	if DefaultConfig().TrendlineEntryTouch != TrendlineEntryThird {
+		t.Fatalf("default trendline entry touch = %q, want %q [Oct D3.2 @ 31:17] (supersedes Sept D2.3-R7)", DefaultConfig().TrendlineEntryTouch, TrendlineEntryThird)
 	}
 }
 
@@ -160,6 +161,7 @@ func TestM60TrendlineThirdTouchCountedInTick(t *testing.T) {
 		t.Fatalf("fixture: %+v", tls)
 	}
 	e := trendlineEval(bars, now, tls[0].key(), tls[0].priceAt(bars[13].OpenTime))
+	e.Cfg.TrendlineEntryTouch = TrendlineEntryFourth // m472 A2: the refusal exists only in the opt-in strict mode
 	e.Tick(bars, now)
 	n := 0
 	for k, v := range e.State.Refusals {

@@ -76,7 +76,7 @@ func loadLinesRestartFixture(t *testing.T) map[string][]market.Kline {
 var lrFreshRTHOff bool
 
 func lrProdCfg() Config {
-	c := DefaultConfig()
+	c := legacy2mCfg()
 	c.Enabled = true
 	c.RealFillOnly = true
 	c.NewsBarsExcluded = false // historical 10-13/10-14 pin (pre-#25 CE-4)

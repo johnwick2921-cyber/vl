@@ -143,7 +143,8 @@ func TestMentorWindowActivePure(t *testing.T) {
 // places; the SWING4H setup is exempt at any hour. The mutant that drops the
 // gate makes the recorder fire at 10:00 CT and this test goes RED.
 func TestMentorWindowGateAtPlacementCallSite(t *testing.T) {
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	// explicit 08:30+60 (m472 A6: unset is now window-off [Oct D5.2 @ 01:00-01:20])
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60})
 	wireMentorPlacementSeams(t, at)
 	ct := kernel.CTLocation()
 	setMentorNowSource(func() time.Time { return time.Date(2026, 10, 2, 10, 0, 0, 0, ct) })

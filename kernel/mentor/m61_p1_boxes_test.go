@@ -597,6 +597,9 @@ const m466Pre61GoldenPath = "testdata/m466_pre61_tick_identity.golden.gz"
 // notes, levels and trendlines on every tick of the four real-tape cases. So
 // each behaviour change of this package is exactly its knob (G37: its hook).
 func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
+	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
+	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
+	keyLevelLastCandleEndMin = 15 * 60
 	boxPeak1Level = false    // pre-m473 B2 construction: the frozen golden predates peak-1 / level pairing
 	firstRTH5mNotISB = false // pre-m473 B4: the frozen golden predates the 08:30-candle-is-not-ISB rule [Oct D4.3 @ 57:20-57:35]
 	t.Cleanup(func() { boxPeak1Level = true; firstRTH5mNotISB = true })
@@ -644,7 +647,7 @@ func TestM61PreValuesReproduceThePre61Golden(t *testing.T) {
 // [D4.2 p2 @06:16–06:30] gives no candle count or breakout margin), so every
 // test of the guard's own behaviour sets the knob explicitly.
 func smallRangeOnConfig() Config {
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.SmallRangeGuard = true
 	return cfg
 }

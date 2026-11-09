@@ -133,10 +133,14 @@ type m434Case struct {
 func m434Cases() []m434Case {
 	return []m434Case{
 		{
+			// m472 note: this case runs on legacy2mCfg() (A1/A2/A3 reverted), NOT
+			// DefaultConfig(); the name is kept because the golden is keyed on it. Its
+			// hashes changed from tick 1326 on only because of A7 (the 1H key-level
+			// candle now ends 15:15, [Oct D5.2 @ 01:00-01:20]); legacy2mCfg does not revert A7.
 			name:  "m423_1023_default_cfg_near1",
 			scale: 1,
 			tape:  m423Bars,
-			cfg:   func() Config { c := DefaultConfig(); c.Enabled = true; return c },
+			cfg:   func() Config { c := legacy2mCfg(); c.Enabled = true; return c },
 			from:  150,
 		},
 		{
@@ -144,7 +148,7 @@ func m434Cases() []m434Case {
 			scale: 0,
 			tape:  m423Bars,
 			cfg: func() Config {
-				c := DefaultConfig()
+				c := legacy2mCfg()
 				c.Enabled = true
 				c.Exec2mAfter30m = false
 				return c
@@ -419,7 +423,7 @@ func BenchmarkM434Tick(b *testing.B) {
 	if len(win) < 600 {
 		b.Fatalf("window %d", len(win))
 	}
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	old := flatNearScale
 	flatNearScale = 1

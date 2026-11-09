@@ -230,13 +230,12 @@ describe('mentor guide — c52 W12 doc sweep', () => {
   })
 
   // release #59 fix round: one setup per level (an open swing refuses the
-  // inside bar) and the PHL rays are the drawn 0.50 / 0.50 [D2.2-R10].
+  // inside bar) and the PHL rays are the October 1.00 / 1.00 [Oct D2.3 @ 46:20-47:20; Sept was 0.50 / 0.50, D2.2-R10].
   it('names the open-swing inside-bar refusal and the drawn PHL rays', () => {
     expect(all).toContain('swing_position_open')
-    expect(all).toContain('stop 0.50 under that candle’s low')
-    expect(all).toContain('0.50 / 0.50')
+    expect(all).toContain('stop 1 point under that candle’s low')
+    expect(all).toContain('1.00 / 1.00')
     expect(all).toContain('rolling_phl_15m_box_ban')
-    expect(all).not.toContain('the PHL entry buffer, default 1.00')
   })
 
   // release #59 review round 2: the closing 4h candle's last bar is read

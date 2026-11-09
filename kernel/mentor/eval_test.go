@@ -297,7 +297,7 @@ func TestSwingZoneGateKnob(t *testing.T) {
 // exactly ON the line is now allowed when no box builds the FTGL/buy zone
 // (see trigger_zone_test.go for the zone itself).
 func TestEvaluatorRefusesWrongTriggerSide(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := legacy2mCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, Open: o, High: h, Low: l, Close: c}
