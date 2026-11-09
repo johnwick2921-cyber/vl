@@ -60,8 +60,14 @@ jobs:
           DATA_ENCRYPTION_KEY: "test-encryption-key-for-ci-only-not-production"
         # m471: -count=1 so no result is read from the GOCACHE setup-go restored
         # (this is the UTC leg of Q5; PR #625 read 20 packages from cache).
+        # m474: -timeout 330m (was 200m). After m473 (#628) kernel/mentor alone
+        # needs ~12,000 s under -race (the restart/seed replays got 1.4-2.6x
+        # slower with the carried-box rebuild); dev run 42571486526 and PR #629
+        # run 42622262431 both died at the 200m cap with every test passing so
+        # far. The job's own limit is 360 min. Follow-up: speed up the seed
+        # replays so this can come back down.
         run: |
-          go test -v -count=1 -race -timeout 200m -coverprofile=coverage.out -covermode=atomic ./...
+          go test -v -count=1 -race -timeout 330m -coverprofile=coverage.out -covermode=atomic ./...
 
       - name: Calculate coverage and generate report
         id: coverage
