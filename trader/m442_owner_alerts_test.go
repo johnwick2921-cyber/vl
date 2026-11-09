@@ -266,7 +266,7 @@ func TestM442WindowRefusalsAreNotAStall(t *testing.T) {
 	// "mentor-setup-stalled" without it, so the final no-alert assertion could
 	// never fail (review D2).
 	at.config.StrategyConfig = &store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}, RiskControl: store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60}} // explicit 08:30 + 60 min (m472 A6: unset is now window-off [Oct D5.2 @ 01:00-01:20])
-	now := mentorStaleBlockClock(10, 0)                                                                                                                        // 10:00 CT: outside 08:30-09:30
+	now := mentorStaleBlockClock(10, 0)                                                                                                                                                 // 10:00 CT: outside 08:30-09:30
 	setMentorNowSource(func() time.Time { return now })
 	t.Cleanup(func() { setMentorNowSource(nil) })
 	wireMentorPlacementSeams(t, at)

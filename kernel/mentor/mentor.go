@@ -842,21 +842,21 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
-		HTFGateNewsOnly:        false,                // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
-		NearBoxRoomMultiple:    2,                    // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:         true,                 // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
-		NearBoxBetweenExempt:   false,                // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
+		HTFGateNewsOnly:        false,               // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
+		NearBoxRoomMultiple:    2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:         true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxBetweenExempt:   false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
 		TrendlineEntryTouch:    TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
-		PHLFlatLow:             PHLFlatLowNear,       // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
-		ISBReverseTouch:        ISBReverseTouchPair,  // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
-		ISBOldExtremePts:       2,                    // B27 [ours]: "at the old extreme" = ± 2 pts
-		ISBInRangeGapPts:       0,                    // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
-		ISBStackCancelCandle2m: 4,                    // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    12.5,                 // m465 D5.1-R26: the worked example stop, measured 12.50 pts (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
-		EveningSlowPts:         100,                  // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
-		EveningSlowFromHour:    15,                   // B10 [ours]: the RTH close
-		EveningSlowWindowMin:   0,                    // B10 [ours]: cumulative since the start hour
-		LossDeparturePts:       0,                    // B22: structural departure; the numeric fallback is OFF
+		PHLFlatLow:             PHLFlatLowNear,      // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
+		ISBReverseTouch:        ISBReverseTouchPair, // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
+		ISBOldExtremePts:       2,                   // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:       0,                   // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m: 4,                   // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:    12.5,                // m465 D5.1-R26: the worked example stop, measured 12.50 pts (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
+		EveningSlowPts:         100,                 // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:    15,                  // B10 [ours]: the RTH close
+		EveningSlowWindowMin:   0,                   // B10 [ours]: cumulative since the start hour
+		LossDeparturePts:       0,                   // B22: structural departure; the numeric fallback is OFF
 		LocTriggerFilter:       true,
 		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
 		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
