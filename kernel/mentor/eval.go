@@ -2326,7 +2326,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	// §2.1 / §2.2 exec-frame schedule (F2, W-MENTOR-TRANSCRIPT-TRUTH): the
-	// X5-10 knob (Exec2mAfter30m, default ON since release #31) applies to
+	// X5-10 knob (Exec2mAfter30m, default ON since release #31; m472 A1: default OFF now, October trades 1m all day [Oct D4.2 @ 22:56-23:46]) applies to
 	// EVERY setup the transcript names — the ISB pair AND PHL/PLH ("Lớp học
 	// của mình chỉ only đúng 3 setup: inside bar, potential high or low,
 	// potential low or high" [X11 @07:09–07:30]; "Mình trade khung 2 phút …

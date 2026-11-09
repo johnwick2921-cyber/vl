@@ -56,8 +56,9 @@ func TestMentorTruthSnapshotReflectsSeededEvaluator(t *testing.T) {
 	if p.Levels == nil || len(*p.Levels) != 1 || (*p.Levels)[0].Kind != "key_level" || (*p.Levels)[0].Price != 30000 || (*p.Levels)[0].VisitsToday != 2 {
 		t.Fatalf("levels = %+v, want one key_level @30000 visited 2x today", p.Levels)
 	}
-	if p.Window.Start != "08:30" || p.Window.Minutes != 60 {
-		t.Fatalf("window = %q/%d, want the default 08:30/60", p.Window.Start, p.Window.Minutes)
+	if p.Window.Start != "08:30" || p.Window.Minutes != 405 {
+		// m472 A6: unset = the RTH band 08:30+405 = 15:15 CT [Oct D5.2 @ 01:00-01:20]; was 08:30/60 [D1.2 p1 @23:49-24:21]
+		t.Fatalf("window = %q/%d, want the default 08:30/405", p.Window.Start, p.Window.Minutes)
 	}
 	if p.DoneAfterWin || p.StopAfterLoss {
 		t.Fatalf("unwired day-stop seams must read not-tripped, got daw=%v sal=%v", p.DoneAfterWin, p.StopAfterLoss)

@@ -18,7 +18,7 @@ import (
 // in mentorTuningResolve → RED.
 func TestM465KnobsDefaultsAreTheCourse(t *testing.T) {
 	cfg := tuningTick(t, nil)
-	if cfg.TrendlineEntryTouch != mentor.TrendlineEntryFourth || cfg.NearBoxBetweenExempt ||
+	if cfg.TrendlineEntryTouch != mentor.TrendlineEntryThird /* m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7 */ || cfg.NearBoxBetweenExempt ||
 		cfg.PHLFlatLow != mentor.PHLFlatLowNear || cfg.ISBReverseTouch != mentor.ISBReverseTouchPair ||
 		cfg.ISBStackTinyStopPts != 12.5 || cfg.DayGateSpentPts != 265 {
 		t.Fatalf("m465 defaults: entry=%q exempt=%v flat=%q rev=%q tiny=%g spent=%g",
@@ -32,14 +32,14 @@ func TestM465KnobsDefaultsAreTheCourse(t *testing.T) {
 func TestM465KnobsReachTheEvaluator(t *testing.T) {
 	on := true
 	cfg := tuningTick(t, &store.MentorTuning{
-		TrendlineEntryTouch:  "third",
+		TrendlineEntryTouch:  "fourth", // m472 A2: "fourth" is now the opt-in value, so it proves the stored knob reaches the evaluator
 		NearBoxBetweenExempt: &on,
 		PHLFlatLow:           "strict",
 		ISBReverseTouch:      "isb_candle",
 		ISBStackTinyStopPts:  0.01, // effectively OFF (no ISB stop is under 3 pts)
 		DayGateSpentPts:      300,
 	})
-	if cfg.TrendlineEntryTouch != mentor.TrendlineEntryThird || !cfg.NearBoxBetweenExempt ||
+	if cfg.TrendlineEntryTouch != mentor.TrendlineEntryFourth || !cfg.NearBoxBetweenExempt ||
 		cfg.PHLFlatLow != mentor.PHLFlatLowStrict || cfg.ISBReverseTouch != mentor.ISBReverseTouchISBCandle ||
 		cfg.ISBStackTinyStopPts != 0.01 || cfg.DayGateSpentPts != 300 {
 		t.Fatalf("stored m465 knobs did not reach the evaluator: entry=%q exempt=%v flat=%q rev=%q tiny=%g spent=%g",
@@ -57,7 +57,7 @@ func TestM465KnobsBadValueFailsClosed(t *testing.T) {
 		ISBReverseTouch:     "mother",
 	}})
 	got := mentorTuningResolve(at, at.mentorRiskControl())
-	if got.TrendlineEntryTouch != mentor.TrendlineEntryFourth || got.PHLFlatLow != mentor.PHLFlatLowNear ||
+	if got.TrendlineEntryTouch != mentor.TrendlineEntryThird /* m472 A2 [Oct D3.2 @ 31:00-31:17] */ || got.PHLFlatLow != mentor.PHLFlatLowNear ||
 		got.ISBReverseTouch != mentor.ISBReverseTouchPair {
 		t.Fatalf("bad values must fall back to the course defaults: %+v", got)
 	}

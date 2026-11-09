@@ -340,6 +340,9 @@ const m61PreP4GoldenPath = "testdata/m61_prep4_tick_identity.golden.gz"
 // MUTANT: drop the ISBCloseBackRequired clause in walkSwingBar (or the
 // required-mode reason text) → intents/notes diverge → RED.
 func TestM61StrictReadIsThePreP4Golden(t *testing.T) {
+	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
+	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
+	keyLevelLastCandleEndMin = 15 * 60
 	raw, err := os.Open(m61PreP4GoldenPath)
 	if err != nil {
 		t.Fatal(err)

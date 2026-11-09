@@ -29,6 +29,7 @@ type mentorTuned struct {
 	ISBReverseEMA9Enabled  bool
 	HTFGateNewsOnly        bool
 	Exec2mAfter30m         bool
+	BEOffsetTicks          int // m472 A5: 0 = OFF (BE at the entry exactly)
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
 	SwingMaxStopPts        float64
@@ -208,6 +209,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	}
 	if t.Exec2mAfter30m != nil {
 		out.Exec2mAfter30m = *t.Exec2mAfter30m
+	}
+	if t.BEOffsetTicks != nil {
+		if v := *t.BEOffsetTicks; v >= 0 && v <= mentorBEOffsetMaxTicks {
+			out.BEOffsetTicks = v // 0 = OFF
+		} else {
+			bad()
+		}
 	}
 
 	// Release #25 course-entry knobs: absent → the DefaultConfig value; an

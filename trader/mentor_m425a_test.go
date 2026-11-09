@@ -80,7 +80,7 @@ func TestM425aEODFlatAuthoringRefused(t *testing.T) {
 func TestM425aRefusedPHLEndsTouchKeepsReason(t *testing.T) {
 	telemetry.ResetSetupStallsForTest()
 	t.Setenv("MENTOR_PLACE", "1")
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true}) // default window 08:30 +60m
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowMinutes: 60}) // explicit 08:30 +60m window (m472 A6: unset is now window-off [Oct D5.2 @ 01:00-01:20])
 	at.mentorEval = mentor.New(mentor.Config{})
 	const key = "L"
 	refClose := int64(1_792_000_000_000 + 59_999)

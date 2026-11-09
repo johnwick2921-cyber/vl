@@ -114,7 +114,7 @@ const COURSE_ENTRY_WRITES: Array<[string, string, unknown]> = [
   ['isb_old_extreme_pts', '3', 3],
   ['isb_in_range_gap_pts', '40', 40],
   // m465 P3 (release #60) structure-fidelity knobs
-  ['trendline_entry_touch', 'third', 'third'],
+  ['trendline_entry_touch', 'fourth', 'fourth'],
   ['near_box_between_exempt', 'on', true],
   ['phl_flat_low', 'strict', 'strict'],
   ['isb_reverse_touch', 'isb_candle', 'isb_candle'],
@@ -183,7 +183,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     ema34_loss_relock: 'until_zone_exit',
     orb_edge_veto_pts: 0,
     orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON
-    exec_2m_after_30m: true, // rule 4 (release #31) default ON
+    exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46] default OFF (was ON, release #31 rule 4)
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,
@@ -204,7 +204,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     isb_old_extreme_pts: 2,
     isb_in_range_gap_pts: 0,
     htf_gate_news_only: false, // m462 — the 4h/1h gate applies all session by default (D5.1-R9/R11)
-    trendline_entry_touch: 'fourth', // m465 D2.3-R7
+    trendline_entry_touch: 'third', // m472 A2 [Oct D3.2 @ 31:17] (was fourth, Sept D2.3-R7)
     near_box_between_exempt: false, // m465 D3.2-R29/R30
     phl_flat_low: 'flat_near', // m465 D2.2-R64
     isb_reverse_touch: 'pair', // m465 D5.4-R7

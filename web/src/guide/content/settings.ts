@@ -1005,14 +1005,14 @@ const risk: KnobSpec[] = [
   {
     label: 'Consecutive-loss halt',
     where: 'Strategy → Risk Control → Guardrails',
-    what: "N consecutive losing closes in one CME session-day halt NEW entries on every path (decision, agent, arm, picture) until the 17:00 CT roll, and resting entries are withdrawn. NOT gated by the guardrails master. PRESENCE-AWARE since W1 (settings truth, 2026-09-23): toggle OFF stores 0 = OFF; toggle ON or a BLANK box = inherit (env BREAKER_HALT_N when set, else 8); a number = that N. Before W1 the row showed a missing value as OFF while the runtime enforced 8, and its OFF wrote a 0 no save could store. The 🛑 boot lines print what is enforced: breaker=8[I] (shipped default), 3[O] / off[O] (saved), 5[E] / off[E] (env), or n/a when not exactly one strategy is bound (each trader's own '🛑 [trader] breaker=' line then speaks for it).",
+    what: "N consecutive losing closes in one CME session-day halt NEW entries on every path (decision, agent, arm, picture) until the 17:00 CT roll, and resting entries are withdrawn. NOT gated by the guardrails master. PRESENCE-AWARE since W1 (settings truth, 2026-09-23): toggle OFF stores 0 = OFF; toggle ON or a BLANK box = inherit (env BREAKER_HALT_N when set, else 4 for a mentor-mode strategy, 8 for AI-mode); a number = that N. Before W1 the row showed a missing value as OFF while the runtime enforced 8, and its OFF wrote a 0 no save could store. The 🛑 boot lines print what is enforced: breaker=8[I] (shipped default), 3[O] / off[O] (saved), 5[E] / off[E] (env), or n/a when not exactly one strategy is bound (each trader's own '🛑 [trader] breaker=' line then speaks for it).",
     trader:
       'The streak-breaker: three losers in a row is the market telling you something.',
     consumer:
-      'store/resolve_source.go ResolveBreakerHalt (the ONE rule: saved incl. 0 → env BREAKER_HALT_N → 8) · trader/auto_trader_orders.go consecutiveLossHaltedAt (decision/agent) · trader/session_risk.go sessionRiskGateAt (arm/picture) · trader/withdraw.go · store/position_query.go CountConsecutiveLossesSince · telemetry gate-block consecutive_loss',
+      'store/resolve_source.go ResolveBreakerHalt (the ONE rule: saved incl. 0 → env BREAKER_HALT_N → 4 for a mentor-mode strategy [Oct D4.1 @ 14:40], 8 for AI-mode) · trader/auto_trader_orders.go consecutiveLossHaltedAt (decision/agent) · trader/session_risk.go sessionRiskGateAt (arm/picture) · trader/withdraw.go · store/position_query.go CountConsecutiveLossesSince · telemetry gate-block consecutive_loss',
     range: 'OFF (0) · inherit (blank) · 1 – N',
     systemDefault:
-      'inherit → 8 [I]; BREAKER_HALT_N overrides the inherit [E] — ON, not master-gated',
+      'inherit → 4 [I] for a mentor-mode strategy (Oct D4.1-R28), 8 [I] for AI-mode; BREAKER_HALT_N overrides the inherit [E] — ON, not master-gated',
     recommended: '⭐ ON, threshold 2–3.',
     whenToTouch:
       "Leave ON — this is the cheapest guardrail in the stack. CAVEAT (W1): a Studio save writes an OFF (0) together with its confirmation record (system_config settings_truth_zero:<strategy id>) in one transaction, and the 🩺 boot line and the effective chip print 'OFF — confirmed by Studio save <time CT>'. A strategy restored or imported WITHOUT that record row reads 'explicit 0 UNCONFIRMED — re-save in Studio' and refuses its trader at load until it is re-saved in the Studio. This is fail-closed, by design. A strategy-level replan cap of 0 works the same way.",

@@ -2003,9 +2003,16 @@ type MentorTuning struct {
 	HTFGateNewsOnly *bool `json:"htf_gate_news_only,omitempty"`
 	// Exec2mAfter30m (X5-10): the execution frame — 2m after 09:00 CT
 	// (1m 08:30–09:00) for ISB + PHL/PLH, the EMA 9/34, boxes, trendlines
-	// and the X8 exit (nil → ON since release #31; the course trades the 1m
-	// for the first 30 min, then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
+	// and the X8 exit (nil → OFF since m472 A1: the 1m all day [Oct D4.2 @ 22:56-23:46];
+	// ON = the September schedule, 1m for the first 30 min then the 2m [X5 @00:41–01:14; X8 @15:52–15:57]).
 	Exec2mAfter30m *bool `json:"exec_2m_after_30m,omitempty"`
+	// BEOffsetTicks (m472 A5): the break-even stop sits this many ticks PAST
+	// the entry on the profit side (long entry+N*tick, short entry-N*tick)
+	// instead of exactly at it. The course moves the stop "a little past" the
+	// entry — "gia 10 do ... de o gia 11 do" [Oct D4.2 @ 13:00-13:25] — but
+	// never says how many ticks, so nil / 0 = OFF = the entry exactly (today).
+	// Valid 0..20; out of range fails closed to 0 and is counted.
+	BEOffsetTicks *int `json:"be_offset_ticks,omitempty"`
 	// Spent-day gate (METHOD §7 table, D5.1 p1 @14:21–15:57): a run of at
 	// least SpentPts before the open = spent; the target cap then applies,
 	// and any setup whose stop is over the cap is skipped (R9).
@@ -2145,7 +2152,7 @@ type MentorTuning struct {
 	// m465 P3 (release #60) structure-fidelity knobs. Unset = the course
 	// (the full video read); the other value = the pre-#60 behaviour.
 	//
-	// D2.3-R7: "fourth" (unset) — a 1m/2m trendline is not a location on the
+	// D2.3-R7: "third" (unset since m472 A2; "fourth" was the September reading) — a 1m/2m trendline is not a location on the
 	// candle of its 3rd touch (the TEST), the entry comes on a later touch
 	// [D2.3 p1 @02:34–02:47, 03:03–03:16]; "third" — it arms on the 3rd touch.
 	TrendlineEntryTouch string `json:"trendline_entry_touch,omitempty"`
@@ -2308,7 +2315,7 @@ type RiskControlConfig struct {
 	// (a) done for the day after a winning close with the day net positive
 	//     (nil → ON; an explicit false disables);
 	// (b) the trading window: MentorWindowStart (HH:MM CT) + MentorWindowMinutes
-	//     (30/60/90/120; unset → 60). The SWING setup is exempt.
+	//     (30/60/90/120; -1 = off; unset → 08:30 + 405 min = the RTH band to 15:15 CT, screen-read [Oct D5.2 @ 01:00-01:20]; -1 = explicit off). The SWING setup is exempt.
 	// (c)/(d) never-widen / never-add are guards, not knobs.
 	MentorDoneAfterWin *bool `json:"mentor_done_after_win,omitempty"`
 	// MentorDoneAfterWinDayStart — the done-after-win "day" boundary, "HH:MM"

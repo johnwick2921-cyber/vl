@@ -895,7 +895,8 @@ func trendlineBeatenByLevel(respected []Level, price float64) bool {
 // 5m close through removes it. BOX BEATS TRENDLINE [DAY-3 row 27 rec
 // @04:38]: a trendline whose current price sits within a live box is
 // suppressed — the box wins. It is TrendlineLevelsTouch with the course
-// default (TrendlineEntryFourth). refused carries "<name>:<line key>" entries
+// strict "fourth" mode (NOT the m472 config default "third"; production calls
+// TrendlineLevelsTouch with Cfg.TrendlineEntryTouch). refused carries "<name>:<line key>" entries
 // the caller counts as named refusals.
 func TrendlineLevels(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline) (levels []Level, refused []string) {
 	return TrendlineLevelsTouch(trendlines, boxes, respected, bars, TrendlineEntryFourth)

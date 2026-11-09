@@ -9,6 +9,7 @@ import (
 	"time"
 
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -100,6 +101,48 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 		return math.Floor(entry/tick+mentorGridEps) * tick
 	}
 	return math.Ceil(entry/tick-mentorGridEps) * tick
+}
+
+// mentorBEOffsetMaxTicks bounds the be_offset_ticks knob.
+const mentorBEOffsetMaxTicks = 20
+
+// mentorBEPastEntry moves a break-even price `ticks` ticks past it on the
+// profit side — long up, short down — so the stop sits a little beyond the
+// entry [Oct D4.2 @ 13:00-13:25]. ticks <= 0 (the knob OFF) or an unknown tick
+// returns be untouched, so OFF is byte-for-byte today's behaviour.
+func mentorBEPastEntry(side string, be, tick float64, ticks int) float64 {
+	if ticks <= 0 || tick <= 0 {
+		return be
+	}
+	if strings.EqualFold(side, "short") {
+		return be - float64(ticks)*tick
+	}
+	return be + float64(ticks)*tick
+}
+
+// mentorBEOffsetTicks reads the be_offset_ticks knob as stored (nil / out of
+// range → 0 = OFF) without the tuning resolver's counters; the clamp agrees
+// with mentorTuningResolve.
+func mentorBEOffsetTicks(rc *store.RiskControlConfig) int {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.BEOffsetTicks == nil {
+		return 0
+	}
+	if v := *rc.MentorTuning.BEOffsetTicks; v >= 0 && v <= mentorBEOffsetMaxTicks {
+		return v
+	}
+	return 0
+}
+
+// mentorBEStop is the production break-even price for a mentor trade: the
+// entry (grid-rounded toward profit by mentorBEStopPrice) plus the knob.
+func (at *AutoTrader) mentorBEStop(side string, entry, tick float64) float64 {
+	return mentorBEPastEntry(side, mentorBEStopPrice(side, entry, tick), tick, mentorBEOffsetTicks(at.mentorRiskControl()))
+}
+
+// mentorSwingBEStop is a swing arm's break-even price: its entry as recorded
+// (unchanged, no grid rounding — today's behaviour) plus the knob.
+func (at *AutoTrader) mentorSwingBEStop(arm mentorLiveArm) float64 {
+	return mentorBEPastEntry(arm.Side, arm.Entry, at.mentorInstrumentTick(), mentorBEOffsetTicks(at.mentorRiskControl()))
 }
 
 // mentorCandleTrailStop is the candle trail for ONE closed candle: one tick
@@ -342,7 +385,7 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		if p.TrailTFMin > 1 && !frameOK {
 			return
 		}
-		be := mentorBEStopPrice(side, pos.Entry, tick)
+		be := at.mentorBEStop(side, pos.Entry, tick)
 		// A break-even stop is only a stop while price is on the PROFIT side of
 		// it: with the close back through the entry, a sell stop above (buy
 		// stop below) the market is refused by NT8 and F1 would escalate a

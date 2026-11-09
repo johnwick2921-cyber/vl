@@ -69,6 +69,9 @@ func m462PreM465Knobs(cfg *Config) {
 }
 
 func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
+	// frozen pre-October golden: pin the September 15:00 last-candle end (m472 A7 [Oct D5.2 @ 02:14-02:40] moved it to 15:15)
+	defer func(v int) { keyLevelLastCandleEndMin = v }(keyLevelLastCandleEndMin)
+	keyLevelLastCandleEndMin = 15 * 60
 	raw, err := os.Open(m462PreGoldenPath)
 	if err != nil {
 		t.Fatal(err)
