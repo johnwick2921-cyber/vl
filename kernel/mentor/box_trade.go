@@ -250,7 +250,10 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 		return nil, "box_inside_box"
 	}
 	risk := abs(price - stop)
-	if risk > cfg.StopCeilingPts {
+	// Stop-size ladder (owner order 2026-11-10): ON lets a box stop up to
+	// mentor_wide_stop_max_pts (40) through to the trader's size table, which
+	// sizes it down [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]; OFF = the D3.3 25 exactly.
+	if risk > StopLadderCeiling(cfg, cfg.StopCeilingPts) {
 		return nil, "box_stop_ceiling"
 	}
 	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)

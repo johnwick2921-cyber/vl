@@ -128,6 +128,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			m61PreP4(&cfg)        // m466 P4 (#61): the pre-#61 swing ISB knobs (required, keep OFF) — this golden predates them
 			m466P2PreValues(&cfg) // m466 P2 (#61): the pre-#61 knob values — this golden predates them
 			m466P1PreValues(&cfg) // m466 P1 (#61): the pre-#61 knob values — this golden predates them
+			cfg.CourseExits.StopSizeLadder = false // the stop-size ladder (2026-11-10) postdates this golden
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {

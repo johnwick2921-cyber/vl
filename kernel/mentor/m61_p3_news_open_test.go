@@ -23,6 +23,7 @@ import (
 // MUTANT: default ISBMaxStopPts back to 25 → the 20.25 and 22.50 stops pass → RED.
 func TestM61ISBOverTwentyRefused(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	if got := cfg.CourseExits.ISBMaxStopPts; got != 20 {
 		t.Fatalf("ISB ceiling default = %g, want 20 (D4.1-R12)", got)
 	}

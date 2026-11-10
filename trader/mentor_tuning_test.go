@@ -207,7 +207,11 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 			Price: 30000, Stop: 30000 - stop, Target: 30000 + 2*stop, StopPts: stop, TargetPts: 2 * stop, ExpiryMs: 100_000}
 	}
 	// knob 35: a 32-pt ISB passes R8 (35) and sizes the reduced band (20–<35).
-	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35})
+	// Ladder OFF: these pin the pre-2026-11-10 meaning of a stored
+	// mentor_isb_max_pts (with the ladder ON a 32-pt stop sizes 1 MNQ —
+	// stop_size_ladder_test.go).
+	off := false
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 35, MentorStopSizeLadder: &off})
 	if cfg := at.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 35 {
 		t.Fatalf("kernel ISB max = %g, want 35 (one knob, not two)", cfg.CourseExits.ISBMaxStopPts)
 	}
@@ -222,7 +226,7 @@ func TestMentorISBMaxKnobReachesR8AndBand(t *testing.T) {
 	}
 
 	// knob 25: a 28.25-pt ISB is refused R8 (25).
-	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25})
+	at2 := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 25, MentorStopSizeLadder: &off})
 	if cfg := at2.mentorEvaluatorConfig(); cfg.CourseExits.ISBMaxStopPts != 25 {
 		t.Fatalf("kernel ISB max = %g, want 25", cfg.CourseExits.ISBMaxStopPts)
 	}

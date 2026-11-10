@@ -294,7 +294,19 @@ func (at *AutoTrader) mentorEntryGateInputs(in mentor.Intent, extra mentorTierIn
 	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
 	// (mentor_swing_max_stop_pts, unset/0 → 90).
 	extra.SwingSkipStopPts = cx.SwingMaxStopPts
+	// Stop-to-size ladder: the R8 ceiling and the size table read the SAME
+	// resolved knobs as the kernel (mentorCourseExitsResolve).
+	mentorStopLadderInputs(cx, &extra)
 	return extra
+}
+
+// mentorStopLadderInputs copies the resolved stop-to-size ladder knobs onto
+// the tier inputs — called by the gate resolver AND the one sizing call site
+// (mentorSizeFor), so no caller can size without them.
+func mentorStopLadderInputs(cx mentorCourseExitsResolved, extra *mentorTierInputs) {
+	extra.StopLadderOff = !cx.StopSizeLadder
+	extra.WideStopContracts = cx.WideStopContracts
+	extra.WideStopMaxPts = cx.WideStopMaxPts
 }
 
 // mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of

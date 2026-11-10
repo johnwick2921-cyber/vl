@@ -246,6 +246,7 @@ func TestCX9ISBMaxStopRefusedAndNamed(t *testing.T) {
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0
 	cfg.CourseExits.ISBMaxStopPts = 1
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	e2 := newISBEval(cfg)
 	bars := isbFixture()
 	now := bars[len(bars)-1].CloseTime + 1

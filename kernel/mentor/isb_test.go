@@ -61,6 +61,7 @@ func TestISBOrdersWickInclusiveWithBuffer(t *testing.T) {
 func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	green := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
 	red := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
 	cur := market.Kline{Open: 102, Close: 104, High: 106.0, Low: 100.0}
@@ -88,6 +89,7 @@ func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 func TestISBStopVerdict(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	cases := []struct {
 		name   string
 		span   float64

@@ -12,7 +12,7 @@ import (
 // Stop-to-size LADDER — trader half (owner order 2026-11-10: "stop loss can
 // adjust contract to fit like mentor said ... cause some day it go big").
 // Course numbers (October wins over September):
-//   - ISB ~12 pts → size 5; ISB 20–30 pts → size 3 or no trade [OctD2.2-R73 @1:12:32];
+//   - ISB ~12 pts → size 5; ISB 20–30 pts → size 3 or no trade [OctD2.2-R73 @01:12:32];
 //   - ~40 pts → do not trade; if you do, only 1 MNQ [OctD2.3-R47 @48:12, R48 @49:38];
 //   - stop too big → the ONLY fix is reduce size, never a bigger target [OctD2.2-R49 @40:47].
 // D4.1-R12 ("inside bar mà nó hai mươi mấy điểm… đừng vô" [D4.1 p1
@@ -60,7 +60,7 @@ func TestStopLadderProductionCallSites(t *testing.T) {
 		{"ISB 12 → 5 (base) [OctD2.2-R73]", "ISB", 12, 5, "base", ""},
 		{"ISB 25 → 3 [OctD2.2-R73]", "ISB", 25, 3, "stop_ladder_reduced", "OctD2.2-R73"},
 		{"ISB 30 → 3 (top of the 20–30 band)", "ISB", 30, 3, "stop_ladder_reduced", "OctD2.2-R73"},
-		{"ISB 35 → 1 [OctD2.3-R47]", "ISB", 35, 1, "stop_ladder_wide", "OctD2.3-R47"},
+		{"ISB 35 → 1 [OctD2.3-R47 @48:12]", "ISB", 35, 1, "stop_ladder_wide", "OctD2.3-R47"},
 		{"ISB 40 → 1 (at the max)", "ISB", 40, 1, "stop_ladder_wide", "OctD2.3-R47"},
 		{"PHL 28 → 3", "PHL", 28, 3, "stop_ladder_reduced", "OctD2.2-R73"},
 		{"PLH 22 → 3 (the pre-ladder 20–25 band keeps its own tier)", "PLH", 22, 3, "reduced", ""},

@@ -99,6 +99,7 @@ func TestM425bBoxEntryIntentWhyNames(t *testing.T) {
 	why("trigger_side", floor, []Box{floor}, ref, far, TriggerLine{Dir: SideShort, Price: 120}, c2, "box_trigger_side")
 	c3 := cfg
 	c3.StopCeilingPts = 0.5
+	c3.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	why("stop_ceiling", floor, []Box{floor}, ref, far, buy, c3, "box_stop_ceiling")
 	c4 := cfg
 	c4.RoomMultiple = 100

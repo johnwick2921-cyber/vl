@@ -197,6 +197,13 @@ type mentorCourseExitsResolved struct {
 	SwingISBCloseBack string
 	SwingISBKeep      bool
 	SwingRunnerTP     string
+	// Stop-to-size LADDER (owner order 2026-11-10): StopSizeLadder
+	// (mentor_stop_size_ladder, nil → ON), WideStopContracts
+	// (mentor_wide_stop_contracts, 0 → 1 [OctD2.3-R47 @48:12 "1 MNQ"]),
+	// WideStopMaxPts (mentor_wide_stop_max_pts, 0 → 40 [OctD2.3-R47 @48:12]).
+	StopSizeLadder    bool
+	WideStopContracts int
+	WideStopMaxPts    float64
 }
 
 // mentorEnumKnob resolves a string enum knob: "" → def; a value outside
@@ -250,8 +257,18 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		SwingISBCloseBack:     mentorSwingISBCloseBack(at, rc),
 		SwingISBKeep:          mentorSwingISBKeepOn(rc),
 		SwingRunnerTP:         mentorSwingRunnerTPMode(at, rc),
+		StopSizeLadder:        rc == nil || mentorBoolKnob(rc.MentorStopSizeLadder, mentorStopLadderDefault),
+		WideStopContracts:     mentorWideStopContractsDefault,
+		WideStopMaxPts:        mentorWideStopMaxDefault,
 	}
 	if rc != nil {
+		out.WideStopMaxPts = mentorPositiveKnob(at, rc.MentorWideStopMaxPts, mentorWideStopMaxDefault, "wide_stop_max_pts")
+		switch {
+		case rc.MentorWideStopContracts > 0:
+			out.WideStopContracts = rc.MentorWideStopContracts
+		case rc.MentorWideStopContracts < 0:
+			at.mentorCount("wide_stop_contracts_bad_value")
+		}
 		out.ISBMaxPts = mentorPositiveKnob(at, rc.MentorISBMaxPts, mentorISBMaxDefault, "isb_max_pts")
 		out.Open5mBreak = mentorEnumKnob(at, rc.MentorOpen5mBreak, mentor.Open5mBreak1mClose, "open5m_break", mentor.Open5mBreak1mClose, mentor.Open5mBreak5mClose)
 		out.NewsWaitMode = mentorEnumKnob(at, rc.MentorNewsWaitMode, mentor.NewsWaitBoth, "news_wait_mode", mentor.NewsWaitBoth, mentor.NewsWait4hOnly)
@@ -270,6 +287,8 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.ReverseISBAsPHL = r.ReverseISBAsPHL
 	cfg.CourseExits.EMA9VisitCap = r.EMA9VisitCap
 	cfg.CourseExits.ISBMaxStopPts = r.ISBMaxPts
+	cfg.CourseExits.StopSizeLadder = r.StopSizeLadder // owner order 2026-11-10: kernel ceilings widen to the wide max
+	cfg.CourseExits.WideStopMaxPts = r.WideStopMaxPts // [OctD2.3-R47 @48:12] ONE number, kernel + trader R8
 	cfg.CourseExits.KeypairCandleRatio = r.KeypairRatio
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
@@ -286,6 +305,17 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 // mentorISBMaxDefault is the CX-9 ISB ceiling default — the kernel's own
 // (CourseExits.ISBMaxStopPts, 20 since m466 G23), read, never retyped.
 var mentorISBMaxDefault = mentor.DefaultCourseExitsCfg().ISBMaxStopPts
+
+// The stop-to-size ladder defaults: ON and the 40-pt max are the kernel's own
+// (CourseExits.StopSizeLadder / WideStopMaxPts), read, never retyped; the
+// 1-MNQ wide tier is the trader's (the kernel does not size) — "Trade vẫn
+// được. 1 MNQ" [OctD2.3-R47 @48:12].
+var (
+	mentorStopLadderDefault  = mentor.DefaultCourseExitsCfg().StopSizeLadder
+	mentorWideStopMaxDefault = mentor.DefaultCourseExitsCfg().WideStopMaxPts
+)
+
+const mentorWideStopContractsDefault = 1
 
 // mentorSwingMaxStopDefault is the m463 swing skip ceiling default — the
 // kernel's own default (SwingCfg.SkipStopPts), read, never retyped.
@@ -310,11 +340,12 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s · open5m_break=%s · news_wait_mode=%s · news_read_lead_min=%d · swing_isb_close_back=%s · swing_isb_keep=%s · swing_runner_tp=%s",
+	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s · open5m_break=%s · news_wait_mode=%s · news_read_lead_min=%d · swing_isb_close_back=%s · swing_isb_keep=%s · swing_runner_tp=%s · stop_size_ladder=%s · wide_stop_contracts=%d · wide_stop_max_pts=%s",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
 		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox, r.Open5mBreak, r.NewsWaitMode, r.NewsReadLeadMin,
-		r.SwingISBCloseBack, onoff(r.SwingISBKeep), r.SwingRunnerTP)
+		r.SwingISBCloseBack, onoff(r.SwingISBKeep), r.SwingRunnerTP,
+		onoff(r.StopSizeLadder), r.WideStopContracts, num(r.WideStopMaxPts))
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing

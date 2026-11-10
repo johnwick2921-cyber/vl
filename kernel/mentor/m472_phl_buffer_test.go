@@ -40,6 +40,7 @@ func TestM472PHLBufferWorkedExample(t *testing.T) {
 func TestM472PHLBufferKnockOn(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	oldLow := Level{Key: "old-low", Kind: KindOldExtreme, Role: OldLow, Price: 28_000}
 	for _, c := range []struct {
 		rng float64

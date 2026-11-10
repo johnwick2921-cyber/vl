@@ -203,6 +203,10 @@ func m434Digest(t *testing.T, c m434Case) []string {
 		}
 	}
 	cfg := c.cfg()
+	// Stop-size ladder (2026-11-10): every frozen golden here predates it, so
+	// the digest runs ladder OFF unless the ladder golden turns it on
+	// (TestStopLadderTickGolden, testdata/stop_ladder_tick.golden).
+	cfg.CourseExits.StopSizeLadder = m434StopLadder
 	if m434PreM473 {
 		cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // pre-m473 B3 default (the 1m close deletes)
 	}
@@ -259,6 +263,11 @@ func m434Digest(t *testing.T, c m434Case) []string {
 // non-m473 code moved nothing. The m473 behaviour is pinned separately in
 // testdata/m473_tick_identity.golden (TestM473TickOutputGolden).
 var m434PreM473 bool
+
+// m434StopLadder — false (every pre-2026-11-10 golden): the digest runs the
+// stop-size ladder OFF, proving the ladder-OFF path is byte-identical on the
+// four real tapes. TestStopLadderTickGolden sets it true.
+var m434StopLadder bool
 
 func m434SetPreM473(t *testing.T, off bool) {
 	t.Helper()

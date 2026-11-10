@@ -174,6 +174,8 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 
 	t.Run("stop-over-max", func(t *testing.T) {
+		cfg := cfg
+		cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 		e := newISBEval(cfg)
 		bars := []market.Kline{
 			rthBars(0, 121, 121.5, 120.5, 120),
@@ -186,6 +188,27 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 		e.Tick(bars, bars[2].CloseTime+1)
 		if e.State.Refusals["isb_stop_over_max"] == 0 {
 			t.Fatalf("30-pt ceiling must be refused by name; ledger = %v", e.State.Refusals)
+		}
+	})
+
+	// Stop-size ladder ON: a stop above mentor_wide_stop_max_pts is still
+	// refused BY NAME (isb_stop_over_max) — the same fixture, wide max 25.
+	t.Run("stop-over-wide-max-ladder-on", func(t *testing.T) {
+		cfg := cfg
+		cfg.CourseExits.StopSizeLadder = true
+		cfg.CourseExits.WideStopMaxPts = 25
+		e := newISBEval(cfg)
+		bars := []market.Kline{
+			rthBars(0, 121, 121.5, 120.5, 120),
+			rthBars(1, 95, 120, 90, 115),  // green candle 1, wide
+			rthBars(2, 100, 117, 90, 101), // ISB; stop = 27 + 3 = 30 pts > 25
+		}
+		if _, ok, why := ISBStopVerdict(bars[2], cfg); ok || why != ISBWideStopReason {
+			t.Fatalf("fixture: the 30-pt stop must be over the 25-pt wide max (ok=%v why=%q)", ok, why)
+		}
+		e.Tick(bars, bars[2].CloseTime+1)
+		if e.State.Refusals["isb_stop_over_max"] == 0 {
+			t.Fatalf("ladder ON over the wide max must be refused by name; ledger = %v", e.State.Refusals)
 		}
 	})
 

@@ -12,7 +12,7 @@ import (
 // The kernel only LETS a big stop through to the trader's size table; the
 // size cut is the trader's. Course numbers (October wins over September):
 //   - "Cái nến INSHABA này tầm 20 điểm, 30 điểm... Tôi vô size 3 hoặc tôi
-//     không trade... 12 điểm. Ok, tôi vô size 5" [OctD2.2-R73 @1:12:32];
+//     không trade... 12 điểm. Ok, tôi vô size 5" [OctD2.2-R73 @01:12:32];
 //   - "40 điểm thì mình làm gì? Mình không trade. ... Trade vẫn được. 1 MNQ"
 //     [OctD2.3-R47 @48:12]; why: a 40-pt stop needs a 40 (≥35) target
 //     [OctD2.3-R48 @49:38];
@@ -27,7 +27,7 @@ func ladderISBCandle(rng float64) market.Kline {
 }
 
 // TestStopLadderKernelDefaults — the ladder is ON by default with a 40-pt
-// wide-stop max [OctD2.3-R47]; the pre-ladder ceilings are unchanged (they
+// wide-stop max [OctD2.3-R47 @48:12]; the pre-ladder ceilings are unchanged (they
 // are what the ladder-OFF path still reads).
 func TestStopLadderKernelDefaults(t *testing.T) {
 	cfg := DefaultConfig()
@@ -158,5 +158,48 @@ func TestStopLadderBoxCeiling(t *testing.T) {
 	off.CourseExits.StopSizeLadder = false
 	if _, why := boxEntryIntentWhy(ref(38), floor, []Box{floor}, far, buy, nil, off); why != "box_stop_ceiling" {
 		t.Fatalf("ladder OFF: 38-pt box why=%q, want box_stop_ceiling (today)", why)
+	}
+}
+
+// TestStopLadderM464WorkedBuyRungArms — the D2.2 worked buy with the ladder
+// ON (production default). The 10:13 rung (risk 29) is no longer stopped by
+// the old 25-pt ceiling — it now meets the 1:1 floor instead: its target
+// (old high 29,433.25 − shy 5 = 29,428.25) is ~24 pts away, under the 29-pt
+// risk, and the ladder NEVER enlarges a target to fit a big stop ("giảm size
+// only chứ không có tăng target" [OctD2.2-R49 @40:47]; "40 điểm em cũng phải
+// kiếm cái target 40 điểm" [OctD2.3-R48 @49:38]). So it is refused by NAME
+// (rolling_phl_target_below_floor), never rolling_phl_stop_ceiling, the 10:12
+// rung is cancelled, and the 10:14 green signal candle is still the last rung
+// at the course price 29,396.75 / 29,385.50 — the course outcome is unchanged.
+func TestStopLadderM464WorkedBuyRungArms(t *testing.T) {
+	bars := m464CourseTape()
+	e := m464Evaluator(SideLong, Level{Key: "old-high:29433.25", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.25}, bars[m464Idx(10, 7)].OpenTime)
+	if !e.Cfg.CourseExits.StopSizeLadder {
+		t.Fatal("fixture: the production default must run the ladder")
+	}
+	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 12))
+	floorBefore := e.State.Refusals["rolling_phl_target_below_floor"]
+	steps = append(steps, m464Run(e, bars, m464Idx(10, 13), m464Idx(10, 14))...)
+	var s1013, last m464Step
+	for _, s := range steps {
+		if s.at == "10:13" {
+			s1013 = s
+		}
+	}
+	last = steps[len(steps)-1]
+	if len(s1013.places) != 0 || len(s1013.cancels) != 1 {
+		t.Fatalf("10:13: places %+v cancels %+v, want the 29-pt rung refused (1:1 floor) and the 10:12 rung cancelled", s1013.places, s1013.cancels)
+	}
+	if got := e.State.Refusals["rolling_phl_stop_ceiling"]; got != 0 {
+		t.Fatalf("ladder ON: the 29-pt rung must not be refused at the stop ceiling, ledger=%v", e.State.Refusals)
+	}
+	if e.State.Refusals["rolling_phl_target_below_floor"] != floorBefore+1 {
+		t.Fatalf("ladder ON: the 29-pt rung must be refused by the 1:1 floor (never a bigger target), ledger=%v", e.State.Refusals)
+	}
+	if last.at != "10:14" || len(last.places) != 1 {
+		t.Fatalf("the 10:14 green signal candle must be the last rung, steps=%+v", steps)
+	}
+	if in := last.places[0]; in.Setup != "PHL" || !m464Approx(in.Price, 29396.75) || !m464Approx(in.Stop, 29385.50) || !m464Approx(in.Target, 29428.25) {
+		t.Fatalf("last rung %s %.2f / %.2f → %.2f, want PHL 29,396.75 / 29,385.50 → 29,428.25 (unchanged by the ladder)", in.Setup, in.Price, in.Stop, in.Target)
 	}
 }

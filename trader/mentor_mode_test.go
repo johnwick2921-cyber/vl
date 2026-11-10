@@ -166,7 +166,10 @@ func TestMentorSize5Defaults(t *testing.T) {
 	// it sizes base (5); the evaluator never lets it reach sizing.
 	wideIn := mentor.Intent{Action: mentor.PlaceStopEntry, Side: mentor.SideLong, Setup: "ISB",
 		Price: 31128.25, Stop: 31100.0, Target: 31185.0, StopPts: 28.25, TargetPts: 56.5}
-	got, err = at.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
+	// Ladder OFF: the pre-2026-11-10 table (ON sizes it 3 — stop_size_ladder_test.go).
+	off := false
+	atOff := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorStopSizeLadder: &off})
+	got, err = atOff.mentorSizeFor(wideIn, mentorExtraFor(wideIn, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -776,13 +779,14 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 		t.Fatalf("SWING4H ~100-pt stop must be REFUSED R31 (m463, đừng vô) [D5.2 p2 @19:34–21:43]: %q", why)
 	}
 	// W-MENTOR-EXACT: a 28.25-pt ISB stop is REFUSED (> 25 — "trên nữa thì thôi").
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R8") {
+	// (Ladder OFF — the pre-2026-11-10 ceiling; ON: stop_size_ladder_test.go.)
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{StopLadderOff: true}); why == "" || !strings.HasPrefix(why, "R8") {
 		t.Fatalf("a 28.25-pt ISB stop must be refused R8 (> 25 ceiling): %q", why)
 	}
 	// m466 G23 (D4.1-R12 "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08]):
 	// a 24-pt ISB stop is REFUSED at the default 20; a 24-pt PHL keeps the
 	// D3.3-R1 25 and passes; a stored 25 keeps the ISB.
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); !strings.HasPrefix(why, "R8") {
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{StopLadderOff: true}); !strings.HasPrefix(why, "R8") {
 		t.Fatalf("a 24-pt ISB stop must be refused R8 (above the 20 ceiling): %q", why)
 	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 76, Target: 148, StopPts: 24, TargetPts: 48}, mentorTierInputs{}); why != "" {
@@ -792,20 +796,20 @@ func TestMentorRuleGateR8R9(t *testing.T) {
 		t.Fatalf("a 24-pt ISB stop must pass R8 with a stored 25: %q", why)
 	}
 	// the swing is the ONLY exemption from the ceiling — 30.00 is refused.
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{}); why == "" {
-		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling)")
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 70, Target: 160, StopPts: 30, TargetPts: 60}, mentorTierInputs{StopLadderOff: true}); why == "" {
+		t.Fatal("a 30.00-pt non-swing stop must be refused (R8 ceiling, ladder OFF)")
 	}
 	// P2-1: R8 reads the mentor_isb_max_pts knob — a knob of 25 refuses a
 	// 28.25-pt stop (the default), and a knob of 35 lets a 32-pt stop through.
 	// A hardcoded 30 fails both.
-	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{ISBMaxStopPts: 25}); why == "" || !strings.HasPrefix(why, "R8") {
+	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 71.75, Target: 156.5, StopPts: 28.25, TargetPts: 56.5}, mentorTierInputs{ISBMaxStopPts: 25, StopLadderOff: true}); why == "" || !strings.HasPrefix(why, "R8") {
 		t.Fatalf("with mentor_isb_max_pts=25 a 28.25-pt stop must be refused R8, got %q", why)
 	}
 	if why := mentorRuleGate(mentor.Intent{Setup: "ISB", Side: "long", Price: 100, Stop: 68, Target: 164, StopPts: 32, TargetPts: 64}, mentorTierInputs{ISBMaxStopPts: 35}); why != "" {
 		t.Fatalf("with mentor_isb_max_pts=35 a 32-pt stop must pass R8, got %q", why)
 	}
-	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 130, StopPts: 30, TargetPts: 30}, mentorTierInputs{}); why == "" {
-		t.Fatal("a non-swing stop at/over 30 must be refused (R8 ceiling)")
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 130, StopPts: 30, TargetPts: 30}, mentorTierInputs{StopLadderOff: true}); why == "" {
+		t.Fatal("a non-swing stop at/over 30 must be refused (R8 ceiling, ladder OFF)")
 	}
 	// R9: target never smaller than stop
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 98, StopPts: 12, TargetPts: 2}, mentorTierInputs{}); why == "" {
@@ -877,8 +881,15 @@ func TestMentorRuleGateDefenceInDepth(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 88, Target: 101}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R9") {
 		t.Fatalf("geometry target 1 < stop 12 must be refused R9, got %q", why)
 	}
-	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 140}, mentorTierInputs{}); why == "" || !strings.HasPrefix(why, "R8") {
-		t.Fatalf("geometry stop 30 must hit the R8 ceiling, got %q", why)
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 140}, mentorTierInputs{StopLadderOff: true}); why == "" || !strings.HasPrefix(why, "R8") {
+		t.Fatalf("geometry stop 30 must hit the R8 ceiling (ladder OFF), got %q", why)
+	}
+	// Ladder ON (default): the geometry stop 30 passes R8; 45 hits it.
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 140}, mentorTierInputs{}); why != "" {
+		t.Fatalf("ladder ON: geometry stop 30 must pass R8 (sized down), got %q", why)
+	}
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 55, Target: 200}, mentorTierInputs{}); !strings.HasPrefix(why, "R8") {
+		t.Fatalf("ladder ON: geometry stop 45 must hit the R8 wide max, got %q", why)
 	}
 }
 

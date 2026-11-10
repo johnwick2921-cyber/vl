@@ -174,6 +174,7 @@ func TestPHLPLHRoomRule(t *testing.T) {
 func TestPHLPLHStopCeiling(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	touch := Touch{
 		Outcome: TouchReject, RefBar: market.Kline{High: 130, Low: 100},
 		ApproachedFrom: SideLong,

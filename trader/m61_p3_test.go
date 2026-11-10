@@ -25,32 +25,34 @@ import (
 // MUTANT: R8 reads the ISB ceiling for every non-swing setup → the PHL is
 // refused → RED.
 func TestM61RuleGateISBTwentyPHLTwentyFive(t *testing.T) {
+	// StopLadderOff: these pin the ladder-OFF (pre-2026-11-10) R8 ceilings;
+	// the ladder-ON R8 is pinned in stop_size_ladder_test.go.
 	in := func(setup string) mentor.Intent {
 		return mentor.Intent{Action: mentor.PlaceStopLimitEntry, Setup: setup, Side: mentor.SideShort,
 			Price: 29034.25, Stop: 29056.75, Target: 28980}
 	}
-	if why := mentorRuleGate(in("ISB"), mentorTierInputs{}); !strings.HasPrefix(why, "R8") {
+	if why := mentorRuleGate(in("ISB"), mentorTierInputs{StopLadderOff: true}); !strings.HasPrefix(why, "R8") {
 		t.Fatalf("ISB 22.50 pts at the default ceiling: %q, want an R8 refusal", why)
 	}
-	if why := mentorRuleGate(in("ISB"), mentorTierInputs{ISBMaxStopPts: 20}); !strings.HasPrefix(why, "R8") {
+	if why := mentorRuleGate(in("ISB"), mentorTierInputs{ISBMaxStopPts: 20, StopLadderOff: true}); !strings.HasPrefix(why, "R8") {
 		t.Fatalf("ISB 22.50 pts at the resolved 20: %q, want R8", why)
 	}
-	if why := mentorRuleGate(in("ISB"), mentorTierInputs{ISBMaxStopPts: 25}); why != "" {
+	if why := mentorRuleGate(in("ISB"), mentorTierInputs{ISBMaxStopPts: 25, StopLadderOff: true}); why != "" {
 		t.Fatalf("a stored 25 must keep the 22.50 ISB: %q", why)
 	}
 	for _, s := range []string{"PHL", "PLH", "BOX"} {
-		if why := mentorRuleGate(in(s), mentorTierInputs{ISBMaxStopPts: 20}); why != "" {
+		if why := mentorRuleGate(in(s), mentorTierInputs{ISBMaxStopPts: 20, StopLadderOff: true}); why != "" {
 			t.Fatalf("%s 22.50 pts must keep the D3.3-R1 25 ceiling: %q", s, why)
 		}
 	}
 	over := in("PHL")
 	over.Stop = 29060 // 25.75 pts
-	if why := mentorRuleGate(over, mentorTierInputs{ISBMaxStopPts: 20}); !strings.HasPrefix(why, "R8") {
+	if why := mentorRuleGate(over, mentorTierInputs{ISBMaxStopPts: 20, StopLadderOff: true}); !strings.HasPrefix(why, "R8") {
 		t.Fatalf("PHL 25.75 pts: %q, want R8 (D3.3-R1 > 25 skip)", why)
 	}
 	twenty := in("ISB")
 	twenty.Stop = 29054.25 // exactly 20.00 — his own "20 points" [D4.1 p1 @02:39–03:20]
-	if why := mentorRuleGate(twenty, mentorTierInputs{ISBMaxStopPts: 20}); why != "" {
+	if why := mentorRuleGate(twenty, mentorTierInputs{ISBMaxStopPts: 20, StopLadderOff: true}); why != "" {
 		t.Fatalf("ISB 20.00 pts must pass: %q", why)
 	}
 

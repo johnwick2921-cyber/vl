@@ -131,6 +131,9 @@ func TestM431NoArmWithoutAnEmittedEntryOnTheRealTape(t *testing.T) {
 		// ceiling 20. The control is about arm registration, not the ceiling, so it
 		// runs at the pre-#61 25 (a stored mentor_isb_max_pts) to keep its entry.
 		e.Cfg.CourseExits.ISBMaxStopPts = 25
+		// The arm ids (isb-17) are this tape's pre-ladder numbering — the
+		// ladder would arm more ISBs (stops 25–40) and renumber them.
+		e.Cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 		known := e.heldArmIDs() // armed before the day began: lifecycle is theirs
 		flagWallAt := ""
 		isb1222Left := false

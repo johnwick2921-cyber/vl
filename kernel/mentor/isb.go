@@ -126,7 +126,10 @@ func ISBStopLimitOrder(prev, cur market.Kline, cfg Config) (Side, Intent, bool, 
 // There is NO fixed 5–6-pt stop.
 func ISBStopVerdict(candle market.Kline, cfg Config) (stopPts float64, ok bool, reason string) {
 	stopPts = (candle.High - candle.Low) + 2*cfg.ISBBufferPts
-	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 20, D4.1-R12)
+	if isbOverMaxStop(stopPts, cfg) { // CX-9 knob (default 20, D4.1-R12); ladder ON → mentor_wide_stop_max_pts (40)
+		if stopLadderWidened(cfg, cfg.CourseExits.ISBMaxStopPts) {
+			return stopPts, false, ISBWideStopReason
+		}
 		return stopPts, false, ISBMaxStopReason
 	}
 	return stopPts, true, ""
