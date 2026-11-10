@@ -352,6 +352,12 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
   },
   'EMA 9 visit cap': { settingId: 'mentor_ema9_visit_cap', live: true },
   'ISB max stop': { settingId: 'mentor_isb_max_pts', live: true },
+  'Stop-size ladder': { settingId: 'mentor_stop_size_ladder', live: true },
+  'Wide-stop contracts': {
+    settingId: 'mentor_wide_stop_contracts',
+    live: true,
+  },
+  'Ladder max stop': { settingId: 'mentor_wide_stop_max_pts', live: true },
   'Key-level pair candle ratio': {
     settingId: 'mentor_keypair_candle_ratio',
     live: true,
@@ -611,7 +617,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Skip an ISB stop above 20',
-          body: 'Release #61 (m466 G23): an ISB stop (entry to stop, the ISB range + 2 × 1.5) above 20 pts must not be taken — "nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop loss nhỏ" [D4.1 p1 @05:41–06:08]; his own stop that morning was 20 points [D4.1 p1 @02:39–03:20], so exactly 20 is taken. D4.1 is a LATER lesson than D3.3 (20–25 = reduce size, above 25 skip [D3.3 p1 @01:09–02:09]), so for an ISB the 20–25 reduce option is gone; PHL/PLH and box stops keep the D3.3 rule (reduced at 20–25, skipped above 25). Example: the D3.4 short ISB at 29,034.25 with its stop at 29,056.75 (22.50 pts) is refused (isb_stop_over_max). A stored mentor_isb_max_pts (e.g. 25) still wins.',
+          body: 'Release #61 (m466 G23): an ISB stop (entry to stop, the ISB range + 2 × 1.5) above 20 pts must not be taken — "nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop loss nhỏ" [D4.1 p1 @05:41–06:08]; his own stop that morning was 20 points [D4.1 p1 @02:39–03:20], so exactly 20 is taken. D4.1 is a LATER lesson than D3.3 (20–25 = reduce size, above 25 skip [D3.3 p1 @01:09–02:09]), so for an ISB the 20–25 reduce option is gone; PHL/PLH and box stops keep the D3.3 rule (reduced at 20–25, skipped above 25). Example: the D3.4 short ISB at 29,034.25 with its stop at 29,056.75 (22.50 pts) is refused (isb_stop_over_max). A stored mentor_isb_max_pts (e.g. 25) still wins. Since 2026-11-10 that refusal is the ladder-OFF behaviour: with the stop-size ladder ON (the default, owner order) a big ISB, PHL/PLH or box stop is sized DOWN instead — 20–30 pts → 3 (“tầm 20 điểm, 30 điểm… Tôi vô size 3” [OctD2.2-R73 @01:12:32]), 30–40 → 1 MNQ (“Trade vẫn được. 1 MNQ” [OctD2.3-R47 @48:12]), above 40 not traded; the target never grows [OctD2.2-R49 @40:47]. The D3.4 example above is then 3 MNQ.',
           cite: 'm466 G23 — CourseExits.ISBMaxStopPts 20 · D4.1 p1 @05:41–06:08 (twenty-something: do not enter) · D4.1 p1 @02:39–03:20 (his 20-pt stop) · D3.3 p1 @01:09–02:09 (PHL/PLH keep 20–25 reduce, > 25 skip)',
         },
       ],
@@ -715,7 +721,7 @@ export const mentor: GuideSection = {
         [
           'Room rule',
           'The room to the FIRST available level must be at least 2× the first take-profit — leg 1 at 1:1 → 2R; a confluence (mode C) leg 1 at 1:2 → 4R [D5.3 p1 @09:16–10:17 · D2.2 p3 @12:13 · D1.2 p1 @07:41–08:45]. Release #30: the EMA 9 / EMA 34 lines are PARTIAL points along the way, not the level the room (and the 1:1 floor) measure — "ta ghẹt tôi đầu tiên phải là về gần đỉnh cũ … tiếp tục là EMA 34 … những cái chỗ này là những cái chỗ anh chị bán bớt" [D3.3 p1 @05:15–07:38]; an EMA must not by itself kill the trade (the room/floor read the next non-EMA level — the nearest old high/low, a key level, or a trendline target; the EMA is the target only when no other level stands beyond). The room is measured to the LEVEL, also on a spent day: the 15-pt take-profit cap shortens the take-profit, never the room — "dù target của em là 15 điểm … từ điểm entry xuống target nó phải từ 30 điểm đổ lên" [D5.3 p1 @09:32–09:50]. So a spent-day setup needs stop ≤ 15 (the 1:1 floor on the capped take-profit), room ≥ 2R to the level, AND room to the level ≥ 2× the capped take-profit — his worked figure: target 15 → room 30 (a take-profit sitting right at the level is refused). A PHL/PLH stop never exceeds 25 pts (SWING4H exempt — its ceiling is 100)',
-          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 20 (release #61, D4.1-R12 — the ISB and reverse ISB only; the trader’s R8 gate reads the SAME knob for an ISB, PHL/PLH/BOX keep 25) · swing_max_stop_pts 100 (the swing SIZING cap, ≤ 2 MNQ) · mentor_swing_max_stop_pts 90 (the swing SKIP — above it the swing is not entered, m463 D5.2 p2 @19:34–21:43)',
+          'RoomMultiple 2 · StopCeilingPts 25 (PHL/PLH and box stops only) · mentor_isb_max_pts 20 (release #61, D4.1-R12 — the ISB and reverse ISB only; the trader’s R8 gate reads the SAME knob for an ISB, PHL/PLH/BOX keep 25) · swing_max_stop_pts 100 (the swing SIZING cap, ≤ 2 MNQ) · mentor_swing_max_stop_pts 90 (the swing SKIP — above it the swing is not entered, m463 D5.2 p2 @19:34–21:43) · stop-size ladder ON: the ISB 20 and PHL/PLH/box 25 above are the ladder-OFF ceilings — with the ladder a non-swing stop up to mentor_wide_stop_max_pts 40 is sized down (20–30 → 3, 30–40 → mentor_wide_stop_contracts 1) [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]',
         ],
         [
           'ORB gate (opening range)',
@@ -1019,7 +1025,7 @@ export const mentor: GuideSection = {
         {
           label: 'Reduced contracts',
           where: 'Strategy → Mentor mode → sizing',
-          what: 'Size when the stop is 20–25 pts, where the band top is the setup’s own ceiling (trader/mentor_mode.go mentorStopCeilingFor → mentorContractsFor): 25 for PHL/PLH/box stops; for an ISB the mentor_isb_max_pts knob — 20 since release #61 (D4.1-R12), so the ISB 20–25 band is UNREACHABLE at default (an ISB stop above 20 is skipped first); it is reached only with a stored mentor_isb_max_pts above 20. A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”). Release #60: an ISB/PHL/PLH entry read on the 2m (or 5m) also sizes this tier (tier exec_2m_reduce, switch “Smaller size on a 2m entry”, D3.1 p1 @14:09–14:35).',
+          what: 'Size when the stop is 20–25 pts, where the band top is the setup’s own ceiling (trader/mentor_mode.go mentorStopCeilingFor → mentorContractsFor): 25 for PHL/PLH/box stops; for an ISB the mentor_isb_max_pts knob — 20 since release #61 (D4.1-R12), so the ISB 20–25 band is UNREACHABLE at default (an ISB stop above 20 is skipped first); it is reached only with a stored mentor_isb_max_pts above 20. A SWING4H is EXEMPT from this band (the swing tier ranks first, so a swing stop in (20,25] sizes swing4h, not the reduced tier). A spent day does NOT use this tier — it keeps the normal size and cuts the target and the runner. The reduced tier actually reduces: 3 (D4.1 p1 @04:37–05:04 “giảm size”). Release #60: an ISB/PHL/PLH entry read on the 2m (or 5m) also sizes this tier (tier exec_2m_reduce, switch “Smaller size on a 2m entry”, D3.1 p1 @14:09–14:35). Stop-size ladder (2026-11-10, default ON): any non-swing stop in (20, 30] — an ISB included — sizes at most this tier (tier stop_ladder_reduced, “tầm 20 điểm, 30 điểm… Tôi vô size 3” [OctD2.2-R73 @01:12:32]).',
           trader: '3 contracts on the reduced tier.',
           consumer: 'trader/mentor_mode.go mentorReducedContractsDefault',
           range: 'int',
@@ -2635,7 +2641,7 @@ export const mentor: GuideSection = {
           label: 'ISB max stop',
           where:
             'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
-          what: 'Refuse an ISB (and the reverse ISB) whose stop — entry to stop, the ISB range + 2 × 1.5 — is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 20 since release #61 (m466 G23, D4.1-R12): exactly 20 is taken, 20.25 is refused; the D3.3 20–25 reduced tier is unreachable for an ISB at default. The trader’s R8 gate reads the SAME knob for an ISB and is the top of the ISB reduced band; PHL/PLH/BOX stops keep the D3.3 25 (R8 and the 20–25 band), or this knob when you store it above 25.',
+          what: 'Refuse an ISB (and the reverse ISB) whose stop — entry to stop, the ISB range + 2 × 1.5 — is ABOVE this many points, counted isb_stop_over_max / isbrev_stop_over_max. Default 20 since release #61 (m466 G23, D4.1-R12): exactly 20 is taken, 20.25 is refused; the D3.3 20–25 reduced tier is unreachable for an ISB at default. The trader’s R8 gate reads the SAME knob for an ISB and is the top of the ISB reduced band; PHL/PLH/BOX stops keep the D3.3 25 (R8 and the 20–25 band), or this knob when you store it above 25. Since 2026-11-10 this is the ladder-OFF ceiling: with the stop-size ladder ON (the default) an ISB stop above it is NOT refused up to the ladder max stop (40) — it is sized down instead (20–30 → 3, 30–40 → 1 MNQ; see “Stop-size ladder”).',
           trader:
             'Course: “nếu như một cái setup inside bar mà nó hai mươi mấy điểm, làm ơn giúp em đừng vô, làm ơn đừng vô… lệnh inside bar phải là một lệnh có stop loss nhỏ” [D4.1 p1 @05:41–06:08]; his own stop was 20 points [D4.1 p1 @02:39–03:20]. D4.1 is later than D3.3 (“hơn 20, 25 đổ lại ok, chứ mà trên nữa thì thôi” [D3.3 p1 @01:59–02:09]), which stays the PHL/PLH rule.',
           consumer:
@@ -2646,6 +2652,56 @@ export const mentor: GuideSection = {
           recommended:
             '20 — D4.1 p1 @05:41–06:08 (the twenty-something ISB: do not enter). 25 = the pre-#61 rule.',
           whenToTouch: 'Only to change the stop ceiling.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Stop-size ladder',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
+          what: 'ON (default, owner order 2026-11-10 “stop loss can adjust contract to fit like mentor said”): a big stop is SIZED DOWN instead of refused, for every non-swing setup — ISB, reverse ISB, PHL/PLH (the rolling ladder too) and box. Stop up to 20 pts → the normal tiers. Stop in (20, 30] → at most the reduced tier (3), tier stop_ladder_reduced. Stop in (30, Ladder max stop] → at most the wide-stop contracts (1 MNQ), tier stop_ladder_wide. Above the ladder max stop (40) → refused as before (isb_stop_over_max / phl_stop_ceiling / box_stop_ceiling / R8). The ladder only ever LOWERS the size (the smaller of the setup’s own tier and the ladder cap) and never touches the target — so a big stop still needs a target at least as far away (1:1 floor, room rule) and many wide setups are still refused there. SWING4H keeps its own tiers. OFF = the bot before 2026-11-10 exactly: an ISB above mentor_isb_max_pts (20) and a PHL/PLH/box stop above 25 are refused.',
+          trader:
+            'Course: “Cái nến INSHABA này tầm 20 điểm, 30 điểm... Tôi vô size 3 hoặc tôi không trade... 12 điểm. Ok, tôi vô size 5” [OctD2.2-R73 @01:12:32]; “40 điểm thì mình làm gì? Mình không trade. ... Trade vẫn được. 1 MNQ” [OctD2.3-R47 @48:12]; “giảm size only chứ không có tăng target” [OctD2.2-R49 @40:47]. This replaces the D4.1 “inside bar mà nó hai mươi mấy điểm… đừng vô” refusal [D4.1 p1 @05:41–06:08] by owner order (October wins over September). The exact cut-off between “1 MNQ” and “do not trade” around 40 is an open mentor question (mentor question 11).',
+          consumer:
+            'kernel/mentor/course_exits.go StopLadderCeiling ← isb.go ISBStopVerdict · phl.go phlPLHR2 · box_trade.go boxEntryIntentWhy · trader/mentor_mode.go mentorRuleGate (R8) + mentorStopLadderCap ← mentorContractsFor ← mentorSizeFor',
+          range: 'ON / OFF',
+          systemDefault: 'ON (unset = ON)',
+          recommended:
+            'ON — the owner’s order and OctD2.2-R73 / OctD2.3-R47. Counters tier_stop_ladder_reduced / tier_stop_ladder_wide; the size line names the tier, the stop and the citation.',
+          whenToTouch:
+            'OFF only to go back to refusing every ISB above 20 and every PHL/PLH/box stop above 25.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Wide-stop contracts',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
+          what: 'With the stop-size ladder ON: the most contracts a non-swing entry may carry when its stop is above 30 pts (up to the ladder max stop). The ladder takes the smaller of this and the tier the setup earned — it never sizes up.',
+          trader:
+            'Course: “Trade vẫn được. 1 MNQ ... 1 MNQ 40 điểm cũng có 80 đô” (you can still trade it — 1 MNQ; 1 MNQ × 40 pts is $80) [OctD2.3-R47 @48:12].',
+          consumer:
+            'trader/mentor_course_exits.go mentorCourseExitsResolve → trader/mentor_mode.go mentorStopLadderCap',
+          range:
+            'contracts, 0 or unset → 1 (a negative value → 1, counted wide_stop_contracts_bad_value)',
+          systemDefault: '1',
+          recommended: '1 — OctD2.3-R47.',
+          whenToTouch:
+            'Only if the mentor gives another count for a 30–40-pt stop.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Ladder max stop',
+          where:
+            'Strategy Studio → Risk control → 🧑‍🏫 Course exits & rules switches (#25)',
+          what: 'With the stop-size ladder ON: a non-swing stop ABOVE this many points is refused — the kernel (ISB, reverse ISB, PHL/PLH, box) and the trader’s R8 gate read the same number. It never narrows a setup’s ladder-OFF ceiling: a stored mentor_isb_max_pts above it still wins.',
+          trader:
+            'Course: “40 điểm thì mình làm gì? Mình không trade” [OctD2.3-R47 @48:12]; why — a 40-pt stop needs a 40-pt target, or at least about 35 (“40 điểm em cũng phải kiếm cái target 40 điểm ... Hoặc là at least là cũng 35 điểm” [OctD2.3-R48 @49:38]).',
+          consumer:
+            'kernel/mentor/course_exits.go StopLadderCeiling · trader/mentor_mode.go mentorStopLadderRefuseCeiling (R8)',
+          range: 'pts, 0 or unset → 40',
+          systemDefault: '40',
+          recommended: '40 — OctD2.3-R47/R48.',
+          whenToTouch:
+            'Only to change where a big stop stops being traded at all.',
           perSession: 'No — per strategy.',
         },
         {

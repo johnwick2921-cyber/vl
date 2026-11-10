@@ -553,6 +553,13 @@ export interface RiskControlConfig {
   // m465 P4 (release #60): D3.1-R30 — a 2m/5m ISB/PHL/PLH entry takes the
   // reduced size; unset → ON.
   mentor_2m_reduce_size?: boolean
+  // Stop-to-size ladder (owner order 2026-11-10): a non-swing stop above the
+  // setup's own ceiling is SIZED DOWN, not refused — (20,30] → the reduced
+  // tier [OctD2.2-R73], (30, mentor_wide_stop_max_pts] →
+  // mentor_wide_stop_contracts [OctD2.3-R47]. Unset → ON / 1 / 40.
+  mentor_stop_size_ladder?: boolean
+  mentor_wide_stop_contracts?: number
+  mentor_wide_stop_max_pts?: number
   // m466 P3 (release #61): G55 D4.4-R40 — what breaks the opening 5m range
   // (unset → '1m_close'); G56 D4.4-R22 — the news wait reads both lines
   // (unset → 'both'); G58 D4.4-R6 — minutes before the print the 1h/4h read

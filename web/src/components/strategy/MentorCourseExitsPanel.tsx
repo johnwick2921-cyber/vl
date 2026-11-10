@@ -20,6 +20,7 @@ export type CourseExitsBoolKey =
   | 'mentor_resonance_raw_isb'
   | 'mentor_2m_reduce_size'
   | 'mentor_swing_isb_keep'
+  | 'mentor_stop_size_ladder'
 
 export type CourseExitsNumKey =
   | 'mentor_swing4h_contracts'
@@ -28,6 +29,8 @@ export type CourseExitsNumKey =
   | 'mentor_box_max_height_pts'
   | 'mentor_swing_max_stop_pts'
   | 'mentor_news_read_lead_min'
+  | 'mentor_wide_stop_contracts'
+  | 'mentor_wide_stop_max_pts'
 
 // m466 P3 + P4 (release #61): the string-enum knobs rendered from ENUM_KEYS below.
 export type CourseExitsEnumKey =
@@ -86,6 +89,13 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_swing_isb_close_back: 'not_required',
   mentor_swing_isb_keep: true,
   mentor_swing_runner_tp: 'none',
+  // Stop-to-size ladder (owner order 2026-11-10): a big non-swing stop is
+  // sized DOWN, not refused — "tầm 20 điểm, 30 điểm… Tôi vô size 3"
+  // [OctD2.2-R73 @01:12:32]; "40 điểm… Trade vẫn được. 1 MNQ" [OctD2.3-R47
+  // @48:12]; above 40 not traded.
+  mentor_stop_size_ladder: true,
+  mentor_wide_stop_contracts: 1,
+  mentor_wide_stop_max_pts: 40,
 } as const
 
 const COPY = {
@@ -277,6 +287,21 @@ const COPY = {
     en: 'SWING max stop (pts, above it = do not enter; 0 → 90)',
     es: 'Stop máximo SWING (pts, por encima = no entrar; 0 → 90)',
   },
+  mentor_stop_size_ladder: {
+    zh: '止损-口数阶梯：大止损减仓而不是拒绝（20–30 → 减仓档，30–上限 → 宽止损口数；SWING 除外）',
+    en: 'Stop-size ladder: a big stop is sized DOWN, not refused (20–30 → reduced, 30–max → wide-stop contracts; not the swing)',
+    es: 'Escalera stop-tamaño: un stop grande reduce el tamaño, no se rechaza (20–30 → reducido, 30–máx → contratos de stop amplio; no el swing)',
+  },
+  mentor_wide_stop_contracts: {
+    zh: '宽止损口数（止损 30 点以上；0 → 1）',
+    en: 'Wide-stop contracts (stop above 30 pts; 0 → 1)',
+    es: 'Contratos de stop amplio (stop sobre 30 pts; 0 → 1)',
+  },
+  mentor_wide_stop_max_pts: {
+    zh: '阶梯最大止损（点，超过即不进场；0 → 40）',
+    en: 'Ladder max stop (pts, above it = do not enter; 0 → 40)',
+    es: 'Stop máximo de la escalera (pts, por encima = no entrar; 0 → 40)',
+  },
 } satisfies Record<string, Copy>
 
 function tr(entry: Copy, language: string): string {
@@ -294,6 +319,7 @@ const BOOL_KEYS: CourseExitsBoolKey[] = [
   'mentor_resonance_raw_isb',
   'mentor_2m_reduce_size',
   'mentor_swing_isb_keep',
+  'mentor_stop_size_ladder',
 ]
 
 const NUM_KEYS: CourseExitsNumKey[] = [
@@ -303,6 +329,8 @@ const NUM_KEYS: CourseExitsNumKey[] = [
   'mentor_box_max_height_pts',
   'mentor_swing_max_stop_pts',
   'mentor_news_read_lead_min',
+  'mentor_wide_stop_contracts',
+  'mentor_wide_stop_max_pts',
 ]
 
 // m466 P3 + P4 (release #61): the enum selects; the first option is the
@@ -495,7 +523,12 @@ export function MentorCourseExitsPanel({
             <input
               type="number"
               min={0}
-              step={key === 'mentor_swing4h_contracts' ? 1 : 'any'}
+              step={
+                key === 'mentor_swing4h_contracts' ||
+                key === 'mentor_wide_stop_contracts'
+                  ? 1
+                  : 'any'
+              }
               disabled={disabled}
               data-testid={`mentor-course-${key}`}
               value={values[key] ?? ''}
@@ -503,7 +536,11 @@ export function MentorCourseExitsPanel({
               onChange={(e) => {
                 const raw = e.target.value.trim()
                 const n = Number(raw)
-                const v = key === 'mentor_swing4h_contracts' ? Math.round(n) : n // an int field on the server
+                const v =
+                  key === 'mentor_swing4h_contracts' ||
+                  key === 'mentor_wide_stop_contracts'
+                    ? Math.round(n)
+                    : n // an int field on the server
                 onChange(key, raw === '' || Number.isNaN(n) ? undefined : v)
               }}
               className="px-2 py-1 rounded"
