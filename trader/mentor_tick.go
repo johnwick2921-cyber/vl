@@ -2221,6 +2221,43 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh mentorSeedBarSource) (stitche
 		}
 		return nil, nil, nil, nil, "", nil
 	}
+	// LL-5 follow-up (reviewer P2): the stitch's newest contract is the TRADED
+	// one — the contract of the newest 1m bar, the same read the tick and the
+	// seed's current-contract window use (LastNBarsCurrentContract). The spans
+	// are ordered by FIRST 1m row, so the NEXT contract's pre-roll rows
+	// (imports, NT8 backfill, a mislabelled run) put it last days before the
+	// bot trades it; stitching onto it put every seeded level ~one roll gap
+	// (+291 on 2026-09-14) off the bars the evaluator ticks on. A span newer
+	// than the traded contract is not yet history — cut there, exactly as
+	// cmd/mentor-replay's Pin does. LL-5's pre-dense measurement therefore
+	// only ever runs when the pre-dense newest IS the traded contract.
+	cur, err := bh.LastNBarsCurrentContract("MNQ", "1m", 1)
+	if err != nil || len(cur) == 0 || cur[0].Contract == "" {
+		if err != nil {
+			at.logWarnf("🧑‍🏫 key-level history: traded-contract read failed (%v) — falling back to current contract", err)
+		}
+		return nil, nil, nil, nil, "", nil
+	}
+	traded := cur[0].Contract
+	cut := -1
+	for i, sp := range spans {
+		if sp.Contract == traded {
+			cut = i
+			break
+		}
+	}
+	if cut < 0 {
+		at.logWarnf("🧑‍🏫 key-level history: traded contract %s has no 1m span — falling back to current contract", traded)
+		return nil, nil, nil, nil, "", nil
+	}
+	if cut < len(spans)-1 {
+		names := make([]string, 0, len(spans)-1-cut)
+		for _, sp := range spans[cut+1:] {
+			names = append(names, sp.Contract)
+		}
+		at.logInfof("🧑‍🏫 key-level history: stitching up to the traded %s — %s not yet traded, not history [levels audit LL-5 follow-up]", traded, strings.Join(names, ","))
+		spans = spans[:cut+1]
+	}
 	read := func(contract string) (mentor.Contract1M, bool) {
 		rows, err := bh.AllBarsOn("MNQ", "1m", contract)
 		if err != nil {

@@ -268,6 +268,9 @@ func NewRollStitcher(newest Contract1M) *RollStitcher {
 		// same lastFullOverlapBefore + measureRollGap evening rule, the
 		// bound being "after every stored day"). No overlap or too few
 		// evening bars still stops the stitch — a gap is never guessed.
+		// PRECONDITION: `newest` is the TRADED contract (the caller cuts the
+		// spans there — trader mentorFullKeyLevelHistory, mentor-replay Pin);
+		// a next contract with pre-roll rows is not history yet.
 		s.headRollDay = preDenseRollDay
 		s.headPreDense = true
 		return s
