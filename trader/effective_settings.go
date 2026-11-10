@@ -901,6 +901,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("near_box_room_multiple", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomMultiple })
 	mentorTuningRow("near_box_room_phl", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxRoomPHL })
 	mentorTuningRow("phl_target_shy_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLTargetShyPts })
+	mentorTuningRow("phl_old_extreme_1m_k", "trader.mentorTuningResolve (phl audit PHL-1, 0 = the pre-PHL-1 5m/15m source)", func(t mentorTuned) any { return t.PHLOldExtreme1mK })
 	mentorTuningRow("isb_old_extreme_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBOldExtremePts })
 	mentorTuningRow("isb_in_range_gap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBInRangeGapPts })
 	mentorTuningRow("trendline_entry_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.TrendlineEntryTouch })

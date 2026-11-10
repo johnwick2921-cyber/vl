@@ -68,6 +68,7 @@ type mentorTuned struct {
 	NearBoxRoomMultiple    float64
 	NearBoxRoomPHL         bool
 	PHLTargetShyPts        float64
+	PHLOldExtreme1mK       int // PHL-1: 4 = default; 0 = the pre-PHL-1 source
 	ISBOldExtremePts       float64
 	ISBInRangeGapPts       float64
 
@@ -143,6 +144,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		NearBoxRoomMultiple:    d.NearBoxRoomMultiple,
 		NearBoxRoomPHL:         d.NearBoxRoomPHL,
 		PHLTargetShyPts:        d.PHLTargetShyPts,
+		PHLOldExtreme1mK:       d.PHLOldExtreme1mK,
 		ISBOldExtremePts:       d.ISBOldExtremePts,
 		ISBInRangeGapPts:       d.ISBInRangeGapPts,
 
@@ -297,6 +299,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickInt(t.ISBStackCancelCandle2m, 3, 12, &out.ISBStackCancelCandle2m)
+	// PHL-1: 0 / absent = the default width; -1 = the pre-PHL-1 source
+	// (Config 0); 1..10 = k. Anything else fails closed to the default, counted.
+	if t.PHLOldExtreme1mK == -1 {
+		out.PHLOldExtreme1mK = 0
+	} else {
+		pickInt(t.PHLOldExtreme1mK, mentor.PHLOldExtreme1mKMin, mentor.PHLOldExtreme1mKMax, &out.PHLOldExtreme1mK)
+	}
 	pickInt(t.EveningSlowFromHour, 15, 17, &out.EveningSlowFromHour)
 	pickInt(t.EveningSlowWindowMin, 1, 600, &out.EveningSlowWindowMin)
 	pickPtr := func(v *float64, lo, hi float64, dst *float64) {
@@ -392,6 +401,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.NearBoxRoomMultiple = t.NearBoxRoomMultiple
 	cfg.NearBoxRoomPHL = t.NearBoxRoomPHL
 	cfg.PHLTargetShyPts = t.PHLTargetShyPts
+	cfg.PHLOldExtreme1mK = t.PHLOldExtreme1mK // phl audit PHL-1
 	cfg.ISBOldExtremePts = t.ISBOldExtremePts
 	cfg.ISBInRangeGapPts = t.ISBInRangeGapPts
 	cfg.TrendlineEntryTouch = t.TrendlineEntryTouch

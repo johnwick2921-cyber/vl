@@ -155,6 +155,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			MidRangeRejectSide: true,                   // D2.2-R71
 			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
 			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
+			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
+			PHLOldExtreme1mK: 4,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -336,5 +338,18 @@ func TestISBTFKnobsReachTheEvaluator(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{CrossingISBLookback: 2, CrossingISBMin: 3}); c.CrossingISBLookback != 3 || c.CrossingISBMin != 2 {
 		t.Fatalf("out-of-range crossing knobs must fail closed to 3 / 2: lookback=%d min=%d", c.CrossingISBLookback, c.CrossingISBMin)
+	}
+}
+
+// TestPHL1OldExtremeKnobReachesTheEvaluator — phl audit PHL-1: the rolling
+// PHL/PLH 1m old-extreme width reaches the evaluator through the ONE resolver
+// (production mentorEvalOnce → mentorTuningResolve → applyMentorTuning):
+// unset = 4, -1 = the pre-PHL-1 5m/15m source (Config 0), 1..10 = k, anything
+// else fails closed to 4.
+func TestPHL1OldExtremeKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want int }{{0, 4}, {-1, 0}, {2, 2}, {10, 10}, {11, 4}, {-2, 4}} {
+		if got := tuningTick(t, &store.MentorTuning{PHLOldExtreme1mK: c.stored}).PHLOldExtreme1mK; got != c.want {
+			t.Fatalf("stored phl_old_extreme_1m_k=%d → Config.PHLOldExtreme1mK %d, want %d", c.stored, got, c.want)
+		}
 	}
 }

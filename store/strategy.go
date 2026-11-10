@@ -2159,6 +2159,13 @@ type MentorTuning struct {
 	// explicit 0 → AT the old extreme) [Ngày 4.1 Go over ngày 3 part1
 	// @00:07:21–00:07:40 "gần đỉnh cũ"].
 	PHLTargetShyPts *float64 `json:"phl_target_shy_pts,omitempty"`
+	// PHL-1 (phl audit 2026-11-10): the rolling PHL/PLH's old high / old low is
+	// the 1m swing the pullback started from; this is its width k (a bar beating
+	// its k left neighbours, confirmed by k bars to its right). 0 / absent = 4
+	// (the only width that reproduces the four Oct D2.3 worked examples — the
+	// course states no number); -1 = the pre-PHL-1 source (the 5m/15m pivots);
+	// 1..10 = k.
+	PHLOldExtreme1mK int `json:"phl_old_extreme_1m_k,omitempty"`
 	// B27: the ISB size-cut definitions — "at the old high/low" band in points
 	// (nil → 2; explicit 0 → an exact touch) and the "in range" key-level gap
 	// (0 / unset → inherit ping_pong_min_gap_pts) [Ngày 4.1 Go over ngày 3

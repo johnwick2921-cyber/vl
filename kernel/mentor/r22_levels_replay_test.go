@@ -325,8 +325,13 @@ func TestR22PHLPlacesAtTheTriggerLine1012(t *testing.T) {
 	// is refused by the target floor (phl_target_below_floor) instead of placed.
 	// The retest is still evaluated — pinned EXACTLY (CTO, #50): no trigger-line
 	// placement and at least one floor refusal, so any later shift is seen.
-	if total < 2 || atTrigger != 0 || e.State.Refusals["phl_target_below_floor"] == 0 {
-		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 2, 0 at the trigger line, >= 1 floor-refused (m427 whole-life break)", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
+	// phl audit PHL-1: the day's two ROLLING PLH rungs (03:19 sell stop 31,150
+	// → old low 31,124; 08:13 sell stop 31,070.75 → old low 31,018) read a
+	// 5m/15m pivot while the 1m low each pullback started from was still
+	// unconfirmed — the stale-target class PHL-1 removed — so the day places
+	// its one LEVEL PHL/PLH (>= 1 pinned; it was >= 2 with the rolling pair).
+	if total < 1 || atTrigger != 0 || e.State.Refusals["phl_target_below_floor"] == 0 {
+		t.Fatalf("10-12 replay placed %d PHL/PLH (%d at the trigger-line retest, %d floor-refused), want >= 1, 0 at the trigger line, >= 1 floor-refused (m427 whole-life break)", total, atTrigger, e.State.Refusals["phl_target_below_floor"])
 	}
 }
 

@@ -378,6 +378,16 @@ type Config struct {
 	// Entry and stop move together, so the RISK is unchanged from the old
 	// 1.00 / 0 pair (range + 1.00).
 	PHLStopBufferPts float64
+	// PHLOldExtreme1mK — PHL-1 (phl audit 2026-11-10): the rolling PHL/PLH's
+	// old high / old low is the 1m swing the pullback started from (a bar
+	// beating its k left neighbours, unbroken, confirmed by k bars to its
+	// right) — "gần đỉnh cũ" [OctD2.3-R30 @ 26:50, R42 @ 41:23, R53 @ 54:00];
+	// every worked example's old extreme is that 1m swing (WE6 10-27 09:36,
+	// WE7 10-30 13:21, WE9 10-29 20:53, WE10 10-29 19:48). The course states
+	// no width: the default 4 is the only k that reproduces all four
+	// (phl_tape_extreme.go). <= 0 = the pre-PHL-1 source (the 5m/15m pivots
+	// of the level set). Knob risk_control.mentor_tuning.phl_old_extreme_1m_k.
+	PHLOldExtreme1mK int
 	// RollingPHL (m216/m225, DS-102) turns on the D2.2 pullback-continuation
 	// rolling PHL/PLH stop entry: during a pullback in a trend (no drawn-level
 	// touch) the buy/sell stop is re-armed to EACH closed candle's extreme
@@ -855,9 +865,10 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
-		PHLEntryBufferPts:        1.0,  // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 entry 1 pt beyond the candle extreme (supersedes Sept D2.2-R10 +0.50 [p1 @04:14–05:43])
-		PHLStopBufferPts:         1.0,  // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 stop 1 pt beyond the other extreme, 2 pts total (supersedes Sept D2.2-R10 −0.50 [p1 @04:14–05:43])
-		RollingPHL:               true, // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
+		PHLEntryBufferPts:        1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 entry 1 pt beyond the candle extreme (supersedes Sept D2.2-R10 +0.50 [p1 @04:14–05:43])
+		PHLStopBufferPts:         1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 stop 1 pt beyond the other extreme, 2 pts total (supersedes Sept D2.2-R10 −0.50 [p1 @04:14–05:43])
+		PHLOldExtreme1mK:         PHLOldExtreme1mKDefault, // PHL-1: the 1m swing the pullback started from (k = 4 reproduces WE6/7/9/10; the course states no width — knob)
+		RollingPHL:               true,                    // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,

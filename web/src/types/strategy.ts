@@ -430,6 +430,8 @@ export interface MentorTuning {
   near_box_room_phl?: boolean
   // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
   phl_target_shy_pts?: number
+  // phl audit PHL-1 [4] — the rolling PHL/PLH old extreme is the 1m swing the pullback started from; its width k (1..10; -1 = the pre-PHL-1 5m/15m pivots). The course states no number: 4 reproduces the four Oct D2.3 worked examples.
+  phl_old_extreme_1m_k?: number
   // B27 [2 / 0] — ISB size cuts: "at the old extreme" ± pts; "in range"
   // key-level gap (0 = inherit ping_pong_min_gap_pts)
   isb_old_extreme_pts?: number
