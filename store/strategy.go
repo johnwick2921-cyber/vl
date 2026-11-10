@@ -2444,6 +2444,30 @@ type RiskControlConfig struct {
 	MentorResonanceRawISB *bool `json:"mentor_resonance_raw_isb,omitempty"`
 	Mentor2mReduceSize    *bool `json:"mentor_2m_reduce_size,omitempty"`
 
+	// Stop-to-size LADDER (owner order 2026-11-10 "stop loss can adjust
+	// contract to fit like mentor said … cause some day it go big"). Resolved
+	// ONLY in trader/mentor_course_exits.go (mentorCourseExitsResolve) onto the
+	// kernel CourseExits block and the trader size table. Every non-SWING4H
+	// mentor setup (ISB, reverse ISB, PHL/PLH, BOX):
+	//   stop ≤ 20            → the tiers unchanged;
+	//   stop in (20, 30]     → the reduced tier (3) — "ISB 20 điểm, 30 điểm…
+	//                          Tôi vô size 3 hoặc tôi không trade… 12 điểm. Ok,
+	//                          tôi vô size 5" [OctD2.2-R73 @1:12:32];
+	//   stop in (30, max]    → MentorWideStopContracts (1) — "40 điểm… Mình
+	//                          không trade… Trade vẫn được. 1 MNQ" [OctD2.3-R47 @48:12];
+	//   stop > max           → refused as before [OctD2.3-R47/R48 @48:12, 49:38].
+	// The ladder only LOWERS size (min with the tier the setup earns) and never
+	// touches the target ("giảm size only chứ không có tăng target" [OctD2.2-R49
+	// @40:47]). SWING4H keeps its own tiers.
+	//   MentorStopSizeLadder — nil → ON; false = the pre-ladder ceilings and
+	//        tiers exactly (ISB > mentor_isb_max_pts refused, PHL/PLH/BOX > 25).
+	//   MentorWideStopContracts — 0 → 1 [OctD2.3-R47 "1 MNQ"].
+	//   MentorWideStopMaxPts — 0 → 40 [OctD2.3-R47 "40 điểm… không trade"];
+	//        never narrows a setup's ladder-OFF ceiling.
+	MentorStopSizeLadder    *bool   `json:"mentor_stop_size_ladder,omitempty"`
+	MentorWideStopContracts int     `json:"mentor_wide_stop_contracts,omitempty"`
+	MentorWideStopMaxPts    float64 `json:"mentor_wide_stop_max_pts,omitempty"`
+
 	// m466 P3 (release #61, owner order 2026-11-02 "fix everything the video
 	// check found"). Resolved ONLY in trader/mentor_course_exits.go onto the
 	// kernel's CourseExits block; unset = the course default; a bad value

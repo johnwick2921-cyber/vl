@@ -275,6 +275,28 @@ func (at *AutoTrader) mentorDrainExits() {
 	}
 }
 
+// mentorEntryGateInputs resolves the rule-gate / size-table inputs the ONE
+// entry path (mentorDispatchEntry) feeds mentorRuleGate and mentorSizeFor —
+// extracted so the tests run the production resolution, never a copy.
+func (at *AutoTrader) mentorEntryGateInputs(in mentor.Intent, extra mentorTierInputs) mentorTierInputs {
+	// ONE MENTOR ENTRY PATH: the order type differs only inside the
+	// evaluator; the injector always rests a stop-limit. The confluence
+	// flag feeds the size tier (10/20) and the exit fork (C).
+	extra.Confluence = mentorConfluenceFlag(in)
+	tuned := mentorTuningResolve(at, at.mentorRiskControl())
+	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
+	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
+	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 20
+	// since m466 G23 D4.1-R12; PHL/PLH/BOX keep 25 via mentorStopCeilingFor) —
+	// one number, not two (P2-1).
+	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
+	extra.ISBMaxStopPts = cx.ISBMaxPts
+	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
+	// (mentor_swing_max_stop_pts, unset/0 → 90).
+	extra.SwingSkipStopPts = cx.SwingMaxStopPts
+	return extra
+}
+
 // mentorDispatchEntry is the ONE mentor entry path (X-07, refactored out of
 // the dispatch switch). A single deferred guard drops the kernel's pending
 // G1/G2 sim fill for the intent's ArmID on EVERY refusal inside this
@@ -295,18 +317,7 @@ func (at *AutoTrader) mentorDispatchEntry(in mentor.Intent, extra mentorTierInpu
 	// ONE MENTOR ENTRY PATH: the order type differs only inside the
 	// evaluator; the injector always rests a stop-limit. The confluence
 	// flag feeds the size tier (10/20) and the exit fork (C).
-	extra.Confluence = mentorConfluenceFlag(in)
-	tuned := mentorTuningResolve(at, at.mentorRiskControl())
-	extra.SwingMaxStopPts = tuned.SwingMaxStopPts
-	extra.SpentDayStopCapPts = tuned.DayGateTargetCapPts
-	// R8 reads the SAME knob as the kernel (mentor_isb_max_pts, unset/0 → 20
-	// since m466 G23 D4.1-R12; PHL/PLH/BOX keep 25 via mentorStopCeilingFor) —
-	// one number, not two (P2-1).
-	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
-	extra.ISBMaxStopPts = cx.ISBMaxPts
-	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
-	// (mentor_swing_max_stop_pts, unset/0 → 90).
-	extra.SwingSkipStopPts = cx.SwingMaxStopPts
+	extra = at.mentorEntryGateInputs(in, extra)
 	if why := mentorRuleGate(in, extra); why != "" {
 		rule := "other"
 		if i := strings.Index(why, ":"); i > 0 {

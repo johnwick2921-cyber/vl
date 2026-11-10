@@ -89,6 +89,16 @@ type mentorTierInputs struct {
 	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 90) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
 	ISBMaxStopPts      float64 // the ISB R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 20 since m466; PHL/PLH/BOX: mentorStopCeilingFor → 25)
+
+	// Stop-to-size LADDER (owner order 2026-11-10; store.RiskControlConfig
+	// MentorStopSizeLadder / MentorWideStopContracts / MentorWideStopMaxPts,
+	// resolved by mentorCourseExitsResolve). StopLadderOff is the knob turned
+	// OFF (false = the zero value = ON, the default — a bare table test runs
+	// the ladder). WideStopContracts 0 → 1, WideStopMaxPts 0 → the kernel
+	// default 40.
+	StopLadderOff     bool
+	WideStopContracts int
+	WideStopMaxPts    float64
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.

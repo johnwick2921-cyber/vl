@@ -54,6 +54,19 @@ type CourseExitsCfg struct {
 	// 25 (Config.StopCeilingPts). Pre-#61 default 25 (W-MENTOR-EXACT); a
 	// stored mentor_isb_max_pts still wins.
 	ISBMaxStopPts float64
+	// StopSizeLadder (owner order 2026-11-10, default ON): a non-swing stop
+	// above the setup's own ceiling (ISB: ISBMaxStopPts; PHL/PLH/BOX:
+	// Config.StopCeilingPts) is NOT refused up to WideStopMaxPts — it goes on
+	// to the trader's size table, which sizes it DOWN (20–30 → 3 [OctD2.2-R73
+	// @1:12:32], 30–max → 1 MNQ [OctD2.3-R47 @48:12]). The kernel only lets
+	// it through; the target is never changed [OctD2.2-R49 @40:47]. OFF = the
+	// pre-ladder ceilings exactly. Knob mentor_stop_size_ladder.
+	StopSizeLadder bool
+	// WideStopMaxPts (default 40, knob mentor_wide_stop_max_pts): with the
+	// ladder ON a non-swing stop ABOVE this is refused — "40 điểm thì mình làm
+	// gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]. Never narrows a
+	// setup's ladder-OFF ceiling (a stored mentor_isb_max_pts above it wins).
+	WideStopMaxPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
 	// out when the gap to the next key level is ≤ ratio × the current closed
 	// 1m candle (High-Low, eval.go) ("một cái nến nó bằng cái range của 2 cái level rồi thì ngồi
