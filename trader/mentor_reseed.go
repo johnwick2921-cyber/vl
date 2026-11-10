@@ -55,8 +55,13 @@ func (at *AutoTrader) mentorReseedOnRefill(nowMs int64) {
 	// Claim the generation FIRST: a refill landing while this re-seed reads the
 	// store bumps it again and the next tick re-seeds once more (idempotent).
 	at.mentorSeedHistGen = gen
+	at.mentorReseedFrom(store.NewBarHistoryStore(at.store.GormDB()), nowMs, why)
+}
+
+// mentorReseedFrom is the re-seed body of mentorReseedOnRefill over a bar
+// source (the offline replay injects the live log's refill re-seeds through it).
+func (at *AutoTrader) mentorReseedFrom(bh mentorSeedBarSource, nowMs int64, why string) {
 	start := time.Now()
-	bh := store.NewBarHistoryStore(at.store.GormDB())
 	stitched1m, full1HRTH, _, _, _, seamBars := at.mentorFullKeyLevelHistory(bh)
 	bars1m := stitched1m
 	if len(full1HRTH) == 0 {

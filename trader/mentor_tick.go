@@ -2000,6 +2000,24 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at == nil || at.store == nil {
 		return
 	}
+	at.mentorSeedFrom(store.NewBarHistoryStore(at.store.GormDB()))
+}
+
+// mentorSeedBarSource is the bar read surface the mentor seed needs. Production
+// passes *store.BarHistoryStore (mentorSeedAtStart); the offline replay
+// (cmd/mentor-replay, MentorReplay.Seed) passes an AS-OF view of the same rows,
+// so a historical day is seeded from exactly the bars that existed then and
+// runs the SAME seed body below — never a re-implementation.
+type mentorSeedBarSource interface {
+	LastNBarsCurrentContract(symbol, tf string, n int) ([]store.BarHistoryDB, error)
+	ContractSpans(symbol, tf string) ([]store.ContractSpan, error)
+	AllBarsOn(symbol, tf, contract string) ([]store.BarHistoryDB, error)
+}
+
+var _ mentorSeedBarSource = (*store.BarHistoryStore)(nil)
+
+// mentorSeedFrom is the seed body of mentorSeedAtStart over a bar source.
+func (at *AutoTrader) mentorSeedFrom(bh mentorSeedBarSource) {
 	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
 	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
 	// never collides with a prior terminal row — or another trader's row.
@@ -2017,7 +2035,6 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
 	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
 	now := mentorClockNow().UnixMilli()
-	bh := store.NewBarHistoryStore(at.store.GormDB())
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
 	if err1m != nil {
 		at.logWarnf("🧑‍🏫 mentor seed: 1m store read failed (%v) — seeding with nothing (refusing)", err1m)
@@ -2193,7 +2210,7 @@ func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
 // ("" = full). FIX 5: it STOPS READING at the first roll whose gap cannot be
 // measured instead of reading every contract. A cold store / read error
 // returns nil and the caller degrades to the current-contract walk.
-func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamBars []market.Kline) {
+func (at *AutoTrader) mentorFullKeyLevelHistory(bh mentorSeedBarSource) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamBars []market.Kline) {
 	if at == nil || bh == nil {
 		return nil, nil, nil, nil, "", nil
 	}
