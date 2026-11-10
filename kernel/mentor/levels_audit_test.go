@@ -4,6 +4,7 @@ import (
 	"encoding/csv"
 	"os"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -209,4 +210,104 @@ func TestLL6EMA34AliasIsInvalidatedOnce(t *testing.T) {
 		t.Errorf("level_invalid_first_touch counted %d for %d emitted LevelInvalid intents — one invalidation, one count", refused, invalids)
 	}
 	t.Logf("LevelInvalid by key: %v (refusals %d)", inv, refused)
+}
+
+// TestLL2BreakThenFirstRetestArmsTheRoleReversal — levels audit LL-2 (P1).
+// OctD5.2-R24 [Oct D5.2 @13:35], the worked example at 28,154.50 on 11-03: the
+// red 18:26 candle (O 28,176.50 H 28,178.00 L 28,133.00 C 28,135.50) closes
+// BELOW the support, then "nó quay ngược lên, nó bắt test… vẫn là nến chạm
+// level… Thứ 2 nữa là nến đóng dưới" — the level is now resistance
+// [R20 @07:42]; the sell stop goes on the FIRST retest candle that touches
+// [R25 @14:16]; the only checks are touch, then where it closes [R22/R23
+// @12:16, 12:29]. Production SeedFull (the live 11-04 seed candles: the bot's
+// copy of the level is 28,155.25, the 07-30 08:30 open) + Tick over the real
+// MNQ 12-26 1m of 11-03 17:00–18:40 CT. Default: the 18:26 break flips the
+// level (counter level_broken_retest, no ISB-only), and the 18:29 retest
+// (H 28,161.25 C 28,149.75) is the first touch from below — a reject, so the
+// level path reads it as the PLH reference candle. Knob off: ISB-only all day
+// (the September "first touch closed through → invalid" [D5.2 p1 @19:51]).
+func TestLL2BreakThenFirstRetestArmsTheRoleReversal(t *testing.T) {
+	candles := llLoad1H(t, "testdata/ll_mnq_1hrth_live_20260720_to_20261103.csv")
+	bars := m413Load(t, "testdata/ll2_mnq_1m_20261102_0800ct.csv")
+	seedAt := llCT(2026, 11, 3, 17, 0)
+	lvlAt := llCT(2026, 7, 30, 8, 30)
+	phl1829 := map[string]int{}
+	run := func(mode string) (e *Evaluator, key string, invalidAt []string, refAt string, refFrom Side, outcome TouchOutcome, ins []Intent) {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		if mode != "" {
+			cfg.KeyLevelBreakRetest = mode
+		}
+		e = New(cfg)
+		var pre []market.Kline
+		for _, b := range bars {
+			if b.OpenTime < seedAt {
+				pre = append(pre, b)
+			}
+		}
+		SeedFull(e, pre, candles, seedAt)
+		l, ok := llLevelAt(e.State.SeedLevels, lvlAt)
+		if !ok || l.Price != 28155.25 {
+			t.Fatalf("fixture: the 07-30 08:30 level must be seeded at 28155.25, got %+v ok=%v", l, ok)
+		}
+		key = l.Key
+		for i := range bars {
+			if bars[i].OpenTime < seedAt {
+				continue
+			}
+			hm := time.UnixMilli(bars[i].OpenTime).In(ctime()).Format("15:04")
+			before := map[string]int{}
+			for k, v := range e.State.Refusals {
+				before[k] = v
+			}
+			tickOut := e.Tick(bars[:i+1], bars[i].CloseTime+1)
+			if hm == "18:29" || hm == "18:30" {
+				for k, v := range e.State.Refusals {
+					if d := v - before[k]; d != 0 {
+						t.Logf("mode %q %s refusal %s +%d", mode, hm, k, d)
+						if hm == "18:29" && strings.HasPrefix(k, "phl_") {
+							phl1829[mode] += d
+						}
+					}
+				}
+			}
+			for _, in := range tickOut {
+				if in.LevelKey != key {
+					continue
+				}
+				if in.Action == LevelInvalid {
+					invalidAt = append(invalidAt, hm)
+				}
+				ins = append(ins, in)
+			}
+			if tr := e.State.Touches[key]; tr.Outcome == TouchReject && refAt == "" {
+				refAt = time.UnixMilli(tr.RefBar.OpenTime).In(ctime()).Format("15:04")
+				refFrom, outcome = tr.ApproachedFrom, tr.Outcome
+			}
+		}
+		return
+	}
+	e, key, invalid, refAt, refFrom, _, ins := run("")
+	if e.State.ISBOnly[key] {
+		t.Errorf("default (October): the 18:26 break must flip 28155.25, not make it ISB-only; LevelInvalid at %v", invalid)
+	}
+	if got := e.State.Refusals["level_broken_retest"] + e.State.Counters["level_broken_retest"]; got < 1 {
+		t.Errorf("default: the break must be counted level_broken_retest (got %d)", got)
+	}
+	if refAt != "18:29" || refFrom != SideShort {
+		t.Errorf("default: the first retest touch must be the 18:29 candle from below (resistance) as a reject, got ref %q from %q (intents %+v)", refAt, refFrom, ins)
+	}
+	// The retest now reaches the PLH gates: the 18:29 reference candle is 40
+	// pts tall (H 28,161.25 L 28,121.25), so the PLH is named by the ordinary
+	// stop ceiling — a gate, not the silent ISB-only of the September read.
+	if phl1829[""] < 1 {
+		t.Errorf("default: the 18:29 retest must reach the PLH gates (a named phl_* verdict), got none; intents %+v", ins)
+	}
+	e, key, invalid, refAt, _, _, _ = run(KeyLevelBreakRetestOff)
+	if !e.State.ISBOnly[key] || len(invalid) != 1 || invalid[0] != "18:26" || refAt != "" {
+		t.Errorf("knob off (September): the 18:26 first touch closing through must make the level ISB-only, no retest read; ISBOnly=%v invalid=%v ref=%q", e.State.ISBOnly[key], invalid, refAt)
+	}
+	if phl1829[KeyLevelBreakRetestOff] != 0 {
+		t.Errorf("knob off: no PLH read at the ISB-only level (got %d phl_* verdicts at 18:29)", phl1829[KeyLevelBreakRetestOff])
+	}
 }

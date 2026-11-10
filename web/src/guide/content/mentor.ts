@@ -207,6 +207,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.key_level_delete_on_1h_close',
     live: true,
   },
+  'Key level: break and retest': {
+    settingId: 'risk_control.mentor_tuning.key_level_break_retest',
+    live: true,
+  },
   'Key level: Uno Reverse after a hold': {
     settingId: 'risk_control.mentor_tuning.uno_key_levels',
     live: true,
@@ -1634,9 +1638,25 @@ export const mentor: GuideSection = {
           perSession: 'No — per strategy.',
         },
         {
+          label: 'Key level: break and retest',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.key_level_break_retest)',
+          what: 'Levels audit LL-2. When the FIRST candle that touches a key level closes THROUGH it, September made the level invalid — ISB-only for the rest of the session [D5.2 p1 @19:44–20:25]. October trades that break: “khi nến nằm ở dưới đường line level này, nó breakdown… Level này đang là kháng cự” [OctD5.2-R20 @07:42]; worked example at 28,154.50 on 11-03 [R24 @13:35]: the red 18:26 candle closes below the support, then “nó quay ngược lên, nó bắt test… vẫn là nến chạm level… Thứ 2 nữa là nến đóng dưới” — and the sell stop goes on the FIRST retest candle that touches [R25 @14:16]; the only checks are the touch, then where the candle closes [R22/R23 @12:16, 12:29]. on (default) = that first-touch break cancels the resting order, flips the level’s role and starts a new visit (counter level_broken_retest, a note names the level); the next candle that touches from the new side and closes back on it is the reference, and the PHL/PLH runs through every normal gate (on the 11-03 example the 18:29 retest candle is 40 pts tall, so the 25-pt stop ceiling names it phl_stop_ceiling). One flip per level per session day, shared with the Uno Reverse of a level that held (uno_key_levels): a second close through after the flip is ISB-only for the day. off = the September ISB-only rule. Over the 91 replay days 260 of 539 first-touch breaks were followed by exactly this retest (115 in RTH).',
+          trader:
+            'on — October [OctD5.2-R20/R24/R25]. Mentor question asked: how many retests count after one break (not in the course; the bot reads one flip per day).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (KeyLevelBreakRetest) · kernel/mentor/uno_key_level.go unoKeyLevelBreak → levelFlip',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD5.2-R20/R24/R25 @07:42–14:16].',
+          whenToTouch:
+            'Only on a mentor answer — off restores the September first-touch ISB-only rule.',
+          perSession: 'No — per strategy.',
+        },
+        {
           label: 'Key level: Uno Reverse after a hold',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Release #61 (G2, D1.3-R21). "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest / Hỗ trợ bị phá → sẽ thành kháng cự khi backtest" (broken resistance becomes support on the backtest, and the mirror) [D1.3 p1 @12:31–12:58]; his drawing: the level 29,104.25 bounces, breaks, then is backtested from below and rejects. on (default) = a KEY level that HELD today (at least one reject visit) and then breaks — a later visit whose first candle closes through it, or a later candle of the held visit closing through it — is NOT made ISB-only: its role flips once (counter level_broken_uno, the resting order is still cancelled), and the next touch from the other side is a fresh first touch, so the backtest reject arms a PHL/PLH through every normal gate. A wrong-way FIRST visit (the level never held — "cây nến chạm đầu tiên đóng ở trên level… invalid" [D5.2 p1 @19:44–20:25]) and a second wrong-way close after the flip stay ISB-only for the day. One flip per level per session day. Moving lines, box edges and old highs/lows keep their own rules. off = the pre-#61 ISB-only on any break.',
+          what: 'Release #61 (G2, D1.3-R21). "Kháng cự bị phá → sẽ thành hỗ trợ khi backtest / Hỗ trợ bị phá → sẽ thành kháng cự khi backtest" (broken resistance becomes support on the backtest, and the mirror) [D1.3 p1 @12:31–12:58]; his drawing: the level 29,104.25 bounces, breaks, then is backtested from below and rejects. on (default) = a KEY level that HELD today (at least one reject visit) and then breaks — a later visit whose first candle closes through it, or a later candle of the held visit closing through it — is NOT made ISB-only: its role flips once (counter level_broken_uno, the resting order is still cancelled), and the next touch from the other side is a fresh first touch, so the backtest reject arms a PHL/PLH through every normal gate. A wrong-way FIRST visit (the level never held — "cây nến chạm đầu tiên đóng ở trên level… invalid" [D5.2 p1 @19:44–20:25]) is, since levels audit LL-2, the October break-and-retest (knob key_level_break_retest, default on): it flips too and its first retest from the other side trades [OctD5.2-R20/R24/R25]; with that knob off it stays ISB-only for the day. A second wrong-way close after a flip stays ISB-only for the day. One flip per level per session day. Moving lines, box edges and old highs/lows keep their own rules. off = the pre-#61 ISB-only on any break.',
           trader: 'on — the course.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (UnoKeyLevels) · kernel/mentor/uno_key_level.go unoKeyLevelBreak / unoSameVisitBreak',

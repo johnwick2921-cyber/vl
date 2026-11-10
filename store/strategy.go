@@ -2213,6 +2213,12 @@ type MentorTuning struct {
 	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
 	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
 	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
+	// levels audit LL-2: "on" (unset) — a key level whose FIRST touch closes
+	// through it flips its role (level_broken_retest) and the first retest
+	// candle from the new side that closes back on it is the PHL/PLH reference
+	// [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16]; "off" — the September
+	// "invalid, ISB-only for the day" [D5.2 p1 @19:44–20:25].
+	KeyLevelBreakRetest string `json:"key_level_break_retest,omitempty"`
 	// levels audit LL-1: "off" (unset) — October keeps a key level a 1H RTH
 	// body closed through ("Key Level nó là quá khứ" [OctD5.2-R15 @04:44]; the
 	// WE3 level 27,997.75 is traded months after a 1H body crossed it

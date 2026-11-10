@@ -266,6 +266,7 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	}
 	cfg.PHLOldExtreme1mK = 0                                // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff        // levels audit LL-2: … and the October break-and-retest
 	prevLL6 := emaAliasDoubleInvalidSeam
 	emaAliasDoubleInvalidSeam = true // levels audit LL-6: … and the single EMA 34 invalidation
 	t.Cleanup(func() { emaAliasDoubleInvalidSeam = prevLL6 })

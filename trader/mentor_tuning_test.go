@@ -158,6 +158,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
+			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -368,6 +369,22 @@ func TestLL1KeyLevelDeleteKnobReachesTheEvaluator(t *testing.T) {
 	} {
 		if got := tuningTick(t, &store.MentorTuning{KeyLevelDeleteOn1HClose: c.stored}).KeyLevelDeleteOn1HClose; got != c.want {
 			t.Errorf("stored key_level_delete_on_1h_close=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator — levels audit LL-2: unset
+// = on (October break-and-retest), "off" = the September ISB-only, a bad value
+// fails closed to on — through the production resolver.
+func TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelBreakRetestOn},
+		{"off", mentor.KeyLevelBreakRetestOff},
+		{"on", mentor.KeyLevelBreakRetestOn},
+		{"twice", mentor.KeyLevelBreakRetestOn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelBreakRetest: c.stored}).KeyLevelBreakRetest; got != c.want {
+			t.Errorf("stored key_level_break_retest=%q → Config %q, want %q", c.stored, got, c.want)
 		}
 	}
 }

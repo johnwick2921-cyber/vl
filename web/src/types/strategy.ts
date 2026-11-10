@@ -453,6 +453,9 @@ export interface MentorTuning {
   // G2 D1.3-R21 ['on'] — a key level that held today and then breaks flips its
   // role once (Uno Reverse); the backtest reject trades [D1.3 p1 @12:31–12:58]
   uno_key_levels?: 'on' | 'off'
+  // levels audit LL-2 ['on'] — a key level whose first touch closes through it flips;
+  // the first retest from the new side is the PHL/PLH reference [OctD5.2-R20/R24/R25]
+  key_level_break_retest?: 'on' | 'off'
   // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
   // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
   key_level_delete_on_1h_close?: 'on' | 'off'

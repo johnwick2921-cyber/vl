@@ -772,9 +772,27 @@ type Config struct {
 	// today (≥1 reject visit) and then breaks FLIPS its role once
 	// (level_broken_uno) instead of turning ISB-only; the backtest reject from
 	// the other side trades through the normal gates. A second wrong-way close
-	// after the flip, or a wrong-way FIRST visit, is ISB-only as before
+	// after the flip, or a wrong-way FIRST visit with KeyLevelBreakRetest off
+	// (LL-2: on, the default, flips that break too), is ISB-only as before
 	// [D5.2 p1 @19:44–20:25]. "off": the pre-#61 ISB-only on any break.
 	UnoKeyLevels string
+	// KeyLevelBreakRetest — levels audit LL-2. "on" (default, October): a KEY
+	// level whose FIRST touch closes through it is not made ISB-only; the
+	// break cancels the arm, flips the level's role and starts a new visit
+	// (counter level_broken_retest), so the first retest candle that touches
+	// from the new side and closes back on it is the PHL/PLH reference — the
+	// stop order goes beyond that candle. OctD5.2-R20 [@07:42] "nến nằm ở dưới
+	// đường line level này, nó breakdown… Level này đang là kháng cự"; R24
+	// [@13:35] the 28,154.50 worked example "nó quay ngược lên, nó bắt test…
+	// vẫn là nến chạm level… Thứ 2 nữa là nến đóng dưới"; R25 [@14:16] sell
+	// stop on the FIRST retest candle that touches; R22/R23 [@12:16, 12:29]
+	// touch, then where it closes. One flip per level per session day (shared
+	// with Uno, UnoFlipped): a second close through after the flip is
+	// ISB-only. How many retests count after one break is not in the course —
+	// mentor question (LL-2). "off": the September "first touch closed through
+	// → invalid, ISB-only" [D5.2 p1 @19:51–20:25].
+	// Studio JSON: risk_control.mentor_tuning.key_level_break_retest.
+	KeyLevelBreakRetest string
 	// SessionOpenLevels — G10 D3.1-R26 + G11 D3.1-R20: "cái râu này nó sẽ là
 	// cái đỉnh" [D3.1 p1 @11:58–12:22] (the session's first 5m candle wick is
 	// an old high/low with no left-neighbour test) and "Cái cạnh dưới của cái
@@ -955,10 +973,11 @@ func DefaultConfig() Config {
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 		// m466 P2 (release #61): levels and touches.
-		UnoKeyLevels:       UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
-		SessionOpenLevels:  SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
-		LevelArmLineCancel: LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
-		PHLPullbackLow:     PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
+		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
+		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms
+		SessionOpenLevels:   SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
+		LevelArmLineCancel:  LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
+		PHLPullbackLow:      PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
 		BreakDirectionLock: true,            // G21 D4.1-R31/R33, G29 D4.1-R55
@@ -1011,8 +1030,11 @@ const (
 // resolver and the guide share.
 const (
 	// levels audit LL-1: the 1H body-close deletion (deck) vs October's keep.
-	KeyLevelDeleteOn1HCloseOn   = "on"
-	KeyLevelDeleteOn1HCloseOff  = "off"
+	KeyLevelDeleteOn1HCloseOn  = "on"
+	KeyLevelDeleteOn1HCloseOff = "off"
+	// levels audit LL-2: the October break-and-retest of a key level.
+	KeyLevelBreakRetestOn       = "on"
+	KeyLevelBreakRetestOff      = "off"
 	UnoKeyLevelsOn              = "on"
 	UnoKeyLevelsOff             = "off"
 	SessionOpenLevelsOn         = "on"

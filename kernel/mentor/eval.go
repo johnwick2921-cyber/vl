@@ -2428,7 +2428,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		moving := isMovingLineKey(lvl.Key)
 		tr := e.State.Touches[lvl.Key]
 		// item 22: a KEY level stays ISB-only for the session day (frozen touch,
-		// no re-read); a MOVING line keeps its visit machinery running so a
+		// no re-read) — since levels audit LL-2 only after its one flip per day
+		// (a first-touch break flips it, key_level_break_retest; a held level
+		// flips via Uno) or with both knobs off; a MOVING line keeps its visit machinery running so a
 		// DEPARTURE can clear the invalidity — the course scopes "invalid" to
 		// the touching candle [D5.2 p2 @20:48], never the line. Item 22 fix
 		// (CTO 00:19Z, DS-105 replay): drift alone NEVER resets a moving line —
