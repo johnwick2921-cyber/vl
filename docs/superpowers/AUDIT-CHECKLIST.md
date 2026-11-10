@@ -10478,3 +10478,16 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - Replay the days where both objects stand at once and count intents that pass only because one gate was skipped.
 - **Pin:** `TestISBTFF1TriggerLineGovernsInsideThe5mBox` (cmd/mentor-replay, 11-02 through the production seed + `mentorEvalOnce`), `TestISBBoxKeepsTriggerPriceFilter`, `TestISBBoxDoesNotHideTheTriggerLine`; F2: `TestISBTFF2EscalationDoesNotLiftTheBoxGate` (cmd/mentor-replay, 10-07 08:52 under the production resolver), `TestISBTFF2CrossingNeverLiftsABoxGate` (the one helper all eight box gates read).
 - **Reference:** `kernel/mentor/eval.go` (Tick, the 1m ISB block and the reverse ISB block), `kernel/mentor/isb_box.go` (`boxGateLiftedByCrossing`; `isbTriggerHiddenByBox5m` and `isbBoxGateLiftedByCrossingSeam` are frozen-golden seams only).
+
+## CLASS NN (assigned at merge) — a "spent" latch set when an order is BUILT, not when it FILLS: a later filter drops the order, the latch stays, and the refusal text claims a fill that never happened (isbTF-F3, feat/mentor-detector-history-audit)
+
+- **Symptom:**
+  - On 10-28 (4h line 29,645.53) the 17:50 5m inside bar's swing ISB was built at the 17:54 tick and dropped by the box ban (inside_any_box). The next 17 inside bars of that 4h candle were refused `swing_isb_spent` "this level's inside-bar entry already filled", but nothing had been placed.
+  - Over 91 days on a5b7662e, 19 of the 77 latches had no emitted intent (16 inside_any_box, 3 swing_line_gap_stale), and they produced 284 of the 1,119 `swing_isb_spent` refusals.
+- **Root cause:**
+  - `walkSwingBar` set `FirstTouch.ISBFired` when the intent was BUILT. The filters that run AFTER it (`boxBanFilter`, `dropStaleSwingLineEntries`, the trigger zone, a trader DropArm) unregister the arm through `unregisterArm`, which cleared `Swing.Pending` but not the latch. The swing's own rule says only a FILL spends the level (rv59, D5.2-R25).
+- **Probe:**
+  - For every latch, ask what event it means (built, placed, filled) and whether every path that undoes that event also undoes the latch. The drop sink (`unregisterArm`) is where "never authored" lands.
+  - Check that a refusal's TEXT matches its trigger ("already filled" means a fill).
+- **Pin:** `TestISBTFF3DroppedSwingISBDoesNotSpendTheLevel` (the production Tick over the real 10-28 tape), `TestISBTFF3TraderRefusalDoesNotSpendTheLevel` (DropArm, the trader's refusal path).
+- **Reference:** `kernel/mentor/eval.go` (`unregisterArm`), `kernel/mentor/swing4h.go` (`walkSwingBar`, `ISBFired`), `kernel/mentor/isb_box.go` (`isbSwingDropSpendsLevelSeam`, frozen-golden seam only).

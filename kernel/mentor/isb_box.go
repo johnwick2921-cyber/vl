@@ -314,6 +314,11 @@ var isbTriggerHiddenByBox5m = false
 // gate (the 5m one only outside mode merge, ISB5-F2). Production keeps false.
 var isbBoxGateLiftedByCrossingSeam = false
 
+// isbSwingDropSpendsLevelSeam restores the pre-isbTF-F3 read for frozen goldens
+// ONLY: true = a swing inside-bar order dropped before it was authored still
+// spends the level (FirstTouch.ISBFired stays latched). Production keeps false.
+var isbSwingDropSpendsLevelSeam = false
+
 // boxGateLiftedByCrossing reports whether the tfMin box gate is skipped this
 // tick. isbTF-F2: never — the escalation ladder D3.4-R43 [D3.4 p2 @17:07–17:49]
 // changes only WHICH trigger line governs; the box gates stand ("anh chị chỉ

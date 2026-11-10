@@ -1214,7 +1214,18 @@ func (e *Evaluator) unregisterArm(armID string) {
 		return
 	}
 	delete(e.State.ISBArms, armID)
-	if e.State.Swing.Pending != nil && e.State.Swing.Pending.ArmID == armID {
+	if p := e.State.Swing.Pending; p != nil && p.ArmID == armID {
+		// isbTF-F3: the swing's INSIDE-BAR order was dropped before it was
+		// ever authored (a later Tick filter — inside_any_box,
+		// swing_line_gap_stale, the trigger zone — or a trader refusal). It
+		// never filled, so it does not spend the level: only a FILL does
+		// (rv59; no time limit, "xuất hiện inside bar, tôi vô lệnh ... cứ đánh
+		// thôi" [D5.2-R25 p2 @10:23–10:51]). Before, ISBFired stayed latched and
+		// every later inside bar of the 4h candle was refused swing_isb_spent
+		// "already filled".
+		if ft := e.State.Swing.FirstTouch; p.ISB && ft != nil && ft.Through && !isbSwingDropSpendsLevelSeam {
+			ft.ISBFired = false
+		}
 		e.State.Swing.Pending = nil
 	}
 	for key, arm := range e.State.LevelArms {

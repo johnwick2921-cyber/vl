@@ -264,12 +264,13 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	if cfg.FiveMinBoxSource == FiveMinBoxMerge {
 		cfg.FiveMinBoxSource = FiveMinBoxNewest
 	}
-	prev, prevF1, prevF2 := isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam
+	prev, prevF1, prevF2, prevF3 := isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam, isbSwingDropSpendsLevelSeam
 	isbBoxSameTickRebuild = false
 	isbTriggerHiddenByBox5m = true        // isbTF-F1: the frozen goldens predate the trigger-inside-the-box read
 	isbBoxGateLiftedByCrossingSeam = true // isbTF-F2: … and the crossing lift of the box gates
+	isbSwingDropSpendsLevelSeam = true    // isbTF-F3: … and a dropped swing ISB spending the level
 	t.Cleanup(func() {
-		isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam = prev, prevF1, prevF2
+		isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam, isbSwingDropSpendsLevelSeam = prev, prevF1, prevF2, prevF3
 	})
 }
 
