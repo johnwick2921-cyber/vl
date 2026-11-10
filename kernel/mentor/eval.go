@@ -366,6 +366,11 @@ type Evaluator struct {
 	// entries; the mirror (5m downtrend, prior high broken) warns SHORT entries
 	// → size down [X11 @13:21–15:02]. C52-W10 (B20).
 	pullbackWarn5m Side
+	// emaLocAlias (levels audit LL-6, transient, set per tick before the touch
+	// loop): the location-gate line ema34_htf is the SAME number as the ema34
+	// line this tick (EMALocationTFMinutes == EMATFMinutes, the default 1) — one
+	// line [OctD5.2-R9 @03:37], so its wrong-way first touch is ONE invalidation.
+	emaLocAlias bool
 	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
 	// a 4h/1h trigger move, a box latched or cleared, a trendline turning
 	// valid or dying, a swing-line gap fold). The trader drains them with
@@ -758,10 +763,17 @@ func handleTouchIntents(e *Evaluator, lvl Level, intents []Intent) []Intent {
 			// faithful but a large hidden suppressor (RTH 10-12 75, 10-13 65,
 			// 10-14 25) the funnel never showed — counted here, once per
 			// invalidation (the touch machinery emits it once per visit).
-			if !e.State.ISBOnly[lvl.Key] {
+			// LL-6: ema34 is the ema34_htf line this tick — the twin is marked
+			// ISB-only like its alias but is neither counted nor emitted again
+			// (the ema34_htf key carries the one invalidation).
+			alias := lvl.Kind == KindEMA34 && e.emaLocAlias && !emaAliasDoubleInvalidSeam
+			if !e.State.ISBOnly[lvl.Key] && !alias {
 				e.refuse("level_invalid_first_touch")
 			}
 			e.State.ISBOnly[lvl.Key] = true
+			if alias {
+				continue
+			}
 		}
 		out = append(out, in)
 	}
@@ -2408,6 +2420,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// would double-trade a box return (a candle inside the box can look like
 	// an approach from above). The edges stay in `levels` for location /
 	// InsideAnyBox / boxBanFilter / midRangeBoxed checks.
+	e.emaLocAlias = emaLocationAliasesEMA34(levels, e.Cfg)
 	for _, lvl := range levels {
 		if lvl.Kind == KindFTGHEdge || lvl.Kind == KindFTGLEdge || lvl.Kind == KindHTFTrigger || lvl.Kind == KindWickMicroscalp || lvl.Kind == KindTrendlineTarget {
 			continue
@@ -4029,6 +4042,31 @@ func swingZoneGate(ints []Intent, t TriggerLine, respect bool) ([]Intent, int) {
 		out = append(out, in)
 	}
 	return out, dropped
+}
+
+// emaAliasDoubleInvalidSeam restores the pre-LL-6 double invalidation (ema34
+// AND its ema34_htf alias each emit and count) — the frozen tick goldens only.
+var emaAliasDoubleInvalidSeam = false
+
+// emaLocationAliasesEMA34 reports whether this tick's location-gate line
+// (ema34_htf) is the ema34 line itself: the same timeframe knob and the same
+// price in the level set (levels audit LL-6). At a different location TF the
+// two are different lines and both keep their own invalidation.
+func emaLocationAliasesEMA34(levels []Level, cfg Config) bool {
+	if cfg.EMALocationTFMinutes != cfg.EMATFMinutes {
+		return false
+	}
+	var p34, pHTF float64
+	var has34, hasHTF bool
+	for _, l := range levels {
+		switch l.Kind {
+		case KindEMA34:
+			p34, has34 = l.Price, true
+		case KindEMA34HTF:
+			pHTF, hasHTF = l.Price, true
+		}
+	}
+	return has34 && hasHTF && p34 == pHTF
 }
 
 // emaLocationLevel (m327 b) is the location-gate EMA 34 line, from ONE source.

@@ -266,6 +266,9 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	}
 	cfg.PHLOldExtreme1mK = 0                                // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
+	prevLL6 := emaAliasDoubleInvalidSeam
+	emaAliasDoubleInvalidSeam = true // levels audit LL-6: … and the single EMA 34 invalidation
+	t.Cleanup(func() { emaAliasDoubleInvalidSeam = prevLL6 })
 	prevP5, prevP2 := rollingSilentCancelSeam, boxPairPrePHL2Seam
 	rollingSilentCancelSeam = true // phl audit PHL-5: … and the named rolling cancels
 	boxPairPrePHL2Seam = true      // phl audit PHL-2: … and the nearest-in-time / September post-escape box pairing

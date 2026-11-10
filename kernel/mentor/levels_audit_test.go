@@ -160,3 +160,53 @@ func TestLL1TickKeepsTheLevelThe1430BodyCrossed(t *testing.T) {
 		}
 	}
 }
+
+// TestLL6EMA34AliasIsInvalidatedOnce — levels audit LL-6 (P3). The EMA 34 of an
+// intraday trade is ONE line, the 1m EMA 34 [OctD5.2-R9 @03:37]; with the
+// default EMALocationTFMinutes = EMATFMinutes = 1 the location-gate line
+// ema34_htf IS the ema34 line (emaLocationLevel returns State.EMA34). Production
+// Tick over the real 11-01 evening (MNQ 12-26 1m, seeded at 17:00 CT from
+// 10-30): every wrong-way first touch of that one line must be ONE LevelInvalid
+// intent (on ema34_htf, the location-gate key) and ONE
+// level_invalid_first_touch refusal — never an ema34 twin of the same candle.
+func TestLL6EMA34AliasIsInvalidatedOnce(t *testing.T) {
+	bars := m413Load(t, "testdata/ll6_mnq_1m_20261030_0800ct.csv")
+	seedAt := llCT(2026, 11, 1, 17, 0)
+	cfg := DefaultConfig()
+	cfg.Enabled = true
+	e := New(cfg)
+	var pre []market.Kline
+	for _, b := range bars {
+		if b.OpenTime < seedAt {
+			pre = append(pre, b)
+		}
+	}
+	Seed(e, pre, seedAt)
+	inv := map[string][]string{}
+	refused, invalids := 0, 0
+	for i := range bars {
+		if bars[i].OpenTime < seedAt {
+			continue
+		}
+		before := e.State.Refusals["level_invalid_first_touch"]
+		for _, in := range e.Tick(bars[:i+1], bars[i].CloseTime+1) {
+			if in.Action != LevelInvalid {
+				continue
+			}
+			invalids++
+			inv[in.LevelKey] = append(inv[in.LevelKey], time.UnixMilli(bars[i].OpenTime).In(ctime()).Format("15:04"))
+		}
+		refused += e.State.Refusals["level_invalid_first_touch"] - before
+	}
+	htf := inv[string(KindEMA34HTF)]
+	if len(htf) < 2 || htf[0] != "17:28" {
+		t.Fatalf("fixture: want the 17:28 and 18:30 ema34_htf invalidations, got %v", htf)
+	}
+	if n := len(inv[string(KindEMA34)]); n != 0 {
+		t.Errorf("ema34 is the SAME line as ema34_htf (EMA TF 1 = location TF 1): %d duplicate LevelInvalid intents at %v (ema34_htf at %v)", n, inv[string(KindEMA34)], htf)
+	}
+	if refused != invalids {
+		t.Errorf("level_invalid_first_touch counted %d for %d emitted LevelInvalid intents — one invalidation, one count", refused, invalids)
+	}
+	t.Logf("LevelInvalid by key: %v (refusals %d)", inv, refused)
+}
