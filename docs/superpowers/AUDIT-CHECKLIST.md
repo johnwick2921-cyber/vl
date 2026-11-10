@@ -10476,5 +10476,5 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:**
   - For every gate written as `if <other object> == nil || …` or `&& !<other read>`, ask: does the course say the other object REPLACES this rule, or ADDS to it? Find the sentence.
   - Replay the days where both objects stand at once and count intents that pass only because one gate was skipped.
-- **Pin:** `TestISBTFF1TriggerLineGovernsInsideThe5mBox` (cmd/mentor-replay, 11-02 through the production seed + `mentorEvalOnce`), `TestISBBoxKeepsTriggerPriceFilter`, `TestISBBoxDoesNotHideTheTriggerLine`.
-- **Reference:** `kernel/mentor/eval.go` (Tick, the 1m ISB block and the reverse ISB block), `kernel/mentor/isb_box.go` (`isbTriggerHiddenByBox5m`, frozen-golden seam only).
+- **Pin:** `TestISBTFF1TriggerLineGovernsInsideThe5mBox` (cmd/mentor-replay, 11-02 through the production seed + `mentorEvalOnce`), `TestISBBoxKeepsTriggerPriceFilter`, `TestISBBoxDoesNotHideTheTriggerLine`; F2: `TestISBTFF2EscalationDoesNotLiftTheBoxGate` (cmd/mentor-replay, 10-07 08:52 under the production resolver), `TestISBTFF2CrossingNeverLiftsABoxGate` (the one helper all eight box gates read).
+- **Reference:** `kernel/mentor/eval.go` (Tick, the 1m ISB block and the reverse ISB block), `kernel/mentor/isb_box.go` (`boxGateLiftedByCrossing`; `isbTriggerHiddenByBox5m` and `isbBoxGateLiftedByCrossingSeam` are frozen-golden seams only).

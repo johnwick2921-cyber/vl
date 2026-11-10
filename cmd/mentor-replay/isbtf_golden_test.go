@@ -3,6 +3,9 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"vl/kernel/mentor"
+	"vl/store"
 )
 
 // refusalsAt returns the kernel refusal names one production tick added.
@@ -73,5 +76,47 @@ func TestISBTFF1TriggerLineGovernsInsideThe5mBox(t *testing.T) {
 				t.Errorf("%s tick: OctD4.3-R28 — no long ISB while the 5m has a SELL trigger, got %v", k, in)
 			}
 		}
+	}
+}
+
+// TestISBTFF2EscalationDoesNotLiftTheBoxGate — isbTF-F2 on 2026-10-07 (MNQ
+// 12-26 1m from data.db, production seed + mentorEvalOnce). Pinned in the mode
+// the audit found it in (mentor_5m_box_source=newest, through the production
+// resolver): 08:40 is an inside bar of 08:35 (red mother, SHORT), 08:45 an
+// inside bar of 08:40 (green mother, LONG) — crossing 5m ISBs. The trigger
+// escalates to the 15m at the 08:49 bar (D3.4-R43), and the 08:45 pair stands
+// as the LONG box 31,144.25–31,207.25. On the 08:52 bar the 1m SHORT ISB (entry
+// 31,188.5, wholly inside the unbroken long box) must be refused
+// isb_box_blocked: "anh chị chỉ có quyền được đánh Inside bar cùng chiều với
+// khung 5 phút ... Chứ không có 5 phút đang Inside bar short vô đây đánh lệnh
+// long" [OctD4.3-R70, Oct D4.3 @ 68:24]. D3.4-R43 escalates the TRIGGER only.
+//
+// The default (merge) keeps the 08:40 SHORT box (merged through 08:45), so the
+// same short ISB is a same-direction trade there — the escalation ladder is not
+// what decides it.
+func TestISBTFF2EscalationDoesNotLiftTheBoxGate(t *testing.T) {
+	newest := &store.StrategyConfig{}
+	newest.RiskControl.MentorTuning = &store.MentorTuning{Mentor5mBoxSource: mentor.FiveMinBoxNewest}
+	got := replayFixtureDay(t, "mnq_12-26_1m_20261005-20261007.csv.gz", "2026-10-07", "08:53", newest)
+	esc := false
+	for _, ev := range got["08:49"].evs {
+		if ev["kind"] == "trigger_escalation" && ev["to_tf"] == 15 {
+			esc = true
+		}
+	}
+	if !esc {
+		t.Fatalf("precondition: the crossing 08:40/08:45 5m ISBs escalate the trigger to the 15m on the 08:49 bar, got %v", got["08:49"].evs)
+	}
+	ts := got["08:52"]
+	if b := ts.box; b == nil || b.Dir != mentor.SideLong || b.Low != 31_144.25 || b.High != 31_207.25 || b.Escaped != "" {
+		t.Fatalf("08:52 tick: precondition — the LONG 08:45 5m box 31,144.25–31,207.25 stands unbroken, got %s", boxStr(b))
+	}
+	for _, in := range intentsAt(ts, "ISB") {
+		if in["side"] == "short" {
+			t.Errorf("08:52 tick: OctD4.3-R70 — a SHORT 1m ISB inside the standing LONG 5m box must be refused, got %v", in)
+		}
+	}
+	if r := refusalsAt(ts); r["isb_box_blocked"] == 0 {
+		t.Errorf("08:52 tick: want isb_box_blocked, got refusals %v", r)
 	}
 }

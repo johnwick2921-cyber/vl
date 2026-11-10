@@ -309,6 +309,27 @@ var isbBoxSameTickRebuild = true
 // overrides it (OctD4.3-R28/R29/R69 [Oct D4.3 @ 22:00, 23:20, 1:07:26]).
 var isbTriggerHiddenByBox5m = false
 
+// isbBoxGateLiftedByCrossingSeam restores the pre-isbTF-F2 read for frozen
+// goldens ONLY: true = crossing ISBs on a box's own timeframe skip that box's
+// gate (the 5m one only outside mode merge, ISB5-F2). Production keeps false.
+var isbBoxGateLiftedByCrossingSeam = false
+
+// boxGateLiftedByCrossing reports whether the tfMin box gate is skipped this
+// tick. isbTF-F2: never — the escalation ladder D3.4-R43 [D3.4 p2 @17:07–17:49]
+// changes only WHICH trigger line governs; the box gates stand ("anh chị chỉ
+// có quyền được đánh Inside bar cùng chiều với khung 5 phút", OctD4.3-R70
+// [Oct D4.3 @ 68:24]; "INSABA không được trade ... Chừng nào thoát khỏi INSABA
+// mới được trade", OctD4.3-R61 [Oct D4.3 @ 59:56]).
+func (e *Evaluator) boxGateLiftedByCrossing(cb []market.Kline, tfMin int) bool {
+	if !isbBoxGateLiftedByCrossingSeam {
+		return false
+	}
+	if tfMin == 5 && e.Cfg.FiveMinBoxSource == FiveMinBoxMerge {
+		return false
+	}
+	return crossingISBs(cb, 3)
+}
+
 // isFirstRTH5m reports whether the 5m candle opening at openMs is the RTH-open
 // bucket: 08:30 CT on a day the CME is open at that minute (calendar-driven,
 // so half-days too).

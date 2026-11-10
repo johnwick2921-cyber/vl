@@ -2703,30 +2703,30 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
-					// ISB5-F2: a MERGED box has one direction (OctD4.3-R59) and
-					// the 5m is the only big frame (OctD4.3-R9) — crossing 5m
-					// pairs inside it do not lift the R70 gate [Oct D4.3 @ 68:24].
-					if e.box5() != nil && (e.Cfg.FiveMinBoxSource == FiveMinBoxMerge || !crossingISBs(cb5, 3)) {
+					// ISB5-F2 + isbTF-F2: crossing inside bars never lift a box
+					// gate — the escalation ladder changes only WHICH trigger
+					// line governs (D3.4-R43 [D3.4 p2 @17:07–17:49]); the box
+					// gates stand [OctD4.3-R70 @ 68:24, R61 @ 59:56, R59 @ 58:00].
+					if e.box5() != nil && !e.boxGateLiftedByCrossing(cb5, 5) {
 						if allowed, r := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 							boxBlocked, _ = true, r
 						}
 					}
 					// D4.1-25: the 15m box gates the ISB exactly like the 5m box —
 					// inside it only a 1m ISB in the 15m box's direction [D4.1 p2
-					// @07:35–08:11; D4.2 p1 @03:40–04:45]. The escalation ladder
-					// (D3.4 p2 @17:07–17:49) skips this gate when the 15m ISBs
-					// are crossing.
+					// @07:35–08:11; D4.2 p1 @03:40–04:45]. isbTF-F2: crossing 15m
+					// ISBs escalate the TRIGGER only; this gate stands.
 					box15Blocked := false
-					if e.box15() != nil && !crossingISBs(cb15, 3) {
+					if e.box15() != nil && !e.boxGateLiftedByCrossing(cb15, 15) {
 						if allowed, r := ISBBoxAllows(*e.box15(), execPrev, execCur); !allowed {
 							box15Blocked, _ = true, r
 						}
 					}
 					// D4.2-07: the 30m box gates the ISB the same way — never
-					// trade against a 30m ISB inside its range; skipped when the
-					// 30m ISBs are crossing.
+					// trade against a 30m ISB inside its range (isbTF-F2: also
+					// while the 30m ISBs cross).
 					box30Blocked := false
-					if e.box30() != nil && !crossingISBs(cb30, 3) {
+					if e.box30() != nil && !e.boxGateLiftedByCrossing(cb30, 30) {
 						if allowed, r := ISBBoxAllows(*e.box30(), execPrev, execCur); !allowed {
 							box30Blocked, _ = true, r
 						}
@@ -2735,7 +2735,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// standing 15m ISB box the 5m must show an ISB the same way
 					// before a 1m ISB trades [D4.2 p1 @14:24–14:34, @17:09–17:13].
 					fifteenRefusal := ""
-					if e.box15() != nil && !crossingISBs(cb15, 3) {
+					if e.box15() != nil && !e.boxGateLiftedByCrossing(cb15, 15) {
 						fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.box15(), e.box5(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 					}
 					side, chosen, ok, why := ISBStopLimitOrder(execPrev, execCur, e.Cfg)
@@ -2923,26 +2923,26 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
-			if e.box5() != nil && (e.Cfg.FiveMinBoxSource == FiveMinBoxMerge || !crossingISBs(cb5, 3)) { // ISB5-F2
+			if e.box5() != nil && !e.boxGateLiftedByCrossing(cb5, 5) { // ISB5-F2 + isbTF-F2
 				if allowed, _ := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 					boxBlocked = true
 				}
 			}
 			box15Blocked := false
-			if e.box15() != nil && !crossingISBs(cb15, 3) {
+			if e.box15() != nil && !e.boxGateLiftedByCrossing(cb15, 15) {
 				if allowed, _ := ISBBoxAllows(*e.box15(), execPrev, execCur); !allowed {
 					box15Blocked = true
 				}
 			}
 			box30Blocked := false
-			if e.box30() != nil && !crossingISBs(cb30, 3) {
+			if e.box30() != nil && !e.boxGateLiftedByCrossing(cb30, 30) {
 				if allowed, _ := ISBBoxAllows(*e.box30(), execPrev, execCur); !allowed {
 					box30Blocked = true
 				}
 			}
 			// CE-1: the same 15m rule as the normal ISB.
 			fifteenRefusal := ""
-			if e.box15() != nil && !crossingISBs(cb15, 3) {
+			if e.box15() != nil && !e.boxGateLiftedByCrossing(cb15, 15) {
 				fifteenRefusal = fifteenMinISBGate(e.Cfg.FifteenMinIBRule, e.box15(), e.box5(), e.State.LastISBBoxAt, e.State.LastISBBoxDir, e.State.LastISBBoxEscape)
 			}
 			// m462: the ONE shared 4h/1h check (all session by default).
