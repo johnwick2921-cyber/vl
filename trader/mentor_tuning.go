@@ -87,6 +87,10 @@ type mentorTuned struct {
 	BreakDirectionLock bool
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
+	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
+	SwingISBOnePerCandle bool
+	CrossingISBLookback  int
+	CrossingISBMin       int
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -127,6 +131,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		LegResetOnWaveBreak:         d.LegResetOnWaveBreak,
 		FlagWallTarget:              d.FlagWallTarget,
 		BoxNewZoneAfterEscape:       d.BoxNewZoneAfterEscape,
+		SwingISBOnePerCandle:        !d.Swing.ISBRepeatAfterFill,
+		CrossingISBLookback:         d.CrossingISBLookback,
+		CrossingISBMin:              d.CrossingISBMin,
 
 		ISBStackCancelCandle2m: d.ISBStackCancelCandle2m,
 		ISBStackTinyStopPts:    d.ISBStackTinyStopPts,
@@ -326,6 +333,17 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
 	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
 	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)
+	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
+	// the default, counted (tuning_bad_value).
+	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
+	pickInt(t.CrossingISBLookback, mentor.CrossingISBLookbackMin, mentor.CrossingISBLookbackMax, &out.CrossingISBLookback)
+	if t.CrossingISBMin != 0 {
+		if t.CrossingISBMin >= mentor.CrossingISBMinMin && t.CrossingISBMin <= out.CrossingISBLookback-1 {
+			out.CrossingISBMin = t.CrossingISBMin
+		} else {
+			bad()
+		}
+	}
 	return out
 }
 
@@ -388,6 +406,9 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
+	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle // isbTF-F4
+	cfg.CrossingISBLookback = t.CrossingISBLookback        // isbTF-F6
+	cfg.CrossingISBMin = t.CrossingISBMin                  // isbTF-F6
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

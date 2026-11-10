@@ -138,6 +138,15 @@ type SwingCfg struct {
 	// stays on the REJECT order (R22). true = keep OFF (the pre-#61 behaviour:
 	// any resting swing order dies on a close through the line).
 	ISBCancelOnCloseThrough bool
+	// ISBRepeatAfterFill (isbTF-F4) — knob mentor_swing_isb_one_per_candle,
+	// INVERTED so the zero value is today's behaviour: false = ONE filled
+	// inside-bar trade per level per 4h candle (after it filled and ended, a
+	// later inside bar is refused swing_isb_spent). The course states NO such
+	// limit — the inside bar has "no time limit" [D5.2-R25 p2 @10:23–10:51];
+	// "one setup per level" [D5.2-R19/R23 p1 @13:23–13:40] is the bot's [B]
+	// reading of it — a mentor question. true = a later inside bar of the same
+	// 4h candle may enter again after the first one filled and ended.
+	ISBRepeatAfterFill bool
 }
 
 // Swing ISB close-back knob values (m466 P4), canonicalized where they enter
@@ -304,8 +313,12 @@ const (
 	// already closed when the tick read it (the candle's last bar is first seen
 	// at the 4h close): the instance is over [D5.2-R27 p3 @12:16–13:18].
 	SwingRefusedCandleClosed = "swing_candle_closed"
-	// SwingRefusedISBSpent — an inside bar at an invalid level whose inside-bar
-	// order already FILLED in this 4h candle: the level gave its trade [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56].
+	// SwingRefusedISBSpent — an inside bar (entry on the trade side of the
+	// line, isbTF-F4) at an invalid level whose inside-bar order already FILLED
+	// in this 4h candle, while knob mentor_swing_isb_one_per_candle is ON (the
+	// default): the bot's [B] reading of "one setup per level" [D5.2-R19/R23 p1
+	// @13:23–13:40] — the course gives the inside bar no time limit [D5.2-R25
+	// p2 @10:23–10:51]; mentor question.
 	SwingRefusedISBSpent = "swing_isb_spent"
 	// SwingRefusedISBEntryBeyondLine (m466 P4, G63 D5.2-R26) — under
 	// mentor_swing_isb_close_back not_required an inside bar may form while
@@ -729,16 +742,40 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 		if isInside && ft.ISBFired {
 			// rv59: an inside bar is never read as a reject shape (the
 			// "only a 5m inside bar may enter" text on a bar that IS one).
-			// The level's inside-bar order FILLED and that leg has ended →
-			// the level gave its trade, NAMED swing_isb_spent. While this
-			// level's order rests or its position is open, the level's setup
-			// is live — that was named once when it latched (or it is the
-			// inside bar's own trade); nothing more to refuse.
-			if s.Pos == nil && s.Pending == nil {
+			// While this level's order rests or its position is open, the
+			// level's setup is live — that was named once when it latched (or
+			// it is the inside bar's own trade); nothing more to refuse.
+			if s.Pos != nil || s.Pending != nil {
+				return out
+			}
+			if isbSwingSpentBeforeGeometrySeam {
+				// Frozen goldens ONLY: the pre-isbTF-F4 read and text.
 				s.refuse(SwingRefusedISBSpent, "%s CT inside bar at the invalid 4h line %.2f: this level's inside-bar entry already filled in this 4h candle — one setup per level [D5.2-R19/R23 p1 @13:23–13:40, p3 @19:15–21:56]",
 					swingCT(b.OpenTime), line)
+				return out
 			}
-			return out
+			// isbTF-F4: the trade-side read comes FIRST — an inside bar whose
+			// stop order would rest beyond the line is not a setup at this
+			// level at all (G63, the same named refusal as before the first
+			// fill), whether or not the level already gave its trade. Before,
+			// such bars hundreds of points from the line were refused
+			// swing_isb_spent "at the invalid 4h line".
+			if entry, onSide := swingISBEntryOnTradeSide(ft.Approach, b, line, cfg); !onSide {
+				s.refuse(SwingRefusedISBEntryBeyondLine, "%s CT inside bar %.2f pts from the invalid 4h line %.2f: its %s stop order %.2f would rest BEYOND the line, where the stop AT the line cannot sit — \"cái điểm entry ở inside bar, basically nó vẫn nằm trên line\" [D5.2-R26/R29 p3 @07:42–08:36]",
+					swingCT(b.OpenTime), abs(entry-line), line, ft.Approach, entry)
+				return out
+			} else if !cfg.ISBRepeatAfterFill {
+				// The level's inside-bar order FILLED and that leg has ended.
+				// One filled inside-bar trade per level per 4h candle is the
+				// bot's [B] reading (knob mentor_swing_isb_one_per_candle,
+				// default ON) — the course gives the inside bar no time limit
+				// [D5.2-R25 p2 @10:23–10:51]; mentor question.
+				s.refuse(SwingRefusedISBSpent, "%s CT inside bar (%s stop order %.2f, %.2f pts from the invalid 4h line %.2f): this level's inside-bar order already FILLED in this 4h candle — the bot takes one filled inside-bar trade per level per 4h candle (knob mentor_swing_isb_one_per_candle ON; the bot's reading of \"one setup per level\" [D5.2-R19/R23 p1 @13:23–13:40], the course gives the inside bar no time limit [D5.2-R25 p2 @10:23–10:51] — mentor question)",
+					swingCT(b.OpenTime), ft.Approach, entry, abs(entry-line), line)
+				return out
+			}
+			// mentor_swing_isb_one_per_candle OFF: the next inside bar enters
+			// like the first one did (fall through).
 		}
 		if isInside {
 			// One setup per level [D5.2-R19/R23 p1 @13:23–13:40; p3
@@ -757,11 +794,15 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 					swingCT(b.OpenTime), line, open.ArmID, open.Side, open.Entry)
 				return out
 			}
-			if entry, onSide := swingISBEntryOnTradeSide(ft.Approach, b, line, cfg); !onSide {
-				// m466 P4 (G63): only reachable under not_required — a closed-back
-				// inside bar always reaches past the line. Not spent (R25).
+			if entry, onSide := swingISBEntryOnTradeSide(ft.Approach, b, line, cfg); !onSide && isbSwingSpentBeforeGeometrySeam {
 				s.refuse(SwingRefusedISBEntryBeyondLine, "%s CT inside bar at the invalid 4h line %.2f: its %s stop order %.2f would rest BEYOND the line, where the stop AT the line cannot sit — \"cái điểm entry ở inside bar, basically nó vẫn nằm trên line\" [D5.2-R26/R29 p3 @07:42–08:36]",
 					swingCT(b.OpenTime), line, ft.Approach, entry)
+				return out
+			} else if !onSide {
+				// m466 P4 (G63): only reachable under not_required — a closed-back
+				// inside bar always reaches past the line. Not spent (R25).
+				s.refuse(SwingRefusedISBEntryBeyondLine, "%s CT inside bar %.2f pts from the invalid 4h line %.2f: its %s stop order %.2f would rest BEYOND the line, where the stop AT the line cannot sit — \"cái điểm entry ở inside bar, basically nó vẫn nằm trên line\" [D5.2-R26/R29 p3 @07:42–08:36]",
+					swingCT(b.OpenTime), abs(entry-line), line, ft.Approach, entry)
 				return out
 			}
 			in, ok, why := swingISBIntent(ft, b, line, cfg)

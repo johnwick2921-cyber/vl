@@ -153,6 +153,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			BreakDirectionLock: true,                   // D4.1-R31/R33, D4.1-R55
 			SmallRangeGuard:    false,                  // D4.2-R33 — OFF since #61 final (count / margin unstated)
 			MidRangeRejectSide: true,                   // D2.2-R71
+			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
+			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -317,5 +319,22 @@ func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 func TestMentorLiveEvaluatorIsRealFillOnly(t *testing.T) {
 	if cfg := tuningTick(t, nil); !cfg.RealFillOnly {
 		t.Fatal("the live mentor evaluator must be RealFillOnly (FU-1): a candle touch must never fill a live arm")
+	}
+}
+
+// TestISBTFKnobsReachTheEvaluator — isbTF-F4/F6: the three new mentor_tuning
+// knobs reach the evaluator config through the ONE resolver (production
+// mentorTuningResolve → applyMentorTuning), unset = today's values, out of
+// range fails closed to the default and is counted.
+func TestISBTFKnobsReachTheEvaluator(t *testing.T) {
+	off := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.Swing.ISBRepeatAfterFill || c.CrossingISBLookback != 3 || c.CrossingISBMin != 2 {
+		t.Fatalf("unset isbTF knobs must keep today's values (one per candle, 3 / 2): repeat=%v lookback=%d min=%d", c.Swing.ISBRepeatAfterFill, c.CrossingISBLookback, c.CrossingISBMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{MentorSwingISBOnePerCandle: &off, CrossingISBLookback: 5, CrossingISBMin: 3}); !c.Swing.ISBRepeatAfterFill || c.CrossingISBLookback != 5 || c.CrossingISBMin != 3 {
+		t.Fatalf("stored isbTF knobs did not reach the evaluator: repeat=%v lookback=%d min=%d", c.Swing.ISBRepeatAfterFill, c.CrossingISBLookback, c.CrossingISBMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{CrossingISBLookback: 2, CrossingISBMin: 3}); c.CrossingISBLookback != 3 || c.CrossingISBMin != 2 {
+		t.Fatalf("out-of-range crossing knobs must fail closed to 3 / 2: lookback=%d min=%d", c.CrossingISBLookback, c.CrossingISBMin)
 	}
 }

@@ -229,20 +229,54 @@ func tfConflictLatchStep(mode string, box5, box15 *ISBBox, latched, forming bool
 // escalates the read one TF up [D3.4 p2 @17:07–17:49]. Conservative reading
 // (mentor question open, Q10): lookback 3 buckets, 2 crossing ISBs.
 func crossingISBs(buckets []market.Kline, lookback int) bool {
-	if len(buckets) < lookback {
+	return crossingISBsN(buckets, lookback, 2)
+}
+
+// Ranges of the isbTF-F6 crossing knobs (the trader resolver clamps to them).
+const (
+	CrossingISBLookbackMin = 3
+	CrossingISBLookbackMax = 12
+	CrossingISBMinMin      = 2
+)
+
+// crossingISBsN: the last `lookback` CLOSED buckets hold at least `minISBs`
+// inside-bar pairs, and those pairs point BOTH ways. With lookback 3 there are
+// at most 2 pairs, so (3, 2) is exactly the pre-F6 read "2 opposite ISBs in 3
+// buckets".
+func crossingISBsN(buckets []market.Kline, lookback, minISBs int) bool {
+	if lookback < CrossingISBLookbackMin || len(buckets) < lookback {
 		return false
+	}
+	if minISBs < CrossingISBMinMin {
+		minISBs = CrossingISBMinMin
 	}
 	window := buckets[len(buckets)-lookback:]
-	var dirs []Side
+	n, long, short := 0, false, false
 	for i := 1; i < len(window); i++ {
 		if isISBFirstRTHAware(window[i-1], window[i]) {
-			dirs = append(dirs, ISBDirection(window[i-1]))
+			n++
+			switch ISBDirection(window[i-1]) {
+			case SideLong:
+				long = true
+			case SideShort:
+				short = true
+			}
 		}
 	}
-	if len(dirs) < 2 {
-		return false
+	return n >= minISBs && long && short
+}
+
+// crossingISBsCfg is the crossing read the trigger escalation uses, with the
+// isbTF-F6 knobs (0 = today's 3 / 2).
+func crossingISBsCfg(cfg Config, buckets []market.Kline) bool {
+	lb, mn := cfg.CrossingISBLookback, cfg.CrossingISBMin
+	if lb == 0 {
+		lb = 3
 	}
-	return dirs[0] != dirs[len(dirs)-1]
+	if mn == 0 {
+		mn = 2
+	}
+	return crossingISBsN(buckets, lb, mn)
 }
 
 // liveBox is the box as the GATES see it: nil when absent or already broken by
@@ -318,6 +352,11 @@ var isbBoxGateLiftedByCrossingSeam = false
 // ONLY: true = a swing inside-bar order dropped before it was authored still
 // spends the level (FirstTouch.ISBFired stays latched). Production keeps false.
 var isbSwingDropSpendsLevelSeam = false
+
+// isbSwingSpentBeforeGeometrySeam restores the pre-isbTF-F4 read for frozen
+// goldens ONLY: true = swing_isb_spent is judged before the trade-side read,
+// with the old "at the invalid 4h line" texts. Production keeps false.
+var isbSwingSpentBeforeGeometrySeam = false
 
 // boxGateLiftedByCrossing reports whether the tfMin box gate is skipped this
 // tick. isbTF-F2: never — the escalation ladder D3.4-R43 [D3.4 p2 @17:07–17:49]

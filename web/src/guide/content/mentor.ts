@@ -342,6 +342,18 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.be_offset_ticks',
     live: true,
   },
+  'Swing: one filled inside-bar trade per 4h candle': {
+    settingId: 'risk_control.mentor_tuning.mentor_swing_isb_one_per_candle',
+    live: true,
+  },
+  'Crossing inside bars: lookback': {
+    settingId: 'risk_control.mentor_tuning.crossing_isb_lookback',
+    live: true,
+  },
+  'Crossing inside bars: minimum count': {
+    settingId: 'risk_control.mentor_tuning.crossing_isb_min',
+    live: true,
+  },
   'ISB candle-3 partial at any profit': {
     settingId: 'mentor_isb_c3_partial_any_profit',
     live: true,
@@ -2465,6 +2477,54 @@ export const mentor: GuideSection = {
           recommended:
             'OFF — the video shows one point past the entry but no tick count [Oct D4.2 @ 13:00–13:25].',
           whenToTouch: 'Only on an owner ruling.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Swing: one filled inside-bar trade per 4h candle',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.mentor_swing_isb_one_per_candle)',
+          what: 'After a 5m close through the 4h line made the level invalid, its inside-bar order may fill once. ON (default, today’s behaviour): after that order FILLED and its trade ended, a later inside bar of the same 4h candle whose stop order sits on the trade side of the line is refused swing_isb_spent; the refusal names the bar’s distance from the line and this knob. OFF: that inside bar enters again. The course states NO such limit — the inside bar has no time limit (“xuất hiện inside bar, tôi vô lệnh”, D5.2-R25); “one setup per level” (D5.2-R19/R23) is the bot’s reading of it, so the limit ships as a knob at today’s value (isbTF audit F4). An inside bar whose stop order would rest beyond the line is never a setup at this level: it is refused swing_isb_entry_beyond_line whatever this knob says (before the audit such bars, up to 339 pts away on 11-10, were named spent “at the invalid 4h line”).',
+          trader:
+            'An inside-bar order that was dropped before it was placed (inside a box, a stale line, the trigger zone, a trader refusal) never spends the level (isbTF-F3).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve → kernel/mentor/swing4h.go walkSwingBar (SwingCfg.ISBRepeatAfterFill = !knob)',
+          range: 'true / false',
+          systemDefault: 'ON (unset = ON — today’s behaviour)',
+          recommended:
+            'ON until the mentor answers — the limit is the bot’s [B] reading, not a course number [D5.2-R25 p2 @10:23–10:51; D5.2-R19/R23 p1 @13:23–13:40].',
+          whenToTouch: 'Only on an owner ruling or a mentor answer.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Crossing inside bars: lookback',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.crossing_isb_lookback)',
+          what: 'How many CLOSED buckets the crossing read looks back over. When the last N closed 5m candles hold inside bars pointing both ways, the 5m trigger is not valid and the 15m trigger governs (the 30m when the 15m crosses too) — D3.4-R43 “inside bars cross back and forth”. The course states no window: 3 is today’s reading (isbTF audit F6, mentor question Q10). The crossing read changes only WHICH trigger line governs; it never lifts a box gate (isbTF-F2). Over the 91-day replay of a5b7662e (isbTF audit) the escalation usually lasted exactly one 5m candle (2,024 of 3,028 episodes).',
+          trader:
+            'Unset or 0 = 3. Out of range is counted (tuning_bad_value) and ignored.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve → kernel/mentor/trigger_escalate.go governingTrigger (crossingISBsCfg)',
+          range: '3 to 12 buckets',
+          systemDefault: '3',
+          recommended:
+            '3 until the mentor answers Q10 — the course gives no number [D3.4-R43 p2 @17:07–17:49].',
+          whenToTouch: 'Only on an owner ruling or a mentor answer.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Crossing inside bars: minimum count',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.crossing_isb_min)',
+          what: 'How many inside-bar pairs (pointing BOTH ways) the crossing window must hold before the trigger escalates. The course states no count: 2 is today’s reading (isbTF audit F6, mentor question Q10). With the default lookback of 3 there are at most 2 pairs, so only 2 is possible there.',
+          trader:
+            'Unset or 0 = 2. It must be below the lookback; out of range is counted (tuning_bad_value) and ignored.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve → kernel/mentor/trigger_escalate.go governingTrigger (crossingISBsCfg)',
+          range: '2 to lookback − 1',
+          systemDefault: '2',
+          recommended:
+            '2 until the mentor answers Q10 — the course gives no number [D3.4-R43 p2 @17:07–17:49].',
+          whenToTouch: 'Only on an owner ruling or a mentor answer.',
           perSession: 'No — per strategy.',
         },
         {

@@ -915,6 +915,9 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("mentor_break_direction_lock", "trader.mentorTuningResolve (m466 D4.1-R31)", func(t mentorTuned) any { return t.BreakDirectionLock })
 	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33; nil → OFF, release #61 final)", func(t mentorTuned) any { return t.SmallRangeGuard })
 	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
+	mentorTuningRow("mentor_swing_isb_one_per_candle", "trader.mentorTuningResolve (isbTF-F4, [B] reading, nil → ON)", func(t mentorTuned) any { return t.SwingISBOnePerCandle })
+	mentorTuningRow("crossing_isb_lookback", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBLookback })
+	mentorTuningRow("crossing_isb_min", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBMin })
 
 	add(rcPath+"planner_contracts", "trader.plannerContracts (dispatch-31), clamped to resolveMaxContracts — the size the authoring stamp actually writes", func(x *effCtx) effResult {
 		// The EFFECTIVE size: min(plannerContracts(rc), resolveMaxContracts()).

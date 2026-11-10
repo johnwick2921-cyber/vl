@@ -469,6 +469,12 @@ export interface MentorTuning {
   mentor_small_range_guard?: boolean
   // default ON: mid-range, trade WITH the last box rejection [D2.2-R71].
   mentor_mid_range_reject_side?: boolean
+  // isbTF audit — numbers the course does not state, at today's values (absent = unchanged).
+  // default ON: one FILLED inside-bar trade per 4h level per 4h candle — the bot's [B] reading, mentor question [D5.2-R25].
+  mentor_swing_isb_one_per_candle?: boolean
+  // crossing read for the trigger escalation [D3.4-R43]: last N closed buckets (3..12, default 3) holding at least M inside bars of both directions (2..N-1, default 2) — mentor Q10.
+  crossing_isb_lookback?: number
+  crossing_isb_min?: number
 }
 
 export interface RiskControlConfig {

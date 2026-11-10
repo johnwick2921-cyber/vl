@@ -2114,6 +2114,21 @@ type MentorTuning struct {
 	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
 	// rejection [D2.2-R71 p3 @14:28–15:58].
 	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
+	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
+	// at today's values (unset = unchanged):
+	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar
+	//     order FILLED and ended, a later inside bar of the same 4h candle is
+	//     refused swing_isb_spent. The bot's [B] reading of "one setup per
+	//     level" [D5.2-R19/R23 p1 @13:23–13:40]; the course gives the inside bar
+	//     no time limit [D5.2-R25 p2 @10:23–10:51] — mentor question.
+	//   CrossingISBLookback / CrossingISBMin: the crossing-inside-bar read that
+	//     escalates the trigger 5m → 15m → 30m [D3.4-R43 p2 @17:07–17:49] — the
+	//     last N CLOSED buckets (0 = 3, range 3..12) holding at least M inside
+	//     bars of BOTH directions (0 = 2, range 2..N-1). The course states no
+	//     count or window — mentor question Q10.
+	MentorSwingISBOnePerCandle *bool `json:"mentor_swing_isb_one_per_candle,omitempty"`
+	CrossingISBLookback        int   `json:"crossing_isb_lookback,omitempty"`
+	CrossingISBMin             int   `json:"crossing_isb_min,omitempty"`
 
 	// Release #52 W11 — "invented-constant" knobs. Every number below is OURS,
 	// not the course's (the mentor gave none, or the owner fixed none); each

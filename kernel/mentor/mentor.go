@@ -627,6 +627,15 @@ type Config struct {
 	// uses governingTrigger; OFF = the 5m line always (pre-#60). Studio:
 	// risk_control.mentor_tuning.trigger_escalation.
 	TriggerEscalation bool
+	// CrossingISBLookback / CrossingISBMin — isbTF-F6: the crossing read that
+	// escalates the trigger (crossingISBsCfg): the last CrossingISBLookback
+	// CLOSED buckets hold at least CrossingISBMin inside bars of BOTH
+	// directions. The course states no count or window ("inside bars cross
+	// back and forth", D3.4-R43 [D3.4 p2 @17:07–17:49]); 3 / 2 is today's
+	// [B] reading, mentor question Q10. Studio JSON:
+	// risk_control.mentor_tuning.crossing_isb_lookback / crossing_isb_min.
+	CrossingISBLookback int
+	CrossingISBMin      int
 	// TFConflictEnd — CE-2 (b, OQ-2): "Đừng trade. Đợi nó thoát cả luôn"
 	// [D4.2 p1 @07:54–08:02]. "first_box" = the 15m/5m conflict ends
 	// when either box escapes; "both_boxes" (default, course-defaults-30) =
@@ -904,6 +913,8 @@ func DefaultConfig() Config {
 		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
 		TriggerEscalation:   true,                       // D3.4-R43
+		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
+		CrossingISBMin:      2,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
@@ -925,9 +936,9 @@ func DefaultConfig() Config {
 		PHLPullbackLow:     PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
-		BreakDirectionLock: true,             // G21 D4.1-R31/R33, G29 D4.1-R55
-		SmallRangeGuard:    false,            // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
-		MidRangeRejectSide: true,             // G43 D2.2-R71
+		BreakDirectionLock: true,            // G21 D4.1-R31/R33, G29 D4.1-R55
+		SmallRangeGuard:    false,           // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
+		MidRangeRejectSide: true,            // G43 D2.2-R71
 	}
 }
 
