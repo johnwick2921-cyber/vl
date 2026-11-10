@@ -10508,3 +10508,17 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - Every `return cancel(...)` / early `return` in a setup path must name its reason once per candle.
 - **Pin:** `TestPHL1CourseWorkedExamples` (WE6/WE7/WE10 on the real bars, production Tick + rollingPHLTick), `TestPHL1WE9TargetIsTheNearestOldLow`, `TestPHL1KIsTheOnlyWidthThatReproducesTheExamples`, `TestPHL1NoStaleFarTarget` (10-23 03:15, 11-09 21:44), `TestPHL5NoOldExtremeIsNamedOncePerCandle`, `TestPHL5LevelTouchOwnsIsNamedOncePerCandle`, `TestPHL1OldExtremeKnobReachesTheEvaluator` (trader).
 - **Reference:** `kernel/mentor/phl_tape_extreme.go` (`phlTapeOldExtreme`, `rollingSilentCancelSeam` frozen-golden seam), `kernel/mentor/rolling_phl.go` (`rollingPHLTick` steps 2–3), knob `risk_control.mentor_tuning.phl_old_extreme_1m_k` (default 4; the course states no width — 4 is the only k that reproduces all four examples). The LEVEL path's PHL/PLH (touch at a drawn level) still reads the 5m/15m set: open follow-up.
+
+## CLASS NN (assigned at merge) — a TWIN builder left on the old rule: one course object built by two functions, the rule rewritten in one, and the other's comment still claiming "the SAME rule" (phl audit PHL-2, feat/mentor-detector-history-audit)
+
+- **Symptom:**
+  - m473 B2 rewrote the FTGH/FTGL pairing in `BoxesBuild` (`pickBoxPair`: two swings LEVEL within flatNearPts, anchored on peak 1 [OctD3.3-R23/R25/R28/R30]). The post-escape new zone (`boxAfterEscapeBuildFrame`, 72% of all boxes over 91 days) kept the September rule — the most extreme swing paired with the nearest later non-exceeding swing, no levelness test — while its doc comment said "The construction is the SAME rule as BoxesBuild".
+  - 519 of 917 post-escape boxes paired swings further apart than flatNearPts (12 of 359 latched boxes). 11-10 07:52 FTGL 27,598.50–27,691.00 was a V reversal (partner 84.25 pts higher); the course's own E10 (10-30) box 28,614.75–28,626.50 at 10:43 was drawn as 28,612.50–28,619.00 at 10:47.
+  - `pickBoxPair` itself paired the extreme with the level swing NEAREST IN TIME, not the first level peak ("First Touch is the best" [OctD3.3-R31 @ 20:33]).
+- **Root cause:**
+  - The rule lived in two functions; the wave that changed it found one call site. The comment asserting equivalence was prose no test could see.
+- **Probe:**
+  - For every course object, list EVERY function that constructs it (`grep` the struct literal and the constructor) and diff their selection rules. A comment that says "same rule as X" must be backed by a call to X.
+  - Replay the course's worked example through the production tick for EACH construction path (latched and post-escape), not just the first.
+- **Pin:** `TestPHL2E10PostEscapeFTGLIsTheCourseBox`, `TestPHL2PeakOneAnchorsThePostEscapeBox`, `TestPHL2NoVReversalPostEscapeBox` (cmd/mentor-replay, production seed + `mentorEvalOnce`).
+- **Reference:** `kernel/mentor/box.go` (`pickBoxPairAt` — extremeOnly for the post-escape zone; `boxAfterEscapeBuildFrame`; `boxPairPrePHL2Seam`, frozen-golden seam only).

@@ -309,7 +309,24 @@ func swingConfirmed(bars []market.Kline, s swingPairAt) bool {
 // false to reproduce the September construction they were recorded under.
 var boxPeak1Level = true
 
+// boxPairPrePHL2Seam restores the pre-PHL-2 box pairing for the frozen
+// tick-identity goldens recorded before the phl audit: the level partner
+// NEAREST IN TIME to the extreme (not the first level peak), and the
+// post-escape box built with the September extreme + nearest-non-exceeding
+// rule (no levelness test, no peak-1 anchor). Never set in production.
+var boxPairPrePHL2Seam = false
+
 func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind) (int, int) {
+	return pickBoxPairAt(tfBars, seq, role, false)
+}
+
+// pickBoxPairAt is pickBoxPair; extremeOnly (the post-escape new zone, PHL-2)
+// pairs the EXTREME swing only and never falls back to a less extreme level
+// pair: after an escape the new zone is where price "failed to go lower" —
+// "nó rớt xuống đây, nó bật ngược lên, nó tạo cái failure to go lower dưới
+// này" [D3.4 p3 recovered2 @00:00–00:21] — so a level pair above a lower low
+// (10-30: two lows ~28,669 above the 09:25 low 28,614.75) is no new FTGL.
+func pickBoxPairAt(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, extremeOnly bool) (int, int) {
 	var conf []int
 	for i, s := range seq {
 		if s.kind == role && swingConfirmed(tfBars, s) {
@@ -350,12 +367,27 @@ func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind
 				if math.Abs(c.price-ex.price) > flatNearPts(tfBars, later) {
 					continue
 				}
+				if !boxPairPrePHL2Seam {
+					// PHL-2 (phl audit): the FIRST level peak of the formation is
+					// the standard — "Tui lấy cái râu đỉnh 1 làm chuẩn ... chuyện
+					// bắt buộc" [OctD3.3-R30 @ 19:31]; "First Touch is the best"
+					// [R31 @ 20:33]. The earliest confirmed swing level with the
+					// extreme pairs with it (10-30 E10: the 09:25 bottom 28,614.75
+					// with the 10:42 one, not a later partner nearest in time).
+					if best < 0 || c.idx < seq[best].idx {
+						best = ci
+					}
+					continue
+				}
 				if best < 0 || absInt(c.idx-ex.idx) < absInt(seq[best].idx-ex.idx) ||
 					(absInt(c.idx-ex.idx) == absInt(seq[best].idx-ex.idx) && c.idx < seq[best].idx) {
 					best = ci
 				}
 			}
 			if best < 0 {
+				if extremeOnly {
+					return -1, -1
+				}
 				continue
 			}
 			if seq[best].idx < ex.idx {
@@ -768,6 +800,62 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 		role = kernel.KindSWGH
 	}
 	seq := swings3(tfBars)
+	var extreme, nearest int
+	if !boxPairPrePHL2Seam {
+		// PHL-2 (phl audit): the new zone is drawn with the SAME pairing as the
+		// latched box (pickBoxPair: two confirmed swings LEVEL within
+		// flatNearPts — the horizontal-line test [OctD3.3-R23 @ 14:20] — the
+		// box anchored on peak 1's wick [R25/R28/R30 @ 15:46–19:31], FTGL the
+		// mirror [R54 @ 43:14]), restricted to swings formed strictly after
+		// the escape. Before PHL-2 this frame paired the most extreme swing with
+		// the nearest later swing that did not exceed it, whatever the gap: 519
+		// of 917 post-escape boxes paired swings further apart than
+		// flatNearPts, e.g. the 11-10 07:52 FTGL 27,598.50–27,691.00 (a V
+		// reversal, the partner 84.25 pts higher).
+		var after []swingPairAt
+		for _, s := range seq {
+			if s.idx > esc {
+				after = append(after, s)
+			}
+		}
+		seq = after
+		extreme, nearest = pickBoxPairAt(tfBars, seq, role, true)
+	} else {
+		extreme, nearest = boxAfterEscapePairPrePHL2(tfBars, seq, esc, role)
+	}
+	if extreme < 0 || nearest < 0 {
+		return nil
+	}
+	b := boxFromPair(tfBars, seq[extreme], seq[nearest])
+	if b == nil {
+		return nil
+	}
+	// Outside the old range only — never a zone inside the standing range.
+	if old.Kind == FTGL && b.Top > old.Bottom {
+		return nil
+	}
+	if old.Kind == FTGH && b.Bottom < old.Top {
+		return nil
+	}
+	b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
+	b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	if b.Kind == FTGL {
+		b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
+	}
+	b.FormedAt = seq[nearest].idx + 1
+	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
+	b.Flipped = escaped(tfBars, *b, b.FormedAt)
+	if buildCfg.TF != baseCfg.TF && buildCfg.TF == "2m" {
+		b.TF = "2m"
+		refreshBox(bars, b, baseCfg) // FormedAt/Flipped onto the 1m window
+	}
+	return b
+}
+
+// boxAfterEscapePairPrePHL2 is the pre-PHL-2 post-escape pairing (frozen
+// goldens only, boxPairPrePHL2Seam): the most extreme confirmed swing after the
+// escape and the nearest later confirmed swing that does not exceed it.
+func boxAfterEscapePairPrePHL2(tfBars []market.Kline, seq []swingPairAt, esc int, role kernel.LevelKind) (int, int) {
 	extreme := -1
 	for i, s := range seq {
 		if s.idx <= esc || s.kind != role {
@@ -788,7 +876,7 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 		}
 	}
 	if extreme < 0 {
-		return nil
+		return -1, -1
 	}
 	nearest := -1
 	for i, s := range seq {
@@ -823,33 +911,7 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 			nearest = i
 		}
 	}
-	if nearest < 0 {
-		return nil
-	}
-	b := boxFromPair(tfBars, seq[extreme], seq[nearest])
-	if b == nil {
-		return nil
-	}
-	// Outside the old range only — never a zone inside the standing range.
-	if old.Kind == FTGL && b.Top > old.Bottom {
-		return nil
-	}
-	if old.Kind == FTGH && b.Bottom < old.Top {
-		return nil
-	}
-	b.Touches = countBoxTouches(tfBars, *b, seq[extreme].idx, cfg)
-	b.Key = "ftgh:" + fnum(b.Top) + ":" + fnum(b.Bottom)
-	if b.Kind == FTGL {
-		b.Key = "ftgl:" + fnum(b.Top) + ":" + fnum(b.Bottom)
-	}
-	b.FormedAt = seq[nearest].idx + 1
-	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
-	b.Flipped = escaped(tfBars, *b, b.FormedAt)
-	if buildCfg.TF != baseCfg.TF && buildCfg.TF == "2m" {
-		b.TF = "2m"
-		refreshBox(bars, b, baseCfg) // FormedAt/Flipped onto the 1m window
-	}
-	return b
+	return extreme, nearest
 }
 
 // countBoxTouches counts closed candles after formation whose wick reached

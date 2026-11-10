@@ -265,9 +265,10 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 		cfg.FiveMinBoxSource = FiveMinBoxNewest
 	}
 	cfg.PHLOldExtreme1mK = 0 // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
-	prevP5 := rollingSilentCancelSeam
+	prevP5, prevP2 := rollingSilentCancelSeam, boxPairPrePHL2Seam
 	rollingSilentCancelSeam = true // phl audit PHL-5: … and the named rolling cancels
-	t.Cleanup(func() { rollingSilentCancelSeam = prevP5 })
+	boxPairPrePHL2Seam = true      // phl audit PHL-2: … and the nearest-in-time / September post-escape box pairing
+	t.Cleanup(func() { rollingSilentCancelSeam, boxPairPrePHL2Seam = prevP5, prevP2 })
 	prev, prevF1, prevF2, prevF3, prevF4 := isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam, isbSwingDropSpendsLevelSeam, isbSwingSpentBeforeGeometrySeam
 	isbBoxSameTickRebuild = false
 	isbTriggerHiddenByBox5m = true         // isbTF-F1: the frozen goldens predate the trigger-inside-the-box read
