@@ -93,6 +93,7 @@ func loadBars(db *sql.DB, symbol string, tfs []string, shiftImport bool) (*barSe
 			imp := r.Src == store.BarSourceHistoricalImport && r.Conv != store.ConventionEpochFloorOpen
 			if shiftImport && imp {
 				r.T -= span
+				r.Conv = store.ConventionEpochFloorOpen // shifted once: the AllBarsOn re-stamp must not move it again
 				bs.importShifted[tf]++
 			}
 			k := key{contract, r.T}
@@ -233,7 +234,10 @@ func (s asOfSource) AllBarsOn(symbol, tf, contract string) ([]store.BarHistoryDB
 	if symbol != s.symbol {
 		return nil, nil
 	}
-	return toDB(symbol, tf, contract, s.rows(tf, contract)), nil
+	// The SAME read-side re-stamp store.BarHistoryStore.AllBarsOn applies
+	// (levels audit LL-3); rows already shifted by -import-shift carry
+	// epoch_floor_open and are left alone.
+	return store.OpenStampImportRows(toDB(symbol, tf, contract, s.rows(tf, contract)), tf), nil
 }
 
 // window returns the newest n closed bars of the current contract as of AsOf —
