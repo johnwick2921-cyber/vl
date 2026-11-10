@@ -211,6 +211,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.key_level_break_retest',
     live: true,
   },
+  'Key level: history from the current contract': {
+    settingId: 'risk_control.mentor_tuning.key_level_history_source',
+    live: true,
+  },
   'Key level: Uno Reverse after a hold': {
     settingId: 'risk_control.mentor_tuning.uno_key_levels',
     live: true,
@@ -1651,6 +1655,21 @@ export const mentor: GuideSection = {
           recommended: 'on — October [OctD5.2-R20/R24/R25 @07:42–14:16].',
           whenToTouch:
             'Only on a mentor answer — off restores the September first-touch ISB-only rule.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Key level: history from the current contract',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.key_level_history_source)',
+          what: 'Levels audit LL-4. The key-level walk reads the 1H RTH candles back through every stored contract. Before LL-4 every candle older than the roll (MNQ 09-26 → 12-26 on 09-11/09-14) was the OLDER contract shifted by ONE measured roll gap (291.0). The mentor draws on MNQZ2026’s own chart, scrolling back to the late-July lows [OctD5.2-R16 @06:18] — 28,154.50, 27,817.75, 27,997.75, 27,753.25 — and the basis drifts: the 07-29 10:30 candle is GREEN on MNQ 12-26 (O 27,825.50 C 27,831.25, a level where he drew 27,817.75) and RED on MNQ 09-26 + 291 (no level at all); 07-29 13:30 is 28,060.00 on 12-26 (he drew 28,062.25). own (default) = every pre-roll candle the current contract’s native bars cover COMPLETELY is rebuilt from them — every 1m bar, else every 15m quarter, else both 30m halves (the 14:30 candle ends 15:15, so it is never read from 30m); anything not fully covered keeps the back-adjusted candle, so there is never a hole. The boot log names how many candles came from each source (“key-level history: N pre-roll 1H RTH candles rebuilt from MNQ 12-26’s own bars …”). stitched = every pre-roll candle back-adjusted (pre-LL-4). [B] Part of the drift is thin back-month prints — but those are the prints the mentor’s chart shows.',
+          trader: 'own — the mentor’s own chart [OctD5.2-R16 @06:18].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (KeyLevelHistorySource) · trader/mentor_tick.go mentorFullKeyLevelHistory → kernel/mentor/key_level_own_history.go OwnContractKeyLevel1H',
+          range: 'own / stitched',
+          systemDefault: 'own',
+          recommended: 'own — OctD5.2-R16 @06:18.',
+          whenToTouch:
+            'Rarely — stitched only to restore the pre-LL-4 back-adjusted history.',
           perSession: 'No — per strategy.',
         },
         {

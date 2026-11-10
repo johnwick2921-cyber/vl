@@ -135,7 +135,7 @@ func run(o opts, stdout io.Writer) error {
 		return fmt.Errorf("calendar: %w", err)
 	}
 	t0 := time.Now()
-	bs, err := loadBars(db, "MNQ", []string{"1m", "5m", "1h"}, o.importShift)
+	bs, err := loadBars(db, "MNQ", []string{"1m", "5m", "15m", "30m", "1h"}, o.importShift) // 15m/30m: the LL-4 own-contract key-level candles
 	if err != nil {
 		return fmt.Errorf("bars: %w", err)
 	}

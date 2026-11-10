@@ -276,6 +276,15 @@ type Config struct {
 	// keep-the-newer prune applies either way. Mentor question (LL-1).
 	// Studio JSON: risk_control.mentor_tuning.key_level_delete_on_1h_close.
 	KeyLevelDeleteOn1HClose string
+	// KeyLevelHistorySource — levels audit LL-4. "own" (default): every 1H RTH
+	// key-level candle the CURRENT contract's native bars fully cover (1m, else
+	// 15m, else 30m) is built from its own prints — the mentor draws on
+	// MNQZ2026's own chart back to late July [OctD5.2-R16 @06:18]; the rest
+	// keeps the back-adjusted older contract. "stitched": every pre-roll candle
+	// from the older contract + the one measured roll gap (pre-LL-4).
+	// Applied by the trader's seed read (mentorFullKeyLevelHistory).
+	// Studio JSON: risk_control.mentor_tuning.key_level_history_source.
+	KeyLevelHistorySource string
 
 	EMAPeriod34  int // default 34
 	EMAPeriod9   int // default 9
@@ -878,6 +887,7 @@ func DefaultConfig() Config {
 		KeyLevelRTHOnly:         true,
 		KeyLevelPrunePts:        20,
 		KeyLevelDeleteOn1HClose: KeyLevelDeleteOn1HCloseOff, // LL-1: October keeps a level a 1H body crossed [OctD5.2-R13..R20 @04:10–07:42]
+		KeyLevelHistorySource:   KeyLevelHistoryOwn,         // LL-4: the current contract's own candles [OctD5.2-R16 @06:18]
 
 		EMAPeriod34:  34,
 		EMAPeriod9:   9,

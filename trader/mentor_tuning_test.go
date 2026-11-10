@@ -159,6 +159,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
+			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -385,6 +386,22 @@ func TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator(t *testing.T) {
 	} {
 		if got := tuningTick(t, &store.MentorTuning{KeyLevelBreakRetest: c.stored}).KeyLevelBreakRetest; got != c.want {
 			t.Errorf("stored key_level_break_retest=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator — levels audit LL-4:
+// unset = own, "stitched" = the pre-LL-4 back-adjusted history, a bad value
+// fails closed to own — through the production resolver.
+func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelHistoryOwn},
+		{"stitched", mentor.KeyLevelHistoryStitched},
+		{"own", mentor.KeyLevelHistoryOwn},
+		{"native", mentor.KeyLevelHistoryOwn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelHistorySource: c.stored}).KeyLevelHistorySource; got != c.want {
+			t.Errorf("stored key_level_history_source=%q → Config %q, want %q", c.stored, got, c.want)
 		}
 	}
 }

@@ -45,6 +45,11 @@ type Contract1M struct {
 	Contract string
 	Bars     []market.Kline // 1m, ascending
 	Bars1H   []market.Kline // native 1h, ascending (whole-hour aligned)
+	// Bars15m / Bars30m — the contract's native 15m / 30m (levels audit LL-4):
+	// read for the NEWEST contract only, to rebuild the pre-roll 1H RTH
+	// candles from its own prints (OwnContractKeyLevel1H).
+	Bars15m []market.Kline
+	Bars30m []market.Kline
 }
 
 // RollGap records one measured roll: the NATIVE pair gap (median of
@@ -224,6 +229,7 @@ type RollStitcher struct {
 	headRollDay  string         // roll day of the head contract
 	headContract string
 	headPreDense bool    // LL-5: the head has no dense session yet (headRollDay = preDenseRollDay)
+	newestFrom   int64   // LL-4: the first Add's cut — the series reads the newest contract strictly after it
 	cumGap       float64 // cumulative gap from the head contract to the newest
 	gaps         []RollGap
 	stoppedAt    string
@@ -314,6 +320,9 @@ func (s *RollStitcher) Add(older Contract1M) bool {
 	head := trimAfter(s.stitched1m, cutTime) // strictly after the older's last bar
 	s.seamCovered = append(s.seamCovered, seamCoveredBy(s.stitched1m, older.Bars, cutTime)...)
 	s.stitched1m = append(pre, head...)
+	if len(s.gaps) == 0 {
+		s.newestFrom = cutTime + 1
+	}
 	s.gaps = append(s.gaps, pair)
 	s.head1h = older.Bars1H
 	s.headRollDay = olderRD
@@ -364,6 +373,11 @@ func seamCoveredBy(head, older []market.Kline, cutTime int64) []market.Kline {
 	}
 	return out
 }
+
+// NewestFrom is the instant from which the stitched series is the newest
+// contract's own bars (LL-4): the first roll's cut + 1 ms; 0 when nothing was
+// stitched (the whole series is the newest contract).
+func (s *RollStitcher) NewestFrom() int64 { return s.newestFrom }
 
 // SeamCovered returns, ascending, the minutes some stitched contract stores
 // that the stitched series itself lacks (see seamCovered). Judge a minute

@@ -2213,6 +2213,11 @@ type MentorTuning struct {
 	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
 	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
 	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
+	// levels audit LL-4: "own" (unset) — every pre-roll 1H RTH key-level candle
+	// the current contract's native bars fully cover (1m, else 15m, else 30m)
+	// is built from its own prints [OctD5.2-R16 @06:18]; "stitched" — the older
+	// contract shifted by the one measured roll gap (pre-LL-4).
+	KeyLevelHistorySource string `json:"key_level_history_source,omitempty"`
 	// levels audit LL-2: "on" (unset) — a key level whose FIRST touch closes
 	// through it flips its role (level_broken_retest) and the first retest
 	// candle from the new side that closes back on it is the PHL/PLH reference

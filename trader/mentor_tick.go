@@ -2244,6 +2244,21 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh mentorSeedBarSource) (stitche
 	if !ok {
 		return nil, nil, nil, nil, "", nil
 	}
+	// levels audit LL-4: the newest contract's native 15m / 30m rebuild the
+	// pre-roll 1H RTH candles from its OWN prints (knob key_level_history_source).
+	cfg := mentor.DefaultConfig()
+	if at.mentorEval != nil {
+		cfg = at.mentorEval.Cfg
+	}
+	ownHistory := mentor.KeyLevelHistoryOwnOn(cfg)
+	if ownHistory {
+		if rows, err := bh.AllBarsOn("MNQ", "15m", newest.Contract); err == nil {
+			newest.Bars15m = storeBarsToKlines(rows, 15*60_000)
+		}
+		if rows, err := bh.AllBarsOn("MNQ", "30m", newest.Contract); err == nil {
+			newest.Bars30m = storeBarsToKlines(rows, 30*60_000)
+		}
+	}
 	s := mentor.NewRollStitcher(newest)
 	contracts = append(contracts, newest)
 	for i := len(spans) - 2; i >= 0; i-- {
@@ -2257,6 +2272,12 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh mentorSeedBarSource) (stitche
 		contracts = append(contracts, c)
 	}
 	stitched1m, full1HRTH, gaps, stoppedAt = s.Result()
+	if ownHistory && s.NewestFrom() > 0 {
+		var n map[string]int
+		full1HRTH, n = mentor.OwnContractKeyLevel1H(full1HRTH, newest, s.NewestFrom())
+		at.logInfof("🧑‍🏫 key-level history: %d pre-roll 1H RTH candles rebuilt from %s's own bars (1m %d · 15m %d · 30m %d), the rest back-adjusted [levels audit LL-4, OctD5.2-R16 @06:18]",
+			n["1m"]+n["15m"]+n["30m"], newest.Contract, n["1m"], n["15m"], n["30m"])
+	}
 	seamBars = s.SeamBars() // bars a contract stores that the cut dropped: not lost (round 4, D1), and folded into the swing line (m456)
 	// Oldest-first, so the boot line reads left-to-right from the earliest date.
 	for i, j := 0, len(contracts)-1; i < j; i, j = i+1, j-1 {

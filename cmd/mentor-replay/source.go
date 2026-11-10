@@ -37,7 +37,7 @@ type barSet struct {
 	importDropped map[string]int
 }
 
-var tfMs = map[string]int64{"1m": 60_000, "5m": 300_000, "1h": 3_600_000}
+var tfMs = map[string]int64{"1m": 60_000, "5m": 300_000, "15m": 900_000, "30m": 1_800_000, "1h": 3_600_000}
 
 // openReadOnly opens the SQLite file strictly read-only (mode=ro): no pragma,
 // no migration, no write can reach the live database through this handle.

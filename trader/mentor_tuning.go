@@ -93,7 +93,8 @@ type mentorTuned struct {
 	CrossingISBLookback     int
 	CrossingISBMin          int
 	KeyLevelDeleteOn1HClose string // LL-1
-	KeyLevelBreakRetest string // LL-2
+	KeyLevelBreakRetest     string // LL-2
+	KeyLevelHistorySource   string // LL-4
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -135,7 +136,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		FlagWallTarget:              d.FlagWallTarget,
 		BoxNewZoneAfterEscape:       d.BoxNewZoneAfterEscape,
 		SwingISBOnePerCandle:        !d.Swing.ISBRepeatAfterFill,
-		KeyLevelBreakRetest: d.KeyLevelBreakRetest,
+		KeyLevelHistorySource:       d.KeyLevelHistorySource,
+		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -337,6 +339,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	// m466 P2 (release #61): same contract — unset = the course default, a
 	// value outside the enum fails closed to the default (tuning_bad_value).
 	enum(t.UnoKeyLevels, &out.UnoKeyLevels, mentor.UnoKeyLevelsOn, mentor.UnoKeyLevelsOff)
+	// levels audit LL-4: unset = own; a value outside the enum fails closed to
+	// the default, counted (tuning_bad_value).
+	enum(t.KeyLevelHistorySource, &out.KeyLevelHistorySource, mentor.KeyLevelHistoryOwn, mentor.KeyLevelHistoryStitched)
 	// levels audit LL-2: unset = on (October break-and-retest); a value
 	// outside the enum fails closed to the default, counted (tuning_bad_value).
 	enum(t.KeyLevelBreakRetest, &out.KeyLevelBreakRetest, mentor.KeyLevelBreakRetestOn, mentor.KeyLevelBreakRetestOff)
@@ -430,7 +435,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.CrossingISBLookback = t.CrossingISBLookback         // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                   // isbTF-F6
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
-	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest // LL-2
+	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest         // LL-2
+	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource     // LL-4
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

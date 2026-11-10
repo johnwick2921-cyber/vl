@@ -364,3 +364,43 @@ func TestLL5SeedBeforeTheFirstDenseSessionStillStitches(t *testing.T) {
 		t.Errorf("want the 09-08..09-14 RTH candles stitched (>= 30), got %d", len(b1h))
 	}
 }
+
+// TestLL4OwnCandleNeedsEveryBar — levels audit LL-4 coverage rule: a stitched
+// candle is replaced only when the newest contract stores EVERY bar of it (1m,
+// else 15m, else 30m); a missing quarter falls through to 30m, a missing half
+// keeps the stitched candle; the 14:30 candle (ends 15:15) never reads 30m;
+// candles at or after `before` (the newest's own stretch) are never touched.
+func TestLL4OwnCandleNeedsEveryBar(t *testing.T) {
+	c0930 := llCT(2026, 7, 29, 9, 30)
+	c1430 := llCT(2026, 7, 29, 14, 30)
+	st := []market.Kline{
+		{OpenTime: c0930, CloseTime: c0930 + 3_600_000 - 1, Open: 1, High: 9, Low: 0, Close: 2},
+		{OpenTime: c1430, CloseTime: llCT(2026, 7, 29, 15, 15) - 1, Open: 1, High: 9, Low: 0, Close: 2},
+	}
+	k := func(ms int64, o, h, l, c float64) market.Kline {
+		return market.Kline{OpenTime: ms, Open: o, High: h, Low: l, Close: c}
+	}
+	q := int64(15 * 60_000)
+	newest := Contract1M{
+		Bars15m: []market.Kline{k(c0930, 10, 12, 9, 11), k(c0930+q, 11, 13, 10, 12), k(c0930+3*q, 12, 15, 11, 14)}, // 09:45 missing
+		Bars30m: []market.Kline{k(c0930, 10, 13, 9, 12), k(c0930+2*q, 12, 15, 11, 14), k(c1430, 20, 21, 19, 20), k(c1430+2*q, 20, 22, 19, 21)},
+	}
+	out, n := OwnContractKeyLevel1H(st, newest, c1430+1)
+	if out[0].Open != 10 || out[0].High != 15 || out[0].Close != 14 || n["30m"] != 1 || n["15m"] != 0 {
+		t.Errorf("09:30: a missing 15m quarter must fall to the complete 30m pair: %+v %v", out[0], n)
+	}
+	if out[1] != st[1] {
+		t.Errorf("14:30 (ends 15:15): 30m can never cover it, keep the stitched candle: %+v", out[1])
+	}
+	if out[0].OpenTime != c0930 || out[0].CloseTime != st[0].CloseTime {
+		t.Errorf("the candle keeps the stitched open/close times: %+v", out[0])
+	}
+	newest.Bars30m = newest.Bars30m[1:] // 09:30 half missing
+	if out, _ := OwnContractKeyLevel1H(st, newest, c1430+1); out[0] != st[0] {
+		t.Errorf("no complete own candle → the stitched one stays: %+v", out[0])
+	}
+	newest.Bars30m = append([]market.Kline{k(c0930, 10, 13, 9, 12)}, newest.Bars30m...)
+	if out, _ := OwnContractKeyLevel1H(st, newest, c0930); out[0] != st[0] {
+		t.Errorf("a candle at/after `before` is the newest's own stretch — never rebuilt: %+v", out[0])
+	}
+}
