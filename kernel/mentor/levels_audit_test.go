@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"compress/gzip"
 	"encoding/csv"
 	"os"
 	"strconv"
@@ -309,5 +310,57 @@ func TestLL2BreakThenFirstRetestArmsTheRoleReversal(t *testing.T) {
 	}
 	if phl1829[KeyLevelBreakRetestOff] != 0 {
 		t.Errorf("knob off: no PLH read at the ISB-only level (got %d phl_* verdicts at 18:29)", phl1829[KeyLevelBreakRetestOff])
+	}
+}
+
+// TestLL5SeedBeforeTheFirstDenseSessionStillStitches — levels audit LL-5 (P2).
+// Draw levels going back months; there is no reset at a contract roll
+// [OctD5.2-R13/R14/R16 @04:10–06:40]. As of 09-14 17:00 CT (the 09-15 seed)
+// MNQ 12-26 has no session day with >= 1000 1m bars yet, so NewRollStitcher
+// stopped at once ("stopped at MNQ 12-26: no measured gap", 6 1H RTH candles,
+// "key levels 1 live" in the replay). Fixture: the real MNQ 09-26 / 12-26 1m +
+// native 1h rows from 09-08 to 09-14 17:00 CT as AllBarsOn reads them (imports
+// open-stamped), exported read-only. Production StitchKeyLevelHistory must
+// measure the Sep→Dec gap on the last overlapping native-1h evening and stitch
+// the Sep RTH candles.
+func TestLL5SeedBeforeTheFirstDenseSessionStillStitches(t *testing.T) {
+	f, err := os.Open("testdata/ll5_mnq_sep_dec_1m1h_asof_20260914_1700ct.csv.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	zr, err := gzip.NewReader(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recs, err := csv.NewReader(zr).ReadAll()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cs := map[string]*Contract1M{"MNQ 09-26": {Contract: "MNQ 09-26"}, "MNQ 12-26": {Contract: "MNQ 12-26"}}
+	for _, r := range recs {
+		ms, _ := strconv.ParseInt(r[2], 10, 64)
+		pf := func(i int) float64 { v, _ := strconv.ParseFloat(r[i], 64); return v }
+		span := int64(60_000)
+		if r[1] == "1h" {
+			span = 3_600_000
+		}
+		k := market.Kline{OpenTime: ms, Open: pf(3), High: pf(4), Low: pf(5), Close: pf(6), CloseTime: ms + span - 1}
+		if r[1] == "1h" {
+			cs[r[0]].Bars1H = append(cs[r[0]].Bars1H, k)
+		} else {
+			cs[r[0]].Bars = append(cs[r[0]].Bars, k)
+		}
+	}
+	_, b1h, gaps, stopped := StitchKeyLevelHistory([]Contract1M{*cs["MNQ 09-26"], *cs["MNQ 12-26"]})
+	t.Logf("%s", KeyLevelHistoryLine([]Contract1M{*cs["MNQ 09-26"], *cs["MNQ 12-26"]}, b1h, gaps, stopped))
+	if stopped != "" || len(gaps) != 1 {
+		t.Fatalf("the Sep→Dec roll must be stitched before Dec's first dense session: stopped=%q gaps=%+v (%d 1H RTH candles)", stopped, gaps, len(b1h))
+	}
+	if g := gaps[0].Gap; g < 280 || g > 300 {
+		t.Errorf("the measured Sep→Dec gap %.2f is not the ~291 roll basis (09-11 evening 291.0)", g)
+	}
+	if len(b1h) < 30 {
+		t.Errorf("want the 09-08..09-14 RTH candles stitched (>= 30), got %d", len(b1h))
 	}
 }
