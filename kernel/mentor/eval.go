@@ -2700,7 +2700,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					// SAME-direction 1m ISB — compute the verdict up front so an
 					// allowed ISB still falls through to the emit below.
 					boxBlocked := false
-					if e.box5() != nil && !crossingISBs(cb5, 3) {
+					// ISB5-F2: a MERGED box has one direction (OctD4.3-R59) and
+					// the 5m is the only big frame (OctD4.3-R9) — crossing 5m
+					// pairs inside it do not lift the R70 gate [Oct D4.3 @ 68:24].
+					if e.box5() != nil && (e.Cfg.FiveMinBoxSource == FiveMinBoxMerge || !crossingISBs(cb5, 3)) {
 						if allowed, r := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 							boxBlocked, _ = true, r
 						}
@@ -2919,7 +2922,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// B6: plus the SAME ISB-box gates (R5 / D4.1-25 / D4.2-07) and the
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
-			if e.box5() != nil && !crossingISBs(cb5, 3) {
+			if e.box5() != nil && (e.Cfg.FiveMinBoxSource == FiveMinBoxMerge || !crossingISBs(cb5, 3)) { // ISB5-F2
 				if allowed, _ := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
 					boxBlocked = true
 				}
