@@ -10522,3 +10522,15 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - Replay the course's worked example through the production tick for EACH construction path (latched and post-escape), not just the first.
 - **Pin:** `TestPHL2E10PostEscapeFTGLIsTheCourseBox`, `TestPHL2PeakOneAnchorsThePostEscapeBox`, `TestPHL2NoVReversalPostEscapeBox` (cmd/mentor-replay, production seed + `mentorEvalOnce`).
 - **Reference:** `kernel/mentor/box.go` (`pickBoxPairAt` — extremeOnly for the post-escape zone; `boxAfterEscapeBuildFrame`; `boxPairPrePHL2Seam`, frozen-golden seam only).
+
+## CLASS NN (assigned at merge) — a deck / September rule kept as code after the October lesson's own worked chart contradicts it, because the rule was checked against the deck's TEXT and never against the mentor's drawn levels on the real bars (levels audit LL-1/LL-2, feat/mentor-detector-history-audit)
+
+- **Symptom:**
+  - LL-1: the bot deleted a key level for good once a later 1H RTH candle's body closed through it (deck slide 31 step 4). On the 11-04 seed it had deleted 11 of the 14 lines the mentor shows on his 11-03 20:38 CT chart (frame s_00333) and the WE3 quiz level 27,997.75 he trades at 19:08 that evening [OctD5.2-R13..R20 @04:10–07:42; WE3 @09:12–10:05]. 28 levels live of 96 drawn.
+  - LL-2: a key level whose first touch closed through it became ISB-only for the session, so the October break-and-retest (role reversal) at 28,154.50 on 11-03 18:26–18:30 [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16] could never arm.
+- **Root cause:** the code cites the September/deck rule; the October notes say D5.2 never mentions it, and nobody rebuilt the mentor's drawn stack from the bars to see whether the rule holds.
+- **Probe:**
+  - For every rule a kernel comment cites from the deck or September, look for an October worked example on the same object (a level, a box, a line) and replay the production path over that example's real bars.
+  - A rule that deletes or disables a course object must be checked against the mentor's own chart at a known clock time: count what he shows, count what the bot holds.
+- **Pin:** `TestLL1OctoberKeepsKeyLevelsThroughA1HBodyClose` (production SeedFull over the live 11-04 seed candles: all ten mentor lines live by default; knob `key_level_delete_on_1h_close=on` deletes them), `TestLL1TickKeepsTheLevelThe1430BodyCrossed` (production Tick over the real 10-29 14:30 candle).
+- **Reference:** `kernel/mentor/key_levels.go` (`levelDeletedBy1HBody`, `keyLevelDeleteOn1HClose`), `kernel/mentor/eval.go` (`advanceKeyLevelDeletion` gate), `kernel/mentor/seed.go` (`seedHistoryState`).

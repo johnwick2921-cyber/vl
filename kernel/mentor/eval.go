@@ -2116,7 +2116,11 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// closed through a key level DELETES it; a 1H wick through does not. The
 	// deletion is permanent for the session and the level leaves the set at
 	// once — it can no longer be touched, located, or laddered to.
-	if e.seeded {
+	// LL-1: October keeps the level (knob key_level_delete_on_1h_close, default
+	// off); only "on" (the deck / September rule) deletes.
+	if !e.Cfg.keyLevelDeleteOn1HClose() {
+		// no deletion: a 1H body close through a key level leaves it drawn
+	} else if e.seeded {
 		// KEYLEVEL-FULL-HISTORY (release #10): deletion was computed ONCE over
 		// the full seeded history; per tick only the NEW closed 1H candles past
 		// the watermark are walked — never the whole series per level.

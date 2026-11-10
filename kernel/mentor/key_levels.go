@@ -23,9 +23,13 @@ import (
 //     NEVER the wick. Draw them even after a gap [D5.3 p1 @ 14:24–15:58];
 //  4. PRUNE: two levels less than KeyLevelPrunePts (20) apart → delete one,
 //     keep the more recent [@ 16:08–16:44];
-//  5. DELETE: a level is deleted when a 1H RTH candle's BODY closes through
-//     it (open one side, close the other) — handled by the evaluator via
-//     levelDeletedBy1HBody, not here (deletion is session state).
+//  5. DELETE (deck / September, knob key_level_delete_on_1h_close=on): a
+//     level is deleted when a 1H RTH candle's BODY closes through it (open one
+//     side, close the other) — handled by the evaluator via
+//     levelDeletedBy1HBody, not here (deletion is session state). October
+//     keeps it (LL-1, the default off): "Key Level nó là quá khứ"
+//     [OctD5.2-R15 @04:44], and the WE3 level 27,997.75 is traded months
+//     after a 1H body crossed it [OctD5.2-R19/R20 @07:20–07:42].
 //
 // The 2025 tiers (15m ETH wicks, 30–60 spacing, 4h red recolouring) are
 // SUPERSEDED and not built. No lookback cap (F7 stands).
@@ -282,6 +286,12 @@ func keyLevel1HCandleCloseTime(openMs int64) int64 {
 // candleColour: green iff close > open, red otherwise (§4.3 step 2).
 func candleColour(b market.Kline) bool {
 	return b.Close > b.Open
+}
+
+// keyLevelDeleteOn1HClose reports whether the deck's 1H body-close deletion
+// runs (LL-1). Only the explicit "on" deletes; "" / "off" is October's keep.
+func (c Config) keyLevelDeleteOn1HClose() bool {
+	return c.KeyLevelDeleteOn1HClose == KeyLevelDeleteOn1HCloseOn
 }
 
 // levelDeletedBy1HBody implements the KEY-LEVEL RULING deletion (final,

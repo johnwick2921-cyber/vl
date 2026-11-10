@@ -203,6 +203,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_touch',
     live: true,
   },
+  'Key level: delete on a 1H body close': {
+    settingId: 'risk_control.mentor_tuning.key_level_delete_on_1h_close',
+    live: true,
+  },
   'Key level: Uno Reverse after a hold': {
     settingId: 'risk_control.mentor_tuning.uno_key_levels',
     live: true,
@@ -1612,6 +1616,22 @@ export const mentor: GuideSection = {
           recommended: 'pair — D5.4 p1 @03:35–03:46.',
           whenToTouch: 'Rarely — isb_candle only to restore the pre-#60 read.',
           perSession: 'No.',
+        },
+        {
+          label: 'Key level: delete on a 1H body close',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.key_level_delete_on_1h_close)',
+          what: 'Levels audit LL-1. A key level is the OPEN of the 1H RTH candle where the candle colour changes (slide 31; Oct D5.2-R9). The deck (slide 31 step 4, September) deleted a level for good once a later 1H RTH candle’s BODY closed through it. October does not: the mentor walks the 1h RTH chart back and draws a line at every colour change — “vẽ bao nhiêu tùy thích… Key Level nó là quá khứ” [OctD5.2-R13..R16 @04:10–07:12] — and his final stack on 11-03 (frame s_00333, 20:38 CT) holds lines a body crossed long before, e.g. 29,466.50 (crossed by the 10-29 14:30 candle) and the WE3 quiz level 27,997.75, which he trades as live resistance at 19:08 on 11-03 although a 1H body crossed it on 07-29 [OctD5.2-R19/R20 @07:20–07:42; WE3 @09:12–10:05]. off (default, October) = a body close leaves the level drawn; the 20-pt keep-the-newer prune still applies, so two lines are never closer than 20 pts. on = the deck deletion. Over the 11-04 seed the bot had deleted 11 of the mentor’s lines with on; with off it keeps every colour-change line the prune keeps (e.g. 89 instead of 28 from 07-20 on).',
+          trader:
+            'off — October [OctD5.2-R13..R20]. Mentor question asked (LL-1).',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (KeyLevelDeleteOn1HClose) · kernel/mentor/eval.go Tick → advanceKeyLevelDeletion · kernel/mentor/seed.go seedHistoryState',
+          range: 'on / off',
+          systemDefault: 'off',
+          recommended: 'off — October wins over the deck [OctD5.2-R13..R20].',
+          whenToTouch:
+            'Only on a mentor answer — on restores the deck / September deletion.',
+          perSession: 'No — per strategy.',
         },
         {
           label: 'Key level: Uno Reverse after a hold',

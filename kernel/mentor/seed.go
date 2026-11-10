@@ -233,6 +233,9 @@ func (e *Evaluator) seedHistoryState(bars1m []market.Kline, full1HRTH []market.K
 		// advanced incrementally per tick past this watermark. The forming
 		// candle was already dropped above, so candles1h is all-closed.
 		for _, l := range e.State.SeedLevels {
+			if !e.Cfg.keyLevelDeleteOn1HClose() {
+				break // LL-1: October keeps the level (knob off, the default)
+			}
 			if levelDeletedBy1HBody(l, candles1h, now) {
 				deleted[l.Key] = true
 			}

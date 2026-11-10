@@ -181,7 +181,8 @@ func countColourChanges(bars []market.Kline) int {
 func TestKeyLevelDeletedBy1HBodyCloseOnly(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
-	cfg.KeyLevelTFMinutes = 1 // draw the level deterministically on the 1m walk; the DELETION runs on the anchored 1H RTH candles either way
+	cfg.KeyLevelTFMinutes = 1                               // draw the level deterministically on the 1m walk; the DELETION runs on the anchored 1H RTH candles either way
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the deck deletion under test (October default keeps)
 	ms := int64(60_000)
 	_ = ms
 	mk := func(hh, mm int, o, h, l, c float64) market.Kline {

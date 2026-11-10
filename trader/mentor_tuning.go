@@ -89,9 +89,10 @@ type mentorTuned struct {
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
-	SwingISBOnePerCandle bool
-	CrossingISBLookback  int
-	CrossingISBMin       int
+	SwingISBOnePerCandle    bool
+	CrossingISBLookback     int
+	CrossingISBMin          int
+	KeyLevelDeleteOn1HClose string // LL-1
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -133,6 +134,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		FlagWallTarget:              d.FlagWallTarget,
 		BoxNewZoneAfterEscape:       d.BoxNewZoneAfterEscape,
 		SwingISBOnePerCandle:        !d.Swing.ISBRepeatAfterFill,
+		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
 
@@ -333,6 +335,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	// m466 P2 (release #61): same contract — unset = the course default, a
 	// value outside the enum fails closed to the default (tuning_bad_value).
 	enum(t.UnoKeyLevels, &out.UnoKeyLevels, mentor.UnoKeyLevelsOn, mentor.UnoKeyLevelsOff)
+	// levels audit LL-1: unset = off (October keeps the level); a value outside
+	// the enum fails closed to the default, counted (tuning_bad_value).
+	enum(t.KeyLevelDeleteOn1HClose, &out.KeyLevelDeleteOn1HClose, mentor.KeyLevelDeleteOn1HCloseOn, mentor.KeyLevelDeleteOn1HCloseOff)
 	enum(t.SessionOpenLevels, &out.SessionOpenLevels, mentor.SessionOpenLevelsOn, mentor.SessionOpenLevelsOff)
 	enum(t.LevelArmLineCancel, &out.LevelArmLineCancel, mentor.LevelArmLineCancelCurrent, mentor.LevelArmLineCancelPlacement)
 	enum(t.PHLPullbackLow, &out.PHLPullbackLow, mentor.PHLPullbackLowPullback, mentor.PHLPullbackLowSignal)
@@ -416,9 +421,10 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
-	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle // isbTF-F4
-	cfg.CrossingISBLookback = t.CrossingISBLookback        // isbTF-F6
-	cfg.CrossingISBMin = t.CrossingISBMin                  // isbTF-F6
+	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle  // isbTF-F4
+	cfg.CrossingISBLookback = t.CrossingISBLookback         // isbTF-F6
+	cfg.CrossingISBMin = t.CrossingISBMin                   // isbTF-F6
+	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

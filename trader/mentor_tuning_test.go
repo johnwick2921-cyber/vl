@@ -156,7 +156,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
 			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
-			PHLOldExtreme1mK: 4,
+			PHLOldExtreme1mK:        4,
+			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -350,6 +351,23 @@ func TestPHL1OldExtremeKnobReachesTheEvaluator(t *testing.T) {
 	for _, c := range []struct{ stored, want int }{{0, 4}, {-1, 0}, {2, 2}, {10, 10}, {11, 4}, {-2, 4}} {
 		if got := tuningTick(t, &store.MentorTuning{PHLOldExtreme1mK: c.stored}).PHLOldExtreme1mK; got != c.want {
 			t.Fatalf("stored phl_old_extreme_1m_k=%d → Config.PHLOldExtreme1mK %d, want %d", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestLL1KeyLevelDeleteKnobReachesTheEvaluator — levels audit LL-1: the
+// knob reaches the evaluator config through the ONE resolver (production
+// mentorTuningResolve → applyMentorTuning): unset = off (October keeps the
+// level), "on" = the deck deletion, a bad value fails closed to off.
+func TestLL1KeyLevelDeleteKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelDeleteOn1HCloseOff},
+		{"on", mentor.KeyLevelDeleteOn1HCloseOn},
+		{"off", mentor.KeyLevelDeleteOn1HCloseOff},
+		{"sometimes", mentor.KeyLevelDeleteOn1HCloseOff},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelDeleteOn1HClose: c.stored}).KeyLevelDeleteOn1HClose; got != c.want {
+			t.Errorf("stored key_level_delete_on_1h_close=%q → Config %q, want %q", c.stored, got, c.want)
 		}
 	}
 }

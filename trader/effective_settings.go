@@ -908,6 +908,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("near_box_between_exempt", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.NearBoxBetweenExempt })
 	mentorTuningRow("phl_flat_low", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.PHLFlatLow })
 	mentorTuningRow("isb_reverse_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseTouch })
+	mentorTuningRow("key_level_delete_on_1h_close", "trader.mentorTuningResolve (LL-1)", func(t mentorTuned) any { return t.KeyLevelDeleteOn1HClose })
 	mentorTuningRow("uno_key_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.UnoKeyLevels })
 	mentorTuningRow("session_open_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SessionOpenLevels })
 	mentorTuningRow("level_arm_line_cancel", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelArmLineCancel })

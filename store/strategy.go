@@ -2213,6 +2213,12 @@ type MentorTuning struct {
 	// above the prior low (phl_pullback_lower_low, mirror) [D2.2 p3
 	// @08:25–09:25]; "signal" — the signal candle's low only (pre-#61).
 	PHLPullbackLow string `json:"phl_pullback_low,omitempty"`
+	// levels audit LL-1: "off" (unset) — October keeps a key level a 1H RTH
+	// body closed through ("Key Level nó là quá khứ" [OctD5.2-R15 @04:44]; the
+	// WE3 level 27,997.75 is traded months after a 1H body crossed it
+	// [OctD5.2-R19/R20 @07:20–07:42]); "on" — the deck / September deletion
+	// (slide 31 step 4). Mentor question.
+	KeyLevelDeleteOn1HClose string `json:"key_level_delete_on_1h_close,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

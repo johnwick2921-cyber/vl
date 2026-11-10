@@ -411,7 +411,9 @@ func TestR22ChartDrawsTheTradingOldExtremes1013(t *testing.T) {
 // through it) — never the total that includes deleted levels.
 func TestR22SeedLineCountsLiveKeyLevels(t *testing.T) {
 	bars := loadFixture(t, "mnq_1m_2026-10-13_session", "1m")
-	e := New(r22Cfg())
+	cfg := r22Cfg()
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the count split needs the deck deletion
+	e := New(cfg)
 	Seed(e, bars, BarCloseInstant(bars[len(bars)-1]))
 	live, deleted := 0, 0
 	for _, l := range e.State.SeedLevels {

@@ -1092,6 +1092,10 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		cfg.RiskControl.MentorTuning = &store.MentorTuning{}
 	}
 	cfg.RiskControl.MentorTuning.DayGateSpentPts = 300
+	// levels audit LL-1: the live 10-13 day deleted a key level once a 1H body
+	// closed through it (the deck rule); October keeps it (the new default).
+	// Pin the live deletion so this test keeps pinning the live day.
+	cfg.RiskControl.MentorTuning.KeyLevelDeleteOn1HClose = mentor.KeyLevelDeleteOn1HCloseOn
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}

@@ -265,9 +265,21 @@ type Config struct {
 	KeyLevelTFMinutes int     // TF of the colour-change walk; default 60 = the 1H RTH series anchored at 08:30 CT (KEY-LEVEL RULING final, slide 31: "Khung 1H ONLY… Bắt đầu từ lúc market open"). Other TFs walk barsTF+RTH for experimentation only.
 	KeyLevelRTHOnly   bool    // walk RTH candles only; default true
 	KeyLevelPrunePts  float64 // prune pairs closer than this, keep the more recent; default 20 [D5.3 p1 @ 16:08–16:44]
-	EMAPeriod34       int     // default 34
-	EMAPeriod9        int     // default 9
-	EMATFMinutes      int     // TF the EMA lines are computed on; default 1
+	// KeyLevelDeleteOn1HClose — levels audit LL-1. "off" (default, October):
+	// a key level SURVIVES a 1H RTH candle whose body closes through it — the
+	// mentor draws a line at every colour change, "vẽ bao nhiêu tùy thích… Key
+	// Level nó là quá khứ" [OctD5.2-R13..R16 @04:10–07:12, R15 @04:44], and
+	// trades the 11-03 19:08 retest of 27,997.75, a level a 1H body crossed on
+	// 07-29 [OctD5.2-R19/R20 @07:20–07:42, WE3 @09:12–10:05]. "on": the deck /
+	// September rule, "Khi nến 1H đóng cửa XUYÊN level đó, thì lúc đó sẽ xóa
+	// level đó đi" (slide 31 step 4) — levelDeletedBy1HBody. The 20-pt
+	// keep-the-newer prune applies either way. Mentor question (LL-1).
+	// Studio JSON: risk_control.mentor_tuning.key_level_delete_on_1h_close.
+	KeyLevelDeleteOn1HClose string
+
+	EMAPeriod34  int // default 34
+	EMAPeriod9   int // default 9
+	EMATFMinutes int // TF the EMA lines are computed on; default 1
 
 	// EMALocationTFMinutes is the LOCATION-GATE EMA 34 timeframe. R3 (RULES
 	// FIX v3, verified): intraday setups use the EMA 34 of the TRADING chart
@@ -844,12 +856,14 @@ func DefaultConfig() Config {
 	return Config{
 		Enabled: false,
 
-		KeyLevelTFMinutes: 60,
-		KeyLevelRTHOnly:   true,
-		KeyLevelPrunePts:  20,
-		EMAPeriod34:       34,
-		EMAPeriod9:        9,
-		EMATFMinutes:      1,
+		KeyLevelTFMinutes:       60,
+		KeyLevelRTHOnly:         true,
+		KeyLevelPrunePts:        20,
+		KeyLevelDeleteOn1HClose: KeyLevelDeleteOn1HCloseOff, // LL-1: October keeps a level a 1H body crossed [OctD5.2-R13..R20 @04:10–07:42]
+
+		EMAPeriod34:  34,
+		EMAPeriod9:   9,
+		EMATFMinutes: 1,
 
 		EMALocationTFMinutes: 1, // R3: intraday EMA 34 lives on the 1m chart
 
@@ -996,6 +1010,9 @@ const (
 // m466 P2 (release #61) knob values — the ONE spelling the kernel, the trader
 // resolver and the guide share.
 const (
+	// levels audit LL-1: the 1H body-close deletion (deck) vs October's keep.
+	KeyLevelDeleteOn1HCloseOn   = "on"
+	KeyLevelDeleteOn1HCloseOff  = "off"
 	UnoKeyLevelsOn              = "on"
 	UnoKeyLevelsOff             = "off"
 	SessionOpenLevelsOn         = "on"
