@@ -2659,17 +2659,20 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	}
 
 	if isbEval && !conflict && IsISB(execPrev, execCur) {
-		// D4.1-23: while the 5m ISB rest box stands, the box — not the 5m
-		// trigger line — governs the 1m ISB. The trigger PRICE-side filter is
-		// skipped entirely ("khung 5 phút kêu làm gì, làm cái đó" [D4.1 p2
-		// @04:06–06:45]; METHOD §5.2 "do not use the trigger line while it
-		// stands"); the box's own direction gate (ISBBoxAllows) runs below.
-		// m465 P1 (D3.4-R43): when the 5m inside bars cross, the 5m box gate is
-		// skipped below (the escalation ladder) — so the box no longer hides
-		// the trigger: the ESCALATED trigger (15m/30m) governs the side.
+		// isbTF-F1 (October overrides Sept D4.1-23): the governing trigger line
+		// gates the 1m ISB WHETHER OR NOT a 5m ISB box stands. Above a SELL
+		// line no long while the 5m still has a sell trigger — "Tuyệt đối
+		// không được. Tại vì sao? Tại vì khung 5 phút vẫn đang có sell
+		// trigger" [OctD4.3-R28, Oct D4.3 @ 22:00]; a long only on a 5m BUY
+		// trigger [OctD4.3-R29 @ 23:20]; inside a 5m box a trade needs BOTH the
+		// trigger and the box's own inside bar [OctD4.3-R69, Oct D4.3 @ 67:26]; the
+		// trigger and the box are separate tools, the trigger stays valid
+		// [Sept D3.4-R39, D3.4 p2 @ 10:40-11:57]. The box's direction gate (ISBBoxAllows, OctD4.3-R70)
+		// still runs below. Before: the standing box skipped this read, so the
+		// bot went long above the 11-02 09:30 sell line @28,834.25.
 		var trigSide Side
 		dirOK := true
-		if e.box5() == nil || trigTF != 5 {
+		if !isbTriggerHiddenByBox5m || e.box5() == nil || trigTF != 5 {
 			dirOK, trigSide, _ = TriggerVerdict(trig, cur.Close)
 		}
 		if dirOK {
@@ -2762,16 +2765,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// CE-1: no same-way 5m ISB inside the 15m box (or option
 						// 1: no trade until the 15m box escapes).
 						e.refuse("isb_" + fifteenRefusal + f15)
-					} else if (e.box5() == nil || trigTF != 5) && trigSide != "" && side != "" && side != trigSide {
-						// I1: while NO R5 5m ISB box stands, the LIVE 5m trigger
-						// line governs the ISB side — a short ISB above a buy line
-						// (or a long below a sell line) is refused [D3.4 p1
-						// @09:30–10:38, @17:39; p3 @02:24; D4.3 @14:40]. While a
-						// box stands, that box's direction governs instead — the
-						// R5 box rule [isb_box.go: ISBBoxAllows, D3.4 p2
-						// @00:14–13:00] already refused an opposite-direction ISB
-						// above (boxBlocked), so this check is skipped entirely.
-						// m465 P1 (D3.4-R43): escalated → the 15m/30m line's side.
+					} else if (!isbTriggerHiddenByBox5m || e.box5() == nil || trigTF != 5) && trigSide != "" && side != "" && side != trigSide {
+						// I1: the LIVE governing trigger line governs the ISB
+						// side — a short ISB above a buy line (or a long below a
+						// sell line) is refused [D3.4 p1 @09:30–10:38, @17:39; p3
+						// @02:24; D4.3 @14:40]. isbTF-F1: also while a 5m box
+						// stands — the box gate above checks the box direction
+						// (OctD4.3-R70), this checks the trigger (OctD4.3-R28/R29/
+						// R69). m465 P1 (D3.4-R43): escalated → the 15m/30m line.
 						e.refuse("isb_trigger_side_mismatch" + trigSfx)
 					} else if r, _ := HTFEntryCheck(e.State.HTF, side); r != "" {
 						// ISB direction against the 4h — no entry (m462 shared

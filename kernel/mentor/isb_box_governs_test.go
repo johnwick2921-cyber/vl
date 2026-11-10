@@ -7,15 +7,15 @@ import (
 	"vl/market"
 )
 
-// TestISBBoxSkipsTriggerPriceFilter pins D4.1-23 — inside a standing 5m ISB
-// box ONLY a same-direction ISB trades, and the box (not the 5m trigger line)
-// governs: "CHỈ ĐƯỢC ĐÁNH INSIDE BAR CÙNG CHIỀU, Ở KHUNG GIỜ NHỎ HƠN… KÊU
-// ĐÁNH LÊN THÌ ĐÁNH LÊN" [D4.1 p2 @04:06–06:45]; METHOD §5.2 "do not use the
-// trigger line while it stands". Without the fix a same-direction ISB BELOW a
-// 5m buy line inside a LONG box is refused isb_trigger_side. Mutant: run the
-// trigger filter even while the box stands → the box case starts refusing
-// isb_trigger_side → RED.
-func TestISBBoxSkipsTriggerPriceFilter(t *testing.T) {
+// TestISBBoxKeepsTriggerPriceFilter — isbTF-F1. Before October the 5m ISB box
+// governed the 1m ISB alone (Sept D4.1-23 [D4.1 p2 @04:06–06:45], METHOD §5.2
+// "do not use the trigger line while it stands"). October overrides it: the
+// trigger stays valid inside the box [OctD4.3-R28, Oct D4.3 @ 22:00 "Tuyệt đối
+// không được ... khung 5 phút vẫn đang có sell trigger"; OctD4.3-R69 @ 67:26
+// both the trigger AND the box]. So a same-direction long ISB BELOW the 5m buy
+// line inside a LONG box is refused isb_trigger_side, exactly as with no box.
+// Mutant: the pre-F1 seam (box hides the trigger) → no refusal → RED.
+func TestISBBoxKeepsTriggerPriceFilter(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
@@ -58,11 +58,20 @@ func TestISBBoxSkipsTriggerPriceFilter(t *testing.T) {
 		t.Fatalf("control: without the box the below-the-line ISB must be refused isb_trigger_side, ledger=%v", eNoBox.State.Refusals)
 	}
 
-	// A LONG box stands: the box governs — the trigger price filter is skipped,
-	// and the same-direction ISB is not refused by it.
+	// A LONG box stands: the trigger price filter still runs (OctD4.3-R28/R69).
 	eBox := seed(&ISBBox{High: 110, Low: 90, Dir: SideLong, AtTime: bars[0].OpenTime})
 	eBox.Tick(bars, now)
-	if eBox.State.Refusals["isb_trigger_side"] != 0 {
-		t.Fatalf("with the box standing the trigger price filter must be skipped, got isb_trigger_side=%d (ledger=%v)", eBox.State.Refusals["isb_trigger_side"], eBox.State.Refusals)
+	if eBox.State.Refusals["isb_trigger_side"] != 1 {
+		t.Fatalf("OctD4.3-R28/R69: with the box standing the trigger price filter must still refuse, got isb_trigger_side=%d (ledger=%v)", eBox.State.Refusals["isb_trigger_side"], eBox.State.Refusals)
+	}
+
+	// Pre-F1 seam (frozen goldens only): the box hid the trigger.
+	prev := isbTriggerHiddenByBox5m
+	isbTriggerHiddenByBox5m = true
+	defer func() { isbTriggerHiddenByBox5m = prev }()
+	eOld := seed(&ISBBox{High: 110, Low: 90, Dir: SideLong, AtTime: bars[0].OpenTime})
+	eOld.Tick(bars, now)
+	if eOld.State.Refusals["isb_trigger_side"] != 0 {
+		t.Fatalf("pre-F1 seam: the box must hide the trigger, ledger=%v", eOld.State.Refusals)
 	}
 }

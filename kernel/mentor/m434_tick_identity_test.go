@@ -264,9 +264,10 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	if cfg.FiveMinBoxSource == FiveMinBoxMerge {
 		cfg.FiveMinBoxSource = FiveMinBoxNewest
 	}
-	prev := isbBoxSameTickRebuild
+	prev, prevF1 := isbBoxSameTickRebuild, isbTriggerHiddenByBox5m
 	isbBoxSameTickRebuild = false
-	t.Cleanup(func() { isbBoxSameTickRebuild = prev })
+	isbTriggerHiddenByBox5m = true // isbTF-F1: the frozen goldens predate the trigger-inside-the-box read
+	t.Cleanup(func() { isbBoxSameTickRebuild, isbTriggerHiddenByBox5m = prev, prevF1 })
 }
 
 // m434PreM473 turns EVERY m473 behaviour off (B1 carry, B2 peak-1/level pairs,

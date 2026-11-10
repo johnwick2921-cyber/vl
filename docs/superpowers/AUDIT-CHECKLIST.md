@@ -10465,3 +10465,16 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - For every `if standing { …delete… } else { build }`, ask whether the build must also run on the delete tick.
 - **Pin:** `TestISB5F1CourseDayMergedBox` (11-02 through the production seed + `mentorEvalOnce`), `TestISB5F2CrossingDoesNotLiftTheMergedBoxGate`, `TestISB5F5LateFormationSeesTheBreak` (10-14), `TestISB5F6MotherAcrossTheHalt` (replay tool output).
 - **Reference:** `kernel/mentor/eval.go` (the R5 5m box block), `kernel/mentor/isb_box.go` (`mergeISBBox5m`), `cmd/mentor-replay/events.go` (`boxFields`).
+
+## CLASS NN (assigned at merge) — one standing gate SWITCHES OFF a different gate: the 5m box hid the trigger line, and the trigger escalation lifted the box gates (isbTF-F1/F2, feat/mentor-detector-history-audit)
+
+- **Symptom:**
+  - On the course's own chart (Mon 2026-11-02) the 09:30 5m candle turns the 5m trigger SELL @28,834.25 and is also a LONG 5m inside bar. While that box stood, the bot read two LONG 1m ISBs above the sell line (09:35 entry 28,845.75, 09:37 entry 28,847.75); the first one filled and was stopped. The mentor forbids exactly this trade on exactly this chart: "Tuyệt đối không được ... khung 5 phút vẫn đang có sell trigger" [OctD4.3-R28, Oct D4.3 @ 22:00].
+  - In the chop the course calls ONE no-trade inside bar (OctD4.3-R59/R61), crossing 5m/15m/30m inside bars escalated the TRIGGER and, through the same read, also skipped the 5m/15m/30m box gates and the CE-1 15m rule, so 1m ISBs AGAINST a standing unbroken box traded (2026-10-07 08:53, a short inside a LONG 5m box).
+- **Root cause:**
+  - Two independent course tools were wired as alternatives: `if box5 == nil || trigTF != 5 { trigger verdict }` and `if box != nil && !crossingISBs(…) { box gate }`. Each condition encoded a September sentence (D4.1-23 "the box governs", D3.4-R43 "go to the 15m") as "the OTHER gate stops". October says the trigger and the box BOTH hold (OctD4.3-R69 two confluences; Sept D3.4-R39 "2 công cụ hoàn toàn khác nhau"), and D3.4-R43 escalates only the trigger.
+- **Probe:**
+  - For every gate written as `if <other object> == nil || …` or `&& !<other read>`, ask: does the course say the other object REPLACES this rule, or ADDS to it? Find the sentence.
+  - Replay the days where both objects stand at once and count intents that pass only because one gate was skipped.
+- **Pin:** `TestISBTFF1TriggerLineGovernsInsideThe5mBox` (cmd/mentor-replay, 11-02 through the production seed + `mentorEvalOnce`), `TestISBBoxKeepsTriggerPriceFilter`, `TestISBBoxDoesNotHideTheTriggerLine`.
+- **Reference:** `kernel/mentor/eval.go` (Tick, the 1m ISB block and the reverse ISB block), `kernel/mentor/isb_box.go` (`isbTriggerHiddenByBox5m`, frozen-golden seam only).

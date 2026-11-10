@@ -303,6 +303,12 @@ func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (
 // goldens set it false).
 var isbBoxSameTickRebuild = true
 
+// isbTriggerHiddenByBox5m restores the pre-isbTF-F1 read for frozen goldens
+// ONLY: true = a standing 5m ISB box (with the 5m governing) hides the trigger
+// line from the 1m ISB (Sept D4.1-23). Production keeps false — October
+// overrides it (OctD4.3-R28/R29/R69 [Oct D4.3 @ 22:00, 23:20, 1:07:26]).
+var isbTriggerHiddenByBox5m = false
+
 // isFirstRTH5m reports whether the 5m candle opening at openMs is the RTH-open
 // bucket: 08:30 CT on a day the CME is open at that minute (calendar-driven,
 // so half-days too).

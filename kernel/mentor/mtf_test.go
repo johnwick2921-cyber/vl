@@ -119,10 +119,10 @@ func mtfAlignedLongTape() []market.Kline {
 
 // C52 W1 B9 at the PRODUCTION call site (Evaluator.Tick, the ISB emit): with
 // the 15m, 5m and 1m ISBs all long the intent is mode-C confluence whatever
-// the 5m trigger line says — a buy line the entry price is still under is the
-// old conjunct's refusal that survives the entry filters (an OPPOSITE line
-// already refuses the ISB itself, isb_trigger_side_mismatch). Pre-fix the two
-// "still under the buy line" cases emitted Confluence=false.
+// the 5m trigger line says. isbTF-F1: a buy line the price is still UNDER now
+// refuses the ISB itself (isb_trigger_side — the trigger gates inside the 5m
+// box too, OctD4.3-R28/R69 [Oct D4.3 @ 22:00, 67:26]), so the cases are the
+// lines an ISB can still emit under: a buy line below the price and no line.
 func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
 	bars := mtfAlignedLongTape()
 	if !MTFAligned(bars5mOf(t, bars), bars15mOf(t, bars), SideLong) {
@@ -132,8 +132,8 @@ func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
 		name string
 		trig TriggerLine
 	}{
-		{"buy line ABOVE the entry (price still under it)", TriggerLine{Dir: SideLong, Price: 130}},
-		{"buy line far above the entry", TriggerLine{Dir: SideLong, Price: 125}},
+		{"buy line below the price", TriggerLine{Dir: SideLong, Price: 95, LastBucket: 1 << 62}},
+		{"no 5m line", TriggerLine{LastBucket: 1 << 62}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
@@ -142,6 +142,12 @@ func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
 			cfg.RoomMultiple = 0 // this pin tests the confluence flag, not the room rule
 			e := New(cfg)
 			e.State.Trigger = c.trig
+			// The old cases' buy line above the entry was also the target;
+			// a key level at 130 stands in for it (isbTF-F1).
+			e.seeded = true
+			e.State.Seed1mWatermark = 1 << 62
+			e.State.Seed1HWatermark = 1 << 62
+			e.State.SeedLevels = []Level{{Key: "K-above", Kind: KindKeyLevel, Price: 130}}
 			e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
 			e.State.ORB = ORB{Day: dayStartCT(auditMs(2026, 9, 15, 9, 0, 0)), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
 			e.State.Day = DayLatch{Key: tradingDayKey(time.UnixMilli(auditMs(2026, 9, 15, 9, 0, 0)).In(ctime())), Verdict: DayTrade}

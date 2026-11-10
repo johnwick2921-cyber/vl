@@ -666,7 +666,9 @@ func TestCE1Opposite5mISBInside15mBox(t *testing.T) {
 	e.State.ISBBox = &ISBBox{High: 110, Low: 95, Dir: SideLong, AtTime: bars[0].OpenTime}
 	shortSide := func(e *Evaluator) {
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 120}}
-		e.State.Trigger = TriggerLine{Dir: SideShort, Price: 101}
+		// isbTF-F1: the 5m trigger gates the ISB inside the 5m box too
+		// (OctD4.3-R69) — a SELL line pinned above the tape.
+		e.State.Trigger = TriggerLine{Dir: SideShort, Price: 110, LastBucket: 1 << 62}
 		e.State.ORB = ORB{Day: dayStartCT(now), High: 120, Low: 115, Drawn: true, Escaped: SideShort}
 	}
 	shortSide(e)

@@ -122,24 +122,37 @@ func TestISBNoTriggerLineUnchanged(t *testing.T) {
 	}
 }
 
-// TestISBBoxGovernsOverTriggerLine — the R5 box clause: while a standing 5m ISB
-// box exists, that box's direction governs instead of the trigger line. A short
-// box + a short ISB is NOT refused by the trigger side even though the 5m
-// trigger line is long [isb_box.go: ISBBoxAllows, D3.4 p2 @00:14–13:00].
-func TestISBBoxGovernsOverTriggerLine(t *testing.T) {
-	cfg := DefaultConfig()
-	cfg.Enabled = true
-	e := newISBEval(cfg) // trigger long
-	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 90}}
-	e.State.ISBBox = &ISBBox{High: 200, Low: 50, Dir: SideShort, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
-	bars := shortISBFixture()
-
-	ints := e.Tick(bars, bars[2].CloseTime+1)
+// TestISBBoxDoesNotHideTheTriggerLine — isbTF-F1 (October overrides the R5
+// box clause of Sept D4.1-23): a standing 5m ISB box no longer hides the
+// trigger line. A short box + a short ISB under a LONG 5m trigger line is
+// refused isb_trigger_side_mismatch — a trade inside the 5m box needs BOTH the
+// trigger and the box [OctD4.3-R69, Oct D4.3 @ 67:26]; no short while the 5m
+// has a BUY trigger [OctD4.3-R28/R29, Oct D4.3 @ 22:00, 23:20]. The box gate
+// itself still passes (same direction, OctD4.3-R70).
+//
+// Mutant: the pre-F1 seam (box hides the trigger) → no refusal → RED.
+func TestISBBoxDoesNotHideTheTriggerLine(t *testing.T) {
+	run := func() *Evaluator {
+		cfg := DefaultConfig()
+		cfg.Enabled = true
+		e := newISBEval(cfg) // trigger long
+		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 90}}
+		e.State.ISBBox = &ISBBox{High: 200, Low: 50, Dir: SideShort, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}
+		bars := shortISBFixture()
+		e.Tick(bars, bars[2].CloseTime+1)
+		return e
+	}
+	e := run()
 	if e.State.Refusals["isb_box_blocked"] != 0 {
 		t.Fatalf("a short ISB matching a short box must not be box-blocked; ledger = %v", e.State.Refusals)
 	}
-	if e.State.Refusals["isb_trigger_side_mismatch"] != 0 {
-		t.Fatalf("while a box stands its direction governs, not the trigger line; ledger = %v", e.State.Refusals)
+	if e.State.Refusals["isb_trigger_side_mismatch"] != 1 {
+		t.Fatalf("OctD4.3-R28/R69: the 5m BUY trigger still governs inside the short box — want isb_trigger_side_mismatch; ledger = %v", e.State.Refusals)
 	}
-	_ = ints
+	prev := isbTriggerHiddenByBox5m
+	isbTriggerHiddenByBox5m = true
+	defer func() { isbTriggerHiddenByBox5m = prev }()
+	if e := run(); e.State.Refusals["isb_trigger_side_mismatch"] != 0 {
+		t.Fatalf("pre-F1 seam: the box hid the trigger (Sept D4.1-23); ledger = %v", e.State.Refusals)
+	}
 }
