@@ -158,6 +158,13 @@ type asOfSource struct {
 	bs     *barSet
 	symbol string
 	AsOf   int64
+	// Pin, when set, is the contract the replayed day traded on (the one with
+	// the most 1m bars in its session): "current contract" reads return it, and
+	// contracts that start after it are not yet part of the stitched history.
+	// Without it the sparse wave-101 import snapshots of the NEXT contract
+	// (MNQ 12-26 at 09-07 17:00 and 09-08/09/10 21:00Z) are the "newest row" on
+	// the roll days and the replay ticks a contract nobody traded.
+	Pin string
 }
 
 func (s asOfSource) rows(tf, contract string) []row {
@@ -166,6 +173,9 @@ func (s asOfSource) rows(tf, contract string) []row {
 
 // currentContract is the contract of the newest closed row (store.CurrentContract).
 func (s asOfSource) currentContract(tf string) string {
+	if s.Pin != "" {
+		return s.Pin
+	}
 	best, bestT := "", int64(-1)
 	for c := range s.bs.byTF[tf] {
 		rs := s.rows(tf, c)
@@ -209,6 +219,13 @@ func (s asOfSource) ContractSpans(symbol, tf string) ([]store.ContractSpan, erro
 		}
 		return out[i].Contract < out[j].Contract
 	})
+	if s.Pin != "" {
+		for i, sp := range out {
+			if sp.Contract == s.Pin {
+				return out[:i+1], nil
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -232,6 +249,20 @@ func (s asOfSource) window(tf string, n int) []market.Kline {
 		rs = rs[len(rs)-n:]
 	}
 	return klines(rs, tfMs[tf])
+}
+
+// sessionContract is the contract holding the most 1m bars in [fromMs, toMs).
+func (bs *barSet) sessionContract(fromMs, toMs int64) string {
+	best, bestN := "", 0
+	for _, c := range sortedKeys(bs.byTF["1m"]) {
+		rs := bs.byTF["1m"][c]
+		lo := sort.Search(len(rs), func(i int) bool { return rs[i].T >= fromMs })
+		hi := sort.Search(len(rs), func(i int) bool { return rs[i].T >= toMs })
+		if n := hi - lo; n > bestN {
+			best, bestN = c, n
+		}
+	}
+	return best
 }
 
 // loadCalendar reads every stored calendar slice (read-only), keyed by date.

@@ -90,7 +90,7 @@ func main() {
 	flag.StringVar(&o.liveLog, "live-log", "", "live vl_<date>.log to compare the 5m ISB box lines against (its day must be replayed)")
 	flag.StringVar(&o.reseedAt, "reseed-at", "", "comma-separated HH:MM:SS CT instants (on each replayed day) at which to run the production history-refill re-seed before that bar's tick; with -live-log the log's own re-seed instants are added for its day")
 	flag.Float64Var(&o.bigMean, "big-mean", 40, "BIG day: mean 5m RTH candle range >= this (pts)")
-	flag.IntVar(&o.bigN50, "big-n50", 5, "BIG day: at least this many 5m RTH candles > 50 pts")
+	flag.IntVar(&o.bigN50, "big-n50", 20, "BIG day: at least this many 5m RTH candles > 50 pts")
 	flag.BoolVar(&o.quiet, "quiet", false, "no per-day progress lines")
 	flag.Parse()
 	if err := run(o, os.Stdout); err != nil {
@@ -457,7 +457,8 @@ func replayDay(o opts, bs *barSet, sc *store.StrategyConfig, cal map[string][]ca
 		return st, err
 	}
 	rp := newReplayer(bs, sc, cal, cap, emit)
-	emit(Event{"kind": "replay_start", "seed_at": seedAt.Format(time.RFC3339), "import_shift": o.importShift, "window": window})
+	rp.src.Pin = bs.sessionContract(time.Date(day.Year(), day.Month(), day.Day(), 17, 0, 0, 0, loc).AddDate(0, 0, -1).UnixMilli(), sessEnd)
+	emit(Event{"kind": "replay_start", "contract": rp.src.Pin, "seed_at": seedAt.Format(time.RFC3339), "import_shift": o.importShift, "window": window})
 	rp.seed(seedAt)
 
 	// Tick every bar that CLOSES after the seed instant, to the session end, on
@@ -466,7 +467,8 @@ func replayDay(o opts, bs *barSet, sc *store.StrategyConfig, cal map[string][]ca
 	// empty (11-10 08:15:25: "no live 1m frame received since boot"; the
 	// funnel's first bar is the 08:15 bar, ticked at 08:16:00).
 	seedMs := seedAt.UnixMilli()
-	contract := asOfSource{bs: bs, symbol: "MNQ", AsOf: sessEnd}.currentContract("1m")
+	sessStart := time.Date(day.Year(), day.Month(), day.Day(), 17, 0, 0, 0, loc).AddDate(0, 0, -1).UnixMilli()
+	contract := bs.sessionContract(sessStart, sessEnd)
 	st.Contract = contract
 	rows := bs.byTF["1m"][contract]
 	first := sort.Search(len(rows), func(i int) bool { return rows[i].T+60_000 > seedMs })
