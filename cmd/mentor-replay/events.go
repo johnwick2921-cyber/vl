@@ -162,14 +162,20 @@ func boxFields(prefix string, b *mentor.ISBBox, tfMin int, bars []market.Kline) 
 	// Display enrichment only: the mother / inside candle OHLC aggregated from
 	// the same closed 1m window the tick read (market.AggregateToTF, the
 	// persister's bucket convention). The box itself is the evaluator's.
+	// ISB5-F6: the mother is the bucket BEFORE the inside candle in that
+	// window — across the 16:00–17:00 CT halt the 17:00 candle pairs with the
+	// 15:55 bucket, not a 16:55 bucket that never existed.
 	if tfMin > 0 && len(bars) > 0 {
 		agg := market.AggregateToTF(bars, 1, tfMin)
-		for _, k := range agg {
-			switch k.OpenTime {
-			case b.AtTime:
-				ev[prefix+"inside_ohlc"] = []float64{k.Open, k.High, k.Low, k.Close}
-			case b.AtTime - int64(tfMin)*60_000:
-				ev[prefix+"mother_ohlc"] = []float64{k.Open, k.High, k.Low, k.Close}
+		for i, k := range agg {
+			if k.OpenTime != b.AtTime {
+				continue
+			}
+			ev[prefix+"inside_ohlc"] = []float64{k.Open, k.High, k.Low, k.Close}
+			if i > 0 {
+				m := agg[i-1]
+				ev[prefix+"mother_at"] = ct(m.OpenTime)
+				ev[prefix+"mother_ohlc"] = []float64{m.Open, m.High, m.Low, m.Close}
 			}
 		}
 	}

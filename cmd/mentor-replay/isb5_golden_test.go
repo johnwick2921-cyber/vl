@@ -13,6 +13,7 @@ import (
 	"vl/calendar"
 	"vl/kernel"
 	"vl/kernel/mentor"
+	"vl/market"
 	"vl/store"
 )
 
@@ -196,5 +197,44 @@ func TestISB5F5LateFormationSeesTheBreak(t *testing.T) {
 		if b := got["08:40"].box; b == nil || b.Escaped != mentor.SideLong {
 			t.Fatalf("%s: 08:40 tick: the 1m close 30,610.75 is above the box — it must break long at 08:40, got %s (lock %+v)", mode, boxStr(b), got["08:40"].lock)
 		}
+	}
+}
+
+// TestISB5F6MotherAcrossTheHalt — ISB5-F6 (tool output only): a 5m pair across
+// the 16:00–17:00 CT halt pairs the 17:00 inside candle with the 15:55 bucket
+// (production closedBuckets has no 16:55 bucket). The event's mother_at and
+// mother_ohlc must name that real previous bucket, not inside_at − 5 minutes.
+// Real case: 2026-10-16.jsonl, bar 2026-10-15 17:04, mother 15:55
+// [30,133.5, 30,135.5, 30,036.5, 30,077.75].
+func TestISB5F6MotherAcrossTheHalt(t *testing.T) {
+	loc := kernel.CTLocation()
+	at := func(h, m int) int64 { return time.Date(2026, 10, 15, h, m, 0, 0, loc).UnixMilli() }
+	var bars []market.Kline
+	add := func(h, m int, o, hi, lo, c float64) {
+		ms := at(h, m)
+		bars = append(bars, market.Kline{OpenTime: ms, CloseTime: ms + 59_999, Open: o, High: hi, Low: lo, Close: c, Final: true})
+	}
+	for i := 0; i < 5; i++ { // the 15:50 bucket
+		add(15, 50+i, 30_120, 30_125, 30_115, 30_120)
+	}
+	add(15, 55, 30_133.5, 30_135.5, 30_120, 30_125) // the 15:55 bucket (the real mother's OHLC)
+	add(15, 56, 30_125, 30_130, 30_090, 30_100)
+	add(15, 57, 30_100, 30_110, 30_036.5, 30_050)
+	add(15, 58, 30_050, 30_080, 30_040, 30_070)
+	add(15, 59, 30_070, 30_090, 30_060, 30_077.75)
+	for i := 0; i < 5; i++ { // the 17:00 bucket, inside the 15:55 one
+		add(17, i, 30_080, 30_100, 30_070, 30_090)
+	}
+	box := &mentor.ISBBox{High: 30_100, Low: 30_070, Dir: mentor.SideShort, AtTime: at(17, 0)}
+	ev := boxFields("", box, 5, bars)
+	if got := ev["mother_at"]; got != "2026-10-15 15:55" {
+		t.Errorf("mother_at: want the real previous bucket 2026-10-15 15:55, got %v", got)
+	}
+	want := []float64{30_133.5, 30_135.5, 30_036.5, 30_077.75}
+	if got, _ := ev["mother_ohlc"].([]float64); fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("mother_ohlc: want the 15:55 bucket %v, got %v", want, ev["mother_ohlc"])
+	}
+	if got := ev["inside_at"]; got != "2026-10-15 17:00" {
+		t.Errorf("inside_at: want 2026-10-15 17:00, got %v", got)
 	}
 }
