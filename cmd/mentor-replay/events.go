@@ -156,6 +156,9 @@ func boxFields(prefix string, b *mentor.ISBBox, tfMin int, bars []market.Kline) 
 	if b.Escaped != "" {
 		ev[prefix+"escaped"] = string(b.Escaped)
 	}
+	if b.MergedTo != 0 {
+		ev[prefix+"merged_to"] = ct(b.MergedTo)
+	}
 	// Display enrichment only: the mother / inside candle OHLC aggregated from
 	// the same closed 1m window the tick read (market.AggregateToTF, the
 	// persister's bucket convention). The box itself is the evaluator's.
@@ -189,6 +192,14 @@ func diffISBBox(tf string, tfMin int, a, b *mentor.ISBBox, bars []market.Kline) 
 		return []Event{merge(Event{"kind": kind + "_formed"}, boxFields("", b, tfMin, bars))}
 	case b == nil:
 		return []Event{merge(Event{"kind": kind + "_deleted"}, boxFields("", a, tfMin, bars))}
+	case a.AtTime == b.AtTime && a.Dir == b.Dir && a.Provisional == b.Provisional && a.MergedTo != b.MergedTo:
+		// ISB5-F1 mode merge: the same box took in a newer 5m candle (it may
+		// widen, and a 1m break during that candle is taken back).
+		if a.High == b.High && a.Low == b.Low && a.Escaped == b.Escaped {
+			return nil
+		}
+		ev := merge(Event{"kind": kind + "_merged"}, boxFields("", b, tfMin, bars))
+		return []Event{merge(ev, boxFields("old_", a, tfMin, bars))}
 	case a.AtTime != b.AtTime || a.High != b.High || a.Low != b.Low || a.Dir != b.Dir || a.Provisional != b.Provisional:
 		ev := merge(Event{"kind": kind + "_replaced"}, boxFields("", b, tfMin, bars))
 		return []Event{merge(ev, boxFields("old_", a, tfMin, bars))}

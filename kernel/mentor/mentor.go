@@ -766,10 +766,16 @@ type Config struct {
 	// ── m466 P1 (release #61): boxes, breaks, ranges ──────────────────────
 	// FiveMinBoxSource — G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside
 	// bar nào gần với thời điểm đó nhất, bọc lại cho em"] + G32 D4.2-R10:
-	// "newest" (default) = while a 5m ISB rest box stands, a NEWER closed 5m
-	// inside bar replaces it (isb_5m_box_replaced, _opposite when the
-	// direction flips — the 15m/5m conflict then reads the new box); "first" =
-	// the pre-#61 read (the first box stands until it escapes). Studio:
+	// "merge" (default, ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00] "bọc từ head
+	// to toe"; October wins) = every 5m candle that CLOSES inside the standing
+	// box widens it to its high/low (isb_5m_box_merged); the box keeps the
+	// first inside bar's time and direction (OctD4.3-R54) and is deleted only
+	// on a 5m close outside (OctD4.3-R67); crossing 5m pairs inside it do not
+	// lift the R70 same-direction gate (ISB5-F2). No growth cap: the course
+	// states none. "newest" = the #61–#66 read: a NEWER closed 5m inside bar
+	// replaces it (isb_5m_box_replaced, _opposite when the direction flips —
+	// the 15m/5m conflict then reads the new box); "first" = the pre-#61 read
+	// (the first box stands until it escapes). Studio:
 	// risk_control.mentor_tuning.mentor_5m_box_source.
 	FiveMinBoxSource string
 	// BreakDirectionLock — G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33] + G29
@@ -918,7 +924,7 @@ func DefaultConfig() Config {
 		LevelArmLineCancel: LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
 		PHLPullbackLow:     PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
 		// m466 P1 (release #61): boxes, breaks, ranges.
-		FiveMinBoxSource:   FiveMinBoxNewest, // G28 D4.1-R37 / G32 D4.2-R10
+		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
 		BreakDirectionLock: true,             // G21 D4.1-R31/R33, G29 D4.1-R55
 		SmallRangeGuard:    false,            // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
 		MidRangeRejectSide: true,             // G43 D2.2-R71
@@ -960,6 +966,9 @@ const (
 	// m466 P1 (release #61, G28/G32): the 5m ISB rest box source.
 	FiveMinBoxNewest = "newest"
 	FiveMinBoxFirst  = "first"
+	// ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00]: the 5m candles that stay inside
+	// the standing box merge into ONE inside bar ("bọc từ head to toe").
+	FiveMinBoxMerge = "merge"
 )
 
 // m466 P2 (release #61) knob values — the ONE spelling the kernel, the trader

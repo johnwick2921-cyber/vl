@@ -216,7 +216,7 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     live: true,
   },
   // m466 P1 (release #61) boxes, breaks, ranges.
-  '5m ISB box: newest inside bar': {
+  '5m ISB box: merged inside bar': {
     settingId: 'risk_control.mentor_tuning.mentor_5m_box_source',
     live: true,
   },
@@ -591,7 +591,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Only same-direction inside a 5m ISB box',
-          body: 'The latest 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Release #61: "latest" means the NEWEST — a newer 5m inside bar replaces the standing box (mentor_5m_box_source); a 1m CLOSE outside the box breaks it and trading is allowed; since m473 the box itself is deleted only when a candle of its own timeframe (5m/15m/30m) closes outside (isb_box_escape = close5m; close = the old 1m delete), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock). A 1m close back inside does not re-arm the box ban (the video states only the exit and the own-timeframe delete); a newer inside-bar pair replaces a broken 15m/30m box at once, and the dashboard marks a broken box "broken long/short".',
+          body: 'The 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Since the ISB5 audit (October OctD4.3-R59 "bọc từ head to toe") every 5m candle that closes inside the standing box MERGES into it — the box widens to that candle’s high/low and keeps the first inside bar’s direction (mentor_5m_box_source = merge; newest = the #61–#66 replace-with-newest read); a 1m CLOSE outside the box breaks it and trading is allowed; since m473 the box itself is deleted only when a candle of its own timeframe (5m/15m/30m) closes outside (isb_box_escape = close5m; close = the old 1m delete), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock). A 1m close back inside does not re-arm the box ban (the video states only the exit and the own-timeframe delete); a newer inside-bar pair replaces a broken 15m/30m box at once, and the dashboard marks a broken box "broken long/short".',
           cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · D4.1-R37 p1 @22:31–22:49 · D4.1-R34 p1 @20:36–21:03 · D4.1-R31 p1 @18:27–20:33',
         },
         {
@@ -690,7 +690,7 @@ export const mentor: GuideSection = {
         [
           'ISB rest box',
           'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); the 08:30 CT 5m candle (the first of the RTH day) is never itself the inside bar, the box starts from the 08:35 candle at the earliest (m473 B4, Oct D4.3 @ 57:20-57:35); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge lets you trade, but the box is deleted only when a candle of its own timeframe closes outside (isb_box_escape, default close5m since m473, Oct D4.3 @ 65:00-66:13; close = the 1m delete, default #61–m472; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
-          'isb_box_escape = close5m (default) · mentor_5m_box_source = newest · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · D4.1-R37 @22:31–22:49 · D4.1-R31 @18:27–20:33',
+          'isb_box_escape = close5m (default) · mentor_5m_box_source = merge · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · OctD4.3-R59 @ 58:00 · D4.1-R31 @18:27–20:33',
         ],
         [
           'Too-small range',
@@ -1652,16 +1652,17 @@ export const mentor: GuideSection = {
           perSession: 'No.',
         },
         {
-          label: '5m ISB box: newest inside bar',
+          label: '5m ISB box: merged inside bar',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Release #61 (m466 G28 D4.1-R37 + G32 D4.2-R10). "cái nến inside bar nào gần với thời điểm đó nhất, bọc lại cho em" (box the inside-bar candle NEAREST in time) [D4.1 p1 @22:31–22:49]. newest (default) = while a 5m ISB rest box stands, a NEWER closed 5m inside bar replaces it (counted isb_5m_box_replaced). When the newer one points the OTHER way it is counted isb_5m_box_replaced_opposite and, under a standing 15m box of the first direction, the 15m/5m conflict refuses every setup (isb_tf_conflict*) — "messed up… đừng trade. Đợi nó thoát cả luôn" [D4.2 p1 @05:34–08:33]. Before #61 the first box stood until it escaped and hid every newer 5m inside bar. first = the pre-#61 read.',
-          trader: 'newest — the course.',
+          what: 'ISB5 audit (October course, OctD4.3-R59 [Oct D4.3 @ 58:00]): "1 cái nến 5 phút, 2 cái nến 5 phút, 3 cái nến 5 phút nó vẫn chưa thoát được cái box này thì nó thành 1 cái Inside Bar ... bọc từ head to toe" — the 5m candles that stay inside the box become ONE inside bar. merge (default) = every 5m candle that CLOSES inside the standing box widens it to that candle’s high and low (counted isb_5m_box_merged); the box keeps the FIRST inside bar’s time and direction (OctD4.3-R54 "always measured against the first inside bar") and is deleted only when a 5m candle closes outside it (OctD4.3-R67). A 1m close outside the box as it stands is still the break (OctD4.3-R66) — but when that 5m candle then closes back inside, the merge takes the break back (isb_5m_box_merge_unbroken) and the break lock clears on that close (break_lock_failed). While the merged box stands, crossing 5m inside-bar pairs inside it do not lift the same-direction rule (OctD4.3-R70 "chỉ có quyền được đánh Insha bar cùng chiều với khung 5 phút"; OctD4.3-R9 the 5m is the only big frame). On the course day (Mon 2 Nov) this draws the mentor’s box exactly: 28,639.75–28,748.75 from the 08:35 candle, deleted on the 09:10 close. The course states no size limit for a merged box, so there is none (a cap would be a new knob with no course number). The long/short label of a merged box is the first inside bar’s mother colour — the course does not say; it is on the mentor question list. newest = the #61–#66 read (September D4.1-R37 [D4.1 p1 @22:31–22:49] "box the inside bar NEAREST in time"): a NEWER closed 5m inside bar replaces the standing box (isb_5m_box_replaced, _opposite when the direction flips). first = the pre-#61 read (the first box stands until it escapes).',
+          trader: 'merge — the October course.',
           consumer:
-            'trader/mentor_tuning.go mentorTuningResolve (FiveMinBoxSource) · kernel/mentor/eval.go Tick (the R5 5m box)',
-          range: 'newest / first',
-          systemDefault: 'newest',
-          recommended: 'newest — D4.1 p1 @22:31–22:49.',
-          whenToTouch: 'Rarely — first only to restore the pre-#61 read.',
+            'trader/mentor_tuning.go mentorTuningResolve (FiveMinBoxSource) · kernel/mentor/eval.go Tick (the R5 5m box) · kernel/mentor/isb_box.go mergeISBBox5m',
+          range: 'merge / newest / first',
+          systemDefault: 'merge',
+          recommended: 'merge — Oct D4.3 @ 58:00 (OctD4.3-R59).',
+          whenToTouch:
+            'Rarely — newest restores the #61–#66 replace-with-newest read; first the pre-#61 read.',
           perSession: 'No.',
         },
         {

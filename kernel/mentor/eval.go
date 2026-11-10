@@ -2486,7 +2486,28 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// when a candle of its OWN timeframe closes outside (default close5m), or on
 	// the 1m close/body in the explicit modes close/body [D3.4 p2 @ 00:14–13:00;
 	// D4.1 p1 @ 21:38; Oct D4.3 @ 65:00-66:13, OctD4.3-R67].
+	goneNow := false
 	if e.State.ISBBox != nil {
+		// ISB5-F1 (mode merge, the default): OctD4.3-R59 [Oct D4.3 @ 58:00] —
+		// a 5m candle that CLOSES inside the standing box merges into it ("bọc
+		// từ head to toe"), BEFORE this 1m candle's escape test, so the break
+		// reads the widened edges.
+		if e.Cfg.FiveMinBoxSource == FiveMinBoxMerge {
+			if cb := e.closedBucketsMemo(bars, now); len(cb) > 0 {
+				if merged, old := mergeISBBox5m(e.State.ISBBox, cb[len(cb)-1]); merged {
+					e.count("isb_5m_box_merged")
+					if old.Escaped != "" {
+						e.State.LastISBBoxEscape = "" // CE-1: standing again, not resolved
+						e.count("isb_5m_box_merge_unbroken")
+					}
+					if b := e.State.ISBBox; b.High != old.High || b.Low != old.Low || old.Escaped != "" {
+						e.note("5m ISB box merged the 5m candle at %s CT (close %.2f inside): %s %.2f–%.2f → %.2f–%.2f%s [OctD4.3-R59 @ 58:00]",
+							swingCT(cb[len(cb)-1].OpenTime), cb[len(cb)-1].Close, b.Dir, old.Low, old.High, b.Low, b.High,
+							map[bool]string{true: ", the 1m break " + string(old.Escaped) + " taken back", false: ""}[old.Escaped != ""])
+					}
+				}
+			}
+		}
 		// CE-5 (release #25): the escape test is the isb_box_escape knob —
 		// m466 G20/G49: close (default since #61) = the 1m close beyond the
 		// edge [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]; body = open AND
@@ -2502,9 +2523,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		if gone {
 			e.State.ISBBox = nil
 			e.State.LastISBBoxEscape = dir
+			goneNow = true
 		} else if newBrk {
 			// broken by a 1m close, still standing until the 5m closes outside
-		} else if e.Cfg.FiveMinBoxSource != FiveMinBoxFirst {
+		} else if e.Cfg.FiveMinBoxSource != FiveMinBoxFirst && e.Cfg.FiveMinBoxSource != FiveMinBoxMerge {
 			// m466 G28 D4.1-R37 [D4.1 p1 @22:31–22:49 "cái nến inside bar nào
 			// gần với thời điểm đó nhất, bọc lại cho em"]: the box is the NEWEST
 			// 5m inside bar — a later closed 5m ISB replaces the standing box.
@@ -2527,14 +2549,34 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 			}
 		}
-	} else if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
-		// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
-		// @ 12:02], so the same pair never builds it again.
-		if bx, ok := ISBBoxFromRTH5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
-			e.State.ISBBox = &bx
-			e.State.LastISBBoxAt = bx.AtTime
-			e.State.LastISBBoxDir = bx.Dir // CE-1
-			e.State.LastISBBoxEscape = ""  // CE-1: standing, not resolved yet
+	}
+	// ISB5-F5: no `else` — a box deleted on THIS tick (its 5m candle closed
+	// outside) does not delay the next one: the same closed 5m candle can be
+	// the next inside bar [OctD4.3-R58 @ 57:20: boxed as soon as it closes].
+	if e.State.ISBBox == nil && (isbBoxSameTickRebuild || !goneNow) {
+		if cb := e.closedBucketsMemo(bars, now); len(cb) >= 2 {
+			// One box per 5m ISB pair: an escaped box is gone for good [D3.4 p2
+			// @ 12:02], so the same pair never builds it again.
+			if bx, ok := ISBBoxFromRTH5m(cb[len(cb)-2], cb[len(cb)-1]); ok && bx.AtTime != e.State.LastISBBoxAt {
+				e.State.ISBBox = &bx
+				e.State.LastISBBoxAt = bx.AtTime
+				e.State.LastISBBoxDir = bx.Dir // CE-1
+				e.State.LastISBBoxEscape = ""  // CE-1: standing, not resolved yet
+				// ISB5-F5: built on a tick AFTER its inside candle (a 1m close
+				// past that candle — a gap, or a mode that held another box),
+				// this tick's own 1m close is a break test like any other
+				// [OctD4.3-R66, Oct D4.3 @ 65:00]; on the candle's own last minute it
+				// cannot be outside its range.
+				if isbBoxSameTickRebuild && cur.OpenTime >= cb[len(cb)-1].OpenTime+5*60_000 {
+					if newBrk, dir, gone := isbBoxStep(e.State.ISBBox, cur, e.Cfg.ISBBoxEscapeMode, cb); newBrk {
+						breaks = append(breaks, isbBreakEvent(*e.State.ISBBox, dir, "isb_5m"))
+						e.State.LastISBBoxEscape = dir
+						if gone {
+							e.State.ISBBox = nil
+						}
+					}
+				}
+			}
 		}
 	}
 

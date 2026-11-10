@@ -322,7 +322,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.PHLPullbackLow, &out.PHLPullbackLow, mentor.PHLPullbackLowPullback, mentor.PHLPullbackLowSignal)
 	// m466 P1 (release #61): unset = the course default; a stored value outside
 	// the enum fails closed to the default, counted (tuning_bad_value).
-	enum(t.Mentor5mBoxSource, &out.FiveMinBoxSource, mentor.FiveMinBoxNewest, mentor.FiveMinBoxFirst)
+	enum(t.Mentor5mBoxSource, &out.FiveMinBoxSource, mentor.FiveMinBoxMerge, mentor.FiveMinBoxNewest, mentor.FiveMinBoxFirst)
 	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
 	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
 	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)

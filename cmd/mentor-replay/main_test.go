@@ -18,6 +18,7 @@ import (
 	"vl/kernel/mentor"
 	"vl/logger"
 	"vl/market"
+	"vl/store"
 	"vl/trader"
 )
 
@@ -131,13 +132,18 @@ func TestReplayMatchesLivePath(t *testing.T) {
 		t.Fatalf("fixture span too short: %d bars", len(span))
 	}
 	noCal := map[string][]calendar.Event{}
+	// The live traders ran the #61–#66 box source (newest) on 11-10; the ISB5
+	// audit made merge the default. The parity compares the live log, so it
+	// runs the config the live log was written under.
+	live := &store.StrategyConfig{}
+	live.RiskControl.MentorTuning = &store.MentorTuning{Mentor5mBoxSource: mentor.FiveMinBoxNewest}
 	oldProv := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = oldProv })
 
 	// A — the tool's own stepping (what `mentor-replay` writes to <day>.jsonl).
 	var a []Event
 	testCap.take()
-	rpA := newReplayer(bs, nil, noCal, testCap, func(ev Event) { a = append(a, ev) })
+	rpA := newReplayer(bs, live, noCal, testCap, func(ev Event) { a = append(a, ev) })
 	rpA.seed(seedAt)
 	a = nil // the seed lines are the same call in both; compare the ticks
 	for _, b := range span {
@@ -147,7 +153,7 @@ func TestReplayMatchesLivePath(t *testing.T) {
 	// B — the live event-loop entry over an NT8-like bar cache.
 	var b []Event
 	testCap.take()
-	rpB := newReplayer(bs, nil, noCal, testCap, func(ev Event) { b = append(b, ev) })
+	rpB := newReplayer(bs, live, noCal, testCap, func(ev Event) { b = append(b, ev) })
 	rpB.seed(seedAt)
 	b = nil
 	src := asOfSource{bs: bs, symbol: "MNQ"}

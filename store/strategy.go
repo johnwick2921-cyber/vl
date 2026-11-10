@@ -2097,8 +2097,10 @@ type MentorTuning struct {
 	// [D4.3 @14:07–14:27]. Read only while wick_microscalp is ON.
 	WickSafePlay *bool `json:"wick_safe_play,omitempty"`
 	// m466 P1 (release #61): boxes, breaks, ranges. Absent = the course default.
-	// Mentor5mBoxSource: "newest" (default) | "first" — the 5m ISB rest box is
-	// the NEWEST 5m inside bar [D4.1-R37 p1 @22:31–22:49; D4.2-R10 p1 @05:34–08:33].
+	// Mentor5mBoxSource: "merge" (default, ISB5-F1 OctD4.3-R59 [Oct D4.3 @
+	// 58:00]: 5m candles that close inside the box merge into ONE inside bar) |
+	// "newest" (the #61–#66 default: the NEWEST 5m inside bar [D4.1-R37 p1
+	// @22:31–22:49; D4.2-R10 p1 @05:34–08:33]) | "first".
 	Mentor5mBoxSource string `json:"mentor_5m_box_source,omitempty"`
 	// MentorBreakDirectionLock: nil → ON — after a box break only setups in the
 	// break direction until a close back inside [D4.1-R31/R33 p1 @18:29–20:33;

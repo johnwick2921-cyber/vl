@@ -149,10 +149,10 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			LevelArmLineCancel: mentor.LevelArmLineCancelCurrent, // G17 D2.3-R34
 			PHLPullbackLow:     mentor.PHLPullbackLowPullback,    // G41 D2.2-R59
 			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
-			FiveMinBoxSource:   mentor.FiveMinBoxNewest, // D4.1-R37
-			BreakDirectionLock: true,                    // D4.1-R31/R33, D4.1-R55
-			SmallRangeGuard:    false,                   // D4.2-R33 — OFF since #61 final (count / margin unstated)
-			MidRangeRejectSide: true,                    // D2.2-R71
+			FiveMinBoxSource:   mentor.FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over D4.1-R37)
+			BreakDirectionLock: true,                   // D4.1-R31/R33, D4.1-R55
+			SmallRangeGuard:    false,                  // D4.2-R33 — OFF since #61 final (count / margin unstated)
+			MidRangeRejectSide: true,                   // D2.2-R71
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)

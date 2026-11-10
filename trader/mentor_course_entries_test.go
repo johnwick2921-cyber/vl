@@ -35,7 +35,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"flag_wall_target=true (course-defaults-30)", cfg.FlagWallTarget},
 		{"orb_escape_completely=false (release #52 B19: body test until the owner rules)", !cfg.OrbEscapeCompletely},
 		// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
-		{"mentor_5m_box_source=newest (D4.1-R37)", cfg.FiveMinBoxSource == mentor.FiveMinBoxNewest},
+		{"mentor_5m_box_source=merge (OctD4.3-R59)", cfg.FiveMinBoxSource == mentor.FiveMinBoxMerge},
 		{"mentor_break_direction_lock=true (D4.1-R31/R55)", cfg.BreakDirectionLock},
 		{"mentor_small_range_guard=false (D4.2-R33 — release #61 final: OFF, the course states no candle count / breakout margin)", !cfg.SmallRangeGuard},
 		{"mentor_mid_range_reject_side=true (D2.2-R71)", cfg.MidRangeRejectSide},
@@ -107,8 +107,8 @@ func TestCourseEntryKnobsBadValueFailsClosed(t *testing.T) {
 		OrbEdgeVetoPts:            999,
 		Mentor5mBoxSource:         "oldest",
 	})
-	if cfg.FiveMinBoxSource != mentor.FiveMinBoxNewest {
-		t.Fatalf("a bad mentor_5m_box_source must fall back to newest, got %q", cfg.FiveMinBoxSource)
+	if cfg.FiveMinBoxSource != mentor.FiveMinBoxMerge {
+		t.Fatalf("a bad mentor_5m_box_source must fall back to merge (the default), got %q", cfg.FiveMinBoxSource)
 	}
 	if cfg.FifteenMinIBRule != mentor.FifteenMinRequire5mISB || cfg.ISBBoxEscapeMode != mentor.ISBBoxEscapeCloseBoxTF || cfg.OrbEdgeVetoPts != 0 {
 		t.Fatalf("bad values must fall back to the defaults: %q %q %g", cfg.FifteenMinIBRule, cfg.ISBBoxEscapeMode, cfg.OrbEdgeVetoPts)
@@ -120,7 +120,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "mentor_5m_box_source=newest", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "mentor_5m_box_source=merge", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

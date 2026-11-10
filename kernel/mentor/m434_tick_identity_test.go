@@ -203,6 +203,10 @@ func m434Digest(t *testing.T, c m434Case) []string {
 		}
 	}
 	cfg := c.cfg()
+	// Every golden replayed here predates the ISB5 audit: the #61–#66 box
+	// source (newest) and the one-tick-late rebuild (F5). The ISB5 behaviour is
+	// pinned on real days by TestISB5F1CourseDayMergedBox / TestISB5F5* (cmd/mentor-replay).
+	m434PreISB5(t, &cfg)
 	if m434PreM473 {
 		cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // pre-m473 B3 default (the 1m close deletes)
 	}
@@ -251,6 +255,18 @@ func m434Digest(t *testing.T, c m434Case) []string {
 			m434Sum(string(ij)), m434Sum(string(sj)), m434Sum(notes), m434Sum(lv), m434Sum(tl)))
 	}
 	return lines
+}
+
+// m434PreISB5 puts the ISB5 audit back to the pre-ISB5 read for a frozen golden:
+// mode merge (the new default) → newest, and the F5 same-tick rebuild off.
+func m434PreISB5(t *testing.T, cfg *Config) {
+	t.Helper()
+	if cfg.FiveMinBoxSource == FiveMinBoxMerge {
+		cfg.FiveMinBoxSource = FiveMinBoxNewest
+	}
+	prev := isbBoxSameTickRebuild
+	isbBoxSameTickRebuild = false
+	t.Cleanup(func() { isbBoxSameTickRebuild = prev })
 }
 
 // m434PreM473 turns EVERY m473 behaviour off (B1 carry, B2 peak-1/level pairs,

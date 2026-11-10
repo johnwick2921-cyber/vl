@@ -47,6 +47,11 @@ func m60p1CrossingEval(t *testing.T, px15 float64) *Evaluator {
 	e := m60p1Eval(t, SideShort, 29_040, SideShort, SideShort, m60p1Levels())
 	e.State.Trigger15 = &TriggerLine{Dir: SideLong, Price: px15, LastBucket: math.MaxInt64}
 	e.State.Trigger30 = &TriggerLine{Dir: SideShort, Price: 29_100, LastBucket: math.MaxInt64}
+	// The escalation ladder pins were written against the #61–#66 newest box
+	// (the 09:40 short pair replaces the 09:35 long box). Under the ISB5 merge
+	// default the merged LONG box gates the short ISB first (isb_box_blocked,
+	// TestISB5F2CrossingDoesNotLiftTheMergedBoxGate).
+	e.Cfg.FiveMinBoxSource = FiveMinBoxNewest
 	return e
 }
 

@@ -80,8 +80,11 @@ func TestM60ConfluenceSurvivesNextFiveMinCandle(t *testing.T) {
 	if b15 == nil || b15.Provisional || b15.Dir != SideLong || b15.High != 29_079.25 || b15.Low != 28_985 || b15.AtTime != m60p1At(10, 0) {
 		t.Fatalf("the WE-2 15m box (long 28,985–29,079.25 @10:00, closed) must stand at 10:21, got %+v", b15)
 	}
-	if b5 == nil || b5.Dir != SideLong || b5.High != 29_048.50 || b5.Low != 29_017.25 || b5.AtTime != m60p1At(10, 10) {
-		t.Fatalf("the WE-2 5m box (long 29,017.25–29,048.50 @10:10) must stand at 10:21, got %+v", b5)
+	// ISB5-F1 (merge default, OctD4.3-R59 [Oct D4.3 @ 58:00]): the 10:15 candle
+	// closed inside the 10:10 box, so it merged in and the top grew to its high
+	// 29,052 (newest: 29,048.50, the 10:10 candle alone).
+	if b5 == nil || b5.Dir != SideLong || b5.High != 29_052 || b5.Low != 29_017.25 || b5.AtTime != m60p1At(10, 10) || b5.MergedTo != m60p1At(10, 15) {
+		t.Fatalf("the WE-2 5m box (long 29,017.25–29,052 @10:10, merged with 10:15) must stand at 10:21, got %+v", b5)
 	}
 	now := BarCloseInstant(bars[len(bars)-1])
 	cb5, cb15 := closedBuckets(bars, now, e.Cfg), closedBucketsTF(bars, 15, now)

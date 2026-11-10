@@ -10446,3 +10446,22 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
   - Run every boot-time refusal over the CURRENT stored configs (`sqlite3 -readonly`, no copy) before the release, not only over a fixture snapshot.
 - **Pin:** `TestM474MentorAbsentBreakerIsNotAW1Flip`: absent or null on a mentor strategy is 4 → 4[I] and not refused. A stored 0 still refuses as "inherit (breaker 4)" → off. An AI strategy stays 8 → 8[I], and env still wins.
 - **Reference:** `store/settings_truth.go` (`legacyBreakerHaltN`), `store/resolve_source.go` (`BreakerHaltMentorDefault`), `manager/trader_manager.go:746`.
+
+## CLASS NN (assigned at merge) — a standing course object REPLACED by the newest candidate instead of GROWN, so it shrinks, flips side and fakes breaks (ISB5-F1/F2/F5, feat/mentor-detector-history-audit)
+
+- **Symptom:**
+  - On the course's own day (Mon 2026-11-02) the mentor draws ONE 5m inside-bar box, 28,639.75–28,748.75 from the 08:35 candle to the 09:10 close [Oct D4.3 @ 57:20-58:00, frames s_03455/s_03492/s_03507]. The bot drew 4 boxes, set 3 false break locks and deleted it twice early inside that single no-trade zone.
+  - Over 91 RTH days, 78% of the newest-ISB replacements reached past the old edges and 72% flipped long/short; 35% of the 1m breaks and 25% of the deletions were closes still inside the course box.
+  - Every direction flip produced a crossing ISB pair, and the crossing read lifted the same-direction gate (OctD4.3-R70) for a third of all live-box minutes (F2).
+  - A box deleted on a tick could not be rebuilt on that same tick (`if … else if build`), so the next box formed a minute late and the 1m close on the build tick was never tested for a break (F5).
+- **Root cause:**
+  - The detector modelled the September sentence "box the inside bar nearest in time" (D4.1-R37) as REPLACE. The October lesson (OctD4.3-R59 "bọc từ head to toe", R54 "always against the first inside bar") makes it ONE object that GROWS while its candles close inside. October wins, and nothing compared the detector with the course's worked day.
+  - A secondary gate (crossing ISBs) was keyed on a read the primary bug manufactured, so the two defects compounded.
+  - The `else if` after a delete is a structural delay: the else branch is the only place the object is built.
+- **Probe:**
+  - For every standing course object (box, line, range), replay the course's OWN worked day through the production tick and compare its edges minute by minute with the frames. A rule summary is not enough.
+  - Count how often a "replace" shrinks, widens or flips the object. A high rate means the object should grow, not be replaced.
+  - For every gate that a second read can lift (crossing, escalation), check whether the first bug manufactures that read.
+  - For every `if standing { …delete… } else { build }`, ask whether the build must also run on the delete tick.
+- **Pin:** `TestISB5F1CourseDayMergedBox` (11-02 through the production seed + `mentorEvalOnce`), `TestISB5F2CrossingDoesNotLiftTheMergedBoxGate`, `TestISB5F5LateFormationSeesTheBreak` (10-14), `TestISB5F6MotherAcrossTheHalt` (replay tool output).
+- **Reference:** `kernel/mentor/eval.go` (the R5 5m box block), `kernel/mentor/isb_box.go` (`mergeISBBox5m`), `cmd/mentor-replay/events.go` (`boxFields`).

@@ -169,15 +169,12 @@ func m61p1NewestTape(long bool) []market.Kline {
 // short inside bar → the box is REPLACED by the 10:05 candle (AtTime 10:05),
 // counted isb_5m_box_replaced. Mutant first → the 09:45 box stays.
 func TestM61FiveMinBoxIsNewestISB(t *testing.T) {
-	if d := DefaultConfig().FiveMinBoxSource; d != FiveMinBoxNewest {
-		t.Fatalf("G28: the default 5m box source must be newest, got %q", d)
-	}
-	for _, mode := range []string{"", FiveMinBoxFirst} {
+	// ISB5-F1: the default is merge since the ISB5 audit (OctD4.3-R59); newest
+	// stays a knob value and is pinned here explicitly.
+	for _, mode := range []string{FiveMinBoxNewest, FiveMinBoxFirst, FiveMinBoxMerge} {
 		e := m60p1Eval(t, SideShort, 29_100, SideShort, SideShort, m60p1Levels())
 		e.Cfg.Early15mRead = false
-		if mode != "" {
-			e.Cfg.FiveMinBoxSource = mode
-		}
+		e.Cfg.FiveMinBoxSource = mode
 		bars := m61p1NewestTape(false)
 		for i := range bars {
 			e.Tick(bars[:i+1], BarCloseInstant(bars[i]))
@@ -188,7 +185,15 @@ func TestM61FiveMinBoxIsNewestISB(t *testing.T) {
 			}
 		}
 		bx := e.State.ISBBox
-		if mode == "" {
+		if mode == FiveMinBoxMerge {
+			// OctD4.3-R59: the 10:05 candle closed inside the 09:45 box → merged,
+			// never a replacement.
+			if bx == nil || bx.AtTime != m60p1At(9, 45) || bx.Dir != SideShort || e.State.Counters["isb_5m_box_replaced"] != 0 {
+				t.Fatalf("merge: the 09:45 box must stand (merged), got %+v counters %v", bx, e.State.Counters)
+			}
+			continue
+		}
+		if mode == FiveMinBoxNewest {
 			if bx == nil || bx.AtTime != m60p1At(10, 5) || bx.Dir != SideShort || bx.High != 29_044 || bx.Low != 29_032 {
 				t.Fatalf("newest: the 10:05 inside bar must replace the 09:45 box, got %+v", bx)
 			}
@@ -210,12 +215,10 @@ func TestM61FiveMinBoxIsNewestISB(t *testing.T) {
 // the 15m-short / 5m-long conflict refuses the next 1m ISB (isb_tf_conflict).
 // Mutant first → the 5m box stays short, no conflict (the pre-#61 read).
 func TestM61NewerOppositeFiveMinISBConflicts(t *testing.T) {
-	for _, mode := range []string{"", FiveMinBoxFirst} {
+	for _, mode := range []string{FiveMinBoxNewest, FiveMinBoxFirst} {
 		e := m60p1Eval(t, SideShort, 29_100, SideShort, SideShort, m60p1Levels())
 		e.Cfg.Early15mRead = false
-		if mode != "" {
-			e.Cfg.FiveMinBoxSource = mode
-		}
+		e.Cfg.FiveMinBoxSource = mode
 		box15 := ISBBox{High: 29_100, Low: 28_950, Dir: SideShort, AtTime: m60p1At(9, 30)}
 		e.State.ISBBox15m = &box15
 		e.State.LastISBBox15mAt = m60p1At(9, 45) // no real 15m rebuild from the tape
@@ -224,7 +227,7 @@ func TestM61NewerOppositeFiveMinISBConflicts(t *testing.T) {
 			m60p1K(m60p1At(10, 11), 29_037, 29_040, 29_035, 29_039),   // inside
 		)
 		m60p1Run(e, bars)
-		if mode == "" {
+		if mode == FiveMinBoxNewest {
 			if bx := e.State.ISBBox; bx == nil || bx.Dir != SideLong || bx.AtTime != m60p1At(10, 5) {
 				t.Fatalf("newest: the newer LONG 5m inside bar must replace the short box, got %+v", bx)
 			}

@@ -37,6 +37,42 @@ type ISBBox struct {
 	// its OWN timeframe closes outside; until then it exists but no longer
 	// gates (trade permission starts at the 1m close) [Oct D4.3 @ 65:00-66:13].
 	Escaped Side `json:",omitempty"`
+	// MergedTo (ISB5-F1, mode merge): the OpenTime of the last closed 5m candle
+	// merged into this box (0 = only the inside candle itself). OctD4.3-R59
+	// [Oct D4.3 @ 58:00]: "1 cái nến 5 phút, 2 cái nến 5 phút, 3 cái nến 5
+	// phút nó vẫn chưa thoát được cái box này thì nó thành 1 cái Inside Bar
+	// ... bọc từ head to toe" — every 5m candle that closes inside the box
+	// widens it to its own high/low; AtTime and Dir stay the FIRST inside
+	// bar's (OctD4.3-R54 [@ 52:30]: always measured against the first one).
+	MergedTo int64 `json:",omitempty"`
+}
+
+// mergeISBBox5m is the OctD4.3-R59 merge step (mode merge) for the newest
+// closed 5m candle `last`: when it is newer than the box's last merged candle
+// and CLOSED inside the box, the box widens to cover its high and low and the
+// 1m escape seen during it is taken back — the merged inside bar contains every
+// 1m close of that candle, so nothing has left it [Oct D4.3 @ 58:00; the break
+// itself stays OctD4.3-R66, a 1m close outside the box as it stands]. A close
+// outside is not merged: isbBoxStep deletes the box on it (OctD4.3-R67).
+// It reports whether the candle was merged, and the box before the merge.
+func mergeISBBox5m(b *ISBBox, last market.Kline) (merged bool, old ISBBox) {
+	old = *b
+	from := b.AtTime
+	if b.MergedTo > from {
+		from = b.MergedTo
+	}
+	if last.OpenTime <= from || last.Close > b.High || last.Close < b.Low {
+		return false, old
+	}
+	if last.High > b.High {
+		b.High = last.High
+	}
+	if last.Low < b.Low {
+		b.Low = last.Low
+	}
+	b.MergedTo = last.OpenTime
+	b.Escaped = ""
+	return true, old
 }
 
 // ISBBoxFrom5m reports whether (prev5m, cur5m) form a 5m ISB and, if so, boxes
@@ -260,6 +296,12 @@ func isbBoxStep(b *ISBBox, cur market.Kline, mode string, cbTF []market.Kline) (
 	}
 	return newBreak, dir, gone
 }
+
+// isbBoxSameTickRebuild switches the ISB5-F5 build step: a 5m box deleted on a
+// tick is followed on that SAME tick by the next one, and a box built after its
+// inside candle tests the tick's own 1m close for a break (frozen pre-ISB5
+// goldens set it false).
+var isbBoxSameTickRebuild = true
 
 // isFirstRTH5m reports whether the 5m candle opening at openMs is the RTH-open
 // bucket: 08:30 CT on a day the CME is open at that minute (calendar-driven,

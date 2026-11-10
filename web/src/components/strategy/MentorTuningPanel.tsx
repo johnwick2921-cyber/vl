@@ -251,9 +251,14 @@ const COPY = {
     en: 'The 5m ISB box is the',
     es: 'La caja ISB de 5m es la',
   },
+  box5mMerge: {
+    zh: '合并的内包线：收在箱体内的 5 分钟 K 线并入箱体（十月课程）',
+    en: 'merged inside bar: 5m candles that close inside join the box (October course)',
+    es: 'vela interior fusionada: las velas de 5m que cierran dentro se suman a la caja (curso de octubre)',
+  },
   box5mNewest: {
     zh: '最新的 5 分钟内包线（替换旧箱体）',
-    en: 'newest 5m inside bar (replaces the standing box)',
+    en: 'newest 5m inside bar (replaces the standing box, #61–#66)',
     es: 'vela interior de 5m más reciente (reemplaza la caja vigente)',
   },
   box5mFirst: {
@@ -586,6 +591,7 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'signal', label: COPY.phlPullbackSignal },
   ],
   mentor_5m_box_source: [
+    { value: 'merge', label: COPY.box5mMerge },
     { value: 'newest', label: COPY.box5mNewest },
     { value: 'first', label: COPY.box5mFirst },
   ],
@@ -655,7 +661,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_arm_line_cancel: 'current_line', // G17 D2.3-R34 [D2.3 p1 @23:35–24:03]
   phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
   // m466 P1 (release #61) — boxes, breaks, ranges.
-  mentor_5m_box_source: 'newest', // G28 D4.1-R37 [D4.1 p1 @22:31–22:49]
+  mentor_5m_box_source: 'merge', // ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00]
   mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
   mentor_small_range_guard: false, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30] — OFF since #61 final (count / margin unstated)
   mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]
