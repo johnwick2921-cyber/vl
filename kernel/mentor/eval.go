@@ -2465,7 +2465,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		// the EMA drifts every tick, and a drift reset re-touches and
 		// re-invalidates every tick (level_invalid 40→446/day, visit cap
 		// 293→14,875). The reset is only the visit-departure below.
-		if e.State.ISBOnly[lvl.Key] && !moving {
+		// D3-G15 (knob key_level_rearm, default off): a stable KEY level re-arms
+		// on visit departure like a moving line [OctD3.2-R78 @1:00:00].
+		rearm := moving || keyLevelRearmOn(e.Cfg) && unoEligible(lvl)
+		if e.State.ISBOnly[lvl.Key] && !rearm {
 			continue // invalid key level: no PHL/PLH, and touches need no re-read
 		}
 		wasNone := tr.Outcome == TouchNone
@@ -2490,7 +2493,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// classification, item 22 fix).
 			delete(e.State.VisitCapRefused, lvl.Key)
 			e.clearPHLRefusedVisit(lvl.Key)
-			if moving {
+			if rearm {
 				delete(e.State.ISBOnly, lvl.Key)
 			}
 		}

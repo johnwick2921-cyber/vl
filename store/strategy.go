@@ -2226,6 +2226,12 @@ type MentorTuning struct {
 	// [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16]; "off" — the September
 	// "invalid, ISB-only for the day" [D5.2 p1 @19:44–20:25].
 	KeyLevelBreakRetest string `json:"key_level_break_retest,omitempty"`
+	// D3-G15 (oct round 2): "off" (unset, today) — a key level that is ISB-only
+	// after its one flip stays ISB-only for the session day; "on" — it re-arms
+	// on visit departure like a trendline, so the retest after the run, closing
+	// back on the right side, is a fresh first touch [OctD3.2-R78 @1:00:00,
+	// garbled ASR; its sketch is a trendline — an inference [B]]. Mentor question.
+	KeyLevelRearm string `json:"key_level_rearm,omitempty"`
 	// levels audit LL-1: "off" (unset) — a key level a 1H RTH body closed
 	// through stays drawn. The course states only "draw as many as you like…
 	// Key Level nó là quá khứ" [OctD5.2-R15 @04:44] and never mentions a

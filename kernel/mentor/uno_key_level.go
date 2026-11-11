@@ -56,6 +56,12 @@ func keyLevelBreakRetestOn(cfg Config) bool {
 	return cfg.KeyLevelBreakRetest != KeyLevelBreakRetestOff
 }
 
+// keyLevelRearmOn reports whether D3-G15 is on (knob key_level_rearm; "" and
+// "off" read as off — today's behaviour).
+func keyLevelRearmOn(cfg Config) bool {
+	return cfg.KeyLevelRearm == KeyLevelRearmOn
+}
+
 // unoKeyLevelBreak is called on a LevelInvalid intent (shape (a)). It returns
 // true when the level FLIPPED (the caller must NOT set ISBOnly and drops the
 // LevelInvalid intent); false = the pre-#61 ISB-only path applies.

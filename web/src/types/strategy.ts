@@ -459,6 +459,8 @@ export interface MentorTuning {
   // levels audit LL-2 ['on'] — a key level whose first touch closes through it flips;
   // the first retest from the new side is the PHL/PLH reference [OctD5.2-R20/R24/R25]
   key_level_break_retest?: 'on' | 'off'
+  // D3-G15 ['off'] — 'on' re-arms an ISB-only key level on visit departure [OctD3.2-R78, [B]]
+  key_level_rearm?: 'on' | 'off'
   // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
   // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
   key_level_delete_on_1h_close?: 'on' | 'off'

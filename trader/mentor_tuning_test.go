@@ -174,6 +174,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			BoxPreOpenLookbackMin:      10,                                // D3-G1
 			PHLMinAbovePriorPts:        0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
 			KeyLevelBreakRetest:        mentor.KeyLevelBreakRetestOn,      // LL-2
+			KeyLevelRearm:              mentor.KeyLevelRearmOff,           // D3-G15
 			KeyLevelHistorySource:      mentor.KeyLevelHistoryOwn,         // LL-4
 		}
 		if got != want {
@@ -401,6 +402,22 @@ func TestLL2KeyLevelBreakRetestKnobReachesTheEvaluator(t *testing.T) {
 	} {
 		if got := tuningTick(t, &store.MentorTuning{KeyLevelBreakRetest: c.stored}).KeyLevelBreakRetest; got != c.want {
 			t.Errorf("stored key_level_break_retest=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestD3G15KeyLevelRearmKnobReachesTheEvaluator — oct round 2 D3-G15: unset =
+// off (today), "on" re-arms an ISB-only key level on departure, a bad value
+// fails closed to off — through the production resolver.
+func TestD3G15KeyLevelRearmKnobReachesTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.KeyLevelRearmOff},
+		{"off", mentor.KeyLevelRearmOff},
+		{"on", mentor.KeyLevelRearmOn},
+		{"always", mentor.KeyLevelRearmOff},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{KeyLevelRearm: c.stored}).KeyLevelRearm; got != c.want {
+			t.Errorf("stored key_level_rearm=%q → Config %q, want %q", c.stored, got, c.want)
 		}
 	}
 }

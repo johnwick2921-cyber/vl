@@ -908,6 +908,23 @@ type Config struct {
 	// → invalid, ISB-only" [D5.2 p1 @19:51–20:25].
 	// Studio JSON: risk_control.mentor_tuning.key_level_break_retest.
 	KeyLevelBreakRetest string
+	// KeyLevelRearm — D3-G15 (oct round 2). "off" (default, today): a KEY level
+	// that is ISB-only for the session day (its second wrong-way close after
+	// the one flip, LL-2/Uno) stays ISB-only until the day rolls. "on": it is
+	// treated like a trendline / moving line — the visit machinery keeps
+	// running, and the invalidity clears when price DEPARTS (a candle that no
+	// longer touches the level from the visit's approach side), so the
+	// retest after the run, closing back on the right side, is a fresh first
+	// touch that can arm a PHL/PLH. OctD3.2-R78 [@ 1:00:00] "đợi cho nó
+	// chạy, xong nó về đây nó test lại cái level này và nó một lần nữa nến
+	// đóng trên" — marked 'changed' vs the September "once invalid, only
+	// inside bars" [D5.2 p2 @20:48]. Ships OFF [B]: the passage is garbled ASR
+	// (source "both, unsure on words") and its worked sketch (28,786 → ~28,774
+	// → 28,795) is a TRENDLINE, which the bot already re-arms; applying it to
+	// static key levels is an inference. A moving line, a box edge and an
+	// old high/low keep their own rules either way. Mentor question.
+	// Studio JSON: risk_control.mentor_tuning.key_level_rearm.
+	KeyLevelRearm string
 	// SessionOpenLevels — G10 D3.1-R26 + G11 D3.1-R20: "cái râu này nó sẽ là
 	// cái đỉnh" [D3.1 p1 @11:58–12:22] (the session's first 5m candle wick is
 	// an old high/low with no left-neighbour test) and "Cái cạnh dưới của cái
@@ -1105,6 +1122,7 @@ func DefaultConfig() Config {
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms
+		KeyLevelRearm:       KeyLevelRearmOff,          // D3-G15 [B]: OctD3.2-R78 is garbled and its sketch is a trendline; on = a key level ISB-only after its flip re-arms on departure
 		SessionOpenLevels:   SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
 		LevelArmLineCancel:  LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
 		PHLPullbackLow:      PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
@@ -1163,8 +1181,11 @@ const (
 	KeyLevelDeleteOn1HCloseOn  = "on"
 	KeyLevelDeleteOn1HCloseOff = "off"
 	// levels audit LL-2: the October break-and-retest of a key level.
-	KeyLevelBreakRetestOn       = "on"
-	KeyLevelBreakRetestOff      = "off"
+	KeyLevelBreakRetestOn  = "on"
+	KeyLevelBreakRetestOff = "off"
+	// D3-G15: re-arm a key level on visit departure (OctD3.2-R78).
+	KeyLevelRearmOn             = "on"
+	KeyLevelRearmOff            = "off"
 	UnoKeyLevelsOn              = "on"
 	UnoKeyLevelsOff             = "off"
 	SessionOpenLevelsOn         = "on"

@@ -267,6 +267,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.key_level_break_retest',
     live: true,
   },
+  'Key level: re-arm after the run': {
+    settingId: 'risk_control.mentor_tuning.key_level_rearm',
+    live: true,
+  },
   'Key level: history from the current contract': {
     settingId: 'risk_control.mentor_tuning.key_level_history_source',
     live: true,
@@ -1916,6 +1920,23 @@ export const mentor: GuideSection = {
           recommended: 'on — October [OctD5.2-R20/R24/R25 @07:42–14:16].',
           whenToTouch:
             'Only on a mentor answer — off restores the September first-touch ISB-only rule.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Key level: re-arm after the run',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.key_level_rearm)',
+          what: 'Oct round 2 D3-G15. A key level that went ISB-only — its second wrong-way close after the one flip of the day (break_retest / uno_key_levels), the September “once invalid, only inside bars” [D5.2 p2 @20:48] — stays ISB-only until the day rolls. October D3.2 says: if there is no inside bar after the hold, “đợi cho nó chạy, xong nó về đây nó test lại cái level này và nó một lần nữa nến đóng trên” — wait for the run, the retest of the level and one more close on the right side, then the entry [OctD3.2-R78 @1:00:00, marked changed vs September]. off (default, today) = unchanged. on = the level behaves like a trendline: the invalidity clears when price DEPARTS (a candle that no longer touches the level from the visit’s approach side), so the retest that closes back on the right side is a fresh first touch and can arm a PHL/PLH through every normal gate; a wrong-way close on that new visit is ISB-only again until the next departure. Ships OFF [B]: the passage is garbled ASR (“unsure on words”) and its drawn sketch is a TRENDLINE (28,786 → ~28,774 → 28,795), which the bot already re-arms; extending it to static key levels is an inference. Moving lines, box edges and old highs/lows keep their own rules.',
+          trader:
+            'off — today. Mentor question: does a key level that closed through twice re-arm after the run and the retest?',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (KeyLevelRearm) · kernel/mentor/eval.go Tick touch loop (rearm) · kernel/mentor/uno_key_level.go keyLevelRearmOn',
+          range: 'on / off',
+          systemDefault: 'off',
+          recommended:
+            'off — today; the course passage is OctD3.2-R78 [@1:00:00], a [B] reading (not from the course for key levels).',
+          whenToTouch:
+            'Only on a mentor answer — on re-arms an ISB-only key level on departure.',
           perSession: 'No — per strategy.',
         },
         {

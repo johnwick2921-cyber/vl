@@ -108,6 +108,7 @@ type mentorTuned struct {
 	ISBTargetFillClose         bool    // D2-G3
 	PHLRoomMultiple            float64 // D2-G2
 	KeyLevelBreakRetest        string  // LL-2
+	KeyLevelRearm              string  // D3-G15
 	KeyLevelHistorySource      string  // LL-4
 }
 
@@ -152,6 +153,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		SwingISBOnePerCandle:        !d.Swing.ISBRepeatAfterFill,
 		KeyLevelHistorySource:       d.KeyLevelHistorySource,
 		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
+		KeyLevelRearm:               d.KeyLevelRearm,
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
@@ -387,6 +389,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	// levels audit LL-2: unset = on (October break-and-retest); a value
 	// outside the enum fails closed to the default, counted (tuning_bad_value).
 	enum(t.KeyLevelBreakRetest, &out.KeyLevelBreakRetest, mentor.KeyLevelBreakRetestOn, mentor.KeyLevelBreakRetestOff)
+	// D3-G15 (oct round 2): unset = off (today: a key level ISB-only after its flip
+	// stays so for the day); a value outside the enum fails closed to the default,
+	// counted (tuning_bad_value).
+	enum(t.KeyLevelRearm, &out.KeyLevelRearm, mentor.KeyLevelRearmOn, mentor.KeyLevelRearmOff)
 	// levels audit LL-1: unset = off (October keeps the level); a value outside
 	// the enum fails closed to the default, counted (tuning_bad_value).
 	enum(t.KeyLevelDeleteOn1HClose, &out.KeyLevelDeleteOn1HClose, mentor.KeyLevelDeleteOn1HCloseOn, mentor.KeyLevelDeleteOn1HCloseOff)
@@ -492,6 +498,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
+	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
 	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource           // LL-4
 }
 
