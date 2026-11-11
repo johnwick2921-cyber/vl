@@ -97,7 +97,7 @@ func TestISBTFF1TriggerLineGovernsInsideThe5mBox(t *testing.T) {
 func TestISBTFF2EscalationDoesNotLiftTheBoxGate(t *testing.T) {
 	newest := &store.StrategyConfig{}
 	openOff := false // G4 (oct round 2): the golden was written reading the trigger over the whole history
-	escOn := true // G3 (oct round 2): escalation is OFF by default; this test pins that it still never lifts a box gate
+	escOn := true    // G3 (oct round 2): escalation is OFF by default; this test pins that it still never lifts a box gate
 	newest.RiskControl.MentorTuning = &store.MentorTuning{TriggerEscalation: &escOn, TriggerFromOpen: &openOff, Mentor5mBoxSource: mentor.FiveMinBoxNewest}
 	got := replayFixtureDay(t, "mnq_12-26_1m_20261005-20261007.csv.gz", "2026-10-07", "08:53", newest)
 	esc := false

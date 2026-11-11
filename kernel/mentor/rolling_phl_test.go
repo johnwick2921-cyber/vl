@@ -20,8 +20,8 @@ func rollingFixture() (*Evaluator, []market.Kline, int64) {
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
-	cfg.EMALocationTFMinutes = 0 // no EMA location line
-	cfg.RoomMultiple = 0.05      // room rule effectively off (pin the rolling mechanics)
+	cfg.EMALocationTFMinutes = 0           // no EMA location line
+	cfg.RoomMultiple = 0.05                // room rule effectively off (pin the rolling mechanics)
 	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
