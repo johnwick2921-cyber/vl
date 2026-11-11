@@ -187,14 +187,14 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,
-    trendline_between_boxes: true, // course-defaults-30
+    trendline_between_boxes: false, // D3-G8 oct round 2 (was true, course-defaults-30)
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
     orb_escape_completely: false, // release #52 B19 — body test until the owner rules
     wick_microscalp: false, // m465 P5 — D4.3 advanced, OFF
     wick_safe_play: false, // m465 P5 — D4.3-R20, OFF
     isb_stack_cancel_candle_2m: 4, // release #52 W11 — unchanged defaults, all ours
-    isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26
+    isb_stack_tiny_stop_pts: 0, // G2 oct round 2 (was 12.5, m465 D5.1-R26)
     evening_slow_pts: 100,
     evening_slow_from_hour: 15,
     evening_slow_window_min: 0,
@@ -203,7 +203,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     phl_target_shy_pts: 5,
     isb_old_extreme_pts: 2,
     isb_in_range_gap_pts: 0,
-    htf_gate_news_only: false, // m462 — the 4h/1h gate applies all session by default (D5.1-R9/R11)
+    htf_gate_news_only: true, // D2-G7 oct round 2 — October: 4h/1h gate only in news + open (was false, m462 all session)
     trendline_entry_touch: 'third', // m472 A2 [Oct D3.2 @ 31:17] (was fourth, Sept D2.3-R7)
     near_box_between_exempt: false, // m465 D3.2-R29/R30
     phl_flat_low: 'flat_near', // m465 D2.2-R64

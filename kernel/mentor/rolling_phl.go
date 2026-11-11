@@ -272,18 +272,39 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 
 	// 2. The target is the NEAREST old extreme on the trade side (B14b), read
 	// from the reference candle's extreme exactly like the level path's tref.
+	//
+	// PHL-1 (phl audit): with PHLOldExtreme1mK > 0 (default 4) the old extreme
+	// is the 1m swing the pullback started from (phlTapeOldExtreme) — the
+	// mentor's "đỉnh cũ / đáy cũ" in every worked example [OctD2.3-R30 @ 26:50,
+	// R42 @ 41:23, R53 @ 54:00]. The 5m/15m pivots of the level set stay the
+	// runner's next level (nextLevelBeyond below). k <= 0 = the pre-PHL-1 read.
 	tref := execCur.High
 	if side == SideShort {
 		tref = execCur.Low
 	}
-	ex, found := nearestOldExtremeOnSide(oldExtremes, tref, side)
-	if !found {
-		return append(out, e.rollingCancel(st, "no old extreme on the trend side — the rolling leg has no target")...)
+	var ex oldExtreme
+	var found, pending bool
+	tape1m := e.Cfg.PHLOldExtreme1mK > 0
+	if tape1m {
+		ex, found, pending = phlTapeOldExtreme(bars, phlRefIdx(bars, execCur), tref, side, e.Cfg.PHLOldExtreme1mK)
+	} else {
+		ex, found = nearestOldExtremeOnSide(oldExtremes, tref, side)
+		if !found {
+			// PHL-5: named, once per exec candle (it used to cancel silently).
+			if !rollingSilentCancelSeam {
+				e.rollingRecordOncePerCandle(execCur, "rolling_phl_no_old_extreme_on_side")
+			}
+			return append(out, e.rollingCancel(st, "no old extreme on the trend side — the rolling leg has no target")...)
+		}
 	}
 
 	// 3. m216: a level touch-reject on this side OWNS the entry (first-touch
 	// fixed). The rolling is the no-level case — never both in one tick.
 	if levelTouchRejectActive(&e.State, side, levels) {
+		// PHL-5: named, once per exec candle (it used to cancel silently).
+		if !rollingSilentCancelSeam {
+			e.rollingRecordOncePerCandle(execCur, "rolling_level_touch_owns")
+		}
 		return append(out, e.rollingCancel(st, "a level touch owns the entry (first-touch fixed) — the rolling pullback does not double it [D2.3 p1 @17:55–19:12]")...)
 	}
 
@@ -292,6 +313,36 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	price := rollingRungPrice(execCur, side, e.Cfg)
 	skip := func(name, why string) []Intent {
 		return append(out, e.rollingSkipRung(st, side, execCur, price, name, why)...)
+	}
+
+	// PHL-1: on the 1m tape a missing old extreme is a RUNG refusal, never the
+	// end of the ladder. The swing the pullback started from is confirmed only
+	// k candles into the pullback; the ladder started on the first pullback
+	// candle [D2.2-R6/R7 p1 @01:46–03:27] goes on, and the rung on the candle
+	// that confirms it is the mentor's (WE7: the 13:25 red rung 28,316.25 —
+	// a red candle could not START a short ladder). An older, farther swing is
+	// never substituted while the newest one is unconfirmed.
+	if tape1m && !found {
+		if pending {
+			return skip("rolling_phl_old_extreme_unconfirmed", "the 1m swing the pullback started from is not confirmed yet — no target to read [OctD2.3-R22/R52 @ 18:28, 53:00]")
+		}
+		return skip("rolling_phl_no_old_extreme_on_side", "no 1m old extreme beyond the reference candle on the trade side — no target, no setup [OctD2.3-R53 @ 54:00]")
+	}
+
+	// 3b. D2-G6 / D2.3b-F3 (oct round 2): a 1m candle that CLOSED beyond the
+	// ladder's left extreme after the old extreme formed ends the ladder — "nó
+	// break cái đỉnh này rồi, thì [lower high] gì tầm này nữa" [OctD2.3-R69 @
+	// 78:10; frames s_04713/s_04718/s_04720: the old-high ray 28,876.50 broken by
+	// a candle that closes ~28,880]. Named once per exec candle and the resting
+	// rung cancelled; the ladder stays over for as long as that close stays on
+	// the tape after the old extreme — a NEW old extreme (a new leg) reads a new
+	// left extreme and restarts it. A wick that closes back inside is not a
+	// break (the per-rung refusal below stays). Knob rolling_left_break_cancel.
+	if e.Cfg.RollingLeftBreakCancel {
+		if left, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes); okLeft && leftExtremeClosedThrough(bars, ex.idx, left, side) {
+			e.rollingRecordOncePerCandle(execCur, "rolling_left_extreme_broken")
+			return append(out, e.rollingCancel(st, "a candle closed beyond the left extreme — the rolling ladder is over [OctD2.3-R69 @ 78:10]")...)
+		}
 	}
 
 	// 4. The entry must sit far enough from the old extreme (the 1–2 pullback
@@ -397,4 +448,16 @@ func rollingPullbackCandle(c market.Kline, side Side) bool {
 		return c.Close > c.Open
 	}
 	return c.Close < c.Open
+}
+
+// leftExtremeClosedThrough reports whether any closed 1m candle AFTER the old
+// extreme's bar closed beyond the ladder's left extreme: above it for a short
+// (the lower high is gone), below it for a long (the higher low is gone).
+func leftExtremeClosedThrough(bars []market.Kline, exIdx int, left float64, side Side) bool {
+	for i := exIdx + 1; i < len(bars); i++ {
+		if side == SideShort && bars[i].Close > left || side == SideLong && bars[i].Close < left {
+			return true
+		}
+	}
+	return false
 }

@@ -10,9 +10,10 @@ import (
 //
 // D3.4-R43 [D3.4 p2 @17:07–17:49]: when the inside bars cross back and forth so
 // the 5m buy/sell trigger is not valid, go to the 15m; if that fails, the 30m;
-// then the 1h, the 4h. The whipsaw read is the PRODUCTION crossingISBs(…, 3)
-// the ISB-box ladder already uses (2 opposite ISBs in the last 3 closed
-// buckets — mentor question Q10 open, no new number). The 1h and 4h rungs
+// then the 1h, the 4h. The whipsaw read is crossingISBsCfg: 2 opposite ISBs
+// in the last 3 closed buckets by default — the course states no count or
+// window, so isbTF-F6 ships both as knobs (crossing_isb_lookback /
+// crossing_isb_min) at today's values, mentor question Q10. The 1h and 4h rungs
 // already gate every intraday entry through the HTF check (HTFEntryCheck), so
 // the ladder here stops at the 30m.
 //
@@ -24,10 +25,10 @@ import (
 // (5, 15 or 30): the 5m, or the 15m when the 5m ISBs cross, or the 30m when the
 // 15m ISBs cross too. Knob mentor trigger_escalation OFF → the 5m always.
 func governingTrigger(cfg Config, t5, t15, t30 TriggerLine, cb5, cb15 []market.Kline) (TriggerLine, int) {
-	if !cfg.TriggerEscalation || !crossingISBs(cb5, 3) {
+	if !cfg.TriggerEscalation || !crossingISBsCfg(cfg, cb5) {
 		return t5, 5
 	}
-	if !crossingISBs(cb15, 3) {
+	if !crossingISBsCfg(cfg, cb15) {
 		return t15, 15
 	}
 	return t30, 30

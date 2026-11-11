@@ -66,12 +66,12 @@ func (e *Evaluator) SeedChartDisplay(bars []market.Kline, now int64) {
 			boxes = append(boxes, e.State.LatchedBoxes[k])
 		}
 	}
-	boxes = e.carriedBoxesAt(boxes, bars, now) // m473 B1 (pure read: display-only contract)
+	boxes, _ = e.carriedBoxesAt(boxes, bars, now) // m473 B1 (pure read: display-only contract)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
 
 	// Trendlines: the pure builder only (no carry, no HTF tracking, no refuse).
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
-	trendlines, _ := trendlinesBuildExec(bars, time.UnixMilli(now), exec2m)
+	trendlines, _ := trendlinesBuildExecOpts(bars, time.UnixMilli(now), exec2m, e.tlOpts())
 	trendlines = dropDeadTrendlines(trendlines) // m428 R3
 	tlLevels, _ := TrendlineLevelsTouch(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch)
 	levels = append(levels, tlLevels...)

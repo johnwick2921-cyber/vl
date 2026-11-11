@@ -50,18 +50,47 @@ func unoEligible(lvl Level) bool {
 	return lvl.Kind == KindKeyLevel && !isMovingLineKey(lvl.Key) && !isBoxEdge(lvl)
 }
 
+// keyLevelBreakRetestOn reports whether the October break-and-retest is on
+// (levels audit LL-2; "" reads as on — the default).
+func keyLevelBreakRetestOn(cfg Config) bool {
+	return cfg.KeyLevelBreakRetest != KeyLevelBreakRetestOff
+}
+
+// keyLevelRearmOn reports whether D3-G15 is on (knob key_level_rearm; "" and
+// "off" read as off — today's behaviour).
+func keyLevelRearmOn(cfg Config) bool {
+	return cfg.KeyLevelRearm == KeyLevelRearmOn
+}
+
 // unoKeyLevelBreak is called on a LevelInvalid intent (shape (a)). It returns
 // true when the level FLIPPED (the caller must NOT set ISBOnly and drops the
 // LevelInvalid intent); false = the pre-#61 ISB-only path applies.
+//
+// Two flips share the one-per-day UnoFlipped mark:
+//   - Uno Reverse (knob uno_key_levels): the level HELD today, then broke;
+//   - levels audit LL-2 (knob key_level_break_retest, default on): the level
+//     NEVER held — its first touch closed through it. October trades that
+//     break's first retest from the new side [OctD5.2-R20/R24/R25 @07:42,
+//     13:35, 14:16], superseding the September "invalid, ISB-only" read of a
+//     first touch [D5.2 p1 @19:44–20:25] (which knob off restores).
 func (e *Evaluator) unoKeyLevelBreak(lvl Level) bool {
-	if !unoKeyLevelsOn(e.Cfg) || !unoEligible(lvl) {
+	if !unoEligible(lvl) {
 		return false
 	}
 	if e.State.UnoFlipped[lvl.Key] {
 		return false // a 2nd wrong-way close after the flip: missed → ISB-only (D5.2-R24) [D5.2 p1 @20:31–21:43]
 	}
 	if e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)] < 1 {
-		return false // it never held today: the first touch closed wrong → invalid [D5.2 p1 @19:44–20:25]
+		// it never held today: the first touch closed through it.
+		if !keyLevelBreakRetestOn(e.Cfg) {
+			return false // September: invalid → ISB-only [D5.2 p1 @19:44–20:25]
+		}
+		e.levelFlip(lvl, "level_broken_retest",
+			"key level %s @%.2f: the first touch closed through it — break and retest: the role flips, the first retest candle that touches from the other side and closes back on it is the reference (one flip per day) [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16]")
+		return true
+	}
+	if !unoKeyLevelsOn(e.Cfg) {
+		return false
 	}
 	e.unoFlip(lvl)
 	return true
@@ -96,12 +125,18 @@ func (e *Evaluator) unoSameVisitBreak(tr *Touch, lvl Level, tc market.Kline) boo
 // touch is reset and the once-per-visit marks cleared, so the backtest from the
 // other side is a new first touch [D1.3 p1 @12:31–12:58].
 func (e *Evaluator) unoFlip(lvl Level) {
+	e.levelFlip(lvl, "level_broken_uno", "key level %s @%.2f held, then broke — Uno Reverse: the role flips, the backtest from the other side may trade (one flip per day) [D1.3 p1 @12:31–12:58]")
+}
+
+// levelFlip is the ONE flip body (Uno Reverse and the LL-2 break-and-retest):
+// the one-per-day mark, the named counter, a note, and a FRESH visit.
+func (e *Evaluator) levelFlip(lvl Level, counter, noteFmt string) {
 	if e.State.UnoFlipped == nil {
 		e.State.UnoFlipped = map[string]bool{}
 	}
 	e.State.UnoFlipped[lvl.Key] = true
-	e.count("level_broken_uno")
-	e.note("key level %s @%.2f held, then broke — Uno Reverse: the role flips, the backtest from the other side may trade (one flip per day) [D1.3 p1 @12:31–12:58]", lvl.Key, lvl.Price)
+	e.count(counter)
+	e.note(noteFmt, lvl.Key, lvl.Price)
 	if e.State.Touches != nil {
 		e.State.Touches[lvl.Key] = Touch{}
 	}

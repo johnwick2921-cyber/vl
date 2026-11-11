@@ -1092,6 +1092,24 @@ func TestFullDayReplayFidelity(t *testing.T) {
 		cfg.RiskControl.MentorTuning = &store.MentorTuning{}
 	}
 	cfg.RiskControl.MentorTuning.DayGateSpentPts = 300
+	// levels audit LL-1: the live 10-13 day deleted a key level once a 1H body
+	// closed through it (the deck rule); October keeps it (the new default).
+	// Pin the live deletion so this test keeps pinning the live day.
+	cfg.RiskControl.MentorTuning.KeyLevelDeleteOn1HClose = mentor.KeyLevelDeleteOn1HCloseOn
+	// oct round 2 D2-G2 / D2-G6: the live 10-13 day asked the September 2R room of a
+	// PHL/PLH and carried a ladder through a close beyond its left extreme;
+	// October's defaults (1R, cancel on the close) author one more PLH at 02:09.
+	// Pin the live values so this test keeps pinning the live day.
+	room2, leftOff := 2.0, false
+	cfg.RiskControl.MentorTuning.PHLRoomMultiple = &room2
+	cfg.RiskControl.MentorTuning.RollingLeftBreakCancel = &leftOff
+	// oct round 2 D2-G3 / G4: the live 10-13 day required a level target for every
+	// ISB and read the 5m trigger over the whole history; October's defaults (the
+	// fill-candle-close first target, the trigger read from the 08:30 open) change
+	// the arm set. Pin the live values.
+	fillOff, openOff := false, false
+	cfg.RiskControl.MentorTuning.ISBTargetFillClose = &fillOff
+	cfg.RiskControl.MentorTuning.TriggerFromOpen = &openOff
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}

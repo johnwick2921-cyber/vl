@@ -20,8 +20,9 @@ func rollingFixture() (*Evaluator, []market.Kline, int64) {
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
-	cfg.EMALocationTFMinutes = 0 // no EMA location line
-	cfg.RoomMultiple = 0.05      // room rule effectively off (pin the rolling mechanics)
+	cfg.EMALocationTFMinutes = 0           // no EMA location line
+	cfg.RoomMultiple = 0.05                // room rule effectively off (pin the rolling mechanics)
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
@@ -34,6 +35,11 @@ func rollingFixture() (*Evaluator, []market.Kline, int64) {
 	cfg.Exec2mAfter30m = false // 1m read
 	cfg.LocTriggerFilter = false
 	cfg.RollingPHL = true
+	// phl audit PHL-1: these mechanics fixtures place their old high as a
+	// LEVEL (SeedLevels) on a 6-candle synthetic tape too short for a 1m swing
+	// of width 4 — pinned on the pre-PHL-1 source. The 1m-tape old extreme is
+	// pinned on the course's real bars (phl1_course_examples_test.go).
+	cfg.PHLOldExtreme1mK = 0
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}
@@ -176,12 +182,14 @@ func TestRollingPLHShortMirror(t *testing.T) {
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0
 	cfg.RoomMultiple = 0.05
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
 	cfg.Exec2mAfter30m = false
 	cfg.LocTriggerFilter = false
 	cfg.RollingPHL = true
+	cfg.PHLOldExtreme1mK = 0 // phl audit PHL-1: synthetic level old extreme (see rollingFixture)
 	t0 := time.Date(2026, time.September, 15, 9, 0, 0, 0, ctime()).UnixMilli()
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: h, Low: l, Close: c}

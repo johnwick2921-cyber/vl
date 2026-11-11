@@ -84,7 +84,8 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 // [D4.1 p1 @08:05 written rule 2].
 func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
+	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
 	swing := swingHighTape5m(101.5)             // swing high 101.5
@@ -146,7 +147,8 @@ func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
 // next level", D3.3 p1 @04:11].
 func TestTargetIsTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 	cfg := DefaultConfig()
-	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
+	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
 	swing := swingHighTape5m(125)              // swing high 125, within 20 of key 130

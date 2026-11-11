@@ -130,6 +130,7 @@ func TestBoxEntryIntentConfluenceUsesRealEntryNotBoxEdge(t *testing.T) {
 // each return exactly once (BoxRefs dedup).
 func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1

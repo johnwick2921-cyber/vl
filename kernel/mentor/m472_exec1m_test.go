@@ -66,5 +66,12 @@ func legacy2mCfg() Config {
 	c.TrendlineEntryTouch = TrendlineEntryFourth
 	// m472 A3: likewise the PHL offsets were 0.50/0.50 (Sept D2.2-R10); October is 1/1 [Oct D2.3 @ 46:20-47:20].
 	c.PHLEntryBufferPts, c.PHLStopBufferPts = 0.5, 0.5
+	c.ISBStackTinyStopPts = 12.5               // oct round 2 G2: these goldens ran the September tiny-stop hold
+	c.ISBTargetFillClose = false               // oct round 2 D2-G3: these goldens ran the September level-target rule
+	c.TriggerFromOpen = false                  // oct round 2 G4: these goldens read the trigger over the whole history
+	c.TriggerEscalation = true                 // oct round 2 G3: these goldens ran the September 15m/30m trigger escalation
+	c.ISBReverseTrend = ISBReverseTrendTrigger // oct round 2 D5.3: these goldens read the reverse ISB's trend from the 5m trigger
+	c.Counter5mReduceSize = Counter5mReduceOff // oct round 2 D5.4-SCALP: these goldens carry no counter_5m flag
+	c.HTFGateNewsOnly = false                  // oct round 2 D2-G7: these goldens ran the m462 all-session 4h/1h gate
 	return c
 }

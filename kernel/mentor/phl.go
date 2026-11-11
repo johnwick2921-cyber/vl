@@ -103,6 +103,21 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 			return Intent{}, false, "not a lower high — a flat high is an FTGH, not a PLH [D2.2 p3 @ 14:03–14:22]"
 		}
 	}
+	// G7 (oct round 2): the entry must stand off the old low it rests on —
+	// 6.50 pts above it "is not even called a Potential High Low", about 15 is
+	// the mentor's figure [OctD4.2-R39/R41/R42 @ 36:45–40:20]. Knob
+	// phl_min_above_old_extreme_pts (0 = off).
+	if cfg.PHLMinAbovePriorPts > 0 && priorSwing != 0 {
+		dist := price - priorSwing
+		kind := "old low"
+		if side == SideShort {
+			dist = priorSwing - price
+			kind = "old high"
+		}
+		if dist < cfg.PHLMinAbovePriorPts {
+			return Intent{}, false, fmt.Sprintf("entry only %.2f pts from the %s — the course wants about %.0f pts beyond it [OctD4.2-R39/R41/R42 @ 36:45–40:20]", dist, kind, cfg.PHLMinAbovePriorPts)
+		}
+	}
 	// D2.2-R10: the stop ray sits PHLStopBufferPts beyond the candle extreme —
 	// not when the D3.3 EMA 34 nuance put it AT the EMA ("no extra room").
 	if !emaStop {
@@ -150,7 +165,7 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.RoomMultiple)); refuse { // m465 D4.3-R17: 1R for a 5m-wick target
+	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.PHLRoomMultiple)); refuse { // D2-G2: October 1R for a PHL/PLH; m465 D4.3-R17: 1R for a 5m-wick target
 		return Intent{}, false, why
 	}
 	setup := "PHL"

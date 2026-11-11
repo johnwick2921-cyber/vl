@@ -388,6 +388,7 @@ func TestM464CourseLadderTapeTriggerIsNamed(t *testing.T) {
 	bars := m464CourseTape()
 	e := m464Evaluator(SideLong, Level{Key: "old-high:29433.25", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.25}, bars[m464Idx(10, 7)].OpenTime)
 	e.State.Trigger = TriggerLine{} // the tape's own 5m trigger
+	e.Cfg.PHLRoomMultiple = 2       // D2-G2: the 2R room (knob phl_room_multiple=2) is what names rolling_room here; October's default is 1
 	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
 	if e.State.Trigger.Dir != SideShort || e.State.Trigger.Price != 29410 {
 		t.Fatalf("the tape's 5m trigger must flip short at 29,410, got %+v", e.State.Trigger)

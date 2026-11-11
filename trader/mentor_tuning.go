@@ -68,6 +68,7 @@ type mentorTuned struct {
 	NearBoxRoomMultiple    float64
 	NearBoxRoomPHL         bool
 	PHLTargetShyPts        float64
+	PHLOldExtreme1mK       int // PHL-1: 4 = default; 0 = the pre-PHL-1 source
 	ISBOldExtremePts       float64
 	ISBInRangeGapPts       float64
 
@@ -87,6 +88,30 @@ type mentorTuned struct {
 	BreakDirectionLock bool
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
+	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
+	SwingISBOnePerCandle       bool
+	CrossingISBLookback        int
+	CrossingISBMin             int
+	KeyLevelDeleteOn1HClose    string  // LL-1
+	PHLMinAbovePriorPts        float64 // G7
+	RollingLeftBreakCancel     bool    // D2-G6
+	HTFTrendlineFlip           bool    // D3-G12
+	TrendlineMaxSlopePtsPerBar float64 // D3-G14
+	TrendlineMinBouncePts      float64 // D3-G10
+	KnockKnockZone             bool    // D2-G10
+	TrendlineFirstBottomAnchor bool    // D3-G9
+	BoxFlipReversible          bool    // D3-G7
+	BoxCarriedStaysLive        bool    // D3-G4
+	BoxSwingBothRoles          bool    // D3-G2
+	BoxPreOpenLookbackMin      float64 // D3-G1
+	TriggerFromOpen            bool    // G4
+	ISBTargetFillClose         bool    // D2-G3
+	PHLRoomMultiple            float64 // D2-G2
+	KeyLevelBreakRetest        string  // LL-2
+	KeyLevelRearm              string  // D3-G15
+	ISBReverseTrend            string  // D5.3-R43/R44
+	Counter5mReduceSize        string  // D5.4-SCALP
+	KeyLevelHistorySource      string  // LL-4
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -127,6 +152,29 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		LegResetOnWaveBreak:         d.LegResetOnWaveBreak,
 		FlagWallTarget:              d.FlagWallTarget,
 		BoxNewZoneAfterEscape:       d.BoxNewZoneAfterEscape,
+		SwingISBOnePerCandle:        !d.Swing.ISBRepeatAfterFill,
+		KeyLevelHistorySource:       d.KeyLevelHistorySource,
+		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
+		KeyLevelRearm:               d.KeyLevelRearm,
+		ISBReverseTrend:             d.ISBReverseTrend,
+		Counter5mReduceSize:         d.Counter5mReduceSize,
+		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
+		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
+		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
+		HTFTrendlineFlip:            d.HTFTrendlineFlip,
+		TrendlineMaxSlopePtsPerBar:  d.TrendlineMaxSlopePtsPerBar,
+		TrendlineMinBouncePts:       d.TrendlineMinBouncePts,
+		KnockKnockZone:              d.KnockKnockZone,
+		TrendlineFirstBottomAnchor:  d.TrendlineFirstBottomAnchor,
+		BoxFlipReversible:           d.BoxFlipReversible,
+		BoxCarriedStaysLive:         d.BoxCarriedStaysLive,
+		BoxSwingBothRoles:           d.BoxSwingBothRoles,
+		BoxPreOpenLookbackMin:       d.BoxPreOpenLookbackMin,
+		TriggerFromOpen:             d.TriggerFromOpen,
+		ISBTargetFillClose:          d.ISBTargetFillClose,
+		PHLRoomMultiple:             d.PHLRoomMultiple,
+		CrossingISBLookback:         d.CrossingISBLookback,
+		CrossingISBMin:              d.CrossingISBMin,
 
 		ISBStackCancelCandle2m: d.ISBStackCancelCandle2m,
 		ISBStackTinyStopPts:    d.ISBStackTinyStopPts,
@@ -136,6 +184,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		NearBoxRoomMultiple:    d.NearBoxRoomMultiple,
 		NearBoxRoomPHL:         d.NearBoxRoomPHL,
 		PHLTargetShyPts:        d.PHLTargetShyPts,
+		PHLOldExtreme1mK:       d.PHLOldExtreme1mK,
 		ISBOldExtremePts:       d.ISBOldExtremePts,
 		ISBInRangeGapPts:       d.ISBInRangeGapPts,
 
@@ -272,6 +321,15 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
+	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel)         // D2-G6
+	flag(t.HTFTrendlineFlip, &out.HTFTrendlineFlip)                     // D3-G12
+	flag(t.KnockKnockZone, &out.KnockKnockZone)                         // D2-G10
+	flag(t.TrendlineFirstBottomAnchor, &out.TrendlineFirstBottomAnchor) // D3-G9
+	flag(t.BoxFlipReversible, &out.BoxFlipReversible)                   // D3-G7
+	flag(t.BoxCarriedStaysLive, &out.BoxCarriedStaysLive)               // D3-G4
+	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)                   // D3-G2
+	flag(t.TriggerFromOpen, &out.TriggerFromOpen)                       // G4
+	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)                 // D2-G3
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -290,6 +348,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickInt(t.ISBStackCancelCandle2m, 3, 12, &out.ISBStackCancelCandle2m)
+	// PHL-1: 0 / absent = the default width; -1 = the pre-PHL-1 source
+	// (Config 0); 1..10 = k. Anything else fails closed to the default, counted.
+	if t.PHLOldExtreme1mK == -1 {
+		out.PHLOldExtreme1mK = 0
+	} else {
+		pickInt(t.PHLOldExtreme1mK, mentor.PHLOldExtreme1mKMin, mentor.PHLOldExtreme1mKMax, &out.PHLOldExtreme1mK)
+	}
 	pickInt(t.EveningSlowFromHour, 15, 17, &out.EveningSlowFromHour)
 	pickInt(t.EveningSlowWindowMin, 1, 600, &out.EveningSlowWindowMin)
 	pickPtr := func(v *float64, lo, hi float64, dst *float64) {
@@ -303,6 +368,11 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
+	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)                // G7
+	pickPtr(t.TrendlineMaxSlopePtsPerBar, 0, 1000, &out.TrendlineMaxSlopePtsPerBar) // D3-G14
+	pickPtr(t.TrendlineMinBouncePts, 0, 1000, &out.TrendlineMinBouncePts)           // D3-G10
+	pickPtr(t.BoxPreOpenLookbackMin, 0, 240, &out.BoxPreOpenLookbackMin)            // D3-G1
+	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple)                         // D2-G2
 	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
 	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
 	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
@@ -317,15 +387,46 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	// m466 P2 (release #61): same contract — unset = the course default, a
 	// value outside the enum fails closed to the default (tuning_bad_value).
 	enum(t.UnoKeyLevels, &out.UnoKeyLevels, mentor.UnoKeyLevelsOn, mentor.UnoKeyLevelsOff)
+	// levels audit LL-4: unset = own; a value outside the enum fails closed to
+	// the default, counted (tuning_bad_value).
+	enum(t.KeyLevelHistorySource, &out.KeyLevelHistorySource, mentor.KeyLevelHistoryOwn, mentor.KeyLevelHistoryStitched)
+	// levels audit LL-2: unset = on (October break-and-retest); a value
+	// outside the enum fails closed to the default, counted (tuning_bad_value).
+	enum(t.KeyLevelBreakRetest, &out.KeyLevelBreakRetest, mentor.KeyLevelBreakRetestOn, mentor.KeyLevelBreakRetestOff)
+	// D3-G15 (oct round 2): unset = off (today: a key level ISB-only after its flip
+	// stays so for the day); a value outside the enum fails closed to the default,
+	// counted (tuning_bad_value).
+	enum(t.KeyLevelRearm, &out.KeyLevelRearm, mentor.KeyLevelRearmOn, mentor.KeyLevelRearmOff)
+	// D5.3-R43/R44 (oct round 2): unset = ema (October: the lines name the trend the
+	// reverse ISB trades with); "trigger" = today's governing-5m-trigger read; a bad
+	// value fails closed to the default, counted (tuning_bad_value).
+	enum(t.ISBReverseTrend, &out.ISBReverseTrend, mentor.ISBReverseTrendEMA, mentor.ISBReverseTrendTrigger)
+	// D5.4-SCALP (oct round 2): unset = on (a counter-5m PHL/PLH sizes the reduced
+	// tier); "off" = today's table. Bad value fails closed to the default.
+	enum(t.Counter5mReduceSize, &out.Counter5mReduceSize, mentor.Counter5mReduceOn, mentor.Counter5mReduceOff)
+	// levels audit LL-1: unset = off (October keeps the level); a value outside
+	// the enum fails closed to the default, counted (tuning_bad_value).
+	enum(t.KeyLevelDeleteOn1HClose, &out.KeyLevelDeleteOn1HClose, mentor.KeyLevelDeleteOn1HCloseOn, mentor.KeyLevelDeleteOn1HCloseOff)
 	enum(t.SessionOpenLevels, &out.SessionOpenLevels, mentor.SessionOpenLevelsOn, mentor.SessionOpenLevelsOff)
 	enum(t.LevelArmLineCancel, &out.LevelArmLineCancel, mentor.LevelArmLineCancelCurrent, mentor.LevelArmLineCancelPlacement)
 	enum(t.PHLPullbackLow, &out.PHLPullbackLow, mentor.PHLPullbackLowPullback, mentor.PHLPullbackLowSignal)
 	// m466 P1 (release #61): unset = the course default; a stored value outside
 	// the enum fails closed to the default, counted (tuning_bad_value).
-	enum(t.Mentor5mBoxSource, &out.FiveMinBoxSource, mentor.FiveMinBoxNewest, mentor.FiveMinBoxFirst)
+	enum(t.Mentor5mBoxSource, &out.FiveMinBoxSource, mentor.FiveMinBoxMerge, mentor.FiveMinBoxNewest, mentor.FiveMinBoxFirst)
 	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
 	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
 	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)
+	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
+	// the default, counted (tuning_bad_value).
+	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
+	pickInt(t.CrossingISBLookback, mentor.CrossingISBLookbackMin, mentor.CrossingISBLookbackMax, &out.CrossingISBLookback)
+	if t.CrossingISBMin != 0 {
+		if t.CrossingISBMin >= mentor.CrossingISBMinMin && t.CrossingISBMin <= out.CrossingISBLookback-1 {
+			out.CrossingISBMin = t.CrossingISBMin
+		} else {
+			bad()
+		}
+	}
 	return out
 }
 
@@ -374,6 +475,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.NearBoxRoomMultiple = t.NearBoxRoomMultiple
 	cfg.NearBoxRoomPHL = t.NearBoxRoomPHL
 	cfg.PHLTargetShyPts = t.PHLTargetShyPts
+	cfg.PHLOldExtreme1mK = t.PHLOldExtreme1mK // phl audit PHL-1
 	cfg.ISBOldExtremePts = t.ISBOldExtremePts
 	cfg.ISBInRangeGapPts = t.ISBInRangeGapPts
 	cfg.TrendlineEntryTouch = t.TrendlineEntryTouch
@@ -388,6 +490,29 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
+	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle        // isbTF-F4
+	cfg.CrossingISBLookback = t.CrossingISBLookback               // isbTF-F6
+	cfg.CrossingISBMin = t.CrossingISBMin                         // isbTF-F6
+	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose       // LL-1
+	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts               // G7
+	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel         // D2-G6
+	cfg.HTFTrendlineFlip = t.HTFTrendlineFlip                     // D3-G12
+	cfg.TrendlineMaxSlopePtsPerBar = t.TrendlineMaxSlopePtsPerBar // D3-G14
+	cfg.TrendlineMinBouncePts = t.TrendlineMinBouncePts           // D3-G10
+	cfg.KnockKnockZone = t.KnockKnockZone                         // D2-G10
+	cfg.TrendlineFirstBottomAnchor = t.TrendlineFirstBottomAnchor // D3-G9
+	cfg.BoxFlipReversible = t.BoxFlipReversible                   // D3-G7
+	cfg.BoxCarriedStaysLive = t.BoxCarriedStaysLive               // D3-G4
+	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles                   // D3-G2
+	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin           // D3-G1
+	cfg.TriggerFromOpen = t.TriggerFromOpen                       // G4
+	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
+	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
+	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
+	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
+	cfg.ISBReverseTrend = t.ISBReverseTrend                       // D5.3-R43/R44
+	cfg.Counter5mReduceSize = t.Counter5mReduceSize               // D5.4-SCALP
+	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource           // LL-4
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for
@@ -399,8 +524,9 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v htf_gate_news_only=%v isb_stack_tiny_stop_pts=%g phl_room_multiple=%g phl_min_above_old_extreme_pts=%g isb_target_fill_close=%v trigger_from_open=%v key_level_rearm=%v isb_reverse_trend=%v counter_5m_reduce_size=%v",
 		id, t.FifteenMinIBRule, t.Early15mRead, t.MTFConfluenceSource, t.TriggerEscalation, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
 		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay,
-		t.FiveMinBoxSource, t.BreakDirectionLock, t.SmallRangeGuard, t.MidRangeRejectSide)
+		t.FiveMinBoxSource, t.BreakDirectionLock, t.SmallRangeGuard, t.MidRangeRejectSide,
+		t.HTFGateNewsOnly, t.ISBStackTinyStopPts, t.PHLRoomMultiple, t.PHLMinAbovePriorPts, t.ISBTargetFillClose, t.TriggerFromOpen, t.KeyLevelRearm, t.ISBReverseTrend, t.Counter5mReduceSize)
 }

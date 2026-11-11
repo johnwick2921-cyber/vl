@@ -356,7 +356,7 @@ export interface MentorTuning {
   level_max_visits?: number // explicit 0 = no per-day cap
   orb_gate_enabled?: boolean
   isb_reverse_ema9_enabled?: boolean
-  htf_gate_news_only?: boolean // m462 — unset = OFF = the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); ON (stored) = the old D4.4-11 news + open windows
+  htf_gate_news_only?: boolean // D2-G7 oct round 2 — unset = ON = the 4h/1h gate only in the news + open windows (October: the 5m is the only big frame); OFF (stored) = the m462 all-session gate (Sept D5.1-R9/R11)
   exec_2m_after_30m?: boolean // X5-10 — unset = OFF since m472 A1 [Oct D4.2 @ 22:56-23:46] "Trade khung 1 phut, chu khong la khung 2 phut" (when ON, execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
@@ -430,6 +430,8 @@ export interface MentorTuning {
   near_box_room_phl?: boolean
   // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
   phl_target_shy_pts?: number
+  // phl audit PHL-1 [4] — the rolling PHL/PLH old extreme is the 1m swing the pullback started from; its width k (1..10; -1 = the pre-PHL-1 5m/15m pivots). The course states no number: 4 reproduces the four Oct D2.3 worked examples.
+  phl_old_extreme_1m_k?: number
   // B27 [2 / 0] — ISB size cuts: "at the old extreme" ± pts; "in range"
   // key-level gap (0 = inherit ping_pong_min_gap_pts)
   isb_old_extreme_pts?: number
@@ -451,6 +453,35 @@ export interface MentorTuning {
   // G2 D1.3-R21 ['on'] — a key level that held today and then breaks flips its
   // role once (Uno Reverse); the backtest reject trades [D1.3 p1 @12:31–12:58]
   uno_key_levels?: 'on' | 'off'
+  // levels audit LL-4 ['own'] — pre-roll key-level candles from the current contract's
+  // own native bars where they cover the candle [OctD5.2-R16]; 'stitched' = back-adjusted
+  key_level_history_source?: 'own' | 'stitched'
+  // levels audit LL-2 ['on'] — a key level whose first touch closes through it flips;
+  // the first retest from the new side is the PHL/PLH reference [OctD5.2-R20/R24/R25]
+  key_level_break_retest?: 'on' | 'off'
+  // D3-G15 ['off'] — 'on' re-arms an ISB-only key level on visit departure [OctD3.2-R78, [B]]
+  key_level_rearm?: 'on' | 'off'
+  // D5.3-R43/R44 ['ema'] — the reverse ISB at EMA 9 trades with the EMA 9/34 line trend; 'trigger' = today's 5m trigger side
+  isb_reverse_trend?: 'ema' | 'trigger'
+  // D5.4-SCALP ['on'] — a PHL/PLH against the governing 5m trigger sizes the reduced tier; 'off' = today
+  counter_5m_reduce_size?: 'on' | 'off'
+  // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
+  // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
+  key_level_delete_on_1h_close?: 'on' | 'off'
+  phl_min_above_old_extreme_pts?: number
+  isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target
+  trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
+  rolling_left_break_cancel?: boolean
+  htf_trendline_flip?: boolean // D3-G12 oct round 2
+  trendline_max_slope_pts_per_bar?: number // D3-G14 oct round 2
+  trendline_min_bounce_pts?: number // D3-G10 oct round 2
+  knock_knock_zone?: boolean // D2-G10 oct round 2
+  trendline_first_bottom_anchor?: boolean // D3-G9 oct round 2
+  box_flip_reversible?: boolean // D3-G7 oct round 2
+  box_carried_stays_live?: boolean // D3-G4 oct round 2
+  box_swing_both_roles?: boolean // D3-G2 oct round 2
+  box_preopen_lookback_min?: number // D3-G1 oct round 2
+  phl_room_multiple?: number
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
   // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
   session_open_levels?: 'on' | 'off'
@@ -462,13 +493,19 @@ export interface MentorTuning {
   phl_pullback_low?: 'pullback' | 'signal'
   // m466 P1 (release #61) — boxes, breaks, ranges (absent = the course default).
   // newest (default): the 5m ISB box is the NEWEST 5m inside bar [D4.1-R37]; first = pre-#61.
-  mentor_5m_box_source?: 'newest' | 'first'
+  mentor_5m_box_source?: 'merge' | 'newest' | 'first'
   // default ON: after a box break only setups in the break direction [D4.1-R31/R33, D4.1-R55].
   mentor_break_direction_lock?: boolean
   // default OFF (release #61 final — the course states no candle count / breakout margin): when true, no entry inside a range too small for its candles (61.50 pts / two 30-pt candles) [D4.2-R33].
   mentor_small_range_guard?: boolean
   // default ON: mid-range, trade WITH the last box rejection [D2.2-R71].
   mentor_mid_range_reject_side?: boolean
+  // isbTF audit — numbers the course does not state, at today's values (absent = unchanged).
+  // default ON: one FILLED inside-bar trade per 4h level per 4h candle — the bot's [B] reading, mentor question [D5.2-R25].
+  mentor_swing_isb_one_per_candle?: boolean
+  // crossing read for the trigger escalation [D3.4-R43]: last N closed buckets (3..12, default 3) holding at least M inside bars of both directions (2..N-1, default 2) — mentor Q10.
+  crossing_isb_lookback?: number
+  crossing_isb_min?: number
 }
 
 export interface RiskControlConfig {
