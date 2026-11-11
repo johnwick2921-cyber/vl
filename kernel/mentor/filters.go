@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"strings"
+	"time"
 
 	"vl/market"
 )
@@ -63,6 +64,21 @@ func triggerTickAt(prev TriggerLine, bars []market.Kline, tfMin int, cfg Config,
 	for i, b := range bars {
 		if b.OpenTime <= next.LastBucket {
 			continue // a committed bucket
+		}
+		if cfg.TriggerFromOpen && isRTHOpenBucket(b.OpenTime, tfMin) {
+			// G4 (oct round 2, OctD4.3-R5 [Oct D4.3 @ 03:10]): the trend is read
+			// from the 08:30 CT Open, not the overnight zone. The open candle is
+			// never compared with the Globex candle before it: the line is empty
+			// and this bucket becomes the reference for the next one. While the
+			// bucket forms (the tail) the read stays what it was, so it is
+			// re-evaluated identically each tick; the watermark commits it once
+			// a newer bucket exists.
+			next.Dir, next.Price, next.MovedAt = "", 0, 0
+			if i < len(bars)-1 {
+				next.LastBar = b
+				next.LastBucket = b.OpenTime
+			}
+			continue
 		}
 		last := next.LastBar
 		if last.OpenTime > 0 && b.OpenTime > last.OpenTime {
@@ -161,6 +177,17 @@ func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, c
 		next = triggerTickAt(next, window, tfMin, cfg, breakAt)
 	}
 	return next
+}
+
+// isRTHOpenBucket reports whether the bucket opening at openMs is the 08:30 CT
+// Open bucket of a 5m, 15m or 30m trigger line (G4, OctD4.3-R5). The 60m/240m
+// lines (the HTF read) are not re-anchored: October gives them no open read.
+func isRTHOpenBucket(openMs int64, tfMin int) bool {
+	if tfMin != 5 && tfMin != 15 && tfMin != 30 {
+		return false
+	}
+	t := time.UnixMilli(openMs).In(ctime())
+	return t.Hour() == 8 && t.Minute() == 30
 }
 
 // applyBreak runs the §5.1 break logic for one bucket against the previous

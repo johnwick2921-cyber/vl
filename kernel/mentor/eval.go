@@ -2825,6 +2825,21 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// missing (or sub-1:1) target skips ONLY this ISB, never
 						// the rest of the tick (CTO E-1/E-2 2026-10-03T15:12Z).
 						target := nextLevelBeyondRoom(levels, chosen.Price, chosen.Stop, side, e.Cfg.RoomMultiple)
+						// D2-G3 (oct round 2, OctD2.2-R35/R37 [@ 28:40, 30:03]): the ISB's
+						// basic target is the fill candle's close, not a level. No level
+						// beyond, or only one inside 1R: the first target is the leg-1 TP
+						// the trader already owns (+1R), the runner keeps the ladder, and
+						// the room-to-a-level rule has no level to measure (knob
+						// isb_target_fill_close; OFF = the September level rule).
+						fillClose := false
+						if e.Cfg.ISBTargetFillClose && (target == 0 || !targetFloorOK(chosen.Price, chosen.Stop, target)) {
+							if side == SideLong {
+								target = chosen.Price + abs(chosen.Price-chosen.Stop)
+							} else {
+								target = chosen.Price - abs(chosen.Price-chosen.Stop)
+							}
+							fillClose = true
+						}
 						if target == 0 {
 							e.refuse("isb_missing_target")
 						} else if !targetFloorOK(chosen.Price, chosen.Stop, target) {
@@ -2841,7 +2856,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 							capped := CapTargetForDay(chosen, e.State.Day.Verdict, dg)
 							if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 								e.refuse("isb_target_below_floor")
-							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.RoomMultiple)); refuse {
+							} else if refuse, _ := roomRefusal(chosen.Price, chosen.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.RoomMultiple)); refuse && !fillClose {
 								// The room to the first level must be >= RoomMultiple ×
 								// the leg-1 take-profit (1R; 2R for confluence).
 								// MENTOR-NY item 1: the room is measured to the LEVEL
@@ -2851,7 +2866,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// [D5.3 p1 @09:32–09:50]. The cap still shortens the
 								// take-profit and the 1:1 floor above still reads it.
 								e.refuse("room")
-							} else if refuse, _ := spentDayRoomRefusal(chosen.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+							} else if refuse, _ := spentDayRoomRefusal(chosen.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse && !fillClose {
 								// SPENT day: room ≥ 2× the capped take-profit too
 								// ("target 15 → room 30", D5.3 p1 @09:32–09:50).
 								e.refuse("room")

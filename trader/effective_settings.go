@@ -910,6 +910,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("isb_reverse_touch", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseTouch })
 	mentorTuningRow("key_level_delete_on_1h_close", "trader.mentorTuningResolve (LL-1)", func(t mentorTuned) any { return t.KeyLevelDeleteOn1HClose })
 	mentorTuningRow("phl_min_above_old_extreme_pts", "trader.mentorTuningResolve (G7 OctD4.2-R41, nil \u2192 15)", func(t mentorTuned) any { return t.PHLMinAbovePriorPts })
+	mentorTuningRow("isb_target_fill_close", "trader.mentorTuningResolve (D2-G3 OctD2.2-R35/R37, nil \u2192 ON)", func(t mentorTuned) any { return t.ISBTargetFillClose })
+	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
 	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
 	mentorTuningRow("phl_room_multiple", "trader.mentorTuningResolve (D2-G2 OctD2.3-R31, nil \u2192 1)", func(t mentorTuned) any { return t.PHLRoomMultiple })
 	mentorTuningRow("key_level_break_retest", "trader.mentorTuningResolve (LL-2)", func(t mentorTuned) any { return t.KeyLevelBreakRetest })

@@ -95,6 +95,8 @@ type mentorTuned struct {
 	KeyLevelDeleteOn1HClose string  // LL-1
 	PHLMinAbovePriorPts     float64 // G7
 	RollingLeftBreakCancel  bool    // D2-G6
+	TriggerFromOpen         bool    // G4
+	ISBTargetFillClose      bool    // D2-G3
 	PHLRoomMultiple         float64 // D2-G2
 	KeyLevelBreakRetest     string  // LL-2
 	KeyLevelHistorySource   string  // LL-4
@@ -144,6 +146,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
+		TriggerFromOpen:             d.TriggerFromOpen,
+		ISBTargetFillClose:          d.ISBTargetFillClose,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -294,6 +298,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
 	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel) // D2-G6
+	flag(t.TriggerFromOpen, &out.TriggerFromOpen)               // G4
+	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)         // D2-G3
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -446,6 +452,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
 	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts         // G7
 	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel   // D2-G6
+	cfg.TriggerFromOpen = t.TriggerFromOpen                 // G4
+	cfg.ISBTargetFillClose = t.ISBTargetFillClose           // D2-G3
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                 // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest         // LL-2
 	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource     // LL-4

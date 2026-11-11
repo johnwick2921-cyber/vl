@@ -2244,6 +2244,18 @@ type MentorTuning struct {
 	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
 	// phl_not_higher_low / phl_not_lower_high refusal only.
 	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
+	// ISBTargetFillClose — D2-G3 (oct round 2): nil → ON (October). The ISB's basic
+	// target is the fill candle's close [OctD2.2-R35/R37 @ 28:40, 30:03]: an ISB
+	// with no level beyond its entry (isb_missing_target) or only a level inside
+	// 1R (isb_target_below_floor) is no longer refused; its first target is the
+	// +1R leg-1 TP and the room-to-a-level rule has no level to measure. false =
+	// the September rule (a level target >= 1R with 2R room).
+	ISBTargetFillClose *bool `json:"isb_target_fill_close,omitempty"`
+	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
+	// line is read from the 08:30 CT Open, not from the overnight Globex tape
+	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the
+	// whole-history read (the 08:30 candle compared with the 08:25 Globex candle).
+	TriggerFromOpen *bool `json:"trigger_from_open,omitempty"`
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
 	// (level touch + rolling ladder). nil → 1 (October: the Oct D2.3 worked trades
 	// are 1.14R–1.8R [OctD2.3-R31 @ 27:33]; no 2x in October). 2 = the September

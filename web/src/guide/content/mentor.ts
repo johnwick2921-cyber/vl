@@ -207,6 +207,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.phl_room_multiple',
     live: true,
   },
+  'ISB first target is the fill candle close': {
+    settingId: 'risk_control.mentor_tuning.isb_target_fill_close',
+    live: true,
+  },
+  'Trigger lines are read from the 08:30 open': {
+    settingId: 'risk_control.mentor_tuning.trigger_from_open',
+    live: true,
+  },
   'Rolling ladder ends on a close through the left extreme': {
     settingId: 'risk_control.mentor_tuning.rolling_left_break_cancel',
     live: true,
@@ -1665,6 +1673,37 @@ export const mentor: GuideSection = {
           systemDefault: '1',
           recommended: '1 — October wins over Sept D5.3 [OctD2.3-R31].',
           whenToTouch: 'Only to restore September: set 2.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'ISB first target is the fill candle close',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.isb_target_fill_close)',
+          what: 'Oct round 2 D2-G3. OctD2.2-R35/R37 [Oct D2.2 @28:40, 30:03]: the ISB gives its own first target — sell part when the trend candle that fills the order closes (“target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng”); R34 [@28:12] puts level targets (tops and bottoms) aside as “not taught yet” and the 1:1 theory with them. ON (default): an ISB with no level beyond its entry (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is no longer refused; its first target is the +1R leg-1 take-profit the trader already owns (partial at the fill candle’s close), the runner keeps the level ladder, and the 2R room-to-a-level rule has no level to measure. Replay 30 Oct 13:26 CT (mother 13:25 red, ISB 13:26): refused isb_target_below_floor before, sell stop 28,307.50 fills 13:27 and the low is 28,240.50 by 13:35. OFF = the September rule: a level target at least 1R away with 2R room.',
+          trader: 'on — October [OctD2.2-R35/R37].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBTargetFillClose) · kernel/mentor/eval.go Tick (ISB target stage)',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended:
+            'on — October [OctD2.2-R35/R37 @28:40, 30:03]; mentor question: Oct D2.1-R13 (level to level) is the argument for the ladder.',
+          whenToTouch:
+            'Only to restore the September level-target rule: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trigger lines are read from the 08:30 open',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.trigger_from_open)',
+          what: 'Oct round 2 G4. OctD4.3-R5 [Oct D4.3 @03:10]: the 5m trend is judged from the Open to the current bar — “từ lúc Open ra… từ cái mảng đen nha chứ không phải tính cái mảng xanh” (the black RTH zone from 08:30 CT, not the blue overnight zone). ON (default): at the 08:30 bucket the 5m (and 15m/30m) trigger line is emptied and that candle only becomes the reference for the next one, so the open candle never breaks the 08:25 Globex candle. Fri 30 Oct: 08:25 L 28,788.25, 08:30 L 28,684.50 — the old read drew a sell line at 28,788.25 from 08:30 (shorts allowed anywhere under it, ~104 pts above the RTH read); the RTH read has no line until 08:35 (L 28,668.25) draws the sell line at 28,684.50. The 1h/4h lines are not re-anchored. OFF = the whole-history read.',
+          trader: 'on — October [OctD4.3-R5 @03:10].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TriggerFromOpen) · kernel/mentor/filters.go triggerTickAt / isRTHOpenBucket',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD4.3-R5 @03:10].',
+          whenToTouch:
+            'Only to restore the overnight-reference read: set false.',
           perSession: 'No — per strategy.',
         },
         {

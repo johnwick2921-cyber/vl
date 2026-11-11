@@ -699,6 +699,27 @@ type Config struct {
 	// escalation; the 15m box (OctD4.3-R60) is unaffected. Studio:
 	// risk_control.mentor_tuning.trigger_escalation.
 	TriggerEscalation bool
+	// TriggerFromOpen — G4 (oct round 2): the 5m (and 15m/30m) trigger line is read
+	// from the 08:30 CT Open, not from the overnight tape: "từ lúc Open ra... từ
+	// cái mảng đen nha chứ không phải tính cái mảng xanh" [OctD4.3-R5 @ 03:10]
+	// (black = RTH from 08:30, blue = the Globex zone). ON (default): at the RTH
+	// open bucket the line is emptied and the 08:30 candle is only the reference
+	// for the next one, so no 08:30 break against the 08:25 Globex candle ever
+	// draws a line. OFF = the pre-round-2 read over the whole history. Studio:
+	// risk_control.mentor_tuning.trigger_from_open.
+	TriggerFromOpen bool
+	// ISBTargetFillClose — D2-G3 (oct round 2): the ISB's basic target is the
+	// fill candle's close, not a level beyond the entry [OctD2.2-R35/R37 @ 28:40,
+	// 30:03: "target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng";
+	// R34 @ 28:12: targets from tops and bottoms are "not taught yet", the 1:1
+	// theory is put aside]. ON (default): an ISB with NO level beyond its entry
+	// (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is
+	// not refused: its first target is the leg-1 take-profit the trader already
+	// owns (+1R native TP, partial at the fill candle's close, mentorISBPartialTP),
+	// the runner keeps the level ladder, and the room-to-a-level rule has no level
+	// to measure. OFF = the September rule (a level target >= 1R with 2R room
+	// is required). Studio: risk_control.mentor_tuning.isb_target_fill_close.
+	ISBTargetFillClose bool
 	// CrossingISBLookback / CrossingISBMin — isbTF-F6: the crossing read that
 	// escalates the trigger (crossingISBsCfg): the last CrossingISBLookback
 	// CLOSED buckets hold at least CrossingISBMin inside bars of BOTH
@@ -1011,6 +1032,8 @@ func DefaultConfig() Config {
 		// boxes, the trigger escalation 5m → 15m → 30m.
 		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
+		ISBTargetFillClose:  true,                       // D2-G3 oct round 2: the ISB's first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]; false = the September level target
+		TriggerFromOpen:     true,                       // G4 oct round 2: the 5m trend is read from the 08:30 open [OctD4.3-R5 @ 03:10]; false = the whole-history read
 		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		CrossingISBMin:      2,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)

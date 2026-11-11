@@ -1103,6 +1103,13 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	room2, leftOff := 2.0, false
 	cfg.RiskControl.MentorTuning.PHLRoomMultiple = &room2
 	cfg.RiskControl.MentorTuning.RollingLeftBreakCancel = &leftOff
+	// oct round 2 D2-G3 / G4: the live 10-13 day required a level target for every
+	// ISB and read the 5m trigger over the whole history; October's defaults (the
+	// fill-candle-close first target, the trigger read from the 08:30 open) change
+	// the arm set. Pin the live values.
+	fillOff, openOff := false, false
+	cfg.RiskControl.MentorTuning.ISBTargetFillClose = &fillOff
+	cfg.RiskControl.MentorTuning.TriggerFromOpen = &openOff
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}

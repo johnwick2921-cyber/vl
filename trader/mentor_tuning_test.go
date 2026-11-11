@@ -160,6 +160,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 			PHLRoomMultiple:         1,                                 // D2-G2 October 1:1
+			ISBTargetFillClose:      true,                              // D2-G3 October [OctD2.2-R35/R37 @ 28:40, 30:03]
+			TriggerFromOpen:         true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
 			PHLMinAbovePriorPts:     0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2

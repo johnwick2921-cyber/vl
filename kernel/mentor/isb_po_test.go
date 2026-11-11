@@ -73,6 +73,7 @@ func TestDojiCandle1IsNotISB(t *testing.T) {
 func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.ISBTargetFillClose = false // D2-G3 oct round 2: the September level-target rule
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
@@ -117,6 +118,7 @@ func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
 func TestISBTargetBelowFloorRefused(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.ISBTargetFillClose = false // D2-G3 oct round 2: the September level-target rule
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}
 	e.State.HTF = HTF{FourH: TriggerLine{Dir: SideLong, Price: 90}}
