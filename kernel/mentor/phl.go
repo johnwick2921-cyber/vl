@@ -143,7 +143,7 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if reward < risk {
 		return Intent{}, false, targetCloserThanStopReason
 	}
-	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.RoomMultiple)); refuse { // m465 D4.3-R17: 1R for a 5m-wick target
+	if refuse, why := roomRefusal(price, stop, target, confluence, targetRoomMultiple(levels, target, cfg.PHLRoomMultiple)); refuse { // D2-G2: October 1R for a PHL/PLH; m465 D4.3-R17: 1R for a 5m-wick target
 		return Intent{}, false, why
 	}
 	setup := "PHL"

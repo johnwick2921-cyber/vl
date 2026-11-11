@@ -92,9 +92,10 @@ type mentorTuned struct {
 	SwingISBOnePerCandle    bool
 	CrossingISBLookback     int
 	CrossingISBMin          int
-	KeyLevelDeleteOn1HClose string // LL-1
-	KeyLevelBreakRetest     string // LL-2
-	KeyLevelHistorySource   string // LL-4
+	KeyLevelDeleteOn1HClose string  // LL-1
+	PHLRoomMultiple         float64 // D2-G2
+	KeyLevelBreakRetest     string  // LL-2
+	KeyLevelHistorySource   string  // LL-4
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -139,6 +140,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelHistorySource:       d.KeyLevelHistorySource,
 		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
+		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
 
@@ -325,6 +327,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
+	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple) // D2-G2
 	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
 	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
 	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
@@ -435,6 +438,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.CrossingISBLookback = t.CrossingISBLookback         // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                   // isbTF-F6
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
+	cfg.PHLRoomMultiple = t.PHLRoomMultiple                 // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest         // LL-2
 	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource     // LL-4
 }

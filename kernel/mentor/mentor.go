@@ -421,7 +421,15 @@ type Config struct {
 	// Filters (PLAN v1 §4).
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
 	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
-	RangeGapPts    float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
+	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path
+	// (level touch + rolling ladder) asks, in place of RoomMultiple. October takes
+	// the Oct D2.3 worked trades at 1:1..1.8R [OctD2.3-R31 @ 27:33 "tăng lên 1,2 ...
+	// 1,1 bây giờ là dĩ vãng"; WE7 1.14R, WE10 1.71R] and states no 2x number (the 2R
+	// room is Sept D5.3 METHOD s7). Default 1 (the D1.2 floor target >= stop stays);
+	// 2 = the September behaviour. ISB / box / swing keep RoomMultiple.
+	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
+	PHLRoomMultiple float64
+	RangeGapPts     float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — m462 (release #59): false (DEFAULT) = the 4h/1h
 	// direction gate applies ALL SESSION to every intraday setup. The final
@@ -914,6 +922,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
+		PHLRoomMultiple:        1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
 		HTFGateNewsOnly:        false,               // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
 		NearBoxRoomMultiple:    2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
 		NearBoxRoomPHL:         true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)

@@ -203,6 +203,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_reverse_touch',
     live: true,
   },
+  'PHL/PLH room multiple': {
+    settingId: 'risk_control.mentor_tuning.phl_room_multiple',
+    live: true,
+  },
   'Key level: delete on a 1H body close': {
     settingId: 'risk_control.mentor_tuning.key_level_delete_on_1h_close',
     live: true,
@@ -1639,6 +1643,20 @@ export const mentor: GuideSection = {
           recommended: 'off — October wins over the deck [OctD5.2-R13..R20].',
           whenToTouch:
             'Only on a mentor answer — on restores the deck / September deletion.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'PHL/PLH room multiple',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.phl_room_multiple)',
+          what: 'Oct round 2 D2-G2. The room rule asks how far the target must be from the entry, as a multiple of the stop. September (Sept D5.3 METHOD s7) asked 2x for every setup. October never states 2x: “tăng lên 1,2 … 1,1 bây giờ là dĩ vãng” [OctD2.3-R31 @27:33], and the mentor’s own Oct D2.3 trades were WE7 risk 15.75 / reward 18 (1.14R) and WE10 on a tool R:R of 1.71 — both won. 1 (default, October) = a PHL/PLH needs a target at least as far as its stop (the 1:1 floor); with 2 the bot refused all three worked trades (WE6 1.84R, WE7 1.45R, WE10 1.81R) as room / rolling_room. 2 = the September rule. The ISB, box and swing paths keep the 2x room_multiple.',
+          trader: '1 — October [OctD2.3-R31].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PHLRoomMultiple) · kernel/mentor/phl.go phlPLHR2',
+          range: '0–10',
+          systemDefault: '1',
+          recommended: '1 — October wins over Sept D5.3 [OctD2.3-R31].',
+          whenToTouch: 'Only to restore September: set 2.',
           perSession: 'No — per strategy.',
         },
         {

@@ -158,6 +158,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
+			PHLRoomMultiple:         1,                                 // D2-G2 October 1:1
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
 		}
@@ -403,5 +404,20 @@ func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
 		if got := tuningTick(t, &store.MentorTuning{KeyLevelHistorySource: c.stored}).KeyLevelHistorySource; got != c.want {
 			t.Errorf("stored key_level_history_source=%q → Config %q, want %q", c.stored, got, c.want)
 		}
+	}
+}
+
+// TestD2G2PHLRoomMultipleKnob — D2-G2: unset = 1 (October), a stored 2 reaches
+// the evaluator (September), an out-of-range value fails closed to 1, counted.
+func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
+	two, bad := 2.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("unset phl_room_multiple = %v, want 1", c.PHLRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &two}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("stored phl_room_multiple=2 → %v", c.PHLRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
 	}
 }

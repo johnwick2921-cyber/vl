@@ -2230,6 +2230,11 @@ type MentorTuning struct {
 	// [OctD5.2-R19/R20 @07:20–07:42]); "on" — the deck / September deletion
 	// (slide 31 step 4). Mentor question.
 	KeyLevelDeleteOn1HClose string `json:"key_level_delete_on_1h_close,omitempty"`
+	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
+	// (level touch + rolling ladder). nil → 1 (October: the Oct D2.3 worked trades
+	// are 1.14R–1.8R [OctD2.3-R31 @ 27:33]; no 2x in October). 2 = the September
+	// behaviour (Sept D5.3 METHOD s7). 0 = no room rule (the 1:1 floor stays).
+	PHLRoomMultiple *float64 `json:"phl_room_multiple,omitempty"`
 }
 
 // RiskControlConfig risk control configuration

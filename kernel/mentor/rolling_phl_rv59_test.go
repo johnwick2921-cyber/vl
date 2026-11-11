@@ -43,6 +43,7 @@ func TestRV59RealTapeProductionLadderIsNamedNotTaken(t *testing.T) {
 	e := m464Evaluator(SideLong, oldHigh, bars[m464Idx(10, 7)].OpenTime)
 	e.Cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // m473 B3: this Sept lesson pin reads the 1m-delete mode explicitly (default is close5m, OctD4.3-R67 [Oct D4.3 @ 65:00-66:13])
 	e.State.Trigger = TriggerLine{}            // the tape's OWN 5m trigger — production
+	e.Cfg.PHLRoomMultiple = 2                  // D2-G2: rolling_room is the September 2R room (October default 1)
 	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
 	for _, s := range steps {
 		if len(s.places) != 0 {
