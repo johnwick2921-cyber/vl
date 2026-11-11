@@ -1096,6 +1096,13 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	// closed through it (the deck rule); October keeps it (the new default).
 	// Pin the live deletion so this test keeps pinning the live day.
 	cfg.RiskControl.MentorTuning.KeyLevelDeleteOn1HClose = mentor.KeyLevelDeleteOn1HCloseOn
+	// oct round 2 D2-G2 / D2-G6: the live 10-13 day asked the September 2R room of a
+	// PHL/PLH and carried a ladder through a close beyond its left extreme;
+	// October's defaults (1R, cancel on the close) author one more PLH at 02:09.
+	// Pin the live values so this test keeps pinning the live day.
+	room2, leftOff := 2.0, false
+	cfg.RiskControl.MentorTuning.PHLRoomMultiple = &room2
+	cfg.RiskControl.MentorTuning.RollingLeftBreakCancel = &leftOff
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
