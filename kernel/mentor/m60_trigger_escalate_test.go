@@ -45,6 +45,7 @@ func m60p1Crossing() []market.Kline {
 func m60p1CrossingEval(t *testing.T, px15 float64) *Evaluator {
 	t.Helper()
 	e := m60p1Eval(t, SideShort, 29_040, SideShort, SideShort, m60p1Levels())
+	e.Cfg.TriggerEscalation = true // G3 oct round 2: the default is OFF; these pins exercise the September escalation
 	e.State.Trigger15 = &TriggerLine{Dir: SideLong, Price: px15, LastBucket: math.MaxInt64}
 	e.State.Trigger30 = &TriggerLine{Dir: SideShort, Price: 29_100, LastBucket: math.MaxInt64}
 	// The escalation ladder pins were written against the #61–#66 newest box
@@ -116,6 +117,7 @@ func TestM60GoverningTriggerLadder(t *testing.T) {
 	t15 := TriggerLine{Dir: SideLong, Price: 2}
 	t30 := TriggerLine{Dir: SideShort, Price: 3}
 	on := DefaultConfig()
+	on.TriggerEscalation = true // G3 oct round 2: the default is OFF; the ladder pins the September read
 	off := DefaultConfig()
 	off.TriggerEscalation = false
 	cases := []struct {

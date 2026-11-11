@@ -137,7 +137,7 @@ const COPY = {
   },
   trigEscalation: {
     zh: '触发线升级：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
-    en: 'Trigger escalation: crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
+    en: 'Trigger escalation (default OFF, October reads the 5m only): crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
     es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
@@ -621,7 +621,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
   '15m_early_read': true, // m465 P1 — D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
   mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
-  trigger_escalation: true, // m465 P1 — D3.4-R43
+  trigger_escalation: false, // G3 oct round 2 — October: the 5m only [OctD4.3-R9 @07:28]; ON = Sept D3.4-R43 (m465 P1)
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)

@@ -2038,8 +2038,9 @@ type MentorTuning struct {
 	// (refusals only, named _forming) [D4.2-R2 p1 @00:08–00:39; D4.3-R21
 	// @12:20–12:32]. MTFConfluenceSource: "standing_boxes" (default) | "last_pair"
 	// — where mode C reads "15m and 5m both say so" [D4.2-R17 p1 @14:57–15:37].
-	// TriggerEscalation: nil → ON — crossing 5m ISBs hand the trigger to the
-	// 15m, then the 30m [D3.4-R43 p2 @17:07–17:49].
+	// TriggerEscalation: nil → OFF since G3 (oct round 2: October reads the 5m only,
+	// OctD4.3-R9). true = crossing 5m ISBs hand the trigger to the 15m, then the
+	// 30m [D3.4-R43 p2 @17:07–17:49].
 	Early15mRead        *bool  `json:"15m_early_read,omitempty"`
 	MTFConfluenceSource string `json:"mtf_confluence_source,omitempty"`
 	TriggerEscalation   *bool  `json:"trigger_escalation,omitempty"`

@@ -693,7 +693,10 @@ type Config struct {
 	// 5m inside bars cross back and forth the 5m trigger is not valid — read
 	// the 15m trigger; if the 15m crosses too, the 30m (the 1h/4h already gate
 	// through the HTF check). ON (default) = every gating read of the trigger
-	// uses governingTrigger; OFF = the 5m line always (pre-#60). Studio:
+	// uses governingTrigger; OFF = the 5m line always (pre-#60). G3 (oct round 2):
+	// DEFAULT OFF — "khung 5 phút only. Ở thời điểm hiện tại mình chỉ sử dụng khung
+	// 5 phút" [OctD4.3-R9 @ 07:28] and October never repeats the September
+	// escalation; the 15m box (OctD4.3-R60) is unaffected. Studio:
 	// risk_control.mentor_tuning.trigger_escalation.
 	TriggerEscalation bool
 	// CrossingISBLookback / CrossingISBMin — isbTF-F6: the crossing read that
@@ -1008,7 +1011,7 @@ func DefaultConfig() Config {
 		// boxes, the trigger escalation 5m → 15m → 30m.
 		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
-		TriggerEscalation:   true,                       // D3.4-R43
+		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		CrossingISBMin:      2,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		// Release #25 course-entry knobs (COMMON-25 knob rule).

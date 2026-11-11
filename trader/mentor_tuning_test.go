@@ -92,11 +92,12 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	// m465 P1 (release #60): a STORED pre-#60 value reaches the evaluator —
 	// 15m_early_read=false, mtf_confluence_source=last_pair,
 	// trigger_escalation=false; unset = the #60 defaults (ON / standing_boxes / ON).
-	if c := tuningTick(t, &store.MentorTuning{Early15mRead: &off, MTFConfluenceSource: "last_pair", TriggerEscalation: &off}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceLastPair || c.TriggerEscalation {
+	on = true
+	if c := tuningTick(t, &store.MentorTuning{Early15mRead: &off, MTFConfluenceSource: "last_pair", TriggerEscalation: &on}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceLastPair || !c.TriggerEscalation {
 		t.Errorf("stored m465 knobs did not reach the evaluator: early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
 	}
-	if c := tuningTick(t, &store.MentorTuning{}); !c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceStandingBoxes || !c.TriggerEscalation {
-		t.Errorf("unset m465 knobs must run the #60 defaults: early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
+	if c := tuningTick(t, &store.MentorTuning{}); !c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceStandingBoxes || c.TriggerEscalation {
+		t.Errorf("unset m465 knobs must run the #60 defaults (trigger_escalation OFF since G3): early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
 	}
 }
 
@@ -122,7 +123,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
 			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
 			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
-			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: true,
+			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: false, // G3 oct round 2: was true (D3.4-R43)
 			NewsWaitBothLines: true,                                                                        // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
 			NewsBarsExcluded:  true,                                                                        // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
@@ -138,7 +139,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
 			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
 			// m465 P3 (release #60): the course defaults from the full video read.
-			ISBStackTinyStopPts:  12.5,                       // D5.1-R26 [D5.1 p2 @02:24–04:41]
+			ISBStackTinyStopPts:  0,                          // G2 oct round 2: OFF (was 12.5, D5.1-R26)
 			TrendlineEntryTouch:  mentor.TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
 			NearBoxBetweenExempt: false,                      // D3.2-R29/R30
 			PHLFlatLow:           mentor.PHLFlatLowNear,      // D2.2-R64

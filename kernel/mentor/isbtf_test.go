@@ -275,6 +275,7 @@ func TestISBTFF6CrossingKnobs(t *testing.T) {
 	bars := m60p1Crossing()
 	cb := closedBuckets(bars, BarCloseInstant(bars[len(bars)-1]), DefaultConfig())
 	d := DefaultConfig()
+	d.TriggerEscalation = true // G3 oct round 2: the default is OFF; this pins the September crossing read
 	if d.CrossingISBLookback != 3 || d.CrossingISBMin != 2 {
 		t.Fatalf("defaults must be today's 3 / 2, got %d / %d", d.CrossingISBLookback, d.CrossingISBMin)
 	}
