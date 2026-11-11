@@ -54,6 +54,7 @@ func r22Cfg() Config {
 	// r22 refusal-counter test must still see the E4 gate fire on the recorded
 	// days, so pin it ON explicitly.
 	cfg.EmaMaxCross30m = 2
+	cfg.PHLRoomMultiple = 1 // review: these pins passed at the 1R PHL room (the knob phl_room_multiple=1); the default is 2 again
 	return cfg
 }
 

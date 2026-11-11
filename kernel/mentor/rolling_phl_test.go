@@ -22,6 +22,7 @@ func rollingFixture() (*Evaluator, []market.Kline, int64) {
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0 // no EMA location line
 	cfg.RoomMultiple = 0.05      // room rule effectively off (pin the rolling mechanics)
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0
@@ -181,6 +182,7 @@ func TestRollingPLHShortMirror(t *testing.T) {
 	cfg.EMAPeriod9 = 0
 	cfg.EMALocationTFMinutes = 0
 	cfg.RoomMultiple = 0.05
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.PHLTargetShyPts = 0
 	cfg.ISBBufferPts = 0

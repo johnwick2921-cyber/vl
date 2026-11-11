@@ -51,6 +51,7 @@ func r2RevTrendRunCfg(t *testing.T, hm string, mod func(*Config), post ...func(*
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false
+	cfg.PHLRoomMultiple = 1 // the 27 Oct tape's rolling PHL long arms at the 1R room (knob phl_room_multiple=1)
 	cfg.ISBReverseEMA9Enabled = true
 	cfg.LocTriggerFilter = false
 	cfg.SmallRangeGuard = false

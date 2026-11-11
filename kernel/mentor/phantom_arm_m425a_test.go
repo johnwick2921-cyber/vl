@@ -28,6 +28,7 @@ func m425aEval(orbHigh, orbLow float64) *Evaluator {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.OrbGateEnabled = true
 	e := New(cfg)
 	e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}

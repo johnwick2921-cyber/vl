@@ -215,6 +215,7 @@ func TestPHL1CourseWorkedExamples(t *testing.T) {
 			// 1:07:47) — a lesson-order question for the mentor, not PHL-1.
 			cfg := DefaultConfig()
 			cfg.RoomMultiple = 1
+			cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 			e := phl1Evaluator(cfg, c.side, bars[from].OpenTime, bars[rung].Close)
 			steps := phl1RunRolling(e, bars, from, rung)
 			got := phl1Find(steps, at)

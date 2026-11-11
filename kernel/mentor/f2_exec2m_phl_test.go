@@ -75,6 +75,7 @@ func f2PHLCfg() Config {
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
 	cfg.RoomMultiple = 0
+	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
 	cfg.PHLTargetShyPts = 0
 	cfg.PHLMinCandlesFromExtreme = 2
 	cfg.LocTriggerFilter = false
