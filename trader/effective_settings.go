@@ -837,6 +837,10 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
 	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve (m466 G23 D4.1-R12, nil → 20)", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
 	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31, nil → 90)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
+	// Stop-to-size ladder (owner order 2026-11-10; OctD2.2-R73 / OctD2.3-R47 / OctD2.2-R49).
+	mentorCXRow("mentor_stop_size_ladder", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.2-R73/OctD2.3-R47, nil → ON)", func(c mentorCourseExitsResolved) any { return c.StopSizeLadder })
+	mentorCXRow("mentor_wide_stop_contracts", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.3-R47 \"1 MNQ\", nil → 1)", func(c mentorCourseExitsResolved) any { return c.WideStopContracts })
+	mentorCXRow("mentor_wide_stop_max_pts", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.3-R47/R48, nil → 40)", func(c mentorCourseExitsResolved) any { return c.WideStopMaxPts })
 	mentorCXRow("mentor_isb_loss_box", "trader.mentorCourseExitsResolve (m465 P2 D4.2-R27, \"\" → range)", func(c mentorCourseExitsResolved) any { return c.ISBLossBox })
 	mentorCXRow("mentor_open5m_break", "trader.mentorCourseExitsResolve (m466 G55 D4.4-R40, \"\" → 1m_close)", func(c mentorCourseExitsResolved) any { return c.Open5mBreak })
 	mentorCXRow("mentor_news_wait_mode", "trader.mentorCourseExitsResolve (m466 G56 D4.4-R22, \"\" → both)", func(c mentorCourseExitsResolved) any { return c.NewsWaitMode })

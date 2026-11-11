@@ -203,6 +203,10 @@ func m434Digest(t *testing.T, c m434Case) []string {
 		}
 	}
 	cfg := c.cfg()
+	// Stop-size ladder (2026-11-10): every frozen golden here predates it, so
+	// the digest runs ladder OFF unless the ladder golden turns it on
+	// (TestStopLadderTickGolden, testdata/stop_ladder_tick.golden).
+	cfg.CourseExits.StopSizeLadder = m434StopLadder
 	// Every golden replayed here predates the ISB5 audit: the #61–#66 box
 	// source (newest) and the one-tick-late rebuild (F5). The ISB5 behaviour is
 	// pinned on real days by TestISB5F1CourseDayMergedBox / TestISB5F5* (cmd/mentor-replay).
@@ -302,6 +306,11 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 // non-m473 code moved nothing. The m473 behaviour is pinned separately in
 // testdata/m473_tick_identity.golden (TestM473TickOutputGolden).
 var m434PreM473 bool
+
+// m434StopLadder — false (every pre-2026-11-10 golden): the digest runs the
+// stop-size ladder OFF, proving the ladder-OFF path is byte-identical on the
+// four real tapes. TestStopLadderTickGolden sets it true.
+var m434StopLadder bool
 
 func m434SetPreM473(t *testing.T, off bool) {
 	t.Helper()

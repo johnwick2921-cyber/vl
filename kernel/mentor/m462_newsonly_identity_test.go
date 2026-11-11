@@ -126,11 +126,12 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			cfg.ISBLossBox = ISBLossBoxBand
 			m465PreValues(&cfg) // m465 (#60): the pre-#60 knob values — this golden predates them
 			m462PreM465Knobs(&cfg)
-			m466PreValues(&cfg)   // m466 P3 (#61): the pre-#61 knob values — this golden predates them
-			m61PreP4(&cfg)        // m466 P4 (#61): the pre-#61 swing ISB knobs (required, keep OFF) — this golden predates them
-			m466P2PreValues(&cfg) // m466 P2 (#61): the pre-#61 knob values — this golden predates them
-			m466P1PreValues(&cfg) // m466 P1 (#61): the pre-#61 knob values — this golden predates them
-			m434PreISB5(t, &cfg)  // ISB5 audit: the frozen golden predates the F5 same-tick rebuild
+			m466PreValues(&cfg)                    // m466 P3 (#61): the pre-#61 knob values — this golden predates them
+			m61PreP4(&cfg)                         // m466 P4 (#61): the pre-#61 swing ISB knobs (required, keep OFF) — this golden predates them
+			m466P2PreValues(&cfg)                  // m466 P2 (#61): the pre-#61 knob values — this golden predates them
+			m466P1PreValues(&cfg)                  // m466 P1 (#61): the pre-#61 knob values — this golden predates them
+			cfg.CourseExits.StopSizeLadder = false // the stop-size ladder (2026-11-10) postdates this golden
+			m434PreISB5(t, &cfg)                   // ISB5 audit: the frozen golden predates the F5 same-tick rebuild
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {

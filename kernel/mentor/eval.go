@@ -3974,7 +3974,7 @@ func phlRefusalKey(reason string) string {
 		// shared "room" counter the ISB / reverse-ISB / box paths use, so a PHL
 		// room drop never falls through to the default "phl_refused".
 		return "room"
-	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"):
+	case strings.HasPrefix(reason, "stop over the 25-pt ceiling"), strings.HasPrefix(reason, PHLWideStopReasonPrefix):
 		return "phl_stop_ceiling"
 	case strings.HasPrefix(reason, "degenerate stop/target"):
 		return "phl_degenerate_geometry"

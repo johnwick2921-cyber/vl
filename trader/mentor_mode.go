@@ -53,6 +53,14 @@ const (
 	// ≥ 2x + 4h&1h agree) is removed by W-MENTOR-EXACT; both tiers default to
 	// base so a confluence/big entry sizes exactly like a base entry.
 	mentorStopTwentiesMinPts = 20.0 // stop > 20 and ≤ the setup ceiling (mentorStopCeilingFor: PHL/PLH/BOX 25; ISB 20 since m466 → empty band) → reduced [D3.3 p1 @ 01:09]
+
+	// mentorStopLadderReducedTopPts is the top of the stop-to-size ladder's
+	// reduced band: a non-swing stop in (20, 30] sizes the reduced tier (3) —
+	// "Cái nến INSHABA này tầm 20 điểm, 30 điểm... Tôi vô size 3 hoặc tôi
+	// không trade... 12 điểm. Ok, tôi vô size 5" [OctD2.2-R73 @01:12:32, frame
+	// s_04345.jpg: −12.25 pts / 49 ticks]. Above it (to mentor_wide_stop_max_pts)
+	// → mentor_wide_stop_contracts [OctD2.3-R47 @48:12].
+	mentorStopLadderReducedTopPts = 30.0
 )
 
 // mentorTierInputs is everything the size table reads. The trader computes
@@ -90,6 +98,16 @@ type mentorTierInputs struct {
 	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 90) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
 	ISBMaxStopPts      float64 // the ISB R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 20 since m466; PHL/PLH/BOX: mentorStopCeilingFor → 25)
+
+	// Stop-to-size LADDER (owner order 2026-11-10; store.RiskControlConfig
+	// MentorStopSizeLadder / MentorWideStopContracts / MentorWideStopMaxPts,
+	// resolved by mentorCourseExitsResolve). StopLadderOff is the knob turned
+	// OFF (false = the zero value = ON, the default — a bare table test runs
+	// the ladder). WideStopContracts 0 → 1, WideStopMaxPts 0 → the kernel
+	// default 40.
+	StopLadderOff     bool
+	WideStopContracts int
+	WideStopMaxPts    float64
 }
 
 // mentorSizeChoice is the tier decision: contracts, the tier name and why.
@@ -136,6 +154,75 @@ func mentorSwingWideStopCap(in mentorTierInputs) int {
 // geometry/location, never of how the last trade went. Nothing here (or at the
 // call site) can size a trade UP because the previous one lost.
 func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
+	choice, err := mentorTierFor(in, base, conf, big, reduced, swing4h, spentCap, maxContracts)
+	if err != nil {
+		return choice, err
+	}
+	return mentorStopLadderCap(in, choice, reduced, maxContracts), nil
+}
+
+// mentorStopLadderCap is the stop-to-size LADDER (owner order 2026-11-10:
+// "stop loss can adjust contract to fit like mentor said ... cause some day
+// it go big"), applied AFTER the tier table to every non-SWING4H setup:
+//
+//	stop ≤ 20          → the tier unchanged;
+//	stop in (20, 30]   → at most the reduced tier (3) [OctD2.2-R73 @01:12:32];
+//	stop in (30, max]  → at most mentor_wide_stop_contracts (1) [OctD2.3-R47 @48:12];
+//	stop > max         → never reaches here (kernel + R8 refuse it).
+//
+// It only ever LOWERS the size — min(the tier the setup earned, the ladder
+// cap) — and never touches the target: "giảm size only chứ không có tăng
+// target" [OctD2.2-R49 @40:47]. SWING4H keeps its own tiers (its stop sits
+// at the 4h line and has its own ceilings, D5.2). Ladder OFF → the choice
+// unchanged (the pre-ladder bot exactly).
+func mentorStopLadderCap(in mentorTierInputs, choice mentorSizeChoice, reduced, maxContracts int) mentorSizeChoice {
+	if in.StopLadderOff || strings.EqualFold(strings.TrimSpace(in.Setup), "SWING4H") || in.StopPts <= mentorStopTwentiesMinPts {
+		return choice
+	}
+	wideMax := in.WideStopMaxPts
+	if wideMax <= 0 {
+		wideMax = mentor.DefaultCourseExitsCfg().WideStopMaxPts
+	}
+	var limit int
+	var tier, why string
+	if in.StopPts <= mentorStopLadderReducedTopPts {
+		limit, tier = reduced, "stop_ladder_reduced"
+		why = fmt.Sprintf("stop %.1f pts in the 20–30 band → size %d, the target unchanged [mentor_stop_size_ladder; OctD2.2-R73 @01:12:32 \"tầm 20 điểm, 30 điểm… Tôi vô size 3 hoặc tôi không trade\"; OctD2.2-R49 @40:47 \"giảm size only chứ không có tăng target\"]",
+			in.StopPts, reduced)
+	} else {
+		limit = in.WideStopContracts
+		if limit <= 0 {
+			limit = mentorWideStopContractsDefault
+		}
+		tier = "stop_ladder_wide"
+		capNote := ""
+		if reduced > 0 && limit > reduced {
+			// A wider stop is never sized BIGGER than a narrower one: the wide tier
+			// is min(wide, reduced) [OctD2.2-R49 @40:47 "giảm size only"].
+			limit = reduced
+			capNote = fmt.Sprintf(", capped at the reduced tier %d (mentor_wide_stop_contracts is above it)", reduced)
+		}
+		var rangeNote string
+		if in.StopPts <= wideMax {
+			rangeNote = fmt.Sprintf("≤ the %g-pt mentor_wide_stop_max_pts", wideMax)
+		} else {
+			rangeNote = fmt.Sprintf("above the %g-pt mentor_wide_stop_max_pts, admitted by the stored mentor_isb_max_pts / stop ceiling (the ladder never narrows a setup's ceiling)", wideMax)
+		}
+		why = fmt.Sprintf("stop %.1f pts above 30 (%s) → %d MNQ%s, the target unchanged [mentor_stop_size_ladder / mentor_wide_stop_contracts; OctD2.3-R47 @48:12 \"40 điểm… Trade vẫn được. 1 MNQ\"; OctD2.2-R49 @40:47]",
+			in.StopPts, rangeNote, limit, capNote)
+	}
+	if limit > maxContracts {
+		limit = maxContracts
+	}
+	if choice.Contracts <= limit {
+		return choice // the ladder only LOWERS — the setup's own tier is already at or under it
+	}
+	return mentorSizeChoice{Contracts: limit, Tier: tier, Why: fmt.Sprintf("%s (the setup earned %d, tier %s)", why, choice.Contracts, choice.Tier)}
+}
+
+// mentorTierFor is the tier table BEFORE the stop-to-size ladder (the
+// pre-ladder mentorContractsFor body, unchanged).
+func mentorTierFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spentCap, maxContracts int) (mentorSizeChoice, error) {
 	if maxContracts <= 0 {
 		return mentorSizeChoice{}, fmt.Errorf("mentor size: mentor_max_contracts not set (max=%d)", maxContracts)
 	}
@@ -289,6 +376,20 @@ func mentorStopCeilingFor(setup string, isbMax float64) float64 {
 		return isbMax
 	}
 	return general
+}
+
+// mentorStopLadderRefuseCeiling is the R8 skip ceiling with the stop-to-size
+// ladder applied: the kernel's own mentor.StopLadderCeiling on the resolved
+// knobs (ladder OFF → ceiling unchanged; ON → max(ceiling, wide max)).
+func mentorStopLadderRefuseCeiling(ceiling float64, in mentorTierInputs) float64 {
+	wideMax := in.WideStopMaxPts
+	if wideMax <= 0 {
+		wideMax = mentor.DefaultCourseExitsCfg().WideStopMaxPts
+	}
+	var cfg mentor.Config
+	cfg.CourseExits.StopSizeLadder = !in.StopLadderOff
+	cfg.CourseExits.WideStopMaxPts = wideMax
+	return mentor.StopLadderCeiling(cfg, ceiling)
 }
 
 // mentorIs2mReduceSetup — the setups the D3.1-R30 2m size cut applies to:
@@ -795,7 +896,14 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 		// PHL/PLH/BOX keep the D3.3-R1 25 ("hơn 20, 25 đổ lại ok, chứ mà trên
 		// nữa thì thôi" [D3.3 p1 @01:59–02:09]) — mentorStopCeilingFor.
 		ceiling := mentorStopCeilingFor(in.Setup, extra.ISBMaxStopPts)
-		if stop > ceiling {
+		// Stop-to-size ladder (owner order 2026-11-10): ON widens the skip to
+		// mentor_wide_stop_max_pts (40) — the SAME kernel function
+		// (mentor.StopLadderCeiling) the evaluator refuses at; the size table
+		// then sizes the stop DOWN [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]. OFF = unchanged.
+		if wide := mentorStopLadderRefuseCeiling(ceiling, extra); stop > wide {
+			if wide > ceiling {
+				return fmt.Sprintf("R8: stop %.1f pts above the %g-pt mentor_wide_stop_max_pts ceiling — skip, \"40 điểm thì mình làm gì? Mình không trade\" [OctD2.3-R47 @48:12, R48 @49:38] (the swing is the only exemption)", stop, wide)
+			}
 			return fmt.Sprintf("R8: stop %.1f pts above the %.0f-pt ceiling — skip (the swing is the only exemption)", stop, ceiling)
 		}
 	}
@@ -840,6 +948,9 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	// set HERE, the one sizing call site, so no caller can forget it.
 	extra.ExecTFMin = in.ExecTFMin
 	extra.Exec2mReduceOff = !mentor2mReduceSizeOn(at.mentorRiskControl())
+	// Stop-to-size ladder (owner order 2026-11-10): set HERE too, the one
+	// sizing call site, so no caller can size without the resolved knobs.
+	mentorStopLadderInputs(mentorCourseExitsResolve(at, at.mentorRiskControl()), &extra)
 	// Defence in depth (CTO 1791058442006): the tier inputs are the GEOMETRY
 	// (abs(Price−Stop), abs(Target−Price)), never a bare intent field an
 	// emit site forgot to set — a swing sized as a base trade is the bug this
@@ -863,8 +974,10 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	if loc := mentor.LocationOf(in.AnchorKey); loc != "" {
 		where = "at a location: " + loc
 	}
+	// The stop on the line is the GEOMETRY the table read (extra.StopPts) —
+	// in.StopPts is 0 whenever the emit site did not stamp it.
 	at.logInfof("🧑‍🏫 mentor size: %d contracts (tier %s) — %s [setup %s, stop %.1f pts, %s]",
-		choice.Contracts, choice.Tier, choice.Why, in.Setup, in.StopPts, where)
+		choice.Contracts, choice.Tier, choice.Why, in.Setup, extra.StopPts, where)
 	return choice, nil
 }
 

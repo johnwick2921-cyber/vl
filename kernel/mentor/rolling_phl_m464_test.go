@@ -222,6 +222,7 @@ func m464Approx(a, b float64) bool { return math.Abs(a-b) < 1e-9 }
 func TestM464CourseWorkedBuyLadder(t *testing.T) {
 	bars := m464CourseTape()
 	e := m464Evaluator(SideLong, Level{Key: "old-high:29433.25", Kind: KindOldExtreme, Role: OldHigh, Price: 29433.25}, bars[m464Idx(10, 7)].OpenTime)
+	e.Cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; ladder ON: TestStopLadderM464WorkedBuyRungArms
 	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
 
 	last := steps[len(steps)-1]
@@ -302,6 +303,7 @@ func TestM464CourseWorkedSellMirror(t *testing.T) {
 	const a = 58800.0
 	bars := m464Mirror(m464CourseTape(), a)
 	e := m464Evaluator(SideShort, Level{Key: "old-low:29366.75", Kind: KindOldExtreme, Role: OldLow, Price: a - 29433.25}, bars[m464Idx(10, 7)].OpenTime)
+	e.Cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; ladder ON: TestStopLadderM464WorkedBuyRungArms
 	steps := m464Run(e, bars, m464Idx(10, 7), m464Idx(10, 14))
 	last := steps[len(steps)-1]
 	if len(last.places) != 1 {

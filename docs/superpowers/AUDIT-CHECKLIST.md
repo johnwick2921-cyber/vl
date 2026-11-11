@@ -10447,6 +10447,16 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Pin:** `TestM474MentorAbsentBreakerIsNotAW1Flip`: absent or null on a mentor strategy is 4 → 4[I] and not refused. A stored 0 still refuses as "inherit (breaker 4)" → off. An AI strategy stays 8 → 8[I], and env still wins.
 - **Reference:** `store/settings_truth.go` (`legacyBreakerHaltN`), `store/resolve_source.go` (`BreakerHaltMentorDefault`), `manager/trader_manager.go:746`.
 
+## CLASS NN (assigned at merge) — a log line reads a bare intent field the emit site never stamps, while the decision beside it reads the geometry (stop-size ladder, feat/mentor-stop-size-ladder)
+
+- **Symptom:**
+  - Every `🧑‍🏫 mentor size:` line ended `[setup ISB, stop 0.0 pts, …]` whenever the evaluator did not stamp `Intent.StopPts`, while the size table had read the real 25-pt stop from the geometry.
+  - An operator reading the size line could not tell which stop the tier was chosen for — the one fact a stop-to-size ladder exists to show.
+- **Root cause:** the defence-in-depth fix (CTO 1791058442006) moved the DECISION inputs to the geometry (`mentorIntentRisk`), but the log line beside it kept printing `in.StopPts`.
+- **Probe:** for every decision that was moved off a bare intent field, grep the same function's log/telemetry lines for the old field; a log must print the value the decision read, not a sibling field.
+- **Pin:** `TestStopLadderProductionCallSites` (the Why names the stop the tier read); the size line now prints `extra.StopPts`.
+- **Reference:** `trader/mentor_mode.go` (`mentorSizeFor`).
+
 ## CLASS NN (assigned at merge) — a standing course object REPLACED by the newest candidate instead of GROWN, so it shrinks, flips side and fakes breaks (ISB5-F1/F2/F5, feat/mentor-detector-history-audit)
 
 - **Symptom:**
