@@ -2140,9 +2140,10 @@ type MentorTuning struct {
 	ISBStackCancelCandle2m int `json:"isb_stack_cancel_candle_2m,omitempty"`
 	// B8: tiny-stop exception — an ISB whose stop is at or under this many
 	// points is not cancelled at the cancel candle [Ngày 5.1 Go over lại tất cả
-	// part2 @02:50–03:40]. m465 (release #60, D5.1-R26): unset → 12.5, the
-	// worked example's measured stop [D5.1 p2 @02:24–04:41]; (0, 25]. No ISB
-	// stop is under 3 pts (range + 2 × 1.5), so 0.01 is effectively OFF.
+	// part2 @02:50–03:40]. m465 (release #60, D5.1-R26): the worked example's
+	// measured stop 12.5 [D5.1 p2 @02:24–04:41]; (0, 25]. G2 (oct round 2): unset
+	// → 0 = OFF (October: the 4th non-filling candle cancels, OctD4.3-R57); store
+	// 12.5 for the September hold.
 	ISBStackTinyStopPts float64 `json:"isb_stack_tiny_stop_pts,omitempty"`
 	// B10: evening "slow" cutoff in points (default 100), the CT hour the range
 	// starts at (15 default, 15–17) and an optional trailing window in minutes

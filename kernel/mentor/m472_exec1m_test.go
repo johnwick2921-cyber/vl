@@ -66,6 +66,7 @@ func legacy2mCfg() Config {
 	c.TrendlineEntryTouch = TrendlineEntryFourth
 	// m472 A3: likewise the PHL offsets were 0.50/0.50 (Sept D2.2-R10); October is 1/1 [Oct D2.3 @ 46:20-47:20].
 	c.PHLEntryBufferPts, c.PHLStopBufferPts = 0.5, 0.5
+	c.ISBStackTinyStopPts = 12.5 // oct round 2 G2: these goldens ran the September tiny-stop hold
 	c.HTFGateNewsOnly = false // oct round 2 D2-G7: these goldens ran the m462 all-session 4h/1h gate
 	return c
 }

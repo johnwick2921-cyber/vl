@@ -233,6 +233,7 @@ func TestM60NearBoxBetweenExemptKnob(t *testing.T) {
 func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.ISBStackTinyStopPts = 12.5 // G2 oct round 2: the September value (the default is now 0)
 	run := func(rng float64) []Intent {
 		i1 := market.Kline{Open: 100, Close: 100 - rng + 1, High: 100 + 0.5, Low: 100 + 0.5 - rng}
 		arm := &ISBArm{FirstBar: i1, TFMin: 1}
@@ -259,8 +260,8 @@ func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
 	if got := ISBStackTick(arm, market.Kline{Open: 99, Close: 101, High: 101.5, Low: 98}, cfg); len(got) != 1 || got[0].Action != CancelArm {
 		t.Fatalf("a body outside I1 cancels at once even with a tiny stop, got %+v", got)
 	}
-	if DefaultConfig().ISBStackTinyStopPts != 12.5 {
-		t.Fatalf("default isb_stack_tiny_stop_pts = %g, want 12.5 (D5.1-R26)", DefaultConfig().ISBStackTinyStopPts)
+	if DefaultConfig().ISBStackTinyStopPts != 0 {
+		t.Fatalf("default isb_stack_tiny_stop_pts = %g, want 0 (G2 oct round 2: October has no tiny-stop exception, OctD4.3-R57; 12.5 was Sept D5.1-R26)", DefaultConfig().ISBStackTinyStopPts)
 	}
 }
 

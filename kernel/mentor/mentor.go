@@ -561,6 +561,11 @@ type Config struct {
 	// nhỏ… cứ việc đặt lệnh, mặc dù sau 3 cây" [D5.1 p2 @02:24–04:41], the
 	// on-screen stop 29,285.75 → 29,273.25 = 12.50 pts (50 ticks). Default
 	// 12.5 (was 0 = OFF); the owner may still store any (0, 25].
+	// G2 (oct round 2): the default is 0 = OFF again. October's 4th-candle cancel
+	// is unconditional ("Lập tức cancel lệnh luôn" [OctD4.3-R57 @ 56:00]; the body
+	// inside I1 hold is its one named exception, R53 @ 51:00) and no October note
+	// repeats the September tiny-stop exception. Knob isb_stack_tiny_stop_pts=12.5
+	// restores the September hold.
 	ISBStackTinyStopPts float64
 
 	// Evening "slow" read — release #52 W11 B10. X11 says trade the 5m only in
@@ -962,7 +967,7 @@ func DefaultConfig() Config {
 		ISBOldExtremePts:       2,                   // B27 [ours]: "at the old extreme" = ± 2 pts
 		ISBInRangeGapPts:       0,                   // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
 		ISBStackCancelCandle2m: 4,                   // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    12.5,                // m465 D5.1-R26: the worked example stop, measured 12.50 pts (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
+		ISBStackTinyStopPts:    0,                   // G2 oct round 2: October has no tiny-stop exception, the 4th non-filling candle cancels [OctD4.3-R57 @ 56:00]; 12.5 = Sept D5.1-R26 (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
 		EveningSlowPts:         100,                 // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
 		EveningSlowFromHour:    15,                  // B10 [ours]: the RTH close
 		EveningSlowWindowMin:   0,                   // B10 [ours]: cumulative since the start hour

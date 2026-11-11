@@ -194,7 +194,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     wick_microscalp: false, // m465 P5 — D4.3 advanced, OFF
     wick_safe_play: false, // m465 P5 — D4.3-R20, OFF
     isb_stack_cancel_candle_2m: 4, // release #52 W11 — unchanged defaults, all ours
-    isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26
+    isb_stack_tiny_stop_pts: 0, // G2 oct round 2 (was 12.5, m465 D5.1-R26)
     evening_slow_pts: 100,
     evening_slow_from_hour: 15,
     evening_slow_window_min: 0,

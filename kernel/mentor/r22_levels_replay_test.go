@@ -33,6 +33,7 @@ func r22Cfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
+	cfg.ISBStackTinyStopPts = 12.5 // oct round 2 G2: the recorded-day pins ran the September tiny-stop hold
 	cfg.HTFGateNewsOnly = false // oct round 2 D2-G7: the recorded-day pins ran the m462 all-session 4h/1h gate
 	cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts = 0.5, 0.5 // m472 A3: recorded-day pins predate the October 1/1 [Oct D2.3 @ 46:20-47:20]
 	cfg.TrendlineEntryTouch = TrendlineEntryFourth         // m472 A2: these recorded-day pins predate the October "third" default [Oct D3.2 @ 31:17]

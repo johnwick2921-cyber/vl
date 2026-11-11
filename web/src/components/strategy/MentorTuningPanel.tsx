@@ -358,7 +358,7 @@ const COPY = {
   },
   isbStackTiny: {
     zh: 'ISB：止损不超过此点数则不在取消K线取消（默认 12.5 = 课程示例；0.01 = 实际关闭）',
-    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default 12.5 = the course example; 0.01 = effectively off)',
+    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default blank = 0 = OFF, October: the 4th non-filling candle cancels; 12.5 = the September worked example)',
     es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto 12.5 = el ejemplo del curso; 0.01 = prácticamente off)',
   },
   tlEntryTouch: {
@@ -641,7 +641,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   wick_safe_play: false, // m465 P5: D4.3-R20 an optional extra confirm [D4.3 @14:07–14:27]
   // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
   isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
-  isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26: the worked example's measured stop [D5.1 p2 @02:24–04:41]
+  isb_stack_tiny_stop_pts: 0, // G2 oct round 2: OFF — October cancels at the 4th candle [OctD4.3-R57 @56:00]; 12.5 = Sept D5.1-R26 [D5.1 p2 @02:24–04:41]
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
