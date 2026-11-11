@@ -136,9 +136,9 @@ const COPY = {
     es: 'los últimos pares de velas 5m y 15m cerradas (antes de #60)',
   },
   trigEscalation: {
-    zh: '触发线升级：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
+    zh: '触发线升级（默认关，10 月课程只读 5 分钟）：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
     en: 'Trigger escalation (default OFF, October reads the 5m only): crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
-    es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
+    es: 'Escalado del disparador (por defecto OFF, octubre lee solo el 5m): ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
     zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（开 = 默认；关 = 全天）',
@@ -357,9 +357,9 @@ const COPY = {
     es: 'ISB 2m: cancelar en la vela N si no se llena (nuestro número, no del curso)',
   },
   isbStackTiny: {
-    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认 12.5 = 课程示例；0.01 = 实际关闭）',
+    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认留空 = 0 = 关闭，10 月课程：第 4 根未成交 K 线即取消；12.5 = 9 月课程示例）',
     en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default blank = 0 = OFF, October: the 4th non-filling candle cancels; 12.5 = the September worked example)',
-    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto 12.5 = el ejemplo del curso; 0.01 = prácticamente off)',
+    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto vacío = 0 = OFF, octubre: la 4.ª vela sin ejecución cancela; 12.5 = el ejemplo del curso de septiembre)',
   },
   tlEntryTouch: {
     zh: '趋势线入场触碰（第 3 次触碰 = 测试）',

@@ -2280,7 +2280,7 @@ type MentorTuning struct {
 	BoxSwingBothRoles *bool `json:"box_swing_both_roles,omitempty"`
 	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): nil -> 10 minutes (R52). A pair of pre-open peaks that forms in the last N minutes before the 08:30 CT open is the morning box and replaces the overnight pair [OctD3.3-R23/R52 @ 17:13, 42:00]; 0 = only boxes formed from 08:30 replace the overnight box (the pre-round-2 behaviour).
 	BoxPreOpenLookbackMin *float64 `json:"box_preopen_lookback_min,omitempty"`
-	// ISBTargetFillClose — D2-G3 (oct round 2): nil → ON (October). The ISB's basic
+	// ISBTargetFillClose — D2-G3 (oct round 2): nil → OFF (review: the course does not say a no-target ISB may be traded, [B]). ON = the ISB's basic
 	// target is the fill candle's close [OctD2.2-R35/R37 @ 28:40, 30:03]: an ISB
 	// with no level beyond its entry (isb_missing_target) or only a level inside
 	// 1R (isb_target_below_floor) is no longer refused; its first target is the
@@ -2293,9 +2293,8 @@ type MentorTuning struct {
 	// whole-history read (the 08:30 candle compared with the 08:25 Globex candle).
 	TriggerFromOpen *bool `json:"trigger_from_open,omitempty"`
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
-	// (level touch + rolling ladder). nil → 1 (October: the Oct D2.3 worked trades
-	// are 1.14R–1.8R [OctD2.3-R31 @ 27:33]; no 2x in October). 2 = the September
-	// behaviour (Sept D5.3 METHOD s7). 0 = no room rule (the 1:1 floor stays).
+	// (level touch + rolling ladder). nil → 2 (review: OctD2.3-R31 @ 27:33 says "about 1:2"; no October 1:1
+	// room rule). 1 = the worked trades WE7/WE10 (1.14R/1.71R) [B]. 0 = no room rule (the 1:1 floor stays).
 	PHLRoomMultiple *float64 `json:"phl_room_multiple,omitempty"`
 }
 

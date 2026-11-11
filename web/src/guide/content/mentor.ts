@@ -1713,30 +1713,32 @@ export const mentor: GuideSection = {
           label: 'PHL/PLH room multiple',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.phl_room_multiple)',
-          what: 'Oct round 2 D2-G2. The room rule asks how far the target must be from the entry, as a multiple of the stop. September (Sept D5.3 METHOD s7) asked 2x for every setup. October never states 2x: “tăng lên 1,2 … 1,1 bây giờ là dĩ vãng” [OctD2.3-R31 @27:33], and the mentor’s own Oct D2.3 trades were WE7 risk 15.75 / reward 18 (1.14R) and WE10 on a tool R:R of 1.71 — both won. 1 (default, October) = a PHL/PLH needs a target at least as far as its stop (the 1:1 floor); with 2 the bot refused all three worked trades (WE6 1.84R, WE7 1.45R, WE10 1.81R) as room / rolling_room. 2 = the September rule. The ISB, box and swing paths keep the 2x room_multiple.',
-          trader: '1 — October [OctD2.3-R31].',
+          what: 'Oct round 2 D2-G2. The room rule asks how far the target must be from the entry, as a multiple of the stop. September (Sept D5.3 METHOD s7) asked 2x for every setup. October never states 2x: “tăng lên 1,2 … 1,1 bây giờ là dĩ vãng” [OctD2.3-R31 @27:33], and the mentor’s own Oct D2.3 trades were WE7 risk 15.75 / reward 18 (1.14R) and WE10 on a tool R:R of 1.71 — both won. 2 (default, today) = the room rule stays at 2x: R31 itself says the reward:risk is about 1:2 and October states no 1:1 room rule [review: absence of a rule is not October lowering the bar]. 1 = a PHL/PLH needs only a target at least as far as its stop (the 1:1 floor) — inferred [B] from the worked WE7/WE10 trades; with 2 the bot refuses WE6/WE7/WE10 as room / rolling_room. The ISB, box and swing paths keep the 2x room_multiple.',
+          trader: '2 — today; 1 is an owner/mentor call [B].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PHLRoomMultiple) · kernel/mentor/phl.go phlPLHR2',
           range: '0–10',
-          systemDefault: '1',
-          recommended: '1 — October wins over Sept D5.3 [OctD2.3-R31].',
-          whenToTouch: 'Only to restore September: set 2.',
+          systemDefault: '2',
+          recommended:
+            '2 — keep until the mentor confirms a 1:1 room [OctD2.3-R31 says 1:2].',
+          whenToTouch:
+            'Only on a mentor answer — set 1 to ask the 1:1 floor only.',
           perSession: 'No — per strategy.',
         },
         {
           label: 'ISB first target is the fill candle close',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.isb_target_fill_close)',
-          what: 'Oct round 2 D2-G3. OctD2.2-R35/R37 [Oct D2.2 @28:40, 30:03]: the ISB gives its own first target — sell part when the trend candle that fills the order closes (“target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng”); R34 [@28:12] puts level targets (tops and bottoms) aside as “not taught yet” and the 1:1 theory with them. ON (default): an ISB with no level beyond its entry (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is no longer refused; its first target is the +1R leg-1 take-profit the trader already owns (partial at the fill candle’s close), the runner keeps the level ladder, and the 2R room-to-a-level rule has no level to measure. Replay 30 Oct 13:26 CT (mother 13:25 red, ISB 13:26): refused isb_target_below_floor before, sell stop 28,307.50 fills 13:27 and the low is 28,240.50 by 13:35. OFF = the September rule: a level target at least 1R away with 2R room.',
-          trader: 'on — October [OctD2.2-R35/R37].',
+          what: 'Oct round 2 D2-G3. OctD2.2-R35/R37 [Oct D2.2 @28:40, 30:03]: the ISB gives its own first target — sell part when the trend candle that fills the order closes (“target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng”); R34 [@28:12] puts level targets (tops and bottoms) aside as “not taught yet” and the 1:1 theory with them. ON (knob; default OFF — the course does not say a no-target ISB may be traded, [B]): an ISB with no level beyond its entry (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is no longer refused; its first target is the +1R leg-1 take-profit the trader already owns (partial at the fill candle’s close), the runner keeps the level ladder, and the 2R room-to-a-level rule has no level to measure. Replay 30 Oct 13:26 CT (mother 13:25 red, ISB 13:26): refused isb_target_below_floor before, sell stop 28,307.50 fills 13:27 and the low is 28,240.50 by 13:35. OFF (default) = the September rule: a level target at least 1R away with 2R room.',
+          trader: 'off — today; on is an owner/mentor call [B].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBTargetFillClose) · kernel/mentor/eval.go Tick (ISB target stage)',
           range: 'on / off',
-          systemDefault: 'on',
+          systemDefault: 'off',
           recommended:
-            'on — October [OctD2.2-R35/R37 @28:40, 30:03]; mentor question: Oct D2.1-R13 (level to level) is the argument for the ladder.',
+            'off until the mentor confirms [OctD2.2-R35/R37 @28:40, 30:03 say only the first partial; R34 says real targets come later; Oct D2.1-R13 level to level is the argument for the ladder].',
           whenToTouch:
-            'Only to restore the September level-target rule: set false.',
+            'Only on a mentor answer — set true to trade a no-target ISB at +1R.',
           perSession: 'No — per strategy.',
         },
         {

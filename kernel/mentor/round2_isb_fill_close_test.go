@@ -53,8 +53,8 @@ func d2g3Entry(ins []Intent) *Intent {
 }
 
 func TestD2G3ISBBasicTargetIsTheFillCandleClose(t *testing.T) {
-	if !DefaultConfig().ISBTargetFillClose {
-		t.Fatal("D2-G3: ISBTargetFillClose must default ON (October: the ISB's first target is the fill candle close)")
+	if DefaultConfig().ISBTargetFillClose {
+		t.Fatal("D2-G3 (review): ISBTargetFillClose must default OFF - the course does not say a no-target ISB may be traded [B]")
 	}
 	cases := []struct {
 		name, refusal string
@@ -64,7 +64,7 @@ func TestD2G3ISBBasicTargetIsTheFillCandleClose(t *testing.T) {
 		{"level inside 1R (isb_target_below_floor)", "isb_target_below_floor", 106, 106},
 	}
 	for _, c := range cases {
-		e, ins := d2g3Run(t, c.ema34, c.close1, nil)
+		e, ins := d2g3Run(t, c.ema34, c.close1, func(cf *Config) { cf.ISBTargetFillClose = true })
 		in := d2g3Entry(ins)
 		if in == nil {
 			t.Fatalf("%s: October trades the ISB; refusals %v", c.name, e.State.Refusals)
@@ -73,9 +73,9 @@ func TestD2G3ISBBasicTargetIsTheFillCandleClose(t *testing.T) {
 		if in.Target != in.Price+risk {
 			t.Fatalf("%s: first target must be the +1R leg-1 TP %.2f, got %.2f", c.name, in.Price+risk, in.Target)
 		}
-		e, ins = d2g3Run(t, c.ema34, c.close1, func(cf *Config) { cf.ISBTargetFillClose = false })
+		e, ins = d2g3Run(t, c.ema34, c.close1, nil)
 		if d2g3Entry(ins) != nil || e.State.Refusals[c.refusal] == 0 {
-			t.Fatalf("%s: knob isb_target_fill_close=false (September) refuses %s; intents %+v ledger %v", c.name, c.refusal, ins, e.State.Refusals)
+			t.Fatalf("%s: default (knob isb_target_fill_close off = September) refuses %s; intents %+v ledger %v", c.name, c.refusal, ins, e.State.Refusals)
 		}
 	}
 }

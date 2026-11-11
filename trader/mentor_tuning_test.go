@@ -159,8 +159,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
 			PHLOldExtreme1mK:           4,
 			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
-			PHLRoomMultiple:            1,                                 // D2-G2 October 1:1
-			ISBTargetFillClose:         true,                              // D2-G3 October [OctD2.2-R35/R37 @ 28:40, 30:03]
+			PHLRoomMultiple:            2,                                 // D2-G2 review: today's 2R
+			ISBTargetFillClose:         false,                             // D2-G3 review: OFF (course does not state it)
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
 			HTFTrendlineFlip:           true,                              // D3-G12
@@ -466,18 +466,19 @@ func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
 	}
 }
 
-// TestD2G2PHLRoomMultipleKnob — D2-G2: unset = 1 (October), a stored 2 reaches
-// the evaluator (September), an out-of-range value fails closed to 1, counted.
+// TestD2G2PHLRoomMultipleKnob — D2-G2 (review): unset = 2 (today), a stored 1
+// reaches the evaluator (the 1:1 floor reading), an out-of-range value fails
+// closed to the default 2.
 func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
-	two, bad := 2.0, 50.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 1 {
-		t.Fatalf("unset phl_room_multiple = %v, want 1", c.PHLRoomMultiple)
+	one, bad := 1.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("unset phl_room_multiple = %v, want 2", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &two}); c.PHLRoomMultiple != 2 {
-		t.Fatalf("stored phl_room_multiple=2 → %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &one}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("stored phl_room_multiple=1 → %v", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
-		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("out-of-range phl_room_multiple must fail closed to 2, got %v", c.PHLRoomMultiple)
 	}
 }
 

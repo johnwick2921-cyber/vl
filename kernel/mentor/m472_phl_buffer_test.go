@@ -65,13 +65,14 @@ func TestM472PHLBufferFrameOldLowRoomRefused(t *testing.T) {
 	ref := market.Kline{High: 28_330.75, Low: 28_317.25, Close: 28_319.25}
 	touch := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideShort}
 	oldLow := Level{Key: "old-low", Kind: KindOldExtreme, Role: OldLow, Price: 28_288}
+	cfg.PHLRoomMultiple = 1
 	if in, ok, reason := PHLPLH(touch, oldLow, 0, 3, cfg); !ok {
-		t.Fatalf("October default (1R room): the frame's own trade must pass, refused: %s", reason)
+		t.Fatalf("phl_room_multiple=1 (1R room): the frame's own trade must pass, refused: %s", reason)
 	} else if in.Price != 28_316.25 {
 		t.Fatalf("entry %.2f, want 28,316.25", in.Price)
 	}
 	sep := cfg
-	sep.PHLRoomMultiple = 2
+	sep.PHLRoomMultiple = 2 // the default
 	if _, ok, reason := PHLPLH(touch, oldLow, 0, 3, sep); ok {
 		t.Fatal("phl_room_multiple=2 must restore the September 2R refusal of the frame's example")
 	} else {

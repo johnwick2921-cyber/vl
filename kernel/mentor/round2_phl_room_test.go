@@ -35,20 +35,21 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 			rung := phl1At(t, bars, 2026, time.October, c.d, c.rungH, c.rungM)
 			at := fmt.Sprintf("%02d:%02d", c.rungH, c.rungM)
 
-			// October default: the rung arms.
-			e := phl1Evaluator(DefaultConfig(), c.side, bars[from].OpenTime, bars[rung].Close)
+			// phl_room_multiple=1: the rung arms.
+			oct := DefaultConfig()
+			oct.PHLRoomMultiple = 1 // knob phl_room_multiple=1: the worked-trade reading [B]
+			e := phl1Evaluator(oct, c.side, bars[from].OpenTime, bars[rung].Close)
 			got := phl1Find(phl1RunRolling(e, bars, from, rung), at)
 			if len(got.places) != 1 || !m464Approx(got.places[0].Price, c.entry) {
 				t.Fatalf("%s: default config must arm the mentor's %s rung %.2f; got %+v refused=%v", c.name, at, c.entry, got.places, got.refuse)
 			}
 
-			// Knob at 2 = September: refused rolling_room, nothing armed.
+			// Default (2): refused rolling_room, nothing armed.
 			cfg := DefaultConfig()
-			cfg.PHLRoomMultiple = 2
 			e2 := phl1Evaluator(cfg, c.side, bars[from].OpenTime, bars[rung].Close)
 			got2 := phl1Find(phl1RunRolling(e2, bars, from, rung), at)
 			if len(got2.places) != 0 {
-				t.Fatalf("%s: phl_room_multiple=2 must restore the 2R refusal, got %+v", c.name, got2.places)
+				t.Fatalf("%s: default 2R room must restore the 2R refusal, got %+v", c.name, got2.places)
 			}
 			found := false
 			for _, r := range got2.refuse {
@@ -57,7 +58,7 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Fatalf("%s: phl_room_multiple=2 must name rolling_room, got %v", c.name, got2.refuse)
+				t.Fatalf("%s: default 2R room must name rolling_room, got %v", c.name, got2.refuse)
 			}
 		})
 	}

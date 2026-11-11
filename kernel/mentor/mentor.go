@@ -428,9 +428,10 @@ type Config struct {
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path
 	// (level touch + rolling ladder) asks, in place of RoomMultiple. October takes
 	// the Oct D2.3 worked trades at 1:1..1.8R [OctD2.3-R31 @ 27:33 "tăng lên 1,2 ...
-	// 1,1 bây giờ là dĩ vãng"; WE7 1.14R, WE10 1.71R] and states no 2x number (the 2R
-	// room is Sept D5.3 METHOD s7). Default 1 (the D1.2 floor target >= stop stays);
-	// 2 = the September behaviour. ISB / box / swing keep RoomMultiple.
+	// 1,1 bây giờ là dĩ vãng"; WE7 1.14R, WE10 1.71R] and states no 1:1 room rule (the 2R
+	// room is Sept D5.3 METHOD s7; R31 itself says "about 1:2"). Default 2 (review
+	// P3: absence of a rule is not October lowering the bar); 1 = ask only the D1.2
+	// 1:1 floor [B, inferred from WE7/WE10]. ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
 	PHLRoomMultiple float64
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
@@ -498,6 +499,10 @@ type Config struct {
 	// October note; the FINAL report's "Oct D5.1-R9" was September's, reread
 	// D5.1-RR2-01). So the gate applies only in the news period and the 08:30-09:30
 	// open window. false = the m462 all-session gate (September D5.1-R9/R11).
+	// [B] review: this is INFERRED (R9 narrows the frame list; no October line
+	// drops a 1h/4h conflict sit-out), kept ON as the owner-reasoned default with
+	// this knob as the revert; it raises entry density on the replay (placement_held
+	// still holds the live trader) — confirm with the mentor.
 	// m462 (release #59) text follows — it describes the false value: false = the 4h/1h
 	// direction gate applies ALL SESSION to every intraday setup. The final
 	// review D5.1 overrides the D4.4 "news first" caveat: D5.1-R9 [D5.1 p1
@@ -754,12 +759,12 @@ type Config struct {
 	// fill candle's close, not a level beyond the entry [OctD2.2-R35/R37 @ 28:40,
 	// 30:03: "target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng";
 	// R34 @ 28:12: targets from tops and bottoms are "not taught yet", the 1:1
-	// theory is put aside]. ON (default): an ISB with NO level beyond its entry
+	// theory is put aside]. ON (knob true; default OFF — the course does not state it, [B]): an ISB with NO level beyond its entry
 	// (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is
 	// not refused: its first target is the leg-1 take-profit the trader already
 	// owns (+1R native TP, partial at the fill candle's close, mentorISBPartialTP),
 	// the runner keeps the level ladder, and the room-to-a-level rule has no level
-	// to measure. OFF = the September rule (a level target >= 1R with 2R room
+	// to measure. OFF (default) = the September rule (a level target >= 1R with 2R room
 	// is required). Studio: risk_control.mentor_tuning.isb_target_fill_close.
 	ISBTargetFillClose bool
 	// CrossingISBLookback / CrossingISBMin — isbTF-F6: the crossing read that
@@ -1066,7 +1071,7 @@ func DefaultConfig() Config {
 		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
 		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
 		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
-		PHLRoomMultiple:            1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
+		PHLRoomMultiple:            2,                   // D2-G2 (review): 2 = today; OctD2.3-R31 @ 27:33 states 1:2, no October 1:1 room rule; knob phl_room_multiple=1 asks only the 1:1 floor [B]
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
 		NearBoxRoomMultiple:        2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
 		NearBoxRoomPHL:             true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
@@ -1118,7 +1123,7 @@ func DefaultConfig() Config {
 		// boxes, the trigger escalation 5m → 15m → 30m.
 		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
-		ISBTargetFillClose:  true,                       // D2-G3 oct round 2: the ISB's first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]; false = the September level target
+		ISBTargetFillClose:  false,                      // D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
 		TriggerFromOpen:     true,                       // G4 oct round 2: the 5m trend is read from the 08:30 open [OctD4.3-R5 @ 03:10]; false = the whole-history read
 		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)

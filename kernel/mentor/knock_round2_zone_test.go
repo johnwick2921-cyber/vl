@@ -1,7 +1,6 @@
 package mentor
 
 import (
-	"math"
 	"testing"
 	"time"
 
@@ -29,7 +28,6 @@ func TestRound2D2G10ZoneCountsPreMarketTests(t *testing.T) {
 	bars := m413Load(t, "testdata/r2_mnq_1m_20261029_1700_to_20261030_1200ct.csv")
 	e := New(m473Cfg())
 	var preN, postN int
-	var lines []string
 	for i := range bars {
 		now := bars[i].CloseTime + 1
 		if now > time.Date(2026, 10, 30, 8, 50, 0, 0, ctime()).UnixMilli() {
@@ -41,15 +39,13 @@ func TestRound2D2G10ZoneCountsPreMarketTests(t *testing.T) {
 			preN = z.N
 		}
 		postN = z.N
-		_ = lines
 	}
 	if preN < 2 {
 		t.Fatalf("pre-market tests of the 28,8xx zone at 08:30 = %d, want >= 2 (07:37-08:00 tests count) — zones: %+v", preN, e.State.ZoneVisits)
 	}
-	if postN < preN {
+	if preN == 0 || postN < preN {
 		t.Fatalf("zone count fell across the 08:30 gate latch: %d -> %d (the pre-market tests were wiped)", preN, postN)
 	}
-	_ = math.Abs
 }
 
 func TestRound2D2G10KnobOffCountsNoZones(t *testing.T) {
