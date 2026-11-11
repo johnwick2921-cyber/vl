@@ -180,10 +180,19 @@ func TestM61UnoKeyLevelBacktest(t *testing.T) {
 // invalid" [D5.2 p1 @19:44–20:25] → ISB-only, no flip.
 func TestM61UnoFirstVisitBreakIsISBOnly(t *testing.T) {
 	e, base := m61UnoEvaluator(t, UnoKeyLevelsOn)
+	e.Cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff // LL-2 off: the September first-touch rule
 	bars := m61UnoHistory(base)
 	m61Tick(e, bars, m61Bar(base, 5, 29130, 29132, 29085, 29090))
 	if !e.State.ISBOnly[m61UnoKey] || e.State.UnoFlipped[m61UnoKey] || e.State.Counters["level_broken_uno"] != 0 {
 		t.Fatalf("a wrong-way FIRST visit is ISB-only, never a flip: isbonly=%v flipped=%v counters=%v", e.State.ISBOnly, e.State.UnoFlipped, e.State.Counters)
+	}
+	// LL-2 on (the default): the same first-touch break flips the level as a
+	// break-and-retest (level_broken_retest), never as an Uno (it never held).
+	e, base = m61UnoEvaluator(t, UnoKeyLevelsOn)
+	bars = m61UnoHistory(base)
+	m61Tick(e, bars, m61Bar(base, 5, 29130, 29132, 29085, 29090))
+	if e.State.ISBOnly[m61UnoKey] || !e.State.UnoFlipped[m61UnoKey] || e.State.Counters["level_broken_retest"] != 1 || e.State.Counters["level_broken_uno"] != 0 {
+		t.Fatalf("LL-2: a first-touch break flips as break-and-retest: isbonly=%v flipped=%v counters=%v", e.State.ISBOnly, e.State.UnoFlipped, e.State.Counters)
 	}
 }
 

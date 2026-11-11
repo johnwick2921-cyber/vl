@@ -77,12 +77,14 @@ func TestSeedChartDisplayNeverAuthors(t *testing.T) {
 // trades may read State.ChartLevels / ChartTrendlines / ChartEMA. AST scan of
 // every non-test .go file in the repo: a selector of those names is allowed
 // only (1) as an assignment TARGET in eval.go / chart_seed.go (the writers) or
-// (2) anywhere in the display readers arm_snapshot.go and
-// trader/mentor_truth_panel.go. Mutant: a read in any other file → RED.
+// (2) anywhere in the display readers arm_snapshot.go,
+// trader/mentor_truth_panel.go and the read-only cmd/mentor-replay/events.go. Mutant: a read in any other file → RED.
 func TestChartDisplayFieldsAreReadOnlyByDisplayCode(t *testing.T) {
 	names := map[string]bool{"ChartLevels": true, "ChartTrendlines": true, "ChartEMA": true}
 	writers := map[string]bool{"kernel/mentor/eval.go": true, "kernel/mentor/chart_seed.go": true}
-	readers := map[string]bool{"kernel/mentor/arm_snapshot.go": true, "trader/mentor_truth_panel.go": true}
+	// cmd/mentor-replay/events.go: the read-only audit replay diffs the chart
+	// lines as detector events (it never trades; it has no broker or store).
+	readers := map[string]bool{"kernel/mentor/arm_snapshot.go": true, "trader/mentor_truth_panel.go": true, "cmd/mentor-replay/events.go": true}
 	root, err := filepath.Abs("../..")
 	if err != nil {
 		t.Fatal(err)

@@ -2000,6 +2000,24 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	if at == nil || at.store == nil {
 		return
 	}
+	at.mentorSeedFrom(store.NewBarHistoryStore(at.store.GormDB()))
+}
+
+// mentorSeedBarSource is the bar read surface the mentor seed needs. Production
+// passes *store.BarHistoryStore (mentorSeedAtStart); the offline replay
+// (cmd/mentor-replay, MentorReplay.Seed) passes an AS-OF view of the same rows,
+// so a historical day is seeded from exactly the bars that existed then and
+// runs the SAME seed body below — never a re-implementation.
+type mentorSeedBarSource interface {
+	LastNBarsCurrentContract(symbol, tf string, n int) ([]store.BarHistoryDB, error)
+	ContractSpans(symbol, tf string) ([]store.ContractSpan, error)
+	AllBarsOn(symbol, tf, contract string) ([]store.BarHistoryDB, error)
+}
+
+var _ mentorSeedBarSource = (*store.BarHistoryStore)(nil)
+
+// mentorSeedFrom is the seed body of mentorSeedAtStart over a bar source.
+func (at *AutoTrader) mentorSeedFrom(bh mentorSeedBarSource) {
 	// REL18-A: each construction (boot or reload) gets its OWN arm epoch (a
 	// per-AutoTrader field, never shared), so a rebuilt evaluator's "isb-1"
 	// never collides with a prior terminal row — or another trader's row.
@@ -2017,7 +2035,6 @@ func (at *AutoTrader) mentorSeedAtStart() {
 	// fixed mid-session instant; production defaults to time.Now() (X-07-follow,
 	// FLAKE-SEED-CLOCK). Same wall clock, same behaviour.
 	now := mentorClockNow().UnixMilli()
-	bh := store.NewBarHistoryStore(at.store.GormDB())
 	rows1m, err1m := bh.LastNBarsCurrentContract("MNQ", "1m", mentorSeedBars1mN)
 	if err1m != nil {
 		at.logWarnf("🧑‍🏫 mentor seed: 1m store read failed (%v) — seeding with nothing (refusing)", err1m)
@@ -2193,7 +2210,7 @@ func (at *AutoTrader) mentorRebuildLimitsAtBoot() {
 // ("" = full). FIX 5: it STOPS READING at the first roll whose gap cannot be
 // measured instead of reading every contract. A cold store / read error
 // returns nil and the caller degrades to the current-contract walk.
-func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamBars []market.Kline) {
+func (at *AutoTrader) mentorFullKeyLevelHistory(bh mentorSeedBarSource) (stitched1m, full1HRTH []market.Kline, contracts []mentor.Contract1M, gaps []mentor.RollGap, stoppedAt string, seamBars []market.Kline) {
 	if at == nil || bh == nil {
 		return nil, nil, nil, nil, "", nil
 	}
@@ -2203,6 +2220,43 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 			at.logWarnf("🧑‍🏫 key-level history: contract span read failed (%v) — falling back to current contract", err)
 		}
 		return nil, nil, nil, nil, "", nil
+	}
+	// LL-5 follow-up (reviewer P2): the stitch's newest contract is the TRADED
+	// one — the contract of the newest 1m bar, the same read the tick and the
+	// seed's current-contract window use (LastNBarsCurrentContract). The spans
+	// are ordered by FIRST 1m row, so the NEXT contract's pre-roll rows
+	// (imports, NT8 backfill, a mislabelled run) put it last days before the
+	// bot trades it; stitching onto it put every seeded level ~one roll gap
+	// (+291 on 2026-09-14) off the bars the evaluator ticks on. A span newer
+	// than the traded contract is not yet history — cut there, exactly as
+	// cmd/mentor-replay's Pin does. LL-5's pre-dense measurement therefore
+	// only ever runs when the pre-dense newest IS the traded contract.
+	cur, err := bh.LastNBarsCurrentContract("MNQ", "1m", 1)
+	if err != nil || len(cur) == 0 || cur[0].Contract == "" {
+		if err != nil {
+			at.logWarnf("🧑‍🏫 key-level history: traded-contract read failed (%v) — falling back to current contract", err)
+		}
+		return nil, nil, nil, nil, "", nil
+	}
+	traded := cur[0].Contract
+	cut := -1
+	for i, sp := range spans {
+		if sp.Contract == traded {
+			cut = i
+			break
+		}
+	}
+	if cut < 0 {
+		at.logWarnf("🧑‍🏫 key-level history: traded contract %s has no 1m span — falling back to current contract", traded)
+		return nil, nil, nil, nil, "", nil
+	}
+	if cut < len(spans)-1 {
+		names := make([]string, 0, len(spans)-1-cut)
+		for _, sp := range spans[cut+1:] {
+			names = append(names, sp.Contract)
+		}
+		at.logInfof("🧑‍🏫 key-level history: stitching up to the traded %s — %s not yet traded, not history [levels audit LL-5 follow-up]", traded, strings.Join(names, ","))
+		spans = spans[:cut+1]
 	}
 	read := func(contract string) (mentor.Contract1M, bool) {
 		rows, err := bh.AllBarsOn("MNQ", "1m", contract)
@@ -2227,6 +2281,21 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 	if !ok {
 		return nil, nil, nil, nil, "", nil
 	}
+	// levels audit LL-4: the newest contract's native 15m / 30m rebuild the
+	// pre-roll 1H RTH candles from its OWN prints (knob key_level_history_source).
+	cfg := mentor.DefaultConfig()
+	if at.mentorEval != nil {
+		cfg = at.mentorEval.Cfg
+	}
+	ownHistory := mentor.KeyLevelHistoryOwnOn(cfg)
+	if ownHistory {
+		if rows, err := bh.AllBarsOn("MNQ", "15m", newest.Contract); err == nil {
+			newest.Bars15m = storeBarsToKlines(rows, 15*60_000)
+		}
+		if rows, err := bh.AllBarsOn("MNQ", "30m", newest.Contract); err == nil {
+			newest.Bars30m = storeBarsToKlines(rows, 30*60_000)
+		}
+	}
 	s := mentor.NewRollStitcher(newest)
 	contracts = append(contracts, newest)
 	for i := len(spans) - 2; i >= 0; i-- {
@@ -2240,6 +2309,12 @@ func (at *AutoTrader) mentorFullKeyLevelHistory(bh *store.BarHistoryStore) (stit
 		contracts = append(contracts, c)
 	}
 	stitched1m, full1HRTH, gaps, stoppedAt = s.Result()
+	if ownHistory && s.NewestFrom() > 0 {
+		var n map[string]int
+		full1HRTH, n = mentor.OwnContractKeyLevel1H(full1HRTH, newest, s.NewestFrom())
+		at.logInfof("🧑‍🏫 key-level history: %d pre-roll 1H RTH candles rebuilt from %s's own bars (1m %d · 15m %d · 30m %d), the rest back-adjusted [levels audit LL-4, OctD5.2-R16 @06:18]",
+			n["1m"]+n["15m"]+n["30m"], newest.Contract, n["1m"], n["15m"], n["30m"])
+	}
 	seamBars = s.SeamBars() // bars a contract stores that the cut dropped: not lost (round 4, D1), and folded into the swing line (m456)
 	// Oldest-first, so the boot line reads left-to-right from the earliest date.
 	for i, j := 0, len(contracts)-1; i < j; i, j = i+1, j-1 {

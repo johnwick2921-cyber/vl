@@ -64,11 +64,11 @@ func TestM473R3CarriedBoxAnchorOutOfWindowDropped(t *testing.T) {
 	b := e.State.LatchedBoxes["ftgh"]
 	e.State.CarriedBoxes = map[string]Box{"ftgh": b}
 	now := m473R3At(2026, 11, 1, 18, 0)
-	if got := e.carriedBoxesAt(nil, bars, now); len(got) != 1 {
+	if got, _ := e.carriedBoxesAt(nil, bars, now); len(got) != 1 {
 		t.Fatalf("anchor in window: want the carried box, got %d", len(got))
 	}
 	later := []market.Kline{m473EvenBar(time.Date(2026, 11, 1, 17, 59, 0, 0, ct))} // window slid past the anchor
-	if got := e.carriedBoxesAt(nil, later, now); len(got) != 0 {
+	if got, _ := e.carriedBoxesAt(nil, later, now); len(got) != 0 {
 		t.Fatalf("anchor scrolled out of the window: carried box must be dropped, got %+v", got)
 	}
 }

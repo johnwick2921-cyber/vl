@@ -46,6 +46,8 @@
 //   ninjascript/VLTraderTCPClient.cs    sha256 7aae2529… — additive feed_status.
 //   provider/ninjatrader/tcp_framing.go sha256 9b5c00cf… — decode feed_status mode.
 //   provider/ninjatrader/tcp_server.go  sha256 bdd96a75… — session-scope feed mode.
+// go.mod baseline advanced 2026-11-11 for GO-2026-6859 (net/http): the go
+//   directive 1.26.10 -> 1.26.11; no require line changed. sha256 2b9fea8a…
 // go.mod baseline advanced 2026-10-22 for m391 (release #48): the friend app
 //   (cmd/vl-friend) merged from friend/build63 @2ebcd2ee0 promotes
 //   golang.org/x/sys v0.48.0 and golang.org/x/term v0.46.0 from indirect to

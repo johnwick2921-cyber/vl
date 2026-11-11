@@ -54,6 +54,7 @@ func TestBoxBanFilter(t *testing.T) {
 func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff // LL-2: the September first-touch ISB-only path under test
 	wrongWay := []Intent{
 		{Action: CancelArm, Reason: "close through"},
 		{Action: LevelInvalid, LevelKey: "x"},
@@ -86,6 +87,7 @@ func TestBoxEdgeExemptFromInvalidLevel(t *testing.T) {
 func TestWrongWayCancelBindsToTheRestingOrderOrIsDropped(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff // LL-2: the September first-touch ISB-only path under test
 	wrongWay := []Intent{
 		{Action: CancelArm, Reason: "close through"},
 		{Action: LevelInvalid, LevelKey: "k"},

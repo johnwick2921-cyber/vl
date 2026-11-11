@@ -15,6 +15,7 @@ import (
 
 func m425bBoxRig(seed []Level, trig TriggerLine) (*Evaluator, []market.Kline, int64) {
 	cfg := DefaultConfig()
+	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.KeyLevelTFMinutes = 1

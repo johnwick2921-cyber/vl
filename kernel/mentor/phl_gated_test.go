@@ -25,6 +25,7 @@ func workedCfg() Config {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6 // target 29,425.75
+	cfg.PHLRoomMultiple = 2 // oct round 2 D2-G2: these boundaries (room exactly 30, 29 < 30) were worked at the September 2R room; October's default is 1
 	// The spent-day / room boundaries below (room exactly 30, 29 < 30, the
 	// 15-pt cap) were worked on the pre-#59 offsets (entry +1.00, stop at the
 	// low). Pinned here so each gate keeps its exact boundary; the production

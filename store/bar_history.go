@@ -668,7 +668,10 @@ func (s *BarHistoryStore) LastNBarsCurrentContract(symbol, tf string, n int) ([]
 // AllBarsOn returns EVERY stored bar for (symbol, tf, contract) ascending —
 // the full-history read for the mentor key-level seed (KEYLEVEL-FULL-HISTORY).
 // No N cap: the caller bounds memory by the symbol's own retention. A read
-// error is returned, never swallowed.
+// error is returned, never swallowed. Close-stamped historical_import rows
+// (convention epoch_floor — the m460 migration not yet run) are read at their
+// OPEN (OpenStampImportRows, levels audit LL-3): the 08:30-anchored 1H RTH
+// candles the key levels walk must start with the 08:30 bar, never the 08:29.
 func (s *BarHistoryStore) AllBarsOn(symbol, tf, contract string) ([]BarHistoryDB, error) {
 	if s == nil || s.db == nil {
 		return nil, fmt.Errorf("store required")
@@ -679,7 +682,7 @@ func (s *BarHistoryStore) AllBarsOn(symbol, tf, contract string) ([]BarHistoryDB
 		Order("open_time_ms ASC").Find(&asc).Error; err != nil {
 		return nil, err
 	}
-	return asc, nil
+	return OpenStampImportRows(asc, tf), nil
 }
 
 // ContractSpan is one contract's (symbol, tf) coverage: its name and the

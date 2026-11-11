@@ -136,14 +136,14 @@ const COPY = {
     es: 'los últimos pares de velas 5m y 15m cerradas (antes de #60)',
   },
   trigEscalation: {
-    zh: '触发线升级：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
-    en: 'Trigger escalation: crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
-    es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
+    zh: '触发线升级（默认关，10 月课程只读 5 分钟）：5 分钟 ISB 交叉 → 15 分钟触发线，再交叉 → 30 分钟',
+    en: 'Trigger escalation (default OFF, October reads the 5m only): crossing 5m ISBs → the 15m trigger line, crossing 15m → the 30m',
+    es: 'Escalado del disparador (por defecto OFF, octubre lee solo el 5m): ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
-    zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（关 = 全天，默认）',
-    en: '4h/1h direction gate only in the news + open windows (OFF = all session, the default)',
-    es: 'Compuerta 4h/1h solo en las ventanas de noticias + apertura (OFF = toda la sesión, por defecto)',
+    zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（开 = 默认；关 = 全天）',
+    en: '4h/1h direction gate only in the news + open windows (ON = default, October: the 5m is the only big frame; OFF = all session)',
+    es: 'Compuerta 4h/1h solo en las ventanas de noticias + apertura (ON = por defecto; OFF = toda la sesión)',
   },
   exec2m: {
     zh: '执行周期：09:00 CT 后为 2 分钟（08:30–09:00 为 1 分钟）— ISB + PHL/PLH、EMA 9/34、箱体、趋势线与 X8 离场',
@@ -251,9 +251,14 @@ const COPY = {
     en: 'The 5m ISB box is the',
     es: 'La caja ISB de 5m es la',
   },
+  box5mMerge: {
+    zh: '合并的内包线：收在箱体内的 5 分钟 K 线并入箱体（十月课程）',
+    en: 'merged inside bar: 5m candles that close inside join the box (October course)',
+    es: 'vela interior fusionada: las velas de 5m que cierran dentro se suman a la caja (curso de octubre)',
+  },
   box5mNewest: {
     zh: '最新的 5 分钟内包线（替换旧箱体）',
-    en: 'newest 5m inside bar (replaces the standing box)',
+    en: 'newest 5m inside bar (replaces the standing box, #61–#66)',
     es: 'vela interior de 5m más reciente (reemplaza la caja vigente)',
   },
   box5mFirst: {
@@ -352,9 +357,9 @@ const COPY = {
     es: 'ISB 2m: cancelar en la vela N si no se llena (nuestro número, no del curso)',
   },
   isbStackTiny: {
-    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认 12.5 = 课程示例；0.01 = 实际关闭）',
-    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default 12.5 = the course example; 0.01 = effectively off)',
-    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto 12.5 = el ejemplo del curso; 0.01 = prácticamente off)',
+    zh: 'ISB：止损不超过此点数则不在取消K线取消（默认留空 = 0 = 关闭，10 月课程：第 4 根未成交 K 线即取消；12.5 = 9 月课程示例）',
+    en: 'ISB: a stop at or under this many pts is not cancelled at the cancel candle (default blank = 0 = OFF, October: the 4th non-filling candle cancels; 12.5 = the September worked example)',
+    es: 'ISB: un stop igual o menor a estos pts no se cancela en la vela de cancelación (por defecto vacío = 0 = OFF, octubre: la 4.ª vela sin ejecución cancela; 12.5 = el ejemplo del curso de septiembre)',
   },
   tlEntryTouch: {
     zh: '趋势线入场触碰（第 3 次触碰 = 测试）',
@@ -586,6 +591,7 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'signal', label: COPY.phlPullbackSignal },
   ],
   mentor_5m_box_source: [
+    { value: 'merge', label: COPY.box5mMerge },
     { value: 'newest', label: COPY.box5mNewest },
     { value: 'first', label: COPY.box5mFirst },
   ],
@@ -607,7 +613,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
-  htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
+  htf_gate_news_only: true, // D2-G7 oct round 2: October — the 5m is the only big frame [OctD4.3-R9 @07:28]; the 4h/1h gate = news + open only; OFF = m462 all session (Sept D5.1-R9/R11)
   exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day
   day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,
@@ -615,7 +621,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
   '15m_early_read': true, // m465 P1 — D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
   mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
-  trigger_escalation: true, // m465 P1 — D3.4-R43
+  trigger_escalation: false, // G3 oct round 2 — October: the 5m only [OctD4.3-R9 @07:28]; ON = Sept D3.4-R43 (m465 P1)
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
   news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
@@ -626,7 +632,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
   trendline_is_target: true, // (a)
-  trendline_between_boxes: true, // (b) — course-defaults-30 [D3.2 p2 @10:56–11:04]
+  trendline_between_boxes: false, // D3-G8 oct round 2 — October [OctD3.3-R59 @46:27]; was true (course-defaults-30)
   leg_reset_on_wave_break: true, // (a)
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
@@ -635,7 +641,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   wick_safe_play: false, // m465 P5: D4.3-R20 an optional extra confirm [D4.3 @14:07–14:27]
   // Release #52 W11 — invented constants, every one OURS (defaults unchanged).
   isb_stack_cancel_candle_2m: 4, // B8: the 1m course count reused on the 2m
-  isb_stack_tiny_stop_pts: 12.5, // m465 (release #60) D5.1-R26: the worked example's measured stop [D5.1 p2 @02:24–04:41]
+  isb_stack_tiny_stop_pts: 0, // G2 oct round 2: OFF — October cancels at the 4th candle [OctD4.3-R57 @56:00]; 12.5 = Sept D5.1-R26 [D5.1 p2 @02:24–04:41]
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
@@ -655,7 +661,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_arm_line_cancel: 'current_line', // G17 D2.3-R34 [D2.3 p1 @23:35–24:03]
   phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
   // m466 P1 (release #61) — boxes, breaks, ranges.
-  mentor_5m_box_source: 'newest', // G28 D4.1-R37 [D4.1 p1 @22:31–22:49]
+  mentor_5m_box_source: 'merge', // ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00]
   mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
   mentor_small_range_guard: false, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30] — OFF since #61 final (count / margin unstated)
   mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]

@@ -20,7 +20,7 @@ func TestM465KnobsDefaultsAreTheCourse(t *testing.T) {
 	cfg := tuningTick(t, nil)
 	if cfg.TrendlineEntryTouch != mentor.TrendlineEntryThird /* m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7 */ || cfg.NearBoxBetweenExempt ||
 		cfg.PHLFlatLow != mentor.PHLFlatLowNear || cfg.ISBReverseTouch != mentor.ISBReverseTouchPair ||
-		cfg.ISBStackTinyStopPts != 12.5 || cfg.DayGateSpentPts != 265 {
+		cfg.ISBStackTinyStopPts != 0 /* G2 oct round 2: was 12.5, D5.1-R26 */ || cfg.DayGateSpentPts != 265 {
 		t.Fatalf("m465 defaults: entry=%q exempt=%v flat=%q rev=%q tiny=%g spent=%g",
 			cfg.TrendlineEntryTouch, cfg.NearBoxBetweenExempt, cfg.PHLFlatLow, cfg.ISBReverseTouch,
 			cfg.ISBStackTinyStopPts, cfg.DayGateSpentPts)

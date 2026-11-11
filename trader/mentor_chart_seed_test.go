@@ -90,16 +90,31 @@ func TestMentorTruthEmptyLevelsSerialiseAsEmptyArray(t *testing.T) {
 
 // The boot path must actually call the display seed (wiring pin): without the
 // call the closed-market chart is blank again. Source check on the production
-// splice, since mentorSeedAtStart needs a live store.
+// splice, since mentorSeedAtStart needs a live store. The seed body lives in
+// mentorSeedFrom (cmd/mentor-replay runs the same body over an as-of bar
+// source), so the pin is: mentorSeedAtStart calls mentorSeedFrom, and
+// mentorSeedFrom calls the display seed.
 func TestMentorSeedAtStartCallsTheChartDisplaySeed(t *testing.T) {
 	src, err := os.ReadFile("mentor_tick.go")
 	if err != nil {
 		t.Fatal(err)
 	}
 	s := string(src)
-	i := strings.Index(s, "func (at *AutoTrader) mentorSeedAtStart()")
-	j := strings.Index(s[i:], "\n}\n")
-	if i < 0 || j < 0 || !strings.Contains(s[i:i+j], "at.mentorSeedChartDisplay(") {
+	body := func(sig string) string {
+		i := strings.Index(s, sig)
+		if i < 0 {
+			return ""
+		}
+		j := strings.Index(s[i:], "\n}\n")
+		if j < 0 {
+			return ""
+		}
+		return s[i : i+j]
+	}
+	if !strings.Contains(body("func (at *AutoTrader) mentorSeedAtStart()"), "at.mentorSeedFrom(") {
+		t.Fatal("mentorSeedAtStart no longer runs the seed body mentorSeedFrom")
+	}
+	if !strings.Contains(body("func (at *AutoTrader) mentorSeedFrom("), "at.mentorSeedChartDisplay(") {
 		t.Fatal("mentorSeedAtStart no longer calls mentorSeedChartDisplay")
 	}
 }

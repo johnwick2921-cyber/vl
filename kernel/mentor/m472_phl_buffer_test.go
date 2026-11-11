@@ -54,20 +54,28 @@ func TestM472PHLBufferKnockOn(t *testing.T) {
 }
 
 // TestM472PHLBufferFrameOldLowRoomRefused records the on-screen example with
-// the frame's REAL old low (28,288.00): the bot's own 2x room rule refuses the
-// mentor's trade (reward 28,316.25-(28,288+5)=23.25 < 2 x risk 15.5 = 31), both
-// before this change (risk 14.5, need 29, reward 23.75) and after it. A standing
-// code-vs-video gap, NOT a flip from A3 - CTO/mentor question, out of A3 scope.
-// Frame: Ngày 2.3 PHL PLH/s_02872.jpg.
+// the frame's REAL old low (28,288.00): reward 28,316.25-(28,288+5)=23.25 vs
+// risk 15.5 is 1.5R. The September 2R room rule refused the mentor's trade
+// (need 31); D2-G2 (oct round 2) ruled October's room 1:1 [OctD2.3-R31 @ 27:33],
+// so at the default the frame's own trade now passes, and phl_room_multiple=2
+// restores the refusal. Frame: Ngày 2.3 PHL PLH/s_02872.jpg.
 func TestM472PHLBufferFrameOldLowRoomRefused(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	ref := market.Kline{High: 28_330.75, Low: 28_317.25, Close: 28_319.25}
 	touch := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideShort}
 	oldLow := Level{Key: "old-low", Kind: KindOldExtreme, Role: OldLow, Price: 28_288}
-	if _, ok, reason := PHLPLH(touch, oldLow, 0, 3, cfg); ok {
-		t.Fatal("expected the room rule to refuse the frame's own example; if this now passes, update the notes")
+	cfg.PHLRoomMultiple = 1
+	if in, ok, reason := PHLPLH(touch, oldLow, 0, 3, cfg); !ok {
+		t.Fatalf("phl_room_multiple=1 (1R room): the frame's own trade must pass, refused: %s", reason)
+	} else if in.Price != 28_316.25 {
+		t.Fatalf("entry %.2f, want 28,316.25", in.Price)
+	}
+	sep := cfg
+	sep.PHLRoomMultiple = 2 // the default
+	if _, ok, reason := PHLPLH(touch, oldLow, 0, 3, sep); ok {
+		t.Fatal("phl_room_multiple=2 must restore the September 2R refusal of the frame's example")
 	} else {
-		t.Logf("frame example refused: %s", reason)
+		t.Logf("September room refuses: %s", reason)
 	}
 }

@@ -203,6 +203,10 @@ func m434Digest(t *testing.T, c m434Case) []string {
 		}
 	}
 	cfg := c.cfg()
+	// Every golden replayed here predates the ISB5 audit: the #61–#66 box
+	// source (newest) and the one-tick-late rebuild (F5). The ISB5 behaviour is
+	// pinned on real days by TestISB5F1CourseDayMergedBox / TestISB5F5* (cmd/mentor-replay).
+	m434PreISB5(t, &cfg)
 	if m434PreM473 {
 		cfg.ISBBoxEscapeMode = ISBBoxEscapeClose // pre-m473 B3 default (the 1m close deletes)
 	}
@@ -251,6 +255,45 @@ func m434Digest(t *testing.T, c m434Case) []string {
 			m434Sum(string(ij)), m434Sum(string(sj)), m434Sum(notes), m434Sum(lv), m434Sum(tl)))
 	}
 	return lines
+}
+
+// m434PreISB5 puts the ISB5 audit back to the pre-ISB5 read for a frozen golden:
+// mode merge (the new default) → newest, and the F5 same-tick rebuild off.
+func m434PreISB5(t *testing.T, cfg *Config) {
+	t.Helper()
+	if cfg.FiveMinBoxSource == FiveMinBoxMerge {
+		cfg.FiveMinBoxSource = FiveMinBoxNewest
+	}
+	cfg.PHLOldExtreme1mK = 0                                // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
+	cfg.PHLRoomMultiple = cfg.RoomMultiple                  // oct round 2 D2-G2: … and the PHL/PLH 2R room (knob phl_room_multiple=2 reproduces the old golden byte for byte)
+	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
+	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
+	cfg.PHLMinAbovePriorPts = 0                             // oct round 2 G7: … and the 15-pt entry-vs-old-low distance
+	cfg.BoxPreOpenLookbackMin = 0                           // oct round 2 D3-G1: … and the pre-open morning box
+	cfg.BoxSwingBothRoles = false                           // oct round 2 D3-G2: … and the one-role swing switch
+	cfg.BoxCarriedStaysLive = false                         // oct round 2 D3-G4: … and the carried-box-only-fills-an-empty-role rule
+	cfg.BoxFlipReversible = false                           // oct round 2 D3-G7: … and the permanent D14 flip
+	cfg.TrendlineFirstBottomAnchor = false                  // oct round 2 D3-G9: … and the pre-round-2 non-adjacent pick
+	cfg.KnockKnockZone = false                              // oct round 2 D2-G10: … and the per-level-key visit count
+	cfg.HTFTrendlineFlip = false                            // oct round 2 D3-G12: … and the delete of a broken HTF line
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
+	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff        // levels audit LL-2: … and the October break-and-retest
+	prevLL6 := emaAliasDoubleInvalidSeam
+	emaAliasDoubleInvalidSeam = true // levels audit LL-6: … and the single EMA 34 invalidation
+	t.Cleanup(func() { emaAliasDoubleInvalidSeam = prevLL6 })
+	prevP5, prevP2 := rollingSilentCancelSeam, boxPairPrePHL2Seam
+	rollingSilentCancelSeam = true // phl audit PHL-5: … and the named rolling cancels
+	boxPairPrePHL2Seam = true      // phl audit PHL-2: … and the nearest-in-time / September post-escape box pairing
+	t.Cleanup(func() { rollingSilentCancelSeam, boxPairPrePHL2Seam = prevP5, prevP2 })
+	prev, prevF1, prevF2, prevF3, prevF4 := isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam, isbSwingDropSpendsLevelSeam, isbSwingSpentBeforeGeometrySeam
+	isbBoxSameTickRebuild = false
+	isbTriggerHiddenByBox5m = true         // isbTF-F1: the frozen goldens predate the trigger-inside-the-box read
+	isbBoxGateLiftedByCrossingSeam = true  // isbTF-F2: … and the crossing lift of the box gates
+	isbSwingDropSpendsLevelSeam = true     // isbTF-F3: … and a dropped swing ISB spending the level
+	isbSwingSpentBeforeGeometrySeam = true // isbTF-F4: … and the spent check before the trade-side read
+	t.Cleanup(func() {
+		isbBoxSameTickRebuild, isbTriggerHiddenByBox5m, isbBoxGateLiftedByCrossingSeam, isbSwingDropSpendsLevelSeam, isbSwingSpentBeforeGeometrySeam = prev, prevF1, prevF2, prevF3, prevF4
+	})
 }
 
 // m434PreM473 turns EVERY m473 behaviour off (B1 carry, B2 peak-1/level pairs,

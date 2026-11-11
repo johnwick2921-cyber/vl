@@ -426,6 +426,7 @@ func TestSeedFullDeletionOverFullHistory(t *testing.T) {
 	cfg := DefaultConfig()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
+	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the deck deletion under test (October default keeps)
 	e := New(cfg)
 	now := auditMs(2026, time.September, 30, 12, 0, 0)
 	SeedFull(e, nil, []market.Kline{c1, c2, c3}, now)

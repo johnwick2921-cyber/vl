@@ -245,6 +245,9 @@ func TestW11B10EveningSlowKnobReachesTheFrameChoice(t *testing.T) {
 			cfg.EveningSlowPts = pts
 		}
 		e := newISBEval(cfg)
+		// isbTF-F1: the trigger line now gates the ISB inside a 5m box too —
+		// pin the long line under the tape (this pins the frame choice).
+		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90, LastBucket: 1 << 62}
 		e.Tick(bars, now)
 		return e.State.Refusals
 	}

@@ -66,6 +66,8 @@ func m462PreM465Knobs(cfg *Config) {
 	cfg.Early15mRead = false
 	cfg.MTFConfluenceSource = MTFConfluenceLastPair
 	cfg.TriggerEscalation = false
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger // oct round 2 D5.3
+	cfg.Counter5mReduceSize = Counter5mReduceOff // oct round 2 D5.4-SCALP
 }
 
 func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
@@ -128,6 +130,7 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			m61PreP4(&cfg)        // m466 P4 (#61): the pre-#61 swing ISB knobs (required, keep OFF) — this golden predates them
 			m466P2PreValues(&cfg) // m466 P2 (#61): the pre-#61 knob values — this golden predates them
 			m466P1PreValues(&cfg) // m466 P1 (#61): the pre-#61 knob values — this golden predates them
+			m434PreISB5(t, &cfg)  // ISB5 audit: the frozen golden predates the F5 same-tick rebuild
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {

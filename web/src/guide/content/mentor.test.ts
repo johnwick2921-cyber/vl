@@ -312,3 +312,21 @@ describe('mentor guide — m473 round 2 boxes', () => {
     }
   })
 })
+
+// phl audit (PHL-1/PHL-2): the guide must describe the shipped PHL old-extreme
+// read and the first-level-peak box pairing. Kernel twins:
+// kernel/mentor/phl1_course_examples_test.go, cmd/mentor-replay/phl_box_golden_test.go.
+describe('mentor guide — phl audit', () => {
+  const all = JSON.stringify(mentor)
+  it('names the 1m old extreme, its counters and the first-peak box pairing', () => {
+    for (const needle of [
+      'phl_old_extreme_1m_k',
+      'rolling_phl_old_extreme_unconfirmed',
+      'rolling_level_touch_owns',
+      'Oct D3.3 @ 20:33',
+      '28,614.75',
+    ]) {
+      expect(all, `missing ${needle}`).toContain(needle)
+    }
+  })
+})

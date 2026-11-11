@@ -69,6 +69,7 @@ type mentorTierInputs struct {
 
 	ISBOldExtreme bool // ISB at an old high/low → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 2]
 	ISBInRange    bool // ISB traded inside a range → the reduced tier (3) [D4.1 p1 @04:37–05:04 rule 3]
+	Counter5m     bool // D5.4-SCALP: the entry is opposite to the governing 5m trigger (FlagCounter5m, knob counter_5m_reduce_size) → the reduced tier [OctD5.4-R11 @04:47]
 	PullbackWarn  bool // X11: 5m candle broke the prior 5m low in a 5m uptrend (mirror: the high in a downtrend) against an entry WITH that trend → size down [Go over lớp học @00:13:21–00:15:19]
 
 	// ExecTFMin (m465 P4, D3.1-R30) is the frame the entry was READ on — the
@@ -171,6 +172,13 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 	// size down ("giảm size lại cũng được") [X11 @13:21–15:02, quote @14:50–15:00].
 	if in.PullbackWarn {
 		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "pullback_warn", Why: "5m pullback warning → the reduced tier (size down) [X11 @13:21–15:02]"}, nil
+	}
+	// D5.4-SCALP (oct round 2, OctD5.4-R11 @04:47 "giảm size lại", R13 @05:00 "ăn
+	// ít lại"): a counter-5m entry sizes down. The course names no count — the
+	// reduced tier is the course's "giảm size" tier. The evaluator only stamps the
+	// flag while counter_5m_reduce_size is on, so off = today's table.
+	if in.Counter5m {
+		return mentorSizeChoice{Contracts: clamp(reduced), Tier: "counter_5m", Why: "entry against the 5m trigger (the 1m scalp) → the reduced tier [OctD5.4-R11 @04:47 \"giảm size lại\", R13 @05:00 \"ăn ít lại\"; counter_5m_reduce_size]"}, nil
 	}
 	// m465 P4 (D3.1-R30): an ISB/PHL/PLH entry READ on the 2m (or the slow-
 	// evening 5m) has a bigger stop than the 1m, so it sizes DOWN — "khi anh
@@ -827,6 +835,7 @@ func (at *AutoTrader) mentorSizeFor(in mentor.Intent, extra mentorTierInputs) (m
 	extra.ISBOldExtreme = extra.ISBOldExtreme || mentor.HasFlag(in.Flag, mentor.FlagISBAtOldExtreme)
 	extra.ISBInRange = extra.ISBInRange || mentor.HasFlag(in.Flag, mentor.FlagISBInRange)
 	extra.PullbackWarn = extra.PullbackWarn || mentor.HasFlag(in.Flag, mentor.FlagPullbackWarn)
+	extra.Counter5m = extra.Counter5m || mentor.HasFlag(in.Flag, mentor.FlagCounter5m)
 	// m465 P4 (D3.1-R30): the frame the entry was read on reaches the table —
 	// set HERE, the one sizing call site, so no caller can forget it.
 	extra.ExecTFMin = in.ExecTFMin

@@ -122,7 +122,17 @@ func m431Tick(e *Evaluator, all []market.Kline, i int) []Intent {
 // twice: knob ON (production) — no phantom arm, and the 12:22 drop is named and
 // its arm un-registered by the same exit pass; knob OFF — the #52 control as
 // before.
+//
+// phl audit PHL-2: that FTGH is the post-escape box paired from the 09:53 high
+// 29,325.75 and the 10:15 high 29,269.25 (body 29,258.00) — 56.5 pts apart,
+// not LEVEL [OctD3.3-R23 @ 14:20], so since PHL-2 the course box does not exist
+// and nothing rejects at 12:22. The G43 mechanics are pinned here on the
+// pre-PHL-2 pairing (boxPairPrePHL2Seam); the arm-registration property is
+// pinned on both.
 func TestM431NoArmWithoutAnEmittedEntryOnTheRealTape(t *testing.T) {
+	prevSeam := boxPairPrePHL2Seam
+	boxPairPrePHL2Seam = true
+	defer func() { boxPairPrePHL2Seam = prevSeam }()
 	for _, on := range []bool{true, false} {
 		e, all, n0 := m431Day10_23(t)
 		e.Cfg.MidRangeRejectSide = on
@@ -210,5 +220,32 @@ func TestM431DroppedEntryUnregistersEveryArmKind(t *testing.T) {
 	}
 	if e.State.EmaPendingArmID != "" || e.State.EmaPendingSide != "" {
 		t.Errorf("dropped EMA34 pending survived: %q %q", e.State.EmaPendingArmID, e.State.EmaPendingSide)
+	}
+}
+
+// TestPHL2M431NoPhantomArmUnderTheCoursePairing — the same 10-23 tape and the
+// same phantom-arm property at the PRODUCTION pairing (no seam): no arm is ever
+// registered without an entry carrying it leaving Tick, and the non-level
+// 29,258.00–29,325.75 FTGH is never live.
+func TestPHL2M431NoPhantomArmUnderTheCoursePairing(t *testing.T) {
+	e, all, n0 := m431Day10_23(t)
+	e.Cfg.CourseExits.ISBMaxStopPts = 25
+	known := e.heldArmIDs()
+	for i := n0 + 1; i <= len(all); i++ {
+		out := m431Tick(e, all, i)
+		ct := time.UnixMilli(all[i-1].CloseTime + 1).In(ctime()).Format("15:04")
+		for id := range entryArmIDs(out) {
+			known[id] = true
+		}
+		for id := range e.heldArmIDs() {
+			if !known[id] {
+				t.Fatalf("tick %s CT: arm %q is registered but no entry carrying it ever left Tick", ct, id)
+			}
+		}
+		for _, b := range liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes) {
+			if b.Kind == FTGH && b.Bottom == 29258.00 && b.Top == 29325.75 {
+				t.Fatalf("tick %s CT: the non-level FTGH 29,258.00–29,325.75 (09:53 / 10:15 highs 56.5 pts apart) is live", ct)
+			}
+		}
 	}
 }

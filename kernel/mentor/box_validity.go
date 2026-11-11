@@ -89,36 +89,50 @@ func (e *Evaluator) carryRTHBoxes(now int64) {
 }
 
 // carriedBoxesAt is the pure read of the carried set at `now` (no state
-// writes, no notes): the still-valid carried boxes for roles `boxes` lacks,
-// refreshed on a copy. SeedChartDisplay uses it directly (display-only
-// contract); withCarriedBoxes adds the expiry bookkeeping.
-func (e *Evaluator) carriedBoxesAt(boxes []Box, bars []market.Kline, now int64) []Box {
+// writes, no notes): the still-valid carried boxes, refreshed on a copy.
+// SeedChartDisplay uses it directly (display-only contract); withCarriedBoxes
+// adds the expiry bookkeeping.
+//
+// D3-G4: by default (BoxCarriedStaysLive) a carried box takes its role from any
+// box the live set holds for it — a Friday box "vẫn còn valid trên chart Chủ nhật"
+// [Oct D3.3 @ 17:00] (OctD3.3-R27; E9: Sun 1 Nov 21:53 the Friday FTGH is the box
+// the course shorts) and is valid "cho tới sáng ngày mai" [@ 41:28] (R51), so a
+// box that formed later in the Sunday evening does not hide it. Knob OFF
+// (box_carried_stays_live=false): the m473 rule — a carried box only fills a role
+// the live set lacks. `used` lists the carried boxes now in the returned set.
+func (e *Evaluator) carriedBoxesAt(boxes []Box, bars []market.Kline, now int64) (out, used []Box) {
+	out = append([]Box(nil), boxes...)
 	for _, kind := range []BoxKind{FTGL, FTGH} {
 		b, ok := e.State.CarriedBoxes[string(kind)]
 		if !ok || now >= boxExpiryMs(b) {
 			continue
 		}
-		have := false
-		for _, x := range boxes {
+		have := -1
+		for i, x := range out {
 			if x.Kind == kind {
-				have = true
+				have = i
 				break
 			}
 		}
-		if have {
+		if have >= 0 && !e.Cfg.BoxCarriedStaysLive {
 			continue
 		}
-		if !boxAnchorInWindow(bars, b, e.Cfg.Box) {
+		if !boxAnchorInWindow(bars, b, e.withBoxFlags(e.Cfg.Box)) {
 			continue // anchor scrolled out of the window: never trust the stale index
 		}
-		refreshBox(bars, &b, e.Cfg.Box)
-		boxes = append(boxes, b)
+		refreshBox(bars, &b, e.withBoxFlags(e.Cfg.Box))
+		if have >= 0 {
+			out[have] = b
+		} else {
+			out = append(out, b)
+		}
+		used = append(used, b)
 	}
-	return boxes
+	return out, used
 }
 
-// withCarriedBoxes expires carried boxes at their next RTH open and appends
-// the still-valid ones for any role the live set lacks (floor, then ceiling).
+// withCarriedBoxes expires carried boxes at their next RTH open and returns the
+// live set with the still-valid carried boxes applied (floor, then ceiling).
 func (e *Evaluator) withCarriedBoxes(boxes []Box, bars []market.Kline, now int64) []Box {
 	for role, b := range e.State.CarriedBoxes {
 		if now >= boxExpiryMs(b) {
@@ -126,8 +140,8 @@ func (e *Evaluator) withCarriedBoxes(boxes []Box, bars []market.Kline, now int64
 			e.note("carried box %s %.2f–%.2f expired at the next RTH open 08:30 CT [Oct D3.3 @ 41:20]", role, b.Bottom, b.Top)
 		}
 	}
-	out := e.carriedBoxesAt(boxes, bars, now)
-	for _, b := range out[len(boxes):] {
+	out, used := e.carriedBoxesAt(boxes, bars, now)
+	for _, b := range used {
 		e.State.CarriedBoxes[string(b.Kind)] = b
 	}
 	return out
