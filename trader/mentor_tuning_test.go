@@ -175,6 +175,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLMinAbovePriorPts:        0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
 			KeyLevelBreakRetest:        mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelRearm:              mentor.KeyLevelRearmOff,           // D3-G15
+			ISBReverseTrend:            mentor.ISBReverseTrendEMA,         // D5.3-R43/R44
+			Counter5mReduceSize:        mentor.Counter5mReduceOn,          // D5.4-SCALP
 			KeyLevelHistorySource:      mentor.KeyLevelHistoryOwn,         // LL-4
 		}
 		if got != want {
@@ -418,6 +420,32 @@ func TestD3G15KeyLevelRearmKnobReachesTheEvaluator(t *testing.T) {
 	} {
 		if got := tuningTick(t, &store.MentorTuning{KeyLevelRearm: c.stored}).KeyLevelRearm; got != c.want {
 			t.Errorf("stored key_level_rearm=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+}
+
+// TestRound2D53D54KnobsReachTheEvaluator — oct round 2: isb_reverse_trend
+// (unset = ema, "trigger" = today) and counter_5m_reduce_size (unset = on, "off"
+// = today); a bad value fails closed to the default — through the resolver.
+func TestRound2D53D54KnobsReachTheEvaluator(t *testing.T) {
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.ISBReverseTrendEMA},
+		{"ema", mentor.ISBReverseTrendEMA},
+		{"trigger", mentor.ISBReverseTrendTrigger},
+		{"fish", mentor.ISBReverseTrendEMA},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{ISBReverseTrend: c.stored}).ISBReverseTrend; got != c.want {
+			t.Errorf("stored isb_reverse_trend=%q → Config %q, want %q", c.stored, got, c.want)
+		}
+	}
+	for _, c := range []struct{ stored, want string }{
+		{"", mentor.Counter5mReduceOn},
+		{"on", mentor.Counter5mReduceOn},
+		{"off", mentor.Counter5mReduceOff},
+		{"half", mentor.Counter5mReduceOn},
+	} {
+		if got := tuningTick(t, &store.MentorTuning{Counter5mReduceSize: c.stored}).Counter5mReduceSize; got != c.want {
+			t.Errorf("stored counter_5m_reduce_size=%q → Config %q, want %q", c.stored, got, c.want)
 		}
 	}
 }

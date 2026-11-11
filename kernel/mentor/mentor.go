@@ -925,6 +925,24 @@ type Config struct {
 	// old high/low keep their own rules either way. Mentor question.
 	// Studio JSON: risk_control.mentor_tuning.key_level_rearm.
 	KeyLevelRearm string
+	// ISBReverseTrend — oct round 2 D5.3-R40/R43/R44 + OctD5.3-RR2-1. Which trend
+	// the reverse ISB at EMA 9 trades WITH. "ema" (October, default): the lines —
+	// uptrend = EMA 9 above EMA 34 and price above the EMA 34, downtrend the
+	// mirror (the course's fish is not built, so the two lines the bot has);
+	// the 5m trigger side is NOT consulted, so the long can be taken under a SELL
+	// trigger exactly as the mentor does on Tue 27 Oct 10:10 [Oct D5.3 @ 17:33,
+	// 20:00, 20:44; D5.4 school 1 allows the counter-5m 1m trade]. Price between
+	// the lines = no trend = no reverse order. "trigger": today — the governing
+	// 5m trigger's side is the trend.
+	// Studio JSON: risk_control.mentor_tuning.isb_reverse_trend.
+	ISBReverseTrend string
+	// Counter5mReduceSize — oct round 2 D5.4-SCALP (OctD5.4-R11 @04:47 "giảm
+	// size lại", R13 @05:00 "ăn ít lại"). "on" (default): a PHL/PLH entry on the
+	// side opposite to the governing 5m trigger is stamped FlagCounter5m and the
+	// trader sizes it at the reduced tier. "off": today (same table as with-
+	// trigger entries).
+	// Studio JSON: risk_control.mentor_tuning.counter_5m_reduce_size.
+	Counter5mReduceSize string
 	// SessionOpenLevels — G10 D3.1-R26 + G11 D3.1-R20: "cái râu này nó sẽ là
 	// cái đỉnh" [D3.1 p1 @11:58–12:22] (the session's first 5m candle wick is
 	// an old high/low with no left-neighbour test) and "Cái cạnh dưới của cái
@@ -1122,6 +1140,8 @@ func DefaultConfig() Config {
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms
+		ISBReverseTrend:     ISBReverseTrendEMA,        // D5.3-R43/R44: the lines name the trend, not the 5m trigger; "trigger" = today
+		Counter5mReduceSize: Counter5mReduceOn,         // D5.4-R11/R13: a counter-5m scalp sizes down; "off" = today
 		KeyLevelRearm:       KeyLevelRearmOff,          // D3-G15 [B]: OctD3.2-R78 is garbled and its sketch is a trendline; on = a key level ISB-only after its flip re-arms on departure
 		SessionOpenLevels:   SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
 		LevelArmLineCancel:  LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
@@ -1184,6 +1204,10 @@ const (
 	KeyLevelBreakRetestOn  = "on"
 	KeyLevelBreakRetestOff = "off"
 	// D3-G15: re-arm a key level on visit departure (OctD3.2-R78).
+	ISBReverseTrendEMA          = "ema"
+	ISBReverseTrendTrigger      = "trigger"
+	Counter5mReduceOn           = "on"
+	Counter5mReduceOff          = "off"
 	KeyLevelRearmOn             = "on"
 	KeyLevelRearmOff            = "off"
 	UnoKeyLevelsOn              = "on"
@@ -1301,6 +1325,9 @@ const (
 	// downtrend) warns an entry WITH that trend, so it sizes down [Go over lớp
 	// học @00:13:21–00:15:19]. Stamped per entry side (C52-W10 B20).
 	FlagPullbackWarn = "pullback_warn"
+	// FlagCounter5m (D5.4-SCALP): the entry's side is opposite to the governing
+	// 5m trigger — the course's counter-5m 1m scalp, sized down [OctD5.4-R11 @ 04:47].
+	FlagCounter5m = "counter_5m"
 )
 
 // HasFlag reports whether the "|"-joined Intent.Flag contains the exact flag.

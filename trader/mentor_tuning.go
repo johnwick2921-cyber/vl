@@ -109,6 +109,8 @@ type mentorTuned struct {
 	PHLRoomMultiple            float64 // D2-G2
 	KeyLevelBreakRetest        string  // LL-2
 	KeyLevelRearm              string  // D3-G15
+	ISBReverseTrend            string  // D5.3-R43/R44
+	Counter5mReduceSize        string  // D5.4-SCALP
 	KeyLevelHistorySource      string  // LL-4
 }
 
@@ -154,6 +156,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelHistorySource:       d.KeyLevelHistorySource,
 		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
 		KeyLevelRearm:               d.KeyLevelRearm,
+		ISBReverseTrend:             d.ISBReverseTrend,
+		Counter5mReduceSize:         d.Counter5mReduceSize,
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
@@ -393,6 +397,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	// stays so for the day); a value outside the enum fails closed to the default,
 	// counted (tuning_bad_value).
 	enum(t.KeyLevelRearm, &out.KeyLevelRearm, mentor.KeyLevelRearmOn, mentor.KeyLevelRearmOff)
+	// D5.3-R43/R44 (oct round 2): unset = ema (October: the lines name the trend the
+	// reverse ISB trades with); "trigger" = today's governing-5m-trigger read; a bad
+	// value fails closed to the default, counted (tuning_bad_value).
+	enum(t.ISBReverseTrend, &out.ISBReverseTrend, mentor.ISBReverseTrendEMA, mentor.ISBReverseTrendTrigger)
+	// D5.4-SCALP (oct round 2): unset = on (a counter-5m PHL/PLH sizes the reduced
+	// tier); "off" = today's table. Bad value fails closed to the default.
+	enum(t.Counter5mReduceSize, &out.Counter5mReduceSize, mentor.Counter5mReduceOn, mentor.Counter5mReduceOff)
 	// levels audit LL-1: unset = off (October keeps the level); a value outside
 	// the enum fails closed to the default, counted (tuning_bad_value).
 	enum(t.KeyLevelDeleteOn1HClose, &out.KeyLevelDeleteOn1HClose, mentor.KeyLevelDeleteOn1HCloseOn, mentor.KeyLevelDeleteOn1HCloseOff)
@@ -499,6 +510,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
 	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
+	cfg.ISBReverseTrend = t.ISBReverseTrend                       // D5.3-R43/R44
+	cfg.Counter5mReduceSize = t.Counter5mReduceSize               // D5.4-SCALP
 	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource           // LL-4
 }
 

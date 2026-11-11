@@ -2232,6 +2232,16 @@ type MentorTuning struct {
 	// back on the right side, is a fresh first touch [OctD3.2-R78 @ 60:00,
 	// garbled ASR; its sketch is a trendline — an inference [B]]. Mentor question.
 	KeyLevelRearm string `json:"key_level_rearm,omitempty"`
+	// D5.3-R43/R44 (oct round 2): "ema" (unset, October) — the reverse ISB at the
+	// EMA 9 trades with the trend the lines show (EMA 9 vs EMA 34 and price vs
+	// the 34; the fish is not built), the 5m trigger side is not consulted
+	// [Oct D5.3 @17:33, 20:00, 20:44]; "trigger" — today: the governing 5m
+	// trigger's side is the trend.
+	ISBReverseTrend string `json:"isb_reverse_trend,omitempty"`
+	// D5.4-SCALP (oct round 2): "on" (unset) — a PHL/PLH entry opposite to the
+	// governing 5m trigger sizes the reduced tier [OctD5.4-R11 @04:47 "giảm size
+	// lại", R13 @05:00 "ăn ít lại"]; "off" — today's table.
+	Counter5mReduceSize string `json:"counter_5m_reduce_size,omitempty"`
 	// levels audit LL-1: "off" (unset) — a key level a 1H RTH body closed
 	// through stays drawn. The course states only "draw as many as you like…
 	// Key Level nó là quá khứ" [OctD5.2-R15 @04:44] and never mentions a

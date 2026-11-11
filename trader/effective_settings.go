@@ -925,6 +925,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("phl_room_multiple", "trader.mentorTuningResolve (D2-G2 OctD2.3-R31, nil \u2192 1)", func(t mentorTuned) any { return t.PHLRoomMultiple })
 	mentorTuningRow("key_level_break_retest", "trader.mentorTuningResolve (LL-2)", func(t mentorTuned) any { return t.KeyLevelBreakRetest })
 	mentorTuningRow("key_level_rearm", "trader.mentorTuningResolve (D3-G15)", func(t mentorTuned) any { return t.KeyLevelRearm })
+	mentorTuningRow("isb_reverse_trend", "trader.mentorTuningResolve (D5.3-R43/R44)", func(t mentorTuned) any { return t.ISBReverseTrend })
+	mentorTuningRow("counter_5m_reduce_size", "trader.mentorTuningResolve (D5.4-SCALP)", func(t mentorTuned) any { return t.Counter5mReduceSize })
 	mentorTuningRow("key_level_history_source", "trader.mentorTuningResolve (LL-4)", func(t mentorTuned) any { return t.KeyLevelHistorySource })
 	mentorTuningRow("uno_key_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.UnoKeyLevels })
 	mentorTuningRow("session_open_levels", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SessionOpenLevels })

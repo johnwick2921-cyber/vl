@@ -37,6 +37,8 @@ func r22Cfg() Config {
 	cfg.ISBTargetFillClose = false                         // oct round 2 D2-G3: the recorded-day pins ran the September level-target rule
 	cfg.TriggerFromOpen = false                            // oct round 2 G4: the recorded-day pins read the trigger over the whole history
 	cfg.TriggerEscalation = true                           // oct round 2 G3: the recorded-day pins ran the September trigger escalation
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger           // oct round 2 D5.3: the recorded-day pins read the reverse ISB's trend from the 5m trigger
+	cfg.Counter5mReduceSize = Counter5mReduceOff           // oct round 2 D5.4-SCALP: the recorded-day pins carry no counter_5m flag
 	cfg.HTFGateNewsOnly = false                            // oct round 2 D2-G7: the recorded-day pins ran the m462 all-session 4h/1h gate
 	cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts = 0.5, 0.5 // m472 A3: recorded-day pins predate the October 1/1 [Oct D2.3 @ 46:20-47:20]
 	cfg.TrendlineEntryTouch = TrendlineEntryFourth         // m472 A2: these recorded-day pins predate the October "third" default [Oct D3.2 @ 31:17]

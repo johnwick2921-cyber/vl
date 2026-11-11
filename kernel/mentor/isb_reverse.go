@@ -102,3 +102,24 @@ func ReverseISBAtEMA9(prev, cur market.Kline, ema9 float64, trend Side, cfg Conf
 		Reason:          "reverse ISB at EMA 9: downtrend, ISB points long → short sell stop on the wire below the ISB low − buffer [D5.4, D1.4 p1 @ 22:26–23:26, D2.1 p1 @ 06:12]",
 	}, true, ""
 }
+
+// emaAlignedTrend is the October trend read for the reverse ISB (D5.3-R43 [Oct
+// D5.3 @ 20:00]: an uptrend is price above all four lines — fish red/white,
+// EMA 34, EMA 9). The fish is not built, so the two lines the bot has: long =
+// EMA 9 above the EMA 34 AND the close above the EMA 34; short = the mirror.
+// The close need not clear the EMA 9: the reverse ISB is taken exactly when
+// price sits ON the EMA 9 (the 27 Oct 10:10 close was 29,717.25 under a
+// 29,721.87 EMA 9, mentor still long). Anything else — a missing line, price
+// between the lines, the lines against price — is no trend ("").
+func emaAlignedTrend(ema9, ema34, close float64) Side {
+	if ema9 <= 0 || ema34 <= 0 {
+		return ""
+	}
+	switch {
+	case ema9 > ema34 && close > ema34:
+		return SideLong
+	case ema9 < ema34 && close < ema34:
+		return SideShort
+	}
+	return ""
+}

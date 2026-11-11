@@ -271,6 +271,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.key_level_rearm',
     live: true,
   },
+  'Reverse ISB: trend from the EMA lines': {
+    settingId: 'risk_control.mentor_tuning.isb_reverse_trend',
+    live: true,
+  },
+  'Counter-5m scalp: reduced size': {
+    settingId: 'risk_control.mentor_tuning.counter_5m_reduce_size',
+    live: true,
+  },
   'Key level: history from the current contract': {
     settingId: 'risk_control.mentor_tuning.key_level_history_source',
     live: true,
@@ -1937,6 +1945,38 @@ export const mentor: GuideSection = {
             'off — today; the course passage is OctD3.2-R78 [@ 60:00], a [B] reading (not from the course for key levels).',
           whenToTouch:
             'Only on a mentor answer — on re-arms an ISB-only key level on departure.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Reverse ISB: trend from the EMA lines',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.isb_reverse_trend)',
+          what: 'Oct round 2 D5.3-R40/R43/R44 (+ reread OctD5.3-RR2-1). At the EMA 9 the market offers two orders — the inside bar for the long, or the potential lower high for the short — and “lúc nào cũng chọn cái hướng theo trend” [OctD5.3-R40 @17:33, R44 @20:44]. The trend is the lines: an uptrend is price above all four — fish red/white, EMA 34, EMA 9 [OctD5.3-R43 @20:00]. ema (default, October) = the reverse ISB trades WITH that trend: EMA 9 above the EMA 34 and price above the 34 = long, the mirror = short; the fish is not built, so the two lines the bot has. Price between the lines (EMA 9 below the 34 with price above it, or the reverse) reads no trend and no reverse order. The 5m trigger side is NOT consulted, and the ISB rest-box gate (5m/15m/30m) tests the side of the ORDER against the box direction. Worked example Tue 27 Oct 10:10 CT: price above the EMA 34 (~29,688) on the EMA 9 (~29,722), the 1m ISBs point short, the 5m trigger flipped SELL — the mentor takes the LONG; the bot used to read the SELL trigger as the trend and emitted nothing (now a buy stop at the ISB high + the 1-pt buffer, 29,721.75). trigger = today: the governing 5m trigger’s side is the trend.',
+          trader:
+            'ema — October [OctD5.3-R40/R43/R44]. The fish line is absent, so the EMA 9/34 alignment stands in for the four-line test; the course warns against making the four-line test a gate for other setups [D3.1-R4], so only the reverse ISB reads it.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBReverseTrend) · kernel/mentor/eval.go reverseISBTrend / reverseISBBoxAllows · kernel/mentor/isb_reverse.go emaAlignedTrend',
+          range: 'ema / trigger',
+          systemDefault: 'ema',
+          recommended: 'ema — October [OctD5.3-R43 @20:00].',
+          whenToTouch:
+            'Only to restore the 5m-trigger read — trigger is today’s behaviour.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Counter-5m scalp: reduced size',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.counter_5m_reduce_size)',
+          what: 'Oct round 2 D5.4-SCALP (minimal). School 1 lets the bot enter against the 5m trigger when the 1m is at its spot (the 1m EMA 34, a 1m key level). October calls that a scalp: “giảm size lại” [OctD5.4-R11 @04:47], “ăn ít lại” [R13 @05:00]. on (default) = a PHL/PLH entry (incl. the reverse ISB read as a PHL/PLH) on the side OPPOSITE to the governing 5m trigger is stamped counter_5m and sizes the reduced tier (mentor_reduced_contracts); the course names no count. off = today (the same table as a with-trigger entry). NOT built: the leg-1 cap below 1R, an entry AT the EMA, and the 30-second bars the mentor uses (no sub-minute feed).',
+          trader:
+            'on — October [OctD5.4-R11/R13]. The reduced count (3) is the course’s “giảm size” tier from D4.1, not a number the D5.4 lesson states.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (Counter5mReduceSize) · kernel/mentor/eval.go stampCounter5m · trader/mentor_mode.go mentorContractsFor (counter_5m)',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD5.4-R11 @04:47].',
+          whenToTouch:
+            'Only to restore the single size table — off is today’s behaviour.',
           perSession: 'No — per strategy.',
         },
         {

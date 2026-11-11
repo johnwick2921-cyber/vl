@@ -66,6 +66,8 @@ func m462PreM465Knobs(cfg *Config) {
 	cfg.Early15mRead = false
 	cfg.MTFConfluenceSource = MTFConfluenceLastPair
 	cfg.TriggerEscalation = false
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger // oct round 2 D5.3
+	cfg.Counter5mReduceSize = Counter5mReduceOff // oct round 2 D5.4-SCALP
 }
 
 func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {

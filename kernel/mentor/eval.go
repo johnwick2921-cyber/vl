@@ -1593,6 +1593,78 @@ func (e *Evaluator) reverseISBEMA9(bars []market.Kline, execCur market.Kline, ex
 	return emaValue(bars, e.Cfg.EMAPeriod9)
 }
 
+// reverseISBEMA34 is the EMA 34 on the frame the reverse ISB pair is read on
+// (the 34 twin of reverseISBEMA9; the 5m evening path keeps the 1m line).
+func (e *Evaluator) reverseISBEMA34(bars []market.Kline, execTFMin int, now int64) float64 {
+	period := e.Cfg.EMAPeriod34
+	if period <= 0 {
+		period = 34
+	}
+	if execTFMin == 2 {
+		if b2 := e.closedBucketsTFMemo(bars, 2, now); len(b2) > 0 {
+			return emaValue(b2, period)
+		}
+	}
+	return emaValue(bars, period)
+}
+
+// reverseISBTrend is the side the reverse ISB trades WITH. knob
+// isb_reverse_trend: "trigger" (today) = the governing 5m trigger's side;
+// "ema" (October, default) = the line alignment [OctD5.3-R43 @ 20:00, R44 @ 20:44].
+func (e *Evaluator) reverseISBTrend(bars []market.Kline, execCur market.Kline, execTFMin int, now int64, ema9 float64, trigDir Side) Side {
+	if e.Cfg.ISBReverseTrend == ISBReverseTrendTrigger {
+		return trigDir
+	}
+	return emaAlignedTrend(ema9, e.reverseISBEMA34(bars, execTFMin, now), execCur.Close)
+}
+
+// stampCounter5m (D5.4-SCALP, knob counter_5m_reduce_size): every PHL/PLH entry
+// (and an un-retagged reverse ISB) on the side OPPOSITE to the governing 5m
+// trigger carries FlagCounter5m, which the trader sizes at the reduced tier
+// [OctD5.4-R11 @04:47 "giảm size lại", R13 @05:00 "ăn ít lại"]. Off, or no
+// trigger direction, or any other setup (ISB is trigger-gated, BOX has its own
+// rule, SWING4H its own tier): untouched.
+func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
+	if e.Cfg.Counter5mReduceSize == Counter5mReduceOff || trigDir == "" {
+		return out
+	}
+	for i := range out {
+		in := &out[i]
+		if in.Action != PlaceStopEntry && in.Action != PlaceStopLimitEntry {
+			continue
+		}
+		if in.Side == trigDir {
+			continue
+		}
+		isRev := in.Setup == "ISB" && strings.Contains(in.Reason, "reverse ISB at EMA 9")
+		if in.Setup != "PHL" && in.Setup != "PLH" && !isRev {
+			continue
+		}
+		in.Flag = joinFlag(in.Flag, FlagCounter5m)
+		e.count("counter_5m_entry")
+	}
+	return out
+}
+
+// reverseISBBoxAllows is the ISB rest-box gate (R5) for the reverse ISB. Today
+// (isb_reverse_trend=trigger) it tests the PAIR's own direction against the box
+// — for a reverse ISB that is the direction the order does NOT trade. October
+// (ema): the order's side must equal the box direction — "trade only in the box
+// direction" [OctD4.3-R70, D3.4 p2 @00:14-13:00], and the 27 Oct 10:10 long sits
+// in the 10:05 5m ISB box that points long [Oct D5.3 @17:33].
+func (e *Evaluator) reverseISBBoxAllows(box ISBBox, prev, cur market.Kline, orderSide Side) bool {
+	if !e.reverseISBTrendFromLines() {
+		allowed, _ := ISBBoxAllows(box, prev, cur)
+		return allowed
+	}
+	return IsISB(prev, cur) && box.Dir == orderSide
+}
+
+// reverseISBTrendFromLines reports whether the reverse ISB reads the lines.
+func (e *Evaluator) reverseISBTrendFromLines() bool {
+	return e.Cfg.ISBReverseTrend != ISBReverseTrendTrigger
+}
+
 // nextLevelBeyond is the §6 target ladder [D3.3 p1 @ 05:07]: the NEAREST level
 // beyond price in the trade direction ("the first thing standing in your way").
 // 0 = no level beyond.
@@ -2108,6 +2180,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// target pass (zero until then, so an early return leaves them inert).
 	var liveFlagWalls flagWalls
 	var curBarOpenTime int64
+	// D5.4-SCALP: the governing 5m trigger side of THIS tick ("" until computed).
+	var counterTrigDir Side
 	// A5 + P0 sizing gap (CTO 20:13:25Z): ONE stamp where intents LEAVE Tick —
 	// the geometry (StopPts/TargetPts), the spent-day flag, and the
 	// untagged-setup drop. The defer covers every return path, including the
@@ -2140,6 +2214,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 		out = kept
+		out = e.stampCounter5m(out, counterTrigDir)                                    // D5.4-SCALP (knob counter_5m_reduce_size)
 		out = applyFlagWallTarget(out, liveFlagWalls, curBarOpenTime, e.Cfg, e.refuse) // CE-11 (knob flag_wall_target, default ON — course-defaults-30)
 		stampHTFAgree(out, e.State.HTF)
 		e.armSchoolOne(out, schoolOne)
@@ -2656,6 +2731,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// escalated refusal carries the TF suffix (trigSfx "_15m"/"_30m"; "" = the
 	// 5m, the pre-#60 names). The trigger-RETEST level stays on the 5m line.
 	trig, trigTF := e.governingTriggerTick(cb5, cb15)
+	counterTrigDir = trig.Dir
 	trigSfx := triggerTFSuffix(trigTF)
 
 	// D4.1-25: the 15m ISB rest box — box the latest CLOSED 15m inside-bar
@@ -2970,7 +3046,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	revEma9 := e.reverseISBEMA9(bars, execCur, execTFMin, now)
 	// m465 P1 (D3.4-R43): the trend the reverse ISB trades WITH is the
 	// governing trigger's (the 15m/30m while the lower TF crosses).
-	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, trig.Dir, e.Cfg)
+	// oct round 2 D5.3-R43/R44: the trend is read from the lines (knob
+	// isb_reverse_trend; "trigger" = today's governing-trigger side).
+	revTrend := e.reverseISBTrend(bars, execCur, execTFMin, now, revEma9, trig.Dir)
+	revIn, revCandidate, _ := ReverseISBAtEMA9(execPrev, execCur, revEma9, revTrend, e.Cfg)
 	if isbEval && conflict && e.Cfg.ISBReverseEMA9Enabled && revCandidate {
 		e.refuse("isbrev_tf_conflict" + f15)
 	}
@@ -2981,7 +3060,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if isbEval && !conflict && e.Cfg.ISBReverseEMA9Enabled && IsISB(execPrev, execCur) {
 		if r := dayGateRefusal(e.State.Day.Verdict); revCandidate && r != "" {
 			e.refuse("isbrev_" + r)
-		} else if trig.Dir == "" {
+		} else if trig.Dir == "" && !e.reverseISBTrendFromLines() {
 			// B6: with no 5m trigger there is no trend to reverse — R7 always
 			// resolved to SHORT here before. Fail closed [D5.4: "đánh theo xu
 			// hướng" — the trend must exist].
@@ -3003,19 +3082,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// trigger-side guard the normal ISB runs.
 			boxBlocked := false
 			if e.box5() != nil && !e.boxGateLiftedByCrossing(cb5, 5) { // ISB5-F2 + isbTF-F2
-				if allowed, _ := ISBBoxAllows(*e.box5(), execPrev, execCur); !allowed {
+				if allowed := e.reverseISBBoxAllows(*e.box5(), execPrev, execCur, in.Side); !allowed {
 					boxBlocked = true
 				}
 			}
 			box15Blocked := false
 			if e.box15() != nil && !e.boxGateLiftedByCrossing(cb15, 15) {
-				if allowed, _ := ISBBoxAllows(*e.box15(), execPrev, execCur); !allowed {
+				if allowed := e.reverseISBBoxAllows(*e.box15(), execPrev, execCur, in.Side); !allowed {
 					box15Blocked = true
 				}
 			}
 			box30Blocked := false
 			if e.box30() != nil && !e.boxGateLiftedByCrossing(cb30, 30) {
-				if allowed, _ := ISBBoxAllows(*e.box30(), execPrev, execCur); !allowed {
+				if allowed := e.reverseISBBoxAllows(*e.box30(), execPrev, execCur, in.Side); !allowed {
 					box30Blocked = true
 				}
 			}
@@ -3043,7 +3122,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("isbrev_" + fifteenRefusal + f15) // CE-1 (+ m465 _forming)
 			} else if htfRefusal != "" {
 				e.refuse("isbrev_" + string(htfRefusal)) // isbrev_htf_no_4h / _conflict / _side_mismatch
-			} else if in.Side != trig.Dir {
+			} else if in.Side != trig.Dir && !e.reverseISBTrendFromLines() {
+				// D5.3-R44: under the October read the lines name the side and the
+				// counter-5m 1m trade is allowed (D5.4 school 1) — only the
+				// "trigger" knob keeps this guard.
 				// B6: the 5m trigger side governs [D3.4 p1 @ 09:30–10:38] —
 				// defensive (R7 already builds in.Side == Trigger.Dir once the
 				// direction is set), kept for parity with the normal ISB.

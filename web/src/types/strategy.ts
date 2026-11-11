@@ -461,6 +461,10 @@ export interface MentorTuning {
   key_level_break_retest?: 'on' | 'off'
   // D3-G15 ['off'] — 'on' re-arms an ISB-only key level on visit departure [OctD3.2-R78, [B]]
   key_level_rearm?: 'on' | 'off'
+  // D5.3-R43/R44 ['ema'] — the reverse ISB at EMA 9 trades with the EMA 9/34 line trend; 'trigger' = today's 5m trigger side
+  isb_reverse_trend?: 'ema' | 'trigger'
+  // D5.4-SCALP ['on'] — a PHL/PLH against the governing 5m trigger sizes the reduced tier; 'off' = today
+  counter_5m_reduce_size?: 'on' | 'off'
   // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
   // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
   key_level_delete_on_1h_close?: 'on' | 'off'

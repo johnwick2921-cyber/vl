@@ -54,6 +54,7 @@ func isbReverseFixture(t *testing.T) (*Evaluator, []market.Kline, int64) {
 	cfg.EMAPeriod9 = 9
 	cfg.EMALocationTFMinutes = 0
 	cfg.ISBReverseEMA9Enabled = true
+	cfg.ISBReverseTrend = ISBReverseTrendTrigger // oct round 2 D5.3: these synthetic pins drive the trend through the pinned 5m trigger (today's read)
 	cfg.ISBBufferPts = 0
 	cfg.LocTriggerFilter = false
 	cfg.RoomMultiple = 0.5
