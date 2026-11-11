@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -271,10 +272,10 @@ func boxLatchDayKey(now int64, cfg Config) string {
 // RTH-formed latched box is never replaced (the first RTH box stands).
 //
 // D3-G1: with BoxPreOpenLookbackMin L > 0 the replacement window opens L
-// minutes BEFORE 08:30 — a pair whose peaks are both pre-open (the Fri 30 Oct
-// FTGH from the ~08:00 and ~08:29 peaks) is the morning box, and any latched
-// box formed before that window (the overnight pair) is the one it replaces.
-// L = 0 is the pre-D3-G1 rule exactly.
+// minutes BEFORE 08:30 — a pair formed in that window from pre-open peaks (the
+// Fri 30 Oct FTGH from the ~08:00 and ~08:29 peaks, see preOpenBoxes) is the
+// morning box, and any latched box formed before that window (the overnight
+// pair) is the one it replaces. L = 0 is the pre-D3-G1 rule exactly.
 func (e *Evaluator) freshRTHReplaces(old, nb Box) bool {
 	if !e.Cfg.CourseExits.BoxFreshRTHPair {
 		return false
@@ -326,18 +327,62 @@ func boxBuildBars(bars []market.Kline, now int64, cfg Config) []market.Kline {
 		return bars
 	}
 	from := rthOpenMs(now)
-	if lb := preOpenLookbackMs(cfg); lb > 0 {
-		// D3-G1: the pre-open peaks are part of the morning box; swings3 reads
-		// two bars of left context, so a peak AT the window edge (08:00 of the
-		// 30-minute window) needs those two bars in the slice.
-		from -= lb + 2*60_000
-	}
 	for i, b := range bars {
 		if b.OpenTime >= from {
 			return bars[i:]
 		}
 	}
 	return nil
+}
+
+// preOpenPeakSpanMs is how far back the pre-open pair search reads for PEAK 1:
+// the worked example's peak 1 is the ~08:00 candle, 30 minutes before the open
+// [Oct D3.3 @ 17:13-17:25; E3 frames s_00866/s_00977], plus the two bars of left
+// context swings3 needs. [B: the example fixes only that 30 minutes is enough.]
+const preOpenPeakSpanMs = 32 * 60_000
+
+// preOpenBoxes (D3-G1) is the box the course draws BEFORE the open: "trước khi
+// Market Open tầm 10 phút thì em coi có … nếu mà nó có thì em vẽ" [Oct D3.3 @
+// 42:00] (OctD3.3-R52). It is BoxesBuild over the last preOpenPeakSpanMs of
+// pre-open bars (the Fri 30 Oct FTGH: peak 1 ~08:00, peak 2 08:29, neither the
+// session extreme [R23/R24]) and keeps only a box that FORMED inside the
+// BoxPreOpenLookbackMin minutes up to the open. A pair that formed earlier
+// (Thu 29 Oct: the 29,700 pair at 08:11) is not the morning box — the pair the
+// RTH build finds is. Nil when the knob is off or `now` is outside RTH.
+func (e *Evaluator) preOpenBoxes(bars []market.Kline, now int64, build BoxCfg) []Box {
+	lb := preOpenLookbackMs(e.Cfg)
+	if lb <= 0 || !boxRTHWindow(now, e.Cfg) {
+		return nil
+	}
+	open := rthOpenMs(now)
+	from := open - preOpenPeakSpanMs
+	i := sort.Search(len(bars), func(i int) bool { return bars[i].OpenTime >= from })
+	var out []Box
+	for _, b := range BoxesBuild(bars[i:], build, time.UnixMilli(now)) {
+		if b.FormedAtMs >= open-lb && b.FormedAtMs <= open {
+			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// boxesBuildRTH is BoxesBuild over the box build slice (boxBuildBars) with the
+// D3-G1 pre-open box taking its role first: it formed before any RTH box can.
+func (e *Evaluator) boxesBuildRTH(bars []market.Kline, now int64, build BoxCfg) []Box {
+	boxes := BoxesBuild(boxBuildBars(bars, now, e.Cfg), build, time.UnixMilli(now))
+	for _, pb := range e.preOpenBoxes(bars, now, build) {
+		replaced := false
+		for i := range boxes {
+			if boxes[i].Kind == pb.Kind {
+				boxes[i] = pb
+				replaced = true
+			}
+		}
+		if !replaced {
+			boxes = append(boxes, pb)
+		}
+	}
+	return boxes
 }
 
 // buildBoxes (CX-11) is the evaluator's box build: BoxesBuild over the
@@ -349,7 +394,7 @@ func (e *Evaluator) buildBoxes(bars []market.Kline, now int64) []Box {
 	src := boxBuildBars(bars, now, e.Cfg)
 	base := e.baseBoxCfg()
 	build := e.boxFrameCfg(now)
-	boxes := BoxesBuild(src, build, time.UnixMilli(now))
+	boxes := e.boxesBuildRTH(bars, now, build)
 	if build.TF != base.TF {
 		for i := range boxes {
 			boxes[i].TF = build.TF // m410: drawn on the frame traded at draw time
@@ -376,9 +421,10 @@ func (e *Evaluator) baseBoxCfg() BoxCfg {
 }
 
 // withBoxFlags overlays the box knobs that live on Config (not Config.Box) onto
-// a BoxCfg, without defaulting anything else: D3-G2 box_swing_both_roles.
+// a BoxCfg, without defaulting anything else: D3-G2 box_swing_both_roles, D3-G7 box_flip_reversible.
 func (e *Evaluator) withBoxFlags(cfg BoxCfg) BoxCfg {
 	cfg.OneRoleSwings = !e.Cfg.BoxSwingBothRoles
+	cfg.FlipPermanent = !e.Cfg.BoxFlipReversible // D3-G7
 	return cfg
 }
 

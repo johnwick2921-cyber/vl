@@ -219,6 +219,34 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.rolling_left_break_cancel',
     live: true,
   },
+  'HTF trendline: broken line flips, never deleted': {
+    settingId: 'risk_control.mentor_tuning.htf_trendline_flip',
+    live: true,
+  },
+  'Trendline: maximum steepness': {
+    settingId: 'risk_control.mentor_tuning.trendline_max_slope_pts_per_bar',
+    live: true,
+  },
+  'Trendline: minimum bounce': {
+    settingId: 'risk_control.mentor_tuning.trendline_min_bounce_pts',
+    live: true,
+  },
+  'Knock Knock counts per zone, pre-market included': {
+    settingId: 'risk_control.mentor_tuning.knock_knock_zone',
+    live: true,
+  },
+  'Trendline: first-bottom anchor': {
+    settingId: 'risk_control.mentor_tuning.trendline_first_bottom_anchor',
+    live: true,
+  },
+  'Box flip is reversible': {
+    settingId: 'risk_control.mentor_tuning.box_flip_reversible',
+    live: true,
+  },
+  'Carried box stays live': {
+    settingId: 'risk_control.mentor_tuning.box_carried_stays_live',
+    live: true,
+  },
   'Box: a big outside bar is both a peak and a bottom': {
     settingId: 'risk_control.mentor_tuning.box_swing_both_roles',
     live: true,
@@ -1729,6 +1757,109 @@ export const mentor: GuideSection = {
           perSession: 'No — per strategy.',
         },
         {
+          label: 'HTF trendline: broken line flips, never deleted',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.htf_trendline_flip)',
+          what: 'Oct round 2 D3-G12. Oct D3.2: “khung giờ lớn mình để luôn, mình không bao giờ xóa” [OctD3.2-R20 @08:27] — a 1H/4H line is never deleted; the candles under a broken line see it as resistance, “đụng resistance thì drop” [R29 @14:18–14:47]; R32 [@20:20] the Friday long at the 4H falling line. ON (default): a persistent 1H/4H line broken by a closed 5m candle wholly beyond it is kept with its role flipped (a broken support is resistance and the reverse) and is a location again after price returns and touches it. OFF: the m428 delete. The 1m lines still die when broken. The seed already builds the HTF lines from the stitched full history.',
+          trader: 'on — October [OctD3.2-R20/R29].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (HTFTrendlineFlip) · kernel/mentor/eval.go htFTrendlines · trendline.go flipHTFTrendline',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD3.2-R20 @08:27].',
+          whenToTouch: 'Only to restore the delete-on-break: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trendline: maximum steepness',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.trendline_max_slope_pts_per_bar)',
+          what: 'Oct round 2 D3-G14. Oct D3.2 [@29:12–29:38]: a trendline at 30–45 degrees is good, at 80–85 degrees it is a slide (“cầu tuột”) and is not drawn. Degrees depend on the chart scale, so the bot needs a points-per-bar number: N pts per build-frame bar — a line steeper than N is refused. Ships OFF (0); the course states no number.',
+          trader:
+            '0 (off) — the course gives degrees, not pts/bar; mentor question.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TrendlineMaxSlopePtsPerBar) · kernel/mentor/trendline.go newSlopedLineMax',
+          range: '0–1000 (0 = off)',
+          systemDefault: '0',
+          recommended:
+            '0 (off) — the course states no number [OctD3.2-R35/R36 @24:00; R40/R41 @29:12].',
+          whenToTouch: "On a mentor answer — 0 is today's behaviour.",
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trendline: minimum bounce',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.trendline_min_bounce_pts)',
+          what: 'Oct round 2 D3-G10. Oct D3.2 [@03:13, 24:00, 24:34]: a low after which price only drifts sideways is rejected (“đi ngang phè”), a bottom counts only if price bounced up a lot, take the clearest, and if it is not clear do not draw. N points: a swing anchors an intraday trendline only when price bounced at least N from it before the next same-role swing. The course states no number, so it ships OFF (0). Sun 1 Nov: the 17:25 low 28,643.25 bounced 16 points, drifted, then dumped to 28,621 — the line drawn from it is the kind the mentor rejects.',
+          trader:
+            '0 (off) — the course states no bounce size; mentor question.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TrendlineMinBouncePts) · kernel/mentor/trendline.go swingBounced',
+          range: '0–1000 (0 = off)',
+          systemDefault: '0',
+          recommended:
+            '0 (off) — the course states no number [OctD3.2-R35/R36 @24:00; R40/R41 @29:12].',
+          whenToTouch: "On a mentor answer — 0 is today's behaviour.",
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Knock Knock counts per zone, pre-market included',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.knock_knock_zone)',
+          what: 'Oct round 2 D2-G10. Oct D2.1 [@21:18–23:43]: “người ta sẽ không còn muốn vô ở những lần sau cái lần thứ 3”, “lần thứ 4 là … có khả năng break nhiều nhất”, “resistor mở lên nó test 3 lần, 4 lần … đừng vô short ngay chỗ đó nữa” — and the tests before the open count (frame s_01351: the 28,816.25 line drawn from the far left, 07:37). ON (default): the tests are counted per PRICE ZONE (a horizontal S/R re-keyed at slightly different prices is one zone) and the zone table lives until the 17:00 roll, not the 08:30 latch; the 4th test of a zone is refused (level_visit_cap). OFF: the per-level-key count that resets at 08:30.',
+          trader: 'on — October [OctD2.1-R22/R25/R34].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (KnockKnockZone) · kernel/mentor/knock_zone.go',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD2.1-R34 @23:24].',
+          whenToTouch: 'Only to restore the per-level-key count: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Trendline: first-bottom anchor',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.trendline_first_bottom_anchor)',
+          what: 'Oct round 2 D3-G9. A trendline joins the FIRST bottom of the move to the later higher bottoms — “hai cái đáy, rồi giá quay lại cái đường” [OctD3.2-R59 @41:20], “nối 2 cái đáy lại rồi kéo dài ra” [R46 @33:00], the first anchor is the first bottom of the move [R45 @31:20]. EX7/EX10 (Sun 1 Nov): 17:07 28,595.00 → 17:29 28,612.00, touched at 18:32, 18:40 and about 20:00. The 17:29 low is LOWER than the swing lows between, so the consecutive pair cannot form that line. ON (default): the non-adjacent slot is refilled from the same first anchor (the new leg replaces the old one). OFF: consecutive pairs plus the one non-adjacent line only.',
+          trader: 'on — October [OctD3.2-R45/R46/R59].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TrendlineFirstBottomAnchor) · kernel/mentor/trendline.go trendlinesBuildFrameB5Opts',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD3.2-R59 @41:20].',
+          whenToTouch: 'Only to restore the consecutive-pair pick: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Box flip is reversible',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_flip_reversible)',
+          what: 'Oct round 2 D3-G7. After a body closes through an FTGH the mentor gives two ways [OctD3.3-R46 @37:40]: an ISB long, or wait — “đợi nó quay về nó bắt test, nó đóng ngược lại level, thì level này lại tiếp tục là Resistance”; R48 [@39:20] lets it drop, retests the box from below and sells (polyline 28,802.75 → 28,731.25 → 28,812.50 → 28,686.25). ON (default): a later candle whose whole body is back on the original side of the box (below an FTGH’s bottom, above an FTGL’s top) restores the role, so the retest short is reachable. OFF: the September D14 flip is permanent for the box’s life.',
+          trader: 'on — October [OctD3.3-R46/R48].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BoxFlipReversible) · kernel/mentor/box.go boxFlipped',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD3.3-R46 @37:40].',
+          whenToTouch: 'Only to restore the permanent Uno flip: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Carried box stays live',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_carried_stays_live)',
+          what: 'Oct round 2 D3-G4. A box standing at the 08:30 open is valid until the next open — “vẫn còn valid trên chart Chủ nhật” [OctD3.3-R27 @17:00], “valid cho tới sáng ngày mai” [R51 @41:28]. E9: Sun 1 Nov about 21:53 price retests the FRIDAY FTGH 28,808.25 and the course shorts it for 17.50 pts. ON (default): the carried box stays the role’s live box over any box that forms later in the evening (m473 let a Sunday-evening box hide it, and the bot went long from flipped evening boxes at 21:55–21:56). OFF: a carried box only fills a role the live set lacks.',
+          trader: 'on — October [OctD3.3-R27/R51].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BoxCarriedStaysLive) · kernel/mentor/box_validity.go carriedBoxesAt',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD3.3-R27 @17:00].',
+          whenToTouch:
+            'Only to restore the m473 fill-an-empty-role rule: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
           label: 'Box: a big outside bar is both a peak and a bottom',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_swing_both_roles)',
@@ -1746,14 +1877,13 @@ export const mentor: GuideSection = {
           label: 'Box pair: pre-open peaks count',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_preopen_lookback_min)',
-          what: "Oct round 2 D3-G1. The course's own FTGH box (Fri 30 Oct, Oct D3.3) is drawn from two PRE-OPEN peaks — peak 1 about 08:00 (high 28,818.25) and peak 2 about 08:29 (body top 28,812.50) — and neither is the session extreme: higher swings stand to the left (06:58, the overnight 03:59 wick). “Bên tay trái mình có thấy một cái đỉnh, bên tay phải … 1 cái đỉnh … Mình vẽ được 1 cái box” [OctD3.3-R23 @17:13]; “bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai” [R51 @41:28]; “trước khi Market Open tầm 10 phút thì em coi có … nếu mà nó có thì em vẽ” [R52 @42:00]. N minutes (default 30): the morning RTH box pair is searched from N minutes before 08:30 CT and replaces the overnight pair; 0 = only boxes formed from 08:30 replace it (the earlier behaviour).",
-          trader:
-            '30 — October [OctD3.3-R23/R52]; the worked example spans 08:00 to 08:30.',
+          what: "Oct round 2 D3-G1. The course's own FTGH box (Fri 30 Oct, Oct D3.3) is drawn from two PRE-OPEN peaks — peak 1 about 08:00 (high 28,818.25) and peak 2 about 08:29 (body top 28,812.50) — and neither is the session extreme: higher swings stand to the left (06:58, the overnight 03:59 wick). “Bên tay trái mình có thấy một cái đỉnh, bên tay phải … 1 cái đỉnh … Mình vẽ được 1 cái box” [OctD3.3-R23 @17:13]; “bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai” [R51 @41:28]; “trước khi Market Open tầm 10 phút thì em coi có … nếu mà nó có thì em vẽ” [R52 @42:00]. N minutes (default 10, R52): a pair of pre-open peaks that forms in the last N minutes before 08:30 CT is the morning box and replaces the overnight pair — a pair that formed earlier (Thu 29 Oct 08:11) does not; 0 = only boxes formed from 08:30 replace it (the earlier behaviour).",
+          trader: '10 — October [OctD3.3-R52 @42:00 “tầm 10 phút”].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (BoxPreOpenLookbackMin) · kernel/mentor/course_exits.go boxBuildBars / freshRTHReplaces',
           range: '0–240 minutes (0 = off)',
-          systemDefault: '30',
-          recommended: '30 — October [OctD3.3-R52 @42:00].',
+          systemDefault: '10',
+          recommended: '10 — October [OctD3.3-R52 @42:00].',
           whenToTouch: 'Only to restore the build-from-08:30 read: set 0.',
           perSession: 'No — per strategy.',
         },

@@ -397,6 +397,11 @@ func TestLatchedBoxIsOutputEveryTick1014(t *testing.T) {
 			if !fresh[string(b.Kind)] {
 				freshMissing++
 			}
+			// oct round 2 D3-G4: a still-valid CARRIED box of the role is the live box
+			// until its expiry; the evening latch stays internal behind it.
+			if c, ok := live.State.CarriedBoxes[string(b.Kind)]; ok && live.Cfg.BoxCarriedStaysLive && BarCloseInstant(full[i]) < boxExpiryMs(c) {
+				continue
+			}
 			if !edges[b.Key+":top"] || !edges[b.Key+":bottom"] {
 				t.Fatalf("%s CT: live box %s %s is not in the tick's level set", lrCT(time.UnixMilli(full[i].OpenTime)), b.Kind, b.Key)
 			}

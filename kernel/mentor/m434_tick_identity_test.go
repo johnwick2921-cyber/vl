@@ -269,6 +269,13 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
 	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
 	cfg.PHLMinAbovePriorPts = 0                             // oct round 2 G7: … and the 15-pt entry-vs-old-low distance
+	cfg.BoxPreOpenLookbackMin = 0                           // oct round 2 D3-G1: … and the pre-open morning box
+	cfg.BoxSwingBothRoles = false                           // oct round 2 D3-G2: … and the one-role swing switch
+	cfg.BoxCarriedStaysLive = false                         // oct round 2 D3-G4: … and the carried-box-only-fills-an-empty-role rule
+	cfg.BoxFlipReversible = false                           // oct round 2 D3-G7: … and the permanent D14 flip
+	cfg.TrendlineFirstBottomAnchor = false                  // oct round 2 D3-G9: … and the pre-round-2 non-adjacent pick
+	cfg.KnockKnockZone = false                              // oct round 2 D2-G10: … and the per-level-key visit count
+	cfg.HTFTrendlineFlip = false                            // oct round 2 D3-G12: … and the delete of a broken HTF line
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
 	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff        // levels audit LL-2: … and the October break-and-retest
 	prevLL6 := emaAliasDoubleInvalidSeam

@@ -437,12 +437,42 @@ type Config struct {
 	// ON (October); OFF = the per-rung phl_not_higher_low/lower_high refusal only.
 	// Studio JSON: risk_control.mentor_tuning.rolling_left_break_cancel.
 	RollingLeftBreakCancel bool
+	// HTFTrendlineFlip — D3-G12 (oct round 2): a persistent 1H/4H trendline is never deleted — a broken one keeps its anchors with the role flipped: "khung giờ lớn mình để luôn, mình không bao giờ xóa" [Oct D3.2 @ 08:27] (R20); the candles under the broken line see it as resistance and "đụng resistance thì drop" [@ 14:18-14:47] (R29); R32 [@ 20:20] the Friday long at the 4H falling line (28,280). A broken support becomes resistance (and the reverse); it is a location again only after price returns and touches it. Default ON (October; the owner's m428 R3 'trendline gãy -> xóa' stays for the 1m lines); OFF = the m428 delete.
+	// Studio JSON: risk_control.mentor_tuning.htf_trendline_flip.
+	HTFTrendlineFlip bool
+	// TrendlineMaxSlopePtsPerBar — D3-G14 (oct round 2): a trendline steeper than this many points per build-frame bar is refused: "Góc 30-45 độ" [Oct D3.2 @ 29:12 (R40)], not 80-85 degrees, "cầu tuột" [@ 29:23-29:38 (R41)]. Degrees depend on the chart scale, so the course gives no points-per-bar number: the DEFAULT IS 0 = OFF (today's behaviour); the owner/mentor gives the value.
+	// Studio JSON: risk_control.mentor_tuning.trendline_max_slope_pts_per_bar.
+	TrendlineMaxSlopePtsPerBar float64
+	// TrendlineMinBouncePts — D3-G10 (oct round 2): a swing anchors an intraday trendline only when price bounced at least this many points from it before the next same-role swing: a low after which price only drifts sideways is rejected [Oct D3.2 @ 03:13 (R9)], "a bottom counts only if price bounced up a lot" [@ 24:00 (R35)], take the clearest [@ 23:34 (R33)], not clear -> do not draw [@ 24:34 (R36)]. The course states no number, so the DEFAULT IS 0 = OFF (today's behaviour); the owner/mentor gives the value (Sun 1 Nov 17:25 low 28,643.25 bounced 16 pts and then dumped to 28,621).
+	// Studio JSON: risk_control.mentor_tuning.trendline_min_bounce_pts.
+	TrendlineMinBouncePts float64
+	// KnockKnockZone — D2-G10 (oct round 2): Knock Knock counts tests per price ZONE (a horizontal S/R tested at slightly different prices is one zone) and keeps the pre-market tests of the same CME session (the zone table is reset at the 17:00 roll, not at the 08:30 day-gate latch), then refuses the reject entry from the 4th test: "người ta sẽ không còn muốn vô ở những lần sau cái lần thứ 3"; "lần thứ 4 là ... có khả năng break nhiều nhất"; "resistor mở lên nó test 3 lần, 4 lần ... đừng vô short ngay chỗ đó nữa" [Oct D2.1 @ 21:18-21:36, 22:24-22:39, 23:24-23:43] (R22/R23/R25/R27/R28/R31/R34/R38); the line 28,816.25 is drawn "from the far left" (07:37) and the pre-market tests count (frame s_01351). Default ON (October); OFF = the per-level-key visit count reset at 08:30.
+	// Studio JSON: risk_control.mentor_tuning.knock_knock_zone.
+	KnockKnockZone bool
+	// TrendlineFirstBottomAnchor — D3-G9 (oct round 2): a trendline anchors on the FIRST bottom (top) of the move and joins the next higher bottom (lower top) to it, not only consecutive swings: "Hai cái đáy, rồi giá quay lại cái đường" [Oct D3.2 @ 41:20] (R59); "nối 2 cái đáy lại rồi kéo dài ra" [@ 33:00] (R46); the first anchor is the FIRST bottom of the move [@ 31:20] (R45); EX7/EX10 Sun 1 Nov 17:07 28,595.00 -> 17:29 28,612.00 (touches 18:32, 18:40, ~20:00). The non-adjacent slot may be refilled from the SAME first anchor (the new leg replaces the old one from that anchor). Default ON (October); OFF = consecutive pairs plus the one non-adjacent line the standing one does not block.
+	// Studio JSON: risk_control.mentor_tuning.trendline_first_bottom_anchor.
+	TrendlineFirstBottomAnchor bool
+	// BoxFlipReversible — D3-G7 (oct round 2): the D14 flip is reversible. After a close above the FTGH the mentor gives two ways [Oct D3.3 @ 37:40] (R46): an ISB long, or "đợi nó quay về nó bắt test, nó đóng ngược lại level, thì level này lại tiếp tục là Resistance"; R48 [@ 39:20]: let it drop, retest the box from below, sell. A later candle whose whole body is back on the original side of the box (below an FTGH's bottom, above an FTGL's top) restores the role. Default ON (October); OFF = the September permanent flip (one body escape flips the role for the box's life).
+	// Studio JSON: risk_control.mentor_tuning.box_flip_reversible.
+	BoxFlipReversible bool
+	// BoxCarriedStaysLive — D3-G4 (oct round 2): a carried FTGH/FTGL box (live at the RTH open, valid to the next 08:30) stays the role's live box over a box that forms later in the evening: "vẫn còn valid trên chart Chủ nhật" [Oct D3.3 @ 17:00] (R27; E9 Sun 1 Nov ~21:53 the Friday FTGH 28,808.25 retest -> -17.50 pts, frames s_02558/s_02567); "valid cho tới sáng ngày mai" [@ 41:28] (R51). Default ON (October); OFF = the m473 rule (a carried box only fills a role the live set lacks, so the Sunday-evening FTGH hides Friday's).
+	// Studio JSON: risk_control.mentor_tuning.box_carried_stays_live.
+	BoxCarriedStaysLive bool
 	// BoxSwingBothRoles — D3-G2 (oct round 2): a candle that is BOTH a 3-bar swing high and a 3-bar swing low (a big outside bar) is a peak AND a bottom for the box builder. Thu 29 Oct 09:05 (O 29,619 H 29,629.25 L 29,586) is peak 2 of the course's red FTGH 29,621.25-29,632.75 [Oct D3.3 @ 15:46 "lấy cái râu cao nhất của cái đỉnh 1, kéo xuống cái thân gần nhất của cái đỉnh 2" (R25); E11 frame s_02696]. Default ON (October); OFF = the September switch that keeps such a bar as a low only (the pair then falls to the 09:19 high, formed 14 minutes later and 15.5 pts lower).
 	// Studio JSON: risk_control.mentor_tuning.box_swing_both_roles.
 	BoxSwingBothRoles bool
-	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): the FTGH/FTGL pair search for the RTH box starts this many minutes BEFORE the 08:30 open, so a pair whose peaks are both pre-open is the morning box and replaces the overnight pair: the course's own Fri 30 Oct FTGH is peak 1 ~08:00 + peak 2 ~08:29, neither the session extreme
-	// [Oct D3.3 @ 17:13-17:25 "Bên tay trái ... một cái đỉnh, bên tay phải ... 1 cái đỉnh ... song song ... vẽ được 1 cái box" (R23/R24, E3 frames s_00866/s_00977/s_01286); @ 41:28-41:36 "bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai" (R51); @ 42:00 "trước khi Market Open tầm 10 phút thì em coi có ... nếu mà nó có thì em vẽ" (R52)].
-	// Default 30 = the worked example's span (08:00 to 08:30); 0 = today's behaviour (only boxes formed from 08:30 replace the overnight box).
+	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): the morning FTGH/FTGL box may be a
+	// pair that FORMS in the last N minutes before the 08:30 open, from peaks that are
+	// both pre-open and neither the session extreme: the course's own Fri 30 Oct FTGH
+	// is peak 1 ~08:00 (H 28,818.25) + peak 2 08:29 (body top 28,812.50) [Oct D3.3 @
+	// 17:13-17:25 "Bên tay trái mình có thấy một cái đỉnh, bên tay phải ... 1 cái đỉnh
+	// ... song song ... vẽ được 1 cái box" (R23/R24, E3 frames s_00866/s_00977/s_01286);
+	// @ 41:28-41:36 "bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai"
+	// (R51); @ 42:00 "trước khi Market Open tầm 10 phút thì em coi có ... nếu mà nó có
+	// thì em vẽ" (R52)]. Default 10 = R52's number; such a box replaces the overnight
+	// pair. A pair that formed earlier (Thu 29 Oct's 29,700 pair at 08:11) is not the
+	// morning box. 0 = today's behaviour (only boxes formed from 08:30 replace the
+	// overnight box).
 	// Studio JSON: risk_control.mentor_tuning.box_preopen_lookback_min.
 	BoxPreOpenLookbackMin float64
 	// PHLMinAbovePriorPts — G7 (oct round 2): a PHL/PLH whose entry sits closer than
@@ -984,36 +1014,43 @@ func DefaultConfig() Config {
 		PHLOldExtreme1mK:         PHLOldExtreme1mKDefault, // PHL-1: the 1m swing the pullback started from (k = 4 reproduces WE6/7/9/10; the course states no width — knob)
 		RollingPHL:               true,                    // D2.2 pullback-continuation rolling stop entry — ON (c52 W6) with the pullback-colour + 5m-trigger gates [@01:52–03:34, 10:47–11:36]
 
-		StopCeilingPts:         25,
-		RoomMultiple:           2,
-		RollingLeftBreakCancel: true,                // D2-G6: October [OctD2.3-R69 @ 78:10]; knob rolling_left_break_cancel=false reverts
-		BoxSwingBothRoles:      true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
-		BoxPreOpenLookbackMin:  30,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open peaks (08:00/08:29) are the morning box; knob box_preopen_lookback_min=0 reverts
-		PHLMinAbovePriorPts:    0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
-		PHLRoomMultiple:        1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
-		HTFGateNewsOnly:        true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
-		NearBoxRoomMultiple:    2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:         true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
-		NearBoxBetweenExempt:   false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
-		TrendlineEntryTouch:    TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
-		PHLFlatLow:             PHLFlatLowNear,      // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
-		ISBReverseTouch:        ISBReverseTouchPair, // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
-		ISBOldExtremePts:       2,                   // B27 [ours]: "at the old extreme" = ± 2 pts
-		ISBInRangeGapPts:       0,                   // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
-		ISBStackCancelCandle2m: 4,                   // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
-		ISBStackTinyStopPts:    0,                   // G2 oct round 2: October has no tiny-stop exception, the 4th non-filling candle cancels [OctD4.3-R57 @ 56:00]; 12.5 = Sept D5.1-R26 (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
-		EveningSlowPts:         100,                 // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
-		EveningSlowFromHour:    15,                  // B10 [ours]: the RTH close
-		EveningSlowWindowMin:   0,                   // B10 [ours]: cumulative since the start hour
-		LossDeparturePts:       0,                   // B22: structural departure; the numeric fallback is OFF
-		LocTriggerFilter:       true,
-		TriggerSchool:          1,  // B20: school 1 — level/box entries without 5m agreement
-		PingPongMinGapPts:      50, // B21: gap > 50 AND candles <= 20 over the last 30
-		PingPongCandleMaxPts:   20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:31–05:37; the 100-pt range = candles ~20)
-		PingPongCandleLookback: 30, // B21 [C: ours — the 30-bar window; the 20-pt cap itself matches D4.2 p2 @05:31–05:37]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
-		LevelMaxVisits:         3,  // B23: first 3 visits/day trade, the 4th refuses
-		EmaMaxCross30m:         0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
-		RangeGapPts:            0,
+		StopCeilingPts:             25,
+		RoomMultiple:               2,
+		RollingLeftBreakCancel:     true,                // D2-G6: October [OctD2.3-R69 @ 78:10]; knob rolling_left_break_cancel=false reverts
+		HTFTrendlineFlip:           true,                // D3-G12: October [OctD3.2-R20/R29 @ 08:27, 14:18]; knob htf_trendline_flip=false reverts
+		TrendlineMaxSlopePtsPerBar: 0,                   // D3-G14: OFF — degrees are chart-scale dependent, the course gives no pts/bar [OctD3.2-R40/R41 @ 29:12]; knob trendline_max_slope_pts_per_bar=N turns it on
+		TrendlineMinBouncePts:      0,                   // D3-G10: OFF — the course gives no bounce size [OctD3.2-R35/R36 @ 24:00]; knob trendline_min_bounce_pts=N turns it on
+		KnockKnockZone:             true,                // D2-G10: October [OctD2.1-R22/R25/R34 @ 21:18-23:43]; knob knock_knock_zone=false reverts
+		TrendlineFirstBottomAnchor: true,                // D3-G9: October [OctD3.2-R45/R46/R59 @ 41:20]; knob trendline_first_bottom_anchor=false reverts
+		BoxFlipReversible:          true,                // D3-G7: October [OctD3.3-R46/R48 @ 37:40, 39:20]; knob box_flip_reversible=false reverts
+		BoxCarriedStaysLive:        true,                // D3-G4: October [OctD3.3-R27/R51 @ 17:00, 41:28]; knob box_carried_stays_live=false reverts
+		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
+		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
+		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
+		PHLRoomMultiple:            1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
+		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
+		NearBoxRoomMultiple:        2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:             true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxBetweenExempt:       false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
+		TrendlineEntryTouch:        TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
+		PHLFlatLow:                 PHLFlatLowNear,      // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL
+		ISBReverseTouch:            ISBReverseTouchPair, // m465 D5.4-R7: EMA 9 inside the mother + ISB group counts
+		ISBOldExtremePts:           2,                   // B27 [ours]: "at the old extreme" = ± 2 pts
+		ISBInRangeGapPts:           0,                   // B27 [ours]: 0 = inherit PingPongMinGapPts (50)
+		ISBStackCancelCandle2m:     4,                   // B8 [ours]: the 1m course count (cancel on candle 4) reused on the 2m
+		ISBStackTinyStopPts:        0,                   // G2 oct round 2: October has no tiny-stop exception, the 4th non-filling candle cancels [OctD4.3-R57 @ 56:00]; 12.5 = Sept D5.1-R26 (29,285.75→29,273.25) [D5.1 p2 @02:24–04:41]
+		EveningSlowPts:             100,                 // B10 [ours]: X11 gives no cutoff; owner Q6 fixed none
+		EveningSlowFromHour:        15,                  // B10 [ours]: the RTH close
+		EveningSlowWindowMin:       0,                   // B10 [ours]: cumulative since the start hour
+		LossDeparturePts:           0,                   // B22: structural departure; the numeric fallback is OFF
+		LocTriggerFilter:           true,
+		TriggerSchool:              1,  // B20: school 1 — level/box entries without 5m agreement
+		PingPongMinGapPts:          50, // B21: gap > 50 AND candles <= 20 over the last 30
+		PingPongCandleMaxPts:       20, // B21: "nến tầm mười mấy điểm" (D4.2 p2 @05:31–05:37; the 100-pt range = candles ~20)
+		PingPongCandleLookback:     30, // B21 [C: ours — the 30-bar window; the 20-pt cap itself matches D4.2 p2 @05:31–05:37]: keeps the on-camera rejection @06:21 (box ping-pong only; the key-level pair reads the current candle, MENTOR-NY item 2)
+		LevelMaxVisits:             3,  // B23: first 3 visits/day trade, the 4th refuses
+		EmaMaxCross30m:             0,  // E4 (item 16): REMOVED default (#45 — the mentor gives no count; "xien len xien xuong" is qualitative). The EMA-off-while-not-respected rule is E2 (loss → blocked until departure). An explicit 2-4 re-enables the numeric gate.
+		RangeGapPts:                0,
 
 		DayGateSpentPts:     265, // m465 D5.1-R18: the worked example's -265.00 run was called spent [D5.1 p1 @17:56–18:14]
 		DayGateTargetCapPts: 15,

@@ -267,8 +267,40 @@ func trendlinesBuildExec(bars []market.Kline, now time.Time, exec2m bool) (out [
 // trendlinesBuildExecB5 is trendlinesBuildExec over a prebuilt barsTF(bars, 5)
 // (m434: the evaluator buckets the 5m once per Tick and shares it).
 func trendlinesBuildExecB5(bars, b5 []market.Kline, now time.Time, exec2m bool) (out []Trendline, crossed []string) {
+	return trendlinesBuildExecB5Opts(bars, b5, now, exec2m, tlOpts{})
+}
+
+// tlOpts are the round-2 trendline knobs the production call sites pass (the
+// zero value is the pre-round-2 build exactly, so every older caller and every
+// frozen golden is unchanged).
+type tlOpts struct {
+	// FirstBottomAnchor (D3-G9): the non-adjacent slot may be refilled from the
+	// SAME first anchor — the line joins the first bottom of the move to each
+	// later higher bottom, not only to consecutive swings.
+	FirstBottomAnchor bool
+	// MinBouncePts (D3-G10, OFF = 0): a swing anchors a line only when price
+	// bounced at least this far from it before the next same-role swing ("a
+	// bottom counts only if price bounced up a lot"; a low after which price
+	// only drifts sideways is rejected) [OctD3.2-R9/R35/R36 @ 03:13].
+	MinBouncePts float64
+	// MaxSlopePtsPerBar (D3-G14, OFF = 0): a line steeper than this many points
+	// per build-frame bar is refused ("30-45 degrees, not 80-85, a slide")
+	// [OctD3.2-R40/R41 @ 29:12].
+	MaxSlopePtsPerBar float64
+}
+
+// tlOpts is the evaluator's trendline option set from Config (production).
+func (e *Evaluator) tlOpts() tlOpts {
+	return tlOpts{FirstBottomAnchor: e.Cfg.TrendlineFirstBottomAnchor, MinBouncePts: e.Cfg.TrendlineMinBouncePts, MaxSlopePtsPerBar: e.Cfg.TrendlineMaxSlopePtsPerBar}
+}
+
+func trendlinesBuildExecOpts(bars []market.Kline, now time.Time, exec2m bool, o tlOpts) (out []Trendline, crossed []string) {
+	return trendlinesBuildExecB5Opts(bars, barsTF(bars, 5), now, exec2m, o)
+}
+
+func trendlinesBuildExecB5Opts(bars, b5 []market.Kline, now time.Time, exec2m bool, o tlOpts) (out []Trendline, crossed []string) {
 	fb, coarse := execBuildFrame(bars, now, exec2m)
-	return trendlinesBuildFrameB5(bars, b5, fb, coarse, now)
+	return trendlinesBuildFrameB5Opts(bars, b5, fb, coarse, now, o)
 }
 
 // execBuildFrame is the traded build frame: the closed 2m buckets when exec2m
@@ -309,6 +341,10 @@ func trendlinesBuildFrame(bars, fb []market.Kline, coarse bool, now time.Time) (
 
 // trendlinesBuildFrameB5 is trendlinesBuildFrame over a prebuilt b5 = barsTF(bars, 5).
 func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.Time) (out []Trendline, crossed []string) {
+	return trendlinesBuildFrameB5Opts(bars, b5, fb, coarse, now, tlOpts{})
+}
+
+func trendlinesBuildFrameB5Opts(bars, b5, fb []market.Kline, coarse bool, now time.Time, o tlOpts) (out []Trendline, crossed []string) {
 	all := swings3(fb)
 	today := tradingDayKey(now.In(ctime()))
 	var seq []swingPairAt
@@ -330,6 +366,9 @@ func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.T
 		var pts []swingPairAt
 		for _, s := range seq {
 			if s.kind == role && swingConfirmed(fb, s) {
+				if o.MinBouncePts > 0 && !swingBounced(fb, s, all, o.MinBouncePts) {
+					continue // D3-G10: a drift, not a bounce
+				}
 				pts = append(pts, s)
 			}
 		}
@@ -339,6 +378,7 @@ func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.T
 		}
 		var liveNA *Trendline // the ONE non-adjacent line of this side that still stands (m428 R5)
 		picker := newPartnerPicker(fb, role, dayStart)
+		picker.maxSlope = o.MaxSlopePtsPerBar
 		for j := 1; j < len(pts); j++ {
 			p1 := pts[j]
 			// The adjacent pair (release #22) plus — m428 R5, owner "missing best
@@ -361,13 +401,16 @@ func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.T
 				// better line replaces the lesser one) — but only while the standing line
 				// is still FORMING at that instant: a valid line (a location in use) is only
 				// ever broken.
-				if naFree || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || picker.st.of(best) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
+				// D3-G9: the same first anchor joined to the next bottom is the same
+				// move's line (the first bottom of the move [OctD3.2-R45 @ 31:20]): it
+				// replaces the leg that stood from that anchor.
+				if naFree || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || o.FirstBottomAnchor && fb[best.idx].OpenTime == liveNA.P0T || picker.st.of(best) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
 					cands = append(cands, best)
 					naIdx = len(cands) - 1
 				}
 			}
 			for ci, p0 := range cands {
-				tl, ok := newSlopedLine(fb, role, side, p0, p1)
+				tl, ok := newSlopedLineMax(fb, role, side, p0, p1, o.MaxSlopePtsPerBar)
 				if !ok {
 					continue
 				}
@@ -402,6 +445,12 @@ func trendlinesBuildFrameB5(bars, b5, fb []market.Kline, coarse bool, now time.T
 // HIGHER low, resistance = a LOWER high [D2.3 p1 @06:44–07:18]), and P1 after P0
 // in time.
 func newSlopedLine(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 swingPairAt) (Trendline, bool) {
+	return newSlopedLineMax(fb, role, side, p0, p1, 0)
+}
+
+// newSlopedLineMax is newSlopedLine with D3-G14's steepness cap: maxSlope > 0
+// refuses a pair steeper than maxSlope points per frame bar (0 = no cap).
+func newSlopedLineMax(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 swingPairAt, maxSlope float64) (Trendline, bool) {
 	if p1.idx-p0.idx < 5 {
 		return Trendline{}, false // at least 5 bars apart — OURS, not the course (c52 W9 B7-R19)
 	}
@@ -415,6 +464,9 @@ func newSlopedLine(fb []market.Kline, role kernel.LevelKind, side Side, p0, p1 s
 	}
 	if math.Abs(p1.price-p0.price) <= flatNearPts(fb, p1.idx) {
 		return Trendline{}, false // m428 R2: a flat pair is a support/resistance, never a trendline
+	}
+	if maxSlope > 0 && math.Abs(p1.price-p0.price)/float64(p1.idx-p0.idx) > maxSlope {
+		return Trendline{}, false // D3-G14: too steep — a slide, not a line
 	}
 	tl := Trendline{
 		Side:     side,
@@ -504,12 +556,13 @@ func swingStanding(fb []market.Kline, s swingPairAt, dayStart int) int {
 // a real uncrossed line — the same answer as scoring every candidate (the
 // 75707f1ed loop), without the O(bars) crossed scan on the ones that lose.
 type partnerPicker struct {
-	fb    []market.Kline
-	role  kernel.LevelKind
-	side  Side
-	st    *standingMemo
-	order []swingPairAt // candidates inserted so far, standing desc, pts order on ties
-	n     int           // how many of pts[:] are in order
+	fb       []market.Kline
+	role     kernel.LevelKind
+	side     Side
+	st       *standingMemo
+	maxSlope float64       // D3-G14 (0 = off)
+	order    []swingPairAt // candidates inserted so far, standing desc, pts order on ties
+	n        int           // how many of pts[:] are in order
 }
 
 func newPartnerPicker(fb []market.Kline, role kernel.LevelKind, dayStart int) *partnerPicker {
@@ -537,7 +590,7 @@ func (pp *partnerPicker) pick(pts []swingPairAt, j int) (swingPairAt, bool) {
 	}
 	p1 := pts[j]
 	for _, p0 := range pp.order {
-		tl, ok := newSlopedLine(pp.fb, pp.role, pp.side, p0, p1)
+		tl, ok := newSlopedLineMax(pp.fb, pp.role, pp.side, p0, p1, pp.maxSlope)
 		if !ok || trendlineCrossed(pp.fb, tl) {
 			continue
 		}
@@ -664,17 +717,47 @@ func trendlinesBuildTFFrames(bars, btf, b5 []market.Kline, tfMin int, now time.T
 // evaluator state was unbroken on the previous tick, so this only needs to see
 // the candles the current window can supply.
 func trendlineHTFBroken(tl Trendline, b5 []market.Kline, now time.Time) bool {
+	return trendlineHTFBrokenAt(tl, b5, now, 0) > 0
+}
+
+// trendlineHTFBrokenAt is the CloseTime of the first closed 5m candle wholly
+// beyond a persisted HTF line since it was drawn (or since its last flip at
+// flipMs, 0 = never flipped), 0 when it stands. D3-G12 reads it as the instant
+// the line's role flips. (The flip time lives in Evaluator.tlFlip, not on the
+// Trendline: the struct is printed whole by the frozen identity goldens.)
+func trendlineHTFBrokenAt(tl Trendline, b5 []market.Kline, now time.Time, flipMs int64) int64 {
 	nowMs := now.UnixMilli()
 	from := tl.breakScanFrom()
+	if flipMs > from {
+		from = flipMs // a flipped line is judged from its flip on
+	}
 	for _, b := range b5 {
 		if b.CloseTime >= nowMs || b.OpenTime < from {
 			continue // still forming, or before the line was drawn
 		}
 		if tl.brokenBy5m(b) {
-			return true
+			return b.CloseTime
 		}
 	}
-	return false
+	return 0
+}
+
+// flipHTFTrendline is the persistent HTF line after its break (D3-G12): "khung
+// giờ lớn mình để luôn, mình không bao giờ xóa" [Oct D3.2 @ 08:27] (OctD3.2-R20);
+// the candles under the broken line see it as resistance and "đụng resistance thì
+// drop" [@ 14:18-14:47] (R29) — a broken support becomes resistance and a broken
+// resistance becomes support, a location again only after price returns and
+// touches it (ValidAt restarts at 0). The anchors do not move; only Side and the
+// scan origin do.
+func flipHTFTrendline(tl Trendline) Trendline {
+	if tl.Side == SideLong {
+		tl.Side = SideShort
+	} else {
+		tl.Side = SideLong
+	}
+	tl.ValidAt = 0
+	tl.Dead = false
+	return tl
 }
 
 // trendlineHTFTouch returns a non-zero value once price has LEFT a persisted
@@ -682,11 +765,17 @@ func trendlineHTFBroken(tl Trendline, b5 []market.Kline, now time.Time) bool {
 // [D3.2 p2 @03:45] — read on the line's own timeframe, purely by TIME. A line
 // that is already valid never calls this (validity is latched in state).
 func trendlineHTFTouch(tl Trendline, btf []market.Kline, now time.Time) int {
+	return trendlineHTFTouchFrom(tl, btf, now, 0)
+}
+
+// trendlineHTFTouchFrom is trendlineHTFTouch for a line flipped at flipMs: only
+// swings after the flip leave and return (D3-G12).
+func trendlineHTFTouchFrom(tl Trendline, btf []market.Kline, now time.Time, flipMs int64) int {
 	nowMs := now.UnixMilli()
 	all := swings3(btf)
 	leave := -1
 	for _, s := range all {
-		if btf[s.idx].OpenTime <= tl.P1T || s.idx+1 >= len(btf) {
+		if btf[s.idx].OpenTime <= tl.P1T || btf[s.idx].OpenTime <= flipMs || s.idx+1 >= len(btf) {
 			continue
 		}
 		if btf[s.idx+1].CloseTime == 0 || btf[s.idx+1].CloseTime >= nowMs {
@@ -979,4 +1068,26 @@ func trendlineLevelsTouchHeld(trendlines []Trendline, boxes []Box, respected []L
 		out = append(out, Level{Key: tl.key(), Kind: KindTrendline, Price: price, AtTime: cur.OpenTime})
 	}
 	return out, refused, held
+}
+
+// swingBounced reports whether price moved at least minPts away from the swing
+// (up from a low, down from a high) before the NEXT same-role swing — the bounce
+// that makes a bottom "clear" [Oct D3.2 @ 03:13, 24:00] (OctD3.2-R9/R35/R36).
+func swingBounced(fb []market.Kline, s swingPairAt, all []swingPairAt, minPts float64) bool {
+	end := len(fb) - 1
+	for _, o := range all {
+		if o.kind == s.kind && o.idx > s.idx {
+			end = o.idx
+			break
+		}
+	}
+	for k := s.idx; k <= end && k < len(fb); k++ {
+		if s.kind == kernel.KindSWGL && fb[k].High-s.price >= minPts {
+			return true
+		}
+		if s.kind == kernel.KindSWGH && s.price-fb[k].Low >= minPts {
+			return true
+		}
+	}
+	return false
 }

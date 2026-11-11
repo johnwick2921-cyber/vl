@@ -89,19 +89,26 @@ type mentorTuned struct {
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
-	SwingISBOnePerCandle    bool
-	CrossingISBLookback     int
-	CrossingISBMin          int
-	KeyLevelDeleteOn1HClose string  // LL-1
-	PHLMinAbovePriorPts     float64 // G7
-	RollingLeftBreakCancel  bool    // D2-G6
-	BoxSwingBothRoles       bool    // D3-G2
-	BoxPreOpenLookbackMin   float64 // D3-G1
-	TriggerFromOpen         bool    // G4
-	ISBTargetFillClose      bool    // D2-G3
-	PHLRoomMultiple         float64 // D2-G2
-	KeyLevelBreakRetest     string  // LL-2
-	KeyLevelHistorySource   string  // LL-4
+	SwingISBOnePerCandle       bool
+	CrossingISBLookback        int
+	CrossingISBMin             int
+	KeyLevelDeleteOn1HClose    string  // LL-1
+	PHLMinAbovePriorPts        float64 // G7
+	RollingLeftBreakCancel     bool    // D2-G6
+	HTFTrendlineFlip           bool    // D3-G12
+	TrendlineMaxSlopePtsPerBar float64 // D3-G14
+	TrendlineMinBouncePts      float64 // D3-G10
+	KnockKnockZone             bool    // D2-G10
+	TrendlineFirstBottomAnchor bool    // D3-G9
+	BoxFlipReversible          bool    // D3-G7
+	BoxCarriedStaysLive        bool    // D3-G4
+	BoxSwingBothRoles          bool    // D3-G2
+	BoxPreOpenLookbackMin      float64 // D3-G1
+	TriggerFromOpen            bool    // G4
+	ISBTargetFillClose         bool    // D2-G3
+	PHLRoomMultiple            float64 // D2-G2
+	KeyLevelBreakRetest        string  // LL-2
+	KeyLevelHistorySource      string  // LL-4
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -148,6 +155,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
+		HTFTrendlineFlip:            d.HTFTrendlineFlip,
+		TrendlineMaxSlopePtsPerBar:  d.TrendlineMaxSlopePtsPerBar,
+		TrendlineMinBouncePts:       d.TrendlineMinBouncePts,
+		KnockKnockZone:              d.KnockKnockZone,
+		TrendlineFirstBottomAnchor:  d.TrendlineFirstBottomAnchor,
+		BoxFlipReversible:           d.BoxFlipReversible,
+		BoxCarriedStaysLive:         d.BoxCarriedStaysLive,
 		BoxSwingBothRoles:           d.BoxSwingBothRoles,
 		BoxPreOpenLookbackMin:       d.BoxPreOpenLookbackMin,
 		TriggerFromOpen:             d.TriggerFromOpen,
@@ -301,10 +315,15 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
-	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel) // D2-G6
-	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)           // D3-G2
-	flag(t.TriggerFromOpen, &out.TriggerFromOpen)               // G4
-	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)         // D2-G3
+	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel)         // D2-G6
+	flag(t.HTFTrendlineFlip, &out.HTFTrendlineFlip)                     // D3-G12
+	flag(t.KnockKnockZone, &out.KnockKnockZone)                         // D2-G10
+	flag(t.TrendlineFirstBottomAnchor, &out.TrendlineFirstBottomAnchor) // D3-G9
+	flag(t.BoxFlipReversible, &out.BoxFlipReversible)                   // D3-G7
+	flag(t.BoxCarriedStaysLive, &out.BoxCarriedStaysLive)               // D3-G4
+	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)                   // D3-G2
+	flag(t.TriggerFromOpen, &out.TriggerFromOpen)                       // G4
+	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)                 // D2-G3
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -343,9 +362,11 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
-	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)     // G7
-	pickPtr(t.BoxPreOpenLookbackMin, 0, 240, &out.BoxPreOpenLookbackMin) // D3-G1
-	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple)              // D2-G2
+	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)                // G7
+	pickPtr(t.TrendlineMaxSlopePtsPerBar, 0, 1000, &out.TrendlineMaxSlopePtsPerBar) // D3-G14
+	pickPtr(t.TrendlineMinBouncePts, 0, 1000, &out.TrendlineMinBouncePts)           // D3-G10
+	pickPtr(t.BoxPreOpenLookbackMin, 0, 240, &out.BoxPreOpenLookbackMin)            // D3-G1
+	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple)                         // D2-G2
 	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
 	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
 	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
@@ -452,19 +473,26 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
-	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle  // isbTF-F4
-	cfg.CrossingISBLookback = t.CrossingISBLookback         // isbTF-F6
-	cfg.CrossingISBMin = t.CrossingISBMin                   // isbTF-F6
-	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
-	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts         // G7
-	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel   // D2-G6
-	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles             // D3-G2
-	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin     // D3-G1
-	cfg.TriggerFromOpen = t.TriggerFromOpen                 // G4
-	cfg.ISBTargetFillClose = t.ISBTargetFillClose           // D2-G3
-	cfg.PHLRoomMultiple = t.PHLRoomMultiple                 // D2-G2
-	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest         // LL-2
-	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource     // LL-4
+	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle        // isbTF-F4
+	cfg.CrossingISBLookback = t.CrossingISBLookback               // isbTF-F6
+	cfg.CrossingISBMin = t.CrossingISBMin                         // isbTF-F6
+	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose       // LL-1
+	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts               // G7
+	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel         // D2-G6
+	cfg.HTFTrendlineFlip = t.HTFTrendlineFlip                     // D3-G12
+	cfg.TrendlineMaxSlopePtsPerBar = t.TrendlineMaxSlopePtsPerBar // D3-G14
+	cfg.TrendlineMinBouncePts = t.TrendlineMinBouncePts           // D3-G10
+	cfg.KnockKnockZone = t.KnockKnockZone                         // D2-G10
+	cfg.TrendlineFirstBottomAnchor = t.TrendlineFirstBottomAnchor // D3-G9
+	cfg.BoxFlipReversible = t.BoxFlipReversible                   // D3-G7
+	cfg.BoxCarriedStaysLive = t.BoxCarriedStaysLive               // D3-G4
+	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles                   // D3-G2
+	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin           // D3-G1
+	cfg.TriggerFromOpen = t.TriggerFromOpen                       // G4
+	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
+	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
+	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
+	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource           // LL-4
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

@@ -207,7 +207,7 @@ func refreshBox(bars []market.Kline, b *Box, cfg BoxCfg) {
 		tfBars := barsForTF(bars, cfg.TF)
 		if idx, ok := resolveBarIndex(tfBars, b.FormedAtMs); ok {
 			b.Touches = countBoxTouches(tfBars, *b, idx, cfg)
-			b.Flipped = escaped(tfBars, *b, idx)
+			b.Flipped = boxFlipped(tfBars, *b, idx, cfg)
 			b.FormedAt = idx
 		}
 		return
@@ -220,7 +220,7 @@ func refreshBox(bars []market.Kline, b *Box, cfg BoxCfg) {
 	}
 	b.Touches = countBoxTouches(tf2, *b, i2, cfg)
 	b.FormedAt = i1 + 1
-	b.Flipped = escaped(bars, *b, b.FormedAt)
+	b.Flipped = boxFlipped(bars, *b, b.FormedAt, cfg)
 }
 
 // boxEscapeOpenMs returns the OpenTime of the first closed candle after
@@ -504,7 +504,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		// the role — a broken FTGH becomes support, a broken FTGL becomes
 		// resistance. The box is NOT deleted (B4); it stays and trades the
 		// new side with the same reject rule and gates.
-		b.Flipped = escaped(tfBars, *b, b.FormedAt)
+		b.Flipped = boxFlipped(tfBars, *b, b.FormedAt, cfg)
 		out = append(out, *b)
 	}
 	return out
@@ -758,6 +758,43 @@ func escaped(bars []market.Kline, b Box, formedAt int) bool {
 	return false
 }
 
+// boxFlipped is the box's CURRENT D14 flip state after formation. FlipPermanent
+// (the September rule): one body escape flips the role for the box's life
+// (escaped). Otherwise (October, D3-G7) the flip is REVERSIBLE: a later candle
+// whose whole body is back on the original side of the box — below an FTGH's
+// bottom, above an FTGL's top — restores the role, so the retest from the
+// original side is the resistance/support it was: "đợi nó quay về nó bắt test, nó
+// đóng ngược lại level, thì level này lại tiếp tục là Resistance" [Oct D3.3 @
+// 37:40] (OctD3.3-R46 way 2); "let it drop, retest the box from below, sell" [@
+// 39:20] (R48). [B: the restore reads the mirror of the escape's whole-body test;
+// the course gives no number.]
+func boxFlipped(bars []market.Kline, b Box, formedAt int, cfg BoxCfg) bool {
+	if cfg.FlipPermanent {
+		return escaped(bars, b, formedAt)
+	}
+	flipped := false
+	for _, c := range bars[formedAt+1:] {
+		if c.CloseTime == 0 {
+			continue
+		}
+		switch b.Kind {
+		case FTGH:
+			if c.Open > b.Top && c.Close > b.Top {
+				flipped = true
+			} else if flipped && c.Open < b.Bottom && c.Close < b.Bottom {
+				flipped = false
+			}
+		case FTGL:
+			if c.Open < b.Bottom && c.Close < b.Bottom {
+				flipped = true
+			} else if flipped && c.Open > b.Top && c.Close > b.Top {
+				flipped = false
+			}
+		}
+	}
+	return flipped
+}
+
 // boxEscapeIndex returns the index of the FIRST closed candle after formation
 // whose whole BODY closed outside the box on the far side (the escape that
 // triggers B52). ok=false when the box has not escaped yet.
@@ -862,7 +899,7 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 	}
 	b.FormedAt = seq[nearest].idx + 1
 	b.FormedAtMs = tfBars[b.FormedAt].OpenTime
-	b.Flipped = escaped(tfBars, *b, b.FormedAt)
+	b.Flipped = boxFlipped(tfBars, *b, b.FormedAt, cfg)
 	if buildCfg.TF != baseCfg.TF && buildCfg.TF == "2m" {
 		b.TF = "2m"
 		refreshBox(bars, b, baseCfg) // FormedAt/Flipped onto the 1m window

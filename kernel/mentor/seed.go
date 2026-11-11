@@ -473,7 +473,7 @@ func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[str
 		// rule (freshRTHReplaces) the tick's latchBoxes applies.
 		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at, preOpenLookbackMs(e.Cfg))
 		if len(latched) < 2 || rthScan {
-			for _, b := range BoxesBuild(boxBuildBars(w, at, e.Cfg), build, time.UnixMilli(at)) {
+			for _, b := range e.boxesBuildRTH(w, at, build) {
 				if build.TF != cfg.TF {
 					b.TF = build.TF
 				}

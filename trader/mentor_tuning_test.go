@@ -157,17 +157,24 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
 			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
-			PHLOldExtreme1mK:        4,
-			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
-			PHLRoomMultiple:         1,                                 // D2-G2 October 1:1
-			ISBTargetFillClose:      true,                              // D2-G3 October [OctD2.2-R35/R37 @ 28:40, 30:03]
-			TriggerFromOpen:         true,                              // G4 October [OctD4.3-R5 @ 03:10]
-			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
-			BoxSwingBothRoles:       true,                              // D3-G2
-			BoxPreOpenLookbackMin:   30,                                // D3-G1
-			PHLMinAbovePriorPts:     0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
-			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
-			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
+			PHLOldExtreme1mK:           4,
+			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
+			PHLRoomMultiple:            1,                                 // D2-G2 October 1:1
+			ISBTargetFillClose:         true,                              // D2-G3 October [OctD2.2-R35/R37 @ 28:40, 30:03]
+			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
+			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
+			HTFTrendlineFlip:           true,                              // D3-G12
+			TrendlineMaxSlopePtsPerBar: 0,                                 // D3-G14
+			TrendlineMinBouncePts:      0,                                 // D3-G10
+			KnockKnockZone:             true,                              // D2-G10
+			TrendlineFirstBottomAnchor: true,                              // D3-G9
+			BoxFlipReversible:          true,                              // D3-G7
+			BoxCarriedStaysLive:        true,                              // D3-G4
+			BoxSwingBothRoles:          true,                              // D3-G2
+			BoxPreOpenLookbackMin:      10,                                // D3-G1
+			PHLMinAbovePriorPts:        0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
+			KeyLevelBreakRetest:        mentor.KeyLevelBreakRetestOn,      // LL-2
+			KeyLevelHistorySource:      mentor.KeyLevelHistoryOwn,         // LL-4
 		}
 		if got != want {
 			t.Errorf("%s: resolved %+v, want %+v", name, got, want)
@@ -459,13 +466,13 @@ func TestG7PHLMinAboveOldExtremeKnob(t *testing.T) {
 // TestD3G1Knob - D3-G1: unset = 30, a stored 45 reaches the evaluator, out of range fails closed to the default.
 func TestD3G1Knob(t *testing.T) {
 	v, bad := float64(45), float64(900)
-	if c := tuningTick(t, &store.MentorTuning{}); c.BoxPreOpenLookbackMin != 30 {
-		t.Fatalf("unset box_preopen_lookback_min = %v, want 30", c.BoxPreOpenLookbackMin)
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxPreOpenLookbackMin != 10 {
+		t.Fatalf("unset box_preopen_lookback_min = %v, want 10", c.BoxPreOpenLookbackMin)
 	}
 	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &v}); c.BoxPreOpenLookbackMin != 45 {
 		t.Fatalf("stored box_preopen_lookback_min did not reach the evaluator: %v", c.BoxPreOpenLookbackMin)
 	}
-	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &bad}); c.BoxPreOpenLookbackMin != 30 {
+	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &bad}); c.BoxPreOpenLookbackMin != 10 {
 		t.Fatalf("out of range must fail closed to the default, got %v", c.BoxPreOpenLookbackMin)
 	}
 }
@@ -478,5 +485,88 @@ func TestD3G2Knob(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{BoxSwingBothRoles: &v}); c.BoxSwingBothRoles != false {
 		t.Fatalf("stored box_swing_both_roles did not reach the evaluator: %v", c.BoxSwingBothRoles)
+	}
+}
+
+// TestD3G4Knob - D3-G4: unset = true, a stored false reaches the evaluator.
+func TestD3G4Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxCarriedStaysLive != true {
+		t.Fatalf("unset box_carried_stays_live = %v, want true", c.BoxCarriedStaysLive)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxCarriedStaysLive: &v}); c.BoxCarriedStaysLive != false {
+		t.Fatalf("stored box_carried_stays_live did not reach the evaluator: %v", c.BoxCarriedStaysLive)
+	}
+}
+
+// TestD3G7Knob - D3-G7: unset = true, a stored false reaches the evaluator.
+func TestD3G7Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxFlipReversible != true {
+		t.Fatalf("unset box_flip_reversible = %v, want true", c.BoxFlipReversible)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxFlipReversible: &v}); c.BoxFlipReversible != false {
+		t.Fatalf("stored box_flip_reversible did not reach the evaluator: %v", c.BoxFlipReversible)
+	}
+}
+
+// TestD3G9Knob - D3-G9: unset = true, a stored false reaches the evaluator.
+func TestD3G9Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineFirstBottomAnchor != true {
+		t.Fatalf("unset trendline_first_bottom_anchor = %v, want true", c.TrendlineFirstBottomAnchor)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineFirstBottomAnchor: &v}); c.TrendlineFirstBottomAnchor != false {
+		t.Fatalf("stored trendline_first_bottom_anchor did not reach the evaluator: %v", c.TrendlineFirstBottomAnchor)
+	}
+}
+
+// TestD2G10Knob - D2-G10: unset = true, a stored false reaches the evaluator.
+func TestD2G10Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.KnockKnockZone != true {
+		t.Fatalf("unset knock_knock_zone = %v, want true", c.KnockKnockZone)
+	}
+	if c := tuningTick(t, &store.MentorTuning{KnockKnockZone: &v}); c.KnockKnockZone != false {
+		t.Fatalf("stored knock_knock_zone did not reach the evaluator: %v", c.KnockKnockZone)
+	}
+}
+
+// TestD3G10Knob - D3-G10: unset = 0, a stored 20 reaches the evaluator, out of range fails closed to the default.
+func TestD3G10Knob(t *testing.T) {
+	v, bad := float64(20), float64(5000)
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineMinBouncePts != 0 {
+		t.Fatalf("unset trendline_min_bounce_pts = %v, want 0", c.TrendlineMinBouncePts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMinBouncePts: &v}); c.TrendlineMinBouncePts != 20 {
+		t.Fatalf("stored trendline_min_bounce_pts did not reach the evaluator: %v", c.TrendlineMinBouncePts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMinBouncePts: &bad}); c.TrendlineMinBouncePts != 0 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.TrendlineMinBouncePts)
+	}
+}
+
+// TestD3G14Knob - D3-G14: unset = 0, a stored 1.5 reaches the evaluator, out of range fails closed to the default.
+func TestD3G14Knob(t *testing.T) {
+	v, bad := float64(1.5), float64(5000)
+	if c := tuningTick(t, &store.MentorTuning{}); c.TrendlineMaxSlopePtsPerBar != 0 {
+		t.Fatalf("unset trendline_max_slope_pts_per_bar = %v, want 0", c.TrendlineMaxSlopePtsPerBar)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMaxSlopePtsPerBar: &v}); c.TrendlineMaxSlopePtsPerBar != 1.5 {
+		t.Fatalf("stored trendline_max_slope_pts_per_bar did not reach the evaluator: %v", c.TrendlineMaxSlopePtsPerBar)
+	}
+	if c := tuningTick(t, &store.MentorTuning{TrendlineMaxSlopePtsPerBar: &bad}); c.TrendlineMaxSlopePtsPerBar != 0 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.TrendlineMaxSlopePtsPerBar)
+	}
+}
+
+// TestD3G12Knob - D3-G12: unset = true, a stored false reaches the evaluator.
+func TestD3G12Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.HTFTrendlineFlip != true {
+		t.Fatalf("unset htf_trendline_flip = %v, want true", c.HTFTrendlineFlip)
+	}
+	if c := tuningTick(t, &store.MentorTuning{HTFTrendlineFlip: &v}); c.HTFTrendlineFlip != false {
+		t.Fatalf("stored htf_trendline_flip did not reach the evaluator: %v", c.HTFTrendlineFlip)
 	}
 }

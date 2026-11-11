@@ -151,6 +151,10 @@ type State struct {
 	// knock", D1.3 p1 @10:32–11:43). Rebuilt by replaying the touch loop.
 	Visits    map[string]int `json:"visits,omitempty"`
 	VisitsDay string         `json:"visits_day,omitempty"`
+	// ZoneVisits / ZoneVisitsDay — D2-G10: the same tests counted per price ZONE
+	// for the trading day (17:00 roll), pre-market included (knock_zone.go).
+	ZoneVisits    []ZoneVisit `json:"zone_visits,omitempty"`
+	ZoneVisitsDay string      `json:"zone_visits_day,omitempty"`
 	// UnoFlipped — m466 P2 (G2 D1.3-R21): the KEY levels that held today and
 	// then broke, so their role flipped once (Uno Reverse, uno_key_level.go).
 	// Reset with Visits at the day roll; a 2nd wrong-way close is ISB-only.
@@ -388,6 +392,7 @@ type Evaluator struct {
 	tlCrossed map[string]bool
 	tlCarry   map[string]carriedTL // m407: valid intraday lines latched across the 08:30/09:00 build-frame switch
 	tlHTF     map[string]Trendline // live PERSISTENT HTF lines by key — anchors kept across the window slide [D2.3 p1 @04:23–05:41]
+	tlFlip    map[string]int64     // D3-G12: flipped HTF line key -> close time of the 5m candle that flipped it
 }
 
 // maxNotes bounds the undrained note buffer (replays and tests never drain).
@@ -443,27 +448,50 @@ func (e *Evaluator) htFTrendlines(bars []market.Kline, now time.Time) (live, bro
 			if old, ok := e.tlHTF[k]; ok && old.ValidAt > 0 && tl.ValidAt == 0 {
 				continue // keep the latched-valid line; never regress it
 			}
+			if _, ok := e.tlFlip[k]; ok {
+				continue // D3-G12: a flipped line is never overwritten by the rebuilt original
+			}
 			e.tlHTF[k] = tl
 		}
 	}
+	type htfFlip struct {
+		tl Trendline
+		at int64
+	}
+	var flips []htfFlip
 	for k, tl := range e.tlHTF {
 		btf := tfBars[tl.TFMin]
 		if btf == nil {
 			btf = e.barsTFMemo(bars, tl.TFMin)
 		}
-		if tl.Dead || trendlineHTFBroken(tl, b5, now) {
+		if brokenAt := trendlineHTFBrokenAt(tl, b5, now, e.tlFlip[k]); tl.Dead || brokenAt > 0 {
 			tl.Dead = true
 			delete(e.tlHTF, k)
 			broken = append(broken, tl)
+			if e.Cfg.HTFTrendlineFlip && brokenAt > 0 {
+				flips = append(flips, htfFlip{flipHTFTrendline(tl), brokenAt}) // D3-G12: kept, role flipped
+			}
 			continue
 		}
 		if tl.ValidAt == 0 {
-			if va := trendlineHTFTouch(tl, btf, now); va > 0 {
+			if va := trendlineHTFTouchFrom(tl, btf, now, e.tlFlip[k]); va > 0 {
 				tl.ValidAt = va
 			}
 		}
 		e.tlHTF[k] = tl
 		live = append(live, tl)
+	}
+	for _, f := range flips {
+		k := f.tl.key()
+		if _, ok := e.tlHTF[k]; ok && e.tlFlip[k] >= f.at {
+			continue // the rebuilt original re-flips every tick: the standing flipped line (and its latched validity) wins
+		}
+		if e.tlFlip == nil {
+			e.tlFlip = map[string]int64{}
+		}
+		e.tlFlip[k] = f.at
+		e.tlHTF[k] = f.tl
+		live = append(live, f.tl)
 	}
 	return live, broken
 }
@@ -2324,7 +2352,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// through. They join the level set location-only (never a target); a
 	// trendline next to a box edge is suppressed (box beats trendline).
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
-	trendlines, crossed := trendlinesBuildExecB5(bars, e.barsTFMemo(bars, 5), time.UnixMilli(now), exec2m)
+	trendlines, crossed := trendlinesBuildExecB5Opts(bars, e.barsTFMemo(bars, 5), time.UnixMilli(now), exec2m, e.tlOpts())
 	frame := 1
 	if exec2m {
 		frame = 2
@@ -2480,6 +2508,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.State.Visits = map[string]int{}
 			}
 			e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)]++
+			if e.Cfg.KnockKnockZone && e.Cfg.LevelMaxVisits > 0 && zoneCountsLevel(lvl) && visitCapAppliesFor(lvl, e.Cfg.CourseExits.EMA9VisitCap) {
+				e.noteZoneVisit(lvl, tr, bars, now) // D2-G10: the same test counted per price zone
+			}
 		}
 		out = append(out, handleTouchIntents(e, lvl, intents)...)
 	}
@@ -3180,7 +3211,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// visit departure so a NEW visit re-arms the refusal.
 			// r22 P1-2: the cap reads the level's REAL identity (visitKey) and
 			// never applies to the EMA lines (visitCapApplies).
-			if e.Cfg.LevelMaxVisits > 0 && visitCapAppliesFor(lvl, e.Cfg.CourseExits.EMA9VisitCap) && e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)] > e.Cfg.LevelMaxVisits {
+			if e.Cfg.LevelMaxVisits > 0 && visitCapAppliesFor(lvl, e.Cfg.CourseExits.EMA9VisitCap) && (e.State.Visits[visitKeyFor(lvl, e.Cfg.CourseExits.EMA9VisitCap)] > e.Cfg.LevelMaxVisits || e.zoneVisitsOver(lvl, tr, bars, now)) {
 				if !e.State.VisitCapRefused[lvl.Key] {
 					e.refuse("level_visit_cap")
 					e.State.VisitCapRefused[lvl.Key] = true

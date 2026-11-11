@@ -142,7 +142,7 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 		return
 	}
 	closed := closedOnly(bars1m, now)
-	lines, crossed := trendlinesBuildExec(closed, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now))
+	lines, crossed := trendlinesBuildExecOpts(closed, time.UnixMilli(now), e.Cfg.Exec2mAfter30m && exec2mReads2m(now), e.tlOpts())
 	day := tradingDayKey(time.UnixMilli(now).In(ctime()))
 	e.tlDay = day
 	e.tlCrossed = map[string]bool{}
@@ -162,9 +162,24 @@ func SeedTrendlines(e *Evaluator, bars1m []market.Kline, now int64) {
 	// @04:23–05:41]. The store's stitched series reaches ≥102 closed 4h
 	// candles, so 1h/4h anchors survive the restart.
 	e.tlHTF = map[string]Trendline{}
+	e.tlFlip = nil
 	for _, tf := range []int{60, 240} {
 		for _, tl := range trendlinesBuildTF(closed, tf, time.UnixMilli(now)) {
 			if tl.Dead {
+				// D3-G12: a broken persistent HTF line is kept with its role
+				// flipped, not dropped [Oct D3.2 @ 08:27, 14:18-14:47].
+				if e.Cfg.HTFTrendlineFlip {
+					if at := trendlineHTFBrokenAt(tl, barsTF(closed, 5), time.UnixMilli(now), 0); at > 0 {
+						fl := flipHTFTrendline(tl)
+						if _, held := e.tlHTF[fl.key()]; !held {
+							if e.tlFlip == nil {
+								e.tlFlip = map[string]int64{}
+							}
+							e.tlFlip[fl.key()] = at
+							e.tlHTF[fl.key()] = fl
+						}
+					}
+				}
 				continue
 			}
 			e.tlHTF[tl.key()] = tl

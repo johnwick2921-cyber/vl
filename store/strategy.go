@@ -2244,9 +2244,23 @@ type MentorTuning struct {
 	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
 	// phl_not_higher_low / phl_not_lower_high refusal only.
 	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
+	// HTFTrendlineFlip — D3-G12 (oct round 2): nil -> ON (October). A persistent 1H/4H trendline broken by a 5m candle wholly beyond it is kept with its role flipped (a broken support is resistance and the reverse; a location again after a retest touch) instead of being deleted [OctD3.2-R20/R29 @ 08:27, 14:18-14:47]. false = the m428 delete. The 1m lines still die when broken.
+	HTFTrendlineFlip *bool `json:"htf_trendline_flip,omitempty"`
+	// TrendlineMaxSlopePtsPerBar — D3-G14 (oct round 2): nil -> 0 (OFF). An intraday trendline steeper than this many points per build-frame bar is refused [OctD3.2-R40/R41 @ 29:12-29:38: 30-45 degrees, not 80-85]; the course gives no points-per-bar number.
+	TrendlineMaxSlopePtsPerBar *float64 `json:"trendline_max_slope_pts_per_bar,omitempty"`
+	// TrendlineMinBouncePts — D3-G10 (oct round 2): nil -> 0 (OFF). A swing anchors an intraday trendline only when price bounced at least this many points from it before the next same-role swing [OctD3.2-R9/R35/R36 @ 03:13, 24:00]; the course states no number.
+	TrendlineMinBouncePts *float64 `json:"trendline_min_bounce_pts,omitempty"`
+	// KnockKnockZone — D2-G10 (oct round 2): nil -> ON (October). Knock Knock counts tests per price zone and keeps the pre-market tests of the same CME session; the 4th test of a zone refuses [OctD2.1-R22/R25/R34 @ 21:18-23:43]. false = the per-level-key count reset at the 08:30 day-gate latch.
+	KnockKnockZone *bool `json:"knock_knock_zone,omitempty"`
+	// TrendlineFirstBottomAnchor — D3-G9 (oct round 2): nil -> ON (October). A trendline joins the FIRST bottom (top) of the move to each later higher bottom (lower top): the non-adjacent slot may be refilled from the same first anchor [OctD3.2-R45/R46/R59 @ 31:20, 33:00, 41:20]. false = the pre-round-2 pick.
+	TrendlineFirstBottomAnchor *bool `json:"trendline_first_bottom_anchor,omitempty"`
+	// BoxFlipReversible — D3-G7 (oct round 2): nil -> ON (October). The D14 box flip is reversible: a candle whose whole body is back on the original side of the box restores the role, so the retest from that side is the resistance/support again [OctD3.3-R46/R48 @ 37:40, 39:20]. false = the September permanent flip.
+	BoxFlipReversible *bool `json:"box_flip_reversible,omitempty"`
+	// BoxCarriedStaysLive — D3-G4 (oct round 2): nil -> ON (October). A carried box (live at the RTH open, valid to the next 08:30 CT) stays the role's live box over a box that formed later in the evening [OctD3.3-R27/R51 @ 17:00, 41:28]. false = the m473 rule (a carried box only fills a role the live set lacks).
+	BoxCarriedStaysLive *bool `json:"box_carried_stays_live,omitempty"`
 	// BoxSwingBothRoles — D3-G2 (oct round 2): nil -> ON (October). A candle that is both a 3-bar swing high and a swing low counts as a peak AND a bottom for the FTGH/FTGL box builder [OctD3.3-R25 @ 15:46; E11 frame s_02696]. false = the September one-role switch (low wins).
 	BoxSwingBothRoles *bool `json:"box_swing_both_roles,omitempty"`
-	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): nil -> 30 minutes. The RTH box pair search starts that many minutes before the 08:30 CT open [OctD3.3-R23/R52 @ 17:13, 42:00]; 0 = only boxes formed from 08:30 replace the overnight box (the pre-round-2 behaviour).
+	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): nil -> 10 minutes (R52). A pair of pre-open peaks that forms in the last N minutes before the 08:30 CT open is the morning box and replaces the overnight pair [OctD3.3-R23/R52 @ 17:13, 42:00]; 0 = only boxes formed from 08:30 replace the overnight box (the pre-round-2 behaviour).
 	BoxPreOpenLookbackMin *float64 `json:"box_preopen_lookback_min,omitempty"`
 	// ISBTargetFillClose — D2-G3 (oct round 2): nil → ON (October). The ISB's basic
 	// target is the fill candle's close [OctD2.2-R35/R37 @ 28:40, 30:03]: an ISB
