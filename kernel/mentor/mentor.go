@@ -762,8 +762,10 @@ type Config struct {
 	TrendlineIsTarget bool
 	// TrendlineBetweenBoxes — CE-11/B13 (b): a trendline reject between an
 	// FTGL and an FTGH may trade [D3.2 p2 @10:56–11:20] although the same
-	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. Default ON
-	// (course-defaults-30: the course trades it).
+	// lesson bans every PHL/PLH between two boxes [@08:34–08:55]. D3-G8 (oct
+	// round 2): default OFF — October's only word on the middle of two boxes is
+	// "ở giữa 2 box chỉ được quyền đánh Inside Bar" [OctD3.3-R59 @ 46:27]; true =
+	// the September exemption (course-defaults-30).
 	TrendlineBetweenBoxes bool
 	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
 	// leg closed by a stop-out also resets on a close beyond the losing
@@ -1006,7 +1008,7 @@ func DefaultConfig() Config {
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
 		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
-		TrendlineBetweenBoxes: true,                   // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+		TrendlineBetweenBoxes: false,                  // D3-G8: October — between two boxes only the inside bar [OctD3.3-R59 @ 46:27]; true = Sept D3.2 p2 @10:56–11:04
 		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape

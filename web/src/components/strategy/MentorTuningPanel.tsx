@@ -632,7 +632,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
   trendline_is_target: true, // (a)
-  trendline_between_boxes: true, // (b) — course-defaults-30 [D3.2 p2 @10:56–11:04]
+  trendline_between_boxes: false, // D3-G8 oct round 2 — October [OctD3.3-R59 @46:27]; was true (course-defaults-30)
   leg_reset_on_wave_break: true, // (a)
   flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]

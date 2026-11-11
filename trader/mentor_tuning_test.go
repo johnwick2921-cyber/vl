@@ -127,7 +127,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			NewsBarsExcluded:  true,                                                                        // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
 			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
-			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
+			TrendlineBetweenBoxes: false, // D3-G8 oct round 2: OctD3.3-R59 [@ 46:27] (was true, CE-11/B13)
 			FlagWallTarget:        true,  // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no

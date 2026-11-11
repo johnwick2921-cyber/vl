@@ -30,7 +30,7 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"d43_trend_source=structure (course-defaults-30)", cfg.D43TrendSource == mentor.D43TrendStructure},
 		{"level_entries_need_trigger_side=false (b)", !cfg.LevelEntriesNeedTriggerSide},
 		{"trendline_is_target=true (a)", cfg.TrendlineIsTarget},
-		{"trendline_between_boxes=true (course-defaults-30)", cfg.TrendlineBetweenBoxes},
+		{"trendline_between_boxes=false (D3-G8 oct round 2: OctD3.3-R59 [@ 46:27]; was true, course-defaults-30)", !cfg.TrendlineBetweenBoxes},
 		{"leg_reset_on_wave_break=true (a)", cfg.LegResetOnWaveBreak},
 		{"flag_wall_target=true (course-defaults-30)", cfg.FlagWallTarget},
 		{"orb_escape_completely=false (release #52 B19: body test until the owner rules)", !cfg.OrbEscapeCompletely},

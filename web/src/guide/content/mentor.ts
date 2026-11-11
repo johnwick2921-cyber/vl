@@ -1882,14 +1882,16 @@ export const mentor: GuideSection = {
         {
           label: 'Trendline reject between two boxes',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D3.2 p2 @10:56–11:20 "Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box" (touch the trendline, close below, trade back down… to the box) — against the same lesson @08:34–08:55 "Nếu như nằm bên giữa cái box mình sẽ không được bắt bất kỳ một lệnh Potential 2 low" (between the boxes you may not take any potential-2-low). ON (default, course-defaults-30) = a trendline reject between an FTGL and an FTGH may trade; OFF = every level PHL/PLH between two boxes is refused (phl_mid_range_boxed), only the ISB trades there. The course trades the trendline reject, so it is ON.',
-          trader: 'ON — course-defaults-30.',
+          what: 'D3.2 p2 @10:56–11:20 "Đụng trendline, nên đóng dưới, đánh ngược lại xuống dưới… dưới cái box" (touch the trendline, close below, trade back down… to the box) — against the same lesson @08:34–08:55 "Nếu như nằm bên giữa cái box mình sẽ không được bắt bất kỳ một lệnh Potential 2 low" (between the boxes you may not take any potential-2-low). OFF (default since oct round 2 D3-G8) = every level PHL/PLH between two boxes, trendline included, is refused (phl_mid_range_boxed): October’s only statement on the middle of two boxes is “nếu như ở giữa 2 box chỉ được quyền đánh Inza Ba” — between two boxes only the inside bar may be traded [OctD3.3-R59 @46:27, frames 45:03–47:03], and no October lesson repeats the trendline exception. ON = the September D3.2 p2 exemption: a trendline reject between an FTGL and an FTGH may trade.',
+          trader: 'OFF — October [OctD3.3-R59 @46:27].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go midRangeBoxed',
           range: 'true / false',
-          systemDefault: 'true',
-          recommended: 'ON — D3.2 p2 @10:56–11:04 (the course trades it).',
-          whenToTouch: 'Rarely — OFF only to restore the pre-30 rule.',
+          systemDefault: 'false',
+          recommended:
+            'OFF — October wins over September [OctD3.3-R59 @46:27].',
+          whenToTouch:
+            'Only on a mentor answer — ON restores the September exemption.',
           perSession: 'No.',
         },
         {

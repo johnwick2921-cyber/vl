@@ -187,7 +187,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
     trendline_is_target: true,
-    trendline_between_boxes: true, // course-defaults-30
+    trendline_between_boxes: false, // D3-G8 oct round 2 (was true, course-defaults-30)
     leg_reset_on_wave_break: true,
     flag_wall_target: true, // course-defaults-30
     orb_escape_completely: false, // release #52 B19 — body test until the owner rules

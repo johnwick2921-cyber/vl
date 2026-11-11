@@ -268,7 +268,6 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	cfg.PHLRoomMultiple = cfg.RoomMultiple                  // oct round 2 D2-G2: … and the PHL/PLH 2R room (knob phl_room_multiple=2 reproduces the old golden byte for byte)
 	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
 	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
-	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
 	cfg.PHLMinAbovePriorPts = 0                             // oct round 2 G7: … and the 15-pt entry-vs-old-low distance
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
 	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff        // levels audit LL-2: … and the October break-and-retest

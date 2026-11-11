@@ -588,20 +588,23 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 	tl := Level{Key: "trendline:x", Kind: KindTrendline, Price: 100}
 	kl := Level{Key: "K", Kind: KindKeyLevel, Price: 100}
 	cfg := DefaultConfig()
-	// default ON: the trendline is exempt, the key level is not.
-	if midRangeBoxedRefuses(cfg, tl, boxes, 101) {
-		t.Fatal("default ON: a trendline reject between two boxes may trade")
-	}
-	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("default ON exempts the trendline only — a key level stays refused")
-	}
-	// OFF (the pre-30 behaviour): the trendline reject is refused again.
-	cfg.TrendlineBetweenBoxes = false
+	// D3-G8 (oct round 2): October's only word on the middle of two boxes is
+	// "ở giữa 2 box chỉ được quyền đánh Inside Bar" [OctD3.3-R59 @ 46:27], so the
+	// default is OFF: the trendline reject is refused like every other level.
 	if !midRangeBoxedRefuses(cfg, tl, boxes, 101) {
-		t.Fatal("OFF: a trendline reject between two boxes is refused")
+		t.Fatal("D3-G8 default OFF (October): a trendline reject between two boxes is refused")
 	}
 	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
-		t.Fatal("OFF keeps the key level refused")
+		t.Fatal("default OFF: a key level stays refused")
+	}
+	// ON (the September D3.2 p2 @10:56 behaviour, the knob): the trendline is
+	// exempt, the key level is not.
+	cfg.TrendlineBetweenBoxes = true
+	if midRangeBoxedRefuses(cfg, tl, boxes, 101) {
+		t.Fatal("knob ON: a trendline reject between two boxes may trade")
+	}
+	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
+		t.Fatal("knob ON exempts the trendline only — a key level stays refused")
 	}
 	if midRangeBoxedRefuses(DefaultConfig(), kl, boxes[:1], 101) {
 		t.Fatal("one box is not mid-range")
