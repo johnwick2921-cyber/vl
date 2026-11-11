@@ -1,6 +1,6 @@
 module vl
 
-go 1.26.10
+go 1.26.11
 
 require (
 	github.com/gin-gonic/gin v1.11.0
