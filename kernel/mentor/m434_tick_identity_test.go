@@ -266,6 +266,7 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	}
 	cfg.PHLOldExtreme1mK = 0                                // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
 	cfg.PHLRoomMultiple = cfg.RoomMultiple                  // oct round 2 D2-G2: … and the PHL/PLH 2R room (knob phl_room_multiple=2 reproduces the old golden byte for byte)
+	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // levels audit LL-1: … and October's keep-through-a-1H-close
 	cfg.KeyLevelBreakRetest = KeyLevelBreakRetestOff        // levels audit LL-2: … and the October break-and-retest
 	prevLL6 := emaAliasDoubleInvalidSeam

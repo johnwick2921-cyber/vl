@@ -429,7 +429,15 @@ type Config struct {
 	// 2 = the September behaviour. ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
 	PHLRoomMultiple float64
-	RangeGapPts     float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
+	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
+	// ladder's left extreme (the higher low / lower high the leg to the old extreme
+	// started from) ENDS the rolling ladder — named rolling_left_extreme_broken —
+	// instead of refusing rung by rung [OctD2.3-R69 @ 1:18:10 "nó break cái đỉnh này
+	// rồi, thì [lower high] gì tầm này nữa"; frames s_04713/s_04718/s_04720]. Default
+	// ON (October); OFF = the per-rung phl_not_higher_low/lower_high refusal only.
+	// Studio JSON: risk_control.mentor_tuning.rolling_left_break_cancel.
+	RollingLeftBreakCancel bool
+	RangeGapPts            float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
 	// HTFGateNewsOnly — m462 (release #59): false (DEFAULT) = the 4h/1h
 	// direction gate applies ALL SESSION to every intraday setup. The final
@@ -922,6 +930,7 @@ func DefaultConfig() Config {
 
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
+		RollingLeftBreakCancel: true,                // D2-G6: October [OctD2.3-R69 @ 1:18:10]; knob rolling_left_break_cancel=false reverts
 		PHLRoomMultiple:        1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
 		HTFGateNewsOnly:        false,               // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
 		NearBoxRoomMultiple:    2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)

@@ -93,6 +93,7 @@ type mentorTuned struct {
 	CrossingISBLookback     int
 	CrossingISBMin          int
 	KeyLevelDeleteOn1HClose string  // LL-1
+	RollingLeftBreakCancel bool // D2-G6
 	PHLRoomMultiple         float64 // D2-G2
 	KeyLevelBreakRetest     string  // LL-2
 	KeyLevelHistorySource   string  // LL-4
@@ -140,6 +141,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelHistorySource:       d.KeyLevelHistorySource,
 		KeyLevelBreakRetest:         d.KeyLevelBreakRetest,
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
+		RollingLeftBreakCancel: d.RollingLeftBreakCancel,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -289,6 +291,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.OrbEscapeCompletely, &out.OrbEscapeCompletely)
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
+	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel) // D2-G6
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -438,6 +441,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.CrossingISBLookback = t.CrossingISBLookback         // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                   // isbTF-F6
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
+	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel // D2-G6
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                 // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest         // LL-2
 	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource     // LL-4

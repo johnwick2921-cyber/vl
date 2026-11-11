@@ -159,6 +159,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 			PHLRoomMultiple:         1,                                 // D2-G2 October 1:1
+			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69]
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
 		}
@@ -419,5 +420,17 @@ func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
 		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
+	}
+}
+
+// TestD2G6RollingLeftBreakCancelKnob — D2-G6: unset = ON (October), a stored
+// false reaches the evaluator (the pre-round-2 per-rung refusal).
+func TestD2G6RollingLeftBreakCancelKnob(t *testing.T) {
+	off := false
+	if c := tuningTick(t, &store.MentorTuning{}); !c.RollingLeftBreakCancel {
+		t.Fatal("unset rolling_left_break_cancel must be ON")
+	}
+	if c := tuningTick(t, &store.MentorTuning{RollingLeftBreakCancel: &off}); c.RollingLeftBreakCancel {
+		t.Fatal("stored rolling_left_break_cancel=false did not reach the evaluator")
 	}
 }

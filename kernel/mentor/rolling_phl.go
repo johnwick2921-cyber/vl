@@ -329,6 +329,22 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 		return skip("rolling_phl_no_old_extreme_on_side", "no 1m old extreme beyond the reference candle on the trade side — no target, no setup [OctD2.3-R53 @ 54:00]")
 	}
 
+	// 3b. D2-G6 / D2.3b-F3 (oct round 2): a 1m candle that CLOSED beyond the
+	// ladder's left extreme after the old extreme formed ends the ladder — "nó
+	// break cái đỉnh này rồi, thì [lower high] gì tầm này nữa" [OctD2.3-R69 @
+	// 1:18:10; frames s_04713/s_04718/s_04720: the old-high ray 28,876.50 broken by
+	// a candle that closes ~28,880]. Named once per exec candle and the resting
+	// rung cancelled; the ladder stays over for as long as that close stays on
+	// the tape after the old extreme — a NEW old extreme (a new leg) reads a new
+	// left extreme and restarts it. A wick that closes back inside is not a
+	// break (the per-rung refusal below stays). Knob rolling_left_break_cancel.
+	if e.Cfg.RollingLeftBreakCancel {
+		if left, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes); okLeft && leftExtremeClosedThrough(bars, ex.idx, left, side) {
+			e.rollingRecordOncePerCandle(execCur, "rolling_left_extreme_broken")
+			return append(out, e.rollingCancel(st, "a candle closed beyond the left extreme — the rolling ladder is over [OctD2.3-R69 @ 1:18:10]")...)
+		}
+	}
+
 	// 4. The entry must sit far enough from the old extreme (the 1–2 pullback
 	// candle wait [D2.2 p2 @05:25, 07:02]).
 	if len(bars)-1-ex.idx < e.Cfg.PHLMinCandlesFromExtreme {
@@ -432,4 +448,16 @@ func rollingPullbackCandle(c market.Kline, side Side) bool {
 		return c.Close > c.Open
 	}
 	return c.Close < c.Open
+}
+
+// leftExtremeClosedThrough reports whether any closed 1m candle AFTER the old
+// extreme's bar closed beyond the ladder's left extreme: above it for a short
+// (the lower high is gone), below it for a long (the higher low is gone).
+func leftExtremeClosedThrough(bars []market.Kline, exIdx int, left float64, side Side) bool {
+	for i := exIdx + 1; i < len(bars); i++ {
+		if side == SideShort && bars[i].Close > left || side == SideLong && bars[i].Close < left {
+			return true
+		}
+	}
+	return false
 }
