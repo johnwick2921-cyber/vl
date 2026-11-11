@@ -2244,6 +2244,10 @@ type MentorTuning struct {
 	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
 	// phl_not_higher_low / phl_not_lower_high refusal only.
 	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
+	// BoxSwingBothRoles — D3-G2 (oct round 2): nil -> ON (October). A candle that is both a 3-bar swing high and a swing low counts as a peak AND a bottom for the FTGH/FTGL box builder [OctD3.3-R25 @ 15:46; E11 frame s_02696]. false = the September one-role switch (low wins).
+	BoxSwingBothRoles *bool `json:"box_swing_both_roles,omitempty"`
+	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): nil -> 30 minutes. The RTH box pair search starts that many minutes before the 08:30 CT open [OctD3.3-R23/R52 @ 17:13, 42:00]; 0 = only boxes formed from 08:30 replace the overnight box (the pre-round-2 behaviour).
+	BoxPreOpenLookbackMin *float64 `json:"box_preopen_lookback_min,omitempty"`
 	// ISBTargetFillClose — D2-G3 (oct round 2): nil → ON (October). The ISB's basic
 	// target is the fill candle's close [OctD2.2-R35/R37 @ 28:40, 30:03]: an ISB
 	// with no level beyond its entry (isb_missing_target) or only a level inside

@@ -93,6 +93,8 @@ describe('knob spec completeness', () => {
         'risk_control.mentor_tuning.isb_target_fill_close',
         'risk_control.mentor_tuning.trigger_from_open',
         'risk_control.mentor_tuning.rolling_left_break_cancel',
+        'risk_control.mentor_tuning.box_swing_both_roles',
+        'risk_control.mentor_tuning.box_preopen_lookback_min',
         'risk_control.mentor_tuning.phl_room_multiple',
         'Config.StopCeilingPts',
         'mentor_done_after_win',

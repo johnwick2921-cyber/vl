@@ -2315,7 +2315,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.State.PostEscapeBoxes = nil // B52: the new-zone boxes die with the day too
 		e.State.LatchedBoxesDay = boxDay
 	}
-	boxes = e.latchBoxes(boxes, bars, e.Cfg.Box)
+	boxes = e.latchBoxes(boxes, bars, e.withBoxFlags(e.Cfg.Box))
 	boxes = e.withCarriedBoxes(boxes, bars, now)
 	levels = append(levels, BoxEdgeLocations(boxes)...)
 

@@ -269,11 +269,39 @@ func boxLatchDayKey(now int64, cfg Config) string {
 // slice) replaces old (the role's latched box): the knob is ON, nb formed in
 // RTH (08:30 <= t < 17:00 CT) and old formed before that day's 08:30 open. An
 // RTH-formed latched box is never replaced (the first RTH box stands).
+//
+// D3-G1: with BoxPreOpenLookbackMin L > 0 the replacement window opens L
+// minutes BEFORE 08:30 — a pair whose peaks are both pre-open (the Fri 30 Oct
+// FTGH from the ~08:00 and ~08:29 peaks) is the morning box, and any latched
+// box formed before that window (the overnight pair) is the one it replaces.
+// L = 0 is the pre-D3-G1 rule exactly.
 func (e *Evaluator) freshRTHReplaces(old, nb Box) bool {
-	if !boxRTHWindow(nb.FormedAtMs, e.Cfg) {
+	if !e.Cfg.CourseExits.BoxFreshRTHPair {
 		return false
 	}
-	return old.FormedAtMs < rthOpenMs(nb.FormedAtMs)
+	lo := rthOpenMs(nb.FormedAtMs) - preOpenLookbackMs(e.Cfg)
+	t := time.UnixMilli(nb.FormedAtMs).In(ctime())
+	if nb.FormedAtMs < lo || t.Hour()*60+t.Minute() >= 17*60 {
+		return false
+	}
+	if old.FormedAtMs < lo {
+		return true
+	}
+	// A box formed INSIDE the pre-open window is provisional only against the
+	// pair the open candle itself confirms: peak 2 of the course's pair is the
+	// 08:29 candle, confirmed by the 08:30 bar, so that box forms exactly at the
+	// open — one minute after the first RTH tick could already have latched a
+	// smaller pre-open pair. Any later box never displaces it (first RTH box
+	// stands).
+	return nb.FormedAtMs == rthOpenMs(nb.FormedAtMs) && old.FormedAtMs < nb.FormedAtMs
+}
+
+// preOpenLookbackMs is the D3-G1 pre-open window in ms (0 = off).
+func preOpenLookbackMs(cfg Config) int64 {
+	if cfg.BoxPreOpenLookbackMin <= 0 {
+		return 0
+	}
+	return int64(cfg.BoxPreOpenLookbackMin * 60_000)
 }
 
 // dropPreRTHPost retires the same-role post-escape boxes that formed before
@@ -298,6 +326,12 @@ func boxBuildBars(bars []market.Kline, now int64, cfg Config) []market.Kline {
 		return bars
 	}
 	from := rthOpenMs(now)
+	if lb := preOpenLookbackMs(cfg); lb > 0 {
+		// D3-G1: the pre-open peaks are part of the morning box; swings3 reads
+		// two bars of left context, so a peak AT the window edge (08:00 of the
+		// 30-minute window) needs those two bars in the slice.
+		from -= lb + 2*60_000
+	}
 	for i, b := range bars {
 		if b.OpenTime >= from {
 			return bars[i:]
@@ -338,6 +372,13 @@ func (e *Evaluator) baseBoxCfg() BoxCfg {
 	if cfg.TF == "" {
 		cfg = DefaultBoxCfg()
 	}
+	return e.withBoxFlags(cfg)
+}
+
+// withBoxFlags overlays the box knobs that live on Config (not Config.Box) onto
+// a BoxCfg, without defaulting anything else: D3-G2 box_swing_both_roles.
+func (e *Evaluator) withBoxFlags(cfg BoxCfg) BoxCfg {
+	cfg.OneRoleSwings = !e.Cfg.BoxSwingBothRoles
 	return cfg
 }
 

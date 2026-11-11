@@ -913,6 +913,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("isb_target_fill_close", "trader.mentorTuningResolve (D2-G3 OctD2.2-R35/R37, nil \u2192 ON)", func(t mentorTuned) any { return t.ISBTargetFillClose })
 	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
 	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
+	mentorTuningRow("box_swing_both_roles", "trader.mentorTuningResolve (D3-G2 OctD3.3-R25)", func(t mentorTuned) any { return t.BoxSwingBothRoles })
+	mentorTuningRow("box_preopen_lookback_min", "trader.mentorTuningResolve (D3-G1 OctD3.3-R23/R52)", func(t mentorTuned) any { return t.BoxPreOpenLookbackMin })
 	mentorTuningRow("phl_room_multiple", "trader.mentorTuningResolve (D2-G2 OctD2.3-R31, nil \u2192 1)", func(t mentorTuned) any { return t.PHLRoomMultiple })
 	mentorTuningRow("key_level_break_retest", "trader.mentorTuningResolve (LL-2)", func(t mentorTuned) any { return t.KeyLevelBreakRetest })
 	mentorTuningRow("key_level_history_source", "trader.mentorTuningResolve (LL-4)", func(t mentorTuned) any { return t.KeyLevelHistorySource })

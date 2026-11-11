@@ -163,6 +163,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBTargetFillClose:      true,                              // D2-G3 October [OctD2.2-R35/R37 @ 28:40, 30:03]
 			TriggerFromOpen:         true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
+			BoxSwingBothRoles:       true,                              // D3-G2
+			BoxPreOpenLookbackMin:   30,                                // D3-G1
 			PHLMinAbovePriorPts:     0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
@@ -451,5 +453,30 @@ func TestG7PHLMinAboveOldExtremeKnob(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &bad}); c.PHLMinAbovePriorPts != 0 {
 		t.Fatalf("out of range must fail closed to 0, got %v", c.PHLMinAbovePriorPts)
+	}
+}
+
+// TestD3G1Knob - D3-G1: unset = 30, a stored 45 reaches the evaluator, out of range fails closed to the default.
+func TestD3G1Knob(t *testing.T) {
+	v, bad := float64(45), float64(900)
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxPreOpenLookbackMin != 30 {
+		t.Fatalf("unset box_preopen_lookback_min = %v, want 30", c.BoxPreOpenLookbackMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &v}); c.BoxPreOpenLookbackMin != 45 {
+		t.Fatalf("stored box_preopen_lookback_min did not reach the evaluator: %v", c.BoxPreOpenLookbackMin)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxPreOpenLookbackMin: &bad}); c.BoxPreOpenLookbackMin != 30 {
+		t.Fatalf("out of range must fail closed to the default, got %v", c.BoxPreOpenLookbackMin)
+	}
+}
+
+// TestD3G2Knob - D3-G2: unset = true, a stored false reaches the evaluator.
+func TestD3G2Knob(t *testing.T) {
+	v := false
+	if c := tuningTick(t, &store.MentorTuning{}); c.BoxSwingBothRoles != true {
+		t.Fatalf("unset box_swing_both_roles = %v, want true", c.BoxSwingBothRoles)
+	}
+	if c := tuningTick(t, &store.MentorTuning{BoxSwingBothRoles: &v}); c.BoxSwingBothRoles != false {
+		t.Fatalf("stored box_swing_both_roles did not reach the evaluator: %v", c.BoxSwingBothRoles)
 	}
 }

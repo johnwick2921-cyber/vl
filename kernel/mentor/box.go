@@ -113,6 +113,14 @@ type BoxCfg struct {
 	// TouchBandPts: a wick within this of an edge counts as a touch;
 	// default 0.25.
 	TouchBandPts float64
+	// OneRoleSwings (D3-G2): true = the September swing switch that records a
+	// candle that is both a 3-bar swing high and low as a LOW only. The zero
+	// value (false) is October: both roles. Set from Config.BoxSwingBothRoles.
+	OneRoleSwings bool
+	// FlipPermanent (D3-G7): true = the September D14 flip that never restores
+	// (one body escape flips the role for the box's life). The zero value is
+	// October: the flip is reversible. Set from Config.BoxFlipReversible.
+	FlipPermanent bool
 }
 
 // DefaultBoxCfg returns the ruling defaults: 1m regular.
@@ -249,6 +257,14 @@ func boxEscapeOpenMs(bars []market.Kline, old Box, baseCfg BoxCfg) (int64, bool)
 // pairing swing keeps no right-side confirmation (B10 T1 ruling 21:00Z);
 // only the EXTREME is confirmed, by swingConfirmed, at the pairing site.
 func swings3(bars []market.Kline) []swingPairAt {
+	return swings3Opt(bars, false)
+}
+
+// swings3Opt is swings3 with D3-G2's both-roles option: a candle that is both a
+// 3-bar swing low and a 3-bar swing high is recorded as the low AND the high
+// (low first) when both is true; with both false it is the one-role switch (low
+// wins) swings3 has always been.
+func swings3Opt(bars []market.Kline, both bool) []swingPairAt {
 	var seq []swingPairAt
 	for i := 2; i < len(bars); i++ {
 		if bars[i].CloseTime == 0 {
@@ -263,10 +279,12 @@ func swings3(bars []market.Kline) []swingPairAt {
 				hi = bars[j].High
 			}
 		}
-		switch {
-		case bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low:
+		isLow := bars[i].Low == lo && bars[i].Low < bars[i-1].Low && bars[i].Low < bars[i-2].Low
+		isHigh := bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High
+		if isLow {
 			seq = append(seq, swingPairAt{kind: kernel.KindSWGL, price: bars[i].Low, idx: i})
-		case bars[i].High == hi && bars[i].High > bars[i-1].High && bars[i].High > bars[i-2].High:
+		}
+		if isHigh && (!isLow || both) {
 			seq = append(seq, swingPairAt{kind: kernel.KindSWGH, price: bars[i].High, idx: i})
 		}
 	}
@@ -442,7 +460,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 		cfg = DefaultBoxCfg()
 	}
 	tfBars := barsForTF(bars, cfg.TF)
-	seq := swings3(tfBars)
+	seq := swings3Opt(tfBars, !cfg.OneRoleSwings)
 	today := tradingDayKey(now.In(ctime()))
 	// B10 T2 (CTO 2026-10-03): pick the extreme among TODAY's swings only.
 	// The slice is 1500 1m bars since A9; pairing against a yesterday extreme
@@ -799,7 +817,7 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 	if old.Kind == FTGH {
 		role = kernel.KindSWGH
 	}
-	seq := swings3(tfBars)
+	seq := swings3Opt(tfBars, !cfg.OneRoleSwings)
 	var extreme, nearest int
 	if !boxPairPrePHL2Seam {
 		// PHL-2 (phl audit): the new zone is drawn with the SAME pairing as the

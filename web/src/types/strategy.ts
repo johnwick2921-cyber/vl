@@ -466,6 +466,8 @@ export interface MentorTuning {
   isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = ON: the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); false = the September level target
   trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
   rolling_left_break_cancel?: boolean
+  box_swing_both_roles?: boolean // D3-G2 oct round 2
+  box_preopen_lookback_min?: number // D3-G1 oct round 2
   phl_room_multiple?: number
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
   // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]

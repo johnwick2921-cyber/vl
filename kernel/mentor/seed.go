@@ -421,9 +421,9 @@ func (e *Evaluator) seedCarriedBoxes(closed1m []market.Kline, day string, now in
 
 // replayLatchDay replays one trading day's FTGH/FTGL latch (see seedBoxLatch).
 func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[string]Box, []Box) {
-	cfg := e.Cfg.Box
+	cfg := e.withBoxFlags(e.Cfg.Box)
 	if cfg.TF == "" {
-		cfg = DefaultBoxCfg()
+		cfg = e.withBoxFlags(DefaultBoxCfg())
 	}
 	// The first bar a tick of THIS trading day evaluated: the tick's clock is
 	// BarCloseInstant(bar), so the day key is read at that instant.
@@ -471,7 +471,7 @@ func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[str
 		// RTH — it builds from the RTH slice exactly as the tick does
 		// (boxBuildBars), never the full window, and applies the SAME replace
 		// rule (freshRTHReplaces) the tick's latchBoxes applies.
-		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at)
+		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at, preOpenLookbackMs(e.Cfg))
 		if len(latched) < 2 || rthScan {
 			for _, b := range BoxesBuild(boxBuildBars(w, at, e.Cfg), build, time.UnixMilli(at)) {
 				if build.TF != cfg.TF {
@@ -536,8 +536,8 @@ func (e *Evaluator) watermarkBoxes(closed1m []market.Kline, latched map[string]B
 
 // eveningLatched reports whether any latched box formed before the RTH open of
 // the CT day `at` falls on (a candidate for the m429 fresh-RTH replacement).
-func eveningLatched(latched map[string]Box, at int64) bool {
-	open := rthOpenMs(at)
+func eveningLatched(latched map[string]Box, at, lookbackMs int64) bool {
+	open := rthOpenMs(at) - lookbackMs
 	for _, b := range latched {
 		if b.FormedAtMs < open {
 			return true
@@ -550,7 +550,7 @@ func eveningLatched(latched map[string]Box, at int64) bool {
 // past "both roles latched": the knob is ON and a latched box is still an
 // evening box that today's RTH (not yet over at `at`) can replace.
 func (e *Evaluator) freshRTHPending(latched map[string]Box, at int64) bool {
-	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at) {
+	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at, preOpenLookbackMs(e.Cfg)) {
 		return false
 	}
 	t := time.UnixMilli(at).In(ctime())

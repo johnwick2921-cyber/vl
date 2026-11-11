@@ -95,6 +95,8 @@ type mentorTuned struct {
 	KeyLevelDeleteOn1HClose string  // LL-1
 	PHLMinAbovePriorPts     float64 // G7
 	RollingLeftBreakCancel  bool    // D2-G6
+	BoxSwingBothRoles       bool    // D3-G2
+	BoxPreOpenLookbackMin   float64 // D3-G1
 	TriggerFromOpen         bool    // G4
 	ISBTargetFillClose      bool    // D2-G3
 	PHLRoomMultiple         float64 // D2-G2
@@ -146,6 +148,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
+		BoxSwingBothRoles:           d.BoxSwingBothRoles,
+		BoxPreOpenLookbackMin:       d.BoxPreOpenLookbackMin,
 		TriggerFromOpen:             d.TriggerFromOpen,
 		ISBTargetFillClose:          d.ISBTargetFillClose,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
@@ -298,6 +302,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
 	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel) // D2-G6
+	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)           // D3-G2
 	flag(t.TriggerFromOpen, &out.TriggerFromOpen)               // G4
 	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)         // D2-G3
 
@@ -338,8 +343,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
-	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts) // G7
-	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple)          // D2-G2
+	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)     // G7
+	pickPtr(t.BoxPreOpenLookbackMin, 0, 240, &out.BoxPreOpenLookbackMin) // D3-G1
+	pickPtr(t.PHLRoomMultiple, 0, 10, &out.PHLRoomMultiple)              // D2-G2
 	pickPtr(t.PHLTargetShyPts, 0, 50, &out.PHLTargetShyPts)
 	pickPtr(t.ISBOldExtremePts, 0, 20, &out.ISBOldExtremePts)
 	flag(t.NearBoxRoomPHL, &out.NearBoxRoomPHL)
@@ -452,6 +458,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose // LL-1
 	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts         // G7
 	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel   // D2-G6
+	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles             // D3-G2
+	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin     // D3-G1
 	cfg.TriggerFromOpen = t.TriggerFromOpen                 // G4
 	cfg.ISBTargetFillClose = t.ISBTargetFillClose           // D2-G3
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                 // D2-G2

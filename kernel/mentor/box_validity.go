@@ -108,10 +108,10 @@ func (e *Evaluator) carriedBoxesAt(boxes []Box, bars []market.Kline, now int64) 
 		if have {
 			continue
 		}
-		if !boxAnchorInWindow(bars, b, e.Cfg.Box) {
+		if !boxAnchorInWindow(bars, b, e.withBoxFlags(e.Cfg.Box)) {
 			continue // anchor scrolled out of the window: never trust the stale index
 		}
-		refreshBox(bars, &b, e.Cfg.Box)
+		refreshBox(bars, &b, e.withBoxFlags(e.Cfg.Box))
 		boxes = append(boxes, b)
 	}
 	return boxes

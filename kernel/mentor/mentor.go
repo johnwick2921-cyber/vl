@@ -437,6 +437,14 @@ type Config struct {
 	// ON (October); OFF = the per-rung phl_not_higher_low/lower_high refusal only.
 	// Studio JSON: risk_control.mentor_tuning.rolling_left_break_cancel.
 	RollingLeftBreakCancel bool
+	// BoxSwingBothRoles — D3-G2 (oct round 2): a candle that is BOTH a 3-bar swing high and a 3-bar swing low (a big outside bar) is a peak AND a bottom for the box builder. Thu 29 Oct 09:05 (O 29,619 H 29,629.25 L 29,586) is peak 2 of the course's red FTGH 29,621.25-29,632.75 [Oct D3.3 @ 15:46 "lấy cái râu cao nhất của cái đỉnh 1, kéo xuống cái thân gần nhất của cái đỉnh 2" (R25); E11 frame s_02696]. Default ON (October); OFF = the September switch that keeps such a bar as a low only (the pair then falls to the 09:19 high, formed 14 minutes later and 15.5 pts lower).
+	// Studio JSON: risk_control.mentor_tuning.box_swing_both_roles.
+	BoxSwingBothRoles bool
+	// BoxPreOpenLookbackMin — D3-G1 (oct round 2): the FTGH/FTGL pair search for the RTH box starts this many minutes BEFORE the 08:30 open, so a pair whose peaks are both pre-open is the morning box and replaces the overnight pair: the course's own Fri 30 Oct FTGH is peak 1 ~08:00 + peak 2 ~08:29, neither the session extreme
+	// [Oct D3.3 @ 17:13-17:25 "Bên tay trái ... một cái đỉnh, bên tay phải ... 1 cái đỉnh ... song song ... vẽ được 1 cái box" (R23/R24, E3 frames s_00866/s_00977/s_01286); @ 41:28-41:36 "bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai" (R51); @ 42:00 "trước khi Market Open tầm 10 phút thì em coi có ... nếu mà nó có thì em vẽ" (R52)].
+	// Default 30 = the worked example's span (08:00 to 08:30); 0 = today's behaviour (only boxes formed from 08:30 replace the overnight box).
+	// Studio JSON: risk_control.mentor_tuning.box_preopen_lookback_min.
+	BoxPreOpenLookbackMin float64
 	// PHLMinAbovePriorPts — G7 (oct round 2): a PHL/PLH whose entry sits closer than
 	// this many points to the old low (PLH: old high) it stands on is refused
 	// phl_min_above_old_extreme [OctD4.2-R39 @ 36:45 "entry ít nhất ... cao hơn cái
@@ -979,6 +987,8 @@ func DefaultConfig() Config {
 		StopCeilingPts:         25,
 		RoomMultiple:           2,
 		RollingLeftBreakCancel: true,                // D2-G6: October [OctD2.3-R69 @ 78:10]; knob rolling_left_break_cancel=false reverts
+		BoxSwingBothRoles:      true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
+		BoxPreOpenLookbackMin:  30,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open peaks (08:00/08:29) are the morning box; knob box_preopen_lookback_min=0 reverts
 		PHLMinAbovePriorPts:    0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
 		PHLRoomMultiple:        1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
 		HTFGateNewsOnly:        true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)

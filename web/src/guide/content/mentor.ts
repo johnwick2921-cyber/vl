@@ -219,6 +219,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.rolling_left_break_cancel',
     live: true,
   },
+  'Box: a big outside bar is both a peak and a bottom': {
+    settingId: 'risk_control.mentor_tuning.box_swing_both_roles',
+    live: true,
+  },
+  'Box pair: pre-open peaks count': {
+    settingId: 'risk_control.mentor_tuning.box_preopen_lookback_min',
+    live: true,
+  },
   'PHL/PLH minimum distance from the old low': {
     settingId: 'risk_control.mentor_tuning.phl_min_above_old_extreme_pts',
     live: true,
@@ -1718,6 +1726,35 @@ export const mentor: GuideSection = {
           systemDefault: 'on',
           recommended: 'on — October [OctD2.3-R69 @78:10].',
           whenToTouch: 'Only to restore the per-rung refusal: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Box: a big outside bar is both a peak and a bottom',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_swing_both_roles)',
+          what: 'Oct round 2 D3-G2. On Thu 29 Oct the 09:05 candle (O 29,619, H 29,629.25, L 29,586, C 29,588.50) is the highest of its neighbours AND the lowest, and it is peak 2 of the course’s red FTGH 29,621.25–29,632.75: “lấy cái râu cao nhất của cái đỉnh 1, kéo xuống cái thân gần nhất của cái đỉnh 2” [OctD3.3-R25 @15:46; frame s_02696]. ON (default): such a bar counts as a swing high and a swing low in the box builder, so the box forms at 09:06 (29,619.00–29,629.75). OFF: the September switch keeps it as a low only and the pair falls to the 09:19 high (29,605.75–29,629.75, formed 09:20).',
+          trader: 'on — October [OctD3.3-R25].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BoxSwingBothRoles) · kernel/mentor/box.go swings3Opt',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended: 'on — October [OctD3.3-R25 @15:46].',
+          whenToTouch: 'Only to restore the one-role swing switch: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Box pair: pre-open peaks count',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_preopen_lookback_min)',
+          what: "Oct round 2 D3-G1. The course's own FTGH box (Fri 30 Oct, Oct D3.3) is drawn from two PRE-OPEN peaks — peak 1 about 08:00 (high 28,818.25) and peak 2 about 08:29 (body top 28,812.50) — and neither is the session extreme: higher swings stand to the left (06:58, the overnight 03:59 wick). “Bên tay trái mình có thấy một cái đỉnh, bên tay phải … 1 cái đỉnh … Mình vẽ được 1 cái box” [OctD3.3-R23 @17:13]; “bên đây mình đã vẽ được rồi thì nó sẽ valid cho tới sáng ngày mai” [R51 @41:28]; “trước khi Market Open tầm 10 phút thì em coi có … nếu mà nó có thì em vẽ” [R52 @42:00]. N minutes (default 30): the morning RTH box pair is searched from N minutes before 08:30 CT and replaces the overnight pair; 0 = only boxes formed from 08:30 replace it (the earlier behaviour).",
+          trader:
+            '30 — October [OctD3.3-R23/R52]; the worked example spans 08:00 to 08:30.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BoxPreOpenLookbackMin) · kernel/mentor/course_exits.go boxBuildBars / freshRTHReplaces',
+          range: '0–240 minutes (0 = off)',
+          systemDefault: '30',
+          recommended: '30 — October [OctD3.3-R52 @42:00].',
+          whenToTouch: 'Only to restore the build-from-08:30 read: set 0.',
           perSession: 'No — per strategy.',
         },
         {
