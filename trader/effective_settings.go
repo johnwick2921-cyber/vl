@@ -865,7 +865,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("level_max_visits", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.LevelMaxVisits })
 	mentorTuningRow("orb_gate_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.OrbGateEnabled })
 	mentorTuningRow("isb_reverse_ema9_enabled", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.ISBReverseEMA9Enabled })
-	mentorTuningRow("htf_gate_news_only", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.HTFGateNewsOnly })
+	mentorTuningRow("htf_gate_news_only", "trader.mentorTuningResolve (D2-G7 default true)", func(t mentorTuned) any { return t.HTFGateNewsOnly })
 	mentorTuningRow("exec_2m_after_30m", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.Exec2mAfter30m })
 	mentorTuningRow("be_offset_ticks", "trader.mentorTuningResolve → trader.mentorBEOffsetTicks", func(t mentorTuned) any { return t.BEOffsetTicks })
 	mentorTuningRow("day_gate_spent_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateSpentPts })

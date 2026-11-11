@@ -141,9 +141,9 @@ const COPY = {
     es: 'Escalado del disparador: ISB de 5m cruzados → línea de 15m, 15m cruzados → 30m',
   },
   htfNews: {
-    zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（关 = 全天，默认）',
-    en: '4h/1h direction gate only in the news + open windows (OFF = all session, the default)',
-    es: 'Compuerta 4h/1h solo en las ventanas de noticias + apertura (OFF = toda la sesión, por defecto)',
+    zh: '4h/1h 方向闸门仅限新闻 + 开盘窗口（开 = 默认；关 = 全天）',
+    en: '4h/1h direction gate only in the news + open windows (ON = default, October: the 5m is the only big frame; OFF = all session)',
+    es: 'Compuerta 4h/1h solo en las ventanas de noticias + apertura (ON = por defecto; OFF = toda la sesión)',
   },
   exec2m: {
     zh: '执行周期：09:00 CT 后为 2 分钟（08:30–09:00 为 1 分钟）— ISB + PHL/PLH、EMA 9/34、箱体、趋势线与 X8 离场',
@@ -613,7 +613,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   level_max_visits: 3,
   orb_gate_enabled: true,
   isb_reverse_ema9_enabled: true,
-  htf_gate_news_only: false, // m462 (release #59): the 4h/1h gate applies ALL SESSION — D5.1-R9/R11; ON = the old news + open windows
+  htf_gate_news_only: true, // D2-G7 oct round 2: October — the 5m is the only big frame [OctD4.3-R9 @07:28]; the 4h/1h gate = news + open only; OFF = m462 all session (Sept D5.1-R9/R11)
   exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day
   day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,

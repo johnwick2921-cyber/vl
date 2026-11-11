@@ -36,9 +36,7 @@ import (
 // off at 02:38 / 13:30 / 00:36 CT.
 func TestM462DefaultGateIsAllDay(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HTFGateNewsOnly {
-		t.Fatal("m462: HTFGateNewsOnly must default OFF (the 4h/1h gate applies all session, D5.1-R9/R11)")
-	}
+	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: the default is now true (TestD2G7HTFGateOctoberFiveMinOnly); this pins the knob's all-session value
 	for _, at := range []struct {
 		name string
 		ms   int64
@@ -108,6 +106,7 @@ func TestM462HTFEntryCheckCases(t *testing.T) {
 // RED before m462: GateOff=true at every one of these minutes → "" (allowed).
 func TestM462RealTradesRefusedUnderDefault(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	ct := func(y int, mo time.Month, d, hh, mm int) int64 { return auditMs(y, mo, d, hh, mm, 0) }
 	cases := []struct {
 		pos   int
@@ -201,6 +200,7 @@ func m462Entries(ins []Intent, setup string, side Side) int {
 // "isb_htf_conflict" (the 698 shape); case 1 agree trades.
 func TestM462ISBConflictRefusedAllDay(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // the 1m isbFixture read
 	run := func(h HTF) (*Evaluator, []Intent) {
@@ -246,7 +246,15 @@ func TestM462ISBConflictRefusedAllDay(t *testing.T) {
 // m462PHL drives the level PHL fixture of TestHTFGateNewsOnlyTick at 10:05 CT
 // (outside the old windows) under the DEFAULT config with the given HTF.
 func m462PHL(h HTF) (*Evaluator, []Intent) {
+	return m462PHLCfg(h, func(c *Config) { c.HTFGateNewsOnly = false }) // D2-G7: the all-session gate
+}
+
+// m462PHLCfg is m462PHL with a config mutator (round 2 D2-G7: the knob both ways).
+func m462PHLCfg(h HTF, mut func(*Config)) (*Evaluator, []Intent) {
 	cfg := DefaultConfig()
+	if mut != nil {
+		mut(&cfg)
+	}
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	cfg.EMALocationTFMinutes = 0
@@ -318,7 +326,7 @@ func TestM462PHLCasesUnderDefault(t *testing.T) {
 // still rolls.
 func TestM462RollingConflictNamed(t *testing.T) {
 	e, bars, now := m436At(10, 0)
-	e.Cfg.HTFGateNewsOnly = DefaultConfig().HTFGateNewsOnly
+	e.Cfg.HTFGateNewsOnly = false // D2-G7: the all-session value
 	e.State.HTF = m462Conflict(SideLong, SideShort)
 	if n := m436Armed(e.Tick(bars, now)); n != 0 {
 		t.Fatalf("10:00 CT conflict: the rolling long must not arm; armed=%d", n)
@@ -327,7 +335,7 @@ func TestM462RollingConflictNamed(t *testing.T) {
 		t.Fatalf("the rolling conflict sit-out must be named + counted once; ledger %v", e.State.Refusals)
 	}
 	e2, bars2, now2 := m436At(10, 0)
-	e2.Cfg.HTFGateNewsOnly = DefaultConfig().HTFGateNewsOnly
+	e2.Cfg.HTFGateNewsOnly = false // D2-G7: the all-session value
 	e2.State.HTF = m462Conflict(SideLong, SideLong)
 	if n := m436Armed(e2.Tick(bars2, now2)); n != 1 {
 		t.Fatalf("10:00 CT case 1 long: the rolling long must arm; armed=%d ledger %v", n, e2.State.Refusals)
@@ -339,6 +347,7 @@ func TestM462RollingConflictNamed(t *testing.T) {
 func TestM462BoxConflictNamed(t *testing.T) {
 	fixture := func(h HTF) (*Evaluator, []market.Kline, int64) {
 		cfg := DefaultConfig()
+		cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = false
 		cfg.KeyLevelTFMinutes = 1
@@ -392,7 +401,7 @@ func TestM462BoxConflictNamed(t *testing.T) {
 // PHL/PLH by CX-6) at 13:30 CT under the default: conflict → isbrev_htf_conflict.
 func TestM462ReverseISBConflictNamed(t *testing.T) {
 	e, bars, _ := isbReverseFixture(t)
-	e.Cfg.HTFGateNewsOnly = DefaultConfig().HTFGateNewsOnly
+	e.Cfg.HTFGateNewsOnly = false // D2-G7: the all-session value
 	bars = m462ShiftTo(bars, 13, 0)
 	now := bars[len(bars)-1].CloseTime
 	e.State.ORB = ORB{Day: dayStartCT(now), High: 90, Low: 85, Drawn: true, Escaped: SideLong}
@@ -458,6 +467,7 @@ func TestM462SharedFilterBackstop(t *testing.T) {
 // triggers under the new default (trade 715 stays the swing's own call).
 func TestM462SwingExemptUnderDefault(t *testing.T) {
 	cfg := DefaultConfig()
+	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	cfg.Enabled = true
 	bars, now := cx1SwingTape(t)
 	e := New(cfg)

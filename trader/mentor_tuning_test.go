@@ -39,7 +39,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		LevelMaxVisits:         intPtr(5),
 		OrbGateEnabled:         &off,
 		ISBReverseEMA9Enabled:  &off,
-		HTFGateNewsOnly:        &on,
+		HTFGateNewsOnly:        &off,
 		Exec2mAfter30m:         &on,
 		DayGateSpentPts:        420,
 		DayGateTargetCapPts:    12,
@@ -58,7 +58,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 		{"level_max_visits=5", cfg.LevelMaxVisits == 5},
 		{"orb_gate_enabled=false", !cfg.OrbGateEnabled},
 		{"isb_reverse_ema9_enabled=false", !cfg.ISBReverseEMA9Enabled},
-		{"htf_gate_news_only=true (D4.4-11 Studio switch)", cfg.HTFGateNewsOnly},
+		{"htf_gate_news_only=false (stored: the m462 all-session gate; default is true since D2-G7)", !cfg.HTFGateNewsOnly},
 		{"exec_2m_after_30m=true (X5-10 Studio switch)", cfg.Exec2mAfter30m},
 		{"day_gate_spent_pts=420", cfg.DayGateSpentPts == 420},
 		{"day_gate_target_cap_pts=12", cfg.DayGateTargetCapPts == 12},
@@ -114,7 +114,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 		want := mentorTuned{
 			TriggerSchool: 1, PingPongMinGapPts: 50, PingPongCandleMaxPts: 20, PingPongCandleLookback: 30,
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
-			HTFGateNewsOnly:       false,                                              // m462 (release #59): the 4h/1h gate applies ALL SESSION by default (D5.1-R9/R11)
+			HTFGateNewsOnly:       true,                                               // D2-G7 oct round 2: the 4h/1h gate only in news + open by default (October: the 5m is the only big frame, OctD4.3-R9)
 			Exec2mAfter30m:        false,                                              // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day (was ON, X5-10 rule 4 release #31)
 			OrbISBFractionOutside: 0.80,                                               // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
 			DayGateSpentPts:       265, DayGateTargetCapPts: 15, SwingMaxStopPts: 100, // m465 (#60) D5.1-R18: spent line 265

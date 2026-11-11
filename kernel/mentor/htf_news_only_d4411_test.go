@@ -21,8 +21,8 @@ import (
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
 	cfg := DefaultConfig()
-	if cfg.HTFGateNewsOnly {
-		t.Fatal("m462: HTFGateNewsOnly must default OFF (the all-day gate, D5.1-R9/R11); news-only is a stored value only")
+	if !cfg.HTFGateNewsOnly {
+		t.Fatal("D2-G7 oct round 2: HTFGateNewsOnly must default ON (October: the 5m is the only big frame); false = the m462 all-day gate")
 	}
 	cfg.HTFGateNewsOnly = true // the explicitly stored old value
 	// W7 (A9/R7): the 07:20–08:30 news period gates ONLY on a print day; with

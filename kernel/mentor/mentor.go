@@ -449,7 +449,14 @@ type Config struct {
 	PHLMinAbovePriorPts float64
 	RangeGapPts         float64 // mid-range: levels bracketing price within this gap both sides; default 0 = disabled
 
-	// HTFGateNewsOnly — m462 (release #59): false (DEFAULT) = the 4h/1h
+	// HTFGateNewsOnly — D2-G7/D2-G15/D5.1-RR2-01 (oct round 2): DEFAULT TRUE again.
+	// October's only big timeframe is the 5m ("khung 5 phút only", OctD4.3-R9
+	// @ 07:28; the slide's 1H line is ignored, R2 @ 01:56) and no October lesson
+	// states an all-session 4h/1h gate or a 4h/1h-conflict sit-out (grep of every
+	// October note; the FINAL report's "Oct D5.1-R9" was September's, reread
+	// D5.1-RR2-01). So the gate applies only in the news period and the 08:30-09:30
+	// open window. false = the m462 all-session gate (September D5.1-R9/R11).
+	// m462 (release #59) text follows — it describes the false value: false = the 4h/1h
 	// direction gate applies ALL SESSION to every intraday setup. The final
 	// review D5.1 overrides the D4.4 "news first" caveat: D5.1-R9 [D5.1 p1
 	// @08:46–09:13, @11:27] "Lúc nào khi anh chị open ra, không cần phải là
@@ -945,7 +952,7 @@ func DefaultConfig() Config {
 		RollingLeftBreakCancel: true,                // D2-G6: October [OctD2.3-R69 @ 78:10]; knob rolling_left_break_cancel=false reverts
 		PHLMinAbovePriorPts:    0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
 		PHLRoomMultiple:        1,                   // D2-G2: October 1:1 [OctD2.3-R31 @ 27:33]; knob phl_room_multiple=2 reverts
-		HTFGateNewsOnly:        false,               // m462: the 4h/1h gate applies ALL SESSION (D5.1-R9/R11); true = the old D4.4-11 news + open windows
+		HTFGateNewsOnly:        true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
 		NearBoxRoomMultiple:    2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
 		NearBoxRoomPHL:         true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
 		NearBoxBetweenExempt:   false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
