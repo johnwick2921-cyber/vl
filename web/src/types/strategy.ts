@@ -462,6 +462,7 @@ export interface MentorTuning {
   // levels audit LL-1 ['off'] — October keeps a key level a 1H body closed through
   // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
   key_level_delete_on_1h_close?: 'on' | 'off'
+  phl_min_above_old_extreme_pts?: number
   rolling_left_break_cancel?: boolean
   phl_room_multiple?: number
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old

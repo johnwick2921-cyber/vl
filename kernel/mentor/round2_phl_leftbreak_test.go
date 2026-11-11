@@ -6,7 +6,7 @@ import (
 )
 
 // D2-G6 + reread D2.3b-F3 (oct round 2) — the WE12 cancel demo, Thu 10-29
-// 21:10-21:22 CT [OctD2.3-R69 @ 1:18:10, frames s_04713 / s_04718 / s_04720]:
+// 21:10-21:22 CT [OctD2.3-R69 @ 78:10, frames s_04713 / s_04718 / s_04720]:
 // the old-high ray 28,876.50 (the 20:58 swing high, H 28,876.25) is broken by
 // a green candle whose body CLOSES above it (the 21:12 candle, C 28,880.75;
 // the next bar opens 28,880.25). "Nó break cái đỉnh này rồi, thì [lower high]

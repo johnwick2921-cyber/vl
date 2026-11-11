@@ -3831,6 +3831,8 @@ func phlRefusalKey(reason string) string {
 		return "phl_not_higher_low"
 	case strings.HasPrefix(reason, "not a lower high"):
 		return "phl_not_lower_high"
+	case strings.HasPrefix(reason, "entry only "):
+		return "phl_min_above_old_extreme"
 	case strings.HasPrefix(reason, "too close to the old extreme"):
 		return "phl_too_close_to_extreme"
 	case strings.HasPrefix(reason, "old extreme not on the target side"):

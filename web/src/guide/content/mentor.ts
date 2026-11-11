@@ -211,6 +211,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.rolling_left_break_cancel',
     live: true,
   },
+  'PHL/PLH minimum distance from the old low': {
+    settingId: 'risk_control.mentor_tuning.phl_min_above_old_extreme_pts',
+    live: true,
+  },
   'Key level: delete on a 1H body close': {
     settingId: 'risk_control.mentor_tuning.key_level_delete_on_1h_close',
     live: true,
@@ -1667,14 +1671,29 @@ export const mentor: GuideSection = {
           label: 'Rolling ladder ends on a close through the left extreme',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.rolling_left_break_cancel)',
-          what: 'Oct round 2 D2-G6. The mentor’s cancel demo (Thu 29 Oct, WE12): the old-high ray 28,876.50 sits on the 20:57 swing high; a green candle closes above it (the next bar opens 28,880.25) and he says “nó break cái đỉnh này rồi, thì [lower high] gì tầm này nữa” — there is no PLH any more [OctD2.3-R69 @1:18:10; frames s_04713, s_04718, s_04720] (mirror for a PHL under its higher low). on (default, October) = a 1m candle that CLOSES beyond the ladder’s left extreme (the lower high / higher low the leg started from) ends the rolling ladder: the resting stop is cancelled and the drop is counted rolling_left_extreme_broken; a wick that closes back inside is not a break, and a new leg reads a new left extreme. off = the earlier behaviour: each rung is refused phl_not_lower_high / phl_not_higher_low on its own and the ladder restarts on the next counter-trend candle.',
+          what: 'Oct round 2 D2-G6. The mentor’s cancel demo (Thu 29 Oct, WE12): the old-high ray 28,876.50 sits on the 20:57 swing high; a green candle closes above it (the next bar opens 28,880.25) and he says “nó break cái đỉnh này rồi, thì [lower high] gì tầm này nữa” — there is no PLH any more [OctD2.3-R69 @78:10; frames s_04713, s_04718, s_04720] (mirror for a PHL under its higher low). on (default, October) = a 1m candle that CLOSES beyond the ladder’s left extreme (the lower high / higher low the leg started from) ends the rolling ladder: the resting stop is cancelled and the drop is counted rolling_left_extreme_broken; a wick that closes back inside is not a break, and a new leg reads a new left extreme. off = the earlier behaviour: each rung is refused phl_not_lower_high / phl_not_higher_low on its own and the ladder restarts on the next counter-trend candle.',
           trader: 'on — October [OctD2.3-R69].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingLeftBreakCancel) · kernel/mentor/rolling_phl.go rollingPHLTick',
           range: 'on / off',
           systemDefault: 'on',
-          recommended: 'on — October [OctD2.3-R69 @1:18:10].',
+          recommended: 'on — October [OctD2.3-R69 @78:10].',
           whenToTouch: 'Only to restore the per-rung refusal: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'PHL/PLH minimum distance from the old low',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.phl_min_above_old_extreme_pts)',
+          what: 'Oct round 2 G7. Oct D4.2 [@36:45–40:20]: the PHL entry must be above the old low it stands on — “nên cho nó cao hơn tầm 15, 15 điểm” [R41] — and in the Sun 01 Nov example an entry 6.50 pts above the old low “em cũng không gọi nó là cái Potential High Low” [R42]. The mentor calls the 15 experience, not a hard law [R39]. 15 = a PHL/PLH (level touch or rolling ladder) whose entry is less than 15 pts from the old low it stands on (PLH: old high) is refused phl_min_above_old_extreme. The Oct D2.3 worked trades (WE6, WE7, WE10) all still arm with it on. 0 (default) = off, the earlier behaviour (only the flat-low and higher-low checks): the mentor calls 15 experience, not law [R39], so it ships as a knob until he rules.',
+          trader:
+            '0 (off) — the mentor calls 15 experience [OctD4.2-R39]; mentor question.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PHLMinAbovePriorPts) · kernel/mentor/phl.go phlPLHR2',
+          range: '0–100 (0 = off)',
+          systemDefault: '15',
+          recommended: '15 — October [OctD4.2-R41 @40:14].',
+          whenToTouch: 'On a mentor answer — 0 restores the earlier behaviour.',
           perSession: 'No — per strategy.',
         },
         {

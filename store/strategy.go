@@ -2230,10 +2230,16 @@ type MentorTuning struct {
 	// [OctD5.2-R19/R20 @07:20–07:42]); "on" — the deck / September deletion
 	// (slide 31 step 4). Mentor question.
 	KeyLevelDeleteOn1HClose string `json:"key_level_delete_on_1h_close,omitempty"`
+	// PHLMinAbovePriorPts — G7 (oct round 2): nil → 0 (OFF, today's behaviour; the course's figure is 15). A PHL/PLH whose entry sits
+	// closer than this many points to the old low (PLH: old high) it stands on is
+	// refused phl_min_above_old_extreme [OctD4.2-R39/R41/R42 @ 36:45–40:20]. The
+	// mentor calls 15 experience, not law [OctD4.2-R39 @ 36:45], so it ships as a
+	// knob: set 15 for the course's figure.
+	PHLMinAbovePriorPts *float64 `json:"phl_min_above_old_extreme_pts,omitempty"`
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): nil → ON (October). A 1m candle
 	// that CLOSES beyond the rolling ladder's left extreme (the higher low / lower
 	// high the leg to the old extreme started from) ends the ladder, counted
-	// rolling_left_extreme_broken [OctD2.3-R69 @ 1:18:10]. false = the per-rung
+	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
 	// phl_not_higher_low / phl_not_lower_high refusal only.
 	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks

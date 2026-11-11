@@ -128,7 +128,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
 			TrendlineBetweenBoxes: true, // CE-11/B13 — course-defaults-30 [D3.2 p2 @10:56–11:04]
-			FlagWallTarget:        true, // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			FlagWallTarget:        true,  // CE-11 — course-defaults-30 [X9 @05:59–06:12]
 			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
@@ -159,7 +159,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLOldExtreme1mK:        4,
 			KeyLevelDeleteOn1HClose: mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 			PHLRoomMultiple:         1,                                 // D2-G2 October 1:1
-			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69]
+			RollingLeftBreakCancel:  true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
+			PHLMinAbovePriorPts:     0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
 			KeyLevelBreakRetest:     mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelHistorySource:   mentor.KeyLevelHistoryOwn,         // LL-4
 		}
@@ -432,5 +433,20 @@ func TestD2G6RollingLeftBreakCancelKnob(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{RollingLeftBreakCancel: &off}); c.RollingLeftBreakCancel {
 		t.Fatal("stored rolling_left_break_cancel=false did not reach the evaluator")
+	}
+}
+
+// TestG7PHLMinAboveOldExtremeKnob — G7: unset = 15, a stored 0 turns it off,
+// a stored 22 reaches the evaluator, out of range fails closed to 15.
+func TestG7PHLMinAboveOldExtremeKnob(t *testing.T) {
+	v, bad := 22.0, 500.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLMinAbovePriorPts != 0 {
+		t.Fatalf("unset phl_min_above_old_extreme_pts = %v, want 0 (off)", c.PHLMinAbovePriorPts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &v}); c.PHLMinAbovePriorPts != 22 {
+		t.Fatalf("stored 22 → %v", c.PHLMinAbovePriorPts)
+	}
+	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &bad}); c.PHLMinAbovePriorPts != 0 {
+		t.Fatalf("out of range must fail closed to 0, got %v", c.PHLMinAbovePriorPts)
 	}
 }

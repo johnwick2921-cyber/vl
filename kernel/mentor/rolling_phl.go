@@ -332,7 +332,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// 3b. D2-G6 / D2.3b-F3 (oct round 2): a 1m candle that CLOSED beyond the
 	// ladder's left extreme after the old extreme formed ends the ladder — "nó
 	// break cái đỉnh này rồi, thì [lower high] gì tầm này nữa" [OctD2.3-R69 @
-	// 1:18:10; frames s_04713/s_04718/s_04720: the old-high ray 28,876.50 broken by
+	// 78:10; frames s_04713/s_04718/s_04720: the old-high ray 28,876.50 broken by
 	// a candle that closes ~28,880]. Named once per exec candle and the resting
 	// rung cancelled; the ladder stays over for as long as that close stays on
 	// the tape after the old extreme — a NEW old extreme (a new leg) reads a new
@@ -341,7 +341,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	if e.Cfg.RollingLeftBreakCancel {
 		if left, okLeft := priorLeftExtremeOnTape(bars, ex, oldExtremes); okLeft && leftExtremeClosedThrough(bars, ex.idx, left, side) {
 			e.rollingRecordOncePerCandle(execCur, "rolling_left_extreme_broken")
-			return append(out, e.rollingCancel(st, "a candle closed beyond the left extreme — the rolling ladder is over [OctD2.3-R69 @ 1:18:10]")...)
+			return append(out, e.rollingCancel(st, "a candle closed beyond the left extreme — the rolling ladder is over [OctD2.3-R69 @ 78:10]")...)
 		}
 	}
 
