@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"bufio"
+	"fmt"
 	"math"
 	"os"
 	"strings"
@@ -155,4 +156,151 @@ func TestStopLadderRealTapeEntries(t *testing.T) {
 		t.Logf("%s: entries OFF %d, ON %d", c.name, len(off), len(on))
 	}
 	t.Logf("ladder-band entries across the four tapes: %d", band)
+}
+
+// stopLadderEntry is one non-swing entry the production evaluator emitted.
+type stopLadderEntry struct {
+	at          int
+	setup, side string
+	risk        float64
+}
+
+// The four real tapes only ever carry 4.5–17.5-pt entry stops (probe
+// 2026-11-10), so none reaches the course's 20 / 30 / 40 bands. The test
+// therefore scales the three band edges by the SAME factor 0.4 (20→8, 30→12,
+// 40→16) and replays the REAL, unscaled tapes: a real stop of s pts stands for
+// s/0.4 course pts (11.5→28.75, 13→32.5, 17.5→43.75). The trader side of the
+// same mapping is TestStopLadderRealTapeStopSizes (trader package).
+const (
+	stopLadderScaleOff  = 8.0  // 20 · 0.4 — the pre-ladder ceiling
+	stopLadderScaleMid  = 12.0 // 30 · 0.4 — top of the reduced (3) band
+	stopLadderScaleWide = 16.0 // 40 · 0.4 — mentor_wide_stop_max_pts
+)
+
+// stopLadderTapeRun replays one case's real tape through e.Tick with the
+// scaled ceilings. unbounded lifts every ceiling to 1000 (what the evaluator
+// WOULD enter with no refusal at all).
+func stopLadderTapeRun(t *testing.T, c m434Case, ladder, unbounded bool) []stopLadderEntry {
+	t.Helper()
+	old := flatNearScale
+	flatNearScale = c.scale
+	defer func() { flatNearScale = old }()
+	bars := c.tape(t)
+	from := c.from
+	if from < 0 {
+		for i := range bars {
+			if bars[i].OpenTime >= r22Open1013 {
+				from = i
+				break
+			}
+		}
+	}
+	cfg := c.cfg()
+	cfg.CourseExits.StopSizeLadder = ladder
+	cfg.StopCeilingPts, cfg.CourseExits.ISBMaxStopPts, cfg.CourseExits.WideStopMaxPts = stopLadderScaleOff, stopLadderScaleOff, stopLadderScaleWide
+	if unbounded {
+		cfg.StopCeilingPts, cfg.CourseExits.ISBMaxStopPts, cfg.CourseExits.WideStopMaxPts = 1000, 1000, 1000
+	}
+	e := New(cfg)
+	var out []stopLadderEntry
+	for i := from; i < len(bars); i++ {
+		lo := i + 1 - 1500
+		if lo < 0 {
+			lo = 0
+		}
+		for _, in := range e.Tick(bars[lo:i+1], BarCloseInstant(bars[i])) {
+			switch in.Action {
+			case ActionMoveStopBE:
+				e.SwingBEApplied(in.ArmID)
+			case ActionClosePosition:
+				e.SwingEnded(in.ArmID)
+			}
+			if (in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry) && in.Setup != "SWING4H" {
+				out = append(out, stopLadderEntry{i, in.Setup, string(in.Side), math.Abs(in.Price - in.Stop)})
+			}
+		}
+	}
+	return out
+}
+
+// stopLadderBands counts entries per scaled band: (off,mid], (mid,wide], >wide.
+func stopLadderBands(es []stopLadderEntry) (mid, wide, over int) {
+	for _, x := range es {
+		switch {
+		case x.risk > stopLadderScaleWide+1e-6:
+			over++
+		case x.risk > stopLadderScaleMid+1e-6:
+			wide++
+		case x.risk > stopLadderScaleOff+1e-6:
+			mid++
+		}
+	}
+	return
+}
+
+// stopLadderWidenedProblems is the contract. got is the run under test
+// (ladder ON in production, forced OFF in the negative test); unbounded is the
+// same tapes with no ceiling. Returns every violation.
+func stopLadderWidenedProblems(got, unbounded []stopLadderEntry) []string {
+	var p []string
+	gm, gw, gover := stopLadderBands(got)
+	um, uw, uo := stopLadderBands(unbounded)
+	if um == 0 || uw == 0 || uo == 0 {
+		p = append(p, fmt.Sprintf("the real tapes do not reach every band unbounded (%d/%d/%d)", um, uw, uo))
+	}
+	if gm == 0 {
+		p = append(p, "no admitted entry in the (20,30] course band (size-3 band)")
+	}
+	if gw == 0 {
+		p = append(p, "no admitted entry in the (30,40] course band (wide, 1 MNQ band)")
+	}
+	if gover != 0 {
+		p = append(p, "an entry above the wide max was admitted — it must be refused")
+	}
+	return p
+}
+
+// TestStopLadderRealTapeWidenedStops: the ladder-ON half of the test above
+// could not fail (no real entry exceeds 17.5 pts). Here the real tapes run
+// with the band edges scaled (see the constants) so real entries land in the
+// (20,30], (30,40] and above-40 bands: the PRODUCTION evaluator (e.Tick) must
+// admit the first two and refuse the last with the ladder ON, and with it OFF
+// admit none above the pre-ladder ceiling [OctD2.2-R73 @01:12:32, OctD2.3-R47
+// @48:12].
+func TestStopLadderRealTapeWidenedStops(t *testing.T) {
+	var on, off, unbounded []stopLadderEntry
+	for _, c := range m434Cases() {
+		on = append(on, stopLadderTapeRun(t, c, true, false)...)
+		off = append(off, stopLadderTapeRun(t, c, false, false)...)
+		unbounded = append(unbounded, stopLadderTapeRun(t, c, true, true)...)
+	}
+	if p := stopLadderWidenedProblems(on, unbounded); len(p) != 0 {
+		t.Fatalf("ladder ON: %v", p)
+	}
+	if m, w, o := stopLadderBands(off); m+w+o != 0 {
+		t.Fatalf("ladder OFF admitted a stop above the pre-ladder ceiling (%d/%d/%d)", m, w, o)
+	}
+	m, w, o := stopLadderBands(on)
+	um, uw, uo := stopLadderBands(unbounded)
+	t.Logf("real tapes, ladder ON admitted mid=%d wide=%d over=%d; unbounded mid=%d wide=%d over=%d", m, w, o, um, uw, uo)
+	for _, x := range unbounded {
+		if x.risk > stopLadderScaleOff+1e-6 {
+			t.Logf("  row %d %s %s stop %.2f (course-equivalent %.2f)", x.at, x.setup, x.side, x.risk, x.risk/0.4)
+		}
+	}
+}
+
+// TestStopLadderRealTapeWidenedStopsFailsOff proves the test above can fail:
+// with the ladder forced OFF the same contract reports violations.
+func TestStopLadderRealTapeWidenedStopsFailsOff(t *testing.T) {
+	var forcedOff, unbounded []stopLadderEntry
+	for _, c := range m434Cases() {
+		forcedOff = append(forcedOff, stopLadderTapeRun(t, c, false, false)...)
+		unbounded = append(unbounded, stopLadderTapeRun(t, c, true, true)...)
+	}
+	p := stopLadderWidenedProblems(forcedOff, unbounded)
+	if len(p) == 0 {
+		t.Fatal("the widened-stop contract passes with the ladder forced OFF — the test cannot fail")
+	}
+	t.Logf("ladder forced OFF reports: %v", p)
 }

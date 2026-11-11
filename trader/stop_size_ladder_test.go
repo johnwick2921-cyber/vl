@@ -181,3 +181,104 @@ func TestStopLadderTableOrder(t *testing.T) {
 		}
 	}
 }
+
+// TestStopLadderWideNeverAboveReduced — review P3 #1: mentor_wide_stop_contracts
+// had no upper bound against the reduced tier, so a WIDER stop could be sized
+// BIGGER than a narrower one (wide 5, reduced 3: a 25-pt stop 3, a 35-pt stop
+// 5). The wide tier is min(wide, reduced) [OctD2.2-R49 @40:47 "giảm size only"].
+func TestStopLadderWideNeverAboveReduced(t *testing.T) {
+	for _, tc := range []struct {
+		name          string
+		rc            store.RiskControlConfig
+		stop          float64
+		want          int
+		wantClampNote bool
+	}{
+		{"wide 5 > reduced 3: ISB 35 → 3", store.RiskControlConfig{MentorMode: true, MentorWideStopContracts: 5}, 35, 3, true},
+		{"wide 5 > reduced 3: ISB 25 → 3 (the narrower stop, same size)", store.RiskControlConfig{MentorMode: true, MentorWideStopContracts: 5}, 25, 3, false},
+		{"wide 3 > reduced 2: BOX 38 → 2", store.RiskControlConfig{MentorMode: true, MentorWideStopContracts: 3, MentorReducedContracts: 2}, 38, 2, true},
+		{"wide 2 < reduced 3: ISB 35 → 2 (the owner's smaller wide knob wins)", store.RiskControlConfig{MentorMode: true, MentorWideStopContracts: 2}, 35, 2, false},
+		{"default wide 1: ISB 35 → 1", store.RiskControlConfig{MentorMode: true}, 35, 1, false},
+	} {
+		at := mentoredTrader(t, tc.rc)
+		setup := "ISB"
+		if strings.HasPrefix(tc.name, "wide 3") {
+			setup = "BOX"
+		}
+		why, got := ladderRun(t, at, ladderIntent(setup, tc.stop))
+		if why != "" || got.Contracts != tc.want {
+			t.Fatalf("%s: why=%q got %d (%s — %s), want %d", tc.name, why, got.Contracts, got.Tier, got.Why, tc.want)
+		}
+		if tc.wantClampNote && !strings.Contains(got.Why, "capped at the reduced tier") {
+			t.Fatalf("%s: Why %q must say the wide tier was capped at the reduced tier", tc.name, got.Why)
+		}
+	}
+	// monotone: across 21..40 pts the size never rises with the stop.
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWideStopContracts: 5})
+	prev := 1 << 30
+	for s := 21.0; s <= 40; s++ {
+		why, got := ladderRun(t, at, ladderIntent("ISB", s))
+		if why != "" {
+			t.Fatalf("ISB %.0f refused: %s", s, why)
+		}
+		if got.Contracts > prev {
+			t.Fatalf("ISB %.0f sized %d, bigger than the narrower stop's %d", s, got.Contracts, prev)
+		}
+		prev = got.Contracts
+	}
+}
+
+// TestStopLadderWideReasonTruthful — review P3 #2: the wide-tier size reason
+// said the stop was "≤ the 40-pt mentor_wide_stop_max_pts" even when a stored
+// mentor_isb_max_pts above the wide max let a 55-pt stop through.
+func TestStopLadderWideReasonTruthful(t *testing.T) {
+	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	_, got := ladderRun(t, at, ladderIntent("ISB", 35))
+	if !strings.Contains(got.Why, "≤ the 40-pt mentor_wide_stop_max_pts") {
+		t.Fatalf("ISB 35 within the wide max: Why %q must keep the ≤ 40-pt statement", got.Why)
+	}
+	atHi := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorISBMaxPts: 60})
+	why, got := ladderRun(t, atHi, ladderIntent("ISB", 55))
+	if why != "" || got.Contracts != 1 {
+		t.Fatalf("stored isb_max 60, ISB 55: why=%q got %d, want 1", why, got.Contracts)
+	}
+	if strings.Contains(got.Why, "≤ the 40-pt") || strings.Contains(got.Why, "at or under") {
+		t.Fatalf("ISB 55 above the 40-pt wide max: Why %q claims it is within the wide max", got.Why)
+	}
+	if !strings.Contains(got.Why, "above the 40-pt mentor_wide_stop_max_pts") || !strings.Contains(got.Why, "mentor_isb_max_pts") {
+		t.Fatalf("ISB 55: Why %q must say it is above the wide max and admitted by the stored ceiling", got.Why)
+	}
+}
+
+// TestStopLadderRealTapeStopSizes — the trader half of the real-tape widened
+// stops (kernel/mentor TestStopLadderRealTapeWidenedStops). The real entries
+// stops from the four tapes (rows named in that test's log) are read at the
+// course scale 1/0.4: 11.5→28.75, 13→32.5, 14→35, 17.5→43.75. Through the
+// production gate + size call: (20,30] → 3, (30,40] → 1, above 40 → refused
+// at R8; with the ladder OFF the same stops are refused (R8 at 20/25) —
+// forced OFF this test fails.
+func TestStopLadderRealTapeStopSizes(t *testing.T) {
+	on := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+	off := false
+	offAT := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorStopSizeLadder: &off})
+	for _, tc := range []struct {
+		setup string
+		stop  float64 // course points = real tape stop / 0.4
+		want  int     // 0 = refused
+	}{
+		{"ISB", 28.75, 3}, {"ISB", 29.375, 3}, {"ISB", 32.5, 1}, {"PLH", 35, 1}, {"ISB", 34.375, 1},
+		{"PLH", 40.625, 0}, {"ISB", 43.75, 0},
+	} {
+		why, got := ladderRun(t, on, ladderIntent(tc.setup, tc.stop))
+		if tc.want == 0 {
+			if !strings.HasPrefix(why, "R8:") {
+				t.Fatalf("%s %.2f ladder ON: want R8 refusal, got why=%q size=%d", tc.setup, tc.stop, why, got.Contracts)
+			}
+		} else if why != "" || got.Contracts != tc.want {
+			t.Fatalf("%s %.2f ladder ON: why=%q got %d, want %d", tc.setup, tc.stop, why, got.Contracts, tc.want)
+		}
+		if w, _ := ladderRun(t, offAT, ladderIntent(tc.setup, tc.stop)); !strings.HasPrefix(w, "R8:") {
+			t.Fatalf("%s %.2f ladder OFF: want the pre-ladder R8 refusal, got %q", tc.setup, tc.stop, w)
+		}
+	}
+}

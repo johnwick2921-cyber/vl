@@ -194,8 +194,21 @@ func mentorStopLadderCap(in mentorTierInputs, choice mentorSizeChoice, reduced, 
 			limit = mentorWideStopContractsDefault
 		}
 		tier = "stop_ladder_wide"
-		why = fmt.Sprintf("stop %.1f pts above 30 (≤ the %g-pt mentor_wide_stop_max_pts) → %d MNQ, the target unchanged [mentor_stop_size_ladder / mentor_wide_stop_contracts; OctD2.3-R47 @48:12 \"40 điểm… Trade vẫn được. 1 MNQ\"; OctD2.2-R49 @40:47]",
-			in.StopPts, wideMax, limit)
+		capNote := ""
+		if reduced > 0 && limit > reduced {
+			// A wider stop is never sized BIGGER than a narrower one: the wide tier
+			// is min(wide, reduced) [OctD2.2-R49 @40:47 "giảm size only"].
+			limit = reduced
+			capNote = fmt.Sprintf(", capped at the reduced tier %d (mentor_wide_stop_contracts is above it)", reduced)
+		}
+		var rangeNote string
+		if in.StopPts <= wideMax {
+			rangeNote = fmt.Sprintf("≤ the %g-pt mentor_wide_stop_max_pts", wideMax)
+		} else {
+			rangeNote = fmt.Sprintf("above the %g-pt mentor_wide_stop_max_pts, admitted by the stored mentor_isb_max_pts / stop ceiling (the ladder never narrows a setup's ceiling)", wideMax)
+		}
+		why = fmt.Sprintf("stop %.1f pts above 30 (%s) → %d MNQ%s, the target unchanged [mentor_stop_size_ladder / mentor_wide_stop_contracts; OctD2.3-R47 @48:12 \"40 điểm… Trade vẫn được. 1 MNQ\"; OctD2.2-R49 @40:47]",
+			in.StopPts, rangeNote, limit, capNote)
 	}
 	if limit > maxContracts {
 		limit = maxContracts
