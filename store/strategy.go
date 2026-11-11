@@ -2226,11 +2226,13 @@ type MentorTuning struct {
 	// [OctD5.2-R20/R24/R25 @07:42, 13:35, 14:16]; "off" — the September
 	// "invalid, ISB-only for the day" [D5.2 p1 @19:44–20:25].
 	KeyLevelBreakRetest string `json:"key_level_break_retest,omitempty"`
-	// levels audit LL-1: "off" (unset) — October keeps a key level a 1H RTH
-	// body closed through ("Key Level nó là quá khứ" [OctD5.2-R15 @04:44]; the
-	// WE3 level 27,997.75 is traded months after a 1H body crossed it
-	// [OctD5.2-R19/R20 @07:20–07:42]); "on" — the deck / September deletion
-	// (slide 31 step 4). Mentor question.
+	// levels audit LL-1: "off" (unset) — a key level a 1H RTH body closed
+	// through stays drawn. The course states only "draw as many as you like…
+	// Key Level nó là quá khứ" [OctD5.2-R15 @04:44] and never mentions a
+	// deletion; keeping the level is an INFERENCE [B] from his drawn stack and
+	// the WE3 quiz level 27,997.75 (a quiz, not a trade), both crossed by a 1H
+	// body long before [OctD5.2-R19/R20 @07:20–07:42]; "on" — the deck /
+	// September deletion (slide 31 step 4). Mentor question.
 	KeyLevelDeleteOn1HClose string `json:"key_level_delete_on_1h_close,omitempty"`
 	// PHLMinAbovePriorPts — G7 (oct round 2): nil → 0 (OFF, today's behaviour; the course's figure is 15). A PHL/PLH whose entry sits
 	// closer than this many points to the old low (PLH: old high) it stands on is

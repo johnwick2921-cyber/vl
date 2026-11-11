@@ -266,11 +266,15 @@ type Config struct {
 	KeyLevelRTHOnly   bool    // walk RTH candles only; default true
 	KeyLevelPrunePts  float64 // prune pairs closer than this, keep the more recent; default 20 [D5.3 p1 @ 16:08–16:44]
 	// KeyLevelDeleteOn1HClose — levels audit LL-1. "off" (default, October):
-	// a key level SURVIVES a 1H RTH candle whose body closes through it — the
-	// mentor draws a line at every colour change, "vẽ bao nhiêu tùy thích… Key
-	// Level nó là quá khứ" [OctD5.2-R13..R16 @04:10–07:12, R15 @04:44], and
-	// trades the 11-03 19:08 retest of 27,997.75, a level a 1H body crossed on
-	// 07-29 [OctD5.2-R19/R20 @07:20–07:42, WE3 @09:12–10:05]. "on": the deck /
+	// a key level SURVIVES a 1H RTH candle whose body closes through it. What
+	// the course STATES: the mentor draws a line at every colour change, "vẽ
+	// bao nhiêu tùy thích… Key Level nó là quá khứ" [OctD5.2-R13..R16
+	// @04:10–07:12, R15 @04:44]; October never says a body close deletes a
+	// level, nor that it does not. INFERENCE [B]: his drawn 11-03 stack holds
+	// lines a 1H body crossed long before (WE1 @03:37–07:12) and the WE3 quiz
+	// level 27,997.75 is a level a 1H body crossed on 07-29 [OctD5.2-R19/R20
+	// @07:20–07:42, WE3 @09:12–10:05; a quiz, not a trade], so the deck's
+	// deletion is read as September-only. Mentor question. "on": the deck /
 	// September rule, "Khi nến 1H đóng cửa XUYÊN level đó, thì lúc đó sẽ xóa
 	// level đó đi" (slide 31 step 4) — levelDeletedBy1HBody. The 20-pt
 	// keep-the-newer prune applies either way. Mentor question (LL-1).

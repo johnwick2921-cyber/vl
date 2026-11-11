@@ -373,7 +373,7 @@ type Evaluator struct {
 	// emaLocAlias (levels audit LL-6, transient, set per tick before the touch
 	// loop): the location-gate line ema34_htf is the SAME number as the ema34
 	// line this tick (EMALocationTFMinutes == EMATFMinutes, the default 1) — one
-	// line [OctD5.2-R9 @03:37], so its wrong-way first touch is ONE invalidation.
+	// line [OctD5.3-R9 @02:00], so its wrong-way first touch is ONE invalidation.
 	emaLocAlias bool
 	// notes are the "changed on this tick" lines (release #22 LINES-RESTART:
 	// a 4h/1h trigger move, a box latched or cleared, a trendline turning

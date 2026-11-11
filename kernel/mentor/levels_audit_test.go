@@ -78,9 +78,11 @@ func llLevelAt(ls []Level, at int64) (Level, bool) {
 // TestLL1OctoberKeepsKeyLevelsThroughA1HBodyClose — levels audit LL-1 (P1).
 // October: the mentor walks the 1h RTH chart and draws a line at every colour
 // change, "vẽ bao nhiêu tùy thích… Key Level nó là quá khứ" [OctD5.2-R13..R16
-// @04:10–07:12, R15 @04:44] and trades the 11-03 19:08 retest of 27,997.75, a
-// level a 1H body crossed on 07-29 [WE3 @09:12–10:05]. The deck's "nến 1H đóng
-// cửa XUYÊN level đó … xóa level đó đi" (slide 31 step 4) is September.
+// @04:10–07:12, R15 @04:44]; the course never mentions a deletion, and his
+// stack and the WE3 quiz level 27,997.75 (not a trade) hold levels a 1H body
+// crossed long before [WE3 @09:12–10:05], so keeping them is an inference [B].
+// The deck's "nến 1H đóng cửa XUYÊN level đó … xóa level đó đi" (slide 31
+// step 4) is September.
 // Production SeedFull over the live 11-04 seed candles: by default every line
 // above is LIVE; the knob key_level_delete_on_1h_close=on restores the deck.
 func TestLL1OctoberKeepsKeyLevelsThroughA1HBodyClose(t *testing.T) {
@@ -164,7 +166,7 @@ func TestLL1TickKeepsTheLevelThe1430BodyCrossed(t *testing.T) {
 }
 
 // TestLL6EMA34AliasIsInvalidatedOnce — levels audit LL-6 (P3). The EMA 34 of an
-// intraday trade is ONE line, the 1m EMA 34 [OctD5.2-R9 @03:37]; with the
+// intraday trade is ONE line, the 1m EMA 34 [OctD5.3-R9 @02:00]; with the
 // default EMALocationTFMinutes = EMATFMinutes = 1 the location-gate line
 // ema34_htf IS the ema34 line (emaLocationLevel returns State.EMA34). Production
 // Tick over the real 11-01 evening (MNQ 12-26 1m, seeded at 17:00 CT from

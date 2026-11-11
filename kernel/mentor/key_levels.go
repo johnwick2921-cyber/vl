@@ -27,9 +27,11 @@ import (
 //     level is deleted when a 1H RTH candle's BODY closes through it (open one
 //     side, close the other) — handled by the evaluator via
 //     levelDeletedBy1HBody, not here (deletion is session state). October
-//     keeps it (LL-1, the default off): "Key Level nó là quá khứ"
-//     [OctD5.2-R15 @04:44], and the WE3 level 27,997.75 is traded months
-//     after a 1H body crossed it [OctD5.2-R19/R20 @07:20–07:42].
+//     never states a deletion either way; the default keeps the level (LL-1,
+//     default off) as an INFERENCE [B]: "Key Level nó là quá khứ"
+//     [OctD5.2-R15 @04:44] and his drawn stack / the WE3 quiz level 27,997.75
+//     both hold levels a 1H body crossed long before [OctD5.2-R19/R20
+//     @07:20–07:42] (WE3 is a quiz example, not a trade).
 //
 // The 2025 tiers (15m ETH wicks, 30–60 spacing, 4h red recolouring) are
 // SUPERSEDED and not built. No lookback cap (F7 stands).
