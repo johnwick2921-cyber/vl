@@ -8,7 +8,7 @@ import (
 )
 
 // TestD3G15KeyLevelRearmsAfterDeparture — oct round 2 D3-G15 (OctD3.2-R78
-// [@ 1:00:00]: wait for the run, the retest of the level and a new close on the
+// [@ 60:00]: wait for the run, the retest of the level and a new close on the
 // right side, then enter — "changed" vs the September "once invalid, only inside
 // bars" [D5.2 p2 @20:48]). Production SeedFull + Tick over the real MNQ 12-26
 // 1m tape of 11-03 17:00–18:40 CT (the LL-2 fixture: the 18:26 candle breaks

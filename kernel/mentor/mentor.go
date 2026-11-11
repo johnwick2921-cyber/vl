@@ -915,7 +915,7 @@ type Config struct {
 	// running, and the invalidity clears when price DEPARTS (a candle that no
 	// longer touches the level from the visit's approach side), so the
 	// retest after the run, closing back on the right side, is a fresh first
-	// touch that can arm a PHL/PLH. OctD3.2-R78 [@ 1:00:00] "đợi cho nó
+	// touch that can arm a PHL/PLH. OctD3.2-R78 [@ 60:00] "đợi cho nó
 	// chạy, xong nó về đây nó test lại cái level này và nó một lần nữa nến
 	// đóng trên" — marked 'changed' vs the September "once invalid, only
 	// inside bars" [D5.2 p2 @20:48]. Ships OFF [B]: the passage is garbled ASR

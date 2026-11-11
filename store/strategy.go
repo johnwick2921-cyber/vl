@@ -2229,7 +2229,7 @@ type MentorTuning struct {
 	// D3-G15 (oct round 2): "off" (unset, today) — a key level that is ISB-only
 	// after its one flip stays ISB-only for the session day; "on" — it re-arms
 	// on visit departure like a trendline, so the retest after the run, closing
-	// back on the right side, is a fresh first touch [OctD3.2-R78 @1:00:00,
+	// back on the right side, is a fresh first touch [OctD3.2-R78 @ 60:00,
 	// garbled ASR; its sketch is a trendline — an inference [B]]. Mentor question.
 	KeyLevelRearm string `json:"key_level_rearm,omitempty"`
 	// levels audit LL-1: "off" (unset) — a key level a 1H RTH body closed

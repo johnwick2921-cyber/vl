@@ -1926,7 +1926,7 @@ export const mentor: GuideSection = {
           label: 'Key level: re-arm after the run',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.key_level_rearm)',
-          what: 'Oct round 2 D3-G15. A key level that went ISB-only — its second wrong-way close after the one flip of the day (break_retest / uno_key_levels), the September “once invalid, only inside bars” [D5.2 p2 @20:48] — stays ISB-only until the day rolls. October D3.2 says: if there is no inside bar after the hold, “đợi cho nó chạy, xong nó về đây nó test lại cái level này và nó một lần nữa nến đóng trên” — wait for the run, the retest of the level and one more close on the right side, then the entry [OctD3.2-R78 @1:00:00, marked changed vs September]. off (default, today) = unchanged. on = the level behaves like a trendline: the invalidity clears when price DEPARTS (a candle that no longer touches the level from the visit’s approach side), so the retest that closes back on the right side is a fresh first touch and can arm a PHL/PLH through every normal gate; a wrong-way close on that new visit is ISB-only again until the next departure. Ships OFF [B]: the passage is garbled ASR (“unsure on words”) and its drawn sketch is a TRENDLINE (28,786 → ~28,774 → 28,795), which the bot already re-arms; extending it to static key levels is an inference. Moving lines, box edges and old highs/lows keep their own rules.',
+          what: 'Oct round 2 D3-G15. A key level that went ISB-only — its second wrong-way close after the one flip of the day (break_retest / uno_key_levels), the September “once invalid, only inside bars” [D5.2 p2 @20:48] — stays ISB-only until the day rolls. October D3.2 says: if there is no inside bar after the hold, “đợi cho nó chạy, xong nó về đây nó test lại cái level này và nó một lần nữa nến đóng trên” — wait for the run, the retest of the level and one more close on the right side, then the entry [OctD3.2-R78 @ 60:00, marked changed vs September]. off (default, today) = unchanged. on = the level behaves like a trendline: the invalidity clears when price DEPARTS (a candle that no longer touches the level from the visit’s approach side), so the retest that closes back on the right side is a fresh first touch and can arm a PHL/PLH through every normal gate; a wrong-way close on that new visit is ISB-only again until the next departure. Ships OFF [B]: the passage is garbled ASR (“unsure on words”) and its drawn sketch is a TRENDLINE (28,786 → ~28,774 → 28,795), which the bot already re-arms; extending it to static key levels is an inference. Moving lines, box edges and old highs/lows keep their own rules.',
           trader:
             'off — today. Mentor question: does a key level that closed through twice re-arm after the run and the retest?',
           consumer:
@@ -1934,7 +1934,7 @@ export const mentor: GuideSection = {
           range: 'on / off',
           systemDefault: 'off',
           recommended:
-            'off — today; the course passage is OctD3.2-R78 [@1:00:00], a [B] reading (not from the course for key levels).',
+            'off — today; the course passage is OctD3.2-R78 [@ 60:00], a [B] reading (not from the course for key levels).',
           whenToTouch:
             'Only on a mentor answer — on re-arms an ISB-only key level on departure.',
           perSession: 'No — per strategy.',
