@@ -2262,6 +2262,15 @@ type MentorTuning struct {
 	// rolling_left_extreme_broken [OctD2.3-R69 @ 78:10]. false = the per-rung
 	// phl_not_higher_low / phl_not_lower_high refusal only.
 	RollingLeftBreakCancel *bool `json:"rolling_left_break_cancel,omitempty"`
+	// RollingStaleTouchReleases — FIX-1112 B (WE6): nil -> OFF (today). true: a level touch-reject
+	// owns the rolling entry only if the touch candle is not older than the old
+	// extreme the ladder targets (a touch of an earlier leg does not block the
+	// pullback) [OctD2.3 @ 13:37-28:33]. nil/false = any live touch-reject owns (m216).
+	RollingStaleTouchReleases *bool `json:"rolling_stale_touch_releases,omitempty"`
+	// RollingKeypairTapeExempt — FIX-1112 B (WE7): nil -> OFF (today). true: the X4 keypair
+	// sit-out is not applied to the rolling ladder's 1m tape old extreme (not a
+	// drawn key level) [OctD2.3 @ 35:46-39:09]. nil/false = today.
+	RollingKeypairTapeExempt *bool `json:"rolling_keypair_tape_exempt,omitempty"`
 	// HTFTrendlineFlip — D3-G12 (oct round 2): nil -> ON (October). A persistent 1H/4H trendline broken by a 5m candle wholly beyond it is kept with its role flipped (a broken support is resistance and the reverse; a location again after a retest touch) instead of being deleted [OctD3.2-R20/R29 @ 08:27, 14:18-14:47]. false = the m428 delete. The 1m lines still die when broken.
 	HTFTrendlineFlip *bool `json:"htf_trendline_flip,omitempty"`
 	// TrendlineMaxSlopePtsPerBar — D3-G14 (oct round 2): nil -> 0 (OFF). An intraday trendline steeper than this many points per build-frame bar is refused [OctD3.2-R40/R41 @ 29:12-29:38: 30-45 degrees, not 80-85]; the course gives no points-per-bar number.

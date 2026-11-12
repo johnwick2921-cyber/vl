@@ -64,6 +64,13 @@ const rollingLevelKey = "__rolling__"
 // roll. A level that is gone owns nothing: its touch can never produce a
 // level entry (the PHL/PLH loop iterates `levels`).
 func levelTouchRejectActive(st *State, side Side, levels []Level) bool {
+	return levelTouchRejectActiveSince(st, side, levels, 0)
+}
+
+// levelTouchRejectActiveSince is levelTouchRejectActive that ignores a touch
+// whose reference candle opened BEFORE sinceMs (> 0): a touch of an earlier
+// leg than the one the rolling ladder trades (FIX-1112 B, WE6).
+func levelTouchRejectActiveSince(st *State, side Side, levels []Level, sinceMs int64) bool {
 	live := make(map[string]struct{}, len(levels))
 	for _, l := range levels {
 		live[l.Key] = struct{}{}
@@ -74,6 +81,11 @@ func levelTouchRejectActive(st *State, side Side, levels []Level) bool {
 		}
 		if _, ok := live[key]; !ok {
 			continue
+		}
+		if sinceMs > 0 && tr.RefBar.OpenTime < sinceMs {
+			if _, resting := st.LevelArms[key]; !resting { // a still-RESTING level order keeps owning (never both)
+				continue
+			}
 		}
 		if tr.ApproachedFrom == side {
 			return true
@@ -300,7 +312,11 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 
 	// 3. m216: a level touch-reject on this side OWNS the entry (first-touch
 	// fixed). The rolling is the no-level case — never both in one tick.
-	if levelTouchRejectActive(&e.State, side, levels) {
+	var touchSince int64
+	if e.Cfg.RollingStaleTouchReleases && tape1m && found && ex.idx >= 0 && ex.idx < len(bars) {
+		touchSince = bars[ex.idx].OpenTime // only a touch at/after the old extreme belongs to this leg
+	}
+	if levelTouchRejectActiveSince(&e.State, side, levels, touchSince) {
 		// PHL-5: named, once per exec candle (it used to cancel silently).
 		if !rollingSilentCancelSeam {
 			e.rollingRecordOncePerCandle(execCur, "rolling_level_touch_owns")
@@ -365,7 +381,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// the next candle's rung is read again).
 	tr := Touch{Outcome: TouchReject, RefBar: execCur, ApproachedFrom: side} // RejectEntry maps SideLong → long, SideShort → short
 	if _, rp, okEntry := RejectEntry(tr, e.Cfg); okEntry {
-		if name, _ := e.phlLocationBan(ex.level, side, rp, cur, levels, boxes); name != "" {
+		if name, _ := e.phlLocationBanRolling(ex.level, side, rp, cur, levels, boxes); name != "" {
 			return skip("rolling_"+name, "the rolling entry sits in a banned PHL/PLH location")
 		}
 		if name := phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low); name != "" {
