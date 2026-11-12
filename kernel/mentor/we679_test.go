@@ -3,6 +3,7 @@ package mentor
 import (
 	"testing"
 	"time"
+	"vl/market"
 )
 
 // FIX-1112 item B — the mentor's worked trades WE6 / WE7 on the real stored
@@ -148,5 +149,42 @@ func TestWE679KnobsDefaultOff(t *testing.T) {
 	c := DefaultConfig()
 	if c.RollingStaleTouchReleases || c.RollingKeypairTapeExempt {
 		t.Fatalf("defaults must be OFF: %+v %+v", c.RollingStaleTouchReleases, c.RollingKeypairTapeExempt)
+	}
+}
+
+// Review P2 (FIX-1112 B): with rolling_stale_touch_releases ON, a stale touch
+// whose LEVEL order still RESTS must keep owning the entry — otherwise the
+// level order and the rolling rung would both be live (double size, m216
+// "never both").
+func TestWE6StaleTouchWithRestingLevelArmStillOwns(t *testing.T) {
+	bars := phl1Tape(t, "phl1_mnq_1m_20261027_0730ct.csv")
+	from := phl1At(t, bars, 2026, time.October, 27, 9, 30)
+	px := bars[phl1At(t, bars, 2026, time.October, 27, 9, 44)].Close
+	cfg := we679Cfg()
+	cfg.RollingStaleTouchReleases = true
+	e := phl1Evaluator(cfg, SideLong, bars[from].OpenTime, px)
+	key := "key_level:29668.50:1792524600000"
+	e.State.LevelArms = map[string]LevelArm{key: {}}
+	steps := we679Run(t, e, "phl1_mnq_1m_20261027_0730ct.csv", time.October, 27, 9, 30, 9, 44, we679Levels6(), key, 8, 40, SideLong)
+	if got := phl1Find(steps, "09:44"); len(got.places) != 0 || e.State.Refusals["rolling_level_touch_owns"] == 0 {
+		t.Fatalf("a resting level order must still own the entry: %s\n%v", phl1Dump(steps), e.State.Refusals)
+	}
+}
+
+// Review P2/P3: rolling_keypair_tape_exempt is ROLLING-path only; the level
+// path's phlLocationBan keeps the X4 sit-out for an old-extreme anchor.
+func TestKeypairTapeExemptDoesNotApplyOnLevelPath(t *testing.T) {
+	cfg := DefaultConfig()
+	cfg.RollingKeypairTapeExempt = true
+	cfg.PingPongCandleMaxPts = 100
+	e := New(cfg)
+	lvl := Level{Key: "oe", Kind: KindOldExtreme, Price: 28288.75}
+	levels := []Level{lvl, {Key: "kl", Kind: KindKeyLevel, Price: 28283.00}}
+	cur := market.Kline{High: 28320, Low: 28306.5}
+	if name, _ := e.phlLocationBan(lvl, SideShort, 28316.25, cur, levels, nil); name != "keypair_candle_too_big" {
+		t.Fatalf("level path must keep X4 for an old-extreme anchor, got %q", name)
+	}
+	if name, _ := e.phlLocationBanRolling(lvl, SideShort, 28316.25, cur, levels, nil); name == "keypair_candle_too_big" {
+		t.Fatalf("rolling path with the knob ON must exempt the tape old extreme")
 	}
 }

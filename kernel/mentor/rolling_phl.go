@@ -83,7 +83,9 @@ func levelTouchRejectActiveSince(st *State, side Side, levels []Level, sinceMs i
 			continue
 		}
 		if sinceMs > 0 && tr.RefBar.OpenTime < sinceMs {
-			continue
+			if _, resting := st.LevelArms[key]; !resting { // a still-RESTING level order keeps owning (never both)
+				continue
+			}
 		}
 		if tr.ApproachedFrom == side {
 			return true
@@ -379,7 +381,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// the next candle's rung is read again).
 	tr := Touch{Outcome: TouchReject, RefBar: execCur, ApproachedFrom: side} // RejectEntry maps SideLong → long, SideShort → short
 	if _, rp, okEntry := RejectEntry(tr, e.Cfg); okEntry {
-		if name, _ := e.phlLocationBan(ex.level, side, rp, cur, levels, boxes); name != "" {
+		if name, _ := e.phlLocationBanRolling(ex.level, side, rp, cur, levels, boxes); name != "" {
 			return skip("rolling_"+name, "the rolling entry sits in a banned PHL/PLH location")
 		}
 		if name := phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low); name != "" {

@@ -1803,7 +1803,17 @@ func trendlineTargets(levels []Level) []Level {
 // lvl is the level the setup is anchored on (the touched level on the level
 // path; the old extreme the leg targets on the rolling path).
 func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur market.Kline, levels []Level, boxes []Box) (name string, oncePerVisit bool) {
-	if e.Cfg.PingPongCandleMaxPts > 0 && !(e.Cfg.RollingKeypairTapeExempt && lvl.Kind == KindOldExtreme) { // FIX-1112 B: a tape old extreme is not a key level of the X4 pair
+	return e.phlLocationBanFor(lvl, side, price, cur, levels, boxes, false)
+}
+
+// phlLocationBanRolling is the rolling-ladder call: the anchor is the 1m tape
+// old extreme, which the rolling_keypair_tape_exempt knob may release from X4.
+func (e *Evaluator) phlLocationBanRolling(lvl Level, side Side, price float64, cur market.Kline, levels []Level, boxes []Box) (name string, oncePerVisit bool) {
+	return e.phlLocationBanFor(lvl, side, price, cur, levels, boxes, true)
+}
+
+func (e *Evaluator) phlLocationBanFor(lvl Level, side Side, price float64, cur market.Kline, levels []Level, boxes []Box, rolling bool) (name string, oncePerVisit bool) {
+	if e.Cfg.PingPongCandleMaxPts > 0 && !(rolling && e.Cfg.RollingKeypairTapeExempt && lvl.Kind == KindOldExtreme) { // FIX-1112 B: a tape old extreme is not a key level of the X4 pair
 		var next float64
 		for _, l2 := range levels {
 			// The pair is the anchor level and the next KEY level he drew — EMA
