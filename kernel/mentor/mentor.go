@@ -442,6 +442,25 @@ type Config struct {
 	// ON (October); OFF = the per-rung phl_not_higher_low/lower_high refusal only.
 	// Studio JSON: risk_control.mentor_tuning.rolling_left_break_cancel.
 	RollingLeftBreakCancel bool
+	// RollingStaleTouchReleases — FIX-1112 B (WE6 10-27 09:44): a level touch-reject
+	// owns the rolling entry only while the touch belongs to the CURRENT leg, i.e.
+	// the touch candle is not older than the old extreme the ladder targets. A touch
+	// of an earlier leg (WE6: the 1H level 29,668.50 rejected at 08:40, an hour
+	// before the 09:36 old high) no longer blocks the pullback the mentor traded
+	// [OctD2.3 @ 13:37-28:33 worked example; no touch-ownership rule exists in the
+	// October notes]. DEFAULT OFF (= today's m216 reading, any live touch-reject owns):
+	// the worked example alone does not reproduce in the full pipeline (the box ban and
+	// the PHL room multiple refuse the rung next), so the default flip waits for the owner/mentor.
+	// Studio JSON: risk_control.mentor_tuning.rolling_stale_touch_releases.
+	RollingStaleTouchReleases bool
+	// RollingKeypairTapeExempt — FIX-1112 B (WE7 10-30 13:25): the X4 keypair
+	// "candle as big as the two levels" sit-out is not applied on the rolling
+	// path, whose anchor is a 1m tape old extreme, not a key level he drew: X4
+	// pairs two KEY levels [X4 @06:31, extra course], and the mentor sold the WE7
+	// rung with the 13.5-pt candle 5.75 pts above a 1H level [OctD2.3 @ 35:46-39:09].
+	// DEFAULT OFF = today (same reason as RollingStaleTouchReleases).
+	// Studio JSON: risk_control.mentor_tuning.rolling_keypair_tape_exempt.
+	RollingKeypairTapeExempt bool
 	// HTFTrendlineFlip — D3-G12 (oct round 2): a persistent 1H/4H trendline is never deleted — a broken one keeps its anchors with the role flipped: "khung giờ lớn mình để luôn, mình không bao giờ xóa" [Oct D3.2 @ 08:27] (R20); the candles under the broken line see it as resistance and "đụng resistance thì drop" [@ 14:18-14:47] (R29); R32 [@ 20:20] the Friday long at the 4H falling line (28,280). A broken support becomes resistance (and the reverse); it is a location again only after price returns and touches it. Default ON (October; the owner's m428 R3 'trendline gãy -> xóa' stays for the 1m lines); OFF = the m428 delete.
 	// Studio JSON: risk_control.mentor_tuning.htf_trendline_flip.
 	HTFTrendlineFlip bool

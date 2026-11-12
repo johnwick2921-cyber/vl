@@ -1803,7 +1803,7 @@ func trendlineTargets(levels []Level) []Level {
 // lvl is the level the setup is anchored on (the touched level on the level
 // path; the old extreme the leg targets on the rolling path).
 func (e *Evaluator) phlLocationBan(lvl Level, side Side, price float64, cur market.Kline, levels []Level, boxes []Box) (name string, oncePerVisit bool) {
-	if e.Cfg.PingPongCandleMaxPts > 0 {
+	if e.Cfg.PingPongCandleMaxPts > 0 && !(e.Cfg.RollingKeypairTapeExempt && lvl.Kind == KindOldExtreme) { // FIX-1112 B: a tape old extreme is not a key level of the X4 pair
 		var next float64
 		for _, l2 := range levels {
 			// The pair is the anchor level and the next KEY level he drew — EMA

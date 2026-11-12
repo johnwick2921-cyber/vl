@@ -472,6 +472,8 @@ export interface MentorTuning {
   isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target
   trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
   rolling_left_break_cancel?: boolean
+  rolling_stale_touch_releases?: boolean // FIX-1112 B — unset = OFF (today): true = a level touch of an EARLIER leg does not own the rolling pullback entry (WE6, OctD2.3 @13:37-28:33); false = any live touch-reject owns (m216)
+  rolling_keypair_tape_exempt?: boolean // FIX-1112 B — unset = OFF (today): true = the X4 keypair sit-out is not applied to the rolling ladder's 1m tape old extreme (WE7, OctD2.3 @35:46-39:09); false = today
   htf_trendline_flip?: boolean // D3-G12 oct round 2
   trendline_max_slope_pts_per_bar?: number // D3-G14 oct round 2
   trendline_min_bounce_pts?: number // D3-G10 oct round 2

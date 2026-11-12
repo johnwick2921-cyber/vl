@@ -219,6 +219,14 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.rolling_left_break_cancel',
     live: true,
   },
+  'Rolling ladder: a touch of an earlier leg does not own the entry': {
+    settingId: 'risk_control.mentor_tuning.rolling_stale_touch_releases',
+    live: true,
+  },
+  'Rolling ladder: no keypair sit-out on the tape old extreme': {
+    settingId: 'risk_control.mentor_tuning.rolling_keypair_tape_exempt',
+    live: true,
+  },
   'HTF trendline: broken line flips, never deleted': {
     settingId: 'risk_control.mentor_tuning.htf_trendline_flip',
     live: true,
@@ -1774,6 +1782,38 @@ export const mentor: GuideSection = {
           systemDefault: 'on',
           recommended: 'on — October [OctD2.3-R69 @78:10].',
           whenToTouch: 'Only to restore the per-rung refusal: set false.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label:
+            'Rolling ladder: a touch of an earlier leg does not own the entry',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.rolling_stale_touch_releases)',
+          what: 'Fix 1112 B (WE6, Tue 27 Oct). A level touch-reject normally owns the entry (the level path, first touch fixed) and the rolling pullback ladder stands aside. WE6’s pullback [OctD2.3 @13:37–28:33] was blocked all the way by a 1H level (29,668.50) that price had rejected at 08:40 — an hour before the 09:36 old high the ladder targets. on = a touch candle older than the old extreme the ladder targets belongs to an earlier leg and no longer owns this one; a touch inside the pullback still owns it. off (default) = today: any live touch-reject owns the entry. Default OFF: after this gate WE6 is still refused by the 5m box ban / mid-range ban, so the worked example is not reproduced end to end and the flip waits for the mentor.',
+          trader: 'off — default until the mentor rules on the box ban.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (RollingStaleTouchReleases) · kernel/mentor/rolling_phl.go rollingPHLTick',
+          range: 'on / off',
+          systemDefault: 'off',
+          recommended:
+            'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
+          whenToTouch: 'To trial the fix: set true.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Rolling ladder: no keypair sit-out on the tape old extreme',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.rolling_keypair_tape_exempt)',
+          what: 'Fix 1112 B (WE7, Fri 30 Oct). The keypair sit-out (a candle as big as the gap between two key levels, X4) paired the rolling ladder’s old low 28,288.75 — a 1m tape swing — with a 1H level 5.75 pts below and refused the 13.5-pt 13:25 candle, the exact rung the mentor sold [OctD2.3 @35:46–39:09]. X4 pairs two key levels he drew. on = the sit-out is not applied when the anchor is the ladder’s tape old extreme (key-level touches keep it). off (default) = today. Default OFF: after this gate WE7 is still refused by the 5m box ban and the 2R PHL room multiple.',
+          trader:
+            'off — default until the mentor rules on the box ban and the room.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (RollingKeypairTapeExempt) · kernel/mentor/eval.go phlLocationBan',
+          range: 'on / off',
+          systemDefault: 'off',
+          recommended:
+            'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
+          whenToTouch: 'To trial the fix: set true.',
           perSession: 'No — per strategy.',
         },
         {

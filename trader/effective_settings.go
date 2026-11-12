@@ -917,6 +917,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("isb_target_fill_close", "trader.mentorTuningResolve (D2-G3 OctD2.2-R35/R37, nil \u2192 OFF)", func(t mentorTuned) any { return t.ISBTargetFillClose })
 	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
 	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
+	mentorTuningRow("rolling_stale_touch_releases", "trader.mentorTuningResolve (FIX-1112 B WE6, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingStaleTouchReleases })
+	mentorTuningRow("rolling_keypair_tape_exempt", "trader.mentorTuningResolve (FIX-1112 B WE7, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingKeypairTapeExempt })
 	mentorTuningRow("htf_trendline_flip", "trader.mentorTuningResolve (D3-G12 OctD3.2-R20/R29)", func(t mentorTuned) any { return t.HTFTrendlineFlip })
 	mentorTuningRow("trendline_max_slope_pts_per_bar", "trader.mentorTuningResolve (D3-G14 OctD3.2-R40/R41)", func(t mentorTuned) any { return t.TrendlineMaxSlopePtsPerBar })
 	mentorTuningRow("trendline_min_bounce_pts", "trader.mentorTuningResolve (D3-G10 OctD3.2-R9/R35/R36)", func(t mentorTuned) any { return t.TrendlineMinBouncePts })

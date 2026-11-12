@@ -95,6 +95,8 @@ type mentorTuned struct {
 	KeyLevelDeleteOn1HClose    string  // LL-1
 	PHLMinAbovePriorPts        float64 // G7
 	RollingLeftBreakCancel     bool    // D2-G6
+	RollingStaleTouchReleases  bool    // FIX-1112 B
+	RollingKeypairTapeExempt   bool    // FIX-1112 B
 	HTFTrendlineFlip           bool    // D3-G12
 	TrendlineMaxSlopePtsPerBar float64 // D3-G14
 	TrendlineMinBouncePts      float64 // D3-G10
@@ -161,6 +163,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		KeyLevelDeleteOn1HClose:     d.KeyLevelDeleteOn1HClose,
 		PHLMinAbovePriorPts:         d.PHLMinAbovePriorPts,
 		RollingLeftBreakCancel:      d.RollingLeftBreakCancel,
+		RollingStaleTouchReleases:   d.RollingStaleTouchReleases,
+		RollingKeypairTapeExempt:    d.RollingKeypairTapeExempt,
 		HTFTrendlineFlip:            d.HTFTrendlineFlip,
 		TrendlineMaxSlopePtsPerBar:  d.TrendlineMaxSlopePtsPerBar,
 		TrendlineMinBouncePts:       d.TrendlineMinBouncePts,
@@ -322,6 +326,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.WickMicroscalp, &out.WickMicroscalp)
 	flag(t.WickSafePlay, &out.WickSafePlay)
 	flag(t.RollingLeftBreakCancel, &out.RollingLeftBreakCancel)         // D2-G6
+	flag(t.RollingStaleTouchReleases, &out.RollingStaleTouchReleases)   // FIX-1112 B
+	flag(t.RollingKeypairTapeExempt, &out.RollingKeypairTapeExempt)     // FIX-1112 B
 	flag(t.HTFTrendlineFlip, &out.HTFTrendlineFlip)                     // D3-G12
 	flag(t.KnockKnockZone, &out.KnockKnockZone)                         // D2-G10
 	flag(t.TrendlineFirstBottomAnchor, &out.TrendlineFirstBottomAnchor) // D3-G9
@@ -496,6 +502,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose       // LL-1
 	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts               // G7
 	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel         // D2-G6
+	cfg.RollingStaleTouchReleases = t.RollingStaleTouchReleases   // FIX-1112 B
+	cfg.RollingKeypairTapeExempt = t.RollingKeypairTapeExempt     // FIX-1112 B
 	cfg.HTFTrendlineFlip = t.HTFTrendlineFlip                     // D3-G12
 	cfg.TrendlineMaxSlopePtsPerBar = t.TrendlineMaxSlopePtsPerBar // D3-G14
 	cfg.TrendlineMinBouncePts = t.TrendlineMinBouncePts           // D3-G10
