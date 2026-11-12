@@ -10612,6 +10612,14 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Pin:** `TestRound2ReviewDefaultsAreToday`, `TestRound2ReviewDefaultRefusesNoTargetISB`, trader `TestD2G2PHLRoomMultipleKnob`, boot-line test `TestCourseEntryBootLineReadsTheResolver` (the round-2 knobs print their RESOLVED values).
 - **Reference:** `kernel/mentor/mentor.go` `DefaultConfig` (`ISBTargetFillClose` false, `PHLRoomMultiple` 2); `HTFGateNewsOnly` stays ON as a documented [B] owner-reasoned default (R9 narrows the frame list), revert knob `htf_gate_news_only=false`.
 
+## CLASS NN (assigned at merge) — a gate leg that compares two sources recording DIFFERENT things and reports the difference as a fault (cutover leg 4 "working_orders: broker 2 vs ledger 0 — MISMATCH" for every open position, fix/broker-ledger-working-orders)
+
+- **Symptom:** three updater jobs (4922c764 11-11 08:16, 63df9d55 11-12 00:20, 50d6d388 11-12 07:03) were refused with `working_orders: broker 2 vs ledger 0 — MISMATCH` while trader 12345 held an armed fill (trader_positions 771/775). The desk BOOK line showed the same text during any open position.
+- **Root cause:** the armed_orders ledger records ENTRY placements; the row goes `filled` (terminal) at the fill, and the stop/target brackets the bot places at NT8 never had a ledger row. Leg 4 compared the broker's whole working book to that entry ledger. [A] The verdict was never wrong (any broker working order fails the leg and legs 1/2 already refuse an open position); only the explanation misled the reader toward a ledger fault.
+- **Probe:** for every cross-check between two sources, list what each source records; if a legitimate state makes them differ, the leg must name that state, not call it a mismatch. Keep the orphan case (flat + broker orders) a hard MISMATCH.
+- **Pin:** `TestLeg4ProtectiveBracketsOfOpenPositionAreNamedNotMismatch`, `TestLeg4OrphanOrdersWhileFlatStillMismatch`, `TestLeg4SameSideOrderWithOpenPositionStillMismatch`.
+- **Reference:** `trader/f12_leg4.go` (`Leg4FromBrokerWithPositionsAt`, `protectiveExits`), `trader/class33_cutover_gate.go` (`leg4PositionsFrom`).
+
 ## CLASS NN (assigned at merge) — a gate written for one object (a drawn key level / a level touch) applied unchanged to a different object (a 1m tape old extreme / a touch of an EARLIER leg), so a worked example the course shows is refused by a rule the course taught for something else (fix-1112 item B: WE6 `rolling_level_touch_owns`, WE7 `rolling_keypair_candle_too_big`, fix/mentor-we6-we7-we9)
 
 - **Symptom:** the Oct D2.3 worked trades WE6 (Tue 27 Oct 09:44 buy stop 29,645.00) and WE7 (Fri 30 Oct 13:25 sell stop 28,316.25) produced no intent on the stored bars although `TestPHL1CourseWorkedExamples` armed them: that test ticks `rollingPHLTick` with no levels, so it never met the gates the production Tick runs with the real level set.

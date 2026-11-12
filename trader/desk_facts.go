@@ -650,7 +650,8 @@ func (at *AutoTrader) deskBook(now time.Time) DeskLine {
 	// request-local view changes no trading gate or shared cache.
 	view := nt.NewOrderSnapshotCache()
 	view.PutAt(snap, received)
-	leg := Leg4FromBrokerAt(view, account, symbol, OrderSnapshotInterval(), orders, now)
+	deskPos, deskPerr := at.gatePositions()
+	leg := Leg4FromBrokerWithPositionsAt(view, account, symbol, OrderSnapshotInterval(), orders, leg4PositionsFrom(deskPos, deskPerr), now)
 	state, reason := "ok", ""
 	if !leg.Pass {
 		state, reason = "stale", leg.Detail
