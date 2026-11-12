@@ -120,7 +120,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "htf_gate_news_only=true", "phl_room_multiple=1", "isb_target_fill_close=false", "trigger_from_open=true", "phl_min_above_old_extreme_pts=0", "mentor_5m_box_source=merge", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "htf_gate_news_only=true", "phl_room_multiple=1", "isb_target_fill_close=false", "isb_no_level_fill_close=true", "trigger_from_open=true", "phl_min_above_old_extreme_pts=0", "mentor_5m_box_source=merge", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

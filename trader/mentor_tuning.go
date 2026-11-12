@@ -109,6 +109,7 @@ type mentorTuned struct {
 	BoxPreOpenLookbackMin      float64 // D3-G1
 	TriggerFromOpen            bool    // G4
 	ISBTargetFillClose         bool    // D2-G3
+	ISBNoLevelFillClose        bool    // answers-1112 Q3
 	PHLRoomMultiple            float64 // D2-G2
 	KeyLevelBreakRetest        string  // LL-2
 	KeyLevelRearm              string  // D3-G15
@@ -188,6 +189,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BoxPreOpenLookbackMin:       d.BoxPreOpenLookbackMin,
 		TriggerFromOpen:             d.TriggerFromOpen,
 		ISBTargetFillClose:          d.ISBTargetFillClose,
+		ISBNoLevelFillClose:         d.ISBNoLevelFillClose,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -349,6 +351,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)                   // D3-G2
 	flag(t.TriggerFromOpen, &out.TriggerFromOpen)                       // G4
 	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)                 // D2-G3
+	flag(t.ISBNoLevelFillClose, &out.ISBNoLevelFillClose)               // answers-1112 Q3
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -533,6 +536,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin           // D3-G1
 	cfg.TriggerFromOpen = t.TriggerFromOpen                       // G4
 	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
+	cfg.ISBNoLevelFillClose = t.ISBNoLevelFillClose               // answers-1112 Q3
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
 	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
@@ -550,9 +554,9 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v htf_gate_news_only=%v isb_stack_tiny_stop_pts=%g phl_room_multiple=%g phl_min_above_old_extreme_pts=%g isb_target_fill_close=%v trigger_from_open=%v key_level_rearm=%v isb_reverse_trend=%v counter_5m_reduce_size=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v htf_gate_news_only=%v isb_stack_tiny_stop_pts=%g phl_room_multiple=%g phl_min_above_old_extreme_pts=%g isb_target_fill_close=%v isb_no_level_fill_close=%v trigger_from_open=%v key_level_rearm=%v isb_reverse_trend=%v counter_5m_reduce_size=%v",
 		id, t.FifteenMinIBRule, t.Early15mRead, t.MTFConfluenceSource, t.TriggerEscalation, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
 		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay,
 		t.FiveMinBoxSource, t.BreakDirectionLock, t.SmallRangeGuard, t.MidRangeRejectSide,
-		t.HTFGateNewsOnly, t.ISBStackTinyStopPts, t.PHLRoomMultiple, t.PHLMinAbovePriorPts, t.ISBTargetFillClose, t.TriggerFromOpen, t.KeyLevelRearm, t.ISBReverseTrend, t.Counter5mReduceSize)
+		t.HTFGateNewsOnly, t.ISBStackTinyStopPts, t.PHLRoomMultiple, t.PHLMinAbovePriorPts, t.ISBTargetFillClose, t.ISBNoLevelFillClose, t.TriggerFromOpen, t.KeyLevelRearm, t.ISBReverseTrend, t.Counter5mReduceSize)
 }

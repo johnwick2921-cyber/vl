@@ -215,6 +215,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.isb_target_fill_close',
     live: true,
   },
+  'ISB with no level beyond is traded (fill candle close)': {
+    settingId: 'risk_control.mentor_tuning.isb_no_level_fill_close',
+    live: true,
+  },
   'Trigger lines are read from the 08:30 open': {
     settingId: 'risk_control.mentor_tuning.trigger_from_open',
     live: true,
@@ -1763,7 +1767,7 @@ export const mentor: GuideSection = {
           label: 'ISB first target is the fill candle close',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.isb_target_fill_close)',
-          what: 'Oct round 2 D2-G3. OctD2.2-R35/R37 [Oct D2.2 @28:40, 30:03]: the ISB gives its own first target — sell part when the trend candle that fills the order closes (“target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng”); R34 [@28:12] puts level targets (tops and bottoms) aside as “not taught yet” and the 1:1 theory with them. ON (knob; default OFF — the course does not say a no-target ISB may be traded, [B]): an ISB with no level beyond its entry (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is no longer refused; its first target is the +1R leg-1 take-profit the trader already owns (partial at the fill candle’s close), the runner keeps the level ladder, and the 2R room-to-a-level rule has no level to measure. Replay 30 Oct 13:26 CT (mother 13:25 red, ISB 13:26): refused isb_target_below_floor before, sell stop 28,307.50 fills 13:27 and the low is 28,240.50 by 13:35. OFF (default) = the September rule: a level target at least 1R away with 2R room.',
+          what: 'Oct round 2 D2-G3. OctD2.2-R35/R37 [Oct D2.2 @28:40, 30:03]: the ISB gives its own first target — sell part when the trend candle that fills the order closes (“target đầu tiên… bán bớt… khi cây nến trend phiêu lệnh… đóng”); R34 [@28:12] puts level targets (tops and bottoms) aside as “not taught yet” and the 1:1 theory with them. ON (knob; default OFF — the course does not say an ISB with a level inside 1R may be traded, [B]): an ISB with no level beyond its entry (isb_missing_target) or only a level inside 1R (isb_target_below_floor) is no longer refused. Since answers-1112 the no-level case is ALSO traded by default through “ISB with no level beyond is traded” (isb_no_level_fill_close, default on), so this knob’s own remaining job is the level-inside-1R case; its first target is the +1R leg-1 take-profit the trader already owns (partial at the fill candle’s close), the runner keeps the level ladder, and the 2R room-to-a-level rule has no level to measure. Replay 30 Oct 13:26 CT (mother 13:25 red, ISB 13:26): refused isb_target_below_floor before, sell stop 28,307.50 fills 13:27 and the low is 28,240.50 by 13:35. OFF (default) = the September rule: a level target at least 1R away with 2R room.',
           trader: 'off — today; on is an owner/mentor call [B].',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBTargetFillClose) · kernel/mentor/eval.go Tick (ISB target stage)',
@@ -1773,6 +1777,22 @@ export const mentor: GuideSection = {
             'off until the mentor confirms [OctD2.2-R35/R37 @28:40, 30:03 say only the first partial; R34 says real targets come later; Oct D2.1-R13 level to level is the argument for the ladder].',
           whenToTouch:
             'Only on a mentor answer — set true to trade a no-target ISB at +1R.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'ISB with no level beyond is traded (fill candle close)',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.isb_no_level_fill_close)',
+          what: 'answers-1112 Q3 (verdict corrected, confidence medium). Oct D2.2 [@28:37-28:56]: “target đầu tiên của mình mà mình phải bán bớt… là khi cây nến trend phiêu lĩnh của mình… Đóng” — the first target, where you sell part, is when the candle that fills the order closes; [@30:24-30:43] “Target của Insha Bar là khi nến trend… phiêu lệnh… Đóng thì mình sẽ bán bớt, không quan tâm nó làm gì hết” (no matter what it does next); Sept D1.4 p1 [@12:12-13:27] “Bắt buộc” (mandatory). No video refuses an ISB because no level lies beyond it. ON (default): an ISB with NO level beyond its entry is traded — its first target is the +1R leg-1 take-profit the trader owns, pulled in to the fill candle’s close when +1R is not reached inside that candle (mentorISBPartialTP), and the room-to-a-level rule has no level to measure. Worked example (Oct D2.2 @39:00-39:59, frame s_02392, Fri 30 Oct ~08:37): short ISB, entry at the NC3 low 28,709.50, stop at its top 28,735.75 (26.25 pts — “Stop Loss của anh chị là 27 điểm”), first target 28,683.25 (“đợi 27 điểm, anh chị bán”) or the fill close (“Hoặc ngay tới đây, anh chị bán bớt”). It fires ONLY when no target level stands beyond at all: a level inside 1R stays refused isb_target_below_floor (isb_target_fill_close owns that case, default off), and a 4h-trigger or 5m-wick level skipped for room is still a level ahead (isb_missing_target, as before). OFF = today’s isb_missing_target refusal exactly.',
+          trader: 'on — the October rule; off reverts.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (ISBNoLevelFillClose) · kernel/mentor/eval.go Tick (ISB target stage, targetLevelBeyond)',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended:
+            'on [Oct D2.2 @28:37-28:56, @30:24-30:43; Sept D1.4 p1 @12:12-13:27]. What to do when the fill candle closes against you is deferred in the course (Oct D2.2 @30:03-30:13 “ngày mai mình sẽ được học”); the +1R TP keeps resting then.',
+          whenToTouch:
+            'Set false only to get back the old refusal of an ISB with no level beyond (isb_missing_target).',
           perSession: 'No — per strategy.',
         },
         {

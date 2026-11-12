@@ -2037,6 +2037,24 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 	return bestEMA
 }
 
+// targetLevelBeyond reports whether ANY level nextLevelBeyondRoom could ever
+// target stands beyond the entry on the trade side — the same filters (no
+// location trendline, an old extreme in its role, a drawn price) but WITHOUT
+// the room skip: a 4h trigger or 5m wick too close to hold its room is still a
+// level ahead. answers-1112 Q3: isb_no_level_fill_close trades an ISB only
+// when this is false (no level beyond at all, the video's case) [B].
+func targetLevelBeyond(levels []Level, entry float64, side Side) bool {
+	for _, l := range levels {
+		if l.Kind == KindTrendline || l.Price <= 0 || !oldExtremeRoleFits(l, side) {
+			continue
+		}
+		if side == SideLong && l.Price > entry || side == SideShort && l.Price < entry {
+			return true
+		}
+	}
+	return false
+}
+
 // WickTargetRoomMultiple is the room a D4.3 5m-wick target (KindWickMicroscalp)
 // needs, in R: the microscalp targets "những cái râu của khung 5 phút" [D4.3-R17
 // @09:39–09:46], a small scalp, and D1.4 asks only "at least 1:1" — so 1R, not
@@ -2963,8 +2981,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// the trader already owns (+1R), the runner keeps the ladder, and
 						// the room-to-a-level rule has no level to measure (knob
 						// isb_target_fill_close; OFF = the September level rule).
+						// answers-1112 Q3 (knob isb_no_level_fill_close, default ON):
+						// NO level beyond at all is the video's case [Oct D2.2
+						// @28:37-28:56, @30:24-30:43] and takes the same first target;
+						// a level inside 1R stays with isb_target_fill_close.
 						fillClose := false
-						if e.Cfg.ISBTargetFillClose && (target == 0 || !targetFloorOK(chosen.Price, chosen.Stop, target)) {
+						noLevel := target == 0 && e.Cfg.ISBNoLevelFillClose && !targetLevelBeyond(levels, chosen.Price, side)
+						if noLevel || e.Cfg.ISBTargetFillClose && (target == 0 || !targetFloorOK(chosen.Price, chosen.Stop, target)) {
 							if side == SideLong {
 								target = chosen.Price + abs(chosen.Price-chosen.Stop)
 							} else {

@@ -2302,7 +2302,19 @@ type MentorTuning struct {
 	// 1R (isb_target_below_floor) is no longer refused; its first target is the
 	// +1R leg-1 TP and the room-to-a-level rule has no level to measure. false =
 	// the September rule (a level target >= 1R with 2R room).
+	// Since answers-1112 Q3 the no-level case defaults ON under
+	// ISBNoLevelFillClose; this knob's remaining own job is the level-inside-1R
+	// case, which no video covers.
 	ISBTargetFillClose *bool `json:"isb_target_fill_close,omitempty"`
+	// ISBNoLevelFillClose — answers-1112 Q3: nil → ON. An ISB with NO level
+	// beyond its entry (isb_missing_target) is traded; its first target is the
+	// close of the candle that fills it [Oct D2.2 @28:37-28:56 "target đầu tiên
+	// … bán bớt … là khi cây nến trend phiêu lĩnh … Đóng", @30:24-30:43 "không
+	// quan tâm nó làm gì hết"; Sept D1.4 p1 @12:12-13:27]: the +1R leg-1 TP,
+	// partial at the fill close (mentorISBPartialTP), no room rule. A level
+	// inside 1R stays refused (isb_target_below_floor; isb_target_fill_close
+	// owns it). false = today's isb_missing_target refusal exactly.
+	ISBNoLevelFillClose *bool `json:"isb_no_level_fill_close,omitempty"`
 	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
 	// line is read from the 08:30 CT Open, not from the overnight Globex tape
 	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the

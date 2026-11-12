@@ -804,7 +804,28 @@ type Config struct {
 	// the runner keeps the level ladder, and the room-to-a-level rule has no level
 	// to measure. OFF (default) = the September rule (a level target >= 1R with 2R room
 	// is required). Studio: risk_control.mentor_tuning.isb_target_fill_close.
+	// Since answers-1112 Q3 the no-level half is ISBNoLevelFillClose (default
+	// ON); this knob keeps its default OFF and still alone lifts the
+	// level-inside-1R case (isb_target_below_floor), which no video covers [B].
 	ISBTargetFillClose bool
+	// ISBNoLevelFillClose — answers-1112 Q3 (verdict corrected, confidence
+	// medium): an ISB with NO level beyond its entry is TRADED, its first
+	// target being the close of the candle that fills it [Oct D2.2 @28:37-28:56
+	// "target đầu tiên của mình mà mình phải bán bớt… là khi cây nến trend
+	// phiêu lĩnh của mình… đóng"; @30:24-30:43 "Target của Insha Bar là khi nến
+	// trend phiêu lệnh… đóng thì mình sẽ bán bớt, không quan tâm nó làm gì
+	// hết"; Sept D1.4 p1 @12:12-13:27 "Bắt buộc"]. Nothing in any video refuses
+	// an ISB because no level lies beyond it. ON (default): the
+	// isb_missing_target case takes the leg-1 take-profit the trader already
+	// owns (+1R native TP, partial at the fill candle's close,
+	// mentorISBPartialTP) and skips the room-to-a-level rule (no level to
+	// measure). It fires ONLY when no target level stands beyond the entry at
+	// all — a level inside 1R stays isb_target_below_floor (ISBTargetFillClose
+	// owns that case), and a target-only level (4h trigger, 5m wick) skipped
+	// for room is still a level ahead: refused isb_missing_target as today [B].
+	// OFF = today's September refusal exactly. Studio:
+	// risk_control.mentor_tuning.isb_no_level_fill_close.
+	ISBNoLevelFillClose bool
 	// CrossingISBLookback / CrossingISBMin — isbTF-F6: the crossing read that
 	// escalates the trigger (crossingISBsCfg): the last CrossingISBLookback
 	// CLOSED buckets hold at least CrossingISBMin inside bars of BOTH
@@ -1163,6 +1184,7 @@ func DefaultConfig() Config {
 		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
 		ISBTargetFillClose:  false,                      // D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
+		ISBNoLevelFillClose: true,                       // answers-1112 Q3: an ISB with no level beyond is traded, first target the fill candle's close [Oct D2.2 @28:37-28:56, @30:24-30:43; Sept D1.4 p1 @12:12-13:27]; false = today's isb_missing_target refusal
 		TriggerFromOpen:     true,                       // G4 oct round 2: the 5m trend is read from the 08:30 open [OctD4.3-R5 @ 03:10]; false = the whole-history read
 		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)

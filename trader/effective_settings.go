@@ -916,6 +916,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("key_level_delete_on_1h_close", "trader.mentorTuningResolve (LL-1)", func(t mentorTuned) any { return t.KeyLevelDeleteOn1HClose })
 	mentorTuningRow("phl_min_above_old_extreme_pts", "trader.mentorTuningResolve (G7 OctD4.2-R41, nil \u2192 0 = OFF; the course figure 15 is opt-in)", func(t mentorTuned) any { return t.PHLMinAbovePriorPts })
 	mentorTuningRow("isb_target_fill_close", "trader.mentorTuningResolve (D2-G3 OctD2.2-R35/R37, nil \u2192 OFF)", func(t mentorTuned) any { return t.ISBTargetFillClose })
+	mentorTuningRow("isb_no_level_fill_close", "trader.mentorTuningResolve (answers-1112 Q3 Oct D2.2 @28:37-31:33, nil \u2192 ON)", func(t mentorTuned) any { return t.ISBNoLevelFillClose })
 	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
 	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
 	mentorTuningRow("rolling_stale_touch_releases", "trader.mentorTuningResolve (FIX-1112 B WE6, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingStaleTouchReleases })

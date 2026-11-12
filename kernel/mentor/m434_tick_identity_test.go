@@ -270,6 +270,7 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	}
 	cfg.PHLOldExtreme1mK = 0                                // phl audit PHL-1: the frozen goldens predate the 1m-tape old extreme
 	cfg.PHLRoomMultiple = cfg.RoomMultiple                  // oct round 2 D2-G2: … and the PHL/PLH 2R room (knob phl_room_multiple=2 reproduces the old golden byte for byte)
+	cfg.ISBNoLevelFillClose = false                         // answers-1112 Q3: … and the isb_missing_target refusal (knob isb_no_level_fill_close=false reproduces the old golden byte for byte)
 	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
 	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
 	cfg.PHLMinAbovePriorPts = 0                             // oct round 2 G7: … and the 15-pt entry-vs-old-low distance
