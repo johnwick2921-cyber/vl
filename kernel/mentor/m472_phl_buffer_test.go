@@ -73,7 +73,7 @@ func TestM472PHLBufferFrameOldLowRoomRefused(t *testing.T) {
 		t.Fatalf("entry %.2f, want 28,316.25", in.Price)
 	}
 	sep := cfg
-	sep.PHLRoomMultiple = 2 // the default
+	sep.PHLRoomMultiple = 2 // the revert value (default 1 since answers-1112 Q2)
 	if _, ok, reason := PHLPLH(touch, oldLow, 0, 3, sep); ok {
 		t.Fatal("phl_room_multiple=2 must restore the September 2R refusal of the frame's example")
 	} else {

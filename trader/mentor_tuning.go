@@ -67,6 +67,7 @@ type mentorTuned struct {
 	EveningSlowWindowMin   int
 	NearBoxRoomMultiple    float64
 	NearBoxRoomPHL         bool
+	NearBoxRoomPHLMultiple float64 // answers-1112 Q2: resolved (nil → the resolved NearBoxRoomMultiple)
 	PHLTargetShyPts        float64
 	PHLOldExtreme1mK       int // PHL-1: 4 = default; 0 = the pre-PHL-1 source
 	ISBOldExtremePts       float64
@@ -114,6 +115,17 @@ type mentorTuned struct {
 	ISBReverseTrend            string  // D5.3-R43/R44
 	Counter5mReduceSize        string  // D5.4-SCALP
 	KeyLevelHistorySource      string  // LL-4
+}
+
+// phlNearBoxFollow resolves the kernel's NearBoxRoomPHLMultiple default
+// (NearBoxRoomPHLMultipleFollow, negative) to the near-box multiple it follows,
+// so the resolver, the effective-settings row and the evaluator all carry the
+// number the PHL/PLH leg really asks (answers-1112 Q2).
+func phlNearBoxFollow(phl, nearBox float64) float64 {
+	if phl < 0 {
+		return nearBox
+	}
+	return phl
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -187,6 +199,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		EveningSlowWindowMin:   d.EveningSlowWindowMin,
 		NearBoxRoomMultiple:    d.NearBoxRoomMultiple,
 		NearBoxRoomPHL:         d.NearBoxRoomPHL,
+		NearBoxRoomPHLMultiple: phlNearBoxFollow(d.NearBoxRoomPHLMultiple, d.NearBoxRoomMultiple),
 		PHLTargetShyPts:        d.PHLTargetShyPts,
 		PHLOldExtreme1mK:       d.PHLOldExtreme1mK,
 		ISBOldExtremePts:       d.ISBOldExtremePts,
@@ -374,6 +387,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
+	// answers-1112 Q2: nil (or a bad value) keeps the kernel's follow default,
+	// resolved to the near_box_room_multiple just picked — today exactly.
+	out.NearBoxRoomPHLMultiple = phlNearBoxFollow(d.NearBoxRoomPHLMultiple, out.NearBoxRoomMultiple)
+	pickPtr(t.NearBoxRoomPHLMultiple, 0, 10, &out.NearBoxRoomPHLMultiple)
 	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)                // G7
 	pickPtr(t.TrendlineMaxSlopePtsPerBar, 0, 1000, &out.TrendlineMaxSlopePtsPerBar) // D3-G14
 	pickPtr(t.TrendlineMinBouncePts, 0, 1000, &out.TrendlineMinBouncePts)           // D3-G10
@@ -480,6 +497,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.EveningSlowWindowMin = t.EveningSlowWindowMin
 	cfg.NearBoxRoomMultiple = t.NearBoxRoomMultiple
 	cfg.NearBoxRoomPHL = t.NearBoxRoomPHL
+	cfg.NearBoxRoomPHLMultiple = t.NearBoxRoomPHLMultiple // answers-1112 Q2
 	cfg.PHLTargetShyPts = t.PHLTargetShyPts
 	cfg.PHLOldExtreme1mK = t.PHLOldExtreme1mK // phl audit PHL-1
 	cfg.ISBOldExtremePts = t.ISBOldExtremePts

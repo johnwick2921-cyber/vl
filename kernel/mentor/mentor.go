@@ -256,6 +256,10 @@ func Leg1RiskMultiple(confluence bool) float64 {
 	return 1
 }
 
+// NearBoxRoomPHLMultipleFollow is the NearBoxRoomPHLMultiple value that makes
+// the PHL/PLH near-box leg follow NearBoxRoomMultiple (today's behaviour).
+const NearBoxRoomPHLMultipleFollow = -1.0
+
 // Config is every knob. Enabled is mentor_mode and defaults to false (L4):
 // while false the evaluator is never consulted and the bot is byte-identical.
 type Config struct {
@@ -426,12 +430,16 @@ type Config struct {
 	StopCeilingPts float64 // hard stop ceiling; default 25 [D3.3 p1 @ 02:04]
 	RoomMultiple   float64 // room rule: first level >= RoomMultiple x leg-1 distance (leg 1 = 1R -> 2R; confluence leg 1 = 2R -> 4R) [D5.3 p1 @09:16–09:52]; default 2
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path
-	// (level touch + rolling ladder) asks, in place of RoomMultiple. October takes
-	// the Oct D2.3 worked trades at 1:1..1.8R [OctD2.3-R31 @ 27:33 "tăng lên 1,2 ...
-	// 1,1 bây giờ là dĩ vãng"; WE7 1.14R, WE10 1.71R] and states no 1:1 room rule (the 2R
-	// room is Sept D5.3 METHOD s7; R31 itself says "about 1:2"). Default 2 (review
-	// P3: absence of a rule is not October lowering the bar); 1 = ask only the D1.2
-	// 1:1 floor [B, inferred from WE7/WE10]. ISB / box / swing keep RoomMultiple.
+	// (level touch + rolling ladder) asks, in place of RoomMultiple. Default 1
+	// since answers-1112 Q2 (verdict confirmed, high): October states the 1:1
+	// room — "khi em đặt stop-loss 40 điểm em cũng phải kiếm cái target 40 điểm
+	// ... Risk reward 1-1 ... at least là cũng 35 điểm" [Oct D2.3 @49:37-49:56,
+	// frame s_02972] — and WE10 shows it: the 3.31R target (s_04120) is dragged in
+	// to the old low and taken at R:R 1.71 (s_04126). R31 @ 27:33 "tăng lên 1,2"
+	// is one trade's result (s_01661 reads 1.8), not a minimum. The confluence
+	// tier still asks 2 x Leg1RiskMultiple (Sept D3.4 p3 "at least 1-2"). 2 = the
+	// September D5.3 METHOD s7 2R room (the revert value, today before
+	// answers-1112). ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
 	PHLRoomMultiple float64
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
@@ -545,8 +553,10 @@ type Config struct {
 
 	// NearBoxRoomMultiple — Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: a setup
 	// whose nearest box edge IN the trade direction is closer than this × its
-	// own risk is refused ("sát box"); 0 disables. Default 2 — the same 2R
-	// room the target rule demands. Between two boxes (row 25) is exempt.
+	// own risk is refused ("sát box"); 0 disables. Default 2 — ours (B11); it
+	// was "the same 2R room the target rule demands", but the PHL/PLH room is 1
+	// since answers-1112 Q2, so the PHL/PLH leg reads NearBoxRoomPHLMultiple
+	// (default: follow this value). Between two boxes (row 25) is exempt.
 	NearBoxRoomMultiple float64
 	// NearBoxRoomPHL — release #52 W11 B11 (knob near_box_room_phl, default ON
 	// = unchanged): the near-box refusal also applies to PHL/PLH entries (risk
@@ -556,6 +566,15 @@ type Config struct {
 	// ISB. The distance itself (NearBoxRoomMultiple, 2 × risk) is ours too —
 	// the mentor gave no number.
 	NearBoxRoomPHL bool
+	// NearBoxRoomPHLMultiple — answers-1112 Q2 (owner question): the near-box
+	// multiple the PHL/PLH leg asks (knob near_box_room_phl_multiple). The 2x is
+	// OURS (B11), not the course: the course gives the "sát box" skip on an ISB
+	// only [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10] and October asks 1:1 room
+	// for a PHL/PLH [Oct D2.3 @49:37-49:56]. DEFAULT NearBoxRoomPHLMultipleFollow
+	// (-1) = follow NearBoxRoomMultiple, i.e. today exactly; 0 = the PHL/PLH leg
+	// off (ISB unchanged); >0 = that multiple for the PHL/PLH leg only.
+	// Studio JSON: risk_control.mentor_tuning.near_box_room_phl_multiple.
+	NearBoxRoomPHLMultiple float64
 
 	// m465 P3 (release #60) structure-fidelity knobs. Each default is the
 	// course; the other value is the pre-#60 behaviour, kept for the owner.
@@ -1090,10 +1109,11 @@ func DefaultConfig() Config {
 		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
 		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
 		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
-		PHLRoomMultiple:            2,                   // D2-G2 (review): 2 = today; OctD2.3-R31 @ 27:33 states 1:2, no October 1:1 room rule; knob phl_room_multiple=1 asks only the 1:1 floor [B]
+		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
 		NearBoxRoomMultiple:        2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
 		NearBoxRoomPHL:             true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxRoomPHLMultiple:     -1,                  // answers-1112 Q2: NearBoxRoomPHLMultipleFollow = follow near_box_room_multiple (today); the PHL/PLH 2x is ours, owner question
 		NearBoxBetweenExempt:       false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
 		TrendlineEntryTouch:        TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
 		PHLFlatLow:                 PHLFlatLowNear,      // m465 D2.2-R64: a flat low (within flatNearPts) is an FTGL, not a PHL

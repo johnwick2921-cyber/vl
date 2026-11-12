@@ -1854,7 +1854,7 @@ func (e *Evaluator) phlLocationBanFor(lvl Level, side Side, price float64, cur m
 // phlNearBoxRefuses is the Day-3 row 24 near-box refusal for a PHL/PLH (the
 // "near_box" counter), shared by the level touch loop and the rolling path
 // (m436): the nearest box edge in the trade direction must be at least
-// NearBoxRoomMultiple x the reference candle's range away [D3.2 p1
+// phlNearBoxMultiple(cfg) x the reference candle's range away [D3.2 p1
 // @21:53–23:08]; m465: an entry inside the opposing box is
 // near_box_inside_opposing and between two boxes is no longer exempt unless
 // NearBoxBetweenExempt (D3.2-R29/R30). W11 B11: the PHL/PLH leg is our
@@ -1864,10 +1864,22 @@ func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRang
 	if !cfg.NearBoxRoomPHL {
 		return ""
 	}
-	if refuse, name := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange, cfg.NearBoxBetweenExempt); refuse {
+	if refuse, name := nearBoxRefusal(boxes, tref, side, phlNearBoxMultiple(cfg), refRange, cfg.NearBoxBetweenExempt); refuse {
 		return name
 	}
 	return ""
+}
+
+// phlNearBoxMultiple is the near-box multiple the PHL/PLH leg asks
+// (answers-1112 Q2, knob near_box_room_phl_multiple): a negative value
+// (NearBoxRoomPHLMultipleFollow, the default) follows NearBoxRoomMultiple —
+// today exactly; 0 turns the PHL/PLH leg off; >0 is that multiple. The 2x is
+// ours (B11), so it stays an owner question.
+func phlNearBoxMultiple(cfg Config) float64 {
+	if cfg.NearBoxRoomPHLMultiple < 0 {
+		return cfg.NearBoxRoomMultiple
+	}
+	return cfg.NearBoxRoomPHLMultiple
 }
 
 // midRangeBoxedRefuses is the level-path mid-range ban (CTO 1791003862333 —
@@ -3402,8 +3414,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
-			// box edge IN the trade direction is closer than NearBoxRoomMultiple ×
-			// its own risk; between two boxes (row 25) is exempt. It fires BEFORE
+			// box edge IN the trade direction is closer than phlNearBoxMultiple ×
+			// its own risk (answers-1112 Q2: follows NearBoxRoomMultiple by
+			// default); between two boxes (row 25) is exempt. It fires BEFORE
 			// the room rule — the room rule's target reads the box edge as the
 			// first obstacle, so the same proximity would otherwise surface as
 			// phl_room_rule instead of the near_box counter.

@@ -354,7 +354,7 @@ func TestM462BoxConflictNamed(t *testing.T) {
 		cfg.EMAPeriod34 = 0
 		cfg.EMAPeriod9 = 0
 		cfg.RoomMultiple = 0.05
-		cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 2)
+		cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 1 since answers-1112 Q2)
 		t0 := time.Date(2026, time.September, 15, 13, 0, 0, 0, ctime()).UnixMilli()
 		mk := func(i int, o, hi, l, c float64) market.Kline {
 			return market.Kline{OpenTime: t0 + int64(i)*60_000, CloseTime: t0 + int64(i)*60_000 + 59_000, Open: o, High: hi, Low: l, Close: c}

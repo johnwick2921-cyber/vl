@@ -428,6 +428,9 @@ export interface MentorTuning {
   // B11 [2 / true] — near-box room × risk (0 = off) and whether it gates PHL/PLH
   near_box_room_multiple?: number
   near_box_room_phl?: boolean
+  // answers-1112 Q2 [unset = follow near_box_room_multiple, today] — the near-box
+  // multiple for the PHL/PLH leg only (0 = PHL/PLH leg off; the 2x is ours, owner question)
+  near_box_room_phl_multiple?: number
   // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
   phl_target_shy_pts?: number
   // phl audit PHL-1 [4] — the rolling PHL/PLH old extreme is the 1m swing the pullback started from; its width k (1..10; -1 = the pre-PHL-1 5m/15m pivots). The course states no number: 4 reproduces the four Oct D2.3 worked examples.
@@ -483,7 +486,7 @@ export interface MentorTuning {
   box_carried_stays_live?: boolean // D3-G4 oct round 2
   box_swing_both_roles?: boolean // D3-G2 oct round 2
   box_preopen_lookback_min?: number // D3-G1 oct round 2
-  phl_room_multiple?: number
+  phl_room_multiple?: number // D2-G2 / answers-1112 Q2 [1] — unset = 1 (October 1:1, Oct D2.3 @49:37-49:56); 2 = the September 2R room (revert)
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
   // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
   session_open_levels?: 'on' | 'off'

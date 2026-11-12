@@ -41,7 +41,7 @@ func TestG7EntryMustStandOffTheOldLow(t *testing.T) {
 			cfg := DefaultConfig()
 			cfg.Enabled = true
 			cfg.PHLMinAbovePriorPts = 15
-			cfg.PHLRoomMultiple = 1 // this test pins the min-above gate, not the room (default 2)
+			cfg.PHLRoomMultiple = 1 // this test pins the min-above gate, not the room (the default, answers-1112 Q2)
 			in, ok, why := PHLPLHR2Levels(tr, oldHigh, 0, 100, c.prior, nil, cfg)
 			if ok != c.wantOK {
 				t.Fatalf("15-pt knob: ok=%v (%s) intent=%+v, want ok=%v at +%.2f over the old low", ok, why, in, c.wantOK, c.dist)

@@ -138,6 +138,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// the kernel hard-coded before (all "ours", none from the course).
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
 			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
+			NearBoxRoomPHLMultiple: 2, // answers-1112 Q2: follows near_box_room_multiple (today)
 			// m465 P3 (release #60): the course defaults from the full video read.
 			ISBStackTinyStopPts:  0,                          // G2 oct round 2: OFF (was 12.5, D5.1-R26)
 			TrendlineEntryTouch:  mentor.TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
@@ -159,7 +160,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
 			PHLOldExtreme1mK:           4,
 			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
-			PHLRoomMultiple:            2,                                 // D2-G2 review: today's 2R
+			PHLRoomMultiple:            1,                                 // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56]; 2 reverts
 			ISBTargetFillClose:         false,                             // D2-G3 review: OFF (course does not state it)
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
@@ -470,19 +471,43 @@ func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
 	}
 }
 
-// TestD2G2PHLRoomMultipleKnob — D2-G2 (review): unset = 2 (today), a stored 1
-// reaches the evaluator (the 1:1 floor reading), an out-of-range value fails
-// closed to the default 2.
+// TestD2G2PHLRoomMultipleKnob — D2-G2 / answers-1112 Q2: unset = 1 (October
+// 1:1 [Oct D2.3 @49:37-49:56 "Risk reward 1-1"; WE10 s_04126 R:R 1.71]), a
+// stored 2 reaches the evaluator (the revert value = today before
+// answers-1112), an out-of-range value fails closed to the default 1.
 func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
-	one, bad := 1.0, 50.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 2 {
-		t.Fatalf("unset phl_room_multiple = %v, want 2", c.PHLRoomMultiple)
+	two, bad := 2.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("unset phl_room_multiple = %v, want 1", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &one}); c.PHLRoomMultiple != 1 {
-		t.Fatalf("stored phl_room_multiple=1 → %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &two}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("stored phl_room_multiple=2 (revert) → %v", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 2 {
-		t.Fatalf("out-of-range phl_room_multiple must fail closed to 2, got %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
+	}
+}
+
+// TestAnswers1112NearBoxPHLMultipleKnob — answers-1112 Q2 (owner question):
+// unset follows near_box_room_multiple (today exactly, including an owner who
+// tuned near_box_room_multiple), a stored value reaches the evaluator for the
+// PHL/PLH leg only, an out-of-range value fails closed to follow.
+func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
+	one, zero, three, bad := 1.0, 0.0, 3.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 2 || c.NearBoxRoomMultiple != 2 {
+		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 2 / 2 (today)", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &three}); c.NearBoxRoomPHLMultiple != 3 {
+		t.Fatalf("unset PHL multiple must follow a stored near_box_room_multiple=3, got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &zero}); c.NearBoxRoomPHLMultiple != 0 {
+		t.Fatalf("unset PHL multiple must follow near_box_room_multiple=0 (off), got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 2 {
+		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 2", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 2 {
+		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (2), got %v", c.NearBoxRoomPHLMultiple)
 	}
 }
 

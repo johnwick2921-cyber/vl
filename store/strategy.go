@@ -2157,6 +2157,13 @@ type MentorTuning struct {
 	// [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10 — no distance given].
 	NearBoxRoomMultiple *float64 `json:"near_box_room_multiple,omitempty"`
 	NearBoxRoomPHL      *bool    `json:"near_box_room_phl,omitempty"`
+	// NearBoxRoomPHLMultiple — answers-1112 Q2 (owner question): the near-box
+	// multiple for the PHL/PLH leg only. nil → follow near_box_room_multiple
+	// (today exactly); explicit 0 → the PHL/PLH leg is off (ISB unchanged);
+	// [0,10]. The 2x is ours, not the course [Ngày 3.2 FTGH FTGL part1
+	// @00:22:44–00:23:10 shows the skip on an ISB only; Oct D2.3 @49:37-49:56
+	// asks 1:1 room for a PHL/PLH].
+	NearBoxRoomPHLMultiple *float64 `json:"near_box_room_phl_multiple,omitempty"`
 	// C16: how far short of the old high/low the PHL/PLH target sits (nil → 5;
 	// explicit 0 → AT the old extreme) [Ngày 4.1 Go over ngày 3 part1
 	// @00:07:21–00:07:40 "gần đỉnh cũ"].
@@ -2302,8 +2309,10 @@ type MentorTuning struct {
 	// whole-history read (the 08:30 candle compared with the 08:25 Globex candle).
 	TriggerFromOpen *bool `json:"trigger_from_open,omitempty"`
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
-	// (level touch + rolling ladder). nil → 2 (review: OctD2.3-R31 @ 27:33 says "about 1:2"; no October 1:1
-	// room rule). 1 = the worked trades WE7/WE10 (1.14R/1.71R) [B]. 0 = no room rule (the 1:1 floor stays).
+	// (level touch + rolling ladder). nil → 1 since answers-1112 Q2: October 1:1 [Oct D2.3
+	// @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04126 R:R
+	// 1.71 taken]. 2 = the revert value (Sept D5.3 2R room, today before answers-1112).
+	// 0 = no room rule (the 1:1 floor stays).
 	PHLRoomMultiple *float64 `json:"phl_room_multiple,omitempty"`
 }
 
