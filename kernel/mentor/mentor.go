@@ -112,6 +112,13 @@ const (
 	// đợi vài ngày" R16). No gap-fill entry exists ("em không đánh theo gap",
 	// R23). Keys "gap_edge:<price>@<session open ms>".
 	KindGapEdge LevelKind = "gap_edge"
+	// KindISB5mBoxScalpEdge is the standing 5m ISB box's FAR edge as the
+	// target cap of an in-box same-direction PHL/PLH (answers-1112 Q9, knob
+	// phl_5m_box_same_dir_allowed): "Chỉ cần xuống gần cạnh dưới bóc là anh
+	// chị đã out rồi. Chỉ là scap thôi" [Oct D4.3 @01:11:40-01:11:45]. It is
+	// never in the level set: withPHL5mBoxScalpEdge adds it to a per-call copy
+	// handed to the PHL/PLH target ladder only — never touched, never a location.
+	KindISB5mBoxScalpEdge LevelKind = "isb5m_box_scalp_edge"
 )
 
 // Level is one mentor level line. Lo/Hi are equal (a line); AtTime is the bar
@@ -930,6 +937,30 @@ type Config struct {
 	// PHL/PLH and swing targets are unchanged. OFF = today exactly. Studio:
 	// risk_control.mentor_tuning.box_trendline_partial_not_room.
 	BoxTrendlinePartialNotRoom bool
+	// PHL5mBoxSameDirAllowed — answers-1112 Q9 (verdict confirmed, confidence
+	// medium). Inside a standing 5m inside-bar box he trades only the box's
+	// own direction: "muốn tray bên trong InshaBar 05 phút thì anh chị phải
+	// đánh cùng chiều với InshaBar 05 phút" [Oct D4.3 @01:08:24-01:08:39];
+	// "Chứ không có 5 phút đang Inshabashort vô đây đánh lệnh lon nha"
+	// [@01:09:46-01:09:51]. A same-direction lower-high/higher-low is allowed
+	// for traders whose eye is trained: "đây là kinh nghiệm cho anh chị nào đã
+	// nhìn quen rồi / Chứ những anh chị khóa mới chưa nhìn quen thì đừng"
+	// [@01:10:58-01:11:03, .check.txt large-v3], "Potential Low High cho lệnh
+	// Short thì vẫn là đúng theo cái Insa Bar cho lệnh Short bên ngoài"
+	// [@01:11:20-01:11:24], with no target of its own — a scalp out near the
+	// box's far edge: "Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi.
+	// Chỉ là scap thôi" [@01:11:40-01:11:45]; "muốn trade một cách thoải mái
+	// thì đừng" [@01:12:00-01:12:11]. Supersedes the September in-box rule (only
+	// a same-direction ISB inside the box, Sept D3.4 p2 @07:27-10:35).
+	// ON: while the 5m ISB box stands, a PHL/PLH on the box's own side
+	// (ISBBox.Dir, the candle-1 colour) is NOT refused phl_5m_box_ban, and its
+	// target is capped at the box's far edge (High for a long, Low for a
+	// short) — the 1:1 floor and the PHL room rule then read the capped
+	// target. The opposite side stays phl_5m_box_ban; the 15m/30m box bans and
+	// the mid-range bans are untouched (no video extends the exception to
+	// them). DEFAULT OFF: "experienced only" is a judgement the owner makes.
+	// Studio: risk_control.mentor_tuning.phl_5m_box_same_dir_allowed.
+	PHL5mBoxSameDirAllowed bool
 	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
 	// leg closed by a stop-out also resets on a close beyond the losing
 	// trade's wave extreme — "đợi cho nó break được cái đỉnh, hoặc đợi cho nó
@@ -1226,6 +1257,8 @@ func DefaultConfig() Config {
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 		// answers-1112 Q12 (box trades and trendlines).
 		BoxTrendlinePartialNotRoom: true, // answers-1112 Q12: a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39 f_000338; Oct D3.3 @46:00-46:27]; false = today
+		// answers-1112 Q9: OFF — "experienced only" is the owner's call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
+		PHL5mBoxSameDirAllowed: false,
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms

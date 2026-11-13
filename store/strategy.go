@@ -2336,6 +2336,16 @@ type MentorTuning struct {
 	// >= 1:1 [Oct D1.2 @11:00-11:40]). A line with no real level beyond stays
 	// the target; ISB/PHL/PLH/swing unchanged. false = today exactly.
 	BoxTrendlinePartialNotRoom *bool `json:"box_trendline_partial_not_room,omitempty"`
+	// PHL5mBoxSameDirAllowed — answers-1112 Q9: nil → OFF (today). true: inside
+	// a standing 5m ISB box a PHL/PLH on the box's OWN side (candle-1 colour) is
+	// not refused phl_5m_box_ban; its target is capped at the box's far edge (a
+	// scalp: "Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi. Chỉ là scap
+	// thôi" [Oct D4.3 @01:11:40-01:11:45]; "phải đánh cùng chiều với InshaBar 05
+	// phút" [@01:08:24-01:08:39]). The opposite side stays banned; 15m/30m box
+	// bans and the mid-range bans are unchanged. Default OFF: "kinh nghiệm cho
+	// anh chị nào đã nhìn quen rồi" [@01:10:58-01:11:03] — experienced only, the
+	// owner's call.
+	PHL5mBoxSameDirAllowed *bool `json:"phl_5m_box_same_dir_allowed,omitempty"`
 	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
 	// line is read from the 08:30 CT Open, not from the overnight Globex tape
 	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the

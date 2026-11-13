@@ -119,6 +119,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.box_trendline_partial_not_room',
     live: true,
   },
+  'PHL/PLH inside the 5m ISB box: same direction as a scalp': {
+    settingId: 'risk_control.mentor_tuning.phl_5m_box_same_dir_allowed',
+    live: true,
+  },
   'Leg reset on a wave break': {
     settingId: 'risk_control.mentor_tuning.leg_reset_on_wave_break',
     live: true,
@@ -717,7 +721,7 @@ export const mentor: GuideSection = {
         },
         {
           title: 'Only same-direction inside a 5m ISB box',
-          body: 'The 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Since the ISB5 audit (October OctD4.3-R59 "bọc từ head to toe") every 5m candle that closes inside the standing box MERGES into it — the box widens to that candle’s high/low and keeps the first inside bar’s direction (mentor_5m_box_source = merge; newest = the #61–#66 replace-with-newest read); a 1m CLOSE outside the box breaks it and trading is allowed; since m473 the box itself is deleted only when a candle of its own timeframe (5m/15m/30m) closes outside (isb_box_escape = close5m; close = the old 1m delete), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock). A 1m close back inside does not re-arm the box ban (the video states only the exit and the own-timeframe delete); a newer inside-bar pair replaces a broken 15m/30m box at once, and the dashboard marks a broken box "broken long/short". The box does NOT replace the trigger line (isbTF audit, October overrides Sept D4.1-23): a 1m ISB inside the box needs BOTH the box direction AND the governing trigger side — above a 5m SELL line no long while the 5m still has a sell trigger ("Tuyệt đối không được … khung 5 phút vẫn đang có sell trigger", OctD4.3-R28), refused isb_trigger_side / isb_trigger_side_mismatch exactly as with no box. Before the audit the standing box hid the trigger, and on the course\u2019s own 11-02 chart the bot went long at 09:35 above the 09:30 sell line.',
+          body: 'The 5m ISB candle is boxed; only a same-direction 1m ISB trades inside it. Since the ISB5 audit (October OctD4.3-R59 "bọc từ head to toe") every 5m candle that closes inside the standing box MERGES into it — the box widens to that candle’s high/low and keeps the first inside bar’s direction (mentor_5m_box_source = merge; newest = the #61–#66 replace-with-newest read); a 1m CLOSE outside the box breaks it and trading is allowed; since m473 the box itself is deleted only when a candle of its own timeframe (5m/15m/30m) closes outside (isb_box_escape = close5m; close = the old 1m delete), and after the break only setups in the break direction trade until a close back inside (mentor_break_direction_lock). A 1m close back inside does not re-arm the box ban (the video states only the exit and the own-timeframe delete); a newer inside-bar pair replaces a broken 15m/30m box at once, and the dashboard marks a broken box "broken long/short". A PHL/PLH inside the box is refused phl_5m_box_ban; with “PHL/PLH inside the 5m ISB box: same direction as a scalp” on (answers-1112 Q9, default off) one on the box’s own side trades as a scalp to the box edge [Oct D4.3 @1:08:24–1:11:45]. The box does NOT replace the trigger line (isbTF audit, October overrides Sept D4.1-23): a 1m ISB inside the box needs BOTH the box direction AND the governing trigger side — above a 5m SELL line no long while the 5m still has a sell trigger ("Tuyệt đối không được … khung 5 phút vẫn đang có sell trigger", OctD4.3-R28), refused isb_trigger_side / isb_trigger_side_mismatch exactly as with no box. Before the audit the standing box hid the trigger, and on the course\u2019s own 11-02 chart the bot went long at 09:35 above the 09:30 sell line.',
           cite: 'D3.4 p2 @09:09–09:39 — ISB rest box, same-direction only · D4.1-R37 p1 @22:31–22:49 · D4.1-R34 p1 @20:36–21:03 · D4.1-R31 p1 @18:27–20:33 · OctD4.3-R28 @ 22:00 · OctD4.3-R29 @ 23:20 · OctD4.3-R69 @ 1:07:26 (trigger AND box)',
         },
         {
@@ -1837,7 +1841,7 @@ export const mentor: GuideSection = {
             'Rolling ladder: a touch of an earlier leg does not own the entry',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.rolling_stale_touch_releases)',
-          what: 'Fix 1112 B (WE6, Tue 27 Oct). A level touch-reject normally owns the entry (the level path, first touch fixed) and the rolling pullback ladder stands aside. WE6’s pullback [OctD2.3 @13:37–28:33] was blocked all the way by a 1H level (29,668.50) that price had rejected at 08:40 — an hour before the 09:36 old high the ladder targets. on = a touch candle older than the old extreme the ladder targets belongs to an earlier leg and no longer owns this one; a touch inside the pullback still owns it. off (default) = today: any live touch-reject owns the entry. Default OFF: after this gate WE6 is still refused by the 5m box ban / mid-range ban, so the worked example is not reproduced end to end and the flip waits for the mentor.',
+          what: 'Fix 1112 B (WE6, Tue 27 Oct). A level touch-reject normally owns the entry (the level path, first touch fixed) and the rolling pullback ladder stands aside. WE6’s pullback [OctD2.3 @13:37–28:33] was blocked all the way by a 1H level (29,668.50) that price had rejected at 08:40 — an hour before the 09:36 old high the ladder targets. on = a touch candle older than the old extreme the ladder targets belongs to an earlier leg and no longer owns this one; a touch inside the pullback still owns it. off (default) = today: any live touch-reject owns the entry. Default OFF: after this gate WE6 is still refused by the 5m box ban / mid-range ban, so the worked example is not reproduced end to end and the flip waits for the mentor. (answers-1112 Q9: WE6 is a long inside a LONG 5m box, so “PHL/PLH inside the 5m ISB box: same direction as a scalp” lifts the box ban for it when on; the mid-range ban stays.)',
           trader: 'off — default until the mentor rules on the box ban.',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingStaleTouchReleases) · kernel/mentor/rolling_phl.go rollingPHLTick',
@@ -1852,7 +1856,7 @@ export const mentor: GuideSection = {
           label: 'Rolling ladder: no keypair sit-out on the tape old extreme',
           where:
             'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.rolling_keypair_tape_exempt)',
-          what: 'Fix 1112 B (WE7, Fri 30 Oct). The keypair sit-out (a candle as big as the gap between two key levels, X4) paired the rolling ladder’s old low 28,288.75 — a 1m tape swing — with a 1H level 5.75 pts below and refused the 13.5-pt 13:25 candle, the exact rung the mentor sold [OctD2.3 @35:46–39:09]. X4 pairs two key levels he drew. on = the sit-out is not applied when the anchor is the ladder’s tape old extreme (key-level touches keep it). off (default) = today. Default OFF: after this gate WE7 is still refused by the 5m box ban and the 2R PHL room multiple.',
+          what: 'Fix 1112 B (WE7, Fri 30 Oct). The keypair sit-out (a candle as big as the gap between two key levels, X4) paired the rolling ladder’s old low 28,288.75 — a 1m tape swing — with a 1H level 5.75 pts below and refused the 13.5-pt 13:25 candle, the exact rung the mentor sold [OctD2.3 @35:46–39:09]. X4 pairs two key levels he drew. on = the sit-out is not applied when the anchor is the ladder’s tape old extreme (key-level touches keep it). off (default) = today. Default OFF: after this gate WE7 is still refused by the 5m box ban and the 2R PHL room multiple. (answers-1112: the room is 1:1 since Q2, and WE7 is a short inside a SHORT 5m box, so “PHL/PLH inside the 5m ISB box: same direction as a scalp” lifts the box ban for it when on — Q9.)',
           trader:
             'off — default until the mentor rules on the box ban and the room.',
           consumer:
@@ -2257,6 +2261,23 @@ export const mentor: GuideSection = {
             'on [Sept D3.3 p1 @05:15–07:46; Sept D3.2 p2 @11:06–11:39]. The partial at the line only goes out when the runner is ≥ 2 contracts in mode B and the AddOn proves the leg-3 build; otherwise leg 1 sells at 1:1 and the runner rides to the target. Not built: counting only a line that has had its 3rd test (Sept D3.2 p2 @03:26–03:59) — no trendline cap is kept on a box trade, so there is nothing to restrict.',
           whenToTouch:
             'Set false only to get back today’s rule (a trendline in the path caps a box trade’s room).',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'PHL/PLH inside the 5m ISB box: same direction as a scalp',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.phl_5m_box_same_dir_allowed)',
+          what: 'answers-1112 Q9 (verdict confirmed, confidence medium). Inside a standing 5m inside-bar box he trades only the box’s own direction: “muốn tray bên trong InshaBar 05 phút thì anh chị phải đánh cùng chiều với InshaBar 05 phút” (to trade inside the 5m inside bar you must trade the same way as the 5m inside bar) [Oct D4.3 @1:08:24–1:08:39]; “Chứ không có 5 phút đang Inshabashort vô đây đánh lệnh lon nha” (not a long in here while the 5m is a short inside bar) [@1:09:46–1:09:51]. He then allows a lower-high short at the 1m mini peaks inside a SHORT box, because it “vẫn là đúng theo cái Insa Bar cho lệnh Short bên ngoài” (still agrees with the short inside bar outside) [@1:11:20–1:11:24] — but only for a trained eye: “đây là kinh nghiệm cho anh chị nào đã nhìn quen rồi / Chứ những anh chị khóa mới chưa nhìn quen thì đừng” (this is experience for those whose eye is used to it; new students, don’t) [@1:10:58–1:11:03], and “muốn trade một cách thoải mái thì đừng” (if you want to trade comfortably, don’t) [@1:12:00–1:12:11]. It has no target of its own: “Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi. Chỉ là scap thôi” (just get near the box’s bottom edge and you are out; only a scalp) [@1:11:40–1:11:45]. October widens September, where only a same-direction ISB traded inside the box [Sept D3.4 p2 @07:27–10:35]. on = while the 5m ISB box stands (its direction is the colour of its first candle), a PHL/PLH on the box’s own side is NOT refused phl_5m_box_ban; its target is capped at the box’s far edge (box high for a long, box low for a short) and the runner does not ride past it; the 1:1 floor and the PHL room rule read the capped target; an entry at or past the edge is refused phl_5m_box_scalp_no_room. The opposite side stays phl_5m_box_ban; the 15m/30m box bans, the mid-range bans and box trades inside the box (box_isb_ban) are unchanged. The mentor’s own WE6 (Tue 27 Oct, long box 29,611.25–29,673.50, buy stop 29,645.00, target 29,668.50) and WE7 (Fri 30 Oct, short box 28,288.75–28,333.00, sell stop 28,316.25, target 28,293.75) both go with their box, and with this on the rolling ladder arms both rungs — on the live tape other gates still refuse them (the 1H touch and mid-range on WE6, X4 and the room on WE7). His one example scalp took 14–15 pts (heard in the report’s large-v3 re-listen @1:11:27–1:11:57, not in the stored transcript); no point number is wired — the box edge is the cap. off (default) = today exactly.',
+          trader:
+            'off — experienced only [Oct D4.3 @1:10:58–1:11:03]; the owner decides.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (PHL5mBoxSameDirAllowed) → kernel/mentor/eval.go phlLocationBanFor (phl5mBoxSameDir) · phl5mBoxScalpEdge / withPHL5mBoxScalpEdge (level touch loop) · kernel/mentor/rolling_phl.go rollingPHLTick',
+          range: 'on / off',
+          systemDefault: 'off',
+          recommended:
+            'off [Oct D4.3 @1:10:58–1:11:03, @1:12:00–1:12:11 — not for new students, not for comfortable trading]. Turn on only if the owner rules the bot trades as an experienced trader.',
+          whenToTouch:
+            'Set true to let a same-direction PHL/PLH scalp to the box edge; false (or unset) keeps today’s ban.',
           perSession: 'No — per strategy.',
         },
         {

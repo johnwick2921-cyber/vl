@@ -919,6 +919,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("isb_no_level_fill_close", "trader.mentorTuningResolve (answers-1112 Q3 Oct D2.2 @28:37-31:33, nil \u2192 ON)", func(t mentorTuned) any { return t.ISBNoLevelFillClose })
 	mentorTuningRow("touch_stop_cover_later_wick", "trader.mentorTuningResolve (answers-1112 Q7 Oct D5.2 @19:42-20:03, swing candle-2 entry, nil \u2192 ON)", func(t mentorTuned) any { return t.TouchStopCoverLaterWick })
 	mentorTuningRow("box_trendline_partial_not_room", "trader.mentorTuningResolve (answers-1112 Q12 Sept D3.3 p1 @05:15-07:46, box trade: a trendline is a partial, not the room cap, nil \u2192 ON)", func(t mentorTuned) any { return t.BoxTrendlinePartialNotRoom })
+	mentorTuningRow("phl_5m_box_same_dir_allowed", "trader.mentorTuningResolve (answers-1112 Q9 Oct D4.3 @01:08:24-01:11:45, a same-direction PHL/PLH inside the 5m ISB box is a scalp to the box edge, nil \u2192 OFF)", func(t mentorTuned) any { return t.PHL5mBoxSameDirAllowed })
 	mentorTuningRow("trigger_from_open", "trader.mentorTuningResolve (G4 OctD4.3-R5, nil \u2192 ON)", func(t mentorTuned) any { return t.TriggerFromOpen })
 	mentorTuningRow("rolling_left_break_cancel", "trader.mentorTuningResolve (D2-G6 OctD2.3-R69, nil \u2192 ON)", func(t mentorTuned) any { return t.RollingLeftBreakCancel })
 	mentorTuningRow("rolling_stale_touch_releases", "trader.mentorTuningResolve (FIX-1112 B WE6, nil \u2192 OFF)", func(t mentorTuned) any { return t.RollingStaleTouchReleases })
