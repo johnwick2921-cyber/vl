@@ -10,8 +10,9 @@ import (
 // the 2R of Sept D5.3 METHOD s7 [OctD2.3-R31 @ 27:33 "tăng lên 1,2 ... 1,1
 // bây giờ là dĩ vãng"; WE7 risk 15.75 / reward 18 = 1.14R and WE10 tool R:R
 // 1.71 were both taken]. PHLRoomMultiple (knob phl_room_multiple) is the room
-// the PHL/PLH path asks: default 1 (the 1:1 floor stays), 2 = the September
-// behaviour. Each case is the mentor's own rung on the real stored bars,
+// the PHL/PLH path asks: default 1 since answers-1112 Q2 [Oct D2.3 @49:37-49:56
+// "Risk reward 1-1"; WE10 s_04126 R:R 1.71] (the 1:1 floor stays), 2 = the
+// September behaviour (the revert value). Each case is the mentor's own rung on the real stored bars,
 // through the production rollingPHLTick at DefaultConfig (NOT the cfg
 // override TestPHL1CourseWorkedExamples uses).
 func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
@@ -35,21 +36,21 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 			rung := phl1At(t, bars, 2026, time.October, c.d, c.rungH, c.rungM)
 			at := fmt.Sprintf("%02d:%02d", c.rungH, c.rungM)
 
-			// phl_room_multiple=1: the rung arms.
+			// Default (phl_room_multiple=1, answers-1112 Q2): the rung arms.
 			oct := DefaultConfig()
-			oct.PHLRoomMultiple = 1 // knob phl_room_multiple=1: the worked-trade reading [B]
 			e := phl1Evaluator(oct, c.side, bars[from].OpenTime, bars[rung].Close)
 			got := phl1Find(phl1RunRolling(e, bars, from, rung), at)
 			if len(got.places) != 1 || !m464Approx(got.places[0].Price, c.entry) {
 				t.Fatalf("%s: default config must arm the mentor's %s rung %.2f; got %+v refused=%v", c.name, at, c.entry, got.places, got.refuse)
 			}
 
-			// Default (2): refused rolling_room, nothing armed.
+			// Revert knob phl_room_multiple=2: refused rolling_room, nothing armed.
 			cfg := DefaultConfig()
+			cfg.PHLRoomMultiple = 2
 			e2 := phl1Evaluator(cfg, c.side, bars[from].OpenTime, bars[rung].Close)
 			got2 := phl1Find(phl1RunRolling(e2, bars, from, rung), at)
 			if len(got2.places) != 0 {
-				t.Fatalf("%s: default 2R room must restore the 2R refusal, got %+v", c.name, got2.places)
+				t.Fatalf("%s: phl_room_multiple=2 must restore the 2R refusal, got %+v", c.name, got2.places)
 			}
 			found := false
 			for _, r := range got2.refuse {
@@ -58,7 +59,7 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 				}
 			}
 			if !found {
-				t.Fatalf("%s: default 2R room must name rolling_room, got %v", c.name, got2.refuse)
+				t.Fatalf("%s: phl_room_multiple=2 must name rolling_room, got %v", c.name, got2.refuse)
 			}
 		})
 	}

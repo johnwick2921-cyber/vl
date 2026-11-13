@@ -180,7 +180,9 @@ type mentorCourseExitsResolved struct {
 	BoxFreshRTHPair       bool
 	BoxMaxHeightPts       float64
 	// SwingMaxStopPts (m463, D5.2-R31): the swing skip ceiling — a SWING4H stop
-	// ABOVE it is refused. Knob mentor_swing_max_stop_pts, unset/0/bad → 90.
+	// ABOVE it is refused. Knob mentor_swing_max_stop_pts, unset/0/bad → 80
+	// (answers-1112 Q13, "7-80 điểm … cứ vô 1-2" [Sept D5.2 p2 @05:25-05:33];
+	// 90 = the m463 value, the revert).
 	SwingMaxStopPts float64
 	// ISBLossBox (m465 P2, D4.2-R27): what an ISB stop-out boxes — range
 	// (the 5m range that held the trade, default) | band.

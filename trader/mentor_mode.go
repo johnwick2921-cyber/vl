@@ -95,7 +95,7 @@ type mentorTierInputs struct {
 	// bare table test) falls back to the kernel defaults, never to a second
 	// constant.
 	SwingMaxStopPts    float64
-	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 90) — a swing stop ABOVE it is refused
+	SwingSkipStopPts   float64 // m463 D5.2-R31: mentor_swing_max_stop_pts (kernel SwingCfg.SkipStopPts, default 80 since answers-1112 Q13; 90 reverts) — a swing stop ABOVE it is refused
 	SpentDayStopCapPts float64
 	ISBMaxStopPts      float64 // the ISB R8 ceiling = mentor_isb_max_pts (kernel CourseExits.ISBMaxStopPts, default 20 since m466; PHL/PLH/BOX: mentorStopCeilingFor → 25)
 
@@ -301,7 +301,7 @@ func mentorTierFor(in mentorTierInputs, base, conf, big, reduced, swing4h, spent
 		// reaches SwingMaxStopPts goes out at min(base, 2) MNQ — "anh chị có
 		// thể lấy 1 hay 2 contract" [D5.2 p2 @21:25-21:43] — whatever the
 		// owner's swing knob says. One number: mentorSwingWideStopCap. m463: a
-		// stop ABOVE mentor_swing_max_stop_pts (default 90) never gets here —
+		// stop ABOVE mentor_swing_max_stop_pts (default 80) never gets here —
 		// the rule gate refuses it (D5.2-R31); this tier only bites when the
 		// owner raises that ceiling to >= this one.
 		if wide := mentorSwingWideStopCap(in); wide > 0 {
@@ -876,7 +876,8 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 		// after being shown the quote): "mà stop loss ở level gần cả trăm điểm
 		// thì không ngon nữa… 100 điểm quá nhiều rủi ro" [D5.2 p2 @19:34–21:43]
 		// (his example 91.75). A swing stop ABOVE mentor_swing_max_stop_pts
-		// (default 90) is refused. The kernel refuses first (swing_max_stop);
+		// (default 80 since answers-1112 Q13: "7-80 điểm … cứ vô 1-2" [Sept
+		// D5.2 p2 @05:25-05:33]; 90 reverts) is refused. The kernel refuses first (swing_max_stop);
 		// this is the trader's backstop on the SAME resolved number. The B5
 		// sizing ceiling (extra.SwingMaxStopPts, 100) only matters when the
 		// owner raises this one above it.
@@ -885,7 +886,7 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 			skip = mentor.DefaultSwingCfg().SkipStopPts
 		}
 		if stop > skip+1e-6 { // float noise only, never a tick
-			return fmt.Sprintf("R31: swing stop %.2f pts above the %.0f-pt ceiling (mentor_swing_max_stop_pts) — \"100 điểm quá nhiều rủi ro\", đừng vô [D5.2 p2 @19:34–21:43]", stop, skip)
+			return fmt.Sprintf("R31: swing stop %.2f pts above the %.0f-pt ceiling (mentor_swing_max_stop_pts) — \"7-80 điểm … cứ vô 1-2 cũng được\" is the most the course allows [D5.2 p2 @05:25-05:33]; \"100 điểm quá nhiều rủi ro\", đừng vô [D5.2 p2 @19:34–21:43]", stop, skip)
 		}
 	} else {
 		// R8 reads the SAME knob as the kernel — mentor_isb_max_pts

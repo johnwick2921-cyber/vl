@@ -32,6 +32,7 @@ type mentorTuned struct {
 	BEOffsetTicks          int // m472 A5: 0 = OFF (BE at the entry exactly)
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
+	HTFOpposedRangeHaltPts float64 // answers-1112 Q1 extra rule: 0 = OFF
 	SwingMaxStopPts        float64
 	SwingMinStopPts        float64
 
@@ -67,6 +68,7 @@ type mentorTuned struct {
 	EveningSlowWindowMin   int
 	NearBoxRoomMultiple    float64
 	NearBoxRoomPHL         bool
+	NearBoxRoomPHLMultiple float64 // answers-1112 Q2: resolved (nil → the resolved NearBoxRoomMultiple)
 	PHLTargetShyPts        float64
 	PHLOldExtreme1mK       int // PHL-1: 4 = default; 0 = the pre-PHL-1 source
 	ISBOldExtremePts       float64
@@ -108,12 +110,27 @@ type mentorTuned struct {
 	BoxPreOpenLookbackMin      float64 // D3-G1
 	TriggerFromOpen            bool    // G4
 	ISBTargetFillClose         bool    // D2-G3
+	ISBNoLevelFillClose        bool    // answers-1112 Q3
+	TouchStopCoverLaterWick    bool    // answers-1112 Q7
+	BoxTrendlinePartialNotRoom bool    // answers-1112 Q12
+	PHL5mBoxSameDirAllowed     bool    // answers-1112 Q9
 	PHLRoomMultiple            float64 // D2-G2
 	KeyLevelBreakRetest        string  // LL-2
 	KeyLevelRearm              string  // D3-G15
 	ISBReverseTrend            string  // D5.3-R43/R44
 	Counter5mReduceSize        string  // D5.4-SCALP
 	KeyLevelHistorySource      string  // LL-4
+}
+
+// phlNearBoxFollow resolves the kernel's NearBoxRoomPHLMultiple default
+// (NearBoxRoomPHLMultipleFollow, negative) to the near-box multiple it follows,
+// so the resolver, the effective-settings row and the evaluator all carry the
+// number the PHL/PLH leg really asks (answers-1112 Q2).
+func phlNearBoxFollow(phl, nearBox float64) float64 {
+	if phl < 0 {
+		return nearBox
+	}
+	return phl
 }
 
 func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTuned {
@@ -130,6 +147,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		Exec2mAfter30m:         d.Exec2mAfter30m,
 		DayGateSpentPts:        d.DayGateSpentPts,
 		DayGateTargetCapPts:    d.DayGateTargetCapPts,
+		HTFOpposedRangeHaltPts: d.HTFOpposedRangeHaltPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
 		SwingMinStopPts:        d.Swing.MinStopPts,
 
@@ -176,6 +194,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BoxPreOpenLookbackMin:       d.BoxPreOpenLookbackMin,
 		TriggerFromOpen:             d.TriggerFromOpen,
 		ISBTargetFillClose:          d.ISBTargetFillClose,
+		ISBNoLevelFillClose:         d.ISBNoLevelFillClose,
+		TouchStopCoverLaterWick:     d.Swing.CoverLaterWick,
+		BoxTrendlinePartialNotRoom:  d.BoxTrendlinePartialNotRoom,
+		PHL5mBoxSameDirAllowed:      d.PHL5mBoxSameDirAllowed,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -187,6 +209,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		EveningSlowWindowMin:   d.EveningSlowWindowMin,
 		NearBoxRoomMultiple:    d.NearBoxRoomMultiple,
 		NearBoxRoomPHL:         d.NearBoxRoomPHL,
+		NearBoxRoomPHLMultiple: phlNearBoxFollow(d.NearBoxRoomPHLMultiple, d.NearBoxRoomMultiple),
 		PHLTargetShyPts:        d.PHLTargetShyPts,
 		PHLOldExtreme1mK:       d.PHLOldExtreme1mK,
 		ISBOldExtremePts:       d.ISBOldExtremePts,
@@ -233,6 +256,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pick(t.PingPongCandleMaxPts, 0.01, 200, &out.PingPongCandleMaxPts)
 	pick(t.DayGateSpentPts, 50, 2000, &out.DayGateSpentPts)
 	pick(t.DayGateTargetCapPts, 1, 100, &out.DayGateTargetCapPts)
+	pick(t.HTFOpposedRangeHaltPts, 50, 2000, &out.HTFOpposedRangeHaltPts) // answers-1112 Q1 extra rule: 0 / out of range = OFF
 	pick(t.SwingMaxStopPts, 30, 300, &out.SwingMaxStopPts)
 	// W26 P2-4: 0 = OFF (R5). A floor above the MaxStopPts ceiling is refused.
 	pick(t.SwingMinStopPts, 0.01, 100, &out.SwingMinStopPts)
@@ -336,6 +360,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.BoxSwingBothRoles, &out.BoxSwingBothRoles)                   // D3-G2
 	flag(t.TriggerFromOpen, &out.TriggerFromOpen)                       // G4
 	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)                 // D2-G3
+	flag(t.ISBNoLevelFillClose, &out.ISBNoLevelFillClose)               // answers-1112 Q3
+	flag(t.TouchStopCoverLaterWick, &out.TouchStopCoverLaterWick)       // answers-1112 Q7
+	flag(t.BoxTrendlinePartialNotRoom, &out.BoxTrendlinePartialNotRoom) // answers-1112 Q12
+	flag(t.PHL5mBoxSameDirAllowed, &out.PHL5mBoxSameDirAllowed)         // answers-1112 Q9
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -374,6 +402,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		bad()
 	}
 	pickPtr(t.NearBoxRoomMultiple, 0, 10, &out.NearBoxRoomMultiple)
+	// answers-1112 Q2: nil (or a bad value) keeps the kernel's follow default,
+	// resolved to the near_box_room_multiple just picked — today exactly.
+	out.NearBoxRoomPHLMultiple = phlNearBoxFollow(d.NearBoxRoomPHLMultiple, out.NearBoxRoomMultiple)
+	pickPtr(t.NearBoxRoomPHLMultiple, 0, 10, &out.NearBoxRoomPHLMultiple)
 	pickPtr(t.PHLMinAbovePriorPts, 0, 100, &out.PHLMinAbovePriorPts)                // G7
 	pickPtr(t.TrendlineMaxSlopePtsPerBar, 0, 1000, &out.TrendlineMaxSlopePtsPerBar) // D3-G14
 	pickPtr(t.TrendlineMinBouncePts, 0, 1000, &out.TrendlineMinBouncePts)           // D3-G10
@@ -450,6 +482,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Exec2mAfter30m = t.Exec2mAfter30m
 	cfg.DayGateSpentPts = t.DayGateSpentPts
 	cfg.DayGateTargetCapPts = t.DayGateTargetCapPts
+	cfg.HTFOpposedRangeHaltPts = t.HTFOpposedRangeHaltPts // answers-1112 Q1 extra rule
 	cfg.Swing.MaxStopPts = t.SwingMaxStopPts
 	cfg.Swing.MinStopPts = t.SwingMinStopPts
 	cfg.FifteenMinIBRule = t.FifteenMinIBRule
@@ -480,6 +513,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.EveningSlowWindowMin = t.EveningSlowWindowMin
 	cfg.NearBoxRoomMultiple = t.NearBoxRoomMultiple
 	cfg.NearBoxRoomPHL = t.NearBoxRoomPHL
+	cfg.NearBoxRoomPHLMultiple = t.NearBoxRoomPHLMultiple // answers-1112 Q2
 	cfg.PHLTargetShyPts = t.PHLTargetShyPts
 	cfg.PHLOldExtreme1mK = t.PHLOldExtreme1mK // phl audit PHL-1
 	cfg.ISBOldExtremePts = t.ISBOldExtremePts
@@ -515,6 +549,10 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin           // D3-G1
 	cfg.TriggerFromOpen = t.TriggerFromOpen                       // G4
 	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
+	cfg.ISBNoLevelFillClose = t.ISBNoLevelFillClose               // answers-1112 Q3
+	cfg.Swing.CoverLaterWick = t.TouchStopCoverLaterWick          // answers-1112 Q7
+	cfg.BoxTrendlinePartialNotRoom = t.BoxTrendlinePartialNotRoom // answers-1112 Q12
+	cfg.PHL5mBoxSameDirAllowed = t.PHL5mBoxSameDirAllowed         // answers-1112 Q9
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
 	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
@@ -532,9 +570,9 @@ func mentorCourseEntryBootLine(at *AutoTrader, rc *store.RiskControlConfig) stri
 	if at != nil && at.id != "" {
 		id = at.id
 	}
-	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v htf_gate_news_only=%v isb_stack_tiny_stop_pts=%g phl_room_multiple=%g phl_min_above_old_extreme_pts=%g isb_target_fill_close=%v trigger_from_open=%v key_level_rearm=%v isb_reverse_trend=%v counter_5m_reduce_size=%v",
+	return fmt.Sprintf("🧑‍🏫 mentor course-entry knobs for trader %s: 15m_ib_requires_5m_isb=%s 15m_early_read=%v mtf_confluence_source=%s trigger_escalation=%v tf_conflict_end=%s news_wait_both_lines=%v news_bars_excluded=%v isb_box_escape=%s ema34_loss_relock=%s orb_edge_veto_pts=%g d43_trend_source=%s level_entries_need_trigger_side=%v trendline_is_target=%v trendline_between_boxes=%v leg_reset_on_wave_break=%v flag_wall_target=%v box_new_zone_after_escape=%v orb_escape_completely=%v wick_microscalp=%v wick_safe_play=%v mentor_5m_box_source=%s mentor_break_direction_lock=%v mentor_small_range_guard=%v mentor_mid_range_reject_side=%v htf_gate_news_only=%v isb_stack_tiny_stop_pts=%g phl_room_multiple=%g phl_min_above_old_extreme_pts=%g isb_target_fill_close=%v isb_no_level_fill_close=%v trigger_from_open=%v key_level_rearm=%v isb_reverse_trend=%v counter_5m_reduce_size=%v",
 		id, t.FifteenMinIBRule, t.Early15mRead, t.MTFConfluenceSource, t.TriggerEscalation, t.TFConflictEnd, t.NewsWaitBothLines, t.NewsBarsExcluded, t.ISBBoxEscapeMode, t.EmaLossRelock,
 		t.OrbEdgeVetoPts, t.D43TrendSource, t.LevelEntriesNeedTriggerSide, t.TrendlineIsTarget, t.TrendlineBetweenBoxes, t.LegResetOnWaveBreak, t.FlagWallTarget, t.BoxNewZoneAfterEscape, t.OrbEscapeCompletely, t.WickMicroscalp, t.WickSafePlay,
 		t.FiveMinBoxSource, t.BreakDirectionLock, t.SmallRangeGuard, t.MidRangeRejectSide,
-		t.HTFGateNewsOnly, t.ISBStackTinyStopPts, t.PHLRoomMultiple, t.PHLMinAbovePriorPts, t.ISBTargetFillClose, t.TriggerFromOpen, t.KeyLevelRearm, t.ISBReverseTrend, t.Counter5mReduceSize)
+		t.HTFGateNewsOnly, t.ISBStackTinyStopPts, t.PHLRoomMultiple, t.PHLMinAbovePriorPts, t.ISBTargetFillClose, t.ISBNoLevelFillClose, t.TriggerFromOpen, t.KeyLevelRearm, t.ISBReverseTrend, t.Counter5mReduceSize)
 }

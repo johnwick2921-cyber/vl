@@ -274,14 +274,18 @@ func GlobexMeasure(bars []market.Kline, now int64, loc *time.Location) GlobexMea
 	if loc == nil {
 		loc = ctime()
 	}
-	var m GlobexMeasurement
 	openMs, closeMs := sessionBounds(now, loc)
 	hiMs := now
 	if !time.UnixMilli(now).In(loc).Before(time.UnixMilli(closeMs).In(loc)) {
 		hiMs = closeMs // session ended: freeze the 17:00→08:30 value
 	}
-	loMs := openMs
+	return measureWindow(bars, openMs, hiMs)
+}
 
+// measureWindow is the high − low of the bars that OPENED in [loMs, hiMs),
+// with the A6 coverage guard (shared by GlobexMeasure and GlobexDayMeasure).
+func measureWindow(bars []market.Kline, loMs, hiMs int64) GlobexMeasurement {
+	var m GlobexMeasurement
 	n := 0
 	var earliest int64
 	for _, b := range bars {

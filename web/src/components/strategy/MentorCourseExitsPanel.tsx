@@ -70,7 +70,9 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   mentor_box_max_height_pts: 0,
   // m463 (D5.2-R31, owner order 2026-11-01 "full of it" — reverses m186): a
   // swing stop ABOVE this is refused, "100 điểm quá nhiều rủi ro… đừng vô".
-  mentor_swing_max_stop_pts: 90,
+  // answers-1112 Q13: 90 → 80 ("7-80 điểm … cứ vô 1-2" [Sept D5.2 p2
+  // @05:25-05:33]); 90 reverts.
+  mentor_swing_max_stop_pts: 80,
   // m465 P2 (D4.2-R27 "tôi bọc cái khu vực này lại. Tôi sẽ không trade bên
   // trong" [D4.2 p2 @03:43–04:07]): an ISB loss boxes the whole 5m range.
   mentor_isb_loss_box: 'range',
@@ -283,9 +285,9 @@ const COPY = {
     es: 'Altura máxima de caja (pts, 0 = off)',
   },
   mentor_swing_max_stop_pts: {
-    zh: 'SWING 最大止损（点，超过即不进场；0 → 90）',
-    en: 'SWING max stop (pts, above it = do not enter; 0 → 90)',
-    es: 'Stop máximo SWING (pts, por encima = no entrar; 0 → 90)',
+    zh: 'SWING 最大止损（点，超过即不进场；0 → 80）',
+    en: 'SWING max stop (pts, above it = do not enter; 0 → 80)',
+    es: 'Stop máximo SWING (pts, por encima = no entrar; 0 → 80)',
   },
   mentor_stop_size_ladder: {
     zh: '止损-口数阶梯：大止损减仓而不是拒绝（20–30 → 减仓档，30–上限 → 宽止损口数；SWING 除外）',

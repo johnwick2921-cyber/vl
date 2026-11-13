@@ -360,6 +360,7 @@ export interface MentorTuning {
   exec_2m_after_30m?: boolean // X5-10 — unset = OFF since m472 A1 [Oct D4.2 @ 22:56-23:46] "Trade khung 1 phut, chu khong la khung 2 phut" (when ON, execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
+  htf_opposed_range_halt_pts?: number // answers-1112 Q1 extra rule — unset / 0 = OFF (today): > 0 = from the 08:30 CT open to the 17:00 CT roll, 4h/1h triggers opposed + the Globex day run (17:00 CT → now) at/above this → no new mentor entries for the rest of the trading day (<setup>_htf_opposed_range_halt) [Sept D5.1 p1 @19:22-19:26 "300-400 điểm … Tắt máy nghỉ luôn"]; 50..2000
   swing_max_stop_pts?: number
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]
@@ -428,6 +429,9 @@ export interface MentorTuning {
   // B11 [2 / true] — near-box room × risk (0 = off) and whether it gates PHL/PLH
   near_box_room_multiple?: number
   near_box_room_phl?: boolean
+  // answers-1112 Q2 [unset = follow near_box_room_multiple, today] — the near-box
+  // multiple for the PHL/PLH leg only (0 = PHL/PLH leg off; the 2x is ours, owner question)
+  near_box_room_phl_multiple?: number
   // C16 [5] — PHL/PLH target pts short of the old extreme (0 = at it)
   phl_target_shy_pts?: number
   // phl audit PHL-1 [4] — the rolling PHL/PLH old extreme is the 1m swing the pullback started from; its width k (1..10; -1 = the pre-PHL-1 5m/15m pivots). The course states no number: 4 reproduces the four Oct D2.3 worked examples.
@@ -469,7 +473,11 @@ export interface MentorTuning {
   // [OctD5.2-R13..R20]; 'on' = the deck / September deletion (slide 31 step 4)
   key_level_delete_on_1h_close?: 'on' | 'off'
   phl_min_above_old_extreme_pts?: number
-  isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target
+  isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target. Since answers-1112 Q3 its own case is a level inside 1R; the no-level case is isb_no_level_fill_close
+  isb_no_level_fill_close?: boolean // answers-1112 Q3 — unset = ON: an ISB with NO level beyond is traded, first target the fill candle close (+1R leg-1 TP) [Oct D2.2 @28:37-28:56, @30:24-30:43]; a level inside 1R stays refused; false = today's isb_missing_target refusal
+  box_trendline_partial_not_room?: boolean // answers-1112 Q12 — unset = OFF (today, since the 2026-11-12 review; owner opt-in). true: for a BOX trade a trendline in the path is a place to sell part, not the room cap — the target and the room read the next real level beyond it, and the line is the runner's first partial past 1:1 [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]; a line with nothing real beyond stays the target; false/unset = today
+  phl_5m_box_same_dir_allowed?: boolean // answers-1112 Q9 — unset = OFF (today): true = inside a standing 5m ISB box a PHL/PLH on the box's own side (candle-1 colour) is not refused phl_5m_box_ban; a scalp, target capped at the box's far edge [Oct D4.3 @1:08:24-1:08:39, @1:11:20-1:11:45]; the opposite side stays banned; experienced only [@1:10:58-1:11:03]
+  touch_stop_cover_later_wick?: boolean // answers-1112 Q7 — unset = OFF (today, since the 2026-11-12 review: a [B] port onto the swing re-arm; owner opt-in). true: two touch candles, entry on the SECOND (the swing leeway re-arm, the bot's only later-candle entry): when candle 2's wick reaches further than candle 1's and past the line+30 stop, the stop covers it 1 pt beyond [Oct D5.2 @19:42-20:03; Oct D2.3 @46:20-47:20]; widen only, the R31 skip still applies; candle-1 entries unchanged; false = today
   trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
   rolling_left_break_cancel?: boolean
   rolling_stale_touch_releases?: boolean // FIX-1112 B — unset = OFF (today): true = a level touch of an EARLIER leg does not own the rolling pullback entry (WE6, OctD2.3 @13:37-28:33); false = any live touch-reject owns (m216)
@@ -483,7 +491,7 @@ export interface MentorTuning {
   box_carried_stays_live?: boolean // D3-G4 oct round 2
   box_swing_both_roles?: boolean // D3-G2 oct round 2
   box_preopen_lookback_min?: number // D3-G1 oct round 2
-  phl_room_multiple?: number
+  phl_room_multiple?: number // D2-G2 / answers-1112 Q2 [1] — unset = 1 (October 1:1, Oct D2.3 @49:37-49:56); 2 = the September 2R room (revert); a confluence PHL/PLH asks 1 × its 2R leg 1 = 2R at 1, 4R at 2 [Sept D3.4 p3]
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
   // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
   session_open_levels?: 'on' | 'off'
@@ -572,7 +580,8 @@ export interface RiskControlConfig {
   mentor_keypair_candle_ratio?: number
   mentor_box_fresh_rth_pair?: boolean
   mentor_box_max_height_pts?: number
-  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
+  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 80
+  // (answers-1112 Q13, Sept D5.2 p2 @05:25-05:33 "7-80 điểm"; 90 reverts).
   mentor_swing_max_stop_pts?: number
   // m465 P2 (release #60, D4.2-R27): what an ISB stop-out boxes — 'range'
   // (default) = the whole 5m range that held the trade; 'band' = the pre-#60

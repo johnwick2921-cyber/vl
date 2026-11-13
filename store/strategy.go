@@ -2018,6 +2018,16 @@ type MentorTuning struct {
 	// and any setup whose stop is over the cap is skipped (R9).
 	DayGateSpentPts     float64 `json:"day_gate_spent_pts,omitempty"`
 	DayGateTargetCapPts float64 `json:"day_gate_target_cap_pts,omitempty"`
+	// HTFOpposedRangeHaltPts — answers-1112 Q1 extra rule: unset / 0 = OFF
+	// (today). > 0: from the 08:30 CT open to the 17:00 CT day roll, when the
+	// 4h and 1h triggers are opposed and the Globex day's run (17:00 CT → now)
+	// is at/above this, no new mentor entries for the rest of the trading day
+	// (<setup>_htf_opposed_range_halt) — "Còn nếu như 2 khung giờ đang ngược
+	// nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ
+	// luôn cho em" [Sept D5.1 p1 @19:22-19:26]. Default OFF: a range, not a
+	// number, and September. Valid 50..2000; out of range fails closed to OFF
+	// and is counted.
+	HTFOpposedRangeHaltPts float64 `json:"htf_opposed_range_halt_pts,omitempty"`
 	// SwingMaxStopPts: a SWING4H stop >= this is SIZED DOWN to <= 2 MNQ (B5; never
 	// skipped, never widened; default 100). The trader size table and the kernel
 	// swing config read this ONE value.
@@ -2157,6 +2167,13 @@ type MentorTuning struct {
 	// [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10 — no distance given].
 	NearBoxRoomMultiple *float64 `json:"near_box_room_multiple,omitempty"`
 	NearBoxRoomPHL      *bool    `json:"near_box_room_phl,omitempty"`
+	// NearBoxRoomPHLMultiple — answers-1112 Q2 (owner question): the near-box
+	// multiple for the PHL/PLH leg only. nil → follow near_box_room_multiple
+	// (today exactly); explicit 0 → the PHL/PLH leg is off (ISB unchanged);
+	// [0,10]. The 2x is ours, not the course [Ngày 3.2 FTGH FTGL part1
+	// @00:22:44–00:23:10 shows the skip on an ISB only; Oct D2.3 @49:37-49:56
+	// asks 1:1 room for a PHL/PLH].
+	NearBoxRoomPHLMultiple *float64 `json:"near_box_room_phl_multiple,omitempty"`
 	// C16: how far short of the old high/low the PHL/PLH target sits (nil → 5;
 	// explicit 0 → AT the old extreme) [Ngày 4.1 Go over ngày 3 part1
 	// @00:07:21–00:07:40 "gần đỉnh cũ"].
@@ -2295,15 +2312,63 @@ type MentorTuning struct {
 	// 1R (isb_target_below_floor) is no longer refused; its first target is the
 	// +1R leg-1 TP and the room-to-a-level rule has no level to measure. false =
 	// the September rule (a level target >= 1R with 2R room).
+	// Since answers-1112 Q3 the no-level case defaults ON under
+	// ISBNoLevelFillClose; this knob's remaining own job is the level-inside-1R
+	// case, which no video covers.
 	ISBTargetFillClose *bool `json:"isb_target_fill_close,omitempty"`
+	// ISBNoLevelFillClose — answers-1112 Q3: nil → ON. An ISB with NO level
+	// beyond its entry (isb_missing_target) is traded; its first target is the
+	// close of the candle that fills it [Oct D2.2 @28:37-28:56 "target đầu tiên
+	// … bán bớt … là khi cây nến trend phiêu lĩnh … Đóng", @30:24-30:43 "không
+	// quan tâm nó làm gì hết"; Sept D1.4 p1 @12:12-13:27]: the +1R leg-1 TP,
+	// partial at the fill close (mentorISBPartialTP), no room rule. A level
+	// inside 1R stays refused (isb_target_below_floor; isb_target_fill_close
+	// owns it). false = today's isb_missing_target refusal exactly.
+	ISBNoLevelFillClose *bool `json:"isb_no_level_fill_close,omitempty"`
+	// TouchStopCoverLaterWick — answers-1112 Q7: nil → OFF (today) since the
+	// 2026-11-12 review — a [B] port onto the swing re-arm, the owner's opt-in.
+	// true: two touch candles,
+	// the entry on the SECOND (the swing leeway re-arm, "du di 2 cây nến"
+	// [Sept D5.2 p1 @15:37-15:51] — the bot's only later-candle entry; a
+	// level-touch PHL/PLH always stays on candle 1). When candle 2's wick
+	// reaches further than candle 1's and past the line + 30 stop, the stop
+	// covers it, 1 pt beyond [Oct D5.2 @19:42-20:03 "cây râu của cây nến đỏ nó
+	// dài hơn… đặt cây nến đỏ đi"; Oct D2.3 @46:20-47:20]. Widen only; the
+	// R31 skip (mentor_swing_max_stop_pts) and the trader gate read the wider
+	// stop. A candle-1 entry is unchanged ([B], not built). false/nil = today.
+	TouchStopCoverLaterWick *bool `json:"touch_stop_cover_later_wick,omitempty"`
+	// BoxTrendlinePartialNotRoom — answers-1112 Q12: nil → OFF (today) since the
+	// 2026-11-12 review (the report: "Builds, all default OFF"). true: for a BOX
+	// (FTGL/FTGH edge) trade a trendline in the path is a place to sell part,
+	// not the level the room rule measures: the target and the room read the
+	// next real level beyond the line, and the line is the runner's first
+	// partial when it sits past the 1:1 leg-1 exit ("Về trendline / Anything …
+	// Là những cái chỗ anh chị bán bớt" [Sept D3.3 p1 @05:15-07:46]; "đụng cái
+	// box … đánh lên trendline … nếu mà thoát ra khỏi trendline thì biên bông
+	// nó sẽ bự hơn" [Sept D3.2 p2 @11:06-11:39, f_000338]; sell part only at
+	// >= 1:1 [Oct D1.2 @11:00-11:40]). A line with no real level beyond stays
+	// the target; ISB/PHL/PLH/swing unchanged. false/nil = today exactly.
+	BoxTrendlinePartialNotRoom *bool `json:"box_trendline_partial_not_room,omitempty"`
+	// PHL5mBoxSameDirAllowed — answers-1112 Q9: nil → OFF (today). true: inside
+	// a standing 5m ISB box a PHL/PLH on the box's OWN side (candle-1 colour) is
+	// not refused phl_5m_box_ban; its target is capped at the box's far edge (a
+	// scalp: "Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi. Chỉ là scap
+	// thôi" [Oct D4.3 @01:11:40-01:11:45]; "phải đánh cùng chiều với InshaBar 05
+	// phút" [@01:08:24-01:08:39]). The opposite side stays banned; 15m/30m box
+	// bans and the mid-range bans are unchanged. Default OFF: "kinh nghiệm cho
+	// anh chị nào đã nhìn quen rồi" [@01:10:58-01:11:03] — experienced only, the
+	// owner's call.
+	PHL5mBoxSameDirAllowed *bool `json:"phl_5m_box_same_dir_allowed,omitempty"`
 	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
 	// line is read from the 08:30 CT Open, not from the overnight Globex tape
 	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the
 	// whole-history read (the 08:30 candle compared with the 08:25 Globex candle).
 	TriggerFromOpen *bool `json:"trigger_from_open,omitempty"`
 	// PHLRoomMultiple — D2-G2 (oct round 2): the room multiple the PHL/PLH path asks
-	// (level touch + rolling ladder). nil → 2 (review: OctD2.3-R31 @ 27:33 says "about 1:2"; no October 1:1
-	// room rule). 1 = the worked trades WE7/WE10 (1.14R/1.71R) [B]. 0 = no room rule (the 1:1 floor stays).
+	// (level touch + rolling ladder). nil → 1 since answers-1112 Q2: October 1:1 [Oct D2.3
+	// @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04126 R:R
+	// 1.71 taken]. 2 = the revert value (Sept D5.3 2R room, today before answers-1112).
+	// 0 = no room rule (the 1:1 floor stays).
 	PHLRoomMultiple *float64 `json:"phl_room_multiple,omitempty"`
 }
 
@@ -2503,7 +2568,9 @@ type RiskControlConfig struct {
 	//        the trader R8 — PHL/PLH/BOX keep the D3.3-R1 25.
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
-	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
+	//   m463 MentorSwingMaxStopPts — 0 → 80 (answers-1112 Q13: "có những lúc mà cái
+	//        nến 5 phút nó tới 7-80 điểm… cứ vô 1-2… risk reward phải 1-1" [Sept D5.2
+	//        p2 @05:25-05:33]; 90 = the m463 value, set it to revert): a SWING4H stop ABOVE this is refused
 	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
 	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
 	//   m465 P2 MentorISBLossBox — "" → range (release #60, D4.2-R27/R28/R30): an

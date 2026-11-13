@@ -138,6 +138,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// the kernel hard-coded before (all "ours", none from the course).
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
 			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
+			NearBoxRoomPHLMultiple: 2, // answers-1112 Q2: follows near_box_room_multiple (today)
 			// m465 P3 (release #60): the course defaults from the full video read.
 			ISBStackTinyStopPts:  0,                          // G2 oct round 2: OFF (was 12.5, D5.1-R26)
 			TrendlineEntryTouch:  mentor.TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
@@ -159,8 +160,13 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.
 			PHLOldExtreme1mK:           4,
 			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
-			PHLRoomMultiple:            2,                                 // D2-G2 review: today's 2R
+			PHLRoomMultiple:            1,                                 // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56]; 2 reverts
 			ISBTargetFillClose:         false,                             // D2-G3 review: OFF (course does not state it)
+			ISBNoLevelFillClose:        true,                              // answers-1112 Q3: no-level ISB traded [Oct D2.2 @28:37-28:56, @30:24-30:43]; false reverts
+			TouchStopCoverLaterWick:    false,                             // answers-1112 Q7: OFF since the review — a [B] port onto the swing re-arm; true = candle-2 stop covers the further wick [Oct D5.2 @19:42-20:03]
+			BoxTrendlinePartialNotRoom: false,                             // answers-1112 Q12: OFF since the review (report "all default OFF"); true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
+			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
+			PHL5mBoxSameDirAllowed:     false,                             // answers-1112 Q9: OFF — experienced only [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction in-box PHL/PLH scalp to the box edge
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
 			HTFTrendlineFlip:           true,                              // D3-G12
@@ -321,17 +327,22 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 
 // The bare table (no strategy) falls back to the kernel defaults. m463
 // D5.2-R31 (REVERSES m186, owner order 2026-11-01 "full of it"): the swing
-// skip default is 90 — a 90-pt stop passes, 90.25 / 99 / 100 are refused
-// ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]). The 100 of
-// the old name is the B5 SIZING ceiling (swing_max_stop_pts), not a skip.
+// skip default is 80 since answers-1112 Q13 ("7-80 điểm … cứ vô 1-2" [Sept
+// D5.2 p2 @05:25-05:33]) — an 80-pt stop passes, 80.25 / 90 / 99 / 100 are
+// refused ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]); at the
+// revert value 90 a 90-pt stop passes again. The 100 of the old name is the B5
+// SIZING ceiling (swing_max_stop_pts), not a skip.
 func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	in := func(stop float64) mentor.Intent {
 		return mentor.Intent{Setup: "SWING4H", Side: "long", Price: 30000, Stop: 30000 - stop, StopPts: stop, TargetPts: 2 * stop}
 	}
-	if why := mentorRuleGate(in(90), mentorTierInputs{}); why != "" {
-		t.Errorf("SWING4H 90-pt stop must pass under the 90 skip default: %q", why)
+	if why := mentorRuleGate(in(80), mentorTierInputs{}); why != "" {
+		t.Errorf("SWING4H 80-pt stop must pass under the 80 skip default: %q", why)
 	}
-	for _, stop := range []float64{90.25, 99, 100} {
+	if why := mentorRuleGate(in(90), mentorTierInputs{SwingSkipStopPts: 90}); why != "" {
+		t.Errorf("SWING4H 90-pt stop must pass at the revert mentor_swing_max_stop_pts=90: %q", why)
+	}
+	for _, stop := range []float64{80.25, 90, 90.25, 99, 100} {
 		if why := mentorRuleGate(in(stop), mentorTierInputs{}); !strings.HasPrefix(why, "R31") {
 			t.Errorf("SWING4H %.2f-pt stop must be REFUSED R31 (m463): %q", stop, why)
 		}
@@ -470,19 +481,43 @@ func TestLL4KeyLevelHistorySourceKnobReachesTheEvaluator(t *testing.T) {
 	}
 }
 
-// TestD2G2PHLRoomMultipleKnob — D2-G2 (review): unset = 2 (today), a stored 1
-// reaches the evaluator (the 1:1 floor reading), an out-of-range value fails
-// closed to the default 2.
+// TestD2G2PHLRoomMultipleKnob — D2-G2 / answers-1112 Q2: unset = 1 (October
+// 1:1 [Oct D2.3 @49:37-49:56 "Risk reward 1-1"; WE10 s_04126 R:R 1.71]), a
+// stored 2 reaches the evaluator (the revert value = today before
+// answers-1112), an out-of-range value fails closed to the default 1.
 func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
-	one, bad := 1.0, 50.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 2 {
-		t.Fatalf("unset phl_room_multiple = %v, want 2", c.PHLRoomMultiple)
+	two, bad := 2.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("unset phl_room_multiple = %v, want 1", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &one}); c.PHLRoomMultiple != 1 {
-		t.Fatalf("stored phl_room_multiple=1 → %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &two}); c.PHLRoomMultiple != 2 {
+		t.Fatalf("stored phl_room_multiple=2 (revert) → %v", c.PHLRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 2 {
-		t.Fatalf("out-of-range phl_room_multiple must fail closed to 2, got %v", c.PHLRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{PHLRoomMultiple: &bad}); c.PHLRoomMultiple != 1 {
+		t.Fatalf("out-of-range phl_room_multiple must fail closed to 1, got %v", c.PHLRoomMultiple)
+	}
+}
+
+// TestAnswers1112NearBoxPHLMultipleKnob — answers-1112 Q2 (owner question):
+// unset follows near_box_room_multiple (today exactly, including an owner who
+// tuned near_box_room_multiple), a stored value reaches the evaluator for the
+// PHL/PLH leg only, an out-of-range value fails closed to follow.
+func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
+	one, zero, three, bad := 1.0, 0.0, 3.0, 50.0
+	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 2 || c.NearBoxRoomMultiple != 2 {
+		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 2 / 2 (today)", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &three}); c.NearBoxRoomPHLMultiple != 3 {
+		t.Fatalf("unset PHL multiple must follow a stored near_box_room_multiple=3, got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &zero}); c.NearBoxRoomPHLMultiple != 0 {
+		t.Fatalf("unset PHL multiple must follow near_box_room_multiple=0 (off), got %v", c.NearBoxRoomPHLMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 2 {
+		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 2", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	}
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 2 {
+		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (2), got %v", c.NearBoxRoomPHLMultiple)
 	}
 }
 

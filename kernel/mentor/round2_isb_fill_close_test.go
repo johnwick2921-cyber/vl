@@ -73,9 +73,11 @@ func TestD2G3ISBBasicTargetIsTheFillCandleClose(t *testing.T) {
 		if in.Target != in.Price+risk {
 			t.Fatalf("%s: first target must be the +1R leg-1 TP %.2f, got %.2f", c.name, in.Price+risk, in.Target)
 		}
-		e, ins = d2g3Run(t, c.ema34, c.close1, nil)
+		// answers-1112 Q3: the no-level half defaults ON under its own knob, so
+		// the September refusal is read with both knobs off.
+		e, ins = d2g3Run(t, c.ema34, c.close1, func(cf *Config) { cf.ISBNoLevelFillClose = false })
 		if d2g3Entry(ins) != nil || e.State.Refusals[c.refusal] == 0 {
-			t.Fatalf("%s: default (knob isb_target_fill_close off = September) refuses %s; intents %+v ledger %v", c.name, c.refusal, ins, e.State.Refusals)
+			t.Fatalf("%s: knobs off (isb_target_fill_close + isb_no_level_fill_close = September) refuses %s; intents %+v ledger %v", c.name, c.refusal, ins, e.State.Refusals)
 		}
 	}
 }

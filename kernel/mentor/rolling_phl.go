@@ -380,10 +380,15 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// once per reference candle; a ban skips THIS rung (m464: the location of
 	// the next candle's rung is read again).
 	tr := Touch{Outcome: TouchReject, RefBar: execCur, ApproachedFrom: side} // RejectEntry maps SideLong → long, SideShort → short
+	// answers-1112 Q9 (knob phl_5m_box_same_dir_allowed, default OFF): a
+	// same-direction rung the knob let through the 5m box ban is a scalp to the
+	// box's far edge [Oct D4.3 @01:08:24-01:08:39, @01:11:20-01:11:45].
+	boxEdge, boxScalp := 0.0, false
 	if _, rp, okEntry := RejectEntry(tr, e.Cfg); okEntry {
 		if name, _ := e.phlLocationBanRolling(ex.level, side, rp, cur, levels, boxes); name != "" {
 			return skip("rolling_"+name, "the rolling entry sits in a banned PHL/PLH location")
 		}
+		boxEdge, boxScalp = e.phl5mBoxScalpEdge(side, cur)
 		if name := phlNearBoxRefuses(e.Cfg, boxes, tref, side, execCur.High-execCur.Low); name != "" {
 			return skip("rolling_"+name, "the rolling entry is too close to a box [D3.2 p1 @21:53–23:08]") // rolling_near_box | rolling_near_box_inside_opposing (m465)
 		}
@@ -406,9 +411,18 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// HTF gate, day gate, …) is THIS rung's, named by the level path's own
 	// ledger name with the rolling_ prefix (it used to cancel the leg
 	// silently).
-	in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, false)
+	phlLevels := levels
+	if boxScalp {
+		phlLevels = withPHL5mBoxScalpEdge(levels, boxEdge) // answers-1112 Q9: target capped at the box edge
+	}
+	in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, phlLevels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, false)
 	if !ok {
 		return skip("rolling_"+phlRefusalKey(reason), reason)
+	}
+	if boxScalp {
+		if name := phl5mBoxScalpRefusal(in, boxEdge); name != "" {
+			return skip("rolling_"+name, "the in-box scalp's entry sits at or past the 5m box's far edge — no room inside the box [Oct D4.3 @01:11:40-01:11:45]")
+		}
 	}
 
 	// 6b. The 5m trigger side (c52 W6, plan A8 / X8-R3b): "lúc nào mình cũng
@@ -439,6 +453,9 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	in.ExecTFMin = execTFMin // 1m, 2m or 5m (m417)
 	in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
 	in.Confluence = false
+	if boxScalp {
+		phl5mBoxScalpStamp(&in, boxEdge) // answers-1112 Q9: a scalp, the runner stays inside the box
+	}
 
 	if st.ArmID != "" {
 		out = append(out, Intent{Action: CancelArm, ArmID: st.ArmID,

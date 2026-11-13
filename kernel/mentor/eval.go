@@ -91,6 +91,11 @@ type State struct {
 	// (owner ruling 2026-10-09): the gate's own inputs, captured the moment the
 	// 08:30 latch freezes, so the per-day INFO line reads them.
 	DayGateReport DayGateReport `json:"day_gate_report,omitempty"`
+	// HTFRangeHalt (answers-1112 Q1 extra rule, knob htf_opposed_range_halt_pts)
+	// is the per-trading-day latch of the HTF-opposed range halt: Key = the
+	// day it holds for ("" = none). See htf_range_halt.go.
+	// A pointer so an unlatched state serialises exactly as before (nil).
+	HTFRangeHalt *HTFRangeHalt `json:"htf_range_halt,omitempty"`
 	// OpenHTF (MENTOR-NY item 6) — the 4h/1h directions the 08:30 day-gate
 	// decision READ, replayed by a seed that ran AFTER today's 08:30 (a boot
 	// mid-session) from the same closed 1m history, cut at the 08:30 read.
@@ -1839,7 +1844,10 @@ func (e *Evaluator) phlLocationBanFor(lvl Level, side Side, price float64, cur m
 	if midRangeBoxedRefuses(e.Cfg, lvl, boxes, price) {
 		return "phl_mid_range_boxed", true
 	}
-	if e.box5() != nil && cur.Close > e.box5().Low && cur.Close < e.box5().High {
+	if b := e.box5(); b != nil && cur.Close > b.Low && cur.Close < b.High && !phl5mBoxSameDir(e.Cfg, b, side) {
+		// answers-1112 Q9 (knob phl_5m_box_same_dir_allowed, default OFF): ON
+		// lifts this ban for a PHL/PLH on the box's own side only — the
+		// caller then caps the target at the box's far edge (phl5mBoxScalpEdge).
 		return "phl_5m_box_ban", true
 	}
 	if e.box15() != nil && cur.Close > e.box15().Low && cur.Close < e.box15().High {
@@ -1851,10 +1859,73 @@ func (e *Evaluator) phlLocationBanFor(lvl Level, side Side, price float64, cur m
 	return "", false
 }
 
+// phl5mBoxSameDir reports whether the standing 5m ISB box b lets a PHL/PLH on
+// side through (answers-1112 Q9, knob phl_5m_box_same_dir_allowed, default
+// OFF): "muốn tray bên trong InshaBar 05 phút thì anh chị phải đánh cùng chiều
+// với InshaBar 05 phút" [Oct D4.3 @01:08:24-01:08:39]; "Chứ không có 5 phút đang
+// Inshabashort vô đây đánh lệnh lon nha" [@01:09:46-01:09:51]; the same-direction
+// lower-high "vẫn là đúng theo cái Insa Bar cho lệnh Short bên ngoài"
+// [@01:11:20-01:11:24], for a trained eye only [@01:10:58-01:11:03]. The box's
+// direction is ISBBox.Dir (candle-1 colour, ISBDirection [D1.4 p1 @09:20-10:20]);
+// a box with no direction fails closed (banned).
+func phl5mBoxSameDir(cfg Config, b *ISBBox, side Side) bool {
+	return cfg.PHL5mBoxSameDirAllowed && b != nil && b.Dir != "" && b.Dir == side
+}
+
+// phl5mBoxScalpEdge returns the standing 5m ISB box's FAR edge in the trade
+// direction (High for a long, Low for a short) when the knob lifted the 5m box
+// ban for this PHL/PLH — the same condition phlLocationBanFor tests (the newest
+// closed 1m candle closes inside the box, the side is the box's). The in-box
+// PHL/PLH "không có target" of its own; it is a scalp out near the box's far
+// edge: "Chỉ cần xuống gần cạnh dưới bóc là anh chị đã out rồi. Chỉ là scap
+// thôi" [Oct D4.3 @01:11:40-01:11:45]. ok=false = no exemption in play.
+func (e *Evaluator) phl5mBoxScalpEdge(side Side, cur market.Kline) (edge float64, ok bool) {
+	b := e.box5()
+	if b == nil || !(cur.Close > b.Low && cur.Close < b.High) || !phl5mBoxSameDir(e.Cfg, b, side) {
+		return 0, false
+	}
+	if side == SideShort {
+		return b.Low, true
+	}
+	return b.High, true
+}
+
+// phl5mBoxScalpRefusal is the in-box scalp's own check on the BUILT intent:
+// its entry must sit inside the box's far edge and its target at or inside it.
+// An entry at or past the edge leaves no scalp inside the box — the target
+// ladder then never sees the edge as "beyond" and reads a target outside the
+// box — so it is refused phl_5m_box_scalp_no_room. "" = a scalp inside the box.
+func phl5mBoxScalpRefusal(in Intent, edge float64) string {
+	if in.Side == SideLong && (in.Price >= edge || in.Target > edge) ||
+		in.Side == SideShort && (in.Price <= edge || in.Target < edge) {
+		return "phl_5m_box_scalp_no_room"
+	}
+	return ""
+}
+
+// withPHL5mBoxScalpEdge returns a COPY of levels with the box's far edge added
+// as a target-ladder obstacle (KindISB5mBoxScalpEdge), so phlTarget caps the
+// target there and the 1:1 floor / PHL room rule read the capped target —
+// the production path, no second target computation. The caller's slice is
+// never touched.
+func withPHL5mBoxScalpEdge(levels []Level, edge float64) []Level {
+	out := make([]Level, 0, len(levels)+1)
+	out = append(out, levels...)
+	return append(out, Level{Key: fmt.Sprintf("%s:%.2f", KindISB5mBoxScalpEdge, edge), Kind: KindISB5mBoxScalpEdge, Price: edge})
+}
+
+// phl5mBoxScalpStamp marks a built in-box scalp intent: the runner does not
+// ride past the box edge (RunnerTarget = the capped target, "Chỉ là scap
+// thôi" [@01:11:44-01:11:45]) and the reason names the exemption.
+func phl5mBoxScalpStamp(in *Intent, edge float64) {
+	in.RunnerTarget = in.Target
+	in.Reason += fmt.Sprintf(" · inside the 5m ISB box on its own side — a scalp, target capped at the box edge %.2f (knob phl_5m_box_same_dir_allowed) [Oct D4.3 @01:08:24-01:08:39, @01:11:20-01:11:45]", edge)
+}
+
 // phlNearBoxRefuses is the Day-3 row 24 near-box refusal for a PHL/PLH (the
 // "near_box" counter), shared by the level touch loop and the rolling path
 // (m436): the nearest box edge in the trade direction must be at least
-// NearBoxRoomMultiple x the reference candle's range away [D3.2 p1
+// phlNearBoxMultiple(cfg) x the reference candle's range away [D3.2 p1
 // @21:53–23:08]; m465: an entry inside the opposing box is
 // near_box_inside_opposing and between two boxes is no longer exempt unless
 // NearBoxBetweenExempt (D3.2-R29/R30). W11 B11: the PHL/PLH leg is our
@@ -1864,10 +1935,22 @@ func phlNearBoxRefuses(cfg Config, boxes []Box, tref float64, side Side, refRang
 	if !cfg.NearBoxRoomPHL {
 		return ""
 	}
-	if refuse, name := nearBoxRefusal(boxes, tref, side, cfg.NearBoxRoomMultiple, refRange, cfg.NearBoxBetweenExempt); refuse {
+	if refuse, name := nearBoxRefusal(boxes, tref, side, phlNearBoxMultiple(cfg), refRange, cfg.NearBoxBetweenExempt); refuse {
 		return name
 	}
 	return ""
+}
+
+// phlNearBoxMultiple is the near-box multiple the PHL/PLH leg asks
+// (answers-1112 Q2, knob near_box_room_phl_multiple): a negative value
+// (NearBoxRoomPHLMultipleFollow, the default) follows NearBoxRoomMultiple —
+// today exactly; 0 turns the PHL/PLH leg off; >0 is that multiple. The 2x is
+// ours (B11), so it stays an owner question.
+func phlNearBoxMultiple(cfg Config) float64 {
+	if cfg.NearBoxRoomPHLMultiple < 0 {
+		return cfg.NearBoxRoomMultiple
+	}
+	return cfg.NearBoxRoomPHLMultiple
 }
 
 // midRangeBoxedRefuses is the level-path mid-range ban (CTO 1791003862333 —
@@ -2023,6 +2106,24 @@ func nextLevelBeyondRoom(levels []Level, entry, stop float64, side Side, roomMul
 		return best
 	}
 	return bestEMA
+}
+
+// targetLevelBeyond reports whether ANY level nextLevelBeyondRoom could ever
+// target stands beyond the entry on the trade side — the same filters (no
+// location trendline, an old extreme in its role, a drawn price) but WITHOUT
+// the room skip: a 4h trigger or 5m wick too close to hold its room is still a
+// level ahead. answers-1112 Q3: isb_no_level_fill_close trades an ISB only
+// when this is false (no level beyond at all, the video's case) [B].
+func targetLevelBeyond(levels []Level, entry float64, side Side) bool {
+	for _, l := range levels {
+		if l.Kind == KindTrendline || l.Price <= 0 || !oldExtremeRoleFits(l, side) {
+			continue
+		}
+		if side == SideLong && l.Price > entry || side == SideShort && l.Price < entry {
+			return true
+		}
+	}
+	return false
 }
 
 // WickTargetRoomMultiple is the room a D4.3 5m-wick target (KindWickMicroscalp)
@@ -2219,6 +2320,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			return
 		}
 		out = e.wickZoneLeave(out, bars, now) // m465 P5: D4.3 wick-zone exit pass (knob OFF → unchanged)
+		out = e.htfRangeHaltLeave(out, now)   // answers-1112 Q1 extra rule (knob htf_opposed_range_halt_pts, default 0 → unchanged)
 		kept, refusals := stampLeave(out, e.State.Day.Verdict)
 		for _, r := range refusals {
 			e.refuse(r)
@@ -2351,6 +2453,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.Cfg.DayOffRecheck {
 		e.State.Day = recheckDayOff(e.State.Day, &e.State.DayRecheck, e.State.HTF, e.closedBucketsTFMemo(htfFeed, 60, now), now, ctime())
 	}
+	// answers-1112 Q1 extra rule (knob htf_opposed_range_halt_pts, default 0 =
+	// OFF): from the 08:30 open on, 4h/1h opposed + the Globex day's run at/above
+	// the knob halts new entries for the rest of the trading day [Sept D5.1 p1
+	// @19:22-19:26 "Tắt máy nghỉ luôn cho em"] — the intraday re-read of the
+	// rule the §7 latch above reads once at 08:30. See htf_range_halt.go.
+	e.advanceHTFRangeHalt(bars, now)
 	// B23: the visit counters belong to the latched trading day — a new day
 	// starts every level's cap over.
 	if e.State.Day.Key != e.State.VisitsDay {
@@ -2951,8 +3059,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// the trader already owns (+1R), the runner keeps the ladder, and
 						// the room-to-a-level rule has no level to measure (knob
 						// isb_target_fill_close; OFF = the September level rule).
+						// answers-1112 Q3 (knob isb_no_level_fill_close, default ON):
+						// NO level beyond at all is the video's case [Oct D2.2
+						// @28:37-28:56, @30:24-30:43] and takes the same first target;
+						// a level inside 1R stays with isb_target_fill_close.
 						fillClose := false
-						if e.Cfg.ISBTargetFillClose && (target == 0 || !targetFloorOK(chosen.Price, chosen.Stop, target)) {
+						noLevel := target == 0 && e.Cfg.ISBNoLevelFillClose && !targetLevelBeyond(levels, chosen.Price, side)
+						if noLevel || e.Cfg.ISBTargetFillClose && (target == 0 || !targetFloorOK(chosen.Price, chosen.Stop, target)) {
 							if side == SideLong {
 								target = chosen.Price + abs(chosen.Price-chosen.Stop)
 							} else {
@@ -3366,6 +3479,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				}
 				continue
 			}
+			// answers-1112 Q9 (knob phl_5m_box_same_dir_allowed, default OFF):
+			// a same-direction PHL/PLH the knob let through the 5m box ban is a
+			// scalp to the box's far edge [Oct D4.3 @01:11:40-01:11:45].
+			boxEdge, boxScalp := e.phl5mBoxScalpEdge(side, cur)
 			// B16 (10-03 ruling, D5.3 p1 @20:40–22:12): ONE intent per reference —
 			// while a level order RESTS at this level, the level is not re-emitted
 			// (no double size on repeated touches).
@@ -3402,8 +3519,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Day-3 row 24 [D3.2 p1 @ 21:53–23:08]: refuse a setup whose nearest
-			// box edge IN the trade direction is closer than NearBoxRoomMultiple ×
-			// its own risk; between two boxes (row 25) is exempt. It fires BEFORE
+			// box edge IN the trade direction is closer than phlNearBoxMultiple ×
+			// its own risk (answers-1112 Q2: follows NearBoxRoomMultiple by
+			// default); between two boxes (row 25) is exempt. It fires BEFORE
 			// the room rule — the room rule's target reads the box edge as the
 			// first obstacle, so the same proximity would otherwise surface as
 			// phl_room_rule instead of the near_box counter.
@@ -3438,10 +3556,15 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's
-			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). C52 W1 B9: the
+			// leg 1 is 2R, so its room is PHLRoomMultiple × 2R (2R at the October
+			// default 1, 4R at the revert value 2 [Sept D3.4 p3 @07:38-08:09]). C52 W1 B9: the
 			// MTF read no longer takes an entry price (no trigger conjunct).
 			confluence := e.mtfConfluence(side, cb5, cb15) // m465 P1 D4.2-R17
-			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, levels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
+			phlLevels := levels
+			if boxScalp {
+				phlLevels = withPHL5mBoxScalpEdge(levels, boxEdge) // answers-1112 Q9: target capped at the box edge
+			}
+			in, ok, reason := PHLPLHGatedR2Levels(tr, ex.level, ex.idx, len(bars)-1, prior, phlLevels, e.Cfg, e.State.HTF, e.State.Day.Verdict, dg, confluence)
 			if !ok {
 				// B-rules (13:51:31Z): EVERY drop names a reason and counts it.
 				// MENTOR-NY item 5: the room drop counts ONCE per visit of the
@@ -3453,6 +3576,14 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					e.refuse(key)
 				}
 				continue
+			}
+			// answers-1112 Q9: the built order must leave room inside the box
+			// (an entry at/past the far edge read a target outside it).
+			if boxScalp {
+				if name := phl5mBoxScalpRefusal(in, boxEdge); name != "" {
+					e.refuseOncePerVisit(lvl.Key, name)
+					continue
+				}
 			}
 			// Row 56 (a) [D3.4 p2 @20:51–21:27 (also @21:55–22:10)]: a
 			// trigger-retest level trades ONLY in the trigger's direction,
@@ -3485,6 +3616,9 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// level beyond the old extreme; 0 = none → the runner's native TP
 			// is removed (exit = BE stop or EOD flat).
 			in.RunnerTarget = nextLevelBeyond(levels, ex.level.Price, side)
+			if boxScalp {
+				phl5mBoxScalpStamp(&in, boxEdge) // answers-1112 Q9: a scalp, the runner stays inside the box
+			}
 			if e.State.LevelArms == nil {
 				e.State.LevelArms = map[string]LevelArm{}
 			}
