@@ -2018,6 +2018,16 @@ type MentorTuning struct {
 	// and any setup whose stop is over the cap is skipped (R9).
 	DayGateSpentPts     float64 `json:"day_gate_spent_pts,omitempty"`
 	DayGateTargetCapPts float64 `json:"day_gate_target_cap_pts,omitempty"`
+	// HTFOpposedRangeHaltPts — answers-1112 Q1 extra rule: unset / 0 = OFF
+	// (today). > 0: from the 08:30 CT open to the 17:00 CT day roll, when the
+	// 4h and 1h triggers are opposed and the Globex day's run (17:00 CT → now)
+	// is at/above this, no new mentor entries for the rest of the trading day
+	// (<setup>_htf_opposed_range_halt) — "Còn nếu như 2 khung giờ đang ngược
+	// nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ
+	// luôn cho em" [Sept D5.1 p1 @19:22-19:26]. Default OFF: a range, not a
+	// number, and September. Valid 50..2000; out of range fails closed to OFF
+	// and is counted.
+	HTFOpposedRangeHaltPts float64 `json:"htf_opposed_range_halt_pts,omitempty"`
 	// SwingMaxStopPts: a SWING4H stop >= this is SIZED DOWN to <= 2 MNQ (B5; never
 	// skipped, never widened; default 100). The trader size table and the kernel
 	// swing config read this ONE value.

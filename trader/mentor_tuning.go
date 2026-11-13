@@ -32,6 +32,7 @@ type mentorTuned struct {
 	BEOffsetTicks          int // m472 A5: 0 = OFF (BE at the entry exactly)
 	DayGateSpentPts        float64
 	DayGateTargetCapPts    float64
+	HTFOpposedRangeHaltPts float64 // answers-1112 Q1 extra rule: 0 = OFF
 	SwingMaxStopPts        float64
 	SwingMinStopPts        float64
 
@@ -146,6 +147,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		Exec2mAfter30m:         d.Exec2mAfter30m,
 		DayGateSpentPts:        d.DayGateSpentPts,
 		DayGateTargetCapPts:    d.DayGateTargetCapPts,
+		HTFOpposedRangeHaltPts: d.HTFOpposedRangeHaltPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
 		SwingMinStopPts:        d.Swing.MinStopPts,
 
@@ -254,6 +256,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pick(t.PingPongCandleMaxPts, 0.01, 200, &out.PingPongCandleMaxPts)
 	pick(t.DayGateSpentPts, 50, 2000, &out.DayGateSpentPts)
 	pick(t.DayGateTargetCapPts, 1, 100, &out.DayGateTargetCapPts)
+	pick(t.HTFOpposedRangeHaltPts, 50, 2000, &out.HTFOpposedRangeHaltPts) // answers-1112 Q1 extra rule: 0 / out of range = OFF
 	pick(t.SwingMaxStopPts, 30, 300, &out.SwingMaxStopPts)
 	// W26 P2-4: 0 = OFF (R5). A floor above the MaxStopPts ceiling is refused.
 	pick(t.SwingMinStopPts, 0.01, 100, &out.SwingMinStopPts)
@@ -479,6 +482,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Exec2mAfter30m = t.Exec2mAfter30m
 	cfg.DayGateSpentPts = t.DayGateSpentPts
 	cfg.DayGateTargetCapPts = t.DayGateTargetCapPts
+	cfg.HTFOpposedRangeHaltPts = t.HTFOpposedRangeHaltPts // answers-1112 Q1 extra rule
 	cfg.Swing.MaxStopPts = t.SwingMaxStopPts
 	cfg.Swing.MinStopPts = t.SwingMinStopPts
 	cfg.FifteenMinIBRule = t.FifteenMinIBRule

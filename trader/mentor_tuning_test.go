@@ -165,6 +165,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBNoLevelFillClose:        true,                              // answers-1112 Q3: no-level ISB traded [Oct D2.2 @28:37-28:56, @30:24-30:43]; false reverts
 			TouchStopCoverLaterWick:    true,                              // answers-1112 Q7: candle-2 stop covers the further wick [Oct D5.2 @19:42-20:03]; false reverts
 			BoxTrendlinePartialNotRoom: true,                              // answers-1112 Q12: a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]; false reverts
+			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
 			PHL5mBoxSameDirAllowed:     false,                             // answers-1112 Q9: OFF — experienced only [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction in-box PHL/PLH scalp to the box edge
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]

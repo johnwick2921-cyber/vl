@@ -360,6 +360,7 @@ export interface MentorTuning {
   exec_2m_after_30m?: boolean // X5-10 — unset = OFF since m472 A1 [Oct D4.2 @ 22:56-23:46] "Trade khung 1 phut, chu khong la khung 2 phut" (when ON, execution frame: 2m after 09:00 CT (1m 08:30–09:00) for ISB + PHL/PLH, EMA 9/34, boxes, trendlines and the X8 exit)
   day_gate_spent_pts?: number
   day_gate_target_cap_pts?: number
+  htf_opposed_range_halt_pts?: number // answers-1112 Q1 extra rule — unset / 0 = OFF (today): > 0 = from the 08:30 CT open to the 17:00 CT roll, 4h/1h triggers opposed + the Globex day run (17:00 CT → now) at/above this → no new mentor entries for the rest of the trading day (<setup>_htf_opposed_range_halt) [Sept D5.1 p1 @19:22-19:26 "300-400 điểm … Tắt máy nghỉ luôn"]; 50..2000
   swing_max_stop_pts?: number
   // Course-entry knobs (release #25). Unset = the ruled default in brackets.
   // D4.2 p1 — a 1m ISB under a standing 15m box [require_5m_isb]

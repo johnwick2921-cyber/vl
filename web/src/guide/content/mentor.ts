@@ -123,6 +123,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.phl_5m_box_same_dir_allowed',
     live: true,
   },
+  'HTF-opposed range halt (rest of the day)': {
+    settingId: 'risk_control.mentor_tuning.htf_opposed_range_halt_pts',
+    live: true,
+  },
   'Leg reset on a wave break': {
     settingId: 'risk_control.mentor_tuning.leg_reset_on_wave_break',
     live: true,
@@ -834,8 +838,8 @@ export const mentor: GuideSection = {
         ],
         [
           'Day gate (§7)',
-          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since — only when mentor_day_off_recheck is ON; course-defaults-30 turns it OFF, so the seed replays no clear), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15',
-          'DayGateSpentPts 265 (release #60, D5.1-R18) · DayGateTargetCapPts 15',
+          'Measure the Globex run (17:00 → 08:30 CT) before the open. Conflict on a spent day → the machine is OFF for the day (latched at 08:30). The day gate is frozen AT the 08:30 read: a restart after 08:30 RESTORES that decision (the seed replays the 08:30 4h/1h read and the frozen run, then replays the one-way DayOff recheck over the closed 1h bars since — only when mentor_day_off_recheck is ON; course-defaults-30 turns it OFF, so the seed replays no clear), so a restart never re-decides the day — the log line reads "RESTORED from the 08:30 read". Only when the 08:30 read is not possible (no bars closed by 08:30) does the line read "re-read at boot … not the 08:30 decision". Spent + agree → trade but cap the target at 15 pts; on a spent day skip any setup whose stop is over 15. Answers-1112 Q1 extra rule (knob htf_opposed_range_halt_pts, default 0 = OFF): when set, the same rule is also re-read every minute AFTER the open — 4h/1h opposed and the Globex day (17:00 CT → now) at/above the knob → no new entries for the rest of the day.',
+          'DayGateSpentPts 265 (release #60, D5.1-R18) · DayGateTargetCapPts 15 · htf_opposed_range_halt_pts 0 (off)',
         ],
         [
           '4h/1h direction',
@@ -2278,6 +2282,23 @@ export const mentor: GuideSection = {
             'off [Oct D4.3 @1:10:58–1:11:03, @1:12:00–1:12:11 — not for new students, not for comfortable trading]. Turn on only if the owner rules the bot trades as an experienced trader.',
           whenToTouch:
             'Set true to let a same-direction PHL/PLH scalp to the box edge; false (or unset) keeps today’s ban.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'HTF-opposed range halt (rest of the day)',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.htf_opposed_range_halt_pts)',
+          what: 'answers-1112 Q1 extra rule. His morning read: “Khung 4 giờ nó đang trigger gì … Khung 1 giờ … Nếu như 2 khung trigger cùng với nhau Ok Mình đánh theo khung 4 giờ … Còn nếu như 2 khung giờ đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt máy nghỉ luôn cho em” (if the 4h and 1h agree, trade with the 4h; if they are opposed and the daily candle has already run 300-400 points, shut the machine off) [Sept D5.1 p1 @19:03–19:26]. The daily candle is measured from the Asia open through pre-market (“nó phải chạy từ Asia / Nó chạy qua pre-market” [@16:55–17:00]), so the range here is the Globex day, 17:00 CT → now, not RTH high-low. The §7 day gate already reads this rule ONCE at 08:30 with the day gate spent threshold (265). This knob is the re-read AFTER the open: from 08:30 to the 17:00 CT roll, at every minute, when the 4h and 1h triggers are opposed and the Globex day has run at least this many points, every new mentor entry is refused for the rest of the trading day (isb_/phl_/box_htf_opposed_range_halt), even if the 1h flips back later. The 4h swing is exempt, as it is from the day-off. A restart restores the halt from the bars (the log says RESTORED). On his own example day (Tue 15 Sep, 4h sell / 1h buy) the daily candle was 264.5 at 08:30 and 287.00 at its 14:52 low (his evening measure: −286.75), so a value of 300 would never have fired that day; 265 fires at 09:52.',
+          trader:
+            '0 = off — the video gives a range (300–400), not one number, and it is September; October uses the 5m only [Oct D4.3 @07:26–07:38].',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (HTFOpposedRangeHaltPts) → kernel/mentor/htf_range_halt.go htfRangeHaltLatch (Tick, after the §7 day gate) · htfRangeHaltLeave (where intents leave Tick) · SeedHTFRangeHalt (restart, via SeedDayLatch)',
+          range: '0 (off) or 50–2000 pts',
+          systemDefault: '0 (off)',
+          recommended:
+            '0 [Sept D5.1 p1 @19:22–19:26 gives 300–400]. If the owner turns it on, 300 is the lower edge of his range; anything at or below the day gate spent threshold (265) also repeats the 08:30 read every minute after the open.',
+          whenToTouch:
+            'Set a number of points to stop new entries for the rest of the day once the 4h and 1h are opposed on a day that has already run that far; 0 (or unset) keeps today’s behaviour.',
           perSession: 'No — per strategy.',
         },
         {

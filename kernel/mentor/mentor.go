@@ -688,6 +688,23 @@ type Config struct {
 	// they agree the DayOff clears one-way to DaySpent).
 	DayOffRecheck bool
 
+	// HTFOpposedRangeHaltPts — answers-1112 Q1 extra rule (knob
+	// htf_opposed_range_halt_pts, DEFAULT 0 = OFF). "Còn nếu như 2 khung giờ
+	// đang ngược nhau / Mà khung daily nó đã chạy được 300-400 điểm rồi / Tắt
+	// máy nghỉ luôn cho em" [Sept D5.1 p1 @19:22-19:26]. > 0: from the 08:30 CT
+	// open to the 17:00 CT day roll, when the 4h and 1h are opposed
+	// (HTFConflict) and the Globex day's run (17:00 CT → now, high − low, not
+	// frozen at 08:30 — the daily candle "chạy từ Asia … qua pre-market"
+	// [@16:55-17:00]) is at/above this, every new intraday entry is refused
+	// for the rest of the trading day (<setup>_htf_opposed_range_halt), even
+	// if the 1h later flips. The §7 gate already reads the same rule ONCE at
+	// 08:30 with DayGateSpentPts; this is the intraday re-read. Default 0: the
+	// citation gives a range (300-400), not one number, and it is September
+	// (October: "khung 5 phút only" [Oct D4.3 @07:26-07:38]). The swing is
+	// exempt, as from DayOff. See htf_range_halt.go. Studio:
+	// risk_control.mentor_tuning.htf_opposed_range_halt_pts.
+	HTFOpposedRangeHaltPts float64
+
 	// PrintWindows (item 18 part 1) lists the day's red-folder 07:30 print
 	// windows (FromMs inclusive, ToMs exclusive). The evaluator skips HTF
 	// breaks from 1m bars whose open falls inside any listed window — the
@@ -1211,6 +1228,8 @@ func DefaultConfig() Config {
 		DayGateSpentPts:     265, // m465 D5.1-R18: the worked example's -265.00 run was called spent [D5.1 p1 @17:56–18:14]
 		DayGateTargetCapPts: 15,
 		DayOffRecheck:       false, // course-defaults-30: the course shuts the whole day [D5.1 p1 @19:22–19:40]
+		// answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, not a number, and September [Sept D5.1 p1 @19:22-19:26]
+		HTFOpposedRangeHaltPts: 0,
 
 		Swing: DefaultSwingCfg(),
 

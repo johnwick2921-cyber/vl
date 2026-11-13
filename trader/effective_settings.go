@@ -874,6 +874,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("be_offset_ticks", "trader.mentorTuningResolve → trader.mentorBEOffsetTicks", func(t mentorTuned) any { return t.BEOffsetTicks })
 	mentorTuningRow("day_gate_spent_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateSpentPts })
 	mentorTuningRow("day_gate_target_cap_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.DayGateTargetCapPts })
+	mentorTuningRow("htf_opposed_range_halt_pts", "trader.mentorTuningResolve (answers-1112 Q1 Sept D5.1 p1 @19:22-19:26, 4h/1h opposed + Globex day run >= this halts new entries for the day, nil \u2192 0 = OFF)", func(t mentorTuned) any { return t.HTFOpposedRangeHaltPts })
 	mentorTuningRow("swing_max_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMaxStopPts })
 	mentorTuningRow("swing_min_stop_pts", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.SwingMinStopPts })
 	mentorTuningRow("15m_ib_requires_5m_isb", "trader.mentorTuningResolve", func(t mentorTuned) any { return t.FifteenMinIBRule })

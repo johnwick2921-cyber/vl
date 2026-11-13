@@ -22,6 +22,9 @@ import (
 // the restart stays cleared. Before 08:30, or when the latch is already frozen
 // (a re-seed must not re-decide), nothing changes.
 func SeedDayLatch(e *Evaluator, bars1m []market.Kline, now int64) {
+	// answers-1112 Q1 extra rule: the HTF-opposed range halt is restored with
+	// the day latch, by every caller (knob 0 → nothing; it guards itself).
+	defer SeedHTFRangeHalt(e, bars1m, now)
 	if e == nil || e.State.Day.Key != "" {
 		return // already latched, or nothing to restore
 	}

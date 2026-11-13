@@ -91,6 +91,11 @@ type State struct {
 	// (owner ruling 2026-10-09): the gate's own inputs, captured the moment the
 	// 08:30 latch freezes, so the per-day INFO line reads them.
 	DayGateReport DayGateReport `json:"day_gate_report,omitempty"`
+	// HTFRangeHalt (answers-1112 Q1 extra rule, knob htf_opposed_range_halt_pts)
+	// is the per-trading-day latch of the HTF-opposed range halt: Key = the
+	// day it holds for ("" = none). See htf_range_halt.go.
+	// A pointer so an unlatched state serialises exactly as before (nil).
+	HTFRangeHalt *HTFRangeHalt `json:"htf_range_halt,omitempty"`
 	// OpenHTF (MENTOR-NY item 6) — the 4h/1h directions the 08:30 day-gate
 	// decision READ, replayed by a seed that ran AFTER today's 08:30 (a boot
 	// mid-session) from the same closed 1m history, cut at the 08:30 read.
@@ -2315,6 +2320,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			return
 		}
 		out = e.wickZoneLeave(out, bars, now) // m465 P5: D4.3 wick-zone exit pass (knob OFF → unchanged)
+		out = e.htfRangeHaltLeave(out, now)   // answers-1112 Q1 extra rule (knob htf_opposed_range_halt_pts, default 0 → unchanged)
 		kept, refusals := stampLeave(out, e.State.Day.Verdict)
 		for _, r := range refusals {
 			e.refuse(r)
@@ -2447,6 +2453,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	if e.Cfg.DayOffRecheck {
 		e.State.Day = recheckDayOff(e.State.Day, &e.State.DayRecheck, e.State.HTF, e.closedBucketsTFMemo(htfFeed, 60, now), now, ctime())
 	}
+	// answers-1112 Q1 extra rule (knob htf_opposed_range_halt_pts, default 0 =
+	// OFF): from the 08:30 open on, 4h/1h opposed + the Globex day's run at/above
+	// the knob halts new entries for the rest of the trading day [Sept D5.1 p1
+	// @19:22-19:26 "Tắt máy nghỉ luôn cho em"] — the intraday re-read of the
+	// rule the §7 latch above reads once at 08:30. See htf_range_halt.go.
+	e.advanceHTFRangeHalt(bars, now)
 	// B23: the visit counters belong to the latched trading day — a new day
 	// starts every level's cap over.
 	if e.State.Day.Key != e.State.VisitsDay {

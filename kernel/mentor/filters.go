@@ -132,51 +132,73 @@ func TriggerReplay1mFrozen(prev TriggerLine, bars1m []market.Kline, tfMin int, c
 	if !cfg.Enabled || len(bars1m) == 0 || tfMin <= 1 {
 		return prev
 	}
-	ms := int64(tfMin) * 60_000
-	next := prev
-	var done, cur market.Kline
-	haveDone, haveCur := false, false
-	window := make([]market.Kline, 0, 2)
+	r := newTriggerReplayer(prev, tfMin, cfg, frozen)
 	for _, b := range bars1m {
-		bucket := bucketOpen(b.OpenTime, tfMin)
-		if !haveCur || bucket != cur.OpenTime {
-			if haveCur {
-				done, haveDone = cur, true
-			}
-			// Built exactly like barsTF: the first bar's fields, re-stamped
-			// to the bucket; then High/Low/Close/Volume extended per bar.
-			cur = b
-			cur.OpenTime = bucket
-			cur.CloseTime = bucket + ms - 1
-			haveCur = true
-		} else {
-			if b.High > cur.High {
-				cur.High = b.High
-			}
-			if b.Low < cur.Low {
-				cur.Low = b.Low
-			}
-			cur.Close = b.Close
-			cur.Volume += b.Volume
-		}
-		if frozen != nil && frozen(b.OpenTime) {
-			continue // the bar builds the bucket, but fires no break
-		}
-		window = window[:0]
-		if haveDone {
-			window = append(window, done)
-		}
-		window = append(window, cur)
-		// B3: the 4h/1h lines stamp the break minute (their live path passes
-		// it, HTFAdvanceAt); the 5m trigger keeps the bucket-open stamp its
-		// live path (TriggerTick) uses, so a restart reproduces both.
-		breakAt := int64(0)
-		if tfMin >= 60 {
-			breakAt = b.OpenTime
-		}
-		next = triggerTickAt(next, window, tfMin, cfg, breakAt)
+		r.step(b)
 	}
-	return next
+	return r.next
+}
+
+// triggerReplayer is TriggerReplay1mFrozen's minute-by-minute state, kept so a
+// caller that needs the line AT EVERY MINUTE of one pass (SeedHTFRangeHalt)
+// reads exactly what TriggerReplay1m returns for that prefix, in O(n) — not
+// a replay restarted mid-bucket (which compares the first full bucket against
+// a truncated one). Callers guard cfg.Enabled / tfMin > 1 as
+// TriggerReplay1mFrozen does.
+type triggerReplayer struct {
+	next              TriggerLine
+	tfMin             int
+	ms                int64
+	cfg               Config
+	frozen            func(openMs int64) bool
+	done, cur         market.Kline
+	haveDone, haveCur bool
+	window            []market.Kline
+}
+
+func newTriggerReplayer(prev TriggerLine, tfMin int, cfg Config, frozen func(openMs int64) bool) *triggerReplayer {
+	return &triggerReplayer{next: prev, tfMin: tfMin, ms: int64(tfMin) * 60_000, cfg: cfg, frozen: frozen, window: make([]market.Kline, 0, 2)}
+}
+
+// step feeds one closed 1m bar (in time order).
+func (r *triggerReplayer) step(b market.Kline) {
+	bucket := bucketOpen(b.OpenTime, r.tfMin)
+	if !r.haveCur || bucket != r.cur.OpenTime {
+		if r.haveCur {
+			r.done, r.haveDone = r.cur, true
+		}
+		// Built exactly like barsTF: the first bar's fields, re-stamped
+		// to the bucket; then High/Low/Close/Volume extended per bar.
+		r.cur = b
+		r.cur.OpenTime = bucket
+		r.cur.CloseTime = bucket + r.ms - 1
+		r.haveCur = true
+	} else {
+		if b.High > r.cur.High {
+			r.cur.High = b.High
+		}
+		if b.Low < r.cur.Low {
+			r.cur.Low = b.Low
+		}
+		r.cur.Close = b.Close
+		r.cur.Volume += b.Volume
+	}
+	if r.frozen != nil && r.frozen(b.OpenTime) {
+		return // the bar builds the bucket, but fires no break
+	}
+	r.window = r.window[:0]
+	if r.haveDone {
+		r.window = append(r.window, r.done)
+	}
+	r.window = append(r.window, r.cur)
+	// B3: the 4h/1h lines stamp the break minute (their live path passes
+	// it, HTFAdvanceAt); the 5m trigger keeps the bucket-open stamp its
+	// live path (TriggerTick) uses, so a restart reproduces both.
+	breakAt := int64(0)
+	if r.tfMin >= 60 {
+		breakAt = b.OpenTime
+	}
+	r.next = triggerTickAt(r.next, r.window, r.tfMin, r.cfg, breakAt)
 }
 
 // isRTHOpenBucket reports whether the bucket opening at openMs is the 08:30 CT
