@@ -909,6 +909,27 @@ type Config struct {
 	// "ở giữa 2 box chỉ được quyền đánh Inside Bar" [OctD3.3-R59 @ 46:27]; true =
 	// the September exemption (course-defaults-30).
 	TrendlineBetweenBoxes bool
+	// BoxTrendlinePartialNotRoom — answers-1112 Q12 (verdict confirmed,
+	// confidence medium): for a BOX (FTGL/FTGH edge) trade a trendline in the
+	// path is a place to sell part, never the level the room rule measures.
+	// "Đụng hỗ trợ thì cứ việc đánh lên… Target là về những level kế tiếp… Về
+	// trendline / Anything / Những cái mà nó ngán đường anh chị… Nó là những
+	// target… Là những cái chỗ anh chị bán bớt" [Sept D3.3 p1 @05:15-07:46];
+	// "Đụng cái box, cái target anh chị muốn đánh lên đâu, có phải là đánh lên
+	// trendline không… biên bông khá là nhỏ… nếu mà thoát ra khỏi trendline thì
+	// biên bông nó sẽ bự hơn… mình canh mình đánh lên tới trên đây" [Sept D3.2
+	// p2 @11:06-11:39, frame f_000338, Sun 13 Sep 2026]; "giữa một cái đường line
+	// và một cái box… tin cái box hơn" [@03:26-03:59]; October: "đụng support,
+	// đánh lên" [Oct D3.3 @46:00-46:27] and nothing in October refuses a box
+	// trade for a trendline. ON (default): the box target skips a
+	// KindTrendlineTarget level the way release #30 skips an EMA — the target
+	// and the room rule read the next real level beyond it; the trendline is
+	// then the runner's first partial line (Intent.RunnerPartialTP) when it sits
+	// past the 1:1 leg-1 exit (Oct D1.2 @11:00-11:40: sell part only at >= 1:1).
+	// A trendline with NO real level beyond stays the target, as today. ISB,
+	// PHL/PLH and swing targets are unchanged. OFF = today exactly. Studio:
+	// risk_control.mentor_tuning.box_trendline_partial_not_room.
+	BoxTrendlinePartialNotRoom bool
 	// LegResetOnWaveBreak — CE-12 (a, extra where the course is silent): a
 	// leg closed by a stop-out also resets on a close beyond the losing
 	// trade's wave extreme — "đợi cho nó break được cái đỉnh, hoặc đợi cho nó
@@ -1203,6 +1224,8 @@ func DefaultConfig() Config {
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
+		// answers-1112 Q12 (box trades and trendlines).
+		BoxTrendlinePartialNotRoom: true, // answers-1112 Q12: a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39 f_000338; Oct D3.3 @46:00-46:27]; false = today
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms

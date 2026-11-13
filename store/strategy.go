@@ -2325,6 +2325,17 @@ type MentorTuning struct {
 	// R31 skip (mentor_swing_max_stop_pts) and the trader gate read the wider
 	// stop. A candle-1 entry is unchanged ([B], not built). false = today.
 	TouchStopCoverLaterWick *bool `json:"touch_stop_cover_later_wick,omitempty"`
+	// BoxTrendlinePartialNotRoom — answers-1112 Q12: nil → ON. For a BOX
+	// (FTGL/FTGH edge) trade a trendline in the path is a place to sell part,
+	// not the level the room rule measures: the target and the room read the
+	// next real level beyond the line, and the line is the runner's first
+	// partial when it sits past the 1:1 leg-1 exit ("Về trendline / Anything …
+	// Là những cái chỗ anh chị bán bớt" [Sept D3.3 p1 @05:15-07:46]; "đụng cái
+	// box … đánh lên trendline … nếu mà thoát ra khỏi trendline thì biên bông
+	// nó sẽ bự hơn" [Sept D3.2 p2 @11:06-11:39, f_000338]; sell part only at
+	// >= 1:1 [Oct D1.2 @11:00-11:40]). A line with no real level beyond stays
+	// the target; ISB/PHL/PLH/swing unchanged. false = today exactly.
+	BoxTrendlinePartialNotRoom *bool `json:"box_trendline_partial_not_room,omitempty"`
 	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
 	// line is read from the 08:30 CT Open, not from the overnight Globex tape
 	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the

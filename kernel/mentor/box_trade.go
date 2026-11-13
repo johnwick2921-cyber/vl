@@ -1,6 +1,7 @@
 package mentor
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -260,6 +261,18 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	if target == 0 {
 		return nil, "box_no_target" // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
+	// answers-1112 Q12 (knob box_trendline_partial_not_room, default ON): a
+	// trendline in the path is a place to sell part, not the room cap — the
+	// target and the room read the next real level beyond it [Sept D3.3 p1
+	// @05:15-07:46; Sept D3.2 p2 @11:06-11:39]. The line then rides as the
+	// runner's first partial (runnerPartialLine, stamped in Tick) when it sits
+	// past the 1:1 leg-1 exit [Oct D1.2 @11:00-11:40].
+	tlLine := 0.0
+	if cfg.BoxTrendlinePartialNotRoom {
+		if past, line := boxTargetPastTrendline(levels, price, stop, side, cfg.RoomMultiple, target); past != 0 {
+			target, tlLine = past, line
+		}
+	}
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
 	fl := ConfluenceVerdict(b, side, trig, price)
@@ -282,8 +295,54 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 		RefBarMs:   ref.CloseTime,
 		ExecTFMin:  boxFrameMin(b, cfg),
 		Confluence: fl.On,
-		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]",
+		Reason:     "box edge return: reject close outside → stop order with the rejecting candle as the reference [D3.2 p1 @ 21:04–21:33; D3.4 p3 @ 07:02]" + boxTrendlineNote(tlLine),
 	}}, ""
+}
+
+// boxTrendlineNote names, on the intent, the trendline the box target passed
+// (answers-1112 Q12); "" when none was passed — today's reason exactly.
+func boxTrendlineNote(line float64) string {
+	if line == 0 {
+		return ""
+	}
+	return fmt.Sprintf(" · trendline %.2f in the path is a partial, not the room cap [answers-1112 Q12; Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]", line)
+}
+
+// boxTargetPastTrendline is the box target under answers-1112 Q12: when the
+// target nextLevelBeyondRoom chose is a trendline (KindTrendlineTarget) and a
+// REAL level stands beyond it, the target becomes that level — every
+// trendline in the path is skipped the way release #30 skips an EMA. It
+// returns (0, 0) when nothing changes: the target is not a trendline, a real
+// level shares its price, or only EMA lines / nothing stand beyond (the
+// trendline then stays the target, as today). line is the trendline passed.
+func boxTargetPastTrendline(levels []Level, entry, stop float64, side Side, roomMultiple, target float64) (past, line float64) {
+	isTL, isReal := false, false
+	rest := make([]Level, 0, len(levels))
+	for _, l := range levels {
+		if l.Kind == KindTrendlineTarget {
+			if l.Price == target {
+				isTL = true
+			}
+			continue
+		}
+		if l.Price == target && l.Kind != KindTrendline && !isEMAPartialKind(l.Kind) && oldExtremeRoleFits(l, side) {
+			isReal = true
+		}
+		rest = append(rest, l)
+	}
+	if !isTL || isReal {
+		return 0, 0
+	}
+	next := nextLevelBeyondRoom(rest, entry, stop, side, roomMultiple)
+	if next == 0 {
+		return 0, 0
+	}
+	for _, l := range rest {
+		if l.Price == next && l.Kind != KindTrendline && !isEMAPartialKind(l.Kind) {
+			return next, target
+		}
+	}
+	return 0, 0 // only an EMA beyond: the trendline stays the target (today)
 }
 
 // ConfluenceFlag is the R2 output for DS-102's exit-C / size-10 branch.

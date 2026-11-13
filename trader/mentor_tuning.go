@@ -111,6 +111,7 @@ type mentorTuned struct {
 	ISBTargetFillClose         bool    // D2-G3
 	ISBNoLevelFillClose        bool    // answers-1112 Q3
 	TouchStopCoverLaterWick    bool    // answers-1112 Q7
+	BoxTrendlinePartialNotRoom bool    // answers-1112 Q12
 	PHLRoomMultiple            float64 // D2-G2
 	KeyLevelBreakRetest        string  // LL-2
 	KeyLevelRearm              string  // D3-G15
@@ -192,6 +193,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBTargetFillClose:          d.ISBTargetFillClose,
 		ISBNoLevelFillClose:         d.ISBNoLevelFillClose,
 		TouchStopCoverLaterWick:     d.Swing.CoverLaterWick,
+		BoxTrendlinePartialNotRoom:  d.BoxTrendlinePartialNotRoom,
 		PHLRoomMultiple:             d.PHLRoomMultiple,
 		CrossingISBLookback:         d.CrossingISBLookback,
 		CrossingISBMin:              d.CrossingISBMin,
@@ -355,6 +357,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.ISBTargetFillClose, &out.ISBTargetFillClose)                 // D2-G3
 	flag(t.ISBNoLevelFillClose, &out.ISBNoLevelFillClose)               // answers-1112 Q3
 	flag(t.TouchStopCoverLaterWick, &out.TouchStopCoverLaterWick)       // answers-1112 Q7
+	flag(t.BoxTrendlinePartialNotRoom, &out.BoxTrendlinePartialNotRoom) // answers-1112 Q12
 
 	// Release #52 W11 invented-constant knobs. Zero = unset = the default for
 	// the plain ones; the pointer ones let an explicit 0 through (0 is a real
@@ -541,6 +544,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
 	cfg.ISBNoLevelFillClose = t.ISBNoLevelFillClose               // answers-1112 Q3
 	cfg.Swing.CoverLaterWick = t.TouchStopCoverLaterWick          // answers-1112 Q7
+	cfg.BoxTrendlinePartialNotRoom = t.BoxTrendlinePartialNotRoom // answers-1112 Q12
 	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
 	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
 	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15

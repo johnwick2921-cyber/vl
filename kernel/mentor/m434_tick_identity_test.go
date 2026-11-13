@@ -272,6 +272,7 @@ func m434PreISB5(t *testing.T, cfg *Config) {
 	cfg.PHLRoomMultiple = cfg.RoomMultiple                  // oct round 2 D2-G2: … and the PHL/PLH 2R room (knob phl_room_multiple=2 reproduces the old golden byte for byte)
 	cfg.ISBNoLevelFillClose = false                         // answers-1112 Q3: … and the isb_missing_target refusal (knob isb_no_level_fill_close=false reproduces the old golden byte for byte)
 	cfg.Swing.SkipStopPts = 90                              // answers-1112 Q13: … and the m463 swing skip ceiling 90 (knob mentor_swing_max_stop_pts=90 reproduces the old golden byte for byte)
+	cfg.BoxTrendlinePartialNotRoom = false                  // answers-1112 Q12: … and the trendline as a box trade's room cap (knob box_trendline_partial_not_room=false reproduces the old golden byte for byte)
 	cfg.RollingLeftBreakCancel = false                      // oct round 2 D2-G6: … and the close-through-the-left-extreme ladder cancel
 	cfg.TrendlineBetweenBoxes = true                        // oct round 2 D3-G8: … and the September trendline-between-boxes exemption
 	cfg.PHLMinAbovePriorPts = 0                             // oct round 2 G7: … and the 15-pt entry-vs-old-low distance

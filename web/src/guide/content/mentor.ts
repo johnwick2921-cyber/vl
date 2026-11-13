@@ -115,6 +115,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'risk_control.mentor_tuning.trendline_between_boxes',
     live: true,
   },
+  'Box trade: a trendline in the path is a partial, not the room cap': {
+    settingId: 'risk_control.mentor_tuning.box_trendline_partial_not_room',
+    live: true,
+  },
   'Leg reset on a wave break': {
     settingId: 'risk_control.mentor_tuning.leg_reset_on_wave_break',
     live: true,
@@ -2227,7 +2231,7 @@ export const mentor: GuideSection = {
         {
           label: 'Trendline is a target',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'D3.3 p1 @05:18–05:35 "Target là về những level kế tiếp… gần đỉnh cũ, EMA 34, EMA 9, con cá, trendline, anything… những cái mà nó ngán đường anh chị trên đường đi" (the target is the next level — near the old high, EMA 34, EMA 9, the fish, a trendline, anything that blocks your path) and @07:57–08:04 "Thì cứ target nè: box, đỉnh cũ, EMA 34, trendline" (so target: the box, the old high, EMA 34, the trendline). true (default) = a valid trendline in the trade’s path is a target and counts as the first obstacle for the room rule; false = the pre-#25 rule (a trendline is a location only, never a target). Knob rule case (a), ON.',
+          what: 'D3.3 p1 @05:18–05:35 "Target là về những level kế tiếp… gần đỉnh cũ, EMA 34, EMA 9, con cá, trendline, anything… những cái mà nó ngán đường anh chị trên đường đi" (the target is the next level — near the old high, EMA 34, EMA 9, the fish, a trendline, anything that blocks your path) and @07:57–08:04 "Thì cứ target nè: box, đỉnh cũ, EMA 34, trendline" (so target: the box, the old high, EMA 34, the trendline). true (default) = a valid trendline in the trade’s path is a target and counts as the first obstacle for the room rule — except on a BOX trade while “Box trade: a trendline in the path is a partial, not the room cap” is on (answers-1112 Q12, default on): there the line is a place to sell part and the room reads the next real level beyond it; false = the pre-#25 rule (a trendline is a location only, never a target). Knob rule case (a), ON.',
           trader: 'ON — case (a).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · kernel/mentor/eval.go nextLevelBeyond (target ladder)',
@@ -2237,6 +2241,23 @@ export const mentor: GuideSection = {
             'ON — D3.3 p1 @05:18–05:35, @07:57–08:04; knob rule (a): course, no ruling against.',
           whenToTouch: 'Rarely — OFF only to compare with the pre-#25 rule.',
           perSession: 'No.',
+        },
+        {
+          label:
+            'Box trade: a trendline in the path is a partial, not the room cap',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.box_trendline_partial_not_room)',
+          what: 'answers-1112 Q12 (verdict confirmed, confidence medium). At a box edge you take the trade; a trendline on the way is where you sell part, not a reason to skip: “Đụng hỗ trợ thì cứ việc đánh lên… Target là về những level kế tiếp… Về trendline / Anything / Những cái mà nó ngán đường anh chị… Nó là những target… Là những cái chỗ anh chị bán bớt” (at support just go long; the targets are the next levels on the way — a trendline, anything that blocks your path; those are where you sell part) [Sept D3.3 p1 @05:15–07:46]. His chart Sun 13 Sep (frame f_000338): FTGL box under a falling trendline from the 18:30 top — “Đụng cái box, cái target anh chị muốn đánh lên đâu, có phải là đánh lên trendline không… biên bông khá là nhỏ… nếu mà thoát ra khỏi trendline thì biên bông nó sẽ bự hơn… mình canh mình đánh lên tới trên đây” (touch the box, the target is the trendline; a small range; if it gets out past the trendline the range is bigger, aim up to here) [Sept D3.2 p2 @11:06–11:39]; “giữa một cái đường line và một cái box… tin cái box hơn” (between a line and a box, trust the box) [@03:26–03:59]. October: “đụng support, đánh lên” [Oct D3.3 @46:00–46:27]; no October lesson refuses a box trade because a trendline is close. ON (default): when a box trade’s target would be a trendline and a REAL level (old high/low, key level, box edge, HTF line) stands beyond it, the target and the 2R room rule read that level; the line rides as the runner’s first partial (leg 3) when it sits past the 1:1 leg-1 exit — he sells part only at 1:1 or better [Oct D1.2 @11:00–11:40]. A line with nothing real beyond stays the target (today); a real level still caps the room. ISB, PHL/PLH and swing targets are unchanged. The tape (13 Sep, 20:24): the candle touches the FTGL [28,981.00–29,003.75] and closes 29,008.25 → buy stop 29,013.50, stop 29,000.25 (13.25 pts); the bot’s line is at 29,028.57 (1.14R) → today refused box_room; ON → target the FTGH bottom 29,096.75 (6.3R), partial at the line; price reached 29,078.00 by 21:01. On that tape the 20:24 return is still refused earlier by the standing 5m ISB box (box_isb_ban), which this knob does not touch. 90-day replay (data.db read-only, default settings, vs today): BOX entries 20 → 32 (RTH 4 → 11); 3 BOX entries that already traded now aim past their trendline; ISB, PHL/PLH and swing unchanged. The two 10-07 RTH box longs come back (13:08 and 14:54 CT), but there the line sits only 0.25R and 0.07R above the entry. On 1m bars, of the 12 new entries 11 fill: 5 reach 1:1 without touching the stop, 6 have the stop inside the fill candle (order unknown) — of those 3 then stop out, 2 reach 1:1, 1 reaches only the line. The owner decides whether to keep it on. OFF = today exactly.',
+          trader: 'on — Sept D3.3 p1 / D3.2 p2, October silent; off reverts.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (BoxTrendlinePartialNotRoom) → kernel/mentor/box_trade.go boxTargetPastTrendline (boxEntryIntentWhy) · kernel/mentor/eval.go runnerPartialLine (leg-3 partial) · trader/mentor_actions.go leg2_qty/leg2_tp (mode B, runner ≥ 2, AddOn leg-3 proof)',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended:
+            'on [Sept D3.3 p1 @05:15–07:46; Sept D3.2 p2 @11:06–11:39]. The partial at the line only goes out when the runner is ≥ 2 contracts in mode B and the AddOn proves the leg-3 build; otherwise leg 1 sells at 1:1 and the runner rides to the target. Not built: counting only a line that has had its 3rd test (Sept D3.2 p2 @03:26–03:59) — no trendline cap is kept on a box trade, so there is nothing to restrict.',
+          whenToTouch:
+            'Set false only to get back today’s rule (a trendline in the path caps a box trade’s room).',
+          perSession: 'No — per strategy.',
         },
         {
           label: 'Trendline reject between two boxes',
