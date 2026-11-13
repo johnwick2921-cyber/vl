@@ -277,15 +277,15 @@ func TestSwingThroughCloseNotSwallowedByGuardShort(t *testing.T) {
 
 // (e) doc truth, m463 — MaxStopPts (100) is STILL not the skip: it is the
 // trader's sizing ceiling (mentorSwingCeiling → the 2-MNQ cap). The SKIP is
-// SkipStopPts (mentor_swing_max_stop_pts, default 90, D5.2-R31 [p2
+// SkipStopPts (mentor_swing_max_stop_pts, default 80 since answers-1112 Q13, D5.2-R31 [p2
 // @19:34–21:43] "100 điểm quá nhiều rủi ro… đừng vô"): the trades 709/710
 // shape — a clean reject off a 72-pt touch candle, stop ~102 from the entry —
 // is REFUSED (m186 reversed, owner order 2026-11-01), and arms only when the
 // owner raises the skip above the stop.
 func TestSwingMaxStopPtsIsNotASkipInSwingRejectIntent(t *testing.T) {
 	cfg := DefaultSwingCfg()
-	if cfg.MaxStopPts != 100 || cfg.SkipStopPts != 90 {
-		t.Fatalf("fixture: MaxStopPts/SkipStopPts defaults = %v/%v, want 100/90", cfg.MaxStopPts, cfg.SkipStopPts)
+	if cfg.MaxStopPts != 100 || cfg.SkipStopPts != 80 {
+		t.Fatalf("fixture: MaxStopPts/SkipStopPts defaults = %v/%v, want 100/80", cfg.MaxStopPts, cfg.SkipStopPts)
 	}
 	cur := []market.Kline{
 		mk5m(t, 15, 5, 0, 10300, 10310, 10290, 10300),    // prev: above the line
@@ -293,7 +293,7 @@ func TestSwingMaxStopPtsIsNotASkipInSwingRejectIntent(t *testing.T) {
 	}
 	s := &SwingState{}
 	if out := SwingTick(s, swingTape(t, cur), cfg, cur[1].OpenTime+60_000); len(out) != 0 {
-		t.Fatalf("a ~102-pt-stop clean reject must be refused at the default skip 90: %+v", out)
+		t.Fatalf("a ~102-pt-stop clean reject must be refused at the default skip 80: %+v", out)
 	}
 	cfg.SkipStopPts = 150
 	s = &SwingState{}

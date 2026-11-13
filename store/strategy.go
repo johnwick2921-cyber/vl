@@ -2524,7 +2524,9 @@ type RiskControlConfig struct {
 	//        the trader R8 — PHL/PLH/BOX keep the D3.3-R1 25.
 	//   CX-10 MentorKeypairCandleRatio — 0 → 1 (case b, no ratio spoken).
 	//   CX-11 MentorBoxFreshRTHPair — nil → ON (m429, owner 2026-10-25: a fresh RTH box replaces the evening box of its role); MentorBoxMaxHeightPts — 0 → off.
-	//   m463 MentorSwingMaxStopPts — 0 → 90: a SWING4H stop ABOVE this is refused
+	//   m463 MentorSwingMaxStopPts — 0 → 80 (answers-1112 Q13: "có những lúc mà cái
+	//        nến 5 phút nó tới 7-80 điểm… cứ vô 1-2… risk reward phải 1-1" [Sept D5.2
+	//        p2 @05:25-05:33]; 90 = the m463 value, set it to revert): a SWING4H stop ABOVE this is refused
 	//        ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2-R31 p2 @19:34–21:43]; his
 	//        example 91.75). REVERSES m186 (owner order 2026-11-01 "full of it").
 	//   m465 P2 MentorISBLossBox — "" → range (release #60, D4.2-R27/R28/R30): an

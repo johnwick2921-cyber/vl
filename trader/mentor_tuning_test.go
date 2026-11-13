@@ -323,17 +323,22 @@ func TestMentorTuningOneValueForGateAndKernel(t *testing.T) {
 
 // The bare table (no strategy) falls back to the kernel defaults. m463
 // D5.2-R31 (REVERSES m186, owner order 2026-11-01 "full of it"): the swing
-// skip default is 90 — a 90-pt stop passes, 90.25 / 99 / 100 are refused
-// ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]). The 100 of
-// the old name is the B5 SIZING ceiling (swing_max_stop_pts), not a skip.
+// skip default is 80 since answers-1112 Q13 ("7-80 điểm … cứ vô 1-2" [Sept
+// D5.2 p2 @05:25-05:33]) — an 80-pt stop passes, 80.25 / 90 / 99 / 100 are
+// refused ("100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]); at the
+// revert value 90 a 90-pt stop passes again. The 100 of the old name is the B5
+// SIZING ceiling (swing_max_stop_pts), not a skip.
 func TestMentorRuleGateSwingDefaultIs100(t *testing.T) {
 	in := func(stop float64) mentor.Intent {
 		return mentor.Intent{Setup: "SWING4H", Side: "long", Price: 30000, Stop: 30000 - stop, StopPts: stop, TargetPts: 2 * stop}
 	}
-	if why := mentorRuleGate(in(90), mentorTierInputs{}); why != "" {
-		t.Errorf("SWING4H 90-pt stop must pass under the 90 skip default: %q", why)
+	if why := mentorRuleGate(in(80), mentorTierInputs{}); why != "" {
+		t.Errorf("SWING4H 80-pt stop must pass under the 80 skip default: %q", why)
 	}
-	for _, stop := range []float64{90.25, 99, 100} {
+	if why := mentorRuleGate(in(90), mentorTierInputs{SwingSkipStopPts: 90}); why != "" {
+		t.Errorf("SWING4H 90-pt stop must pass at the revert mentor_swing_max_stop_pts=90: %q", why)
+	}
+	for _, stop := range []float64{80.25, 90, 90.25, 99, 100} {
 		if why := mentorRuleGate(in(stop), mentorTierInputs{}); !strings.HasPrefix(why, "R31") {
 			t.Errorf("SWING4H %.2f-pt stop must be REFUSED R31 (m463): %q", stop, why)
 		}

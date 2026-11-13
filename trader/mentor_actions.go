@@ -292,7 +292,7 @@ func (at *AutoTrader) mentorEntryGateInputs(in mentor.Intent, extra mentorTierIn
 	cx := mentorCourseExitsResolve(at, at.mentorRiskControl())
 	extra.ISBMaxStopPts = cx.ISBMaxPts
 	// m463 D5.2-R31: the swing skip reads the SAME knob as the kernel
-	// (mentor_swing_max_stop_pts, unset/0 → 90).
+	// (mentor_swing_max_stop_pts, unset/0 → 80 since answers-1112 Q13; 90 reverts).
 	extra.SwingSkipStopPts = cx.SwingMaxStopPts
 	// Stop-to-size ladder: the R8 ceiling and the size table read the SAME
 	// resolved knobs as the kernel (mentorCourseExitsResolve).

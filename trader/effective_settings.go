@@ -836,7 +836,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorCXRow("mentor_reverse_isb_as_phl", "trader.mentorCourseExitsResolve (CX-6, nil → ON)", func(c mentorCourseExitsResolved) any { return c.ReverseISBAsPHL })
 	mentorCXRow("mentor_ema9_visit_cap", "trader.mentorCourseExitsResolve (CX-8)", func(c mentorCourseExitsResolved) any { return c.EMA9VisitCap })
 	mentorCXRow("mentor_isb_max_pts", "trader.mentorCourseExitsResolve (m466 G23 D4.1-R12, nil → 20)", func(c mentorCourseExitsResolved) any { return c.ISBMaxPts })
-	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31, nil → 90)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
+	mentorCXRow("mentor_swing_max_stop_pts", "trader.mentorCourseExitsResolve (m463 D5.2-R31; answers-1112 Q13 Sept D5.2 p2 @05:25-05:33 \"7-80 điểm\": nil → 80, 90 reverts)", func(c mentorCourseExitsResolved) any { return c.SwingMaxStopPts })
 	// Stop-to-size ladder (owner order 2026-11-10; OctD2.2-R73 / OctD2.3-R47 / OctD2.2-R49).
 	mentorCXRow("mentor_stop_size_ladder", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.2-R73/OctD2.3-R47, nil → ON)", func(c mentorCourseExitsResolved) any { return c.StopSizeLadder })
 	mentorCXRow("mentor_wide_stop_contracts", "trader.mentorCourseExitsResolve (stop-size ladder OctD2.3-R47 \"1 MNQ\", nil → 1)", func(c mentorCourseExitsResolved) any { return c.WideStopContracts })

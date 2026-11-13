@@ -9,8 +9,8 @@ import (
 // B5 (#45 review): a swing stop >= swing_max_stop_pts is SIZED DOWN to <= 2
 // MNQ, never sent at the owner's larger swing size. m463 (D5.2-R31): the SIZE
 // table is unchanged, but the rule gate now REFUSES a swing stop above
-// mentor_swing_max_stop_pts (default 90) — so this table runs the gate with the
-// skip raised to 500 to pin the sizing on its own; the default-90 refusal is
+// mentor_swing_max_stop_pts (default 80 since answers-1112 Q13; 90 at m463) — so
+// this table runs the gate with the skip raised to 500 to pin the sizing on its own; the default refusal is
 // pinned in m463_swing_max_stop_test.go.
 func TestSwingWideStopSizesDownNeverRefuses(t *testing.T) {
 	cases := []struct {

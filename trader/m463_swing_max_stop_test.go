@@ -12,7 +12,9 @@ import (
 // điểm thì không ngon nữa… Phải chi 30-40, 50-60 ok, vô 2 contracts được…
 // nhưng 100 điểm quá nhiều rủi ro" (his example: 91.75 pts). Owner order
 // 2026-11-01 ("full of it", after being shown this quote) REVERSES m186: the
-// swing is refused ABOVE mentor_swing_max_stop_pts (default 90). The kernel
+// swing is refused ABOVE mentor_swing_max_stop_pts (default 80 since
+// answers-1112 Q13, "7-80 điểm" [Sept D5.2 p2 @05:25-05:33]; m463 shipped 90,
+// the revert value — pinned in answers1112_swing_80_test.go). The kernel
 // refuses first (swing_max_stop); the trader rule gate reads the SAME resolved
 // number as its backstop — one number, not two.
 
@@ -23,17 +25,20 @@ func TestM463SwingRuleGateRefusesAboveCeiling(t *testing.T) {
 	}
 	// trades 709/710: 102.25 pts → refused, named R31.
 	if why := gate(102.25, 0); !strings.HasPrefix(why, "R31:") || !strings.Contains(why, "mentor_swing_max_stop_pts") {
-		t.Fatalf("a 102.25-pt swing stop must be refused by R31 at the default 90, got %q", why)
+		t.Fatalf("a 102.25-pt swing stop must be refused by R31 at the default 80, got %q", why)
 	}
 	// E11 91.75 → refused.
 	if why := gate(91.75, 0); !strings.HasPrefix(why, "R31:") {
 		t.Fatalf("E11's 91.75-pt stop must be refused, got %q", why)
 	}
-	// 90 exactly, 60, 30 → taken.
-	for _, stop := range []float64{90, 60, 30} {
+	// 80 exactly, 60, 30 → taken at the default; 90 exactly at the revert 90.
+	for _, stop := range []float64{80, 60, 30} {
 		if why := gate(stop, 0); why != "" {
 			t.Fatalf("a %.2f-pt swing stop is inside the course band, refused: %q", stop, why)
 		}
+	}
+	if why := gate(90, 90); why != "" {
+		t.Fatalf("mentor_swing_max_stop_pts=90 (revert) must take 90.00, refused: %q", why)
 	}
 	// the knob raises the ceiling.
 	if why := gate(102.25, 110); why != "" {
@@ -46,12 +51,12 @@ func TestM463SwingRuleGateRefusesAboveCeiling(t *testing.T) {
 }
 
 func TestM463CourseExitsResolveSwingMaxStop(t *testing.T) {
-	if r := mentorCourseExitsResolve(nil, nil); r.SwingMaxStopPts != 90 {
-		t.Fatalf("no strategy: swing max stop = %v, want 90", r.SwingMaxStopPts)
+	if r := mentorCourseExitsResolve(nil, nil); r.SwingMaxStopPts != 80 {
+		t.Fatalf("no strategy: swing max stop = %v, want 80", r.SwingMaxStopPts)
 	}
 	rc := &store.RiskControlConfig{}
-	if r := mentorCourseExitsResolve(nil, rc); r.SwingMaxStopPts != 90 {
-		t.Fatalf("unset knob: swing max stop = %v, want 90", r.SwingMaxStopPts)
+	if r := mentorCourseExitsResolve(nil, rc); r.SwingMaxStopPts != 80 {
+		t.Fatalf("unset knob: swing max stop = %v, want 80", r.SwingMaxStopPts)
 	}
 	rc.MentorSwingMaxStopPts = 110
 	r := mentorCourseExitsResolve(nil, rc)
@@ -64,7 +69,7 @@ func TestM463CourseExitsResolveSwingMaxStop(t *testing.T) {
 	if cfg.Swing.SkipStopPts != 110 {
 		t.Fatalf("kernel SkipStopPts = %v, want the resolved 110", cfg.Swing.SkipStopPts)
 	}
-	if mentor.DefaultConfig().Swing.SkipStopPts != 90 {
-		t.Fatalf("kernel default SkipStopPts = %v, want 90", mentor.DefaultConfig().Swing.SkipStopPts)
+	if mentor.DefaultConfig().Swing.SkipStopPts != 80 {
+		t.Fatalf("kernel default SkipStopPts = %v, want 80", mentor.DefaultConfig().Swing.SkipStopPts)
 	}
 }

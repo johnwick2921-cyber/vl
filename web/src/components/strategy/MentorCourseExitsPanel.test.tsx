@@ -119,9 +119,10 @@ it('the EMA 9 mode and the numbers are stored as typed', () => {
 
 // m463 (D5.2-R31 [p2 @19:34–21:43] "100 điểm quá nhiều rủi ro… đừng vô"; owner
 // order 2026-11-01 "full of it" reverses m186): the swing skip ceiling is a
-// course-exits number, default 90, stored as typed.
-it('the SWING max stop defaults to 90 and is stored as typed', () => {
-  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_swing_max_stop_pts).toBe(90)
+// course-exits number, default 80 since answers-1112 Q13 ("7-80 điểm … cứ vô
+// 1-2" [Sept D5.2 p2 @05:25-05:33]; 90 reverts), stored as typed.
+it('the SWING max stop defaults to 80 and is stored as typed', () => {
+  expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_swing_max_stop_pts).toBe(80)
   const { onChange, full } = renderEditor({ mentor_mode: true })
   const input = screen.getByTestId('mentor-course-mentor_swing_max_stop_pts')
   expect(screen.getByText(/SWING max stop/)).toBeTruthy()

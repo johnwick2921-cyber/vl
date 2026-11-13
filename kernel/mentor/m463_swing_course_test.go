@@ -267,13 +267,16 @@ func TestM463R24CandleColourIrrelevant(t *testing.T) {
 // ngon nữa… Phải chi 30-40, 50-60 ok, vô 2 contracts được… nhưng 100 điểm quá
 // nhiều rủi ro" [D5.2 p2 @19:34-21:43] (his example: 91.75 pts). Owner order
 // 2026-11-01 ("full of it", shown this quote) REVERSES m186: a swing whose stop
-// is ABOVE mentor_swing_max_stop_pts (default 90) is refused and NAMED
-// swing_max_stop. 90.00 exactly is still taken.
+// is ABOVE mentor_swing_max_stop_pts is refused and NAMED swing_max_stop. The
+// default is 80 since answers-1112 Q13 ("7-80 điểm … cứ vô 1-2" [Sept D5.2 p2
+// @05:25-05:33]); at the m463 value 90 (the revert) 90.00 exactly is taken.
+// The 80-default table is answers1112_swing_80_test.go.
 func TestM463R31SkipAboveNinety(t *testing.T) {
 	cfg := DefaultSwingCfg()
-	if cfg.SkipStopPts != 90 {
-		t.Fatalf("default skip = %v, want 90", cfg.SkipStopPts)
+	if cfg.SkipStopPts != 80 {
+		t.Fatalf("default skip = %v, want 80 (answers-1112 Q13)", cfg.SkipStopPts)
 	}
+	cfg.SkipStopPts = 90 // the m463 ceiling this test was written against (the revert value)
 	// reject short: entry = candle low, stop = line + 30 → stop pts = line+30-low.
 	mkTape := func(low float64) []market.Kline {
 		return swingTape(t, []market.Kline{
@@ -295,7 +298,7 @@ func TestM463R31SkipAboveNinety(t *testing.T) {
 	if m463Refused(s, SwingRefusedMaxStop) != 1 {
 		t.Fatalf("the refusal must be NAMED swing_max_stop: %+v", s.refused)
 	}
-	// exactly 90 → taken
+	// exactly 90 → taken at mentor_swing_max_stop_pts=90
 	s = &SwingState{}
 	bars = mkTape(stopLine - 90)
 	if es := m463Entries(SwingTick(s, bars, cfg, bars[len(bars)-1].OpenTime+60_000)); len(es) != 1 {

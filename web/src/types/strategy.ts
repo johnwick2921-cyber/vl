@@ -576,7 +576,8 @@ export interface RiskControlConfig {
   mentor_keypair_candle_ratio?: number
   mentor_box_fresh_rth_pair?: boolean
   mentor_box_max_height_pts?: number
-  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 90.
+  // m463 (D5.2-R31): a SWING4H stop ABOVE this is refused; unset → 80
+  // (answers-1112 Q13, Sept D5.2 p2 @05:25-05:33 "7-80 điểm"; 90 reverts).
   mentor_swing_max_stop_pts?: number
   // m465 P2 (release #60, D4.2-R27): what an ISB stop-out boxes — 'range'
   // (default) = the whole 5m range that held the trade; 'band' = the pre-#60

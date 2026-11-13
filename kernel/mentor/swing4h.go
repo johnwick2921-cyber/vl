@@ -51,8 +51,9 @@ import (
 //     touch is refused (swing_level_invalid). Candle colour does not matter
 //     (R26, [p3 @06:24–06:52] "không quan trọng màu").
 //  6. Stop of ~100 → "đừng vô" (m463, D5.2-R31, REVERSES m186): a swing whose
-//     stop is ABOVE SkipStopPts (knob mentor_swing_max_stop_pts, default 90 —
-//     his own example is 91.75 [p2 @19:34–21:43]) is refused (swing_max_stop),
+//     stop is ABOVE SkipStopPts (knob mentor_swing_max_stop_pts, default 80 —
+//     "7-80 điểm … cứ vô 1-2" [p2 @05:25-05:33], answers-1112 Q13; was 90 at
+//     m463; his own example is 91.75 [p2 @19:34–21:43]) is refused (swing_max_stop),
 //     on the reject and the inside-bar path alike. 30–40 / 50–60 are fine. The
 //     swing stays EXEMPT from the ISB ceiling (mentor_isb_max_pts, 20 since m466).
 //  7. Targets [table]: first = "EMA 34 on the 5-minute" (or the 50-pt
@@ -88,7 +89,7 @@ type SwingCfg struct {
 	// MaxStopPts is the SIZING ceiling (risk_control.mentor_tuning.swing_max_stop_pts,
 	// default 100) the trader reads in mentorSwingCeiling: a swing stop >= it
 	// goes out at <= 2 MNQ. It is never a skip — SkipStopPts is (m463). With the
-	// default skip 90 a stop >= 100 is refused before sizing; the size cap only
+	// default skip 80 a stop >= 100 is refused before sizing; the size cap only
 	// bites when the owner raises mentor_swing_max_stop_pts above it.
 	MaxStopPts float64
 	// MinStopPts is the degenerate-geometry floor (W26 P2-4): a swing stop
@@ -102,7 +103,9 @@ type SwingCfg struct {
 	// (reject or inside bar) whose stop is ABOVE this is refused, NAMED
 	// swing_max_stop: "100 điểm quá nhiều rủi ro… đừng vô" [D5.2 p2 @19:34–21:43]
 	// (his example 91.75 pts); "30-40, 50-60 ok, vô 2 contracts được". Default
-	// 90; ≤ 0 resolves to 90 (no OFF). REVERSES m186 (owner order 2026-11-01
+	// 80 (answers-1112 Q13: "7-80 điểm … cứ vô 1-2 … risk reward phải 1-1"
+	// [Sept D5.2 p2 @05:25-05:33]; 90 at m463 — the revert value); ≤ 0
+	// resolves to the default (no OFF). REVERSES m186 (owner order 2026-11-01
 	// "full of it", after being shown the quote).
 	SkipStopPts float64
 	// LeewayCandles is the reference-leeway knob [D5.2 p1 @15:21–15:48]: the
@@ -178,9 +181,15 @@ func DefaultSwingCfg() SwingCfg {
 		MinStopPts:        0,   // W26 P2-4: OFF by default (R5)
 		EntryBufferPts:    0,   // no buffer [D5.2 p2 @05:02–05:12]
 		TargetEMA5mPeriod: 34,
-		SkipStopPts:       90, // m463 D5.2-R31: refuse a swing stop > 90 [p2 @19:34–21:43]
-		LeewayCandles:     2,
-		Hold4hBars:        1,
+		// answers-1112 Q13: 90 → 80 — "có những lúc mà cái nến 5 phút nó tới
+		// 7-80 điểm, 5-60 điểm cứ vô 1-2 [MNQ] cũng được… risk reward phải 1-1"
+		// [Sept D5.2 p2 @05:25-05:33], over his 71.75-pt example (frame
+		// part2/f_000158); nothing named between 80 and ~100 ("đừng vô" [p2
+		// @19:41-19:44], his 91.75 skipped [p2 @21:06-21:43]). October gives no
+		// swing number. Revert: mentor_swing_max_stop_pts=90 (today, m463).
+		SkipStopPts:   80,
+		LeewayCandles: 2,
+		Hold4hBars:    1,
 	}
 }
 
@@ -946,7 +955,7 @@ func nearTouch(b market.Kline, line float64, approach Side) bool {
 
 // swingRefuseExtras adds, to an invalid-level refusal, what ELSE the candle
 // would have broken: a near miss (R12) and the reject stop it would have had
-// against the 90-pt ceiling (R31).
+// against the skip ceiling (R31; mentor_swing_max_stop_pts, default 80).
 func swingRefuseExtras(b market.Kline, line float64, approach Side, cfg SwingCfg) string {
 	var x string
 	if !touchesLine(b, line) {
@@ -966,7 +975,7 @@ func swingRefuseExtras(b market.Kline, line float64, approach Side, cfg SwingCfg
 	return x
 }
 
-// swingSkipStopPts resolves SkipStopPts (≤ 0 → the 90 default; no OFF).
+// swingSkipStopPts resolves SkipStopPts (≤ 0 → the default, 80 since answers-1112 Q13; no OFF).
 func swingSkipStopPts(cfg SwingCfg) float64 {
 	if cfg.SkipStopPts > 0 {
 		return cfg.SkipStopPts
