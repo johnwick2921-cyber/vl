@@ -475,9 +475,9 @@ export interface MentorTuning {
   phl_min_above_old_extreme_pts?: number
   isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target. Since answers-1112 Q3 its own case is a level inside 1R; the no-level case is isb_no_level_fill_close
   isb_no_level_fill_close?: boolean // answers-1112 Q3 — unset = ON: an ISB with NO level beyond is traded, first target the fill candle close (+1R leg-1 TP) [Oct D2.2 @28:37-28:56, @30:24-30:43]; a level inside 1R stays refused; false = today's isb_missing_target refusal
-  box_trendline_partial_not_room?: boolean // answers-1112 Q12 — unset = ON: for a BOX trade a trendline in the path is a place to sell part, not the room cap — the target and the room read the next real level beyond it, and the line is the runner's first partial past 1:1 [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]; a line with nothing real beyond stays the target; false = today
+  box_trendline_partial_not_room?: boolean // answers-1112 Q12 — unset = OFF (today, since the 2026-11-12 review; owner opt-in). true: for a BOX trade a trendline in the path is a place to sell part, not the room cap — the target and the room read the next real level beyond it, and the line is the runner's first partial past 1:1 [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]; a line with nothing real beyond stays the target; false/unset = today
   phl_5m_box_same_dir_allowed?: boolean // answers-1112 Q9 — unset = OFF (today): true = inside a standing 5m ISB box a PHL/PLH on the box's own side (candle-1 colour) is not refused phl_5m_box_ban; a scalp, target capped at the box's far edge [Oct D4.3 @1:08:24-1:08:39, @1:11:20-1:11:45]; the opposite side stays banned; experienced only [@1:10:58-1:11:03]
-  touch_stop_cover_later_wick?: boolean // answers-1112 Q7 — unset = ON: two touch candles, entry on the SECOND (the swing leeway re-arm, the bot's only later-candle entry): when candle 2's wick reaches further than candle 1's and past the line+30 stop, the stop covers it 1 pt beyond [Oct D5.2 @19:42-20:03; Oct D2.3 @46:20-47:20]; widen only, the R31 skip still applies; candle-1 entries unchanged; false = today
+  touch_stop_cover_later_wick?: boolean // answers-1112 Q7 — unset = OFF (today, since the 2026-11-12 review: a [B] port onto the swing re-arm; owner opt-in). true: two touch candles, entry on the SECOND (the swing leeway re-arm, the bot's only later-candle entry): when candle 2's wick reaches further than candle 1's and past the line+30 stop, the stop covers it 1 pt beyond [Oct D5.2 @19:42-20:03; Oct D2.3 @46:20-47:20]; widen only, the R31 skip still applies; candle-1 entries unchanged; false = today
   trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
   rolling_left_break_cancel?: boolean
   rolling_stale_touch_releases?: boolean // FIX-1112 B — unset = OFF (today): true = a level touch of an EARLIER leg does not own the rolling pullback entry (WE6, OctD2.3 @13:37-28:33); false = any live touch-reject owns (m216)
@@ -491,7 +491,7 @@ export interface MentorTuning {
   box_carried_stays_live?: boolean // D3-G4 oct round 2
   box_swing_both_roles?: boolean // D3-G2 oct round 2
   box_preopen_lookback_min?: number // D3-G1 oct round 2
-  phl_room_multiple?: number // D2-G2 / answers-1112 Q2 [1] — unset = 1 (October 1:1, Oct D2.3 @49:37-49:56); 2 = the September 2R room (revert)
+  phl_room_multiple?: number // D2-G2 / answers-1112 Q2 [1] — unset = 1 (October 1:1, Oct D2.3 @49:37-49:56); 2 = the September 2R room (revert); a confluence PHL/PLH asks 1 × its 2R leg 1 = 2R at 1, 4R at 2 [Sept D3.4 p3]
   // G10/G11 D3.1-R26/R20 ['on'] — the session open candle wick is an old
   // high/low; an unfilled ≥20-pt gap's far edge is a level [D3.1 p1 @11:58–12:22, @09:41–09:51]
   session_open_levels?: 'on' | 'off'

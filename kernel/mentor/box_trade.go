@@ -261,7 +261,8 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	if target == 0 {
 		return nil, "box_no_target" // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
-	// answers-1112 Q12 (knob box_trendline_partial_not_room, default ON): a
+	// answers-1112 Q12 (knob box_trendline_partial_not_room, default OFF since
+	// the 2026-11-12 review; ON is the owner's opt-in): a
 	// trendline in the path is a place to sell part, not the room cap — the
 	// target and the room read the next real level beyond it [Sept D3.3 p1
 	// @05:15-07:46; Sept D3.2 p2 @11:06-11:39]. The line then rides as the

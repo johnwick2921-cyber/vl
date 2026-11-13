@@ -2325,7 +2325,9 @@ type MentorTuning struct {
 	// inside 1R stays refused (isb_target_below_floor; isb_target_fill_close
 	// owns it). false = today's isb_missing_target refusal exactly.
 	ISBNoLevelFillClose *bool `json:"isb_no_level_fill_close,omitempty"`
-	// TouchStopCoverLaterWick — answers-1112 Q7: nil → ON. Two touch candles,
+	// TouchStopCoverLaterWick — answers-1112 Q7: nil → OFF (today) since the
+	// 2026-11-12 review — a [B] port onto the swing re-arm, the owner's opt-in.
+	// true: two touch candles,
 	// the entry on the SECOND (the swing leeway re-arm, "du di 2 cây nến"
 	// [Sept D5.2 p1 @15:37-15:51] — the bot's only later-candle entry; a
 	// level-touch PHL/PLH always stays on candle 1). When candle 2's wick
@@ -2333,9 +2335,10 @@ type MentorTuning struct {
 	// covers it, 1 pt beyond [Oct D5.2 @19:42-20:03 "cây râu của cây nến đỏ nó
 	// dài hơn… đặt cây nến đỏ đi"; Oct D2.3 @46:20-47:20]. Widen only; the
 	// R31 skip (mentor_swing_max_stop_pts) and the trader gate read the wider
-	// stop. A candle-1 entry is unchanged ([B], not built). false = today.
+	// stop. A candle-1 entry is unchanged ([B], not built). false/nil = today.
 	TouchStopCoverLaterWick *bool `json:"touch_stop_cover_later_wick,omitempty"`
-	// BoxTrendlinePartialNotRoom — answers-1112 Q12: nil → ON. For a BOX
+	// BoxTrendlinePartialNotRoom — answers-1112 Q12: nil → OFF (today) since the
+	// 2026-11-12 review (the report: "Builds, all default OFF"). true: for a BOX
 	// (FTGL/FTGH edge) trade a trendline in the path is a place to sell part,
 	// not the level the room rule measures: the target and the room read the
 	// next real level beyond the line, and the line is the runner's first
@@ -2344,7 +2347,7 @@ type MentorTuning struct {
 	// box … đánh lên trendline … nếu mà thoát ra khỏi trendline thì biên bông
 	// nó sẽ bự hơn" [Sept D3.2 p2 @11:06-11:39, f_000338]; sell part only at
 	// >= 1:1 [Oct D1.2 @11:00-11:40]). A line with no real level beyond stays
-	// the target; ISB/PHL/PLH/swing unchanged. false = today exactly.
+	// the target; ISB/PHL/PLH/swing unchanged. false/nil = today exactly.
 	BoxTrendlinePartialNotRoom *bool `json:"box_trendline_partial_not_room,omitempty"`
 	// PHL5mBoxSameDirAllowed — answers-1112 Q9: nil → OFF (today). true: inside
 	// a standing 5m ISB box a PHL/PLH on the box's OWN side (candle-1 colour) is

@@ -3556,7 +3556,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				continue
 			}
 			// Confluence is computed BEFORE the PHL room check: a confluence PHL's
-			// leg 1 is 2R, so its room is RoomMultiple × 2R (4R). C52 W1 B9: the
+			// leg 1 is 2R, so its room is PHLRoomMultiple × 2R (2R at the October
+			// default 1, 4R at the revert value 2 [Sept D3.4 p3 @07:38-08:09]). C52 W1 B9: the
 			// MTF read no longer takes an entry price (no trigger conjunct).
 			confluence := e.mtfConfluence(side, cb5, cb15) // m465 P1 D4.2-R17
 			phlLevels := levels

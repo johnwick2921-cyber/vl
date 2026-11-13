@@ -52,17 +52,33 @@ func q7Run(t *testing.T, cfg SwingCfg, c1High, c2High float64) ([]Intent, *Swing
 	return m463ExampleCfg(t, cfg, 10, 15, 9, q7Line, q7Tape(t, c1High, c2High))
 }
 
+// q7On is the swing config with touch_stop_cover_later_wick switched ON (the
+// owner's opt-in); everything else is the default.
+func q7On() SwingCfg {
+	c := DefaultSwingCfg()
+	c.CoverLaterWick = true
+	return c
+}
+
+// TestAnswers1112TouchStopCoverLaterWickDefault — review 2026-11-12 (P2): the
+// knob ships OFF. The rule is stated for a key-level sell stop on candle 2
+// [Oct D5.2 @18:47-20:19]; the bot never enters a level trade on candle 2, so
+// the build carries it onto the 4h swing re-arm, whose stop is line ± 30, not a
+// wick — a [B] port the report lists under "Builds, all default OFF" (Q7,
+// "needs owner sign-off"), and on the 90-day replay its one effect refused a
+// swing that reached its target. OFF = today exactly; ON is the owner's call.
+// MUTANT: CoverLaterWick: true in DefaultSwingCfg → RED.
 func TestAnswers1112TouchStopCoverLaterWickDefault(t *testing.T) {
 	d := DefaultSwingCfg()
-	if !d.CoverLaterWick {
-		t.Fatal("touch_stop_cover_later_wick default must be ON [Oct D5.2 @19:42-20:03]")
+	if d.CoverLaterWick {
+		t.Fatal("touch_stop_cover_later_wick must default OFF (review P2: a [B] port onto the swing re-arm, report Q7 \"needs owner sign-off\")")
 	}
 	if d.LaterWickStopBufferPts != DefaultConfig().PHLStopBufferPts || d.LaterWickStopBufferPts != 1.0 {
 		t.Fatalf("LaterWickStopBufferPts = %v, want the course's 1-pt stop ray (PHLStopBufferPts %v) [Oct D2.3 @46:20-47:20]",
 			d.LaterWickStopBufferPts, DefaultConfig().PHLStopBufferPts)
 	}
-	if !DefaultConfig().Swing.CoverLaterWick {
-		t.Fatal("DefaultConfig().Swing.CoverLaterWick must be ON")
+	if DefaultConfig().Swing.CoverLaterWick {
+		t.Fatal("DefaultConfig().Swing.CoverLaterWick must be OFF")
 	}
 }
 
@@ -73,9 +89,9 @@ func TestAnswers1112TouchStopCoverLaterWickFromTheVideo(t *testing.T) {
 	cases := []struct {
 		name           string
 		c1High, c2High float64
-		wantDefault    float64 // candle-2 entry stop at the default (0 = candle 2 refused)
+		wantDefault    float64 // candle-2 entry stop with the knob ON (0 = candle 2 refused)
 		wantRevert     float64 // touch_stop_cover_later_wick=false (today)
-		refusedDefault string  // the refusal candle 2 gets at the default
+		refusedDefault string  // the refusal candle 2 gets with the knob ON
 	}{
 		{"his screen: candle 1 is the further wick (28,161 [B] vs 28,158.25 [A]) — the exception does not fire",
 			28161, 28158.25, lineStop, lineStop, ""},
@@ -87,22 +103,25 @@ func TestAnswers1112TouchStopCoverLaterWickFromTheVideo(t *testing.T) {
 			28161, 28210, 0, lineStop, SwingRefusedMaxStop},
 	}
 	for _, c := range cases {
-		es, s := q7Run(t, DefaultSwingCfg(), c.c1High, c.c2High)
+		es, s := q7Run(t, q7On(), c.c1High, c.c2High)
 		if len(es) < 1 || es[0].Price != 28120.00 || es[0].Stop != lineStop {
 			t.Fatalf("%s: candle 1 must arm the sell stop 28,120.00 with the line stop %.2f (unchanged); got %+v", c.name, lineStop, es)
 		}
 		switch {
 		case c.wantDefault == 0:
 			if len(es) != 1 {
-				t.Errorf("%s: default: candle 2 must be refused; got %+v", c.name, es)
+				t.Errorf("%s: knob ON: candle 2 must be refused; got %+v", c.name, es)
 			}
 			if m463Refused(s, c.refusedDefault) != 1 {
-				t.Errorf("%s: default: candle 2 refusal must be NAMED %s once; got %+v", c.name, c.refusedDefault, s.refused)
+				t.Errorf("%s: knob ON: candle 2 refusal must be NAMED %s once; got %+v", c.name, c.refusedDefault, s.refused)
 			}
 		case len(es) != 2 || es[1].Price != 28123.50 || es[1].Stop != c.wantDefault:
-			t.Errorf("%s: default: candle 2 re-arm 28,123.50 must carry stop %.2f; got %+v", c.name, c.wantDefault, es)
+			t.Errorf("%s: knob ON: candle 2 re-arm 28,123.50 must carry stop %.2f; got %+v", c.name, c.wantDefault, es)
 		}
 		res, _ := q7Run(t, revert, c.c1High, c.c2High)
+		if def, _ := q7Run(t, DefaultSwingCfg(), c.c1High, c.c2High); len(def) != 2 || def[1].Stop != c.wantRevert {
+			t.Errorf("%s: DEFAULT (knob OFF) must be today's candle 2 stop %.2f; got %+v", c.name, c.wantRevert, def)
+		}
 		if len(res) != 2 || res[1].Price != 28123.50 || res[1].Stop != c.wantRevert {
 			t.Errorf("%s: revert touch_stop_cover_later_wick=false: candle 2 stop %.2f (today); got %+v", c.name, c.wantRevert, res)
 		}
@@ -117,7 +136,7 @@ func TestAnswers1112TouchStopCandleOneEntryUnchanged(t *testing.T) {
 		m463Bar(t, 10, 15, 9, 0, 28100, 28110, 28095, 28105),
 		m463Bar(t, 10, 15, 9, 5, 28125, 28195, 28120, 28150), // SYNTHETIC: wick 40.50 above the line
 	}
-	es, _ := m463ExampleCfg(t, DefaultSwingCfg(), 10, 15, 9, q7Line, cur)
+	es, _ := m463ExampleCfg(t, q7On(), 10, 15, 9, q7Line, cur)
 	if len(es) != 1 || es[0].Stop != q7Line+30 {
 		t.Fatalf("candle-1 entry: stop must stay line+30 = %.2f; got %+v", q7Line+30, es)
 	}
@@ -132,7 +151,7 @@ func TestAnswers1112TouchStopLongMirror(t *testing.T) {
 		m463Bar(t, 10, 15, 9, 5, 28185, 28189, 28148, 28160),     // candle 1: touches, closes back above (SYNTHETIC)
 		m463Bar(t, 10, 15, 9, 10, 28160, 28186.50, 28118, 28172), // candle 2: low 28,118 < line−30 = 28,124.50, high below candle 1's high
 	}
-	es, _ := m463ExampleCfg(t, DefaultSwingCfg(), 10, 15, 9, line, cur)
+	es, _ := m463ExampleCfg(t, q7On(), 10, 15, 9, line, cur)
 	if len(es) != 2 || es[1].Side != SideLong || es[1].Price != 28186.50 || es[1].Stop != 28117 {
 		t.Fatalf("long mirror: candle 2 re-arm 28,186.50 must carry stop 28,117.00 (its low − 1); got %+v", es)
 	}
@@ -170,14 +189,17 @@ func TestAnswers1112TouchStopReplay0709(t *testing.T) {
 	if m463Refused(s, SwingRefusedMaxStop) != 1 {
 		t.Fatalf("revert: candle 1's 157.88-pt reject must be refused swing_max_stop once: %+v", s.refused)
 	}
-	es, s = m463ExampleCfg(t, DefaultSwingCfg(), 7, 9, 9, line, cur)
+	if def, _ := m463ExampleCfg(t, DefaultSwingCfg(), 7, 9, 9, line, cur); len(def) != 1 || abs(def[0].Stop-(line-30)) > 1e-9 {
+		t.Fatalf("DEFAULT (knob OFF): today's candle 2 buy stop with the line stop %.2f; got %+v", line-30, def)
+	}
+	es, s = m463ExampleCfg(t, q7On(), 7, 9, 9, line, cur)
 	if len(es) != 0 {
-		t.Fatalf("default: candle 2's covered stop 29,612.75 (101.50 pts) must be refused; got %+v", es)
+		t.Fatalf("knob ON: candle 2's covered stop 29,612.75 (101.50 pts) must be refused; got %+v", es)
 	}
 	if n := m463Refused(s, SwingRefusedMaxStop); n != 2 {
-		t.Fatalf("default: candle 1 AND candle 2 refused swing_max_stop, got %d: %+v", n, s.refused)
+		t.Fatalf("knob ON: candle 1 AND candle 2 refused swing_max_stop, got %d: %+v", n, s.refused)
 	}
 	if w := s.refused[len(s.refused)-1].Why; !strings.Contains(w, "stop 29612.75 = 101.50 pts") || !strings.Contains(w, "touch_stop_cover_later_wick ON") {
-		t.Fatalf("default: the refusal must name the covered stop 29,612.75 / 101.50 pts: %q", w)
+		t.Fatalf("knob ON: the refusal must name the covered stop 29,612.75 / 101.50 pts: %q", w)
 	}
 }

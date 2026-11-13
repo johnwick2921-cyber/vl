@@ -443,8 +443,12 @@ type Config struct {
 	// ... Risk reward 1-1 ... at least là cũng 35 điểm" [Oct D2.3 @49:37-49:56,
 	// frame s_02972] — and WE10 shows it: the 3.31R target (s_04120) is dragged in
 	// to the old low and taken at R:R 1.71 (s_04126). R31 @ 27:33 "tăng lên 1,2"
-	// is one trade's result (s_01661 reads 1.8), not a minimum. The confluence
-	// tier still asks 2 x Leg1RiskMultiple (Sept D3.4 p3 "at least 1-2"). 2 = the
+	// is one trade's result (s_01661 reads 1.8), not a minimum. roomRefusal
+	// multiplies this by Leg1RiskMultiple, so a CONFLUENCE PHL/PLH (leg 1 = 2R)
+	// asks 1 x 2R = 2R at the default — "at least là risk reward 1-2" [Sept D3.4
+	// p3 @07:38-08:09], the report's Q2 final setting — and 4R at 2 (review
+	// 2026-11-12: this comment used to say the confluence room was unchanged;
+	// TestAnswers1112ReviewConfluencePHLRoomIsTwoR pins both). 2 = the
 	// September D5.3 METHOD s7 2R room (the revert value, today before
 	// answers-1112). ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
@@ -838,8 +842,12 @@ type Config struct {
 	// "target đầu tiên của mình mà mình phải bán bớt… là khi cây nến trend
 	// phiêu lĩnh của mình… đóng"; @30:24-30:43 "Target của Insha Bar là khi nến
 	// trend phiêu lệnh… đóng thì mình sẽ bán bớt, không quan tâm nó làm gì
-	// hết"; Sept D1.4 p1 @12:12-13:27 "Bắt buộc"]. Nothing in any video refuses
-	// an ISB because no level lies beyond it. ON (default): the
+	// hết"; Sept D1.4 p1 @12:12-13:27 "Bắt buộc"]. The opposing line (review
+	// 2026-11-12) is Sept D4.1 p1 @01:39-02:02 "một cái setup là anh chị provide
+	// … 3 thứ … entry, stop loss, target … không có một trong ba … Bắt buộc lúc
+	// nào cũng phải đợi" — the line the old isb_missing_target refusal cites;
+	// for an ISB the fill candle's close IS that third thing (the lessons above
+	// name it the ISB's target), so the setup still provides all three. ON (default): the
 	// isb_missing_target case takes the leg-1 take-profit the trader already
 	// owns (+1R native TP, partial at the fill candle's close,
 	// mentorISBPartialTP) and skips the room-to-a-level rule (no level to
@@ -945,14 +953,19 @@ type Config struct {
 	// p2 @11:06-11:39, frame f_000338, Sun 13 Sep 2026]; "giữa một cái đường line
 	// và một cái box… tin cái box hơn" [@03:26-03:59]; October: "đụng support,
 	// đánh lên" [Oct D3.3 @46:00-46:27] and nothing in October refuses a box
-	// trade for a trendline. ON (default): the box target skips a
+	// trade for a trendline. Default OFF since the 2026-11-12 review (P1): the
+	// report lists this build under "Builds, all default OFF", the video aims
+	// past the line only once price breaks out of it ("nếu mà thoát ra khỏi
+	// trendline" [Sept D3.2 p2 @11:11-11:39]), no line states a room to a
+	// trendline, and the 90-day replay returned box trades whose line sat
+	// 0.07R-0.25R from entry — the owner's call. ON: the box target skips a
 	// KindTrendlineTarget level the way release #30 skips an EMA — the target
 	// and the room rule read the next real level beyond it; the trendline is
 	// then the runner's first partial line (Intent.RunnerPartialTP) when it sits
 	// past the 1:1 leg-1 exit (Oct D1.2 @11:00-11:40: sell part only at >= 1:1).
 	// A trendline with NO real level beyond stays the target, as today. ISB,
-	// PHL/PLH and swing targets are unchanged. OFF = today exactly. Studio:
-	// risk_control.mentor_tuning.box_trendline_partial_not_room.
+	// PHL/PLH and swing targets are unchanged. OFF (default) = today exactly.
+	// Studio: risk_control.mentor_tuning.box_trendline_partial_not_room.
 	BoxTrendlinePartialNotRoom bool
 	// PHL5mBoxSameDirAllowed — answers-1112 Q9 (verdict confirmed, confidence
 	// medium). Inside a standing 5m inside-bar box he trades only the box's
@@ -1275,7 +1288,7 @@ func DefaultConfig() Config {
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 		// answers-1112 Q12 (box trades and trendlines).
-		BoxTrendlinePartialNotRoom: true, // answers-1112 Q12: a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39 f_000338; Oct D3.3 @46:00-46:27]; false = today
+		BoxTrendlinePartialNotRoom: false, // answers-1112 Q12: OFF since the 2026-11-12 review (report "Builds, all default OFF"; the line is the target until price escapes it [Sept D3.2 p2 @11:11-11:39]) = today; true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
 		// answers-1112 Q9: OFF — "experienced only" is the owner's call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
 		PHL5mBoxSameDirAllowed: false,
 		// m466 P2 (release #61): levels and touches.

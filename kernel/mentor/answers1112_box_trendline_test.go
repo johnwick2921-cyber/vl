@@ -8,7 +8,8 @@ import (
 	"vl/market"
 )
 
-// answers-1112 Q12 (knob box_trendline_partial_not_room, default ON): for a
+// answers-1112 Q12 (knob box_trendline_partial_not_room, default OFF since the
+// 2026-11-12 review; ON is the owner's opt-in): for a
 // BOX trade a trendline in the path is a place to sell part, not the level the
 // room rule measures.
 //
@@ -95,9 +96,23 @@ func q12Cfg(on bool) Config {
 	return cfg
 }
 
-func TestAnswers1112BoxTrendlineDefaultOn(t *testing.T) {
-	if !DefaultConfig().BoxTrendlinePartialNotRoom {
-		t.Fatal("box_trendline_partial_not_room must default ON [Sept D3.3 p1 @05:15-07:46; Sept D3.2 p2 @11:06-11:39]")
+// TestAnswers1112BoxTrendlineDefaultOff — review 2026-11-12 (P1): the knob
+// ships OFF. The report lists the Q12 build under "Builds, all default OFF";
+// the video makes the trendline the TARGET and aims past it only after the
+// line breaks ("nếu mà thoát ra khỏi trendline thì biên bông nó sẽ bự hơn"
+// [Sept D3.2 p2 @11:11-11:39]); and on the 90-day replay the returned box
+// trades include lines 0.07R / 0.25R from entry. OFF = today's box_room.
+// MUTANT: BoxTrendlinePartialNotRoom: true in DefaultConfig → RED.
+func TestAnswers1112BoxTrendlineDefaultOff(t *testing.T) {
+	if DefaultConfig().BoxTrendlinePartialNotRoom {
+		t.Fatal("box_trendline_partial_not_room must default OFF (review P1: report \"Builds, all default OFF\"; the line is the target until it breaks [Sept D3.2 p2 @11:11-11:39])")
+	}
+	// The default refuses the video's 20:24 box long box_room, as today.
+	ref, window, boxes := q12Fixture(t)
+	cfg := DefaultConfig()
+	cfg.LocTriggerFilter = false
+	if out, why := boxEntryIntentWhy(ref, boxes[0], boxes, q12Levels(q12BotLine), TriggerLine{}, window, cfg); len(out) != 0 || why != "box_room" {
+		t.Fatalf("default: got %d intents, %q — want box_room (today)", len(out), why)
 	}
 }
 

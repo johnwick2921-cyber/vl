@@ -76,7 +76,11 @@ func TestAnswers1112ISBNoLevelDefaults(t *testing.T) {
 	}
 }
 
-// The video's case: no level below the short ISB. Default → traded; the first
+// The video's ISB geometry (s_02392 entry/stop) with NO level below it placed
+// in the test — on his chart a recent low does stand below the entry, and the
+// 26.25-pt stop is over the trader's 20-pt mentor_isb_max_pts, so end to end
+// this exact trade is refused (review P3); the kernel case is the no-level
+// branch on his numbers, not a replay of his trade. Default → traded; the first
 // target is the +1R leg-1 take-profit the trader owns ("đợi 27 điểm, anh chị
 // bán"), pulled in to the fill candle's close by mentorISBPartialTP ("Hoặc ngay
 // tới đây, anh chị bán bớt"; trader TestAnswers1112ISBNoLevelPartialAtFillClose).

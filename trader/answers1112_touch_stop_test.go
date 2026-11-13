@@ -8,15 +8,20 @@ import (
 	"vl/store"
 )
 
-// TestAnswers1112TouchStopCoverLaterWickKnob — answers-1112 Q7: unset = ON (a
-// candle-2 swing entry's stop covers candle 2's further wick [Oct D5.2
-// @19:42-20:03]); a stored false reaches the evaluator (today's line+30 stop).
+// TestAnswers1112TouchStopCoverLaterWickKnob — answers-1112 Q7: unset = OFF
+// since the 2026-11-12 review (today's line+30 stop; the rule is stated for a
+// level trade and carried onto the swing re-arm as a [B] port, report Q7 "needs
+// owner sign-off"); a stored true reaches the evaluator (a candle-2 swing
+// entry's stop covers candle 2's further wick [Oct D5.2 @19:42-20:03]).
 // The knob changes only the swing leeway re-arm; the stop-size / R31 gates are
 // untouched and read the wider stop (below).
 func TestAnswers1112TouchStopCoverLaterWickKnob(t *testing.T) {
 	off, on := false, true
-	if c := tuningTick(t, &store.MentorTuning{}); !c.Swing.CoverLaterWick || c.Swing.LaterWickStopBufferPts != 1.0 {
-		t.Fatalf("unset: Swing.CoverLaterWick=%v buffer=%v, want true / 1.0 [Oct D2.3 @46:20-47:20]", c.Swing.CoverLaterWick, c.Swing.LaterWickStopBufferPts)
+	if c := tuningTick(t, &store.MentorTuning{}); c.Swing.CoverLaterWick || c.Swing.LaterWickStopBufferPts != 1.0 {
+		t.Fatalf("unset: Swing.CoverLaterWick=%v buffer=%v, want false (review: owner opt-in) / 1.0 [Oct D2.3 @46:20-47:20]", c.Swing.CoverLaterWick, c.Swing.LaterWickStopBufferPts)
+	}
+	if c := tuningTick(t, nil); c.Swing.CoverLaterWick {
+		t.Fatal("no mentor_tuning block: touch_stop_cover_later_wick must resolve OFF")
 	}
 	if c := tuningTick(t, &store.MentorTuning{TouchStopCoverLaterWick: &off}); c.Swing.CoverLaterWick {
 		t.Fatal("stored touch_stop_cover_later_wick=false (revert) must reach the evaluator")
@@ -26,6 +31,7 @@ func TestAnswers1112TouchStopCoverLaterWickKnob(t *testing.T) {
 	}
 	// the course-exits resolver (mentor_swing_max_stop_pts) leaves the knob alone.
 	cfg := mentor.DefaultConfig()
+	cfg.Swing.CoverLaterWick = true // as a stored true would set it
 	applyMentorCourseExits(nil, &cfg, &store.RiskControlConfig{MentorSwingMaxStopPts: 90})
 	if !cfg.Swing.CoverLaterWick || cfg.Swing.SkipStopPts != 90 {
 		t.Fatalf("applyMentorCourseExits must not reset CoverLaterWick: %+v", cfg.Swing)

@@ -151,7 +151,11 @@ type SwingCfg struct {
 	// 4h candle may enter again after the first one filled and ended.
 	ISBRepeatAfterFill bool
 	// CoverLaterWick (answers-1112 Q7) — knob touch_stop_cover_later_wick,
-	// default ON. Two touch candles; the entry is on the SECOND one (the swing
+	// default OFF since the 2026-11-12 review (P2): the rule is stated for a
+	// key-level order on candle 2 and carried onto the swing re-arm as a [B]
+	// port (the report: "needs owner sign-off", "Builds, all default OFF"); on
+	// the 90-day replay its one effect refused a swing that reached its target
+	// (Thu 9 Jul 09:20 CT). ON is the owner's opt-in. Two touch candles; the entry is on the SECOND one (the swing
 	// leeway re-arm, "du di 2 cây nến" [Sept D5.2 p1 @15:37-15:51] — the bot's
 	// only entry on a later touching candle: a level-touch PHL/PLH always
 	// stays on candle 1, touch.go TouchTick). The stop "bắt buộc phải đi theo
@@ -164,7 +168,7 @@ type SwingCfg struct {
 	// swing stop is already beyond both wicks otherwise). The widened stop runs
 	// through the same R31 skip (swing_max_stop) and the trader gate. A
 	// candle-1 entry is unchanged (applying it there is [B], not built). false
-	// = today exactly.
+	// (default) = today exactly.
 	CoverLaterWick bool
 	// LaterWickStopBufferPts is how far beyond candle 2's extreme the covered
 	// stop sits: the course's stop ray beyond a candle extreme, 1 pt
@@ -210,9 +214,10 @@ func DefaultSwingCfg() SwingCfg {
 		SkipStopPts:   80,
 		LeewayCandles: 2,
 		Hold4hBars:    1,
-		// answers-1112 Q7: a candle-2 entry's stop covers candle 2's further
-		// wick [Oct D5.2 @19:42-20:03]; 1 pt beyond it [Oct D2.3 @46:20-47:20].
-		CoverLaterWick:         true,
+		// answers-1112 Q7: OFF (review 2026-11-12 — a [B] port, owner's
+		// opt-in). ON: a candle-2 entry's stop covers candle 2's further wick
+		// [Oct D5.2 @19:42-20:03]; 1 pt beyond it [Oct D2.3 @46:20-47:20].
+		CoverLaterWick:         false,
 		LaterWickStopBufferPts: 1.0,
 	}
 }
