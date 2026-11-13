@@ -31,7 +31,7 @@ func TestAnswers1112ReviewConfluencePHLRoomIsTwoR(t *testing.T) {
 
 	// 28,958: reward 22.00 = 2.51R — inside 4R, past 2R.
 	if _, ok, why := run(answersCfg(), 28_958, true); !ok {
-		t.Fatalf("default (1): a confluence PLH with 2.51R room must pass the 1 x 2R = 2R room [Sept D3.4 p3 \"at least 1-2\"]; refused %q", why)
+		t.Fatalf("default (1): a confluence PLH with 2.51R room must pass the 1 x 2R = 2R room [Sept D3.4 p3 @07:38-08:09 \"at least 1-2\"]; refused %q", why)
 	}
 	if _, ok, why := run(rev, 28_958, true); ok || !strings.HasPrefix(why, "room: reward 22.00 pts < 35.00 pts") {
 		t.Fatalf("revert (2): the confluence room must be 2 x 2R = 4R (35.00 pts), as today; ok=%v why=%q", ok, why)
