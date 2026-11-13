@@ -163,6 +163,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLRoomMultiple:            1,                                 // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56]; 2 reverts
 			ISBTargetFillClose:         false,                             // D2-G3 review: OFF (course does not state it)
 			ISBNoLevelFillClose:        true,                              // answers-1112 Q3: no-level ISB traded [Oct D2.2 @28:37-28:56, @30:24-30:43]; false reverts
+			TouchStopCoverLaterWick:    true,                              // answers-1112 Q7: candle-2 stop covers the further wick [Oct D5.2 @19:42-20:03]; false reverts
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
 			HTFTrendlineFlip:           true,                              // D3-G12

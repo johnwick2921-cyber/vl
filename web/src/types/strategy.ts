@@ -474,6 +474,7 @@ export interface MentorTuning {
   phl_min_above_old_extreme_pts?: number
   isb_target_fill_close?: boolean // D2-G3 oct round 2 — unset = OFF (review: course does not state it, [B]); true = the ISB first target is the fill candle close (+1R leg-1 TP); no level required (OctD2.2-R35/R37); unset/false = the September level target. Since answers-1112 Q3 its own case is a level inside 1R; the no-level case is isb_no_level_fill_close
   isb_no_level_fill_close?: boolean // answers-1112 Q3 — unset = ON: an ISB with NO level beyond is traded, first target the fill candle close (+1R leg-1 TP) [Oct D2.2 @28:37-28:56, @30:24-30:43]; a level inside 1R stays refused; false = today's isb_missing_target refusal
+  touch_stop_cover_later_wick?: boolean // answers-1112 Q7 — unset = ON: two touch candles, entry on the SECOND (the swing leeway re-arm, the bot's only later-candle entry): when candle 2's wick reaches further than candle 1's and past the line+30 stop, the stop covers it 1 pt beyond [Oct D5.2 @19:42-20:03; Oct D2.3 @46:20-47:20]; widen only, the R31 skip still applies; candle-1 entries unchanged; false = today
   trigger_from_open?: boolean // G4 oct round 2 — unset = ON: the 5m trigger line is read from the 08:30 CT open (OctD4.3-R5); false = the whole-history read
   rolling_left_break_cancel?: boolean
   rolling_stale_touch_releases?: boolean // FIX-1112 B — unset = OFF (today): true = a level touch of an EARLIER leg does not own the rolling pullback entry (WE6, OctD2.3 @13:37-28:33); false = any live touch-reject owns (m216)

@@ -150,6 +150,26 @@ type SwingCfg struct {
 	// reading of it — a mentor question. true = a later inside bar of the same
 	// 4h candle may enter again after the first one filled and ended.
 	ISBRepeatAfterFill bool
+	// CoverLaterWick (answers-1112 Q7) — knob touch_stop_cover_later_wick,
+	// default ON. Two touch candles; the entry is on the SECOND one (the swing
+	// leeway re-arm, "du di 2 cây nến" [Sept D5.2 p1 @15:37-15:51] — the bot's
+	// only entry on a later touching candle: a level-touch PHL/PLH always
+	// stays on candle 1, touch.go TouchTick). The stop "bắt buộc phải đi theo
+	// cây đầu tiên… chứ không phải là đặt ở cây nến 2" [Oct D5.2 @19:01-19:25],
+	// "ngoại trừ nếu như mà cây râu của cây nến đỏ nó dài hơn cây nến xanh…
+	// mà cái stop loss nó bự hơn… đặt cây nến đỏ đi" [Oct D5.2 @19:42-20:03]:
+	// when candle 2's wick reaches further than candle 1's, the stop is never
+	// INSIDE it — it widens to candle 2's extreme + LaterWickStopBufferPts when
+	// that lies beyond the line + StopBeyondLinePts stop (widen only; the
+	// swing stop is already beyond both wicks otherwise). The widened stop runs
+	// through the same R31 skip (swing_max_stop) and the trader gate. A
+	// candle-1 entry is unchanged (applying it there is [B], not built). false
+	// = today exactly.
+	CoverLaterWick bool
+	// LaterWickStopBufferPts is how far beyond candle 2's extreme the covered
+	// stop sits: the course's stop ray beyond a candle extreme, 1 pt
+	// [Oct D2.3 @46:20-47:20] (the same number as Config.PHLStopBufferPts).
+	LaterWickStopBufferPts float64
 }
 
 // Swing ISB close-back knob values (m466 P4), canonicalized where they enter
@@ -190,6 +210,10 @@ func DefaultSwingCfg() SwingCfg {
 		SkipStopPts:   80,
 		LeewayCandles: 2,
 		Hold4hBars:    1,
+		// answers-1112 Q7: a candle-2 entry's stop covers candle 2's further
+		// wick [Oct D5.2 @19:42-20:03]; 1 pt beyond it [Oct D2.3 @46:20-47:20].
+		CoverLaterWick:         true,
+		LaterWickStopBufferPts: 1.0,
 	}
 }
 
@@ -889,7 +913,14 @@ func (s *SwingState) walkSwingBar(prev, b market.Kline, line float64, bars5m []m
 			return out
 		}
 	}
-	in, ok, why := swingRejectIntent(approach, b, line, cfg)
+	// answers-1112 Q7: on the leeway candle (touches > 1) the entry is on a
+	// LATER touching candle — the previous touching candle of this window is
+	// ft.RefBar, whose wick the covered stop is compared against.
+	var earlier *market.Kline
+	if ft := s.FirstTouch; ft != nil && touches > 1 {
+		earlier = &ft.RefBar
+	}
+	in, ok, why := swingRejectIntentAfter(approach, b, earlier, line, cfg)
 	if !ok {
 		s.refuse(why.Name, "%s CT %s reject: %s", swingCT(b.OpenTime), approach, why.Why)
 		s.FirstTouch = &swingTouch{RefBar: b, Approach: approach, Touches: touches} // the touch is spent
@@ -1146,6 +1177,44 @@ func closedBack(approach Side, close, line float64) bool {
 // 709/710 were 102.25), narrower than MinStopPts (OFF by default), or on the
 // wrong side of the entry (the hard invariant).
 func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingCfg) (Intent, bool, SwingRefusal) {
+	return swingRejectIntentAfter(approach, ref, nil, line, cfg)
+}
+
+// swingLaterWickStop (answers-1112 Q7, knob touch_stop_cover_later_wick) is the
+// stop of an entry on a LATER touching candle ref whose wick reaches further
+// than the earlier touching candle's: "nếu mà cây nến đỏ cái râu nó dài hơn
+// cây nến xanh mà cái stop loss nó bự hơn cây nến xanh thì… đặt cây nến đỏ đi"
+// [Oct D5.2 @19:42-20:03]. It returns the WIDER of the line stop and ref's
+// extreme ± LaterWickStopBufferPts [Oct D2.3 @46:20-47:20], and whether it
+// widened. earlier == nil (a candle-1 entry), the knob off, or ref's wick not
+// the further one → the line stop unchanged.
+func swingLaterWickStop(side Side, ref market.Kline, earlier *market.Kline, lineStop float64, cfg SwingCfg) (float64, bool) {
+	if !cfg.CoverLaterWick || earlier == nil {
+		return lineStop, false
+	}
+	if side == SideShort {
+		if ref.High <= earlier.High {
+			return lineStop, false // candle 1 is the further wick: the stop follows candle 1 [@19:01-19:25]
+		}
+		if c := ref.High + cfg.LaterWickStopBufferPts; c > lineStop {
+			return c, true
+		}
+		return lineStop, false
+	}
+	if ref.Low >= earlier.Low {
+		return lineStop, false
+	}
+	if c := ref.Low - cfg.LaterWickStopBufferPts; c < lineStop {
+		return c, true
+	}
+	return lineStop, false
+}
+
+// swingRejectIntentAfter is swingRejectIntent for an entry on ref when an
+// EARLIER touching candle of the same window exists (nil = ref is the first):
+// the stop covers ref's further wick (swingLaterWickStop) BEFORE the R31 skip
+// reads it, so a widened stop is refused swing_max_stop like any other.
+func swingRejectIntentAfter(approach Side, ref market.Kline, earlier *market.Kline, line float64, cfg SwingCfg) (Intent, bool, SwingRefusal) {
 	var in Intent
 	if approach == SideShort { // resistance: came from below → sell stop
 		in = Intent{
@@ -1164,10 +1233,18 @@ func swingRejectIntent(approach Side, ref market.Kline, line float64, cfg SwingC
 			Stop:   line - cfg.StopBeyondLinePts,
 		}
 	}
+	stop, covered := swingLaterWickStop(in.Side, ref, earlier, in.Stop, cfg)
+	in.Stop = stop
 	if why, bad := swingStopRefusal(in, cfg); bad {
+		if covered {
+			why.Why += "; the stop covers this later touching candle's further wick (touch_stop_cover_later_wick ON; false = the line stop) [Oct D5.2 @19:42-20:03]"
+		}
 		return Intent{}, false, why
 	}
 	in.Reason = "swing §8: reject touch, stop order tight on the reference candle, stop 30 pts beyond the 4h EMA 34 [D5.2-R18/R21/R28 p1 @13:44–14:05, p3 @17:32–18:01]"
+	if covered {
+		in.Reason += fmt.Sprintf("; entry on the later touching candle, whose wick reaches further than the first one's and past the line stop — the stop covers it at %.2f (touch_stop_cover_later_wick) [Oct D5.2 @19:42-20:03 \"đặt cây nến đỏ đi\"; 1-pt ray Oct D2.3 @46:20-47:20]", stop)
+	}
 	return in, true, SwingRefusal{}
 }
 

@@ -480,6 +480,10 @@ const mentorKnobKeys: Record<string, { settingId: string; live: boolean }> = {
     settingId: 'mentor_swing_max_stop_pts',
     live: true,
   },
+  'Candle-2 entry: the stop covers the longer wick': {
+    settingId: 'risk_control.mentor_tuning.touch_stop_cover_later_wick',
+    live: true,
+  },
   'ISB loss box': { settingId: 'mentor_isb_loss_box', live: true },
   'Opening 5m range break': { settingId: 'mentor_open5m_break', live: true },
   'News wait: which lines': { settingId: 'mentor_news_wait_mode', live: true },
@@ -2594,6 +2598,22 @@ export const mentor: GuideSection = {
             '80 — “có những lúc mà cái nến 5 phút nó tới 7-80 điểm, 5-60 điểm cứ vô 1-2 [MNQ] cũng được… nhưng risk reward phải 1-1” [Sept D5.2 p2 @05:25–05:33], said over his own 71.75-pt example (entry 28,689, stop 28,615.75 — taken). Nothing is named between 80 and ~100; ~100 is “đừng vô” [p2 @19:41–19:44] and his 91.75 is skipped [p2 @21:06–21:43]. October gives no swing number, so September stands. The 60–80 size step (1–2 MNQ) is not built yet. Set 90 to get the pre-answers-1112 behaviour back exactly (80.25–90 taken again).',
           whenToTouch:
             'Only with a new owner ruling; 90 = the old (m463) ceiling.',
+          perSession: 'No — per strategy.',
+        },
+        {
+          label: 'Candle-2 entry: the stop covers the longer wick',
+          where:
+            'No Studio control — set it in the strategy JSON (risk_control.mentor_tuning.touch_stop_cover_later_wick)',
+          what: 'answers-1112 Q7 (verdict corrected, confidence medium). Two candles touch the level and both close back. The order belongs on the FIRST touch candle; if you enter on candle 2 anyway (“em đã du di cho anh chị là được đặt lệnh sell stop ở cây nến 2”), the stop still follows candle 1 — “bắt buộc phải đi theo cây đầu tiên… chứ không phải là đặt ở cây nến 2” [Oct D5.2 @18:49–19:25] — EXCEPT when candle 2’s wick is longer: “ngoại trừ nếu như mà cây râu của cây nến đỏ nó dài hơn cây nến xanh á, thì ok, thì mình đặt ở cây nến đỏ… mà cái stop loss nó bự hơn… đặt cây nến đỏ đi” [@19:42–20:03]. The stop is never inside the further wick. Where the bot enters on candle 2: ONLY the 4h swing’s leeway re-arm (“du di 2 cây nến” [Sept D5.2 p1 @15:37–15:51]); a level-touch PHL/PLH always keeps its order on candle 1, so this knob never touches it. ON (default): on that re-arm, when candle 2’s wick reaches further than candle 1’s AND past the swing’s line+30 stop, the stop widens to candle 2’s extreme + 1 pt (the course’s 1-pt stop ray [Oct D2.3 @46:20–47:20]); otherwise the line+30 stop already sits beyond both wicks and nothing changes. Widen only. The wider stop still meets “Swing skip stop (đừng vô)” (80) and the trader’s R31 gate. His chart (frames s_00875/s_01185, level 28,154.50): candle 2 H 28,158.25, candle 1’s wick ≈ 28,161 — candle 1 is the further one there, so the exception does not fire on screen. Example: line 28,154.50, candle 1 H 28,161, candle 2 H 28,190 L 28,123.50 → candle 2’s sell stop 28,123.50 with stop 28,191.00 (was 28,184.50); candle 2 H 28,210 → stop 28,211.00 is 87.50 pts, refused swing_max_stop. 90-day replay (data.db read-only): 1 of 9 candle-2 swing re-arms changed — Thu 9 Jul 09:20 CT long, line ≈ 29,675.87: candle 2 (O 29,691.00 H 29,714.25 L 29,613.75 C 29,711.25) wicked 62 pts under the line, so today’s stop 29,645.87 sat 32 pts inside that wick (68.38 pts, taken; on the 5m bars it reached its target); covered at 29,612.75 it is 101.50 pts and refused swing_max_stop. OFF = today exactly.',
+          trader: 'on — the October rule for a candle-2 entry; off reverts.',
+          consumer:
+            'trader/mentor_tuning.go mentorTuningResolve (TouchStopCoverLaterWick) → kernel/mentor/swing4h.go SwingCfg.CoverLaterWick (swingLaterWickStop) · trader/mentor_mode.go mentorRuleGate (R31) reads the wider stop',
+          range: 'on / off',
+          systemDefault: 'on',
+          recommended:
+            'on [Oct D5.2 @19:42–20:03]. Not built: applying it to a CANDLE-1 entry (the order resting on candle 1 while a later candle wicks further) — the report’s [B] extension; the course states no buffer or candle count for it.',
+          whenToTouch:
+            'Set false only to get back the plain line+30 stop on a candle-2 swing re-arm.',
           perSession: 'No — per strategy.',
         },
         {

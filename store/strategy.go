@@ -2315,6 +2315,16 @@ type MentorTuning struct {
 	// inside 1R stays refused (isb_target_below_floor; isb_target_fill_close
 	// owns it). false = today's isb_missing_target refusal exactly.
 	ISBNoLevelFillClose *bool `json:"isb_no_level_fill_close,omitempty"`
+	// TouchStopCoverLaterWick — answers-1112 Q7: nil → ON. Two touch candles,
+	// the entry on the SECOND (the swing leeway re-arm, "du di 2 cây nến"
+	// [Sept D5.2 p1 @15:37-15:51] — the bot's only later-candle entry; a
+	// level-touch PHL/PLH always stays on candle 1). When candle 2's wick
+	// reaches further than candle 1's and past the line + 30 stop, the stop
+	// covers it, 1 pt beyond [Oct D5.2 @19:42-20:03 "cây râu của cây nến đỏ nó
+	// dài hơn… đặt cây nến đỏ đi"; Oct D2.3 @46:20-47:20]. Widen only; the
+	// R31 skip (mentor_swing_max_stop_pts) and the trader gate read the wider
+	// stop. A candle-1 entry is unchanged ([B], not built). false = today.
+	TouchStopCoverLaterWick *bool `json:"touch_stop_cover_later_wick,omitempty"`
 	// TriggerFromOpen — G4 (oct round 2): nil → ON (October). The 5m/15m/30m trigger
 	// line is read from the 08:30 CT Open, not from the overnight Globex tape
 	// ("từ lúc Open ra… từ cái mảng đen" [OctD4.3-R5 @ 03:10]). false = the
