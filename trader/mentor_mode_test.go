@@ -1086,8 +1086,9 @@ func TestMentorExitForkAtPlacement(t *testing.T) {
 // Mutant: any default flipped (e.g. leg budget false) → RED.
 func TestMentorKnobRoutingDefaults(t *testing.T) {
 	at := funnelAT(t)
-	if !mentorLegBudgetEnabled(nil) || !mentorLocationTriggerFilter(nil) {
-		t.Fatal("leg budget and the location trigger filter default ON")
+	// OCT-EXACT A1 row 9: the leg budget now defaults OFF; the trigger filter stays ON.
+	if mentorLegBudgetEnabled(nil) || !mentorLocationTriggerFilter(nil) {
+		t.Fatal("leg budget must default OFF (A1 row 9) and the location trigger filter ON")
 	}
 	if v := mentorLegResetOn(at, nil); v != "close" {
 		t.Fatalf("leg reset default = %q, want close", v)

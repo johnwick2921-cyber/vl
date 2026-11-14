@@ -13,7 +13,7 @@ import (
 // through Tick with the production clock (now = the bar's OpenTime,
 // trader/mentor_tick.go mentorEvalOnce).
 func TestEscapedISBBoxIsNotRebuiltFromTheSamePair(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	mk := func(i int, o, h, l, c float64) market.Kline {
 		return market.Kline{OpenTime: int64(i) * 60_000, CloseTime: int64(i)*60_000 + 59_999, Open: o, High: h, Low: l, Close: c}

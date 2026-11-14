@@ -15,7 +15,7 @@ import (
 // evening box.
 
 func m429Cfg(on bool) Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // 1m box geometry
 	cfg.KeyLevelTFMinutes = 1
@@ -176,8 +176,8 @@ func m429Snap(e *Evaluator, now int64) string {
 func m429Run1023(t *testing.T, on bool, at [][2]int) []string {
 	cfg := m429Cfg(on)
 	cfg.Exec2mAfter30m = true // production frame schedule (2m boxes after 09:00)
-	cfg.KeyLevelTFMinutes = DefaultConfig().KeyLevelTFMinutes
-	cfg.EMAPeriod34, cfg.EMAPeriod9 = DefaultConfig().EMAPeriod34, DefaultConfig().EMAPeriod9
+	cfg.KeyLevelTFMinutes = preOctCfg().KeyLevelTFMinutes
+	cfg.EMAPeriod34, cfg.EMAPeriod9 = preOctCfg().EMAPeriod34, preOctCfg().EMAPeriod9
 	all := m423Bars(t)
 	want := map[int64]int{}
 	for i, a := range at {

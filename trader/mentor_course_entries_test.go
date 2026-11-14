@@ -22,8 +22,8 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 	}{
 		{"15m_ib_requires_5m_isb=require_5m_isb (a)", cfg.FifteenMinIBRule == mentor.FifteenMinRequire5mISB},
 		{"tf_conflict_end=both_boxes (course-defaults-30)", cfg.TFConflictEnd == mentor.TFConflictBothBoxes},
-		{"news_wait_both_lines=true (course-defaults-30)", cfg.NewsWaitBothLines},
-		{"news_bars_excluded=true (a)", cfg.NewsBarsExcluded},
+		{"news_wait_both_lines=false (OCT-EXACT A1 row 6; was true, course-defaults-30)", !cfg.NewsWaitBothLines},
+		{"news_bars_excluded=false (OCT-EXACT A1 row 6; was true, a)", !cfg.NewsBarsExcluded},
 		{"isb_box_escape=close5m (m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13]; was close m466 G20/G49 D4.1-R34)", cfg.ISBBoxEscapeMode == mentor.ISBBoxEscapeCloseBoxTF},
 		{"ema34_loss_relock=until_zone_exit (a)", cfg.EmaLossRelock == mentor.EmaRelockUntilZoneExit},
 		{"orb_edge_veto_pts=0 (b)", cfg.OrbEdgeVetoPts == 0},
@@ -36,9 +36,9 @@ func TestCourseEntryKnobsDefaultsAtTheCallSite(t *testing.T) {
 		{"orb_escape_completely=false (release #52 B19: body test until the owner rules)", !cfg.OrbEscapeCompletely},
 		// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
 		{"mentor_5m_box_source=merge (OctD4.3-R59)", cfg.FiveMinBoxSource == mentor.FiveMinBoxMerge},
-		{"mentor_break_direction_lock=true (D4.1-R31/R55)", cfg.BreakDirectionLock},
+		{"mentor_break_direction_lock=false (OCT-EXACT A1 row 12; was true, D4.1-R31/R55)", !cfg.BreakDirectionLock},
 		{"mentor_small_range_guard=false (D4.2-R33 — release #61 final: OFF, the course states no candle count / breakout margin)", !cfg.SmallRangeGuard},
-		{"mentor_mid_range_reject_side=true (D2.2-R71)", cfg.MidRangeRejectSide},
+		{"mentor_mid_range_reject_side=false (OCT-EXACT A1 row 11; was true, D2.2-R71)", !cfg.MidRangeRejectSide},
 	}
 	for _, c := range checks {
 		if !c.ok {
@@ -120,7 +120,7 @@ func TestCourseEntryBootLineReadsTheResolver(t *testing.T) {
 	on := true
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorTuning: &store.MentorTuning{TFConflictEnd: "both_boxes", NewsWaitBothLines: &on}})
 	line := mentorCourseEntryBootLine(at, at.mentorRiskControl())
-	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "htf_gate_news_only=true", "phl_room_multiple=1", "isb_target_fill_close=false", "isb_no_level_fill_close=true", "trigger_from_open=true", "phl_min_above_old_extreme_pts=0", "mentor_5m_box_source=merge", "mentor_break_direction_lock=true", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=true"} {
+	for _, want := range []string{"tf_conflict_end=both_boxes", "news_wait_both_lines=true", "15m_ib_requires_5m_isb=require_5m_isb", "isb_box_escape=close5m", "trendline_is_target=true", "orb_escape_completely=false", "htf_gate_news_only=true", "phl_room_multiple=1", "isb_target_fill_close=false", "isb_no_level_fill_close=true", "trigger_from_open=true", "phl_min_above_old_extreme_pts=0", "mentor_5m_box_source=merge", "mentor_break_direction_lock=false", "mentor_small_range_guard=false", "mentor_mid_range_reject_side=false"} {
 		if !strings.Contains(line, want) {
 			t.Fatalf("boot line %q is missing %q", line, want)
 		}

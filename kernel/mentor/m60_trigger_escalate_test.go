@@ -116,9 +116,9 @@ func TestM60GoverningTriggerLadder(t *testing.T) {
 	t5 := TriggerLine{Dir: SideShort, Price: 1}
 	t15 := TriggerLine{Dir: SideLong, Price: 2}
 	t30 := TriggerLine{Dir: SideShort, Price: 3}
-	on := DefaultConfig()
+	on := preOctCfg()
 	on.TriggerEscalation = true // G3 oct round 2: the default is OFF; the ladder pins the September read
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.TriggerEscalation = false
 	cases := []struct {
 		name      string
@@ -172,7 +172,7 @@ func TestM60P1TapeReplayDiff(t *testing.T) {
 		expiry    int64
 	}
 	run := func(pre bool) (map[string]entry, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.RealFillOnly = true
 		cfg.LossDeparturePts = 0

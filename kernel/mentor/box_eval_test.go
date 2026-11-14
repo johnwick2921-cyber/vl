@@ -13,7 +13,7 @@ import (
 // exactly once).
 
 func TestBoxEntryIntentRejectPlacesStopOrder(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.5
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
@@ -36,7 +36,7 @@ func TestBoxEntryIntentRejectPlacesStopOrder(t *testing.T) {
 }
 
 func TestBoxEntryIntentInsideCloseCancels(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	ref := market.Kline{High: 105.1, Low: 103, Close: 104} // touch, close inside = cancel [D3.2 p1 @ 21:04–21:33]
@@ -46,7 +46,7 @@ func TestBoxEntryIntentInsideCloseCancels(t *testing.T) {
 }
 
 func TestBoxEntryIntentTriggerBlock(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	b := Box{Kind: FTGH, Top: 105, Bottom: 102}
 	ref := market.Kline{High: 104.5, Low: 100.5, Close: 101}
@@ -61,7 +61,7 @@ func TestBoxEntryIntentTriggerBlock(t *testing.T) {
 // trigger agrees, NO key-level condition → the flag rides the intent for
 // DS-102's exit-C / size-10.
 func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // this pin tests the confluence FLAG, not the room rule
 	b := Box{Kind: FTGL, Top: 96, Bottom: 94}
@@ -98,7 +98,7 @@ func TestBoxEntryIntentConfluenceFlag(t *testing.T) {
 // "below the buy line", and left Confluence false; the entry is at 97.5, above
 // the line, so the intent must carry Confluence=true. Short mirror included.
 func TestBoxEntryIntentConfluenceUsesRealEntryNotBoxEdge(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // the flag, not the room rule
 	b := Box{Kind: FTGL, Top: 96, Bottom: 94}
@@ -129,7 +129,7 @@ func TestBoxEntryIntentConfluenceUsesRealEntryNotBoxEdge(t *testing.T) {
 // of a live box — two reject returns in the day emit two box intents — and
 // each return exactly once (BoxRefs dedup).
 func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
@@ -208,7 +208,7 @@ func TestEvaluatorBoxPathEveryReturnTrades(t *testing.T) {
 // edges are OUT of the level touch loop, so the level path must not add a
 // second entry for the same return. Mutant (edges back in the loop) → 2 != 1.
 func TestBoxReturnExactlyOneEntry(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
@@ -277,7 +277,7 @@ func TestBoxReturnExactlyOneEntry(t *testing.T) {
 // seq[nearest].idx, walk the confirming bar) → RED: an entry fires on the
 // confirming bar before the return.
 func TestBoxThirdTouchIsTheTrade(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
@@ -355,7 +355,7 @@ func TestPingPongVerdict(t *testing.T) {
 // TestBoxEntryPingPongRange — the call site: a box return between two boxes
 // fires only when the ping-pong range is >= 50 pts.
 func TestBoxEntryPingPongRange(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl:100.00:90.00"}
@@ -381,7 +381,7 @@ func TestBoxEntryPingPongRange(t *testing.T) {
 // TestLocTriggerFilterBox — v5_loc_notrig mirror: false switches the 5m
 // trigger filter off for BOX rejects.
 func TestLocTriggerFilterBox(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl:100.00:90.00"}
@@ -403,7 +403,7 @@ func TestLocTriggerFilterBox(t *testing.T) {
 // TestWrongTriggerSideBox — B2 (10-03 ruling): every entry, the box path
 // included, must be on the trigger side. The old two-line band is gone (B1).
 func TestWrongTriggerSideBox(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
 	cfg.TriggerSchool = 2 // B20 school 2: the box path waits for the 5m trigger
@@ -432,7 +432,7 @@ func TestWrongTriggerSideBox(t *testing.T) {
 // RTH ORB to draw. If zero entries fire, the test reports the per-gate
 // census of where the first box return died.
 func TestBoxPathRecordedTape13Sep(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.OrbGateEnabled = false // Globex tape: no RTH ORB exists
 	bars := loadFixture(t, "mnq_1m_2026-09-13_boxframe", "1m")
@@ -526,7 +526,7 @@ func chooseStop(ref market.Kline, side Side) float64 {
 // at least one box entry fires, or every return's death is a
 // ruling-sanctioned gate, named.
 func TestBoxPathRecordedTapeWeekdayRTH(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true // ORB gate stays ON: the RTH tape can draw a real ORB
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
 
@@ -580,7 +580,7 @@ func TestBoxPathRecordedTapeWeekdayRTH(t *testing.T) {
 // obey the 4h/1h direction, the day-off and the spent cap like every setup.
 func TestBoxEntryDayAndHTFGates(t *testing.T) {
 	fixture := func(htf HTF, day DayLatch) (*Evaluator, []market.Kline, int64) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = false  // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
@@ -663,7 +663,7 @@ func TestBoxEntryDayAndHTFGates(t *testing.T) {
 // standing 5m-ISB box only a same-direction ISB trades; box trades never.
 func TestBoxEntryBannedInsideISBBox(t *testing.T) {
 	fixture := func() (*Evaluator, []market.Kline, int64) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 		cfg.KeyLevelTFMinutes = 1

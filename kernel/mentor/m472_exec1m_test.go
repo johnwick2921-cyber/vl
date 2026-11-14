@@ -18,10 +18,10 @@ func TestM472Exec1mAllDayDefault(t *testing.T) {
 	now := auditMs(2026, 9, 15, 9, 15, 0)
 	bars := x5BarsAt(now)
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	if cfg.Exec2mAfter30m {
-		t.Errorf("DefaultConfig().Exec2mAfter30m must be false [Oct D4.2 @ 22:56-23:46]")
+		t.Errorf("preOctCfg().Exec2mAfter30m must be false [Oct D4.2 @ 22:56-23:46]")
 	}
 	e := newISBEval(cfg)
 	if got := x5_10Emits(e, bars, now); got != 1 {
@@ -43,7 +43,7 @@ func TestM472Exec1mAllDayDefault(t *testing.T) {
 // from 09:15 too. The evening-slow 5m schedule is unchanged and is not asserted
 // here (it is gated by its own knob, off in DefaultConfig).
 func TestM472Exec1mScheduleTable(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	for _, hm := range [][2]int{{8, 45}, {9, 15}, {14, 55}, {18, 0}, {3, 30}} {
 		now := auditMs(2026, 9, 15, hm[0], hm[1], 0)
@@ -59,7 +59,7 @@ func TestM472Exec1mScheduleTable(t *testing.T) {
 // code (kept in place behind the knob) or were recorded on the old default build
 // their config through this so they keep covering that path.
 func legacy2mCfg() Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Exec2mAfter30m = true
 	// m472 A2: these goldens were recorded on the pre-October build, whose
 	// trendline default was "fourth" (Sept D2.3-R7); October is "third" [Oct D3.2 @ 31:17].

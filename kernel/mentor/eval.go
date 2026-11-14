@@ -2415,7 +2415,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	e.State.HTF.GateOff = !HTFGateActive(now, e.Cfg)
 
 	// §7 day gate (fold item 4): Globex run → per-trading-day latch (L1/L2).
-	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
+	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts, Off: !e.Cfg.DayGateEnabled}
 	m := GlobexMeasure(bars, now, ctime())
 	e.State.Day = LatchDay(e.State.Day, now, ctime(), m.Run, m.OK, HTFConflict(e.State.HTF), dg)
 	// Owner ruling 2026-10-09: the per-day day-gate log line reads the gate's
@@ -4195,9 +4195,28 @@ func (e *Evaluator) dropStaleSwingLineEntries(ints []Intent) []Intent {
 // gate on [C]: not stated in the method (CTO swing ruling, mails
 // 1791001124127 / 1791001760445).
 func runSwing(e *Evaluator, bars []market.Kline, now int64) []Intent {
+	// OCT-EXACT A1 row 3: the whole SWING 4H→5M setup is OFF — October does not
+	// trade it ("the 5m is not traded because the stop is too big" [Oct D4.3-R10
+	// @07:58]). Only NEW arms stop: while a swing order rests or a swing leg is
+	// open the machine still ticks (BE / hold-close / expiry management) and its
+	// new entries are dropped below. knob mentor_swing4h_enabled=true reverts.
+	swingOff := !e.Cfg.Swing4HEnabled
+	if swingOff && e.State.Swing.Pending == nil && e.State.Swing.Pos == nil {
+		return nil
+	}
 	closed := closedBuckets(bars, now, e.Cfg)
 	wasStale, prevCount, prevLine := e.State.Swing.LineStale, e.State.Swing.EmaCount, e.State.Swing.Line
 	ints := SwingTick(&e.State.Swing, closed, e.Cfg.Swing, now)
+	if swingOff {
+		kept := ints[:0:0]
+		for _, in := range ints {
+			if in.Action == PlaceStopEntry || in.Action == PlaceStopLimitEntry {
+				continue // no NEW swing arm while the setup is OFF
+			}
+			kept = append(kept, in)
+		}
+		ints = kept
+	}
 	if f := e.State.Swing.Folded; f > 1 && e.State.Swing.EmaCount == prevCount+f {
 		e.note("swing 4h EMA34 line folded %d 4h closes after a feed gap: %.2f → %.2f (%d closes) [F-3]", f, prevLine, e.State.Swing.Line, e.State.Swing.EmaCount)
 	}

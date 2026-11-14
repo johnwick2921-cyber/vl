@@ -37,7 +37,7 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 			at := fmt.Sprintf("%02d:%02d", c.rungH, c.rungM)
 
 			// Default (phl_room_multiple=1, answers-1112 Q2): the rung arms.
-			oct := DefaultConfig()
+			oct := preOctCfg()
 			e := phl1Evaluator(oct, c.side, bars[from].OpenTime, bars[rung].Close)
 			got := phl1Find(phl1RunRolling(e, bars, from, rung), at)
 			if len(got.places) != 1 || !m464Approx(got.places[0].Price, c.entry) {
@@ -45,7 +45,7 @@ func TestD2G2PHLRoomOctoberOneToOne(t *testing.T) {
 			}
 
 			// Revert knob phl_room_multiple=2: refused rolling_room, nothing armed.
-			cfg := DefaultConfig()
+			cfg := preOctCfg()
 			cfg.PHLRoomMultiple = 2
 			e2 := phl1Evaluator(cfg, c.side, bars[from].OpenTime, bars[rung].Close)
 			got2 := phl1Find(phl1RunRolling(e2, bars, from, rung), at)

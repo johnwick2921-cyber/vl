@@ -69,7 +69,7 @@ func f2PHLEval(cfg Config, bars []market.Kline, now int64) *Evaluator {
 // f2PHLCfg is the frame-pin config: the room rule and the target-shy are off
 // so the pin reads the frame stamp and the entry geometry alone.
 func f2PHLCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0
 	cfg.EMAPeriod34 = 0

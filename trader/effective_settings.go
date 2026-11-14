@@ -811,7 +811,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return *rc.MentorStopAfterLoss
 	})
 	mentorRCRow("mentor_day_off_recheck", "mentorDayOffRecheck (nil → OFF)", func(rc store.RiskControlConfig) any { return mentorDayOffRecheck(&rc) })
-	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → ON)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
+	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → OFF, OCT-EXACT A1 row 9)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
 	add(rcPath+"mentor_leg_reset_on", "mentorLegResetOn (default \"close\")", func(x *effCtx) effResult {
 		v := mentorLegResetOn(x.at, &x.cfg.RiskControl)
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
@@ -947,6 +947,13 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("mentor_5m_box_source", "trader.mentorTuningResolve (m466 D4.1-R37)", func(t mentorTuned) any { return t.FiveMinBoxSource })
 	mentorTuningRow("mentor_break_direction_lock", "trader.mentorTuningResolve (m466 D4.1-R31)", func(t mentorTuned) any { return t.BreakDirectionLock })
 	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33; nil → OFF, release #61 final)", func(t mentorTuned) any { return t.SmallRangeGuard })
+	mentorTuningRow("mentor_htf_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 1)", func(t mentorTuned) any { return t.HTFGateEnabled })
+	mentorTuningRow("mentor_day_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 2)", func(t mentorTuned) any { return t.DayGateEnabled })
+	mentorTuningRow("mentor_swing4h_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 3)", func(t mentorTuned) any { return t.Swing4HEnabled })
+	mentorTuningRow("mentor_orb_part2_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 4)", func(t mentorTuned) any { return t.OrbPart2Enabled })
+	mentorTuningRow("mentor_open5m_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 5)", func(t mentorTuned) any { return t.Open5mGateEnabled })
+	mentorTuningRow("mentor_news_hold_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 7)", func(t mentorTuned) any { return t.NewsHoldEnabled })
+	mentorTuningRow("mentor_loss_box_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 10)", func(t mentorTuned) any { return t.LossBoxEnabled })
 	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
 	mentorTuningRow("mentor_swing_isb_one_per_candle", "trader.mentorTuningResolve (isbTF-F4, [B] reading, nil → ON)", func(t mentorTuned) any { return t.SwingISBOnePerCandle })
 	mentorTuningRow("crossing_isb_lookback", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBLookback })
@@ -991,7 +998,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 		if on {
 			v = "on"
 		}
-		origin := store.SourceShippedDefault + " (course default: ON)"
+		origin := store.SourceShippedDefault + " (OCT-EXACT A1 row 8: default OFF)"
 		if x.st.present {
 			origin = store.SourceSaved
 		}

@@ -50,7 +50,7 @@ func m60ISB(side Side, entry, stop, target float64, expiry int64) Intent {
 // m60Cfg: G2 only (the G1 leg budget must not shadow the loss box), the
 // shipped ISB loss box default.
 func m60Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LegBudgetEnabled = false
 	return cfg
 }
@@ -378,7 +378,7 @@ func m60LoadRealday(t *testing.T, dir string) []market.Kline {
 // keyed "<CT time> <action> <side> <price>" → "stop/target arm", plus the
 // final Limits ledgers (the day's refusals survive to the session end).
 func m60ReplayRun(bars []market.Kline, from, to int64, mode string) (map[string]string, Limits) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBLossBox = mode
 	e := New(cfg)

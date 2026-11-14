@@ -20,7 +20,7 @@ import (
 // with SYNTHETIC prices, not the frame's circled bottoms; only ValidAt==13 and
 // the arming are asserted (the 28,595.75 -> ~28,645.50 line is not). A literal
 // "2 touches define the line" is not implemented (ValidAt stays 3, as ordered).
-// Through the production path (cfg := DefaultConfig(); the knob value the live
+// Through the production path (cfg := preOctCfg(); the knob value the live
 // eval hands TrendlineLevelsTouch) the return candle arms the line as a
 // location; before m472 the default "fourth" refused it (third_touch_is_test)
 // and waited for a fourth touch.
@@ -41,7 +41,7 @@ func TestM472TrendlineTwoBottomsReturnArmsOnDefault(t *testing.T) {
 	if len(tls) != 1 || tls[0].ValidAt != 13 {
 		t.Fatalf("fixture: two bottoms + the return must make one valid line at bar 13, got %+v", tls)
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	boxes := BoxesBuild(bars, DefaultBoxCfg(), now13)
 	got, refused := TrendlineLevelsTouch(tls, boxes, nil, bars, cfg.TrendlineEntryTouch)
 	if len(got) != 1 || len(refused) != 0 {
@@ -82,7 +82,7 @@ func TestM472TrendlineFrameNumbersReturnArms(t *testing.T) {
 	if len(tls) != 1 || tls[0].ValidAt != 46 {
 		t.Fatalf("two bottoms (28,600 / 28,620) + the return at 17:50 must make one valid line at bar 46, got %+v", tls)
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	boxes := BoxesBuild(bars, DefaultBoxCfg(), now)
 	got, refused := TrendlineLevelsTouch(tls, boxes, nil, bars, cfg.TrendlineEntryTouch)
 	if len(got) != 1 || len(refused) != 0 {

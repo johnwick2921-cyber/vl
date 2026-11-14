@@ -1250,6 +1250,9 @@ func (at *AutoTrader) mentorDayEvents() ([]calendar.Event, bool) {
 // 07:30 print window on a print day; with no readable calendar, hold the
 // window anyway (fail-closed), counted news_hold_no_calendar.
 func (at *AutoTrader) mentorNewsGate() (bool, string) {
+	if !at.mentorNewsHoldEnabled() {
+		return false, "" // OCT-EXACT A1 row 7: the 07:20–07:35 hold is OFF (October has no news rule)
+	}
 	now := mentorClockNow()
 	evs, ok := at.mentorDayEvents()
 	if !ok {
@@ -1288,6 +1291,9 @@ func (at *AutoTrader) mentorNewsGate() (bool, string) {
 func (at *AutoTrader) mentorNewsCancelFlattenAt(now time.Time) bool {
 	if !at.mentorEnabled() || at.store == nil || at.trader == nil {
 		return false
+	}
+	if !at.mentorNewsHoldEnabled() {
+		return false // OCT-EXACT A1 row 7: the hold's destructive half (cancel + flatten at print −10m) goes with it
 	}
 	evs, ok := at.mentorDayEvents()
 	if !ok {
@@ -1470,7 +1476,11 @@ func (at *AutoTrader) mentorDoneAfterWinEnabled() bool {
 	if v != nil {
 		return *v
 	}
-	return true // nil → ON (the course default: "làm ơn đóng máy lại" D1.2 p2 @06:09; m186 reverts the 2026-10-16 OFF)
+	// OCT-EXACT A1 row 8: nil → OFF. October has no "stop for the day after a win"
+	// rule (the Sept D1.2 p2 @06:09 "đóng máy lại" is superseded; OctD5.1
+	// @06:25-08:0x does not say it either); the owner was told and did not say
+	// keep (CTO-decisions A1 #8). A stored mentor_done_after_win=true reverts.
+	return false
 }
 
 // mentorDoneAfterWinTripped reports the DEFINITE done-after-win trip only — a

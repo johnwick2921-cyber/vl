@@ -37,7 +37,7 @@ const (
 // 4h trigger line (a target-only level) there; ema34 > 0 puts the EMA34 there.
 func q3Run(t *testing.T, ema34, level4h float64, mut func(*Config)) (*Evaluator, []Intent) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// the target-rule fixture exercises this stage only: no later-lesson 4h/1h gate.
 	cfg.HTFGateNewsOnly = true
@@ -67,7 +67,7 @@ func q3Run(t *testing.T, ema34, level4h float64, mut func(*Config)) (*Evaluator,
 }
 
 func TestAnswers1112ISBNoLevelDefaults(t *testing.T) {
-	c := DefaultConfig()
+	c := preOctCfg()
 	if !c.ISBNoLevelFillClose {
 		t.Error("ISBNoLevelFillClose must default ON (answers-1112 Q3: Oct D2.2 @28:37-28:56, @30:24-30:43 — the ISB's first target is the fill candle's close; no video refuses a no-level ISB)")
 	}

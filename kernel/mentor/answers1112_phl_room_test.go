@@ -42,7 +42,7 @@ func we7Touch() Touch {
 }
 
 func answersCfg() Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	return c
 }
@@ -74,7 +74,7 @@ func phlRoomRun(c phlRoomCase, cfg Config, obstacle float64) (Intent, bool, stri
 // TestAnswers1112PHLRoomDefaultIsOneToOne — the default is October's 1:1.
 // MUTANT: PHLRoomMultiple: 2 in DefaultConfig → RED.
 func TestAnswers1112PHLRoomDefaultIsOneToOne(t *testing.T) {
-	if got := DefaultConfig().PHLRoomMultiple; got != 1 {
+	if got := preOctCfg().PHLRoomMultiple; got != 1 {
 		t.Fatalf("PHLRoomMultiple default = %v, want 1 [Oct D2.3 @49:37-49:56 \"Risk reward 1-1\"; WE10 s_04126 R:R 1.71 taken]", got)
 	}
 }
@@ -121,7 +121,7 @@ func TestAnswers1112PHLRoomBelowOneRStillRefused(t *testing.T) {
 // near_box_room_multiple (today exactly): the B11 fixture still counts near_box,
 // and near_box_room_multiple=0 still turns the PHL leg off.
 func TestAnswers1112NearBoxPHLMultipleDefaultFollows(t *testing.T) {
-	if got := DefaultConfig().NearBoxRoomPHLMultiple; got != NearBoxRoomPHLMultipleFollow {
+	if got := preOctCfg().NearBoxRoomPHLMultiple; got != NearBoxRoomPHLMultipleFollow {
 		t.Fatalf("NearBoxRoomPHLMultiple default = %v, want NearBoxRoomPHLMultipleFollow (today)", got)
 	}
 	if got := w11NearBoxPHLTick(t, func(*Config) {}); got != 1 {

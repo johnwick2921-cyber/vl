@@ -24,7 +24,7 @@ func withFlatNear(t *testing.T) {
 }
 
 func m428Eval() *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // the synthetic tapes are 1m
 	e := New(cfg)
 	e.Cfg.Enabled = true

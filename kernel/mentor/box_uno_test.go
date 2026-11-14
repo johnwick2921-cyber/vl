@@ -16,7 +16,7 @@ import (
 // was ever counted from above (box_trade.go counted only the original
 // approach side).
 func TestEvaluatorUnoReverseBrokenFTGHTradesLong(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1

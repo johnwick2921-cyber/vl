@@ -73,12 +73,12 @@ func TestAnswers1112TouchStopCoverLaterWickDefault(t *testing.T) {
 	if d.CoverLaterWick {
 		t.Fatal("touch_stop_cover_later_wick must default OFF (review P2: a [B] port onto the swing re-arm, report Q7 \"needs owner sign-off\")")
 	}
-	if d.LaterWickStopBufferPts != DefaultConfig().PHLStopBufferPts || d.LaterWickStopBufferPts != 1.0 {
+	if d.LaterWickStopBufferPts != preOctCfg().PHLStopBufferPts || d.LaterWickStopBufferPts != 1.0 {
 		t.Fatalf("LaterWickStopBufferPts = %v, want the course's 1-pt stop ray (PHLStopBufferPts %v) [Oct D2.3 @46:20-47:20]",
-			d.LaterWickStopBufferPts, DefaultConfig().PHLStopBufferPts)
+			d.LaterWickStopBufferPts, preOctCfg().PHLStopBufferPts)
 	}
-	if DefaultConfig().Swing.CoverLaterWick {
-		t.Fatal("DefaultConfig().Swing.CoverLaterWick must be OFF")
+	if preOctCfg().Swing.CoverLaterWick {
+		t.Fatal("preOctCfg().Swing.CoverLaterWick must be OFF")
 	}
 }
 

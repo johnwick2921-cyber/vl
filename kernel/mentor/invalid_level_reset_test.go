@@ -32,7 +32,7 @@ func TestIsMovingLineKey(t *testing.T) {
 // seedEmptySeeded builds a seeded evaluator with no key levels so the ONLY level
 // is the trigger retest (or whatever the test appends).
 func seedEmptySeeded() *Evaluator {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	e.Cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	e.seeded = true

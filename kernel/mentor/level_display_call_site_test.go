@@ -83,7 +83,7 @@ func seededMentorEval(cfg Config, keyPrice, emaPrice float64, bars []market.Klin
 // AT it, no candle traded above it) carries the isb_at_old_extreme size-3 flag
 // [D4.1 p1 @08:05 written rule 2].
 func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
@@ -115,7 +115,7 @@ func TestISBFlagAtTheNearestUnbrokenOldHighCallSite(t *testing.T) {
 // pivot is no longer an old high, so the inside bar is not "at an old high" and
 // is not size-cut. The pre-r22 12-pivot list still flagged it.
 func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 
@@ -146,7 +146,7 @@ func TestISBFlagIgnoresABrokenOldHighCallSite(t *testing.T) {
 // obstacle, ahead of the key level at 130 [§6 "nearest old high → EMA 34 → the
 // next level", D3.3 p1 @04:11].
 func TestTargetIsTheNearestUnbrokenOldHighCallSite(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Exec2mAfter30m = false    // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true

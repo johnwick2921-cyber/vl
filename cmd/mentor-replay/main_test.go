@@ -137,6 +137,18 @@ func TestReplayMatchesLivePath(t *testing.T) {
 	// runs the config the live log was written under.
 	live := &store.StrategyConfig{}
 	live.RiskControl.MentorTuning = &store.MentorTuning{Mentor5mBoxSource: mentor.FiveMinBoxNewest}
+	// OCT-EXACT A1: the live 11-10 log was written under the Sept gates (HTF, day,
+	// SWING4H, ORB part 2, open-5m, news, leg budget, loss box, break lock,
+	// mid-range side, done-after-win); the parity compares that log, so pin them.
+	{
+		on, frac := true, 0.80
+		t := live.RiskControl.MentorTuning
+		t.MentorHTFGateEnabled, t.MentorDayGateEnabled, t.MentorSwing4HEnabled = &on, &on, &on
+		t.MentorOrbPart2Enabled, t.MentorOpen5mGateEnabled, t.MentorNewsHoldEnabled = &on, &on, &on
+		t.MentorLossBoxEnabled, t.MentorBreakDirectionLock, t.MentorMidRangeRejectSide = &on, &on, &on
+		t.NewsWaitBothLines, t.NewsBarsExcluded, t.OrbISBFractionOutside = &on, &on, &frac
+		live.RiskControl.MentorLegBudgetEnabled, live.RiskControl.MentorDoneAfterWin = &on, &on
+	}
 	oldProv := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = oldProv })
 

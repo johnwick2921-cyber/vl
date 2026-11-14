@@ -41,7 +41,7 @@ func q1Conflict() HTF {
 }
 
 func TestAnswers1112HTFRangeHaltDefaultOff(t *testing.T) {
-	if v := DefaultConfig().HTFOpposedRangeHaltPts; v != 0 {
+	if v := preOctCfg().HTFOpposedRangeHaltPts; v != 0 {
 		t.Fatalf("HTFOpposedRangeHaltPts default = %v, want 0 (OFF): the citation gives a range 300-400, not one number, and it is September [Sept D5.1 p1 @19:22-19:26]", v)
 	}
 }
@@ -143,7 +143,7 @@ func TestAnswers1112HTFRangeHaltLatchOnHisDay(t *testing.T) {
 // stops opposing (the case-2 / agree read) and Tick B sees the ISB.
 func q1HaltRun(t *testing.T, pts float64, conflict bool) (*Evaluator, []Intent) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = true
 	cfg.HTFOpposedRangeHaltPts = pts
@@ -221,7 +221,7 @@ func TestAnswers1112HTFRangeHaltRefusesRestOfDay(t *testing.T) {
 
 // The swing is exempt, as it is from the §7 DayOff; non-entry actions pass.
 func TestAnswers1112HTFRangeHaltLeaveScope(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFOpposedRangeHaltPts = 300
 	e := New(cfg)
 	now := q1At(10, 0)
@@ -278,7 +278,7 @@ func q1HourTape() []market.Kline {
 
 func TestAnswers1112HTFRangeHaltSeedRestoresLiveLatch(t *testing.T) {
 	bars := q1HourTape()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFOpposedRangeHaltPts = 290
 	live := New(cfg)

@@ -14,7 +14,7 @@ import (
 // would refuse) still emits when the remaining conditions hold. Mutant
 // (restore the location gate on the ISB path) → RED.
 func TestISBNotLocationGated(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// a head bar with a high close so the EMA 34 target sits well BEYOND the
 	// entry: the E-2 floor ("the target is never smaller than the stop"
@@ -52,7 +52,7 @@ func TestISBNotLocationGated(t *testing.T) {
 // 1m ISB in the SAME direction as the 5m ISB may arm inside it; a 1m BODY
 // closing outside deletes the box.
 func TestISBBoxGatesTheEvaluator(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins the R5 box gate, not the room rule
 	// a box standing with Dir long

@@ -9,12 +9,12 @@ import "testing"
 // Production call site: the m60 crossing tape through Evaluator.Tick. Knob
 // trigger_escalation=true restores the 15m governing read.
 func TestG3TriggerEscalationOffByDefault(t *testing.T) {
-	if DefaultConfig().TriggerEscalation {
+	if preOctCfg().TriggerEscalation {
 		t.Fatal("G3: TriggerEscalation must default OFF (October: the 5m is the only big frame)")
 	}
 	bars := m60p1Crossing()
 	e := m60p1CrossingEval(t, 28_950)
-	e.Cfg.TriggerEscalation = DefaultConfig().TriggerEscalation
+	e.Cfg.TriggerEscalation = preOctCfg().TriggerEscalation
 	m60p1Run(e, bars)
 	if e.State.Counters["trigger_escalated_15m"] != 0 || e.State.Refusals["isb_trigger_side_mismatch_15m"] != 0 {
 		t.Fatalf("default: no escalation to the 15m line; counters %v refusals %v", e.State.Counters, e.State.Refusals)

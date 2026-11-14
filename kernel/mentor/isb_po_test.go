@@ -43,11 +43,11 @@ func TestDojiCandle1IsNotISB(t *testing.T) {
 	if dir := ISBDirection(doji); dir != "" {
 		t.Fatalf("a doji has no ISB direction, got %q", dir)
 	}
-	if _, _, ok, _ := ISBStopLimitOrder(doji, cur, DefaultConfig()); ok {
+	if _, _, ok, _ := ISBStopLimitOrder(doji, cur, preOctCfg()); ok {
 		t.Fatal("a doji candle 1 must not produce an ISB order")
 	}
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newISBEval(cfg)
 	bars := []market.Kline{
@@ -71,7 +71,7 @@ func TestDojiCandle1IsNotISB(t *testing.T) {
 // THAT ISB with a named refusal and the tick CONTINUES (the old code returned
 // out, aborting PHL/box/swing/stacking for the minute).
 func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBTargetFillClose = false  // D2-G3 oct round 2: the September level-target rule
 	cfg.ISBNoLevelFillClose = false // answers-1112 Q3: … and the no-level refusal this test names (revert knob)
@@ -117,7 +117,7 @@ func TestISBMissingTargetSkipsOnlyThatISB(t *testing.T) {
 // 1:1 floor; |target−entry| < |entry−stop| is refused by name ("the target is
 // never smaller than the stop" [D1.2 p1 @ 07:48]) and no arm is placed.
 func TestISBTargetBelowFloorRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBTargetFillClose = false // D2-G3 oct round 2: the September level-target rule (isb_no_level_fill_close stays at its default: a level inside 1R is not its case)
 	e := New(cfg)
@@ -172,7 +172,7 @@ func TestTargetFloorOK(t *testing.T) {
 // ceiling (CX-9), the HTF block, the R5 box block, the HTF side mismatch and
 // the DayOff branch all record a named refusal instead of dropping silently.
 func TestISBSilentDropsAllNamed(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)
 
@@ -269,7 +269,7 @@ func TestISBSilentDropsAllNamed(t *testing.T) {
 // TestB9ISBOnSpentDayEmitsExactlyTheCap (level 36.4 pts out).
 func TestISBSpentDayTargetCap(t *testing.T) {
 	run := func(v DayVerdict) (*Intent, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.DayGateSpentPts = 300
 		cfg.DayGateTargetCapPts = 15

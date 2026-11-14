@@ -29,7 +29,7 @@ func m406BarAt(openMs int64, even bool) market.Kline {
 // an ExtendArm or a stacking CancelArm, plus the total cancel count.
 func driveArmTicks(t *testing.T, tfMin, nBars int) (stamps []int64, cancels int) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.State.ORB = ORB{Day: 0, High: 200, Low: 50, Drawn: true, Escaped: SideLong}

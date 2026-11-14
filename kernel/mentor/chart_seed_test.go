@@ -161,7 +161,7 @@ func TestM427SeedChartDisplayLatchDayGate(t *testing.T) {
 	}
 	now := BarCloseInstant(bars[len(bars)-1])
 	build := func(dayKey string) *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := New(cfg)
 		e.State.LatchedBoxes = map[string]Box{"ftgh": {Key: "box:test", Top: 150, Bottom: 140}}
@@ -178,7 +178,7 @@ func TestM427SeedChartDisplayLatchDayGate(t *testing.T) {
 		}
 		return n
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	today := boxLatchDayKey(now, cfg)
 	if n := edges(build(today)); n != 2 {

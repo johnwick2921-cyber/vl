@@ -200,7 +200,7 @@ func TestPHL1CourseWorkedExamples(t *testing.T) {
 			// 1. PRODUCTION Tick at the production defaults: the rung candle
 			// reads the 1m old extreme — whatever refuses it, it is never the
 			// missing old extreme (WE7/WE10 used to have none at all).
-			ep := phl1Evaluator(DefaultConfig(), c.side, bars[from].OpenTime, bars[rung].Close)
+			ep := phl1Evaluator(preOctCfg(), c.side, bars[from].OpenTime, bars[rung].Close)
 			prod := phl1Find(phl1Run(ep, bars, from, rung), at)
 			for _, r := range prod.refuse {
 				if r == "rolling_phl_no_old_extreme_on_side" || r == "rolling_phl_old_extreme_unconfirmed" {
@@ -213,7 +213,7 @@ func TestPHL1CourseWorkedExamples(t *testing.T) {
 			// D5.3 room rule (day 5): at its default 2 it refuses all three of
 			// the mentor's Oct D2.3 trades (RR 1.7–1.8 on his own tool, @ 27:34,
 			// 1:07:47) — a lesson-order question for the mentor, not PHL-1.
-			cfg := DefaultConfig()
+			cfg := preOctCfg()
 			cfg.RoomMultiple = 1
 			cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 1 since answers-1112 Q2)
 			e := phl1Evaluator(cfg, c.side, bars[from].OpenTime, bars[rung].Close)
@@ -245,7 +245,7 @@ func TestPHL1CourseWorkedExamples(t *testing.T) {
 func TestPHL1WE9TargetIsTheNearestOldLow(t *testing.T) {
 	bars := phl1Tape(t, "phl1_mnq_1m_20261029_1800ct.csv")
 	r := phl1At(t, bars, 2026, time.October, 29, 21, 1)
-	ex, found, pending := phlTapeOldExtreme(bars, r, bars[r].Low, SideShort, DefaultConfig().PHLOldExtreme1mK)
+	ex, found, pending := phlTapeOldExtreme(bars, r, bars[r].Low, SideShort, preOctCfg().PHLOldExtreme1mK)
 	if !found || pending || ex.level.Price != 28825.00 || ex.level.Role != OldLow {
 		t.Fatalf("WE9 old low = %+v found=%v pending=%v, want the 20:53 L 28,825.00", ex.level, found, pending)
 	}
@@ -272,8 +272,8 @@ func TestPHL1KIsTheOnlyWidthThatReproducesTheExamples(t *testing.T) {
 			t.Fatalf("k=%d: WE6 old high %.2f (%v), WE7 old low %.2f (%v) — only k=4 may reproduce both (29,673.50 / 28,288.75)", k, ex6.level.Price, ok6, ex7.level.Price, ok7)
 		}
 	}
-	if DefaultConfig().PHLOldExtreme1mK != 4 {
-		t.Fatalf("PHLOldExtreme1mK default = %d, want 4", DefaultConfig().PHLOldExtreme1mK)
+	if preOctCfg().PHLOldExtreme1mK != 4 {
+		t.Fatalf("PHLOldExtreme1mK default = %d, want 4", preOctCfg().PHLOldExtreme1mK)
 	}
 }
 
@@ -303,7 +303,7 @@ func TestPHL1NoStaleFarTarget(t *testing.T) {
 			bars := phl1Tape(t, c.file)
 			from := phl1At(t, bars, 2026, c.mo, c.d, c.fromH, c.fromM)
 			to := phl1At(t, bars, 2026, c.mo, c.d, c.toH, c.toM)
-			e := phl1Evaluator(DefaultConfig(), c.side, bars[from].OpenTime, bars[to].Close)
+			e := phl1Evaluator(preOctCfg(), c.side, bars[from].OpenTime, bars[to].Close)
 			steps := phl1RunRolling(e, bars, from, to)
 			for _, s := range steps {
 				for _, p := range s.places {

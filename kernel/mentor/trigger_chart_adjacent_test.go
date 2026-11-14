@@ -27,7 +27,7 @@ func ctTime(day, hour, min int) time.Time {
 
 func chartTrigger(t *testing.T, tf int, bars []market.Kline) TriggerLine {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	switch tf {
 	case 5:

@@ -54,7 +54,7 @@ func TestBoxReturnBarsEveryVisit(t *testing.T) {
 // stable ArmID so a real fill matches its Limits pend (and the G2 box identity
 // survives the fill). Mutant (blank the ArmID) → RED.
 func TestBoxEntryIntentMintsArmID(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LocTriggerFilter = false
 	cfg.PingPongCandleMaxPts = 0
 	b := Box{Kind: FTGL, Top: 98, Bottom: 95, Key: "ftgl:98.00:95.00"}

@@ -762,6 +762,41 @@ type Config struct {
 	// escape side after a 1m body close outside. The §8 swing is exempt.
 	OrbGateEnabled bool
 
+	// OCT-EXACT A1 (build step A1, CTO-decisions.md section A1, owner order
+	// 2026-11-14 "mentor mode = the October course exactly, nothing else"):
+	// the gates below are Sept / invented and October is silent or contrary, so
+	// each ships OFF. The revert for every one is the old value (true). Every
+	// field is mentor-evaluator-only (this Config drives mentor.Evaluator; AI
+	// mode never builds it).
+	//
+	// HTFGateEnabled — A1 row 1: the 4h/1h direction gate (<setup>_htf_no_4h /
+	// _htf_conflict / _htf_side_mismatch + the htfEntryFilter backstop + the
+	// rolling trend side). October's only big frame is the 5m [Oct D4.3-R9
+	// @07:28]. Default false; knob mentor_htf_gate_enabled=true reverts.
+	HTFGateEnabled bool
+	// DayGateEnabled — A1 row 2: the §7 day gate (day_off / day_spent 265 /
+	// day_not_measured, the spent-day target cap 15, the spent stop cap, the
+	// spent-day room and the trader R9 spent cap). Default false; knob
+	// mentor_day_gate_enabled=true reverts.
+	DayGateEnabled bool
+	// Swing4HEnabled — A1 row 3: the whole SWING 4H→5M setup. October does not
+	// trade it: "the 5m is not traded because the stop is too big" [Oct D4.3-R10
+	// @07:58]. Only NEW swing arms stop; an open or resting swing is still
+	// managed. Default false; knob mentor_swing4h_enabled=true reverts.
+	Swing4HEnabled bool
+	// OrbPart2Enabled — A1 row 4: ORB part 2 (orb_not_drawn / orb_not_escaped /
+	// orb_wrong_side). Part 1, orb_inside, stays ON under OrbGateEnabled
+	// [Oct D4.3 @ 61:44 R63 "nến đang nằm trong vòng ORB 2 phút, đừng trade"].
+	// Default false; knob mentor_orb_part2_enabled=true reverts.
+	OrbPart2Enabled bool
+	// Open5mGateEnabled — A1 row 5: open_5m_range_not_broken (Sept D4.4).
+	// Default false; knob mentor_open5m_gate_enabled=true reverts.
+	Open5mGateEnabled bool
+	// LossBoxEnabled — A1 row 10: loss box / loss range G2 (loss_box_blocked,
+	// loss_range_blocked, loss_box_off_day). Default false; knob
+	// mentor_loss_box_enabled=true reverts.
+	LossBoxEnabled bool
+
 	// LegBudgetEnabled — G1 (R12, DS-107, CTO 2026-10-03): at most 2 entries
 	// per leg (the PHL/PLH + a same-direction ISB); a stop-out inside the leg
 	// closes it. Default ON.
@@ -1257,10 +1292,16 @@ func DefaultConfig() Config {
 		// supersedes Release #31 rule 4 (X5-10; Sept "2m after the first 30 min").
 		Exec2mAfter30m: false,
 		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
-		OrbISBFractionOutside: 0.80,
+		OrbISBFractionOutside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); orb_isb_fraction_outside=0.80 reverts
 
-		LegBudgetEnabled: true,
-		LegResetOn:       "close",
+		LegBudgetEnabled:  false, // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
+		HTFGateEnabled:    false, // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
+		DayGateEnabled:    false, // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
+		Swing4HEnabled:    false, // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
+		OrbPart2Enabled:   false, // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
+		Open5mGateEnabled: false, // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
+		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
+		LegResetOn:        "close",
 
 		CourseExits: DefaultCourseExitsCfg(),
 		// m465 P1 (release #60): the early 15m read, mode C from the standing
@@ -1276,8 +1317,8 @@ func DefaultConfig() Config {
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
 		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
-		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+		NewsWaitBothLines:     false,                  // OCT-EXACT A1 row 6: Sept D4.4 news wait, October silent (no news/07:30 rule in the 17 Oct notes); news_wait_both_lines=true reverts (was CE-3 course-defaults-30 [Sept D4.4 p1 @21:55–22:12])
+		NewsBarsExcluded:      false,                  // OCT-EXACT A1 row 6: the read freeze is Sept (CE-4), October silent; news_bars_excluded=true reverts
 		ISBBoxEscapeMode:      ISBBoxEscapeCloseBoxTF, // m473 B3 OctD4.3-R67: a 1m close = permission, the box is dropped on a close of its OWN TF [Oct D4.3 @ 65:00-66:13]; was CE-5 -> m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
 		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
@@ -1302,9 +1343,9 @@ func DefaultConfig() Config {
 		PHLPullbackLow:      PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
-		BreakDirectionLock: true,            // G21 D4.1-R31/R33, G29 D4.1-R55
+		BreakDirectionLock: false,           // OCT-EXACT A1 row 12: break_counter_setup OFF (the FTGH/FTGL lock goes with it, skeptic confirmed); mentor_break_direction_lock=true reverts (Sept G21 D4.1-R31/R33, G29 D4.1-R55)
 		SmallRangeGuard:    false,           // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
-		MidRangeRejectSide: true,            // G43 D2.2-R71
+		MidRangeRejectSide: false,           // OCT-EXACT A1 row 11: mid_range_against_rejection OFF (October: between 2 boxes only an inside bar, OctD3.3-R59 @46:27, no side rule); mentor_mid_range_reject_side=true reverts (Sept G43 D2.2-R71)
 	}
 }
 

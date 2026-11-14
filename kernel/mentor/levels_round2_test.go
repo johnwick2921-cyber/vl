@@ -42,7 +42,7 @@ func TestD3G15KeyLevelRearmsAfterDeparture(t *testing.T) {
 		bars = append(bars, market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: s.o, High: s.h, Low: s.l, Close: s.c, Volume: 1000})
 	}
 	run := func(mode string) (isbAt41 bool, isbAt45 bool, outcome45 TouchOutcome, ref45 string) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		if mode != "" {
 			cfg.KeyLevelRearm = mode

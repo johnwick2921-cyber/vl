@@ -16,14 +16,15 @@ import (
 
 // TestRelease31Defaults — rule 4 and rule 5 ship ON in DefaultConfig.
 func TestRelease31Defaults(t *testing.T) {
-	d := DefaultConfig()
+	d := preOctCfg()
 	// m472 A1: rule 4 (release #31, 2m after the first 30 min) is superseded by
 	// the October course: the 1m all day [Oct D4.2 @ 22:56-23:46]; default OFF.
 	if d.Exec2mAfter30m {
 		t.Fatal("rule 4 (superseded by m472 A1): exec_2m_after_30m must default OFF (1m all day) [Oct D4.2 @ 22:56-23:46]")
 	}
-	if d.OrbISBFractionOutside != 0.80 {
-		t.Fatalf("rule 5: orb_isb_fraction_outside must default 0.80, got %v", d.OrbISBFractionOutside)
+	// OCT-EXACT A1 row 4: orb_isb_mostly_inside (EXTRA X5/X11) defaults OFF; 0.80 is the revert.
+	if DefaultConfig().OrbISBFractionOutside != 0 || d.OrbISBFractionOutside != 0.80 {
+		t.Fatalf("rule 5: orb_isb_fraction_outside must default 0 (OFF) with 0.80 the revert, got %v / %v", DefaultConfig().OrbISBFractionOutside, d.OrbISBFractionOutside)
 	}
 }
 
@@ -65,7 +66,7 @@ func TestOrbISBFractionOutside(t *testing.T) {
 func TestOrbISBMostlyInsideGate(t *testing.T) {
 	day := auditMs(2026, 9, 15, 9, 0, 0)
 	orb := ORB{Day: dayStartCT(day), High: 100, Low: 90, Drawn: true, Escaped: SideLong}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 
 	isb := func(hi, lo float64) Intent {
@@ -88,7 +89,7 @@ func TestOrbISBMostlyInsideGate(t *testing.T) {
 	}
 
 	// The fraction knob scales: 0.40 admits the 50%-outside candle.
-	cfg40 := DefaultConfig()
+	cfg40 := preOctCfg()
 	cfg40.Enabled = true
 	cfg40.OrbISBFractionOutside = 0.40
 	got, refused = orbGateFilter([]Intent{isb(102, 98)}, orb, day, cfg40)
@@ -97,7 +98,7 @@ func TestOrbISBMostlyInsideGate(t *testing.T) {
 	}
 
 	// Knob <= 0 turns the rule off.
-	cfgOff := DefaultConfig()
+	cfgOff := preOctCfg()
 	cfgOff.Enabled = true
 	cfgOff.OrbISBFractionOutside = 0
 	got, refused = orbGateFilter([]Intent{isb(102, 98)}, orb, day, cfgOff)
@@ -140,7 +141,7 @@ func TestOrbISBMostlyInsideGate(t *testing.T) {
 // TestISBOrdersStampTheCandle — the production ISB emit stamps the entry candle
 // high/low, so orbGateFilter can measure rule 5.
 func TestISBOrdersStampTheCandle(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	long, short := ISBOrders(market.Kline{High: 110, Low: 90}, cfg)
 	if long.EntryCandleHigh != 110 || long.EntryCandleLow != 90 {
 		t.Fatalf("long ISB must stamp the candle high/low, got %v/%v", long.EntryCandleHigh, long.EntryCandleLow)

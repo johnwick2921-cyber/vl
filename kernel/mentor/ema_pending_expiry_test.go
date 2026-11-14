@@ -18,7 +18,7 @@ import (
 // MUTANT: restore `EmaPendingExpiry = in.ExpiryMs` at the emit site → the pin
 // sees expiry 0 → RED.
 func TestEmaPendingExpiryNonZeroForLevelArm(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

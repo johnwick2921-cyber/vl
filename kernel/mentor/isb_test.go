@@ -39,7 +39,7 @@ func TestISBIdentifiedByBodyOnly(t *testing.T) {
 // extreme, 1.5-pt buffer BOTH sides outward, order type STOP-LIMIT with
 // limit = the stop (trigger) price.
 func TestISBOrdersWickInclusiveWithBuffer(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	c := market.Kline{High: 100.5, Low: 98.25}
 	long, short := ISBOrders(c, cfg)
@@ -59,7 +59,7 @@ func TestISBOrdersWickInclusiveWithBuffer(t *testing.T) {
 // single stop-limit on that side, and a stop ≥ 30 pts is skipped
 // (course-defaults-30: stop < 30 taken, ≥ 30 refused).
 func TestISBDirectionAndStopLimitOrder(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	green := market.Kline{Open: 100, Close: 106, High: 106.5, Low: 99.5}
@@ -87,7 +87,7 @@ func TestISBDirectionAndStopLimitOrder(t *testing.T) {
 // fix all"): NO fixed 5–6-pt stop and NO "twenties" window. An ISB stop < 30
 // pts is TAKEN; ≥ 30 is REFUSED (CourseExits.ISBMaxStopPts default 30).
 func TestISBStopVerdict(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	cases := []struct {
@@ -136,7 +136,7 @@ func TestISBStackingArithmetic(t *testing.T) {
 // TestISBStackTickHoldsTwoCancelsAtFour — the arm counter from the quotes:
 // keep through candles 2 and 3, cancel at candle 4 [D5.1 p2 @ 04:00–04:08].
 func TestISBStackTickHoldsTwoCancelsAtFour(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this pins the count (a 10-pt stop)
 	first := market.Kline{Open: 100, Close: 105, High: 106, Low: 99}
@@ -162,7 +162,7 @@ func TestISBStackTickHoldsTwoCancelsAtFour(t *testing.T) {
 // [D4.2 p2 @ 08:21–09:01]. A candle whose body is inside the MOTHER's full
 // range but OUTSIDE I1 cancels AT ONCE.
 func TestISBStackTickContainmentIsAgainstI1NotTheMother(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// mother is WIDE (high 120 / low 80); I1 is much narrower.
 	first := market.Kline{Open: 100, Close: 105, High: 106, Low: 99}
@@ -189,7 +189,7 @@ func TestISBStackTickContainmentIsAgainstI1NotTheMother(t *testing.T) {
 // 2026-09-15 RTH day produces orders whose stop verdict matches the knobs,
 // and the tape contains a sane number of ISBs.
 func TestISBOnRecordedTape(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
 	isbs := 0

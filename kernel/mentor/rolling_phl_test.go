@@ -15,7 +15,7 @@ import (
 // a buy stop rolled to EACH closed pullback candle's high, stop at that
 // candle's low, target near the old high.
 func rollingFixture() (*Evaluator, []market.Kline, int64) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0
@@ -175,7 +175,7 @@ func TestRollingPHLDoesNotFireOnLevelTouch(t *testing.T) {
 // previous candle's low and fills it [D2.2 p1 @11:05–11:36 "Tôi ra một lệnh
 // sell stop đã sẵn"].
 func TestRollingPLHShortMirror(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

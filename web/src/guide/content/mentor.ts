@@ -824,7 +824,7 @@ export const mentor: GuideSection = {
         [
           'ISB rest box',
           'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); the 08:30 CT 5m candle (the first of the RTH day) is never itself the inside bar, the box starts from the 08:35 candle at the earliest (m473 B4, Oct D4.3 @ 57:20-57:35); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge lets you trade, but the box is deleted only when a candle of its own timeframe closes outside (isb_box_escape, default close5m since m473, Oct D4.3 @ 65:00-66:13; close = the 1m delete, default #61–m472; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
-          'isb_box_escape = close5m (default) · mentor_5m_box_source = merge · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · OctD4.3-R59 @ 58:00 · D4.1-R31 @18:27–20:33',
+          'isb_box_escape = close5m (default) · mentor_5m_box_source = merge · mentor_break_direction_lock = OFF (OCT-EXACT A1 row 12; true reverts) · D4.1-R34 p1 @20:36–21:03 · OctD4.3-R59 @ 58:00 · D4.1-R31 @18:27–20:33',
         ],
         [
           'Too-small range',
@@ -834,7 +834,7 @@ export const mentor: GuideSection = {
         [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
-          'mentor_mid_range_reject_side = ON · D2.2-R71 p3 @14:28–15:58',
+          'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',
         ],
         [
           'Day gate (§7)',
@@ -869,7 +869,7 @@ export const mentor: GuideSection = {
         [
           'ORB-edge ISB candle fraction outside',
           'An ISB at the ORB edge trades only when at least 80% (the knob) of the ISB candle — its high-minus-low range — lies OUTSIDE the opening range on the trade side: "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1 @07:46–09:04]. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts). A candle whose entry point just ticks outside the edge but whose body is still mostly inside the range is skipped and counted orb_isb_mostly_inside. The knob orb_isb_fraction_outside defaults to 0.80; 0 turns the rule OFF (the ISB trades at the edge at any fraction); the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
-          'orb_isb_fraction_outside = 0.80 (default ON; 0 = off) · extra "Routine trước khi trade" part1 @07:46–09:04',
+          'orb_isb_fraction_outside = 0 (OCT-EXACT A1 row 4: default OFF; 0.80 reverts) · extra "Routine trước khi trade" part1 @07:46–09:04',
         ],
       ],
     },

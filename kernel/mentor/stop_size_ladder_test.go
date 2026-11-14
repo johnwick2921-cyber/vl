@@ -30,7 +30,7 @@ func ladderISBCandle(rng float64) market.Kline {
 // wide-stop max [OctD2.3-R47 @48:12]; the pre-ladder ceilings are unchanged (they
 // are what the ladder-OFF path still reads).
 func TestStopLadderKernelDefaults(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if !cfg.CourseExits.StopSizeLadder {
 		t.Fatal("CourseExits.StopSizeLadder default = OFF, want ON (owner order 2026-11-10)")
 	}
@@ -49,7 +49,7 @@ func TestStopLadderKernelDefaults(t *testing.T) {
 // with the pre-ladder reason, byte-identical.
 // RED before the change: the 25/35/40 stops are refused at the 20-pt ceiling.
 func TestStopLadderISBVerdict(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.CourseExits.StopSizeLadder = true
 	cfg.CourseExits.WideStopMaxPts = 40
 	buf2 := 2 * cfg.ISBBufferPts
@@ -104,7 +104,7 @@ func TestStopLadderISBVerdict(t *testing.T) {
 // refuses 28 with the pre-ladder 25-pt reason.
 // RED before the change: 28 refused at the 25-pt ceiling.
 func TestStopLadderPHLCeiling(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.StopSizeLadder = true
 	cfg.CourseExits.WideStopMaxPts = 40
@@ -135,7 +135,7 @@ func TestStopLadderPHLCeiling(t *testing.T) {
 // 45 is refused box_stop_ceiling; OFF refuses 38 box_stop_ceiling as today.
 // RED before the change: 38 refused at the 25-pt ceiling.
 func TestStopLadderBoxCeiling(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
 	cfg.CourseExits.StopSizeLadder = true

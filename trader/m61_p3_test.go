@@ -158,11 +158,13 @@ func TestM61KnobsResolveAndApply(t *testing.T) {
 // 2026-10-16 OFF. The comments at the switch now say so.
 func TestM61DoneAfterWinNilOn(t *testing.T) {
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
-	if !at.mentorDoneAfterWinEnabled() {
-		t.Fatal("mentor_done_after_win nil must read ON")
+	// OCT-EXACT A1 row 8: nil now reads OFF (October has no stop-after-a-win rule);
+	// an explicit true is the revert.
+	if at.mentorDoneAfterWinEnabled() {
+		t.Fatal("mentor_done_after_win nil must read OFF (OCT-EXACT A1 row 8)")
 	}
-	off := false
-	if mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorDoneAfterWin: &off}).mentorDoneAfterWinEnabled() {
-		t.Fatal("an explicit false must read OFF")
+	on := true
+	if !mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorDoneAfterWin: &on}).mentorDoneAfterWinEnabled() {
+		t.Fatal("an explicit true (the revert) must read ON")
 	}
 }

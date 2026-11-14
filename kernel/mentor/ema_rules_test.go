@@ -12,7 +12,7 @@ import (
 // (reward < RoomMultiple x risk). The EMA34 rides the shared PHL/PLH path, so
 // this pins the room rule at the EMA call shape.
 func TestEMARoomRule(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ema := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
 
@@ -39,7 +39,7 @@ func TestEMARoomRule(t *testing.T) {
 // TestEMAVisitReclassifies — E3: per-visit references apply to the EMA too (the
 // line moves, so a visit ends on one closed candle not touching it).
 func TestEMAVisitReclassifies(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
 	var tr Touch
@@ -69,7 +69,7 @@ func TestEMAVisitReclassifies(t *testing.T) {
 // (a) filled, then stopped → blocked until a departure; (b) never filled
 // before the expiry → NOT blocked; (c) filled, then target first → NOT blocked.
 func TestEmaLossTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LossDeparturePts = 20 // B22 (CTO 20:29:07Z): the knob default is OFF — E2's numeric departure is pinned here explicitly
 	// CE-6 (release #25): this test pins the numeric departure, so it runs the
 	// "session" relock; the zone-exit default is TestCE6EmaLossRelocksOnZoneExit.
@@ -135,7 +135,7 @@ func TestEmaLossTick(t *testing.T) {
 
 // TestEmaSetupAllowed — E2 block + E4 crossing knob on the seam.
 func TestEmaSetupAllowed(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.EmaMaxCross30m = 4
 	e := New(cfg)
 	ema := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
@@ -189,7 +189,7 @@ func TestEmaCross30Window(t *testing.T) {
 // over the last 30m) emits NO entry. Mutant (isEMA34 = KindEMA34 only) → RED:
 // the same touch emits a PHL.
 func TestEmaCrossingGatesTradedLine(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

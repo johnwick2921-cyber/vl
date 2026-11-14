@@ -15,7 +15,7 @@ import (
 // TestLocationKeyLevelTouch — the reference candle touching a key level is a
 // location.
 func TestLocationKeyLevelTouch(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 101, Low: 99}
 	levels := []Level{{Key: "k1", Kind: KindKeyLevel, Price: 100}}
@@ -33,7 +33,7 @@ func TestLocationKeyLevelTouch(t *testing.T) {
 // TestLocationBareSwingIsNotALocation — an old high/low ALONE is not a
 // location; ±2 pts of a key level makes it one (fold item 1).
 func TestLocationBareSwingIsNotALocation(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 101, Low: 99}
 	swing := Level{Key: "s1", Kind: KindOldExtreme, Price: 100}
@@ -52,7 +52,7 @@ func TestLocationBareSwingIsNotALocation(t *testing.T) {
 // [D5.4 @08:12–08:40]. The 4h EMA 34 belongs ONLY to the swing.
 // Other TFs (here 5m) stay allowed for experimentation.
 func TestLocationEMA34Default1m(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// deterministic 1m series: closes 100, 102, 104, …
 	var bars []market.Kline
@@ -77,7 +77,7 @@ func TestLocationEMA34Default1m(t *testing.T) {
 // TestLocationTriggerRetest — the 5m trigger-line retest is a location
 // [D3.4 p2 @ 20:51].
 func TestLocationTriggerRetest(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 100.5, Low: 99.5}
 	ok, where := LocationVerdict(ref, nil, TriggerLine{Dir: SideLong, Price: 100}, nil, cfg)
@@ -89,7 +89,7 @@ func TestLocationTriggerRetest(t *testing.T) {
 // TestLocationEMA9IsNotALocation — §10: EMA 9 is a reverse-ISB location only,
 // never a location for ISB/PHL/PLH.
 func TestLocationEMA9IsNotALocation(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 101, Low: 99}
 	levels := []Level{{Key: "ema9", Kind: KindEMA9, Price: 100}}
@@ -102,7 +102,7 @@ func TestLocationEMA9IsNotALocation(t *testing.T) {
 // produces no PHL/PLH intent through the evaluator; the same touch at a key
 // level can. (Mutant: drop the levelIsLocation check → RED.)
 func TestPHLPLHGatedByLocationAtEvalLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RangeGapPts = 0
 	cfg.EMALocationTFMinutes = 1 // R3 default — isolate via bare levels, no bars
@@ -127,7 +127,7 @@ func TestPHLPLHGatedByLocationAtEvalLevel(t *testing.T) {
 // the slice-head seed). MUTANT: fall back to EMALocationLevel at tf=1 → the
 // level price ≠ State.EMA34 on a window where the slice-head EMA diverges → RED.
 func TestEMALocationLevelTF1UsesStateEMA34(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 1
 

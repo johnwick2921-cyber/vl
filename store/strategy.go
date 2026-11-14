@@ -2125,6 +2125,23 @@ type MentorTuning struct {
 	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
 	// rejection [D2.2-R71 p3 @14:28–15:58].
 	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
+	// OCT-EXACT A1 (owner order 2026-11-14 "mentor mode = the October course
+	// exactly"): nil → OFF for each gate below (October is silent or contrary);
+	// a stored true is the revert and still wins.
+	//   MentorHTFGateEnabled    — row 1, the 4h/1h direction gate [Oct D4.3-R9 @07:28]
+	//   MentorDayGateEnabled    — row 2, the §7 day gate (day_off/day_spent/spent caps)
+	//   MentorSwing4HEnabled    — row 3, NEW SWING 4H arms [Oct D4.3-R10 @07:58]
+	//   MentorOrbPart2Enabled   — row 4, ORB not_drawn/not_escaped/wrong_side (orb_inside stays)
+	//   MentorOpen5mGateEnabled — row 5, open_5m_range_not_broken
+	//   MentorNewsHoldEnabled   — row 7, news_hold 07:20-07:35 + the news flatten
+	//   MentorLossBoxEnabled    — row 10, loss box / loss range (G2)
+	MentorHTFGateEnabled    *bool `json:"mentor_htf_gate_enabled,omitempty"`
+	MentorDayGateEnabled    *bool `json:"mentor_day_gate_enabled,omitempty"`
+	MentorSwing4HEnabled    *bool `json:"mentor_swing4h_enabled,omitempty"`
+	MentorOrbPart2Enabled   *bool `json:"mentor_orb_part2_enabled,omitempty"`
+	MentorOpen5mGateEnabled *bool `json:"mentor_open5m_gate_enabled,omitempty"`
+	MentorNewsHoldEnabled   *bool `json:"mentor_news_hold_enabled,omitempty"`
+	MentorLossBoxEnabled    *bool `json:"mentor_loss_box_enabled,omitempty"`
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

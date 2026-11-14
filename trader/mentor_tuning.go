@@ -90,6 +90,14 @@ type mentorTuned struct {
 	BreakDirectionLock bool
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
+	// OCT-EXACT A1 (all default OFF = October; true reverts).
+	HTFGateEnabled    bool
+	DayGateEnabled    bool
+	Swing4HEnabled    bool
+	OrbPart2Enabled   bool
+	Open5mGateEnabled bool
+	NewsHoldEnabled   bool
+	LossBoxEnabled    bool
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
 	CrossingISBLookback        int
@@ -228,6 +236,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BreakDirectionLock: d.BreakDirectionLock,
 		SmallRangeGuard:    d.SmallRangeGuard,
 		MidRangeRejectSide: d.MidRangeRejectSide,
+		HTFGateEnabled:     d.HTFGateEnabled,
+		DayGateEnabled:     d.DayGateEnabled,
+		Swing4HEnabled:     d.Swing4HEnabled,
+		OrbPart2Enabled:    d.OrbPart2Enabled,
+		Open5mGateEnabled:  d.Open5mGateEnabled,
+		NewsHoldEnabled:    false, // OCT-EXACT A1 row 7 [Oct: no news rule in the 17 notes]; mentor_news_hold_enabled=true reverts (not a kernel Config field: the hold is a trader placement gate)
+		LossBoxEnabled:     d.LossBoxEnabled,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -454,6 +469,13 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
 	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
 	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)
+	flag(t.MentorHTFGateEnabled, &out.HTFGateEnabled)       // OCT-EXACT A1 row 1
+	flag(t.MentorDayGateEnabled, &out.DayGateEnabled)       // row 2
+	flag(t.MentorSwing4HEnabled, &out.Swing4HEnabled)       // row 3
+	flag(t.MentorOrbPart2Enabled, &out.OrbPart2Enabled)     // row 4
+	flag(t.MentorOpen5mGateEnabled, &out.Open5mGateEnabled) // row 5
+	flag(t.MentorNewsHoldEnabled, &out.NewsHoldEnabled)     // row 7
+	flag(t.MentorLossBoxEnabled, &out.LossBoxEnabled)       // row 10
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
@@ -530,6 +552,12 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
+	cfg.HTFGateEnabled = t.HTFGateEnabled                         // OCT-EXACT A1 row 1
+	cfg.DayGateEnabled = t.DayGateEnabled                         // row 2
+	cfg.Swing4HEnabled = t.Swing4HEnabled                         // row 3
+	cfg.OrbPart2Enabled = t.OrbPart2Enabled                       // row 4
+	cfg.Open5mGateEnabled = t.Open5mGateEnabled                   // row 5
+	cfg.LossBoxEnabled = t.LossBoxEnabled                         // row 10
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle        // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback               // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                         // isbTF-F6

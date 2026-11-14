@@ -1084,6 +1084,7 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	cfg := loadReplayStrategy(t)
 	fdrPinPre25CourseEntries(cfg) // release #25: the live day ran the pre-#25 course-entry knobs
 	fdrPinPre30Defaults(cfg)      // course-defaults-30: the live day predates #30 — pin the live defaults
+	pinPreOctA1(&cfg.RiskControl) // OCT-EXACT A1: the live day ran the Sept HTF/day/ORB/news/leg-budget/loss-box gates — pin them
 	// m465 (release #60, D5.1-R18): the live 10-13 night ran the 300 spent line.
 	// Its overnight run sits between 265 and 300, so at the new 265 default the
 	// night is SPENT and the m423 02:43 PLH short (30683.00 / 30695.75) is no

@@ -162,6 +162,19 @@ func ORBVerdict(orb ORB, side Side, price float64, cfg Config) (ok bool, reason 
 	if !cfg.OrbGateEnabled {
 		return true, ""
 	}
+	if !cfg.OrbPart2Enabled {
+		// OCT-EXACT A1 row 4: ORB part 2 (not drawn / not escaped / wrong side) is
+		// OFF; ONLY part 1 stays — no entry priced inside the 2-minute range
+		// [Oct D4.3 @ 61:44 R63 "nến đang nằm trong vòng ORB 2 phút, đừng trade"].
+		// Before the range is drawn there is no range to be inside of.
+		if orb.Drawn && price >= orb.Low && price <= orb.High {
+			return false, "ORB gate: no trade inside the opening range [Oct D4.3 @ 61:44 R63]"
+		}
+		if orb.Drawn && orbEdgeTooNear(orb, side, price, cfg) {
+			return false, "ORB gate: the entry sits too near the ORB edge [X5 @08:52–09:09]"
+		}
+		return true, ""
+	}
 	if !orb.Drawn {
 		return false, "ORB gate: the opening range is not drawn yet — no trade until the 08:30 2-minute candle completes [X5 @01:52, 06:29]"
 	}
@@ -293,6 +306,13 @@ func orbGateFilter(ints []Intent, orb ORB, now int64, cfg Config) (out []Intent,
 func orbRefusalStage(orb ORB, side Side, price float64, cfg Config) string {
 	if !cfg.OrbGateEnabled {
 		return ""
+	}
+	if !cfg.OrbPart2Enabled {
+		// OCT-EXACT A1 row 4: part 1 only — inside, or (knob, default off) too near the edge.
+		if orb.Drawn && price >= orb.Low && price <= orb.High {
+			return "orb_inside"
+		}
+		return "orb_edge_too_near"
 	}
 	if !orb.Drawn {
 		return "orb_not_drawn"

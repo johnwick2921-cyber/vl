@@ -18,7 +18,7 @@ func orbEntry(side Side, price float64) Intent {
 // TestORBNotGatedBeforeRTHOpen — pin 1: at 03:00 CT (pre-market) an intraday
 // entry is NOT ORB-blocked, even though the ORB is not drawn yet.
 func TestORBNotGatedBeforeRTHOpen(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	preMarket := auditMs(2026, 9, 15, 3, 0, 0) // 03:00 CT
 	got, refused := orbGateFilter([]Intent{orbEntry(SideLong, 25000)},
@@ -34,7 +34,7 @@ func TestORBNotGatedBeforeRTHOpen(t *testing.T) {
 // TestORBBlocksAfterRTHOpenUntilEscape — pin 2: from the 08:30 CT RTH open the
 // gate blocks until the ORB is drawn and escaped (unchanged behaviour).
 func TestORBBlocksAfterRTHOpenUntilEscape(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 
 	// 08:31 CT — the 08:30–08:32 two-minute ORB candle has not completed.
@@ -58,7 +58,7 @@ func TestORBBlocksAfterRTHOpenUntilEscape(t *testing.T) {
 // evening Globex session) the ORB gate does not filter, whatever the morning
 // escape side latched [EXTRAS P2].
 func TestORBNotGatedAfterRTHClose(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// The morning ORB escaped LONG; an evening SHORT would be orb_wrong_side if
 	// the gate still applied after the RTH close.

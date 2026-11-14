@@ -623,12 +623,12 @@ export const MENTOR_TUNING_DEFAULTS = {
   mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
   trigger_escalation: false, // G3 oct round 2 — October: the 5m only [OctD4.3-R9 @07:28]; ON = Sept D3.4-R43 (m465 P1)
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
-  news_wait_both_lines: true, // (b) OQ-6 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-  news_bars_excluded: true, // CE-4 — course-defaults-30 (release #29 rework: freeze the pre-print read)
+  news_wait_both_lines: false, // OCT-EXACT A1 row 6: Sept CE-3 (b) OQ-6 [D4.4 p1 @21:55–22:12], October silent; true reverts
+  news_bars_excluded: false, // OCT-EXACT A1 row 6: Sept CE-4 pre-print read freeze, October silent; true reverts
   isb_box_escape: 'close5m', // m473 B3: a 1m close = permission, the box is deleted on a close of its own TF [Oct D4.3 @ 65:00-66:13]; was close (m466 G20/G49 [D4.1 p1 @20:36–21:03])
   ema34_loss_relock: 'until_zone_exit', // (a)
   orb_edge_veto_pts: 0, // (b) 0 = off
-  orb_isb_fraction_outside: 0.8, // rule 5 (release #31) — default ON at 0.80
+  orb_isb_fraction_outside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); 0.8 reverts (rule 5, release #31)
   d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
   trendline_is_target: true, // (a)
@@ -662,9 +662,9 @@ export const MENTOR_TUNING_DEFAULTS = {
   phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
   // m466 P1 (release #61) — boxes, breaks, ranges.
   mentor_5m_box_source: 'merge', // ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00]
-  mentor_break_direction_lock: true, // G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33]
+  mentor_break_direction_lock: false, // OCT-EXACT A1 row 12: break_counter_setup OFF; true reverts (Sept G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33])
   mentor_small_range_guard: false, // G33 D4.2-R33 [D4.2 p2 @06:16–06:30] — OFF since #61 final (count / margin unstated)
-  mentor_mid_range_reject_side: true, // G43 D2.2-R71 [D2.2 p3 @14:28–15:58]
+  mentor_mid_range_reject_side: false, // OCT-EXACT A1 row 11: mid_range_against_rejection OFF; true reverts (Sept G43 D2.2-R71 [D2.2 p3 @14:28–15:58])
 } as const
 
 // Remove a key when the value is undefined; keep an empty block out of the

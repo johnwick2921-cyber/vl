@@ -186,6 +186,12 @@ func htfRefusalName(setup string, r HTFRefusal) string {
 // History: #43 shipped all-day (owner decision A m134), #45 reverted it to
 // news + open, m462 restores all-day as the DEFAULT from the D5.1 review.
 func HTFGateActive(now int64, cfg Config) bool {
+	// OCT-EXACT A1 row 1: October's only big frame is the 5m [Oct D4.3-R9
+	// @07:28], so the 4h/1h direction gate is OFF by default. Knob
+	// mentor_htf_gate_enabled=true reverts to the windows below.
+	if !cfg.HTFGateEnabled {
+		return false
+	}
 	if !cfg.HTFGateNewsOnly {
 		return true
 	}

@@ -26,7 +26,7 @@ func frozenDayLatch(anchorMs int64, v DayVerdict) DayLatch {
 // produced the first intent — including the ISB missing-target early return —
 // is checked.
 func TestTickStampsSpentDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
@@ -60,7 +60,7 @@ func TestRecordedDaysCarrySetupAndGeometry(t *testing.T) {
 	lateRefusedBefore := SwingLateDayRRRefused()
 	for _, fix := range fixtures {
 		bars := loadFixture(t, fix, "1m")
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		// B52 (release #29) ships ON and changes the box set on these tapes
 		// (post-escape boxes ban the old entries). This A7 invariant is about
@@ -131,7 +131,7 @@ func TestDayGateBlocksEveryIntradaySetup(t *testing.T) {
 		{DayNotMeasured, "isb_day_not_measured", "isb_day_off"},
 		{DayOff, "isb_day_off", "isb_day_not_measured"},
 	} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := New(cfg)
 		e.State.Trigger = TriggerLine{Dir: SideLong, Price: 90}

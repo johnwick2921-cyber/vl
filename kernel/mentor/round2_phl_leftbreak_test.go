@@ -19,7 +19,7 @@ func TestD2G6LeftExtremeCloseEndsTheLadder(t *testing.T) {
 	broke := phl1At(t, bars, 2026, time.October, 29, 21, 12)
 	to := phl1At(t, bars, 2026, time.October, 29, 21, 22)
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	e := phl1Evaluator(cfg, SideShort, bars[from].OpenTime, bars[to].Close)
 	steps := phl1RunRolling(e, bars, from, to)
 	named := false
@@ -45,7 +45,7 @@ func TestD2G6LeftExtremeCloseEndsTheLadder(t *testing.T) {
 	}
 
 	// Knob OFF = today: the name never appears.
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.RollingLeftBreakCancel = false
 	e2 := phl1Evaluator(off, SideShort, bars[from].OpenTime, bars[to].Close)
 	for _, s := range phl1RunRolling(e2, bars, from, to) {
@@ -64,7 +64,7 @@ func TestD2G6AWickPokeKeepsTheLadder(t *testing.T) {
 	bars := m413Load(t, "testdata/round2_mnq_1m_20261029_1940ct.csv")
 	from := phl1At(t, bars, 2026, time.October, 29, 21, 5)
 	wick := phl1At(t, bars, 2026, time.October, 29, 21, 11)
-	e := phl1Evaluator(DefaultConfig(), SideShort, bars[from].OpenTime, bars[wick].Close)
+	e := phl1Evaluator(preOctCfg(), SideShort, bars[from].OpenTime, bars[wick].Close)
 	for _, s := range phl1RunRolling(e, bars, from, wick) {
 		for _, r := range s.refuse {
 			if r == "rolling_left_extreme_broken" {

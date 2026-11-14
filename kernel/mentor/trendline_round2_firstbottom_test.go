@@ -92,7 +92,7 @@ func TestRound2D3G14SlopeCapRefusesTheSteepLine(t *testing.T) {
 }
 
 func TestRound2D3G10G14DefaultsAreOff(t *testing.T) {
-	c := DefaultConfig()
+	c := preOctCfg()
 	if c.TrendlineMinBouncePts != 0 || c.TrendlineMaxSlopePtsPerBar != 0 {
 		t.Fatalf("uncited numbers ship OFF: bounce=%v slope=%v", c.TrendlineMinBouncePts, c.TrendlineMaxSlopePtsPerBar)
 	}

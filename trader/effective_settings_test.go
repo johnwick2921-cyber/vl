@@ -454,8 +454,9 @@ func TestEffMentorDoneAfterWinResolvesSwitch(t *testing.T) {
 	}
 	absent := effRowsFor(t, rc(`{}`), "", "")
 	k := absent[rcPath+"mentor_done_after_win"]
-	if k.Effective != "on" || k.Origin != store.SourceShippedDefault+" (course default: ON)" || !k.Resolved {
-		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want on / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (course default: ON)")
+	// OCT-EXACT A1 row 8: absent → OFF (was ON, m186); a stored true is the revert.
+	if k.Effective != "off" || k.Origin != store.SourceShippedDefault+" (OCT-EXACT A1 row 8: default OFF)" || !k.Resolved {
+		t.Fatalf("absent: effective=%v origin=%q resolved=%v, want off / %q / true", k.Effective, k.Origin, k.Resolved, store.SourceShippedDefault+" (OCT-EXACT A1 row 8: default OFF)")
 	}
 
 	storedTrue := effRowsFor(t, rc(`{"mentor_done_after_win":true}`), "", "")

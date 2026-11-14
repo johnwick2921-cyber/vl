@@ -86,7 +86,7 @@ func TestBarsTF4HAnchoredTo1700CT(t *testing.T) {
 // TestClosedBucketsDropForming — B4: the still-forming 5m bucket is dropped so
 // the 15m/5m conflict reads CLOSED candles only [D4.2 p1 @ 05:10].
 func TestClosedBucketsDropForming(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	start := int64(9*60) * 60_000 // 09:00 CT
 	bars := []market.Kline{

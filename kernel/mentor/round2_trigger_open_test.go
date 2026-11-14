@@ -51,7 +51,7 @@ func g4Tape() []market.Kline {
 }
 
 func g4Eval(mut func(*Config)) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if mut != nil {
 		mut(&cfg)
 	}
@@ -74,7 +74,7 @@ func g4Lines(e *Evaluator, bars []market.Kline) (at0830, at0835 TriggerLine) {
 }
 
 func TestG4TriggerReadFromTheOpen(t *testing.T) {
-	if !DefaultConfig().TriggerFromOpen {
+	if !preOctCfg().TriggerFromOpen {
 		t.Fatal("G4: TriggerFromOpen must default ON (October: the 5m trend is read from the 08:30 open)")
 	}
 	bars := g4Tape()

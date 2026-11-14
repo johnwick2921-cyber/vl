@@ -85,9 +85,9 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	if got := tuningTick(t, &store.MentorTuning{OrbISBFractionOutside: floatPtr(0)}).OrbISBFractionOutside; got != 0 {
 		t.Errorf("explicit orb_isb_fraction_outside=0 must turn the rule off, got %.2f", got)
 	}
-	// unset stays the 0.80 default.
-	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0.80 {
-		t.Errorf("unset orb_isb_fraction_outside must stay 0.80, got %.2f", got)
+	// OCT-EXACT A1 row 4: unset is now 0 (orb_isb_mostly_inside OFF); a stored 0.80 reverts.
+	if got := tuningTick(t, &store.MentorTuning{}).OrbISBFractionOutside; got != 0 {
+		t.Errorf("unset orb_isb_fraction_outside must be 0 (OFF, A1 row 4), got %.2f", got)
 	}
 	// m465 P1 (release #60): a STORED pre-#60 value reaches the evaluator —
 	// 15m_early_read=false, mtf_confluence_source=last_pair,
@@ -117,15 +117,15 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			LevelMaxVisits: 3, OrbGateEnabled: true, ISBReverseEMA9Enabled: true,
 			HTFGateNewsOnly:       true,                                               // D2-G7 oct round 2: the 4h/1h gate only in news + open by default (October: the 5m is the only big frame, OctD4.3-R9)
 			Exec2mAfter30m:        false,                                              // m472 A1 [Oct D4.2 @ 22:56-23:46]: the 1m all day (was ON, X5-10 rule 4 release #31)
-			OrbISBFractionOutside: 0.80,                                               // rule 5 (release #31): the ORB-edge ISB candle must be ≥ 80% outside
+			OrbISBFractionOutside: 0,                                                  // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (was 0.80, rule 5 release #31)
 			DayGateSpentPts:       265, DayGateTargetCapPts: 15, SwingMaxStopPts: 100, // m465 (#60) D5.1-R18: spent line 265
 			// Release #25 course-entry knobs (course-defaults-30 changes).
 			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
 			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
 			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
 			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: false, // G3 oct round 2: was true (D3.4-R43)
-			NewsWaitBothLines: true,                                                                        // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-			NewsBarsExcluded:  true,                                                                        // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+			NewsWaitBothLines: false,                                                                       // OCT-EXACT A1 row 6 (was true, CE-3 course-defaults-30 [D4.4 p1 @21:55–22:12])
+			NewsBarsExcluded:  false,                                                                       // OCT-EXACT A1 row 6 (was true, CE-4 release #29 rework)
 			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
 			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
 			TrendlineBetweenBoxes: false, // D3-G8 oct round 2: OctD3.3-R59 [@ 46:27] (was true, CE-11/B13)
@@ -152,9 +152,9 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLPullbackLow:     mentor.PHLPullbackLowPullback,    // G41 D2.2-R59
 			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
 			FiveMinBoxSource:   mentor.FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over D4.1-R37)
-			BreakDirectionLock: true,                   // D4.1-R31/R33, D4.1-R55
+			BreakDirectionLock: false,                  // OCT-EXACT A1 row 12 (was true, D4.1-R31/R33, D4.1-R55)
 			SmallRangeGuard:    false,                  // D4.2-R33 — OFF since #61 final (count / margin unstated)
-			MidRangeRejectSide: true,                   // D2.2-R71
+			MidRangeRejectSide: false,                  // OCT-EXACT A1 row 11 (was true, D2.2-R71)
 			// isbTF audit F4/F6: today's values, [B] readings (the course states none).
 			SwingISBOnePerCandle: true, CrossingISBLookback: 3, CrossingISBMin: 2,
 			// phl audit PHL-1: the 1m swing width that reproduces the four Oct D2.3 worked examples.

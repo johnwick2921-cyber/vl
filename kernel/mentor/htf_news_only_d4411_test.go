@@ -20,7 +20,7 @@ import (
 
 // TestHTFGateActiveNewsOnly pins the pure window test.
 func TestHTFGateActiveNewsOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if !cfg.HTFGateNewsOnly {
 		t.Fatal("D2-G7 oct round 2: HTFGateNewsOnly must default ON (October: the 5m is the only big frame); false = the m462 all-day gate")
 	}
@@ -67,7 +67,7 @@ func TestHTFGateActiveNewsOnly(t *testing.T) {
 // the 10:05 conflict PHL is refused under news+open → RED.
 func TestHTFGateNewsOnlyTick(t *testing.T) {
 	run := func(allDay bool) bool {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.EMALocationTFMinutes = 0

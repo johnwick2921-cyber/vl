@@ -44,7 +44,7 @@ func loadMNQ1m(t *testing.T, path string) []market.Kline {
 // (2026-09-16 RTH), and the resulting state must EQUAL a fresh seed over the
 // whole two-day tape: same 1H level set, same 1m EMA 34/9.
 func TestSeedIncrementalMatchesRebuildRecordedDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	day1 := loadMNQ1m(t, "testdata/mnq_1m_2026-09-15_rth.json")
 	day2 := loadMNQ1m(t, "testdata/mnq_1m_2026-09-16_rth.json")

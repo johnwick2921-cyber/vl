@@ -14,7 +14,7 @@ import (
 // screen's 28,828.50-28,831.50). applyBreak sets the price from the broken candle
 // (before.Low); this pins it through the production TriggerTick.
 func TestD43AU1TriggerLineSitsOnTheBrokenCandleLow(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	at := func(m int) int64 { return 1_793_000_000_000 - 1_793_000_000_000%300_000 + int64(m)*300_000 }
 	peak := market.Kline{OpenTime: at(0), CloseTime: at(1) - 1, Open: 28_859, High: 28_891.5, Low: 28_834.25, Close: 28_886.75}

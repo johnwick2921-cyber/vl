@@ -14,7 +14,7 @@ import (
 // or the knob OFF) → 1; a 5mha box → 5.
 // MUTANT: drop the ExecTFMin stamp in boxEntryIntent → RED.
 func TestBoxEntryCarriesItsDrawnFrame(t *testing.T) {
-	cfgBase := DefaultConfig()
+	cfgBase := preOctCfg()
 	cfgBase.LocTriggerFilter = false
 	cfgBase.PingPongCandleMaxPts = 0
 

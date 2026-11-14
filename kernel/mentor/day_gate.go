@@ -72,6 +72,12 @@ type DayGate struct {
 	// included) passes through unchanged — the 10-vs-15 pick itself is his
 	// discretion, not a stated rule.
 	TargetCapPts float64
+	// Off — OCT-EXACT A1 row 2: the whole §7 day gate is disabled (verdict is
+	// always DayTrade: no day_off / day_spent / day_not_measured, no spent-day
+	// target cap / stop cap / room, no R9 spent cap). Set from
+	// !Config.DayGateEnabled by the evaluator; knob mentor_day_gate_enabled=true
+	// reverts.
+	Off bool
 }
 
 // DefaultDayGate returns the §7 defaults (265 / 15) — m465 D5.1-R18.
@@ -336,6 +342,9 @@ func GlobexRun(bars []market.Kline, now int64, loc *time.Location) (run float64,
 //	otherwise (incl. a conflict  → DayTrade — §5.4 case 3 handles the
 //	on a normal day)              per-tick sit-out until the flip
 func DayGateVerdict(run float64, haveRun bool, conflict bool, g DayGate) (DayVerdict, string) {
+	if g.Off {
+		return DayTrade, "" // OCT-EXACT A1 row 2
+	}
 	if g.SpentPts <= 0 || g.TargetCapPts <= 0 {
 		g = DefaultDayGate()
 	}

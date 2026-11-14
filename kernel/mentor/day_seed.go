@@ -35,7 +35,7 @@ func SeedDayLatch(e *Evaluator, bars1m []market.Kline, now int64) {
 	}
 	four, one := openHTFLines(e, bars1m, open)
 	m := GlobexMeasure(bars1m, open, ctime())
-	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts}
+	dg := DayGate{SpentPts: e.Cfg.DayGateSpentPts, TargetCapPts: e.Cfg.DayGateTargetCapPts, Off: !e.Cfg.DayGateEnabled}
 	conflict := HTFConflict(HTF{FourH: four, OneH: one})
 	v, _ := DayGateVerdict(m.Run, m.OK, conflict, dg)
 	e.State.Day = DayLatch{Key: key, Verdict: v}

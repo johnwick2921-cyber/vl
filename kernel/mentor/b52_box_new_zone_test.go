@@ -22,7 +22,7 @@ import (
 // b52Cfg is the production evaluator config with the non-box machinery turned
 // down so the synthetic tape's boxes are the only thing alive.
 func b52Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: the B52 pins are 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1

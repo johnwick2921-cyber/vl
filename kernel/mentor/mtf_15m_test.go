@@ -15,7 +15,7 @@ import (
 // driven by red) with a long trigger and a level above at 110.
 func mtfFixture(t *testing.T, red bool) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1

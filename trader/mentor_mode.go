@@ -596,9 +596,19 @@ func (at *AutoTrader) mentorStaleDataBlockBootLine() string {
 // other mentor knobs. Each resolver is the single defaults site, and
 // mentorEvaluatorConfig applies every one of them to the evaluator.
 
-// mentorLegBudgetEnabled — G1 leg budget: nil → ON (default).
+// mentorLegBudgetEnabled — G1 leg budget.
+// OCT-EXACT A1 row 9: nil → OFF. D3.1 E1 shows ~10 orders in a row [Oct D3.1-R24
+// @08:14-08:47 (11-01, 17:00-18:00)], so the 2-per-leg budget (X15) is contrary;
+// a stored true reverts.
 func mentorLegBudgetEnabled(rc *store.RiskControlConfig) bool {
-	return rc == nil || rc.MentorLegBudgetEnabled == nil || *rc.MentorLegBudgetEnabled
+	return rc != nil && rc.MentorLegBudgetEnabled != nil && *rc.MentorLegBudgetEnabled
+}
+
+// mentorNewsHoldEnabled — OCT-EXACT A1 row 7: mentor_news_hold_enabled (mentor_tuning),
+// nil → OFF; a stored true reverts to the 07:20–07:35 hold + news flatten.
+func (at *AutoTrader) mentorNewsHoldEnabled() bool {
+	rc := at.mentorRiskControl()
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsHoldEnabled != nil && *rc.MentorTuning.MentorNewsHoldEnabled
 }
 
 // mentorLegResetOn — G1 parity knob: "close" default; a bad value fails

@@ -15,9 +15,9 @@ import (
 
 // TestDayOffRecheckDefaultsOff — course-defaults-30 item 4 / P1-7: the kernel
 // default is OFF (the whole-day latch, superseding the 2026-10-09 ruling).
-// Mutant: DefaultConfig().DayOffRecheck → true → RED.
+// Mutant: preOctCfg().DayOffRecheck → true → RED.
 func TestDayOffRecheckDefaultsOff(t *testing.T) {
-	if DefaultConfig().DayOffRecheck {
+	if preOctCfg().DayOffRecheck {
 		t.Fatal("DayOffRecheck must default OFF (the whole-day latch; course-defaults-30 item 4)")
 	}
 }
@@ -43,7 +43,7 @@ func dayoffRecheckTape(hours ...[3]float64) []market.Kline {
 // dayoffRecheckEval seeds an evaluator with a conflicting 4h/1h (4h SHORT, 1h
 // LONG drawn later) and a latched DayOff for 2026-09-15 — the 10-08 shape.
 func dayoffRecheckEval(recheck bool) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false
 	cfg.DayOffRecheck = recheck
@@ -161,7 +161,7 @@ func TestDayOffRecheckOneWay(t *testing.T) {
 // DayOff refuses (isb_day_off), a DaySpent day emits (capped), proving the
 // gate reopens in the agreed direction once the DayOff clears.
 func shortISBEntryCount(verdict DayVerdict) int {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // pin the day gate + direction, not the room rule
 	// head low so the EMA 34 target sits BELOW the short entry.
@@ -204,7 +204,7 @@ func TestDayOffRecheckReopensEntries(t *testing.T) {
 // / 1h long conflict must record DayOff, run 310, hi/lo and their bar times, the
 // 300-pt line and the two directions — exactly once (a second tick leaves it).
 func TestDayGateReportRecordedOnceAtFreeze(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false
 	cfg.KeyLevelTFMinutes = 1
@@ -264,7 +264,7 @@ func TestDayGateReportRecordedOnceAtFreeze(t *testing.T) {
 // SHORT at the 10:00 bar's CLOSE (11:00 CT). The recheck must clear there, dir
 // SHORT — the production e.State.HTF (with the broke-both tie-break) path.
 func TestDayOffRecheckReal1008HourlySequence(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false
 	cfg.DayOffRecheck = true

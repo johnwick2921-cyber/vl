@@ -16,7 +16,7 @@ import (
 // PingPongCandleLookback closed bars must stay at or below
 // PingPongCandleMaxPts ("nến tầm mười mấy điểm").
 func TestPingPongCandleCap(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl"}
 	ceil := Box{Kind: FTGH, Top: 210, Bottom: 160, Key: "ftgh"} // gap 60
@@ -68,7 +68,7 @@ const (
 
 func b21PairFixtureMode(mode string) (*Evaluator, []market.Kline, int64) {
 	fat := mode == b21FatPrior
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
@@ -214,7 +214,7 @@ func TestMentorNYKeyPairCountedOncePerVisit(t *testing.T) {
 // @10:32–11:43 "knock knock"): a level trades its first 3 visits of the day;
 // the 4th and later refuse, named and counted.
 func TestB23LevelVisitCap(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0

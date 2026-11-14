@@ -10,7 +10,7 @@ import (
 // TestKeyLevelsPruneKeepsTheMoreRecent — §4.3 step 5 [D5.3 p1 @ 12:55–17:30]:
 // two levels < 20 pts apart → delete one, KEEP THE MORE RECENT.
 func TestKeyLevelsPruneKeepsTheMoreRecent(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1 // mechanics walk on 1m; the DEFAULT source is 1H RTH
 	cfg.KeyLevelRTHOnly = false
@@ -56,7 +56,7 @@ func TestKeyLevelsPruneKeepsTheMoreRecent(t *testing.T) {
 // at a colour change the line is the OPEN of the SECOND candle
 // (red→green: open of the green; green→red: open of the red).
 func TestKeyLevelsLineAtSecondCandleOpen(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.KeyLevelRTHOnly = false
@@ -82,7 +82,7 @@ func TestKeyLevelsLineAtSecondCandleOpen(t *testing.T) {
 // candle is 08:30–09:29; a colour change there draws a level at ITS OPEN (the
 // 08:30 1m open).
 func TestKeyLevels1HAnchoredRTHOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	ms := int64(60_000)
@@ -128,7 +128,7 @@ func TestKeyLevels1HAnchoredRTHOnly(t *testing.T) {
 // (never a wick, never an ETH candle), every kept pair must respect the 20-pt
 // prune, and the week must draw levels.
 func TestKeyLevelsOnRecorded1HWeek(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_1h_2026-09-28to10-02", "1h")
 	candles := keyLevel1HBars(bars)
@@ -179,7 +179,7 @@ func countColourChanges(bars []market.Kline) int {
 // other) deletes it; a 1H wick through does NOT. The evaluator persists the
 // deletion in State.DeletedLevels and the level leaves the set at once.
 func TestKeyLevelDeletedBy1HBodyCloseOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1                               // draw the level deterministically on the 1m walk; the DELETION runs on the anchored 1H RTH candles either way
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the deck deletion under test (October default keeps)
@@ -296,7 +296,7 @@ func TestKeyLevelsDisabledIsNil(t *testing.T) {
 // level is a single price equal to the standard EMA seeded at the first close
 // (§11; DS-106: ema_periods knob).
 func TestEMA34LevelTracksCloses(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMATFMinutes = 1
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")

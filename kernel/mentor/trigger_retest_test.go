@@ -16,7 +16,7 @@ import (
 // line. Pin: a buy-line retest rejecting from below → NO short, refused
 // "trigger_retest_wrong_way" [CTO ruling 2026-10-04].
 func TestTriggerRetestWrongWayRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	// Drop the EMA-34 location line from the level set so it does not become

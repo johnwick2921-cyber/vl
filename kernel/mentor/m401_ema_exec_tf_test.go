@@ -68,7 +68,7 @@ func m401Indep(bars []market.Kline, upto, tf, period int) float64 {
 }
 
 func m401Cfg(knob bool) Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	c.Exec2mAfter30m = knob
 	return c

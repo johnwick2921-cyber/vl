@@ -428,7 +428,7 @@ func TestBoxTopTwoCandleNeverWalked(t *testing.T) {
 	}
 	// The top-2 candle is entry-eligible: walked, it would trade. With the
 	// correct FormedAt the walk never reaches it.
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	c.RoomMultiple = 0.05
 	c.LocTriggerFilter = false

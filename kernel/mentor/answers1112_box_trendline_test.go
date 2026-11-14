@@ -90,7 +90,7 @@ func q12Levels(line float64, extra ...Level) []Level {
 }
 
 func q12Cfg(on bool) Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LocTriggerFilter = false // the 5m trigger is not under test here
 	cfg.BoxTrendlinePartialNotRoom = on
 	return cfg
@@ -104,12 +104,12 @@ func q12Cfg(on bool) Config {
 // trades include lines 0.07R / 0.25R from entry. OFF = today's box_room.
 // MUTANT: BoxTrendlinePartialNotRoom: true in DefaultConfig → RED.
 func TestAnswers1112BoxTrendlineDefaultOff(t *testing.T) {
-	if DefaultConfig().BoxTrendlinePartialNotRoom {
+	if preOctCfg().BoxTrendlinePartialNotRoom {
 		t.Fatal("box_trendline_partial_not_room must default OFF (review P1: report \"Builds, all default OFF\"; the line is the target until it breaks [Sept D3.2 p2 @11:11-11:39])")
 	}
 	// The default refuses the video's 20:24 box long box_room, as today.
 	ref, window, boxes := q12Fixture(t)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.LocTriggerFilter = false
 	if out, why := boxEntryIntentWhy(ref, boxes[0], boxes, q12Levels(q12BotLine), TriggerLine{}, window, cfg); len(out) != 0 || why != "box_room" {
 		t.Fatalf("default: got %d intents, %q — want box_room (today)", len(out), why)
@@ -209,7 +209,7 @@ func TestAnswers1112BoxTrendlineInsideOneR(t *testing.T) {
 // reverse ISB and PHL/PLH paths call still returns the trendline.
 func TestAnswers1112BoxTrendlineScopeIsBoxOnly(t *testing.T) {
 	levels := q12Levels(q12BotLine)
-	if got := nextLevelBeyondRoom(levels, q12Entry, q12Stop, SideLong, DefaultConfig().RoomMultiple); got != q12BotLine {
+	if got := nextLevelBeyondRoom(levels, q12Entry, q12Stop, SideLong, preOctCfg().RoomMultiple); got != q12BotLine {
 		t.Fatalf("nextLevelBeyondRoom = %.2f, want the trendline 29,028.57 (ISB/PHL targets unchanged)", got)
 	}
 }

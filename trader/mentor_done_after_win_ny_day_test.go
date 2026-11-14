@@ -73,16 +73,25 @@ func pinDoneAfterWinClock(t *testing.T, d, h, m int) {
 // no longer refuses and this test goes RED. Production call site: the gate and
 // the sweep.
 func TestDoneAfterWinNilDefaultsOn(t *testing.T) {
+	// OCT-EXACT A1 row 8: nil now defaults OFF — the +$31.50 scratch no longer
+	// stops the day; the stored true (the revert) still does.
 	at, st := doneAfterWinRig(t, "") // explicit true, then nil it below
 	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
 	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // 10-16 #660: a +$31.50 scratch
 
 	pinDoneAfterWinClock(t, 8, 11, 3)
+	if refuse, why := at.mentorDoneAfterWinGate(); refuse {
+		t.Fatalf("nil → OFF (A1 row 8): the gate must not refuse (why=%q)", why)
+	}
+	if trip, _ := at.mentorDoneAfterWinTripped(); trip {
+		t.Fatalf("nil → OFF (A1 row 8): the sweep must not trip")
+	}
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true) // the revert
 	if refuse, why := at.mentorDoneAfterWinGate(); !refuse || why == "" {
-		t.Fatalf("nil → ON: the +$31.50 scratch must stop the day (refuse=%v why=%q)", refuse, why)
+		t.Fatalf("stored true (revert): the +$31.50 scratch must stop the day (refuse=%v why=%q)", refuse, why)
 	}
 	if trip, why := at.mentorDoneAfterWinTripped(); !trip || why == "" {
-		t.Fatalf("nil → ON: the sweep must trip on the scratch win (trip=%v why=%q)", trip, why)
+		t.Fatalf("stored true (revert): the sweep must trip on the scratch win (trip=%v why=%q)", trip, why)
 	}
 }
 

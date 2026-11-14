@@ -86,7 +86,7 @@ func m60p1Tape(fives [][6]float64) []market.Kline {
 // levels sit far above and below, EMAs are off, and the exec frame is the 1m.
 func m60p1Eval(t *testing.T, trig5 Side, trigPx float64, htf, orb Side, levels []Level) *Evaluator {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // the 1m pair is the entry read in every m60 P1 pin
 	cfg.KeyLevelTFMinutes = 1
@@ -352,7 +352,7 @@ func TestM60Forming15mReplacedAtClose(t *testing.T) {
 // the forming bucket; one is too early, three means the 15m has closed.
 func TestM60Forming15mISBUnit(t *testing.T) {
 	cb := func(bars []market.Kline, now int64) ([]market.Kline, []market.Kline) {
-		return closedBuckets(bars, now, DefaultConfig()), closedBucketsTF(bars, 15, now)
+		return closedBuckets(bars, now, preOctCfg()), closedBucketsTF(bars, 15, now)
 	}
 	bars := m60p1WE1(28_998)
 	// 09:55 tick: two closed 5m (09:45, 09:50) in the forming 09:45 bucket.
@@ -425,7 +425,7 @@ func TestM60FormingConflictLatchReleasedOnDrop(t *testing.T) {
 
 	// The provisional box's 15m candle closes as NO inside bar → dropped, and
 	// the forming-origin latch is released.
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBBox, e.State.ISBBox15m = box5, prov
 	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true
 	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
@@ -438,7 +438,7 @@ func TestM60FormingConflictLatchReleasedOnDrop(t *testing.T) {
 		t.Fatalf("the release is counted: %v", e.State.Counters)
 	}
 	// A REAL-origin latch survives the same drop.
-	e2 := New(DefaultConfig())
+	e2 := New(preOctCfg())
 	e2.State.ISBBox, e2.State.ISBBox15m = box5, prov
 	e2.State.TFConflictLatched = true
 	e2.advance15mBox(nil, []market.Kline{mother, closedNoISB}, m60p1K(m60p1At(10, 0), 118, 119, 117, 118))
@@ -460,7 +460,7 @@ func TestM60FormingConflictLatchReleasedAfterEscape(t *testing.T) {
 	box5 := &ISBBox{High: 110, Low: 100, Dir: SideShort, AtTime: m60p1At(9, 50)}
 	prov := &ISBBox{High: 112, Low: 98, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
 	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBBox, e.State.ISBBox15m = box5, prov
 	e.State.LastForming15mAt = prov.AtTime
 	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true
@@ -484,7 +484,7 @@ func TestM60FormingConflictLatchReleasedAfterEscape(t *testing.T) {
 
 	// Same escape, but the 15m closes AS an inside bar → the latch now rests on
 	// a real 15m ISB: kept, and marked real.
-	e2 := New(DefaultConfig())
+	e2 := New(preOctCfg())
 	e2.State.ISBBox, e2.State.ISBBox15m = box5, prov
 	e2.State.LastForming15mAt = prov.AtTime
 	e2.State.TFConflictLatched, e2.State.TFConflictLatchForming = true, true
@@ -511,7 +511,7 @@ func TestM60FormingConflictLatchConfirmedIsReal(t *testing.T) {
 	prov := &ISBBox{High: 104, Low: 100, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
 	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
 	closedISB := market.Kline{OpenTime: m60p1At(9, 45), CloseTime: m60p1At(10, 0) - 1, Open: 101, High: 104, Low: 100, Close: 103}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBBox, e.State.ISBBox15m = nil, prov // the 5m box escaped already
 	e.State.LastForming15mAt = prov.AtTime
 	e.State.TFConflictLatched, e.State.TFConflictLatchForming = true, true

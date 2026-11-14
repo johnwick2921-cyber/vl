@@ -58,7 +58,7 @@ func TestThirtyDayReplaySeconds(t *testing.T) {
 	if raceEnabled {
 		t.Skip("the CPU-time ceiling is meaningless under -race (5-10x slower); the non-race suite enforces it")
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	var bars1m []market.Kline
 	cl := 20000.0

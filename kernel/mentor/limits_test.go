@@ -28,7 +28,7 @@ var limitsLvlsG2 = []Level{
 }
 
 func limitsCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	return cfg
 }

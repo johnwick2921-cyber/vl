@@ -46,7 +46,7 @@ func newShortISBEval(cfg Config) *Evaluator {
 // TestISBTriggerSideMismatchRefused — pin 1: 5m buy line + 4h short + a short
 // ISB above the line → refused with the counted reason isb_trigger_side_mismatch.
 func TestISBTriggerSideMismatchRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newShortISBEval(cfg)
 	bars := shortISBFixture()
@@ -78,7 +78,7 @@ func TestISBTriggerSideMismatchRefused(t *testing.T) {
 // TestISBTriggerSideMatchPlaced — pin 2: 5m buy line + a long ISB → placed
 // (no trigger-side refusal).
 func TestISBTriggerSideMatchPlaced(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newISBEval(cfg) // trigger long, 4h long, ORB escaped long
 	bars := isbFixture()
@@ -101,7 +101,7 @@ func TestISBTriggerSideMatchPlaced(t *testing.T) {
 // TestISBNoTriggerLineUnchanged — pin 3: no 5m line → the ISB places exactly as
 // before (the trigger-side check is skipped, no refusal).
 func TestISBNoTriggerLineUnchanged(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := newISBEval(cfg)
 	e.State.Trigger = TriggerLine{} // no live 5m trigger line
@@ -133,7 +133,7 @@ func TestISBNoTriggerLineUnchanged(t *testing.T) {
 // Mutant: the pre-F1 seam (box hides the trigger) → no refusal → RED.
 func TestISBBoxDoesNotHideTheTriggerLine(t *testing.T) {
 	run := func() *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := newISBEval(cfg) // trigger long
 		e.State.HTF = HTF{FourH: TriggerLine{Dir: SideShort, Price: 90}}

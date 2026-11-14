@@ -53,7 +53,7 @@ func TestISBInRangeNarrowKeyLevels(t *testing.T) {
 // The production resolver: an ISB inside the standing 5m box carries isb_in_range
 // even with no boxes and no old extreme.
 func TestISBFlagsForWidensInRange(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBBox = &ISBBox{High: 100, Low: 90}
 	cur := market.Kline{High: 96, Low: 94, Close: 95}
 	if f := e.isbFlagsFor(cur, SideLong, nil, nil); f != FlagISBInRange {
@@ -75,7 +75,7 @@ func TestISBFlagsForWidensInRange(t *testing.T) {
 // (`chosen.Flag = isbFlags(cur, levels, boxes)`) → RED: the ISB emits with an
 // empty flag.
 func TestISBInRangeFlagOnTick(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins the in-range flag, not the room rule
 	box := ISBBox{High: 103, Low: 97, Dir: SideLong, AtTime: auditMs(2026, 9, 15, 9, 0, 0)}

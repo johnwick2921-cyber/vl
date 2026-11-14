@@ -168,13 +168,13 @@ func TestMTFConfluenceIgnoresTheTriggerAtTheEmitSite(t *testing.T) {
 
 func bars5mOf(t *testing.T, bars []market.Kline) []market.Kline {
 	t.Helper()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	return e.closedBucketsMemo(bars, bars[len(bars)-1].CloseTime+1)
 }
 
 func bars15mOf(t *testing.T, bars []market.Kline) []market.Kline {
 	t.Helper()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	return e.closedBucketsTFMemo(bars, 15, bars[len(bars)-1].CloseTime+1)
 }
 
