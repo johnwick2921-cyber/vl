@@ -3064,6 +3064,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// stacking extends the EXISTING arm — no new arm.
 						// REL-5 audit #3: name the skip instead of a silent drop.
 						e.refuse("isb_arm_active")
+					} else if r := e.isbJustBrokenRefusal(side, execPrev, execCur, boxes); r != "" {
+						// oct-exact D1 [OctD3.3-R2/R3 @00:46-01:00, R47 @38:10]: the ISB
+						// sits at a level its mother candle just broke — wait for the
+						// retest. Ahead of every box / trigger gate so the rule itself
+						// is what refuses the 10-30 09:03 break-and-reverse ISB.
+						e.refuse(r)
 					} else if boxBlocked {
 						// R5: an opposite-direction ISB inside the box — no entry
 						e.refuse("isb_box_blocked")
@@ -3291,6 +3297,8 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			target := 0.0
 			if _, stopOK, why := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse(isbStopRefusal("isbrev_", why))
+			} else if r := e.isbJustBrokenRefusal(in.Side, execPrev, execCur, boxes); r != "" {
+				e.refuse(r + "_rev") // oct-exact D1: the reverse ISB at a level its mother just broke
 			} else if boxBlocked {
 				e.refuse("isbrev_box_blocked")
 			} else if box15Blocked {

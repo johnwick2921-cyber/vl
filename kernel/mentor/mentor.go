@@ -485,6 +485,20 @@ type Config struct {
 	// same 15 as D4.2-R14/R18). 0 = off (today: no scalp target). Studio JSON:
 	// risk_control.mentor_tuning.mentor_counter_5m_scalp_pts.
 	Counter5mScalpPts float64
+	// ISBJustBrokenLevel — oct-exact D1: an ISB whose MOTHER candle just closed
+	// through a level (key level, old extreme, gap edge, FTGH/FTGL box edge,
+	// trendline) with its body, and whose inside bar has not retested the level,
+	// is refused (isb_just_broken_level) until the retest [OctD3.3-R2/R3 @00:46-01:00,
+	// R47 @38:10 "hoan toan khong duoc", the 10-30 09:03 break-and-reverse ISB].
+	// No points number (the mentor gives none). Default true; revert
+	// risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
+	ISBJustBrokenLevel bool
+	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
+	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
+	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
+	// video draws the box top at 29,014, the wick-level pairing drew 29,003.75].
+	// Default true; revert risk_control.mentor_tuning.mentor_ftgl_body_edge_partner=false.
+	FTGLBodyEdgePartner bool
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
 	// ladder's left extreme (the higher low / lower high the leg to the old extreme
 	// started from) ENDS the rolling ladder — named rolling_left_extreme_broken —
@@ -1353,6 +1367,8 @@ func DefaultConfig() Config {
 		ISBRoomMultiple:            1,                   // oct-exact C4: ISB room 1R [Oct D2.3-R48 @49:38, D2.2 @28:37]; mentor_isb_room_multiple=2 reverts
 		LevelFirstTouchLock:        false,               // oct-exact C3: a first touch closing through only cancels that order [Oct D5.2-R23/R24 @07:42-14:16]; mentor_level_first_touch_lock=true reverts
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
+		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
+		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
 		NearBoxRoomMultiple:        0,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)

@@ -465,6 +465,7 @@ func (e *Evaluator) baseBoxCfg() BoxCfg {
 func (e *Evaluator) withBoxFlags(cfg BoxCfg) BoxCfg {
 	cfg.OneRoleSwings = !e.Cfg.BoxSwingBothRoles
 	cfg.FlipPermanent = !e.Cfg.BoxFlipReversible // D3-G7
+	cfg.FTGLBodyEdgePartner = e.Cfg.FTGLBodyEdgePartner // oct-exact D3
 	return cfg
 }
 

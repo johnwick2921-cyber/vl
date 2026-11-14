@@ -23,7 +23,7 @@ func preOctCfg() Config {
 	c.MidRangeRejectSide = true
 	c.BreakDirectionLock = true
 	c.OrbISBFractionOutside = 0.80
-	return octBCRevert(octA2Revert(c))
+	return octDRevert(octBCRevert(octA2Revert(c)))
 }
 
 // octA2Revert applies every OCT-EXACT A2 revert (CTO-decisions.md section A2):

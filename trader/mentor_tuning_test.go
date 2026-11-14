@@ -173,6 +173,9 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			BEOffsetTicks:              4,                                 // OCT-EXACT B7: 4 ticks = 1 pt (was 0) [Oct D4.2 @13:00-13:25]; stored 0 reverts
 			ISBRoomMultiple:            1,                                 // OCT-EXACT C4: ISB room 1R (was the shared 2) [Oct D2.3-R48 @49:38]; 2 reverts
 			Counter5mScalpPts:          15,                                // OCT-EXACT C1: counter-5m EMA 34 scalp first target 15 [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
+			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
+			FTGLBodyEdgePartner:        true,                              // OCT-EXACT D3: FTGL partner by body edge [OctD3.3-R54 @43:14]; false reverts
+			Leg1FixedPts:               0,                                 // OCT-EXACT D2: production 15 (mentorLeg1FixedPtsDefault); this test binary pins 0 in TestMain, oct_d_test.go pins the 15
 			ResonanceTrail:             true,                              // OCT-EXACT C6: the mode-A runner trails after BE [Oct D4.2-R31/R32 @08:11]; false reverts
 			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
 			PHL5mBoxSameDirAllowed:     true,                              // OCT-EXACT B1: ON (was OFF, answers-1112 Q9) [Oct D4.3-R70/R71 @68:24]; false reverts

@@ -842,6 +842,11 @@ export const mentor: GuideSection = {
           'phl_5m_box_same_dir_allowed · touch_stop_cover_later_wick · rolling_stale_touch_releases · rolling_keypair_tape_exempt · isb_target_fill_close · phl_min_above_old_extreme_pts · be_offset_ticks · box_trendline_partial_not_room · mentor_counter_5m_scalp_pts · mentor_level_first_touch_lock · mentor_isb_room_multiple · mentor_resonance_trail · each revert = the old value · Oct D4.3 @68:24 · D5.2-R33 @19:40 · D2.2 @28:37 · D4.2-R41 · D4.2 @13:00 · D5.4 Ex.1 · D5.2-R23/R24 · D2.3-R48 · D4.2-R31/R32',
         ],
         [
+          'October-exact build D: just-broken ISB, fixed partial, FTGL body edge',
+          'Three more October rules ship ON. (D1) mentor_isb_just_broken_level: an inside bar right after a candle whose body just closed through an FTGH/FTGL box edge, with no retest by the inside bar, is refused (isb_just_broken_level) until price comes back to the box [OctD3.3-R47 @38:10, R2/R3 @00:46-01:00; the 10-30 09:03 break-and-reverse ISB]. (D2) mentor_leg1_fixed_pts = 15: a normal PHL/PLH sells all but ONE contract at +15 points (never under 1R, never past the target), then break-even, one runner [Oct D4.2 @12:16 R14, @14:18 R18]; ISB, BOX, swing and confluence keep their own first target; 0 reverts to ceil(n/2) at +1R. (D3) mentor_ftgl_body_edge_partner: the FTGL second bottom is the swing low whose lower body edge is level with bottom 1 own body edge (13 Sep: top 29,015 vs the old 29,003.75; video ~29,014) [OctD3.3-R54 @43:14]. Not built: the morning dead box (no measure in the example) and the trendline / key-level form of D1 (the mentor own D2.2 E9 trade contradicts it).',
+          'mentor_isb_just_broken_level · mentor_leg1_fixed_pts · mentor_ftgl_body_edge_partner · trendline_max_lines_per_anchor = 3 (A2)',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
           'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',

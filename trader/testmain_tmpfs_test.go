@@ -27,6 +27,10 @@ func TestMain(m *testing.M) {
 	// so the package's test binary runs with the unset default at 0 (the stored
 	// 0 revert). oct_bc_test.go pins the October default of 4 through octBEDefault.
 	mentorBEOffsetDefaultTicks = 0
+	// OCT-EXACT D2 (mentor_leg1_fixed_pts default 15, Oct D4.2 @12:16): the pre-October
+	// split/exit tests assert leg 1 at +1R with ceil(n/2), so the binary runs with the
+	// unset default at 0 (the stored 0 revert). oct_d_test.go pins the production 15.
+	mentorLeg1FixedPtsDefault = 0
 	start := time.Now()
 	restore := kernel.ClockSampleForTest(func() (int64, time.Duration) {
 		mono := time.Since(start)

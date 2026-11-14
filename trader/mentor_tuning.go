@@ -121,6 +121,9 @@ type mentorTuned struct {
 	ISBRoomMultiple             float64 // BC C4
 	LevelFirstTouchLock         bool    // BC C3
 	Counter5mScalpPts           float64 // BC C1
+	ISBJustBrokenLevel          bool    // D1
+	FTGLBodyEdgePartner         bool    // D3
+	Leg1FixedPts                float64 // D2 (trader-side)
 	ResonanceTrail              bool    // BC C6 (trader-side)
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
@@ -291,6 +294,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBRoomMultiple:             d.ISBRoomMultiple,
 		LevelFirstTouchLock:         d.LevelFirstTouchLock,
 		Counter5mScalpPts:           d.Counter5mScalpPts,
+		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
+		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
+		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
 		ResonanceTrail:              true, // BC C6
 	}
 	if rc == nil || rc.MentorTuning == nil {
@@ -548,6 +554,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pickPtr(t.MentorISBRoomMultiple, 0, 10, &out.ISBRoomMultiple)                // BC C4
 	pickPtr(t.MentorCounter5mScalpPts, 0, 100, &out.Counter5mScalpPts)           // BC C1
 	flag(t.MentorLevelFirstTouchLock, &out.LevelFirstTouchLock)                  // BC C3
+	flag(t.MentorISBJustBrokenLevel, &out.ISBJustBrokenLevel)                    // D1
+	flag(t.MentorFTGLBodyEdgePartner, &out.FTGLBodyEdgePartner)                  // D3
+	pickPtr(t.MentorLeg1FixedPts, 0, 100, &out.Leg1FixedPts)                     // D2
 	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
@@ -652,6 +661,8 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBRoomMultiple = t.ISBRoomMultiple                         // BC C4
 	cfg.LevelFirstTouchLock = t.LevelFirstTouchLock                 // BC C3
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
+	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
+	cfg.FTGLBodyEdgePartner = t.FTGLBodyEdgePartner                 // D3
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                           // isbTF-F6

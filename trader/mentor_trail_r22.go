@@ -113,6 +113,25 @@ const mentorBEOffsetMaxTicks = 20
 // mechanics at the entry (TestMain sets 0); production never assigns it.
 var mentorBEOffsetDefaultTicks = 4
 
+// mentorLeg1FixedPtsDefault is the unset default of mentor_leg1_fixed_pts
+// (oct-exact D2): a normal PHL/PLH sells leg 1 at +15 points [Oct D4.2 @12:16
+// R14 "bán 15 hay 20 điểm", @14:18 R18]. Stored 0 reverts to ceil(n/2) at +1R.
+// A var ONLY so the trader test binary can pin the pre-October +1R mechanics
+// (TestMain sets 0); production never assigns it.
+var mentorLeg1FixedPtsDefault = 15.0
+
+// mentorLeg1FixedPts reads the knob as stored (nil / out of range -> default),
+// the clamp agrees with mentorTuningResolve.
+func mentorLeg1FixedPts(rc *store.RiskControlConfig) float64 {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorLeg1FixedPts == nil {
+		return mentorLeg1FixedPtsDefault
+	}
+	if v := *rc.MentorTuning.MentorLeg1FixedPts; v >= 0 && v <= 100 {
+		return v
+	}
+	return mentorLeg1FixedPtsDefault
+}
+
 // mentorBEPastEntry moves a break-even price `ticks` ticks past it on the
 // profit side — long up, short down — so the stop sits a little beyond the
 // entry [Oct D4.2 @ 13:00-13:25]. ticks <= 0 (the knob OFF) or an unknown tick
