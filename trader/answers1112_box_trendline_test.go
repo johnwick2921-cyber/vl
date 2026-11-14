@@ -15,11 +15,13 @@ import (
 // evaluator does with it.
 func TestAnswers1112BoxTrendlinePartialNotRoomKnob(t *testing.T) {
 	off, on := false, true
-	if c := tuningTick(t, &store.MentorTuning{}); c.BoxTrendlinePartialNotRoom {
-		t.Fatal("unset box_trendline_partial_not_room must resolve OFF (review P1: owner opt-in)")
+	// OCT-EXACT B8 (CTO-decisions.md section B): the default is now ON [Sept
+	// D3.3 p1 @05:15-07:46, Oct D3.3 @46:00-46:27]; the stored false is the revert.
+	if c := tuningTick(t, &store.MentorTuning{}); !c.BoxTrendlinePartialNotRoom {
+		t.Fatal("unset box_trendline_partial_not_room must resolve ON (oct-exact B8)")
 	}
-	if c := tuningTick(t, nil); c.BoxTrendlinePartialNotRoom {
-		t.Fatal("no mentor_tuning block: box_trendline_partial_not_room must resolve OFF")
+	if c := tuningTick(t, nil); !c.BoxTrendlinePartialNotRoom {
+		t.Fatal("no mentor_tuning block: box_trendline_partial_not_room must resolve ON (oct-exact B8)")
 	}
 	if c := tuningTick(t, &store.MentorTuning{BoxTrendlinePartialNotRoom: &off}); c.BoxTrendlinePartialNotRoom {
 		t.Fatal("stored box_trendline_partial_not_room=false (revert) must reach the evaluator")

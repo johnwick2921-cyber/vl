@@ -263,6 +263,15 @@ func Leg1RiskMultiple(confluence bool) float64 {
 	return 1
 }
 
+// isbRoomMultiple is the room multiple the ISB path asks (oct-exact C4):
+// ISBRoomMultiple when set, else RoomMultiple (zero-safe for literal Configs).
+func (c Config) isbRoomMultiple() float64 {
+	if c.ISBRoomMultiple > 0 {
+		return c.ISBRoomMultiple
+	}
+	return c.RoomMultiple
+}
+
 // NearBoxRoomPHLMultipleFollow is the NearBoxRoomPHLMultiple value that makes
 // the PHL/PLH near-box leg follow NearBoxRoomMultiple (today's behaviour).
 const NearBoxRoomPHLMultipleFollow = -1.0
@@ -453,6 +462,29 @@ type Config struct {
 	// answers-1112). ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
 	PHLRoomMultiple float64
+	// ISBRoomMultiple — oct-exact C4: the room multiple the ISB path (normal and
+	// reverse ISB) asks, in place of RoomMultiple. Default 1 = October's 1:1
+	// floor [Oct D2.3-R48 @49:38; the ISB's first target is the fill-candle close,
+	// Oct D2.2 @28:37, so 2x/4R is ours]. 0 (or negative) = follow RoomMultiple,
+	// so the revert is mentor_isb_room_multiple=2 (Sept). Mentor-only: this
+	// Config is built only for the mentor evaluator. Studio JSON:
+	// risk_control.mentor_tuning.mentor_isb_room_multiple.
+	ISBRoomMultiple float64
+	// LevelFirstTouchLock — oct-exact C3: true = today (a key level whose first
+	// touch closes through is locked ISB-only, level_invalid_first_touch). false
+	// (default, October D5.2-R23/R24, later than R20): the first touch closing
+	// through only CANCELS the order resting at that level; the level is not
+	// locked, the retest after the break is tradable. Studio JSON:
+	// risk_control.mentor_tuning.mentor_level_first_touch_lock.
+	LevelFirstTouchLock bool
+	// Counter5mScalpPts — oct-exact C1: the first target of a counter-5m scalp
+	// at the EMA 34 (a PHL/PLH on the side OPPOSITE the governing 5m trigger,
+	// stamped counter_5m): entry +/- this many points, never past the original
+	// target and never inside the 1:1 floor. Default 15 ("10-something" pts,
+	// Oct D5.4 Ex.1 @04:47-05:00 "ăn ít lại"; the 15 is the CTO's reading, the
+	// same 15 as D4.2-R14/R18). 0 = off (today: no scalp target). Studio JSON:
+	// risk_control.mentor_tuning.mentor_counter_5m_scalp_pts.
+	Counter5mScalpPts float64
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
 	// ladder's left extreme (the higher low / lower high the leg to the old extreme
 	// started from) ENDS the rolling ladder — named rolling_left_extreme_broken —
@@ -1317,7 +1349,10 @@ func DefaultConfig() Config {
 		BoxCarriedStaysLive:        true,                // D3-G4: October [OctD3.3-R27/R51 @ 17:00, 41:28]; knob box_carried_stays_live=false reverts
 		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
 		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
-		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
+		PHLMinAbovePriorPts:        15,                  // oct-exact B6: 15 pts (revert 0 = off) [OctD4.2-R41 @36:45-40:20 "15 điểm"]; scorecard with 15: 0 phl_min_above_old_extreme refusals in any took/marked trade window, pass set unchanged
+		ISBRoomMultiple:            1,                   // oct-exact C4: ISB room 1R [Oct D2.3-R48 @49:38, D2.2 @28:37]; mentor_isb_room_multiple=2 reverts
+		LevelFirstTouchLock:        false,               // oct-exact C3: a first touch closing through only cancels that order [Oct D5.2-R23/R24 @07:42-14:16]; mentor_level_first_touch_lock=true reverts
+		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
 		NearBoxRoomMultiple:        0,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
@@ -1396,7 +1431,7 @@ func DefaultConfig() Config {
 		// boxes, the trigger escalation 5m → 15m → 30m.
 		Early15mRead:        false,                      // OCT-EXACT A2 row 1: the 15m early read OFF (October's only big frame is the 5m, D4.3-R9 @07:28); 15m_early_read=true reverts (D4.2-R2/R11, D4.3-R21)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
-		ISBTargetFillClose:  false,                      // D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
+		ISBTargetFillClose:  true,                       // oct-exact B5: ON (revert false) [Oct D2.2 @28:37 "target đầu tiên… đóng"]. Was: D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
 		ISBNoLevelFillClose: true,                       // answers-1112 Q3: an ISB with no level beyond is traded, first target the fill candle's close [Oct D2.2 @28:37-28:56, @30:24-30:43; Sept D1.4 p1 @12:12-13:27]; false = today's isb_missing_target refusal
 		TriggerFromOpen:     true,                       // G4 oct round 2: the 5m trend is read from the 08:30 open [OctD4.3-R5 @ 03:10]; false = the whole-history read
 		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
@@ -1417,9 +1452,11 @@ func DefaultConfig() Config {
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 		// answers-1112 Q12 (box trades and trendlines).
-		BoxTrendlinePartialNotRoom: false, // answers-1112 Q12: OFF since the 2026-11-12 review (report "Builds, all default OFF"; the line is the target until price escapes it [Sept D3.2 p2 @11:11-11:39]) = today; true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
-		// answers-1112 Q9: OFF — "experienced only" is the owner's call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
-		PHL5mBoxSameDirAllowed: false,
+		BoxTrendlinePartialNotRoom: true, // oct-exact B8: ON (revert false) [Sept D3.3 p1 @05:15-07:46; Oct D3.3 @46:00-46:27]. Was: answers-1112 Q12: OFF since the 2026-11-12 review (report "Builds, all default OFF"; the line is the target until price escapes it [Sept D3.2 p2 @11:11-11:39]) = today; true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
+		// answers-1112 Q9 (oct-exact B1: now ON): was OFF — "experienced only" was the owner call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
+		PHL5mBoxSameDirAllowed:    true, // oct-exact B1: ON (revert false) [Oct D4.3-R70/R71 @68:24, later video]; WE6/WE7 go with their box
+		RollingStaleTouchReleases: true, // oct-exact B3: ON (revert false); moot once rolling_level_touch_owns is off (A2-4) [OctD2.3 @13:37-28:33 WE6]
+		RollingKeypairTapeExempt:  true, // oct-exact B4: ON (revert false) [OctD2.3 @35:46-39:09 WE7]
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms

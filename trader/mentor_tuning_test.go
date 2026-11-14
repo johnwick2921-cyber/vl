@@ -105,6 +105,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 // 2026-10-04 rulings: school 1, spent 300, cap 15 (R-B), ISB reverse ON (R-C),
 // swing max stop 100 (R-D). No block, an empty block and a nil strategy agree.
 func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
+	octBEDefault(t) // OCT-EXACT B7: the production default (4 ticks), not the test binary's 0
 	at := funnelAT(t)
 	for name, rc := range map[string]*store.RiskControlConfig{
 		"nil":   nil,
@@ -163,12 +164,18 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			PHLOldExtreme1mK:           4,
 			KeyLevelDeleteOn1HClose:    mentor.KeyLevelDeleteOn1HCloseOff, // LL-1
 			PHLRoomMultiple:            1,                                 // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56]; 2 reverts
-			ISBTargetFillClose:         false,                             // D2-G3 review: OFF (course does not state it)
+			ISBTargetFillClose:         true,                              // OCT-EXACT B5: ON (was OFF, D2-G3) [Oct D2.2 @28:37]; false reverts
 			ISBNoLevelFillClose:        true,                              // answers-1112 Q3: no-level ISB traded [Oct D2.2 @28:37-28:56, @30:24-30:43]; false reverts
-			TouchStopCoverLaterWick:    false,                             // answers-1112 Q7: OFF since the review — a [B] port onto the swing re-arm; true = candle-2 stop covers the further wick [Oct D5.2 @19:42-20:03]
-			BoxTrendlinePartialNotRoom: false,                             // answers-1112 Q12: OFF since the review (report "all default OFF"); true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
+			TouchStopCoverLaterWick:    true,                              // OCT-EXACT B2: ON (was OFF, answers-1112 Q7) [Oct D5.2-R33 @19:40]; false reverts
+			BoxTrendlinePartialNotRoom: true,                              // OCT-EXACT B8: ON (was OFF, answers-1112 Q12) [Sept D3.3 p1 @05:15-07:46]; false reverts
+			RollingStaleTouchReleases:  true,                              // OCT-EXACT B3: ON (was OFF)
+			RollingKeypairTapeExempt:   true,                              // OCT-EXACT B4: ON (was OFF)
+			BEOffsetTicks:              4,                                 // OCT-EXACT B7: 4 ticks = 1 pt (was 0) [Oct D4.2 @13:00-13:25]; stored 0 reverts
+			ISBRoomMultiple:            1,                                 // OCT-EXACT C4: ISB room 1R (was the shared 2) [Oct D2.3-R48 @49:38]; 2 reverts
+			Counter5mScalpPts:          15,                                // OCT-EXACT C1: counter-5m EMA 34 scalp first target 15 [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
+			ResonanceTrail:             true,                              // OCT-EXACT C6: the mode-A runner trails after BE [Oct D4.2-R31/R32 @08:11]; false reverts
 			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
-			PHL5mBoxSameDirAllowed:     false,                             // answers-1112 Q9: OFF — experienced only [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction in-box PHL/PLH scalp to the box edge
+			PHL5mBoxSameDirAllowed:     true,                              // OCT-EXACT B1: ON (was OFF, answers-1112 Q9) [Oct D4.3-R70/R71 @68:24]; false reverts
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]
 			RollingLeftBreakCancel:     true,                              // D2-G6 October [OctD2.3-R69 @ 78:10]
 			HTFTrendlineFlip:           true,                              // D3-G12
@@ -180,7 +187,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			BoxCarriedStaysLive:        true,                              // D3-G4
 			BoxSwingBothRoles:          true,                              // D3-G2
 			BoxPreOpenLookbackMin:      10,                                // D3-G1
-			PHLMinAbovePriorPts:        0,                                 // G7 OFF — experience, not law [OctD4.2-R39 @ 36:45]
+			PHLMinAbovePriorPts:        15,                                // OCT-EXACT B6: 15 (was 0 = OFF, G7) [OctD4.2-R41 @36:45]; 0 reverts
 			KeyLevelBreakRetest:        mentor.KeyLevelBreakRetestOn,      // LL-2
 			KeyLevelRearm:              mentor.KeyLevelRearmOff,           // D3-G15
 			ISBReverseTrend:            mentor.ISBReverseTrendEMA,         // D5.3-R43/R44
@@ -539,14 +546,14 @@ func TestD2G6RollingLeftBreakCancelKnob(t *testing.T) {
 // a stored 22 reaches the evaluator, out of range fails closed to 15.
 func TestG7PHLMinAboveOldExtremeKnob(t *testing.T) {
 	v, bad := 22.0, 500.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.PHLMinAbovePriorPts != 0 {
-		t.Fatalf("unset phl_min_above_old_extreme_pts = %v, want 0 (off)", c.PHLMinAbovePriorPts)
+	if c := tuningTick(t, &store.MentorTuning{}); c.PHLMinAbovePriorPts != 15 { // OCT-EXACT B6: 15 (was 0)
+		t.Fatalf("unset phl_min_above_old_extreme_pts = %v, want 15 (OCT-EXACT B6, Oct D4.2-R41)", c.PHLMinAbovePriorPts)
 	}
 	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &v}); c.PHLMinAbovePriorPts != 22 {
 		t.Fatalf("stored 22 → %v", c.PHLMinAbovePriorPts)
 	}
-	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &bad}); c.PHLMinAbovePriorPts != 0 {
-		t.Fatalf("out of range must fail closed to 0, got %v", c.PHLMinAbovePriorPts)
+	if c := tuningTick(t, &store.MentorTuning{PHLMinAbovePriorPts: &bad}); c.PHLMinAbovePriorPts != 15 {
+		t.Fatalf("out of range must fail closed to the default 15, got %v", c.PHLMinAbovePriorPts)
 	}
 }
 

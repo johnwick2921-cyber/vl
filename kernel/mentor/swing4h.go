@@ -217,7 +217,7 @@ func DefaultSwingCfg() SwingCfg {
 		// answers-1112 Q7: OFF (review 2026-11-12 — a [B] port, owner's
 		// opt-in). ON: a candle-2 entry's stop covers candle 2's further wick
 		// [Oct D5.2 @19:42-20:03]; 1 pt beyond it [Oct D2.3 @46:20-47:20].
-		CoverLaterWick:         false,
+		CoverLaterWick:         true, // oct-exact B2: ON (revert false) [Oct D5.2-R33 @19:40, later than R31]
 		LaterWickStopBufferPts: 1.0,
 	}
 }

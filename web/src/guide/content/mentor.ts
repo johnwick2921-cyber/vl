@@ -837,6 +837,11 @@ export const mentor: GuideSection = {
           'mentor_htf_box_gates · mentor_tf_conflict · mentor_mtf_confluence · mentor_rolling_level_touch_owns · keypair_rule_enabled · ema34_loss_relock=off · near_box_room_phl / near_box_room_multiple · flag_wall_target · mentor_trigger_retest_wrong_way · phl_pullback_low=signal · mentor_box_ping_pong · mentor_box_room_multiple=1 · mentor_phl_isb_preferred_at_box · mentor_trigger_box_zone · mentor_box_touch_band_pts=0 · mentor_isb_location_size_cuts · mentor_pullback_warn_cut · mentor_key_level_prune_pts=0 · trendline_level_prefer_pts=0 · mentor_trendline_box_beats · trendline_max_lines_per_anchor=3 · trendline_is_target · mentor_x8_trap_dodge · mentor_resonance_be_min_rr=0 · mentor_confluence_hold_2r · OCT-EXACT A2 (CTO-decisions.md) · OctD4.3-R9 @07:28 · OctD4.3-R93 · OctD2.3-R48 @49:38',
         ],
         [
+          'October-exact knobs ON and conflict rulings (BC)',
+          'Eight knobs now default to the October value: phl_5m_box_same_dir_allowed, touch_stop_cover_later_wick, rolling_stale_touch_releases, rolling_keypair_tape_exempt, isb_target_fill_close, box_trendline_partial_not_room (all ON), phl_min_above_old_extreme_pts = 15 and be_offset_ticks = 4 (1 point past the entry). Conflict rulings: a counter-5m PHL/PLH at the EMA 34 is a 1m scalp with a 15-point first target at the reduced size (mentor_counter_5m_scalp_pts); a first touch that closes through only cancels that order and the level is not locked ISB-only (mentor_level_first_touch_lock = false); the ISB room is 1R (mentor_isb_room_multiple = 1); the resonance runner trails after break-even (mentor_resonance_trail = true). The 3-candle PHL rule stays at 3.',
+          'phl_5m_box_same_dir_allowed · touch_stop_cover_later_wick · rolling_stale_touch_releases · rolling_keypair_tape_exempt · isb_target_fill_close · phl_min_above_old_extreme_pts · be_offset_ticks · box_trendline_partial_not_room · mentor_counter_5m_scalp_pts · mentor_level_first_touch_lock · mentor_isb_room_multiple · mentor_resonance_trail · each revert = the old value · Oct D4.3 @68:24 · D5.2-R33 @19:40 · D2.2 @28:37 · D4.2-R41 · D4.2 @13:00 · D5.4 Ex.1 · D5.2-R23/R24 · D2.3-R48 · D4.2-R31/R32',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
           'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',
@@ -1793,7 +1798,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBTargetFillClose) · kernel/mentor/eval.go Tick (ISB target stage)',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.2 @28:37)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the mentor confirms [OctD2.2-R35/R37 @28:40, 30:03 say only the first partial; R34 says real targets come later; Oct D2.1-R13 level to level is the argument for the ladder].',
           whenToTouch:
@@ -1855,7 +1860,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingStaleTouchReleases) · kernel/mentor/rolling_phl.go rollingPHLTick',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.3 WE6)', // OCT-EXACT BC (was: off)
           recommended:
             'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
           whenToTouch: 'To trial the fix: set true.',
@@ -1871,7 +1876,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingKeypairTapeExempt) · kernel/mentor/eval.go phlLocationBan',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.3 WE7)', // OCT-EXACT BC (was: off)
           recommended:
             'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
           whenToTouch: 'To trial the fix: set true.',
@@ -2018,7 +2023,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PHLMinAbovePriorPts) · kernel/mentor/phl.go phlPLHR2',
           range: '0–100 (0 = off)',
-          systemDefault: '15',
+          systemDefault: '15 (October D4.2-R41; 0 reverts)', // OCT-EXACT BC (was: 15)
           recommended: '15 — October [OctD4.2-R41 @40:14].',
           whenToTouch: 'On a mentor answer — 0 restores the earlier behaviour.',
           perSession: 'No — per strategy.',
@@ -2266,7 +2271,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (BoxTrendlinePartialNotRoom) → kernel/mentor/box_trade.go boxTargetPastTrendline (boxEntryIntentWhy) · kernel/mentor/eval.go runnerPartialLine (leg-3 partial) · trader/mentor_actions.go leg2_qty/leg2_tp (mode B, runner ≥ 2, AddOn leg-3 proof)',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (Sept D3.3 p1 @05:15-07:46; Oct D3.3 @46:00)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the owner rules (review 2026-11-12; report “Builds, all default OFF”). On reads [Sept D3.3 p1 @05:15–07:46; Sept D3.2 p2 @11:06–11:39]. The partial at the line only goes out when the runner is ≥ 2 contracts in mode B and the AddOn proves the leg-3 build; otherwise leg 1 sells at 1:1 and the runner rides to the target. Not built: counting only a line that has had its 3rd test (Sept D3.2 p2 @03:26–03:59) — no trendline cap is kept on a box trade, so there is nothing to restrict.',
           whenToTouch:
@@ -2283,7 +2288,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PHL5mBoxSameDirAllowed) → kernel/mentor/eval.go phlLocationBanFor (phl5mBoxSameDir) · phl5mBoxScalpEdge / withPHL5mBoxScalpEdge (level touch loop) · kernel/mentor/rolling_phl.go rollingPHLTick',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D4.3 @1:08:24 R70/R71)', // OCT-EXACT BC (was: off)
           recommended:
             'off [Oct D4.3 @1:10:58–1:11:03, @1:12:00–1:12:11 — not for new students, not for comfortable trading]. Turn on only if the owner rules the bot trades as an experienced trader.',
           whenToTouch:
@@ -2679,7 +2684,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (TouchStopCoverLaterWick) → kernel/mentor/swing4h.go SwingCfg.CoverLaterWick (swingLaterWickStop) · trader/mentor_mode.go mentorRuleGate (R31) reads the wider stop',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D5.2-R33 @19:40)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the owner rules (review 2026-11-12; report Q7 “needs owner sign-off”). On reads [Oct D5.2 @19:42–20:03]. Not built: applying it to a CANDLE-1 entry (the order resting on candle 1 while a later candle wicks further) — the report’s [B] extension; the course states no buffer or candle count for it.',
           whenToTouch:
@@ -3055,7 +3060,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · trader/mentor_trail_r22.go mentorBEStop',
           range: '0 (OFF) to 20 ticks',
-          systemDefault: 'OFF',
+          systemDefault: '4 ticks = 1 point (October D4.2 @13:00; 0 reverts)', // OCT-EXACT BC (was: OFF)
           recommended:
             'OFF — the video shows one point past the entry but no tick count [Oct D4.2 @ 13:00–13:25].',
           whenToTouch: 'Only on an owner ruling.',

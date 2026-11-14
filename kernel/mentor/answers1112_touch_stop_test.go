@@ -70,8 +70,11 @@ func q7On() SwingCfg {
 // MUTANT: CoverLaterWick: true in DefaultSwingCfg → RED.
 func TestAnswers1112TouchStopCoverLaterWickDefault(t *testing.T) {
 	d := DefaultSwingCfg()
-	if d.CoverLaterWick {
-		t.Fatal("touch_stop_cover_later_wick must default OFF (review P2: a [B] port onto the swing re-arm, report Q7 \"needs owner sign-off\")")
+	// OCT-EXACT B2 (CTO-decisions.md section B): the default is now ON — the
+	// later video wins [Oct D5.2-R33 @19:40, later than R31]; the revert is
+	// touch_stop_cover_later_wick=false.
+	if !d.CoverLaterWick {
+		t.Fatal("touch_stop_cover_later_wick must default ON (oct-exact B2, Oct D5.2-R33 @19:40)")
 	}
 	if d.LaterWickStopBufferPts != preOctCfg().PHLStopBufferPts || d.LaterWickStopBufferPts != 1.0 {
 		t.Fatalf("LaterWickStopBufferPts = %v, want the course's 1-pt stop ray (PHLStopBufferPts %v) [Oct D2.3 @46:20-47:20]",
@@ -119,8 +122,9 @@ func TestAnswers1112TouchStopCoverLaterWickFromTheVideo(t *testing.T) {
 			t.Errorf("%s: knob ON: candle 2 re-arm 28,123.50 must carry stop %.2f; got %+v", c.name, c.wantDefault, es)
 		}
 		res, _ := q7Run(t, revert, c.c1High, c.c2High)
-		if def, _ := q7Run(t, DefaultSwingCfg(), c.c1High, c.c2High); len(def) != 2 || def[1].Stop != c.wantRevert {
-			t.Errorf("%s: DEFAULT (knob OFF) must be today's candle 2 stop %.2f; got %+v", c.name, c.wantRevert, def)
+		// OCT-EXACT B2: the DEFAULT is now the knob-ON read (revert = false, today).
+		if def, _ := q7Run(t, DefaultSwingCfg(), c.c1High, c.c2High); len(def) != len(es) || (len(def) == 2 && def[1].Stop != c.wantDefault) {
+			t.Errorf("%s: DEFAULT (knob ON, oct-exact B2) must equal the ON read (stop %.2f); got %+v", c.name, c.wantDefault, def)
 		}
 		if len(res) != 2 || res[1].Price != 28123.50 || res[1].Stop != c.wantRevert {
 			t.Errorf("%s: revert touch_stop_cover_later_wick=false: candle 2 stop %.2f (today); got %+v", c.name, c.wantRevert, res)
@@ -189,8 +193,10 @@ func TestAnswers1112TouchStopReplay0709(t *testing.T) {
 	if m463Refused(s, SwingRefusedMaxStop) != 1 {
 		t.Fatalf("revert: candle 1's 157.88-pt reject must be refused swing_max_stop once: %+v", s.refused)
 	}
-	if def, _ := m463ExampleCfg(t, DefaultSwingCfg(), 7, 9, 9, line, cur); len(def) != 1 || abs(def[0].Stop-(line-30)) > 1e-9 {
-		t.Fatalf("DEFAULT (knob OFF): today's candle 2 buy stop with the line stop %.2f; got %+v", line-30, def)
+	// OCT-EXACT B2: the DEFAULT is now ON — candle 2's covered stop is refused
+	// swing_max_stop exactly like the explicit-ON read below.
+	if def, _ := m463ExampleCfg(t, DefaultSwingCfg(), 7, 9, 9, line, cur); len(def) != 0 {
+		t.Fatalf("DEFAULT (knob ON, oct-exact B2): candle 2's covered stop must be refused; got %+v", def)
 	}
 	es, s = m463ExampleCfg(t, q7On(), 7, 9, 9, line, cur)
 	if len(es) != 0 {

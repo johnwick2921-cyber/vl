@@ -17,11 +17,12 @@ import (
 // untouched and read the wider stop (below).
 func TestAnswers1112TouchStopCoverLaterWickKnob(t *testing.T) {
 	off, on := false, true
-	if c := tuningTick(t, &store.MentorTuning{}); c.Swing.CoverLaterWick || c.Swing.LaterWickStopBufferPts != 1.0 {
-		t.Fatalf("unset: Swing.CoverLaterWick=%v buffer=%v, want false (review: owner opt-in) / 1.0 [Oct D2.3 @46:20-47:20]", c.Swing.CoverLaterWick, c.Swing.LaterWickStopBufferPts)
+	// OCT-EXACT B2: the default is now ON [Oct D5.2-R33 @19:40, later than R31].
+	if c := tuningTick(t, &store.MentorTuning{}); !c.Swing.CoverLaterWick || c.Swing.LaterWickStopBufferPts != 1.0 {
+		t.Fatalf("unset: Swing.CoverLaterWick=%v buffer=%v, want true (oct-exact B2) / 1.0 [Oct D2.3 @46:20-47:20]", c.Swing.CoverLaterWick, c.Swing.LaterWickStopBufferPts)
 	}
-	if c := tuningTick(t, nil); c.Swing.CoverLaterWick {
-		t.Fatal("no mentor_tuning block: touch_stop_cover_later_wick must resolve OFF")
+	if c := tuningTick(t, nil); !c.Swing.CoverLaterWick {
+		t.Fatal("no mentor_tuning block: touch_stop_cover_later_wick must resolve ON (oct-exact B2)")
 	}
 	if c := tuningTick(t, &store.MentorTuning{TouchStopCoverLaterWick: &off}); c.Swing.CoverLaterWick {
 		t.Fatal("stored touch_stop_cover_later_wick=false (revert) must reach the evaluator")

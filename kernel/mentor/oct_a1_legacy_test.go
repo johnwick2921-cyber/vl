@@ -23,7 +23,7 @@ func preOctCfg() Config {
 	c.MidRangeRejectSide = true
 	c.BreakDirectionLock = true
 	c.OrbISBFractionOutside = 0.80
-	return octA2Revert(c)
+	return octBCRevert(octA2Revert(c))
 }
 
 // octA2Revert applies every OCT-EXACT A2 revert (CTO-decisions.md section A2):
@@ -57,5 +57,23 @@ func octA2Revert(c Config) Config {
 	c.TrendlineMaxLinesPerAnchor = 1
 	c.TrendlineIsTarget = true
 	c.ConfluenceHold2R = true
+	return c
+}
+
+// octBCRevert applies the OCT-EXACT BC reverts (CTO-decisions.md sections B/C):
+// the section-B knobs back to their pre-October OFF values and the C-rulings
+// back to the Sept behaviour. Mechanics tests of those paths build from
+// preOctCfg; the October defaults are pinned by oct_bc_test.go.
+func octBCRevert(c Config) Config {
+	c.PHL5mBoxSameDirAllowed = false
+	c.Swing.CoverLaterWick = false
+	c.RollingStaleTouchReleases = false
+	c.RollingKeypairTapeExempt = false
+	c.ISBTargetFillClose = false
+	c.PHLMinAbovePriorPts = 0 // B6: 15 -> 0
+	c.BoxTrendlinePartialNotRoom = false
+	c.LevelFirstTouchLock = true
+	c.ISBRoomMultiple = 0 // C4 revert: 0 = follow RoomMultiple (the stored mentor_isb_room_multiple=2 is the same on a default RoomMultiple)
+	c.Counter5mScalpPts = 0
 	return c
 }

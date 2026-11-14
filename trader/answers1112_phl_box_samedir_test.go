@@ -15,11 +15,13 @@ import (
 // does with it.
 func TestAnswers1112PHL5mBoxSameDirKnob(t *testing.T) {
 	off, on := false, true
-	if c := tuningTick(t, &store.MentorTuning{}); c.PHL5mBoxSameDirAllowed {
-		t.Fatal("unset phl_5m_box_same_dir_allowed must resolve OFF (today)")
+	// OCT-EXACT B1: the default is now ON [Oct D4.3-R70/R71 @68:24, later video];
+	// the stored false is the revert.
+	if c := tuningTick(t, &store.MentorTuning{}); !c.PHL5mBoxSameDirAllowed {
+		t.Fatal("unset phl_5m_box_same_dir_allowed must resolve ON (oct-exact B1)")
 	}
-	if c := tuningTick(t, nil); c.PHL5mBoxSameDirAllowed {
-		t.Fatal("no mentor_tuning block: phl_5m_box_same_dir_allowed must resolve OFF")
+	if c := tuningTick(t, nil); !c.PHL5mBoxSameDirAllowed {
+		t.Fatal("no mentor_tuning block: phl_5m_box_same_dir_allowed must resolve ON (oct-exact B1)")
 	}
 	if c := tuningTick(t, &store.MentorTuning{PHL5mBoxSameDirAllowed: &on}); !c.PHL5mBoxSameDirAllowed {
 		t.Fatal("stored phl_5m_box_same_dir_allowed=true must reach the evaluator")

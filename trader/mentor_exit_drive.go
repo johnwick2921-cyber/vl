@@ -494,7 +494,25 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		if p.UncapTries < mentorResonanceUncapMaxTries && !mentorResonanceRunnerTPOn(at.mentorRiskControl()) {
 			at.mentorResonanceRunnerUncap(nt, p)
 		}
+		// oct-exact C6 (knob mentor_resonance_trail, default ON): once BE is armed
+		// on a PRIOR candle and the 1:1 partial is confirmed, the runner trails one
+		// tick beyond each closed candle like mode B [Oct D4.2-R31/R32, later than
+		// R13 "no trail"; D4.2 #5 trailed to 28,218.75]. The candle that arms BE
+		// only arms BE.
+		wasArmedA := p.Pos.ArmedBE
 		at.mentorExitDriveResonance(nt, p, c, scaledNow, at.mentorExitedLegs(p))
+		if wasArmedA && scaledNow && mentorResonanceTrailOn(at.mentorRiskControl()) &&
+			p.Legs[0].Wire == 1 && at.mentorTrailMode() == mentorTrailModeCandle {
+			exitedA := at.mentorExitedLegs(p)
+			_, exitedAtMsA := at.mentorScaledState(p)
+			tc, th, tl, tOK := c, h, l, true
+			scaledBeforeA := mentorLeg1ExitedBefore(exitedAtMsA, candleOpenMs)
+			if p.TrailTFMin > 1 {
+				tc, th, tl, tOK = p.trailBar.Close, p.trailBar.High, p.trailBar.Low, p.trailBarOK
+				scaledBeforeA = mentorLeg1ExitedBefore(exitedAtMsA, p.trailBar.OpenTime)
+			}
+			at.mentorExitDriveCandle(nt, p, tc, th, tl, scaledNow, scaledBeforeA, trail && tOK, tOK, exitedA)
+		}
 		return
 	}
 
@@ -1505,6 +1523,15 @@ func mentorResonanceBEMinRRFor(rc *store.RiskControlConfig) float64 {
 		return v
 	}
 	return 0
+}
+
+// mentorResonanceTrailOn reads mentor_resonance_trail (oct-exact C6): nil ->
+// ON (October D4.2-R31/R32); a stored false reverts to the no-trail mode A.
+func mentorResonanceTrailOn(rc *store.RiskControlConfig) bool {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorResonanceTrail == nil {
+		return true
+	}
+	return *rc.MentorTuning.MentorResonanceTrail
 }
 
 // mentorExitDriveResonance is the mode-A break-even on one CLOSED 1m candle

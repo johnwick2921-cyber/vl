@@ -2164,6 +2164,11 @@ type MentorTuning struct {
 	MentorBoxTouchBandPts       *float64 `json:"mentor_box_touch_band_pts,omitempty"`       // row 11: FTGH/FTGL box touch band (0 = literal; 0.25 reverts)
 	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
 	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
+	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
+	MentorISBRoomMultiple     *float64 `json:"mentor_isb_room_multiple,omitempty"`      // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	MentorLevelFirstTouchLock *bool    `json:"mentor_level_first_touch_lock,omitempty"` // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorCounter5mScalpPts   *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`   // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
+	MentorResonanceTrail      *bool    `json:"mentor_resonance_trail,omitempty"`        // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

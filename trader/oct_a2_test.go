@@ -132,6 +132,7 @@ func pinPreOctA2(rc *store.RiskControlConfig) {
 			*f.p = &v
 		}
 	}
+	pinPreOctBC(rc) // OCT-EXACT BC: and the section-B knobs / C-rulings the Sept live days did not have
 	if t.TrendlineMaxLinesPerAnchor == 0 {
 		t.TrendlineMaxLinesPerAnchor = 1
 	}

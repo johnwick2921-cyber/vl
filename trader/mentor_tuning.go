@@ -118,6 +118,10 @@ type mentorTuned struct {
 	BoxTouchBandPts             float64 // A2 row 11
 	ResonanceBEMinRR            float64 // A2 row 17
 	TrendlineMaxLinesPerAnchor  int     // A2 row 15
+	ISBRoomMultiple             float64 // BC C4
+	LevelFirstTouchLock         bool    // BC C3
+	Counter5mScalpPts           float64 // BC C1
+	ResonanceTrail              bool    // BC C6 (trader-side)
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
 	CrossingISBLookback        int
@@ -178,6 +182,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		HTFOpposedRangeHaltPts: d.HTFOpposedRangeHaltPts,
 		SwingMaxStopPts:        d.Swing.MaxStopPts,
 		SwingMinStopPts:        d.Swing.MinStopPts,
+		BEOffsetTicks:          mentorBEOffsetDefaultTicks, // oct-exact B7
 
 		FifteenMinIBRule:            d.FifteenMinIBRule,
 		Early15mRead:                d.Early15mRead,
@@ -283,6 +288,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BoxTouchBandPts:             d.Box.TouchBandPts,
 		ResonanceBEMinRR:            0, // A2 row 17: trader-side; mentor_resonance_be_min_rr=0.25 reverts
 		TrendlineMaxLinesPerAnchor:  d.TrendlineMaxLinesPerAnchor,
+		ISBRoomMultiple:             d.ISBRoomMultiple,
+		LevelFirstTouchLock:         d.LevelFirstTouchLock,
+		Counter5mScalpPts:           d.Counter5mScalpPts,
+		ResonanceTrail:              true, // BC C6
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -536,6 +545,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pickPtr(t.MentorBoxTouchBandPts, 0, 5, &out.BoxTouchBandPts)                 // A2 row 11
 	pickPtr(t.MentorResonanceBEMinRR, 0, 2, &out.ResonanceBEMinRR)               // A2 row 17
 	pickInt(t.TrendlineMaxLinesPerAnchor, 1, 5, &out.TrendlineMaxLinesPerAnchor) // A2 row 15
+	pickPtr(t.MentorISBRoomMultiple, 0, 10, &out.ISBRoomMultiple)                // BC C4
+	pickPtr(t.MentorCounter5mScalpPts, 0, 100, &out.Counter5mScalpPts)           // BC C1
+	flag(t.MentorLevelFirstTouchLock, &out.LevelFirstTouchLock)                  // BC C3
+	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
@@ -636,6 +649,9 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.KeyLevelPrunePts = t.KeyLevelPrunePts                       // A2 row 14
 	cfg.Box.TouchBandPts = t.BoxTouchBandPts                        // A2 row 11
 	cfg.TrendlineMaxLinesPerAnchor = t.TrendlineMaxLinesPerAnchor   // A2 row 15
+	cfg.ISBRoomMultiple = t.ISBRoomMultiple                         // BC C4
+	cfg.LevelFirstTouchLock = t.LevelFirstTouchLock                 // BC C3
+	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6
 	cfg.CrossingISBMin = t.CrossingISBMin                           // isbTF-F6
