@@ -287,11 +287,16 @@ type tlOpts struct {
 	// per build-frame bar is refused ("30-45 degrees, not 80-85, a slide")
 	// [OctD3.2-R40/R41 @ 29:12].
 	MaxSlopePtsPerBar float64
+	// MaxNonAdjacent (A2 row 15; 0 or 1 = today: ONE non-adjacent line per side
+	// at a time): up to this many non-adjacent lines of a side stand together
+	// — October's fan, "3 đường thôi … một cái đáy bên tay trái thôi mà em
+	// kéo ra" [OctD3.2-R21/R22 @08:31-09:36].
+	MaxNonAdjacent int
 }
 
 // tlOpts is the evaluator's trendline option set from Config (production).
 func (e *Evaluator) tlOpts() tlOpts {
-	return tlOpts{FirstBottomAnchor: e.Cfg.TrendlineFirstBottomAnchor, MinBouncePts: e.Cfg.TrendlineMinBouncePts, MaxSlopePtsPerBar: e.Cfg.TrendlineMaxSlopePtsPerBar}
+	return tlOpts{FirstBottomAnchor: e.Cfg.TrendlineFirstBottomAnchor, MinBouncePts: e.Cfg.TrendlineMinBouncePts, MaxSlopePtsPerBar: e.Cfg.TrendlineMaxSlopePtsPerBar, MaxNonAdjacent: e.Cfg.TrendlineMaxLinesPerAnchor}
 }
 
 func trendlinesBuildExecOpts(bars []market.Kline, now time.Time, exec2m bool, o tlOpts) (out []Trendline, crossed []string) {
@@ -376,7 +381,8 @@ func trendlinesBuildFrameB5Opts(bars, b5, fb []market.Kline, coarse bool, now ti
 		if role == kernel.KindSWGH {
 			side = SideShort
 		}
-		var liveNA *Trendline // the ONE non-adjacent line of this side that still stands (m428 R5)
+		var liveNA *Trendline  // the newest non-adjacent line of this side that still stands (m428 R5)
+		var fanNA []*Trendline // A2 row 15: the OTHER standing non-adjacent lines (a fan, at most MaxNonAdjacent-1 beside liveNA)
 		picker := newPartnerPicker(fb, role, dayStart)
 		picker.maxSlope = o.MaxSlopePtsPerBar
 		for j := 1; j < len(pts); j++ {
@@ -393,6 +399,24 @@ func trendlinesBuildFrameB5Opts(bars, b5, fb []market.Kline, coarse bool, now ti
 			if naFree {
 				liveNA = nil
 			}
+			// A2 row 15: with room in the fan a new non-adjacent line is offered
+			// BESIDE the standing ones (the same most-significant anchor to the
+			// next bottom: the October fan).
+			fanRoom := false
+			if o.MaxNonAdjacent > 1 {
+				kept := fanNA[:0:0]
+				for _, f := range fanNA {
+					if !naBrokenBy(*f, b5, fb[p1.idx].OpenTime) {
+						kept = append(kept, f)
+					}
+				}
+				fanNA = kept
+				if liveNA == nil && len(fanNA) > 0 {
+					liveNA, fanNA = fanNA[len(fanNA)-1], fanNA[:len(fanNA)-1]
+					naFree = false
+				}
+				fanRoom = liveNA != nil && len(fanNA)+1 < o.MaxNonAdjacent
+			}
 			if best, ok := picker.pick(pts, j); ok {
 				// A new non-adjacent line is offered when the side has none standing,
 				// or when it CONTINUES the standing one from its end anchor (the
@@ -404,7 +428,7 @@ func trendlinesBuildFrameB5Opts(bars, b5, fb []market.Kline, coarse bool, now ti
 				// D3-G9: the same first anchor joined to the next bottom is the same
 				// move's line (the first bottom of the move [OctD3.2-R45 @ 31:20]): it
 				// replaces the leg that stood from that anchor.
-				if naFree || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || o.FirstBottomAnchor && fb[best.idx].OpenTime == liveNA.P0T || picker.st.of(best) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
+				if naFree || fanRoom || !validAsOf(fb, b5, all, *liveNA, fb[p1.idx].CloseTime+1) && (fb[best.idx].OpenTime == liveNA.P1T || o.FirstBottomAnchor && fb[best.idx].OpenTime == liveNA.P0T || picker.st.of(best) > swingStanding(fb, swingPairAt{kind: role, price: liveNA.P0Px, idx: liveNA.P0Idx}, dayStart)) {
 					cands = append(cands, best)
 					naIdx = len(cands) - 1
 				}
@@ -425,7 +449,10 @@ func trendlinesBuildFrameB5Opts(bars, b5, fb []market.Kline, coarse bool, now ti
 					tl.ValidAt = oneMinIdxAtClose(bars, fb[tl.ValidAt].CloseTime)
 				}
 				if ci == naIdx {
-					if liveNA != nil {
+					if fanRoom && liveNA != nil {
+						// A2 row 15 fan: the standing line is kept; the new one joins it.
+						fanNA = append(fanNA, liveNA)
+					} else if liveNA != nil {
 						out = dropLineKey(out, liveNA.key()) // the continued leg replaces the previous one
 					}
 					c := tl
@@ -965,10 +992,19 @@ const trendlineLevelPreferPts = 2.0
 // TrendlineLevels). FORMING lines never enter here: they stay non-locations
 // (the 3rd-touch return rule is unchanged).
 func trendlineBeatenByLevel(respected []Level, price float64) bool {
+	return trendlineBeatenByLevelBand(respected, price, trendlineLevelPreferPts)
+}
+
+// trendlineBeatenByLevelBand is trendlineBeatenByLevel with the band as a
+// parameter; band <= 0 = the preference is OFF (A2 row 15).
+func trendlineBeatenByLevelBand(respected []Level, price, band float64) bool {
+	if band <= 0 {
+		return false
+	}
 	for _, lv := range respected {
 		switch lv.Kind {
 		case KindKeyLevel, KindOldExtreme, KindFTGHEdge, KindFTGLEdge:
-			if math.Abs(lv.Price-price) <= trendlineLevelPreferPts {
+			if math.Abs(lv.Price-price) <= band {
 				return true
 			}
 		}
@@ -1026,6 +1062,27 @@ func TrendlineLevelsTouch(trendlines []Trendline, boxes []Box, respected []Level
 // (CE-11/B12 "Target là về những level kế tiếp… về trendline" [D3.3 p1
 // @05:18–05:35]) — the evaluator mirrors it into KindTrendlineTarget.
 func trendlineLevelsTouchHeld(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string) (levels []Level, refused []string, held []Level) {
+	return trendlineLevelsTouchHeldOpts(trendlines, boxes, respected, bars, entryTouch, tlLevelOpts{PreferPts: trendlineLevelPreferPts, BoxBeats: true})
+}
+
+// tlLevelOpts are the A2 row 15 location knobs the production call sites pass
+// (the zero value is NOT the old behaviour: the legacy entry
+// trendlineLevelsTouchHeld passes the Sept values explicitly, so every older
+// caller and test is unchanged).
+type tlLevelOpts struct {
+	// PreferPts: a respected level within this many points beats a fresh
+	// trendline (<= 0 = OFF).
+	PreferPts float64
+	// BoxBeats: a trendline price inside a live box is not a location.
+	BoxBeats bool
+}
+
+// tlLevelOpts is the evaluator's trendline-location option set from Config.
+func (e *Evaluator) tlLevelOpts() tlLevelOpts {
+	return tlLevelOpts{PreferPts: e.Cfg.TrendlineLevelPreferPts, BoxBeats: e.Cfg.TrendlineBoxBeats}
+}
+
+func trendlineLevelsTouchHeldOpts(trendlines []Trendline, boxes []Box, respected []Level, bars []market.Kline, entryTouch string, lo tlLevelOpts) (levels []Level, refused []string, held []Level) {
 	if len(trendlines) == 0 || len(bars) == 0 {
 		return nil, nil, nil
 	}
@@ -1041,7 +1098,7 @@ func trendlineLevelsTouchHeld(trendlines []Trendline, boxes []Box, respected []L
 		// BOX BEATS TRENDLINE (CTO ruling 23:10:31Z): the band is the BOX
 		// ITSELF — a trendline touch inside a live box's [Bottom, Top] is not
 		// a trendline location; the box governs the interior.
-		if InsideAnyBox(boxes, price) {
+		if lo.BoxBeats && InsideAnyBox(boxes, price) {
 			continue
 		}
 		firstTest := tl.TFMin == 0 && !tl.carried && tl.ValidAt == lastIdx
@@ -1061,7 +1118,7 @@ func trendlineLevelsTouchHeld(trendlines []Trendline, boxes []Box, respected []L
 		// bar). A valid line past its 3rd-touch return is no longer suppressed
 		// [D2.3 p1 @02:19–03:45]. Persistent HTF lines keep the preference
 		// unchanged (their ValidAt is an HTF-bar index, not comparable here).
-		if (tl.TFMin != 0 || firstTest) && trendlineBeatenByLevel(respected, price) {
+		if (tl.TFMin != 0 || firstTest) && trendlineBeatenByLevelBand(respected, price, lo.PreferPts) {
 			refused = append(refused, trendlineFirstTestLevelPreferred+":"+tl.key())
 			continue
 		}

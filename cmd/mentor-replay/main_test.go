@@ -149,6 +149,47 @@ func TestReplayMatchesLivePath(t *testing.T) {
 		t.NewsWaitBothLines, t.NewsBarsExcluded, t.OrbISBFractionOutside = &on, &on, &frac
 		live.RiskControl.MentorLegBudgetEnabled, live.RiskControl.MentorDoneAfterWin = &on, &on
 	}
+	// OCT-EXACT A2: the same log ran the Sept entry/level gates and exits (fill
+	// only what an older pin has not set).
+	{
+		two, band, prune, prefer, minRR := 2.0, 0.25, 20.0, 2.0, 0.25
+		t := live.RiskControl.MentorTuning
+		for _, p := range []**bool{
+			&t.MentorHTFBoxGates, &t.MentorTFConflict, &t.MentorMTFConfluence, &t.MentorRollingLevelTouchOwns,
+			&t.KeypairRuleEnabled, &t.MentorTriggerRetestWrongWay, &t.MentorBoxPingPong, &t.MentorPHLISBPreferredAtBox,
+			&t.MentorTriggerBoxZone, &t.MentorISBLocationSizeCuts, &t.MentorPullbackWarnCut, &t.MentorTrendlineBoxBeats,
+			&t.MentorConfluenceHold2R, &t.MentorX8TrapDodge, &t.Early15mRead, &t.FlagWallTarget, &t.TrendlineIsTarget, &t.NearBoxRoomPHL,
+		} {
+			if *p == nil {
+				on := true
+				*p = &on
+			}
+		}
+		for _, f := range []struct {
+			p **float64
+			v float64
+		}{
+			{&t.NearBoxRoomMultiple, 2}, {&t.MentorBoxRoomMultiple, two}, {&t.MentorBoxTouchBandPts, band},
+			{&t.MentorKeyLevelPrunePts, prune}, {&t.TrendlineLevelPreferPts, prefer}, {&t.MentorResonanceBEMinRR, minRR},
+		} {
+			if *f.p == nil {
+				v := f.v
+				*f.p = &v
+			}
+		}
+		if t.TrendlineMaxLinesPerAnchor == 0 {
+			t.TrendlineMaxLinesPerAnchor = 1
+		}
+		if t.FifteenMinIBRequires5mISB == "" {
+			t.FifteenMinIBRequires5mISB = "require_5m_isb"
+		}
+		if t.EMA34LossRelock == "" {
+			t.EMA34LossRelock = "until_zone_exit"
+		}
+		if t.PHLPullbackLow == "" {
+			t.PHLPullbackLow = "pullback"
+		}
+	}
 	oldProv := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = oldProv })
 

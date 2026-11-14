@@ -91,7 +91,7 @@ func pruneLevelsByRecency(levels []Level, prunePts float64) []Level {
 	for _, l := range sorted {
 		drop := false
 		for _, k := range kept {
-			if abs(l.Price-k.Price) < prunePts {
+			if d := abs(l.Price - k.Price); d < prunePts || d == 0 { // A2 row 14: prune 0 still dedups the same price
 				drop = true
 				break
 			}

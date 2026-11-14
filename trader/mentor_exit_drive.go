@@ -12,6 +12,7 @@ import (
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -215,7 +216,10 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 		return false // the swing is held by the 4h — X8 is an intraday rule
 	}
 	if at.mentorX8LimitFallback(nt, p) {
-		return true
+		return true // a fallback only ever follows an X8 exit already sent (revert path)
+	}
+	if !mentorX8TrapDodgeEnabled(at.mentorRiskControl()) {
+		return false // OCT-EXACT A2 row 17: the X8 trap-dodge exit is OFF (Sept extra X8, October silent); mentor_x8_trap_dodge=true reverts
 	}
 	// m409: the X8 frame is the frame the ENTRY was read on ("trade khung nào
 	// thì BẬT KHUNG ĐÓ", D5.4 @08:15) — 1m in the first 30 min, 2m after, 5m on
@@ -1490,6 +1494,19 @@ func (at *AutoTrader) mentorPersistResonanceMode(p *mentorLivePos) {
 // not the course; the owner may change it; disclosed in the guide].
 const mentorResonanceBEMinRR = 0.25
 
+// mentorResonanceBEMinRRFor is the knob-resolved minimum (OCT-EXACT A2 row 17):
+// mentor_resonance_be_min_rr nil -> 0 (BE once the close is beyond the entry;
+// the 0.25R is ours, October states none); 0.25 reverts. A bad value -> 0.
+func mentorResonanceBEMinRRFor(rc *store.RiskControlConfig) float64 {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorResonanceBEMinRR == nil {
+		return 0
+	}
+	if v := *rc.MentorTuning.MentorResonanceBEMinRR; v >= 0 && v <= 2 {
+		return v
+	}
+	return 0
+}
+
 // mentorExitDriveResonance is the mode-A break-even on one CLOSED 1m candle
 // (plan §Exits B). c52 W2 B2: the course puts the stop at break-even BECAUSE
 // leg 1 was already sold at 1:1 — "RISK REWARD 1-1 tôi vẫn sẽ bán bớt. Nhưng
@@ -1536,7 +1553,7 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 	// mentorMoveLegStop keeps it on the protective side (a through-the-market BE
 	// is closed, not sent).
 	if !split && !scaledNow {
-		dist := pos.R * mentorResonanceBEMinRR
+		dist := pos.R * mentorResonanceBEMinRRFor(at.mentorRiskControl())
 		reached := (side == "long" && c >= pos.Entry+dist) || (side != "long" && c <= pos.Entry-dist)
 		if !reached {
 			at.mentorCount("resonance_be_waiting")
@@ -1642,4 +1659,9 @@ func (at *AutoTrader) mentorInstrumentTick() float64 {
 		return t
 	}
 	return 0.25
+}
+
+// mentorX8TrapDodgeEnabled reads mentor_x8_trap_dodge (nil -> OFF).
+func mentorX8TrapDodgeEnabled(rc *store.RiskControlConfig) bool {
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorX8TrapDodge != nil && *rc.MentorTuning.MentorX8TrapDodge
 }

@@ -797,6 +797,77 @@ type Config struct {
 	// mentor_loss_box_enabled=true reverts.
 	LossBoxEnabled bool
 
+	// OCT-EXACT A2 (build step A2, CTO-decisions.md section A2, owner order
+	// 2026-11-14 "mentor mode = the October course exactly"): entry and level
+	// gates that are Sept / invented and October is silent or contrary. Each
+	// ships OFF (or at the October value); the revert is the old value in the
+	// comment. Every field is mentor-evaluator-only (AI mode never builds this
+	// Config).
+	//
+	// HTFBoxGates — A2 row 1: the 15m and 30m ISB-box gates on every setup
+	// (isb/isbrev/phl/box _15m*, _30m*, the forming 15m box). October's only
+	// big frame is the 5m [Oct D4.3-R9 @07:28]; WE9 (took) was refused by
+	// phl_15m_box_ban. Default false: no 15m/30m box is built. With it OFF
+	// Early15mRead and FifteenMinIBRule are moot (their own defaults are also
+	// off: 15m_early_read=false, 15m_ib_requires_5m_isb=off). Revert:
+	// mentor_htf_box_gates=true (+ the two knobs).
+	HTFBoxGates bool
+	// TFConflictEnabled — A2 row 2: tf_conflict (5m vs 15m box disagreement
+	// cancels the arms and refuses every setup). Default false; revert
+	// mentor_tf_conflict=true.
+	TFConflictEnabled bool
+	// MTFConfluenceEnabled — A2 row 3: confluence C from the 15m + 5m boxes
+	// (mtfConfluence). Default false; revert mentor_mtf_confluence=true.
+	MTFConfluenceEnabled bool
+	// RollingLevelTouchOwns — A2 row 4: a level touch-reject owns the rolling
+	// entry (rolling_level_touch_owns, m216; WE6 refutes it). Default false;
+	// revert mentor_rolling_level_touch_owns=true.
+	RollingLevelTouchOwns bool
+	// KeypairRuleEnabled — A2 row 5: keypair_candle_too_big (EXTRA X4; refuses
+	// WE7), on the level path and the rolling path. Default false; revert
+	// keypair_rule_enabled=true.
+	KeypairRuleEnabled bool
+	// TriggerRetestWrongWayRefuse — A2 row 9: a trigger-retest level trades
+	// only in the trigger's direction (Sept row 56). October: "the trigger line
+	// is just a level, tradable both ways" [Oct D4.3 @ 92:00 R93]. Default false;
+	// revert mentor_trigger_retest_wrong_way=true.
+	TriggerRetestWrongWayRefuse bool
+	// BoxPingPongGate / BoxRoomMultiple / PHLISBPreferredAtBox /
+	// TriggerBoxZoneGate — A2 row 11 (FTGH/FTGL box gates): box_ping_pong
+	// (the range gap/candle cap), the box room (2 -> 1, October 1:1
+	// [Oct D2.3-R48 @49:38]), phl_isb_preferred_at_box and the B1 trigger zone
+	// (trigger_ftgl_buy_zone / trigger_ftgh_sell_zone). Defaults false / 1 /
+	// false / false; reverts mentor_box_ping_pong=true, mentor_box_room_multiple=2,
+	// mentor_phl_isb_preferred_at_box=true, mentor_trigger_box_zone=true. The
+	// box touch band 0.25 -> 0 (literal touch) is Box.TouchBandPts (default 0).
+	BoxPingPongGate      bool
+	BoxRoomMultiple      float64
+	PHLISBPreferredAtBox bool
+	TriggerBoxZoneGate   bool
+	// ISBLocationSizeCuts — A2 row 12: isb_at_old_extreme / isb_in_range cut an
+	// ISB to size 3 (Sept). Default false; revert mentor_isb_location_size_cuts=true.
+	ISBLocationSizeCuts bool
+	// PullbackWarnCut — A2 row 13: the X11 pullback_warn size cut (EXTRA X11).
+	// Default false; revert mentor_pullback_warn_cut=true.
+	PullbackWarnCut bool
+	// TrendlineLevelPreferPts — A2 row 15: the band within which a respected
+	// level beats a fresh trendline (ours, the mentor gives no number). Default
+	// 0 = the preference is OFF; revert trendline_level_prefer_pts=2.
+	TrendlineLevelPreferPts float64
+	// TrendlineBoxBeats — A2 row 15: BOX BEATS TRENDLINE (a trendline price
+	// inside a live box is not a location). Default false; revert
+	// mentor_trendline_box_beats=true.
+	TrendlineBoxBeats bool
+	// TrendlineMaxLinesPerAnchor — A2 row 15: up to this many non-adjacent
+	// lines per side stand at once (October fan: "3 đường thôi, một cái đáy
+	// bên tay trái" [OctD3.2-R21/R22 @08:31-09:36]). Default 3; revert
+	// trendline_max_lines_per_anchor=1.
+	TrendlineMaxLinesPerAnchor int
+	// ConfluenceHold2R — A2 row 17: confluence C (leg 1 held to 2R, the school-1
+	// upgrade, the box + trigger confluence). Sept D3.4. Default false; revert
+	// mentor_confluence_hold_2r=true.
+	ConfluenceHold2R bool
+
 	// LegBudgetEnabled — G1 (R12, DS-107, CTO 2026-10-03): at most 2 entries
 	// per leg (the PHL/PLH + a same-direction ISB); a stop-out inside the leg
 	// closes it. Default ON.
@@ -1207,7 +1278,7 @@ func DefaultConfig() Config {
 
 		KeyLevelTFMinutes:       60,
 		KeyLevelRTHOnly:         true,
-		KeyLevelPrunePts:        20,
+		KeyLevelPrunePts:        0,                          // OCT-EXACT A2 row 14: the 20-pt prune is Sept/ours (October draws every level it sees); mentor_key_level_prune_pts=20 reverts (the gap-edge floor stays 20: gapEdgeMinPts)
 		KeyLevelDeleteOn1HClose: KeyLevelDeleteOn1HCloseOff, // LL-1: October keeps a level a 1H body crossed [OctD5.2-R13..R20 @04:10–07:42]
 		KeyLevelHistorySource:   KeyLevelHistoryOwn,         // LL-4: the current contract's own candles [OctD5.2-R16 @06:18]
 
@@ -1249,8 +1320,8 @@ func DefaultConfig() Config {
 		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
-		NearBoxRoomMultiple:        2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:             true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxRoomMultiple:        0,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
+		NearBoxRoomPHL:             false,               // OCT-EXACT A2 row 7: near_box on the PHL/PLH leg OFF (ours, not October); near_box_room_phl=true reverts (B11)
 		NearBoxRoomPHLMultiple:     -1,                  // answers-1112 Q2: NearBoxRoomPHLMultipleFollow = follow near_box_room_multiple (today); the PHL/PLH 2x is ours, owner question
 		NearBoxBetweenExempt:       false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
 		TrendlineEntryTouch:        TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
@@ -1281,7 +1352,7 @@ func DefaultConfig() Config {
 
 		Swing: DefaultSwingCfg(),
 
-		Box: DefaultBoxCfg(),
+		Box: BoxCfg{TF: "1m", TouchBandPts: 0}, // OCT-EXACT A2 row 11: the box touch band 0.25 -> 0 (literal touch); DefaultBoxCfg() 0.25 is the revert
 
 		OrbGateEnabled: true,
 
@@ -1301,12 +1372,29 @@ func DefaultConfig() Config {
 		OrbPart2Enabled:   false, // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
 		Open5mGateEnabled: false, // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
 		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
-		LegResetOn:        "close",
+		// OCT-EXACT A2 (each revert named in the Config comment).
+		HTFBoxGates:                 false, // row 1
+		TFConflictEnabled:           false, // row 2
+		MTFConfluenceEnabled:        false, // row 3
+		RollingLevelTouchOwns:       false, // row 4
+		KeypairRuleEnabled:          false, // row 5
+		TriggerRetestWrongWayRefuse: false, // row 9 [Oct D4.3 @ 92:00 R93]
+		BoxPingPongGate:             false, // row 11
+		BoxRoomMultiple:             1,     // row 11 [Oct D2.3-R48 @49:38]; mentor_box_room_multiple=2 reverts
+		PHLISBPreferredAtBox:        false, // row 11
+		TriggerBoxZoneGate:          false, // row 11
+		ISBLocationSizeCuts:         false, // row 12
+		PullbackWarnCut:             false, // row 13
+		TrendlineLevelPreferPts:     0,     // row 15; 2 reverts
+		TrendlineBoxBeats:           false, // row 15
+		TrendlineMaxLinesPerAnchor:  3,     // row 15 [OctD3.2-R21/R22 @08:31-09:36]; 1 reverts
+		ConfluenceHold2R:            false, // row 17
+		LegResetOn:                  "close",
 
 		CourseExits: DefaultCourseExitsCfg(),
 		// m465 P1 (release #60): the early 15m read, mode C from the standing
 		// boxes, the trigger escalation 5m → 15m → 30m.
-		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+		Early15mRead:        false,                      // OCT-EXACT A2 row 1: the 15m early read OFF (October's only big frame is the 5m, D4.3-R9 @07:28); 15m_early_read=true reverts (D4.2-R2/R11, D4.3-R21)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
 		ISBTargetFillClose:  false,                      // D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
 		ISBNoLevelFillClose: true,                       // answers-1112 Q3: an ISB with no level beyond is traded, first target the fill candle's close [Oct D2.2 @28:37-28:56, @30:24-30:43; Sept D1.4 p1 @12:12-13:27]; false = today's isb_missing_target refusal
@@ -1315,16 +1403,16 @@ func DefaultConfig() Config {
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		CrossingISBMin:      2,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
-		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
+		FifteenMinIBRule:      FifteenMinOff,          // OCT-EXACT A2 row 1: 15m_ib_requires_5m_isb OFF; require_5m_isb reverts (CE-1 (a))
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
 		NewsWaitBothLines:     false,                  // OCT-EXACT A1 row 6: Sept D4.4 news wait, October silent (no news/07:30 rule in the 17 Oct notes); news_wait_both_lines=true reverts (was CE-3 course-defaults-30 [Sept D4.4 p1 @21:55–22:12])
 		NewsBarsExcluded:      false,                  // OCT-EXACT A1 row 6: the read freeze is Sept (CE-4), October silent; news_bars_excluded=true reverts
 		ISBBoxEscapeMode:      ISBBoxEscapeCloseBoxTF, // m473 B3 OctD4.3-R67: a 1m close = permission, the box is dropped on a close of its OWN TF [Oct D4.3 @ 65:00-66:13]; was CE-5 -> m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
-		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
+		EmaLossRelock:         EmaRelockOff,           // OCT-EXACT A2 row 6: phl_ema_loss_block OFF (no EMA-loss block); until_zone_exit reverts (CE-6 (a))
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
-		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
+		TrendlineIsTarget:     false,                  // OCT-EXACT A2 row 16: October is silent, EX4 ran through the line; trendline_is_target=true reverts (CE-11/B12 (a))
 		TrendlineBetweenBoxes: false,                  // D3-G8: October — between two boxes only the inside bar [OctD3.3-R59 @ 46:27]; true = Sept D3.2 p2 @10:56–11:04
-		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+		FlagWallTarget:        false,                  // OCT-EXACT A2 row 8: flag wall (X9) OFF; flag_wall_target=true reverts (CE-11, X9 @05:59–06:12)
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
@@ -1340,7 +1428,7 @@ func DefaultConfig() Config {
 		KeyLevelRearm:       KeyLevelRearmOff,          // D3-G15 [B]: OctD3.2-R78 is garbled and its sketch is a trendline; on = a key level ISB-only after its flip re-arms on departure
 		SessionOpenLevels:   SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
 		LevelArmLineCancel:  LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
-		PHLPullbackLow:      PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
+		PHLPullbackLow:      PHLPullbackLowSignal,      // OCT-EXACT A2 row 10: phl_pullback_lower_low / plh_pullback_higher_high OFF (phl_not_higher_low / lower_high stay: the PHL definition); phl_pullback_low=pullback reverts (G41 D2.2-R59)
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
 		BreakDirectionLock: false,           // OCT-EXACT A1 row 12: break_counter_setup OFF (the FTGH/FTGL lock goes with it, skeptic confirmed); mentor_break_direction_lock=true reverts (Sept G21 D4.1-R31/R33, G29 D4.1-R55)
@@ -1368,6 +1456,7 @@ const (
 	// timeframe (5m/15m/30m) closes outside [Oct D4.3 @ 65:00-66:13].
 	ISBBoxEscapeCloseBoxTF = "close5m"
 	ISBBoxEscapeBody       = "body"
+	EmaRelockOff           = "off" // OCT-EXACT A2 row 6: no EMA-loss block at all
 	EmaRelockSession       = "session"
 	EmaRelockUntilZoneExit = "until_zone_exit"
 	D43TrendTriggerLine    = "trigger_line"

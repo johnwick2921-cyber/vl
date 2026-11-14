@@ -85,6 +85,9 @@ func MTFConfluenceStanding(side Side, box5, box15 *ISBBox, last5mAt int64, last5
 // "standing_boxes" (default) = MTFConfluenceStanding; "last_pair" = the
 // pre-#60 MTFConfluence over the latest closed 5m/15m pairs.
 func (e *Evaluator) mtfConfluence(side Side, bars5m, bars15m []market.Kline) bool {
+	if !e.Cfg.MTFConfluenceEnabled || !e.Cfg.ConfluenceHold2R { // OCT-EXACT A2 rows 3 + 17
+		return false
+	}
 	if e.Cfg.MTFConfluenceSource == MTFConfluenceLastPair {
 		return MTFConfluence(side, bars5m, bars15m)
 	}

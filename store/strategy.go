@@ -2142,6 +2142,28 @@ type MentorTuning struct {
 	MentorOpen5mGateEnabled *bool `json:"mentor_open5m_gate_enabled,omitempty"`
 	MentorNewsHoldEnabled   *bool `json:"mentor_news_hold_enabled,omitempty"`
 	MentorLossBoxEnabled    *bool `json:"mentor_loss_box_enabled,omitempty"`
+	// OCT-EXACT A2 (owner order 2026-11-14): nil -> OFF / the October value for
+	// each knob below; a stored value is the revert and still wins.
+	MentorHTFBoxGates           *bool    `json:"mentor_htf_box_gates,omitempty"`            // row 1: 15m/30m ISB-box gates on every setup
+	MentorTFConflict            *bool    `json:"mentor_tf_conflict,omitempty"`              // row 2: tf_conflict (5m vs 15m box disagreement)
+	MentorMTFConfluence         *bool    `json:"mentor_mtf_confluence,omitempty"`           // row 3: MTF confluence C from the 15m + 5m boxes
+	MentorRollingLevelTouchOwns *bool    `json:"mentor_rolling_level_touch_owns,omitempty"` // row 4: rolling_level_touch_owns
+	KeypairRuleEnabled          *bool    `json:"keypair_rule_enabled,omitempty"`            // row 5: keypair_candle_too_big (X4)
+	MentorTriggerRetestWrongWay *bool    `json:"mentor_trigger_retest_wrong_way,omitempty"` // row 9: trigger_retest_wrong_way refusal
+	MentorBoxPingPong           *bool    `json:"mentor_box_ping_pong,omitempty"`            // row 11: box_ping_pong
+	MentorPHLISBPreferredAtBox  *bool    `json:"mentor_phl_isb_preferred_at_box,omitempty"` // row 11: phl_isb_preferred_at_box
+	MentorTriggerBoxZone        *bool    `json:"mentor_trigger_box_zone,omitempty"`         // row 11: trigger_ftgl_buy_zone / trigger_ftgh_sell_zone
+	MentorISBLocationSizeCuts   *bool    `json:"mentor_isb_location_size_cuts,omitempty"`   // row 12: isb_at_old_extreme / isb_in_range size cuts
+	MentorPullbackWarnCut       *bool    `json:"mentor_pullback_warn_cut,omitempty"`        // row 13: pullback_warn size cut
+	MentorTrendlineBoxBeats     *bool    `json:"mentor_trendline_box_beats,omitempty"`      // row 15: box beats trendline
+	MentorConfluenceHold2R      *bool    `json:"mentor_confluence_hold_2r,omitempty"`       // row 17: confluence C hold 2R
+	MentorX8TrapDodge           *bool    `json:"mentor_x8_trap_dodge,omitempty"`            // row 17: X8 trap-dodge exit
+	MentorBoxRoomMultiple       *float64 `json:"mentor_box_room_multiple,omitempty"`        // row 11: box room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	TrendlineLevelPreferPts     *float64 `json:"trendline_level_prefer_pts,omitempty"`      // row 15: respected-level-beats-trendline band (0 = off; 2 reverts)
+	MentorKeyLevelPrunePts      *float64 `json:"mentor_key_level_prune_pts,omitempty"`      // row 14: key-level prune distance (0 = off; 20 reverts)
+	MentorBoxTouchBandPts       *float64 `json:"mentor_box_touch_band_pts,omitempty"`       // row 11: FTGH/FTGL box touch band (0 = literal; 0.25 reverts)
+	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
+	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

@@ -832,6 +832,11 @@ export const mentor: GuideSection = {
           'mentor_small_range_guard = OFF (default since #61 final — count / margin unstated, on the mentor list) · D4.2-R33 p2 @06:16–06:30',
         ],
         [
+          'October-exact entry and level gates (A2)',
+          'Mentor mode now trades the October course exactly: the 15m/30m ISB-box gates (and the 15m early read, the 15m-needs-5m-ISB rule, tf_conflict and the 15m+5m confluence C), rolling_level_touch_owns, the X4 keypair rule, the EMA 34 loss block, near_box on PHL and ISB, the flag wall, trigger_retest_wrong_way, the pullback lower-low / higher-high check, the box ping-pong / ISB-preferred / trigger-zone gates, the ISB location and pullback-warn size cuts, the key-level prune, the level-beats-trendline band, box-beats-trendline, trendline_is_target, the X8 trap-dodge exit, the resonance BE distance and the confluence hold-2R are all OFF. The box room is 1:1, the box touch band is a literal touch and up to 3 trendlines per side may stand (OctD3.2-R21/R22). Each has a revert knob.',
+          'mentor_htf_box_gates · mentor_tf_conflict · mentor_mtf_confluence · mentor_rolling_level_touch_owns · keypair_rule_enabled · ema34_loss_relock=off · near_box_room_phl / near_box_room_multiple · flag_wall_target · mentor_trigger_retest_wrong_way · phl_pullback_low=signal · mentor_box_ping_pong · mentor_box_room_multiple=1 · mentor_phl_isb_preferred_at_box · mentor_trigger_box_zone · mentor_box_touch_band_pts=0 · mentor_isb_location_size_cuts · mentor_pullback_warn_cut · mentor_key_level_prune_pts=0 · trendline_level_prefer_pts=0 · mentor_trendline_box_beats · trendline_max_lines_per_anchor=3 · trendline_is_target · mentor_x8_trap_dodge · mentor_resonance_be_min_rr=0 · mentor_confluence_hold_2r · OCT-EXACT A2 (CTO-decisions.md) · OctD4.3-R9 @07:28 · OctD4.3-R93 · OctD2.3-R48 @49:38',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
           'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',

@@ -133,6 +133,7 @@ func pinPreOctA1(rc *store.RiskControlConfig) {
 	t.OrbISBFractionOutside = &frac
 	rc.MentorLegBudgetEnabled = &on
 	rc.MentorDoneAfterWin = &on
+	pinPreOctA2(rc) // OCT-EXACT A2: the same live days ran the Sept entry/level gates and exits
 }
 
 // octPreA1Tuning returns a MentorTuning with the Sept A1 gates pinned (see pinPreOctA1).

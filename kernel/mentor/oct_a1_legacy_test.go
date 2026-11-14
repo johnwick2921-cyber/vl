@@ -23,5 +23,39 @@ func preOctCfg() Config {
 	c.MidRangeRejectSide = true
 	c.BreakDirectionLock = true
 	c.OrbISBFractionOutside = 0.80
+	return octA2Revert(c)
+}
+
+// octA2Revert applies every OCT-EXACT A2 revert (CTO-decisions.md section A2):
+// the Sept entry/level gates the October build turned OFF. Mechanics tests of
+// those gates build from it (preOctCfg); the October defaults are pinned by
+// oct_a2_test.go.
+func octA2Revert(c Config) Config {
+	c.HTFBoxGates = true
+	c.Early15mRead = true
+	c.FifteenMinIBRule = FifteenMinRequire5mISB
+	c.TFConflictEnabled = true
+	c.MTFConfluenceEnabled = true
+	c.RollingLevelTouchOwns = true
+	c.KeypairRuleEnabled = true
+	c.EmaLossRelock = EmaRelockUntilZoneExit
+	c.NearBoxRoomPHL = true
+	c.NearBoxRoomMultiple = 2
+	c.FlagWallTarget = true
+	c.TriggerRetestWrongWayRefuse = true
+	c.PHLPullbackLow = PHLPullbackLowPullback
+	c.BoxPingPongGate = true
+	c.BoxRoomMultiple = 0 // unset = the shared RoomMultiple (2), so legacy tests that tune RoomMultiple still drive the box room
+	c.PHLISBPreferredAtBox = true
+	c.TriggerBoxZoneGate = true
+	c.Box.TouchBandPts = 0.25
+	c.ISBLocationSizeCuts = true
+	c.PullbackWarnCut = true
+	c.KeyLevelPrunePts = 20
+	c.TrendlineLevelPreferPts = 2
+	c.TrendlineBoxBeats = true
+	c.TrendlineMaxLinesPerAnchor = 1
+	c.TrendlineIsTarget = true
+	c.ConfluenceHold2R = true
 	return c
 }

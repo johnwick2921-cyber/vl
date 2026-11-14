@@ -28,7 +28,7 @@ func TestAnswers1112BoxTrendlinePartialNotRoomKnob(t *testing.T) {
 		t.Fatal("stored box_trendline_partial_not_room=true must reach the evaluator")
 	}
 	// The knob leaves the trendline-target and first-bottom-anchor knobs alone.
-	if c := tuningTick(t, &store.MentorTuning{BoxTrendlinePartialNotRoom: &off}); !c.TrendlineIsTarget || !c.TrendlineFirstBottomAnchor {
-		t.Fatalf("trendline_is_target=%v trendline_first_bottom_anchor=%v, want both ON (unchanged)", c.TrendlineIsTarget, c.TrendlineFirstBottomAnchor)
+	if c := tuningTick(t, &store.MentorTuning{BoxTrendlinePartialNotRoom: &off}); c.TrendlineIsTarget || !c.TrendlineFirstBottomAnchor { // OCT-EXACT A2 row 16: trendline_is_target default OFF
+		t.Fatalf("trendline_is_target=%v trendline_first_bottom_anchor=%v, want OFF / ON (unchanged)", c.TrendlineIsTarget, c.TrendlineFirstBottomAnchor)
 	}
 }

@@ -41,7 +41,7 @@ type driveMove struct {
 func newDriveAT(t *testing.T) (*AutoTrader, func() []driveMove) {
 	t.Helper()
 	at := &AutoTrader{
-		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailMode: "off"}}},
+		config: AutoTraderConfig{StrategyConfig: &store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true, MentorTrailMode: "off", MentorTuning: octA2SeptExitTuning()}}},
 		trader: &nttrader.TCPTrader{},
 	}
 	oldBroker := mentorBrokerLegStopRead
@@ -1265,4 +1265,13 @@ func TestMentorX8UnfilledLimitGetsOneMarketFallback(t *testing.T) {
 	if len(*limits) != 1 || len(*markets) != 1 {
 		t.Fatalf("want 1 limit then exactly 1 market fallback, got limits=%v markets=%v", *limits, *markets)
 	}
+}
+
+// octA2SeptExitTuning is the OCT-EXACT A2 row 17 revert for the exit-drive
+// mechanics tests: the X8 trap-dodge exit ON and the one-bracket resonance BE
+// at 0.25R (the Sept behaviour those tests pin). The October defaults (X8 OFF,
+// BE min 0) are pinned by oct_a2_test.go.
+func octA2SeptExitTuning() *store.MentorTuning {
+	on, minRR := true, mentorResonanceBEMinRR
+	return &store.MentorTuning{MentorX8TrapDodge: &on, MentorResonanceBEMinRR: &minRR}
 }

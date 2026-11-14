@@ -91,13 +91,33 @@ type mentorTuned struct {
 	SmallRangeGuard    bool // default OFF (release #61 final): course gives no count / margin
 	MidRangeRejectSide bool
 	// OCT-EXACT A1 (all default OFF = October; true reverts).
-	HTFGateEnabled    bool
-	DayGateEnabled    bool
-	Swing4HEnabled    bool
-	OrbPart2Enabled   bool
-	Open5mGateEnabled bool
-	NewsHoldEnabled   bool
-	LossBoxEnabled    bool
+	HTFGateEnabled              bool
+	DayGateEnabled              bool
+	Swing4HEnabled              bool
+	OrbPart2Enabled             bool
+	Open5mGateEnabled           bool
+	NewsHoldEnabled             bool
+	LossBoxEnabled              bool
+	HTFBoxGates                 bool    // A2 row 1
+	TFConflictEnabled           bool    // A2 row 2
+	MTFConfluenceEnabled        bool    // A2 row 3
+	RollingLevelTouchOwns       bool    // A2 row 4
+	KeypairRuleEnabled          bool    // A2 row 5
+	TriggerRetestWrongWayRefuse bool    // A2 row 9
+	BoxPingPongGate             bool    // A2 row 11
+	PHLISBPreferredAtBox        bool    // A2 row 11
+	TriggerBoxZoneGate          bool    // A2 row 11
+	ISBLocationSizeCuts         bool    // A2 row 12
+	PullbackWarnCut             bool    // A2 row 13
+	TrendlineBoxBeats           bool    // A2 row 15
+	ConfluenceHold2R            bool    // A2 row 17
+	X8TrapDodge                 bool    // A2 row 17
+	BoxRoomMultiple             float64 // A2 row 11
+	TrendlineLevelPreferPts     float64 // A2 row 15
+	KeyLevelPrunePts            float64 // A2 row 14
+	BoxTouchBandPts             float64 // A2 row 11
+	ResonanceBEMinRR            float64 // A2 row 17
+	TrendlineMaxLinesPerAnchor  int     // A2 row 15
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
 	CrossingISBLookback        int
@@ -228,21 +248,41 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		PHLFlatLow:           d.PHLFlatLow,
 		ISBReverseTouch:      d.ISBReverseTouch,
 
-		UnoKeyLevels:       d.UnoKeyLevels,
-		SessionOpenLevels:  d.SessionOpenLevels,
-		LevelArmLineCancel: d.LevelArmLineCancel,
-		PHLPullbackLow:     d.PHLPullbackLow,
-		FiveMinBoxSource:   d.FiveMinBoxSource,
-		BreakDirectionLock: d.BreakDirectionLock,
-		SmallRangeGuard:    d.SmallRangeGuard,
-		MidRangeRejectSide: d.MidRangeRejectSide,
-		HTFGateEnabled:     d.HTFGateEnabled,
-		DayGateEnabled:     d.DayGateEnabled,
-		Swing4HEnabled:     d.Swing4HEnabled,
-		OrbPart2Enabled:    d.OrbPart2Enabled,
-		Open5mGateEnabled:  d.Open5mGateEnabled,
-		NewsHoldEnabled:    false, // OCT-EXACT A1 row 7 [Oct: no news rule in the 17 notes]; mentor_news_hold_enabled=true reverts (not a kernel Config field: the hold is a trader placement gate)
-		LossBoxEnabled:     d.LossBoxEnabled,
+		UnoKeyLevels:                d.UnoKeyLevels,
+		SessionOpenLevels:           d.SessionOpenLevels,
+		LevelArmLineCancel:          d.LevelArmLineCancel,
+		PHLPullbackLow:              d.PHLPullbackLow,
+		FiveMinBoxSource:            d.FiveMinBoxSource,
+		BreakDirectionLock:          d.BreakDirectionLock,
+		SmallRangeGuard:             d.SmallRangeGuard,
+		MidRangeRejectSide:          d.MidRangeRejectSide,
+		HTFGateEnabled:              d.HTFGateEnabled,
+		DayGateEnabled:              d.DayGateEnabled,
+		Swing4HEnabled:              d.Swing4HEnabled,
+		OrbPart2Enabled:             d.OrbPart2Enabled,
+		Open5mGateEnabled:           d.Open5mGateEnabled,
+		NewsHoldEnabled:             false, // OCT-EXACT A1 row 7 [Oct: no news rule in the 17 notes]; mentor_news_hold_enabled=true reverts (not a kernel Config field: the hold is a trader placement gate)
+		LossBoxEnabled:              d.LossBoxEnabled,
+		HTFBoxGates:                 d.HTFBoxGates,
+		TFConflictEnabled:           d.TFConflictEnabled,
+		MTFConfluenceEnabled:        d.MTFConfluenceEnabled,
+		RollingLevelTouchOwns:       d.RollingLevelTouchOwns,
+		KeypairRuleEnabled:          d.KeypairRuleEnabled,
+		TriggerRetestWrongWayRefuse: d.TriggerRetestWrongWayRefuse,
+		BoxPingPongGate:             d.BoxPingPongGate,
+		PHLISBPreferredAtBox:        d.PHLISBPreferredAtBox,
+		TriggerBoxZoneGate:          d.TriggerBoxZoneGate,
+		ISBLocationSizeCuts:         d.ISBLocationSizeCuts,
+		PullbackWarnCut:             d.PullbackWarnCut,
+		TrendlineBoxBeats:           d.TrendlineBoxBeats,
+		ConfluenceHold2R:            d.ConfluenceHold2R,
+		X8TrapDodge:                 false, // A2 row 17: trader-side exit; mentor_x8_trap_dodge=true reverts
+		BoxRoomMultiple:             d.BoxRoomMultiple,
+		TrendlineLevelPreferPts:     d.TrendlineLevelPreferPts,
+		KeyLevelPrunePts:            d.KeyLevelPrunePts,
+		BoxTouchBandPts:             d.Box.TouchBandPts,
+		ResonanceBEMinRR:            0, // A2 row 17: trader-side; mentor_resonance_be_min_rr=0.25 reverts
+		TrendlineMaxLinesPerAnchor:  d.TrendlineMaxLinesPerAnchor,
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -329,7 +369,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.MTFConfluenceSource, &out.MTFConfluenceSource, mentor.MTFConfluenceStandingBoxes, mentor.MTFConfluenceLastPair) // m465 P1
 	enum(t.TFConflictEnd, &out.TFConflictEnd, mentor.TFConflictFirstBox, mentor.TFConflictBothBoxes)
 	enum(t.ISBBoxEscape, &out.ISBBoxEscapeMode, mentor.ISBBoxEscapeCloseBoxTF, mentor.ISBBoxEscapeClose, mentor.ISBBoxEscapeBody) // m473 B3: close5m default [Oct D4.3 @ 65:00-66:13]
-	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)
+	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockOff, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)      // A2 row 6: off
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)
 	// Rule 5 (release #31, fold #565 D5): nil → 0.80 (ON); an explicit 0 → OFF
@@ -469,13 +509,33 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorBreakDirectionLock, &out.BreakDirectionLock)
 	flag(t.MentorSmallRangeGuard, &out.SmallRangeGuard)
 	flag(t.MentorMidRangeRejectSide, &out.MidRangeRejectSide)
-	flag(t.MentorHTFGateEnabled, &out.HTFGateEnabled)       // OCT-EXACT A1 row 1
-	flag(t.MentorDayGateEnabled, &out.DayGateEnabled)       // row 2
-	flag(t.MentorSwing4HEnabled, &out.Swing4HEnabled)       // row 3
-	flag(t.MentorOrbPart2Enabled, &out.OrbPart2Enabled)     // row 4
-	flag(t.MentorOpen5mGateEnabled, &out.Open5mGateEnabled) // row 5
-	flag(t.MentorNewsHoldEnabled, &out.NewsHoldEnabled)     // row 7
-	flag(t.MentorLossBoxEnabled, &out.LossBoxEnabled)       // row 10
+	flag(t.MentorHTFGateEnabled, &out.HTFGateEnabled)                            // OCT-EXACT A1 row 1
+	flag(t.MentorDayGateEnabled, &out.DayGateEnabled)                            // row 2
+	flag(t.MentorSwing4HEnabled, &out.Swing4HEnabled)                            // row 3
+	flag(t.MentorOrbPart2Enabled, &out.OrbPart2Enabled)                          // row 4
+	flag(t.MentorOpen5mGateEnabled, &out.Open5mGateEnabled)                      // row 5
+	flag(t.MentorNewsHoldEnabled, &out.NewsHoldEnabled)                          // row 7
+	flag(t.MentorLossBoxEnabled, &out.LossBoxEnabled)                            // row 10
+	flag(t.MentorHTFBoxGates, &out.HTFBoxGates)                                  // A2 row 1
+	flag(t.MentorTFConflict, &out.TFConflictEnabled)                             // A2 row 2
+	flag(t.MentorMTFConfluence, &out.MTFConfluenceEnabled)                       // A2 row 3
+	flag(t.MentorRollingLevelTouchOwns, &out.RollingLevelTouchOwns)              // A2 row 4
+	flag(t.KeypairRuleEnabled, &out.KeypairRuleEnabled)                          // A2 row 5
+	flag(t.MentorTriggerRetestWrongWay, &out.TriggerRetestWrongWayRefuse)        // A2 row 9
+	flag(t.MentorBoxPingPong, &out.BoxPingPongGate)                              // A2 row 11
+	flag(t.MentorPHLISBPreferredAtBox, &out.PHLISBPreferredAtBox)                // A2 row 11
+	flag(t.MentorTriggerBoxZone, &out.TriggerBoxZoneGate)                        // A2 row 11
+	flag(t.MentorISBLocationSizeCuts, &out.ISBLocationSizeCuts)                  // A2 row 12
+	flag(t.MentorPullbackWarnCut, &out.PullbackWarnCut)                          // A2 row 13
+	flag(t.MentorTrendlineBoxBeats, &out.TrendlineBoxBeats)                      // A2 row 15
+	flag(t.MentorConfluenceHold2R, &out.ConfluenceHold2R)                        // A2 row 17
+	flag(t.MentorX8TrapDodge, &out.X8TrapDodge)                                  // A2 row 17
+	pickPtr(t.MentorBoxRoomMultiple, 0, 10, &out.BoxRoomMultiple)                // A2 row 11
+	pickPtr(t.TrendlineLevelPreferPts, 0, 20, &out.TrendlineLevelPreferPts)      // A2 row 15
+	pickPtr(t.MentorKeyLevelPrunePts, 0, 100, &out.KeyLevelPrunePts)             // A2 row 14
+	pickPtr(t.MentorBoxTouchBandPts, 0, 5, &out.BoxTouchBandPts)                 // A2 row 11
+	pickPtr(t.MentorResonanceBEMinRR, 0, 2, &out.ResonanceBEMinRR)               // A2 row 17
+	pickInt(t.TrendlineMaxLinesPerAnchor, 1, 5, &out.TrendlineMaxLinesPerAnchor) // A2 row 15
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
@@ -552,41 +612,59 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BreakDirectionLock = t.BreakDirectionLock
 	cfg.SmallRangeGuard = t.SmallRangeGuard
 	cfg.MidRangeRejectSide = t.MidRangeRejectSide
-	cfg.HTFGateEnabled = t.HTFGateEnabled                         // OCT-EXACT A1 row 1
-	cfg.DayGateEnabled = t.DayGateEnabled                         // row 2
-	cfg.Swing4HEnabled = t.Swing4HEnabled                         // row 3
-	cfg.OrbPart2Enabled = t.OrbPart2Enabled                       // row 4
-	cfg.Open5mGateEnabled = t.Open5mGateEnabled                   // row 5
-	cfg.LossBoxEnabled = t.LossBoxEnabled                         // row 10
-	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle        // isbTF-F4
-	cfg.CrossingISBLookback = t.CrossingISBLookback               // isbTF-F6
-	cfg.CrossingISBMin = t.CrossingISBMin                         // isbTF-F6
-	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose       // LL-1
-	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts               // G7
-	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel         // D2-G6
-	cfg.RollingStaleTouchReleases = t.RollingStaleTouchReleases   // FIX-1112 B
-	cfg.RollingKeypairTapeExempt = t.RollingKeypairTapeExempt     // FIX-1112 B
-	cfg.HTFTrendlineFlip = t.HTFTrendlineFlip                     // D3-G12
-	cfg.TrendlineMaxSlopePtsPerBar = t.TrendlineMaxSlopePtsPerBar // D3-G14
-	cfg.TrendlineMinBouncePts = t.TrendlineMinBouncePts           // D3-G10
-	cfg.KnockKnockZone = t.KnockKnockZone                         // D2-G10
-	cfg.TrendlineFirstBottomAnchor = t.TrendlineFirstBottomAnchor // D3-G9
-	cfg.BoxFlipReversible = t.BoxFlipReversible                   // D3-G7
-	cfg.BoxCarriedStaysLive = t.BoxCarriedStaysLive               // D3-G4
-	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles                   // D3-G2
-	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin           // D3-G1
-	cfg.TriggerFromOpen = t.TriggerFromOpen                       // G4
-	cfg.ISBTargetFillClose = t.ISBTargetFillClose                 // D2-G3
-	cfg.ISBNoLevelFillClose = t.ISBNoLevelFillClose               // answers-1112 Q3
-	cfg.Swing.CoverLaterWick = t.TouchStopCoverLaterWick          // answers-1112 Q7
-	cfg.BoxTrendlinePartialNotRoom = t.BoxTrendlinePartialNotRoom // answers-1112 Q12
-	cfg.PHL5mBoxSameDirAllowed = t.PHL5mBoxSameDirAllowed         // answers-1112 Q9
-	cfg.PHLRoomMultiple = t.PHLRoomMultiple                       // D2-G2
-	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest               // LL-2
-	cfg.KeyLevelRearm = t.KeyLevelRearm                           // D3-G15
-	cfg.ISBReverseTrend = t.ISBReverseTrend                       // D5.3-R43/R44
-	cfg.Counter5mReduceSize = t.Counter5mReduceSize               // D5.4-SCALP
-	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource           // LL-4
+	cfg.HTFGateEnabled = t.HTFGateEnabled                           // OCT-EXACT A1 row 1
+	cfg.DayGateEnabled = t.DayGateEnabled                           // row 2
+	cfg.Swing4HEnabled = t.Swing4HEnabled                           // row 3
+	cfg.OrbPart2Enabled = t.OrbPart2Enabled                         // row 4
+	cfg.Open5mGateEnabled = t.Open5mGateEnabled                     // row 5
+	cfg.LossBoxEnabled = t.LossBoxEnabled                           // row 10
+	cfg.HTFBoxGates = t.HTFBoxGates                                 // A2 row 1
+	cfg.TFConflictEnabled = t.TFConflictEnabled                     // A2 row 2
+	cfg.MTFConfluenceEnabled = t.MTFConfluenceEnabled               // A2 row 3
+	cfg.RollingLevelTouchOwns = t.RollingLevelTouchOwns             // A2 row 4
+	cfg.KeypairRuleEnabled = t.KeypairRuleEnabled                   // A2 row 5
+	cfg.TriggerRetestWrongWayRefuse = t.TriggerRetestWrongWayRefuse // A2 row 9
+	cfg.BoxPingPongGate = t.BoxPingPongGate                         // A2 row 11
+	cfg.PHLISBPreferredAtBox = t.PHLISBPreferredAtBox               // A2 row 11
+	cfg.TriggerBoxZoneGate = t.TriggerBoxZoneGate                   // A2 row 11
+	cfg.ISBLocationSizeCuts = t.ISBLocationSizeCuts                 // A2 row 12
+	cfg.PullbackWarnCut = t.PullbackWarnCut                         // A2 row 13
+	cfg.TrendlineBoxBeats = t.TrendlineBoxBeats                     // A2 row 15
+	cfg.ConfluenceHold2R = t.ConfluenceHold2R                       // A2 row 17
+	cfg.BoxRoomMultiple = t.BoxRoomMultiple                         // A2 row 11
+	cfg.TrendlineLevelPreferPts = t.TrendlineLevelPreferPts         // A2 row 15
+	cfg.KeyLevelPrunePts = t.KeyLevelPrunePts                       // A2 row 14
+	cfg.Box.TouchBandPts = t.BoxTouchBandPts                        // A2 row 11
+	cfg.TrendlineMaxLinesPerAnchor = t.TrendlineMaxLinesPerAnchor   // A2 row 15
+	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
+	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6
+	cfg.CrossingISBMin = t.CrossingISBMin                           // isbTF-F6
+	cfg.KeyLevelDeleteOn1HClose = t.KeyLevelDeleteOn1HClose         // LL-1
+	cfg.PHLMinAbovePriorPts = t.PHLMinAbovePriorPts                 // G7
+	cfg.RollingLeftBreakCancel = t.RollingLeftBreakCancel           // D2-G6
+	cfg.RollingStaleTouchReleases = t.RollingStaleTouchReleases     // FIX-1112 B
+	cfg.RollingKeypairTapeExempt = t.RollingKeypairTapeExempt       // FIX-1112 B
+	cfg.HTFTrendlineFlip = t.HTFTrendlineFlip                       // D3-G12
+	cfg.TrendlineMaxSlopePtsPerBar = t.TrendlineMaxSlopePtsPerBar   // D3-G14
+	cfg.TrendlineMinBouncePts = t.TrendlineMinBouncePts             // D3-G10
+	cfg.KnockKnockZone = t.KnockKnockZone                           // D2-G10
+	cfg.TrendlineFirstBottomAnchor = t.TrendlineFirstBottomAnchor   // D3-G9
+	cfg.BoxFlipReversible = t.BoxFlipReversible                     // D3-G7
+	cfg.BoxCarriedStaysLive = t.BoxCarriedStaysLive                 // D3-G4
+	cfg.BoxSwingBothRoles = t.BoxSwingBothRoles                     // D3-G2
+	cfg.BoxPreOpenLookbackMin = t.BoxPreOpenLookbackMin             // D3-G1
+	cfg.TriggerFromOpen = t.TriggerFromOpen                         // G4
+	cfg.ISBTargetFillClose = t.ISBTargetFillClose                   // D2-G3
+	cfg.ISBNoLevelFillClose = t.ISBNoLevelFillClose                 // answers-1112 Q3
+	cfg.Swing.CoverLaterWick = t.TouchStopCoverLaterWick            // answers-1112 Q7
+	cfg.BoxTrendlinePartialNotRoom = t.BoxTrendlinePartialNotRoom   // answers-1112 Q12
+	cfg.PHL5mBoxSameDirAllowed = t.PHL5mBoxSameDirAllowed           // answers-1112 Q9
+	cfg.PHLRoomMultiple = t.PHLRoomMultiple                         // D2-G2
+	cfg.KeyLevelBreakRetest = t.KeyLevelBreakRetest                 // LL-2
+	cfg.KeyLevelRearm = t.KeyLevelRearm                             // D3-G15
+	cfg.ISBReverseTrend = t.ISBReverseTrend                         // D5.3-R43/R44
+	cfg.Counter5mReduceSize = t.Counter5mReduceSize                 // D5.4-SCALP
+	cfg.KeyLevelHistorySource = t.KeyLevelHistorySource             // LL-4
 }
 
 // mentorCourseEntryBootLine renders the release #25 course-entry knobs for

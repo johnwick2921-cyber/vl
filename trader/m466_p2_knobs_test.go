@@ -17,7 +17,7 @@ import (
 func TestM466P2KnobsDefaultsAreTheCourse(t *testing.T) {
 	cfg := tuningTick(t, nil)
 	if cfg.UnoKeyLevels != mentor.UnoKeyLevelsOn || cfg.SessionOpenLevels != mentor.SessionOpenLevelsOn ||
-		cfg.LevelArmLineCancel != mentor.LevelArmLineCancelCurrent || cfg.PHLPullbackLow != mentor.PHLPullbackLowPullback {
+		cfg.LevelArmLineCancel != mentor.LevelArmLineCancelCurrent || cfg.PHLPullbackLow != mentor.PHLPullbackLowSignal { // OCT-EXACT A2 row 10: phl_pullback_low default signal (was pullback, G41)
 		t.Fatalf("m466 P2 defaults: uno=%q open=%q line=%q pullback=%q",
 			cfg.UnoKeyLevels, cfg.SessionOpenLevels, cfg.LevelArmLineCancel, cfg.PHLPullbackLow)
 	}
@@ -50,7 +50,7 @@ func TestM466P2KnobsBadValueFailsClosed(t *testing.T) {
 	}})
 	got := mentorTuningResolve(at, at.mentorRiskControl())
 	if got.UnoKeyLevels != mentor.UnoKeyLevelsOn || got.SessionOpenLevels != mentor.SessionOpenLevelsOn ||
-		got.LevelArmLineCancel != mentor.LevelArmLineCancelCurrent || got.PHLPullbackLow != mentor.PHLPullbackLowPullback {
+		got.LevelArmLineCancel != mentor.LevelArmLineCancelCurrent || got.PHLPullbackLow != mentor.PHLPullbackLowSignal { // OCT-EXACT A2 row 10
 		t.Fatalf("bad values must fall back to the course defaults: %+v", got)
 	}
 	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != 4 {

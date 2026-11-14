@@ -291,6 +291,11 @@ const COPY = {
     en: 'EMA 34 comes back after a loss',
     es: 'La EMA 34 vuelve tras una pérdida',
   },
+  emaRelockOff: {
+    zh: '不阻挡（October 无此规则）',
+    en: 'never blocks (October has no such rule)',
+    es: 'nunca bloquea (octubre no tiene esa regla)',
+  },
   emaRelockSession: {
     zh: '本交易日关闭，至 17:00 CT 换日',
     en: 'at the 17:00 CT roll (off for the session)',
@@ -555,6 +560,7 @@ const ENUM_OPTIONS: { [K in EnumKey]: ReadonlyArray<EnumOption<K>> } = {
     { value: 'body', label: COPY.isbEscapeBody },
   ],
   ema34_loss_relock: [
+    { value: 'off', label: COPY.emaRelockOff },
     { value: 'session', label: COPY.emaRelockSession },
     { value: 'until_zone_exit', label: COPY.emaRelockZone },
   ],
@@ -618,23 +624,23 @@ export const MENTOR_TUNING_DEFAULTS = {
   day_gate_spent_pts: 265, // m465 (release #60) D5.1-R18: the worked example's −265 day was spent [D5.1 p1 @17:56–18:14]
   day_gate_target_cap_pts: 15,
   swing_max_stop_pts: 100,
-  '15m_ib_requires_5m_isb': 'require_5m_isb', // (a)
-  '15m_early_read': true, // m465 P1 — D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+  '15m_ib_requires_5m_isb': 'off', // OCT-EXACT A2 row 1: October's only big frame is the 5m [Oct D4.3-R9 @07:28]; require_5m_isb reverts (CE-1 (a))
+  '15m_early_read': false, // OCT-EXACT A2 row 1: no 15m box in October; true reverts (m465 P1 D4.2-R2/R11, D4.3-R21)
   mtf_confluence_source: 'standing_boxes', // m465 P1 — D4.2-R17
   trigger_escalation: false, // G3 oct round 2 — October: the 5m only [OctD4.3-R9 @07:28]; ON = Sept D3.4-R43 (m465 P1)
   tf_conflict_end: 'both_boxes', // (b) OQ-2 — course-defaults-30 [D4.2 p1 @07:54–08:02]
   news_wait_both_lines: false, // OCT-EXACT A1 row 6: Sept CE-3 (b) OQ-6 [D4.4 p1 @21:55–22:12], October silent; true reverts
   news_bars_excluded: false, // OCT-EXACT A1 row 6: Sept CE-4 pre-print read freeze, October silent; true reverts
   isb_box_escape: 'close5m', // m473 B3: a 1m close = permission, the box is deleted on a close of its own TF [Oct D4.3 @ 65:00-66:13]; was close (m466 G20/G49 [D4.1 p1 @20:36–21:03])
-  ema34_loss_relock: 'until_zone_exit', // (a)
+  ema34_loss_relock: 'off', // OCT-EXACT A2 row 6: phl_ema_loss_block OFF; until_zone_exit reverts (CE-6 (a))
   orb_edge_veto_pts: 0, // (b) 0 = off
   orb_isb_fraction_outside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); 0.8 reverts (rule 5, release #31)
   d43_trend_source: 'structure', // (b) — course-defaults-30 [D4.3 @12:43–12:54]
   level_entries_need_trigger_side: false, // (b) owner ruled school 1
-  trendline_is_target: true, // (a)
+  trendline_is_target: false, // OCT-EXACT A2 row 16: October silent, EX4 ran through the line; true reverts (CE-11/B12 (a))
   trendline_between_boxes: false, // D3-G8 oct round 2 — October [OctD3.3-R59 @46:27]; was true (course-defaults-30)
   leg_reset_on_wave_break: true, // (a)
-  flag_wall_target: true, // (b) X9 extra, ported from #416 — course-defaults-30 [X9 @05:59–06:12]
+  flag_wall_target: false, // OCT-EXACT A2 row 8: flag wall (X9) OFF; true reverts (CE-11 (b), X9 @05:59–06:12)
   box_new_zone_after_escape: true, // (a) B52: new zone after range escape [D3.4 p3 recovered2 @00:00–00:21]
   orb_escape_completely: false, // (b) release #52 B19: wick-inclusive ORB escape — body test until the owner rules
   wick_microscalp: false, // m465 P5: D4.3 advanced — "đừng có tập khúc này đầu liền" [D4.3 @04:55–05:17]
@@ -645,8 +651,8 @@ export const MENTOR_TUNING_DEFAULTS = {
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
-  near_box_room_multiple: 2, // B11
-  near_box_room_phl: true, // B11: the skip also gates PHL/PLH
+  near_box_room_multiple: 0, // OCT-EXACT A2 row 7: near_box OFF (the 2x is ours, B11); 2 reverts
+  near_box_room_phl: false, // OCT-EXACT A2 row 7: the skip no longer gates PHL/PLH; true reverts (B11)
   phl_target_shy_pts: 5, // C16
   isb_old_extreme_pts: 2, // B27
   isb_in_range_gap_pts: 0, // B27: 0 = inherit ping_pong_min_gap_pts
@@ -659,7 +665,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   uno_key_levels: 'on', // G2 D1.3-R21 [D1.3 p1 @12:31–12:58]
   session_open_levels: 'on', // G10/G11 D3.1-R26/R20 [D3.1 p1 @09:41–12:22]
   level_arm_line_cancel: 'current_line', // G17 D2.3-R34 [D2.3 p1 @23:35–24:03]
-  phl_pullback_low: 'pullback', // G41 D2.2-R59 [D2.2 p3 @08:25–09:25]
+  phl_pullback_low: 'signal', // OCT-EXACT A2 row 10: pullback lower-low / higher-high OFF; pullback reverts (G41 D2.2-R59 [D2.2 p3 @08:25–09:25])
   // m466 P1 (release #61) — boxes, breaks, ranges.
   mentor_5m_box_source: 'merge', // ISB5-F1 OctD4.3-R59 [Oct D4.3 @ 58:00]
   mentor_break_direction_lock: false, // OCT-EXACT A1 row 12: break_counter_setup OFF; true reverts (Sept G21 D4.1-R31/R33 [D4.1 p1 @18:29–20:33])

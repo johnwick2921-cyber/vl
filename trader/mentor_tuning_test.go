@@ -96,7 +96,7 @@ func TestMentorTuningReachesTheEvaluator(t *testing.T) {
 	if c := tuningTick(t, &store.MentorTuning{Early15mRead: &off, MTFConfluenceSource: "last_pair", TriggerEscalation: &on}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceLastPair || !c.TriggerEscalation {
 		t.Errorf("stored m465 knobs did not reach the evaluator: early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
 	}
-	if c := tuningTick(t, &store.MentorTuning{}); !c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceStandingBoxes || c.TriggerEscalation {
+	if c := tuningTick(t, &store.MentorTuning{}); c.Early15mRead || c.MTFConfluenceSource != mentor.MTFConfluenceStandingBoxes || c.TriggerEscalation {
 		t.Errorf("unset m465 knobs must run the #60 defaults (trigger_escalation OFF since G3): early=%v source=%q escalation=%v", c.Early15mRead, c.MTFConfluenceSource, c.TriggerEscalation)
 	}
 }
@@ -120,16 +120,16 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			OrbISBFractionOutside: 0,                                                  // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (was 0.80, rule 5 release #31)
 			DayGateSpentPts:       265, DayGateTargetCapPts: 15, SwingMaxStopPts: 100, // m465 (#60) D5.1-R18: spent line 265
 			// Release #25 course-entry knobs (course-defaults-30 changes).
-			FifteenMinIBRule: mentor.FifteenMinRequire5mISB, TFConflictEnd: mentor.TFConflictBothBoxes,
+			FifteenMinIBRule: mentor.FifteenMinOff, TFConflictEnd: mentor.TFConflictBothBoxes,
 			// m465 P1 (release #60): early 15m read ON (D4.2-R2), mode C from the
 			// standing boxes (D4.2-R17), trigger escalation ON (D3.4-R43).
-			Early15mRead: true, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: false, // G3 oct round 2: was true (D3.4-R43)
-			NewsWaitBothLines: false,                                                                       // OCT-EXACT A1 row 6 (was true, CE-3 course-defaults-30 [D4.4 p1 @21:55–22:12])
-			NewsBarsExcluded:  false,                                                                       // OCT-EXACT A1 row 6 (was true, CE-4 release #29 rework)
-			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockUntilZoneExit, // m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
-			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: true,
+			Early15mRead: false, MTFConfluenceSource: mentor.MTFConfluenceStandingBoxes, TriggerEscalation: false, // OCT-EXACT A2 row 1: 15m_early_read OFF (was ON, D4.2-R2); G3 oct round 2: was true (D3.4-R43)
+			NewsWaitBothLines: false,                                                             // OCT-EXACT A1 row 6 (was true, CE-3 course-defaults-30 [D4.4 p1 @21:55–22:12])
+			NewsBarsExcluded:  false,                                                             // OCT-EXACT A1 row 6 (was true, CE-4 release #29 rework)
+			ISBBoxEscapeMode:  mentor.ISBBoxEscapeCloseBoxTF, EmaLossRelock: mentor.EmaRelockOff, // OCT-EXACT A2 row 6 (was until_zone_exit); m473 B3 OctD4.3-R67 [Oct D4.3 @ 65:00-66:13] (was close, m466 G20/G49 D4.1-R34)
+			D43TrendSource: mentor.D43TrendStructure, TrendlineIsTarget: false, // OCT-EXACT A2 row 16 (was true)
 			TrendlineBetweenBoxes: false, // D3-G8 oct round 2: OctD3.3-R59 [@ 46:27] (was true, CE-11/B13)
-			FlagWallTarget:        true,  // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+			FlagWallTarget:        false, // OCT-EXACT A2 row 8 (was true, CE-11 course-defaults-30 [X9 @05:59–06:12])
 			LegResetOnWaveBreak:   true,
 			// Release #29 B52: a new zone after a range escape — course, no
 			// ruling against → ON (COMMON-25).
@@ -137,8 +137,10 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// Release #52 W11 invented-constant knobs: every default is the value
 			// the kernel hard-coded before (all "ours", none from the course).
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
-			NearBoxRoomMultiple: 2, NearBoxRoomPHL: true, PHLTargetShyPts: 5, ISBOldExtremePts: 2,
-			NearBoxRoomPHLMultiple: 2, // answers-1112 Q2: follows near_box_room_multiple (today)
+			NearBoxRoomMultiple: 0, NearBoxRoomPHL: false, PHLTargetShyPts: 5, ISBOldExtremePts: 2, // OCT-EXACT A2 row 7: near_box OFF (was 2 / true)
+			NearBoxRoomPHLMultiple: 0, // answers-1112 Q2: follows near_box_room_multiple (A2 row 7: 0)
+			// OCT-EXACT A2: box room 1 (row 11), key-level prune 0 (row 14), trendline fan 3 / level-prefer 0 (row 15).
+			BoxRoomMultiple: 1, KeyLevelPrunePts: 0, TrendlineMaxLinesPerAnchor: 3, TrendlineLevelPreferPts: 0, BoxTouchBandPts: 0,
 			// m465 P3 (release #60): the course defaults from the full video read.
 			ISBStackTinyStopPts:  0,                          // G2 oct round 2: OFF (was 12.5, D5.1-R26)
 			TrendlineEntryTouch:  mentor.TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] supersedes Sept D2.3-R7
@@ -149,7 +151,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			UnoKeyLevels:       mentor.UnoKeyLevelsOn,            // G2 D1.3-R21
 			SessionOpenLevels:  mentor.SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20
 			LevelArmLineCancel: mentor.LevelArmLineCancelCurrent, // G17 D2.3-R34
-			PHLPullbackLow:     mentor.PHLPullbackLowPullback,    // G41 D2.2-R59
+			PHLPullbackLow:     mentor.PHLPullbackLowSignal,      // OCT-EXACT A2 row 10 (was pullback, G41 D2.2-R59)
 			// m466 P1 (release #61): boxes, breaks, ranges — the course defaults.
 			FiveMinBoxSource:   mentor.FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over D4.1-R37)
 			BreakDirectionLock: false,                  // OCT-EXACT A1 row 12 (was true, D4.1-R31/R33, D4.1-R55)
@@ -504,8 +506,8 @@ func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
 // PHL/PLH leg only, an out-of-range value fails closed to follow.
 func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
 	one, zero, three, bad := 1.0, 0.0, 3.0, 50.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 2 || c.NearBoxRoomMultiple != 2 {
-		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 2 / 2 (today)", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 0 || c.NearBoxRoomMultiple != 0 { // OCT-EXACT A2 row 7: near_box OFF by default
+		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 0 / 0 (OFF)", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
 	}
 	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &three}); c.NearBoxRoomPHLMultiple != 3 {
 		t.Fatalf("unset PHL multiple must follow a stored near_box_room_multiple=3, got %v", c.NearBoxRoomPHLMultiple)
@@ -513,11 +515,11 @@ func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
 	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &zero}); c.NearBoxRoomPHLMultiple != 0 {
 		t.Fatalf("unset PHL multiple must follow near_box_room_multiple=0 (off), got %v", c.NearBoxRoomPHLMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 2 {
-		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 2", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 0 { // OCT-EXACT A2 row 7: the ISB leg default is 0
+		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 0", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 2 {
-		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (2), got %v", c.NearBoxRoomPHLMultiple)
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 0 { // OCT-EXACT A2 row 7: follows the (0) ISB multiple
+		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (0), got %v", c.NearBoxRoomPHLMultiple)
 	}
 }
 

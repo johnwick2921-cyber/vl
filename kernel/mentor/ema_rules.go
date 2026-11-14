@@ -89,7 +89,7 @@ func emaLossTick(e *Evaluator, emaPrice float64, cur market.Kline, now int64) {
 		case !s.EmaPendingFilled && now > s.EmaPendingExpiry:
 			s.EmaPendingSide = "" // (b) expired unfilled — no loss, no block
 		case s.EmaPendingFilled && touchStop:
-			s.EmaBlocked = true // (a) one loss at the line
+			s.EmaBlocked = e.Cfg.EmaLossRelock != EmaRelockOff // (a) one loss at the line; OCT-EXACT A2 row 6: "off" never blocks
 			s.EmaLossPrice = s.EmaPendingStop
 			s.EmaLossBarTime = cur.CloseTime
 			// CE-6: the zone the loss happened in — the trade's entry-to-stop.
