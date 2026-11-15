@@ -48,7 +48,7 @@ func TestOctNonMentorConfigUnchanged(t *testing.T) {
 		"mentor_htf_box_gates", "mentor_tf_conflict", "mentor_mtf_confluence",
 		"mentor_rolling_level_touch_owns", "keypair_rule_enabled", "mentor_trigger_retest_wrong_way",
 		"mentor_box_ping_pong", "mentor_box_room_multiple", "trendline_max_lines_per_anchor",
-		"mentor_isb_room_multiple", "mentor_level_first_touch_lock", "mentor_isbrev_fill_close",
+		"mentor_isb_room_multiple", "mentor_level_first_touch_lock", "mentor_isbrev_fill_close", "mentor_isbrev_old_extreme_room",
 		"mentor_isb_just_broken_level", "mentor_ftgl_body_edge_partner", "mentor_leg1_fixed_pts",
 		"mentor_counter_5m_scalp_pts", "mentor_resonance_trail",
 		"mentor_box_carry_first_latched", "mentor_box_counter_5m_scalp",

@@ -4660,6 +4660,20 @@ func swingRoomRefused(in Intent, obstacle, roomMultiple float64) bool {
 // (D2.3 WE8 is the one video refusal this reading loses: see the scorecard list.)
 func (e *Evaluator) isbRevTarget(levels []Level, in Intent) (target float64, fillClose bool) {
 	target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.isbRoomMultiple())
+	if e.Cfg.ISBRevOldExtremeRoom && target != 0 && isOldExtremeAt(levels, target) {
+		// oct-exact P4-missesB D2.3-WE8: the retagged reverse ISB is a PLH by the mentor's own naming
+		// (D5.4 @03:52), and a PLH whose old low stands inside 1R of the entry "has no room, no target, so
+		// there is no setup, you do not trade it" [Oct D2.3-R53 @54:00; R55 @57:00 early entry 28,839.75 with
+		// 9.25 pts to the near-old-low target is refused, the late one is preferred]. The target is NEAR the
+		// old extreme, not AT it [Oct D2.3 @72:20], so the floor is measured to the shy target.
+		shy := target + e.Cfg.PHLTargetShyPts // short: stops above the old low
+		if in.Side == SideLong {
+			shy = target - e.Cfg.PHLTargetShyPts // long: stops below the old high
+		}
+		if !targetFloorOK(in.Price, in.Stop, shy) {
+			return 0, false
+		}
+	}
 	if !e.Cfg.ISBRevFillClose {
 		return target, false
 	}
@@ -4671,4 +4685,14 @@ func (e *Evaluator) isbRevTarget(levels []Level, in Intent) (target float64, fil
 		return in.Price - d, true
 	}
 	return target, false
+}
+
+// isOldExtremeAt reports whether the level at this price is an old high/low (KindOldExtreme).
+func isOldExtremeAt(levels []Level, price float64) bool {
+	for _, l := range levels {
+		if l.Kind == KindOldExtreme && l.Price == price {
+			return true
+		}
+	}
+	return false
 }

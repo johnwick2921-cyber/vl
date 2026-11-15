@@ -176,6 +176,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
 			BoxCarryFirstLatched:       true,                              // OCT-EXACT P3-missesA E9: the carried box is the RTH box the mentor drew that morning [Oct D3.3-R27 @17:00]; false reverts
 			BoxCounter5mScalp:          true,                              // OCT-EXACT P3-missesA E9: a box return against the 5m is the counter-5m scalp [Oct D5.4-R20 @07:51]; false reverts
+			ISBRevOldExtremeRoom:       true,                              // OCT-EXACT P4-missesB WE8: D2.3-R53 @54:00; false reverts
 			ISBRevFillClose:            true,                              // OCT-EXACT close r1: the reverse ISB takes the ISB first target (fill-close +1R) when no level gives room [Oct D5.3-R39 @16:43; D2.2 @28:37]; false reverts
 			FTGLBodyEdgePartner:        true,                              // OCT-EXACT D3: FTGL partner by body edge [OctD3.3-R54 @43:14]; false reverts
 			NewsFlattenEnabled:         true,                              // review fix: the news cancel+flatten is its own knob, default ON (safety stays); false holds through the print

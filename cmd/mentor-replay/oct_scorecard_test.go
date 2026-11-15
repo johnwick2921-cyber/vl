@@ -140,12 +140,11 @@ var acceptedMisses = map[string]string{
 	"D4.3-3":   "the video's 5m sell line 28,834.25 is the 09:25 5m low and exists only from the 09:30 candle close (09:35); the bot correctly refuses the long ISBs (isb_trigger_side x4) and its armed long PHLs are D5.4 counter-5m reduced scalps (tier counter_5m, later than D4.3); window start 09:25 is inferred; moving it to 09:35 did not pass (09:34 slack arm) so it was not changed [A tape, B rest]",
 	"D4.3-4":   "the video's 5m buy trigger 28,678.75 is not a 5m high or low anywhere in 10:00-10:35 on 11-02 (10:20 H 28,704.50, 10:25 H 28,676.50) [A]; the bot's 5m trigger there is SHORT 28,807.25, so the long ISB is refused on trigger side; the line cannot be reproduced from the tape",
 	"D4.3-9":   "a 1m 'peak scalp' inside the #8 5m box 28,758.75-28,718.50 (formed 10:04-10:05, the bot builds it too) with the window 09:50-10:10 'inferred'; the bot refuses inside_any_box / box_isb_ban / rolling_phl_5m_box_ban and arms short ISBs 28,680.75 at 10:12 [B]; October gives no number to qualify the scalp (CTO E)",
-	"D5.4-Ex1": "'plan only' with approximate times ('~09:30-10:20', entry '~28,392.50'): no order was placed in the video; the bot arms counter-5m longs through the window at 28,325-28,439 (09:32 to 10:16) but none within 2 pts of the plan price [B]",
-	"D2.3-WE8": "two October rules collide on the reverse-ISB retag: D2.3-R48 1R room refuses the PLH (room 9.25 < stop 14.25), while D2.2 @28:37 / D5.3-R39 @16:43 take a reverse ISB to the +1R fill-candle close when the nearest level is inside 1R (mentor_isbrev_fill_close, 5 scorecard trades: D5.3-10..13, D2.3 WE4-6). The bot's arm 28,839.75 is the same price as the refused PLH entry. A shy target without fill-close was tried in r1: WE8 passed, WE4-6 + D5.3-11/12 failed (27/55). Needs a mentor answer which of the two reads wins [A r1 trial]"}
+	"D5.4-Ex1": "'plan only' with approximate times ('~09:30-10:20', entry '~28,392.50'): no order was placed in the video; the bot arms counter-5m longs through the window at 28,325-28,439 (09:32 to 10:16) but none within 2 pts of the plan price [B]"}
 
 // octSignoffPending: accepted misses that are NOT closed - the bot contradicts a video, two October rules collide,
 // or the reason is a [B]/[C] inference. Needs an owner/CTO ruling or a mentor answer (review fix, tests lens P2).
-var octSignoffPending = []string{"D3.3-E8", "D2.3-WE8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17"}
+var octSignoffPending = []string{"D3.3-E8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17"}
 
 const octPriceTol = 2.0 // points
 const octSlackBars = 2  // one-minute bars either side of the window

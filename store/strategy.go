@@ -2174,6 +2174,7 @@ type MentorTuning struct {
 	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`  // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
 	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"` // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
 	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`    // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
+	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"` // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
 	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
 	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
 	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)

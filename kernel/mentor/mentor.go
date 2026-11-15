@@ -406,6 +406,7 @@ type Config struct {
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
+	ISBRevOldExtremeRoom     bool    // P4-missesB: a retagged reverse ISB with an old extreme inside 1R (to the shy target) is refused, no fill-close (D2.3-R53 @54:00, R55 @57:00); false reverts to the r1 fill-close
 	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
 	// PHLEntryBufferPts — entry buffer beyond the reference candle's extreme
 	// (outward). Default 0.50 (release #59 fix round, mentor-exact): the
@@ -1374,6 +1375,7 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
+		ISBRevOldExtremeRoom:     true,                    // P4-missesB WE8: PLH with an old low inside 1R has no setup [Oct D2.3-R53 @54:00, R55 @57:00]; mentor_isbrev_old_extreme_room=false reverts to the r1 fill-close
 		PHLEntryBufferPts:        1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 entry 1 pt beyond the candle extreme (supersedes Sept D2.2-R10 +0.50 [p1 @04:14–05:43])
 		PHLStopBufferPts:         1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 stop 1 pt beyond the other extreme, 2 pts total (supersedes Sept D2.2-R10 −0.50 [p1 @04:14–05:43])
 		PHLOldExtreme1mK:         PHLOldExtreme1mKDefault, // PHL-1: the 1m swing the pullback started from (k = 4 reproduces WE6/7/9/10; the course states no width — knob)

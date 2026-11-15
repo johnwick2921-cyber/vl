@@ -123,6 +123,7 @@ type mentorTuned struct {
 	ISBRoomMultiple             float64 // BC C4
 	LevelFirstTouchLock         bool    // BC C3
 	ISBRevFillClose             bool    // close r1
+	ISBRevOldExtremeRoom        bool    // P4-missesB WE8
 	BoxCarryFirstLatched        bool    // P3-missesA E9
 	BoxCounter5mScalp           bool    // P3-missesA E9
 	Counter5mScalpPts           float64 // BC C1
@@ -301,6 +302,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		ISBRoomMultiple:             d.ISBRoomMultiple,
 		LevelFirstTouchLock:         d.LevelFirstTouchLock,
 		ISBRevFillClose:             d.ISBRevFillClose,
+		ISBRevOldExtremeRoom:        d.ISBRevOldExtremeRoom,
 		BoxCarryFirstLatched:        d.BoxCarryFirstLatched,
 		BoxCounter5mScalp:           d.BoxCounter5mScalp,
 		Counter5mScalpPts:           d.Counter5mScalpPts,
@@ -567,6 +569,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pickPtr(t.MentorCounter5mScalpPts, 0, 100, &out.Counter5mScalpPts)           // BC C1
 	flag(t.MentorLevelFirstTouchLock, &out.LevelFirstTouchLock)                  // BC C3
 	flag(t.MentorISBRevFillClose, &out.ISBRevFillClose)                          // close r1
+	flag(t.MentorISBRevOldExtremeRoom, &out.ISBRevOldExtremeRoom)                // P4-missesB WE8
 	flag(t.MentorBoxCarryFirstLatched, &out.BoxCarryFirstLatched)                // P3-missesA E9
 	flag(t.MentorBoxCounter5mScalp, &out.BoxCounter5mScalp)                      // P3-missesA E9
 	flag(t.MentorISBJustBrokenLevel, &out.ISBJustBrokenLevel)                    // D1
@@ -677,6 +680,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.ISBRoomMultiple = t.ISBRoomMultiple                         // BC C4
 	cfg.LevelFirstTouchLock = t.LevelFirstTouchLock                 // BC C3
 	cfg.ISBRevFillClose = t.ISBRevFillClose                         // close r1
+	cfg.ISBRevOldExtremeRoom = t.ISBRevOldExtremeRoom               // P4-missesB WE8
 	cfg.BoxCarryFirstLatched = t.BoxCarryFirstLatched               // P3-missesA E9
 	cfg.BoxCounter5mScalp = t.BoxCounter5mScalp                     // P3-missesA E9
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1

@@ -20,8 +20,9 @@ func TestOctCloseR1ReverseISBFillClose(t *testing.T) {
 	if got, fc := e.isbRevTarget(nil, long); got != 29657.25 || !fc {
 		t.Fatalf("long, no level: target %.2f fillClose %v, want 29657.25 true", got, fc)
 	}
-	// A level inside 1R (floor fails) takes the same first target.
-	near := []Level{{Key: "old_extreme:28330.00", Kind: KindOldExtreme, Price: 28330.00, Role: OldLow}}
+	// A non-extreme level (a box edge) inside 1R (floor fails) takes the same first target.
+	// P4-missesB WE8: an OLD EXTREME inside 1R no longer does (D2.3-R53), see TestOctP4WE8.
+	near := []Level{{Key: "ftgl_edge:28330.00", Kind: KindFTGLEdge, Price: 28330.00}}
 	if got, fc := e.isbRevTarget(near, short); got != 28319.00 || !fc {
 		t.Fatalf("short, level inside 1R: target %.2f fillClose %v, want 28319.00 true", got, fc)
 	}
