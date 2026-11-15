@@ -234,13 +234,13 @@
    "id": "D3.2-EX4",
    "video": "D3.2",
    "date": "2026-10-30",
-   "start": "08:30",
+   "start": "13:30",
    "end": "15:00",
    "family": "TRENDLINE",
    "side": "long",
    "outcome": "took",
    "cite": "19:59-21:00 s_01200 s_01324",
-   "note": "4H trendline long; time of day not stated -> whole RTH day; said 28,280 / tool 28,359.50"
+   "note": "4H trendline long; HARNESS close r1: window narrowed from the whole RTH day to 13:30-15:00 - the note (Ngay 3.2 EX4 line 736) matches the extended lower line to the Fri 30 Oct 13:40 low (~28,240) and the rally to ~28,600 by 15:00; said 28,280 / tool 28,359.50"
   },
   {
    "id": "D3.2-EX10",
@@ -623,7 +623,7 @@
    "date": "2026-11-03",
    "start": "20:35",
    "end": "21:12",
-   "family": "EMA",
+   "family": "EMA34",
    "side": "short",
    "outcome": "refused",
    "cite": "08:09-08:37 s_00489 s_00511",

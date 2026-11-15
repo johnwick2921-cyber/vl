@@ -55,7 +55,24 @@ import (
 )
 
 // acceptedMisses: id -> written reason. EMPTY at the baseline on purpose.
-var acceptedMisses = map[string]string{}
+var acceptedMisses = map[string]string{
+	// close r1: D2.2 E11/E13/E17 are ONE example (10-30 08:36-08:37, long ISB buy stop 28,751.50 / 28,750.25,
+	// stop 28,706.25 / 28,706.00 = 45 pts). Two October rules the bot keeps refuse it, and both are LATER than
+	// D2.2 (rule 4: the later video wins): the 5m trigger side (the 08:30 5m candle's sell line 28,684.50 stands
+	// under price: "Tuyet doi khong duoc ... khung 5 phut van dang co sell trigger" Oct D4.3 @22:00 OctD4.3-R28,
+	// kept by CTO C1) and the stop ceiling (stop over 40 = no trade, Oct D2.3 @48:12 OctD2.3-R47, kept by CTO C9;
+	// D2.2 E17 itself says "35 pts -> size 3 or no trade", Oct D2.2 @1:12:32). D2.2 taught the ISB mechanics before
+	// either rule, so the take is the pre-rule example, not a conflict the bot can resolve.
+	"D2.2-E11": "D2.2 example taken before the D4.3 5m trigger-side rule (OctD4.3-R28 @22:00, CTO C1 keep) and the D2.3 stop-over-40 rule (OctD2.3-R47 @48:12, CTO C9 keep): both later than D2.2, later video wins",
+	"D2.2-E13": "same 10-30 08:37 example as D2.2-E11 (stop 44.75 pts, price above the 5m sell trigger line 28,684.50): OctD4.3-R28 + OctD2.3-R47, both later than D2.2",
+	"D2.2-E17": "the sizing demo on the same 10-30 08:37 ISB (stop 35-45 pts): its own words are 'size 3 or no trade' (Oct D2.2 @1:12:32) and the later D2.3-R47 / D4.3-R28 rules refuse it",
+	// D4.1-1 stays refused by October, but the rule that refuses it is the morning dead box (CTO D4), which the
+	// CTO ruled NOT built: D4.1-R23 gives no measure of 'did not move for ~30 min' (box 28,739.25/28,662.00 is 77.25
+	// pts, left edge 08:30-08:34, a number the bot cannot derive; its own 5m ISB box forms at 08:40). The arms inside
+	// the window are the 08:41 reverse ISB (inside the box 28,639.75-28,727.00 the bot built at 08:40) and the 08:43
+	// ISB buy stop; D4.3-R70 allows a same-direction ISB inside a 5m box, so no existing October rule refuses them.
+	"D4.1-1": "morning dead box (Oct D4.1 @11:28 OctD4.1-R23) is the CTO D4 item listed NOT built: no October measure of 'did not move for ~30 min'; the bot's own 5m ISB box allows a same-direction ISB (OctD4.3-R70)",
+}
 
 const octPriceTol = 2.0 // points
 const octSlackBars = 2  // one-minute bars either side of the window
@@ -178,6 +195,11 @@ func octFamilyMatch(fam string, a octArm) bool {
 		switch strings.TrimSpace(f) {
 		case "ANY":
 			ok = true
+		case "EMA34":
+			// HARNESS (close r1): a trade AT the EMA 34 line (D5.3 #3, "wait for the touch",
+			// Oct D5.3 @07:38-08:30). A reverse ISB at the EMA 9 is a different D5.3 setup
+			// and does not count as an EMA 34 entry.
+			ok = strings.Contains(reason, "ema 34") || strings.Contains(reason, "ema34") || strings.Contains(strings.ToLower(a.Level), "ema34")
 		case "ISB":
 			ok = a.Setup == "ISB"
 		case "PHL":

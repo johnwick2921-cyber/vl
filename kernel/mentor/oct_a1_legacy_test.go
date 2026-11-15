@@ -75,5 +75,6 @@ func octBCRevert(c Config) Config {
 	c.LevelFirstTouchLock = true
 	c.ISBRoomMultiple = 0 // C4 revert: 0 = follow RoomMultiple (the stored mentor_isb_room_multiple=2 is the same on a default RoomMultiple)
 	c.Counter5mScalpPts = 0
+	c.ISBRevFillClose = false // close r1: the reverse ISB keeps the September level-or-refuse target
 	return c
 }

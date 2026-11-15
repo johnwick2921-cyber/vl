@@ -477,6 +477,8 @@ type Config struct {
 	// locked, the retest after the break is tradable. Studio JSON:
 	// risk_control.mentor_tuning.mentor_level_first_touch_lock.
 	LevelFirstTouchLock bool
+	// ISBRevFillClose — oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	ISBRevFillClose bool
 	// Counter5mScalpPts — oct-exact C1: the first target of a counter-5m scalp
 	// at the EMA 34 (a PHL/PLH on the side OPPOSITE the governing 5m trigger,
 	// stamped counter_5m): entry +/- this many points, never past the original
@@ -1366,6 +1368,7 @@ func DefaultConfig() Config {
 		PHLMinAbovePriorPts:        15,                  // oct-exact B6: 15 pts (revert 0 = off) [OctD4.2-R41 @36:45-40:20 "15 điểm"]; scorecard with 15: 0 phl_min_above_old_extreme refusals in any took/marked trade window, pass set unchanged
 		ISBRoomMultiple:            1,                   // oct-exact C4: ISB room 1R [Oct D2.3-R48 @49:38, D2.2 @28:37]; mentor_isb_room_multiple=2 reverts
 		LevelFirstTouchLock:        false,               // oct-exact C3: a first touch closing through only cancels that order [Oct D5.2-R23/R24 @07:42-14:16]; mentor_level_first_touch_lock=true reverts
+		ISBRevFillClose: true, // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts

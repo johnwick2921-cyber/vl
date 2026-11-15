@@ -3295,6 +3295,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			// m462: the ONE shared 4h/1h check (all session by default).
 			htfRefusal, _ := HTFEntryCheck(e.State.HTF, in.Side)
 			target := 0.0
+			revFillClose := false
 			if _, stopOK, why := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse(isbStopRefusal("isbrev_", why))
 			} else if r := e.isbJustBrokenRefusal(in.Side, execPrev, execCur, boxes); r != "" {
@@ -3324,7 +3325,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				e.refuse("isbrev_trigger_side_mismatch" + trigSfx)
 			} else if refuse, name := nearBoxRefusal(boxes, in.Price, in.Side, e.Cfg.NearBoxRoomMultiple, abs(in.Price-in.Stop), e.Cfg.NearBoxBetweenExempt); refuse {
 				e.refuse(name) // near_box | near_box_inside_opposing (m465)
-			} else if target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.isbRoomMultiple()); target == 0 { // oct-exact C4: ISB room 1R
+			} else if target, revFillClose = e.isbRevTarget(levels, in); target == 0 { // oct-exact C4: ISB room 1R
 				// Item 26 / R81 (RELEASE #4): the reverse ISB needs a target —
 				// Q7 open → the normal ISB target rule: the next level beyond
 				// in the trade direction, with the 1:1 floor and the cap.
@@ -3339,13 +3340,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				capped := CapTargetForDay(in, e.State.Day.Verdict, dg)
 				if !targetFloorOK(capped.Price, capped.Stop, capped.Target) {
 					e.refuse("isbrev_target_below_floor")
-				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.isbRoomMultiple())); refuse {
+				} else if refuse, _ := roomRefusal(in.Price, in.Stop, target, confluence, targetRoomMultiple(levels, target, e.Cfg.isbRoomMultiple())); refuse && !revFillClose {
 					// Item 25: the reverse ISB runs the same room rule as the
 					// normal ISB. One counter "room". MENTOR-NY item 1: measured
 					// to the LEVEL, not the spent-day capped take-profit
 					// [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
-				} else if refuse, _ := spentDayRoomRefusal(in.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse {
+				} else if refuse, _ := spentDayRoomRefusal(in.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse && !revFillClose {
 					// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
 				} else {
@@ -4634,4 +4635,28 @@ func swingRoomRefused(in Intent, obstacle, roomMultiple float64) bool {
 	// confluence=false leg-1 distance (1R) is the correct one here.
 	refuse, _ := roomRefusal(in.Price, in.Stop, obstacle, false, roomMultiple)
 	return refuse
+}
+
+// isbRevTarget is the reverse ISB's first target. Default: the next level beyond
+// the entry with 1R room (nextLevelBeyondRoom). oct-exact close r1 (knob
+// mentor_isbrev_fill_close, default ON, revert false): the reverse ISB is read as
+// the same setup under another name [Oct D5.3 @16:43 OctD5.3-R39 "it is also our
+// setup, we only read another name"], so when there is no level beyond, or only
+// one inside 1R, it takes the ISB first target the normal ISB takes: +1R, the
+// fill-candle close partial the trader owns [Oct D2.2 @28:37-28:56, @30:24-30:43].
+// fillClose reports that the room-to-a-level rule then has no level to measure.
+// (D2.3 WE8 is the one video refusal this reading loses: see the scorecard list.)
+func (e *Evaluator) isbRevTarget(levels []Level, in Intent) (target float64, fillClose bool) {
+	target = nextLevelBeyondRoom(levels, in.Price, in.Stop, in.Side, e.Cfg.isbRoomMultiple())
+	if !e.Cfg.ISBRevFillClose {
+		return target, false
+	}
+	if target == 0 || !targetFloorOK(in.Price, in.Stop, target) {
+		d := abs(in.Price - in.Stop)
+		if in.Side == SideLong {
+			return in.Price + d, true
+		}
+		return in.Price - d, true
+	}
+	return target, false
 }

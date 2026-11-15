@@ -2167,6 +2167,7 @@ type MentorTuning struct {
 	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
 	MentorISBRoomMultiple     *float64 `json:"mentor_isb_room_multiple,omitempty"`      // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
 	MentorLevelFirstTouchLock *bool    `json:"mentor_level_first_touch_lock,omitempty"` // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorISBRevFillClose *bool `json:"mentor_isbrev_fill_close,omitempty"` // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
 	MentorISBJustBrokenLevel  *bool    `json:"mentor_isb_just_broken_level,omitempty"`  // D1: ISB at a level it just broke refused until the retest (default ON)
 	MentorFTGLBodyEdgePartner *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"` // D3: FTGL partner by body edge (default ON)
 	MentorLeg1FixedPts        *float64 `json:"mentor_leg1_fixed_pts,omitempty"`         // D2: leg-1 fixed partial in points (15; 0 = today's +1R)

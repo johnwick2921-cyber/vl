@@ -1111,6 +1111,9 @@ func TestFullDayReplayFidelity(t *testing.T) {
 	fillOff, openOff := false, false
 	cfg.RiskControl.MentorTuning.ISBTargetFillClose = &fillOff
 	cfg.RiskControl.MentorTuning.TriggerFromOpen = &openOff
+	// oct-exact close r1: the live 10-13 day refused a reverse ISB with no level beyond; pin that.
+	revFillOff := false
+	cfg.RiskControl.MentorTuning.MentorISBRevFillClose = &revFillOff
 	w.setNow(fdrLiveSeedMs)
 	w.cur.Store(int64(w.barIndexAtOrAfter(fdrLiveSeedMs) - 1))
 	ft := &fdrTrader{id: "fdr-hoang", account: acct, levelPx: map[string]float64{}}
