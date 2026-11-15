@@ -1251,7 +1251,25 @@ func (at *AutoTrader) mentorDayEvents() ([]calendar.Event, bool) {
 // window anyway (fail-closed), counted news_hold_no_calendar.
 func (at *AutoTrader) mentorNewsGate() (bool, string) {
 	if !at.mentorNewsHoldEnabled() {
-		return false, "" // OCT-EXACT A1 row 7: the 07:20–07:35 hold is OFF (October has no news rule)
+		// OCT-EXACT A1 row 7: the fail-closed 07:20–07:35 hold is OFF (October has no
+		// news rule). Review r2 (P2): the news FLATTEN stays ON by default (safety
+		// stays) and would sweep anything placed inside the print window on the next
+		// bar — arm-then-cancel churn, or a fresh fill flattened at a loss. So with
+		// the flatten ON, refuse exactly what it would sweep: the same calendar and
+		// the same window (mentorNewsHold). No readable calendar → no hold, as the
+		// flatten never acts on a guess.
+		if !at.mentorEnabled() || !at.mentorNewsFlattenEnabled() {
+			return false, ""
+		}
+		evs, ok := at.mentorDayEvents()
+		if !ok {
+			return false, ""
+		}
+		hold, why := mentorNewsHold(evs, mentorClockNow())
+		if hold {
+			at.mentorCount("news_hold_flatten_window")
+		}
+		return hold, why
 	}
 	now := mentorClockNow()
 	evs, ok := at.mentorDayEvents()
