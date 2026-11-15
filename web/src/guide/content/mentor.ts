@@ -857,6 +857,11 @@ export const mentor: GuideSection = {
           'mentor_box_carry_first_latched · mentor_box_counter_5m_scalp · each revert = false · OCT-EXACT P3-missesA · Oct D3.3-R27 @17:00, R51 @41:28 · D5.4-R20 @07:51-08:20',
         ],
         [
+          'October-exact reverse ISB beside an old extreme (P4)',
+          'One more October rule ships ON. mentor_isbrev_old_extreme_room: a reverse ISB (read as a PHL/PLH, so the PLH/PHL room rule applies) whose old high/low stands inside 1R of the entry, measured to the near-the-extreme target (old extreme minus 5 pts), is refused (isbrev_missing_target) instead of taking the fill-candle-close target. A reverse ISB beside a box edge or key level keeps the fill-close first target. [Oct D2.3-R53 @54:00 "no room, no target, no setup, do not trade it"; R55 @57:00 early entry 28,839.75 with 9.25 pts refused, the late one preferred.] Reverts with false.',
+          'mentor_isbrev_old_extreme_room · revert = false · OCT-EXACT P4-missesB D2.3-WE8',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
           'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',
