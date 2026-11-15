@@ -92,7 +92,37 @@ var acceptedMisses = map[string]string{
 	// bar: no entry, 'doi mai hoc'" (wait for tomorrow's lesson), D3.3 note E8 line 429. The bot's 09:15 short ISB
 	// (28,675.75, stop 28.0) is a genuine ISB by his own R1 (candle 2 BODY 28,680-28,690 inside candle 1's full range
 	// 28,677.75-28,710.25, OctD1.4-R1), 130 pts below the FTGH box, so no October rule refuses it.
-	"D3.3-E8": "teaching pause ('doi mai hoc', D3.3 E8): the 09:15 1m candle's body sits inside the 09:14 range (his own ISB R1), 130 pts under the FTGH box; no October rule refuses a short ISB there"}
+	"D3.3-E8": "teaching pause ('doi mai hoc', D3.3 E8): the 09:15 1m candle's body sits inside the 09:14 range (his own ISB R1), 130 pts under the FTGH box; no October rule refuses a short ISB there",
+
+	// close r3. Every entry below was re-read against the tape and the bot's own 5m trigger line (debug prints at the
+	// rolling tick, not committed). Tiers: [A] read directly, [B] inferred, [C] unproven.
+	//
+	// D4.2 long takes are COUNTER-5m. D4.2 pre-dates D4.3, which forbids trading against a standing 5m trigger
+	// (OctD4.3-R28 @22:00, CTO C1 keep; D5.4 later allows only a reduced-size 1m counter scalp at the EMA 34). [A] the
+	// bot's 5m trigger is SHORT at every D4.2 long: 17:05 11-02 sell line 28,213.50 (D4.2-1/-2/-5, buy stop 28,150.75 =
+	// 17:05 high 28,150.50 + 0.25, stop 28,135.50 = 17:05 low), 03:36 11-02 sell line 28,781.50 (D4.2-4), 18:40 11-02 sell
+	// line 28,223.50 (D4.2-9). Rolling leg side is the 4h read (short here); making it follow the 5m trigger was tried
+	// (rollingTrendSide) and the scorecard did not move (31/55 both ways), so no knob was shipped.
+	"D4.2-1": "D4.2 long PHL 28,150.75 taken with the 5m sell trigger 28,213.50 standing [A]; counter-5m, forbidden by the later D4.3-R28 @22:00 (CTO C1 keep): later video wins",
+	"D4.2-2": "same 11-02 17:05-17:06 long as D4.2-1 (entry 28,151.5-28,152.25, stop 28,135.50): counter to the standing 5m sell trigger 28,213.50 [A]; D4.3-R28 is later",
+	"D4.2-4": "D4.2 long 03:36-03:38 at 28,768-28,774 under the 5m sell trigger 28,781.50 [A]; counter-5m, later D4.3-R28 wins; the bot arms the with-trigger short ISB 28,761.00 instead",
+	"D4.2-5": "same 11-02 17:06 long as D4.2-1 (trailed to 28,218.75): counter to the 5m sell trigger 28,213.50 [A]; the later D4.3-R28 refuses it; the bot's 15:04 long ISB 28,206.75 is a different entry",
+	"D4.2-9": "D4.2 5m-trendline long ~28,170-28,175 at 18:40 under the 5m sell trigger 28,223.50 [A], counter-5m (D4.3-R28 later); the mentor's anchors 28,089 / 28,139.75 are also not on the 11-02 evening tape [B, close r2]",
+	// Trendline illustrations with no order price: the bot draws its own lines by the drawing rules, the notes give no
+	// number that separates the hand-drawn line from the bot's (CTO D1 trendline forms listed NOT built).
+	"D4.2-10":   "'plan: order when price comes near' on a hand-drawn falling 5m line 01:25->09:15 (10-30); no price, no order; the bot arms a same-side short PLH 28,963.00 at 01:28 [B]",
+	"D3.2-EX10": "marker only ('touch and hold marker' on a hand-drawn 11-01 18:40 line, 28,669.75); no order taught; the bot's own trendlines differ from the hand-drawn anchors (close r2) [B]",
+	"D3.2-EX4":  "the note contradicts itself ('said 28,280 / tool 28,359.50'): a demo of an extended 4H line, not an order; the bot arms the with-5m short PLH 28,296.50 at 13:30 [B]",
+	// FTGH/FTGL box illustrations.
+	"D3.3-E3":  "illustration of the FTGH box 28,812.50-28,819.00 'from 08:00/08:29': the box exists for the bot only after the 08:30 close and price is 60+ pts away by then (close r2); window end inferred [B]",
+	"D3.3-E9":  "Friday FTGH retest at 28,808.25 on Sunday night: the bot builds its own new box 28,807-28,809.25 at 21:47 and refuses inside it (inside_any_box x16); whether the Friday box carries over the weekend is a box-carry decision no October line gives (D3.3 @41:20) [C]",
+	"D3.3-E11": "FTGL 29,440.75 + FTGH 29,621.25 'both sides' is a box illustration, not an entry ('marked'); no price or time of an order is given [B]",
+	// D4.3: bot trigger lines differ from the video's, or the demo is a scalp with an inferred window.
+	"D4.3-3":   "the video's 5m sell line 28,834.25 is the 09:25 5m low and exists only from the 09:30 candle close (09:35); the bot correctly refuses the long ISBs (isb_trigger_side x4) and its armed long PHLs are D5.4 counter-5m reduced scalps (tier counter_5m, later than D4.3); window start 09:25 is inferred; moving it to 09:35 did not pass (09:34 slack arm) so it was not changed [A tape, B rest]",
+	"D4.3-4":   "the video's 5m buy trigger 28,678.75 is not a 5m high or low anywhere in 10:00-10:35 on 11-02 (10:20 H 28,704.50, 10:25 H 28,676.50) [A]; the bot's 5m trigger there is SHORT 28,807.25, so the long ISB is refused on trigger side; the line cannot be reproduced from the tape",
+	"D4.3-9":   "a 1m 'peak scalp' inside the #8 5m box 28,758.75-28,718.50 (formed 10:04-10:05, the bot builds it too) with the window 09:50-10:10 'inferred'; the bot refuses inside_any_box / box_isb_ban / rolling_phl_5m_box_ban and arms short ISBs 28,680.75 at 10:12 [B]; October gives no number to qualify the scalp (CTO E)",
+	"D5.4-Ex1": "'plan only' with approximate times ('~09:30-10:20', entry '~28,392.50'): no order was placed in the video; the bot arms counter-5m longs through the window at 28,325-28,439 (09:32 to 10:16) but none within 2 pts of the plan price [B]",
+	"D2.3-WE8": "two October rules collide on the reverse-ISB retag: D2.3-R48 1R room refuses the PLH (room 9.25 < stop 14.25), while D2.2 @28:37 / D5.3-R39 @16:43 take a reverse ISB to the +1R fill-candle close when the nearest level is inside 1R (mentor_isbrev_fill_close, 5 scorecard trades: D5.3-10..13, D2.3 WE4-6). The bot's arm 28,839.75 is the same price as the refused PLH entry. A shy target without fill-close was tried in r1: WE8 passed, WE4-6 + D5.3-11/12 failed (27/55). Needs a mentor answer which of the two reads wins [A r1 trial]"}
 
 const octPriceTol = 2.0 // points
 const octSlackBars = 2  // one-minute bars either side of the window
