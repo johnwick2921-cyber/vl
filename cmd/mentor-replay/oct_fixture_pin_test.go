@@ -63,8 +63,24 @@ func TestOctSignoffPendingAreListedAndReasonsHonest(t *testing.T) {
 	if r := acceptedMisses["D3.3-E8"]; !containsAll(r, "NOT CLOSED", "no inside bar") {
 		t.Errorf("D3.3-E8 reason must say it is open and quote the note: %q", r)
 	}
-	if r := acceptedMisses["D2.2-E11"]; !containsAll(r, "isbrev_stop_over_max", "R47", "1 MNQ") {
-		t.Errorf("D2.2-E11 reason must name the real refusals and R47's 1 MNQ allowance: %q", r)
+	// Since the owner's no-cap order 2026-11-15 the stop size no longer refuses E11/E13/E17:
+	// isb_trigger_side is the ONLY real refusal, and a reason still citing isbrev_stop_over_max
+	// (the retired size refusal) would be stale.
+	for _, id := range []string{"D2.2-E11", "D2.2-E13", "D2.2-E17"} {
+		r := acceptedMisses[id]
+		if !containsAll(r, "isb_trigger_side", "1 MNQ", "2026-11-15") || strings.Contains(r, "isbrev_stop_over_max") {
+			t.Errorf("%s reason must name isb_trigger_side as the only refusal, the 1 MNQ no-cap sizing and the 2026-11-15 order, and not the retired isbrev_stop_over_max: %q", id, r)
+		}
+	}
+	if r := acceptedMisses["D2.2-E11"]; !containsAll(r, "R47", "1 MNQ") {
+		t.Errorf("D2.2-E11 reason must name R47's 1 MNQ allowance: %q", r)
+	}
+	// D2.2-E15 is accepted ONLY on the owner's order (answer Q6) with the floor lowered explicitly.
+	if r := acceptedMisses["D2.2-E15"]; !containsAll(r, "owner order 2026-11-15", "1 MNQ", "33 -> 32") {
+		t.Errorf("D2.2-E15 reason must cite the owner order, the 1 MNQ sizing and the explicit floor drop: %q", r)
+	}
+	if octScoreFloor != 32 {
+		t.Errorf("octScoreFloor = %d: the 2026-11-15 owner order lowered it to exactly 32 (raise it when a miss is fixed; never lower it silently)", octScoreFloor)
 	}
 }
 
