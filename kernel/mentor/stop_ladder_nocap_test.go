@@ -91,3 +91,53 @@ func TestStopLadderNoCapDefault(t *testing.T) {
 		}
 	}
 }
+
+// TestStopLadderCeilingBadValueFailsClosed — a NEGATIVE or NaN
+// WideStopMaxPts that reaches the kernel without the trader's resolver (a
+// future caller, a hand-built Config) must FAIL CLOSED to the #70 cap 40,
+// never mean "no cap" (only an exact 0 is no cap) and never fall to the
+// ladder-OFF ceiling (ladder ON is still ON). Reviewer P2-1 on 7e790a741:
+// -5 returned +Inf and NaN returned the OFF ceiling — two bad values, two
+// different wrong answers. RED before the fix.
+func TestStopLadderCeilingBadValueFailsClosed(t *testing.T) {
+	cfg := DefaultConfig()
+	if !cfg.CourseExits.StopSizeLadder {
+		t.Fatal("fixture: DefaultConfig must carry the ladder ON")
+	}
+	for _, bad := range []float64{-5, -0.25, math.NaN(), math.Inf(-1)} {
+		c := cfg
+		c.CourseExits.WideStopMaxPts = bad
+		for _, off := range []float64{20, 25} {
+			got := StopLadderCeiling(c, off)
+			if got != WideStopMaxFailClosedPts {
+				t.Errorf("WideStopMaxPts=%g off=%g: StopLadderCeiling = %g, want fail-closed %g", bad, off, got, WideStopMaxFailClosedPts)
+			}
+		}
+		// A setup ceiling stored ABOVE 40 still wins (the ladder never narrows).
+		if got := StopLadderCeiling(c, 55); got != 55 {
+			t.Errorf("WideStopMaxPts=%g off=55: StopLadderCeiling = %g, want 55", bad, got)
+		}
+		// ISB production gate: a 45-pt stop is refused, a 40-pt stop is taken.
+		ic := preOctCfg()
+		ic.CourseExits.WideStopMaxPts = bad
+		buf2 := 2 * ic.ISBBufferPts
+		if _, ok, _ := ISBStopVerdict(ladderISBCandle(45-buf2), ic); ok {
+			t.Errorf("WideStopMaxPts=%g: 45-pt ISB taken, want refused (fail closed to 40)", bad)
+		}
+		if stop, ok, why := ISBStopVerdict(ladderISBCandle(40-buf2), ic); !ok || stop != 40 {
+			t.Errorf("WideStopMaxPts=%g: 40-pt ISB ok=%v stop=%.2f why=%q, want taken", bad, ok, stop, why)
+		}
+	}
+	// +Inf stored: also not a finite cap — fails closed the same way.
+	c := cfg
+	c.CourseExits.WideStopMaxPts = math.Inf(1)
+	if got := StopLadderCeiling(c, 20); got != WideStopMaxFailClosedPts {
+		t.Errorf("WideStopMaxPts=+Inf: StopLadderCeiling = %g, want fail-closed %g", got, WideStopMaxFailClosedPts)
+	}
+	// Ladder OFF ignores the wide max entirely, bad or not.
+	c.CourseExits.StopSizeLadder = false
+	c.CourseExits.WideStopMaxPts = -5
+	if got := StopLadderCeiling(c, 20); got != 20 {
+		t.Errorf("ladder OFF + -5: StopLadderCeiling = %g, want 20", got)
+	}
+}

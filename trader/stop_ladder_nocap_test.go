@@ -147,3 +147,25 @@ func TestWideStopMaxBootLineNone(t *testing.T) {
 		t.Errorf("effective %s resolver %q must say 0 = no cap", path, row.Resolver)
 	}
 }
+
+// TestStopLadderRefuseCeilingUnresolvedBadValue — reviewer P2-1 (7e790a741):
+// a mentorTierInputs built WITHOUT mentorWideStopMaxResolve (a future caller,
+// a test) that carries a negative / NaN / ±Inf WideStopMaxPts must still fail
+// CLOSED at the R8 table — the kernel's StopLadderCeiling owns that, and this
+// pins the trader's pass-through reads it. Only an exact 0 is no cap.
+func TestStopLadderRefuseCeilingUnresolvedBadValue(t *testing.T) {
+	for _, bad := range []float64{-5, math.NaN(), math.Inf(1), math.Inf(-1)} {
+		if c := mentorStopLadderRefuseCeiling(20, mentorTierInputs{WideStopMaxPts: bad}); c != mentor.WideStopMaxFailClosedPts {
+			t.Errorf("unresolved %g: R8 ceiling %g, want fail-closed %g", bad, c, mentor.WideStopMaxFailClosedPts)
+		}
+	}
+	if c := mentorStopLadderRefuseCeiling(20, mentorTierInputs{}); !math.IsInf(c, 1) {
+		t.Errorf("unresolved 0: R8 ceiling %g, want +Inf (no cap)", c)
+	}
+	if c := mentorStopLadderRefuseCeiling(20, mentorTierInputs{WideStopMaxPts: -5, StopLadderOff: true}); c != 20 {
+		t.Errorf("ladder OFF + -5: R8 ceiling %g, want 20", c)
+	}
+	if mentorWideStopMaxFailClosed != mentor.WideStopMaxFailClosedPts {
+		t.Errorf("trader fail-closed %g != kernel %g", mentorWideStopMaxFailClosed, mentor.WideStopMaxFailClosedPts)
+	}
+}

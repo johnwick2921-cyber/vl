@@ -171,7 +171,7 @@ func mentorPositiveKnob(at *AutoTrader, v, def float64, name string) float64 {
 // gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). A bad value must
 // never silently mean "no cap" (fail CLOSED), so it does NOT fall back to the
 // default 0.
-const mentorWideStopMaxFailClosed = 40.0
+const mentorWideStopMaxFailClosed = mentor.WideStopMaxFailClosedPts
 
 // mentorWideStopMaxResolve resolves mentor_wide_stop_max_pts (owner order
 // 2026-11-15 "tarde all isb or any thing just need adjust contact"):

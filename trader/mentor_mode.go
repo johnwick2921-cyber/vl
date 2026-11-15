@@ -390,7 +390,8 @@ func mentorStopCeilingFor(setup string, isbMax float64) float64 {
 // ladder applied: the kernel's own mentor.StopLadderCeiling on the resolved
 // knobs (ladder OFF → ceiling unchanged; ON with wide max 0 → +Inf, no
 // stop-size cap, owner order 2026-11-15; ON with a stored positive wide max →
-// max(ceiling, wide max)). The +Inf is only ever COMPARED (R8 `stop > wide`),
+// max(ceiling, wide max); ON with a negative/NaN/±Inf wide max → fails closed
+// to the kernel's WideStopMaxFailClosedPts 40). The +Inf is only ever COMPARED (R8 `stop > wide`),
 // never formatted, logged or stored.
 func mentorStopLadderRefuseCeiling(ceiling float64, in mentorTierInputs) float64 {
 	var cfg mentor.Config

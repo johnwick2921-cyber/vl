@@ -224,16 +224,34 @@ func isbOverMaxStop(stopPts float64, cfg Config) bool {
 // mentor_isb_max_pts above the wide max still wins) and never touches the
 // target [OctD2.2-R49 @40:47]. Exported: the trader's R8 backstop reads the
 // SAME function, one rule in two places is not two rules.
+//
+// Only an EXACT 0 means no cap. A negative, NaN or ±Inf WideStopMaxPts (a
+// Config built without the trader's resolver) FAILS CLOSED to
+// WideStopMaxFailClosedPts — the #70 cap 40 — never to no cap and never to the
+// ladder-OFF ceiling (reviewer P2-1, 7e790a741).
 func StopLadderCeiling(cfg Config, offCeiling float64) float64 {
-	if cfg.CourseExits.StopSizeLadder && cfg.CourseExits.WideStopMaxPts <= 0 {
+	if !cfg.CourseExits.StopSizeLadder {
+		return offCeiling
+	}
+	wide := cfg.CourseExits.WideStopMaxPts
+	if wide == 0 {
 		// Owner order 2026-11-15: no cap — every non-swing stop is sized, never refused.
 		return math.Inf(1)
 	}
-	if cfg.CourseExits.StopSizeLadder && cfg.CourseExits.WideStopMaxPts > offCeiling {
-		return cfg.CourseExits.WideStopMaxPts
+	if wide < 0 || math.IsNaN(wide) || math.IsInf(wide, 0) {
+		wide = WideStopMaxFailClosedPts // fail CLOSED, never "no cap"
+	}
+	if wide > offCeiling {
+		return wide
 	}
 	return offCeiling
 }
+
+// WideStopMaxFailClosedPts is where a BAD stored mentor_wide_stop_max_pts
+// (negative, NaN, ±Inf) lands: the #70 cap 40 ("40 điểm thì mình làm gì?
+// Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). A bad value must never
+// silently mean "no cap". The trader's resolver uses the same constant.
+const WideStopMaxFailClosedPts = 40.0
 
 // stopLadderWidened reports whether the ladder raised this ceiling (the
 // refusal then names the wide-stop knob instead of the pre-ladder one).
