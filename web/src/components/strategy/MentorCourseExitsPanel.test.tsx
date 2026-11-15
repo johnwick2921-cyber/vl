@@ -215,3 +215,16 @@ it('the swing ISB / runner TP knobs default to the course and store / remove', (
     mentor_swing_isb_keep: false,
   })
 })
+
+it('the ladder max stop placeholder says 0 = no cap, 40 reverts (owner order 2026-11-15)', () => {
+  renderEditor({ mentor_mode: true })
+  const input = screen.getByTestId(
+    'mentor-course-mentor_wide_stop_max_pts'
+  ) as HTMLInputElement
+  expect(input.placeholder).toBe('default: 0 = no cap (40 reverts)')
+  // the other number placeholders keep the plain "default: N" form
+  const cx = screen.getByTestId(
+    'mentor-course-mentor_wide_stop_contracts'
+  ) as HTMLInputElement
+  expect(cx.placeholder).toBe('default: 1')
+})

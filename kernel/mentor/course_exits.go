@@ -2,6 +2,7 @@ package mentor
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"strings"
 	"time"
@@ -57,15 +58,27 @@ type CourseExitsCfg struct {
 	ISBMaxStopPts float64
 	// StopSizeLadder (owner order 2026-11-10, default ON): a non-swing stop
 	// above the setup's own ceiling (ISB: ISBMaxStopPts; PHL/PLH/BOX:
-	// Config.StopCeilingPts) is NOT refused up to WideStopMaxPts — it goes on
-	// to the trader's size table, which sizes it DOWN (20–30 → 3 [OctD2.2-R73
-	// @01:12:32], 30–max → 1 MNQ [OctD2.3-R47 @48:12]). The kernel only lets
-	// it through; the target is never changed [OctD2.2-R49 @40:47]. OFF = the
-	// pre-ladder ceilings exactly. Knob mentor_stop_size_ladder.
+	// Config.StopCeilingPts) is NOT refused for its size — it goes on to the
+	// trader's size table, which sizes it DOWN (20–30 → 3 [OctD2.2-R73
+	// @01:12:32], above 30 → mentor_wide_stop_contracts, 1 MNQ [OctD2.3-R47
+	// @48:12]). With WideStopMaxPts 0 (the default since owner order
+	// 2026-11-15) there is NO upper limit; a stored positive WideStopMaxPts
+	// refuses above it. The kernel only lets it through; the target is never
+	// changed [OctD2.2-R49 @40:47]. OFF = the pre-ladder ceilings exactly.
+	// Knob mentor_stop_size_ladder.
 	StopSizeLadder bool
-	// WideStopMaxPts (default 40, knob mentor_wide_stop_max_pts): with the
-	// ladder ON a non-swing stop ABOVE this is refused — "40 điểm thì mình làm
-	// gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]. Never narrows a
+	// WideStopMaxPts (knob mentor_wide_stop_max_pts): 0 (the default since
+	// owner order 2026-11-15 "trade all isb or anything just need adjust
+	// contract") = NO stop-size refusal — with the ladder ON every non-swing
+	// stop goes to the size table and trades at mentor_wide_stop_contracts
+	// above 30 ("40 điểm… Trade vẫn được. 1 MNQ" [OctD2.3-R47 @48:12]). Only
+	// the SIZE refusal goes: the setups' location rules (isb_trigger_side, the
+	// 5m/15m ISB box, orb_inside, just-broken, near_box) and the 1:1 floor /
+	// room still refuse — e.g. the mentor's own 44–45-pt long ISBs at the
+	// 10-30 open (OctD2.2-E11/E13/E17) stay refused by isb_trigger_side. A
+	// stored positive
+	// value restores the refusal ABOVE it (revert = 40, "40 điểm thì mình làm
+	// gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). Never narrows a
 	// setup's ladder-OFF ceiling (a stored mentor_isb_max_pts above it wins).
 	WideStopMaxPts float64
 	// KeypairCandleRatio (CX-10, default 1 = today): the X4 keypair rule sits
@@ -139,7 +152,7 @@ func DefaultCourseExitsCfg() CourseExitsCfg {
 		KeypairCandleRatio:      1,
 		ISBMaxStopPts:           20,                     // m466 G23: "hai mươi mấy điểm… đừng vô" [D4.1 p1 @05:41–06:08] (later than D3.3's 25)
 		StopSizeLadder:          true,                   // owner order 2026-11-10: size DOWN, not refuse [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12, OctD2.2-R49 @40:47]
-		WideStopMaxPts:          40,                     // "40 điểm thì mình làm gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]
+		WideStopMaxPts:          0,                      // owner order 2026-11-15: no stop-size refusal, size down to 1 MNQ [OctD2.3-R47 @48:12 "Trade vẫn được. 1 MNQ"]; revert = 40
 		Open5mBreak:             Open5mBreak1mClose,     // m466 G55 D4.4-R40
 		NewsWaitMode:            NewsWaitBoth,           // m466 G56 D4.4-R22
 		NewsReadLeadMin:         NewsReadLeadMinDefault, // m466 G58 D4.4-R6
@@ -201,7 +214,9 @@ func isbOverMaxStop(stopPts float64, cfg Config) bool {
 // against (the stop-to-size LADDER, owner order 2026-11-10). offCeiling is
 // the setup's own pre-ladder ceiling (ISB: CourseExits.ISBMaxStopPts; PHL/PLH
 // and BOX: Config.StopCeilingPts). Ladder OFF → offCeiling, unchanged. Ladder
-// ON → max(offCeiling, CourseExits.WideStopMaxPts): a stop up to the wide max
+// ON with WideStopMaxPts 0 (the default, owner order 2026-11-15) → +Inf: no
+// stop is refused for its size, the size table sizes it down. ON with a
+// stored positive WideStopMaxPts → max(offCeiling, WideStopMaxPts): a stop up to the wide max
 // passes to the trader's size table, which sizes it DOWN — 20–30 → the
 // reduced tier ("tầm 20 điểm, 30 điểm… Tôi vô size 3 hoặc tôi không trade"
 // [OctD2.2-R73 @01:12:32]), 30–max → 1 MNQ ("Trade vẫn được. 1 MNQ"
@@ -209,12 +224,34 @@ func isbOverMaxStop(stopPts float64, cfg Config) bool {
 // mentor_isb_max_pts above the wide max still wins) and never touches the
 // target [OctD2.2-R49 @40:47]. Exported: the trader's R8 backstop reads the
 // SAME function, one rule in two places is not two rules.
+//
+// Only an EXACT 0 means no cap. A negative, NaN or ±Inf WideStopMaxPts (a
+// Config built without the trader's resolver) FAILS CLOSED to
+// WideStopMaxFailClosedPts — the #70 cap 40 — never to no cap and never to the
+// ladder-OFF ceiling (reviewer P2-1, 7e790a741).
 func StopLadderCeiling(cfg Config, offCeiling float64) float64 {
-	if cfg.CourseExits.StopSizeLadder && cfg.CourseExits.WideStopMaxPts > offCeiling {
-		return cfg.CourseExits.WideStopMaxPts
+	if !cfg.CourseExits.StopSizeLadder {
+		return offCeiling
+	}
+	wide := cfg.CourseExits.WideStopMaxPts
+	if wide == 0 {
+		// Owner order 2026-11-15: no cap — every non-swing stop is sized, never refused.
+		return math.Inf(1)
+	}
+	if wide < 0 || math.IsNaN(wide) || math.IsInf(wide, 0) {
+		wide = WideStopMaxFailClosedPts // fail CLOSED, never "no cap"
+	}
+	if wide > offCeiling {
+		return wide
 	}
 	return offCeiling
 }
+
+// WideStopMaxFailClosedPts is where a BAD stored mentor_wide_stop_max_pts
+// (negative, NaN, ±Inf) lands: the #70 cap 40 ("40 điểm thì mình làm gì?
+// Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). A bad value must never
+// silently mean "no cap". The trader's resolver uses the same constant.
+const WideStopMaxFailClosedPts = 40.0
 
 // stopLadderWidened reports whether the ladder raised this ceiling (the
 // refusal then names the wide-stop knob instead of the pre-ladder one).
@@ -464,7 +501,7 @@ func (e *Evaluator) baseBoxCfg() BoxCfg {
 // a BoxCfg, without defaulting anything else: D3-G2 box_swing_both_roles, D3-G7 box_flip_reversible.
 func (e *Evaluator) withBoxFlags(cfg BoxCfg) BoxCfg {
 	cfg.OneRoleSwings = !e.Cfg.BoxSwingBothRoles
-	cfg.FlipPermanent = !e.Cfg.BoxFlipReversible // D3-G7
+	cfg.FlipPermanent = !e.Cfg.BoxFlipReversible        // D3-G7
 	cfg.FTGLBodyEdgePartner = e.Cfg.FTGLBodyEdgePartner // oct-exact D3
 	return cfg
 }
@@ -495,13 +532,16 @@ func (e *Evaluator) boxBuildCfg(cfg BoxCfg) BoxCfg {
 }
 
 // ISBWideStopReason is the refusal ISBStopVerdict returns when the stop-size
-// ladder is ON and the ISB stop is above mentor_wide_stop_max_pts.
-const ISBWideStopReason = "ISB stop above mentor_wide_stop_max_pts — refused [stop-size ladder, default 40 — \"40 điểm thì mình làm gì? Mình không trade\" OctD2.3-R47 @48:12, R48 @49:38]"
+// ladder is ON and the ISB stop is above a STORED positive
+// mentor_wide_stop_max_pts (unset/0 = no cap since owner order 2026-11-15, so
+// this only fires on the revert value, e.g. 40).
+const ISBWideStopReason = "ISB stop above the stored mentor_wide_stop_max_pts — refused [stop-size ladder, default 0 = no cap; revert 40 — \"40 điểm thì mình làm gì? Mình không trade\" OctD2.3-R47 @48:12, R48 @49:38]"
 
 // PHLWideStopReasonPrefix starts the PHL/PLH refusal when the ladder is ON
-// and the stop is above mentor_wide_stop_max_pts (counted phl_stop_ceiling,
-// the same counter as the pre-ladder 25-pt refusal).
-const PHLWideStopReasonPrefix = "stop over the mentor_wide_stop_max_pts ceiling"
+// and the stop is above a STORED positive mentor_wide_stop_max_pts (counted
+// phl_stop_ceiling, the same counter as the pre-ladder 25-pt refusal).
+// Unset/0 = no cap (owner order 2026-11-15): it only fires on a stored value.
+const PHLWideStopReasonPrefix = "stop over the stored mentor_wide_stop_max_pts ceiling"
 
 // ISBMaxStopReason is the CX-9 refusal reason ISBStopVerdict returns.
 const ISBMaxStopReason = "ISB stop above mentor_isb_max_pts — refused [CX-9 knob, default 20 — \"hai mươi mấy điểm… đừng vô\" D4.1 p1 @05:41–06:08]"

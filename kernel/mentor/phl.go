@@ -149,9 +149,12 @@ func phlPLHR2(t Touch, oldExtreme Level, extremeIdx, barIdx int, priorSwing floa
 	if risk <= 0 || reward <= 0 {
 		return Intent{}, false, "degenerate stop/target geometry"
 	}
-	// Stop-size ladder (owner order 2026-11-10): ON lets a stop up to
-	// mentor_wide_stop_max_pts (40) through to the trader's size table, which
-	// sizes it down [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]; OFF = the D3.3 25 exactly.
+	// Stop-size ladder (owner order 2026-11-10): ON lets a wide stop through
+	// to the trader's size table, which sizes it down [OctD2.2-R73 @01:12:32,
+	// OctD2.3-R47 @48:12] — with no size cap by default (mentor_wide_stop_max_pts
+	// 0, owner order 2026-11-15); a stored mentor_wide_stop_max_pts caps
+	// (revert 40). OFF = the D3.3 25 exactly. The 1:1 floor / room below still
+	// apply to every stop — a wide stop needs a level that far away.
 	if ceil := StopLadderCeiling(cfg, cfg.StopCeilingPts); risk > ceil {
 		if ceil > cfg.StopCeilingPts {
 			return Intent{}, false, fmt.Sprintf("%s (%g pts) — do not trade [\"40 điểm… Mình không trade\" OctD2.3-R47 @48:12, R48 @49:38]", PHLWideStopReasonPrefix, ceil)

@@ -166,6 +166,30 @@ func mentorPositiveKnob(at *AutoTrader, v, def float64, name string) float64 {
 	return v
 }
 
+// mentorWideStopMaxFailClosed is what a BAD stored mentor_wide_stop_max_pts
+// (negative, NaN, ±Inf) resolves to: the #70 cap 40 ("40 điểm thì mình làm
+// gì? Mình không trade" [OctD2.3-R47 @48:12; R48 @49:38]). A bad value must
+// never silently mean "no cap" (fail CLOSED), so it does NOT fall back to the
+// default 0.
+const mentorWideStopMaxFailClosed = mentor.WideStopMaxFailClosedPts
+
+// mentorWideStopMaxResolve resolves mentor_wide_stop_max_pts (owner order
+// 2026-11-15 "tarde all isb or any thing just need adjust contact"):
+// unset/0 → the kernel default 0 = NO stop-size cap; a positive finite value
+// → that cap (revert = 40); negative/NaN/±Inf → 40, counted
+// wide_stop_max_pts_bad_value (fail closed — not mentorPositiveKnob, whose
+// fallback is the default, which here would be no cap).
+func mentorWideStopMaxResolve(at *AutoTrader, v float64) float64 {
+	if v == 0 {
+		return mentorWideStopMaxDefault
+	}
+	if v < 0 || math.IsNaN(v) || math.IsInf(v, 0) {
+		at.mentorCount("wide_stop_max_pts_bad_value")
+		return mentorWideStopMaxFailClosed
+	}
+	return v
+}
+
 // mentorCourseExitsResolved is the per-trader resolved view (boot line + tests).
 type mentorCourseExitsResolved struct {
 	SwingEMA34FirstTarget bool
@@ -202,7 +226,10 @@ type mentorCourseExitsResolved struct {
 	// Stop-to-size LADDER (owner order 2026-11-10): StopSizeLadder
 	// (mentor_stop_size_ladder, nil → ON), WideStopContracts
 	// (mentor_wide_stop_contracts, 0 → 1 [OctD2.3-R47 @48:12 "1 MNQ"]),
-	// WideStopMaxPts (mentor_wide_stop_max_pts, 0 → 40 [OctD2.3-R47 @48:12]).
+	// WideStopMaxPts (mentor_wide_stop_max_pts, 0 → no cap, owner order
+	// 2026-11-15; a stored positive value caps [OctD2.3-R47 @48:12]; a bad
+	// stored value → 40, fail closed — mentorWideStopMaxResolve). Always
+	// finite: the no-cap +Inf lives only inside mentor.StopLadderCeiling.
 	StopSizeLadder    bool
 	WideStopContracts int
 	WideStopMaxPts    float64
@@ -264,7 +291,7 @@ func mentorCourseExitsResolve(at *AutoTrader, rc *store.RiskControlConfig) mento
 		WideStopMaxPts:        mentorWideStopMaxDefault,
 	}
 	if rc != nil {
-		out.WideStopMaxPts = mentorPositiveKnob(at, rc.MentorWideStopMaxPts, mentorWideStopMaxDefault, "wide_stop_max_pts")
+		out.WideStopMaxPts = mentorWideStopMaxResolve(at, rc.MentorWideStopMaxPts)
 		switch {
 		case rc.MentorWideStopContracts > 0:
 			out.WideStopContracts = rc.MentorWideStopContracts
@@ -290,7 +317,7 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 	cfg.CourseExits.EMA9VisitCap = r.EMA9VisitCap
 	cfg.CourseExits.ISBMaxStopPts = r.ISBMaxPts
 	cfg.CourseExits.StopSizeLadder = r.StopSizeLadder // owner order 2026-11-10: kernel ceilings widen to the wide max
-	cfg.CourseExits.WideStopMaxPts = r.WideStopMaxPts // [OctD2.3-R47 @48:12] ONE number, kernel + trader R8
+	cfg.CourseExits.WideStopMaxPts = r.WideStopMaxPts // 0 = no cap (owner 2026-11-15); stored caps [OctD2.3-R47 @48:12] — ONE number, kernel + trader R8
 	cfg.CourseExits.KeypairCandleRatio = r.KeypairRatio
 	cfg.CourseExits.BoxFreshRTHPair = r.BoxFreshRTHPair
 	cfg.CourseExits.BoxMaxHeightPts = r.BoxMaxHeightPts
@@ -308,10 +335,10 @@ func applyMentorCourseExits(at *AutoTrader, cfg *mentor.Config, rc *store.RiskCo
 // (CourseExits.ISBMaxStopPts, 20 since m466 G23), read, never retyped.
 var mentorISBMaxDefault = mentor.DefaultCourseExitsCfg().ISBMaxStopPts
 
-// The stop-to-size ladder defaults: ON and the 40-pt max are the kernel's own
-// (CourseExits.StopSizeLadder / WideStopMaxPts), read, never retyped; the
-// 1-MNQ wide tier is the trader's (the kernel does not size) — "Trade vẫn
-// được. 1 MNQ" [OctD2.3-R47 @48:12].
+// The stop-to-size ladder defaults: ON and the wide max (0 = no cap since
+// owner order 2026-11-15) are the kernel's own (CourseExits.StopSizeLadder /
+// WideStopMaxPts), read, never retyped; the 1-MNQ wide tier is the trader's
+// (the kernel does not size) — "Trade vẫn được. 1 MNQ" [OctD2.3-R47 @48:12].
 var (
 	mentorStopLadderDefault  = mentor.DefaultCourseExitsCfg().StopSizeLadder
 	mentorWideStopMaxDefault = mentor.DefaultCourseExitsCfg().WideStopMaxPts
@@ -342,12 +369,21 @@ func (at *AutoTrader) mentorCourseExitsBootLine() string {
 		}
 		return fmt.Sprintf("%g", v)
 	}
+	// wide_stop_max_pts 0 is NOT "off" (that reads as "the ladder is off"):
+	// it is the no-cap default (owner order 2026-11-15). Never +Inf — the
+	// resolved value is always finite.
+	wideMax := func(v float64) string {
+		if v <= 0 {
+			return "none (no cap)"
+		}
+		return fmt.Sprintf("%g", v)
+	}
 	return fmt.Sprintf("🧑‍🏫 mentor course-exits knobs: swing_ema34_is_first_target=%s · swing_runner=%s (swing contracts %d) · resonance_runner_tp_old_high=%s · be_before_partial=%s · isb_c3_partial_any_profit=%s · reverse_isb_as_phl=%s · ema9_visit_cap=%s · isb_max_pts=%s · keypair_candle_ratio=%g · box_fresh_rth_pair=%s · box_max_height_pts=%s · swing_max_stop_pts=%s · isb_loss_box=%s · open5m_break=%s · news_wait_mode=%s · news_read_lead_min=%d · swing_isb_close_back=%s · swing_isb_keep=%s · swing_runner_tp=%s · stop_size_ladder=%s · wide_stop_contracts=%d · wide_stop_max_pts=%s",
 		onoff(r.SwingEMA34FirstTarget), onoff(r.SwingRunner), at.mentorSwingContractsRead(), onoff(r.ResonanceRunnerTP),
 		onoff(r.BEBeforePartial), onoff(r.ISBC3AnyProfit), onoff(r.ReverseISBAsPHL), r.EMA9VisitCap,
 		num(r.ISBMaxPts), r.KeypairRatio, onoff(r.BoxFreshRTHPair), num(r.BoxMaxHeightPts), num(r.SwingMaxStopPts), r.ISBLossBox, r.Open5mBreak, r.NewsWaitMode, r.NewsReadLeadMin,
 		r.SwingISBCloseBack, onoff(r.SwingISBKeep), r.SwingRunnerTP,
-		onoff(r.StopSizeLadder), r.WideStopContracts, num(r.WideStopMaxPts))
+		onoff(r.StopSizeLadder), r.WideStopContracts, wideMax(r.WideStopMaxPts))
 }
 
 // mentorSwingContractsRead reads the resolved swing size (the existing

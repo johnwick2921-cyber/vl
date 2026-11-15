@@ -75,9 +75,17 @@ var acceptedMisses = map[string]string{
 	// keep) and (b) isbrev_stop_over_max x1 = ISBMaxStopPts 20 (m466 D4.1-R12), a bot cap, not a 40 ladder. The
 	// mentor TOOK these 44.75-45 pt-stop entries, so rule 3 ("the mentor's own video trade wins") is overridden here
 	// by rule 4 ("the later video wins": D4.3-R28 is later than D2.2). That override is the CTO's, NOT yet owner-approved.
-	"D2.2-E11": "[NEEDS OWNER SIGN-OFF: own-trade-wins overridden by later-wins] refused by isb_trigger_side x3 (D4.3-R28 @22:00, CTO C1 keep, later than D2.2) and isbrev_stop_over_max x1 (ISBMaxStopPts 20, m466 D4.1-R12); NOT by D2.3-R47, which allows a >40 pt stop at 1 MNQ (@48:12)",
-	"D2.2-E13": "[NEEDS OWNER SIGN-OFF: own-trade-wins overridden by later-wins] same 10-30 08:37 example as D2.2-E11 (stop 44.75 pts): refused by isb_trigger_side x3 (D4.3-R28) and isbrev_stop_over_max x1 (ISBMaxStopPts 20, D4.1-R12); D2.3-R47 would allow it at 1 MNQ",
-	"D2.2-E17": "[NEEDS OWNER SIGN-OFF] the sizing demo on the same 10-30 08:37 ISB (stop 35-45 pts): its own words are 'size 3 or no trade' (Oct D2.2 @1:12:32); the bot refuses it on isb_trigger_side (D4.3-R28) and isbrev_stop_over_max (ISBMaxStopPts 20)",
+	// NO-CAP (owner order 2026-11-15 "tarde all isb or any thing just need adjust contact"): the stop-size refusal is
+	// gone (mentor_wide_stop_max_pts 0 = no cap, a >30 stop trades 1 MNQ), so isbrev_stop_over_max no longer fires
+	// here. isb_trigger_side (D4.3-R28) is now the ONLY blocker of E11/E13/E17 - the owner kept the October location
+	// rules - and the bot instead arms an opposite-side short PLH 28,706.75 at 08:38 (stop 43.2 pts, 1 MNQ).
+	"D2.2-E11": "[NEEDS OWNER SIGN-OFF: own-trade-wins overridden by later-wins] refused by isb_trigger_side x3 only (D4.3-R28 @22:00, CTO C1 keep, later than D2.2; the owner kept the October location rules 2026-11-15); the stop size no longer refuses it (owner order 2026-11-15 no-cap: a 45-pt stop would trade 1 MNQ, D2.3-R47 @48:12). The bot arms the opposite side instead: 08:38 short PLH 28,706.75, stop 43.2 pts, 1 MNQ",
+	"D2.2-E13": "[NEEDS OWNER SIGN-OFF: own-trade-wins overridden by later-wins] same 10-30 08:37 example as D2.2-E11 (stop 44.75 pts): refused by isb_trigger_side x3 only (D4.3-R28); no stop-size refusal since the owner's no-cap order 2026-11-15 (1 MNQ, D2.3-R47). The bot arms the opposite-side 08:38 short PLH 28,706.75 (stop 43.2 pts) instead",
+	"D2.2-E17": "[NEEDS OWNER SIGN-OFF] the sizing demo on the same 10-30 08:37 ISB (stop 35-45 pts): its own words are 'size 3 or no trade' (Oct D2.2 @1:12:32); the bot refuses it on isb_trigger_side only (D4.3-R28) - no stop-size refusal since the owner's no-cap order 2026-11-15 (it would size 1 MNQ)",
+	// NO-CAP (owner order 2026-11-15, accepted with the owner's answer Q6): D2.2-E15 is the mentor's refusal of any
+	// entry 10-30 08:47-08:49. With no stop-size cap the bot now arms a 08:46 short PLH 28,731.00 (reverse ISB at the
+	// EMA 9 as PLH, stop 41.8 pts) at 1 MNQ - exactly the wide-stop trade the owner ordered taken. Floor 33 -> 32.
+	"D2.2-E15": "owner order 2026-11-15 'trade all … adjust contract' — the mentor skipped it on video (D2.2); the bot takes it at 1 MNQ (08:46 short PLH 28,731.00, stop 41.8 pts, mentor_wide_stop_max_pts 0 = no cap; refused at the #70 40-pt cap). Accepted by the owner (answer Q6), floor lowered 33 -> 32 explicitly",
 	// D4.1-1 stays refused by October, but the rule that refuses it is the morning dead box (CTO D4), which the
 	// CTO ruled NOT built: D4.1-R23 gives no measure of 'did not move for ~30 min' (box 28,739.25/28,662.00 is 77.25
 	// pts, left edge 08:30-08:34, a number the bot cannot derive; its own 5m ISB box forms at 08:40). The arms inside
@@ -565,4 +573,7 @@ func TestOctVideoScorecard(t *testing.T) {
 }
 
 // octScoreFloor is the ratchet: raise it when a miss is fixed (P4-missesB: 33/55).
-const octScoreFloor = 33
+// LOWERED 33 -> 32 EXPLICITLY by owner order 2026-11-15 ("tarde all isb or any thing just need adjust contact";
+// answer Q6: accept D2.2-E15 - the bot now takes the 41.8-pt 08:46 PLH at 1 MNQ the mentor skipped). Never lower it
+// silently: the next drop needs its own owner order and its own acceptedMisses entry.
+const octScoreFloor = 32

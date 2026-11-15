@@ -31,17 +31,24 @@ func m425bIntent(stop, target float64) mentor.Intent {
 
 func TestM425bRuleGateRefusalsCounted(t *testing.T) {
 	t.Setenv("MENTOR_PLACE", "")
+	off := false
 	cases := []struct {
 		name, class string
 		in          mentor.Intent
+		rc          store.RiskControlConfig
 	}{
-		{"bad_geometry", "mentor_bad_geometry", m425bIntent(29605, 29610)},
-		{"r8", "mentor_rule_r8", m425bIntent(29500, 29800)},
-		{"r9", "mentor_rule_r9", m425bIntent(29590, 29605)},
+		{"bad_geometry", "mentor_bad_geometry", m425bIntent(29605, 29610), store.RiskControlConfig{MentorMode: true}},
+		// R8 needs a real ceiling: since owner order 2026-11-15 the default
+		// ladder has NO stop-size cap (this 100-pt stop would arm 1 MNQ), so
+		// the R8 counter is pinned on the stored REVERT cap 40 and on the
+		// ladder OFF (20-pt ISB ceiling) — never a vacuous default pass.
+		{"r8", "mentor_rule_r8", m425bIntent(29500, 29800), store.RiskControlConfig{MentorMode: true, MentorWideStopMaxPts: 40}},
+		{"r8_ladder_off", "mentor_rule_r8", m425bIntent(29500, 29800), store.RiskControlConfig{MentorMode: true, MentorStopSizeLadder: &off}},
+		{"r9", "mentor_rule_r9", m425bIntent(29590, 29605), store.RiskControlConfig{MentorMode: true}},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true})
+			at := mentoredTrader(t, c.rc)
 			if got := m425bGate(t, at, c.class, func() { at.mentorDispatchIntent(c.in, mentorTierInputs{}, 1000, 1100) }); got != 1 {
 				t.Fatalf("%s: gate-block %s = %d, want 1", c.name, c.class, got)
 			}
