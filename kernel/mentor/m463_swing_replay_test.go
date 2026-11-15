@@ -56,7 +56,7 @@ type m463ReplayResult struct {
 func m463Replay(t *testing.T, cfgMut func(*Config)) m463ReplayResult {
 	t.Helper()
 	bars := m413Load(t, "testdata/m463_mnq_1m_20261028_0800ct.csv")
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if cfgMut != nil {
 		cfgMut(&cfg)
 	}

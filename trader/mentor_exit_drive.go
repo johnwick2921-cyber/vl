@@ -12,6 +12,7 @@ import (
 	"vl/kernel/mentor"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
+	"vl/store"
 	ntTrader "vl/trader/ninjatrader"
 )
 
@@ -215,7 +216,10 @@ func (at *AutoTrader) mentorX8TrapDodgeExit(nt *ntTrader.TCPTrader, p *mentorLiv
 		return false // the swing is held by the 4h — X8 is an intraday rule
 	}
 	if at.mentorX8LimitFallback(nt, p) {
-		return true
+		return true // a fallback only ever follows an X8 exit already sent (revert path)
+	}
+	if !mentorX8TrapDodgeEnabled(at.mentorRiskControl()) {
+		return false // OCT-EXACT A2 row 17: the X8 trap-dodge exit is OFF (Sept extra X8, October silent); mentor_x8_trap_dodge=true reverts
 	}
 	// m409: the X8 frame is the frame the ENTRY was read on ("trade khung nào
 	// thì BẬT KHUNG ĐÓ", D5.4 @08:15) — 1m in the first 30 min, 2m after, 5m on
@@ -490,7 +494,25 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		if p.UncapTries < mentorResonanceUncapMaxTries && !mentorResonanceRunnerTPOn(at.mentorRiskControl()) {
 			at.mentorResonanceRunnerUncap(nt, p)
 		}
+		// oct-exact C6 (knob mentor_resonance_trail, default ON): once BE is armed
+		// on a PRIOR candle and the 1:1 partial is confirmed, the runner trails one
+		// tick beyond each closed candle like mode B [Oct D4.2-R31/R32, later than
+		// R13 "no trail"; D4.2 #5 trailed to 28,218.75]. The candle that arms BE
+		// only arms BE.
+		wasArmedA := p.Pos.ArmedBE
 		at.mentorExitDriveResonance(nt, p, c, scaledNow, at.mentorExitedLegs(p))
+		if wasArmedA && scaledNow && mentorResonanceTrailOn(at.mentorRiskControl()) &&
+			p.Legs[0].Wire == 1 && at.mentorTrailMode() == mentorTrailModeCandle {
+			exitedA := at.mentorExitedLegs(p)
+			_, exitedAtMsA := at.mentorScaledState(p)
+			tc, th, tl, tOK := c, h, l, true
+			scaledBeforeA := mentorLeg1ExitedBefore(exitedAtMsA, candleOpenMs)
+			if p.TrailTFMin > 1 {
+				tc, th, tl, tOK = p.trailBar.Close, p.trailBar.High, p.trailBar.Low, p.trailBarOK
+				scaledBeforeA = mentorLeg1ExitedBefore(exitedAtMsA, p.trailBar.OpenTime)
+			}
+			at.mentorExitDriveCandle(nt, p, tc, th, tl, scaledNow, scaledBeforeA, trail && tOK, tOK, exitedA)
+		}
 		return
 	}
 
@@ -1490,6 +1512,28 @@ func (at *AutoTrader) mentorPersistResonanceMode(p *mentorLivePos) {
 // not the course; the owner may change it; disclosed in the guide].
 const mentorResonanceBEMinRR = 0.25
 
+// mentorResonanceBEMinRRFor is the knob-resolved minimum (OCT-EXACT A2 row 17):
+// mentor_resonance_be_min_rr nil -> 0 (BE once the close is beyond the entry;
+// the 0.25R is ours, October states none); 0.25 reverts. A bad value -> 0.
+func mentorResonanceBEMinRRFor(rc *store.RiskControlConfig) float64 {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorResonanceBEMinRR == nil {
+		return 0
+	}
+	if v := *rc.MentorTuning.MentorResonanceBEMinRR; v >= 0 && v <= 2 {
+		return v
+	}
+	return 0
+}
+
+// mentorResonanceTrailOn reads mentor_resonance_trail (oct-exact C6): nil ->
+// ON (October D4.2-R31/R32); a stored false reverts to the no-trail mode A.
+func mentorResonanceTrailOn(rc *store.RiskControlConfig) bool {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorResonanceTrail == nil {
+		return true
+	}
+	return *rc.MentorTuning.MentorResonanceTrail
+}
+
 // mentorExitDriveResonance is the mode-A break-even on one CLOSED 1m candle
 // (plan §Exits B). c52 W2 B2: the course puts the stop at break-even BECAUSE
 // leg 1 was already sold at 1:1 — "RISK REWARD 1-1 tôi vẫn sẽ bán bớt. Nhưng
@@ -1536,7 +1580,7 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 	// mentorMoveLegStop keeps it on the protective side (a through-the-market BE
 	// is closed, not sent).
 	if !split && !scaledNow {
-		dist := pos.R * mentorResonanceBEMinRR
+		dist := pos.R * mentorResonanceBEMinRRFor(at.mentorRiskControl())
 		reached := (side == "long" && c >= pos.Entry+dist) || (side != "long" && c <= pos.Entry-dist)
 		if !reached {
 			at.mentorCount("resonance_be_waiting")
@@ -1642,4 +1686,9 @@ func (at *AutoTrader) mentorInstrumentTick() float64 {
 		return t
 	}
 	return 0.25
+}
+
+// mentorX8TrapDodgeEnabled reads mentor_x8_trap_dodge (nil -> OFF).
+func mentorX8TrapDodgeEnabled(rc *store.RiskControlConfig) bool {
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorX8TrapDodge != nil && *rc.MentorTuning.MentorX8TrapDodge
 }

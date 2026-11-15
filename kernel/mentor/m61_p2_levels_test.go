@@ -29,7 +29,7 @@ var m61UnoKey = "key_level:29104.25"
 // the level's role, not the long).
 func m61UnoEvaluator(t *testing.T, uno string) (*Evaluator, int64) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.UnoKeyLevels = uno
@@ -329,7 +329,7 @@ func TestM61SessionOpenWickIsOldHigh(t *testing.T) {
 		t.Fatalf("fixture: last bar %02d:%02d CT, want 18:30", hh, mm)
 	}
 	now := last.CloseTime + 1
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	l, ok := m61Find(Levels(bars, cfg, now), KindOldExtreme, 29136)
 	if !ok || l.Role != OldHigh {
@@ -351,7 +351,7 @@ func TestM61SessionOpenWickBroken(t *testing.T) {
 	sun := auditMs(2026, 9, 13, 17, 0, 0)
 	bars[10+6] = m61Bar(sun, 6, 29090, 29137, 29085, 29090)
 	now := bars[len(bars)-1].CloseTime + 1
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	if _, ok := m61Find(Levels(bars, cfg, now), KindOldExtreme, 29136); ok {
 		t.Fatal("a broken open wick is no old high")
@@ -363,7 +363,7 @@ func TestM61SessionOpenWickBroken(t *testing.T) {
 // from Friday's last close 29,391.25 down to the Sunday open candle's high.
 // RED before #61: no gap level kind at all.
 func TestM61GapEdgeLevel(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := m61WeekendTape(29391.25)
 	now := bars[len(bars)-1].CloseTime + 1
@@ -420,7 +420,7 @@ func TestM61GapEdgeLevel(t *testing.T) {
 // TestM61GapEdgeSeededPath — the evaluator's own (seeded) level set carries the
 // open pivots and the gap edge too.
 func TestM61GapEdgeSeededPath(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := m61WeekendTape(29391.25)
@@ -447,7 +447,7 @@ func TestM61TrendlineArmCancelsOnCurrentLine(t *testing.T) {
 	tl := Trendline{Side: SideLong, P0Px: 29375, P0T: p0, P1Px: 29384, P1T: p1, ValidAt: 1}
 	key := tl.key()
 	run := func(mode string, lines []Trendline) ([]Intent, *Evaluator) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.LevelArmLineCancel = mode
 		e := New(cfg)
@@ -478,7 +478,7 @@ func TestM61TrendlineArmCancelsOnCurrentLine(t *testing.T) {
 
 // TestM61KeyLevelArmUnchanged — a non-moving key keeps the placement price.
 func TestM61KeyLevelArmUnchanged(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	p0 := auditMs(2026, 9, 15, 10, 0, 0)
@@ -505,7 +505,7 @@ func TestM61PHLPullbackLowerLowRefused(t *testing.T) {
 			m61Bar(base, 3, 29360, 29372, 29350, 29368), // signal candle
 		}
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if got := phlPullbackRefusal(cfg, SideLong, mk(29335), 0, 3, mk(29335)[3], 29338); got != "phl_pullback_lower_low" {
 		t.Fatalf("a pullback low 29,335 under the prior low 29,338 must refuse, got %q", got)
 	}
@@ -543,7 +543,7 @@ func TestM61PHLPullbackLowerLowRefused(t *testing.T) {
 // 29,330 — under the leg-start low 29,335 — before the touch candle.
 func TestM61PHLPullbackLowerLowThroughTick(t *testing.T) {
 	for _, mode := range []string{PHLPullbackLowPullback, PHLPullbackLowSignal} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.Exec2mAfter30m = false

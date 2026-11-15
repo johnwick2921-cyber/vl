@@ -127,6 +127,12 @@ func open5mBrokenWith(bars []market.Kline, now int64, high, low float64, mode st
 const open5mMissingNote = "open5m_range_missing"
 
 func open5mRangeFilter(ints []Intent, h HTF, bars []market.Kline, now int64, cfg Config) (out []Intent, refusals []string, notes []string) {
+	// OCT-EXACT A1 row 5: the open-5m range break gate is Sept D4.4, October is
+	// silent (closest: OctD4.3-R66 @1:05:00 is the 5m ISB box break, a different
+	// rule). mentor_open5m_gate_enabled=true reverts.
+	if !cfg.Open5mGateEnabled {
+		return ints, nil, nil
+	}
 	t := time.UnixMilli(now).In(ctime())
 	mins := t.Hour()*60 + t.Minute()
 	if mins < 8*60+30 || mins > 9*60+30 {

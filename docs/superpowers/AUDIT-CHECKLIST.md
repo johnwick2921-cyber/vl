@@ -10699,3 +10699,19 @@ Reference: trader/veto_snapshot.go (armVetoSnapshot / lazyArmVetoSnapshot), trad
 - **Probe:** for every default change to a factor, grep every call site that multiplies it (`roomRefusal`, `spentDayRoomRefusal`, `levelRoomMultiple`, `targetRoomMultiple`) and every product it feeds (normal vs confluence leg, wick target); state the product before and after for each, and pin each product at the default AND the revert value at the production core.
 - **Pin:** `TestAnswers1112ReviewConfluencePHLRoomIsTwoR` (kernel/mentor/answers1112_review_test.go — WE10 geometry through `phlPLHR2`: a confluence PLH at 2.51R passes at 1 and is refused at 2 with "22.00 pts < 35.00 pts"; at 1.71R the confluence leg is refused "15.00 pts < 17.50 pts (1.00x the leg-1 2R …)" while the non-confluence WE10 passes), store `TestAnswers1112ReviewPHLRoomNoteNamesConfluenceRoom` (the registry note names 2R at 1 and 4R at 2).
 - **Reference:** `kernel/mentor/eval.go` `roomRefusal`, `kernel/mentor/phl.go` `phlPLHR2`, `kernel/mentor/mentor.go` `Leg1RiskMultiple` / `PHLRoomMultiple`, `store/knob_registry_table.go` `phl_room_multiple`, guide card "PHL/PLH room multiple".
+
+## CLASS NN (assigned at merge) — rules with no course source shipped ON by default (oct-exact build, feat/oct-exact-1114)
+
+- **Symptom:** the 11-14 W1 gate audit found ~260 mentor-mode gates; most of the day-level and entry-level gates (4h/1h HTF gate, day gate 265, SWING 4H, ORB part 2, open-5m gate, news waits/hold, leg budget, loss box, 15m/30m box gates, near_box 2x, keypair, flag wall) had no October citation and several refused or never saw the mentor's own video trades (scorecard 16/55 at baseline) [A, read in w1-verdicts.tsv and the scorecard].
+- **Root cause:** each gate was added by a release with a one-line rationale ("safety", "Sept D5.1", "the owner was told") and defaulted ON; nothing required a cite for an ON default and nothing replayed the course's own trades, so the set drifted away from the course one reasonable gate at a time.
+- **Probe:** for every mentor-mode default that is ON, name the October video cite; a gate with no cite, or contradicted by a video trade, ships OFF behind a knob whose old value is the revert. Run the video-trade scorecard on every gate change.
+- **Pin:** `TestOctVideoScorecard` (cmd/mentor-replay), `TestOctNonMentorConfigUnchanged` (trader).
+- **Reference:** `kernel/mentor/mentor.go` DefaultConfig (OCT-EXACT comments), `trader/mentor_tuning.go`, build folder CTO-decisions.md.
+
+## CLASS NN (assigned at merge) — a scorecard window "inferred" from a note instead of read from the frame makes a trade pass or fail for the wrong reason (oct-exact build, feat/oct-exact-1114)
+
+- **Symptom:** several scorecard rows (EX4, E8, E11, E13) carried guessed windows; the review had to revert one window and rewrite three reasons because the row passed or failed for a cause other than the one written [A, review r1 commit 086f2ebc1].
+- **Root cause:** harness windows are data, not code, so a wrong one is invisible to every test that only checks the harness runs.
+- **Probe:** every scorecard window carries a cite (note line or frame id) or is listed in the signoff-pending list; any harness change is named under "HARNESS:" in the commit.
+- **Pin:** `TestOctVideoScorecard`.
+- **Reference:** `cmd/mentor-replay` scorecard fixtures.

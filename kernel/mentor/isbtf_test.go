@@ -16,12 +16,12 @@ import (
 // are lifted again → RED.
 func TestISBTFF2CrossingNeverLiftsABoxGate(t *testing.T) {
 	bars := m60p1Crossing()
-	cb := closedBuckets(bars, BarCloseInstant(bars[len(bars)-1]), DefaultConfig())
+	cb := closedBuckets(bars, BarCloseInstant(bars[len(bars)-1]), preOctCfg())
 	if !crossingISBs(cb, 3) {
 		t.Fatal("precondition: the buckets must hold crossing ISBs")
 	}
 	for _, mode := range []string{FiveMinBoxMerge, FiveMinBoxNewest, FiveMinBoxFirst} {
-		e := New(DefaultConfig())
+		e := New(preOctCfg())
 		e.Cfg.FiveMinBoxSource = mode
 		for _, tf := range []int{5, 15, 30} {
 			if e.boxGateLiftedByCrossing(cb, tf) {
@@ -32,7 +32,7 @@ func TestISBTFF2CrossingNeverLiftsABoxGate(t *testing.T) {
 	prev := isbBoxGateLiftedByCrossingSeam
 	isbBoxGateLiftedByCrossingSeam = true
 	defer func() { isbBoxGateLiftedByCrossingSeam = prev }()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.FiveMinBoxSource = FiveMinBoxNewest
 	if !e.boxGateLiftedByCrossing(cb, 15) || !e.boxGateLiftedByCrossing(cb, 5) {
 		t.Fatal("pre-F2 seam: the crossing read lifted the 15m gate and (outside merge) the 5m gate")
@@ -59,7 +59,7 @@ type isbTFSwingTick struct {
 func isbTFSwingTape(t *testing.T, end int64) (*Evaluator, map[string]isbTFSwingTick) {
 	t.Helper()
 	bars := m413Load(t, "testdata/m463_mnq_1m_20261028_0800ct.csv")
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.State.Swing = SwingState{Line: m463Line1700, BucketStart: m463Bucket1700, EmaCount: FourHEMA34Min, LastBarTime: m463Bucket1700 - 65*60_000}
@@ -158,7 +158,7 @@ const (
 func isbTFSwing1110(t *testing.T) (*Evaluator, map[string]isbTFSwingTick, []string) {
 	t.Helper()
 	bars := m413Load(t, "testdata/isbtf_mnq_1m_20261110_0100ct.csv")
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.State.Swing = SwingState{Line: isbTFLine0900_1110, BucketStart: isbTFBucket0900_1110, EmaCount: FourHEMA34Min, LastBarTime: isbTFBucket0900_1110 - 5*60_000}
@@ -273,8 +273,8 @@ func TestISBTFF4OnePerCandleKnob(t *testing.T) {
 // 15); a stricter count the tape cannot meet (lookback 4, min 3) keeps the 5m.
 func TestISBTFF6CrossingKnobs(t *testing.T) {
 	bars := m60p1Crossing()
-	cb := closedBuckets(bars, BarCloseInstant(bars[len(bars)-1]), DefaultConfig())
-	d := DefaultConfig()
+	cb := closedBuckets(bars, BarCloseInstant(bars[len(bars)-1]), preOctCfg())
+	d := preOctCfg()
 	d.TriggerEscalation = true // G3 oct round 2: the default is OFF; this pins the September crossing read
 	if d.CrossingISBLookback != 3 || d.CrossingISBMin != 2 {
 		t.Fatalf("defaults must be today's 3 / 2, got %d / %d", d.CrossingISBLookback, d.CrossingISBMin)

@@ -13,14 +13,14 @@ import (
 // the knob supplies it). Cancel-if-unfilled rides the evaluator's stacking.
 
 func reverseCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBReverseEMA9Enabled = true
 	return cfg
 }
 
 func TestReverseISBAtEMA9KnobOff(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBReverseEMA9Enabled = false // explicitly off (the default is ON since R-C)
 	prev := market.Kline{Open: 106, Close: 100, High: 106.5, Low: 99.5}
@@ -32,8 +32,8 @@ func TestReverseISBAtEMA9KnobOff(t *testing.T) {
 
 // OWNER RULING 2026-10-04 R-C: the reverse ISB at EMA 9 is ON by default.
 func TestReverseISBAtEMA9DefaultIsOn(t *testing.T) {
-	if !DefaultConfig().ISBReverseEMA9Enabled {
-		t.Fatal("DefaultConfig().ISBReverseEMA9Enabled must be true (owner ruling 2026-10-04 R-C)")
+	if !preOctCfg().ISBReverseEMA9Enabled {
+		t.Fatal("preOctCfg().ISBReverseEMA9Enabled must be true (owner ruling 2026-10-04 R-C)")
 	}
 }
 

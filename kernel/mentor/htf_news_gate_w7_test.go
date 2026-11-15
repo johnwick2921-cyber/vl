@@ -24,7 +24,7 @@ import (
 // TestHTFGateActivePrintDay pins the pure window test: the news period runs
 // from the print window's start to the 08:30 CT open ONLY on a print day.
 func TestHTFGateActivePrintDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFGateNewsOnly = true
 	at := func(hh, mm int) int64 { return auditMs(2026, 9, 15, hh, mm, 0) }
 
@@ -71,7 +71,7 @@ func TestHTFGateActivePrintDay(t *testing.T) {
 // test and may still refuse a long that the HTF gate passed.)
 func w7HTFBlocks(t *testing.T, printDay bool, htf HTF) bool {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	cfg.EMALocationTFMinutes = 0
@@ -175,7 +175,7 @@ func b3Tape() []market.Kline {
 // rồi thì đương nhiên là mình sẽ coi 4 giờ thôi"].
 // MUTANT: stamp MovedAt = cur.OpenTime (bucket open) in applyBreak -> RED.
 func TestEarlier1hTriggerIgnoredByBreakInstant(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := b3Tape()
 
@@ -223,7 +223,7 @@ func TestEarlier1hTriggerIgnoredByBreakInstant(t *testing.T) {
 // MUTANT: eval.go Tick passes breakAt=0 -> the lines stamp the bucket open
 // (01:00) and this test is RED.
 func TestEarlier1hTriggerTickStampsBreakMinute(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.seeded = true

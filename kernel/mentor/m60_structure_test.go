@@ -137,8 +137,8 @@ func TestM60TrendlineEntryTouchThirdKnob(t *testing.T) {
 		t.Fatalf("knob fourth: the 3rd-touch candle is refused — levels=%+v refused=%v", got, refused)
 	}
 	// m472 A2: October supersedes Sept D2.3-R7 — [Oct D3.2 @ 31:17] "Em chỉ cần 2 touch".
-	if DefaultConfig().TrendlineEntryTouch != TrendlineEntryThird {
-		t.Fatalf("default trendline entry touch = %q, want %q [Oct D3.2 @ 31:17] (supersedes Sept D2.3-R7)", DefaultConfig().TrendlineEntryTouch, TrendlineEntryThird)
+	if preOctCfg().TrendlineEntryTouch != TrendlineEntryThird {
+		t.Fatalf("default trendline entry touch = %q, want %q [Oct D3.2 @ 31:17] (supersedes Sept D2.3-R7)", preOctCfg().TrendlineEntryTouch, TrendlineEntryThird)
 	}
 }
 
@@ -219,7 +219,7 @@ func TestM60NearBoxBetweenExemptKnob(t *testing.T) {
 	if refuse, name := nearBoxRefusal(boxes, 90, SideLong, 2, 6, false); !refuse || name != "near_box" {
 		t.Fatalf("default: 10 pts under the FTGH with 2R = 12 → near_box, got (%v, %q)", refuse, name)
 	}
-	if DefaultConfig().NearBoxBetweenExempt {
+	if preOctCfg().NearBoxBetweenExempt {
 		t.Fatal("default near_box_between_exempt must be false (D3.2-R29)")
 	}
 }
@@ -231,7 +231,7 @@ func TestM60NearBoxBetweenExemptKnob(t *testing.T) {
 // [D5.1 p2 @02:24–04:41]; the on-screen stop 29,285.75 → 29,273.25 = 12.50 pts
 // (50 ticks). A 12.5-pt ISB stop is held past the cancel candle; 12.75 cancels.
 func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBStackTinyStopPts = 12.5 // G2 oct round 2: the September value (the default is now 0)
 	run := func(rng float64) []Intent {
@@ -260,8 +260,8 @@ func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
 	if got := ISBStackTick(arm, market.Kline{Open: 99, Close: 101, High: 101.5, Low: 98}, cfg); len(got) != 1 || got[0].Action != CancelArm {
 		t.Fatalf("a body outside I1 cancels at once even with a tiny stop, got %+v", got)
 	}
-	if DefaultConfig().ISBStackTinyStopPts != 0 {
-		t.Fatalf("default isb_stack_tiny_stop_pts = %g, want 0 (G2 oct round 2: October has no tiny-stop exception, OctD4.3-R57; 12.5 was Sept D5.1-R26)", DefaultConfig().ISBStackTinyStopPts)
+	if preOctCfg().ISBStackTinyStopPts != 0 {
+		t.Fatalf("default isb_stack_tiny_stop_pts = %g, want 0 (G2 oct round 2: October has no tiny-stop exception, OctD4.3-R57; 12.5 was Sept D5.1-R26)", preOctCfg().ISBStackTinyStopPts)
 	}
 }
 
@@ -272,7 +272,7 @@ func TestM60ISBStackTinyStopHoldsPastCandle4(t *testing.T) {
 // go lower" [@09:46–10:15]; pink box 29,369.00–~29,380.25. The "same price"
 // measure is the owner-ruled m428 R2 flatNearPts.
 func TestM60PHLFlatLowRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	ref := func(low float64) market.Kline {
 		return market.Kline{Open: low + 3, Close: low + 6, High: low + 8, Low: low}
 	}
@@ -307,7 +307,7 @@ func TestM60PHLFlatLowRefused(t *testing.T) {
 // chạy gần hết cây daily luôn rồi" + "phải còn 100 điểm" [D5.1 p1 @17:56–18:14];
 // the measured run was −265.00 (1,060 ticks) and the mentor called it spent.
 func TestM60DayGate265IsSpent(t *testing.T) {
-	for _, g := range []DayGate{DefaultDayGate(), {SpentPts: DefaultConfig().DayGateSpentPts, TargetCapPts: DefaultConfig().DayGateTargetCapPts}} {
+	for _, g := range []DayGate{DefaultDayGate(), {SpentPts: preOctCfg().DayGateSpentPts, TargetCapPts: preOctCfg().DayGateTargetCapPts}} {
 		if v, _ := DayGateVerdict(265, true, false, g); v != DaySpent {
 			t.Fatalf("gate %+v: 265 agree → %v, want DaySpent", g, v)
 		}
@@ -328,7 +328,7 @@ func TestM60DayGate265IsSpent(t *testing.T) {
 // H100 L90, ISB H97 L93: an EMA 9 at 91.5 is inside the mother + ISB range
 // (not the ISB candle's own) → LONG; at 88 it was never reached → refused.
 func TestM60ReverseISBHoverTouch(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	mother := market.Kline{Open: 99, Close: 91, High: 100, Low: 90}
 	isb := market.Kline{Open: 94, Close: 96, High: 97, Low: 93}
@@ -371,7 +371,7 @@ func m465PreValues(cfg *Config) {
 func TestM60PHLFlatLowRefusedAtTheTickCallSite(t *testing.T) {
 	withFlatNear(t)
 	run := func(flat string) (*Evaluator, []Intent) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.PHLTargetShyPts = 6
 		cfg.EMALocationTFMinutes = 0

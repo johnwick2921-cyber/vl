@@ -811,7 +811,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 		return *rc.MentorStopAfterLoss
 	})
 	mentorRCRow("mentor_day_off_recheck", "mentorDayOffRecheck (nil → OFF)", func(rc store.RiskControlConfig) any { return mentorDayOffRecheck(&rc) })
-	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → ON)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
+	mentorRCRow("mentor_leg_budget_enabled", "mentorLegBudgetEnabled (nil → OFF, OCT-EXACT A1 row 9)", func(rc store.RiskControlConfig) any { return mentorLegBudgetEnabled(&rc) })
 	add(rcPath+"mentor_leg_reset_on", "mentorLegResetOn (default \"close\")", func(x *effCtx) effResult {
 		v := mentorLegResetOn(x.at, &x.cfg.RiskControl)
 		return effResult{value: v, origin: presenceOrigin(x, v, store.SourceShippedDefault), scope: ScopeStrategy}
@@ -947,6 +947,46 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("mentor_5m_box_source", "trader.mentorTuningResolve (m466 D4.1-R37)", func(t mentorTuned) any { return t.FiveMinBoxSource })
 	mentorTuningRow("mentor_break_direction_lock", "trader.mentorTuningResolve (m466 D4.1-R31)", func(t mentorTuned) any { return t.BreakDirectionLock })
 	mentorTuningRow("mentor_small_range_guard", "trader.mentorTuningResolve (m466 D4.2-R33; nil → OFF, release #61 final)", func(t mentorTuned) any { return t.SmallRangeGuard })
+	mentorTuningRow("mentor_htf_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 1)", func(t mentorTuned) any { return t.HTFGateEnabled })
+	mentorTuningRow("mentor_day_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 2)", func(t mentorTuned) any { return t.DayGateEnabled })
+	mentorTuningRow("mentor_swing4h_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 3)", func(t mentorTuned) any { return t.Swing4HEnabled })
+	mentorTuningRow("mentor_orb_part2_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 4)", func(t mentorTuned) any { return t.OrbPart2Enabled })
+	mentorTuningRow("mentor_open5m_gate_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 5)", func(t mentorTuned) any { return t.Open5mGateEnabled })
+	mentorTuningRow("mentor_news_hold_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 7)", func(t mentorTuned) any { return t.NewsHoldEnabled })
+	mentorTuningRow("mentor_news_flatten_enabled", "trader.mentorTuningResolve (review fix: news flatten split from the hold, default ON)", func(t mentorTuned) any { return t.NewsFlattenEnabled })
+	mentorTuningRow("mentor_loss_box_enabled", "trader.mentorTuningResolve (OCT-EXACT A1 row 10)", func(t mentorTuned) any { return t.LossBoxEnabled })
+	mentorTuningRow("mentor_15m_box_no_trade", "trader.mentorTuningResolve (review fix, OctD4.3-R60 @58:38; default ON)", func(t mentorTuned) any { return t.Box15mNoTrade })
+	mentorTuningRow("mentor_htf_box_gates", "trader.mentorTuningResolve (OCT-EXACT A2 row 1)", func(t mentorTuned) any { return t.HTFBoxGates })
+	mentorTuningRow("mentor_tf_conflict", "trader.mentorTuningResolve (OCT-EXACT A2 row 2)", func(t mentorTuned) any { return t.TFConflictEnabled })
+	mentorTuningRow("mentor_mtf_confluence", "trader.mentorTuningResolve (OCT-EXACT A2 row 3)", func(t mentorTuned) any { return t.MTFConfluenceEnabled })
+	mentorTuningRow("mentor_rolling_level_touch_owns", "trader.mentorTuningResolve (OCT-EXACT A2 row 4)", func(t mentorTuned) any { return t.RollingLevelTouchOwns })
+	mentorTuningRow("keypair_rule_enabled", "trader.mentorTuningResolve (OCT-EXACT A2 row 5)", func(t mentorTuned) any { return t.KeypairRuleEnabled })
+	mentorTuningRow("mentor_trigger_retest_wrong_way", "trader.mentorTuningResolve (OCT-EXACT A2 row 9)", func(t mentorTuned) any { return t.TriggerRetestWrongWayRefuse })
+	mentorTuningRow("mentor_box_ping_pong", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxPingPongGate })
+	mentorTuningRow("mentor_phl_isb_preferred_at_box", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.PHLISBPreferredAtBox })
+	mentorTuningRow("mentor_trigger_box_zone", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.TriggerBoxZoneGate })
+	mentorTuningRow("mentor_isb_location_size_cuts", "trader.mentorTuningResolve (OCT-EXACT A2 row 12)", func(t mentorTuned) any { return t.ISBLocationSizeCuts })
+	mentorTuningRow("mentor_pullback_warn_cut", "trader.mentorTuningResolve (OCT-EXACT A2 row 13)", func(t mentorTuned) any { return t.PullbackWarnCut })
+	mentorTuningRow("mentor_trendline_box_beats", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineBoxBeats })
+	mentorTuningRow("mentor_confluence_hold_2r", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.ConfluenceHold2R })
+	mentorTuningRow("mentor_x8_trap_dodge", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.X8TrapDodge })
+	mentorTuningRow("mentor_box_room_multiple", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxRoomMultiple })
+	mentorTuningRow("trendline_level_prefer_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineLevelPreferPts })
+	mentorTuningRow("mentor_key_level_prune_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 14)", func(t mentorTuned) any { return t.KeyLevelPrunePts })
+	mentorTuningRow("mentor_box_touch_band_pts", "trader.mentorTuningResolve (OCT-EXACT A2 row 11)", func(t mentorTuned) any { return t.BoxTouchBandPts })
+	mentorTuningRow("mentor_resonance_be_min_rr", "trader.mentorTuningResolve (OCT-EXACT A2 row 17)", func(t mentorTuned) any { return t.ResonanceBEMinRR })
+	mentorTuningRow("mentor_isb_room_multiple", "trader.mentorTuningResolve (OCT-EXACT C4: ISB room 1R, Oct D2.3-R48)", func(t mentorTuned) any { return t.ISBRoomMultiple })
+	mentorTuningRow("mentor_box_carry_first_latched", "trader.mentorTuningResolve (OCT-EXACT P3-missesA E9: the box carried past the 17:00 roll is the RTH box the mentor drew that morning, Oct D3.3-R27 @17:00)", func(t mentorTuned) any { return t.BoxCarryFirstLatched })
+	mentorTuningRow("mentor_box_counter_5m_scalp", "trader.mentorTuningResolve (OCT-EXACT P3-missesA E9: a box return against the 5m is the counter-5m scalp, Oct D5.4-R20 @07:51)", func(t mentorTuned) any { return t.BoxCounter5mScalp })
+	mentorTuningRow("mentor_isbrev_old_extreme_room", "trader.mentorTuningResolve (OCT-EXACT P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close)", func(t mentorTuned) any { return t.ISBRevOldExtremeRoom })
+	mentorTuningRow("mentor_isbrev_fill_close", "trader.mentorTuningResolve (OCT-EXACT close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37)", func(t mentorTuned) any { return t.ISBRevFillClose })
+	mentorTuningRow("mentor_level_first_touch_lock", "trader.mentorTuningResolve (OCT-EXACT C3: first touch closing through only cancels, Oct D5.2-R23/R24)", func(t mentorTuned) any { return t.LevelFirstTouchLock })
+	mentorTuningRow("mentor_isb_just_broken_level", "trader.mentorTuningResolve (OCT-EXACT D1: ISB at a level it just broke, OctD3.3-R47)", func(t mentorTuned) any { return t.ISBJustBrokenLevel })
+	mentorTuningRow("mentor_ftgl_body_edge_partner", "trader.mentorTuningResolve (OCT-EXACT D3: FTGL partner by body edge, OctD3.3-R54)", func(t mentorTuned) any { return t.FTGLBodyEdgePartner })
+	mentorTuningRow("mentor_leg1_fixed_pts", "trader.mentorTuningResolve (OCT-EXACT D2: leg-1 fixed partial, OctD4.2-R14/R18)", func(t mentorTuned) any { return t.Leg1FixedPts })
+	mentorTuningRow("mentor_counter_5m_scalp_pts", "trader.mentorTuningResolve (OCT-EXACT C1: counter-5m EMA 34 scalp target, Oct D5.4 Ex.1)", func(t mentorTuned) any { return t.Counter5mScalpPts })
+	mentorTuningRow("mentor_resonance_trail", "trader.mentorTuningResolve (OCT-EXACT C6: mode-A runner trails after BE, Oct D4.2-R31/R32)", func(t mentorTuned) any { return t.ResonanceTrail })
+	mentorTuningRow("trendline_max_lines_per_anchor", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineMaxLinesPerAnchor })
 	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
 	mentorTuningRow("mentor_swing_isb_one_per_candle", "trader.mentorTuningResolve (isbTF-F4, [B] reading, nil → ON)", func(t mentorTuned) any { return t.SwingISBOnePerCandle })
 	mentorTuningRow("crossing_isb_lookback", "trader.mentorTuningResolve (isbTF-F6 D3.4-R43, [B] reading, mentor Q10)", func(t mentorTuned) any { return t.CrossingISBLookback })
@@ -991,7 +1031,7 @@ func buildEffectiveResolvers() map[string]effResolver {
 		if on {
 			v = "on"
 		}
-		origin := store.SourceShippedDefault + " (course default: ON)"
+		origin := store.SourceShippedDefault + " (OCT-EXACT A1 row 8: default OFF)"
 		if x.st.present {
 			origin = store.SourceSaved
 		}

@@ -61,12 +61,12 @@ func m61p1Has(out []Intent, side Side) bool {
 func TestM61ISBBoxEscapesOnOneMinuteClose(t *testing.T) {
 	// m473 B3 [Oct D4.3 @ 65:00-66:13] OctD4.3-R67 supersedes the September default: the 1m close
 	// still gives permission, but the DEFAULT now keeps the box until its own TF closes outside.
-	if d := DefaultConfig().ISBBoxEscapeMode; d != ISBBoxEscapeCloseBoxTF {
+	if d := preOctCfg().ISBBoxEscapeMode; d != ISBBoxEscapeCloseBoxTF {
 		t.Fatalf("m473 B3 D4.3-R67: the default ISB rest-box escape must be close5m, got %q", d)
 	}
 	box := ISBBox{High: 29_046.25, Low: 29_031.25, Dir: SideShort, AtTime: m60p1At(9, 45)}
 	bar := m60p1K(m60p1At(9, 56), 29_040, 29_048, 29_039, 29_047)
-	if esc, dir := ISBBoxEscapeWith(box, bar, DefaultConfig().ISBBoxEscapeMode); !esc || dir != SideLong {
+	if esc, dir := ISBBoxEscapeWith(box, bar, preOctCfg().ISBBoxEscapeMode); !esc || dir != SideLong {
 		t.Fatalf("O29,040 C29,047 must escape the 5m box long, got escaped=%v dir=%q", esc, dir)
 	}
 	if esc, _ := ISBBoxEscapeWith(box, bar, ISBBoxEscapeBody); esc {
@@ -119,7 +119,7 @@ func TestM61ISBBoxEscapesOnOneMinuteClose(t *testing.T) {
 // outside / C inside does neither.
 func TestM61PHLBanAndBoxEscapeAgree(t *testing.T) {
 	box := ISBBox{High: 29_046.25, Low: 29_031.25, Dir: SideShort, AtTime: m60p1At(9, 45)}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	for _, c := range []struct {
 		name string
 		o, c float64
@@ -257,8 +257,10 @@ func TestM61NewerOppositeFiveMinISBConflicts(t *testing.T) {
 // (inside the box: the break FAILED, D4.1-R30) clears it. Case 2: a 5m ISB box
 // escapes DOWN through Tick → the long ISB is refused. Knob off → today.
 func TestM61BreakLocksCounterSetups(t *testing.T) {
-	if !DefaultConfig().BreakDirectionLock {
-		t.Fatal("G21: mentor_break_direction_lock must default ON")
+	// OCT-EXACT A1 row 12: the Sept G21 lock now defaults OFF (the knob true is the
+	// revert); this test pins the lock's mechanics under the revert value.
+	if DefaultConfig().BreakDirectionLock || !preOctCfg().BreakDirectionLock {
+		t.Fatal("A1 row 12: mentor_break_direction_lock must default OFF and be ON under the revert")
 	}
 	b0 := m60p1K(m60p1At(10, 0), 29_470, 29_475, 29_465, 29_468)
 	b1 := m60p1K(m60p1At(10, 1), 29_468, 29_477, 29_460, 29_470)
@@ -275,7 +277,7 @@ func TestM61BreakLocksCounterSetups(t *testing.T) {
 		t.Fatalf("only the FIRST escape candle is a break event, got %+v on 10:03", ev)
 	}
 
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.advanceBreakLock(b2, BarCloseInstant(b2), ev)
 	if l := e.State.BreakLock; l == nil || l.Side != SideLong || l.At != b2.OpenTime {
 		t.Fatalf("want a LONG break lock at 10:02, got %+v", l)
@@ -405,7 +407,7 @@ func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 	// Release #61 final: the default is OFF (the course gives no candle count
 	// or breakout margin; three review rounds of mis-latches) — the behaviour
 	// below is the knob set ON explicitly.
-	if DefaultConfig().SmallRangeGuard {
+	if preOctCfg().SmallRangeGuard {
 		t.Fatal("G33: mentor_small_range_guard must default OFF (release #61 final)")
 	}
 	bars := m61p1SmallRange(29_021.50, 33.75, 34.50)
@@ -413,12 +415,12 @@ func TestM61SmallRangeBigCandlesRefused(t *testing.T) {
 	if !ok || lo != 28_960 || hi != 29_021.5 {
 		t.Fatalf("want the too-small range 28,960.00–29,021.50, got %v %v %v", lo, hi, ok)
 	}
-	off := New(DefaultConfig())
+	off := New(preOctCfg())
 	off.advanceSmallRange(bars)
 	if off.State.SmallRange != nil {
 		t.Fatalf("default (knob OFF) never builds the state, got %+v", off.State.SmallRange)
 	}
-	onCfg := DefaultConfig()
+	onCfg := preOctCfg()
 	onCfg.SmallRangeGuard = true
 	e := New(onCfg)
 	e.advanceSmallRange(bars)
@@ -472,7 +474,7 @@ func TestM61MidRangeUsesFlippedRole(t *testing.T) {
 	if !midRangeBoxed(boxes, 29_420) {
 		t.Fatal("a flipped FTGH below price is a FLOOR: price 29,420 sits between two boxes")
 	}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	cur := m60p1K(m60p1At(10, 0), 29_418, 29_422, 29_415, 29_420)
 	if name, _ := e.phlLocationBan(Level{Key: "k", Kind: KindKeyLevel, Price: 29_420}, SideLong, 29_420, cur, nil, boxes); name != "phl_mid_range_boxed" {
 		t.Fatalf("the PHL between the flipped floor and the ceiling must be phl_mid_range_boxed, got %q", name)
@@ -505,8 +507,9 @@ func TestM61MidRangeUsesFlippedRole(t *testing.T) {
 // mid_range_against_rejection, a SHORT one passes; once a candle touches the
 // FTGL top (L29,379) the long passes again. Knob off → today.
 func TestM61MidRangeTradesWithRejection(t *testing.T) {
-	if !DefaultConfig().MidRangeRejectSide {
-		t.Fatal("G43: mentor_mid_range_reject_side must default ON")
+	// OCT-EXACT A1 row 11: Sept G43 now defaults OFF; mechanics pinned under the revert value.
+	if DefaultConfig().MidRangeRejectSide || !preOctCfg().MidRangeRejectSide {
+		t.Fatal("A1 row 11: mentor_mid_range_reject_side must default OFF and be ON under the revert")
 	}
 	boxes := []Box{
 		{Kind: FTGL, Top: 29_380.50, Bottom: 29_368.50, Key: "ftgl:29380.5:29368.5"},
@@ -514,7 +517,7 @@ func TestM61MidRangeTradesWithRejection(t *testing.T) {
 	}
 	rej := m60p1K(m60p1At(10, 0), 29_450, 29_465, 29_448, 29_455)
 	for _, on := range []bool{true, false} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.MidRangeRejectSide = on
 		e := New(cfg)
 		e.advanceMidRangeReject(rej, boxes)

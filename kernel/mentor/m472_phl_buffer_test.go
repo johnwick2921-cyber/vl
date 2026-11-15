@@ -20,7 +20,7 @@ import (
 // matches exactly. The frame's own trade is refused by the 2x room gate
 // (reward 23.25 < 2 x risk 15.5): a standing code-vs-video gap raised to the CTO.
 func TestM472PHLBufferWorkedExample(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 28_330.75, Low: 28_317.25, Close: 28_319.25}
 	touch := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideShort}
@@ -38,7 +38,7 @@ func TestM472PHLBufferWorkedExample(t *testing.T) {
 // (risk 25.5) is over the 25 ceiling, a 22.5 one (risk 24.5) still passes.
 // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46.
 func TestM472PHLBufferKnockOn(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	oldLow := Level{Key: "old-low", Kind: KindOldExtreme, Role: OldLow, Price: 28_000}
@@ -61,7 +61,7 @@ func TestM472PHLBufferKnockOn(t *testing.T) {
 // so at the default the frame's own trade now passes, and phl_room_multiple=2
 // restores the refusal. Frame: Ngày 2.3 PHL PLH/s_02872.jpg.
 func TestM472PHLBufferFrameOldLowRoomRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ref := market.Kline{High: 28_330.75, Low: 28_317.25, Close: 28_319.25}
 	touch := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideShort}

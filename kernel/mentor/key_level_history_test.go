@@ -423,7 +423,7 @@ func TestSeedFullDeletionOverFullHistory(t *testing.T) {
 	c2.CloseTime = keyLevel1HCandleCloseTime(c2.OpenTime)
 	c3.CloseTime = keyLevel1HCandleCloseTime(c3.OpenTime)
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	cfg.KeyLevelDeleteOn1HClose = KeyLevelDeleteOn1HCloseOn // LL-1: the deck deletion under test (October default keeps)
@@ -492,7 +492,7 @@ func TestSeedFullDrawsLevelFromOlderContract(t *testing.T) {
 		t.Fatalf("stitch stopped at %q, want full", stopped)
 	}
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelPrunePts = 0.5
 	e := New(cfg)

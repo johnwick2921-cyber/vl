@@ -137,6 +137,59 @@ func TestReplayMatchesLivePath(t *testing.T) {
 	// runs the config the live log was written under.
 	live := &store.StrategyConfig{}
 	live.RiskControl.MentorTuning = &store.MentorTuning{Mentor5mBoxSource: mentor.FiveMinBoxNewest}
+	// OCT-EXACT A1: the live 11-10 log was written under the Sept gates (HTF, day,
+	// SWING4H, ORB part 2, open-5m, news, leg budget, loss box, break lock,
+	// mid-range side, done-after-win); the parity compares that log, so pin them.
+	{
+		on, frac := true, 0.80
+		t := live.RiskControl.MentorTuning
+		t.MentorHTFGateEnabled, t.MentorDayGateEnabled, t.MentorSwing4HEnabled = &on, &on, &on
+		t.MentorOrbPart2Enabled, t.MentorOpen5mGateEnabled, t.MentorNewsHoldEnabled = &on, &on, &on
+		t.MentorLossBoxEnabled, t.MentorBreakDirectionLock, t.MentorMidRangeRejectSide = &on, &on, &on
+		t.NewsWaitBothLines, t.NewsBarsExcluded, t.OrbISBFractionOutside = &on, &on, &frac
+		live.RiskControl.MentorLegBudgetEnabled, live.RiskControl.MentorDoneAfterWin = &on, &on
+	}
+	// OCT-EXACT A2: the same log ran the Sept entry/level gates and exits (fill
+	// only what an older pin has not set).
+	{
+		two, band, prune, prefer, minRR := 2.0, 0.25, 20.0, 2.0, 0.25
+		t := live.RiskControl.MentorTuning
+		for _, p := range []**bool{
+			&t.MentorHTFBoxGates, &t.MentorTFConflict, &t.MentorMTFConfluence, &t.MentorRollingLevelTouchOwns,
+			&t.KeypairRuleEnabled, &t.MentorTriggerRetestWrongWay, &t.MentorBoxPingPong, &t.MentorPHLISBPreferredAtBox,
+			&t.MentorTriggerBoxZone, &t.MentorISBLocationSizeCuts, &t.MentorPullbackWarnCut, &t.MentorTrendlineBoxBeats,
+			&t.MentorConfluenceHold2R, &t.MentorX8TrapDodge, &t.Early15mRead, &t.FlagWallTarget, &t.TrendlineIsTarget, &t.NearBoxRoomPHL,
+		} {
+			if *p == nil {
+				on := true
+				*p = &on
+			}
+		}
+		for _, f := range []struct {
+			p **float64
+			v float64
+		}{
+			{&t.NearBoxRoomMultiple, 2}, {&t.MentorBoxRoomMultiple, two}, {&t.MentorBoxTouchBandPts, band},
+			{&t.MentorKeyLevelPrunePts, prune}, {&t.TrendlineLevelPreferPts, prefer}, {&t.MentorResonanceBEMinRR, minRR},
+		} {
+			if *f.p == nil {
+				v := f.v
+				*f.p = &v
+			}
+		}
+		if t.TrendlineMaxLinesPerAnchor == 0 {
+			t.TrendlineMaxLinesPerAnchor = 1
+		}
+		if t.FifteenMinIBRequires5mISB == "" {
+			t.FifteenMinIBRequires5mISB = "require_5m_isb"
+		}
+		if t.EMA34LossRelock == "" {
+			t.EMA34LossRelock = "until_zone_exit"
+		}
+		if t.PHLPullbackLow == "" {
+			t.PHLPullbackLow = "pullback"
+		}
+	}
 	oldProv := market.FuturesBarsProvider
 	t.Cleanup(func() { market.FuturesBarsProvider = oldProv })
 

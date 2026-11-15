@@ -15,7 +15,7 @@ import (
 // reference [D5.3 p1 @20:40–22:12]); a LATER candle closing through the
 // level cancels it ("Mình cancel" [D2.3 p1 @18:01–19:12, recovered @23:48]).
 func TestLevelOrderRestsAndCancels(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	cfg.Exec2mAfter30m = false // the B6 rest/cancel pin reads the 1m touch
@@ -104,7 +104,7 @@ func TestLevelOrderRestsAndCancels(t *testing.T) {
 // TestLevelArmCancelAtWindowEnd — B6: at the RTH window end (15:00 CT) the
 // resting order is cancelled even without a close-through.
 func TestLevelArmCancelAtWindowEnd(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.seeded = true

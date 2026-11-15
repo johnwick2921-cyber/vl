@@ -25,7 +25,7 @@ func m425aISBTape() []market.Kline {
 }
 
 func m425aEval(orbHigh, orbLow float64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0
 	cfg.PHLRoomMultiple = cfg.RoomMultiple // review: the PHL/PLH room follows the fixture's room setting (the decoupled knob defaults to 1 since answers-1112 Q2)
@@ -88,7 +88,7 @@ func TestM425aORBFilteredISBLeavesNoArm(t *testing.T) {
 // kind (KindKeyLevel, or KindEMA34HTF — the EMA34 line that trades).
 func m425aLevelFixture(t *testing.T, kind LevelKind, key string) (*Evaluator, []market.Kline, Intent) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6
 	cfg.Exec2mAfter30m = false
@@ -158,7 +158,7 @@ func TestM425aRefusedPHLNotReEmitted(t *testing.T) {
 // emitted by e.Tick, with EmaPending* recorded.
 func m425aEMAFixture(t *testing.T) (*Evaluator, []market.Kline, Intent) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

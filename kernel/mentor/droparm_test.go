@@ -9,7 +9,7 @@ import (
 // the swing Pending. It never touches a FILLED swing position, and empty /
 // unknown ids are no-ops.
 func TestDropArm(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.ISBArms["isb-1"] = ISBArm{Inside: 0, Side: SideLong}
 	e.State.Swing.Pending = &swingPosition{ArmID: "swing-123", Side: SideShort, Entry: 10100, Stop: 10130}
 	e.State.Swing.Pos = &swingPosition{ArmID: "swing-123", Side: SideShort, Entry: 10100, Stop: 10130}

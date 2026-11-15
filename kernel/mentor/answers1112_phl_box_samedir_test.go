@@ -48,7 +48,7 @@ func q9Run(t *testing.T, c q9Case, dir Side, hi, lo float64, mut func(*Config)) 
 	bars := phl1Tape(t, c.file)
 	from := phl1At(t, bars, 2026, time.October, c.d, c.fromH, c.fromM)
 	rung := phl1At(t, bars, 2026, time.October, c.d, c.rungH, c.rungM)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if mut != nil {
 		mut(&cfg)
 	}
@@ -72,7 +72,7 @@ func q9Refused(r phl1Rung, name string) bool {
 }
 
 func TestAnswers1112PHLBoxSameDirDefaultOff(t *testing.T) {
-	if DefaultConfig().PHL5mBoxSameDirAllowed {
+	if preOctCfg().PHL5mBoxSameDirAllowed {
 		t.Fatal("PHL5mBoxSameDirAllowed must default OFF — \"experienced only\" [Oct D4.3 @01:10:58-01:11:03] is the owner's call")
 	}
 }

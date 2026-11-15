@@ -20,7 +20,7 @@ import (
 // 28,812-28,818).
 
 func m473Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.KeyLevelTFMinutes = 1

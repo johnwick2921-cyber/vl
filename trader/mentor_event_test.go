@@ -976,6 +976,7 @@ func TestMentorNewsHold(t *testing.T) {
 func TestMentorNewsGateAtPlacementCallSite(t *testing.T) {
 	// the trading window (b) runs first: 07:00–09:00 CT covers every now below.
 	at := mentoredTrader(t, store.RiskControlConfig{MentorMode: true, MentorWindowStart: "07:00", MentorWindowMinutes: 120})
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	wireMentorPlacementSeams(t, at)
 
 	ct := kernel.CTLocation()

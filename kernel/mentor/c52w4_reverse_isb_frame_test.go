@@ -20,7 +20,7 @@ import (
 // the `cur` range [curLow, curHigh] can contain one and not the other.
 func c52w4Fixture(t *testing.T, curLow, curHigh float64) (*Evaluator, []market.Kline, int64) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = true
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false

@@ -64,6 +64,7 @@ func TestMentorNewsPrintWindowsFromEvents(t *testing.T) {
 func TestMentorNewsCancelFlattenCancelsIntradayArms(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	newsPrintEvents(t)
 
 	// live intraday arm (never placed → SignalID empty → cancel settles now).
@@ -112,6 +113,7 @@ func (r *newsFlattenRecorder) CloseShort(string, float64) (map[string]interface{
 // is exempt. The mutant that drops the flatten (or the swing exemption) fails.
 func TestMentorNewsCancelFlattenFlattensIntradayPositions(t *testing.T) {
 	at, st := resetTrader(t, store.StrategyConfig{RiskControl: store.RiskControlConfig{MentorMode: true}})
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	rec := &newsFlattenRecorder{MockTrader: &MockTrader{}}
 	at.trader = rec
 	t.Cleanup(at.Stop)

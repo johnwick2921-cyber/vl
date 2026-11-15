@@ -38,7 +38,7 @@ func TestG7EntryMustStandOffTheOldLow(t *testing.T) {
 		t.Run(c.name, func(t *testing.T) {
 			ref := bars[at(c.h, c.m)]
 			tr := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideLong}
-			cfg := DefaultConfig()
+			cfg := preOctCfg()
 			cfg.Enabled = true
 			cfg.PHLMinAbovePriorPts = 15
 			cfg.PHLRoomMultiple = 1 // this test pins the min-above gate, not the room (the default, answers-1112 Q2)
@@ -63,7 +63,7 @@ func TestG7EntryMustStandOffTheOldLow(t *testing.T) {
 	hi := 28800.0
 	ref := bars[at(20, 55)] // L 28,759.00 → entry 28,758.00; 28,758 is 42 under 28,800: allowed
 	tr := Touch{Outcome: TouchReject, RefBar: ref, ApproachedFrom: SideShort}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLMinAbovePriorPts = 15
 	if _, ok, why := PHLPLHR2Levels(tr, Level{Price: 28700, Role: OldLow}, 0, 100, hi, nil, cfg); !ok && strings.HasPrefix(why, "entry only") {
@@ -81,7 +81,7 @@ func TestG7EntryMustStandOffTheOldLow(t *testing.T) {
 // TestG7DefaultIsOff — the default reproduces today's behaviour: the 11.25-pt
 // entry passes without the knob.
 func TestG7DefaultIsOff(t *testing.T) {
-	if DefaultConfig().PHLMinAbovePriorPts != 0 {
-		t.Fatalf("default PHLMinAbovePriorPts = %v, want 0 (off)", DefaultConfig().PHLMinAbovePriorPts)
+	if preOctCfg().PHLMinAbovePriorPts != 0 {
+		t.Fatalf("default PHLMinAbovePriorPts = %v, want 0 (off)", preOctCfg().PHLMinAbovePriorPts)
 	}
 }

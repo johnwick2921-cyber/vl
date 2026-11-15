@@ -2125,6 +2125,62 @@ type MentorTuning struct {
 	// MentorMidRangeRejectSide: nil → ON — mid-range, trade WITH the last box
 	// rejection [D2.2-R71 p3 @14:28–15:58].
 	MentorMidRangeRejectSide *bool `json:"mentor_mid_range_reject_side,omitempty"`
+	// OCT-EXACT A1 (owner order 2026-11-14 "mentor mode = the October course
+	// exactly"): nil → OFF for each gate below (October is silent or contrary);
+	// a stored true is the revert and still wins.
+	//   MentorHTFGateEnabled    — row 1, the 4h/1h direction gate [Oct D4.3-R9 @07:28]
+	//   MentorDayGateEnabled    — row 2, the §7 day gate (day_off/day_spent/spent caps)
+	//   MentorSwing4HEnabled    — row 3, NEW SWING 4H arms [Oct D4.3-R10 @07:58]
+	//   MentorOrbPart2Enabled   — row 4, ORB not_drawn/not_escaped/wrong_side (orb_inside stays)
+	//   MentorOpen5mGateEnabled — row 5, open_5m_range_not_broken
+	//   MentorNewsHoldEnabled   — row 7, news_hold 07:20-07:35 entry hold only (the flatten is MentorNewsFlattenEnabled)
+	//   MentorLossBoxEnabled    — row 10, loss box / loss range (G2)
+	MentorHTFGateEnabled    *bool `json:"mentor_htf_gate_enabled,omitempty"`
+	MentorDayGateEnabled    *bool `json:"mentor_day_gate_enabled,omitempty"`
+	MentorSwing4HEnabled    *bool `json:"mentor_swing4h_enabled,omitempty"`
+	MentorOrbPart2Enabled   *bool `json:"mentor_orb_part2_enabled,omitempty"`
+	MentorOpen5mGateEnabled *bool `json:"mentor_open5m_gate_enabled,omitempty"`
+	MentorNewsHoldEnabled   *bool `json:"mentor_news_hold_enabled,omitempty"`
+	// MentorNewsFlattenEnabled — review fix (fidelity P2): the news cancel + flatten at print -10m is
+	// a SAFETY behaviour, split from the entry hold above. nil -> ON ("safety stays"); a stored false
+	// is the explicit owner acceptance of holding through a print.
+	MentorNewsFlattenEnabled *bool `json:"mentor_news_flatten_enabled,omitempty"`
+	MentorLossBoxEnabled     *bool `json:"mentor_loss_box_enabled,omitempty"`
+	// OCT-EXACT A2 (owner order 2026-11-14): nil -> OFF / the October value for
+	// each knob below; a stored value is the revert and still wins.
+	Mentor15mBoxNoTrade         *bool    `json:"mentor_15m_box_no_trade,omitempty"`         // review fix: the 15m ISB-box no-trade (OctD4.3-R60 @58:38), nil -> ON
+	MentorHTFBoxGates           *bool    `json:"mentor_htf_box_gates,omitempty"`            // row 1: 15m/30m ISB-box gates on every setup
+	MentorTFConflict            *bool    `json:"mentor_tf_conflict,omitempty"`              // row 2: tf_conflict (5m vs 15m box disagreement)
+	MentorMTFConfluence         *bool    `json:"mentor_mtf_confluence,omitempty"`           // row 3: MTF confluence C from the 15m + 5m boxes
+	MentorRollingLevelTouchOwns *bool    `json:"mentor_rolling_level_touch_owns,omitempty"` // row 4: rolling_level_touch_owns
+	KeypairRuleEnabled          *bool    `json:"keypair_rule_enabled,omitempty"`            // row 5: keypair_candle_too_big (X4)
+	MentorTriggerRetestWrongWay *bool    `json:"mentor_trigger_retest_wrong_way,omitempty"` // row 9: trigger_retest_wrong_way refusal
+	MentorBoxPingPong           *bool    `json:"mentor_box_ping_pong,omitempty"`            // row 11: box_ping_pong
+	MentorPHLISBPreferredAtBox  *bool    `json:"mentor_phl_isb_preferred_at_box,omitempty"` // row 11: phl_isb_preferred_at_box
+	MentorTriggerBoxZone        *bool    `json:"mentor_trigger_box_zone,omitempty"`         // row 11: trigger_ftgl_buy_zone / trigger_ftgh_sell_zone
+	MentorISBLocationSizeCuts   *bool    `json:"mentor_isb_location_size_cuts,omitempty"`   // row 12: isb_at_old_extreme / isb_in_range size cuts
+	MentorPullbackWarnCut       *bool    `json:"mentor_pullback_warn_cut,omitempty"`        // row 13: pullback_warn size cut
+	MentorTrendlineBoxBeats     *bool    `json:"mentor_trendline_box_beats,omitempty"`      // row 15: box beats trendline
+	MentorConfluenceHold2R      *bool    `json:"mentor_confluence_hold_2r,omitempty"`       // row 17: confluence C hold 2R
+	MentorX8TrapDodge           *bool    `json:"mentor_x8_trap_dodge,omitempty"`            // row 17: X8 trap-dodge exit
+	MentorBoxRoomMultiple       *float64 `json:"mentor_box_room_multiple,omitempty"`        // row 11: box room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	TrendlineLevelPreferPts     *float64 `json:"trendline_level_prefer_pts,omitempty"`      // row 15: respected-level-beats-trendline band (0 = off; 2 reverts)
+	MentorKeyLevelPrunePts      *float64 `json:"mentor_key_level_prune_pts,omitempty"`      // row 14: key-level prune distance (0 = off; 20 reverts)
+	MentorBoxTouchBandPts       *float64 `json:"mentor_box_touch_band_pts,omitempty"`       // row 11: FTGH/FTGL box touch band (0 = literal; 0.25 reverts)
+	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
+	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
+	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
+	MentorISBRoomMultiple      *float64 `json:"mentor_isb_room_multiple,omitempty"`       // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`  // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"` // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
+	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`    // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
+	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"` // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
+	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
+	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)
+	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`          // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
+	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`    // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
+	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`         // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

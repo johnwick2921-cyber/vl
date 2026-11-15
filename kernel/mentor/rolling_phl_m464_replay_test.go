@@ -57,7 +57,7 @@ func TestM464RollingReplay(t *testing.T) {
 		t.Fatalf("tape too short: %d bars", len(bars))
 	}
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
 	cfg.LossDeparturePts = 0

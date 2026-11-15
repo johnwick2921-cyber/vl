@@ -345,7 +345,11 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 				l.refuse("orphan_not_location") // K2: not a location
 				continue
 			}
-			if p := l.blockedPlace(ref, in.Price); p != nil {
+			// OCT-EXACT A1 row 10: the G2 loss box / loss range is Sept, October is
+			// silent (Oct D4.1-R24 @11:45 is psychology, no re-entry ban); the
+			// place accounting above keeps running, only the REFUSAL is gated.
+			// mentor_loss_box_enabled=true reverts.
+			if p := l.blockedPlace(ref, in.Price); cfg.LossBoxEnabled && p != nil {
 				l.refuse(p.refusal())
 				continue // G2: the place is boxed after a loss
 			}
@@ -376,7 +380,7 @@ func (l *Limits) Apply(out []Intent, prev, cur market.Kline, now int64, levels [
 			// D2-17 (D4.2-13): an ISB participates in G2 — a blocked band
 			// refuses the entry, and the ISB's own stop-out boxes its
 			// entry-to-stop band.
-			if p := l.blockedPlace(placeRef{}, in.Price); p != nil {
+			if p := l.blockedPlace(placeRef{}, in.Price); cfg.LossBoxEnabled && p != nil { // OCT-EXACT A1 row 10
 				l.refuse(p.refusal())
 				continue
 			}

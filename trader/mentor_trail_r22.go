@@ -106,6 +106,40 @@ func mentorBEStopPrice(side string, entry, tick float64) float64 {
 // mentorBEOffsetMaxTicks bounds the be_offset_ticks knob.
 const mentorBEOffsetMaxTicks = 20
 
+// mentorBEOffsetDefaultTicks is the unset default (oct-exact B7): 4 ticks = 1
+// point on MNQ, "10 -> 11 do" [Oct D4.2 @13:00]. Stored 0 is the revert (BE at
+// the entry exactly, today's pre-oct-exact behaviour).
+// A var (not a const) ONLY so the trader test binary can pin the pre-October
+// mechanics at the entry (TestMain sets 0); production never assigns it.
+var mentorBEOffsetDefaultTicks = 4
+
+// mentorLeg1FixedPtsDefault is the unset default of mentor_leg1_fixed_pts
+// (oct-exact D2): a normal PHL/PLH sells leg 1 at +15 points [Oct D4.2 @12:16
+// R14 "bán 15 hay 20 điểm", @14:18 R18]. Stored 0 reverts to ceil(n/2) at +1R.
+// RULING RECORD (review fix, fidelity P2): the video scopes R14/R18 to the "setup gong loi"
+// (hold-profit) trade, and the bot has no separate flag for that setup - the gong-loi trade IS
+// the normal PHL/PLH, so CTO-decisions section D row 2 generalises it to every normal (fork B,
+// no confluence TP) PHL/PLH. R14 gives a RANGE ("15 hay 20 tuy tay", R18 uses 20 with 1 MNQ left):
+// 15 is the CTO's pick inside that 15-20 range, not a number the mentor fixes. n contracts sell
+// n-1 at the partial and leave ONE runner (R18). Knob mentor_leg1_fixed_pts: 20 is the other
+// October value, 0 reverts. October gives no sizing outside the gong-loi setup; whether the
+// generalisation to every PHL/PLH is wanted is an open mentor question.
+// A var ONLY so the trader test binary can pin the pre-October +1R mechanics
+// (TestMain sets 0); production never assigns it.
+var mentorLeg1FixedPtsDefault = 15.0
+
+// mentorLeg1FixedPts reads the knob as stored (nil / out of range -> default),
+// the clamp agrees with mentorTuningResolve.
+func mentorLeg1FixedPts(rc *store.RiskControlConfig) float64 {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorLeg1FixedPts == nil {
+		return mentorLeg1FixedPtsDefault
+	}
+	if v := *rc.MentorTuning.MentorLeg1FixedPts; v >= 0 && v <= 100 {
+		return v
+	}
+	return mentorLeg1FixedPtsDefault
+}
+
 // mentorBEPastEntry moves a break-even price `ticks` ticks past it on the
 // profit side — long up, short down — so the stop sits a little beyond the
 // entry [Oct D4.2 @ 13:00-13:25]. ticks <= 0 (the knob OFF) or an unknown tick
@@ -120,17 +154,17 @@ func mentorBEPastEntry(side string, be, tick float64, ticks int) float64 {
 	return be + float64(ticks)*tick
 }
 
-// mentorBEOffsetTicks reads the be_offset_ticks knob as stored (nil / out of
-// range → 0 = OFF) without the tuning resolver's counters; the clamp agrees
+// mentorBEOffsetTicks reads the be_offset_ticks knob as stored (nil or out of
+// range → the October default 4; stored 0 = OFF) without the tuning resolver's counters; the clamp agrees
 // with mentorTuningResolve.
 func mentorBEOffsetTicks(rc *store.RiskControlConfig) int {
 	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.BEOffsetTicks == nil {
-		return 0
+		return mentorBEOffsetDefaultTicks // oct-exact B7: nil -> 4 (revert: stored 0)
 	}
 	if v := *rc.MentorTuning.BEOffsetTicks; v >= 0 && v <= mentorBEOffsetMaxTicks {
 		return v
 	}
-	return 0
+	return mentorBEOffsetDefaultTicks // out of range -> the default, like the resolver (oct-exact B7)
 }
 
 // mentorBEStop is the production break-even price for a mentor trade: the

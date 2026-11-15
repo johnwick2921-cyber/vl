@@ -30,7 +30,7 @@ const (
 )
 
 func r22Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RealFillOnly = true
 	cfg.ISBStackTinyStopPts = 12.5                         // oct round 2 G2: the recorded-day pins ran the September tiny-stop hold

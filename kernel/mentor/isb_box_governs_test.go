@@ -16,7 +16,7 @@ import (
 // line inside a LONG box is refused isb_trigger_side, exactly as with no box.
 // Mutant: the pre-F1 seam (box hides the trigger) → no refusal → RED.
 func TestISBBoxKeepsTriggerPriceFilter(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false // release #31: the default is ON (2m after 09:00); these pins test the 1m read
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1

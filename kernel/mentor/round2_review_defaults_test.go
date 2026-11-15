@@ -18,7 +18,7 @@ import "testing"
 //     trade's result (s_01661 reads 1.8), not a minimum. phl_room_multiple=2
 //     reverts (TestAnswers1112PHLRoomWorkedTradesAcceptedAtDefault).
 func TestRound2ReviewDefaultsAreToday(t *testing.T) {
-	c := DefaultConfig()
+	c := preOctCfg()
 	if c.ISBTargetFillClose {
 		t.Error("ISBTargetFillClose must default OFF (course does not state a level-inside-1R ISB may be traded)")
 	}

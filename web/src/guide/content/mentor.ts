@@ -824,7 +824,7 @@ export const mentor: GuideSection = {
         [
           'ISB rest box',
           'The NEWEST 5m ISB candle is boxed and extended right (a newer 5m inside bar replaces the box — release #61); the 08:30 CT 5m candle (the first of the RTH day) is never itself the inside bar, the box starts from the 08:35 candle at the earliest (m473 B4, Oct D4.3 @ 57:20-57:35); only a same-direction 1m ISB trades inside; a 1m candle that CLOSES beyond the edge lets you trade, but the box is deleted only when a candle of its own timeframe closes outside (isb_box_escape, default close5m since m473, Oct D4.3 @ 65:00-66:13; close = the 1m delete, default #61–m472; body = open AND close beyond, #25–#60); after it breaks, only setups in the break direction until a close back inside (break_counter_setup)',
-          'isb_box_escape = close5m (default) · mentor_5m_box_source = merge · mentor_break_direction_lock = ON · D4.1-R34 p1 @20:36–21:03 · OctD4.3-R59 @ 58:00 · D4.1-R31 @18:27–20:33',
+          'isb_box_escape = close5m (default) · mentor_5m_box_source = merge · mentor_break_direction_lock = OFF (OCT-EXACT A1 row 12; true reverts) · D4.1-R34 p1 @20:36–21:03 · OctD4.3-R59 @ 58:00 · D4.1-R31 @18:27–20:33',
         ],
         [
           'Too-small range',
@@ -832,9 +832,39 @@ export const mentor: GuideSection = {
           'mentor_small_range_guard = OFF (default since #61 final — count / margin unstated, on the mentor list) · D4.2-R33 p2 @06:16–06:30',
         ],
         [
+          'October-exact entry and level gates (A2)',
+          'Mentor mode now trades the October course exactly: the 15m/30m ISB-box gates (and the 15m early read, the 15m-needs-5m-ISB rule, tf_conflict and the 15m+5m confluence C), rolling_level_touch_owns, the X4 keypair rule, the EMA 34 loss block, near_box on PHL and ISB, the flag wall, trigger_retest_wrong_way, the pullback lower-low / higher-high check, the box ping-pong / ISB-preferred / trigger-zone gates, the ISB location and pullback-warn size cuts, the key-level prune, the level-beats-trendline band, box-beats-trendline, trendline_is_target, the X8 trap-dodge exit, the resonance BE distance and the confluence hold-2R are all OFF. The 15m ISB-box no-trade itself stays ON (OctD4.3-R60 @58:38). The box room is 1:1, the box touch band is a literal touch and up to 3 trendlines per side may stand (OctD3.2-R21/R22). Each has a revert knob.',
+          'mentor_htf_box_gates · mentor_tf_conflict · mentor_mtf_confluence · mentor_rolling_level_touch_owns · keypair_rule_enabled · ema34_loss_relock=off · near_box_room_phl / near_box_room_multiple · flag_wall_target · mentor_trigger_retest_wrong_way · phl_pullback_low=signal · mentor_box_ping_pong · mentor_box_room_multiple=1 · mentor_phl_isb_preferred_at_box · mentor_trigger_box_zone · mentor_box_touch_band_pts=0 · mentor_isb_location_size_cuts · mentor_pullback_warn_cut · mentor_key_level_prune_pts=0 · trendline_level_prefer_pts=0 · mentor_trendline_box_beats · trendline_max_lines_per_anchor=3 · trendline_is_target · mentor_x8_trap_dodge · mentor_resonance_be_min_rr=0 · mentor_confluence_hold_2r · OCT-EXACT A2 (CTO-decisions.md) · OctD4.3-R9 @07:28 · OctD4.3-R93 · OctD2.3-R48 @49:38',
+        ],
+        [
+          'October-exact day-level gates OFF (A1)',
+          'Mentor mode follows the October course only, and October is silent or contrary on these, so they are OFF: the 4h/1h direction gate, the day gate (day_off / day_spent 265 and its caps), the whole SWING 4H to 5M setup (new swing arms stop; an open swing is still managed), ORB part 2 (not drawn / not escaped / wrong side / mostly inside), the open-5m range-break gate, the news waits and read freeze, the 07:20-07:35 news hold, done-after-win, the leg budget, the loss box, the mid-range reject side and the break direction lock. ORB part 1 (orb_inside, 2 minutes inside the ORB) stays ON, and the news flatten and every safety stop stay ON. Each has a revert knob; true (or the old value) restores the old behaviour.',
+          'mentor_htf_gate_enabled · mentor_day_gate_enabled · mentor_swing4h_enabled · mentor_open5m_gate_enabled · mentor_news_hold_enabled · mentor_orb_part2_enabled · news_wait_both_lines · mentor_loss_box_enabled · mentor_leg_budget_enabled · done_after_win · mentor_mid_range_reject_side · mentor_break_direction_lock · orb_isb_fraction_outside · each revert = the old value · OCT-EXACT A1 · Oct D4.3-R9 @07:28, R10 @07:58, R63 @1:01:44',
+        ],
+        [
+          'October-exact knobs ON and conflict rulings (BC)',
+          'Eight knobs now default to the October value: phl_5m_box_same_dir_allowed, touch_stop_cover_later_wick, rolling_stale_touch_releases, rolling_keypair_tape_exempt, isb_target_fill_close, box_trendline_partial_not_room (all ON), phl_min_above_old_extreme_pts = 15 and be_offset_ticks = 4 (1 point past the entry). Conflict rulings: a counter-5m PHL/PLH at the EMA 34 is a 1m scalp with a 15-point first target at the reduced size (mentor_counter_5m_scalp_pts); a first touch that closes through only cancels that order and the level is not locked ISB-only (mentor_level_first_touch_lock = false); the ISB room is 1R (mentor_isb_room_multiple = 1); the resonance runner trails after break-even (mentor_resonance_trail = true). The 3-candle PHL rule stays at 3.',
+          'phl_5m_box_same_dir_allowed · touch_stop_cover_later_wick · rolling_stale_touch_releases · rolling_keypair_tape_exempt · isb_target_fill_close · phl_min_above_old_extreme_pts · be_offset_ticks · box_trendline_partial_not_room · mentor_counter_5m_scalp_pts · mentor_level_first_touch_lock · mentor_isb_room_multiple · mentor_resonance_trail · each revert = the old value · Oct D4.3 @68:24 · D5.2-R33 @19:40 · D2.2 @28:37 · D4.2-R41 · D4.2 @13:00 · D5.4 Ex.1 · D5.2-R23/R24 · D2.3-R48 · D4.2-R31/R32',
+        ],
+        [
+          'October-exact build D: just-broken ISB, fixed partial, FTGL body edge',
+          'Three more October rules ship ON. (D1) mentor_isb_just_broken_level: an inside bar right after a candle whose body just closed through an FTGH/FTGL box edge, with no retest by the inside bar, is refused (isb_just_broken_level) until price comes back to the box [OctD3.3-R47 @38:10, R2/R3 @00:46-01:00; the 10-30 09:03 break-and-reverse ISB]. (D2) mentor_leg1_fixed_pts = 15: a normal PHL/PLH sells all but ONE contract at +15 points (never under 1R, never past the target), then break-even, one runner [Oct D4.2 @12:16 R14, @14:18 R18]; ISB, BOX, swing and confluence keep their own first target; 0 reverts to ceil(n/2) at +1R. (D3) mentor_ftgl_body_edge_partner: the FTGL second bottom is the swing low whose lower body edge is level with bottom 1 own body edge (13 Sep: top 29,015 vs the old 29,003.75; video ~29,014) [OctD3.3-R54 @43:14]. Not built: the morning dead box (no measure in the example) and the trendline / key-level form of D1 (the mentor own D2.2 E9 trade contradicts it).',
+          'mentor_isb_just_broken_level · mentor_leg1_fixed_pts · mentor_ftgl_body_edge_partner · trendline_max_lines_per_anchor = 3 (A2)',
+        ],
+        [
+          'October-exact FTGH/FTGL box carry and counter-5m box scalp (P3)',
+          'Two more October rules ship ON. (1) mentor_box_carry_first_latched: the box carried past the 17:00 CT roll is the RTH box drawn that morning (the first latched / fresh-RTH box, e.g. the Friday FTGH 28,812.50-28,818.25), not a later post-escape zone, and a restart seeds the same box the live tick latched (a Friday box "vẫn còn valid trên chart Chủ nhật"). (2) mentor_box_counter_5m_scalp [B - inferred from ONE mentor trade, D3.3-E9, plus D5.4-R20; D5.4-R8 limits a counter-5m trade to a 1m support/EMA34 spot and D4.3-R28 still says long only on a 5m buy trigger, so it is awaiting an owner/mentor ruling; it only applies while counter_5m_reduce_size is on]: a FTGH/FTGL box return AGAINST the 5m trigger is no longer refused (box_against_5m_trend / box_trigger_side); it is the counter-5m scalp - the reduced counter_5m size and the short first target (mentor_counter_5m_scalp_pts). Each reverts with false.',
+          'mentor_box_carry_first_latched · mentor_box_counter_5m_scalp · each revert = false · OCT-EXACT P3-missesA · Oct D3.3-R27 @17:00, R51 @41:28 · D5.4-R20 @07:51-08:20',
+        ],
+        [
+          'October-exact reverse ISB beside an old extreme (P4)',
+          'One more October rule ships ON. mentor_isbrev_old_extreme_room: a reverse ISB (read as a PHL/PLH, so the PLH/PHL room rule applies) whose old high/low stands inside 1R of the entry, measured to the near-the-extreme target (old extreme minus 5 pts), is refused (isbrev_missing_target) instead of taking the fill-candle-close target. A reverse ISB beside a box edge or key level keeps the fill-close first target. [Oct D2.3-R53 @54:00 "no room, no target, no setup, do not trade it"; R55 @57:00 early entry 28,839.75 with 9.25 pts refused, the late one preferred.] Reverts with false.',
+          'mentor_isbrev_old_extreme_room · revert = false · OCT-EXACT P4-missesB D2.3-WE8',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
-          'mentor_mid_range_reject_side = ON · D2.2-R71 p3 @14:28–15:58',
+          'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',
         ],
         [
           'Day gate (§7)',
@@ -869,7 +899,7 @@ export const mentor: GuideSection = {
         [
           'ORB-edge ISB candle fraction outside',
           'An ISB at the ORB edge trades only when at least 80% (the knob) of the ISB candle — its high-minus-low range — lies OUTSIDE the opening range on the trade side: "80% 90% là cái nến nó nằm ở ngoài… anh chị có quyền take risk… điểm entry… nằm gần cái resistance quá thì thôi bỏ đi" [extra "Routine trước khi trade" part1 @07:46–09:04]. It is the fraction of the candle, NOT a points distance (that is the separate CE-7 orb_edge_veto_pts). A candle whose entry point just ticks outside the edge but whose body is still mostly inside the range is skipped and counted orb_isb_mostly_inside. The knob orb_isb_fraction_outside defaults to 0.80; 0 turns the rule OFF (the ISB trades at the edge at any fraction); the rule is part of the ORB gate (orb_gate_enabled), ISB entries only, RTH only.',
-          'orb_isb_fraction_outside = 0.80 (default ON; 0 = off) · extra "Routine trước khi trade" part1 @07:46–09:04',
+          'orb_isb_fraction_outside = 0 (OCT-EXACT A1 row 4: default OFF; 0.80 reverts) · extra "Routine trước khi trade" part1 @07:46–09:04',
         ],
       ],
     },
@@ -1788,7 +1818,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (ISBTargetFillClose) · kernel/mentor/eval.go Tick (ISB target stage)',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.2 @28:37)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the mentor confirms [OctD2.2-R35/R37 @28:40, 30:03 say only the first partial; R34 says real targets come later; Oct D2.1-R13 level to level is the argument for the ladder].',
           whenToTouch:
@@ -1850,7 +1880,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingStaleTouchReleases) · kernel/mentor/rolling_phl.go rollingPHLTick',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.3 WE6)', // OCT-EXACT BC (was: off)
           recommended:
             'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
           whenToTouch: 'To trial the fix: set true.',
@@ -1866,7 +1896,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (RollingKeypairTapeExempt) · kernel/mentor/eval.go phlLocationBan',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D2.3 WE7)', // OCT-EXACT BC (was: off)
           recommended:
             'off — today [OctD2.3 @13:37–28:33, @35:46–39:09 worked examples; not yet reproduced end to end].',
           whenToTouch: 'To trial the fix: set true.',
@@ -2013,7 +2043,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PHLMinAbovePriorPts) · kernel/mentor/phl.go phlPLHR2',
           range: '0–100 (0 = off)',
-          systemDefault: '15',
+          systemDefault: '15 (October D4.2-R41; 0 reverts)', // OCT-EXACT BC (was: 15)
           recommended: '15 — October [OctD4.2-R41 @40:14].',
           whenToTouch: 'On a mentor answer — 0 restores the earlier behaviour.',
           perSession: 'No — per strategy.',
@@ -2261,7 +2291,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (BoxTrendlinePartialNotRoom) → kernel/mentor/box_trade.go boxTargetPastTrendline (boxEntryIntentWhy) · kernel/mentor/eval.go runnerPartialLine (leg-3 partial) · trader/mentor_actions.go leg2_qty/leg2_tp (mode B, runner ≥ 2, AddOn leg-3 proof)',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (Sept D3.3 p1 @05:15-07:46; Oct D3.3 @46:00)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the owner rules (review 2026-11-12; report “Builds, all default OFF”). On reads [Sept D3.3 p1 @05:15–07:46; Sept D3.2 p2 @11:06–11:39]. The partial at the line only goes out when the runner is ≥ 2 contracts in mode B and the AddOn proves the leg-3 build; otherwise leg 1 sells at 1:1 and the runner rides to the target. Not built: counting only a line that has had its 3rd test (Sept D3.2 p2 @03:26–03:59) — no trendline cap is kept on a box trade, so there is nothing to restrict.',
           whenToTouch:
@@ -2278,7 +2308,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (PHL5mBoxSameDirAllowed) → kernel/mentor/eval.go phlLocationBanFor (phl5mBoxSameDir) · phl5mBoxScalpEdge / withPHL5mBoxScalpEdge (level touch loop) · kernel/mentor/rolling_phl.go rollingPHLTick',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D4.3 @1:08:24 R70/R71)', // OCT-EXACT BC (was: off)
           recommended:
             'off [Oct D4.3 @1:10:58–1:11:03, @1:12:00–1:12:11 — not for new students, not for comfortable trading]. Turn on only if the owner rules the bot trades as an experienced trader.',
           whenToTouch:
@@ -2472,15 +2502,15 @@ export const mentor: GuideSection = {
         {
           label: 'Near-box room',
           where: 'Strategy → Risk control → Mentor method numbers',
-          what: 'Release #52 B11. Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box" ("Insaba Sword ngay chỗ đó mình không được đánh… sát box gần box gần supply quá mình không được đánh" [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]). The mentor gives NO distance, so the 2× is OURS (the same room the target rule demands), not the course. Release #60 (D3.2-R29/R30): an entry INSIDE the box that opposes its side (an FTGL for a short, an FTGH for a long) is refused near_box_inside_opposing — the mentor’s E6, a short ISB sitting on the FTGL top with the FTGH drawn above [D3.2 p1 @22:12–23:08]; and "between two boxes" is no longer a blanket exemption — the middle ISB the mentor took was fine because nothing was near it ("nó đâu có làm gì đâu" [@23:14–24:41]), so it passes on its own room (the "Near-box: between two boxes exempt" card restores the old exemption). Blank = 2; an explicit 0 turns the refusal off for every setup.',
+          what: 'Release #52 B11. Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box" ("Insaba Sword ngay chỗ đó mình không được đánh… sát box gần box gần supply quá mình không được đánh" [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]). The mentor gives NO distance: the October build ships the ISB leg at 0.5× risk, a number that is OURS (fitted to keep the video scorecard; it is on the owner sign-off list, D3.3-R2/R4/R47/R49 do NOT give it), and the PHL/PLH leg (near_box_room_phl) ships OFF; if you turn it on it follows the same 0.5×, not the old 2×. Release #60 (D3.2-R29/R30): an entry INSIDE the box that opposes its side (an FTGL for a short, an FTGH for a long) is refused near_box_inside_opposing — the mentor’s E6, a short ISB sitting on the FTGL top with the FTGH drawn above [D3.2 p1 @22:12–23:08]; and "between two boxes" is no longer a blanket exemption — the middle ISB the mentor took was fine because nothing was near it ("nó đâu có làm gì đâu" [@23:14–24:41]), so it passes on its own room (the "Near-box: between two boxes exempt" card restores the old exemption). Blank = 2; an explicit 0 turns the refusal off for every setup.',
           trader:
-            '2× — ours, not the course. Between two boxes the setup still needs its own room (release #60).',
+            '0.5× on an ISB (W3, October D3.3-R2 @00:46, R4 @01:20, R47 @38:10, R49 @39:37: no ISB too close to a level); the number is ours, the largest that keeps every video trade the mentor took (1× refuses 5 of them). The PHL/PLH leg stays off. Between two boxes the setup still needs its own room (release #60).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (NearBoxRoomMultiple) · kernel/mentor/box.go nearBoxRefusal',
           range: '0–10 × (0 = off)',
-          systemDefault: '2',
+          systemDefault: '0.5',
           recommended:
-            '2 until the mentor names the distance — his own example (an ISB short 10–15 pts above an FTGL with a 5–6 pt risk) is 2–3R, so a strict 2× may refuse the 3R end. The between-two-boxes case (D3.2-R30 @23:14–24:41) passes on its own room since release #60.',
+            '0.5 (W3) until the mentor names the distance — his own example (an ISB short 10–15 pts above an FTGL with a 5–6 pt risk) is 2–3R, so a strict 2× may refuse the 3R end. The between-two-boxes case (D3.2-R30 @23:14–24:41) passes on its own room since release #60.',
           whenToTouch:
             'Only when the mentor gives the number. Zero disables the near-box refusal entirely.',
           perSession: 'No.',
@@ -2674,7 +2704,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (TouchStopCoverLaterWick) → kernel/mentor/swing4h.go SwingCfg.CoverLaterWick (swingLaterWickStop) · trader/mentor_mode.go mentorRuleGate (R31) reads the wider stop',
           range: 'on / off',
-          systemDefault: 'off',
+          systemDefault: 'on (October D5.2-R33 @19:40)', // OCT-EXACT BC (was: off)
           recommended:
             'off until the owner rules (review 2026-11-12; report Q7 “needs owner sign-off”). On reads [Oct D5.2 @19:42–20:03]. Not built: applying it to a CANDLE-1 entry (the order resting on candle 1 while a later candle wicks further) — the report’s [B] extension; the course states no buffer or candle count for it.',
           whenToTouch:
@@ -3050,7 +3080,7 @@ export const mentor: GuideSection = {
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve · trader/mentor_trail_r22.go mentorBEStop',
           range: '0 (OFF) to 20 ticks',
-          systemDefault: 'OFF',
+          systemDefault: '4 ticks = 1 point (October D4.2 @13:00; 0 reverts)', // OCT-EXACT BC (was: OFF)
           recommended:
             'OFF — the video shows one point past the entry but no tick count [Oct D4.2 @ 13:00–13:25].',
           whenToTouch: 'Only on an owner ruling.',

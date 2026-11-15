@@ -18,7 +18,7 @@ import (
 // capped at the near level, the floor fails and phl_target_below_floor is
 // counted instead.
 func TestB14SkipNeverFallsBackToFartherExtreme(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

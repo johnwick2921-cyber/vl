@@ -237,14 +237,14 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 		side, price, stop = SideShort, ref.Low, ref.High
 	}
 	if cfg.LocTriggerFilter && cfg.TriggerSchool != 1 {
-		if ok, ts, _ := TriggerVerdict(trig, price); !ok || ts != "" && ts != side {
+		if ok, ts, _ := TriggerVerdict(trig, price); (!ok || ts != "" && ts != side) && !(cfg.BoxCounter5mScalp && cfg.Counter5mReduceSize != Counter5mReduceOff && ok) { // P3-missesA: opposite trigger = counter-5m scalp
 			return nil, "box_trigger_side"
 		}
 	}
 	// PING PONG (CTO 13:24:53Z): between two boxes the edge trade is legal
 	// only when the gap is >= 50 pts — below that, refused (the MIDDLE is for
 	// ping pong, not the edges, and a narrow range cannot support the bounce).
-	if ok, _ := pingPongVerdict(boxes, bars, price, cfg); !ok {
+	if ok, _ := pingPongVerdict(boxes, bars, price, cfg); cfg.BoxPingPongGate && !ok { // OCT-EXACT A2 row 11: box_ping_pong OFF
 		return nil, "box_ping_pong"
 	}
 	if InsideAnyBox(boxes, price) {
@@ -257,7 +257,8 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	if risk > StopLadderCeiling(cfg, cfg.StopCeilingPts) {
 		return nil, "box_stop_ceiling"
 	}
-	target := nextLevelBeyondRoom(levels, price, stop, side, cfg.RoomMultiple)
+	boxRoom := cfg.boxRoomMultiple()
+	target := nextLevelBeyondRoom(levels, price, stop, side, boxRoom)
 	if target == 0 {
 		return nil, "box_no_target" // no level beyond → no setup [D4.1 p1 @ 01:45]
 	}
@@ -270,14 +271,17 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 	// past the 1:1 leg-1 exit [Oct D1.2 @11:00-11:40].
 	tlLine := 0.0
 	if cfg.BoxTrendlinePartialNotRoom {
-		if past, line := boxTargetPastTrendline(levels, price, stop, side, cfg.RoomMultiple, target); past != 0 {
+		if past, line := boxTargetPastTrendline(levels, price, stop, side, boxRoom, target); past != 0 {
 			target, tlLine = past, line
 		}
 	}
 	// Confluence is computed BEFORE the room check: a confluence box's leg 1 is
 	// 2R, so its room is RoomMultiple × 2R (4R).
 	fl := ConfluenceVerdict(b, side, trig, price)
-	if abs(target-price) < targetRoomMultiple(levels, target, cfg.RoomMultiple)*risk*Leg1RiskMultiple(fl.On) { // m465 D4.3-R17: 1R for a 5m-wick target
+	if !cfg.ConfluenceHold2R {
+		fl = ConfluenceFlag{} // OCT-EXACT A2 row 17: confluence C OFF
+	}
+	if abs(target-price) < targetRoomMultiple(levels, target, boxRoom)*risk*Leg1RiskMultiple(fl.On) { // m465 D4.3-R17: 1R for a 5m-wick target
 		return nil, "box_room"
 	}
 	// G2 place (CTO R-b / 13:20:08Z): a box is ONE place — the key WITHOUT the
@@ -394,4 +398,14 @@ func ConfluenceVerdict(b Box, side Side, trig TriggerLine, entry float64) Conflu
 		}
 	}
 	return ConfluenceFlag{On: true, Side: side}
+}
+
+// boxRoomMultiple is the room multiple a box trade asks (A2 row 11: October
+// 1:1 [Oct D2.3-R48 @49:38]); an unset (<= 0) field keeps the shared
+// RoomMultiple, so a hand-built Config is unchanged.
+func (c Config) boxRoomMultiple() float64 {
+	if c.BoxRoomMultiple > 0 {
+		return c.BoxRoomMultiple
+	}
+	return c.RoomMultiple
 }

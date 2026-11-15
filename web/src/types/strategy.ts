@@ -380,7 +380,7 @@ export interface MentorTuning {
   // D4.1 p1 @20:52 — ISB rest box escape test [body]
   isb_box_escape?: 'close5m' | 'close' | 'body'
   // D4.2 p2 @01:33 — EMA 34 back after one loss [until_zone_exit]
-  ema34_loss_relock?: 'session' | 'until_zone_exit'
+  ema34_loss_relock?: 'off' | 'session' | 'until_zone_exit'
   // X5 @08:52 — refuse an entry within N pts of the ORB edge [0 = off]
   orb_edge_veto_pts?: number
   // rule 5 (release #31): the ORB-edge ISB candle must lie ≥ this fraction outside [0.80]

@@ -32,10 +32,10 @@ import (
 
 // TestM462DefaultGateIsAllDay — the DEFAULT applies the 4h/1h gate at every
 // minute of the session; the stored news-only value stays reachable.
-// RED before m462: DefaultConfig().HTFGateNewsOnly was true and the gate was
+// RED before m462: preOctCfg().HTFGateNewsOnly was true and the gate was
 // off at 02:38 / 13:30 / 00:36 CT.
 func TestM462DefaultGateIsAllDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: the default is now true (TestD2G7HTFGateOctoberFiveMinOnly); this pins the knob's all-session value
 	for _, at := range []struct {
 		name string
@@ -105,7 +105,7 @@ func TestM462HTFEntryCheckCases(t *testing.T) {
 // gate is active at that minute and the entry is refused by NAME.
 // RED before m462: GateOff=true at every one of these minutes → "" (allowed).
 func TestM462RealTradesRefusedUnderDefault(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	ct := func(y int, mo time.Month, d, hh, mm int) int64 { return auditMs(y, mo, d, hh, mm, 0) }
 	cases := []struct {
@@ -199,7 +199,7 @@ func m462Entries(ins []Intent, setup string, side Side) int {
 // (outside the old news/open windows): a 4h/1h conflict refuses the ISB
 // "isb_htf_conflict" (the 698 shape); case 1 agree trades.
 func TestM462ISBConflictRefusedAllDay(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // the 1m isbFixture read
@@ -251,7 +251,7 @@ func m462PHL(h HTF) (*Evaluator, []Intent) {
 
 // m462PHLCfg is m462PHL with a config mutator (round 2 D2-G7: the knob both ways).
 func m462PHLCfg(h HTF, mut func(*Config)) (*Evaluator, []Intent) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if mut != nil {
 		mut(&cfg)
 	}
@@ -346,7 +346,7 @@ func TestM462RollingConflictNamed(t *testing.T) {
 // 13:00 CT conflict → box_htf_conflict; no 4h → box_htf_no_4h.
 func TestM462BoxConflictNamed(t *testing.T) {
 	fixture := func(h HTF) (*Evaluator, []market.Kline, int64) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = false
@@ -467,7 +467,7 @@ func TestM462SharedFilterBackstop(t *testing.T) {
 // TestM462SwingExemptUnderDefault — SWING4H is NOT gated by the 4h/1h
 // triggers under the new default (trade 715 stays the swing's own call).
 func TestM462SwingExemptUnderDefault(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.HTFGateNewsOnly = false // D2-G7 oct round 2: these pins exercise the September all-session gate (knob false)
 	cfg.Enabled = true
 	bars, now := cx1SwingTape(t)

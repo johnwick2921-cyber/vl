@@ -27,7 +27,7 @@ func TestG2ISBTinyStopExceptionOffByDefault(t *testing.T) {
 		}
 		return 0
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	if stop, _, _ := ISBStopVerdict(i1, cfg); stop != 12.5 {
 		t.Fatalf("fixture drift: stop %.2f, want 12.50", stop)

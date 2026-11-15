@@ -13,7 +13,7 @@ import (
 // sequence gives exactly ONE arm, extended twice (the 2nd and 3rd inside
 // candles), then cancelled (the 4th).
 func TestISBOneArmFiveCandleSequence(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0        // item 25: this fixture pins arm stacking, not the room rule
 	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off

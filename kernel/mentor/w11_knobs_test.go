@@ -55,12 +55,12 @@ func w11StackRun(t *testing.T, cfg Config, lastStep int) (cancelAt int, insideAf
 // evaluator reading the constant 4 instead of cfg.isbStackCancelCandle(arm.TFMin)
 // cancels at step 9 for the knob row → RED.
 func TestW11B8Stack2mCancelCandleKnob(t *testing.T) {
-	def := DefaultConfig()
+	def := preOctCfg()
 	def.ISBStackTinyStopPts = 0 // m465 (#60): the default tiny stop is 12.5 (D5.1-R26); this pins the cancel candle
 	if at, _ := w11StackRun(t, def, 13); at != 9 {
 		t.Fatalf("default 2m cancel candle must cancel at 09:09 (step 9), got step %d", at)
 	}
-	knob := DefaultConfig()
+	knob := preOctCfg()
 	knob.ISBStackTinyStopPts = 0 // m465: see above
 	knob.ISBStackCancelCandle2m = 6
 	if at, _ := w11StackRun(t, knob, 9); at != 0 {
@@ -73,7 +73,7 @@ func TestW11B8Stack2mCancelCandleKnob(t *testing.T) {
 
 // TestW11B8CancelCandleKnobIsTwoMinuteOnly — the course 4 stays on the 1m and 5m.
 func TestW11B8CancelCandleKnobIsTwoMinuteOnly(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBStackCancelCandle2m = 8
 	cfg.ISBStackTinyStopPts = 0 // m465 (#60): the default is now 12.5 (D5.1-R26); this fixture pins the stack count, so the tiny-stop exception is off
@@ -103,12 +103,12 @@ func TestW11B8CancelCandleKnobIsTwoMinuteOnly(t *testing.T) {
 // it too (TestM60ISBStackTinyStopHoldsPastCandle4 pins the 12.5 line).
 // MUTANT: drop the tiny-stop early return in ISBStackTick → the 12 row cancels → RED.
 func TestW11B8TinyStopKeepsTheArmPastTheCancelCandle(t *testing.T) {
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.ISBStackTinyStopPts = 0
 	if at, _ := w11StackRun(t, off, 9); at != 9 {
 		t.Fatalf("tiny-stop OFF must cancel at step 9, got %d", at)
 	}
-	tiny := DefaultConfig()
+	tiny := preOctCfg()
 	tiny.ISBStackTinyStopPts = 12
 	at, inside := w11StackRun(t, tiny, 13)
 	if at != 0 {
@@ -117,7 +117,7 @@ func TestW11B8TinyStopKeepsTheArmPastTheCancelCandle(t *testing.T) {
 	if inside < 4 {
 		t.Fatalf("the kept arm must keep counting inside candles, got inside=%d", inside)
 	}
-	small := DefaultConfig()
+	small := preOctCfg()
 	small.ISBStackTinyStopPts = 10
 	if at, _ := w11StackRun(t, small, 9); at != 9 {
 		t.Fatalf("a 10.5-pt stop above a 10-pt tiny-stop knob must still cancel, got step %d", at)
@@ -127,7 +127,7 @@ func TestW11B8TinyStopKeepsTheArmPastTheCancelCandle(t *testing.T) {
 // TestW11B8TinyStopStillCancelsWhenABodyLeavesI1 — the exception only lifts the
 // candle-count cancel; a body outside I1 cancels at once.
 func TestW11B8TinyStopStillCancelsWhenABodyLeavesI1(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.ISBStackTinyStopPts = 12
 	arm := &ISBArm{FirstBar: market.Kline{High: 106, Low: 98.5}, Side: SideLong, TFMin: 1}
@@ -160,32 +160,32 @@ func w11EveningBars(now int64) []market.Kline {
 func TestW11B10EveningSlowKnobs(t *testing.T) {
 	now := auditMs(2026, 9, 15, 18, 30, 0)
 	bars := w11EveningBars(now)
-	if eveningSlow(now, bars, DefaultConfig()) {
+	if eveningSlow(now, bars, preOctCfg()) {
 		t.Fatal("default: a 110-pt range since 15:00 is a strong night")
 	}
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.EveningSlowPts = 150
 	if !eveningSlow(now, bars, c) {
 		t.Fatal("a 150-pt cutoff must read the 110-pt night as slow")
 	}
-	c = DefaultConfig()
+	c = preOctCfg()
 	c.EveningSlowFromHour = 17
 	if !eveningSlow(now, bars, c) {
 		t.Fatal("a range starting at 17:00 must ignore the 15:30 swing (slow)")
 	}
-	c = DefaultConfig()
+	c = preOctCfg()
 	c.EveningSlowWindowMin = 60
 	if !eveningSlow(now, bars, c) {
 		t.Fatal("a 60-minute trailing window must ignore the 15:30 swing (slow)")
 	}
 	// Overnight 01:30 CT reads yesterday's start hour.
 	over := auditMs(2026, 9, 16, 1, 30, 0)
-	c = DefaultConfig()
+	c = preOctCfg()
 	c.EveningSlowFromHour = 17
 	if !eveningSlow(over, bars, c) {
 		t.Fatal("overnight with a 17:00 start must read yesterday's 17:00 (slow)")
 	}
-	if eveningSlow(over, bars, DefaultConfig()) {
+	if eveningSlow(over, bars, preOctCfg()) {
 		t.Fatal("overnight default must read yesterday's 15:00 (the swing counts: strong)")
 	}
 	// A hand-built zero Config (no DefaultConfig) must not turn the night off:
@@ -231,13 +231,13 @@ func w11EveningISBBars() []market.Kline {
 // closed 5m pair is an ISB) and is refused at the pre-open day gate
 // (isb_day_not_measured proves an ISB formed); with EveningSlowPts = 5 the same
 // night is strong, the read is the 2m (doji pair) and NO ISB forms.
-// MUTANT: pass DefaultConfig() instead of e.Cfg at the call site → the knob row
+// MUTANT: pass preOctCfg() instead of e.Cfg at the call site → the knob row
 // still reads slow → RED.
 func TestW11B10EveningSlowKnobReachesTheFrameChoice(t *testing.T) {
 	bars := w11EveningISBBars()
 	now := bars[len(bars)-1].CloseTime + 1 // 19:12 CT
 	run := func(pts float64) map[string]int {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.Exec2mAfter30m = true
 		cfg.HTFGateNewsOnly = true // pins the frame choice, not the 4h/1h gate (m462 all-day default would refuse first)
@@ -269,7 +269,7 @@ func TestW11B10EveningSlowKnobReachesTheFrameChoice(t *testing.T) {
 func TestW11B27OldExtremeBandKnob(t *testing.T) {
 	cur := market.Kline{High: 100, Low: 98}
 	lv := []Level{{Kind: KindOldExtreme, Price: 104}}
-	if touchesOldExtreme(cur, lv, DefaultConfig().ISBOldExtremePts) {
+	if touchesOldExtreme(cur, lv, preOctCfg().ISBOldExtremePts) {
 		t.Fatal("default ±2: an extreme 4 pts above the high is not touched")
 	}
 	if !touchesOldExtreme(cur, lv, 5) {
@@ -278,7 +278,7 @@ func TestW11B27OldExtremeBandKnob(t *testing.T) {
 	if touchesOldExtreme(market.Kline{High: 100, Low: 98}, []Level{{Kind: KindOldExtreme, Price: 99}}, 0) == false {
 		t.Fatal("band 0: a candle whose range contains the extreme is still an exact touch")
 	}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.ISBOldExtremePts = 5
 	if got := e.isbFlagsFor(cur, SideLong, lv, nil); !HasFlag(got, FlagISBAtOldExtreme) {
 		t.Fatalf("isbFlagsFor must read Cfg.ISBOldExtremePts, flags %q", got)
@@ -294,7 +294,7 @@ func TestW11B27OldExtremeBandKnob(t *testing.T) {
 func TestW11B27InRangeGapKnob(t *testing.T) {
 	levels := []Level{{Kind: KindKeyLevel, Price: 80}, {Kind: KindKeyLevel, Price: 130}} // a 50-pt gap, price 100
 	cur := market.Kline{High: 101, Low: 99, Close: 100}
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	if HasFlag(e.isbFlagsFor(cur, SideLong, levels, nil), FlagISBInRange) {
 		t.Fatal("default: a 50-pt key-level gap is not narrower than 50")
 	}
@@ -315,7 +315,7 @@ func TestW11B27InRangeGapKnob(t *testing.T) {
 // returns the near_box refusal count.
 func w11NearBoxPHLTick(t *testing.T, mutate func(*Config)) int {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0
@@ -361,7 +361,7 @@ func TestW11B11NearBoxPHLScopeKnob(t *testing.T) {
 // TestW11B11ISBNearBoxIgnoresThePHLScope — switching the PHL scope off must NOT
 // touch the ISB skip (the course's own example).
 func TestW11B11ISBNearBoxIgnoresThePHLScope(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Exec2mAfter30m = false
 	cfg.Enabled = true
 	cfg.EMALocationTFMinutes = 0
@@ -395,11 +395,11 @@ func TestW11C16PHLTargetShyKnob(t *testing.T) {
 		shy       float64
 		long, srt float64
 	}{
-		{DefaultConfig().PHLTargetShyPts, 29_426.75, 29_436.75},
+		{preOctCfg().PHLTargetShyPts, 29_426.75, 29_436.75},
 		{0, 29_431.75, 29_431.75},
 		{12, 29_419.75, 29_443.75},
 	} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.PHLTargetShyPts = c.shy
 		if got := phlTarget(ex, 29_400, SideLong, nil, cfg); got != c.long {
 			t.Fatalf("shy %g long target = %.2f, want %.2f", c.shy, got, c.long)
@@ -421,11 +421,11 @@ func TestW11C16PHLTargetShyKnob(t *testing.T) {
 // With the default Config nothing changes. MUTANT: restore DefaultBoxCfg() at
 // the walk → the band-4 row records no return → RED.
 func TestW11C15BoxReturnWalkReadsTheConfiguredBoxFrame(t *testing.T) {
-	if New(DefaultConfig()).baseBoxCfg() != DefaultBoxCfg() {
+	if New(preOctCfg()).baseBoxCfg() != DefaultBoxCfg() {
 		t.Fatal("the default Config.Box must equal DefaultBoxCfg() (no live behaviour change)")
 	}
 	run := func(band float64) int {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Exec2mAfter30m = false
 		cfg.Enabled = true
 		cfg.EMALocationTFMinutes = 0

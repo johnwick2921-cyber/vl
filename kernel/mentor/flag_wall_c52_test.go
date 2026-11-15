@@ -83,7 +83,7 @@ func TestC52W9B22FlagWallOnlyOnPHLPLH(t *testing.T) {
 		flatLine(SideLong, 95, 0, false),
 		flatLine(SideShort, 106, 0, false),
 	})
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	mk := func(setup string, stop float64) Intent {
 		return Intent{Action: PlaceStopEntry, Side: SideLong, Setup: setup, Price: 100, Stop: stop, Target: 120}
 	}

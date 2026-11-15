@@ -20,7 +20,7 @@ const b9CapPts = 15.0
 // b9BoxFixture is the FTGL reject-return tape (one LONG return, two box
 // entries) with the HTF and the day latch preset.
 func b9BoxFixture(htf HTF, verdict DayVerdict) (*Evaluator, []market.Kline, int64) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false  // m410: the b9 pins are 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.HTFGateNewsOnly = false // these pins exercise the direction gate itself (all-day)

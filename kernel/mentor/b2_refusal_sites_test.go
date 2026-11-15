@@ -26,7 +26,7 @@ func TestLevelTriggerSideDropIsCounted(t *testing.T) {
 }
 
 func TestBoxTriggerSideDropIsCounted(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1
@@ -78,7 +78,7 @@ func TestBoxTriggerSideDropIsCounted(t *testing.T) {
 }
 
 func TestSwingTriggerSideDropIsCounted(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Swing.Respects5mZone = true
 	now := time.Date(2026, time.September, 15, 9, 15, 0, 0, ctime()).UnixMilli()

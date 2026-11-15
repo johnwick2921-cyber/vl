@@ -121,6 +121,9 @@ type BoxCfg struct {
 	// (one body escape flips the role for the box's life). The zero value is
 	// October: the flip is reversible. Set from Config.BoxFlipReversible.
 	FlipPermanent bool
+	// FTGLBodyEdgePartner (oct-exact D3): FTGL levelness is judged on the lower
+	// BODY edges first [OctD3.3-R54 @43:14]. Set from Config.FTGLBodyEdgePartner.
+	FTGLBodyEdgePartner bool
 }
 
 // DefaultBoxCfg returns the ruling defaults: 1m regular.
@@ -334,8 +337,48 @@ var boxPeak1Level = true
 // rule (no levelness test, no peak-1 anchor). Never set in production.
 var boxPairPrePHL2Seam = false
 
-func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind) (int, int) {
-	return pickBoxPairAt(tfBars, seq, role, false)
+func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, bodyEdge bool) (int, int) {
+	return pickBoxPairAt(tfBars, seq, role, false, bodyEdge)
+}
+
+// lowerBodyEdge is the bottom of a candle's body.
+func lowerBodyEdge(b market.Kline) float64 {
+	return math.Min(b.Open, b.Close)
+}
+
+// bodyEdgePartner (oct-exact D3, knob mentor_ftgl_body_edge_partner) picks the FTGL
+// second bottom by the BODY edge: "mình sẽ lấy cái râu thấp nhất của cái đáy 1,
+// mình kéo lên cái thân gần nhất của cái đáy 2" [OctD3.3-R54 @43:14]. Among the
+// other confirmed swing lows, the partner is the one whose LOWER BODY EDGE is
+// level (within flatNearPts of the later swing, the same horizontal-line test the
+// wick pairing uses) with the extreme's lower body edge, the CLOSEST body edge
+// first, an earlier swing winning a tie. -1 when none is level, and the wick
+// pairing runs unchanged. 13 Sep 2026 (the D3.2 FTGL example): bottom 1 wick
+// 28,981, body edge 29,015; the second bottom's body edge is 29,015.00 (18:51) /
+// 29,014.75 (18:56) and the video draws the top at ~29,014; the wick pairing took
+// the adjacent 17:09 low (body edge 29,003.75) as the partner.
+func bodyEdgePartner(tfBars []market.Kline, seq []swingPairAt, conf []int, ei int) int {
+	ex := seq[ei]
+	exEdge := lowerBodyEdge(tfBars[ex.idx])
+	best, bestD := -1, 0.0
+	for _, ci := range conf {
+		if ci == ei {
+			continue
+		}
+		c := seq[ci]
+		later := c.idx
+		if ex.idx > later {
+			later = ex.idx
+		}
+		d := math.Abs(lowerBodyEdge(tfBars[c.idx]) - exEdge)
+		if d > flatNearPts(tfBars, later) {
+			continue
+		}
+		if best < 0 || d < bestD-1e-9 || (math.Abs(d-bestD) <= 1e-9 && c.idx < seq[best].idx) {
+			best, bestD = ci, d
+		}
+	}
+	return best
 }
 
 // pickBoxPairAt is pickBoxPair; extremeOnly (the post-escape new zone, PHL-2)
@@ -344,7 +387,7 @@ func pickBoxPair(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind
 // "nó rớt xuống đây, nó bật ngược lên, nó tạo cái failure to go lower dưới
 // này" [D3.4 p3 recovered2 @00:00–00:21] — so a level pair above a lower low
 // (10-30: two lows ~28,669 above the 09:25 low 28,614.75) is no new FTGL.
-func pickBoxPairAt(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, extremeOnly bool) (int, int) {
+func pickBoxPairAt(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKind, extremeOnly bool, bodyEdge bool) (int, int) {
 	var conf []int
 	for i, s := range seq {
 		if s.kind == role && swingConfirmed(tfBars, s) {
@@ -373,7 +416,13 @@ func pickBoxPairAt(tfBars []market.Kline, seq []swingPairAt, role kernel.LevelKi
 		for _, ei := range order {
 			ex := seq[ei]
 			best := -1
+			if bodyEdge && role == kernel.KindSWGL && !boxPairPrePHL2Seam {
+				best = bodyEdgePartner(tfBars, seq, conf, ei) // oct-exact D3 [OctD3.3-R54 @43:14]
+			}
 			for _, ci := range conf {
+				if best >= 0 {
+					break // the body-edge partner stands
+				}
 				if ci == ei {
 					continue
 				}
@@ -475,7 +524,7 @@ func BoxesBuild(bars []market.Kline, cfg BoxCfg, now time.Time) []Box {
 	seq = seqToday
 	var out []Box
 	for _, role := range []kernel.LevelKind{kernel.KindSWGL, kernel.KindSWGH} {
-		extreme, nearest := pickBoxPair(tfBars, seq, role)
+		extreme, nearest := pickBoxPair(tfBars, seq, role, cfg.FTGLBodyEdgePartner)
 		if extreme < 0 || nearest < 0 {
 			continue
 		}
@@ -602,6 +651,32 @@ func liveBoxes(latched map[string]Box, post []Box) []Box {
 		}
 		if b, ok := latched[string(kind)]; ok {
 			out = append(out, b)
+		}
+	}
+	return out
+}
+
+// carryBoxes picks the boxes carried past the 17:00 CT roll. With
+// BoxCarryFirstLatched (knob mentor_box_carry_first_latched) a role's carried
+// box is the RTH box the mentor drew that morning (the latched / fresh-RTH
+// box), not a later post-escape new zone: "cái box này hôm thứ sáu ... vẫn còn
+// valid trên chart Chủ nhật" [Oct D3.3 @ 17:00, OctD3.3-R27; E9: the Friday
+// FTGH 28,812.50-28,818.25 retested Sun 21:53]. Off = liveBoxes (newest per role).
+func carryBoxes(first bool, latched map[string]Box, post []Box) []Box {
+	if !first {
+		return liveBoxes(latched, post)
+	}
+	out := make([]Box, 0, 2)
+	live := liveBoxes(latched, post)
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		if b, ok := latched[string(kind)]; ok {
+			out = append(out, b)
+			continue
+		}
+		for _, b := range live {
+			if b.Kind == kind {
+				out = append(out, b)
+			}
 		}
 	}
 	return out
@@ -874,7 +949,7 @@ func boxAfterEscapeBuildFrame(bars []market.Kline, buildCfg, baseCfg BoxCfg, old
 			}
 		}
 		seq = after
-		extreme, nearest = pickBoxPairAt(tfBars, seq, role, true)
+		extreme, nearest = pickBoxPairAt(tfBars, seq, role, true, cfg.FTGLBodyEdgePartner)
 	} else {
 		extreme, nearest = boxAfterEscapePairPrePHL2(tfBars, seq, esc, role)
 	}

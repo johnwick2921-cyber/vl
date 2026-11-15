@@ -20,6 +20,7 @@ import (
 func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(7, 20) // inside the 07:20–07:35 print window
@@ -105,6 +106,7 @@ func TestMentorNewsCancelFlattenAtEvalOnceCallSite(t *testing.T) {
 func TestMentorNewsCancelRunsOnTheMonitorBeatWithoutABar(t *testing.T) {
 	t.Setenv("MENTOR_STOP_LIMIT", "on")
 	at, _, ledger, _ := mentorB3Rig(t)
+	octNewsHoldOn(t, at) // OCT-EXACT A1 row 7: pin the hold's mechanics under the revert knob
 	mentorWireSeams(t, at, ledger)
 
 	now := b3Clock(7, 20)

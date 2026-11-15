@@ -13,7 +13,7 @@ import (
 // LossDeparturePts (0) the numeric departure is OFF, so the day rollover is the
 // ONLY reset. MUTANT: drop the day-key reset → this test stays RED.
 func TestEmaLossBlockResetsAtSessionDay(t *testing.T) {
-	cfg := DefaultConfig() // LossDeparturePts 0 — the block must lift WITHOUT the knob
+	cfg := preOctCfg() // LossDeparturePts 0 — the block must lift WITHOUT the knob
 	// CE-6 (release #25): the 17:00 CT roll is the reset of the "session"
 	// relock; the zone-exit default (a far candle lifts it) is
 	// TestCE6EmaLossRelocksOnZoneExit.

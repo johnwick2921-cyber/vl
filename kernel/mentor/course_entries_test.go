@@ -111,7 +111,7 @@ func TestCE2ConflictHoldsUntilBothBoxesEscape(t *testing.T) {
 			t.Fatalf("held conflict must be counted; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().TFConflictEnd != TFConflictBothBoxes {
+	if preOctCfg().TFConflictEnd != TFConflictBothBoxes {
 		t.Fatal("tf_conflict_end default must be both_boxes (course-defaults-30)")
 	}
 }
@@ -148,7 +148,7 @@ func TestCE5ISBBoxEscapeIsBody(t *testing.T) {
 // MUTANT: drop the zone-exit branch in emaLossTick → RED.
 func TestCE6EmaLossRelocksOnZoneExit(t *testing.T) {
 	run := func(mode string) *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		if mode != "" {
 			cfg.EmaLossRelock = mode
 		}
@@ -230,8 +230,9 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 			t.Fatalf("refusal must be counted as news_wait_4h_line; refusals %v", e.State.Refusals)
 		}
 	}
-	if !DefaultConfig().NewsWaitBothLines {
-		t.Fatal("news_wait_both_lines default must be ON (course-defaults-30)")
+	// OCT-EXACT A1 row 6: the Sept CE-3 wait now defaults OFF; mechanics pinned under the revert value.
+	if DefaultConfig().NewsWaitBothLines || !preOctCfg().NewsWaitBothLines {
+		t.Fatal("A1 row 6: news_wait_both_lines must default OFF and be ON under the revert")
 	}
 }
 
@@ -240,14 +241,15 @@ func TestCE3NewsWaitFor4hLine(t *testing.T) {
 // print window start until the 08:30 CT day-gate read (the bars still build
 // their whole 1h/4h candles); OFF keeps the item-18 print-window drop.
 func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
-	if !DefaultConfig().NewsBarsExcluded {
-		t.Fatal("news_bars_excluded default must be ON (case a)")
+	// OCT-EXACT A1 row 6: the Sept CE-4 freeze now defaults OFF; mechanics pinned under the revert value.
+	if DefaultConfig().NewsBarsExcluded || !preOctCfg().NewsBarsExcluded {
+		t.Fatal("A1 row 6: news_bars_excluded must default OFF and be ON under the revert")
 	}
 	w := printWindowCT(2026, 9, 15)
 
 	// ON freezes every tick from the print window start through the 08:30
 	// day-gate read (the 08:30-close tick at now = 08:31:00 releases).
-	on := DefaultConfig()
+	on := preOctCfg()
 	on.NewsBarsExcluded = true
 	on.PrintWindows = []PrintWindow{w}
 	for _, tc := range []struct {
@@ -283,7 +285,7 @@ func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
 	}
 
 	// OFF: no freeze at all (the item-18 drop is the only behaviour).
-	off := DefaultConfig()
+	off := preOctCfg()
 	off.NewsBarsExcluded = false
 	off.PrintWindows = []PrintWindow{w}
 	if newsHTFFrozen(off, auditMs(2026, 9, 15, 7, 50, 0)) {
@@ -296,7 +298,7 @@ func TestCE4NewsBarsExcludedToTheOpen(t *testing.T) {
 // MUTANT: drop the newsHTFFrozen guard in Tick → RED.
 func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 	build := func(on bool) *Evaluator {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.NewsBarsExcluded = on
 		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -328,7 +330,7 @@ func TestCE4TickHTFIgnoresPostPrintBars(t *testing.T) {
 // moves the 1h line only after the open, not during the news window.
 // MUTANT: drop the newsHTFFrozen guard in Tick → the 07:50 tick moves the line.
 func TestCE4FreezeResumesOnWholeCandles(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.NewsBarsExcluded = true
 	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -369,7 +371,7 @@ func TestCE4FreezeResumesOnWholeCandles(t *testing.T) {
 // of the news window) seeded the line as never-moved ("").
 // MUTANT: revert seedHistoryState to the htfFeedBars delete → RED.
 func TestCE4SeedHistoryStateFreeze(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.NewsBarsExcluded = true
 	cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -410,7 +412,7 @@ func TestCE4SeedHistoryStateFreeze(t *testing.T) {
 // seed replay → the restart seeds the line long → RED.
 func TestCE4RestartDuringFreezeParity(t *testing.T) {
 	mk := func() Config {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.NewsBarsExcluded = true
 		cfg.PrintWindows = []PrintWindow{printWindowCT(2026, 9, 15)}
@@ -505,7 +507,7 @@ func TestCE8StructureTrend5m(t *testing.T) {
 // trendline LOCATION itself never is.
 // MUTANT: skip KindTrendlineTarget in nextLevelBeyondRoom → RED.
 func TestB12TrendlineIsTarget(t *testing.T) {
-	if !DefaultConfig().TrendlineIsTarget {
+	if !preOctCfg().TrendlineIsTarget {
 		t.Fatal("trendline_is_target default must be ON (case a)")
 	}
 	levels := []Level{
@@ -574,7 +576,7 @@ func TestCE9LevelEntriesNeedTriggerSide(t *testing.T) {
 			t.Fatalf("knob OFF (school 1): the level reject must trade without the trigger; refusals %v", e.State.Refusals)
 		}
 	}
-	if DefaultConfig().LevelEntriesNeedTriggerSide {
+	if preOctCfg().LevelEntriesNeedTriggerSide {
 		t.Fatal("level_entries_need_trigger_side default must be OFF (case b)")
 	}
 }
@@ -587,7 +589,7 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 	boxes := []Box{{Kind: FTGL, Top: 95, Bottom: 90}, {Kind: FTGH, Top: 115, Bottom: 110}}
 	tl := Level{Key: "trendline:x", Kind: KindTrendline, Price: 100}
 	kl := Level{Key: "K", Kind: KindKeyLevel, Price: 100}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	// D3-G8 (oct round 2): October's only word on the middle of two boxes is
 	// "ở giữa 2 box chỉ được quyền đánh Inside Bar" [OctD3.3-R59 @ 46:27], so the
 	// default is OFF: the trendline reject is refused like every other level.
@@ -606,7 +608,7 @@ func TestB13TrendlineBetweenBoxes(t *testing.T) {
 	if !midRangeBoxedRefuses(cfg, kl, boxes, 101) {
 		t.Fatal("knob ON exempts the trendline only — a key level stays refused")
 	}
-	if midRangeBoxedRefuses(DefaultConfig(), kl, boxes[:1], 101) {
+	if midRangeBoxedRefuses(preOctCfg(), kl, boxes[:1], 101) {
 		t.Fatal("one box is not mid-range")
 	}
 }
@@ -627,7 +629,7 @@ func TestCE11FlagWallTarget(t *testing.T) {
 	var refused []string
 	ref := func(r string) { refused = append(refused, r) }
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if !cfg.FlagWallTarget {
 		t.Fatal("flag_wall_target default must be ON (course-defaults-30)")
 	}

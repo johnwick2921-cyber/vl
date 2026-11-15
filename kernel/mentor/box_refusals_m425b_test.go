@@ -14,7 +14,7 @@ import (
 // (same tape as TestEvaluatorBoxPathEveryReturnTrades: two rejecting returns).
 
 func m425bBoxRig(seed []Level, trig TriggerLine) (*Evaluator, []market.Kline, int64) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.BoxSwingBothRoles = false // oct round 2 D3-G2: this synthetic tape's outside bars predate the both-roles swing read (the box premise is the one-role switch)
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
@@ -79,7 +79,7 @@ func TestM425bBoxTriggerSideHasItsOwnName(t *testing.T) {
 
 // Every silent path of boxEntryIntent now returns a stable name.
 func TestM425bBoxEntryIntentWhyNames(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0.05
 	floor := Box{Kind: FTGL, Top: 100, Bottom: 90, Key: "ftgl:100.00:90.00"}

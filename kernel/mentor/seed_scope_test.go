@@ -30,7 +30,7 @@ func seededWith(e *Evaluator, d seedDepth, now int64) {
 // scopeISBTick runs the standard long ISB through Tick on an evaluator seeded
 // with depth d and returns the intents and the evaluator.
 func scopeISBTick(d seedDepth) ([]Intent, *Evaluator) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMAPeriod34 = 0
 	cfg.EMAPeriod9 = 0
@@ -46,7 +46,7 @@ func scopeISBTick(d seedDepth) ([]Intent, *Evaluator) {
 // seeded with depth d. mutate runs after seeding, before the tick.
 func scopeSwingTick(t *testing.T, d seedDepth, mutate func(e *Evaluator, now int64)) ([]Intent, *Evaluator) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0 // item 25: this fixture pins SEED scoping, not the swing room rule
 	cur := []market.Kline{

@@ -15,7 +15,7 @@ func keyLevel(price float64) Level {
 // did not touch the level ends the visit and the NEXT touching candle is the
 // new reference [D5.3 p1 @20:42-23:35; X4 @04:55-05:27].
 func TestLevelVisitReclassifies(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	lvl := keyLevel(100)
 	var tr Touch
@@ -51,7 +51,7 @@ func TestLevelVisitReclassifies(t *testing.T) {
 // comes close but never REACHES the level must not be a reference, no matter
 // how wide the band is.
 func TestLevelTouchLiteral(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.TouchBandPts = 0.5 // band loosened — key levels must ignore it
 	lvl := keyLevel(100)
@@ -74,7 +74,7 @@ func TestLevelTouchLiteral(t *testing.T) {
 // TestEMATouchKeepsBand: the band still applies to non-key kinds (the EMA's
 // line moves; the strictness knob is only pinned for levels).
 func TestEMATouchKeepsBand(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.TouchBandPts = 0.5
 	lvl := Level{Key: string(KindEMA34), Kind: KindEMA34, Price: 100}
@@ -91,7 +91,7 @@ func TestEMATouchKeepsBand(t *testing.T) {
 // TestVisitMinPts: the L1 knob — a departure needs LvlRevisitMinPts of
 // close-distance from the level. Below the distance the visit survives.
 func TestVisitMinPts(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.LvlRevisitMinPts = 0.5
 	lvl := keyLevel(100)

@@ -59,7 +59,7 @@ func we679Run(t *testing.T, e *Evaluator, file string, mo time.Month, d int, fro
 }
 
 func we679Cfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.RoomMultiple = 1
 	cfg.PHLRoomMultiple = 1 // as TestPHL1CourseWorkedExamples: sets the D5.3 room rule aside
 	return cfg
@@ -146,7 +146,7 @@ func TestWE7KnobOffReproducesToday(t *testing.T) {
 // Both knobs ship OFF (today's behaviour): the worked examples do not
 // reproduce end to end (5m box ban / mid-range ban, 2R PHL room come next).
 func TestWE679KnobsDefaultOff(t *testing.T) {
-	c := DefaultConfig()
+	c := preOctCfg()
 	if c.RollingStaleTouchReleases || c.RollingKeypairTapeExempt {
 		t.Fatalf("defaults must be OFF: %+v %+v", c.RollingStaleTouchReleases, c.RollingKeypairTapeExempt)
 	}
@@ -174,7 +174,7 @@ func TestWE6StaleTouchWithRestingLevelArmStillOwns(t *testing.T) {
 // Review P2/P3: rolling_keypair_tape_exempt is ROLLING-path only; the level
 // path's phlLocationBan keeps the X4 sit-out for an old-extreme anchor.
 func TestKeypairTapeExemptDoesNotApplyOnLevelPath(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.RollingKeypairTapeExempt = true
 	cfg.PingPongCandleMaxPts = 100
 	e := New(cfg)

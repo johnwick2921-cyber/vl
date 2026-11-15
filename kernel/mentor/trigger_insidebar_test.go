@@ -15,7 +15,7 @@ func tfBar(tfMin, idx int, high, low, close float64) market.Kline {
 // beyond neither extreme: it moves nothing; the next bar decides (CTO parity
 // ruling 2026-10-04 Q2).
 func TestOutsideBarInsideCloseMovesNothing(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	for _, tf := range []int{5, 60, 240} {
 		prior := tfBar(tf, 0, 100, 96, 98)
@@ -44,7 +44,7 @@ func TestOutsideBarInsideCloseMovesNothing(t *testing.T) {
 
 // The beyond-close cases still pick the side price is NOW beyond.
 func TestOutsideBarBeyondCloseStillPicksSide(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	up := TriggerTick(TriggerLine{}, []market.Kline{tfBar(5, 0, 100, 96, 98), tfBar(5, 1, 103, 94, 101)}, 5, cfg)
 	if up.Dir != SideLong || up.Price != 100 {

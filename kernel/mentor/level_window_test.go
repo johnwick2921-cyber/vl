@@ -29,7 +29,7 @@ func levelWindowBar(y int, mo time.Month, d, hh, mm int, close float64) market.K
 
 // levelWindowEval builds a seeded evaluator with one resting long level arm.
 func levelWindowEval(placedAt int64, now int64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	e.seeded = true

@@ -263,6 +263,15 @@ func Leg1RiskMultiple(confluence bool) float64 {
 	return 1
 }
 
+// isbRoomMultiple is the room multiple the ISB path asks (oct-exact C4):
+// ISBRoomMultiple when set, else RoomMultiple (zero-safe for literal Configs).
+func (c Config) isbRoomMultiple() float64 {
+	if c.ISBRoomMultiple > 0 {
+		return c.ISBRoomMultiple
+	}
+	return c.RoomMultiple
+}
+
 // NearBoxRoomPHLMultipleFollow is the NearBoxRoomPHLMultiple value that makes
 // the PHL/PLH near-box leg follow NearBoxRoomMultiple (today's behaviour).
 const NearBoxRoomPHLMultipleFollow = -1.0
@@ -397,6 +406,7 @@ type Config struct {
 
 	// PHL/PLH (PLAN v1 §3).
 	PHLMinCandlesFromExtreme int     // entry at least N candles from the old extreme; default 3 [D4.1 p1 @ 09:40 written]
+	ISBRevOldExtremeRoom     bool    // P4-missesB: a retagged reverse ISB with an old extreme inside 1R (to the shy target) is refused, no fill-close (D2.3-R53 @54:00, R55 @57:00); false reverts to the r1 fill-close
 	PHLTargetShyPts          float64 // target this far short of the old extreme; default 5 (Q2 knob; 'near the old extreme, not AT it' [D2.2 p1 @06:11, 07:33] — the 5 is ours, not the mentor's)
 	// PHLEntryBufferPts — entry buffer beyond the reference candle's extreme
 	// (outward). Default 0.50 (release #59 fix round, mentor-exact): the
@@ -453,6 +463,45 @@ type Config struct {
 	// answers-1112). ISB / box / swing keep RoomMultiple.
 	// Studio JSON: risk_control.mentor_tuning.phl_room_multiple.
 	PHLRoomMultiple float64
+	// ISBRoomMultiple — oct-exact C4: the room multiple the ISB path (normal and
+	// reverse ISB) asks, in place of RoomMultiple. Default 1 = October's 1:1
+	// floor [Oct D2.3-R48 @49:38; the ISB's first target is the fill-candle close,
+	// Oct D2.2 @28:37, so 2x/4R is ours]. 0 (or negative) = follow RoomMultiple,
+	// so the revert is mentor_isb_room_multiple=2 (Sept). Mentor-only: this
+	// Config is built only for the mentor evaluator. Studio JSON:
+	// risk_control.mentor_tuning.mentor_isb_room_multiple.
+	ISBRoomMultiple float64
+	// LevelFirstTouchLock — oct-exact C3: true = today (a key level whose first
+	// touch closes through is locked ISB-only, level_invalid_first_touch). false
+	// (default, October D5.2-R23/R24, later than R20): the first touch closing
+	// through only CANCELS the order resting at that level; the level is not
+	// locked, the retest after the break is tradable. Studio JSON:
+	// risk_control.mentor_tuning.mentor_level_first_touch_lock.
+	LevelFirstTouchLock bool
+	// ISBRevFillClose — oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	ISBRevFillClose bool
+	// Counter5mScalpPts — oct-exact C1: the first target of a counter-5m scalp
+	// at the EMA 34 (a PHL/PLH on the side OPPOSITE the governing 5m trigger,
+	// stamped counter_5m): entry +/- this many points, never past the original
+	// target and never inside the 1:1 floor. Default 15 ("10-something" pts,
+	// Oct D5.4 Ex.1 @04:47-05:00 "ăn ít lại"; the 15 is the CTO's reading, the
+	// same 15 as D4.2-R14/R18). 0 = off (today: no scalp target). Studio JSON:
+	// risk_control.mentor_tuning.mentor_counter_5m_scalp_pts.
+	Counter5mScalpPts float64
+	// ISBJustBrokenLevel — oct-exact D1: an ISB whose MOTHER candle just closed
+	// through a level (key level, old extreme, gap edge, FTGH/FTGL box edge,
+	// trendline) with its body, and whose inside bar has not retested the level,
+	// is refused (isb_just_broken_level) until the retest [OctD3.3-R2/R3 @00:46-01:00,
+	// R47 @38:10 "hoan toan khong duoc", the 10-30 09:03 break-and-reverse ISB].
+	// No points number (the mentor gives none). Default true; revert
+	// risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
+	ISBJustBrokenLevel bool
+	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
+	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
+	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
+	// video draws the box top at 29,014, the wick-level pairing drew 29,003.75].
+	// Default true; revert risk_control.mentor_tuning.mentor_ftgl_body_edge_partner=false.
+	FTGLBodyEdgePartner bool
 	// RollingLeftBreakCancel — D2-G6 (oct round 2): a 1m candle that CLOSES beyond the
 	// ladder's left extreme (the higher low / lower high the leg to the old extreme
 	// started from) ENDS the rolling ladder — named rolling_left_extreme_broken —
@@ -501,6 +550,22 @@ type Config struct {
 	// BoxCarriedStaysLive — D3-G4 (oct round 2): a carried FTGH/FTGL box (live at the RTH open, valid to the next 08:30) stays the role's live box over a box that forms later in the evening: "vẫn còn valid trên chart Chủ nhật" [Oct D3.3 @ 17:00] (R27; E9 Sun 1 Nov ~21:53 the Friday FTGH 28,808.25 retest -> -17.50 pts, frames s_02558/s_02567); "valid cho tới sáng ngày mai" [@ 41:28] (R51). Default ON (October); OFF = the m473 rule (a carried box only fills a role the live set lacks, so the Sunday-evening FTGH hides Friday's).
 	// Studio JSON: risk_control.mentor_tuning.box_carried_stays_live.
 	BoxCarriedStaysLive bool
+	// BoxCarryFirstLatched — oct-exact P3-missesA (D3.3-E9): the box carried past the
+	// 17:00 CT roll is the RTH box the mentor drew that morning (the latched /
+	// fresh-RTH box), not a later post-escape new zone [Oct D3.3 @17:00 OctD3.3-R27:
+	// "cái box này hôm thứ sáu ... vẫn còn valid trên chart Chủ nhật"; E9 Sun 1 Nov
+	// ~21:53 retest of the Friday FTGH 28,812.50-28,818.25]. Default ON; false
+	// reverts to m473 (the newest live box per role).
+	BoxCarryFirstLatched bool
+	// BoxCounter5mScalp — oct-exact P3-missesA (D3.3-E9): a FTGH/FTGL box return AGAINST
+	// the 5m trigger is not refused (box_against_5m_trend / box_trigger_side); it is
+	// the course's counter-5m SCALP: the counter_5m reduced size and the short first
+	// target [Oct D5.4-R20 @07:51-08:20 "những lệnh long của mình phải là những lệnh
+	// scalping, phải là những lệnh đánh size nhỏ ... cứ có điểm chạy", R9 @04:25, R11
+	// @04:47, R13 @05:00; later than D4.3-R6/R14]. E9: Sun 1 Nov 21:56 the Friday FTGH
+	// 28,812.50-28,818.25 retested under a 5m long trigger, "cũng được 17 điểm". Default
+	// ON; false reverts (a counter-5m box return stays refused).
+	BoxCounter5mScalp bool
 	// BoxSwingBothRoles — D3-G2 (oct round 2): a candle that is BOTH a 3-bar swing high and a 3-bar swing low (a big outside bar) is a peak AND a bottom for the box builder. Thu 29 Oct 09:05 (O 29,619 H 29,629.25 L 29,586) is peak 2 of the course's red FTGH 29,621.25-29,632.75 [Oct D3.3 @ 15:46 "lấy cái râu cao nhất của cái đỉnh 1, kéo xuống cái thân gần nhất của cái đỉnh 2" (R25); E11 frame s_02696]. Default ON (October); OFF = the September switch that keeps such a bar as a low only (the pair then falls to the 09:19 high, formed 14 minutes later and 15.5 pts lower).
 	// Studio JSON: risk_control.mentor_tuning.box_swing_both_roles.
 	BoxSwingBothRoles bool
@@ -761,6 +826,122 @@ type Config struct {
 	// intraday entry — nothing inside, no reversal at the edges, only the
 	// escape side after a 1m body close outside. The §8 swing is exempt.
 	OrbGateEnabled bool
+
+	// OCT-EXACT A1 (build step A1, CTO-decisions.md section A1, owner order
+	// 2026-11-14 "mentor mode = the October course exactly, nothing else"):
+	// the gates below are Sept / invented and October is silent or contrary, so
+	// each ships OFF. The revert for every one is the old value (true). Every
+	// field is mentor-evaluator-only (this Config drives mentor.Evaluator; AI
+	// mode never builds it).
+	//
+	// HTFGateEnabled — A1 row 1: the 4h/1h direction gate (<setup>_htf_no_4h /
+	// _htf_conflict / _htf_side_mismatch + the htfEntryFilter backstop + the
+	// rolling trend side). October's only big frame is the 5m [Oct D4.3-R9
+	// @07:28]. Default false; knob mentor_htf_gate_enabled=true reverts.
+	HTFGateEnabled bool
+	// DayGateEnabled — A1 row 2: the §7 day gate (day_off / day_spent 265 /
+	// day_not_measured, the spent-day target cap 15, the spent stop cap, the
+	// spent-day room and the trader R9 spent cap). Default false; knob
+	// mentor_day_gate_enabled=true reverts.
+	DayGateEnabled bool
+	// Swing4HEnabled — A1 row 3: the whole SWING 4H→5M setup. October does not
+	// trade it: "the 5m is not traded because the stop is too big" [Oct D4.3-R10
+	// @07:58]. Only NEW swing arms stop; an open or resting swing is still
+	// managed. Default false; knob mentor_swing4h_enabled=true reverts.
+	Swing4HEnabled bool
+	// OrbPart2Enabled — A1 row 4: ORB part 2 (orb_not_drawn / orb_not_escaped /
+	// orb_wrong_side). Part 1, orb_inside, stays ON under OrbGateEnabled
+	// [Oct D4.3 @ 61:44 R63 "nến đang nằm trong vòng ORB 2 phút, đừng trade"].
+	// Default false; knob mentor_orb_part2_enabled=true reverts.
+	OrbPart2Enabled bool
+	// Open5mGateEnabled — A1 row 5: open_5m_range_not_broken (Sept D4.4).
+	// Default false; knob mentor_open5m_gate_enabled=true reverts.
+	Open5mGateEnabled bool
+	// LossBoxEnabled — A1 row 10: loss box / loss range G2 (loss_box_blocked,
+	// loss_range_blocked, loss_box_off_day). Default false; knob
+	// mentor_loss_box_enabled=true reverts.
+	LossBoxEnabled bool
+
+	// OCT-EXACT A2 (build step A2, CTO-decisions.md section A2, owner order
+	// 2026-11-14 "mentor mode = the October course exactly"): entry and level
+	// gates that are Sept / invented and October is silent or contrary. Each
+	// ships OFF (or at the October value); the revert is the old value in the
+	// comment. Every field is mentor-evaluator-only (AI mode never builds this
+	// Config).
+	//
+	// HTFBoxGates — A2 row 1: the 15m and 30m ISB-box gates on every setup
+	// (isb/isbrev/phl/box _15m*, _30m*, the forming 15m box). October's only
+	// big frame is the 5m [Oct D4.3-R9 @07:28]; WE9 (took) was refused by
+	// phl_15m_box_ban. Default false: no 15m/30m box is built. With it OFF
+	// Early15mRead and FifteenMinIBRule are moot (their own defaults are also
+	// off: 15m_early_read=false, 15m_ib_requires_5m_isb=off). Revert:
+	// mentor_htf_box_gates=true (+ the two knobs).
+	HTFBoxGates bool
+	// Box15mNoTrade — review fix (fidelity P2, counter-cite to D4.3-R9): the 15m ISB-box no-trade
+	// stays ON when HTFBoxGates is OFF. OctD4.3-R60 @58:38 teaches it in the same video as R9:
+	// "Day la ly do tai sao buoi sang ngay hom nay anh chi thua ne. Tai vi dang lam Insapa khung
+	// 15 phut" (the 08:30 cluster is a 15m inside bar; the losses came from trading inside it;
+	// check by switching to 15m). Mentor question 2 of Ngay 4.3 ("does the 15m check still apply?")
+	// is OPEN and unanswered, so a rule October itself teaches is not turned off on R9 alone.
+	// Builds only the 15m box and its box gates; the 30m box, tf_conflict, MTF confluence,
+	// Early15mRead and FifteenMinIBRule stay under their own knobs. Revert (Sept/R9-only read):
+	// mentor_15m_box_no_trade=false.
+	Box15mNoTrade bool
+	// TFConflictEnabled — A2 row 2: tf_conflict (5m vs 15m box disagreement
+	// cancels the arms and refuses every setup). Default false; revert
+	// mentor_tf_conflict=true.
+	TFConflictEnabled bool
+	// MTFConfluenceEnabled — A2 row 3: confluence C from the 15m + 5m boxes
+	// (mtfConfluence). Default false; revert mentor_mtf_confluence=true.
+	MTFConfluenceEnabled bool
+	// RollingLevelTouchOwns — A2 row 4: a level touch-reject owns the rolling
+	// entry (rolling_level_touch_owns, m216; WE6 refutes it). Default false;
+	// revert mentor_rolling_level_touch_owns=true.
+	RollingLevelTouchOwns bool
+	// KeypairRuleEnabled — A2 row 5: keypair_candle_too_big (EXTRA X4; refuses
+	// WE7), on the level path and the rolling path. Default false; revert
+	// keypair_rule_enabled=true.
+	KeypairRuleEnabled bool
+	// TriggerRetestWrongWayRefuse — A2 row 9: a trigger-retest level trades
+	// only in the trigger's direction (Sept row 56). October: "the trigger line
+	// is just a level, tradable both ways" [Oct D4.3 @ 92:00 R93]. Default false;
+	// revert mentor_trigger_retest_wrong_way=true.
+	TriggerRetestWrongWayRefuse bool
+	// BoxPingPongGate / BoxRoomMultiple / PHLISBPreferredAtBox /
+	// TriggerBoxZoneGate — A2 row 11 (FTGH/FTGL box gates): box_ping_pong
+	// (the range gap/candle cap), the box room (2 -> 1, October 1:1
+	// [Oct D2.3-R48 @49:38]), phl_isb_preferred_at_box and the B1 trigger zone
+	// (trigger_ftgl_buy_zone / trigger_ftgh_sell_zone). Defaults false / 1 /
+	// false / false; reverts mentor_box_ping_pong=true, mentor_box_room_multiple=2,
+	// mentor_phl_isb_preferred_at_box=true, mentor_trigger_box_zone=true. The
+	// box touch band 0.25 -> 0 (literal touch) is Box.TouchBandPts (default 0).
+	BoxPingPongGate      bool
+	BoxRoomMultiple      float64
+	PHLISBPreferredAtBox bool
+	TriggerBoxZoneGate   bool
+	// ISBLocationSizeCuts — A2 row 12: isb_at_old_extreme / isb_in_range cut an
+	// ISB to size 3 (Sept). Default false; revert mentor_isb_location_size_cuts=true.
+	ISBLocationSizeCuts bool
+	// PullbackWarnCut — A2 row 13: the X11 pullback_warn size cut (EXTRA X11).
+	// Default false; revert mentor_pullback_warn_cut=true.
+	PullbackWarnCut bool
+	// TrendlineLevelPreferPts — A2 row 15: the band within which a respected
+	// level beats a fresh trendline (ours, the mentor gives no number). Default
+	// 0 = the preference is OFF; revert trendline_level_prefer_pts=2.
+	TrendlineLevelPreferPts float64
+	// TrendlineBoxBeats — A2 row 15: BOX BEATS TRENDLINE (a trendline price
+	// inside a live box is not a location). Default false; revert
+	// mentor_trendline_box_beats=true.
+	TrendlineBoxBeats bool
+	// TrendlineMaxLinesPerAnchor — A2 row 15: up to this many non-adjacent
+	// lines per side stand at once (October fan: "3 đường thôi, một cái đáy
+	// bên tay trái" [OctD3.2-R21/R22 @08:31-09:36]). Default 3; revert
+	// trendline_max_lines_per_anchor=1.
+	TrendlineMaxLinesPerAnchor int
+	// ConfluenceHold2R — A2 row 17: confluence C (leg 1 held to 2R, the school-1
+	// upgrade, the box + trigger confluence). Sept D3.4. Default false; revert
+	// mentor_confluence_hold_2r=true.
+	ConfluenceHold2R bool
 
 	// LegBudgetEnabled — G1 (R12, DS-107, CTO 2026-10-03): at most 2 entries
 	// per leg (the PHL/PLH + a same-direction ISB); a stop-out inside the leg
@@ -1172,7 +1353,7 @@ func DefaultConfig() Config {
 
 		KeyLevelTFMinutes:       60,
 		KeyLevelRTHOnly:         true,
-		KeyLevelPrunePts:        20,
+		KeyLevelPrunePts:        0,                          // OCT-EXACT A2 row 14: the 20-pt prune is Sept/ours (October draws every level it sees); mentor_key_level_prune_pts=20 reverts (the gap-edge floor stays 20: gapEdgeMinPts)
 		KeyLevelDeleteOn1HClose: KeyLevelDeleteOn1HCloseOff, // LL-1: October keeps a level a 1H body crossed [OctD5.2-R13..R20 @04:10–07:42]
 		KeyLevelHistorySource:   KeyLevelHistoryOwn,         // LL-4: the current contract's own candles [OctD5.2-R16 @06:18]
 
@@ -1194,6 +1375,7 @@ func DefaultConfig() Config {
 
 		PHLMinCandlesFromExtreme: 3,
 		PHLTargetShyPts:          5,
+		ISBRevOldExtremeRoom:     true,                    // P4-missesB WE8: PLH with an old low inside 1R has no setup [Oct D2.3-R53 @54:00, R55 @57:00]; mentor_isbrev_old_extreme_room=false reverts to the r1 fill-close
 		PHLEntryBufferPts:        1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 entry 1 pt beyond the candle extreme (supersedes Sept D2.2-R10 +0.50 [p1 @04:14–05:43])
 		PHLStopBufferPts:         1.0,                     // [Oct D2.3 @ 46:20-47:20] OctD2.3-R46 stop 1 pt beyond the other extreme, 2 pts total (supersedes Sept D2.2-R10 −0.50 [p1 @04:14–05:43])
 		PHLOldExtreme1mK:         PHLOldExtreme1mKDefault, // PHL-1: the 1m swing the pullback started from (k = 4 reproduces WE6/7/9/10; the course states no width — knob)
@@ -1208,14 +1390,22 @@ func DefaultConfig() Config {
 		KnockKnockZone:             true,                // D2-G10: October [OctD2.1-R22/R25/R34 @ 21:18-23:43]; knob knock_knock_zone=false reverts
 		TrendlineFirstBottomAnchor: true,                // D3-G9: October [OctD3.2-R45/R46/R59 @ 41:20]; knob trendline_first_bottom_anchor=false reverts
 		BoxFlipReversible:          true,                // D3-G7: October [OctD3.3-R46/R48 @ 37:40, 39:20]; knob box_flip_reversible=false reverts
+		BoxCarryFirstLatched:       true,                // P3-missesA E9; false reverts
+		BoxCounter5mScalp:          true,                // P3-missesA E9 [Oct D5.4-R20 @07:51]; false reverts
 		BoxCarriedStaysLive:        true,                // D3-G4: October [OctD3.3-R27/R51 @ 17:00, 41:28]; knob box_carried_stays_live=false reverts
 		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
 		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
-		PHLMinAbovePriorPts:        0,                   // G7: OFF — the mentor calls 15 experience, not law (OctD4.2-R39 @ 36:45); knob phl_min_above_old_extreme_pts=15 turns it on
+		PHLMinAbovePriorPts:        15,                  // oct-exact B6: 15 pts (revert 0 = off) [OctD4.2-R41 @36:45-40:20 "15 điểm"]; scorecard with 15: 0 phl_min_above_old_extreme refusals in any took/marked trade window, pass set unchanged
+		ISBRoomMultiple:            1,                   // oct-exact C4: ISB room 1R [Oct D2.3-R48 @49:38, D2.2 @28:37]; mentor_isb_room_multiple=2 reverts
+		LevelFirstTouchLock:        false,               // oct-exact C3: a first touch closing through only cancels that order [Oct D5.2-R23/R24 @07:42-14:16]; mentor_level_first_touch_lock=true reverts
+		ISBRevFillClose:            true,                // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
+		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
+		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
+		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
-		NearBoxRoomMultiple:        2,                   // Day-3 row 24: near-box room = 2 × risk (the 2 is OURS — B11); between two boxes exempt (row 25)
-		NearBoxRoomPHL:             true,                // B11: the near-box skip also gates PHL/PLH (our extension of the ISB lesson)
+		NearBoxRoomMultiple:        0.5,                 // W3 P2-volume: ISB leg of near_box back ON at 0.5 x risk (largest of 0.01/0.5/1/2 keeping scorecard 31/55; 1 -> 26, 2 -> 24: the mentor took ISBs that close) (NOT the source of 0.5: OctD3.3-R2/R4/R47/R49 are about an ISB sitting AT a level it just broke, already enforced by mentor_isb_just_broken_level; October gives NO near-box distance); the 0.5 is OURS (fitted: the largest value keeping the scorecard, OWNER SIGN-OFF LIST), as a PHL near-box follow it would also be 0.5 (was 2 before W3) when near_box_room_phl is turned on; the PHL/PLH leg stays OFF via NearBoxRoomPHL=false; near_box_room_multiple=0 reverts to the W2 OFF
+		NearBoxRoomPHL:             false,               // OCT-EXACT A2 row 7: near_box on the PHL/PLH leg OFF (ours, not October); near_box_room_phl=true reverts (B11)
 		NearBoxRoomPHLMultiple:     -1,                  // answers-1112 Q2: NearBoxRoomPHLMultipleFollow = follow near_box_room_multiple (today); the PHL/PLH 2x is ours, owner question
 		NearBoxBetweenExempt:       false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room
 		TrendlineEntryTouch:        TrendlineEntryThird, // m472 A2 [Oct D3.2 @ 31:00-31:17] "chỉ cần 2 touch là được", [Oct D3.2 @ 41:20-41:27] two bottoms then the return is traded; supersedes m465 D2.3-R7 (Sept) "lần thứ tư mới dám vô"; "fourth" stays as the stricter knob value
@@ -1246,7 +1436,7 @@ func DefaultConfig() Config {
 
 		Swing: DefaultSwingCfg(),
 
-		Box: DefaultBoxCfg(),
+		Box: BoxCfg{TF: "1m", TouchBandPts: 0}, // OCT-EXACT A2 row 11: the box touch band 0.25 -> 0 (literal touch); DefaultBoxCfg() 0.25 is the revert
 
 		OrbGateEnabled: true,
 
@@ -1257,40 +1447,66 @@ func DefaultConfig() Config {
 		// supersedes Release #31 rule 4 (X5-10; Sept "2m after the first 30 min").
 		Exec2mAfter30m: false,
 		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
-		OrbISBFractionOutside: 0.80,
+		OrbISBFractionOutside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); orb_isb_fraction_outside=0.80 reverts
 
-		LegBudgetEnabled: true,
-		LegResetOn:       "close",
+		LegBudgetEnabled:  false, // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
+		HTFGateEnabled:    false, // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
+		DayGateEnabled:    false, // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
+		Swing4HEnabled:    false, // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
+		OrbPart2Enabled:   false, // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
+		Open5mGateEnabled: false, // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
+		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
+		// OCT-EXACT A2 (each revert named in the Config comment).
+		HTFBoxGates:                 false, // row 1
+		Box15mNoTrade:               true,  // review fix: OctD4.3-R60 @58:38 keeps the 15m ISB-box no-trade; false reverts to the R9-only read
+		TFConflictEnabled:           false, // row 2
+		MTFConfluenceEnabled:        false, // row 3
+		RollingLevelTouchOwns:       false, // row 4
+		KeypairRuleEnabled:          false, // row 5
+		TriggerRetestWrongWayRefuse: false, // row 9 [Oct D4.3 @ 92:00 R93]
+		BoxPingPongGate:             false, // row 11
+		BoxRoomMultiple:             1,     // row 11 [Oct D2.3-R48 @49:38]; mentor_box_room_multiple=2 reverts
+		PHLISBPreferredAtBox:        false, // row 11
+		TriggerBoxZoneGate:          false, // row 11
+		ISBLocationSizeCuts:         false, // row 12
+		PullbackWarnCut:             false, // row 13
+		TrendlineLevelPreferPts:     0,     // row 15; 2 reverts
+		TrendlineBoxBeats:           false, // row 15
+		TrendlineMaxLinesPerAnchor:  3,     // row 15 [OctD3.2-R21/R22 @08:31-09:36]; 1 reverts
+		ConfluenceHold2R:            false, // row 17
+		LegResetOn:                  "close",
 
 		CourseExits: DefaultCourseExitsCfg(),
 		// m465 P1 (release #60): the early 15m read, mode C from the standing
 		// boxes, the trigger escalation 5m → 15m → 30m.
-		Early15mRead:        true,                       // D4.2-R2/R11, D4.3-R21 (defensive: refusals only)
+		Early15mRead:        false,                      // OCT-EXACT A2 row 1: the 15m early read OFF (October's only big frame is the 5m, D4.3-R9 @07:28); 15m_early_read=true reverts (D4.2-R2/R11, D4.3-R21)
 		MTFConfluenceSource: MTFConfluenceStandingBoxes, // D4.2-R17
-		ISBTargetFillClose:  false,                      // D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
+		ISBTargetFillClose:  true,                       // oct-exact B5: ON (revert false) [Oct D2.2 @28:37 "target đầu tiên… đóng"]. Was: D2-G3 (review): OFF = the September level target; the course does not say a no-target ISB may be traded [B]; true = first target is the fill candle close [OctD2.2-R35/R37 @ 28:40, 30:03]
 		ISBNoLevelFillClose: true,                       // answers-1112 Q3: an ISB with no level beyond is traded, first target the fill candle's close [Oct D2.2 @28:37-28:56, @30:24-30:43; Sept D1.4 p1 @12:12-13:27]; false = today's isb_missing_target refusal
 		TriggerFromOpen:     true,                       // G4 oct round 2: the 5m trend is read from the 08:30 open [OctD4.3-R5 @ 03:10]; false = the whole-history read
 		TriggerEscalation:   false,                      // G3 oct round 2: October reads the 5m only [OctD4.3-R9 @ 07:28]; true = Sept D3.4-R43
 		CrossingISBLookback: 3,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		CrossingISBMin:      2,                          // isbTF-F6: [B] reading, mentor Q10 (no course number)
 		// Release #25 course-entry knobs (COMMON-25 knob rule).
-		FifteenMinIBRule:      FifteenMinRequire5mISB, // CE-1 (a)
+		FifteenMinIBRule:      FifteenMinOff,          // OCT-EXACT A2 row 1: 15m_ib_requires_5m_isb OFF; require_5m_isb reverts (CE-1 (a))
 		TFConflictEnd:         TFConflictBothBoxes,    // CE-2 — course-defaults-30: "đợi nó thoát cả luôn" [D4.2 p1 @07:54–08:02]
-		NewsWaitBothLines:     true,                   // CE-3 — course-defaults-30 [D4.4 p1 @21:55–22:12]
-		NewsBarsExcluded:      true,                   // CE-4 (a, release #29 rework: freeze the pre-print read, candles whole)
+		NewsWaitBothLines:     false,                  // OCT-EXACT A1 row 6: Sept D4.4 news wait, October silent (no news/07:30 rule in the 17 Oct notes); news_wait_both_lines=true reverts (was CE-3 course-defaults-30 [Sept D4.4 p1 @21:55–22:12])
+		NewsBarsExcluded:      false,                  // OCT-EXACT A1 row 6: the read freeze is Sept (CE-4), October silent; news_bars_excluded=true reverts
 		ISBBoxEscapeMode:      ISBBoxEscapeCloseBoxTF, // m473 B3 OctD4.3-R67: a 1m close = permission, the box is dropped on a close of its OWN TF [Oct D4.3 @ 65:00-66:13]; was CE-5 -> m466 G20 D4.1-R34 / G49 D3.4-R34: a 1m CLOSE outside the box [D4.1 p1 @20:36–21:03; D3.4 p2 @05:37–06:01]
-		EmaLossRelock:         EmaRelockUntilZoneExit, // CE-6 (a)
+		EmaLossRelock:         EmaRelockOff,           // OCT-EXACT A2 row 6: phl_ema_loss_block OFF (no EMA-loss block); until_zone_exit reverts (CE-6 (a))
 		D43TrendSource:        D43TrendStructure,      // CE-8 — course-defaults-30: 5m swing structure [D4.3 @12:43–12:54]
-		TrendlineIsTarget:     true,                   // CE-11/B12 (a)
+		TrendlineIsTarget:     false,                  // OCT-EXACT A2 row 16: October is silent, EX4 ran through the line; trendline_is_target=true reverts (CE-11/B12 (a))
 		TrendlineBetweenBoxes: false,                  // D3-G8: October — between two boxes only the inside bar [OctD3.3-R59 @ 46:27]; true = Sept D3.2 p2 @10:56–11:04
-		FlagWallTarget:        true,                   // CE-11 — course-defaults-30 [X9 @05:59–06:12]
+		FlagWallTarget:        false,                  // OCT-EXACT A2 row 8: flag wall (X9) OFF; flag_wall_target=true reverts (CE-11, X9 @05:59–06:12)
 		LegResetOnWaveBreak:   true,                   // CE-12 (a)
 		BoxNewZoneAfterEscape: true,                   // B52 (a) — new zone after a range escape
 		ISBLossBox:            ISBLossBoxRange,        // #60 P2 — D4.2-R27: box the whole 5m range
 		// answers-1112 Q12 (box trades and trendlines).
-		BoxTrendlinePartialNotRoom: false, // answers-1112 Q12: OFF since the 2026-11-12 review (report "Builds, all default OFF"; the line is the target until price escapes it [Sept D3.2 p2 @11:11-11:39]) = today; true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
-		// answers-1112 Q9: OFF — "experienced only" is the owner's call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
-		PHL5mBoxSameDirAllowed: false,
+		BoxTrendlinePartialNotRoom: true, // oct-exact B8: ON (revert false) [Sept D3.3 p1 @05:15-07:46; Oct D3.3 @46:00-46:27]. Was: answers-1112 Q12: OFF since the 2026-11-12 review (report "Builds, all default OFF"; the line is the target until price escapes it [Sept D3.2 p2 @11:11-11:39]) = today; true = a trendline in a box trade's path is a partial, not the room cap [Sept D3.3 p1 @05:15-07:46]
+		// answers-1112 Q9 (oct-exact B1: now ON): was OFF — "experienced only" was the owner call [Oct D4.3 @01:10:58-01:11:03]; true = a same-direction PHL/PLH inside the 5m ISB box, scalp to the box edge [@01:08:24-01:08:39, @01:11:20-01:11:45]
+		PHL5mBoxSameDirAllowed:    true, // oct-exact B1: ON (revert false) [Oct D4.3-R70/R71 @68:24, later video]; WE6/WE7 go with their box
+		RollingStaleTouchReleases: true, // oct-exact B3: ON (revert false); moot once rolling_level_touch_owns is off (A2-4) [OctD2.3 @13:37-28:33 WE6]
+		RollingKeypairTapeExempt:  true, // oct-exact B4: ON (revert false) [OctD2.3 @35:46-39:09 WE7]
 		// m466 P2 (release #61): levels and touches.
 		UnoKeyLevels:        UnoKeyLevelsOn,            // G2 D1.3-R21: a held-then-broken key level flips (Uno Reverse)
 		KeyLevelBreakRetest: KeyLevelBreakRetestOn,     // LL-2 OctD5.2-R20/R24/R25 [@07:42–14:16]: a first-touch break flips the level; the first retest arms
@@ -1299,12 +1515,12 @@ func DefaultConfig() Config {
 		KeyLevelRearm:       KeyLevelRearmOff,          // D3-G15 [B]: OctD3.2-R78 is garbled and its sketch is a trendline; on = a key level ISB-only after its flip re-arms on departure
 		SessionOpenLevels:   SessionOpenLevelsOn,       // G10/G11 D3.1-R26/R20: the open wick + the gap far edge are levels
 		LevelArmLineCancel:  LevelArmLineCancelCurrent, // G17 D2.3-R34: close through the line's CURRENT price cancels
-		PHLPullbackLow:      PHLPullbackLowPullback,    // G41 D2.2-R59: the whole pullback's low must hold
+		PHLPullbackLow:      PHLPullbackLowSignal,      // OCT-EXACT A2 row 10: phl_pullback_lower_low / plh_pullback_higher_high OFF (phl_not_higher_low / lower_high stay: the PHL definition); phl_pullback_low=pullback reverts (G41 D2.2-R59)
 		// m466 P1 (release #61): boxes, breaks, ranges.
 		FiveMinBoxSource:   FiveMinBoxMerge, // ISB5-F1 OctD4.3-R59 (October wins over G28 D4.1-R37 / G32 D4.2-R10)
-		BreakDirectionLock: true,            // G21 D4.1-R31/R33, G29 D4.1-R55
+		BreakDirectionLock: false,           // OCT-EXACT A1 row 12: break_counter_setup OFF (the FTGH/FTGL lock goes with it, skeptic confirmed); mentor_break_direction_lock=true reverts (Sept G21 D4.1-R31/R33, G29 D4.1-R55)
 		SmallRangeGuard:    false,           // G33 D4.2-R33 — OFF until the mentor answers (count / margin unstated)
-		MidRangeRejectSide: true,            // G43 D2.2-R71
+		MidRangeRejectSide: false,           // OCT-EXACT A1 row 11: mid_range_against_rejection OFF (October: between 2 boxes only an inside bar, OctD3.3-R59 @46:27, no side rule); mentor_mid_range_reject_side=true reverts (Sept G43 D2.2-R71)
 	}
 }
 
@@ -1327,6 +1543,7 @@ const (
 	// timeframe (5m/15m/30m) closes outside [Oct D4.3 @ 65:00-66:13].
 	ISBBoxEscapeCloseBoxTF = "close5m"
 	ISBBoxEscapeBody       = "body"
+	EmaRelockOff           = "off" // OCT-EXACT A2 row 6: no EMA-loss block at all
 	EmaRelockSession       = "session"
 	EmaRelockUntilZoneExit = "until_zone_exit"
 	D43TrendTriggerLine    = "trigger_line"

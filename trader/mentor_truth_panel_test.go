@@ -82,8 +82,8 @@ func TestMentorTruthSnapshotDisabledWhenMentorOff(t *testing.T) {
 // in mentorDoneAfterWinTripped (or make the card read the day net directly) →
 // RED.
 func TestMentorTruthSnapshotDoneAfterWinOnWithWonDay(t *testing.T) {
-	at, st := doneAfterWinRig(t, "") // explicit true, then nil below
-	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = nil
+	at, st := doneAfterWinRig(t, "")                                     // explicit true, then nil below
+	at.config.StrategyConfig.RiskControl.MentorDoneAfterWin = bp(true)   // OCT-EXACT A1 row 8: nil is OFF now; the stored true (the revert) is what this pin exercises
 	seedClosedWin(t, st, at.id, nyDayClock(8, 11, 2).UnixMilli(), 31.50) // the 10-16 #660 shape
 
 	pinDoneAfterWinClock(t, 8, 11, 3)

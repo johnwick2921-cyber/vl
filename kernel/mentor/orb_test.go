@@ -105,7 +105,7 @@ func TestORBRestartReplaysEscapeHistory(t *testing.T) {
 // nothing trades and there is no reversal at the edges; the escape only picks
 // the side [X5 @02:36, 03:29–03:47]. The §8 swing is exempt.
 func TestORBGateWorkedExample(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	if !cfg.OrbGateEnabled {
 		t.Fatal("orb_gate_enabled must default ON")
@@ -153,7 +153,7 @@ func TestORBGateWorkedExample(t *testing.T) {
 // TestORBNotDrawnBlocksEverything — before 08:32 the gate blocks every
 // intraday entry (and a new session day resets the ORB).
 func TestORBNotDrawnBlocksEverything(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	if ok, reason := ORBVerdict(ORB{Day: 1}, SideLong, 25000, cfg); ok || reason == "" {
 		t.Fatal("an undrawn ORB must block every entry")

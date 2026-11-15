@@ -22,7 +22,7 @@ import (
 // PHL/PLH keep the D3.3-R1 25 (StopCeilingPts).
 // MUTANT: default ISBMaxStopPts back to 25 → the 20.25 and 22.50 stops pass → RED.
 func TestM61ISBOverTwentyRefused(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	if got := cfg.CourseExits.ISBMaxStopPts; got != 20 {
 		t.Fatalf("ISB ceiling default = %g, want 20 (D4.1-R12)", got)
@@ -119,7 +119,7 @@ func open5mTape14Sep(upToHH, upToMM int) []market.Kline {
 // pre-#61 5m_close waits for the 08:40 bucket's close at 08:45.
 // MUTANT: drop the 1m branch in open5mBrokenWith → the 08:44 long is refused → RED.
 func TestM61Open5mBreaksOnOneMinuteClose(t *testing.T) {
-	def := DefaultConfig()
+	def := preOctCfg()
 	if def.CourseExits.Open5mBreak != Open5mBreak1mClose {
 		t.Fatalf("mentor_open5m_break default = %q, want %q", def.CourseExits.Open5mBreak, Open5mBreak1mClose)
 	}
@@ -178,9 +178,9 @@ func TestM61Open5mBreaksOnOneMinuteClose(t *testing.T) {
 // case 2, "1h ko có gì hết") the 4h alone. 4h_only = the pre-#61 rule.
 // MUTANT: drop the 1h check in newsWaitFilter → the 29,350 long passes → RED.
 func TestM61NewsWaitBothLines(t *testing.T) {
-	def := DefaultConfig()
-	if def.CourseExits.NewsWaitMode != NewsWaitBoth || !def.NewsWaitBothLines {
-		t.Fatalf("news wait defaults: mode %q on=%v, want both / ON", def.CourseExits.NewsWaitMode, def.NewsWaitBothLines)
+	def := preOctCfg() // OCT-EXACT A1 row 6: the news wait defaults OFF now; the mode and mechanics are pinned under the revert value
+	if DefaultConfig().NewsWaitBothLines || def.CourseExits.NewsWaitMode != NewsWaitBoth || !def.NewsWaitBothLines {
+		t.Fatalf("news wait: default on=%v (want OFF), revert mode %q on=%v, want both / ON", DefaultConfig().NewsWaitBothLines, def.CourseExits.NewsWaitMode, def.NewsWaitBothLines)
 	}
 	now := auditMs(2026, 9, 11, 7, 50, 0) // after the 07:30 print, before the open
 	def.PrintWindows = []PrintWindow{{FromMs: auditMs(2026, 9, 11, 7, 20, 0), ToMs: auditMs(2026, 9, 11, 7, 35, 0), PrintAtMs: auditMs(2026, 9, 11, 7, 30, 0)}}
@@ -253,7 +253,7 @@ func TestM61NewsWaitBothLinesAtTick(t *testing.T) {
 // (the window 07:20–07:35) is unchanged.
 // MUTANT: ignore PrintAtMs in newsHTFWindows → the 07:05 break flips the 1h → RED.
 func TestM61NewsFreezeStartsThirtyBefore(t *testing.T) {
-	if DefaultConfig().CourseExits.NewsReadLeadMin != 30 {
+	if preOctCfg().CourseExits.NewsReadLeadMin != 30 {
 		t.Fatal("mentor_news_read_lead_min default must be 30 (D4.4-R6)")
 	}
 	w := PrintWindow{
@@ -261,7 +261,7 @@ func TestM61NewsFreezeStartsThirtyBefore(t *testing.T) {
 		ToMs:      auditMs(2026, 9, 15, 7, 35, 0),
 		PrintAtMs: auditMs(2026, 9, 15, 7, 30, 0),
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PrintWindows = []PrintWindow{w}
 	for _, tc := range []struct {

@@ -15,7 +15,7 @@ import (
 func TestEvaluatorOnRecordedDaysEmitsOnlyCompleteIntents(t *testing.T) {
 	lateRefusedBefore := SwingLateDayRRRefused()
 	for _, day := range []string{"mnq_1m_2026-09-15_rth", "mnq_1m_2026-09-16_rth", "mnq_1m_2026-08-28_rth"} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		e := New(cfg)
 		bars := loadFixture(t, day, "1m")
@@ -98,7 +98,7 @@ func TestEvaluatorTickWarmSwingEntryUsesSeededLine(t *testing.T) {
 	}
 	now := bars[len(bars)-1].CloseTime + 1
 	bucket := fourHBucketStart(now, loc)
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	e.State.Swing = SwingState{
 		Line:        950,
@@ -149,7 +149,7 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 	}
 	now := bars[len(bars)-1].CloseTime + 1
 	oldBucket := fourHBucketStart(bars[3].OpenTime, loc)
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	// m466 P4: under the #61 default (not_required) the 09:10 close-back bar is
 	// itself an inside bar of the 09:05 through candle and arms one beat earlier
@@ -188,7 +188,7 @@ func TestEvaluatorTickWarmSwingEntryUsesIncrementedLineAfterFlip(t *testing.T) {
 // from bars plus the ledger, never RAM-only (dispatch requirement): replaying
 // the same history in one pass yields exactly the state built incrementally.
 func TestEvaluatorRebuildFromBarsMatchesIncremental(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
 
@@ -218,7 +218,7 @@ func TestEvaluatorRebuildFromBarsMatchesIncremental(t *testing.T) {
 
 // TestEvaluatorStateRoundTrip — the ledger form survives marshal/unmarshal.
 func TestEvaluatorStateRoundTrip(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
@@ -240,7 +240,7 @@ func TestEvaluatorStateRoundTrip(t *testing.T) {
 // INVALID, only ISBs may trade there — the evaluator never emits a PHL/PLH
 // naming that level.
 func TestEvaluatorInvalidLevelBlocksPHL(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RangeGapPts = 0
 	// synthetic history: price runs up to a key level, first touch closes on

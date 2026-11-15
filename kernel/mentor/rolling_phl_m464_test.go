@@ -143,7 +143,7 @@ func m464Mirror(bars []market.Kline, a float64) []market.Kline {
 //     long's target stops at. TestM464CourseLadderTapeTriggerIsNamed pins what
 //     the production read does with the tape's own trigger.
 func m464Evaluator(side Side, oldExtreme Level, at int64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.EMAPeriod34 = 0
@@ -284,7 +284,7 @@ func TestM464CourseWorkedBuyLadder(t *testing.T) {
 // put the worked buy at 29,396.75 / 29,386.50.
 // Mutant: restore PHLEntryBufferPts 1.0 or PHLStopBufferPts 0 → RED.
 func TestM464CourseDefaultsAreTheDrawnOffsets(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	if cfg.PHLEntryBufferPts != 1.0 || cfg.PHLStopBufferPts != 1.0 {
 		t.Fatalf("PHL offsets = entry %.2f / stop %.2f, want the drawn 1.00 / 1.00 [Oct D2.3 @ 46:20-47:20 OctD2.3-R46; supersedes D2.2-R10 p1 @04:14–05:43]", cfg.PHLEntryBufferPts, cfg.PHLStopBufferPts)
 	}
@@ -538,7 +538,7 @@ func TestM464RealTapeWorkedBuy(t *testing.T) {
 		b14.Open != 29390.50 || b14.High != 29395.75 || b14.Low != 29386.50 || b14.Close != 29394.00 {
 		t.Fatalf("the fixture is not the lesson's tape: 10:13 %+v 10:14 %+v", b13, b14)
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	for _, c := range []struct {
 		hh, mm int
 		want   float64

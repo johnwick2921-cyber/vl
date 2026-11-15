@@ -89,7 +89,7 @@ func TestLL1OctoberKeepsKeyLevelsThroughA1HBodyClose(t *testing.T) {
 	candles := llLoad1H(t, "testdata/ll_mnq_1hrth_live_20260720_to_20261103.csv")
 	now := llCT(2026, 11, 3, 17, 0)
 	for _, mode := range []string{"", KeyLevelDeleteOn1HCloseOff, KeyLevelDeleteOn1HCloseOn} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		if mode != "" {
 			cfg.KeyLevelDeleteOn1HClose = mode
@@ -130,7 +130,7 @@ func TestLL1TickKeepsTheLevelThe1430BodyCrossed(t *testing.T) {
 	bars := m413Load(t, "testdata/ll1_mnq_1m_20261029_1230ct.csv")
 	lvlAt := llCT(2026, 10, 29, 13, 30)
 	for _, mode := range []string{KeyLevelDeleteOn1HCloseOff, KeyLevelDeleteOn1HCloseOn} {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.KeyLevelDeleteOn1HClose = mode
 		e := New(cfg)
@@ -176,7 +176,7 @@ func TestLL1TickKeepsTheLevelThe1430BodyCrossed(t *testing.T) {
 func TestLL6EMA34AliasIsInvalidatedOnce(t *testing.T) {
 	bars := m413Load(t, "testdata/ll6_mnq_1m_20261030_0800ct.csv")
 	seedAt := llCT(2026, 11, 1, 17, 0)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	var pre []market.Kline
@@ -236,7 +236,7 @@ func TestLL2BreakThenFirstRetestArmsTheRoleReversal(t *testing.T) {
 	lvlAt := llCT(2026, 7, 30, 8, 30)
 	phl1829 := map[string]int{}
 	run := func(mode string) (e *Evaluator, key string, invalidAt []string, refAt string, refFrom Side, outcome TouchOutcome, ins []Intent) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		if mode != "" {
 			cfg.KeyLevelBreakRetest = mode

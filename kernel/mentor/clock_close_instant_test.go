@@ -19,7 +19,7 @@ func clockBar(openMs int64, o, h, l, c float64) market.Kline {
 }
 
 func clockCfg() Config {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	return cfg
 }

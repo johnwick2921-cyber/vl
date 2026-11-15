@@ -56,7 +56,7 @@ func TestM60WickReplay(t *testing.T) {
 	// minute — a moved entry names what the other run refused on its candle.
 	refAt := map[bool]map[string]string{false: {}, true: {}}
 	run := func(on bool) ([]entry, map[string]int, map[string]int) {
-		cfg := DefaultConfig()
+		cfg := preOctCfg()
 		cfg.Enabled = true
 		cfg.WickMicroscalpEnabled = on
 		e := New(cfg)

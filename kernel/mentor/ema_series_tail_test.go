@@ -15,7 +15,7 @@ import (
 // the same emaValue recurrence, seeded with the first close), so the curve the
 // chart draws lands exactly on the level lines — not a parallel approximation.
 func TestEMASeriesChartTailEqualsLevels(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.EMATFMinutes = 1
 	cfg.EMAPeriod9 = 9

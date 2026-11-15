@@ -35,7 +35,7 @@ import (
 // mother 15m candle.
 func m61rv2FormingLockOver(t *testing.T, under breakEvent, underClose float64) (*Evaluator, market.Kline) {
 	t.Helper()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	c0 := m60p1K(m60p1At(9, 50), underClose-1, underClose+1, underClose-2, underClose)
 	e.advanceBreakLock(c0, c0.OpenTime+60_000, []breakEvent{under})
 	if l := e.State.BreakLock; l == nil || l.Src != under.Src {
@@ -185,7 +185,7 @@ func TestM61rv2SmallRangeNeverLatchesOnTheBreakout(t *testing.T) {
 // conflict (5m box short vs 15m box long, both above the close so neither
 // escapes nor bans the return).
 func TestM61rv2BoxReturnInConflictIsConsumed(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.KeyLevelTFMinutes = 1
@@ -260,7 +260,7 @@ func TestM61rv2BoxReturnInConflictIsConsumed(t *testing.T) {
 func TestM61rv2UnflippedFTGLFromBelowIsNoReject(t *testing.T) {
 	hit := m60p1K(m60p1At(10, 0), 28_995, 29_002, 28_990, 28_996) // from below, wick into 29,000, close under
 	run := func(b Box) *MidRangeReject {
-		e := New(DefaultConfig())
+		e := New(preOctCfg())
 		e.advanceMidRangeReject(hit, []Box{b})
 		return e.State.MidRangeReject
 	}
@@ -275,7 +275,7 @@ func TestM61rv2UnflippedFTGLFromBelowIsNoReject(t *testing.T) {
 	}
 	// Mirror: an un-flipped FTGH hit from above is no floor reject.
 	hitUp := m60p1K(m60p1At(10, 0), 29_015, 29_020, 29_008, 29_014)
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.advanceMidRangeReject(hitUp, []Box{{Kind: FTGH, Top: 29_010, Bottom: 29_000, Key: "ftgh"}})
 	if r := e.State.MidRangeReject; r != nil {
 		t.Fatalf("an un-flipped FTGH hit from above is no FTGL reject; got %+v", r)

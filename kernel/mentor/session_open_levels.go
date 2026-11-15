@@ -171,7 +171,7 @@ func gapEdgeLevels(bars []market.Kline, cfg Config, now int64) []Level {
 		default:
 			continue // no empty space between the sessions
 		}
-		if size < cfg.KeyLevelPrunePts {
+		if size < gapEdgeMinPts(cfg) {
 			continue // D5.3-R24: closer than the prune distance → the newer line (the open wick) stands alone
 		}
 		if gapFilled(tape, c.firstIdx, lastClose, gapDown) {
@@ -197,4 +197,15 @@ func gapFilled(tape []market.Kline, from int, edge float64, gapDown bool) bool {
 		}
 	}
 	return false
+}
+
+// gapEdgeMinPts is the smallest gap that draws a far edge. It was the
+// key-level prune distance (20) [D5.3-R24 @16:08]; A2 row 14 turns the prune OFF
+// (KeyLevelPrunePts 0) but that must not turn every 1-tick gap into a level,
+// so the gap keeps its own 20 floor when the prune is off.
+func gapEdgeMinPts(cfg Config) float64 {
+	if cfg.KeyLevelPrunePts > 0 {
+		return cfg.KeyLevelPrunePts
+	}
+	return 20
 }

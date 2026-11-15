@@ -43,7 +43,7 @@ func TestM473B4FirstRTH5mCandleIsNeverTheInsideBar(t *testing.T) {
 	bars = append(bars, bucket(8, 30, 28680, 28710, 28670, 28700)...)       // first RTH candle: body inside 08:25
 	bars = append(bars, bucket(8, 35, 28685, 28702, 28680, 28695)...)       // inside 08:30
 
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	feed := func(from, to int) {

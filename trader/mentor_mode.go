@@ -596,9 +596,31 @@ func (at *AutoTrader) mentorStaleDataBlockBootLine() string {
 // other mentor knobs. Each resolver is the single defaults site, and
 // mentorEvaluatorConfig applies every one of them to the evaluator.
 
-// mentorLegBudgetEnabled — G1 leg budget: nil → ON (default).
+// mentorLegBudgetEnabled — G1 leg budget.
+// OCT-EXACT A1 row 9: nil → OFF. D3.1 E1 shows ~10 orders in a row [Oct D3.1-R24
+// @08:14-08:47 (11-01, 17:00-18:00)], so the 2-per-leg budget (X15) is contrary;
+// a stored true reverts.
 func mentorLegBudgetEnabled(rc *store.RiskControlConfig) bool {
-	return rc == nil || rc.MentorLegBudgetEnabled == nil || *rc.MentorLegBudgetEnabled
+	return rc != nil && rc.MentorLegBudgetEnabled != nil && *rc.MentorLegBudgetEnabled
+}
+
+// mentorNewsHoldEnabled — OCT-EXACT A1 row 7: mentor_news_hold_enabled (mentor_tuning),
+// nil → OFF; a stored true reverts to the 07:20–07:35 hold + news flatten.
+func (at *AutoTrader) mentorNewsHoldEnabled() bool {
+	rc := at.mentorRiskControl()
+	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsHoldEnabled != nil && *rc.MentorTuning.MentorNewsHoldEnabled
+}
+
+// mentorNewsFlattenEnabled — review fix (fidelity P2): the cancel + flatten at print -10m is the
+// safety half of the news window and stays ON by default ("safety stays"), independent of the
+// entry hold. mentor_news_flatten_enabled=false is the explicit owner acceptance of holding through
+// a print. October has no news rule either way (silence is not a reason to drop a safety flatten).
+func (at *AutoTrader) mentorNewsFlattenEnabled() bool {
+	rc := at.mentorRiskControl()
+	if rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsFlattenEnabled != nil {
+		return *rc.MentorTuning.MentorNewsFlattenEnabled
+	}
+	return true
 }
 
 // mentorLegResetOn — G1 parity knob: "close" default; a bad value fails
@@ -1067,6 +1089,39 @@ const mentorSpentDayRunnerCap = 2
 // forkTP is the exit fork leg-1 target (non-zero only for mode C, >=2R);
 // 0 -> the +1R default (entry +/- R). Spent day caps the runner at 2 (D).
 func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64) (leg1Qty int, leg1TP float64) {
+	return mentorLeg1ForFrameFixed(in, n, forkMode, forkTP, 0)
+}
+
+// mentorLeg1FixedApplies reports whether the D2 fixed partial governs this entry:
+// a NORMAL (fork B, no confluence TP) PHL/PLH - the setup gong-loi's trade [Oct
+// D4.2 @12:16 R14]. ISB keeps its own first target (the fill-candle close, Oct
+// D2.2 @28:37), BOX and SWING4H are not in the rule, confluence (C) keeps 2R.
+func mentorLeg1FixedApplies(in mentor.Intent, forkMode string, forkTP, fixedPts float64) bool {
+	return fixedPts > 0 && forkMode == "B" && forkTP == 0 && (in.Setup == "PHL" || in.Setup == "PLH")
+}
+
+// mentorLeg1FixedDist is the D2 leg-1 distance in points: the fixed N, but never
+// under 1R ("anh lam gi anh cung phai ban bot o 1:1" [D2.2 p3 @12:13-12:26], the
+// 1:1 floor stands) and only while the trade target lies beyond it (a target
+// closer than N + 1 pt keeps the +1R partial, leg 1 never sits past the runner's
+// target). 0 = the +1R default.
+func mentorLeg1FixedDist(in mentor.Intent, fixedPts float64) float64 {
+	r := mentorIntentRisk(in)
+	if fixedPts <= r {
+		return 0 // the 1:1 floor is already at or beyond N
+	}
+	if in.Target > 0 && math.Abs(in.Target-in.Price) < fixedPts+1 {
+		return 0
+	}
+	return fixedPts
+}
+
+// mentorLeg1ForFrameFixed is mentorLeg1ForFrame with oct-exact D2 (knob
+// mentor_leg1_fixed_pts, fixedPts 0 = off = today): a normal PHL/PLH sells leg 1
+// at +fixedPts and leaves ONE contract as the runner, then break-even - "bán 15
+// hay 20 điểm, rồi kéo stop ... free run" [Oct D4.2 @12:16 R14], "bán ở 20 điểm
+// và để lại đúng 1 MNQ" [@14:18 R18; the 11-02 28,152.25 buy stop, partial at +15/20].
+func mentorLeg1ForFrameFixed(in mentor.Intent, n int, forkMode string, forkTP, fixedPts float64) (leg1Qty int, leg1TP float64) {
 	if forkMode == "swing" || n <= 1 {
 		return 0, 0
 	}
@@ -1082,9 +1137,21 @@ func mentorLeg1ForFrame(in mentor.Intent, n int, forkMode string, forkTP float64
 	// n - runner: with the spent-day cap (D) the contracts the cap takes off
 	// the runner go to leg 1 — never a runner above the cap on the wire.
 	leg1 := n - leg2
+	dist := 0.0
+	if mentorLeg1FixedApplies(in, forkMode, forkTP, fixedPts) {
+		if d := mentorLeg1FixedDist(in, fixedPts); d > 0 {
+			dist = d
+			// one runner: every contract but one goes at the fixed partial
+			// (the spent-day cap D is already <= 1 here).
+			leg1, leg2 = n-1, 1
+		}
+	}
 	tp := forkTP
 	if tp == 0 {
 		r := mentorIntentRisk(in)
+		if dist > 0 {
+			r = dist / mentor.Leg1RiskMultiple(false) // dist in R units of the 1R multiple
+		}
 		if in.Side == mentor.SideShort {
 			tp = in.Price - r*mentor.Leg1RiskMultiple(false)
 		} else {

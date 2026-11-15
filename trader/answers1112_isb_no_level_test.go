@@ -12,15 +12,17 @@ import (
 // isb_target_fill_close keeps its default OFF and its own value.
 func TestAnswers1112ISBNoLevelFillCloseKnob(t *testing.T) {
 	off, on := false, true
-	if c := tuningTick(t, &store.MentorTuning{}); !c.ISBNoLevelFillClose || c.ISBTargetFillClose {
-		t.Fatalf("unset: isb_no_level_fill_close=%v isb_target_fill_close=%v, want true / false", c.ISBNoLevelFillClose, c.ISBTargetFillClose)
+	// OCT-EXACT B5: isb_target_fill_close is now ON by default [Oct D2.2 @28:37].
+	if c := tuningTick(t, &store.MentorTuning{}); !c.ISBNoLevelFillClose || !c.ISBTargetFillClose {
+		t.Fatalf("unset: isb_no_level_fill_close=%v isb_target_fill_close=%v, want true / true", c.ISBNoLevelFillClose, c.ISBTargetFillClose)
 	}
 	if c := tuningTick(t, &store.MentorTuning{ISBNoLevelFillClose: &off}); c.ISBNoLevelFillClose {
 		t.Fatal("stored isb_no_level_fill_close=false (revert) must reach the evaluator")
 	}
-	if c := tuningTick(t, &store.MentorTuning{ISBTargetFillClose: &on}); !c.ISBTargetFillClose || !c.ISBNoLevelFillClose {
-		t.Fatalf("stored isb_target_fill_close=true: %v / no-level %v, want true / true (independent knobs)", c.ISBTargetFillClose, c.ISBNoLevelFillClose)
+	if c := tuningTick(t, &store.MentorTuning{ISBTargetFillClose: &off}); c.ISBTargetFillClose || !c.ISBNoLevelFillClose {
+		t.Fatalf("stored isb_target_fill_close=false (revert): %v / no-level %v, want false / true (independent knobs)", c.ISBTargetFillClose, c.ISBNoLevelFillClose)
 	}
+	_ = on
 }
 
 // TestAnswers1112ISBNoLevelPartialAtFillClose — the first target of the

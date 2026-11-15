@@ -18,7 +18,7 @@ import (
 //     says SHORT) AND the box still exists, no longer gating;
 //   - the 5m candle (11:15-11:19) closing below -> the box is deleted.
 func TestM473B3FiveMinBoxDeletedOnlyOnFiveMinuteClose(t *testing.T) {
-	if d := DefaultConfig().ISBBoxEscapeMode; d != ISBBoxEscapeCloseBoxTF {
+	if d := preOctCfg().ISBBoxEscapeMode; d != ISBBoxEscapeCloseBoxTF {
 		t.Fatalf("B3 D4.3-R67: default ISB box escape mode must be %q, got %q", ISBBoxEscapeCloseBoxTF, d)
 	}
 	e := m60p1Eval(t, SideShort, 28_800, SideShort, SideShort, m60p1Levels())

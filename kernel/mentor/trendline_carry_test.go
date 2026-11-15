@@ -90,7 +90,7 @@ func TestTrendlineCarryValid1mLineAcross0900Switch(t *testing.T) {
 
 // the mirror: a valid 2m line carries into the 08:30–09:00 1m period.
 func TestTrendlineCarryValid2mLineInto0830(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	t0 := ctAt(8, 0)
 	line := Trendline{Side: SideLong, P0Px: 97, P1Px: 98.2, P0T: t0, P1T: t0 + 12*60_000, ValidAt: 5}
 	e.carryIntradayLines([]Trendline{line}, nil, time.UnixMilli(t0+29*60_000), 2, true)
@@ -103,7 +103,7 @@ func TestTrendlineCarryValid2mLineInto0830(t *testing.T) {
 // not duplicated when the new frame draws the same line; forming lines are not
 // carried; knob OFF carries nothing.
 func TestTrendlineCarryDedupAndForming(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	t0 := ctAt(8, 40)
 	valid := Trendline{Side: SideLong, P0Px: 97, P1Px: 98.2, P0T: t0 + 60_000, P1T: t0 + 13*60_000, ValidAt: 9}
 	forming := Trendline{Side: SideShort, P0Px: 110, P1Px: 109, P0T: t0, P1T: t0 + 600_000}
@@ -126,7 +126,7 @@ func TestTrendlineCarryDedupAndForming(t *testing.T) {
 	if n != 1 {
 		t.Fatalf("support lines = %d, want exactly 1 (no duplicate): %+v", n, got)
 	}
-	off := New(DefaultConfig())
+	off := New(preOctCfg())
 	if r := off.carryIntradayLines(nil, nil, time.UnixMilli(t0), 2, false); len(r) != 0 || off.tlCarry != nil {
 		t.Fatalf("knob OFF must carry nothing: %+v", r)
 	}

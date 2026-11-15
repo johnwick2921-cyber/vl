@@ -18,7 +18,7 @@ import (
 // TestISBMissingTargetSkipsOnlyThatISB / TestISBTargetBelowFloorRefused.
 func d2g3Run(t *testing.T, ema34 float64, closeFirst float64, mut func(*Config)) (*Evaluator, []Intent) {
 	t.Helper()
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	// the target-rule fixtures exercise this stage only: no later-lesson 4h/1h gate.
 	cfg.HTFGateNewsOnly = true
@@ -53,7 +53,7 @@ func d2g3Entry(ins []Intent) *Intent {
 }
 
 func TestD2G3ISBBasicTargetIsTheFillCandleClose(t *testing.T) {
-	if DefaultConfig().ISBTargetFillClose {
+	if preOctCfg().ISBTargetFillClose {
 		t.Fatal("D2-G3 (review): ISBTargetFillClose must default OFF - the course does not say a no-target ISB may be traded [B]")
 	}
 	cases := []struct {

@@ -172,7 +172,7 @@ func m60Uptrend5m(last3 [3][4]float64) []market.Kline {
 // wicks in the uptrend → wick_against_trend. Ranging ("") → the run's side.
 func TestM60WickTrendFromStructure(t *testing.T) {
 	lower := m60Uptrend5m([3][4]float64{{108, 112, 100, 110}, {104, 108, 96, 106}, {105, 109, 98, 107}})
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.State.Trigger = TriggerLine{Dir: SideShort, Price: 120}
 	if got := structureTrend5m(lower); got != SideLong {
 		t.Fatalf("fixture: the 5m structure must read long, got %q", got)
@@ -217,7 +217,7 @@ func TestM60WickZoneIsLocation(t *testing.T) {
 	if levelIsLocation(Level{Key: "wick_microscalp:long:28919.75", Kind: KindWickMicroscalp, Price: 28919.75}, nil) {
 		t.Fatal("the 5m-wick target must stay target-only")
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.RangeGapPts = 50
 	lv := []Level{edge, {Key: "K", Kind: KindKeyLevel, Price: 28920}}
 	if MidRange(lv, 28900, cfg) {
@@ -236,7 +236,7 @@ func TestM60WickZoneIsLocation(t *testing.T) {
 // m60Eval is a seeded evaluator with the knob ON, a 1m read, the trigger /
 // 4h / ORB / day all on side, and only the given seed levels.
 func m60Eval(side Side, trig float64, seed []Level, now int64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false
 	cfg.KeyLevelTFMinutes = 1
@@ -433,7 +433,7 @@ func TestM60WickZonePHLAtTheZone(t *testing.T) {
 // TestM60WickZoneWrongSideDropped — the zone trades only its own side: a PLH
 // short read off the demand box's top from INSIDE the box is dropped and named.
 func TestM60WickZoneWrongSideDropped(t *testing.T) {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled, e.Cfg.WickMicroscalpEnabled = true, true
 	m60InjectZone(e, WickZone{Side: SideLong, Bottom: 28880, Top: 28885}, rthBars(0, 0, 0, 0, 0).CloseTime)
 	in := Intent{Action: PlaceStopEntry, Setup: "PLH", Side: SideShort, Price: 28881, Stop: 28886, AnchorKey: e.State.Wick.Long.Key + ":top", ArmID: "lvl-1"}
@@ -458,7 +458,7 @@ func TestM60WickTargetsAre5mWicks(t *testing.T) {
 		t.Fatalf("Ex.1 ladder = %v, want 28,919.75 then 28,933.50 [D4.3 @07:40–07:44]", got)
 	}
 	// Room: an entry 28,912 with a 9-pt risk sees 28,919.75 under 1R.
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled, e.Cfg.WickMicroscalpEnabled = true, true
 	m60InjectZone(e, z, bars[len(bars)-1].CloseTime)
 	in := Intent{Action: PlaceStopLimitEntry, Setup: "ISB", Side: SideLong, Price: 28912, Stop: 28903, RefBarMs: bars[len(bars)-1].CloseTime}
@@ -599,7 +599,7 @@ func TestM60WickSafePlayWaits(t *testing.T) {
 		m60InjectZone(e, z, now)
 		return m60FindISB(e.Tick(bars, now), SideShort), e
 	}
-	if d := DefaultConfig(); d.WickSafePlay || d.WickMicroscalpEnabled {
+	if d := preOctCfg(); d.WickSafePlay || d.WickMicroscalpEnabled {
 		t.Fatalf("both knobs default OFF: wick_microscalp=%v wick_safe_play=%v", d.WickMicroscalpEnabled, d.WickSafePlay)
 	}
 	// Inside bar closing 29,629 — inside the box.
@@ -626,7 +626,7 @@ func TestM60WickSafePlayWaits(t *testing.T) {
 // golden (TestM434TickOutputIsByteIdentical) pins the bytes.
 func TestM60WickKnobOffIsInert(t *testing.T) {
 	bars := m423Bars(t)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	e := New(cfg)
 	for i := 150; i < len(bars); i += 7 {

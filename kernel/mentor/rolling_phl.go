@@ -316,7 +316,7 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	if e.Cfg.RollingStaleTouchReleases && tape1m && found && ex.idx >= 0 && ex.idx < len(bars) {
 		touchSince = bars[ex.idx].OpenTime // only a touch at/after the old extreme belongs to this leg
 	}
-	if levelTouchRejectActiveSince(&e.State, side, levels, touchSince) {
+	if e.Cfg.RollingLevelTouchOwns && levelTouchRejectActiveSince(&e.State, side, levels, touchSince) { // OCT-EXACT A2 row 4: rolling_level_touch_owns OFF (WE6 refutes it)
 		// PHL-5: named, once per exec candle (it used to cancel silently).
 		if !rollingSilentCancelSeam {
 			e.rollingRecordOncePerCandle(execCur, "rolling_level_touch_owns")

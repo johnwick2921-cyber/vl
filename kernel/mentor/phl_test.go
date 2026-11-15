@@ -14,7 +14,7 @@ import (
 // setup must PASS the room rule (reward 29.5 vs risk 9.25 = 3.2R ≥ 2×) and the
 // stop ceiling.
 func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 6 // worked example: 29,425.75 vs old high ~29,431.75
 	ref := market.Kline{High: 29_395.75, Low: 29_387.5, Close: 29_392.0}
@@ -48,7 +48,7 @@ func TestPHLPLHWorkedExampleGeometry(t *testing.T) {
 // MUTANT: drop the +cfg.PHLEntryBufferPts on the entry → the 2.0-knob entry
 // comes back at 100 instead of 102 → RED.
 func TestPHLEntryBufferKnob(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLEntryBufferPts = 2.0
 	touch := Touch{
@@ -72,7 +72,7 @@ func TestPHLEntryBufferKnob(t *testing.T) {
 // the stop outward only.
 // MUTANT: drop the −cfg.PHLStopBufferPts on the stop → 95 / 100 → RED.
 func TestPHLStopBufferKnob(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLStopBufferPts = 1.25
 	long := Touch{Outcome: TouchReject, RefBar: market.Kline{High: 100, Low: 95}, ApproachedFrom: SideLong}
@@ -93,7 +93,7 @@ func TestPHLStopBufferKnob(t *testing.T) {
 // beyond-the-wick stop. MUTANT: drop the PriceAtTouch branch in phlPLHR2 → the
 // no-wick-through stop comes back at the candle low instead of the EMA 34 → RED.
 func TestPHLEMA34StopNuance(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	ema := 95.0
 	oldHigh := Level{Key: "old-high", Kind: KindOldExtreme, Role: OldHigh, Price: 140}
@@ -129,7 +129,7 @@ func TestPHLEMA34StopNuance(t *testing.T) {
 // TestPHLPLHRequiresThreeCandlesFromOldExtreme — [D4.1 p1 @ 09:40 written]:
 // "Phải đợi đi xa đỉnh/đáy cũ trước đó (ít nhất là 3 cây nến backtest)".
 func TestPHLPLHRequiresThreeCandlesFromOldExtreme(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	touch := Touch{
 		Outcome: TouchReject, RefBar: market.Kline{High: 101, Low: 99},
@@ -151,7 +151,7 @@ func TestPHLPLHRequiresThreeCandlesFromOldExtreme(t *testing.T) {
 // TestPHLPLHRoomRule — §6 [D5.3 p1 @ 09:16]: reward must be at least 2× risk.
 // A 1:1 shape is refused.
 func TestPHLPLHRoomRule(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.PHLTargetShyPts = 0
 	// entry 110 (buy stop above ref high 108.5 + 1.5), stop 103 (ref low 104.5 − 1.5)
@@ -172,7 +172,7 @@ func TestPHLPLHRoomRule(t *testing.T) {
 // TestPHLPLHStopCeiling — §6 [D3.3 p1 @ 02:04]: stop over 25 pts is never a
 // trade, regardless of reward.
 func TestPHLPLHStopCeiling(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.CourseExits.StopSizeLadder = false // pins the ladder-OFF (pre-2026-11-10) ceiling; the ladder-ON path is stop_size_ladder_test.go
 	touch := Touch{
@@ -188,7 +188,7 @@ func TestPHLPLHStopCeiling(t *testing.T) {
 // TestPHLPLHOldExtremeOnTargetSide — the old extreme must be on the target
 // side: long → old high above the entry; a high BELOW the entry is refused.
 func TestPHLPLHOldExtremeOnTargetSide(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	touch := Touch{
 		Outcome: TouchReject, RefBar: market.Kline{High: 101, Low: 99},
@@ -205,7 +205,7 @@ func TestPHLPLHOldExtremeOnTargetSide(t *testing.T) {
 // TestPHLPLHWrongWayTouchIsNotASetup — §3 [D5.2 p1 @ 19:51]: only a REJECT
 // touch can be a PHL/PLH; a wrong-way (invalidated) level never produces one.
 func TestPHLPLHWrongWayTouchIsNotASetup(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	touch := Touch{Outcome: TouchWrongWay, RefBar: market.Kline{High: 101, Low: 99}}
 	if _, ok, _ := PHLPLH(touch, Level{Kind: KindOldExtreme, Price: 125}, 0, 3, cfg); ok {

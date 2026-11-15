@@ -92,7 +92,7 @@ func HTFSideMustBeAllowed(h HTF, side Side) bool {
 // drawn, the verdict never names a side other than the 4h side — a trade is
 // either on the 4h direction or refused by case 3.
 func TestHTFTriggerOnRecordedTapes(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars4h := loadFixture(t, "mnq_4h_2026-09-14to10-02", "4h")
 	bars1h := loadFixture(t, "mnq_1h_2026-09-28to10-02", "1h")

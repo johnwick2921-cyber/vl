@@ -78,7 +78,7 @@ func countAction(ins []Intent, a Action) int {
 // armed and filled in THIS process.
 func TestEvaluatorTickSwingBreakEvenOnlyAtOneR(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	now := tape[len(tape)-1].CloseTime + 1
 	e.State.Swing = swingWarmState(fourHBucketStart(now, ctime()), tape[3].OpenTime, &swingTouch{Approach: SideShort, Through: true})
@@ -111,7 +111,7 @@ func TestEvaluatorTickSwingBreakEvenOnlyAtOneR(t *testing.T) {
 // break-even on the SAME bar as the live-fill path, never before.
 func TestEvaluatorTickRebuiltSwingBreakEvenOnlyAtOneR(t *testing.T) {
 	tape, fill, oneR := swingRiskTape()
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	e.Cfg.Enabled = true
 	refBar := tape[5] // the 05:10 inside bar the entry was placed on
 	afterFill := append(append([]market.Kline{}, tape...), fill)

@@ -407,7 +407,7 @@ func (e *Evaluator) seedCarriedBoxes(closed1m []market.Kline, day string, now in
 	}
 	prev := tradingDayKey(time.UnixMilli(BarCloseInstant(closed1m[first-1])).In(ctime()))
 	latched, post := e.replayLatchDay(closed1m[:first], prev)
-	for _, b := range liveBoxes(latched, post) {
+	for _, b := range carryBoxes(e.Cfg.BoxCarryFirstLatched, latched, post) {
 		if now >= boxExpiryMs(b) {
 			continue
 		}
@@ -471,7 +471,7 @@ func (e *Evaluator) replayLatchDay(closed1m []market.Kline, day string) (map[str
 		// RTH — it builds from the RTH slice exactly as the tick does
 		// (boxBuildBars), never the full window, and applies the SAME replace
 		// rule (freshRTHReplaces) the tick's latchBoxes applies.
-		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at, preOpenLookbackMs(e.Cfg))
+		rthScan := e.Cfg.CourseExits.BoxFreshRTHPair && boxRTHWindow(at, e.Cfg) && eveningLatched(latched, at, preOpenLookbackMs(e.Cfg), e.Cfg.BoxCarryFirstLatched)
 		if len(latched) < 2 || rthScan {
 			for _, b := range e.boxesBuildRTH(w, at, build) {
 				if build.TF != cfg.TF {
@@ -536,8 +536,17 @@ func (e *Evaluator) watermarkBoxes(closed1m []market.Kline, latched map[string]B
 
 // eveningLatched reports whether any latched box formed before the RTH open of
 // the CT day `at` falls on (a candidate for the m429 fresh-RTH replacement).
-func eveningLatched(latched map[string]Box, at, lookbackMs int64) bool {
+func eveningLatched(latched map[string]Box, at, lookbackMs int64, preOpenToo bool) bool {
 	open := rthOpenMs(at) - lookbackMs
+	if preOpenToo { // knob BoxCarryFirstLatched (false = the pre-P3 seed scan)
+		// P3-missesA D3.3-E9: a box formed INSIDE the pre-open window is still replaced
+		// by the box the open candle itself confirms (freshRTHReplaces' second case:
+		// peak 2 = the 08:29 candle, box formed exactly at 08:30). The live tick
+		// replaces it; the seed replay used to stop scanning once a pre-open box was
+		// latched, so a restart / the 17:00 carry kept 28,793.50-28,794.00 instead
+		// of the Friday FTGH 28,812.50-28,818.25 [Oct D3.3 @17:00 R27, @41:28 R51].
+		open = rthOpenMs(at)
+	}
 	for _, b := range latched {
 		if b.FormedAtMs < open {
 			return true
@@ -550,7 +559,7 @@ func eveningLatched(latched map[string]Box, at, lookbackMs int64) bool {
 // past "both roles latched": the knob is ON and a latched box is still an
 // evening box that today's RTH (not yet over at `at`) can replace.
 func (e *Evaluator) freshRTHPending(latched map[string]Box, at int64) bool {
-	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at, preOpenLookbackMs(e.Cfg)) {
+	if !e.Cfg.CourseExits.BoxFreshRTHPair || !eveningLatched(latched, at, preOpenLookbackMs(e.Cfg), e.Cfg.BoxCarryFirstLatched) {
 		return false
 	}
 	t := time.UnixMilli(at).In(ctime())

@@ -73,7 +73,7 @@ func (e *Evaluator) SeedChartDisplay(bars []market.Kline, now int64) {
 	exec2m := e.Cfg.Exec2mAfter30m && exec2mReads2m(now)
 	trendlines, _ := trendlinesBuildExecOpts(bars, time.UnixMilli(now), exec2m, e.tlOpts())
 	trendlines = dropDeadTrendlines(trendlines) // m428 R3
-	tlLevels, _ := TrendlineLevelsTouch(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch)
+	tlLevels, _, _ := trendlineLevelsTouchHeldOpts(trendlines, boxes, levels, bars, e.Cfg.TrendlineEntryTouch, e.tlLevelOpts())
 	levels = append(levels, tlLevels...)
 
 	e.State.ChartLevels = levels

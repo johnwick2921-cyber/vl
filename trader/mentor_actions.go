@@ -540,7 +540,7 @@ func (at *AutoTrader) mentorArmIntent(in mentor.Intent, choice mentorSizeChoice,
 	// REVIEW-353: the split AT ENTRY rides the ONE frame — leg1_qty + leg1_tp
 	// go on the wire; the AddOn places TWO OCO pairs on the one fill. (0, 0)
 	// = the single-bracket legacy path (n <= 1 or swing).
-	leg1Qty, leg1TP := mentorLeg1ForFrame(in, choice.Contracts, forkMode, forkTP)
+	leg1Qty, leg1TP := mentorLeg1ForFrameFixed(in, choice.Contracts, forkMode, forkTP, mentorLeg1FixedPts(at.mentorRiskControl())) // oct-exact D2
 	if q, tp, runnerTP, ok := at.mentorSwingRunnerLegs(in, choice.Contracts, forkMode); ok {
 		// CX-2 (knob mentor_swing_runner, default OFF): leg 1 at the swing's
 		// first target, the runner held by the 4h with its own TP.

@@ -48,7 +48,7 @@ func r2RevTrendRunCfg(t *testing.T, hm string, mod func(*Config), post ...func(*
 		t.Fatalf("bar %s not in fixture", hm)
 	}
 	bars := all[:idx+1]
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.HTFGateNewsOnly = false
 	cfg.PHLRoomMultiple = 1 // the 27 Oct tape's rolling PHL long arms at the 1R room (knob phl_room_multiple=1)

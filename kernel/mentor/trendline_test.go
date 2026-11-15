@@ -338,7 +338,7 @@ func TestTrendlineNeverTarget(t *testing.T) {
 // touch pre-classified at the trendline's key (the trendline itself is built
 // from the tape by TrendlinesBuild inside Tick).
 func trendlineEval(bars []market.Kline, now int64, key string, priceAt float64) *Evaluator {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.KeyLevelTFMinutes = 1
 	cfg.EMAPeriod34 = 0

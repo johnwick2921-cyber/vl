@@ -28,7 +28,7 @@ import (
 // dsCfg is the evaluator config for the 10-15 tape: DefaultConfig + the live
 // switches. The tape has no red-folder print windows, so the news knobs are inert.
 func dsCfg() Config {
-	c := DefaultConfig()
+	c := preOctCfg()
 	c.Enabled = true
 	c.RealFillOnly = true
 	return c

@@ -16,7 +16,7 @@ import (
 // return #2 is never reached (BoxRefs stays at return #1's stale index); GREEN
 // on the fix (BoxRefs advances to return #2's OpenTime).
 func TestRel9BoxRefsAdvancesAcrossSlidingWindow(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.Exec2mAfter30m = false // m410: this fixture pins the 1m box geometry (boxes now draw on the traded 2m frame after 09:00)
 	cfg.KeyLevelTFMinutes = 1

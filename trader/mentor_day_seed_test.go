@@ -86,7 +86,7 @@ func daySeed1015Trader(t *testing.T, bars []market.Kline, seedAt int64) *AutoTra
 		id: "t-day-seed-1015",
 		config: AutoTraderConfig{
 			StrategyConfig: &store.StrategyConfig{
-				RiskControl: store.RiskControlConfig{MentorMode: true},
+				RiskControl: store.RiskControlConfig{MentorMode: true, MentorTuning: octPreA1Tuning()}, // OCT-EXACT A1: the 10-15 day ran the Sept day gate
 			},
 		},
 		store: st,

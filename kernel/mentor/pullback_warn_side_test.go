@@ -127,7 +127,7 @@ func pwTick(t *testing.T, hl [][2]float64, bull bool, side Side) (Intent, *Evalu
 		shift = 55.0
 	}
 	specs := pwSeries(hl, bull, shift)
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	cfg.RoomMultiple = 0
 	cfg.Exec2mAfter30m = false // read the 1m ISB pair; the 5m warning read is frame-independent

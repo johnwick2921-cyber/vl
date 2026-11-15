@@ -16,7 +16,7 @@ import (
 // FORMING (CloseTime 0); its high breaks the previous high → the line is
 // drawn NOW, not at the close.
 func TestTriggerFiresIntrabarOnForming5m(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := []market.Kline{
 		{OpenTime: 60_000, CloseTime: 60_000 + 5*60_000 - 1, High: 100, Low: 96, Close: 98}, // closed previous
@@ -32,7 +32,7 @@ func TestTriggerFiresIntrabarOnForming5m(t *testing.T) {
 // trigger machine consumes 5m bars; a 1m series is never the input. This
 // pins the call contract (the evaluator passes barsTF(bars, 5)).
 func TestTriggerOnRecordedTapeNeverOn1m(t *testing.T) {
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	bars := loadFixture(t, "mnq_1m_2026-09-15_rth", "1m")
 	// feeding the RAW 1m series must not draw a line from a 1m break alone:

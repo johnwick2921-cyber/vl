@@ -69,7 +69,7 @@ func TestM462PastEntriesAudit(t *testing.T) {
 	if err := json.Unmarshal(raw, &arms); err != nil {
 		t.Fatal(err)
 	}
-	cfg := DefaultConfig()
+	cfg := preOctCfg()
 	cfg.Enabled = true
 	str := func(p *string) string {
 		if p == nil {

@@ -201,7 +201,7 @@ func TestM61rvMidRangeFloorIsSupport(t *testing.T) {
 func TestM61rvFormingBreakLockReleasedWhenNoInsideBar(t *testing.T) {
 	mother := market.Kline{OpenTime: m60p1At(9, 30), CloseTime: m60p1At(9, 45) - 1, Open: 100, High: 105, Low: 99, Close: 104}
 	run := func(closed15 market.Kline, close1m float64) *Evaluator {
-		e := New(DefaultConfig())
+		e := New(preOctCfg())
 		prov := &ISBBox{High: 112, Low: 98, Dir: SideLong, AtTime: m60p1At(9, 45), Provisional: true}
 		e.State.ISBBox15m = prov
 		e.State.LastForming15mAt = prov.AtTime

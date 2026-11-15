@@ -39,7 +39,7 @@ func holeSessionMinutes(from, to time.Time, skip func(t time.Time) bool) []marke
 }
 
 func holeSeed(bars []market.Kline, now int64) *Evaluator {
-	e := New(DefaultConfig())
+	e := New(preOctCfg())
 	SeedFull(e, bars, keyLevel1HBars(bars), now)
 	return e
 }
@@ -87,7 +87,7 @@ func TestSeedSwingLine_AncientHole_NotStale(t *testing.T) {
 	hi := time.Date(2026, 8, 5, 21, 58, 0, 0, loc)
 	e := holeSeed(holeSessionMinutes(from, to, hole(lo, hi)), to.UnixMilli())
 	if e.State.Swing.LineStale {
-		t.Errorf("a hole >%d buckets behind the line is below 0.01 pt of weight; it must not mark the line stale", swingHoleHorizonBuckets(DefaultConfig().Swing.EMAPeriod))
+		t.Errorf("a hole >%d buckets behind the line is below 0.01 pt of weight; it must not mark the line stale", swingHoleHorizonBuckets(preOctCfg().Swing.EMAPeriod))
 	}
 }
 

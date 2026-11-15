@@ -162,7 +162,7 @@ it('an enum knob shows its ruled default on the blank option', () => {
   )
   const ib = screen.getByTestId('mentor-tuning-15m_ib_requires_5m_isb')
   expect(within(ib).getAllByRole('option')[0]).toHaveTextContent(
-    'default: require a 5m ISB in the 15m direction'
+    'default: off — a 1m ISB in the 15m direction passes (pre-#25)' // OCT-EXACT A2 row 1 (was require_5m_isb)
   )
   expect(screen.getByTestId('mentor-tuning-orb_edge_veto_pts')).toHaveAttribute(
     'placeholder',
@@ -170,26 +170,26 @@ it('an enum knob shows its ruled default on the blank option', () => {
   )
   expect(
     screen.getByTestId('mentor-tuning-orb_isb_fraction_outside')
-  ).toHaveAttribute('placeholder', 'default: 0.8')
+  ).toHaveAttribute('placeholder', 'default: 0') // OCT-EXACT A1 row 4 (was 0.8)
 })
 
 it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
   expect(MENTOR_TUNING_DEFAULTS).toMatchObject({
-    '15m_ib_requires_5m_isb': 'require_5m_isb',
+    '15m_ib_requires_5m_isb': 'off', // OCT-EXACT A2 row 1 (was require_5m_isb)
     tf_conflict_end: 'both_boxes', // course-defaults-30
-    news_wait_both_lines: true, // course-defaults-30
-    news_bars_excluded: true, // course-defaults-30 (CE-4, release #29 rework)
+    news_wait_both_lines: false, // OCT-EXACT A1 row 6 (was true, course-defaults-30)
+    news_bars_excluded: false, // OCT-EXACT A1 row 6 (was true, CE-4 release #29 rework)
     isb_box_escape: 'close5m', // m473 B3 OctD4.3-R67
-    ema34_loss_relock: 'until_zone_exit',
+    ema34_loss_relock: 'off', // OCT-EXACT A2 row 6 (was until_zone_exit)
     orb_edge_veto_pts: 0,
-    orb_isb_fraction_outside: 0.8, // rule 5 (release #31) default ON
+    orb_isb_fraction_outside: 0, // OCT-EXACT A1 row 4 (was 0.8, rule 5 release #31)
     exec_2m_after_30m: false, // m472 A1 [Oct D4.2 @ 22:56-23:46] default OFF (was ON, release #31 rule 4)
     d43_trend_source: 'structure', // course-defaults-30
     level_entries_need_trigger_side: false,
-    trendline_is_target: true,
+    trendline_is_target: false, // OCT-EXACT A2 row 16 (was true)
     trendline_between_boxes: false, // D3-G8 oct round 2 (was true, course-defaults-30)
     leg_reset_on_wave_break: true,
-    flag_wall_target: true, // course-defaults-30
+    flag_wall_target: false, // OCT-EXACT A2 row 8 (was true, course-defaults-30)
     orb_escape_completely: false, // release #52 B19 — body test until the owner rules
     wick_microscalp: false, // m465 P5 — D4.3 advanced, OFF
     wick_safe_play: false, // m465 P5 — D4.3-R20, OFF
@@ -198,8 +198,8 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     evening_slow_pts: 100,
     evening_slow_from_hour: 15,
     evening_slow_window_min: 0,
-    near_box_room_multiple: 2,
-    near_box_room_phl: true,
+    near_box_room_multiple: 0.5, // W3 P2-volume (A2 row 7 was 0)
+    near_box_room_phl: false, // OCT-EXACT A2 row 7 (was true)
     phl_target_shy_pts: 5,
     isb_old_extreme_pts: 2,
     isb_in_range_gap_pts: 0,
@@ -211,6 +211,6 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     uno_key_levels: 'on', // m466 P2 G2 D1.3-R21
     session_open_levels: 'on', // m466 P2 G10/G11 D3.1-R26/R20
     level_arm_line_cancel: 'current_line', // m466 P2 G17 D2.3-R34
-    phl_pullback_low: 'pullback', // m466 P2 G41 D2.2-R59
+    phl_pullback_low: 'signal', // OCT-EXACT A2 row 10 (was pullback, m466 P2 G41 D2.2-R59)
   })
 })

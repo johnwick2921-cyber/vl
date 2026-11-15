@@ -48,8 +48,8 @@ func TestAnswers1112SwingMaxStopDefaultIsEighty(t *testing.T) {
 	if got := DefaultSwingCfg().SkipStopPts; got != 80 {
 		t.Fatalf("SkipStopPts default = %v, want 80 [Sept D5.2 p2 @05:25-05:33 \"7-80 điểm\"]", got)
 	}
-	if got := DefaultConfig().Swing.SkipStopPts; got != 80 {
-		t.Fatalf("DefaultConfig().Swing.SkipStopPts = %v, want 80", got)
+	if got := preOctCfg().Swing.SkipStopPts; got != 80 {
+		t.Fatalf("preOctCfg().Swing.SkipStopPts = %v, want 80", got)
 	}
 	// unset/0 resolves to the default (no OFF), now 80.
 	if got := swingSkipStopPts(SwingCfg{}); got != 80 {
