@@ -860,6 +860,16 @@ type Config struct {
 	// off: 15m_early_read=false, 15m_ib_requires_5m_isb=off). Revert:
 	// mentor_htf_box_gates=true (+ the two knobs).
 	HTFBoxGates bool
+	// Box15mNoTrade — review fix (fidelity P2, counter-cite to D4.3-R9): the 15m ISB-box no-trade
+	// stays ON when HTFBoxGates is OFF. OctD4.3-R60 @58:38 teaches it in the same video as R9:
+	// "Day la ly do tai sao buoi sang ngay hom nay anh chi thua ne. Tai vi dang lam Insapa khung
+	// 15 phut" (the 08:30 cluster is a 15m inside bar; the losses came from trading inside it;
+	// check by switching to 15m). Mentor question 2 of Ngay 4.3 ("does the 15m check still apply?")
+	// is OPEN and unanswered, so a rule October itself teaches is not turned off on R9 alone.
+	// Builds only the 15m box and its box gates; the 30m box, tf_conflict, MTF confluence,
+	// Early15mRead and FifteenMinIBRule stay under their own knobs. Revert (Sept/R9-only read):
+	// mentor_15m_box_no_trade=false.
+	Box15mNoTrade bool
 	// TFConflictEnabled — A2 row 2: tf_conflict (5m vs 15m box disagreement
 	// cancels the arms and refuses every setup). Default false; revert
 	// mentor_tf_conflict=true.
@@ -1428,6 +1438,7 @@ func DefaultConfig() Config {
 		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
 		// OCT-EXACT A2 (each revert named in the Config comment).
 		HTFBoxGates:                 false, // row 1
+		Box15mNoTrade:               true,  // review fix: OctD4.3-R60 @58:38 keeps the 15m ISB-box no-trade; false reverts to the R9-only read
 		TFConflictEnabled:           false, // row 2
 		MTFConfluenceEnabled:        false, // row 3
 		RollingLevelTouchOwns:       false, // row 4

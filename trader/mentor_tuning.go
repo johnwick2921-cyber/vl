@@ -97,8 +97,10 @@ type mentorTuned struct {
 	OrbPart2Enabled             bool
 	Open5mGateEnabled           bool
 	NewsHoldEnabled             bool
+	NewsFlattenEnabled          bool // default ON (safety stays); mentor_news_flatten_enabled=false holds through the print
 	LossBoxEnabled              bool
 	HTFBoxGates                 bool    // A2 row 1
+	Box15mNoTrade               bool    // review fix: default ON (OctD4.3-R60 @58:38); false reverts
 	TFConflictEnabled           bool    // A2 row 2
 	MTFConfluenceEnabled        bool    // A2 row 3
 	RollingLevelTouchOwns       bool    // A2 row 4
@@ -271,8 +273,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		OrbPart2Enabled:             d.OrbPart2Enabled,
 		Open5mGateEnabled:           d.Open5mGateEnabled,
 		NewsHoldEnabled:             false, // OCT-EXACT A1 row 7 [Oct: no news rule in the 17 notes]; mentor_news_hold_enabled=true reverts (not a kernel Config field: the hold is a trader placement gate)
+		NewsFlattenEnabled:          true,
 		LossBoxEnabled:              d.LossBoxEnabled,
 		HTFBoxGates:                 d.HTFBoxGates,
+		Box15mNoTrade:               d.Box15mNoTrade,
 		TFConflictEnabled:           d.TFConflictEnabled,
 		MTFConfluenceEnabled:        d.MTFConfluenceEnabled,
 		RollingLevelTouchOwns:       d.RollingLevelTouchOwns,
@@ -532,8 +536,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorOrbPart2Enabled, &out.OrbPart2Enabled)                          // row 4
 	flag(t.MentorOpen5mGateEnabled, &out.Open5mGateEnabled)                      // row 5
 	flag(t.MentorNewsHoldEnabled, &out.NewsHoldEnabled)                          // row 7
+	flag(t.MentorNewsFlattenEnabled, &out.NewsFlattenEnabled)                    // review fix: flatten split from the hold
 	flag(t.MentorLossBoxEnabled, &out.LossBoxEnabled)                            // row 10
 	flag(t.MentorHTFBoxGates, &out.HTFBoxGates)                                  // A2 row 1
+	flag(t.Mentor15mBoxNoTrade, &out.Box15mNoTrade)                              // review fix (R60)
 	flag(t.MentorTFConflict, &out.TFConflictEnabled)                             // A2 row 2
 	flag(t.MentorMTFConfluence, &out.MTFConfluenceEnabled)                       // A2 row 3
 	flag(t.MentorRollingLevelTouchOwns, &out.RollingLevelTouchOwns)              // A2 row 4
@@ -644,6 +650,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Open5mGateEnabled = t.Open5mGateEnabled                     // row 5
 	cfg.LossBoxEnabled = t.LossBoxEnabled                           // row 10
 	cfg.HTFBoxGates = t.HTFBoxGates                                 // A2 row 1
+	cfg.Box15mNoTrade = t.Box15mNoTrade                             // review fix (R60)
 	cfg.TFConflictEnabled = t.TFConflictEnabled                     // A2 row 2
 	cfg.MTFConfluenceEnabled = t.MTFConfluenceEnabled               // A2 row 3
 	cfg.RollingLevelTouchOwns = t.RollingLevelTouchOwns             // A2 row 4

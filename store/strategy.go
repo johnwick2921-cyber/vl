@@ -2133,7 +2133,7 @@ type MentorTuning struct {
 	//   MentorSwing4HEnabled    — row 3, NEW SWING 4H arms [Oct D4.3-R10 @07:58]
 	//   MentorOrbPart2Enabled   — row 4, ORB not_drawn/not_escaped/wrong_side (orb_inside stays)
 	//   MentorOpen5mGateEnabled — row 5, open_5m_range_not_broken
-	//   MentorNewsHoldEnabled   — row 7, news_hold 07:20-07:35 + the news flatten
+	//   MentorNewsHoldEnabled   — row 7, news_hold 07:20-07:35 entry hold only (the flatten is MentorNewsFlattenEnabled)
 	//   MentorLossBoxEnabled    — row 10, loss box / loss range (G2)
 	MentorHTFGateEnabled    *bool `json:"mentor_htf_gate_enabled,omitempty"`
 	MentorDayGateEnabled    *bool `json:"mentor_day_gate_enabled,omitempty"`
@@ -2141,9 +2141,14 @@ type MentorTuning struct {
 	MentorOrbPart2Enabled   *bool `json:"mentor_orb_part2_enabled,omitempty"`
 	MentorOpen5mGateEnabled *bool `json:"mentor_open5m_gate_enabled,omitempty"`
 	MentorNewsHoldEnabled   *bool `json:"mentor_news_hold_enabled,omitempty"`
+	// MentorNewsFlattenEnabled — review fix (fidelity P2): the news cancel + flatten at print -10m is
+	// a SAFETY behaviour, split from the entry hold above. nil -> ON ("safety stays"); a stored false
+	// is the explicit owner acceptance of holding through a print.
+	MentorNewsFlattenEnabled *bool `json:"mentor_news_flatten_enabled,omitempty"`
 	MentorLossBoxEnabled    *bool `json:"mentor_loss_box_enabled,omitempty"`
 	// OCT-EXACT A2 (owner order 2026-11-14): nil -> OFF / the October value for
 	// each knob below; a stored value is the revert and still wins.
+	Mentor15mBoxNoTrade         *bool    `json:"mentor_15m_box_no_trade,omitempty"`         // review fix: the 15m ISB-box no-trade (OctD4.3-R60 @58:38), nil -> ON
 	MentorHTFBoxGates           *bool    `json:"mentor_htf_box_gates,omitempty"`            // row 1: 15m/30m ISB-box gates on every setup
 	MentorTFConflict            *bool    `json:"mentor_tf_conflict,omitempty"`              // row 2: tf_conflict (5m vs 15m box disagreement)
 	MentorMTFConfluence         *bool    `json:"mentor_mtf_confluence,omitempty"`           // row 3: MTF confluence C from the 15m + 5m boxes

@@ -176,6 +176,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
 			ISBRevFillClose:            true,                              // OCT-EXACT close r1: the reverse ISB takes the ISB first target (fill-close +1R) when no level gives room [Oct D5.3-R39 @16:43; D2.2 @28:37]; false reverts
 			FTGLBodyEdgePartner:        true,                              // OCT-EXACT D3: FTGL partner by body edge [OctD3.3-R54 @43:14]; false reverts
+			NewsFlattenEnabled:         true,                              // review fix: the news cancel+flatten is its own knob, default ON (safety stays); false holds through the print
+			Box15mNoTrade:              true,                              // review fix: the 15m ISB-box no-trade stays ON [OctD4.3-R60 @58:38]; false reverts to the R9-only read
 			Leg1FixedPts:               0,                                 // OCT-EXACT D2: production 15 (mentorLeg1FixedPtsDefault); this test binary pins 0 in TestMain, oct_d_test.go pins the 15
 			ResonanceTrail:             true,                              // OCT-EXACT C6: the mode-A runner trails after BE [Oct D4.2-R31/R32 @08:11]; false reverts
 			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]

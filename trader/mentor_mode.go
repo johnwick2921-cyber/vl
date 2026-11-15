@@ -611,6 +611,18 @@ func (at *AutoTrader) mentorNewsHoldEnabled() bool {
 	return rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsHoldEnabled != nil && *rc.MentorTuning.MentorNewsHoldEnabled
 }
 
+// mentorNewsFlattenEnabled — review fix (fidelity P2): the cancel + flatten at print -10m is the
+// safety half of the news window and stays ON by default ("safety stays"), independent of the
+// entry hold. mentor_news_flatten_enabled=false is the explicit owner acceptance of holding through
+// a print. October has no news rule either way (silence is not a reason to drop a safety flatten).
+func (at *AutoTrader) mentorNewsFlattenEnabled() bool {
+	rc := at.mentorRiskControl()
+	if rc != nil && rc.MentorTuning != nil && rc.MentorTuning.MentorNewsFlattenEnabled != nil {
+		return *rc.MentorTuning.MentorNewsFlattenEnabled
+	}
+	return true
+}
+
 // mentorLegResetOn — G1 parity knob: "close" default; a bad value fails
 // closed to "close" and is counted.
 func mentorLegResetOn(at *AutoTrader, rc *store.RiskControlConfig) string {

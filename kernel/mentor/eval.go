@@ -2914,8 +2914,12 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// to it under a "_forming" refusal name; the real box replaces it at the
 	// 15m close (advance15mBox, mtf_forming15.go).
 	if !e.Cfg.HTFBoxGates {
-		// OCT-EXACT A2 row 1: no 15m / 30m box exists [Oct D4.3-R9 @07:28].
-		e.State.ISBBox15m, e.State.ISBBox30m = nil, nil
+		// OCT-EXACT A2 row 1: no 30m box exists [Oct D4.3-R9 @07:28]; the 15m box is kept
+		// only by Box15mNoTrade (review fix, OctD4.3-R60 @58:38 counter-cite).
+		e.State.ISBBox30m = nil
+	}
+	if !e.Cfg.HTFBoxGates && !e.Cfg.Box15mNoTrade {
+		e.State.ISBBox15m = nil
 	} else if ev, ok := e.advance15mBox(cb5, cb15, cur); ok {
 		breaks = append(breaks, ev) // m466 G29 D4.1-R55: the 15m exit sets the side
 	}

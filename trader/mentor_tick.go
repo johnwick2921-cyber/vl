@@ -1292,8 +1292,8 @@ func (at *AutoTrader) mentorNewsCancelFlattenAt(now time.Time) bool {
 	if !at.mentorEnabled() || at.store == nil || at.trader == nil {
 		return false
 	}
-	if !at.mentorNewsHoldEnabled() {
-		return false // OCT-EXACT A1 row 7: the hold's destructive half (cancel + flatten at print −10m) goes with it
+	if !at.mentorNewsFlattenEnabled() {
+		return false // review fix: the flatten is its own knob (default ON, safety stays); the entry hold knob no longer gates it
 	}
 	evs, ok := at.mentorDayEvents()
 	if !ok {
