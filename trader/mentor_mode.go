@@ -58,8 +58,9 @@ const (
 	// reduced band: a non-swing stop in (20, 30] sizes the reduced tier (3) —
 	// "Cái nến INSHABA này tầm 20 điểm, 30 điểm... Tôi vô size 3 hoặc tôi
 	// không trade... 12 điểm. Ok, tôi vô size 5" [OctD2.2-R73 @01:12:32, frame
-	// s_04345.jpg: −12.25 pts / 49 ticks]. Above it (to mentor_wide_stop_max_pts)
-	// → mentor_wide_stop_contracts [OctD2.3-R47 @48:12].
+	// s_04345.jpg: −12.25 pts / 49 ticks]. Above it → mentor_wide_stop_contracts
+	// [OctD2.3-R47 @48:12], with no upper limit unless a positive
+	// mentor_wide_stop_max_pts is stored (owner order 2026-11-15).
 	mentorStopLadderReducedTopPts = 30.0
 )
 
@@ -103,8 +104,11 @@ type mentorTierInputs struct {
 	// MentorStopSizeLadder / MentorWideStopContracts / MentorWideStopMaxPts,
 	// resolved by mentorCourseExitsResolve). StopLadderOff is the knob turned
 	// OFF (false = the zero value = ON, the default — a bare table test runs
-	// the ladder). WideStopContracts 0 → 1, WideStopMaxPts 0 → the kernel
-	// default 40.
+	// the ladder). WideStopContracts 0 → 1. WideStopMaxPts 0 → NO stop-size
+	// cap (the kernel default since owner order 2026-11-15 "tarde all isb or
+	// any thing just need adjust contact"); a positive value is the stored
+	// cap (revert 40). The resolver never hands a negative/NaN here — a bad
+	// stored value fails closed to 40 (mentorWideStopMaxResolve).
 	StopLadderOff     bool
 	WideStopContracts int
 	WideStopMaxPts    float64
@@ -167,8 +171,10 @@ func mentorContractsFor(in mentorTierInputs, base, conf, big, reduced, swing4h, 
 //
 //	stop ≤ 20          → the tier unchanged;
 //	stop in (20, 30]   → at most the reduced tier (3) [OctD2.2-R73 @01:12:32];
-//	stop in (30, max]  → at most mentor_wide_stop_contracts (1) [OctD2.3-R47 @48:12];
-//	stop > max         → never reaches here (kernel + R8 refuse it).
+//	stop > 30          → at most mentor_wide_stop_contracts (1) [OctD2.3-R47 @48:12],
+//	                     NO upper limit by default (owner order 2026-11-15);
+//	stop > a STORED mentor_wide_stop_max_pts → never reaches here (kernel + R8
+//	                     refuse it; only with a stored positive max, revert 40).
 //
 // It only ever LOWERS the size — min(the tier the setup earned, the ladder
 // cap) — and never touches the target: "giảm size only chứ không có tăng
@@ -179,10 +185,10 @@ func mentorStopLadderCap(in mentorTierInputs, choice mentorSizeChoice, reduced, 
 	if in.StopLadderOff || strings.EqualFold(strings.TrimSpace(in.Setup), "SWING4H") || in.StopPts <= mentorStopTwentiesMinPts {
 		return choice
 	}
+	// wideMax ≤ 0 = no stop-size cap (owner order 2026-11-15); a positive
+	// value is the stored cap. No fallback to a second default: 0 IS the
+	// kernel default.
 	wideMax := in.WideStopMaxPts
-	if wideMax <= 0 {
-		wideMax = mentor.DefaultCourseExitsCfg().WideStopMaxPts
-	}
 	var limit int
 	var tier, why string
 	if in.StopPts <= mentorStopLadderReducedTopPts {
@@ -203,7 +209,9 @@ func mentorStopLadderCap(in mentorTierInputs, choice mentorSizeChoice, reduced, 
 			capNote = fmt.Sprintf(", capped at the reduced tier %d (mentor_wide_stop_contracts is above it)", reduced)
 		}
 		var rangeNote string
-		if in.StopPts <= wideMax {
+		if wideMax <= 0 {
+			rangeNote = "no stop-size cap — mentor_wide_stop_max_pts unset, owner order 2026-11-15 \"trade all isb or anything just need adjust contract\""
+		} else if in.StopPts <= wideMax {
 			rangeNote = fmt.Sprintf("≤ the %g-pt mentor_wide_stop_max_pts", wideMax)
 		} else {
 			rangeNote = fmt.Sprintf("above the %g-pt mentor_wide_stop_max_pts, admitted by the stored mentor_isb_max_pts / stop ceiling (the ladder never narrows a setup's ceiling)", wideMax)
@@ -380,15 +388,14 @@ func mentorStopCeilingFor(setup string, isbMax float64) float64 {
 
 // mentorStopLadderRefuseCeiling is the R8 skip ceiling with the stop-to-size
 // ladder applied: the kernel's own mentor.StopLadderCeiling on the resolved
-// knobs (ladder OFF → ceiling unchanged; ON → max(ceiling, wide max)).
+// knobs (ladder OFF → ceiling unchanged; ON with wide max 0 → +Inf, no
+// stop-size cap, owner order 2026-11-15; ON with a stored positive wide max →
+// max(ceiling, wide max)). The +Inf is only ever COMPARED (R8 `stop > wide`),
+// never formatted, logged or stored.
 func mentorStopLadderRefuseCeiling(ceiling float64, in mentorTierInputs) float64 {
-	wideMax := in.WideStopMaxPts
-	if wideMax <= 0 {
-		wideMax = mentor.DefaultCourseExitsCfg().WideStopMaxPts
-	}
 	var cfg mentor.Config
 	cfg.CourseExits.StopSizeLadder = !in.StopLadderOff
-	cfg.CourseExits.WideStopMaxPts = wideMax
+	cfg.CourseExits.WideStopMaxPts = in.WideStopMaxPts // 0 = no cap, the kernel default
 	return mentor.StopLadderCeiling(cfg, ceiling)
 }
 
@@ -919,10 +926,14 @@ func mentorRuleGate(in mentor.Intent, extra mentorTierInputs) string {
 		// PHL/PLH/BOX keep the D3.3-R1 25 ("hơn 20, 25 đổ lại ok, chứ mà trên
 		// nữa thì thôi" [D3.3 p1 @01:59–02:09]) — mentorStopCeilingFor.
 		ceiling := mentorStopCeilingFor(in.Setup, extra.ISBMaxStopPts)
-		// Stop-to-size ladder (owner order 2026-11-10): ON widens the skip to
-		// mentor_wide_stop_max_pts (40) — the SAME kernel function
-		// (mentor.StopLadderCeiling) the evaluator refuses at; the size table
-		// then sizes the stop DOWN [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]. OFF = unchanged.
+		// Stop-to-size ladder (owner order 2026-11-10): ON lifts the skip —
+		// to NO stop-size cap by default (mentor_wide_stop_max_pts 0, owner
+		// order 2026-11-15 "tarde all isb or any thing just need adjust
+		// contact"), or to a stored positive mentor_wide_stop_max_pts (revert
+		// 40) — the SAME kernel function (mentor.StopLadderCeiling) the
+		// evaluator refuses at; the size table then sizes the stop DOWN
+		// [OctD2.2-R73 @01:12:32, OctD2.3-R47 @48:12]. OFF = unchanged. The
+		// +Inf no-cap ceiling is never formatted: `stop > +Inf` is false.
 		if wide := mentorStopLadderRefuseCeiling(ceiling, extra); stop > wide {
 			if wide > ceiling {
 				return fmt.Sprintf("R8: stop %.1f pts above the %g-pt mentor_wide_stop_max_pts ceiling — skip, \"40 điểm thì mình làm gì? Mình không trade\" [OctD2.3-R47 @48:12, R48 @49:38] (the swing is the only exemption)", stop, wide)
