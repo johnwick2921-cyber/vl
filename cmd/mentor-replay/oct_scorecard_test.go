@@ -72,7 +72,27 @@ var acceptedMisses = map[string]string{
 	// the window are the 08:41 reverse ISB (inside the box 28,639.75-28,727.00 the bot built at 08:40) and the 08:43
 	// ISB buy stop; D4.3-R70 allows a same-direction ISB inside a 5m box, so no existing October rule refuses them.
 	"D4.1-1": "morning dead box (Oct D4.1 @11:28 OctD4.1-R23) is the CTO D4 item listed NOT built: no October measure of 'did not move for ~30 min'; the bot's own 5m ISB box allows a same-direction ISB (OctD4.3-R70)",
-}
+
+	// close r2: D5.2 WE3 / WE4 are replay QUIZZES on hand-drawn 1h key levels that come from bars BEFORE the
+	// scorecard tape (the fixture starts 2026-09-07; WE1 @06:14-07:12 draws 28,154.50 from 3 Aug and 27,997.75
+	// from the Jul/Apr block, "zooms far out to Jun-Sep ... Lui tiep ... April"). The bot has no bar that makes
+	// those lines, so it cannot hold the level, and the notes give no order price: WE3 "He places no order;
+	// stop/target not given", WE4 "Numeric order prices not stated". Only the mechanics (touch then close under =
+	// keep the lower-high sell stop; the first touching candle owns the order, Oct D5.2 @07:42-10:05, @13:27-20:28)
+	// are taught, and those are covered by the level-arm tests (C3 first-touch rule).
+	"D5.2-WE3": "quiz on the hand-drawn 1h level 27,997.75 (from before the 2026-09-07 tape start, Oct D5.2 WE1 @06:42-07:12); no order price taught (WE3 'He places no order'), the bot has no bar that creates the line",
+	"D5.2-WE4": "quiz on the hand-drawn 1h level 28,154.50 (3 Aug, before the 2026-09-07 tape start, Oct D5.2 WE1 @06:14-06:40); order prices 'not stated' (WE4); the bot has no bar that creates the line",
+	// close r2: D2.3 WE9 (10-29 20:59, short PLH sell stop 28,861.50, stop 28,875.25, target 28,830.50) is taken in
+	// D2.3, BEFORE D4.3 teaches the 5m trigger side. At 20:58 the 5m trigger has flipped LONG (the 20:57-20:58 high
+	// 28,876.25), so the kernel refuses the short on rolling_phl_trigger_side / isb_trigger_side (Oct D4.3 @22:00
+	// OctD4.3-R28, CTO C1 keep). D2.3 also meets the 5m trigger line 28,852 as a target obstacle (trigger_retest);
+	// skipping it was tried and still refused on the trigger side, so it was not shipped. Later video wins.
+	"D2.3-WE9": "D2.3 take pre-dates the D4.3 5m trigger-side rule (OctD4.3-R28 @22:00, CTO C1 keep): at 20:58 the 5m trigger is long, the short is refused on rolling_phl_trigger_side; later video wins",
+	// close r2: D3.3 E8 is a teaching pause, not a trade rule: "Price falls from the box 28,815 to ~28,620 with no inside
+	// bar: no entry, 'doi mai hoc'" (wait for tomorrow's lesson), D3.3 note E8 line 429. The bot's 09:15 short ISB
+	// (28,675.75, stop 28.0) is a genuine ISB by his own R1 (candle 2 BODY 28,680-28,690 inside candle 1's full range
+	// 28,677.75-28,710.25, OctD1.4-R1), 130 pts below the FTGH box, so no October rule refuses it.
+	"D3.3-E8": "teaching pause ('doi mai hoc', D3.3 E8): the 09:15 1m candle's body sits inside the 09:14 range (his own ISB R1), 130 pts under the FTGH box; no October rule refuses a short ISB there"}
 
 const octPriceTol = 2.0 // points
 const octSlackBars = 2  // one-minute bars either side of the window
