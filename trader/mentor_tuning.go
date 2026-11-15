@@ -122,7 +122,9 @@ type mentorTuned struct {
 	TrendlineMaxLinesPerAnchor  int     // A2 row 15
 	ISBRoomMultiple             float64 // BC C4
 	LevelFirstTouchLock         bool    // BC C3
-	ISBRevFillClose bool // close r1
+	ISBRevFillClose             bool    // close r1
+	BoxCarryFirstLatched        bool    // P3-missesA E9
+	BoxCounter5mScalp           bool    // P3-missesA E9
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
 	FTGLBodyEdgePartner         bool    // D3
@@ -298,12 +300,14 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		TrendlineMaxLinesPerAnchor:  d.TrendlineMaxLinesPerAnchor,
 		ISBRoomMultiple:             d.ISBRoomMultiple,
 		LevelFirstTouchLock:         d.LevelFirstTouchLock,
-		ISBRevFillClose: d.ISBRevFillClose,
+		ISBRevFillClose:             d.ISBRevFillClose,
+		BoxCarryFirstLatched:        d.BoxCarryFirstLatched,
+		BoxCounter5mScalp:           d.BoxCounter5mScalp,
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
 		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
 		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
-		ResonanceTrail:              true, // BC C6
+		ResonanceTrail:              true,                      // BC C6
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -562,7 +566,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	pickPtr(t.MentorISBRoomMultiple, 0, 10, &out.ISBRoomMultiple)                // BC C4
 	pickPtr(t.MentorCounter5mScalpPts, 0, 100, &out.Counter5mScalpPts)           // BC C1
 	flag(t.MentorLevelFirstTouchLock, &out.LevelFirstTouchLock)                  // BC C3
-	flag(t.MentorISBRevFillClose, &out.ISBRevFillClose) // close r1
+	flag(t.MentorISBRevFillClose, &out.ISBRevFillClose)                          // close r1
+	flag(t.MentorBoxCarryFirstLatched, &out.BoxCarryFirstLatched)                // P3-missesA E9
+	flag(t.MentorBoxCounter5mScalp, &out.BoxCounter5mScalp)                      // P3-missesA E9
 	flag(t.MentorISBJustBrokenLevel, &out.ISBJustBrokenLevel)                    // D1
 	flag(t.MentorFTGLBodyEdgePartner, &out.FTGLBodyEdgePartner)                  // D3
 	pickPtr(t.MentorLeg1FixedPts, 0, 100, &out.Leg1FixedPts)                     // D2
@@ -670,7 +676,9 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.TrendlineMaxLinesPerAnchor = t.TrendlineMaxLinesPerAnchor   // A2 row 15
 	cfg.ISBRoomMultiple = t.ISBRoomMultiple                         // BC C4
 	cfg.LevelFirstTouchLock = t.LevelFirstTouchLock                 // BC C3
-	cfg.ISBRevFillClose = t.ISBRevFillClose // close r1
+	cfg.ISBRevFillClose = t.ISBRevFillClose                         // close r1
+	cfg.BoxCarryFirstLatched = t.BoxCarryFirstLatched               // P3-missesA E9
+	cfg.BoxCounter5mScalp = t.BoxCounter5mScalp                     // P3-missesA E9
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
 	cfg.FTGLBodyEdgePartner = t.FTGLBodyEdgePartner                 // D3

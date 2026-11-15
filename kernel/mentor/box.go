@@ -656,6 +656,32 @@ func liveBoxes(latched map[string]Box, post []Box) []Box {
 	return out
 }
 
+// carryBoxes picks the boxes carried past the 17:00 CT roll. With
+// BoxCarryFirstLatched (knob mentor_box_carry_first_latched) a role's carried
+// box is the RTH box the mentor drew that morning (the latched / fresh-RTH
+// box), not a later post-escape new zone: "cái box này hôm thứ sáu ... vẫn còn
+// valid trên chart Chủ nhật" [Oct D3.3 @ 17:00, OctD3.3-R27; E9: the Friday
+// FTGH 28,812.50-28,818.25 retested Sun 21:53]. Off = liveBoxes (newest per role).
+func carryBoxes(first bool, latched map[string]Box, post []Box) []Box {
+	if !first {
+		return liveBoxes(latched, post)
+	}
+	out := make([]Box, 0, 2)
+	live := liveBoxes(latched, post)
+	for _, kind := range []BoxKind{FTGL, FTGH} {
+		if b, ok := latched[string(kind)]; ok {
+			out = append(out, b)
+			continue
+		}
+		for _, b := range live {
+			if b.Kind == kind {
+				out = append(out, b)
+			}
+		}
+	}
+	return out
+}
+
 // latchPostEscapeBoxes (B52) refreshes the post-escape boxes and latches a new
 // one for any role whose ACTIVE box has escaped. The active box is the newest
 // post-escape box of that role, else the first-latched box. One box per escape:

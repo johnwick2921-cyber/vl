@@ -2145,7 +2145,7 @@ type MentorTuning struct {
 	// a SAFETY behaviour, split from the entry hold above. nil -> ON ("safety stays"); a stored false
 	// is the explicit owner acceptance of holding through a print.
 	MentorNewsFlattenEnabled *bool `json:"mentor_news_flatten_enabled,omitempty"`
-	MentorLossBoxEnabled    *bool `json:"mentor_loss_box_enabled,omitempty"`
+	MentorLossBoxEnabled     *bool `json:"mentor_loss_box_enabled,omitempty"`
 	// OCT-EXACT A2 (owner order 2026-11-14): nil -> OFF / the October value for
 	// each knob below; a stored value is the revert and still wins.
 	Mentor15mBoxNoTrade         *bool    `json:"mentor_15m_box_no_trade,omitempty"`         // review fix: the 15m ISB-box no-trade (OctD4.3-R60 @58:38), nil -> ON
@@ -2170,14 +2170,16 @@ type MentorTuning struct {
 	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
 	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
 	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
-	MentorISBRoomMultiple     *float64 `json:"mentor_isb_room_multiple,omitempty"`      // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
-	MentorLevelFirstTouchLock *bool    `json:"mentor_level_first_touch_lock,omitempty"` // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
-	MentorISBRevFillClose *bool `json:"mentor_isbrev_fill_close,omitempty"` // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
-	MentorISBJustBrokenLevel  *bool    `json:"mentor_isb_just_broken_level,omitempty"`  // D1: ISB at a level it just broke refused until the retest (default ON)
-	MentorFTGLBodyEdgePartner *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"` // D3: FTGL partner by body edge (default ON)
-	MentorLeg1FixedPts        *float64 `json:"mentor_leg1_fixed_pts,omitempty"`         // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
-	MentorCounter5mScalpPts   *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`   // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
-	MentorResonanceTrail      *bool    `json:"mentor_resonance_trail,omitempty"`        // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
+	MentorISBRoomMultiple      *float64 `json:"mentor_isb_room_multiple,omitempty"`       // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`  // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"` // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
+	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`    // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
+	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
+	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)
+	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`          // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
+	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`    // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
+	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`         // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

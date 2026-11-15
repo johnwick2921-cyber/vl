@@ -852,6 +852,11 @@ export const mentor: GuideSection = {
           'mentor_isb_just_broken_level · mentor_leg1_fixed_pts · mentor_ftgl_body_edge_partner · trendline_max_lines_per_anchor = 3 (A2)',
         ],
         [
+          'October-exact FTGH/FTGL box carry and counter-5m box scalp (P3)',
+          'Two more October rules ship ON. (1) mentor_box_carry_first_latched: the box carried past the 17:00 CT roll is the RTH box drawn that morning (the first latched / fresh-RTH box, e.g. the Friday FTGH 28,812.50-28,818.25), not a later post-escape zone, and a restart seeds the same box the live tick latched (a Friday box "vẫn còn valid trên chart Chủ nhật"). (2) mentor_box_counter_5m_scalp: a FTGH/FTGL box return AGAINST the 5m trigger is no longer refused (box_against_5m_trend / box_trigger_side); it is the counter-5m scalp - the reduced counter_5m size and the short first target (mentor_counter_5m_scalp_pts). Each reverts with false.',
+          'mentor_box_carry_first_latched · mentor_box_counter_5m_scalp · each revert = false · OCT-EXACT P3-missesA · Oct D3.3-R27 @17:00, R51 @41:28 · D5.4-R20 @07:51-08:20',
+        ],
+        [
           'Mid-range rejection side',
           'Between the floor and the ceiling box, after a candle rejects the ceiling no LONG entry until a candle reaches the floor (mirror for a floor reject) — mid_range_against_rejection, release #61',
           'mentor_mid_range_reject_side = OFF (OCT-EXACT A1 row 11; true reverts) · D2.2-R71 p3 @14:28–15:58',

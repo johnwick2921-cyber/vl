@@ -75,6 +75,8 @@ func octBCRevert(c Config) Config {
 	c.LevelFirstTouchLock = true
 	c.ISBRoomMultiple = 0 // C4 revert: 0 = follow RoomMultiple (the stored mentor_isb_room_multiple=2 is the same on a default RoomMultiple)
 	c.Counter5mScalpPts = 0
-	c.ISBRevFillClose = false // close r1: the reverse ISB keeps the September level-or-refuse target
+	c.ISBRevFillClose = false      // close r1: the reverse ISB keeps the September level-or-refuse target
+	c.BoxCarryFirstLatched = false // P3-missesA E9: the carried box is the newest live box per role, the seed scan stops at a pre-open box
+	c.BoxCounter5mScalp = false    // P3-missesA E9: a box return against the 5m stays refused (box_against_5m_trend / box_trigger_side)
 	return c
 }

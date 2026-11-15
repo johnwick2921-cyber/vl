@@ -237,7 +237,7 @@ func boxEntryIntentWhy(ref market.Kline, b Box, boxes []Box, levels []Level, tri
 		side, price, stop = SideShort, ref.Low, ref.High
 	}
 	if cfg.LocTriggerFilter && cfg.TriggerSchool != 1 {
-		if ok, ts, _ := TriggerVerdict(trig, price); !ok || ts != "" && ts != side {
+		if ok, ts, _ := TriggerVerdict(trig, price); (!ok || ts != "" && ts != side) && !(cfg.BoxCounter5mScalp && ok) { // P3-missesA: opposite trigger = counter-5m scalp
 			return nil, "box_trigger_side"
 		}
 	}

@@ -51,6 +51,7 @@ func TestOctNonMentorConfigUnchanged(t *testing.T) {
 		"mentor_isb_room_multiple", "mentor_level_first_touch_lock", "mentor_isbrev_fill_close",
 		"mentor_isb_just_broken_level", "mentor_ftgl_body_edge_partner", "mentor_leg1_fixed_pts",
 		"mentor_counter_5m_scalp_pts", "mentor_resonance_trail",
+		"mentor_box_carry_first_latched", "mentor_box_counter_5m_scalp",
 	} {
 		if strings.Contains(string(raw), `"`+k+`"`) {
 			t.Errorf("default (AI-mode) strategy config serialises the new mentor knob %q", k)

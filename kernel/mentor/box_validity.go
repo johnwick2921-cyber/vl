@@ -76,7 +76,7 @@ func (e *Evaluator) carryRTHBoxes(now int64) {
 	if !boxCarryRTH {
 		return
 	}
-	for _, b := range liveBoxes(e.State.LatchedBoxes, e.State.PostEscapeBoxes) {
+	for _, b := range carryBoxes(e.Cfg.BoxCarryFirstLatched, e.State.LatchedBoxes, e.State.PostEscapeBoxes) {
 		if now >= boxExpiryMs(b) {
 			continue
 		}

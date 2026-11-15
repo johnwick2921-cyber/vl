@@ -549,6 +549,22 @@ type Config struct {
 	// BoxCarriedStaysLive — D3-G4 (oct round 2): a carried FTGH/FTGL box (live at the RTH open, valid to the next 08:30) stays the role's live box over a box that forms later in the evening: "vẫn còn valid trên chart Chủ nhật" [Oct D3.3 @ 17:00] (R27; E9 Sun 1 Nov ~21:53 the Friday FTGH 28,808.25 retest -> -17.50 pts, frames s_02558/s_02567); "valid cho tới sáng ngày mai" [@ 41:28] (R51). Default ON (October); OFF = the m473 rule (a carried box only fills a role the live set lacks, so the Sunday-evening FTGH hides Friday's).
 	// Studio JSON: risk_control.mentor_tuning.box_carried_stays_live.
 	BoxCarriedStaysLive bool
+	// BoxCarryFirstLatched — oct-exact P3-missesA (D3.3-E9): the box carried past the
+	// 17:00 CT roll is the RTH box the mentor drew that morning (the latched /
+	// fresh-RTH box), not a later post-escape new zone [Oct D3.3 @17:00 OctD3.3-R27:
+	// "cái box này hôm thứ sáu ... vẫn còn valid trên chart Chủ nhật"; E9 Sun 1 Nov
+	// ~21:53 retest of the Friday FTGH 28,812.50-28,818.25]. Default ON; false
+	// reverts to m473 (the newest live box per role).
+	BoxCarryFirstLatched bool
+	// BoxCounter5mScalp — oct-exact P3-missesA (D3.3-E9): a FTGH/FTGL box return AGAINST
+	// the 5m trigger is not refused (box_against_5m_trend / box_trigger_side); it is
+	// the course's counter-5m SCALP: the counter_5m reduced size and the short first
+	// target [Oct D5.4-R20 @07:51-08:20 "những lệnh long của mình phải là những lệnh
+	// scalping, phải là những lệnh đánh size nhỏ ... cứ có điểm chạy", R9 @04:25, R11
+	// @04:47, R13 @05:00; later than D4.3-R6/R14]. E9: Sun 1 Nov 21:56 the Friday FTGH
+	// 28,812.50-28,818.25 retested under a 5m long trigger, "cũng được 17 điểm". Default
+	// ON; false reverts (a counter-5m box return stays refused).
+	BoxCounter5mScalp bool
 	// BoxSwingBothRoles — D3-G2 (oct round 2): a candle that is BOTH a 3-bar swing high and a 3-bar swing low (a big outside bar) is a peak AND a bottom for the box builder. Thu 29 Oct 09:05 (O 29,619 H 29,629.25 L 29,586) is peak 2 of the course's red FTGH 29,621.25-29,632.75 [Oct D3.3 @ 15:46 "lấy cái râu cao nhất của cái đỉnh 1, kéo xuống cái thân gần nhất của cái đỉnh 2" (R25); E11 frame s_02696]. Default ON (October); OFF = the September switch that keeps such a bar as a low only (the pair then falls to the 09:19 high, formed 14 minutes later and 15.5 pts lower).
 	// Studio JSON: risk_control.mentor_tuning.box_swing_both_roles.
 	BoxSwingBothRoles bool
@@ -1372,19 +1388,21 @@ func DefaultConfig() Config {
 		KnockKnockZone:             true,                // D2-G10: October [OctD2.1-R22/R25/R34 @ 21:18-23:43]; knob knock_knock_zone=false reverts
 		TrendlineFirstBottomAnchor: true,                // D3-G9: October [OctD3.2-R45/R46/R59 @ 41:20]; knob trendline_first_bottom_anchor=false reverts
 		BoxFlipReversible:          true,                // D3-G7: October [OctD3.3-R46/R48 @ 37:40, 39:20]; knob box_flip_reversible=false reverts
+		BoxCarryFirstLatched:       true,                // P3-missesA E9; false reverts
+		BoxCounter5mScalp:          true,                // P3-missesA E9 [Oct D5.4-R20 @07:51]; false reverts
 		BoxCarriedStaysLive:        true,                // D3-G4: October [OctD3.3-R27/R51 @ 17:00, 41:28]; knob box_carried_stays_live=false reverts
 		BoxSwingBothRoles:          true,                // D3-G2: October [OctD3.3-R25 @ 15:46]; knob box_swing_both_roles=false reverts
 		BoxPreOpenLookbackMin:      10,                  // D3-G1: October [OctD3.3-R23/R52 @ 17:13, 42:00] the pre-open pair (peaks 08:00/08:29) that forms in the last 10 min before the open is the morning box; knob box_preopen_lookback_min=0 reverts
 		PHLMinAbovePriorPts:        15,                  // oct-exact B6: 15 pts (revert 0 = off) [OctD4.2-R41 @36:45-40:20 "15 điểm"]; scorecard with 15: 0 phl_min_above_old_extreme refusals in any took/marked trade window, pass set unchanged
 		ISBRoomMultiple:            1,                   // oct-exact C4: ISB room 1R [Oct D2.3-R48 @49:38, D2.2 @28:37]; mentor_isb_room_multiple=2 reverts
 		LevelFirstTouchLock:        false,               // oct-exact C3: a first touch closing through only cancels that order [Oct D5.2-R23/R24 @07:42-14:16]; mentor_level_first_touch_lock=true reverts
-		ISBRevFillClose: true, // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
+		ISBRevFillClose:            true,                // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
-		NearBoxRoomMultiple:        0.5,                // W3 P2-volume: ISB leg of near_box back ON at 0.5 x risk (largest of 0.01/0.5/1/2 keeping scorecard 31/55; 1 -> 26, 2 -> 24: the mentor took ISBs that close) [OctD3.3-R2 @00:46, R4 @01:20, R47 @38:10, R49 @39:37: no ISB too close to a level]; October gives no distance, the 0.5 is OURS; the PHL/PLH leg stays OFF via NearBoxRoomPHL=false; near_box_room_multiple=0 reverts to the W2 OFF
+		NearBoxRoomMultiple:        0.5,                 // W3 P2-volume: ISB leg of near_box back ON at 0.5 x risk (largest of 0.01/0.5/1/2 keeping scorecard 31/55; 1 -> 26, 2 -> 24: the mentor took ISBs that close) [OctD3.3-R2 @00:46, R4 @01:20, R47 @38:10, R49 @39:37: no ISB too close to a level]; October gives no distance, the 0.5 is OURS; the PHL/PLH leg stays OFF via NearBoxRoomPHL=false; near_box_room_multiple=0 reverts to the W2 OFF
 		NearBoxRoomPHL:             false,               // OCT-EXACT A2 row 7: near_box on the PHL/PLH leg OFF (ours, not October); near_box_room_phl=true reverts (B11)
 		NearBoxRoomPHLMultiple:     -1,                  // answers-1112 Q2: NearBoxRoomPHLMultipleFollow = follow near_box_room_multiple (today); the PHL/PLH 2x is ours, owner question
 		NearBoxBetweenExempt:       false,               // m465 D3.2-R29/R30: no blanket two-box exemption (E6 refused) — the middle case passes on its own room

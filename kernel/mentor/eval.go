@@ -1653,7 +1653,8 @@ func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
 			continue
 		}
 		isRev := in.Setup == "ISB" && strings.Contains(in.Reason, "reverse ISB at EMA 9")
-		if in.Setup != "PHL" && in.Setup != "PLH" && !isRev {
+		isBox := in.Setup == "BOX" && e.Cfg.BoxCounter5mScalp // P3-missesA: D5.4-R20 counter-5m box return = scalp
+		if in.Setup != "PHL" && in.Setup != "PLH" && !isRev && !isBox {
 			continue
 		}
 		in.Flag = joinFlag(in.Flag, FlagCounter5m)
@@ -1673,10 +1674,11 @@ func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
 // RunnerPartialTP) go: a scalp has no runner. Other setups, a reverse ISB at EMA 9
 // and every non-EMA-34 level are untouched.
 func (e *Evaluator) counter5mScalpTarget(in *Intent) {
-	if e.Cfg.Counter5mScalpPts <= 0 || (in.Setup != "PHL" && in.Setup != "PLH") {
+	box := in.Setup == "BOX" && e.Cfg.BoxCounter5mScalp // P3-missesA: the counter-5m box return is a scalp too [Oct D5.4-R20 @07:51]
+	if e.Cfg.Counter5mScalpPts <= 0 || (in.Setup != "PHL" && in.Setup != "PLH" && !box) {
 		return
 	}
-	if in.AnchorKey != string(KindEMA34) && in.AnchorKey != string(KindEMA34HTF) {
+	if !box && in.AnchorKey != string(KindEMA34) && in.AnchorKey != string(KindEMA34HTF) {
 		return
 	}
 	if in.Price <= 0 || in.Target <= 0 {
@@ -3828,13 +3830,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if e.Cfg.D43TrendSource == D43TrendStructure {
 				trend = structureTrend5m(e.closedBucketsMemo(bars, now))
 			}
-			if trend == SideLong && boxEffectiveKind(b) == FTGH {
-				e.refuse("box_against_5m_trend")
-				continue
-			}
-			if trend == SideShort && boxEffectiveKind(b) == FTGL {
-				e.refuse("box_against_5m_trend")
-				continue
+			// P3-missesA (knob BoxCounter5mScalp): a box return against the 5m is the
+			// D5.4-R20 counter-5m SCALP (reduced size, short target), not a refusal.
+			if !e.Cfg.BoxCounter5mScalp {
+				if trend == SideLong && boxEffectiveKind(b) == FTGH {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
+				if trend == SideShort && boxEffectiveKind(b) == FTGL {
+					e.refuse("box_against_5m_trend")
+					continue
+				}
 			}
 			// C5: name the trigger-side drop that boxEntryIntent also gates.
 			// D14 "Uno Reverse": the trigger side is the box's CURRENT role —
@@ -3848,8 +3854,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					tSide, tPrice = SideShort, bars[r.RefBar].Low
 				}
 				if ok, ts, _ := TriggerVerdict(trig, tPrice); !ok || ts != "" && ts != tSide {
-					e.refuse("box_trigger_side" + trigSfx)
-					continue
+					if !(e.Cfg.BoxCounter5mScalp && ok) { // P3-missesA: an opposite trigger side is the counter-5m scalp
+						e.refuse("box_trigger_side" + trigSfx)
+						continue
+					}
 				}
 			}
 			boxIntents, boxWhy := boxEntryIntentWhy(bars[r.RefBar], b, boxes, levels, trig, bars, e.Cfg)
