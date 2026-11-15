@@ -26,16 +26,18 @@ func ladderISBCandle(rng float64) market.Kline {
 	return market.Kline{OpenTime: ot, CloseTime: ot + 59_999, Open: lo + 1, High: lo + rng, Low: lo, Close: lo + rng - 1}
 }
 
-// TestStopLadderKernelDefaults — the ladder is ON by default with a 40-pt
-// wide-stop max [OctD2.3-R47 @48:12]; the pre-ladder ceilings are unchanged (they
+// TestStopLadderKernelDefaults — the ladder is ON by default with NO wide-stop
+// max (0, owner order 2026-11-15 "tarde all isb or any thing just need adjust
+// contact"; was 40 [OctD2.3-R47 @48:12], now the stored revert value — the
+// 40-explicit tests below pin it); the pre-ladder ceilings are unchanged (they
 // are what the ladder-OFF path still reads).
 func TestStopLadderKernelDefaults(t *testing.T) {
 	cfg := preOctCfg()
 	if !cfg.CourseExits.StopSizeLadder {
 		t.Fatal("CourseExits.StopSizeLadder default = OFF, want ON (owner order 2026-11-10)")
 	}
-	if cfg.CourseExits.WideStopMaxPts != 40 {
-		t.Fatalf("CourseExits.WideStopMaxPts default = %g, want 40 [OctD2.3-R47 @48:12]", cfg.CourseExits.WideStopMaxPts)
+	if cfg.CourseExits.WideStopMaxPts != 0 {
+		t.Fatalf("CourseExits.WideStopMaxPts default = %g, want 0 = no cap (owner order 2026-11-15)", cfg.CourseExits.WideStopMaxPts)
 	}
 	if cfg.CourseExits.ISBMaxStopPts != 20 || cfg.StopCeilingPts != 25 {
 		t.Fatalf("ladder-OFF ceilings moved: ISB %g PHL/BOX %g, want 20/25", cfg.CourseExits.ISBMaxStopPts, cfg.StopCeilingPts)

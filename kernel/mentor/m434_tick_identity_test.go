@@ -207,6 +207,9 @@ func m434Digest(t *testing.T, c m434Case) []string {
 	// the digest runs ladder OFF unless the ladder golden turns it on
 	// (TestStopLadderTickGolden, testdata/stop_ladder_tick.golden).
 	cfg.CourseExits.StopSizeLadder = m434StopLadder
+	if m434StopLadder {
+		cfg.CourseExits.WideStopMaxPts = m434WideStopMaxPts
+	}
 	// Every golden replayed here predates the ISB5 audit: the #61–#66 box
 	// source (newest) and the one-tick-late rebuild (F5). The ISB5 behaviour is
 	// pinned on real days by TestISB5F1CourseDayMergedBox / TestISB5F5* (cmd/mentor-replay).
@@ -314,6 +317,13 @@ var m434PreM473 bool
 // stop-size ladder OFF, proving the ladder-OFF path is byte-identical on the
 // four real tapes. TestStopLadderTickGolden sets it true.
 var m434StopLadder bool
+
+// m434WideStopMaxPts — the mentor_wide_stop_max_pts the ladder-ON digest runs
+// with. 40 (the #70 default, now the stored REVERT value) keeps
+// testdata/stop_ladder_tick.golden byte-identical: the revert golden. 0 = the
+// no-cap default since owner order 2026-11-15 (TestStopLadderNoCapTickGolden,
+// testdata/stop_ladder_nocap_tick.golden).
+var m434WideStopMaxPts = 40.0
 
 func m434SetPreM473(t *testing.T, off bool) {
 	t.Helper()

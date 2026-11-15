@@ -884,12 +884,18 @@ func TestMentorRuleGateDefenceInDepth(t *testing.T) {
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 140}, mentorTierInputs{StopLadderOff: true}); why == "" || !strings.HasPrefix(why, "R8") {
 		t.Fatalf("geometry stop 30 must hit the R8 ceiling (ladder OFF), got %q", why)
 	}
-	// Ladder ON (default): the geometry stop 30 passes R8; 45 hits it.
+	// Ladder ON (default): the geometry stop 30 passes R8; with no stored
+	// wide max (0 = no cap, owner order 2026-11-15) 45 passes too (sized 1).
 	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 70, Target: 140}, mentorTierInputs{}); why != "" {
 		t.Fatalf("ladder ON: geometry stop 30 must pass R8 (sized down), got %q", why)
 	}
-	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 55, Target: 200}, mentorTierInputs{}); !strings.HasPrefix(why, "R8") {
-		t.Fatalf("ladder ON: geometry stop 45 must hit the R8 wide max, got %q", why)
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 55, Target: 200}, mentorTierInputs{}); why != "" {
+		t.Fatalf("ladder ON, no cap: geometry stop 45 must pass R8 (sized down), got %q", why)
+	}
+	// Stored wide max 40 (the revert): the geometry stop 45 hits R8 — the
+	// mutant (R8 reading a bare StopPts field) still turns this RED.
+	if why := mentorRuleGate(mentor.Intent{Setup: "PHL", Side: "long", Price: 100, Stop: 55, Target: 200}, mentorTierInputs{WideStopMaxPts: 40}); !strings.HasPrefix(why, "R8") {
+		t.Fatalf("ladder ON, stored max 40: geometry stop 45 must hit the R8 wide max, got %q", why)
 	}
 }
 

@@ -16,10 +16,18 @@ import (
 // behaviour, recorded once at the ladder head; TestStopLadderRealTapeEntries
 // says what moved and checks it is only what the ladder allows.
 //
+// Since owner order 2026-11-15 (no stop-size cap by default) THIS golden runs
+// the ladder with a STORED mentor_wide_stop_max_pts 40 (m434WideStopMaxPts) —
+// the revert value, byte-identical to the #70 golden; the no-cap default is
+// pinned by TestStopLadderNoCapTickGolden (testdata/stop_ladder_nocap_tick.golden).
+//
 // Regenerate (only for a deliberate behaviour change):
 //
-//	STOP_LADDER_WRITE_GOLDEN=1 go test -count=1 -run TestStopLadderTickGolden ./kernel/mentor
-const stopLadderGoldenPath = "testdata/stop_ladder_tick.golden"
+//	STOP_LADDER_WRITE_GOLDEN=1 go test -count=1 -run 'TestStopLadderTickGolden|TestStopLadderNoCapTickGolden' ./kernel/mentor
+const (
+	stopLadderGoldenPath      = "testdata/stop_ladder_tick.golden"
+	stopLadderNoCapGoldenPath = "testdata/stop_ladder_nocap_tick.golden"
+)
 
 func withStopLadder(t *testing.T, on bool) {
 	t.Helper()
@@ -28,20 +36,47 @@ func withStopLadder(t *testing.T, on bool) {
 	t.Cleanup(func() { m434StopLadder = prev })
 }
 
+func withWideStopMax(t *testing.T, v float64) {
+	t.Helper()
+	prev := m434WideStopMaxPts
+	m434WideStopMaxPts = v
+	t.Cleanup(func() { m434WideStopMaxPts = prev })
+}
+
+// TestStopLadderTickGolden — the ladder ON with the stored REVERT cap 40.
 func TestStopLadderTickGolden(t *testing.T) {
 	withStopLadder(t, true)
+	withWideStopMax(t, 40)
+	stopLadderGoldenCheck(t, stopLadderGoldenPath)
+}
+
+// TestStopLadderNoCapTickGolden — the ladder ON with the production default
+// mentor_wide_stop_max_pts 0 = NO stop-size cap (owner order 2026-11-15 "tarde
+// all isb or any thing just need adjust contact"). Recorded once with
+// STOP_LADDER_WRITE_GOLDEN=1 at the no-cap head.
+func TestStopLadderNoCapTickGolden(t *testing.T) {
+	withStopLadder(t, true)
+	withWideStopMax(t, DefaultCourseExitsCfg().WideStopMaxPts)
+	if m434WideStopMaxPts != 0 {
+		t.Fatalf("fixture: the no-cap golden must run the production default 0, got %g", m434WideStopMaxPts)
+	}
+	stopLadderGoldenCheck(t, stopLadderNoCapGoldenPath)
+}
+
+func stopLadderGoldenCheck(t *testing.T, path string) {
+	t.Helper()
 	if os.Getenv("STOP_LADDER_WRITE_GOLDEN") != "" {
 		var all []string
 		for _, c := range m434Cases() {
 			all = append(all, m434Digest(t, c)...)
 		}
-		if err := os.WriteFile(stopLadderGoldenPath, []byte(strings.Join(all, "\n")+"\n"), 0o644); err != nil {
+		if err := os.WriteFile(path, []byte(strings.Join(all, "\n")+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
-		t.Logf("wrote %d tick digests", len(all))
+		t.Logf("wrote %d tick digests to %s", len(all), path)
 		return
 	}
-	f, err := os.Open(stopLadderGoldenPath)
+	f, err := os.Open(path)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -73,9 +108,10 @@ func TestStopLadderTickGolden(t *testing.T) {
 // OFF and checks the ladder's contract on every emitted non-swing entry:
 //   - OFF: no ISB/reverse-ISB-as-ISB stop above the 20-pt ISB ceiling and no
 //     PHL/PLH/BOX stop above 25 (the pre-ladder ceilings) — sanity;
-//   - ON: no non-swing stop above mentor_wide_stop_max_pts (40) [OctD2.3-R47
-//     @48:12], every target at least 1:1 (the ladder never enlarges a target
-//     [OctD2.2-R49 @40:47]).
+//   - ON: no non-swing stop above a STORED mentor_wide_stop_max_pts (the
+//     cases' cfg; 0 = no cap since owner order 2026-11-15, so the check only
+//     binds when a positive max is set) [OctD2.3-R47 @48:12], every target at
+//     least 1:1 (the ladder never enlarges a target [OctD2.2-R49 @40:47]).
 //
 // It logs every ladder-band entry (stop above the pre-ladder ceiling) so the
 // report can name them.
@@ -138,7 +174,7 @@ func TestStopLadderRealTapeEntries(t *testing.T) {
 			}
 		}
 		for _, x := range on {
-			if x.risk > cfg.CourseExits.WideStopMaxPts+eps {
+			if cfg.CourseExits.WideStopMaxPts > 0 && x.risk > cfg.CourseExits.WideStopMaxPts+eps {
 				t.Fatalf("%s ON row %d: %s stop %.2f above mentor_wide_stop_max_pts %g", c.name, x.at, x.setup, x.risk, cfg.CourseExits.WideStopMaxPts)
 			}
 			if x.rew > 0 && x.rew+eps < x.risk {
