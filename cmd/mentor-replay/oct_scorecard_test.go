@@ -83,7 +83,11 @@ var acceptedMisses = map[string]string{
 	// pts, left edge 08:30-08:34, a number the bot cannot derive; its own 5m ISB box forms at 08:40). The arms inside
 	// the window are the 08:41 reverse ISB (inside the box 28,639.75-28,727.00 the bot built at 08:40) and the 08:43
 	// ISB buy stop; D4.3-R70 allows a same-direction ISB inside a 5m box, so no existing October rule refuses them.
-	"D4.1-1": "morning dead box (Oct D4.1 @11:28 OctD4.1-R23) is the CTO D4 item listed NOT built: no October measure of 'did not move for ~30 min'; the bot's own 5m ISB box allows a same-direction ISB (OctD4.3-R70)",
+	// REVIEWER P2 (open bug, NOT a justified miss): the arms in the window are not only a same-direction ISB. Q-1102-01 shows
+	// 08:41 short PLH @28686.00 (the reverse-ISB-at-EMA9 retag) and 08:53 short PLH @28680.50 as well as the 08:58 short ISB.
+	// OctD4.3-R70 / 00-METHOD allow ONLY a same-direction 1m ISB inside a 5m ISB box ("No PHL, no PLH, no opposite ISB"), so
+	// the PHL/PLH/retagged-reverse-ISB arms inside the 5m ISB box are October-contrary (a quiet-window precision miss, A confidence).
+	"D4.1-1": "OPEN BUG, parked not justified: (1) morning dead box (Oct D4.1 @11:28 OctD4.1-R23) is the CTO D4 item listed NOT built (no October measure of 'did not move for ~30 min'); (2) the arms are the 08:41/08:53 short PLH (reverse-ISB-at-EMA9 retag) AND the 08:58 short ISB inside the bot's own 5m ISB box; OctD4.3-R70 allows only a same-direction ISB there (no PHL, no PLH, no opposite ISB), so a gate refusing retagged reverse ISB / PHL / PLH inside a live 5m ISB box is owed (Q-1102-01)",
 
 	// close r2: D5.2 WE3 / WE4 are replay QUIZZES on hand-drawn 1h key levels that come from bars BEFORE the
 	// scorecard tape (the fixture starts 2026-09-07; WE1 @06:14-07:12 draws 28,154.50 from 3 Aug and 27,997.75
@@ -144,7 +148,9 @@ var acceptedMisses = map[string]string{
 
 // octSignoffPending: accepted misses that are NOT closed - the bot contradicts a video, two October rules collide,
 // or the reason is a [B]/[C] inference. Needs an owner/CTO ruling or a mentor answer (review fix, tests lens P2).
-var octSignoffPending = []string{"D3.3-E8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17"}
+var octSignoffPending = []string{"D3.3-E8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17", "D4.1-1"}
+
+// OWNER SIGN-OFF (not a trade id): near_box_room_multiple=0.5 is OURS (no October source), see mentor.go DefaultConfig.
 
 const octPriceTol = 2.0 // points
 const octSlackBars = 2  // one-minute bars either side of the window
@@ -545,6 +551,10 @@ func TestOctVideoScorecard(t *testing.T) {
 	if os.Getenv("OCT_SCORECARD_REPORT") != "" {
 		return
 	}
+	// Ratchet (reviewer P2): recall may not fall below the committed baseline.
+	if pass < octScoreFloor {
+		t.Errorf("SCORE %d/%d fell below the ratchet floor %d", pass, len(res), octScoreFloor)
+	}
 	if len(failed) > 0 {
 		var ids []string
 		for _, r := range failed {
@@ -553,3 +563,6 @@ func TestOctVideoScorecard(t *testing.T) {
 		t.Errorf("SCORE %d/%d: %d trade(s) fail the October video scorecard (not in acceptedMisses): %s", pass, len(res), len(failed), strings.Join(ids, ", "))
 	}
 }
+
+// octScoreFloor is the ratchet: raise it when a miss is fixed (P4-missesB: 33/55).
+const octScoreFloor = 33

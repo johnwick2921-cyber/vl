@@ -80,7 +80,7 @@ var acceptedQuietMisses = map[string]string{
 	// BASELINE (P1-precision, W2 build 19def7f80+): every entry below is a REAL precision miss the bot has today,
 	// parked so the suite stays green while the P2 fix steps run. None is a justified miss; each leaves the map
 	// when its gate is fixed. Arm counts are from this replay [A].
-	"Q-1029-01": "BASELINE MISS: PLH short 28,839.75 armed 20:57 although the video refuses it for no room (room 9.25 < stop 14.25, D2.3-R48); same price as D2.3-WE8, where D2.2 @28:37 / D5.3-R39 reverse-ISB fill-close collides [A]",
+	// CLEAN since P4-missesB WE8 (ratchet: removed from the map): "Q-1029-01": "BASELINE MISS: PLH short 28,839.75 armed 20:57 although the video refuses it for no room (room 9.25 < stop 14.25, D2.3-R48); same price as D2.3-WE8, where D2.2 @28:37 / D5.3-R39 reverse-ISB fill-close collides [A]",
 	"Q-1030-09": "BASELINE MISS: 3 short ISBs armed 09:16-09:25 in the straight drop after the 09:03 break; the video allows no ISB there [B, Q-1030-09 is B]",
 	"Q-1102-01": "BASELINE MISS: 8 arms (short PLH/ISB + 1 long ISB) 08:41-09:07 inside the 5m ISB box 28,727.50-28,639.75; D4.1 says no trade inside it, either side [A]",
 	"Q-1102-02": "BASELINE MISS: 9 arms inside the ORB-2 range 08:32-09:12 (same arms as Q-1102-01 plus 08:36); end of window is derived from the DB [B]",
@@ -93,7 +93,7 @@ var acceptedQuietMisses = map[string]string{
 }
 
 // octQuietSignoffPending: dirty windows that are NOT closed; all of them at the baseline.
-var octQuietSignoffPending = []string{"Q-1029-01", "Q-1030-09", "Q-1102-01", "Q-1102-02", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
+var octQuietSignoffPending = []string{"Q-1030-09", "Q-1102-01", "Q-1102-02", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
 
 type octQuietRes struct {
 	q       octQuiet
@@ -188,7 +188,7 @@ func TestOctQuietPrecision(t *testing.T) {
 
 	clean, total := 0, 0
 	var sb strings.Builder
-	var dirty []string
+	var dirty, stale []string
 	sb.WriteString("\nid | date window | refused | verdict | arms inside\n")
 	for _, r := range res {
 		q := r.q
@@ -200,6 +200,9 @@ func TestOctQuietPrecision(t *testing.T) {
 		total++
 		if len(r.arms) == 0 {
 			clean++
+			if _, ok := acceptedQuietMisses[q.ID]; ok {
+				stale = append(stale, q.ID)
+			}
 			v := "CLEAN"
 			if r.nodata {
 				v = "CLEAN (WARNING: no replay bars in part of the window - vacuous)"
@@ -231,6 +234,14 @@ func TestOctQuietPrecision(t *testing.T) {
 	if os.Getenv("OCT_SCORECARD_REPORT") != "" {
 		return
 	}
+	// Ratchet (reviewer P2): precision may not fall below the baseline, and an
+	// accepted-dirty window that turned clean must be removed from the list.
+	if clean < octQuietCleanFloor {
+		t.Errorf("PRECISION %d/%d fell below the ratchet floor %d clean", clean, total, octQuietCleanFloor)
+	}
+	if len(stale) > 0 {
+		t.Errorf("acceptedQuietMisses entries now CLEAN (remove them, raise octQuietCleanFloor): %s", strings.Join(stale, ", "))
+	}
 	if len(dirty) > 0 {
 		t.Errorf("PRECISION %d/%d: %d quiet window(s) dirty (not in acceptedQuietMisses): %s", clean, total, len(dirty), strings.Join(dirty, ", "))
 	}
@@ -242,3 +253,6 @@ func sideOrAny(s string) string {
 	}
 	return s
 }
+
+// octQuietCleanFloor is the precision ratchet (P4-missesB WE8: 11 of 20 clean).
+const octQuietCleanFloor = 11

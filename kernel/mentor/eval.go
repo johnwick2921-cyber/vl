@@ -1640,6 +1640,12 @@ func (e *Evaluator) reverseISBTrend(bars []market.Kline, execCur market.Kline, e
 // [OctD5.4-R11 @04:47 "giảm size lại", R13 @05:00 "ăn ít lại"]. Off, or no
 // trigger direction, or any other setup (ISB is trigger-gated, BOX has its own
 // rule, SWING4H its own tier): untouched.
+// boxCounterScalpActive: the BOX counter-5m scalp (BoxCounter5mScalp) is only
+// safe when stampCounter5m will actually reduce size and shorten the target.
+func (e *Evaluator) boxCounterScalpActive() bool {
+	return e.Cfg.BoxCounter5mScalp && e.Cfg.Counter5mReduceSize != Counter5mReduceOff
+}
+
 func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
 	if e.Cfg.Counter5mReduceSize == Counter5mReduceOff || trigDir == "" {
 		return out
@@ -1653,7 +1659,7 @@ func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
 			continue
 		}
 		isRev := in.Setup == "ISB" && strings.Contains(in.Reason, "reverse ISB at EMA 9")
-		isBox := in.Setup == "BOX" && e.Cfg.BoxCounter5mScalp // P3-missesA: D5.4-R20 counter-5m box return = scalp
+		isBox := in.Setup == "BOX" && e.boxCounterScalpActive() // P3-missesA: D5.4-R20 counter-5m box return = scalp
 		if in.Setup != "PHL" && in.Setup != "PLH" && !isRev && !isBox {
 			continue
 		}
@@ -1674,7 +1680,7 @@ func (e *Evaluator) stampCounter5m(out []Intent, trigDir Side) []Intent {
 // RunnerPartialTP) go: a scalp has no runner. Other setups, a reverse ISB at EMA 9
 // and every non-EMA-34 level are untouched.
 func (e *Evaluator) counter5mScalpTarget(in *Intent) {
-	box := in.Setup == "BOX" && e.Cfg.BoxCounter5mScalp // P3-missesA: the counter-5m box return is a scalp too [Oct D5.4-R20 @07:51]
+	box := in.Setup == "BOX" && e.boxCounterScalpActive() // P3-missesA: the counter-5m box return is a scalp too [Oct D5.4-R20 @07:51]
 	if e.Cfg.Counter5mScalpPts <= 0 || (in.Setup != "PHL" && in.Setup != "PLH" && !box) {
 		return
 	}
@@ -3832,7 +3838,10 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			}
 			// P3-missesA (knob BoxCounter5mScalp): a box return against the 5m is the
 			// D5.4-R20 counter-5m SCALP (reduced size, short target), not a refusal.
-			if !e.Cfg.BoxCounter5mScalp {
+			// Livepath fix: the skip applies only when the scalp stamp WILL be applied
+			// (reduce-size knob on and trend == the stamp reference trig.Dir); otherwise
+			// the old refusal stays, so a box return is never armed full-size.
+			if !e.boxCounterScalpActive() || trend != trig.Dir {
 				if trend == SideLong && boxEffectiveKind(b) == FTGH {
 					e.refuse("box_against_5m_trend")
 					continue
@@ -3854,7 +3863,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 					tSide, tPrice = SideShort, bars[r.RefBar].Low
 				}
 				if ok, ts, _ := TriggerVerdict(trig, tPrice); !ok || ts != "" && ts != tSide {
-					if !(e.Cfg.BoxCounter5mScalp && ok) { // P3-missesA: an opposite trigger side is the counter-5m scalp
+					if !(e.boxCounterScalpActive() && ok) { // P3-missesA: an opposite trigger side is the counter-5m scalp
 						e.refuse("box_trigger_side" + trigSfx)
 						continue
 					}
