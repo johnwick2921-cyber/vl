@@ -500,7 +500,7 @@ func TestOctVideoScorecard(t *testing.T) {
 	sort.Strings(dayKeys)
 	days := map[string]octDay{}
 	for _, d := range dayKeys {
-		days[d] = octReplay(t, bs, d)
+		days[d] = octReplayCached(t, bs, d)
 		if os.Getenv("OCT_SCORECARD_DUMP") != "" {
 			var sb strings.Builder
 			for _, a := range days[d].arms {
