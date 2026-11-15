@@ -603,8 +603,9 @@ export interface RiskControlConfig {
   mentor_2m_reduce_size?: boolean
   // Stop-to-size ladder (owner order 2026-11-10): a non-swing stop above the
   // setup's own ceiling is SIZED DOWN, not refused — (20,30] → the reduced
-  // tier [OctD2.2-R73], (30, mentor_wide_stop_max_pts] →
-  // mentor_wide_stop_contracts [OctD2.3-R47]. Unset → ON / 1 / 40.
+  // tier [OctD2.2-R73], above 30 → mentor_wide_stop_contracts [OctD2.3-R47].
+  // Unset → ON / 1 / 0 = no cap (owner order 2026-11-15); a stored
+  // mentor_wide_stop_max_pts refuses above it (40 reverts).
   mentor_stop_size_ladder?: boolean
   mentor_wide_stop_contracts?: number
   mentor_wide_stop_max_pts?: number

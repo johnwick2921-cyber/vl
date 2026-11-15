@@ -7,6 +7,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { GUIDE_SECTIONS } from './GuidePage'
+import { MENTOR_COURSE_EXITS_DEFAULTS } from '../components/strategy/MentorCourseExitsPanel'
 
 const mentorKnobs =
   GUIDE_SECTIONS.find((s) => s.id === 'mentor')?.blocks.flatMap((b) =>
@@ -137,5 +138,38 @@ describe('mentor guide knob honesty', () => {
     expect(m).not.toBeNull()
     const card = mentorKnobs.find((k) => k.settingId === 'SwingCfg.Hold4hBars')
     expect(card?.systemDefault).toBe(m![1])
+  })
+
+  // Stop-size ladder no-cap (owner order 2026-11-15 "tarde all isb or any
+  // thing just need adjust contact"): the guide said 40 while the Go default
+  // was 0 and all of vitest stayed green. The "Ladder max stop" card's
+  // systemDefault and the Studio panel default are the kernel's
+  // DefaultCourseExitsCfg().WideStopMaxPts, read — never retyped; and a 0
+  // default must be described as NO CAP, never as a 0-pt max.
+  it('the Ladder max stop card defaults to kernel WideStopMaxPts (no-cap 2026-11-15)', () => {
+    const go = readFileSync(
+      resolve(process.cwd(), '..', 'kernel/mentor/course_exits.go'),
+      'utf8'
+    )
+    const m = /WideStopMaxPts:\s+(\d+(?:\.\d+)?),/.exec(go)
+    expect(m, 'WideStopMaxPts: in DefaultCourseExitsCfg').not.toBeNull()
+    const goDefault = Number(m![1])
+    const card = mentorKnobs.find(
+      (k) => k.settingId === 'mentor_wide_stop_max_pts'
+    )
+    expect(card?.label).toBe('Ladder max stop')
+    expect(card?.live).toBe(true)
+    const sys = /^(\d+(?:\.\d+)?)/.exec(card?.systemDefault ?? '')
+    expect(sys, `systemDefault ${card?.systemDefault}`).not.toBeNull()
+    expect(Number(sys![1])).toBe(goDefault)
+    expect(MENTOR_COURSE_EXITS_DEFAULTS.mentor_wide_stop_max_pts).toBe(
+      goDefault
+    )
+    if (goDefault === 0) {
+      expect(card?.systemDefault).toMatch(/no cap/i)
+      expect(card?.range).toMatch(/no cap/i)
+      expect(card?.range).toMatch(/40 reverts/)
+      expect(card?.what).toMatch(/no partial/i)
+    }
   })
 })

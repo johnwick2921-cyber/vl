@@ -94,10 +94,11 @@ export const MENTOR_COURSE_EXITS_DEFAULTS = {
   // Stop-to-size ladder (owner order 2026-11-10): a big non-swing stop is
   // sized DOWN, not refused — "tầm 20 điểm, 30 điểm… Tôi vô size 3"
   // [OctD2.2-R73 @01:12:32]; "40 điểm… Trade vẫn được. 1 MNQ" [OctD2.3-R47
-  // @48:12]; above 40 not traded.
+  // @48:12]; owner order 2026-11-15: no cap by default (0) — store 40 to
+  // restore "above 40 not traded".
   mentor_stop_size_ladder: true,
   mentor_wide_stop_contracts: 1,
-  mentor_wide_stop_max_pts: 40,
+  mentor_wide_stop_max_pts: 0,
 } as const
 
 const COPY = {
@@ -112,6 +113,13 @@ const COPY = {
     es: 'Cada elemento es su propio interruptor. "por defecto" = la clave no se guarda y el servidor usa el valor dictado. Se aplica al guardar la estrategia.',
   },
   deflt: { zh: '默认', en: 'default', es: 'por defecto' },
+  // owner order 2026-11-15: the ladder max stop's default 0 means NO cap —
+  // a bare "default: 0" would read as "0-pt max".
+  wideStopNoCap: {
+    zh: '默认：0 = 不设上限（填 40 恢复）',
+    en: 'default: 0 = no cap (40 reverts)',
+    es: 'por defecto: 0 = sin tope (40 revierte)',
+  },
   on: { zh: '开', en: 'ON', es: 'ON' },
   off: { zh: '关', en: 'OFF', es: 'OFF' },
   mentor_swing_ema34_is_first_target: {
@@ -290,9 +298,9 @@ const COPY = {
     es: 'Stop máximo SWING (pts, por encima = no entrar; 0 → 80)',
   },
   mentor_stop_size_ladder: {
-    zh: '止损-口数阶梯：大止损减仓而不是拒绝（20–30 → 减仓档，30–上限 → 宽止损口数；SWING 除外）',
-    en: 'Stop-size ladder: a big stop is sized DOWN, not refused (20–30 → reduced, 30–max → wide-stop contracts; not the swing)',
-    es: 'Escalera stop-tamaño: un stop grande reduce el tamaño, no se rechaza (20–30 → reducido, 30–máx → contratos de stop amplio; no el swing)',
+    zh: '止损-口数阶梯：大止损减仓而不是拒绝（20–30 → 减仓档，30 以上 → 宽止损口数，默认不设上限；SWING 除外）',
+    en: 'Stop-size ladder: a big stop is sized DOWN, not refused (20–30 → reduced, above 30 → wide-stop contracts, no cap by default; not the swing)',
+    es: 'Escalera stop-tamaño: un stop grande reduce el tamaño, no se rechaza (20–30 → reducido, sobre 30 → contratos de stop amplio, sin tope por defecto; no el swing)',
   },
   mentor_wide_stop_contracts: {
     zh: '宽止损口数（止损 30 点以上；0 → 1）',
@@ -300,9 +308,9 @@ const COPY = {
     es: 'Contratos de stop amplio (stop sobre 30 pts; 0 → 1)',
   },
   mentor_wide_stop_max_pts: {
-    zh: '阶梯最大止损（点，超过即不进场；0 → 40）',
-    en: 'Ladder max stop (pts, above it = do not enter; 0 → 40)',
-    es: 'Stop máximo de la escalera (pts, por encima = no entrar; 0 → 40)',
+    zh: '阶梯最大止损（点，超过即不进场；0 → 不设上限，只减口数）',
+    en: 'Ladder max stop (pts, above it = do not enter; 0 → no cap, size down only)',
+    es: 'Stop máximo de la escalera (pts, por encima = no entrar; 0 → sin tope, solo reduce contratos)',
   },
 } satisfies Record<string, Copy>
 
@@ -534,7 +542,12 @@ export function MentorCourseExitsPanel({
               disabled={disabled}
               data-testid={`mentor-course-${key}`}
               value={values[key] ?? ''}
-              placeholder={`${tr(COPY.deflt, language)}: ${MENTOR_COURSE_EXITS_DEFAULTS[key]}`}
+              placeholder={
+                key === 'mentor_wide_stop_max_pts' &&
+                MENTOR_COURSE_EXITS_DEFAULTS[key] === 0
+                  ? tr(COPY.wideStopNoCap, language)
+                  : `${tr(COPY.deflt, language)}: ${MENTOR_COURSE_EXITS_DEFAULTS[key]}`
+              }
               onChange={(e) => {
                 const raw = e.target.value.trim()
                 const n = Number(raw)
