@@ -198,7 +198,7 @@ it('the course-entry defaults follow the knob rule (a) ON / (b) OFF', () => {
     evening_slow_pts: 100,
     evening_slow_from_hour: 15,
     evening_slow_window_min: 0,
-    near_box_room_multiple: 0, // OCT-EXACT A2 row 7 (was 2)
+    near_box_room_multiple: 0.5, // W3 P2-volume (A2 row 7 was 0)
     near_box_room_phl: false, // OCT-EXACT A2 row 7 (was true)
     phl_target_shy_pts: 5,
     isb_old_extreme_pts: 2,

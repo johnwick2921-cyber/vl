@@ -651,7 +651,7 @@ export const MENTOR_TUNING_DEFAULTS = {
   evening_slow_pts: 100, // B10
   evening_slow_from_hour: 15, // B10: the RTH close
   evening_slow_window_min: 0, // B10: 0 = cumulative since the start hour
-  near_box_room_multiple: 0, // OCT-EXACT A2 row 7: near_box OFF (the 2x is ours, B11); 2 reverts
+  near_box_room_multiple: 0.5, // W3 P2-volume: ISB leg ON at 0.5 (OctD3.3-R2/R4/R47/R49; the number is ours); 0 reverts to the W2 OFF
   near_box_room_phl: false, // OCT-EXACT A2 row 7: the skip no longer gates PHL/PLH; true reverts (B11)
   phl_target_shy_pts: 5, // C16
   isb_old_extreme_pts: 2, // B27

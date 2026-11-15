@@ -31,7 +31,7 @@ func TestOctA2_EvaluatorConfigDefaultsAndReverts(t *testing.T) {
 	if c.FifteenMinIBRule != mentor.FifteenMinOff || c.EmaLossRelock != mentor.EmaRelockOff || c.PHLPullbackLow != mentor.PHLPullbackLowSignal {
 		t.Errorf("enum defaults: 15m=%q ema=%q pullback=%q", c.FifteenMinIBRule, c.EmaLossRelock, c.PHLPullbackLow)
 	}
-	if c.NearBoxRoomMultiple != 0 || c.BoxRoomMultiple != 1 || c.Box.TouchBandPts != 0 || c.KeyLevelPrunePts != 0 ||
+	if c.NearBoxRoomMultiple != 0.5 || c.BoxRoomMultiple != 1 || c.Box.TouchBandPts != 0 || c.KeyLevelPrunePts != 0 ||
 		c.TrendlineLevelPreferPts != 0 || c.TrendlineMaxLinesPerAnchor != 3 {
 		t.Errorf("number defaults: nearbox=%v boxroom=%v band=%v prune=%v prefer=%v lines=%d", c.NearBoxRoomMultiple, c.BoxRoomMultiple,
 			c.Box.TouchBandPts, c.KeyLevelPrunePts, c.TrendlineLevelPreferPts, c.TrendlineMaxLinesPerAnchor)

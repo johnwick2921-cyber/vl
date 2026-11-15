@@ -138,8 +138,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			// Release #52 W11 invented-constant knobs: every default is the value
 			// the kernel hard-coded before (all "ours", none from the course).
 			ISBStackCancelCandle2m: 4, EveningSlowPts: 100, EveningSlowFromHour: 15,
-			NearBoxRoomMultiple: 0, NearBoxRoomPHL: false, PHLTargetShyPts: 5, ISBOldExtremePts: 2, // OCT-EXACT A2 row 7: near_box OFF (was 2 / true)
-			NearBoxRoomPHLMultiple: 0, // answers-1112 Q2: follows near_box_room_multiple (A2 row 7: 0)
+			NearBoxRoomMultiple: 0.5, NearBoxRoomPHL: false, PHLTargetShyPts: 5, ISBOldExtremePts: 2, // W3 P2-volume: ISB leg ON, PHL leg OFF
+			NearBoxRoomPHLMultiple: 0.5, // answers-1112 Q2: follows near_box_room_multiple (W3: 0.5)
 			// OCT-EXACT A2: box room 1 (row 11), key-level prune 0 (row 14), trendline fan 3 / level-prefer 0 (row 15).
 			BoxRoomMultiple: 1, KeyLevelPrunePts: 0, TrendlineMaxLinesPerAnchor: 3, TrendlineLevelPreferPts: 0, BoxTouchBandPts: 0,
 			// m465 P3 (release #60): the course defaults from the full video read.
@@ -519,8 +519,8 @@ func TestD2G2PHLRoomMultipleKnob(t *testing.T) {
 // PHL/PLH leg only, an out-of-range value fails closed to follow.
 func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
 	one, zero, three, bad := 1.0, 0.0, 3.0, 50.0
-	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 0 || c.NearBoxRoomMultiple != 0 { // OCT-EXACT A2 row 7: near_box OFF by default
-		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 0 / 0 (OFF)", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{}); c.NearBoxRoomPHLMultiple != 0.5 || c.NearBoxRoomMultiple != 0.5 { // W3 P2-volume: ISB leg ON at 0.5 (PHL leg stays off via near_box_room_phl=false)
+		t.Fatalf("unset: PHL multiple %v / ISB multiple %v, want 0.5 / 0.5", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
 	}
 	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &three}); c.NearBoxRoomPHLMultiple != 3 {
 		t.Fatalf("unset PHL multiple must follow a stored near_box_room_multiple=3, got %v", c.NearBoxRoomPHLMultiple)
@@ -528,11 +528,11 @@ func TestAnswers1112NearBoxPHLMultipleKnob(t *testing.T) {
 	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomMultiple: &zero}); c.NearBoxRoomPHLMultiple != 0 {
 		t.Fatalf("unset PHL multiple must follow near_box_room_multiple=0 (off), got %v", c.NearBoxRoomPHLMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 0 { // OCT-EXACT A2 row 7: the ISB leg default is 0
-		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 0", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &one}); c.NearBoxRoomPHLMultiple != 1 || c.NearBoxRoomMultiple != 0.5 { // W3 P2-volume: the ISB leg default is 0.5
+		t.Fatalf("stored near_box_room_phl_multiple=1: PHL %v / ISB %v, want 1 / 0.5", c.NearBoxRoomPHLMultiple, c.NearBoxRoomMultiple)
 	}
-	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 0 { // OCT-EXACT A2 row 7: follows the (0) ISB multiple
-		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (0), got %v", c.NearBoxRoomPHLMultiple)
+	if c := tuningTick(t, &store.MentorTuning{NearBoxRoomPHLMultiple: &bad}); c.NearBoxRoomPHLMultiple != 0.5 { // W3 P2-volume: follows the (0.5) ISB multiple
+		t.Fatalf("out-of-range near_box_room_phl_multiple must fail closed to follow (0.5), got %v", c.NearBoxRoomPHLMultiple)
 	}
 }
 

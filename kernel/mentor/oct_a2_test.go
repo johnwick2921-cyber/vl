@@ -44,8 +44,10 @@ func TestOctA2_Defaults(t *testing.T) {
 	if d.EmaLossRelock != EmaRelockOff {
 		t.Errorf("EmaLossRelock = %q, want off (row 6)", d.EmaLossRelock)
 	}
-	if d.NearBoxRoomMultiple != 0 {
-		t.Errorf("NearBoxRoomMultiple = %v, want 0 (row 7)", d.NearBoxRoomMultiple)
+	// W3 P2-volume: the ISB leg of near_box is back ON (October D3.3-R2 @00:46, R4 @01:20, R47 @38:10, R49 @39:37);
+	// the PHL/PLH leg stays OFF through NearBoxRoomPHL (checked in the `off` map above), so row 7 is split not reverted.
+	if d.NearBoxRoomMultiple != 0.5 {
+		t.Errorf("NearBoxRoomMultiple = %v, want 0.5 (W3 P2-volume: ISB leg ON; October gives no distance, 0.5 is the largest keeping the scorecard at 31)", d.NearBoxRoomMultiple)
 	}
 	if d.PHLPullbackLow != PHLPullbackLowSignal {
 		t.Errorf("PHLPullbackLow = %q, want signal (row 10)", d.PHLPullbackLow)

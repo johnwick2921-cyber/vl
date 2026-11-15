@@ -2494,13 +2494,13 @@ export const mentor: GuideSection = {
           where: 'Strategy → Risk control → Mentor method numbers',
           what: 'Release #52 B11. Refuse an ISB or PHL/PLH whose nearest box edge in the trade direction is closer than this × its own risk — the setup is "sát box" ("Insaba Sword ngay chỗ đó mình không được đánh… sát box gần box gần supply quá mình không được đánh" [Ngày 3.2 FTGH FTGL part1 @00:22:44–00:23:10]). The mentor gives NO distance, so the 2× is OURS (the same room the target rule demands), not the course. Release #60 (D3.2-R29/R30): an entry INSIDE the box that opposes its side (an FTGL for a short, an FTGH for a long) is refused near_box_inside_opposing — the mentor’s E6, a short ISB sitting on the FTGL top with the FTGH drawn above [D3.2 p1 @22:12–23:08]; and "between two boxes" is no longer a blanket exemption — the middle ISB the mentor took was fine because nothing was near it ("nó đâu có làm gì đâu" [@23:14–24:41]), so it passes on its own room (the "Near-box: between two boxes exempt" card restores the old exemption). Blank = 2; an explicit 0 turns the refusal off for every setup.',
           trader:
-            '2× — ours, not the course. Between two boxes the setup still needs its own room (release #60).',
+            '0.5× on an ISB (W3, October D3.3-R2 @00:46, R4 @01:20, R47 @38:10, R49 @39:37: no ISB too close to a level); the number is ours, the largest that keeps every video trade the mentor took (1× refuses 5 of them). The PHL/PLH leg stays off. Between two boxes the setup still needs its own room (release #60).',
           consumer:
             'trader/mentor_tuning.go mentorTuningResolve (NearBoxRoomMultiple) · kernel/mentor/box.go nearBoxRefusal',
           range: '0–10 × (0 = off)',
-          systemDefault: '2',
+          systemDefault: '0.5',
           recommended:
-            '2 until the mentor names the distance — his own example (an ISB short 10–15 pts above an FTGL with a 5–6 pt risk) is 2–3R, so a strict 2× may refuse the 3R end. The between-two-boxes case (D3.2-R30 @23:14–24:41) passes on its own room since release #60.',
+            '0.5 (W3) until the mentor names the distance — his own example (an ISB short 10–15 pts above an FTGL with a 5–6 pt risk) is 2–3R, so a strict 2× may refuse the 3R end. The between-two-boxes case (D3.2-R30 @23:14–24:41) passes on its own room since release #60.',
           whenToTouch:
             'Only when the mentor gives the number. Zero disables the near-box refusal entirely.',
           perSession: 'No.',

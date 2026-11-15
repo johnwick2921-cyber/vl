@@ -22,7 +22,7 @@ func TestW11KnobsDefaultsAreUnchanged(t *testing.T) {
 	// G2 (oct round 2): the tiny-stop default is OFF (was the course's measured 12.5, m465 D5.1-R26).
 	if cfg.ISBStackCancelCandle2m != 4 || cfg.ISBStackTinyStopPts != 0 ||
 		cfg.EveningSlowPts != 100 || cfg.EveningSlowFromHour != 15 || cfg.EveningSlowWindowMin != 0 ||
-		cfg.NearBoxRoomMultiple != 0 || cfg.NearBoxRoomPHL || // OCT-EXACT A2 row 7: near_box OFF (was 2 / true)
+		cfg.NearBoxRoomMultiple != 0.5 || cfg.NearBoxRoomPHL || // W3 P2-volume: ISB leg ON (0.5, OctD3.3-R2/R4/R47/R49); PHL leg OFF (A2 row 7)
 		cfg.PHLTargetShyPts != 5 ||
 		cfg.ISBOldExtremePts != 2 || cfg.ISBInRangeGapPts != 0 {
 		t.Fatalf("W11 defaults drifted: %+v", cfg)
