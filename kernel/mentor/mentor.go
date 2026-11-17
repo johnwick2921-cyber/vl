@@ -865,6 +865,10 @@ type Config struct {
 	// _htf_conflict / _htf_side_mismatch + the htfEntryFilter backstop + the
 	// rolling trend side). October's only big frame is the 5m [Oct D4.3-R9
 	// @07:28]. Default false; knob mentor_htf_gate_enabled=true reverts.
+	// J-PHL-1 (11-16): with the gate off the rolling PHL/PLH ladder takes its
+	// side from the 5m trigger line (rollingTrendSide); before J-PHL-1 it still
+	// fell back to the 4h line's direction, and with no 4h line it never ran.
+	// true reverts that too (the 4h side, rollingTrendSideHTF).
 	HTFGateEnabled bool
 	// DayGateEnabled — A1 row 2: the §7 day gate (day_off / day_spent 265 /
 	// day_not_measured, the spent-day target cap 15, the spent stop cap, the
