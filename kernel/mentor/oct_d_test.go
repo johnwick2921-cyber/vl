@@ -133,9 +133,10 @@ func TestOctD1_JustBrokenLevelE7(t *testing.T) {
 
 // D1 SCOPE pin: the mentor's own D2.2 E9 trade is an ISB short right after a
 // candle closed through an ascending trendline (10-30 08:33: mother 08:32 O 28,747.25
-// C 28,714.75 through the 28,743.9 line; the order sold 28,709.5, marked). A box is
-// the only level the rule reads, so a candle through a trendline or a key level does
-// not refuse (see just_broken.go SCOPE).
+// C 28,714.75 through the 28,743.9 line; the order sold 28,709.5, marked). The D1
+// box read (scope box, the revert) reads boxes only. ISB-M1 (scope all) reads the
+// trendline too and still allows E9 because the inside bar is clear of the line
+// (TestISBM1_E9AllowedClearOfTheLine).
 func TestOctD1_OnlyBoxEdgesAreRead(t *testing.T) {
 	mother := octDBar(28747.25, 28751, 28710.75, 28714.75, 0)
 	isb := octDBar(28714.5, 28735.75, 28711, 28726, 1)
@@ -144,17 +145,29 @@ func TestOctD1_OnlyBoxEdgesAreRead(t *testing.T) {
 	}
 }
 
-// The evaluator hook obeys the knob.
+// The evaluator hook obeys the knob. ISB-M1: the default scope (all) refuses the
+// E7 pair as the box BREAK-AND-REVERSE (the 09:01 candle closed above the box, the
+// 09:02 mother came back down through it) - the inside bar is clear of the edge, so
+// the at-the-level read alone would not; scope box (the D1 build) refuses it as
+// "mother crossed, no wick retest". Both keep E7 refused; knob off reverts both.
 func TestOctD1_KnobOffRevert(t *testing.T) {
+	above := octDBar(28849.00, 28857.00, 28825.25, 28827.00, -1) // 10-30 09:01, closed over the box
+	below := octDBar(28772.50, 28780.00, 28771.25, 28775.00, -2) // price came from under the box
 	prev := octDBar(28826.75, 28828.25, 28795.75, 28800.75, 0)
 	cur := octDBar(28801.00, 28807.50, 28786.00, 28802.75, 1)
-	boxes := []Box{{Kind: FTGH, Top: 28819, Bottom: 28812.5}}
+	jb := justBrokenCtx{hist: []market.Kline{below, above, prev, cur}, boxes: []Box{{Kind: FTGH, Top: 28819, Bottom: 28812.5}}}
 	e := &Evaluator{Cfg: DefaultConfig()}
-	if got := e.isbJustBrokenRefusal(SideShort, prev, cur, boxes); got != "isb_just_broken_level" {
-		t.Errorf("default: got %q, want isb_just_broken_level", got)
+	if got := e.isbJustBrokenRefusal(SideShort, jb); got != "isb_just_broken_level" {
+		t.Errorf("default (scope all): got %q, want isb_just_broken_level", got)
+	}
+	box := DefaultConfig()
+	box.ISBJustBrokenScope = JustBrokenScopeBox
+	e = &Evaluator{Cfg: box}
+	if got := e.isbJustBrokenRefusal(SideShort, jb); got != "isb_just_broken_level" {
+		t.Errorf("scope box: got %q, want isb_just_broken_level", got)
 	}
 	e = &Evaluator{Cfg: octDRevert(DefaultConfig())}
-	if got := e.isbJustBrokenRefusal(SideShort, prev, cur, boxes); got != "" {
+	if got := e.isbJustBrokenRefusal(SideShort, jb); got != "" {
 		t.Errorf("revert: got %q, want none", got)
 	}
 }

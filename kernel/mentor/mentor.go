@@ -488,14 +488,27 @@ type Config struct {
 	// same 15 as D4.2-R14/R18). 0 = off (today: no scalp target). Studio JSON:
 	// risk_control.mentor_tuning.mentor_counter_5m_scalp_pts.
 	Counter5mScalpPts float64
-	// ISBJustBrokenLevel — oct-exact D1: an ISB whose MOTHER candle just closed
-	// through a level (key level, old extreme, gap edge, FTGH/FTGL box edge,
-	// trendline) with its body, and whose inside bar has not retested the level,
-	// is refused (isb_just_broken_level) until the retest [OctD3.3-R2/R3 @00:46-01:00,
-	// R47 @38:10 "hoan toan khong duoc", the 10-30 09:03 break-and-reverse ISB].
-	// No points number (the mentor gives none). Default true; revert
-	// risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
+	// ISBJustBrokenLevel — oct-exact D1 (+ ISB-M1): the master switch of the
+	// "ISB at a level it just broke" refusal (isb_just_broken_level, normal and
+	// reverse ISB) [OctD3.3-R2/R3 @00:46-01:00, R47 @38:10]. WHICH levels it reads
+	// is ISBJustBrokenScope. No points number (the mentor gives none). Default
+	// true; revert risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
 	ISBJustBrokenLevel bool
+	// ISBJustBrokenScope — ISB-M1 + J-BOX-14 + TL-M10 (11-16 full re-read):
+	//   "all" (default): an inside bar that sits ON (the level inside its
+	//   [Low, High]) a key level, old extreme, valid trendline or FTGH/FTGL box
+	//   edge whose most recent BODY cross was the mother — or an earlier candle
+	//   with price still on the level since (no move away) — is refused; the
+	//   inside bar's own wick is NOT a retest. It lifts when the inside bar forms
+	//   clear of the level or price moved away and came back (the retest) [Oct D3.3
+	//   @00:46-01:00, @01:40, @02:40, @39:20-39:52; the 11-16 19:13 inside bar on key
+	//   27,359]. Plus the box break-and-reverse (E7 @38:58). The ISB long wholly
+	//   above a box it just broke (D3.3 @37:00-51) and the drop-away ISB
+	//   (@40:07-40:20) are allowed.
+	//   "box" reverts to the D1 build: FTGH/FTGL edges only, the mother crossed
+	//   the edge facing the ISB and the inside bar's wick did not reach it.
+	// Studio JSON: risk_control.mentor_tuning.mentor_isb_just_broken_scope.
+	ISBJustBrokenScope string
 	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
 	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
 	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
@@ -1401,6 +1414,7 @@ func DefaultConfig() Config {
 		ISBRevFillClose:            true,                // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
+		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)

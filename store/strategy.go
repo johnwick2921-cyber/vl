@@ -2177,6 +2177,7 @@ type MentorTuning struct {
 	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"` // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
 	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
 	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
+	MentorISBJustBrokenScope   string   `json:"mentor_isb_just_broken_scope,omitempty"`   // ISB-M1: ""/"all" = every level the mother body broke (key level, old extreme, trendline, box edge) inside the inside bar + the box break-and-reverse; "box" reverts (box edges only, the inside bar's own wick lifts it)
 	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)
 	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`          // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
 	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`    // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)

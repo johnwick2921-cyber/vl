@@ -128,6 +128,7 @@ type mentorTuned struct {
 	BoxCounter5mScalp           bool    // P3-missesA E9
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
+	ISBJustBrokenScope          string  // ISB-M1
 	FTGLBodyEdgePartner         bool    // D3
 	Leg1FixedPts                float64 // D2 (trader-side)
 	ResonanceTrail              bool    // BC C6 (trader-side)
@@ -307,6 +308,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BoxCounter5mScalp:           d.BoxCounter5mScalp,
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
+		ISBJustBrokenScope:          d.ISBJustBrokenScope,
 		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
 		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
 		ResonanceTrail:              true,                      // BC C6
@@ -398,6 +400,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.ISBBoxEscape, &out.ISBBoxEscapeMode, mentor.ISBBoxEscapeCloseBoxTF, mentor.ISBBoxEscapeClose, mentor.ISBBoxEscapeBody) // m473 B3: close5m default [Oct D4.3 @ 65:00-66:13]
 	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockOff, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)      // A2 row 6: off
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
+	// ISB-M1: "all" (default) / "box" (revert); an unknown value fails closed to all, counted.
+	enum(t.MentorISBJustBrokenScope, &out.ISBJustBrokenScope, mentor.JustBrokenScopeAll, mentor.JustBrokenScopeBox)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)
 	// Rule 5 (release #31, fold #565 D5): nil → 0.80 (ON); an explicit 0 → OFF
 	// (the kernel reads <= 0 as off); (0,1] → the fraction. The pointer lets a
@@ -685,6 +689,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BoxCounter5mScalp = t.BoxCounter5mScalp                     // P3-missesA E9
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
+	cfg.ISBJustBrokenScope = t.ISBJustBrokenScope                   // ISB-M1
 	cfg.FTGLBodyEdgePartner = t.FTGLBodyEdgePartner                 // D3
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6
