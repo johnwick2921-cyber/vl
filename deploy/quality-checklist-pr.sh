@@ -2,13 +2,23 @@
 # quality-checklist-pr.sh <body-file> <diff-file>
 #
 # Checks a pull request body against docs/QUALITY-CHECKLIST.md. The body must
-# carry one bullet line per row, Q1 to Q13, and each line must say either
+# carry one bullet line per row, Q1 to Q14, and each line must say either
 #   proof: <what proves it>        (at least 8 non-space characters)
 #   n/a: <why it does not apply>   (at least 10 non-space characters)
 # A tick or an empty checkbox on its own is not proof. Every Go test named on a
 # row (TestSomething) must appear, as a whole name, on an ADDED line of the diff
 # file, so a row cannot cite a test this PR never touched, only kept as
 # context, or deleted.
+#
+# MENTOR TRADING CODE (owner order 2026-11-17). When the diff touches
+# kernel/mentor/ or trader/mentor*, two rows get a machine check:
+#   Q1  must be "proof:" and cite an October video by day and timestamp,
+#       "D<n>.<m> @mm:ss" (the sources are listed in docs/QUALITY-CHECKLIST.md).
+#   Q14 must be "proof:" and carry the money replay: the words "live" and
+#       "branch" and at least two dollar amounts ("$1,871 live vs $1,733
+#       branch"). Matching the video is not proof the change makes money:
+#       release #72 matched the video and its new ISB rule would have cost
+#       $425.50 on the 11-16 night the live version won.
 #
 # Exit 0 when every row passes, 1 otherwise, with one plain line per problem.
 #
@@ -17,7 +27,7 @@
 # taken from it is quoted. No network.
 set -euo pipefail
 
-ROWS=13
+ROWS=14
 MIN_PROOF=8
 MIN_NA=10
 
@@ -38,6 +48,7 @@ fi
 
 problems=()
 declare -A seen=()
+declare -A rowtext=()
 declare -A cited=()
 
 # A row line is a markdown bullet whose first word is Q<n>, optionally after a
@@ -106,6 +117,7 @@ while IFS= read -r line || [ -n "$line" ]; do
 		continue
 	fi
 	seen[$id]=1
+	rowtext[$id]=$line
 
 	lower=${line,,}
 	ok=0
@@ -144,6 +156,28 @@ for ((n = 1; n <= ROWS; n++)); do
 		problems+=("Q$n: the row is missing; add a line \"- Q$n ...: proof: ...\" or \"- Q$n ...: n/a: ...\"")
 	fi
 done
+
+# Mentor trading code: Q1 needs a video cite, Q14 needs the money replay. A
+# diff header is "diff --git a/<path> b/<path>"; either side counts, so a file
+# moved out of kernel/mentor/ is still caught.
+mentor_re='^diff --git (a/(kernel/mentor/|trader/mentor)[^ ]*|.* b/(kernel/mentor/|trader/mentor)[^ ]*)'
+cite_re='D[1-5]\.[1-9][^@]{0,40}@[0-9]{1,2}:[0-9]{2}'
+money_re='\$[0-9]'
+if grep -qE "$mentor_re" "$diff_file"; then
+	q1=${rowtext[Q1]:-}
+	q1_lower=${q1,,}
+	if [ -n "$q1" ] && { [[ $q1_lower != *"proof:"* ]] || ! grep -qE "$cite_re" <<<"$q1"; }; then
+		problems+=("Q1: this PR changes mentor trading code (kernel/mentor/ or trader/mentor*); Q1 must be \"proof:\" with an October video cite \"D<n>.<m> @mm:ss\" from the sources in docs/QUALITY-CHECKLIST.md")
+	fi
+	q14=${rowtext[Q14]:-}
+	q14_lower=${q14,,}
+	if [ -n "$q14" ]; then
+		dollars=$(grep -oE "$money_re" <<<"$q14" | wc -l || true)
+		if [[ $q14_lower != *"proof:"* ]] || [[ $q14_lower != *"live"* ]] || [[ $q14_lower != *"branch"* ]] || [ "$dollars" -lt 2 ]; then
+			problems+=("Q14: this PR changes mentor trading code; Q14 must be \"proof:\" with the money replay: the live version's \$ and this branch's \$ on the same recent sessions (the words \"live\" and \"branch\" and two dollar amounts)")
+		fi
+	fi
+fi
 
 # Only ADDED lines count: a test this PR deletes ("-" lines), or one that is
 # only context around an edit (" " lines), is not something this PR proves.

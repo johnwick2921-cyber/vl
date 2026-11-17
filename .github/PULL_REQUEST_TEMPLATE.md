@@ -14,7 +14,7 @@ characters). If a row does not apply, replace "proof:" with "n/a:" and say why
 in this PR's diff. The "Quality checklist" check turns red otherwise.
 -->
 
-- Q1 course frame cited, worked example is the first test: proof:
+- Q1 course frame cited (Oct D<n>.<m> @mm:ss from the sources in docs/QUALITY-CHECKLIST.md), worked example is the first test: proof:
 - Q2 every ending of new state (fill, cancel, expiry, reject, restart, day roll): proof:
 - Q3 guard removed, its test went red, tests call production code: proof:
 - Q4 time logic across DST, daily break, weekend, half day, contract roll: proof:
@@ -27,6 +27,7 @@ in this PR's diff. The "Quality checklist" check turns red otherwise.
 - Q11 live behaviour read after Update (deploy/post-install-check.sh): proof:
 - Q12 escaped bug adds or tightens a row and a test: proof:
 - Q13 adversarial review by someone who did not write it: proof:
+- Q14 money replay: live version $ vs this branch $ on the same recent live sessions, every differing trade listed: proof:
 
 ## Rules / errors
 
