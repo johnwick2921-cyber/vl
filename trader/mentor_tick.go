@@ -227,6 +227,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// Limits.openTrade before this tick's simulate() can phantom-book a
 	// stop-out through the original stop.
 	at.mentorDrainExits()
+	// EX-01: a leg-1 TP receipt since the last pass owes the runner's live 1:1
+	// AT ONCE — sent here, before the watermark, so the pass the receipt's poke
+	// wakes moves it between two candle closes.
+	at.mentorDrainRunnerRR11AtFill()
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}

@@ -2183,6 +2183,8 @@ type MentorTuning struct {
 	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`           // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
 	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`     // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
 	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`          // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
+	MentorRunnerRR11AtFill     *bool    `json:"mentor_runner_1to1_at_fill,omitempty"`      // EX-01: nil -> true (on the leg-1 TP fill receipt the runner stop goes AT ONCE to the live 1:1 max(stop, 2*fill - T), Oct D1.2 @26:40-26:57); false reverts (the runner waits for the next closed candle)
+	MentorResonance1LotBEGuard *bool    `json:"mentor_resonance_1lot_be_guard,omitempty"`  // EX-02: nil -> true (a one-bracket resonance BE waits until price reached the first-target level, +mentor_leg1_fixed_pts, then goes out on a close past BE + 1 tick, and never becomes a market close; Oct D4.2 @12:14-12:27, @13:00-13:25); false reverts (BE on a close past entry + R*mentor_resonance_be_min_rr, a through-the-market BE closes at market)
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

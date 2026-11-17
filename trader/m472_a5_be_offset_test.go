@@ -96,7 +96,8 @@ func TestM472A5BEMoveThroughProductionPath(t *testing.T) {
 // "off mode BE after the partial skips leg 1"); 2 ticks short = entry-0.50.
 func TestM472A5BEHalfBlockCarriesOffset(t *testing.T) {
 	for _, ticks := range []*int{nil, m472Int(2)} {
-		rc := store.RiskControlConfig{MentorTrailMode: "off", MentorTuning: &store.MentorTuning{BEOffsetTicks: ticks}}
+		// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+		rc := store.RiskControlConfig{MentorTrailMode: "off", MentorTuning: &store.MentorTuning{BEOffsetTicks: ticks, MentorRunnerRR11AtFill: cxBool(false)}}
 		b := r22Fixture(t, rc)
 		b.positions("short", 1)
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
@@ -143,7 +144,8 @@ func TestM472A5ProductionHelpersBothSides(t *testing.T) {
 // downstream snap. The wire value is the pin (the belief fields stay raw).
 func TestM472A5BEHalfKnobZeroOffGridEntry(t *testing.T) {
 	const offGrid = 30742.30
-	b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: "off"})
+	// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+	b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: "off", MentorTuning: ex01Off()})
 	b.positionsPx("short", 1, offGrid)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, offGrid, r22Stop, r22L1TP, r22Target)
 	b.book(r22FullBook(r22Stop)...)

@@ -242,7 +242,8 @@ func r22RunnerBook(runnerStop float64) []ntwire.NT8Order {
 func TestR22BEAfterConfirmedPartialThenCandleTrail(t *testing.T) {
 	// course-defaults-30: BE-before-partial defaults ON, so this R3 pin (BE
 	// only after the confirmed partial) sets the knob OFF explicitly.
-	b := r22Fixture(t, store.RiskControlConfig{MentorBEBeforePartial: cxBool(false)})
+	// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+	b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off(), MentorBEBeforePartial: cxBool(false)})
 	b.positions("short", 3)
 	b.book(r22FullBook(r22Stop)...)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
@@ -394,7 +395,8 @@ func TestR22LongTrailHigherLowUpLowerLowNoMove(t *testing.T) {
 // and the belief takes the broker's stop. Mutant M1 (drop the broker-tighter
 // refusal) sends 30730.00 → RED.
 func TestR22NeverWidenJudgedAgainstTheBroker(t *testing.T) {
-	b := r22Fixture(t, store.RiskControlConfig{})
+	// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+	b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off()})
 	b.positions("short", 1)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 	b.book(r22RunnerBook(r22Stop)...)
@@ -430,7 +432,8 @@ func TestR22NeverWidenJudgedAgainstTheBroker(t *testing.T) {
 // is recorded and ignored — no WARN path, no re-send.
 func TestR22LegClosedNoMoveSent(t *testing.T) {
 	t.Run("runner stop gone at the broker", func(t *testing.T) {
-		b := r22Fixture(t, store.RiskControlConfig{})
+		// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+		b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off()})
 		b.positions("short", 1)
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 		b.book(r22RunnerBook(r22Stop)...)
@@ -469,7 +472,8 @@ func TestR22LegClosedNoMoveSent(t *testing.T) {
 		}
 	})
 	t.Run("off mode BE after the partial skips leg 1", func(t *testing.T) {
-		b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: "off"})
+		// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+		b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off(), MentorTrailMode: "off"})
 		b.positions("short", 1)
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 		// The book LAGS the receipt: leg 1's -sl still shows live (the OCO
@@ -508,7 +512,8 @@ func TestR22LegClosedNoMoveSent(t *testing.T) {
 // TestR22RefusedMovesAreCounted — NT8 refuses (the book keeps the old price):
 // the BE stop move is logged + counted and re-sent once (F1), nothing silent.
 func TestR22RefusedMovesAreCounted(t *testing.T) {
-	b := r22Fixture(t, store.RiskControlConfig{})
+	// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+	b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off()})
 	b.positions("short", 1)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 	b.book(r22RunnerBook(r22Stop)...)
@@ -737,7 +742,8 @@ func TestR22KnobOffKeepsThePreR3Rule(t *testing.T) {
 		mode  string
 		moves int
 	}{{"off", 0}, {"", 1}, {"candle", 1}} {
-		b := r22Fixture(t, store.RiskControlConfig{MentorTrailMode: tc.mode})
+		// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+		b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off(), MentorTrailMode: tc.mode})
 		b.positions("short", 1)
 		b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)
 		b.book(r22RunnerBook(r22Stop)...)
@@ -881,10 +887,12 @@ func TestR22ShortWorkedExampleFillCandlePastOneR(t *testing.T) {
 	}
 	// the leg-1 TP receipt arrives.
 	b.receiptLeg1(sig, "short", l1tp, r22Minute(0).Add(30*time.Second))
-	// the next candle: the runner goes to break-even at the entry 30100.
+	// the next candle: EX-01 (default) first sends the at-fill live 1:1 owed by
+	// the receipt — min(30115, 2·30085 − 30060) = 30110 [Oct D1.2 @26:40-26:57] —
+	// then the R3 stage sends break-even at the entry 30100. Both on leg 2.
 	b.candle(r22Minute(1), 30080, 30090, 30085, 30090)
-	moves := b.waitMoves(1)
-	if len(moves) != 1 || moves[0].Leg != 2 || moves[0].NewStopLoss != entry {
-		t.Fatalf("the runner must go to break-even at 30100 on leg 2; got %+v", moves)
+	moves := b.waitMoves(2)
+	if len(moves) != 2 || moves[0].Leg != 2 || moves[0].NewStopLoss != 30110 || moves[1].Leg != 2 || moves[1].NewStopLoss != entry {
+		t.Fatalf("the runner must go to the at-fill 1:1 30110, then to break-even at 30100, on leg 2; got %+v", moves)
 	}
 }

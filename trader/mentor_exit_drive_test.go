@@ -1270,8 +1270,11 @@ func TestMentorX8UnfilledLimitGetsOneMarketFallback(t *testing.T) {
 // octA2SeptExitTuning is the OCT-EXACT A2 row 17 revert for the exit-drive
 // mechanics tests: the X8 trap-dodge exit ON and the one-bracket resonance BE
 // at 0.25R (the Sept behaviour those tests pin). The October defaults (X8 OFF,
-// BE min 0) are pinned by oct_a2_test.go.
+// BE min 0) are pinned by oct_a2_test.go. EX-02 (full re-read 11-16): the
+// one-bracket BE guard OFF too — these tests pin the 0.25R close gate and the
+// through-the-market close; the guarded default (first target, then BE on a
+// close past it, never a market close) is pinned by mentor_ex0102_test.go.
 func octA2SeptExitTuning() *store.MentorTuning {
-	on, minRR := true, mentorResonanceBEMinRR
-	return &store.MentorTuning{MentorX8TrapDodge: &on, MentorResonanceBEMinRR: &minRR}
+	on, minRR, off := true, mentorResonanceBEMinRR, false
+	return &store.MentorTuning{MentorX8TrapDodge: &on, MentorResonanceBEMinRR: &minRR, MentorResonance1LotBEGuard: &off}
 }

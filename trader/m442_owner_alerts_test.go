@@ -216,7 +216,8 @@ func TestM442SwingCloseRefusedThreeTimesPushesOneStorm(t *testing.T) {
 // before mentorBumpStopMoveEpisode in mentor_exit_drive.go -> no storm -> RED.
 func TestM442StopMoveNotAppliedReachesTheOwnerOverTheVerifyLoop(t *testing.T) {
 	sink, p := m442InstallPush(t)
-	b := r22Fixture(t, store.RiskControlConfig{})
+	// EX-01 revert (mentor_runner_1to1_at_fill=false): this pin is about the move AFTER the receipt on the closed candle; the default at-fill 1:1 is pinned in mentor_ex0102_test.go.
+	b := r22Fixture(t, store.RiskControlConfig{MentorTuning: ex01Off()})
 	b.at.name = "hoang"
 	b.positions("short", 1)
 	b.registerSplit(r22Sig, "short", "PLH", 3, 2, r22Entry, r22Stop, r22L1TP, r22Target)

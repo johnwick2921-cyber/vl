@@ -133,6 +133,8 @@ type mentorTuned struct {
 	FTGLBodyEdgePartner         bool    // D3
 	Leg1FixedPts                float64 // D2 (trader-side)
 	ResonanceTrail              bool    // BC C6 (trader-side)
+	RunnerRR11AtFill            bool    // EX-01 (trader-side)
+	ResonanceOneLotBEGuard      bool    // EX-02 (trader-side)
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
 	CrossingISBLookback        int
@@ -314,6 +316,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
 		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
 		ResonanceTrail:              true,                      // BC C6
+		RunnerRR11AtFill:            true,                      // EX-01
+		ResonanceOneLotBEGuard:      true,                      // EX-02
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -583,6 +587,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorFTGLBodyEdgePartner, &out.FTGLBodyEdgePartner)                  // D3
 	pickPtr(t.MentorLeg1FixedPts, 0, 100, &out.Leg1FixedPts)                     // D2
 	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
+	flag(t.MentorRunnerRR11AtFill, &out.RunnerRR11AtFill)                        // EX-01
+	flag(t.MentorResonance1LotBEGuard, &out.ResonanceOneLotBEGuard)              // EX-02
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)

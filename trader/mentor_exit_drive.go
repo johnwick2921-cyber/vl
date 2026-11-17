@@ -137,6 +137,9 @@ func (at *AutoTrader) mentorExitDrive(bars []market.Kline) {
 	// Release #22 (P1-2): the same broker-book verdict for a SENT leg-1 TP
 	// modify (the ISB candle-3 partial) — the AddOn sends no success ack.
 	at.mentorVerifyPendingTPModifies(nt)
+	// EX-01: an owed at-fill runner 1:1 goes out before this candle drives the
+	// runner (a no-op when the receipt's own event pass already sent it).
+	at.mentorDrainRunnerRR11AtFill()
 	c, h, l := last.Close, last.High, last.Low
 	// CTO gate (release #4): the loop must drop a position once the account
 	// is flat on its side — nothing else ever unregistered it, so a closed
@@ -500,7 +503,7 @@ func (at *AutoTrader) mentorExitDrivePos(nt *ntTrader.TCPTrader, p *mentorLivePo
 		// R13 "no trail"; D4.2 #5 trailed to 28,218.75]. The candle that arms BE
 		// only arms BE.
 		wasArmedA := p.Pos.ArmedBE
-		at.mentorExitDriveResonance(nt, p, c, scaledNow, at.mentorExitedLegs(p))
+		at.mentorExitDriveResonance(nt, p, c, h, l, scaledNow, at.mentorExitedLegs(p))
 		if wasArmedA && scaledNow && mentorResonanceTrailOn(at.mentorRiskControl()) &&
 			p.Legs[0].Wire == 1 && at.mentorTrailMode() == mentorTrailModeCandle {
 			exitedA := at.mentorExitedLegs(p)
@@ -884,6 +887,21 @@ var mentorCloseLegAtMarketWire = func(at *AutoTrader, nt *ntTrader.TCPTrader, si
 // errMentorStopAtBroker when the broker already holds newStop (nothing sent,
 // the caller may write the belief — mentorMoveApplied).
 func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg *mentorLeg, newStop float64) error {
+	return at.mentorMoveLegStopX(nt, side, leg, newStop, true)
+}
+
+// errMentorStopThroughMarketWait (EX-02) is the sentinel mentorMoveLegStopX
+// returns when the new stop is through the market and the caller asked NOT to
+// close at market: nothing was sent, nothing was closed, the caller retries on
+// a later candle.
+var errMentorStopThroughMarketWait = errors.New("mentor stop move: stop through the market — waiting, not closing")
+
+// mentorMoveLegStopX is mentorMoveLegStop with the wrong-side outcome chosen by
+// the caller: closeThrough=true (every caller but one) closes the leg at market
+// as before; false (EX-02, the guarded one-bracket resonance BE) sends nothing
+// and returns errMentorStopThroughMarketWait — a break-even move is never turned
+// into a market exit at the entry.
+func (at *AutoTrader) mentorMoveLegStopX(nt *ntTrader.TCPTrader, side string, leg *mentorLeg, newStop float64, closeThrough bool) error {
 	if leg == nil || leg.SignalID == "" {
 		return fmt.Errorf("mentor leg stop move: no leg signal id")
 	}
@@ -900,6 +918,12 @@ func (at *AutoTrader) mentorMoveLegStop(nt *ntTrader.TCPTrader, side string, leg
 	// exit has effectively happened, so CLOSE the leg at market (reduce-only)
 	// instead of sending. A stale price keeps today's behaviour (send), logged.
 	if price, fresh := mentorLatestPriceSeam(at); fresh {
+		if mentorStopMoveWrongSide(side, newStop, price) && !closeThrough {
+			at.mentorCount("stop_move_through_market_wait")
+			at.logInfof("🧑‍🏫 mentor stop move %s leg %d → %.2f is on the wrong side of the market (price %.2f) — NOT sent and NOT closed at market; it waits for a close past it [EX-02]",
+				leg.SignalID, leg.Wire, newStop, price)
+			return errMentorStopThroughMarketWait
+		}
 		if mentorStopMoveWrongSide(side, newStop, price) {
 			at.mentorCount("stop_move_through_market_close")
 			at.logWarnf("🧑‍🏫 mentor stop move %s leg %d → %.2f is through the market (price %.2f) — closing the leg at market instead (= the BE exit)",
@@ -1525,6 +1549,33 @@ func mentorResonanceBEMinRRFor(rc *store.RiskControlConfig) float64 {
 	return 0
 }
 
+// mentorResonance1LotBEGuardOn reads mentor_resonance_1lot_be_guard (EX-02):
+// nil -> ON; a stored false reverts.
+func mentorResonance1LotBEGuardOn(rc *store.RiskControlConfig) bool {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorResonance1LotBEGuard == nil {
+		return true
+	}
+	return *rc.MentorTuning.MentorResonance1LotBEGuard
+}
+
+// mentorResOneLotFirstTarget is how far past the entry (points) price must
+// reach before a one-bracket resonance BE (EX-02): the first-target sale the
+// split position makes — mentor_leg1_fixed_pts (15, "bán ở giá 15 điểm hoặc là
+// bán 20 điểm" [Oct D4.2 @12:14-12:27]; one number with the split partial, not
+// two) — or +1R when that knob is 0 (the bot's 1:1 partial). Never less than
+// R·mentor_resonance_be_min_rr when the owner stored one.
+func (at *AutoTrader) mentorResOneLotFirstTarget(pos *mentorPosition) float64 {
+	rc := at.mentorRiskControl()
+	dist := mentorLeg1FixedPts(rc)
+	if dist <= 0 {
+		dist = pos.R
+	}
+	if mr := pos.R * mentorResonanceBEMinRRFor(rc); mr > dist {
+		dist = mr
+	}
+	return dist
+}
+
 // mentorResonanceTrailOn reads mentor_resonance_trail (oct-exact C6): nil ->
 // ON (October D4.2-R31/R32); a stored false reverts to the no-trail mode A.
 func mentorResonanceTrailOn(rc *store.RiskControlConfig) bool {
@@ -1551,7 +1602,22 @@ func mentorResonanceTrailOn(rc *store.RiskControlConfig) bool {
 // EVERY leg that needs BE was applied by the broker; an unapplied leg is
 // retried on the next closed candle (tracked by leg.Stop).
 // m151 (2): a one-bracket position moves ALL its open legs (the single leg).
-func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentorLivePos, c float64, scaledNow bool, exited [3]bool) {
+//
+// EX-02 (full re-read 11-16, knob mentor_resonance_1lot_be_guard, nil -> ON): a
+// ONE-bracket position has no part to sell, and October puts the break-even
+// only AFTER the sale at +15/+20 — "anh chỉ có quyền bán ở giá 15 điểm hoặc là
+// bán 20 điểm tùy tay của anh, xong sau đó anh chị để stop loss ở break even và
+// cho nó chạy" [Oct D4.2 @12:14-12:27], BE plus the fee ("10 đô … nên để ở giá
+// 11 đô … Tại nó có tính tiền phi" [D4.2 @13:00-13:25]). So the 1-lot BE waits
+// until a closed candle of mode A has REACHED that first-target level
+// (mentorResOneLotFirstTarget: entry ± mentor_leg1_fixed_pts, the SAME 15 the
+// split partial sells at; +1R when that knob is 0), then goes out on the first
+// close past BE by a tick (the R3 candle-path guard), and a BE that would sit on
+// the wrong side of the market WAITS — it is never turned into a market close
+// at the entry (11-16 19:19:00: PHL 1 MNQ @27374.75 closed at 27374.75, pnl 0).
+// False reverts: BE on a close past entry + R·mentor_resonance_be_min_rr, and
+// mentorMoveLegStop closes a through-the-market BE at market.
+func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentorLivePos, c, h, l float64, scaledNow bool, exited [3]bool) {
 	if p == nil || p.Pos.ArmedBE {
 		return
 	}
@@ -1574,12 +1640,37 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 	side := pos.Side
 	tick := at.mentorInstrumentTick()
 	be := at.mentorBEStop(side, pos.Entry, tick)
-	// One bracket, no partial: BE needs the close at least 0.25R beyond entry
-	// (long; mirrored for short). A split position past its confirmed partial
+	// One bracket, no partial: with the EX-02 guard (default) BE waits for the
+	// first-target level and a close past BE, and is never a market close; the
+	// revert needs the close R·mentor_resonance_be_min_rr beyond entry (0 since
+	// OCT-EXACT A2; 0.25 = m134 (d)). A split position past its confirmed partial
 	// moves on the next closed candle — the wrong-side guard in
 	// mentorMoveLegStop keeps it on the protective side (a through-the-market BE
 	// is closed, not sent).
-	if !split && !scaledNow {
+	oneLotGuard := !split && mentorResonance1LotBEGuardOn(at.mentorRiskControl())
+	if oneLotGuard && !scaledNow {
+		// EX-02: first the +15 (the sale the 1-lot cannot make), THEN BE + fee.
+		if !p.ResOneLotReached {
+			dist := at.mentorResOneLotFirstTarget(pos)
+			reached := (side == "long" && h >= pos.Entry+dist) || (side != "long" && l <= pos.Entry-dist)
+			if !reached {
+				at.mentorCount("resonance_be_waiting_first_target")
+				return
+			}
+			p.ResOneLotReached = true
+			at.mentorCount("resonance_be_first_target_reached")
+			sign := "+"
+			if side != "long" {
+				sign = "−"
+			}
+			at.logInfof("🧑‍🏫 mentor resonance 1-lot: %s reached the first target (entry %.2f %s %.2f pts) — break-even + fee %.2f goes out on the first close past it [EX-02; Oct D4.2 @12:14-12:27, @13:00-13:25]",
+				legs[0].SignalID, pos.Entry, sign, dist, be)
+		}
+		if (side == "long" && c < be+tick) || (side != "long" && c > be-tick) {
+			at.mentorCount("resonance_be_waiting_price")
+			return
+		}
+	} else if !split && !scaledNow {
 		dist := pos.R * mentorResonanceBEMinRRFor(at.mentorRiskControl())
 		reached := (side == "long" && c >= pos.Entry+dist) || (side != "long" && c <= pos.Entry-dist)
 		if !reached {
@@ -1593,8 +1684,13 @@ func (at *AutoTrader) mentorExitDriveResonance(nt *ntTrader.TCPTrader, p *mentor
 		if legAtOrBeyondBE(side, leg.Stop, be) {
 			continue // already at BE (or a tighter broker stop) from a prior candle
 		}
-		err := at.mentorMoveLegStop(nt, side, leg, be)
+		// EX-02: the guarded 1-lot BE never closes the trade at market — a BE on
+		// the wrong side of the market waits (retried next candle).
+		err := at.mentorMoveLegStopX(nt, side, leg, be, !oneLotGuard)
 		switch {
+		case errors.Is(err, errMentorStopThroughMarketWait):
+			allApplied = false
+			at.mentorCount("resonance_be_waiting_price")
 		case errors.Is(err, errMentorStopBrokerTighter):
 			// m151 (6): the broker holds a tighter stop; mentorJudgeAgainstBroker
 			// already wrote leg.Stop to it, so the belief matches.

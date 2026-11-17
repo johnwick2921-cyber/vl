@@ -185,6 +185,8 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			Box15mNoTrade:              true,                              // review fix: the 15m ISB-box no-trade stays ON [OctD4.3-R60 @58:38]; false reverts to the R9-only read
 			Leg1FixedPts:               0,                                 // OCT-EXACT D2: production 15 (mentorLeg1FixedPtsDefault); this test binary pins 0 in TestMain, oct_d_test.go pins the 15
 			ResonanceTrail:             true,                              // OCT-EXACT C6: the mode-A runner trails after BE [Oct D4.2-R31/R32 @08:11]; false reverts
+			RunnerRR11AtFill:           true,                              // EX-01: the runner goes to the live 1:1 at the leg-1 fill receipt [Oct D1.2 @26:40-26:57]; false reverts
+			ResonanceOneLotBEGuard:     true,                              // EX-02: a 1-lot resonance BE waits for +15 and never closes at market at the entry [Oct D4.2 @12:14-12:27, @13:00-13:25]; false reverts
 			HTFOpposedRangeHaltPts:     0,                                 // answers-1112 Q1 extra rule: OFF — "300-400 điểm" is a range, and September [Sept D5.1 p1 @19:22-19:26]
 			PHL5mBoxSameDirAllowed:     true,                              // OCT-EXACT B1: ON (was OFF, answers-1112 Q9) [Oct D4.3-R70/R71 @68:24]; false reverts
 			TriggerFromOpen:            true,                              // G4 October [OctD4.3-R5 @ 03:10]

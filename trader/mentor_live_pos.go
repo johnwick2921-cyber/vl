@@ -99,6 +99,22 @@ type mentorLivePos struct {
 	UncapTries int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
+	// EX-01 (full re-read 11-16, knob mentor_runner_rr11_at_partial_fill):
+	// RunnerRR11Owed / RunnerRR11Px — the broker's leg-1 TP receipt landed at
+	// RunnerRR11Px and the runner's live 1:1 move is owed AT ONCE (the event pass
+	// the receipt wakes, mentorDrainRunnerRR11AtFill), not on the next closed
+	// candle. Written by the receipt goroutine under mentorExitMu, consumed by
+	// the drain under mentorEvalMu. RunnerRR11Moved — that move was APPLIED, so a
+	// runner stop already at/past break-even counts as BE in the R3 stage
+	// (mentorExitDriveCandle) instead of asking for a wider BE.
+	RunnerRR11Owed  bool
+	RunnerRR11Px    float64
+	RunnerRR11Moved bool
+	// EX-02 (knob mentor_resonance_one_lot_be_guard): a one-bracket resonance
+	// position's price has REACHED the first-target level on a closed candle —
+	// the break-even may now go out on the first close past it. Drive goroutine
+	// only. A restart-rebuilt position starts false (fail-safe: it waits again).
+	ResOneLotReached bool
 	// ModeSource / ModeWhy (P2-2 rel22) say WHERE Pos.Mode came from — the
 	// staged fork, the row's persisted exit_mode, the SWING4H rule or the
 	// course default — and why. Set by mentorBuildLivePos; read by the
@@ -671,6 +687,11 @@ func (at *AutoTrader) mentorMarkLeg1Scaled(p ntwire.PositionClosePayload) {
 		if at.mentorLatchLeg1Scaled(p.SignalID, mentorCloseReceiptMs(p)) {
 			at.mentorCount("leg1_at_target")
 			at.logInfof("🧑‍🏫 mentor leg 1 scaled on the broker TP receipt: %s (%s)", p.SignalID, p.PositionSide)
+			// EX-01: the runner's live 1:1 is owed NOW — wake the event pass,
+			// which moves it under the evaluator mutex (never from this goroutine).
+			if at.mentorOweRunnerRR11(p.SignalID, p.ExitPrice) {
+				at.pokeMentorExitDrive()
+			}
 		}
 		return
 	}

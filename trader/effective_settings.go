@@ -988,6 +988,8 @@ func buildEffectiveResolvers() map[string]effResolver {
 	mentorTuningRow("mentor_leg1_fixed_pts", "trader.mentorTuningResolve (OCT-EXACT D2: leg-1 fixed partial, OctD4.2-R14/R18)", func(t mentorTuned) any { return t.Leg1FixedPts })
 	mentorTuningRow("mentor_counter_5m_scalp_pts", "trader.mentorTuningResolve (OCT-EXACT C1: counter-5m EMA 34 scalp target, Oct D5.4 Ex.1)", func(t mentorTuned) any { return t.Counter5mScalpPts })
 	mentorTuningRow("mentor_resonance_trail", "trader.mentorTuningResolve (OCT-EXACT C6: mode-A runner trails after BE, Oct D4.2-R31/R32)", func(t mentorTuned) any { return t.ResonanceTrail })
+	mentorTuningRow("mentor_runner_1to1_at_fill", "trader.mentorTuningResolve (EX-01: on the leg-1 TP fill receipt the runner stop goes at once to the live 1:1 max(stop, 2*fill - T), Oct D1.2 @26:40-26:57; false reverts to the next closed candle)", func(t mentorTuned) any { return t.RunnerRR11AtFill })
+	mentorTuningRow("mentor_resonance_1lot_be_guard", "trader.mentorTuningResolve (EX-02: a one-bracket resonance BE waits for the first-target level and a close past BE, never a market close at the entry, Oct D4.2 @12:14-12:27, @13:00-13:25; false reverts)", func(t mentorTuned) any { return t.ResonanceOneLotBEGuard })
 	mentorTuningRow("trendline_max_lines_per_anchor", "trader.mentorTuningResolve (OCT-EXACT A2 row 15)", func(t mentorTuned) any { return t.TrendlineMaxLinesPerAnchor })
 	mentorTuningRow("mentor_mid_range_reject_side", "trader.mentorTuningResolve (m466 D2.2-R71)", func(t mentorTuned) any { return t.MidRangeRejectSide })
 	mentorTuningRow("mentor_swing_isb_one_per_candle", "trader.mentorTuningResolve (isbTF-F4, [B] reading, nil → ON)", func(t mentorTuned) any { return t.SwingISBOnePerCandle })
