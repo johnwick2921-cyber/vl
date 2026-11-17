@@ -524,9 +524,11 @@ type Config struct {
 	// and the box break-and-reverse reads its mother cross and its outside
 	// closes the same way. 0.25 = one MNQ tick: the mother that closed 0.25
 	// through key 27,383.25 (22:01, pos 819), opened 0.25 below key 27,255.50
-	// (05:17, pos 902) or closed ~0.03 through a sloping line (21:48, pos 813)
-	// did not break it. 0 = the exact #72 read (Open at the level counts). Scope
-	// "all" only (the "box" revert is the D1 build, untouched). Studio JSON:
+	// and closed 5.75 above it (05:17, pos 902 — the OPEN side was within one
+	// tick, so under the both-ends read it is no break however far the close
+	// went; owner ruling pending, #73 review P1) or closed ~0.03 through a
+	// sloping line (21:48, pos 813) did not break it. 0 = the exact #72 read
+	// (Open at the level counts). Scope "all" only (the "box" revert is the D1 build, untouched). Studio JSON:
 	// risk_control.mentor_tuning.mentor_isb_just_broken_tolerance_pts.
 	ISBJustBrokenTolPts float64
 	// OpeningISBBoxNoTrade — J-BOX-01 (11-16 full re-read): the OPENING 5m ISB

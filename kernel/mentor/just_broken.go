@@ -103,9 +103,19 @@ func jbPast(a, b, tol float64) bool { return a-b > tol+jbTolEps }
 // "build" after the 11-16 night replay of #72: 3 of the 9 refused winners
 // turned on a break of one tick or less — pos 819 22:01 close 0.25 through key
 // 27,383.25, pos 902 05:17 open 0.25 below key 27,255.50, pos 813 21:48 ~0.03
-// pt through a sloping trendline). October gives no points distance (Oct D3.3
+// pt through a sloping trendline). 05:17 is a one-tick OPEN, not a one-tick
+// break: the mother closed 5.75 above the key (05:13 had closed 4 under it,
+// 05:14 one tick under) — see the BAR SEAM note on justBrokenAt. October gives no points distance (Oct D3.3
 // @00:46-01:00, @02:40); this number is the owner's, one MNQ tick.
 const ISBJustBrokenTolDefault = 0.25
+
+// ISBJustBrokenTolMax — the ceiling of mentor_isb_just_broken_tolerance_pts (two
+// MNQ ticks; #73 review P2). The pinned real breaks sit just past it: the 11-16
+// 19:58 short (pos 803, a loser) closed 0.714 pt through the 27,367.08 line, and
+// October's D3.3 E1 (01-Nov 21:18, "dung vo") about 0.75 through its line [B].
+// A stored value above it fails closed to ISBJustBrokenTolDefault in the trader
+// resolver, counted tuning_bad_value.
+const ISBJustBrokenTolMax = 0.5
 
 // jbClose is a candle's close instant for a sloping line (its open when the
 // close time is not on the candle).
@@ -157,6 +167,16 @@ func jbClose(c market.Kline) int64 {
 // level(open) - Open > tol AND Close - level(close) > tol; down mirrored. A
 // mother that closed 0.25 through, or opened 0.25 on the other side, did not
 // break the level. tol 0 keeps the exact #72 comparison (Open == level counts).
+//
+// BAR SEAM (#73 review P1, OWNER RULING PENDING): futures bars open where the
+// last one closed, so a move through the level split at a bar boundary one tick
+// from it — candle A closes within a tick, candle B opens there and runs 20 pts
+// through — is a break by NEITHER candle under this both-ends read, however far
+// price went (the 11-17 05:17 long: 05:14 closed 0.25 under key 27,255.50, the
+// 05:15 mother opened there and closed 5.75 over it). The alternative is
+// close-side only (the open leg back to #72's Open >= / <= level), which keeps
+// 05:17 refused. Pinned as built by TestISBM1Tick_BarSeamPendingOwnerRuling;
+// the ruling flips that pin, the 05:17 rows of the tick tests and the guide.
 //
 // from: the instant the level exists (a candle before it cannot have broken it).
 func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from int64, tol float64) bool {

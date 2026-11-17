@@ -43,7 +43,11 @@ func jbTol(pts float64) *store.StrategyConfig {
 //	22:01 short ISB 27,377.00 (pos 819): mother 21:59 O 27,390.00 C 27,383.00,
 //	      0.25 under key 27,383.25 [A]
 //	05:17 long  ISB 27,271.50 (pos 902): mother 05:15 O 27,255.25 C 27,261.25,
-//	      OPENED 0.25 under key 27,255.50 [A]
+//	      OPENED 0.25 under key 27,255.50 and closed 5.75 over it [A] — a
+//	      one-tick OPEN, not a one-tick break (05:14 closed one tick under the
+//	      key, 05:13 four under): it arms only because the both-ends read
+//	      ignores a break split at a bar seam (#73 review P1, owner ruling
+//	      pending; kernel TestISBM1Tick_BarSeamPendingOwnerRuling)
 //
 // all three ARM under the default (0.25). The real breaks stay refused:
 //
@@ -62,7 +66,7 @@ func TestISBM1Tick_1116NightOneTickBreaksArm(t *testing.T) {
 	}{
 		{"21:48", "short", 27424.00, "pos 813: ~0.03 pt through the 27,434.78 trendline"},
 		{"22:01", "short", 27377.00, "pos 819: the mother closed 0.25 through key 27,383.25"},
-		{"05:17", "long", 27271.50, "pos 902: the mother opened 0.25 below key 27,255.50"},
+		{"05:17", "long", 27271.50, "pos 902: the mother opened 0.25 below key 27,255.50, closed 5.75 over it (bar seam, owner ruling pending)"},
 	}
 	realBreaks := []struct{ hhmm, side, why string }{
 		{"19:14", "long", "key 27,359 (live 19:14 loser, rows 608/609)"},
@@ -100,6 +104,34 @@ func TestISBM1Tick_1116NightOneTickBreaksArm(t *testing.T) {
 	for _, w := range realBreaks {
 		if ref0[w.hhmm+" isb_just_broken_level"] == 0 {
 			t.Errorf("tolerance 0: %s not refused isb_just_broken_level (%s)", w.hhmm, w.why)
+		}
+	}
+}
+
+// #73 review P2 (both reviewers): the knob's ceiling must not reach the pinned
+// real breaks. The nearest one on the night is the 19:58 short (pos 803, a
+// loser): 19:55 O 27,377.50 C 27,365.50 closed 0.714 pt under the 27,367.08 line
+// (J-BOX-14). At the ceiling (0.5, two ticks) it stays refused; a stored 0.75 or
+// 5 (the old ceiling, which released it) is out of range, fails closed to the
+// 0.25 default and is counted tuning_bad_value — so 19:14 / 19:26 / 19:58 stay
+// refused for every stored value. Production replay, the night tape.
+func TestISBM1Tick_CeilingKeepsTheNightRealBreaks(t *testing.T) {
+	bs := jbFixtureNight1116(t)
+	end := time.Date(2026, 11, 16, 20, 5, 0, 0, kernel.CTLocation())
+	realBreaks := []struct{ hhmm, side, why string }{
+		{"19:14", "long", "key 27,359, 9.00 through"},
+		{"19:26", "long", "trendline 27,353.39, 3.61 through"},
+		{"19:58", "short", "trendline 27,367.08, 0.714 through"},
+	}
+	for _, v := range []float64{0.5, 0.75, 5} {
+		arms, ref, _ := jbReplay(t, bs, "2026-11-17", end, jbTol(v))
+		for _, w := range realBreaks {
+			if ref[w.hhmm+" isb_just_broken_level"] == 0 {
+				t.Errorf("stored tolerance %v: %s %s ISB not refused isb_just_broken_level (%s); refusals then: %v", v, w.hhmm, w.side, w.why, jbAt(ref, w.hhmm))
+			}
+			if jbArmAt(arms, w.hhmm, w.side, "ISB", 0) {
+				t.Errorf("stored tolerance %v: a %s %s ISB armed (%s) - the knob's ceiling released a real break", v, w.hhmm, w.side, w.why)
+			}
 		}
 	}
 }

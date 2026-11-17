@@ -19,9 +19,10 @@ import (
 // never two numbers.
 
 // mentorISBJustBrokenTolMax is the ceiling of mentor_isb_just_broken_tolerance_pts
-// (20 MNQ ticks). Above it the knob would stop ISB-M1 reading real breaks; the
-// value fails closed to the 0.25 default, counted tuning_bad_value.
-const mentorISBJustBrokenTolMax = 5.0
+// (mentor.ISBJustBrokenTolMax, 0.5 = two MNQ ticks). Above it the knob would stop
+// ISB-M1 reading real breaks (the 11-16 19:58 short closed 0.714 through its
+// line); the value fails closed to the 0.25 default, counted tuning_bad_value.
+const mentorISBJustBrokenTolMax = mentor.ISBJustBrokenTolMax
 
 // mentorTuned is the resolved view: every field is a usable value.
 type mentorTuned struct {
@@ -607,7 +608,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorRunnerRR11AtFill, &out.RunnerRR11AtFill)                        // EX-01
 	flag(t.MentorResonance1LotBEGuard, &out.ResonanceOneLotBEGuard)              // EX-02
 	// ISB-M1 one tick (owner order 2026-11-17 "build"): nil -> 0.25; 0 = the exact
-	// #72 read; negative / NaN / Inf / above 5 -> 0.25, counted tuning_bad_value.
+	// #72 read; negative / NaN / Inf / above 0.5 -> 0.25, counted tuning_bad_value.
 	pickPtr(t.MentorISBJustBrokenTolPts, 0, mentorISBJustBrokenTolMax, &out.ISBJustBrokenTolPts)
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).

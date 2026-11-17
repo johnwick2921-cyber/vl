@@ -687,8 +687,14 @@ func TestD3G12Knob(t *testing.T) {
 // 2026-11-17 "build"): mentor_isb_just_broken_tolerance_pts reaches the
 // evaluator through the ONE resolver at the production call site
 // (mentorEvalOnce -> mentorTuningResolve -> applyMentorTuning). Unset -> 0.25;
-// 0 -> 0 (the exact #72 read); 0.5 -> 0.5; negative / NaN / +Inf / above 5 ->
-// 0.25, each counted tuning_bad_value.
+// 0 -> 0 (the exact #72 read); 0.5 (the ceiling, two ticks) -> 0.5; negative /
+// NaN / +Inf / above 0.5 -> 0.25, each counted tuning_bad_value.
+//
+// Ceiling 0.5 (#73 review P2, both reviewers): the pinned real breaks sit just
+// past it — the 11-16 19:58 short (pos 803, a loser) closed 0.714 pt through the
+// 27,367.08 line, and October's only measured just-broke trendline picture, D3.3
+// E1 (01-Nov 21:18 "dung vo"), about 0.75 [B]. The old ceiling of 5 let one
+// stored value silently un-refuse both; above 0.5 now fails closed to 0.25.
 func TestISBM1TolKnobReachesTheEvaluator(t *testing.T) {
 	if c := tuningTick(t, &store.MentorTuning{}); c.ISBJustBrokenTolPts != 0.25 {
 		t.Fatalf("unset: ISBJustBrokenTolPts = %v, want 0.25 (one MNQ tick)", c.ISBJustBrokenTolPts)
@@ -696,14 +702,14 @@ func TestISBM1TolKnobReachesTheEvaluator(t *testing.T) {
 	if c := tuningTick(t, nil); c.ISBJustBrokenTolPts != mentor.ISBJustBrokenTolDefault {
 		t.Fatalf("no tuning block: ISBJustBrokenTolPts = %v, want %v", c.ISBJustBrokenTolPts, mentor.ISBJustBrokenTolDefault)
 	}
-	for _, v := range []float64{0, 0.5, 5} {
+	for _, v := range []float64{0, 0.25, 0.5} {
 		v := v
 		if c := tuningTick(t, &store.MentorTuning{MentorISBJustBrokenTolPts: &v}); c.ISBJustBrokenTolPts != v {
 			t.Errorf("stored %v: ISBJustBrokenTolPts = %v", v, c.ISBJustBrokenTolPts)
 		}
 	}
 	at := funnelAT(t)
-	bad := []float64{-0.25, math.NaN(), math.Inf(1), math.Inf(-1), 5.25}
+	bad := []float64{-0.25, math.NaN(), math.Inf(1), math.Inf(-1), 0.51, 0.75, 5, 5.25}
 	for _, v := range bad {
 		v := v
 		got := mentorTuningResolve(at, &store.RiskControlConfig{MentorTuning: &store.MentorTuning{MentorISBJustBrokenTolPts: &v}})

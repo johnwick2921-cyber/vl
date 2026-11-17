@@ -103,8 +103,11 @@ func TestISBM1Tick_EarlierRealBreakStillRefuses(t *testing.T) {
 // The 11-16 night, the tape's own bars (MNQ 12-26 1m, CST = UTC-6).
 // 22:01 short (pos 819): mother 21:59 O 27,390.00 C 27,383.00 closed 0.25 under
 // key 27,383.25; 21:58 (L 27,390.00) was clear above it. 05:17 long (pos 902):
-// mother 05:15 O 27,255.25 C 27,261.25 opened 0.25 under key 27,255.50; 05:13
-// (H 27,253.00) was clear under it. Default: not breaks. tol 0: refused (#72).
+// mother 05:15 O 27,255.25 C 27,261.25 opened 0.25 under key 27,255.50 and
+// closed 5.75 OVER it (a one-tick OPEN, not a one-tick break: 05:13 closed 4
+// under, 05:14 one tick under — the bar-seam case, owner ruling pending, see
+// TestISBM1Tick_BarSeamPendingOwnerRuling); 05:13 (H 27,253.00) was clear under
+// it. Default: not breaks. tol 0: refused (#72).
 func TestISBM1Tick_1116NightKeyLevelOneTick(t *testing.T) {
 	cst := func(d, h, m int) time.Time { return time.Date(2026, 11, d, h+6, m, 0, 0, time.UTC) }
 	formed := time.Date(2026, 11, 16, 23, 0, 0, 0, time.UTC).UnixMilli()
@@ -128,7 +131,7 @@ func TestISBM1Tick_1116NightKeyLevelOneTick(t *testing.T) {
 		m1Bar(cst(17, 5, 16), 27261.75, 27270.00, 27252.25, 27265.75), // inside bar on 27,255.50
 	}
 	if got := tickHook(0.25, SideLong, justBrokenCtx{hist: h2, levels: k2}); got != "" {
-		t.Errorf("05:17 long (open 0.25 under key 27,255.50), default: got %q, want none", got)
+		t.Errorf("05:17 long (open 0.25 under key 27,255.50, close 5.75 over it), default (both-ends read): got %q, want none", got)
 	}
 	if got := tickHook(0, SideLong, justBrokenCtx{hist: h2, levels: k2}); got != "isb_just_broken_level" {
 		t.Errorf("05:17 long, tol 0 (exact #72): got %q, want isb_just_broken_level", got)
@@ -227,5 +230,82 @@ func TestISBM1Tick_BoxReverse(t *testing.T) {
 	}
 	if !justBrokenBoxReverse(SideShort, weak, box, 0) {
 		t.Errorf("tol 0 (exact #72): the 0.25 close over the top counts as the break")
+	}
+}
+
+// #73 review P1 — OWNER RULING PENDING. This pins the rule AS BUILT (both ends),
+// not a ruling. Futures bars open where the last one closed, so a move through a
+// level split at a bar seam one tick from it is a break by NEITHER candle at the
+// default, however far price went: A closes 0.25 through (no break: close side
+// within the tolerance), B opens there and runs 20 pts on (no break: open side
+// within the tolerance). Same with A closing exactly AT the level. tol 0 (#72)
+// refuses both. The 11-17 05:17 long (pos 902) is this picture: 05:14 closed
+// 27,255.25, one tick under key 27,255.50; the 05:15 mother opened 27,255.25 and
+// closed 27,261.25, 5.75 over it.
+//
+// If the owner rules CLOSE-SIDE ONLY (a break = the close more than a tick
+// through; the open read as #72), the two default rows below flip to refused,
+// as do the 05:17 rows of TestISBM1Tick_1116NightKeyLevelOneTick, the
+// open-side rows of TestISBM1Tick_CrossPredicateEdges and
+// cmd/mentor-replay TestISBM1Tick_1116NightOneTickBreaksArm — and the guide.
+func TestISBM1Tick_BarSeamPendingOwnerRuling(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 3, 15, m, 0, 0, time.UTC) }
+	lv := []Level{{Kind: KindKeyLevel, Price: 100, AtTime: at(0).UnixMilli()}}
+	for _, c := range []struct {
+		name string
+		hist []market.Kline
+	}{
+		{"A 126 -> 99.75 (0.25 under), mother B opens 99.75 and closes 80", []market.Kline{
+			m1Bar(at(1), 130, 131, 125, 126),    // clear above
+			m1Bar(at(2), 126, 127, 99.5, 99.75), // A
+			m1Bar(at(3), 99.75, 101, 79, 80),    // mother B
+			m1Bar(at(4), 85, 100.5, 81, 84),     // inside bar, wick up to the level
+		}},
+		{"A closes AT 100, mother B opens AT 100 and closes 80", []market.Kline{
+			m1Bar(at(1), 130, 131, 125, 126),
+			m1Bar(at(2), 126, 127, 99.75, 100),
+			m1Bar(at(3), 100, 101, 79, 80),
+			m1Bar(at(4), 85, 100.5, 81, 84),
+		}},
+	} {
+		jb := justBrokenCtx{hist: c.hist, levels: lv}
+		if got := tickHook(ISBJustBrokenTolDefault, SideShort, jb); got != "" {
+			t.Errorf("%s: default (both ends, as built) got %q, want none — if the owner ruled close-side only, flip this pin", c.name, got)
+		}
+		if got := tickHook(0, SideShort, jb); got != "isb_just_broken_level" {
+			t.Errorf("%s: tol 0 (exact #72) got %q, want isb_just_broken_level", c.name, got)
+		}
+	}
+}
+
+// #73 review P2 (both reviewers): at the knob's ceiling (ISBJustBrokenTolMax,
+// two ticks) the closest pinned real breaks stay refused — October's D3.3 E1
+// (01-Nov 21:18 "dung vo": mother 21:17 C 28,770.25 about 0.75 under the
+// reconstructed line [B], TestISBM1_D33_0101_2118*) and the 11-16 19:58 short
+// (pos 803 loser, 0.714 through the 27,367.08 line; production replay pin
+// cmd/mentor-replay TestISBM1Tick_CeilingKeepsTheNightRealBreaks). The ceiling
+// must stay under both margins.
+func TestISBM1Tick_CeilingKeepsD33E1Refused(t *testing.T) {
+	if ISBJustBrokenTolMax != 0.5 || ISBJustBrokenTolMax < ISBJustBrokenTolDefault {
+		t.Fatalf("ISBJustBrokenTolMax = %v, want 0.5 (two ticks, under the 0.714 / ~0.75 real-break margins)", ISBJustBrokenTolMax)
+	}
+	at := func(m int) time.Time { return time.Date(2026, 11, 2, 3, m, 0, 0, time.UTC) } // 21:mm CST
+	hist := []market.Kline{
+		m1Bar(at(16), 28773.00, 28775.50, 28772.00, 28773.75),
+		m1Bar(at(17), 28773.00, 28773.00, 28763.75, 28770.25), // mother
+		m1Bar(at(18), 28769.75, 28771.75, 28765.00, 28765.00), // inside bar (frame 00:50)
+	}
+	p0 := time.Date(2026, 11, 2, 2, 26, 0, 0, time.UTC)
+	line := Trendline{Side: SideLong, P0Px: 28771.00 - 0.25*52, P0T: p0.UnixMilli(), P1Px: 28771.00 - 0.25*8, P1T: at(10).UnixMilli(), ValidAt: 1}
+	jb := justBrokenCtx{hist: hist, trendlines: []Trendline{line}}
+	for _, tol := range []float64{0, ISBJustBrokenTolDefault, ISBJustBrokenTolMax} {
+		if got := tickHook(tol, SideShort, jb); got != "isb_just_broken_level" {
+			t.Errorf("D3.3 E1 21:18 short at tolerance %v: got %q, want isb_just_broken_level", tol, got)
+		}
+	}
+	// the reconstructed close margin is 0.75: a tolerance of 0.75 releases E1 —
+	// why the knob's ceiling must sit below it (the trader resolver refuses 0.75)
+	if got := tickHook(0.75, SideShort, jb); got != "" {
+		t.Errorf("D3.3 E1 at tolerance 0.75: got %q, want none (the reconstruction's margin is 0.75; if this moved, re-check the ceiling)", got)
 	}
 }
