@@ -29,6 +29,7 @@ import (
 // ex13Snapshot marks b Final with an emission stamp `beforeClose` ms before its
 // close instant (the 11-16 batch: 15 s before).
 func ex13Snapshot(b market.Kline, beforeClose int64) market.Kline {
+	b.Historical = true // only a bars_historical replay bar can be one (review P0)
 	b.Final = true
 	b.EmittedAt = BarCloseInstant(b) - beforeClose
 	return b
@@ -213,6 +214,32 @@ func TestEX13SnapshotInEntryCandlesWindow(t *testing.T) {
 		bars[c.snapAt] = ex13Snapshot(bars[c.snapAt], 1)
 		if _, ok := snapshotInEntryCandles(bars); ok != c.want {
 			t.Errorf("snapshot at 09:%02d with cur 09:19: got %v, want %v", c.snapAt, ok, c.want)
+		}
+	}
+}
+
+// TestEX13LiveBoundaryFinalEmittedEarlyStillArms — review P0 (prod-path +
+// tests-guide, 11-17): a LIVE boundary final is emitted on the first tick of the
+// next minute by NT8's exchange-time clock, and the PC clock routinely reads a
+// few ms BEFORE the bar's close instant when it is stamped. Live journal
+// `mentor eval latency` 11-12/11-14/11-16: 10/14, 8/12, 32/90 finals reached Go
+// before their close, by up to 357 ms; the 11-16 19:13 inside bar itself arrived
+// at 19:13:59.996 (close=1794878039999 arrival=1794878039996). Such a bar IS
+// closed: only a bar from a bars_historical replay batch can be NT8's
+// in-progress bar stamped final (VLBarsSubscriptionManager.cs EmitHistorical).
+// The live finals, emitted 4 / 30 / 360 ms early, must not refuse the ISB.
+func TestEX13LiveBoundaryFinalEmittedEarlyStillArms(t *testing.T) {
+	for _, early := range []int64{4, 30, 360} {
+		placed, e := ex13Tick3(t, nil, func(bars []market.Kline) {
+			for i := range bars {
+				bars[i].EmittedAt = BarCloseInstant(bars[i]) - early // live finals, Historical=false
+			}
+		})
+		if len(placed) != 1 || placed[0].Side != SideLong || placed[0].Price != 106 {
+			t.Errorf("live finals emitted %d ms before close: want the one long ISB at 106; got %+v (refusals %v)", early, placed, e.State.Refusals)
+		}
+		if n := e.State.Refusals["bar_not_truly_closed"]; n != 0 {
+			t.Errorf("live finals emitted %d ms before close were refused bar_not_truly_closed x%d — a live boundary final is a true close", early, n)
 		}
 	}
 }

@@ -542,9 +542,11 @@ type Config struct {
 	// Studio JSON: risk_control.mentor_tuning.mentor_isb_opposite_arm_guard.
 	ISBOppositeArmGuard bool
 	// BarCloseGuard — EX-13 (11-16 full re-read): no entry is authored on a bar
-	// that was not truly closed. A bar the AddOn labelled Final but whose own
-	// frame was emitted BEFORE its close instant (Final && 0 < EmittedAt <
-	// close) is a forming snapshot: the boot's bars_historical batch stamps
+	// that was not truly closed. A bars_historical REPLAY bar the AddOn
+	// labelled Final but whose own frame was emitted BEFORE its close instant
+	// (Historical && Final && 0 < EmittedAt < close) is a forming snapshot;
+	// live frames are never judged (a live boundary final is often stamped a
+	// few ms before its close — review P0 11-17). The boot's bars_historical batch stamps
 	// every replay bar final, NT8's in-progress last bar included, and the
 	// AddOn's watermark then suppresses that bar's real close (11-16: the 19:12
 	// bar emitted 19:12:45, v=5140, 615 contracts short of its 3m/5m parents —

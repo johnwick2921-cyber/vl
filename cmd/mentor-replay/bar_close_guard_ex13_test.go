@@ -97,6 +97,16 @@ type ex13Run struct {
 // boundary, 19:14 forming).
 func ex13Replay(t *testing.T, sc *store.StrategyConfig) ex13Run {
 	t.Helper()
+	return ex13ReplayOpt(t, sc, false)
+}
+
+// ex13ReplayOpt is ex13Replay; live1912=true is the control in which the 19:12
+// bar reached Go as a LIVE boundary final instead (Historical=false), stamped
+// 19:12:59.969 — 31 ms before its close instant, the early-stamp the live journal
+// shows on ~40% of real finals (11-16: 32 of 90; the 19:13 bar itself arrived at
+// 19:13:59.996).
+func ex13ReplayOpt(t *testing.T, sc *store.StrategyConfig, live1912 bool) ex13Run {
+	t.Helper()
 	bs := jbFixture1116(t)
 	seedAt, err := seedInstant("session", "2026-11-17")
 	if err != nil {
@@ -125,7 +135,12 @@ func ex13Replay(t *testing.T, sc *store.StrategyConfig) ex13Run {
 		}
 		b := klines([]row{r}, 60_000)[0]
 		b.EmittedAt = batchAt
+		b.Historical = true // a bars_historical replay batch (cache Source=historical)
 		batch = append(batch, b)
+	}
+	if live1912 {
+		batch[len(batch)-1].EmittedAt = ex13CT(19, 12, 59, 969).UnixMilli()
+		batch[len(batch)-1].Historical = false
 	}
 	var cache []market.Kline
 	srcWindow := rp.src.window
@@ -172,7 +187,9 @@ func ex13Replay(t *testing.T, sc *store.StrategyConfig) ex13Run {
 	t1914 := ex13CT(19, 14, 0, 0).UnixMilli()
 	rp.reseed(t1914, "replay released 1999 MNQ 1m row(s) to the store")
 	b1913 := ex13Bar(t, bs, ex13CT(19, 13, 0, 0))
-	b1913.EmittedAt = ex13CT(19, 14, 0, 300).UnixMilli()
+	// The real live 19:13 final: close=1794878039999 arrival=1794878039996 (11-16
+	// journal, mentor eval latency) — emitted 4 ms BEFORE its close instant.
+	b1913.EmittedAt = ex13CT(19, 13, 59, 996).UnixMilli()
 	cache = append(append([]market.Kline(nil), batch...), b1913, ex13Forming(t, bs, ex13CT(19, 14, 0, 0), ex13CT(19, 14, 0, 350)))
 	run.at1914 = pass(ex13CT(19, 14, 0, 400), t1914)
 	return run
@@ -250,5 +267,26 @@ func TestEX13_1116_DefaultNoISBAt1914(t *testing.T) {
 	}
 	if run.at1914.armed("long", "ISB", 27364.25) {
 		t.Errorf("default: the 19:14 long ISB 27,364.25 armed: %s", run.at1914)
+	}
+}
+
+// TestEX13_1116_LiveEarlyFinalsDoNotRefuse — review P0 (11-17) on the LIVE event
+// path: the same 19:14 pass, but the 19:12 mother reached Go as a LIVE boundary
+// final stamped 31 ms before its close and the 19:13 inside bar 4 ms before its
+// close (both real live shapes). They are closed bars: with ISB-M1 scope box (the
+// live rule) the long ISB 27,364.25 arms, and nothing is refused
+// bar_not_truly_closed. Only a bars_historical batch can carry NT8's forming bar
+// labelled final.
+func TestEX13_1116_LiveEarlyFinalsDoNotRefuse(t *testing.T) {
+	run := ex13ReplayOpt(t, jbScope("box"), true)
+	t.Logf("19:14:00 %s", run.at1914)
+	if !run.at1914.ran {
+		t.Fatalf("19:14:00: the 19:13 bar was not ticked: %s", run.at1914)
+	}
+	if run.at1914.refusals["bar_not_truly_closed"] != 0 {
+		t.Errorf("19:14:00: live finals stamped a few ms before their close were refused bar_not_truly_closed: %s", run.at1914)
+	}
+	if !run.at1914.armed("long", "ISB", 27364.25) {
+		t.Errorf("19:14:00: with live (truly closed) 19:12/19:13 bars the scope-box long ISB 27,364.25 must arm: %s", run.at1914)
 	}
 }

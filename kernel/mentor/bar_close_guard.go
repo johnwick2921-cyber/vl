@@ -22,17 +22,28 @@ import (
 // and the store kept that snapshot (v=5140, 615 contracts short of its 3m/5m
 // parents), and at 19:14 it was the MOTHER of the armed long ISB.
 //
-// The frame's own emission clock is the proof Go has: Final=true with EmittedAt
-// before the bar's close instant is a forming snapshot labelled final. A bar with
-// no emission stamp (store / backfill rows, an AddOn older than emitted_at) is
+// The proof Go has: a bar from a bars_historical REPLAY batch (Kline.Historical,
+// the cache's Source=historical) that is Final=true with EmittedAt before the
+// bar's close instant is a forming snapshot labelled final. A bar with no
+// emission stamp (store / backfill rows, an AddOn older than emitted_at) is
 // judged by Final alone, as before — nothing to compare, never a fabricated
 // verdict.
+//
+// LIVE frames are never judged (review P0, 11-17). A live boundary final is
+// emitted on the first tick of the next minute by NT8's exchange-time bar
+// builder, and the PC clock that stamps EmittedAt routinely reads a few ms
+// before the close instant then: the live journal ('mentor eval latency
+// close=… arrival=…') shows 10/14 (11-12), 8/12 (11-14) and 32/90 (11-16)
+// finals reaching Go BEFORE their close, by up to 357 ms — the 11-16 19:13
+// inside bar arrived at 19:13:59.996. Judging those by EmittedAt alone refused
+// almost every entry all day. Only the replay batch can label NT8's
+// in-progress bar final.
 
-// BarNotTrulyClosed reports whether b is a final-labelled forming snapshot: the
-// AddOn marked it Final, but the frame carrying it was emitted before the bar's
-// close instant.
+// BarNotTrulyClosed reports whether b is a final-labelled forming snapshot: a
+// bars_historical replay bar the AddOn marked Final whose frame was emitted
+// before the bar's close instant.
 func BarNotTrulyClosed(b market.Kline) bool {
-	return b.Final && b.EmittedAt > 0 && b.EmittedAt < BarCloseInstant(b)
+	return b.Historical && b.Final && b.EmittedAt > 0 && b.EmittedAt < BarCloseInstant(b)
 }
 
 // guardFrameMs is the 5m frame the course draws its boxes and ISB box on [Oct
