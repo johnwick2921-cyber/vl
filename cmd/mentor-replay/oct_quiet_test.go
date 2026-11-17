@@ -82,8 +82,10 @@ var acceptedQuietMisses = map[string]string{
 	// when its gate is fixed. Arm counts are from this replay [A].
 	// CLEAN since P4-missesB WE8 (ratchet: removed from the map): "Q-1029-01": "BASELINE MISS: PLH short 28,839.75 armed 20:57 although the video refuses it for no room (room 9.25 < stop 14.25, D2.3-R48); same price as D2.3-WE8, where D2.2 @28:37 / D5.3-R39 reverse-ISB fill-close collides [A]",
 	"Q-1030-09": "BASELINE MISS: 3 short ISBs armed 09:16-09:25 in the straight drop after the 09:03 break; the video allows no ISB there [B, Q-1030-09 is B]",
-	"Q-1102-01": "BASELINE MISS: 8 arms (short PLH/ISB + 1 long ISB) 08:41-09:07 inside the 5m ISB box 28,727.50-28,639.75; D4.1 says no trade inside it, either side [A]",
-	"Q-1102-02": "BASELINE MISS: 9 arms inside the ORB-2 range 08:32-09:12 (same arms as Q-1102-01 plus 08:36); end of window is derived from the DB [B]",
+	// Q-1102-01 / Q-1102-02 (11-02 08:32-09:15, inside the opening 5m ISB box / the ORB-2 range) are CLEAN since J-BOX-01
+	// (fix/mentor-reread-1116, mentor_opening_isb_box_no_trade default ON): every setup inside the opening 5m ISB box
+	// 28,639.75-28,748.75 is refused (opening_isb_box_no_trade) until the 09:12 1m close outside it [Oct D4.3 @58:00-58:33,
+	// @59:50-1:00:29; D4.1 @11:00-11:41]. With the knob false both windows are dirty again (the 08:58 short ISB).
 	"Q-1102-04": "BASELINE MISS: 3 long arms 09:38-09:54 against the 5m sell trigger; the arm cannot tell a D5.4 ~10-pt scalp from a hold trade, so some may be legal scalps [A, times inferred]",
 	"Q-1102-07": "BASELINE MISS: 12 PHL/PLH arms 19:33-21:14 in EMA34/fish chop where the mentor trades limits only; family EMA matches on 'ema' in the reason text [B]",
 	"Q-1103-01": "BASELINE MISS: 3 short PLH arms 17:49-17:55 in EMA34/fish chop [B]",
@@ -93,7 +95,7 @@ var acceptedQuietMisses = map[string]string{
 }
 
 // octQuietSignoffPending: dirty windows that are NOT closed; all of them at the baseline.
-var octQuietSignoffPending = []string{"Q-1030-09", "Q-1102-01", "Q-1102-02", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
+var octQuietSignoffPending = []string{"Q-1030-09", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
 
 type octQuietRes struct {
 	q       octQuiet
@@ -254,5 +256,6 @@ func sideOrAny(s string) string {
 	return s
 }
 
-// octQuietCleanFloor is the precision ratchet (P4-missesB WE8: 11 of 20 clean).
-const octQuietCleanFloor = 11
+// octQuietCleanFloor is the precision ratchet (P4-missesB WE8: 11 of 20 clean; J-BOX-01 raised it to 13:
+// Q-1102-01 and Q-1102-02 are clean on the opening 5m ISB box no-trade).
+const octQuietCleanFloor = 13

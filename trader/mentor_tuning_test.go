@@ -175,6 +175,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			Counter5mScalpPts:          15,                                // OCT-EXACT C1: counter-5m EMA 34 scalp first target 15 [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
 			ISBJustBrokenScope:         mentor.JustBrokenScopeAll,         // ISB-M1: every level the mother broke under the inside bar [Oct D3.3 @00:46-01:00]; box reverts
+			OpeningISBBoxNoTrade:       true,                              // J-BOX-01: the opening 5m ISB box refuses every setup inside it until a 1m close outside [Oct D4.3 @58:00-58:33, @59:50-1:00:29]; false reverts
 			BoxCarryFirstLatched:       true,                              // OCT-EXACT P3-missesA E9: the carried box is the RTH box the mentor drew that morning [Oct D3.3-R27 @17:00]; false reverts
 			BoxCounter5mScalp:          true,                              // OCT-EXACT P3-missesA E9: a box return against the 5m is the counter-5m scalp [Oct D5.4-R20 @07:51]; false reverts
 			ISBRevOldExtremeRoom:       true,                              // OCT-EXACT P4-missesB WE8: D2.3-R53 @54:00; false reverts

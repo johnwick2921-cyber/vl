@@ -85,17 +85,12 @@ var acceptedMisses = map[string]string{
 	// NO-CAP (owner order 2026-11-15, accepted with the owner's answer Q6): D2.2-E15 is the mentor's refusal of any
 	// entry 10-30 08:47-08:49. With no stop-size cap the bot now arms a 08:46 short PLH 28,731.00 (reverse ISB at the
 	// EMA 9 as PLH, stop 41.8 pts) at 1 MNQ - exactly the wide-stop trade the owner ordered taken. Floor 33 -> 32.
-	"D2.2-E15": "owner order 2026-11-15 'trade all … adjust contract' — the mentor skipped it on video (D2.2); the bot takes it at 1 MNQ (08:46 short PLH 28,731.00, stop 41.8 pts, mentor_wide_stop_max_pts 0 = no cap; refused at the #70 40-pt cap). Accepted by the owner (answer Q6), floor lowered 33 -> 32 explicitly",
-	// D4.1-1 stays refused by October, but the rule that refuses it is the morning dead box (CTO D4), which the
-	// CTO ruled NOT built: D4.1-R23 gives no measure of 'did not move for ~30 min' (box 28,739.25/28,662.00 is 77.25
-	// pts, left edge 08:30-08:34, a number the bot cannot derive; its own 5m ISB box forms at 08:40). The arms inside
-	// the window are the 08:41 reverse ISB (inside the box 28,639.75-28,727.00 the bot built at 08:40) and the 08:43
-	// ISB buy stop; D4.3-R70 allows a same-direction ISB inside a 5m box, so no existing October rule refuses them.
-	// REVIEWER P2 (open bug, NOT a justified miss): the arms in the window are not only a same-direction ISB. Q-1102-01 shows
-	// 08:41 short PLH @28686.00 (the reverse-ISB-at-EMA9 retag) and 08:53 short PLH @28680.50 as well as the 08:58 short ISB.
-	// OctD4.3-R70 / 00-METHOD allow ONLY a same-direction 1m ISB inside a 5m ISB box ("No PHL, no PLH, no opposite ISB"), so
-	// the PHL/PLH/retagged-reverse-ISB arms inside the 5m ISB box are October-contrary (a quiet-window precision miss, A confidence).
-	"D4.1-1": "OPEN BUG, parked not justified: (1) morning dead box (Oct D4.1 @11:28 OctD4.1-R23) is the CTO D4 item listed NOT built (no October measure of 'did not move for ~30 min'); (2) the arms are the 08:41/08:53 short PLH (reverse-ISB-at-EMA9 retag) AND the 08:58 short ISB inside the bot's own 5m ISB box; OctD4.3-R70 allows only a same-direction ISB there (no PHL, no PLH, no opposite ISB), so a gate refusing retagged reverse ISB / PHL / PLH inside a live 5m ISB box is owed (Q-1102-01)",
+	"D2.2-E15": "owner order 2026-11-15 'trade all … adjust contract' — the mentor skipped it on video (D2.2); the bot takes it at 1 MNQ (08:46 short PLH 28,731.00, stop 41.8 pts, mentor_wide_stop_max_pts 0 = no cap; refused at the #70 40-pt cap). Accepted by the owner (answer Q6), floor lowered 33 -> 32 explicitly. Since J-BOX-01 (default ON) the 08:46 PLH sits inside the 10-30 opening 5m ISB box (08:35 inside bar of the 08:30 red mother, 28,668.25-28,807.75) and is refused opening_isb_box_no_trade, so the row PASSES; this acceptance applies only with mentor_opening_isb_box_no_trade=false",
+	// D4.1-1 (11-02 08:41-09:09, refused, ANY) is no longer listed: J-BOX-01 (fix/mentor-reread-1116, knob
+	// mentor_opening_isb_box_no_trade, default ON) refuses every setup inside the opening 5m ISB box (08:35 inside bar
+	// of the 08:30 red mother, merged 28,639.75-28,748.75) until the 09:12 1m close outside it [Oct D4.3 @58:00-58:33,
+	// @59:50-1:00:29; D4.1 @11:00-11:41], so the 08:58 short ISB 28,672.00 that kept it failing is refused
+	// (opening_isb_box_no_trade) and the row PASSES. With the knob false the row fails again (08:58 short ISB).
 
 	// close r2: D5.2 WE3 / WE4 are replay QUIZZES on hand-drawn 1h key levels that come from bars BEFORE the
 	// scorecard tape (the fixture starts 2026-09-07; WE1 @06:14-07:12 draws 28,154.50 from 3 Aug and 27,997.75
@@ -156,7 +151,7 @@ var acceptedMisses = map[string]string{
 
 // octSignoffPending: accepted misses that are NOT closed - the bot contradicts a video, two October rules collide,
 // or the reason is a [B]/[C] inference. Needs an owner/CTO ruling or a mentor answer (review fix, tests lens P2).
-var octSignoffPending = []string{"D3.3-E8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17", "D4.1-1"}
+var octSignoffPending = []string{"D3.3-E8", "D4.3-3", "D4.3-9", "D2.2-E11", "D2.2-E13", "D2.2-E17"}
 
 // OWNER SIGN-OFF (not a trade id): near_box_room_multiple=0.5 is OURS (no October source), see mentor.go DefaultConfig.
 
@@ -576,4 +571,7 @@ func TestOctVideoScorecard(t *testing.T) {
 // LOWERED 33 -> 32 EXPLICITLY by owner order 2026-11-15 ("tarde all isb or any thing just need adjust contact";
 // answer Q6: accept D2.2-E15 - the bot now takes the 41.8-pt 08:46 PLH at 1 MNQ the mentor skipped). Never lower it
 // silently: the next drop needs its own owner order and its own acceptedMisses entry.
-const octScoreFloor = 32
+// RAISED 32 -> 33 by J-BOX-01 (fix/mentor-reread-1116): the opening 5m ISB box no-trade fixes D4.1-1 and D2.2-E15
+// (both "refused" rows on the opening box: 11-02 08:58 short ISB, 10-30 08:46 short PLH); ISB-M1 (same branch) had
+// taken the score 32 -> 31 on D4.3-7, which is still failing and awaits its own ruling.
+const octScoreFloor = 33

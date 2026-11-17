@@ -2170,18 +2170,19 @@ type MentorTuning struct {
 	MentorResonanceBEMinRR      *float64 `json:"mentor_resonance_be_min_rr,omitempty"`      // row 17: one-bracket resonance BE minimum R (0 = BE once beyond entry; 0.25 reverts)
 	TrendlineMaxLinesPerAnchor  int      `json:"trendline_max_lines_per_anchor,omitempty"`  // row 15: 0 = 3 (October fan, OctD3.2-R21/R22); 1 reverts
 	// OCT-EXACT BC (owner order 2026-11-14): nil -> the October value; a stored value is the revert and still wins.
-	MentorISBRoomMultiple      *float64 `json:"mentor_isb_room_multiple,omitempty"`       // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
-	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`  // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
-	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"` // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
-	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`    // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
-	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"` // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
-	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`       // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
-	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`   // D1: ISB at a level it just broke refused until the retest (default ON)
-	MentorISBJustBrokenScope   string   `json:"mentor_isb_just_broken_scope,omitempty"`   // ISB-M1: ""/"all" = every level the mother body broke (key level, old extreme, trendline, box edge) inside the inside bar + the box break-and-reverse; "box" reverts (box edges only, the inside bar's own wick lifts it)
-	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`  // D3: FTGL partner by body edge (default ON)
-	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`          // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
-	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`    // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
-	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`         // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
+	MentorISBRoomMultiple      *float64 `json:"mentor_isb_room_multiple,omitempty"`        // C4: ISB room multiple (October 1:1; 2 reverts; 0 = the shared room_multiple)
+	MentorLevelFirstTouchLock  *bool    `json:"mentor_level_first_touch_lock,omitempty"`   // C3: nil -> false (a first touch closing through only cancels that order); true reverts (ISB-only lock)
+	MentorBoxCarryFirstLatched *bool    `json:"mentor_box_carry_first_latched,omitempty"`  // P3-missesA E9: nil -> true; false reverts (the carried box is the newest live box per role)
+	MentorBoxCounter5mScalp    *bool    `json:"mentor_box_counter_5m_scalp,omitempty"`     // P3-missesA E9: nil -> true; false reverts (a box return against the 5m stays refused)
+	MentorISBRevOldExtremeRoom *bool    `json:"mentor_isbrev_old_extreme_room,omitempty"`  // P4-missesB D2.3-WE8: a retagged reverse ISB (a PLH by D5.4 @03:52) with an old extreme inside 1R of the entry (measured to the shy target) is refused, no fill-close: D2.3-R53 @54:00 / R55 @57:00; nil -> true, false reverts to the r1 fill-close
+	MentorISBRevFillClose      *bool    `json:"mentor_isbrev_fill_close,omitempty"`        // close r1: nil -> true; false reverts. the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37
+	MentorISBJustBrokenLevel   *bool    `json:"mentor_isb_just_broken_level,omitempty"`    // D1: ISB at a level it just broke refused until the retest (default ON)
+	MentorISBJustBrokenScope   string   `json:"mentor_isb_just_broken_scope,omitempty"`    // ISB-M1: ""/"all" = every level the mother body broke (key level, old extreme, trendline, box edge) inside the inside bar + the box break-and-reverse; "box" reverts (box edges only, the inside bar's own wick lifts it)
+	MentorOpeningISBBoxNoTrade *bool    `json:"mentor_opening_isb_box_no_trade,omitempty"` // J-BOX-01: the opening 5m ISB box (first RTH 5m inside bar, inside candle 08:35-08:55 CT) refuses every setup inside it until a 1m close outside (default ON; false reverts) [Oct D4.3 @58:00-58:33, @59:50-1:00:29]
+	MentorFTGLBodyEdgePartner  *bool    `json:"mentor_ftgl_body_edge_partner,omitempty"`   // D3: FTGL partner by body edge (default ON)
+	MentorLeg1FixedPts         *float64 `json:"mentor_leg1_fixed_pts,omitempty"`           // D2: leg-1 fixed partial in points (15; 0 = today's +1R)
+	MentorCounter5mScalpPts    *float64 `json:"mentor_counter_5m_scalp_pts,omitempty"`     // C1: counter-5m EMA 34 scalp first target (15; 0 = off, today)
+	MentorResonanceTrail       *bool    `json:"mentor_resonance_trail,omitempty"`          // C6: nil -> true (the mode-A runner trails after BE, D4.2-R31/R32); false reverts (no trail, D4.2-R13)
 	// isbTF audit (F4/F6) — numbers the course does not state, shipped as knobs
 	// at today's values (unset = unchanged):
 	//   MentorSwingISBOnePerCandle: nil → ON — after the level's inside-bar

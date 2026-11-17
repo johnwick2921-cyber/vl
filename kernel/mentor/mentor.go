@@ -509,6 +509,20 @@ type Config struct {
 	//   the edge facing the ISB and the inside bar's wick did not reach it.
 	// Studio JSON: risk_control.mentor_tuning.mentor_isb_just_broken_scope.
 	ISBJustBrokenScope string
+	// OpeningISBBoxNoTrade — J-BOX-01 (11-16 full re-read): the OPENING 5m ISB
+	// box (the first 5m inside bar of the RTH session, its inside candle opening
+	// in the first half hour, 08:35-08:55 CT) is a NO-TRADE box: while it stands
+	// unbroken, EVERY intraday entry inside it is refused
+	// (opening_isb_box_no_trade) — the same-direction 1m ISB that ISBBoxAllows
+	// lets through included. A 1m close outside gives permission again; the box
+	// is deleted on a 5m close outside (the existing close5m machinery). [Oct
+	// D4.3 @58:00-58:33 "nguyên một cái box này buổi sáng ngày hôm nay mình không
+	// được tray", @59:50-1:00:29 "Chừng nào thoát khỏi INSABA mới được trade",
+	// @1:01:06-1:04:20 "đầu giờ", @1:04:54-1:06:13; Oct D4.1 @11:00-11:41 "tầm
+	// 30 phút đồng hồ đầu tiên ... Khi nào thoát ra đi em trade"]. Default true;
+	// false reverts (the box gates only the 1m ISB direction, R70 @1:08:24).
+	// Studio JSON: risk_control.mentor_tuning.mentor_opening_isb_box_no_trade.
+	OpeningISBBoxNoTrade bool
 	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
 	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
 	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
@@ -1415,6 +1429,7 @@ func DefaultConfig() Config {
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
 		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
+		OpeningISBBoxNoTrade:       true,                // J-BOX-01 [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41]; mentor_opening_isb_box_no_trade=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)

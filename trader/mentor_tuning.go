@@ -129,6 +129,7 @@ type mentorTuned struct {
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
 	ISBJustBrokenScope          string  // ISB-M1
+	OpeningISBBoxNoTrade        bool    // J-BOX-01
 	FTGLBodyEdgePartner         bool    // D3
 	Leg1FixedPts                float64 // D2 (trader-side)
 	ResonanceTrail              bool    // BC C6 (trader-side)
@@ -309,6 +310,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
 		ISBJustBrokenScope:          d.ISBJustBrokenScope,
+		OpeningISBBoxNoTrade:        d.OpeningISBBoxNoTrade,
 		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
 		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
 		ResonanceTrail:              true,                      // BC C6
@@ -577,6 +579,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorBoxCarryFirstLatched, &out.BoxCarryFirstLatched)                // P3-missesA E9
 	flag(t.MentorBoxCounter5mScalp, &out.BoxCounter5mScalp)                      // P3-missesA E9
 	flag(t.MentorISBJustBrokenLevel, &out.ISBJustBrokenLevel)                    // D1
+	flag(t.MentorOpeningISBBoxNoTrade, &out.OpeningISBBoxNoTrade)                // J-BOX-01
 	flag(t.MentorFTGLBodyEdgePartner, &out.FTGLBodyEdgePartner)                  // D3
 	pickPtr(t.MentorLeg1FixedPts, 0, 100, &out.Leg1FixedPts)                     // D2
 	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
@@ -690,6 +693,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
 	cfg.ISBJustBrokenScope = t.ISBJustBrokenScope                   // ISB-M1
+	cfg.OpeningISBBoxNoTrade = t.OpeningISBBoxNoTrade               // J-BOX-01
 	cfg.FTGLBodyEdgePartner = t.FTGLBodyEdgePartner                 // D3
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6

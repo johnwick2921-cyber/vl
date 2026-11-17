@@ -3954,6 +3954,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
+	// J-BOX-01 (knob mentor_opening_isb_box_no_trade, default ON): the OPENING
+	// 5m ISB box is a no-trade box — every intraday entry inside it is refused,
+	// the same-direction 1m ISB included, until a 1m candle closes outside it
+	// [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41].
+	if ob := e.openingISBBox(cb5); ob != nil {
+		out, refused = openingISBBoxFilter(out, *ob, bars[len(bars)-1])
+		for _, r := range refused {
+			e.refuse(r)
+		}
+	}
+
 	// D3.3 p1 @08:12–08:56: a box-edge reject and an inside bar on the same
 	// closed bar, same side — the mentor takes the inside bar (smaller stop).
 	out, refused, noted := out, []string(nil), []string(nil)
