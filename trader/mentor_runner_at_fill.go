@@ -41,10 +41,24 @@ func mentorRunnerRR11AtFillOn(rc *store.RiskControlConfig) bool {
 // mentorOweRunnerRR11 records, under mentorExitMu, that the runner's live 1:1
 // is owed at the leg-1 fill price px. Only a SPLIT position (leg 1 on its own
 // wire) with a known fill price owes it; mode C (the stop never moves) and the
-// swing (held by the 4h) never do. The knob is read by the drain, not here.
+// swing (held by the 4h) never do. With the knob false nothing is owed and the
+// caller does not poke the event loop — the old receipt path exactly (review
+// P2, 11-17: the extra event pass was a timing difference under the revert);
+// the skipped move is still counted runner_rr11_at_partial_fill_off. The drain
+// re-reads the knob too (a flip between receipt and drain).
 // Returns true when a move is now owed (the caller pokes the event loop).
 func (at *AutoTrader) mentorOweRunnerRR11(key string, px float64) bool {
 	if at == nil || key == "" || px <= 0 {
+		return false
+	}
+	if !mentorRunnerRR11AtFillOn(at.mentorRiskControl()) {
+		at.mentorExitMu.Lock()
+		lp, ok := at.mentorLivePos[key]
+		split := ok && lp != nil && lp.Legs[0].Wire == 1 && lp.Pos.Mode != "C" && lp.Pos.Mode != "swing"
+		at.mentorExitMu.Unlock()
+		if split {
+			at.mentorCount("runner_rr11_at_partial_fill_off")
+		}
 		return false
 	}
 	at.mentorExitMu.Lock()

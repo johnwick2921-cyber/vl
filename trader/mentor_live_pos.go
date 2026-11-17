@@ -99,7 +99,7 @@ type mentorLivePos struct {
 	UncapTries int
 	// BEWaitLogged — the "close not past break-even, BE waits" line fired once.
 	BEWaitLogged bool
-	// EX-01 (full re-read 11-16, knob mentor_runner_rr11_at_partial_fill):
+	// EX-01 (full re-read 11-16, knob mentor_runner_1to1_at_fill):
 	// RunnerRR11Owed / RunnerRR11Px — the broker's leg-1 TP receipt landed at
 	// RunnerRR11Px and the runner's live 1:1 move is owed AT ONCE (the event pass
 	// the receipt wakes, mentorDrainRunnerRR11AtFill), not on the next closed
@@ -110,7 +110,7 @@ type mentorLivePos struct {
 	RunnerRR11Owed  bool
 	RunnerRR11Px    float64
 	RunnerRR11Moved bool
-	// EX-02 (knob mentor_resonance_one_lot_be_guard): a one-bracket resonance
+	// EX-02 (knob mentor_resonance_1lot_be_guard): a one-bracket resonance
 	// position's price has REACHED the first-target level on a closed candle —
 	// the break-even may now go out on the first close past it. Drive goroutine
 	// only. A restart-rebuilt position starts false (fail-safe: it waits again).

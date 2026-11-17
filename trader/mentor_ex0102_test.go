@@ -185,6 +185,14 @@ func TestEX02_1116_1917OneLotResonanceNoMarketExitAtEntry(t *testing.T) {
 func TestEX01_1116_1914RevertWaitsForTheNextCandle(t *testing.T) {
 	b := ex01Setup(t, store.RiskControlConfig{MentorTuning: ex01Off()})
 	b.receiptLeg1(ex01Sig, "long", ex01L1Px, r22Minute(1))
+	// review P2 (prod-path, 11-17): with the knob false the receipt owes nothing
+	// and wakes no extra event pass (no poke) — the old receipt path exactly.
+	b.at.mentorExitMu.Lock()
+	owed := b.at.mentorLivePos[ex01Sig] != nil && b.at.mentorLivePos[ex01Sig].RunnerRR11Owed
+	b.at.mentorExitMu.Unlock()
+	if owed {
+		t.Fatalf("revert: the leg-1 receipt recorded an owed at-fill move (and poked the event loop) although mentor_runner_1to1_at_fill=false")
+	}
 	b.positionsPx("long", 2, ex01Fill)
 	b.book(ex01Book(ex01Stop)[1:2]...)
 	ex01EventPass(t, b)
