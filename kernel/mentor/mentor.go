@@ -523,6 +523,24 @@ type Config struct {
 	// false reverts (the box gates only the 1m ISB direction, R70 @1:08:24).
 	// Studio JSON: risk_control.mentor_tuning.mentor_opening_isb_box_no_trade.
 	OpeningISBBoxNoTrade bool
+	// ISBOppositeArmGuard — ISB-M2 (11-16 full re-read): while an ISB arm RESTS,
+	// no ISB arm on the OPPOSITE side is authored (isb_opposite_arm_active; the
+	// reverse ISB isbrev_opposite_arm_active). The course has ONE order per ISB:
+	// the next candle whose body stays inside the first ISB is "Insider 3 của
+	// Insider 3" and the SAME order is kept — frame 52:09 green mother, red inside
+	// candle, ONE buy line; frame 52:45 the next inside candle, still one line
+	// [Oct D4.3 @52:03-52:49]; with two directions on offer he picks one, "Lúc nào
+	// cũng chọn cái hướng theo trend" [Oct D5.3 @17:40-17:56]. Before: only the
+	// SAME side was blocked (isbArmActive), and with no governing trigger
+	// direction (or a trigger that flipped while the arm rested) the (I1, I2) pair
+	// of a red I1 armed a SHORT beside the resting long — a two-sided bracket. The
+	// gate runs LAST, just before the arm registers, so it names only an ISB that
+	// would otherwise have armed (earlier gates keep their own names). The
+	// first arm is never cancelled by this rule (it keeps its own stacking /
+	// expiry); once it is gone the opposite ISB is an ordinary new ISB. No points
+	// number. Default true; false reverts (the two-sided bracket can rest).
+	// Studio JSON: risk_control.mentor_tuning.mentor_isb_opposite_arm_guard.
+	ISBOppositeArmGuard bool
 	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
 	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
 	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
@@ -1434,6 +1452,7 @@ func DefaultConfig() Config {
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
 		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
 		OpeningISBBoxNoTrade:       true,                // J-BOX-01 [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41]; mentor_opening_isb_box_no_trade=false reverts
+		ISBOppositeArmGuard:        true,                // ISB-M2 [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; mentor_isb_opposite_arm_guard=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)

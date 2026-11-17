@@ -132,6 +132,16 @@ func TestM462StoredNewsOnlyIsThePreM462Behaviour(t *testing.T) {
 			m466P1PreValues(&cfg)                  // m466 P1 (#61): the pre-#61 knob values — this golden predates them
 			cfg.CourseExits.StopSizeLadder = false // the stop-size ladder (2026-11-10) postdates this golden
 			m434PreISB5(t, &cfg)                   // ISB5 audit: the frozen golden predates the F5 same-tick rebuild
+			// ISB-M2 (11-16): the frozen golden predates the opposite-arm guard. Its
+			// only effect on these tapes is r22_1013_session_near1 tick 1742 (10-12
+			// 19:22 CT): a LONG ISB beside the resting short isb-5 (19:20/19:21) that
+			// the late trigger_ftgh_sell_zone filter dropped anyway — the guard now
+			// refuses it first (isb_opposite_arm_active) and never takes an ArmSeq
+			// number for it. Checked with the guard ON over all 1,380 ticks: the
+			// intents are identical except that later ArmIDs are one lower, and the
+			// state differs only by that refusal name and the ArmSeq. The revert
+			// value keeps this pin byte-identical.
+			cfg.ISBOppositeArmGuard = false
 			e := New(cfg)
 			w := want[c.name]
 			if len(w) != len(bars)-from {
