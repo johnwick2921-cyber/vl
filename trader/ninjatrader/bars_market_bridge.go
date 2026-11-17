@@ -105,6 +105,10 @@ func barsToKlines(bars []ntwire.Bar, timeframe string) []market.Kline {
 			CloseTime: b.T + durMs - 1,
 			Final:     b.Final,
 			EmittedAt: b.EmittedAt,
+			// EX-13 review P0: the replay provenance travels, so the mentor's
+			// bar-close guard judges only replay bars (a live boundary final
+			// stamped a few ms before its close is a true close).
+			Historical: b.Source == ntwire.BarSourceHistorical,
 		}
 	}
 	return out

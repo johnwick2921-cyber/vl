@@ -91,7 +91,10 @@ func ISBBoxFrom5m(prev5m, cur5m market.Kline) (ISBBox, bool) {
 
 // ISBBoxAllows answers the R5 trade rule for a candidate 1m ISB while the box
 // stands: allowed only when the pair IS an ISB AND its R1 direction equals the
-// 5m ISB's direction [D3.4 p2 @ 00:14–13:00].
+// 5m ISB's direction [D3.4 p2 @ 00:14–13:00]. The OPENING 5m ISB box is the
+// exception: there even a same-direction ISB is refused, by the late filter
+// openingISBBoxFilter (J-BOX-01, knob mentor_opening_isb_box_no_trade) [Oct D4.3
+// @59:50-1:00:29].
 func ISBBoxAllows(box ISBBox, prev1m, cur1m market.Kline) (allowed bool, reason string) {
 	if !IsISB(prev1m, cur1m) {
 		return false, "R5 box: not a 1m ISB [D3.4 p2 @ 00:14]"

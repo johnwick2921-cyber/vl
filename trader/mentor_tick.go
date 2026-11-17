@@ -60,7 +60,7 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 	if market.FuturesBarsProvider == nil {
 		return
 	}
-	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
+	bars := at.mentorClosedBarsFor(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), "1m")
 	if len(bars) == 0 {
 		return
 	}
@@ -78,11 +78,97 @@ func (at *AutoTrader) mentorTick(ctx *kernel.Context) {
 // if its Final frame was lost). The bot's wall clock is deliberately NOT used:
 // a clock ahead of NT8's, or a Final frame that lags, would let an unfinished
 // bar through and stamp the watermark on it.
+//
+// EX-13 (knob mentor_bar_close_guard, default ON): Final alone is NOT proof.
+// The AddOn's bars_historical batch stamps every replay bar final — NT8's
+// in-progress last bar included — and its watermark then suppresses that bar's
+// real close (11-16 boot: the 19:12 bar emitted 19:12:45, ticked at 19:12:46 as
+// closed). mentorClosedBarsGuarded therefore keeps a final TAIL only when its
+// close instant is at or before the newest NT8 clock Go holds for this feed
+// (the frames' own emission stamps, EmittedAt — never the bot's wall clock).
+// A bar that is no longer the tail passes (a newer bar exists; the kernel's
+// bar_not_truly_closed refuses any entry read off a final-labelled snapshot).
+// The knob false reverts to this function (Final alone).
 func mentorClosedBars(bars []market.Kline) []market.Kline {
 	if n := len(bars); n > 0 && !bars[n-1].Final {
 		return bars[:n-1]
 	}
 	return bars
+}
+
+// mentorNT8ClockMs is the newest NT8 clock reading the bars carry: the latest
+// emission stamp of any frame in the window, raised to the newest bar's open
+// (a bar NT8 opened at T proves its clock reached T). 0 = no frame carries an
+// emission stamp (store / backfill rows, an AddOn older than emitted_at): the
+// clock is unknown.
+func mentorNT8ClockMs(bars []market.Kline) int64 {
+	var clock int64
+	for _, b := range bars {
+		if b.EmittedAt > clock {
+			clock = b.EmittedAt
+		}
+	}
+	if clock == 0 {
+		return 0
+	}
+	if n := len(bars); n > 0 && bars[n-1].OpenTime > clock {
+		clock = bars[n-1].OpenTime
+	}
+	return clock
+}
+
+// mentorClosedBarsGuarded is mentorClosedBars with the EX-13 tail rule: a tail
+// bar is closed only when it is Final AND its close instant (CloseTime+1) is at
+// or before the newest NT8 clock (mentorNT8ClockMs). With no emission stamp on
+// any bar the clock is unknown and Final alone decides (as before). early=true
+// when a final-labelled tail was dropped for closing after the NT8 clock.
+func mentorClosedBarsGuarded(bars []market.Kline) (out []market.Kline, early bool) {
+	n := len(bars)
+	if n == 0 {
+		return bars, false
+	}
+	tail := bars[n-1]
+	if !tail.Final {
+		return bars[:n-1], false
+	}
+	clock := mentorNT8ClockMs(bars)
+	if clock > 0 && mentor.BarCloseInstant(tail) > clock {
+		return bars[:n-1], true
+	}
+	return bars, false
+}
+
+// mentorBarCloseGuardOn reads mentor_bar_close_guard (nil -> ON).
+func mentorBarCloseGuardOn(rc *store.RiskControlConfig) bool {
+	if rc == nil || rc.MentorTuning == nil || rc.MentorTuning.MentorBarCloseGuard == nil {
+		return true
+	}
+	return *rc.MentorTuning.MentorBarCloseGuard
+}
+
+// mentorClosedBarsFor is the closed-bar filter every mentor reader of the bar
+// cache uses: the EX-13 guard when the knob is ON (default), Final alone when
+// it is false. A final-labelled tail dropped for closing after the NT8 clock is
+// counted (bar_final_before_close) and WARNed once per bar.
+func (at *AutoTrader) mentorClosedBarsFor(bars []market.Kline, tf string) []market.Kline {
+	if at == nil || !mentorBarCloseGuardOn(at.mentorRiskControl()) {
+		return mentorClosedBars(bars)
+	}
+	out, early := mentorClosedBarsGuarded(bars)
+	if early {
+		tail := bars[len(bars)-1]
+		slot := 0
+		if tf != "1m" {
+			slot = 1
+		}
+		if at.mentorEarlyFinalLogged[slot].Swap(tail.OpenTime) != tail.OpenTime {
+			at.mentorCount("bar_final_before_close")
+			at.logWarnf("🧑‍🏫 bar-close guard: the %s CT %s bar arrived labelled final but its close (%s CT) is later than the NT8 clock (%s CT, the frame's emission stamp) — it is still forming, not ticked [EX-13; Oct D3.2 @34:20-34:33]",
+				kernel.ClockCTSeconds(time.UnixMilli(tail.OpenTime)), tf, kernel.ClockCTSeconds(time.UnixMilli(mentor.BarCloseInstant(tail))),
+				kernel.ClockCTSeconds(time.UnixMilli(mentorNT8ClockMs(bars))))
+		}
+	}
+	return out
 }
 
 // noteLiveBarsForMentorPass is the sink's mentor half: a FINAL 1m/5m frame
@@ -124,7 +210,7 @@ func (at *AutoTrader) mentorEventPassAt(now time.Time) bool {
 	if market.FuturesBarsProvider == nil {
 		return false
 	}
-	bars := mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
+	bars := at.mentorClosedBarsFor(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), "1m")
 	if len(bars) == 0 {
 		return false
 	}
@@ -227,6 +313,10 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// Limits.openTrade before this tick's simulate() can phantom-book a
 	// stop-out through the original stop.
 	at.mentorDrainExits()
+	// EX-01: a leg-1 TP receipt since the last pass owes the runner's live 1:1
+	// AT ONCE — sent here, before the watermark, so the pass the receipt's poke
+	// wakes moves it between two candle closes.
+	at.mentorDrainRunnerRR11AtFill()
 	if last.OpenTime <= at.mentorLastTickOpen {
 		return false // already ticked (the other goroutine won the race)
 	}
@@ -325,7 +415,7 @@ func (at *AutoTrader) mentorEvalOnce(bars []market.Kline) bool {
 	// S9 (D5.2 p2 @05:21): strong-day detection from the recent CLOSED 5m bars
 	// — 50–80 pt candles cut every tier to 1–2.
 	strongDay := false
-	if bars5 := mentorClosedBars(market.FuturesBarsProvider("MNQ", "5m", 12)); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
+	if bars5 := at.mentorClosedBarsFor(market.FuturesBarsProvider("MNQ", "5m", 12), "5m"); len(bars5) > 0 && mentorStrongDayFrom5m(bars5) {
 		strongDay = true
 	}
 	// item 18 part 2 (R12): at print −10m on a red-folder print day, cancel
@@ -2593,7 +2683,7 @@ func MentorLatencyBootLine() string {
 func (at *AutoTrader) mentorSeedChartDisplay(storeBars1m []market.Kline) {
 	var win []market.Kline
 	if market.FuturesBarsProvider != nil {
-		win = mentorClosedBars(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth))
+		win = at.mentorClosedBarsFor(market.FuturesBarsProvider("MNQ", "1m", mentorBars1mDepth), "1m")
 	}
 	if len(win) == 0 {
 		win = storeBars1m

@@ -173,6 +173,16 @@ type Kline struct {
 	// EmittedAt (W-PICTURE-HTF, 2026-09-20) is the AddOn's emission clock for
 	// this frame (ms, UTC). ADDITIVE + omitempty.
 	EmittedAt int64 `json:"emitted_at,omitempty"`
+	// Historical (EX-13 review P0, 11-17) marks a bar that reached the cache in
+	// an AddOn bars_historical replay batch (the cache's Bar.Source ==
+	// "historical"), not as a live frame. Only such a bar can be NT8's
+	// in-progress bar labelled final (VLBarsSubscriptionManager.cs
+	// EmitHistorical stamps every replay bar final). GO-SIDE ONLY, json:"-"
+	// like the wire Bar.Source it mirrors: every Kline JSON stays
+	// byte-identical, every named-field literal compiles unchanged, and a bar
+	// that went through JSON reads false (the guard then stays silent — the old
+	// behaviour, never a fabricated verdict).
+	Historical bool `json:"-"`
 }
 
 type KlineResponse []interface{}

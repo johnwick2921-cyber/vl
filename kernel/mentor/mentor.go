@@ -488,14 +488,87 @@ type Config struct {
 	// same 15 as D4.2-R14/R18). 0 = off (today: no scalp target). Studio JSON:
 	// risk_control.mentor_tuning.mentor_counter_5m_scalp_pts.
 	Counter5mScalpPts float64
-	// ISBJustBrokenLevel — oct-exact D1: an ISB whose MOTHER candle just closed
-	// through a level (key level, old extreme, gap edge, FTGH/FTGL box edge,
-	// trendline) with its body, and whose inside bar has not retested the level,
-	// is refused (isb_just_broken_level) until the retest [OctD3.3-R2/R3 @00:46-01:00,
-	// R47 @38:10 "hoan toan khong duoc", the 10-30 09:03 break-and-reverse ISB].
-	// No points number (the mentor gives none). Default true; revert
-	// risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
+	// ISBJustBrokenLevel — oct-exact D1 (+ ISB-M1): the master switch of the
+	// "ISB at a level it just broke" refusal (isb_just_broken_level, normal and
+	// reverse ISB) [OctD3.3-R2/R3 @00:46-01:00, R47 @38:10]. WHICH levels it reads
+	// is ISBJustBrokenScope. No points number (the mentor gives none). Default
+	// true; revert risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
 	ISBJustBrokenLevel bool
+	// ISBJustBrokenScope — ISB-M1 + J-BOX-14 + TL-M10 (11-16 full re-read):
+	//   "all" (default): an inside bar that sits ON (the level inside its
+	//   [Low, High]) a key level, old extreme, valid trendline or FTGH/FTGL box
+	//   edge whose most recent BODY cross was the mother — or an earlier candle
+	//   with price still on the level since (no move away) — is refused; the
+	//   inside bar's own wick is NOT a retest. It lifts when the inside bar forms
+	//   clear of the level or price moved away and came back (the retest) [Oct D3.3
+	//   @00:46-01:00, @01:40, @02:40, @39:20-39:52; the 11-16 19:13 inside bar on key
+	//   27,359]. Plus the box break-and-reverse (E7 @38:58). The ISB long wholly
+	//   above a box it just broke (D3.3 @37:00-51) and the drop-away ISB
+	//   (@40:07-40:20) are allowed. Only a break in the TRADE's direction refuses
+	//   (review P1-1, 11-17): a long on an up-break, a short on a down-break (the
+	//   D3.3 picture is the ISB in the break direction; the trap "dut nguoc len"
+	//   is the other way). A trade against the most recent break — the reverse
+	//   ISB read as the with-trend PHL/PLH, the 11-16 19:17 long PHL 27,374.75
+	//   (D5.3 @17:40-18:30) — is not refused here; the box break-and-reverse
+	//   refuses only the mother's direction (E7: the short).
+	//   "box" reverts to the D1 build: FTGH/FTGL edges only, the mother crossed
+	//   the edge facing the ISB and the inside bar's wick did not reach it.
+	// Studio JSON: risk_control.mentor_tuning.mentor_isb_just_broken_scope.
+	ISBJustBrokenScope string
+	// OpeningISBBoxNoTrade — J-BOX-01 (11-16 full re-read): the OPENING 5m ISB
+	// box (the first 5m inside bar of the RTH session, its inside candle opening
+	// in the first half hour, 08:35-08:55 CT) is a NO-TRADE box: while it stands
+	// unbroken, EVERY intraday entry inside it is refused
+	// (opening_isb_box_no_trade) — the same-direction 1m ISB that ISBBoxAllows
+	// lets through included. A 1m close outside gives permission again; the box
+	// is deleted on a 5m close outside (the existing close5m machinery). [Oct
+	// D4.3 @58:00-58:33 "nguyên một cái box này buổi sáng ngày hôm nay mình không
+	// được tray", @59:50-1:00:29 "Chừng nào thoát khỏi INSABA mới được trade",
+	// @1:01:06-1:04:20 "đầu giờ", @1:04:54-1:06:13; Oct D4.1 @11:00-11:41 "tầm
+	// 30 phút đồng hồ đầu tiên ... Khi nào thoát ra đi em trade"]. Default true;
+	// false reverts (the box gates only the 1m ISB direction, R70 @1:08:24).
+	// Studio JSON: risk_control.mentor_tuning.mentor_opening_isb_box_no_trade.
+	OpeningISBBoxNoTrade bool
+	// ISBOppositeArmGuard — ISB-M2 (11-16 full re-read): while an ISB arm RESTS,
+	// no ISB arm on the OPPOSITE side is authored (isb_opposite_arm_active; the
+	// reverse ISB isbrev_opposite_arm_active). The course has ONE order per ISB:
+	// the next candle whose body stays inside the first ISB is "Insider 3 của
+	// Insider 3" and the SAME order is kept — frame 52:09 green mother, red inside
+	// candle, ONE buy line; frame 52:45 the next inside candle, still one line
+	// [Oct D4.3 @52:03-52:49]; with two directions on offer he picks one, "Lúc nào
+	// cũng chọn cái hướng theo trend" [Oct D5.3 @17:40-17:56]. Before: only the
+	// SAME side was blocked (isbArmActive), and with no governing trigger
+	// direction (or a trigger that flipped while the arm rested) the (I1, I2) pair
+	// of a red I1 armed a SHORT beside the resting long — a two-sided bracket. The
+	// gate runs LAST, just before the arm registers, so it names only an ISB that
+	// would otherwise have armed (earlier gates keep their own names). The
+	// first arm is never cancelled by this rule (it keeps its own stacking /
+	// expiry); once it is gone the opposite ISB is an ordinary new ISB. No points
+	// number. Default true; false reverts (the two-sided bracket can rest).
+	// Studio JSON: risk_control.mentor_tuning.mentor_isb_opposite_arm_guard.
+	ISBOppositeArmGuard bool
+	// BarCloseGuard — EX-13 (11-16 full re-read): no entry is authored on a bar
+	// that was not truly closed. A bars_historical REPLAY bar the AddOn
+	// labelled Final but whose own frame was emitted BEFORE its close instant
+	// (Historical && Final && 0 < EmittedAt < close) is a forming snapshot;
+	// live frames are never judged (a live boundary final is often stamped a
+	// few ms before its close — review P0 11-17). The boot's bars_historical batch stamps
+	// every replay bar final, NT8's in-progress last bar included, and the
+	// AddOn's watermark then suppresses that bar's real close (11-16: the 19:12
+	// bar emitted 19:12:45, v=5140, 615 contracts short of its 3m/5m parents —
+	// the MOTHER of the 19:14 long ISB). While such a bar is among the candles
+	// an entry on this tick reads (the 1m mother + inside pair, and the 1m bars
+	// of the newest two 5m candles), every entry is refused
+	// bar_not_truly_closed; cancels and state still flow. A bar with no
+	// emission stamp (store / backfill bars, an AddOn older than emitted_at) is
+	// judged by Final alone, as before. The trader half drops a final-labelled
+	// TAIL bar whose close is later than the newest NT8 emission clock it holds
+	// (trader/mentor_tick.go mentorClosedBarsGuarded). October reads a candle
+	// only after it closes: "Em quan tâm việc đóng nến" [Oct D3.2 @34:20-34:33];
+	// "Ngồi đợi cây nến này đóng xong" [Oct D4.2 @30:48-30:56]. No points number.
+	// Default true; false reverts (Final alone).
+	// Studio JSON: risk_control.mentor_tuning.mentor_bar_close_guard.
+	BarCloseGuard bool
 	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
 	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
 	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
@@ -838,7 +911,20 @@ type Config struct {
 	// _htf_conflict / _htf_side_mismatch + the htfEntryFilter backstop + the
 	// rolling trend side). October's only big frame is the 5m [Oct D4.3-R9
 	// @07:28]. Default false; knob mentor_htf_gate_enabled=true reverts.
+	// J-PHL-1 (11-16): with the gate off the rolling PHL/PLH ladder takes its
+	// side from the 5m trigger line (rollingTrendSide); before J-PHL-1 it still
+	// fell back to the 4h line's direction, and with no 4h line it never ran.
+	// true reverts that too (the 4h side, rollingTrendSideHTF).
 	HTFGateEnabled bool
+	// RollingSideSource — J-PHL-1 rolling-only revert (review P1, 11-17): where
+	// the rolling PHL/PLH ladder takes its side while the HTF gate is OFF.
+	// "5m" (default): the 5m trigger line [Oct D4.3 @07:26-07:35, @10:36-11:33].
+	// "htf": the September 4h side (rollingTrendSideHTF) with the 4h/1h entry
+	// gate left OFF — the exact pre-J-PHL-1 live state, which
+	// mentor_htf_gate_enabled=true cannot reach (it turns the whole gate back on).
+	// HTFGateEnabled=true still forces the 4h side, as before.
+	// Studio JSON: risk_control.mentor_tuning.mentor_rolling_side_source.
+	RollingSideSource string
 	// DayGateEnabled — A1 row 2: the §7 day gate (day_off / day_spent 265 /
 	// day_not_measured, the spent-day target cap 15, the spent stop cap, the
 	// spent-day room and the trader R9 spent cap). Default false; knob
@@ -1401,6 +1487,10 @@ func DefaultConfig() Config {
 		ISBRevFillClose:            true,                // oct-exact close r1: the reverse ISB takes the ISB first target (fill-candle close / +1R) when no level gives room: D5.3-R39 @16:43 reverse ISB is the same setup read under another name; D2.2 @28:37; mentor_isbrev_fill_close=false reverts
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
+		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
+		OpeningISBBoxNoTrade:       true,                // J-BOX-01 [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41]; mentor_opening_isb_box_no_trade=false reverts
+		ISBOppositeArmGuard:        true,                // ISB-M2 [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; mentor_isb_opposite_arm_guard=false reverts
+		BarCloseGuard:              true,                // EX-13 [Oct D3.2 @34:20-34:33; D4.2 @30:48-30:56]; mentor_bar_close_guard=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)
@@ -1449,13 +1539,14 @@ func DefaultConfig() Config {
 		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
 		OrbISBFractionOutside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); orb_isb_fraction_outside=0.80 reverts
 
-		LegBudgetEnabled:  false, // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
-		HTFGateEnabled:    false, // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
-		DayGateEnabled:    false, // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
-		Swing4HEnabled:    false, // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
-		OrbPart2Enabled:   false, // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
-		Open5mGateEnabled: false, // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
-		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
+		LegBudgetEnabled:  false,         // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
+		HTFGateEnabled:    false,         // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
+		RollingSideSource: RollingSide5m, // J-PHL-1 [Oct D4.3 @07:26-07:35, @10:36-11:33]; mentor_rolling_side_source=htf reverts (gate stays off)
+		DayGateEnabled:    false,         // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
+		Swing4HEnabled:    false,         // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
+		OrbPart2Enabled:   false,         // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
+		Open5mGateEnabled: false,         // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
+		LossBoxEnabled:    false,         // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
 		// OCT-EXACT A2 (each revert named in the Config comment).
 		HTFBoxGates:                 false, // row 1
 		Box15mNoTrade:               true,  // review fix: OctD4.3-R60 @58:38 keeps the 15m ISB-box no-trade; false reverts to the R9-only read

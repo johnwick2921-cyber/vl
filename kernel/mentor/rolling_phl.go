@@ -94,10 +94,40 @@ func levelTouchRejectActiveSince(st *State, side Side, levels []Level, sinceMs i
 	return false
 }
 
-// rollingTrendSide is the side the rolling pullback leg follows: the gate-aware
-// HTF verdict whenever the gate applies (since m462: all session by default —
-// D5.1-R9/R11), and the 4h trigger direction alone when it does not (a stored
-// news-only strategy outside its windows, m436).
+// rollingTrendSide is the side the rolling pullback leg follows.
+//
+// J-PHL-1 (full re-read 11-16, P0; mentor_htf_gate_enabled=false, the October
+// default since #70): the side is the 5m TRIGGER LINE's. October has no 4h/1h
+// direction line — "Là khung 5 phút only" (the 5m frame only) [Oct D4.3
+// @07:26-07:35], the 1h line on the slide is skipped ("2 cái dòng này bỏ qua"
+// [Oct D4.3 @01:38-01:47]), "khung 5 phút nó kêu mình làm cái gì mình làm cái
+// đó" (do what the 5m says) [Oct D4.3 @10:36-11:33], the trend is read by eye,
+// left to right [Oct D2.3 @13:00-13:20]. No 5m line yet (before its first
+// break) = no side = no ladder (fail-closed). The 4h line no longer lends the
+// ladder its side: live 11-16 19:14 the 4h was short and the 5m long, so the
+// whole 19:12-19:20 rally could only ladder (refused) shorts.
+//
+// Revert: rollingTrendSideHTF, the September side below, exactly as before —
+// mentor_rolling_side_source=htf (rolling only, the 4h/1h gate stays OFF: the
+// exact pre-J-PHL-1 live state), or mentor_htf_gate_enabled=true (which also
+// turns the whole 4h/1h entry gate back on).
+const (
+	RollingSide5m  = "5m"  // J-PHL-1 default: the 5m trigger line's side
+	RollingSideHTF = "htf" // the revert: the September 4h side, gate untouched
+)
+
+func (e *Evaluator) rollingTrendSide() Side {
+	if e.Cfg.HTFGateEnabled || e.Cfg.RollingSideSource == RollingSideHTF {
+		return rollingTrendSideHTF(e.State.HTF)
+	}
+	return e.State.Trigger.Dir
+}
+
+// rollingTrendSideHTF is the September side (the J-PHL-1 revert, reached only
+// with mentor_htf_gate_enabled=true): the gate-aware HTF verdict whenever the
+// gate applies (since m462: all session by default — D5.1-R9/R11), and the 4h
+// trigger direction alone when it does not (a stored news-only strategy outside
+// its windows, m436).
 //
 // HTFVerdict returns an EMPTY side whenever the 4h/1h direction gate is OFF
 // (HTF.GateOff — only a stored htf_gate_news_only=true outside 08:30–09:30 CT
@@ -108,10 +138,10 @@ func levelTouchRejectActiveSince(st *State, side Side, levels []Level, sinceMs i
 // every resting roll at 09:30 and started none for the rest of the day. The
 // pullback continuation of D2.2 has no time window in the lesson — the trend is
 // the 4h read the mentor starts from ("Ngồi chờ khi nào 1h trigger buy theo
-// khung 4 giờ thì trade" is the GATE's sit-out, off outside the window) [D2.2
-// p1 @02:44, @11:05–11:19; D4.4 p1 @02:53]. With the gate off the 4h direction
-// IS the trend; no 4h trigger at all = no direction = no continuation.
-func rollingTrendSide(h HTF) Side {
+// khung 4 giờ thì trade" is the GATE's sit-out, off outside the window) [Sept
+// D2.2 p1 @02:44, @11:05–11:19; D4.4 p1 @02:53]. With the gate off the 4h
+// direction IS the trend; no 4h trigger at all = no direction = no continuation.
+func rollingTrendSideHTF(h HTF) Side {
 	if _, side, _ := HTFVerdict(h); side != "" {
 		return side
 	}
@@ -246,14 +276,21 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 		}
 	}
 
-	// 1. Trend direction (the 4h read, §5.4). No direction = no continuation.
-	side := rollingTrendSide(e.State.HTF)
+	// 1. Trend direction: the 5m trigger line (J-PHL-1, October); the 4h read
+	// (§5.4) only under the mentor_htf_gate_enabled revert. No direction = no
+	// continuation.
+	side := e.rollingTrendSide()
 	if side == "" {
 		// m462: the gate applies and refuses (no 4h trigger / case 3). Name it
 		// — once per exec candle, and only where a leg would have lived: a roll
 		// is resting, or this candle is the pullback of the 4h side (the
 		// pre-m462 leg) — so a refusal records a leg the gate stopped, never a
 		// candle with nothing to trade [D5.1-R11; D4.4 p1 @15:09–15:33].
+		// J-PHL-1: only under the revert — with the gate off (the October
+		// default) HTFEntryCheck never refuses, and the side is the 5m's.
+		if !e.Cfg.HTFGateEnabled {
+			return e.rollingCancel(st, "no 5m trigger line yet — the rolling pullback leg has no side [Oct D4.3 @07:26-07:35]")
+		}
 		if r, _ := HTFEntryCheck(e.State.HTF, ""); r != "" {
 			four := e.State.HTF.FourH.Dir
 			if (st.ArmID != "" || four != "" && rollingPullbackCandle(execCur, four)) && e.State.RollingHTFRefusedAt != execCur.CloseTime {
@@ -268,7 +305,11 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// candle that is the NEW side's pullback may start the new ladder below.
 	var out []Intent
 	if st.Ladder && st.Side != side {
-		out = e.rollingCancel(st, "the HTF side flipped — cancel the resting roll of the old side")
+		why := "the 5m trigger side flipped — cancel the resting roll of the old side [Oct D4.3 @10:36-11:33]"
+		if e.Cfg.HTFGateEnabled {
+			why = "the HTF side flipped — cancel the resting roll of the old side"
+		}
+		out = e.rollingCancel(st, why)
 	}
 
 	// 1c. The START gate (c52 W6, plan A8; m464: the start ONLY): the ladder
@@ -431,7 +472,10 @@ func (e *Evaluator) rollingPHLTick(bars []market.Kline, cur, execCur market.Klin
 	// Below the buy line / above the sell line, or against the line's side, the
 	// rung is refused and a resting order is cancelled. The same
 	// LocTriggerFilter switch the level path honours turns it off; an empty
-	// trigger passes (TriggerVerdict). Counted once per candle.
+	// trigger passes (TriggerVerdict). Counted once per candle. Since J-PHL-1
+	// the leg's side IS the 5m line's (October default), so only the "entry
+	// beyond the line" half can refuse; the side half bites under the
+	// mentor_htf_gate_enabled revert (4h side vs 5m side).
 	if e.Cfg.LocTriggerFilter {
 		if dirOK, trigSide, _ := TriggerVerdict(e.State.Trigger, in.Price); !dirOK || trigSide != "" && trigSide != side {
 			return skip("rolling_phl_trigger_side", "the 5m trigger side disagrees with the rolling leg [X8 part1 @06:25, 08:37–08:48]")

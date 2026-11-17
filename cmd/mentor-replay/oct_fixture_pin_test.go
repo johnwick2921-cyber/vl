@@ -79,8 +79,10 @@ func TestOctSignoffPendingAreListedAndReasonsHonest(t *testing.T) {
 	if r := acceptedMisses["D2.2-E15"]; !containsAll(r, "owner order 2026-11-15", "1 MNQ", "33 -> 32") {
 		t.Errorf("D2.2-E15 reason must cite the owner order, the 1 MNQ sizing and the explicit floor drop: %q", r)
 	}
-	if octScoreFloor != 32 {
-		t.Errorf("octScoreFloor = %d: the 2026-11-15 owner order lowered it to exactly 32 (raise it when a miss is fixed; never lower it silently)", octScoreFloor)
+	// The 2026-11-15 owner order lowered it to exactly 32; J-BOX-01 (fix/mentor-reread-1116) raised it to 33
+	// (D4.1-1 and D2.2-E15 pass on the opening 5m ISB box no-trade).
+	if octScoreFloor != 33 {
+		t.Errorf("octScoreFloor = %d: the 2026-11-15 owner order lowered it to exactly 32 and J-BOX-01 raised it to 33 (raise it when a miss is fixed; never lower it silently)", octScoreFloor)
 	}
 }
 

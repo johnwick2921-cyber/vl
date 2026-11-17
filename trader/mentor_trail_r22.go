@@ -246,7 +246,8 @@ func mentorMoveErrAlreadyLogged(err error) bool {
 		errors.Is(err, errMentorLegClosed) ||
 		errors.Is(err, errMentorStopBrokerTighter) ||
 		errors.Is(err, errMentorStopAtBroker) ||
-		errors.Is(err, errMentorStopThroughMarket)
+		errors.Is(err, errMentorStopThroughMarket) ||
+		errors.Is(err, errMentorStopThroughMarketWait)
 }
 
 // mentorBrokerLegStopRead reads the broker's OWN stop for one wire leg from the
@@ -441,6 +442,12 @@ func (at *AutoTrader) mentorExitDriveCandle(nt *ntTrader.TCPTrader, p *mentorLiv
 		appliedAny := false
 		brokerTighter := false
 		for _, leg := range runners {
+			if p.RunnerRR11Moved && legAtOrBeyondBE(side, leg.Stop, be) {
+				// EX-01: the at-fill 1:1 already pulled this runner to/past
+				// break-even — that IS BE; asking for BE would be a widen.
+				appliedAny = true
+				continue
+			}
 			err := at.mentorMoveLegStop(nt, side, leg, be)
 			if errors.Is(err, errMentorStopBrokerTighter) {
 				brokerTighter = true

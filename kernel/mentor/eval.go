@@ -1192,10 +1192,34 @@ func isbInRange(price float64, levels []Level, boxes []Box, isbBox *ISBBox, ping
 // isbArmActive reports whether an ISB arm for the SAME side is still live
 // (CTO parity ruling 1791008332386 #1: ONE active ISB arm per side — the
 // reference is the FIRST ISB; a new arm forms only after the previous one is
-// filled, cancelled or expired).
+// filled, cancelled or expired). The OPPOSITE side is isbOppositeArmActive
+// (ISB-M2, mentor_isb_opposite_arm_guard).
 func isbArmActive(arms map[string]ISBArm, side Side) bool {
 	for _, arm := range arms {
 		if arm.Inside >= 0 && arm.Side == side {
+			return true
+		}
+	}
+	return false
+}
+
+// isbOppositeArmActive reports whether an ISB arm on the OPPOSITE side of side
+// is still resting (ISB-M2, knob mentor_isb_opposite_arm_guard). skip names
+// arms authored THIS tick (justPlaced): the reverse ISB's own same-pair
+// suppression (R85, suppressSamePairCounterISB) owns those. The course rests
+// ONE order per ISB and keeps it while the next bodies stay inside the first
+// ISB — "Insider 3 của Insider 3", one buy line in frames 52:09 and 52:45 [Oct
+// D4.3 @52:03-52:49]; with two directions on offer he picks one [Oct D5.3
+// @17:40-17:56]. A side-less request never matches.
+func isbOppositeArmActive(arms map[string]ISBArm, side Side, skip map[string]bool) bool {
+	if side == "" {
+		return false
+	}
+	for id, arm := range arms {
+		if skip[id] {
+			continue
+		}
+		if arm.Inside >= 0 && arm.Side != "" && arm.Side != side {
 			return true
 		}
 	}
@@ -2666,6 +2690,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 	// is byte-identical to the 1m-only build.
 	prev, cur := bars[len(bars)-2], bars[len(bars)-1]
 	execPrev, execCur, execTFMin := prev, cur, 1
+	execHist := bars // ISB-M1: the execution-frame candles ending with execCur
 	if e.Cfg.Exec2mAfter30m {
 		want := 2
 		switch {
@@ -2683,6 +2708,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			if b2 := e.closedBucketsTFMemo(bars, tf, now); len(b2) >= 2 {
 				execPrev, execCur = b2[len(b2)-2], b2[len(b2)-1]
 				execTFMin = tf
+				execHist = b2
 				break
 			}
 			if tf == 2 {
@@ -3076,7 +3102,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 						// stacking extends the EXISTING arm — no new arm.
 						// REL-5 audit #3: name the skip instead of a silent drop.
 						e.refuse("isb_arm_active")
-					} else if r := e.isbJustBrokenRefusal(side, execPrev, execCur, boxes); r != "" {
+					} else if r := e.isbJustBrokenRefusal(side, justBrokenCtx{hist: execHist, boxes: boxes, levels: levels, trendlines: trendlines}); r != "" {
 						// oct-exact D1 [OctD3.3-R2/R3 @00:46-01:00, R47 @38:10]: the ISB
 						// sits at a level its mother candle just broke — wait for the
 						// retest. Ahead of every box / trigger gate so the rule itself
@@ -3181,6 +3207,19 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 								// SPENT day: room ≥ 2× the capped take-profit too
 								// ("target 15 → room 30", D5.3 p1 @09:32–09:50).
 								e.refuse("room")
+							} else if e.Cfg.ISBOppositeArmGuard && isbOppositeArmActive(e.State.ISBArms, side, justPlaced) {
+								// ISB-M2 (11-16 full re-read): an ISB arm already RESTS on
+								// the other side — one order per ISB, the resting one is
+								// kept ("Insider 3 của Insider 3", frames 52:09/52:45 one
+								// buy line [Oct D4.3 @52:03-52:49]; one direction [Oct D5.3
+								// @17:40-17:56]). Without this, a red I1 under a resting
+								// long armed the (I1, I2) short whenever the governing
+								// trigger had no direction (TriggerVerdict side "") or
+								// flipped while the long rested — a two-sided bracket. The
+								// LAST gate before the arm registers, so it names only an
+								// ISB that would otherwise have armed (every earlier gate
+								// keeps its own refusal name). mentor_isb_opposite_arm_guard=false reverts.
+								e.refuse("isb_opposite_arm_active")
 							} else {
 								// The emitted intent carries the CAPPED target: `capped`
 								// above fed only the floor check, so a spent-day ISB went
@@ -3310,7 +3349,7 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			revFillClose := false
 			if _, stopOK, why := ISBStopVerdict(execCur, e.Cfg); !stopOK {
 				e.refuse(isbStopRefusal("isbrev_", why))
-			} else if r := e.isbJustBrokenRefusal(in.Side, execPrev, execCur, boxes); r != "" {
+			} else if r := e.isbJustBrokenRefusal(in.Side, justBrokenCtx{hist: execHist, boxes: boxes, levels: levels, trendlines: trendlines}); r != "" {
 				e.refuse(r + "_rev") // oct-exact D1: the reverse ISB at a level its mother just broke
 			} else if boxBlocked {
 				e.refuse("isbrev_box_blocked")
@@ -3361,6 +3400,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 				} else if refuse, _ := spentDayRoomRefusal(in.Price, target, capped.Target, e.State.Day.Verdict, e.Cfg.RoomMultiple); refuse && !revFillClose {
 					// SPENT day: "target 15 → room 30" [D5.3 p1 @09:32–09:50].
 					e.refuse("room")
+				} else if e.Cfg.ISBOppositeArmGuard && isbOppositeArmActive(e.State.ISBArms, in.Side, justPlaced) {
+					// ISB-M2: the reverse ISB is an ISB order too — never beside a
+					// resting ISB arm of the other side [Oct D4.3 @52:03-52:49;
+					// D5.3 @17:40-17:56]. The same-pair normal ISB authored THIS
+					// tick is skipped: R85 below suppresses it in favour of this
+					// one. Last gate, like the normal ISB's.
+					e.refuse("isbrev_opposite_arm_active")
 				} else {
 					in.Target = capped.Target
 					// B6: the same size flags as the normal ISB — rule 2 (at an
@@ -3952,6 +3998,17 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		e.refuse(r)
 	}
 
+	// J-BOX-01 (knob mentor_opening_isb_box_no_trade, default ON): the OPENING
+	// 5m ISB box is a no-trade box — every intraday entry inside it is refused,
+	// the same-direction 1m ISB included, until a 1m candle closes outside it
+	// [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41].
+	if ob := e.openingISBBox(cb5); ob != nil {
+		out, refused = openingISBBoxFilter(out, *ob, bars[len(bars)-1])
+		for _, r := range refused {
+			e.refuse(r)
+		}
+	}
+
 	// D3.3 p1 @08:12–08:56: a box-edge reject and an inside bar on the same
 	// closed bar, same side — the mentor takes the inside bar (smaller stop).
 	out, refused, noted := out, []string(nil), []string(nil)
@@ -4047,6 +4104,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 		for _, r := range refused {
 			e.refuse(r)
 		}
+	}
+	// EX-13 (knob mentor_bar_close_guard, default ON): no entry on a bar that
+	// was not truly closed — a final-labelled forming snapshot among the
+	// candles this tick's entries read [Oct D3.2 @34:20-34:33; D4.2
+	// @30:48-30:56]. Before the limits hook, so a refused entry spends no leg.
+	if e.Cfg.BarCloseGuard {
+		out = e.barCloseGuardFilter(out, bars)
 	}
 
 	// G1/G2 limits hook (DS-107): the leg budget and the loss box apply to

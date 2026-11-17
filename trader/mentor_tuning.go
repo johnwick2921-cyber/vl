@@ -128,9 +128,16 @@ type mentorTuned struct {
 	BoxCounter5mScalp           bool    // P3-missesA E9
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
+	ISBJustBrokenScope          string  // ISB-M1
+	RollingSideSource           string  // J-PHL-1 revert
+	OpeningISBBoxNoTrade        bool    // J-BOX-01
+	ISBOppositeArmGuard         bool    // ISB-M2
+	BarCloseGuard               bool    // EX-13
 	FTGLBodyEdgePartner         bool    // D3
 	Leg1FixedPts                float64 // D2 (trader-side)
 	ResonanceTrail              bool    // BC C6 (trader-side)
+	RunnerRR11AtFill            bool    // EX-01 (trader-side)
+	ResonanceOneLotBEGuard      bool    // EX-02 (trader-side)
 	// isbTF audit F4/F6 (defaults = today's behaviour; the course states none).
 	SwingISBOnePerCandle       bool
 	CrossingISBLookback        int
@@ -307,9 +314,16 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		BoxCounter5mScalp:           d.BoxCounter5mScalp,
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
+		ISBJustBrokenScope:          d.ISBJustBrokenScope,
+		RollingSideSource:           d.RollingSideSource,
+		OpeningISBBoxNoTrade:        d.OpeningISBBoxNoTrade,
+		ISBOppositeArmGuard:         d.ISBOppositeArmGuard,
+		BarCloseGuard:               d.BarCloseGuard,
 		FTGLBodyEdgePartner:         d.FTGLBodyEdgePartner,
 		Leg1FixedPts:                mentorLeg1FixedPtsDefault, // oct-exact D2
 		ResonanceTrail:              true,                      // BC C6
+		RunnerRR11AtFill:            true,                      // EX-01
+		ResonanceOneLotBEGuard:      true,                      // EX-02
 	}
 	if rc == nil || rc.MentorTuning == nil {
 		return out
@@ -398,6 +412,10 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.ISBBoxEscape, &out.ISBBoxEscapeMode, mentor.ISBBoxEscapeCloseBoxTF, mentor.ISBBoxEscapeClose, mentor.ISBBoxEscapeBody) // m473 B3: close5m default [Oct D4.3 @ 65:00-66:13]
 	enum(t.EMA34LossRelock, &out.EmaLossRelock, mentor.EmaRelockOff, mentor.EmaRelockSession, mentor.EmaRelockUntilZoneExit)      // A2 row 6: off
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
+	// ISB-M1: "all" (default) / "box" (revert); an unknown value fails closed to all, counted.
+	enum(t.MentorISBJustBrokenScope, &out.ISBJustBrokenScope, mentor.JustBrokenScopeAll, mentor.JustBrokenScopeBox)
+	// J-PHL-1 rolling-only revert: "5m" (default) / "htf"; an unknown value fails to 5m, counted.
+	enum(t.MentorRollingSideSource, &out.RollingSideSource, mentor.RollingSide5m, mentor.RollingSideHTF)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)
 	// Rule 5 (release #31, fold #565 D5): nil → 0.80 (ON); an explicit 0 → OFF
 	// (the kernel reads <= 0 as off); (0,1] → the fraction. The pointer lets a
@@ -573,9 +591,14 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorBoxCarryFirstLatched, &out.BoxCarryFirstLatched)                // P3-missesA E9
 	flag(t.MentorBoxCounter5mScalp, &out.BoxCounter5mScalp)                      // P3-missesA E9
 	flag(t.MentorISBJustBrokenLevel, &out.ISBJustBrokenLevel)                    // D1
+	flag(t.MentorOpeningISBBoxNoTrade, &out.OpeningISBBoxNoTrade)                // J-BOX-01
+	flag(t.MentorISBOppositeArmGuard, &out.ISBOppositeArmGuard)                  // ISB-M2
+	flag(t.MentorBarCloseGuard, &out.BarCloseGuard)                              // EX-13
 	flag(t.MentorFTGLBodyEdgePartner, &out.FTGLBodyEdgePartner)                  // D3
 	pickPtr(t.MentorLeg1FixedPts, 0, 100, &out.Leg1FixedPts)                     // D2
 	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
+	flag(t.MentorRunnerRR11AtFill, &out.RunnerRR11AtFill)                        // EX-01
+	flag(t.MentorResonance1LotBEGuard, &out.ResonanceOneLotBEGuard)              // EX-02
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
@@ -685,6 +708,11 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.BoxCounter5mScalp = t.BoxCounter5mScalp                     // P3-missesA E9
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
+	cfg.ISBJustBrokenScope = t.ISBJustBrokenScope                   // ISB-M1
+	cfg.RollingSideSource = t.RollingSideSource                     // J-PHL-1 revert
+	cfg.OpeningISBBoxNoTrade = t.OpeningISBBoxNoTrade               // J-BOX-01
+	cfg.ISBOppositeArmGuard = t.ISBOppositeArmGuard                 // ISB-M2
+	cfg.BarCloseGuard = t.BarCloseGuard                             // EX-13
 	cfg.FTGLBodyEdgePartner = t.FTGLBodyEdgePartner                 // D3
 	cfg.Swing.ISBRepeatAfterFill = !t.SwingISBOnePerCandle          // isbTF-F4
 	cfg.CrossingISBLookback = t.CrossingISBLookback                 // isbTF-F6
