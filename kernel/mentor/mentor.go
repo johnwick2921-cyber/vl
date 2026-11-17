@@ -541,6 +541,26 @@ type Config struct {
 	// number. Default true; false reverts (the two-sided bracket can rest).
 	// Studio JSON: risk_control.mentor_tuning.mentor_isb_opposite_arm_guard.
 	ISBOppositeArmGuard bool
+	// BarCloseGuard — EX-13 (11-16 full re-read): no entry is authored on a bar
+	// that was not truly closed. A bar the AddOn labelled Final but whose own
+	// frame was emitted BEFORE its close instant (Final && 0 < EmittedAt <
+	// close) is a forming snapshot: the boot's bars_historical batch stamps
+	// every replay bar final, NT8's in-progress last bar included, and the
+	// AddOn's watermark then suppresses that bar's real close (11-16: the 19:12
+	// bar emitted 19:12:45, v=5140, 615 contracts short of its 3m/5m parents —
+	// the MOTHER of the 19:14 long ISB). While such a bar is among the candles
+	// an entry on this tick reads (the 1m mother + inside pair, and the 1m bars
+	// of the newest two 5m candles), every entry is refused
+	// bar_not_truly_closed; cancels and state still flow. A bar with no
+	// emission stamp (store / backfill bars, an AddOn older than emitted_at) is
+	// judged by Final alone, as before. The trader half drops a final-labelled
+	// TAIL bar whose close is later than the newest NT8 emission clock it holds
+	// (trader/mentor_tick.go mentorClosedBarsGuarded). October reads a candle
+	// only after it closes: "Em quan tâm việc đóng nến" [Oct D3.2 @34:20-34:33];
+	// "Ngồi đợi cây nến này đóng xong" [Oct D4.2 @30:48-30:56]. No points number.
+	// Default true; false reverts (Final alone).
+	// Studio JSON: risk_control.mentor_tuning.mentor_bar_close_guard.
+	BarCloseGuard bool
 	// FTGLBodyEdgePartner — oct-exact D3: the FTGL second bottom is picked by the
 	// BODY edge (levelness read on the lower body edges, not the wicks) [OctD3.3-R54
 	// @43:14 "kéo lên cái thân gần nhất của cái đáy 2"; the 13 Sep example: the
@@ -1453,6 +1473,7 @@ func DefaultConfig() Config {
 		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
 		OpeningISBBoxNoTrade:       true,                // J-BOX-01 [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41]; mentor_opening_isb_box_no_trade=false reverts
 		ISBOppositeArmGuard:        true,                // ISB-M2 [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; mentor_isb_opposite_arm_guard=false reverts
+		BarCloseGuard:              true,                // EX-13 [Oct D3.2 @34:20-34:33; D4.2 @30:48-30:56]; mentor_bar_close_guard=false reverts
 		FTGLBodyEdgePartner:        true,                // oct-exact D3 [OctD3.3-R54 @43:14]; mentor_ftgl_body_edge_partner=false reverts
 		PHLRoomMultiple:            1,                   // answers-1112 Q2: October 1:1 [Oct D2.3 @49:37-49:56 "stop-loss 40 điểm ... target 40 điểm ... Risk reward 1-1"; WE10 s_04120→s_04126 3.31R dragged to 1.71R and taken]; R31 @ 27:33 "1,2" is one trade's result (s_01661 1.8), not a minimum; knob phl_room_multiple=2 reverts (Sept D5.3 2R)
 		HTFGateNewsOnly:            true,                // D2-G7 oct round 2: October's only big frame is the 5m [OctD4.3-R9 @ 07:28]; the 4h/1h gate = the print period + 08:30-09:30 open only; false = m462 all session (Sept D5.1-R9/R11)

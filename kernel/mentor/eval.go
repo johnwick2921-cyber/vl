@@ -4105,6 +4105,13 @@ func (e *Evaluator) Tick(bars []market.Kline, now int64) (out []Intent) {
 			e.refuse(r)
 		}
 	}
+	// EX-13 (knob mentor_bar_close_guard, default ON): no entry on a bar that
+	// was not truly closed — a final-labelled forming snapshot among the
+	// candles this tick's entries read [Oct D3.2 @34:20-34:33; D4.2
+	// @30:48-30:56]. Before the limits hook, so a refused entry spends no leg.
+	if e.Cfg.BarCloseGuard {
+		out = e.barCloseGuardFilter(out, bars)
+	}
 
 	// G1/G2 limits hook (DS-107): the leg budget and the loss box apply to
 	// intraday entries; the §8 swing runs its own machine and is exempt.

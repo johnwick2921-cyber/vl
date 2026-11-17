@@ -676,6 +676,10 @@ type AutoTrader struct {
 	// mutates the evaluator's maps — N11 (DS-104). One mutex, both callers.
 	mentorEvalMu       sync.Mutex
 	mentorFinalArrival atomic.Int64 // ms — when the FINAL frame hit the sink
+	// mentorEarlyFinalLogged (EX-13): the open of the last final-labelled tail
+	// bar the bar-close guard dropped and WARNed ([0] 1m, [1] 5m) — one WARN
+	// and one count per bar, not one per event pass.
+	mentorEarlyFinalLogged [2]atomic.Int64
 	// MENTOR B20 — the chosen exit branch per open position (keyed by side:
 	// "long"/"short"), set at placement from the entry-time fork (A/B/C/swing)
 	// and switched to C by a confluence upgrade. The P1 exit loop drives the
