@@ -504,7 +504,13 @@ type Config struct {
 	//   @00:46-01:00, @01:40, @02:40, @39:20-39:52; the 11-16 19:13 inside bar on key
 	//   27,359]. Plus the box break-and-reverse (E7 @38:58). The ISB long wholly
 	//   above a box it just broke (D3.3 @37:00-51) and the drop-away ISB
-	//   (@40:07-40:20) are allowed.
+	//   (@40:07-40:20) are allowed. Only a break in the TRADE's direction refuses
+	//   (review P1-1, 11-17): a long on an up-break, a short on a down-break (the
+	//   D3.3 picture is the ISB in the break direction; the trap "dut nguoc len"
+	//   is the other way). A trade against the most recent break — the reverse
+	//   ISB read as the with-trend PHL/PLH, the 11-16 19:17 long PHL 27,374.75
+	//   (D5.3 @17:40-18:30) — is not refused here; the box break-and-reverse
+	//   refuses only the mother's direction (E7: the short).
 	//   "box" reverts to the D1 build: FTGH/FTGL edges only, the mother crossed
 	//   the edge facing the ISB and the inside bar's wick did not reach it.
 	// Studio JSON: risk_control.mentor_tuning.mentor_isb_just_broken_scope.

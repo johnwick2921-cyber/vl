@@ -86,6 +86,8 @@ var acceptedQuietMisses = map[string]string{
 	// (fix/mentor-reread-1116, mentor_opening_isb_box_no_trade default ON): every setup inside the opening 5m ISB box
 	// 28,639.75-28,748.75 is refused (opening_isb_box_no_trade) until the 09:12 1m close outside it [Oct D4.3 @58:00-58:33,
 	// @59:50-1:00:29; D4.1 @11:00-11:41]. With the knob false both windows are dirty again (the 08:58 short ISB).
+	// Q-1102-02 is DIRTY again since review P1-1 (11-17, side-aware ISB-M1) — see its entry.
+	"Q-1102-02": "[NEEDS OWNER SIGN-OFF - NOT CLOSED] 1 arm: 11-02 08:36 short PLH 28,686.50 (mother 08:34, inside 08:35), before the 08:40 opening 5m ISB box exists. Side-free ISB-M1 refused it only because the 08:33 candle closed UP through key 28,701 and price stayed on it; review P1-1 made ISB-M1 refuse only the break direction (Oct D3.3 @00:16-02:47 is the ISB in the break direction; the 11-16 19:17 long PHL against the 19:15 down-break is ruled correct, REPORT-full-reread-1116.md:115, D5.3 @17:40-18:30), so a short against an up-break is no longer refused by it. The rule that would refuse 08:36 is the ORB-2 candle reading (D4.3 @1:03:00-1:03:20 'Neu nhu nen nam giua ORB 2 phut, dung trade', window conf B); the bot gates ORB-2 by ENTRY PRICE only (A1 row 4, part 1) and 28,686.50 is 2.25 under the 28,688.75 ORB low. The same arm now PASSES scorecard row D4.3-7 (took any side 08:35-08:40). Owner question: trade 11-02 08:36 or not [A, replay]",
 	"Q-1102-04": "BASELINE MISS: 3 long arms 09:38-09:54 against the 5m sell trigger; the arm cannot tell a D5.4 ~10-pt scalp from a hold trade, so some may be legal scalps [A, times inferred]",
 	"Q-1102-07": "BASELINE MISS: 12 PHL/PLH arms 19:33-21:14 in EMA34/fish chop where the mentor trades limits only; family EMA matches on 'ema' in the reason text [B]",
 	"Q-1103-01": "BASELINE MISS: 3 short PLH arms 17:49-17:55 in EMA34/fish chop [B]",
@@ -95,7 +97,7 @@ var acceptedQuietMisses = map[string]string{
 }
 
 // octQuietSignoffPending: dirty windows that are NOT closed; all of them at the baseline.
-var octQuietSignoffPending = []string{"Q-1030-09", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
+var octQuietSignoffPending = []string{"Q-1030-09", "Q-1102-02", "Q-1102-04", "Q-1102-07", "Q-1103-01", "Q-1103-02", "Q-1103-03", "Q-1103-04"}
 
 type octQuietRes struct {
 	q       octQuiet
@@ -258,4 +260,8 @@ func sideOrAny(s string) string {
 
 // octQuietCleanFloor is the precision ratchet (P4-missesB WE8: 11 of 20 clean; J-BOX-01 raised it to 13:
 // Q-1102-01 and Q-1102-02 are clean on the opening 5m ISB box no-trade).
-const octQuietCleanFloor = 13
+// LOWERED 13 -> 12 EXPLICITLY (review P1-1, fix/mentor-reread-1116, 11-17): the 13 set by J-BOX-01 in this same
+// branch counted Q-1102-02 clean, but its 08:32-08:40 part was clean only because the side-free ISB-M1 refused the
+// 08:36 short PLH against the 08:33 up-break; the side-aware rule (the reviewed video fidelity fix) lets it arm. It
+// is listed above as NEEDS OWNER SIGN-OFF, not closed. Raise back to 13 when the owner's ruling closes it.
+const octQuietCleanFloor = 12

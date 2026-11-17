@@ -122,8 +122,18 @@ func jbClose(c market.Kline) int64 {
 //     (price moved away), so the inside bar is the return to it — the retest the
 //     mentor waits for (@01:00, @39:20).
 //
+// The break DIRECTION is part of the rule (review P1-1, 11-17): D3.3 @00:16-02:47
+// refuses the ISB in the direction of the break ("no dong o duoi ... INSABA cho
+// lenh sóc ... dung vo" — the short after a close under; the trap is that price
+// "dut nguoc len", rips back the other way). A cross counts only when it went
+// the trade's way: a long refuses on an UP cross (open at/below the level,
+// close above), a short on a DOWN cross. If the most recent body cross went the
+// OTHER way, the inside bar is a trade against the break — the reverse ISB read
+// as the with-trend PHL/PLH (D5.3 @17:40-18:30, the 11-16 19:17 PHL long) — and
+// no October source refuses that here: allowed.
+//
 // from: the instant the level exists (a candle before it cannot have broken it).
-func justBrokenAt(hist []market.Kline, at func(int64) float64, from int64) bool {
+func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from int64) bool {
 	n := len(hist)
 	if n < 2 {
 		return false
@@ -133,9 +143,22 @@ func justBrokenAt(hist []market.Kline, at func(int64) float64, from int64) bool 
 		lo, hi := math.Min(a, b), math.Max(a, b)
 		return c.Low <= hi && c.High >= lo
 	}
-	crossed := func(c market.Kline) bool {
+	// crossed: 0 no body cross, -1 down through the level, +1 up through it.
+	crossed := func(c market.Kline) int {
 		vo, vc := at(c.OpenTime), at(jbClose(c))
-		return (c.Open >= vo && c.Close < vc) || (c.Open <= vo && c.Close > vc)
+		switch {
+		case c.Open >= vo && c.Close < vc:
+			return -1
+		case c.Open <= vo && c.Close > vc:
+			return 1
+		}
+		return 0
+	}
+	want := 1
+	if side == SideShort {
+		want = -1
+	} else if side != SideLong {
+		return false
 	}
 	if !touches(hist[n-1]) {
 		return false // the inside bar is clear of the level
@@ -145,8 +168,8 @@ func justBrokenAt(hist []market.Kline, at func(int64) float64, from int64) bool 
 		if c.OpenTime < from {
 			return false
 		}
-		if crossed(c) {
-			return true
+		if d := crossed(c); d != 0 {
+			return d == want // the most recent break: refused only in the trade's direction
 		}
 		if !touches(c) {
 			return false // price had moved away: the inside bar is the return (retest)
@@ -173,7 +196,11 @@ func justBrokenAt(hist []market.Kline, at func(int64) float64, from int64) bool 
 // E7: 08:57 closed under the box, 08:59-09:01 over it (the break), 09:02 back under
 // (the reverse) — refused. 09:00: 08:57 under, 08:59 over, and nothing over the box
 // before since it formed — one traversal, a break, not a reverse — allowed.
-func justBrokenBoxReverse(hist []market.Kline, b Box) bool {
+//
+// Side (review P1-1, 11-17): the reverse refuses the ISB in the mother's
+// direction only (E7: the mother closed out UNDER the box -> the short). A trade
+// against the mother's traversal is not the E7 picture and is not refused here.
+func justBrokenBoxReverse(side Side, hist []market.Kline, b Box) bool {
 	n := len(hist)
 	if n < 3 || b.Top <= 0 || b.Bottom <= 0 || b.Top < b.Bottom {
 		return false
@@ -188,7 +215,10 @@ func justBrokenBoxReverse(hist []market.Kline, b Box) bool {
 	default:
 		return false
 	}
-	side := func(c market.Kline) int {
+	if (mSide == -1 && side != SideShort) || (mSide == 1 && side != SideLong) {
+		return false
+	}
+	sideOf := func(c market.Kline) int {
 		switch {
 		case c.Close > b.Top:
 			return 1
@@ -203,7 +233,7 @@ func justBrokenBoxReverse(hist []market.Kline, b Box) bool {
 		if b.FormedAtMs > 0 && c.OpenTime < b.FormedAtMs {
 			return false
 		}
-		switch s := side(c); {
+		switch s := sideOf(c); {
 		case s == 0:
 			continue
 		case s == want && want == -mSide:
@@ -217,8 +247,9 @@ func justBrokenBoxReverse(hist []market.Kline, b Box) bool {
 	return false
 }
 
-// justBrokenAll is the scope=all read: "" = allowed, else what refused it.
-func justBrokenAll(jb justBrokenCtx) string {
+// justBrokenAll is the scope=all read for a trade on side: "" = allowed, else
+// what refused it. Only a break in the trade's direction refuses (review P1-1).
+func justBrokenAll(side Side, jb justBrokenCtx) string {
 	n := len(jb.hist)
 	if n < 2 {
 		return ""
@@ -226,11 +257,11 @@ func justBrokenAll(jb justBrokenCtx) string {
 	cur := jb.hist[n-1]
 	flat := func(p float64) func(int64) float64 { return func(int64) float64 { return p } }
 	for _, b := range jb.boxes {
-		if justBrokenBoxReverse(jb.hist, b) {
+		if justBrokenBoxReverse(side, jb.hist, b) {
 			return fmt.Sprintf("%s box %.2f-%.2f broke and reversed back through", b.Kind, b.Bottom, b.Top)
 		}
 		for _, p := range []float64{b.Bottom, b.Top} {
-			if p > 0 && p >= cur.Low && p <= cur.High && justBrokenAt(jb.hist, flat(p), b.FormedAtMs) {
+			if p > 0 && p >= cur.Low && p <= cur.High && justBrokenAt(side, jb.hist, flat(p), b.FormedAtMs) {
 				return fmt.Sprintf("%s box edge %.2f", b.Kind, p)
 			}
 		}
@@ -242,7 +273,7 @@ func justBrokenAll(jb justBrokenCtx) string {
 		if l.Price <= 0 || l.Price < cur.Low || l.Price > cur.High {
 			continue
 		}
-		if justBrokenAt(jb.hist, flat(l.Price), l.AtTime) {
+		if justBrokenAt(side, jb.hist, flat(l.Price), l.AtTime) {
 			return fmt.Sprintf("%s %.2f", l.Kind, l.Price)
 		}
 	}
@@ -250,7 +281,7 @@ func justBrokenAll(jb justBrokenCtx) string {
 		if tl.ValidAt == 0 || tl.Dead || tl.P1T == tl.P0T {
 			continue
 		}
-		if justBrokenAt(jb.hist, tl.priceAt, tl.P1T) {
+		if justBrokenAt(side, jb.hist, tl.priceAt, tl.P1T) {
 			return fmt.Sprintf("trendline %s %.2f", tl.key(), tl.priceAt(cur.OpenTime))
 		}
 	}
@@ -272,7 +303,7 @@ func (e *Evaluator) isbJustBrokenRefusal(side Side, jb justBrokenCtx) string {
 		e.note("ISB %s refused: it sits at a box that just broke (%s) with no retest yet — wait for the retest [OctD3.3-R47 @38:10, R2/R3 @00:46-01:00]", side, what)
 		return "isb_just_broken_level"
 	}
-	what := justBrokenAll(jb)
+	what := justBrokenAll(side, jb)
 	if what == "" {
 		return ""
 	}

@@ -576,4 +576,8 @@ func TestOctVideoScorecard(t *testing.T) {
 // RAISED 32 -> 33 by J-BOX-01 (fix/mentor-reread-1116): the opening 5m ISB box no-trade fixes D4.1-1 and D2.2-E15
 // (both "refused" rows on the opening box: 11-02 08:58 short ISB, 10-30 08:46 short PLH); ISB-M1 (same branch) had
 // taken the score 32 -> 31 on D4.3-7, which is still failing and awaits its own ruling.
+// NOT RAISED at 34/55 (review P1-1 side-aware ISB-M1, 11-17): D4.3-7 ("took any side 08:35-08:40") now PASSES on
+// the 11-02 08:36 short PLH 28,686.50, the SAME arm that makes quiet window Q-1102-02 (ORB-2, D4.3 @1:03:00) dirty
+// and that D4.3 @46:03-48:20 disowns. The owner rules that one arm; if it is ruled out the score returns to 33
+// without a floor change.
 const octScoreFloor = 33

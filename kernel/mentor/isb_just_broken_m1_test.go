@@ -65,12 +65,16 @@ func TestISBM1_1116_InsideBarOnTheKeyLevelRefused(t *testing.T) {
 	if got := m1Hook(t, "", SideLong, jb); got != "isb_just_broken_level" {
 		t.Errorf("default (all): 19:13 long ISB on key 27,359 got %q, want isb_just_broken_level", got)
 	}
-	if what := justBrokenAll(jb); !strings.Contains(what, "27359.00") {
+	if what := justBrokenAll(SideLong, jb); !strings.Contains(what, "27359.00") {
 		t.Errorf("the refusal names %q, want key 27,359 (the level inside the inside candle)", what)
 	}
-	// the reverse-ISB call site reads the same location (side is not the trigger)
-	if got := m1Hook(t, "", SideShort, jb); got != "isb_just_broken_level" {
-		t.Errorf("default (all): the reverse-ISB read of the same pair got %q, want isb_just_broken_level", got)
+	// review P1-1 (11-17): the break DIRECTION is part of the rule. The mother
+	// broke 27,359 UP; a SHORT read of the same pair (the reverse ISB, against
+	// the break) is not what Oct D3.3 @00:16-02:47 refuses ("no dong duoi ...
+	// INSABA cho lenh sóc ... dung vo" is the ISB in the break direction), so it
+	// is not refused here.
+	if got := m1Hook(t, "", SideShort, jb); got != "" {
+		t.Errorf("default (all): the counter-break (short) read of an UP break got %q, want none", got)
 	}
 	// revert: the D1 build reads boxes only -> the live arm
 	if got := m1Hook(t, JustBrokenScopeBox, SideLong, jb); got != "" {
@@ -192,7 +196,7 @@ func TestISBM1_1030BoxBreakVersusBreakAndReverse(t *testing.T) {
 	if got := m1Hook(t, "", SideShort, jb); got != "isb_just_broken_level" {
 		t.Errorf("default (all): E7 break-and-reverse got %q, want isb_just_broken_level [Oct D3.3 @38:58]", got)
 	}
-	if what := justBrokenAll(jb); !strings.Contains(what, "reversed") {
+	if what := justBrokenAll(SideShort, jb); !strings.Contains(what, "reversed") {
 		t.Errorf("E7 refused for %q, want the break-and-reverse", what)
 	}
 	// drop-away: 09:15 short ISB (mother 09:14), the box ~100 pts above
@@ -243,5 +247,65 @@ func TestISBM1_JBox14BreakEarlierThanTheMother(t *testing.T) {
 	off.ISBJustBrokenLevel = false
 	if got := (&Evaluator{Cfg: off}).isbJustBrokenRefusal(SideShort, justBrokenCtx{hist: stillOn, levels: lv}); got != "" {
 		t.Errorf("mentor_isb_just_broken_level=false: got %q, want none", got)
+	}
+}
+
+// Review P1-1 (11-17): ISB-M1 refuses the ISB in the BREAK direction only. The
+// 11-16 19:15 RED mother (O 27,365.75 C 27,344.75) closed DOWN through key 27,359;
+// the 19:16 candle (L 27,340.00 H 27,373.25) sits on it. A SHORT there is the
+// D3.3 picture ("no dong o duoi level ... INSABA cho lenh sóc ... dung vo",
+// @00:16-02:47: the market traps you and "dut nguoc len"): refused. The LONG
+// (the reverse ISB read as the with-trend PHL, D5.3 @17:40-18:30 "Luc nao cung
+// chon cai huong theo trend", REPORT-full-reread-1116.md:115 rules the 19:17
+// PHL long correct) trades AGAINST the break, and no October source refuses it:
+// allowed. Box break-and-reverse reads the same way: E7's mother closed out
+// UNDER the box, so the E7 short is refused and a long on that pair is not.
+func TestISBM1_CounterBreakSideNotRefused(t *testing.T) {
+	at := func(m int) time.Time { return time.Date(2026, 11, 17, 1, m, 0, 0, time.UTC) } // 11-16 19:mm CST
+	hist := []market.Kline{
+		m1Bar(at(13), 27361.75, 27362.75, 27346.75, 27359.00),
+		m1Bar(at(14), 27358.75, 27372.50, 27355.75, 27365.50),
+		m1Bar(at(15), 27365.75, 27369.25, 27337.75, 27344.75), // RED mother, down through 27,359
+		m1Bar(at(16), 27345.00, 27373.25, 27340.00, 27366.25), // on 27,359
+	}
+	formed := time.Date(2026, 11, 16, 21, 30, 0, 0, time.UTC).UnixMilli()
+	jb := justBrokenCtx{hist: hist, levels: []Level{{Kind: KindKeyLevel, Price: 27359.00, AtTime: formed}}}
+	if got := m1Hook(t, "", SideShort, jb); got != "isb_just_broken_level" {
+		t.Errorf("the short in the break direction got %q, want isb_just_broken_level [Oct D3.3 @00:16-02:47]", got)
+	}
+	if got := m1Hook(t, "", SideLong, jb); got != "" {
+		t.Errorf("the long AGAINST the down-break (the 19:17 reverse-ISB PHL) got %q, want none [D5.3 @17:40-18:30]", got)
+	}
+	// a sloping line reads the same: the 21:18 D3.3 picture is a DOWN cross of a
+	// rising line -> the short is refused, a long on that pair is not
+	at2 := func(m int) time.Time { return time.Date(2026, 11, 2, 3, m, 0, 0, time.UTC) }
+	hist2 := []market.Kline{
+		m1Bar(at2(16), 28773.00, 28775.50, 28772.00, 28773.75),
+		m1Bar(at2(17), 28773.00, 28773.00, 28763.75, 28770.25),
+		m1Bar(at2(18), 28769.75, 28771.75, 28765.00, 28765.00),
+	}
+	p0 := time.Date(2026, 11, 2, 2, 26, 0, 0, time.UTC)
+	line := Trendline{Side: SideLong, P0Px: 28771.00 - 0.25*52, P0T: p0.UnixMilli(), P1Px: 28771.00 - 0.25*8, P1T: at2(10).UnixMilli(), ValidAt: 1}
+	jb2 := justBrokenCtx{hist: hist2, trendlines: []Trendline{line}}
+	if got := m1Hook(t, "", SideLong, jb2); got != "" {
+		t.Errorf("a long against the trendline's down-break got %q, want none", got)
+	}
+	// box break-and-reverse (E7, 10-30 09:02 mother back DOWN out of the FTGH box)
+	at3 := func(m int) time.Time { return time.Date(2026, 10, 30, 13, 0, 0, 0, time.UTC).Add(time.Duration(m) * time.Minute) }
+	e7 := []market.Kline{
+		m1Bar(at3(57), 28769.0, 28777.25, 28753.0, 28773.25),
+		m1Bar(at3(58), 28772.5, 28832.25, 28771.25, 28815.5),
+		m1Bar(at3(59), 28815.75, 28860.25, 28806.75, 28841.75),
+		m1Bar(at3(60), 28842.0, 28859.0, 28827.25, 28848.75),
+		m1Bar(at3(61), 28849.0, 28857.0, 28825.25, 28827.0),
+		m1Bar(at3(62), 28826.75, 28828.25, 28795.75, 28800.75),
+		m1Bar(at3(63), 28801.0, 28807.5, 28786.0, 28802.75),
+	}
+	box := []Box{{Kind: FTGH, Top: 28819, Bottom: 28812.5, FormedAtMs: time.Date(2026, 10, 30, 13, 29, 0, 0, time.UTC).UnixMilli()}}
+	if got := m1Hook(t, "", SideShort, justBrokenCtx{hist: e7, boxes: box}); got != "isb_just_broken_level" {
+		t.Errorf("E7 short (the break-and-reverse direction) got %q, want isb_just_broken_level", got)
+	}
+	if got := m1Hook(t, "", SideLong, justBrokenCtx{hist: e7, boxes: box}); got != "" {
+		t.Errorf("a long on the E7 pair (against the reverse) got %q, want none", got)
 	}
 }

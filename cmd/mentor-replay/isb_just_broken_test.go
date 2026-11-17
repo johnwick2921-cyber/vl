@@ -203,3 +203,29 @@ func TestISBM1_D33_0101_2118NoShortISB(t *testing.T) {
 		}
 	}
 }
+
+// Review P1-1 (11-17): the 11-16 19:17 long PHL 27,374.75 (the reverse ISB at
+// EMA 9 read as the with-trend PHL) must arm under the default. Its mother, the
+// 19:15 RED candle (O 27,365.75 C 27,344.75), broke key 27,359 DOWN; the long
+// trades AGAINST that break, and Oct D3.3 @00:16-02:47 refuses only the ISB in
+// the break direction. REPORT-full-reread-1116.md:115 rules this trade correct
+// (D5.3 @17:40-18:30 "Luc nao cung chon cai huong theo trend", "Nhung lenh no
+// dep lam"). The 19:17 SHORT ISB on the same pair (the break direction) stays
+// refused isb_just_broken_level.
+func TestISBM1_1116_1917ReverseLongPHLNotRefused(t *testing.T) {
+	bs := jbFixture1116(t)
+	end := time.Date(2026, 11, 16, 19, 18, 0, 0, kernel.CTLocation())
+	arms, ref, _ := jbReplay(t, bs, "2026-11-17", end, nil)
+	if !jbArmAt(arms, "19:17", "long", "PHL", 27374.75) {
+		t.Errorf("default: the 19:17 long PHL 27,374.75 (against the 19:15 down-break) did not arm; 19:17 refusals %v", jbAt(ref, "19:17"))
+	}
+	if ref["19:17 isb_just_broken_level_rev"] != 0 {
+		t.Errorf("default: the 19:17 reverse ISB long was refused isb_just_broken_level_rev - the mother broke 27,359 DOWN, the long is against the break")
+	}
+	if ref["19:17 isb_just_broken_level"] == 0 {
+		t.Errorf("default: the 19:17 short ISB in the break direction is no longer refused; 19:17 refusals %v", jbAt(ref, "19:17"))
+	}
+	if jbArmAt(arms, "19:14", "long", "ISB", 27364.25) {
+		t.Errorf("default: the 19:14 long ISB came back (the up-break direction must stay refused)")
+	}
+}
