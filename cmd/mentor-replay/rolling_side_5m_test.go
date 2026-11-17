@@ -123,3 +123,28 @@ func TestJPHL1_1116_RollingSideFollowsThe5m(t *testing.T) {
 		}
 	}
 }
+
+// Review P1 (prod-path, 11-17): the exact pre-J-PHL-1 live state — HTF gate
+// OFF, rolling side from the 4h — through mentor_rolling_side_source=htf alone.
+// On the 11-16 tape the live short ladder of the 4h side comes back at 19:13 and
+// 19:14 (the resolver keeps the 4h/1h gate OFF: trader
+// TestJPHL1RollingSideSourceReachesTheEvaluator; on this window the gate would
+// add no htf_* refusal either way, so the check below is a guard, not the proof).
+func TestJPHL1_1116_RollingSideSourceHTFRevertsExactly(t *testing.T) {
+	bs := jbFixture1116(t)
+	sc := &store.StrategyConfig{}
+	sc.RiskControl.MentorTuning = &store.MentorTuning{MentorRollingSideSource: "htf"}
+	rev := jphl1Replay(t, bs, sc)
+	for _, m := range rev {
+		if m.HM == "19:13" || m.HM == "19:14" {
+			if !(m.Ladder && m.Side == mentor.SideShort && m.FourH == mentor.SideShort) {
+				t.Errorf("mentor_rolling_side_source=htf: %s want the live short ladder of the 4h side, got ladder=%v side=%q 4h=%q", m.HM, m.Ladder, m.Side, m.FourH)
+			}
+		}
+		for _, r := range m.Refusals {
+			if strings.HasPrefix(r, "htf_") || strings.Contains(r, "_htf_") {
+				t.Errorf("mentor_rolling_side_source=htf: %s refusal %q - the 4h/1h entry gate must stay OFF", m.HM, r)
+			}
+		}
+	}
+}

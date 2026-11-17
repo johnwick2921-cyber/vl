@@ -916,6 +916,15 @@ type Config struct {
 	// fell back to the 4h line's direction, and with no 4h line it never ran.
 	// true reverts that too (the 4h side, rollingTrendSideHTF).
 	HTFGateEnabled bool
+	// RollingSideSource — J-PHL-1 rolling-only revert (review P1, 11-17): where
+	// the rolling PHL/PLH ladder takes its side while the HTF gate is OFF.
+	// "5m" (default): the 5m trigger line [Oct D4.3 @07:26-07:35, @10:36-11:33].
+	// "htf": the September 4h side (rollingTrendSideHTF) with the 4h/1h entry
+	// gate left OFF — the exact pre-J-PHL-1 live state, which
+	// mentor_htf_gate_enabled=true cannot reach (it turns the whole gate back on).
+	// HTFGateEnabled=true still forces the 4h side, as before.
+	// Studio JSON: risk_control.mentor_tuning.mentor_rolling_side_source.
+	RollingSideSource string
 	// DayGateEnabled — A1 row 2: the §7 day gate (day_off / day_spent 265 /
 	// day_not_measured, the spent-day target cap 15, the spent stop cap, the
 	// spent-day room and the trader R9 spent cap). Default false; knob
@@ -1530,13 +1539,14 @@ func DefaultConfig() Config {
 		// Release #31 rule 5: the ORB-edge ISB candle must be ≥ 80% outside.
 		OrbISBFractionOutside: 0, // OCT-EXACT A1 row 4: orb_isb_mostly_inside OFF (EXTRA X5/X11, not October); orb_isb_fraction_outside=0.80 reverts
 
-		LegBudgetEnabled:  false, // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
-		HTFGateEnabled:    false, // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
-		DayGateEnabled:    false, // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
-		Swing4HEnabled:    false, // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
-		OrbPart2Enabled:   false, // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
-		Open5mGateEnabled: false, // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
-		LossBoxEnabled:    false, // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
+		LegBudgetEnabled:  false,         // OCT-EXACT A1 row 9: D3.1 E1 shows ~10 orders in a row [Oct D3.1 @ 08:14-08:47]; mentor_leg_budget_enabled=true reverts
+		HTFGateEnabled:    false,         // OCT-EXACT A1 row 1 [Oct D4.3-R9 @07:28]; mentor_htf_gate_enabled=true reverts
+		RollingSideSource: RollingSide5m, // J-PHL-1 [Oct D4.3 @07:26-07:35, @10:36-11:33]; mentor_rolling_side_source=htf reverts (gate stays off)
+		DayGateEnabled:    false,         // OCT-EXACT A1 row 2; mentor_day_gate_enabled=true reverts
+		Swing4HEnabled:    false,         // OCT-EXACT A1 row 3 [Oct D4.3-R10 @07:58]; mentor_swing4h_enabled=true reverts
+		OrbPart2Enabled:   false,         // OCT-EXACT A1 row 4 (part 1 orb_inside stays) [Oct D4.3 @ 61:44 R63]; mentor_orb_part2_enabled=true reverts
+		Open5mGateEnabled: false,         // OCT-EXACT A1 row 5 (Sept D4.4); mentor_open5m_gate_enabled=true reverts
+		LossBoxEnabled:    false,         // OCT-EXACT A1 row 10; mentor_loss_box_enabled=true reverts
 		// OCT-EXACT A2 (each revert named in the Config comment).
 		HTFBoxGates:                 false, // row 1
 		Box15mNoTrade:               true,  // review fix: OctD4.3-R60 @58:38 keeps the 15m ISB-box no-trade; false reverts to the R9-only read

@@ -174,6 +174,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBRoomMultiple:            1,                                 // OCT-EXACT C4: ISB room 1R (was the shared 2) [Oct D2.3-R48 @49:38]; 2 reverts
 			Counter5mScalpPts:          15,                                // OCT-EXACT C1: counter-5m EMA 34 scalp first target 15 [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
+			RollingSideSource:          mentor.RollingSide5m,              // J-PHL-1: the rolling ladder side is the 5m trigger line's [Oct D4.3 @07:26-07:35]; htf reverts (gate stays off)
 			ISBJustBrokenScope:         mentor.JustBrokenScopeAll,         // ISB-M1: every level the mother broke under the inside bar [Oct D3.3 @00:46-01:00]; box reverts
 			OpeningISBBoxNoTrade:       true,                              // J-BOX-01: the opening 5m ISB box refuses every setup inside it until a 1m close outside [Oct D4.3 @58:00-58:33, @59:50-1:00:29]; false reverts
 			ISBOppositeArmGuard:        true,                              // ISB-M2: no ISB arm opposite a resting ISB arm [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; false reverts

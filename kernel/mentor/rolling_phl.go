@@ -107,10 +107,17 @@ func levelTouchRejectActiveSince(st *State, side Side, levels []Level, sinceMs i
 // ladder its side: live 11-16 19:14 the 4h was short and the 5m long, so the
 // whole 19:12-19:20 rally could only ladder (refused) shorts.
 //
-// Revert (mentor_htf_gate_enabled=true): rollingTrendSideHTF, the September
-// side below, exactly as before.
+// Revert: rollingTrendSideHTF, the September side below, exactly as before —
+// mentor_rolling_side_source=htf (rolling only, the 4h/1h gate stays OFF: the
+// exact pre-J-PHL-1 live state), or mentor_htf_gate_enabled=true (which also
+// turns the whole 4h/1h entry gate back on).
+const (
+	RollingSide5m  = "5m"  // J-PHL-1 default: the 5m trigger line's side
+	RollingSideHTF = "htf" // the revert: the September 4h side, gate untouched
+)
+
 func (e *Evaluator) rollingTrendSide() Side {
-	if e.Cfg.HTFGateEnabled {
+	if e.Cfg.HTFGateEnabled || e.Cfg.RollingSideSource == RollingSideHTF {
 		return rollingTrendSideHTF(e.State.HTF)
 	}
 	return e.State.Trigger.Dir

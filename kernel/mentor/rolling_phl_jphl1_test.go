@@ -118,3 +118,37 @@ func TestJPHL1_Revert_HTFGateEnabled_4hSide(t *testing.T) {
 	}
 	_ = e2
 }
+
+// Review P1 (prod-path) / P2-3 (video) / P2-5 (tests-guide), 11-17: the
+// pre-branch live state was the HTF gate OFF with the rolling side from the 4h.
+// mentor_htf_gate_enabled=true brings the 4h side back but ALSO the whole 4h/1h
+// entry gate, so no setting reproduced the old live state. The dedicated
+// rolling-only revert, mentor_rolling_side_source=htf, does: the gate stays OFF
+// and the ladder side is the September 4h side, exactly as before J-PHL-1.
+func TestJPHL1_Revert_RollingSideSourceHTF_GateStaysOff(t *testing.T) {
+	if got := DefaultConfig().RollingSideSource; got != RollingSide5m {
+		t.Fatalf("RollingSideSource default %q, want %q (J-PHL-1, Oct D4.3 @07:26-07:35)", got, RollingSide5m)
+	}
+	mk := func(fourH, fiveM Side) (*Evaluator, func() int) {
+		e, _, tick := jphl1Fixture(false, fourH, fiveM)
+		e.Cfg.RollingSideSource = RollingSideHTF
+		return e, tick
+	}
+	e, tick := mk(SideShort, SideLong)
+	if e.Cfg.HTFGateEnabled {
+		t.Fatalf("the rolling-only revert must leave the 4h/1h gate OFF")
+	}
+	if n := tick(); n != 0 {
+		t.Fatalf("rolling side htf, 4h short + 5m long: the old 4h side (short) must hold, got %d armed; ladder=%+v", n, e.State.RollingPHL)
+	}
+	if e.State.RollingPHL.Side == SideLong {
+		t.Fatalf("rolling side htf: a long ladder runs although the 4h is short")
+	}
+	if _, tick2 := mk("", SideLong); tick2() != 0 {
+		t.Fatalf("rolling side htf, no 4h line: the old code had no side and no ladder")
+	}
+	e3, tick3 := mk(SideLong, SideLong)
+	if n := tick3(); n != 1 {
+		t.Fatalf("rolling side htf control, 4h long + 5m long: want the long rung armed, got %d; refusals=%v", n, e3.State.Refusals)
+	}
+}

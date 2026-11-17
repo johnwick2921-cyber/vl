@@ -129,6 +129,7 @@ type mentorTuned struct {
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
 	ISBJustBrokenScope          string  // ISB-M1
+	RollingSideSource           string  // J-PHL-1 revert
 	OpeningISBBoxNoTrade        bool    // J-BOX-01
 	ISBOppositeArmGuard         bool    // ISB-M2
 	BarCloseGuard               bool    // EX-13
@@ -314,6 +315,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
 		ISBJustBrokenScope:          d.ISBJustBrokenScope,
+		RollingSideSource:           d.RollingSideSource,
 		OpeningISBBoxNoTrade:        d.OpeningISBBoxNoTrade,
 		ISBOppositeArmGuard:         d.ISBOppositeArmGuard,
 		BarCloseGuard:               d.BarCloseGuard,
@@ -412,6 +414,8 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	enum(t.D43TrendSource, &out.D43TrendSource, mentor.D43TrendTriggerLine, mentor.D43TrendStructure)
 	// ISB-M1: "all" (default) / "box" (revert); an unknown value fails closed to all, counted.
 	enum(t.MentorISBJustBrokenScope, &out.ISBJustBrokenScope, mentor.JustBrokenScopeAll, mentor.JustBrokenScopeBox)
+	// J-PHL-1 rolling-only revert: "5m" (default) / "htf"; an unknown value fails to 5m, counted.
+	enum(t.MentorRollingSideSource, &out.RollingSideSource, mentor.RollingSide5m, mentor.RollingSideHTF)
 	pick(t.OrbEdgeVetoPts, 0.25, 50, &out.OrbEdgeVetoPts)
 	// Rule 5 (release #31, fold #565 D5): nil → 0.80 (ON); an explicit 0 → OFF
 	// (the kernel reads <= 0 as off); (0,1] → the fraction. The pointer lets a
@@ -705,6 +709,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
 	cfg.ISBJustBrokenScope = t.ISBJustBrokenScope                   // ISB-M1
+	cfg.RollingSideSource = t.RollingSideSource                     // J-PHL-1 revert
 	cfg.OpeningISBBoxNoTrade = t.OpeningISBBoxNoTrade               // J-BOX-01
 	cfg.ISBOppositeArmGuard = t.ISBOppositeArmGuard                 // ISB-M2
 	cfg.BarCloseGuard = t.BarCloseGuard                             // EX-13
