@@ -7,7 +7,7 @@ package deploy
 // pins the page so it can only get shorter and more machine-checked:
 //
 //   - at most 120 lines;
-//   - rows are exactly Q1..Q13, in order, one table row each;
+//   - rows are exactly Q1..Q14, in order, one table row each;
 //   - a row enforced by "test: Name" names a func Name( that exists in some
 //     *_test.go in the repo;
 //   - the number of "self" rows (author proof + reviewer) equals the cap below,
@@ -36,11 +36,13 @@ import (
 const (
 	qualityChecklistPath     = "docs/QUALITY-CHECKLIST.md"
 	qualityChecklistMaxLines = 120
-	qualityChecklistRowCount = 13
+	qualityChecklistRowCount = 14
 	// qualityChecklistSelfCap is today's number of "self" rows. When a row gets
 	// a machine check, lower this by one in the same PR (Q6 moved to its P0
-	// census test, TestOwnerPushP0Census, in m469: 12 -> 11).
-	qualityChecklistSelfCap = 11
+	// census test, TestOwnerPushP0Census, in m469: 12 -> 11). Q1 moved to the
+	// PR-body script's mentor-diff video-cite check, and Q14 (money replay vs
+	// the live version, owner order 2026-11-17) was born machine-checked: 11 -> 10.
+	qualityChecklistSelfCap = 10
 )
 
 var (
@@ -213,7 +215,7 @@ func TestQualityChecklistCensusCatchesEachBreak(t *testing.T) {
 		t.Fatalf("baseline page should pass: %v", p)
 	}
 
-	q2, q3, q13 := rowLine(t, doc, "Q2"), rowLine(t, doc, "Q3"), rowLine(t, doc, "Q13")
+	q2, q3, q14 := rowLine(t, doc, "Q2"), rowLine(t, doc, "Q3"), rowLine(t, doc, "Q14")
 	swapped := strings.Replace(doc, q2, "\x00", 1)
 	swapped = strings.Replace(swapped, q3, q2, 1)
 	swapped = strings.Replace(swapped, "\x00", q3, 1)
@@ -231,7 +233,7 @@ func TestQualityChecklistCensusCatchesEachBreak(t *testing.T) {
 		{"unknown enforced-by", setEnforcedBy(t, doc, "Q5", "reviewer"), "must be \"self\""},
 		{"empty ci", setEnforcedBy(t, doc, "Q5", "ci:"), "must name the CI check"},
 		{"rows out of order", swapped, "in that order"},
-		{"row missing", strings.Replace(doc, q13+"\n", "", 1), "in that order"},
+		{"row missing", strings.Replace(doc, q14+"\n", "", 1), "in that order"},
 	}
 	for _, c := range cases {
 		c := c
@@ -280,8 +282,8 @@ func TestQualityChecklistPRScript(t *testing.T) {
 		diff     string // "" = pr.diff
 		problems int    // 0 = exactly one when failing
 	}{
-		{body: filepath.Join(dir, "good.md"), want: "all 13 rows have proof or a reason"},
-		{body: crlf, want: "all 13 rows have proof or a reason"},
+		{body: filepath.Join(dir, "good.md"), want: "all 14 rows have proof or a reason"},
+		{body: crlf, want: "all 14 rows have proof or a reason"},
 		{body: filepath.Join(dir, "missing-row.md"), wantExit: 1, want: "Q7: the row is missing"},
 		{body: filepath.Join(dir, "bare-tick.md"), wantExit: 1, want: "Q4: no proof"},
 		{body: filepath.Join(dir, "short-na.md"), wantExit: 1, want: "Q2: the n/a reason is too short"},
@@ -289,7 +291,7 @@ func TestQualityChecklistPRScript(t *testing.T) {
 		{body: filepath.Join(dir, "hidden-in-comment.md"), wantExit: 1, want: "Q4: the row is missing"},
 		// m468 review: each claimed failure mode gets its own fixture.
 		{body: filepath.Join(dir, "dup-row.md"), wantExit: 1, want: "Q3: the row appears more than once"},
-		{body: filepath.Join(dir, "unknown-row.md"), wantExit: 1, want: "Q14: there is no row Q14"},
+		{body: filepath.Join(dir, "unknown-row.md"), wantExit: 1, want: "Q15: there is no row Q15"},
 		// Three checkboxes and two ticks: 9 characters if the boxes were not
 		// stripped, 0 once they are.
 		{body: filepath.Join(dir, "tick-proof.md"), wantExit: 1, want: "Q3: the proof is empty or too short"},
@@ -300,6 +302,20 @@ func TestQualityChecklistPRScript(t *testing.T) {
 		// A diff that DELETES the cited tests does not prove them.
 		{body: filepath.Join(dir, "good.md"), wantExit: 1, diff: "deleted-tests.diff", problems: 2,
 			want: "Q3: cites TestFixtureGuardTurnsRed, but TestFixtureGuardTurnsRed is not in this PR's diff"},
+		// Mentor trading code (owner order 2026-11-17): Q1 needs an October
+		// video cite and Q14 the money replay, live $ vs branch $.
+		{body: filepath.Join(dir, "good-mentor.md"), diff: "mentor.diff", want: "all 14 rows have proof or a reason"},
+		{body: filepath.Join(dir, "good.md"), wantExit: 1, diff: "mentor.diff", problems: 2,
+			want: "Q14: this PR changes mentor trading code"},
+		{body: filepath.Join(dir, "mentor-no-cite.md"), wantExit: 1, diff: "mentor.diff",
+			want: "Q1: this PR changes mentor trading code"},
+		{body: filepath.Join(dir, "mentor-no-money.md"), wantExit: 1, diff: "mentor.diff",
+			want: "Q14: this PR changes mentor trading code"},
+		{body: filepath.Join(dir, "mentor-q14-na.md"), wantExit: 1, diff: "mentor.diff",
+			want: "Q14: this PR changes mentor trading code"},
+		// A file moved OUT of kernel/mentor/ is still mentor code (b/ side or a/ side).
+		{body: filepath.Join(dir, "good.md"), wantExit: 1, diff: "mentor-moved.diff", problems: 2,
+			want: "Q1: this PR changes mentor trading code"},
 		// Nor does one where the cited test is only a context line around an edit.
 		{body: filepath.Join(dir, "good.md"), wantExit: 1, diff: "context-only.diff",
 			want: "Q3: cites TestFixtureGuardTurnsRed, but TestFixtureGuardTurnsRed is not in this PR's diff"},

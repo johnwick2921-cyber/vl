@@ -1,6 +1,6 @@
 # Quality checklist
 
-One page. Thirteen rows. Each row comes from bugs that really shipped here and
+One page. Fourteen rows. Each row comes from bugs that really shipped here and
 came back after a written rule already said "don't". Rules that had a test
 behind them held; rules that were only prose did not. So every row asks for
 **proof**, not a promise.
@@ -37,7 +37,7 @@ named test disappears, if the page grows past 120 lines, or if the number of
 
 | # | Rule | Bug type it stops (entries found) | Proof | Enforced by |
 |---|---|---|---|---|
-| Q1 | Course rule: cite the video frame, and the on-screen example is the first test. A number with no citation ships OFF. | Course drift (~35; release #61 guard re-guessed each review) | Frame cite + test | self |
+| Q1 | Course rule: cite the October video by day and timestamp (`D<n>.<m> @mm:ss`) from the sources below, open the transcript and the frame, and make the on-screen example the first test. A number with no citation ships OFF. | Course drift (~35; release #61 guard re-guessed each review) | Video cite + test | ci: quality-checklist (mentor diffs need a D<n>.<m> @mm:ss cite) |
 | Q2 | List every ending of any new state: fill, cancel, expiry, reject, restart, day roll. Test each. | State lifecycle (~22; classes 87, 96, 199, 204) | Tests | self |
 | Q3 | Delete the guard and its switch-on line; the test must go red. Tests call production code, not a helper. | Tests proving nothing (~20; classes 53, 86, 108, 114) | Paste the red | self |
 | Q4 | Run time logic across DST, daily break, weekend, half day and contract roll. | Calendar (~20; classes 138, 143, 149; release #60 DST) | Tests | self |
@@ -50,11 +50,26 @@ named test disappears, if the page grows past 120 lines, or if the number of
 | Q11 | After Update, read live behaviour, not diffs. | 95 refusals missed for 6 days (10-23 to 10-29) | `deploy/post-install-check.sh` | self |
 | Q12 | Any bug that escapes adds or tightens a row and a test in the same fix PR. | Repeats (12+ classes came back after a rule existed) | PR | self |
 | Q13 | Before merge, a reviewer who didn't write the fix tries to break it, using these rows. | Caught the most bugs in our history | Review findings | self |
+| Q14 | Money replay before release: replay recent live sessions (at least the last 3, the live nights first) through the LIVE version and this branch on the same bars and the live strategies; post both $ totals and every trade that differs. A change that makes less than live needs the owner's OK and a revert switch. | Matches the video, loses money (release #72: −$425.50 on the 11-16 night the live #71 won) | $ table: live vs branch | ci: quality-checklist (mentor diffs need live $ and branch $) |
+
+## Course sources (every Q1 cite comes from here)
+
+The October 2026 course is the only trading source. Cite it as `Oct D<day>.<part> @mm:ss`.
+
+- Videos (16): `~/mm-course/oct/videos/MM. Tháng 10_2026/Ngày <d>.<p> <title>.mkv`
+- Transcripts, one set per video: `~/mm-course/oct/transcripts/Ngày <d>.<p> <title>.txt` (plain), `.srt` (timestamps), `.check.txt` (re-checked)
+- Notes per video: `~/mm-course/oct/notes/final/Ngày <d>.<p> <title>.md`
+- Latest verified re-read: `~/mm-course/oct/REPORT-full-reread-1116.md`
+
+Read the transcript at the timestamp AND look at the frame. A transcript alone has
+misheard numbers; the frame decides.
 
 ## What this page cannot do
 
 It cannot promise zero bugs. It makes the known bug types harder to ship, and
-it makes every new escape leave a test behind. Only Q5 (the release gate) and
-Q6 (the P0 census test) are checked by a machine today. When another row gets
+it makes every new escape leave a test behind. Q1 and Q14 (for mentor trading
+code), Q5 (the release gate) and Q6 (the P0 census test) are checked by a
+machine today. Q14 checks that the $ table is there, not that its numbers are
+true: the CTO reruns the replay before tagging. When another row gets
 a machine check, its row changes from `self` to `test: <name>` and the `self`
 cap in `deploy/quality_checklist_test.go` drops by one.

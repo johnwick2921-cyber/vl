@@ -23,6 +23,7 @@ One line per row of docs/QUALITY-CHECKLIST.md.
 - Q11 live behaviour after Update: proof: post-install-check PASS pasted after the boot
 - Q12 escaped bug adds a row and a test: proof: Q8 tightened, TestFixtureUnknownReadRefuses added
 - Q13 adversarial review: proof: second reviewer findings F1-F3 folded in commit abc123
+- Q14 money replay vs the live version: n/a: no mentor trading code is touched in this PR
 
 ## Rules / errors
 
