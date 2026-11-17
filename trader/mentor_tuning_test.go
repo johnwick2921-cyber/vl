@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -176,6 +177,7 @@ func TestMentorTuningDefaultsAreTheRuledOnes(t *testing.T) {
 			ISBJustBrokenLevel:         true,                              // OCT-EXACT D1: ISB at a box it just broke refused until the retest [OctD3.3-R47 @38:10]; false reverts
 			RollingSideSource:          mentor.RollingSide5m,              // J-PHL-1: the rolling ladder side is the 5m trigger line's [Oct D4.3 @07:26-07:35]; htf reverts (gate stays off)
 			ISBJustBrokenScope:         mentor.JustBrokenScopeAll,         // ISB-M1: every level the mother broke under the inside bar [Oct D3.3 @00:46-01:00]; box reverts
+			ISBJustBrokenTolPts:        0.25,                              // ISB-M1 one tick (owner order 2026-11-17 "build" after the 11-16 night replay; October gives no points distance, Oct D3.3 @00:46-01:00, @02:40); 0 reverts to the exact #72 read
 			OpeningISBBoxNoTrade:       true,                              // J-BOX-01: the opening 5m ISB box refuses every setup inside it until a 1m close outside [Oct D4.3 @58:00-58:33, @59:50-1:00:29]; false reverts
 			ISBOppositeArmGuard:        true,                              // ISB-M2: no ISB arm opposite a resting ISB arm [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; false reverts
 			BarCloseGuard:              true,                              // EX-13: no tick / no entry on a bar that was not truly closed [Oct D3.2 @34:20-34:33; D4.2 @30:48-30:56]; false reverts
@@ -678,5 +680,38 @@ func TestD3G12Knob(t *testing.T) {
 	}
 	if c := tuningTick(t, &store.MentorTuning{HTFTrendlineFlip: &v}); c.HTFTrendlineFlip != false {
 		t.Fatalf("stored htf_trendline_flip did not reach the evaluator: %v", c.HTFTrendlineFlip)
+	}
+}
+
+// TestISBM1TolKnobReachesTheEvaluator — ISB-M1 one tick (owner order
+// 2026-11-17 "build"): mentor_isb_just_broken_tolerance_pts reaches the
+// evaluator through the ONE resolver at the production call site
+// (mentorEvalOnce -> mentorTuningResolve -> applyMentorTuning). Unset -> 0.25;
+// 0 -> 0 (the exact #72 read); 0.5 -> 0.5; negative / NaN / +Inf / above 5 ->
+// 0.25, each counted tuning_bad_value.
+func TestISBM1TolKnobReachesTheEvaluator(t *testing.T) {
+	if c := tuningTick(t, &store.MentorTuning{}); c.ISBJustBrokenTolPts != 0.25 {
+		t.Fatalf("unset: ISBJustBrokenTolPts = %v, want 0.25 (one MNQ tick)", c.ISBJustBrokenTolPts)
+	}
+	if c := tuningTick(t, nil); c.ISBJustBrokenTolPts != mentor.ISBJustBrokenTolDefault {
+		t.Fatalf("no tuning block: ISBJustBrokenTolPts = %v, want %v", c.ISBJustBrokenTolPts, mentor.ISBJustBrokenTolDefault)
+	}
+	for _, v := range []float64{0, 0.5, 5} {
+		v := v
+		if c := tuningTick(t, &store.MentorTuning{MentorISBJustBrokenTolPts: &v}); c.ISBJustBrokenTolPts != v {
+			t.Errorf("stored %v: ISBJustBrokenTolPts = %v", v, c.ISBJustBrokenTolPts)
+		}
+	}
+	at := funnelAT(t)
+	bad := []float64{-0.25, math.NaN(), math.Inf(1), math.Inf(-1), 5.25}
+	for _, v := range bad {
+		v := v
+		got := mentorTuningResolve(at, &store.RiskControlConfig{MentorTuning: &store.MentorTuning{MentorISBJustBrokenTolPts: &v}})
+		if got.ISBJustBrokenTolPts != 0.25 {
+			t.Errorf("bad %v: resolved %v, want the 0.25 default", v, got.ISBJustBrokenTolPts)
+		}
+	}
+	if n := at.mentorCountSnapshot()["tuning_bad_value"]; n != len(bad) {
+		t.Errorf("tuning_bad_value = %d, want %d (one per bad value)", n, len(bad))
 	}
 }

@@ -491,8 +491,9 @@ type Config struct {
 	// ISBJustBrokenLevel — oct-exact D1 (+ ISB-M1): the master switch of the
 	// "ISB at a level it just broke" refusal (isb_just_broken_level, normal and
 	// reverse ISB) [OctD3.3-R2/R3 @00:46-01:00, R47 @38:10]. WHICH levels it reads
-	// is ISBJustBrokenScope. No points number (the mentor gives none). Default
-	// true; revert risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
+	// is ISBJustBrokenScope. The mentor gives no points number; the only one is
+	// the owner's one-tick tolerance (ISBJustBrokenTolPts). Default true; revert
+	// risk_control.mentor_tuning.mentor_isb_just_broken_level=false.
 	ISBJustBrokenLevel bool
 	// ISBJustBrokenScope — ISB-M1 + J-BOX-14 + TL-M10 (11-16 full re-read):
 	//   "all" (default): an inside bar that sits ON (the level inside its
@@ -515,6 +516,19 @@ type Config struct {
 	//   the edge facing the ISB and the inside bar's wick did not reach it.
 	// Studio JSON: risk_control.mentor_tuning.mentor_isb_just_broken_scope.
 	ISBJustBrokenScope string
+	// ISBJustBrokenTolPts — ISB-M1 one-tick tolerance (owner order 2026-11-17
+	// "build" after the 11-16 night replay; October gives no points distance —
+	// Oct D3.3 @00:46-01:00, @02:40): a BODY counts as breaking a level only
+	// when it went MORE than this many points past it on BOTH ends (up: level at
+	// the open - Open > tol AND Close - level at the close > tol; down mirrored),
+	// and the box break-and-reverse reads its mother cross and its outside
+	// closes the same way. 0.25 = one MNQ tick: the mother that closed 0.25
+	// through key 27,383.25 (22:01, pos 819), opened 0.25 below key 27,255.50
+	// (05:17, pos 902) or closed ~0.03 through a sloping line (21:48, pos 813)
+	// did not break it. 0 = the exact #72 read (Open at the level counts). Scope
+	// "all" only (the "box" revert is the D1 build, untouched). Studio JSON:
+	// risk_control.mentor_tuning.mentor_isb_just_broken_tolerance_pts.
+	ISBJustBrokenTolPts float64
 	// OpeningISBBoxNoTrade — J-BOX-01 (11-16 full re-read): the OPENING 5m ISB
 	// box (the first 5m inside bar of the RTH session, its inside candle opening
 	// in the first half hour, 08:35-08:55 CT) is a NO-TRADE box: while it stands
@@ -1488,6 +1502,7 @@ func DefaultConfig() Config {
 		Counter5mScalpPts:          15,                  // oct-exact C1: counter-5m EMA 34 scalp first target 15 pts [Oct D5.4 Ex.1 @04:47-05:00]; 0 reverts
 		ISBJustBrokenLevel:         true,                // oct-exact D1 [OctD3.3-R2/R3/R47 @00:46-01:00, 38:10]; mentor_isb_just_broken_level=false reverts
 		ISBJustBrokenScope:         JustBrokenScopeAll,  // ISB-M1 [Oct D3.3 @00:46-01:00, @02:40, @38:58-39:52]; mentor_isb_just_broken_scope=box reverts
+		ISBJustBrokenTolPts:        0.25,                // ISB-M1 one tick (owner order 2026-11-17 "build" after the 11-16 night replay; October gives no points distance, Oct D3.3 @00:46-01:00, @02:40); mentor_isb_just_broken_tolerance_pts=0 reverts to the exact #72 read
 		OpeningISBBoxNoTrade:       true,                // J-BOX-01 [Oct D4.3 @58:00-58:33, @59:50-1:00:29, @1:04:54-1:05:29; D4.1 @11:00-11:41]; mentor_opening_isb_box_no_trade=false reverts
 		ISBOppositeArmGuard:        true,                // ISB-M2 [Oct D4.3 @52:03-52:49; D5.3 @17:40-17:56]; mentor_isb_opposite_arm_guard=false reverts
 		BarCloseGuard:              true,                // EX-13 [Oct D3.2 @34:20-34:33; D4.2 @30:48-30:56]; mentor_bar_close_guard=false reverts

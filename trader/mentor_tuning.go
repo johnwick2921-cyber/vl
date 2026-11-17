@@ -18,6 +18,11 @@ import (
 // rule gate both read its result, so a swing max stop or a spent-day cap is
 // never two numbers.
 
+// mentorISBJustBrokenTolMax is the ceiling of mentor_isb_just_broken_tolerance_pts
+// (20 MNQ ticks). Above it the knob would stop ISB-M1 reading real breaks; the
+// value fails closed to the 0.25 default, counted tuning_bad_value.
+const mentorISBJustBrokenTolMax = 5.0
+
 // mentorTuned is the resolved view: every field is a usable value.
 type mentorTuned struct {
 	TriggerSchool          int
@@ -129,6 +134,7 @@ type mentorTuned struct {
 	Counter5mScalpPts           float64 // BC C1
 	ISBJustBrokenLevel          bool    // D1
 	ISBJustBrokenScope          string  // ISB-M1
+	ISBJustBrokenTolPts         float64 // ISB-M1 one tick (owner 2026-11-17)
 	RollingSideSource           string  // J-PHL-1 revert
 	OpeningISBBoxNoTrade        bool    // J-BOX-01
 	ISBOppositeArmGuard         bool    // ISB-M2
@@ -315,6 +321,7 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 		Counter5mScalpPts:           d.Counter5mScalpPts,
 		ISBJustBrokenLevel:          d.ISBJustBrokenLevel,
 		ISBJustBrokenScope:          d.ISBJustBrokenScope,
+		ISBJustBrokenTolPts:         d.ISBJustBrokenTolPts,
 		RollingSideSource:           d.RollingSideSource,
 		OpeningISBBoxNoTrade:        d.OpeningISBBoxNoTrade,
 		ISBOppositeArmGuard:         d.ISBOppositeArmGuard,
@@ -599,6 +606,9 @@ func mentorTuningResolve(at *AutoTrader, rc *store.RiskControlConfig) mentorTune
 	flag(t.MentorResonanceTrail, &out.ResonanceTrail)                            // BC C6
 	flag(t.MentorRunnerRR11AtFill, &out.RunnerRR11AtFill)                        // EX-01
 	flag(t.MentorResonance1LotBEGuard, &out.ResonanceOneLotBEGuard)              // EX-02
+	// ISB-M1 one tick (owner order 2026-11-17 "build"): nil -> 0.25; 0 = the exact
+	// #72 read; negative / NaN / Inf / above 5 -> 0.25, counted tuning_bad_value.
+	pickPtr(t.MentorISBJustBrokenTolPts, 0, mentorISBJustBrokenTolMax, &out.ISBJustBrokenTolPts)
 	// isbTF audit F4/F6: unset = today's value; out of range fails closed to
 	// the default, counted (tuning_bad_value).
 	flag(t.MentorSwingISBOnePerCandle, &out.SwingISBOnePerCandle)
@@ -709,6 +719,7 @@ func applyMentorTuning(at *AutoTrader, cfg *mentor.Config, rc *store.RiskControl
 	cfg.Counter5mScalpPts = t.Counter5mScalpPts                     // BC C1
 	cfg.ISBJustBrokenLevel = t.ISBJustBrokenLevel                   // D1
 	cfg.ISBJustBrokenScope = t.ISBJustBrokenScope                   // ISB-M1
+	cfg.ISBJustBrokenTolPts = t.ISBJustBrokenTolPts                 // ISB-M1 one tick (owner 2026-11-17)
 	cfg.RollingSideSource = t.RollingSideSource                     // J-PHL-1 revert
 	cfg.OpeningISBBoxNoTrade = t.OpeningISBBoxNoTrade               // J-BOX-01
 	cfg.ISBOppositeArmGuard = t.ISBOppositeArmGuard                 // ISB-M2

@@ -85,7 +85,27 @@ type justBrokenCtx struct {
 	// here (box edges come from boxes, trendlines from trendlines).
 	levels     []Level
 	trendlines []Trendline
+	// tol: the one-tick tolerance in points (Config.ISBJustBrokenTolPts). A body
+	// counts as crossing a level only when it went MORE than tol past it on BOTH
+	// ends; 0 (or NaN / negative) = the exact #72 read (open at the level counts).
+	tol float64
 }
+
+// jbTolEps absorbs float noise on a computed (sloping) level so a body exactly
+// tol past it reads as "tol or less" (owner 2026-11-17: one tick OR LESS).
+const jbTolEps = 1e-9
+
+// jbPast reports whether a is MORE than tol beyond b (a - b > tol). Only called
+// with tol > 0.
+func jbPast(a, b, tol float64) bool { return a-b > tol+jbTolEps }
+
+// ISBJustBrokenTolDefault — ISB-M1 one-tick tolerance (owner order 2026-11-17
+// "build" after the 11-16 night replay of #72: 3 of the 9 refused winners
+// turned on a break of one tick or less — pos 819 22:01 close 0.25 through key
+// 27,383.25, pos 902 05:17 open 0.25 below key 27,255.50, pos 813 21:48 ~0.03
+// pt through a sloping trendline). October gives no points distance (Oct D3.3
+// @00:46-01:00, @02:40); this number is the owner's, one MNQ tick.
+const ISBJustBrokenTolDefault = 0.25
 
 // jbClose is a candle's close instant for a sloping line (its open when the
 // close time is not on the candle).
@@ -132,8 +152,14 @@ func jbClose(c market.Kline) int64 {
 // as the with-trend PHL/PLH (D5.3 @17:40-18:30, the 11-16 19:17 PHL long) — and
 // no October source refuses that here: allowed.
 //
+// ONE TICK (owner order 2026-11-17 "build"): with tol > 0 a body counts as a
+// cross only when it went MORE than tol past the level on BOTH ends — up:
+// level(open) - Open > tol AND Close - level(close) > tol; down mirrored. A
+// mother that closed 0.25 through, or opened 0.25 on the other side, did not
+// break the level. tol 0 keeps the exact #72 comparison (Open == level counts).
+//
 // from: the instant the level exists (a candle before it cannot have broken it).
-func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from int64) bool {
+func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from int64, tol float64) bool {
 	n := len(hist)
 	if n < 2 {
 		return false
@@ -146,6 +172,15 @@ func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from i
 	// crossed: 0 no body cross, -1 down through the level, +1 up through it.
 	crossed := func(c market.Kline) int {
 		vo, vc := at(c.OpenTime), at(jbClose(c))
+		if tol > 0 {
+			switch {
+			case jbPast(c.Open, vo, tol) && jbPast(vc, c.Close, tol):
+				return -1
+			case jbPast(vo, c.Open, tol) && jbPast(c.Close, vc, tol):
+				return 1
+			}
+			return 0
+		}
 		switch {
 		case c.Open >= vo && c.Close < vc:
 			return -1
@@ -200,7 +235,14 @@ func justBrokenAt(side Side, hist []market.Kline, at func(int64) float64, from i
 // Side (review P1-1, 11-17): the reverse refuses the ISB in the mother's
 // direction only (E7: the mother closed out UNDER the box -> the short). A trade
 // against the mother's traversal is not the E7 picture and is not refused here.
-func justBrokenBoxReverse(side Side, hist []market.Kline, b Box) bool {
+//
+// ONE TICK (owner order 2026-11-17): the same tolerance as justBrokenAt — with
+// tol > 0 the mother's body must go MORE than tol past the edge on both ends,
+// and a close counts as outside the box only MORE than tol past an edge. E7 is
+// untouched by it (mother 09:02 O 28,826.75 C 28,800.75: 14.25 above / 11.75
+// under the 28,812.50 bottom; 08:59 closed 22.75 over the top, 08:57 39.25
+// under the bottom). tol 0 is the exact #72 read.
+func justBrokenBoxReverse(side Side, hist []market.Kline, b Box, tol float64) bool {
 	n := len(hist)
 	if n < 3 || b.Top <= 0 || b.Bottom <= 0 || b.Top < b.Bottom {
 		return false
@@ -208,6 +250,12 @@ func justBrokenBoxReverse(side Side, hist []market.Kline, b Box) bool {
 	m := hist[n-2]
 	var mSide int // -1 the mother closed out under the box, +1 over it
 	switch {
+	case tol > 0 && jbPast(m.Open, b.Bottom, tol) && jbPast(b.Bottom, m.Close, tol):
+		mSide = -1
+	case tol > 0 && jbPast(b.Top, m.Open, tol) && jbPast(m.Close, b.Top, tol):
+		mSide = 1
+	case tol > 0:
+		return false
 	case m.Open >= b.Bottom && m.Close < b.Bottom:
 		mSide = -1
 	case m.Open <= b.Top && m.Close > b.Top:
@@ -219,6 +267,15 @@ func justBrokenBoxReverse(side Side, hist []market.Kline, b Box) bool {
 		return false
 	}
 	sideOf := func(c market.Kline) int {
+		if tol > 0 {
+			switch {
+			case jbPast(c.Close, b.Top, tol):
+				return 1
+			case jbPast(b.Bottom, c.Close, tol):
+				return -1
+			}
+			return 0
+		}
 		switch {
 		case c.Close > b.Top:
 			return 1
@@ -257,11 +314,11 @@ func justBrokenAll(side Side, jb justBrokenCtx) string {
 	cur := jb.hist[n-1]
 	flat := func(p float64) func(int64) float64 { return func(int64) float64 { return p } }
 	for _, b := range jb.boxes {
-		if justBrokenBoxReverse(side, jb.hist, b) {
+		if justBrokenBoxReverse(side, jb.hist, b, jb.tol) {
 			return fmt.Sprintf("%s box %.2f-%.2f broke and reversed back through", b.Kind, b.Bottom, b.Top)
 		}
 		for _, p := range []float64{b.Bottom, b.Top} {
-			if p > 0 && p >= cur.Low && p <= cur.High && justBrokenAt(side, jb.hist, flat(p), b.FormedAtMs) {
+			if p > 0 && p >= cur.Low && p <= cur.High && justBrokenAt(side, jb.hist, flat(p), b.FormedAtMs, jb.tol) {
 				return fmt.Sprintf("%s box edge %.2f", b.Kind, p)
 			}
 		}
@@ -273,7 +330,7 @@ func justBrokenAll(side Side, jb justBrokenCtx) string {
 		if l.Price <= 0 || l.Price < cur.Low || l.Price > cur.High {
 			continue
 		}
-		if justBrokenAt(side, jb.hist, flat(l.Price), l.AtTime) {
+		if justBrokenAt(side, jb.hist, flat(l.Price), l.AtTime, jb.tol) {
 			return fmt.Sprintf("%s %.2f", l.Kind, l.Price)
 		}
 	}
@@ -281,7 +338,7 @@ func justBrokenAll(side Side, jb justBrokenCtx) string {
 		if tl.ValidAt == 0 || tl.Dead || tl.P1T == tl.P0T {
 			continue
 		}
-		if justBrokenAt(side, jb.hist, tl.priceAt, tl.P1T) {
+		if justBrokenAt(side, jb.hist, tl.priceAt, tl.P1T, jb.tol) {
 			return fmt.Sprintf("trendline %s %.2f", tl.key(), tl.priceAt(cur.OpenTime))
 		}
 	}
@@ -303,9 +360,14 @@ func (e *Evaluator) isbJustBrokenRefusal(side Side, jb justBrokenCtx) string {
 		e.note("ISB %s refused: it sits at a box that just broke (%s) with no retest yet — wait for the retest [OctD3.3-R47 @38:10, R2/R3 @00:46-01:00]", side, what)
 		return "isb_just_broken_level"
 	}
+	jb.tol = e.Cfg.ISBJustBrokenTolPts // one tick (owner 2026-11-17); 0 = the exact #72 read
 	what := justBrokenAll(side, jb)
 	if what == "" {
 		return ""
+	}
+	if jb.tol > 0 {
+		e.note("ISB %s refused: the inside bar sits at a level just broken (%s, by more than %g pt), no retest yet — wait for price to move away and retest, or an ISB clear of the level [Oct D3.3 @00:46-01:00, @01:40, @02:40, @38:58-39:52; mentor_isb_just_broken_scope=box reverts; a break of %g pt or less is not a break, mentor_isb_just_broken_tolerance_pts, owner 2026-11-17]", side, what, jb.tol, jb.tol)
+		return "isb_just_broken_level"
 	}
 	e.note("ISB %s refused: the inside bar sits at a level just broken (%s), no retest yet — wait for price to move away and retest, or an ISB clear of the level [Oct D3.3 @00:46-01:00, @01:40, @02:40, @38:58-39:52; mentor_isb_just_broken_scope=box reverts]", side, what)
 	return "isb_just_broken_level"
