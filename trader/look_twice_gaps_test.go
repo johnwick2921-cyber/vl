@@ -183,6 +183,86 @@ func TestLookTwiceGap_UnsettledDropsTheLinkCheck(t *testing.T) {
 	}
 }
 
+// G12: a look that cannot be read drops the link check that is out. Kept, the re-look
+// would wait for THAT answer (up to 5.05 s) instead of the hold's own second look.
+func TestLookTwiceGap_RestartDropsTheLinkCheck(t *testing.T) {
+	for name, unreadable := range map[string]func(w *lookWire, sid string){
+		"unknown cover": func(w *lookWire, sid string) {
+			naked := w.lastBook
+			w.book("state_change", append([]ntwire.NT8Order{sl(sid+"-sl", stop1193, 1, "Martian")}, naked...)...)
+			w.sync()
+			w.look()
+			w.book("state_change", naked...)
+			w.sync()
+		},
+		"positions": func(w *lookWire, _ string) {
+			w.protState(func() { w.at.trader = nttrader.NewTCPTrader(w.s, "MNQ", "Sim999") })
+			w.look()
+			w.protState(func() { w.at.trader = w.nt })
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			fastConfirm(t)
+			w, sid := nakedShort(t, "gap-g12-"+name, 27740)
+			t.Cleanup(func() { protectionUnverifiedSince.Delete(w.at.id) })
+			run, wake := w.at.protectionRunCtx(), make(chan struct{}, 1)
+			w.protState(func() { w.at.protRelookRun, w.at.protRelookWake = run, wake }) // the loop starts below
+			w.cancelStop(sid)
+			w.noAcks()
+			w.look()
+			w.jump(1100 * time.Millisecond)
+			w.look()
+			if w.at.outstandingProtectionProbe() == nil {
+				t.Fatal("fixture: the second look must send a link check")
+			}
+			unreadable(w, sid)
+			if w.at.outstandingProtectionProbe() != nil {
+				t.Error("a look that could not be read kept the link check of the looks before it")
+			}
+			if w.holds() != 1 {
+				t.Fatalf("fixture: the hold must stay, holds %d", w.holds())
+			}
+			began := time.Now()
+			w.at.monitorWg.Add(1)
+			go func() { defer w.at.monitorWg.Done(); w.at.protectionRelookLoop(run, wake) }()
+			for looked := false; !looked; time.Sleep(10 * time.Millisecond) {
+				w.protState(func() { h := w.at.protHolds["MNQ|SHORT"]; looked = h != nil && !h.firstLook.IsZero() })
+				if took := time.Since(began); !looked && took > 4*time.Second {
+					t.Fatalf("no look for %s (confirm is 1 s): the loop waits for an answer nobody needs", took)
+				}
+			}
+		})
+	}
+}
+
+// I29, I39: one hold raises its P0 once, though its looks start over and though the
+// row was refused (the phone has it). The store hides a repeat only of a WRITTEN row.
+func TestLookTwiceGap_OneHoldRaisesOnce(t *testing.T) {
+	w := gapWire(t, "onep0")
+	w.protState(func() { w.at.protRelookRun, w.at.protRelookWake = w.at.protectionRunCtx(), make(chan struct{}, 1) })
+	w.positions(short(1, entry1193))
+	w.book("periodic")
+	w.sync()
+	w.openHold(36*time.Second, 1, entry1193)
+	raised := func() float64 { return traderEvents(w.at.id, "protection_hold_p0") }
+	began := raised()
+	deny := denyAlerts(t, w.st)
+	deny.Store(true)
+	w.gate(gapPlace, 1, entry1193, nil)
+	deny.Store(false)
+	if n := raised() - began; n != 1 {
+		t.Fatalf("control: 36 s owes the P0, raised %.0f", n)
+	}
+	w.gate(gapPlace, 1, entry1193, nil)
+	if n := raised() - began; n != 1 {
+		t.Errorf("I29: the next look raised it again (%.0f)", n)
+	}
+	w.gate(gapPlace, 1, entry1193, (*protectionHold).restart)
+	if n := raised() - began; n != 1 {
+		t.Errorf("I39: a restart raised it again (%.0f)", n)
+	}
+}
+
 // J05 and I26: a ledger that cannot be read holds, tells the owner at once, and uses
 // up the link check's answer.
 func TestLookTwiceGap_UnreadableLedgerHolds(t *testing.T) {
@@ -354,6 +434,49 @@ func TestLookTwiceGap_OneRelookPerRun(t *testing.T) {
 	// K14: … and the Run's end ends its 30 s wait.
 	at.cancelStopMonitor()
 	ends(t, 3*time.Second, "K14: Stop must not wait out the re-look's timer", at.monitorWg.Wait)
+}
+
+// K06: Stop waits for the re-look, and ends once it has (a Done without its Add takes
+// the counter below zero: a panic there, and a later Stop that waits for ever).
+func TestLookTwiceGap_StopJoinsTheRelook(t *testing.T) {
+	t.Setenv(lookTwiceEnv, "30000")
+	at := &AutoTrader{id: "gap-join"} // not relookTrader: its cleanup would wait on the broken counter
+	at.setupStopMonitorForTest()
+	at.isRunning = true
+	at.protHolds = map[string]*protectionHold{"MNQ|SHORT": {run: at.protectionRunCtx()}}
+	if run, _ := at.armForGap(); run == nil {
+		t.Fatal("fixture: no re-look")
+	}
+	joined := make(chan struct{})
+	go func() { at.monitorWg.Wait(); close(joined) }()
+	select {
+	case <-joined:
+		t.Fatal("Stop would not wait for the re-look")
+	case <-time.After(200 * time.Millisecond):
+	}
+	at.cancelStopMonitor()
+	ends(t, 3*time.Second, "Stop never ends", func() { <-joined })
+}
+
+// L01: a beat waits for the pass that is running (without -race: the order itself).
+func TestLookTwiceGap_OnePassAtATime(t *testing.T) {
+	w := gapWire(t, "onepass")
+	w.positions(short(1, entry1193))
+	w.book("periodic")
+	w.sync()
+	done := make(chan struct{})
+	w.protState(func() { // another pass
+		go func() { w.at.reconcileProtectionAt(w.now(), "monitor"); close(done) }()
+		select {
+		case <-done:
+			t.Error("a beat judged while another pass held the lock")
+		case <-time.After(400 * time.Millisecond):
+		}
+	})
+	ends(t, 5*time.Second, "the beat never ran", func() { <-done })
+	if w.holds() != 1 {
+		t.Errorf("control: the beat opens the hold, holds %d", w.holds())
+	}
 }
 
 func TestLookTwiceGap_RelookLoopEndsWithoutAHold(t *testing.T) {
@@ -890,6 +1013,42 @@ func TestLookTwiceGap_OwnRowCap(t *testing.T) {
 		{"symbol": "MNQ", "side": "SHORT", "quantity": 0.0, "entryPrice": 90.0}})
 	if n := len(rows["MNQ|SHORT"]); n != 1 {
 		t.Errorf("Q17: a row of zero is not a position, got %d rows", n)
+	}
+}
+
+// Q02: the two-rows P0 is raised once a session day, though its row was refused (the
+// phone has it). The store hides a repeat only of a WRITTEN row.
+func TestLookTwiceGap_TwoRowsRaisedOnceADay(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{})
+	at.id = "gap-tworows"
+	var tries atomic.Int64
+	if err := st.GormDB().Callback().Create().Before("gorm:create").Register("gap:count-alerts", func(tx *gorm.DB) {
+		if strings.Contains(tx.Statement.Table, "alert") {
+			tries.Add(1)
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	deny := denyAlerts(t, st)
+	day := ctInstant(t, "2026-11-18 10:00:05.000")
+	raise := func(now time.Time) int64 {
+		at.protMu.Lock()
+		defer at.protMu.Unlock()
+		at.alertTwoRowsLocked(map[string][]protRow{"MNQ|SHORT": {{1, 27733.5}, {1, 27990}}}, now)
+		return tries.Load()
+	}
+	deny.Store(true)
+	if n := raise(day); n != 1 {
+		t.Fatalf("control: the first beat raises it, tries %d", n)
+	}
+	for i := 1; i <= 3; i++ {
+		deny.Store(i < 3)
+		if n := raise(day.Add(time.Duration(i) * time.Minute)); n != 1 {
+			t.Errorf("beat %d raised it again, tries %d", i, n)
+		}
+	}
+	if n := raise(day.Add(24 * time.Hour)); n != 2 {
+		t.Errorf("the next session day raises it again, tries %d", n)
 	}
 }
 
