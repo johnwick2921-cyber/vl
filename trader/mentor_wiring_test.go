@@ -151,9 +151,11 @@ func TestMentorProductionWiring(t *testing.T) {
 		t.Fatalf("closed-profit seam must fail closed on a NULL row: %v/%v", closed, ok)
 	}
 
-	// a failing snapshot must answer not-ok, never a fabricated value.
+	// a failing snapshot must answer not-ok, never a fabricated value. "" is
+	// the seam's "read and FLAT" answer, so it was the fabricated value
+	// (look-twice D): the read error answers unknown.
 	fake.err = errors.New("snapshot down")
-	if side := at.mentorOpenSideSource(); side != "" {
-		t.Fatalf("a snapshot error must answer empty side, got %q", side)
+	if side := at.mentorOpenSideSource(); side != mentorOpenSideUnknown {
+		t.Fatalf("a snapshot error must answer %q, got %q", mentorOpenSideUnknown, side)
 	}
 }
