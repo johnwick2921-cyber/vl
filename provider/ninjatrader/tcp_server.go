@@ -109,6 +109,13 @@ type TCPServer struct {
 	// already running, so a plain field is a data race (-race).
 	acceptClock atomic.Pointer[func() time.Time]
 
+	// receiptClock is a test-only seam for the RECEIVE instant of the frames the
+	// protection evidence is ordered by (order_snapshot, positions, entry
+	// receipts) — spec look-twice 2026-11-24 "use an injectable clock". nil =
+	// time.Now in production. See ReceiptNow. atomic: installed while the read
+	// loop is already running.
+	receiptClock atomic.Pointer[func() time.Time]
+
 	// E7 capability handshake (2026-08-30): the far-side AddOn's build id,
 	// reported on every heartbeat. Empty until the first heartbeat carries it.
 	// Frame types are gated on it (FarSideBuildE7) — an old AddOn that would
@@ -2526,7 +2533,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 				continue
 			}
 			if s.orderSnaps != nil {
-				s.orderSnaps.PutAt(p, time.Now())
+				s.orderSnaps.PutAt(p, s.ReceiptNow())
 			}
 			// W117 F2 — R4 watermark: every order_snapshot advances the
 			// counter the ordered workers wait on before applying the
@@ -2819,7 +2826,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			// production receive path. Only the test seeder stamped it, so
 			// in production the clock stayed 0001-01-01 forever and every
 			// snapshot after the first entry receipt was refused as stale.
-			s.acctPositionsReceived[p.Account] = time.Now()
+			s.acctPositionsReceived[p.Account] = s.ReceiptNow()
 			s.acctMu.Unlock()
 			// m433 — persist the last frame (nil hook = no store wired). Outside
 			// the lock: the hook does a DB write. p.Positions is local to this

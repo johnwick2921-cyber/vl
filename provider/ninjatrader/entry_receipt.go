@@ -14,6 +14,27 @@ type entryReceiptState struct {
 	quantities map[string]int
 }
 
+// ReceiptNow is the ONE clock that stamps when a frame was RECEIVED. Go receive
+// order is the only order that may be compared (the AddOn's emitted times come
+// from another clock). time.Now in production; a test may install its own so a
+// recorded broker timeline can be replayed at its own instants.
+func (s *TCPServer) ReceiptNow() time.Time {
+	if fn := s.receiptClock.Load(); fn != nil {
+		return (*fn)()
+	}
+	return time.Now()
+}
+
+// SetReceiptClockForTest installs the receive clock (TESTS ONLY; nil restores
+// time.Now).
+func (s *TCPServer) SetReceiptClockForTest(fn func() time.Time) {
+	if fn == nil {
+		s.receiptClock.Store(nil)
+		return
+	}
+	s.receiptClock.Store(&fn)
+}
+
 // NoteEntryExecution records positive entry-execution evidence for one signal
 // on one (symbol, account). Only growth of a cumulative observation advances
 // the fence — repeated old frames cannot invalidate a newer broker snapshot
@@ -35,7 +56,7 @@ func (s *TCPServer) NoteEntryExecution(symbol, account, signal string, quantity 
 	}
 	if quantity > r.quantities[signal] {
 		r.quantities[signal] = quantity
-		r.received = time.Now()
+		r.received = s.ReceiptNow()
 	}
 }
 

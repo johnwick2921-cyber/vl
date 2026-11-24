@@ -226,7 +226,7 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 		logger.Warnf("ninjatrader/tcp: reconcile list open positions failed: %v", err)
 		return
 	}
-	nowMs := time.Now().UTC().UnixMilli()
+	nowMs := t.server.ReceiptNow().UTC().UnixMilli() // same clock as the positions frame read above
 	if t.flatSince == nil {
 		t.flatSince = make(map[int64]int64)
 	}
