@@ -8,11 +8,13 @@ import (
 	"testing"
 	"time"
 
+	dto "github.com/prometheus/client_model/go"
 	"gorm.io/gorm"
 
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	"vl/telemetry"
 	nttrader "vl/trader/ninjatrader"
 )
 
@@ -281,6 +283,13 @@ func TestProtectionSendStateIsClearedByItsAnswer(t *testing.T) {
 	}
 }
 
+// traderEvents reads one per-trader event counter.
+func traderEvents(trader, event string) float64 {
+	var m dto.Metric
+	_ = telemetry.TraderEventsTotal.WithLabelValues(trader, event).Write(&m)
+	return m.GetCounter().GetValue()
+}
+
 // ── Finding 3 — an order book written late ───────────────────────────────────
 
 // bookAt is a book the AddOn stamped at emitted (0 = no stamp).
@@ -482,6 +491,40 @@ func TestLookTwiceLateBook_ALateStopDoesNotEndTheHold(t *testing.T) {
 	w.look()
 	time.Sleep(300 * time.Millisecond)
 	w.actsAfterRestart("naked, a late covered book, naked")
+}
+
+// … and that P0 is really raised while the newest book is a late one that shows a
+// stop: it is the same doubt. Nothing is sent, and the hold's end says so. MUTANT:
+// no 35 s check on a late covered book (the hold died at 70 s with no line).
+func TestLookTwiceLateBook_ALateStopStillTellsTheOwnerAt35s(t *testing.T) {
+	fastConfirm(t)
+	w, sid := nakedShort(t, "lt-book-late-stop-p0", 27740)
+	covered := w.lastBook
+	w.cancelStop(sid)
+	w.look()
+	w.bookAt(w.now().Add(-5*time.Second), covered...) // the one from before the cancel
+	w.sync()
+	w.look()
+	w.jump(33 * time.Second)
+	w.look()
+	w.mustHaveNoP0("before 35 s")
+	before := traderEvents(w.at.id, "protection_hold_expired")
+	w.jump(2 * time.Second)
+	w.look()
+	if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "order book") || !strings.Contains(ps[0].Body, "shows a stop") {
+		t.Fatalf("a late book that shows a stop must not silence the 35 s P0, got %d: %+v", len(ps), ps)
+	}
+	w.jump(10 * time.Second)
+	w.look()
+	if n := len(w.p0s()); n != 1 {
+		t.Fatalf("one hold = one P0, got %d", n)
+	}
+	w.jump(26 * time.Second) // 71 s after the last real look
+	w.look()
+	if n := traderEvents(w.at.id, "protection_hold_expired") - before; n != 1 || w.holds() != 0 {
+		t.Fatalf("the hold ends 70 s after its last look and says so: counted %.0f, holds %d", n, w.holds())
+	}
+	w.mustBeSilent("a late book that shows a stop")
 }
 
 // The guard of the send reads the order too. MUTANT: drop bookLate from check.

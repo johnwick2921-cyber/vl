@@ -30,15 +30,12 @@ func newExitFenceRig(t *testing.T) *exitFenceRig {
 	r.srv.SetReceiptClockForTest(func() time.Time {
 		return exitFenceT0.Add(time.Duration(r.nowMs.Load()) * time.Millisecond)
 	})
-	addr := freeEphemeralAddr(t)
-	r.srv.SetAddrForTest(addr)
+	r.srv.SetAddrForTest("127.0.0.1:0") // the server binds it: a guessed free port is taken by another test under load
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	if err := r.srv.Start(ctx); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
+	portRetry(t, "start the server", func() error { return r.srv.Start(ctx) })
 	t.Cleanup(func() { _ = r.srv.Stop() })
-	r.client = NewMockTCPClient(addr, 50*time.Millisecond)
+	r.client = NewMockTCPClient(r.srv.ListenAddrForTest().String(), 50*time.Millisecond)
 	if err := r.client.Start(ctx); err != nil {
 		t.Fatalf("client Start: %v", err)
 	}

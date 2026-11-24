@@ -141,10 +141,11 @@ func (w *lookWire) redial() {
 			t.Fatal("fixture: the server did not see the disconnect")
 		}
 	}
-	conn, err := net.Dial("tcp", w.s.ListenAddrForTest().String())
-	if err != nil {
-		t.Fatal(err)
-	}
+	var conn net.Conn
+	portRetry(t, "dial", func() (err error) {
+		conn, err = net.Dial("tcp", w.s.ListenAddrForTest().String())
+		return err
+	})
 	t.Cleanup(func() { _ = conn.Close() })
 	waitAddonRegistered(t, w.s)
 	w.wmu.Lock()

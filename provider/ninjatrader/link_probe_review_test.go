@@ -1,6 +1,7 @@
 package ninjatrader
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net"
@@ -12,7 +13,11 @@ import (
 // must start there. MUTANT: drop s.hbLink = newHeartbeatLink() there.
 func TestLinkProbeConnectKeyMode(t *testing.T) {
 	t.Setenv("NT_CONNECT_KEY", testConnectKey)
-	s := startedServer(t, nil)
+	s := NewTCPServer(nil)
+	s.SetAddrForTest("127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	portRetry(t, "start the server", func() error { return s.Start(ctx) })
+	t.Cleanup(func() { _ = s.Stop(); cancel() })
 	for round := 1; round <= 2; round++ {
 		w := dialWire(t, s, HelloPayload{ConnectKey: testConnectKey})
 		if _, ok := w.next(FrameHello, 3*time.Second); !ok {

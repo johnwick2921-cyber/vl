@@ -1,10 +1,14 @@
 package trader
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -81,10 +85,82 @@ func (w *lookWire) until(d time.Duration) {
 	}
 }
 
+// portRetry runs fn again while the box has no port to give: this WSL box has 4,096
+// ephemeral ports and a closed connection keeps its own for a minute, so a loaded run
+// uses them up for a while. Any other error is the test's.
+func portRetry(t *testing.T, what string, fn func() error) {
+	t.Helper()
+	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		err := fn()
+		if err == nil {
+			return
+		}
+		if !(errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, syscall.EADDRNOTAVAIL)) || time.Now().After(deadline) {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+}
+
+// newLookExecWire is newExecWire with two differences: it waits for a port, and it
+// returns only once its own heartbeat has been ANSWERED. newExecWire waits for the
+// build id, which the read loop publishes before it writes that ack; the ack could
+// then land inside the first sync(), which took it for the answer to its own
+// heartbeat and returned before the frames sent ahead of it were read (1 run in 50
+// under load: "the reconcile must materialize the LONG row").
+func newLookExecWire(t *testing.T, traderID string) *execWire {
+	t.Helper()
+	withMaintenanceDir(t)
+	at, st := resetTrader(t, store.StrategyConfig{DayPlan: &store.DayPlanConfig{PlanEnabled: true}})
+	at.id = traderID
+	s := ntwire.NewTCPServer(nil)
+	s.SetAddrForTest("127.0.0.1:0")
+	s.SetAccountsList([]ntwire.AccountInfo{{Name: "Sim101", IsSim: true}}, "Sim101")
+	s.SeedAccountBalanceForTest("Sim101", ntwire.AccountBalancePayload{Account: "Sim101", NetLiquidation: 100000, CashValue: 100000, BuyingPower: 100000})
+	ctx, cancel := context.WithCancel(context.Background())
+	portRetry(t, "start the server", func() error { return s.Start(ctx) })
+	t.Cleanup(func() { _ = s.Stop(); cancel() })
+	w := &execWire{at: at, st: st, s: s}
+	portRetry(t, "dial", func() (err error) {
+		w.conn, err = net.Dial("tcp", s.ListenAddrForTest().String())
+		return err
+	})
+	waitAddonRegistered(t, s)
+	conn := w.conn
+	t.Cleanup(func() { _ = conn.Close() })
+	answered := make(chan struct{})
+	go func() {
+		var once sync.Once
+		for {
+			env, err := ntwire.ReadFrame(conn)
+			if err != nil {
+				return
+			}
+			w.mu.Lock()
+			w.frames = append(w.frames, env)
+			w.mu.Unlock()
+			if env.Type == ntwire.FrameAck {
+				once.Do(func() { close(answered) })
+			}
+		}
+	}()
+	if err := ntwire.WriteFrame(conn, ntwire.FrameHeartbeat, ntwire.HeartbeatPayload{BuildID: ntwire.MinAddonBuildPictureHtf}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-answered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("fixture: the first heartbeat was not answered in 5 s")
+	}
+	w.nt = nttrader.NewTCPTrader(s, "MNQ", "Sim101")
+	at.trader = w.nt
+	at.config.NinjaTraderSymbol = "MNQ"
+	return w
+}
+
 // newLookWire starts the fixture with its clock at base.
 func newLookWire(t *testing.T, traderID string, base time.Time) *lookWire {
 	t.Helper()
-	w := &lookWire{execWire: newExecWire(t, traderID), t: t, base: base, start: time.Now(), stopAck: make(chan struct{})}
+	w := &lookWire{execWire: newLookExecWire(t, traderID), t: t, base: base, start: time.Now(), stopAck: make(chan struct{})}
 	// price()'s provider goes back AFTER Stop (cleanups run last in, first out): the
 	// re-look reads it until it is joined.
 	origBars := market.FuturesBarsProvider

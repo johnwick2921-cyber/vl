@@ -2,10 +2,28 @@ package ninjatrader
 
 import (
 	"context"
+	"errors"
 	"net"
+	"syscall"
 	"testing"
 	"time"
 )
+
+// portRetry runs fn again while the box has no port to give: this WSL box has 4,096
+// ephemeral ports and a closed connection keeps its own for a minute, so a loaded run
+// uses them up for a while. Any other error is the test's.
+func portRetry(t *testing.T, what string, fn func() error) {
+	t.Helper()
+	for deadline := time.Now().Add(90 * time.Second); ; time.Sleep(50 * time.Millisecond) {
+		err := fn()
+		if err == nil {
+			return
+		}
+		if !(errors.Is(err, syscall.EADDRINUSE) || errors.Is(err, syscall.EADDRNOTAVAIL)) || time.Now().After(deadline) {
+			t.Fatalf("%s: %v", what, err)
+		}
+	}
+}
 
 // probeServer is a started server with one dialed AddOn whose heartbeats are
 // answered only when the test says so.
@@ -14,15 +32,14 @@ func probeServer(t *testing.T) (*TCPServer, func() net.Conn) {
 	s := NewTCPServer(nil)
 	s.SetAddrForTest("127.0.0.1:0")
 	ctx, cancel := context.WithCancel(context.Background())
-	if err := s.Start(ctx); err != nil {
-		t.Fatal(err)
-	}
+	portRetry(t, "start the server", func() error { return s.Start(ctx) })
 	t.Cleanup(func() { _ = s.Stop(); cancel() })
 	return s, func() net.Conn {
-		c, err := net.Dial("tcp", s.ListenAddrForTest().String())
-		if err != nil {
-			t.Fatal(err)
-		}
+		var c net.Conn
+		portRetry(t, "dial", func() (err error) {
+			c, err = net.Dial("tcp", s.ListenAddrForTest().String())
+			return err
+		})
 		t.Cleanup(func() { _ = c.Close() })
 		go func() { // drain what the server writes
 			for {

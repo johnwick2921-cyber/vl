@@ -43,7 +43,8 @@ import (
 //	   that sum to its whole entry quantity): then a P0 only, for at most 60 s;
 //	6. a stop is placed again only on a book received after the previous send.
 //
-// A look on a book the AddOn wrote late (nt late_book.go) is not a look.
+// A look on a book the AddOn wrote late (nt late_book.go) is not a look, whatever
+// that book shows: it opens no way to an order and it ends no hold.
 //
 // The evidence is read AFTER the pass's last database read, and once more by
 // protectionProof.check with the socket's writer held, as the last step before
@@ -52,7 +53,9 @@ import (
 //
 // A hold calls nothing that can send: actOnConfirmed is not reached. The next
 // look runs on the trader's own re-look goroutine (joined by monitorWg), and
-// holding for 35 s raises one P0.
+// holding for 35 s raises one P0 - through a late book too, naked or covered. Only
+// a look that could not READ (unreadable positions, UNKNOWN cover) is silent there:
+// the m469 P0 says that one, after 10 minutes.
 //
 // LOCKS. protMu is held for one whole pass, so a beat and a re-look can never
 // judge or act at the same time. Order: protMu → limitFlattenMu (the flatten),
@@ -249,7 +252,8 @@ func (at *AutoTrader) dropStaleProtectionHoldsLocked(positions []map[string]inte
 }
 
 // expireProtectionHoldsLocked forgets holds nothing has looked at for 70 s (the
-// positions stayed unreadable), so the re-look goroutine can end. protMu held.
+// positions or the cover stayed unreadable, or every book was a late one that shows
+// a stop), so the re-look goroutine can end. protMu held.
 func (at *AutoTrader) expireProtectionHoldsLocked(srv *nt.TCPServer) {
 	if srv == nil {
 		return
@@ -258,6 +262,9 @@ func (at *AutoTrader) expireProtectionHoldsLocked(srv *nt.TCPServer) {
 	for key, h := range at.protHolds {
 		if now.Sub(h.lastLook) > protectionLookGap {
 			delete(at.protHolds, key)
+			telemetry.IncTraderEvent(at.id, "protection_hold_expired")
+			at.logWarnf("🧷 protection hold EXPIRED: %s — no look for %s (open for %s); nothing was sent, the next naked look is a first one",
+				key, now.Sub(h.lastLook).Round(time.Second), now.Sub(h.since).Round(time.Second))
 		}
 	}
 }
@@ -454,19 +461,45 @@ func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, key, symbol, s
 			agoText(lookAt, ev.CloseSent), agoText(lookAt, ev.StopSent), v.Why)
 	}
 	held := lookAt.Sub(h.since)
-	if !h.alerted && (veto || held >= protectionHoldAlertAfter) {
-		h.alerted = true
-		telemetry.IncTraderEvent(at.id, "protection_hold_p0")
-		title := "Open position looks unprotected — the bot is HOLDING, check NinjaTrader"
-		if veto {
-			title = "NinjaTrader shows a position the bot already closed — check it"
-		}
-		at.emitAlert("P0", alertKindProtectionHeld,
-			fmt.Sprintf("held:%s:%s:%d", symbol, side, h.since.UnixMilli()), title,
+	title := "Open position looks unprotected — the bot is HOLDING, check NinjaTrader"
+	if veto {
+		title = "NinjaTrader shows a position the bot already closed — check it"
+	}
+	if veto || held >= protectionHoldAlertAfter {
+		at.alertHoldLocked(h, symbol, side, title,
 			fmt.Sprintf("%s %s ×%d (avg %.2f) has no full stop on the book, and for %s the bot has not acted because %s. Nothing was placed or closed. Check the position and its stop in NinjaTrader now.",
 				side, symbol, qty, avg, held.Round(time.Second), why))
 	}
 	return nil
+}
+
+// alertHoldLocked raises the hold's one P0. protMu held.
+func (at *AutoTrader) alertHoldLocked(h *protectionHold, symbol, side, title, body string) {
+	if h.alerted {
+		return
+	}
+	h.alerted = true
+	telemetry.IncTraderEvent(at.id, "protection_hold_p0")
+	at.emitAlert("P0", alertKindProtectionHeld,
+		fmt.Sprintf("held:%s:%s:%d", symbol, side, h.since.UnixMilli()), title, body)
+}
+
+// holdOnLateCoverLocked is an open hold whose newest book shows a stop but was
+// written late: the book before it showed none, so the late one ends nothing. It is
+// no look (lastLook stays, so this alone never keeps a hold past 70 s), but it is
+// the same doubt, and the 35 s P0 runs on. Nothing can be sent here. protMu held.
+func (at *AutoTrader) holdOnLateCoverLocked(h *protectionHold, symbol, side string, qty int, avg float64, now time.Time, trigger string) {
+	h.restart()
+	const why = "the newest order book shows a stop, but NinjaTrader built it before one it had already sent (written late, or its clock was set back), so that stop may be gone; the next order book decides"
+	if h.lastWhy != why {
+		h.lastWhy = why
+		at.logWarnf("🧷 protection HOLD (%s): %s %s ×%d avg %.2f — nothing sent: %s", trigger, side, symbol, qty, avg, why)
+	}
+	if held := now.Sub(h.since); held >= protectionHoldAlertAfter {
+		at.alertHoldLocked(h, symbol, side, "Open position looks unprotected — the bot is HOLDING, check NinjaTrader",
+			fmt.Sprintf("%s %s ×%d (avg %.2f): %s. For %s the bot has not been able to tell. Nothing was placed or closed. Check the position and its stop in NinjaTrader now.",
+				side, symbol, qty, avg, why, held.Round(time.Second)))
+	}
 }
 
 // finishProtectionActLocked ends the hold a proof came from — or keeps it, as a

@@ -879,7 +879,7 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 			switch v.Action {
 			case protectionOK:
 				if h := at.protHolds[holdKey]; h != nil && bookLate {
-					h.restart() // a book written late ends no hold either (its 35 s P0 runs on)
+					at.holdOnLateCoverLocked(h, symbol, side, qty, positionAvg(p), passStart, trigger)
 				} else {
 					at.dropProtectionHoldLocked(holdKey, "a stop covers it")
 				}
