@@ -268,6 +268,9 @@ type TCPServer struct {
 	// newest EXIT fill per (symbol, account). Evidence only; GetPositions does
 	// not read it. See exit_receipt.go.
 	exitReceipts map[string]*exitReceiptState
+	// positionLevels (look-twice) — account -> symbol|side: a positions frame
+	// written late is told by the smaller one before it. late_frame.go. acctMu.
+	positionLevels map[string]map[string]positionLevel
 	// closeSent / stopSent (look-twice B rule 3) — when WE last sent a
 	// close_position / place_protective_stop per (symbol, account). acctMu.
 	closeSent map[string]time.Time
@@ -1650,6 +1653,7 @@ func (s *TCPServer) SeedPositionsForTestAt(account string, ps []OpenPosition, re
 	if s.acctPositionsReceived == nil {
 		s.acctPositionsReceived = make(map[string]time.Time)
 	}
+	s.notePositionLevelsLocked(account, ps, receivedAt)
 	s.acctPositions[account] = ps
 	s.acctPositionsReceived[account] = receivedAt
 	s.acctMu.Unlock()
@@ -2827,12 +2831,14 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			if s.acctPositionsReceived == nil {
 				s.acctPositionsReceived = make(map[string]time.Time)
 			}
+			receivedAt := s.ReceiptNow()
+			s.notePositionLevelsLocked(p.Account, p.Positions, receivedAt) // look-twice: before the stamp below moves
 			s.acctPositions[p.Account] = p.Positions
 			// W117 F-1 (CTO P0) — stamp the receipt clock HERE, on the
 			// production receive path. Only the test seeder stamped it, so
 			// in production the clock stayed 0001-01-01 forever and every
 			// snapshot after the first entry receipt was refused as stale.
-			s.acctPositionsReceived[p.Account] = s.ReceiptNow()
+			s.acctPositionsReceived[p.Account] = receivedAt
 			s.acctMu.Unlock()
 			s.notePositionsOnLink(c, p.Account) // look-twice B
 			// m433 — persist the last frame (nil hook = no store wired). Outside

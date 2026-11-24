@@ -31,7 +31,9 @@ import (
 //	   and one Run, with no fill in between and no gap over 70 s;
 //	2. the newest POSITIONS FRAME (never the fill-derived cache) was received
 //	   after the newest exit fill AND the newest entry fill, and shows exactly
-//	   this position;
+//	   this position. A frame that shows MORE than the frame before it with no
+//	   entry fill in between proves nothing until a later frame repeats it
+//	   (nt.ProtectionEvidence.Unproven: the AddOn can write a frame late);
 //	3. protectionConfirm() has passed since the newest exit fill, entry fill, own
 //	   close send and own stop send;
 //	4. a heartbeat sent at the second look has been ACKED (link_probe.go): Go has
@@ -304,6 +306,8 @@ func (p *protectionProof) check() error {
 		return p.refuse("another order of ours went out")
 	case !ev.PositionsAfterFills() || !ev.Holds(p.symbol, p.side, p.qty, p.avg):
 		return p.refuse("the position changed")
+	case ev.Unproven(p.symbol, p.side):
+		return p.refuse("the position was reported smaller, then as before")
 	case !haveBook || !bookAt.Equal(p.bookAt):
 		return p.refuse("a newer order book arrived")
 	}
@@ -373,6 +377,8 @@ func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, key, symbol, s
 		why = "the newest positions frame is OLDER than the newest fill"
 	case !ev.Holds(symbol, side, qty, avg):
 		why = "the position changed while this pass was reading"
+	case ev.Unproven(symbol, side):
+		why = "NinjaTrader had already reported smaller (or flat) and no entry fill has been seen since, so this report may be an old one written late; the next report decides"
 	case !newest.IsZero() && passStart.Sub(newest) < confirm:
 		why = "a fill or one of our own orders is less than " + confirm.String() + " old"
 	case !haveBook || !latestBook.Equal(bookAt):
