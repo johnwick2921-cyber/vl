@@ -268,6 +268,10 @@ type TCPServer struct {
 	// newest EXIT fill per (symbol, account). Evidence only; GetPositions does
 	// not read it. See exit_receipt.go.
 	exitReceipts map[string]*exitReceiptState
+	// closeSent / stopSent (look-twice B rule 3) — when WE last sent a
+	// close_position / place_protective_stop per (symbol, account). acctMu.
+	closeSent map[string]time.Time
+	stopSent  map[string]time.Time
 
 	// Plan 4 Stage 4 — available accounts discovered by the C# AddOn
 	// (accounts_list frame). Emitted on connect and on account change.
@@ -298,7 +302,8 @@ type TCPServer struct {
 	conn          net.Conn
 	pendingConn   net.Conn // connect-key mode only: the unauthenticated dial
 	lastAckTime   time.Time
-	staleOverride time.Duration // test hook: 0 means use TCPStaleSignalAge
+	hbLink        *heartbeatLink // look-twice B: heartbeat/ack accounting of the PUBLISHED conn (link_probe.go)
+	staleOverride time.Duration  // test hook: 0 means use TCPStaleSignalAge
 
 	// U21 — rate-limit the "connect_key refused" warn to once per peer per
 	// minute (a wrong-key AddOn reconnecting every 5 s must not flood the
@@ -1445,6 +1450,7 @@ func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
 	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID) // A2 (G1)
+	s.noteOwnSend(&s.closeSent, payload.Symbol, payload.Account)                           // look-twice B rule 3
 	s.writeMu.Lock()
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := WriteFrame(c, FrameClosePosition, payload)
@@ -1477,6 +1483,7 @@ func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) 
 		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
 	}
 	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID)
+	s.noteOwnSend(&s.stopSent, payload.Symbol, payload.Account) // look-twice B rules 3 and 6
 	s.writeMu.Lock()
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := WriteFrame(c, FramePlaceProtectiveStop, payload)
@@ -1757,6 +1764,7 @@ func (s *TCPServer) acceptLoop(ctx context.Context) {
 			continue
 		}
 		s.conn = c
+		s.hbLink = newHeartbeatLink()
 		s.lastAckTime = time.Now()
 		s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // B11: a fresh conn restarts the read-idle clock
 		s.beginConnectionRecord(c, acceptAt)            // W-ONE-BUTTON M2 site 7 (lock order connMu → maint.mu)
@@ -2249,6 +2257,7 @@ func (s *TCPServer) authenticateKeyHello(ctx context.Context, c net.Conn, env En
 		return false
 	}
 	s.conn = c
+	s.hbLink = newHeartbeatLink()
 	s.pendingConn = nil
 	s.lastAckTime = time.Now()
 	s.lastFrameUnixMs.Store(time.Now().UnixMilli()) // the alive clock starts at auth
@@ -2570,6 +2579,8 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			var ack AckPayload
 			if err := json.Unmarshal(env.Payload, &ack); err == nil && ack.Seq != 0 {
 				_ = s.verifyInbound("ack", ack.Seq, ack.TraderID, ack.Account, ack.SignalID, "")
+			} else if err == nil && ack.Acks == "heartbeat" {
+				s.noteHeartbeatAck(c) // look-twice B rule 4
 			}
 
 		case FrameHeartbeat:
@@ -2841,6 +2852,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			// snapshot after the first entry receipt was refused as stale.
 			s.acctPositionsReceived[p.Account] = s.ReceiptNow()
 			s.acctMu.Unlock()
+			s.notePositionsOnLink(c, p.Account) // look-twice B
 			// m433 — persist the last frame (nil hook = no store wired). Outside
 			// the lock: the hook does a DB write. p.Positions is local to this
 			// readLoop iteration.
@@ -2941,17 +2953,14 @@ func (s *TCPServer) heartbeatLoop(ctx context.Context, c net.Conn) {
 				return
 			}
 			since := time.Since(s.lastAckTime)
+			link := s.hbLink
 			s.connMu.Unlock()
 			if since > TCPHeartbeatAckTimeout {
 				s.logger.Warn("tcp_server: heartbeat ack timeout, closing", "since", since)
 				s.closeConn()
 				return
 			}
-			s.writeMu.Lock()
-			_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-			err := WriteFrame(c, FrameHeartbeat, HeartbeatPayload{})
-			s.writeMu.Unlock()
-			if err != nil {
+			if _, err := s.writeHeartbeat(c, link); err != nil {
 				s.logger.Warn("tcp_server: write heartbeat", "err", err)
 				s.closeConn()
 				return
