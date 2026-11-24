@@ -486,17 +486,36 @@ var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
 // attempt itself still runs every pass. Cleared when the verdict leaves place.
 var protectionPlaceEpisode sync.Map // trader id + symbol + side → int64
 
-// protectionSendFailed: the last P0 of the current place / flatten episode said
-// its order could NOT be sent. When a retry of that episode then sends it, the
-// owner must hear that too: told to set a stop (or close) by hand, he would
-// otherwise add a second one beside the bot's.
-var protectionSendFailed sync.Map // trader id + symbol + side → bool
+// protectionSends is what the owner was told, and what went out, in the current
+// place / flatten episode.
+type protectionSends struct {
+	// told: a P0 of this episode really said its order could NOT be sent. Only the
+	// FIRST P0 of an episode is raised (its event id is the episode's), so a refusal
+	// after a send is silent: "now SENT" would then answer a message nobody got.
+	told bool
+	sent bool // an order of this episode was sent
+}
 
-// noteSendOutcome records the outcome of one pass of an episode; nowSent reports
-// the first pass that sent after one that could not.
-func noteSendOutcome(key string, failed bool) (nowSent bool) {
-	prev, had := protectionSendFailed.Swap(key, failed)
-	return had && prev.(bool) && !failed
+// protectionSendState: trader id + symbol + side → protectionSends. When a retry
+// sends an order the owner was told could not be sent, he must hear that too: told
+// to set a stop (or close) by hand, he would otherwise add one beside the bot's.
+var protectionSendState sync.Map
+
+func sendsSoFar(key string) protectionSends {
+	if v, ok := protectionSendState.Load(key); ok {
+		return v.(protectionSends)
+	}
+	return protectionSends{}
+}
+
+// noteSendOutcome records one pass of an episode. told = a P0 that says its order
+// could NOT be sent was raised by this pass; nowSent = this pass sent one the
+// owner was told could not be, and answered it (once).
+func noteSendOutcome(key string, failed, told, nowSent bool) {
+	s := sendsSoFar(key)
+	s.told = told || (s.told && !nowSent)
+	s.sent = s.sent || !failed
+	protectionSendState.Store(key, s)
 }
 
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
@@ -651,7 +670,7 @@ func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (
 }
 
 // sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
-// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries, protectionSendFailed —
+// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries, protectionSendState —
 // for every key whose (symbol, side) is NOT in the positions just read. It runs
 // only on a successful positions read, so a read error never forgets state (A24).
 func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
@@ -682,7 +701,7 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 	sweep(&protectionFlattenEpisode)
 	sweep(&protectionPlaceEpisode)
 	sweep(&protectionFlattenRetries)
-	sweep(&protectionSendFailed)
+	sweep(&protectionSendState)
 }
 
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
@@ -1040,7 +1059,7 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 		protectionPlaceEpisode.Delete(key)
 	}
 	if changed { // another verdict: another episode, no outcome yet
-		protectionSendFailed.Delete(key)
+		protectionSendState.Delete(key)
 	}
 
 	// m217: a pending -sl has been UNCHANGED (same name, stopPrice, qty) for 3
@@ -1113,27 +1132,42 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 		// first pass of an episode stamps its start; the repeats re-emit the SAME
 		// id, which the store dedupes silently (no new row, no new push).
 		placeEpisode := now.UnixMilli()
-		if prevStart, ok := protectionPlaceEpisode.Load(key); ok {
+		prevStart, repeat := protectionPlaceEpisode.Load(key)
+		if repeat {
 			placeEpisode = prevStart.(int64)
 		} else {
 			protectionPlaceEpisode.Store(key, placeEpisode)
 		}
 		// The alert follows the send and says what happened (look twice 2026-11-24).
+		so := sendsSoFar(key)
+		earlier := ""
+		if so.sent {
+			earlier = " An earlier stop of this episode was already sent, so there may be two: check the working stops in NinjaTrader before you add one, and keep one."
+		}
 		title := "Open position had NO stop — a protective stop was sent"
 		what := fmt.Sprintf("A stop at %.2f (%s) was SENT to NinjaTrader. Sent is not confirmed: check in NinjaTrader that it is working.", v.StopPx, v.Source)
 		if placeErr != nil {
 			title = "Open position had NO stop — a protective stop could NOT be sent"
 			what = fmt.Sprintf("The stop at %.2f (%s) could NOT be sent; the bot tries again on its next check. Set a stop by hand now.", v.StopPx, v.Source)
+			if so.sent {
+				what = fmt.Sprintf("The stop at %.2f (%s) could NOT be sent; the bot tries again on its next check.", v.StopPx, v.Source)
+			}
+			what += earlier
 		}
-		at.emitAlert("P0", "unprotected_position",
+		created, emitErr := at.emitAlert("P0", "unprotected_position",
 			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, placeEpisode), title,
 			fmt.Sprintf("%s %s ×%d had no protective order at the broker. %s %s",
 				side, symbol, qty, what, v.Why))
-		if noteSendOutcome(key, placeErr != nil) {
+		// A P0 whose row was refused still goes to the phone, once per event id: the
+		// first pass of the episode only.
+		told := placeErr != nil && (created || (emitErr != nil && !repeat))
+		nowSent := placeErr == nil && so.told
+		noteSendOutcome(key, placeErr != nil, told, nowSent)
+		if nowSent {
 			title = "The protective stop that could NOT be sent is now SENT — do not add another"
 			at.emitAlert("P0", "unprotected_position",
 				fmt.Sprintf("unprotected:%s:%s:%d:sent", symbol, side, placeEpisode), title,
-				fmt.Sprintf("%s %s ×%d: %s If you already set a stop by hand, cancel one of the two. %s", side, symbol, qty, what, v.Why))
+				fmt.Sprintf("%s %s ×%d: %s If you already set a stop by hand, cancel one of the two.%s %s", side, symbol, qty, what, earlier, v.Why))
 		}
 		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — stop %.2f from %s: %s",
 			trigger, side, symbol, qty, v.StopPx, v.Source, title)
@@ -1179,7 +1213,8 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 		// LOOK TWICE (2026-11-24): the alert follows the send and says what went
 		// out. It used to be raised BEFORE the close and read "flattening",
 		// whether or not a close was written (11-19: the owner read it as done).
-		nowSent := noteSendOutcome(key, flatOutcome == marketFlatFailed)
+		failed, told := flatOutcome == marketFlatFailed, false
+		nowSent := !failed && sendsSoFar(key).told
 		if changed || nowSent {
 			what, title := "A market close was SENT to NinjaTrader. Sent is not filled: check NinjaTrader that the position is flat.", "a market close was sent"
 			switch flatOutcome {
@@ -1199,11 +1234,13 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 				full = "Open position was naked and the stop is already behind the market — " + title
 				eventID = fmt.Sprintf("flatten:%s:%s:%d:sent", symbol, side, protectionFlattenStart(key))
 			}
-			at.emitAlert("P0", "unprotected_position", eventID, full,
+			created, emitErr := at.emitAlert("P0", "unprotected_position", eventID, full,
 				fmt.Sprintf("%s %s ×%d. %s %s", side, symbol, qty, v.Why, what))
+			told = failed && (created || emitErr != nil) // changed: the episode's first P0
 			at.logErrorf("🧷 protection: price already through the intended stop %.2f — %s (%s %s ×%d): %s",
 				v.StopPx, title, side, symbol, qty, v.Why)
 		}
+		noteSendOutcome(key, failed, told, nowSent)
 	}
 }
 

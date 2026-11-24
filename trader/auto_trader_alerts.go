@@ -16,12 +16,15 @@ import (
 // updater/bar-hole guard tripped, must always reach the owner — the alert
 // center is the only surface a down trader has. Plan-content alerts keep the
 // day-plan gate.
-func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
+// created = this call wrote the row (false = a repeat, or a kind this trader does
+// not raise); err = the row was refused (a P0 is pushed all the same). Almost every
+// caller ignores both.
+func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) (created bool, err error) {
 	if at.store == nil {
-		return
+		return false, nil
 	}
 	if !at.dayPlanEnabled() && !isOpsAlertKind(kind) {
-		return
+		return false, nil
 	}
 	row := &store.AlertDB{
 		TraderID:  at.id,
@@ -32,7 +35,7 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		Body:      body,
 		CreatedAt: time.Now().Unix(),
 	}
-	created, err := at.store.Alert().Emit(row)
+	created, err = at.store.Alert().Emit(row)
 	// m432: a NEW ops P0 also reaches the owner's phone (outbound, async,
 	// deduped, rate-limited; never blocks this caller).
 	// m471 L3-2: a P0 whose row INSERT FAILED is pushed too. untracked-position
@@ -49,6 +52,7 @@ func (at *AutoTrader) emitAlert(level, kind, eventID, title, body string) {
 		at.logErrorf("🚨 alert EMIT failed (%s %s): %v — body: %s", level, kind, err, body)
 		telemetry.RecordError(at.id, "alert_emit_failed", err.Error(), telemetry.CostNone)
 	}
+	return created, err
 }
 
 // isOpsAlertKind reports whether an alert kind is an OPS condition (down, link,
