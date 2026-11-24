@@ -264,6 +264,10 @@ type TCPServer struct {
 	// (symbol, account). Lives on the SERVER so adapter replacement (trader
 	// reload) cannot forget which flat snapshots predate an entry.
 	entryReceipts map[string]*entryReceiptState
+	// exitReceipts (look-twice A) — the exit twin: the receive instant of the
+	// newest EXIT fill per (symbol, account). Evidence only; GetPositions does
+	// not read it. See exit_receipt.go.
+	exitReceipts map[string]*exitReceiptState
 
 	// Plan 4 Stage 4 — available accounts discovered by the C# AddOn
 	// (accounts_list frame). Emitted on connect and on account change.
@@ -840,6 +844,7 @@ func NewTCPServer(logger *slog.Logger) *TCPServer {
 		acctBalances:          make(map[string]AccountBalancePayload),
 		acctPositionsReceived: make(map[string]time.Time),
 		entryReceipts:         make(map[string]*entryReceiptState),
+		exitReceipts:          make(map[string]*exitReceiptState),
 		acctPositions:         make(map[string][]OpenPosition),
 		barsSubscribe: BarsSubscribePayload{
 			Symbol:     defaultAutoBarsSymbol,
@@ -2504,6 +2509,11 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 			if oup.CancelReport && !CancelReportRegimeOn() {
 				continue
 			}
+			// look-twice A — the exit fence, before anything downstream can
+			// act on this frame. The AddOn writes order_update, then the
+			// order_snapshot without the filled leg, so the fence is up before
+			// the stop-less book can be read.
+			s.noteExitOrderUpdate(oup)
 			// W117 F2 — enqueue to the owner's worker (stamped with the
 			// snapshot watermark for the post-change book gate, R4).
 			if s.enqueueOrdered(subKey(oup.Symbol, oup.Account), orderedItem{kind: orderedOrder, order: oup, snapAt: s.snapSeqFor(oup.Account)}) {
@@ -2786,6 +2796,9 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 				s.logger.Warn("tcp_server: bad position_close payload", "err", err)
 				continue
 			}
+			// look-twice A — the exit fence BEFORE the identity check: a close we
+			// refuse to record is still a fill the broker made.
+			s.noteExitClose(p)
 			// A2 (G1) — verify the echoed identity; a mismatch freezes the trader and
 			// the close is NOT recorded (never record a close for the wrong originator).
 			if !s.verifyInbound("position_close", p.Seq, p.TraderID, p.Account, p.SignalID, "") {
