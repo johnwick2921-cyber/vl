@@ -112,8 +112,8 @@ func TestLookTwiceTwoRows_P0AndNoLargerStopThanOurRow(t *testing.T) {
 	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-two-cap", 27740)
 	w.mentorStop(sid, "short", 1, 0, stop1193)
-	// the other month ranks FIRST (lower average), so its look acts first
-	w.positions(short(1, 27733.50), short(2, 27500))
+	// the other month comes FIRST in the frame, so it is acted on first
+	w.positions(short(2, 27500), short(1, 27733.50))
 	w.sync()
 	w.jump(10 * time.Second)
 	w.beat30() // it is really there

@@ -51,6 +51,7 @@ func TestPositionRegrowIsUnprovenUntilExplainedOrRepeated(t *testing.T) {
 		"its frame beat the entry, then it closed":   {[]step{f(0), f(sec, short(3)), fill(ms, "a"), f(60*sec, short(1)), f(ms, short(3))}, true},
 		"the other side was entered":                 {[]step{f(0, short(1)), f(sec), fill(ms, "a"), f(ms, long(1)), f(ms, short(1))}, true},
 		"the other side says nothing of this one":    {[]step{f(0, short(1), long(1)), f(sec, short(1)), f(ms, short(1), long(1))}, false},
+		"two months in the other order":              {[]step{f(0, short(2), short(1)), f(sec, short(1), short(2))}, false},
 		"two months of one side are one size":        {[]step{f(0, short(1), short(2)), f(sec, short(2), short(1))}, false},
 		"one of two months came back":                {[]step{f(0, short(1), short(2)), f(sec, short(1)), f(ms, short(1), short(2))}, true},
 	} {
