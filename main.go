@@ -834,6 +834,8 @@ func main() {
 	logger.Infof("🧷 %s", trader.BracketsBootLine(nil, false, "", 0))
 	// LOOK TWICE (2026-11-24) — READ from PROTECTION_CONFIRM_MS.
 	logger.Infof("🧷 %s", trader.ProtectionConfirmBootLine())
+	// OWN REVERSE (look twice C) — READ from OWN_REVERSE.
+	logger.Infof("🔁 %s", trader.OwnReverseBootLine())
 	logger.Infof("🎛 %s", kernel.EntryLawBootLedger(nil)) // P1.4 (ledger-close 2026-08-19) — clock-guard block: live host-RTC drift,
 	// guard-timer freshness, last resync/check state. Log-only, best-effort.
 	kernel.LogClockGuardBoot()

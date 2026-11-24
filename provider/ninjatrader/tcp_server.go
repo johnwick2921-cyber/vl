@@ -272,6 +272,8 @@ type TCPServer struct {
 	// close_position / place_protective_stop per (symbol, account). acctMu.
 	closeSent map[string]time.Time
 	stopSent  map[string]time.Time
+	// ownCloses (look-twice C) — the closes we sent, see own_close_log.go. acctMu.
+	ownCloses map[string][]OwnClose
 
 	// Plan 4 Stage 4 — available accounts discovered by the C# AddOn
 	// (accounts_list frame). Emitted on connect and on account change.
@@ -1451,10 +1453,14 @@ func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
 	}
 	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID) // A2 (G1)
 	s.noteOwnSend(&s.closeSent, payload.Symbol, payload.Account)                           // look-twice B rule 3
+	forget := s.noteOwnClose(payload)                                                      // look-twice C
 	s.writeMu.Lock()
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
 	err := WriteFrame(c, FrameClosePosition, payload)
 	s.writeMu.Unlock()
+	if err != nil {
+		forget()
+	}
 	return err
 }
 

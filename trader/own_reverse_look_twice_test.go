@@ -240,27 +240,31 @@ func TestLookTwicePin13_NotAReverse(t *testing.T) {
 	})
 }
 
-// OWN_REVERSE=close sends ONE close of the reverse and only when the book carries
-// no order the owner added; with one, it is the owner's now: alert, no close.
+// OWN_REVERSE=close is REFUSED in Release 1 and reads as alert (step 4 ruling:
+// "refused unless every section 3 C condition is implemented" — the send record
+// is in memory only, so the "saved record of our own send" condition is not).
+// Whatever is on the book, it alerts and never sends an order.
 func TestLookTwice13_CloseMode(t *testing.T) {
-	t.Run("ours alone: one close of the long", func(t *testing.T) {
-		t.Setenv(ownReverseEnv, "close")
-		w := reverse1119(t, "or-close", 27753.25)
-		w.mustFlagReverse(8 * time.Second)
-		time.Sleep(4 * time.Second)
-		got := w.closesOut()
-		if len(got) != 2 || !strings.Contains(got[1], `"side":"long"`) {
-			t.Fatalf("want exactly one more close, of the long, got %d:\n  %s", len(got), strings.Join(got, "\n  "))
-		}
-	})
-	t.Run("the owner added an order: alert, no close", func(t *testing.T) {
-		t.Setenv(ownReverseEnv, "close")
-		w := reverse1119(t, "or-owner-order", 27753.25, ntwire.NT8Order{OrderID: "own-1", Symbol: "MNQ",
-			Name: "Stop1", Action: "sell", Type: "stop", StopPrice: 27700, Quantity: 1, State: "Working"})
-		w.mustFlagReverse(8 * time.Second)
-		time.Sleep(4 * time.Second)
-		if got := w.closesOut(); len(got) != 1 {
-			t.Fatalf("an owner order is on the instrument: no close, got %d:\n  %s", len(got), strings.Join(got, "\n  "))
-		}
-	})
+	for name, book := range map[string][]ntwire.NT8Order{
+		"ours alone": nil,
+		"the owner added an order": {{OrderID: "own-1", Symbol: "MNQ",
+			Name: "Stop1", Action: "sell", Type: "stop", StopPrice: 27700, Quantity: 1, State: "Working"}},
+	} {
+		t.Run(name+": alert, no close", func(t *testing.T) {
+			t.Setenv(ownReverseEnv, "close")
+			w := reverse1119(t, "or-close-"+name[:3], 27753.25, book...)
+			w.mustFlagReverse(8 * time.Second)
+			time.Sleep(4 * time.Second)
+			if got := w.closesOut(); len(got) != 1 {
+				t.Fatalf("close is refused in this release: no close beyond our first one, got %d:\n  %s", len(got), strings.Join(got, "\n  "))
+			}
+			p := w.reverseP0s()[0]
+			if !strings.Contains(p.Body, "Nothing was sent") {
+				t.Fatalf("the P0 must say nothing was sent: %q", p.Body)
+			}
+			if wantStop := len(book) == 0; strings.Contains(p.Title, "no stop") != wantStop {
+				t.Fatalf("the P0 must say what the book shows (no stop = %v): %q", wantStop, p.Title)
+			}
+		})
+	}
 }

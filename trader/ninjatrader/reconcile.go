@@ -558,7 +558,9 @@ func (t *TCPTrader) reconcilePositions(traderID, exchangeID, exchangeType string
 			}
 		}
 		if manualVerdict {
-			flagAdoptedManual(st, traderID, row.ID, sym, side, qty)
+			if why := t.flagManualUnlessOwnReverse(st, traderID, row.ID, sym, side, qty, avg, firstSeen); why != "" {
+				origin = "UNATTRIBUTED entry kept BOT (" + why + ")" // look-twice C
+			}
 		}
 		logger.Warnf("🧩 reconcile: MATERIALIZED untracked NT8 position %s %s qty=%.0f @ %.2f (acct=%s) — %s now tracked; its close will record real P&L", sym, side, qty, avg, acct, origin)
 		delete(t.untrackedSince, key)

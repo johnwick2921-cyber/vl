@@ -133,7 +133,7 @@ func Limits() string {
 var p0KindPrefixes = []string{
 	"feed-down", "feed-still-down", "feed-back",
 	"data_truth_", "data-paused-", "data-still-paused-", "data-resumed-",
-	"trader_down", "dead_man", "unprotected_position", "protection_",
+	"trader_down", "dead_man", "unprotected_position", "protection_", "own_reverse",
 	"position_close_rejected", "stop-move-not-applied",
 	"ai-payment", "ai-still-down", "ai-back", "ai-failing",
 	"daily-loss", "untracked-position", "trader_panic", "goroutine_panic",

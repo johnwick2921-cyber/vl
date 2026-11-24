@@ -171,6 +171,11 @@ type TCPTrader struct {
 	// records real P&L instead of being dropped). Reconcile goroutine only.
 	untrackedSince map[string]int64
 
+	// ownReverses (look-twice C) — positions our own close is proven to have
+	// opened, waiting for the reconcile to materialize their row. own_reverse.go.
+	ownReverseMu sync.Mutex
+	ownReverses  []OwnReverse
+
 	// Plan 4 Stage 4 — reference to the parent AutoTrader (optional).
 	// Used to notify the AutoTrader when the first account_balance frame arrives.
 	// Set by transport.go after creating the trader.

@@ -53,6 +53,7 @@ var (
 	postExitHookOnce    sync.Once
 	postExitLegHookOnce sync.Once
 	closeRejectHookOnce sync.Once
+	unappliedHookOnce   sync.Once
 )
 
 func registerPostExitDispatch(at *AutoTrader) {
@@ -63,6 +64,8 @@ func registerPostExitDispatch(at *AutoTrader) {
 	postExitHookOnce.Do(func() { ntTrader.OnPositionClosed = dispatchPositionClosed })
 	// B2 (BUILD-ALL): the leg-aware hook is likewise written exactly once.
 	postExitLegHookOnce.Do(func() { ntTrader.OnPositionLegClosed = dispatchPositionLegClosed })
+	// look-twice C: an exit receipt that stays unapplied may be a reverse.
+	unappliedHookOnce.Do(func() { ntTrader.OnExitUnapplied = dispatchExitUnapplied })
 	// m442: a rejected exit raises an ops P0 (and feeds the refusal-storm count);
 	// the storm push names the trader by display name. Both written exactly once.
 	closeRejectHookOnce.Do(func() {
