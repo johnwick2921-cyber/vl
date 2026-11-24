@@ -494,7 +494,7 @@ func TestLookTwiceGap_LateCoverOfAnotherPositionStartsItsOwn35s(t *testing.T) {
 			w.positions(short(1, entry1193))
 			w.lateCover()
 			h := hold
-			h.run, h.since, h.lastLook = w.at.protectionRunCtx(), w.now().Add(-20*time.Minute), w.now()
+			h.run, h.since, h.lastLook = w.at.protectionRunCtx(), w.now().Add(-20*time.Minute), w.now().Add(-10*time.Second)
 			w.protState(func() { w.at.protHolds = map[string]*protectionHold{"MNQ|SHORT": &h} })
 			w.relook()
 			w.jump(33 * time.Second)
@@ -506,10 +506,10 @@ func TestLookTwiceGap_LateCoverOfAnotherPositionStartsItsOwn35s(t *testing.T) {
 			if len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "For 36s ") || !strings.Contains(ps[0].Body, "×1 (avg") {
 				t.Fatalf("36 s of the new position owe its P0, dated from ITS first pass, got %+v", ps)
 			}
-			w.jump(35 * time.Second)
+			w.jump(26 * time.Second) // 62 s after its takeover
 			w.relook()
 			if w.holds() != 0 {
-				t.Fatal("71 s after the last real look the hold ends, whoever it was for")
+				t.Fatal("72 s after the last real look the hold ends, whoever it was for")
 			}
 		})
 	}
