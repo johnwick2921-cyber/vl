@@ -82,7 +82,8 @@ const (
 )
 
 // protectionConfirm is the PROTECTION_CONFIRM_MS setting: unset or bad = 3000,
-// 0 = the old single look (revert switch).
+// 0 = the old single look (revert switch). 0 brings back WHEN orders go out, not
+// the old alerts: the P0s still follow the send and say what was sent.
 func protectionConfirm() time.Duration {
 	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(protectionConfirmEnv)))
 	if err != nil {

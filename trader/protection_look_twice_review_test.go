@@ -100,8 +100,7 @@ func TestLookTwiceReview_FlatDuringTheLedgerRead(t *testing.T) {
 			w.cancelStop(sid)
 			ran := make(chan struct{})
 			w.onceOnTable("query", "UPPER(side)", func() {
-				w.positions()
-				w.book("state_change")
+				w.positions() // the book is unchanged: only the positions frame tells
 				w.sync()
 				close(ran)
 			})
