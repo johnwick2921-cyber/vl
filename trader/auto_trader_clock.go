@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -694,7 +695,7 @@ func (at *AutoTrader) flattenPositionAt(p *store.TraderPosition, tag string, now
 	// the resting -lx).
 	if why := at.limitExitBlockedByBook(p.Symbol, now); why != "" {
 		at.logWarnf("%s: %s — closing %s %s at MARKET, NOT a second whole-position limit exit", tag, why, p.Symbol, side)
-		at.marketExitLocked(p, tag, now)
+		_ = at.marketExitLocked(p, tag, now, nil)
 		return
 	}
 	res, err := lc.CloseWithLimit(p.Symbol, side, 0, limit)
@@ -870,9 +871,13 @@ func (at *AutoTrader) repeatFlattenLocked(pending *pendingLimitFlatten, tag stri
 // NT8's Flatten also cancels the resting -lx. On a send failure the record stays
 // so the next caller retries. Caller holds limitFlattenMu.
 func (at *AutoTrader) escalateLimitFlattenLocked(pending *pendingLimitFlatten, tag string, now time.Time) bool {
+	return at.escalateLimitFlattenIfLocked(pending, tag, now, nil) == nil
+}
+
+func (at *AutoTrader) escalateLimitFlattenIfLocked(pending *pendingLimitFlatten, tag string, now time.Time, guard func() error) error {
 	p := pending.position
-	if !at.sendMarketClose(p.Symbol, flattenSide(&p), tag) {
-		return false
+	if err := at.sendMarketCloseIf(p.Symbol, flattenSide(&p), tag, guard); err != nil {
+		return err
 	}
 	_ = at.trader.CancelStopOrders(p.Symbol)
 	pending.marketSentAt = now
@@ -880,22 +885,44 @@ func (at *AutoTrader) escalateLimitFlattenLocked(pending *pendingLimitFlatten, t
 	if pending.timer != nil {
 		pending.timer.Stop()
 	}
-	return true
+	return nil
 }
 
 // sendMarketClose is the one market close: CloseLong/CloseShort with 0 = all.
 func (at *AutoTrader) sendMarketClose(symbol, side, tag string) bool {
+	return at.sendMarketCloseIf(symbol, side, tag, nil) == nil
+}
+
+// sendMarketCloseIf is sendMarketClose behind a guard (nil = always), asked
+// immediately before the close frame is written; ntwire.ErrSendWithheld = not sent.
+func (at *AutoTrader) sendMarketCloseIf(symbol, side, tag string, guard func() error) error {
+	g, guarded := at.trader.(interface {
+		CloseAllIf(side string, guard func() error) error
+	})
 	var e error
-	if side == "LONG" {
-		_, e = at.trader.CloseLong(symbol, 0) // 0 = close all
-	} else {
-		_, e = at.trader.CloseShort(symbol, 0)
+	switch {
+	case guard != nil && guarded:
+		if side == "LONG" {
+			e = g.CloseAllIf("long", guard)
+		} else {
+			e = g.CloseAllIf("short", guard)
+		}
+	default:
+		if guard != nil { // a broker with no guarded close: ask just before
+			if e = guard(); e != nil {
+				break
+			}
+		}
+		if side == "LONG" {
+			_, e = at.trader.CloseLong(symbol, 0) // 0 = close all
+		} else {
+			_, e = at.trader.CloseShort(symbol, 0)
+		}
 	}
-	if e != nil {
+	if e != nil && !errors.Is(e, ntwire.ErrSendWithheld) {
 		at.logErrorf("%s: close %s %s failed: %v", tag, symbol, side, e)
-		return false
 	}
-	return true
+	return e
 }
 
 // flattenPositionAtMarket is the EMERGENCY close (m471 L2-2): always a market
@@ -903,8 +930,10 @@ func (at *AutoTrader) sendMarketClose(symbol, side, tag string) bool {
 // same in-flight record as flattenPosition. A resting limit exit for the same
 // (account, symbol, side) is escalated rather than stacked; a market close sent
 // inside exitInFlightHold is not re-sent. It returns what happened on the wire,
-// so an alert never claims a close that was not sent.
-func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag string, now time.Time) marketFlatOutcome {
+// so an alert never claims a close that was not sent. guard (look twice; nil =
+// always) is asked after the wait for limitFlattenMu, as the last step before a
+// close frame is written.
+func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag string, now time.Time, guard func() error) marketFlatOutcome {
 	position := *p
 	p = &position
 	at.limitFlattenMu.Lock()
@@ -917,15 +946,9 @@ func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag strin
 		}
 		at.logWarnf("%s: limit exit %s for %s %s is resting — escalating it to the market close now",
 			tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(p))
-		if !at.escalateLimitFlattenLocked(pending, tag, now) {
-			return marketFlatFailed
-		}
-		return marketFlatSent
+		return marketFlatOutcomeOf(at.escalateLimitFlattenIfLocked(pending, tag, now, guard))
 	}
-	if !at.marketExitLocked(p, tag, now) {
-		return marketFlatFailed
-	}
-	return marketFlatSent
+	return marketFlatOutcomeOf(at.marketExitLocked(p, tag, now, guard))
 }
 
 // marketFlatOutcome is what flattenPositionAtMarket put on the wire.
@@ -935,13 +958,24 @@ const (
 	marketFlatFailed   marketFlatOutcome = iota // the close frame was NOT written
 	marketFlatSent                              // written now (sent is not filled)
 	marketFlatInFlight                          // an earlier market close still stands; nothing written now
+	marketFlatWithheld                          // the guard said no; nothing written
 )
+
+func marketFlatOutcomeOf(err error) marketFlatOutcome {
+	switch {
+	case err == nil:
+		return marketFlatSent
+	case errors.Is(err, ntwire.ErrSendWithheld):
+		return marketFlatWithheld
+	}
+	return marketFlatFailed
+}
 
 // marketExitLocked sends a fresh market close plus bracket cancel and records it
 // in flight (held for exitInFlightHold). Caller holds limitFlattenMu.
-func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now time.Time) bool {
-	if !at.sendMarketClose(p.Symbol, flattenSide(p), tag) {
-		return false
+func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now time.Time, guard func() error) error {
+	if err := at.sendMarketCloseIf(p.Symbol, flattenSide(p), tag, guard); err != nil {
+		return err
 	}
 	if err := at.trader.CancelStopOrders(p.Symbol); err != nil {
 		at.logWarnf("%s: cancel bracket %s failed (non-fatal): %v", tag, p.Symbol, err)
@@ -949,7 +983,7 @@ func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now 
 	durable := p.ID > 0 && p.TraderID == at.id
 	at.registerLimitFlattenLocked(&pendingLimitFlatten{position: *p, key: flattenKeyOf(p), tag: tag,
 		after: exitInFlightHold, sentAt: now, deadline: now, marketSentAt: now}, durable)
-	return true
+	return nil
 }
 
 // limitExitBlockedByBook (m471 L2 review-1) reads this trader's FRESH broker

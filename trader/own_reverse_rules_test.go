@@ -268,7 +268,7 @@ func TestProtectionFlattenP0SaysWhatWasSent(t *testing.T) {
 		t.Errorf("failed: %q / %q", failed.Title, failed.Body)
 	}
 	inflight := run("fl-inflight", nil, func(at *AutoTrader, now time.Time) {
-		if got := at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: "MNQ", Side: "LONG"}, "t", now); got != marketFlatSent {
+		if got := at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: "MNQ", Side: "LONG"}, "t", now, nil); got != marketFlatSent {
 			t.Fatalf("fixture: %v", got)
 		}
 	})

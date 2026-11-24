@@ -24,6 +24,12 @@ func TestBusyCloseFrameIsNeverDropped(t *testing.T) {
 	store.SetImmediateTxBusyTimeoutForTest(120) // 5 tries ≈ 0.6s busy + 0.75s backoff
 	defer store.ResetImmediateTxBusyTimeoutForTest()
 
+	// look twice C: the parked receipt must also reach the own-reverse watch.
+	unapplied := make(chan store.NT8ExitReceipt, 4)
+	prevHook := OnExitUnapplied
+	OnExitUnapplied = func(_ string, r store.NT8ExitReceipt) { unapplied <- r }
+	t.Cleanup(func() { OnExitUnapplied = prevHook })
+
 	f := newOrderedOnceFixture(t)
 	tr, st := f.tr, f.st
 	tr.StartCloseSync("t1", "ex", "ninjatrader", st) // the legacy advisory consumer runs too
@@ -99,6 +105,16 @@ func TestBusyCloseFrameIsNeverDropped(t *testing.T) {
 			t.Fatalf("today's code returns on the FIRST busy error — no receipt persisted, no priced park: the close is LOST (the receipt row never appeared)")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+
+	// MUTANT (shown RED): drop notifyExitUnapplied after SavePendingExit.
+	select {
+	case r := <-unapplied:
+		if r.SignalID != "sig-busy" || r.Quantity != 1 {
+			t.Fatalf("the own-reverse watch got receipt %+v", r)
+		}
+	case <-time.After(6 * time.Second):
+		t.Fatal("a busy-parked receipt never reached the own-reverse watch")
 	}
 
 	// F-A contract: the broker's REAL price is parked for reconcile's orphan
