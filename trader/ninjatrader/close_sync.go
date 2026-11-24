@@ -401,6 +401,7 @@ func (t *TCPTrader) recordCloseOrdered(
 		}
 		logger.Errorf("❌ NT8 exit PARKED after busy retries exhausted account=%s signal=%s qty=%.0f exit=%.2f — priced + receipt persisted (applied=false); RetryPendingNT8Exits will apply it",
 			p.Account, p.SignalID, qty, p.ExitPrice)
+		notifyExitUnapplied(traderID, receipt)
 		return
 	}
 	if result.Pending {
@@ -417,6 +418,7 @@ func (t *TCPTrader) recordCloseOrdered(
 		t.mu.Unlock()
 		logger.Warnf("NT8 exit receipt PENDING owned entry evidence account=%s signal=%s qty=%.0f exit=%.2f (retained + price parked for reconcile; will apply when the row catches up)",
 			p.Account, p.SignalID, qty, p.ExitPrice)
+		notifyExitUnapplied(traderID, receipt)
 		return
 	}
 	owner := result.Position

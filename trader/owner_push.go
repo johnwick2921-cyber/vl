@@ -55,6 +55,10 @@ const alertKindProtectionUnverified = "protection_unverified"
 // ledger says that position just closed). The owner must look.
 const alertKindProtectionHeld = "protection_held"
 
+// alertKindOwnReverse - look twice C (2026-11-24): an exit filled more contracts
+// than were open and NT8 now holds the opposite side (11-19: -1207.00).
+const alertKindOwnReverse = "own_reverse"
+
 // ownerPushClock is the instant the feed-down CME-open leg is judged at; a var
 // so the pins are not hostage to the wall clock (the CME daily break / weekend
 // would otherwise make a green test red).
@@ -75,6 +79,7 @@ func ownerPushKind(level, kind string) bool {
 		"protection_over_covered",
 		alertKindProtectionUnverified, // m469: a position open and its protection unreadable for too long
 		alertKindProtectionHeld,       // look-twice: naked, and held for 35 s / our own ledger says it closed
+		alertKindOwnReverse,           // look-twice: our own close opened a reverse position
 		alertKindCloseRejected,
 		alertKindStopMoveNotApplied,
 		// m469: the 11-03..11-06 402 outage never reached the owner. The AI
