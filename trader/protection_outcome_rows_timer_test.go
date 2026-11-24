@@ -115,7 +115,7 @@ func TestLookTwiceTwoRows_P0AndNoLargerStopThanOurRow(t *testing.T) {
 	// the other month comes FIRST in the frame, so it is acted on first
 	w.positions(short(2, 27500), short(1, 27733.50))
 	w.sync()
-	w.jump(10 * time.Second)
+	w.jump(13 * time.Second)
 	w.beat30() // it is really there
 	w.sync()
 	w.cancelStop(sid)

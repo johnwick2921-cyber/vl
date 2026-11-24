@@ -26,10 +26,12 @@ import (
 // GetPositions does not read it.
 
 // positionRegrowProof is how much later a second frame must show the same size.
-// Above the 5 s the read loop can stall on the order-snapshot insert (frames
-// waiting in the socket then look seconds apart), below the 30 s resend - so the
-// next resend, or at worst the one after it, always settles it.
-const positionRegrowProof = 6 * time.Second
+// Frames are dated when Go reads them, and the read loop can stall 5 s on ONE
+// order-snapshot insert (SQLite busy timeout): two frames the AddOn wrote together
+// with two snapshots between them then look 10 s apart. 12 s is above two stalls
+// and below the 30 s resend - so the next resend, or at worst the one after it,
+// settles it.
+const positionRegrowProof = 12 * time.Second
 
 type positionLevel struct {
 	qty     int       // in the newest frame

@@ -165,10 +165,10 @@ func TestLookTwiceLateFrame_ARepeatAtOnceIsNotProof(t *testing.T) {
 	w.positions()
 	w.positions(short(1, 27733.50))
 	w.sync()
-	w.jump(4 * time.Second)
+	w.jump(10 * time.Second) // two 5 s stalls of the read loop between them
 	w.positions(short(1, 27733.50))
 	w.sync()
-	w.mustStaySilent("two late frames 4 s apart")
+	w.mustStaySilent("two late frames read 10 s apart")
 }
 
 // THE OTHER WAY ROUND: a genuine hand entry (NT8 names it nothing, so the AddOn
