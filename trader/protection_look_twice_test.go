@@ -11,6 +11,7 @@ import (
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
+	nttrader "vl/trader/ninjatrader"
 )
 
 // ── LOOK TWICE (spec 2026-11-24, incident 11-19 06:47:30, row 1194 −1207.00) ─
@@ -74,6 +75,7 @@ func newLookWire(t *testing.T, traderID string, base time.Time) *lookWire {
 	t.Helper()
 	w := &lookWire{execWire: newExecWire(t, traderID), t: t, base: base, start: time.Now(), stopAck: make(chan struct{})}
 	w.s.SetReceiptClockForTest(w.now)
+	nttrader.ResetPricedCloseCacheForTest()
 
 	// the running state Run leaves behind, without Run's loops.
 	w.at.setupStopMonitorForTest()
