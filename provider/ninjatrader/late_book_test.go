@@ -42,6 +42,7 @@ func TestBookOrder(t *testing.T) {
 		"clock set back: counted from the first":       {[]put{{0, 1e9, 1}, {0, 50, 1}, {6 * sec, 6050, 1}, {6 * sec, 12_050, 1}}, false},
 		"clock set back, then in order":                {[]put{{0, 1e9, 1}, {0, 50, 1}, {proof, 12_050, 1}, {sec, 12_051, 1}}, false},
 		"clock set back, then a late one":              {[]put{{0, 1e9, 1}, {0, 50, 1}, {proof, 12_050, 1}, {sec, 12_049, 1}}, true},
+		"clock set back, its newest stamp again":       {[]put{{0, 1e9, 1}, {0, 50, 1}, {sec, 12_050, 1}, {proof, 12_050, 1}}, true},
 		"clock set back, the same stamp proves 0":      {[]put{{0, 1e9, 1}, {0, 50, 1}, {proof, 50, 1}}, true},
 		"clock set back twice":                         {[]put{{0, 1e9, 1}, {0, 5000, 1}, {sec, 50, 1}, {proof, 12_050, 1}}, false},
 		"late among the late ones is a new run":        {[]put{{0, 1e9, 1}, {0, 5000, 1}, {proof, 50, 1}}, true},
