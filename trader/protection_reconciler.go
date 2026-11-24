@@ -1055,19 +1055,11 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		// carries into the event id, so a later episode raises a NEW P0 while
 		// repeats inside one episode stay silent. The close retry still runs
 		// every pass, with its count logged; the count resets per episode.
-		if changed {
-			episodeStart := now.UnixMilli()
-			protectionFlattenEpisode.Store(key, episodeStart)
-			protectionFlattenRetries.Delete(key)
-			at.emitAlert("P0", "unprotected_position",
-				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, episodeStart),
-				"Open position was naked and the stop is already behind the market — flattening",
-				fmt.Sprintf("%s %s ×%d. %s Closing the position at market now.", side, symbol, qty, v.Why))
-			at.logErrorf("🧷 protection: price already through the intended stop %.2f — flattened (%s %s ×%d): %s",
-				v.StopPx, side, symbol, qty, v.Why)
-		}
 		retries := int64(0)
-		if prevN, ok := protectionFlattenRetries.Load(key); ok {
+		if changed {
+			protectionFlattenEpisode.Store(key, now.UnixMilli())
+			protectionFlattenRetries.Delete(key)
+		} else if prevN, ok := protectionFlattenRetries.Load(key); ok {
 			retries = prevN.(int64)
 		}
 		retries++
@@ -1082,8 +1074,26 @@ func (at *AutoTrader) actOnProtection(v protectionVerdict, symbol, side string, 
 		// durable identity for the ladder's market fallback. It goes through the
 		// L2-1 in-flight guard, so a pass inside the hold of an earlier market
 		// close sends nothing and a resting limit exit is escalated, not stacked.
-		at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: symbol, Side: side},
+		outcome := at.flattenPositionAtMarket(&store.TraderPosition{TraderID: at.id, Symbol: symbol, Side: side},
 			"protection-through-stop", now)
+		// LOOK TWICE (2026-11-24): the alert follows the send and says what went
+		// out. It used to be raised BEFORE the close and read "flattening",
+		// whether or not a close was written (11-19: the owner read it as done).
+		if changed {
+			what, title := "A market close was SENT to NinjaTrader. Sent is not filled: check NinjaTrader that the position is flat.", "a market close was sent"
+			switch outcome {
+			case marketFlatInFlight:
+				what, title = "A market close sent earlier is still in flight, so no second one was sent. Check NinjaTrader that the position is flat.", "a market close is already in flight"
+			case marketFlatFailed:
+				what, title = "The market close could NOT be sent to NinjaTrader; the bot tries again on its next check. Close the position by hand now.", "the market close could NOT be sent"
+			}
+			at.emitAlert("P0", "unprotected_position",
+				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, now.UnixMilli()),
+				"Open position was naked and the stop is already behind the market — "+title,
+				fmt.Sprintf("%s %s ×%d. %s %s", side, symbol, qty, v.Why, what))
+			at.logErrorf("🧷 protection: price already through the intended stop %.2f — %s (%s %s ×%d): %s",
+				v.StopPx, title, side, symbol, qty, v.Why)
+		}
 	}
 }
 
