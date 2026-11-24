@@ -266,7 +266,7 @@ func TestLookTwiceReview_TwoRowsOfOneSymbolStillAct(t *testing.T) {
 	w, sid := nakedShort(t, "lt-rv-tworows", 27740)
 	w.positions(short(1, 27733.50), short(2, 27990))
 	w.sync()
-	w.jump(10 * time.Second)
+	w.jump(13 * time.Second)
 	w.beat30() // the second row is really there (no entry fill explains it)
 	w.sync()
 	w.cancelStop(sid)
