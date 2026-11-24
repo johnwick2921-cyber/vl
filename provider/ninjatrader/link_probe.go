@@ -177,6 +177,8 @@ type ProtectionEvidence struct {
 	CloseSent   time.Time // newest close_position we sent on (symbol, account)
 	StopSent    time.Time // newest place_protective_stop we sent on (symbol, account)
 	AcceptSeq   uint64    // the connection's accept sequence (0 = never connected)
+
+	levels map[string]positionLevel // late_frame.go; replaced whole by every frame, never edited
 }
 
 // LastExecution is the newest of exit fill, entry fill, our own close send and
@@ -236,6 +238,7 @@ func (s *TCPServer) ProtectionEvidenceFor(account, symbol string) ProtectionEvid
 		out.Exit = r.received
 	}
 	out.CloseSent, out.StopSent = s.closeSent[key], s.stopSent[key]
+	out.levels = s.positionLevels[account]
 	if v, ok := s.acctPositions[account]; ok {
 		out.Known = true
 		out.Snapshot = append([]OpenPosition(nil), v...)

@@ -139,7 +139,7 @@ func TestLookTwiceLateFrame_P0At35sThenTheRepeatedFrameActs(t *testing.T) {
 	w.mustHaveNoP0("before 35 s")
 	w.jump(2 * time.Second)
 	w.look()
-	if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "reported smaller") {
+	if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "already reported smaller") {
 		t.Fatalf("holding past 35 s = one P0 that says why, got %d: %+v", len(ps), ps)
 	}
 	w.mustBeSilent("no frame has repeated it")
