@@ -342,6 +342,13 @@ func (at *AutoTrader) GetPositions() ([]map[string]interface{}, error) {
 	return result, nil
 }
 
+// orderFillPollInterval is the gap between the looks for an order's fill: once
+// before the first of five and after each (3 s in all). A var only so tests that
+// pin what the poll finds need not wait 3 s for it.
+var orderFillPollInterval = orderFillPollDefault
+
+const orderFillPollDefault = 500 * time.Millisecond
+
 // recordAndConfirmOrder polls order status for actual fill data and records position
 // action: open_long, open_short, close_long, close_short
 // entryPrice: entry price when closing (0 when opening)
@@ -439,7 +446,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 			return
 		}
 		filled := false
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 		for i := 0; i < 5 && !filled; i++ {
 			if reason, rejected := ev.RecentRejectFor(orderID); rejected {
 				if strings.TrimSpace(reason) == "" {
@@ -464,7 +471,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 				at.recordOrderFill(orderRecord.ID, orderID, symbol, action, actualPrice, actualQty, fee)
 				break
 			}
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(orderFillPollInterval)
 		}
 		if !filled {
 			logger.Warnf("  ⚠️ %s %s SUBMITTED, UNCONFIRMED — no fill for signal %s within the confirmation window; the order row stays unresolved and NO position is recorded (a later fill is materialized from NT8's position by the reconciler)", action, symbol, orderID)
@@ -474,7 +481,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 
 	// Wait for order to be filled and get actual fill data
 	if !ntSignalKeyed {
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 	}
 	for i := 0; i < 5 && !ntSignalKeyed; i++ {
 		status, err := at.trader.GetOrderStatus(symbol, orderID)
@@ -512,7 +519,7 @@ func (at *AutoTrader) recordAndConfirmOrderAs(orderResult map[string]interface{}
 				return
 			}
 		}
-		time.Sleep(500 * time.Millisecond)
+		time.Sleep(orderFillPollInterval)
 	}
 
 	// Normalize symbol for position record consistency
