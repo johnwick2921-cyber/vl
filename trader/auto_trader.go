@@ -929,6 +929,7 @@ type AutoTrader struct {
 	stopMonitorCtx        context.Context
 	stopMonitorCancel     context.CancelFunc
 	monitorWg             sync.WaitGroup        // Used to wait for monitoring goroutine to finish
+	protectionLooks                             // LOOK TWICE: holds of the protection pass (protection_look_twice.go)
 	kickCh                chan string           // discard-burn/post-exit: one-shot deferred-cycle kicks into the run loop (reason payload)
 	kickPending           atomic.Bool           // at most one kick armed at a time (CAS)
 	skipDodgeOnce         bool                  // a dodge-kicked cycle must not re-dodge at the boundary (run-loop goroutine only)

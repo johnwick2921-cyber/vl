@@ -77,7 +77,8 @@ func isOpsAlertKind(kind string) bool {
 		// m469: every kind pushed to the owner is an ops kind too, so a trader
 		// with no day plan (every mentor trader) still writes the row - and only
 		// a written row is ever pushed. The census test pins pushed => ops.
-		alertKindProtectionUnverified,
+		// look twice: an unprotected position the bot is holding on
+		alertKindProtectionUnverified, alertKindProtectionHeld,
 		"ai-payment",         // the AI provider answers 402: no AI decision until topped up
 		"ai-failing",         // AI calls keep failing for another reason
 		"daily-loss",         // the daily loss limit tripped: entries refused, positions flattened
