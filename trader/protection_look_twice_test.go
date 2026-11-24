@@ -33,6 +33,17 @@ import (
 
 const lookTwiceEnv = "PROTECTION_CONFIRM_MS"
 
+// fastConfirm runs a test at the smallest allowed PROTECTION_CONFIRM_MS: for tests
+// that pin WHAT the second look decides, not that it is 3 s. The incident replay
+// and a place and a flatten run stay at the default (TestLookTwice01, 02, 07).
+func fastConfirm(t *testing.T) {
+	t.Helper()
+	t.Setenv(lookTwiceEnv, fmt.Sprint(protectionConfirmMin.Milliseconds()))
+}
+
+// relookOver sleeps past the next background re-look (and its link check).
+func relookOver() { time.Sleep(protectionConfirm() + 500*time.Millisecond) }
+
 type lookWire struct {
 	*execWire
 	t        *testing.T
@@ -306,7 +317,7 @@ func (w *lookWire) mustHaveNoP0(when string) {
 // anything it (or a background re-look) puts on the wire.
 func (w *lookWire) look() {
 	w.at.reconcileProtectionAt(w.now(), "monitor")
-	time.Sleep(120 * time.Millisecond)
+	time.Sleep(60 * time.Millisecond)
 }
 
 // secondLook is a pass 3.1 s later with the link alive, plus time for an
@@ -345,7 +356,7 @@ func (w *lookWire) actsOnce(notBefore time.Duration) string {
 		w.t.Fatalf("acted %s after the first look, want no earlier than %s (one look must never act): %s",
 			took.Round(time.Millisecond), notBefore, out[0])
 	}
-	time.Sleep(700 * time.Millisecond)
+	time.Sleep(400 * time.Millisecond)
 	if out = w.ordersOut(); len(out) != 1 {
 		w.t.Fatalf("want exactly ONE order frame, got %d:\n  %s", len(out), strings.Join(out, "\n  "))
 	}
@@ -504,7 +515,7 @@ func TestLookTwice01_Replay0647(t *testing.T) {
 	w.flat1193() // .254
 	w.secondLook()
 	w.mustBeSilent("06:47:33 second look")
-	time.Sleep(3500 * time.Millisecond) // the real-time re-look, if one is armed
+	relookOver() // the real-time re-look, if one is armed
 	w.jump(57 * time.Second)
 	w.beat30()
 	w.sync()
@@ -524,7 +535,7 @@ func TestLookTwice02_Replay0647SafeSide(t *testing.T) {
 	w.mustBeSilent("06:47:30.249 first look")
 	w.flat1193()
 	w.secondLook()
-	time.Sleep(3500 * time.Millisecond)
+	relookOver()
 	w.mustBeSilent("after the second look")
 	w.mustHaveNoP0("the whole replay")
 }
@@ -618,6 +629,7 @@ func TestLookTwice03_HoldP0At35s(t *testing.T) {
 // exit evidence and still says Short 1. "A frame newer than the fill" alone is
 // not proof; the second look is.
 func TestLookTwice04_HeartbeatShort1(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-hb", stop1193)
 	w.stops1193(exits1193{})
 	w.until(ms1193(240))
@@ -628,7 +640,7 @@ func TestLookTwice04_HeartbeatShort1(t *testing.T) {
 	w.mustBeSilent("first look on a heartbeat frame newer than the fill")
 	w.flat1193()
 	w.secondLook()
-	time.Sleep(3500 * time.Millisecond)
+	relookOver()
 	w.mustBeSilent("after NT8 said flat")
 	w.mustHaveNoP0("the whole replay")
 }
@@ -666,6 +678,7 @@ func (w *lookWire) cancelStop(sid string) {
 // the Close fill and the Flat frame wait in the socket. Time alone must not act;
 // the heartbeat ack, behind the same frames, is what proves the link caught up.
 func TestLookTwice05_FrozenReadLoop(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-frozen", 27740)
 	release := make(chan struct{})
 	frozen := make(chan struct{})
@@ -690,13 +703,13 @@ func TestLookTwice05_FrozenReadLoop(t *testing.T) {
 
 	w.look()
 	w.mustBeSilent("first look")
-	time.Sleep(5500 * time.Millisecond) // the 3 s re-look and its 5 s ack wait pass
+	time.Sleep(5500 * time.Millisecond) // the re-look comes, and most of its 5 s ack wait
 	w.at.reconcileProtectionAt(w.now(), "monitor")
 	w.mustBeSilent("5.5 s later, read loop still frozen: no ack, no action")
 	unfreeze()
 	w.sync()
 	w.look()
-	time.Sleep(3500 * time.Millisecond)
+	relookOver()
 	w.mustBeSilent("after the loop caught up (NT8 is flat)")
 }
 
@@ -704,6 +717,7 @@ func TestLookTwice05_FrozenReadLoop(t *testing.T) {
 // later a same-side re-entry B fills at the SAME quantity and price, its bracket
 // not in the book yet. The look at +3 s is B's FIRST look, whatever A's was.
 func TestLookTwice06_SameSideReentry(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-reentry", 27740) // safe side: a wrong act would PLACE
 	w.stops1193(exits1193{})
 	w.until(ms1193(249))
@@ -724,17 +738,21 @@ func TestLookTwice06_SameSideReentry(t *testing.T) {
 	w.orderUpdate(b+"-sl", "working", 0, 0, sl(b+"-sl", stop1193, 1, "Working"))
 	w.sync()
 	w.secondLook()
-	time.Sleep(3500 * time.Millisecond)
+	relookOver()
 	w.mustBeSilent("B's bracket is in the book: a stop beside it would double-exit")
 }
 
 // TestLookTwice07_ActsAtThreeSeconds — spec 9.7, the timing half: a truly naked
-// position is acted on by the SECOND look (3 s, no 60 s wait), never the first.
+// position is acted on by the SECOND look (3 s, no 60 s wait), never the first. PLACE and FLATTEN run at the
+// default 3 s, the other shapes at the smallest setting.
 func TestLookTwice07_ActsAtThreeSeconds(t *testing.T) {
 	for _, c := range lookTwiceNakedCases() {
 		t.Run(c.name, func(t *testing.T) {
+			if c.id != "place" && c.id != "flatten" { // those two run at the default 3 s
+				fastConfirm(t)
+			}
 			w := c.open(t, "lt-act-"+c.id)
-			got := w.actsOnce(2900 * time.Millisecond)
+			got := w.actsOnce(protectionConfirm() - 100*time.Millisecond)
 			c.check(t, got)
 		})
 	}
@@ -743,6 +761,7 @@ func TestLookTwice07_ActsAtThreeSeconds(t *testing.T) {
 // TestLookTwicePin07_NakedIsStillProtected — the half of spec 9.7 that must NOT
 // change: those same positions get exactly one order. Green before and after.
 func TestLookTwicePin07_NakedIsStillProtected(t *testing.T) {
+	fastConfirm(t)
 	for _, c := range lookTwiceNakedCases() {
 		t.Run(c.name, func(t *testing.T) {
 			w := c.open(t, "lt-pin-"+c.id)
@@ -794,8 +813,8 @@ func lookTwiceNakedCases() []nakedCase {
 			return w
 		}, isClose},
 		// Leg 1's target filled 2 and leg 2's stop was CANCELLED: the runner is
-		// naked for real. The AddOn repeats leg 1's exit frames 2.5 s after the
-		// first look; a replay is not a new fill and must not push the act away.
+		// naked for real. The AddOn repeats leg 1's exit frames 5/6 into the
+		// hold; a replay is not a new fill and must not push the act away.
 		{"runner naked after leg 1, exit frames repeated during the hold: PLACE", "runner", func(t *testing.T, id string) *lookWire {
 			w := newLookWire(t, id, ctInstant(t, "2026-11-18 10:00:05.000"))
 			w.price(27740)
@@ -820,7 +839,7 @@ func lookTwiceNakedCases() []nakedCase {
 			w.jump(10 * time.Second) // long settled: only a NEW fill may hold it now
 			w.beat30()
 			w.sync()
-			dup := time.AfterFunc(2500*time.Millisecond, func() {
+			dup := time.AfterFunc(protectionConfirm()*5/6, func() {
 				w.wmu.Lock()
 				defer w.wmu.Unlock()
 				_ = ntwire.WriteFrame(w.conn, ntwire.FrameOrderUpdate, ou)
@@ -869,6 +888,7 @@ func lookTwiceNakedCases() []nakedCase {
 // TestLookTwicePin09_NoRowNoPriceStillAlerts — spec 9.9's other half: with no row
 // and no price there is nothing to place, and the P0 must still reach the owner.
 func TestLookTwicePin09_NoRowNoPriceStillAlerts(t *testing.T) {
+	fastConfirm(t)
 	w := newLookWire(t, "lt-norow-noprice", ctInstant(t, "2026-11-18 10:00:05.000"))
 	w.orderUpdate("ai-sig", "filled", 27733.50, 1)
 	w.positions(short(1, 27733.50))
@@ -941,6 +961,7 @@ func TestLookTwice10_OwnDeathVeto(t *testing.T) {
 // TestLookTwicePin10_ManualRowKeepsTodaysPath — an owner's own position (row
 // origin=manual) is protected on the same path as today.
 func TestLookTwicePin10_ManualRowKeepsTodaysPath(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-manual", 27740)
 	if err := w.st.GormDB().Model(&store.TraderPosition{}).Where("trader_id = ?", w.at.id).Update("origin", store.OriginManual).Error; err != nil {
 		t.Fatal(err)
@@ -952,11 +973,12 @@ func TestLookTwicePin10_ManualRowKeepsTodaysPath(t *testing.T) {
 // TestLookTwice11_StopDuringHold — spec 9.11: Stop() lands inside the hold. The
 // re-look must be joined (monitorWg) and nothing may go out afterwards.
 func TestLookTwice11_StopDuringHold(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-stop", 27755) // would FLATTEN
 	w.cancelStop(sid)
 	w.at.reconcileProtectionAt(w.now(), "monitor")
 	w.at.Stop()
-	time.Sleep(4500 * time.Millisecond)
+	time.Sleep(protectionConfirm() + 1500*time.Millisecond)
 	w.mustBeSilent("after Stop during the hold")
 }
 
@@ -964,10 +986,11 @@ func TestLookTwice11_StopDuringHold(t *testing.T) {
 // background re-look fall together. ONE stop, until a book received AFTER the
 // send says it is not there (rule 6).
 func TestLookTwice11_BeatAndRelookPlaceOneStop(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-onestop", 27740)
 	w.cancelStop(sid)
 	w.at.reconcileProtectionAt(w.now(), "monitor")
-	time.Sleep(3 * time.Second)
+	time.Sleep(protectionConfirm())
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {
 		wg.Add(1)
@@ -975,7 +998,7 @@ func TestLookTwice11_BeatAndRelookPlaceOneStop(t *testing.T) {
 	}
 	wg.Wait()
 	w.waitOrders(1, 10*time.Second)
-	time.Sleep(3500 * time.Millisecond) // another re-look, same book
+	relookOver() // another re-look, same book
 	w.at.reconcileProtectionAt(w.now(), "monitor")
 	time.Sleep(300 * time.Millisecond)
 	if n := w.count(ntwire.FramePlaceProtectiveStop); n != 1 {
@@ -987,6 +1010,7 @@ func TestLookTwice11_BeatAndRelookPlaceOneStop(t *testing.T) {
 // cancels the stop (231 such windows, longest 424 ms) while the position still
 // reads Short 1. Today: PLACE on an account that is about to be flat.
 func TestLookTwice12_TargetFillCancelsTheStop(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-tp", 27700) // price at the target: the safe side
 	w.orderUpdate(sid+"-tp", "filled", 27700, 1, sl(sid+"-sl", stop1193, 1, "Working"))
 	w.orderUpdate(sid+"-sl", "cancelsubmitted", 0, 0, sl(sid+"-sl", stop1193, 1, "CancelSubmitted"))
@@ -1000,7 +1024,7 @@ func TestLookTwice12_TargetFillCancelsTheStop(t *testing.T) {
 	w.orderUpdate(sid+"-sl", "cancelled", 0, 0)
 	w.sync()
 	w.secondLook()
-	time.Sleep(3500 * time.Millisecond)
+	relookOver()
 	w.mustBeSilent("after flat")
 	w.mustHaveNoP0("a normal target exit")
 }

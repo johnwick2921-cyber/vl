@@ -26,6 +26,9 @@ func TestOwnReverseSetting(t *testing.T) {
 			t.Errorf("the boot line must READ the mode in force and the raw setting: %q", l)
 		}
 	}
+	if ownReverseDelay != 3*time.Second {
+		t.Errorf("the detector's wait is %s in production, want 3 s", ownReverseDelay)
+	}
 	t.Setenv(ownReverseEnv, "close")
 	if l := OwnReverseBootLine(); !strings.Contains(l, "REFUSED") {
 		t.Errorf("close is refused in this release and the boot line must say so: %q", l)
@@ -78,6 +81,7 @@ func over1119(t *testing.T, id string) *lookWire {
 
 // MUTANT: treat every "Close" as ours.
 func TestOwnReverseHandCloseIsAlertOnlyAndStaysManual(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-handclose")
 	w.positions(long(1, 27753.25))
 	w.sync()
@@ -92,6 +96,7 @@ func TestOwnReverseHandCloseIsAlertOnlyAndStaysManual(t *testing.T) {
 
 // The owner reads which side, how many, at what price, and that nothing was sent.
 func TestOwnReverseP0NamesOurCloseAndMissingStop(t *testing.T) {
+	fastReverse(t)
 	w := reverse1119(t, "or-title", 27753.25)
 	w.mustFlagReverse(8 * time.Second)
 	p := w.reverseP0s()[0]
@@ -106,8 +111,9 @@ func TestOwnReverseP0NamesOurCloseAndMissingStop(t *testing.T) {
 
 // MUTANT: drop PositionsAfterFills (act on the pre-fill frame).
 func TestOwnReverseWaitsForAFrameNewerThanTheFill(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-late-frame")
-	w.mustNotFlagReverse(4500 * time.Millisecond) // the newest frame is the flat one from before the fill
+	w.mustNotFlagReverse(ownReverseDelay + time.Second) // the newest frame is the flat one from before the fill
 	w.positions(long(1, 27753.25))
 	w.sync()
 	w.mustFlagReverse(5 * time.Second)
@@ -115,37 +121,41 @@ func TestOwnReverseWaitsForAFrameNewerThanTheFill(t *testing.T) {
 
 // MUTANT: compare the quantity of the receipt instead of the arithmetic.
 func TestOwnReverseQuantityMustMatch(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-qty")
 	w.positions(long(2, 27753.25)) // 1 over-closed, 2 held: a hand added one
 	w.sync()
-	w.mustNotFlagReverse(4500 * time.Millisecond)
+	w.mustNotFlagReverse(ownReverseDelay + time.Second)
 }
 
 // MUTANT: accept any held side. A same-side position is not a reverse.
 func TestOwnReverseSameSideIsNotAReverse(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-side")
 	w.positions(short(1, 27753.25))
 	w.sync()
-	w.mustNotFlagReverse(4500 * time.Millisecond)
+	w.mustNotFlagReverse(ownReverseDelay + time.Second)
 }
 
 // MUTANT: drop EntryFillSince. A normal long entry at the exit price is ours.
 func TestOwnReverseOurOwnEntryIsNotAReverse(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-entry")
 	w.send(ntwire.FrameFill, ntwire.FillPayload{SignalID: "new-long", Symbol: "MNQ", Account: "Sim101", Side: "long",
 		FillPrice: 27753.25, Quantity: 1, Status: "filled", FillTime: w.now().UTC().Format(time.RFC3339)})
 	w.positions(long(1, 27753.25))
 	w.sync()
-	w.mustNotFlagReverse(4500 * time.Millisecond)
+	w.mustNotFlagReverse(ownReverseDelay + time.Second)
 }
 
 // MUTANT: drop the open-row check.
 func TestOwnReverseOpenRowWithItsOwnEntryIsNotAReverse(t *testing.T) {
+	fastReverse(t)
 	w := over1119(t, "or-row")
 	w.row("new-long", "LONG", 1, 27753.25, w.now())
 	w.positions(long(1, 27753.25))
 	w.sync()
-	w.mustNotFlagReverse(4500 * time.Millisecond)
+	w.mustNotFlagReverse(ownReverseDelay + time.Second)
 }
 
 // MUTANT: drop the NoteOwnReverse row correction. The reconcile materialized the
@@ -175,6 +185,7 @@ func (w *lookWire) mustBecomeBot(id int64) {
 // MUTANT: drop the first-seen bound. The reverse went flat; three minutes later
 // a hand opens the same side, size and price: that one is manual.
 func TestOwnReverseProofDoesNotReachALaterPosition(t *testing.T) {
+	fastReverse(t)
 	w := reverse1119(t, "or-later", 27753.25)
 	w.mustFlagReverse(8 * time.Second)
 	w.positions()
@@ -189,6 +200,7 @@ func TestOwnReverseProofDoesNotReachALaterPosition(t *testing.T) {
 
 // MUTANTS: not bound to the Run's stop context; not joined by monitorWg.
 func TestOwnReverseStopEndsTheWait(t *testing.T) {
+	fastReverse(t)
 	w := reverse1119(t, "or-stop", 27753.25)
 	done := make(chan struct{})
 	began := time.Now()
@@ -201,7 +213,7 @@ func TestOwnReverseStopEndsTheWait(t *testing.T) {
 	if took := time.Since(began); took > time.Second {
 		t.Fatalf("Stop took %s", took)
 	}
-	w.mustNotFlagReverse(4500 * time.Millisecond)
+	w.mustNotFlagReverse(ownReverseDelay + time.Second)
 }
 
 // Another account's receipt, and a stopped trader, start nothing.

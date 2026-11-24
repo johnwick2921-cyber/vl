@@ -38,8 +38,6 @@ const (
 	ownReverseOff     = "off"
 	ownReverseClose   = "close"
 
-	// ownReverseDelay: worst false window 0.424 s + worst wire lag 1.153 s.
-	ownReverseDelay = 3 * time.Second
 	// ownReverseGiveUp: the AddOn resends every position on its 30 s heartbeat;
 	// after two of them with no usable frame nothing can be proven.
 	ownReverseGiveUp = 70 * time.Second
@@ -54,6 +52,12 @@ const (
 	// ownReverseEntrySlack: an entry fill of ours may print just before the exit.
 	ownReverseEntrySlack = 5 * time.Second
 )
+
+// ownReverseDelay: worst false window 0.424 s + worst wire lag 1.153 s. A var only
+// so the tests that do not pin the 3 s need not wait them out.
+var ownReverseDelay = ownReverseDelayDefault
+
+const ownReverseDelayDefault = 3 * time.Second
 
 // ownReverseMode is the OWN_REVERSE setting in force: alert unless exactly off.
 func ownReverseMode() string {

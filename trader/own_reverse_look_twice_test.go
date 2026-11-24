@@ -23,6 +23,14 @@ import (
 
 const ownReverseEnv = "OWN_REVERSE"
 
+// fastReverse shortens the detector's wait for tests that pin what it decides, not
+// that it waits 3 s (the 11-19 pair and TestOwnReverseSetting keep the 3 s).
+func fastReverse(t *testing.T) {
+	t.Helper()
+	ownReverseDelay = time.Second
+	t.Cleanup(func() { ownReverseDelay = ownReverseDelayDefault })
+}
+
 func (w *lookWire) reverseP0s() []*store.AlertDB {
 	w.t.Helper()
 	var out []*store.AlertDB
@@ -131,13 +139,14 @@ func TestLookTwice13_OwnReverse1119(t *testing.T) {
 // −1207.00 was outside the bot record and the daily-loss gate.
 func TestLookTwice13_OwnReverseRowIsBot1119(t *testing.T) {
 	w := reverse1119(t, "or-1119-row", 27753.25)
-	time.Sleep(4500 * time.Millisecond) // the detector's 3 s
+	time.Sleep(ownReverseDelay + time.Second) // the detector's 3 s
 	w.mustBeBotRow("LONG")
 }
 
 // 10-30 14:45:21: two close_position frames 4 ms apart rested two "-lx" limits;
 // both filled at 28429.75 and the second opened LONG 1 (row 724, origin manual).
 func TestLookTwice13_OwnReverse1030(t *testing.T) {
+	fastReverse(t)
 	const sid = "a07a4475-1d73-41c1-acb1-78decf310acf"
 	w := newLookWire(t, "or-1030", ctInstant(t, "2026-10-30 14:40:00.000"))
 	w.row(sid, "SHORT", 1, 28600.25, w.now())
@@ -168,6 +177,7 @@ func TestLookTwice13_OwnReverse1030(t *testing.T) {
 // 10-16 02:13:26: two stops for one contract both filled at 30186.25. Receipts
 // only: no order_update frame, no close of ours on record. Flagged (alert).
 func TestLookTwice13_OwnReverse1016FromReceiptsOnly(t *testing.T) {
+	fastReverse(t)
 	const sid = "6714b4ad-9863-4010-b106-449714de2e5b"
 	w := newLookWire(t, "or-1016", ctInstant(t, "2026-10-16 02:13:00.000"))
 	w.row(sid, "SHORT", 1, 30186.25, w.now())
@@ -188,6 +198,7 @@ func TestLookTwice13_OwnReverse1016FromReceiptsOnly(t *testing.T) {
 // A close of 3 while only 1 was left: the receipts over-closed by 2 and NT8 is
 // long 2. Arithmetic, not "the same quantity as the receipt".
 func TestLookTwice13_PartialOverClose(t *testing.T) {
+	fastReverse(t)
 	w := open1193(t, "or-partial", stop1193)
 	w.until(ms1193(157))
 	left := sl(sid1193+"-sl2", stop1193, 1, "Working")
@@ -209,6 +220,7 @@ func TestLookTwice13_PartialOverClose(t *testing.T) {
 
 // Pins: what must NOT be called a reverse. Green today (no detector) and after.
 func TestLookTwicePin13_NotAReverse(t *testing.T) {
+	fastReverse(t)
 	t.Run("09-28 hand Close of 40: no row, flat after", func(t *testing.T) {
 		w := newLookWire(t, "or-0928", ctInstant(t, "2026-09-28 01:16:00.000"))
 		w.positions(ntwire.OpenPosition{Symbol: "MNQ", Side: "long", Quantity: 40, AvgPrice: 30600})
@@ -219,11 +231,11 @@ func TestLookTwicePin13_NotAReverse(t *testing.T) {
 		w.positions()
 		w.sync()
 		w.receipts(1, false)
-		w.mustNotFlagReverse(4500 * time.Millisecond)
+		w.mustNotFlagReverse(ownReverseDelay + time.Second)
 	})
 	t.Run("one tick off the receipt price", func(t *testing.T) {
 		w := reverse1119(t, "or-tick", 27753.50)
-		w.mustNotFlagReverse(4500 * time.Millisecond)
+		w.mustNotFlagReverse(ownReverseDelay + time.Second)
 	})
 	t.Run("a hand reverse: no send of ours, so the row stays manual", func(t *testing.T) {
 		w := newLookWire(t, "or-hand", ctInstant(t, "2026-11-18 10:00:05.000"))
@@ -236,7 +248,7 @@ func TestLookTwicePin13_NotAReverse(t *testing.T) {
 	t.Run("OWN_REVERSE=off", func(t *testing.T) {
 		t.Setenv(ownReverseEnv, "off")
 		w := reverse1119(t, "or-off", 27753.25)
-		w.mustNotFlagReverse(4500 * time.Millisecond)
+		w.mustNotFlagReverse(ownReverseDelay + time.Second)
 	})
 }
 
@@ -245,6 +257,7 @@ func TestLookTwicePin13_NotAReverse(t *testing.T) {
 // is in memory only, so the "saved record of our own send" condition is not).
 // Whatever is on the book, it alerts and never sends an order.
 func TestLookTwice13_CloseMode(t *testing.T) {
+	fastReverse(t)
 	for name, book := range map[string][]ntwire.NT8Order{
 		"ours alone": nil,
 		"the owner added an order": {{OrderID: "own-1", Symbol: "MNQ",
@@ -254,7 +267,7 @@ func TestLookTwice13_CloseMode(t *testing.T) {
 			t.Setenv(ownReverseEnv, "close")
 			w := reverse1119(t, "or-close-"+name[:3], 27753.25, book...)
 			w.mustFlagReverse(8 * time.Second)
-			time.Sleep(4 * time.Second)
+			time.Sleep(ownReverseDelay + time.Second)
 			if got := w.closesOut(); len(got) != 1 {
 				t.Fatalf("close is refused in this release: no close beyond our first one, got %d:\n  %s", len(got), strings.Join(got, "\n  "))
 			}

@@ -69,6 +69,7 @@ func (w *lookWire) goesFlat(sid string) {
 // flat meanwhile. The stop must already be out: nothing may follow the flat.
 // MUTANT: emit the PLACE alert before the send.
 func TestLookTwiceReview_PlaceIsSentBeforeTheAlertWrite(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-stall", 27740)
 	w.cancelStop(sid)
 	atInsert, ran := -1, make(chan struct{})
@@ -94,6 +95,7 @@ func TestLookTwiceReview_PlaceIsSentBeforeTheAlertWrite(t *testing.T) {
 // evidence must be read after it. The flat carries no applied receipt, so only
 // the evidence can hold. MUTANT: read the evidence before OwnDeathFor.
 func TestLookTwiceReview_FlatDuringTheLedgerRead(t *testing.T) {
+	fastConfirm(t)
 	for name, px := range map[string]float64{"place": 27740, "flatten": 27755} {
 		t.Run(name, func(t *testing.T) {
 			w, sid := nakedShort(t, "lt-rv-ledger-"+name, px)
@@ -116,7 +118,7 @@ func TestLookTwiceReview_FlatDuringTheLedgerRead(t *testing.T) {
 					t.Errorf("the look itself must see it, not only the guard of the send: %q", h.lastWhy)
 				}
 			})
-			time.Sleep(3500 * time.Millisecond)
+			relookOver()
 			w.mustBeSilent("flat during the own-death read")
 		})
 	}
@@ -125,11 +127,12 @@ func TestLookTwiceReview_FlatDuringTheLedgerRead(t *testing.T) {
 // FLATTEN waits for limitFlattenMu behind another exit; NT8 reports flat meanwhile.
 // MUTANT: call flattenPositionAtMarket with no guard, or ask it before the lock.
 func TestLookTwiceReview_FlatDuringTheFlattenLockWait(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-flatlock", 27755)
 	w.cancelStop(sid)
 	w.at.limitFlattenMu.Lock()
 	w.look()
-	time.Sleep(4 * time.Second) // the re-look confirms and waits for the lock
+	time.Sleep(protectionConfirm() + time.Second) // the re-look confirms and waits for the lock
 	// (the pass holds protMu now: nothing here may take it)
 	w.positions()
 	w.sync()
@@ -254,18 +257,23 @@ func (w *lookWire) dropLink() {
 // Two rows of one root symbol and side (two MNQ expiries): the naked position is
 // still acted on at about 3 s, with ONE stop. MUTANT: key the hold by symbol|side.
 func TestLookTwiceReview_TwoRowsOfOneSymbolStillAct(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-tworows", 27740)
 	w.positions(short(1, 27733.50), short(2, 27990))
+	w.sync()
+	w.jump(10 * time.Second)
+	w.beat30() // the second row is really there (no entry fill explains it)
+	w.sync()
 	w.cancelStop(sid)
 	began := time.Now()
 	w.look()
 	w.positions(short(2, 27990), short(1, 27733.50)) // the rows swap places
 	w.sync()
 	out, took := w.waitOrders(1, 8*time.Second)
-	if len(out) != 1 || time.Since(began) < 2900*time.Millisecond {
+	if len(out) != 1 || time.Since(began) < protectionConfirm()-100*time.Millisecond {
 		t.Fatalf("two rows: want one order at about 3 s, got %d after %s", len(out), took)
 	}
-	time.Sleep(4 * time.Second)
+	time.Sleep(protectionConfirm() + time.Second)
 	if out = w.ordersOut(); len(out) != 1 {
 		t.Fatalf("no book since the first stop: the second row must not get another, got %d:\n  %s", len(out), strings.Join(out, "\n  "))
 	}
@@ -297,6 +305,7 @@ func TestProtectionHoldKeys(t *testing.T) {
 // Rule 5 — a same-side re-entry that filled after the exit is a NEW position, row
 // or no row. MUTANT: drop the EntryOpened line of protectionOwnDeath.
 func TestLookTwiceReview_OwnDeathDoesNotHoldANewEntry(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-rv-newentry", 27740)
 	w.stops1193(exits1193{})
 	w.flat1193()
@@ -337,6 +346,7 @@ func TestLookTwiceReview_ACloseFillIsNotANewEntry(t *testing.T) {
 // An UNKNOWN cover between two naked looks is not a look, and the next is a first
 // one. MUTANT: drop h.restart() in the protectionUnknown case.
 func TestLookTwiceReview_UnknownRestartsTheLooks(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-unknown", 27740)
 	w.cancelStop(sid)
 	naked := w.lastBook
@@ -361,6 +371,7 @@ func TestLookTwiceReview_UnknownRestartsTheLooks(t *testing.T) {
 // spent P0 and own-death bound) alive all night. MUTANT: h.lastLook = passStart in
 // the protectionUnknown case.
 func TestLookTwiceReview_UnknownDoesNotKeepTheHoldAlive(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-stale", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -382,6 +393,7 @@ func TestLookTwiceReview_UnknownDoesNotKeepTheHoldAlive(t *testing.T) {
 // Positions that stay unreadable end the hold after 70 s too. MUTANT: drop
 // expireProtectionHoldsLocked.
 func TestLookTwiceReview_UnreadablePositionsEndTheHold(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-unreadable", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -402,6 +414,7 @@ func TestLookTwiceReview_UnreadablePositionsEndTheHold(t *testing.T) {
 // A re-look serves the open holds only; another position's first look is the
 // beat's. MUTANT: drop the relook filter.
 func TestLookTwiceReview_RelookServesOpenHoldsOnly(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-only", 27740)
 	w.noAcks() // the MNQ hold stays open
 	w.cancelStop(sid)
@@ -423,6 +436,7 @@ func TestLookTwiceReview_RelookServesOpenHoldsOnly(t *testing.T) {
 // Recovery seen by a RE-LOOK ends the episode: the next emergency close raises its
 // own P0. MUTANT: drop noteProtectionCovered.
 func TestLookTwiceReview_RelookRecoveryEndsTheEpisode(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-rv-episode", 27755) // would FLATTEN
 	w.cancelStop(sid)
 	w.actsOnce(0)
@@ -458,6 +472,7 @@ func TestLookTwiceReview_RelookRecoveryEndsTheEpisode(t *testing.T) {
 // A standing alert-only state takes no look at all: no hold, no link check, no
 // second P0. MUTANT: drop the standing-alert break.
 func TestLookTwiceReview_StandingAlertOnlyIsSilent(t *testing.T) {
+	fastConfirm(t)
 	w := newLookWire(t, "lt-rv-standing", ctInstant(t, "2026-11-18 10:00:05.000"))
 	w.orderUpdate("ai-sig", "filled", 27733.50, 1)
 	w.positions(short(1, 27733.50)) // no row, no price
