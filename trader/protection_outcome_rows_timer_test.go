@@ -57,6 +57,20 @@ func TestProtectionPlaceRetryThatSendsTellsTheOwner(t *testing.T) {
 	if got = titles(); len(got) != 3 {
 		t.Fatalf("a new episode sent at once = one P0, got %q", got)
 	}
+	// … not even when the episode before it ended on a refusal
+	ok := func() {
+		at.actOnProtection(protectionVerdict{Action: protectionOK}, "MNQ", "LONG", 1, "sig", "t", 0, t0.Add(20*time.Minute))
+	}
+	ok()
+	tr.err = fmt.Errorf("no build")
+	pass = 21
+	act()
+	ok()
+	tr.err = nil
+	act()
+	if got = titles(); len(got) != 5 {
+		t.Fatalf("refused, recovered, then sent in a NEW episode = two P0s and no 'now SENT', got %q", got)
+	}
 }
 
 // Finding 2, the flatten half.
@@ -160,6 +174,30 @@ func TestProtectionOwnStopQty(t *testing.T) {
 		if got := protectionOwnStopQty(c.qty, c.rows, c.own, c.ownAvg, 0.25); got != c.want {
 			t.Errorf("%s: %d, want %d", name, got, c.want)
 		}
+	}
+}
+
+// MUTANTS: count a manual row; count another account's; drop the weighting.
+func TestProtectionOwnOpenRow(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{})
+	at.id = "own-row"
+	mk := func(sid, side, account, origin string, qty, px float64) {
+		p := &store.TraderPosition{TraderID: at.id, ExchangeType: "ninjatrader", Symbol: "MNQ", Side: side, Quantity: qty, EntryQuantity: qty,
+			EntryPrice: px, EntryOrderID: sid, EntryTime: 1, Leverage: 1, Status: "OPEN", Source: "t", Account: account, Origin: origin}
+		if err := st.Position().Create(p); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := at.ownOpenRow("Sim101", "MNQ", "SHORT"); got != (protRowSum{}) {
+		t.Fatalf("no row: %+v", got)
+	}
+	mk("a", "SHORT", "Sim101", store.OriginBot, 1, 100)
+	mk("b", "SHORT", "", store.OriginBot, 3, 104)
+	mk("c", "SHORT", "Sim102", store.OriginBot, 5, 1)
+	mk("d", "LONG", "Sim101", store.OriginBot, 5, 1)
+	mk("e", "SHORT", "Sim101", store.OriginManual, 5, 1)
+	if got := at.ownOpenRow("Sim101", "MNQ", "short"); got.qty != 4 || got.avg != 103 {
+		t.Fatalf("our own open position there is 4 @ 103, got %+v", got)
 	}
 }
 

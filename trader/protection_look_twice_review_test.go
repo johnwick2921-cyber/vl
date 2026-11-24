@@ -173,7 +173,12 @@ func (w *lookWire) proofFor(v protectionVerdict) *protectionProof {
 // The last recheck, one change at a time. MUTANTS: drop any case of check().
 func TestLookTwiceReview_TheGuardIsTheLastStepBeforeTheFrame(t *testing.T) {
 	changes := map[string]func(w *lookWire, sid string){
-		"flat":    func(w *lookWire, sid string) { w.positions(); w.sync() },
+		"flat": func(w *lookWire, sid string) { w.positions(); w.sync() },
+		"flat, then a late frame": func(w *lookWire, sid string) {
+			w.positions()
+			w.positions(short(1, 27733.50))
+			w.sync()
+		},
 		"smaller": func(w *lookWire, sid string) { w.positions(short(2, 27733.50)); w.sync() },
 		"exit fill": func(w *lookWire, sid string) {
 			w.closeFrame(sid, "short", "tp", 27700, 1, 0, w.now())
