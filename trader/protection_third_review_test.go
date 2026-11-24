@@ -508,7 +508,7 @@ func TestLookTwiceLateBook_ALateStopStillTellsTheOwnerAt35s(t *testing.T) {
 	w.jump(33 * time.Second)
 	w.look()
 	w.mustHaveNoP0("before 35 s")
-	before := traderEvents(w.at.id, "protection_hold_expired")
+	before, raised := traderEvents(w.at.id, "protection_hold_expired"), traderEvents(w.at.id, "protection_hold_p0")
 	w.jump(2 * time.Second)
 	w.look()
 	if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "order book") || !strings.Contains(ps[0].Body, "shows a stop") {
@@ -516,8 +516,9 @@ func TestLookTwiceLateBook_ALateStopStillTellsTheOwnerAt35s(t *testing.T) {
 	}
 	w.jump(10 * time.Second)
 	w.look()
-	if n := len(w.p0s()); n != 1 {
-		t.Fatalf("one hold = one P0, got %d", n)
+	// (the event id is the hold's, so a second row is hidden by the store: count the raises)
+	if n := traderEvents(w.at.id, "protection_hold_p0") - raised; n != 1 || len(w.p0s()) != 1 {
+		t.Fatalf("one hold = one P0, raised %.0f, rows %d", n, len(w.p0s()))
 	}
 	w.jump(26 * time.Second) // 71 s after the last real look
 	w.look()
