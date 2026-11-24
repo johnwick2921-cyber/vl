@@ -127,13 +127,10 @@ func TestLookTwiceRule1_ReadErrorRestarts(t *testing.T) {
 	w.actsAfterRestart("after an unreadable positions read")
 }
 
-// Rule 1 — a NEW connection: the looks of the old one do not count, and the
-// positions frame cached from the old one is not evidence.
-func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
-	w, sid := nakedShort(t, "lt-r1-conn", 27740)
-	w.cancelStop(sid)
-	w.look()
-
+// redial drops the AddOn connection and dials a new one.
+func (w *lookWire) redial() {
+	t := w.t
+	t.Helper()
 	_ = w.conn.Close()
 	for deadline := time.Now().Add(5 * time.Second); w.s.IsConnected(); time.Sleep(2 * time.Millisecond) {
 		if time.Now().After(deadline) {
@@ -160,6 +157,16 @@ func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
 			w.mu.Unlock()
 		}
 	}()
+}
+
+// Rule 1 — a NEW connection: the looks of the old one do not count, and the
+// positions frame cached from the old one is not evidence.
+func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
+	w, sid := nakedShort(t, "lt-r1-conn", 27740)
+	w.cancelStop(sid)
+	w.look()
+
+	w.redial()
 	w.book("connect", w.lastBook...) // the book arrives, the positions frame does not yet
 	w.sync()
 	w.jump(3100 * time.Millisecond)
@@ -172,6 +179,109 @@ func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
 	if out, took := w.waitOrders(1, 12*time.Second); len(out) != 1 {
 		t.Fatalf("once the new connection reported the position it must be protected, got %d after %s", len(out), took)
 	}
+}
+
+// Rule 1 — a NEW connection that reports the position at once: still a first look.
+func TestLookTwiceRule1_ReconnectIsAFirstLook(t *testing.T) {
+	w, sid := nakedShort(t, "lt-r1-conn2", 27740)
+	w.cancelStop(sid)
+	w.look()
+	w.redial()
+	w.beat30()
+	w.sync()
+	w.jump(3100 * time.Millisecond)
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	w.actsAfterRestart("the first look on the new connection")
+}
+
+// Rule 1 — two looks 1 s apart are not two looks.
+func TestLookTwiceRule1_TooSoon(t *testing.T) {
+	w, sid := nakedShort(t, "lt-r1-soon", 27740)
+	w.cancelStop(sid)
+	w.look()
+	w.jump(time.Second)
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	w.actsAfterRestart("1 s after the first look")
+}
+
+// Rule 1 — a fill after the first look: the same side, quantity and price again,
+// 3.2 s after ITS fill, is that position's FIRST look.
+func TestLookTwiceRule1_FillSinceTheFirstLookRestarts(t *testing.T) {
+	w := open1193(t, "lt-r1-fill", 27740)
+	w.stops1193(exits1193{})
+	w.until(ms1193(249))
+	w.look()
+	w.jump(time.Second)
+	const b = "reentry-b"
+	w.row(b, "SHORT", 1, entry1193, w.now())
+	w.mentorStop(b, "short", 1, 0, stop1193)
+	w.orderUpdate(b, "filled", entry1193, 1)
+	w.positions(short(1, entry1193))
+	w.sync()
+	w.jump(3200 * time.Millisecond)
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	w.actsAfterRestart("B's first look")
+}
+
+// judge runs the gate alone, as one pass would with this evidence.
+func (w *lookWire) judge(qty int, bookAt time.Time, prep func(*protectionHold)) (act bool, why string) {
+	w.protState(func() {
+		start := w.at.beginProtectionLookLocked(w.s)
+		if h := w.at.protHolds["MNQ|SHORT"]; h != nil && prep != nil {
+			prep(h)
+		}
+		act = w.at.protectionMayActLocked(protectionVerdict{Action: protectionPlace, StopPx: stop1193}, "MNQ", "SHORT",
+			qty, 27733.50, w.s, "Sim101", bookAt, start, 3*time.Second, "t")
+		if h := w.at.protHolds["MNQ|SHORT"]; h != nil {
+			why = h.lastWhy
+		}
+	})
+	return act, why
+}
+
+// A frame that lands while a pass is reading (its database reads can take
+// seconds) must not be judged with the older half of the evidence, and a Stop
+// that lands there must not send.
+func TestLookTwiceGate_EvidenceChangedDuringThePass(t *testing.T) {
+	bookAt := func(w *lookWire) time.Time {
+		_, at, _ := w.s.OrderSnapshots().LatestReceived("Sim101")
+		return at
+	}
+	proven := func(h *protectionHold) { h.proven = true }
+	t.Run("positions", func(t *testing.T) {
+		w, _ := nakedShort(t, "lt-g-pos", 27740)
+		w.judge(2, bookAt(w), nil) // NT8 says 1
+		w.jump(3100 * time.Millisecond)
+		if act, why := w.judge(2, bookAt(w), proven); act || !strings.Contains(why, "position changed") {
+			t.Fatalf("the newest frame shows another position: act=%v why=%q", act, why)
+		}
+	})
+	t.Run("book", func(t *testing.T) {
+		w, _ := nakedShort(t, "lt-g-book", 27740)
+		old := bookAt(w)
+		w.judge(1, old, nil)
+		w.jump(3100 * time.Millisecond)
+		w.beat30()
+		w.sync()
+		if act, why := w.judge(1, old, proven); act || !strings.Contains(why, "newer order book") {
+			t.Fatalf("a newer book arrived: act=%v why=%q", act, why)
+		}
+		if act, _ := w.judge(1, bookAt(w), proven); !act {
+			t.Fatal("control: with the newest book the same evidence acts")
+		}
+	})
+	t.Run("stop", func(t *testing.T) {
+		w, _ := nakedShort(t, "lt-g-stop", 27740)
+		w.judge(1, bookAt(w), nil)
+		w.jump(3100 * time.Millisecond)
+		w.at.cancelStopMonitor()
+		if act, _ := w.judge(1, bookAt(w), proven); act {
+			t.Fatal("the Run ended while the pass was reading: nothing may be sent")
+		}
+	})
 }
 
 // Rule 1 — a Stop/Start in between: the new Run looks for itself.
@@ -271,6 +381,40 @@ func TestLookTwiceRule4_OlderAckDoesNotCount(t *testing.T) {
 	if out, took := w.waitOrders(1, 3*time.Second); len(out) != 1 {
 		t.Fatalf("its own ack must release the hold at once, got %d after %s", len(out), took)
 	}
+}
+
+// Rule 4 — an ack that comes after the 5 s answers nothing: a NEW check is sent.
+func TestLookTwiceRule4_LateAckDoesNotCount(t *testing.T) {
+	w, sid := nakedShort(t, "lt-r4-late", 27740)
+	w.noAcks()
+	w.cancelStop(sid)
+	w.look()
+	w.secondLook()
+	w.jump(5100 * time.Millisecond)
+	before := w.count(ntwire.FrameHeartbeat)
+	w.send(ntwire.FrameAck, ntwire.AckPayload{Acks: "heartbeat"})
+	w.sync()
+	w.look()
+	w.mustBeSilent("an ack 5.1 s after the check")
+	if n := w.count(ntwire.FrameHeartbeat); n != before+1 {
+		t.Fatalf("a new link check must replace the expired one, sent %d", n-before)
+	}
+}
+
+// Rule 5 — the owner is told as soon as the veto is what holds it, not at 35 s.
+func TestLookTwiceRule5_VetoTellsTheOwnerAtOnce(t *testing.T) {
+	w := deadByReceipts(t, "lt-r5-p0")
+	w.look()
+	w.mustHaveNoP0("a first look")
+	w.jump(5 * time.Second)
+	w.beat30()
+	w.sync()
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Title, "already closed") {
+		t.Fatalf("want ONE own-death P0, got %d: %+v", len(ps), ps)
+	}
+	w.mustBeSilent("P0 only")
 }
 
 // Rule 5 — a row closed by receipts that do NOT sum to its size is not a death:
@@ -410,7 +554,16 @@ func TestLookTwiceRelookEndsWithTheHold(t *testing.T) {
 			t.Fatalf("round %d: the hold outlived the cover", i)
 		}
 	}
-	w.mustBeSilent("the stop came back both times")
+	w.cancelStop(sid)
+	w.at.reconcileProtectionAt(w.now(), "monitor")
+	w.positions() // flat: the hold ends with the position, not 70 s later
+	w.sync()
+	for deadline := time.Now().Add(6 * time.Second); w.relookAlive() || w.holds() != 0; time.Sleep(10 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("flat: holds %d, goroutine %v", w.holds(), w.relookAlive())
+		}
+	}
+	w.mustBeSilent("the stop came back twice, then flat")
 }
 
 // PROTECTION_CONFIRM_MS=0 puts nothing new on the wire: no link check, no hold,
