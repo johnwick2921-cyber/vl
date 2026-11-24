@@ -94,6 +94,27 @@ func TestLookTwicePanicAfterTheAckDoesNotSpin(t *testing.T) {
 	}
 }
 
+// The stamp is put on the holds that are DUE only: a pass made for one hold must
+// not push back another (finding 4 of the second review: 6 s instead of 3).
+// MUTANT: stamp every hold.
+func TestLookTwiceLastTryIsForDueHoldsOnly(t *testing.T) {
+	now := time.Date(2026, 11, 19, 12, 0, 0, 0, time.UTC)
+	s := ntwire.NewTCPServer(nil)
+	s.SetReceiptClockForTest(func() time.Time { return now })
+	ago := func(d time.Duration) time.Time { return now.Add(-d) }
+	due := &protectionHold{firstLook: ago(3 * time.Second), lastLook: ago(3 * time.Second)}
+	soon := &protectionHold{firstLook: ago(1500 * time.Millisecond), lastLook: ago(1500 * time.Millisecond)}
+	at := &AutoTrader{}
+	at.protHolds = map[string]*protectionHold{"due": due, "soon": soon}
+	at.beginProtectionLookLocked(s, 3*time.Second)
+	if !due.lastTry.Equal(now) || !soon.lastTry.IsZero() {
+		t.Fatalf("lastTry: due %s, soon %s", due.lastTry, soon.lastTry)
+	}
+	if got := at.protectionRelookWaitLocked(now, 3*time.Second); got != 1500*time.Millisecond {
+		t.Fatalf("the next look is due in 1.5 s, got %s", got)
+	}
+}
+
 // Finding 2 — "the stop that could NOT be sent is now SENT" is only true when the
 // owner was told a stop could not be sent. One episode has ONE first P0 (its event
 // id is the episode's), so a refusal after a send is silent - and the next send

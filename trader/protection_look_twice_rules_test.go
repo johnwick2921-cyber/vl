@@ -236,7 +236,7 @@ func TestLookTwiceRule1_FillSinceTheFirstLookRestarts(t *testing.T) {
 // judge runs the gate alone, as one pass would with this evidence.
 func (w *lookWire) judge(qty int, bookAt time.Time, prep func(*protectionHold)) (act bool, why string) {
 	w.protState(func() {
-		start := w.at.beginProtectionLookLocked(w.s)
+		start := w.at.beginProtectionLookLocked(w.s, protectionConfirm())
 		if h := w.at.protHolds["MNQ|SHORT"]; h != nil && prep != nil {
 			prep(h)
 		}

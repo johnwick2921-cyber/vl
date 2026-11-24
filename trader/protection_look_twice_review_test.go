@@ -154,7 +154,7 @@ func (w *lookWire) proofFor(v protectionVerdict) *protectionProof {
 	step := func(proven bool) {
 		w.protState(func() {
 			_, bookAt, _ := w.s.OrderSnapshots().LatestReceived("Sim101")
-			start := w.at.beginProtectionLookLocked(w.s)
+			start := w.at.beginProtectionLookLocked(w.s, protectionConfirm())
 			if h := w.at.protHolds["MNQ|SHORT"]; h != nil {
 				h.proven = proven
 			}

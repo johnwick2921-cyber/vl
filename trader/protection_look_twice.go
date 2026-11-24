@@ -134,6 +134,7 @@ type protectionHold struct {
 	since     time.Time // the hold opened (35 s alert, own-death bound)
 	firstLook time.Time // zero = the next look is the first one
 	lastLook  time.Time
+	lastTry   time.Time // a pass began while this hold was due, whether or not it could look
 
 	probe   *nt.LinkProbe // the heartbeat sent at the second look
 	probeAt time.Time
@@ -141,6 +142,23 @@ type protectionHold struct {
 
 	alerted bool   // one P0 per hold
 	lastWhy string // a hold's log line repeats only when the reason changes
+}
+
+// due is when the hold's next look is wanted: its first look plus confirm, or
+// (restarted, or looked at since then) its last look plus confirm - but never
+// sooner than confirm after a pass that was already due. A pass that could not
+// look (UNKNOWN cover, unreadable positions, a contained panic) leaves both looks
+// where they were, so without lastTry the hold stayed due and the loop ran every
+// protectionRelookFloor, with its database reads, for up to protectionLookGap.
+func (h *protectionHold) due(confirm time.Duration) time.Time {
+	due := h.firstLook.Add(confirm)
+	if h.firstLook.IsZero() || !h.lastLook.Before(due) {
+		due = h.lastLook.Add(confirm)
+	}
+	if retry := h.lastTry.Add(confirm); retry.After(due) {
+		due = retry
+	}
+	return due
 }
 
 // restart makes the next look the first one again. since/alerted stay: a
@@ -166,15 +184,19 @@ func (at *AutoTrader) protectionServer() *nt.TCPServer {
 }
 
 // beginProtectionLookLocked opens one pass: it reads which heartbeats are acked
-// BEFORE the pass reads positions and book, so those are read after the ack.
-// protMu held.
-func (at *AutoTrader) beginProtectionLookLocked(srv *nt.TCPServer) time.Time {
+// BEFORE the pass reads positions and book, so those are read after the ack. It
+// also stamps lastTry on the holds that are due: only on those, or a pass made
+// for one hold would push back another that is due in a moment. protMu held.
+func (at *AutoTrader) beginProtectionLookLocked(srv *nt.TCPServer, confirm time.Duration) time.Time {
 	if srv == nil {
 		return time.Now()
 	}
 	now := srv.ReceiptNow()
 	for _, h := range at.protHolds {
 		h.proven = false
+		if !h.due(confirm).After(now) {
+			h.lastTry = now
+		}
 		if h.probe == nil {
 			continue
 		}
@@ -182,7 +204,9 @@ func (at *AutoTrader) beginProtectionLookLocked(srv *nt.TCPServer) time.Time {
 		case now.Sub(h.probeAt) > nt.HeartbeatAckWait:
 			h.probe = nil // no ack in time (or an ack nobody looked at): ask again
 		case acked:
-			h.proven = true
+			// Taken off here: an answered check left on a hold this pass never
+			// reaches (a panic) would wake the loop again at once.
+			h.probe, h.proven = nil, true
 		}
 	}
 	return now
@@ -551,9 +575,8 @@ func (at *AutoTrader) releaseProtectionRelookLocked(wake chan struct{}) {
 	}
 }
 
-// protectionRelookWait is how long until the EARLIEST open hold is due: its first
-// look plus confirm, or (restarted, or looked at since then) its last look plus
-// confirm. A plain confirm-long tick looked at a hold opened in mid-tick too
+// protectionRelookWait is how long until the EARLIEST open hold is due
+// (protectionHold.due). A plain confirm-long tick looked at a hold opened in mid-tick too
 // early and then again a whole tick later: up to 6 s instead of 3.
 func (at *AutoTrader) protectionRelookWait(confirm time.Duration) time.Duration {
 	at.protMu.Lock()
@@ -569,11 +592,7 @@ func (at *AutoTrader) protectionRelookWait(confirm time.Duration) time.Duration 
 func (at *AutoTrader) protectionRelookWaitLocked(now time.Time, confirm time.Duration) time.Duration {
 	wait := confirm
 	for _, h := range at.protHolds {
-		due := h.firstLook.Add(confirm)
-		if h.firstLook.IsZero() || !h.lastLook.Before(due) {
-			due = h.lastLook.Add(confirm)
-		}
-		if d := due.Sub(now); d < wait {
+		if d := h.due(confirm).Sub(now); d < wait {
 			wait = d
 		}
 	}

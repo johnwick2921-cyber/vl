@@ -249,6 +249,9 @@ func TestProtectionRelookWait(t *testing.T) {
 		"looked at since it was due": {[]*protectionHold{{firstLook: ago(9 * time.Second), lastLook: ago(time.Second)}}, 2 * time.Second},
 		"restarted":                  {[]*protectionHold{{lastLook: ago(time.Second)}}, 2 * time.Second},
 		"restarted long ago":         {[]*protectionHold{{lastLook: ago(20 * time.Second)}}, protectionRelookFloor},
+		"could not look":             {[]*protectionHold{{lastLook: ago(20 * time.Second), lastTry: ago(time.Second)}}, 2 * time.Second},
+		"could not look, long ago":   {[]*protectionHold{{lastLook: ago(20 * time.Second), lastTry: ago(5 * time.Second)}}, protectionRelookFloor},
+		"looked after it could not":  {[]*protectionHold{{firstLook: ago(time.Second), lastLook: ago(time.Second), lastTry: ago(2 * time.Second)}}, 2 * time.Second},
 		"a clock that stepped":       {[]*protectionHold{{firstLook: now.Add(time.Hour), lastLook: now.Add(time.Hour)}}, c},
 	} {
 		at := &AutoTrader{}

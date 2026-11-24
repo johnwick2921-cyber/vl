@@ -732,7 +732,7 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 	if relook != nil && srv == nil {
 		return false // no wire to look at
 	}
-	passStart := at.beginProtectionLookLocked(srv)
+	passStart := at.beginProtectionLookLocked(srv, confirm)
 	if relook != nil {
 		now = passStart // the re-look has no clock of its own
 	}
