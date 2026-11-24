@@ -241,7 +241,7 @@ func (w *lookWire) judge(qty int, bookAt time.Time, prep func(*protectionHold)) 
 			prep(h)
 		}
 		act = w.at.protectionMayActLocked(protectionVerdict{Action: protectionPlace, StopPx: stop1193}, "MNQ|SHORT", "MNQ", "SHORT",
-			qty, 27733.50, w.s, "Sim101", bookAt, start, 3*time.Second, "t") != nil
+			qty, 27733.50, w.s, "Sim101", bookAt, false, start, 3*time.Second, "t") != nil
 		if h := w.at.protHolds["MNQ|SHORT"]; h != nil {
 			why = h.lastWhy
 		}

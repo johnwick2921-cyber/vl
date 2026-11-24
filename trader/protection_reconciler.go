@@ -794,7 +794,7 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 	}
 	unverified := "" // m469: the first position this pass could not verify
 
-	book, have, age, bookAt, account := at.protectionBook(now)
+	book, have, age, bookAt, bookLate, account := at.protectionBook(now)
 	if have && snapshotMaxAge() > 0 && age > snapshotMaxAge() {
 		// A book older than the bound answers about the past. The reconnect
 		// edge in particular fires BEFORE any fresh snapshot: the AddOn sends
@@ -878,7 +878,11 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 		if confirm > 0 {
 			switch v.Action {
 			case protectionOK:
-				at.dropProtectionHoldLocked(holdKey, "a stop covers it")
+				if h := at.protHolds[holdKey]; h != nil && bookLate {
+					h.restart() // a book written late ends no hold either (its 35 s P0 runs on)
+				} else {
+					at.dropProtectionHoldLocked(holdKey, "a stop covers it")
+				}
 				if relook != nil {
 					at.noteProtectionCovered(symbol, side)
 				}
@@ -897,7 +901,7 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 				if v.Action == protectionPlace && len(twoRows[symbol+"|"+side]) > 1 {
 					own = at.ownOpenRow(account, symbol, side)
 				}
-				proof := at.protectionMayActLocked(v, holdKey, symbol, side, qty, positionAvg(p), srv, account, bookAt, passStart, confirm, trigger)
+				proof := at.protectionMayActLocked(v, holdKey, symbol, side, qty, positionAvg(p), srv, account, bookAt, bookLate, passStart, confirm, trigger)
 				if proof == nil {
 					continue // a hold sends nothing
 				}
@@ -927,18 +931,19 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 	return
 }
 
-// protectionBook is liveBook plus the receive instant and the account it came
-// from (look-twice compares receive instants, never ages).
-func (at *AutoTrader) protectionBook(now time.Time) (orders []nt.NT8Order, have bool, age time.Duration, bookAt time.Time, account string) {
+// protectionBook is liveBook plus the receive instant, whether the book was written
+// late, and the account it came from (look-twice compares receive instants, never
+// ages).
+func (at *AutoTrader) protectionBook(now time.Time) (orders []nt.NT8Order, have bool, age time.Duration, bookAt time.Time, late bool, account string) {
 	cache, account, _ := at.brokerBook()
 	if cache == nil {
-		return nil, false, 0, time.Time{}, account
+		return nil, false, 0, time.Time{}, false, account
 	}
-	snap, at0, ok := cache.LatestReceived(account)
+	snap, at0, late, ok := cache.LatestOrder(account)
 	if !ok || at0.IsZero() {
-		return nil, false, 0, time.Time{}, account
+		return nil, false, 0, time.Time{}, false, account
 	}
-	return snap.Orders, true, now.Sub(at0), at0, account
+	return snap.Orders, true, now.Sub(at0), at0, late, account
 }
 
 // protectionUnverifiedAlertAfter (m469) is how long the reconciler may go

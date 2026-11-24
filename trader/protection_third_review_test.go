@@ -392,3 +392,54 @@ func TestLookTwiceLateBook_NoStampAndReconnectAreEvidence(t *testing.T) {
 		w.actsOnce(0)
 	})
 }
+
+// A book written late that SHOWS a stop covers nothing either: the hold, and its
+// 35 s P0, stay. MUTANT: drop the hold on it.
+func TestLookTwiceLateBook_ALateStopDoesNotEndTheHold(t *testing.T) {
+	fastConfirm(t)
+	w, sid := nakedShort(t, "lt-book-late-stop", 27740)
+	covered := w.lastBook
+	w.cancelStop(sid)
+	w.look()
+	w.bookAt(w.now().Add(-5*time.Second), covered...) // the one from before the cancel
+	w.sync()
+	w.look()
+	if w.holds() != 1 {
+		t.Fatalf("a late book ended the hold, holds %d", w.holds())
+	}
+	w.jump(5 * time.Second)
+	w.book("periodic", tp(sid+"-tp", 27700, 1, "Working"))
+	w.sync()
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	w.actsAfterRestart("naked, a late covered book, naked")
+}
+
+// The guard of the send reads the order too. MUTANT: drop bookLate from check.
+func TestLookTwiceLateBook_AtTheSend(t *testing.T) {
+	w, sid := nakedShort(t, "lt-book-send", 27740)
+	w.cancelStop(sid)
+	p := w.proofFor(protectionVerdict{Action: protectionPlace, StopPx: stop1193})
+	if err := p.check(); err != nil {
+		t.Fatalf("fixture: nothing changed, got %v", err)
+	}
+	at := p.bookAt
+	w.s.SetReceiptClockForTest(func() time.Time { return at }) // the same instant
+	w.bookAt(at.Add(-time.Hour), w.lastBook...)
+	w.sync()
+	if err := p.check(); err == nil || !strings.Contains(err.Error(), "order book") {
+		t.Fatalf("a late book since the second look withholds the send, got %v", err)
+	}
+}
+
+// Every other reader is unchanged: the last book received, dated at its receipt.
+func TestLookTwiceLateBook_AllReadersStillSeeIt(t *testing.T) {
+	w, sid := nakedShort(t, "lt-book-readers", 27740)
+	late := w.now().Add(-time.Hour)
+	w.bookAt(late, tp(sid+"-tp", 27700, 1, "Working"))
+	w.sync()
+	snap, at, ok := w.s.OrderSnapshots().LatestReceived("Sim101")
+	if !ok || snap.EmittedMs != late.UnixMilli() || len(snap.Orders) != 1 || w.now().Sub(at) > 5*time.Second {
+		t.Fatalf("every other reader keeps the last book received: ok=%v %+v received %s", ok, snap, at)
+	}
+}

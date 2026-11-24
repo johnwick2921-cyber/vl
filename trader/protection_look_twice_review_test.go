@@ -158,7 +158,7 @@ func (w *lookWire) proofFor(v protectionVerdict) *protectionProof {
 			if h := w.at.protHolds["MNQ|SHORT"]; h != nil {
 				h.proven = proven
 			}
-			p = w.at.protectionMayActLocked(v, "MNQ|SHORT", "MNQ", "SHORT", 1, 27733.50, w.s, "Sim101", bookAt, start, 3*time.Second, "t")
+			p = w.at.protectionMayActLocked(v, "MNQ|SHORT", "MNQ", "SHORT", 1, 27733.50, w.s, "Sim101", bookAt, false, start, 3*time.Second, "t")
 		})
 	}
 	step(false)

@@ -43,6 +43,8 @@ import (
 //	   that sum to its whole entry quantity): then a P0 only, for at most 60 s;
 //	6. a stop is placed again only on a book received after the previous send.
 //
+// A look on a book the AddOn wrote late (nt late_book.go) is not a look.
+//
 // The evidence is read AFTER the pass's last database read, and once more by
 // protectionProof.check with the socket's writer held, as the last step before
 // the order frame: anything that changed in between means nothing is written and
@@ -323,7 +325,7 @@ func (p *protectionProof) check() error {
 		return p.refuse("the trader is stopping")
 	}
 	ev := p.srv.ProtectionEvidenceFor(p.account, p.symbol)
-	_, bookAt, haveBook := p.srv.OrderSnapshots().LatestReceived(p.account)
+	_, bookAt, bookLate, haveBook := p.srv.OrderSnapshots().LatestOrder(p.account)
 	switch {
 	case ev.AcceptSeq != p.ev.AcceptSeq || !ev.OnLink:
 		return p.refuse("the NinjaTrader connection changed")
@@ -335,7 +337,7 @@ func (p *protectionProof) check() error {
 		return p.refuse("the position changed")
 	case ev.Unproven(p.symbol, p.side):
 		return p.refuse("the position was reported smaller, then as before")
-	case !haveBook || !bookAt.Equal(p.bookAt):
+	case !haveBook || bookLate || !bookAt.Equal(p.bookAt):
 		return p.refuse("a newer order book arrived")
 	}
 	if age := p.srv.ReceiptNow().Sub(p.passStart); age > protectionProofMaxAge {
@@ -355,9 +357,11 @@ func (p *protectionProof) refuse(why string) error {
 // it once something was acted on. protMu held.
 //
 // passStart is when the pass began (before positions and book were read) and
-// bookAt the receive instant of the book the verdict was made on.
+// bookAt the receive instant of the book the verdict was made on. bookLate: that
+// book was stamped before one received earlier (nt late_book.go), so the verdict
+// may rest on the past. It is not a look, but the hold stays and its 35 s P0 runs.
 func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, key, symbol, side string, qty int, avg float64,
-	srv *nt.TCPServer, account string, bookAt, passStart time.Time, confirm time.Duration, trigger string) *protectionProof {
+	srv *nt.TCPServer, account string, bookAt time.Time, bookLate bool, passStart time.Time, confirm time.Duration, trigger string) *protectionProof {
 
 	// The ledger is read BEFORE the evidence: a stalled database read must not
 	// stand between the evidence and the send.
@@ -389,10 +393,15 @@ func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, key, symbol, s
 	}
 	h.qty, h.avg, h.acceptSeq, h.lastLook = qty, avg, ev.AcceptSeq, lookAt
 
+	if bookLate {
+		h.restart()
+	}
 	settled, why := false, ""
 	newest := ev.LastExecution()
 	_, latestBook, haveBook := srv.OrderSnapshots().LatestReceived(account)
 	switch {
+	case bookLate:
+		why = "NinjaTrader built the newest order book before one it had already sent (written late, or its clock was set back), so it may be out of date; the next order book decides"
 	case h.firstLook.IsZero():
 		h.firstLook = lookAt
 		why = fmt.Sprintf("first look; a second one is due in %s", confirm)

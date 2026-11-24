@@ -19,6 +19,7 @@ package ninjatrader
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -119,6 +120,7 @@ func ParseOrderSnapshot(b []byte) (OrderSnapshotPayload, error) {
 type cachedSnapshot struct {
 	Payload    OrderSnapshotPayload
 	ReceivedAt time.Time
+	order      bookOrder // late_book.go: evidence only, no other reader
 }
 
 // OrderSnapshotCache holds the latest book per account+symbol.
@@ -146,9 +148,17 @@ func snapKey(account string) string {
 // nothing under here reads a clock, so a test states its own and the boot line,
 // the gate and the guard all agree on one instant.
 func (c *OrderSnapshotCache) PutAt(p OrderSnapshotPayload, receivedAt time.Time) {
+	c.putFrom(p, receivedAt, nil)
+}
+
+// putFrom is PutAt for a book read on connection link (nil = not known). The newest
+// RECEIVED book always replaces the cached one; link only dates it (late_book.go).
+func (c *OrderSnapshotCache) putFrom(p OrderSnapshotPayload, receivedAt time.Time, link net.Conn) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.byKey[snapKey(p.Account)] = cachedSnapshot{Payload: p, ReceivedAt: receivedAt}
+	k := snapKey(p.Account)
+	c.byKey[k] = cachedSnapshot{Payload: p, ReceivedAt: receivedAt,
+		order: c.byKey[k].order.next(p.EmittedMs, receivedAt, link)}
 }
 
 // EverReceived reports whether ANY snapshot has arrived on this link. It is

@@ -261,7 +261,7 @@ func (at *AutoTrader) flagOwnReverse(srv *nt.TCPServer, tcp *ntTrader.TCPTrader,
 // ownReverseStopText says what the newest book shows — never "no stop" for a
 // book that cannot be read.
 func (at *AutoTrader) ownReverseStopText(symbol, side string, now time.Time) string {
-	book, have, age, _, _ := at.protectionBook(now)
+	book, have, age, _, _, _ := at.protectionBook(now)
 	if !have || (snapshotMaxAge() > 0 && age > snapshotMaxAge()) {
 		return "its stop is UNKNOWN"
 	}

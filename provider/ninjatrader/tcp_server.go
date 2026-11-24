@@ -2538,7 +2538,7 @@ func (s *TCPServer) readLoop(ctx context.Context, c net.Conn, pending bool) {
 				continue
 			}
 			if s.orderSnaps != nil {
-				s.orderSnaps.PutAt(p, s.ReceiptNow())
+				s.orderSnaps.putFrom(p, s.ReceiptNow(), c)
 			}
 			// W117 F2 — R4 watermark: every order_snapshot advances the
 			// counter the ordered workers wait on before applying the
