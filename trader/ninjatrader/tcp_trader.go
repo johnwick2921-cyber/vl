@@ -1704,7 +1704,7 @@ func (t *TCPTrader) CloseWithLimit(symbol string, side string, quantity float64,
 	return t.sendCloseAt(side, quantity, limitPrice)
 }
 
-func (t *TCPTrader) sendCloseAt(side string, quantity float64, limitPrice float64) (map[string]interface{}, error) {
+func (t *TCPTrader) sendCloseAtIf(side string, quantity float64, limitPrice float64, guard func() error) (map[string]interface{}, error) {
 	// Clear the entry correlation so the close-path order poll does NOT match the
 	// lingering entry fill (which would record exit≈entry, PnL≈0). The real exit
 	// is recorded by close-sync off the position_close frame.
@@ -1722,7 +1722,7 @@ func (t *TCPTrader) sendCloseAt(side string, quantity float64, limitPrice float6
 		Account:    t.boundAccount, // A2 (G1) — identity stamp
 		TraderID:   tid,
 	}
-	if err := t.server.SendClosePosition(payload); err != nil {
+	if err := t.server.SendClosePositionIf(payload, guard); err != nil {
 		return nil, fmt.Errorf("ninjatrader/tcp: send close: %w", err)
 	}
 	return map[string]interface{}{
@@ -1744,7 +1744,7 @@ func (t *TCPTrader) SetMarginMode(symbol string, isCrossMargin bool) error {
 	return nil // n/a for futures
 }
 
-// PlaceProtectiveStop places a STANDALONE protective stop for a position the
+// PlaceProtectiveStopIf places a STANDALONE protective stop for a position the
 // broker is holding with no protection (D5, 2026-09-07).
 //
 // NOTE FOR THE NEXT READER: SetStopLoss below is NOT this. It writes a price
@@ -1753,7 +1753,9 @@ func (t *TCPTrader) SetMarginMode(symbol string, isCrossMargin bool) error {
 // place a protective stop for an already-open position at all, which is part of
 // why position 592 stayed naked for 8h19m: nothing was watching, and nothing
 // could have fixed it if it had been.
-func (t *TCPTrader) PlaceProtectiveStop(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string) error {
+//
+// guard (look-twice; nil = always) is asked immediately before the frame is written.
+func (t *TCPTrader) PlaceProtectiveStopIf(symbol, positionSide string, quantity int, stopPrice float64, signalID, reason string, guard func() error) error {
 	// CAPABILITY HANDSHAKE. An older AddOn has no handler for this frame. Rather
 	// than send into the dark and log a placement that never happened (class 81),
 	// refuse and name the build.
@@ -1785,7 +1787,7 @@ func (t *TCPTrader) PlaceProtectiveStop(symbol, positionSide string, quantity in
 	if werr != nil {
 		return fmt.Errorf("ninjatrader/tcp: refusing protective-stop %s %s stop=%.2f: %w", positionSide, symbol, stopPrice, werr)
 	}
-	return t.server.SendPlaceProtectiveStop(ntwire.PlaceProtectiveStopPayload{
+	return t.server.SendPlaceProtectiveStopIf(ntwire.PlaceProtectiveStopPayload{
 		Symbol:       symbol,
 		SignalID:     signalID,
 		PositionSide: upperSideStr(positionSide),
@@ -1795,7 +1797,7 @@ func (t *TCPTrader) PlaceProtectiveStop(symbol, positionSide string, quantity in
 		Timestamp:    time.Now().UTC().Format(time.RFC3339),
 		Account:      tradeAcct,
 		TraderID:     t.traderID,
-	})
+	}, guard)
 }
 
 func (t *TCPTrader) SetStopLoss(symbol, positionSide string, quantity, stopPrice float64) error {

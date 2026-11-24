@@ -12,6 +12,7 @@ import (
 
 	"vl/kernel"
 	nt "vl/provider/ninjatrader"
+	"vl/store"
 	"vl/telemetry"
 )
 
@@ -40,7 +41,12 @@ import (
 //	   that sum to its whole entry quantity): then a P0 only, for at most 60 s;
 //	6. a stop is placed again only on a book received after the previous send.
 //
-// A hold calls nothing that can send: actOnProtection is not reached. The next
+// The evidence is read AFTER the pass's last database read, and once more by
+// protectionProof.check with the socket's writer held, as the last step before
+// the order frame: anything that changed in between means nothing is written and
+// the next look is a first one. Alerts follow the send.
+//
+// A hold calls nothing that can send: actOnConfirmed is not reached. The next
 // look runs on the trader's own re-look goroutine (joined by monitorWg), and
 // holding for 35 s raises one P0.
 //
@@ -67,6 +73,12 @@ const (
 	// protectionOwnDeathWindow bounds rule 5 (both by the row's exit time and by
 	// the age of the hold, so a skewed clock cannot stretch it).
 	protectionOwnDeathWindow = 60 * time.Second
+	// protectionProofMaxAge bounds the time from the start of the pass (which read
+	// the link check's ack) to the order frame. In a database stall the read loop
+	// can be frozen too (the snapshot sink inserts on it), and then nothing in
+	// memory changes: only a FRESH ack says the link is caught up. A pass is a few
+	// ms; its one scan (14 days of book history) measured 58 ms on the live DB.
+	protectionProofMaxAge = 3 * time.Second
 )
 
 // protectionConfirm is the PROTECTION_CONFIRM_MS setting: unset or bad = 3000,
@@ -101,9 +113,9 @@ func ProtectionConfirmBootLine() string {
 // protection pass and guards the rest.
 type protectionLooks struct {
 	protMu         sync.Mutex
-	protHolds      map[string]*protectionHold // symbol|side -> a naked position waiting for its second look
+	protHolds      map[string]*protectionHold // protectionHoldKeys -> a naked position waiting for its second look
 	protRelookRun  context.Context            // the Run whose re-look goroutine is alive (nil = none)
-	protRelookWake chan struct{}              // a beat sent a link check: wait for its ack now
+	protRelookWake chan struct{}              // a beat sent a link check: wait for its ack now; identifies the goroutine
 }
 
 // protectionHold is one position waiting for its second look. protMu guards it.
@@ -194,10 +206,8 @@ func (at *AutoTrader) dropProtectionHoldLocked(key, why string) {
 // longer held. Runs only on a successful positions read. protMu held.
 func (at *AutoTrader) dropStaleProtectionHoldsLocked(positions []map[string]interface{}) {
 	live := make(map[string]bool, len(positions))
-	for _, p := range positions {
-		symbol, _ := p["symbol"].(string)
-		side, _ := p["side"].(string)
-		live[symbol+"|"+side] = true
+	for _, key := range protectionHoldKeys(positions) {
+		live[key] = true
 	}
 	for key := range at.protHolds {
 		if !live[key] {
@@ -220,15 +230,111 @@ func (at *AutoTrader) expireProtectionHoldsLocked(srv *nt.TCPServer) {
 	}
 }
 
-// protectionMayActLocked is the second look (rules 1-6). true = act now; the
-// hold is closed. false = hold, nothing may be sent. protMu held.
+// protectionHoldKeys names the hold of each positions row: symbol|side, plus #2,
+// #3 … for further rows of one symbol and side (two MNQ expiries are both "MNQ"
+// on the wire). With one key for two rows each row would restart the other's
+// looks and neither would ever be protected. The rank is by (average, quantity),
+// so the order rows arrive in does not matter.
+func protectionHoldKeys(positions []map[string]interface{}) []string {
+	keys := make([]string, len(positions))
+	for i, p := range positions {
+		symbol, _ := p["symbol"].(string)
+		side, _ := p["side"].(string)
+		keys[i] = symbol + "|" + side
+	}
+	before := func(i, j int) bool {
+		ai, aj := positionAvg(positions[i]), positionAvg(positions[j])
+		qi, _ := positions[i]["quantity"].(float64)
+		qj, _ := positions[j]["quantity"].(float64)
+		switch {
+		case ai != aj:
+			return ai < aj
+		case qi != qj:
+			return qi < qj
+		}
+		return i < j
+	}
+	out := make([]string, len(positions))
+	for i := range positions {
+		rank := 1
+		for j := range positions {
+			if j != i && keys[j] == keys[i] && before(j, i) {
+				rank++
+			}
+		}
+		out[i] = keys[i]
+		if rank > 1 {
+			out[i] = fmt.Sprintf("%s#%d", keys[i], rank)
+		}
+	}
+	return out
+}
+
+// protectionProof is the evidence one confirmed second look rests on. check is
+// the guard of the send.
+type protectionProof struct {
+	srv          *nt.TCPServer
+	account      string
+	symbol, side string
+	qty          int
+	avg          float64
+	ev           nt.ProtectionEvidence
+	bookAt       time.Time
+	passStart    time.Time
+	run          context.Context
+	hold         *protectionHold
+	withheld     string // why check said no; "" = it has not
+}
+
+// check re-reads the evidence, in memory only (it runs with the socket's writer
+// held: no database, no protMu). nil = still exactly what the second look saw.
+func (p *protectionProof) check() error {
+	if p.run != nil && p.run.Err() != nil {
+		return p.refuse("the trader is stopping")
+	}
+	ev := p.srv.ProtectionEvidenceFor(p.account, p.symbol)
+	_, bookAt, haveBook := p.srv.OrderSnapshots().LatestReceived(p.account)
+	switch {
+	case ev.AcceptSeq != p.ev.AcceptSeq || !ev.OnLink:
+		return p.refuse("the NinjaTrader connection changed")
+	case !ev.Entry.Equal(p.ev.Entry) || !ev.Exit.Equal(p.ev.Exit):
+		return p.refuse("a fill arrived")
+	case !ev.CloseSent.Equal(p.ev.CloseSent) || !ev.StopSent.Equal(p.ev.StopSent):
+		return p.refuse("another order of ours went out")
+	case !ev.PositionsAfterFills() || !ev.Holds(p.symbol, p.side, p.qty, p.avg):
+		return p.refuse("the position changed")
+	case !haveBook || !bookAt.Equal(p.bookAt):
+		return p.refuse("a newer order book arrived")
+	}
+	if age := p.srv.ReceiptNow().Sub(p.passStart); age > protectionProofMaxAge {
+		return p.refuse("the link check is more than " + protectionProofMaxAge.String() + " old")
+	}
+	return nil
+}
+
+func (p *protectionProof) refuse(why string) error {
+	p.withheld = why
+	return fmt.Errorf("%w: %s", nt.ErrSendWithheld, why)
+}
+
+// protectionMayActLocked is the second look (rules 1-6). A proof = act now, with
+// its check as the guard of the send; nil = hold, nothing may be sent. The hold
+// is restarted either way (the proof speaks for this pass only); the caller ends
+// it once something was acted on. protMu held.
 //
 // passStart is when the pass began (before positions and book were read) and
 // bookAt the receive instant of the book the verdict was made on.
-func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, symbol, side string, qty int, avg float64,
-	srv *nt.TCPServer, account string, bookAt, passStart time.Time, confirm time.Duration, trigger string) bool {
+func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, key, symbol, side string, qty int, avg float64,
+	srv *nt.TCPServer, account string, bookAt, passStart time.Time, confirm time.Duration, trigger string) *protectionProof {
 
-	key := symbol + "|" + side
+	// The ledger is read BEFORE the evidence: a stalled database read must not
+	// stand between the evidence and the send.
+	var death store.OwnDeath
+	var deathErr error
+	if h := at.protHolds[key]; h != nil && h.proven && at.store != nil {
+		death, deathErr = at.store.Position().OwnDeathFor(at.id, account, symbol, side)
+	}
+
 	ev := srv.ProtectionEvidenceFor(account, symbol) // read LAST: anything newer than the book shows up here
 	run := at.protectionRunCtx()
 	lookAt := srv.ReceiptNow()
@@ -283,18 +389,18 @@ func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, symbol, side s
 		why = at.protectionProbeLocked(h, srv)
 	default:
 		h.probe, h.proven = nil, false // consumed: the ack speaks for this pass only
-		why, veto = at.protectionOwnDeath(account, symbol, side, lookAt, h)
+		why, veto = protectionOwnDeath(death, deathErr, ev, lookAt, h)
 	}
 
 	if why == "" {
 		if run != nil && run.Err() != nil {
-			return false // stopping: nothing may be sent (Stop joins this goroutine)
+			return nil // stopping: nothing may be sent (Stop joins this goroutine)
 		}
-		delete(at.protHolds, key)
-		telemetry.IncTraderEvent(at.id, "protection_hold_acted")
 		at.logWarnf("🧷 protection second look CONFIRMED (%s): %s %s ×%d still %s after %s — positions frame newer than every fill, link ack received",
 			trigger, side, symbol, qty, v.Action, lookAt.Sub(h.since).Round(time.Millisecond))
-		return true
+		h.restart() // withheld at the send = a first look again; acted = the caller ends the hold
+		return &protectionProof{srv: srv, account: account, symbol: symbol, side: side, qty: qty, avg: avg,
+			ev: ev, bookAt: bookAt, passStart: passStart, run: run, hold: h}
 	}
 
 	if why != h.lastWhy {
@@ -317,7 +423,23 @@ func (at *AutoTrader) protectionMayActLocked(v protectionVerdict, symbol, side s
 			fmt.Sprintf("%s %s ×%d (avg %.2f) has no full stop on the book, and for %s the bot has not acted because %s. Nothing was placed or closed. Check the position and its stop in NinjaTrader now.",
 				side, symbol, qty, avg, held.Round(time.Second), why))
 	}
-	return false
+	return nil
+}
+
+// finishProtectionActLocked ends the hold a proof came from — or keeps it, as a
+// first look, when the guard withheld the send. protMu held.
+func (at *AutoTrader) finishProtectionActLocked(key string, v protectionVerdict, p *protectionProof) {
+	if p.withheld != "" {
+		telemetry.IncTraderEvent(at.id, "protection_hold_withheld")
+		p.hold.lastWhy = "withheld: " + p.withheld
+		at.logWarnf("🧷 protection %s WITHHELD at the send: %s %s ×%d — %s after the second look; nothing was written, the next look is a first one",
+			v.Action, p.side, p.symbol, p.qty, p.withheld)
+		return
+	}
+	if at.protHolds[key] == p.hold {
+		delete(at.protHolds, key)
+	}
+	telemetry.IncTraderEvent(at.id, "protection_hold_acted_"+v.Action.String())
 }
 
 // protectionProbeLocked is rule 4: send (once) the heartbeat whose ack proves the
@@ -335,12 +457,15 @@ func (at *AutoTrader) protectionProbeLocked(h *protectionHold, srv *nt.TCPServer
 
 // protectionOwnDeath is rule 5. why != "" = hold (P0). A MISSING row is not a
 // veto. An unreadable ledger cannot rule our own death out, so it holds too,
-// for the same 60 s at most.
-func (at *AutoTrader) protectionOwnDeath(account, symbol, side string, now time.Time, h *protectionHold) (why string, veto bool) {
-	if at.store == nil || now.Sub(h.since) > protectionOwnDeathWindow {
+// for the same 60 s at most. An ENTRY filled after the last exit fill makes the
+// held position a NEW one (its row may lag): the dead row says nothing about it.
+func protectionOwnDeath(d store.OwnDeath, err error, ev nt.ProtectionEvidence, now time.Time, h *protectionHold) (why string, veto bool) {
+	if now.Sub(h.since) > protectionOwnDeathWindow {
 		return "", false
 	}
-	d, err := at.store.Position().OwnDeathFor(at.id, account, symbol, side)
+	if !ev.Exit.IsZero() && ev.EntryOpened.After(ev.Exit) {
+		return "", false
+	}
 	if err != nil {
 		return fmt.Sprintf("the position ledger could not be read (%v), so our own close cannot be ruled out", err), true
 	}
@@ -401,13 +526,19 @@ func (at *AutoTrader) armProtectionRelookLocked() {
 		defer at.monitorWg.Done()
 		defer func() {
 			at.protMu.Lock()
-			if at.protRelookRun == run {
-				at.protRelookRun = nil
-			}
+			at.releaseProtectionRelookLocked(wake)
 			at.protMu.Unlock()
 		}()
 		at.protectionRelookLoop(run, wake)
 	})
+}
+
+// releaseProtectionRelookLocked drops the registration of the goroutine that owns
+// wake, never that of a newer one a beat started in between. protMu held.
+func (at *AutoTrader) releaseProtectionRelookLocked(wake chan struct{}) {
+	if at.protRelookWake == wake {
+		at.protRelookRun, at.protRelookWake = nil, nil
+	}
 }
 
 // protectionRelookLoop looks again every protectionConfirm() — or as soon as a

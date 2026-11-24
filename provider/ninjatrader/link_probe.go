@@ -2,6 +2,7 @@ package ninjatrader
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"strings"
@@ -80,12 +81,9 @@ func (s *TCPServer) writeHeartbeat(c net.Conn, link *heartbeatLink) (seq uint64,
 		link.mu.Unlock()
 	}
 	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	if err = WriteFrame(c, FrameHeartbeat, HeartbeatPayload{}); err != nil && link != nil {
-		// not written whole: this connection is broken and nothing will ack it
-		link.mu.Lock()
-		link.sent--
-		link.mu.Unlock()
-	}
+	// On an error the count STAYS: the frame may be half written, so the stream is
+	// out of step and the caller closes this connection (and its accounting).
+	err = WriteFrame(c, FrameHeartbeat, HeartbeatPayload{})
 	return seq, err
 }
 
@@ -113,7 +111,9 @@ type LinkProbe struct {
 }
 
 // SendLinkProbe sends a heartbeat now. An error means there is no link to check.
-// It never blocks on the ack.
+// It never blocks on the ack. A failed write closes that connection, as the
+// periodic heartbeat does: the next frame after a half-written one - an order -
+// would be read as its tail. The AddOn redials; the look restarts there.
 func (s *TCPServer) SendLinkProbe() (*LinkProbe, error) {
 	s.connMu.Lock()
 	c, link := s.conn, s.hbLink
@@ -123,6 +123,8 @@ func (s *TCPServer) SendLinkProbe() (*LinkProbe, error) {
 	}
 	seq, err := s.writeHeartbeat(c, link)
 	if err != nil {
+		s.logger.Warn("tcp_server: write link check - closing the connection", "err", err)
+		s.closeConnIf(c)
 		return nil, fmt.Errorf("ninjatrader/tcp: link probe: %w", err)
 	}
 	return &LinkProbe{link: link, seq: seq}, nil
@@ -167,10 +169,14 @@ type ProtectionEvidence struct {
 	Snapshot []OpenPosition
 	Known    bool
 	// OnLink: that account has sent a positions frame on the CURRENT connection.
-	OnLink    bool
-	CloseSent time.Time // newest close_position we sent on (symbol, account)
-	StopSent  time.Time // newest place_protective_stop we sent on (symbol, account)
-	AcceptSeq uint64    // the connection's accept sequence (0 = never connected)
+	OnLink bool
+	// EntryOpened is the newest fill of an ENTRY-named order: Entry without NT8's
+	// "Close" (the order_update of a Flatten carries one name as signal and order,
+	// so it moves the entry fence too, and it opens nothing).
+	EntryOpened time.Time
+	CloseSent   time.Time // newest close_position we sent on (symbol, account)
+	StopSent    time.Time // newest place_protective_stop we sent on (symbol, account)
+	AcceptSeq   uint64    // the connection's accept sequence (0 = never connected)
 }
 
 // LastExecution is the newest of exit fill, entry fill, our own close send and
@@ -224,7 +230,7 @@ func (s *TCPServer) ProtectionEvidenceFor(account, symbol string) ProtectionEvid
 	key := subKey(symbol, account)
 	out.Positions = s.acctPositionsReceived[account]
 	if r := s.entryReceipts[key]; r != nil {
-		out.Entry = r.received
+		out.Entry, out.EntryOpened = r.received, r.opened
 	}
 	if r := s.exitReceipts[key]; r != nil {
 		out.Exit = r.received
@@ -251,4 +257,59 @@ func (s *TCPServer) noteOwnSend(m *map[string]time.Time, symbol, account string)
 		*m = make(map[string]time.Time)
 	}
 	(*m)[subKey(symbol, account)] = now
+}
+
+// ErrSendWithheld: the guard of a guarded send said no. Nothing was written.
+var ErrSendWithheld = errors.New("the order was withheld at the send")
+
+// GUARDED SENDS (look-twice). The reason to send an order is read before the
+// send, and the wait in between - a database stall, another writer holding the
+// socket - can outlive it. guard is asked with writeMu HELD, immediately before
+// the frame is written; its error means no frame, no send stamp. It must only
+// read memory (it may take connMu, acctMu, maint.mu and the order book's lock:
+// nothing holds one of those while waiting for writeMu). nil guard = always.
+
+// SendClosePositionIf is SendClosePosition behind a guard.
+func (s *TCPServer) SendClosePositionIf(payload ClosePositionPayload, guard func() error) error {
+	// The connection is taken BEFORE the guard: a guard that saw another connection
+	// refuses, so a frame can never go out on one it did not judge.
+	c := s.connectedAuthed()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if guard != nil {
+		if err := guard(); err != nil {
+			return err
+		}
+	}
+	if c == nil {
+		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
+	}
+	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID) // A2 (G1)
+	s.noteOwnSend(&s.closeSent, payload.Symbol, payload.Account)                           // look-twice B rule 3
+	forget := s.noteOwnClose(payload)                                                      // look-twice C
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	err := WriteFrame(c, FrameClosePosition, payload)
+	if err != nil {
+		forget()
+	}
+	return err
+}
+
+// SendPlaceProtectiveStopIf is SendPlaceProtectiveStop behind a guard.
+func (s *TCPServer) SendPlaceProtectiveStopIf(payload PlaceProtectiveStopPayload, guard func() error) error {
+	c := s.connectedAuthed()
+	s.writeMu.Lock()
+	defer s.writeMu.Unlock()
+	if guard != nil {
+		if err := guard(); err != nil {
+			return err
+		}
+	}
+	if c == nil {
+		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
+	}
+	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID)
+	s.noteOwnSend(&s.stopSent, payload.Symbol, payload.Account) // look-twice B rules 3 and 6
+	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
+	return WriteFrame(c, FramePlaceProtectiveStop, payload)
 }

@@ -1447,21 +1447,7 @@ func (s *TCPServer) SendSignal(payload SignalPayload) error {
 // Unlike SendSignal it is NOT queued — a close is an immediate command; if no
 // client is connected it errors so the caller can report it.
 func (s *TCPServer) SendClosePosition(payload ClosePositionPayload) error {
-	c := s.connectedAuthed()
-	if c == nil {
-		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
-	}
-	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID) // A2 (G1)
-	s.noteOwnSend(&s.closeSent, payload.Symbol, payload.Account)                           // look-twice B rule 3
-	forget := s.noteOwnClose(payload)                                                      // look-twice C
-	s.writeMu.Lock()
-	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := WriteFrame(c, FrameClosePosition, payload)
-	s.writeMu.Unlock()
-	if err != nil {
-		forget()
-	}
-	return err
+	return s.SendClosePositionIf(payload, nil)
 }
 
 // SendMoveStop asks the AddOn to move a resting stop to a new price without
@@ -1484,17 +1470,7 @@ func (s *TCPServer) SendMoveStop(payload MoveStopPayload) error {
 // resting limit entry and/or its bracket legs. Immediate command.
 // SendPlaceProtectiveStop puts a standalone protective stop on the wire (D5).
 func (s *TCPServer) SendPlaceProtectiveStop(payload PlaceProtectiveStopPayload) error {
-	c := s.connectedAuthed()
-	if c == nil {
-		return fmt.Errorf("ninjatrader/tcp: no NT client connected")
-	}
-	payload.Seq = s.assignSeqRegister(payload.TraderID, payload.Account, payload.SignalID)
-	s.noteOwnSend(&s.stopSent, payload.Symbol, payload.Account) // look-twice B rules 3 and 6
-	s.writeMu.Lock()
-	_ = c.SetWriteDeadline(time.Now().Add(5 * time.Second))
-	err := WriteFrame(c, FramePlaceProtectiveStop, payload)
-	s.writeMu.Unlock()
-	return err
+	return s.SendPlaceProtectiveStopIf(payload, nil)
 }
 
 func (s *TCPServer) SendCancelOrder(payload CancelOrderPayload) error {
@@ -3182,6 +3158,20 @@ func (s *TCPServer) PendingAttemptedCount() int {
 func (s *TCPServer) closeConn() {
 	s.connMu.Lock()
 	defer s.connMu.Unlock()
+	s.closeConnLocked()
+}
+
+// closeConnIf closes c only while it is still the published connection.
+func (s *TCPServer) closeConnIf(c net.Conn) {
+	s.connMu.Lock()
+	defer s.connMu.Unlock()
+	if c != nil && s.conn == c {
+		s.closeConnLocked()
+	}
+}
+
+// closeConnLocked: connMu held.
+func (s *TCPServer) closeConnLocked() {
 	if s.conn != nil {
 		_ = s.conn.Close()
 		s.conn = nil

@@ -233,8 +233,8 @@ func (w *lookWire) judge(qty int, bookAt time.Time, prep func(*protectionHold)) 
 		if h := w.at.protHolds["MNQ|SHORT"]; h != nil && prep != nil {
 			prep(h)
 		}
-		act = w.at.protectionMayActLocked(protectionVerdict{Action: protectionPlace, StopPx: stop1193}, "MNQ", "SHORT",
-			qty, 27733.50, w.s, "Sim101", bookAt, start, 3*time.Second, "t")
+		act = w.at.protectionMayActLocked(protectionVerdict{Action: protectionPlace, StopPx: stop1193}, "MNQ|SHORT", "MNQ", "SHORT",
+			qty, 27733.50, w.s, "Sim101", bookAt, start, 3*time.Second, "t") != nil
 		if h := w.at.protHolds["MNQ|SHORT"]; h != nil {
 			why = h.lastWhy
 		}
@@ -608,7 +608,7 @@ func TestLookTwiceNoDeadlockWithFlattensReadLoopAndStop(t *testing.T) {
 		spin(time.Millisecond, func() { w.at.reconcileProtectionAt(w.now(), "monitor") })
 	}
 	spin(3*time.Millisecond, func() {
-		w.at.flattenPositionAtMarket(&store.TraderPosition{TraderID: w.at.id, Symbol: "MNQ", Side: "SHORT"}, "t", w.now())
+		w.at.flattenPositionAtMarket(&store.TraderPosition{TraderID: w.at.id, Symbol: "MNQ", Side: "SHORT"}, "t", w.now(), nil)
 	})
 	spin(2*time.Millisecond, func() {
 		w.at.reopenRejectedExit(ntwire.PositionCloseRejectedPayload{Account: "Sim101", Symbol: "MNQ", PositionSide: "SHORT", Reason: "t"})

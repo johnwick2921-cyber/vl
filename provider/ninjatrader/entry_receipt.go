@@ -11,6 +11,7 @@ import (
 // Protected by TCPServer.acctMu.
 type entryReceiptState struct {
 	received   time.Time
+	opened     time.Time // received, without NT8's "Close" (look-twice rule 5; GetPositions does not read it)
 	quantities map[string]int
 }
 
@@ -57,6 +58,9 @@ func (s *TCPServer) NoteEntryExecution(symbol, account, signal string, quantity 
 	if quantity > r.quantities[signal] {
 		r.quantities[signal] = quantity
 		r.received = s.ReceiptNow()
+		if !strings.EqualFold(strings.TrimSpace(signal), "Close") {
+			r.opened = r.received
+		}
 	}
 }
 
