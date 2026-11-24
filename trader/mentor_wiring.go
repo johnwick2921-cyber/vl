@@ -26,6 +26,11 @@ type mentorPositionReader interface {
 	GetOpenOrders(symbol string) ([]types.OpenOrder, error)
 }
 
+// mentorOpenSideUnknown is the open-side seam's third answer: the position list
+// could not be read (or a held row has no readable side). It is neither a side
+// nor "" (flat) — every reader of the seam must refuse or count it as open.
+const mentorOpenSideUnknown = "unknown"
+
 // mentorSeamNames is the canonical seam order for the boot line and refusals.
 var mentorSeamNames = []string{
 	"open_side", "leg_protection",
@@ -76,17 +81,26 @@ func (at *AutoTrader) mentorWireProductionSeams() {
 		at.mentorOpenSideSource = func() string {
 			pos, err := pr.GetPositions()
 			if err != nil {
-				return ""
+				// look-twice D: an unreadable account is NOT flat. "" lifted
+				// the never-add / no-flip gate on exactly the read that failed.
+				return mentorOpenSideUnknown
 			}
+			open := ""
 			for _, p := range pos {
-				switch strings.ToLower(strings.TrimSpace(p["side"].(string))) {
+				side, _ := p["side"].(string)
+				switch strings.ToLower(strings.TrimSpace(side)) {
 				case "long":
 					return "long"
 				case "short":
 					return "short"
 				}
+				// Held size under a side we cannot read: something is open. (A
+				// row with no size is not a position — openPositionCount's rule.)
+				if q, ok := p["positionAmt"].(float64); ok && q != 0 {
+					open = mentorOpenSideUnknown
+				}
 			}
-			return ""
+			return open
 		}
 
 		at.mentorLegProtectedSource = func(leg string) bool {

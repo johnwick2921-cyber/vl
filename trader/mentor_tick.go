@@ -1813,7 +1813,8 @@ func (at *AutoTrader) mentorStopAfterLossTrip() (bool, string) {
 // entry [D2.4 p1 @05:41–05:57].
 
 // at.mentorOpenSideSource is the session seam for (d): the side of the open
-// mentor position (nil → none open; the live driver fills it at P1).
+// mentor position ("" = read and flat, mentorOpenSideUnknown = not readable;
+// the live driver fills it at P1).
 // REL18-B: per-trader field.
 
 // mentorAddGate is the call-site half of (d). FAIL-CLOSED: with no open-side
@@ -1827,6 +1828,10 @@ func (at *AutoTrader) mentorAddGate(in mentor.Intent) (bool, string) {
 	open := at.mentorOpenSideSource()
 	if open == "" {
 		return false, ""
+	}
+	if open == mentorOpenSideUnknown {
+		at.mentorCount("add_open_side_unresolved")
+		return true, "never-add guard: the account's open position could not be read — an unknown is not 'flat'; refusing the entry (fail-closed) [D1.1 p1 @17:00–17:44]"
 	}
 	if strings.EqualFold(open, string(in.Side)) {
 		at.mentorCount("add_refused")
