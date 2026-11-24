@@ -902,8 +902,9 @@ func (at *AutoTrader) sendMarketClose(symbol, side, tag string) bool {
 // close plus bracket cancel, whatever EOD_FLAT_LIMIT_TICKS says, through the
 // same in-flight record as flattenPosition. A resting limit exit for the same
 // (account, symbol, side) is escalated rather than stacked; a market close sent
-// inside exitInFlightHold is not re-sent.
-func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag string, now time.Time) {
+// inside exitInFlightHold is not re-sent. It returns what happened on the wire,
+// so an alert never claims a close that was not sent.
+func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag string, now time.Time) marketFlatOutcome {
 	position := *p
 	p = &position
 	at.limitFlattenMu.Lock()
@@ -912,21 +913,35 @@ func (at *AutoTrader) flattenPositionAtMarket(p *store.TraderPosition, tag strin
 		if !pending.marketSentAt.IsZero() {
 			at.logWarnf("%s: market close for %s %s already in flight (sent %s ago by %s) — NOT re-sent this pass",
 				tag, p.Symbol, flattenSide(p), now.Sub(pending.marketSentAt).Round(time.Second), pending.tag)
-			return
+			return marketFlatInFlight
 		}
 		at.logWarnf("%s: limit exit %s for %s %s is resting — escalating it to the market close now",
 			tag, shortID(pending.closeSignalID), p.Symbol, flattenSide(p))
-		at.escalateLimitFlattenLocked(pending, tag, now)
-		return
+		if !at.escalateLimitFlattenLocked(pending, tag, now) {
+			return marketFlatFailed
+		}
+		return marketFlatSent
 	}
-	at.marketExitLocked(p, tag, now)
+	if !at.marketExitLocked(p, tag, now) {
+		return marketFlatFailed
+	}
+	return marketFlatSent
 }
+
+// marketFlatOutcome is what flattenPositionAtMarket put on the wire.
+type marketFlatOutcome int
+
+const (
+	marketFlatFailed   marketFlatOutcome = iota // the close frame was NOT written
+	marketFlatSent                              // written now (sent is not filled)
+	marketFlatInFlight                          // an earlier market close still stands; nothing written now
+)
 
 // marketExitLocked sends a fresh market close plus bracket cancel and records it
 // in flight (held for exitInFlightHold). Caller holds limitFlattenMu.
-func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now time.Time) {
+func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now time.Time) bool {
 	if !at.sendMarketClose(p.Symbol, flattenSide(p), tag) {
-		return
+		return false
 	}
 	if err := at.trader.CancelStopOrders(p.Symbol); err != nil {
 		at.logWarnf("%s: cancel bracket %s failed (non-fatal): %v", tag, p.Symbol, err)
@@ -934,6 +949,7 @@ func (at *AutoTrader) marketExitLocked(p *store.TraderPosition, tag string, now 
 	durable := p.ID > 0 && p.TraderID == at.id
 	at.registerLimitFlattenLocked(&pendingLimitFlatten{position: *p, key: flattenKeyOf(p), tag: tag,
 		after: exitInFlightHold, sentAt: now, deadline: now, marketSentAt: now}, durable)
+	return true
 }
 
 // limitExitBlockedByBook (m471 L2 review-1) reads this trader's FRESH broker
