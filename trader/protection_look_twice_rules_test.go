@@ -121,9 +121,10 @@ func TestLookTwiceRule1_ReadErrorRestarts(t *testing.T) {
 	w, sid := nakedShort(t, "lt-r1-err", 27740)
 	w.cancelStop(sid)
 	w.look()
-	w.at.trader = nttrader.NewTCPTrader(w.s, "MNQ", "Sim999") // no positions frame, no fill: UNKNOWN
+	// no positions frame, no fill: UNKNOWN (swapped under the passes' own lock)
+	w.protState(func() { w.at.trader = nttrader.NewTCPTrader(w.s, "MNQ", "Sim999") })
 	w.look()
-	w.at.trader = w.nt
+	w.protState(func() { w.at.trader = w.nt })
 	w.jump(3100 * time.Millisecond)
 	w.look()
 	time.Sleep(300 * time.Millisecond)

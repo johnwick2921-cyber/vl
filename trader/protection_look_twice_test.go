@@ -85,6 +85,10 @@ func (w *lookWire) until(d time.Duration) {
 func newLookWire(t *testing.T, traderID string, base time.Time) *lookWire {
 	t.Helper()
 	w := &lookWire{execWire: newExecWire(t, traderID), t: t, base: base, start: time.Now(), stopAck: make(chan struct{})}
+	// price()'s provider goes back AFTER Stop (cleanups run last in, first out): the
+	// re-look reads it until it is joined.
+	origBars := market.FuturesBarsProvider
+	t.Cleanup(func() { market.FuturesBarsProvider = origBars })
 	w.s.SetReceiptClockForTest(w.now)
 	nttrader.ResetPricedCloseCacheForTest()
 
@@ -223,8 +227,6 @@ func (w *lookWire) closeFrame(signal, side, reason string, px float64, qty, leg 
 // price serves a fresh 1m close to the through-check.
 func (w *lookWire) price(px float64) {
 	w.t.Helper()
-	orig := market.FuturesBarsProvider
-	w.t.Cleanup(func() { market.FuturesBarsProvider = orig })
 	market.FuturesBarsProvider = func(_, _ string, _ int) []market.Kline {
 		return []market.Kline{{OpenTime: w.now().Truncate(time.Minute).UnixMilli(), Close: px}}
 	}

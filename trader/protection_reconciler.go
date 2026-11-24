@@ -705,7 +705,7 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 // m469 UNVERIFIED spell, the over-covered counter) to the beats. more reports
 // whether a hold is still open.
 func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook context.Context) (more bool) {
-	if at == nil || at.trader == nil || at.exchange != "ninjatrader" {
+	if at == nil || at.exchange != "ninjatrader" {
 		return false
 	}
 	defer func() {
@@ -715,6 +715,9 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 	}()
 	at.protMu.Lock() // one pass at a time: a beat and a re-look never judge together
 	defer at.protMu.Unlock()
+	if at.trader == nil {
+		return false
+	}
 	if relook != nil && relook.Err() != nil {
 		return false // stopped while waiting for the lock
 	}
@@ -726,7 +729,13 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 		}
 	}
 	srv := at.protectionServer()
+	if relook != nil && srv == nil {
+		return false // no wire to look at
+	}
 	passStart := at.beginProtectionLookLocked(srv)
+	if relook != nil {
+		now = passStart // the re-look has no clock of its own
+	}
 	defer func() {
 		at.expireProtectionHoldsLocked(srv)
 		if relook != nil && len(at.protHolds) == 0 && at.protRelookRun == relook {
@@ -766,9 +775,6 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 	}
 	unverified := "" // m469: the first position this pass could not verify
 
-	if relook != nil {
-		now = passStart
-	}
 	book, have, age, bookAt, account := at.protectionBook(now)
 	if have && snapshotMaxAge() > 0 && age > snapshotMaxAge() {
 		// A book older than the bound answers about the past. The reconnect
