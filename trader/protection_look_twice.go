@@ -81,6 +81,8 @@ const (
 	// memory changes: only a FRESH ack says the link is caught up. A pass is a few
 	// ms; its one scan (14 days of book history) measured 58 ms on the live DB.
 	protectionProofMaxAge = 3 * time.Second
+	// protectionRelookFloor keeps a re-look that is already due from spinning.
+	protectionRelookFloor = 10 * time.Millisecond
 )
 
 // protectionConfirm is the PROTECTION_CONFIRM_MS setting: unset or bad = 3000,
@@ -119,6 +121,7 @@ type protectionLooks struct {
 	protHolds      map[string]*protectionHold // protectionHoldKeys -> a naked position waiting for its second look
 	protRelookRun  context.Context            // the Run whose re-look goroutine is alive (nil = none)
 	protRelookWake chan struct{}              // a beat sent a link check: wait for its ack now; identifies the goroutine
+	protTwoRowsAt  map[string]string          // symbol|side -> event id of the last two-rows P0
 }
 
 // protectionHold is one position waiting for its second look. protMu guards it.
@@ -548,18 +551,41 @@ func (at *AutoTrader) releaseProtectionRelookLocked(wake chan struct{}) {
 	}
 }
 
-// protectionRelookLoop looks again every protectionConfirm() — or as soon as a
-// link check is answered — until no hold is left or the Run ends.
+// protectionRelookWait is how long until the EARLIEST open hold is due: its first
+// look plus confirm, or (restarted, or looked at since then) its last look plus
+// confirm. A plain confirm-long tick looked at a hold opened in mid-tick too
+// early and then again a whole tick later: up to 6 s instead of 3.
+func (at *AutoTrader) protectionRelookWait(now time.Time, confirm time.Duration) time.Duration {
+	at.protMu.Lock()
+	defer at.protMu.Unlock()
+	wait := confirm
+	for _, h := range at.protHolds {
+		due := h.firstLook.Add(confirm)
+		if h.firstLook.IsZero() || !h.lastLook.Before(due) {
+			due = h.lastLook.Add(confirm)
+		}
+		if d := due.Sub(now); d < wait {
+			wait = d
+		}
+	}
+	if wait < protectionRelookFloor {
+		wait = protectionRelookFloor
+	}
+	return wait
+}
+
+// protectionRelookLoop looks again when the earliest hold is due — or as soon as
+// a link check is answered — until no hold is left or the Run ends.
 func (at *AutoTrader) protectionRelookLoop(run context.Context, wake <-chan struct{}) {
 	for {
 		if probe := at.outstandingProtectionProbe(); probe != nil {
 			probe.Wait(run, nt.HeartbeatAckWait+50*time.Millisecond)
 		} else {
-			wait := protectionConfirm()
-			if wait <= 0 {
-				return // reverted to the single look
+			confirm, srv := protectionConfirm(), at.protectionServer()
+			if confirm <= 0 || srv == nil {
+				return // reverted to the single look, or no wire to look at
 			}
-			timer := time.NewTimer(wait)
+			timer := time.NewTimer(at.protectionRelookWait(srv.ReceiptNow(), confirm))
 			select {
 			case <-timer.C:
 			case <-wake:

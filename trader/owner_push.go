@@ -55,6 +55,10 @@ const alertKindProtectionUnverified = "protection_unverified"
 // ledger says that position just closed). The owner must look.
 const alertKindProtectionHeld = "protection_held"
 
+// alertKindProtectionTwoRows - look twice (2026-11-24): NT8 reports two rows of
+// one symbol and side (two contract months); the wire carries no month.
+const alertKindProtectionTwoRows = "protection_two_rows"
+
 // alertKindOwnReverse - look twice C (2026-11-24): an exit filled more contracts
 // than were open and NT8 now holds the opposite side (11-19: -1207.00).
 const alertKindOwnReverse = "own_reverse"
@@ -79,6 +83,7 @@ func ownerPushKind(level, kind string) bool {
 		"protection_over_covered",
 		alertKindProtectionUnverified, // m469: a position open and its protection unreadable for too long
 		alertKindProtectionHeld,       // look-twice: naked, and held for 35 s / our own ledger says it closed
+		alertKindProtectionTwoRows,    // look-twice: two contract months of one symbol and side
 		alertKindOwnReverse,           // look-twice: our own close opened a reverse position
 		alertKindCloseRejected,
 		alertKindStopMoveNotApplied,

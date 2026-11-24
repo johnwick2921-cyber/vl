@@ -23,7 +23,7 @@ func (w *lookWire) mustStaySilent(when string) {
 	w.t.Helper()
 	w.look()
 	w.secondLook()
-	time.Sleep(protectionConfirm() + 500*time.Millisecond)
+	relookOver()
 	w.mustBeSilent(when)
 }
 
@@ -51,6 +51,7 @@ func TestLookTwiceLateFrame_PlaceOnAFlatAccount(t *testing.T) {
 // (b) a Close fills, NT8 says flat, a late "Short 1" follows and the price is
 // through the stop: close_position on a flat account OPENS a reverse (11-19).
 func TestLookTwiceLateFrame_FlattenOnAFlatAccount(t *testing.T) {
+	fastConfirm(t)
 	for name, fill := range map[string]func(w *lookWire){
 		"order_update": func(w *lookWire) { w.orderUpdate("Close", "filled", 27755, 1) },
 		"position_close": func(w *lookWire) {
@@ -73,6 +74,7 @@ func TestLookTwiceLateFrame_FlattenOnAFlatAccount(t *testing.T) {
 // (c) SHORT 3: leg 1 stops 2, the runner's stop is cancelled, "Short 1", then a
 // late "Short 3". The stop must be for 1, once a frame says 1 again.
 func TestLookTwiceLateFrame_RunnerGetsAStopOfItsOwnSize(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-late-runner", 27740)
 	sl2, tp2 := sl(sid1193+"-sl2", stop1193, 1, "Working"), tp(sid1193+"-tp2", 27133.50, 1, "Working")
 	w.orderUpdate(sid1193+"-sl", "filled", stop1193, 2, sl2, tp2)
@@ -98,6 +100,7 @@ func TestLookTwiceLateFrame_RunnerGetsAStopOfItsOwnSize(t *testing.T) {
 // smaller of the two is still more than flat. MUTANT: end the doubt on any
 // smaller frame.
 func TestLookTwiceLateFrame_TwoLateFrames(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-late-two", 27740)
 	w.stops1193(exits1193{noReceipt: true})
 	w.positions()
@@ -111,6 +114,7 @@ func TestLookTwiceLateFrame_TwoLateFrames(t *testing.T) {
 // fill says nothing about the dead short. MUTANT: compare EntryOpened with the
 // exit instead of the last smaller frame.
 func TestLookTwiceLateFrame_AfterTheOtherSideEntered(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-late-other", 27755)
 	w.orderUpdate(sid+"-tp", "filled", 27700, 1)
 	w.positions()
@@ -126,6 +130,7 @@ func TestLookTwiceLateFrame_AfterTheOtherSideEntered(t *testing.T) {
 // The frames end for good: the owner is told at 35 s, and a position that the
 // next frame repeats is then protected. MUTANT: no settle at all.
 func TestLookTwiceLateFrame_P0At35sThenTheRepeatedFrameActs(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-late-p0", 27740)
 	w.orderUpdate(sid+"-sl", "cancelled", 0, 0, tp(sid+"-tp", 27700, 1, "Working"))
 	w.positions()
@@ -154,6 +159,7 @@ func TestLookTwiceLateFrame_P0At35sThenTheRepeatedFrameActs(t *testing.T) {
 // A frame that repeats the late one at once proves nothing (two resends can both
 // be late). MUTANT: settle on any repeated frame.
 func TestLookTwiceLateFrame_ARepeatAtOnceIsNotProof(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-late-rep", 27740)
 	w.orderUpdate(sid+"-tp", "filled", 27700, 1)
 	w.positions()
@@ -169,6 +175,7 @@ func TestLookTwiceLateFrame_ARepeatAtOnceIsNotProof(t *testing.T) {
 // sends no order_update and there is no entry fence) after a flat frame. Held
 // until the next 30 s frame, then protected. Never for ever.
 func TestLookTwiceLateFrame_AHandEntryIsProtectedByTheNextFrame(t *testing.T) {
+	fastConfirm(t)
 	w := newLookWire(t, "lt-late-hand", ctInstant(t, "2026-11-18 10:00:05.000"))
 	w.price(27740)
 	w.mentorStop("hand", "short", 1, 0, stop1193)
@@ -194,6 +201,7 @@ func TestLookTwiceLateFrame_AHandEntryIsProtectedByTheNextFrame(t *testing.T) {
 // … and a hand ADD beside a lost stop: the next frame that repeats Short 2 gets
 // a stop of 2.
 func TestLookTwiceLateFrame_AHandAddIsProtectedByTheNextFrame(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-late-add", 27740)
 	w.cancelStop(sid)
 	w.positions(short(2, 27735))
@@ -213,6 +221,7 @@ func TestLookTwiceLateFrame_AHandAddIsProtectedByTheNextFrame(t *testing.T) {
 // A real entry (its fill received after the flat frame) is not delayed at all.
 // MUTANT: ignore EntryOpened.
 func TestLookTwiceLateFrame_AnEntryFillExplainsTheGrowth(t *testing.T) {
+	fastConfirm(t)
 	for name, frameFirst := range map[string]bool{"fill first": false, "frame first": true} {
 		t.Run(name, func(t *testing.T) {
 			w := newLookWire(t, "lt-late-entry-"+strings.ReplaceAll(name, " ", ""), ctInstant(t, "2026-11-18 10:00:05.000"))

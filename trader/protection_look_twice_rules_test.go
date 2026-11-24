@@ -75,6 +75,7 @@ func TestLookTwiceConfirmSetting(t *testing.T) {
 
 // Rule 1 — a changed average price is another position.
 func TestLookTwiceRule1_AverageChangeRestarts(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-avg", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -88,6 +89,7 @@ func TestLookTwiceRule1_AverageChangeRestarts(t *testing.T) {
 
 // Rule 1 — more than 70 s since the last look.
 func TestLookTwiceRule1_GapRestarts(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-gap", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -115,6 +117,7 @@ func TestLookTwiceRule1_TwoBeatsCount(t *testing.T) {
 
 // Rule 1 — positions that cannot be read are not a look.
 func TestLookTwiceRule1_ReadErrorRestarts(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-err", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -162,6 +165,7 @@ func (w *lookWire) redial() {
 // Rule 1 — a NEW connection: the looks of the old one do not count, and the
 // positions frame cached from the old one is not evidence.
 func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-conn", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -183,6 +187,7 @@ func TestLookTwiceRule1_ReconnectRestarts(t *testing.T) {
 
 // Rule 1 — a NEW connection that reports the position at once: still a first look.
 func TestLookTwiceRule1_ReconnectIsAFirstLook(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-conn2", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -209,6 +214,7 @@ func TestLookTwiceRule1_TooSoon(t *testing.T) {
 // Rule 1 — a fill after the first look: the same side, quantity and price again,
 // 3.2 s after ITS fill, is that position's FIRST look.
 func TestLookTwiceRule1_FillSinceTheFirstLookRestarts(t *testing.T) {
+	fastConfirm(t)
 	w := open1193(t, "lt-r1-fill", 27740)
 	w.stops1193(exits1193{})
 	w.until(ms1193(249))
@@ -286,6 +292,7 @@ func TestLookTwiceGate_EvidenceChangedDuringThePass(t *testing.T) {
 
 // Rule 1 — a Stop/Start in between: the new Run looks for itself.
 func TestLookTwiceRule1_NewRunRestarts(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r1-run", 27740)
 	w.cancelStop(sid)
 	w.look()
@@ -480,6 +487,7 @@ func TestLookTwiceRule5_BlankAccountOpenRowIsOurs(t *testing.T) {
 // Rule 6 — the same book cannot justify a second stop, however old the first
 // send is; a book received AFTER the send that still shows none does.
 func TestLookTwiceRule6_RePlaceNeedsANewBook(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-r6", 27740)
 	w.cancelStop(sid)
 	w.actsOnce(0)
@@ -503,6 +511,7 @@ func TestLookTwiceRule6_RePlaceNeedsANewBook(t *testing.T) {
 // The re-look leaves the per-beat bookkeeping alone: the m217 pending-SL count
 // is consecutive BEATS.
 func TestLookTwiceRelookDoesNotCountAsABeat(t *testing.T) {
+	fastConfirm(t)
 	const sid = "pend-sig"
 	w := newLookWire(t, "lt-m217", ctInstant(t, "2026-11-18 10:00:05.000"))
 	t.Cleanup(func() { clearPendingSLSeen("lt-m217", sid+"-sl") })
@@ -536,6 +545,7 @@ func TestLookTwiceRelookDoesNotCountAsABeat(t *testing.T) {
 
 // A cleared hold ends the goroutine; a later hold starts a new one.
 func TestLookTwiceRelookEndsWithTheHold(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-life", 27740)
 	for i := 0; i < 2; i++ {
 		w.cancelStop(sid)
@@ -586,6 +596,7 @@ func TestLookTwiceConfirmZeroSendsNoLinkCheck(t *testing.T) {
 // reopens (both take limitFlattenMu) and AddOn frames (the read loop) at once,
 // then Stop in the middle of it. Nothing may go out after Stop returned.
 func TestLookTwiceNoDeadlockWithFlattensReadLoopAndStop(t *testing.T) {
+	fastConfirm(t)
 	w, sid := nakedShort(t, "lt-locks", 27755)
 	w.cancelStop(sid)
 	stop := make(chan struct{})
@@ -617,7 +628,7 @@ func TestLookTwiceNoDeadlockWithFlattensReadLoopAndStop(t *testing.T) {
 		w.positions(short(1, 27733.50))
 		w.book("periodic", tp(sid+"-tp", 27700, 1, "Working"))
 	})
-	time.Sleep(4 * time.Second)
+	time.Sleep(3 * time.Second)
 	close(stop)
 	done := make(chan struct{})
 	go func() { wg.Wait(); w.at.Stop(); close(done) }()
@@ -628,7 +639,7 @@ func TestLookTwiceNoDeadlockWithFlattensReadLoopAndStop(t *testing.T) {
 	}
 	time.Sleep(100 * time.Millisecond) // frames already on the wire reach the fixture
 	n := len(w.ordersOut())
-	time.Sleep(4 * time.Second)
+	time.Sleep(protectionConfirm() + time.Second)
 	if got := len(w.ordersOut()); got != n {
 		t.Fatalf("%d order frame(s) went out after Stop returned", got-n)
 	}
@@ -637,6 +648,7 @@ func TestLookTwiceNoDeadlockWithFlattensReadLoopAndStop(t *testing.T) {
 // The 654 floor through the DEFAULT path: no mentor record, an accepted BE stop
 // in the book history, a wider plan. The second look places the BE price.
 func TestLookTwiceKnownBrokerStopIsPlacedBySecondLook(t *testing.T) {
+	fastConfirm(t)
 	const sid = "known-sig"
 	w := newLookWire(t, "lt-known", ctInstant(t, "2026-11-18 10:00:05.000"))
 	w.price(27740)
@@ -652,7 +664,7 @@ func TestLookTwiceKnownBrokerStopIsPlacedBySecondLook(t *testing.T) {
 	w.jump(10 * time.Second)
 	w.beat30()
 	w.sync()
-	got := w.actsOnce(2900 * time.Millisecond)
+	got := w.actsOnce(protectionConfirm() - 100*time.Millisecond)
 	if !strings.HasPrefix(got, string(ntwire.FramePlaceProtectiveStop)) || !strings.Contains(got, `"stop_price":27751.25`) {
 		t.Fatalf("want the known broker stop 27751.25 placed, got %s", got)
 	}

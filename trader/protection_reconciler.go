@@ -486,6 +486,19 @@ var protectionFlattenEpisode sync.Map // trader id + symbol + side → int64
 // attempt itself still runs every pass. Cleared when the verdict leaves place.
 var protectionPlaceEpisode sync.Map // trader id + symbol + side → int64
 
+// protectionSendFailed: the last P0 of the current place / flatten episode said
+// its order could NOT be sent. When a retry of that episode then sends it, the
+// owner must hear that too: told to set a stop (or close) by hand, he would
+// otherwise add a second one beside the bot's.
+var protectionSendFailed sync.Map // trader id + symbol + side → bool
+
+// noteSendOutcome records the outcome of one pass of an episode; nowSent reports
+// the first pass that sent after one that could not.
+func noteSendOutcome(key string, failed bool) (nowSent bool) {
+	prev, had := protectionSendFailed.Swap(key, failed)
+	return had && prev.(bool) && !failed
+}
+
 // UnprotectedFound is the boot line's figure — READ from the counter (A11).
 func UnprotectedFound(traderID string) int64 {
 	if v, ok := protectionUnprotected.Load(traderID); ok {
@@ -638,7 +651,7 @@ func (at *AutoTrader) knownBrokerStopFor(signalID, side string, now time.Time) (
 }
 
 // sweepStaleProtectionState deletes this trader's per-(symbol, side) protection
-// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries —
+// state — protectionLastAction, protectionFlattenEpisode, protectionPlaceEpisode, protectionFlattenRetries, protectionSendFailed —
 // for every key whose (symbol, side) is NOT in the positions just read. It runs
 // only on a successful positions read, so a read error never forgets state (A24).
 func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface{}) {
@@ -669,6 +682,7 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 	sweep(&protectionFlattenEpisode)
 	sweep(&protectionPlaceEpisode)
 	sweep(&protectionFlattenRetries)
+	sweep(&protectionSendFailed)
 }
 
 // reconcileProtectionAt is the D5 pass. It runs on the 1-minute monitor beat and
@@ -792,6 +806,10 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 		stuckID = "" // m217 counts consecutive BEATS
 	}
 	holdKeys := protectionHoldKeys(positions)
+	twoRows := protectionTwoRows(positions)
+	if relook == nil {
+		defer at.alertTwoRowsLocked(twoRows, now) // last: a database write must not delay a look
+	}
 	for i, p := range positions {
 		symbol, _ := p["symbol"].(string)
 		side, _ := p["side"].(string)
@@ -850,11 +868,19 @@ func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook conte
 				if srv == nil {
 					continue
 				}
+				var own protRowSum // read before the evidence, like every database read of the pass
+				if v.Action == protectionPlace && len(twoRows[symbol+"|"+side]) > 1 {
+					own = at.ownOpenRow(account, symbol, side)
+				}
 				proof := at.protectionMayActLocked(v, holdKey, symbol, side, qty, positionAvg(p), srv, account, bookAt, passStart, confirm, trigger)
 				if proof == nil {
 					continue // a hold sends nothing
 				}
-				at.actOnConfirmed(v, symbol, side, qty, signalID, trigger, age, now, proof.check)
+				stopQty := qty
+				if rows := twoRows[symbol+"|"+side]; v.Action == protectionPlace && len(rows) > 1 {
+					stopQty = protectionOwnStopQty(qty, rows, own.qty, own.avg, protectionTick(symbol))
+				}
+				at.actOnConfirmed(v, symbol, side, stopQty, signalID, trigger, age, now, proof.check)
 				at.finishProtectionActLocked(holdKey, v, proof)
 				continue
 			}
@@ -1007,6 +1033,9 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 	if v.Action != protectionPlace {
 		protectionPlaceEpisode.Delete(key)
 	}
+	if changed { // another verdict: another episode, no outcome yet
+		protectionSendFailed.Delete(key)
+	}
 
 	// m217: a pending -sl has been UNCHANGED (same name, stopPrice, qty) for 3
 	// consecutive passes — ALERT-ONLY, the order keeps counting as cover. Raise
@@ -1094,6 +1123,12 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 			fmt.Sprintf("unprotected:%s:%s:%d", symbol, side, placeEpisode), title,
 			fmt.Sprintf("%s %s ×%d had no protective order at the broker. %s %s",
 				side, symbol, qty, what, v.Why))
+		if noteSendOutcome(key, placeErr != nil) {
+			title = "The protective stop that could NOT be sent is now SENT — do not add another"
+			at.emitAlert("P0", "unprotected_position",
+				fmt.Sprintf("unprotected:%s:%s:%d:sent", symbol, side, placeEpisode), title,
+				fmt.Sprintf("%s %s ×%d: %s If you already set a stop by hand, cancel one of the two. %s", side, symbol, qty, what, v.Why))
+		}
 		at.logErrorf("🚨 UNPROTECTED POSITION (%s): %s %s ×%d — stop %.2f from %s: %s",
 			trigger, side, symbol, qty, v.StopPx, v.Source, title)
 		switch {
@@ -1138,7 +1173,8 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 		// LOOK TWICE (2026-11-24): the alert follows the send and says what went
 		// out. It used to be raised BEFORE the close and read "flattening",
 		// whether or not a close was written (11-19: the owner read it as done).
-		if changed {
+		nowSent := noteSendOutcome(key, flatOutcome == marketFlatFailed)
+		if changed || nowSent {
 			what, title := "A market close was SENT to NinjaTrader. Sent is not filled: check NinjaTrader that the position is flat.", "a market close was sent"
 			switch flatOutcome {
 			case marketFlatInFlight:
@@ -1146,14 +1182,31 @@ func (at *AutoTrader) actOnConfirmed(v protectionVerdict, symbol, side string, q
 			case marketFlatFailed:
 				what, title = "The market close could NOT be sent to NinjaTrader; the bot tries again on its next check. Close the position by hand now.", "the market close could NOT be sent"
 			}
-			at.emitAlert("P0", "unprotected_position",
-				fmt.Sprintf("flatten:%s:%s:%d", symbol, side, now.UnixMilli()),
-				"Open position was naked and the stop is already behind the market — "+title,
+			eventID := fmt.Sprintf("flatten:%s:%s:%d", symbol, side, now.UnixMilli())
+			full := "Open position was naked and the stop is already behind the market — " + title
+			if nowSent {
+				title = "a retry of the market close is now SENT"
+				if flatOutcome == marketFlatInFlight {
+					title = "a market close is now in flight"
+				}
+				title += ", do not close it again"
+				full = "Open position was naked and the stop is already behind the market — " + title
+				eventID = fmt.Sprintf("flatten:%s:%s:%d:sent", symbol, side, protectionFlattenStart(key))
+			}
+			at.emitAlert("P0", "unprotected_position", eventID, full,
 				fmt.Sprintf("%s %s ×%d. %s %s", side, symbol, qty, v.Why, what))
 			at.logErrorf("🧷 protection: price already through the intended stop %.2f — %s (%s %s ×%d): %s",
 				v.StopPx, title, side, symbol, qty, v.Why)
 		}
 	}
+}
+
+// protectionFlattenStart is the start of the current flatten episode.
+func protectionFlattenStart(key string) int64 {
+	if v, ok := protectionFlattenEpisode.Load(key); ok {
+		return v.(int64)
+	}
+	return 0
 }
 
 // errNoStandaloneStop: this broker has no standalone protective stop.
