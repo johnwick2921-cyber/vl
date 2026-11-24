@@ -50,6 +50,11 @@ const alertKindStopMoveNotApplied = "stop-move-not-applied"
 // day-plan state.
 const alertKindProtectionUnverified = "protection_unverified"
 
+// alertKindProtectionHeld - look twice (2026-11-24): the reconciler sees a naked
+// position but may not act yet (the evidence never settled for 35 s, or our own
+// ledger says that position just closed). The owner must look.
+const alertKindProtectionHeld = "protection_held"
+
 // ownerPushClock is the instant the feed-down CME-open leg is judged at; a var
 // so the pins are not hostage to the wall clock (the CME daily break / weekend
 // would otherwise make a green test red).
@@ -69,6 +74,7 @@ func ownerPushKind(level, kind string) bool {
 		"protection_pending_stuck",
 		"protection_over_covered",
 		alertKindProtectionUnverified, // m469: a position open and its protection unreadable for too long
+		alertKindProtectionHeld,       // look-twice: naked, and held for 35 s / our own ledger says it closed
 		alertKindCloseRejected,
 		alertKindStopMoveNotApplied,
 		// m469: the 11-03..11-06 402 outage never reached the owner. The AI

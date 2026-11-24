@@ -1,6 +1,7 @@
 package trader
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"math"
@@ -676,18 +677,58 @@ func (at *AutoTrader) sweepStaleProtectionState(positions []map[string]interface
 // unless day_plan is enabled (armed_executor.go), and a position is unprotected
 // regardless of day_plan. A safety check that a config flag can silence is not
 // a safety check.
+//
+// LOOK TWICE (2026-11-24): a verdict that would place, flatten or alert is only
+// a HOLD on the first look; protection_look_twice.go decides when it may act.
 func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
+	at.protectionPass(now, trigger, nil)
+}
+
+// protectionPass is one look. relook is nil on a beat (monitor / reconnect) and
+// the Run's stop context on the background re-look, which only serves the open
+// holds: it leaves every per-beat bookkeeping (the m217 pending-SL counter, the
+// m469 UNVERIFIED spell, the over-covered counter) to the beats. more reports
+// whether a hold is still open.
+func (at *AutoTrader) protectionPass(now time.Time, trigger string, relook context.Context) (more bool) {
 	if at == nil || at.trader == nil || at.exchange != "ninjatrader" {
-		return
+		return false
 	}
 	defer func() {
 		if rec := recover(); rec != nil {
 			at.logWarnf("🧷 protection reconcile panicked and was contained: %v", rec)
 		}
 	}()
+	at.protMu.Lock() // one pass at a time: a beat and a re-look never judge together
+	defer at.protMu.Unlock()
+	if relook != nil && relook.Err() != nil {
+		return false // stopped while waiting for the lock
+	}
+	confirm := protectionConfirm()
+	if confirm == 0 {
+		at.protHolds = nil
+		if relook != nil {
+			return false
+		}
+	}
+	srv := at.protectionServer()
+	passStart := at.beginProtectionLookLocked(srv)
+	defer func() {
+		at.expireProtectionHoldsLocked(srv)
+		if relook != nil && len(at.protHolds) == 0 {
+			at.protRelookRun = nil // under protMu: a beat that opens a hold now starts a new one
+		}
+		more = len(at.protHolds) > 0
+		if relook == nil {
+			at.armProtectionRelookLocked()
+		}
+	}()
 
 	positions, err := at.trader.GetPositions()
 	if err != nil {
+		at.restartProtectionHoldsLocked()
+		if relook != nil {
+			return // the beat says it; this is not a look
+		}
 		// A24: a read failure is not "flat". Say so and do nothing.
 		at.logWarnf("🧷 protection UNVERIFIED (%s): positions unreadable: %v — no action taken", trigger, err)
 		// m469: the broker cannot be read, so whether a position is open comes
@@ -703,13 +744,17 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	// changed=false and flattens SILENTLY (no P0, no episode stamp). A read error
 	// changes nothing (A24: an unreadable book is not a licence to forget state).
 	at.sweepStaleProtectionState(positions)
+	at.dropStaleProtectionHoldsLocked(positions)
 	if len(positions) == 0 {
 		protectionUnverifiedSince.Delete(at.id) // flat: nothing left to verify
 		return
 	}
 	unverified := "" // m469: the first position this pass could not verify
 
-	book, have, age := at.liveBook(now)
+	if relook != nil {
+		now = passStart
+	}
+	book, have, age, bookAt, account := at.protectionBook(now)
 	if have && snapshotMaxAge() > 0 && age > snapshotMaxAge() {
 		// A book older than the bound answers about the past. The reconnect
 		// edge in particular fires BEFORE any fresh snapshot: the AddOn sends
@@ -723,7 +768,7 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	// Without this, a later same-named order would read a stale sighting as
 	// stuck. Only with a FRESH book (a stale/absent book must not forget state,
 	// A24).
-	if have {
+	if have && relook == nil {
 		bookNames := make(map[string]bool, len(book))
 		for i := range book {
 			bookNames[book[i].Name] = true
@@ -741,6 +786,10 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		})
 	}
 
+	stuckID := at.id
+	if relook != nil {
+		stuckID = "" // m217 counts consecutive BEATS
+	}
 	for _, p := range positions {
 		symbol, _ := p["symbol"].(string)
 		side, _ := p["side"].(string)
@@ -748,6 +797,10 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 		qty := int(math.Round(qtyF))
 		if qty <= 0 || symbol == "" || side == "" {
 			continue
+		}
+		holdKey := symbol + "|" + side
+		if relook != nil && at.protHolds[holdKey] == nil {
+			continue // a re-look serves the open holds only
 		}
 		signalID, acceptedStop, planStop := at.protectionPricesFor(symbol, side)
 		// REL17-F4: the registered mentor live position's CURRENT driver stop
@@ -764,20 +817,41 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 			freshPriceP = &fp
 		}
 		var ksPtr *knownBrokerStop
-		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, at.id, now)
+		v := adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, nil, freshPriceP, stuckID, now)
 		// P2-1: only a verdict that would PLACE a non-mentor stop asks for the
 		// tightest stop the broker is known to have held (the book-history read
 		// is a database scan; a protected position never pays for it).
 		if (v.Action == protectionPlace || (v.Action == protectionAlertOnly && v.HaveQty == 0)) && v.Source != "mentor_driver" && !hasMentorStop {
 			if ks, ok := at.knownBrokerStopFor(signalID, side, now); ok {
 				ksPtr = &ks
-				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, at.id, now)
+				v = adjudicateProtectionWith(symbol, side, qty, book, have, acceptedStop, planStop, mentorStopP, ksPtr, freshPriceP, stuckID, now)
 			}
 		}
 		if v.Action == protectionUnknown && unverified == "" {
 			unverified = fmt.Sprintf("%s %s ×%d — %s", side, symbol, qty, v.Why)
 		}
+		if confirm > 0 {
+			switch v.Action {
+			case protectionOK:
+				at.dropProtectionHoldLocked(holdKey, "a stop covers it")
+			case protectionUnknown:
+				if h := at.protHolds[holdKey]; h != nil {
+					h.restart() // cover could not be read: not a look
+					h.lastLook = passStart
+				}
+			default:
+				if srv == nil || !at.protectionMayActLocked(v, symbol, side, qty, positionAvg(p), srv, account, bookAt, passStart, confirm, trigger) {
+					continue // a hold sends nothing
+				}
+			}
+			if relook != nil && (v.Action == protectionOK || v.Action == protectionUnknown) {
+				continue // the beat's bookkeeping
+			}
+		}
 		at.actOnProtection(v, symbol, side, qty, signalID, trigger, age, now)
+	}
+	if relook != nil {
+		return
 	}
 	if unverified != "" {
 		// the broker reports this position open, so a position IS open.
@@ -785,6 +859,21 @@ func (at *AutoTrader) reconcileProtectionAt(now time.Time, trigger string) {
 	} else {
 		protectionUnverifiedSince.Delete(at.id) // every open position verified
 	}
+	return
+}
+
+// protectionBook is liveBook plus the receive instant and the account it came
+// from (look-twice compares receive instants, never ages).
+func (at *AutoTrader) protectionBook(now time.Time) (orders []nt.NT8Order, have bool, age time.Duration, bookAt time.Time, account string) {
+	cache, account, _ := at.brokerBook()
+	if cache == nil {
+		return nil, false, 0, time.Time{}, account
+	}
+	snap, at0, ok := cache.LatestReceived(account)
+	if !ok || at0.IsZero() {
+		return nil, false, 0, time.Time{}, account
+	}
+	return snap.Orders, true, now.Sub(at0), at0, account
 }
 
 // protectionUnverifiedAlertAfter (m469) is how long the reconciler may go
