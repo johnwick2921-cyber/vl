@@ -256,7 +256,7 @@ func TestProtectionRelookWait(t *testing.T) {
 		for i, h := range x.holds {
 			at.protHolds[fmt.Sprint(i)] = h
 		}
-		if got := at.protectionRelookWait(now, c); got != x.want {
+		if got := at.protectionRelookWaitLocked(now, c); got != x.want {
 			t.Errorf("%s: %s, want %s", name, got, x.want)
 		}
 	}

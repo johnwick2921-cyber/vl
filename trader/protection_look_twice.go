@@ -555,9 +555,18 @@ func (at *AutoTrader) releaseProtectionRelookLocked(wake chan struct{}) {
 // look plus confirm, or (restarted, or looked at since then) its last look plus
 // confirm. A plain confirm-long tick looked at a hold opened in mid-tick too
 // early and then again a whole tick later: up to 6 s instead of 3.
-func (at *AutoTrader) protectionRelookWait(now time.Time, confirm time.Duration) time.Duration {
+func (at *AutoTrader) protectionRelookWait(confirm time.Duration) time.Duration {
 	at.protMu.Lock()
 	defer at.protMu.Unlock()
+	srv := at.protectionServer()
+	if srv == nil {
+		return confirm // the pass ends the loop
+	}
+	return at.protectionRelookWaitLocked(srv.ReceiptNow(), confirm)
+}
+
+// protectionRelookWaitLocked: protMu held.
+func (at *AutoTrader) protectionRelookWaitLocked(now time.Time, confirm time.Duration) time.Duration {
 	wait := confirm
 	for _, h := range at.protHolds {
 		due := h.firstLook.Add(confirm)
@@ -581,11 +590,11 @@ func (at *AutoTrader) protectionRelookLoop(run context.Context, wake <-chan stru
 		if probe := at.outstandingProtectionProbe(); probe != nil {
 			probe.Wait(run, nt.HeartbeatAckWait+50*time.Millisecond)
 		} else {
-			confirm, srv := protectionConfirm(), at.protectionServer()
-			if confirm <= 0 || srv == nil {
-				return // reverted to the single look, or no wire to look at
+			confirm := protectionConfirm()
+			if confirm <= 0 {
+				return // reverted to the single look
 			}
-			timer := time.NewTimer(at.protectionRelookWait(srv.ReceiptNow(), confirm))
+			timer := time.NewTimer(at.protectionRelookWait(confirm))
 			select {
 			case <-timer.C:
 			case <-wake:
@@ -598,8 +607,7 @@ func (at *AutoTrader) protectionRelookLoop(run context.Context, wake <-chan stru
 		if run.Err() != nil {
 			return
 		}
-		srv := at.protectionServer()
-		if srv == nil || !at.protectionPass(srv.ReceiptNow(), protectionRelookTrigger, run) {
+		if !at.protectionPass(time.Time{}, protectionRelookTrigger, run) {
 			return
 		}
 	}
