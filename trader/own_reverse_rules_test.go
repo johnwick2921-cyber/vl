@@ -58,6 +58,8 @@ func TestOwnCloseOnRecord(t *testing.T) {
 		"our limit exit by id, 20 min later":      {[]ntwire.OwnClose{mk("a", false, 20*time.Minute)}, "a", true},
 		"another signal's limit exit":             {[]ntwire.OwnClose{mk("a", false, time.Second)}, "b", false},
 		"a market close does not explain a -sl":   {[]ntwire.OwnClose{mk("a", true, time.Second)}, "entry-1", false},
+		"R12 a market close by the same id":       {[]ntwire.OwnClose{mk("a", true, time.Second)}, "a", false},
+		"R13 a blank id matches nothing":          {[]ntwire.OwnClose{mk("", false, time.Second)}, "", false},
 		"an older own close behind a newer limit": {[]ntwire.OwnClose{mk("a", true, time.Second), mk("b", false, 0)}, "Close", true},
 	} {
 		if got := ownCloseOnRecord(c.sent, store.NT8ExitReceipt{SignalID: c.sig}, read) != ""; got != c.want {
