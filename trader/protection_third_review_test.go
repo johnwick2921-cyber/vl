@@ -231,6 +231,56 @@ func TestProtectionRefusalAfterASendSaysAStopWasSent(t *testing.T) {
 	}
 }
 
+// A row refused twice in one episode: the second message is the first one's event
+// id, so neither the row nor the phone got it. MUTANT: told on any refused row.
+func TestProtectionNowSentNotAfterARefusalNobodyGot(t *testing.T) {
+	at, st := resetTrader(t, store.StrategyConfig{})
+	tr := &placeTrader{}
+	at.id, at.exchange, at.trader = "now-sent-lost", "ninjatrader", tr
+	t.Cleanup(func() { at.sweepStaleProtectionState(nil) })
+	v := protectionVerdict{Action: protectionPlace, StopPx: 31163, NeedQty: 1, Source: "plan", Why: "naked."}
+	var deny atomic.Bool
+	if err := st.GormDB().Callback().Create().Before("gorm:create").Register("deny-alerts", func(tx *gorm.DB) {
+		if deny.Load() && strings.Contains(tx.Statement.Table, "alert") {
+			_ = tx.AddError(errors.New("database is locked"))
+		}
+	}); err != nil {
+		t.Fatal(err)
+	}
+	t0 := time.Now()
+	for i, err := range []error{nil, fmt.Errorf("refused"), nil} {
+		deny.Store(i < 2)
+		tr.err = err
+		at.actOnProtection(v, "MNQ", "LONG", 1, "sig", "t", 0, t0.Add(time.Duration(i)*time.Minute))
+	}
+	all, err := st.Alert().List(at.id, 10)
+	if err != nil || len(all) != 1 || strings.Contains(all[0].Title, "now SENT") {
+		t.Fatalf("want the plain 'was sent' P0 only, got %d (%v): %+v", len(all), err, all)
+	}
+}
+
+// 'now SENT' answers a refusal ONCE (the event id hides a second one from the desk,
+// not from the log). MUTANT: do not clear told.
+func TestProtectionSendStateIsClearedByItsAnswer(t *testing.T) {
+	const key = "send-state|MNQ|LONG"
+	t.Cleanup(func() { protectionSendState.Delete(key) })
+	for i, c := range []struct {
+		failed, told, nowSent bool
+		want                  protectionSends
+	}{
+		{true, true, false, protectionSends{told: true}},
+		{true, false, false, protectionSends{told: true}},
+		{false, false, true, protectionSends{sent: true}},
+		{true, false, false, protectionSends{sent: true}},
+		{false, false, false, protectionSends{sent: true}},
+	} {
+		noteSendOutcome(key, c.failed, c.told, c.nowSent)
+		if got := sendsSoFar(key); got != c.want {
+			t.Fatalf("step %d: %+v, want %+v", i, got, c.want)
+		}
+	}
+}
+
 // ── Finding 3 — an order book written late ───────────────────────────────────
 
 // bookAt is a book the AddOn stamped at emitted (0 = no stamp).
@@ -289,6 +339,25 @@ func TestLookTwiceLateBook_IsNotALook(t *testing.T) {
 	w.look()
 	time.Sleep(300 * time.Millisecond)
 	w.actsAfterRestart("a late book, then a newer one")
+}
+
+// … and it ends the look before it: the book may say anything in between. MUTANT:
+// skip the late look without restarting the hold.
+func TestLookTwiceLateBook_RestartsTheLooks(t *testing.T) {
+	fastConfirm(t)
+	w, sid := nakedShort(t, "lt-book-restart", 27740)
+	w.cancelStop(sid)
+	naked := tp(sid+"-tp", 27700, 1, "Working")
+	w.look()
+	w.bookAt(w.now().Add(-5*time.Second), naked)
+	w.sync()
+	w.look()
+	w.jump(3100 * time.Millisecond)
+	w.book("state_change", naked)
+	w.sync()
+	w.look()
+	time.Sleep(300 * time.Millisecond)
+	w.actsAfterRestart("naked, late, naked")
 }
 
 // Really naked: the first newer book lets the bot act.
