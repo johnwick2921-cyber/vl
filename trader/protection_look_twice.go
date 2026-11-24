@@ -234,7 +234,7 @@ func (at *AutoTrader) dropProtectionHoldLocked(key, why string) {
 	delete(at.protHolds, key)
 	telemetry.IncTraderEvent(at.id, "protection_hold_cleared")
 	at.logInfof("🧷 protection hold CLEARED: %s — %s after %s; nothing was sent",
-		key, why, h.lastLook.Sub(h.since).Round(time.Millisecond))
+		key, why, max(0, h.lastLook.Sub(h.since)).Round(time.Millisecond)) // since is later after holdOnLateCoverLocked
 }
 
 // dropStaleProtectionHoldsLocked drops the hold of every position that is no
@@ -488,8 +488,19 @@ func (at *AutoTrader) alertHoldLocked(h *protectionHold, symbol, side, title, bo
 // written late: the book before it showed none, so the late one ends nothing. It is
 // no look (lastLook stays, so this alone never keeps a hold past 70 s), but it is
 // the same doubt, and the 35 s P0 runs on. Nothing can be sent here. protMu held.
+//
+// Nothing here opens a hold, so this one must be usable as it is: the hold of another
+// Run, or one nobody looked at for 70 s, says nothing and is left to its expiry, and
+// another quantity or average is another position, with its own 35 s and its own P0
+// (lastLook stays, so the 70 s run on).
 func (at *AutoTrader) holdOnLateCoverLocked(h *protectionHold, symbol, side string, qty int, avg float64, now time.Time, trigger string) {
 	h.restart()
+	if h.run != at.protectionRunCtx() || now.Sub(h.lastLook) > protectionLookGap {
+		return
+	}
+	if h.qty != qty || h.avg != avg {
+		h.qty, h.avg, h.since, h.alerted, h.lastWhy = qty, avg, now, false, ""
+	}
 	const why = "the newest order book shows a stop, but NinjaTrader built it before one it had already sent (written late, or its clock was set back), so that stop may be gone; the next order book decides"
 	if h.lastWhy != why {
 		h.lastWhy = why

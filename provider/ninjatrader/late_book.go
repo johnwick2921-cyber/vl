@@ -27,10 +27,13 @@ import (
 //     the read loop between them, look 13 s apart - and their stamps do not. The
 //     30 s resend, or at worst the one after it, ends a single step.
 //  2. A CLOCK THAT KEEPS STEPPING BACK starts a new run with every step, so rule 1
-//     may never hold. After lateBookCap of ONLY late books the newest one received
-//     is evidence again. A book is late by a write: three resends in a row that
-//     are all late are not, and the alternative is worse - a really naked position
-//     that the bot never protects for as long as the clock keeps moving.
+//     may never hold. After lateBookCap of ONLY late books, lateBookCapCount of
+//     them at least (counted over all the runs, the newest one too), the newest one
+//     received is evidence again. The time alone is not enough: two books can be
+//     90 s apart when none was read in between. A book is late by a write: three
+//     late ones over 90 s with none in order are not, and the alternative is worse
+//     - a really naked position that the bot never protects for as long as the
+//     clock keeps moving.
 //
 // A hold's 35 s P0 runs on through a late book, whether that book shows a stop or
 // not (a book that cannot be read is UNKNOWN, and its P0 comes after 10 minutes).
@@ -43,8 +46,11 @@ const (
 	// positionRegrowProof (12 s) in Go time; a real step keeps the Windows clock
 	// running, so its stamps move as far, less a late first read.
 	lateBookStepProof = 10 * time.Second
-	// lateBookCap: three 30 s resends.
+	// lateBookCap is the Go time the late books must cover: three 30 s resends.
 	lateBookCap = 90 * time.Second
+	// lateBookCapCount is how many late books there must be in it. With the resends
+	// coming there are four (0, 30, 60 and 90 s).
+	lateBookCapCount = 3
 )
 
 type bookOrder struct {
@@ -52,6 +58,7 @@ type bookOrder struct {
 	newest    int64     // the newest stamp there, ms
 	late      bool      // THIS book was stamped before it
 	lateSince time.Time // every book since then was late
+	lateCount int       // … and there were so many, this one too
 	lateAt    time.Time // the first book of the late run was received
 	lateFirst int64     // its stamp
 	lateMax   int64     // the run's newest stamp
@@ -62,17 +69,17 @@ func (o bookOrder) next(emitted int64, at time.Time, link net.Conn) bookOrder {
 	if link == nil || o.link != link {
 		return bookOrder{link: link, newest: emitted}
 	}
-	since := at
+	since, count := at, 1
 	if o.late {
-		since = o.lateSince
+		since, count = o.lateSince, o.lateCount+1
 	}
-	run := bookOrder{link: link, newest: o.newest, late: true, lateSince: since, lateAt: at, lateFirst: emitted, lateMax: emitted}
+	run := bookOrder{link: link, newest: o.newest, late: true, lateSince: since, lateCount: count, lateAt: at, lateFirst: emitted, lateMax: emitted}
 	switch {
 	case emitted <= 0: // no stamp: not late, and no news of the order either
 		return bookOrder{link: link, newest: o.newest}
 	case emitted >= o.newest:
 		return bookOrder{link: link, newest: emitted}
-	case at.Sub(since) >= lateBookCap: // nothing but late books all that time: the clock keeps moving
+	case at.Sub(since) >= lateBookCap && count >= lateBookCapCount: // nothing but late books all that time: the clock keeps moving
 		return bookOrder{link: link, newest: emitted}
 	case !o.late, emitted < o.lateMax: // late even among the late ones, or the clock went back again: a new run
 		return run

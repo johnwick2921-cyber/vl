@@ -57,6 +57,14 @@ func TestBookOrder(t *testing.T) {
 		"an oscillating clock after the cap, in order": {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {30 * sec, 8e6, 1}, {30 * sec, 7e6, 1}, {30 * sec, 6e6, 1}, {sec, 6e6 + 1, 1}}, false},
 		"an oscillating clock: late again after it":    {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {30 * sec, 8e6, 1}, {30 * sec, 7e6, 1}, {30 * sec, 6e6, 1}, {sec, 5e6, 1}}, true},
 		"a newer book restarts the cap":                {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {60 * sec, 1e9 + 1, 1}, {0, 8e6, 1}, {60 * sec, 7e6, 1}}, true},
+		"only two late books, 90 s apart":              {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {90 * sec, 8e6, 1}}, true},
+		"only two late books, 10 min apart":            {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {600 * sec, 8e6, 1}}, true},
+		"the third late book, 1 ms before the cap":     {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {sec, 8e6, 1}, {89*sec - time.Millisecond, 7e6, 1}}, true},
+		"the third late book, at the cap":              {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {sec, 8e6, 1}, {89 * sec, 7e6, 1}}, false},
+		"three late books of one run (no stamp step)":  {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {sec, 9e6, 1}, {89 * sec, 9e6, 1}}, false},
+		"late books after the cap are counted anew":    {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {sec, 8e6, 1}, {89 * sec, 7e6, 1}, {0, 6e6, 1}, {90 * sec, 5e6, 1}}, true},
+		"a newer book restarts the count":              {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {0, 8e6, 1}, {0, 1e9 + 1, 1}, {0, 7e6, 1}, {90 * sec, 6e6, 1}}, true},
+		"no stamp restarts the count":                  {[]put{{0, 1e9, 1}, {0, 9e6, 1}, {0, 8e6, 1}, {0, 0, 1}, {0, 7e6, 1}, {90 * sec, 6e6, 1}}, true},
 		"back at the old time":                         {[]put{{0, 1e9, 1}, {0, 50, 1}, {sec, 1e9 + 1, 1}}, false},
 	} {
 		links := []net.Conn{nil, &net.TCPConn{}, &net.TCPConn{}}

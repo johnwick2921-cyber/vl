@@ -1,7 +1,6 @@
 package trader
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,7 +13,6 @@ import (
 
 	"gorm.io/gorm"
 
-	"vl/logger"
 	"vl/market"
 	ntwire "vl/provider/ninjatrader"
 	"vl/store"
@@ -96,6 +94,48 @@ func TestLookTwiceGap_ExitFillSinceTheFirstLookIsAFirstLook(t *testing.T) {
 	w.jump(3100 * time.Millisecond)
 	if p, why := w.gate(gapPlace, 1, entry1193, ackedLook); p != nil || !strings.Contains(why, "first look") {
 		t.Fatalf("an exit filled since the first look: want a first look, got proof %v why %q", p != nil, why)
+	}
+}
+
+// I15 and I16: an ALERT-ONLY verdict (partly covered, or no price) has no send, so no
+// guard behind the gate: rule 2 alone stands between it and its P0.
+func TestLookTwiceGap_AnAlertNeedsAPositionsFrame(t *testing.T) {
+	partial := protectionVerdict{Action: protectionAlertOnly, HaveQty: 1, Why: "partly covered."}
+	noPrice := protectionVerdict{Action: protectionAlertOnly, Why: "no price."}
+	for name, c := range map[string]struct {
+		v     protectionVerdict
+		event func(w *lookWire) // after the frame, before both looks
+		why   string
+	}{
+		"I15 a new connection without a frame, partial": {partial, func(w *lookWire) { w.redial(); w.book("connect") }, "no positions frame"},
+		"I15 a new connection without a frame, noprice": {noPrice, func(w *lookWire) { w.redial(); w.book("connect") }, "no positions frame"},
+		"I16 an exit fill and no frame after, partial":  {partial, func(w *lookWire) { w.orderUpdate("old-tp", "filled", 27700, 1) }, "OLDER than the newest fill"},
+		"I16 an exit fill and no frame after, noprice":  {noPrice, func(w *lookWire) { w.orderUpdate("old-tp", "filled", 27700, 1) }, "OLDER than the newest fill"},
+		"I16 an entry fill and no frame after, partial": {partial, func(w *lookWire) { w.orderUpdate("re-entry", "filled", entry1193, 1) }, "OLDER than the newest fill"},
+		"I16 an entry fill and no frame after, noprice": {noPrice, func(w *lookWire) { w.orderUpdate("re-entry", "filled", entry1193, 1) }, "OLDER than the newest fill"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := gapWire(t, "alert-"+name[:3])
+			w.positions(short(2, entry1193))
+			w.book("periodic")
+			w.sync()
+			w.jump(time.Second)
+			c.event(w)
+			w.sync()
+			w.jump(3100 * time.Millisecond)
+			if p, why := w.gate(c.v, 2, entry1193, nil); p != nil || !strings.Contains(why, "first look") {
+				t.Fatalf("fixture: want a first look, got proof %v why %q", p != nil, why)
+			}
+			w.jump(3100 * time.Millisecond)
+			if p, why := w.gate(c.v, 2, entry1193, ackedLook); p != nil || !strings.Contains(why, c.why) {
+				t.Fatalf("nothing says the position is still there: no alert, got proof %v why %q", p != nil, why)
+			}
+			w.positions(short(2, entry1193))
+			w.sync()
+			if p, why := w.gate(c.v, 2, entry1193, ackedLook); p == nil {
+				t.Fatalf("control: with a frame after it the second look alerts, got %q", why)
+			}
+		})
 	}
 }
 
@@ -349,6 +389,179 @@ func TestLookTwiceGap_LastHoldDropsTheRegistration(t *testing.T) {
 	})
 	if more := w.relook(); more || w.relookAlive() {
 		t.Fatalf("flat: more %v, registered %v", more, w.relookAlive())
+	}
+}
+
+// L02: a re-look that was waiting for the lock when the Run ended does nothing. The
+// gate and the send guard stop its ORDERS; only this stops the P0 of its open hold.
+func TestLookTwiceGap_ARelookStoppedAtTheLockTellsNothing(t *testing.T) {
+	for name, after := range map[string]func(w *lookWire){
+		"naked":        func(*lookWire) {},
+		"late covered": func(w *lookWire) { w.lateCover() },
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := gapWire(t, "stopped")
+			w.positions(short(1, entry1193))
+			w.book("periodic")
+			w.sync()
+			after(w)
+			run := w.at.protectionRunCtx()
+			pass := func() bool { return w.at.protectionPass(time.Time{}, protectionRelookTrigger, run) }
+			w.openHold(36*time.Second, 1, entry1193)
+			more := make(chan bool, 1)
+			w.protState(func() {
+				go func() { more <- pass() }()
+				time.Sleep(50 * time.Millisecond) // it is at the lock now (or will be: the same)
+				w.at.cancelStopMonitor()
+			})
+			if <-more {
+				t.Fatal("the loop of a Run that ended goes on")
+			}
+			w.mustHaveNoP0("a pass after Stop")
+			w.mustBeSilent("a pass after Stop")
+			w.at.setupStopMonitorForTest() // control: the same hold of a live Run owes its P0
+			run = w.at.protectionRunCtx()
+			w.openHold(36*time.Second, 1, entry1193)
+			pass()
+			if ps := w.p0s(); len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld {
+				t.Fatalf("control: want the hold's P0, got %+v", ps)
+			}
+		})
+	}
+}
+
+// lateCover makes the newest book one that shows a stop for 1 but was written late.
+func (w *lookWire) lateCover() {
+	w.book("periodic")
+	w.bookAt(w.now().Add(-5*time.Second), sl("a-sl", stop1193, 1, "Working"))
+	w.sync()
+}
+
+// The hold's P0 on a late covered book needs a hold that is OF this Run, was looked at
+// in the last 70 s, and is dated from the first pass on THIS position.
+func TestLookTwiceGap_LateCoverUsesOnlyItsOwnHold(t *testing.T) {
+	w := gapWire(t, "latecover")
+	w.positions(short(1, entry1193))
+	w.lateCover()
+	run := w.at.protectionRunCtx()
+	old, cancel := context.WithCancel(context.Background())
+	cancel()
+	for _, c := range []struct {
+		name        string
+		run         context.Context
+		since, look time.Duration // ago
+		qty         int
+		avg         float64
+		p0          float64
+		left        int
+	}{
+		{"its own, 36 s", run, 36 * time.Second, 3 * time.Second, 1, entry1193, 1, 1},
+		{"its own, 33 s", run, 33 * time.Second, 3 * time.Second, 1, entry1193, 0, 1},
+		{"its own, the last look 66 s ago", run, 90 * time.Second, 66 * time.Second, 1, entry1193, 1, 1},
+		{"stale: the last look 71 s ago", run, 20 * time.Minute, 71 * time.Second, 1, entry1193, 0, 0},
+		{"stale: never looked at since 20 min", run, 20 * time.Minute, 20 * time.Minute, 1, entry1193, 0, 0},
+		{"another Run's", old, 20 * time.Minute, 3 * time.Second, 1, entry1193, 0, 1},
+		{"of no Run", nil, 36 * time.Second, 3 * time.Second, 1, entry1193, 0, 1},
+		{"another quantity", run, 20 * time.Minute, 3 * time.Second, 3, entry1193, 0, 1},
+		{"another average", run, 20 * time.Minute, 3 * time.Second, 1, entry1193 + 0.25, 0, 1},
+	} {
+		w.protState(func() {
+			w.at.protHolds = map[string]*protectionHold{"MNQ|SHORT": {run: c.run, qty: c.qty, avg: c.avg,
+				since: w.now().Add(-c.since), lastLook: w.now().Add(-c.look)}}
+		})
+		before, rows := traderEvents(w.at.id, "protection_hold_p0"), len(w.p0s())
+		w.relook()
+		if n := traderEvents(w.at.id, "protection_hold_p0") - before; n != c.p0 || len(w.p0s())-rows != int(c.p0) {
+			t.Errorf("%s: raised %.0f (rows +%d), want %.0f", c.name, n, len(w.p0s())-rows, c.p0)
+		}
+		if n := w.holds(); n != c.left {
+			t.Errorf("%s: holds %d, want %d (a hold that is not used is left to its expiry)", c.name, n, c.left)
+		}
+	}
+	w.mustBeSilent("late covered")
+}
+
+// Another position takes over the hold with its OWN 35 s: the doubt is still told, with
+// its own time, and an alert of the old position does not swallow it. A hold taken over
+// by another position keeps its last look: the 70 s run on.
+func TestLookTwiceGap_LateCoverOfAnotherPositionStartsItsOwn35s(t *testing.T) {
+	for name, hold := range map[string]protectionHold{
+		"quantity": {qty: 3, avg: entry1193},
+		"average":  {qty: 1, avg: entry1193 + 0.25, alerted: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			w := gapWire(t, "lateown")
+			w.positions(short(1, entry1193))
+			w.lateCover()
+			h := hold
+			h.run, h.since, h.lastLook = w.at.protectionRunCtx(), w.now().Add(-20*time.Minute), w.now()
+			w.protState(func() { w.at.protHolds = map[string]*protectionHold{"MNQ|SHORT": &h} })
+			w.relook()
+			w.jump(33 * time.Second)
+			w.relook()
+			w.mustHaveNoP0("33 s of the new position")
+			w.jump(3 * time.Second)
+			w.relook()
+			ps := w.p0s()
+			if len(ps) != 1 || ps[0].Kind != alertKindProtectionHeld || !strings.Contains(ps[0].Body, "For 36s ") || !strings.Contains(ps[0].Body, "×1 (avg") {
+				t.Fatalf("36 s of the new position owe its P0, dated from ITS first pass, got %+v", ps)
+			}
+			w.jump(35 * time.Second)
+			w.relook()
+			if w.holds() != 0 {
+				t.Fatal("71 s after the last real look the hold ends, whoever it was for")
+			}
+		})
+	}
+}
+
+// … and the line that ends it by a cover never says a time below zero (its last look is
+// older than the position it is now dated from).
+func TestLookTwiceGap_LateCoverThenCoveredSaysNoNegativeTime(t *testing.T) {
+	w := gapWire(t, "latecleared")
+	w.positions(short(1, entry1193))
+	w.lateCover()
+	w.openHold(36*time.Second, 3, entry1193)
+	w.relook()
+	w.book("periodic", sl("a-sl", stop1193, 1, "Working"))
+	w.sync()
+	log := captureTraderLog(t)
+	w.relook()
+	if !strings.Contains(log.String(), "MNQ|SHORT — a stop covers it after 0s; nothing was sent") {
+		t.Fatalf("got:\n%s", log.String())
+	}
+}
+
+// Z5: the late-cover HOLD line is written once while its reason is unchanged.
+func TestLookTwiceGap_LateCoverLogsOncePerReason(t *testing.T) {
+	w := gapWire(t, "latelog")
+	w.positions(short(1, entry1193))
+	w.lateCover()
+	w.openHold(3*time.Second, 1, entry1193)
+	log := captureTraderLog(t)
+	lines := func() (n int) {
+		for _, l := range strings.Split(log.String(), "\n") {
+			if strings.Contains(l, w.at.logTag()) && strings.Contains(l, "protection HOLD (second-look): SHORT MNQ ×1") && strings.Contains(l, "shows a stop, but") {
+				n++
+			}
+		}
+		return n
+	}
+	for i := 0; i < 3; i++ {
+		w.relook()
+	}
+	if n := lines(); n != 1 {
+		t.Fatalf("three passes, one reason: want one line, got %d:\n%s", n, log.String())
+	}
+	w.protState(func() { w.at.protHolds["MNQ|SHORT"].lastWhy = "another reason" })
+	w.relook()
+	if n := lines(); n != 2 {
+		t.Fatalf("control: after another reason the line comes again, got %d", n)
+	}
+	w.protState(func() { w.at.protHolds["MNQ|SHORT"].qty = 3 })
+	w.relook()
+	if n := lines(); n != 3 {
+		t.Fatalf("another position: the line comes again, got %d", n)
 	}
 }
 
@@ -606,18 +819,19 @@ func TestLookTwiceGap_UnguardedBrokerAsksBeforeTheSend(t *testing.T) {
 // O01, O03, O04: the guarded close is the one used, for the side held, and a withheld
 // one is not logged as a close that failed.
 func TestLookTwiceGap_GuardedCloseIsUsed(t *testing.T) {
-	var log bytes.Buffer
-	old := logger.Log.Out
-	logger.Log.SetOutput(&log)
-	t.Cleanup(func() { logger.Log.SetOutput(old) })
+	log := captureTraderLog(t)
 	at, _ := resetTrader(t, store.StrategyConfig{})
 	tr := &guardedTrader{}
 	at.id, at.exchange, at.trader = "gap-guarded", "ninjatrader", tr
 	if err := at.sendMarketCloseIf("MNQ", "LONG", "t", withheld); !errors.Is(err, ntwire.ErrSendWithheld) {
 		t.Fatalf("O01: the guard was not asked by the guarded close: %v", err)
 	}
-	if strings.Contains(log.String(), "failed") {
+	failed := at.logTag() + " t: close MNQ LONG failed: "
+	if strings.Contains(log.String(), failed) {
 		t.Fatalf("O04: a withheld close is not a failed one: %s", log.String())
+	}
+	if err := at.sendMarketCloseIf("MNQ", "LONG", "t", func() error { return errors.New("the wire is closed") }); err == nil || strings.Count(log.String(), failed) != 1 {
+		t.Fatalf("control: a close that failed is logged as one, err %v: %s", err, log.String())
 	}
 	for _, side := range []string{"LONG", "SHORT"} {
 		if err := at.sendMarketCloseIf("MNQ", side, "t", func() error { return nil }); err != nil {
