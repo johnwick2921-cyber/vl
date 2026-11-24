@@ -88,6 +88,9 @@ func newLookWire(t *testing.T, traderID string, base time.Time) *lookWire {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { w.at.Stop() })
+	// The verdict memory is process-global by trader id: an alert-only verdict is
+	// raised on a CHANGE only, so a -count=2 run would inherit the first run's.
+	t.Cleanup(func() { w.at.sweepStaleProtectionState(nil) })
 
 	// The AddOn's answers: every Go heartbeat is acked on the same ordered stream
 	// (VLTraderTCPClient.cs HandleMessage "heartbeat" → SendAck).
