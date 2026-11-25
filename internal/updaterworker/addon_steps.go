@@ -124,6 +124,9 @@ func (w *Worker) stepAddonBuild(ctx context.Context, j updaterjob.Job) stepResul
 		return berr
 	}()
 	ev["dll"], ev["sha256"], ev["built_by"] = res.DllPath, res.Sha256, res.BuiltBy
+	if res.Ps1Error != "" {
+		ev["ps1_error"] = clipText(res.Ps1Error)
+	}
 	out := stepResult{receipts: []Receipt{w.receipt("addon_build", start, ev, err)}, err: err}
 	if err != nil {
 		out.failTo, out.reason = updaterjob.StateRevertedClean, "the AddOn build failed: "+clipText(err.Error())

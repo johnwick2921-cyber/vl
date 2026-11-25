@@ -8,7 +8,7 @@
 # Modes:
 #   normal    compile every <Src>\*.cs into <Out>\VL.AddOn.dll and print
 #             "VL_ADDON_DLL=<path>" and "VL_ADDON_SHA256=<hex>".
-#   -Probe    compile a trivial source against the full reference set and print
+#   -Probe    compile one small AddOn type against the full reference set and print
 #             "VL_ADDON_PROBE=ok" - used by /api/updates/readiness to prove the
 #             no-SDK path actually works on this box.
 #   -Custom   compile VLCustomBuilder.cs (the C# builder sitting next to this
@@ -233,6 +233,16 @@ if ($CustomDir) {
     Add-Ref (Join-Path $CustomDir 'NinjaTrader.Vendor.dll')
 }
 
+# 2b. NinjaTrader.Core / NinjaTrader.Gui from the INSTALLED NT8 itself. NT8 8.1.9.0
+#     ships a csproj with <ProjectReference> items and no HintPath for them. Add-Ref
+#     is first-wins, so a csproj that does name them (8.1.8.x) is used unchanged.
+foreach ($n in @('NinjaTrader.Core.dll','NinjaTrader.Gui.dll')) {
+    Add-Ref (Join-Path $NT8Bin $n)
+    if (-not $refPaths.ContainsKey($n.ToLowerInvariant())) {
+        Fail ($n + ' not found: not in NinjaTrader.Custom.csproj and not in ' + $NT8Bin + ' - is NinjaTrader 8 installed there?')
+    }
+}
+
 # 3. Newtonsoft.Json (the dotnet recipe references it; harmless if unused).
 Add-Ref (Join-Path $NT8Bin 'Newtonsoft.Json.dll')
 
@@ -256,7 +266,9 @@ foreach ($key in ($refPaths.Keys | Sort-Object)) {
 $trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.SyntaxTree]'
 
 if ($Probe) {
-    $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public static class __VlAddonProbe { }'))
+    # A type of NinjaTrader.Core, not an empty class: the probe must be red when the real
+    # build would be (it said ok for 10 days while every ps1 build failed).
+    $trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public class __VlAddonProbe : NinjaTrader.NinjaScript.AddOnBase { public NinjaTrader.Cbi.Account A; }'))
     $asmName = '__VlAddonProbe'
 } else {
     if (-not $Src) { Fail "-Src is required" }

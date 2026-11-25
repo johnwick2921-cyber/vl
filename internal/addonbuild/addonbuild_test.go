@@ -294,6 +294,10 @@ func TestBuildFallsBackToDotnet(t *testing.T) {
 	if res.DllPath != wantDll || res.BuiltBy != BuiltByDotnet {
 		t.Fatalf("res = %+v, want dll %q built_by %q", res, wantDll, BuiltByDotnet)
 	}
+	// why the primary builder failed must survive the fallback's success
+	if !strings.Contains(res.Ps1Error, "ps1 failed") {
+		t.Fatalf("Ps1Error = %q, want the ps1 builder's error", res.Ps1Error)
+	}
 
 	// Both builders were attempted, ps1 first then dotnet.
 	if len(calls) != 2 || !strings.Contains(calls[0], "powershell") || !strings.Contains(calls[1], "dotnet") {

@@ -119,3 +119,29 @@ func TestE2EAddonNT8ClosedCompletesDLLPlacedNoRestart(t *testing.T) {
 		t.Fatalf("NT8 restarted %d times with NT8 closed, want 0", *starts)
 	}
 }
+
+// The dotnet fallback built it: the addon_build receipt says why the ps1 builder failed
+// (since NT8 8.1.9.0 it failed on every box and no record said so).
+func TestE2EAddonBuildReceiptKeepsThePs1Error(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		if strings.Contains(name, "powershell") && winFlag(args, "-Out") != "" && !hasWinFlag(args, "-Custom") {
+			return []byte("ERROR CS0246: AddOnBase"), errors.New("ps1 build failed")
+		}
+		return r.box.fakeRunWin(ctx, name, args...)
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if j.State != updaterjob.StateComplete || j.Addon == nil || j.Addon.BuiltBy != addonbuild.BuiltByDotnet {
+		t.Fatalf("job %s addon=%+v, want complete by the dotnet fallback", j.State, j.Addon)
+	}
+	for _, rc := range j.Receipts {
+		if rc.Step == "addon_build" {
+			if !strings.Contains(rc.Evidence["ps1_error"], "CS0246") {
+				t.Fatalf("addon_build evidence = %v, want ps1_error with the compiler line", rc.Evidence)
+			}
+			return
+		}
+	}
+	t.Fatal("no addon_build receipt")
+}
