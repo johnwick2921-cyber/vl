@@ -411,7 +411,10 @@ static class Program
         seeds = new List<OrderSeed> { new OrderSeed { Ref = so, OrderId = "s", Buy = true, ExitSide = true, Kind = STOP, Phase = SettlePhase.Filled, Filled = 1 } };
         st.G.Upkeep(st.Key, st, true, true, -1, seeds, st.Now, out was); Ok("R2-1 its phase is taken over too (terminal)", st.G.LiveRefs(st.Key, st.Now + 5001).Count == 0);
         Ok("R2-1 the first look after it only starts the anchor", st.G.Upkeep(st.Key, st, true, true, -1, seeds, st.Now + 4999, out was) == UpkeepResult.None && !st.G.IsTrusted(st.Key));
-        foreach (var mid in new[] { SettlePhase.Changing, SettlePhase.CancelPending })
+        var mv = new K(); mv.Pos = 2; object mo = new object(); mv.Ord(mo, true, false, OTH, SettlePhase.PartFilled, 1); mv.G.Upkeep(mv.Key, mv, true, true, 2, null, mv.Now, out was); mv.Now += 5000;
+        seeds = new List<OrderSeed> { new OrderSeed { Ref = mo, OrderId = "m", Buy = true, Kind = OTH, Phase = SettlePhase.Filled, Filled = 2 } };
+        Ok("R2-1 seen on the second look, it starts the anchor again", mv.G.Upkeep(mv.Key, mv, true, true, 2, seeds, mv.Now, out was) == UpkeepResult.None && !mv.G.IsTrusted(mv.Key));
+        foreach (var mid in new[] { SettlePhase.Changing, SettlePhase.CancelPending, SettlePhase.Unknown })
         {
             var c = Short3(); object s = new object(); c.Ord(s, true, true, STOP, SettlePhase.Working, 0); c.Now += 50; c.Ord(s, true, true, STOP, mid, 0);
             Ok("R2-2 a triggered stop that is " + mid + " is still imminent", c.J().Why == UnsettledWhy.TriggeredStop, c.J().ToString());
@@ -435,6 +438,20 @@ static class Program
         big.G.Prune(big.Now); Ok("R2-4 and the cap holds again once it is", big.G.TrackedCount == 2000, big.G.TrackedCount.ToString());
         var slow = new K(); slow.Pos = 1; var few = many.GetRange(0, 3); slow.G.Upkeep(slow.Key, slow, true, true, 1, few, slow.Now, out was); slow.Now += 600001; slow.G.Prune(slow.Now);
         Ok("R2-4 an untrusted key's ended orders are not forgotten by age either", slow.G.TrackedCount == 3 && slow.G.Upkeep(slow.Key, slow, true, true, 1, few, slow.Now, out was) == UpkeepResult.Anchored, slow.G.TrackedCount.ToString());
+        // what the owner is told
+        long ms; string why; var w = new K(); Func<bool> due = () => w.G.UntrustedDue(w.Key, w.Now, out ms, out why);
+        w.G.Upkeep(w.Key, w, true, true, 0, null, w.Now, out was); w.Now += 50000; w.G.Upkeep(w.Key, w, true, true, 1, null, w.Now, out was);
+        w.G.Upkeep(w.Key, w, false, true, 1, null, w.Now, out was); w.Now += 10000; Ok("R2-5 untrusted time starts again after the account was not connected", !due());
+        w.G.Upkeep(w.Key, w, true, true, 2, null, w.Now, out was); w.Now += 59999; bool early = due(); w.Now += 1; bool at = due(), again = due(); w.Now += 599999; bool inside = due(); w.Now += 1; bool later = due();
+        Ok("R2-5 NOT ARMED at 60 s, once, and again 10 min later", !early && at && !again && !inside && later, early + " " + at + " " + again + " " + inside + " " + later);
+        w.G.Upkeep(w.Key, w, true, true, 3, null, w.Now, out was); w.Now += 600000; Ok("R2-5 with the reason", w.G.UntrustedDue(w.Key, w.Now, out ms, out why) && why == "the position changes between looks" && ms == 1260000, ms.ToString());
+        Ok("R2-5 an unknown key is not due", !w.G.UntrustedDue("nope", w.Now, out ms, out why));
+        var g = new VLSettleGate(); var t1 = new K(g, "SimA").Anchor(); var t2 = new K(g, "SimB"); g.NotePosition("SimB", t2.Key, 0, t2, t2, t2.Now);
+        Ok("R2-5 1 of 2 armed", g.ArmedText() == "1 of 2", g.ArmedText()); Ok("R2-5 a trusted key is never due", !g.UntrustedDue(t1.Key, t1.Now + 10000000, out ms, out why));
+        g.NoteConnection(t1, false, true, false, true); g.NoteConnection(t1, true, false, false, false); var dr = g.TakeDrops();
+        Ok("R2-5 the drop is told once, with why", dr.Count == 1 && dr[0].Key == t1.Key && dr[0].Value.Contains("disconnected") && g.TakeDrops().Count == 0 && g.ArmedText() == "0 of 2");
+        g.NoteConnection(t1, false, true, false, true); g.NoteConnection(t1, true, false, false, false); Ok("R2-5 an untrusted key has nothing to drop", g.TakeDrops().Count == 0);
+        t1.Now += 10000; t1.Anchor(); g.Upkeep(t1.Key, new object(), true, true, 0, null, t1.Now, out was); dr = g.TakeDrops(); Ok("R2-5 moved to another connection: told", dr.Count == 1 && dr[0].Value.Contains("another connection"));
     }
     static void Stale()
     {

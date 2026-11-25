@@ -389,7 +389,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             lock (gate)
             {
                 KeyState k;
-                if (!keys.TryGetValue(key, out k) || k.Trusted || k.UntrustedMs < 0) return false;
+                if (!keys.TryGetValue(key, out k) || k.UntrustedMs < 0) return false;
                 forMs = now - k.UntrustedMs;
                 if (forMs < UntrustedWarnMs || (k.WarnMs >= 0 && now - k.WarnMs < UntrustedRepeatMs)) return false;
                 k.WarnMs = now;
@@ -418,8 +418,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 byRef.Remove(old);
                 t.Ref = orderRef;
                 byRef[orderRef] = t;
+                // a sweep mark holds the same OwnExit objects, so it follows too
                 foreach (OwnExit o in ownExits) if (ReferenceEquals(o.Ref, old)) o.Ref = orderRef;
-                foreach (SweepMark m in marks) foreach (OwnExit o in m.Items) if (ReferenceEquals(o.Ref, old)) o.Ref = orderRef;
                 return t;
             }
             return null;

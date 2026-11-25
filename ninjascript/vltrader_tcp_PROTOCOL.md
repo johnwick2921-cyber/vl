@@ -151,7 +151,17 @@ contract (younger than `settle_ms`), and no Flatten of ours is still running (a
 Flatten builds its Close order 113-237 ms after the call; 300 ms at least). A
 held close is released on the second settled look at least 20 ms after the first.
 A state the AddOn cannot know (no anchor yet, position unreadable, flat with no
-position event seen this session) runs the close at once, as before.
+position event seen this session) runs the close at once, as before. A triggered stop
+counts as triggered until it ends or is back to Accepted: a change or cancel request on
+the way does not clear it (and does not start its `settle_ms` again).
+
+A contract is ARMED after the same position was read twice at least 5 s apart with no
+fill between, and only on an account whose order events are hooked. The NT8 Log says
+`settle gate ARMED for ...` (INFO), `settle gate DISARMED for ...` (INFO: its connection
+was disconnected and is back, or the account moved), `settle gate NOT ARMED for ...`
+(WARN after 60 s on a connected account, then every 10 min), each with "armed N of M";
+and every close logs either `close_position ran at once on ... - L= E= C= <verdict>` or
+`close_position was HELD <ms> ms ...`.
 
 - A second close for the same account and contract joins the held one: the first
   deadline stays, a market close replaces a limit one.
@@ -164,14 +174,19 @@ position event seen this session) runs the close at once, as before.
 - **Second limit exit:** while a live `-lx` of ours with the same order action
   already exits the whole held position, a second one is not placed. The answer is
   an `order_snapshot` with `reason` `lx_working`; Go's own timers send the market
-  close.
+  close. The PRICE is not compared (known limit): a marketable limit exit behind a
+  passive `-lx` waits for that market close, 10-15 s after the first one.
 - **Cancelled entry:** a `cancel_order` no longer drops the deferred bracket; it
   goes with the entry's own Cancelled (0 filled) or Rejected event.
 - **Flat sweep:** when a position goes flat the AddOn cancels its own leftover `-lx`
   and standalone `-sl` orders (the list is fixed at that Flat event, matched by
   object, never by name, never while a position is held again).
 - **Order of things inside the AddOn:** commands of one account run one at a time
-  (signal, close, place-stop, release, sweep).
+  (signal, close, place-stop, release, sweep). `move_stop`, `modify_bracket` and
+  `cancel_order` are not in that queue: they only Change or Cancel an existing order.
+- **Known limits, each can still open a reverse** (the bot raises its own-reverse P0):
+  a stop that fills in the 113-237 ms between Flatten and its Close order; an entry
+  frame while a close is held; NT8 settling later than `settle_ms`.
 
 Kill switches, no build and no NT8 restart: `Documents\NinjaTrader 8\VL\addon-switches.txt`,
 read at start and every 5 s when it changes; absent = defaults. `settle_ms=1000`

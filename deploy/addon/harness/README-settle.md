@@ -24,7 +24,10 @@ Compiles `ninjascript/VLTraderTCPClient.cs` against `NT8WireStubs.cs` (232 lines
 drives HandleFrame by reflection. It never activates the AddOn: port 36974 is the live bot.
 
     dotnet run -c Release                                   # GREEN
-    dotnet run -c Release -p:AddonSrc=<base ninjascript>    # RED on c6f9c0663: 28 of 61
+    dotnet run -c Release -p:AddonSrc=<base ninjascript>    # RED on c6f9c0663: 28 of 61 (before round 2)
     dotnet run -c Release -- seq                            # call + frame sequences, all switches off
 
 `seq` is byte-identical on the base source and on this one with every switch at 0 (W14).
+
+Round 2 (R1-R14 in settlewire, R2-1..R2-5 in settlegate): RED on 58f66b1c7: settlewire 8 of
+79, settlegate 14 of 172 (behaviour tests; the R2-5 log API did not exist). R14 and the price rule are a KNOWN LIMIT pin, not a fix.
