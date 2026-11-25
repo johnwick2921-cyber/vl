@@ -59,7 +59,7 @@ static class Program
     static int Main(string[] a)
     {
         if (a.Length > 1 && a[0] == "replay") return Replay.Run(a[1]);
-        foreach (Action t in new Action[] { U1, U2, U3, U4, U5, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U18, X6, X7, X8, X13, Stale, Prune, Conn })
+        foreach (Action t in new Action[] { U1, U2, U3, U4, U5, U5b, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U18, X6, X7, X8, X13, Stale, Prune, Conn })
         { try { t(); } catch (Exception ex) { Ok(t.Method.Name, false, "threw " + ex.Message); } }
         Console.WriteLine("settlegate: " + pass + " PASS, " + fail + " FAIL");
         return fail == 0 ? 0 : 1;
@@ -125,6 +125,13 @@ static class Program
         k.Now += 20; string e = k.G.CheckHeld(tok, k.J(), k.Now);
         Ok("U5 equality on one look (19 ms) is not a release; the burst starts the count again", a == null && b == null && c == null && d == null && e == "settled", a + b + c + d + e);
     }
+    static void U5b()
+    {
+        var k = Short3(); long tok = k.Hold(); k.G.CheckHeld(tok, k.J(), k.Now); k.Now += 10; object s = new object(); k.Ord(s, true, true, STOP, SettlePhase.Working, 0);
+        string a = k.G.CheckHeld(tok, k.J(), k.Now); k.Now += 5; k.Ord(s, true, true, STOP, SettlePhase.Accepted, 0); k.Now += 10;
+        string b = k.G.CheckHeld(tok, k.J(), k.Now); k.Now += 20; string c = k.G.CheckHeld(tok, k.J(), k.Now);
+        Ok("U5 unsettled in between with the same position: the 20 ms start again", a == null && b == null && c == "settled", a + b + c);
+    }
     static void U6()
     {
         var k = Short3(); k.Ord(new object(), true, true, OTH, SettlePhase.Filled, 2); k.Ev(-1); k.Now += 1;
@@ -135,6 +142,7 @@ static class Program
         var k = new K().Anchor(); object o = new object();
         k.Ord(o, true, false, MKT, SettlePhase.PartFilled, 1); k.Ord(o, true, false, MKT, SettlePhase.PartFilled, 2); k.Ord(o, true, false, MKT, SettlePhase.PartFilled, 2);
         k.Ord(o, true, false, MKT, SettlePhase.PartFilled, 1); k.Ord(o, true, false, MKT, SettlePhase.Filled, 3); k.Ord(o, true, false, MKT, SettlePhase.Filled, 3);
+        object sm = new object(); k.Ord(sm, true, false, MKT, SettlePhase.PartFilled, 2); k.Ord(sm, true, false, MKT, SettlePhase.PartFilled, 1); Ok("U7 a smaller value changes nothing", k.J().L == 5, k.J().ToString()); k.Ord(sm, true, false, MKT, SettlePhase.Cancelled, 2); k.G.NotePosition(k.Acct, k.Key, 0, k, k, k.Now); k.Ord(new object(), false, true, OTH, SettlePhase.Filled, 2);
         Ok("U7 repeats, growth and a smaller value count once", k.J().L == 3, k.J().ToString());
         k.Ord(new object(), true, false, MKT, SettlePhase.Filled, 3);
         Ok("U7 another Order object is another order", k.J().L == 6, k.J().ToString());
@@ -146,6 +154,8 @@ static class Program
         var k = Short3(); k.G.NoteFlatten(k.Key, true, k.Now); k.Now += 5;
         Ok("U8 5 ms after our own Flatten: held (no Close order exists yet)", k.J().Why == UnsettledWhy.OwnFlatten);
         k.Now += 125; object c = new object(); k.Ord(c, true, true, MKT, SettlePhase.Submitted, 0); k.Ord(c, true, true, MKT, SettlePhase.Filled, 3); k.Ev(0); k.Now += 10;
+        var lm = Short3(); lm.G.NoteFlatten(lm.Key, true, lm.Now); lm.Now += 130; lm.Ord(new object(), true, true, MKT, SettlePhase.Submitted, 0); lm.Ev(0); lm.Now += 300;
+        Ok("U8 past 300 ms and flat, but its market exit is still live: not over", (lm.J().Why & UnsettledWhy.OwnFlatten) != 0, lm.J().ToString());
         Ok("U8 the Flat event does not clear it before 300 ms", k.J().Why == UnsettledWhy.OwnFlatten, k.J().ToString());
         k.Now += 161; Ok("U8 301 ms after, flat: settled", k.J().Kind == VerdictKind.SettledFlat, k.J().ToString());
         var r = Short3(); r.G.NoteFlatten(r.Key, true, r.Now); r.Now += 100; object c2 = new object(); r.Ord(c2, true, true, MKT, SettlePhase.Submitted, 0); r.Ord(c2, true, true, MKT, SettlePhase.Rejected, 0);
@@ -179,6 +189,8 @@ static class Program
         Ok("U9 gate off: the held one and the new one run once (market wins)", t.G.OnCloseFrame(t.Key, true, "new", false, true, t.Now, out p2, out t2) == CloseRoute.RunNow && (string)p2 == "held" && t.G.PeekHeld(t.Key) == null);
         var u = Short3(); long ut = u.Hold(); Ok("U9 taken exactly once", u.G.Take(ut) != null && u.G.Take(ut) == null && u.G.PendingCount == 1);
         u.G.ReleaseDone(); Ok("U9 pending is 0 after the release", u.G.PendingCount == 0);
+        var ci = Short3(); bool c0 = ci.G.CloseInFlight(ci.Key, ci.Now); long ct = ci.Hold(); bool c1 = ci.G.CloseInFlight(ci.Key, ci.Now); ci.G.Take(ct); ci.G.ReleaseDone(); bool c2 = ci.G.CloseInFlight(ci.Key, ci.Now);
+        ci.G.NoteFlatten(ci.Key, true, ci.Now); bool c3 = ci.G.CloseInFlight(ci.Key, ci.Now + 299), c4 = ci.G.CloseInFlight(ci.Key, ci.Now + 300); Ok("U9 a close is in flight while held, and 300 ms after our Flatten", !c0 && c1 && !c2 && c3 && !c4);
         var w = Short3(); long wt = w.Hold(); w.G.Switches = new AddonSwitches(0, true, true, true, true); Ok("U9 settle_ms set to 0 releases a held close", w.G.CheckHeld(wt, w.J(), w.Now) == "gate switched off");
     }
     static void U10()
@@ -189,6 +201,8 @@ static class Program
         Ok("U10 two passes 5 s apart set it right", r1 == UpkeepResult.None && r2 == UpkeepResult.Resynced && was == -4 && k.J().Kind == VerdictKind.SettledHeld, r1 + " " + r2 + " " + was);
         var f = Short3(); f.Ord(new object(), true, true, STOP, SettlePhase.Filled, 1); f.Now += 500; f.G.Upkeep(f.Key, f, true, true, -3, null, f.Now, out was); Ok("U10 no resync while the last fill is fresh", f.J().L == -2);
         var e = Short3(); e.Ord(new object(), true, true, STOP, SettlePhase.Filled, 1); e.Now += 2000; e.G.Upkeep(e.Key, e, true, true, -2, null, e.Now, out was); e.Now += 5000; Ok("U10 no resync while the event disagrees (E=-3, C=-2, L=-2 is right anyway)", e.G.Upkeep(e.Key, e, true, true, -2, null, e.Now, out was) == UpkeepResult.None);
+        var q = Short3(); q.Ord(new object(), true, true, STOP, SettlePhase.Filled, 1); q.Now += 500; q.G.Upkeep(q.Key, q, true, true, -3, null, q.Now, out was); q.Now += 5000; Ok("U10 the pass inside the fresh time does not count as the first", q.G.Upkeep(q.Key, q, true, true, -3, null, q.Now, out was) == UpkeepResult.None);
+        var de = Short3(); de.Ord(new object(), true, true, STOP, SettlePhase.Filled, 2); de.Now += 2000; de.G.Upkeep(de.Key, de, true, true, -2, null, de.Now, out was); de.Now += 5000; Ok("U10 three different answers (L=-1 E=-3 C=-2): no resync", de.G.Upkeep(de.Key, de, true, true, -2, null, de.Now, out was) == UpkeepResult.None && de.J().L == -1);
         var m = Short3(); m.Ord(new object(), true, true, STOP, SettlePhase.Filled, 1); m.Now += 2000; m.G.Upkeep(m.Key, m, true, true, -3, null, m.Now, out was); m.Now += 2500; m.Ord(new object(), true, true, STOP, SettlePhase.Filled, 1); m.Now += 2500;
         Ok("U10 a fill between the two passes starts the count again", m.G.Upkeep(m.Key, m, true, true, -3, null, m.Now, out was) == UpkeepResult.None && m.J().L == -1);
     }
@@ -250,6 +264,10 @@ static class Program
         m = n.G.MarksSnapshot()[0]; Step(n, m, SettlePhase.Initialized, out c); n.Now += 25; var s1 = Step(n, m, SettlePhase.Initialized, out c); n.G.MarkOwnExitSubmitted(early); var s2 = Step(n, m, SettlePhase.Submitted, out c);
         Ok("X10 the list is fixed at the Flat event; an unsubmitted order waits for its Submit", s1 == SweepStep.Wait && s2 == SweepStep.Cancel && c.Count == 1 && ReferenceEquals(c[0], early), s1 + " " + s2);
         n.Ord(new object(), false, false, MKT, SettlePhase.Filled, 1); n.Now += 10; var s3 = Step(n, m, SettlePhase.Submitted, out c); Ok("X10 unsettled again in the middle: no cancel", s3 == SweepStep.Wait && c.Count == 0, s3.ToString());
+        n.Ord(new object(), true, false, MKT, SettlePhase.Filled, 1); n.Now += 10; var s4 = Step(n, m, SettlePhase.Submitted, out c); n.Now += 20; var s5 = Step(n, m, SettlePhase.Submitted, out c);
+        Ok("X10 settled again: two fresh checks before the next cancel", s4 == SweepStep.Wait && s5 == SweepStep.Cancel, s4 + " " + s5);
+        var two = new VLSettleGate(); K ka = new K(two, "SimA"), kb = new K(two, "SimB"); object oa = new object(), ob = new object(); two.RegisterOwnExit(ka.Key, oa, true, true, 1); two.RegisterOwnExit(kb.Key, ob, true, true, 1); ka.Ev(0);
+        Ok("U13 only the flat key's orders are listed", two.MarksSnapshot().Count == 1 && two.MarksSnapshot()[0].Items.Count == 1 && ReferenceEquals(two.MarksSnapshot()[0].Items[0].Ref, oa));
         K t = Short3(); object tt = new object(); t.G.RegisterOwnExit(t.Key, tt, true, true, t.Now); t.Ord(tt, true, true, OTH, SettlePhase.Filled, 3); t.Ev(0); Ok("U13 a filled -lx leaves the list, no mark", t.G.MarksSnapshot().Count == 0 && t.G.PendingCount == 0);
         K f = Short3(); object fo = new object(); f.G.RegisterOwnExit(f.Key, fo, true, true, f.Now); f.G.DropOwnExit(fo); f.Ev(0); Ok("U13 Submit threw: dropped", f.G.MarksSnapshot().Count == 0);
         K x = Short3(); x.G.Switches = new AddonSwitches(1000, true, true, false, true); x.G.RegisterOwnExit(x.Key, new object(), true, true, x.Now); x.Ev(0); Ok("U13 own_exit_sweep=0: no mark", x.G.MarksSnapshot().Count == 0);

@@ -590,6 +590,29 @@ static class P
                 Ok(n, r.A.Count("Flatten pos=1") == 2 && r.A.Pos == 0, r.Seq(r.A));
             }
         });
+        T("W20 a Flatten that throws is refused loudly, and the next close runs at once", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "long", 1); Thread.Sleep(20);
+                r.A.ThrowOnFlatten = true; r.Close(r.A, "c1", "long"); bool rej = Until(() => r.FramesWith("position_close_rejected") == 1, 500);
+                r.A.ThrowOnFlatten = false; r.Close(r.A, "c2", "long"); int now = r.A.Count("Flatten pos=1");
+                Until(() => r.A.Pos == 0, 1500);
+                Ok(n, rej && now == 2 && r.A.Pos == 0, r.Seq(r.A));
+            }
+        });
+        T("W21 an account that appears later: the ledger is still hooked first", n =>
+        {
+            using (var r = new Rig())
+            {
+                if (Rig.GateT != null) { Rig.GateT.GetField("UpkeepMs", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(r.Gate, 60000L); Thread.Sleep(60); }
+                var late = new Account { Name = "SimLate", Connection = r.A.Connection }; lock (Account.All) Account.All.Add(late);
+                r.Run("SubscribeOrderUpdate", late);
+                var ev = (Delegate)typeof(Account).GetField("OrderUpdate", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(late);
+                var names = ev.GetInvocationList().Select(d => d.Method.Name).ToList();
+                Ok(n, names.Count == 2 && names[0] == "OnLedgerOrderUpdate", string.Join(",", names));
+            }
+        });
         T("X17 two entry frames: our own running Flatten is not repeated by an entry", n =>
         {
             using (var r = new Rig())
