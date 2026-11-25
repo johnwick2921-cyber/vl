@@ -421,7 +421,7 @@ static class P
                 {
                     if (m.Contains("close_position MNQ") && Interlocked.Exchange(ref sent, 1) == 0)
                     {
-                        second = new Thread(() => r.Close(r.A, "c2", "long")) { IsBackground = true }; second.Start();
+                        var t = new Thread(() => r.Close(r.A, "c2", "long")) { IsBackground = true }; t.Start(); second = t;
                         Thread.Sleep(80); // the window the settle thread stands in
                     }
                 };

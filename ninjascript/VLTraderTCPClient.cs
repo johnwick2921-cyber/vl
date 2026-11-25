@@ -81,7 +81,11 @@ namespace NinjaTrader.NinjaScript.AddOns
         //   const — a const anchor sat in the #Blob heap IMMEDIATELY after the id
         //   blob (no terminal byte), so the INSTALLED #46.1 reader read the next
         //   blob's 0x30 size byte as a trailing '0' ("2026-10-22-c0") and refused.
-        private const string  VL_BUILD_ID             = "2026-10-22-d";
+        // 2026-11-24-a (Release 2): the settle gate (VLSettleGate.cs): a close waits at
+        //   most settle_ms for NT8 to agree with its own fills; the bracket note lives
+        //   until the entry is really cancelled; no needless stop, no second -lx, our
+        //   own exits swept on flat; bracket cancels outside signalMapLock.
+        private const string  VL_BUILD_ID             = "2026-11-24-a";
         // m400 anchor: the id also travels as a folded user string "VL_BUILD_ID=<id>"
         // (referenced in the CONNECTED log) so internal/addonbuild.BuildIDFromDLL can
         // anchor to the constant instead of any id-shaped value in a comment or
@@ -119,6 +123,20 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly string          activationNonce  = Guid.NewGuid().ToString("N");
         private string                   sourceHashCache;   // computed once per activation
         private readonly object          writeLock = new object();
+
+        // === Release 2 (2026-11-24) — the settle gate (VLSettleGate.cs, pure logic) ===
+        // See the "Settle gate" section below. null = not started: every gate call then
+        // falls through to the behaviour of the previous build.
+        private VLSettleGate             settleGate;
+        private Thread                   settleThread;
+        private volatile bool            settleAlive   = false;
+        private volatile bool            settleStop    = false;
+        private string                   settleSwitchPath = null; // null = Documents\NinjaTrader 8\VL\addon-switches.txt
+        private readonly AutoResetEvent  settleWake    = new AutoResetEvent(false);
+        private readonly HashSet<Account> ledgerSubscribed = new HashSet<Account>();
+        private readonly object          ledgerSubLock = new object();
+        private readonly Dictionary<string, object> cmdLocks = new Dictionary<string, object>(StringComparer.Ordinal);
+        private int                      ledgerFaults  = 0;  // counted on NT8's thread, logged by the settle thread
 
         // Track signal_id → original entry price for slippage calculation.
         private readonly Dictionary<string, double> signalEntryByOco = new Dictionary<string, double>();
@@ -170,6 +188,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             public double      Sl;
             public double      Tp;
             public Account     Account;   // PHASE 3: the routed submit account (SL/TP follow the entry)
+            public Order       EntryOrder; // Release 2: the entry this note was written for (a signal id can be used again)
             // REVIEW-353: the split AT ENTRY — leg 1 = ceil(n/2) with its OWN TP;
             // leg 2 = the runner with TP = Tp. 0 = the single-bracket legacy path.
             public int         Leg1Qty;
@@ -350,6 +369,9 @@ namespace NinjaTrader.NinjaScript.AddOns
                 LoadConnectConfig(); // W-FRIEND-HOSTED: read connect.json BEFORE the reader thread dials
                 cts = new CancellationTokenSource();
                 ResolveAccount();
+                // Release 2 — the settle gate: its ledger handler is hooked on every SIM
+                // account BEFORE OnOrderUpdate, so a fill is counted before any frame work.
+                StartSettleGate();
                 if (account != null)
                 {
                     SubscribeOrderUpdate(account);   // PHASE 3: dedup'd OrderUpdate subscription
@@ -415,6 +437,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             else if (State == State.Terminated)
             {
                 try { cts?.Cancel(); } catch { }
+                StopSettleGate(); // Release 2: a held close is released, never dropped
                 // PHASE 3: unsubscribe OrderUpdate from EVERY account we hooked (active + routed)
                 lock (orderSubLock)
                 {
@@ -451,6 +474,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             // Multi-threading: NT8 staff guidance — copy the args, they may race
             // ahead of us while we process.
             ConnectionStatusEventArgs eCopy = e;
+            NoteSettleConnection(eCopy);
             try
             {
                 string priceStatus = eCopy.PriceStatus.ToString();
@@ -616,6 +640,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void SubscribeOrderUpdate(Account a)
         {
             if (a == null) return;
+            HookLedger(a); // Release 2: the fill ledger is always the first delegate
             bool added = false;
             lock (orderSubLock)
             {
@@ -909,11 +934,16 @@ namespace NinjaTrader.NinjaScript.AddOns
                 }
                 if (type == "signal")
                 {
-                    HandleSignal(payload);
+                    lock (CmdLockFor(payload)) { HandleSignal(payload); }
                 }
                 else if (type == "close_position")
                 {
-                    HandleClosePosition(payload);
+                    // Release 2 — the settle gate decides WHEN, never whether.
+                    lock (CmdLockFor(payload))
+                    {
+                        Dictionary<string, object> closeNow;
+                        if (!TryHoldClose(payload, out closeNow)) HandleClosePosition(closeNow);
+                    }
                 }
                 else if (type == "move_stop")
                 {
@@ -929,7 +959,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                 {
                     // D5 (2026-09-07) — restore a stop for a position the broker
                     // is holding UNPROTECTED. Standalone: no bracket, no OCO group.
-                    HandlePlaceProtectiveStop(payload);
+                    lock (CmdLockFor(payload))
+                    {
+                        Dictionary<string, object> stopNow;
+                        if (!RefuseNeedlessStop(payload, out stopNow)) HandlePlaceProtectiveStop(stopNow);
+                    }
                 }
                 else if (type == "modify_bracket")
                 {
@@ -1372,6 +1406,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 double limitArg = isLimit ? limitPx
                     : (isStopEntry && stopLimitWanted ? stopPx : 0);
                 double stopArg  = isStopEntry ? stopPx : 0;
+                // Release 2 — every refusal is behind us: wire order stays close-then-entry.
+                ReleaseHeldBeforeEntry(submitAccount, instrument, signalId);
                 var entryOrder = submitAccount.CreateOrder(
                     instrument, entryAction, orderT, OrderEntry.Manual,
                     TimeInForce.Day, qty, limitArg, stopArg, string.Empty, signalId,
@@ -1387,6 +1423,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                         Sl         = sl,
                         Tp         = tp,
                         Account    = submitAccount,   // PHASE 3: the bracket follows the entry's account
+                        EntryOrder = entryOrder,      // Release 2: which entry this note belongs to
                         Leg1Qty    = leg1Qty,         // REVIEW-353 split
                         Leg1Tp     = leg1Tp,
                         Leg2Qty    = leg2Qty,         // release #31: runner first partial
@@ -1738,6 +1775,15 @@ namespace NinjaTrader.NinjaScript.AddOns
                     }
                     else
                     {
+                        // Release 2 (e) — a live -lx of ours already exits all of it: a second one
+                        // could fill too and open a reverse. Go's own timers send the market close.
+                        if (OwnLxCovers(closeTarget, instrument, !wantLong, heldQty))
+                        {
+                            LogWarn("VLTraderTCPClient: limit exit NOT placed on account=" + closeTarget.Name + " " + root
+                                    + " — a working -lx already exits all " + heldQty + " (one exit, never two)");
+                            SendOrderSnapshot(closeTarget, "lx_working");
+                            return;
+                        }
                         try
                         {
                             int closeQty = heldQty;
@@ -1749,7 +1795,10 @@ namespace NinjaTrader.NinjaScript.AddOns
                                 instrument, exitAction, OrderType.Limit, OrderEntry.Manual,
                                 TimeInForce.Day, closeQty, limitPrice, 0, string.Empty, closeSignalId + "-lx",
                                 Core.Globals.MaxDate, null);
-                            closeTarget.Submit(new[] { limitOrder });
+                            NoteOwnExit(closeTarget, instrument, limitOrder, true);
+                            try { closeTarget.Submit(new[] { limitOrder }); }
+                            catch { DropOwnExit(limitOrder); throw; }
+                            MarkOwnExitSubmitted(limitOrder);
                             LogInfo("VLTraderTCPClient: limit exit submitted " + root + " " + sideStr
                                     + " qty=" + closeQty + " @ " + limitPrice + " on account=" + closeTarget.Name
                                     + " — Go schedules the market fallback (not yet closed)");
@@ -1767,7 +1816,12 @@ namespace NinjaTrader.NinjaScript.AddOns
                 // the account (bracket legs and resting entries). KNOWN LIMIT: `quantity`
                 // is not honoured here — no Go path sends a smaller market close while
                 // expecting the rest to stay open (see vltrader_tcp_PROTOCOL.md §1b).
-                closeTarget.Flatten(new[] { instrument });
+                // Release 2 — stamped immediately before the call, on every path: NT8 builds the
+                // Close order 113-237 ms after it, and a second Flatten in that time would size
+                // itself from the same position.
+                NoteOwnFlatten(closeTarget, instrument, !heldKnown || (heldMp != MarketPosition.Flat && heldQty != 0));
+                try { closeTarget.Flatten(new[] { instrument }); }
+                catch { NoteOwnFlattenFailed(closeTarget, instrument); throw; }
                 // Flatten is async fire-and-forget: the actual fill (or a REJECT, e.g. "no
                 // market data" with the feed down) arrives later in OnOrderUpdate. This log
                 // means SUBMITTED, not closed — the close is confirmed only by the
@@ -1860,6 +1914,652 @@ namespace NinjaTrader.NinjaScript.AddOns
             }
         }
 
+        // === Settle gate (Release 2, 2026-11-24) — thin adapters over VLSettleGate.cs ===
+        //
+        // THREADS. The reader runs TryHoldClose / RefuseNeedlessStop / ReleaseHeldBeforeEntry
+        // and never sleeps. NT8's threads run OnLedgerOrderUpdate / StampSettlePosition: a
+        // dictionary update and an event Set, no NT8 call, no log, no frame, no wait.
+        // VLTrader-Settle runs releases, sweeps, anchoring and the switch file. Each held
+        // close has its own deadline timer, so one stuck release cannot hold another account.
+        //
+        // LOCKS. cmdLock is one per account, around every signal / close / place-stop handler
+        // and every release / sweep; never taken in an On*Update handler. The gate's own lock
+        // is never held across an NT8 call, a log or a frame.
+
+        private static long SettleNowMs()
+        {
+            return (long)(System.Diagnostics.Stopwatch.GetTimestamp() * 1000.0 / System.Diagnostics.Stopwatch.Frequency);
+        }
+
+        private object CmdLockFor(string acctName)
+        {
+            lock (cmdLocks)
+            {
+                object l;
+                string k = acctName ?? "";
+                if (!cmdLocks.TryGetValue(k, out l)) { l = new object(); cmdLocks[k] = l; }
+                return l;
+            }
+        }
+
+        // A frame that names no account acts on the active one.
+        private object CmdLockFor(Dictionary<string, object> p)
+        {
+            string n = GetString(p, "account");
+            if (string.IsNullOrEmpty(n)) { Account a = account; n = a != null ? a.Name : ""; }
+            return CmdLockFor(n);
+        }
+
+        private static SettlePhase SettlePhaseOf(OrderState st)
+        {
+            switch (st)
+            {
+                case OrderState.Initialized:     return SettlePhase.Initialized;
+                case OrderState.Submitted:       return SettlePhase.Submitted;
+                case OrderState.Accepted:        return SettlePhase.Accepted;
+                case OrderState.TriggerPending:  return SettlePhase.TriggerPending;
+                case OrderState.ChangePending:
+                case OrderState.ChangeSubmitted: return SettlePhase.Changing;
+                case OrderState.Working:         return SettlePhase.Working;
+                case OrderState.PartFilled:      return SettlePhase.PartFilled;
+                case OrderState.CancelPending:
+                case OrderState.CancelSubmitted: return SettlePhase.CancelPending;
+                case OrderState.Filled:          return SettlePhase.Filled;
+                case OrderState.Cancelled:       return SettlePhase.Cancelled;
+                case OrderState.Rejected:        return SettlePhase.Rejected;
+                default:                         return SettlePhase.Unknown;
+            }
+        }
+
+        private static SettleOrderKind SettleKindOf(OrderType t)
+        {
+            if (t == OrderType.StopMarket || t == OrderType.StopLimit) return SettleOrderKind.Stop;
+            return t == OrderType.Market ? SettleOrderKind.Market : SettleOrderKind.Other;
+        }
+
+        private void StartSettleGate()
+        {
+            try
+            {
+                if (settleGate == null) settleGate = new VLSettleGate();
+                LoadSettleSwitches(true);
+                List<Account> accts = CopyAccounts();
+                foreach (Account a in accts) HookLedger(a);
+                settleStop = false;
+                settleGate.Tick(SettleNowMs());
+                settleThread = new Thread(RunSettleLoop) { IsBackground = true, Name = "VLTrader-Settle" };
+                settleAlive = true;
+                settleThread.Start();
+            }
+            catch (Exception ex)
+            {
+                settleAlive = false;
+                LogWarn("VLTraderTCPClient: settle gate did not start (" + ex.Message + ") — closes run at once, as before");
+            }
+        }
+
+        // Terminated: no Join and no lock wait. A held close whose account lock is busy means
+        // that account's command is already running.
+        private void StopSettleGate()
+        {
+            VLSettleGate g = settleGate;
+            settleStop = true;
+            settleAlive = false;
+            try { settleWake.Set(); } catch { }
+            if (g != null)
+                foreach (HeldClose h in g.HeldSnapshot())
+                    ReleaseHeldClose(h.Token, h.Account, "AddOn terminated", false);
+            lock (ledgerSubLock)
+            {
+                foreach (var a in ledgerSubscribed) { try { a.OrderUpdate -= OnLedgerOrderUpdate; } catch { } }
+                ledgerSubscribed.Clear();
+            }
+        }
+
+        private static List<Account> CopyAccounts()
+        {
+            var res = new List<Account>();
+            lock (Account.All) { foreach (Account a in Account.All) if (a != null) res.Add(a); }
+            return res;
+        }
+
+        // SIM accounts only: no other account is ever gated.
+        private void HookLedger(Account a)
+        {
+            if (a == null || settleGate == null || settleStop || !IsSimAccount(a)) return;
+            lock (ledgerSubLock)
+            {
+                if (ledgerSubscribed.Add(a)) a.OrderUpdate += OnLedgerOrderUpdate;
+            }
+        }
+
+        // NT8's thread. Counts the fill and the state; nothing else.
+        private void OnLedgerOrderUpdate(object sender, OrderEventArgs e)
+        {
+            try
+            {
+                VLSettleGate g = settleGate;
+                if (g == null || e == null || e.Order == null) return;
+                Order o = e.Order;
+                Account a = o.Account ?? (sender as Account);
+                if (a == null || o.Instrument == null) return;
+                OrderAction act = o.OrderAction;
+                bool busy = g.NoteOrder(VLSettleGate.Key(a.Name, o.Instrument.FullName), o, o.OrderId,
+                    act == OrderAction.Buy || act == OrderAction.BuyToCover,
+                    act == OrderAction.Sell || act == OrderAction.BuyToCover,
+                    SettleKindOf(o.OrderType), SettlePhaseOf(e.OrderState), e.Filled, SettleNowMs());
+                if (busy) settleWake.Set();
+            }
+            catch { Interlocked.Increment(ref ledgerFaults); }
+        }
+
+        // NT8's thread, the first line of OnPositionUpdate.
+        private void StampSettlePosition(object sender, PositionEventArgs e)
+        {
+            try
+            {
+                VLSettleGate g = settleGate;
+                Account a = sender as Account;
+                if (g == null || a == null || e == null || e.Position == null || e.Position.Instrument == null) return;
+                Instrument i = e.Position.Instrument;
+                int signed = e.MarketPosition == MarketPosition.Long ? e.Quantity
+                    : (e.MarketPosition == MarketPosition.Short ? -e.Quantity : 0);
+                if (g.NotePosition(a.Name, VLSettleGate.Key(a.Name, i.FullName), signed, a, i, SettleNowMs()))
+                    settleWake.Set();
+            }
+            catch { Interlocked.Increment(ref ledgerFaults); }
+        }
+
+        // NT8's thread. No account is read here: the settle thread anchors again later.
+        private void NoteSettleConnection(ConnectionStatusEventArgs e)
+        {
+            try
+            {
+                VLSettleGate g = settleGate;
+                if (g == null || e == null || e.Connection == null) return;
+                g.NoteConnection(e.Connection, e.Status == ConnectionStatus.Connected, e.Status == ConnectionStatus.Disconnected,
+                    e.Status == ConnectionStatus.ConnectionLost, e.PreviousStatus == ConnectionStatus.Connected);
+            }
+            catch { Interlocked.Increment(ref ledgerFaults); }
+        }
+
+        // The live state of some orders, read outside every lock.
+        private static List<LiveOrder> ReadLive(List<object> refs)
+        {
+            var res = new List<LiveOrder>();
+            foreach (object r in refs)
+            {
+                Order o = r as Order;
+                if (o != null) res.Add(new LiveOrder { Ref = o, Filled = o.Filled, Phase = SettlePhaseOf(o.OrderState) });
+            }
+            return res;
+        }
+
+        private SettleVerdict JudgeSettle(VLSettleGate g, Account acct, Instrument instrument, string key)
+        {
+            List<LiveOrder> live = ReadLive(g.LiveRefs(key, SettleNowMs()));
+            MarketPosition mp;
+            int qty;
+            bool known = TryAccountPosition(acct, instrument, out mp, out qty);
+            int c = mp == MarketPosition.Long ? qty : (mp == MarketPosition.Short ? -qty : 0);
+            return g.Judge(key, known, c, live, SettleNowMs());
+        }
+
+        // true = the close is held (or joined one that is): it WILL run, at the latest
+        // settle_ms after it arrived. false = run `run` now. Any fault here means: run now.
+        private bool TryHoldClose(Dictionary<string, object> p, out Dictionary<string, object> run)
+        {
+            run = p;
+            VLSettleGate g = settleGate;
+            long token = 0;
+            IDisposable timer = null;
+            try
+            {
+                if (g == null || p == null) return false;
+                string acctName = GetString(p, "account");
+                if (string.IsNullOrEmpty(acctName)) return false;
+                Account acct = FindAccountByName(acctName);
+                if (acct == null || !IsSimAccount(acct)) return false;
+                string how;
+                Instrument instrument = VLInstrumentLookup.Resolve(GetString(p, "symbol"), LogWarn, out how);
+                if (instrument == null) return false;
+                string key = VLSettleGate.Key(acct.Name, instrument.FullName);
+                bool isLimit = GetDouble(p, "limit_price") > 0;
+
+                object payload;
+                IDisposable absorbed;
+                CloseRoute route = g.OnCloseFrame(key, isLimit, p, stream != null, settleAlive, SettleNowMs(), out payload, out absorbed);
+                if (route == CloseRoute.RunNow)
+                {
+                    run = (payload as Dictionary<string, object>) ?? p;
+                    DisposeQuietly(absorbed);
+                    return false;
+                }
+                if (route == CloseRoute.Joined) return true;
+
+                SettleVerdict v = JudgeSettle(g, acct, instrument, key);
+                if (v.Kind != VerdictKind.Unsettled) return false;
+
+                int settleMs = g.Switches.SettleMs;
+                long now = SettleNowMs();
+                token = g.NewToken();
+                long tok = token;
+                timer = new Timer(_ => ReleaseHeldClose(tok, acctName, "deadline timer", true), null, settleMs, Timeout.Infinite);
+                var h = new HeldClose
+                {
+                    Token = token, Account = acctName, Key = key, IsLimit = isLimit, Payload = p,
+                    ArrivedMs = now, DeadlineMs = now + settleMs, AtHold = v,
+                    AccountRef = acct, InstrumentRef = instrument, Timer = timer
+                };
+                g.Hold(h, now); // last: from here the close belongs to the list
+            }
+            catch (Exception ex)
+            {
+                if (g != null && token != 0 && g.Take(token) != null) g.ReleaseDone(); // never in two places
+                DisposeQuietly(timer);
+                LogWarn("VLTraderTCPClient: settle gate fault (" + ex.Message + ") — the close runs now");
+                return false;
+            }
+            settleWake.Set();
+            return true;
+        }
+
+        private static void DisposeQuietly(IDisposable d)
+        {
+            if (d == null) return;
+            try { d.Dispose(); } catch { }
+        }
+
+        // Runs a held close exactly once, under its account's command lock. wait=false: only
+        // if that lock is free (the settle thread comes back, the deadline timer waits).
+        private void ReleaseHeldClose(long token, string acctName, string why, bool wait)
+        {
+            VLSettleGate g = settleGate;
+            if (g == null) return;
+            object lk = CmdLockFor(acctName);
+            bool got = false;
+            try
+            {
+                if (wait) Monitor.Enter(lk, ref got); else Monitor.TryEnter(lk, 0, ref got);
+                if (!got) return;
+                HeldClose h = g.Take(token);
+                if (h == null) return;
+                try { HandleClosePosition(h.Payload as Dictionary<string, object>); }
+                finally
+                {
+                    g.ReleaseDone();
+                    DisposeQuietly(h.Timer);
+                }
+                LogWarn("VLTraderTCPClient: close_position was HELD " + (SettleNowMs() - h.ArrivedMs) + " ms on account="
+                        + h.Account + " — " + why + "; at arrival " + h.AtHold);
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: held close release failed: " + ex.Message);
+            }
+            finally
+            {
+                if (got) Monitor.Exit(lk);
+            }
+        }
+
+        // A new entry is about to be submitted on (account, instrument): a close held for the
+        // same key runs first. When the only thing it waited for is our own running Flatten it
+        // is a duplicate of that Flatten and is dropped (a failed Flatten comes back to Go as
+        // position_close_rejected and is sent again).
+        private void ReleaseHeldBeforeEntry(Account acct, Instrument instrument, string signalId)
+        {
+            VLSettleGate g = settleGate;
+            if (g == null) return;
+            try
+            {
+                string key = VLSettleGate.Key(acct.Name, instrument.FullName);
+                HeldClose h = g.PeekHeld(key);
+                if (h == null) return;
+                bool duplicate = false;
+                try { duplicate = VLSettleGate.OnlyOwnFlatten(JudgeSettle(g, acct, instrument, key)); } catch { }
+                if (duplicate)
+                {
+                    if (g.Take(h.Token) != null)
+                    {
+                        g.ReleaseDone();
+                        DisposeQuietly(h.Timer);
+                        LogWarn("VLTraderTCPClient: held close on account=" + acct.Name + " dropped before entry " + signalId
+                                + " — our own Flatten of that position is still running");
+                    }
+                    return;
+                }
+                ReleaseHeldClose(h.Token, h.Account, "entry " + signalId + " arrived", true);
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: release before entry failed: " + ex.Message);
+            }
+        }
+
+        // (c) true = the stop is not needed and nothing was placed (warned and acked). Never
+        // waits. Refused only when ledger, event and a fresh read all say the same.
+        private bool RefuseNeedlessStop(Dictionary<string, object> p, out Dictionary<string, object> run)
+        {
+            run = p;
+            try
+            {
+                VLSettleGate g = settleGate;
+                if (g == null || p == null || !g.Switches.StopCheck) return false;
+                string side = (GetString(p, "position_side") ?? "").ToUpperInvariant();
+                string acctName = GetString(p, "account");
+                int qty = GetInt(p, "quantity");
+                if ((side != "LONG" && side != "SHORT") || string.IsNullOrEmpty(acctName) || qty <= 0
+                    || GetDouble(p, "stop_price") <= 0 || string.IsNullOrEmpty(GetString(p, "signal_id"))) return false;
+                Account acct = FindAccountByName(acctName);
+                if (acct == null || !IsSimAccount(acct) || !IsSessionAccount(acct.Name)
+                    || acct.Connection == null || acct.Connection.Status != ConnectionStatus.Connected) return false;
+                string how;
+                Instrument instrument = VLInstrumentLookup.Resolve(GetString(p, "symbol"), LogWarn, out how);
+                if (instrument == null) return false;
+                string key = VLSettleGate.Key(acct.Name, instrument.FullName);
+                SettleVerdict v = JudgeSettle(g, acct, instrument, key);
+                int place;
+                StopAction what = StopDecision.Decide(side == "LONG", qty, v, g.CloseInFlight(key, SettleNowMs()), out place);
+                if (what == StopAction.Place)
+                {
+                    if (place != qty)
+                    {
+                        run = new Dictionary<string, object>(p);
+                        run["quantity"] = (long)place;
+                        LogInfo("VLTraderTCPClient: place_protective_stop quantity " + qty + " capped at the " + place + " held");
+                    }
+                    return false;
+                }
+                bool flat = what == StopAction.RefuseFlat;
+                LogWarn("VLTraderTCPClient: place_protective_stop NOT placed for " + GetString(p, "signal_id") + " " + side
+                        + " on account=" + acct.Name + " — the account is " + (flat ? "flat" : "held on the other side") + " (" + v + ")");
+                SendAck(flat ? "place_protective_stop_flat" : "place_protective_stop_opposite");
+                return true;
+            }
+            catch (Exception ex)
+            {
+                run = p;
+                LogWarn("VLTraderTCPClient: stop check fault (" + ex.Message + ") — the stop is placed as asked");
+                return false;
+            }
+        }
+
+        // (a)
+        private bool KeepBracketNote()
+        {
+            VLSettleGate g = settleGate;
+            return g != null && g.Switches.KeepNote;
+        }
+
+        private void SettleCancelledEntryNote(OrderEventArgs e)
+        {
+            try
+            {
+                VLSettleGate g = settleGate;
+                if (g == null || e.Order == null || !g.Switches.KeepNote) return;
+                Order o = e.Order;
+                if (o.OrderAction != OrderAction.Buy && o.OrderAction != OrderAction.SellShort) return;
+                string id = string.IsNullOrEmpty(o.Name) ? (o.Oco ?? "") : o.Name;
+                bool eSeen = false;
+                int ev = 0;
+                if (o.Account != null && o.Instrument != null)
+                    g.ReadEvent(VLSettleGate.Key(o.Account.Name, o.Instrument.FullName), out eSeen, out ev);
+                NoteAction what;
+                lock (signalMapLock)
+                {
+                    PendingBracket note;
+                    bool present = pendingBrackets.TryGetValue(id, out note) && note != null;
+                    what = NoteDecision.OnCancelled(present, present && ReferenceEquals(note.EntryOrder, o),
+                                                    e.Filled, eSeen, ev, o.OrderAction == OrderAction.Buy);
+                    if (what == NoteAction.Remove) pendingBrackets.Remove(id);
+                }
+                if (what == NoteAction.PlaceBracket)
+                {
+                    LogWarn("VLTraderTCPClient: entry " + id + " Cancelled with " + e.Filled + " filled and no bracket placed — placing it");
+                    SubmitBracketOnEntryFill(id, e.Filled, e.AverageFillPrice);
+                }
+                else if (what == NoteAction.KeepAndWarn)
+                    LogWarn("VLTraderTCPClient: entry " + id + " Cancelled with " + e.Filled
+                            + " filled, no bracket placed and no position event on its side — note kept");
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: cancelled-entry note failed: " + ex.Message);
+            }
+        }
+
+        // (d)/(e) bookkeeping of our own exit orders; a fault never stops the order itself.
+        private void NoteOwnExit(Account acct, Instrument instrument, Order o, bool isLx)
+        {
+            try
+            {
+                if (settleGate != null)
+                    settleGate.RegisterOwnExit(VLSettleGate.Key(acct.Name, instrument.FullName), o, isLx,
+                                               o.OrderAction == OrderAction.BuyToCover, SettleNowMs());
+            }
+            catch (Exception ex) { LogWarn("VLTraderTCPClient: own-exit note failed: " + ex.Message); }
+        }
+
+        private void MarkOwnExitSubmitted(Order o) { if (settleGate != null && o != null) settleGate.MarkOwnExitSubmitted(o); }
+
+        private void DropOwnExit(Order o) { if (settleGate != null && o != null) settleGate.DropOwnExit(o); }
+
+        private bool OwnLxCovers(Account acct, Instrument instrument, bool needBuy, int heldQty)
+        {
+            try
+            {
+                VLSettleGate g = settleGate;
+                if (g == null || !g.Switches.OneLx) return false;
+                long now = SettleNowMs();
+                foreach (OwnExit x in g.OwnLx(VLSettleGate.Key(acct.Name, instrument.FullName)))
+                {
+                    Order o = x.Ref as Order;
+                    if (o != null && LxDecision.Covers(x.Buy, SettlePhaseOf(o.OrderState), o.Quantity - o.Filled, now - x.RegisteredMs, needBuy, heldQty))
+                        return true;
+                }
+            }
+            catch (Exception ex) { LogWarn("VLTraderTCPClient: -lx check fault (" + ex.Message + ") — placed as before"); }
+            return false;
+        }
+
+        private void NoteOwnFlatten(Account acct, Instrument instrument, bool held)
+        {
+            try { if (settleGate != null) settleGate.NoteFlatten(VLSettleGate.Key(acct.Name, instrument.FullName), held, SettleNowMs()); }
+            catch (Exception ex) { LogWarn("VLTraderTCPClient: flatten note failed: " + ex.Message); }
+        }
+
+        private void NoteOwnFlattenFailed(Account acct, Instrument instrument)
+        {
+            try { if (settleGate != null) settleGate.NoteFlattenFailed(VLSettleGate.Key(acct.Name, instrument.FullName)); } catch { }
+        }
+
+        private int SettlePendingCount()
+        {
+            VLSettleGate g = settleGate;
+            return g == null ? 0 : g.PendingCount;
+        }
+
+        private void RunSettleLoop()
+        {
+            VLSettleGate g = settleGate;
+            long lastUpkeep = long.MinValue / 2;
+            try
+            {
+                while (!settleStop)
+                {
+                    settleWake.WaitOne(g.Busy ? 10 : (int)Math.Min(5000, g.UpkeepMs));
+                    if (settleStop) return;
+                    g.Tick(SettleNowMs());
+                    foreach (HeldClose h in g.HeldSnapshot())
+                    {
+                        try
+                        {
+                            SettleVerdict v = JudgeSettle(g, (Account)h.AccountRef, (Instrument)h.InstrumentRef, h.Key);
+                            string why = g.CheckHeld(h.Token, v, SettleNowMs());
+                            if (why != null) ReleaseHeldClose(h.Token, h.Account, why, false);
+                        }
+                        catch (Exception ex) { LogWarn("VLTraderTCPClient: settle check fault: " + ex.Message); }
+                        g.Tick(SettleNowMs());
+                    }
+                    foreach (SweepMark m in g.MarksSnapshot())
+                    {
+                        try { SweepOwnExits(g, m); }
+                        catch (Exception ex) { g.DropMark(m); LogWarn("VLTraderTCPClient: own-exit sweep fault: " + ex.Message); }
+                        g.Tick(SettleNowMs());
+                    }
+                    long now = SettleNowMs();
+                    if (now - lastUpkeep >= g.UpkeepMs)
+                    {
+                        lastUpkeep = now;
+                        try { SettleUpkeep(g); }
+                        catch (Exception ex) { LogWarn("VLTraderTCPClient: settle upkeep fault: " + ex.Message); }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                LogWarn("VLTraderTCPClient: settle thread ended (" + ex.Message + ") — closes run at once, as before");
+            }
+            finally { settleAlive = false; g.StopSweeps(); } // held closes keep their own timers
+        }
+
+        // (d) one step. Only orders of OUR list, fixed when the Flat event came; never a
+        // manual order, a bracket leg or an entry; never while a position is held.
+        private void SweepOwnExits(VLSettleGate g, SweepMark m)
+        {
+            object lk = CmdLockFor(m.Account);
+            bool got = false;
+            try
+            {
+                Monitor.TryEnter(lk, 0, ref got);
+                if (!got) return; // a command of that account is running: look again
+                Account acct = (Account)m.AccountRef;
+                var refs = new List<object>();
+                foreach (OwnExit x in m.Items.ToArray()) refs.Add(x.Ref);
+                List<LiveOrder> live = ReadLive(refs);
+                SettleVerdict v = JudgeSettle(g, acct, (Instrument)m.InstrumentRef, m.Key);
+                List<object> cancel;
+                string why;
+                switch (g.CheckSweep(m, v, live, SettleNowMs(), out cancel, out why))
+                {
+                    case SweepStep.Cancel:
+                        var orders = new List<Order>();
+                        foreach (object r in cancel) { Order o = r as Order; if (o != null) orders.Add(o); }
+                        acct.Cancel(orders);
+                        break;
+                    case SweepStep.Done:
+                        g.DropMark(m);
+                        break;
+                    case SweepStep.Drop:
+                        g.DropMark(m);
+                        LogWarn("VLTraderTCPClient: own-exit sweep on account=" + m.Account + " stopped — " + why + " (" + v + ")");
+                        break;
+                }
+            }
+            finally
+            {
+                if (got) Monitor.Exit(lk);
+            }
+        }
+
+        // Every 5 s on VLTrader-Settle: hook new SIM accounts, anchor, resync, prune, switches.
+        private void SettleUpkeep(VLSettleGate g)
+        {
+            LoadSettleSwitches(false);
+            int faults = Interlocked.Exchange(ref ledgerFaults, 0);
+            if (faults > 0) LogWarn("VLTraderTCPClient: settle ledger faults on NT8's thread: " + faults);
+            foreach (Account a in CopyAccounts())
+            {
+                if (!IsSimAccount(a)) continue;
+                HookLedger(a);
+                Connection conn = a.Connection;
+                bool up = conn != null && conn.Status == ConnectionStatus.Connected;
+                // orders BEFORE positions: a fill seen here and not there restarts the anchor
+                var seeds = new Dictionary<string, List<OrderSeed>>(StringComparer.Ordinal);
+                var orders = new List<Order>();
+                lock (a.Orders) { foreach (Order o in a.Orders) if (o != null) orders.Add(o); }
+                foreach (Order o in orders)
+                {
+                    if (o.Instrument == null) continue;
+                    string k = VLSettleGate.Key(a.Name, o.Instrument.FullName);
+                    if (g.IsTrusted(k)) continue;
+                    List<OrderSeed> l;
+                    if (!seeds.TryGetValue(k, out l)) { l = new List<OrderSeed>(); seeds[k] = l; }
+                    l.Add(new OrderSeed
+                    {
+                        Ref = o, OrderId = o.OrderId, Filled = o.Filled, Phase = SettlePhaseOf(o.OrderState), Kind = SettleKindOf(o.OrderType),
+                        Buy = o.OrderAction == OrderAction.Buy || o.OrderAction == OrderAction.BuyToCover,
+                        ExitSide = o.OrderAction == OrderAction.Sell || o.OrderAction == OrderAction.BuyToCover
+                    });
+                }
+                var pos = new Dictionary<string, int>(StringComparer.Ordinal);
+                lock (a.Positions)
+                {
+                    foreach (Position x in a.Positions)
+                    {
+                        if (x == null || x.Instrument == null) continue;
+                        int q = x.MarketPosition == MarketPosition.Long ? x.Quantity : (x.MarketPosition == MarketPosition.Short ? -x.Quantity : 0);
+                        pos[VLSettleGate.Key(a.Name, x.Instrument.FullName)] = q;
+                    }
+                }
+                var all = new HashSet<string>(g.KnownKeys(a.Name), StringComparer.Ordinal);
+                foreach (string k in seeds.Keys) all.Add(k);
+                foreach (string k in pos.Keys) all.Add(k);
+                foreach (string k in all)
+                {
+                    int c;
+                    pos.TryGetValue(k, out c);
+                    List<OrderSeed> l;
+                    seeds.TryGetValue(k, out l);
+                    int was;
+                    UpkeepResult r = g.Upkeep(k, conn, up, true, c, l, SettleNowMs(), out was);
+                    if (r == UpkeepResult.Resynced)
+                        LogWarn("VLTraderTCPClient: settle ledger resync on account=" + a.Name + " — counted " + was + ", NT8 holds " + c);
+                }
+                g.Tick(SettleNowMs());
+            }
+            g.Prune(SettleNowMs());
+        }
+
+        // === the switch file (no build, no NT8 restart) ===
+        private DateTime settleSwitchStamp = DateTime.MinValue;
+        private bool settleSwitchSeen = false;
+        private bool settleSwitchBad = false;
+
+        private string SettleSwitchFile()
+        {
+            if (settleSwitchPath != null) return settleSwitchPath;
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "NinjaTrader 8", "VL", "addon-switches.txt");
+        }
+
+        private void LoadSettleSwitches(bool first)
+        {
+            VLSettleGate g = settleGate;
+            if (g == null) return;
+            try
+            {
+                string path = SettleSwitchFile();
+                bool there = File.Exists(path);
+                DateTime stamp = there ? File.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+                if (!first && there == settleSwitchSeen && stamp == settleSwitchStamp && !settleSwitchBad) return;
+                string text = there ? File.ReadAllText(path) : null;
+                List<string> warnings;
+                AddonSwitches sw = AddonSwitches.Parse(text, g.Switches, out warnings);
+                g.Switches = sw;
+                settleSwitchSeen = there;
+                settleSwitchStamp = stamp;
+                settleSwitchBad = false;
+                foreach (string w in warnings) LogWarn("VLTraderTCPClient: addon-switches.txt: " + w);
+                LogInfo("VLTraderTCPClient: settle switches " + sw + (there ? " (from addon-switches.txt)" : " (defaults, no file)"));
+            }
+            catch (Exception ex)
+            {
+                if (!settleSwitchBad) LogWarn("VLTraderTCPClient: addon-switches.txt unreadable (" + ex.GetType().Name + ") — last good values kept");
+                settleSwitchBad = true;
+            }
+        }
+
         // === Fill subscription (spec L4398-4406) ===
         private void OnOrderUpdate(object sender, OrderEventArgs e)
         {
@@ -1867,6 +2567,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             // track working/cancelled resting entries + bracket legs. The fill /
             // position_close terminal frames below stay the entry/exit path.
             SendOrderUpdateFrame(e);
+
+            // Release 2 (a) — the bracket note of an entry goes when the entry is really
+            // Cancelled, not when Go asks for the cancel (11-20: 26.7 s naked).
+            if (e.OrderState == OrderState.Cancelled) SettleCancelledEntryNote(e);
 
             // Only act on filled/rejected states; ignore accepted/working.
             if (e.OrderState != OrderState.Filled
@@ -2181,11 +2885,10 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 ["held"]            = held,
                 ["job_id"]          = job,
-                // Frames execute synchronously on the read thread: when this ack is
-                // written, every frame received before it has already run. There is
-                // no command queue, so the depth is 0 by construction. A future
-                // asynchronous dispatcher MUST report its real depth here.
-                ["queued_commands"] = 0,
+                // Frames execute synchronously on the read thread, with one exception
+                // since Release 2: a close the settle gate holds (at most settle_ms), one
+                // being released, and a sweep of our own exits. That is the real depth.
+                ["queued_commands"] = SettlePendingCount(),
                 ["build_id"]        = VL_BUILD_ID
             };
             try
@@ -2634,15 +3337,17 @@ namespace NinjaTrader.NinjaScript.AddOns
                             + " 2026-09-06 23:37:02)");
                 }
                 // The DEFERRED bracket for this entry is not a live order — it is
-                // our own note to place one WHEN the entry fills. A cancelled
-                // entry must not leave that note behind: SubmitBracketOnEntryFill
-                // fires on ANY later Filled for the same key, and nothing else
-                // clears it (only a REJECT did), so the map also grew for the
-                // life of the AddOn. Bookkeeping, not an order — and emphatically
-                // NOT the placedBrackets walk this handler no longer does. A
-                // no-op when the entry already filled, because the bracket was
-                // placed and the note consumed at that moment.
-                lock (signalMapLock) { pendingBrackets.Remove(signalId); }
+                // our own note to place one WHEN the entry fills. It must not outlive
+                // the entry, but a cancel REQUEST is not the entry's end: on 2026-11-20
+                // the order had already filled and its fill handler was still on the
+                // way, so dropping the note here left the position naked for 26.7 s.
+                // Release 2 (keep_note=1): the note goes with the entry's own Cancelled
+                // event (SettleCancelledEntryNote) or its Rejected one. Bookkeeping, not
+                // an order — and not the bracket walk this handler no longer does.
+                if (!KeepBracketNote())
+                {
+                    lock (signalMapLock) { pendingBrackets.Remove(signalId); }
+                }
                 SendCancelReport(signalId);
                 SendAck("cancel_order");
             }
@@ -2810,7 +3515,11 @@ namespace NinjaTrader.NinjaScript.AddOns
                     instrument, exitAction, OrderType.StopMarket, OrderEntry.Manual,
                     TimeInForce.Gtc, qty, 0, stopPx, string.Empty, signalId + "-sl",
                     Core.Globals.MaxDate, null);
-                ba.Submit(new[] { slOrder });
+                // Release 2 (d) — ours by object reference, so a flat account sweeps it.
+                NoteOwnExit(ba, instrument, slOrder, false);
+                try { ba.Submit(new[] { slOrder }); }
+                catch { DropOwnExit(slOrder); throw; }
+                MarkOwnExitSubmitted(slOrder);
                 LogInfo("VLTraderTCPClient: PLACED protective stop signal_id=" + signalId
                         + " " + side + " " + symbol + " qty=" + qty + " stop=" + stopPx
                         + " oco=<none> tif=Gtc name=" + signalId + "-sl"
@@ -3550,6 +4259,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         // bug). A close/flat arrives as MarketPosition.Flat or Quantity 0.
         private void OnPositionUpdate(object sender, PositionEventArgs e)
         {
+            StampSettlePosition(sender, e); // Release 2: before any frame work
             var acc = (sender as Account) ?? account;
             // Emit for the account that actually changed (sender) — PositionUpdate is
             // now hooked on ALL SIM accounts, so this can fire for a non-active account.
