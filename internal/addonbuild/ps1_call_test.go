@@ -52,7 +52,7 @@ func TestCompilerProbeHonoursThePs1ExitCode(t *testing.T) {
 // is never looked at. It does NOT say that production gives them the same Config: the
 // readiness item sets no Exe, so it looks in C:\Program Files only, and has its own
 // docs-folder detection (updatereadiness, TestReadinessProbeLooksOnlyInTheDefaultFolders);
-// the updater honours VL_NT8_EXE and VL_NT8_DOCS_DIR.
+// the updater honours VL_NT8_DOCS_DIR, and VL_NT8_EXE when it has forward slashes.
 func TestProbeAndBuildPassTheSameTwoFoldersToThePs1(t *testing.T) {
 	useTempWindowsTools(t)
 	src, work := t.TempDir(), t.TempDir()
@@ -90,4 +90,19 @@ func TestProbeAndBuildPassTheSameTwoFoldersToThePs1(t *testing.T) {
 		t.Fatalf("Build = %+v, %v", res, err)
 	}
 	check("Build")
+}
+
+// A known limit, shown so that the text about it stays true: with backslashes the build
+// looks in the default folder, not in Exe's. The guide says so; a fix changes both.
+func TestExeWithBackslashesBuildsFromTheDefaultFolder(t *testing.T) {
+	for exe, want := range map[string]string{
+		`D:\Apps\NT8\bin\NinjaTrader.exe`:     `C:\Program Files\NinjaTrader 8\bin`,
+		"D:/Apps/NT8/bin/NinjaTrader.exe":     `D:\Apps\NT8\bin`,
+		"/mnt/d/Apps/NT8/bin/NinjaTrader.exe": `D:\Apps\NT8\bin`,
+		"":                                    `C:\Program Files\NinjaTrader 8\bin`,
+	} {
+		if got := nt8BinWindows(exe); got != want {
+			t.Errorf("nt8BinWindows(%q) = %q, want %q", exe, got, want)
+		}
+	}
 }

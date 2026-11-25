@@ -29,7 +29,8 @@ import (
 
 // Config is everything Build/Place need that the caller supplies. DocsDir,
 // Exe, SourceDir and WorkDir are WSL paths (Exe may also be a Windows path,
-// as the worker's addonExe returns). DotnetExe and PowerShellExe are passed to
+// as the worker's addonExe returns; see nt8BinWindows for one with
+// backslashes). DotnetExe and PowerShellExe are passed to
 // Run verbatim.
 //
 //	DocsDir       - Documents\NinjaTrader 8 directory (bin/Custom must exist)
@@ -282,8 +283,10 @@ func buildViaDotnet(ctx context.Context, c Config, workDir, srcDir, docsDir, dot
 }
 
 // nt8BinWindows returns the NinjaTrader bin directory as a Windows path,
-// derived from Exe (which may itself be a Windows or WSL path) with the
-// standard install location as the default.
+// derived from Exe when Exe is written with forward slashes (a WSL path, or
+// D:/...), with the standard install location as the default. An Exe with
+// BACKSLASHES (D:\...) gives the default too: filepath.Dir is "." for it on
+// Linux (TestExeWithBackslashesBuildsFromTheDefaultFolder).
 func nt8BinWindows(exe string) string {
 	if exe != "" {
 		dir := filepath.Dir(exe)

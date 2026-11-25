@@ -133,14 +133,16 @@ func TestReadinessGuideSaysOnlyWhatTheProbeTests(t *testing.T) {
 	guideMustSay(t, "only GET /api/updates/readiness, no page shows it",
 		"it turns red when NinjaTrader.Core or the compiler cannot be used; it does not test the release’s own AddOn source, and it does not test the updater")
 	guideMustNotSay(t, "it is red when the real build would be")
-	// Where it looks: TestReadinessProbeLooksOnlyInTheDefaultFolders (updatereadiness). The
-	// updater's side and the 10 seconds are read here.
+	// Where it looks: TestReadinessProbeLooksOnlyInTheDefaultFolders (updatereadiness); the
+	// slashes: TestExeWithBackslashesBuildsFromTheDefaultFolder (addonbuild). The updater's
+	// env and the 10 seconds are read here.
 	guideMustSay(t, `It looks for the program only in C:\\Program Files\\NinjaTrader 8\\bin`,
-		"it is also red when it takes more than 10 seconds; the updater follows VL_NT8_EXE and VL_NT8_DOCS_DIR and also looks in OneDrive")
-	t.Setenv("VL_NT8_EXE", `D:\Apps\NT8\bin\NinjaTrader.exe`)
+		"it is also red when it takes more than 10 seconds; the updater follows VL_NT8_DOCS_DIR and also looks in OneDrive",
+		"it builds from the folder of VL_NT8_EXE when that is written with forward slashes (written with backslashes, it builds from the default folder too)")
+	t.Setenv("VL_NT8_EXE", "/mnt/d/Apps/NT8/bin/NinjaTrader.exe")
 	docs := t.TempDir()
 	t.Setenv("VL_NT8_DOCS_DIR", docs)
-	if got, derr := addonDocsDir(); addonExe() != `D:\Apps\NT8\bin\NinjaTrader.exe` || got != docs || derr != nil {
+	if got, derr := addonDocsDir(); addonExe() != "/mnt/d/Apps/NT8/bin/NinjaTrader.exe" || got != docs || derr != nil {
 		t.Errorf("the updater does not follow its env: exe %q, docs %q, err %v", addonExe(), got, derr)
 	}
 	if h, herr := os.ReadFile("../../api/handler_updates.go"); herr != nil || !strings.Contains(string(h), "updatereadiness.RunViaExec(10 * time.Second)") {

@@ -180,7 +180,8 @@ func checkCompiler(ctx context.Context, c Config, docs string) Item {
 	// and it need not look where the updater looks: no Exe is set here, so the
 	// script always gets C:\Program Files\NinjaTrader 8\bin, and DefaultDetect
 	// takes /mnt/c/Users/*/Documents only (no OneDrive). The updater honours
-	// VL_NT8_EXE and VL_NT8_DOCS_DIR and also looks in OneDrive. The caller
+	// VL_NT8_DOCS_DIR, and VL_NT8_EXE when it is written with forward slashes
+	// (addonbuild.nt8BinWindows), and also looks in OneDrive. The caller
 	// (handleUpdatesReadiness) gives each command 10 s: a slower probe is red.
 	ok, detail := addonbuild.CompilerProbe(ctx, addonbuild.Config{
 		DocsDir:       docs,

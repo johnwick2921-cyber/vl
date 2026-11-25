@@ -116,7 +116,7 @@ func TestCheckAllGreen(t *testing.T) {
 // guide and the comment in checkCompiler say so.
 func TestReadinessProbeLooksOnlyInTheDefaultFolders(t *testing.T) {
 	docs := buildDocs(t)
-	t.Setenv("VL_NT8_EXE", `D:\Apps\NT8\bin\NinjaTrader.exe`)
+	t.Setenv("VL_NT8_EXE", "/mnt/d/Apps/NT8/bin/NinjaTrader.exe")
 	t.Setenv("VL_NT8_DOCS_DIR", t.TempDir())
 	ok := okRunner(t)
 	var probe []string
