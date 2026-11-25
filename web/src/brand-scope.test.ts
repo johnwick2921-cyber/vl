@@ -1,6 +1,6 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
 // Wire baseline advanced 2026-11-24 for Release 2 (fix/addon-settle-gate-1124):
-//   ninjascript/VLTraderTCPClient.cs  sha256 cf9abdef… — the settle gate delays a
+//   ninjascript/VLTraderTCPClient.cs  sha256 98d24d0c… — the settle gate delays a
 //     close_position by at most settle_ms (VLSettleGate.cs), bracket cancels run outside
 //     signalMapLock, VL_BUILD_ID 2026-11-24-a. No frame, field, order name, account or
 //     signal-id contract changes; every refusal guard keeps its place.

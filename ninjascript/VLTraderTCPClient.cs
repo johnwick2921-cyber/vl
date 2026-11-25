@@ -2471,55 +2471,61 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (faults > 0) LogWarn("VLTraderTCPClient: settle ledger faults on NT8's thread: " + faults);
             foreach (Account a in CopyAccounts())
             {
-                if (!IsSimAccount(a)) continue;
-                HookLedger(a);
-                Connection conn = a.Connection;
-                bool up = conn != null && conn.Status == ConnectionStatus.Connected;
-                // orders BEFORE positions: a fill seen here and not there restarts the anchor
-                var seeds = new Dictionary<string, List<OrderSeed>>(StringComparer.Ordinal);
-                var orders = new List<Order>();
-                lock (a.Orders) { foreach (Order o in a.Orders) if (o != null) orders.Add(o); }
-                foreach (Order o in orders)
-                {
-                    if (o.Instrument == null) continue;
-                    string k = VLSettleGate.Key(a.Name, o.Instrument.FullName);
-                    if (g.IsTrusted(k)) continue;
-                    List<OrderSeed> l;
-                    if (!seeds.TryGetValue(k, out l)) { l = new List<OrderSeed>(); seeds[k] = l; }
-                    l.Add(new OrderSeed
-                    {
-                        Ref = o, OrderId = o.OrderId, Filled = o.Filled, Phase = SettlePhaseOf(o.OrderState), Kind = SettleKindOf(o.OrderType),
-                        Buy = o.OrderAction == OrderAction.Buy || o.OrderAction == OrderAction.BuyToCover,
-                        ExitSide = o.OrderAction == OrderAction.Sell || o.OrderAction == OrderAction.BuyToCover
-                    });
-                }
-                var pos = new Dictionary<string, int>(StringComparer.Ordinal);
-                lock (a.Positions)
-                {
-                    foreach (Position x in a.Positions)
-                    {
-                        if (x == null || x.Instrument == null) continue;
-                        int q = x.MarketPosition == MarketPosition.Long ? x.Quantity : (x.MarketPosition == MarketPosition.Short ? -x.Quantity : 0);
-                        pos[VLSettleGate.Key(a.Name, x.Instrument.FullName)] = q;
-                    }
-                }
-                var all = new HashSet<string>(g.KnownKeys(a.Name), StringComparer.Ordinal);
-                foreach (string k in seeds.Keys) all.Add(k);
-                foreach (string k in pos.Keys) all.Add(k);
-                foreach (string k in all)
-                {
-                    int c;
-                    pos.TryGetValue(k, out c);
-                    List<OrderSeed> l;
-                    seeds.TryGetValue(k, out l);
-                    int was;
-                    UpkeepResult r = g.Upkeep(k, conn, up, true, c, l, SettleNowMs(), out was);
-                    if (r == UpkeepResult.Resynced)
-                        LogWarn("VLTraderTCPClient: settle ledger resync on account=" + a.Name + " — counted " + was + ", NT8 holds " + c);
-                }
+                // one account that cannot be read must not stop the others
+                try { if (IsSimAccount(a)) SettleUpkeepAccount(g, a); }
+                catch (Exception ex) { LogWarn("VLTraderTCPClient: settle upkeep fault on account=" + a.Name + ": " + ex.Message); }
                 g.Tick(SettleNowMs());
             }
             g.Prune(SettleNowMs());
+        }
+
+        private void SettleUpkeepAccount(VLSettleGate g, Account a)
+        {
+            HookLedger(a);
+            Connection conn = a.Connection;
+            bool up = conn != null && conn.Status == ConnectionStatus.Connected;
+            // orders BEFORE positions: a fill seen here and not there restarts the anchor
+            var seeds = new Dictionary<string, List<OrderSeed>>(StringComparer.Ordinal);
+            var orders = new List<Order>();
+            lock (a.Orders) { foreach (Order o in a.Orders) if (o != null) orders.Add(o); }
+            foreach (Order o in orders)
+            {
+                if (o.Instrument == null) continue;
+                string k = VLSettleGate.Key(a.Name, o.Instrument.FullName);
+                if (g.IsTrusted(k)) continue;
+                List<OrderSeed> l;
+                if (!seeds.TryGetValue(k, out l)) { l = new List<OrderSeed>(); seeds[k] = l; }
+                l.Add(new OrderSeed
+                {
+                    Ref = o, OrderId = o.OrderId, Filled = o.Filled, Phase = SettlePhaseOf(o.OrderState), Kind = SettleKindOf(o.OrderType),
+                    Buy = o.OrderAction == OrderAction.Buy || o.OrderAction == OrderAction.BuyToCover,
+                    ExitSide = o.OrderAction == OrderAction.Sell || o.OrderAction == OrderAction.BuyToCover
+                });
+            }
+            var pos = new Dictionary<string, int>(StringComparer.Ordinal);
+            lock (a.Positions)
+            {
+                foreach (Position x in a.Positions)
+                {
+                    if (x == null || x.Instrument == null) continue;
+                    int q = x.MarketPosition == MarketPosition.Long ? x.Quantity : (x.MarketPosition == MarketPosition.Short ? -x.Quantity : 0);
+                    pos[VLSettleGate.Key(a.Name, x.Instrument.FullName)] = q;
+                }
+            }
+            var all = new HashSet<string>(g.KnownKeys(a.Name), StringComparer.Ordinal);
+            foreach (string k in seeds.Keys) all.Add(k);
+            foreach (string k in pos.Keys) all.Add(k);
+            foreach (string k in all)
+            {
+                int c;
+                pos.TryGetValue(k, out c);
+                List<OrderSeed> l;
+                seeds.TryGetValue(k, out l);
+                int was;
+                UpkeepResult r = g.Upkeep(k, conn, up, true, c, l, SettleNowMs(), out was);
+                if (r == UpkeepResult.Resynced)
+                    LogWarn("VLTraderTCPClient: settle ledger resync on account=" + a.Name + " — counted " + was + ", NT8 holds " + c);
+            }
         }
 
         // === the switch file (no build, no NT8 restart) ===
