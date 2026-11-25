@@ -520,9 +520,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                 connWasDown[conn] = false;
                 if (!down) return false;
                 foreach (KeyState k in keys.Values)
-                    if (ReferenceEquals(k.Conn, conn)) { k.Trusted = false; k.ESeen = false; k.E = 0; k.HasCand = false; k.HasRes = false; }
+                    if (ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k);
                 return true;
             }
+        }
+
+        private static void DropAnchorLocked(KeyState k)
+        {
+            k.Trusted = false; k.ESeen = false; k.E = 0; k.HasCand = false; k.HasRes = false;
         }
 
         // === upkeep (settle thread, about every 5 s) ============================
@@ -535,7 +540,13 @@ namespace NinjaTrader.NinjaScript.AddOns
             lock (gate)
             {
                 KeyState k = GetLocked(key);
-                k.Conn = conn;
+                if (conn != null)
+                {
+                    // Moved to another connection: its state may have been restored there without
+                    // an event (10-22), so it is anchored again.
+                    if (k.Conn != null && !ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k);
+                    k.Conn = conn;
+                }
                 wasL = k.L;
                 if (!cKnown || !connected) { k.HasCand = false; k.HasRes = false; return UpkeepResult.None; }
                 if (!k.Trusted)

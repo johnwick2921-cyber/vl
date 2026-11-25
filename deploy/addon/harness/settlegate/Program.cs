@@ -372,6 +372,9 @@ static class Program
         var g = new VLSettleGate(); var k = new K(g); int was; g.NoteConnection(k, false, false, false, false);
         g.Upkeep(k.Key, k, true, true, 0, null, k.Now, out was); k.Now += 5000; g.Upkeep(k.Key, k, true, true, 0, null, k.Now, out was);
         Ok("Conn first Connected ever seen (from Connecting) is a start", g.NoteConnection(k, true, false, false, false) && !g.IsTrusted(k.Key));
+        g.Upkeep(k.Key, k, true, true, 0, null, k.Now, out was); k.Now += 5000; g.Upkeep(k.Key, k, true, true, 0, null, k.Now, out was); bool tr = g.IsTrusted(k.Key);
+        g.Upkeep(k.Key, null, false, true, 0, null, k.Now, out was); bool still = g.IsTrusted(k.Key); g.Upkeep(k.Key, new object(), true, true, 0, null, k.Now, out was);
+        Ok("Conn an account that moves to another connection is anchored again (none for a moment is not a move)", tr && still && !g.IsTrusted(k.Key));
         Ok("Conn the second one is not", !g.NoteConnection(k, true, false, false, true));
     }
     static void X8()

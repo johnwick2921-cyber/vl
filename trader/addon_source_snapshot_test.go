@@ -25,7 +25,7 @@ import (
 // VL_BUILD_ID and these two constants move together.
 const (
 	addonSourceSnapshotBuild = "2026-11-24-a"
-	addonSourceSnapshotSHA   = "7767b07ee4d5658112cd128daf2d3b5d91275ef138a0156f940c911da0b985ce"
+	addonSourceSnapshotSHA   = "03d6ac37356e137b4d591f33bc0ebd6420bd25a89d501cb2180d4b785f45c72d"
 )
 
 const addonSourceDir = "../ninjascript"
