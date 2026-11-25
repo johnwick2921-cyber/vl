@@ -1,4 +1,9 @@
 // Dispatch 102 freezes load-bearing identifiers, including their surrounding guards.
+// Wire baseline advanced 2026-11-24 for Release 2 (fix/addon-settle-gate-1124):
+//   ninjascript/VLTraderTCPClient.cs  sha256 cf9abdef… — the settle gate delays a
+//     close_position by at most settle_ms (VLSettleGate.cs), bracket cancels run outside
+//     signalMapLock, VL_BUILD_ID 2026-11-24-a. No frame, field, order name, account or
+//     signal-id contract changes; every refusal guard keeps its place.
 // Wire baseline advanced 2026-10-26 for m433 (fix/m433-install-gate-broker-down), Go-only:
 //   provider/ninjatrader/tcp_server.go  sha256 f5d05417… — the FramePositions case hands an
 //     optional persistence hook (SetPositionsSink) the account and its non-flat count, after

@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <!-- 7.3 on purpose: NT8's oldest compiler must take the same file. -->
+    <LangVersion>7.3</LangVersion>
+    <Nullable>disable</Nullable>
+    <NoWarn>CS0649</NoWarn>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <GateSrc Condition="'$(GateSrc)' == ''">../../../../ninjascript</GateSrc>
+  </PropertyGroup>
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile Include="Replay.cs" />
+    <!-- The ACTUAL production file (no NinjaTrader types in it). -->
+    <Compile Include="$(GateSrc)/VLSettleGate.cs" />
+  </ItemGroup>
+</Project>

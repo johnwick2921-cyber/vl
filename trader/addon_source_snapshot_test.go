@@ -24,8 +24,8 @@ import (
 // VL_BUILD_ID the snapshot was taken at. Bumping the AddOn means BOTH the C#
 // VL_BUILD_ID and these two constants move together.
 const (
-	addonSourceSnapshotBuild = "2026-10-22-d"
-	addonSourceSnapshotSHA   = "c8f71a6556634b8803a168d4563d968d867f56ef34547ac9718a5c4f4b266a8c"
+	addonSourceSnapshotBuild = "2026-11-24-a"
+	addonSourceSnapshotSHA   = "7767b07ee4d5658112cd128daf2d3b5d91275ef138a0156f940c911da0b985ce"
 )
 
 const addonSourceDir = "../ninjascript"

@@ -138,6 +138,58 @@ sends the market fallback as a later `close_position` frame WITHOUT
 - All other fields unchanged (identity stamp, SIM-only guard). No field was
   added for this build.
 
+#### Settle gate (Release 2, build `2026-11-24-a`)
+
+No frame, field or protocol version changes. A `close_position` that NAMES a SIM
+account is **delayed, never refused and never answered "already flat"**: it still
+ends in the handler described above, at once when NT8 is settled (47 of 48 close
+frames in four weeks), else as soon as it settles, at the latest `settle_ms`
+(default 1000) after the frame arrived. Settled means three sources agree: the
+AddOn's own count of fills (from order events), NT8's last position event, and a
+fresh read of the position; and no stop is triggered or market exit live on that
+contract (younger than `settle_ms`), and no Flatten of ours is still running (a
+Flatten builds its Close order 113-237 ms after the call; 300 ms at least). A
+held close is released on the second settled look at least 20 ms after the first.
+A state the AddOn cannot know (no anchor yet, position unreadable, flat with no
+position event seen this session) runs the close at once, as before.
+
+- A second close for the same account and contract joins the held one: the first
+  deadline stays, a market close replaces a limit one.
+- A new entry that passes every refusal releases the held close of its own account
+  and contract first, so wire order close-then-entry stays. If the close was only
+  waiting for our own running Flatten it is a duplicate of it and is dropped (a
+  Flatten that fails comes back as `position_close_rejected`).
+- A close that names no account, a non-SIM or unknown account, a down link, or a
+  settle thread that does not answer: exactly as before.
+- **Second limit exit:** while a live `-lx` of ours with the same order action
+  already exits the whole held position, a second one is not placed. The answer is
+  an `order_snapshot` with `reason` `lx_working`; Go's own timers send the market
+  close.
+- **Cancelled entry:** a `cancel_order` no longer drops the deferred bracket; it
+  goes with the entry's own Cancelled (0 filled) or Rejected event.
+- **Flat sweep:** when a position goes flat the AddOn cancels its own leftover `-lx`
+  and standalone `-sl` orders (the list is fixed at that Flat event, matched by
+  object, never by name, never while a position is held again).
+- **Order of things inside the AddOn:** commands of one account run one at a time
+  (signal, close, place-stop, release, sweep).
+
+Kill switches, no build and no NT8 restart: `Documents\NinjaTrader 8\VL\addon-switches.txt`,
+read at start and every 5 s when it changes; absent = defaults. `settle_ms=1000`
+(0 = no hold; 0..2000), `keep_note=1`, `stop_check=1`, `own_exit_sweep=1`,
+`one_lx=1`. A bad value keeps the last good one; every load logs one line with the
+values in force. All 0 = the behaviour of `2026-10-22-d`.
+
+### 1c. `place_protective_stop` (Go server -> C# AddOn): answers
+
+Never held. From `2026-11-24-a`, with `stop_check=1` and a named SIM account: when
+the fill count, the last position event and a fresh read ALL say flat, no order is
+placed and the ack is `place_protective_stop_flat`; when all three say the position
+is on the other side, `place_protective_stop_opposite`. Anything else is placed, with
+the quantity capped at what is held when the three agree (never more than asked).
+While a close of that account and contract is held, or our Flatten is younger than
+300 ms, the stop is placed as asked and left to the flat sweep. Go reads an ack
+other than `heartbeat` as a time stamp only, so both strings change nothing there.
+
 ### 2. `fill` (C# AddOn → Go server)
 
 Outgoing fill notification.
@@ -652,8 +704,10 @@ AddOn's half. **Additive; protocol version unchanged (3).**
   take the census. It carries the exception type only, never the message, which could
   carry an account name. Go never reads an absent list as an empty one.
 - `queued_commands`: the AddOn executes frames synchronously on its read thread, so
-  when the ack is written every earlier frame has already run. The depth is **0 by
-  construction**. A future asynchronous dispatcher must report its real depth.
+  when the ack is written every earlier frame has already run. Up to build
+  `2026-10-22-d` the depth was **0 by construction**. From `2026-11-24-a` it is the
+  settle gate's real depth: closes held + a release in progress + flat sweeps in
+  progress (each lasts 2 s at most by default). Go refuses the update while it is not 0.
 - The census takes each NT8 collection under **its own** lock and counts outside it; it never
   holds one lock while taking another, because it runs on the read thread that also carries
   close and protective frames (M2.1).
