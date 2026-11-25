@@ -2,6 +2,8 @@ package updaterworker
 
 import (
 	"context"
+	"errors"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -87,6 +89,63 @@ func TestCatchupNT8ClosedReplacesAnEqualBuildAndTheGuideSaysSo(t *testing.T) {
 		"catchup-*.json in data/updater/jobs", "built_by")
 	guideMustNotSay(t, "a build that is not newer than the running or placed one is refused",
 		"nothing touches the AddOn again")
+}
+
+// The AddOn build runs UNDER the maintenance hold: a build that fails has installed and
+// placed nothing, and the hold is released.
+func TestAddonBuildFailureReleasesTheHoldAlreadyTakenAndTheGuideSaysSo(t *testing.T) {
+	r := newRig(t, withCSChanged())
+	dll := filepath.Join(r.nt8docs, "bin", "Custom", "VL.AddOn.dll")
+	before, _ := os.ReadFile(dll)
+	builds, held := 0, 0
+	r.w.runWin = func(ctx context.Context, name string, args ...string) ([]byte, error) {
+		ps1 := strings.Contains(name, "powershell") && winFlag(args, "-Out") != ""
+		if !ps1 && !strings.Contains(name, "dotnet") {
+			return r.box.fakeRunWin(ctx, name, args...)
+		}
+		builds++
+		if s, _ := ReadHoldFor(r.data, boxJobID); s == HoldOurs {
+			held++
+		}
+		return []byte("ERROR CS1002: ; expected"), errors.New("build failed")
+	}
+	j := r.runToEnd(t)
+	r.noViolations(t)
+	if builds != 2 || held != 2 {
+		t.Fatalf("%d builder runs, %d under this job's hold, want 2 and 2", builds, held)
+	}
+	if j.State != updaterjob.StateRevertedClean || !strings.Contains(j.Error, "CS1002") {
+		t.Fatalf("job %s error %q, want reverted_clean with the compiler error", j.State, j.Error)
+	}
+	if s, _ := ReadHoldFor(r.data, boxJobID); s != HoldAbsent {
+		t.Fatalf("hold %s after a failed build, want it released", s)
+	}
+	if after, _ := os.ReadFile(dll); string(after) != string(before) || (j.Addon != nil && j.Addon.BackupDir != "") || j.IdentityBefore != nil {
+		t.Fatalf("a failed build placed or activated something: addon=%+v identity_before=%+v", j.Addon, j.IdentityBefore)
+	}
+	guideMustSay(t, "The build runs after the maintenance hold, the flat-and-SIM gate and the database backup.",
+		"If both builds fail, nothing is installed or placed, the maintenance hold already taken is released and the job ends “reverted clean”")
+	guideMustNotSay(t, "REFUSED before anything is installed or held", "installed or held")
+}
+
+// The readiness item is an API answer only, and it says less than "the build will work".
+func TestReadinessGuideSaysOnlyWhatTheProbeTests(t *testing.T) {
+	guideMustSay(t, "only GET /api/updates/readiness, no page shows it",
+		"it turns red when NinjaTrader.Core or the compiler cannot be used; it does not test the release’s own AddOn source, and it does not test the updater")
+	guideMustNotSay(t, "it is red when the real build would be")
+	err := filepath.WalkDir("../../web/src", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || strings.Contains(p, "/guide/content/") {
+			return err
+		}
+		b, rerr := os.ReadFile(p)
+		if rerr == nil && strings.Contains(string(b), "updates/readiness") {
+			t.Errorf("%s uses updates/readiness: the guide says no page shows it", p)
+		}
+		return rerr
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 }
 
 // The worker_swap receipt says ok:true for a swap that did NOT happen too: it never fails

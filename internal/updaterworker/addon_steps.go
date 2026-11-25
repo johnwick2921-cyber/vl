@@ -85,9 +85,11 @@ func (w *Worker) addonConfig(j updaterjob.Job) (addonbuild.Config, error) {
 	}, nil
 }
 
-// stepAddonBuild compiles the release's ninjascript/*.cs into VL.AddOn.dll. A
-// build error refuses the update BEFORE any hold, kill or place — the page
-// shows the compiler error. A release whose signed manifest lists no
+// stepAddonBuild compiles the release's ninjascript/*.cs into VL.AddOn.dll. In an
+// install it runs after the hold, the drain, the gate and the backup (advance): a
+// build error ends reverted_clean, so nothing is installed, killed or placed and
+// the hold already taken is released (stepRevertClean; a release that fails is
+// recovery_needed). The page shows the compiler error. A release whose signed manifest lists no
 // ninjascript/*.cs cannot be compiled from its own unproven sources: refused.
 // A CATCH-UP job builds the VERIFIED installed release's own ninjascript
 // (m355: <VL_RELEASE_DIR>/<running revision>/ninjascript, re-proved through its

@@ -40,7 +40,7 @@ func TestPs1TakesCoreAndGuiFromTheInstalledNT8(t *testing.T) {
 		"# -- Compile ---")
 }
 
-// The probe must fail when the real build would: it compiles a type of NinjaTrader.Core.
+// The probe must fail when NinjaTrader.Core cannot be used: it compiles a type of it.
 func TestPs1ProbeCompilesAgainstNinjaTraderCore(t *testing.T) {
 	ps1InOrder(t, "$trees = New-Object", "if ($Probe) {", "NinjaTrader.NinjaScript.AddOnBase", "NinjaTrader.Cbi.Account", "$asmName = '__VlAddonProbe'")
 	if strings.Contains(BuildPs1(), "public static class __VlAddonProbe { }") {

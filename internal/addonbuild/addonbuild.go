@@ -511,12 +511,13 @@ func BuildPs1() string { return buildPs1Script }
 // deploy copy; TestBuilderCsParityWithDeploy keeps them from drifting).
 func BuilderCs() string { return builderCs }
 
-// CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
+// CompilerProbe says whether the ps1 can use this box's compiler and NinjaTrader.Core
+// (not whether a release's AddOn source compiles): it writes the
 // embedded build-addon.ps1 (and its VLCustomBuilder.cs sidekick) to a
 // worker-made temp dir and runs its -Probe mode, which loads Roslyn from NT8's
 // bin, resolves its dependencies, compiles one small AddOn type against the full
 // reference set, AND runs the builder's --selftest (FOLD 5 F1). ok is true only
-// when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK. Nothing
+// when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK and exits 0. Nothing
 // touches the real NT8 folder or starts NT8.
 func CompilerProbe(ctx context.Context, c Config) (ok bool, detail string) {
 	if c.Run == nil {
