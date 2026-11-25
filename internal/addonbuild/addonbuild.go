@@ -55,12 +55,13 @@ const (
 	BuiltByDotnet    = "dotnet"     // the dotnet.exe net48 csproj fallback
 )
 
-// Result is what Build returns: the built DLL (WSL path), its hex sha256, and
-// which builder produced it.
+// Result is what Build returns: the built DLL (WSL path), its hex sha256, which
+// builder produced it, and, when that was the fallback, why the ps1 builder failed.
 type Result struct {
-	DllPath string
-	Sha256  string
-	BuiltBy string
+	DllPath  string
+	Sha256   string
+	BuiltBy  string
+	Ps1Error string
 }
 
 // Sentinel errors returned by this package.
@@ -193,6 +194,7 @@ func Build(ctx context.Context, c Config) (Result, error) {
 	// FALLBACK: the dotnet.exe net48 csproj (needs the SDK).
 	dotnetDll, dotnetErr := buildViaDotnet(ctx, c, workDir, srcDir, docsDir, dotnetExe)
 	if dotnetErr == nil {
+		dotnetDll.Ps1Error = ps1Err.Error()
 		return dotnetDll, nil
 	}
 
@@ -512,7 +514,7 @@ func BuilderCs() string { return builderCs }
 // CompilerProbe proves the no-SDK ps1 path works on this box: it writes the
 // embedded build-addon.ps1 (and its VLCustomBuilder.cs sidekick) to a
 // worker-made temp dir and runs its -Probe mode, which loads Roslyn from NT8's
-// bin, resolves its dependencies, compiles a trivial source against the full
+// bin, resolves its dependencies, compiles one small AddOn type against the full
 // reference set, AND runs the builder's --selftest (FOLD 5 F1). ok is true only
 // when the probe prints both VL_ADDON_PROBE=ok and VL_SELFTEST_OK. Nothing
 // touches the real NT8 folder or starts NT8.

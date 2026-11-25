@@ -174,8 +174,8 @@ func checkCompiler(ctx context.Context, c Config, docs string) Item {
 	it := Item{Item: "NT8 Roslyn compiler"}
 	// GAP 2: the "compiler" item reads true ONLY when the no-SDK ps1 path
 	// actually works — i.e. the embedded build-addon.ps1 loads Roslyn from
-	// NT8's bin, resolves its dependencies, and compiles a trivial source
-	// against the full reference set. File presence alone is not enough: a
+	// NT8's bin, resolves its dependencies, and compiles one small AddOn
+	// type (NinjaTrader.Core) against the full reference set. File presence alone is not enough: a
 	// box with Roslyn present but broken (or missing its dependency DLLs)
 	// must read not-ok before the owner presses Update.
 	ok, detail := addonbuild.CompilerProbe(ctx, addonbuild.Config{
