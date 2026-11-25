@@ -96,7 +96,7 @@ func TestWorkerSwapReceiptOkAloneProvesNothingAndTheGuideSaysSo(t *testing.T) {
 	exe := filepath.Join(dir, workerBinaryName)
 	writeExecutable(t, exe, "old-binary")
 	for name, c := range map[string]struct{ knob, key string }{
-		"refused": {"1", "refused"}, // the rel has no manifest entry: refused
+		"refused": {"1", "refused"}, // the release facts are not the job's: refused
 		"off":     {"0", "self_update"},
 	} {
 		t.Run(name, func(t *testing.T) {
