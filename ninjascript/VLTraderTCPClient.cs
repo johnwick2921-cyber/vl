@@ -1479,26 +1479,38 @@ namespace NinjaTrader.NinjaScript.AddOns
                         }
                     }
                 }
-                // QUEUE-47: cancel EVERY matched bracket, and retire a key from
-                // tracking only after that bracket's OWN orders were cancelled. A
-                // failed cancel leaves the key; nothing re-drives it — the legs
-                // settle through order_update or a later sweep (the next netting
-                // flat via CancelAllBracketsFor, or the next close).
-                foreach (var v in victims)
+            }
+            // QUEUE-47: cancel EVERY matched bracket, and retire a key from
+            // tracking only after that bracket's OWN orders were cancelled. A
+            // failed cancel leaves the key; nothing re-drives it — the legs
+            // settle through order_update or a later sweep (the next netting
+            // flat via CancelAllBracketsFor, or the next close).
+            //
+            // P1-4 (Release 2, 2026-11-24): Cancel runs OUTSIDE signalMapLock.
+            // It raises OnOrderUpdate on this same thread (NT8 trace: 3,211 of
+            // 3,321), so holding the map lock across it also held it across a
+            // socket write — and, against a thread that is inside NT8 and wants
+            // this lock, deadlocked the one SIM fill thread.
+            foreach (var v in victims)
+            {
+                PlacedBracket pb = v.Value;
+                bool retired = true; // nothing resting: the key is stale
+                if (pb != null)
                 {
-                    PlacedBracket pb = v.Value;
-                    if (pb == null) { placedBrackets.Remove(v.Key); continue; }
                     Account ba = pb.Account ?? account;
                     var toCancel = new List<Order>();
-                    if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
-                    if (pb.TpOrder != null) toCancel.Add(pb.TpOrder);
-                    // REVIEW-353: cancel leg 2's pair too — EVERY bracket of the signal.
-                    if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
-                    if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
-                    // release #31: leg 3's pair too.
-                    if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
-                    if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
-                    bool retired = (toCancel.Count == 0); // nothing resting: the key is stale
+                    lock (signalMapLock)
+                    {
+                        if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
+                        if (pb.TpOrder != null) toCancel.Add(pb.TpOrder);
+                        // REVIEW-353: cancel leg 2's pair too — EVERY bracket of the signal.
+                        if (pb.SlOrder2 != null) toCancel.Add(pb.SlOrder2);
+                        if (pb.TpOrder2 != null) toCancel.Add(pb.TpOrder2);
+                        // release #31: leg 3's pair too.
+                        if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
+                        if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
+                    }
+                    retired = (toCancel.Count == 0);
                     if (toCancel.Count > 0 && ba != null)
                     {
                         try
@@ -1512,9 +1524,15 @@ namespace NinjaTrader.NinjaScript.AddOns
                             LogWarn("VLTraderTCPClient: bracket cancel after exit failed: " + ex.Message);
                         }
                     }
-                    if (retired)
+                }
+                if (retired)
+                {
+                    lock (signalMapLock)
                     {
-                        placedBrackets.Remove(v.Key);
+                        // only if the record is still the one whose legs were cancelled
+                        PlacedBracket cur;
+                        if (placedBrackets.TryGetValue(v.Key, out cur) && ReferenceEquals(cur, pb))
+                            placedBrackets.Remove(v.Key);
                     }
                 }
             }
@@ -3577,8 +3595,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void CancelAllBracketsFor(string rootSymbol, string acctName)
         {
             if (string.IsNullOrEmpty(rootSymbol)) return;
-            List<PlacedBracket> victims = new List<PlacedBracket>();
-            List<string> keysToRemove = new List<string>();
+            var victims = new List<KeyValuePair<string, PlacedBracket>>();
             lock (signalMapLock)
             {
                 foreach (var kv in placedBrackets)
@@ -3592,16 +3609,22 @@ namespace NinjaTrader.NinjaScript.AddOns
                     if (string.Equals(candRoot, rootSymbol, StringComparison.OrdinalIgnoreCase)
                         && (string.IsNullOrEmpty(acctName) || string.Equals(candAcct, acctName, StringComparison.OrdinalIgnoreCase)))
                     {
-                        victims.Add(cand);
-                        keysToRemove.Add(kv.Key);
+                        victims.Add(kv);
                     }
                 }
-                if (victims.Count == 0) return;
-                int cancelled = 0;
-                foreach (var pb in victims)
+            }
+            if (victims.Count == 0) return;
+            // P1-4 (Release 2): Cancel OUTSIDE signalMapLock (see CancelBracketsFor);
+            // a key is dropped only after its own Cancel did not throw, and only if
+            // the record is still the same one.
+            int cancelled = 0;
+            foreach (var kv in victims)
+            {
+                PlacedBracket pb = kv.Value;
+                Account ba = pb.Account ?? account;
+                var toCancel = new List<Order>();
+                lock (signalMapLock)
                 {
-                    Account ba = pb.Account ?? account;
-                    var toCancel = new List<Order>();
                     if (pb.SlOrder != null) toCancel.Add(pb.SlOrder);
                     if (pb.TpOrder != null) toCancel.Add(pb.TpOrder);
                     // P0-2: the netting-flat sweep must cancel leg 2 too.
@@ -3610,26 +3633,33 @@ namespace NinjaTrader.NinjaScript.AddOns
                     // release #31: leg 3's pair too.
                     if (pb.SlOrder3 != null) toCancel.Add(pb.SlOrder3);
                     if (pb.TpOrder3 != null) toCancel.Add(pb.TpOrder3);
-                    if (toCancel.Count > 0 && ba != null)
+                }
+                bool retired = true;
+                if (toCancel.Count > 0 && ba != null)
+                {
+                    try
                     {
-                        try
-                        {
-                            ba.Cancel(toCancel);
-                            cancelled += toCancel.Count;
-                        }
-                        catch (Exception ex)
-                        {
-                            LogWarn("VLTraderTCPClient: netting-flat bracket cancel failed: " + ex.Message);
-                        }
+                        ba.Cancel(toCancel);
+                        cancelled += toCancel.Count;
+                    }
+                    catch (Exception ex)
+                    {
+                        retired = false;
+                        LogWarn("VLTraderTCPClient: netting-flat bracket cancel failed: " + ex.Message);
                     }
                 }
-                foreach (var k in keysToRemove)
+                if (retired)
                 {
-                    placedBrackets.Remove(k);
+                    lock (signalMapLock)
+                    {
+                        PlacedBracket cur;
+                        if (placedBrackets.TryGetValue(kv.Key, out cur) && ReferenceEquals(cur, pb))
+                            placedBrackets.Remove(kv.Key);
+                    }
                 }
-                LogInfo("VLTraderTCPClient: netting-flat bracket sweep cancelled " + cancelled
-                        + " leg(s) for " + rootSymbol + " (" + victims.Count + " bracket(s))");
             }
+            LogInfo("VLTraderTCPClient: netting-flat bracket sweep cancelled " + cancelled
+                    + " leg(s) for " + rootSymbol + " (" + victims.Count + " bracket(s))");
         }
 
         // Emit the accounts_list frame reporting all available NT accounts with
