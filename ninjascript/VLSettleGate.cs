@@ -272,6 +272,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         // Not const: the harness shortens them.
         internal long UpkeepMs = 5000;
         internal long AnchorGapMs = 5000;
+        internal long UntrustedWarnMs = 60000;
+        internal long UntrustedRepeatMs = 600000;
 
         private sealed class RefEq : IEqualityComparer<object>
         {
@@ -289,7 +291,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             public SettlePhase Phase;
             public int Counted;
             public long FirstSeenMs;
-            public long WorkingMs = -1;   // when it last ENTERED Working/PartFilled
+            public long WorkingMs = -1;   // when it was triggered (entered Working/PartFilled)
             public long TerminalMs = -1;
         }
 
@@ -302,6 +304,9 @@ namespace NinjaTrader.NinjaScript.AddOns
             public bool ESeen;
             public long FillSeq;
             public long LastFillMs = -1;
+            // what the owner is told: since when it is untrusted on a connected account, and why
+            public long UntrustedMs = -1, WarnMs = -1;
+            public string NotYet = "", Dropped;
             // anchor candidate
             public bool HasCand; public int CandC; public long CandMs, CandSeq;
             // resync candidate
@@ -352,6 +357,47 @@ namespace NinjaTrader.NinjaScript.AddOns
             lock (gate) { KeyState k; return keys.TryGetValue(key, out k) && k.Trusted; }
         }
 
+        // "2 of 3": contracts the gate can judge, of all it has seen. For the log.
+        public string ArmedText()
+        {
+            lock (gate)
+            {
+                int n = 0;
+                foreach (KeyState k in keys.Values) if (k.Trusted) n++;
+                return n.ToString(CultureInfo.InvariantCulture) + " of " + keys.Count.ToString(CultureInfo.InvariantCulture);
+            }
+        }
+
+        // The anchors dropped since the last call, each with why (dropped on NT8's thread,
+        // which must not log).
+        public List<KeyValuePair<string, string>> TakeDrops()
+        {
+            var res = new List<KeyValuePair<string, string>>();
+            lock (gate)
+            {
+                foreach (KeyValuePair<string, KeyState> kv in keys)
+                    if (kv.Value.Dropped != null) { res.Add(new KeyValuePair<string, string>(kv.Key, kv.Value.Dropped)); kv.Value.Dropped = null; }
+            }
+            return res;
+        }
+
+        // True once when a key has been untrusted for UntrustedWarnMs on a connected account,
+        // and again after UntrustedRepeatMs.
+        public bool UntrustedDue(string key, long now, out long forMs, out string why)
+        {
+            forMs = 0; why = "";
+            lock (gate)
+            {
+                KeyState k;
+                if (!keys.TryGetValue(key, out k) || k.Trusted || k.UntrustedMs < 0) return false;
+                forMs = now - k.UntrustedMs;
+                if (forMs < UntrustedWarnMs || (k.WarnMs >= 0 && now - k.WarnMs < UntrustedRepeatMs)) return false;
+                k.WarnMs = now;
+                why = k.NotYet;
+                return true;
+            }
+        }
+
         public List<string> KnownKeys(string account)
         {
             var res = new List<string>();
@@ -368,9 +414,12 @@ namespace NinjaTrader.NinjaScript.AddOns
             if (!string.IsNullOrEmpty(orderId) && byId.TryGetValue(key + "\u001f" + orderId, out t))
             {
                 // Same order, new object (NT8 does not promise identity across a disconnect).
-                byRef.Remove(t.Ref);
+                object old = t.Ref;
+                byRef.Remove(old);
                 t.Ref = orderRef;
                 byRef[orderRef] = t;
+                foreach (OwnExit o in ownExits) if (ReferenceEquals(o.Ref, old)) o.Ref = orderRef;
+                foreach (SweepMark m in marks) foreach (OwnExit o in m.Items) if (ReferenceEquals(o.Ref, old)) o.Ref = orderRef;
                 return t;
             }
             return null;
@@ -415,8 +464,10 @@ namespace NinjaTrader.NinjaScript.AddOns
         private void PhaseLocked(Tracked t, SettlePhase phase, long now)
         {
             if (t.TerminalMs >= 0) return; // terminal is terminal
-            if (IsTriggered(phase)) { if (!IsTriggered(t.Phase)) t.WorkingMs = now; }
-            else t.WorkingMs = -1;
+            // A triggered stop stays triggered through Changing / CancelPending / Unknown (it can
+            // still fill): only its end or a return to an untriggered state clears it.
+            if (IsTriggered(phase)) { if (t.WorkingMs < 0) t.WorkingMs = now; }
+            else if (phase != SettlePhase.Changing && phase != SettlePhase.CancelPending && phase != SettlePhase.Unknown) t.WorkingMs = -1;
             t.Phase = phase;
             if (IsTerminal(phase)) t.TerminalMs = now;
         }
@@ -520,13 +571,15 @@ namespace NinjaTrader.NinjaScript.AddOns
                 connWasDown[conn] = false;
                 if (!down) return false;
                 foreach (KeyState k in keys.Values)
-                    if (ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k);
+                    if (ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k, "its connection was disconnected and is back");
                 return true;
             }
         }
 
-        private static void DropAnchorLocked(KeyState k)
+        private static void DropAnchorLocked(KeyState k, string why)
         {
+            if (k.Trusted) k.Dropped = why;
+            k.UntrustedMs = -1;
             k.Trusted = false; k.ESeen = false; k.E = 0; k.HasCand = false; k.HasRes = false;
         }
 
@@ -544,13 +597,14 @@ namespace NinjaTrader.NinjaScript.AddOns
                 {
                     // Moved to another connection: its state may have been restored there without
                     // an event (10-22), so it is anchored again.
-                    if (k.Conn != null && !ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k);
+                    if (k.Conn != null && !ReferenceEquals(k.Conn, conn)) DropAnchorLocked(k, "the account moved to another connection");
                     k.Conn = conn;
                 }
                 wasL = k.L;
-                if (!cKnown || !connected) { k.HasCand = false; k.HasRes = false; return UpkeepResult.None; }
+                if (!cKnown || !connected) { k.HasCand = false; k.HasRes = false; k.UntrustedMs = -1; return UpkeepResult.None; }
                 if (!k.Trusted)
                 {
+                    if (k.UntrustedMs < 0) k.UntrustedMs = now;
                     bool moved = false;
                     if (seeds != null)
                         foreach (OrderSeed s in seeds)
@@ -564,15 +618,23 @@ namespace NinjaTrader.NinjaScript.AddOns
                                 PhaseLocked(t, s.Phase, now);
                                 if (s.Filled > 0) moved = true;
                             }
-                            else if (s.Filled > t.Counted) moved = true; // live is ahead of its event
+                            else if (s.Filled > t.Counted)
+                            {
+                                // Live is ahead of its last event. That event may never come, so the
+                                // order is taken as NT8 shows it now; L itself is set by the anchor.
+                                moved = true;
+                                t.Counted = s.Filled;
+                                if (s.Phase != SettlePhase.Unknown) PhaseLocked(t, s.Phase, now);
+                            }
                         }
                     if (moved || !k.HasCand || k.CandC != c || k.CandSeq != k.FillSeq)
                     {
+                        k.NotYet = !k.HasCand ? "first look" : (k.CandC != c ? "the position changes between looks" : "fills between looks");
                         k.HasCand = true; k.CandC = c; k.CandMs = now; k.CandSeq = k.FillSeq;
                         return UpkeepResult.None;
                     }
                     if (now - k.CandMs < AnchorGapMs) return UpkeepResult.None;
-                    k.L = c; k.Trusted = true; k.HasCand = false; k.HasRes = false;
+                    k.L = c; k.Trusted = true; k.HasCand = false; k.HasRes = false; k.UntrustedMs = -1;
                     return UpkeepResult.Anchored;
                 }
                 bool quiet = k.LastFillMs < 0 || now - k.LastFillMs > WindowLocked();
@@ -589,13 +651,19 @@ namespace NinjaTrader.NinjaScript.AddOns
         }
 
         // Forget terminal orders after TerminalKeepMs, and beyond TerminalCap oldest first.
-        // (Forgotten at once + a repeated Filled = counted twice.)
+        // (Forgotten at once + a repeated Filled = counted twice.) Not those of an untrusted key:
+        // the next anchor pass would find them again as new fills and never end (NT8's own order
+        // list bounds them, and they go once the key is trusted).
         public void Prune(long now)
         {
             lock (gate)
             {
                 var term = new List<Tracked>();
-                foreach (Tracked t in byRef.Values) if (t.TerminalMs >= 0) term.Add(t);
+                foreach (Tracked t in byRef.Values)
+                {
+                    KeyState k;
+                    if (t.TerminalMs >= 0 && keys.TryGetValue(t.Key, out k) && k.Trusted) term.Add(t);
+                }
                 term.Sort((a, b) => a.TerminalMs.CompareTo(b.TerminalMs));
                 int over = term.Count - TerminalCap;
                 for (int i = 0; i < term.Count; i++)
@@ -656,7 +724,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                         liveMarket = true;
                         if (now - t.FirstSeenMs < win) v.Why |= UnsettledWhy.LiveMarketExit;
                     }
-                    else if (t.Kind == SettleOrderKind.Stop && IsTriggered(t.Phase) && now - t.WorkingMs < win)
+                    else if (t.Kind == SettleOrderKind.Stop && t.WorkingMs >= 0 && now - t.WorkingMs < win)
                         v.Why |= UnsettledWhy.TriggeredStop;
                 }
                 if (k.HasFlatten && k.FlattenHeld && now - k.FlattenMs < win)

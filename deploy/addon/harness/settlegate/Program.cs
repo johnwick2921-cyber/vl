@@ -59,7 +59,7 @@ static class Program
     static int Main(string[] a)
     {
         if (a.Length > 1 && a[0] == "replay") return Replay.Run(a[1]);
-        foreach (Action t in new Action[] { U1, U2, U3, U4, U5, U5b, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U18, X6, X7, X8, X13, Stale, Prune, Conn })
+        foreach (Action t in new Action[] { U1, U2, U3, U4, U5, U5b, U6, U7, U8, U9, U10, U11, U12, U13, U14, U15, U16, U17, U18, X6, X7, X8, X13, Stale, Prune, Conn, R2 })
         { try { t(); } catch (Exception ex) { Ok(t.Method.Name, false, "threw " + ex.Message); } }
         Console.WriteLine("settlegate: " + pass + " PASS, " + fail + " FAIL");
         return fail == 0 ? 0 : 1;
@@ -398,6 +398,43 @@ static class Program
         var k = new K().Anchor(); for (int i = 0; i < 2100; i++) { k.Ord(new object(), true, true, OTH, SettlePhase.Cancelled, 0, "c" + i); } object live = new object(); k.Ord(live, true, true, OTH, SettlePhase.Working, 0);
         k.G.Prune(k.Now); Ok("Prune at most 2000 ended orders are kept, live ones always", k.G.TrackedCount == 2001, k.G.TrackedCount.ToString());
         k.Now += 600001; k.G.Prune(k.Now); Ok("Prune ended orders go after 10 min", k.G.TrackedCount == 1, k.G.TrackedCount.ToString());
+    }
+    // round 2
+    static void R2()
+    {
+        int was; var k = new K(); k.Pos = 2; object o = new object(); k.Ord(o, true, false, OTH, SettlePhase.PartFilled, 1);
+        var seeds = new List<OrderSeed> { new OrderSeed { Ref = o, OrderId = "q", Buy = true, Kind = OTH, Phase = SettlePhase.Filled, Filled = 2 } }; // its last event never came
+        for (int i = 0; i < 4; i++) { k.G.Upkeep(k.Key, k, true, true, 2, seeds, k.Now, out was); k.Now += 5000; }
+        Ok("R2-1 a tracked order whose live Filled is ahead of its last event does not keep the key untrusted", k.G.IsTrusted(k.Key) && k.J().L == 2, k.J().ToString());
+        k.Ord(o, true, false, OTH, SettlePhase.Filled, 2); Ok("R2-1 and its late event is not counted again", k.J().L == 2, k.J().ToString());
+        var st = new K(); st.Pos = -1; object so = new object(); st.Ord(so, true, true, STOP, SettlePhase.PartFilled, 0);
+        seeds = new List<OrderSeed> { new OrderSeed { Ref = so, OrderId = "s", Buy = true, ExitSide = true, Kind = STOP, Phase = SettlePhase.Filled, Filled = 1 } };
+        st.G.Upkeep(st.Key, st, true, true, -1, seeds, st.Now, out was); Ok("R2-1 its phase is taken over too (terminal)", st.G.LiveRefs(st.Key, st.Now + 5001).Count == 0);
+        Ok("R2-1 the first look after it only starts the anchor", st.G.Upkeep(st.Key, st, true, true, -1, seeds, st.Now + 4999, out was) == UpkeepResult.None && !st.G.IsTrusted(st.Key));
+        foreach (var mid in new[] { SettlePhase.Changing, SettlePhase.CancelPending })
+        {
+            var c = Short3(); object s = new object(); c.Ord(s, true, true, STOP, SettlePhase.Working, 0); c.Now += 50; c.Ord(s, true, true, STOP, mid, 0);
+            Ok("R2-2 a triggered stop that is " + mid + " is still imminent", c.J().Why == UnsettledWhy.TriggeredStop, c.J().ToString());
+            c.Now += 949; bool a = c.J().Why == UnsettledWhy.TriggeredStop; c.Now += 1; Ok("R2-2 " + mid + ": the 1000 ms count from the trigger, not from the change", a && c.J().Kind == VerdictKind.SettledHeld, c.J().ToString());
+            c.Ord(s, true, true, STOP, SettlePhase.Working, 0); Ok("R2-2 " + mid + " and back to Working is not a new trigger", c.J().Kind == VerdictKind.SettledHeld, c.J().ToString());
+            var d = Short3(); object s2 = new object(); d.Ord(s2, true, true, STOP, SettlePhase.Working, 0); d.Ord(s2, true, true, STOP, mid, 0); d.Ord(s2, true, true, STOP, SettlePhase.Accepted, 0);
+            Ok("R2-2 " + mid + " then Accepted: not imminent", d.J().Kind == VerdictKind.SettledHeld, d.J().ToString());
+            var e = Short3(); object s3 = new object(); e.Ord(s3, true, true, STOP, SettlePhase.Working, 0); e.Ord(s3, true, true, STOP, mid, 0); e.Ord(s3, true, true, STOP, SettlePhase.Cancelled, 0);
+            Ok("R2-2 " + mid + " then Cancelled: not imminent", e.J().Kind == VerdictKind.SettledHeld, e.J().ToString());
+        }
+        var m = Short3(); object o1 = new object(), o2 = new object(); m.G.RegisterOwnExit(m.Key, o1, true, true, m.Now); m.G.MarkOwnExitSubmitted(o1); m.Ord(o1, true, true, OTH, SettlePhase.Working, 0, "lx1");
+        m.Ord(o2, true, true, OTH, SettlePhase.Working, 0, "lx1"); Ok("R2-3 the same order as a new object: the -lx record follows", m.G.OwnLx(m.Key).Count == 1 && ReferenceEquals(m.G.OwnLx(m.Key)[0].Ref, o2));
+        m.Ord(o2, true, true, OTH, SettlePhase.Cancelled, 0, "lx1"); Ok("R2-3 and ends with the new object's end", m.G.OwnLx(m.Key).Count == 0);
+        var mk = Short3(); object p1 = new object(), p2 = new object(); mk.G.RegisterOwnExit(mk.Key, p1, true, true, mk.Now); mk.Ord(p1, true, true, OTH, SettlePhase.Working, 0, "lx2"); mk.Ev(0);
+        mk.Ord(p2, true, true, OTH, SettlePhase.Working, 0, "lx2");
+        Ok("R2-3 a sweep mark follows too", mk.G.MarksSnapshot().Count == 1 && ReferenceEquals(mk.G.MarksSnapshot()[0].Items[0].Ref, p2));
+        mk.G.MarkOwnExitSubmitted(p2); Ok("R2-3 and is found by the new object", mk.G.MarksSnapshot()[0].Items[0].Submitted);
+        var big = new K(); var many = new List<OrderSeed>(); for (int i = 0; i < 2100; i++) many.Add(new OrderSeed { Ref = new object(), OrderId = "b" + i, Buy = true, Kind = OTH, Phase = SettlePhase.Filled, Filled = 1 });
+        big.Pos = 1; for (int i = 0; i < 4; i++) { big.G.Upkeep(big.Key, big, true, true, 1, big.G.IsTrusted(big.Key) ? null : many, big.Now, out was); big.G.Prune(big.Now); big.Now += 5000; }
+        Ok("R2-4 an account with more ended orders than the cap is still anchored", big.G.IsTrusted(big.Key) && big.J().L == 1, big.J().ToString());
+        big.G.Prune(big.Now); Ok("R2-4 and the cap holds again once it is", big.G.TrackedCount == 2000, big.G.TrackedCount.ToString());
+        var slow = new K(); slow.Pos = 1; var few = many.GetRange(0, 3); slow.G.Upkeep(slow.Key, slow, true, true, 1, few, slow.Now, out was); slow.Now += 600001; slow.G.Prune(slow.Now);
+        Ok("R2-4 an untrusted key's ended orders are not forgotten by age either", slow.G.TrackedCount == 3 && slow.G.Upkeep(slow.Key, slow, true, true, 1, few, slow.Now, out was) == UpkeepResult.Anchored, slow.G.TrackedCount.ToString());
     }
     static void Stale()
     {

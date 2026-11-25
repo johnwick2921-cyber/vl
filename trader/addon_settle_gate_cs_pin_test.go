@@ -229,3 +229,32 @@ func TestSettleGateFileRules(t *testing.T) {
 		t.Error("VLSettleGate.cs must declare internal types only")
 	}
 }
+
+// move_stop, modify_bracket and cancel_order run OUTSIDE the per-account command lock, on
+// purpose: they can only Change or Cancel an order that already exists, so beside a held
+// close's release they cannot make a second exit or a reverse — and inside it a stuck
+// release (a socket stall of 8.5 s was seen) would delay a stop move or an entry cancel.
+// The day one of them submits an order or sizes itself from a position, it needs the lock.
+func TestSettleGateUnlockedCommandsNeverSubmit(t *testing.T) {
+	src := addonSource(t)
+	for _, m := range []string{"private void HandleMoveStop(", "private void HandleModifyBracket(", "private void HandleCancelOrder("} {
+		b := csharpMethodBody(t, src, m)
+		for _, bad := range []string{".Submit(", "CreateOrder(", ".Flatten(", "TryAccountPosition(", ".Positions"} {
+			if strings.Contains(b, bad) {
+				t.Errorf("%s contains %s: put it under CmdLockFor", m, bad)
+			}
+		}
+	}
+}
+
+// The gate tells the owner whether it is armed, and only from its own thread or after a
+// close has run.
+func TestSettleGateStateIsLogged(t *testing.T) {
+	src := addonSource(t)
+	inOrder(t, csharpMethodBody(t, src, "private void SettleUpkeep("), "SettleUpkeepAccount(g, a);", "SettleWarnLimited(", "g.TakeDrops()", "settle gate DISARMED")
+	inOrder(t, csharpMethodBody(t, src, "private void SettleUpkeepAccount("), "HookLedger(a);", "if (!ledgerSubscribed.Contains(a)) return;",
+		"g.Upkeep(", "settle gate ARMED", "g.UntrustedDue(", "settle gate NOT ARMED")
+	inOrder(t, csharpMethodBody(t, src, "private void HandleFrame("), "HandleClosePosition(closeNow);", "LogSettleRanNow();")
+	inOrder(t, csharpMethodBody(t, src, "private void StartSettleGate("), "catch (Exception ex)", "settleGate.StopSweeps();")
+	inOrder(t, csharpMethodBody(t, src, "private void HookLedger("), "try", "IsSimAccount(a)", "catch (Exception ex)")
+}

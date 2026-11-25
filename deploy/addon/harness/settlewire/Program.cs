@@ -45,7 +45,7 @@ sealed class Rig : IDisposable
         B.Connection = A.Connection; Connection.Connections.Add(A.Connection);
         Account.All.Add(A); Account.All.Add(B);
         NinjaScript.Lines.Clear(); NinjaScript.OnLog = null;
-        Instrument.ThrowFullNameIn = -1; Order.ThrowFilledIn = -1; VLInstrumentLookup.ThrowIn = -1;
+        Instrument.ThrowFullNameIn = -1; Order.ThrowFilledIn = -1; VLInstrumentLookup.ThrowIn = -1; Account.ThrowAllIn = -1;
         lis = new TcpListener(IPAddress.Loopback, 0); lis.Start();
         near = new TcpClient(); near.Connect(IPAddress.Loopback, ((IPEndPoint)lis.LocalEndpoint).Port);
         far = lis.AcceptTcpClient();
@@ -122,6 +122,7 @@ static class P
         Console.WriteLine("gate compiled in: " + (Rig.GateT != null));
         if (args.Length > 0 && args[0] == "seq") { SeqMode(); return 0; }
         Define();
+        Define2();
         foreach (var (n, a) in Tests)
         {
             if (args.Length > 1 && args[0] == "one" && !n.StartsWith(args[1])) continue;
@@ -166,8 +167,9 @@ static class P
                 r.Seen(r.A); r.Open(r.A, "e1", "short", 1); r.StopFilledPosLags(r.A, "e1-sl", 1);
                 r.Close(r.A, "c1", "short"); int f = r.A.Count("Flatten");
                 r.Frame("{\"type\":\"heartbeat\",\"payload\":{}}");
-                bool ack = Until(() => r.FramesWith("\"acks\":\"heartbeat\"") == 1, 300);
-                Ok(n, f == 0 && ack && r.A.Count("Flatten") == 0, "flattens at frame " + f + " ack " + ack);
+                int after = r.A.Count("Flatten"); // the reader came back while the close was still held; the ack itself may be slow to reach the far end
+                bool ack = Until(() => r.FramesWith("\"acks\":\"heartbeat\"") == 1, 2000);
+                Ok(n, f == 0 && ack && after == 0, "flattens at frame " + f + " after " + after + " ack " + ack);
                 Account.SimWait(() => r.A.MovePos(+1)); Until(() => r.A.Count("Flatten") == 1, 1500);
             }
         });
@@ -372,8 +374,7 @@ static class P
         {
             using (var r = new Rig())
             {
-                var ev = (Delegate)typeof(Account).GetField("OrderUpdate", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(r.A);
-                var names = ev.GetInvocationList().Select(d => d.Method.Name).ToList();
+                var names = r.A.OrderHooks();
                 Ok(n, names.Count == 2 && names[0] == "OnLedgerOrderUpdate" && names[1] == "OnOrderUpdate", string.Join(",", names));
             }
         });
@@ -608,8 +609,7 @@ static class P
                 if (Rig.GateT != null) { Rig.GateT.GetField("UpkeepMs", BindingFlags.Instance | BindingFlags.NonPublic).SetValue(r.Gate, 60000L); Thread.Sleep(60); }
                 var late = new Account { Name = "SimLate", Connection = r.A.Connection }; lock (Account.All) Account.All.Add(late);
                 r.Run("SubscribeOrderUpdate", late);
-                var ev = (Delegate)typeof(Account).GetField("OrderUpdate", BindingFlags.Instance | BindingFlags.NonPublic).GetValue(late);
-                var names = ev.GetInvocationList().Select(d => d.Method.Name).ToList();
+                var names = late.OrderHooks();
                 Ok(n, names.Count == 2 && names[0] == "OnLedgerOrderUpdate", string.Join(",", names));
             }
         });
@@ -669,6 +669,203 @@ static class P
                 var o = new Order { Account = r.A, Instrument = Instrument.Mnq, Name = "x", OrderAction = OrderAction.Buy, Quantity = 1, OrderId = "x" };
                 Account.SimWait(() => { r.A.State(o, OrderState.Working); r.A.FillEvent(o, 1); r.A.State(new Order { Account = r.A, Instrument = null, Name = "bad" }, OrderState.Working); });
                 Ok(n, NinjaScript.Lines.Count == l0 && r.Frames.Count == f0, "lines " + (NinjaScript.Lines.Count - l0));
+            }
+        });
+    }
+
+    // ── round 2 ──────────────────────────────────────────────────────────────
+    static void GateField(Rig r, string f, long v) { if (r.Gate == null) return; var x = Rig.GateT.GetField(f, BindingFlags.Instance | BindingFlags.NonPublic | BindingFlags.Public); if (x != null) x.SetValue(r.Gate, v); }
+    static int Lines(params string[] parts) { return NinjaScript.Lines.Count(l => parts.All(p => l.Contains(p))); }
+    static int Pending(Rig r) { r.Frame("{\"type\":\"maintenance\",\"payload\":{\"held\":true,\"job_id\":\"pq\"}}"); string f = null; Until(() => (f = r.Frames.FirstOrDefault(x => x.Contains("maintenance_ack") && x.Contains("\"pq\""))) != null, 2000); int i = f.IndexOf("\"queued_commands\":") + 18; return f[i] - '0'; }
+    static void Define2()
+    {
+        T("R1 arming is logged once, with the gate's state", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); Until(() => Lines("Information", "settle gate ARMED", "SimA", "MNQ 12-26", "1 of 1") == 1, 1000); Thread.Sleep(100);
+                Ok(n, Lines("settle gate ARMED") == 1 && Lines("settle gate ARMED", "SimA", "1 of 1") == 1, string.Join("|", NinjaScript.Lines));
+            }
+        });
+        T("R2 a Disconnected-to-Connected transition drops the anchor, says so, and a close then runs at once", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); GateField(r, "AnchorGapMs", 600000);
+                Action<ConnectionStatus, ConnectionStatus> conn = (now, was) => r.Run("OnVLConnectionStatusUpdate", null, new ConnectionStatusEventArgs { Connection = r.A.Connection, Status = now, PreviousStatus = was, PriceStatus = now, PreviousPriceStatus = was });
+                conn(ConnectionStatus.ConnectionLost, ConnectionStatus.Connected); conn(ConnectionStatus.Connected, ConnectionStatus.ConnectionLost); bool kept = r.Trusted(r.A);
+                conn(ConnectionStatus.Disconnected, ConnectionStatus.Connected); conn(ConnectionStatus.Connecting, ConnectionStatus.Disconnected); conn(ConnectionStatus.Connected, ConnectionStatus.Connecting);
+                bool dropped = !r.Trusted(r.A);
+                bool said = Until(() => Lines("Information", "settle gate DISARMED", "SimA", "0 of 1") == 1, 1000); Thread.Sleep(80);
+                r.StopFilledPosLags(r.A, "e1-sl", 1); r.Close(r.A, "c1", "short");
+                Ok(n, kept && dropped && said && Lines("settle gate DISARMED") == 1 && r.A.Count("Flatten pos=-1") == 1, "kept " + kept + " dropped " + dropped + " said " + said + " " + r.Seq(r.A));
+                Account.SimWait(() => r.A.MovePos(1));
+            }
+        });
+        T("R3 not armed for long on a connected account: one WARN, rate limited; on a disconnected one: none", n =>
+        {
+            using (var r = new Rig(null, x => { x.B.Connection = new Connection { Status = ConnectionStatus.Disconnected }; }))
+            {
+                GateField(r, "AnchorGapMs", 600000); GateField(r, "UntrustedWarnMs", 100);
+                Account.SimWait(() => { r.A.RaisePos(); r.B.RaisePos(); });
+                Thread.Sleep(60); int early = Lines("NOT ARMED");
+                bool one = Until(() => Lines("Warning", "settle gate NOT ARMED", "SimA") == 1, 1500); Thread.Sleep(400);
+                Ok(n, early == 0 && one && Lines("settle gate NOT ARMED") == 1 && Lines("settle gate NOT ARMED", "SimB") == 0, "early " + early + " n " + Lines("settle gate NOT ARMED"));
+            }
+        });
+        T("R4 every close that runs at once says what the gate saw", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Open(r.A, "e0", "long", 1); Until(() => r.A.Pos == 1, 500); GateField(r, "AnchorGapMs", 600000);
+                bool unarmed = !r.Trusted(r.A); r.Close(r.A, "c0", "long"); int a = Lines("close_position ran at once", "SimA", "NOT ARMED"); Until(() => r.A.Pos == 0, 1500);
+                GateField(r, "AnchorGapMs", 30); r.Seen(r.A); Thread.Sleep(400); r.Open(r.A, "e1", "long", 1); Thread.Sleep(20);
+                r.Close(r.A, "c1", "long"); int b = Lines("close_position ran at once", "SimA", "SettledHeld");
+                Ok(n, unarmed && a == 1 && b == 1, "unarmed " + unarmed + " a " + a + " b " + b);
+                Until(() => r.A.Pos == 0, 1500);
+            }
+        });
+        T("R5 an unreadable position runs the close at once", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); Thread.Sleep(20);
+                r.A.ThrowPositions = true; r.Close(r.A, "c1", "short"); int at = r.A.Count("Flatten pos=-1"); r.A.ThrowPositions = false;
+                Ok(n, at == 1, r.Seq(r.A)); Until(() => r.A.Pos == 0, 1500);
+            }
+        });
+        T("R5b a held close whose position becomes unreadable is released at once", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); r.StopFilledPosLags(r.A, "e1-sl", 1);
+                r.Close(r.A, "c1", "short"); int at = r.A.Count("Flatten"); var sw = Stopwatch.StartNew(); r.A.ThrowPositions = true;
+                Until(() => r.A.Count("Flatten") == 1, 2000); sw.Stop(); Until(() => Lines("was HELD", "state unknown") == 1, 1000); r.A.ThrowPositions = false;
+                Ok(n, at == 0 && sw.ElapsedMilliseconds < 600 && Lines("was HELD", "state unknown") == 1, "at " + at + " ms " + sw.ElapsedMilliseconds);
+                Account.SimWait(() => r.A.MovePos(1));
+            }
+        });
+        T("R6 a non-SIM account is never hooked, and is never gated even when its key is armed", n =>
+        {
+            using (var r = new Rig(null, x => x.B.Simulation = false))
+            {
+                Thread.Sleep(60); var hooks = r.B.OrderHooks();
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); r.StopFilledPosLags(r.A, "e1-sl", 1);
+                r.A.Simulation = false; r.Close(r.A, "c1", "short");
+                bool rej = Until(() => r.FramesWith("position_close_rejected") == 1, 500); r.A.Simulation = true;
+                Ok(n, hooks.Count == 1 && hooks[0] == "OnOrderUpdate" && rej && r.A.Count("Flatten") == 0, string.Join(",", hooks) + " rej " + rej + " " + r.Seq(r.A));
+                Account.SimWait(() => r.A.MovePos(1));
+            }
+        });
+        T("R7 the sweep waits for a running command of its account", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); r.Close(r.A, "c1", "short", 101);
+                var block = new ManualResetEventSlim(); var inside = new ManualResetEventSlim();
+                r.A.OnCall = c => { if (c.StartsWith("Submit e9")) { inside.Set(); block.Wait(3000); } };
+                var t = new Thread(() => r.Signal(r.A, "e9", "long", 1, ",\"order_type\":\"limit\",\"limit_price\":50")) { IsBackground = true }; t.Start();
+                bool running = inside.Wait(1000);
+                var sl = r.A.Find("e1-sl"); Account.SimWait(() => { r.A.State(sl, OrderState.Working); r.A.FillNow(sl, 1); });
+                Thread.Sleep(250); int during = r.A.Count("Cancel c1-lx");
+                block.Set(); bool after = Until(() => r.A.Count("Cancel c1-lx") >= 1, 1000); t.Join(1000);
+                Ok(n, running && during == 0 && after, "running " + running + " during " + during + " after " + after + " " + r.Seq(r.A));
+            }
+        });
+        T("R8 a late Cancelled of the OLDER order of a reused signal id keeps the new order's note", n =>
+        {
+            using (var r = new Rig())
+            {
+                string lim = ",\"order_type\":\"limit\",\"limit_price\":99";
+                r.Seen(r.A); r.Signal(r.A, "e1", "long", 1, lim); var o1 = r.A.Find("e1");
+                ((System.Collections.IDictionary)r.Get("seenSignals")).Clear();
+                r.Signal(r.A, "e1", "long", 1, lim); var o2 = r.A.Find("e1");
+                Account.SimWait(() => r.A.State(o1, OrderState.Cancelled));
+                Account.SimWait(() => r.A.FillNow(o2, 1));
+                Ok(n, !ReferenceEquals(o1, o2) && r.A.Count("Submit e1-sl Sell StopMarket 1") == 1, r.Seq(r.A));
+            }
+        });
+        foreach (var viaLx in new[] { false, true })
+        {
+            bool lx = viaLx; string who = lx ? "CancelBracketsFor (-lx Filled)" : "CancelAllBracketsFor (flat)";
+            T("R9 " + who + ": a throwing Cancel keeps the key, the next one drops it", n =>
+            {
+                using (var r = new Rig("own_exit_sweep=0"))
+                {
+                    r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); if (lx) { r.Close(r.A, "c1", "short", 101); r.Close(r.A, "c2", "short", 101); }
+                    int thrown = 0; r.A.OnCall = c => { if (c.StartsWith("Cancel e1") && thrown++ == 0) throw new InvalidOperationException("stub cancel"); };
+                    var map = (System.Collections.IDictionary)r.Get("placedBrackets");
+                    Action go = () => { if (lx) r.A.FillEvent(r.A.Find("c1-lx"), 1); else { r.A.SetPos(0); r.A.RaisePos(); } };
+                    Account.SimWait(go); bool kept = map.Contains("e1"); Account.SimWait(go); bool dropped = !map.Contains("e1");
+                    Ok(n, thrown >= 2 && kept && dropped, "thrown " + thrown + " kept " + kept + " dropped " + dropped + " " + r.Seq(r.A));
+                }
+            });
+            T("R9 " + who + ": a record replaced during the Cancel is not the one dropped", n =>
+            {
+                using (var r = new Rig("own_exit_sweep=0"))
+                {
+                    r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); if (lx) r.Close(r.A, "c1", "short", 101);
+                    var map = (System.Collections.IDictionary)r.Get("placedBrackets"); object fresh = null;
+                    r.A.OnCall = c => { if (c.StartsWith("Cancel e1") && fresh == null) { fresh = Activator.CreateInstance(map["e1"].GetType(), true); map["e1"] = fresh; } };
+                    Account.SimWait(() => { if (lx) r.A.FillEvent(r.A.Find("c1-lx"), 1); else { r.A.SetPos(0); r.A.RaisePos(); } });
+                    Ok(n, fresh != null && ReferenceEquals(map["e1"], fresh), "fresh " + (fresh != null) + " still " + map.Contains("e1"));
+                }
+            });
+        }
+        T("R10 an account whose orders cannot be read does not stop the others, and is reported at a limited rate", n =>
+        {
+            using (var r = new Rig(null, x => x.A.ThrowOrders = true))
+            {
+                Account.SimWait(() => { r.A.RaisePos(); r.B.RaisePos(); });
+                bool b = Until(() => r.Trusted(r.B), 1500); Thread.Sleep(200);
+                int w = Lines("settle upkeep fault", "SimA"); bool a = r.Trusted(r.A);
+                r.A.ThrowOrders = false; bool healed = Until(() => r.Trusted(r.A), 1500);
+                Ok(n, b && !a && w == 1 && healed, "B " + b + " A " + a + " warns " + w + " healed " + healed);
+            }
+        });
+        T("R11 the gate does not start: nothing waits for it, closes run at once", n =>
+        {
+            using (var r = new Rig(null, x => Account.ThrowAllIn = 0))
+            {
+                r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); r.Close(r.A, "c1", "short", 101);
+                var sl = r.A.Find("e1-sl"); Account.SimWait(() => { r.A.State(sl, OrderState.Working); r.A.FillNow(sl, 1); }); Thread.Sleep(50);
+                r.Open(r.A, "e2", "short", 1); r.Close(r.A, "c2", "short"); int at = r.A.Count("Flatten pos=-1"); int p = Pending(r);
+                Ok(n, Lines("settle gate did not start") == 1 && p == 0 && at == 1, "pending " + p + " flattens " + at + " " + r.Seq(r.A));
+                Until(() => r.A.Pos == 0, 1500);
+            }
+        });
+        T("R12 a ledger hook that throws costs only its own account, and is tried again", n =>
+        {
+            using (var r = new Rig(null, x => x.A.ThrowOnLedgerHook = true))
+            {
+                bool sub = r.A.OrderHooks().Contains("OnOrderUpdate"); Account.SimWait(() => r.A.RaisePos()); r.A.SetPos(-1);
+                r.Seen(r.B); r.Open(r.B, "b1", "short", 1); r.StopFilledPosLags(r.B, "b1-sl", 1); r.Close(r.B, "cb", "short"); int held = r.B.Count("Flatten");
+                Account.SimWait(() => r.B.MovePos(1)); bool rel = Until(() => r.B.Count("Flatten pos=0") == 1, 1500);
+                bool unarmed = !r.Trusted(r.A); r.A.ThrowOnLedgerHook = false; bool later = Until(() => r.A.OrderHooks().Contains("OnLedgerOrderUpdate") && r.Trusted(r.A), 1000);
+                Ok(n, unarmed && Lines("settle ledger hook failed", "SimA") == 1 && sub && held == 0 && rel && later, "unarmed " + unarmed + " sub " + sub + " held " + held + " rel " + rel + " later " + later);
+            }
+        });
+        T("R13 the -lx came back as a new object (reconnect): the sweep cancels the new one", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); Thread.Sleep(20); r.Close(r.A, "c1", "short", 101); var old = r.A.Find("c1-lx");
+                Account.SimWait(() => r.A.State(old, OrderState.Working));
+                var now = new Order { Account = r.A, Instrument = Instrument.Mnq, Name = old.Name, OrderId = old.OrderId, OrderAction = old.OrderAction, OrderType = old.OrderType, Quantity = 1 };
+                r.A.Replace(old, now); Account.SimWait(() => r.A.State(now, OrderState.Working));
+                var sl = r.A.Find("e1-sl"); Account.SimWait(() => { r.A.State(sl, OrderState.Working); r.A.FillNow(sl, 1); });
+                bool gone = Until(() => now.Terminal, 1500);
+                Ok(n, gone && !old.Terminal, "new " + now.OrderState + " old " + old.OrderState + " " + r.Seq(r.A));
+            }
+        });
+        T("R14 KNOWN LIMIT: a marketable second limit exit behind a passive -lx is not placed (Go's own timer sends the market close)", n =>
+        {
+            using (var r = new Rig())
+            {
+                r.Seen(r.A); r.Open(r.A, "e1", "short", 1); Thread.Sleep(20);
+                r.Close(r.A, "c1", "short", 50); r.Close(r.A, "c2", "short", 150); int lx = r.A.Calls.Count(c => c.StartsWith("Submit c") && c.Contains("-lx"));
+                r.Close(r.A, "c3", "short"); // the market fallback is never blocked by the -lx
+                Ok(n, lx == 1 && r.A.Count("Change") == 0 && r.A.Count("Flatten pos=-1") == 1, r.Seq(r.A)); Until(() => r.A.Pos == 0, 1500);
             }
         });
     }

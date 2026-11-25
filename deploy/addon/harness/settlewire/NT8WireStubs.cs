@@ -69,15 +69,25 @@ namespace NinjaTrader.Cbi
 
     public class Account
     {
-        public static readonly List<Account> All = new List<Account>();
+        private static readonly List<Account> all = new List<Account>();
+        public static int ThrowAllIn = -1;    // fault injection: throws on the Nth read
+        public static List<Account> All { get { if (ThrowAllIn >= 0 && ThrowAllIn-- == 0) throw new InvalidOperationException("stub All"); return all; } }
         public string Name; public bool Simulation { get; set; } = true;
         public Connection Connection = new Connection();
         private readonly List<Position> positions = new List<Position>();
         private readonly List<Order> orders = new List<Order>();
         public int ThrowPositionsIn = -1;
-        public List<Position> Positions { get { if (ThrowPositionsIn >= 0 && ThrowPositionsIn-- == 0) throw new InvalidOperationException("stub Positions"); return positions; } }
-        public List<Order> Orders { get { return orders; } }
-        public event EventHandler<OrderEventArgs> OrderUpdate;
+        public bool ThrowPositions, ThrowOrders, ThrowOnLedgerHook; // until switched off
+        public List<Position> Positions { get { if (ThrowPositions) throw new InvalidOperationException("stub Positions"); if (ThrowPositionsIn >= 0 && ThrowPositionsIn-- == 0) throw new InvalidOperationException("stub Positions"); return positions; } }
+        public List<Order> Orders { get { if (ThrowOrders) throw new InvalidOperationException("stub Orders"); return orders; } }
+        private EventHandler<OrderEventArgs> orderUpdate;
+        public event EventHandler<OrderEventArgs> OrderUpdate
+        {
+            add { if (ThrowOnLedgerHook && value.Method.Name == "OnLedgerOrderUpdate") throw new InvalidOperationException("stub hook"); lock (orders) orderUpdate += value; }
+            remove { lock (orders) orderUpdate -= value; }
+        }
+        public List<string> OrderHooks() { var h = orderUpdate; return h == null ? new List<string>() : h.GetInvocationList().Select(d => d.Method.Name).ToList(); }
+        public void Replace(Order old, Order now) { lock (orders) { orders.Remove(old); orders.Add(now); } } // NT8 reconnect: same order, new object
         public event EventHandler<PositionEventArgs> PositionUpdate;
         public event EventHandler<AccountItemEventArgs> AccountItemUpdate;
 
@@ -157,12 +167,12 @@ namespace NinjaTrader.Cbi
         public void State(Order o, OrderState s)
         {
             o.OrderState = s;
-            OrderUpdate?.Invoke(this, new OrderEventArgs { Order = o, OrderState = s, Filled = o.FilledRaw, AverageFillPrice = 100 });
+            orderUpdate?.Invoke(this, new OrderEventArgs { Order = o, OrderState = s, Filled = o.FilledRaw, AverageFillPrice = 100 });
         }
         public void FillEvent(Order o, int cum)   // the order half: live state, then the callback
         {
             o.Filled = cum; o.OrderState = cum >= o.Quantity ? OrderState.Filled : OrderState.PartFilled;
-            OrderUpdate?.Invoke(this, new OrderEventArgs { Order = o, OrderState = o.OrderState, Filled = cum, AverageFillPrice = 100 });
+            orderUpdate?.Invoke(this, new OrderEventArgs { Order = o, OrderState = o.OrderState, Filled = cum, AverageFillPrice = 100 });
         }
         public void MovePos(int delta)            // the position half
         {

@@ -137,6 +137,8 @@ namespace NinjaTrader.NinjaScript.AddOns
         private readonly object          ledgerSubLock = new object();
         private readonly Dictionary<string, object> cmdLocks = new Dictionary<string, object>(StringComparer.Ordinal);
         private int                      ledgerFaults  = 0;  // counted on NT8's thread, logged by the settle thread
+        private readonly Dictionary<string, long> settleWarned = new Dictionary<string, long>(StringComparer.Ordinal);
+        [ThreadStatic] private static string settleRanNow;   // what the gate saw of a close that runs at once
 
         // Track signal_id → original entry price for slippage calculation.
         private readonly Dictionary<string, double> signalEntryByOco = new Dictionary<string, double>();
@@ -943,6 +945,7 @@ namespace NinjaTrader.NinjaScript.AddOns
                     {
                         Dictionary<string, object> closeNow;
                         if (!TryHoldClose(payload, out closeNow)) HandleClosePosition(closeNow);
+                        LogSettleRanNow(); // after the close, never before it
                     }
                 }
                 else if (type == "move_stop")
@@ -1924,7 +1927,10 @@ namespace NinjaTrader.NinjaScript.AddOns
         //
         // LOCKS. cmdLock is one per account, around every signal / close / place-stop handler
         // and every release / sweep; never taken in an On*Update handler. The gate's own lock
-        // is never held across an NT8 call, a log or a frame.
+        // is never held across an NT8 call, a log or a frame. move_stop, modify_bracket and
+        // cancel_order stay OUTSIDE cmdLock: they only Change or Cancel an existing order (no
+        // Submit, no position read: pinned), so they cannot double an exit, and a stuck release
+        // must not delay a stop move or an entry cancel.
 
         private static long SettleNowMs()
         {
@@ -1984,8 +1990,8 @@ namespace NinjaTrader.NinjaScript.AddOns
                 if (settleGate == null) settleGate = new VLSettleGate();
                 LoadSettleSwitches(true);
                 List<Account> accts = CopyAccounts();
-                foreach (Account a in accts) HookLedger(a);
                 settleStop = false;
+                foreach (Account a in accts) HookLedger(a);
                 settleGate.Tick(SettleNowMs());
                 settleThread = new Thread(RunSettleLoop) { IsBackground = true, Name = "VLTrader-Settle" };
                 settleAlive = true;
@@ -1994,6 +2000,7 @@ namespace NinjaTrader.NinjaScript.AddOns
             catch (Exception ex)
             {
                 settleAlive = false;
+                if (settleGate != null) settleGate.StopSweeps(); // no thread would ever finish a mark
                 LogWarn("VLTraderTCPClient: settle gate did not start (" + ex.Message + ") — closes run at once, as before");
             }
         }
@@ -2026,11 +2033,48 @@ namespace NinjaTrader.NinjaScript.AddOns
         // SIM accounts only: no other account is ever gated.
         private void HookLedger(Account a)
         {
-            if (a == null || settleGate == null || settleStop || !IsSimAccount(a)) return;
-            lock (ledgerSubLock)
+            if (a == null || settleGate == null || settleStop) return;
+            try
             {
-                if (ledgerSubscribed.Add(a)) a.OrderUpdate += OnLedgerOrderUpdate;
+                if (!IsSimAccount(a)) return;
+                lock (ledgerSubLock)
+                {
+                    if (ledgerSubscribed.Contains(a)) return;
+                    a.OrderUpdate += OnLedgerOrderUpdate;
+                    ledgerSubscribed.Add(a);
+                }
             }
+            catch (Exception ex)
+            {
+                // this account is not counted, so it is never armed (its closes run at once); the
+                // others are, and the next upkeep tries again
+                SettleWarnLimited("hook " + a.Name, "settle ledger hook failed on account=" + a.Name + ": " + ex.Message);
+            }
+        }
+
+        // One WARN a minute for the same thing.
+        private void SettleWarnLimited(string id, string text)
+        {
+            long now = SettleNowMs(), last;
+            lock (settleWarned)
+            {
+                if (settleWarned.TryGetValue(id, out last) && now - last < 60000) return;
+                settleWarned[id] = now;
+            }
+            LogWarn("VLTraderTCPClient: " + text);
+        }
+
+        private static string SettleKeyText(string key)
+        {
+            return "account=" + key.Replace("\u001f", " ");
+        }
+
+        // One line per close that was not held: what the gate saw, or that it was not armed.
+        private void LogSettleRanNow()
+        {
+            string s = settleRanNow;
+            settleRanNow = null;
+            if (s != null) LogInfo("VLTraderTCPClient: close_position ran at once on " + s);
         }
 
         // NT8's thread. Counts the fill and the state; nothing else.
@@ -2110,6 +2154,7 @@ namespace NinjaTrader.NinjaScript.AddOns
         private bool TryHoldClose(Dictionary<string, object> p, out Dictionary<string, object> run)
         {
             run = p;
+            settleRanNow = null;
             VLSettleGate g = settleGate;
             long token = 0;
             IDisposable timer = null;
@@ -2133,12 +2178,17 @@ namespace NinjaTrader.NinjaScript.AddOns
                 {
                     run = (payload as Dictionary<string, object>) ?? p;
                     DisposeQuietly(absorbed);
+                    settleRanNow = SettleKeyText(key) + " - settle gate off, link down or settle thread not answering";
                     return false;
                 }
                 if (route == CloseRoute.Joined) return true;
 
                 SettleVerdict v = JudgeSettle(g, acct, instrument, key);
-                if (v.Kind != VerdictKind.Unsettled) return false;
+                if (v.Kind != VerdictKind.Unsettled)
+                {
+                    settleRanNow = SettleKeyText(key) + " - " + v + (v.Trusted ? "" : " (settle gate NOT ARMED for it yet)");
+                    return false;
+                }
 
                 int settleMs = g.Switches.SettleMs;
                 long now = SettleNowMs();
@@ -2345,6 +2395,11 @@ namespace NinjaTrader.NinjaScript.AddOns
 
         private void DropOwnExit(Order o) { if (settleGate != null && o != null) settleGate.DropOwnExit(o); }
 
+        // KNOWN LIMIT: the price is not compared. A marketable limit exit behind a passive -lx
+        // waits for Go's own market fallback (10-15 s after the FIRST one). Moving the resting
+        // order by Account.Change was left out: a limit order on its way to a fill has never been
+        // changed by this AddOn, and a Change that fails or lands late is one more exit state to
+        // prove; 1 pair in four weeks, at the same price.
         private bool OwnLxCovers(Account acct, Instrument instrument, bool needBuy, int heldQty)
         {
             try
@@ -2473,15 +2528,22 @@ namespace NinjaTrader.NinjaScript.AddOns
             {
                 // one account that cannot be read must not stop the others
                 try { if (IsSimAccount(a)) SettleUpkeepAccount(g, a); }
-                catch (Exception ex) { LogWarn("VLTraderTCPClient: settle upkeep fault on account=" + a.Name + ": " + ex.Message); }
+                catch (Exception ex) { SettleWarnLimited("upkeep " + a.Name, "settle upkeep fault on account=" + a.Name + ": " + ex.Message); }
                 g.Tick(SettleNowMs());
             }
+            foreach (KeyValuePair<string, string> d in g.TakeDrops())
+                LogInfo("VLTraderTCPClient: settle gate DISARMED for " + SettleKeyText(d.Key) + " - " + d.Value
+                        + "; closes run at once until it is armed again (armed " + g.ArmedText() + ")");
             g.Prune(SettleNowMs());
         }
 
         private void SettleUpkeepAccount(VLSettleGate g, Account a)
         {
             HookLedger(a);
+            lock (ledgerSubLock)
+            {
+                if (!ledgerSubscribed.Contains(a)) return; // its fills are not counted: never armed
+            }
             Connection conn = a.Connection;
             bool up = conn != null && conn.Status == ConnectionStatus.Connected;
             // orders BEFORE positions: a fill seen here and not there restarts the anchor
@@ -2525,6 +2587,13 @@ namespace NinjaTrader.NinjaScript.AddOns
                 UpkeepResult r = g.Upkeep(k, conn, up, true, c, l, SettleNowMs(), out was);
                 if (r == UpkeepResult.Resynced)
                     LogWarn("VLTraderTCPClient: settle ledger resync on account=" + a.Name + " — counted " + was + ", NT8 holds " + c);
+                else if (r == UpkeepResult.Anchored)
+                    LogInfo("VLTraderTCPClient: settle gate ARMED for " + SettleKeyText(k) + " - position " + c + " (armed " + g.ArmedText() + ")");
+                long forMs;
+                string notYet;
+                if (g.UntrustedDue(k, SettleNowMs(), out forMs, out notYet))
+                    LogWarn("VLTraderTCPClient: settle gate NOT ARMED for " + SettleKeyText(k) + " for " + (forMs / 1000) + " s on a connected account - "
+                            + notYet + "; closes run at once, as before (armed " + g.ArmedText() + ")");
             }
         }
 
