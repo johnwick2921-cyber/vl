@@ -203,6 +203,11 @@ Write-Output 'VL_ADDON_PROBE=ok'`
 		{"function", regexp.MustCompile(`(?i)\bfunction\b`), []string{
 			"function Fail([string]$msg) {", "function Build-VLCustomBuilder([string]$NT8Bin) {", "function Add-Ref([string]$path) {"}},
 		{"alias", regexp.MustCompile(`(?i)\b(set|new)-alias\b|\bInvoke-Expression\b|\biex\b`), nil},
+		{"exit, return, throw or break", regexp.MustCompile(`(?i)\b(exit|return|throw|break)\b`), []string{
+			"exit 1", "return [System.Reflection.Assembly]::LoadFrom($candidate)", "return $null",
+			"try { [void][System.Reflection.AssemblyName]::GetAssemblyName($_.FullName) } catch { return }",
+			"return $exe", "exit $LASTEXITCODE", "if (-not $path) { return }", "if (-not (Test-Path $path)) { return }", "return",
+			"exit $LASTEXITCODE", "exit 0"}},
 		{"trap", regexp.MustCompile(`(?i)^trap\b|ErrorActionPreference`), []string{"$ErrorActionPreference = 'Stop'"}},
 	}
 )
@@ -256,11 +261,6 @@ func TestPs1GuardRealScript(t *testing.T) {
 	if err := ps1Guard(BuildPs1()); err != nil {
 		t.Fatalf("build-addon.ps1: %v", err)
 	}
-	for _, p := range []string{"# 2b.", "# -- Compile ---"} {
-		if strings.Count(BuildPs1(), p) != 1 {
-			t.Fatalf("build-addon.ps1: the section header %q is not there exactly once", p)
-		}
-	}
 }
 
 // The guard must see the breaks that keep every text pin of ps1_refs_test.go green (the
@@ -269,17 +269,22 @@ func TestPs1GuardSeesBreaksThatKeepThePinnedText(t *testing.T) {
 	const (
 		blk = "foreach ($n in @('NinjaTrader.Core.dll','NinjaTrader.Gui.dll')) {\n"
 		end = "is NinjaTrader 8 installed there?')\n    }\n}\n"
-		nj  = "# 3. Newtonsoft.Json"
-		cmp = "# -- Compile ---"
+		nj  = "Add-Ref (Join-Path $NT8Bin 'Newtonsoft.Json.dll')"
+		cmp = "$options = New-Object"
+		top = "$codeAnalysis = Join-Path"
+		mir = "if ($CustomDir) {\n    $csproj"
 	)
+	if err := ps1Guard(BuildPs1()); err != nil {
+		t.Fatalf("the unbroken script is red, so a red mutant shows nothing: %v", err)
+	}
 	for name, rs := range map[string][]string{
 		"S1 block only with -Probe":           {blk, "if ($Probe) {\n" + blk, end, end + "}\n"},
-		"S1b all of it one level down":        {"# 2. Mirror the references", "& {\n# 2. Mirror the references", "[Microsoft.CodeAnalysis.SyntaxTree]'\n\nif ($Probe) {", "[Microsoft.CodeAnalysis.SyntaxTree]'\n}\nif ($Probe) {"},
+		"S1b all of it one level down":        {mir, "& {\n" + mir, "[Microsoft.CodeAnalysis.SyntaxTree]'\n\nif ($Probe) {", "[Microsoft.CodeAnalysis.SyntaxTree]'\n}\nif ($Probe) {"},
 		"S1c block in an uncalled function":   {blk, "function Later {\n" + blk, end, end + "}\n"},
 		"S1d block in a scriptblock":          {blk, "$later = {\n" + blk, end, end + "}\n"},
 		"S2 $NT8Bin emptied before the block": {blk, "$NT8Bin = 'C:\\nowhere'\n" + blk},
-		"S2b $NT8Bin set early":               {"# -- Load Roslyn", "$script:nt8bin = 'C:\\nowhere'\n# -- Load Roslyn"},
-		"S2c Set-Variable":                    {"# -- Load Roslyn", "Set-Variable NT8Bin 'C:\\nowhere'\n# -- Load Roslyn"},
+		"S2b $NT8Bin set early":               {top, "$script:nt8bin = 'C:\\nowhere'\n" + top},
+		"S2c Set-Variable":                    {top, "Set-Variable NT8Bin 'C:\\nowhere'\n" + top},
 		"S3 Add-Ref last-wins":                {"    if (-not $refPaths.ContainsKey($key)) {\n", "    if ($true) {\n"},
 		"S3b Add-Ref does nothing":            {"    if (-not $path) { return }\n", "    return\n"},
 		"S3c a second Add-Ref":                {nj, "function Add-Ref([string]$p) { }\n" + nj},
@@ -294,6 +299,8 @@ func TestPs1GuardSeesBreaksThatKeepThePinnedText(t *testing.T) {
 		"S8b a quote is missing":              {"is NinjaTrader 8 installed there?')\n", "is NinjaTrader 8 installed there?)\n"},
 		"S8c a brace is missing at the end":   {end, "is NinjaTrader 8 installed there?')\n    }\n"},
 		"S8d block comment around the block":  {blk, "<#\n" + blk, end, end + "#>\n"},
+		"S10 the script leaves early":         {mir, "if ($PSVersionTable.PSVersion.Major -lt 9) { exit 0 }\n" + mir},
+		"S10b a top-level return":             {top, "return\n" + top},
 		"Fail does not stop":                  {"    exit 1\n}\n", "}\n"},
 		"errors do not stop":                  {"$ErrorActionPreference = 'Stop'", "$ErrorActionPreference = 'SilentlyContinue'"},
 		"a lone CR hides code in a comment":   {cmp, "# note\r$x = 1\n" + cmp},
