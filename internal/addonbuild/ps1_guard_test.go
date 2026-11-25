@@ -195,6 +195,18 @@ Write-Output 'VL_ADDON_PROBE=ok'`
 			"$refs = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.MetadataReference]'",
 			"$refs.Add([Microsoft.CodeAnalysis.MetadataReference]::CreateFromFile($refPaths[$key]))",
 			"$compilation = [Microsoft.CodeAnalysis.CSharp.CSharpCompilation]::Create($asmName, $trees, $refs, $options)"}},
+		{"$srcFiles", regexp.MustCompile(`(?i)\bsrcFiles\b`), []string{
+			"$srcFiles = @(Get-ChildItem -Path $Src -Filter '*.cs' -File)",
+			`if ($srcFiles.Count -eq 0) { Fail "no .cs files in " + $Src }`, "foreach ($f in $srcFiles) {"}},
+		{"$trees", regexp.MustCompile(`(?i)\btrees\b`), []string{
+			"$trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.SyntaxTree]'",
+			"$trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText('public class __VlAddonProbe : NinjaTrader.NinjaScript.AddOnBase { public NinjaTrader.Cbi.Account A; }'))",
+			"$trees.Add([Microsoft.CodeAnalysis.CSharp.CSharpSyntaxTree]::ParseText($text, $null, $f.FullName, $null))",
+			"$compilation = [Microsoft.CodeAnalysis.CSharp.CSharpCompilation]::Create($asmName, $trees, $refs, $options)"}},
+		{"$result", regexp.MustCompile(`(?i)\bresult\b`), []string{
+			"$result = $compilation.Emit($ms)", "$result = $compilation.Emit($fs)",
+			"$errors = @($result.Diagnostics | Where-Object { $_.Severity -eq [Microsoft.CodeAnalysis.DiagnosticSeverity]::Error })",
+			"if (-not $result.Success) {"}},
 		{"$Probe", regexp.MustCompile(`(?i)\$probe\b`), []string{
 			"[switch]$Probe,", "if (-not $Probe -and -not $Custom -and -not $CustomDir) {",
 			"if ($Probe) {", "if ($Probe) {", "if ($Probe) {"}},
@@ -203,7 +215,7 @@ Write-Output 'VL_ADDON_PROBE=ok'`
 		{"function", regexp.MustCompile(`(?i)\bfunction\b`), []string{
 			"function Fail([string]$msg) {", "function Build-VLCustomBuilder([string]$NT8Bin) {", "function Add-Ref([string]$path) {"}},
 		{"alias", regexp.MustCompile(`(?i)\b(set|new)-alias\b|\bInvoke-Expression\b|\biex\b`), nil},
-		{"exit, return, throw or break", regexp.MustCompile(`(?i)\b(exit|return|throw|break)\b`), []string{
+		{"exit, return, throw, break or continue", regexp.MustCompile(`(?i)\b(exit|return|throw|break|continue)\b`), []string{
 			"exit 1", "return [System.Reflection.Assembly]::LoadFrom($candidate)", "return $null",
 			"try { [void][System.Reflection.AssemblyName]::GetAssemblyName($_.FullName) } catch { return }",
 			"return $exe", "exit $LASTEXITCODE", "if (-not $path) { return }", "if (-not (Test-Path $path)) { return }", "return",
@@ -273,6 +285,9 @@ func TestPs1GuardSeesBreaksThatKeepThePinnedText(t *testing.T) {
 		cmp = "$options = New-Object"
 		top = "$codeAnalysis = Join-Path"
 		mir = "if ($CustomDir) {\n    $csproj"
+		ver = "$errors = @($result.Diagnostics"
+		src = "@(Get-ChildItem -Path $Src -Filter '*.cs' -File)"
+		fwd = "-File | ForEach-Object { Add-Ref $_.FullName }\n}\n"
 	)
 	if err := ps1Guard(BuildPs1()); err != nil {
 		t.Fatalf("the unbroken script is red, so a red mutant shows nothing: %v", err)
@@ -301,6 +316,17 @@ func TestPs1GuardSeesBreaksThatKeepThePinnedText(t *testing.T) {
 		"S8d block comment around the block":  {blk, "<#\n" + blk, end, end + "#>\n"},
 		"S10 the script leaves early":         {mir, "if ($PSVersionTable.PSVersion.Major -lt 9) { exit 0 }\n" + mir},
 		"S10b a top-level return":             {top, "return\n" + top},
+		"X1 a success object as the result":   {ver, "$result = New-Object PSObject -Property @{ Success = $true; Diagnostics = @() }\n" + ver},
+		"X1b the result by Set-Variable":      {ver, "Set-Variable result ([pscustomobject]@{ Success = $true; Diagnostics = @() })\n" + ver},
+		"X1c another Emit result":             {"$result = $compilation.Emit($fs)", "[void]$compilation.Emit($fs); $result = $empty"},
+		"X2 a top-level continue":             {fwd, fwd + "continue\n"},
+		"X2b continue on a condition":         {top, "if ($true) { Continue }\n" + top},
+		"X3 trees emptied before the compile": {cmp, "$trees.Clear()\n" + cmp},
+		"X3b trees replaced":                  {cmp, "$Trees = New-Object 'System.Collections.Generic.List[Microsoft.CodeAnalysis.SyntaxTree]'\n" + cmp},
+		"X6 only the first source file":       {src, src + " | Select-Object -First 1"},
+		"X6b the first file in the loop":      {"foreach ($f in $srcFiles) {", "foreach ($f in $srcFiles[0]) {"},
+		"X6c the loop ends after one file":    {"$f.FullName, $null))\n", "$f.FullName, $null))\n        break\n"},
+		"X6d the loop skips files":            {"foreach ($f in $srcFiles) {\n", "foreach ($f in $srcFiles) {\n        if ($f.Name -ne 'x.cs') { continue }\n"},
 		"Fail does not stop":                  {"    exit 1\n}\n", "}\n"},
 		"errors do not stop":                  {"$ErrorActionPreference = 'Stop'", "$ErrorActionPreference = 'SilentlyContinue'"},
 		"a lone CR hides code in a comment":   {cmp, "# note\r$x = 1\n" + cmp},

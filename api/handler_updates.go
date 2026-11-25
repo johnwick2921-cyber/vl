@@ -593,8 +593,8 @@ func (s *Server) handleUpdatesStatus(c *gin.Context) {
 
 // handleUpdatesReadiness — GET /api/updates/readiness (W-ADDON-ONE-CLICK).
 // Behind the same updates gate as every other route here. Returns the
-// pre-update checklist the page shows BEFORE the owner presses Update, read
-// from the live box (auto-detected NT8 Documents folder, a powershell probe,
+// pre-update checklist for a caller to read BEFORE pressing Update (no page
+// calls it and Update does not read it), read from the live box (auto-detected NT8 Documents folder, a powershell probe,
 // Config.xml, and the AddOns folder). Read-only; never touches the bot or NT8.
 func (s *Server) handleUpdatesReadiness(c *gin.Context) {
 	items := updatereadiness.Check(c.Request.Context(), updatereadiness.Config{

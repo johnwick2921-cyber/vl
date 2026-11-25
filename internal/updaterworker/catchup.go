@@ -11,14 +11,21 @@ import (
 // ── feat/addon-catchup ──────────────────────────────────────────────────────
 //
 // The owner's "why do I have to copy to NinjaTrader again": when the worker
-// starts, and at the end of every install, it compares the AddOn build NT8 is
-// ACTUALLY running (the last hello) with the VERIFIED installed release's
-// AddOn build (m355: the signed manifest's addon.build_id of
-// <VL_RELEASE_DIR>/<running revision> — never oldInstallBuildID()). If the
-// running build differs, the worker rebuilds the AddOn from that verified
-// release's own ninjascript and places it — restarting NT8 and proving the
-// reconnect when NT8 is open, building+placing only when NT8 is closed (the
-// new DLL loads at the next NT8 start).
+// starts idle, and after a job that is not a catch-up, did not end
+// recovery_needed and did not swap the worker, it reads the AddOn build NT8 is
+// ACTUALLY running (the current connection's maintenance ack) and the VERIFIED
+// installed release's AddOn build (m355: the signed manifest's addon.build_id of
+// <VL_RELEASE_DIR>/<running revision> — never oldInstallBuildID()).
+//
+//   - Ack there ("NT8 open"): the same build → nothing is owed; an older release
+//     build → held; else, when the box is flat + SIM, the AddOn is rebuilt from
+//     that verified release's own ninjascript and placed, NT8 is restarted and
+//     the reconnect is proven.
+//   - No ack (NT8 closed, OR its AddOn not linked yet): there is no running build
+//     to compare, so with a verified artifact a catch-up is ALWAYS owed, for an
+//     EQUAL build too: build + place only, and the new DLL loads at the next NT8
+//     start. A build older than the placed DLL, or not rankable against it, is
+//     refused at the place step (catchupNeverDowngrade).
 //
 // The catch-up runs as its own durable job (StateCatchup → addon_built →
 // addon_placed → [nt8_restarted →] addon_reconnected → complete) so it gets
@@ -34,11 +41,12 @@ type catchupDecision struct {
 	running string       // the running AddOn's ack build ("" when NT8 is closed)
 }
 
-// catchupStatus reports whether a catch-up is owed. It is owed when the
-// verified installed-release artifact names a build the running AddOn does not
-// run — and is SKIPPED (with a log) when the artifact is unavailable, already
-// current, or would DOWNGRADE the box (m355). nt8Open is true when the AddOn's
-// last hello exists.
+// catchupStatus reports whether a catch-up is owed. With an ack (nt8Open) it is
+// owed when the verified installed-release artifact names a build the running
+// AddOn does not run; it is not when that build is already running, and is held
+// (with a log) when it would DOWNGRADE the box (m355) or the box is not flat+SIM.
+// Without an ack it is owed whatever is placed, the same build included. An
+// unavailable artifact or one without a build id is held (with a log) either way.
 func (w *Worker) catchupStatus(ctx context.Context) (catchupDecision, error) {
 	var d catchupDecision
 	m, merr := w.app.Maintenance(ctx)

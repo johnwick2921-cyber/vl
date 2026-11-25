@@ -17,24 +17,42 @@ func argAfter(args []string, flag string) string {
 	return ""
 }
 
-// The ps1's exit code decides: a script that printed both markers and then failed (the
-// selftest's exit code is the script's) is not ok.
+// The probe is ok only with exit 0 AND both markers: a script that printed both and then
+// failed (the selftest's exit code is the script's) is not ok, and neither is an exit 0
+// that printed only one of them.
 func TestCompilerProbeHonoursThePs1ExitCode(t *testing.T) {
 	useTempWindowsTools(t)
-	cfg := Config{
-		DocsDir: mkNT8(t, t.TempDir(), "alice", true), PowerShellExe: "powershell.exe",
-		Run: func(context.Context, string, ...string) ([]byte, error) {
-			return []byte("VL_ADDON_PROBE=ok\nVL_SELFTEST_OK\n"), errors.New("exit status 1")
-		},
-	}
-	if ok, detail := CompilerProbe(context.Background(), cfg); ok {
-		t.Fatalf("CompilerProbe = ok (%q) on a ps1 that exited 1", detail)
+	const compiled, selftest = "VL_ADDON_PROBE=ok\n", "VL_SELFTEST_OK\n"
+	for name, c := range map[string]struct {
+		out  string
+		err  error
+		want bool
+	}{
+		"both markers, exit 0":           {compiled + selftest, nil, true},
+		"both markers, exit 1":           {compiled + selftest, errors.New("exit status 1"), false},
+		"only VL_ADDON_PROBE=ok, exit 0": {compiled, nil, false},
+		"only VL_SELFTEST_OK, exit 0":    {selftest, nil, false},
+		"no marker, exit 0":              {"", nil, false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			cfg := Config{
+				DocsDir: mkNT8(t, t.TempDir(), "alice", true), PowerShellExe: "powershell.exe",
+				Run: func(context.Context, string, ...string) ([]byte, error) { return []byte(c.out), c.err },
+			}
+			if ok, detail := CompilerProbe(context.Background(), cfg); ok != c.want {
+				t.Fatalf("CompilerProbe = %v (%q), want %v", ok, detail, c.want)
+			}
+		})
 	}
 }
 
-// Both callers hand the script the SAME two folders: without -CustomDir the probe has no
-// csproj and no NinjaTrader.Custom.dll (the script guards that in normal mode only), and
-// without -NT8Bin an NT8 outside C:\Program Files is never looked at.
+// For the SAME Config, CompilerProbe and Build hand the script the same two folders:
+// without -CustomDir the probe has no csproj and no NinjaTrader.Custom.dll (the script
+// guards that in normal mode only), and without -NT8Bin an NT8 outside C:\Program Files
+// is never looked at. It does NOT say that production gives them the same Config: the
+// readiness item sets no Exe, so it looks in C:\Program Files only, and has its own
+// docs-folder detection (updatereadiness, TestReadinessProbeLooksOnlyInTheDefaultFolders);
+// the updater honours VL_NT8_EXE and VL_NT8_DOCS_DIR.
 func TestProbeAndBuildPassTheSameTwoFoldersToThePs1(t *testing.T) {
 	useTempWindowsTools(t)
 	src, work := t.TempDir(), t.TempDir()

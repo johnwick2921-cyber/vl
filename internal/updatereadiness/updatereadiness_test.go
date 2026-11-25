@@ -111,6 +111,41 @@ func TestCheckAllGreen(t *testing.T) {
 	}
 }
 
+// The compiler item does not read the updater's VL_NT8_EXE and VL_NT8_DOCS_DIR: it asks
+// for C:\Program Files\NinjaTrader 8\bin and for the folder its own detection found. The
+// guide and the comment in checkCompiler say so.
+func TestReadinessProbeLooksOnlyInTheDefaultFolders(t *testing.T) {
+	docs := buildDocs(t)
+	t.Setenv("VL_NT8_EXE", `D:\Apps\NT8\bin\NinjaTrader.exe`)
+	t.Setenv("VL_NT8_DOCS_DIR", t.TempDir())
+	ok := okRunner(t)
+	var probe []string
+	items := Check(context.Background(), Config{
+		Detect: func() (string, error) { return docs, nil },
+		Run: func(ctx context.Context, name string, args ...string) ([]byte, error) {
+			for _, a := range args {
+				if a == "-Probe" {
+					probe = args
+				}
+			}
+			return ok(ctx, name, args...)
+		},
+	})
+	if it := find(items, "NT8 Roslyn compiler"); it == nil || !it.OK {
+		t.Fatalf("compiler item: %+v", it)
+	}
+	got := map[string]string{}
+	for i := 0; i+1 < len(probe); i++ {
+		got[probe[i]] = probe[i+1]
+	}
+	if got["-NT8Bin"] != `C:\Program Files\NinjaTrader 8\bin` {
+		t.Errorf("-NT8Bin %q, want the default folder (args %q)", got["-NT8Bin"], probe)
+	}
+	if want := windowsPath(filepath.Join(docs, "bin", "Custom")); !strings.HasSuffix(strings.ReplaceAll(got["-CustomDir"], "/", `\`), want) {
+		t.Errorf("-CustomDir %q, want %q, the folder readiness detected", got["-CustomDir"], want)
+	}
+}
+
 func TestCheckReportsMissingDocsDir(t *testing.T) {
 	items := Check(context.Background(), Config{Detect: func() (string, error) {
 		return "", os.ErrNotExist

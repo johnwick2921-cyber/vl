@@ -304,9 +304,9 @@ func (w *Worker) stepAddonPlace(ctx context.Context, j updaterjob.Job) stepResul
 		if deferred {
 			return "", nil
 		}
-		// m355 rule 3 — NEVER DOWNGRADE: a catch-up only places a build that
-		// is strictly newer than what the box runs (the ack) or loads (the
-		// placed DLL). Refused here means bin\Custom is untouched.
+		// m355 rule 3 — NEVER DOWNGRADE: a catch-up does not place a build that
+		// is older than what the box runs (the ack) or loads (the placed DLL);
+		// an EQUAL one is placed. Refused here means VL.AddOn.dll is not touched.
 		if j.Catchup {
 			if derr := w.catchupNeverDowngrade(ctx, cfg.DocsDir, w.wantAddonBuild(j)); derr != nil {
 				return "", derr

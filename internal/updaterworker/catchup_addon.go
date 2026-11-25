@@ -28,9 +28,10 @@ import (
 //     reason; InstallDir/ninjascript is NEVER a fallback (it is not a proof).
 //  2. expects the artifact's SIGNED manifest addon.build_id — never
 //     oldInstallBuildID().
-//  3. never downgrades: a build that is not strictly newer than what the box
-//     runs (the maintenance ack) or loads (the placed DLL) is refused and the
-//     AddOn is left alone.
+//  3. never downgrades: a build that is OLDER than what the box runs (the
+//     maintenance ack) or loads (the placed DLL), or that cannot be ranked
+//     against it, is refused and the AddOn is left alone. An EQUAL build is
+//     allowed: it is re-placed.
 
 // buildIDParts splits a build id into its numeric date and suffix. Build ids
 // are YYYY-MM-DD(-suffix) with suffix [A-Za-z0-9]+; ok is false unless the id
@@ -229,11 +230,12 @@ func verdictForSourceSHA(dataDir, sourceSHA string) (updaterjob.Verdict, bool, e
 	return updaterjob.Verdict{}, false, nil
 }
 
-// catchupNeverDowngrade (m355 rule 3) refuses a catch-up placement that is not
-// a STRICT upgrade over what the box runs or loads now: the running AddOn's
-// ack build when NT8 is open, and the currently placed DLL's embedded build id
-// (what the next NT8 start loads) always. A build that cannot be proven newer
-// than an existing one is refused — the AddOn is left alone.
+// catchupNeverDowngrade (m355 rule 3) refuses a catch-up placement that is OLDER
+// than what the box runs or loads now: the running AddOn's ack build when there
+// is one, and the currently placed DLL's embedded build id (what the next NT8
+// start loads) when it can be read. A build that cannot be ranked against a
+// valid existing id is refused too — the AddOn is left alone. An EQUAL build
+// passes, and so does any build when neither id is valid or readable.
 func (w *Worker) catchupNeverDowngrade(ctx context.Context, docsDir, wantBuild string) error {
 	if !validBuildID(wantBuild) {
 		return nil // nothing to rank; verify-on-place + the sha still guard
